@@ -1,0 +1,3 @@
+[submodule "canokey-crypto"]
+	path = canokey-crypto
+	url = https://github.com/canopo/canokey-crypto.git
