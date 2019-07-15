@@ -30,7 +30,11 @@ if (ENABLE_TESTS)
 
     if (PCSCLITE_FOUND)
         add_definitions(-DNFC)
-        add_library(u2f-virt-card SHARED virt-card/ifdhandler.c virt-card/apdu-adapter.c)
+        add_library(u2f-virt-card SHARED 
+            virt-card/ifdhandler.c
+            virt-card/apdu-adapter.c
+            virt-card/fabrication.c
+            littlefs/emubd/lfs_emubd.c)
         target_include_directories(u2f-virt-card SYSTEM PRIVATE u2f virt-card ${PCSCLITE_INCLUDE_DIRS})
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
     endif ()
