@@ -1,4 +1,5 @@
 #include "u2f.h"
+#include <aes.h>
 #include <apdu.h>
 #include <core.h>
 #include <ecdsa.h>
@@ -6,6 +7,7 @@
 #include <rand.h>
 #include <sha2.h>
 #include <string.h>
+#include <util.h>
 
 /*
  * Key Handle:
@@ -31,6 +33,9 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
     return 0;
   }
 
+#ifdef NFC
+  pressed = 1;
+#endif
   if (!pressed) {
     rapdu->sw = SW_CONDITIONS_NOT_SATISFIED;
     rapdu->len = 0;
@@ -45,6 +50,11 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   ecdsa_generate(ECDSA_SECP256R1, handle + U2F_APPID_SIZE,
                  handle + U2F_APPID_SIZE + U2F_EC_KEY_SIZE);
 
+  uint8_t key_buf[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
+  int err = read_file(&g_lfs, KEY_FILE, key_buf, sizeof(key_buf));
+  if (err < 0)
+    return err;
+
   // REGISTER ID (1)
   resp->registerId = U2F_REGISTER_ID;
   // PUBLIC KEY (65)
@@ -54,32 +64,25 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   // KEY HANDLE LENGTH (1)
   resp->keyHandleLen = U2F_KH_SIZE;
   // KEY HANDLE (128)
+  WORD aes_key[44];
+  aes_key_setup(key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE, aes_key, 128);
+  aes_encrypt_ctr(handle, U2F_KH_SIZE, handle, aes_key, 128, key_buf);
   memcpy(resp->keyHandleCertSig, handle, U2F_KH_SIZE);
   // CERTIFICATE (var)
-  lfs_file_t f;
-  int err = lfs_file_open(&g_lfs, &f, CERT_FILE, LFS_O_RDONLY);
-  if (err < 0)
-    return err;
-  lfs_ssize_t cert_len = lfs_file_read(
-      &g_lfs, &f, resp->keyHandleCertSig + U2F_KH_SIZE, U2F_KH_SIZE);
+  int cert_len = read_file(&g_lfs, CERT_FILE,
+                           resp->keyHandleCertSig + U2F_KH_SIZE, U2F_KH_SIZE);
   if (cert_len < 0)
     return cert_len;
-  err = lfs_file_close(&g_lfs, &f);
-  if (err < 0)
-    return err;
   // SIG (var)
   SHA256_CTX ctx;
   sha256_Init(&ctx);
   sha256_Update(&ctx, (uint8_t[]){0x00}, 1);
   sha256_Update(&ctx, req->appId, U2F_APPID_SIZE);
   sha256_Update(&ctx, req->chal, U2F_CHAL_SIZE);
-  memcpy(req->chal, handle + U2F_APPID_SIZE,
-         U2F_EC_KEY_SIZE); // store private key to chal
-  // TODO: encrypt handle here
   sha256_Update(&ctx, handle, U2F_KH_SIZE);
   sha256_Update(&ctx, (const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
   sha256_Final(&ctx, handle);
-  ecdsa_sign(ECDSA_SECP256R1, req->chal, handle, handle + 32);
+  ecdsa_sign(ECDSA_SECP256R1, key_buf, handle, handle + 32);
   size_t signature_len = ecdsa_sig2ansi(
       handle + 32, resp->keyHandleCertSig + U2F_KH_SIZE + cert_len);
   rapdu->sw = SW_NO_ERROR;
@@ -97,7 +100,14 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     return 0;
   }
 
-  // TODO: decrypt handle
+  uint8_t key_buf[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
+  int err = read_file(&g_lfs, KEY_FILE, key_buf, sizeof(key_buf));
+  if (err < 0)
+    return err;
+  WORD aes_key[44];
+  aes_key_setup(key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE, aes_key, 128);
+  aes_decrypt_ctr(req->keyHandle, U2F_KH_SIZE, req->keyHandle, aes_key, 128,
+                  key_buf);
   if (memcmp(req->appId, req->keyHandle, U2F_APPID_SIZE) != 0) {
     rapdu->sw = SW_WRONG_DATA;
     rapdu->len = 0;
@@ -110,6 +120,9 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     return 0;
   }
 
+#ifdef NFC
+  pressed = 1;
+#endif
   if (capdu->p1 == U2F_AUTH_CHECK_ONLY || !pressed) {
     rapdu->sw = SW_CONDITIONS_NOT_SATISFIED;
     rapdu->len = 0;
@@ -117,19 +130,12 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   }
   pressed = 0;
 
-  lfs_file_t f;
   uint32_t ctr = 0;
-  int err = lfs_file_open(&g_lfs, &f, CTR_FILE, LFS_O_RDWR);
-  if (err < 0)
-    return err;
-  err = lfs_file_read(&g_lfs, &f, &ctr, sizeof(ctr));
+  err = read_file(&g_lfs, CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
   ++ctr;
-  err = lfs_file_write(&g_lfs, &f, &ctr, sizeof(ctr));
-  if (err < 0)
-    return err;
-  err = lfs_file_close(&g_lfs, &f);
+  err = write_file(&g_lfs, CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
 
@@ -167,31 +173,17 @@ int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
 
 int u2f_personalization(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
+
   uint8_t buffer[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
   ecdsa_generate(ECDSA_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
   random_buffer(buffer + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE,
                 U2F_SECRET_KEY_SIZE);
-  lfs_file_t f;
-  int err = lfs_file_open(&g_lfs, &f, KEY_FILE,
-                          LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-  if (err < 0)
-    return err;
-  err = lfs_file_write(&g_lfs, &f, buffer, sizeof(buffer));
-  if (err < 0)
-    return err;
-  err = lfs_file_close(&g_lfs, &f);
+  int err = write_file(&g_lfs, KEY_FILE, buffer, sizeof(buffer));
   if (err < 0)
     return err;
 
   uint32_t ctr = 0;
-  err = lfs_file_open(&g_lfs, &f, CTR_FILE,
-                      LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
-  if (err < 0)
-    return err;
-  err = lfs_file_write(&g_lfs, &f, &ctr, sizeof(ctr));
-  if (err < 0)
-    return err;
-  err = lfs_file_close(&g_lfs, &f);
+  err = write_file(&g_lfs, CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
 
@@ -207,17 +199,11 @@ int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
     rapdu->len = 0;
     return 0;
   }
-  lfs_file_t f;
-  int err = lfs_file_open(&g_lfs, &f, CERT_FILE,
-                          LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+
+  int err = write_file(&g_lfs, CERT_FILE, capdu->data, capdu->lc);
   if (err < 0)
     return err;
-  err = lfs_file_write(&g_lfs, &f, capdu->data, capdu->lc);
-  if (err < 0)
-    return err;
-  err = lfs_file_close(&g_lfs, &f);
-  if (err < 0)
-    return err;
+
   rapdu->sw = SW_NO_ERROR;
   rapdu->len = 0;
   return 0;
