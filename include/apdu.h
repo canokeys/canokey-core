@@ -8,14 +8,14 @@ typedef struct {
   uint8_t ins;
   uint8_t p1;
   uint8_t p2;
+  uint32_t le; // Le can be 65536 bytes long as per ISO7816-3
   uint16_t lc;
-  uint16_t le;
   uint8_t data[];
 } __attribute__((packed)) CAPDU;
 
 typedef struct {
+  uint32_t len;
   uint16_t sw;
-  uint16_t len;
   uint8_t data[];
 } __attribute__((packed)) RAPDU;
 
