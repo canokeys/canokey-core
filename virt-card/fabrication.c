@@ -62,7 +62,7 @@ int u2f_fabrication_procedure() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 128;
   cfg.lookahead_size = 16;
-  lfs_emubd_create(&cfg, "test");
+  lfs_emubd_create(&cfg, "lfs-root");
 
   init(&cfg);
 
