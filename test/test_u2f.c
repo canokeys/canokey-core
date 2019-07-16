@@ -180,7 +180,7 @@ static void test_u2f_authenicate(void **state) {
   assert_int_equal(resp->ctr[2], 0);
   assert_int_equal(resp->ctr[3], 1);
 
-  uint8_t sig_buffer[69], priv_key[32];
+  uint8_t sig_buffer[72], priv_key[32];
   sig_buffer[0] = 0;
   for (int i = 0; i != 32; ++i) {
     sig_buffer[i] = i + 32;
@@ -206,8 +206,8 @@ static void test_u2f_authenicate(void **state) {
 }
 
 int main() {
-  struct lfs_config cfg;
-  lfs_emubd_t bd;
+  static struct lfs_config cfg;
+  static lfs_emubd_t bd;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_emubd_read;

@@ -70,7 +70,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(resp->keyHandleCertSig, handle, U2F_KH_SIZE);
   // CERTIFICATE (var)
   int cert_len = read_file(&g_lfs, CERT_FILE,
-                           resp->keyHandleCertSig + U2F_KH_SIZE, U2F_KH_SIZE);
+                           resp->keyHandleCertSig + U2F_KH_SIZE, U2F_MAX_ATT_CERT_SIZE);
   if (cert_len < 0)
     return cert_len;
   // SIG (var)

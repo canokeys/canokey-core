@@ -78,7 +78,7 @@ int u2f_apdu_transceive(
     uint8_t * cmd_struct = (uint8_t*) malloc(sizeof(CAPDU) + Lc);
     if(!cmd_struct)
         return -1;
-    uint8_t * resp_struct = (uint8_t*) malloc(sizeof(RAPDU) + Le);
+    uint8_t * resp_struct = (uint8_t*) malloc(sizeof(RAPDU) + 4096);
     if(!resp_struct) {
         free(cmd_struct);
         return -1;
