@@ -2,7 +2,6 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-#include "core.h"
 #include "fabrication.h"
 #include "u2f.h"
 #include <aes.h>
@@ -67,7 +66,7 @@ int u2f_fabrication_procedure() {
   cfg.lookahead_size = 16;
   lfs_emubd_create(&cfg, "lfs-root");
 
-  init(&cfg);
+  fs_init(&cfg);
 
   fake_u2f_personalization();
   return 0;
