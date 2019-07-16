@@ -1,13 +1,12 @@
 #include "u2f.h"
 #include <aes.h>
 #include <apdu.h>
-#include <core.h>
 #include <ecdsa.h>
+#include <fs.h>
 #include <lfs.h>
 #include <rand.h>
 #include <sha2.h>
 #include <string.h>
-#include <util.h>
 
 /*
  * Key Handle:
@@ -51,7 +50,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
                  handle + U2F_APPID_SIZE + U2F_EC_KEY_SIZE);
 
   uint8_t key_buf[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
-  int err = read_file(&g_lfs, KEY_FILE, key_buf, sizeof(key_buf));
+  int err = read_file(KEY_FILE, key_buf, sizeof(key_buf));
   if (err < 0)
     return err;
 
@@ -69,8 +68,8 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   aes_encrypt_ctr(handle, U2F_KH_SIZE, handle, aes_key, 128, key_buf);
   memcpy(resp->keyHandleCertSig, handle, U2F_KH_SIZE);
   // CERTIFICATE (var)
-  int cert_len = read_file(&g_lfs, CERT_FILE,
-                           resp->keyHandleCertSig + U2F_KH_SIZE, U2F_MAX_ATT_CERT_SIZE);
+  int cert_len = read_file(CERT_FILE, resp->keyHandleCertSig + U2F_KH_SIZE,
+      U2F_MAX_ATT_CERT_SIZE);
   if (cert_len < 0)
     return cert_len;
   // SIG (var)
@@ -101,7 +100,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   uint8_t key_buf[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
-  int err = read_file(&g_lfs, KEY_FILE, key_buf, sizeof(key_buf));
+  int err = read_file(KEY_FILE, key_buf, sizeof(key_buf));
   if (err < 0)
     return err;
   WORD aes_key[44];
@@ -131,11 +130,11 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   pressed = 0;
 
   uint32_t ctr = 0;
-  err = read_file(&g_lfs, CTR_FILE, &ctr, sizeof(ctr));
+  err = read_file(CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
   ++ctr;
-  err = write_file(&g_lfs, CTR_FILE, &ctr, sizeof(ctr));
+  err = write_file(CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
 
@@ -202,12 +201,12 @@ int u2f_personalization(const CAPDU *capdu, RAPDU *rapdu) {
   ecdsa_generate(ECDSA_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
   random_buffer(buffer + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE,
                 U2F_SECRET_KEY_SIZE);
-  int err = write_file(&g_lfs, KEY_FILE, buffer, sizeof(buffer));
+  int err = write_file(KEY_FILE, buffer, sizeof(buffer));
   if (err < 0)
     return err;
 
   uint32_t ctr = 0;
-  err = write_file(&g_lfs, CTR_FILE, &ctr, sizeof(ctr));
+  err = write_file(CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
 
@@ -224,7 +223,7 @@ int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
     return 0;
   }
 
-  int err = write_file(&g_lfs, CERT_FILE, capdu->data, capdu->lc);
+  int err = write_file(CERT_FILE, capdu->data, capdu->lc);
   if (err < 0)
     return err;
 

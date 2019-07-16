@@ -2,17 +2,17 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#include "core.h"
 #include "fabrication.h"
 #include "u2f.h"
-#include "core.h"
 #include <aes.h>
 #include <apdu.h>
 #include <ecdsa.h>
 #include <emubd/lfs_emubd.h>
+#include <fs.h>
 #include <lfs.h>
 #include <memzero.h>
 #include <sha2.h>
-#include <util.h>
 
 static struct lfs_config cfg;
 static lfs_emubd_t bd;

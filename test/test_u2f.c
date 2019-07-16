@@ -6,14 +6,12 @@
 #include "../u2f/u2f.h"
 #include <aes.h>
 #include <apdu.h>
-#include <core.h>
 #include <ecdsa.h>
 #include <emubd/lfs_emubd.h>
+#include <fs.h>
 #include <lfs.h>
 #include <memzero.h>
 #include <sha2.h>
-#include <util.h>
-
 
 uint8_t public_key[] = {
     0x04, 0x7A, 0x59, 0x31, 0x80, 0x86, 0x0C, 0x40, 0x37, 0xC8, 0x3C,
@@ -26,7 +24,7 @@ uint8_t public_key[] = {
 static void test_u2f_personalization(void **state) {
   (void)state;
 
-  uint8_t c_buf[100], r_buf[1024];
+  uint8_t c_buf[1024], r_buf[1024];
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
   capdu->cla = 0x80;
@@ -38,9 +36,9 @@ static void test_u2f_personalization(void **state) {
   assert_int_equal(rapdu->len, 64);
 
   uint8_t key_buf[112];
-  read_file(&g_lfs, "u2f_key", key_buf, sizeof(key_buf));
+  read_file("u2f_key", key_buf, sizeof(key_buf));
   memzero(key_buf + 96, 16);
-  write_file(&g_lfs, "u2f_key", key_buf, sizeof(key_buf));
+  write_file("u2f_key", key_buf, sizeof(key_buf));
 
   capdu->ins = U2F_INSTALL_CERT;
   capdu->lc = 1;
@@ -207,8 +205,8 @@ static void test_u2f_authenicate(void **state) {
 }
 
 int main() {
-  static struct lfs_config cfg;
-  static lfs_emubd_t bd;
+  struct lfs_config cfg;
+  lfs_emubd_t bd;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_emubd_read;
@@ -224,7 +222,7 @@ int main() {
   cfg.lookahead_size = 16;
   lfs_emubd_create(&cfg, "lfs-root");
 
-  init(&cfg);
+  fs_init(&cfg);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_u2f_personalization),

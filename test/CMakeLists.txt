@@ -1,6 +1,5 @@
 add_mocked_test(u2f
-        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/core.c
-        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/util.c
+        SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/fs.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../u2f/u2f.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs_util.c
