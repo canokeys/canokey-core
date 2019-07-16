@@ -51,6 +51,7 @@ static void test_u2f_personalization(void **state) {
 
 static void test_u2f_registration(void **state) {
   (void)state;
+
   uint8_t c_buf[100], r_buf[1024];
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
