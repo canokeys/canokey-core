@@ -32,6 +32,7 @@ typedef struct {
 #define U2F_REGISTER 0x01     // Registration command
 #define U2F_AUTHENTICATE 0x02 // Authenticate/sign command
 #define U2F_VERSION 0x03      // Read version string command
+#define U2F_SELECT 0xA4
 
 // Vendor defined commands
 #define U2F_VENDOR_FIRST 0xc0 // First vendor defined command
