@@ -6,6 +6,7 @@
 #include "../u2f/u2f.h"
 #include <aes.h>
 #include <apdu.h>
+#include <block-cipher.h>
 #include <ecdsa.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
@@ -103,15 +104,22 @@ static void test_u2f_registration(void **state) {
   for (int i = 0; i != 64; ++i) {
     expected_keyhandle[i + 64] = public_key[i + 1];
   }
-  uint8_t raw_aes_key[16], iv[16];
+  uint8_t aes_key[16], iv[16];
   for (int i = 0; i != 16; ++i) {
     iv[i] = i;
   }
-  memzero(raw_aes_key, 16);
-  WORD aes_key[44];
-  aes_key_setup(raw_aes_key, aes_key, 128);
-  aes_encrypt_ctr(expected_keyhandle, sizeof(expected_keyhandle),
-                  expected_keyhandle, aes_key, 128, iv);
+  memzero(aes_key, 16);
+
+  block_cipher_config cfg = {.mode = CTR,
+                             .in = expected_keyhandle,
+                             .in_size = sizeof(expected_keyhandle),
+                             .out = expected_keyhandle,
+                             .key = aes_key,
+                             .iv = iv,
+                             .block_size = 16,
+                             .encrypt = aes_enc,
+                             .decrypt = aes_dec};
+  block_cipher_enc(&cfg);
   for (int i = 0; i != U2F_KH_SIZE; ++i) {
     assert_int_equal(resp->keyHandleCertSig[i], expected_keyhandle[i]);
   }
@@ -143,7 +151,7 @@ static void test_u2f_registration(void **state) {
   }
 }
 
-static void test_u2f_authenicate(void **state) {
+static void test_u2f_authenticate(void **state) {
   (void)state;
 
   uint8_t c_buf[1000], r_buf[1024];
@@ -168,14 +176,21 @@ static void test_u2f_authenicate(void **state) {
   for (int i = 0; i != 64; ++i) {
     keyhandle[i + 64] = public_key[i + 1];
   }
-  uint8_t raw_aes_key[16], iv[16];
+  uint8_t aes_key[16], iv[16];
   for (int i = 0; i != 16; ++i) {
     iv[i] = i;
   }
-  memzero(raw_aes_key, 16);
-  WORD aes_key[44];
-  aes_key_setup(raw_aes_key, aes_key, 128);
-  aes_encrypt_ctr(keyhandle, sizeof(keyhandle), keyhandle, aes_key, 128, iv);
+  memzero(aes_key, 16);
+  block_cipher_config cfg = {.mode = CTR,
+                             .in = keyhandle,
+                             .in_size = sizeof(keyhandle),
+                             .out = keyhandle,
+                             .key = aes_key,
+                             .iv = iv,
+                             .block_size = 16,
+                             .encrypt = aes_enc,
+                             .decrypt = aes_dec};
+  block_cipher_enc(&cfg);
 
   for (int i = 0; i < 128; ++i) {
     capdu->data[i + 65] = keyhandle[i];
@@ -240,7 +255,7 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_u2f_personalization),
       cmocka_unit_test(test_u2f_registration),
-      cmocka_unit_test(test_u2f_authenicate),
+      cmocka_unit_test(test_u2f_authenticate),
   };
 
   return cmocka_run_group_tests(tests, NULL, NULL);
