@@ -21,6 +21,18 @@ uint8_t public_key[] = {
     0xFF, 0x1B, 0x99, 0xFF, 0x91, 0xC2, 0x4A, 0x0D, 0xA0, 0x6F, 0xB3,
     0x2B, 0x5B, 0xE2, 0x01, 0x48, 0xC9, 0x24, 0x9F, 0x56, 0x50};
 
+static void aes_enc(const uint8_t *in, uint8_t *out, const uint8_t *key) {
+  WORD aes_key[64];
+  aes_key_setup(key, aes_key, 128);
+  aes_encrypt(in, out, aes_key, 128);
+}
+
+static void aes_dec(const uint8_t *in, uint8_t *out, const uint8_t *key) {
+  WORD aes_key[64];
+  aes_key_setup(key, aes_key, 128);
+  aes_decrypt(in, out, aes_key, 128);
+}
+
 static void test_u2f_personalization(void **state) {
   (void)state;
 
@@ -223,6 +235,7 @@ int main() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
+  u2f_config(aes_enc, aes_dec);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_u2f_personalization),

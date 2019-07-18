@@ -1,6 +1,6 @@
 #include "u2f.h"
-#include <aes.h>
 #include <apdu.h>
+#include <block-cipher.h>
 #include <ecdsa.h>
 #include <fs.h>
 #include <lfs.h>
@@ -20,6 +20,7 @@
 #define CTR_FILE "u2f_ctr"
 
 volatile static uint8_t pressed = 0;
+static block_cipher_config cipher_cfg;
 
 void u2f_press() { pressed = 1; }
 
@@ -63,13 +64,16 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   // KEY HANDLE LENGTH (1)
   resp->keyHandleLen = U2F_KH_SIZE;
   // KEY HANDLE (128)
-  WORD aes_key[44];
-  aes_key_setup(key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE, aes_key, 128);
-  aes_encrypt_ctr(handle, U2F_KH_SIZE, handle, aes_key, 128, key_buf);
+  cipher_cfg.in = handle;
+  cipher_cfg.out = handle;
+  cipher_cfg.in_size = U2F_KH_SIZE;
+  cipher_cfg.key = key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE;
+  cipher_cfg.iv = key_buf;
+  block_cipher_enc(&cipher_cfg);
   memcpy(resp->keyHandleCertSig, handle, U2F_KH_SIZE);
   // CERTIFICATE (var)
   int cert_len = read_file(CERT_FILE, resp->keyHandleCertSig + U2F_KH_SIZE,
-      U2F_MAX_ATT_CERT_SIZE);
+                           U2F_MAX_ATT_CERT_SIZE);
   if (cert_len < 0)
     return cert_len;
   // SIG (var)
@@ -103,10 +107,12 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   int err = read_file(KEY_FILE, key_buf, sizeof(key_buf));
   if (err < 0)
     return err;
-  WORD aes_key[44];
-  aes_key_setup(key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE, aes_key, 128);
-  aes_decrypt_ctr(req->keyHandle, U2F_KH_SIZE, req->keyHandle, aes_key, 128,
-                  key_buf);
+  cipher_cfg.in = req->keyHandle;
+  cipher_cfg.out = req->keyHandle;
+  cipher_cfg.in_size = U2F_KH_SIZE;
+  cipher_cfg.key = key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE;
+  cipher_cfg.iv = key_buf;
+  block_cipher_dec(&cipher_cfg);
   if (memcmp(req->appId, req->keyHandle, U2F_APPID_SIZE) != 0) {
     rapdu->sw = SW_WRONG_DATA;
     rapdu->len = 0;
@@ -262,4 +268,14 @@ int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   rapdu->sw = SW_CLA_NOT_SUPPORTED;
   rapdu->len = 0;
   return 0;
+}
+
+void u2f_config(void (*enc)(const uint8_t *in, uint8_t *out,
+                            const uint8_t *key),
+                void (*dec)(const uint8_t *in, uint8_t *out,
+                            const uint8_t *key)) {
+  cipher_cfg.block_size = 16;
+  cipher_cfg.mode = CTR;
+  cipher_cfg.encrypt = enc;
+  cipher_cfg.decrypt = dec;
 }
