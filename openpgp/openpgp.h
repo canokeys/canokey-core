@@ -5,6 +5,7 @@
 
 #define OPENPGP_VERIFY 0x20
 #define OPENPGP_CHANGE_REFERENCE_DATA 0x24
+#define OPENPGP_RESET_RETRY_COUNTER 0x2C
 
 int openpgp_initialize(void);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);

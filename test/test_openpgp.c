@@ -70,6 +70,35 @@ static void test_change_reference_data(void **state) {
   openpgp_initialize();
 }
 
+static void test_reset_retry_counter(void **state) {
+  (void)state;
+
+  write_file("pgp-rc", "abcdef", 6);
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+  capdu->cla = 0x00;
+  capdu->ins = OPENPGP_RESET_RETRY_COUNTER;
+  capdu->p1 = 0x02;
+  capdu->p2 = 0x81;
+  capdu->lc = 12;
+  strcpy((char *)capdu->data, "abcdef654321");
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+  capdu->p1 = 0x00;
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  capdu->ins = OPENPGP_VERIFY;
+  capdu->p1 = 0x00;
+  capdu->p2 = 0x81;
+  capdu->lc = 6;
+  strcpy((char *)capdu->data, "654321");
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -94,6 +123,7 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_verify),
       cmocka_unit_test(test_change_reference_data),
+      cmocka_unit_test(test_reset_retry_counter),
   };
 
   return cmocka_run_group_tests(tests, NULL, NULL);
