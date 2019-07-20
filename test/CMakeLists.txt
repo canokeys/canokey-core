@@ -8,6 +8,7 @@ add_mocked_test(u2f
 
 add_mocked_test(openpgp
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/fs.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/pin.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../openpgp/openpgp.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs_util.c

@@ -4,6 +4,7 @@
 #include <apdu.h>
 
 #define OPENPGP_VERIFY 0x20
+#define OPENPGP_CHANGE_REFERENCE_DATA 0x24
 
 int openpgp_initialize(void);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);

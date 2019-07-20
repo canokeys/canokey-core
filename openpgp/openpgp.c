@@ -1,40 +1,25 @@
 #include "openpgp.h"
 #include <fs.h>
+#include <pin.h>
 #include <string.h>
 
-static uint8_t pw1_mode, pw3_verified;
-
-#define PW1_MIN_LENGTH 6
-#define PW1_MAX_LENGTH 127
-#define PW1_PATH "pgp-pw1"
-#define PW1_DEFAULT "123456"
 #define PW1_MODE81_ON() pw1_mode |= 1u
 #define PW1_MODE81_OFF() pw1_mode &= 0XFEu
 #define PW1_MODE82_ON() pw1_mode |= 2u
 #define PW1_MODE82_OFF() pw1_mode &= 0XFDu
-#define PW3_MIN_LENGTH 8
-#define PW3_MAX_LENGTH 127
-#define PW3_PATH "pgp-pw3"
-#define PW3_DEFAULT "12345678"
-#define PW_RETRY_ATTR 0
 #define PW_RETRY_COUNTER_DEFAULT 3
 
+static uint8_t pw1_mode;
+pin_t pw1 = {
+    .min_length = 6, .max_length = 63, .is_validated = 0, .path = "pgp-pw1"};
+pin_t pw3 = {
+    .min_length = 8, .max_length = 63, .is_validated = 0, .path = "pgp-pw3"};
+
 int openpgp_initialize() {
-  uint8_t retry_counter = PW_RETRY_COUNTER_DEFAULT;
-  int err = write_file(PW1_PATH, PW1_DEFAULT, strlen(PW1_DEFAULT));
-  if (err < 0)
-    return err;
-  err = write_attr(PW1_PATH, PW_RETRY_ATTR, &retry_counter,
-                   sizeof(retry_counter));
-  if (err < 0)
-    return err;
-  err = write_file(PW3_PATH, PW3_DEFAULT, strlen(PW3_DEFAULT));
-  if (err < 0)
-    return err;
-  err = write_attr(PW3_PATH, PW_RETRY_ATTR, &retry_counter,
-                   sizeof(retry_counter));
-  if (err < 0)
-    return err;
+  if (pin_create(&pw1, "123456", 6, PW_RETRY_COUNTER_DEFAULT) < 0)
+    return -1;
+  if (pin_create(&pw3, "12345678", 8, PW_RETRY_COUNTER_DEFAULT) < 0)
+    return -1;
   return 0;
 }
 
@@ -42,83 +27,88 @@ int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
 
   pw1_mode = 0;
+  pw1.is_validated = 0;
+  pw3.is_validated = 0;
 
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = 0;
   return 0;
 }
 
 int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
 
 int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
-  if (capdu->p2 == 0x81 || capdu->p2 == 0x82) {
-    if (capdu->lc < PW1_MIN_LENGTH || capdu->lc > PW1_MAX_LENGTH) {
-      rapdu->sw = SW_WRONG_DATA;
-      return 0;
-    }
-    uint8_t ctr;
-    int err = read_attr(PW1_PATH, PW_RETRY_ATTR, &ctr, sizeof(ctr));
-    if (err < 0)
-      return err;
-    if (ctr == 0) {
-      rapdu->sw = SW_AUTHENTICATION_BLOCKED;
-      return 0;
-    }
-    int len = read_file(PW1_PATH, rapdu->data, PW1_MAX_LENGTH);
-    if (len != capdu->lc || memcmp(rapdu->data, capdu->data, len) != 0) {
-      --ctr;
-      err = write_attr(PW1_PATH, PW_RETRY_ATTR, &ctr, sizeof(ctr));
-      if (err < 0)
-        return err;
-      rapdu->sw = SW_SECURITY_STATUS_NOT_SATISFIED;
-      return 0;
-    }
-    if (capdu->p2 == 0x81)
-      PW1_MODE81_ON();
-    else
-      PW1_MODE82_ON();
-    ctr = PW_RETRY_COUNTER_DEFAULT;
-    err = write_attr(PW1_PATH, PW_RETRY_ATTR, &ctr, sizeof(ctr));
-    if (err < 0)
-      return err;
-    rapdu->sw = SW_NO_ERROR;
+  if (capdu->p1 != 0x00) {
+    rapdu->sw = SW_WRONG_P1P2;
     return 0;
   }
-  if (capdu->p2 == 0x83) {
-    if (capdu->lc < PW3_MIN_LENGTH || capdu->lc > PW3_MAX_LENGTH) {
-      rapdu->sw = SW_WRONG_DATA;
-      return 0;
-    }
-    uint8_t ctr;
-    int err = read_attr(PW3_PATH, PW_RETRY_ATTR, &ctr, sizeof(ctr));
-    if (err < 0)
-      return err;
-    if (ctr == 0) {
-      rapdu->sw = SW_AUTHENTICATION_BLOCKED;
-      return 0;
-    }
-    int len = read_file(PW3_PATH, rapdu->data, PW3_MAX_LENGTH);
-    if (len != capdu->lc || memcmp(rapdu->data, capdu->data, len) != 0) {
-      --ctr;
-      err = write_attr(PW3_PATH, PW_RETRY_ATTR, &ctr, sizeof(ctr));
-      if (err < 0)
-        return err;
-      rapdu->sw = SW_SECURITY_STATUS_NOT_SATISFIED;
-      return 0;
-    }
-    pw3_verified = 1;
-    ctr = PW_RETRY_COUNTER_DEFAULT;
-    err = write_attr(PW1_PATH, PW_RETRY_ATTR, &ctr, sizeof(ctr));
-    if (err < 0)
-      return err;
-    rapdu->sw = SW_NO_ERROR;
+  pin_t *pw;
+  if (capdu->p2 == 0x81) {
+    pw = &pw1;
+    PW1_MODE81_OFF();
+  } else if (capdu->p2 == 0x82) {
+    pw = &pw1;
+    PW1_MODE82_OFF();
+  } else if (capdu->p2 == 0x83)
+    pw = &pw3;
+  else {
+    rapdu->sw = SW_WRONG_P1P2;
     return 0;
   }
-  rapdu->sw = SW_WRONG_P1P2;
+  int err = pin_verify(pw, capdu->data, capdu->lc);
+  if (err == PIN_IO_FAIL)
+    return -1;
+  if (err == PIN_LENGTH_INVALID) {
+    rapdu->sw = SW_WRONG_LENGTH;
+    return 0;
+  }
+  if (err == PIN_AUTH_FAIL) {
+    rapdu->sw = SW_SECURITY_STATUS_NOT_SATISFIED;
+    return 0;
+  }
+  if (err == 0) {
+    rapdu->sw = SW_AUTHENTICATION_BLOCKED;
+    return 0;
+  }
+  if (capdu->p2 == 0x81)
+    PW1_MODE81_ON();
+  else if (capdu->p2 == 0x82)
+    PW1_MODE82_ON();
   return 0;
 }
 
 int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
+  if (capdu->p1 != 0x00) {
+    rapdu->sw = SW_WRONG_P1P2;
+    return 0;
+  }
+  pin_t *pw;
+  if (capdu->p2 == 0x81) {
+    pw = &pw1;
+    pw1_mode = 0;
+  } else if (capdu->p2 == 0x83)
+    pw = &pw3;
+  else {
+    rapdu->sw = SW_WRONG_P1P2;
+    return 0;
+  }
+  int pw_length = pin_get_size(pw);
+  int err = pin_verify(pw, capdu->data, pw_length);
+  if (err == PIN_IO_FAIL)
+    return -1;
+  if (err == PIN_AUTH_FAIL) {
+    rapdu->sw = SW_SECURITY_STATUS_NOT_SATISFIED;
+    return 0;
+  }
+  if (err == 0) {
+    rapdu->sw = SW_AUTHENTICATION_BLOCKED;
+    return 0;
+  }
+  err = pin_update(pw, capdu->data + pw_length, capdu->lc - pw_length);
+  if (err == PIN_IO_FAIL)
+    return -1;
+  if (err == PIN_LENGTH_INVALID) {
+    rapdu->sw = SW_WRONG_LENGTH;
+    return 0;
+  }
   return 0;
 }
 
@@ -146,6 +136,7 @@ int openpgp_activate_file(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
 
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   rapdu->len = 0;
+  rapdu->sw = SW_NO_ERROR;
   switch (capdu->ins) {
   case 0xA4:
     return openpgp_select(capdu, rapdu);
@@ -153,7 +144,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     return openpgp_get_data(capdu, rapdu);
   case OPENPGP_VERIFY:
     return openpgp_verify(capdu, rapdu);
-  case 0x24:
+  case OPENPGP_CHANGE_REFERENCE_DATA:
     return openpgp_change_reference_data(capdu, rapdu);
   case 0x2C:
     return openpgp_reset_retry_counter(capdu, rapdu);

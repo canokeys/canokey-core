@@ -48,3 +48,14 @@ int write_attr(const char *path, uint8_t attr, const void *buf,
                lfs_size_t len) {
   return lfs_setattr(&lfs, path, attr, buf, len);
 }
+
+int get_file_size(const char *path) {
+  lfs_file_t f;
+  int err = lfs_file_open(&lfs, &f, path, LFS_O_RDONLY);
+  if (err < 0)
+    return err;
+  err = lfs_file_close(&lfs, &f);
+  if (err < 0)
+    return err;
+  return lfs_file_size(&lfs, &f);
+}
