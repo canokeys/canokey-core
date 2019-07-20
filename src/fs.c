@@ -27,7 +27,8 @@ int read_file(const char *path, void *buf, lfs_size_t len) {
 
 int write_file(const char *path, const void *buf, lfs_size_t len) {
   lfs_file_t f;
-  int err = lfs_file_open(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+  int err =
+      lfs_file_open(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
   if (err < 0)
     return err;
   err = lfs_file_write(&lfs, &f, buf, len);
@@ -37,4 +38,13 @@ int write_file(const char *path, const void *buf, lfs_size_t len) {
   if (err < 0)
     return err;
   return 0;
+}
+
+int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
+  return lfs_getattr(&lfs, path, attr, buf, len);
+}
+
+int write_attr(const char *path, uint8_t attr, const void *buf,
+               lfs_size_t len) {
+  return lfs_setattr(&lfs, path, attr, buf, len);
 }

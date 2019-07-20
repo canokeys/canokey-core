@@ -15,7 +15,7 @@ endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
 include_directories(include littlefs)
-file(GLOB SRC src/*.c littlefs/*.c u2f/*.c)
+file(GLOB SRC src/*.c littlefs/*.c u2f/*.c openpgp/*.c)
 add_library(canokey-core ${SRC})
 target_link_libraries(canokey-core canokey-crypto)
 

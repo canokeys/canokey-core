@@ -177,23 +177,8 @@ int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
-  if (capdu->lc != 8) {
-    rapdu->sw = SW_WRONG_LENGTH;
-    rapdu->len = 0;
-    return 0;
-  }
-  if (capdu->p1 != 0x04) {
-    rapdu->sw = SW_WRONG_P1P2;
-    rapdu->len = 0;
-    return 0;
-  }
-  if (memcmp(capdu->data,
-             (uint8_t[]){0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01},
-             8) != 0) {
-    rapdu->sw = SW_WRONG_DATA;
-    rapdu->len = 0;
-    return 0;
-  }
+  (void)capdu;
+
   rapdu->sw = SW_NO_ERROR;
   rapdu->len = 6;
   memcpy(rapdu->data, "U2F_V2", 6);
