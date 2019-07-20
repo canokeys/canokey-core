@@ -1,17 +1,9 @@
-#include <setjmp.h>
-#include <stdarg.h>
-#include <stddef.h>
-
 #include "fabrication.h"
 #include "u2f.h"
-#include <aes.h>
 #include <apdu.h>
-#include <ecdsa.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
 #include <lfs.h>
-#include <memzero.h>
-#include <sha2.h>
 
 static struct lfs_config cfg;
 static lfs_emubd_t bd;
@@ -37,11 +29,6 @@ static void fake_u2f_personalization() {
   capdu->lc = 0;
 
   u2f_process_apdu(capdu, rapdu);
-
-  // uint8_t key_buf[112];
-  // read_file(&g_lfs, "u2f_key", key_buf, sizeof(key_buf));
-  // memzero(key_buf + 96, 16);
-  // write_file(&g_lfs, "u2f_key", key_buf, sizeof(key_buf));
 
   capdu->ins = U2F_INSTALL_CERT;
   capdu->lc = sizeof(cert);
