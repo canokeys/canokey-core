@@ -23,6 +23,7 @@ typedef struct {
 
 #define SW_NO_ERROR 0x9000
 #define SW_WRONG_LENGTH 0x6700
+#define SW_UNABLE_TO_PROCESS 0x6900
 #define SW_SECURITY_STATUS_NOT_SATISFIED 0x6982
 #define SW_AUTHENTICATION_BLOCKED 0x6983
 #define SW_CONDITIONS_NOT_SATISFIED 0x6985
@@ -32,4 +33,17 @@ typedef struct {
 #define SW_INS_NOT_SUPPORTED 0x6D00
 #define SW_CLA_NOT_SUPPORTED 0x6E00
 
-#endif //CANOKEY_CORE__APDU_H
+// Macros
+
+#define CLA capdu->cla
+#define INS capdu->ins
+#define P1 capdu->p1
+#define P2 capdu->p2
+#define LC capdu->lc
+#define LE capdu->le
+#define DATA capdu->data
+#define RDATA rapdu->data
+#define SW rapdu->sw
+#define LL rapdu->len
+
+#endif // CANOKEY_CORE__APDU_H

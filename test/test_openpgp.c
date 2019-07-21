@@ -16,7 +16,7 @@ static void test_verify(void **state) {
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
   capdu->cla = 0x00;
-  capdu->ins = OPENPGP_VERIFY;
+  capdu->ins = OPENPGP_INS_VERIFY;
   capdu->p1 = 0x00;
   capdu->p2 = 0x81;
   capdu->lc = 6;
@@ -47,7 +47,7 @@ static void test_change_reference_data(void **state) {
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
   capdu->cla = 0x00;
-  capdu->ins = OPENPGP_CHANGE_REFERENCE_DATA;
+  capdu->ins = OPENPGP_INS_CHANGE_REFERENCE_DATA;
   capdu->p1 = 0x01;
   capdu->p2 = 0x81;
   capdu->lc = 6;
@@ -79,7 +79,7 @@ static void test_reset_retry_counter(void **state) {
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
   capdu->cla = 0x00;
-  capdu->ins = OPENPGP_RESET_RETRY_COUNTER;
+  capdu->ins = OPENPGP_INS_RESET_RETRY_COUNTER;
   capdu->p1 = 0x02;
   capdu->p2 = 0x81;
   capdu->lc = 12;
@@ -90,11 +90,26 @@ static void test_reset_retry_counter(void **state) {
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
-  capdu->ins = OPENPGP_VERIFY;
+  capdu->ins = OPENPGP_INS_VERIFY;
   capdu->p1 = 0x00;
   capdu->p2 = 0x81;
   capdu->lc = 6;
   strcpy((char *)capdu->data, "654321");
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+}
+
+static void test_get_data(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+  capdu->cla = 0x00;
+  capdu->ins = OPENPGP_INS_GET_DATA;
+  capdu->p1 = 0x00;
+  capdu->p2 = TAG_APPLICATION_RELATED_DATA;
+  capdu->lc = 0;
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
@@ -124,6 +139,7 @@ int main() {
       cmocka_unit_test(test_verify),
       cmocka_unit_test(test_change_reference_data),
       cmocka_unit_test(test_reset_retry_counter),
+      cmocka_unit_test(test_get_data),
   };
 
   return cmocka_run_group_tests(tests, NULL, NULL);

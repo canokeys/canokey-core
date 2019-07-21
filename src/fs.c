@@ -31,9 +31,11 @@ int write_file(const char *path, const void *buf, lfs_size_t len) {
       lfs_file_open(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
   if (err < 0)
     return err;
-  err = lfs_file_write(&lfs, &f, buf, len);
-  if (err < 0)
-    return err;
+  if (len > 0) {
+    err = lfs_file_write(&lfs, &f, buf, len);
+    if (err < 0)
+      return err;
+  }
   err = lfs_file_close(&lfs, &f);
   if (err < 0)
     return err;
