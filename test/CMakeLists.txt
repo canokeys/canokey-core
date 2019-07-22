@@ -4,7 +4,7 @@ add_mocked_test(u2f
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs_util.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/emubd/lfs_emubd.c
-        LINK_LIBRARIES canokey-crypto)
+        LINK_LIBRARIES canokey-crypto mbedcrypto)
 
 add_mocked_test(openpgp
         SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../src/fs.c
@@ -14,4 +14,4 @@ add_mocked_test(openpgp
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/lfs_util.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/emubd/lfs_emubd.c
-        LINK_LIBRARIES canokey-crypto)
+        LINK_LIBRARIES canokey-crypto mbedcrypto)

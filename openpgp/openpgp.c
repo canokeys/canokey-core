@@ -27,7 +27,7 @@ static const uint8_t default_sex = 0x39;
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t historical_bytes[] = {0x00, 0x73, 0x00, 0x00,
                                            0x80, 0x05, 0x90, 0x00}; // TODO
-static const uint8_t extended_capabilites[] = {
+static const uint8_t extended_capabilities[] = {
     0x00, // Support nothing currently
     0x00, // SM algorithm
     0x00, MAX_CHALLENGE_LENGTH, HI(MAX_CERT_LENGTH), LO(MAX_CERT_LENGTH), 0x08,
@@ -51,12 +51,6 @@ pin_t rc = {.min_length = 8,
             .max_length = MAX_PIN_LENGTH,
             .is_validated = 0,
             .path = "pgp-rc"};
-
-#define EXCEPT(sw_code)                                                        \
-  do {                                                                         \
-    SW = sw_code;                                                              \
-    return 0;                                                                  \
-  } while (0)
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
 #define PW1_MODE81_OFF() pw1_mode &= 0XFEu
@@ -222,9 +216,9 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = 0; // for length
 
     RDATA[off++] = TAG_EXTENDED_CAPABILITIES;
-    RDATA[off++] = sizeof(extended_capabilites);
-    memcpy(RDATA + off, extended_capabilites, sizeof(extended_capabilites));
-    off += sizeof(extended_capabilites);
+    RDATA[off++] = sizeof(extended_capabilities);
+    memcpy(RDATA + off, extended_capabilities, sizeof(extended_capabilities));
+    off += sizeof(extended_capabilities);
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_SIG;
     RDATA[off++] = ALGO_ATTRIBUTES_LENGTH;

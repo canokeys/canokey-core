@@ -46,4 +46,10 @@ typedef struct {
 #define SW rapdu->sw
 #define LL rapdu->len
 
+#define EXCEPT(sw_code)                                                        \
+  do {                                                                         \
+    SW = sw_code;                                                              \
+    return 0;                                                                  \
+  } while (0)
+
 #endif // CANOKEY_CORE__APDU_H

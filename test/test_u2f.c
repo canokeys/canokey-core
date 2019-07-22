@@ -12,7 +12,7 @@
 #include <fs.h>
 #include <lfs.h>
 #include <memzero.h>
-#include <sha2.h>
+#include <sha.h>
 
 uint8_t public_key[] = {
     0x04, 0x7A, 0x59, 0x31, 0x80, 0x86, 0x0C, 0x40, 0x37, 0xC8, 0x3C,
@@ -105,8 +105,8 @@ static void test_u2f_registration(void **state) {
                              .key = aes_key,
                              .iv = iv,
                              .block_size = 16,
-                             .encrypt = aes_enc,
-                             .decrypt = aes_dec};
+                             .encrypt = aes128_enc,
+                             .decrypt = aes128_dec};
   block_cipher_enc(&cfg);
   for (int i = 0; i != U2F_KH_SIZE; ++i) {
     assert_int_equal(resp->keyHandleCertSig[i], expected_keyhandle[i]);
@@ -176,8 +176,8 @@ static void test_u2f_authenticate(void **state) {
                              .key = aes_key,
                              .iv = iv,
                              .block_size = 16,
-                             .encrypt = aes_enc,
-                             .decrypt = aes_dec};
+                             .encrypt = aes128_enc,
+                             .decrypt = aes128_dec};
   block_cipher_enc(&cfg);
 
   for (int i = 0; i < 128; ++i) {
@@ -238,7 +238,7 @@ int main() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
-  u2f_config(aes_enc, aes_dec);
+  u2f_config(aes128_enc, aes128_dec);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_u2f_personalization),

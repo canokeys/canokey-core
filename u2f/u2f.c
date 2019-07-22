@@ -5,7 +5,7 @@
 #include <fs.h>
 #include <lfs.h>
 #include <rand.h>
-#include <sha2.h>
+#include <sha.h>
 #include <string.h>
 
 /*
@@ -27,9 +27,9 @@ void u2f_press() { pressed = 1; }
 void u2f_unpress() { pressed = 0; }
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
-  if (capdu->lc != 64) {
-    rapdu->sw = SW_WRONG_LENGTH;
-    rapdu->len = 0;
+  if (LC != 64) {
+    SW = SW_WRONG_LENGTH;
+    LL = 0;
     return 0;
   }
 
@@ -37,14 +37,14 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   pressed = 1;
 #endif
   if (!pressed) {
-    rapdu->sw = SW_CONDITIONS_NOT_SATISFIED;
-    rapdu->len = 0;
+    SW = SW_CONDITIONS_NOT_SATISFIED;
+    LL = 0;
     return 0;
   }
   pressed = 0;
 
-  U2F_REGISTER_REQ *req = (U2F_REGISTER_REQ *)capdu->data;
-  U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)rapdu->data;
+  U2F_REGISTER_REQ *req = (U2F_REGISTER_REQ *)DATA;
+  U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)RDATA;
   uint8_t handle[U2F_APPID_SIZE + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE];
   memcpy(handle, req->appId, U2F_APPID_SIZE);
   ecdsa_generate(ECDSA_SECP256R1, handle + U2F_APPID_SIZE,
@@ -88,18 +88,18 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   ecdsa_sign(ECDSA_SECP256R1, key_buf, handle, handle + 32);
   size_t signature_len = ecdsa_sig2ansi(
       handle + 32, resp->keyHandleCertSig + U2F_KH_SIZE + cert_len);
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = 67 + U2F_KH_SIZE + cert_len + signature_len;
+  SW = SW_NO_ERROR;
+  LL = 67 + U2F_KH_SIZE + cert_len + signature_len;
   return 0;
 }
 
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
-  U2F_AUTHENTICATE_REQ *req = (U2F_AUTHENTICATE_REQ *)capdu->data;
-  U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)rapdu->data;
+  U2F_AUTHENTICATE_REQ *req = (U2F_AUTHENTICATE_REQ *)DATA;
+  U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
 
   if (req->keyHandleLen != U2F_KH_SIZE) {
-    rapdu->sw = SW_WRONG_LENGTH;
-    rapdu->len = 0;
+    SW = SW_WRONG_LENGTH;
+    LL = 0;
     return 0;
   }
 
@@ -114,23 +114,23 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   cipher_cfg.iv = key_buf;
   block_cipher_dec(&cipher_cfg);
   if (memcmp(req->appId, req->keyHandle, U2F_APPID_SIZE) != 0) {
-    rapdu->sw = SW_WRONG_DATA;
-    rapdu->len = 0;
+    SW = SW_WRONG_DATA;
+    LL = 0;
     return 0;
   }
 
-  if (capdu->p1 != U2F_AUTH_ENFORCE) {
-    rapdu->sw = SW_WRONG_P1P2;
-    rapdu->len = 0;
+  if (P1 != U2F_AUTH_ENFORCE) {
+    SW = SW_WRONG_P1P2;
+    LL = 0;
     return 0;
   }
 
 #ifdef NFC
   pressed = 1;
 #endif
-  if (capdu->p1 == U2F_AUTH_CHECK_ONLY || !pressed) {
-    rapdu->sw = SW_CONDITIONS_NOT_SATISFIED;
-    rapdu->len = 0;
+  if (P1 == U2F_AUTH_CHECK_ONLY || !pressed) {
+    SW = SW_CONDITIONS_NOT_SATISFIED;
+    LL = 0;
     return 0;
   }
   pressed = 0;
@@ -159,29 +159,29 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
              resp->sig);
   size_t signature_len = ecdsa_sig2ansi(resp->sig, resp->sig);
 
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = signature_len + 5;
+  SW = SW_NO_ERROR;
+  LL = signature_len + 5;
   return 0;
 }
 
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
-  if (capdu->lc != 0) {
-    rapdu->sw = SW_WRONG_LENGTH;
-    rapdu->len = 0;
+  if (LC != 0) {
+    SW = SW_WRONG_LENGTH;
+    LL = 0;
     return 0;
   }
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = 6;
-  memcpy(rapdu->data, "U2F_V2", 6);
+  SW = SW_NO_ERROR;
+  LL = 6;
+  memcpy(RDATA, "U2F_V2", 6);
   return 0;
 }
 
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
 
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = 6;
-  memcpy(rapdu->data, "U2F_V2", 6);
+  SW = SW_NO_ERROR;
+  LL = 6;
+  memcpy(RDATA, "U2F_V2", 6);
   return 0;
 }
 
@@ -201,64 +201,75 @@ int u2f_personalization(const CAPDU *capdu, RAPDU *rapdu) {
   if (err < 0)
     return err;
 
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = U2F_EC_PUB_KEY_SIZE;
-  memcpy(rapdu->data, buffer + U2F_EC_KEY_SIZE, U2F_EC_PUB_KEY_SIZE);
+  SW = SW_NO_ERROR;
+  LL = U2F_EC_PUB_KEY_SIZE;
+  memcpy(RDATA, buffer + U2F_EC_KEY_SIZE, U2F_EC_PUB_KEY_SIZE);
   return 0;
 }
 
 int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
-  if (capdu->lc > U2F_MAX_ATT_CERT_SIZE) {
-    rapdu->sw = SW_WRONG_LENGTH;
-    rapdu->len = 0;
+  if (LC > U2F_MAX_ATT_CERT_SIZE) {
+    SW = SW_WRONG_LENGTH;
+    LL = 0;
     return 0;
   }
 
-  int err = write_file(CERT_FILE, capdu->data, capdu->lc);
+  int err = write_file(CERT_FILE, DATA, LC);
   if (err < 0)
     return err;
 
-  rapdu->sw = SW_NO_ERROR;
-  rapdu->len = 0;
+  SW = SW_NO_ERROR;
+  LL = 0;
   return 0;
 }
 
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
-  if (capdu->cla == 0x00) {
-    switch (capdu->ins) {
+  LL = 0;
+  SW = SW_NO_ERROR;
+  int ret;
+  if (CLA == 0x00) {
+    switch (INS) {
     case U2F_REGISTER:
-      return u2f_register(capdu, rapdu);
+      ret = u2f_register(capdu, rapdu);
+      break;
     case U2F_AUTHENTICATE:
-      return u2f_authenticate(capdu, rapdu);
+      ret = u2f_authenticate(capdu, rapdu);
+      break;
     case U2F_VERSION:
-      return u2f_version(capdu, rapdu);
+      ret = u2f_version(capdu, rapdu);
+      break;
     case U2F_SELECT:
-      return u2f_select(capdu, rapdu);
+      ret = u2f_select(capdu, rapdu);
+      break;
+    default:
+      EXCEPT(SW_INS_NOT_SUPPORTED);
     }
-    rapdu->sw = SW_INS_NOT_SUPPORTED;
-    rapdu->len = 0;
-    return 0;
+    if (ret < 0)
+      EXCEPT(SW_UNABLE_TO_PROCESS);
+    else
+      return 0;
   }
-  if (capdu->cla == 0x80) {
-    switch (capdu->ins) {
+  if (CLA == 0x80) {
+    switch (INS) {
     case U2F_PERSONALIZATION:
-      return u2f_personalization(capdu, rapdu);
+      ret = u2f_personalization(capdu, rapdu);
+      break;
     case U2F_INSTALL_CERT:
-      return u2f_install_cert(capdu, rapdu);
+      ret = u2f_install_cert(capdu, rapdu);
+      break;
+    default:
+      EXCEPT(SW_INS_NOT_SUPPORTED);
     }
-    rapdu->sw = SW_INS_NOT_SUPPORTED;
-    rapdu->len = 0;
-    return 0;
+    if (ret < 0)
+      EXCEPT(SW_UNABLE_TO_PROCESS);
+    else
+      return 0;
   }
-  rapdu->sw = SW_CLA_NOT_SUPPORTED;
-  rapdu->len = 0;
-  return 0;
+  EXCEPT(SW_CLA_NOT_SUPPORTED);
 }
 
-void u2f_config(void (*enc)(const uint8_t *in, uint8_t *out,
-                            const uint8_t *key),
-                void (*dec)(const uint8_t *in, uint8_t *out,
-                            const uint8_t *key)) {
+void u2f_config(void (*enc)(const void *, void *, const void *),
+                void (*dec)(const void *, void *, const void *)) {
   cipher_cfg.block_size = 16;
   cipher_cfg.mode = CTR;
   cipher_cfg.encrypt = enc;
