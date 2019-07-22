@@ -80,3 +80,10 @@ int pin_get_retries(const pin_t *pin) {
     return PIN_IO_FAIL;
   return ctr;
 }
+
+int pin_clear(const pin_t *pin) {
+  int err = write_file(pin->path, NULL, 0);
+  if (err < 0)
+    return PIN_IO_FAIL;
+  return 0;
+}
