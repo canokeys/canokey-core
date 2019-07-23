@@ -14,9 +14,9 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
-include_directories(include littlefs)
 file(GLOB SRC src/*.c littlefs/*.c u2f/*.c openpgp/*.c)
 add_library(canokey-core ${SRC})
+target_include_directories(canokey-core SYSTEM PUBLIC include PRIVATE littlefs)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
@@ -37,7 +37,7 @@ if (ENABLE_TESTS)
             virt-card/apdu-adapter.c
             virt-card/fabrication.c
             littlefs/emubd/lfs_emubd.c)
-        target_include_directories(u2f-virt-card SYSTEM PRIVATE u2f virt-card ${PCSCLITE_INCLUDE_DIRS})
+        target_include_directories(u2f-virt-card SYSTEM PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs)
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
     endif ()
 endif (ENABLE_TESTS)
