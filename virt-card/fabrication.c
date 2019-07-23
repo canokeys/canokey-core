@@ -1,5 +1,5 @@
 #include "fabrication.h"
-#include "u2f.h"
+#include "../u2f/u2f.h"
 #include <apdu.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
