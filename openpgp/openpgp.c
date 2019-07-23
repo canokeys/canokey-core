@@ -30,23 +30,26 @@
 static const uint8_t default_lang[] = {0x65, 0x6E}; // English
 static const uint8_t default_sex = 0x39;
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
-                              0x02, 0x01, // version
-                              0xFF, 0xFE, // manufacturer
+                              0x02, 0x01,                         // version
+                              0xFF, 0xFE,             // manufacturer
                               0x00, 0x00, 0x00, 0x00, // serial number
                               0x00, 0x00};
 static const uint8_t historical_bytes[] = {0x00, 0x73, 0x00, 0x00,
-                                           0x80, 0x05, 0x90, 0x00}; // TODO
+                                           0x40, 0x05, 0x90, 0x00};
 static const uint8_t extended_capabilities[] = {
-    0x00, // Support nothing currently
+    0x30, // Support key import and pw1 status change
     0x00, // SM algorithm
-    0x00, MAX_CHALLENGE_LENGTH, HI(MAX_CERT_LENGTH), LO(MAX_CERT_LENGTH), 0x08,
+    0x00,
+    MAX_CHALLENGE_LENGTH,
+    HI(MAX_CERT_LENGTH),
+    LO(MAX_CERT_LENGTH),
+    0x08,
     0x00, // Maximum length of command data
     0x08,
     0x00, // Maximum length of response data
 };
 static const uint8_t pw_status[] = {
-    0x00, // PW1 only valid for one command
-    MAX_PIN_LENGTH, MAX_PIN_LENGTH, MAX_PIN_LENGTH, 0x00, 0x00, 0x00};
+    0x00, MAX_PIN_LENGTH, MAX_PIN_LENGTH, MAX_PIN_LENGTH, 0x00, 0x00, 0x00};
 static uint8_t pw1_mode;
 pin_t pw1 = {.min_length = 6,
              .max_length = MAX_PIN_LENGTH,
@@ -258,6 +261,8 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = TAG_PW_STATUS;
     RDATA[off++] = sizeof(pw_status);
     memcpy(RDATA + off, pw_status, sizeof(pw_status));
+    if (read_attr(DATA_PATH, TAG_PW_STATUS, RDATA + off, 1) < 0)
+      return -1;
     retries = pin_get_retries(&pw1);
     if (retries < 0)
       return -1;
@@ -344,7 +349,9 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_PW_STATUS:
-    memcpy(RDATA + off, pw_status, sizeof(pw_status));
+    memcpy(RDATA, pw_status, sizeof(pw_status));
+    if (read_attr(DATA_PATH, TAG_PW_STATUS, RDATA, 1) < 0)
+      return -1;
     retries = pin_get_retries(&pw1);
     if (retries < 0)
       return -1;
@@ -491,6 +498,11 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+  rsa_key_t sig_key;
+  if (openpgp_key_get_rsa_key(KEY_SIG_PATH, &sig_key) < 0)
+    return -1;
+  if (rsa_sign_pkcs_v15(&sig_key, DATA, LC, RDATA) < 0)
+    return -1;
   return 0;
 }
 
@@ -539,6 +551,15 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC > MAX_CERT_LENGTH)
       EXCEPT(SW_WRONG_LENGTH);
     if (write_attr(DATA_PATH, LO(TAG_CARDHOLDER_CERTIFICATE), DATA, LC) < 0)
+      return -1;
+    break;
+
+  case TAG_PW_STATUS:
+    if (LC != 1)
+      EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[0] != 0x00 && DATA[0] != 0x01)
+      EXCEPT(SW_WRONG_DATA);
+    if (write_attr(DATA_PATH, TAG_PW_STATUS, DATA, LC) < 0)
       return -1;
     break;
 

@@ -46,7 +46,7 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len) {
   err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
     return PIN_IO_FAIL;
-  err = write_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
+  err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
     return PIN_IO_FAIL;
   return ctr;
@@ -63,17 +63,17 @@ int pin_update(pin_t *pin, const void *buf, uint8_t len) {
   err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
     return PIN_IO_FAIL;
-  err = write_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
+  err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
     return PIN_IO_FAIL;
   return 0;
 }
 
-int pin_get_size(const pin_t *pin) {
-  return get_file_size(pin->path);
-}
+int pin_get_size(const pin_t *pin) { return get_file_size(pin->path); }
 
 int pin_get_retries(const pin_t *pin) {
+  if (pin_get_size(pin) == 0)
+    return 0;
   uint8_t ctr;
   int err = read_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
