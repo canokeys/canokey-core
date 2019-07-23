@@ -4,6 +4,7 @@
 #include <rsa.h>
 
 #define DATA_PATH "pgp-data"
+#define CERT_PATH "pgp-cert"
 #define KEY_SIG_PATH "pgp-sig"
 #define KEY_DEC_PATH "pgp-dec"
 #define KEY_AUT_PATH "pgp-aut"
@@ -29,6 +30,7 @@
 
 static const uint8_t default_lang[] = {0x65, 0x6E}; // English
 static const uint8_t default_sex = 0x39;
+static const uint8_t default_pw1_status = 0x00; // verify every time
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
                               0x02, 0x01,                         // version
                               0xFF, 0xFE,             // manufacturer
@@ -110,6 +112,9 @@ int openpgp_initialize() {
     return -1;
   if (write_attr(DATA_PATH, LO(TAG_SEX), &default_sex, sizeof(default_sex)))
     return -1;
+  if (write_attr(DATA_PATH, TAG_PW_STATUS, &default_pw1_status,
+                 sizeof(default_pw1_status)))
+    return -1;
 
   // Key data
   uint8_t buf[20];
@@ -145,7 +150,7 @@ int openpgp_initialize() {
     return -1;
 
   // Cert
-  if (write_attr(DATA_PATH, LO(TAG_CARDHOLDER_CERTIFICATE), buf, 0) < 0)
+  if (write_file(CERT_PATH, NULL, 0) < 0)
     return -1;
 
   return 0;
@@ -341,8 +346,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
-    len = read_attr(DATA_PATH, LO(TAG_CARDHOLDER_CERTIFICATE), RDATA,
-                    MAX_CERT_LENGTH);
+    len = read_file(CERT_PATH, RDATA, MAX_CERT_LENGTH);
     if (len < 0)
       return -1;
     LL = len;
@@ -550,7 +554,7 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_CARDHOLDER_CERTIFICATE:
     if (LC > MAX_CERT_LENGTH)
       EXCEPT(SW_WRONG_LENGTH);
-    if (write_attr(DATA_PATH, LO(TAG_CARDHOLDER_CERTIFICATE), DATA, LC) < 0)
+    if (write_file(CERT_PATH, DATA, LC) < 0)
       return -1;
     break;
 
