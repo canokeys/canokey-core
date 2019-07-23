@@ -29,7 +29,11 @@
 
 static const uint8_t default_lang[] = {0x65, 0x6E}; // English
 static const uint8_t default_sex = 0x39;
-static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
+static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
+                              0x02, 0x01, // version
+                              0xFF, 0xFE, // manufacturer
+                              0x00, 0x00, 0x00, 0x00, // serial number
+                              0x00, 0x00};
 static const uint8_t historical_bytes[] = {0x00, 0x73, 0x00, 0x00,
                                            0x80, 0x05, 0x90, 0x00}; // TODO
 static const uint8_t extended_capabilities[] = {
