@@ -1,5 +1,6 @@
 #include "apdu-adapter.h"
 #include "u2f.h"
+#include "../openpgp/openpgp.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -10,8 +11,13 @@
 #define EXT_LC_MSB 5
 #define EXT_LC_LSB 6
 
+enum {
+    APPLET_NULL = 0,
+    APPLET_U2F,
+    APPLET_OPENPGP
+} current_applet;
 
-int u2f_apdu_transceive(
+int virt_card_apdu_transceive(
     unsigned char *txBuf, unsigned long txLen,
     unsigned char *rxBuf, unsigned long *rxLen)
 {
@@ -97,9 +103,33 @@ int u2f_apdu_transceive(
 
     r->len = Le;
 
-    printf("calling u2f_process_apdu\n");
-    int ret = u2f_process_apdu(c, r);
-    printf("u2f_process_apdu ret %d\n", ret);
+    int ret;
+    if (c->cla == 0x00 && c->ins == 0xA4 && c->p1 == 0x04 && c->p2 == 0x00) {
+        if(c->lc == 8 && memcmp(c->data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
+            current_applet = APPLET_U2F;
+        }
+        else if(c->lc >= 6 && memcmp(c->data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
+            current_applet = APPLET_OPENPGP;
+        }
+    }
+    switch(current_applet) {
+        default:
+            printf("No applet selected yet\n");
+            r->sw = 0x6D00;
+            r->len = 0;
+            ret = 0;
+            break;
+        case APPLET_U2F:
+            printf("calling u2f_process_apdu\n");
+            ret = u2f_process_apdu(c, r);
+            printf("u2f_process_apdu ret %d\n", ret);
+            break;
+        case APPLET_OPENPGP:
+            printf("calling openpgp_process_apdu\n");
+            ret = openpgp_process_apdu(c, r);
+            printf("openpgp_process_apdu ret %d\n", ret);
+            break;
+    }
     if(ret == 0) {
         memcpy(rxBuf, r->data, r->len);
         rxBuf[r->len] = 0xff & (r->sw >> 8);
