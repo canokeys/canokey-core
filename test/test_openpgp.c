@@ -5,6 +5,7 @@
 
 #include "../openpgp/openpgp.h"
 #include <apdu.h>
+#include <crypto-util.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
 #include <lfs.h>
@@ -138,6 +139,24 @@ static void test_import_key(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
+static void test_generate_key(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+  capdu->cla = 0x00;
+  capdu->ins = OPENPGP_GENERATE_ASYMMETRIC_KEY_PAIR;
+  capdu->p1 = 0x80;
+  capdu->p2 = 0x00;
+  capdu->lc = 0x02;
+  capdu->data[0] = 0xB6;
+  capdu->data[1] = 0x00;
+  openpgp_process_apdu(capdu, rapdu);
+  printHex(rapdu->data, rapdu->len);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -165,6 +184,7 @@ int main() {
       cmocka_unit_test(test_reset_retry_counter),
       cmocka_unit_test(test_get_data),
       cmocka_unit_test(test_import_key),
+      cmocka_unit_test(test_generate_key),
   };
 
   return cmocka_run_group_tests(tests, NULL, NULL);

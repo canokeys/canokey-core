@@ -461,26 +461,22 @@ int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_send_public_key(const CAPDU *capdu, RAPDU *rapdu) {
-  const char *key_path = get_key_path(DATA[0]);
-  if (key_path == NULL)
-    EXCEPT(SW_WRONG_DATA);
-  rsa_key_t key;
-  openpgp_key_get_rsa_key(key_path, &key);
+int openpgp_send_public_key(const rsa_key_t *key, RAPDU *rapdu) {
   uint16_t offset = 0;
   RDATA[offset++] = 0x7F;
   RDATA[offset++] = 0x49;
   RDATA[offset++] = 0x82; // use two bytes to represent length
   uint8_t offset_for_length = offset;
+  offset += 2;
   RDATA[offset++] = 0x81; // modulus
   RDATA[offset++] = 0x82;
   RDATA[offset++] = HI(N_LENGTH);
   RDATA[offset++] = LO(N_LENGTH);
-  memcpy(RDATA + offset, &key.n, N_LENGTH);
+  memcpy(RDATA + offset, key->n, N_LENGTH);
   offset += N_LENGTH;
   RDATA[offset++] = 0x82; // exponent
   RDATA[offset++] = E_LENGTH;
-  memcpy(RDATA + offset, &key.e, E_LENGTH);
+  memcpy(RDATA + offset, key->e, E_LENGTH);
   offset += E_LENGTH;
   LL = offset;
   offset = offset - offset_for_length - 2;
@@ -494,11 +490,14 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   if (key_path == NULL)
     EXCEPT(SW_WRONG_DATA);
   rsa_key_t key;
-  if (rsa_generate_key(&key, RSA_N_BIT) < 0)
-    return -1;
-  if (openpgp_key_set_rsa_key(key_path, &key) < 0)
-    return -1;
-  return openpgp_send_public_key(capdu, rapdu);
+  if (P1 == 0x80) {
+    if (rsa_generate_key(&key, RSA_N_BIT) < 0)
+      return -1;
+    if (openpgp_key_set_rsa_key(key_path, &key) < 0)
+      return -1;
+  } else if (P1 != 0x81)
+    EXCEPT(SW_WRONG_P1P2);
+  return openpgp_send_public_key(&key, rapdu);
 }
 
 int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
