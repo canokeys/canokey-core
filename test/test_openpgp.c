@@ -114,6 +114,30 @@ static void test_get_data(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
+static void test_import_key(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+  capdu->cla = 0x00;
+  capdu->ins = OPENPGP_INS_IMPORT_KEY;
+  capdu->p1 = 0x00;
+  capdu->p2 = TAG_APPLICATION_RELATED_DATA;
+  capdu->lc = 0;
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_P1P2);
+
+  capdu->p1 = 0x3F;
+  capdu->p2 = 0xFF;
+  capdu->lc = 19;
+  memcpy(capdu->data, (uint8_t[]){0x4D, 0x11, 0xB6, 0x00, 0x7F, 0x48, 0x06, 0x91, 0x01,
+                                  0x92, 0x01, 0x93, 0x01, 0x5F, 0x48, 0x03, 0x01, 0x01,
+                                  0x01}, 19);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -140,6 +164,7 @@ int main() {
       cmocka_unit_test(test_change_reference_data),
       cmocka_unit_test(test_reset_retry_counter),
       cmocka_unit_test(test_get_data),
+      cmocka_unit_test(test_import_key),
   };
 
   return cmocka_run_group_tests(tests, NULL, NULL);

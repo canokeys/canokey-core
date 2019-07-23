@@ -269,15 +269,18 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_CA_FINGERPRINTS;
     RDATA[off++] = KEY_FINGERPRINT_LENGTH * 3;
-    len = read_attr(DATA_PATH, ATTR_CA1_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
+    len =
+        read_attr(DATA_PATH, ATTR_CA1_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
     if (len < 0)
       return -1;
     off += len;
-    len = read_attr(DATA_PATH, ATTR_CA2_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
+    len =
+        read_attr(DATA_PATH, ATTR_CA2_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
     if (len < 0)
       return -1;
     off += len;
-    len = read_attr(DATA_PATH, ATTR_CA3_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
+    len =
+        read_attr(DATA_PATH, ATTR_CA3_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
     if (len < 0)
       return -1;
     off += len;
@@ -568,7 +571,69 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x3F || P2 != 0xFF)
+    EXCEPT(SW_WRONG_P1P2);
+//  ASSERT_ADMIN();
+
+  const uint8_t *p = DATA;
+  if (*p++ != 0x4D)
+    EXCEPT(SW_WRONG_DATA);
+  uint16_t len = tlv_get_length(p);
+  uint8_t off = tlv_length_size(len);
+  if (len + off + 1 != LC)
+    EXCEPT(SW_WRONG_LENGTH);
+  p += off;
+  const char *key_path;
+  if (*p == 0xB6)
+    key_path = KEY_SIG_PATH;
+  else if (*p == 0xB8)
+    key_path = KEY_DEC_PATH;
+  else if (*p == 0xA4)
+    key_path = KEY_AUT_PATH;
+  else
+    EXCEPT(SW_WRONG_DATA);
+  ++p;
+  if (*p++ != 0x00)
+    EXCEPT(SW_WRONG_DATA);
+  if (*p++ != 0x7F || *p++ != 0x48)
+    EXCEPT(SW_WRONG_DATA);
+  uint16_t template_len = tlv_get_length(p);
+  p += tlv_length_size(template_len);
+
+  const uint8_t *data_tag = p + template_len;
+  if (*p++ != 0x91)
+    EXCEPT(SW_WRONG_DATA);
+  int e_len = tlv_get_length(p);
+  p += tlv_length_size(e_len);
+  if (*p++ != 0x92)
+    EXCEPT(SW_WRONG_DATA);
+  int p_len = tlv_get_length(p);
+  p += tlv_length_size(p_len);
+  if (*p++ != 0x93)
+    EXCEPT(SW_WRONG_DATA);
+  int q_len = tlv_get_length(p);
+
+  p = data_tag;
+  if (*p++ != 0x5F || *p++ != 0x48)
+    EXCEPT(SW_WRONG_DATA);
+  p += tlv_length_size(tlv_get_length(p));
+
+  rsa_pri_key_t key;
+  key.e_len = e_len;
+  memcpy(key.e, p, e_len);
+  p += e_len;
+  key.p_len = p_len;
+  memcpy(key.p, p, p_len);
+  p += p_len;
+  key.q_len = q_len;
+  memcpy(key.q, p, q_len);
+
+  if (openpgp_key_set_rsa_pri_key(key_path, &key) < 0)
+    return -1;
+
+  return 0;
+}
 
 int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
