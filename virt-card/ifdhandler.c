@@ -17,16 +17,18 @@
 #include <unistd.h>
 #include "apdu-adapter.h"
 #include "fabrication.h"
+#include "../openpgp/openpgp.h"
 
 const static UCHAR ATR[] = {0x3B, 0xE9, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x45, 0x4A, 0x43, 0x4F, 0x50, 0x32, 0x34, 0x32, 0x52, 0x32, 0xA0};
-static int u2f_usable = 0;
+static int applet_init = 0;
 
 RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
 {
     printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
-    if(!u2f_usable) {
+    if(!applet_init) {
         u2f_fabrication_procedure();
-        u2f_usable = 1;
+        openpgp_initialize();
+        applet_init = 1;
     }
     return IFD_SUCCESS;
 }
@@ -120,7 +122,7 @@ RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
     RecvPci->Protocol = SendPci.Protocol;
     //SCARD_IO_HEADER::Length is not used according to document
 
-    int ret = u2f_apdu_transceive(TxBuffer, TxLength, RxBuffer, RxLength);
+    int ret = virt_card_apdu_transceive(TxBuffer, TxLength, RxBuffer, RxLength);
     if(ret < 0)
         *RxLength = 0;
 
