@@ -64,8 +64,10 @@ pin_t rc = {.min_length = 8,
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
 #define PW1_MODE81_OFF() pw1_mode &= 0XFEu
+#define PW1_MODE81() (pw1_mode & 1u)
 #define PW1_MODE82_ON() pw1_mode |= 2u
 #define PW1_MODE82_OFF() pw1_mode &= 0XFDu
+#define PW1_MODE82() (pw1_mode & 2u)
 #define PW_RETRY_COUNTER_DEFAULT 3
 
 #define ASSERT_ADMIN()                                                         \
@@ -197,6 +199,8 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_CARDHOLDER_RELATED_DATA:
+    RDATA[off++] = TAG_CARDHOLDER_RELATED_DATA;
+    ++off; // for length
     RDATA[off++] = TAG_NAME;
     len = read_attr(DATA_PATH, TAG_NAME, RDATA + off + 1, MAX_NAME_LENGTH);
     if (len < 0)
@@ -219,10 +223,14 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     RDATA[off++] = len;
     off += len;
+    RDATA[1] = off - 2;
     LL = off;
     break;
 
   case TAG_APPLICATION_RELATED_DATA:
+    RDATA[off++] = TAG_APPLICATION_RELATED_DATA;
+    RDATA[off++] = 0x82; // for length
+    off += 2;
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
@@ -326,11 +334,15 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     off += len;
 
-    LL = off;
+    RDATA[2] = HI((uint16_t)(off - 3));
+    RDATA[3] = LO((uint16_t)(off - 3));
     RDATA[length_pos] = off - length_pos - 1;
+    LL = off;
     break;
 
   case TAG_SECURITY_SUPPORT_TEMPLATE:
+    RDATA[off++] = TAG_SECURITY_SUPPORT_TEMPLATE;
+    RDATA[off++] = DIGITAL_SIG_COUNTER_LENGTH + 2;
     RDATA[off++] = TAG_DIGITAL_SIG_COUNTER;
     RDATA[off++] = DIGITAL_SIG_COUNTER_LENGTH;
     len = read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, RDATA + off,
@@ -491,6 +503,7 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_DATA);
   rsa_key_t key;
   if (P1 == 0x80) {
+    ASSERT_ADMIN();
     if (rsa_generate_key(&key, RSA_N_BIT) < 0)
       return -1;
     if (openpgp_key_set_rsa_key(key_path, &key) < 0)
@@ -504,6 +517,14 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+  if (PW1_MODE81() == 0)
+    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  uint8_t pw1_status;
+  if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0)
+    return -1;
+  if (pw1_status == 0x00)
+    PW1_MODE81_OFF();
+
   if (get_file_size(KEY_SIG_PATH) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t sig_key;
@@ -526,6 +547,8 @@ int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+  if (PW1_MODE82() == 0)
+    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   if (get_file_size(KEY_DEC_PATH) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t dec_key;
@@ -679,9 +702,9 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
+  ASSERT_ADMIN();
   if (P1 != 0x3F || P2 != 0xFF)
     EXCEPT(SW_WRONG_P1P2);
-  //  ASSERT_ADMIN();
 
   const uint8_t *p = DATA;
   if (*p++ != 0x4D)
@@ -735,6 +758,8 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (PW1_MODE82() == 0)
+    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   if (get_file_size(KEY_AUT_PATH) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t aut_key;

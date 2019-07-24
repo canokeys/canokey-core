@@ -85,5 +85,12 @@ int pin_clear(const pin_t *pin) {
   int err = write_file(pin->path, NULL, 0);
   if (err < 0)
     return PIN_IO_FAIL;
+  uint8_t ctr;
+  err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
+  if (err < 0)
+    return PIN_IO_FAIL;
+  err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
+  if (err < 0)
+    return PIN_IO_FAIL;
   return 0;
 }
