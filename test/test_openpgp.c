@@ -157,6 +157,79 @@ static void test_generate_key(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
+static void test_special(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+
+  apdu_fill_with_command(capdu, "00 A4 04 00 06 D2 76 00 01 24 01");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 4F 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 5F 52 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 C4 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 6E 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 7F 74 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 5E 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 6E 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 65 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 5F 50 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 C4 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 CA 00 7A 00");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
+  openpgp_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -179,6 +252,7 @@ int main() {
   openpgp_initialize();
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_special),
       cmocka_unit_test(test_verify),
       cmocka_unit_test(test_change_reference_data),
       cmocka_unit_test(test_reset_retry_counter),

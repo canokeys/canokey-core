@@ -30,6 +30,7 @@ typedef struct {
 #define SW_COMMAND_NOT_ALLOWED 0x6986
 #define SW_WRONG_DATA 0x6A80
 #define SW_WRONG_P1P2 0x6A86
+#define SW_REFERENCE_DATA_NOT_FOUND 0x6A88
 #define SW_INS_NOT_SUPPORTED 0x6D00
 #define SW_CLA_NOT_SUPPORTED 0x6E00
 
@@ -51,5 +52,7 @@ typedef struct {
     SW = sw_code;                                                              \
     return 0;                                                                  \
   } while (0)
+
+void apdu_fill_with_command(CAPDU *capdu, char *cmd);
 
 #endif // CANOKEY_CORE__APDU_H

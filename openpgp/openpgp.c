@@ -129,13 +129,13 @@ int openpgp_initialize() {
     return -1;
   if (openpgp_key_set_fingerprint(KEY_DEC_PATH, buf) < 0)
     return -1;
-  if (openpgp_key_set_datetime(KEY_SIG_PATH, buf) < 0)
+  if (openpgp_key_set_datetime(KEY_DEC_PATH, buf) < 0)
     return -1;
   if (write_file(KEY_AUT_PATH, NULL, 0) < 0)
     return -1;
   if (openpgp_key_set_fingerprint(KEY_AUT_PATH, buf) < 0)
     return -1;
-  if (openpgp_key_set_datetime(KEY_SIG_PATH, buf) < 0)
+  if (openpgp_key_set_datetime(KEY_AUT_PATH, buf) < 0)
     return -1;
   if (write_attr(DATA_PATH, ATTR_CA1_FP, buf, KEY_FINGERPRINT_LENGTH) < 0)
     return -1;
@@ -493,6 +493,8 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL)
     EXCEPT(SW_WRONG_DATA);
+  if (get_file_size(key_path) == 0)
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t key;
   if (P1 == 0x80) {
     if (rsa_generate_key(&key, RSA_N_BIT) < 0)
