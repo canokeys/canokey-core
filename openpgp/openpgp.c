@@ -753,6 +753,8 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   p += p_len;
   memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
 
+  MSG_DBG("[IMPORT] %s, e: %d, p: %d, q: %d\n", key_path, e_len, p_len, q_len);
+
   if (openpgp_key_set_rsa_key(key_path, &key) < 0)
     return -1;
 
