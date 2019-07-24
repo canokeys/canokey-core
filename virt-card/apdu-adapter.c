@@ -1,6 +1,6 @@
 #include "apdu-adapter.h"
-#include "../u2f/u2f.h"
-#include "../openpgp/openpgp.h"
+#include "u2f.h"
+#include "openpgp.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>

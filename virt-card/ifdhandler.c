@@ -9,15 +9,15 @@
 /
 ******************************************************************/
 
+#include "apdu-adapter.h"
+#include "fabrication.h"
+#include "openpgp.h"
 #include <ifdhandler.h>
 #include <reader.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
-#include "apdu-adapter.h"
-#include "fabrication.h"
-#include "../openpgp/openpgp.h"
 
 const static UCHAR ATR[] = {0x3B, 0xE9, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x45, 0x4A, 0x43, 0x4F, 0x50, 0x32, 0x34, 0x32, 0x52, 0x32, 0xA0};
 static int applet_init = 0;

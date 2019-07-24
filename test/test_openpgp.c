@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <cmocka.h>
 
-#include "../openpgp/openpgp.h"
+#include "openpgp.h"
 #include <apdu.h>
 #include <crypto-util.h>
 #include <emubd/lfs_emubd.h>

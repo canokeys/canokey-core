@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <cmocka.h>
 
-#include "../u2f/u2f.h"
+#include <u2f.h>
 #include <aes.h>
 #include <apdu.h>
 #include <block-cipher.h>
