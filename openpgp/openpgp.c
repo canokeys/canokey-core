@@ -493,7 +493,7 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL)
     EXCEPT(SW_WRONG_DATA);
-  if (get_file_size(key_path) == 0)
+  if (P1 == 0x81 && get_file_size(key_path) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t key;
   if (P1 == 0x80) {
