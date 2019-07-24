@@ -59,15 +59,14 @@ int virt_card_apdu_transceive(
             printf("Length %lu shorter than %hu+7\n", txLen, Lc);
             return -2;
         }
-        if(txLen == 7 + Lc + 3) {
+        if(txLen == 7 + Lc + 2) {
             // With Le
-            if(txBuf[7 + Lc] != 0) {
-                printf("Le prefix not zero\n");
-                return -3;
-            }
-            Le = ((uint16_t)txBuf[7 + Lc + 1] << 8) | txBuf[7 + Lc + 2];
+            Le = ((uint16_t)txBuf[7 + Lc] << 8) | txBuf[7 + Lc + 1];
             if (Le == 0)
                 Le = 0x10000;
+        }else if(txLen > 7 + Lc) {
+            printf("incorrect APDU length %lu\n", txLen);
+            return -2;
         }
     } else {
         printf("Wrong length %lu\n", txLen);
