@@ -515,6 +515,7 @@ int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     return -1;
   if (rsa_sign_pkcs_v15(&sig_key, DATA, LC, RDATA) < 0)
     return -1;
+  LL = N_LENGTH;
   return 0;
 }
 
