@@ -509,6 +509,8 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     if (openpgp_key_set_rsa_key(key_path, &key) < 0)
       return -1;
   } else if (P1 == 0x81) {
+    if (get_file_size(key_path) == 0)
+      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     if (openpgp_key_get_rsa_key(key_path, &key) < 0)
       return -1;
   } else
