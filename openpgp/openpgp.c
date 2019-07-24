@@ -9,10 +9,6 @@
 #define KEY_DEC_PATH "pgp-dec"
 #define KEY_AUT_PATH "pgp-aut"
 
-#define RSA_N_BIT 2048u
-#define E_LENGTH 4
-#define N_LENGTH (RSA_N_BIT / 8)
-#define PQ_LENGTH (RSA_N_BIT / 16)
 #define MAX_CHALLENGE_LENGTH 16
 #define MAX_LOGIN_LENGTH 254
 #define MAX_URL_LENGTH 254
@@ -504,7 +500,7 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   rsa_key_t key;
   if (P1 == 0x80) {
     ASSERT_ADMIN();
-    if (rsa_generate_key(&key, RSA_N_BIT) < 0)
+    if (rsa_generate_key(&key) < 0)
       return -1;
     if (openpgp_key_set_rsa_key(key_path, &key) < 0)
       return -1;
@@ -753,8 +749,8 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   p += p_len;
   memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
 
-  MSG_DBG("[IMPORT] %s, e: %d, p: %d, q: %d\n", key_path, e_len, p_len, q_len);
-
+  if (rsa_complete_key(&key) < 0)
+    return -1;
   if (openpgp_key_set_rsa_key(key_path, &key) < 0)
     return -1;
 

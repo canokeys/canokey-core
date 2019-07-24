@@ -8,7 +8,7 @@
 #include <string.h>
 
 #ifdef TEST
-#define MSG_DBG(fmt, ...) printf("[DBG]%s:" fmt "\n", __func__, ##__VA_ARGS__)
+#define MSG_DBG(fmt, ...) printf("[DBG] %s:" fmt "\n", __func__, ##__VA_ARGS__)
 #else
 #define MSG_DBG(fmt, ...)
 #endif
