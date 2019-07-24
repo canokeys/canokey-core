@@ -501,7 +501,10 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     if (openpgp_key_set_rsa_key(key_path, &key) < 0)
       return -1;
-  } else if (P1 != 0x81)
+  } else if (P1 == 0x81) {
+    if (openpgp_key_get_rsa_key(key_path, &key) < 0)
+      return -1;
+  } else
     EXCEPT(SW_WRONG_P1P2);
   return openpgp_send_public_key(&key, rapdu);
 }
