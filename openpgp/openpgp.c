@@ -486,6 +486,10 @@ int openpgp_send_public_key(const rsa_key_t *key, RAPDU *rapdu) {
 }
 
 int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P2 != 0x00)
+    EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0x02)
+    EXCEPT(SW_WRONG_LENGTH);
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL)
     EXCEPT(SW_WRONG_DATA);
@@ -738,16 +742,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = openpgp_import_key(capdu, rapdu);
     break;
   case OPENPGP_GENERATE_ASYMMETRIC_KEY_PAIR:
-    if (P2 != 0x00)
-      EXCEPT(SW_WRONG_P1P2);
-    if (LC != 0x02)
-      EXCEPT(SW_WRONG_LENGTH);
-    if (P1 == 0x80)
-      ret = openpgp_generate_asymmetric_key_pair(capdu, rapdu);
-    else if (P1 == 0x81)
-      ret = openpgp_send_public_key(capdu, rapdu);
-    else
-      EXCEPT(SW_WRONG_P1P2);
+    ret = openpgp_generate_asymmetric_key_pair(capdu, rapdu);
     break;
   case OPENPGP_INS_PSO:
     if (P1 == 0x9E && P2 == 0x9A) {
