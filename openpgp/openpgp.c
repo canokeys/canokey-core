@@ -41,11 +41,7 @@ static const uint8_t historical_bytes[] = {0x00, 0x73, 0x00, 0x00,
 static const uint8_t extended_capabilities[] = {
     0x30, // Support key import and pw1 status change
     0x00, // SM algorithm
-    0x00,
-    MAX_CHALLENGE_LENGTH,
-    HI(MAX_CERT_LENGTH),
-    LO(MAX_CERT_LENGTH),
-    0x08,
+    0x00, MAX_CHALLENGE_LENGTH, HI(MAX_CERT_LENGTH), LO(MAX_CERT_LENGTH), 0x08,
     0x00, // Maximum length of command data
     0x08,
     0x00, // Maximum length of response data
@@ -493,8 +489,6 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL)
     EXCEPT(SW_WRONG_DATA);
-  if (P1 == 0x81 && get_file_size(key_path) == 0)
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t key;
   if (P1 == 0x80) {
     if (rsa_generate_key(&key, RSA_N_BIT) < 0)
@@ -510,16 +504,39 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+  if (get_file_size(KEY_SIG_PATH) == 0)
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t sig_key;
   if (openpgp_key_get_rsa_key(KEY_SIG_PATH, &sig_key) < 0)
     return -1;
   if (rsa_sign_pkcs_v15(&sig_key, DATA, LC, RDATA) < 0)
     return -1;
+  uint8_t ctr[3];
+  if (read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr,
+                DIGITAL_SIG_COUNTER_LENGTH) < 0)
+    return -1;
+  for (int i = 3; i > 0; --i)
+    if (++ctr[i - 1] != 0)
+      break;
+  if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr,
+                 DIGITAL_SIG_COUNTER_LENGTH) < 0)
+    return -1;
   LL = N_LENGTH;
   return 0;
 }
 
-int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+  if (get_file_size(KEY_DEC_PATH) == 0)
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  rsa_key_t dec_key;
+  if (openpgp_key_get_rsa_key(KEY_SIG_PATH, &dec_key) < 0)
+    return -1;
+  size_t olen;
+  if (rsa_decrypt_pkcs_v15(&dec_key, DATA, &olen, RDATA) < 0)
+    return -1;
+  LL = olen;
+  return 0;
+}
 
 int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   ASSERT_ADMIN();
@@ -718,6 +735,14 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (get_file_size(KEY_AUT_PATH) == 0)
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  rsa_key_t aut_key;
+  if (openpgp_key_get_rsa_key(KEY_AUT_PATH, &aut_key) < 0)
+    return -1;
+  if (rsa_sign_pkcs_v15(&aut_key, DATA, LC, RDATA) < 0)
+    return -1;
+  LL = N_LENGTH;
   return 0;
 }
 
