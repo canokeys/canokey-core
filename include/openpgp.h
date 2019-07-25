@@ -2,7 +2,6 @@
 #define CANOKEY_CORE_OPENPGP_OPENPGP_H
 
 #include <apdu.h>
-#include <pin.h>
 
 #define OPENPGP_INS_SELECT 0xA4
 #define OPENPGP_INS_GET_DATA 0xCA

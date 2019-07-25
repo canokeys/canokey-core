@@ -1,7 +1,8 @@
-#include "openpgp.h"
 #include "key.h"
+#include <openpgp.h>
 #include <common.h>
 #include <rsa.h>
+#include <pin.h>
 
 #define DATA_PATH "pgp-data"
 #define CERT_PATH "pgp-cert"
