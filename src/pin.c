@@ -39,6 +39,8 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
     return PIN_IO_FAIL;
   if (real_len != len || memcmp(buf, pin_buf, len) != 0) {
     --ctr;
+    if (retries)
+      *retries = ctr;
     err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
     if (err < 0)
       return PIN_IO_FAIL;
