@@ -1,8 +1,8 @@
 #include "key.h"
-#include <openpgp.h>
 #include <common.h>
-#include <rsa.h>
+#include <openpgp.h>
 #include <pin.h>
+#include <rsa.h>
 
 #define DATA_PATH "pgp-data"
 #define CERT_PATH "pgp-cert"
@@ -46,18 +46,18 @@ static const uint8_t extended_capabilities[] = {
 static const uint8_t pw_status[] = {
     0x00, MAX_PIN_LENGTH, MAX_PIN_LENGTH, MAX_PIN_LENGTH, 0x00, 0x00, 0x00};
 static uint8_t pw1_mode;
-pin_t pw1 = {.min_length = 6,
-             .max_length = MAX_PIN_LENGTH,
-             .is_validated = 0,
-             .path = "pgp-pw1"};
-pin_t pw3 = {.min_length = 8,
-             .max_length = MAX_PIN_LENGTH,
-             .is_validated = 0,
-             .path = "pgp-pw3"};
-pin_t rc = {.min_length = 8,
-            .max_length = MAX_PIN_LENGTH,
-            .is_validated = 0,
-            .path = "pgp-rc"};
+static pin_t pw1 = {.min_length = 6,
+                    .max_length = MAX_PIN_LENGTH,
+                    .is_validated = 0,
+                    .path = "pgp-pw1"};
+static pin_t pw3 = {.min_length = 8,
+                    .max_length = MAX_PIN_LENGTH,
+                    .is_validated = 0,
+                    .path = "pgp-pw3"};
+static pin_t rc = {.min_length = 8,
+                   .max_length = MAX_PIN_LENGTH,
+                   .is_validated = 0,
+                   .path = "pgp-rc"};
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
 #define PW1_MODE81_OFF() pw1_mode &= 0XFEu

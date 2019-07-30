@@ -8,13 +8,13 @@
 #include <string.h>
 
 #ifdef TEST
-#define MSG_DBG(fmt, ...) printf("[DBG] %s:" fmt "\n", __func__, ##__VA_ARGS__)
+#define MSG_DBG(fmt, ...) printf("[DBG] %s: " fmt "\n", __func__, ##__VA_ARGS__)
 #else
 #define MSG_DBG(fmt, ...)
 #endif
 
-#define LO(x) ((uint8_t)((x)&0xFFu))
-#define HI(x) ((uint8_t)((x) >> 8u))
+#define LO(x) ((uint8_t)(((uint16_t)x) & 0xFFu))
+#define HI(x) ((uint8_t)(((uint16_t)x) >> 8u))
 
 uint16_t tlv_get_length(const uint8_t *data);
 uint8_t tlv_length_size(uint16_t length);

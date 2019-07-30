@@ -11,7 +11,10 @@
 #define PIV_GENERAL_AUTHENTICATE 0x87
 #define PIV_INS_PUT_DATA 0xDB
 #define PIV_GENERATE_ASYMMETRIC_KEY_PAIR 0x47
+#define PIV_GET_RESPONSE 0xC0
 
+int piv_install(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int piv_config(uint8_t *buf, uint16_t buffer_size);
 
-#endif //CANOKEY_CORE_INCLUDE_PIV_H_
+#endif // CANOKEY_CORE_INCLUDE_PIV_H_
