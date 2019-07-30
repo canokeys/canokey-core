@@ -21,7 +21,7 @@ int pin_create(const pin_t *pin, const void *buf, uint8_t len,
   return 0;
 }
 
-int pin_verify(pin_t *pin, const void *buf, uint8_t len) {
+int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
   pin->is_validated = 0;
   if (len < pin->min_length || len > pin->max_length)
     return PIN_LENGTH_INVALID;
@@ -29,8 +29,10 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len) {
   int err = read_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
     return PIN_IO_FAIL;
+  if (retries)
+    *retries = ctr;
   if (ctr == 0)
-    return 0;
+    return PIN_AUTH_FAIL;
   uint8_t pin_buf[MAX_LENGTH];
   int real_len = read_file(pin->path, pin_buf, MAX_LENGTH);
   if (real_len < 0)

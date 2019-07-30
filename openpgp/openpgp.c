@@ -396,15 +396,16 @@ int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
     pw = &pw3;
   else
     EXCEPT(SW_WRONG_P1P2);
-  int err = pin_verify(pw, DATA, LC);
+  uint8_t ctr;
+  int err = pin_verify(pw, DATA, LC, &ctr);
   if (err == PIN_IO_FAIL)
     return -1;
   if (err == PIN_LENGTH_INVALID)
     EXCEPT(SW_WRONG_LENGTH);
+  if (ctr == 0)
+    EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
     EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (err == 0)
-    EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (P2 == 0x81)
     PW1_MODE81_ON();
   else if (P2 == 0x82)
@@ -424,13 +425,14 @@ int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   else
     EXCEPT(SW_WRONG_P1P2);
   int pw_length = pin_get_size(pw);
-  int err = pin_verify(pw, DATA, pw_length);
+  uint8_t ctr;
+  int err = pin_verify(pw, DATA, pw_length, &ctr);
   if (err == PIN_IO_FAIL)
     return -1;
+  if (ctr == 0)
+    EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
     EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (err == 0)
-    EXCEPT(SW_AUTHENTICATION_BLOCKED);
   err = pin_update(pw, DATA + pw_length, LC - pw_length);
   if (err == PIN_IO_FAIL)
     return -1;
@@ -447,13 +449,14 @@ int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
     offset = pin_get_size(&rc);
     if (offset == 0)
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    err = pin_verify(&rc, DATA, offset);
+    uint8_t ctr;
+    err = pin_verify(&rc, DATA, offset, &ctr);
     if (err == PIN_IO_FAIL)
       return -1;
+    if (ctr == 0)
+      EXCEPT(SW_AUTHENTICATION_BLOCKED);
     if (err == PIN_AUTH_FAIL)
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (err == 0)
-      EXCEPT(SW_AUTHENTICATION_BLOCKED);
   } else {
     ASSERT_ADMIN();
     offset = 0;
