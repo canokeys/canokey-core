@@ -184,7 +184,7 @@ int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (ctr == 0)
     EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + err);
+    EXCEPT(0x63C0 + ctr);
   return 0;
 }
 
@@ -202,7 +202,7 @@ int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (ctr == 0)
     EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + err);
+    EXCEPT(0x63C0 + ctr);
   err = pin_update(&pin, DATA + 8, 8);
   if (err == PIN_IO_FAIL)
     return -1;
@@ -230,7 +230,7 @@ int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   if (ctr == 0)
     EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + err);
+    EXCEPT(0x63C0 + ctr);
   err = pin_update(p, DATA + 8, 8);
   if (err == PIN_IO_FAIL)
     return -1;
