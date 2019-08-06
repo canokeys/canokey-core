@@ -4,6 +4,7 @@
 #include <cmocka.h>
 
 #include <apdu.h>
+#include <crypto-util.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
 #include <piv.h>
@@ -82,6 +83,33 @@ static void test_data(void **state) {
     assert_int_equal(RDATA[i], i + 2);
 }
 
+static void test_auth(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+  CLA = 0x00;
+  INS = PIV_GENERAL_AUTHENTICATE;
+  P1 = 0x00;
+  P2 = 0x9B;
+  LC = 0x04;
+  memcpy(DATA, (uint8_t[]){0x7C, 0x02, 0x81, 0x00}, 0x04);
+  LE = 256;
+  piv_process_apdu(capdu, rapdu);
+  printHex(RDATA, LL);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, 12);
+
+  LC = 0x0C;
+  memcpy(DATA,
+         (uint8_t[]){0x7C, 0x0A, 0x82, 0x08,
+                     0x35, 0x51, 0xB0, 0xA1, 0x56, 0xF6, 0x95, 0xD1},
+         0x0C);
+  piv_process_apdu(capdu, rapdu);
+  assert_int_equal(SW, SW_NO_ERROR);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -106,6 +134,7 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_data),
+      cmocka_unit_test(test_auth),
   };
 
   return cmocka_run_group_tests(tests, NULL, NULL);

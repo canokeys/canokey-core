@@ -6,7 +6,7 @@
 
 #define DATA_PATH "pgp-data"
 #define CERT_PATH "pgp-cert"
-#define KEY_SIG_PATH "pgp-sig"
+#define SIG_CERT_PATH "pgp-sig"
 #define KEY_DEC_PATH "pgp-dec"
 #define KEY_AUT_PATH "pgp-aut"
 
@@ -76,7 +76,7 @@ static pin_t rc = {.min_length = 8,
 
 static const char *get_key_path(uint8_t tag) {
   if (tag == 0xB6)
-    return KEY_SIG_PATH;
+    return SIG_CERT_PATH;
   else if (tag == 0xB8)
     return KEY_DEC_PATH;
   else if (tag == 0xA4)
@@ -114,11 +114,11 @@ int openpgp_initialize() {
   // Key data
   uint8_t buf[20];
   memset(buf, 0, sizeof(buf));
-  if (write_file(KEY_SIG_PATH, NULL, 0) < 0)
+  if (write_file(SIG_CERT_PATH, NULL, 0) < 0)
     return -1;
-  if (openpgp_key_set_fingerprint(KEY_SIG_PATH, buf) < 0)
+  if (openpgp_key_set_fingerprint(SIG_CERT_PATH, buf) < 0)
     return -1;
-  if (openpgp_key_set_datetime(KEY_SIG_PATH, buf) < 0)
+  if (openpgp_key_set_datetime(SIG_CERT_PATH, buf) < 0)
     return -1;
   if (write_file(KEY_DEC_PATH, NULL, 0) < 0)
     return -1;
@@ -285,7 +285,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_KEY_FINGERPRINTS;
     RDATA[off++] = KEY_FINGERPRINT_LENGTH * 3;
-    len = openpgp_key_get_fingerprint(KEY_SIG_PATH, RDATA + off);
+    len = openpgp_key_get_fingerprint(SIG_CERT_PATH, RDATA + off);
     if (len < 0)
       return -1;
     off += len;
@@ -318,7 +318,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_KEY_GENERATION_DATES;
     RDATA[off++] = KEY_DATETIME_LENGTH * 3;
-    len = openpgp_key_get_datetime(KEY_SIG_PATH, RDATA + off);
+    len = openpgp_key_get_datetime(SIG_CERT_PATH, RDATA + off);
     if (len < 0)
       return -1;
     off += len;
@@ -527,10 +527,10 @@ int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if (pw1_status == 0x00)
     PW1_MODE81_OFF();
 
-  if (get_file_size(KEY_SIG_PATH) == 0)
+  if (get_file_size(SIG_CERT_PATH) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t sig_key;
-  if (openpgp_key_get_rsa_key(KEY_SIG_PATH, &sig_key) < 0)
+  if (openpgp_key_get_rsa_key(SIG_CERT_PATH, &sig_key) < 0)
     return -1;
   if (rsa_sign_pkcs_v15(&sig_key, DATA, LC, RDATA) < 0)
     return -1;
@@ -554,7 +554,7 @@ int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (get_file_size(KEY_DEC_PATH) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t dec_key;
-  if (openpgp_key_get_rsa_key(KEY_SIG_PATH, &dec_key) < 0)
+  if (openpgp_key_get_rsa_key(SIG_CERT_PATH, &dec_key) < 0)
     return -1;
   size_t olen;
   if (rsa_decrypt_pkcs_v15(&dec_key, DATA, &olen, RDATA) < 0)
@@ -621,7 +621,7 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_KEY_SIG_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH)
       EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_fingerprint(KEY_SIG_PATH, DATA) < 0)
+    if (openpgp_key_set_fingerprint(SIG_CERT_PATH, DATA) < 0)
       return -1;
     break;
 
@@ -663,7 +663,7 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_KEY_SIG_GENERATION_DATES:
     if (LC != KEY_DATETIME_LENGTH)
       EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_datetime(KEY_SIG_PATH, DATA) < 0)
+    if (openpgp_key_set_datetime(SIG_CERT_PATH, DATA) < 0)
       return -1;
     break;
 
