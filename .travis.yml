@@ -12,7 +12,7 @@ addons:
       - g++
       - cmake
       - pcscd
-      - pcsc-tool
+      - pcsc-tools
       - libpcsclite-dev
 stages:
   - compile
@@ -38,3 +38,7 @@ jobs:
       script:
         - sudo cp build/libu2f-virt-card.so /usr/local/lib/
         - sudo cp pcscd-reader.conf /etc/reader.conf.d/
+        - travis_wait 10 sudo pcscd -a -f &>/tmp/pcscd.log &
+        - pcsc_scan
+      after_failure:
+        - cat /tmp/pcscd.log
