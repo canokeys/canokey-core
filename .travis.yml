@@ -31,8 +31,8 @@ script:
   -
   - sudo cp build/libu2f-virt-card.so /usr/local/lib/
   - sudo cp pcscd-reader.conf /etc/reader.conf.d/
-  - travis_wait 10 sudo pcscd -a -f &>/tmp/pcscd.log &
-  - pcsc_scan
+  - travis_wait 10 sudo pcscd -a -f 2>&1 |tee /tmp/pcscd.log &
+  - timeout 1s pcsc_scan -q || true
   - ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v
 after_failure:
   - cat /tmp/pcscd.log
