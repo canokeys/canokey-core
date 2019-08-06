@@ -15,31 +15,24 @@ addons:
       - pcsc-tools
       - libpcsclite-dev
       - libcmocka-dev
-stages:
-  - compile
-  - test
-jobs:
-  include:
-    - stage: "compile"
-      name: "u2f-tests"
-      script:
-        - git clone --depth 1 https://github.com/google/u2f-ref-code.git
-        - cd u2f-ref-code/u2f-tests/HID
-        - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
-        - cd ../NFC
-        - make
-    - stage: "compile"
-      name: "canokey"
-      script:
-        - mkdir build && cd build
-        - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release
-        - make -j2
-    - stage: "test"
-      name: "run tests"
-      script:
-        - sudo cp build/libu2f-virt-card.so /usr/local/lib/
-        - sudo cp pcscd-reader.conf /etc/reader.conf.d/
-        - travis_wait 10 sudo pcscd -a -f &>/tmp/pcscd.log &
-        - pcsc_scan
-      after_failure:
-        - cat /tmp/pcscd.log
+
+script:
+  - git clone --depth 1 https://github.com/google/u2f-ref-code.git
+  - pushd u2f-ref-code/u2f-tests/HID
+  - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
+  - cd ../NFC
+  - make
+  - popd
+  -
+  - mkdir build && pushd build
+  - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+  - make -j2
+  - popd
+  -
+  - sudo cp build/libu2f-virt-card.so /usr/local/lib/
+  - sudo cp pcscd-reader.conf /etc/reader.conf.d/
+  - travis_wait 10 sudo pcscd -a -f &>/tmp/pcscd.log &
+  - pcsc_scan
+  - ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v
+after_failure:
+  - cat /tmp/pcscd.log
