@@ -1,6 +1,7 @@
 #include "apdu-adapter.h"
 #include "u2f.h"
 #include "openpgp.h"
+#include "piv.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
@@ -14,7 +15,8 @@
 enum {
     APPLET_NULL = 0,
     APPLET_U2F,
-    APPLET_OPENPGP
+    APPLET_OPENPGP,
+    APPLET_PIV,
 } current_applet;
 
 int virt_card_apdu_transceive(
@@ -22,7 +24,7 @@ int virt_card_apdu_transceive(
     unsigned char *rxBuf, unsigned long *rxLen)
 {
     uint16_t Lc = 0, offData = 0;
-    uint32_t Le = 0;
+    uint32_t Le = 256;
     if(txLen == 4) {
         // Without Lc or Le
     } else if(txLen == 5) {
@@ -110,6 +112,9 @@ int virt_card_apdu_transceive(
         else if(c->lc >= 6 && memcmp(c->data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
             current_applet = APPLET_OPENPGP;
         }
+        else if(c->lc >= 5 && memcmp(c->data, "\xA0\x00\x00\x03\x08", 5) == 0) {
+            current_applet = APPLET_PIV;
+        }
     }
     switch(current_applet) {
         default:
@@ -127,6 +132,11 @@ int virt_card_apdu_transceive(
             printf("calling openpgp_process_apdu\n");
             ret = openpgp_process_apdu(c, r);
             printf("openpgp_process_apdu ret %d\n", ret);
+            break;
+        case APPLET_PIV:
+            printf("calling piv_process_apdu\n");
+            ret = piv_process_apdu(c, r);
+            printf("piv_process_apdu ret %d\n", ret);
             break;
     }
     if(ret == 0) {
