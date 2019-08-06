@@ -1,5 +1,6 @@
 #include "fabrication.h"
 #include "u2f.h"
+#include "piv.h"
 #include <apdu.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
@@ -56,5 +57,9 @@ int u2f_fabrication_procedure() {
   fs_init(&cfg);
 
   fake_u2f_personalization();
+
+  static uint8_t piv_buffer[2048];
+  piv_config(piv_buffer, sizeof(piv_buffer));
+  piv_install();
   return 0;
 }
