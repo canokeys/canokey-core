@@ -1,0 +1,39 @@
+dist: bionic
+sudo: required
+language:
+  - cpp
+compiler:
+  - gcc
+addons:
+  apt:
+    packages:
+      - gcc
+      - g++
+      - cmake
+      - pcscd
+      - pcsc-tool
+      - libpcsclite-dev
+stages:
+  - compile
+  - test
+jobs:
+  include:
+    - stage: "compile"
+      name: "u2f-tests"
+      script:
+        - git clone --depth 1 https://github.com/google/u2f-ref-code.git
+        - cd u2f-ref-code/u2f-tests/HID
+        - git clone --depth 1 https://android.googlesource.com/platform/system/core
+        - cd ../NFC
+        - make
+    - stage: "compile"
+      name: "canokey"
+      script:
+        - mkdir build && cd build
+        - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+        - make -j2
+    - stage: "test"
+      name: "run tests"
+      script:
+        - sudo cp build/libu2f-virt-card.so /usr/local/lib/
+        - sudo cp pcscd-reader.conf /etc/reader.conf.d/
