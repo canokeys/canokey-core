@@ -541,7 +541,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       uint8_t key[24];
       if (read_file(key_path, key, 24) < 0)
         return -1;
-      tdes_dec(buffer + pos[IDX_CHALLENGE], buffer + 4, key);
+      tdes_enc(buffer + pos[IDX_CHALLENGE], buffer + 4, key);
     } else if (alg == ALG_AES_128) {
       // TODO
     } else {
