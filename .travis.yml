@@ -73,16 +73,16 @@ script:
   - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 123456
   - yubico-piv-tool -r "$READER_NAME" -a change-pin -P 123456 -N 654321
   - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 654321
-  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 123456 | grep '2 tries left before pin is blocked.'
-  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 123456 | grep '1 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
   - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 654321
   - yubico-piv-tool -r "$READER_NAME" -P 654321 -a generate -s 9e >/tmp/pubkey-9e.pem
   - #yubico-piv-tool -r "$READER_NAME" -P 654321 -a import-certificate -s 9e < /tmp/cert-9e.pem
   - #yubico-piv-tool -r "$READER_NAME" -P 654321 -a selfsign-certificate -s 9e -S '/CN=test' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
-  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 222222
-  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 222222
-  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 222222
-  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 654321
+  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
+  - yubico-piv-tool -r "$READER_NAME" -a verify-pin -P 654321 2>&1 | grep 'Pin code blocked'
   -
   - sudo killall pcscd || true
 after_failure:
