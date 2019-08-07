@@ -56,8 +56,11 @@ int get_file_size(const char *path) {
   int err = lfs_file_open(&lfs, &f, path, LFS_O_RDONLY);
   if (err < 0)
     return err;
+  int size = lfs_file_size(&lfs, &f);
+  if (size < 0)
+    return size;
   err = lfs_file_close(&lfs, &f);
   if (err < 0)
     return err;
-  return lfs_file_size(&lfs, &f);
+  return size;
 }

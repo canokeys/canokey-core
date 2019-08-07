@@ -35,8 +35,6 @@ static void test_verify(void **state) {
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_SECURITY_STATUS_NOT_SATISFIED);
   openpgp_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-  openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_AUTHENTICATION_BLOCKED);
   openpgp_initialize();
 }
@@ -74,7 +72,7 @@ static void test_change_reference_data(void **state) {
 static void test_reset_retry_counter(void **state) {
   (void)state;
 
-  write_file("pgp-rc", "abcdef", 6);
+  write_file("pgp-rc", "abcdefgh", 8);
 
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU *capdu = (CAPDU *)c_buf;
@@ -83,8 +81,8 @@ static void test_reset_retry_counter(void **state) {
   capdu->ins = OPENPGP_INS_RESET_RETRY_COUNTER;
   capdu->p1 = 0x02;
   capdu->p2 = 0x81;
-  capdu->lc = 12;
-  strcpy((char *)capdu->data, "abcdef654321");
+  capdu->lc = 14;
+  strcpy((char *)capdu->data, "abcdefgh654321");
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_SECURITY_STATUS_NOT_SATISFIED);
   capdu->p1 = 0x00;

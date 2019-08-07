@@ -53,7 +53,7 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
   err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0)
     return PIN_IO_FAIL;
-  return ctr;
+  return 0;
 }
 
 int pin_update(pin_t *pin, const void *buf, uint8_t len) {

@@ -3,6 +3,7 @@
 #include <pin.h>
 #include <piv.h>
 #include <rand.h>
+#include <rsa.h>
 
 #define MAX_BUFFER_SIZE 2000
 
@@ -97,22 +98,6 @@ static int get_block_size(uint8_t alg) {
   default:
     return 0;
   }
-}
-
-static int encrypt(const char *path, uint8_t alg, const void *in,
-                   size_t in_size, void *out, size_t out_size) {
-  switch (alg) {
-  case ALG_TDEA_3KEY: {
-    uint8_t key[24];
-    if (read_file(path, key, 24) < 0)
-      return -1;
-    tdes_enc(in, out, key);
-    return 0;
-  }
-  default:
-    return -1;
-  }
-  return 0;
 }
 
 int piv_install() {
@@ -410,6 +395,24 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application sends a challenge to the PIV Card Application
   if (pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0 &&
       pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0) {
+    authenticate_reset();
+    if (P2 != 0x9A && P2 != 0x9E)
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (length != len[IDX_CHALLENGE])
+      EXCEPT(SW_WRONG_DATA);
+
+    rsa_key_t key;
+    if (read_file(key_path, &key, sizeof(rsa_key_t)) < 0)
+      return -1;
+    rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 4);
+
+    buffer[0] = 0x7C;
+    buffer[1] = length + 2;
+    buffer[2] = TAG_RESPONSE;
+    buffer[3] = length;
+    buffer_len = length + 4;
+
+    send_response(rapdu, LE);
   }
 
   //
@@ -420,6 +423,8 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] == 0) {
     authenticate_reset();
+    if (P2 != 0x9B)
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     buffer[0] = 0x7C;
     buffer[1] = length + 2;
     buffer[2] = TAG_CHALLENGE;
@@ -430,8 +435,17 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
     auth_ctx[OFFSET_AUTH_KEY_ID] = P2;
     auth_ctx[OFFSET_AUTH_ALGO] = alg;
-    encrypt(key_path, alg, buffer + 4, length, auth_ctx + OFFSET_AUTH_CHALLENGE,
-            length);
+
+    if (alg == ALG_TDEA_3KEY) {
+      uint8_t key[24];
+      if (read_file(key_path, key, 24) < 0)
+        return -1;
+      tdes_enc(buffer + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key);
+    } else if (alg == ALG_AES_128) {
+      // TODO
+    } else {
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    }
 
     send_response(rapdu, LE);
   }
@@ -468,7 +482,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   //
 
   // > Client application returns the decrypted witness referencing the original
-  // algrithm key reference
+  // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 &&
            pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
   }
