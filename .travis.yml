@@ -21,6 +21,7 @@ addons:
       - libcmocka-dev
 
 script:
+  - gpg --version
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
   - pushd u2f-ref-code/u2f-tests/HID
   - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
@@ -58,6 +59,7 @@ script:
   - echo -e 'key 1\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[1] to Signature key
   - echo -e 'key 2\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[2] to Encryption key
   - echo -e 'key 3\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[3] to Authentication key
+  - echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nsex\nm\nlist\nquit' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-card
   - # PIV tests:
   - pkcs15-tool -D
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456
