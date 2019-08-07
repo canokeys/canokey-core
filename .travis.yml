@@ -16,6 +16,7 @@ addons:
       - pcsc-tools
       - yubico-piv-tool
       - gnupg2
+      - scdaemon
       - opensc
       - libpcsclite-dev
       - libcmocka-dev
