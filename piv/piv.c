@@ -337,30 +337,30 @@ int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+const char *get_key_path(uint8_t id) {
+  switch (id) {
+  case 0x9A:
+    return PIV_AUTH_KEY_PATH;
+  case 0x9B:
+    return CARD_ADMIN_KEY_PATH;
+  case 0x9C:
+    return SIG_KEY_PATH;
+  case 0x9D:
+    return KEY_MANAGEMENT_KEY_PATH;
+  case 0x9E:
+    return CARD_AUTH_KEY_PATH;
+  default:
+    return NULL;
+  }
+}
+
 int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (*buffer != 0x7C)
     EXCEPT(SW_WRONG_DATA);
 
-  const char *key_path;
-  switch (P2) {
-  case 0x9A:
-    key_path = PIV_AUTH_KEY_PATH;
-    break;
-  case 0x9B:
-    key_path = CARD_ADMIN_KEY_PATH;
-    break;
-  case 0x9C:
-    key_path = SIG_KEY_PATH;
-    break;
-  case 0x9D:
-    key_path = KEY_MANAGEMENT_KEY_PATH;
-    break;
-  case 0x9E:
-    key_path = CARD_AUTH_KEY_PATH;
-    break;
-  default:
+  const char *key_path = get_key_path(P2);
+  if (key_path == NULL)
     EXCEPT(SW_WRONG_P1P2);
-  }
 
   uint8_t alg;
   if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
@@ -514,6 +514,38 @@ int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+//  if (!in_admin_status)
+//    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) ||
+      buffer[0] != 0xAC || buffer[2] != 0x80 || buffer[3] != 0x01)
+    EXCEPT(SW_WRONG_DATA);
+  const char *key_path = get_key_path(P2);
+  uint8_t alg = buffer[4];
+  if (alg == ALG_RSA_2048) {
+    rsa_key_t key;
+    if (rsa_generate_key(&key) < 0)
+      return -1;
+    if (write_file(key_path, &key, sizeof(key)) < 0)
+      return -1;
+    if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
+      return -1;
+    buffer[0] = 0x7F;
+    buffer[1] = 0x49;
+    buffer[2] = 0x82;
+    buffer[3] = HI(6 + N_LENGTH + E_LENGTH);
+    buffer[4] = LO(6 + N_LENGTH + E_LENGTH);
+    buffer[5] = 0x81; // modulus
+    buffer[6] = 0x82;
+    buffer[7] = HI(N_LENGTH);
+    buffer[8] = LO(N_LENGTH);
+    memcpy(buffer + 9, key.n, N_LENGTH);
+    buffer[9 + N_LENGTH] = 0x82; // exponent
+    buffer[10 + N_LENGTH] = E_LENGTH;
+    memcpy(RDATA + 11 + N_LENGTH, key.e, E_LENGTH);
+    buffer_len = 11 + N_LENGTH + E_LENGTH;
+    send_response(rapdu, LE);
+  } else
+    EXCEPT(SW_WRONG_DATA);
   return 0;
 }
 

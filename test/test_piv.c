@@ -110,6 +110,26 @@ static void test_auth(void **state) {
   assert_int_equal(SW, SW_NO_ERROR);
 }
 
+static void test_gen_key(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+  CLA = 0x00;
+  INS = PIV_GENERATE_ASYMMETRIC_KEY_PAIR;
+  P1 = 0x00;
+  P2 = 0x9E;
+  LC = 0x05;
+  memcpy(DATA,
+         (uint8_t[]){0xAC, 0x0A, 0x80, 0x01, 0x07},
+         0x05);
+  LE = 256;
+  piv_process_apdu(capdu, rapdu);
+  printHex(RDATA, LL);
+  assert_int_equal(SW, 0x610F);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -135,6 +155,7 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_data),
       cmocka_unit_test(test_auth),
+      cmocka_unit_test(test_gen_key),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

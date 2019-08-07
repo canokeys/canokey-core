@@ -470,26 +470,20 @@ int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_send_public_key(const rsa_key_t *key, RAPDU *rapdu) {
-  uint16_t offset = 0;
-  RDATA[offset++] = 0x7F;
-  RDATA[offset++] = 0x49;
-  RDATA[offset++] = 0x82; // use two bytes to represent length
-  uint8_t offset_for_length = offset;
-  offset += 2;
-  RDATA[offset++] = 0x81; // modulus
-  RDATA[offset++] = 0x82;
-  RDATA[offset++] = HI(N_LENGTH);
-  RDATA[offset++] = LO(N_LENGTH);
-  memcpy(RDATA + offset, key->n, N_LENGTH);
-  offset += N_LENGTH;
-  RDATA[offset++] = 0x82; // exponent
-  RDATA[offset++] = E_LENGTH;
-  memcpy(RDATA + offset, key->e, E_LENGTH);
-  offset += E_LENGTH;
-  LL = offset;
-  offset = offset - offset_for_length - 2;
-  RDATA[offset_for_length] = HI(offset);
-  RDATA[offset_for_length + 1] = LO(offset);
+  RDATA[0] = 0x7F;
+  RDATA[1] = 0x49;
+  RDATA[2] = 0x82;
+  RDATA[3] = HI(6 + N_LENGTH + E_LENGTH);
+  RDATA[4] = LO(6 + N_LENGTH + E_LENGTH);
+  RDATA[5] = 0x81; // modulus
+  RDATA[6] = 0x82;
+  RDATA[7] = HI(N_LENGTH);
+  RDATA[8] = LO(N_LENGTH);
+  memcpy(RDATA + 9, key->n, N_LENGTH);
+  RDATA[9 + N_LENGTH] = 0x82; // exponent
+  RDATA[10 + N_LENGTH] = E_LENGTH;
+  memcpy(RDATA + 11 + N_LENGTH, key->e, E_LENGTH);
+  LL = 11 + N_LENGTH + E_LENGTH;
   return 0;
 }
 
