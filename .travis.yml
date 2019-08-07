@@ -1,4 +1,4 @@
-dist: xenial
+dist: bionic
 sudo: required
 language:
   - cpp
@@ -53,7 +53,7 @@ script:
   - # OpenPGP tests:
   - echo 12345678 >/tmp/passwd
   - "echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg2 --batch --gen-key"
-  - KEYID=$(gpg2 -k|grep -Po '\w{40}')
+  - KEYID=$(gpg2 -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
   - echo -e 'addkey\n6\n2048\n0\nsave' | gpg2 --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # [2] encrypt key
   - echo -e 'addkey\n4\n2048\n0\nsave' | gpg2 --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # [3] sign key
   - echo -e 'key 1\nkeytocard\n1\nsave' | gpg2 --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[1] to Signature key
