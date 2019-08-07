@@ -46,11 +46,19 @@ script:
   - travis_wait 10 sudo pcscd -a -f >/tmp/pcscd.log &
   - sleep 3
   - timeout 1s pcsc_scan || true
-  -
+  - # U2F tests:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
-  -
-  - "echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: qwert\n%commit\n%echo done' | gpg --batch --gen-key"
-  -
+  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 3
+  - # OpenPGP tests:
+  - echo 12345678 >/tmp/passwd
+  - "echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key"
+  - KEYID=$(gpg -k|grep -Po '\w{40}')
+  - echo -e 'addkey\n6\n2048\n0\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # [2] encrypt key
+  - echo -e 'addkey\n4\n2048\n0\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # [3] sign key
+  - echo -e 'key 1\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[1] to Signature key
+  - echo -e 'key 2\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[2] to Encryption key
+  - echo -e 'key 3\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[3] to Authentication key
+  - # PIV tests:
   - pkcs15-tool -D
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456
   - yubico-piv-tool -r 'Virtual Card 00 00' -a change-pin -P 123456 -N 654321
@@ -66,7 +74,6 @@ script:
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 654321
   -
-  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 3
   - sudo killall pcscd || true
 after_failure:
   - cat /tmp/pcscd.log
