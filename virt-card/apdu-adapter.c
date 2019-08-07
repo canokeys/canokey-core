@@ -25,7 +25,10 @@ int virt_card_apdu_transceive(
 {
     uint16_t Lc = 0, offData = 0;
     uint32_t Le = 256;
-    if(txLen == 4) {
+    if (txLen < 4) {
+        printf("APDU too short\n");
+        return -2;
+    } else if(txLen == 4) {
         // Without Lc or Le
     } else if(txLen == 5) {
         Le = txBuf[SHORT_LC];
@@ -72,7 +75,7 @@ int virt_card_apdu_transceive(
         }
     } else {
         printf("Wrong length %lu\n", txLen);
-        return -2;
+        //return -2;
     }
 
     printf("Lc=%hu Le=%u\n", Lc, Le);
