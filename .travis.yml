@@ -1,0 +1,49 @@
+dist: xenial
+sudo: required
+language:
+  - cpp
+compiler:
+  - gcc
+addons:
+  apt:
+    update: true
+    packages:
+      - gcc
+      - g++
+      - cmake
+      - psmisc
+      - pcscd
+      - pcsc-tools
+      - libpcsclite-dev
+      - libcmocka-dev
+
+script:
+  - git clone --depth 1 https://github.com/google/u2f-ref-code.git
+  - pushd u2f-ref-code/u2f-tests/HID
+  - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
+  - cd ../NFC
+  - make
+  - popd
+  -
+  - mkdir build && pushd build
+  - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+  - make -j2
+  - ./canokey-crypto/test/test_aes
+  - ./canokey-crypto/test/test_ecdsa
+  - ./canokey-crypto/test/test_sha
+  - ./test/test_u2f
+  - ./test/test_piv
+  - ./test/test_openpgp
+  - popd
+  -
+  - sudo killall -9 pcscd || true
+  - sudo cp build/libu2f-virt-card.so /usr/local/lib/
+  - sudo cp pcscd-reader.conf /etc/reader.conf.d/
+  - travis_wait 10 sudo pcscd -a -f >/tmp/pcscd.log &
+  - sleep 3
+  - timeout 1s pcsc_scan || true
+  - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
+  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
+  - sudo killall pcscd || true
+after_failure:
+  - cat /tmp/pcscd.log
