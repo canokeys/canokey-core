@@ -370,8 +370,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   }
 
-  int length = get_block_size(alg);
-
+  uint16_t length = get_block_size(alg);
   uint16_t pos[6] = {0};
   int16_t len[6];
   uint16_t dat_len = tlv_get_length(buffer + 1);
@@ -393,8 +392,9 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   //
 
   // > Client application sends a challenge to the PIV Card Application
-  if (pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0 &&
-      pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0) {
+  if (pos[IDX_WITNESS] == 0 && pos[IDX_CHALLENGE] > 0 &&
+      len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
+      len[IDX_RESPONSE] == 0) {
     authenticate_reset();
     if (P2 != 0x9A && P2 != 0x9E)
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -423,8 +423,11 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] == 0) {
     authenticate_reset();
+    in_admin_status = 0;
+
     if (P2 != 0x9B)
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+
     buffer[0] = 0x7C;
     buffer[1] = length + 2;
     buffer[2] = TAG_CHALLENGE;
@@ -464,9 +467,9 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
+
     authenticate_reset();
     in_admin_status = 1;
-    return 0;
   }
 
   //
@@ -475,6 +478,35 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a WITNESS from the PIV Card Application.
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] == 0) {
+    authenticate_reset();
+    in_admin_status = 0;
+
+    if (P2 != 0x9B)
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+
+    auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
+    auth_ctx[OFFSET_AUTH_KEY_ID] = P2;
+    auth_ctx[OFFSET_AUTH_ALGO] = alg;
+    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, length);
+
+    buffer[0] = 0x7C;
+    buffer[1] = length + 2;
+    buffer[2] = TAG_WITNESS;
+    buffer[3] = length;
+    buffer_len = length + 4;
+
+    if (alg == ALG_TDEA_3KEY) {
+      uint8_t key[24];
+      if (read_file(key_path, key, 24) < 0)
+        return -1;
+      tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + 4, key);
+    } else if (alg == ALG_AES_128) {
+      // TODO
+    } else {
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    }
+
+    send_response(rapdu, LE);
   }
 
   //
@@ -485,6 +517,40 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 &&
            pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL ||
+        auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
+        auth_ctx[OFFSET_AUTH_ALGO] != alg || length != len[IDX_WITNESS] ||
+        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + pos[IDX_WITNESS],
+               length) != 0) {
+      authenticate_reset();
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    }
+
+    if (length != len[IDX_CHALLENGE]) {
+      authenticate_reset();
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+
+    buffer[0] = 0x7C;
+    buffer[1] = length + 2;
+    buffer[2] = TAG_RESPONSE;
+    buffer[3] = length;
+    buffer_len = length + 4;
+
+    if (alg == ALG_TDEA_3KEY) {
+      uint8_t key[24];
+      if (read_file(key_path, key, 24) < 0)
+        return -1;
+      tdes_dec(buffer + pos[IDX_CHALLENGE], buffer + 4, key);
+    } else if (alg == ALG_AES_128) {
+      // TODO
+    } else {
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    }
+
+    authenticate_reset();
+    in_admin_status = 1;
+    send_response(rapdu, LE);
   }
 
   //
@@ -514,8 +580,8 @@ int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
-//  if (!in_admin_status)
-//    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  //  if (!in_admin_status)
+  //    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) ||
       buffer[0] != 0xAC || buffer[2] != 0x80 || buffer[3] != 0x01)
     EXCEPT(SW_WRONG_DATA);
