@@ -118,11 +118,14 @@ int virt_card_apdu_transceive(
         else if(c->lc >= 5 && memcmp(c->data, "\xA0\x00\x00\x03\x08", 5) == 0) {
             current_applet = APPLET_PIV;
         }
+        else {
+            current_applet = APPLET_NULL;
+        }
     }
     switch(current_applet) {
         default:
             printf("No applet selected yet\n");
-            r->sw = 0x6D00;
+            r->sw = 0x6A82;
             r->len = 0;
             ret = 0;
             break;
