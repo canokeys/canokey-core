@@ -15,6 +15,7 @@ addons:
       - pcscd
       - pcsc-tools
       - yubico-piv-tool
+      - gpg
       - opensc
       - libpcsclite-dev
       - libcmocka-dev
@@ -48,20 +49,22 @@ script:
   -
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   -
+  - "echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: qwert\n%commit\n%echo done' | gpg --batch --gen-key"
+  -
   - pkcs15-tool -D
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456
   - yubico-piv-tool -r 'Virtual Card 00 00' -a change-pin -P 123456 -N 654321
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 654321
-  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456
-  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456
+  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 123456 | grep '1 tries left before pin is blocked.'
   - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 654321
-  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
-  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
-  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
-  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 654321
-  - #yubico-piv-tool -r 'Virtual Card 00 00' -P 654321 -a generate -s 9e >/tmp/pubkey-9e.pem
+  - yubico-piv-tool -r 'Virtual Card 00 00' -P 654321 -a generate -s 9e >/tmp/pubkey-9e.pem
   - #yubico-piv-tool -r 'Virtual Card 00 00' -P 654321 -a import-certificate -s 9e < /tmp/cert-9e.pem
   - #yubico-piv-tool -r 'Virtual Card 00 00' -P 654321 -a selfsign-certificate -s 9e -S '/CN=test' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
+  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
+  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
+  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 222222
+  - yubico-piv-tool -r 'Virtual Card 00 00' -a verify-pin -P 654321
   -
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 3
   - sudo killall pcscd || true
