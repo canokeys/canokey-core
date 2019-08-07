@@ -548,7 +548,7 @@ int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (get_file_size(KEY_DEC_PATH) == 0)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   rsa_key_t dec_key;
-  if (openpgp_key_get_rsa_key(SIG_CERT_PATH, &dec_key) < 0)
+  if (openpgp_key_get_rsa_key(KEY_DEC_PATH, &dec_key) < 0)
     return -1;
   size_t olen;
   if (rsa_decrypt_pkcs_v15(&dec_key, DATA, &olen, RDATA) < 0)
