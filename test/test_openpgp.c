@@ -210,5 +210,9 @@ int main() {
       cmocka_unit_test(test_special),
   };
 
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  int ret = cmocka_run_group_tests(tests, NULL, NULL);
+
+  lfs_emubd_destroy(&cfg);
+
+  return ret;
 }

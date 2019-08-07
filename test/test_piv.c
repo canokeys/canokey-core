@@ -1,7 +1,7 @@
+#include <cmocka.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <cmocka.h>
 
 #include <apdu.h>
 #include <crypto-util.h>
@@ -103,8 +103,8 @@ static void test_auth(void **state) {
 
   LC = 0x0C;
   memcpy(DATA,
-         (uint8_t[]){0x7C, 0x0A, 0x82, 0x08,
-                     0x35, 0x51, 0xB0, 0xA1, 0x56, 0xF6, 0x95, 0xD1},
+         (uint8_t[]){0x7C, 0x0A, 0x82, 0x08, 0x35, 0x51, 0xB0, 0xA1, 0x56, 0xF6,
+                     0x95, 0xD1},
          0x0C);
   piv_process_apdu(capdu, rapdu);
   assert_int_equal(SW, SW_NO_ERROR);
@@ -137,5 +137,9 @@ int main() {
       cmocka_unit_test(test_auth),
   };
 
-  return cmocka_run_group_tests(tests, NULL, NULL);
+  int ret = cmocka_run_group_tests(tests, NULL, NULL);
+
+  lfs_emubd_destroy(&cfg);
+
+  return ret;
 }
