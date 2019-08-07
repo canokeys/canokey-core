@@ -10,7 +10,7 @@ set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -lasan")
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 if (ENABLE_TESTS)
-    add_definitions(-DTEST)
+    add_definitions(-DTEST -DNFC)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
@@ -31,7 +31,6 @@ if (ENABLE_TESTS)
     pkg_search_module(PCSCLITE libpcsclite)
 
     if (PCSCLITE_FOUND)
-        add_definitions(-DNFC)
         add_library(u2f-virt-card SHARED 
             virt-card/ifdhandler.c
             virt-card/apdu-adapter.c
