@@ -1,0 +1,70 @@
+diff --git a/u2f-tests/NFC/u2f_nfc_test.cc b/u2f-tests/NFC/u2f_nfc_test.cc
+index 7e6a4bd..ae20913 100644
+--- a/u2f-tests/NFC/u2f_nfc_test.cc
++++ b/u2f-tests/NFC/u2f_nfc_test.cc
+@@ -190,6 +190,7 @@ int main(int argc, char* argv[]) {
+   CHECK_EQ(0x6700u, xchgAPDUShort(0, U2F_INS_REGISTER, 0, 0, 0, "", &rapduLen, rapdu));
+   CHECK_EQ(0, rapduLen);
+ 
++#if 0
+   setChainingLc(256);
+   std::cout << "\nValid U2F_REGISTER, Short APDU";
+   PASS(test_Enroll(SHORT_APDU, 0x9000u));
+@@ -202,23 +203,25 @@ int main(int argc, char* argv[]) {
+   std::cout << "Check the Signature\n";
+   PASS(enrollCheckSignature(regReq , regRsp));
+   setChainingLc(256);
++#endif
+ 
+   std::cout << "\nValid U2F_REGISTER, Extended APDU";
+   PASS(test_Enroll(EXTENDED_APDU, 0x9000u));
+   std::cout << "Check the Signature\n";
+   PASS(enrollCheckSignature(regReq, regRsp));
+ 
++#if 0
+   std::cout << "\nValid U2F_AUTH, Short APDU";
+   PASS(rapduLen = test_Sign(SHORT_APDU, 0x9000u));
+   std::cout << "Check the Signature & Counter";
+-  PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen));
+-  ctr = MAKE_UINT32(authRsp.ctr);
++  PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen)); ctr = MAKE_UINT32(authRsp.ctr);
++#endif
+ 
+   std::cout << "\nValid U2F_AUTH, Extended APDU";
+   PASS(rapduLen = test_Sign(EXTENDED_APDU, 0x9000u));
+   std::cout << "Check the Signature & Counter";
+   PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen));
+-  CHECK_EQ(MAKE_UINT32(authRsp.ctr), ctr+1); ctr = MAKE_UINT32(authRsp.ctr);
++  ctr = MAKE_UINT32(authRsp.ctr);
+ 
+   std::cout << "\nTest Auth with wrong keyHandle";
+   regRsp.keyHandleCertSig[0] ^= 0x55;
+@@ -230,11 +233,13 @@ int main(int argc, char* argv[]) {
+   PASS(test_Sign(EXTENDED_APDU, 0x6a80));
+   regReq.appId[0] ^= 0xaa;
+ 
++#if 0
+   std::cout << "\nReTest Valid U2F_AUTH, Short APDU";
+   PASS(rapduLen = test_Sign(SHORT_APDU, 0x9000u));
+   std::cout << "Check the Signature & Counter";
+   PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen));
+   CHECK_EQ(MAKE_UINT32(authRsp.ctr), ctr+1); ctr = MAKE_UINT32(authRsp.ctr);
++#endif
+ 
+   std::cout << "\nReTest U2F_AUTH, Extended APDU";
+   PASS(rapduLen = test_Sign(EXTENDED_APDU, 0x9000u));
+@@ -253,6 +258,7 @@ int main(int argc, char* argv[]) {
+   PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen));
+   CHECK_EQ(MAKE_UINT32(authRsp.ctr), ctr+1); ctr = MAKE_UINT32(authRsp.ctr);
+ 
++#if 0
+   std::cout << "\nValid U2F_REGISTER, Short APDU";
+   PASS(test_Enroll(SHORT_APDU, 0x9000u));
+   std::cout << "Check the Signature\n";
+@@ -263,5 +269,6 @@ int main(int argc, char* argv[]) {
+   std::cout << "Check the Signature & Counter";
+   PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen));
+   CHECK_EQ(MAKE_UINT32(authRsp.ctr), ctr+1); ctr = MAKE_UINT32(authRsp.ctr);
++#endif
+   checkPause("----------------------------------\nEnd of Test, Succesfully Completed\n----------------------------------\nHit Key To Exit...");
+ }

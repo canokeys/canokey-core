@@ -22,6 +22,7 @@ script:
   - pushd u2f-ref-code/u2f-tests/HID
   - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
   - cd ../NFC
+  - git apply ../../../virt-card/disable-short-apdu-test.patch
   - make
   - popd
   -
