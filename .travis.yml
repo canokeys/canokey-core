@@ -44,7 +44,7 @@ script:
   - sleep 3
   - timeout 1s pcsc_scan || true
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
-  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
+  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 3
   - sudo killall pcscd || true
 after_failure:
   - cat /tmp/pcscd.log
