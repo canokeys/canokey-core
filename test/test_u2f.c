@@ -3,7 +3,6 @@
 #include <stddef.h>
 #include <cmocka.h>
 
-#include <u2f.h>
 #include <aes.h>
 #include <apdu.h>
 #include <block-cipher.h>
@@ -13,6 +12,7 @@
 #include <lfs.h>
 #include <memzero.h>
 #include <sha.h>
+#include <u2f.h>
 
 uint8_t public_key[] = {
     0x04, 0x7A, 0x59, 0x31, 0x80, 0x86, 0x0C, 0x40, 0x37, 0xC8, 0x3C,
@@ -63,9 +63,11 @@ static void test_u2f_registration(void **state) {
     capdu->data[i] = i;
   }
 
+#ifndef NFC
   // without touch
   u2f_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_CONDITIONS_NOT_SATISFIED);
+#endif
 
   // after touch
   u2f_press();

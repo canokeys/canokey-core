@@ -3,7 +3,6 @@
 #include <block-cipher.h>
 #include <ecdsa.h>
 #include <fs.h>
-#include <lfs.h>
 #include <rand.h>
 #include <sha.h>
 #include <string.h>
