@@ -551,7 +551,7 @@ int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (openpgp_key_get_rsa_key(KEY_DEC_PATH, &dec_key) < 0)
     return -1;
   size_t olen;
-  if (rsa_decrypt_pkcs_v15(&dec_key, DATA, &olen, RDATA) < 0)
+  if (rsa_decrypt_pkcs_v15(&dec_key, DATA + 1, &olen, RDATA) < 0)
     return -1;
   LL = olen;
   return 0;
