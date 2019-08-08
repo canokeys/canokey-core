@@ -415,7 +415,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       buffer[5] = 0x82;
       buffer[6] = HI(length);
       buffer[7] = LO(length);
-      buffer_len = length + 7;
+      buffer_len = length + 8;
     } else
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
