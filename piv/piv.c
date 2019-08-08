@@ -402,7 +402,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     rsa_key_t key;
     if (read_file(key_path, &key, sizeof(rsa_key_t)) < 0)
       return -1;
-    rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 4);
+    rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 8);
 
     buffer[0] = 0x7C;
     buffer[1] = 0x82;
