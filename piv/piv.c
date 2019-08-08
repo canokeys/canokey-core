@@ -635,6 +635,17 @@ int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00)
+    EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0)
+    EXCEPT(SW_WRONG_LENGTH);
+  if (pin_get_retries(&pin) > 0 || pin_get_retries(&puk) > 0)
+    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  piv_install();
+  return 0;
+}
+
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
@@ -703,6 +714,9 @@ restart:
     break;
   case PIV_INS_SET_MANAGEMENT_KEY:
     ret = piv_set_management_key(capdu, rapdu);
+    break;
+  case PIV_INS_RESET:
+    ret = piv_reset(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
