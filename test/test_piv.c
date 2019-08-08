@@ -110,6 +110,15 @@ static void test_gen_key(void **state) {
   piv_process_apdu(capdu, rapdu);
   printHex(RDATA, LL);
   assert_int_equal(SW, 0x610F);
+
+  INS = PIV_INS_GET_RESPONSE;
+  P1 = 0x00;
+  P2 = 0x00;
+  LC = 0;
+  LE = 0x0F;
+  piv_process_apdu(capdu, rapdu);
+  printHex(RDATA, LL);
+  assert_int_equal(SW, SW_NO_ERROR);
 }
 
 static void test_sign(void **state) {

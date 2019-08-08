@@ -613,7 +613,7 @@ int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(buffer + 9, key.n, N_LENGTH);
     buffer[9 + N_LENGTH] = 0x82; // exponent
     buffer[10 + N_LENGTH] = E_LENGTH;
-    memcpy(RDATA + 11 + N_LENGTH, key.e, E_LENGTH);
+    memcpy(buffer + 11 + N_LENGTH, key.e, E_LENGTH);
     buffer_len = 11 + N_LENGTH + E_LENGTH;
     send_response(rapdu, LE);
   } else
