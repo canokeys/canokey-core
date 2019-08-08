@@ -243,16 +243,12 @@ int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL)
       EXCEPT(SW_FILE_NOT_FOUND);
-    buffer[0] = 0x5C;
-    buffer[1] = 0x82;
-    int len = read_file(path, buffer + 4, MAX_BUFFER_SIZE - 4);
+    int len = read_file(path, buffer, MAX_BUFFER_SIZE - 4);
     if (len < 0)
       return -1;
     if (len == 0)
       EXCEPT(SW_FILE_NOT_FOUND);
-    buffer[2] = HI(len);
-    buffer[3] = LO(len);
-    buffer_len = len + 4;
+    buffer_len = len;
     send_response(rapdu, LE);
   } else
     EXCEPT(SW_FILE_NOT_FOUND);

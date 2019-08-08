@@ -61,15 +61,15 @@ static void test_data(void **state) {
   DATA[4] = 0x05;
   LE = 0x100;
   piv_process_apdu(capdu, rapdu);
-  assert_int_equal(RDATA[0], 0x5C);
-  assert_int_equal(RDATA[1], 0x82);
-  assert_int_equal(RDATA[2], 0x01);
-  assert_int_equal(RDATA[3], 0xF9);
-  for (int i = 5; i <= 254; ++i)
-    assert_int_equal(RDATA[i - 1], i);
-  assert_int_equal(RDATA[254], 0x00);
-  assert_int_equal(RDATA[255], 0x01);
-  assert_int_equal(SW, 0x61FD);
+  for (int i = 0; i <= 249; ++i)
+    assert_int_equal(RDATA[i], i + 5);
+  assert_int_equal(RDATA[250], 0x00);
+  assert_int_equal(RDATA[251], 0x01);
+  assert_int_equal(RDATA[252], 0x02);
+  assert_int_equal(RDATA[253], 0x03);
+  assert_int_equal(RDATA[254], 0x04);
+  assert_int_equal(RDATA[255], 0x05);
+  assert_int_equal(SW, 0x61F9);
 
   INS = PIV_GET_RESPONSE;
   P1 = 0x00;
@@ -78,9 +78,9 @@ static void test_data(void **state) {
   LE = 0xFD;
   piv_process_apdu(capdu, rapdu);
   assert_int_equal(SW, SW_NO_ERROR);
-  assert_int_equal(LL, 0xFD);
-  for (int i = 0; i != 253; ++i)
-    assert_int_equal(RDATA[i], i + 2);
+  assert_int_equal(LL, 0xF9);
+  for (int i = 0; i != 0xF9; ++i)
+    assert_int_equal(RDATA[i], i + 6);
 }
 
 static void test_auth(void **state) {
