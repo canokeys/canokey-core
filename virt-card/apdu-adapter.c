@@ -31,7 +31,10 @@ int virt_card_apdu_transceive(
     } else if(txLen == 4) {
         // Without Lc or Le
     } else if(txLen == 5) {
+        // With Le
         Le = txBuf[SHORT_LC];
+        if(Le == 0)
+            Le = 0x100;
     } else if(txBuf[SHORT_LC] && txLen == 5+txBuf[SHORT_LC]) {
         // With Lc
         Lc = txBuf[SHORT_LC];
