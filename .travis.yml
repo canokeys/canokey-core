@@ -92,6 +92,10 @@ script:
   - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
   - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
   - yubico-piv-tool -r "" -a verify-pin -P 654321 2>&1 | grep 'Pin code blocked'
+  - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 999999 2>&1 | grep 'Successfully unblocked the pin code'
+  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 87654321 2>&1 | grep 'Successfully changed the puk code'
+  - yubico-piv-tool -r "" -a unblock-pin -P 87654321 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
+  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
   -
   - sudo killall pcscd || true
 after_failure:
