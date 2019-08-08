@@ -143,6 +143,24 @@ static void test_gen_key(void **state) {
   assert_int_equal(SW, 0x610F);
 }
 
+static void test_sign(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+
+  apdu_fill_with_command(capdu, "10 87 07 9E FF 7C 82 01 06 82 00 81 82 01 00 00 01 FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF 00 30 31 30 0D 06 09 60 86 48 01 65 03 04 02 01 05 00 04 20 3D 29 57 C1 48 45 0A FF A1 16 67 C5 2B F9 C5 1B 78 3D 8D DB 35");
+  piv_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 87 07 9E 0B 02 A2 2B 99 FE 52 EE F9 9D BA 0F 00");
+  piv_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -169,6 +187,7 @@ int main() {
       cmocka_unit_test(test_data),
       cmocka_unit_test(test_auth),
       cmocka_unit_test(test_gen_key),
+      cmocka_unit_test(test_sign),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

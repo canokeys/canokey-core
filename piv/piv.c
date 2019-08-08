@@ -88,13 +88,15 @@ static int create_key(const char *path) {
   return 0;
 }
 
-static int get_block_size(uint8_t alg) {
+static int get_input_size(uint8_t alg) {
   switch (alg) {
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
     return 8;
   case ALG_AES_128:
     return 16;
+  case ALG_RSA_2048:
+    return 256;
   default:
     return 0;
   }
@@ -370,7 +372,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   }
 
-  uint16_t length = get_block_size(alg);
+  uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
   int16_t len[6];
   uint16_t dat_len = tlv_get_length(buffer + 1);
