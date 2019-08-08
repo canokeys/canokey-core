@@ -82,6 +82,8 @@ script:
   - yubico-piv-tool -r "" -a generate -s 9e >/tmp/pubkey-9e.pem
   - yubico-piv-tool -r "" -a selfsign-certificate -s 9e -S '/CN=CertAtSlot9e' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
   - yubico-piv-tool -r "" -a import-certificate -s 9e < /tmp/cert-9e.pem
+  - yubico-piv-tool -r "" -a status
+  - yubico-piv-tool -r "" -a test-signature -s 9e -H SHA1 < /tmp/cert-9e.pem
   - pkcs15-tool -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
   - echo hello >/tmp/hello.txt
   - pkcs11-tool -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
