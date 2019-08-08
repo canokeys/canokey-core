@@ -17,6 +17,17 @@ static void test_data(void **state) {
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
+
+  // external auth
+  apdu_fill_with_command(capdu, "00 87 00 9B 04 7C 02 81 00 00");
+  piv_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+  apdu_fill_with_command(capdu, "00 87 00 9B 0C 7C 0A 82 08 35 51 B0 A1 56 F6 95 D1");
+  piv_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+
   CLA = 0x10;
   INS = PIV_INS_PUT_DATA;
   P1 = 0x3F;
@@ -71,7 +82,7 @@ static void test_data(void **state) {
   assert_int_equal(RDATA[255], 0x05);
   assert_int_equal(SW, 0x61F9);
 
-  INS = PIV_GET_RESPONSE;
+  INS = PIV_INS_GET_RESPONSE;
   P1 = 0x00;
   P2 = 0x00;
   LC = 0;
@@ -83,48 +94,6 @@ static void test_data(void **state) {
     assert_int_equal(RDATA[i], i + 6);
 }
 
-static void test_auth(void **state) {
-  (void)state;
-
-  uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
-  CLA = 0x00;
-  INS = PIV_GENERAL_AUTHENTICATE;
-  P1 = 0x00;
-  P2 = 0x9B;
-  LC = 0x04;
-  memcpy(DATA, (uint8_t[]){0x7C, 0x02, 0x81, 0x00}, 0x04);
-  LE = 256;
-  piv_process_apdu(capdu, rapdu);
-  printHex(RDATA, LL);
-  assert_int_equal(SW, SW_NO_ERROR);
-  assert_int_equal(LL, 12);
-
-  LC = 0x0C;
-  memcpy(DATA,
-         (uint8_t[]){0x7C, 0x0A, 0x82, 0x08, 0x35, 0x51, 0xB0, 0xA1, 0x56, 0xF6,
-                     0x95, 0xD1},
-         0x0C);
-  piv_process_apdu(capdu, rapdu);
-  assert_int_equal(SW, SW_NO_ERROR);
-
-  LC = 0x04;
-  memcpy(DATA, (uint8_t[]){0x7C, 0x02, 0x80, 0x00}, 0x04);
-  piv_process_apdu(capdu, rapdu);
-  printHex(RDATA, LL);
-  assert_int_equal(SW, SW_NO_ERROR);
-
-  LC = 0x18;
-  memcpy(DATA, (uint8_t[]){0x7C, 0x16, 0x80, 0x08, 0xE9, 0xF6, 0xCC, 0xD1,
-                           0x34, 0x53, 0xF9, 0xAA, 0x81, 0x08, 0x01, 0x02,
-                           0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x82, 0x00},
-         0x18);
-  piv_process_apdu(capdu, rapdu);
-  printHex(RDATA, LL);
-  assert_int_equal(SW, SW_NO_ERROR);
-}
-
 static void test_gen_key(void **state) {
   (void)state;
 
@@ -132,7 +101,7 @@ static void test_gen_key(void **state) {
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
   CLA = 0x00;
-  INS = PIV_GENERATE_ASYMMETRIC_KEY_PAIR;
+  INS = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
   P1 = 0x00;
   P2 = 0x9E;
   LC = 0x05;
@@ -185,7 +154,6 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_data),
-      cmocka_unit_test(test_auth),
       cmocka_unit_test(test_gen_key),
       cmocka_unit_test(test_sign),
   };
