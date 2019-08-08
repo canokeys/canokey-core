@@ -130,6 +130,19 @@ static void test_sign(void **state) {
   printHex(RDATA, LL);
 }
 
+static void test_change_pin(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+
+  apdu_fill_with_command(capdu, "00 2C 00 80 10 31 32 33 34 35 36 37 38 39 39 39 39 39 39 FF FF");
+  piv_process_apdu(capdu, rapdu);
+  printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -156,6 +169,7 @@ int main() {
       cmocka_unit_test(test_data),
       cmocka_unit_test(test_gen_key),
       cmocka_unit_test(test_sign),
+      cmocka_unit_test(test_change_pin),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

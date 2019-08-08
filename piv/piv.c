@@ -284,29 +284,6 @@ int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
 int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00)
     EXCEPT(SW_WRONG_P1P2);
-  if (P2 != 0x80)
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  if (LC != 16)
-    EXCEPT(SW_WRONG_LENGTH);
-  uint8_t ctr;
-  int err = pin_verify(&pin, DATA, 8, &ctr);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (ctr == 0)
-    EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + ctr);
-  err = pin_update(&pin, DATA + 8, 8);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (err == PIN_LENGTH_INVALID)
-    EXCEPT(SW_WRONG_LENGTH);
-  return 0;
-}
-
-int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
   pin_t *p;
   if (P2 == 0x80)
     p = &pin;
@@ -317,7 +294,7 @@ int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 16)
     EXCEPT(SW_WRONG_LENGTH);
   uint8_t ctr;
-  int err = pin_verify(&pin, DATA, 8, &ctr);
+  int err = pin_verify(p, DATA, 8, &ctr);
   if (err == PIN_IO_FAIL)
     return -1;
   if (ctr == 0)
@@ -325,6 +302,29 @@ int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   if (err == PIN_AUTH_FAIL)
     EXCEPT(0x63C0 + ctr);
   err = pin_update(p, DATA + 8, 8);
+  if (err == PIN_IO_FAIL)
+    return -1;
+  if (err == PIN_LENGTH_INVALID)
+    EXCEPT(SW_WRONG_LENGTH);
+  return 0;
+}
+
+int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00)
+    EXCEPT(SW_WRONG_P1P2);
+  if (P2 != 0x80)
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (LC != 16)
+    EXCEPT(SW_WRONG_LENGTH);
+  uint8_t ctr;
+  int err = pin_verify(&puk, DATA, 8, &ctr);
+  if (err == PIN_IO_FAIL)
+    return -1;
+  if (ctr == 0)
+    EXCEPT(SW_AUTHENTICATION_BLOCKED);
+  if (err == PIN_AUTH_FAIL)
+    EXCEPT(0x63C0 + ctr);
+  err = pin_update(&pin, DATA + 8, 8);
   if (err == PIN_IO_FAIL)
     return -1;
   if (err == PIN_LENGTH_INVALID)
