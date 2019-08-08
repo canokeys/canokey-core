@@ -405,10 +405,14 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 4);
 
     buffer[0] = 0x7C;
-    buffer[1] = length + 2;
-    buffer[2] = TAG_RESPONSE;
-    buffer[3] = length;
-    buffer_len = length + 4;
+    buffer[1] = 0x82;
+    buffer[2] = HI(length + 4u);
+    buffer[3] = LO(length + 4u);
+    buffer[4] = TAG_RESPONSE;
+    buffer[5] = 0x82;
+    buffer[6] = HI(length);
+    buffer[7] = LO(length);
+    buffer_len = length + 7;
 
     send_response(rapdu, LE);
   }
