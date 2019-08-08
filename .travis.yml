@@ -78,7 +78,7 @@ script:
   - yubico-piv-tool -r "" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
   - yubico-piv-tool -r "" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
   - yubico-piv-tool -r "" -a verify-pin -P 654321
-  - #yubico-piv-tool -r "" -a set-mgm-key -n 010203040506070801020304050607080102030405060708
+  - yubico-piv-tool -r "" -a set-mgm-key -n 010203040506070801020304050607080102030405060708
   - yubico-piv-tool -r "" -a generate -s 9e >/tmp/pubkey-9e.pem
   - yubico-piv-tool -r "" -a selfsign-certificate -s 9e -S '/CN=CertAtSlot9e' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
   - yubico-piv-tool -r "" -a import-certificate -s 9e < /tmp/cert-9e.pem
