@@ -414,16 +414,13 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_SECURITY_SUPPORT_TEMPLATE:
-    RDATA[off++] = TAG_SECURITY_SUPPORT_TEMPLATE;
-    RDATA[off++] = DIGITAL_SIG_COUNTER_LENGTH + 2;
-    RDATA[off++] = TAG_DIGITAL_SIG_COUNTER;
-    RDATA[off++] = DIGITAL_SIG_COUNTER_LENGTH;
-    len = read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, RDATA + off,
+    RDATA[0] = TAG_DIGITAL_SIG_COUNTER;
+    RDATA[1] = DIGITAL_SIG_COUNTER_LENGTH;
+    len = read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, RDATA + 2,
                     DIGITAL_SIG_COUNTER_LENGTH);
     if (len < 0)
       return -1;
-    off += len;
-    LL = off;
+    LL = 2 + DIGITAL_SIG_COUNTER_LENGTH;
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
@@ -610,11 +607,12 @@ static int openpgp_send_public_key(const uint8_t *key, uint8_t key_type,
     memcpy(RDATA + 11 + N_LENGTH, ((rsa_key_t *)key)->e, E_LENGTH);
     LL = 11 + N_LENGTH + E_LENGTH;
   } else {
-    RDATA[2] = ECC_PUB_KEY_SIZE + 2;
+    RDATA[2] = ECC_PUB_KEY_SIZE + 3;
     RDATA[3] = 0x86;
-    RDATA[4] = 0x04;
-    memcpy(RDATA + 5, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
-    LL = ECC_PUB_KEY_SIZE + 5;
+    RDATA[4] = ECC_PUB_KEY_SIZE + 1;
+    RDATA[5] = 0x04;
+    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    LL = ECC_PUB_KEY_SIZE + 6;
   }
   return 0;
 }
