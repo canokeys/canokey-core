@@ -1,11 +1,11 @@
-#include <u2f.h>
 #include <apdu.h>
 #include <block-cipher.h>
-#include <ecdsa.h>
+#include <ecc.h>
 #include <fs.h>
 #include <rand.h>
 #include <sha.h>
 #include <string.h>
+#include <u2f.h>
 
 /*
  * Key Handle:
@@ -46,8 +46,8 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)RDATA;
   uint8_t handle[U2F_APPID_SIZE + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE];
   memcpy(handle, req->appId, U2F_APPID_SIZE);
-  ecdsa_generate(ECDSA_SECP256R1, handle + U2F_APPID_SIZE,
-                 handle + U2F_APPID_SIZE + U2F_EC_KEY_SIZE);
+  ecc_generate(ECC_SECP256R1, handle + U2F_APPID_SIZE,
+               handle + U2F_APPID_SIZE + U2F_EC_KEY_SIZE);
 
   uint8_t key_buf[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
   int err = read_file(KEY_FILE, key_buf, sizeof(key_buf));
@@ -84,7 +84,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_Update(&ctx, handle, U2F_KH_SIZE);
   sha256_Update(&ctx, (const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
   sha256_Final(&ctx, handle);
-  ecdsa_sign(ECDSA_SECP256R1, key_buf, handle, handle + 32);
+  ecdsa_sign(ECC_SECP256R1, key_buf, handle, handle + 32);
   size_t signature_len = ecdsa_sig2ansi(
       handle + 32, resp->keyHandleCertSig + U2F_KH_SIZE + cert_len);
   SW = SW_NO_ERROR;
@@ -154,7 +154,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_Update(&ctx, req->chal, U2F_CHAL_SIZE);
   sha256_Final(&ctx, req->appId);
 
-  ecdsa_sign(ECDSA_SECP256R1, req->keyHandle + U2F_APPID_SIZE, req->appId,
+  ecdsa_sign(ECC_SECP256R1, req->keyHandle + U2F_APPID_SIZE, req->appId,
              resp->sig);
   size_t signature_len = ecdsa_sig2ansi(resp->sig, resp->sig);
 
@@ -188,7 +188,7 @@ int u2f_personalization(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
 
   uint8_t buffer[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
-  ecdsa_generate(ECDSA_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
+  ecc_generate(ECC_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
   random_buffer(buffer + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE,
                 U2F_SECRET_KEY_SIZE);
   int err = write_file(KEY_FILE, buffer, sizeof(buffer));

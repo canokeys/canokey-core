@@ -6,7 +6,7 @@
 #include <aes.h>
 #include <apdu.h>
 #include <block-cipher.h>
-#include <ecdsa.h>
+#include <ecc.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
 #include <lfs.h>
@@ -133,7 +133,7 @@ static void test_u2f_registration(void **state) {
   sha256_Update(&ctx, expected_keyhandle, U2F_KH_SIZE);
   sha256_Update(&ctx, public_key, sizeof(public_key));
   sha256_Final(&ctx, sig_buffer);
-  ecdsa_sign(ECDSA_SECP256R1, priv_key, sig_buffer, expected_keyhandle);
+  ecdsa_sign(ECC_SECP256R1, priv_key, sig_buffer, expected_keyhandle);
   int sig_len = ecdsa_sig2ansi(expected_keyhandle, expected_keyhandle);
   for (int i = 0; i != sig_len; ++i) {
     assert_int_equal(resp->keyHandleCertSig[i + U2F_KH_SIZE + 1],
@@ -214,7 +214,7 @@ static void test_u2f_authenticate(void **state) {
   sha256_Init(&ctx);
   sha256_Update(&ctx, sig_buffer, 69);
   sha256_Final(&ctx, sig_buffer);
-  ecdsa_sign(ECDSA_SECP256R1, priv_key, sig_buffer, sig_buffer);
+  ecdsa_sign(ECC_SECP256R1, priv_key, sig_buffer, sig_buffer);
   int sig_len = ecdsa_sig2ansi(sig_buffer, sig_buffer);
   for (int i = 0; i != sig_len; ++i) {
     assert_int_equal(resp->sig[i], sig_buffer[i]);
