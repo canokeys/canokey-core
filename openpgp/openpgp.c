@@ -878,6 +878,9 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(*p);
   if (key_path == NULL)
     EXCEPT(SW_WRONG_DATA);
+  uint8_t attr[MAX_ATTR_LENGTH];
+  if (openpgp_key_get_attributes(key_path, attr) < 0)
+    return -1;
   ++p;
   if (*p++ != 0x00)
     EXCEPT(SW_WRONG_DATA);
@@ -886,35 +889,39 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t template_len = tlv_get_length(p);
   p += tlv_length_size(template_len);
 
-  const uint8_t *data_tag = p + template_len;
-  if (*p++ != 0x91)
-    EXCEPT(SW_WRONG_DATA);
-  int e_len = tlv_get_length(p);
-  p += tlv_length_size(e_len);
-  if (*p++ != 0x92)
-    EXCEPT(SW_WRONG_DATA);
-  int p_len = tlv_get_length(p);
-  p += tlv_length_size(p_len);
-  if (*p++ != 0x93)
-    EXCEPT(SW_WRONG_DATA);
-  int q_len = tlv_get_length(p);
+  if (attr[0] == KEY_TYPE_RSA) {
+    const uint8_t *data_tag = p + template_len;
+    if (*p++ != 0x91)
+      EXCEPT(SW_WRONG_DATA);
+    int e_len = tlv_get_length(p);
+    p += tlv_length_size(e_len);
+    if (*p++ != 0x92)
+      EXCEPT(SW_WRONG_DATA);
+    int p_len = tlv_get_length(p);
+    p += tlv_length_size(p_len);
+    if (*p++ != 0x93)
+      EXCEPT(SW_WRONG_DATA);
+    int q_len = tlv_get_length(p);
 
-  p = data_tag;
-  if (*p++ != 0x5F || *p++ != 0x48)
-    EXCEPT(SW_WRONG_DATA);
-  p += tlv_length_size(tlv_get_length(p));
+    p = data_tag;
+    if (*p++ != 0x5F || *p++ != 0x48)
+      EXCEPT(SW_WRONG_DATA);
+    p += tlv_length_size(tlv_get_length(p));
 
-  rsa_key_t key;
-  memset(&key, 0, sizeof(key));
-  memcpy(key.e + (E_LENGTH - e_len), p, e_len);
-  p += e_len;
-  memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
-  p += p_len;
-  memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
+    rsa_key_t key;
+    memset(&key, 0, sizeof(key));
+    memcpy(key.e + (E_LENGTH - e_len), p, e_len);
+    p += e_len;
+    memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
+    p += p_len;
+    memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
 
-  if (rsa_complete_key(&key) < 0)
-    return -1;
-  if (openpgp_key_set_key(key_path, &key, sizeof(key)) < 0)
+    if (rsa_complete_key(&key) < 0)
+      return -1;
+    if (openpgp_key_set_key(key_path, &key, sizeof(key)) < 0)
+      return -1;
+  }
+  if (openpgp_key_set_status(key_path, KEY_GENERATED) < 0)
     return -1;
 
   return 0;
