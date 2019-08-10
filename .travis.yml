@@ -69,6 +69,13 @@ script:
   - gpg </tmp/sign.gpg
   - "echo world | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}') --encrypt >/tmp/enc.gpg"
   - gpg --pinentry-mode loopback --passphrase-file=/tmp/passwd -d /tmp/enc.gpg
+  - echo 12345678 >/tmp/passwd
+  - echo -e 'admin\nfactory-reset\ny\nyes' | gpg2 --command-fd 0 --batch --edit-card # clear all keys, no pin verification at all
+  - echo -e 'addkey\n10\n3\n0\nsave' | gpg2 --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # gen ecdsa P-256 key[4]
+  - echo -e 'key 4\nkeytocard\n1\nsave' | gpg2 --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[4] to Signature key
+  - echo 123456 >/tmp/passwd
+  - "echo hello3 | gpg --armor --pinentry-mode loopback --passphrase-file=/tmp/passwd --default-key $(gpg2 -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
+  - gpg </tmp/sign.gpg
   - gpgconf --kill gpg-agent
   - # PIV tests:
   - pkcs15-tool -D
