@@ -71,7 +71,7 @@ script:
   - gpg --pinentry-mode loopback --passphrase-file=/tmp/passwd -d /tmp/enc.gpg
   - echo 12345678 >/tmp/passwd
   - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --batch --edit-card # clear all keys, no pin verification at all
-  - echo -e 'addkey\n10\n3\n0\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # gen ecdsa P-256 key[4]
+  - echo -e 'addkey\n10\n3\n0\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID --expert # gen ecdsa P-256 key[4]
   - echo -e 'key 4\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[4] to Signature key
   - echo 123456 >/tmp/passwd
   - "echo hello3 | gpg --armor --pinentry-mode loopback --passphrase-file=/tmp/passwd --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
