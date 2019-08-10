@@ -310,18 +310,24 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_SIG;
     RDATA[off++] = ALGO_ATTRIBUTES_LENGTH;
-    openpgp_key_get_attributes(SIG_KEY_PATH, RDATA + off);
-    off += ALGO_ATTRIBUTES_LENGTH;
+    len = openpgp_key_get_attributes(SIG_KEY_PATH, RDATA + off);
+    if (len < 0)
+      return -1;
+    off += len;
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_DEC;
     RDATA[off++] = ALGO_ATTRIBUTES_LENGTH;
-    openpgp_key_get_attributes(DEC_KEY_PATH, RDATA + off);
-    off += ALGO_ATTRIBUTES_LENGTH;
+    len = openpgp_key_get_attributes(DEC_KEY_PATH, RDATA + off);
+    if (len < 0)
+      return -1;
+    off += len;
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_AUT;
     RDATA[off++] = ALGO_ATTRIBUTES_LENGTH;
-    openpgp_key_get_attributes(AUT_KEY_PATH, RDATA + off);
-    off += ALGO_ATTRIBUTES_LENGTH;
+    len = openpgp_key_get_attributes(AUT_KEY_PATH, RDATA + off);
+    if (len < 0)
+      return -1;
+    off += len;
 
     RDATA[off++] = TAG_PW_STATUS;
     RDATA[off++] = PW_STATUS_LENGTH;
