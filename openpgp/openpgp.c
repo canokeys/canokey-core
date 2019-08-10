@@ -309,21 +309,21 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     off += sizeof(extended_capabilities);
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_SIG;
-    len = openpgp_key_get_attributes(SIG_KEY_PATH, RDATA + off);
+    len = openpgp_key_get_attributes(SIG_KEY_PATH, RDATA + off + 1);
     if (len < 0)
       return -1;
     RDATA[off++] = len;
     off += len;
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_DEC;
-    len = openpgp_key_get_attributes(DEC_KEY_PATH, RDATA + off);
+    len = openpgp_key_get_attributes(DEC_KEY_PATH, RDATA + off + 1);
     if (len < 0)
       return -1;
     RDATA[off++] = len;
     off += len;
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_AUT;
-    len = openpgp_key_get_attributes(AUT_KEY_PATH, RDATA + off);
+    len = openpgp_key_get_attributes(AUT_KEY_PATH, RDATA + off + 1);
     if (len < 0)
       return -1;
     RDATA[off++] = len;
