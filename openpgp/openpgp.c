@@ -147,16 +147,16 @@ int openpgp_install() {
   // Key data
   uint8_t buf[20];
   memset(buf, 0, sizeof(buf));
-  if (write_file(SIG_CERT_PATH, NULL, 0) < 0)
+  if (write_file(SIG_KEY_PATH, NULL, 0) < 0)
     return -1;
-  if (openpgp_key_set_fingerprint(SIG_CERT_PATH, buf) < 0)
+  if (openpgp_key_set_fingerprint(SIG_KEY_PATH, buf) < 0)
     return -1;
-  if (openpgp_key_set_datetime(SIG_CERT_PATH, buf) < 0)
+  if (openpgp_key_set_datetime(SIG_KEY_PATH, buf) < 0)
     return -1;
-  if (openpgp_key_set_attributes(SIG_CERT_PATH, rsa_attributes,
+  if (openpgp_key_set_attributes(SIG_KEY_PATH, rsa_attributes,
                                  sizeof(rsa_attributes)) < 0)
     return -1;
-  if (openpgp_key_set_status(SIG_CERT_PATH, KEY_NOT_PRESENT) < 0)
+  if (openpgp_key_set_status(SIG_KEY_PATH, KEY_NOT_PRESENT) < 0)
     return -1;
   if (write_file(DEC_KEY_PATH, NULL, 0) < 0)
     return -1;
