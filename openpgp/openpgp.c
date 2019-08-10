@@ -39,8 +39,8 @@
 #define STATE_GET_CERT_DATA 0x02
 
 #define KEY_TYPE_RSA 0x01
-#define KEY_TYPE_ECDSA 0x0D
-#define KEY_TYPE_ECDH 0x0C
+#define KEY_TYPE_ECDSA 0x13
+#define KEY_TYPE_ECDH 0x12
 
 static const uint8_t rsa_attributes[] = {KEY_TYPE_RSA, 0x08, 0x00,
                                          0x00,         0x20, 0x00};
