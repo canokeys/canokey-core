@@ -304,7 +304,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_SIG;
     RDATA[off++] = ALGO_ATTRIBUTES_LENGTH;
-    openpgp_key_get_attributes(SIG_CERT_PATH, RDATA + off);
+    openpgp_key_get_attributes(SIG_KEY_PATH, RDATA + off);
     off += ALGO_ATTRIBUTES_LENGTH;
 
     RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_DEC;
@@ -339,7 +339,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_KEY_FINGERPRINTS;
     RDATA[off++] = KEY_FINGERPRINT_LENGTH * 3;
-    len = openpgp_key_get_fingerprint(SIG_CERT_PATH, RDATA + off);
+    len = openpgp_key_get_fingerprint(SIG_KEY_PATH, RDATA + off);
     if (len < 0)
       return -1;
     off += len;
@@ -372,7 +372,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_KEY_GENERATION_DATES;
     RDATA[off++] = KEY_DATETIME_LENGTH * 3;
-    len = openpgp_key_get_datetime(SIG_CERT_PATH, RDATA + off);
+    len = openpgp_key_get_datetime(SIG_KEY_PATH, RDATA + off);
     if (len < 0)
       return -1;
     off += len;
@@ -387,7 +387,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_KEY_INFO;
     RDATA[off++] = 6;
-    status = openpgp_key_get_status(SIG_CERT_PATH);
+    status = openpgp_key_get_status(SIG_KEY_PATH);
     if (status < 0)
       return -1;
     RDATA[off++] = 0x01;
@@ -461,7 +461,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_INFO:
-    status = openpgp_key_get_status(SIG_CERT_PATH);
+    status = openpgp_key_get_status(SIG_KEY_PATH);
     if (status < 0)
       return -1;
     RDATA[0] = 0x01;
@@ -780,7 +780,7 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_KEY_SIG_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH)
       EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_fingerprint(SIG_CERT_PATH, DATA) < 0)
+    if (openpgp_key_set_fingerprint(SIG_KEY_PATH, DATA) < 0)
       return -1;
     break;
 
@@ -822,7 +822,7 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_KEY_SIG_GENERATION_DATES:
     if (LC != KEY_DATETIME_LENGTH)
       EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_datetime(SIG_CERT_PATH, DATA) < 0)
+    if (openpgp_key_set_datetime(SIG_KEY_PATH, DATA) < 0)
       return -1;
     break;
 
