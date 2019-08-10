@@ -181,7 +181,8 @@ static void send_response(RAPDU *rapdu, uint16_t le) {
 int piv_deselect() { return 0; }
 
 int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
-  (void)capdu;
+  state = CHAINING_STATE_NORMAL;
+  in_admin_status = 0;
   buffer[0] = 0x61;
   buffer[1] = 6 + sizeof(pix) + sizeof(rid);
   buffer[2] = 0x4F;
@@ -266,7 +267,10 @@ int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC == 0) {
     if (pin.is_validated)
       return 0;
-    EXCEPT(0x63C0 + pin_get_retries(&pin));
+    int retries = pin_get_retries(&pin);
+    if (retries < 0)
+      return -1;
+    EXCEPT(SW_PIN_RETRIES + retries);
   }
   if (LC != 8)
     EXCEPT(SW_WRONG_LENGTH);
@@ -277,7 +281,7 @@ int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (ctr == 0)
     EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + ctr);
+    EXCEPT(SW_PIN_RETRIES + ctr);
   return 0;
 }
 
@@ -300,7 +304,7 @@ int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (ctr == 0)
     EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + ctr);
+    EXCEPT(SW_PIN_RETRIES + ctr);
   err = pin_update(p, DATA + 8, 8);
   if (err == PIN_IO_FAIL)
     return -1;
@@ -731,7 +735,5 @@ int piv_config(uint8_t *buf, uint16_t buffer_size) {
     return -1;
   buffer = buf;
   buffer_cap = buffer_size;
-  state = CHAINING_STATE_NORMAL;
-  in_admin_status = 0;
   return 0;
 }

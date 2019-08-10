@@ -34,6 +34,7 @@ typedef struct {
 #define SW_REFERENCE_DATA_NOT_FOUND 0x6A88
 #define SW_INS_NOT_SUPPORTED 0x6D00
 #define SW_CLA_NOT_SUPPORTED 0x6E00
+#define SW_PIN_RETRIES 0x63C0
 
 // Macros
 

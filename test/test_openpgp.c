@@ -36,7 +36,7 @@ static void test_verify(void **state) {
   assert_int_equal(rapdu->sw, SW_SECURITY_STATUS_NOT_SATISFIED);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_AUTHENTICATION_BLOCKED);
-  openpgp_initialize();
+  openpgp_install();
 }
 
 static void test_change_reference_data(void **state) {
@@ -66,7 +66,7 @@ static void test_change_reference_data(void **state) {
   strcpy((char *)capdu->data, "123456654321");
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
-  openpgp_initialize();
+  openpgp_install();
 }
 
 static void test_reset_retry_counter(void **state) {
@@ -198,7 +198,7 @@ int main() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
-  openpgp_initialize();
+  openpgp_install();
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_verify),

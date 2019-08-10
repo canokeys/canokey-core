@@ -4,7 +4,9 @@
 #include <apdu.h>
 
 #define OPENPGP_INS_SELECT 0xA4
+#define OPENPGP_INS_SELECT_DATA 0xA5
 #define OPENPGP_INS_GET_DATA 0xCA
+#define OPENPGP_INS_GET_NEXT_DATA 0xCC
 #define OPENPGP_INS_VERIFY 0x20
 #define OPENPGP_INS_CHANGE_REFERENCE_DATA 0x24
 #define OPENPGP_INS_RESET_RETRY_COUNTER 0x2C
@@ -45,8 +47,10 @@
 #define TAG_SECURITY_SUPPORT_TEMPLATE 0x7A
 #define TAG_DIGITAL_SIG_COUNTER 0x93
 #define TAG_CARDHOLDER_CERTIFICATE 0x7F21u
+#define TAG_EXTENDED_LENGTH_INFO 0x7F66u
+#define TAG_KEY_INFO 0xDE
 
-int openpgp_initialize(void);
+int openpgp_install(void);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H
