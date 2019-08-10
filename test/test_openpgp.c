@@ -140,7 +140,7 @@ static void test_generate_key(void **state) {
   CAPDU *capdu = (CAPDU *)c_buf;
   RAPDU *rapdu = (RAPDU *)r_buf;
   capdu->cla = 0x00;
-  capdu->ins = OPENPGP_GENERATE_ASYMMETRIC_KEY_PAIR;
+  capdu->ins = OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
   capdu->p1 = 0x80;
   capdu->p2 = 0x00;
   capdu->lc = 0x02;

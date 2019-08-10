@@ -1,6 +1,6 @@
 #include "key.h"
 #include <common.h>
-#include <ecdsa.h>
+#include <ecc.h>
 #include <openpgp.h>
 #include <pin.h>
 #include <rsa.h>
@@ -33,6 +33,7 @@
 #define ATTR_CA1_FP 0xFF
 #define ATTR_CA2_FP 0xFE
 #define ATTR_CA3_FP 0xFD
+#define ATTR_TERMINATED 0xFC
 
 #define STATE_NORMAL 0x00
 #define STATE_SELECT_DATA 0x01
@@ -127,21 +128,26 @@ int openpgp_install() {
   // Cardholder Data
   if (write_file(DATA_PATH, NULL, 0) < 0)
     return -1;
-  if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0))
+  if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0) < 0)
     return -1;
-  if (write_attr(DATA_PATH, LO(TAG_URL), NULL, 0))
+  if (write_attr(DATA_PATH, LO(TAG_URL), NULL, 0) < 0)
     return -1;
   if (write_attr(DATA_PATH, TAG_NAME, NULL, 0))
     return -1;
-  uint8_t default_lang[] = {0x65, 0x6E}; // English
-  if (write_attr(DATA_PATH, LO(TAG_LANG), default_lang, sizeof(default_lang)))
+  uint8_t default_data[] = {0x65, 0x6E}; // English
+  if (write_attr(DATA_PATH, LO(TAG_LANG), default_data, sizeof(default_data)) <
+      0)
     return -1;
-  uint8_t default_sex = 0x39;
-  if (write_attr(DATA_PATH, LO(TAG_SEX), &default_sex, sizeof(default_sex)))
+  default_data[0] = 0x39; // default sex
+  if (write_attr(DATA_PATH, LO(TAG_SEX), default_data, 1) < 0)
     return -1;
-  uint8_t default_pw1_status = 0x00; // verify every time
-  if (write_attr(DATA_PATH, TAG_PW_STATUS, &default_pw1_status,
-                 sizeof(default_pw1_status)))
+  default_data[0] = 0x00; // verify PIN every time
+  if (write_attr(DATA_PATH, TAG_PW_STATUS, default_data, 1) < 0)
+    return -1;
+
+  // Terminated
+  default_data[0] = 0x00;
+  if (write_attr(DATA_PATH, ATTR_TERMINATED, default_data, 1) < 0)
     return -1;
 
   // Key data
@@ -203,7 +209,7 @@ int openpgp_install() {
   return 0;
 }
 
-int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
   (void)rapdu;
 
@@ -215,7 +221,7 @@ int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0)
     EXCEPT(SW_WRONG_LENGTH);
 
@@ -485,7 +491,7 @@ int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 && P1 != 0xFF)
     EXCEPT(SW_WRONG_P1P2);
   pin_t *pw;
@@ -530,7 +536,7 @@ int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00)
     EXCEPT(SW_WRONG_P1P2);
   pin_t *pw;
@@ -558,7 +564,7 @@ int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   if ((P1 != 0x00 && P1 != 0x02) || P2 != 0x81)
     EXCEPT(SW_WRONG_P1P2);
   int offset, err;
@@ -586,8 +592,8 @@ int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_send_public_key(const uint8_t *key, uint8_t key_type,
-                            RAPDU *rapdu) {
+static int openpgp_send_public_key(const uint8_t *key, uint8_t key_type,
+                                   RAPDU *rapdu) {
   RDATA[0] = 0x7F;
   RDATA[1] = 0x49;
   if (key_type == KEY_TYPE_RSA) {
@@ -604,16 +610,17 @@ int openpgp_send_public_key(const uint8_t *key, uint8_t key_type,
     memcpy(RDATA + 11 + N_LENGTH, ((rsa_key_t *)key)->e, E_LENGTH);
     LL = 11 + N_LENGTH + E_LENGTH;
   } else {
-    RDATA[2] = ECDSA_PUB_KEY_SIZE + 2;
+    RDATA[2] = ECC_PUB_KEY_SIZE + 2;
     RDATA[3] = 0x86;
     RDATA[4] = 0x04;
-    memcpy(RDATA + 5, key + ECDSA_KEY_SIZE, ECDSA_PUB_KEY_SIZE);
-    LL = ECDSA_PUB_KEY_SIZE + 5;
+    memcpy(RDATA + 5, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    LL = ECC_PUB_KEY_SIZE + 5;
   }
   return 0;
 }
 
-int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu,
+                                                RAPDU *rapdu) {
   if (P2 != 0x00)
     EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x02 && LC != 0x05)
@@ -625,16 +632,19 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   if (openpgp_key_get_attributes(key_path, attr) < 0)
     return -1;
   uint8_t key[sizeof(rsa_key_t)];
+  uint16_t key_len;
   if (P1 == 0x80) {
     ASSERT_ADMIN();
     if (attr[0] == KEY_TYPE_RSA) {
+      key_len = sizeof(rsa_key_t);
       if (rsa_generate_key((rsa_key_t *)key) < 0)
         return -1;
     } else {
-      if (ecdsa_generate(ECDSA_SECP256R1, key, key + ECDSA_KEY_SIZE) < 0)
+      key_len = ECC_KEY_SIZE + ECC_PUB_KEY_SIZE;
+      if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
         return -1;
     }
-    if (openpgp_key_set_key(key_path, key, sizeof(key)) < 0)
+    if (openpgp_key_set_key(key_path, key, key_len) < 0)
       return -1;
     if (openpgp_key_set_status(key_path, KEY_GENERATED) < 0)
       return -1;
@@ -651,7 +661,7 @@ int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   return openpgp_send_public_key(key, attr[0], rapdu);
 }
 
-int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE81() == 0)
     EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   uint8_t pw1_status;
@@ -676,10 +686,10 @@ int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     LL = N_LENGTH;
   } else if (attr[0] == KEY_TYPE_ECDSA) {
-    uint8_t sig_key[ECDSA_KEY_SIZE];
-    if (openpgp_key_get_key(SIG_KEY_PATH, sig_key, ECDSA_KEY_SIZE) < 0)
+    uint8_t sig_key[ECC_KEY_SIZE];
+    if (openpgp_key_get_key(SIG_KEY_PATH, sig_key, ECC_KEY_SIZE) < 0)
       return -1;
-    if (ecdsa_sign(ECDSA_SECP256R1, sig_key, DATA, RDATA) < 0)
+    if (ecdsa_sign(ECC_SECP256R1, sig_key, DATA, RDATA) < 0)
       return -1;
     LL = ecdsa_sig2ansi(RDATA, RDATA);
   } else
@@ -698,22 +708,44 @@ int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0)
     EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (get_file_size(DEC_KEY_PATH) == 0)
+  int status = openpgp_key_get_status(DEC_KEY_PATH);
+  if (status < 0)
+    return -1;
+  if (status == KEY_NOT_PRESENT)
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  rsa_key_t dec_key;
-  if (openpgp_key_get_key(DEC_KEY_PATH, &dec_key, sizeof(dec_key)) < 0)
+  uint8_t attr[MAX_ATTR_LENGTH];
+  if (openpgp_key_get_attributes(DEC_KEY_PATH, attr) < 0)
     return -1;
-  size_t olen;
-  if (rsa_decrypt_pkcs_v15(&dec_key, DATA + 1, &olen, RDATA) < 0)
+  if (attr[0] == KEY_TYPE_RSA) {
+    rsa_key_t dec_key;
+    if (openpgp_key_get_key(DEC_KEY_PATH, &dec_key, sizeof(dec_key)) < 0)
+      return -1;
+    size_t olen;
+    if (rsa_decrypt_pkcs_v15(&dec_key, DATA + 1, &olen, RDATA) < 0)
+      return -1;
+    LL = olen;
+  } else if (attr[0] == KEY_TYPE_ECDSA) {
+    if (DATA[0] != 0xA6 || DATA[1] != 70 || DATA[2] != 0x7F ||
+        DATA[3] != 0x49 || DATA[4] != 67 || DATA[5] != 0x86 || DATA[6] != 65 ||
+        DATA[7] != 0x04)
+      EXCEPT(SW_WRONG_DATA);
+    uint8_t dec_key[ECC_KEY_SIZE];
+    if (openpgp_key_get_key(SIG_KEY_PATH, dec_key, ECC_KEY_SIZE) < 0)
+      return -1;
+    RDATA[0] = 0x04;
+    if (ecdh_decrypt(ECC_SECP256R1, dec_key, DATA + 8, RDATA + 1) < 0)
+      return -1;
+    LL = ecdsa_sig2ansi(RDATA, RDATA);
+  } else
     return -1;
-  LL = olen;
+
   return 0;
 }
 
-int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   ASSERT_ADMIN();
   int err;
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
@@ -890,7 +922,7 @@ int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   ASSERT_ADMIN();
   if (P1 != 0x3F || P2 != 0xFF)
     EXCEPT(SW_WRONG_P1P2);
@@ -919,8 +951,10 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 
   const uint8_t *data_tag = p + template_len;
   uint8_t key[sizeof(rsa_key_t)];
+  uint16_t key_len;
 
   if (attr[0] == KEY_TYPE_RSA) {
+    key_len = sizeof(rsa_key_t);
     if (*p++ != 0x91)
       EXCEPT(SW_WRONG_DATA);
     int e_len = tlv_get_length(p);
@@ -949,8 +983,8 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   } else {
     if (*p++ != 0x92)
       EXCEPT(SW_WRONG_DATA);
-    int key_len = tlv_get_length(p);
-    if (key_len != ECDSA_KEY_SIZE)
+    key_len = tlv_get_length(p);
+    if (key_len != ECC_KEY_SIZE)
       EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
@@ -959,10 +993,12 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += tlv_length_size(tlv_get_length(p));
     memcpy(key, p, key_len);
 
-    // TODO: ECC KEY COMPLETE
+    if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
+      return -1;
+    key_len += ECC_PUB_KEY_SIZE;
   }
 
-  if (openpgp_key_set_key(key_path, key, sizeof(key)) < 0)
+  if (openpgp_key_set_key(key_path, key, key_len) < 0)
     return -1;
   if (openpgp_key_set_status(key_path, KEY_IMPORTED) < 0)
     return -1;
@@ -970,7 +1006,7 @@ int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0)
     EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
@@ -990,10 +1026,10 @@ int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     LL = N_LENGTH;
   } else if (attr[0] == KEY_TYPE_ECDSA) {
-    uint8_t aut_key[ECDSA_KEY_SIZE];
-    if (openpgp_key_get_key(AUT_KEY_PATH, aut_key, ECDSA_KEY_SIZE) < 0)
+    uint8_t aut_key[ECC_KEY_SIZE];
+    if (openpgp_key_get_key(AUT_KEY_PATH, aut_key, ECC_KEY_SIZE) < 0)
       return -1;
-    if (ecdsa_sign(ECDSA_SECP256R1, aut_key, DATA, RDATA) < 0)
+    if (ecdsa_sign(ECC_SECP256R1, aut_key, DATA, RDATA) < 0)
       return -1;
     LL = ecdsa_sig2ansi(RDATA, RDATA);
   } else
@@ -1002,7 +1038,7 @@ int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_select_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_select_data(const CAPDU *capdu, RAPDU *rapdu) {
   current_occurrence = 0;
   if (P1 > 2 || P2 != 0x04)
     EXCEPT(SW_WRONG_P1P2);
@@ -1015,7 +1051,7 @@ int openpgp_select_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int openpgp_get_next_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_get_next_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x7F || P2 != 0x21)
     EXCEPT(SW_WRONG_P1P2);
   if (LC > 0)
@@ -1035,10 +1071,41 @@ int openpgp_get_next_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+static int openpgp_terminate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00)
+    EXCEPT(SW_WRONG_P1P2);
+  int retries = pin_get_retries(&pw3);
+  if (retries < 0)
+    return -1;
+  if (retries > 0)
+    ASSERT_ADMIN();
+  uint8_t terminated = 1;
+  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0)
+    return -1;
+  return 0;
+}
+
+static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00)
+    EXCEPT(SW_WRONG_P1P2);
+  return openpgp_install();
+}
+
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  int ret;
+
+  uint8_t terminated;
+  if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0)
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (terminated == 1) {
+    if (INS == OPENPGP_INS_ACTIVATE) {
+      if (openpgp_activate(capdu, rapdu) < 0)
+        EXCEPT(SW_UNABLE_TO_PROCESS);
+      return 0;
+    }
+  }
+
   if (INS == OPENPGP_INS_SELECT_DATA) {
     state = STATE_SELECT_DATA;
   } else if (state == STATE_NORMAL) {
@@ -1063,6 +1130,8 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       state = STATE_NORMAL;
     }
   }
+
+  int ret;
   switch (INS) {
   case OPENPGP_INS_SELECT:
     ret = openpgp_select(capdu, rapdu);
@@ -1091,7 +1160,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case OPENPGP_INS_IMPORT_KEY:
     ret = openpgp_import_key(capdu, rapdu);
     break;
-  case OPENPGP_GENERATE_ASYMMETRIC_KEY_PAIR:
+  case OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR:
     ret = openpgp_generate_asymmetric_key_pair(capdu, rapdu);
     break;
   case OPENPGP_INS_PSO:
@@ -1106,6 +1175,9 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   case OPENPGP_INS_INTERNAL_AUTHENTICATE:
     ret = openpgp_internal_authenticate(capdu, rapdu);
+    break;
+  case OPENPGP_INS_TERMINATE:
+    ret = openpgp_terminate(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
