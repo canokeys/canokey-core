@@ -91,7 +91,7 @@ script:
   - yubico-piv-tool -r "" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
   - yubico-piv-tool -r "" -a verify-pin -P 654321
   - yubico-piv-tool -r "" -a set-mgm-key -n 010203040506070801020304050607080102030405060708
-  - yubico-piv-tool -r "" -a generate -s 9e >/tmp/pubkey-9e.pem
+  - yubico-piv-tool -r "" -a generate -s 9e >/tmp/pubkey-9e.pem # generate key at 9E
   - yubico-piv-tool -r "" -a selfsign-certificate -s 9e -S '/CN=CertAtSlot9e' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
   - yubico-piv-tool -r "" -a import-certificate -s 9e < /tmp/cert-9e.pem
   - yubico-piv-tool -r "" -a status
@@ -100,6 +100,19 @@ script:
   - echo -n hello >/tmp/hello.txt
   - pkcs11-tool -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
   - openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
+  - yubico-piv-tool -r "" -a generate -s 9a >/tmp/pubkey-9a.pem # generate key at 9a
+  - yubico-piv-tool -r "" -a selfsign-certificate -s 9a -S '/CN=CertAtSlot9a' < /tmp/pubkey-9a.pem >/tmp/cert-9a.pem
+  - yubico-piv-tool -r "" -a import-certificate -s 9a < /tmp/cert-9a.pem
+  - yubico-piv-tool -r "" -a generate -A ECCP256 -s 9c >/tmp/pubkey-9c.pem # generate key at 9c
+  - yubico-piv-tool -r "" -a selfsign-certificate -s 9c -S '/CN=CertAtSlot9c' < /tmp/pubkey-9c.pem >/tmp/cert-9c.pem
+  - yubico-piv-tool -r "" -a import-certificate -s 9c < /tmp/cert-9c.pem
+  - yubico-piv-tool -r "" -a generate -A ECCP256 -s 9d >/tmp/pubkey-9d.pem # generate key at 9d
+  - yubico-piv-tool -r "" -a selfsign-certificate -s 9d -S '/CN=CertAtSlot9d' < /tmp/pubkey-9d.pem >/tmp/cert-9d.pem
+  - yubico-piv-tool -r "" -a import-certificate -s 9d < /tmp/cert-9d.pem
+  - yubico-piv-tool -r "" -a status
+  - yubico-piv-tool -r "" -a test-signature -s 9a < /tmp/cert-9a.pem
+  - yubico-piv-tool -r "" -a test-signature -s 9c < /tmp/cert-9c.pem
+  - yubico-piv-tool -r "" -a test-decipher -s 9d < /tmp/cert-9d.pem
   - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
   - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
   - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
