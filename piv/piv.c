@@ -1,5 +1,6 @@
 #include <common.h>
 #include <des.h>
+#include <ecc.h>
 #include <pin.h>
 #include <piv.h>
 #include <rand.h>
@@ -178,11 +179,10 @@ static void send_response(RAPDU *rapdu, uint16_t le) {
   }
 }
 
-int piv_deselect() { return 0; }
-
 int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   state = CHAINING_STATE_NORMAL;
   in_admin_status = 0;
+
   buffer[0] = 0x61;
   buffer[1] = 6 + sizeof(pix) + sizeof(rid);
   buffer[2] = 0x4F;
@@ -195,6 +195,7 @@ int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(buffer + 8 + sizeof(pix), rid, sizeof(rid));
   buffer_len = 8 + sizeof(pix) + sizeof(rid);
   send_response(rapdu, LE);
+
   return 0;
 }
 
@@ -389,6 +390,9 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // Authenticates the CARD to the CLIENT and is also used for KEY ESTABLISHMENT
   // and DIGITAL SIGNATURES. Documented in SP800-73-4 Part 2 Appendix A.3
   //
+  // OR - Signature Generation (Key ID = 9C)
+  // Documented in SP800-73-4 Part 2 Appendix A.4
+  //
   // OR - KEY ESTABLISHMENT (Key ID = 9D)
   // Documented in SP800-73-4 Part 2 Appendix A.5
   //
@@ -420,6 +424,16 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       buffer[6] = HI(length);
       buffer[7] = LO(length);
       buffer_len = length + 8;
+    } else if (alg == ALG_ECC_256) {
+      uint8_t key[ECC_KEY_SIZE];
+      if (read_file(key_path, key, sizeof(key)) < 0)
+        return -1;
+      ecdsa_sign(ECC_SECP256R1, key, buffer + pos[IDX_CHALLENGE], buffer + 4);
+      buffer[0] = 0x7C;
+      buffer[1] = ECC_KEY_SIZE * 2 + 2;
+      buffer[2] = TAG_RESPONSE;
+      buffer[3] = ECC_KEY_SIZE * 2;
+      buffer_len = length + 4;
     } else
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
@@ -619,6 +633,19 @@ int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     buffer[10 + N_LENGTH] = E_LENGTH;
     memcpy(buffer + 11 + N_LENGTH, key.e, E_LENGTH);
     buffer_len = 11 + N_LENGTH + E_LENGTH;
+    send_response(rapdu, LE);
+  } else if (alg == ALG_ECC_256) {
+    uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
+    if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
+      return -1;
+    buffer[0] = 0x7F;
+    buffer[1] = 0x49;
+    buffer[2] = ECC_PUB_KEY_SIZE + 3;
+    buffer[3] = 0x86;
+    buffer[4] = ECC_PUB_KEY_SIZE + 1;
+    buffer[5] = 0x04;
+    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    buffer_len = ECC_PUB_KEY_SIZE + 6;
     send_response(rapdu, LE);
   } else
     EXCEPT(SW_WRONG_DATA);
