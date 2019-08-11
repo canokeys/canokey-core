@@ -95,6 +95,8 @@ static int get_input_size(uint8_t alg) {
     return 8;
   case ALG_RSA_2048:
     return 256;
+  case ALG_ECC_256:
+    return 32;
   default:
     return 0;
   }
@@ -433,7 +435,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       buffer[1] = ECC_KEY_SIZE * 2 + 2;
       buffer[2] = TAG_RESPONSE;
       buffer[3] = ECC_KEY_SIZE * 2;
-      buffer_len = length + 4;
+      buffer_len = ECC_KEY_SIZE * 2 + 4;
     } else
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
@@ -617,8 +619,6 @@ int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     if (write_file(key_path, &key, sizeof(key)) < 0)
       return -1;
-    if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
-      return -1;
     buffer[0] = 0x7F;
     buffer[1] = 0x49;
     buffer[2] = 0x82;
@@ -638,17 +638,21 @@ int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
     if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
       return -1;
+    if (write_file(key_path, key, sizeof(key)) < 0)
+      return -1;
     buffer[0] = 0x7F;
     buffer[1] = 0x49;
     buffer[2] = ECC_PUB_KEY_SIZE + 3;
     buffer[3] = 0x86;
     buffer[4] = ECC_PUB_KEY_SIZE + 1;
     buffer[5] = 0x04;
-    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    memcpy(buffer + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
     buffer_len = ECC_PUB_KEY_SIZE + 6;
     send_response(rapdu, LE);
   } else
     EXCEPT(SW_WRONG_DATA);
+  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
+    return -1;
   return 0;
 }
 
