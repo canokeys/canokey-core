@@ -693,10 +693,9 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t sig_key[ECC_KEY_SIZE];
     if (openpgp_key_get_key(SIG_KEY_PATH, sig_key, ECC_KEY_SIZE) < 0)
       return -1;
-    if (ecdsa_sign(ECC_SECP256R1, sig_key, DATA, RDATA + 1) < 0)
+    if (ecdsa_sign(ECC_SECP256R1, sig_key, DATA, RDATA) < 0)
       return -1;
-    RDATA[0] = 0x04;
-    LL = ECC_KEY_SIZE * 2 + 1;
+    LL = ECC_KEY_SIZE * 2;
   } else
     return -1;
 
