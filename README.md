@@ -5,5 +5,5 @@
 Core implementations of an open-source secure key, with supports of:
 
 * U2F
-* OpenPGP Card V2.1
+* OpenPGP Card V3.4 with ECDSA support
 * PIV (NIST SP 800-73-4)
