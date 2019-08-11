@@ -74,9 +74,13 @@ script:
   - gpg --card-status |grep -E 'Signature key.+none'
   - echo -e 'addkey\n10\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # gen ecdsa P-256 key[4]
   - echo -e 'key 4\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[4] to Signature key
+  - echo -e 'addkey\n12\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # gen ecdsa P-256 key[5]
+  - echo -e 'key 5\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[5] to Encryption key
   - echo 123456 >/tmp/passwd
   - "echo -n hello3 | gpg --armor --pinentry-mode loopback --passphrase-file=/tmp/passwd --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
   - gpg </tmp/sign.gpg
+  - "echo -n world2 | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}'|tail -n 1) --encrypt >/tmp/enc.gpg"
+  - gpg --pinentry-mode loopback --passphrase-file=/tmp/passwd -d /tmp/enc.gpg
   - gpgconf --kill gpg-agent
   - # PIV tests:
   - pkcs15-tool -D
