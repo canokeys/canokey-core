@@ -739,9 +739,9 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     if (openpgp_key_get_key(SIG_KEY_PATH, dec_key, ECC_KEY_SIZE) < 0)
       return -1;
     RDATA[0] = 0x04;
-    if (ecdh_decrypt(ECC_SECP256R1, dec_key, DATA + 8, RDATA + 1) < 0)
+    if (ecdh_decrypt(ECC_SECP256R1, dec_key, DATA + 8, RDATA) < 0)
       return -1;
-    LL = ecdsa_sig2ansi(RDATA, RDATA);
+    LL = ECC_KEY_SIZE;
   } else
     return -1;
 
