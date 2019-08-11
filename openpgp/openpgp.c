@@ -730,7 +730,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     if (rsa_decrypt_pkcs_v15(&dec_key, DATA + 1, &olen, RDATA) < 0)
       return -1;
     LL = olen;
-  } else if (attr[0] == KEY_TYPE_ECDSA) {
+  } else if (attr[0] == KEY_TYPE_ECDH) {
     if (DATA[0] != 0xA6 || DATA[1] != 70 || DATA[2] != 0x7F ||
         DATA[3] != 0x49 || DATA[4] != 67 || DATA[5] != 0x86 || DATA[6] != 65 ||
         DATA[7] != 0x04)
@@ -739,9 +739,9 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     if (openpgp_key_get_key(SIG_KEY_PATH, dec_key, ECC_KEY_SIZE) < 0)
       return -1;
     RDATA[0] = 0x04;
-    if (ecdh_decrypt(ECC_SECP256R1, dec_key, DATA + 8, RDATA) < 0)
+    if (ecdh_decrypt(ECC_SECP256R1, dec_key, DATA + 8, RDATA + 1) < 0)
       return -1;
-    LL = ECC_KEY_SIZE;
+    LL = ECC_KEY_SIZE * 2 + 1;
   } else
     return -1;
 
