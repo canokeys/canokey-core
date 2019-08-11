@@ -736,7 +736,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         DATA[7] != 0x04)
       EXCEPT(SW_WRONG_DATA);
     uint8_t dec_key[ECC_KEY_SIZE];
-    if (openpgp_key_get_key(SIG_KEY_PATH, dec_key, ECC_KEY_SIZE) < 0)
+    if (openpgp_key_get_key(DEC_KEY_PATH, dec_key, ECC_KEY_SIZE) < 0)
       return -1;
     RDATA[0] = 0x04;
     if (ecdh_decrypt(ECC_SECP256R1, dec_key, DATA + 8, RDATA + 1) < 0)
