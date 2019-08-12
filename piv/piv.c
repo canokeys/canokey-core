@@ -367,10 +367,8 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t alg;
   if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
     return -1;
-  if (!(P1 == ALG_DEFAULT && alg == ALG_TDEA_3KEY) && alg != P1) {
-    MSG_DBG("P1 %02X, P2 %02X, alg %02X", P1, P2, alg);
+  if (!(P1 == ALG_DEFAULT && alg == ALG_TDEA_3KEY) && alg != P1)
     EXCEPT(SW_WRONG_P1P2);
-  }
 
   uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
@@ -404,7 +402,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
       len[IDX_RESPONSE] == 0) {
     authenticate_reset();
-    if (pin.is_validated == 0)
+    if (P2 != 0x9E && pin.is_validated == 0)
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     if (length != len[IDX_CHALLENGE])
       EXCEPT(SW_WRONG_DATA);
