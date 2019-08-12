@@ -732,6 +732,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (*p++ != 0x02)
       EXCEPT(SW_WRONG_DATA);
     int q_len = tlv_get_length(p);
+    p += tlv_length_size(q_len);
     memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
     if (rsa_complete_key(&key) < 0)
       return -1;
