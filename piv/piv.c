@@ -29,6 +29,7 @@
 #define ALG_TDEA_3KEY 0x03
 #define ALG_RSA_2048 0x07
 #define ALG_ECC_256 0x11
+#define TDEA_BLOCK_SIZE 8
 
 // tags for general auth
 #define TAG_WITNESS 0x80
@@ -92,11 +93,11 @@ static int get_input_size(uint8_t alg) {
   switch (alg) {
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
-    return 8;
+    return TDEA_BLOCK_SIZE;
   case ALG_RSA_2048:
-    return 256;
+    return N_LENGTH;
   case ALG_ECC_256:
-    return 32;
+    return ECC_KEY_SIZE;
   default:
     return 0;
   }
@@ -393,7 +394,7 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // OR - Signature Generation (Key ID = 9C)
   // Documented in SP800-73-4 Part 2 Appendix A.4
   //
-  // OR - KEY ESTABLISHMENT (Key ID = 9D)
+  // OR - KEY ESTABLISHMENT (Key ID = 9D, RSA only)
   // Documented in SP800-73-4 Part 2 Appendix A.5
   //
 
@@ -573,6 +574,33 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     authenticate_reset();
     in_admin_status = 1;
+    send_response(rapdu, LE);
+  }
+
+  //
+  // CASE 6 - ECDH with the PIV KMK
+  // Documented in SP800-73-4 Part 2 Appendix A.5
+  //
+
+  else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 &&
+           pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
+    authenticate_reset();
+    if (P2 != 0x9D || pin.is_validated == 0)
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (len[IDX_EXP] != 2 * ECC_KEY_SIZE + 1)
+      EXCEPT(SW_WRONG_DATA);
+    if (P2 == 0x9D)
+      pin.is_validated = 0;
+    uint8_t key[ECC_KEY_SIZE];
+    if (read_file(key_path, key, ECC_KEY_SIZE) < 0)
+      return -1;
+    if (ecdh_decrypt(ECC_SECP256R1, key, buffer + pos[IDX_EXP], buffer + 4) < 0)
+      return -1;
+    buffer[0] = 0x7C;
+    buffer[1] = ECC_KEY_SIZE + 2;
+    buffer[2] = TAG_RESPONSE;
+    buffer[3] = ECC_KEY_SIZE;
+    buffer_len = ECC_KEY_SIZE + 4;
     send_response(rapdu, LE);
   }
 
