@@ -96,6 +96,7 @@ script:
   - yubico-piv-tool -r "" -a import-certificate -s 9e < /tmp/cert-9e.pem
   - yubico-piv-tool -r "" -a status
   - yubico-piv-tool -r "" -a test-signature -s 9e < /tmp/cert-9e.pem
+  - yubico-piv-tool -r "" -a test-decipher -s 9e < /tmp/cert-9e.pem
   - pkcs15-tool -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
   - echo -n hello >/tmp/hello.txt
   - pkcs11-tool -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
