@@ -105,7 +105,7 @@ static void test_gen_key(void **state) {
   P1 = 0x00;
   P2 = 0x9E;
   LC = 0x05;
-  memcpy(DATA, (uint8_t[]){0xAC, 0x0A, 0x80, 0x01, 0x07}, 0x05);
+  memcpy(DATA, (uint8_t[]){0xAC, 0x03, 0x80, 0x01, 0x07}, 0x05);
   LE = 256;
   piv_process_apdu(capdu, rapdu);
   printHex(RDATA, LL);
@@ -136,6 +136,34 @@ static void test_sign(void **state) {
   apdu_fill_with_command(capdu, "00 87 07 9E 0B 02 A2 2B 99 FE 52 EE F9 9D BA 0F 00");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
+  printHex(RDATA, LL);
+}
+
+static void test_decrypt(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU *capdu = (CAPDU *)c_buf;
+  RAPDU *rapdu = (RAPDU *)r_buf;
+
+  CLA = 0x00;
+  INS = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
+  P1 = 0x00;
+  P2 = 0x9D;
+  LC = 0x05;
+  memcpy(DATA, (uint8_t[]){0xAC, 0x03, 0x80, 0x01, 0x11}, 0x05);
+  LE = 256;
+  piv_process_apdu(capdu, rapdu);
+  printHex(RDATA, LL);
+
+  apdu_fill_with_command(capdu, "00 20 00 80 08 31 32 33 34 35 36 FF FF");
+  piv_process_apdu(capdu, rapdu);
+  printf("Verify PIN, SW: %X ", SW);
+
+  apdu_fill_with_command(capdu, "00 87 11 9D 47 7C 45 82 00 85 41 04 D5 46 28 25 41 C7 53 E8 37 57 8A 91 41 07 CE A6 DE 47 B7 F8 72 49 A3 6D 70 AD D0 1C 00 5A 22 85 66 4D 57 6D 95 33 25 03 B0 AF 45 58 7A CD 58 3B 07 4B 2D 53 46 E9 4A 32 09 06 D1 7A 3B ED 24 55");
+  LE = 256;
+  piv_process_apdu(capdu, rapdu);
+  printf("Decrypt, SW: %X ", SW);
   printHex(RDATA, LL);
 }
 
@@ -178,6 +206,7 @@ int main() {
       cmocka_unit_test(test_data),
       cmocka_unit_test(test_gen_key),
       cmocka_unit_test(test_sign),
+      cmocka_unit_test(test_decrypt),
       cmocka_unit_test(test_change_pin),
   };
 

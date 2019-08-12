@@ -594,7 +594,8 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t key[ECC_KEY_SIZE];
     if (read_file(key_path, key, ECC_KEY_SIZE) < 0)
       return -1;
-    if (ecdh_decrypt(ECC_SECP256R1, key, buffer + pos[IDX_EXP], buffer + 4) < 0)
+    if (ecdh_decrypt(ECC_SECP256R1, key, buffer + pos[IDX_EXP] + 1,
+                     buffer + 4) < 0)
       return -1;
     buffer[0] = 0x7C;
     buffer[1] = ECC_KEY_SIZE + 2;
