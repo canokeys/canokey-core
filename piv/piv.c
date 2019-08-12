@@ -429,11 +429,12 @@ int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       if (read_file(key_path, key, sizeof(key)) < 0)
         return -1;
       ecdsa_sign(ECC_SECP256R1, key, buffer + pos[IDX_CHALLENGE], buffer + 4);
+      int sig_len = ecdsa_sig2ansi(buffer + 4, buffer + 4);
       buffer[0] = 0x7C;
-      buffer[1] = ECC_KEY_SIZE * 2 + 2;
+      buffer[1] = sig_len + 2;
       buffer[2] = TAG_RESPONSE;
-      buffer[3] = ECC_KEY_SIZE * 2;
-      buffer_len = ECC_KEY_SIZE * 2 + 4;
+      buffer[3] = sig_len;
+      buffer_len = sig_len + 4;
     } else
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
