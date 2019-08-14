@@ -76,14 +76,13 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (cert_len < 0)
     return cert_len;
   // SIG (var)
-  SHA256_CTX ctx;
-  sha256_Init(&ctx);
-  sha256_Update(&ctx, (uint8_t[]){0x00}, 1);
-  sha256_Update(&ctx, req->appId, U2F_APPID_SIZE);
-  sha256_Update(&ctx, req->chal, U2F_CHAL_SIZE);
-  sha256_Update(&ctx, handle, U2F_KH_SIZE);
-  sha256_Update(&ctx, (const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
-  sha256_Final(&ctx, handle);
+  sha256_init();
+  sha256_update((uint8_t[]){0x00}, 1);
+  sha256_update(req->appId, U2F_APPID_SIZE);
+  sha256_update(req->chal, U2F_CHAL_SIZE);
+  sha256_update(handle, U2F_KH_SIZE);
+  sha256_update((const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
+  sha256_final(handle);
   ecdsa_sign(ECC_SECP256R1, key_buf, handle, handle + 32);
   size_t signature_len = ecdsa_sig2ansi(
       handle + 32, resp->keyHandleCertSig + U2F_KH_SIZE + cert_len);
@@ -146,13 +145,12 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   resp->flags = U2F_AUTH_FLAG_TUP;
   ctr = htobe32(ctr);
   memcpy(resp->ctr, &ctr, sizeof(ctr));
-  SHA256_CTX ctx;
-  sha256_Init(&ctx);
-  sha256_Update(&ctx, req->appId, U2F_APPID_SIZE);
-  sha256_Update(&ctx, (uint8_t[]){U2F_AUTH_FLAG_TUP}, 1);
-  sha256_Update(&ctx, (const uint8_t *)&ctr, sizeof(ctr));
-  sha256_Update(&ctx, req->chal, U2F_CHAL_SIZE);
-  sha256_Final(&ctx, req->appId);
+  sha256_init();
+  sha256_update(req->appId, U2F_APPID_SIZE);
+  sha256_update((uint8_t[]){U2F_AUTH_FLAG_TUP}, 1);
+  sha256_update((const uint8_t *)&ctr, sizeof(ctr));
+  sha256_update(req->chal, U2F_CHAL_SIZE);
+  sha256_final(req->appId);
 
   ecdsa_sign(ECC_SECP256R1, req->keyHandle + U2F_APPID_SIZE, req->appId,
              resp->sig);

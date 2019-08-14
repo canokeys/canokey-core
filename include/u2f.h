@@ -81,6 +81,7 @@ typedef struct {
 } U2F_AUTHENTICATE_RESP;
 
 void u2f_press();
+void u2f_unpress();
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 void u2f_config(void (*enc)(const void *, void *, const void *),
                 void (*dec)(const void *, void *, const void *));

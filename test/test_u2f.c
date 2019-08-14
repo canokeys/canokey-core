@@ -127,12 +127,11 @@ static void test_u2f_registration(void **state) {
   for (int i = 0; i != 32; ++i) {
     priv_key[i] = i;
   }
-  SHA256_CTX ctx;
-  sha256_Init(&ctx);
-  sha256_Update(&ctx, sig_buffer, 65);
-  sha256_Update(&ctx, expected_keyhandle, U2F_KH_SIZE);
-  sha256_Update(&ctx, public_key, sizeof(public_key));
-  sha256_Final(&ctx, sig_buffer);
+  sha256_init();
+  sha256_update(sig_buffer, 65);
+  sha256_update(expected_keyhandle, U2F_KH_SIZE);
+  sha256_update(public_key, sizeof(public_key));
+  sha256_final(sig_buffer);
   ecdsa_sign(ECC_SECP256R1, priv_key, sig_buffer, expected_keyhandle);
   int sig_len = ecdsa_sig2ansi(expected_keyhandle, expected_keyhandle);
   for (int i = 0; i != sig_len; ++i) {
@@ -210,10 +209,9 @@ static void test_u2f_authenticate(void **state) {
   for (int i = 0; i != 32; ++i) {
     priv_key[i] = i;
   }
-  SHA256_CTX ctx;
-  sha256_Init(&ctx);
-  sha256_Update(&ctx, sig_buffer, 69);
-  sha256_Final(&ctx, sig_buffer);
+  sha256_init();
+  sha256_update(sig_buffer, 69);
+  sha256_final(sig_buffer);
   ecdsa_sign(ECC_SECP256R1, priv_key, sig_buffer, sig_buffer);
   int sig_len = ecdsa_sig2ansi(sig_buffer, sig_buffer);
   for (int i = 0; i != sig_len; ++i) {
