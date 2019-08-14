@@ -2,7 +2,6 @@
 #define CANOKEY_CORE_INCLUDE_COMMON_H
 
 #include <fs.h>
-#include <memory.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>

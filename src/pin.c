@@ -1,6 +1,6 @@
 #include <fs.h>
-#include <memory.h>
 #include <pin.h>
+#include <string.h>
 
 #define RETRY_ATTR 0
 #define DEFAULT_RETRY_ATTR 1
