@@ -7,6 +7,12 @@
 #include <string.h>
 #include <u2f.h>
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define htobe32(x) (x)
+#else
+#define htobe32(x) __builtin_bswap32(x)
+#endif
+
 /*
  * Key Handle:
  * 32 bytes: app id
