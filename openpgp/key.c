@@ -1,6 +1,5 @@
 #include "key.h"
 #include <fs.h>
-#include <rsa.h>
 
 #define ATTR_FINGERPRINT 0x00
 #define ATTR_DATETIME 0x01

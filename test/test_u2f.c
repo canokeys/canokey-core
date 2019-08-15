@@ -238,7 +238,7 @@ int main() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
-  u2f_config(aes128_enc, aes128_dec);
+  u2f_config(16, aes128_enc, aes128_dec);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_u2f_personalization),

@@ -130,7 +130,7 @@ static void test_import_key(void **state) {
   apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   apdu_fill_with_command(capdu, "00 DB 3F FF 00 01 1A 4D 82 01 16 B8 00 7F 48 08 91 04 92 81 80 93 81 80 5F 48 82 01 04 00 01 00 01 D6 2F 32 91 59 9E 87 36 FC 9C 48 54 EF 6D F8 CF 63 37 61 F5 22 08 58 77 33 F0 03 6C 7B D4 7F 2F 88 4F 29 4B 73 37 A8 00 66 BB DB CD F1 FA 13 40 46 90 29 B7 40 EB 6B D8 3F 5E 66 D3 FF 41 92 01 EF 6A 44 15 07 E3 4A B8 DC 0D B7 BE 86 C4 62 BA 78 4F 29 0D 68 2D 5D EF C6 F7 82 06 F0 3D CC 27 58 FD BD E8 0D 24 13 09 A7 8D 9F 84 85 1D F2 D5 1C B1 85 C1 C5 62 7B A8 82 BB 3F 58 8F D1 01 15 D8 E5 6E 4B EF 39 47 F0 D0 DE 3B 57 C6 7C 2E 94 01 13 B5 A9 98 8E 36 54 8D B6 08 EF 76 7E FE 96 B7 D8 06 A6 61 3F 28 A8 9D 89 87 E6 27 20 6F 9F 02 47 D7 60 EA AC 5A 95 69 0C 22 00 89 CA 96 09 B6 ED FC FF 5E DF D5 09 89 7F 74 9C 0F EF 91 37 2F 72 5F 11 FA F6 27 1E 6B 2F 32 F2 B1 D3 64 5B B1 B1 9C B2 60 B8 C4 C6 9A 8A AC 44 86 F1 05 8A 9A F3 45 E8 6D 6E 73 DD 56 05 F2 22 17 8A 53 61");
   openpgp_process_apdu(capdu, rapdu);
@@ -158,7 +158,7 @@ static void test_generate_key(void **state) {
   capdu->data[0] = 0xB6;
   capdu->data[1] = 0x00;
   openpgp_process_apdu(capdu, rapdu);
-  printHex(rapdu->data, rapdu->len);
+  print_hex(rapdu->data, rapdu->len);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
@@ -172,22 +172,22 @@ static void test_special(void **state) {
   apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   apdu_fill_with_command(capdu, "00 20 00 83 08 31 32 33 34 35 36 37 38");
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   apdu_fill_with_command(capdu, "00 47 80 00 00 00 02 B6 00 01 0F");
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 }
 
 int main() {

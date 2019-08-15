@@ -1,4 +1,6 @@
+#include <crypto-util.h>
 #include <fs.h>
+#include <memzero.h>
 #include <pin.h>
 #include <string.h>
 
@@ -37,22 +39,30 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
   int real_len = read_file(pin->path, pin_buf, MAX_LENGTH);
   if (real_len < 0)
     return PIN_IO_FAIL;
-  if (real_len != len || memcmp(buf, pin_buf, len) != 0) {
+  if (real_len != len || memcmp_s(buf, pin_buf, len) != 0) {
     --ctr;
     if (retries)
       *retries = ctr;
     err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
-    if (err < 0)
+    if (err < 0) {
+      memzero(pin_buf, sizeof(pin_buf));
       return PIN_IO_FAIL;
+    }
+    memzero(pin_buf, sizeof(pin_buf));
     return PIN_AUTH_FAIL;
   }
   pin->is_validated = 1;
   err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
-  if (err < 0)
+  if (err < 0) {
+    memzero(pin_buf, sizeof(pin_buf));
     return PIN_IO_FAIL;
+  }
   err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
-  if (err < 0)
+  if (err < 0) {
+    memzero(pin_buf, sizeof(pin_buf));
     return PIN_IO_FAIL;
+  }
+  memzero(pin_buf, sizeof(pin_buf));
   return 0;
 }
 

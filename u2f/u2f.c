@@ -7,10 +7,12 @@
 #include <string.h>
 #include <u2f.h>
 
+#ifndef htobe32
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define htobe32(x) (x)
 #else
 #define htobe32(x) __builtin_bswap32(x)
+#endif
 #endif
 
 /*
@@ -271,9 +273,12 @@ int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   EXCEPT(SW_CLA_NOT_SUPPORTED);
 }
 
-void u2f_config(void (*enc)(const void *, void *, const void *),
-                void (*dec)(const void *, void *, const void *)) {
-  cipher_cfg.block_size = 16;
+void u2f_config(uint8_t block_size,
+                int (*enc)(const uint8_t *, uint8_t *,
+                                     const uint8_t *),
+                int (*dec)(const uint8_t *, uint8_t *,
+                                     const uint8_t *)) {
+  cipher_cfg.block_size = block_size;
   cipher_cfg.mode = CTR;
   cipher_cfg.encrypt = enc;
   cipher_cfg.decrypt = dec;

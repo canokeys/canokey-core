@@ -22,12 +22,12 @@ static void test_data(void **state) {
   apdu_fill_with_command(capdu, "00 87 00 9B 04 7C 02 81 00 00");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
   apdu_fill_with_command(capdu,
                          "00 87 00 9B 0C 7C 0A 82 08 35 51 B0 A1 56 F6 95 D1");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   CLA = 0x10;
   INS = PIV_INS_PUT_DATA;
@@ -109,7 +109,7 @@ static void test_gen_key(void **state) {
   memcpy(DATA, (uint8_t[]){0xAC, 0x03, 0x80, 0x01, 0x07}, 0x05);
   LE = 256;
   piv_process_apdu(capdu, rapdu);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
   assert_int_equal(SW, 0x610F);
 
   INS = PIV_INS_GET_RESPONSE;
@@ -118,7 +118,7 @@ static void test_gen_key(void **state) {
   LC = 0;
   LE = 0x0F;
   piv_process_apdu(capdu, rapdu);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
   assert_int_equal(SW, SW_NO_ERROR);
 }
 
@@ -144,13 +144,13 @@ static void test_sign(void **state) {
       "29 57 C1 48 45 0A FF A1 16 67 C5 2B F9 C5 1B 78 3D 8D DB 35");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   apdu_fill_with_command(capdu,
                          "00 87 07 9E 0B 02 A2 2B 99 FE 52 EE F9 9D BA 0F 00");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 }
 
 static void test_decrypt(void **state) {
@@ -168,7 +168,7 @@ static void test_decrypt(void **state) {
   memcpy(DATA, (uint8_t[]){0xAC, 0x03, 0x80, 0x01, 0x11}, 0x05);
   LE = 256;
   piv_process_apdu(capdu, rapdu);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 
   apdu_fill_with_command(capdu, "00 20 00 80 08 31 32 33 34 35 36 FF FF");
   piv_process_apdu(capdu, rapdu);
@@ -182,7 +182,7 @@ static void test_decrypt(void **state) {
   LE = 256;
   piv_process_apdu(capdu, rapdu);
   printf("Decrypt, SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 }
 
 static void test_change_pin(void **state) {
@@ -196,7 +196,7 @@ static void test_change_pin(void **state) {
       capdu, "00 2C 00 80 10 31 32 33 34 35 36 37 38 39 39 39 39 39 39 FF FF");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 }
 
 static void test_import_rsa(void **state) {
@@ -251,7 +251,7 @@ static void test_import_rsa(void **state) {
              "69 02 75 56 4D F8 CC 82 7E 99 DC 4E 5F 4C 75");
   piv_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
-  printHex(RDATA, LL);
+  print_hex(RDATA, LL);
 }
 
 int main() {

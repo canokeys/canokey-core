@@ -83,7 +83,10 @@ typedef struct {
 void u2f_press();
 void u2f_unpress();
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
-void u2f_config(void (*enc)(const void *, void *, const void *),
-                void (*dec)(const void *, void *, const void *));
+void u2f_config(uint8_t block_size,
+                int (*enc)(const uint8_t *, uint8_t *,
+                                     const uint8_t *),
+                int (*dec)(const uint8_t *, uint8_t *,
+                                     const uint8_t *));
 
 #endif // __U2F_H_INCLUDED__
