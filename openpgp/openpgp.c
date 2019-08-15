@@ -595,34 +595,6 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_send_public_key(const uint8_t *key, uint8_t key_type,
-                                   RAPDU *rapdu) {
-  RDATA[0] = 0x7F;
-  RDATA[1] = 0x49;
-  if (key_type == KEY_TYPE_RSA) {
-    RDATA[2] = 0x82;
-    RDATA[3] = HI(6 + N_LENGTH + E_LENGTH);
-    RDATA[4] = LO(6 + N_LENGTH + E_LENGTH);
-    RDATA[5] = 0x81; // modulus
-    RDATA[6] = 0x82;
-    RDATA[7] = HI(N_LENGTH);
-    RDATA[8] = LO(N_LENGTH);
-    memcpy(RDATA + 9, ((rsa_key_t *)key)->n, N_LENGTH);
-    RDATA[9 + N_LENGTH] = 0x82; // exponent
-    RDATA[10 + N_LENGTH] = E_LENGTH;
-    memcpy(RDATA + 11 + N_LENGTH, ((rsa_key_t *)key)->e, E_LENGTH);
-    LL = 11 + N_LENGTH + E_LENGTH;
-  } else {
-    RDATA[2] = ECC_PUB_KEY_SIZE + 3;
-    RDATA[3] = 0x86;
-    RDATA[4] = ECC_PUB_KEY_SIZE + 1;
-    RDATA[5] = 0x04;
-    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
-    LL = ECC_PUB_KEY_SIZE + 6;
-  }
-  return 0;
-}
-
 static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu,
                                                 RAPDU *rapdu) {
   if (P2 != 0x00)
@@ -678,8 +650,33 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu,
     memzero(key, sizeof(key));
     EXCEPT(SW_WRONG_P1P2);
   }
+
+  RDATA[0] = 0x7F;
+  RDATA[1] = 0x49;
+  if (attr[0] == KEY_TYPE_RSA) {
+    RDATA[2] = 0x82;
+    RDATA[3] = HI(6 + N_LENGTH + E_LENGTH);
+    RDATA[4] = LO(6 + N_LENGTH + E_LENGTH);
+    RDATA[5] = 0x81; // modulus
+    RDATA[6] = 0x82;
+    RDATA[7] = HI(N_LENGTH);
+    RDATA[8] = LO(N_LENGTH);
+    memcpy(RDATA + 9, ((rsa_key_t *)key)->n, N_LENGTH);
+    RDATA[9 + N_LENGTH] = 0x82; // exponent
+    RDATA[10 + N_LENGTH] = E_LENGTH;
+    memcpy(RDATA + 11 + N_LENGTH, ((rsa_key_t *)key)->e, E_LENGTH);
+    LL = 11 + N_LENGTH + E_LENGTH;
+  } else {
+    RDATA[2] = ECC_PUB_KEY_SIZE + 3;
+    RDATA[3] = 0x86;
+    RDATA[4] = ECC_PUB_KEY_SIZE + 1;
+    RDATA[5] = 0x04;
+    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    LL = ECC_PUB_KEY_SIZE + 6;
+  }
+
   memzero(key, sizeof(key));
-  return openpgp_send_public_key(key, attr[0], rapdu);
+  return 0;
 }
 
 static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
