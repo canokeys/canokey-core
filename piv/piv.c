@@ -1,6 +1,7 @@
 #include <common.h>
 #include <des.h>
 #include <ecc.h>
+#include <memzero.h>
 #include <pin.h>
 #include <piv.h>
 #include <rand.h>
@@ -414,7 +415,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       rsa_key_t key;
       if (read_file(key_path, &key, sizeof(rsa_key_t)) < 0)
         return -1;
-      rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 8);
+      if (rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 8) < 0) {
+        memzero(&key, sizeof(key));
+        return -1;
+      }
+      memzero(&key, sizeof(key));
 
       buffer[0] = 0x7C;
       buffer[1] = 0x82;
@@ -429,7 +434,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       uint8_t key[ECC_KEY_SIZE];
       if (read_file(key_path, key, sizeof(key)) < 0)
         return -1;
-      ecdsa_sign(ECC_SECP256R1, key, buffer + pos[IDX_CHALLENGE], buffer + 4);
+      if (ecdsa_sign(ECC_SECP256R1, key, buffer + pos[IDX_CHALLENGE],
+                     buffer + 4) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      memzero(key, sizeof(key));
+
       int sig_len = ecdsa_sig2ansi(buffer + 4, buffer + 4);
       buffer[0] = 0x7C;
       buffer[1] = sig_len + 2;
@@ -470,7 +481,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       uint8_t key[24];
       if (read_file(key_path, key, 24) < 0)
         return -1;
-      tdes_enc(buffer + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key);
+      if (tdes_enc(buffer + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      memzero(key, sizeof(key));
     } else {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -525,7 +540,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       uint8_t key[24];
       if (read_file(key_path, key, 24) < 0)
         return -1;
-      tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + 4, key);
+      if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + 4, key) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      memzero(key, sizeof(key));
     } else {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -566,7 +585,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       uint8_t key[24];
       if (read_file(key_path, key, 24) < 0)
         return -1;
-      tdes_enc(buffer + pos[IDX_CHALLENGE], buffer + 4, key);
+      if (tdes_enc(buffer + pos[IDX_CHALLENGE], buffer + 4, key) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      memzero(key, sizeof(key));
     } else {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -595,8 +618,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (read_file(key_path, key, ECC_KEY_SIZE) < 0)
       return -1;
     if (ecdh_decrypt(ECC_SECP256R1, key, buffer + pos[IDX_EXP] + 1,
-                     buffer + 4) < 0)
+                     buffer + 4) < 0) {
+      memzero(key, sizeof(key));
       return -1;
+    }
+    memzero(key, sizeof(key));
     buffer[0] = 0x7C;
     buffer[1] = ECC_KEY_SIZE + 2;
     buffer[2] = TAG_RESPONSE;
@@ -645,8 +671,10 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     rsa_key_t key;
     if (rsa_generate_key(&key) < 0)
       return -1;
-    if (write_file(key_path, &key, sizeof(key)) < 0)
+    if (write_file(key_path, &key, sizeof(key)) < 0) {
+      memzero(&key, sizeof(key));
       return -1;
+    }
     buffer[0] = 0x7F;
     buffer[1] = 0x49;
     buffer[2] = 0x82;
@@ -661,13 +689,16 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     buffer[10 + N_LENGTH] = E_LENGTH;
     memcpy(buffer + 11 + N_LENGTH, key.e, E_LENGTH);
     buffer_len = 11 + N_LENGTH + E_LENGTH;
+    memzero(&key, sizeof(key));
     send_response(rapdu, LE);
   } else if (alg == ALG_ECC_256) {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
     if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
       return -1;
-    if (write_file(key_path, key, sizeof(key)) < 0)
+    if (write_file(key_path, key, sizeof(key)) < 0) {
+      memzero(key, sizeof(key));
       return -1;
+    }
     buffer[0] = 0x7F;
     buffer[1] = 0x49;
     buffer[2] = ECC_PUB_KEY_SIZE + 3;
@@ -676,6 +707,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     buffer[5] = 0x04;
     memcpy(buffer + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
     buffer_len = ECC_PUB_KEY_SIZE + 6;
+    memzero(key, sizeof(key));
     send_response(rapdu, LE);
   } else
     EXCEPT(SW_WRONG_DATA);
@@ -734,10 +766,15 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     int q_len = tlv_get_length(p);
     p += tlv_length_size(q_len);
     memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
-    if (rsa_complete_key(&key) < 0)
+    if (rsa_complete_key(&key) < 0) {
+      memzero(&key, sizeof(key));
       return -1;
-    if (write_file(key_path, &key, sizeof(key)) < 0)
+    }
+    if (write_file(key_path, &key, sizeof(key)) < 0) {
+      memzero(&key, sizeof(key));
       return -1;
+    }
+    memzero(&key, sizeof(key));
     break;
   }
   case ALG_ECC_256: {
@@ -745,10 +782,15 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (buffer[0] != 0x06 || buffer[1] != ECC_KEY_SIZE)
       EXCEPT(SW_WRONG_DATA);
     memcpy(key, buffer + 2, ECC_KEY_SIZE);
-    if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
+    if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
+      memzero(key, sizeof(key));
       return -1;
-    if (write_file(key_path, key, sizeof(key)) < 0)
+    }
+    if (write_file(key_path, key, sizeof(key)) < 0) {
+      memzero(key, sizeof(key));
       return -1;
+    }
+    memzero(key, sizeof(key));
     break;
   }
   default:
