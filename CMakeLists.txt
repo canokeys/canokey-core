@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.7)
 include(FindPkgConfig)
 project(canokey-core C)
 
-set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fno-omit-frame-pointer -fsanitize=address")
