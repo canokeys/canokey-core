@@ -16,7 +16,7 @@ add_subdirectory(canokey-crypto)
 
 file(GLOB SRC src/*.c littlefs/*.c u2f/*.c openpgp/*.c piv/*.c)
 add_library(canokey-core ${SRC})
-target_include_directories(canokey-core SYSTEM PUBLIC include PRIVATE littlefs)
+target_include_directories(canokey-core SYSTEM PUBLIC include littlefs)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
