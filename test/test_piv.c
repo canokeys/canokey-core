@@ -15,8 +15,9 @@ static void test_data(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   // external auth
   apdu_fill_with_command(capdu, "00 87 00 9B 04 7C 02 81 00 00");
@@ -99,8 +100,9 @@ static void test_gen_key(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   CLA = 0x00;
   INS = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
   P1 = 0x00;
@@ -126,8 +128,9 @@ static void test_sign(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   apdu_fill_with_command(
       capdu,
@@ -157,8 +160,9 @@ static void test_decrypt(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   CLA = 0x00;
   INS = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
@@ -189,8 +193,9 @@ static void test_change_pin(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   apdu_fill_with_command(
       capdu, "00 2C 00 80 10 31 32 33 34 35 36 37 38 39 39 39 39 39 39 FF FF");
@@ -203,8 +208,9 @@ static void test_import_rsa(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   apdu_fill_with_command(
       capdu, "10 FE 07 9A FF 01 81 80 E8 12 82 34 EE 93 5F 33 ED DF 34 1F 4E "

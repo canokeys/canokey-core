@@ -26,8 +26,10 @@ static void test_u2f_personalization(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
   capdu->cla = 0x80;
   capdu->ins = U2F_PERSONALIZATION;
   capdu->lc = 0;
@@ -52,8 +54,9 @@ static void test_u2f_registration(void **state) {
   (void)state;
 
   uint8_t c_buf[100], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   // prepare data
   capdu->cla = 0x00;
@@ -144,8 +147,9 @@ static void test_u2f_authenticate(void **state) {
   (void)state;
 
   uint8_t c_buf[1000], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   // prepare data
   capdu->cla = 0x00;

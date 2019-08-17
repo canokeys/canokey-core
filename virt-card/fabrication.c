@@ -24,18 +24,21 @@ uint8_t cert[] = {0x30,0x82,0x01,0x1f,0x30,0x81,0xc8,0x02,0x09,0x00,0x92,0xce,0x
 static void fake_u2f_personalization() {
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
-  capdu->cla = 0x80;
-  capdu->ins = U2F_PERSONALIZATION;
-  capdu->lc = 0;
+  CAPDU capdu;
+  RAPDU rapdu;
+  capdu.data = c_buf;
+  rapdu.data = r_buf;
 
-  u2f_process_apdu(capdu, rapdu);
+  capdu.cla = 0x80;
+  capdu.ins = U2F_PERSONALIZATION;
+  capdu.lc = 0;
 
-  capdu->ins = U2F_INSTALL_CERT;
-  capdu->lc = sizeof(cert);
-  memcpy(capdu->data, cert, sizeof(cert));
-  u2f_process_apdu(capdu, rapdu);
+  u2f_process_apdu(&capdu, &rapdu);
+
+  capdu.ins = U2F_INSTALL_CERT;
+  capdu.lc = sizeof(cert);
+  memcpy(capdu.data, cert, sizeof(cert));
+  u2f_process_apdu(&capdu, &rapdu);
 }
 
 

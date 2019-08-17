@@ -14,8 +14,9 @@ static void test_verify(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   capdu->cla = 0x00;
   capdu->ins = OPENPGP_INS_VERIFY;
   capdu->p1 = 0x00;
@@ -43,8 +44,9 @@ static void test_change_reference_data(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   capdu->cla = 0x00;
   capdu->ins = OPENPGP_INS_CHANGE_REFERENCE_DATA;
   capdu->p1 = 0x01;
@@ -75,8 +77,9 @@ static void test_reset_retry_counter(void **state) {
   write_file("pgp-rc", "abcdefgh", 8);
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   capdu->cla = 0x00;
   capdu->ins = OPENPGP_INS_RESET_RETRY_COUNTER;
   capdu->p1 = 0x02;
@@ -102,8 +105,9 @@ static void test_get_data(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   capdu->cla = 0x00;
   capdu->ins = OPENPGP_INS_GET_DATA;
   capdu->p1 = 0x00;
@@ -117,8 +121,9 @@ static void test_import_key(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   apdu_fill_with_command(capdu, "00 20 00 83 08 31 32 33 34 35 36 37 38");
   openpgp_process_apdu(capdu, rapdu);
@@ -148,8 +153,9 @@ static void test_generate_key(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   capdu->cla = 0x00;
   capdu->ins = OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
   capdu->p1 = 0x80;
@@ -166,8 +172,9 @@ static void test_special(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU *capdu = (CAPDU *)c_buf;
-  RAPDU *rapdu = (RAPDU *)r_buf;
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
 
   apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
   openpgp_process_apdu(capdu, rapdu);

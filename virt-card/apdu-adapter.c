@@ -88,37 +88,29 @@ int virt_card_apdu_transceive(
         return -1;
     }
 
-    uint8_t * cmd_struct = (uint8_t*) malloc(sizeof(CAPDU) + Lc);
-    if(!cmd_struct)
-        return -1;
-    uint8_t * resp_struct = (uint8_t*) malloc(sizeof(RAPDU) + 4096);
-    if(!resp_struct) {
-        free(cmd_struct);
-        return -1;
-    }
+    CAPDU c;
+    RAPDU r;
 
-    CAPDU *c = (CAPDU*) cmd_struct;
-    RAPDU *r = (RAPDU*) resp_struct;
+    c.cla = txBuf[0];
+    c.ins = txBuf[1];
+    c.p1 = txBuf[2];
+    c.p2 = txBuf[3];
+    c.lc = Lc;
+    c.le = Le;
+    c.data = txBuf + offData;
 
-    c->cla = txBuf[0];
-    c->ins = txBuf[1];
-    c->p1 = txBuf[2];
-    c->p2 = txBuf[3];
-    c->lc = Lc;
-    c->le = Le;
-    memcpy(c->data, txBuf + offData, Lc);
-
-    r->len = Le;
+    r.len = Le;
+    r.data = rxBuf; 
 
     int ret;
-    if (c->cla == 0x00 && c->ins == 0xA4 && c->p1 == 0x04 && c->p2 == 0x00) {
-        if(c->lc == 8 && memcmp(c->data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
+    if (c.cla == 0x00 && c.ins == 0xA4 && c.p1 == 0x04 && c.p2 == 0x00) {
+        if(c.lc == 8 && memcmp(c.data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
             current_applet = APPLET_U2F;
         }
-        else if(c->lc >= 6 && memcmp(c->data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
+        else if(c.lc >= 6 && memcmp(c.data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
             current_applet = APPLET_OPENPGP;
         }
-        else if(c->lc >= 5 && memcmp(c->data, "\xA0\x00\x00\x03\x08", 5) == 0) {
+        else if(c.lc >= 5 && memcmp(c.data, "\xA0\x00\x00\x03\x08", 5) == 0) {
             current_applet = APPLET_PIV;
         }
         else {
@@ -128,35 +120,32 @@ int virt_card_apdu_transceive(
     switch(current_applet) {
         default:
             printf("No applet selected yet\n");
-            r->sw = 0x6A82;
-            r->len = 0;
+            r.sw = 0x6A82;
+            r.len = 0;
             ret = 0;
             break;
         case APPLET_U2F:
             printf("calling u2f_process_apdu\n");
-            ret = u2f_process_apdu(c, r);
+            ret = u2f_process_apdu(&c, &r);
             printf("u2f_process_apdu ret %d\n", ret);
             break;
         case APPLET_OPENPGP:
             printf("calling openpgp_process_apdu\n");
-            ret = openpgp_process_apdu(c, r);
+            ret = openpgp_process_apdu(&c, &r);
             printf("openpgp_process_apdu ret %d\n", ret);
             break;
         case APPLET_PIV:
             printf("calling piv_process_apdu\n");
-            ret = piv_process_apdu(c, r);
+            ret = piv_process_apdu(&c, &r);
             printf("piv_process_apdu ret %d\n", ret);
             break;
     }
     if(ret == 0) {
-        memcpy(rxBuf, r->data, r->len);
-        rxBuf[r->len] = 0xff & (r->sw >> 8);
-        rxBuf[r->len+1] = 0xff & r->sw;
-        *rxLen = r->len+2;
+        rxBuf[r.len] = 0xff & (r.sw >> 8);
+        rxBuf[r.len+1] = 0xff & r.sw;
+        *rxLen = r.len+2;
     }
 
-    free(resp_struct);
-    free(cmd_struct);
 
     return ret;
 }
