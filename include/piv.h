@@ -16,6 +16,7 @@
 #define PIV_INS_SET_MANAGEMENT_KEY 0xFF
 #define PIV_INS_RESET 0xFB
 #define PIV_INS_IMPORT_ASYMMETRIC_KEY 0xFE
+#define PIV_INS_GET_VERSION 0xFD
 
 int piv_install(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);

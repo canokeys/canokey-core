@@ -801,6 +801,19 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00)
+    EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0)
+    EXCEPT(SW_WRONG_LENGTH);
+  buffer[0] = 0x05;
+  buffer[1] = 0x00;
+  buffer[2] = 0x00;
+  buffer_len = 3;
+  send_response(rapdu, LE);
+  return 0;
+}
+
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
@@ -875,6 +888,9 @@ restart:
     break;
   case PIV_INS_IMPORT_ASYMMETRIC_KEY:
     ret = piv_import_asymmetric_key(capdu, rapdu);
+    break;
+  case PIV_INS_GET_VERSION:
+    ret = piv_get_version(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
