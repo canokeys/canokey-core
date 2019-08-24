@@ -377,7 +377,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
-  int16_t len[6];
+  int16_t len[6] = {0};
   uint16_t dat_len = tlv_get_length(buffer + 1);
   uint16_t dat_pos = 1 + tlv_length_size(dat_len);
   while (dat_pos < buffer_len) {
