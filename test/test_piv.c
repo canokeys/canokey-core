@@ -280,7 +280,7 @@ int main() {
 
   fs_init(&cfg);
   piv_config(buffer, 2048);
-  piv_install(0);
+  piv_install(1);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_data),       cmocka_unit_test(test_gen_key),
