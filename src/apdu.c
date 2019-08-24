@@ -76,7 +76,7 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
     LE = 0x100;
   } else if (LC > 0 && len == 6 + LC) { // Case 4S
     memcpy(DATA, cmd + 5, LC);
-    LE = cmd[6 + LC];
+    LE = cmd[5 + LC];
     if (LE == 0)
       LE = 0x100;
   } else if (len == 7) { // Case 2E
@@ -96,7 +96,7 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
       LE = 0x10000;
       return 0;
     } else if (len == 9 + LC) { // Case 4E
-      LE = (cmd[8 + LC] << 8) | cmd[9 + LC];
+      LE = (cmd[7 + LC] << 8) | cmd[8 + LC];
       if (LE == 0)
         LE = 0x10000;
     } else
