@@ -52,7 +52,7 @@
 #define TAG_EXTENDED_LENGTH_INFO 0x7F66u
 #define TAG_KEY_INFO 0xDE
 
-int openpgp_install(void);
+int openpgp_install(uint8_t reset);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H

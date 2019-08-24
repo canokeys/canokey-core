@@ -74,7 +74,7 @@ static pin_t pin = {
 static pin_t puk = {
     .min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
 
-static void authenticate_reset() {
+static void authenticate_reset(void) {
   auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_NONE;
   auth_ctx[OFFSET_AUTH_KEY_ID] = 0;
   auth_ctx[OFFSET_AUTH_ALGO] = 0;
@@ -104,7 +104,10 @@ static int get_input_size(uint8_t alg) {
   }
 }
 
-int piv_install() {
+int piv_install(uint8_t reset) {
+  if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0)
+    return 0;
+
   // PIN data
   if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0)
     return -1;
@@ -737,7 +740,7 @@ static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_LENGTH);
   if (pin_get_retries(&pin) > 0 || pin_get_retries(&puk) > 0)
     EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  piv_install();
+  piv_install(1);
   return 0;
 }
 

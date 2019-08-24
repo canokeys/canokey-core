@@ -274,10 +274,8 @@ int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 void u2f_config(uint8_t block_size,
-                int (*enc)(const uint8_t *, uint8_t *,
-                                     const uint8_t *),
-                int (*dec)(const uint8_t *, uint8_t *,
-                                     const uint8_t *)) {
+                int (*enc)(const uint8_t *, uint8_t *, const uint8_t *),
+                int (*dec)(const uint8_t *, uint8_t *, const uint8_t *)) {
   cipher_cfg.block_size = block_size;
   cipher_cfg.mode = CTR;
   cipher_cfg.encrypt = enc;

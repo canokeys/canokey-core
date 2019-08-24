@@ -19,7 +19,7 @@
 #define PIV_INS_GET_VERSION 0xFD
 #define PIV_INS_GET_SERIAL 0xF8
 
-int piv_install(void);
+int piv_install(uint8_t reset);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int piv_config(uint8_t *buf, uint16_t buffer_size);
 

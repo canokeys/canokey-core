@@ -56,5 +56,6 @@ typedef struct {
   } while (0)
 
 void apdu_fill_with_command(CAPDU *capdu, char *cmd);
+int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 
 #endif // CANOKEY_CORE__APDU_H

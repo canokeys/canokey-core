@@ -24,9 +24,9 @@
 #define MAX_LANG_LENGTH 8
 #define MAX_SEX_LENGTH 1
 #define MAX_PIN_LENGTH 64
-#define MAX_CERT_LENGTH 0x480u
+#define MAX_CERT_LENGTH 0x480
 #define MAX_DO_LENGTH 0xFF
-#define MAX_APDU_LENGTH 0x500u
+#define MAX_APDU_LENGTH 0x500
 #define DIGITAL_SIG_COUNTER_LENGTH 3
 #define PW_STATUS_LENGTH 7
 
@@ -116,7 +116,9 @@ static const char *get_key_path(uint8_t tag) {
     return NULL;
 }
 
-int openpgp_install() {
+int openpgp_install(uint8_t reset) {
+  if (!reset && get_file_size(DATA_PATH) == 0)
+    return 0;
   // PIN data
   if (pin_create(&pw1, "123456", 6, PW_RETRY_COUNTER_DEFAULT) < 0)
     return -1;
@@ -1145,7 +1147,7 @@ static int openpgp_terminate(const CAPDU *capdu, RAPDU *rapdu) {
 static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00)
     EXCEPT(SW_WRONG_P1P2);
-  return openpgp_install();
+  return openpgp_install(1);
 }
 
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {

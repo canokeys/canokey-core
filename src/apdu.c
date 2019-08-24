@@ -52,3 +52,49 @@ void apdu_fill_with_command(CAPDU *capdu, char *cmd) {
     }
   }
 }
+
+int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
+  if (len < 4)
+    return -1;
+  CLA = cmd[0];
+  INS = cmd[1];
+  P1 = cmd[2];
+  P2 = cmd[3];
+  LC = 0;
+  LE = 0;
+
+  if (len == 4) // Case 1
+    return 0;
+  LC = cmd[4];
+  if (len == 5) { // Case 2S
+    LE = LC;
+    LC = 0;
+  } else if (LC > 0 && len == 5 + LC) { // Case 3S
+    memcpy(DATA, cmd + 5, LC);
+  } else if (LC > 0 && len == 6 + LC) { // Case 4S
+    memcpy(DATA, cmd + 5, LC);
+    LE = cmd[6 + LC];
+    if (LE == 0)
+      LE = 0x100;
+  } else if (len == 7) { // Case 2E
+    if (LC != 0)
+      return -1;
+    LE = (cmd[5] << 8) | cmd[6];
+  } else {
+    if (LC != 0)
+      return -1;
+    LC = (cmd[5] << 8) | cmd[6];
+    if (LC == 0)
+      return -1;
+    memcpy(DATA, cmd + 7, LC);
+    if (len == 7 + LC) { // Case 3E
+      return 0;
+    } else if (len == 9 + LC) { // Case 4E
+      LE = (cmd[8 + LC] << 8) | cmd[9 + LC];
+      if (LE == 0)
+        LE = 0x10000;
+    } else
+      return -1;
+  }
+  return 0;
+}
