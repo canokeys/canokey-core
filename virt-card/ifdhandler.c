@@ -27,7 +27,7 @@ RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
     printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
     if(!applet_init) {
         u2f_fabrication_procedure();
-        openpgp_install();
+        openpgp_install(0);
         applet_init = 1;
     }
     return IFD_SUCCESS;

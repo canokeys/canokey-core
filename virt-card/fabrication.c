@@ -64,6 +64,6 @@ int u2f_fabrication_procedure() {
 
   static uint8_t piv_buffer[2048];
   piv_config(piv_buffer, sizeof(piv_buffer));
-  piv_install();
+  piv_install(0);
   return 0;
 }
