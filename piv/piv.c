@@ -105,6 +105,8 @@ static int get_input_size(uint8_t alg) {
 }
 
 int piv_install(uint8_t reset) {
+  state = CHAINING_STATE_NORMAL;
+
   if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0)
     return 0;
 
