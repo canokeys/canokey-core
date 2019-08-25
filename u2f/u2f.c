@@ -190,11 +190,15 @@ int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int u2f_personalization(const CAPDU *capdu, RAPDU *rapdu) {
+int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
 
+  if (LC != U2F_EC_KEY_SIZE)
+    EXCEPT(SW_WRONG_LENGTH);
+
   uint8_t buffer[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
-  ecc_generate(ECC_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
+  memcpy(buffer, DATA, LC);
+  ecc_get_public_key(ECC_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
   random_buffer(buffer + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE,
                 U2F_SECRET_KEY_SIZE);
   int err = write_file(KEY_FILE, buffer, sizeof(buffer));
@@ -202,14 +206,7 @@ int u2f_personalization(const CAPDU *capdu, RAPDU *rapdu) {
     return err;
 
   uint32_t ctr = 0;
-  err = write_file(CTR_FILE, &ctr, sizeof(ctr));
-  if (err < 0)
-    return err;
-
-  SW = SW_NO_ERROR;
-  LL = U2F_EC_PUB_KEY_SIZE;
-  memcpy(RDATA, buffer + U2F_EC_KEY_SIZE, U2F_EC_PUB_KEY_SIZE);
-  return 0;
+  return write_file(CTR_FILE, &ctr, sizeof(ctr));
 }
 
 int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
@@ -254,13 +251,13 @@ int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     else
       return 0;
   }
-  if (CLA == 0x80) {
+  if (CLA == 0x90) {
     switch (INS) {
-    case U2F_PERSONALIZATION:
-      ret = u2f_personalization(capdu, rapdu);
-      break;
     case U2F_INSTALL_CERT:
       ret = u2f_install_cert(capdu, rapdu);
+      break;
+    case U2F_INSTALL_PRIVATE_KEY:
+      ret = u2f_install_private_key(capdu, rapdu);
       break;
     default:
       EXCEPT(SW_INS_NOT_SUPPORTED);

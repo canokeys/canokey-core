@@ -36,8 +36,8 @@ typedef struct {
 
 // Vendor defined commands
 #define U2F_VENDOR_FIRST 0xc0 // First vendor defined command
-#define U2F_PERSONALIZATION 0x10
-#define U2F_INSTALL_CERT 0x11
+#define U2F_INSTALL_CERT 0x01
+#define U2F_INSTALL_PRIVATE_KEY 0x02
 #define U2F_VENDOR_LAST 0xff // Last vendor defined command
 
 // U2F_CMD_REGISTER command defines
