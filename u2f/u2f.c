@@ -26,28 +26,22 @@
 #define KEY_FILE "u2f_key"
 #define CTR_FILE "u2f_ctr"
 
-volatile static uint8_t pressed = 0;
+volatile static uint8_t pressed;
 static block_cipher_config cipher_cfg;
 
-void u2f_press() { pressed = 1; }
+void u2f_press(void) { pressed = 1; }
 
-void u2f_unpress() { pressed = 0; }
+void u2f_unpress(void) { pressed = 0; }
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC != 64) {
-    SW = SW_WRONG_LENGTH;
-    LL = 0;
-    return 0;
-  }
+  if (LC != 64)
+    EXCEPT(SW_WRONG_LENGTH);
 
 #ifdef NFC
   pressed = 1;
 #endif
-  if (!pressed) {
-    SW = SW_CONDITIONS_NOT_SATISFIED;
-    LL = 0;
-    return 0;
-  }
+  if (!pressed)
+    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   pressed = 0;
 
   U2F_REGISTER_REQ *req = (U2F_REGISTER_REQ *)DATA;
@@ -62,6 +56,13 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (err < 0)
     return err;
 
+  // there are overlaps between req and resp
+  sha256_init();
+  sha256_update((uint8_t[]){0x00}, 1);
+  sha256_update(req->appId, U2F_APPID_SIZE);
+  sha256_update(req->chal, U2F_CHAL_SIZE);
+
+  // build response
   // REGISTER ID (1)
   resp->registerId = U2F_REGISTER_ID;
   // PUBLIC KEY (65)
@@ -84,17 +85,12 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (cert_len < 0)
     return cert_len;
   // SIG (var)
-  sha256_init();
-  sha256_update((uint8_t[]){0x00}, 1);
-  sha256_update(req->appId, U2F_APPID_SIZE);
-  sha256_update(req->chal, U2F_CHAL_SIZE);
   sha256_update(handle, U2F_KH_SIZE);
   sha256_update((const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
   sha256_final(handle);
   ecdsa_sign(ECC_SECP256R1, key_buf, handle, handle + 32);
   size_t signature_len = ecdsa_sig2ansi(
       handle + 32, resp->keyHandleCertSig + U2F_KH_SIZE + cert_len);
-  SW = SW_NO_ERROR;
   LL = 67 + U2F_KH_SIZE + cert_len + signature_len;
   return 0;
 }
@@ -103,11 +99,8 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_AUTHENTICATE_REQ *req = (U2F_AUTHENTICATE_REQ *)DATA;
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
 
-  if (req->keyHandleLen != U2F_KH_SIZE) {
-    SW = SW_WRONG_LENGTH;
-    LL = 0;
-    return 0;
-  }
+  if (req->keyHandleLen != U2F_KH_SIZE)
+    EXCEPT(SW_WRONG_LENGTH);
 
   uint8_t key_buf[U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE + U2F_SECRET_KEY_SIZE];
   int err = read_file(KEY_FILE, key_buf, sizeof(key_buf));
@@ -119,26 +112,14 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   cipher_cfg.key = key_buf + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE;
   cipher_cfg.iv = key_buf;
   block_cipher_dec(&cipher_cfg);
-  if (memcmp(req->appId, req->keyHandle, U2F_APPID_SIZE) != 0) {
-    SW = SW_WRONG_DATA;
-    LL = 0;
-    return 0;
-  }
-
-  if (P1 != U2F_AUTH_ENFORCE) {
-    SW = SW_WRONG_P1P2;
-    LL = 0;
-    return 0;
-  }
+  if (memcmp(req->appId, req->keyHandle, U2F_APPID_SIZE) != 0)
+    EXCEPT(SW_WRONG_DATA);
 
 #ifdef NFC
   pressed = 1;
 #endif
-  if (P1 == U2F_AUTH_CHECK_ONLY || !pressed) {
-    SW = SW_CONDITIONS_NOT_SATISFIED;
-    LL = 0;
-    return 0;
-  }
+  if (P1 == U2F_AUTH_CHECK_ONLY || !pressed)
+    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   pressed = 0;
 
   uint32_t ctr = 0;
@@ -150,32 +131,27 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (err < 0)
     return err;
 
-  resp->flags = U2F_AUTH_FLAG_TUP;
-  ctr = htobe32(ctr);
-  memcpy(resp->ctr, &ctr, sizeof(ctr));
   sha256_init();
   sha256_update(req->appId, U2F_APPID_SIZE);
   sha256_update((uint8_t[]){U2F_AUTH_FLAG_TUP}, 1);
   sha256_update((const uint8_t *)&ctr, sizeof(ctr));
   sha256_update(req->chal, U2F_CHAL_SIZE);
   sha256_final(req->appId);
-
   ecdsa_sign(ECC_SECP256R1, req->keyHandle + U2F_APPID_SIZE, req->appId,
              resp->sig);
   size_t signature_len = ecdsa_sig2ansi(resp->sig, resp->sig);
 
-  SW = SW_NO_ERROR;
+  resp->flags = U2F_AUTH_FLAG_TUP;
+  ctr = htobe32(ctr);
+  memcpy(resp->ctr, &ctr, sizeof(ctr));
+
   LL = signature_len + 5;
   return 0;
 }
 
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC != 0) {
-    SW = SW_WRONG_LENGTH;
-    LL = 0;
-    return 0;
-  }
-  SW = SW_NO_ERROR;
+  if (LC != 0)
+    EXCEPT(SW_WRONG_LENGTH);
   LL = 6;
   memcpy(RDATA, "U2F_V2", 6);
   return 0;
@@ -184,7 +160,6 @@ int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
 
-  SW = SW_NO_ERROR;
   LL = 6;
   memcpy(RDATA, "U2F_V2", 6);
   return 0;
@@ -210,19 +185,10 @@ int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC > U2F_MAX_ATT_CERT_SIZE) {
-    SW = SW_WRONG_LENGTH;
-    LL = 0;
-    return 0;
-  }
+  if (LC > U2F_MAX_ATT_CERT_SIZE)
+    EXCEPT(SW_WRONG_LENGTH);
 
-  int err = write_file(CERT_FILE, DATA, LC);
-  if (err < 0)
-    return err;
-
-  SW = SW_NO_ERROR;
-  LL = 0;
-  return 0;
+  return write_file(CERT_FILE, DATA, LC);
 }
 
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
@@ -277,4 +243,5 @@ void u2f_config(uint8_t block_size,
   cipher_cfg.mode = CTR;
   cipher_cfg.encrypt = enc;
   cipher_cfg.decrypt = dec;
+  pressed = 0;
 }

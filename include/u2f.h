@@ -80,8 +80,8 @@ typedef struct {
   uint8_t sig[U2F_MAX_EC_SIG_SIZE]; // Signature
 } U2F_AUTHENTICATE_RESP;
 
-void u2f_press();
-void u2f_unpress();
+void u2f_press(void);
+void u2f_unpress(void);
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 void u2f_config(uint8_t block_size,
                 int (*enc)(const uint8_t *, uint8_t *,
