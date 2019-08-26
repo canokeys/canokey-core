@@ -130,6 +130,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   err = write_file(CTR_FILE, &ctr, sizeof(ctr));
   if (err < 0)
     return err;
+  ctr = htobe32(ctr);
 
   sha256_init();
   sha256_update(req->appId, U2F_APPID_SIZE);
@@ -142,7 +143,6 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   size_t signature_len = ecdsa_sig2ansi(resp->sig, resp->sig);
 
   resp->flags = U2F_AUTH_FLAG_TUP;
-  ctr = htobe32(ctr);
   memcpy(resp->ctr, &ctr, sizeof(ctr));
 
   LL = signature_len + 5;

@@ -6,6 +6,7 @@
 #include <aes.h>
 #include <apdu.h>
 #include <block-cipher.h>
+#include <crypto-util.h>
 #include <ecc.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
