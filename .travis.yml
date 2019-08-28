@@ -123,7 +123,6 @@ script:
   - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 999999 2>&1 | grep 'Successfully unblocked the pin code'
   - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 87654321 2>&1 | grep 'Successfully changed the puk code'
   - yubico-piv-tool -r "" -a unblock-pin -P 87654321 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
-  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
   - ## Key import
   - openssl ecparam -name prime256v1 -out p256.pem
   - openssl req -x509 -newkey ec:p256.pem -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
@@ -139,6 +138,9 @@ script:
   - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 1 tries left before blocked'
   - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'The puk code is blocked'
   - yubico-piv-tool -r "" -a change-puk -P 87654321 -N 11111111 2>&1 | grep 'The puk code is blocked'
+  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
+  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
   - yubico-piv-tool -r "" -a reset
   - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
