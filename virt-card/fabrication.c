@@ -29,9 +29,10 @@ uint8_t cert[] = {0x30,0x82,0x01,0x1f,0x30,0x81,0xc8,0x02,0x09,0x00,0x92,0xce,0x
 
 static void fake_u2f_personalization() {
 
-  uint8_t r_buf[1024];
+  uint8_t c_buf[1024], r_buf[1024];
   CAPDU capdu;
   RAPDU rapdu;
+  capdu.data = c_buf;
   rapdu.data = r_buf;
 
   apdu_fill_with_command(&capdu, "00 20 00 00 06 31 32 33 34 35 36");
