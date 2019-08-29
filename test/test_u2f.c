@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <cmocka.h>
 
+#include <admin.h>
 #include <aes.h>
 #include <apdu.h>
 #include <block-cipher.h>
@@ -36,24 +37,28 @@ static void test_u2f_personalization(void **state) {
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
 
-  capdu->cla = 0x90;
-  capdu->ins = U2F_INSTALL_PRIVATE_KEY;
+  apdu_fill_with_command(capdu, "00 20 00 00 06 31 32 33 34 35 36");
+  admin_process_apdu(capdu, rapdu);
+  assert_int_equal(SW, SW_NO_ERROR);
+
+  capdu->cla = 0x00;
+  capdu->ins = ADMIN_INS_WRITE_U2F_PRIVATE_KEY;
   capdu->data = private_key;
   capdu->lc = 32;
 
-  u2f_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  admin_process_apdu(capdu, rapdu);
+  assert_int_equal(SW, SW_NO_ERROR);
 
   uint8_t key_buf[112];
   read_file("u2f_key", key_buf, sizeof(key_buf));
   memzero(key_buf + 96, 16);
   write_file("u2f_key", key_buf, sizeof(key_buf));
 
-  capdu->ins = U2F_INSTALL_CERT;
+  capdu->ins = ADMIN_INS_WRITE_U2F_CERT;
   capdu->lc = 1;
   capdu->data[0] = 0xDD;
-  u2f_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  admin_process_apdu(capdu, rapdu);
+  assert_int_equal(SW, SW_NO_ERROR);
 }
 
 static void test_u2f_registration(void **state) {
@@ -248,6 +253,7 @@ int main() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
+  admin_install();
   u2f_config(16, aes128_enc, aes128_dec);
 
   const struct CMUnitTest tests[] = {

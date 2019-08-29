@@ -1,8 +1,9 @@
 #include "fabrication.h"
-#include "u2f.h"
 #include "piv.h"
-#include <apdu.h>
+#include "u2f.h"
+#include <admin.h>
 #include <aes.h>
+#include <apdu.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
 #include <lfs.h>
@@ -33,17 +34,20 @@ static void fake_u2f_personalization() {
   RAPDU rapdu;
   rapdu.data = r_buf;
 
-  capdu.cla = 0x90;
-  capdu.ins = U2F_INSTALL_PRIVATE_KEY;
+  apdu_fill_with_command(&capdu, "00 20 00 00 06 31 32 33 34 35 36");
+  admin_process_apdu(&capdu, &rapdu);
+
+  capdu.cla = 0x00;
+  capdu.ins = ADMIN_INS_WRITE_U2F_PRIVATE_KEY;
   capdu.data = private_key;
   capdu.lc = 32;
 
-  u2f_process_apdu(&capdu, &rapdu);
+  admin_process_apdu(&capdu, &rapdu);
 
-  capdu.ins = U2F_INSTALL_CERT;
+  capdu.ins = ADMIN_INS_WRITE_U2F_CERT;
   capdu.data = cert;
   capdu.lc = sizeof(cert);
-  u2f_process_apdu(&capdu, &rapdu);
+  admin_process_apdu(&capdu, &rapdu);
 }
 
 

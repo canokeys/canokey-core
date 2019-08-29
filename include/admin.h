@@ -12,7 +12,7 @@
 #define ADMIN_INS_CHANGE_PIN 0x21
 #define ADMIN_INS_WRITE_SN 0x30
 
-int admin_install(uint8_t reset);
+int admin_install(void);
 int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_

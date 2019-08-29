@@ -12,8 +12,8 @@
 static pin_t pin = {
     .min_length = 6, .max_length = 128, .is_validated = 0, .path = "admin-pin"};
 
-int admin_install(uint8_t reset) {
-  if (!reset && get_file_size(pin.path) == 0)
+int admin_install(void) {
+  if (get_file_size(pin.path) >= 0)
     return 0;
   if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0)
     return -1;
@@ -74,9 +74,13 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   SW = SW_NO_ERROR;
 
   int ret;
+  if (INS == ADMIN_INS_VERIFY)
+    return admin_verify(capdu, rapdu);
+  if (!pin.is_validated)
+    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   switch (INS) {
   case ADMIN_INS_WRITE_U2F_PRIVATE_KEY:
-    ret = u2f_install_cert(capdu, rapdu);
+    ret = u2f_install_private_key(capdu, rapdu);
     break;
   case ADMIN_INS_WRITE_U2F_CERT:
     ret = u2f_install_cert(capdu, rapdu);
@@ -89,9 +93,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_RESET_OATH:
     ret = 0;
-    break;
-  case ADMIN_INS_VERIFY:
-    ret = admin_verify(capdu, rapdu);
     break;
   case ADMIN_INS_CHANGE_PIN:
     ret = admin_change_pin(capdu, rapdu);
