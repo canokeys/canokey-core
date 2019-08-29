@@ -1,7 +1,6 @@
 dist: bionic
 sudo: required
 language:
-  - cpp
   - go
 go:
   - 1.12.x
