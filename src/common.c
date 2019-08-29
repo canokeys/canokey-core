@@ -17,7 +17,3 @@ uint8_t tlv_length_size(uint16_t length) {
     return 2;
   return 3;
 }
-
-__attribute__((weak)) void fill_sn(uint8_t *buf) {
-  memset(buf, 0, 4);
-}

@@ -88,5 +88,7 @@ void u2f_config(uint8_t block_size,
                                      const uint8_t *),
                 int (*dec)(const uint8_t *, uint8_t *,
                                      const uint8_t *));
+int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
+int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // __U2F_H_INCLUDED__
