@@ -18,4 +18,10 @@
 uint16_t tlv_get_length(const uint8_t *data);
 uint8_t tlv_length_size(uint16_t length);
 
+/**
+ * Fill a 4-byte serial number
+ * @param buf buffer to be filled
+ */
+void fill_sn(uint8_t *buf);
+
 #endif // CANOKEY_CORE_INCLUDE_COMMON_H

@@ -51,7 +51,7 @@ static const uint8_t ec_attr[] = {0x00, 0x2A, 0x86, 0x48, 0xCE,
                                   0x3D, 0x03, 0x01, 0x07};
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
                               0x03, 0x04,                         // version
-                              0xFF, 0xFE,             // manufacturer
+                              0x80, 0x86,             // manufacturer
                               0x00, 0x00, 0x00, 0x00, // serial number
                               0x00, 0x00};
 static const uint8_t historical_bytes[] = {0x00,
@@ -236,6 +236,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   switch (tag) {
   case TAG_AID:
     memcpy(RDATA, aid, sizeof(aid));
+    fill_sn(RDATA + 10);
     LL = sizeof(aid);
     break;
 
@@ -288,6 +289,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
+    fill_sn(RDATA + off + 10);
     off += sizeof(aid);
 
     RDATA[off++] = HI(TAG_HISTORICAL_BYTES);

@@ -828,10 +828,7 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   if (LC != 0)
     EXCEPT(SW_WRONG_LENGTH);
-  buffer[0] = 0x80;
-  buffer[1] = 0x00;
-  buffer[2] = 0x00;
-  buffer[3] = 0x00;
+  fill_sn(buffer);
   buffer_len = 4;
   send_response(rapdu, LE);
   return 0;
