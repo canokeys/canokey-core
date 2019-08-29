@@ -1010,13 +1010,13 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (*p++ != 0x92)
       EXCEPT(SW_WRONG_DATA);
     int p_len = tlv_get_length(p);
-    if (p_len > E_LENGTH)
+    if (p_len > PQ_LENGTH)
       EXCEPT(SW_WRONG_DATA);
     p += tlv_length_size(p_len);
     if (*p++ != 0x93)
       EXCEPT(SW_WRONG_DATA);
     int q_len = tlv_get_length(p);
-    if (q_len > E_LENGTH)
+    if (q_len > PQ_LENGTH)
       EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
