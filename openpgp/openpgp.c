@@ -27,6 +27,8 @@
 #define MAX_CERT_LENGTH 0x480
 #define MAX_DO_LENGTH 0xFF
 #define MAX_APDU_LENGTH 0x500
+#define MAX_KEY_LENGTH 0x200
+#define MAX_KEY_TEMPLATE_LENGTH 14
 #define DIGITAL_SIG_COUNTER_LENGTH 3
 #define PW_STATUS_LENGTH 7
 
@@ -971,6 +973,8 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p++ != 0x4D)
     EXCEPT(SW_WRONG_DATA);
   uint16_t len = tlv_get_length(p);
+  if (len > MAX_KEY_LENGTH)
+    EXCEPT(SW_WRONG_DATA);
   uint8_t off = tlv_length_size(len);
   if (len + off + 1 != LC)
     EXCEPT(SW_WRONG_LENGTH);
@@ -987,6 +991,8 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p++ != 0x7F || *p++ != 0x48)
     EXCEPT(SW_WRONG_DATA);
   uint16_t template_len = tlv_get_length(p);
+  if (template_len > MAX_KEY_TEMPLATE_LENGTH)
+    EXCEPT(SW_WRONG_DATA);
   p += tlv_length_size(template_len);
 
   const uint8_t *data_tag = p + template_len;
@@ -998,19 +1004,28 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (*p++ != 0x91)
       EXCEPT(SW_WRONG_DATA);
     int e_len = tlv_get_length(p);
+    if (e_len > E_LENGTH)
+      EXCEPT(SW_WRONG_DATA);
     p += tlv_length_size(e_len);
     if (*p++ != 0x92)
       EXCEPT(SW_WRONG_DATA);
     int p_len = tlv_get_length(p);
+    if (p_len > E_LENGTH)
+      EXCEPT(SW_WRONG_DATA);
     p += tlv_length_size(p_len);
     if (*p++ != 0x93)
       EXCEPT(SW_WRONG_DATA);
     int q_len = tlv_get_length(p);
+    if (q_len > E_LENGTH)
+      EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48)
       EXCEPT(SW_WRONG_DATA);
-    p += tlv_length_size(tlv_get_length(p));
+    len = tlv_get_length(p); // Concatenation of key data
+    if (len > MAX_KEY_LENGTH)
+      EXCEPT(SW_WRONG_DATA);
+    p += tlv_length_size(len);
 
     memcpy(((rsa_key_t *)key)->e + (E_LENGTH - e_len), p, e_len);
     p += e_len;
@@ -1032,7 +1047,10 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48)
       EXCEPT(SW_WRONG_DATA);
-    p += tlv_length_size(tlv_get_length(p));
+    len = tlv_get_length(p); // Concatenation of key data
+    if (len > MAX_KEY_LENGTH)
+      EXCEPT(SW_WRONG_DATA);
+    p += tlv_length_size(len);
     memcpy(key, p, key_len);
 
     if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
