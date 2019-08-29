@@ -1,6 +1,7 @@
 #include "fabrication.h"
 #include "piv.h"
 #include "u2f.h"
+#include "oath.h"
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
@@ -59,17 +60,18 @@ int u2f_fabrication_procedure() {
   cfg.prog = &lfs_emubd_prog;
   cfg.erase = &lfs_emubd_erase;
   cfg.sync = &lfs_emubd_sync;
-  cfg.read_size = 16;
-  cfg.prog_size = 16;
+  cfg.read_size = 1;
+  cfg.prog_size = 512;
   cfg.block_size = 512;
-  cfg.block_count = 400;
+  cfg.block_count = 256;
   cfg.block_cycles = 50000;
-  cfg.cache_size = 128;
+  cfg.cache_size = 512;
   cfg.lookahead_size = 16;
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
   admin_install();
+  oath_install(0);
   u2f_config(16, aes128_enc, aes128_dec);
   fake_u2f_personalization();
 

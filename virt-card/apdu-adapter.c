@@ -2,9 +2,11 @@
 #include "u2f.h"
 #include "openpgp.h"
 #include "piv.h"
+#include "oath.h"
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 #define SHORT_LC   4
@@ -16,6 +18,7 @@ enum {
     APPLET_NULL = 0,
     APPLET_U2F,
     APPLET_OPENPGP,
+    APPLET_OATH,
     APPLET_PIV,
 } current_applet;
 
@@ -103,7 +106,9 @@ int virt_card_apdu_transceive(
     r.data = rxBuf; 
 
     int ret;
+    bool selecting = false;
     if (c.cla == 0x00 && c.ins == 0xA4 && c.p1 == 0x04 && c.p2 == 0x00) {
+        selecting = true;
         if(c.lc == 8 && memcmp(c.data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
             current_applet = APPLET_U2F;
         }
@@ -112,6 +117,9 @@ int virt_card_apdu_transceive(
         }
         else if(c.lc >= 5 && memcmp(c.data, "\xA0\x00\x00\x03\x08", 5) == 0) {
             current_applet = APPLET_PIV;
+        }
+        else if(c.lc >= 7 && memcmp(c.data, "\xa0\x00\x00\x05\x27\x21\x01", 7) == 0) {
+            current_applet = APPLET_OATH;
         }
         else {
             current_applet = APPLET_NULL;
@@ -123,6 +131,17 @@ int virt_card_apdu_transceive(
             r.sw = 0x6A82;
             r.len = 0;
             ret = 0;
+            break;
+        case APPLET_OATH:
+            if(selecting) {
+                r.sw = 0x9000;
+                r.len = 0;
+                ret = 0;
+            }else{
+                printf("calling oath_process_apdu\n");
+                ret = oath_process_apdu(&c, &r);
+                printf("oath_process_apdu ret %d\n", ret);
+            }
             break;
         case APPLET_U2F:
             printf("calling u2f_process_apdu\n");
