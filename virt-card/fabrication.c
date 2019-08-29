@@ -68,6 +68,7 @@ int u2f_fabrication_procedure() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
+  admin_install();
   u2f_config(16, aes128_enc, aes128_dec);
   fake_u2f_personalization();
 
