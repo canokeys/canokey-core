@@ -4,3 +4,6 @@
 [submodule "littlefs"]
 	path = littlefs
 	url = https://github.com/ARMmbed/littlefs.git
+[submodule "tinycbor"]
+	path = tinycbor
+	url = https://github.com/intel/tinycbor.git

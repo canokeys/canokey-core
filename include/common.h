@@ -6,10 +6,20 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifdef TEST
-#define MSG_DBG(fmt, ...) printf("[DBG] %s: " fmt "\n", __func__, ##__VA_ARGS__)
+#define DEBUG
+
+#ifdef DEBUG
+#include <crypto-util.h>
+#include <stdio.h>
+#define DBG_MSG(format, ...)                                                   \
+  printf("[DBG] %s(%d): " format, __func__, __LINE__, ##__VA_ARGS__)
+#define ERR_MSG(format, ...)                                                   \
+  printf("[ERR] %s(%d): " format, __func__, __LINE__, ##__VA_ARGS__)
+#define PRINT_HEX(...) print_hex(__VA_ARGS__)
 #else
-#define MSG_DBG(fmt, ...)
+#define DBG_MSG(...)
+#define ERR_MSG(...)
+#define PRINT_HEX(...)
 #endif
 
 #define LO(x) ((uint8_t)(((uint16_t)x) & 0xFFu))

@@ -388,7 +388,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     dat_pos += tlv_length_size(len[tag - 0x80]);
     pos[tag - 0x80] = dat_pos;
     dat_pos += len[tag - 0x80];
-    MSG_DBG("Tag %02X, pos: %d, len: %d", tag, pos[tag - 0x80],
+    DBG_MSG("Tag %02X, pos: %d, len: %d", tag, pos[tag - 0x80],
             len[tag - 0x80]);
   }
 
