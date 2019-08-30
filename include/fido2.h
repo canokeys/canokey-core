@@ -18,15 +18,23 @@
 
 #define MC_requiredMask 0xF
 
-#define MC_CLIENT_DATA_HASH 0x01
-#define MC_RP 0x02
-#define MC_USER 0x03
-#define MC_PUB_KEY_CRED_PARAMS 0x04
-#define MC_EXCLUDE_LIST 0x05
-#define MC_EXTENSIONS 0x06
-#define MC_OPTIONS 0x07
-#define MC_PIN_AUTH 0x08
-#define MC_PIN_PROTOCOL 0x09
+#define MC_clientDataHash 0x01
+#define MC_rp 0x02
+#define MC_user 0x03
+#define MC_pubKeyCredParams 0x04
+#define MC_excludeList 0x05
+#define MC_extensions 0x06
+#define MC_options 0x07
+#define MC_pinAuth 0x08
+#define MC_pinProtocol 0x09
+
+#define GA_rpId 0x01
+#define GA_clientDataHash 0x02
+#define GA_allowList 0x03
+#define GA_extensions 0x04
+#define GA_options 0x05
+#define GA_pinAuth 0x06
+#define GA_pinProtocol 0x07
 
 #define PUB_KEY_CRED_PUB_KEY 0x01
 #define PUB_KEY_CRED_CTAP1 0x41
@@ -37,7 +45,7 @@
 #define CREDENTIAL_TAG_SIZE 16
 #define CLIENT_DATA_HASH_SIZE 32
 #define CREDENTIAL_NONCE_SIZE 16
-#define DOMAIN_NAME_MAX_SIZE 253
+#define DOMAIN_NAME_MAX_SIZE 254
 #define USER_ID_MAX_SIZE 64
 #define USER_NAME_LIMIT 65    // Must be minimum of 64 bytes but can be more.
 #define DISPLAY_NAME_LIMIT 65 // Must be minimum of 64 bytes but can be more.
@@ -67,6 +75,17 @@ typedef struct {
   uint8_t rk;
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
-} CTAP_MakeCredential;
+} CTAP_makeCredential;
+
+typedef struct {
+  uint16_t parsedParams;
+  uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
+  uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
+  CborValue allowList;
+  size_t allowListSize;
+  uint8_t up;
+  uint8_t uv;
+  uint8_t pinAuth[PIN_AUTH_SIZE];
+} CTAP_getAssertion;
 
 #endif // CANOKEY_CORE_FIDO2_FIDO2_H_
