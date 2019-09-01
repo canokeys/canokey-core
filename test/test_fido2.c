@@ -185,6 +185,17 @@ static void test_ctap_make_credential(void **state) {
   print_hex(output, output_size);
 }
 
+static void test_ctap_get_info(void **state) {
+  (void)state;
+
+  uint8_t input[] = {0x04};
+  uint8_t output[1000];
+  size_t output_size = sizeof(output);
+  assert_int_equal(ctap_process(input, sizeof(input), output, &output_size),
+                   0);
+  print_hex(output, output_size);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_emubd_t bd;
@@ -218,6 +229,7 @@ int main() {
       cmocka_unit_test(test_parse_make_credential),
       cmocka_unit_test(test_parse_get_assertion),
       cmocka_unit_test(test_ctap_make_credential),
+      cmocka_unit_test(test_ctap_get_info),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

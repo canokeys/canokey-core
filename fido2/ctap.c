@@ -40,16 +40,20 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
   CTAP_authData *ad = (CTAP_authData *)buf;
   memcpy(ad->rpIdHash, rpIdHash, sizeof(ad->rpIdHash));
   ad->flags = (at << 6) | 1;
+
   uint32_t ctr;
   int ret = get_sign_counter(&ctr);
   if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ad->signCount = htobe32(ctr);
-  *len = 37;
+
+  *len = 37; // without attCred
+
   if (at) {
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credentialIdLength = htobe16(sizeof(KeyHandle));
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
     if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+
     // now format public key as
     // A5
     // 01 02
@@ -125,44 +129,88 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   // }
   ret = cbor_encode_int(&map, RESP_attStmt);
   CHECK_CBOR_RET(ret);
-  CborEncoder att_map, x5carr;
+  CborEncoder att_map;
   ret = cbor_encoder_create_map(&map, &att_map, 3);
   CHECK_CBOR_RET(ret);
-  // alg = ECC secp256r1
-  ret = cbor_encode_text_stringz(&att_map, "alg");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&att_map, COSE_ALG_ES256);
-  CHECK_CBOR_RET(ret);
-  // sig
-  ret = cbor_encode_text_stringz(&att_map, "sig");
-  CHECK_CBOR_RET(ret);
-  sha256_init();
-  sha256_update(data_buf, len);
-  sha256_update(mc.clientDataHash, sizeof(mc.clientDataHash));
-  sha256_final(data_buf);
-  len = sign_with_device_key(data_buf, data_buf);
-  ret = cbor_encode_byte_string(&att_map, data_buf, len);
-  CHECK_CBOR_RET(ret);
-  // cert (is an array)
-  ret = cbor_encode_text_stringz(&att_map, "x5c");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&att_map, &x5carr, 1);
-  CHECK_CBOR_RET(ret);
-  // to save RAM, generate an empty cert first, then fill it manually
-  ret = cbor_encode_byte_string(&x5carr, NULL, 0);
-  CHECK_CBOR_RET(ret);
-  uint8_t *ptr = x5carr.data.ptr - 1;
-  ret = get_cert(ptr + 3);
-  if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  *ptr++ = 0x59;
-  *ptr++ = HI(ret);
-  *ptr++ = LO(ret);
-  x5carr.data.ptr = ptr + ret;
-  ret = cbor_encoder_close_container(&att_map, &x5carr);
-  CHECK_CBOR_RET(ret);
-  // att done
+  {
+    // alg (ECC secp256r1)
+    ret = cbor_encode_text_stringz(&att_map, "alg");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&att_map, COSE_ALG_ES256);
+    CHECK_CBOR_RET(ret);
+
+    // sig (asn.1)
+    ret = cbor_encode_text_stringz(&att_map, "sig");
+    CHECK_CBOR_RET(ret);
+    sha256_init();
+    sha256_update(data_buf, len);
+    sha256_update(mc.clientDataHash, sizeof(mc.clientDataHash));
+    sha256_final(data_buf);
+    len = sign_with_device_key(data_buf, data_buf);
+    ret = cbor_encode_byte_string(&att_map, data_buf, len);
+    CHECK_CBOR_RET(ret);
+
+    // cert (is an array)
+    ret = cbor_encode_text_stringz(&att_map, "x5c");
+    CHECK_CBOR_RET(ret);
+    CborEncoder x5carr;
+    ret = cbor_encoder_create_array(&att_map, &x5carr, 1);
+    CHECK_CBOR_RET(ret);
+    {
+      // to save RAM, generate an empty cert first, then fill it manually
+      ret = cbor_encode_byte_string(&x5carr, NULL, 0);
+      CHECK_CBOR_RET(ret);
+      uint8_t *ptr = x5carr.data.ptr - 1;
+      ret = get_cert(ptr + 3);
+      if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      *ptr++ = 0x59;
+      *ptr++ = HI(ret);
+      *ptr++ = LO(ret);
+      x5carr.data.ptr = ptr + ret;
+    }
+    ret = cbor_encoder_close_container(&att_map, &x5carr);
+    CHECK_CBOR_RET(ret);
+    // att done
+  }
   ret = cbor_encoder_close_container(&map, &att_map);
   CHECK_CBOR_RET(ret);
+
+  ret = cbor_encoder_close_container(encoder, &map);
+  CHECK_CBOR_RET(ret);
+  return 0;
+}
+
+static uint8_t ctap_get_info(CborEncoder *encoder) {
+  // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
+  // Currently, we respond versions and aaguid.
+  CborEncoder map;
+  int ret = cbor_encoder_create_map(encoder, &map, 2);
+  CHECK_CBOR_RET(ret);
+
+  // versions
+  ret = cbor_encode_uint(&map, RESP_versions);
+  CHECK_CBOR_RET(ret);
+  {
+    CborEncoder array;
+    ret = cbor_encoder_create_array(&map, &array, 2);
+    CHECK_CBOR_RET(ret);
+    {
+      ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&array, "U2F_V2");
+      CHECK_CBOR_RET(ret);
+    }
+    ret = cbor_encoder_close_container(&map, &array);
+    CHECK_CBOR_RET(ret);
+  }
+
+  // aaguid
+  ret = cbor_encode_uint(&map, RESP_aaguid);
+  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_byte_string(&map, aaguid, sizeof(aaguid));
+    CHECK_CBOR_RET(ret);
+  }
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
@@ -177,6 +225,13 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
   switch (*req++) {
   case CTAP_MAKE_CREDENTIAL:
     *resp = ctap_make_credential(&encoder, req, req_len);
+    if (*resp == 0)
+      *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
+    else
+      *resp_len = 1;
+    break;
+  case CTAP_GET_INFO:
+    *resp = ctap_get_info(&encoder);
     if (*resp == 0)
       *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
     else
