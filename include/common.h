@@ -22,6 +22,22 @@
 #define PRINT_HEX(...)
 #endif
 
+#ifndef htobe32
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define htobe32(x) (x)
+#else
+#define htobe32(x) __builtin_bswap32(x)
+#endif
+#endif
+
+#ifndef htobe16
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define htobe16(x) (x)
+#else
+#define htobe16(x) __builtin_bswap16(x)
+#endif
+#endif
+
 #define LO(x) ((uint8_t)(((uint16_t)x) & 0xFFu))
 #define HI(x) ((uint8_t)(((uint16_t)x) >> 8u))
 

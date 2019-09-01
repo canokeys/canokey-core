@@ -24,7 +24,6 @@
 #define CTAP2_ERR_UNSUPPORTED_ALGORITHM     0x26
 #define CTAP2_ERR_OPERATION_DENIED          0x27
 #define CTAP2_ERR_KEY_STORE_FULL            0x28
-#define CTAP2_ERR_NOT_BUSY                  0x29
 #define CTAP2_ERR_NO_OPERATION_PENDING      0x2A
 #define CTAP2_ERR_UNSUPPORTED_OPTION        0x2B
 #define CTAP2_ERR_INVALID_OPTION            0x2C
@@ -42,11 +41,13 @@
 #define CTAP2_ERR_PIN_TOKEN_EXPIRED         0x38
 #define CTAP2_ERR_REQUEST_TOO_LARGE         0x39
 #define CTAP2_ERR_ACTION_TIMEOUT            0x3A
+#define CTAP2_ERR_UP_REQUIRED               0x3B
 #define CTAP1_ERR_OTHER                     0x7F
 #define CTAP2_ERR_SPEC_LAST                 0xDF
 #define CTAP2_ERR_EXTENSION_FIRST           0xE0
 #define CTAP2_ERR_EXTENSION_LAST            0xEF
 #define CTAP2_ERR_VENDOR_FIRST              0xF0
+#define CTAP2_ERR_UNHANDLED_REQUEST         0xF1
 #define CTAP2_ERR_VENDOR_LAST               0xFF
 
 #endif // CANOKEY_CORE_FIDO2_CTAP_ERRORS_H_

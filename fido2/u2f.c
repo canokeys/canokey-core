@@ -1,19 +1,12 @@
 #include <apdu.h>
 #include <block-cipher.h>
+#include <common.h>
 #include <ecc.h>
 #include <fs.h>
 #include <rand.h>
 #include <sha.h>
 #include <string.h>
 #include <u2f.h>
-
-#ifndef htobe32
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define htobe32(x) (x)
-#else
-#define htobe32(x) __builtin_bswap32(x)
-#endif
-#endif
 
 /*
  * Key Handle:
