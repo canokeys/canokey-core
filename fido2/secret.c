@@ -2,6 +2,7 @@
 #include <ecc.h>
 #include <fs.h>
 #include <hmac.h>
+#include <memzero.h>
 #include <rand.h>
 
 #define CTAP_CERT "ctap_cert"
@@ -43,6 +44,24 @@ int generate_key_handle(KeyHandle *kh, uint8_t *pubkey) {
   return 0;
 }
 
+int verify_key_handle(KeyHandle *kh) {
+  uint8_t prikey[ECC_KEY_SIZE];
+  int ret = read_keys(prikey);
+  if (ret < 0) return ret;
+  // get private key
+  hmac_sha256(prikey, ECC_KEY_SIZE, kh->nonce, sizeof(kh->nonce), prikey);
+  // get tag, store in rpIdHash, which should be verified first outside of this function
+  hmac_sha256(prikey, ECC_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh->rpIdHash);
+  if (memcmp(kh->rpIdHash, kh->tag, sizeof(kh->tag)) == 0) {
+    // store prikey to rpIdHash
+    memcpy(kh->rpIdHash, prikey, sizeof(prikey));
+    memzero(prikey, sizeof(prikey));
+    return 0;
+  }
+  memzero(prikey, sizeof(prikey));
+  return 1;
+}
+
 size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   int ret = read_keys(sig);
   if (ret < 0) return ret;
@@ -50,6 +69,9 @@ size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   return ecdsa_sig2ansi(sig, sig);
 }
 
-int get_cert(uint8_t *buf) {
-  return read_file(CTAP_CERT, buf, MAX_CERT_SIZE);
+size_t sign_with_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
+  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
+  return ecdsa_sig2ansi(sig, sig);
 }
+
+int get_cert(uint8_t *buf) { return read_file(CTAP_CERT, buf, MAX_CERT_SIZE); }

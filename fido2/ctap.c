@@ -20,6 +20,32 @@
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
+static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
+
+static void build_cose_key(uint8_t *data) {
+  // format public key as
+  // A5
+  // 01 02
+  // 03 26
+  // 20 01
+  // 21 58 20 x
+  // 22 58 20 y
+  memmove(data + 45, data + 32, 32);
+  memmove(data + 10, data, 32);
+  data[0] = 0xA5;
+  data[1] = 0x01;
+  data[2] = 0x02;
+  data[3] = 0x03;
+  data[4] = 0x26;
+  data[5] = 0x20;
+  data[6] = 0x01;
+  data[7] = 0x21;
+  data[8] = 0x58;
+  data[9] = 0x20;
+  data[42] = 0x22;
+  data[43] = 0x58;
+  data[44] = 0x20;
+}
 
 static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, size_t *len) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
@@ -54,47 +80,32 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
     if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
-    // now format public key as
-    // A5
-    // 01 02
-    // 03 26
-    // 20 01
-    // 21 58 20 x
-    // 21 58 20 y
-    memmove(ad->at.publicKey + 45, ad->at.publicKey + 32, 32);
-    memmove(ad->at.publicKey + 10, ad->at.publicKey, 32);
-    ad->at.publicKey[0] = 0xA5;
-    ad->at.publicKey[1] = 0x01;
-    ad->at.publicKey[2] = 0x02;
-    ad->at.publicKey[3] = 0x03;
-    ad->at.publicKey[4] = 0x26;
-    ad->at.publicKey[5] = 0x20;
-    ad->at.publicKey[6] = 0x01;
-    ad->at.publicKey[7] = 0x21;
-    ad->at.publicKey[8] = 0x58;
-    ad->at.publicKey[9] = 0x20;
-    ad->at.publicKey[42] = 0x21;
-    ad->at.publicKey[43] = 0x58;
-    ad->at.publicKey[44] = 0x20;
+    build_cose_key(ad->at.publicKey);
     *len += sizeof(ad->at);
   }
   // TODO: extensions
   return 0;
 }
 
+static int get_pin_retries(void) {
+  return 3;
+}
+
 static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params, size_t len) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
+  CborParser parser;
   CTAP_makeCredential mc;
-  uint8_t ret = parse_make_credential(&mc, params, len);
+  uint8_t ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
-  if ((mc.parsedParams & MC_requiredMask) == 0) return CTAP2_ERR_MISSING_PARAMETER;
 
   uint8_t data_buf[sizeof(CTAP_authData)];
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
-      parse_public_key_credential_descriptor(&mc.excludeList, data_buf);
+      parse_credential_descriptor(&mc.excludeList, data_buf);
       DBG_MSG("Exclude ID found\n");
       // TODO: check id
+      ret = cbor_value_advance(&mc.excludeList);
+      CHECK_CBOR_RET(ret);
     }
   }
   // TODO: check options
@@ -180,6 +191,65 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   return 0;
 }
 
+static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, size_t len) {
+  CborParser parser;
+  CTAP_getAssertion ga;
+  uint8_t ret = parse_get_assertion(&parser, &ga, params, len);
+  CHECK_PARSER_RET(ret);
+
+  // we do not support rk yet, so allow list is required
+  if (ga.allowListSize == 0) return CTAP2_ERR_MISSING_PARAMETER;
+
+  uint8_t data_buf[sizeof(CTAP_authData)];
+  KeyHandle *kh = (KeyHandle *)data_buf;
+  size_t i;
+  for (i = 0; i < ga.allowListSize; ++i) {
+    parse_credential_descriptor(&ga.allowList, data_buf);
+    // compare rpId first
+    if (memcmp(kh->rpIdHash, ga.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
+    // then verify key handle and get private key in rpIdHash
+    int err = verify_key_handle(kh);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err == 0) break; // only handle one allow entry for now
+    ret = cbor_value_advance(&ga.allowList);
+    CHECK_CBOR_RET(ret);
+  }
+  if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
+
+  // TODO: verify PIN
+  // TODO: check options
+  // TODO: wait for user
+
+  // build response
+  CborEncoder map;
+  ret = cbor_encoder_create_map(encoder, &map, 2);
+  CHECK_CBOR_RET(ret);
+
+  // auth data
+  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, &len);
+  if (ret != 0) return ret;
+  ret = cbor_encode_int(&map, RESP_authData);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&map, data_buf, len);
+  CHECK_CBOR_RET(ret);
+
+  // signature
+  ret = cbor_encode_int(&map, RESP_signature);
+  CHECK_CBOR_RET(ret);
+  sha256_init();
+  sha256_update(data_buf, len);
+  sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
+  sha256_final(data_buf);
+  len = sign_with_private_key(kh->rpIdHash, data_buf, data_buf);
+  ret = cbor_encode_byte_string(&map, data_buf, len);
+  CHECK_CBOR_RET(ret);
+
+  ret = cbor_encoder_close_container(encoder, &map);
+  CHECK_CBOR_RET(ret);
+
+  return 0;
+}
+
 static uint8_t ctap_get_info(CborEncoder *encoder) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
   // Currently, we respond versions and aaguid.
@@ -188,7 +258,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
 
   // versions
-  ret = cbor_encode_uint(&map, RESP_versions);
+  ret = cbor_encode_int(&map, RESP_versions);
   CHECK_CBOR_RET(ret);
   {
     CborEncoder array;
@@ -205,11 +275,62 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   }
 
   // aaguid
-  ret = cbor_encode_uint(&map, RESP_aaguid);
+  ret = cbor_encode_int(&map, RESP_aaguid);
   CHECK_CBOR_RET(ret);
   {
     ret = cbor_encode_byte_string(&map, aaguid, sizeof(aaguid));
     CHECK_CBOR_RET(ret);
+  }
+
+  ret = cbor_encoder_close_container(encoder, &map);
+  CHECK_CBOR_RET(ret);
+  return 0;
+}
+
+
+static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
+  CborParser parser;
+  CTAP_clientPin cp;
+  uint8_t ret = parse_client_pin(&parser, &cp, params, len);
+  CHECK_PARSER_RET(ret);
+
+  CborEncoder map, key_map;
+  uint8_t *ptr;
+  switch (cp.subCommand) {
+  case CP_cmdGetRetries:
+    ret = cbor_encoder_create_map(encoder, &map, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&map, RESP_retries);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&map, get_pin_retries());
+    CHECK_CBOR_RET(ret);
+    break;
+
+  case CP_cmdGetKeyAgreement:
+    ret = cbor_encoder_create_map(encoder, &map, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&map, RESP_keyAgreement);
+    CHECK_CBOR_RET(ret);
+    // to save RAM, generate an empty key first, then fill it manually
+    ret = cbor_encoder_create_map(&map, &key_map, 0);
+    CHECK_CBOR_RET(ret);
+    ptr = key_map.data.ptr - 1;
+    ret = ecc_generate(ECC_SECP256R1, key_agreement_pri_key, ptr);
+    if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    build_cose_key(ptr);
+    key_map.data.ptr = ptr + COSE_KEY_SIZE;
+    ret = cbor_encoder_close_container(&map, &key_map);
+    CHECK_CBOR_RET(ret);
+    break;
+
+  case CP_cmdSetPin:
+    break;
+
+  case CP_cmdChangePin:
+    break;
+
+  case CP_cmdGetPinToken:
+    break;
   }
 
   ret = cbor_encoder_close_container(encoder, &map);
@@ -230,13 +351,27 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
     else
       *resp_len = 1;
     break;
-  case CTAP_GET_INFO:
-    *resp = ctap_get_info(&encoder);
+  case CTAP_GET_ASSERTION:
+    *resp = ctap_get_assertion(&encoder, req, req_len);
     if (*resp == 0)
       *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
     else
       *resp_len = 1;
     break;
+    case CTAP_GET_INFO:
+      *resp = ctap_get_info(&encoder);
+      if (*resp == 0)
+        *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
+      else
+        *resp_len = 1;
+      break;
+    case CTAP_CLIENT_PIN:
+      *resp = ctap_client_pin(&encoder, req, req_len);
+      if (*resp == 0)
+        *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
+      else
+        *resp_len = 1;
+      break;
   }
   return 0;
 }
