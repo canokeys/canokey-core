@@ -1,31 +1,56 @@
 #include "secret.h"
+#include <apdu.h>
 #include <ecc.h>
 #include <fs.h>
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
 
-#define CTAP_CERT "ctap_cert"
+#define CTAP_CERT_FILE "ctap_cert"
 #define KEY_ATTR 0x00
-#define CTR_ATTR 0x01
+#define SIGN_CTR_ATTR 0x01
+#define PIN_ATTR 0x02
+#define PIN_CTR_ATTR 0x03
+
+int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC != ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+
+  int err = write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
+  if (err < 0) return err;
+
+  uint32_t ctr = 0;
+  err = write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &ctr, sizeof(ctr));
+  if (err < 0) return err;
+
+  err = write_attr(CTAP_CERT_FILE, PIN_ATTR, NULL, 0);
+  if (err < 0) return err;
+
+  return 0;
+}
+
+int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC > MAX_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
+
+  return write_file(CTAP_CERT_FILE, DATA, LC);
+}
 
 static int read_keys(uint8_t *prikey) {
-  int ret = read_attr(CTAP_CERT, KEY_ATTR, prikey, ECC_KEY_SIZE);
+  int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, prikey, ECC_KEY_SIZE);
   if (ret < 0) return ret;
   return 0;
 }
 
 int get_sign_counter(uint32_t *counter) {
-  int ret = read_attr(CTAP_CERT, CTR_ATTR, counter, sizeof(uint32_t));
+  int ret = read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, counter, sizeof(uint32_t));
   if (ret < 0) return ret;
   return 0;
 }
 
 int increase_counter(uint32_t *counter) {
-  int ret = read_attr(CTAP_CERT, CTR_ATTR, counter, sizeof(uint32_t));
+  int ret = read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, counter, sizeof(uint32_t));
   if (ret < 0) return ret;
   ++*counter;
-  ret = write_attr(CTAP_CERT, CTR_ATTR, counter, sizeof(uint32_t));
+  ret = write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, counter, sizeof(uint32_t));
   if (ret < 0) return ret;
   return 0;
 }
@@ -74,4 +99,37 @@ size_t sign_with_private_key(const uint8_t *key, const uint8_t *digest, uint8_t 
   return ecdsa_sig2ansi(sig, sig);
 }
 
-int get_cert(uint8_t *buf) { return read_file(CTAP_CERT, buf, MAX_CERT_SIZE); }
+int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, MAX_CERT_SIZE); }
+
+int has_pin(void) {
+  uint8_t tmp;
+  return read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1);
+}
+
+int set_pin(uint8_t *buf, uint8_t length) {
+  sha256_raw(buf, length, buf);
+  int err = write_attr(CTAP_CERT_FILE, PIN_ATTR, buf, PIN_HASH_SIZE);
+  if (err < 0) return err;
+  uint8_t ctr = 8;
+  return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1);
+}
+
+int verify_pin_hash(uint8_t *buf) {
+  uint8_t storedPinHash[PIN_HASH_SIZE];
+  int err = read_attr(CTAP_CERT_FILE, PIN_ATTR, storedPinHash, PIN_HASH_SIZE);
+  if (err < 0) return err;
+  if (memcmp(storedPinHash, buf, PIN_HASH_SIZE) == 0)
+    return 0;
+  return 1;
+}
+
+int get_pin_retries(void) {
+  uint8_t ctr;
+  int err = read_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1);
+  if (err < 0) return err;
+  return ctr;
+}
+
+int set_pin_retries(uint8_t ctr) {
+  return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1);
+}

@@ -2,11 +2,14 @@
 #include "ctap-errors.h"
 #include "ctap-parser.h"
 #include "secret.h"
+#include <aes.h>
+#include <block-cipher.h>
 #include <cbor.h>
 #include <common.h>
 #include <ctap.h>
 #include <ecc.h>
 #include <hmac.h>
+#include <memzero.h>
 #include <rand.h>
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
@@ -21,30 +24,57 @@
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
+static uint8_t pin_token[PIN_TOKEN_SIZE];
+static uint8_t consecutive_pin_counter = 3;
 
-static void build_cose_key(uint8_t *data) {
+static void build_cose_key(uint8_t *data, uint8_t ecdh) {
   // format public key as
   // A5
   // 01 02
-  // 03 26
+  // 03 26 (ecdsa) or 03 38 18 (ecdh)
   // 20 01
   // 21 58 20 x
   // 22 58 20 y
-  memmove(data + 45, data + 32, 32);
-  memmove(data + 10, data, 32);
+  if (ecdh) {
+    memmove(data + 46, data + 32, 32);
+    memmove(data + 11, data, 32);
+  } else {
+    memmove(data + 45, data + 32, 32);
+    memmove(data + 10, data, 32);
+  }
   data[0] = 0xA5;
   data[1] = 0x01;
   data[2] = 0x02;
   data[3] = 0x03;
-  data[4] = 0x26;
-  data[5] = 0x20;
-  data[6] = 0x01;
-  data[7] = 0x21;
-  data[8] = 0x58;
-  data[9] = 0x20;
-  data[42] = 0x22;
-  data[43] = 0x58;
-  data[44] = 0x20;
+  if (ecdh) {
+    data[4] = 0x38;
+    data[5] = 0x18;
+    data[6] = 0x20;
+    data[7] = 0x01;
+    data[8] = 0x21;
+    data[9] = 0x58;
+    data[10] = 0x20;
+    data[43] = 0x22;
+    data[44] = 0x58;
+    data[45] = 0x20;
+  } else {
+    data[4] = 0x26;
+    data[5] = 0x20;
+    data[6] = 0x01;
+    data[7] = 0x21;
+    data[8] = 0x58;
+    data[9] = 0x20;
+    data[42] = 0x22;
+    data[43] = 0x58;
+    data[44] = 0x20;
+  }
+}
+
+static uint8_t get_shared_secret(uint8_t *pub_key) {
+  int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_pri_key, pub_key, pub_key);
+  if (ret < 0) return 1;
+  sha256_raw(pub_key, ECC_KEY_SIZE, pub_key);
+  return 0;
 }
 
 static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, size_t *len) {
@@ -80,15 +110,11 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
     if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
-    build_cose_key(ad->at.publicKey);
-    *len += sizeof(ad->at);
+    build_cose_key(ad->at.publicKey, 0);
+    *len += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
   }
   // TODO: extensions
   return 0;
-}
-
-static int get_pin_retries(void) {
-  return 3;
 }
 
 static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params, size_t len) {
@@ -287,7 +313,6 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   return 0;
 }
 
-
 static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
   CborParser parser;
   CTAP_clientPin cp;
@@ -295,7 +320,12 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   CHECK_PARSER_RET(ret);
 
   CborEncoder map, key_map;
+  uint8_t iv[16], hmac_buf[80], i;
+  memzero(iv, sizeof(iv));
+  block_cipher_config cfg = {
+      .in_size = 64, .block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   uint8_t *ptr;
+  int err, retries;
   switch (cp.subCommand) {
   case CP_cmdGetRetries:
     ret = cbor_encoder_create_map(encoder, &map, 1);
@@ -317,19 +347,101 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ptr = key_map.data.ptr - 1;
     ret = ecc_generate(ECC_SECP256R1, key_agreement_pri_key, ptr);
     if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    build_cose_key(ptr);
-    key_map.data.ptr = ptr + COSE_KEY_SIZE;
+    build_cose_key(ptr, 1);
+    key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);
     CHECK_CBOR_RET(ret);
     break;
 
   case CP_cmdSetPin:
+    err = has_pin();
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err > 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+    ret = get_shared_secret(cp.keyAgreement);
+    CHECK_PARSER_RET(ret);
+    hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), hmac_buf);
+    if (memcmp(params, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+    cfg.key = cp.keyAgreement;
+    cfg.in = cp.newPinEnc;
+    cfg.out = cp.newPinEnc;
+    block_cipher_dec(&cfg);
+    i = 63;
+    while (i > 0 && cp.newPinEnc[i] == 0)
+      --i;
+    if (i <= 3 || i >= 63) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+    err = set_pin(cp.newPinEnc, i + 1);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     break;
 
   case CP_cmdChangePin:
+    err = get_pin_retries();
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
+    retries = err - 1;
+    ret = get_shared_secret(cp.keyAgreement);
+    CHECK_PARSER_RET(ret);
+    memcpy(hmac_buf, cp.newPinEnc, sizeof(cp.newPinEnc));
+    memcpy(hmac_buf + sizeof(cp.newPinEnc), cp.pinHashEnc, sizeof(cp.pinHashEnc));
+    hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, hmac_buf, sizeof(cp.newPinEnc) + sizeof(cp.pinHashEnc), hmac_buf);
+    if (memcmp(params, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+    err = set_pin_retries(retries);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    cfg.key = cp.keyAgreement;
+    cfg.in = cp.pinHashEnc;
+    cfg.out = cp.pinHashEnc;
+    block_cipher_dec(&cfg);
+    err = verify_pin_hash(cp.pinHashEnc);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err > 0) {
+      if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
+      if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
+      --consecutive_pin_counter;
+      return CTAP2_ERR_PIN_INVALID;
+    }
+    consecutive_pin_counter = 3;
+    cfg.key = cp.keyAgreement;
+    cfg.in = cp.newPinEnc;
+    cfg.out = cp.newPinEnc;
+    block_cipher_dec(&cfg);
+    i = 63;
+    while (i > 0 && cp.newPinEnc[i] == 0)
+      --i;
+    if (i <= 3 || i >= 63) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+    err = set_pin(cp.newPinEnc, i + 1);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     break;
 
   case CP_cmdGetPinToken:
+    err = get_pin_retries();
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
+    retries = err - 1;
+    ret = get_shared_secret(cp.keyAgreement);
+    CHECK_PARSER_RET(ret);
+    err = set_pin_retries(retries);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    cfg.key = cp.keyAgreement;
+    cfg.in = cp.pinHashEnc;
+    cfg.out = cp.pinHashEnc;
+    block_cipher_dec(&cfg);
+    err = verify_pin_hash(cp.pinHashEnc);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err > 0) {
+      if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
+      if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
+      --consecutive_pin_counter;
+      return CTAP2_ERR_PIN_INVALID;
+    }
+    consecutive_pin_counter = 3;
+    err = set_pin_retries(8);
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    random_buffer(pin_token, sizeof(pin_token));
+    ret = cbor_encoder_create_map(encoder, &map, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&map, RESP_pinToken);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&map, pin_token, sizeof(pin_token));
+    CHECK_CBOR_RET(ret);
     break;
   }
 
@@ -358,20 +470,20 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
     else
       *resp_len = 1;
     break;
-    case CTAP_GET_INFO:
-      *resp = ctap_get_info(&encoder);
-      if (*resp == 0)
-        *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
-      else
-        *resp_len = 1;
-      break;
-    case CTAP_CLIENT_PIN:
-      *resp = ctap_client_pin(&encoder, req, req_len);
-      if (*resp == 0)
-        *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
-      else
-        *resp_len = 1;
-      break;
+  case CTAP_GET_INFO:
+    *resp = ctap_get_info(&encoder);
+    if (*resp == 0)
+      *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
+    else
+      *resp_len = 1;
+    break;
+  case CTAP_CLIENT_PIN:
+    *resp = ctap_client_pin(&encoder, req, req_len);
+    if (*resp == 0)
+      *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);
+    else
+      *resp_len = 1;
+    break;
   }
   return 0;
 }

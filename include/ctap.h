@@ -83,12 +83,14 @@
 #define RESP_pinToken 0x02
 #define RESP_retries 0x03
 
-#define COSE_KEY_SIZE 77
+#define SHARED_SECRET_SIZE 32
+#define MAX_COSE_KEY_SIZE 78
 #define MAX_PIN_SIZE 63
-#define PIN_HASH_ENC_SIZE 16
+#define PIN_HASH_SIZE 16
 #define MAX_CERT_SIZE 1152
 #define AAGUID_SIZE 16
 #define PIN_AUTH_SIZE 16
+#define PIN_TOKEN_SIZE 16
 #define CREDENTIAL_TAG_SIZE 16
 #define CLIENT_DATA_HASH_SIZE 32
 #define CREDENTIAL_NONCE_SIZE 16
@@ -116,7 +118,7 @@ typedef struct {
   uint8_t aaguid[AAGUID_SIZE];
   uint16_t credentialIdLength;
   KeyHandle credentialId;
-  uint8_t publicKey[COSE_KEY_SIZE]; // public key in cose_key format
+  uint8_t publicKey[MAX_COSE_KEY_SIZE]; // public key in cose_key format
   // https://www.w3.org/TR/webauthn/#sctn-encoded-credPubKey-examples
 } __attribute__((packed)) CTAP_attestedData;
 
@@ -156,7 +158,7 @@ typedef struct {
   uint8_t keyAgreement[ECC_PUB_KEY_SIZE];
   uint8_t pinAuth[PIN_AUTH_SIZE];
   uint8_t newPinEnc[MAX_PIN_SIZE + 1];
-  uint8_t pinHashEnc[PIN_HASH_ENC_SIZE];
+  uint8_t pinHashEnc[PIN_HASH_SIZE];
 } CTAP_clientPin;
 
 int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
