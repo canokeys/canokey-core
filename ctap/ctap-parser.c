@@ -160,7 +160,7 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
   uint8_t ret = cbor_value_map_find_value(arr, "id", &val);
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&val) != CborByteStringType) return CTAP2_ERR_MISSING_PARAMETER;
-  size_t len = sizeof(KeyHandle);
+  size_t len = sizeof(CredentialId);
   if (id) {
     ret = cbor_value_copy_byte_string(&val, id, &len, NULL);
     CHECK_CBOR_RET(ret);

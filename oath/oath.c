@@ -25,58 +25,45 @@ static const char *build_path(const uint8_t *name, uint8_t len) {
 }
 
 static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   uint8_t offset = 0;
-  if (DATA[offset++] != OATH_TAG_NAME)
-    EXCEPT(SW_WRONG_DATA);
+  if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset++];
-  if (name_len > 64)
-    EXCEPT(SW_WRONG_DATA);
+  if (name_len > 64) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
-  if (DATA[offset++] != OATH_TAG_KEY)
-    EXCEPT(SW_WRONG_DATA);
+  if (DATA[offset++] != OATH_TAG_KEY) EXCEPT(SW_WRONG_DATA);
   uint8_t key_len = DATA[offset++];
   if (key_len > 64 + 2) // 2 for algo & digits
     EXCEPT(SW_WRONG_DATA);
   uint8_t alg = DATA[offset];
   if ((alg & OATH_TYPE_MASK) != OATH_TYPE_TOTP ||
-      ((alg & OATH_ALG_MASK) != OATH_ALG_SHA1 &&
-       (alg & OATH_ALG_MASK) != OATH_ALG_SHA256))
+      ((alg & OATH_ALG_MASK) != OATH_ALG_SHA1 && (alg & OATH_ALG_MASK) != OATH_ALG_SHA256))
     EXCEPT(SW_WRONG_DATA);
   return write_file(build_path(DATA + 2, name_len), DATA + offset, key_len);
 }
 
 static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   uint8_t offset = 0;
-  if (DATA[offset++] != OATH_TAG_NAME)
-    EXCEPT(SW_WRONG_DATA);
+  if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset];
-  if (name_len > 64)
-    EXCEPT(SW_WRONG_DATA);
+  if (name_len > 64) EXCEPT(SW_WRONG_DATA);
   int err = remove_file(build_path(DATA + 2, name_len));
-  if (err == LFS_ERR_NOENT)
-    EXCEPT(SW_DATA_INVALID);
+  if (err == LFS_ERR_NOENT) EXCEPT(SW_DATA_INVALID);
   return err;
 }
 
 static int oath_list(const CAPDU *capdu, RAPDU *rapdu, uint8_t remaining) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   oath_remaining_type = REMAINING_LIST;
   char path[65] = "oath/";
-  if (!remaining)
-    open_dir(path);
+  if (!remaining) open_dir(path);
   uint8_t off = 0, i;
   for (i = 0; i < 3; ++i) {
     RDATA[off] = OATH_TAG_NAME_LIST;
     int err = get_next_filename(path);
-    if (err < 0)
-      return -1;
-    if (err > 0)
-      break;
+    if (err < 0) return -1;
+    if (err > 0) break;
     ++off;
     uint8_t len = strlen(path);
     RDATA[off++] = len;
@@ -92,27 +79,20 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu, uint8_t remaining) {
 }
 
 static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   uint8_t offset = 0;
-  if (DATA[offset++] != OATH_TAG_NAME)
-    EXCEPT(SW_WRONG_DATA);
+  if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset++];
-  if (name_len > 64)
-    EXCEPT(SW_WRONG_DATA);
+  if (name_len > 64) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
-  if (DATA[offset++] != OATH_TAG_CHALLENGE)
-    EXCEPT(SW_WRONG_DATA);
+  if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
   challenge_len = DATA[offset++];
-  if (challenge_len > 64)
-    EXCEPT(SW_WRONG_DATA);
+  if (challenge_len > 64) EXCEPT(SW_WRONG_DATA);
   memcpy(challenge, DATA + offset, challenge_len);
   uint8_t key[66];
-  int len = read_file(build_path(DATA + 2, name_len), key, 66);
-  if (len == LFS_ERR_NOENT)
-    EXCEPT(SW_DATA_INVALID);
-  if (len < 0)
-    return len;
+  int len = read_file(build_path(DATA + 2, name_len), key, 0, 66);
+  if (len == LFS_ERR_NOENT) EXCEPT(SW_DATA_INVALID);
+  if (len < 0) return len;
 
   // to save memory, use name_len to store challenge len,
   // and use key to store hmac result
@@ -134,20 +114,16 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu,
-                              uint8_t remaining) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
+static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu, uint8_t remaining) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   oath_remaining_type = REMAINING_CALC;
   uint8_t key[66];
   char path[65] = "oath/";
   if (!remaining) {
     uint8_t off_in = 0;
-    if (DATA[off_in++] != OATH_TAG_CHALLENGE)
-      EXCEPT(SW_WRONG_DATA);
+    if (DATA[off_in++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
     challenge_len = DATA[off_in++];
-    if (challenge_len > 64)
-      EXCEPT(SW_WRONG_DATA);
+    if (challenge_len > 64) EXCEPT(SW_WRONG_DATA);
     memcpy(challenge, DATA + off_in, challenge_len);
     open_dir(path);
   }
@@ -155,16 +131,14 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu,
   for (i = 0; i < 3; ++i) {
     RDATA[off_out] = OATH_TAG_NAME;
     int err = get_next_filename(path);
-    if (err < 0)
-      return -1;
-    if (err > 0)
-      break;
+    if (err < 0) return -1;
+    if (err > 0) break;
     ++off_out;
     uint8_t name_len = strlen(path);
     RDATA[off_out++] = name_len;
     memcpy(RDATA + off_out, path, name_len);
     off_out += name_len;
-    int key_len = read_file(build_path((uint8_t *)path, name_len), key, 66);
+    int key_len = read_file(build_path((uint8_t *)path, name_len), key, 0, 66);
     RDATA[off_out++] = OATH_TAG_RESPONSE;
     RDATA[off_out++] = 5;
     RDATA[off_out++] = key[1];
@@ -189,10 +163,8 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu,
 }
 
 static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
-  if (oath_remaining_type == REMAINING_LIST)
-    return oath_list(capdu, rapdu, 1);
-  if (oath_remaining_type == REMAINING_CALC)
-    return oath_calculate_all(capdu, rapdu, 1);
+  if (oath_remaining_type == REMAINING_LIST) return oath_list(capdu, rapdu, 1);
+  if (oath_remaining_type == REMAINING_CALC) return oath_calculate_all(capdu, rapdu, 1);
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 }
 
@@ -222,7 +194,6 @@ int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
   }
-  if (ret < 0)
-    EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }

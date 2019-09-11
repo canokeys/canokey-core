@@ -112,12 +112,17 @@ typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
   uint8_t nonce[CREDENTIAL_NONCE_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
-} __attribute__((packed)) KeyHandle;
+} __attribute__((packed)) CredentialId;
+
+typedef struct {
+  CredentialId kh;
+  UserEntity user;
+} __attribute__((packed)) CTAP_residentKey;
 
 typedef struct {
   uint8_t aaguid[AAGUID_SIZE];
   uint16_t credentialIdLength;
-  KeyHandle credentialId;
+  CredentialId credentialId;
   uint8_t publicKey[MAX_COSE_KEY_SIZE]; // public key in cose_key format
   // https://www.w3.org/TR/webauthn/#sctn-encoded-credPubKey-examples
 } __attribute__((packed)) CTAP_attestedData;

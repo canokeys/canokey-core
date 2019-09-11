@@ -7,6 +7,7 @@
 #include <cbor.h>
 #include <common.h>
 #include <ctap.h>
+#include <device.h>
 #include <ecc.h>
 #include <hmac.h>
 #include <memzero.h>
@@ -106,7 +107,7 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
 
   if (at) {
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
-    ad->at.credentialIdLength = htobe16(sizeof(KeyHandle));
+    ad->at.credentialIdLength = htobe16(sizeof(CredentialId));
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
     if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
@@ -136,7 +137,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   }
   // TODO: check options
   // TODO: verify pin
-  // TODO: wait for user
+  wait_for_user_presence();
 
   // build response
   CborEncoder map;
@@ -227,7 +228,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   if (ga.allowListSize == 0) return CTAP2_ERR_MISSING_PARAMETER;
 
   uint8_t data_buf[sizeof(CTAP_authData)];
-  KeyHandle *kh = (KeyHandle *)data_buf;
+  CredentialId *kh = (CredentialId *)data_buf;
   size_t i;
   for (i = 0; i < ga.allowListSize; ++i) {
     parse_credential_descriptor(&ga.allowList, data_buf);
@@ -244,7 +245,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
 
   // TODO: verify PIN
   // TODO: check options
-  // TODO: wait for user
+  wait_for_user_presence();
 
   // build response
   CborEncoder map;

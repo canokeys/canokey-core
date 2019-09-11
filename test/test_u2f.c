@@ -50,7 +50,7 @@ static void test_u2f_personalization(void **state) {
   assert_int_equal(SW, SW_NO_ERROR);
 
   uint8_t key_buf[112];
-  read_file("u2f_key", key_buf, sizeof(key_buf));
+  read_file("u2f_key", key_buf, 0, sizeof(key_buf));
   memzero(key_buf + 96, 16);
   write_file("u2f_key", key_buf, sizeof(key_buf));
 

@@ -11,6 +11,7 @@
 #define SIGN_CTR_ATTR 0x01
 #define PIN_ATTR 0x02
 #define PIN_CTR_ATTR 0x03
+#define RK_FILE "ctap_rk"
 
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
@@ -55,7 +56,7 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-int generate_key_handle(KeyHandle *kh, uint8_t *pubkey) {
+int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
   int ret = read_keys(pubkey); // use pubkey as key buffer
   if (ret < 0) return ret;
   do {
@@ -69,7 +70,7 @@ int generate_key_handle(KeyHandle *kh, uint8_t *pubkey) {
   return 0;
 }
 
-int verify_key_handle(KeyHandle *kh) {
+int verify_key_handle(CredentialId *kh) {
   uint8_t prikey[ECC_KEY_SIZE];
   int ret = read_keys(prikey);
   if (ret < 0) return ret;
@@ -99,7 +100,7 @@ size_t sign_with_private_key(const uint8_t *key, const uint8_t *digest, uint8_t 
   return ecdsa_sig2ansi(sig, sig);
 }
 
-int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, MAX_CERT_SIZE); }
+int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
 
 int has_pin(void) {
   uint8_t tmp;

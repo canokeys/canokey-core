@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <cmocka.h>
 
-#include "../fido2/ctap-errors.h"
-#include "../fido2/ctap-parser.h"
+#include "../ctap/ctap-errors.h"
+#include "../ctap/ctap-parser.h"
 #include <cbor.h>
 #include <crypto-util.h>
 #include <emubd/lfs_emubd.h>

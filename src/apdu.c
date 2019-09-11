@@ -28,8 +28,7 @@ void apdu_fill_with_command(CAPDU *capdu, char *cmd) {
   } else if (LC > 0 && txLen == 6 + LC) { // Case 4S
     copy_data(DATA, &cmd, LC);
     LE = strtoul(cmd, &cmd, 16);
-    if (LE == 0)
-      LE = 0x100;
+    if (LE == 0) LE = 0x100;
   } else if (txLen == 7) { // Case 2E
     assert(LC == 0);
     LE = strtoul(cmd, &cmd, 16);
@@ -45,8 +44,7 @@ void apdu_fill_with_command(CAPDU *capdu, char *cmd) {
     } else if (txLen == 9 + LC) { // Case 4E
       LE = strtoul(cmd, &cmd, 16);
       LE = (LE << 8u) + strtoul(cmd, &cmd, 16);
-      if (LE == 0)
-        LE = 0x10000;
+      if (LE == 0) LE = 0x10000;
     } else {
       assert(0);
     }
@@ -54,8 +52,7 @@ void apdu_fill_with_command(CAPDU *capdu, char *cmd) {
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
-  if (len < 4)
-    return -1;
+  if (len < 4) return -1;
   CLA = cmd[0];
   INS = cmd[1];
   P1 = cmd[2];
@@ -69,36 +66,29 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
   if (len == 5) { // Case 2S
     LE = LC;
     LC = 0;
-    if (LE == 0)
-      LE = 0x100;
+    if (LE == 0) LE = 0x100;
   } else if (LC > 0 && len == 5 + LC) { // Case 3S
     memcpy(DATA, cmd + 5, LC);
     LE = 0x100;
   } else if (LC > 0 && len == 6 + LC) { // Case 4S
     memcpy(DATA, cmd + 5, LC);
     LE = cmd[5 + LC];
-    if (LE == 0)
-      LE = 0x100;
+    if (LE == 0) LE = 0x100;
   } else if (len == 7) { // Case 2E
-    if (LC != 0)
-      return -1;
+    if (LC != 0) return -1;
     LE = (cmd[5] << 8) | cmd[6];
-    if (LE == 0)
-      LE = 0x10000;
+    if (LE == 0) LE = 0x10000;
   } else {
-    if (LC != 0)
-      return -1;
+    if (LC != 0) return -1;
     LC = (cmd[5] << 8) | cmd[6];
-    if (LC == 0)
-      return -1;
+    if (LC == 0) return -1;
     memcpy(DATA, cmd + 7, LC);
     if (len == 7 + LC) { // Case 3E
       LE = 0x10000;
       return 0;
     } else if (len == 9 + LC) { // Case 4E
       LE = (cmd[7 + LC] << 8) | cmd[8 + LC];
-      if (LE == 0)
-        LE = 0x10000;
+      if (LE == 0) LE = 0x10000;
     } else
       return -1;
   }

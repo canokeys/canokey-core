@@ -69,10 +69,8 @@ static uint8_t state, state_ins, state_p1, state_p2;
 static uint8_t auth_ctx[LENGTH_AUTH_STATE];
 static uint8_t in_admin_status;
 
-static pin_t pin = {
-    .min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
-static pin_t puk = {
-    .min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
+static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
+static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
 
 static void authenticate_reset(void) {
   auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_NONE;
@@ -82,11 +80,9 @@ static void authenticate_reset(void) {
 }
 
 static int create_key(const char *path) {
-  if (write_file(path, NULL, 0) < 0)
-    return -1;
+  if (write_file(path, NULL, 0) < 0) return -1;
   uint8_t alg = 0xFF;
-  if (write_attr(path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
-    return -1;
+  if (write_attr(path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
   return 0;
 }
 
@@ -107,48 +103,31 @@ static int get_input_size(uint8_t alg) {
 int piv_install(uint8_t reset) {
   state = CHAINING_STATE_NORMAL;
 
-  if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0)
-    return 0;
+  if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0) return 0;
 
   // PIN data
-  if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0)
-    return -1;
-  if (pin_create(&puk, "12345678", 8, 3) < 0)
-    return -1;
+  if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0) return -1;
+  if (pin_create(&puk, "12345678", 8, 3) < 0) return -1;
 
   // objects
-  if (write_file(PIV_AUTH_CERT_PATH, NULL, 0) < 0)
-    return -1;
-  if (write_file(SIG_CERT_PATH, NULL, 0) < 0)
-    return -1;
-  if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0) < 0)
-    return -1;
-  if (write_file(CARD_AUTH_CERT_PATH, NULL, 0) < 0)
-    return -1;
-  if (write_file(CCC_PATH, NULL, 0) < 0)
-    return -1;
-  if (write_file(CHUID_PATH, NULL, 0) < 0)
-    return -1;
+  if (write_file(PIV_AUTH_CERT_PATH, NULL, 0) < 0) return -1;
+  if (write_file(SIG_CERT_PATH, NULL, 0) < 0) return -1;
+  if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0) < 0) return -1;
+  if (write_file(CARD_AUTH_CERT_PATH, NULL, 0) < 0) return -1;
+  if (write_file(CCC_PATH, NULL, 0) < 0) return -1;
+  if (write_file(CHUID_PATH, NULL, 0) < 0) return -1;
 
   // keys
-  if (create_key(PIV_AUTH_KEY_PATH) < 0)
-    return -1;
-  if (create_key(SIG_KEY_PATH) < 0)
-    return -1;
-  if (create_key(KEY_MANAGEMENT_KEY_PATH) < 0)
-    return -1;
-  if (create_key(CARD_AUTH_KEY_PATH) < 0)
-    return -1;
-  if (create_key(CARD_ADMIN_KEY_PATH) < 0)
-    return -1;
+  if (create_key(PIV_AUTH_KEY_PATH) < 0) return -1;
+  if (create_key(SIG_KEY_PATH) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_KEY_PATH) < 0) return -1;
+  if (create_key(CARD_AUTH_KEY_PATH) < 0) return -1;
+  if (create_key(CARD_ADMIN_KEY_PATH) < 0) return -1;
   if (write_file(CARD_ADMIN_KEY_PATH,
-                 (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4,
-                             5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8},
-                 24) < 0)
+                 (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 24) < 0)
     return -1;
   uint8_t alg = ALG_TDEA_3KEY;
-  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
-    return -1;
+  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
 
   return 0;
 }
@@ -174,8 +153,7 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 
 static void send_response(RAPDU *rapdu, uint16_t le) {
   uint32_t to_send = buffer_len - buffer_pos;
-  if (to_send > le)
-    to_send = le;
+  if (to_send > le) to_send = le;
   memcpy(RDATA, buffer + buffer_pos, to_send);
   buffer_pos += to_send;
   LL = to_send;
@@ -220,15 +198,11 @@ static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
  * ---------------------------------------------
  */
 static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x3F || P2 != 0xFF)
-    EXCEPT(SW_WRONG_P1P2);
-  if (DATA[0] != 0x5C)
-    EXCEPT(SW_WRONG_DATA);
-  if (DATA[1] + 2 != LC)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
+  if (DATA[1] + 2 != LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[1] == 1) {
-    if (DATA[2] != 0x7E)
-      EXCEPT(SW_FILE_NOT_FOUND);
+    if (DATA[2] != 0x7E) EXCEPT(SW_FILE_NOT_FOUND);
     // For the Discovery Object, the 0x7E template nests two data elements:
     // 1) tag 0x4F contains the AID of the PIV Card Application and
     // 2) tag 0x5F2F lists the PIN Usage Policy.
@@ -241,21 +215,16 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     buffer[4 + sizeof(rid) + sizeof(pix)] = 0x5F;
     buffer[5 + sizeof(rid) + sizeof(pix)] = 0x2F;
     buffer[6 + sizeof(rid) + sizeof(pix)] = sizeof(pin_policy);
-    memcpy(buffer + 7 + sizeof(rid) + sizeof(pix), pin_policy,
-           sizeof(pin_policy));
+    memcpy(buffer + 7 + sizeof(rid) + sizeof(pix), pin_policy, sizeof(pin_policy));
     buffer_len = 7 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
     send_response(rapdu, LE);
   } else if (DATA[1] == 3) {
-    if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1)
-      EXCEPT(SW_FILE_NOT_FOUND);
+    if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
-    if (path == NULL)
-      EXCEPT(SW_FILE_NOT_FOUND);
-    int len = read_file(path, buffer, MAX_BUFFER_SIZE - 4);
-    if (len < 0)
-      return -1;
-    if (len == 0)
-      EXCEPT(SW_FILE_NOT_FOUND);
+    if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
+    int len = read_file(path, buffer, 0, MAX_BUFFER_SIZE - 4);
+    if (len < 0) return -1;
+    if (len == 0) EXCEPT(SW_FILE_NOT_FOUND);
     buffer_len = len;
     send_response(rapdu, LE);
   } else
@@ -264,40 +233,30 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 && P1 != 0xFF)
-    EXCEPT(SW_WRONG_P1P2);
-  if (P2 != 0x80)
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (P1 != 0x00 && P1 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (P2 != 0x80) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if (P1 == 0xFF) {
-    if (LC != 0)
-      EXCEPT(SW_WRONG_LENGTH);
+    if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     pin.is_validated = 0;
     return 0;
   }
   if (LC == 0) {
-    if (pin.is_validated)
-      return 0;
+    if (pin.is_validated) return 0;
     int retries = pin_get_retries(&pin);
-    if (retries < 0)
-      return -1;
+    if (retries < 0) return -1;
     EXCEPT(SW_PIN_RETRIES + retries);
   }
-  if (LC != 8)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (LC != 8) EXCEPT(SW_WRONG_LENGTH);
   uint8_t ctr;
   int err = pin_verify(&pin, DATA, 8, &ctr);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (ctr == 0)
-    EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL)
-    EXCEPT(SW_PIN_RETRIES + ctr);
+  if (err == PIN_IO_FAIL) return -1;
+  if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
+  if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
   return 0;
 }
 
 static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   pin_t *p;
   if (P2 == 0x80)
     p = &pin;
@@ -305,44 +264,30 @@ static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
     p = &puk;
   else
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  if (LC != 16)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (LC != 16) EXCEPT(SW_WRONG_LENGTH);
   uint8_t ctr;
   int err = pin_verify(p, DATA, 8, &ctr);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (ctr == 0)
-    EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL)
-    EXCEPT(SW_PIN_RETRIES + ctr);
+  if (err == PIN_IO_FAIL) return -1;
+  if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
+  if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
   err = pin_update(p, DATA + 8, 8);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (err == PIN_LENGTH_INVALID)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (err == PIN_IO_FAIL) return -1;
+  if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   return 0;
 }
 
 static int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
-  if (P2 != 0x80)
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  if (LC != 16)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (P2 != 0x80) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (LC != 16) EXCEPT(SW_WRONG_LENGTH);
   uint8_t ctr;
   int err = pin_verify(&puk, DATA, 8, &ctr);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (ctr == 0)
-    EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL)
-    EXCEPT(0x63C0 + ctr);
+  if (err == PIN_IO_FAIL) return -1;
+  if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
+  if (err == PIN_AUTH_FAIL) EXCEPT(0x63C0 + ctr);
   err = pin_update(&pin, DATA + 8, 8);
-  if (err == PIN_IO_FAIL)
-    return -1;
-  if (err == PIN_LENGTH_INVALID)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (err == PIN_IO_FAIL) return -1;
+  if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   return 0;
 }
 
@@ -364,18 +309,14 @@ static const char *get_key_path(uint8_t id) {
 }
 
 static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
-  if (*buffer != 0x7C)
-    EXCEPT(SW_WRONG_DATA);
+  if (*buffer != 0x7C) EXCEPT(SW_WRONG_DATA);
 
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL)
-    EXCEPT(SW_WRONG_P1P2);
+  if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
 
   uint8_t alg;
-  if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
-    return -1;
-  if (!(P1 == ALG_DEFAULT && alg == ALG_TDEA_3KEY) && alg != P1)
-    EXCEPT(SW_WRONG_P1P2);
+  if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
+  if (!(P1 == ALG_DEFAULT && alg == ALG_TDEA_3KEY) && alg != P1) EXCEPT(SW_WRONG_P1P2);
 
   uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
@@ -388,8 +329,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     dat_pos += tlv_length_size(len[tag - 0x80]);
     pos[tag - 0x80] = dat_pos;
     dat_pos += len[tag - 0x80];
-    DBG_MSG("Tag %02X, pos: %d, len: %d", tag, pos[tag - 0x80],
-            len[tag - 0x80]);
+    DBG_MSG("Tag %02X, pos: %d, len: %d", tag, pos[tag - 0x80], len[tag - 0x80]);
   }
 
   //
@@ -405,21 +345,16 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   //
 
   // > Client application sends a challenge to the PIV Card Application
-  if (pos[IDX_WITNESS] == 0 && pos[IDX_CHALLENGE] > 0 &&
-      len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
+  if (pos[IDX_WITNESS] == 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
       len[IDX_RESPONSE] == 0) {
     authenticate_reset();
-    if (P2 != 0x9E && pin.is_validated == 0)
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (length != len[IDX_CHALLENGE])
-      EXCEPT(SW_WRONG_DATA);
-    if (P2 == 0x9D)
-      pin.is_validated = 0;
+    if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (length != len[IDX_CHALLENGE]) EXCEPT(SW_WRONG_DATA);
+    if (P2 == 0x9D) pin.is_validated = 0;
 
     if (alg == ALG_RSA_2048) {
       rsa_key_t key;
-      if (read_file(key_path, &key, sizeof(rsa_key_t)) < 0)
-        return -1;
+      if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
       if (rsa_private(&key, buffer + pos[IDX_CHALLENGE], buffer + 8) < 0) {
         memzero(&key, sizeof(key));
         return -1;
@@ -437,10 +372,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       buffer_len = length + 8;
     } else if (alg == ALG_ECC_256) {
       uint8_t key[ECC_KEY_SIZE];
-      if (read_file(key_path, key, sizeof(key)) < 0)
-        return -1;
-      if (ecdsa_sign(ECC_SECP256R1, key, buffer + pos[IDX_CHALLENGE],
-                     buffer + 4) < 0) {
+      if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
+      if (ecdsa_sign(ECC_SECP256R1, key, buffer + pos[IDX_CHALLENGE], buffer + 4) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -468,8 +401,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     authenticate_reset();
     in_admin_status = 0;
 
-    if (P2 != 0x9B)
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
     buffer[0] = 0x7C;
     buffer[1] = length + 2;
@@ -484,8 +416,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (alg == ALG_TDEA_3KEY) {
       uint8_t key[24];
-      if (read_file(key_path, key, 24) < 0)
-        return -1;
+      if (read_file(key_path, key, 0, 24) < 0) return -1;
       if (tdes_enc(buffer + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key) < 0) {
         memzero(key, sizeof(key));
         return -1;
@@ -505,11 +436,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL ||
-        auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
         auth_ctx[OFFSET_AUTH_ALGO] != alg || length != len[IDX_RESPONSE] ||
-        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + pos[IDX_RESPONSE],
-               length) != 0) {
+        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + pos[IDX_RESPONSE], length) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -527,8 +456,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     authenticate_reset();
     in_admin_status = 0;
 
-    if (P2 != 0x9B)
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
     auth_ctx[OFFSET_AUTH_KEY_ID] = P2;
@@ -543,8 +471,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (alg == ALG_TDEA_3KEY) {
       uint8_t key[24];
-      if (read_file(key_path, key, 24) < 0)
-        return -1;
+      if (read_file(key_path, key, 0, 24) < 0) return -1;
       if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + 4, key) < 0) {
         memzero(key, sizeof(key));
         return -1;
@@ -564,13 +491,10 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application returns the decrypted witness referencing the original
   // algorithm key reference
-  else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 &&
-           pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL ||
-        auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
+  else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
         auth_ctx[OFFSET_AUTH_ALGO] != alg || length != len[IDX_WITNESS] ||
-        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + pos[IDX_WITNESS],
-               length) != 0) {
+        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, buffer + pos[IDX_WITNESS], length) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -588,8 +512,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (alg == ALG_TDEA_3KEY) {
       uint8_t key[24];
-      if (read_file(key_path, key, 24) < 0)
-        return -1;
+      if (read_file(key_path, key, 0, 24) < 0) return -1;
       if (tdes_enc(buffer + pos[IDX_CHALLENGE], buffer + 4, key) < 0) {
         memzero(key, sizeof(key));
         return -1;
@@ -610,20 +533,14 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // Documented in SP800-73-4 Part 2 Appendix A.5
   //
 
-  else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 &&
-           pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
+  else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
     authenticate_reset();
-    if (P2 != 0x9D || pin.is_validated == 0)
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (len[IDX_EXP] != 2 * ECC_KEY_SIZE + 1)
-      EXCEPT(SW_WRONG_DATA);
-    if (P2 == 0x9D)
-      pin.is_validated = 0;
+    if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (len[IDX_EXP] != 2 * ECC_KEY_SIZE + 1) EXCEPT(SW_WRONG_DATA);
+    if (P2 == 0x9D) pin.is_validated = 0;
     uint8_t key[ECC_KEY_SIZE];
-    if (read_file(key_path, key, ECC_KEY_SIZE) < 0)
-      return -1;
-    if (ecdh_decrypt(ECC_SECP256R1, key, buffer + pos[IDX_EXP] + 1,
-                     buffer + 4) < 0) {
+    if (read_file(key_path, key, 0, ECC_KEY_SIZE) < 0) return -1;
+    if (ecdh_decrypt(ECC_SECP256R1, key, buffer + pos[IDX_EXP] + 1, buffer + 4) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
@@ -648,34 +565,26 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
-  if (!in_admin_status)
-    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (P1 != 0x3F || P2 != 0xFF)
-    EXCEPT(SW_WRONG_P1P2);
-  if (buffer[0] != 0x5C)
-    EXCEPT(SW_WRONG_DATA);
-  if (buffer[1] != 3 || buffer[2] != 0x5F || buffer[3] != 0xC1)
-    EXCEPT(SW_FILE_NOT_FOUND);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (buffer[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
+  if (buffer[1] != 3 || buffer[2] != 0x5F || buffer[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(buffer[4]);
-  if (path == NULL)
-    EXCEPT(SW_FILE_NOT_FOUND);
-  if (write_file(path, buffer + 5, buffer_len - 5) < 0)
-    return -1;
+  if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
+  if (write_file(path, buffer + 5, buffer_len - 5) < 0) return -1;
   return 0;
 }
 
 static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
-  if (!in_admin_status)
-    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) ||
-      buffer[0] != 0xAC || buffer[2] != 0x80 || buffer[3] != 0x01)
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || buffer[0] != 0xAC || buffer[2] != 0x80 ||
+      buffer[3] != 0x01)
     EXCEPT(SW_WRONG_DATA);
   const char *key_path = get_key_path(P2);
   uint8_t alg = buffer[4];
   if (alg == ALG_RSA_2048) {
     rsa_key_t key;
-    if (rsa_generate_key(&key) < 0)
-      return -1;
+    if (rsa_generate_key(&key) < 0) return -1;
     if (write_file(key_path, &key, sizeof(key)) < 0) {
       memzero(&key, sizeof(key));
       return -1;
@@ -698,8 +607,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     send_response(rapdu, LE);
   } else if (alg == ALG_ECC_256) {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
-    if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0)
-      return -1;
+    if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) return -1;
     if (write_file(key_path, key, sizeof(key)) < 0) {
       memzero(key, sizeof(key));
       return -1;
@@ -716,42 +624,31 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     send_response(rapdu, LE);
   } else
     EXCEPT(SW_WRONG_DATA);
-  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
-    return -1;
+  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
   return 0;
 }
 
 static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0xFF || P2 != 0xFF)
-    EXCEPT(SW_WRONG_P1P2);
-  if (LC != 27)
-    EXCEPT(SW_WRONG_LENGTH);
-  if (buffer[0] != 0x03 || buffer[1] != 0x9B || buffer[2] != 24)
-    EXCEPT(SW_WRONG_DATA);
-  if (!in_admin_status)
-    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (write_file(CARD_ADMIN_KEY_PATH, buffer + 3, 24) < 0)
-    return -1;
+  if (P1 != 0xFF || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
+  if (buffer[0] != 0x03 || buffer[1] != 0x9B || buffer[2] != 24) EXCEPT(SW_WRONG_DATA);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (write_file(CARD_ADMIN_KEY_PATH, buffer + 3, 24) < 0) return -1;
   return 0;
 }
 
 static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
-  if (LC != 0)
-    EXCEPT(SW_WRONG_LENGTH);
-  if (pin_get_retries(&pin) > 0 || pin_get_retries(&puk) > 0)
-    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+  if (pin_get_retries(&pin) > 0 || pin_get_retries(&puk) > 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   piv_install(1);
   return 0;
 }
 
 static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
-  if (!in_admin_status)
-    EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL)
-    EXCEPT(SW_WRONG_P1P2);
+  if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
   uint8_t alg = P1;
   switch (alg) {
   case ALG_RSA_2048: {
@@ -760,19 +657,15 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     key.e[1] = 1;
     key.e[3] = 1;
     uint8_t *p = buffer;
-    if (*p++ != 0x01)
-      EXCEPT(SW_WRONG_DATA);
+    if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
     int p_len = tlv_get_length(p);
-    if (p_len > PQ_LENGTH)
-      EXCEPT(SW_WRONG_DATA);
+    if (p_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += tlv_length_size(p_len);
     memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
     p += p_len;
-    if (*p++ != 0x02)
-      EXCEPT(SW_WRONG_DATA);
+    if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
     int q_len = tlv_get_length(p);
-    if (q_len > PQ_LENGTH)
-      EXCEPT(SW_WRONG_DATA);
+    if (q_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += tlv_length_size(q_len);
     memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
     if (rsa_complete_key(&key) < 0) {
@@ -788,8 +681,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
   case ALG_ECC_256: {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
-    if (buffer[0] != 0x06 || buffer[1] != ECC_KEY_SIZE)
-      EXCEPT(SW_WRONG_DATA);
+    if (buffer[0] != 0x06 || buffer[1] != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     memcpy(key, buffer + 2, ECC_KEY_SIZE);
     if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
@@ -805,16 +697,13 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0)
-    return -1;
+  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
   return 0;
 }
 
 static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
-  if (LC != 0)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   buffer[0] = 0x05;
   buffer[1] = 0x00;
   buffer[2] = 0x00;
@@ -824,10 +713,8 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00)
-    EXCEPT(SW_WRONG_P1P2);
-  if (LC != 0)
-    EXCEPT(SW_WRONG_LENGTH);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   fill_sn(buffer);
   buffer_len = 4;
   send_response(rapdu, LE);
@@ -857,12 +744,10 @@ restart:
       state = CHAINING_STATE_NORMAL;
       goto restart;
     }
-    if (buffer_len + LC > buffer_cap)
-      EXCEPT(SW_WRONG_DATA);
+    if (buffer_len + LC > buffer_cap) EXCEPT(SW_WRONG_DATA);
     memcpy(buffer + buffer_len, DATA, LC);
     buffer_len += LC;
-    if (is_chaining)
-      return 0;
+    if (is_chaining) return 0;
     state = CHAINING_STATE_NORMAL;
   }
   if (state == CHAINING_STATE_LONG_RESPONSE && INS != PIV_INS_GET_RESPONSE) {
@@ -872,8 +757,7 @@ restart:
   int ret = 0;
   switch (INS) {
   case PIV_INS_GET_RESPONSE:
-    if (state != CHAINING_STATE_LONG_RESPONSE)
-      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    if (state != CHAINING_STATE_LONG_RESPONSE) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     send_response(rapdu, LE);
     break;
   case PIV_INS_SELECT:
@@ -918,14 +802,12 @@ restart:
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
   }
-  if (ret < 0)
-    EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }
 
 int piv_config(uint8_t *buf, uint16_t buffer_size) {
-  if (buffer_size < MAX_BUFFER_SIZE)
-    return -1;
+  if (buffer_size < MAX_BUFFER_SIZE) return -1;
   buffer = buf;
   buffer_cap = buffer_size;
   return 0;
