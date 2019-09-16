@@ -1,6 +1,7 @@
 #include "fabrication.h"
 #include "piv.h"
 #include "u2f.h"
+#include "openpgp.h"
 #include "oath.h"
 #include <admin.h>
 #include <aes.h>
@@ -53,7 +54,7 @@ static void fake_u2f_personalization() {
 }
 
 
-int u2f_fabrication_procedure() {
+int card_fabrication_procedure() {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_emubd_read;
@@ -78,5 +79,7 @@ int u2f_fabrication_procedure() {
   static uint8_t piv_buffer[2048];
   piv_config(piv_buffer, sizeof(piv_buffer));
   piv_install(0);
+
+  openpgp_install(0);
   return 0;
 }
