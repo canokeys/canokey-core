@@ -134,3 +134,17 @@ int get_pin_retries(void) {
 int set_pin_retries(uint8_t ctr) {
   return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1);
 }
+
+int find_rk_by_credential_id(CTAP_residentKey *rk) {
+  int size = get_file_size(RK_FILE);
+  if (size < 0) return -2;
+  uint8_t buf[sizeof(CredentialId)];
+  memcpy(buf, &rk->credential_id, sizeof(buf));
+  int nRk = size / sizeof(CTAP_residentKey);
+  for (int i = 0; i != nRk; ++i) {
+    size = read_file(RK_FILE, rk, i * sizeof(CredentialId), sizeof(CredentialId));
+    if (size < 0) return -2;
+    if (memcmp(buf, &rk->credential_id, sizeof(buf)) == 0) return i;
+  }
+  return -1;
+}
