@@ -41,4 +41,13 @@ if (ENABLE_TESTS)
         target_include_directories(u2f-virt-card SYSTEM PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs)
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
     endif ()
+
+    add_executable(fido-hid-over-udp
+                virt-card/apdu-adapter.c
+                virt-card/fabrication.c
+                virt-card/ctap-hid.c
+                virt-card/udp-server.c
+                littlefs/emubd/lfs_emubd.c)
+    target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
+    target_link_libraries(fido-hid-over-udp canokey-core)
 endif (ENABLE_TESTS)

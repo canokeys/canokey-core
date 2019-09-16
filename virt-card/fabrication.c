@@ -53,6 +53,14 @@ static void fake_u2f_personalization() {
   admin_process_apdu(&capdu, &rapdu);
 }
 
+static void fido2_init() {
+  uint8_t buf[32];
+  random_buffer(buf, 32);
+  write_file("ctap_cert", NULL, 0);
+  write_attr("ctap_cert", 0x00, buf, 32);
+  write_attr("ctap_cert", 0x01, buf, 4);
+}
+
 
 int card_fabrication_procedure() {
   memset(&cfg, 0, sizeof(cfg));
@@ -75,6 +83,8 @@ int card_fabrication_procedure() {
   oath_install(0);
   u2f_config(16, aes128_enc, aes128_dec);
   fake_u2f_personalization();
+
+  fido2_init();
 
   static uint8_t piv_buffer[2048];
   piv_config(piv_buffer, sizeof(piv_buffer));
