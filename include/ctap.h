@@ -1,10 +1,13 @@
 #ifndef CANOKEY_CORE_FIDO2_FIDO2_H_
 #define CANOKEY_CORE_FIDO2_FIDO2_H_
 
+#include <apdu.h>
 #include <cbor.h>
 #include <ecc.h>
 #include <sha.h>
 #include <stdint.h>
+
+#define CTAP_INS_MSG 0x10
 
 #define CTAP_MAKE_CREDENTIAL 0x01
 #define CTAP_GET_ASSERTION 0x02
@@ -115,7 +118,7 @@ typedef struct {
 } __attribute__((packed)) CredentialId;
 
 typedef struct {
-  CredentialId kh;
+  CredentialId credential_id;
   UserEntity user;
 } __attribute__((packed)) CTAP_residentKey;
 
@@ -167,5 +170,6 @@ typedef struct {
 } CTAP_clientPin;
 
 int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
+int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_FIDO2_FIDO2_H_

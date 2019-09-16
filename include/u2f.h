@@ -36,7 +36,7 @@ typedef struct {
 
 // Vendor defined commands
 #define U2F_VENDOR_FIRST 0xc0 // First vendor defined command
-#define U2F_VENDOR_LAST 0xff // Last vendor defined command
+#define U2F_VENDOR_LAST 0xff  // Last vendor defined command
 
 // U2F_CMD_REGISTER command defines
 
@@ -49,9 +49,9 @@ typedef struct {
 } U2F_REGISTER_REQ;
 
 typedef struct {
-  uint8_t registerId;   // Registration identifier (U2F_REGISTER_ID_V2)
-  U2F_EC_POINT pubKey;  // Generated public key
-  uint8_t keyHandleLen; // Length of key handle
+  uint8_t registerId;                              // Registration identifier (U2F_REGISTER_ID_V2)
+  U2F_EC_POINT pubKey;                             // Generated public key
+  uint8_t keyHandleLen;                            // Length of key handle
   uint8_t keyHandleCertSig[U2F_KH_SIZE +           // Key handle
                            U2F_MAX_ATT_CERT_SIZE + // Attestation certificate
                            U2F_MAX_EC_SIG_SIZE];   // Registration signature
@@ -81,11 +81,8 @@ typedef struct {
 void u2f_press(void);
 void u2f_unpress(void);
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
-void u2f_config(uint8_t block_size,
-                int (*enc)(const uint8_t *, uint8_t *,
-                                     const uint8_t *),
-                int (*dec)(const uint8_t *, uint8_t *,
-                                     const uint8_t *));
+void u2f_config(uint8_t block_size, int (*enc)(const uint8_t *, uint8_t *, const uint8_t *),
+                int (*dec)(const uint8_t *, uint8_t *, const uint8_t *));
 int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 

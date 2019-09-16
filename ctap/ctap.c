@@ -12,6 +12,7 @@
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
+#include <u2f.h>
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
@@ -122,21 +123,28 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
   CborParser parser;
   CTAP_makeCredential mc;
-  uint8_t ret = parse_make_credential(&parser, &mc, params, len);
+  int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
   uint8_t data_buf[sizeof(CTAP_authData)];
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
-      parse_credential_descriptor(&mc.excludeList, data_buf);
-      DBG_MSG("Exclude ID found\n");
-      // TODO: check id
+      parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
+      CTAP_residentKey *rk = (CTAP_residentKey *)data_buf;
+      ret = find_rk_by_credential_id(rk);
+      if (ret == -2) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (ret >= 0) {
+        DBG_MSG("Exclude ID found\n");
+        wait_for_user_presence();
+        return CTAP2_ERR_CREDENTIAL_EXCLUDED;
+      }
       ret = cbor_value_advance(&mc.excludeList);
       CHECK_CBOR_RET(ret);
     }
   }
-  // TODO: check options
-  // TODO: verify pin
+
+  if (has_pin() && (mc.parsedParams & PARAM_pinAuth) == 0) return CTAP2_ERR_PIN_REQUIRED;
+
   wait_for_user_presence();
 
   // build response
@@ -487,4 +495,37 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
     break;
   }
   return 0;
+}
+
+int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+  LL = 0;
+  SW = SW_NO_ERROR;
+  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
+
+  int ret = 0;
+  size_t len;
+  switch (INS) {
+  case U2F_REGISTER:
+//    ret = u2f_register(capdu, rapdu);
+    break;
+  case U2F_AUTHENTICATE:
+//    ret = u2f_authenticate(capdu, rapdu);
+    break;
+  case U2F_VERSION:
+//    ret = u2f_version(capdu, rapdu);
+    break;
+  case U2F_SELECT:
+//    ret = u2f_select(capdu, rapdu);
+    break;
+  case CTAP_INS_MSG:
+    ctap_process(DATA, LC, RDATA, &len);
+    LL = len;
+    break;
+  default:
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+  }
+  if (ret < 0)
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  else
+    return 0;
 }
