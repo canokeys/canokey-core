@@ -55,11 +55,11 @@ static void fake_u2f_personalization() {
 }
 
 static void fido2_init() {
-  uint8_t buf[32];
-  random_buffer(buf, 32);
-  write_file("ctap_cert", NULL, 0, 0, 1);
-  write_attr("ctap_cert", 0x00, buf, 32);
+  uint8_t buf[4] = {0};
+  write_file("ctap_cert", cert, 0, sizeof(cert), 1);
+  write_attr("ctap_cert", 0x00, private_key, sizeof(private_key));
   write_attr("ctap_cert", 0x01, buf, 4);
+  write_attr("ctap_cert", 0x02, NULL, 0);
 }
 
 
