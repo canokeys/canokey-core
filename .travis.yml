@@ -15,6 +15,7 @@ addons:
       - gcc
       - g++
       - cmake
+      - swig
       - psmisc
       - pcscd
       - pcsc-tools
