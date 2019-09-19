@@ -25,10 +25,10 @@ addons:
       - openssl
       - libpcsclite-dev
       - libcmocka-dev
+      - python3-pip
 install:
   - go build -o test-oath virt-card/test-oath.go
-script:
-  - gpg --version
+  -
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
   - pushd u2f-ref-code/u2f-tests/HID
   - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
@@ -36,6 +36,13 @@ script:
   - git apply ../../../virt-card/disable-short-apdu-test.patch
   - make
   - popd
+  -
+  - git clone --depth 1 https://github.com/solokeys/fido2-tests.git
+  - pushd fido2-tests
+  - pip3 install --user -r requirements.txt
+  - popd
+
+script:
   -
   - mkdir build && pushd build
   - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release
@@ -60,6 +67,7 @@ script:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 3
   - # OpenPGP tests:
+  - gpg --version
   - echo 12345678 >/tmp/passwd
   - "echo -e 'Key-Type: 1\\nKey-Length: 2048\\nSubkey-Type: 1\\nSubkey-Length: 2048\\nName-Real: Someone\\nName-Email: foo@example.com\\nPassphrase: 12345678\\n%commit\\n%echo done' | gpg --batch --gen-key"
   - KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
