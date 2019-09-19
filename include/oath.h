@@ -23,6 +23,16 @@
 #define OATH_TYPE_MASK 0xF0
 #define OATH_TYPE_TOTP 0x20
 
+#define MAX_NAME_LEN 64
+#define MAX_KEY_LEN 66 // 64 + 2 for algo & digits
+
+typedef struct {
+  uint8_t name_len;
+  uint8_t name[MAX_NAME_LEN];
+  uint8_t key_len;
+  uint8_t key[MAX_KEY_LEN];
+} __attribute__((packed)) OATH_RECORD;
+
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 

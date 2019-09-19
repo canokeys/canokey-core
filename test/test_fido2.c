@@ -273,7 +273,7 @@ int main() {
   fs_init(&cfg);
   uint8_t buf[32];
   random_buffer(buf, 32);
-  write_file("ctap_cert", NULL, 0);
+  write_file("ctap_cert", NULL, 0, 0, 1);
   write_attr("ctap_cert", 0x00, buf, 32);
   write_attr("ctap_cert", 0x01, buf, 4);
   const struct CMUnitTest tests[] = {

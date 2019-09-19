@@ -52,7 +52,7 @@ static void test_u2f_personalization(void **state) {
   uint8_t key_buf[112];
   read_file("u2f_key", key_buf, 0, sizeof(key_buf));
   memzero(key_buf + 96, 16);
-  write_file("u2f_key", key_buf, sizeof(key_buf));
+  write_file("u2f_key", key_buf, 0, sizeof(key_buf), 1);
 
   capdu->ins = ADMIN_INS_WRITE_U2F_CERT;
   capdu->lc = 1;

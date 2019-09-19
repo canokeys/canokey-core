@@ -26,9 +26,13 @@ int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   return read_length;
 }
 
-int write_file(const char *path, const void *buf, lfs_size_t len) {
+int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
   lfs_file_t f;
-  int err = lfs_file_open(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | LFS_O_TRUNC);
+  int flags = LFS_O_WRONLY | LFS_O_CREAT;
+  if (trunc) flags |= LFS_O_TRUNC;
+  int err = lfs_file_open(&lfs, &f, path, flags);
+  if (err < 0) return err;
+  err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
   if (err < 0) return err;
   if (len > 0) {
     err = lfs_file_write(&lfs, &f, buf, len);

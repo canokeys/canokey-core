@@ -107,7 +107,7 @@ static int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   err = read_file(CTR_FILE, &ctr, 0, sizeof(ctr));
   if (err < 0) return err;
   ++ctr;
-  err = write_file(CTR_FILE, &ctr, sizeof(ctr));
+  err = write_file(CTR_FILE, &ctr, 0, sizeof(ctr), 1);
   if (err < 0) return err;
   ctr = htobe32(ctr);
 
@@ -151,17 +151,17 @@ int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(buffer, DATA, LC);
   ecc_get_public_key(ECC_SECP256R1, buffer, buffer + U2F_EC_KEY_SIZE);
   random_buffer(buffer + U2F_EC_KEY_SIZE + U2F_EC_PUB_KEY_SIZE, U2F_SECRET_KEY_SIZE);
-  int err = write_file(KEY_FILE, buffer, sizeof(buffer));
+  int err = write_file(KEY_FILE, buffer, 0, sizeof(buffer), 1);
   if (err < 0) return err;
 
   uint32_t ctr = 0;
-  return write_file(CTR_FILE, &ctr, sizeof(ctr));
+  return write_file(CTR_FILE, &ctr, 0, sizeof(ctr), 1);
 }
 
 int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC > U2F_MAX_ATT_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
 
-  return write_file(CERT_FILE, DATA, LC);
+  return write_file(CERT_FILE, DATA, 0, LC, 1);
 }
 
 int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {

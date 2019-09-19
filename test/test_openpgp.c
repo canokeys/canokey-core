@@ -74,7 +74,7 @@ static void test_change_reference_data(void **state) {
 static void test_reset_retry_counter(void **state) {
   (void)state;
 
-  write_file("pgp-rc", "abcdefgh", 8);
+  write_file("pgp-rc", "abcdefgh", 0, 8, 1);
 
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};

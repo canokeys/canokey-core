@@ -32,7 +32,7 @@ int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
 int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC > MAX_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
 
-  return write_file(CTAP_CERT_FILE, DATA, LC);
+  return write_file(CTAP_CERT_FILE, DATA, 0, LC, 1);
 }
 
 static int read_keys(uint8_t *prikey) {

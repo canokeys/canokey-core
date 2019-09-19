@@ -45,7 +45,7 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x04) EXCEPT(SW_WRONG_LENGTH);
   if (get_file_size(SN_FILE) >= 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  return write_file(SN_FILE, DATA, LC);
+  return write_file(SN_FILE, DATA, 0, LC, 1);
 }
 
 void fill_sn(uint8_t *buf) {

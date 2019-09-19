@@ -493,6 +493,10 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
     else
       *resp_len = 1;
     break;
+  case CTAP_RESET:
+    *resp = 0;
+    *resp_len = 1;
+    break;
   }
   return 0;
 }

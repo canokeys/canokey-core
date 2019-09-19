@@ -4,6 +4,8 @@
 #include <oath.h>
 #include <string.h>
 
+#define OATH_FILE "oath"
+
 static enum {
   REMAINING_NONE,
   REMAINING_CALC,
@@ -15,6 +17,41 @@ static uint8_t challenge[64], challenge_len;
 int oath_install(uint8_t reset) {
   oath_remaining_type = REMAINING_NONE;
   create_dir("oath");
+  return 0;
+}
+
+static int find_record(OATH_RECORD *record) {
+  int size = get_file_size(OATH_FILE);
+  if (size < 0) return -2;
+  uint8_t name_buf[64], name_len;
+  name_len = record->name_len;
+  if (name_len > 64) return -2;
+  memcpy(name_buf, record->name, name_len);
+  int nRecords = size / sizeof(OATH_RECORD);
+  for (int i = 0; i != nRecords; ++i) {
+    size = read_file(OATH_FILE, record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD));
+    if (size < 0) return -2;
+    if (name_len == record->name_len && memcmp(name_buf, record->name, name_len) == 0) return i;
+  }
+  return -1;
+}
+
+static int add_record(OATH_RECORD *record) {
+  int size = get_file_size(OATH_FILE);
+  if (size < 0) return -2;
+  uint8_t name_len;
+  int nRecords = size / sizeof(OATH_RECORD);
+  for (int i = 0; i != nRecords; ++i) {
+    size = read_file(OATH_FILE, &name_len, i * sizeof(OATH_RECORD), 1);
+    if (size < 0) return -2;
+    if (name_len == 0) {
+      return 0;
+    }
+  }
+  return -1;
+}
+
+static int delete_record(uint8_t index) {
   return 0;
 }
 
@@ -39,7 +76,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   if ((alg & OATH_TYPE_MASK) != OATH_TYPE_TOTP ||
       ((alg & OATH_ALG_MASK) != OATH_ALG_SHA1 && (alg & OATH_ALG_MASK) != OATH_ALG_SHA256))
     EXCEPT(SW_WRONG_DATA);
-  return write_file(build_path(DATA + 2, name_len), DATA + offset, key_len);
+  return write_file(build_path(DATA + 2, name_len), DATA + offset, 0, key_len, 1);
 }
 
 static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {

@@ -114,7 +114,7 @@ int openpgp_install(uint8_t reset) {
   if (pin_create(&rc, NULL, 0, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
 
   // Cardholder Data
-  if (write_file(DATA_PATH, NULL, 0) < 0) return -1;
+  if (write_file(DATA_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, LO(TAG_URL), NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_NAME, NULL, 0)) return -1;
@@ -132,17 +132,17 @@ int openpgp_install(uint8_t reset) {
   // Key data
   uint8_t buf[20];
   memzero(buf, sizeof(buf));
-  if (write_file(SIG_KEY_PATH, NULL, 0) < 0) return -1;
+  if (write_file(SIG_KEY_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (openpgp_key_set_fingerprint(SIG_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_datetime(SIG_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_attributes(SIG_KEY_PATH, rsa_attributes, sizeof(rsa_attributes)) < 0) return -1;
   if (openpgp_key_set_status(SIG_KEY_PATH, KEY_NOT_PRESENT) < 0) return -1;
-  if (write_file(DEC_KEY_PATH, NULL, 0) < 0) return -1;
+  if (write_file(DEC_KEY_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (openpgp_key_set_fingerprint(DEC_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_datetime(DEC_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_attributes(DEC_KEY_PATH, rsa_attributes, sizeof(rsa_attributes)) < 0) return -1;
   if (openpgp_key_set_status(DEC_KEY_PATH, KEY_NOT_PRESENT) < 0) return -1;
-  if (write_file(AUT_KEY_PATH, NULL, 0) < 0) return -1;
+  if (write_file(AUT_KEY_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (openpgp_key_set_fingerprint(AUT_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_datetime(AUT_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_attributes(AUT_KEY_PATH, rsa_attributes, sizeof(rsa_attributes)) < 0) return -1;
@@ -155,9 +155,9 @@ int openpgp_install(uint8_t reset) {
   if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, buf, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
 
   // Certs
-  if (write_file(SIG_CERT_PATH, NULL, 0) < 0) return -1;
-  if (write_file(DEC_CERT_PATH, NULL, 0) < 0) return -1;
-  if (write_file(AUT_CERT_PATH, NULL, 0) < 0) return -1;
+  if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(DEC_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(AUT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
 
   return 0;
 }
@@ -692,11 +692,11 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_CARDHOLDER_CERTIFICATE:
     if (LC > MAX_CERT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     if (current_occurrence == 0)
-      err = write_file(SIG_CERT_PATH, DATA, LC);
+      err = write_file(SIG_CERT_PATH, DATA, 0, LC, 1);
     else if (current_occurrence == 1)
-      err = write_file(DEC_CERT_PATH, DATA, LC);
+      err = write_file(DEC_CERT_PATH, DATA, 0, LC, 1);
     else if (current_occurrence == 2)
-      err = write_file(AUT_CERT_PATH, DATA, LC);
+      err = write_file(AUT_CERT_PATH, DATA, 0, LC, 1);
     else
       EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     if (err < 0) return -1;

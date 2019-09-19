@@ -80,7 +80,7 @@ static void authenticate_reset(void) {
 }
 
 static int create_key(const char *path) {
-  if (write_file(path, NULL, 0) < 0) return -1;
+  if (write_file(path, NULL, 0, 0, 1) < 0) return -1;
   uint8_t alg = 0xFF;
   if (write_attr(path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
   return 0;
@@ -110,12 +110,12 @@ int piv_install(uint8_t reset) {
   if (pin_create(&puk, "12345678", 8, 3) < 0) return -1;
 
   // objects
-  if (write_file(PIV_AUTH_CERT_PATH, NULL, 0) < 0) return -1;
-  if (write_file(SIG_CERT_PATH, NULL, 0) < 0) return -1;
-  if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0) < 0) return -1;
-  if (write_file(CARD_AUTH_CERT_PATH, NULL, 0) < 0) return -1;
-  if (write_file(CCC_PATH, NULL, 0) < 0) return -1;
-  if (write_file(CHUID_PATH, NULL, 0) < 0) return -1;
+  if (write_file(PIV_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(CARD_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(CCC_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(CHUID_PATH, NULL, 0, 0, 1) < 0) return -1;
 
   // keys
   if (create_key(PIV_AUTH_KEY_PATH) < 0) return -1;
@@ -124,7 +124,7 @@ int piv_install(uint8_t reset) {
   if (create_key(CARD_AUTH_KEY_PATH) < 0) return -1;
   if (create_key(CARD_ADMIN_KEY_PATH) < 0) return -1;
   if (write_file(CARD_ADMIN_KEY_PATH,
-                 (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 24) < 0)
+                 (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 0, 24, 1) < 0)
     return -1;
   uint8_t alg = ALG_TDEA_3KEY;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
@@ -571,7 +571,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (buffer[1] != 3 || buffer[2] != 0x5F || buffer[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(buffer[4]);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-  if (write_file(path, buffer + 5, buffer_len - 5) < 0) return -1;
+  if (write_file(path, buffer + 5, 0, buffer_len - 5, 1) < 0) return -1;
   return 0;
 }
 
@@ -585,7 +585,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   if (alg == ALG_RSA_2048) {
     rsa_key_t key;
     if (rsa_generate_key(&key) < 0) return -1;
-    if (write_file(key_path, &key, sizeof(key)) < 0) {
+    if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -608,7 +608,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   } else if (alg == ALG_ECC_256) {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
     if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) return -1;
-    if (write_file(key_path, key, sizeof(key)) < 0) {
+    if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
@@ -633,7 +633,7 @@ static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
   if (buffer[0] != 0x03 || buffer[1] != 0x9B || buffer[2] != 24) EXCEPT(SW_WRONG_DATA);
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  if (write_file(CARD_ADMIN_KEY_PATH, buffer + 3, 24) < 0) return -1;
+  if (write_file(CARD_ADMIN_KEY_PATH, buffer + 3, 0, 24, 1) < 0) return -1;
   return 0;
 }
 
@@ -672,7 +672,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       return -1;
     }
-    if (write_file(key_path, &key, sizeof(key)) < 0) {
+    if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -687,7 +687,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(key, sizeof(key));
       return -1;
     }
-    if (write_file(key_path, key, sizeof(key)) < 0) {
+    if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }

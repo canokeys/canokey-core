@@ -46,7 +46,7 @@ int openpgp_key_get_key(const char *path, void *buf, uint16_t len) {
 }
 
 int openpgp_key_set_key(const char *path, const void *buf, uint16_t len) {
-  int err = write_file(path, buf, len);
+  int err = write_file(path, buf, 0, len, 1);
   if (err < 0) return err;
   return 0;
 }
