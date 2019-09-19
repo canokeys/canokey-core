@@ -42,6 +42,12 @@ static int udp_server()
         exit(1);
     }
 
+    int reuseaddr = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(reuseaddr)) != 0) {
+        perror( "setsockopt" );
+        exit(1);
+    }
+
     struct sockaddr_in serveraddr;
     memset( &serveraddr, 0, sizeof(serveraddr) );
     serveraddr.sin_family = AF_INET;
