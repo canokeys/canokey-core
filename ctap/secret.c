@@ -89,9 +89,10 @@ int verify_key_handle(CredentialId *kh) {
 }
 
 size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
-  int ret = read_keys(sig);
+  uint8_t key[32];
+  int ret = read_keys(key);
   if (ret < 0) return ret;
-  ecdsa_sign(ECC_SECP256R1, sig, digest, sig);
+  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
   return ecdsa_sig2ansi(sig, sig);
 }
 
