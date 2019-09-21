@@ -69,6 +69,8 @@ static void fake_u2f_personalization() {
 
 static void fido2_init() {
   uint8_t buf[4] = {0};
+  if(get_file_size("ctap_cert") > 0)
+    return;
   write_file("ctap_cert", cert, 0, sizeof(cert), 1);
   write_attr("ctap_cert", 0x00, private_key, sizeof(private_key));
   write_attr("ctap_cert", 0x01, buf, 4);

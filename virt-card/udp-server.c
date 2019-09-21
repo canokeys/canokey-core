@@ -125,7 +125,9 @@ int main()
                                   "\x9a\x72\x50\xdc";
             if ( memcmp(magic_cmd, buf, 64) == 0 ) {
                 printf("MAGIC REBOOT command recieved!\r\n");
-                exit(0);
+                // exit(0);
+                char *argv[] = {NULL};
+                execl("/proc/self/exe", argv);
                 return 0;
             }
             CTAP_HID_OutEvent(buf);

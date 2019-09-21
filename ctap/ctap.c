@@ -79,7 +79,7 @@ static uint8_t get_shared_secret(uint8_t *pub_key) {
   return 0;
 }
 
-static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, size_t *len) {
+static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t uv, size_t *len) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -97,7 +97,7 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
   // --------------------------------------------------------------------------------
   CTAP_authData *ad = (CTAP_authData *)buf;
   memcpy(ad->rpIdHash, rpIdHash, sizeof(ad->rpIdHash));
-  ad->flags = (at << 6) | 1;
+  ad->flags = (at << 6) | (uv << 2) | 1;
 
   uint32_t ctr;
   int ret = get_sign_counter(&ctr);
@@ -160,7 +160,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   CHECK_CBOR_RET(ret);
 
   // auth data
-  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, 1, &len);
+  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, 1, has_pin() > 0, &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -233,9 +233,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   uint8_t ret = parse_get_assertion(&parser, &ga, params, len);
   CHECK_PARSER_RET(ret);
 
-  // we do not support rk yet, so allow list is required
-  if (ga.allowListSize == 0) return CTAP2_ERR_MISSING_PARAMETER;
-
   uint8_t data_buf[sizeof(CTAP_authData)];
   CredentialId *kh = (CredentialId *)data_buf;
   size_t i;
@@ -262,7 +259,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   CHECK_CBOR_RET(ret);
 
   // auth data
-  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, &len);
+  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0, &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -418,7 +415,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err > 0) {
       if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
-      if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
+      if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       --consecutive_pin_counter;
       return CTAP2_ERR_PIN_INVALID;
     }
@@ -454,7 +451,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err > 0) {
       if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
-      if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
+      if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       --consecutive_pin_counter;
       return CTAP2_ERR_PIN_INVALID;
     }

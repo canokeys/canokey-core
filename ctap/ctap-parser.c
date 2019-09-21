@@ -446,7 +446,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
-      if (len != PIN_AUTH_SIZE) return CTAP2_ERR_INVALID_CBOR;
+      if (len != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cbor_value_copy_byte_string(&map, mc->pinAuth, &len, NULL);
       CHECK_CBOR_RET(ret);
       mc->parsedParams |= PARAM_pinAuth;
@@ -551,7 +551,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
-      if (len != PIN_AUTH_SIZE) return CTAP2_ERR_INVALID_CBOR;
+      if (len != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cbor_value_copy_byte_string(&map, ga->pinAuth, &len, NULL);
       CHECK_CBOR_RET(ret);
       ga->parsedParams |= PARAM_pinAuth;
