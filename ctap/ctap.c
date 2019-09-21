@@ -150,10 +150,13 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
       parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
-      CTAP_residentKey *rk = (CTAP_residentKey *)data_buf;
-      ret = find_rk_by_credential_id(rk);
-      if (ret == -2) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (ret >= 0) {
+      CredentialId *kh = (CredentialId *)data_buf;
+      // compare rpId first
+      if (memcmp(kh->rpIdHash, mc.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
+      // then verify key handle and get private key in rpIdHash
+      ret = verify_key_handle(kh);
+      if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
         wait_for_user_presence();
         return CTAP2_ERR_CREDENTIAL_EXCLUDED;
@@ -251,9 +254,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   CTAP_getAssertion ga;
   uint8_t ret = parse_get_assertion(&parser, &ga, params, len);
   CHECK_PARSER_RET(ret);
-
-  // we do not support rk yet, so allow list is required
-  if (ga.allowListSize == 0) return CTAP2_ERR_MISSING_PARAMETER;
 
   uint8_t data_buf[sizeof(CTAP_authData)];
   CredentialId *kh = (CredentialId *)data_buf;
