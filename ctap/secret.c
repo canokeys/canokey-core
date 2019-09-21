@@ -6,36 +6,7 @@
 #include <memzero.h>
 #include <rand.h>
 
-#define CTAP_CERT_FILE "ctap_cert"
-#define KEY_ATTR 0x00
-#define SIGN_CTR_ATTR 0x01
-#define PIN_ATTR 0x02
-#define PIN_CTR_ATTR 0x03
-#define RK_FILE "ctap_rk"
-
-int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC != ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
-
-  int err = write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
-  if (err < 0) return err;
-
-  uint32_t ctr = 0;
-  err = write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &ctr, sizeof(ctr));
-  if (err < 0) return err;
-
-  err = write_attr(CTAP_CERT_FILE, PIN_ATTR, NULL, 0);
-  if (err < 0) return err;
-
-  return 0;
-}
-
-int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC > MAX_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
-
-  return write_file(CTAP_CERT_FILE, DATA, 0, LC, 1);
-}
-
-static int read_keys(uint8_t *prikey) {
+static int read_pri_key(uint8_t *prikey) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, prikey, ECC_KEY_SIZE);
   if (ret < 0) return ret;
   return 0;
@@ -57,7 +28,7 @@ int increase_counter(uint32_t *counter) {
 }
 
 int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
-  int ret = read_keys(pubkey); // use pubkey as key buffer
+  int ret = read_pri_key(pubkey); // use pubkey as key buffer
   if (ret < 0) return ret;
   do {
     random_buffer(kh->nonce, sizeof(kh->nonce));
@@ -72,7 +43,7 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
 
 int verify_key_handle(CredentialId *kh) {
   uint8_t prikey[ECC_KEY_SIZE];
-  int ret = read_keys(prikey);
+  int ret = read_pri_key(prikey);
   if (ret < 0) return ret;
   // get private key
   hmac_sha256(prikey, ECC_KEY_SIZE, kh->nonce, sizeof(kh->nonce), prikey);
@@ -90,7 +61,7 @@ int verify_key_handle(CredentialId *kh) {
 
 size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   uint8_t key[32];
-  int ret = read_keys(key);
+  int ret = read_pri_key(key);
   if (ret < 0) return ret;
   ecdsa_sign(ECC_SECP256R1, key, digest, sig);
   return ecdsa_sig2ansi(sig, sig);
@@ -145,9 +116,20 @@ int find_rk_by_credential_id(CTAP_residentKey *rk) {
   memcpy(buf, &rk->credential_id, sizeof(buf));
   int nRk = size / sizeof(CTAP_residentKey);
   for (int i = 0; i != nRk; ++i) {
-    size = read_file(RK_FILE, rk, i * sizeof(CredentialId), sizeof(CredentialId));
+    size = read_file(RK_FILE, rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
     if (size < 0) return -2;
     if (memcmp(buf, &rk->credential_id, sizeof(buf)) == 0) return i;
   }
   return -1;
+}
+
+int write_rk(CTAP_residentKey *rk, int idx) {
+  if (idx == -1) {
+    int size = get_file_size(RK_FILE);
+    if (size < 0) return -1;
+    int nRk = size / sizeof(CTAP_residentKey);
+    return write_file(RK_FILE, rk, nRk * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
+  } else {
+    return write_file(RK_FILE, rk, idx * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
+  }
 }

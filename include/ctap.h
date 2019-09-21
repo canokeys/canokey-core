@@ -7,6 +7,13 @@
 #include <sha.h>
 #include <stdint.h>
 
+#define CTAP_CERT_FILE "ctap_cert"
+#define KEY_ATTR 0x00
+#define SIGN_CTR_ATTR 0x01
+#define PIN_ATTR 0x02
+#define PIN_CTR_ATTR 0x03
+#define RK_FILE "ctap_rk"
+
 #define CTAP_INS_MSG 0x10
 
 #define CTAP_MAKE_CREDENTIAL 0x01
@@ -169,6 +176,7 @@ typedef struct {
   uint8_t pinHashEnc[PIN_HASH_SIZE];
 } CTAP_clientPin;
 
+uint8_t ctap_install(uint8_t reset);
 int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
 int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
