@@ -316,7 +316,13 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // pin protocol
   ret = cbor_encode_int(&map, RESP_pinProtocols);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, 1);
+  ret = cbor_encoder_create_array(&map, &array, 1);
+  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_int(&array, 1);
+    CHECK_CBOR_RET(ret);
+  }
+  ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
 
   ret = cbor_encoder_close_container(encoder, &map);
