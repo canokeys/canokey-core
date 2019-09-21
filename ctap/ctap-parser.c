@@ -315,7 +315,8 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
     CHECK_CBOR_RET(ret);
   }
 
-  if (parsed_keys != 5) return CTAP2_ERR_MISSING_PARAMETER;
+  DBG_MSG("parsed_keys=%x\n",parsed_keys);
+  if (parsed_keys < 4) return CTAP2_ERR_MISSING_PARAMETER;
 
   return 0;
 }
@@ -641,7 +642,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
 
     case CP_newPinEnc:
       DBG_MSG("newPinEnc\n");
-      if (cbor_value_get_type(&map) == CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
       if (len != MAX_PIN_SIZE + 1) return CTAP2_ERR_INVALID_CBOR;
@@ -652,7 +653,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
 
     case CP_pinHashEnc:
       DBG_MSG("pinHashEnc\n");
-      if (cbor_value_get_type(&map) == CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
       if (len != MAX_PIN_SIZE + 1) return CTAP2_ERR_INVALID_CBOR;

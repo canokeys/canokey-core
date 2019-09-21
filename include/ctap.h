@@ -161,7 +161,7 @@ typedef struct {
 } CTAP_getAssertion;
 
 typedef struct {
-  uint8_t parsedParams;
+  uint16_t parsedParams;
   uint8_t subCommand;
   uint8_t keyAgreement[ECC_PUB_KEY_SIZE];
   uint8_t pinAuth[PIN_AUTH_SIZE];

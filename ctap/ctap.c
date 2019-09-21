@@ -351,6 +351,8 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, get_pin_retries());
     CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_close_container(encoder, &map);
+    CHECK_CBOR_RET(ret);
     break;
 
   case CP_cmdGetKeyAgreement:
@@ -368,6 +370,8 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);
     CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_close_container(encoder, &map);
+    CHECK_CBOR_RET(ret);
     break;
 
   case CP_cmdSetPin:
@@ -377,7 +381,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = get_shared_secret(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
     hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), hmac_buf);
-    if (memcmp(params, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     cfg.key = cp.keyAgreement;
     cfg.in = cp.newPinEnc;
     cfg.out = cp.newPinEnc;
@@ -459,11 +463,11 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_byte_string(&map, pin_token, sizeof(pin_token));
     CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_close_container(encoder, &map);
+    CHECK_CBOR_RET(ret);
     break;
   }
 
-  ret = cbor_encoder_close_container(encoder, &map);
-  CHECK_CBOR_RET(ret);
   return 0;
 }
 
