@@ -443,7 +443,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_pinAuth:
       DBG_MSG("pinAuth: ");
-      if (cbor_value_get_type(&map) == CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
       if (len != PIN_AUTH_SIZE) return CTAP2_ERR_INVALID_CBOR;
@@ -454,7 +454,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_pinProtocol:
       DBG_MSG("pinProtocol: ");
-      if (cbor_value_get_type(&map) == CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_int_checked(&map, &pinProtocol);
       CHECK_CBOR_RET(ret);
       DBG_MSG("%d\n", pinProtocol);
