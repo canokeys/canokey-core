@@ -405,7 +405,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     memcpy(hmac_buf, cp.newPinEnc, sizeof(cp.newPinEnc));
     memcpy(hmac_buf + sizeof(cp.newPinEnc), cp.pinHashEnc, sizeof(cp.pinHashEnc));
     hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, hmac_buf, sizeof(cp.newPinEnc) + sizeof(cp.pinHashEnc), hmac_buf);
-    if (memcmp(params, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     err = set_pin_retries(retries);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     cfg.key = cp.keyAgreement;
