@@ -340,7 +340,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   uint8_t iv[16], hmac_buf[80], i;
   memzero(iv, sizeof(iv));
   block_cipher_config cfg = {
-      .in_size = 64, .block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
+      .block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   uint8_t *ptr;
   int err, retries;
   switch (cp.subCommand) {
@@ -383,6 +383,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), hmac_buf);
     if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     cfg.key = cp.keyAgreement;
+    cfg.in_size = MAX_PIN_SIZE+1;
     cfg.in = cp.newPinEnc;
     cfg.out = cp.newPinEnc;
     block_cipher_dec(&cfg);
@@ -408,6 +409,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     err = set_pin_retries(retries);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     cfg.key = cp.keyAgreement;
+    cfg.in_size = PIN_HASH_SIZE;
     cfg.in = cp.pinHashEnc;
     cfg.out = cp.pinHashEnc;
     block_cipher_dec(&cfg);
@@ -421,6 +423,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     }
     consecutive_pin_counter = 3;
     cfg.key = cp.keyAgreement;
+    cfg.in_size = MAX_PIN_SIZE+1;
     cfg.in = cp.newPinEnc;
     cfg.out = cp.newPinEnc;
     block_cipher_dec(&cfg);
@@ -442,6 +445,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     err = set_pin_retries(retries);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     cfg.key = cp.keyAgreement;
+    cfg.in_size = PIN_HASH_SIZE;
     cfg.in = cp.pinHashEnc;
     cfg.out = cp.pinHashEnc;
     block_cipher_dec(&cfg);
