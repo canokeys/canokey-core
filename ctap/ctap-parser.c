@@ -320,6 +320,43 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
   return 0;
 }
 
+uint8_t parse_extensions(uint8_t *hmac_secret, CborValue *val) {
+  size_t map_length;
+  char key[11];
+  bool b;
+  CborValue map;
+
+  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+
+  int ret = cbor_value_enter_container(val, &map);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_get_map_length(val, &map_length);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; i++) {
+    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    size_t sz = sizeof(key);
+    ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
+    CHECK_CBOR_RET(ret);
+
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+    if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+
+    if (strncmp(key, "hmac-secret", 11) == 0) {
+      ret = cbor_value_get_boolean(&map, &b);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("hmac-secret: %d\n", b);
+      if (hmac_secret) *hmac_secret = b;
+    } else {
+      DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
+    }
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+  }
+  return 0;
+}
+
 uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len) {
   CborValue it, map;
   size_t map_length;
@@ -388,7 +425,10 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       break;
 
     case MC_extensions:
-      DBG_MSG("Ignore Extensions\n");
+      DBG_MSG("extensions: ");
+      ret = parse_extensions(NULL, &map);
+      CHECK_PARSER_RET(ret);
+      mc->parsedParams |= PARAM_extensions;
       break;
 
     case MC_options:
@@ -430,7 +470,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
   if ((mc->parsedParams & PARAM_pinAuth) && (mc->parsedParams & PARAM_pinProtocol) == 0)
     return CTAP2_ERR_PIN_AUTH_INVALID;
-  if ((mc->parsedParams & MC_requiredMask) == 0) return CTAP2_ERR_MISSING_PARAMETER;
+  if ((mc->parsedParams & MC_requiredMask) != MC_requiredMask) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
 
@@ -535,7 +575,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
 
   if ((ga->parsedParams & PARAM_pinAuth) && (ga->parsedParams & PARAM_pinProtocol) == 0)
     return CTAP2_ERR_PIN_AUTH_INVALID;
-  if ((ga->parsedParams & GA_requiredMask) == 0) return CTAP2_ERR_MISSING_PARAMETER;
+  if ((ga->parsedParams & GA_requiredMask) != GA_requiredMask) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
 
@@ -630,7 +670,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
     CHECK_CBOR_RET(ret);
   }
 
-  if ((cp->parsedParams & CP_requiredMask) == 0) return CTAP2_ERR_MISSING_PARAMETER;
+  if ((cp->parsedParams & CP_requiredMask) != CP_requiredMask) return CTAP2_ERR_MISSING_PARAMETER;
   if (cp->subCommand == CP_cmdSetPin &&
       ((cp->parsedParams & PARAM_keyAgreement) == 0 || (cp->parsedParams & PARAM_newPinEnc) == 0))
     return CTAP2_ERR_MISSING_PARAMETER;

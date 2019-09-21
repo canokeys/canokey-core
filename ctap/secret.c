@@ -109,8 +109,13 @@ int has_pin(void) {
 }
 
 int set_pin(uint8_t *buf, uint8_t length) {
-  sha256_raw(buf, length, buf);
-  int err = write_attr(CTAP_CERT_FILE, PIN_ATTR, buf, PIN_HASH_SIZE);
+  int err;
+  if (length == 0) {
+    err = write_attr(CTAP_CERT_FILE, PIN_ATTR, NULL, 0);
+  } else {
+    sha256_raw(buf, length, buf);
+    err = write_attr(CTAP_CERT_FILE, PIN_ATTR, buf, PIN_HASH_SIZE);
+  }
   if (err < 0) return err;
   uint8_t ctr = 8;
   return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1);
@@ -120,8 +125,7 @@ int verify_pin_hash(uint8_t *buf) {
   uint8_t storedPinHash[PIN_HASH_SIZE];
   int err = read_attr(CTAP_CERT_FILE, PIN_ATTR, storedPinHash, PIN_HASH_SIZE);
   if (err < 0) return err;
-  if (memcmp(storedPinHash, buf, PIN_HASH_SIZE) == 0)
-    return 0;
+  if (memcmp(storedPinHash, buf, PIN_HASH_SIZE) == 0) return 0;
   return 1;
 }
 
@@ -132,9 +136,7 @@ int get_pin_retries(void) {
   return ctr;
 }
 
-int set_pin_retries(uint8_t ctr) {
-  return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1);
-}
+int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1); }
 
 int find_rk_by_credential_id(CTAP_residentKey *rk) {
   int size = get_file_size(RK_FILE);

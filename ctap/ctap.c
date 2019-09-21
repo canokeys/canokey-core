@@ -287,35 +287,37 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
 
 static uint8_t ctap_get_info(CborEncoder *encoder) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
-  // Currently, we respond versions and aaguid.
+  // Currently, we respond versions, aaguid, pin protocol.
   CborEncoder map;
-  int ret = cbor_encoder_create_map(encoder, &map, 2);
+  int ret = cbor_encoder_create_map(encoder, &map, 3);
   CHECK_CBOR_RET(ret);
 
   // versions
   ret = cbor_encode_int(&map, RESP_versions);
   CHECK_CBOR_RET(ret);
+  CborEncoder array;
+  ret = cbor_encoder_create_array(&map, &array, 2);
+  CHECK_CBOR_RET(ret);
   {
-    CborEncoder array;
-    ret = cbor_encoder_create_array(&map, &array, 2);
+    ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
     CHECK_CBOR_RET(ret);
-    {
-      ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&array, "U2F_V2");
-      CHECK_CBOR_RET(ret);
-    }
-    ret = cbor_encoder_close_container(&map, &array);
+    ret = cbor_encode_text_stringz(&array, "U2F_V2");
     CHECK_CBOR_RET(ret);
   }
+  ret = cbor_encoder_close_container(&map, &array);
+  CHECK_CBOR_RET(ret);
 
   // aaguid
   ret = cbor_encode_int(&map, RESP_aaguid);
   CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_byte_string(&map, aaguid, sizeof(aaguid));
-    CHECK_CBOR_RET(ret);
-  }
+  ret = cbor_encode_byte_string(&map, aaguid, sizeof(aaguid));
+  CHECK_CBOR_RET(ret);
+
+  // pin protocol
+  ret = cbor_encode_int(&map, RESP_pinProtocols);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map, 1);
+  CHECK_CBOR_RET(ret);
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
@@ -459,6 +461,11 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   return 0;
 }
 
+static uint8_t ctap_reset(void) {
+  set_pin(NULL, 0);
+  return 0;
+}
+
 int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
   CborEncoder encoder;
@@ -494,7 +501,7 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
       *resp_len = 1;
     break;
   case CTAP_RESET:
-    *resp = 0;
+    *resp = ctap_reset();
     *resp_len = 1;
     break;
   }

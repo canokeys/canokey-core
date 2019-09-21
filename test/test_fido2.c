@@ -276,6 +276,7 @@ int main() {
   write_file("ctap_cert", NULL, 0, 0, 1);
   write_attr("ctap_cert", 0x00, buf, 32);
   write_attr("ctap_cert", 0x01, buf, 4);
+  write_attr("ctap_cert", 0x02, NULL, 0);
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_parse_user),
       cmocka_unit_test(test_parse_rp),
