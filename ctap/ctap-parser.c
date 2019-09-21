@@ -7,10 +7,12 @@
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
+    if (ret > 0) DBG_MSG("CHECK_PARSER_RET %#x\n", ret);                                                            \
     if (ret > 0) return ret;                                                                                           \
   } while (0)
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
+    if (ret != CborNoError) DBG_MSG("CHECK_CBOR_RET %#x\n", ret);                                                            \
     if (ret != CborNoError) return CTAP2_ERR_INVALID_CBOR;                                                             \
   } while (0)
 
@@ -656,7 +658,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
-      if (len != MAX_PIN_SIZE + 1) return CTAP2_ERR_INVALID_CBOR;
+      if (len != PIN_HASH_SIZE) return CTAP2_ERR_INVALID_CBOR;
       ret = cbor_value_copy_byte_string(&map, cp->pinHashEnc, &len, NULL);
       CHECK_CBOR_RET(ret);
       cp->parsedParams |= PARAM_pinHashEnc;
