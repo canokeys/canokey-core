@@ -16,10 +16,12 @@
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
+    if (ret != 0) DBG_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
     if (ret > 0) return ret;                                                                                           \
   } while (0)
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
+    if (ret != 0) DBG_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
     if (ret != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
   } while (0)
 
@@ -256,29 +258,51 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   CHECK_PARSER_RET(ret);
 
   uint8_t data_buf[sizeof(CTAP_authData)];
-  CredentialId *kh = (CredentialId *)data_buf;
+  CredentialId kh;
   size_t i;
+
+  // build response
+  CborEncoder map;
+  ret = cbor_encoder_create_map(encoder, &map, 3);
+  CHECK_CBOR_RET(ret);
+
   for (i = 0; i < ga.allowListSize; ++i) {
-    parse_credential_descriptor(&ga.allowList, data_buf);
+    parse_credential_descriptor(&ga.allowList, &kh);
     // compare rpId first
-    if (memcmp(kh->rpIdHash, ga.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
+    if (memcmp(kh.rpIdHash, ga.rpIdHash, sizeof(kh.rpIdHash)) != 0) {
+      ret = cbor_value_advance(&ga.allowList);
+      CHECK_CBOR_RET(ret);
+      continue;
+    }
+
+    // build credential id
+    ret = cbor_encode_int(&map, RESP_credential);
+    CHECK_CBOR_RET(ret);
+
+    CborEncoder credential_map;
+    ret = cbor_encoder_create_map(&map, &credential_map, 2);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&credential_map, "id");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&credential_map, &kh, sizeof(kh));
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&credential_map, "type");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&credential_map, "public-key");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_close_container(&map, &credential_map);
+    CHECK_CBOR_RET(ret);
+
     // then verify key handle and get private key in rpIdHash
-    int err = verify_key_handle(kh);
+    int err = verify_key_handle(&kh);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err == 0) break; // only handle one allow entry for now
-    ret = cbor_value_advance(&ga.allowList);
-    CHECK_CBOR_RET(ret);
   }
   if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
 
   // TODO: verify PIN
   // TODO: check options
   wait_for_user_presence();
-
-  // build response
-  CborEncoder map;
-  ret = cbor_encoder_create_map(encoder, &map, 2);
-  CHECK_CBOR_RET(ret);
 
   // auth data
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0, &len);
@@ -295,7 +319,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   sha256_update(data_buf, len);
   sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
   sha256_final(data_buf);
-  len = sign_with_private_key(kh->rpIdHash, data_buf, data_buf);
+  len = sign_with_private_key(kh.rpIdHash, data_buf, data_buf);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 
