@@ -307,7 +307,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   wait_for_user_presence();
 
   // auth data
-  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0, &len);
+  DBG_MSG("has_pin()=%d\n",has_pin());
+  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0 && (ga.parsedParams & PARAM_pinAuth), &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -335,7 +336,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
   // Currently, we respond versions, aaguid, pin protocol.
   CborEncoder map;
-  int ret = cbor_encoder_create_map(encoder, &map, 3);
+  int ret = cbor_encoder_create_map(encoder, &map, 4);
   CHECK_CBOR_RET(ret);
 
   // versions
@@ -357,6 +358,19 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_int(&map, RESP_aaguid);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_byte_string(&map, aaguid, sizeof(aaguid));
+  CHECK_CBOR_RET(ret);
+
+  // options
+  ret = cbor_encode_int(&map, RESP_options);
+  CHECK_CBOR_RET(ret);
+  CborEncoder option_map;
+  ret = cbor_encoder_create_map(&map, &option_map, 1);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&option_map, "clientPin");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&option_map, has_pin() > 0);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_close_container(&map, &option_map);
   CHECK_CBOR_RET(ret);
 
   // pin protocol
