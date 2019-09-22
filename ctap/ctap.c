@@ -150,7 +150,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
-  uint8_t data_buf[sizeof(CTAP_authData)];
+  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
       parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
@@ -158,7 +158,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       // compare rpId first
       if (memcmp(kh->rpIdHash, mc.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
       // then verify key handle and get private key in rpIdHash
-      ret = verify_key_handle(kh);
+      ret = verify_key_handle(kh, pri_key);
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
@@ -174,11 +174,12 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   if (mc.parsedParams & PARAM_pinAuth) {
     if (mc.pinAuthLength == 0) {
       wait_for_user_presence();
-      if (has_pin()) return CTAP2_ERR_PIN_INVALID;
-      else return CTAP2_ERR_PIN_NOT_SET;
+      if (has_pin())
+        return CTAP2_ERR_PIN_INVALID;
+      else
+        return CTAP2_ERR_PIN_NOT_SET;
     }
-    if ((mc.parsedParams & PARAM_pinProtocol) == 0)
-      return CTAP2_ERR_PIN_AUTH_INVALID;
+    if ((mc.parsedParams & PARAM_pinProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), params);
     if (memcmp(params, mc.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
   }
@@ -203,6 +204,13 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
+
+  // process rk
+  if (mc.rk) {
+    ret = write_rk((CTAP_residentKey *)(data_buf + 55), -1);
+    if (ret == -1) return CTAP2_ERR_KEY_STORE_FULL;
+    if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
 
   // attestation statement
   // https://www.w3.org/TR/webauthn/#packed-attestation
@@ -261,6 +269,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
+
   return 0;
 }
 
@@ -270,18 +279,19 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   uint8_t ret = parse_get_assertion(&parser, &ga, params, len);
   CHECK_PARSER_RET(ret);
 
-  uint8_t data_buf[sizeof(CTAP_authData)];
+  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
   CredentialId kh;
   size_t i;
 
   if (ga.parsedParams & PARAM_pinAuth) {
     if (ga.pinAuthLength == 0) {
       wait_for_user_presence();
-      if (has_pin()) return CTAP2_ERR_PIN_INVALID;
-      else return CTAP2_ERR_PIN_NOT_SET;
+      if (has_pin())
+        return CTAP2_ERR_PIN_INVALID;
+      else
+        return CTAP2_ERR_PIN_NOT_SET;
     }
-    if ((ga.parsedParams & PARAM_pinProtocol) == 0)
-      return CTAP2_ERR_PIN_AUTH_INVALID;
+    if ((ga.parsedParams & PARAM_pinProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), params);
     if (memcmp(params, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
   }
@@ -303,7 +313,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
     // build credential id
     ret = cbor_encode_int(&map, RESP_credential);
     CHECK_CBOR_RET(ret);
-
     CborEncoder credential_map;
     ret = cbor_encoder_create_map(&map, &credential_map, 2);
     CHECK_CBOR_RET(ret);
@@ -319,7 +328,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
     CHECK_CBOR_RET(ret);
 
     // then verify key handle and get private key in rpIdHash
-    int err = verify_key_handle(&kh);
+    int err = verify_key_handle(&kh, pri_key);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err == 0) break; // only handle one allow entry for now
   }
@@ -342,12 +351,14 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   sha256_update(data_buf, len);
   sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
   sha256_final(data_buf);
-  len = sign_with_private_key(kh.rpIdHash, data_buf, data_buf);
+  len = sign_with_private_key(pri_key, data_buf, data_buf);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
+
+  memzero(pri_key, sizeof(pri_key));
 
   return 0;
 }

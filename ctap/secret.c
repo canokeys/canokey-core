@@ -6,6 +6,8 @@
 #include <memzero.h>
 #include <rand.h>
 
+#define MAX_RK_NUM 64
+
 static int read_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, ECC_KEY_SIZE);
   if (ret < 0) return ret;
@@ -47,17 +49,15 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
   return 0;
 }
 
-int verify_key_handle(CredentialId *kh) {
+int verify_key_handle(CredentialId *kh, uint8_t *pri_key) {
   uint8_t kh_key[KH_KEY_SIZE];
   int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
   // get private key
-  hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), kh_key);
-  // get tag, store in rpIdHash, which should be verified first outside of this function
-  hmac_sha256(kh_key, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh->rpIdHash);
-  if (memcmp(kh->rpIdHash, kh->tag, sizeof(kh->tag)) == 0) {
-    // store prikey to rpIdHash
-    memcpy(kh->rpIdHash, kh_key, sizeof(kh_key));
+  hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pri_key);
+  // get tag, store in kh_key, which should be verified first outside of this function
+  hmac_sha256(pri_key, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh_key);
+  if (memcmp(kh_key, kh->tag, sizeof(kh->tag)) == 0) {
     memzero(kh_key, sizeof(kh_key));
     return 0;
   }
@@ -133,9 +133,8 @@ int write_rk(CTAP_residentKey *rk, int idx) {
   if (idx == -1) {
     int size = get_file_size(RK_FILE);
     if (size < 0) return -1;
-    int nRk = size / sizeof(CTAP_residentKey);
-    return write_file(RK_FILE, rk, nRk * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
-  } else {
-    return write_file(RK_FILE, rk, idx * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
+    idx = size / sizeof(CTAP_residentKey);
   }
+  if (idx >= MAX_RK_NUM) return -1;
+  return write_file(RK_FILE, rk, idx * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
 }
