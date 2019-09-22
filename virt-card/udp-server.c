@@ -34,6 +34,10 @@ static int udp_server()
         return 1;
     }
 
+    int flags = fcntl(fd, F_GETFD);
+    flags |= FD_CLOEXEC;
+    fcntl(fd, F_SETFD, flags);
+
     struct timeval read_timeout;
     read_timeout.tv_sec = 0;
     read_timeout.tv_usec = 10;
