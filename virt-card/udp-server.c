@@ -126,8 +126,9 @@ int main()
             if ( memcmp(magic_cmd, buf, 64) == 0 ) {
                 printf("MAGIC REBOOT command recieved!\r\n");
                 // exit(0);
-                char *argv[] = {NULL};
-                execl("/proc/self/exe", argv);
+                char * const argv[] = {"fido-hid-over-udp", NULL};
+                int ret = execv("/proc/self/exe", argv);
+                printf("ERROR exec %d", ret);
                 return 0;
             }
             CTAP_HID_OutEvent(buf);
