@@ -1,12 +1,13 @@
 #include "fabrication.h"
-#include "piv.h"
-#include "u2f.h"
-#include "openpgp.h"
 #include "oath.h"
+#include "openpgp.h"
+#include "piv.h"
 #include "rand.h"
+#include "u2f.h"
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
+#include <ctap.h>
 #include <emubd/lfs_emubd.h>
 #include <fs.h>
 #include <lfs.h>
@@ -68,13 +69,12 @@ static void fake_u2f_personalization() {
 }
 
 static void fido2_init() {
-  uint8_t buf[4] = {0};
-  if(get_file_size("ctap_cert") > 0)
-    return;
+  //uint8_t buf[4] = {0};
+  //if(get_file_size("ctap_cert") > 0)
+  //  return;
+  ctap_install(0);
   write_file("ctap_cert", cert, 0, sizeof(cert), 1);
   write_attr("ctap_cert", 0x00, private_key, sizeof(private_key));
-  write_attr("ctap_cert", 0x01, buf, 4);
-  write_attr("ctap_cert", 0x02, NULL, 0);
 }
 
 

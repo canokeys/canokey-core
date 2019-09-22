@@ -29,6 +29,26 @@ static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter = 3;
 
+uint8_t ctap_install(uint8_t reset) {
+  if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
+  uint8_t ctr[4] = {0};
+  if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, ctr, 4) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_attr(CTAP_CERT_FILE, PIN_ATTR, NULL, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  return 0;
+}
+
+int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC != ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
+}
+
+int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC > MAX_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  return write_file(CTAP_CERT_FILE, DATA, 0, LC, 1);
+}
+
 static void build_cose_key(uint8_t *data, uint8_t ecdh) {
   // format public key as
   // A5
@@ -128,20 +148,22 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
 
   uint8_t data_buf[sizeof(CTAP_authData)];
   if (mc.excludeListSize > 0) {
-    // TODO: check exclude list
-//    for (size_t i = 0; i < mc.excludeListSize; ++i) {
-//      parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
-//      CTAP_residentKey *rk = (CTAP_residentKey *)data_buf;
-//      ret = find_rk_by_credential_id(rk);
-//      if (ret == -2) return CTAP2_ERR_UNHANDLED_REQUEST;
-//      if (ret >= 0) {
-//        DBG_MSG("Exclude ID found\n");
-//        wait_for_user_presence();
-//        return CTAP2_ERR_CREDENTIAL_EXCLUDED;
-//      }
-//      ret = cbor_value_advance(&mc.excludeList);
-//      CHECK_CBOR_RET(ret);
-//    }
+    for (size_t i = 0; i < mc.excludeListSize; ++i) {
+      parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
+      CredentialId *kh = (CredentialId *)data_buf;
+      // compare rpId first
+      if (memcmp(kh->rpIdHash, mc.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
+      // then verify key handle and get private key in rpIdHash
+      ret = verify_key_handle(kh);
+      if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (ret == 0) {
+        DBG_MSG("Exclude ID found\n");
+        wait_for_user_presence();
+        return CTAP2_ERR_CREDENTIAL_EXCLUDED;
+      }
+      ret = cbor_value_advance(&mc.excludeList);
+      CHECK_CBOR_RET(ret);
+    }
   }
 
   if (has_pin() && (mc.parsedParams & PARAM_pinAuth) == 0) return CTAP2_ERR_PIN_REQUIRED;
@@ -337,8 +359,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   CborEncoder map, key_map;
   uint8_t iv[16], hmac_buf[80], i;
   memzero(iv, sizeof(iv));
-  block_cipher_config cfg = {
-      .block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
+  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   uint8_t *ptr;
   int err, retries;
   switch (cp.subCommand) {
@@ -381,7 +402,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), hmac_buf);
     if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     cfg.key = cp.keyAgreement;
-    cfg.in_size = MAX_PIN_SIZE+1;
+    cfg.in_size = MAX_PIN_SIZE + 1;
     cfg.in = cp.newPinEnc;
     cfg.out = cp.newPinEnc;
     block_cipher_dec(&cfg);
@@ -421,7 +442,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     }
     consecutive_pin_counter = 3;
     cfg.key = cp.keyAgreement;
-    cfg.in_size = MAX_PIN_SIZE+1;
+    cfg.in_size = MAX_PIN_SIZE + 1;
     cfg.in = cp.newPinEnc;
     cfg.out = cp.newPinEnc;
     block_cipher_dec(&cfg);
@@ -473,11 +494,6 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   return 0;
 }
 
-static uint8_t ctap_reset(void) {
-  set_pin(NULL, 0);
-  return 0;
-}
-
 int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
   CborEncoder encoder;
@@ -513,7 +529,7 @@ int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp
       *resp_len = 1;
     break;
   case CTAP_RESET:
-    *resp = ctap_reset();
+    *resp = ctap_install(1);
     *resp_len = 1;
     break;
   }
@@ -529,16 +545,16 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   size_t len;
   switch (INS) {
   case U2F_REGISTER:
-//    ret = u2f_register(capdu, rapdu);
+    //    ret = u2f_register(capdu, rapdu);
     break;
   case U2F_AUTHENTICATE:
-//    ret = u2f_authenticate(capdu, rapdu);
+    //    ret = u2f_authenticate(capdu, rapdu);
     break;
   case U2F_VERSION:
-//    ret = u2f_version(capdu, rapdu);
+    //    ret = u2f_version(capdu, rapdu);
     break;
   case U2F_SELECT:
-//    ret = u2f_select(capdu, rapdu);
+    //    ret = u2f_select(capdu, rapdu);
     break;
   case CTAP_INS_MSG:
     ctap_process(DATA, LC, RDATA, &len);
