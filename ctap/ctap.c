@@ -177,6 +177,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       if (has_pin()) return CTAP2_ERR_PIN_INVALID;
       else return CTAP2_ERR_PIN_NOT_SET;
     }
+    if ((mc.parsedParams & PARAM_pinProtocol) == 0)
+      return CTAP2_ERR_PIN_AUTH_INVALID;
     hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), params);
     if (memcmp(params, mc.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
   }
@@ -272,6 +274,18 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   CredentialId kh;
   size_t i;
 
+  if (ga.parsedParams & PARAM_pinAuth) {
+    if (ga.pinAuthLength == 0) {
+      wait_for_user_presence();
+      if (has_pin()) return CTAP2_ERR_PIN_INVALID;
+      else return CTAP2_ERR_PIN_NOT_SET;
+    }
+    if ((ga.parsedParams & PARAM_pinProtocol) == 0)
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), params);
+    if (memcmp(params, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
+
   // build response
   CborEncoder map;
   ret = cbor_encoder_create_map(encoder, &map, 3);
@@ -311,19 +325,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   }
   if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
 
-  if (ga.parsedParams & PARAM_pinAuth) {
-    if (ga.pinAuthLength == 0) {
-      wait_for_user_presence();
-      if (has_pin()) return CTAP2_ERR_PIN_INVALID;
-      else return CTAP2_ERR_PIN_NOT_SET;
-    }
-    hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), params);
-    if (memcmp(params, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-  }
   wait_for_user_presence();
 
   // auth data
-  DBG_MSG("has_pin()=%d\n", has_pin());
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0 && (ga.parsedParams & PARAM_pinAuth), &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
@@ -542,11 +546,15 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     err = set_pin_retries(8);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     random_buffer(pin_token, sizeof(pin_token));
+    cfg.in_size = PIN_TOKEN_SIZE;
+    cfg.in = pin_token;
+    cfg.out = hmac_buf;
+    block_cipher_enc(&cfg);
     ret = cbor_encoder_create_map(encoder, &map, 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, RESP_pinToken);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, pin_token, sizeof(pin_token));
+    ret = cbor_encode_byte_string(&map, hmac_buf, PIN_TOKEN_SIZE);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_close_container(encoder, &map);
     CHECK_CBOR_RET(ret);

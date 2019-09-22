@@ -470,8 +470,6 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
     CHECK_CBOR_RET(ret);
   }
 
-  if ((mc->parsedParams & PARAM_pinAuth) && (mc->parsedParams & PARAM_pinProtocol) == 0)
-    return CTAP2_ERR_PIN_AUTH_INVALID;
   if ((mc->parsedParams & MC_requiredMask) != MC_requiredMask) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
@@ -574,8 +572,6 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
     CHECK_CBOR_RET(ret);
   }
 
-  if ((ga->parsedParams & PARAM_pinAuth) && (ga->parsedParams & PARAM_pinProtocol) == 0)
-    return CTAP2_ERR_PIN_AUTH_INVALID;
   if ((ga->parsedParams & GA_requiredMask) != GA_requiredMask) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
