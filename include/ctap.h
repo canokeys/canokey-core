@@ -156,6 +156,7 @@ typedef struct {
   uint8_t rk;
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
+  size_t pinAuthLength;
 } CTAP_makeCredential;
 
 typedef struct {
@@ -167,6 +168,7 @@ typedef struct {
   uint8_t up;
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
+  size_t pinAuthLength;
 } CTAP_getAssertion;
 
 typedef struct {

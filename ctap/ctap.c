@@ -143,7 +143,7 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
   return 0;
 }
 
-static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params, size_t len) {
+static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_t len) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
   CborParser parser;
   CTAP_makeCredential mc;
@@ -171,6 +171,15 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, const uint8_t *params,
   }
 
   if (has_pin() && (mc.parsedParams & PARAM_pinAuth) == 0) return CTAP2_ERR_PIN_REQUIRED;
+  if (mc.parsedParams & PARAM_pinAuth) {
+    if (mc.pinAuthLength == 0) {
+      wait_for_user_presence();
+      if (has_pin()) return CTAP2_ERR_PIN_INVALID;
+      else return CTAP2_ERR_PIN_NOT_SET;
+    }
+    hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), params);
+    if (memcmp(params, mc.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
 
   wait_for_user_presence();
 
@@ -269,7 +278,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   CHECK_CBOR_RET(ret);
 
   for (i = 0; i < ga.allowListSize; ++i) {
-    parse_credential_descriptor(&ga.allowList, &kh);
+    parse_credential_descriptor(&ga.allowList, (uint8_t *)&kh);
     // compare rpId first
     if (memcmp(kh.rpIdHash, ga.rpIdHash, sizeof(kh.rpIdHash)) != 0) {
       ret = cbor_value_advance(&ga.allowList);
@@ -286,7 +295,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&credential_map, "id");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&credential_map, &kh, sizeof(kh));
+    ret = cbor_encode_byte_string(&credential_map, (const uint8_t *)&kh, sizeof(kh));
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&credential_map, "type");
     CHECK_CBOR_RET(ret);
@@ -302,12 +311,19 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   }
   if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
 
-  // TODO: verify PIN
-  // TODO: check options
+  if (ga.parsedParams & PARAM_pinAuth) {
+    if (ga.pinAuthLength == 0) {
+      wait_for_user_presence();
+      if (has_pin()) return CTAP2_ERR_PIN_INVALID;
+      else return CTAP2_ERR_PIN_NOT_SET;
+    }
+    hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), params);
+    if (memcmp(params, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
   wait_for_user_presence();
 
   // auth data
-  DBG_MSG("has_pin()=%d\n",has_pin());
+  DBG_MSG("has_pin()=%d\n", has_pin());
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0 && (ga.parsedParams & PARAM_pinAuth), &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
