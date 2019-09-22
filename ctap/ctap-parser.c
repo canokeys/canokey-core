@@ -67,6 +67,7 @@ uint8_t parse_user(UserEntity *user, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    len = sizeof(key);
     ret = cbor_value_copy_text_string(&map, key, &len, NULL);
     if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
     CHECK_CBOR_RET(ret);
