@@ -455,6 +455,9 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     break;
 
   case CP_cmdChangePin:
+    err = has_pin();
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
@@ -495,6 +498,9 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     break;
 
   case CP_cmdGetPinToken:
+    err = has_pin();
+    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
