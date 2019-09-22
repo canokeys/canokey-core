@@ -12,6 +12,7 @@
 #define SIGN_CTR_ATTR 0x01
 #define PIN_ATTR 0x02
 #define PIN_CTR_ATTR 0x03
+#define KH_KEY_ATTR 0x04
 #define RK_FILE "ctap_rk"
 
 #define CTAP_INS_MSG 0x10
@@ -93,6 +94,7 @@
 #define RESP_pinToken 0x02
 #define RESP_retries 0x03
 
+#define KH_KEY_SIZE 32
 #define SHARED_SECRET_SIZE 32
 #define MAX_COSE_KEY_SIZE 78
 #define MAX_PIN_SIZE 63

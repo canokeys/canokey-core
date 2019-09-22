@@ -33,11 +33,13 @@ static uint8_t consecutive_pin_counter = 3;
 
 uint8_t ctap_install(uint8_t reset) {
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
-  uint8_t ctr[4] = {0};
+  uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, ctr, 4) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, kh_key, 4) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_attr(CTAP_CERT_FILE, PIN_ATTR, NULL, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  random_buffer(kh_key, sizeof(kh_key));
+  if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   return 0;
 }
 

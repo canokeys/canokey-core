@@ -6,8 +6,14 @@
 #include <memzero.h>
 #include <rand.h>
 
-static int read_pri_key(uint8_t *prikey) {
-  int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, prikey, ECC_KEY_SIZE);
+static int read_pri_key(uint8_t *pri_key) {
+  int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, ECC_KEY_SIZE);
+  if (ret < 0) return ret;
+  return 0;
+}
+
+static int read_kh_key(uint8_t *kh_key) {
+  int ret = read_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, KH_KEY_SIZE);
   if (ret < 0) return ret;
   return 0;
 }
@@ -28,34 +34,34 @@ int increase_counter(uint32_t *counter) {
 }
 
 int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
-  int ret = read_pri_key(pubkey); // use pubkey as key buffer
+  int ret = read_kh_key(pubkey); // use pubkey as key buffer
   if (ret < 0) return ret;
   do {
     random_buffer(kh->nonce, sizeof(kh->nonce));
     // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
-    hmac_sha256(pubkey, ECC_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
+    hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
     // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in pubkey[32, 64)
-    hmac_sha256(pubkey, ECC_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + ECC_KEY_SIZE);
-    memcpy(kh->tag, pubkey + ECC_KEY_SIZE, sizeof(kh->tag));
+    hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
+    memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
   } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
   return 0;
 }
 
 int verify_key_handle(CredentialId *kh) {
-  uint8_t prikey[ECC_KEY_SIZE];
-  int ret = read_pri_key(prikey);
+  uint8_t kh_key[KH_KEY_SIZE];
+  int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
   // get private key
-  hmac_sha256(prikey, ECC_KEY_SIZE, kh->nonce, sizeof(kh->nonce), prikey);
+  hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), kh_key);
   // get tag, store in rpIdHash, which should be verified first outside of this function
-  hmac_sha256(prikey, ECC_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh->rpIdHash);
+  hmac_sha256(kh_key, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh->rpIdHash);
   if (memcmp(kh->rpIdHash, kh->tag, sizeof(kh->tag)) == 0) {
     // store prikey to rpIdHash
-    memcpy(kh->rpIdHash, prikey, sizeof(prikey));
-    memzero(prikey, sizeof(prikey));
+    memcpy(kh->rpIdHash, kh_key, sizeof(kh_key));
+    memzero(kh_key, sizeof(kh_key));
     return 0;
   }
-  memzero(prikey, sizeof(prikey));
+  memzero(kh_key, sizeof(kh_key));
   return 1;
 }
 
