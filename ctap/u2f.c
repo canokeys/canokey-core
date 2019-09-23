@@ -1,12 +1,9 @@
 #include <apdu.h>
-#include <block-cipher.h>
-#include <common.h>
 #include <ecc.h>
 #include <fs.h>
-#include <rand.h>
+#include <memzero.h>
 #include <sha.h>
 #include <string.h>
-#include <memzero.h>
 #include <u2f.h>
 
 #include "fido-internal.h"
@@ -55,7 +52,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   int cert_len = read_file(CTAP_CERT_FILE, resp->keyHandleCertSig + sizeof(CredentialId), 0, U2F_MAX_ATT_CERT_SIZE);
   if (cert_len < 0) return cert_len;
   // SIG (var)
-  sha256_update(&kh, sizeof(CredentialId));
+  sha256_update((const uint8_t *)&kh, sizeof(CredentialId));
   sha256_update((const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
   sha256_final(digest);
   size_t signature_len = sign_with_device_key(digest, resp->keyHandleCertSig + sizeof(CredentialId) + cert_len);
@@ -78,19 +75,16 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 == U2F_AUTH_CHECK_ONLY || !pressed) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   pressed = 0;
 
-  if(memcmp(req->appId, ((CredentialId*)req->keyHandle)->rpIdHash, U2F_APPID_SIZE))
-    EXCEPT(SW_WRONG_DATA);
+  if (memcmp(req->appId, ((CredentialId *)req->keyHandle)->rpIdHash, U2F_APPID_SIZE) != 0) EXCEPT(SW_WRONG_DATA);
 
-  uint8_t err = verify_key_handle((CredentialId*)req->keyHandle, priv_key);
-  if(err) EXCEPT(SW_WRONG_DATA);
-
-  err = ctap_make_auth_data(req->appId, &auth_data, 0, 0, 1, &len);
-  if(err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  uint8_t err = verify_key_handle((CredentialId *)req->keyHandle, priv_key);
+  if (err) EXCEPT(SW_WRONG_DATA);
+  err = ctap_make_auth_data(req->appId, (uint8_t *)&auth_data, 0, 0, 1, &len);
+  if (err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.signCount));
-
   sha256_init();
-  sha256_update(&auth_data, U2F_APPID_SIZE + 1 + sizeof(auth_data.signCount));
+  sha256_update((const uint8_t *)&auth_data, U2F_APPID_SIZE + 1 + sizeof(auth_data.signCount));
   sha256_update(req->chal, U2F_CHAL_SIZE);
   sha256_final(req->appId);
   ecdsa_sign(ECC_SECP256R1, priv_key, req->appId, resp->sig);
@@ -110,13 +104,9 @@ int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
 
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
-
   LL = 6;
   memcpy(RDATA, "U2F_V2", 6);
   return 0;
 }
 
-void u2f_config() {
-
-  pressed = 0;
-}
+void u2f_config() { pressed = 0; }

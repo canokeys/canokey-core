@@ -10,4 +10,3 @@ void u2f_config(void);
 uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t uv, uint8_t up, size_t *len);
 
 #endif
-

@@ -6,8 +6,6 @@
 #include <memzero.h>
 #include <rand.h>
 
-#define MAX_RK_NUM 64
-
 static int read_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, ECC_KEY_SIZE);
   if (ret < 0) return ret;
@@ -115,20 +113,6 @@ int get_pin_retries(void) {
 }
 
 int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1); }
-
-int find_rk_by_credential_id(CTAP_residentKey *rk) {
-  int size = get_file_size(RK_FILE);
-  if (size < 0) return -2;
-  uint8_t buf[sizeof(CredentialId)];
-  memcpy(buf, &rk->credential_id, sizeof(buf));
-  int nRk = size / sizeof(CTAP_residentKey);
-  for (int i = 0; i != nRk; ++i) {
-    size = read_file(RK_FILE, rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
-    if (size < 0) return -2;
-    if (memcmp(buf, &rk->credential_id, sizeof(buf)) == 0) return i;
-  }
-  return -1;
-}
 
 int write_rk(CTAP_residentKey *rk, int idx) {
   if (idx == -1) {

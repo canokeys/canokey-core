@@ -17,14 +17,14 @@ int get_pin_retries(void);
 int set_pin_retries(uint8_t ctr);
 
 /**
- * Find the resident key by the given credential id (passed in rk)
- * @param rk The credential id in the resident key will be used to find the corresponding one, and once the rk is found,
- *           the rk will be filled.
+ * Find the resident key by the given rpIdHash (passed in rk)
+ * @param rpIdHash rkIdHash to look up.
+ * @param rk Once the rk is found, the rk will be filled.
  * @return -2 for error
  *         -1 for not found
  *         >=0 for index
  */
-int find_rk_by_credential_id(CTAP_residentKey *rk);
+int find_rk_by_rpid_hash(uint8_t rpIdHash[SHA256_DIGEST_LENGTH], CTAP_residentKey *rk);
 
 /**
  * Write the resident key to the specific index

@@ -31,6 +31,7 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
 static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter = 3;
+static uint8_t credential_list[MAX_RK_NUM], credential_list_len;
 
 uint8_t ctap_install(uint8_t reset) {
   u2f_config();
@@ -127,7 +128,7 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t
 
   uint32_t ctr;
   int ret = increase_counter(&ctr);
-  printf("----ctr=%d\n",ctr);
+  printf("----ctr=%d\n", ctr);
   if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ad->signCount = htobe32(ctr);
 
@@ -209,11 +210,14 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CHECK_CBOR_RET(ret);
 
   // process rk
-  //  if (mc.rk) {
-  //    ret = write_rk((CTAP_residentKey *)(data_buf + 55), -1);
-  //    if (ret == -1) return CTAP2_ERR_KEY_STORE_FULL;
-  //    if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  //  }
+  if (mc.rk) {
+    CTAP_residentKey rk;
+    memcpy(&rk.credential_id, data_buf + 55, sizeof(rk.credential_id));
+    memcpy(&rk.user, &mc.user, sizeof(UserEntity));
+    ret = write_rk(&rk, -1);
+    if (ret == -1) return CTAP2_ERR_KEY_STORE_FULL;
+    if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
 
   // attestation statement
   // https://www.w3.org/TR/webauthn/#packed-attestation
@@ -276,7 +280,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   return 0;
 }
 
-static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, size_t len) {
+static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len) {
   CborParser parser;
   CTAP_getAssertion ga;
   uint8_t ret = parse_get_assertion(&parser, &ga, params, len);
@@ -295,49 +299,66 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
     if (memcmp(params, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
   }
 
-  // build response
-  CborEncoder map;
-  ret = cbor_encoder_create_map(encoder, &map, 3);
-  CHECK_CBOR_RET(ret);
-
-  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
-  CredentialId kh;
-  size_t i;
-  for (i = 0; i < ga.allowListSize; ++i) {
-    parse_credential_descriptor(&ga.allowList, (uint8_t *)&kh);
-    // compare rpId first
-    if (memcmp(kh.rpIdHash, ga.rpIdHash, sizeof(kh.rpIdHash)) != 0) {
+  uint8_t data_buf[sizeof(CTAP_residentKey)], pri_key[ECC_KEY_SIZE], rk_counter = 0;
+  CTAP_residentKey *rk = (CTAP_residentKey *)data_buf;
+  if (ga.allowListSize > 0) {
+    size_t i;
+    for (i = 0; i < ga.allowListSize; ++i) {
+      parse_credential_descriptor(&ga.allowList, (uint8_t *)&rk->credential_id);
+      // compare rpId first
+      if (memcmp(rk->credential_id.rpIdHash, ga.rpIdHash, sizeof(rk->credential_id.rpIdHash)) != 0) goto next;
+      // then verify key handle and get private key
+      int err = verify_key_handle(&rk->credential_id, pri_key);
+      if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (err == 0) break; // only handle one allow entry for now
+    next:
       ret = cbor_value_advance(&ga.allowList);
       CHECK_CBOR_RET(ret);
-      continue;
     }
-
-    // build credential id
-    ret = cbor_encode_int(&map, RESP_credential);
-    CHECK_CBOR_RET(ret);
-    CborEncoder credential_map;
-    ret = cbor_encoder_create_map(&map, &credential_map, 2);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&credential_map, "id");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&credential_map, (const uint8_t *)&kh, sizeof(kh));
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&credential_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&credential_map, "public-key");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_close_container(&map, &credential_map);
-    CHECK_CBOR_RET(ret);
-
-    // then verify key handle and get private key in rpIdHash
-    int err = verify_key_handle(&kh, pri_key);
-    if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    if (err == 0) break; // only handle one allow entry for now
+    if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
+  } else {
+    int size = get_file_size(RK_FILE);
+    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    size_t nRk = size / sizeof(CTAP_residentKey);
+    credential_list_len = 0;
+    for (size_t i = 0; i != nRk; ++i) {
+      size = read_file(RK_FILE, rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
+      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (memcmp(ga.rpIdHash, rk->credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0) {
+        credential_list[credential_list_len++] = i;
+        ++rk_counter;
+      }
+    }
+    if (rk_counter == 0) return CTAP2_ERR_NO_CREDENTIALS;
+    // get private key
+    int err = verify_key_handle(&rk->credential_id, pri_key);
+    if (err != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
-  if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
 
   if (ga.uv) return CTAP2_ERR_UNSUPPORTED_OPTION;
   if (ga.up) wait_for_user_presence();
+
+  // build response
+  CborEncoder map, sub_map;
+  // if the credential id is provided by server, we do not offer user field.
+  ret = cbor_encoder_create_map(encoder, &map, ga.allowListSize > 0 ? 3 : 4);
+  CHECK_CBOR_RET(ret);
+
+  // build credential id
+  ret = cbor_encode_int(&map, RESP_credential);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_create_map(&map, &sub_map, 2);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "id");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&sub_map, (const uint8_t *)&rk->credential_id, sizeof(CredentialId));
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "type");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "public-key");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_close_container(&map, &sub_map);
+  CHECK_CBOR_RET(ret);
 
   // auth data
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0 && (ga.parsedParams & PARAM_pinAuth), ga.up, &len);
@@ -357,6 +378,32 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, const uint8_t *params, s
   len = sign_with_private_key(pri_key, data_buf, data_buf);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
+
+  // user
+  if (ga.allowListSize == 0) {
+    ret = cbor_encode_int(&map, RESP_publicKeyCredentialUserEntity);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_create_map(&map, &sub_map, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "id");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&sub_map, rk->user.id, rk->user.id_size);
+    CHECK_CBOR_RET(ret);
+    //    ret = cbor_encode_text_stringz(&sub_map, "icon");
+    //    CHECK_CBOR_RET(ret);
+    //    ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.icon);
+    //    CHECK_CBOR_RET(ret);
+    //    ret = cbor_encode_text_stringz(&sub_map, "name");
+    //    CHECK_CBOR_RET(ret);
+    //    ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.name);
+    //    CHECK_CBOR_RET(ret);
+    //    ret = cbor_encode_text_stringz(&sub_map, "displayName");
+    //    CHECK_CBOR_RET(ret);
+    //    ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.displayName);
+    //    CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_close_container(&map, &sub_map);
+    CHECK_CBOR_RET(ret);
+  }
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
@@ -578,7 +625,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   return 0;
 }
 
-int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
+int ctap_process(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
   CborEncoder encoder;
   cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);

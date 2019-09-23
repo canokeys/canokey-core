@@ -111,6 +111,7 @@
 #define USER_NAME_LIMIT 65    // Must be minimum of 64 bytes but can be more.
 #define DISPLAY_NAME_LIMIT 65 // Must be minimum of 64 bytes but can be more.
 #define ICON_LIMIT 129        // Must be minimum of 64 bytes but can be more.
+#define MAX_RK_NUM 64
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -183,7 +184,7 @@ typedef struct {
 uint8_t ctap_install(uint8_t reset);
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu);
-int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
+int ctap_process(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
 int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_FIDO2_FIDO2_H_
