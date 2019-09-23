@@ -75,6 +75,9 @@ static void fido2_init() {
   ctap_install(0);
   write_file("ctap_cert", cert, 0, sizeof(cert), 1);
   write_attr("ctap_cert", 0x00, private_key, sizeof(private_key));
+
+  u2f_config(16, aes128_enc, aes128_dec);
+  fake_u2f_personalization();
 }
 
 
@@ -97,8 +100,6 @@ int card_fabrication_procedure() {
   fs_init(&cfg);
   admin_install();
   oath_install(0);
-  u2f_config(16, aes128_enc, aes128_dec);
-  fake_u2f_personalization();
 
   fido2_init();
 

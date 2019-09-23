@@ -2,6 +2,7 @@
 #include <time.h>
 #include "ctap-hid.h"
 #include "ctap.h"
+#include "apdu-adapter.h"
 
 void FIDO_U2F_SendResponse(int ch, uint8_t cmd, uint16_t length, uint8_t *data);
 void FIDO_U2F_SendError(int ch, uint8_t errorCode);
@@ -165,7 +166,7 @@ int8_t CTAP_HID_InEvent(CTAP_HID_SendReport_t CTAP_HID_SendReport)
             chan[i].respData += datLen;
             chan[i].nextRespSeq = 0;
             DBG_MSG("%#x remain %d", chan[i].respCmd, chan[i].respRemain);
-            CTAP_HID_SendReport(&initMsg, sizeof(struct FIDO_U2F_Message_t));
+            CTAP_HID_SendReport((uint8_t*)&initMsg, sizeof(struct FIDO_U2F_Message_t));
             chan[i].respCmd = 0;
         } else if(chan[i].respRemain) {
             struct FIDO_U2F_Cont_Message_t contMsg;
@@ -176,7 +177,7 @@ int8_t CTAP_HID_InEvent(CTAP_HID_SendReport_t CTAP_HID_SendReport)
             chan[i].respRemain -= datLen;
             chan[i].respData += datLen;
             DBG_MSG("seq %d remain %d", contMsg.seq, chan[i].respRemain);
-            CTAP_HID_SendReport(&contMsg, sizeof(struct FIDO_U2F_Cont_Message_t));
+            CTAP_HID_SendReport((uint8_t*)&contMsg, sizeof(struct FIDO_U2F_Cont_Message_t));
         } else {
             continue;
         }
@@ -228,14 +229,14 @@ void FIDO_U2F_HandleCmdInit(int ch, uint16_t length, uint8_t *data)
     respBuffer[13] = 1; // Major device version number
     respBuffer[14] = 0; // Minor device version number
     respBuffer[15] = 0; // Build device version number
-    respBuffer[16] = 4|8; // Capabilities flags
+    respBuffer[16] = 4; // Capabilities flags: CAPABILITY_CBOR
     FIDO_U2F_SendResponse(ch, FIDO_U2F_HID_INIT, 17, respBuffer);
 }
 
-/*
+
 void FIDO_U2F_HandleMsgXfer(int ch, uint16_t length, uint8_t *data)
 {
-    uint16_t rLen = MAX_PAYLOAD_LEN;
+    size_t rLen = MAX_PAYLOAD_LEN;
     // static uint8_t rBuf[MAX_PAYLOAD_LEN];
     uint8_t *rBuf = chan[ch].respBuffer = malloc(rLen);
     if(!rBuf) {
@@ -243,13 +244,14 @@ void FIDO_U2F_HandleMsgXfer(int ch, uint16_t length, uint8_t *data)
         FIDO_U2F_SendError(ch, FIDO_U2F_ERR_OTHER);
         return;
     }
-    if(FIDO_U2F_RawMsgXfer(data, length, rBuf, &rLen)) {
+    select_u2f_from_hid();
+    if(virt_card_apdu_transceive(data, length, rBuf, &rLen)) {
         FIDO_U2F_SendError(ch, FIDO_U2F_ERR_OTHER);
     } else {
         FIDO_U2F_SendResponse(ch, FIDO_U2F_HID_MSG, rLen, rBuf);
     }
 }
-*/
+
 
 void FIDO2_HandleMsgXfer(int ch, uint16_t length, uint8_t *data)
 {
@@ -276,12 +278,12 @@ void FIDO_U2F_HandleCommand(int ch, uint8_t cmd, uint16_t length, uint8_t *data)
         FIDO_U2F_HandleCmdInit(ch, length, data);
         break;
 
-    // case FIDO_U2F_HID_MSG:
-    //     if(cid == FIDO_U2FHID_BROADCAST_CID)
-    //         FIDO_U2F_SendError(ch, FIDO_U2F_ERR_INVALID_CID);
-    //     else
-    //         FIDO_U2F_HandleMsgXfer(ch, length, data);
-    //     break;
+    case FIDO_U2F_HID_MSG:
+        if(cid == FIDO_U2FHID_BROADCAST_CID)
+            FIDO_U2F_SendError(ch, FIDO_U2F_ERR_INVALID_CID);
+        else
+            FIDO_U2F_HandleMsgXfer(ch, length, data);
+        break;
 
     case FIDO_U2F_HID_CBOR:
         if(cid == FIDO_U2FHID_BROADCAST_CID)

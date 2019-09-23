@@ -22,6 +22,11 @@ enum {
     APPLET_PIV,
 } current_applet;
 
+void select_u2f_from_hid(void)
+{
+    current_applet = APPLET_U2F;
+}
+
 int virt_card_apdu_transceive(
     unsigned char *txBuf, unsigned long txLen,
     unsigned char *rxBuf, unsigned long *rxLen)
@@ -88,7 +93,11 @@ int virt_card_apdu_transceive(
 
     if(*rxLen < Le + 2) {
         printf("RX Buffer is not large enough\n");
-        return -1;
+        if(*rxLen > 2) {
+            Le = *rxLen - 2;
+            printf("  set Le to %hu", Le);
+        }else
+            return -1;
     }
 
     CAPDU c;
