@@ -15,6 +15,7 @@
 #include <memzero.h>
 #include <sha.h>
 #include <u2f.h>
+#include <ctap.h>
 
 uint8_t private_key[] = {
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A,
@@ -79,13 +80,13 @@ static void test_u2f_registration(void **state) {
 
 #ifndef NFC
   // without touch
-  u2f_process_apdu(capdu, rapdu);
+  ctap_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_CONDITIONS_NOT_SATISFIED);
 #endif
 
   // after touch
   u2f_press();
-  u2f_process_apdu(capdu, rapdu);
+  ctap_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
   assert_int_equal(rapdu->len, 266);
 
@@ -201,7 +202,7 @@ static void test_u2f_authenticate(void **state) {
   }
 
   u2f_press();
-  u2f_process_apdu(capdu, rapdu);
+  ctap_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)rapdu->data;
   assert_int_equal(resp->flags, U2F_AUTH_FLAG_TUP);

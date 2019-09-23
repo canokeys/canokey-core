@@ -1,6 +1,7 @@
 #include "cose-key.h"
 #include "ctap-errors.h"
 #include "ctap-parser.h"
+#include "fido-internal.h"
 #include "secret.h"
 #include <aes.h>
 #include <block-cipher.h>
@@ -626,16 +627,16 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   size_t len;
   switch (INS) {
   case U2F_REGISTER:
-    //    ret = u2f_register(capdu, rapdu);
+    ret = u2f_register(capdu, rapdu);
     break;
   case U2F_AUTHENTICATE:
-    //    ret = u2f_authenticate(capdu, rapdu);
+    ret = u2f_authenticate(capdu, rapdu);
     break;
   case U2F_VERSION:
-    //    ret = u2f_version(capdu, rapdu);
+    ret = u2f_version(capdu, rapdu);
     break;
   case U2F_SELECT:
-    //    ret = u2f_select(capdu, rapdu);
+    ret = u2f_select(capdu, rapdu);
     break;
   case CTAP_INS_MSG:
     ctap_process(DATA, LC, RDATA, &len);

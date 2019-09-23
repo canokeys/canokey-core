@@ -80,7 +80,6 @@ typedef struct {
 
 void u2f_press(void);
 void u2f_unpress(void);
-int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 void u2f_config(uint8_t block_size, int (*enc)(const uint8_t *, uint8_t *, const uint8_t *),
                 int (*dec)(const uint8_t *, uint8_t *, const uint8_t *));
 int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu);

@@ -8,6 +8,8 @@
 #include <string.h>
 #include <u2f.h>
 
+#include "fido-internal.h"
+
 /*
  * Key Handle:
  * 32 bytes: app id
@@ -26,7 +28,7 @@ void u2f_press(void) { pressed = 1; }
 
 void u2f_unpress(void) { pressed = 0; }
 
-static int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
+int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
 
 #ifdef NFC
@@ -80,7 +82,7 @@ static int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_AUTHENTICATE_REQ *req = (U2F_AUTHENTICATE_REQ *)DATA;
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
 
@@ -127,14 +129,14 @@ static int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
+int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   LL = 6;
   memcpy(RDATA, "U2F_V2", 6);
   return 0;
 }
 
-static int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
+int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
   (void)capdu;
 
   LL = 6;
@@ -162,34 +164,6 @@ int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC > U2F_MAX_ATT_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
 
   return write_file(CERT_FILE, DATA, 0, LC, 1);
-}
-
-int u2f_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
-  LL = 0;
-  SW = SW_NO_ERROR;
-  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
-
-  int ret;
-  switch (INS) {
-  case U2F_REGISTER:
-    ret = u2f_register(capdu, rapdu);
-    break;
-  case U2F_AUTHENTICATE:
-    ret = u2f_authenticate(capdu, rapdu);
-    break;
-  case U2F_VERSION:
-    ret = u2f_version(capdu, rapdu);
-    break;
-  case U2F_SELECT:
-    ret = u2f_select(capdu, rapdu);
-    break;
-  default:
-    EXCEPT(SW_INS_NOT_SUPPORTED);
-  }
-  if (ret < 0)
-    EXCEPT(SW_UNABLE_TO_PROCESS);
-  else
-    return 0;
 }
 
 void u2f_config(uint8_t block_size, int (*enc)(const uint8_t *, uint8_t *, const uint8_t *),

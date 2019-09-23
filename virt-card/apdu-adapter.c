@@ -1,5 +1,5 @@
 #include "apdu-adapter.h"
-#include "u2f.h"
+#include "ctap.h"
 #include "openpgp.h"
 #include "piv.h"
 #include "oath.h"
@@ -16,7 +16,7 @@
 
 enum {
     APPLET_NULL = 0,
-    APPLET_U2F,
+    APPLET_FIDO,
     APPLET_OPENPGP,
     APPLET_OATH,
     APPLET_PIV,
@@ -24,7 +24,7 @@ enum {
 
 void select_u2f_from_hid(void)
 {
-    current_applet = APPLET_U2F;
+    current_applet = APPLET_FIDO;
 }
 
 int virt_card_apdu_transceive(
@@ -95,7 +95,7 @@ int virt_card_apdu_transceive(
         printf("RX Buffer is not large enough\n");
         if(*rxLen > 2) {
             Le = *rxLen - 2;
-            printf("  set Le to %hu", Le);
+            printf("  set Le to %hu\n", Le);
         }else
             return -1;
     }
@@ -119,7 +119,7 @@ int virt_card_apdu_transceive(
     if (c.cla == 0x00 && c.ins == 0xA4 && c.p1 == 0x04 && c.p2 == 0x00) {
         selecting = true;
         if(c.lc == 8 && memcmp(c.data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
-            current_applet = APPLET_U2F;
+            current_applet = APPLET_FIDO;
         }
         else if(c.lc >= 6 && memcmp(c.data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
             current_applet = APPLET_OPENPGP;
@@ -152,10 +152,10 @@ int virt_card_apdu_transceive(
                 printf("oath_process_apdu ret %d\n", ret);
             }
             break;
-        case APPLET_U2F:
-            printf("calling u2f_process_apdu\n");
-            ret = u2f_process_apdu(&c, &r);
-            printf("u2f_process_apdu ret %d\n", ret);
+        case APPLET_FIDO:
+            printf("calling ctap_process_apdu\n");
+            ret = ctap_process_apdu(&c, &r);
+            printf("ctap_process_apdu ret %d\n", ret);
             break;
         case APPLET_OPENPGP:
             printf("calling openpgp_process_apdu\n");
