@@ -70,6 +70,7 @@ size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   int ret = read_pri_key(key);
   if (ret < 0) return ret;
   ecdsa_sign(ECC_SECP256R1, key, digest, sig);
+  memzero(key, sizeof(key));
   return ecdsa_sig2ansi(sig, sig);
 }
 

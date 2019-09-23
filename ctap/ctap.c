@@ -33,6 +33,7 @@ static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter = 3;
 
 uint8_t ctap_install(uint8_t reset) {
+  u2f_config();
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -104,7 +105,7 @@ static uint8_t get_shared_secret(uint8_t *pub_key) {
   return 0;
 }
 
-static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t uv, uint8_t up, size_t *len) {
+uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t uv, uint8_t up, size_t *len) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -125,7 +126,7 @@ static uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, 
   ad->flags = (at << 6) | (uv << 2) | up;
 
   uint32_t ctr;
-  int ret = get_sign_counter(&ctr);
+  int ret = increase_counter(&ctr);
   if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ad->signCount = htobe32(ctr);
 

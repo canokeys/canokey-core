@@ -4,19 +4,19 @@
 #include <apdu.h>
 #include <stdint.h>
 
+#include "ctap.h"
+
 // General constants
 
 #define U2F_EC_KEY_SIZE 32         // EC key size in bytes
 #define U2F_EC_PUB_KEY_SIZE 64     // EC public key size in bytes
-#define U2F_KH_SIZE 128            // Key handle size
+#define U2F_KH_SIZE sizeof(CredentialId)            // Key handle size
 #define U2F_MAX_ATT_CERT_SIZE 1152 // Max size of attestation certificate
 #define U2F_MAX_EC_SIG_SIZE 72     // Max size of DER coded EC signature
 #define U2F_CTR_SIZE 4             // Size of counter field
 #define U2F_APPID_SIZE 32          // Size of application id
 #define U2F_CHAL_SIZE 32           // Size of challenge
 #define U2F_SECRET_KEY_SIZE 16     // Secret key size
-
-#define ENC_SIZE(x) ((x + 7) & 0xfff8)
 
 // EC (uncompressed) point
 
@@ -80,8 +80,6 @@ typedef struct {
 
 void u2f_press(void);
 void u2f_unpress(void);
-void u2f_config(uint8_t block_size, int (*enc)(const uint8_t *, uint8_t *, const uint8_t *),
-                int (*dec)(const uint8_t *, uint8_t *, const uint8_t *));
 int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 

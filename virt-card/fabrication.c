@@ -44,7 +44,7 @@ uint8_t cert[] = {
     0x7d, 0xfa, 0x7d, 0x02, 0x20, 0x20, 0x79, 0x69, 0x3a, 0x78, 0x31, 0xd3, 0xec, 0x3a, 0x9b, 0x17, 0x1b, 0x30, 0x47,
     0x04, 0xa8, 0x35, 0x3b, 0x5b, 0x58, 0xd5, 0x57, 0xf5, 0x77, 0x59, 0xeb, 0x7a, 0x07, 0xba, 0x0e, 0x1c, 0x67};
 
-static void fake_u2f_personalization() {
+static void fake_fido_personalization() {
 
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU capdu;
@@ -56,28 +56,21 @@ static void fake_u2f_personalization() {
   admin_process_apdu(&capdu, &rapdu);
 
   capdu.cla = 0x00;
-  capdu.ins = ADMIN_INS_WRITE_U2F_PRIVATE_KEY;
+  capdu.ins = ADMIN_INS_WRITE_FIDO_PRIVATE_KEY;
   capdu.data = private_key;
   capdu.lc = 32;
 
   admin_process_apdu(&capdu, &rapdu);
 
-  capdu.ins = ADMIN_INS_WRITE_U2F_CERT;
+  capdu.ins = ADMIN_INS_WRITE_FIDO_CERT;
   capdu.data = cert;
   capdu.lc = sizeof(cert);
   admin_process_apdu(&capdu, &rapdu);
 }
 
 static void fido2_init() {
-  //uint8_t buf[4] = {0};
-  //if(get_file_size("ctap_cert") > 0)
-  //  return;
   ctap_install(0);
-  write_file("ctap_cert", cert, 0, sizeof(cert), 1);
-  write_attr("ctap_cert", 0x00, private_key, sizeof(private_key));
-
-  u2f_config(16, aes128_enc, aes128_dec);
-  fake_u2f_personalization();
+  fake_fido_personalization();
 }
 
 

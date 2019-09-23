@@ -181,6 +181,8 @@ typedef struct {
 } CTAP_clientPin;
 
 uint8_t ctap_install(uint8_t reset);
+int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
+int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_process(const uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
 int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 

@@ -4,7 +4,7 @@
 #include <pin.h>
 #include <piv.h>
 #include <string.h>
-#include <u2f.h>
+#include <ctap.h>
 
 #define PIN_RETRY_COUNTER 3
 #define SN_FILE "sn"
@@ -61,11 +61,11 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (INS == ADMIN_INS_VERIFY) return admin_verify(capdu, rapdu);
   if (!pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   switch (INS) {
-  case ADMIN_INS_WRITE_U2F_PRIVATE_KEY:
-    ret = u2f_install_private_key(capdu, rapdu);
+  case ADMIN_INS_WRITE_FIDO_PRIVATE_KEY:
+    ret = ctap_install_private_key(capdu, rapdu);
     break;
-  case ADMIN_INS_WRITE_U2F_CERT:
-    ret = u2f_install_cert(capdu, rapdu);
+  case ADMIN_INS_WRITE_FIDO_CERT:
+    ret = ctap_install_cert(capdu, rapdu);
     break;
   case ADMIN_INS_RESET_OPENPGP:
     ret = openpgp_install(1);
