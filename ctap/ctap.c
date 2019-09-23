@@ -127,6 +127,7 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t
 
   uint32_t ctr;
   int ret = increase_counter(&ctr);
+  printf("----ctr=%d\n",ctr);
   if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ad->signCount = htobe32(ctr);
 
