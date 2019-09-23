@@ -81,6 +81,9 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t err = ctap_make_auth_data(req->appId, &auth_data, 0, 0, 1, &len);
   if(err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
+  if(memcmp(req->appId, ((CredentialId*)req->keyHandle)->rpIdHash, U2F_APPID_SIZE))
+    EXCEPT(SW_WRONG_DATA);
+
   err = verify_key_handle((CredentialId*)req->keyHandle, priv_key);
   if(err) EXCEPT(SW_WRONG_DATA);
 

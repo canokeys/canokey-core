@@ -53,7 +53,6 @@ script:
   - ./canokey-crypto/test/test_aes
   - ./canokey-crypto/test/test_ecdsa
   - ./canokey-crypto/test/test_sha
-  - ./test/test_u2f
   - ./test/test_piv
   - ./test/test_openpgp
   - popd
