@@ -95,7 +95,7 @@ int virt_card_apdu_transceive(
         printf("RX Buffer is not large enough\n");
         if(*rxLen > 2) {
             Le = *rxLen - 2;
-            printf("  set Le to %hu\n", Le);
+            printf("  set Le to %u\n", Le);
         }else
             return -1;
     }
