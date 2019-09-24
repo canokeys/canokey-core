@@ -13,6 +13,7 @@
 #define PIN_ATTR 0x02
 #define PIN_CTR_ATTR 0x03
 #define KH_KEY_ATTR 0x04
+#define HE_KEY_ATTR 0x05
 #define RK_FILE "ctap_rk"
 
 #define CTAP_INS_MSG 0x10
@@ -94,6 +95,7 @@
 #define RESP_retries 0x03
 
 #define KH_KEY_SIZE 32
+#define HE_KEY_SIZE 32
 #define SHARED_SECRET_SIZE 32
 #define MAX_COSE_KEY_SIZE 78
 #define MAX_PIN_SIZE 63
@@ -144,6 +146,7 @@ typedef struct {
   uint8_t flags;
   uint32_t signCount;
   CTAP_attestedData at;
+  uint8_t extensions[14];
 } __attribute__((packed)) CTAP_authData;
 
 typedef struct {
@@ -154,6 +157,7 @@ typedef struct {
   CborValue excludeList;
   size_t excludeListSize;
   uint8_t rk;
+  uint8_t extension_hmac_secret;
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
   size_t pinAuthLength;

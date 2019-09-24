@@ -18,6 +18,12 @@ static int read_kh_key(uint8_t *kh_key) {
   return 0;
 }
 
+static int read_he_key(uint8_t *he_key) {
+  int ret = read_attr(CTAP_CERT_FILE, HE_KEY_ATTR, he_key, HE_KEY_SIZE);
+  if (ret < 0) return ret;
+  return 0;
+}
+
 int get_sign_counter(uint32_t *counter) {
   int ret = read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, counter, sizeof(uint32_t));
   if (ret < 0) return ret;

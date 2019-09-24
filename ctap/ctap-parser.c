@@ -432,7 +432,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_extensions:
       DBG_MSG("extensions found\n");
-      ret = parse_extensions(NULL, &map);
+      ret = parse_extensions(&mc->extension_hmac_secret, &map);
       CHECK_PARSER_RET(ret);
       mc->parsedParams |= PARAM_extensions;
       break;
