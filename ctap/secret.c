@@ -47,7 +47,7 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
   return 0;
 }
 
-int verify_key_handle(CredentialId *kh, uint8_t *pri_key) {
+int verify_key_handle(const CredentialId *kh, uint8_t *pri_key) {
   uint8_t kh_key[KH_KEY_SIZE];
   int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
