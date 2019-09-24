@@ -111,6 +111,7 @@
 #define DISPLAY_NAME_LIMIT 65 // Must be minimum of 64 bytes but can be more.
 #define ICON_LIMIT 129        // Must be minimum of 64 bytes but can be more.
 #define MAX_RK_NUM 64
+#define MAX_ALLOW_LIST_NUM 3
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -164,6 +165,7 @@ typedef struct {
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   CborValue allowList;
+  CredentialId allowCredentialList[MAX_ALLOW_LIST_NUM];
   size_t allowListSize;
   uint8_t up;
   uint8_t uv;
