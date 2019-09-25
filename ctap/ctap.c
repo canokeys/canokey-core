@@ -375,7 +375,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     ret = get_shared_secret(ga.hmacSecretKeyAgreement);
     CHECK_PARSER_RET(ret);
     uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
-    hmac_sha256(ga.hmacSecretKeyAgreement, SHARED_SECRET_SIZE, ga.hmacSecretSaltEnc, HMAC_SECRET_SALT_SIZE, hmac_buf);
+    hmac_sha256(ga.hmacSecretKeyAgreement, SHARED_SECRET_SIZE, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen, hmac_buf);
     if (memcmp(hmac_buf, ga.hmacSecretSaltAuth, HMAC_SECRET_SALT_AUTH_SIZE) != 0) return CTAP2_ERR_EXTENSION_FIRST;
     cfg.key = ga.hmacSecretKeyAgreement;
     cfg.in_size = ga.hmacSecretSaltLen;

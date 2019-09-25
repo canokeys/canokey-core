@@ -162,7 +162,7 @@ typedef struct {
 } __attribute__((packed)) CTAP_authData;
 
 typedef struct {
-  uint8_t parsedParams;
+  uint16_t parsedParams;
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   UserEntity user;
@@ -176,7 +176,7 @@ typedef struct {
 } CTAP_makeCredential;
 
 typedef struct {
-  uint8_t parsedParams;
+  uint16_t parsedParams;
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   CborValue allowList;
