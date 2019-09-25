@@ -60,6 +60,10 @@
 #define GA_pinAuth 0x06
 #define GA_pinProtocol 0x07
 
+#define HMAC_SECRET_keyAgreement 0x01
+#define HMAC_SECRET_saltEnc 0x02
+#define HMAC_SECRET_saltAuth 0x03
+
 #define CP_pinProtocol 0x01
 #define CP_subCommand 0x02
 #define CP_cmdGetRetries 0x01
