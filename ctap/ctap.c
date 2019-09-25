@@ -53,6 +53,9 @@ uint8_t ctap_install(uint8_t reset) {
   if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   random_buffer(kh_key, sizeof(kh_key));
   if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  random_buffer(kh_key, sizeof(kh_key));
+  if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  memzero(kh_key, sizeof(kh_key));
   return 0;
 }
 
@@ -116,7 +119,7 @@ static uint8_t get_shared_secret(uint8_t *pub_key) {
   return 0;
 }
 
-uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t uv, uint8_t up, size_t *len) {
+uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize, const uint8_t *extension, size_t *len) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -132,27 +135,36 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t at, uint8_t
   //            |          | public key (in COSE_key format)
   //  extension |  var     | IGNORE FOR NOW
   // --------------------------------------------------------------------------------
+  size_t outLen = 37; // without attCred
   CTAP_authData *ad = (CTAP_authData *)buf;
+  if(*len < outLen) return CTAP2_ERR_LIMIT_EXCEEDED;
+
   memcpy(ad->rpIdHash, rpIdHash, sizeof(ad->rpIdHash));
-  ad->flags = (at << 6) | (uv << 2) | up;
+  ad->flags = flags;
 
   uint32_t ctr;
   int ret = increase_counter(&ctr);
   if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ad->signCount = htobe32(ctr);
 
-  *len = 37; // without attCred
 
-  if (at) {
+  if (flags & FLAGS_AT) {
+    if(*len < outLen + sizeof(ad->at) - 1) return CTAP2_ERR_LIMIT_EXCEEDED;
+
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credentialIdLength = htobe16(sizeof(CredentialId));
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
     if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
     build_cose_key(ad->at.publicKey, 0);
-    *len += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
+    outLen += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
   }
-  // TODO: extensions
+  if (flags & FLAGS_ED) {
+    if(*len < outLen + extensionSize) return CTAP2_ERR_LIMIT_EXCEEDED;
+    memcpy(buf + outLen, extension, extensionSize);
+    outLen += extensionSize;
+  }
+  *len = outLen;
   return 0;
 }
 
@@ -160,6 +172,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
   CborParser parser;
   CTAP_makeCredential mc;
+  // CBOR of {"hmac-secret": true}
+  const uint8_t hmacExt[] = {0xA1,0x6B,0x68,0x6D,0x61,0x63,0x2D,0x73,0x65,0x63,0x72,0x65,0x74,0xF5};
   int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
@@ -211,7 +225,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CHECK_CBOR_RET(ret);
 
   // auth data
-  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, 1, has_pin() > 0, 1, &len);
+  len = sizeof(data_buf);
+  uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (has_pin() > 0 ? FLAGS_UV : 0) | FLAGS_UP;
+  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, flags, sizeof(hmacExt), hmacExt, &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -303,6 +319,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   static CTAP_getAssertion ga;
   CborParser parser;
   uint8_t ret, pinAuth[SHA256_DIGEST_LENGTH];
+  CborParser parser;
   if (credential_idx == 0) {
     ret = parse_get_assertion(&parser, &ga, params, len);
     CHECK_PARSER_RET(ret);
@@ -361,8 +378,50 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     if (err != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
+  uint8_t extensionBuffer[79], extensionSize = 0;
+  uint8_t iv[16] = {0};
+  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
+  if(ga.parsedParams & PARAM_hmacSecret) {
+    ret = get_shared_secret(ga.hmacSecretKeyAgreement);
+    CHECK_PARSER_RET(ret);
+    uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
+    hmac_sha256(ga.hmacSecretKeyAgreement, SHARED_SECRET_SIZE, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen, hmac_buf);
+    if (memcmp(hmac_buf, ga.hmacSecretSaltAuth, HMAC_SECRET_SALT_AUTH_SIZE) != 0) return CTAP2_ERR_EXTENSION_FIRST;
+    cfg.key = ga.hmacSecretKeyAgreement;
+    cfg.in_size = ga.hmacSecretSaltLen;
+    cfg.in = ga.hmacSecretSaltEnc;
+    cfg.out = ga.hmacSecretSaltEnc;
+    block_cipher_dec(&cfg);
+  }
+
   if (ga.uv) return CTAP2_ERR_UNSUPPORTED_OPTION;
   if (ga.up) wait_for_user_presence();
+
+  if (ga.parsedParams & PARAM_hmacSecret) {
+    ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen, ga.hmacSecretSaltEnc);
+    if(ret) return ret;
+    cfg.key = ga.hmacSecretKeyAgreement;
+    cfg.in_size = ga.hmacSecretSaltLen;
+    cfg.in = ga.hmacSecretSaltEnc;
+    cfg.out = ga.hmacSecretSaltEnc;
+    block_cipher_dec(&cfg);
+    memzero(ga.hmacSecretKeyAgreement, sizeof(ga.hmacSecretKeyAgreement));
+
+    CborEncoder extensionEncoder;
+    CborEncoder map;
+    // build extensions
+    cbor_encoder_init(&extensionEncoder, extensionBuffer, sizeof(extensionBuffer), 0);
+    ret = cbor_encoder_create_map(&extensionEncoder, &map, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&map, "hmac-secret");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&map, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encoder_close_container(&extensionEncoder, &map);
+    CHECK_CBOR_RET(ret);
+
+    extensionSize = cbor_encoder_get_buffer_size(&extensionEncoder, extensionBuffer);
+  }
 
   // build response
   CborEncoder map, sub_map;
@@ -389,7 +448,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   CHECK_CBOR_RET(ret);
 
   // auth data
-  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, 0, has_pin() > 0 && (ga.parsedParams & PARAM_pinAuth), ga.up, &len);
+  len = sizeof(data_buf);
+  uint8_t flags = (ga.parsedParams & PARAM_hmacSecret ? FLAGS_ED : 0) | (has_pin() && (ga.parsedParams & PARAM_pinAuth) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
+  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -461,7 +522,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
   // Currently, we respond versions, aaguid, pin protocol.
   CborEncoder map;
-  int ret = cbor_encoder_create_map(encoder, &map, 4);
+  int ret = cbor_encoder_create_map(encoder, &map, 5);
   CHECK_CBOR_RET(ret);
 
   // versions
@@ -474,6 +535,18 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
     ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&array, "U2F_V2");
+    CHECK_CBOR_RET(ret);
+  }
+  ret = cbor_encoder_close_container(&map, &array);
+  CHECK_CBOR_RET(ret);
+
+  // extensions
+  ret = cbor_encode_int(&map, RESP_extensions);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_create_array(&map, &array, 1);
+  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&array, "hmac-secret");
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&map, &array);

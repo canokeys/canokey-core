@@ -13,6 +13,7 @@
 #define PIN_ATTR 0x02
 #define PIN_CTR_ATTR 0x03
 #define KH_KEY_ATTR 0x04
+#define HE_KEY_ATTR 0x05
 #define RK_FILE "ctap_rk"
 
 #define CTAP_INS_MSG 0x10
@@ -36,6 +37,7 @@
 #define PARAM_keyAgreement (1 << 9)
 #define PARAM_newPinEnc (1 << 10)
 #define PARAM_pinHashEnc (1 << 11)
+#define PARAM_hmacSecret (1 << 12)
 
 #define MC_requiredMask (PARAM_clientDataHash | PARAM_rpId | PARAM_user | PARAM_pubKeyCredParams)
 #define GA_requiredMask (PARAM_clientDataHash | PARAM_rpId)
@@ -58,6 +60,10 @@
 #define GA_options 0x05
 #define GA_pinAuth 0x06
 #define GA_pinProtocol 0x07
+
+#define HMAC_SECRET_keyAgreement 0x01
+#define HMAC_SECRET_saltEnc 0x02
+#define HMAC_SECRET_saltAuth 0x03
 
 #define CP_pinProtocol 0x01
 #define CP_subCommand 0x02
@@ -93,7 +99,13 @@
 #define RESP_pinToken 0x02
 #define RESP_retries 0x03
 
+#define FLAGS_UP    (1)
+#define FLAGS_UV    (1<<2)
+#define FLAGS_AT    (1<<6)
+#define FLAGS_ED    (1<<7)
+
 #define KH_KEY_SIZE 32
+#define HE_KEY_SIZE 32
 #define SHARED_SECRET_SIZE 32
 #define MAX_COSE_KEY_SIZE 78
 #define MAX_PIN_SIZE 63
@@ -102,6 +114,8 @@
 #define AAGUID_SIZE 16
 #define PIN_AUTH_SIZE 16
 #define PIN_TOKEN_SIZE 16
+#define HMAC_SECRET_SALT_SIZE 64
+#define HMAC_SECRET_SALT_AUTH_SIZE 16
 #define CREDENTIAL_TAG_SIZE 16
 #define CLIENT_DATA_HASH_SIZE 32
 #define CREDENTIAL_NONCE_SIZE 16
@@ -144,23 +158,25 @@ typedef struct {
   uint8_t flags;
   uint32_t signCount;
   CTAP_attestedData at;
+  uint8_t extensions[14];
 } __attribute__((packed)) CTAP_authData;
 
 typedef struct {
-  uint8_t parsedParams;
+  uint16_t parsedParams;
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   UserEntity user;
   CborValue excludeList;
   size_t excludeListSize;
   uint8_t rk;
+  uint8_t extension_hmac_secret;
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
   size_t pinAuthLength;
 } CTAP_makeCredential;
 
 typedef struct {
-  uint8_t parsedParams;
+  uint16_t parsedParams;
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   CborValue allowList;
@@ -169,6 +185,10 @@ typedef struct {
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
   size_t pinAuthLength;
+  uint8_t hmacSecretKeyAgreement[ECC_PUB_KEY_SIZE];
+  uint8_t hmacSecretSaltEnc[HMAC_SECRET_SALT_SIZE];
+  uint8_t hmacSecretSaltAuth[HMAC_SECRET_SALT_AUTH_SIZE];
+  uint8_t hmacSecretSaltLen;
 } CTAP_getAssertion;
 
 typedef struct {

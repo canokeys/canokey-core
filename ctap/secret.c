@@ -18,6 +18,12 @@ static int read_kh_key(uint8_t *kh_key) {
   return 0;
 }
 
+static int read_he_key(uint8_t *he_key) {
+  int ret = read_attr(CTAP_CERT_FILE, HE_KEY_ATTR, he_key, HE_KEY_SIZE);
+  if (ret < 0) return ret;
+  return 0;
+}
+
 int get_sign_counter(uint32_t *counter) {
   int ret = read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, counter, sizeof(uint32_t));
   if (ret < 0) return ret;
@@ -122,4 +128,18 @@ int write_rk(CTAP_residentKey *rk, int idx) {
   }
   if (idx >= MAX_RK_NUM) return -1;
   return write_file(RK_FILE, rk, idx * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
+}
+
+int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output)
+{
+  uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
+  // use hmac-sha256(HE_KEY, CredentialId::nonce) as CredRandom
+  int err = read_he_key(hmac_buf);
+  if(err < 0) return err;
+  
+  hmac_sha256(hmac_buf, HE_KEY_SIZE, nonce, CREDENTIAL_NONCE_SIZE, hmac_buf);
+  hmac_sha256(hmac_buf, HE_KEY_SIZE, salt, 32, output);
+  if(len == 64)
+    hmac_sha256(hmac_buf, HE_KEY_SIZE, salt+32, 32, output+32);
+  return 0;
 }

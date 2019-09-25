@@ -8,7 +8,7 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fno-omit-frame-pointer -fsanitize=address")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fstack-usage -fno-omit-frame-pointer")
 set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -lasan")
 
 if (ENABLE_TESTS)

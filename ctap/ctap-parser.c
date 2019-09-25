@@ -7,12 +7,12 @@
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
-    if (ret > 0) DBG_MSG("CHECK_PARSER_RET %#x\n", ret);                                                            \
+    if (ret > 0) DBG_MSG("CHECK_PARSER_RET %#x\n", ret);                                                               \
     if (ret > 0) return ret;                                                                                           \
   } while (0)
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
-    if (ret != CborNoError) DBG_MSG("CHECK_CBOR_RET %#x\n", ret);                                                            \
+    if (ret != CborNoError) DBG_MSG("CHECK_CBOR_RET %#x\n", ret);                                                      \
     if (ret != CborNoError) return CTAP2_ERR_INVALID_CBOR;                                                             \
   } while (0)
 
@@ -192,7 +192,7 @@ uint8_t parse_public_key_credential_list(CborValue *lst) {
   CHECK_CBOR_RET(ret);
   ret = cbor_value_enter_container(lst, &arr);
   CHECK_CBOR_RET(ret);
-  for (size_t i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; ++i) {
     ret = parse_credential_descriptor(&arr, NULL);
     CHECK_PARSER_RET(ret);
     ret = cbor_value_advance(&arr);
@@ -214,7 +214,7 @@ uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val) {
   ret = cbor_value_get_map_length(val, &map_length);
   CHECK_CBOR_RET(ret);
 
-  for (size_t i = 0; i < map_length; i++) {
+  for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     size_t sz = sizeof(key);
     ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
@@ -260,7 +260,7 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
 
   int key;
   uint8_t parsed_keys = 0;
-  for (size_t i = 0; i < map_length; i++) {
+  for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -318,31 +318,28 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
     CHECK_CBOR_RET(ret);
   }
 
-  DBG_MSG("parsed_keys=%x\n",parsed_keys);
+  DBG_MSG("parsed_keys=%x\n", parsed_keys);
   if (parsed_keys < 4) return CTAP2_ERR_MISSING_PARAMETER;
 
   return 0;
 }
 
-uint8_t parse_extensions(uint8_t *hmac_secret, CborValue *val) {
+uint8_t parse_mc_extensions(uint8_t *hmac_secret, CborValue *val) {
+  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   size_t map_length;
   char key[11];
   bool b;
   CborValue map;
-
-  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-
   int ret = cbor_value_enter_container(val, &map);
   CHECK_CBOR_RET(ret);
   ret = cbor_value_get_map_length(val, &map_length);
   CHECK_CBOR_RET(ret);
 
-  for (size_t i = 0; i < map_length; i++) {
+  for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     size_t sz = sizeof(key);
     ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
-    CHECK_CBOR_RET(ret);
-
+    if (ret != CborErrorOutOfMemory) CHECK_CBOR_RET(ret);
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
     if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -355,6 +352,87 @@ uint8_t parse_extensions(uint8_t *hmac_secret, CborValue *val) {
     } else {
       DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
     }
+
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+  }
+  return 0;
+}
+
+uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
+  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  size_t map_length;
+  char key[11];
+  CborValue map;
+  int ret = cbor_value_enter_container(val, &map);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_get_map_length(val, &map_length);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; ++i) {
+    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    size_t sz = sizeof(key);
+    ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
+    if (ret != CborErrorOutOfMemory) CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+
+    if (strncmp(key, "hmac-secret", 11) == 0) {
+      DBG_MSG("hmac-secret found\n");
+      ga->parsedParams |= PARAM_hmacSecret;
+      if (cbor_value_get_type(&map) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      size_t hmac_map_length;
+      CborValue hmac_map;
+      ret = cbor_value_enter_container(&map, &hmac_map);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_value_get_map_length(&map, &hmac_map_length);
+      CHECK_CBOR_RET(ret);
+      if(hmac_map_length != 3) return CTAP2_ERR_MISSING_PARAMETER;
+      for (size_t j = 0; j < hmac_map_length; ++j) {
+        if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        size_t len;
+        int hmac_key;
+        ret = cbor_value_get_int_checked(&hmac_map, &hmac_key);
+        CHECK_CBOR_RET(ret);
+        ret = cbor_value_advance(&hmac_map);
+        CHECK_CBOR_RET(ret);
+        switch (hmac_key) {
+        case HMAC_SECRET_keyAgreement:
+          ret = parse_cose_key(&hmac_map, ga->hmacSecretKeyAgreement);
+          CHECK_CBOR_RET(ret);
+          DBG_MSG("keyAgreement: ");
+          PRINT_HEX(ga->hmacSecretKeyAgreement, 64);
+          break;
+        case HMAC_SECRET_saltEnc:
+          if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+          len = sizeof(ga->hmacSecretSaltEnc);
+          ret = cbor_value_copy_byte_string(&hmac_map, ga->hmacSecretSaltEnc, &len, NULL);
+          if(ret == CborErrorOutOfMemory) return CTAP1_ERR_INVALID_LENGTH;
+          CHECK_CBOR_RET(ret);
+          if (len != HMAC_SECRET_SALT_SIZE && len != HMAC_SECRET_SALT_SIZE / 2) return CTAP1_ERR_INVALID_LENGTH;
+          ga->hmacSecretSaltLen = len;
+          DBG_MSG("saltEnc: ");
+          PRINT_HEX(ga->hmacSecretSaltEnc, ga->hmacSecretSaltLen);
+          break;
+        case HMAC_SECRET_saltAuth:
+          if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+          len = sizeof(ga->hmacSecretSaltAuth);
+          ret = cbor_value_copy_byte_string(&hmac_map, ga->hmacSecretSaltAuth, &len, NULL);
+          CHECK_CBOR_RET(ret);
+          if (len != HMAC_SECRET_SALT_AUTH_SIZE) return CTAP1_ERR_INVALID_LENGTH;
+          DBG_MSG("saltAuth: ");
+          PRINT_HEX(ga->hmacSecretSaltAuth, 16);
+          break;
+        default:
+          return CTAP1_ERR_INVALID_PARAMETER;
+        }
+        ret = cbor_value_advance(&hmac_map);
+        CHECK_CBOR_RET(ret);
+      }
+    } else {
+      DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
+    }
+
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
   }
@@ -432,7 +510,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_extensions:
       DBG_MSG("extensions found\n");
-      ret = parse_extensions(NULL, &map);
+      ret = parse_mc_extensions(&mc->extension_hmac_secret, &map);
       CHECK_PARSER_RET(ret);
       mc->parsedParams |= PARAM_extensions;
       break;
@@ -539,7 +617,9 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       break;
 
     case GA_extensions:
-      DBG_MSG("Ignore Extensions\n");
+      DBG_MSG("extensions found\n");
+      ret = parse_ga_extensions(ga, &map);
+      CHECK_PARSER_RET(ret);
       break;
 
     case GA_options:
