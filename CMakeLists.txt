@@ -8,8 +8,7 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fstack-usage -fno-omit-frame-pointer")
-set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -lasan")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fstack-usage -fno-omit-frame-pointer --coverage")
 
 if (ENABLE_TESTS)
     add_definitions(-DTEST -DNFC)
@@ -49,5 +48,7 @@ if (ENABLE_TESTS)
                 virt-card/udp-server.c
                 littlefs/emubd/lfs_emubd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
-    target_link_libraries(fido-hid-over-udp canokey-core)
+    target_link_libraries(fido-hid-over-udp general canokey-core asan)
+    # target_link_libraries(fido-hid-over-udp debug gcov) # --coverage implies -lcov
+    target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
 endif (ENABLE_TESTS)
