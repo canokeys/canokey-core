@@ -221,10 +221,20 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // process rk
   if (mc.rk) {
     CTAP_residentKey rk;
+    int size = get_file_size(RK_FILE);
+    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    size_t nRk = size / sizeof(CTAP_residentKey), i;
+    for (i = 0; i != nRk; ++i) {
+      size = read_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
+      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (memcmp(mc.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0 &&
+          mc.user.id_size == rk.user.id_size && memcmp(mc.user.id, rk.user.id, mc.user.id_size) == 0)
+        break;
+    }
+    if (i >= MAX_RK_NUM) return CTAP2_ERR_KEY_STORE_FULL;
     memcpy(&rk.credential_id, data_buf + 55, sizeof(rk.credential_id));
     memcpy(&rk.user, &mc.user, sizeof(UserEntity));
-    ret = write_rk(&rk, -1);
-    if (ret == -1) return CTAP2_ERR_KEY_STORE_FULL;
+    ret = write_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
     if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
