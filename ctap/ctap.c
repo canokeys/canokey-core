@@ -314,28 +314,20 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
   CTAP_residentKey rk;
   if (ga.allowListSize > 0) {
-    if (credential_idx == 0) {
-      credential_numbers = 0;
-      for (size_t i = 0; i < ga.allowListSize; ++i) {
-        parse_credential_descriptor(&ga.allowList, (uint8_t *)&rk.credential_id);
-        // compare rpId first
-        if (memcmp(rk.credential_id.rpIdHash, ga.rpIdHash, sizeof(rk.credential_id.rpIdHash)) != 0) goto next;
-        // then verify key handle and get private key
-        int err = verify_key_handle(&rk.credential_id, pri_key);
-        if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        if (err == 0) {
-          memcpy(&ga.allowCredentialList[credential_numbers++], &rk.credential_id, sizeof(CredentialId));
-          if (credential_numbers >= MAX_ALLOW_LIST_NUM) break;
-        }
-      next:
-        ret = cbor_value_advance(&ga.allowList);
-        CHECK_CBOR_RET(ret);
-      }
-      if (credential_numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+    size_t i;
+    for (i = 0; i < ga.allowListSize; ++i) {
+      parse_credential_descriptor(&ga.allowList, (uint8_t *)&rk.credential_id);
+      // compare rpId first
+      if (memcmp(rk.credential_id.rpIdHash, ga.rpIdHash, sizeof(rk.credential_id.rpIdHash)) != 0) goto next;
+      // then verify key handle and get private key
+      int err = verify_key_handle(&rk.credential_id, pri_key);
+      if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (err == 0) break; // only process one support credential
+    next:
+      ret = cbor_value_advance(&ga.allowList);
+      CHECK_CBOR_RET(ret);
     }
-    memcpy(&rk.credential_id, &ga.allowCredentialList[credential_idx], sizeof(CredentialId));
-    int err = verify_key_handle(&rk.credential_id, pri_key);
-    if (err != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
   } else {
     int size;
     if (credential_idx == 0) {
