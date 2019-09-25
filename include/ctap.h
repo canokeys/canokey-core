@@ -104,6 +104,8 @@
 #define AAGUID_SIZE 16
 #define PIN_AUTH_SIZE 16
 #define PIN_TOKEN_SIZE 16
+#define HMAC_SECRET_SALT_SIZE 64
+#define HMAC_SECRET_SALT_AUTH_SIZE 16
 #define CREDENTIAL_TAG_SIZE 16
 #define CLIENT_DATA_HASH_SIZE 32
 #define CREDENTIAL_NONCE_SIZE 16
@@ -173,6 +175,10 @@ typedef struct {
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
   size_t pinAuthLength;
+  uint8_t hmacSecretKeyAgreement[ECC_PUB_KEY_SIZE];
+  uint8_t hmacSecretSaltEnc[HMAC_SECRET_SALT_SIZE];
+  uint8_t hmacSecretSaltAuth[HMAC_SECRET_SALT_AUTH_SIZE];
+  uint8_t hmacSecretSaltLen;
 } CTAP_getAssertion;
 
 typedef struct {
