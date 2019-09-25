@@ -319,7 +319,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   static CTAP_getAssertion ga;
   CborParser parser;
   uint8_t ret, pinAuth[SHA256_DIGEST_LENGTH];
-  CborParser parser;
   if (credential_idx == 0) {
     ret = parse_get_assertion(&parser, &ga, params, len);
     CHECK_PARSER_RET(ret);
