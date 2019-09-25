@@ -57,7 +57,7 @@ script:
   - ./test/test_openpgp
   - popd
   -
-  - travis_wait 3 ./fido-hid-over-udp >/tmp/fido-udp.log &
+  - travis_wait 3 ./build/fido-hid-over-udp >/tmp/fido-udp.log &
   - pushd fido2-tests
   - ~/.local/bin/pytest --color=yes --sim tests/standard/fido2/
   - popd
@@ -167,4 +167,5 @@ script:
   - yubico-piv-tool -r "" -a reset
   - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
+  - cat /tmp/fido-udp.log
   - cat /tmp/pcscd.log
