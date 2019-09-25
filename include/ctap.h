@@ -37,6 +37,7 @@
 #define PARAM_keyAgreement (1 << 9)
 #define PARAM_newPinEnc (1 << 10)
 #define PARAM_pinHashEnc (1 << 11)
+#define PARAM_hmacSecret (1 << 12)
 
 #define MC_requiredMask (PARAM_clientDataHash | PARAM_rpId | PARAM_user | PARAM_pubKeyCredParams)
 #define GA_requiredMask (PARAM_clientDataHash | PARAM_rpId)
@@ -93,6 +94,11 @@
 #define RESP_keyAgreement 0x01
 #define RESP_pinToken 0x02
 #define RESP_retries 0x03
+
+#define FLAGS_UP    (1)
+#define FLAGS_UV    (1<<2)
+#define FLAGS_AT    (1<<6)
+#define FLAGS_ED    (1<<7)
 
 #define KH_KEY_SIZE 32
 #define HE_KEY_SIZE 32
