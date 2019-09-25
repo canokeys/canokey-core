@@ -44,11 +44,13 @@ install:
   - pushd fido2-tests
   - pip3 install --user -r requirements.txt
   - popd
+  -
+  - pip3 install cpp-coveralls
 
 script:
   -
   - mkdir build && pushd build
-  - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+  - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
   - make -j2
   - ./canokey-crypto/test/test_aes
   - ./canokey-crypto/test/test_ecdsa
@@ -62,6 +64,7 @@ script:
   - ~/.local/bin/pytest --color=yes --sim tests/standard/fido2/
   - popd
   - killall fido-hid-over-udp || true
+  - coveralls -b build --exclude littlefs --exclude test --gcov-options '\-lp'
   -
   - sudo killall -9 pcscd || true
   - sudo cp build/libu2f-virt-card.so /usr/local/lib/

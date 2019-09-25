@@ -88,7 +88,7 @@ int card_fabrication_procedure() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 16;
-  lfs_emubd_create(&cfg, "lfs-root");
+  lfs_emubd_create(&cfg, "/tmp/lfs-root");
 
   fs_init(&cfg);
   admin_install();
