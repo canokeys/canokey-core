@@ -1,10 +1,11 @@
 #include <admin.h>
+#include <ctap.h>
 #include <fs.h>
+#include <oath.h>
 #include <openpgp.h>
 #include <pin.h>
 #include <piv.h>
 #include <string.h>
-#include <ctap.h>
 
 #define PIN_RETRY_COUNTER 3
 #define SN_FILE "sn"
@@ -74,7 +75,7 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = piv_install(1);
     break;
   case ADMIN_INS_RESET_OATH:
-    ret = 0;
+    ret = oath_install(1);
     break;
   case ADMIN_INS_CHANGE_PIN:
     ret = admin_change_pin(capdu, rapdu);

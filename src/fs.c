@@ -1,8 +1,6 @@
 #include <fs.h>
-#include <string.h>
 
 static lfs_t lfs;
-static lfs_dir_t dir;
 
 int fs_init(struct lfs_config *cfg) {
   int err = lfs_mount(&lfs, cfg);
@@ -60,27 +58,4 @@ int get_file_size(const char *path) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return size;
-}
-
-int create_dir(const char *path) { return lfs_mkdir(&lfs, path); }
-
-int remove_file(const char *path) { return lfs_remove(&lfs, path); }
-
-int open_dir(const char *path) {
-  lfs_dir_close(&lfs, &dir);
-  return lfs_dir_open(&lfs, &dir, path);
-}
-
-int get_next_filename(char *path) {
-  struct lfs_info info;
-  do {
-    int err = lfs_dir_read(&lfs, &dir, &info);
-    if (err < 0) return err;
-    if (err == 0) {
-      lfs_dir_close(&lfs, &dir);
-      return 1;
-    }
-  } while (info.name[0] == '.');
-  strcpy(path, info.name);
-  return 0;
 }

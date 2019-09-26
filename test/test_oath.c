@@ -26,17 +26,11 @@ static void test_put(void **state) {
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
-  data[2] = 'b';
-  oath_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
-
-  data[2] = 'c';
-  oath_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
-
-  data[2] = 'd';
-  oath_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  for (int i = 0; i != 10; ++i) {
+    data[2] = 'b' + i;
+    oath_process_apdu(capdu, rapdu);
+    assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  }
 }
 
 static void test_calc(void **state) {
