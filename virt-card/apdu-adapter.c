@@ -159,6 +159,8 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
         r.len = 0;
         ret = 0;
       } else {
+        memcpy(fido2_chaining_buffer + fido2_chaining_pos, c.data, c.lc);
+        fido2_chaining_pos += c.lc;
         memcpy(c.data, fido2_chaining_buffer, fido2_chaining_pos);
         c.lc = fido2_chaining_pos;
         fido2_chaining_pos = 0;
