@@ -45,7 +45,7 @@ install:
   - pip3 install --user -r requirements.txt
   - popd
   -
-  - pip install cpp-coveralls
+  - sudo pip install cpp-coveralls
 
 script:
   -
