@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <unistd.h>
 
 #define SHORT_LC   4
 #define EXT_LC_0   4
@@ -154,8 +155,16 @@ int virt_card_apdu_transceive(
             break;
         case APPLET_FIDO:
             printf("calling ctap_process_apdu\n");
-            ret = ctap_process_apdu(&c, &r);
-            printf("ctap_process_apdu ret %d\n", ret);
+            if ( c.cla == 0x00 && c.ins == 0xEE && c.lc == 0x04 && memcmp(c.data, "\x12\x56\xAB\xF0", 4) == 0 ) {
+                printf("MAGIC REBOOT command recieved!\r\n");
+                ctap_install(0);
+                r.sw = 0x9000;
+                r.len = 0;
+                ret = 0;
+            }else{
+                ret = ctap_process_apdu(&c, &r);
+                printf("ctap_process_apdu ret %d\n", ret);
+            }
             break;
         case APPLET_OPENPGP:
             printf("calling openpgp_process_apdu\n");

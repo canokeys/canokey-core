@@ -39,12 +39,13 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
 // pin related
 static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
 static uint8_t pin_token[PIN_TOKEN_SIZE];
-static uint8_t consecutive_pin_counter = 3;
+static uint8_t consecutive_pin_counter;
 // assertion related
 static uint8_t credential_list[MAX_RK_NUM], credential_numbers, credential_idx, last_cmd = 0xFF;
 
 uint8_t ctap_install(uint8_t reset) {
   u2f_config();
+  consecutive_pin_counter = 3;
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -793,7 +794,7 @@ int ctap_process(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) 
 int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (CLA != 0x00 || (CLA == 0x80 && INS != CTAP_INS_MSG)) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (CLA != 0x00 && (CLA != 0x80 || INS != CTAP_INS_MSG)) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   int ret = 0;
   size_t len;
