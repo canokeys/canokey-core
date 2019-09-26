@@ -59,19 +59,16 @@ script:
   - ./test/test_openpgp
   - popd
   -
-  - travis_wait 3 ./build/fido-hid-over-udp >/tmp/fido-udp.log &
-  - pushd fido2-tests
-  - ~/.local/bin/pytest --color=yes --sim tests/standard/fido2/
-  - popd
-  - killall fido-hid-over-udp || true
-  - coveralls -b build --exclude littlefs --exclude test --gcov-options '\-lp'
-  -
   - sudo killall -9 pcscd || true
   - sudo cp build/libu2f-virt-card.so /usr/local/lib/
   - sudo cp pcscd-reader.conf /etc/reader.conf.d/
   - travis_wait 3 sudo pcscd -a -f >/tmp/pcscd.log &
   - sleep 3
   - timeout 1s pcsc_scan || true
+  - # FIDO2 test:
+  - pushd fido2-tests
+  - ~/.local/bin/pytest --color=yes --nfc tests/standard/fido2/
+  - popd
   - # OATH test:
   - ./test-oath
   - # U2F tests:
@@ -172,3 +169,4 @@ script:
   - sudo killall pcscd || true
   - cat /tmp/fido-udp.log
   - cat /tmp/pcscd.log
+  - coveralls -b build --exclude littlefs --exclude test --gcov-options '\-lp'
