@@ -15,7 +15,7 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
-file(GLOB SRC src/*.c littlefs/*.c ctap/*.c openpgp/*.c piv/*.c oath/*.c admin/*.c tinycbor/src/*.c)
+file(GLOB SRC src/*.c littlefs/*.c ctap/*.c openpgp/*.c piv/*.c oath/*.c admin/*.c tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
 target_include_directories(canokey-core SYSTEM PUBLIC include littlefs tinycbor/src)
 target_link_libraries(canokey-core canokey-crypto)
@@ -42,11 +42,11 @@ if (ENABLE_TESTS)
     endif ()
 
     add_executable(fido-hid-over-udp
-                virt-card/apdu-adapter.c
-                virt-card/fabrication.c
-                virt-card/ctap-hid.c
-                virt-card/udp-server.c
-                littlefs/emubd/lfs_emubd.c)
+            virt-card/apdu-adapter.c
+            virt-card/fabrication.c
+            virt-card/ctap-hid.c
+            virt-card/udp-server.c
+            littlefs/emubd/lfs_emubd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core asan)
     # target_link_libraries(fido-hid-over-udp debug gcov) # --coverage implies -lcov
