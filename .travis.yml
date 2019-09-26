@@ -40,12 +40,12 @@ install:
   - make
   - popd
   -
-  - git clone --depth 1 https://github.com/solokeys/fido2-tests.git
+  - git clone --depth 1 https://github.com/canopo/fido2-tests.git
   - pushd fido2-tests
   - pip3 install --user -r requirements.txt
   - popd
   -
-  - pip3 install cpp-coveralls
+  - pip install cpp-coveralls
 
 script:
   -
