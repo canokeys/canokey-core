@@ -11,9 +11,11 @@
 
 volatile static uint8_t pressed;
 
+#ifndef NFC
 void u2f_press(void) { pressed = 1; }
 
 void u2f_unpress(void) { pressed = 0; }
+#endif
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
@@ -21,6 +23,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
 #ifdef NFC
   pressed = 1;
 #endif
+
   if (!pressed) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   pressed = 0;
 
@@ -72,6 +75,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #ifdef NFC
   pressed = 1;
 #endif
+
   if (P1 == U2F_AUTH_CHECK_ONLY || !pressed) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   pressed = 0;
 

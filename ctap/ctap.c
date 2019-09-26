@@ -119,7 +119,8 @@ static uint8_t get_shared_secret(uint8_t *pub_key) {
   return 0;
 }
 
-uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize, const uint8_t *extension, size_t *len) {
+uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
+                            const uint8_t *extension, size_t *len) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -137,7 +138,7 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
   // --------------------------------------------------------------------------------
   size_t outLen = 37; // without attCred
   CTAP_authData *ad = (CTAP_authData *)buf;
-  if(*len < outLen) return CTAP2_ERR_LIMIT_EXCEEDED;
+  if (*len < outLen) return CTAP2_ERR_LIMIT_EXCEEDED;
 
   memcpy(ad->rpIdHash, rpIdHash, sizeof(ad->rpIdHash));
   ad->flags = flags;
@@ -147,9 +148,8 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
   if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ad->signCount = htobe32(ctr);
 
-
   if (flags & FLAGS_AT) {
-    if(*len < outLen + sizeof(ad->at) - 1) return CTAP2_ERR_LIMIT_EXCEEDED;
+    if (*len < outLen + sizeof(ad->at) - 1) return CTAP2_ERR_LIMIT_EXCEEDED;
 
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credentialIdLength = htobe16(sizeof(CredentialId));
@@ -160,7 +160,7 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
     outLen += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
   }
   if (flags & FLAGS_ED) {
-    if(*len < outLen + extensionSize) return CTAP2_ERR_LIMIT_EXCEEDED;
+    if (*len < outLen + extensionSize) return CTAP2_ERR_LIMIT_EXCEEDED;
     memcpy(buf + outLen, extension, extensionSize);
     outLen += extensionSize;
   }
@@ -173,7 +173,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CborParser parser;
   CTAP_makeCredential mc;
   // CBOR of {"hmac-secret": true}
-  const uint8_t hmacExt[] = {0xA1,0x6B,0x68,0x6D,0x61,0x63,0x2D,0x73,0x65,0x63,0x72,0x65,0x74,0xF5};
+  const uint8_t hmacExt[] = {0xA1, 0x6B, 0x68, 0x6D, 0x61, 0x63, 0x2D, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0xF5};
   int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
@@ -380,7 +380,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   uint8_t extensionBuffer[79], extensionSize = 0;
   uint8_t iv[16] = {0};
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  if(ga.parsedParams & PARAM_hmacSecret) {
+  if (ga.parsedParams & PARAM_hmacSecret) {
     ret = get_shared_secret(ga.hmacSecretKeyAgreement);
     CHECK_PARSER_RET(ret);
     uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
@@ -397,8 +397,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   if (ga.up) wait_for_user_presence();
 
   if (ga.parsedParams & PARAM_hmacSecret) {
-    ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen, ga.hmacSecretSaltEnc);
-    if(ret) return ret;
+    ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen,
+                                  ga.hmacSecretSaltEnc);
+    if (ret) return ret;
     cfg.key = ga.hmacSecretKeyAgreement;
     cfg.in_size = ga.hmacSecretSaltLen;
     cfg.in = ga.hmacSecretSaltEnc;
@@ -448,7 +449,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // auth data
   len = sizeof(data_buf);
-  uint8_t flags = (ga.parsedParams & PARAM_hmacSecret ? FLAGS_ED : 0) | (has_pin() && (ga.parsedParams & PARAM_pinAuth) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
+  uint8_t flags = (ga.parsedParams & PARAM_hmacSecret ? FLAGS_ED : 0) |
+                  (has_pin() && (ga.parsedParams & PARAM_pinAuth) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
@@ -775,7 +777,7 @@ int ctap_process(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) 
     SET_RESP();
     break;
   case CTAP_RESET:
-    DBG_MSG("----------------RESET------------------\n");
+    DBG_MSG("----------------RESET-----------------\n");
     *resp = ctap_install(1);
     *resp_len = 1;
     break;
@@ -791,7 +793,7 @@ int ctap_process(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) 
 int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (CLA != 0x00 || (CLA == 0x80 && INS != CTAP_INS_MSG)) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   int ret = 0;
   size_t len;
