@@ -169,4 +169,4 @@ script:
   - sudo killall pcscd || true
   - cat /tmp/fido-udp.log
   - cat /tmp/pcscd.log
-  - coveralls -b build --exclude build --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --gcov-options '\-lp'
+  - coveralls -b build --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --gcov-options '\-lp'
