@@ -94,3 +94,46 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
   }
   return 0;
 }
+
+int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh) {
+restart:
+  if (!ex->in_chaining) {
+    ex->capdu.cla = sh->cla & 0xEF;
+    ex->capdu.ins = sh->ins;
+    ex->capdu.p1 = sh->p1;
+    ex->capdu.p2 = sh->p2;
+    ex->capdu.lc = 0;
+  } else if (ex->capdu.cla != (sh->cla & 0xEF) || ex->capdu.ins != sh->ins || ex->capdu.p1 != sh->p1 ||
+             ex->capdu.p2 != sh->p2) {
+    ex->in_chaining = 0;
+    goto restart;
+  }
+  ex->in_chaining = 1;
+  if (ex->capdu.lc + sh->lc > ex->max_size) return APDU_CHAINING_OVERFLOW;
+  memcpy(ex->capdu.data + ex->capdu.lc, sh->data, sh->lc);
+  ex->capdu.lc += sh->lc;
+
+  if (sh->cla & 0x10) // not last block
+    return APDU_CHAINING_NOT_LAST_BLOCK;
+  else {
+    ex->in_chaining = 0;
+    return APDU_CHAINING_LAST_BLOCK;
+  }
+}
+
+int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
+  uint16_t to_send = ex->rapdu.len - ex->sent;
+  if (to_send == 0) return APDU_CHAINING_NO_MORE;
+  if (to_send > 254) to_send = 254;
+  memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
+  sh->len = to_send;
+  ex->sent += to_send;
+  if (ex->sent < ex->rapdu.len) {
+    if (ex->rapdu.len - ex->sent > 0xFF)
+      sh->sw = 0x61FF;
+    else
+      sh->sw = 0x6100 + (ex->rapdu.len - ex->sent);
+  } else
+    sh->sw = ex->rapdu.sw;
+  return 0;
+}

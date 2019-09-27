@@ -15,7 +15,7 @@ typedef struct {
 
 typedef struct {
   uint8_t *data;
-  uint32_t len;
+  uint16_t len;
   uint16_t sw;
 } __attribute__((packed)) RAPDU;
 
@@ -51,13 +51,33 @@ typedef struct {
 #define SW rapdu->sw
 #define LL rapdu->len
 
-#define EXCEPT(sw_code)                                                        \
-  do {                                                                         \
-    SW = sw_code;                                                              \
-    return 0;                                                                  \
+#define EXCEPT(sw_code)                                                                                                \
+  do {                                                                                                                 \
+    SW = sw_code;                                                                                                      \
+    return 0;                                                                                                          \
   } while (0)
+
+// Chainings
+
+#define APDU_CHAINING_NOT_LAST_BLOCK 0x01
+#define APDU_CHAINING_LAST_BLOCK 0x02
+#define APDU_CHAINING_OVERFLOW 0x03
+#define APDU_CHAINING_NO_MORE 0x04
+
+typedef struct {
+  CAPDU capdu;
+  uint16_t max_size;
+  uint8_t in_chaining;
+} CAPDU_CHAINING;
+
+typedef struct {
+  RAPDU rapdu;
+  uint16_t sent;
+} RAPDU_CHAINING;
 
 void apdu_fill_with_command(CAPDU *capdu, char *cmd);
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
+int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
+int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
 
 #endif // CANOKEY_CORE__APDU_H
