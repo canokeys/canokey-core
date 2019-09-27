@@ -387,7 +387,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
       CHECK_CBOR_RET(ret);
       ret = cbor_value_get_map_length(&map, &hmac_map_length);
       CHECK_CBOR_RET(ret);
-      if(hmac_map_length != 3) return CTAP2_ERR_MISSING_PARAMETER;
+      if (hmac_map_length != 3) return CTAP2_ERR_MISSING_PARAMETER;
       for (size_t j = 0; j < hmac_map_length; ++j) {
         if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         size_t len;
@@ -407,7 +407,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
           if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
           len = sizeof(ga->hmacSecretSaltEnc);
           ret = cbor_value_copy_byte_string(&hmac_map, ga->hmacSecretSaltEnc, &len, NULL);
-          if(ret == CborErrorOutOfMemory) return CTAP1_ERR_INVALID_LENGTH;
+          if (ret == CborErrorOutOfMemory) return CTAP1_ERR_INVALID_LENGTH;
           CHECK_CBOR_RET(ret);
           if (len != HMAC_SECRET_SALT_SIZE && len != HMAC_SECRET_SALT_SIZE / 2) return CTAP1_ERR_INVALID_LENGTH;
           ga->hmacSecretSaltLen = len;
