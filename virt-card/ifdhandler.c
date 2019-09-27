@@ -121,8 +121,10 @@ RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
     //SCARD_IO_HEADER::Length is not used according to document
 
     int ret = virt_card_apdu_transceive(TxBuffer, TxLength, RxBuffer, RxLength);
-    if(ret < 0)
+    if(ret < 0) {
         *RxLength = 0;
+        printf("warning: virt_card_apdu_transceive returns %d\n", ret);
+    }
 
     return ret == 0 ? IFD_SUCCESS : IFD_COMMUNICATION_ERROR;
 }
