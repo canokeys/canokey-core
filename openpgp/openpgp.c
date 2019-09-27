@@ -964,6 +964,7 @@ static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
+  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   uint8_t terminated;
   if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
@@ -1047,6 +1048,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
   }
+
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }
