@@ -146,12 +146,12 @@ static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   RDATA[1] = 6 + sizeof(pix) + sizeof(rid);
   RDATA[2] = 0x4F;
   RDATA[3] = sizeof(pix);
-  memcpy(DATA + 4, pix, sizeof(pix));
+  memcpy(RDATA + 4, pix, sizeof(pix));
   RDATA[4 + sizeof(pix)] = 0x79;
   RDATA[5 + sizeof(pix)] = 2 + sizeof(rid);
   RDATA[6 + sizeof(pix)] = 0x4F;
   RDATA[7 + sizeof(pix)] = sizeof(rid);
-  memcpy(DATA + 8 + sizeof(pix), rid, sizeof(rid));
+  memcpy(RDATA + 8 + sizeof(pix), rid, sizeof(rid));
   LL = 8 + sizeof(pix) + sizeof(rid);
 
   return 0;
@@ -172,7 +172,7 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] + 2 != LC) EXCEPT(SW_WRONG_LENGTH);
-  if (RDATA[1] == 1) {
+  if (DATA[1] == 1) {
     if (DATA[2] != 0x7E) EXCEPT(SW_FILE_NOT_FOUND);
     // For the Discovery Object, the 0x7E template nests two data elements:
     // 1) tag 0x4F contains the AID of the PIV Card Application and
@@ -181,8 +181,8 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[1] = 5 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
     RDATA[2] = 0x4F;
     RDATA[3] = sizeof(rid) + sizeof(pix);
-    memcpy(DATA + 4, rid, sizeof(rid));
-    memcpy(DATA + 4 + sizeof(rid), pix, sizeof(pix));
+    memcpy(RDATA + 4, rid, sizeof(rid));
+    memcpy(RDATA + 4 + sizeof(rid), pix, sizeof(pix));
     RDATA[4 + sizeof(rid) + sizeof(pix)] = 0x5F;
     RDATA[5 + sizeof(rid) + sizeof(pix)] = 0x2F;
     RDATA[6 + sizeof(rid) + sizeof(pix)] = sizeof(pin_policy);
@@ -192,7 +192,7 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-    int len = read_file(path, DATA, 0, LE);
+    int len = read_file(path, RDATA, 0, LE);
     if (len < 0) return -1;
     if (len == 0) EXCEPT(SW_FILE_NOT_FOUND);
     LL = len;
@@ -324,7 +324,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (alg == ALG_RSA_2048) {
       rsa_key_t key;
       if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
-      if (rsa_private(&key, DATA + pos[IDX_CHALLENGE], DATA + 8) < 0) {
+      if (rsa_private(&key, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
         memzero(&key, sizeof(key));
         return -1;
       }
@@ -342,13 +342,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     } else if (alg == ALG_ECC_256) {
       uint8_t key[ECC_KEY_SIZE];
       if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
-      if (ecdsa_sign(ECC_SECP256R1, key, DATA + pos[IDX_CHALLENGE], DATA + 4) < 0) {
+      if (ecdsa_sign(ECC_SECP256R1, key, DATA + pos[IDX_CHALLENGE], RDATA + 4) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
       memzero(key, sizeof(key));
 
-      int sig_len = ecdsa_sig2ansi(DATA + 4, DATA + 4);
+      int sig_len = ecdsa_sig2ansi(DATA + 4, RDATA + 4);
       RDATA[0] = 0x7C;
       RDATA[1] = sig_len + 2;
       RDATA[2] = TAG_RESPONSE;
@@ -374,7 +374,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[1] = length + 2;
     RDATA[2] = TAG_CHALLENGE;
     RDATA[3] = length;
-    random_buffer(DATA + 4, length);
+    random_buffer(RDATA + 4, length);
     LL = length + 4;
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
@@ -384,7 +384,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (alg == ALG_TDEA_3KEY) {
       uint8_t key[24];
       if (read_file(key_path, key, 0, 24) < 0) return -1;
-      if (tdes_enc(DATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key) < 0) {
+      if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -437,7 +437,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (alg == ALG_TDEA_3KEY) {
       uint8_t key[24];
       if (read_file(key_path, key, 0, 24) < 0) return -1;
-      if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + 4, key) < 0) {
+      if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -476,7 +476,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (alg == ALG_TDEA_3KEY) {
       uint8_t key[24];
       if (read_file(key_path, key, 0, 24) < 0) return -1;
-      if (tdes_enc(DATA + pos[IDX_CHALLENGE], DATA + 4, key) < 0) {
+      if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -502,7 +502,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (P2 == 0x9D) pin.is_validated = 0;
     uint8_t key[ECC_KEY_SIZE];
     if (read_file(key_path, key, 0, ECC_KEY_SIZE) < 0) return -1;
-    if (ecdh_decrypt(ECC_SECP256R1, key, DATA + pos[IDX_EXP] + 1, DATA + 4) < 0) {
+    if (ecdh_decrypt(ECC_SECP256R1, key, DATA + pos[IDX_EXP] + 1, RDATA + 4) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
@@ -559,10 +559,10 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[6] = 0x82;
     RDATA[7] = HI(N_LENGTH);
     RDATA[8] = LO(N_LENGTH);
-    memcpy(DATA + 9, key.n, N_LENGTH);
+    memcpy(RDATA + 9, key.n, N_LENGTH);
     RDATA[9 + N_LENGTH] = 0x82; // exponent
     RDATA[10 + N_LENGTH] = E_LENGTH;
-    memcpy(DATA + 11 + N_LENGTH, key.e, E_LENGTH);
+    memcpy(RDATA + 11 + N_LENGTH, key.e, E_LENGTH);
     LL = 11 + N_LENGTH + E_LENGTH;
     memzero(&key, sizeof(key));
   } else if (alg == ALG_ECC_256) {
@@ -578,7 +578,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[3] = 0x86;
     RDATA[4] = ECC_PUB_KEY_SIZE + 1;
     RDATA[5] = 0x04;
-    memcpy(DATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
     LL = ECC_PUB_KEY_SIZE + 6;
     memzero(key, sizeof(key));
   } else
@@ -673,7 +673,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
 static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
-  fill_sn(DATA);
+  fill_sn(RDATA);
   LL = 4;
   return 0;
 }
