@@ -9,8 +9,6 @@
 #include <fs.h>
 #include <piv.h>
 
-uint8_t buffer[2048];
-
 static void test_data(void **state) {
   (void)state;
 
@@ -30,7 +28,7 @@ static void test_data(void **state) {
   printf("SW: %X ", SW);
   print_hex(RDATA, LL);
 
-  CLA = 0x10;
+  CLA = 0x00;
   INS = PIV_INS_PUT_DATA;
   P1 = 0x3F;
   P2 = 0xFF;
@@ -49,51 +47,7 @@ static void test_data(void **state) {
   INS = PIV_INS_GET_DATA;
   LC = 5;
   piv_process_apdu(capdu, rapdu);
-  assert_int_equal(SW, SW_FILE_NOT_FOUND);
-
-  CLA = 0x10;
-  INS = PIV_INS_PUT_DATA;
-  LC = 0xFF;
-  piv_process_apdu(capdu, rapdu);
   assert_int_equal(SW, SW_NO_ERROR);
-
-  CLA = 0x00;
-  LC = 0xFF;
-  for (int i = 0; i <= 255; ++i)
-    DATA[i] = i;
-  piv_process_apdu(capdu, rapdu);
-  assert_int_equal(SW, SW_NO_ERROR);
-
-  CLA = 0x00;
-  INS = PIV_INS_GET_DATA;
-  LC = 5;
-  DATA[0] = 0x5C;
-  DATA[1] = 0x03;
-  DATA[2] = 0x5F;
-  DATA[3] = 0xC1;
-  DATA[4] = 0x05;
-  LE = 0x100;
-  piv_process_apdu(capdu, rapdu);
-  for (int i = 0; i <= 249; ++i)
-    assert_int_equal(RDATA[i], i + 5);
-  assert_int_equal(RDATA[250], 0x00);
-  assert_int_equal(RDATA[251], 0x01);
-  assert_int_equal(RDATA[252], 0x02);
-  assert_int_equal(RDATA[253], 0x03);
-  assert_int_equal(RDATA[254], 0x04);
-  assert_int_equal(RDATA[255], 0x05);
-  assert_int_equal(SW, 0x61F9);
-
-  INS = PIV_INS_GET_RESPONSE;
-  P1 = 0x00;
-  P2 = 0x00;
-  LC = 0;
-  LE = 0xFD;
-  piv_process_apdu(capdu, rapdu);
-  assert_int_equal(SW, SW_NO_ERROR);
-  assert_int_equal(LL, 0xF9);
-  for (int i = 0; i != 0xF9; ++i)
-    assert_int_equal(RDATA[i], i + 6);
 }
 
 static void test_gen_key(void **state) {
@@ -110,15 +64,6 @@ static void test_gen_key(void **state) {
   LC = 0x05;
   memcpy(DATA, (uint8_t[]){0xAC, 0x03, 0x80, 0x01, 0x07}, 0x05);
   LE = 256;
-  piv_process_apdu(capdu, rapdu);
-  print_hex(RDATA, LL);
-  assert_int_equal(SW, 0x610F);
-
-  INS = PIV_INS_GET_RESPONSE;
-  P1 = 0x00;
-  P2 = 0x00;
-  LC = 0;
-  LE = 0x0F;
   piv_process_apdu(capdu, rapdu);
   print_hex(RDATA, LL);
   assert_int_equal(SW, SW_NO_ERROR);
@@ -279,7 +224,6 @@ int main() {
   lfs_emubd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
-  piv_config(buffer, 2048);
   piv_install(1);
 
   const struct CMUnitTest tests[] = {

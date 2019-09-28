@@ -7,6 +7,7 @@ int u2f_version(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu);
 void u2f_config(void);
 
-uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize, const uint8_t *extension, size_t *len);
+uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
+                            const uint8_t *extension, size_t *len);
 
 #endif
