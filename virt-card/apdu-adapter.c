@@ -1,4 +1,5 @@
 #include "apdu-adapter.h"
+#include "apdu.h"
 #include "ctap.h"
 #include "oath.h"
 #include "openpgp.h"
@@ -21,16 +22,26 @@ enum {
   APPLET_OPENPGP,
   APPLET_OATH,
   APPLET_PIV,
+  APPLET_ENUM_MAX
 } current_applet;
 
-static uint8_t fido2_chaining_buffer[4096];
-static size_t fido2_chaining_pos;
+static uint8_t cmd_chaining_buffer[4096], resp_chaining_buffer[4096];
+CAPDU_CHAINING capdu_chaining = {
+  .max_size = sizeof(cmd_chaining_buffer),
+  .capdu.data = cmd_chaining_buffer,
+};
+RAPDU_CHAINING rapdu_chaining = {
+  .rapdu.data = resp_chaining_buffer,
+};
 
 void select_u2f_from_hid(void) { current_applet = APPLET_FIDO; }
 
 int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigned char *rxBuf, unsigned long *rxLen) {
+  int ret;
   uint16_t Lc = 0, offData = 0;
-  uint32_t Le = 256;
+  uint32_t Le = 254;
+  bool extAPDU = false;
+  bool selecting = false;
   if (txLen < 4) {
     printf("APDU too short\n");
     return -2;
@@ -58,6 +69,7 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
     }
     Le = ((uint16_t)txBuf[EXT_LC_MSB] << 8) | txBuf[EXT_LC_LSB];
     if (Le == 0) Le = 0x10000;
+    extAPDU = 1;
   } else if (txLen > 7) {
     // With Lc
     if (txBuf[EXT_LC_0] != 0) {
@@ -78,6 +90,7 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       printf("incorrect APDU length %lu\n", txLen);
       return -2;
     }
+    extAPDU = 1;
   } else {
     printf("Wrong length %lu\n", txLen);
     // return -2;
@@ -95,7 +108,7 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
   }
 
   CAPDU c;
-  RAPDU r;
+  RAPDU r = {.data = rxBuf, .len = Le};
 
   c.cla = txBuf[0];
   c.ins = txBuf[1];
@@ -105,16 +118,37 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
   c.le = Le;
   c.data = txBuf + offData;
 
-  r.len = Le;
-  r.data = rxBuf;
+  if((c.cla == 0x80 || c.cla == 0x00) && c.ins == 0xC0) {
+    // GET RESPONSE
+    ret = apdu_output(&rapdu_chaining, &r);
+    goto return_result;
+  } else {
+    rapdu_chaining.rapdu.len = 0;
+    rapdu_chaining.sent = 0;
+  }
 
-  int ret;
-  bool selecting = false;
+  ret = apdu_input(&capdu_chaining, &c);
+  if(ret == APDU_CHAINING_NOT_LAST_BLOCK) {
+    printf("chaining\n");
+    r.sw = 0x9000;
+    r.len = 0;
+    ret = 0;
+    goto return_result;
+  } else if(ret == APDU_CHAINING_LAST_BLOCK) {
+    // process apdu now
+    c = capdu_chaining.capdu;
+  } else {
+    printf("apdu_input returned %d\n", ret);
+    r.sw = 0x6F00;
+    r.len = 0;
+    ret = 0;
+    goto return_result;
+  }
+
   if (c.cla == 0x00 && c.ins == 0xA4 && c.p1 == 0x04 && c.p2 == 0x00) {
     selecting = true;
     if (c.lc == 8 && memcmp(c.data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
       current_applet = APPLET_FIDO;
-      fido2_chaining_pos = 0;
     } else if (c.lc >= 6 && memcmp(c.data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
       current_applet = APPLET_OPENPGP;
     } else if (c.lc >= 5 && memcmp(c.data, "\xA0\x00\x00\x03\x08", 5) == 0) {
@@ -125,6 +159,10 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       current_applet = APPLET_NULL;
     }
   }
+
+  rapdu_chaining.sent = 0;
+  rapdu_chaining.rapdu.len = sizeof(resp_chaining_buffer);
+
   switch (current_applet) {
   default:
     printf("No applet selected yet\n");
@@ -152,21 +190,13 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       r.len = 0;
       ret = 0;
     } else {
-      if (c.cla == 0x90) {
-        memcpy(fido2_chaining_buffer + fido2_chaining_pos, c.data, c.lc);
-        fido2_chaining_pos += c.lc;
-        r.sw = 0x9000;
-        r.len = 0;
-        ret = 0;
-      } else {
-        memcpy(fido2_chaining_buffer + fido2_chaining_pos, c.data, c.lc);
-        fido2_chaining_pos += c.lc;
-        memcpy(c.data, fido2_chaining_buffer, fido2_chaining_pos);
-        c.lc = fido2_chaining_pos;
-        fido2_chaining_pos = 0;
-        ret = ctap_process_apdu(&c, &r);
-      }
+      printf("calling ctap_process_apdu\n");
+      ret = ctap_process_apdu(&c, &rapdu_chaining.rapdu);
       printf("ctap_process_apdu ret %d\n", ret);
+      // for(int i=0;i<rapdu_chaining.rapdu.len;i++) printf("%02x ",rapdu_chaining.rapdu.data[i]);
+      // putchar('\n');
+      printf("chaining.len=%hu r.len=%hu\n", rapdu_chaining.rapdu.len, r.len);
+      ret = apdu_output(&rapdu_chaining, &r);
     }
     break;
   case APPLET_OPENPGP:
@@ -176,10 +206,13 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
     break;
   case APPLET_PIV:
     printf("calling piv_process_apdu\n");
-    ret = piv_process_apdu(&c, &r);
+    ret = piv_process_apdu(&c, &rapdu_chaining.rapdu);
     printf("piv_process_apdu ret %d\n", ret);
+    printf("chaining.len=%hu r.len=%hu\n", rapdu_chaining.rapdu.len, r.len);
+    ret = apdu_output(&rapdu_chaining, &r);
     break;
   }
+return_result:
   if (ret == 0) {
     rxBuf[r.len] = 0xff & (r.sw >> 8);
     rxBuf[r.len + 1] = 0xff & r.sw;
