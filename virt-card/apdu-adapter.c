@@ -4,6 +4,7 @@
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
+#include "common.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -25,7 +26,7 @@ enum {
   APPLET_ENUM_MAX
 } current_applet;
 
-static uint8_t cmd_chaining_buffer[4096], resp_chaining_buffer[4096];
+static uint8_t cmd_chaining_buffer[APDU_BUFFER_SIZE], resp_chaining_buffer[APDU_BUFFER_SIZE];
 CAPDU_CHAINING capdu_chaining = {
   .max_size = sizeof(cmd_chaining_buffer),
   .capdu.data = cmd_chaining_buffer,
@@ -156,17 +157,22 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
     } else if (c.lc >= 7 && memcmp(c.data, "\xa0\x00\x00\x05\x27\x21\x01", 7) == 0) {
       current_applet = APPLET_OATH;
     } else {
-      current_applet = APPLET_NULL;
+      // current_applet = APPLET_NULL;
+      r.sw = 0x6A82;
+      r.len = 0;
+      ret = 0;
+      goto return_result;
     }
   }
 
   rapdu_chaining.sent = 0;
-  rapdu_chaining.rapdu.len = sizeof(resp_chaining_buffer);
+  rapdu_chaining.rapdu.len = APDU_BUFFER_SIZE;
+  c.le = APDU_BUFFER_SIZE;
 
   switch (current_applet) {
   default:
     printf("No applet selected yet\n");
-    r.sw = 0x6A82;
+    r.sw = 0x6F00;
     r.len = 0;
     ret = 0;
     break;
@@ -193,8 +199,6 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       printf("calling ctap_process_apdu\n");
       ret = ctap_process_apdu(&c, &rapdu_chaining.rapdu);
       printf("ctap_process_apdu ret %d\n", ret);
-      // for(int i=0;i<rapdu_chaining.rapdu.len;i++) printf("%02x ",rapdu_chaining.rapdu.data[i]);
-      // putchar('\n');
       printf("chaining.len=%hu r.len=%hu\n", rapdu_chaining.rapdu.len, r.len);
       ret = apdu_output(&rapdu_chaining, &r);
     }

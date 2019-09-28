@@ -191,8 +191,10 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
+    DBG_MSG("file %s Le=%d\n", path, LE);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     int len = read_file(path, RDATA, 0, APDU_BUFFER_SIZE);
+    DBG_MSG("length %d\n", len);
     if (len < 0) return -1;
     if (len == 0) EXCEPT(SW_FILE_NOT_FOUND);
     LL = len;
@@ -531,8 +533,11 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(DATA[4]);
+  DBG_MSG("%s length %d\n", path, LC - 5);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
   if (write_file(path, DATA + 5, 0, LC - 5, 1) < 0) return -1;
+  int len = read_file(path, DATA + 5, 0, LC - 5);
+  DBG_MSG("length %d\n", len);
   return 0;
 }
 
