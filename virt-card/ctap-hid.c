@@ -238,6 +238,10 @@ void FIDO_U2F_HandleMsgXfer(int ch, uint16_t length, uint8_t *data)
 {
     size_t rLen = MAX_PAYLOAD_LEN;
     // static uint8_t rBuf[MAX_PAYLOAD_LEN];
+    if(length == 0) {
+        FIDO_U2F_SendError(ch, FIDO_U2F_ERR_INVALID_LEN);
+        return;
+    }
     uint8_t *rBuf = chan[ch].respBuffer = malloc(rLen);
     if(!rBuf) {
         ERR_MSG("No space");
@@ -257,6 +261,10 @@ void FIDO2_HandleMsgXfer(int ch, uint16_t length, uint8_t *data)
 {
     size_t rLen = MAX_PAYLOAD_LEN;
     // static uint8_t rBuf[MAX_PAYLOAD_LEN];
+    if(length == 0) {
+        FIDO_U2F_SendError(ch, FIDO_U2F_ERR_INVALID_LEN);
+        return;
+    }
     uint8_t *rBuf = chan[ch].respBuffer = malloc(rLen);
     if(!rBuf) {
         ERR_MSG("No space");
@@ -297,6 +305,13 @@ void FIDO_U2F_HandleCommand(int ch, uint8_t cmd, uint16_t length, uint8_t *data)
             FIDO_U2F_SendError(ch, FIDO_U2F_ERR_INVALID_CID);
         else
             FIDO_U2F_SendResponse(ch, cmd, length, data);
+        break;
+
+    case FIDO_U2F_HID_WINK:
+        if(cid == FIDO_U2FHID_BROADCAST_CID)
+            FIDO_U2F_SendError(ch, FIDO_U2F_ERR_INVALID_CID);
+        else
+            FIDO_U2F_SendResponse(ch, cmd, 0, data);
         break;
 
     default:
