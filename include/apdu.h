@@ -1,7 +1,7 @@
 #ifndef CANOKEY_CORE__APDU_H
 #define CANOKEY_CORE__APDU_H
 
-#include <stdint.h>
+#include "common.h"
 
 typedef struct {
   uint8_t *data;
@@ -11,13 +11,13 @@ typedef struct {
   uint8_t p2;
   uint32_t le; // Le can be 65536 bytes long as per ISO7816-3
   uint16_t lc;
-} __attribute__((packed)) CAPDU;
+} __packed CAPDU;
 
 typedef struct {
   uint8_t *data;
   uint16_t len;
   uint16_t sw;
-} __attribute__((packed)) RAPDU;
+} __packed RAPDU;
 
 // Command status responses
 

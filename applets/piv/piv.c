@@ -332,8 +332,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
       RDATA[0] = 0x7C;
       RDATA[1] = 0x82;
-      RDATA[2] = HI(length + 4u);
-      RDATA[3] = LO(length + 4u);
+      RDATA[2] = HI(length + 4);
+      RDATA[3] = LO(length + 4);
       RDATA[4] = TAG_RESPONSE;
       RDATA[5] = 0x82;
       RDATA[6] = HI(length);

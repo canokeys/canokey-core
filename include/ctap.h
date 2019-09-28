@@ -132,18 +132,18 @@ typedef struct {
   uint8_t name[USER_NAME_LIMIT];
   uint8_t displayName[DISPLAY_NAME_LIMIT];
   uint8_t icon[ICON_LIMIT];
-} __attribute__((packed)) UserEntity;
+} __packed UserEntity;
 
 typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
   uint8_t nonce[CREDENTIAL_NONCE_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
-} __attribute__((packed)) CredentialId;
+} __packed CredentialId;
 
 typedef struct {
   CredentialId credential_id;
   UserEntity user;
-} __attribute__((packed)) CTAP_residentKey;
+} __packed CTAP_residentKey;
 
 typedef struct {
   uint8_t aaguid[AAGUID_SIZE];
@@ -151,7 +151,7 @@ typedef struct {
   CredentialId credentialId;
   uint8_t publicKey[MAX_COSE_KEY_SIZE]; // public key in cose_key format
   // https://www.w3.org/TR/webauthn/#sctn-encoded-credPubKey-examples
-} __attribute__((packed)) CTAP_attestedData;
+} __packed CTAP_attestedData;
 
 typedef struct {
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
@@ -159,7 +159,7 @@ typedef struct {
   uint32_t signCount;
   CTAP_attestedData at;
   uint8_t extensions[14];
-} __attribute__((packed)) CTAP_authData;
+} __packed CTAP_authData;
 
 typedef struct {
   uint16_t parsedParams;

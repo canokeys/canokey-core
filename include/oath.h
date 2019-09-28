@@ -31,7 +31,7 @@ typedef struct {
   uint8_t name[MAX_NAME_LEN];
   uint8_t key_len;
   uint8_t key[MAX_KEY_LEN];
-} __attribute__((packed)) OATH_RECORD;
+} __packed OATH_RECORD;
 
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);

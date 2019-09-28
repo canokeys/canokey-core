@@ -15,9 +15,16 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
-file(GLOB SRC src/*.c littlefs/*.c applets/ctap/*.c applets/openpgp/*.c applets/piv/*.c applets/oath/*.c applets/admin/*.c tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
+file(GLOB_RECURSE SRC src/*.c littlefs/*.c interfaces/*.c applets/*.c
+        tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
-target_include_directories(canokey-core SYSTEM PUBLIC include littlefs tinycbor/src)
+target_include_directories(canokey-core SYSTEM
+        PUBLIC include
+        PRIVATE littlefs tinycbor/src
+        interfaces/USB/core/inc
+        interfaces/USB/class/ccid
+        interfaces/USB/class/ctaphid
+        interfaces/USB/device)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
@@ -49,6 +56,5 @@ if (ENABLE_TESTS)
             littlefs/emubd/lfs_emubd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core asan)
-    # target_link_libraries(fido-hid-over-udp debug gcov) # --coverage implies -lcov
     target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
 endif (ENABLE_TESTS)
