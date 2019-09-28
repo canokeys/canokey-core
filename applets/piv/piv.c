@@ -186,9 +186,9 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[4 + sizeof(rid) + sizeof(pix)] = 0x5F;
     RDATA[5 + sizeof(rid) + sizeof(pix)] = 0x2F;
     RDATA[6 + sizeof(rid) + sizeof(pix)] = sizeof(pin_policy);
-    memcpy(DATA + 7 + sizeof(rid) + sizeof(pix), pin_policy, sizeof(pin_policy));
+    memcpy(RDATA + 7 + sizeof(rid) + sizeof(pix), pin_policy, sizeof(pin_policy));
     LL = 7 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
-  } else if (RDATA[1] == 3) {
+  } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
