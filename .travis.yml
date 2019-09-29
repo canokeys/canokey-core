@@ -166,6 +166,5 @@ script:
   - yubico-piv-tool -r "" -a reset
   - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
-  - cat /tmp/fido-udp.log
   - cat /tmp/pcscd.log
   - coveralls -b build --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --gcov-options '\-lp'
