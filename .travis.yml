@@ -36,7 +36,6 @@ install:
   - pushd u2f-ref-code/u2f-tests/HID
   - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
   - cd ../NFC
-  - git apply ../../../virt-card/disable-short-apdu-test.patch
   - make
   - popd
   -
@@ -67,13 +66,13 @@ script:
   - timeout 1s pcsc_scan || true
   - # FIDO2 test:
   - pushd fido2-tests
-  - ~/.local/bin/pytest --color=yes --nfc tests/standard/fido2/
+  - ~/.local/bin/pytest --color=yes --nfc tests/standard/
   - popd
   - # OATH test:
   - ./test-oath
   - # U2F tests:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
-  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 3
+  - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
   - # OpenPGP tests:
   - gpg --version
   - echo 12345678 >/tmp/passwd

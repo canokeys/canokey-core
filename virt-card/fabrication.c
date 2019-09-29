@@ -96,8 +96,6 @@ int card_fabrication_procedure() {
 
   fido2_init();
 
-  static uint8_t piv_buffer[2048];
-  piv_config(piv_buffer, sizeof(piv_buffer));
   piv_install(0);
 
   openpgp_install(0);

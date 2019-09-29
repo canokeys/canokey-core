@@ -41,11 +41,14 @@ static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter;
 // assertion related
-static uint8_t credential_list[MAX_RK_NUM], credential_numbers, credential_idx, last_cmd = 0xFF;
+static uint8_t credential_list[MAX_RK_NUM], credential_numbers, credential_idx, last_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
   u2f_config();
   consecutive_pin_counter = 3;
+  credential_numbers = 0;
+  credential_idx = 0;
+  last_cmd = 0xff;
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
