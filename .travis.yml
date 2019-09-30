@@ -30,8 +30,6 @@ addons:
       - python3-setuptools
       - python3-wheel
 install:
-  - go build -o test-oath virt-card/test-oath.go
-  -
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
   - pushd u2f-ref-code/u2f-tests/HID
   - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
@@ -69,7 +67,7 @@ script:
   - ~/.local/bin/pytest --color=yes --nfc tests/standard/
   - popd
   - # OATH test:
-  - ./test-oath
+  - go test virt-card/oath_test.go
   - # U2F tests:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
