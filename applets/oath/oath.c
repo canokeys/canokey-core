@@ -133,6 +133,10 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   }
   if (i == nRecords) EXCEPT(SW_DATA_INVALID);
 
+  RDATA[0] = OATH_TAG_RESPONSE;
+  RDATA[1] = 5;
+  RDATA[2] = record.key[1];
+
   // use record.key to store hmac result
   uint8_t digest_length;
   if ((record.key[0] & OATH_ALG_MASK) == OATH_ALG_SHA1) {
@@ -143,9 +147,6 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
     digest_length = SHA256_DIGEST_LENGTH;
   }
 
-  RDATA[0] = OATH_TAG_RESPONSE;
-  RDATA[1] = 5;
-  RDATA[2] = record.key[1];
   offset = record.key[digest_length - 1] & 0xF;
   memcpy(RDATA + 3, record.key + offset, 4);
   RDATA[3] &= 0x7F;
