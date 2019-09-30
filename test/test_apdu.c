@@ -71,7 +71,7 @@ static void test_output_chaining(void **state) {
   (void)state;
 
   uint8_t r_buf[1024], total_buf[2048];
-  RAPDU R = {.data = r_buf};
+  RAPDU R = {.data = r_buf, .len = 254};
   RAPDU_CHAINING RC = {.rapdu.data = total_buf, .rapdu.len = 512, .rapdu.sw = 0x9000, .sent = 0};
 
   int ret = apdu_output(&RC, &R);

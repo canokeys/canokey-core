@@ -67,14 +67,14 @@ restart:
     return APDU_CHAINING_NOT_LAST_BLOCK;
   else {
     ex->in_chaining = 0;
+    ex->capdu.le = sh->le;
     return APDU_CHAINING_LAST_BLOCK;
   }
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
   uint16_t to_send = ex->rapdu.len - ex->sent;
-//  if (to_send > sh->len) to_send = sh->len;
-  if (to_send > 254) to_send = 254;
+  if (to_send > sh->len) to_send = sh->len;
   memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
   sh->len = to_send;
   ex->sent += to_send;
