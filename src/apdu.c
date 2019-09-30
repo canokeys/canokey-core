@@ -73,7 +73,8 @@ restart:
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
   uint16_t to_send = ex->rapdu.len - ex->sent;
-  if (to_send > sh->len) to_send = sh->len;
+//  if (to_send > sh->len) to_send = sh->len;
+  if (to_send > 254) to_send = 254;
   memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
   sh->len = to_send;
   ex->sent += to_send;
