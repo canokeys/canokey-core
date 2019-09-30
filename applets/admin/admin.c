@@ -10,7 +10,7 @@
 #define PIN_RETRY_COUNTER 3
 #define SN_FILE "sn"
 
-static pin_t pin = {.min_length = 6, .max_length = 128, .is_validated = 0, .path = "admin-pin"};
+static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
 int admin_install(void) {
   if (get_file_size(pin.path) >= 0) return 0;
@@ -29,6 +29,7 @@ static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t ctr;
   int err = pin_verify(&pin, DATA, LC, &ctr);
   if (err == PIN_IO_FAIL) return -1;
+  if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
   return 0;

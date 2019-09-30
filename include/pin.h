@@ -13,6 +13,7 @@ typedef struct {
 #define PIN_IO_FAIL -1
 #define PIN_AUTH_FAIL -2
 #define PIN_LENGTH_INVALID -3
+#define PIN_MAX_LENGTH 64
 
 int pin_create(const pin_t *pin, const void *buf, uint8_t len,
                uint8_t max_retries);
