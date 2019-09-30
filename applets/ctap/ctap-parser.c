@@ -505,7 +505,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       CHECK_CBOR_RET(ret);
       ret = cbor_value_get_array_length(&map, &mc->excludeListSize);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("excludeList size: %lu\n", mc->excludeListSize);
+      DBG_MSG("excludeList size: %zu\n", mc->excludeListSize);
       break;
 
     case MC_extensions:
@@ -613,7 +613,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       CHECK_CBOR_RET(ret);
       ret = cbor_value_get_array_length(&map, &ga->allowListSize);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("allowList size: %lu\n", ga->allowListSize);
+      DBG_MSG("allowList size: %zu\n", ga->allowListSize);
       break;
 
     case GA_extensions:

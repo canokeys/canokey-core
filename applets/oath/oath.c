@@ -15,8 +15,12 @@ static enum {
 
 static uint8_t challenge[MAX_CHALLENGE_LEN], challenge_len, record_idx;
 
-int oath_install(uint8_t reset) {
+void oath_poweroff(void) {
   oath_remaining_type = REMAINING_NONE;
+}
+
+int oath_install(uint8_t reset) {
+  oath_poweroff();
   if (!reset && get_file_size(OATH_FILE) == 0) return 0;
   return write_file(OATH_FILE, NULL, 0, 0, 1);
 }
@@ -216,8 +220,12 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
+
   int ret = 0;
   switch (INS) {
+  case OATH_INS_SELECT:
+    // Do nothing
+    break;
   case OATH_INS_PUT:
     ret = oath_put(capdu, rapdu);
     break;
