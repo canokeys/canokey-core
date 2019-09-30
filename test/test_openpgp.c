@@ -14,7 +14,8 @@ static void test_verify(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
   capdu->cla = 0x00;
@@ -44,7 +45,8 @@ static void test_change_reference_data(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
   capdu->cla = 0x00;
@@ -77,7 +79,8 @@ static void test_reset_retry_counter(void **state) {
   write_file("pgp-rc", "abcdefgh", 0, 8, 1);
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
   capdu->cla = 0x00;
@@ -105,7 +108,8 @@ static void test_get_data(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
   capdu->cla = 0x00;
@@ -121,30 +125,72 @@ static void test_import_key(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
 
-  apdu_fill_with_command(capdu, "00 20 00 83 08 31 32 33 34 35 36 37 38");
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x83\x08\x31\x32\x33\x34\x35\x36\x37\x38", 13);
   openpgp_process_apdu(capdu, rapdu);
 
-  apdu_fill_with_command(capdu, "00 DB 3F FF 00 01 1A 4D 82 01 16 B6 00 7F 48 08 91 04 92 81 80 93 81 80 5F 48 82 01 04 00 01 00 01 EC 2A 0A F7 80 D6 43 9D 4D 86 99 41 90 9C D1 E3 B6 28 49 30 57 D0 3E 22 2A A4 F5 74 18 35 1D 27 8B AC 91 BF D6 1E 78 B1 E2 16 9C FD F9 BC D1 18 2A 38 5B C0 66 55 AB B7 F5 CC 1A CB 97 98 E7 91 F4 F4 EC 4B 99 E8 EA 80 DD F7 97 3A 7F 7B 19 26 27 1A 8E 7A C4 2C 5B 8F 1A EF D8 F0 8F B2 9C 22 2C 44 D0 B2 B7 9D 79 06 39 1E C8 A1 88 4B 22 22 47 6E 48 54 9F 46 3A 60 D3 51 5A CC 94 51 4F 1D F6 11 4C 04 4B 66 46 14 78 EB 80 C5 26 E2 CA 23 F8 68 2D 10 BA AE E8 08 48 21 5B 3A 4A F7 8D A2 DC 8C B7 C5 70 4F 8F 6E 66 8C E2 8F 1B D3 DC AB 6C 37 8D 7E DE D5 4E 25 51 9F A1 4F A6 E2 0E A6 24 CB 6F 74 67 EC E4 D3 E3 BA 51 7A 55 4D B6 8D 17 81 9A 12 E0 71 B7 F2 57 1A E0 55 F6 8F 82 72 75 FC 74 68 8A 11 1F 06 45 19 AA 77 EF 6D AC C0 C8 78 1F 5D 83 EA EB 79 62 A5 2C 9F 8F B6 7E 27");
+  build_capdu(
+      capdu,
+      (uint8_t *)"\x00\xDB\x3F\xFF\x00\x01\x1A\x4D\x82\x01\x16\xB6\x00\x7F\x48\x08\x91\x04\x92\x81\x80\x93\x81\x80\x5F"
+                 "\x48\x82\x01\x04\x00\x01\x00\x01\xEC\x2A\x0A\xF7\x80\xD6\x43\x9D\x4D\x86\x99\x41\x90\x9C\xD1\xE3\xB6"
+                 "\x28\x49\x30\x57\xD0\x3E\x22\x2A\xA4\xF5\x74\x18\x35\x1D\x27\x8B\xAC\x91\xBF\xD6\x1E\x78\xB1\xE2\x16"
+                 "\x9C\xFD\xF9\xBC\xD1\x18\x2A\x38\x5B\xC0\x66\x55\xAB\xB7\xF5\xCC\x1A\xCB\x97\x98\xE7\x91\xF4\xF4\xEC"
+                 "\x4B\x99\xE8\xEA\x80\xDD\xF7\x97\x3A\x7F\x7B\x19\x26\x27\x1A\x8E\x7A\xC4\x2C\x5B\x8F\x1A\xEF\xD8\xF0"
+                 "\x8F\xB2\x9C\x22\x2C\x44\xD0\xB2\xB7\x9D\x79\x06\x39\x1E\xC8\xA1\x88\x4B\x22\x22\x47\x6E\x48\x54\x9F"
+                 "\x46\x3A\x60\xD3\x51\x5A\xCC\x94\x51\x4F\x1D\xF6\x11\x4C\x04\x4B\x66\x46\x14\x78\xEB\x80\xC5\x26\xE2"
+                 "\xCA\x23\xF8\x68\x2D\x10\xBA\xAE\xE8\x08\x48\x21\x5B\x3A\x4A\xF7\x8D\xA2\xDC\x8C\xB7\xC5\x70\x4F\x8F"
+                 "\x6E\x66\x8C\xE2\x8F\x1B\xD3\xDC\xAB\x6C\x37\x8D\x7E\xDE\xD5\x4E\x25\x51\x9F\xA1\x4F\xA6\xE2\x0E\xA6"
+                 "\x24\xCB\x6F\x74\x67\xEC\xE4\xD3\xE3\xBA\x51\x7A\x55\x4D\xB6\x8D\x17\x81\x9A\x12\xE0\x71\xB7\xF2\x57"
+                 "\x1A\xE0\x55\xF6\x8F\x82\x72\x75\xFC\x74\x68\x8A\x11\x1F\x06\x45\x19\xAA\x77\xEF\x6D\xAC\xC0\xC8\x78"
+                 "\x1F\x5D\x83\xEA\xEB\x79\x62\xA5\x2C\x9F\x8F\xB6\x7E\x27",
+      289);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
-  apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
+  build_capdu(capdu, (uint8_t *)"\x00\x47\x81\x00\x00\x00\x02\xB6\x00\x01\x0F", 11);
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
   print_hex(RDATA, LL);
 
-  apdu_fill_with_command(capdu, "00 DB 3F FF 00 01 1A 4D 82 01 16 B8 00 7F 48 08 91 04 92 81 80 93 81 80 5F 48 82 01 04 00 01 00 01 D6 2F 32 91 59 9E 87 36 FC 9C 48 54 EF 6D F8 CF 63 37 61 F5 22 08 58 77 33 F0 03 6C 7B D4 7F 2F 88 4F 29 4B 73 37 A8 00 66 BB DB CD F1 FA 13 40 46 90 29 B7 40 EB 6B D8 3F 5E 66 D3 FF 41 92 01 EF 6A 44 15 07 E3 4A B8 DC 0D B7 BE 86 C4 62 BA 78 4F 29 0D 68 2D 5D EF C6 F7 82 06 F0 3D CC 27 58 FD BD E8 0D 24 13 09 A7 8D 9F 84 85 1D F2 D5 1C B1 85 C1 C5 62 7B A8 82 BB 3F 58 8F D1 01 15 D8 E5 6E 4B EF 39 47 F0 D0 DE 3B 57 C6 7C 2E 94 01 13 B5 A9 98 8E 36 54 8D B6 08 EF 76 7E FE 96 B7 D8 06 A6 61 3F 28 A8 9D 89 87 E6 27 20 6F 9F 02 47 D7 60 EA AC 5A 95 69 0C 22 00 89 CA 96 09 B6 ED FC FF 5E DF D5 09 89 7F 74 9C 0F EF 91 37 2F 72 5F 11 FA F6 27 1E 6B 2F 32 F2 B1 D3 64 5B B1 B1 9C B2 60 B8 C4 C6 9A 8A AC 44 86 F1 05 8A 9A F3 45 E8 6D 6E 73 DD 56 05 F2 22 17 8A 53 61");
+  build_capdu(
+      capdu,
+      (uint8_t *)"\x00\xDB\x3F\xFF\x00\x01\x1A\x4D\x82\x01\x16\xB8\x00\x7F\x48\x08\x91\x04\x92\x81\x80\x93\x81\x80\x5F"
+                 "\x48\x82\x01\x04\x00\x01\x00\x01\xD6\x2F\x32\x91\x59\x9E\x87\x36\xFC\x9C\x48\x54\xEF\x6D\xF8\xCF\x63"
+                 "\x37\x61\xF5\x22\x08\x58\x77\x33\xF0\x03\x6C\x7B\xD4\x7F\x2F\x88\x4F\x29\x4B\x73\x37\xA8\x00\x66\xBB"
+                 "\xDB\xCD\xF1\xFA\x13\x40\x46\x90\x29\xB7\x40\xEB\x6B\xD8\x3F\x5E\x66\xD3\xFF\x41\x92\x01\xEF\x6A\x44"
+                 "\x15\x07\xE3\x4A\xB8\xDC\x0D\xB7\xBE\x86\xC4\x62\xBA\x78\x4F\x29\x0D\x68\x2D\x5D\xEF\xC6\xF7\x82\x06"
+                 "\xF0\x3D\xCC\x27\x58\xFD\xBD\xE8\x0D\x24\x13\x09\xA7\x8D\x9F\x84\x85\x1D\xF2\xD5\x1C\xB1\x85\xC1\xC5"
+                 "\x62\x7B\xA8\x82\xBB\x3F\x58\x8F\xD1\x01\x15\xD8\xE5\x6E\x4B\xEF\x39\x47\xF0\xD0\xDE\x3B\x57\xC6\x7C"
+                 "\x2E\x94\x01\x13\xB5\xA9\x98\x8E\x36\x54\x8D\xB6\x08\xEF\x76\x7E\xFE\x96\xB7\xD8\x06\xA6\x61\x3F\x28"
+                 "\xA8\x9D\x89\x87\xE6\x27\x20\x6F\x9F\x02\x47\xD7\x60\xEA\xAC\x5A\x95\x69\x0C\x22\x00\x89\xCA\x96\x09"
+                 "\xB6\xED\xFC\xFF\x5E\xDF\xD5\x09\x89\x7F\x74\x9C\x0F\xEF\x91\x37\x2F\x72\x5F\x11\xFA\xF6\x27\x1E\x6B"
+                 "\x2F\x32\xF2\xB1\xD3\x64\x5B\xB1\xB1\x9C\xB2\x60\xB8\xC4\xC6\x9A\x8A\xAC\x44\x86\xF1\x05\x8A\x9A\xF3"
+                 "\x45\xE8\x6D\x6E\x73\xDD\x56\x05\xF2\x22\x17\x8A\x53\x61",
+      289);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
-  apdu_fill_with_command(capdu, "00 20 00 82 06 36 35 34 33 32 31");
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x82\x06\x36\x35\x34\x33\x32\x31", 11);
   openpgp_process_apdu(capdu, rapdu);
 
-  apdu_fill_with_command(capdu, "00 2A 80 86 00 01 01 00 7C 45 ED 54 25 8A EF F7 8A 7A 56 B7 6A 80 7F 24 7F 93 47 98 93 36 E4 44 58 1B 3C EF 98 7B 48 69 F9 2C 26 9E 91 CD 4C 0E 2A 43 E3 EE E6 9C 79 B5 F2 94 04 41 33 9A 76 DA DD 50 16 16 68 7B 6F 68 F9 6F B3 B9 1D 1D DF C3 C8 A6 AF 28 B8 24 7E 11 16 88 D0 D9 84 5F EF 3F 92 32 B2 EA BD 35 5D EA C2 93 96 94 42 85 E2 39 E5 5B 52 4D 60 B8 EA 6F A3 F6 A8 E3 B1 7C AA EF 77 C5 BC D5 19 EF 1B 27 28 08 9C 8E 47 C6 7F F3 F1 0D 52 3F F3 1F 8A 65 96 01 7B E3 9A 1F D0 AF E7 31 D0 68 4F 00 09 4E A8 89 F4 8E 75 6E 74 EE 53 FE 09 BB 42 48 07 D0 F1 0A 6B 84 FD 70 28 DA 30 11 D4 69 A9 0B E8 97 9E 0B 57 52 AE AB FA 23 83 4E 4F DC 9A DB D7 F7 2E F2 12 3E 34 41 A4 F8 9E 84 49 7B CF 7A 17 09 92 C4 CE 22 5E 3C 17 60 CB B5 9C 79 04 B8 62 33 A2 CA 1C CB E1 12 21 BE 59 B6 73 C0 AE B9 95 97 01 00");
+  build_capdu(
+      capdu,
+      (uint8_t *)"\x00\x2A\x80\x86\x00\x01\x01\x00\x7C\x45\xED\x54\x25\x8A\xEF\xF7\x8A\x7A\x56\xB7\x6A\x80\x7F\x24\x7F"
+                 "\x93\x47\x98\x93\x36\xE4\x44\x58\x1B\x3C\xEF\x98\x7B\x48\x69\xF9\x2C\x26\x9E\x91\xCD\x4C\x0E\x2A\x43"
+                 "\xE3\xEE\xE6\x9C\x79\xB5\xF2\x94\x04\x41\x33\x9A\x76\xDA\xDD\x50\x16\x16\x68\x7B\x6F\x68\xF9\x6F\xB3"
+                 "\xB9\x1D\x1D\xDF\xC3\xC8\xA6\xAF\x28\xB8\x24\x7E\x11\x16\x88\xD0\xD9\x84\x5F\xEF\x3F\x92\x32\xB2\xEA"
+                 "\xBD\x35\x5D\xEA\xC2\x93\x96\x94\x42\x85\xE2\x39\xE5\x5B\x52\x4D\x60\xB8\xEA\x6F\xA3\xF6\xA8\xE3\xB1"
+                 "\x7C\xAA\xEF\x77\xC5\xBC\xD5\x19\xEF\x1B\x27\x28\x08\x9C\x8E\x47\xC6\x7F\xF3\xF1\x0D\x52\x3F\xF3\x1F"
+                 "\x8A\x65\x96\x01\x7B\xE3\x9A\x1F\xD0\xAF\xE7\x31\xD0\x68\x4F\x00\x09\x4E\xA8\x89\xF4\x8E\x75\x6E\x74"
+                 "\xEE\x53\xFE\x09\xBB\x42\x48\x07\xD0\xF1\x0A\x6B\x84\xFD\x70\x28\xDA\x30\x11\xD4\x69\xA9\x0B\xE8\x97"
+                 "\x9E\x0B\x57\x52\xAE\xAB\xFA\x23\x83\x4E\x4F\xDC\x9A\xDB\xD7\xF7\x2E\xF2\x12\x3E\x34\x41\xA4\xF8\x9E"
+                 "\x84\x49\x7B\xCF\x7A\x17\x09\x92\xC4\xCE\x22\x5E\x3C\x17\x60\xCB\xB5\x9C\x79\x04\xB8\x62\x33\xA2\xCA"
+                 "\x1C\xCB\xE1\x12\x21\xBE\x59\xB6\x73\xC0\xAE\xB9\x95\x97\x01\x00",
+      266);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
@@ -153,7 +199,8 @@ static void test_generate_key(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
   capdu->cla = 0x00;
@@ -172,26 +219,27 @@ static void test_special(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
 
-  apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
+  build_capdu(capdu, (uint8_t *)"\x00\x47\x81\x00\x00\x00\x02\xB6\x00\x01\x0F", 11);
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
   print_hex(RDATA, LL);
 
-  apdu_fill_with_command(capdu, "00 20 00 83 08 31 32 33 34 35 36 37 38");
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x83\x08\x31\x32\x33\x34\x35\x36\x37\x38", 13);
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
   print_hex(RDATA, LL);
 
-  apdu_fill_with_command(capdu, "00 47 80 00 00 00 02 B6 00 01 0F");
+  build_capdu(capdu, (uint8_t *)"\x00\x47\x80\x00\x00\x00\x02\xB6\x00\x01\x0F", 11);
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
   print_hex(RDATA, LL);
 
-  apdu_fill_with_command(capdu, "00 47 81 00 00 00 02 B6 00 01 0F");
+  build_capdu(capdu, (uint8_t *)"\x00\x47\x81\x00\x00\x00\x02\xB6\x00\x01\x0F", 11);
   openpgp_process_apdu(capdu, rapdu);
   printf("SW: %X ", SW);
   print_hex(RDATA, LL);

@@ -75,7 +75,6 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
-void apdu_fill_with_command(CAPDU *capdu, char *cmd);
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
