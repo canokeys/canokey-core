@@ -1,5 +1,6 @@
 #include "apdu-adapter.h"
 #include "apdu.h"
+#include "admin.h"
 #include "ctap.h"
 #include "oath.h"
 #include "openpgp.h"
@@ -23,6 +24,7 @@ enum {
   APPLET_OPENPGP,
   APPLET_OATH,
   APPLET_PIV,
+  APPLET_ADMIN,
   APPLET_ENUM_MAX
 } current_applet;
 
@@ -154,6 +156,8 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       current_applet = APPLET_OPENPGP;
     } else if (c.lc >= 5 && memcmp(c.data, "\xA0\x00\x00\x03\x08", 5) == 0) {
       current_applet = APPLET_PIV;
+    } else if (c.lc >= 7 && memcmp(c.data, "\xa0\x00\x00\x06\xFF\xFF\x01", 7) == 0) {
+      current_applet = APPLET_ADMIN;
     } else if (c.lc >= 7 && memcmp(c.data, "\xa0\x00\x00\x05\x27\x21\x01", 7) == 0) {
       current_applet = APPLET_OATH;
     } else {
@@ -185,6 +189,17 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       printf("calling oath_process_apdu\n");
       ret = oath_process_apdu(&c, &r);
       printf("oath_process_apdu ret %d\n", ret);
+    }
+    break;
+  case APPLET_ADMIN:
+    if (selecting) {
+      r.sw = 0x9000;
+      r.len = 0;
+      ret = 0;
+    } else {
+      printf("calling admin_process_apdu\n");
+      ret = admin_process_apdu(&c, &r);
+      printf("admin_process_apdu ret %d\n", ret);
     }
     break;
   case APPLET_FIDO:
