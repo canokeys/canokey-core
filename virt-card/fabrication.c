@@ -1,9 +1,6 @@
-#include "fabrication.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
-#include "rand.h"
-#include "u2f.h"
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
@@ -52,7 +49,7 @@ static void fake_fido_personalization() {
   capdu.data = c_buf;
   rapdu.data = r_buf;
 
-  apdu_fill_with_command(&capdu, "00 20 00 00 06 31 32 33 34 35 36");
+  build_capdu(&capdu, (uint8_t *)"\x00\x20\x00\x00\x06\x31\x32\x33\x34\x35\x36", 11);
   admin_process_apdu(&capdu, &rapdu);
 
   capdu.cla = 0x00;

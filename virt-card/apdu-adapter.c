@@ -43,7 +43,6 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
   int ret;
   uint16_t Lc = 0, offData = 0;
   uint32_t Le = 254;
-  bool extAPDU = false;
   bool selecting = false;
   if (txLen < 4) {
     printf("APDU too short\n");
@@ -72,7 +71,6 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
     }
     Le = ((uint16_t)txBuf[EXT_LC_MSB] << 8) | txBuf[EXT_LC_LSB];
     if (Le == 0) Le = 0x10000;
-    extAPDU = 1;
   } else if (txLen > 7) {
     // With Lc
     if (txBuf[EXT_LC_0] != 0) {
@@ -93,7 +91,6 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       printf("incorrect APDU length %lu\n", txLen);
       return -2;
     }
-    extAPDU = 1;
   } else {
     printf("Wrong length %lu\n", txLen);
     // return -2;

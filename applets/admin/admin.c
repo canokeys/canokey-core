@@ -12,7 +12,12 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
+void admin_poweroff(void) {
+  pin.is_validated = 0;
+}
+
 int admin_install(void) {
+  admin_poweroff();
   if (get_file_size(pin.path) >= 0) return 0;
   if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
   return 0;

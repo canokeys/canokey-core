@@ -90,7 +90,12 @@ static int get_input_size(uint8_t alg) {
   }
 }
 
+void piv_poweroff(void) {
+  in_admin_status = 0;
+}
+
 int piv_install(uint8_t reset) {
+  piv_poweroff();
   if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0) return 0;
 
   // PIN data
@@ -140,7 +145,7 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 }
 
 static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
-  in_admin_status = 0;
+  UNUSED(capdu);
 
   RDATA[0] = 0x61;
   RDATA[1] = 6 + sizeof(pix) + sizeof(rid);
@@ -334,8 +339,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
       RDATA[0] = 0x7C;
       RDATA[1] = 0x82;
-      RDATA[2] = HI(length + 4u);
-      RDATA[3] = LO(length + 4u);
+      RDATA[2] = HI(length + 4);
+      RDATA[3] = LO(length + 4);
       RDATA[4] = TAG_RESPONSE;
       RDATA[5] = 0x82;
       RDATA[6] = HI(length);

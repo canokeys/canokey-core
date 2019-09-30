@@ -12,6 +12,7 @@
 #define ADMIN_INS_CHANGE_PIN 0x21
 #define ADMIN_INS_WRITE_SN 0x30
 
+void admin_poweroff(void);
 int admin_install(void);
 int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 

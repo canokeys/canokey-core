@@ -52,8 +52,9 @@ script:
   - ./canokey-crypto/test/test_aes
   - ./canokey-crypto/test/test_ecdsa
   - ./canokey-crypto/test/test_sha
-  - ./test/test_piv
+  - ./test/test_apdu
   - ./test/test_openpgp
+  - ./test/test_oath
   - popd
   -
   - sudo killall -9 pcscd || true
