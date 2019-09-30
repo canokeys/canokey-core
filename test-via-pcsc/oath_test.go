@@ -54,19 +54,21 @@ func TestOath(t *testing.T) {
 
 		NumKeys := 100
 
-		Convey("When name is too long", func(ctx C) {
-			name := strings.Repeat("O", 65)
-			err := oath.Delete(name)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "wrong syntax")
+		Convey("When name is too long or empty", func(ctx C) {
+			for l := range []int{0, 65} {
+				name := strings.Repeat("O", l)
+				err := oath.Delete(name)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "wrong syntax")
 
-			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), false)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "wrong syntax")
+				err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), false)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "wrong syntax")
 
-			_, err = oath.Calculate(name, nil)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "wrong syntax")
+				_, err = oath.Calculate(name, nil)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "wrong syntax")
+			}
 		})
 
 		Convey("When it is empty", func(ctx C) {

@@ -13,7 +13,7 @@ static enum {
   REMAINING_LIST,
 } oath_remaining_type;
 
-static uint8_t challenge[64], challenge_len, record_idx;
+static uint8_t challenge[MAX_CHALLENGE_LEN], challenge_len, record_idx;
 
 int oath_install(uint8_t reset) {
   oath_remaining_type = REMAINING_NONE;
@@ -28,13 +28,13 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t offset = 0;
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset++];
-  if (name_len > 64) EXCEPT(SW_WRONG_DATA);
+  if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
 
   // parse key
   if (DATA[offset++] != OATH_TAG_KEY) EXCEPT(SW_WRONG_DATA);
   uint8_t key_len = DATA[offset++];
-  if (key_len > 64 + 2) // 2 for algo & digits
+  if (key_len > MAX_KEY_LEN || key_len <= 2) // 2 for algo & digits
     EXCEPT(SW_WRONG_DATA);
   uint8_t alg = DATA[offset];
   if ((alg & OATH_TYPE_MASK) != OATH_TYPE_TOTP ||
@@ -65,7 +65,7 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t offset = 0;
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset];
-  if (name_len > 64) EXCEPT(SW_WRONG_DATA);
+  if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
 
   // find and delete the record
   int size = get_file_size(OATH_FILE);
@@ -94,6 +94,7 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
   for (i = 0; i < 8; ++i) {
     if (record_idx >= nRecords) break;
     if (read_file(OATH_FILE, &record, record_idx++ * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
+    if (record.name_len == 0) continue;
     RDATA[off++] = OATH_TAG_NAME_LIST;
     RDATA[off++] = record.name_len;
     memcpy(RDATA + off, record.name, record.name_len);
@@ -114,12 +115,12 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t offset = 0;
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset++];
-  if (name_len > 64) EXCEPT(SW_WRONG_DATA);
+  if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
 
   if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
   challenge_len = DATA[offset++];
-  if (challenge_len > 64) EXCEPT(SW_WRONG_DATA);
+  if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) EXCEPT(SW_WRONG_DATA);
   memcpy(challenge, DATA + offset, challenge_len);
 
   // find the record
@@ -166,7 +167,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t off_in = 0;
     if (DATA[off_in++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
     challenge_len = DATA[off_in++];
-    if (challenge_len > 64) EXCEPT(SW_WRONG_DATA);
+    if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) EXCEPT(SW_WRONG_DATA);
     memcpy(challenge, DATA + off_in, challenge_len);
   }
 
@@ -175,6 +176,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
   for (i = 0; i < 8; ++i) {
     if (record_idx >= nRecords) break;
     if (read_file(OATH_FILE, &record, record_idx++ * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
+    if (record.name_len == 0) continue;
     RDATA[off_out++] = OATH_TAG_NAME;
     RDATA[off_out++] = record.name_len;
     memcpy(RDATA + off_out, record.name, record.name_len);
