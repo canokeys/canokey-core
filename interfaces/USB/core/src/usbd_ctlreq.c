@@ -240,12 +240,12 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
       break;
 
     default:
-      USBD_CtlError(pdev, req);
-      return;
+      pbuf = pdev->pDesc->GetUsrStrDescriptor(pdev->dev_speed, (req->wValue), &len);
+      break;
     }
     break;
-  case USB_DESC_TYPE_DEVICE_QUALIFIER:
 
+  case USB_DESC_TYPE_DEVICE_QUALIFIER:
     if (pdev->dev_speed == USBD_SPEED_HIGH) {
       pbuf = pdev->pClass->GetDeviceQualifierDescriptor(&len);
       break;
@@ -269,9 +269,7 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
   }
 
   if ((len != 0) && (req->wLength != 0)) {
-
     len = MIN(len, req->wLength);
-
     USBD_CtlSendData(pdev, pbuf, len);
   }
 }
@@ -284,27 +282,12 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
  * @retval status
  */
 USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
-  uint16_t len;
-  const uint8_t *pbuf;
-
   USBD_StatusTypeDef ret = USBD_OK;
 
   switch (req->bRequest) {
   case 0x01: // WebUSB
     ERR_MSG("Request WebUSB URL\n");
     USBD_CtlError(pdev, req);
-    break;
-
-  case 0x02:                   // MS OS 2.0
-    if (req->wIndex == 0x07) { // MS_OS_20_REQUEST_DESCRIPTOR
-      pbuf = pdev->pDesc->GetMSOS20Descriptor(pdev->dev_speed, &len);
-      if ((len != 0) && (req->wLength != 0)) {
-        len = MIN(len, req->wLength);
-        USBD_CtlSendData(pdev, pbuf, len);
-      }
-    } else {
-      USBD_CtlError(pdev, req);
-    }
     break;
 
   default:
@@ -515,7 +498,6 @@ static void USBD_ClrFeature(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req)
  * @param  req: usb request
  * @retval None
  */
-
 void USBD_ParseSetupRequest(USBD_SetupReqTypedef *req, uint8_t *pdata) {
   req->bmRequest = *pdata;
   req->bRequest = *(pdata + 1);
@@ -531,7 +513,6 @@ void USBD_ParseSetupRequest(USBD_SetupReqTypedef *req, uint8_t *pdata) {
  * @param  req: usb request
  * @retval None
  */
-
 void USBD_CtlError(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   USBD_LL_StallEP(pdev, 0x80);
   USBD_LL_StallEP(pdev, 0);

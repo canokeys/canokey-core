@@ -1,13 +1,19 @@
-#ifndef CANOKEY_CORE_INCLUDE_CCID_H_
-#define CANOKEY_CORE_INCLUDE_CCID_H_
+#ifndef _CCID_H_
+#define _CCID_H_
 
 #include <common.h>
-#include <usbd_ccid.h>
+
+#define IDX_CCID 0
+#define IDX_OPENPGP 1
+
+#define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
+#define CCID_CMD_HEADER_SIZE 10
+#define CCID_NUMBER_OF_SLOTS 1
 
 typedef struct {
   uint8_t bMessageType; /* Offset = 0*/
   uint32_t dwLength;    /* Offset = 1, The length field (dwLength) is the length
-                          of the message not including the 10-byte header.*/
+                           of the message not including the 10-byte header.*/
   uint8_t bSlot;        /* Offset = 5*/
   uint8_t bSeq;         /* Offset = 6*/
   uint8_t bSpecific_0;  /* Offset = 7*/
@@ -113,7 +119,7 @@ typedef enum {
 #define RDR_TO_PC_DATARATEANDCLOCKFREQUENCY 0x84
 
 uint8_t CCID_Init(void);
-uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
+uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx);
 void CCID_Loop(void);
 
-#endif // CANOKEY_CORE_INCLUDE_CCID_H_
+#endif //_CCID_H_

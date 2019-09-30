@@ -62,7 +62,6 @@ USBD_StatusTypeDef USBD_CtlPrepareRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, ui
  * @retval status
  */
 USBD_StatusTypeDef USBD_CtlContinueRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, uint16_t len) {
-
   USBD_LL_PrepareReceive(pdev, 0, pbuf, len);
   return USBD_OK;
 }

@@ -10,6 +10,6 @@ USBD_StatusTypeDef USBD_CtlPrepareRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, ui
 USBD_StatusTypeDef USBD_CtlContinueRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, uint16_t len);
 USBD_StatusTypeDef USBD_CtlSendStatus(USBD_HandleTypeDef *pdev);
 USBD_StatusTypeDef USBD_CtlReceiveStatus(USBD_HandleTypeDef *pdev);
-uint16_t USBD_GetRxCount(USBD_HandleTypeDef *pdev, uint8_t epnum);
+uint16_t USBD_GetRxCount(USBD_HandleTypeDef *pdev, uint8_t ep_addr);
 
 #endif /* __USBD_IOREQ_H */

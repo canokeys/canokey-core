@@ -22,6 +22,7 @@ typedef struct {
 // Command status responses
 
 #define SW_NO_ERROR 0x9000
+#define SW_PIN_RETRIES 0x63C0
 #define SW_WRONG_LENGTH 0x6700
 #define SW_UNABLE_TO_PROCESS 0x6900
 #define SW_SECURITY_STATUS_NOT_SATISFIED 0x6982
@@ -36,7 +37,7 @@ typedef struct {
 #define SW_REFERENCE_DATA_NOT_FOUND 0x6A88
 #define SW_INS_NOT_SUPPORTED 0x6D00
 #define SW_CLA_NOT_SUPPORTED 0x6E00
-#define SW_PIN_RETRIES 0x63C0
+#define SW_CHECKING_ERROR 0x6F00
 
 // Macros
 
@@ -62,7 +63,6 @@ typedef struct {
 #define APDU_CHAINING_NOT_LAST_BLOCK 0x01
 #define APDU_CHAINING_LAST_BLOCK 0x02
 #define APDU_CHAINING_OVERFLOW 0x03
-#define APDU_CHAINING_NO_MORE 0x04
 
 typedef struct {
   CAPDU capdu;

@@ -15,16 +15,19 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
-file(GLOB_RECURSE SRC src/*.c littlefs/*.c interfaces/*.c applets/*.c
+file(GLOB_RECURSE SRC src/*.c interfaces/*.c applets/*.c
+        littlefs/lfs.c littlefs/lfs_util.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
 target_include_directories(canokey-core SYSTEM
-        PUBLIC include
-        PRIVATE littlefs tinycbor/src
+        PUBLIC
+        include
+        littlefs
+        tinycbor/src
+        interfaces/USB/device
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
-        interfaces/USB/class/ctaphid
-        interfaces/USB/device)
+        interfaces/USB/class/ctaphid)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")

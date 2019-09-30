@@ -26,7 +26,6 @@
 #define MAX_PIN_LENGTH 64
 #define MAX_CERT_LENGTH 0x480
 #define MAX_DO_LENGTH 0xFF
-#define MAX_APDU_LENGTH 0x500
 #define MAX_KEY_LENGTH 0x200
 #define MAX_KEY_TEMPLATE_LENGTH 14
 #define DIGITAL_SIG_COUNTER_LENGTH 3
@@ -60,11 +59,10 @@ static const uint8_t historical_bytes[] = {0x00,
                                            0x31, // card services
                                            0xC5, // Section 6.2
                                            0x05, 0x90, 0x00};
-static const uint8_t extended_length_info[] = {0x02, 0x02, HI(MAX_APDU_LENGTH), LO(MAX_APDU_LENGTH),
-                                               0x02, 0x02, HI(MAX_APDU_LENGTH), LO(MAX_APDU_LENGTH)};
+static const uint8_t extended_length_info[] = {0x02, 0x02, HI(APDU_BUFFER_SIZE), LO(APDU_BUFFER_SIZE),
+                                               0x02, 0x02, HI(APDU_BUFFER_SIZE), LO(APDU_BUFFER_SIZE)};
 static const uint8_t extended_capabilities[] = {
-    0x34, // Support key import, pw1 status change, and algorithm attributes
-          // changes
+    0x34, // Support key import, pw1 status change, and algorithm attributes changes
     0x00, // No SM algorithm
     0x00,
     0x00, // No challenge support
@@ -106,8 +104,17 @@ static const char *get_key_path(uint8_t tag) {
     return NULL;
 }
 
+void openpgp_poweroff(void) {
+  pw1_mode = 0;
+  pw1.is_validated = 0;
+  pw3.is_validated = 0;
+  state = STATE_NORMAL;
+}
+
 int openpgp_install(uint8_t reset) {
+  openpgp_poweroff();
   if (!reset && get_file_size(DATA_PATH) == 0) return 0;
+
   // PIN data
   if (pin_create(&pw1, "123456", 6, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
   if (pin_create(&pw3, "12345678", 8, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
@@ -163,14 +170,8 @@ int openpgp_install(uint8_t reset) {
 }
 
 static int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
-  (void)capdu;
-  (void)rapdu;
-
-  pw1_mode = 0;
-  pw1.is_validated = 0;
-  pw3.is_validated = 0;
-  state = STATE_NORMAL;
-
+  if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 6 || memcmp(DATA, aid, LC) != 0) EXCEPT(SW_FILE_NOT_FOUND);
   return 0;
 }
 

@@ -23,24 +23,20 @@
 #define PRINT_HEX(...)
 #endif
 
-#ifndef htobe32
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define htobe32(x) (x)
+#define htobe16(x) (x)
+#define letoh32(x) __builtin_bswap32(x)
+#define htole32(x) __builtin_bswap32(x)
 #else
 #define htobe32(x) __builtin_bswap32(x)
-#endif
-#endif
-
-#ifndef htobe16
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define htobe16(x) (x)
-#else
 #define htobe16(x) __builtin_bswap16(x)
-#endif
+#define letoh32(x) (x)
+#define htole32(x) (x)
 #endif
 
-#define LO(x) ((uint8_t)((x) & 0x00FF))
-#define HI(x) ((uint8_t)(((x) & 0xFF00) >> 8))
+#define LO(x) ((uint8_t)((x)&0x00FF))
+#define HI(x) ((uint8_t)(((x)&0xFF00) >> 8))
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 

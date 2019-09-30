@@ -1,97 +1,128 @@
+#include <admin.h>
 #include <ccid.h>
 #include <common.h>
+#include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
-#include <u2f.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
-#define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data.bStatus = (cmd_status | icc_status)
+#define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data[idx].bStatus = (cmd_status | icc_status)
+
+static uint8_t CCID_CheckCommandParams(uint32_t param_type, uint8_t idx);
 
 static const uint8_t atr[] = {0x3B, 0xFC, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x59, 0x75,
                               0x62, 0x69, 0x6B, 0x65, 0x79, 0x4E, 0x45, 0x4F, 0x72, 0x33, 0xE1};
 static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
-static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
-static const uint8_t FIDO2_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x47, 0x2F, 0x00, 0x01};
+static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
+static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 
-enum {
+static enum {
   APPLET_NULL,
-  APPLET_OPENPGP,
   APPLET_PIV,
-  APPLET_U2F,
+  APPLET_OATH,
+  APPLET_ADMIN,
   APPLET_ENUM_END,
 } current_applet;
 
 static const uint8_t *const AID[] = {
     [APPLET_NULL] = NULL,
-    [APPLET_OPENPGP] = OPENPGP_AID,
     [APPLET_PIV] = PIV_AID,
-    [APPLET_U2F] = FIDO2_AID,
+    [APPLET_OATH] = OATH_AID,
+    [APPLET_ADMIN] = ADMIN_AID,
 };
 
 static const uint8_t AID_Size[] = {
     [APPLET_NULL] = 0,
-    [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
     [APPLET_PIV] = sizeof(PIV_AID),
-    [APPLET_U2F] = sizeof(FIDO2_AID),
+    [APPLET_OATH] = sizeof(OATH_AID),
+    [APPLET_ADMIN] = sizeof(ADMIN_AID),
 };
 
-ccid_bulkin_data_t bulkin_data;
-ccid_bulkout_data_t bulkout_data;
-static uint16_t ab_data_length;
-static uint8_t bulk_out_state;
-static volatile uint8_t has_cmd;
-static CAPDU apdu_cmd;
-static RAPDU apdu_resp;
-
-static uint8_t CCID_CheckCommandParams(uint32_t param_type);
+// We use a separate interface to deal with openpgp since it opens ICC exclusive
+static ccid_bulkin_data_t bulkin_data[2];
+static ccid_bulkout_data_t bulkout_data[2];
+static uint16_t ab_data_length[2];
+static volatile uint8_t bulkout_state[2];
+static volatile uint8_t has_cmd[2];
+static CAPDU apdu_cmd[2];
+static RAPDU apdu_resp[2];
+static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
+static CAPDU_CHAINING capdu_chaining = {
+    .max_size = sizeof(chaining_buffer),
+    .capdu.data = chaining_buffer,
+};
+static RAPDU_CHAINING rapdu_chaining = {
+    .rapdu.data = chaining_buffer,
+};
 
 uint8_t CCID_Init(void) {
-  bulk_out_state = CCID_STATE_IDLE;
-  has_cmd = 0;
-  bulkout_data.abData = bulkin_data.abData;
-  apdu_cmd.data = bulkin_data.abData;
-  apdu_resp.data = bulkin_data.abData;
   current_applet = APPLET_NULL;
+  bulkout_state[0] = CCID_STATE_IDLE;
+  bulkout_state[1] = CCID_STATE_IDLE;
+  has_cmd[0] = 0;
+  has_cmd[1] = 0;
+  bulkout_data[0].abData = bulkin_data[0].abData;
+  bulkout_data[1].abData = bulkin_data[1].abData;
+  apdu_cmd[0].data = bulkin_data[0].abData;
+  apdu_cmd[1].data = bulkin_data[1].abData;
+  apdu_resp[0].data = bulkin_data[0].abData;
+  apdu_resp[1].data = bulkin_data[1].abData;
   return 0;
 }
 
-uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
-  switch (bulk_out_state) {
+uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx) {
+  switch (bulkout_state[idx]) {
   case CCID_STATE_IDLE:
     if (len == 0)
-      bulk_out_state = CCID_STATE_IDLE;
+      bulkout_state[idx] = CCID_STATE_IDLE;
     else if (len >= CCID_CMD_HEADER_SIZE) {
-      ab_data_length = len - CCID_CMD_HEADER_SIZE;
-      memcpy(&bulkout_data, data, CCID_CMD_HEADER_SIZE);
-      memcpy(bulkout_data.abData, data + CCID_CMD_HEADER_SIZE, ab_data_length);
-      bulkout_data.dwLength = __builtin_bswap32(bulkout_data.dwLength);
-      bulkin_data.bSlot = bulkout_data.bSlot;
-      bulkin_data.bSeq = bulkout_data.bSeq;
-      if (ab_data_length == bulkout_data.dwLength)
-        has_cmd = 1;
-      else if (ab_data_length < bulkout_data.dwLength) {
-        if (bulkout_data.dwLength > ABDATA_SIZE)
-          bulk_out_state = CCID_STATE_IDLE;
+      ab_data_length[idx] = len - CCID_CMD_HEADER_SIZE;
+      memcpy(&bulkout_data[idx], data, CCID_CMD_HEADER_SIZE);
+      memcpy(bulkout_data[idx].abData, data + CCID_CMD_HEADER_SIZE, ab_data_length[idx]);
+      bulkout_data[idx].dwLength = letoh32(bulkout_data[idx].dwLength);
+      bulkin_data[idx].bSlot = bulkout_data[idx].bSlot;
+      bulkin_data[idx].bSeq = bulkout_data[idx].bSeq;
+      if (ab_data_length[idx] == bulkout_data[idx].dwLength)
+        has_cmd[idx] = 1;
+      else if (ab_data_length[idx] < bulkout_data[idx].dwLength) {
+        if (bulkout_data[idx].dwLength > ABDATA_SIZE)
+          bulkout_state[idx] = CCID_STATE_IDLE;
         else
-          bulk_out_state = CCID_STATE_RECEIVE_DATA;
+          bulkout_state[idx] = CCID_STATE_RECEIVE_DATA;
       } else
-        bulk_out_state = CCID_STATE_IDLE;
+        bulkout_state[idx] = CCID_STATE_IDLE;
     }
     break;
 
   case CCID_STATE_RECEIVE_DATA:
-    if (ab_data_length + len < bulkout_data.dwLength) {
-      memcpy(bulkout_data.abData + ab_data_length, data, len);
-      ab_data_length += len;
-    } else if (ab_data_length + len == bulkout_data.dwLength) {
-      memcpy(bulkout_data.abData + ab_data_length, data, len);
-      bulk_out_state = CCID_STATE_IDLE;
-      has_cmd = 1;
+    if (ab_data_length[idx] + len < bulkout_data[idx].dwLength) {
+      memcpy(bulkout_data[idx].abData + ab_data_length[idx], data, len);
+      ab_data_length[idx] += len;
+    } else if (ab_data_length[idx] + len == bulkout_data[idx].dwLength) {
+      memcpy(bulkout_data[idx].abData + ab_data_length[idx], data, len);
+      bulkout_state[idx] = CCID_STATE_IDLE;
+      has_cmd[idx] = 1;
     } else
-      bulk_out_state = CCID_STATE_IDLE;
+      bulkout_state[idx] = CCID_STATE_IDLE;
   }
   return 0;
+}
+
+static void poweroff(uint8_t applet) {
+  switch (applet) {
+  case APPLET_PIV:
+    piv_poweroff();
+    break;
+  case APPLET_OATH:
+    oath_poweroff();
+    break;
+  case APPLET_ADMIN:
+    admin_poweroff();
+    break;
+  default:
+    break;
+  }
 }
 
 /**
@@ -100,18 +131,17 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
  * @param  None
  * @retval uint8_t status of the command execution
  */
-static uint8_t PC_to_RDR_IccPowerOn(void) {
-  bulkin_data.dwLength = 0;
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU2);
+static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
+  bulkin_data[idx].dwLength = 0;
+  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU2, idx);
   if (error != 0) return error;
-  uint8_t voltage = bulkout_data.bSpecific_0;
+  uint8_t voltage = bulkout_data[idx].bSpecific_0;
   if (voltage != 0x00) {
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
     return SLOTERROR_BAD_POWERSELECT;
   }
-  current_applet = APPLET_NULL;
-  memcpy(bulkin_data.abData, atr, sizeof(atr));
-  bulkin_data.dwLength = sizeof(atr);
+  memcpy(bulkin_data[idx].abData, atr, sizeof(atr));
+  bulkin_data[idx].dwLength = sizeof(atr);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -122,8 +152,8 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
  * @param  None
  * @retval uint8_t error: status of the command execution
  */
-static uint8_t PC_to_RDR_IccPowerOff(void) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH);
+static uint8_t PC_to_RDR_IccPowerOff(uint8_t idx) {
+  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH, idx);
   if (error != 0) return error;
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
@@ -135,8 +165,8 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
  * @param  None
  * @retval uint8_t status of the command execution
  */
-static uint8_t PC_to_RDR_GetSlotStatus(void) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
+static uint8_t PC_to_RDR_GetSlotStatus(uint8_t idx) {
+  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3, idx);
   if (error != 0) return error;
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;
@@ -149,56 +179,77 @@ static uint8_t PC_to_RDR_GetSlotStatus(void) {
  * @param  None
  * @retval uint8_t status of the command execution
  */
-static uint8_t PC_to_RDR_XfrBlock(void) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_ACTIVE_STATE);
+static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
+  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_ACTIVE_STATE, idx);
   if (error != 0) return error;
 
-  if (bulkout_data.dwLength > ABDATA_SIZE) return SLOTERROR_BAD_DWLENGTH;
+  DBG_MSG("O[%s]: ", idx == 0 ? "c" : "g");
+  PRINT_HEX(bulkout_data[idx].abData, bulkout_data[idx].dwLength);
 
-  PRINT_HEX(bulkout_data.abData, bulkout_data.dwLength);
-  if (build_capdu(&apdu_cmd, bulkout_data.abData, bulkout_data.dwLength) < 0) {
-    bulkin_data.dwLength = 2;
-    bulkin_data.abData[0] = 0x67;
-    bulkin_data.abData[1] = 0x00;
-    goto end;
-  }
-  CAPDU *capdu = &apdu_cmd;
-  RAPDU *rapdu = &apdu_resp;
-  if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-    uint8_t i;
-    for (i = APPLET_NULL + 1; i != APPLET_ENUM_END; ++i) {
-      if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
-        current_applet = i;
-        break;
-      }
-    }
-    if (i == APPLET_ENUM_END) {
-      bulkin_data.dwLength = 2;
-      bulkin_data.abData[0] = 0x6A;
-      bulkin_data.abData[1] = 0x82;
-      goto end;
-    }
-  }
-  switch (current_applet) {
-  case APPLET_OPENPGP:
-    openpgp_process_apdu(capdu, rapdu);
-    break;
-  case APPLET_PIV:
-    piv_process_apdu(capdu, rapdu);
-    break;
-  case APPLET_U2F:
-    ctap_process_apdu(capdu, rapdu);
-    break;
-  default:
+  CAPDU *capdu = &apdu_cmd[idx];
+  RAPDU *rapdu = &apdu_resp[idx];
+  if (build_capdu(&apdu_cmd[idx], bulkout_data[idx].abData, bulkout_data[idx].dwLength) < 0) {
+    // abandon malformed apdu
     LL = 0;
-    SW = SW_COMMAND_NOT_ALLOWED;
+    SW = SW_CHECKING_ERROR;
+    goto send_response;
   }
-  bulkin_data.dwLength = LL + 2;
-  bulkin_data.abData[LL] = HI(SW);
-  bulkin_data.abData[LL + 1] = LO(SW);
-  PRINT_HEX(bulkin_data.abData, bulkin_data.dwLength);
+  if (idx == IDX_OPENPGP) {
+    openpgp_process_apdu(capdu, rapdu);
+  } else {
+    int ret = apdu_input(&capdu_chaining, capdu);
+    if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
+      LL = 0;
+      SW = SW_NO_ERROR;
+    } else if (ret == APDU_CHAINING_LAST_BLOCK) {
+      capdu = &capdu_chaining.capdu;
+      if ((CLA == 0x80 || CLA == 0x00) && INS == 0xC0) { // GET RESPONSE
+        apdu_output(&rapdu_chaining, rapdu);
+        goto send_response;
+      }
+      rapdu_chaining.sent = 0;
+      if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
+        // deal with select
+        uint8_t i;
+        for (i = APPLET_NULL + 1; i != APPLET_ENUM_END; ++i) {
+          if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+            if (i != current_applet) poweroff(current_applet);
+            current_applet = i;
+            break;
+          }
+        }
+        if (i == APPLET_ENUM_END) {
+          LL = 0;
+          SW = SW_FILE_NOT_FOUND;
+        }
+      }
+      switch (current_applet) {
+      case APPLET_PIV:
+        piv_process_apdu(capdu, &rapdu_chaining.rapdu);
+        apdu_output(&rapdu_chaining, rapdu);
+        break;
+      case APPLET_OATH:
+        oath_process_apdu(capdu, rapdu);
+        break;
+      case APPLET_ADMIN:
+        admin_process_apdu(capdu, rapdu);
+        break;
+      default:
+        LL = 0;
+        SW = SW_COMMAND_NOT_ALLOWED;
+      }
+    } else {
+      LL = 0;
+      SW = SW_CHECKING_ERROR;
+    }
+  }
 
-end:
+send_response:
+  bulkin_data[idx].dwLength = LL + 2;
+  bulkin_data[idx].abData[LL] = HI(SW);
+  bulkin_data[idx].abData[LL + 1] = LO(SW);
+  DBG_MSG("I[%s]: ", idx == 0 ? "c" : "g");
+  PRINT_HEX(bulkin_data[idx].abData, bulkin_data[idx].dwLength);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -210,8 +261,8 @@ end:
  * @param  None
  * @retval uint8_t status of the command execution
  */
-static uint8_t PC_to_RDR_GetParameters(void) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
+static uint8_t PC_to_RDR_GetParameters(uint8_t idx) {
+  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3, idx);
   if (error != 0) return error;
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;
@@ -224,10 +275,10 @@ static uint8_t PC_to_RDR_GetParameters(void) {
  * @param  uint8_t errorCode: code to be returned to the host
  * @retval None
  */
-static void RDR_to_PC_DataBlock(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_DATABLOCK;
-  bulkin_data.bError = errorCode;
-  bulkin_data.bSpecific = 0;
+static void RDR_to_PC_DataBlock(uint8_t errorCode, uint8_t idx) {
+  bulkin_data[idx].bMessageType = RDR_TO_PC_DATABLOCK;
+  bulkin_data[idx].bError = errorCode;
+  bulkin_data[idx].bSpecific = 0;
 }
 
 /**
@@ -238,11 +289,11 @@ static void RDR_to_PC_DataBlock(uint8_t errorCode) {
  * @param  uint8_t errorCode: code to be returned to the host
  * @retval None
  */
-static void RDR_to_PC_SlotStatus(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_SLOTSTATUS;
-  bulkin_data.dwLength = 0;
-  bulkin_data.bError = errorCode;
-  bulkin_data.bSpecific = 0;
+static void RDR_to_PC_SlotStatus(uint8_t errorCode, uint8_t idx) {
+  bulkin_data[idx].bMessageType = RDR_TO_PC_SLOTSTATUS;
+  bulkin_data[idx].dwLength = 0;
+  bulkin_data[idx].bError = errorCode;
+  bulkin_data[idx].bSpecific = 0;
 }
 
 /**
@@ -252,24 +303,24 @@ static void RDR_to_PC_SlotStatus(uint8_t errorCode) {
  * @param  uint8_t errorCode: code to be returned to the host
  * @retval None
  */
-static void RDR_to_PC_Parameters(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_PARAMETERS;
-  bulkin_data.bError = errorCode;
+static void RDR_to_PC_Parameters(uint8_t errorCode, uint8_t idx) {
+  bulkin_data[idx].bMessageType = RDR_TO_PC_PARAMETERS;
+  bulkin_data[idx].bError = errorCode;
 
   if (errorCode == SLOT_NO_ERROR)
-    bulkin_data.dwLength = 7;
+    bulkin_data[idx].dwLength = 7;
   else
-    bulkin_data.dwLength = 0;
+    bulkin_data[idx].dwLength = 0;
 
-  bulkin_data.abData[0] = 0x11;
-  bulkin_data.abData[1] = 0x10;
-  bulkin_data.abData[2] = 0x00;
-  bulkin_data.abData[3] = 0x15;
-  bulkin_data.abData[4] = 0x00;
-  bulkin_data.abData[5] = 0xFE;
-  bulkin_data.abData[6] = 0x00;
+  bulkin_data[idx].abData[0] = 0x11;
+  bulkin_data[idx].abData[1] = 0x10;
+  bulkin_data[idx].abData[2] = 0x00;
+  bulkin_data[idx].abData[3] = 0x15;
+  bulkin_data[idx].abData[4] = 0x00;
+  bulkin_data[idx].abData[5] = 0xFE;
+  bulkin_data[idx].abData[6] = 0x00;
 
-  bulkin_data.bSpecific = 0x01;
+  bulkin_data[idx].bSpecific = 0x01;
 }
 
 /**
@@ -281,33 +332,34 @@ static void RDR_to_PC_Parameters(uint8_t errorCode) {
  * function
  * @retval uint8_t status
  */
-static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
-  bulkin_data.bStatus = BM_ICC_PRESENT_ACTIVE | BM_COMMAND_STATUS_NO_ERROR;
+static uint8_t CCID_CheckCommandParams(uint32_t param_type, uint8_t idx) {
+  bulkin_data[idx].bStatus = BM_ICC_PRESENT_ACTIVE | BM_COMMAND_STATUS_NO_ERROR;
   uint32_t parameter = param_type;
 
   if (parameter & CHK_PARAM_SLOT) {
-    if (bulkout_data.bSlot >= CCID_NUMBER_OF_SLOTS) {
+    if (bulkout_data[idx].bSlot >= CCID_NUMBER_OF_SLOTS) {
       CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
       return SLOTERROR_BAD_SLOT;
     }
   }
 
   if (parameter & CHK_PARAM_DWLENGTH) {
-    if (bulkout_data.dwLength != 0) {
+    if (bulkout_data[idx].dwLength != 0) {
       CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
       return SLOTERROR_BAD_LENTGH;
     }
   }
 
   if (parameter & CHK_PARAM_abRFU2) {
-    if ((bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
+    if ((bulkout_data[idx].bSpecific_1 != 0) || (bulkout_data[idx].bSpecific_2 != 0)) {
       CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
       return SLOTERROR_BAD_ABRFU_2B;
     }
   }
 
   if (parameter & CHK_PARAM_abRFU3) {
-    if ((bulkout_data.bSpecific_0 != 0) || (bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
+    if ((bulkout_data[idx].bSpecific_0 != 0) || (bulkout_data[idx].bSpecific_1 != 0) ||
+        (bulkout_data[idx].bSpecific_2 != 0)) {
       CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
       return SLOTERROR_BAD_ABRFU_3B;
     }
@@ -317,38 +369,49 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
 }
 
 void CCID_Loop(void) {
-  if (!has_cmd) return;
-  has_cmd = 0;
+  uint8_t idx = 0xFF;
+  if (has_cmd[0]) {
+    idx = 0;
+    has_cmd[0] = 0;
+  }
+  if (has_cmd[1]) {
+    idx = 1;
+    has_cmd[1] = 0;
+  }
+  if (idx == 0xFF) return;
 
   uint8_t errorCode;
-
-  switch (bulkout_data.bMessageType) {
+  switch (bulkout_data[idx].bMessageType) {
   case PC_TO_RDR_ICCPOWERON:
-    errorCode = PC_to_RDR_IccPowerOn();
-    RDR_to_PC_DataBlock(errorCode);
+    DBG_MSG("Slot %s power on\n", idx == 0 ? "ccid" : "openpgp");
+    errorCode = PC_to_RDR_IccPowerOn(idx);
+    RDR_to_PC_DataBlock(errorCode, idx);
     break;
   case PC_TO_RDR_ICCPOWEROFF:
-    errorCode = PC_to_RDR_IccPowerOff();
-    RDR_to_PC_SlotStatus(errorCode);
+    DBG_MSG("Slot %s power off\n", idx == 0 ? "ccid" : "openpgp");
+    errorCode = PC_to_RDR_IccPowerOff(idx);
+    RDR_to_PC_SlotStatus(errorCode, idx);
     break;
   case PC_TO_RDR_GETSLOTSTATUS:
-    errorCode = PC_to_RDR_GetSlotStatus();
-    RDR_to_PC_SlotStatus(errorCode);
+    DBG_MSG("Slot %s get status\n", idx == 0 ? "ccid" : "openpgp");
+    errorCode = PC_to_RDR_GetSlotStatus(idx);
+    RDR_to_PC_SlotStatus(errorCode, idx);
     break;
   case PC_TO_RDR_XFRBLOCK:
-    errorCode = PC_to_RDR_XfrBlock();
-    RDR_to_PC_DataBlock(errorCode);
+    errorCode = PC_to_RDR_XfrBlock(idx);
+    RDR_to_PC_DataBlock(errorCode, idx);
     break;
   case PC_TO_RDR_GETPARAMETERS:
-    errorCode = PC_to_RDR_GetParameters();
-    RDR_to_PC_Parameters(errorCode);
+    DBG_MSG("Slot %s get param\n", idx == 0 ? "ccid" : "openpgp");
+    errorCode = PC_to_RDR_GetParameters(idx);
+    RDR_to_PC_Parameters(errorCode, idx);
     break;
   default:
-    RDR_to_PC_SlotStatus(SLOTERROR_CMD_NOT_SUPPORTED);
+    RDR_to_PC_SlotStatus(SLOTERROR_CMD_NOT_SUPPORTED, idx);
     break;
   }
 
-  uint16_t len = bulkin_data.dwLength;
-  bulkin_data.dwLength = __builtin_bswap32(bulkin_data.dwLength);
-  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data, len + CCID_CMD_HEADER_SIZE);
+  uint16_t len = bulkin_data[idx].dwLength;
+  bulkin_data[idx].dwLength = htole32(bulkin_data[idx].dwLength);
+  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data[idx], len + CCID_CMD_HEADER_SIZE, idx);
 }

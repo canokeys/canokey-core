@@ -15,6 +15,7 @@
 #define OATH_INS_CALCULATE 0x04
 #define OATH_INS_CALCULATE_ALL 0x05
 #define OATH_INS_SEND_REMAINING 0x06
+#define OATH_INS_SELECT 0xA4
 
 #define OATH_ALG_MASK 0x0F
 #define OATH_ALG_SHA1 0x01
@@ -33,6 +34,7 @@ typedef struct {
   uint8_t key[MAX_KEY_LEN];
 } __packed OATH_RECORD;
 
+void oath_poweroff(void);
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 
