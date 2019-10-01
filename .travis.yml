@@ -118,6 +118,10 @@ script:
   - gpg </tmp/sign.gpg
   - "echo -n world2 | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}'|tail -n 1) --encrypt >/tmp/enc.gpg"
   - gpg -d /tmp/enc.gpg
+  - echo -e 'addkey\n10\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --edit-key $KEYID # gen ecdsa P-256 key[6]
+  - echo -e 'key 6\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --edit-key $KEYID # key[6] to Authentication key
+  - "echo -n hello4 | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
+  - gpg </tmp/sign.gpg
   - echo -e 'addcardkey\n3\n2048\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Authentication key on card
   - gpgconf --kill gpg-agent
   - # PIV tests:
