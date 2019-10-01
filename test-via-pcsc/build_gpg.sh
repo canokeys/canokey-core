@@ -1,5 +1,7 @@
 #!/bin/bash
 set -e
+mkdir ~/.gnupg
+echo "pinentry-program /usr/local/bin/pinentry-tty" >~/.gnupg/gpg-agent.conf
 mkdir gnupg
 pushd gnupg
 wget https://gnupg.org/ftp/gcrypt/pinentry/pinentry-1.1.0.tar.bz2
@@ -13,7 +15,7 @@ popd
 wget https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.17.tar.bz2
 tar -xf gnupg-2.2.17.tar.bz2
 pushd gnupg-2.2.17
-./configure --disable-doc --disable-wks-tools --disable-gpgtar --enable-gpg-is-gpg2 --disable-photo-viewers --disable-ldap
+./configure --disable-doc --disable-wks-tools --disable-gpgtar --disable-photo-viewers --disable-ldap
 make -j2
 sudo make install
 popd
