@@ -32,4 +32,10 @@ uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
-uint8_t is_nfc(void) { return 0; }
+uint8_t is_nfc(void) {
+#ifdef TEST
+  return 1;
+#else
+  return 0;
+#endif
+}
