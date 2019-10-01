@@ -43,7 +43,6 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
   int ret;
   uint16_t Lc = 0, offData = 0;
   uint32_t Le = 254;
-  bool selecting = false;
   if (txLen < 4) {
     printf("APDU too short\n");
     return -2;
@@ -146,7 +145,6 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
   }
 
   if (c.cla == 0x00 && c.ins == 0xA4 && c.p1 == 0x04 && c.p2 == 0x00) {
-    selecting = true;
     if (c.lc == 8 && memcmp(c.data, "\xA0\x00\x00\x06\x47\x2F\x00\x01", 8) == 0) {
       current_applet = APPLET_FIDO;
     } else if (c.lc >= 6 && memcmp(c.data, "\xD2\x76\x00\x01\x24\x01", 6) == 0) {
@@ -178,26 +176,14 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
     ret = 0;
     break;
   case APPLET_OATH:
-    if (selecting) {
-      r.sw = 0x9000;
-      r.len = 0;
-      ret = 0;
-    } else {
-      printf("calling oath_process_apdu\n");
-      ret = oath_process_apdu(&c, &r);
-      printf("oath_process_apdu ret %d\n", ret);
-    }
+    printf("calling oath_process_apdu\n");
+    ret = oath_process_apdu(&c, &r);
+    printf("oath_process_apdu ret %d\n", ret);
     break;
   case APPLET_ADMIN:
-    if (selecting) {
-      r.sw = 0x9000;
-      r.len = 0;
-      ret = 0;
-    } else {
-      printf("calling admin_process_apdu\n");
-      ret = admin_process_apdu(&c, &r);
-      printf("admin_process_apdu ret %d\n", ret);
-    }
+    printf("calling admin_process_apdu\n");
+    ret = admin_process_apdu(&c, &r);
+    printf("admin_process_apdu ret %d\n", ret);
     break;
   case APPLET_FIDO:
     printf("calling ctap_process_apdu\n");
