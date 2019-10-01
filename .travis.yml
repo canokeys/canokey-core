@@ -82,6 +82,7 @@ script:
   - pkill gpg-agent || true
   - gpg --version
   - mkdir /tmp/mock
+  - base64 /dev/urandom | head -c 1152 > /tmp/random.txt
   - echo 12345678 >"/tmp/mock/Passphrase:"
   - echo 12345678 >"/tmp/mock/Admin PIN"
   - echo 123456 >"/tmp/mock/PIN"
@@ -93,9 +94,12 @@ script:
   - echo -e 'key 2\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[2] to Encryption key
   - echo -e 'key 3\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[3] to Authentication key
   - echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nlang\ncn\nsex\nm\nquit' | gpg --yes --command-fd 0 --batch --edit-card
+  - echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --batch --edit-card
   - echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --batch --edit-card
   - gpgconf --kill gpg-agent # restart agent to clear cached info
   - gpg --card-status
+  - echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --batch --edit-card
+  - diff /tmp/random-read.txt /tmp/random.txt
   - "echo -n hello | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
   - gpg </tmp/sign.gpg
   - "echo -n hello2 | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|head -n 1) -s >/tmp/sign.gpg"
