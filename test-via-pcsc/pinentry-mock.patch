@@ -1,5 +1,5 @@
 --- A/pinentry-1.1.0/tty/pinentry-tty.c	2017-12-04 00:13:05.000000000 +0800
-+++ B/pinentry-1.1.0/tty/pinentry-tty.c	2019-10-01 09:56:29.504799584 +0800
++++ B/pinentry-1.1.0/tty/pinentry-tty.c	2019-10-01 15:20:29.948849147 +0800
 @@ -300,6 +300,39 @@
  }
  
@@ -13,7 +13,7 @@
 +  snprintf(filename, sizeof(filename), "/tmp/mock/%s", prompt);
 +  FILE *f = fopen(filename, "r");
 +  if(!f) {
-+      fprintf(ttyfo, "Failed to open %s", filename);
++      fprintf(ttyfo, "Failed to open '%s'", filename);
 +      return NULL;
 +  }
 +  fseek(f, 0, SEEK_END);
@@ -58,3 +58,22 @@
  	  fputc ('\n', ttyfo);
  	  if (! passphrase2)
  	    {
+@@ -509,6 +542,9 @@
+   FILE *ttyfi = stdin;
+   FILE *ttyfo = stdout;
+ 
++  pinentry->ttyname = NULL;
++  ttyfo = fopen("/tmp/debug-pin.log","w");
++
+ #ifndef HAVE_DOSISH_SYSTEM
+   timed_out = 0;
+ 
+@@ -546,7 +582,7 @@
+       if (pinentry->pin)
+ 	rc = password (pinentry, ttyfi, ttyfo);
+       else
+-	rc = confirm (pinentry, ttyfi, ttyfo);
++	rc = 1;//confirm (pinentry, ttyfi, ttyfo);
+     }
+ 
+   do_touch_file (pinentry);

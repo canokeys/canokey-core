@@ -81,7 +81,8 @@ script:
   - # OpenPGP tests:
   - gpg --version
   - mkdir /tmp/mock
-  - echo 12345678 >"/tmp/mock/ADMIN PIN"
+  - echo 12345678 >"/tmp/mock/Passphrase:"
+  - echo 12345678 >"/tmp/mock/Admin PIN"
   - echo 123456 >"/tmp/mock/PIN"
   - "echo -e 'Key-Type: 1\\nKey-Length: 2048\\nSubkey-Type: 1\\nSubkey-Length: 2048\\nName-Real: Someone\\nName-Email: foo@example.com\\nPassphrase: 12345678\\n%commit\\n%echo done' | gpg --batch --gen-key"
   - KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
