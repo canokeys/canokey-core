@@ -17,6 +17,7 @@ addons:
       - cmake
       - swig
       - psmisc
+      - procps
       - pcscd
       - pcsc-tools
       - yubico-piv-tool
@@ -78,7 +79,7 @@ script:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
   - # OpenPGP tests:
-  - gpg-agent --daemon
+  - pkill gpg-agent
   - gpg --version
   - mkdir /tmp/mock
   - echo 12345678 >"/tmp/mock/Passphrase:"
@@ -92,7 +93,7 @@ script:
   - echo -e 'key 2\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[2] to Encryption key
   - echo -e 'key 3\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[3] to Authentication key
   - echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nlang\ncn\nsex\nm\nquit' | gpg --yes --command-fd 0 --batch --edit-card
-  - echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --batch --edit-card
+  - echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --batch --edit-card
   - gpgconf --kill gpg-agent # restart agent to clear cached info
   - gpg --card-status
   - "echo -n hello | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
