@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-mkdir ~/.gnupg
+mkdir ~/.gnupg || true
 echo "pinentry-program /usr/local/bin/pinentry-tty" >~/.gnupg/gpg-agent.conf
 mkdir gnupg
 pushd gnupg
