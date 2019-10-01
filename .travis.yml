@@ -83,6 +83,7 @@ script:
   - gpg --version
   - mkdir /tmp/mock
   - base64 /dev/urandom | head -c 1152 > /tmp/random.txt
+  - echo 9876543210 >"/tmp/mock/Reset Code"
   - echo 12345678 >"/tmp/mock/Passphrase:"
   - echo 12345678 >"/tmp/mock/Admin PIN"
   - echo 123456 >"/tmp/mock/PIN"
@@ -106,6 +107,7 @@ script:
   - gpg </tmp/sign.gpg
   - "echo -n world | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}') --encrypt >/tmp/enc.gpg"
   - gpg -d /tmp/enc.gpg
+  - echo -e 'admin\npasswd\n4\nq\nq' | gpg --yes --command-fd 0 --batch --edit-card # config reset code
   - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --batch --edit-card # clear all keys, no pin verification at all
   - gpg --card-status |grep -E 'Signature key.+none'
   - echo -e 'addkey\n10\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --batch --edit-key $KEYID # gen ecdsa P-256 key[4]
