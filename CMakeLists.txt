@@ -19,9 +19,12 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
-file(GLOB_RECURSE SRC src/*.c interfaces/*.c applets/*.c
+file(GLOB_RECURSE SRC src/*.c applets/*.c
         littlefs/lfs.c littlefs/lfs_util.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
+if (NOT ENABLE_TESTS)
+    file(GLOB_RECURSE SRC interfaces/*.c)
+endif (ENABLE_TESTS)
 add_library(canokey-core ${SRC})
 target_include_directories(canokey-core SYSTEM
         PUBLIC
