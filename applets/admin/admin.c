@@ -12,9 +12,7 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-void admin_poweroff(void) {
-  pin.is_validated = 0;
-}
+void admin_poweroff(void) { pin.is_validated = 0; }
 
 int admin_install(void) {
   admin_poweroff();
@@ -65,7 +63,11 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   SW = SW_NO_ERROR;
 
   int ret;
-  if (INS == ADMIN_INS_VERIFY) return admin_verify(capdu, rapdu);
+  if (INS == ADMIN_INS_SELECT) return 0;
+  if (INS == ADMIN_INS_VERIFY) {
+    ret = admin_verify(capdu, rapdu);
+    goto done;
+  }
   if (!pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   switch (INS) {
   case ADMIN_INS_WRITE_FIDO_PRIVATE_KEY:
@@ -92,6 +94,8 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
   }
+
+done:
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }

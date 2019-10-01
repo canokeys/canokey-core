@@ -11,6 +11,7 @@
 #define ADMIN_INS_VERIFY 0x20
 #define ADMIN_INS_CHANGE_PIN 0x21
 #define ADMIN_INS_WRITE_SN 0x30
+#define ADMIN_INS_SELECT 0xA4
 
 void admin_poweroff(void);
 int admin_install(void);
