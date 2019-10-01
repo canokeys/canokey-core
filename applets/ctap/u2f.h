@@ -8,15 +8,15 @@
 
 // General constants
 
-#define U2F_EC_KEY_SIZE 32         // EC key size in bytes
-#define U2F_EC_PUB_KEY_SIZE 64     // EC public key size in bytes
-#define U2F_KH_SIZE sizeof(CredentialId)            // Key handle size
-#define U2F_MAX_ATT_CERT_SIZE 1152 // Max size of attestation certificate
-#define U2F_MAX_EC_SIG_SIZE 72     // Max size of DER coded EC signature
-#define U2F_CTR_SIZE 4             // Size of counter field
-#define U2F_APPID_SIZE 32          // Size of application id
-#define U2F_CHAL_SIZE 32           // Size of challenge
-#define U2F_SECRET_KEY_SIZE 16     // Secret key size
+#define U2F_EC_KEY_SIZE 32               // EC key size in bytes
+#define U2F_EC_PUB_KEY_SIZE 64           // EC public key size in bytes
+#define U2F_KH_SIZE sizeof(CredentialId) // Key handle size
+#define U2F_MAX_ATT_CERT_SIZE 1152       // Max size of attestation certificate
+#define U2F_MAX_EC_SIG_SIZE 72           // Max size of DER coded EC signature
+#define U2F_CTR_SIZE 4                   // Size of counter field
+#define U2F_APPID_SIZE 32                // Size of application id
+#define U2F_CHAL_SIZE 32                 // Size of challenge
+#define U2F_SECRET_KEY_SIZE 16           // Secret key size
 
 // EC (uncompressed) point
 
@@ -77,10 +77,5 @@ typedef struct {
   uint8_t ctr[U2F_CTR_SIZE];        // Counter field (big-endian)
   uint8_t sig[U2F_MAX_EC_SIG_SIZE]; // Signature
 } U2F_AUTHENTICATE_RESP;
-
-void u2f_press(void);
-void u2f_unpress(void);
-int u2f_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
-int u2f_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // __U2F_H_INCLUDED__

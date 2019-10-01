@@ -2,9 +2,9 @@
 #include <ctaphid.h>
 #include <device.h>
 #include <rand.h>
+#include <usb_device.h>
 #include <usbd_ctaphid.h>
 
-extern USBD_HandleTypeDef usb_device;
 static CTAPHID_FRAME frame;
 static CTAPHID_Channel channel;
 static volatile uint8_t has_frame;
@@ -38,6 +38,16 @@ static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code) {
   CTAPHID_SendFrame();
 }
 
+static void CTAPHID_SendKeepAlive(uint32_t cid, uint8_t status) {
+  memset(&frame, 0, sizeof(frame));
+  frame.cid = cid;
+  frame.init.cmd = CTAPHID_KEEPALIVE;
+  frame.init.bcnth = 0;
+  frame.init.bcntl = 1;
+  frame.init.data[0] = status;
+  CTAPHID_SendFrame();
+}
+
 static void CTAPHID_Execute_Init(void) {
   CTAPHID_INIT_RESP *resp = (CTAPHID_INIT_RESP *)channel.data;
   uint32_t resp_cid;
@@ -50,7 +60,7 @@ static void CTAPHID_Execute_Init(void) {
   resp->versionMajor = 1;                      // Major version number
   resp->versionMinor = 0;                      // Minor version number
   resp->versionBuild = 0;                      // Build version number
-  resp->capFlags = CAPFLAG_WINK;               // Capabilities flags
+  resp->capFlags = CAPABILITY_CBOR;            // Capabilities flags
   CTAPHID_SendResponse(channel.cid, channel.cmd, (uint8_t *)resp, sizeof(CTAPHID_INIT_RESP));
 }
 
@@ -65,41 +75,62 @@ static void CTAPHID_Execute_Msg(void) {
   DATA = &channel.data[7];
   LE = 0x10000;
   RDATA = channel.data;
+  DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
   ctap_process_apdu(capdu, rapdu);
   channel.data[LL] = HI(SW);
   channel.data[LL + 1] = LO(SW);
+  DBG_MSG("R: ");
   PRINT_HEX(RDATA, LL + 2);
   CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, LL + 2);
+}
+
+static void CTAPHID_Execute_Cbor(void) {
+  DBG_MSG("C: ");
+  PRINT_HEX(channel.data, channel.bcnt_total);
+  size_t len = sizeof(channel.data);
+  ctap_process_cbor(channel.data, channel.bcnt_total, channel.data, &len);
+  DBG_MSG("R: ");
+  PRINT_HEX(channel.data, len);
+  CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, len);
 }
 
 static void CTAPHID_Execute_Ping(void) {
   CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
 }
 
-void CTAPHID_Loop(void) {
+uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   if (channel.state == CTAPHID_BUSY && device_get_tick() > channel.expire) {
     channel.state = CTAPHID_IDLE;
-    return CTAPHID_SendErrorResponse(channel.cid, ERR_MSG_TIMEOUT);
+    CTAPHID_SendErrorResponse(channel.cid, ERR_MSG_TIMEOUT);
+    return LOOP_SUCCESS;
   }
 
-  if (!has_frame) return;
+  if (!has_frame) return LOOP_SUCCESS;
   has_frame = 0;
 
-  if (frame.cid == 0 || (frame.cid == CID_BROADCAST && frame.init.cmd != CTAPHID_INIT))
-    return CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_CID);
-  if (channel.state == CTAPHID_BUSY && frame.cid != channel.cid)
-    return CTAPHID_SendErrorResponse(frame.cid, ERR_CHANNEL_BUSY);
+  if (frame.cid == 0 || (frame.cid == CID_BROADCAST && frame.init.cmd != CTAPHID_INIT)) {
+    CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_CID);
+    return LOOP_SUCCESS;
+  }
+  if (channel.state == CTAPHID_BUSY && frame.cid != channel.cid) {
+    CTAPHID_SendErrorResponse(frame.cid, ERR_CHANNEL_BUSY);
+    return LOOP_SUCCESS;
+  }
 
   channel.cid = frame.cid;
 
   if (FRAME_TYPE(frame) == TYPE_INIT) {
     if (channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) { // self abort is ok
       channel.state = CTAPHID_IDLE;
-      return CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
+      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
+      return LOOP_SUCCESS;
     }
     channel.bcnt_total = (uint16_t)MSG_LEN(frame);
-    if (channel.bcnt_total > MAX_CTAP_BUFSIZE) return CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_LEN);
+    if (channel.bcnt_total > MAX_CTAP_BUFSIZE) {
+      CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_LEN);
+      return LOOP_SUCCESS;
+    }
     uint16_t copied;
     channel.bcnt_current = copied = MIN(channel.bcnt_total, ISIZE);
     channel.state = CTAPHID_BUSY;
@@ -108,10 +139,11 @@ void CTAPHID_Loop(void) {
     memcpy(channel.data, frame.init.data, copied);
     channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
   } else if (FRAME_TYPE(frame) == TYPE_CONT) {
-    if (channel.state == CTAPHID_IDLE) return; // ignore spurious continuation packet
+    if (channel.state == CTAPHID_IDLE) return 0; // ignore spurious continuation packet
     if (FRAME_SEQ(frame) != channel.seq++) {
       channel.state = CTAPHID_IDLE;
-      return CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
+      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
+      return LOOP_SUCCESS;
     }
     uint16_t copied;
     copied = MIN(channel.bcnt_total - channel.bcnt_current, CSIZE);
@@ -121,21 +153,40 @@ void CTAPHID_Loop(void) {
 
   if (channel.bcnt_current == channel.bcnt_total) {
     switch (channel.cmd) {
-    case CTAPHID_INIT:
-      CTAPHID_Execute_Init();
-      break;
     case CTAPHID_MSG:
-      CTAPHID_Execute_Msg();
+      if (wait_for_user)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else
+        CTAPHID_Execute_Msg();
+      break;
+    case CTAPHID_CBOR:
+      if (wait_for_user)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else
+        CTAPHID_Execute_Cbor();
+      break;
+    case CTAPHID_INIT:
+      if (wait_for_user)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else
+        CTAPHID_Execute_Init();
       break;
     case CTAPHID_PING:
-      CTAPHID_Execute_Ping();
+      if (wait_for_user)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else
+        CTAPHID_Execute_Ping();
       break;
+    case CTAPHID_CANCEL:
+      return LOOP_CANCEL;
     default:
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
       break;
     }
     channel.state = CTAPHID_IDLE;
   }
+
+  return LOOP_SUCCESS;
 }
 
 void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len) {

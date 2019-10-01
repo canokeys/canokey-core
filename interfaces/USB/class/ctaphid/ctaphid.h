@@ -54,7 +54,10 @@ typedef struct {
 // CTAPHID_INIT command defines
 
 #define INIT_NONCE_SIZE 8 // Size of channel initialization challenge
-#define CAPFLAG_WINK 0x01 // Device supports WINK command
+
+#define CAPABILITY_WINK 0x01
+#define CAPABILITY_CBOR 0x04
+#define CAPABILITY_NMSG 0x08
 
 typedef struct {
   uint8_t nonce[INIT_NONCE_SIZE]; // Client application nonce
@@ -83,7 +86,10 @@ typedef struct {
 #define ERR_INVALID_CID 0x0b
 #define ERR_OTHER 0x7f // Other unspecified error
 
-#define MAX_CTAP_BUFSIZE 1500
+#define LOOP_SUCCESS 0x00
+#define LOOP_CANCEL 0x01
+
+#define MAX_CTAP_BUFSIZE 1280
 
 typedef struct {
   uint32_t cid;
@@ -98,8 +104,7 @@ typedef struct {
 
 uint8_t CTAPHID_Init(void);
 uint8_t CTAPHID_OutEvent(uint8_t *data);
-
 void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len);
-void CTAPHID_Loop(void);
+uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 
 #endif // __CTAPHID_H_INCLUDED__

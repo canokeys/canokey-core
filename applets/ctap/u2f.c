@@ -1,31 +1,19 @@
+#include "u2f.h"
 #include <apdu.h>
+#include <device.h>
 #include <ecc.h>
 #include <fs.h>
 #include <memzero.h>
 #include <sha.h>
 #include <string.h>
-#include <u2f.h>
 
 #include "fido-internal.h"
 #include "secret.h"
 
-volatile static uint8_t pressed;
-
-#ifndef NFC
-void u2f_press(void) { pressed = 1; }
-
-void u2f_unpress(void) { pressed = 0; }
-#endif
-
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
 
-#ifdef NFC
-  pressed = 1;
-#endif
-
-  if (!pressed) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  pressed = 0;
+  if (!is_nfc() && get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   U2F_REGISTER_REQ *req = (U2F_REGISTER_REQ *)DATA;
   U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)RDATA;
@@ -71,16 +59,12 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t priv_key[ECC_KEY_SIZE];
 
   if (req->keyHandleLen != sizeof(CredentialId) ||
-    memcmp(req->appId, ((CredentialId *)req->keyHandle)->rpIdHash, U2F_APPID_SIZE) != 0) EXCEPT(SW_WRONG_DATA);
+      memcmp(req->appId, ((CredentialId *)req->keyHandle)->rpIdHash, U2F_APPID_SIZE) != 0)
+    EXCEPT(SW_WRONG_DATA);
   uint8_t err = verify_key_handle((CredentialId *)req->keyHandle, priv_key);
   if (err) EXCEPT(SW_WRONG_DATA);
 
-#ifdef NFC
-  pressed = 1;
-#endif
-
-  if (P1 == U2F_AUTH_CHECK_ONLY || !pressed) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  pressed = 0;
+  if (P1 == U2F_AUTH_CHECK_ONLY || (!is_nfc() && get_touch_result() == TOUCH_NO)) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   len = sizeof(auth_data);
   uint8_t flags = FLAGS_UP;
@@ -113,5 +97,3 @@ int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(RDATA, "U2F_V2", 6);
   return 0;
 }
-
-void u2f_config() { pressed = 0; }

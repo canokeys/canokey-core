@@ -3,6 +3,7 @@
 #include "ctap-parser.h"
 #include "fido-internal.h"
 #include "secret.h"
+#include "u2f.h"
 #include <aes.h>
 #include <block-cipher.h>
 #include <cbor.h>
@@ -13,7 +14,6 @@
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
-#include <u2f.h>
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
@@ -44,7 +44,6 @@ static uint8_t consecutive_pin_counter;
 static uint8_t credential_list[MAX_RK_NUM], credential_numbers, credential_idx, last_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
-  u2f_config();
   consecutive_pin_counter = 3;
   credential_numbers = 0;
   credential_idx = 0;
@@ -747,7 +746,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   return 0;
 }
 
-int ctap_process(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
+int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
   CborEncoder encoder;
   cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);
@@ -815,7 +814,7 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = u2f_select(capdu, rapdu);
     break;
   case CTAP_INS_MSG:
-    ctap_process(DATA, LC, RDATA, &len);
+    ctap_process_cbor(DATA, LC, RDATA, &len);
     LL = len;
     break;
   default:
