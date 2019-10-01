@@ -11,7 +11,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fstack-usage -fno-omit-frame-pointer --coverage")
 
 if (ENABLE_TESTS)
-    add_definitions(-DTEST -DNFC)
+    add_definitions(-DTEST)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 

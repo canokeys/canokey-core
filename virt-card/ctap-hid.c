@@ -271,7 +271,7 @@ void FIDO2_HandleMsgXfer(int ch, uint16_t length, uint8_t *data)
         FIDO_U2F_SendError(ch, FIDO_U2F_ERR_OTHER);
         return;
     }
-    if(ctap_process(data, length, rBuf, &rLen)) {
+    if(ctap_process_cbor(data, length, rBuf, &rLen)) {
         FIDO_U2F_SendError(ch, FIDO_U2F_ERR_OTHER);
     } else {
         FIDO_U2F_SendResponse(ch, FIDO_U2F_HID_CBOR, rLen, rBuf);
