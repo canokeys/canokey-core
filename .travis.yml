@@ -24,7 +24,6 @@ addons:
       - libgcrypt20-dev
       - libksba-dev
       - libnpth0-dev
-      - scdaemon
       - opensc
       - openssl
       - libpcsclite-dev
@@ -79,6 +78,7 @@ script:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
   - # OpenPGP tests:
+  - gpg-agent --daemon
   - gpg --version
   - mkdir /tmp/mock
   - echo 12345678 >"/tmp/mock/Passphrase:"
