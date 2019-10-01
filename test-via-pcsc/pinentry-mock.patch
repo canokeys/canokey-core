@@ -1,0 +1,79 @@
+--- A/pinentry-1.1.0/tty/pinentry-tty.c	2017-12-04 00:13:05.000000000 +0800
++++ B/pinentry-1.1.0/tty/pinentry-tty.c	2019-10-01 15:20:29.948849147 +0800
+@@ -300,6 +300,39 @@
+ }
+ 
+ static char *
++read_password_mock (const char *prompt, FILE *ttyfo)
++{
++  long len;
++  char *buffer;
++  char filename[256];
++
++  snprintf(filename, sizeof(filename), "/tmp/mock/%s", prompt);
++  FILE *f = fopen(filename, "r");
++  if(!f) {
++      fprintf(ttyfo, "Failed to open '%s'", filename);
++      return NULL;
++  }
++  fseek(f, 0, SEEK_END);
++  len = ftell(f);
++  fseek(f, 0, SEEK_SET);
++
++  buffer = secmem_malloc (len);
++  if (! buffer) {
++    fclose(f);
++    return NULL;
++  }
++
++  fgets(buffer, len, f);
++
++  len = strlen(buffer);
++  if(len && buffer[len-1] == '\n')
++    buffer[len-1] = '\0';
++  fprintf(ttyfo, "%s", buffer);
++
++  return buffer;
++}
++
++static char *
+ read_password (FILE *ttyfi, FILE *ttyfo)
+ {
+   int done = 0;
+@@ -411,7 +444,7 @@
+ 		|| prompt[strlen(prompt) - 1] == '?') ? "" : ":");
+       fflush (ttyfo);
+ 
+-      passphrase = read_password (ttyfi, ttyfo);
++      passphrase = read_password_mock (prompt, ttyfo);
+       fputc ('\n', ttyfo);
+       if (! passphrase)
+ 	{
+@@ -433,7 +466,7 @@
+ 		    || prompt[strlen(prompt) - 1] == '?') ? "" : ":");
+ 	  fflush (ttyfo);
+ 
+-	  passphrase2 = read_password (ttyfi, ttyfo);
++	  passphrase2 = read_password_mock (prompt, ttyfo);
+ 	  fputc ('\n', ttyfo);
+ 	  if (! passphrase2)
+ 	    {
+@@ -509,6 +542,9 @@
+   FILE *ttyfi = stdin;
+   FILE *ttyfo = stdout;
+ 
++  pinentry->ttyname = NULL;
++  ttyfo = fopen("/tmp/debug-pin.log","w");
++
+ #ifndef HAVE_DOSISH_SYSTEM
+   timed_out = 0;
+ 
+@@ -546,7 +582,7 @@
+       if (pinentry->pin)
+ 	rc = password (pinentry, ttyfi, ttyfo);
+       else
+-	rc = confirm (pinentry, ttyfi, ttyfo);
++	rc = 1;//confirm (pinentry, ttyfi, ttyfo);
+     }
+ 
+   do_touch_file (pinentry);

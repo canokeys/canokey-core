@@ -17,11 +17,14 @@ addons:
       - cmake
       - swig
       - psmisc
+      - procps
       - pcscd
       - pcsc-tools
       - yubico-piv-tool
-      - gnupg2
-      - scdaemon
+      - libassuan-dev
+      - libgcrypt20-dev
+      - libksba-dev
+      - libnpth0-dev
       - opensc
       - openssl
       - libpcsclite-dev
@@ -30,6 +33,7 @@ addons:
       - python3-setuptools
       - python3-wheel
 install:
+  - ./test-via-pcsc/build_gpg.sh # Build latest GPG
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
   - pushd u2f-ref-code/u2f-tests/HID
   - git clone --depth 1 -b lollipop-release https://android.googlesource.com/platform/system/core
@@ -75,35 +79,43 @@ script:
   - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
   - # OpenPGP tests:
+  - pkill gpg-agent || true
   - gpg --version
-  - echo 12345678 >/tmp/passwd
+  - mkdir /tmp/mock
+  - base64 /dev/urandom | head -c 1152 > /tmp/random.txt
+  - echo 12345678 >"/tmp/mock/Passphrase:"
+  - echo 12345678 >"/tmp/mock/Admin PIN"
+  - echo 123456 >"/tmp/mock/PIN"
   - "echo -e 'Key-Type: 1\\nKey-Length: 2048\\nSubkey-Type: 1\\nSubkey-Length: 2048\\nName-Real: Someone\\nName-Email: foo@example.com\\nPassphrase: 12345678\\n%commit\\n%echo done' | gpg --batch --gen-key"
   - KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
-  - echo -e 'addkey\n6\n2048\n0\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # [2] encrypt key
-  - echo -e 'addkey\n4\n2048\n0\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # [3] sign key
-  - echo -e 'key 1\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[1] to Signature key
-  - echo -e 'key 2\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[2] to Encryption key
-  - echo -e 'key 3\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[3] to Authentication key
-  - echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nsex\nm\nlist\nquit' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-card
-  - echo 123456 >/tmp/passwd
-  - "echo -n hello | gpg --armor --pinentry-mode loopback --passphrase-file=/tmp/passwd --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
+  - echo -e 'addkey\n6\n2048\n0\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # [2] encrypt key
+  - echo -e 'addkey\n4\n2048\n0\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # [3] sign key
+  - echo -e 'key 1\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[1] to Signature key
+  - echo -e 'key 2\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[2] to Encryption key
+  - echo -e 'key 3\nkeytocard\n3\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[3] to Authentication key
+  - echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nlang\ncn\nsex\nm\nquit' | gpg --yes --command-fd 0 --batch --edit-card
+  - echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --batch --edit-card
+  - echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --batch --edit-card
+  - gpgconf --kill gpg-agent # restart agent to clear cached info
+  - gpg --card-status
+  - echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --batch --edit-card
+  - diff /tmp/random-read.txt /tmp/random.txt
+  - "echo -n hello | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
   - gpg </tmp/sign.gpg
-  - "echo -n hello2 | gpg --armor --pinentry-mode loopback --passphrase-file=/tmp/passwd --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|head -n 1) -s >/tmp/sign.gpg"
+  - "echo -n hello2 | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|head -n 1) -s >/tmp/sign.gpg"
   - gpg </tmp/sign.gpg
   - "echo -n world | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}') --encrypt >/tmp/enc.gpg"
-  - gpg --pinentry-mode loopback --passphrase-file=/tmp/passwd -d /tmp/enc.gpg
-  - echo 12345678 >/tmp/passwd
+  - gpg -d /tmp/enc.gpg
   - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --batch --edit-card # clear all keys, no pin verification at all
   - gpg --card-status |grep -E 'Signature key.+none'
-  - echo -e 'addkey\n10\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # gen ecdsa P-256 key[4]
-  - echo -e 'key 4\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[4] to Signature key
-  - echo -e 'addkey\n12\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # gen ecdsa P-256 key[5]
-  - echo -e 'key 5\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --pinentry-mode loopback --passphrase-file=/tmp/passwd --batch --edit-key $KEYID # key[5] to Encryption key
-  - echo 123456 >/tmp/passwd
-  - "echo -n hello3 | gpg --armor --pinentry-mode loopback --passphrase-file=/tmp/passwd --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
+  - echo -e 'addkey\n10\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --batch --edit-key $KEYID # gen ecdsa P-256 key[4]
+  - echo -e 'key 4\nkeytocard\n1\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[4] to Signature key
+  - echo -e 'addkey\n12\n3\n0\nsave' | gpg --expert --yes --command-fd 0 --batch --edit-key $KEYID # gen ecdsa P-256 key[5]
+  - echo -e 'key 5\nkeytocard\n2\nsave' | gpg --yes --command-fd 0 --batch --edit-key $KEYID # key[5] to Encryption key
+  - "echo -n hello3 | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s >/tmp/sign.gpg"
   - gpg </tmp/sign.gpg
   - "echo -n world2 | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}'|tail -n 1) --encrypt >/tmp/enc.gpg"
-  - gpg --pinentry-mode loopback --passphrase-file=/tmp/passwd -d /tmp/enc.gpg
+  - gpg -d /tmp/enc.gpg
   - gpgconf --kill gpg-agent
   - # PIV tests:
   - yubico-piv-tool -r "" -a status
@@ -171,4 +183,4 @@ script:
   - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
   - cat /tmp/pcscd.log
-  - coveralls -b build --exclude canokey-crypto --exclude virt-card --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --exclude interfaces --gcov-options '\-lp'
+  - coveralls -b build --exclude gnupg --exclude canokey-crypto --exclude virt-card --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --exclude interfaces --gcov-options '\-lp'
