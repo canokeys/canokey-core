@@ -155,6 +155,10 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
 static uint8_t PC_to_RDR_IccPowerOff(uint8_t idx) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH, idx);
   if (error != 0) return error;
+  if (idx == IDX_OPENPGP)
+    openpgp_poweroff();
+  else
+    poweroff(current_applet);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }

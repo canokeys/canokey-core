@@ -34,6 +34,16 @@
       *resp_len = 1;                                                                                                   \
   } while (0)
 
+#define WAIT()                                                                                                         \
+  do {                                                                                                                 \
+    switch (wait_for_user_presence()) {                                                                                \
+    case USER_PRESENCE_CANCEL:                                                                                         \
+      return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
+    case USER_PRESENCE_TIMEOUT:                                                                                        \
+      return CTAP2_ERR_USER_ACTION_TIMEOUT;                                                                            \
+    }                                                                                                                  \
+  } while (0)
+
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin related
@@ -192,7 +202,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
-        wait_for_user_presence();
+        WAIT();
         return CTAP2_ERR_CREDENTIAL_EXCLUDED;
       }
       ret = cbor_value_advance(&mc.excludeList);
@@ -203,7 +213,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   if (has_pin() && (mc.parsedParams & PARAM_pinAuth) == 0) return CTAP2_ERR_PIN_REQUIRED;
   if (mc.parsedParams & PARAM_pinAuth) {
     if (mc.pinAuthLength == 0) {
-      wait_for_user_presence();
+      WAIT();
       if (has_pin())
         return CTAP2_ERR_PIN_INVALID;
       else
@@ -214,7 +224,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     if (memcmp(params, mc.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
   }
 
-  wait_for_user_presence();
+  WAIT();
 
   // build response
   CborEncoder map;
@@ -329,7 +339,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   if (ga.parsedParams & PARAM_pinAuth) {
     if (ga.pinAuthLength == 0) {
-      wait_for_user_presence();
+      WAIT();
       if (has_pin())
         return CTAP2_ERR_PIN_INVALID;
       else
@@ -397,7 +407,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   if (ga.uv) return CTAP2_ERR_UNSUPPORTED_OPTION;
-  if (ga.up) wait_for_user_presence();
+  if (ga.up) WAIT();
 
   if (ga.parsedParams & PARAM_hmacSecret) {
     ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen,

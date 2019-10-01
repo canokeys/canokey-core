@@ -28,6 +28,33 @@ uint8_t CTAPHID_OutEvent(uint8_t *data) {
 
 static void CTAPHID_SendFrame(void) { USBD_CTAPHID_SendReport(&usb_device, (uint8_t *)&frame, sizeof(CTAPHID_FRAME)); }
 
+static void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len) {
+  uint16_t off = 0;
+  size_t copied;
+  uint8_t seq = 0;
+
+  memset(&frame, 0, sizeof(frame));
+  frame.cid = cid;
+  frame.type = TYPE_INIT;
+  frame.init.cmd |= cmd;
+  frame.init.bcnth = (uint8_t)((len >> 8) & 0xFF);
+  frame.init.bcntl = (uint8_t)(len & 0xFF);
+
+  copied = MIN(len, ISIZE);
+  memcpy(frame.init.data, data, copied);
+  CTAPHID_SendFrame();
+  off += copied;
+
+  while (len > off) {
+    memset(&frame.cont, 0, sizeof(frame.cont));
+    frame.cont.seq = (uint8_t)seq++;
+    copied = MIN(len - off, CSIZE);
+    memcpy(frame.cont.data, data + off, copied);
+    CTAPHID_SendFrame();
+    off += copied;
+  }
+}
+
 static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code) {
   memset(&frame, 0, sizeof(frame));
   frame.cid = cid;
@@ -35,16 +62,6 @@ static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code) {
   frame.init.bcnth = 0;
   frame.init.bcntl = 1;
   frame.init.data[0] = code;
-  CTAPHID_SendFrame();
-}
-
-static void CTAPHID_SendKeepAlive(uint32_t cid, uint8_t status) {
-  memset(&frame, 0, sizeof(frame));
-  frame.cid = cid;
-  frame.init.cmd = CTAPHID_KEEPALIVE;
-  frame.init.bcnth = 0;
-  frame.init.bcntl = 1;
-  frame.init.data[0] = status;
   CTAPHID_SendFrame();
 }
 
@@ -152,34 +169,41 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   }
 
   if (channel.bcnt_current == channel.bcnt_total) {
+    channel.expire = UINT32_MAX;
     switch (channel.cmd) {
     case CTAPHID_MSG:
+      DBG_MSG("MSG\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
       else
         CTAPHID_Execute_Msg();
       break;
     case CTAPHID_CBOR:
+      DBG_MSG("CBOR\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
       else
         CTAPHID_Execute_Cbor();
       break;
     case CTAPHID_INIT:
+      DBG_MSG("INIT\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
       else
         CTAPHID_Execute_Init();
       break;
     case CTAPHID_PING:
+      DBG_MSG("PING\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
       else
         CTAPHID_Execute_Ping();
       break;
     case CTAPHID_CANCEL:
+      DBG_MSG("CANCEL\n");
       return LOOP_CANCEL;
     default:
+      DBG_MSG("Invalid CMD\n");
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
       break;
     }
@@ -189,29 +213,13 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   return LOOP_SUCCESS;
 }
 
-void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len) {
-  uint16_t off = 0;
-  size_t copied;
-  uint8_t seq = 0;
-
+void CTAPHID_SendKeepAlive(uint8_t status) {
   memset(&frame, 0, sizeof(frame));
-  frame.cid = cid;
+  frame.cid = channel.cid;
   frame.type = TYPE_INIT;
-  frame.init.cmd |= cmd;
-  frame.init.bcnth = (uint8_t)((len >> 8) & 0xFF);
-  frame.init.bcntl = (uint8_t)(len & 0xFF);
-
-  copied = MIN(len, ISIZE);
-  memcpy(frame.init.data, data, copied);
+  frame.init.cmd |= CTAPHID_KEEPALIVE;
+  frame.init.bcnth = 0;
+  frame.init.bcntl = 1;
+  frame.init.data[0] = status;
   CTAPHID_SendFrame();
-  off += copied;
-
-  while (len > off) {
-    memset(&frame.cont, 0, sizeof(frame.cont));
-    frame.cont.seq = (uint8_t)seq++;
-    copied = MIN(len - off, CSIZE);
-    memcpy(frame.cont.data, data + off, copied);
-    CTAPHID_SendFrame();
-    off += copied;
-  }
 }

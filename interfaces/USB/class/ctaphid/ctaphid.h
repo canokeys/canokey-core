@@ -86,6 +86,9 @@ typedef struct {
 #define ERR_INVALID_CID 0x0b
 #define ERR_OTHER 0x7f // Other unspecified error
 
+#define KEEPALIVE_STATUS_PROCESSING 1
+#define KEEPALIVE_STATUS_UPNEEDED 2
+
 #define LOOP_SUCCESS 0x00
 #define LOOP_CANCEL 0x01
 
@@ -104,7 +107,7 @@ typedef struct {
 
 uint8_t CTAPHID_Init(void);
 uint8_t CTAPHID_OutEvent(uint8_t *data);
-void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len);
+void CTAPHID_SendKeepAlive(uint8_t status);
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 
 #endif // __CTAPHID_H_INCLUDED__

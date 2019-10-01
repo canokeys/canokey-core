@@ -9,9 +9,7 @@
 
 #define APDU_BUFFER_SIZE 1280
 
-#define DEBUG
-
-#ifdef DEBUG
+#ifdef DEBUG_OUTPUT
 #include <crypto-util.h>
 #include <stdio.h>
 #define DBG_MSG(format, ...) printf("[DBG] %s(%d): " format, __func__, __LINE__, ##__VA_ARGS__)
