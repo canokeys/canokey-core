@@ -32,10 +32,12 @@ uint8_t wait_for_user_presence(void) {
 }
 
 void device_loop(void) {
+#ifdef TEST
   while (1) {
     CCID_Loop();
     CTAPHID_Loop(0);
   }
+#endif
 }
 
 uint8_t get_touch_result(void) { return touch_result; }
