@@ -196,10 +196,8 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
-    DBG_MSG("file %s Le=%d\n", path, LE);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     int len = read_file(path, RDATA, 0, APDU_BUFFER_SIZE);
-    DBG_MSG("length %d\n", len);
     if (len < 0) return -1;
     if (len == 0) EXCEPT(SW_FILE_NOT_FOUND);
     LL = len;

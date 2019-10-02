@@ -41,10 +41,8 @@ uint8_t wait_for_user_presence(void) {
 
 void device_loop(void) {
 #ifndef TEST
-  while (1) {
-    CCID_Loop();
-    CTAPHID_Loop(0);
-  }
+  CCID_Loop();
+  CTAPHID_Loop(0);
 #endif
 }
 
