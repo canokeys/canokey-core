@@ -4,10 +4,9 @@
 #include <apdu.h>
 #include <stdint.h>
 
-#include "ctap.h"
+#include "ctap-internal.h"
 
 // General constants
-
 #define U2F_EC_KEY_SIZE 32               // EC key size in bytes
 #define U2F_EC_PUB_KEY_SIZE 64           // EC public key size in bytes
 #define U2F_KH_SIZE sizeof(CredentialId) // Key handle size
@@ -16,10 +15,8 @@
 #define U2F_CTR_SIZE 4                   // Size of counter field
 #define U2F_APPID_SIZE 32                // Size of application id
 #define U2F_CHAL_SIZE 32                 // Size of challenge
-#define U2F_SECRET_KEY_SIZE 16           // Secret key size
 
 // EC (uncompressed) point
-
 #define U2F_POINT_UNCOMPRESSED 0x04 // Uncompressed point format
 
 typedef struct {
@@ -34,14 +31,8 @@ typedef struct {
 #define U2F_VERSION 0x03      // Read version string command
 #define U2F_SELECT 0xA4
 
-// Vendor defined commands
-#define U2F_VENDOR_FIRST 0xc0 // First vendor defined command
-#define U2F_VENDOR_LAST 0xff  // Last vendor defined command
-
 // U2F_CMD_REGISTER command defines
-
-#define U2F_REGISTER_ID 0x05      // Version 2 registration identifier
-#define U2F_REGISTER_HASH_ID 0x00 // Version 2 hash identintifier
+#define U2F_REGISTER_ID 0x05 // Version 2 registration identifier
 
 typedef struct {
   uint8_t chal[U2F_CHAL_SIZE];   // Challenge
@@ -57,10 +48,7 @@ typedef struct {
                            U2F_MAX_EC_SIG_SIZE];   // Registration signature
 } U2F_REGISTER_RESP;
 
-// U2F_CMD_AUTHENTICATE command defines
-
 // Authentication control byte
-
 #define U2F_AUTH_ENFORCE 0x03    // Enforce user presence and sign
 #define U2F_AUTH_CHECK_ONLY 0x07 // Check only
 #define U2F_AUTH_FLAG_TUP 0x01   // Test of user presence set

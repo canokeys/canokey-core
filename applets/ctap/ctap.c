@@ -1,7 +1,7 @@
 #include "cose-key.h"
 #include "ctap-errors.h"
+#include "ctap-internal.h"
 #include "ctap-parser.h"
-#include "fido-internal.h"
 #include "secret.h"
 #include "u2f.h"
 #include <aes.h>
@@ -9,6 +9,7 @@
 #include <cbor.h>
 #include <common.h>
 #include <ctap.h>
+#include <ctaphid.h>
 #include <device.h>
 #include <ecc.h>
 #include <hmac.h>
@@ -36,12 +37,16 @@
 
 #define WAIT()                                                                                                         \
   do {                                                                                                                 \
+    start_blinking();                                                                                                  \
     switch (wait_for_user_presence()) {                                                                                \
     case USER_PRESENCE_CANCEL:                                                                                         \
+      stop_blinking();                                                                                                 \
       return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
+      stop_blinking();                                                                                                 \
       return CTAP2_ERR_USER_ACTION_TIMEOUT;                                                                            \
     }                                                                                                                  \
+    stop_blinking();                                                                                                   \
   } while (0)
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
@@ -536,7 +541,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
   // Currently, we respond versions, aaguid, pin protocol.
   CborEncoder map;
-  int ret = cbor_encoder_create_map(encoder, &map, 5);
+  int ret = cbor_encoder_create_map(encoder, &map, 6);
   CHECK_CBOR_RET(ret);
 
   // versions
@@ -583,6 +588,12 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_boolean(&option_map, has_pin() > 0);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &option_map);
+  CHECK_CBOR_RET(ret);
+
+  // max message length
+  ret = cbor_encode_int(&map, RESP_maxMsgSize);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map, MAX_CTAP_BUFSIZE);
   CHECK_CBOR_RET(ret);
 
   // pin protocol

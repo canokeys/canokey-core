@@ -9,10 +9,10 @@
 #define USBD_LANGID_STRING 0x0409u
 #define USBD_MANUFACTURER_STRING "Canopo"
 #define USBD_PRODUCT_STRING "Canokey"
-#define USBD_CCID_INTERFACE_STRING "CCID"
-#define USBD_CCID_INTERFACE_IDX 0x10
-#define USBD_OPENPGP_INTERFACE_STRING "OpenPGP Card"
+#define USBD_OPENPGP_INTERFACE_STRING "OpenPGP"
 #define USBD_OPENPGP_INTERFACE_IDX 0x11
+#define USBD_CCID_INTERFACE_STRING "PIV OATH"
+#define USBD_CCID_INTERFACE_IDX 0x12
 
 // clang-format off
 const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
@@ -103,17 +103,17 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     CTAPHID_EPOUT_SIZE, 0x00, /* wMaxPacketSize: 64 Bytes max  */
     0x05,                     /* bInterval: Polling Interval (5 ms) */
     /************** Descriptor of CCID interface ****************/
-    /* This interface is for PIV, oath, and admin applet */
+    /* This interface is for OpenPGP applet */
     /* 41 */
-    0x09,                     /* bLength: Interface Descriptor size */
-    USB_DESC_TYPE_INTERFACE,  /* bDescriptorType: Interface descriptor type */
-    USBD_CANOKEY_CCID_IF,     /* bInterfaceNumber: Number of Interface */
-    0x00,                     /* bAlternateSetting: Alternate setting */
-    0x02,                     /* bNumEndpoints */
-    0x0B,                     /* bInterfaceClass: Chip/SmartCard */
-    0x00,                     /* bInterfaceSubClass: 0=no boot */
-    0x00,                     /* nInterfaceProtocol: 0=none */
-    USBD_CCID_INTERFACE_IDX,  /* iInterface: Index of string descriptor */
+    0x09,                       /* bLength: Interface Descriptor size */
+    USB_DESC_TYPE_INTERFACE,    /* bDescriptorType: Interface descriptor type */
+    USBD_CANOKEY_OPENPGP_IF,    /* bInterfaceNumber: Number of Interface */
+    0x00,                       /* bAlternateSetting: Alternate setting */
+    0x02,                       /* bNumEndpoints */
+    0x0B,                       /* bInterfaceClass: Chip/SmartCard */
+    0x00,                       /* bInterfaceSubClass: 0=no boot */
+    0x00,                       /* nInterfaceProtocol: 0=none */
+    USBD_OPENPGP_INTERFACE_IDX, /* iInterface: Index of string descriptor */
     /******************** Descriptor of CCID *************************/
     /* 50 */
     0x36,                     /* bLength: CCID Descriptor size */
@@ -147,28 +147,29 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     /* 104 */
     0x07,                     /* bLength: Endpoint Descriptor size */
     USB_DESC_TYPE_ENDPOINT,   /* bDescriptorType: */
-    CCID_EPIN_ADDR,           /* bEndpointAddress: Endpoint Address (IN) */
+    OPENPGP_EPIN_ADDR,        /* bEndpointAddress: Endpoint Address (IN) */
     USBD_EP_TYPE_BULK,        /* bmAttributes: Bulk endpoint */
-    CCID_EPIN_SIZE, 0x00,     /* wMaxPacketSize: 64 Byte max */
+    OPENPGP_EPIN_SIZE, 0x00,  /* wMaxPacketSize: 64 Byte max */
     0x00,                     /* bInterval: Polling Interval */
     /* 111 */
     0x07,                     /* bLength: Endpoint Descriptor size */
     USB_DESC_TYPE_ENDPOINT,   /* bDescriptorType: */
-    CCID_EPOUT_ADDR,          /* bEndpointAddress: Endpoint Address (OUT) */
+    OPENPGP_EPOUT_ADDR,       /* bEndpointAddress: Endpoint Address (OUT) */
     USBD_EP_TYPE_BULK,        /* bmAttributes: Bulk endpoint */
-    CCID_EPOUT_SIZE, 0x00,    /* wMaxPacketSize: 64 Bytes max  */
+    OPENPGP_EPOUT_SIZE, 0x00, /* wMaxPacketSize: 64 Bytes max  */
     0x00,                     /* bInterval: Polling Interval */
-    /************** Descriptor of OPENPGP interface ****************/
+    /************** Descriptor of CCID interface ****************/
+    /* This interface is for PIV, oath, and admin applet */
     /* 118 */
     0x09,                       /* bLength: Interface Descriptor size */
     USB_DESC_TYPE_INTERFACE,    /* bDescriptorType: Interface descriptor type */
-    USBD_CANOKEY_OPENPGP_IF,    /* bInterfaceNumber: Number of Interface */
+    USBD_CANOKEY_CCID_IF,       /* bInterfaceNumber: Number of Interface */
     0x00,                       /* bAlternateSetting: Alternate setting */
     0x02,                       /* bNumEndpoints */
     0x0B,                       /* bInterfaceClass: Chip/SmartCard */
     0x00,                       /* bInterfaceSubClass: 0=no boot */
     0x00,                       /* nInterfaceProtocol: 0=none */
-    USBD_OPENPGP_INTERFACE_IDX, /* iInterface: Index of string descriptor */
+    USBD_CCID_INTERFACE_IDX,    /* iInterface: Index of string descriptor */
     /******************** Descriptor of CCID *************************/
     /* 127 */
     0x36,                     /* bLength: CCID Descriptor size */
@@ -202,16 +203,16 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     /* 181 */
     0x07,                     /* bLength: Endpoint Descriptor size */
     USB_DESC_TYPE_ENDPOINT,   /* bDescriptorType: */
-    OPENPGP_EPIN_ADDR,        /* bEndpointAddress: Endpoint Address (IN) */
+    CCID_EPIN_ADDR,           /* bEndpointAddress: Endpoint Address (IN) */
     USBD_EP_TYPE_BULK,        /* bmAttributes: Bulk endpoint */
-    OPENPGP_EPIN_SIZE, 0x00,  /* wMaxPacketSize: 64 Byte max */
+    CCID_EPIN_SIZE, 0x00,     /* wMaxPacketSize: 64 Byte max */
     0x00,                     /* bInterval: Polling Interval */
     /* 188 */
     0x07,                     /* bLength: Endpoint Descriptor size */
     USB_DESC_TYPE_ENDPOINT,   /* bDescriptorType: */
-    OPENPGP_EPOUT_ADDR,       /* bEndpointAddress: Endpoint Address (OUT) */
+    CCID_EPOUT_ADDR,          /* bEndpointAddress: Endpoint Address (OUT) */
     USBD_EP_TYPE_BULK,        /* bmAttributes: Bulk endpoint */
-    OPENPGP_EPOUT_SIZE, 0x00, /* wMaxPacketSize: 64 Bytes max  */
+    CCID_EPOUT_SIZE, 0x00,    /* wMaxPacketSize: 64 Bytes max  */
     0x00,                     /* bInterval: Polling Interval */
     /* 195 */
 };

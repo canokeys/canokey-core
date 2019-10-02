@@ -1,6 +1,7 @@
 #ifndef CANOKEY_CORE_FIDO2_SECRET_H_
 #define CANOKEY_CORE_FIDO2_SECRET_H_
 
+#include "ctap-internal.h"
 #include <ctap.h>
 
 int increase_counter(uint32_t *counter);

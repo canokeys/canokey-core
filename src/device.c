@@ -3,11 +3,19 @@
 #include <ctaphid.h>
 #include <device.h>
 
-volatile static uint8_t touch_result;
+volatile static uint8_t touch_result, is_blinking;
 
 __weak void device_delay(int ms) {}
-
 __weak uint32_t device_get_tick(void) { return 0; }
+__weak void device_start_blinking(void) {}
+__weak void device_stop_blinking(void) {}
+__weak uint8_t is_nfc(void) {
+#ifdef TEST
+  return 1;
+#else
+  return 0;
+#endif
+}
 
 uint8_t wait_for_user_presence(void) {
 #ifndef TEST
@@ -44,10 +52,13 @@ uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
-uint8_t is_nfc(void) {
-#ifdef TEST
-  return 1;
-#else
-  return 0;
-#endif
+void start_blinking(void) {
+  if (is_blinking) return;
+  is_blinking = 1;
+  device_start_blinking();
+}
+
+void stop_blinking(void) {
+  is_blinking = 0;
+  device_stop_blinking();
 }

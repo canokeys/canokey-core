@@ -2,7 +2,6 @@
 #include "cose-key.h"
 #include "ctap-errors.h"
 #include <cbor.h>
-#include <common.h>
 #include <ctap.h>
 
 #define CHECK_PARSER_RET(ret)                                                                                          \

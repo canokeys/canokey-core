@@ -230,6 +230,7 @@ static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
       switch (current_applet) {
       case APPLET_PIV:
         piv_process_apdu(capdu, &rapdu_chaining.rapdu);
+        rapdu->len = LE;
         apdu_output(&rapdu_chaining, rapdu);
         break;
       case APPLET_OATH:
@@ -240,7 +241,7 @@ static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
         break;
       default:
         LL = 0;
-        SW = SW_COMMAND_NOT_ALLOWED;
+        SW = SW_FILE_NOT_FOUND;
       }
     } else {
       LL = 0;

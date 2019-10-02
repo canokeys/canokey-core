@@ -1,6 +1,7 @@
 #ifndef CANOKEY_CORE_FIDO2_CTAP_PARSER_H_
 #define CANOKEY_CORE_FIDO2_CTAP_PARSER_H_
 
+#include "ctap-internal.h"
 #include <cbor.h>
 #include <ctap.h>
 

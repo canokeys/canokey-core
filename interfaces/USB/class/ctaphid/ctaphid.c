@@ -138,7 +138,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   channel.cid = frame.cid;
 
   if (FRAME_TYPE(frame) == TYPE_INIT) {
-    if (channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) { // self abort is ok
+    if (!wait_for_user && channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) { // self abort is ok
       channel.state = CTAPHID_IDLE;
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
       return LOOP_SUCCESS;
