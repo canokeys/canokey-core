@@ -9,7 +9,6 @@
 #define USBD_LANGID_STRING 0x0409u
 #define USBD_MANUFACTURER_STRING "Canopo"
 #define USBD_PRODUCT_STRING "Canokey"
-#define USBD_SERIALNUMBER_STRING "000000000000"
 #define USBD_CCID_INTERFACE_STRING "CCID"
 #define USBD_CCID_INTERFACE_IDX 0x10
 #define USBD_OPENPGP_INTERFACE_STRING "OpenPGP Card"
@@ -276,7 +275,11 @@ const uint8_t *USBD_ManufacturerStrDescriptor(USBD_SpeedTypeDef speed, uint16_t 
 }
 
 const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
-  USBD_GetString((uint8_t *)USBD_SERIALNUMBER_STRING, USBD_StrDesc, length);
+  uint8_t sn[4];
+  char sn_str[9];
+  fill_sn(sn);
+  sprintf(sn_str, "%02X%02X%02X%02X", sn[0], sn[1], sn[2], sn[3]);
+  USBD_GetString((uint8_t *)sn_str, USBD_StrDesc, length);
   return USBD_StrDesc;
 }
 

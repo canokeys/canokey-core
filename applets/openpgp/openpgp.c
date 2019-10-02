@@ -913,7 +913,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
     memzero(key, sizeof(key));
-    LL = ecdsa_sig2ansi(RDATA, RDATA);
+    LL = ECC_KEY_SIZE * 2;
   } else
     return -1;
 
