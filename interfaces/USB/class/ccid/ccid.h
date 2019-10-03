@@ -123,11 +123,10 @@ enum APPLET {
   APPLET_PIV,
   APPLET_OATH,
   APPLET_ADMIN,
+  APPLET_OPENPGP,
   APPLET_ENUM_END,
 };
-extern const uint8_t PIV_AID[];
-extern const uint8_t OATH_AID[];
-extern const uint8_t ADMIN_AID[];
+
 extern const uint8_t *const AID[];
 extern const uint8_t AID_Size[];
 

@@ -2,6 +2,7 @@
 #include <apdu.h>
 #include <ccid.h>
 #include <oath.h>
+#include <openpgp.h>
 #include <piv.h>
 #include <webusb.h>
 
@@ -117,6 +118,9 @@ void WebUSB_Loop(void) {
     break;
   case APPLET_ADMIN:
     admin_process_apdu(capdu, rapdu);
+    break;
+  case APPLET_OPENPGP:
+    openpgp_process_apdu(capdu, rapdu);
     break;
   default:
     LL = 0;

@@ -11,15 +11,17 @@
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type, uint8_t idx);
 
-const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
-const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
-const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
+static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
+static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 
 const uint8_t *const AID[] = {
     [APPLET_NULL] = NULL,
     [APPLET_PIV] = PIV_AID,
     [APPLET_OATH] = OATH_AID,
     [APPLET_ADMIN] = ADMIN_AID,
+    [APPLET_OPENPGP] = OPENPGP_AID,
 };
 
 const uint8_t AID_Size[] = {
@@ -27,6 +29,7 @@ const uint8_t AID_Size[] = {
     [APPLET_PIV] = sizeof(PIV_AID),
     [APPLET_OATH] = sizeof(OATH_AID),
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
+    [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
 };
 
 static const uint8_t atr[] = {0x3B, 0xFC, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x59, 0x75,
@@ -113,6 +116,9 @@ void poweroff(uint8_t applet) {
     break;
   case APPLET_ADMIN:
     admin_poweroff();
+    break;
+  case APPLET_OPENPGP:
+    openpgp_poweroff();
     break;
   default:
     break;
@@ -207,16 +213,16 @@ static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
       }
       rapdu_chaining.sent = 0;
       if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-        // deal with select
+        // deal with select, note that in this ccid interface, we do not support openpgp
         uint8_t i;
-        for (i = APPLET_NULL + 1; i != APPLET_ENUM_END; ++i) {
+        for (i = APPLET_NULL + 1; i != APPLET_OPENPGP; ++i) {
           if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
             if (i != current_applet) poweroff(current_applet);
             current_applet = i;
             break;
           }
         }
-        if (i == APPLET_ENUM_END) {
+        if (i == APPLET_OPENPGP) {
           LL = 0;
           SW = SW_FILE_NOT_FOUND;
         }
