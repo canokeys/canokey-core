@@ -151,7 +151,7 @@ int virt_card_apdu_transceive(unsigned char *txBuf, unsigned long txLen, unsigne
       current_applet = APPLET_OPENPGP;
     } else if (c.lc >= 5 && memcmp(c.data, "\xA0\x00\x00\x03\x08", 5) == 0) {
       current_applet = APPLET_PIV;
-    } else if (c.lc >= 7 && memcmp(c.data, "\xF0\x00\x00\x00\x00", 5) == 0) {
+    } else if (c.lc >= 5 && memcmp(c.data, "\xF0\x00\x00\x00\x00", 5) == 0) {
       current_applet = APPLET_ADMIN;
     } else if (c.lc >= 7 && memcmp(c.data, "\xa0\x00\x00\x05\x27\x21\x01", 7) == 0) {
       current_applet = APPLET_OATH;
