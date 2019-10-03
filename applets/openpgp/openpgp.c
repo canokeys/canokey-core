@@ -52,12 +52,12 @@ static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
                               0x00, 0x00, 0x00, 0x00,             // serial number
                               0x00, 0x00};
 static const uint8_t historical_bytes[] = {0x00,
+                                           0x31, // card services
+                                           0xC5, // Section 6.2
                                            0x73, // card capabilities
                                            0xC0, // full/partial
                                            0x01, // data coding byte
                                            0x40, // extended apdu (Section 6.1)
-                                           0x31, // card services
-                                           0xC5, // Section 6.2
                                            0x05, 0x90, 0x00};
 static const uint8_t extended_length_info[] = {0x02, 0x02, HI(APDU_BUFFER_SIZE), LO(APDU_BUFFER_SIZE),
                                                0x02, 0x02, HI(APDU_BUFFER_SIZE), LO(APDU_BUFFER_SIZE)};
@@ -104,6 +104,12 @@ static const char *get_key_path(uint8_t tag) {
     return NULL;
 }
 
+static int reset_sig_counter(void) {
+  uint8_t buf[3] = {0};
+  if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, buf, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
+  return 0;
+}
+
 void openpgp_poweroff(void) {
   pw1_mode = 0;
   pw1.is_validated = 0;
@@ -125,16 +131,14 @@ int openpgp_install(uint8_t reset) {
   if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, LO(TAG_URL), NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_NAME, NULL, 0)) return -1;
-  uint8_t default_data[] = {0x65, 0x6E}; // English
-  if (write_attr(DATA_PATH, LO(TAG_LANG), default_data, sizeof(default_data)) < 0) return -1;
-  default_data[0] = 0x39; // default sex
-  if (write_attr(DATA_PATH, LO(TAG_SEX), default_data, 1) < 0) return -1;
-  default_data[0] = 0x00; // verify PIN every time
-  if (write_attr(DATA_PATH, TAG_PW_STATUS, default_data, 1) < 0) return -1;
-
-  // Terminated
-  default_data[0] = 0x00;
-  if (write_attr(DATA_PATH, ATTR_TERMINATED, default_data, 1) < 0) return -1;
+  // default lang = NULL
+  if (write_attr(DATA_PATH, LO(TAG_LANG), NULL, 0) < 0) return -1;
+  uint8_t default_sex = 0x39; // default sex
+  if (write_attr(DATA_PATH, LO(TAG_SEX), &default_sex, 1) < 0) return -1;
+  uint8_t default_pin_strategy = 0x00; // verify PIN every time
+  if (write_attr(DATA_PATH, TAG_PW_STATUS, &default_pin_strategy, 1) < 0) return -1;
+  uint8_t terminated = 0x00; // Terminated: no
+  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
 
   // Key data
   uint8_t buf[20];
@@ -159,7 +163,7 @@ int openpgp_install(uint8_t reset) {
   if (write_attr(DATA_PATH, ATTR_CA3_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
 
   // Digital Sig Counter
-  if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, buf, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
+  if (reset_sig_counter() < 0) return -1;
 
   // Certs
   if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
@@ -569,7 +573,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   }
 
   memzero(key, sizeof(key));
-  return 0;
+  return reset_sig_counter();
 }
 
 static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
@@ -879,7 +883,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
   memzero(key, sizeof(key));
 
-  return 0;
+  return reset_sig_counter();
 }
 
 static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
