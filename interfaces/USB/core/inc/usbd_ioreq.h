@@ -4,7 +4,7 @@
 #include <usbd_core.h>
 #include <usbd_def.h>
 
-USBD_StatusTypeDef USBD_CtlSendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len);
+USBD_StatusTypeDef USBD_CtlSendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len, uint8_t sender);
 USBD_StatusTypeDef USBD_CtlContinueSendData(USBD_HandleTypeDef *pdev, const uint8_t *pbuf, uint16_t len);
 USBD_StatusTypeDef USBD_CtlPrepareRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, uint16_t len);
 USBD_StatusTypeDef USBD_CtlContinueRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, uint16_t len);

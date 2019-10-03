@@ -253,10 +253,6 @@ USBD_StatusTypeDef USBD_LL_DataInStage(USBD_HandleTypeDef *pdev, uint8_t epnum, 
         }
       }
     }
-    if (pdev->dev_test_mode == 1) {
-      USBD_RunTestMode(pdev);
-      pdev->dev_test_mode = 0;
-    }
   } else if ((pdev->pClass->DataIn != NULL) && (pdev->dev_state == USBD_STATE_CONFIGURED)) {
     pdev->pClass->DataIn(pdev, epnum);
   }
@@ -330,13 +326,7 @@ USBD_StatusTypeDef USBD_LL_Resume(USBD_HandleTypeDef *pdev) {
  * @param  pdev: device instance
  * @retval status
  */
-
 USBD_StatusTypeDef USBD_LL_SOF(USBD_HandleTypeDef *pdev) {
-  if (pdev->dev_state == USBD_STATE_CONFIGURED) {
-    if (pdev->pClass->SOF != NULL) {
-      pdev->pClass->SOF(pdev);
-    }
-  }
   return USBD_OK;
 }
 

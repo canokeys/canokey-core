@@ -6,13 +6,15 @@
  * @param  pdev: device instance
  * @param  buff: pointer to data buffer
  * @param  len: length of data to be sent
+ * @param  sender: the tag to mark the sender
  * @retval status
  */
-USBD_StatusTypeDef USBD_CtlSendData(USBD_HandleTypeDef *pdev, const uint8_t *pbuf, uint16_t len) {
+USBD_StatusTypeDef USBD_CtlSendData(USBD_HandleTypeDef *pdev, const uint8_t *pbuf, uint16_t len, uint8_t sender) {
   /* Set EP0 State */
   pdev->ep0_state = USBD_EP0_DATA_IN;
   pdev->ep_in[0].total_length = len;
   pdev->ep_in[0].rem_length = len;
+  pdev->ep0_sender = sender;
   /* Start the transfer */
   USBD_LL_Transmit(pdev, 0x00, pbuf, len);
 

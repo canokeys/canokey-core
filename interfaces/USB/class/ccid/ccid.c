@@ -11,33 +11,27 @@
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type, uint8_t idx);
 
-static const uint8_t atr[] = {0x3B, 0xFC, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x59, 0x75,
-                              0x62, 0x69, 0x6B, 0x65, 0x79, 0x4E, 0x45, 0x4F, 0x72, 0x33, 0xE1};
-static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
-static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
-static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
+const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
+const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
+const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 
-static enum {
-  APPLET_NULL,
-  APPLET_PIV,
-  APPLET_OATH,
-  APPLET_ADMIN,
-  APPLET_ENUM_END,
-} current_applet;
-
-static const uint8_t *const AID[] = {
+const uint8_t *const AID[] = {
     [APPLET_NULL] = NULL,
     [APPLET_PIV] = PIV_AID,
     [APPLET_OATH] = OATH_AID,
     [APPLET_ADMIN] = ADMIN_AID,
 };
 
-static const uint8_t AID_Size[] = {
+const uint8_t AID_Size[] = {
     [APPLET_NULL] = 0,
     [APPLET_PIV] = sizeof(PIV_AID),
     [APPLET_OATH] = sizeof(OATH_AID),
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
 };
+
+static const uint8_t atr[] = {0x3B, 0xFC, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x59, 0x75,
+                              0x62, 0x69, 0x6B, 0x65, 0x79, 0x4E, 0x45, 0x4F, 0x72, 0x33, 0xE1};
+static enum APPLET current_applet;
 
 // We use a separate interface to deal with openpgp since it opens ICC exclusive
 static ccid_bulkin_data_t bulkin_data[2];
@@ -109,7 +103,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx) {
   return 0;
 }
 
-static void poweroff(uint8_t applet) {
+void poweroff(uint8_t applet) {
   switch (applet) {
   case APPLET_PIV:
     piv_poweroff();

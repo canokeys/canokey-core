@@ -118,6 +118,20 @@ typedef enum {
 #define RDR_TO_PC_ESCAPE 0x83
 #define RDR_TO_PC_DATARATEANDCLOCKFREQUENCY 0x84
 
+enum APPLET {
+  APPLET_NULL,
+  APPLET_PIV,
+  APPLET_OATH,
+  APPLET_ADMIN,
+  APPLET_ENUM_END,
+};
+extern const uint8_t PIV_AID[];
+extern const uint8_t OATH_AID[];
+extern const uint8_t ADMIN_AID[];
+extern const uint8_t *const AID[];
+extern const uint8_t AID_Size[];
+
+void poweroff(uint8_t applet);
 uint8_t CCID_Init(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx);
 void CCID_Loop(void);

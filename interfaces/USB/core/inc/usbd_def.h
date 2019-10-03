@@ -103,12 +103,6 @@ typedef struct _Device_cb {
   /* Class Specific Endpoints*/
   uint8_t (*DataIn)(struct _USBD_HandleTypeDef *pdev, uint8_t epnum);
   uint8_t (*DataOut)(struct _USBD_HandleTypeDef *pdev, uint8_t epnum);
-  uint8_t (*SOF)(struct _USBD_HandleTypeDef *pdev);
-  uint8_t *(*GetOtherSpeedConfigDescriptor)(uint16_t *length);
-  uint8_t *(*GetDeviceQualifierDescriptor)(uint16_t *length);
-#if (USBD_SUPPORT_USER_STRING == 1)
-  uint8_t *(*GetUsrStrDescriptor)(struct _USBD_HandleTypeDef *pdev, uint8_t index, uint16_t *length);
-#endif
 } USBD_ClassTypeDef;
 
 /* Following USB Device Speed */
@@ -134,6 +128,7 @@ typedef struct {
   const uint8_t *(*GetProductStrDescriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
   const uint8_t *(*GetSerialStrDescriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
   const uint8_t *(*GetBOSDescriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
+  const uint8_t *(*GetMSOS20Descriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
   const uint8_t *(*GetUsrStrDescriptor)(USBD_SpeedTypeDef speed, uint8_t index, uint16_t *length);
 } USBD_DescriptorsTypeDef;
 
@@ -156,9 +151,9 @@ typedef struct _USBD_HandleTypeDef {
   USBD_EndpointTypeDef ep_out[4];
   uint32_t ep0_state;
   uint32_t ep0_data_len;
+  uint8_t ep0_sender;
   uint8_t dev_state;
   uint8_t dev_old_state;
-  uint8_t dev_test_mode;
   uint32_t dev_remote_wakeup;
 
   USBD_SetupReqTypedef request;

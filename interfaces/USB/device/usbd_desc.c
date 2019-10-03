@@ -9,6 +9,8 @@
 #define USBD_LANGID_STRING 0x0409u
 #define USBD_MANUFACTURER_STRING "Canopo"
 #define USBD_PRODUCT_STRING "Canokey"
+#define USBD_CTAPHID_INTERFACE_STRING "U2F/FIDO2"
+#define USBD_CTAPHID_INTERFACE_IDX 0x10
 #define USBD_OPENPGP_INTERFACE_STRING "OpenPGP"
 #define USBD_OPENPGP_INTERFACE_IDX 0x11
 #define USBD_CCID_INTERFACE_STRING "PIV OATH"
@@ -22,6 +24,7 @@ const uint8_t *USBD_ManufacturerStrDescriptor(USBD_SpeedTypeDef speed, uint16_t 
 const uint8_t *USBD_ProductStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
 const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
 const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
+const uint8_t *USBD_MSOS20Descriptor(USBD_SpeedTypeDef speed, uint16_t *length);
 const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uint16_t *length);
 
 const USBD_DescriptorsTypeDef usbdDescriptors = {
@@ -32,6 +35,7 @@ const USBD_DescriptorsTypeDef usbdDescriptors = {
     USBD_ProductStrDescriptor,
     USBD_SerialStrDescriptor,
     USBD_BOSDescriptor,
+    USBD_MSOS20Descriptor,
     USBD_UsrStrDescriptor
 };
 
@@ -60,23 +64,23 @@ static const uint8_t USBD_FS_DeviceDesc[] = {
 static const uint8_t USBD_FS_CfgDesc[] = {
     0x09,                        /* bLength: Configuration Descriptor size */
     USB_DESC_TYPE_CONFIGURATION, /* bDescriptorType: Configuration */
-    0xC3, 0x00,                  /* wTotalLength: Bytes returned */
-    0x03,                        /* bNumInterfaces: 3 interfaces */
+    0xCC, 0x00,                  /* wTotalLength: Bytes returned */
+    0x04,                        /* bNumInterfaces: 3 interfaces */
     0x01,                        /* bConfigurationValue: Configuration value */
     0x00,                        /* Configuration: Index of string descriptor describing the configuration */
     0x80,                        /* bmAttributes: bus powered */
     0x32,                        /* MaxPower 100 mA: this current is used for detecting Vbus */
     /************** Descriptor of CTAP HID interface ****************/
     /* 09 */
-    0x09,                    /* bLength: Interface Descriptor size */
-    USB_DESC_TYPE_INTERFACE, /* bDescriptorType: Interface descriptor type */
-    USBD_CANOKEY_CTAPHID_IF, /* bInterfaceNumber: Number of Interface */
-    0x00,                    /* bAlternateSetting: Alternate setting */
-    0x02,                    /* bNumEndpoints */
-    0x03,                    /* bInterfaceClass: HID */
-    0x00,                    /* bInterfaceSubClass: 0=no boot */
-    0x00,                    /* nInterfaceProtocol: 0=none */
-    0,                       /* iInterface: Index of string descriptor */
+    0x09,                       /* bLength: Interface Descriptor size */
+    USB_DESC_TYPE_INTERFACE,    /* bDescriptorType: Interface descriptor type */
+    USBD_CANOKEY_CTAPHID_IF,    /* bInterfaceNumber: Number of Interface */
+    0x00,                       /* bAlternateSetting: Alternate setting */
+    0x02,                       /* bNumEndpoints */
+    0x03,                       /* bInterfaceClass: HID */
+    0x00,                       /* bInterfaceSubClass: 0=no boot */
+    0x00,                       /* nInterfaceProtocol: 0=none */
+    USBD_CTAPHID_INTERFACE_IDX, /* iInterface: Index of string descriptor */
     /******************** Descriptor of CTAP HID *************************/
     /* 18 */
     0x09,                    /* bLength: CTAP HID Descriptor size */
@@ -214,15 +218,26 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     USBD_EP_TYPE_BULK,        /* bmAttributes: Bulk endpoint */
     CCID_EPOUT_SIZE, 0x00,    /* wMaxPacketSize: 64 Bytes max  */
     0x00,                     /* bInterval: Polling Interval */
+    /************** Descriptor of WebUSB interface ****************/
     /* 195 */
+    0x09,                    /* bLength: Interface Descriptor size */
+    USB_DESC_TYPE_INTERFACE, /* bDescriptorType: Interface descriptor type */
+    USBD_CANOKEY_WEBUSB_IF,  /* bInterfaceNumber: Number of Interface */
+    0x00,                    /* bAlternateSetting: Alternate setting */
+    0x00,                    /* bNumEndpoints */
+    0xFF,                    /* bInterfaceClass: Vendor Specific */
+    0xFF,                    /* bInterfaceSubClass: Vendor Specific */
+    0xFF,                    /* nInterfaceProtocol: Vendor Specific */
+    0,                       /* iInterface: Index of string descriptor */
+    /* 204 */
 };
 
 /** USB BOS descriptor. */
 static const uint8_t USBD_FS_BOSDesc[] = {
     0x05,              /*bLength */
     USB_DESC_TYPE_BOS, /*bDescriptorType*/
-    0x1D, 0x00,        /*total length*/
-    0x01,              /*Number of device capabilities*/
+    0x39, 0x00,        /*total length*/
+    0x02,              /*Number of device capabilities*/
 
     /*WebUSB platform capability descriptor*/
     0x18,                   /*bLength*/
@@ -236,7 +251,65 @@ static const uint8_t USBD_FS_BOSDesc[] = {
     0x00, 0x01,             /*Version 1.0*/
     0x01,                   /*Vendor request code*/
     0x00,                   /*No landing page*/
+
+    /*Microsoft OS 2.0 Platform Capability Descriptor (MS_VendorCode == 0x02)*/
+    0x1C,                   /*bLength*/
+    0x10,                   /*Device Capability descriptor*/
+    0x05,                   /*Platform Capability descriptor*/
+    0x00,                   /*Reserved*/
+    0xDF, 0x60, 0xDD, 0xD8, /*MS OS 2.0 GUID*/
+    0x89, 0x45, 0xC7, 0x4C,
+    0x9C, 0xD2, 0x65, 0x9D,
+    0x9E, 0x64, 0x8A, 0x9F,
+    0x00, 0x00, 0x03, 0x06, /*Windows version*/
+    0xB2, 0x00,             /*Descriptor set length*/
+    0x02,                   /*Vendor request code*/
+    0x00                    /*Alternate enumeration code*/
 };
+
+static const uint8_t USBD_FS_MSOS20Desc[] = {
+    // Microsoft OS 2.0 descriptor set header (table 10)
+    0x0A, 0x00,             // Descriptor size (10 bytes)
+    0x00, 0x00,             // MS OS 2.0 descriptor set header
+    0x00, 0x00, 0x03, 0x06, // Windows version (8.1) (0x06030000)
+    0xB2, 0x00,             // Size, MS OS 2.0 descriptor set
+
+    // Microsoft OS 2.0 configuration subset header
+    0x08, 0x00, // Descriptor size (8 bytes)
+    0x01, 0x00, // MS OS 2.0 configuration subset header
+    0x00,       // bConfigurationValue
+    0x00,       // Reserved
+    0xA8, 0x00, // Size, MS OS 2.0 configuration subset
+
+    // Microsoft OS 2.0 function subset header
+    0x08, 0x00, // Descriptor size (8 bytes)
+    0x02, 0x00, // MS OS 2.0 function subset header
+    0x03,       // First interface number
+    0x00,       // Reserved
+    0xA0, 0x00, // Size, MS OS 2.0 function subset
+
+    // Microsoft OS 2.0 compatible ID descriptor (table 13)
+    0x14, 0x00, // wLength
+    0x03, 0x00, // MS_OS_20_FEATURE_COMPATIBLE_ID
+    'W',  'I',  'N',  'U',  'S',  'B',  0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+
+    0x84, 0x00, // wLength:
+    0x04, 0x00, // wDescriptorType: MS_OS_20_FEATURE_REG_PROPERTY: 0x04 (Table 9)
+    0x07, 0x00, // wPropertyDataType: REG_MULTI_SZ (Table 15)
+    0x2A, 0x00, // wPropertyNameLength:
+    // bPropertyName: "DeviceInterfaceGUID"
+    'D', 0x00, 'e', 0x00, 'v', 0x00, 'i', 0x00, 'c', 0x00, 'e', 0x00, 'I', 0x00,
+    'n', 0x00, 't', 0x00, 'e', 0x00, 'r', 0x00, 'f', 0x00, 'a', 0x00, 'c', 0x00,
+    'e', 0x00, 'G', 0x00, 'U', 0x00, 'I', 0x00, 'D', 0x00, 's', 0x00, 0x00, 0x00,
+    0x50, 0x00, // wPropertyDataLength
+    // bPropertyData: "{244eb29e-e090-4e49-81fe-1f20f8d3b8f4}"
+    '{', 0x00, '2', 0x00, '4', 0x00, '4', 0x00, 'E', 0x00, 'B', 0x00, '2', 0x00,
+    '9', 0x00, 'E', 0x00, '-', 0x00, 'E', 0x00, '0', 0x00, '9', 0x00, '0', 0x00,
+    '-', 0x00, '4', 0x00, 'E', 0x00, '4', 0x00, '9', 0x00, '-', 0x00, '8', 0x00,
+    '1', 0x00, 'F', 0x00, 'E', 0x00, '-', 0x00, '1', 0x00, 'F', 0x00, '2', 0x00,
+    '0', 0x00, 'F', 0x00, '8', 0x00, 'D', 0x00, '3', 0x00, 'B', 0x00, '8', 0x00,
+    'F', 0x00, '4', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00};
 
 /** USB lang identifier descriptor. */
 static const uint8_t USBD_LangIDDesc[] = {
@@ -289,8 +362,16 @@ const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
   return USBD_FS_BOSDesc;
 }
 
+const uint8_t *USBD_MSOS20Descriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
+  *length = sizeof(USBD_FS_MSOS20Desc);
+  return USBD_FS_MSOS20Desc;
+}
+
 const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uint16_t *length) {
   switch (index) {
+  case USBD_CTAPHID_INTERFACE_IDX:
+    USBD_GetString((uint8_t *)USBD_CTAPHID_INTERFACE_STRING, USBD_StrDesc, length);
+    return USBD_StrDesc;
   case USBD_CCID_INTERFACE_IDX:
     USBD_GetString((uint8_t *)USBD_CCID_INTERFACE_STRING, USBD_StrDesc, length);
     return USBD_StrDesc;

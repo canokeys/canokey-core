@@ -2,6 +2,7 @@
 #include <ccid.h>
 #include <ctaphid.h>
 #include <device.h>
+#include <webusb.h>
 
 volatile static uint8_t touch_result, is_blinking;
 
@@ -43,6 +44,7 @@ void device_loop(void) {
 #ifndef TEST
   CCID_Loop();
   CTAPHID_Loop(0);
+  WebUSB_Loop();
 #endif
 }
 

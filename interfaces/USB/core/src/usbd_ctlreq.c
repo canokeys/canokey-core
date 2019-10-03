@@ -183,7 +183,7 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
         pep->status = 0x0000;
       }
 
-      USBD_CtlSendData(pdev, (uint8_t *)&pep->status, 2);
+      USBD_CtlSendData(pdev, (uint8_t *)&pep->status, 2, 0);
       break;
 
     default:
@@ -245,24 +245,6 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
     }
     break;
 
-  case USB_DESC_TYPE_DEVICE_QUALIFIER:
-    if (pdev->dev_speed == USBD_SPEED_HIGH) {
-      pbuf = pdev->pClass->GetDeviceQualifierDescriptor(&len);
-      break;
-    } else {
-      USBD_CtlError(pdev, req);
-      return;
-    }
-
-  case USB_DESC_TYPE_OTHER_SPEED_CONFIGURATION:
-    if (pdev->dev_speed == USBD_SPEED_HIGH) {
-      pbuf = pdev->pClass->GetOtherSpeedConfigDescriptor(&len);
-      break;
-    } else {
-      USBD_CtlError(pdev, req);
-      return;
-    }
-
   default:
     USBD_CtlError(pdev, req);
     return;
@@ -270,7 +252,7 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
 
   if ((len != 0) && (req->wLength != 0)) {
     len = MIN(len, req->wLength);
-    USBD_CtlSendData(pdev, pbuf, len);
+    USBD_CtlSendData(pdev, pbuf, len, 0);
   }
 }
 
@@ -282,12 +264,27 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
  * @retval status
  */
 USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
+  uint16_t len;
+  const uint8_t *pbuf;
+
   USBD_StatusTypeDef ret = USBD_OK;
 
   switch (req->bRequest) {
   case 0x01: // WebUSB
     ERR_MSG("Request WebUSB URL\n");
     USBD_CtlError(pdev, req);
+    break;
+
+  case 0x02: // MS OS 2.0
+    if (req->wIndex == 0x07) { // MS_OS_20_REQUEST_DESCRIPTOR
+      pbuf = pdev->pDesc->GetMSOS20Descriptor(pdev->dev_speed, &len);
+      if ((len != 0) && (req->wLength != 0)) {
+        len = MIN(len, req->wLength);
+        USBD_CtlSendData(pdev, pbuf, len, 0);
+      }
+    } else {
+      USBD_CtlError(pdev, req);
+    }
     break;
 
   default:
@@ -404,12 +401,11 @@ static void USBD_GetConfig(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
     switch (pdev->dev_state) {
     case USBD_STATE_ADDRESSED:
       pdev->dev_default_config = 0;
-      USBD_CtlSendData(pdev, (uint8_t *)&pdev->dev_default_config, 1);
+      USBD_CtlSendData(pdev, (uint8_t *)&pdev->dev_default_config, 1, 0);
       break;
 
     case USBD_STATE_CONFIGURED:
-
-      USBD_CtlSendData(pdev, (uint8_t *)&pdev->dev_config, 1);
+      USBD_CtlSendData(pdev, (uint8_t *)&pdev->dev_config, 1, 0);
       break;
 
     default:
@@ -442,7 +438,7 @@ static void USBD_GetStatus(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
       pdev->dev_config_status |= USB_CONFIG_REMOTE_WAKEUP;
     }
 
-    USBD_CtlSendData(pdev, (uint8_t *)&pdev->dev_config_status, 2);
+    USBD_CtlSendData(pdev, (uint8_t *)&pdev->dev_config_status, 2, 0);
     break;
 
   default:

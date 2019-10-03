@@ -18,12 +18,12 @@
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
-    if (ret != 0) DBG_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
+    if (ret != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
     if (ret > 0) return ret;                                                                                           \
   } while (0)
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
-    if (ret != 0) DBG_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
+    if (ret != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
     if (ret != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
   } while (0)
 

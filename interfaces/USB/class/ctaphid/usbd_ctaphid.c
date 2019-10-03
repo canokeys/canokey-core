@@ -40,8 +40,8 @@ static const uint8_t USBD_CTAPHID_Desc[] = {
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = CTAPHID_IDLE;
   CTAPHID_Init();
-  USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.Report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
-  return 0;
+  USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  return USBD_OK;
 }
 
 uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
@@ -53,24 +53,23 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
     switch (req->bRequest) {
 
     case CTAPHID_REQ_SET_PROTOCOL:
-      hid_handle.Protocol = (uint8_t)(req->wValue);
+      hid_handle.protocol = (uint8_t)(req->wValue);
       break;
 
     case CTAPHID_REQ_GET_PROTOCOL:
-      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.Protocol, 1);
+      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.protocol, 1, 0);
       break;
 
     case CTAPHID_REQ_SET_IDLE:
-      hid_handle.IdleState = (uint8_t)(req->wValue >> 8);
+      hid_handle.idle_state = (uint8_t)(req->wValue >> 8);
       break;
 
     case CTAPHID_REQ_GET_IDLE:
-      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.IdleState, 1);
+      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.idle_state, 1, 0);
       break;
 
     case CTAPHID_REQ_SET_REPORT:
-      hid_handle.IsReportAvailable = 1;
-      USBD_CtlPrepareRx(pdev, hid_handle.Report_buf, (uint8_t)(req->wLength));
+      hid_handle.is_report_available = 1;
       break;
 
     default:
@@ -92,15 +91,15 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
         USBD_CtlError(pdev, req);
         break;
       }
-      USBD_CtlSendData(pdev, pbuf, len);
+      USBD_CtlSendData(pdev, pbuf, len, 0);
       break;
 
     case USB_REQ_GET_INTERFACE:
-      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.AltSetting, 1);
+      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.alt_setting, 1, 0);
       break;
 
     case USB_REQ_SET_INTERFACE:
-      hid_handle.AltSetting = (uint8_t)(req->wValue);
+      hid_handle.alt_setting = (uint8_t)(req->wValue);
       break;
     }
   }
@@ -113,16 +112,8 @@ uint8_t USBD_CTAPHID_DataIn() {
 }
 
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
-  CTAPHID_OutEvent(hid_handle.Report_buf);
-  USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.Report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
-  return USBD_OK;
-}
-
-uint8_t USBD_CTAPHID_EP0_RxReady() {
-  if (hid_handle.IsReportAvailable == 1) {
-    CTAPHID_OutEvent(hid_handle.Report_buf);
-    hid_handle.IsReportAvailable = 0;
-  }
+  CTAPHID_OutEvent(hid_handle.report_buf);
+  USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
   return USBD_OK;
 }
 

@@ -37,7 +37,8 @@ target_include_directories(canokey-core SYSTEM
         interfaces/USB/device
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
-        interfaces/USB/class/ctaphid)
+        interfaces/USB/class/ctaphid
+        interfaces/USB/class/webusb)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
