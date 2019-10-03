@@ -67,6 +67,8 @@ script:
   - travis_wait 3 sudo pcscd -a -f >/tmp/pcscd.log &
   - sleep 3
   - timeout 1s pcsc_scan || true
+  - # OpenGPG test:
+  - go test -v test-via-pcsc/opengpg_test.go
   - # ADMIN test:
   - go test -v test-via-pcsc/admin_test.go
   - # FIDO2 test:

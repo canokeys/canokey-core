@@ -705,6 +705,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     else
       EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     if (err < 0) return -1;
+    current_occurrence = 0;
     break;
 
   case TAG_ALGORITHM_ATTRIBUTES_SIG:
