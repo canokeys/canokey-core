@@ -51,7 +51,7 @@ The default PIN is "123456" (in string) or "31 32 33 34 35 36" (in hex). You nee
 
 The maximum length of the PIN is 64 bytes and the minimum length is 6 bytes.
 
-### Change PIN
+#### Change PIN
 
 After a successful verification, you can use this command to change your PIN DIRECTLY:
 
@@ -63,7 +63,7 @@ Your PIN will be set to "11111111".
 
 NOTE THAT THERE IS NO WAY TO RESET THE PIN OF THIS ADMIN APPLET.
 
-### Write FIDO private key
+#### Write FIDO private key
 
 This is a EcDSA secp256r1 private key (32 bytes), and will be used in both U2F and FIDO2 to sign the registration data. Use a short APDU to set it:
 
@@ -73,7 +73,7 @@ This is a EcDSA secp256r1 private key (32 bytes), and will be used in both U2F a
 
 Once you write a new private key, your old 2FA credentials will be INVALID.
 
-### Write FIDO certificate
+#### Write FIDO certificate
 
 This is a X.509 der certificate corresponding to your private key. Use a EXTENDED APDU to set it:
 
@@ -81,11 +81,11 @@ This is a X.509 der certificate corresponding to your private key. Use a EXTENDE
 
 `9000`
 
-### Reset applets
+#### Reset applets
 
 Executing these commands will reset the corresponding applets.
 
-### Write SN
+#### Write SN
 
 The SN can be only set ONCE. Due to the limitation of OpenPGP card spec, the serial number is 4-byte long.
 
