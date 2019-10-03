@@ -41,3 +41,53 @@ For interface 3, you may use APDUs to use OpenPGP Card / PIV / OATH / Admin appl
   * 05 Reset OATH applet
   * 30 Write SN
 
+#### Verify PIN
+
+The default PIN is "123456" (in string) or "31 32 33 34 35 36" (in hex). You need to verify your PIN before you do anything else. The verification is the same as the OpenPGP applet. Here is the example:
+
+`00 20 00 00 06 31 32 33 34 35 36`
+
+`9000`
+
+The maximum length of the PIN is 64 bytes and the minimum length is 6 bytes.
+
+### Change PIN
+
+After a successful verification, you can use this command to change your PIN DIRECTLY:
+
+`00 21 00 00 08 31 31 31 31 31 31 31 31`
+
+`9000`
+
+Your PIN will be set to "11111111".
+
+NOTE THAT THERE IS NO WAY TO RESET THE PIN OF THIS ADMIN APPLET.
+
+### Write FIDO private key
+
+This is a EcDSA secp256r1 private key (32 bytes), and will be used in both U2F and FIDO2 to sign the registration data. Use a short APDU to set it:
+
+`00 01 00 00 20 01 02 03 04 05 06 07 08 09 ..`
+
+`9000`
+
+Once you write a new private key, your old 2FA credentials will be INVALID.
+
+### Write FIDO certificate
+
+This is a X.509 der certificate corresponding to your private key. Use a EXTENDED APDU to set it:
+
+`00 02 00 00 00 LL LL DD DD ..`, LLLL is the length of the cert.
+
+`9000`
+
+### Reset applets
+
+Executing these commands will reset the corresponding applets.
+
+### Write SN
+
+The SN can be only set ONCE. Due to the limitation of OpenPGP card spec, the serial number is 4-byte long.
+
+`00 30 00 00 04 DE AD BE AF`
+`9000`
