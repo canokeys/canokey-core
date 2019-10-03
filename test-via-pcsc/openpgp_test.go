@@ -163,6 +163,12 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88)
 		})
+
+		Convey("Select cert 1", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0xA5, 0x00, 0x04, 0x06, 0x60, 0x04, 0x5C, 0x02, 0x7F, 0x21})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+		})
 	})
 
 }
