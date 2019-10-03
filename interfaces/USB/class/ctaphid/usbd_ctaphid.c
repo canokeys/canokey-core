@@ -6,7 +6,7 @@
 static USBD_CTAPHID_HandleTypeDef hid_handle;
 
 // clang-format off
-static const uint8_t ReportDesc[] = {
+static const uint8_t report_desc[] = {
     0x06, 0xD0, 0xF1, // USAGE_PAGE (CTAP Usage Page)
     0x09, 0x01,       // USAGE (CTAP HID)
     0xA1, 0x01,       // COLLECTION (Application)
@@ -51,25 +51,8 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
   switch (req->bmRequest & USB_REQ_TYPE_MASK) {
   case USB_REQ_TYPE_CLASS:
     switch (req->bRequest) {
-
-    case CTAPHID_REQ_SET_PROTOCOL:
-      hid_handle.protocol = (uint8_t)(req->wValue);
-      break;
-
-    case CTAPHID_REQ_GET_PROTOCOL:
-      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.protocol, 1, 0);
-      break;
-
     case CTAPHID_REQ_SET_IDLE:
       hid_handle.idle_state = (uint8_t)(req->wValue >> 8);
-      break;
-
-    case CTAPHID_REQ_GET_IDLE:
-      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.idle_state, 1, 0);
-      break;
-
-    case CTAPHID_REQ_SET_REPORT:
-      hid_handle.is_report_available = 1;
       break;
 
     default:
@@ -82,8 +65,8 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
     switch (req->bRequest) {
     case USB_REQ_GET_DESCRIPTOR:
       if (req->wValue >> 8 == CTAPHID_REPORT_DESC) {
-        len = (uint16_t)MIN(sizeof(ReportDesc), req->wLength);
-        pbuf = ReportDesc;
+        len = (uint16_t)MIN(sizeof(report_desc), req->wLength);
+        pbuf = report_desc;
       } else if (req->wValue >> 8 == CTAPHID_DESCRIPTOR_TYPE) {
         pbuf = USBD_CTAPHID_Desc;
         len = (uint16_t)MIN(sizeof(USBD_CTAPHID_Desc), req->wLength);
@@ -94,13 +77,9 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
       USBD_CtlSendData(pdev, pbuf, len, 0);
       break;
 
-    case USB_REQ_GET_INTERFACE:
-      USBD_CtlSendData(pdev, (uint8_t *)&hid_handle.alt_setting, 1, 0);
-      break;
-
-    case USB_REQ_SET_INTERFACE:
-      hid_handle.alt_setting = (uint8_t)(req->wValue);
-      break;
+    default:
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
     }
   }
   return USBD_OK;
