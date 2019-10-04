@@ -32,8 +32,10 @@ const uint8_t AID_Size[] = {
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
 };
 
-static const uint8_t atr[] = {0x3B, 0xFC, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x59, 0x75,
-                              0x62, 0x69, 0x6B, 0x65, 0x79, 0x4E, 0x45, 0x4F, 0x72, 0x33, 0xE1};
+static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15,
+                                   0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0xEB};
+static const uint8_t atr_openpgp[] = {0x3B, 0xFA, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x00,
+                                      0x31, 0xC5, 0x73, 0xC0, 0x01, 0x40, 0x05, 0x90, 0x00, 0x21};
 static enum APPLET current_applet;
 
 // We use a separate interface to deal with openpgp since it opens ICC exclusive
@@ -140,8 +142,13 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
     return SLOTERROR_BAD_POWERSELECT;
   }
-  memcpy(bulkin_data[idx].abData, atr, sizeof(atr));
-  bulkin_data[idx].dwLength = sizeof(atr);
+  if (idx == IDX_OPENPGP) {
+    memcpy(bulkin_data[idx].abData, atr_openpgp, sizeof(atr_openpgp));
+    bulkin_data[idx].dwLength = sizeof(atr_openpgp);
+  } else {
+    memcpy(bulkin_data[idx].abData, atr_ccid, sizeof(atr_ccid));
+    bulkin_data[idx].dwLength = sizeof(atr_ccid);
+  }
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;
 }

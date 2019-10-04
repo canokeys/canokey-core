@@ -1,12 +1,13 @@
+#include <stdio.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
 #include <usbd_core.h>
 #include <usbd_ctaphid.h>
 #include <usbd_desc.h>
 
-#define USBD_VID 0xABCDu
-#define USBD_PID 0x0123u
-#define USBD_LANGID_STRING 0x0409u
+#define USBD_VID 0x16D0
+#define USBD_PID 0x0E80
+#define USBD_LANGID_STRING 0x0409
 #define USBD_MANUFACTURER_STRING "Canopo"
 #define USBD_PRODUCT_STRING "Canokey"
 #define USBD_CTAPHID_INTERFACE_STRING "U2F/FIDO2"
@@ -15,6 +16,8 @@
 #define USBD_OPENPGP_INTERFACE_IDX 0x11
 #define USBD_CCID_INTERFACE_STRING "PIV OATH"
 #define USBD_CCID_INTERFACE_IDX 0x12
+#define USBD_WEBUSB_INTERFACE_STRING "WebUSB"
+#define USBD_WEBUSB_INTERFACE_IDX 0x13
 
 // clang-format off
 const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
@@ -65,7 +68,7 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     0x09,                        /* bLength: Configuration Descriptor size */
     USB_DESC_TYPE_CONFIGURATION, /* bDescriptorType: Configuration */
     0xCC, 0x00,                  /* wTotalLength: Bytes returned */
-    0x04,                        /* bNumInterfaces: 3 interfaces */
+    0x04,                        /* bNumInterfaces: 4 interfaces */
     0x01,                        /* bConfigurationValue: Configuration value */
     0x00,                        /* Configuration: Index of string descriptor describing the configuration */
     0x80,                        /* bmAttributes: bus powered */
@@ -127,8 +130,8 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     CCID_NUMBER_OF_SLOTS - 1, /* bMaxSlotIndex: highest available slot on this device */
     0x07,                     /* bVoltageSupport: 5.0V/3.3V/1.8V*/
     0x02, 0x00, 0x00, 0x00,   /* dwProtocols: Protocol T=1 */
-    0xA0, 0x0F, 0x00, 0x00,   /* dwDefaultClock: 4Mhz */
-    0xA0, 0x0F, 0x00, 0x00,   /* dwMaximumClock: 4Mhz */
+    0xA0, 0x0F, 0x00, 0x00,   /* dwDefaultClock: 4MHz */
+    0xA0, 0x0F, 0x00, 0x00,   /* dwMaximumClock: 4MHz */
     0x00,                     /* bNumClockSupported : no setting from PC */
     0x00, 0xB0, 0x04, 0x00,   /* dwDataRate: Default ICC I/O data rate */
     0x00, 0xB0, 0x04, 0x00,   /* dwMaxDataRate: Maximum supported ICC I/O data */
@@ -183,8 +186,8 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     CCID_NUMBER_OF_SLOTS - 1, /* bMaxSlotIndex: highest available slot on this device */
     0x07,                     /* bVoltageSupport: 5.0V/3.3V/1.8V*/
     0x02, 0x00, 0x00, 0x00,   /* dwProtocols: Protocol T=1 */
-    0xA0, 0x0F, 0x00, 0x00,   /* dwDefaultClock: 4Mhz */
-    0xA0, 0x0F, 0x00, 0x00,   /* dwMaximumClock: 4Mhz */
+    0xA0, 0x0F, 0x00, 0x00,   /* dwDefaultClock: 4MHz */
+    0xA0, 0x0F, 0x00, 0x00,   /* dwMaximumClock: 4MHz */
     0x00,                     /* bNumClockSupported : no setting from PC */
     0x00, 0xB0, 0x04, 0x00,   /* dwDataRate: Default ICC I/O data rate */
     0x00, 0xB0, 0x04, 0x00,   /* dwMaxDataRate: Maximum supported ICC I/O data */
@@ -220,15 +223,15 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     0x00,                     /* bInterval: Polling Interval */
     /************** Descriptor of WebUSB interface ****************/
     /* 195 */
-    0x09,                    /* bLength: Interface Descriptor size */
-    USB_DESC_TYPE_INTERFACE, /* bDescriptorType: Interface descriptor type */
-    USBD_CANOKEY_WEBUSB_IF,  /* bInterfaceNumber: Number of Interface */
-    0x00,                    /* bAlternateSetting: Alternate setting */
-    0x00,                    /* bNumEndpoints */
-    0xFF,                    /* bInterfaceClass: Vendor Specific */
-    0xFF,                    /* bInterfaceSubClass: Vendor Specific */
-    0xFF,                    /* nInterfaceProtocol: Vendor Specific */
-    0,                       /* iInterface: Index of string descriptor */
+    0x09,                      /* bLength: Interface Descriptor size */
+    USB_DESC_TYPE_INTERFACE,   /* bDescriptorType: Interface descriptor type */
+    USBD_CANOKEY_WEBUSB_IF,    /* bInterfaceNumber: Number of Interface */
+    0x00,                      /* bAlternateSetting: Alternate setting */
+    0x00,                      /* bNumEndpoints */
+    0xFF,                      /* bInterfaceClass: Vendor Specific */
+    0xFF,                      /* bInterfaceSubClass: Vendor Specific */
+    0xFF,                      /* nInterfaceProtocol: Vendor Specific */
+    USBD_WEBUSB_INTERFACE_IDX, /* iInterface: Index of string descriptor */
     /* 204 */
 };
 
@@ -377,6 +380,9 @@ const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uin
     return USBD_StrDesc;
   case USBD_OPENPGP_INTERFACE_IDX:
     USBD_GetString((uint8_t *)USBD_OPENPGP_INTERFACE_STRING, USBD_StrDesc, length);
+    return USBD_StrDesc;
+  case USBD_WEBUSB_INTERFACE_IDX:
+    USBD_GetString((uint8_t *)USBD_WEBUSB_INTERFACE_STRING, USBD_StrDesc, length);
     return USBD_StrDesc;
   }
   *length = 0;
