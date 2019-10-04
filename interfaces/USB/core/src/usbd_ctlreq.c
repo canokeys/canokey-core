@@ -75,7 +75,7 @@ USBD_StatusTypeDef USBD_StdItfReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
   switch (pdev->dev_state) {
   case USBD_STATE_CONFIGURED:
 
-    if (LO(req->wIndex) <= USBD_MAX_NUM_INTERFACES) {
+    if (LO(req->wIndex) < USBD_MAX_NUM_INTERFACES) {
       pdev->pClass->Setup(pdev, req);
 
       if (req->wLength == 0) {

@@ -4,12 +4,18 @@
 #include <device.h>
 #include <webusb.h>
 
-volatile static uint8_t touch_result, is_blinking;
+volatile static uint8_t touch_result;
+static uint8_t is_inf_blinking;
+static uint32_t last_blink = UINT32_MAX;
 
 __weak void device_delay(int ms) {}
+
 __weak uint32_t device_get_tick(void) { return 0; }
-__weak void device_start_blinking(void) {}
+
+__weak void device_start_blinking(uint8_t sec) {}
+
 __weak void device_stop_blinking(void) {}
+
 __weak uint8_t is_nfc(void) {
 #ifdef TEST
   return 1;
@@ -52,13 +58,19 @@ uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
-void start_blinking(void) {
-  if (is_blinking) return;
-  is_blinking = 1;
-  device_start_blinking();
+void start_blinking(uint8_t sec) {
+  if (sec == 0) {
+    if (is_inf_blinking) return;
+    is_inf_blinking = 1;
+  } else {
+    uint32_t now = device_get_tick();
+    if (now > last_blink && now - last_blink < 1000) return;
+    last_blink = now;
+  }
+  device_start_blinking(sec);
 }
 
 void stop_blinking(void) {
-  is_blinking = 0;
+  is_inf_blinking = 0;
   device_stop_blinking();
 }

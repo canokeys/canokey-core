@@ -14,7 +14,11 @@
 // functions should be implemented by device
 void device_delay(int ms);
 uint32_t device_get_tick(void);
-void device_start_blinking(void);
+/**
+ * Blink for several time
+ * @param sec 0 for infinite
+ */
+void device_start_blinking(uint8_t sec);
 void device_stop_blinking(void);
 uint8_t is_nfc(void);
 
@@ -23,7 +27,11 @@ uint8_t wait_for_user_presence(void);
 void device_loop(void);
 uint8_t get_touch_result(void);
 void set_touch_result(uint8_t result);
-void start_blinking(void);
+/**
+ * Blink for several time
+ * @param sec 0 for infinite
+ */
+void start_blinking(uint8_t sec);
 void stop_blinking(void);
 
 #endif // _DEVICE_H_

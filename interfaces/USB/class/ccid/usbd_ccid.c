@@ -39,7 +39,8 @@ uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uin
     while (bulk_in_state[idx] != CCID_STATE_IDLE)
       device_delay(1);
     bulk_in_state[idx] = CCID_STATE_DATA_IN;
-    ret = USBD_LL_Transmit(pdev, idx == IDX_CCID ? CCID_EPIN_ADDR : OPENPGP_EPIN_ADDR, buf, len);
+    uint8_t addr = idx == IDX_CCID ? CCID_EPOUT_ADDR : OPENPGP_EPOUT_ADDR;
+    ret = USBD_LL_Transmit(pdev, addr, buf, len);
   }
   return ret;
 }

@@ -51,17 +51,17 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   UNUSED(pdev);
 
-  if (epnum == (0x7Fu & CTAPHID_EPIN_ADDR)) return USBD_CTAPHID_DataIn();
-  if (epnum == (0x7Fu & CCID_EPIN_ADDR)) return USBD_CCID_DataIn(IDX_CCID);
-  if (epnum == (0x7Fu & OPENPGP_EPIN_ADDR)) return USBD_CCID_DataIn(IDX_OPENPGP);
+  if (epnum == (0x7F & CTAPHID_EPIN_ADDR)) return USBD_CTAPHID_DataIn();
+  if (epnum == (0x7F & CCID_EPIN_ADDR)) return USBD_CCID_DataIn(IDX_CCID);
+  if (epnum == (0x7F & OPENPGP_EPIN_ADDR)) return USBD_CCID_DataIn(IDX_OPENPGP);
 
   return USBD_FAIL;
 }
 
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
-  if (epnum == (0x7Fu & CTAPHID_EPOUT_ADDR)) return USBD_CTAPHID_DataOut(pdev);
-  if (epnum == (0x7Fu & CCID_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_CCID);
-  if (epnum == (0x7Fu & OPENPGP_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_OPENPGP);
+  if (epnum == (0x7F & CTAPHID_EPOUT_ADDR)) return USBD_CTAPHID_DataOut(pdev);
+  if (epnum == (0x7F & CCID_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_CCID);
+  if (epnum == (0x7F & OPENPGP_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_OPENPGP);
 
   return USBD_FAIL;
 }

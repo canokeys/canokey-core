@@ -14,8 +14,9 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
 
   if (!is_nfc()) {
-    start_blinking();
+    start_blinking(1);
     if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    stop_blinking();
   }
 
   U2F_REGISTER_REQ *req = (U2F_REGISTER_REQ *)DATA;
@@ -25,10 +26,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
 
   memcpy(kh.rpIdHash, req->appId, U2F_APPID_SIZE);
   int err = generate_key_handle(&kh, resp->pubKey.x);
-  if (err < 0) {
-    stop_blinking();
-    return err;
-  }
+  if (err < 0) return err;
 
   // there are overlaps between req and resp
   sha256_init();
@@ -47,18 +45,13 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(resp->keyHandleCertSig, &kh, sizeof(CredentialId));
   // CERTIFICATE (var)
   int cert_len = read_file(CTAP_CERT_FILE, resp->keyHandleCertSig + sizeof(CredentialId), 0, U2F_MAX_ATT_CERT_SIZE);
-  if (cert_len < 0) {
-    stop_blinking();
-    return cert_len;
-  }
+  if (cert_len < 0) return cert_len;
   // SIG (var)
   sha256_update((const uint8_t *)&kh, sizeof(CredentialId));
   sha256_update((const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
   sha256_final(digest);
   size_t signature_len = sign_with_device_key(digest, resp->keyHandleCertSig + sizeof(CredentialId) + cert_len);
   LL = 67 + sizeof(CredentialId) + cert_len + signature_len;
-
-  stop_blinking();
 
   return 0;
 }
@@ -78,17 +71,15 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (P1 == U2F_AUTH_CHECK_ONLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   if (!is_nfc()) {
-    start_blinking();
+    start_blinking(1);
     if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    stop_blinking();
   }
 
   len = sizeof(auth_data);
   uint8_t flags = FLAGS_UP;
   err = ctap_make_auth_data(req->appId, (uint8_t *)&auth_data, flags, 0, NULL, &len);
-  if (err) {
-    stop_blinking();
-    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  }
+  if (err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.signCount));
   sha256_init();
@@ -99,8 +90,6 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   memzero(priv_key, sizeof(priv_key));
   size_t signature_len = ecdsa_sig2ansi(resp->sig, resp->sig);
   LL = signature_len + 5;
-
-  stop_blinking();
 
   return 0;
 }
