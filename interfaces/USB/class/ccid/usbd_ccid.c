@@ -21,11 +21,11 @@ uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
 }
 
 uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev, uint8_t idx) {
-  if(bulk_in_state[idx] == CCID_STATE_DATA_IN_WITH_ZLP) {
+  if (bulk_in_state[idx] == CCID_STATE_DATA_IN_WITH_ZLP) {
     bulk_in_state[idx] = CCID_STATE_DATA_IN;
     uint8_t addr = idx == IDX_CCID ? CCID_EPOUT_ADDR : OPENPGP_EPOUT_ADDR;
     USBD_LL_Transmit(pdev, addr, NULL, 0);
-  }else {
+  } else {
     bulk_in_state[idx] = CCID_STATE_IDLE;
   }
   return USBD_OK;
