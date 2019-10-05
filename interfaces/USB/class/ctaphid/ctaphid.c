@@ -175,6 +175,8 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       DBG_MSG("MSG\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else if (channel.bcnt_total < 4) // APDU CLA...P2
+        CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
       else
         CTAPHID_Execute_Msg();
       break;
@@ -182,6 +184,8 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       DBG_MSG("CBOR\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else if (channel.bcnt_total == 0)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
       else
         CTAPHID_Execute_Cbor();
       break;
@@ -191,6 +195,10 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
       else
         CTAPHID_Execute_Init();
+      break;
+    case CTAPHID_WINK:
+      DBG_MSG("WINK\n");
+      CTAPHID_SendResponse(channel.cid, channel.cmd, NULL, 0);
       break;
     case CTAPHID_PING:
       DBG_MSG("PING\n");
