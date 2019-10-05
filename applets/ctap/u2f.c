@@ -23,9 +23,10 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)RDATA;
   CredentialId kh;
   uint8_t digest[SHA256_DIGEST_LENGTH];
+  uint8_t pubkey[ECC_PUB_KEY_SIZE];
 
   memcpy(kh.rpIdHash, req->appId, U2F_APPID_SIZE);
-  int err = generate_key_handle(&kh, resp->pubKey.x);
+  int err = generate_key_handle(&kh, pubkey);
   if (err < 0) return err;
 
   // there are overlaps between req and resp
@@ -39,6 +40,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   resp->registerId = U2F_REGISTER_ID;
   // PUBLIC KEY (65)
   resp->pubKey.pointFormat = U2F_POINT_UNCOMPRESSED;
+  memcpy(resp->pubKey.x, pubkey, ECC_PUB_KEY_SIZE);
   // KEY HANDLE LENGTH (1)
   resp->keyHandleLen = sizeof(CredentialId);
   // KEY HANDLE (128)
@@ -81,11 +83,11 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   err = ctap_make_auth_data(req->appId, (uint8_t *)&auth_data, flags, 0, NULL, &len);
   if (err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
-  memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.signCount));
   sha256_init();
   sha256_update((const uint8_t *)&auth_data, U2F_APPID_SIZE + 1 + sizeof(auth_data.signCount));
   sha256_update(req->chal, U2F_CHAL_SIZE);
   sha256_final(req->appId);
+  memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.signCount));
   ecdsa_sign(ECC_SECP256R1, priv_key, req->appId, resp->sig);
   memzero(priv_key, sizeof(priv_key));
   size_t signature_len = ecdsa_sig2ansi(resp->sig, resp->sig);
