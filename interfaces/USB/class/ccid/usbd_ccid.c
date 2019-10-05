@@ -10,6 +10,10 @@ static volatile uint8_t bulk_in_state[2];
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
   bulk_in_state[0] = CCID_STATE_IDLE;
   bulk_in_state[1] = CCID_STATE_IDLE;
+  USBD_LL_OpenEP(pdev, CCID_EPIN_ADDR, USBD_EP_TYPE_BULK, CCID_EPIN_SIZE);
+  USBD_LL_OpenEP(pdev, CCID_EPOUT_ADDR, USBD_EP_TYPE_BULK, CCID_EPOUT_SIZE);
+  USBD_LL_OpenEP(pdev, OPENPGP_EPIN_ADDR, USBD_EP_TYPE_BULK, OPENPGP_EPIN_SIZE);
+  USBD_LL_OpenEP(pdev, OPENPGP_EPOUT_ADDR, USBD_EP_TYPE_BULK, OPENPGP_EPOUT_SIZE);
   CCID_Init();
   USBD_LL_PrepareReceive(pdev, CCID_EPOUT_ADDR, ccid_out_buf, CCID_EPOUT_SIZE);
   USBD_LL_PrepareReceive(pdev, OPENPGP_EPOUT_ADDR, openpgp_out_buf, OPENPGP_EPOUT_SIZE);

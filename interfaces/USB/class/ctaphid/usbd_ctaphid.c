@@ -39,6 +39,8 @@ static const uint8_t USBD_CTAPHID_Desc[] = {
 
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = CTAPHID_IDLE;
+  USBD_LL_OpenEP(pdev, CTAPHID_EPIN_ADDR, USBD_EP_TYPE_INTR, CTAPHID_EPIN_SIZE);
+  USBD_LL_OpenEP(pdev, CTAPHID_EPOUT_ADDR, USBD_EP_TYPE_INTR, CTAPHID_EPOUT_SIZE);
   CTAPHID_Init();
   USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
   return USBD_OK;
