@@ -145,7 +145,7 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 }
 
 static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
-  UNUSED(capdu);
+  if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   RDATA[0] = 0x61;
   RDATA[1] = 6 + sizeof(pix) + sizeof(rid);

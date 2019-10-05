@@ -232,6 +232,7 @@ static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
         if (i == APPLET_OPENPGP) {
           LL = 0;
           SW = SW_FILE_NOT_FOUND;
+          goto send_response;
         }
       }
       switch (current_applet) {
