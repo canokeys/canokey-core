@@ -5,10 +5,10 @@
 #include <usbd_ioreq.h>
 
 #define CCID_EPIN_ADDR 0x81
-#define CCID_EPIN_SIZE 16
+#define CCID_EPIN_SIZE 32
 
 #define CCID_EPOUT_ADDR 0x01
-#define CCID_EPOUT_SIZE 16
+#define CCID_EPOUT_SIZE 32
 
 #define OPENPGP_EPIN_ADDR 0x82
 #define OPENPGP_EPIN_SIZE 64
