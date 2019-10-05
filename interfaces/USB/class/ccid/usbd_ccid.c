@@ -20,8 +20,14 @@ uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
   return 0;
 }
 
-uint8_t USBD_CCID_DataIn(uint8_t idx) {
-  bulk_in_state[idx] = CCID_STATE_IDLE;
+uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev, uint8_t idx) {
+  if(bulk_in_state[idx] == CCID_STATE_DATA_IN_WITH_ZLP) {
+    bulk_in_state[idx] = CCID_STATE_DATA_IN;
+    uint8_t addr = idx == IDX_CCID ? CCID_EPOUT_ADDR : OPENPGP_EPOUT_ADDR;
+    USBD_LL_Transmit(pdev, addr, NULL, 0);
+  }else {
+    bulk_in_state[idx] = CCID_STATE_IDLE;
+  }
   return USBD_OK;
 }
 
@@ -42,8 +48,9 @@ uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uin
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
     while (bulk_in_state[idx] != CCID_STATE_IDLE)
       device_delay(1);
-    bulk_in_state[idx] = CCID_STATE_DATA_IN;
     uint8_t addr = idx == IDX_CCID ? CCID_EPOUT_ADDR : OPENPGP_EPOUT_ADDR;
+    uint8_t ep_size = idx == IDX_CCID ? CCID_EPOUT_SIZE : OPENPGP_EPOUT_SIZE;
+    bulk_in_state[idx] = len % ep_size == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
     ret = USBD_LL_Transmit(pdev, addr, buf, len);
   }
   return ret;

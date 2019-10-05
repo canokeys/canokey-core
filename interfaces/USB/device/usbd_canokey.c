@@ -52,8 +52,8 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   UNUSED(pdev);
 
   if (epnum == (0x7F & CTAPHID_EPIN_ADDR)) return USBD_CTAPHID_DataIn();
-  if (epnum == (0x7F & CCID_EPIN_ADDR)) return USBD_CCID_DataIn(IDX_CCID);
-  if (epnum == (0x7F & OPENPGP_EPIN_ADDR)) return USBD_CCID_DataIn(IDX_OPENPGP);
+  if (epnum == (0x7F & CCID_EPIN_ADDR)) return USBD_CCID_DataIn(pdev, IDX_CCID);
+  if (epnum == (0x7F & OPENPGP_EPIN_ADDR)) return USBD_CCID_DataIn(pdev, IDX_OPENPGP);
 
   return USBD_FAIL;
 }

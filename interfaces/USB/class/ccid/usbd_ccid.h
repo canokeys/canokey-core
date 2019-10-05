@@ -20,9 +20,10 @@
 #define CCID_STATE_IDLE 0
 #define CCID_STATE_RECEIVE_DATA 1
 #define CCID_STATE_DATA_IN 2
+#define CCID_STATE_DATA_IN_WITH_ZLP 3
 
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev);
-uint8_t USBD_CCID_DataIn(uint8_t idx);
+uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev, uint8_t idx);
 uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev, uint8_t idx);
 uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len, uint8_t idx);
 
