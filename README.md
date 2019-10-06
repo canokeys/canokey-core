@@ -91,3 +91,21 @@ The SN can be only set ONCE. Due to the limitation of OpenPGP card spec, the ser
 
 `00 30 00 00 04 DE AD BE AF`
 `9000`
+
+## Porting
+
+Use [Canokey-STM32](https://github.com/canopo/canokey-stm32) as an example.
+
+1. You need to implement these functions in `device.h`:
+
+* `void device_delay(int ms);`
+* `uint32_t device_get_tick(void);`
+* `void device_start_blinking(uint8_t sec);`
+* `void device_stop_blinking(void);`
+* `uint8_t is_nfc(void);`
+
+2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
+
+3. You need to configure the mbed-tls according to its documentation or provide the algorithms on your own by overwriting the weak symbols.
+
+4. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 150ms **IN A TIMER**.
