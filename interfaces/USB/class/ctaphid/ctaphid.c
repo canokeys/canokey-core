@@ -112,10 +112,6 @@ static void CTAPHID_Execute_Cbor(void) {
   CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, len);
 }
 
-static void CTAPHID_Execute_Ping(void) {
-  CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
-}
-
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   if (channel.state == CTAPHID_BUSY && device_get_tick() > channel.expire) {
     channel.state = CTAPHID_IDLE;
@@ -198,14 +194,17 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       break;
     case CTAPHID_WINK:
       DBG_MSG("WINK\n");
-      CTAPHID_SendResponse(channel.cid, channel.cmd, NULL, 0);
+      if (wait_for_user)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+      else
+        CTAPHID_SendResponse(channel.cid, channel.cmd, NULL, 0);
       break;
     case CTAPHID_PING:
       DBG_MSG("PING\n");
       if (wait_for_user)
         CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
       else
-        CTAPHID_Execute_Ping();
+        CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
       break;
     case CTAPHID_CANCEL:
       DBG_MSG("CANCEL\n");

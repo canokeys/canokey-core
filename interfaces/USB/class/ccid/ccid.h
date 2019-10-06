@@ -33,6 +33,16 @@ typedef struct {
   uint8_t abData[ABDATA_SIZE]; /* Offset = 10*/
 } __packed ccid_bulkin_data_t;
 
+typedef struct {
+  uint8_t bMessageType; /* Offset = 0*/
+  uint32_t dwLength;    /* Offset = 1*/
+  uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
+  uint8_t bSeq;         /* Offset = 6, Same as Bulk-OUT message */
+  uint8_t bStatus;      /* Offset = 7, Slot status as defined in § 6.2.6*/
+  uint8_t bError;       /* Offset = 8, Slot error  as defined in § 6.2.6*/
+  uint8_t bSpecific;    /* Offset = 9*/
+} __packed empty_ccid_bulkin_data_t;
+
 /******************************************************************************/
 /*  ERROR CODES for USB Bulk In Messages : bError                   */
 /******************************************************************************/
@@ -134,5 +144,6 @@ void poweroff(uint8_t applet);
 uint8_t CCID_Init(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx);
 void CCID_Loop(void);
+void CCID_TimeExtensionLoop(void);
 
 #endif //_CCID_H_

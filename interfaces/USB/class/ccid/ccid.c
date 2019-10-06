@@ -32,17 +32,21 @@ const uint8_t AID_Size[] = {
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
 };
 
-static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15,
-                                   0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0xEB};
-static const uint8_t atr_openpgp[] = {0x3B, 0xFA, 0x13, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x00,
-                                      0x31, 0xC5, 0x73, 0xC0, 0x01, 0x40, 0x05, 0x90, 0x00, 0x21};
+// Fi=372, Di=1, 372 cycles/ETU 10752 bits/s at 4.00 MHz
+// BWT = 0.18s
+static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15,
+                                   0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0xE9};
+static const uint8_t atr_openpgp[] = {0x3B, 0xFA, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15, 0x00,
+                                      0x31, 0xC5, 0x73, 0xC0, 0x01, 0x40, 0x05, 0x90, 0x00, 0x23};
 static enum APPLET current_applet;
 
 // We use a separate interface to deal with openpgp since it opens ICC exclusive
+static empty_ccid_bulkin_data_t bulkin_time_extension;
 static ccid_bulkin_data_t bulkin_data[2];
 static ccid_bulkout_data_t bulkout_data[2];
 static uint16_t ab_data_length[2];
 static volatile uint8_t bulkout_state[2];
+static volatile uint8_t bulkin_state[2];
 static volatile uint8_t has_cmd[2];
 static CAPDU apdu_cmd[2];
 static RAPDU apdu_resp[2];
@@ -57,6 +61,8 @@ static RAPDU_CHAINING rapdu_chaining = {
 
 uint8_t CCID_Init(void) {
   current_applet = APPLET_NULL;
+  bulkin_state[0] = CCID_STATE_IDLE;
+  bulkin_state[1] = CCID_STATE_IDLE;
   bulkout_state[0] = CCID_STATE_IDLE;
   bulkout_state[1] = CCID_STATE_IDLE;
   has_cmd[0] = 0;
@@ -325,13 +331,13 @@ static void RDR_to_PC_Parameters(uint8_t errorCode, uint8_t idx) {
   else
     bulkin_data[idx].dwLength = 0;
 
-  bulkin_data[idx].abData[0] = 0x11;
-  bulkin_data[idx].abData[1] = 0x10;
-  bulkin_data[idx].abData[2] = 0x00;
-  bulkin_data[idx].abData[3] = 0x15;
-  bulkin_data[idx].abData[4] = 0x00;
-  bulkin_data[idx].abData[5] = 0xFE;
-  bulkin_data[idx].abData[6] = 0x00;
+  bulkin_data[idx].abData[0] = 0x11; // Fi=372, Di=1
+  bulkin_data[idx].abData[1] = 0x10; // Checksum: LRC, Convention: direct, ignored by CCID
+  bulkin_data[idx].abData[2] = 0x00; // No extra guard time
+  bulkin_data[idx].abData[3] = 0x15; // BWI = 1, CWI = 5
+  bulkin_data[idx].abData[4] = 0x00; // Stopping the Clock is not allowed
+  bulkin_data[idx].abData[5] = 0xFE; // IFSC = 0xFE
+  bulkin_data[idx].abData[6] = 0x00; // NAD
 
   bulkin_data[idx].bSpecific = 0x01;
 }
@@ -386,8 +392,7 @@ void CCID_Loop(void) {
   if (has_cmd[0]) {
     idx = 0;
     has_cmd[0] = 0;
-  }
-  if (has_cmd[1]) {
+  } else if (has_cmd[1]) {
     idx = 1;
     has_cmd[1] = 0;
   }
@@ -411,6 +416,7 @@ void CCID_Loop(void) {
     RDR_to_PC_SlotStatus(errorCode, idx);
     break;
   case PC_TO_RDR_XFRBLOCK:
+    bulkin_state[idx] = CCID_STATE_PROCESS_DATA;
     errorCode = PC_to_RDR_XfrBlock(idx);
     RDR_to_PC_DataBlock(errorCode, idx);
     break;
@@ -426,5 +432,24 @@ void CCID_Loop(void) {
 
   uint16_t len = bulkin_data[idx].dwLength;
   bulkin_data[idx].dwLength = htole32(bulkin_data[idx].dwLength);
-  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data[idx], len + CCID_CMD_HEADER_SIZE, idx);
+  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data[idx], len + CCID_CMD_HEADER_SIZE, idx, 0);
+  bulkin_state[idx] = CCID_STATE_IDLE;
+}
+
+void CCID_TimeExtensionLoop(void) {
+  uint8_t idx = 0xFF;
+  if (bulkin_state[0] == CCID_STATE_PROCESS_DATA)
+    idx = 0;
+  else if (bulkin_state[1] == CCID_STATE_PROCESS_DATA)
+    idx = 1;
+  if (idx == 0xFF) return;
+
+  bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
+  bulkin_time_extension.dwLength = 0;
+  bulkin_time_extension.bSlot = bulkout_data[idx].bSlot;
+  bulkin_time_extension.bSeq = bulkout_data[idx].bSeq;
+  bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
+  bulkin_time_extension.bError = 1; // Request another BTW (0.18s)
+  bulkin_time_extension.bSpecific = 0;
+  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, idx, 1);
 }
