@@ -187,50 +187,48 @@ func TestOath(t *testing.T) {
 					uniqueNames[name] = true
 				}
 			})
-			if false {
-				Convey("Then calculate all of them at once", func(ctx C) {
-					results, err := oath.CalculateAll()
-					So(err, ShouldBeNil)
-					for name, otp := range results {
-						So(allKeys, ShouldContainKey, name)
-						if allKeys[name].Type() == "hotp" {
-							So(otp, ShouldEqual, "hotp-no-response")
-						} else {
-							validateTotp(name, otp)
-						}
+			Convey("Then calculate all of them at once", func(ctx C) {
+				results, err := oath.CalculateAll()
+				So(err, ShouldBeNil)
+				for name, otp := range results {
+					So(allKeys, ShouldContainKey, name)
+					if allKeys[name].Type() == "hotp" {
+						So(otp, ShouldEqual, "hotp-no-response")
+					} else {
+						validateTotp(name, otp)
 					}
-				})
-				Convey("Then calculate each of them", func(ctx C) {
-					items, err := oath.List()
-					So(err, ShouldBeNil)
+				}
+			})
+			Convey("Then calculate each of them", func(ctx C) {
+				items, err := oath.List()
+				So(err, ShouldBeNil)
 
-					for _, item := range items {
-						name := item.Name
-						otp, err := oath.Calculate(name, nil)
-						So(err, ShouldBeNil)
-						So(allKeys, ShouldContainKey, name)
-						if allKeys[name].Type() == "hotp" {
-							validateHotp(name, otp)
-						} else {
-							validateTotp(name, otp)
-						}
-					}
-				})
-				Convey("Then test a sequence of HOTP values", func(ctx C) {
-					name := ""
-					for itemName, obj := range allKeys {
-						if obj.Type() == "hotp" {
-							name = itemName
-							break
-						}
-					}
-					for i := 0; i < 257; i++ {
-						otp, err := oath.Calculate(name, nil)
-						So(err, ShouldBeNil)
+				for _, item := range items {
+					name := item.Name
+					otp, err := oath.Calculate(name, nil)
+					So(err, ShouldBeNil)
+					So(allKeys, ShouldContainKey, name)
+					if allKeys[name].Type() == "hotp" {
 						validateHotp(name, otp)
+					} else {
+						validateTotp(name, otp)
 					}
-				})
-			}
+				}
+			})
+			Convey("Then test a sequence of HOTP values", func(ctx C) {
+				name := ""
+				for itemName, obj := range allKeys {
+					if obj.Type() == "hotp" {
+						name = itemName
+						break
+					}
+				}
+				for i := 0; i < 257; i++ {
+					otp, err := oath.Calculate(name, nil)
+					So(err, ShouldBeNil)
+					validateHotp(name, otp)
+				}
+			})
 		})
 	})
 
