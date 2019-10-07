@@ -61,6 +61,7 @@ static void test_list(void **state) {
 
   capdu->ins = OATH_INS_LIST;
   capdu->lc = 0;
+  capdu->le = 32;
 
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, 0x61FF);
@@ -84,6 +85,7 @@ static void test_calc_all(void **state) {
   capdu->ins = OATH_INS_CALCULATE_ALL;
   capdu->data = data;
   capdu->lc = sizeof(data);
+  capdu->le = 64;
 
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, 0x61FF);

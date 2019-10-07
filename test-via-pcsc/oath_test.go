@@ -116,7 +116,7 @@ func TestOath(t *testing.T) {
 				_, err := crand.Read(key)
 				So(err, ShouldBeNil)
 
-				fmt.Printf("adding key %d %s %s\n", i, name, hex.EncodeToString(key))
+				// fmt.Printf("adding key %d %s %s\n", i, name, hex.EncodeToString(key))
 				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
 				So(err, ShouldBeNil)
 

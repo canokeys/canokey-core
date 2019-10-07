@@ -165,7 +165,6 @@ static int oath_increase_counter(OATH_RECORD *record) {
     record->challenge[i]++;
     if (record->challenge[i] != 0) break;
   }
-  printf("inc\n");
   return i >= 0 ? 0 : -1;
 }
 
@@ -278,7 +277,6 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
       continue;
     }
     if ((record.prop & OATH_PROP_TOUCH)) {
-      DBG_MSG("touch %d\n", record_idx);
       RDATA[off_out++] = OATH_TAG_REQ_TOUCH;
       RDATA[off_out++] = 1;
       RDATA[off_out++] = record.key[1];
