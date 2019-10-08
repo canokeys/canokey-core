@@ -169,6 +169,18 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})
+
+		Convey("Set resetting code", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0xDA, 0x00, 0xD3, 0x09, 0x31, 0x32, 0x33, 0x31, 0x32, 0x33, 0x31, 0x32, 0x33})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+		})
+
+		Convey("Clear resetting code", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0xDA, 0x00, 0xD3})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+		})
 	})
 
 }
