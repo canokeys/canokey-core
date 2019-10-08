@@ -269,7 +269,6 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off_out++] = record.name_len;
     memcpy(RDATA + off_out, record.name, record.name_len);
     off_out += record.name_len;
-    printf("%02x %s--------\n",record.key[0],record.name); 
 
     if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
       puts("hotp");
