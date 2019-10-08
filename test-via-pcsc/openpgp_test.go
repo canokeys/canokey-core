@@ -103,8 +103,20 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(res, ShouldResemble, []byte{2, 2, 5, 0, 2, 2, 5, 0})
 		})
 
+		Convey("Admin PIN retry times", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0x20, 0x00, 0x83})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x63C3)
+		})
+
 		Convey("Verify Admin PIN to write data", func(ctx C) {
 			_, code, err := app.Send([]byte{0x00, 0x20, 0x00, 0x83, 0x08, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+		})
+
+		Convey("Admin PIN verified", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0x20, 0x00, 0x83})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})
@@ -217,6 +229,12 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(res, ShouldResemble, certContent[3])
 		})
 
+		Convey("Select non-existent cert", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0xA5, 0x02, 0x04, 0x06, 0xFF, 0x04, 0x5C, 0x02, 0x7F, 0x21})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x6A80)
+		})
+
 		Convey("Set resetting code", func(ctx C) {
 			_, code, err := app.Send([]byte{0x00, 0xDA, 0x00, 0xD3, 0x09, 0x31, 0x32, 0x33, 0x31, 0x32, 0x33, 0x31, 0x32, 0x33})
 			So(err, ShouldBeNil)
@@ -225,6 +243,12 @@ func TestOpenPGPApplet(t *testing.T) {
 
 		Convey("Clear resetting code", func(ctx C) {
 			_, code, err := app.Send([]byte{0x00, 0xDA, 0x00, 0xD3})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+		})
+
+		Convey("Clear PIN verification state", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0x20, 0xFF, 0x83})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})

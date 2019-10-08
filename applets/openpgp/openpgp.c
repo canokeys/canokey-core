@@ -939,9 +939,8 @@ static int openpgp_get_next_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x7F || P2 != 0x21) EXCEPT(SW_WRONG_P1P2);
   if (LC > 0) EXCEPT(SW_WRONG_LENGTH);
   int len;
-  if (++current_occurrence == 0)
-    len = read_file(SIG_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
-  else if (current_occurrence == 1)
+  ++current_occurrence;
+  if (current_occurrence == 1)
     len = read_file(DEC_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
   else if (current_occurrence == 2)
     len = read_file(AUT_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
