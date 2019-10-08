@@ -129,8 +129,8 @@ script:
   - # PIV tests:
   - RDID=" 01"
   - yubico-piv-tool -r "$RDID" -a status
-  - opensc-tool -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
-  - opensc-tool -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
+  - opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
+  - opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
   - pkcs15-tool --reader "$RDID" -D
   - yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
   - yubico-piv-tool -r "$RDID" -a change-pin -P 123456 -N 654321
