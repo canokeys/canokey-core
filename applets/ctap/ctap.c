@@ -35,9 +35,14 @@
       *resp_len = 1;                                                                                                   \
   } while (0)
 
+#ifdef TEST
 #define WAIT()                                                                                                         \
   do {                                                                                                                 \
-    start_blinking(0);                                                                                                  \
+  } while (0)
+#else
+#define WAIT()                                                                                                         \
+  do {                                                                                                                 \
+    start_blinking(0);                                                                                                 \
     switch (wait_for_user_presence()) {                                                                                \
     case USER_PRESENCE_CANCEL:                                                                                         \
       stop_blinking();                                                                                                 \
@@ -48,6 +53,7 @@
     }                                                                                                                  \
     stop_blinking();                                                                                                   \
   } while (0)
+#endif
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};

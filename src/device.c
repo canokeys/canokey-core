@@ -4,6 +4,8 @@
 #include <device.h>
 #include <webusb.h>
 
+#ifndef TEST
+
 volatile static uint8_t touch_result;
 static uint8_t is_inf_blinking;
 static uint32_t last_blink = UINT32_MAX;
@@ -17,15 +19,10 @@ __weak void device_start_blinking(uint8_t sec) {}
 __weak void device_stop_blinking(void) {}
 
 __weak uint8_t is_nfc(void) {
-#ifdef TEST
-  return 1;
-#else
   return 0;
-#endif
 }
 
 uint8_t wait_for_user_presence(void) {
-#ifndef TEST
   uint32_t start = device_get_tick();
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
@@ -42,16 +39,13 @@ uint8_t wait_for_user_presence(void) {
       CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
-#endif
   return USER_PRESENCE_OK;
 }
 
 void device_loop(void) {
-#ifndef TEST
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
-#endif
 }
 
 uint8_t get_touch_result(void) { return touch_result; }
@@ -74,3 +68,5 @@ void stop_blinking(void) {
   is_inf_blinking = 0;
   device_stop_blinking();
 }
+
+#endif
