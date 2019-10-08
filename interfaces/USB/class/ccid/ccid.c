@@ -4,6 +4,7 @@
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
+#include <ctap.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
@@ -15,10 +16,12 @@ static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
+static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
 
 const uint8_t *const AID[] = {
     [APPLET_NULL] = NULL,
     [APPLET_PIV] = PIV_AID,
+    [APPLET_FIDO] = FIDO_AID,
     [APPLET_OATH] = OATH_AID,
     [APPLET_ADMIN] = ADMIN_AID,
     [APPLET_OPENPGP] = OPENPGP_AID,
@@ -27,6 +30,7 @@ const uint8_t *const AID[] = {
 const uint8_t AID_Size[] = {
     [APPLET_NULL] = 0,
     [APPLET_PIV] = sizeof(PIV_AID),
+    [APPLET_FIDO] = sizeof(FIDO_AID),
     [APPLET_OATH] = sizeof(OATH_AID),
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
@@ -42,8 +46,8 @@ static enum APPLET current_applet;
 
 // We use a separate interface to deal with openpgp since it opens ICC exclusive
 static empty_ccid_bulkin_data_t bulkin_time_extension;
-static ccid_bulkin_data_t bulkin_data[2];
-static ccid_bulkout_data_t bulkout_data[2];
+ccid_bulkin_data_t bulkin_data[2];
+ccid_bulkout_data_t bulkout_data[2];
 static uint16_t ab_data_length[2];
 static volatile uint8_t bulkout_state[2];
 static volatile uint8_t bulkin_state[2];
@@ -196,11 +200,11 @@ static uint8_t PC_to_RDR_GetSlotStatus(uint8_t idx) {
  * @param  None
  * @retval uint8_t status of the command execution
  */
-static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_ACTIVE_STATE, idx);
+uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
+  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT, idx);
   if (error != 0) return error;
 
-  DBG_MSG("O[%s]: ", idx == 0 ? "c" : "g");
+  DBG_MSG("O[%s]: ", idx == IDX_CCID ? "c" : "g");
   PRINT_HEX(bulkout_data[idx].abData, bulkout_data[idx].dwLength);
 
   CAPDU *capdu = &apdu_cmd[idx];
@@ -241,9 +245,24 @@ static uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
           goto send_response;
         }
       }
+      LE = MIN(LE, APDU_BUFFER_SIZE);
       switch (current_applet) {
       case APPLET_PIV:
         piv_process_apdu(capdu, &rapdu_chaining.rapdu);
+        rapdu->len = LE;
+        apdu_output(&rapdu_chaining, rapdu);
+        break;
+      case APPLET_FIDO:
+#ifdef TEST
+        if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
+          printf("MAGIC REBOOT command received!\r\n");
+          ctap_install(0);
+          SW = 0x9000;
+          LL = 0;
+          break;
+        }
+#endif
+        ctap_process_apdu(capdu, &rapdu_chaining.rapdu);
         rapdu->len = LE;
         apdu_output(&rapdu_chaining, rapdu);
         break;
@@ -267,7 +286,7 @@ send_response:
   bulkin_data[idx].dwLength = LL + 2;
   bulkin_data[idx].abData[LL] = HI(SW);
   bulkin_data[idx].abData[LL + 1] = LO(SW);
-  DBG_MSG("I[%s]: ", idx == 0 ? "c" : "g");
+  DBG_MSG("I[%s]: ", idx == IDX_CCID ? "c" : "g");
   PRINT_HEX(bulkin_data[idx].abData, bulkin_data[idx].dwLength);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;

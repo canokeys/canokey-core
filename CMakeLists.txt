@@ -19,15 +19,11 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
-if (ENABLE_TESTS)
-    file(GLOB_RECURSE SRC src/*.c applets/*.c
-            littlefs/lfs.c littlefs/lfs_util.c
-            tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
-else ()
-    file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
-            littlefs/lfs.c littlefs/lfs_util.c
-            tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
-endif (ENABLE_TESTS)
+
+file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
+        littlefs/lfs.c littlefs/lfs_util.c
+        tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
+
 add_library(canokey-core ${SRC})
 target_include_directories(canokey-core SYSTEM
         PUBLIC
@@ -55,20 +51,9 @@ if (ENABLE_TESTS)
     if (PCSCLITE_FOUND)
         add_library(u2f-virt-card SHARED
                 virt-card/ifdhandler.c
-                virt-card/apdu-adapter.c
                 virt-card/fabrication.c
                 littlefs/emubd/lfs_emubd.c)
         target_include_directories(u2f-virt-card SYSTEM PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs)
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
     endif ()
-
-    add_executable(fido-hid-over-udp
-            virt-card/apdu-adapter.c
-            virt-card/fabrication.c
-            virt-card/ctap-hid.c
-            virt-card/udp-server.c
-            littlefs/emubd/lfs_emubd.c)
-    target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
-    target_link_libraries(fido-hid-over-udp general canokey-core asan)
-    target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
 endif (ENABLE_TESTS)

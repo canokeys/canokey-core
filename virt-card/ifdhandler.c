@@ -9,7 +9,7 @@
 /
 ******************************************************************/
 
-#include "apdu-adapter.h"
+#include "ccid.h"
 #include "fabrication.h"
 #include <ifdhandler.h>
 #include <reader.h>
@@ -25,6 +25,7 @@ RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
 {
     printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
     if(!applet_init) {
+        CCID_Init();
         card_fabrication_procedure();
         applet_init = 1;
     }
@@ -59,7 +60,7 @@ RESPONSECODE IFDHGetCapabilities ( DWORD Lun, DWORD Tag,
         break;
     case TAG_IFD_SLOTS_NUMBER:
         *Length = 1;
-        Value[0] = 1;
+        Value[0] = 2;
         break;
     case TAG_IFD_POLLING_THREAD_KILLABLE:
         *Length = 1;
@@ -110,6 +111,9 @@ RESPONSECODE IFDHPowerICC ( DWORD Lun, DWORD Action,
     return IFD_SUCCESS;
 }
 
+extern ccid_bulkin_data_t bulkin_data[2];
+extern ccid_bulkout_data_t bulkout_data[2];
+
 RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
                                  PUCHAR TxBuffer, DWORD TxLength,
                                  PUCHAR RxBuffer, PDWORD RxLength,
@@ -120,13 +124,30 @@ RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
     RecvPci->Protocol = SendPci.Protocol;
     //SCARD_IO_HEADER::Length is not used according to document
 
-    int ret = virt_card_apdu_transceive(TxBuffer, TxLength, RxBuffer, RxLength);
-    if(ret < 0) {
+    if(TxLength > sizeof(bulkin_data[Lun].abData)) {
+        printf("warning TxLength(%lu) too large\n", TxLength);
         *RxLength = 0;
-        printf("warning: virt_card_apdu_transceive returns %d\n", ret);
+        return IFD_ERROR_INSUFFICIENT_BUFFER;
+    }
+    memcpy(bulkout_data[Lun].abData, TxBuffer, TxLength);
+    bulkout_data[Lun].dwLength = TxLength;
+
+    uint8_t ret = PC_to_RDR_XfrBlock(Lun);
+    if(ret != SLOT_NO_ERROR) {
+        *RxLength = 0;
+        printf("warning: PC_to_RDR_XfrBlock returns %#x\n", ret);
+    }else{
+        if(bulkin_data[Lun].dwLength > *RxLength) {
+            printf("bulkin_data[Lun].dwLength(%u) > *RxLength(%lu)\n",
+                bulkin_data[Lun].dwLength, *RxLength);
+            *RxLength = 0;
+            return IFD_ERROR_INSUFFICIENT_BUFFER;
+        }
+        memcpy(RxBuffer, bulkin_data[Lun].abData, bulkin_data[Lun].dwLength);
+        *RxLength = bulkin_data[Lun].dwLength;
     }
 
-    return ret == 0 ? IFD_SUCCESS : IFD_COMMUNICATION_ERROR;
+    return ret == SLOT_NO_ERROR ? IFD_SUCCESS : IFD_COMMUNICATION_ERROR;
 }
 
 RESPONSECODE IFDHControl (DWORD Lun, DWORD dwControlCode, PUCHAR

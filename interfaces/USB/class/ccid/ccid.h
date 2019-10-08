@@ -3,8 +3,8 @@
 
 #include <common.h>
 
-#define IDX_CCID 0
-#define IDX_OPENPGP 1
+#define IDX_OPENPGP 0
+#define IDX_CCID 1
 
 #define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
 #define CCID_CMD_HEADER_SIZE 10
@@ -131,6 +131,7 @@ typedef enum {
 enum APPLET {
   APPLET_NULL,
   APPLET_PIV,
+  APPLET_FIDO,
   APPLET_OATH,
   APPLET_ADMIN,
   APPLET_OPENPGP,
@@ -145,5 +146,6 @@ uint8_t CCID_Init(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx);
 void CCID_Loop(void);
 void CCID_TimeExtensionLoop(void);
+uint8_t PC_to_RDR_XfrBlock(uint8_t idx); // Exported for test purposes
 
 #endif //_CCID_H_

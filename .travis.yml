@@ -78,7 +78,7 @@ script:
   - # OATH test:
   - go test -v test-via-pcsc/oath_test.go
   - # U2F tests:
-  - echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
+  - echo 1 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
   - # OpenPGP tests:
   - pkill gpg-agent || true
@@ -127,69 +127,70 @@ script:
   - echo -e 'addcardkey\n3\n2048\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Authentication key on card
   - gpgconf --kill gpg-agent
   - # PIV tests:
-  - yubico-piv-tool -r "" -a status
+  - RDID=" 01"
+  - yubico-piv-tool -r "$RDID" -a status
   - opensc-tool -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
   - opensc-tool -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
-  - pkcs15-tool -D
-  - yubico-piv-tool -r "" -a verify-pin -P 123456
-  - yubico-piv-tool -r "" -a change-pin -P 123456 -N 654321
-  - yubico-piv-tool -r "" -a verify-pin -P 654321
-  - yubico-piv-tool -r "" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
-  - yubico-piv-tool -r "" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
-  - yubico-piv-tool -r "" -a verify-pin -P 654321
+  - pkcs15-tool --reader "$RDID" -D
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
+  - yubico-piv-tool -r "$RDID" -a change-pin -P 123456 -N 654321
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
   - ## Key generation
-  - yubico-piv-tool -r "" -a set-mgm-key -n 010203040506070801020304050607080102030405060708
-  - yubico-piv-tool -r "" -a generate -s 9e >/tmp/pubkey-9e.pem # generate key at 9E
-  - yubico-piv-tool -r "" -a selfsign-certificate -s 9e -S '/CN=CertAtSlot9e' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
-  - yubico-piv-tool -r "" -a import-certificate -s 9e < /tmp/cert-9e.pem
-  - yubico-piv-tool -r "" -a status
-  - yubico-piv-tool -r "" -a test-signature -s 9e < /tmp/cert-9e.pem
-  - yubico-piv-tool -r "" -a test-decipher -s 9e < /tmp/cert-9e.pem
-  - pkcs15-tool -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
+  - yubico-piv-tool -r "$RDID" -a set-mgm-key -n 010203040506070801020304050607080102030405060708
+  - yubico-piv-tool -r "$RDID" -a generate -s 9e >/tmp/pubkey-9e.pem # generate key at 9E
+  - yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9e -S '/CN=CertAtSlot9e' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
+  - yubico-piv-tool -r "$RDID" -a import-certificate -s 9e < /tmp/cert-9e.pem
+  - yubico-piv-tool -r "$RDID" -a status
+  - yubico-piv-tool -r "$RDID" -a test-signature -s 9e < /tmp/cert-9e.pem
+  - yubico-piv-tool -r "$RDID" -a test-decipher -s 9e < /tmp/cert-9e.pem
+  - pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
   - echo -n hello >/tmp/hello.txt
-  - pkcs11-tool -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
+  - pkcs11-tool --slot-index 2 -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
   - openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
-  - yubico-piv-tool -r "" -a generate -s 9a >/tmp/pubkey-9a.pem # generate key at 9a
-  - yubico-piv-tool -r "" -a selfsign-certificate -s 9a -S '/CN=CertAtSlot9a' < /tmp/pubkey-9a.pem >/tmp/cert-9a.pem
-  - yubico-piv-tool -r "" -a import-certificate -s 9a < /tmp/cert-9a.pem
-  - yubico-piv-tool -r "" -a generate -A ECCP256 -s 9c >/tmp/pubkey-9c.pem # generate key at 9c
-  - yubico-piv-tool -r "" -a selfsign-certificate -s 9c -S '/CN=CertAtSlot9c' < /tmp/pubkey-9c.pem >/tmp/cert-9c.pem
-  - yubico-piv-tool -r "" -a import-certificate -s 9c < /tmp/cert-9c.pem
-  - yubico-piv-tool -r "" -a generate -A ECCP256 -s 9d >/tmp/pubkey-9d.pem # generate key at 9d
-  - yubico-piv-tool -r "" -a selfsign-certificate -s 9d -S '/CN=CertAtSlot9d' < /tmp/pubkey-9d.pem >/tmp/cert-9d.pem
-  - yubico-piv-tool -r "" -a import-certificate -s 9d < /tmp/cert-9d.pem
-  - yubico-piv-tool -r "" -a status
+  - yubico-piv-tool -r "$RDID" -a generate -s 9a >/tmp/pubkey-9a.pem # generate key at 9a
+  - yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9a -S '/CN=CertAtSlot9a' < /tmp/pubkey-9a.pem >/tmp/cert-9a.pem
+  - yubico-piv-tool -r "$RDID" -a import-certificate -s 9a < /tmp/cert-9a.pem
+  - yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9c >/tmp/pubkey-9c.pem # generate key at 9c
+  - yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9c -S '/CN=CertAtSlot9c' < /tmp/pubkey-9c.pem >/tmp/cert-9c.pem
+  - yubico-piv-tool -r "$RDID" -a import-certificate -s 9c < /tmp/cert-9c.pem
+  - yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9d >/tmp/pubkey-9d.pem # generate key at 9d
+  - yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9d -S '/CN=CertAtSlot9d' < /tmp/pubkey-9d.pem >/tmp/cert-9d.pem
+  - yubico-piv-tool -r "$RDID" -a import-certificate -s 9d < /tmp/cert-9d.pem
+  - yubico-piv-tool -r "$RDID" -a status
   - ## PIN unblock
-  - yubico-piv-tool -r "" -P 654321 -a verify-pin -a test-signature -s 9a < /tmp/cert-9a.pem
-  - yubico-piv-tool -r "" -P 654321 -a verify-pin -a test-signature -s 9c < /tmp/cert-9c.pem
-  - yubico-piv-tool -r "" -P 654321 -a verify-pin -a test-decipher -s 9d < /tmp/cert-9d.pem
-  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
-  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
-  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
-  - yubico-piv-tool -r "" -a verify-pin -P 654321 2>&1 | grep 'Pin code blocked'
-  - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 999999 2>&1 | grep 'Successfully unblocked the pin code'
-  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 87654321 2>&1 | grep 'Successfully changed the puk code'
-  - yubico-piv-tool -r "" -a unblock-pin -P 87654321 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
+  - yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a < /tmp/cert-9a.pem
+  - yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c < /tmp/cert-9c.pem
+  - yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-decipher -s 9d < /tmp/cert-9d.pem
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 2>&1 | grep 'Pin code blocked'
+  - yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 999999 2>&1 | grep 'Successfully unblocked the pin code'
+  - yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 87654321 2>&1 | grep 'Successfully changed the puk code'
+  - yubico-piv-tool -r "$RDID" -a unblock-pin -P 87654321 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
   - ## Key import
   - openssl ecparam -name prime256v1 -out p256.pem
   - openssl req -x509 -newkey ec:p256.pem -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-  - yubico-piv-tool -r '' -a import-key -s 9a -i key.pem
-  - yubico-piv-tool -r '' -a import-certificate -s 9a -i cert.pem
-  - yubico-piv-tool -r '' -P 654321 -a verify-pin -a test-signature -s 9a <cert.pem
+  - yubico-piv-tool -r "$RDID" -a import-key -s 9a -i key.pem
+  - yubico-piv-tool -r "$RDID" -a import-certificate -s 9a -i cert.pem
+  - yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a <cert.pem
   - openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-  - yubico-piv-tool -r '' -a import-key -s 9c -i key.pem
-  - yubico-piv-tool -r '' -a import-certificate -s 9c -i cert.pem
-  - yubico-piv-tool -r '' -P 654321 -a verify-pin -a test-signature -s 9c <cert.pem
+  - yubico-piv-tool -r "$RDID" -a import-key -s 9c -i key.pem
+  - yubico-piv-tool -r "$RDID" -a import-certificate -s 9c -i cert.pem
+  - yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c <cert.pem
   - ## Factory reset
-  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
-  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 1 tries left before blocked'
-  - yubico-piv-tool -r "" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'The puk code is blocked'
-  - yubico-piv-tool -r "" -a change-puk -P 87654321 -N 11111111 2>&1 | grep 'The puk code is blocked'
-  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
-  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
-  - yubico-piv-tool -r "" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
-  - yubico-piv-tool -r "" -a reset
-  - yubico-piv-tool -r "" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
+  - yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
+  - yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 1 tries left before blocked'
+  - yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'The puk code is blocked'
+  - yubico-piv-tool -r "$RDID" -a change-puk -P 87654321 -N 11111111 2>&1 | grep 'The puk code is blocked'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
+  - yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
+  - yubico-piv-tool -r "$RDID" -a reset
+  - yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
   - cat /tmp/pcscd.log
   - coveralls -b build --exclude gnupg --exclude canokey-crypto --exclude virt-card --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --exclude interfaces --gcov-options '\-lp'
