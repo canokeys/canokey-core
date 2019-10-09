@@ -5,7 +5,7 @@
 
 #define KEY_FINGERPRINT_LENGTH 20
 #define KEY_DATETIME_LENGTH 4
-#define MAX_ATTR_LENGTH 9
+#define MAX_ATTR_LENGTH 11
 
 int openpgp_key_get_attributes(const char *path, void *buf);
 int openpgp_key_set_attributes(const char *path, const void *buf, uint8_t len);
