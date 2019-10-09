@@ -719,10 +719,9 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
     LL = olen;
   } else if (attr[0] == KEY_TYPE_ECDH) {
-    if (DATA[0] != 0xA6 || DATA[1] != 70 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[4] != 67 || DATA[5] != 0x86)
-      EXCEPT(SW_WRONG_DATA);
+    if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) EXCEPT(SW_WRONG_DATA);
     if (attr_len == sizeof(p256r1_attr)) {
-      if (DATA[6] != ECC_PUB_KEY_SIZE + 1 || DATA[7] != 0x04) EXCEPT(SW_WRONG_DATA);
+      if (DATA[1] != 70 || DATA[4] != 67 || DATA[6] != ECC_PUB_KEY_SIZE + 1 || DATA[7] != 0x04) EXCEPT(SW_WRONG_DATA);
       uint8_t key[ECC_KEY_SIZE];
       if (openpgp_key_get_key(DEC_KEY_PATH, key, ECC_KEY_SIZE) < 0) {
         memzero(key, sizeof(key));
@@ -736,7 +735,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(key, sizeof(key));
       LL = ECC_PUB_KEY_SIZE + 1;
     } else if (attr_len == sizeof(cv25519_attr)) {
-      if (DATA[6] != ED_PUB_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+      if (DATA[1] != 37 || DATA[4] != 34 || DATA[6] != ED_PUB_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
       uint8_t key[ED_KEY_SIZE];
       if (openpgp_key_get_key(DEC_KEY_PATH, key, ED_KEY_SIZE) < 0) {
         memzero(key, sizeof(key));
