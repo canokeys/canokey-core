@@ -108,6 +108,8 @@ static const uint8_t extended_capabilities[] = {
     0x00,              // No PIN block 2 format
     0x00,              // No MSE
 };
+
+static const ed25519_public_key gx = {9};
 // clang-format on
 
 static uint8_t pw1_mode, current_occurrence, state;
@@ -567,7 +569,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
       if (attr_len == sizeof(ed25519_attr))
         ed25519_publickey(key, key + ED_KEY_SIZE);
       else
-        curve25519_scalarmult_basepoint(key + ED_KEY_SIZE, key);
+        curve25519_scalarmult(key + ED_KEY_SIZE, key, gx);
     } else
       return -1;
     if (openpgp_key_set_key(key_path, key, key_len) < 0) {
@@ -675,14 +677,15 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     LL = ECC_KEY_SIZE * 2;
   } else if (attr[0] == KEY_TYPE_ED25519) {
     if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
-    uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE];
+    uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
     if (openpgp_key_get_key(SIG_KEY_PATH, key, ED_KEY_SIZE + ED_PUB_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
-    ed25519_sign(DATA, LC, key, key + ED_KEY_SIZE, RDATA);
+    ed25519_sign(DATA, LC, key, key + ED_KEY_SIZE, sig);
     memzero(key, sizeof(key));
-    LL = ECC_KEY_SIZE * 2;
+    memcpy(RDATA, sig, ED_KEY_SIZE * 2);
+    LL = ED_KEY_SIZE * 2;
   } else
     return -1;
 
@@ -986,7 +989,8 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     } else if (attr[0] == KEY_TYPE_ECDH && attr_len == sizeof(cv25519_attr)) {
       for (int i = 0; i < 16; ++i)
         SWAP(key[31 - i], key[i], uint8_t);
-      curve25519_scalarmult_basepoint(key + ED_KEY_SIZE, key);
+      curve25519_scalarmult(key + ED_KEY_SIZE, key, gx);
+      key_len += ED_PUB_KEY_SIZE;
     } else {
       memzero(key, sizeof(key));
       return -1;
