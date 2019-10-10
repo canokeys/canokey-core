@@ -93,8 +93,8 @@ script:
   - KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
   - Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
   - Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; }
-  - "GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1 ~ /ssb/ && $12 ~ /s/ {print $5}'|tail -n 1) -s|gpg; }"
-  - "GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1 ~ /ssb/ && $12 == \"e\" {print $5}') --encrypt|gpg; }"
+  - "GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s/ {print $5}'|tail -n 1) -s|gpg; }"
+  - "GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }"
   - Key2card 1 1 # key[1] to Signature key
   - GPGSign
   - Addkey 12 3 # [2] ECDH P-256 encrypt key
@@ -114,13 +114,22 @@ script:
   - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card # clear all keys, no pin verification at all
   - gpg --card-status |grep -E 'Signature key.+none'
   - Addkey 4 2048 # [4] gen RSA2048 key
-  - Key2card 4 1 # key[4] to Signature key
+  - Key2card 4 3 # key[4] to Authentication key
   - Addkey 6 2048 # [5] gen RSA2048 key
   - Key2card 5 2 # key[5] to Encryption key
   - GPGSign
   - GPGEnc
-  - Addkey 10 3 # gen ecdsa P-256 key[6]
-  - Key2card 6 3 # key[6] to Authentication key
+  - Addkey 10 3 # [6] gen ECDSA P-256 key
+  - Key2card 6 1 # key[6] to Signature key
+  - GPGSign
+  - Addkey 12 1 # [7] cv25519 encrypt key
+  - Addkey 10 1 # [8] ed25519 sign key
+  - Key2card 7 2 # key[7] to Encryption key
+  - Key2card 8 3 # key[8] to Authentication key
+  - GPGSign
+  - GPGEnc
+  - Addkey 10 1 # [9] ed25519 sign key
+  - Key2card 9 1 # key[9] to Signature key
   - GPGSign
   - echo -e 'addcardkey\n3\n2048\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Authentication key on card
   - GPGSign
