@@ -92,7 +92,7 @@ script:
   - "echo -e 'Key-Type: 1\\nKey-Length: 2048\\nSubkey-Type: 1\\nSubkey-Length: 2048\\nName-Real: Someone\\nName-Email: foo@example.com\\nPassphrase: 12345678\\n%commit\\n%echo done' | gpg --batch --gen-key"
   - KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
   - Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
-  - Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; }
+  - Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; gpg --card-status; }
   - "GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s/ {print $5}'|tail -n 1) -s|gpg; }"
   - "GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }"
   - Key2card 1 1 # key[1] to Signature key
@@ -110,7 +110,7 @@ script:
   - gpg --card-status
   - echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
   - diff /tmp/random-read.txt /tmp/random.txt
-  - echo -e 'admin\npasswd\n1\n3\n4\nq\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
+  - echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
   - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card # clear all keys, no pin verification at all
   - gpg --card-status |grep -E 'Signature key.+none'
   - Addkey 4 2048 # [4] gen RSA2048 key
