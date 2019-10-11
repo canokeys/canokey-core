@@ -122,6 +122,7 @@ script:
   - Addkey 10 3 # [6] gen ECDSA P-256 key
   - Key2card 6 1 # key[6] to Signature key
   - GPGSign
+  - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card # clear all keys, no pin verification at all
   - Addkey 12 1 # [7] cv25519 encrypt key
   - Addkey 10 1 # [8] ed25519 sign key
   - Key2card 7 2 # key[7] to Encryption key
@@ -131,6 +132,7 @@ script:
   - Addkey 10 1 # [9] ed25519 sign key
   - Key2card 9 1 # key[9] to Signature key
   - GPGSign
+  - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card # clear all keys, no pin verification at all
   - echo -e 'addcardkey\n3\n2048\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Authentication key on card
   - GPGSign
   - gpgconf --kill gpg-agent
