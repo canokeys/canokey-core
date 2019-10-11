@@ -633,7 +633,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   }
 
   memzero(key, sizeof(key));
-  if (strcmp(key_path, SIG_KEY_PATH) == 0) return reset_sig_counter();
+  if (P1 == 0x80 && strcmp(key_path, SIG_KEY_PATH) == 0) return reset_sig_counter();
   return 0;
 }
 
