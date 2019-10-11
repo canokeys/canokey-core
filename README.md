@@ -1,6 +1,6 @@
 # Canokey Core
 
-[![Build Status](https://travis-ci.org/canopo/canokey-core.svg?branch=master)](https://travis-ci.org/canopo/canokey-core)
+[![Build Status](https://travis-ci.com/canopo/canokey-core.svg?branch=master)](https://travis-ci.com/canopo/canokey-core)
 [![Coverage Status](https://coveralls.io/repos/github/canopo/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canopo/canokey-core?branch=master)
 
 ## Introduction
