@@ -53,9 +53,6 @@ script:
   - mkdir build && pushd build
   - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
   - make -j2
-  - ./canokey-crypto/test/test_aes
-  - ./canokey-crypto/test/test_ecdsa
-  - ./canokey-crypto/test/test_sha
   - ./test/test_apdu
   - ./test/test_openpgp
   - ./test/test_oath

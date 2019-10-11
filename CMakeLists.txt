@@ -14,9 +14,6 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -g -Wall -fstack-usage -fno-omit-frame-pointer --coverage")
 
-if (ENABLE_TESTS)
-    add_definitions(-DTEST)
-endif (ENABLE_TESTS)
 add_subdirectory(canokey-crypto)
 
 
@@ -25,6 +22,9 @@ file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 
 add_library(canokey-core ${SRC})
+if (ENABLE_TESTS)
+    target_compile_definitions(canokey-core PUBLIC -DTEST)
+endif (ENABLE_TESTS)
 target_include_directories(canokey-core SYSTEM
         PUBLIC
         include
