@@ -133,7 +133,11 @@ script:
   - Key2card 9 1 # key[9] to Signature key
   - GPGSign
   - echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card # clear all keys, no pin verification at all
-  - echo -e 'addcardkey\n3\n2048\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Authentication key on card
+  - echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
+  - echo -e 'addcardkey\n1\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Signature key on card
+  - echo -e 'addcardkey\n2\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Encryption key on card
+  - #echo -e 'addcardkey\n3\n2048\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID # generate Authentication key on card
+  - GPGEnc
   - GPGSign
   - gpgconf --kill gpg-agent
   - # PIV tests:
