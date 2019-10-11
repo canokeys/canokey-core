@@ -90,7 +90,7 @@ script:
   - KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
   - Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
   - Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; gpg --card-status; }
-  - Addcardkey() { echo -e 'addcardkey\n$1\n0\nsave\n' | gpg --expert --command-fd 0 --yes --edit-key $KEYID; }
+  - Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg --expert --command-fd 0 --yes --edit-key $KEYID; }
   - "ChangeUsage() { SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1); echo -e \"key $SUBKEY\\nchange-usage\\nS\\nQ\\ncross-certify\\nsave\" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }"
   - "GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }"
   - "GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }"
