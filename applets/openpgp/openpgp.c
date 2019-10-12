@@ -676,7 +676,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(key, sizeof(key));
     LL = ECC_KEY_SIZE * 2;
   } else if (attr[0] == KEY_TYPE_ED25519) {
-    if (LC != ED_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+    // if (LC != ED_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
     uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
     if (openpgp_key_get_key(SIG_KEY_PATH, key, ED_KEY_SIZE + ED_PUB_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
