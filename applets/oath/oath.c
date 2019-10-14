@@ -271,13 +271,11 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     off_out += record.name_len;
 
     if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
-      puts("hotp");
       RDATA[off_out++] = OATH_TAG_NO_RESP;
       RDATA[off_out++] = 1;
       RDATA[off_out++] = record.key[1];
       continue;
     }
-      puts("totp");
     if ((record.prop & OATH_PROP_TOUCH)) {
       RDATA[off_out++] = OATH_TAG_REQ_TOUCH;
       RDATA[off_out++] = 1;

@@ -90,9 +90,7 @@ static int get_input_size(uint8_t alg) {
   }
 }
 
-void piv_poweroff(void) {
-  in_admin_status = 0;
-}
+void piv_poweroff(void) { in_admin_status = 0; }
 
 int piv_install(uint8_t reset) {
   piv_poweroff();
