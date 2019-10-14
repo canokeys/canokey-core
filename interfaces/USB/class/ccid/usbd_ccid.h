@@ -4,7 +4,6 @@
 #include <ccid.h>
 #include <usbd_ioreq.h>
 
-#ifndef EP_CONFIG
 #define CCID_EPIN_ADDR 0x81
 #define CCID_EPIN_SIZE 16
 #define CCID_EPOUT_ADDR 0x01
@@ -13,7 +12,6 @@
 #define OPENPGP_EPIN_SIZE 64
 #define OPENPGP_EPOUT_ADDR 0x02
 #define OPENPGP_EPOUT_SIZE 64
-#endif
 
 // CCID Bulk State machine
 #define CCID_STATE_IDLE 0

@@ -53,6 +53,8 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(SN_FILE, DATA, 0, LC, 1);
 }
 
+__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+
 void fill_sn(uint8_t *buf) {
   int err = read_file(SN_FILE, buf, 0, 4);
   if (err != 4) memset(buf, 0, 4);
@@ -90,6 +92,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_WRITE_SN:
     ret = admin_write_sn(capdu, rapdu);
+    break;
+  case ADMIN_INS_VENDOR_SPECIFIC:
+    ret = admin_vendor_specific(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);

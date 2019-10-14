@@ -468,7 +468,7 @@ void CCID_TimeExtensionLoop(void) {
   bulkin_time_extension.bSlot = bulkout_data[idx].bSlot;
   bulkin_time_extension.bSeq = bulkout_data[idx].bSeq;
   bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
-  bulkin_time_extension.bError = 1; // Request another BTW (0.18s)
+  bulkin_time_extension.bError = 10; // Request another 10 BTWs (1.8s)
   bulkin_time_extension.bSpecific = 0;
   CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, idx, 1);
 }

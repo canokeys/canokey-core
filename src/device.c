@@ -10,18 +10,6 @@ volatile static uint8_t touch_result;
 static uint8_t is_inf_blinking;
 static uint32_t last_blink = UINT32_MAX;
 
-__weak void device_delay(int ms) {}
-
-__weak uint32_t device_get_tick(void) { return 0; }
-
-__weak void device_start_blinking(uint8_t sec) {}
-
-__weak void device_stop_blinking(void) {}
-
-__weak uint8_t is_nfc(void) {
-  return 0;
-}
-
 uint8_t wait_for_user_presence(void) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
