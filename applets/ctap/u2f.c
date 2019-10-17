@@ -17,6 +17,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (!is_nfc()) {
     start_blinking(1);
     if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    set_touch_result(TOUCH_NO);
     stop_blinking();
   }
 #endif
@@ -78,6 +79,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (!is_nfc()) {
     start_blinking(1);
     if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    set_touch_result(TOUCH_NO);
     stop_blinking();
   }
 #endif

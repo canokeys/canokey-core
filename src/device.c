@@ -14,7 +14,7 @@ uint8_t wait_for_user_presence(void) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
-  while (!touch_result) {
+  while (touch_result == TOUCH_NO) {
     CCID_Loop();
     if (CTAPHID_Loop(1) == LOOP_CANCEL) return USER_PRESENCE_CANCEL;
     uint32_t now = device_get_tick();
@@ -27,6 +27,7 @@ uint8_t wait_for_user_presence(void) {
       CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
+  touch_result = TOUCH_NO;
   return USER_PRESENCE_OK;
 }
 
