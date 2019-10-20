@@ -5,12 +5,21 @@ project(canokey-core C)
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
-if (ENABLE_DEBUG_OUTPUT)
-    add_definitions(-DDEBUG_OUTPUT)
-endif (ENABLE_DEBUG_OUTPUT)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer")
+
+if (ENABLE_DEBUG_OUTPUT)
+    add_definitions(-DDEBUG_OUTPUT)
+endif (ENABLE_DEBUG_OUTPUT)
+if (ENABLE_TESTS)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage --coverage")
+endif (ENABLE_TESTS)
+if (ENABLE_FUZZING)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
+endif (ENABLE_FUZZING)
 
 add_subdirectory(canokey-crypto)
 
@@ -18,11 +27,15 @@ add_subdirectory(canokey-crypto)
 file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
         littlefs/lfs.c littlefs/lfs_util.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
-
 add_library(canokey-core ${SRC})
-if (ENABLE_TESTS OR ENABLE_FUZZING)
+
+if (ENABLE_TESTS)
     target_compile_definitions(canokey-core PUBLIC -DTEST)
-endif (ENABLE_TESTS OR ENABLE_FUZZING)
+endif (ENABLE_TESTS)
+if (ENABLE_FUZZING)
+    target_compile_definitions(canokey-core PUBLIC -DTEST -DFUZZ)
+endif (ENABLE_FUZZING)
+
 target_include_directories(canokey-core SYSTEM
         PUBLIC
         include
@@ -38,9 +51,6 @@ target_link_libraries(canokey-core canokey-crypto)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
 if (ENABLE_TESTS)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage --coverage")
-
     find_package(CMocka CONFIG REQUIRED)
     include(AddCMockaTest)
     include(AddMockedTest)
@@ -60,7 +70,6 @@ if (ENABLE_TESTS)
 endif (ENABLE_TESTS)
 
 if (ENABLE_FUZZING)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
     add_executable(honggfuzz-fuzzer
             fuzzer/honggfuzz-fuzzer.c
             fuzzer/dummy.c
