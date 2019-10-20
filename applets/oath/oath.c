@@ -208,7 +208,10 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
     challenge_len = DATA[offset++];
-    if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) EXCEPT(SW_WRONG_DATA);
+    if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) {
+      challenge_len = 0;
+      EXCEPT(SW_WRONG_DATA);
+    }
     memcpy(challenge, DATA + offset, challenge_len);
 
     if (oath_enforce_increasing(&record, file_offset) < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -245,7 +248,10 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t off_in = 0;
     if (DATA[off_in++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
     challenge_len = DATA[off_in++];
-    if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) EXCEPT(SW_WRONG_DATA);
+    if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) {
+      challenge_len = 0;
+      EXCEPT(SW_WRONG_DATA);
+    }
     memcpy(challenge, DATA + off_in, challenge_len);
   }
 
