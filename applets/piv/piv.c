@@ -320,7 +320,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (pos[IDX_WITNESS] == 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
       len[IDX_RESPONSE] == 0) {
     authenticate_reset();
+#ifndef FUZZ
     if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
     if (length != len[IDX_CHALLENGE]) EXCEPT(SW_WRONG_DATA);
     if (P2 == 0x9D) pin.is_validated = 0;
 
@@ -500,7 +502,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
     authenticate_reset();
+#ifndef FUZZ
     if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
     if (len[IDX_EXP] != 2 * ECC_KEY_SIZE + 1) EXCEPT(SW_WRONG_DATA);
     if (P2 == 0x9D) pin.is_validated = 0;
     uint8_t key[ECC_KEY_SIZE];
@@ -529,7 +533,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
@@ -543,7 +549,9 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
       DATA[3] != 0x01)
     EXCEPT(SW_WRONG_DATA);
@@ -597,7 +605,9 @@ static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0xFF || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
   if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x03 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
+#ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   if (write_file(CARD_ADMIN_KEY_PATH, DATA + 3, 0, 24, 1) < 0) return -1;
   return 0;
 }
@@ -611,7 +621,9 @@ static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
   uint8_t alg = P1;

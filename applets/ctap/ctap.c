@@ -358,7 +358,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     }
     if ((ga.parsedParams & PARAM_pinProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), pinAuth);
+#ifndef FUZZ
     if (memcmp(pinAuth, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+#endif
   }
 
   uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
@@ -630,7 +632,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   memzero(iv, sizeof(iv));
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   uint8_t *ptr;
-  int err, retries;
+  int err, retries = 0;
   switch (cp.subCommand) {
   case CP_cmdGetRetries:
     ret = cbor_encoder_create_map(encoder, &map, 1);
@@ -669,7 +671,9 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = get_shared_secret(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
     hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), hmac_buf);
+#ifndef FUZZ
     if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+#endif
     cfg.key = cp.keyAgreement;
     cfg.in_size = MAX_PIN_SIZE + 1;
     cfg.in = cp.newPinEnc;
@@ -689,14 +693,18 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+#ifndef FUZZ
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
     retries = err - 1;
+#endif
     ret = get_shared_secret(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
     memcpy(hmac_buf, cp.newPinEnc, sizeof(cp.newPinEnc));
     memcpy(hmac_buf + sizeof(cp.newPinEnc), cp.pinHashEnc, sizeof(cp.pinHashEnc));
     hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, hmac_buf, sizeof(cp.newPinEnc) + sizeof(cp.pinHashEnc), hmac_buf);
+#ifndef FUZZ
     if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+#endif
     err = set_pin_retries(retries);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     cfg.key = cp.keyAgreement;
@@ -706,12 +714,14 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     block_cipher_dec(&cfg);
     err = verify_pin_hash(cp.pinHashEnc);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+#ifndef FUZZ
     if (err > 0) {
       if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
       if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       --consecutive_pin_counter;
       return CTAP2_ERR_PIN_INVALID;
     }
+#endif
     consecutive_pin_counter = 3;
     cfg.key = cp.keyAgreement;
     cfg.in_size = MAX_PIN_SIZE + 1;
@@ -732,8 +742,10 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+#ifndef FUZZ
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
     retries = err - 1;
+#endif
     ret = get_shared_secret(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
     err = set_pin_retries(retries);
@@ -745,12 +757,14 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     block_cipher_dec(&cfg);
     err = verify_pin_hash(cp.pinHashEnc);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+#ifndef FUZZ
     if (err > 0) {
       if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
       if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       --consecutive_pin_counter;
       return CTAP2_ERR_PIN_INVALID;
     }
+#endif
     consecutive_pin_counter = 3;
     err = set_pin_retries(8);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;

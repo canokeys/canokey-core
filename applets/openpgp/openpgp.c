@@ -527,7 +527,9 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
     if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
     if (err == PIN_AUTH_FAIL) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   } else {
+#ifndef FUZZ
     ASSERT_ADMIN();
+#endif
     offset = 0;
   }
   err = pin_update(&pw1, DATA + offset, LC - offset);
@@ -547,7 +549,9 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   uint8_t key[sizeof(rsa_key_t)];
   uint16_t key_len;
   if (P1 == 0x80) {
+#ifndef FUZZ
     ASSERT_ADMIN();
+#endif
     if (attr[0] == KEY_TYPE_RSA) {
       key_len = sizeof(rsa_key_t);
       if (rsa_generate_key((rsa_key_t *)key) < 0) {
@@ -638,7 +642,9 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
 }
 
 static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   if (PW1_MODE81() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   uint8_t pw1_status;
   if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
   if (pw1_status == 0x00) PW1_MODE81_OFF();
@@ -698,7 +704,9 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   int status = openpgp_key_get_status(DEC_KEY_PATH);
   if (status < 0) return -1;
   if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
@@ -753,7 +761,9 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   ASSERT_ADMIN();
+#endif
   int err;
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
   switch (tag) {
@@ -906,7 +916,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   ASSERT_ADMIN();
+#endif
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
 
   const uint8_t *p = DATA;
@@ -1011,7 +1023,9 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
 
   int status = openpgp_key_get_status(AUT_KEY_PATH);
   if (status < 0) return -1;
@@ -1111,12 +1125,14 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 
   uint8_t terminated;
   if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+#ifndef FUZZ
   if (terminated == 1) {
     if (INS == OPENPGP_INS_ACTIVATE) {
       if (openpgp_activate(capdu, rapdu) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
       return 0;
     }
   }
+#endif
 
   if (INS == OPENPGP_INS_SELECT_DATA) {
     state = STATE_SELECT_DATA;

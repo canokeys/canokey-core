@@ -24,10 +24,13 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
   int err = read_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0) return PIN_IO_FAIL;
   if (retries) *retries = ctr;
+#ifndef FUZZ
   if (ctr == 0) return PIN_AUTH_FAIL;
+#endif
   uint8_t pin_buf[PIN_MAX_LENGTH];
   int real_len = read_file(pin->path, pin_buf, 0, PIN_MAX_LENGTH);
   if (real_len < 0) return PIN_IO_FAIL;
+#ifndef FUZZ
   if (real_len != len || memcmp_s(buf, pin_buf, len) != 0) {
     --ctr;
     if (retries) *retries = ctr;
@@ -39,6 +42,7 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
     memzero(pin_buf, sizeof(pin_buf));
     return PIN_AUTH_FAIL;
   }
+#endif
   pin->is_validated = 1;
   err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0) {

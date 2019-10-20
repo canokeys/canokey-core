@@ -70,7 +70,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = admin_verify(capdu, rapdu);
     goto done;
   }
+#ifndef FUZZ
   if (!pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
   switch (INS) {
   case ADMIN_INS_WRITE_FIDO_PRIVATE_KEY:
     ret = ctap_install_private_key(capdu, rapdu);
