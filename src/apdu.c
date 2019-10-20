@@ -32,11 +32,12 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
     if (LC != 0) return -1;
     LC = (cmd[5] << 8) | cmd[6];
     if (LC == 0) return -1;
-    memmove(DATA, cmd + 7, LC);
     if (len == 7 + LC) { // Case 3E
+      memmove(DATA, cmd + 7, LC);
       LE = 0x10000;
       return 0;
     } else if (len == 9 + LC) { // Case 4E
+      memmove(DATA, cmd + 7, LC);
       LE = (cmd[7 + LC] << 8) | cmd[8 + LC];
       if (LE == 0) LE = 0x10000;
     } else
