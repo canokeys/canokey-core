@@ -1,3 +1,3 @@
 #pragma once
 
-int card_fabrication_procedure(void);
+int card_fabrication_procedure(const char *lfs_root);

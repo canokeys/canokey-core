@@ -71,7 +71,7 @@ static void fido2_init() {
 }
 
 
-int card_fabrication_procedure() {
+int card_fabrication_procedure(const char * lfs_root) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_emubd_read;
@@ -85,7 +85,7 @@ int card_fabrication_procedure() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 16;
-  lfs_emubd_create(&cfg, "/tmp/lfs-root");
+  lfs_emubd_create(&cfg, lfs_root);
 
   fs_init(&cfg);
   admin_install();
