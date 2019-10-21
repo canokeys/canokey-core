@@ -10,11 +10,13 @@ static CTAPHID_Channel channel;
 static volatile uint8_t has_frame;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
+static uint8_t (*callback_send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len);
 
 const uint16_t ISIZE = sizeof(frame.init.data);
 const uint16_t CSIZE = sizeof(frame.cont.data);
 
-uint8_t CTAPHID_Init(void) {
+uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len)) {
+  callback_send_report = send_report;
   channel.state = CTAPHID_IDLE;
   has_frame = 0;
   return 0;
@@ -26,7 +28,7 @@ uint8_t CTAPHID_OutEvent(uint8_t *data) {
   return 0;
 }
 
-static void CTAPHID_SendFrame(void) { USBD_CTAPHID_SendReport(&usb_device, (uint8_t *)&frame, sizeof(CTAPHID_FRAME)); }
+static void CTAPHID_SendFrame(void) { callback_send_report(&usb_device, (uint8_t *)&frame, sizeof(CTAPHID_FRAME)); }
 
 static void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len) {
   uint16_t off = 0;

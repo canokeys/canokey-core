@@ -1,5 +1,8 @@
 #include "device.h"
 #include "usbd_core.h"
+#include <time.h>
+#include <unistd.h>
+
 USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev) { return USBD_OK; }
@@ -21,7 +24,16 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
   return USBD_OK;
 }
 uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return 0; }
-void device_delay(int ms) {}
-uint32_t device_get_tick(void) { return 0; }
+void device_delay(int ms) { usleep(ms * 1000); }
+uint32_t device_get_tick(void) {
+  uint64_t ms, s;
+  struct timespec spec;
+
+  clock_gettime(CLOCK_MONOTONIC, &spec);
+
+  s = spec.tv_sec;
+  ms = spec.tv_nsec / 1000000;
+  return (uint32_t)(s * 1000 + ms);
+}
 void device_disable_irq(void) {}
 void device_enable_irq(void) {}

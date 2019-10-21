@@ -57,6 +57,15 @@ if (ENABLE_TESTS)
     add_subdirectory(test)
     enable_testing()
 
+    add_executable(fido-hid-over-udp
+            virt-card/dummy.c
+            virt-card/fabrication.c
+            virt-card/fido-hid-over-udp.c
+            littlefs/emubd/lfs_emubd.c)
+    target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
+    target_link_libraries(fido-hid-over-udp general canokey-core asan)
+    target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
+
     pkg_search_module(PCSCLITE libpcsclite)
 
     if (PCSCLITE_FOUND)
@@ -72,7 +81,7 @@ endif (ENABLE_TESTS)
 if (ENABLE_FUZZING)
     add_executable(honggfuzz-fuzzer
             fuzzer/honggfuzz-fuzzer.c
-            fuzzer/dummy.c
+            virt-card/dummy.c
             virt-card/fabrication.c
             littlefs/emubd/lfs_emubd.c)
     target_include_directories(honggfuzz-fuzzer SYSTEM PRIVATE virt-card littlefs)
