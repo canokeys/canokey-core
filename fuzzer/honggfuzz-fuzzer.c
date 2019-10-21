@@ -74,6 +74,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     if (build_capdu(&capdu, bulkout_data[0].abData, len) < 0) {
       return 0;
     }
+    PRINT_HEX(bulkout_data[0].abData, len);
     process_func(&capdu, &rapdu);
   }
   return 0;
