@@ -476,7 +476,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // auth data
   len = sizeof(data_buf);
-  uint8_t flags = (ga.parsedParams & PARAM_hmacSecret ? FLAGS_ED : 0) |
+  uint8_t flags = ((ga.parsedParams & PARAM_hmacSecret) ? FLAGS_ED : 0) |
                   (has_pin() && (ga.parsedParams & PARAM_pinAuth) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len);
   if (ret != 0) return ret;
