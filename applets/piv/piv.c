@@ -432,6 +432,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
     auth_ctx[OFFSET_AUTH_KEY_ID] = P2;
     auth_ctx[OFFSET_AUTH_ALGO] = alg;
+    if (OFFSET_AUTH_CHALLENGE + length > sizeof(auth_ctx)) EXCEPT(SW_WRONG_DATA);
     random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, length);
 
     RDATA[0] = 0x7C;
