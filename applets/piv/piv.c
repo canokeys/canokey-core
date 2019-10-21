@@ -662,6 +662,10 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
     if (DATA[0] != 0x06 || DATA[1] != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     memcpy(key, DATA + 2, ECC_KEY_SIZE);
+    if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
+      memzero(key, sizeof(key));
+      EXCEPT(SW_WRONG_DATA);
+    }
     if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
       return -1;
