@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 
 const static UCHAR ATR[] = {0x3B, 0xE9, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x45, 0x4A, 0x43, 0x4F, 0x50, 0x32, 0x34, 0x32, 0x52, 0x32, 0xA0};
 static int applet_init = 0;
@@ -40,7 +41,8 @@ RESPONSECODE IFDHCloseChannel ( DWORD Lun )
 
 static RESPONSECODE card_state_change(DWORD Lun, int timeout)
 {
-    usleep(timeout * 1000);
+    struct timespec spec = {.tv_sec = timeout/1000, .tv_nsec = timeout % 1000 * 1000000ll};
+    nanosleep(&spec, NULL);
     return IFD_RESPONSE_TIMEOUT;
 }
 

@@ -25,7 +25,7 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
 }
 uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return 0; }
 void device_delay(int ms) {
-  struct timespec spec = {.tv_sec = 0, .tv_nsec = ms * 1000000ll};
+  struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
   nanosleep(&spec, NULL);
 }
 uint32_t device_get_tick(void) {
