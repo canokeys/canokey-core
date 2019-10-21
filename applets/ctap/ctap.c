@@ -342,7 +342,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len) {
   static CTAP_getAssertion ga;
   CborParser parser;
-  uint8_t ret, pinAuth[SHA256_DIGEST_LENGTH];
+  int ret;
+  uint8_t pinAuth[SHA256_DIGEST_LENGTH];
   if (credential_idx == 0) {
     ret = parse_get_assertion(&parser, &ga, params, len);
     CHECK_PARSER_RET(ret);
@@ -624,7 +625,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
 static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
   CborParser parser;
   CTAP_clientPin cp;
-  uint8_t ret = parse_client_pin(&parser, &cp, params, len);
+  int ret = parse_client_pin(&parser, &cp, params, len);
   CHECK_PARSER_RET(ret);
 
   CborEncoder map, key_map;
