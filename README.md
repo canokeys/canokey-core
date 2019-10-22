@@ -8,9 +8,9 @@
 Core implementations of an open-source secure key, with supports of:
 
 * U2F / FIDO2
-* OpenPGP Card V3.4 with ECDSA support
+* OpenPGP Card V3.4 with EcDSA / EdDSA / ECDH support
 * PIV (NIST SP 800-73-4)
-* TOTP
+* HOTP / TOTP
 
 The USB mode contains 4 different interfaces:
 
@@ -40,6 +40,7 @@ For interface 3, you may use APDUs to use OpenPGP Card / PIV / OATH / Admin appl
   * 04 Reset PIV applet
   * 05 Reset OATH applet
   * 30 Write SN
+  * FF Vendor specific function
 
 #### Verify PIN
 
@@ -92,6 +93,12 @@ The SN can be only set ONCE. Due to the limitation of OpenPGP card spec, the ser
 `00 30 00 00 04 DE AD BE AF`
 `9000`
 
+#### Vendor specific function
+
+The default response is always `9000`. You can override this by implement the following function:
+
+`int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu)`
+
 ## Porting
 
 Use [Canokey-STM32](https://github.com/canopo/canokey-stm32) as an example.
@@ -100,12 +107,18 @@ Use [Canokey-STM32](https://github.com/canopo/canokey-stm32) as an example.
 
 * `void device_delay(int ms);`
 * `uint32_t device_get_tick(void);`
+* `void device_disable_irq(void);`
+* `void device_enable_irq(void);`
+* `uint8_t is_nfc(void);`
 * `void device_start_blinking(uint8_t sec);`
 * `void device_stop_blinking(void);`
-* `uint8_t is_nfc(void);`
 
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
 
-3. You need to configure the mbed-tls according to its documentation or provide the algorithms on your own by overwriting the weak symbols.
+3. You need to configure the littlefs properly.
 
-4. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 150ms **IN A TIMER**.
+4. You need to configure the mbed-tls according to its documentation or provide the algorithms on your own by overwriting the weak symbols.
+
+    Or instead, you may implement the cryptography algorithms by yourself.
+
+5. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 1 second **IN A TIMER**.
