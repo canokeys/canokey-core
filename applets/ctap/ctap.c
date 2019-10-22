@@ -429,11 +429,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen,
                                   ga.hmacSecretSaltEnc);
     if (ret) return ret;
+    DBG_MSG("hmac-secret(plain): ");
+    PRINT_HEX(ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen);
     cfg.key = ga.hmacSecretKeyAgreement;
     cfg.in_size = ga.hmacSecretSaltLen;
     cfg.in = ga.hmacSecretSaltEnc;
     cfg.out = ga.hmacSecretSaltEnc;
-    block_cipher_dec(&cfg);
+    block_cipher_enc(&cfg);
     memzero(ga.hmacSecretKeyAgreement, sizeof(ga.hmacSecretKeyAgreement));
 
     CborEncoder extensionEncoder;
@@ -450,6 +452,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CHECK_CBOR_RET(ret);
 
     extensionSize = cbor_encoder_get_buffer_size(&extensionEncoder, extensionBuffer);
+    DBG_MSG("extensionSize=%hhu\n", extensionSize);
   }
 
   // build response
