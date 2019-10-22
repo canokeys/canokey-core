@@ -201,15 +201,17 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
-  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
+  uint8_t data_buf[sizeof(CTAP_authData)];
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
+      uint8_t pri_key[ECC_KEY_SIZE];
       parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
       CredentialId *kh = (CredentialId *)data_buf;
       // compare rpId first
       if (memcmp(kh->rpIdHash, mc.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
       // then verify key handle and get private key in rpIdHash
       ret = verify_key_handle(kh, pri_key);
+      memzero(pri_key, sizeof(pri_key));
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
