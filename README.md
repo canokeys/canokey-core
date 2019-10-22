@@ -8,17 +8,17 @@
 
 Core implementations of an open-source secure key, with supports of:
 
-  * U2F / FIDO2
-  * OpenPGP Card V3.4 with EcDSA / EdDSA / ECDH support
-  * PIV (NIST SP 800-73-4)
-  * HOTP / TOTP
+* U2F / FIDO2
+* OpenPGP Card V3.4 with EcDSA / EdDSA / ECDH support
+* PIV (NIST SP 800-73-4)
+* HOTP / TOTP
 
 The USB mode contains 4 different interfaces:
 
-  * Interface 0: U2F / FIDO2, which is an HID interface
-  * Interface 1: OpenPGP Card, which is a CCID interface
-  * Interface 2: PIV and OATH, which is also a CCID interface
-  * Interface 3: WebUSB, which is not a standard interface
+* Interface 0: U2F / FIDO2, which is an HID interface
+* Interface 1: OpenPGP Card, which is a CCID interface
+* Interface 2: PIV and OATH, which is also a CCID interface
+* Interface 3: WebUSB, which is not a standard interface
 
 Although OpenPGP Card uses the CCID interface, we make it a unique one because the `gpg-agent` opens the card using the `exlusive` mode.
 The WebUSB interface is used to configure the key via a web-based interface.
@@ -31,17 +31,17 @@ For interface 3, you may use APDUs to use OpenPGP Card / PIV / OATH / Admin appl
 
 ### The protocol of admin applet
 
-  * AID: F0 00 00 00 00
-  * Instructions:
-    * 20 Verify PIN
-    * 21 Change PIN
-    * 01 Write FIDO private key
-    * 02 Write FIDO cert
-    * 03 Reset OpenPGP applet
-    * 04 Reset PIV applet
-    * 05 Reset OATH applet
-    * 30 Write SN
-    * FF Vendor specific function
+* AID: F0 00 00 00 00
+* Instructions:
+  * 20 Verify PIN
+  * 21 Change PIN
+  * 01 Write FIDO private key
+  * 02 Write FIDO cert
+  * 03 Reset OpenPGP applet
+  * 04 Reset PIV applet
+  * 05 Reset OATH applet
+  * 30 Write SN
+  * FF Vendor specific function
 
 #### Verify PIN
 
@@ -104,22 +104,22 @@ The default response is always `9000`. You can override this by implement the fo
 
 Use [Canokey-STM32](https://github.com/canopo/canokey-stm32) as an example.
 
- 1. You need to implement these functions in `device.h`:
+1. You need to implement these functions in `device.h`:
 
-  * `void device_delay(int ms);`
-  * `uint32_t device_get_tick(void);`
-  * `void device_disable_irq(void);`
-  * `void device_enable_irq(void);`
-  * `uint8_t is_nfc(void);`
-  * `void device_start_blinking(uint8_t sec);`
-  * `void device_stop_blinking(void);`
+   * `void device_delay(int ms);`
+   * `uint32_t device_get_tick(void);`
+   * `void device_disable_irq(void);`
+   * `void device_enable_irq(void);`
+   * `uint8_t is_nfc(void);`
+   * `void device_start_blinking(uint8_t sec);`
+   * `void device_stop_blinking(void);`
 
- 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
+2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
 
- 3. You need to configure the littlefs properly.
+3. You need to configure the littlefs properly.
 
- 4. You need to configure the mbed-tls according to its documentation or provide the algorithms on your own by overwriting the weak symbols.
- 
-    Or instead, you may implement the cryptography algorithms by yourself.
+4. You need to configure the mbed-tls according to its documentation or provide the algorithms on your own by overwriting the weak symbols.
 
- 5. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 1 second **IN A TIMER**.
+   Or instead, you may implement the cryptography algorithms by yourself.
+
+5. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 1 second **IN A TIMER**.
