@@ -173,10 +173,10 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&val) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
 
-  char type_str[10];
-  len = sizeof(type_str);
-  ret = cbor_value_copy_text_string(&val, type_str, &len, NULL);
-  CHECK_CBOR_RET(ret);
+  // char type_str[10];
+  // len = sizeof(type_str);
+  // ret = cbor_value_copy_text_string(&val, type_str, &len, NULL);
+  // CHECK_CBOR_RET(ret);
 
   return 0;
 }
