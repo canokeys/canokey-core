@@ -32,6 +32,10 @@ addons:
       - python3-pip
       - python3-setuptools
       - python3-wheel
+cache:
+  directories:
+    - gnupg
+    - /home/travis/.cache/pip
 install:
   - ./test-via-pcsc/build_gpg.sh # Build latest GPG
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
