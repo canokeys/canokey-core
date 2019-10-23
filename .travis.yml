@@ -44,16 +44,11 @@ install:
   - cd ../NFC
   - make
   - popd
-  -
   - git clone --depth 1 https://github.com/canopo/fido2-tests.git
-  - pushd fido2-tests
-  - pip3 install --user -r requirements.txt
-  - popd
-  -
+  - pushd fido2-tests; pip3 install --user -r requirements.txt; popd
   - sudo pip install cpp-coveralls
 
 script:
-  -
   - mkdir build && pushd build
   - cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
   - make -j2
@@ -61,7 +56,7 @@ script:
   - ./test/test_openpgp
   - ./test/test_oath
   - popd
-  -
+  - # Start pcscd
   - sudo killall -9 pcscd || true
   - sudo cp build/libu2f-virt-card.so /usr/local/lib/
   - sudo cp test-via-pcsc/pcscd-reader.conf /etc/reader.conf.d/
