@@ -2,7 +2,7 @@
 set -e
 mkdir ~/.gnupg || true
 echo "pinentry-program /usr/local/bin/pinentry-tty" >~/.gnupg/gpg-agent.conf
-mkdir gnupg
+mkdir gnupg || true
 pushd gnupg
 if [ ! -d pinentry-1.1.0 ];then
     wget https://gnupg.org/ftp/gcrypt/pinentry/pinentry-1.1.0.tar.bz2
