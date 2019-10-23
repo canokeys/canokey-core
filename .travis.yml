@@ -12,6 +12,7 @@ addons:
   apt:
     update: true
     packages:
+      - pastebinit
       - gcc
       - g++
       - cmake
@@ -228,5 +229,5 @@ script:
   - yubico-piv-tool -r "$RDID" -a reset
   - yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
-  - cat /tmp/pcscd.log
+  - pastebinit -i /tmp/pcscd.log -b http://pastebin.com || true
   - coveralls -b build --exclude gnupg --exclude canokey-crypto --exclude virt-card --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --exclude interfaces --gcov-options '\-lp'
