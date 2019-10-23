@@ -36,7 +36,8 @@ addons:
 cache:
   directories:
     - gnupg
-    - /home/travis/gopath
+    - /home/travis/gopath/pkg
+    - /home/travis/gopath/src/golang.org
     - /home/travis/.cache/pip
 install:
   - ./test-via-pcsc/build_gpg.sh # Build latest GPG
