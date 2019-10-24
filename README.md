@@ -1,8 +1,8 @@
 # Canokey Core
 
-[![Build Status](https://travis-ci.com/canopo/canokey-core.svg?branch=master)](https://travis-ci.com/canopo/canokey-core)
-[![Coverage Status](https://coveralls.io/repos/github/canopo/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canopo/canokey-core?branch=master)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/de791a6a112a4b9f8da8df6fb96bcb12)](https://www.codacy.com/manual/zz593141477/canokey-core?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=canopo/canokey-core&amp;utm_campaign=Badge_Grade)
+[![Build Status](https://travis-ci.com/canokeys/canokey-core.svg?branch=master)](https://travis-ci.com/canokeys/canokey-core)
+[![Coverage Status](https://coveralls.io/repos/github/canokeys/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canokeys/canokey-core?branch=master)
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/de791a6a112a4b9f8da8df6fb96bcb12)](https://www.codacy.com/manual/zz593141477/canokey-core?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=canokeys/canokey-core&amp;utm_campaign=Badge_Grade)
 
 ## Introduction
 
@@ -102,7 +102,7 @@ The default response is always `9000`. You can override this by implement the fo
 
 ## Porting
 
-Use [Canokey-STM32](https://github.com/canopo/canokey-stm32) as an example.
+Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 1. You need to implement these functions in `device.h`:
 
