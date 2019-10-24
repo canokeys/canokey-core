@@ -230,5 +230,5 @@ script:
   - yubico-piv-tool -r "$RDID" -a reset
   - yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
   - sudo killall pcscd || true
-  - grep 'APDU:' /tmp/pcscd.log | pastebinit -b http://pastebin.com || true
   - coveralls -b build --exclude gnupg --exclude canokey-crypto --exclude virt-card --exclude u2f-ref-code --exclude tinycbor --exclude littlefs --exclude test --exclude interfaces --gcov-options '\-lp'
+  - grep -a 'APDU:' /tmp/pcscd.log | pastebinit -b http://pastebin.com || true
