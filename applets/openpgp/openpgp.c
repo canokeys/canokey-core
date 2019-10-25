@@ -989,6 +989,10 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 
     if ((attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) ||
         (attr[0] == KEY_TYPE_ECDH && attr_len == sizeof(p256r1_attr))) {
+      if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
+        memzero(key, sizeof(key));
+        EXCEPT(SW_WRONG_DATA);
+      }
       if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
         memzero(key, sizeof(key));
         return -1;
