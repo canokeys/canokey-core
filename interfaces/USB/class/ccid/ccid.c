@@ -224,7 +224,9 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
       SW = SW_NO_ERROR;
     } else if (ret == APDU_CHAINING_LAST_BLOCK) {
       capdu = &capdu_chaining.capdu;
+      LE = MIN(LE, APDU_BUFFER_SIZE);
       if ((CLA == 0x80 || CLA == 0x00) && INS == 0xC0) { // GET RESPONSE
+        rapdu->len = LE;
         apdu_output(&rapdu_chaining, rapdu);
         goto send_response;
       }
@@ -245,7 +247,6 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
           goto send_response;
         }
       }
-      LE = MIN(LE, APDU_BUFFER_SIZE);
       switch (current_applet) {
       case APPLET_PIV:
         piv_process_apdu(capdu, &rapdu_chaining.rapdu);
