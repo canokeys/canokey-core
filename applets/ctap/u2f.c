@@ -68,9 +68,8 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   size_t len;
   uint8_t priv_key[ECC_KEY_SIZE];
 
-  if (req->keyHandleLen != sizeof(CredentialId) ||
-      memcmp(req->appId, ((CredentialId *)req->keyHandle)->rpIdHash, U2F_APPID_SIZE) != 0)
-    EXCEPT(SW_WRONG_DATA);
+  if (req->keyHandleLen != sizeof(CredentialId)) EXCEPT(SW_WRONG_LENGTH);
+  if (memcmp(req->appId, ((CredentialId *)req->keyHandle)->rpIdHash, U2F_APPID_SIZE) != 0) EXCEPT(SW_WRONG_DATA);
   uint8_t err = verify_key_handle((CredentialId *)req->keyHandle, priv_key);
   if (err) EXCEPT(SW_WRONG_DATA);
 
