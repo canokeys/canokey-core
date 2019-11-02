@@ -3,8 +3,12 @@
 
 #include <common.h>
 
+#ifdef ENABLE_GPG_INTERFACE
 #define IDX_OPENPGP 0
 #define IDX_CCID 1
+#else
+#define IDX_CCID 0
+#endif
 
 #define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
 #define CCID_CMD_HEADER_SIZE 10

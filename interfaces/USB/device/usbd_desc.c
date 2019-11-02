@@ -67,8 +67,14 @@ static const uint8_t USBD_FS_DeviceDesc[] = {
 static const uint8_t USBD_FS_CfgDesc[] = {
     0x09,                        /* bLength: Configuration Descriptor size */
     USB_DESC_TYPE_CONFIGURATION, /* bDescriptorType: Configuration */
-    0xCC, 0x00,                  /* wTotalLength: Bytes returned */
-    0x04,                        /* bNumInterfaces: 4 interfaces */
+#ifdef ENABLE_GPG_INTERFACE
+    0x4D +
+#endif
+    0x7F, 0x00,                  /* wTotalLength: Bytes returned */
+#ifdef ENABLE_GPG_INTERFACE
+    1 +
+#endif
+    0x03,                        /* bNumInterfaces: HID+CCID+WebUSB */
     0x01,                        /* bConfigurationValue: Configuration value */
     0x00,                        /* Configuration: Index of string descriptor describing the configuration */
     0x80,                        /* bmAttributes: bus powered */
@@ -109,6 +115,7 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     0x03,                     /* bmAttributes: Interrupt endpoint */
     CTAPHID_EPOUT_SIZE, 0x00, /* wMaxPacketSize: 64 Bytes max  */
     0x05,                     /* bInterval: Polling Interval (5 ms) */
+#ifdef ENABLE_GPG_INTERFACE
     /************** Descriptor of CCID interface ****************/
     /* This interface is for OpenPGP applet */
     /* 41 */
@@ -165,6 +172,7 @@ static const uint8_t USBD_FS_CfgDesc[] = {
     USBD_EP_TYPE_BULK,        /* bmAttributes: Bulk endpoint */
     OPENPGP_EPOUT_SIZE, 0x00, /* wMaxPacketSize: 64 Bytes max  */
     0x00,                     /* bInterval: Polling Interval */
+  #endif
     /************** Descriptor of CCID interface ****************/
     /* This interface is for PIV, oath, and admin applet */
     /* 118 */

@@ -53,7 +53,9 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
 
   if (epnum == (0x7F & CTAPHID_EPIN_ADDR)) return USBD_CTAPHID_DataIn();
   if (epnum == (0x7F & CCID_EPIN_ADDR)) return USBD_CCID_DataIn(pdev, IDX_CCID);
+#ifdef ENABLE_GPG_INTERFACE
   if (epnum == (0x7F & OPENPGP_EPIN_ADDR)) return USBD_CCID_DataIn(pdev, IDX_OPENPGP);
+#endif
 
   return USBD_FAIL;
 }
@@ -61,7 +63,9 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == (0x7F & CTAPHID_EPOUT_ADDR)) return USBD_CTAPHID_DataOut(pdev);
   if (epnum == (0x7F & CCID_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_CCID);
+#ifdef ENABLE_GPG_INTERFACE
   if (epnum == (0x7F & OPENPGP_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_OPENPGP);
+#endif
 
   return USBD_FAIL;
 }

@@ -152,10 +152,13 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
     return SLOTERROR_BAD_POWERSELECT;
   }
+#ifdef ENABLE_GPG_INTERFACE
   if (idx == IDX_OPENPGP) {
     memcpy(bulkin_data[idx].abData, atr_openpgp, sizeof(atr_openpgp));
     bulkin_data[idx].dwLength = sizeof(atr_openpgp);
-  } else {
+  } else 
+#endif
+  {
     memcpy(bulkin_data[idx].abData, atr_ccid, sizeof(atr_ccid));
     bulkin_data[idx].dwLength = sizeof(atr_ccid);
   }
@@ -172,9 +175,11 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
 static uint8_t PC_to_RDR_IccPowerOff(uint8_t idx) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH, idx);
   if (error != 0) return error;
+#ifdef ENABLE_GPG_INTERFACE
   if (idx == IDX_OPENPGP)
     openpgp_poweroff();
   else
+#endif
     poweroff(current_applet);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
@@ -215,9 +220,12 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
     SW = SW_CHECKING_ERROR;
     goto send_response;
   }
+#ifdef ENABLE_GPG_INTERFACE
   if (idx == IDX_OPENPGP) {
     openpgp_process_apdu(capdu, rapdu);
-  } else {
+  } else
+#endif
+  {
     int ret = apdu_input(&capdu_chaining, capdu);
     if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
       LL = 0;
@@ -234,20 +242,30 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
       if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
         // deal with select, note that in this ccid interface, we do not support openpgp
         uint8_t i;
-        for (i = APPLET_NULL + 1; i != APPLET_OPENPGP; ++i) {
+#ifdef ENABLE_GPG_INTERFACE
+        uint8_t end = APPLET_OPENPGP;
+#else
+        uint8_t end = APPLET_ENUM_END;
+#endif
+        for (i = APPLET_NULL + 1; i != end; ++i) {
           if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
             if (i != current_applet) poweroff(current_applet);
             current_applet = i;
+            DBG_MSG("applet switched to: %d\n", current_applet);
             break;
           }
         }
-        if (i == APPLET_OPENPGP) {
+        if (i == end) {
           LL = 0;
           SW = SW_FILE_NOT_FOUND;
+          DBG_MSG("applet not found\n");
           goto send_response;
         }
       }
       switch (current_applet) {
+      case APPLET_OPENPGP:
+        openpgp_process_apdu(capdu, rapdu);
+        break;
       case APPLET_PIV:
         piv_process_apdu(capdu, &rapdu_chaining.rapdu);
         rapdu->len = LE;
