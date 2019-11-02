@@ -421,17 +421,17 @@ void CCID_Loop(void) {
   uint8_t errorCode;
   switch (bulkout_data[idx].bMessageType) {
   case PC_TO_RDR_ICCPOWERON:
-    DBG_MSG("Slot %s power on\n", idx == 0 ? "ccid" : "openpgp");
+    DBG_MSG("Slot %s power on\n", idx == IDX_CCID ? "ccid" : "openpgp");
     errorCode = PC_to_RDR_IccPowerOn(idx);
     RDR_to_PC_DataBlock(errorCode, idx);
     break;
   case PC_TO_RDR_ICCPOWEROFF:
-    DBG_MSG("Slot %s power off\n", idx == 0 ? "ccid" : "openpgp");
+    DBG_MSG("Slot %s power off\n", idx == IDX_CCID ? "ccid" : "openpgp");
     errorCode = PC_to_RDR_IccPowerOff(idx);
     RDR_to_PC_SlotStatus(errorCode, idx);
     break;
   case PC_TO_RDR_GETSLOTSTATUS:
-    DBG_MSG("Slot %s get status\n", idx == 0 ? "ccid" : "openpgp");
+    DBG_MSG("Slot %s get status\n", idx == IDX_CCID ? "ccid" : "openpgp");
     errorCode = PC_to_RDR_GetSlotStatus(idx);
     RDR_to_PC_SlotStatus(errorCode, idx);
     break;
@@ -441,7 +441,7 @@ void CCID_Loop(void) {
     RDR_to_PC_DataBlock(errorCode, idx);
     break;
   case PC_TO_RDR_GETPARAMETERS:
-    DBG_MSG("Slot %s get param\n", idx == 0 ? "ccid" : "openpgp");
+    DBG_MSG("Slot %s get param\n", idx == IDX_CCID ? "ccid" : "openpgp");
     errorCode = PC_to_RDR_GetParameters(idx);
     RDR_to_PC_Parameters(errorCode, idx);
     break;
