@@ -318,7 +318,7 @@ int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   int ret = 0;
   switch (INS) {
   case OATH_INS_SELECT:
-    // Do nothing
+    if(P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     break;
   case OATH_INS_PUT:
     ret = oath_put(capdu, rapdu);

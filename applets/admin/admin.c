@@ -65,7 +65,10 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   SW = SW_NO_ERROR;
 
   int ret;
-  if (INS == ADMIN_INS_SELECT) return 0;
+  if (INS == ADMIN_INS_SELECT) {
+    if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    return 0;
+  }
   if (INS == ADMIN_INS_VERIFY) {
     ret = admin_verify(capdu, rapdu);
     goto done;
