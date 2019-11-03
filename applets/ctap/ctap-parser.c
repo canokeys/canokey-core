@@ -563,6 +563,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
   int key, pinProtocol;
   char domain[DOMAIN_NAME_MAX_SIZE];
   memset(ga, 0, sizeof(CTAP_getAssertion));
+  ga->up = 1;
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
   CHECK_CBOR_RET(ret);
