@@ -50,12 +50,10 @@ uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uin
     while (bulk_in_state[idx] != CCID_STATE_IDLE)
       device_delay(1);
     if (bulk_in_state[idx] != CCID_STATE_IDLE && is_time_extension_request) return ret;
-    device_disable_irq();
     uint8_t addr = idx == IDX_CCID ? CCID_EPOUT_ADDR : OPENPGP_EPOUT_ADDR;
     uint8_t ep_size = idx == IDX_CCID ? CCID_EPOUT_SIZE : OPENPGP_EPOUT_SIZE;
     bulk_in_state[idx] = len % ep_size == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
     ret = USBD_LL_Transmit(pdev, addr, buf, len);
-    device_enable_irq();
   }
   return ret;
 }

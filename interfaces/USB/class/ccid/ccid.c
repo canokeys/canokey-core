@@ -1,10 +1,11 @@
 #include <admin.h>
 #include <ccid.h>
 #include <common.h>
+#include <ctap.h>
+#include <device.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
-#include <ctap.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
@@ -52,6 +53,7 @@ static uint16_t ab_data_length[2];
 static volatile uint8_t bulkout_state[2];
 static volatile uint8_t bulkin_state[2];
 static volatile uint8_t has_cmd[2];
+static volatile uint32_t bulkin_state_spinlock;
 static CAPDU apdu_cmd[2];
 static RAPDU apdu_resp[2];
 static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
@@ -470,24 +472,28 @@ void CCID_Loop(void) {
 
   uint16_t len = bulkin_data[idx].dwLength;
   bulkin_data[idx].dwLength = htole32(bulkin_data[idx].dwLength);
+  device_spinlock_lock(&bulkin_state_spinlock, true);
   CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data[idx], len + CCID_CMD_HEADER_SIZE, idx, 0);
   bulkin_state[idx] = CCID_STATE_IDLE;
+  device_spinlock_unlock(&bulkin_state_spinlock);
 }
 
 void CCID_TimeExtensionLoop(void) {
+  if (device_spinlock_lock(&bulkin_state_spinlock, false) != 0) return;
   uint8_t idx = 0xFF;
   if (bulkin_state[0] == CCID_STATE_PROCESS_DATA)
     idx = 0;
   else if (bulkin_state[1] == CCID_STATE_PROCESS_DATA)
     idx = 1;
-  if (idx == 0xFF) return;
-
-  bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
-  bulkin_time_extension.dwLength = 0;
-  bulkin_time_extension.bSlot = bulkout_data[idx].bSlot;
-  bulkin_time_extension.bSeq = bulkout_data[idx].bSeq;
-  bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
-  bulkin_time_extension.bError = 10; // Request another 10 BTWs (1.8s)
-  bulkin_time_extension.bSpecific = 0;
-  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, idx, 1);
+  if (idx != 0xFF) {
+    bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
+    bulkin_time_extension.dwLength = 0;
+    bulkin_time_extension.bSlot = bulkout_data[idx].bSlot;
+    bulkin_time_extension.bSeq = bulkout_data[idx].bSeq;
+    bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
+    bulkin_time_extension.bError = 10; // Request another 10 BTWs (1.8s)
+    bulkin_time_extension.bSpecific = 0;
+    CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, idx, 1);
+  }
+  device_spinlock_unlock(&bulkin_state_spinlock);
 }
