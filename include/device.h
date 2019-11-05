@@ -16,11 +16,11 @@
 #define USER_PRESENCE_TIMEOUT 2
 
 // functions should be implemented by device
-inline void device_delay(int ms);
-inline uint32_t device_get_tick(void);
-inline void device_disable_irq(void);
-inline void device_enable_irq(void);
-inline uint8_t is_nfc(void);
+void device_delay(int ms);
+uint32_t device_get_tick(void);
+void device_disable_irq(void);
+void device_enable_irq(void);
+uint8_t is_nfc(void);
 /**
  * Blink for several time
  * @param sec 0 for infinite
