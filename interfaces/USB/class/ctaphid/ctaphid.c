@@ -43,6 +43,7 @@ static void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint1
   frame.init.bcntl = (uint8_t)(len & 0xFF);
 
   copied = MIN(len, ISIZE);
+  if(!data) return;
   memcpy(frame.init.data, data, copied);
   CTAPHID_SendFrame();
   off += copied;
