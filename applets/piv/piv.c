@@ -545,7 +545,10 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   DBG_MSG("%s length %d\n", path, LC - 5);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
   if (write_file(path, DATA + 5, 0, LC - 5, 1) < 0) return -1;
-  int len = read_file(path, DATA + 5, 0, LC - 5);
+#ifdef DEBUG_OUTPUT
+  int len =
+#endif
+      read_file(path, DATA + 5, 0, LC - 5);
   DBG_MSG("length %d\n", len);
   return 0;
 }
