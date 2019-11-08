@@ -66,6 +66,7 @@ static RAPDU_CHAINING rapdu_chaining = {
 };
 
 uint8_t CCID_Init(void) {
+  bulkin_state_spinlock = 0;
   current_applet = APPLET_NULL;
   bulkin_state[0] = CCID_STATE_IDLE;
   bulkin_state[1] = CCID_STATE_IDLE;

@@ -47,7 +47,7 @@ void start_blinking(uint8_t sec) {
     is_inf_blinking = 1;
   } else {
     uint32_t now = device_get_tick();
-    if (now > last_blink && now - last_blink < 1000) return;
+    if (now > last_blink && now - last_blink < sec * 1000) return;
     last_blink = now;
   }
   device_start_blinking(sec);
