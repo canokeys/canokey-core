@@ -31,6 +31,16 @@ uint8_t wait_for_user_presence(void) {
   return USER_PRESENCE_OK;
 }
 
+int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
+  // Not really working, for test only
+  while (*lock) {
+    if (!blocking) return -1;
+  }
+  *lock = 1;
+  return 0;
+}
+void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
+
 void device_loop(void) {
   CCID_Loop();
   CTAPHID_Loop(0);
