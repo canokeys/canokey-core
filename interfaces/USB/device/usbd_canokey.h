@@ -4,9 +4,9 @@
 #include <usbd_ioreq.h>
 
 #define USBD_CANOKEY_CTAPHID_IF 0
-#define USBD_CANOKEY_OPENPGP_IF 1
+#define USBD_CANOKEY_WEBUSB_IF 1
 #define USBD_CANOKEY_CCID_IF 2
-#define USBD_CANOKEY_WEBUSB_IF 3
+#define USBD_CANOKEY_OPENPGP_IF 3
 
 extern const USBD_ClassTypeDef USBD_CANOKEY;
 
