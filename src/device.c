@@ -47,7 +47,7 @@ void start_blinking(uint8_t sec) {
     is_inf_blinking = 1;
   } else {
     uint32_t now = device_get_tick();
-    if (now > last_blink && now - last_blink < 1000) return;
+    if (now > last_blink && now - last_blink < sec * 1000) return;
     last_blink = now;
   }
   device_start_blinking(sec);
@@ -57,5 +57,17 @@ void stop_blinking(void) {
   is_inf_blinking = 0;
   device_stop_blinking();
 }
+
+#else
+
+int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
+  // Not really working, for test only
+  while (*lock) {
+    if (!blocking) return -1;
+  }
+  *lock = 1;
+  return 0;
+}
+void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
 
 #endif
