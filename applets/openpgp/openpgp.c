@@ -1064,14 +1064,12 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(key, sizeof(key));
     LL = ECC_KEY_SIZE * 2;
   } else if (attr[0] == KEY_TYPE_ED25519) {
-    if (LC != ED_KEY_SIZE + 4) EXCEPT(SW_WRONG_DATA);
     uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
     if (openpgp_key_get_key(AUT_KEY_PATH, key, ED_KEY_SIZE + ED_PUB_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
-    // I don't know why
-    ed25519_sign(DATA + 4, LC - 4, key, key + ED_KEY_SIZE, sig);
+    ed25519_sign(DATA, LC, key, key + ED_KEY_SIZE, sig);
     memzero(key, sizeof(key));
     memcpy(RDATA, sig, ED_KEY_SIZE * 2);
     LL = ED_KEY_SIZE * 2;
