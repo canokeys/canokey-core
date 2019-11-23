@@ -7,5 +7,6 @@
 extern USBD_HandleTypeDef usb_device;
 
 void usb_device_init(void);
+void usb_device_deinit(void);
 
 #endif /* __USB_DEVICE__H__ */

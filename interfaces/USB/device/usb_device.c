@@ -10,3 +10,8 @@ void usb_device_init(void) {
   USBD_RegisterClass(&usb_device, &USBD_CANOKEY);
   USBD_Start(&usb_device);
 }
+
+void usb_device_deinit(void) {
+  USBD_Stop(&usb_device);
+  USBD_DeInit(&usb_device);
+}
