@@ -28,6 +28,7 @@ addons:
       - libnpth0-dev
       - opensc
       - openssl
+      - openssh-server
       - libpcsclite-dev
       - libcmocka-dev
       - python3-pip
@@ -81,7 +82,9 @@ script:
   - test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
   - # OpenPGP tests:
   - pkill gpg-agent || true
+  - #echo 'enable-ssh-support' > ~/.gnupg/gpg-agent.conf
   - gpg --version
+  - export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
   - mkdir /tmp/mock
   - base64 /dev/urandom | head -c 1152 > /tmp/random.txt
   - echo 9876543210 >"/tmp/mock/Reset Code"
@@ -96,6 +99,7 @@ script:
   - "ChangeUsage() { SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1); echo -e \"key $SUBKEY\\nchange-usage\\nS\\nQ\\ncross-certify\\nsave\" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }"
   - "GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }"
   - "GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }"
+  - "GPGAuth() { gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol;ssh-add -L >~/.ssh/authorized_keys;ssh -v -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id; }"
   - GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
   - Key2card 1 1 # key[1] to Signature key
   - GPGSign
@@ -103,7 +107,7 @@ script:
   - Addkey 10 3 # [3] ECDSA P-256 sign key
   - Key2card 2 2 # key[2] to Encryption key
   - Key2card 3 3 # key[3] to Authentication key
-  - GPGSign
+  - GPGAuth
   - GPGEnc
   - echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nlang\ncn\nsex\nm\nquit' | gpg --yes --command-fd 0 --edit-card
   - echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
@@ -119,7 +123,7 @@ script:
   - Key2card 4 3 # key[4] to Authentication key
   - Addkey 6 2048 # [5] gen RSA2048 key
   - Key2card 5 2 # key[5] to Encryption key
-  - GPGSign
+  - GPGAuth
   - GPGEnc
   - Addkey 10 3 # [6] gen ECDSA P-256 key
   - Key2card 6 1 # key[6] to Signature key
@@ -129,7 +133,7 @@ script:
   - Addkey 10 1 # [8] ed25519 sign key
   - Key2card 7 2 # key[7] to Encryption key
   - Key2card 8 3 # key[8] to Authentication key
-  - GPGSign
+  - GPGAuth
   - GPGEnc
   - Addkey 10 1 # [9] ed25519 sign key
   - Key2card 9 1 # key[9] to Signature key
@@ -143,7 +147,7 @@ script:
   - GPGSign
   - Addcardkey 3 # generate Authentication key on card
   - ChangeUsage
-  - GPGSign
+  - GPGAuth
   - GPGReset
   - echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
   - Addcardkey 1 # generate Signature key on card
@@ -152,7 +156,7 @@ script:
   - GPGSign
   - Addcardkey 3 # generate Authentication key on card
   - ChangeUsage
-  - GPGSign
+  - GPGAuth
   - GPGReset
   - echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
   - Addcardkey 1 # generate Signature key on card
@@ -161,7 +165,7 @@ script:
   - GPGSign
   - Addcardkey 3 # generate Authentication key on card
   - ChangeUsage
-  - GPGSign
+  - GPGAuth
   - GPGReset
   - gpgconf --kill gpg-agent
   - # PIV tests:
