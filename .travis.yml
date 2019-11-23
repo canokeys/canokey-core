@@ -28,6 +28,7 @@ addons:
       - libnpth0-dev
       - opensc
       - openssl
+      - openssh-server
       - libpcsclite-dev
       - libcmocka-dev
       - python3-pip
@@ -40,6 +41,8 @@ cache:
     - /home/travis/gopath/src/golang.org
     - /home/travis/.cache/pip
 install:
+  - sudo sshd
+  - ssh localhost
   - ./test-via-pcsc/build_gpg.sh # Build latest GPG
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
   - pushd u2f-ref-code/u2f-tests/HID
