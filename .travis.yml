@@ -41,8 +41,9 @@ cache:
     - /home/travis/gopath/src/golang.org
     - /home/travis/.cache/pip
 install:
-  - sudo sshd
-  - ssh localhost
+  - netstat -lnt
+  - sudo /usr/sbin/sshd
+  - ssh -v localhost
   - ./test-via-pcsc/build_gpg.sh # Build latest GPG
   - git clone --depth 1 https://github.com/google/u2f-ref-code.git
   - pushd u2f-ref-code/u2f-tests/HID
