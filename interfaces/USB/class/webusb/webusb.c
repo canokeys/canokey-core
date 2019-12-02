@@ -59,7 +59,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
     break;
 
   case WEBUSB_REQ_CALC:
-    state = STATE_PROCESS;
+    if (state == STATE_IDLE) state = STATE_PROCESS;
     USBD_CtlSendData(pdev, NULL, 0, 0);
     break;
 
@@ -73,6 +73,14 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
+    break;
+
+  case WEBUSB_REQ_STAT:
+    do {
+      static uint8_t in_progress;
+      in_progress = state == STATE_PROCESS;
+      USBD_CtlSendData(pdev, &in_progress, 1, WEBUSB_EP0_SENDER);
+    } while (0);
     break;
   }
 
