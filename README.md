@@ -20,7 +20,7 @@ The USB mode contains 4 different interfaces:
 * Interface 2: PIV and OATH, which is also a CCID interface
 * Interface 3: WebUSB, which is not a standard interface
 
-Although OpenPGP Card uses the CCID interface, we make it a unique one because the `gpg-agent` opens the card using the `exlusive` mode.
+Although OpenPGP Card uses the CCID interface, we make it a unique one because the `gpg-agent` opens the card using the `exclusive` mode.
 The WebUSB interface is used to configure the key via a web-based interface.
 
 ## Protocol
