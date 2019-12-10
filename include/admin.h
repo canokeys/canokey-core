@@ -11,12 +11,26 @@
 #define ADMIN_INS_VERIFY 0x20
 #define ADMIN_INS_CHANGE_PIN 0x21
 #define ADMIN_INS_WRITE_SN 0x30
+#define ADMIN_INS_CONFIG 0x40
 #define ADMIN_INS_SELECT 0xA4
 #define ADMIN_INS_VENDOR_SPECIFIC 0xFF
+
+#define ADMIN_P1_CFG_LED_ON 0x01
+#define ADMIN_P1_CFG_GPGIFACE 0x02
+#define ADMIN_P1_CFG_KBDIFACE 0x03
+
+typedef struct {
+    uint32_t reserved;
+    uint32_t led_normally_on : 1;
+    uint32_t gpg_interface_en : 1;
+    uint32_t kbd_interface_en : 1;
+} __packed admin_device_config_t;
 
 void admin_poweroff(void);
 int admin_install(void);
 int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu);
+
+uint8_t cfg_is_led_normally_on(void);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_

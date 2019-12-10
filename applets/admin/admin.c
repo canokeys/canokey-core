@@ -9,13 +9,33 @@
 
 #define PIN_RETRY_COUNTER 3
 #define SN_FILE "sn"
+#define CFG_FILE "admin_cfg"
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-void admin_poweroff(void) { pin.is_validated = 0; }
+static const admin_device_config_t default_cfg = {.led_normally_on = 1, .gpg_interface_en = 1};
+admin_device_config_t current_config;
+
+uint8_t cfg_is_led_normally_on(void) {
+  return current_config.led_normally_on;
+}
+
+void admin_poweroff(void) {
+  pin.is_validated = 0;
+}
 
 int admin_install(void) {
   admin_poweroff();
+  if (get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
+    current_config = default_cfg;
+    if(write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1) < 0) {
+      return -1;
+    }
+  } else {
+    if(read_file(CFG_FILE, &current_config, 0, sizeof(current_config)) < 0) {
+      return -1;
+    }
+  }
   if (get_file_size(pin.path) >= 0) return 0;
   if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
   return 0;
@@ -51,6 +71,24 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0x04) EXCEPT(SW_WRONG_LENGTH);
   if (get_file_size(SN_FILE) >= 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   return write_file(SN_FILE, DATA, 0, LC, 1);
+}
+
+static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
+  switch (P1)
+  {
+  case ADMIN_P1_CFG_GPGIFACE:
+    current_config.gpg_interface_en = P2 & 1;
+    break;
+  case ADMIN_P1_CFG_KBDIFACE:
+    current_config.kbd_interface_en = P2 & 1;
+    break;
+  case ADMIN_P1_CFG_LED_ON:
+    current_config.led_normally_on = P2 & 1;
+    break;
+  default:
+    EXCEPT(SW_WRONG_P1P2);
+  }
+  return write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
 }
 
 __attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
@@ -97,6 +135,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_WRITE_SN:
     ret = admin_write_sn(capdu, rapdu);
+    break;
+  case ADMIN_INS_CONFIG:
+    ret = admin_config(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);
