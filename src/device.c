@@ -3,6 +3,7 @@
 #include <ctaphid.h>
 #include <device.h>
 #include <webusb.h>
+#include <kbdhid.h>
 
 #ifndef TEST
 
@@ -35,6 +36,7 @@ void device_loop(void) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
+  KBDHID_Loop();
 }
 
 uint8_t get_touch_result(void) { return touch_result; }
