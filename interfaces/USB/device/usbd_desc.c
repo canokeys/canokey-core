@@ -72,7 +72,7 @@ static const uint8_t USBD_FS_DeviceDesc[] = {
     USBD_MAX_NUM_CONFIGURATION /*bNumConfigurations*/
 };
 
-static uint8_t USBD_FS_IfDesc_CTAPHID[] = {
+static const uint8_t USBD_FS_IfDesc_CTAPHID[] = {
     /************** Descriptor of CTAP HID interface ****************/
     0x09,                       /* bLength: Interface Descriptor size */
     USB_DESC_TYPE_INTERFACE,    /* bDescriptorType: Interface descriptor type */
@@ -107,7 +107,7 @@ static uint8_t USBD_FS_IfDesc_CTAPHID[] = {
     0x05,                     /* bInterval: Polling Interval (5 ms) */
 };
 
-static uint8_t USBD_FS_IfDesc_KBDHID[] = {
+static const uint8_t USBD_FS_IfDesc_KBDHID[] = {
     /************** Descriptor of KBD HID interface ****************/
     0x09,                       /* bLength: Interface Descriptor size */
     USB_DESC_TYPE_INTERFACE,    /* bDescriptorType: Interface descriptor type */
@@ -142,7 +142,7 @@ static uint8_t USBD_FS_IfDesc_KBDHID[] = {
     0x05,                     /* bInterval: Polling Interval (5 ms) */
 };
 
-static uint8_t USBD_FS_IfDesc_WEBUSB[] = {
+static const uint8_t USBD_FS_IfDesc_WEBUSB[] = {
     /************** Descriptor of WebUSB interface ****************/
     0x09,                      /* bLength: Interface Descriptor size */
     USB_DESC_TYPE_INTERFACE,   /* bDescriptorType: Interface descriptor type */
@@ -155,7 +155,7 @@ static uint8_t USBD_FS_IfDesc_WEBUSB[] = {
     USBD_WEBUSB_INTERFACE_IDX, /* iInterface: Index of string descriptor */
 };
 
-static uint8_t USBD_FS_IfDesc_CCID[] = {
+static const uint8_t USBD_FS_IfDesc_CCID[] = {
     /************** Descriptor of CCID interface ****************/
     /* This interface is for PIV, oath, and admin applet */
     0x09,                       /* bLength: Interface Descriptor size */
@@ -210,7 +210,7 @@ static uint8_t USBD_FS_IfDesc_CCID[] = {
     0x00,                     /* bInterval: Polling Interval */
 };
 
-static uint8_t USBD_FS_IfDesc_OPENPGP[] = {
+static const uint8_t USBD_FS_IfDesc_OPENPGP[] = {
     /************** Descriptor of CCID interface ****************/
     /* This interface is for OpenPGP applet */
     0x09,                       /* bLength: Interface Descriptor size */
@@ -387,36 +387,36 @@ static void patch_interface_descriptor(uint8_t *desc, uint8_t *desc_end, uint8_t
 }
 
 void USBD_DescriptorInit(void) {
-  // TODO: const USBD_FS_IfDesc_xxxx
-  patch_interface_descriptor(USBD_FS_IfDesc_CTAPHID, USBD_FS_IfDesc_CTAPHID + sizeof(USBD_FS_IfDesc_CTAPHID),
-                             USBD_CANOKEY_CTAPHID_IF, EP_IN(ctap_hid), EP_OUT(ctap_hid));
-  patch_interface_descriptor(USBD_FS_IfDesc_WEBUSB, USBD_FS_IfDesc_WEBUSB + sizeof(USBD_FS_IfDesc_WEBUSB),
-                             USBD_CANOKEY_WEBUSB_IF, 0, 0);
-  patch_interface_descriptor(USBD_FS_IfDesc_CCID, USBD_FS_IfDesc_CCID + sizeof(USBD_FS_IfDesc_CCID),
-                             USBD_CANOKEY_CCID_IF, EP_IN(ccid), EP_OUT(ccid));
-  if(IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF))
-    patch_interface_descriptor(USBD_FS_IfDesc_OPENPGP, USBD_FS_IfDesc_OPENPGP + sizeof(USBD_FS_IfDesc_OPENPGP),
-                               USBD_CANOKEY_OPENPGP_IF, EP_IN(openpgp), EP_OUT(openpgp));
-  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF))
-    patch_interface_descriptor(USBD_FS_IfDesc_KBDHID, USBD_FS_IfDesc_KBDHID + sizeof(USBD_FS_IfDesc_KBDHID),
-                               USBD_CANOKEY_KBDHID_IF, EP_IN(kbd_hid), EP_OUT(kbd_hid));
-
   uint8_t *desc = USBD_FS_CfgDesc + USB_LEN_CFG_DESC;
   uint8_t nIface = 3;
+
   memcpy(desc, USBD_FS_IfDesc_CTAPHID, sizeof(USBD_FS_IfDesc_CTAPHID));
+  patch_interface_descriptor(desc, desc + sizeof(USBD_FS_IfDesc_CTAPHID),
+                             USBD_CANOKEY_CTAPHID_IF, EP_IN(ctap_hid), EP_OUT(ctap_hid));
   desc += sizeof(USBD_FS_IfDesc_CTAPHID);
+
   memcpy(desc, USBD_FS_IfDesc_WEBUSB, sizeof(USBD_FS_IfDesc_WEBUSB));
+  patch_interface_descriptor(desc, desc + sizeof(USBD_FS_IfDesc_WEBUSB),
+                             USBD_CANOKEY_WEBUSB_IF, 0, 0);
   desc += sizeof(USBD_FS_IfDesc_WEBUSB);
+
   memcpy(desc, USBD_FS_IfDesc_CCID, sizeof(USBD_FS_IfDesc_CCID));
+  patch_interface_descriptor(desc, desc + sizeof(USBD_FS_IfDesc_CCID),
+                             USBD_CANOKEY_CCID_IF, EP_IN(ccid), EP_OUT(ccid));
   desc += sizeof(USBD_FS_IfDesc_CCID);
+  
   if(IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF)) {
     nIface++;
     memcpy(desc, USBD_FS_IfDesc_OPENPGP, sizeof(USBD_FS_IfDesc_OPENPGP));
+    patch_interface_descriptor(desc, desc + sizeof(USBD_FS_IfDesc_OPENPGP),
+                               USBD_CANOKEY_OPENPGP_IF, EP_IN(openpgp), EP_OUT(openpgp));
     desc += sizeof(USBD_FS_IfDesc_OPENPGP);
   }
   if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF)) {
     nIface++;
     memcpy(desc, USBD_FS_IfDesc_KBDHID, sizeof(USBD_FS_IfDesc_KBDHID));
+    patch_interface_descriptor(desc, desc + sizeof(USBD_FS_IfDesc_KBDHID),
+                               USBD_CANOKEY_KBDHID_IF, EP_IN(kbd_hid), EP_OUT(kbd_hid));
     desc += sizeof(USBD_FS_IfDesc_KBDHID);
   }
   uint16_t totalLen = (uint16_t)(desc - USBD_FS_CfgDesc);
