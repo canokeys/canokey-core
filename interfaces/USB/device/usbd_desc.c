@@ -479,7 +479,7 @@ const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uin
     return USBD_StrDesc;
   case USBD_CCID_INTERFACE_IDX:
     USBD_GetString(
-        (uint8_t *)(IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF) ? USBD_CCID_OPENPGP_INTERFACE_STRING : USBD_CCID_INTERFACE_STRING),
+        (uint8_t *)(IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF) ? USBD_CCID_INTERFACE_STRING : USBD_CCID_OPENPGP_INTERFACE_STRING),
         USBD_StrDesc, length);
     return USBD_StrDesc;
   case USBD_OPENPGP_INTERFACE_IDX:

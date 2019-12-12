@@ -24,12 +24,12 @@ void usb_resources_alloc(void) {
   IFACE_TABLE.ccid = iface++;
   
   if (cfg_is_gpg_interface_en()) {
-    DBG_MSG("OpenPGP interface enabled, Iface %u", iface);
+    DBG_MSG("OpenPGP interface enabled, Iface %u\n", iface);
     EP_TABLE.openpgp = ep++;
     IFACE_TABLE.openpgp = iface++;
   }
   if (cfg_is_kbd_interface_en()) {
-    DBG_MSG("Keyboard interface enabled, Iface %u", iface);
+    DBG_MSG("Keyboard interface enabled, Iface %u\n", iface);
     EP_TABLE.kbd_hid = ep++;
     IFACE_TABLE.kbd_hid = iface++;
   }

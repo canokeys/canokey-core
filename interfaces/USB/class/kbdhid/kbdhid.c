@@ -19,15 +19,18 @@ static uint8_t ascii2keycode(char ch) {
     return 30 + ch - '1';
   else if ('0' == ch)
     return 30 + 9;
+  else if ('\r' == ch)
+    return 40;
   else
     return 0; // do not support non-digits for now
 }
 
 static void KBDHID_UserTouchHandle(void) {
   // TODO: call something
-  strcpy(key_sequence, "123456");
+  strcpy(key_sequence, "123456\r");
   key_seq_position = 0;
   state = KBDHID_Typing;
+  DBG_MSG("Start typing %s", key_sequence);
 }
 
 static void KBDHID_TypeKeySeq(void) {
@@ -65,18 +68,17 @@ uint8_t KBDHID_Init() {
 }
 
 uint8_t KBDHID_Loop(void) {
-  static uint8_t active;
-  if (!active) {
+  static uint32_t active_ts;
+  if (!active_ts) {
     if (get_touch_result() == TOUCH_SHORT) {
-      active = 1;
+      active_ts = device_get_tick();
       if (state == KBDHID_Idle) {
         KBDHID_UserTouchHandle();
       }
     }
-  } else {
-    if (get_touch_result() == TOUCH_NO) {
-      active = 0;
-    }
+  } else if (device_get_tick() - active_ts > 200) {
+    set_touch_result(TOUCH_NO);
+    active_ts = 0;
   }
   if (state != KBDHID_Idle) KBDHID_TypeKeySeq();
   return 0;
