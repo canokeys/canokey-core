@@ -45,6 +45,7 @@ target_include_directories(canokey-core SYSTEM
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
         interfaces/USB/class/ctaphid
+        interfaces/USB/class/kbdhid
         interfaces/USB/class/webusb)
 target_link_libraries(canokey-core canokey-crypto)
 

@@ -3,6 +3,7 @@
 #include <usbd_ccid.h>
 #include <usbd_core.h>
 #include <usbd_ctaphid.h>
+#include <usbd_kbdhid.h>
 #include <usbd_desc.h>
 
 #define USBD_VID 0x0483
@@ -19,6 +20,8 @@
 #define USBD_CCID_INTERFACE_IDX 0x12
 #define USBD_WEBUSB_INTERFACE_STRING "WebUSB"
 #define USBD_WEBUSB_INTERFACE_IDX 0x13
+#define USBD_KBDHID_INTERFACE_STRING "Keyboard"
+#define USBD_KBDHID_INTERFACE_IDX 0x14
 
 #define PLACEHOLDER_IFACE_NUM 0xFF
 #define PLACEHOLDER_EPIN_ADDR 0xFF
@@ -101,6 +104,41 @@ static uint8_t USBD_FS_IfDesc_CTAPHID[] = {
     PLACEHOLDER_EPOUT_ADDR,   /* bEndpointAddress: Endpoint Address (OUT) */
     0x03,                     /* bmAttributes: Interrupt endpoint */
     CTAPHID_EPOUT_SIZE, 0x00, /* wMaxPacketSize: 64 Bytes max  */
+    0x05,                     /* bInterval: Polling Interval (5 ms) */
+};
+
+static uint8_t USBD_FS_IfDesc_KBDHID[] = {
+    /************** Descriptor of KBD HID interface ****************/
+    0x09,                       /* bLength: Interface Descriptor size */
+    USB_DESC_TYPE_INTERFACE,    /* bDescriptorType: Interface descriptor type */
+    PLACEHOLDER_IFACE_NUM,      /* bInterfaceNumber: Number of Interface */
+    0x00,                       /* bAlternateSetting: Alternate setting */
+    0x02,                       /* bNumEndpoints */
+    0x03,                       /* bInterfaceClass: HID */
+    0x00,                       /* bInterfaceSubClass: 0=no boot */
+    0x00,                       /* nInterfaceProtocol: 0=none */
+    USBD_KBDHID_INTERFACE_IDX,  /* iInterface: Index of string descriptor */
+    /******************** Descriptor of KBD HID *************************/
+    0x09,                       /* bLength: KBD HID Descriptor size */
+    KBDHID_DESCRIPTOR_TYPE,     /* bDescriptorType: HID */
+    0x11, 0x01,                 /* bKBD_HID: KBD HID Class Spec release number */
+    0x00,                       /* bCountryCode: Hardware target country */
+    0x01,                       /* bNumDescriptors: 1 */
+    KBDHID_REPORT_DESC,         /* bDescriptorType */
+    KBDHID_REPORT_DESC_SIZE,    /* wItemLength: Total length of Report descriptor */
+    0x00,
+    /**************** Descriptor of KBD HID endpoints ****************/
+    0x07,                     /* bLength: Endpoint Descriptor size */
+    USB_DESC_TYPE_ENDPOINT,   /* bDescriptorType: */
+    PLACEHOLDER_EPIN_ADDR,    /* bEndpointAddress: Endpoint Address (IN) */
+    0x03,                     /* bmAttributes: Interrupt endpoint */
+    KBDHID_EPIN_SIZE,         /* wMaxPacketSize: 8 Bytes max */
+    0x00, 0x05,               /* bInterval: Polling Interval (5 ms) */
+    0x07,                     /* bLength: Endpoint Descriptor size */
+    USB_DESC_TYPE_ENDPOINT,   /* bDescriptorType: */
+    PLACEHOLDER_EPOUT_ADDR,   /* bEndpointAddress: Endpoint Address (OUT) */
+    0x03,                     /* bmAttributes: Interrupt endpoint */
+    KBDHID_EPOUT_SIZE, 0x00,  /* wMaxPacketSize: 8 Bytes max  */
     0x05,                     /* bInterval: Polling Interval (5 ms) */
 };
 
@@ -231,6 +269,7 @@ static uint8_t USBD_FS_CfgDesc[USB_LEN_CFG_DESC +
                               sizeof(USBD_FS_IfDesc_OPENPGP) +
                               sizeof(USBD_FS_IfDesc_CCID) +
                               sizeof(USBD_FS_IfDesc_WEBUSB) +
+                              sizeof(USBD_FS_IfDesc_KBDHID) +
                               sizeof(USBD_FS_IfDesc_CTAPHID)] = {
     USB_LEN_CFG_DESC,            /* bLength: Configuration Descriptor size */
     USB_DESC_TYPE_CONFIGURATION, /* bDescriptorType: Configuration */
@@ -348,6 +387,7 @@ static void patch_interface_descriptor(uint8_t *desc, uint8_t *desc_end, uint8_t
 }
 
 void USBD_DescriptorInit(void) {
+  // TODO: const USBD_FS_IfDesc_xxxx
   patch_interface_descriptor(USBD_FS_IfDesc_CTAPHID, USBD_FS_IfDesc_CTAPHID + sizeof(USBD_FS_IfDesc_CTAPHID),
                              USBD_CANOKEY_CTAPHID_IF, EP_IN(ctap_hid), EP_OUT(ctap_hid));
   patch_interface_descriptor(USBD_FS_IfDesc_WEBUSB, USBD_FS_IfDesc_WEBUSB + sizeof(USBD_FS_IfDesc_WEBUSB),
@@ -357,6 +397,9 @@ void USBD_DescriptorInit(void) {
   if(IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF))
     patch_interface_descriptor(USBD_FS_IfDesc_OPENPGP, USBD_FS_IfDesc_OPENPGP + sizeof(USBD_FS_IfDesc_OPENPGP),
                                USBD_CANOKEY_OPENPGP_IF, EP_IN(openpgp), EP_OUT(openpgp));
+  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF))
+    patch_interface_descriptor(USBD_FS_IfDesc_KBDHID, USBD_FS_IfDesc_KBDHID + sizeof(USBD_FS_IfDesc_KBDHID),
+                               USBD_CANOKEY_KBDHID_IF, EP_IN(kbd_hid), EP_OUT(kbd_hid));
 
   uint8_t *desc = USBD_FS_CfgDesc + USB_LEN_CFG_DESC;
   uint8_t nIface = 3;
@@ -370,6 +413,11 @@ void USBD_DescriptorInit(void) {
     nIface++;
     memcpy(desc, USBD_FS_IfDesc_OPENPGP, sizeof(USBD_FS_IfDesc_OPENPGP));
     desc += sizeof(USBD_FS_IfDesc_OPENPGP);
+  }
+  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF)) {
+    nIface++;
+    memcpy(desc, USBD_FS_IfDesc_KBDHID, sizeof(USBD_FS_IfDesc_KBDHID));
+    desc += sizeof(USBD_FS_IfDesc_KBDHID);
   }
   uint16_t totalLen = (uint16_t)(desc - USBD_FS_CfgDesc);
   USBD_FS_CfgDesc[4] = nIface;
@@ -439,6 +487,9 @@ const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uin
     return USBD_StrDesc;
   case USBD_WEBUSB_INTERFACE_IDX:
     USBD_GetString((uint8_t *)USBD_WEBUSB_INTERFACE_STRING, USBD_StrDesc, length);
+    return USBD_StrDesc;
+  case USBD_KBDHID_INTERFACE_IDX:
+    USBD_GetString((uint8_t *)USBD_KBDHID_INTERFACE_STRING, USBD_StrDesc, length);
     return USBD_StrDesc;
   }
   *length = 0;
