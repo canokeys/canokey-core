@@ -176,6 +176,18 @@ func TestOath(t *testing.T) {
 				hotpCnt[name]++
 			}
 
+			Convey("Then set one key as default", func(ctx C) {
+				name := ""
+				for itemName, obj := range allKeys {
+					if obj.Type() == "hotp" {
+						name = itemName
+						break
+					}
+				}
+				err := oath.SetAsDefault(name)
+				So(err, ShouldBeNil)
+			})
+
 			Convey("Then list keys", func(ctx C) {
 
 				uniqueNames := make(map[string]bool)
