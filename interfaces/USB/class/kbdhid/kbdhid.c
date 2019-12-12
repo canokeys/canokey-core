@@ -31,7 +31,7 @@ static uint8_t ascii2keycode(char ch) {
 static void KBDHID_UserTouchHandle(void) {
   if (oath_process_one_touch(key_sequence, sizeof(key_sequence)) < 0) {
     ERR_MSG("Failed to get the OTP code\n");
-    strncpy(key_sequence, "error", sizeof(key_sequence));
+    memcpy(key_sequence, "error", 6);
   } else {
     key_sequence[6] = '\r';
     key_sequence[7] = '\0';
