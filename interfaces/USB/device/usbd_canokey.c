@@ -38,7 +38,7 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 
   if ((recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_CTAPHID_IF) ||
       (recipient == USB_REQ_RECIPIENT_ENDPOINT &&
-       (req->wIndex == CTAPHID_EPIN_ADDR || req->wIndex == CTAPHID_EPOUT_ADDR)))
+       (req->wIndex == EP_IN(ctap_hid) || req->wIndex == EP_OUT(ctap_hid))))
     return USBD_CTAPHID_Setup(pdev, req);
   if (recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_WEBUSB_IF)
     return USBD_WEBUSB_Setup(pdev, req);
@@ -51,21 +51,17 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   UNUSED(pdev);
 
-  if (epnum == (0x7F & CTAPHID_EPIN_ADDR)) return USBD_CTAPHID_DataIn();
-  if (epnum == (0x7F & CCID_EPIN_ADDR)) return USBD_CCID_DataIn(pdev, IDX_CCID);
-#ifdef ENABLE_GPG_INTERFACE
-  if (epnum == (0x7F & OPENPGP_EPIN_ADDR)) return USBD_CCID_DataIn(pdev, IDX_OPENPGP);
-#endif
+  if (epnum == (0x7F & EP_IN(ctap_hid))) return USBD_CTAPHID_DataIn();
+  if (epnum == (0x7F & EP_IN(ccid))) return USBD_CCID_DataIn(pdev, IDX_CCID);
+  if (epnum == (0x7F & EP_IN(openpgp))) return USBD_CCID_DataIn(pdev, IDX_OPENPGP);
 
   return USBD_FAIL;
 }
 
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
-  if (epnum == (0x7F & CTAPHID_EPOUT_ADDR)) return USBD_CTAPHID_DataOut(pdev);
-  if (epnum == (0x7F & CCID_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_CCID);
-#ifdef ENABLE_GPG_INTERFACE
-  if (epnum == (0x7F & OPENPGP_EPOUT_ADDR)) return USBD_CCID_DataOut(pdev, IDX_OPENPGP);
-#endif
+  if (epnum == EP_OUT(ctap_hid)) return USBD_CTAPHID_DataOut(pdev);
+  if (epnum == EP_OUT(ccid)) return USBD_CCID_DataOut(pdev, IDX_CCID);
+  if (epnum == EP_OUT(openpgp)) return USBD_CCID_DataOut(pdev, IDX_OPENPGP);
 
   return USBD_FAIL;
 }

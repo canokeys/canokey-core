@@ -3,9 +3,7 @@
 
 #include <usbd_ioreq.h>
 
-#define CTAPHID_EPIN_ADDR 0x83
 #define CTAPHID_EPIN_SIZE 64
-#define CTAPHID_EPOUT_ADDR 0x03
 #define CTAPHID_EPOUT_SIZE 64
 
 #define CTAPHID_DESCRIPTOR_TYPE 0x21

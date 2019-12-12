@@ -16,13 +16,11 @@ static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated
 static const admin_device_config_t default_cfg = {.led_normally_on = 1, .gpg_interface_en = 1};
 admin_device_config_t current_config;
 
-uint8_t cfg_is_led_normally_on(void) {
-  return current_config.led_normally_on;
-}
+uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
+uint8_t cfg_is_gpg_interface_en(void) { return current_config.gpg_interface_en; }
+uint8_t cfg_is_kbd_interface_en(void) { return current_config.kbd_interface_en; }
 
-void admin_poweroff(void) {
-  pin.is_validated = 0;
-}
+void admin_poweroff(void) { pin.is_validated = 0; }
 
 int admin_install(void) {
   admin_poweroff();

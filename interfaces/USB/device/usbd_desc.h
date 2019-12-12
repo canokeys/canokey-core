@@ -6,4 +6,6 @@
 /** Descriptor for the Usb device. */
 extern const USBD_DescriptorsTypeDef usbdDescriptors;
 
+void USBD_DescriptorInit(void);
+
 #endif /* __USBD_DESC__H__ */

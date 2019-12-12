@@ -1,5 +1,6 @@
 #include <ctaphid.h>
 #include <device.h>
+#include <usb_device.h>
 #include <usbd_ctaphid.h>
 #include <usbd_ctlreq.h>
 
@@ -39,10 +40,10 @@ static const uint8_t USBD_CTAPHID_Desc[] = {
 
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = CTAPHID_IDLE;
-  USBD_LL_OpenEP(pdev, CTAPHID_EPIN_ADDR, USBD_EP_TYPE_INTR, CTAPHID_EPIN_SIZE);
-  USBD_LL_OpenEP(pdev, CTAPHID_EPOUT_ADDR, USBD_EP_TYPE_INTR, CTAPHID_EPOUT_SIZE);
+  USBD_LL_OpenEP(pdev, EP_IN(ctap_hid), USBD_EP_TYPE_INTR, CTAPHID_EPIN_SIZE);
+  USBD_LL_OpenEP(pdev, EP_OUT(ctap_hid), USBD_EP_TYPE_INTR, CTAPHID_EPOUT_SIZE);
   CTAPHID_Init(USBD_CTAPHID_SendReport);
-  USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  USBD_LL_PrepareReceive(pdev, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
   return USBD_OK;
 }
 
@@ -94,7 +95,7 @@ uint8_t USBD_CTAPHID_DataIn() {
 
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
   CTAPHID_OutEvent(hid_handle.report_buf);
-  USBD_LL_PrepareReceive(pdev, CTAPHID_EPOUT_ADDR, hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  USBD_LL_PrepareReceive(pdev, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
   return USBD_OK;
 }
 
@@ -105,7 +106,7 @@ uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint1
     while (*state != CTAPHID_IDLE)
       device_delay(1);
     hid_handle.state = CTAPHID_BUSY;
-    USBD_LL_Transmit(pdev, CTAPHID_EPIN_ADDR, report, len);
+    USBD_LL_Transmit(pdev, EP_IN(ctap_hid), report, len);
   }
   return USBD_OK;
 }

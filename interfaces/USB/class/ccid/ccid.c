@@ -8,6 +8,7 @@
 #include <piv.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
+#include <usbd_canokey.h>
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data[idx].bStatus = (cmd_status | icc_status)
 
@@ -155,12 +156,10 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
     return SLOTERROR_BAD_POWERSELECT;
   }
-#ifdef ENABLE_GPG_INTERFACE
   if (idx == IDX_OPENPGP) {
     memcpy(bulkin_data[idx].abData, atr_openpgp, sizeof(atr_openpgp));
     bulkin_data[idx].dwLength = sizeof(atr_openpgp);
   } else 
-#endif
   {
     memcpy(bulkin_data[idx].abData, atr_ccid, sizeof(atr_ccid));
     bulkin_data[idx].dwLength = sizeof(atr_ccid);
@@ -178,11 +177,9 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
 static uint8_t PC_to_RDR_IccPowerOff(uint8_t idx) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH, idx);
   if (error != 0) return error;
-#ifdef ENABLE_GPG_INTERFACE
   if (idx == IDX_OPENPGP)
     openpgp_poweroff();
   else
-#endif
     poweroff(current_applet);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
@@ -223,11 +220,9 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
     SW = SW_CHECKING_ERROR;
     goto send_response;
   }
-#ifdef ENABLE_GPG_INTERFACE
   if (idx == IDX_OPENPGP) {
     openpgp_process_apdu(capdu, rapdu);
   } else
-#endif
   {
     int ret = apdu_input(&capdu_chaining, capdu);
     if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
@@ -243,13 +238,9 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
       }
       rapdu_chaining.sent = 0;
       if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-        // deal with select, note that in this ccid interface, we do not support openpgp
+        // handle select, note that in this ccid interface, we will skip openpgp unless independent openpgp interface disabled
         uint8_t i;
-#ifdef ENABLE_GPG_INTERFACE
-        uint8_t end = APPLET_OPENPGP;
-#else
-        uint8_t end = APPLET_ENUM_END;
-#endif
+        uint8_t end = IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF) ? APPLET_OPENPGP : APPLET_ENUM_END;
         for (i = APPLET_NULL + 1; i != end; ++i) {
           if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
             if (i != current_applet) poweroff(current_applet);

@@ -5,7 +5,6 @@ project(canokey-core C)
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
-option(ENABLE_GPG_INTERFACE "Independent CCID interface for OpenPGP" ON)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -36,9 +35,6 @@ endif (ENABLE_TESTS)
 if (ENABLE_FUZZING)
     target_compile_definitions(canokey-core PUBLIC -DTEST -DFUZZ)
 endif (ENABLE_FUZZING)
-if (ENABLE_GPG_INTERFACE)
-    target_compile_definitions(canokey-core PRIVATE -DENABLE_GPG_INTERFACE)
-endif (ENABLE_GPG_INTERFACE)
 
 target_include_directories(canokey-core SYSTEM
         PUBLIC
