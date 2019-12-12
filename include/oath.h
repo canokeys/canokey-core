@@ -3,6 +3,8 @@
 
 #include <apdu.h>
 
+#define ATTR_DEFAULT_RECORD 0x01
+
 #define OATH_TAG_NAME 0x71
 #define OATH_TAG_NAME_LIST 0x72
 #define OATH_TAG_KEY 0x73
@@ -19,6 +21,7 @@
 #define OATH_INS_CALCULATE 0x04
 #define OATH_INS_CALCULATE_ALL 0x05
 #define OATH_INS_SEND_REMAINING 0x06
+#define OATH_INS_SET_DEFAULT 0x55
 #define OATH_INS_SELECT 0xA4
 
 #define OATH_ALG_MASK 0x0F
@@ -48,5 +51,6 @@ typedef struct {
 void oath_poweroff(void);
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int oath_process_one_touch(char *output, size_t maxlen);
 
 #endif // CANOKEY_CORE_OATH_OATH_H_

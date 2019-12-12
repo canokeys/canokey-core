@@ -72,6 +72,7 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
+  admin_device_config_t oldconfig = current_config;
   switch (P1)
   {
   case ADMIN_P1_CFG_GPGIFACE:
@@ -85,6 +86,11 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   default:
     EXCEPT(SW_WRONG_P1P2);
+  }
+  if(current_config.gpg_interface_en && current_config.kbd_interface_en) {
+    ERR_MSG("Cannot enable GPG & Keyboard both");
+    current_config = oldconfig;
+    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   }
   return write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
 }

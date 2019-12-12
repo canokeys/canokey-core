@@ -182,6 +182,57 @@ static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA256_DIGEST_LE
   return buffer + offset;
 }
 
+static int oath_calculate_by_offset(off_t file_offset, uint8_t result[4]) {
+  if (file_offset < 0 || file_offset % sizeof(OATH_RECORD) != 0) return -1;
+  int size = get_file_size(OATH_FILE);
+  if (size < 0 || file_offset >= size) return -1;
+  OATH_RECORD record;
+  if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
+
+  if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) {
+    ERR_MSG("TOTP is not supported");
+    return -1;
+  } else if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
+
+    if (oath_increase_counter(&record) < 0) return -1;
+    oath_update_challenge_field(&record, file_offset);
+
+    challenge_len = sizeof(record.challenge);
+    memcpy(challenge, record.challenge, challenge_len);
+  }
+
+  uint8_t hash[SHA256_DIGEST_LENGTH];
+  memcpy(result, oath_digest(&record, hash), 4);
+  result[3] &= 0x7F;
+  return 0;
+}
+
+static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  uint8_t offset = 0;
+  if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
+  uint8_t name_len = DATA[offset++];
+  if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
+  offset += name_len;
+
+  // find the record
+  int size = get_file_size(OATH_FILE);
+  if (size < 0) return -1;
+  uint32_t nRecords = size / sizeof(OATH_RECORD), i;
+  uint32_t file_offset;
+  OATH_RECORD record;
+  for (i = 0; i != nRecords; ++i) {
+    file_offset = i * sizeof(OATH_RECORD);
+    if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
+    if (record.name_len == name_len && memcmp(record.name, DATA + 2, name_len) == 0) break;
+  }
+  if (i == nRecords) EXCEPT(SW_DATA_INVALID);
+
+  if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &file_offset, sizeof(file_offset)) < 0) return -1;
+  return 0;
+}
+
 static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
@@ -311,6 +362,14 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 }
 
+int oath_process_one_touch(char *output, size_t maxlen) {
+  uint32_t offset, otp_code;
+  if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -1;
+  if (oath_calculate_by_offset(offset, (uint8_t *)&otp_code) < 0) return -1;
+  snprintf(output, maxlen, "%06d", (int)otp_code % 1000000);
+  return 0;
+}
+
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
@@ -318,7 +377,7 @@ int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   int ret = 0;
   switch (INS) {
   case OATH_INS_SELECT:
-    if(P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     break;
   case OATH_INS_PUT:
     ret = oath_put(capdu, rapdu);
@@ -332,6 +391,9 @@ int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case OATH_INS_CALCULATE:
     ret = oath_calculate(capdu, rapdu);
+    break;
+  case OATH_INS_SET_DEFAULT:
+    ret = oath_set_default(capdu, rapdu);
     break;
   case OATH_INS_CALCULATE_ALL:
     record_idx = 0;

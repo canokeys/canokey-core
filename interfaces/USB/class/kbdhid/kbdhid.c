@@ -1,6 +1,7 @@
 #include <common.h>
 #include <device.h>
 #include <kbdhid.h>
+#include <oath.h>
 #include <usb_device.h>
 #include <usbd_kbdhid.h>
 
@@ -21,13 +22,20 @@ static uint8_t ascii2keycode(char ch) {
     return 30 + 9;
   else if ('\r' == ch)
     return 40;
+  else if ('a' <= ch && ch <= 'z')
+    return 4 + ch - 'a';
   else
     return 0; // do not support non-digits for now
 }
 
 static void KBDHID_UserTouchHandle(void) {
-  // TODO: call something
-  strcpy(key_sequence, "123456\r");
+  if (oath_process_one_touch(key_sequence, sizeof(key_sequence)) < 0) {
+    ERR_MSG("Failed to get the OTP code\n");
+    strncpy(key_sequence, "error", sizeof(key_sequence));
+  } else {
+    key_sequence[6] = '\r';
+    key_sequence[7] = '\0';
+  }
   key_seq_position = 0;
   state = KBDHID_Typing;
   DBG_MSG("Start typing %s", key_sequence);
