@@ -111,7 +111,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 		})
 		Convey("Configuration", func(ctx C) {
 			for P1 := 0; P1 <= 3; P1++ {
-				for P2 := 0; P2 <= 1; P2++ {
+				for P2 := 1; P2 >= 0; P2-- {
 					apdu := []byte{0x00, 0x40, uint8(P1), uint8(P2)}
 					_, code, err := app.Send(apdu)
 					So(err, ShouldBeNil)
