@@ -117,7 +117,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 					So(err, ShouldBeNil)
 					if verified {
 						if P1 == 0 {
-							So(code, ShouldEqual, 0x6B00)
+							So(code, ShouldEqual, 0x6A86)
 						} else {
 							So(code, ShouldEqual, 0x9000)
 						}
