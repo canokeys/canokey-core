@@ -89,6 +89,52 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 		if verified {
 			So(verifyPin([]byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36}), ShouldEqual, 0x9000)
 		}
+		Convey("Invalid Instruction", func(ctx C) {
+			apdu := []byte{0x00, 0xEE, 0x00, 0x00}
+			_, code, err := app.Send(apdu)
+			So(err, ShouldBeNil)
+			if verified {
+				So(code, ShouldEqual, 0x6D00)
+			} else {
+				So(code, ShouldEqual, 0x6982)
+			}
+		})
+		Convey("Vendor-specific", func(ctx C) {
+			apdu := []byte{0x00, 0xFF, 0x00, 0x00}
+			_, code, err := app.Send(apdu)
+			So(err, ShouldBeNil)
+			if verified {
+				So(code, ShouldEqual, 0x9000)
+			} else {
+				So(code, ShouldEqual, 0x6982)
+			}
+		})
+		Convey("Configuration", func(ctx C) {
+			for P1 := 0; P1 <= 3; P1++ {
+				for P2 := 0; P2 <= 1; P2++ {
+					apdu := []byte{0x00, 0x40, uint8(P1), uint8(P2)}
+					_, code, err := app.Send(apdu)
+					So(err, ShouldBeNil)
+					if verified {
+						if P1 == 0 {
+							So(code, ShouldEqual, 0x6B00)
+						} else {
+							So(code, ShouldEqual, 0x9000)
+						}
+					} else {
+						So(code, ShouldEqual, 0x6982)
+					}
+				}
+			}
+			if verified {
+				_, code, err := app.Send([]byte{0x00, 0x40, 0x02, 0x01})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x9000)
+				_, code, err = app.Send([]byte{0x00, 0x40, 0x03, 0x01})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x6985)
+			}
+		})
 		Convey("Write SN", func(ctx C) {
 			apdu := []byte{0x00, 0x30, 0x00, 0x00, 0x04, 0xA1, 0xB2, 0xC3, 0xD4}
 			_, code, err := app.Send(apdu)
