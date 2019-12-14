@@ -13,12 +13,14 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-static const admin_device_config_t default_cfg = {.led_normally_on = 1, .gpg_interface_en = 1};
+static const admin_device_config_t default_cfg = {.led_normally_on = 1};
 admin_device_config_t current_config;
 
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
-uint8_t cfg_is_gpg_interface_en(void) { return current_config.gpg_interface_en; }
-uint8_t cfg_is_kbd_interface_en(void) { return current_config.kbd_interface_en; }
+
+uint8_t cfg_is_gpg_interface_enable(void) { return current_config.gpg_interface_en; }
+
+uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_en; }
 
 void admin_poweroff(void) { pin.is_validated = 0; }
 
@@ -26,13 +28,9 @@ int admin_install(void) {
   admin_poweroff();
   if (get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
     current_config = default_cfg;
-    if(write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1) < 0) {
-      return -1;
-    }
+    if (write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1) < 0) return -1;
   } else {
-    if(read_file(CFG_FILE, &current_config, 0, sizeof(current_config)) < 0) {
-      return -1;
-    }
+    if (read_file(CFG_FILE, &current_config, 0, sizeof(current_config)) < 0) return -1;
   }
   if (get_file_size(pin.path) >= 0) return 0;
   if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
@@ -73,8 +71,7 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   admin_device_config_t oldconfig = current_config;
-  switch (P1)
-  {
+  switch (P1) {
   case ADMIN_P1_CFG_GPGIFACE:
     current_config.gpg_interface_en = P2 & 1;
     break;
@@ -87,7 +84,7 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  if(current_config.gpg_interface_en && current_config.kbd_interface_en) {
+  if (current_config.gpg_interface_en && current_config.kbd_interface_en) {
     ERR_MSG("Cannot enable GPG & Keyboard both");
     current_config = oldconfig;
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);

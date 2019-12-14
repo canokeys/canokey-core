@@ -2,6 +2,7 @@
 #include <fs.h>
 #include <hmac.h>
 #include <oath.h>
+#include <stdio.h>
 #include <string.h>
 
 #define OATH_FILE "oath"
@@ -182,7 +183,7 @@ static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA256_DIGEST_LE
   return buffer + offset;
 }
 
-static int oath_calculate_by_offset(off_t file_offset, uint8_t result[4]) {
+static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   if (file_offset < 0 || file_offset % sizeof(OATH_RECORD) != 0) return -1;
   int size = get_file_size(OATH_FILE);
   if (size < 0 || file_offset >= size) return -1;

@@ -1,8 +1,8 @@
 #include <device.h>
+#include <kbdhid.h>
 #include <usb_device.h>
 #include <usbd_ctlreq.h>
 #include <usbd_kbdhid.h>
-#include <kbdhid.h>
 
 static USBD_KBDHID_HandleTypeDef hid_handle;
 
@@ -58,8 +58,8 @@ uint8_t USBD_KBDHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = KBDHID_IDLE;
   KBDHID_Init();
   if (EP_OUT(kbd_hid) != 0xFF) {
-    USBD_LL_OpenEP(pdev, EP_IN(kbd_hid), USBD_EP_TYPE_INTR, KBDHID_EPIN_SIZE);
-    USBD_LL_OpenEP(pdev, EP_OUT(kbd_hid), USBD_EP_TYPE_INTR, KBDHID_EPOUT_SIZE);
+    USBD_LL_OpenEP(pdev, EP_IN(kbd_hid), USBD_EP_TYPE_INTR, EP_SIZE(kbd_hid));
+    USBD_LL_OpenEP(pdev, EP_OUT(kbd_hid), USBD_EP_TYPE_INTR, EP_SIZE(kbd_hid));
     USBD_LL_PrepareReceive(pdev, EP_OUT(kbd_hid), hid_handle.report_buf, USBD_KBDHID_REPORT_BUF_SIZE);
   }
   return USBD_OK;

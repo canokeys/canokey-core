@@ -3,9 +3,6 @@
 
 #include <usbd_ioreq.h>
 
-#define CTAPHID_EPIN_SIZE 64
-#define CTAPHID_EPOUT_SIZE 64
-
 #define CTAPHID_DESCRIPTOR_TYPE 0x21
 #define CTAPHID_REPORT_DESC 0x22
 #define CTAPHID_REQ_SET_IDLE 0x0A

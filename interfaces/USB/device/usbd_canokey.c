@@ -39,8 +39,7 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
   DBG_MSG("Recipient: %X, Index: %X\n", recipient, req->wIndex);
 
   if ((recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_CTAPHID_IF) ||
-      (recipient == USB_REQ_RECIPIENT_ENDPOINT &&
-       (req->wIndex == EP_IN(ctap_hid) || req->wIndex == EP_OUT(ctap_hid))))
+      (recipient == USB_REQ_RECIPIENT_ENDPOINT && (req->wIndex == EP_IN(ctap_hid) || req->wIndex == EP_OUT(ctap_hid))))
     return USBD_CTAPHID_Setup(pdev, req);
   if ((recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_KBDHID_IF) ||
       (recipient == USB_REQ_RECIPIENT_ENDPOINT && (req->wIndex == EP_IN(kbd_hid) || req->wIndex == EP_OUT(kbd_hid))))
@@ -54,8 +53,6 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 }
 
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
-  UNUSED(pdev);
-
   if (epnum == (0x7F & EP_IN(ctap_hid))) return USBD_CTAPHID_DataIn();
   if (epnum == (0x7F & EP_IN(kbd_hid))) return USBD_KBDHID_DataIn();
   if (epnum == (0x7F & EP_IN(ccid))) return USBD_CCID_DataIn(pdev, IDX_CCID);

@@ -4,11 +4,6 @@
 #include <ccid.h>
 #include <usbd_ioreq.h>
 
-#define CCID_EPIN_SIZE 16
-#define CCID_EPOUT_SIZE 16
-#define OPENPGP_EPIN_SIZE 64
-#define OPENPGP_EPOUT_SIZE 64
-
 // CCID Bulk State machine
 #define CCID_STATE_IDLE 0
 #define CCID_STATE_RECEIVE_DATA 1

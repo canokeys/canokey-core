@@ -3,9 +3,6 @@
 
 #include <usbd_ioreq.h>
 
-#define KBDHID_EPIN_SIZE 8
-#define KBDHID_EPOUT_SIZE 8
-
 #define KBDHID_DESCRIPTOR_TYPE 0x21
 #define KBDHID_REPORT_DESC 0x22
 #define KBDHID_REQ_SET_IDLE 0x0A

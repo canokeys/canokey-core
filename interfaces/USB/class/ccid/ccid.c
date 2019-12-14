@@ -7,8 +7,8 @@
 #include <openpgp.h>
 #include <piv.h>
 #include <usb_device.h>
-#include <usbd_ccid.h>
 #include <usbd_canokey.h>
+#include <usbd_ccid.h>
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data[idx].bStatus = (cmd_status | icc_status)
 
@@ -21,12 +21,8 @@ static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
 
 const uint8_t *const AID[] = {
-    [APPLET_NULL] = NULL,
-    [APPLET_PIV] = PIV_AID,
-    [APPLET_FIDO] = FIDO_AID,
-    [APPLET_OATH] = OATH_AID,
-    [APPLET_ADMIN] = ADMIN_AID,
-    [APPLET_OPENPGP] = OPENPGP_AID,
+    [APPLET_NULL] = NULL,     [APPLET_PIV] = PIV_AID,     [APPLET_FIDO] = FIDO_AID,
+    [APPLET_OATH] = OATH_AID, [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID,
 };
 
 const uint8_t AID_Size[] = {
@@ -159,8 +155,7 @@ static uint8_t PC_to_RDR_IccPowerOn(uint8_t idx) {
   if (idx == IDX_OPENPGP) {
     memcpy(bulkin_data[idx].abData, atr_openpgp, sizeof(atr_openpgp));
     bulkin_data[idx].dwLength = sizeof(atr_openpgp);
-  } else 
-  {
+  } else {
     memcpy(bulkin_data[idx].abData, atr_ccid, sizeof(atr_ccid));
     bulkin_data[idx].dwLength = sizeof(atr_ccid);
   }
@@ -222,8 +217,7 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
   }
   if (idx == IDX_OPENPGP) {
     openpgp_process_apdu(capdu, rapdu);
-  } else
-  {
+  } else {
     int ret = apdu_input(&capdu_chaining, capdu);
     if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
       LL = 0;
@@ -238,7 +232,8 @@ uint8_t PC_to_RDR_XfrBlock(uint8_t idx) {
       }
       rapdu_chaining.sent = 0;
       if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-        // handle select, note that in this ccid interface, we will skip openpgp unless independent openpgp interface disabled
+        // handle select, note that in this ccid interface, we will skip openpgp unless independent openpgp interface
+        // disabled
         uint8_t i;
         uint8_t end = IS_ENABLED_IFACE(USBD_CANOKEY_OPENPGP_IF) ? APPLET_OPENPGP : APPLET_ENUM_END;
         for (i = APPLET_NULL + 1; i != end; ++i) {
