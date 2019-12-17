@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/canopo/ykoath"
+	"github.com/canokeys/ykoath"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/hotp"
 	"github.com/pquerna/otp/totp"
