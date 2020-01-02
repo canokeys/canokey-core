@@ -12,9 +12,9 @@
 #define CCID_STATE_PROCESS_DATA 4
 
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev);
-uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev, uint8_t idx);
-uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev, uint8_t idx);
-uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len, uint8_t idx,
+uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev);
+uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev);
+uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uint16_t len,
                                uint8_t is_time_extension_request);
 
 #endif // _USBD_CCID_H_

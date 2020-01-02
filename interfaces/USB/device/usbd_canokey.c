@@ -55,8 +55,7 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == (0x7F & EP_IN(ctap_hid))) return USBD_CTAPHID_DataIn();
   if (epnum == (0x7F & EP_IN(kbd_hid))) return USBD_KBDHID_DataIn();
-  if (epnum == (0x7F & EP_IN(ccid))) return USBD_CCID_DataIn(pdev, IDX_CCID);
-  if (epnum == (0x7F & EP_IN(openpgp))) return USBD_CCID_DataIn(pdev, IDX_OPENPGP);
+  if (epnum == (0x7F & EP_IN(ccid))) return USBD_CCID_DataIn(pdev);
 
   return USBD_FAIL;
 }
@@ -64,8 +63,7 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == EP_OUT(ctap_hid)) return USBD_CTAPHID_DataOut(pdev);
   if (epnum == EP_OUT(kbd_hid)) return USBD_KBDHID_DataOut(pdev);
-  if (epnum == EP_OUT(ccid)) return USBD_CCID_DataOut(pdev, IDX_CCID);
-  if (epnum == EP_OUT(openpgp)) return USBD_CCID_DataOut(pdev, IDX_OPENPGP);
+  if (epnum == EP_OUT(ccid)) return USBD_CCID_DataOut(pdev);
 
   return USBD_FAIL;
 }
