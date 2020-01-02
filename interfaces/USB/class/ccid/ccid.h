@@ -3,9 +3,6 @@
 
 #include <common.h>
 
-#define IDX_OPENPGP 0
-#define IDX_CCID 1
-
 #define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
 #define CCID_CMD_HEADER_SIZE 10
 #define CCID_NUMBER_OF_SLOTS 1
@@ -143,9 +140,9 @@ extern const uint8_t AID_Size[];
 
 void poweroff(uint8_t applet);
 uint8_t CCID_Init(void);
-uint8_t CCID_OutEvent(uint8_t *data, uint8_t len, uint8_t idx);
+uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
 void CCID_Loop(void);
 void CCID_TimeExtensionLoop(void);
-uint8_t PC_to_RDR_XfrBlock(uint8_t idx); // Exported for test purposes
+uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes
 
 #endif //_CCID_H_
