@@ -1,44 +1,18 @@
 #include <admin.h>
 #include <ccid.h>
 #include <common.h>
-#include <ctap.h>
 #include <device.h>
-#include <oath.h>
-#include <openpgp.h>
-#include <piv.h>
 #include <usb_device.h>
-#include <usbd_canokey.h>
 #include <usbd_ccid.h>
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data.bStatus = (cmd_status | icc_status)
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
 
-static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
-static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
-static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
-static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
-static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
-
-const uint8_t *const AID[] = {
-    [APPLET_NULL] = NULL,     [APPLET_PIV] = PIV_AID,     [APPLET_FIDO] = FIDO_AID,
-    [APPLET_OATH] = OATH_AID, [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID,
-};
-
-const uint8_t AID_Size[] = {
-    [APPLET_NULL] = 0,
-    [APPLET_PIV] = sizeof(PIV_AID),
-    [APPLET_FIDO] = sizeof(FIDO_AID),
-    [APPLET_OATH] = sizeof(OATH_AID),
-    [APPLET_ADMIN] = sizeof(ADMIN_AID),
-    [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
-};
-
 // Fi=372, Di=1, 372 cycles/ETU 10752 bits/s at 4.00 MHz
 // BWT = 0.18s
 static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15,
                                    0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0xE9};
-static enum APPLET current_applet;
 
 static empty_ccid_bulkin_data_t bulkin_time_extension;
 ccid_bulkin_data_t bulkin_data;
@@ -50,18 +24,10 @@ static volatile uint8_t has_cmd;
 static volatile uint32_t bulkin_state_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
-static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
-static CAPDU_CHAINING capdu_chaining = {
-    .max_size = sizeof(chaining_buffer),
-    .capdu.data = chaining_buffer,
-};
-static RAPDU_CHAINING rapdu_chaining = {
-    .rapdu.data = chaining_buffer,
-};
 
 uint8_t CCID_Init(void) {
   bulkin_state_spinlock = 0;
-  current_applet = APPLET_NULL;
+  //  current_applet = APPLET_NULL;
   bulkin_state = CCID_STATE_IDLE;
   bulkout_state = CCID_STATE_IDLE;
   has_cmd = 0;
@@ -109,25 +75,6 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
   return 0;
 }
 
-void poweroff(uint8_t applet) {
-  switch (applet) {
-  case APPLET_PIV:
-    piv_poweroff();
-    break;
-  case APPLET_OATH:
-    oath_poweroff();
-    break;
-  case APPLET_ADMIN:
-    admin_poweroff();
-    break;
-  case APPLET_OPENPGP:
-    openpgp_poweroff();
-    break;
-  default:
-    break;
-  }
-}
-
 /**
  * @brief  PC_to_RDR_IccPowerOn
  *         PC_TO_RDR_ICCPOWERON message execution, apply voltage and get ATR
@@ -160,7 +107,7 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
 static uint8_t PC_to_RDR_IccPowerOff(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH);
   if (error != 0) return error;
-  poweroff(current_applet);
+  applet_poweroff();
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -194,82 +141,15 @@ uint8_t PC_to_RDR_XfrBlock(void) {
 
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
+
   if (build_capdu(&apdu_cmd, bulkout_data.abData, bulkout_data.dwLength) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_CHECKING_ERROR;
-    goto send_response;
-  }
-
-  int ret = apdu_input(&capdu_chaining, capdu);
-  if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
-    LL = 0;
-    SW = SW_NO_ERROR;
-  } else if (ret == APDU_CHAINING_LAST_BLOCK) {
-    capdu = &capdu_chaining.capdu;
-    LE = MIN(LE, APDU_BUFFER_SIZE);
-    if ((CLA == 0x80 || CLA == 0x00) && INS == 0xC0) { // GET RESPONSE
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      goto send_response;
-    }
-    rapdu_chaining.sent = 0;
-    if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-      uint8_t i, end = APPLET_ENUM_END;
-      for (i = APPLET_NULL + 1; i != end; ++i) {
-        if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
-          if (i != current_applet) poweroff(current_applet);
-          current_applet = i;
-          DBG_MSG("applet switched to: %d\n", current_applet);
-          break;
-        }
-      }
-      if (i == end) {
-        LL = 0;
-        SW = SW_FILE_NOT_FOUND;
-        DBG_MSG("applet not found\n");
-        goto send_response;
-      }
-    }
-    switch (current_applet) {
-    case APPLET_OPENPGP:
-      openpgp_process_apdu(capdu, rapdu);
-      break;
-    case APPLET_PIV:
-      piv_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_FIDO:
-#ifdef TEST
-      if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
-        printf("MAGIC REBOOT command received!\r\n");
-        ctap_install(0);
-        SW = 0x9000;
-        LL = 0;
-        break;
-      }
-#endif
-      ctap_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_OATH:
-      oath_process_apdu(capdu, rapdu);
-      break;
-    case APPLET_ADMIN:
-      admin_process_apdu(capdu, rapdu);
-      break;
-    default:
-      LL = 0;
-      SW = SW_FILE_NOT_FOUND;
-    }
   } else {
-    LL = 0;
-    SW = SW_CHECKING_ERROR;
+    process_apdu(capdu, rapdu);
   }
 
-send_response:
   bulkin_data.dwLength = LL + 2;
   bulkin_data.abData[LL] = HI(SW);
   bulkin_data.abData[LL + 1] = LO(SW);

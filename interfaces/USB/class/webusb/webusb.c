@@ -1,9 +1,4 @@
-#include <admin.h>
 #include <apdu.h>
-#include <ccid.h>
-#include <oath.h>
-#include <openpgp.h>
-#include <piv.h>
 #include <webusb.h>
 
 enum {
@@ -17,7 +12,6 @@ static uint8_t expected_cmd_seq, state, apdu_buffer[APDU_BUFFER_SIZE];
 static uint16_t apdu_buffer_size;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
-static enum APPLET current_applet;
 
 uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
@@ -26,7 +20,6 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   apdu_buffer_size = 0;
   apdu_cmd.data = apdu_buffer;
   apdu_resp.data = apdu_buffer;
-  current_applet = APPLET_NULL;
 
   return USBD_OK;
 }
@@ -95,47 +88,15 @@ void WebUSB_Loop(void) {
 
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
+
   if (build_capdu(&apdu_cmd, apdu_buffer, apdu_buffer_size) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_CHECKING_ERROR;
-    goto send_response;
+  } else {
+    process_apdu(capdu, rapdu);
   }
 
-  if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-    // deal with select
-    uint8_t i;
-    for (i = APPLET_NULL + 1; i != APPLET_ENUM_END; ++i) {
-      if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
-        if (i != current_applet) poweroff(current_applet);
-        current_applet = i;
-        break;
-      }
-    }
-    if (i == APPLET_ENUM_END) {
-      LL = 0;
-      SW = SW_FILE_NOT_FOUND;
-    }
-  }
-  switch (current_applet) {
-  case APPLET_PIV:
-    piv_process_apdu(capdu, rapdu);
-    break;
-  case APPLET_OATH:
-    oath_process_apdu(capdu, rapdu);
-    break;
-  case APPLET_ADMIN:
-    admin_process_apdu(capdu, rapdu);
-    break;
-  case APPLET_OPENPGP:
-    openpgp_process_apdu(capdu, rapdu);
-    break;
-  default:
-    LL = 0;
-    SW = SW_FILE_NOT_FOUND;
-  }
-
-send_response:
   apdu_buffer_size = LL + 2;
   apdu_buffer[LL] = HI(SW);
   apdu_buffer[LL + 1] = LO(SW);
