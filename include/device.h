@@ -17,7 +17,6 @@
 
 // functions should be implemented by device
 void device_delay(int ms);
-void device_delay_us(int us);
 uint32_t device_get_tick(void);
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);
 void device_spinlock_unlock(volatile uint32_t *lock);
