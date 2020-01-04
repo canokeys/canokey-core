@@ -20,6 +20,7 @@ void device_delay(int ms);
 uint32_t device_get_tick(void);
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);
 void device_spinlock_unlock(volatile uint32_t *lock);
+void set_nfc(uint8_t val);
 uint8_t is_nfc(void);
 /**
  * Blink for several time

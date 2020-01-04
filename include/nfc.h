@@ -16,6 +16,9 @@
 #define REG_NFC_CFG 0xD
 #define REG_REGU_CFG 0xE
 
+#define RF_STATE_MASK 0xE0
+#define RF_STATE_L4 0xA0
+
 #define MAIN_IRQ_AUX (1 << 0)
 #define MAIN_IRQ_FIFO (1 << 1)
 #define MAIN_IRQ_ARBIT (1 << 2)
@@ -44,9 +47,9 @@
 #define NFC_STATE_BUSY 0x01
 
 void nfc_init(void);
+int nfc_has_rf(void);
 void nfc_handler(void);
 void nfc_loop(void);
-void nfc_setup(void);
 void nfc_wtx(void);
 
 #endif // _NFC_H_

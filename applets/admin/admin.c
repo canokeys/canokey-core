@@ -1,5 +1,6 @@
 #include <admin.h>
 #include <ctap.h>
+#include <device.h>
 #include <fs.h>
 #include <oath.h>
 #include <openpgp.h>
@@ -17,8 +18,6 @@ static const admin_device_config_t default_cfg = {.led_normally_on = 1};
 admin_device_config_t current_config;
 
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
-
-uint8_t cfg_is_gpg_interface_enable(void) { return current_config.gpg_interface_en; }
 
 uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_en; }
 
@@ -70,26 +69,26 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
-  admin_device_config_t oldconfig = current_config;
   switch (P1) {
-  case ADMIN_P1_CFG_GPGIFACE:
-    current_config.gpg_interface_en = P2 & 1;
+  case ADMIN_P1_CFG_LED_ON:
+    current_config.led_normally_on = P2 & 1;
     break;
   case ADMIN_P1_CFG_KBDIFACE:
     current_config.kbd_interface_en = P2 & 1;
     break;
-  case ADMIN_P1_CFG_LED_ON:
-    current_config.led_normally_on = P2 & 1;
-    break;
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  if (current_config.gpg_interface_en && current_config.kbd_interface_en) {
-    ERR_MSG("Cannot enable GPG & Keyboard both");
-    current_config = oldconfig;
-    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  }
   return write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
+}
+
+static int admin_config_nfc(const CAPDU *capdu, RAPDU *rapdu) {
+  uint16_t addr = (P1 << 8) | P2;
+  if (addr < 0x000C || addr > 0x03CF) EXCEPT(SW_WRONG_P1P2);
+  if (LC > 16) EXCEPT(SW_WRONG_LENGTH);
+  fm_write_eeprom(addr, DATA, LC);
+  device_delay(15);
+  return 0;
 }
 
 __attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
@@ -112,9 +111,11 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = admin_verify(capdu, rapdu);
     goto done;
   }
+
 #ifndef FUZZ
   if (!pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
+
   switch (INS) {
   case ADMIN_INS_WRITE_FIDO_PRIVATE_KEY:
     ret = ctap_install_private_key(capdu, rapdu);
@@ -139,6 +140,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_CONFIG:
     ret = admin_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_CONFIG_NFC:
+    ret = admin_config_nfc(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);

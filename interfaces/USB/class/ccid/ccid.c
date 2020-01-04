@@ -10,9 +10,9 @@
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
 
 // Fi=372, Di=1, 372 cycles/ETU 10752 bits/s at 4.00 MHz
-// BWT = 0.18s
-static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x15,
-                                   0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0xE9};
+// BWT = 5.7s
+static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65,
+                                   0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 
 static empty_ccid_bulkin_data_t bulkin_time_extension;
 ccid_bulkin_data_t bulkin_data;
@@ -325,7 +325,7 @@ void CCID_TimeExtensionLoop(void) {
     bulkin_time_extension.bSlot = bulkout_data.bSlot;
     bulkin_time_extension.bSeq = bulkout_data.bSeq;
     bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
-    bulkin_time_extension.bError = 10; // Request another 10 BTWs (1.8s)
+    bulkin_time_extension.bError = 1; // Request another 1 BTWs (5.7s)
     bulkin_time_extension.bSpecific = 0;
     CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, 1);
   }
