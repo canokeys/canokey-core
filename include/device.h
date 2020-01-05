@@ -28,6 +28,7 @@ uint8_t is_nfc(void);
  */
 void device_start_blinking(uint8_t sec);
 void device_stop_blinking(void);
+void device_set_timeout(void (*callback)(void), uint16_t timeout);
 int fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len);
 int fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len);
 int fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);

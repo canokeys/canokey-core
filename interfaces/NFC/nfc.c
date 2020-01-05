@@ -2,24 +2,29 @@
 #include "apdu.h"
 #include "device.h"
 
+#define WTX_PERIOD 300
+
 static volatile uint32_t state_spinlock;
-static volatile uint8_t has_frame, nfc_state;
+static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
-static uint8_t apdu_buffer[APDU_BUFFER_SIZE];
-static uint16_t apdu_buffer_size, apdu_buffer_sent, last_sent;
+static uint8_t apdu_buffer[APDU_BUFFER_SIZE], inf_sending;
+static uint16_t apdu_buffer_size;
+static uint16_t apdu_buffer_sent, last_sent;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 
 void nfc_init(void) {
   block_number = 1;
-  has_frame = 0;
   apdu_buffer_size = 0;
   last_sent = 0;
+  inf_sending = 0;
   state_spinlock = 0;
-  nfc_state = NFC_STATE_IDLE;
+  next_state = TO_RECEIVE;
   apdu_cmd.data = apdu_buffer;
   apdu_resp.data = apdu_buffer;
-  fm_write_reg(REG_REGU_CFG, (uint8_t[]){0x3F}, 1);
+  uint8_t val = 0x3F; // max power
+  fm_write_reg(REG_REGU_CFG, &val, 1);
+  fm_write_reg(REG_FIFO_FLUSH, &val, 1);
 }
 
 int nfc_has_rf(void) {
@@ -28,17 +33,12 @@ int nfc_has_rf(void) {
   return (val & RF_STATE_MASK) == RF_STATE_L4;
 }
 
-void nfc_setup(void) {
-  // set ATQA=4400 and SAK=04/20
-  fm_write_eeprom(0x3A0, (uint8_t[]){0x44, 0x00, 0x04, 0x20}, 4);
-  device_delay(15);
-  // set ATS: FSCI=2, DS=1, DR=1, FWI=8, SFGI=8
-  // set NFC: L4, no active interrupt
-  fm_write_eeprom(0x3B0, (uint8_t[]){0x05, 0x72, 0x03, 0x00, 0xF7, 0xAA, 0x00}, 7);
-  device_delay(15);
-  // regu_cfg
-  fm_write_eeprom(0x391, (uint8_t[]){0x37}, 1);
-  device_delay(15);
+static void nfc_error_handler(void) {
+  DBG_MSG("ERR!\n");
+  block_number = 1;
+  apdu_buffer_size = 0;
+  last_sent = 0;
+  inf_sending = 0;
 }
 
 void nfc_handler(void) {
@@ -50,11 +50,14 @@ void nfc_handler(void) {
     fm_read_fifo(rx_frame_buf, rx_frame_size);
     DBG_MSG("RX: ");
     PRINT_HEX(rx_frame_buf, rx_frame_size);
-    has_frame = 1;
+    if (next_state == TO_SEND) DBG_MSG("WTHH\n");
+    next_state = TO_SEND;
   }
+  if (irq[2] & AUX_IRQ_ERROR_MASK)
+    nfc_error_handler();
 }
 
-void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
+static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   if (len > 29) return;
 
   tx_frame_buf[0] = prologue;
@@ -68,38 +71,70 @@ void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   fm_write_reg(REG_RF_TXEN, &val, 1);
 }
 
-void nfc_send_frame_with_lock(uint8_t prologue, uint8_t *data, uint8_t len) {
-  device_spinlock_lock(&state_spinlock, true);
-  nfc_send_frame(prologue, data, len);
-  nfc_state = NFC_STATE_IDLE;
-  device_spinlock_unlock(&state_spinlock);
+void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
+  for (int retry = 1; retry;) {
+    if (device_spinlock_lock(&state_spinlock, true) != 0) return;
+    if (next_state == TO_SEND) {
+      do_nfc_send_frame(prologue, data, len);
+      next_state = TO_RECEIVE;
+      retry = 0;
+    } else {
+      DBG_MSG("WTH\n");
+    }
+    device_spinlock_unlock(&state_spinlock);
+  }
 }
 
-void send_apdu_buffer(uint8_t resend) {
-  if (resend) apdu_buffer_size -= apdu_buffer_sent -= last_sent;
+static void send_apdu_buffer(uint8_t resend) {
+  if (resend) apdu_buffer_sent -= last_sent;
   last_sent = apdu_buffer_size - apdu_buffer_sent;
+  if (last_sent == 0) {
+    nfc_error_handler();
+    return;
+  }
   if (last_sent > 29) last_sent = 29;
   uint8_t prologue = block_number | 0x02;
   if (apdu_buffer_size - apdu_buffer_sent > last_sent) prologue |= PCB_I_CHAINING;
-  nfc_send_frame_with_lock(prologue, apdu_buffer + apdu_buffer_sent, last_sent);
+  nfc_send_frame(prologue, apdu_buffer + apdu_buffer_sent, last_sent);
   apdu_buffer_sent += last_sent;
+}
 
-  if (apdu_buffer_sent == apdu_buffer_size) apdu_buffer_size = 0;
+static void send_wtx(void) {
+  if (device_spinlock_lock(&state_spinlock, false) != 0) return;
+  if (next_state == TO_SEND) {
+    uint8_t WTXM = 1;
+    do_nfc_send_frame(S_WTX, &WTXM, 1);
+    next_state = TO_RECEIVE;
+  }
+  device_spinlock_unlock(&state_spinlock);
+  device_set_timeout(send_wtx, WTX_PERIOD);
 }
 
 void nfc_loop(void) {
-  if (has_frame == 0) return;
-  has_frame = 0;
+  if (next_state == TO_RECEIVE) return;
 
   if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {
+    if (inf_sending) {
+      inf_sending = 0;
+      apdu_buffer_size = 0;
+    }
+
     block_number ^= 1;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
       memcpy(apdu_buffer + apdu_buffer_size, rx_frame_buf + 1, rx_frame_size - 3);
+      if (apdu_buffer_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
+        nfc_error_handler();
+        return;
+      }
       apdu_buffer_size += rx_frame_size - 3;
-      nfc_send_frame_with_lock(R_ACK | block_number, NULL, 0);
+      nfc_send_frame(R_ACK | block_number, NULL, 0);
     } else {
       memcpy(apdu_buffer + apdu_buffer_size, rx_frame_buf + 1, rx_frame_size - 3);
+      if (apdu_buffer_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
+        nfc_error_handler();
+        return;
+      }
       apdu_buffer_size += rx_frame_size - 3;
 
       CAPDU *capdu = &apdu_cmd;
@@ -109,8 +144,9 @@ void nfc_loop(void) {
         LL = 0;
         SW = SW_CHECKING_ERROR;
       } else {
-        nfc_state = NFC_STATE_BUSY;
+        device_set_timeout(send_wtx, WTX_PERIOD);
         process_apdu(capdu, rapdu);
+        device_set_timeout(NULL, 0);
       }
 
       apdu_buffer_size = LL + 2;
@@ -118,6 +154,7 @@ void nfc_loop(void) {
       apdu_buffer[LL + 1] = LO(SW);
 
       apdu_buffer_sent = 0;
+      inf_sending = 1;
       send_apdu_buffer(0);
     }
   } else if ((rx_frame_buf[0] & PCB_MASK) == PCB_R_BLOCK) {
@@ -130,19 +167,12 @@ void nfc_loop(void) {
       }
     } else {
       if ((rx_frame_buf[0] & 1) != block_number) {
-        nfc_send_frame_with_lock(R_ACK | block_number, NULL, 0);
+        nfc_send_frame(R_ACK | block_number, NULL, 0);
       } else {
         send_apdu_buffer(1);
       }
     }
+  } else {
+    // S-Block
   }
-}
-
-void nfc_wtx(void) {
-  if (device_spinlock_lock(&state_spinlock, false) != 0) return;
-  if (nfc_state == NFC_STATE_BUSY) {
-    uint8_t WTXM = 1;
-    nfc_send_frame(S_WTX, &WTXM, 1);
-  }
-  device_spinlock_unlock(&state_spinlock);
 }
