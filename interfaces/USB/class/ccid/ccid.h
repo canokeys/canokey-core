@@ -6,6 +6,7 @@
 #define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
 #define CCID_CMD_HEADER_SIZE 10
 #define CCID_NUMBER_OF_SLOTS 1
+#define TIME_EXTENSION_PERIOD 5000
 
 typedef struct {
   uint8_t bMessageType; /* Offset = 0*/

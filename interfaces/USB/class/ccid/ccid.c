@@ -19,16 +19,13 @@ ccid_bulkin_data_t bulkin_data;
 ccid_bulkout_data_t bulkout_data;
 static uint16_t ab_data_length;
 static volatile uint8_t bulkout_state;
-static volatile uint8_t bulkin_state;
 static volatile uint8_t has_cmd;
-static volatile uint32_t bulkin_state_spinlock;
+static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 
 uint8_t CCID_Init(void) {
-  bulkin_state_spinlock = 0;
-  //  current_applet = APPLET_NULL;
-  bulkin_state = CCID_STATE_IDLE;
+  send_data_spinlock = 0;
   bulkout_state = CCID_STATE_IDLE;
   has_cmd = 0;
   bulkout_data.abData = bulkin_data.abData;
@@ -147,7 +144,9 @@ uint8_t PC_to_RDR_XfrBlock(void) {
     LL = 0;
     SW = SW_CHECKING_ERROR;
   } else {
+    device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
     process_apdu(capdu, rapdu);
+    device_set_timeout(NULL, 0);
   }
 
   bulkin_data.dwLength = LL + 2;
@@ -294,7 +293,6 @@ void CCID_Loop(void) {
     RDR_to_PC_SlotStatus(errorCode);
     break;
   case PC_TO_RDR_XFRBLOCK:
-    bulkin_state = CCID_STATE_PROCESS_DATA;
     errorCode = PC_to_RDR_XfrBlock();
     RDR_to_PC_DataBlock(errorCode);
     break;
@@ -310,16 +308,14 @@ void CCID_Loop(void) {
 
   uint16_t len = bulkin_data.dwLength;
   bulkin_data.dwLength = htole32(bulkin_data.dwLength);
-  device_spinlock_lock(&bulkin_state_spinlock, true);
+  device_spinlock_lock(&send_data_spinlock, true);
   CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data, len + CCID_CMD_HEADER_SIZE, 0);
-  bulkin_state = CCID_STATE_IDLE;
-  device_spinlock_unlock(&bulkin_state_spinlock);
+  device_spinlock_unlock(&send_data_spinlock);
 }
 
 void CCID_TimeExtensionLoop(void) {
-  if (device_spinlock_lock(&bulkin_state_spinlock, false) != 0) return;
-
-  if (bulkin_state == CCID_STATE_PROCESS_DATA) {
+  if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
+    DBG_MSG("send t-ext\r\n");
     bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
     bulkin_time_extension.dwLength = 0;
     bulkin_time_extension.bSlot = bulkout_data.bSlot;
@@ -328,7 +324,8 @@ void CCID_TimeExtensionLoop(void) {
     bulkin_time_extension.bError = 1; // Request another 1 BTWs (5.7s)
     bulkin_time_extension.bSpecific = 0;
     CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, 1);
+    device_spinlock_unlock(&send_data_spinlock);
   }
 
-  device_spinlock_unlock(&bulkin_state_spinlock);
+  device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
 }
