@@ -190,7 +190,7 @@ script:
   - yubico-piv-tool -r "$RDID" -a test-decipher -s 9e < /tmp/cert-9e.pem
   - pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
   - echo -n hello >/tmp/hello.txt
-  - pkcs11-tool --slot-index 1 -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
+  - pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
   - openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
   - yubico-piv-tool -r "$RDID" -a generate -s 9a >/tmp/pubkey-9a.pem # generate key at 9a
   - yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9a -S '/CN=CertAtSlot9a' < /tmp/pubkey-9a.pem >/tmp/cert-9a.pem
