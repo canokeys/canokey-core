@@ -17,7 +17,6 @@
 #define REG_REGU_CFG 0xE
 
 #define RF_STATE_MASK 0xE0
-#define RF_STATE_L4 0xA0
 
 #define MAIN_IRQ_AUX (1 << 0)
 #define MAIN_IRQ_FIFO (1 << 1)

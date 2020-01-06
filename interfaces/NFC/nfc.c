@@ -22,15 +22,13 @@ void nfc_init(void) {
   next_state = TO_RECEIVE;
   apdu_cmd.data = apdu_buffer;
   apdu_resp.data = apdu_buffer;
-  uint8_t val = 0x3F; // max power
-  fm_write_reg(REG_REGU_CFG, &val, 1);
-  fm_write_reg(REG_FIFO_FLUSH, &val, 1);
+  fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1);  // writing anything to this reg will flush FIFO buffer
 }
 
 int nfc_has_rf(void) {
   uint8_t val;
   fm_read_reg(REG_RF_STATUS, &val, 1);
-  return (val & RF_STATE_MASK) == RF_STATE_L4;
+  return (val & RF_STATE_MASK) != 0;
 }
 
 static void nfc_error_handler(void) {
