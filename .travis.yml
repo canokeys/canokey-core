@@ -48,7 +48,7 @@ install:
   - cd ../NFC
   - make
   - popd
-  - git clone --depth 1 https://github.com/canopo/fido2-tests.git
+  - git clone --depth 1 https://github.com/canokeys/fido2-tests.git
   - pushd fido2-tests; pip3 install --user -r requirements.txt; popd
   - sudo pip install cpp-coveralls
 
@@ -169,7 +169,7 @@ script:
   - GPGReset
   - gpgconf --kill gpg-agent
   - # PIV tests:
-  - RDID=" 01"
+  - RDID="PIV"
   - yubico-piv-tool -r "$RDID" -a status
   - opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
   - opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico

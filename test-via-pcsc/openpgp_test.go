@@ -38,7 +38,7 @@ func New() (*OpenPGPApplet, error) {
 		return nil, errors.Wrapf(err, errFailedToListReaders)
 	}
 	for _, reader := range readers {
-		if strings.Contains(reader, "Cano") && strings.Contains(reader, "OpenPGP") {
+		if strings.Contains(reader, "Canokey") && strings.Contains(reader, "OpenPGP") {
 			card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
 			if err != nil {
 				context.Release()
