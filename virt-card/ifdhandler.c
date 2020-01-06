@@ -134,7 +134,7 @@ RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
     memcpy(bulkout_data[Lun].abData, TxBuffer, TxLength);
     bulkout_data[Lun].dwLength = TxLength;
 
-    uint8_t ret = PC_to_RDR_XfrBlock(Lun);
+    uint8_t ret = PC_to_RDR_XfrBlock();
     if(ret != SLOT_NO_ERROR) {
         *RxLength = 0;
         printf("warning: PC_to_RDR_XfrBlock returns %#x\n", ret);

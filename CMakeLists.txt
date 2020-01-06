@@ -71,6 +71,7 @@ if (ENABLE_TESTS)
 
     if (PCSCLITE_FOUND)
         add_library(u2f-virt-card SHARED
+                virt-card/dummy.c
                 virt-card/ifdhandler.c
                 virt-card/fabrication.c
                 littlefs/emubd/lfs_emubd.c)
