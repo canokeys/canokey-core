@@ -110,13 +110,13 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Configuration", func(ctx C) {
-			for P1 := 0; P1 <= 3; P1++ {
+			for P1 := 1; P1 <= 3; P1++ {
 				for P2 := 1; P2 >= 0; P2-- {
 					apdu := []byte{0x00, 0x40, uint8(P1), uint8(P2)}
 					_, code, err := app.Send(apdu)
 					So(err, ShouldBeNil)
 					if verified {
-						if P1 == 0 {
+						if P1 == 2 {
 							So(code, ShouldEqual, 0x6A86)
 						} else {
 							So(code, ShouldEqual, 0x9000)
@@ -125,14 +125,6 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 						So(code, ShouldEqual, 0x6982)
 					}
 				}
-			}
-			if verified {
-				_, code, err := app.Send([]byte{0x00, 0x40, 0x02, 0x01})
-				So(err, ShouldBeNil)
-				So(code, ShouldEqual, 0x9000)
-				_, code, err = app.Send([]byte{0x00, 0x40, 0x03, 0x01})
-				So(err, ShouldBeNil)
-				So(code, ShouldEqual, 0x6985)
 			}
 		})
 		Convey("Write SN", func(ctx C) {
