@@ -19,7 +19,8 @@
 #include <unistd.h>
 #include <time.h>
 
-const static UCHAR ATR[] = {0x3B, 0xE9, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x45, 0x4A, 0x43, 0x4F, 0x50, 0x32, 0x34, 0x32, 0x52, 0x32, 0xA0};
+const static UCHAR ATR[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65,
+                            0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 static int applet_init = 0;
 
 RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
@@ -62,7 +63,7 @@ RESPONSECODE IFDHGetCapabilities ( DWORD Lun, DWORD Tag,
         break;
     case TAG_IFD_SLOTS_NUMBER:
         *Length = 1;
-        Value[0] = 2;
+        Value[0] = 1;
         break;
     case TAG_IFD_POLLING_THREAD_KILLABLE:
         *Length = 1;
