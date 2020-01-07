@@ -2,7 +2,7 @@
 #include "apdu.h"
 #include "device.h"
 
-#define WTX_PERIOD 300
+#define WTX_PERIOD 150
 
 static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;

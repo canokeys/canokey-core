@@ -8,7 +8,7 @@ static void device_delay_us(int us) {
 
 void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
   fm_nss_low();
-  reg |= 20;
+  reg |= 0x20;
   fm_transmit(&reg, 1);
   fm_receive(buf, len);
   fm_nss_high();
@@ -17,7 +17,7 @@ void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
 void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
   fm_nss_low();
   fm_transmit(&reg, 1);
-  fm_receive(buf, len);
+  fm_transmit(buf, len);
   fm_nss_high();
 }
 
