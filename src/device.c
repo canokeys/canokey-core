@@ -9,7 +9,7 @@
 #ifndef TEST
 
 volatile static uint8_t touch_result;
-static uint8_t is_blinking;
+static uint8_t has_rf, is_blinking;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 
@@ -37,6 +37,10 @@ uint8_t wait_for_user_presence(void) {
 uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
+
+void set_nfc_state(uint8_t val) { has_rf = val; }
+
+uint8_t is_nfc(void) { return has_rf; }
 
 static void toggle_led(void) {
   if (led_status == ON) {
