@@ -13,92 +13,18 @@ Core implementations of an open-source secure key, with supports of:
 * PIV (NIST SP 800-73-4)
 * HOTP / TOTP
 
-The USB mode contains 4 different interfaces:
+The USB mode contains 3 different interfaces:
 
 * Interface 0: U2F / FIDO2, which is an HID interface
-* Interface 1: OpenPGP Card, which is a CCID interface
-* Interface 2: PIV and OATH, which is also a CCID interface
-* Interface 3: WebUSB, which is not a standard interface
+* Interface 1: PIV/OpenPGP/OATH Card, which is a CCID interface
+* Interface 2: WebUSB, which is not a standard interface
+* Interface 3: Keyboard
 
-Although OpenPGP Card uses the CCID interface, we make it a unique one because the `gpg-agent` opens the card using the `exclusive` mode.
 The WebUSB interface is used to configure the key via a web-based interface.
 
 ## Protocol
 
-For interface 0-2, please refer to the corresponding standard.
-
-For interface 3, you may use APDUs to use OpenPGP Card / PIV / OATH / Admin applets. The PIV applet in interface 3 only supports extended APDU mode.
-
-### The protocol of admin applet
-
-* AID: F0 00 00 00 00
-* Instructions:
-  * 20 Verify PIN
-  * 21 Change PIN
-  * 01 Write FIDO private key
-  * 02 Write FIDO cert
-  * 03 Reset OpenPGP applet
-  * 04 Reset PIV applet
-  * 05 Reset OATH applet
-  * 30 Write SN
-  * FF Vendor specific function
-
-#### Verify PIN
-
-The default PIN is "123456" (in string) or "31 32 33 34 35 36" (in hex). You need to verify your PIN before you do anything else. The verification is the same as the OpenPGP applet. Here is the example:
-
-`00 20 00 00 06 31 32 33 34 35 36`
-
-`9000`
-
-The maximum length of the PIN is 64 bytes and the minimum length is 6 bytes.
-
-#### Change PIN
-
-After a successful verification, you can use this command to change your PIN DIRECTLY:
-
-`00 21 00 00 08 31 31 31 31 31 31 31 31`
-
-`9000`
-
-Your PIN will be set to "11111111".
-
-NOTE THAT THERE IS NO WAY TO RESET THE PIN OF THIS ADMIN APPLET.
-
-#### Write FIDO private key
-
-This is a EcDSA secp256r1 private key (32 bytes), and will be used in both U2F and FIDO2 to sign the registration data. Use a short APDU to set it:
-
-`00 01 00 00 20 01 02 03 04 05 06 07 08 09 ..`
-
-`9000`
-
-Once you write a new private key, your old 2FA credentials will be INVALID.
-
-#### Write FIDO certificate
-
-This is a X.509 der certificate corresponding to your private key. Use a EXTENDED APDU to set it:
-
-`00 02 00 00 00 LL LL DD DD ..`, LLLL is the length of the cert.
-
-`9000`
-
-#### Reset applets
-
-Executing these commands will reset the corresponding applets.
-
-#### Write SN
-
-The SN can be only set ONCE. Due to the limitation of OpenPGP card spec, the serial number is 4-byte long.
-
-`00 30 00 00 04 DE AD BE AF`
-`9000`
-
-#### Vendor specific function
-
-The default response is always `9000`. You can override this by implement the following function:
-
-`int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu)`
+Please refer to the [documentation](https://canokeys.github.io/doc/).
 
 ## Porting
 
