@@ -1,15 +1,17 @@
 #include "common.h"
+#include <admin.h>
 #include <ccid.h>
 #include <ctaphid.h>
 #include <device.h>
-#include <webusb.h>
 #include <kbdhid.h>
+#include <webusb.h>
 
 #ifndef TEST
 
 volatile static uint8_t touch_result;
-static uint8_t is_inf_blinking;
-static uint32_t last_blink = UINT32_MAX;
+static uint8_t is_blinking;
+static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
+static enum { ON, OFF } led_status;
 
 uint8_t wait_for_user_presence(void) {
   uint32_t start = device_get_tick();
@@ -32,32 +34,61 @@ uint8_t wait_for_user_presence(void) {
   return USER_PRESENCE_OK;
 }
 
-void device_loop(void) {
-  CCID_Loop();
-  CTAPHID_Loop(0);
-  WebUSB_Loop();
-  KBDHID_Loop();
-}
-
 uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
-void start_blinking(uint8_t sec) {
-  if (sec == 0) {
-    if (is_inf_blinking) return;
-    is_inf_blinking = 1;
+static void toggle_led(void) {
+  if (led_status == ON) {
+    led_off();
+    led_status = OFF;
   } else {
-    uint32_t now = device_get_tick();
-    if (now > last_blink && now - last_blink < sec * 1000) return;
-    last_blink = now;
+    led_on();
+    led_status = ON;
   }
-  device_start_blinking(sec);
+}
+
+static void update_led(void) {
+  uint32_t now = device_get_tick();
+  if (now > blink_timeout) stop_blinking();
+  if (now >= last_blink && now - last_blink >= blink_interval) {
+    last_blink = now;
+    toggle_led();
+  }
+}
+
+void start_blinking(uint8_t sec) {
+  if (is_blinking) return;
+  last_blink = device_get_tick();
+  if (sec == 0) {
+    blink_timeout = UINT32_MAX;
+    blink_interval = 1000;
+  } else {
+    blink_timeout = last_blink + sec * 1000;
+    blink_interval = sec * 500;
+  }
+  toggle_led();
 }
 
 void stop_blinking(void) {
-  is_inf_blinking = 0;
-  device_stop_blinking();
+  is_blinking = 0;
+  last_blink = UINT32_MAX;
+  if (cfg_is_led_normally_on()) {
+    led_on();
+    led_status = ON;
+  } else {
+    led_off();
+    led_status = OFF;
+  }
+}
+
+void device_loop(void) {
+  static uint8_t cnt = 1;
+  CCID_Loop();
+  CTAPHID_Loop(0);
+  WebUSB_Loop();
+  KBDHID_Loop();
+  if (++cnt == 0) update_led();
 }
 
 #else
