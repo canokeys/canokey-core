@@ -42,6 +42,7 @@
 #else
 #define WAIT()                                                                                                         \
   do {                                                                                                                 \
+    if (is_nfc()) break;                                                                                               \
     start_blinking(0);                                                                                                 \
     switch (wait_for_user_presence()) {                                                                                \
     case USER_PRESENCE_CANCEL:                                                                                         \

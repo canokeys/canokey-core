@@ -32,7 +32,7 @@ int nfc_has_rf(void) {
 }
 
 static void nfc_error_handler(void) {
-  DBG_MSG("ERR!\n");
+  DBG_MSG("NFC Error!\n");
   block_number = 1;
   apdu_buffer_size = 0;
   last_sent = 0;
@@ -48,7 +48,7 @@ void nfc_handler(void) {
     fm_read_fifo(rx_frame_buf, rx_frame_size);
     DBG_MSG("RX: ");
     PRINT_HEX(rx_frame_buf, rx_frame_size);
-    if (next_state == TO_SEND) DBG_MSG("WTHH\n");
+    if (next_state == TO_SEND) DBG_MSG("Wrong State!\n");
     next_state = TO_SEND;
   }
   if (irq[2] & AUX_IRQ_ERROR_MASK)
@@ -77,7 +77,7 @@ void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
       next_state = TO_RECEIVE;
       retry = 0;
     } else {
-      DBG_MSG("WTH\n");
+      DBG_MSG("Wrong State!\n");
     }
     device_spinlock_unlock(&state_spinlock);
   }
