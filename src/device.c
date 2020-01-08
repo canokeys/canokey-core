@@ -52,7 +52,7 @@ static void toggle_led(void) {
   }
 }
 
-static void update_led(void) {
+void device_update_led(void) {
   uint32_t now = device_get_tick();
   if (now > blink_timeout) stop_blinking();
   if (now >= last_blink && now - last_blink >= blink_interval) {
@@ -66,7 +66,7 @@ void start_blinking(uint8_t sec) {
   last_blink = device_get_tick();
   if (sec == 0) {
     blink_timeout = UINT32_MAX;
-    blink_interval = 1000;
+    blink_interval = 512;
   } else {
     blink_timeout = last_blink + sec * 1000;
     blink_interval = sec * 500;
@@ -87,12 +87,10 @@ void stop_blinking(void) {
 }
 
 void device_loop(void) {
-  static uint8_t cnt = 1;
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
   KBDHID_Loop();
-  if (++cnt == 0) update_led();
 }
 
 #else

@@ -22,6 +22,7 @@ int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);
 void device_spinlock_unlock(volatile uint32_t *lock);
 void led_on(void);
 void led_off(void);
+void device_update_led(void);
 void device_set_timeout(void (*callback)(void), uint16_t timeout);
 void fm_nss_low(void);
 void fm_nss_high(void);
