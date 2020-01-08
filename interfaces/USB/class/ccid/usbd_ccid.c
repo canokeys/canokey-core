@@ -44,8 +44,10 @@ uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uin
   USBD_StatusTypeDef ret = USBD_OK;
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
     while (bulk_in_state != CCID_STATE_IDLE)
-      device_delay(1);
-    if (bulk_in_state != CCID_STATE_IDLE && is_time_extension_request) return ret;
+      if (is_time_extension_request)
+        return ret;
+      else
+        device_delay(1);
     uint8_t addr = EP_OUT(ccid);
     uint8_t ep_size = EP_SIZE(ccid);
     bulk_in_state = len % ep_size == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
