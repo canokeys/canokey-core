@@ -8,21 +8,22 @@ static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
 static uint8_t apdu_buffer[APDU_BUFFER_SIZE], inf_sending;
-static uint16_t apdu_buffer_size;
+static uint16_t apdu_buffer_rx_size, apdu_buffer_tx_size;
 static uint16_t apdu_buffer_sent, last_sent;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 
 void nfc_init(void) {
   block_number = 1;
-  apdu_buffer_size = 0;
+  apdu_buffer_rx_size = 0;
+  apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
   state_spinlock = 0;
   next_state = TO_RECEIVE;
   apdu_cmd.data = apdu_buffer;
   apdu_resp.data = apdu_buffer;
-  fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1);  // writing anything to this reg will flush FIFO buffer
+  fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
 }
 
 int nfc_has_rf(void) {
@@ -31,10 +32,11 @@ int nfc_has_rf(void) {
   return (val & RF_STATE_MASK) != 0;
 }
 
-static void nfc_error_handler(void) {
-  DBG_MSG("NFC Error!\n");
+static void nfc_error_handler(int code) {
+  DBG_MSG("NFC Error %d\n", code);
   block_number = 1;
-  apdu_buffer_size = 0;
+  apdu_buffer_rx_size = 0;
+  apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
 }
@@ -51,8 +53,7 @@ void nfc_handler(void) {
     if (next_state == TO_SEND) DBG_MSG("Wrong State!\n");
     next_state = TO_SEND;
   }
-  if (irq[2] & AUX_IRQ_ERROR_MASK)
-    nfc_error_handler();
+  // if (irq[2] & AUX_IRQ_ERROR_MASK) nfc_error_handler(-1);
 }
 
 static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
@@ -85,16 +86,17 @@ void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
 
 static void send_apdu_buffer(uint8_t resend) {
   if (resend) apdu_buffer_sent -= last_sent;
-  last_sent = apdu_buffer_size - apdu_buffer_sent;
+  last_sent = apdu_buffer_tx_size - apdu_buffer_sent;
   if (last_sent == 0) {
-    nfc_error_handler();
+    nfc_error_handler(-2);
     return;
   }
   if (last_sent > 29) last_sent = 29;
   uint8_t prologue = block_number | 0x02;
-  if (apdu_buffer_size - apdu_buffer_sent > last_sent) prologue |= PCB_I_CHAINING;
+  if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent) prologue |= PCB_I_CHAINING;
   nfc_send_frame(prologue, apdu_buffer + apdu_buffer_sent, last_sent);
   apdu_buffer_sent += last_sent;
+  if (apdu_buffer_tx_size == apdu_buffer_sent) inf_sending = 0;
 }
 
 static void send_wtx(void) {
@@ -112,33 +114,29 @@ void nfc_loop(void) {
   if (next_state == TO_RECEIVE) return;
 
   if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {
-    if (inf_sending) {
-      inf_sending = 0;
-      apdu_buffer_size = 0;
-    }
 
     block_number ^= 1;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
-      memcpy(apdu_buffer + apdu_buffer_size, rx_frame_buf + 1, rx_frame_size - 3);
-      if (apdu_buffer_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
-        nfc_error_handler();
+      memcpy(apdu_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
+      if (apdu_buffer_rx_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
+        nfc_error_handler(-3);
         return;
       }
-      apdu_buffer_size += rx_frame_size - 3;
+      apdu_buffer_rx_size += rx_frame_size - 3;
       nfc_send_frame(R_ACK | block_number, NULL, 0);
     } else {
-      memcpy(apdu_buffer + apdu_buffer_size, rx_frame_buf + 1, rx_frame_size - 3);
-      if (apdu_buffer_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
-        nfc_error_handler();
+      memcpy(apdu_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
+      if (apdu_buffer_rx_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
+        nfc_error_handler(-4);
         return;
       }
-      apdu_buffer_size += rx_frame_size - 3;
+      apdu_buffer_rx_size += rx_frame_size - 3;
 
       CAPDU *capdu = &apdu_cmd;
       RAPDU *rapdu = &apdu_resp;
 
-      if (build_capdu(&apdu_cmd, apdu_buffer, apdu_buffer_size) < 0) {
+      if (build_capdu(&apdu_cmd, apdu_buffer, apdu_buffer_rx_size) < 0) {
         LL = 0;
         SW = SW_CHECKING_ERROR;
       } else {
@@ -147,26 +145,32 @@ void nfc_loop(void) {
         device_set_timeout(NULL, 0);
       }
 
-      apdu_buffer_size = LL + 2;
+      apdu_buffer_tx_size = LL + 2;
       apdu_buffer[LL] = HI(SW);
       apdu_buffer[LL + 1] = LO(SW);
 
+      apdu_buffer_rx_size = 0;
       apdu_buffer_sent = 0;
       inf_sending = 1;
       send_apdu_buffer(0);
     }
   } else if ((rx_frame_buf[0] & PCB_MASK) == PCB_R_BLOCK) {
     if ((rx_frame_buf[0] & R_BLOCK_MASK) == R_ACK) {
-      if ((rx_frame_buf[0] & 1) != block_number) {
+      if ((rx_frame_buf[0] & 1) != block_number) { // continue chaining
         block_number ^= 1;
         send_apdu_buffer(0);
-      } else {
+      } else { // re-send
         send_apdu_buffer(1);
       }
     } else {
       if ((rx_frame_buf[0] & 1) != block_number) {
-        nfc_send_frame(R_ACK | block_number, NULL, 0);
-      } else {
+        if (inf_sending) { // continue chaining
+          block_number ^= 1;
+          send_apdu_buffer(0);
+        } else { // card presence check reply
+          nfc_send_frame(R_ACK | block_number, NULL, 0);
+        }
+      } else { // re-send
         send_apdu_buffer(1);
       }
     }
