@@ -1,6 +1,7 @@
 #include <admin.h>
 #include <apdu.h>
 #include <ctap.h>
+#include <device.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
@@ -173,6 +174,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       uint8_t i, end = APPLET_ENUM_END;
       for (i = APPLET_NULL + 1; i != end; ++i) {
         if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+          if (i == APPLET_FIDO && !is_nfc()) {
+            LL = 0;
+            SW = SW_CONDITIONS_NOT_SATISFIED;
+            DBG_MSG("should not use FIDO via CCID\n");
+            return;
+          }
           if (i != current_applet) applet_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);
@@ -188,7 +195,9 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     }
     switch (current_applet) {
     case APPLET_OPENPGP:
-      openpgp_process_apdu(capdu, rapdu);
+      openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
+      rapdu->len = LE;
+      apdu_output(&rapdu_chaining, rapdu);
       break;
     case APPLET_PIV:
       piv_process_apdu(capdu, &rapdu_chaining.rapdu);
