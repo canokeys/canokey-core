@@ -44,6 +44,7 @@ void start_blinking(uint8_t sec);
 void stop_blinking(void);
 void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len);
 void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len);
+void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
 void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
 void fm_read_fifo(uint8_t *buf, uint8_t len);
 void fm_write_fifo(uint8_t *buf, uint8_t len);

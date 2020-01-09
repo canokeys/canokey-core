@@ -1,9 +1,9 @@
-#include <stdint.h>
 #include "device.h"
+#include <stdint.h>
 
 static void device_delay_us(int us) {
-  for (int i = 0; i < us * 1000; ++i)
-      asm volatile ("nop");
+  for (int i = 0; i < us * 10; ++i)
+    asm volatile("nop");
 }
 
 void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
@@ -18,6 +18,15 @@ void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
   fm_nss_low();
   fm_transmit(&reg, 1);
   fm_transmit(buf, len);
+  fm_nss_high();
+}
+
+void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) {
+  fm_nss_low();
+  device_delay_us(100);
+  uint8_t data[2] = {0x60 | (addr >> 8), addr & 0xFF};
+  fm_transmit(data, 2);
+  fm_receive(buf, len);
   fm_nss_high();
 }
 
