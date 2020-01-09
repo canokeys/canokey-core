@@ -171,14 +171,14 @@ func TestOpenPGPApplet(t *testing.T) {
 		})
 
 		Convey("Read cert 1", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00})
+			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[1])
 		})
 
 		Convey("Read next cert 2", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00})
+			res, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, cert2)
@@ -191,14 +191,14 @@ func TestOpenPGPApplet(t *testing.T) {
 		})
 
 		Convey("Read cert 3", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00})
+			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[3])
 		})
 
 		Convey("Read next cert 4", func(ctx C) {
-			_, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00})
+			_, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88)
 		})
@@ -216,14 +216,14 @@ func TestOpenPGPApplet(t *testing.T) {
 		})
 
 		Convey("Read cert 2 again", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00})
+			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[2])
 		})
 
 		Convey("Read next cert 3", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00})
+			res, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[3])
