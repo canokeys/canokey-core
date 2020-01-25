@@ -174,7 +174,7 @@ script:
   - opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
   - opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
   - pkcs15-tool --reader "$RDID" -D
-  - PIV_EXT_AUTH_KEY="$PWD/test-via-pcsc/PIV_EXT_AUTH_KEY.txt" piv-tool -r "$RDID" --admin A:9B:03 -G 9A:11 # External Auth
+  - PIV_EXT_AUTH_KEY="$PWD/test-via-pcsc/PIV_EXT_AUTH_KEY.txt" piv-tool --reader "$RDID" --admin A:9B:03 -G 9A:11 # External Auth
   - yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
   - yubico-piv-tool -r "$RDID" -a change-pin -P 123456 -N 654321
   - yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
