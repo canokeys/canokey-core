@@ -15,7 +15,7 @@
 
 uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev);
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req);
-uint8_t USBD_WEBUSB_DataIn(USBD_HandleTypeDef *pdev);
+uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev);
 void WebUSB_Loop(void);
 
 #endif // _WEBUSB_H_

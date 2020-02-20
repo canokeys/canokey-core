@@ -69,6 +69,6 @@ static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
 }
 
 static uint8_t USBD_CANOKEY_EP0_TxSent(USBD_HandleTypeDef *pdev) {
-  if (pdev->ep0_sender == WEBUSB_EP0_SENDER) return USBD_WEBUSB_DataIn(pdev);
+  if (pdev->ep0_sender == WEBUSB_EP0_SENDER) return USBD_WEBUSB_TxSent(pdev);
   return USBD_OK;
 }
