@@ -41,21 +41,6 @@ static void nfc_error_handler(int code) {
   inf_sending = 0;
 }
 
-void nfc_handler(void) {
-  uint8_t irq[3];
-  fm_read_reg(REG_MAIN_IRQ, irq, sizeof(irq));
-
-  if (irq[0] & MAIN_IRQ_RX_DONE) {
-    fm_read_reg(REG_FIFO_WORDCNT, &rx_frame_size, 1);
-    fm_read_fifo(rx_frame_buf, rx_frame_size);
-    DBG_MSG("RX: ");
-    PRINT_HEX(rx_frame_buf, rx_frame_size);
-    if (next_state == TO_SEND) DBG_MSG("Wrong State!\n");
-    next_state = TO_SEND;
-  }
-  // if (irq[2] & AUX_IRQ_ERROR_MASK) nfc_error_handler(-1);
-}
-
 static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   if (len > 29) return;
 
@@ -114,7 +99,6 @@ void nfc_loop(void) {
   if (next_state == TO_RECEIVE) return;
 
   if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {
-
     block_number ^= 1;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
@@ -176,5 +160,23 @@ void nfc_loop(void) {
     }
   } else {
     // S-Block
+  }
+}
+
+void nfc_handler(void) {
+  uint8_t irq[3];
+  fm_read_reg(REG_MAIN_IRQ, irq, sizeof(irq));
+
+  if (irq[0] & MAIN_IRQ_RX_DONE) {
+    fm_read_reg(REG_FIFO_WORDCNT, &rx_frame_size, 1);
+    fm_read_fifo(rx_frame_buf, rx_frame_size);
+    DBG_MSG("RX: ");
+    PRINT_HEX(rx_frame_buf, rx_frame_size);
+    if (next_state == TO_SEND) DBG_MSG("Wrong State!\n");
+    next_state = TO_SEND;
+  }
+  if (irq[2] & AUX_IRQ_ERROR_MASK) {
+    DBG_MSG("AUX: %02X\n", irq[2]);
+    nfc_error_handler(-1);
   }
 }

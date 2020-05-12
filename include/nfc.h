@@ -30,7 +30,7 @@
 #define FIFO_IRQ_OVERFLOW (1 << 2)
 #define FIFO_IRQ_WATER_LEVEL (1 << 3)
 
-#define AUX_IRQ_ERROR_MASK 0x38
+#define AUX_IRQ_ERROR_MASK 0x78
 
 #define PCB_MASK 0xC0
 #define PCB_I_BLOCK 0x00
