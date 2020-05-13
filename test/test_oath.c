@@ -5,7 +5,7 @@
 
 #include <apdu.h>
 #include <crypto-util.h>
-#include <emubd/lfs_emubd.h>
+#include <bd/lfs_filebd.h>
 #include <fs.h>
 #include <lfs.h>
 #include <oath.h>
@@ -99,13 +99,13 @@ static void test_calc_all(void **state) {
 
 int main() {
   struct lfs_config cfg;
-  lfs_emubd_t bd;
+  lfs_filebd_t bd;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
-  cfg.read = &lfs_emubd_read;
-  cfg.prog = &lfs_emubd_prog;
-  cfg.erase = &lfs_emubd_erase;
-  cfg.sync = &lfs_emubd_sync;
+  cfg.read = &lfs_filebd_read;
+  cfg.prog = &lfs_filebd_prog;
+  cfg.erase = &lfs_filebd_erase;
+  cfg.sync = &lfs_filebd_sync;
   cfg.read_size = 16;
   cfg.prog_size = 16;
   cfg.block_size = 512;
@@ -113,7 +113,7 @@ int main() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 128;
   cfg.lookahead_size = 16;
-  lfs_emubd_create(&cfg, "lfs-root");
+  lfs_filebd_create(&cfg, "lfs-root");
 
   fs_init(&cfg);
   oath_install(1);
@@ -127,7 +127,7 @@ int main() {
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
 
-  lfs_emubd_destroy(&cfg);
+  lfs_filebd_destroy(&cfg);
 
   return ret;
 }

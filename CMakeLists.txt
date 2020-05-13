@@ -62,7 +62,7 @@ if (ENABLE_TESTS)
             virt-card/dummy.c
             virt-card/fabrication.c
             virt-card/fido-hid-over-udp.c
-            littlefs/emubd/lfs_emubd.c)
+            littlefs/bd/lfs_filebd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core asan)
     target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
@@ -74,7 +74,7 @@ if (ENABLE_TESTS)
                 virt-card/dummy.c
                 virt-card/ifdhandler.c
                 virt-card/fabrication.c
-                littlefs/emubd/lfs_emubd.c)
+                littlefs/bd/lfs_filebd.c)
         target_include_directories(u2f-virt-card SYSTEM PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs)
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
     endif ()
@@ -85,7 +85,7 @@ if (ENABLE_FUZZING)
             fuzzer/honggfuzz-fuzzer.c
             virt-card/dummy.c
             virt-card/fabrication.c
-            littlefs/emubd/lfs_emubd.c)
+            littlefs/bd/lfs_filebd.c)
     target_include_directories(honggfuzz-fuzzer SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(honggfuzz-fuzzer canokey-core)
 endif (ENABLE_FUZZING)

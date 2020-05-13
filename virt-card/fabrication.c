@@ -5,12 +5,12 @@
 #include <aes.h>
 #include <apdu.h>
 #include <ctap.h>
-#include <emubd/lfs_emubd.h>
+#include <bd/lfs_filebd.h>
 #include <fs.h>
 #include <lfs.h>
 
 static struct lfs_config cfg;
-static lfs_emubd_t bd;
+static lfs_filebd_t bd;
 
 uint8_t private_key[] = {0xD9, 0x5C, 0x12, 0x15, 0xD1, 0x0A, 0xBB, 0x57, 0x91, 0xB6, 0x47,
                          0x52, 0xDF, 0x9D, 0x25, 0x3C, 0xA4, 0x17, 0x31, 0x37, 0x5D, 0x41,
@@ -74,10 +74,10 @@ static void fido2_init() {
 int card_fabrication_procedure(const char * lfs_root) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
-  cfg.read = &lfs_emubd_read;
-  cfg.prog = &lfs_emubd_prog;
-  cfg.erase = &lfs_emubd_erase;
-  cfg.sync = &lfs_emubd_sync;
+  cfg.read = &lfs_filebd_read;
+  cfg.prog = &lfs_filebd_prog;
+  cfg.erase = &lfs_filebd_erase;
+  cfg.sync = &lfs_filebd_sync;
   cfg.read_size = 1;
   cfg.prog_size = 512;
   cfg.block_size = 512;
@@ -85,7 +85,7 @@ int card_fabrication_procedure(const char * lfs_root) {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 16;
-  lfs_emubd_create(&cfg, lfs_root);
+  lfs_filebd_create(&cfg, lfs_root);
 
   fs_init(&cfg);
   admin_install();
