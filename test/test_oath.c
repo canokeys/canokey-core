@@ -140,6 +140,18 @@ static void test_regression_fuzz(void **state) {
     uint8_t data[] = {0x00};
     test_helper(data, sizeof(data), OATH_INS_DELETE, SW_WRONG_LENGTH);
   }
+
+  if (1) {
+    // calculate with dummy data
+    uint8_t data[] = {0x00};
+    test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_LENGTH);
+  }
+
+  if (1) {
+    // set default with dummy data
+    uint8_t data[] = {0x00};
+    test_helper(data, sizeof(data), OATH_INS_SET_DEFAULT, SW_WRONG_LENGTH);
+  }
 }
 
 int main() {
