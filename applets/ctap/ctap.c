@@ -847,7 +847,7 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (CLA != 0x00 && (CLA != 0x80 || INS != CTAP_INS_MSG)) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   int ret = 0;
-  size_t len;
+  size_t len = 0;
   switch (INS) {
   case U2F_REGISTER:
     ret = u2f_register(capdu, rapdu);
@@ -862,7 +862,7 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = u2f_select(capdu, rapdu);
     break;
   case CTAP_INS_MSG:
-    ctap_process_cbor(DATA, LC, RDATA, &len);
+    ret = ctap_process_cbor(DATA, LC, RDATA, &len);
     LL = len;
     break;
   default:
