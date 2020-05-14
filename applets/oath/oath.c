@@ -33,6 +33,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t offset = 0;
   if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
+  if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
   uint8_t name_len = DATA[offset++];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   name_offset = offset;
@@ -41,6 +42,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   // parse key
   if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_KEY) EXCEPT(SW_WRONG_DATA);
+  if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
   uint8_t key_len = DATA[offset++];
   if (key_len > MAX_KEY_LEN || key_len <= 2) // 2 for algo & digits
     EXCEPT(SW_WRONG_DATA);
