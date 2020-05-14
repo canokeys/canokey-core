@@ -164,6 +164,45 @@ static void test_regression_fuzz(void **state) {
   }
 }
 
+static void test_put_long_key(void **state) {
+  (void)state;
+
+  // put with too long key length(0xFF)
+  uint8_t data[] = {
+    // name tag
+    0x71, 0x01, 0x20,
+    // key tag
+    0x73, 0xff, 0x11, 0x10, 0x00};
+  test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_DATA);
+}
+
+static void test_put_unsupported_algo(void **state) {
+  (void)state;
+
+  // put with wrong algo(0x0)
+  uint8_t data[] = {
+    // name tag
+    0x71, 0x01, 0x20,
+    // key tag
+    0x73, 0x03, 0x00, 0x10, 0x00};
+  test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_DATA);
+}
+
+static void test_put_unsupported_counter(void **state) {
+  (void)state;
+
+  // put with unsupported counter type(except HOTP)
+  uint8_t data[] = {
+    // name tag
+    0x71, 0x01, 0x20,
+    // key tag (TOTP + SHA1)
+    0x73, 0x03, 0x21, 0x10, 0x00,
+    // HOTP tag
+    0x7A, 0x04, 0x00, 0x00, 0x00, 0x00};
+  test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_DATA);
+}
+
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -191,6 +230,9 @@ int main() {
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_regression_fuzz),
+      cmocka_unit_test(test_put_long_key),
+      cmocka_unit_test(test_put_unsupported_algo),
+      cmocka_unit_test(test_put_unsupported_counter),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

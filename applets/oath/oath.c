@@ -64,8 +64,8 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t chal[MAX_CHALLENGE_LEN] = {0};
   if (offset + 1 < LC && DATA[offset] == OATH_TAG_COUNTER) {
     offset++;
-    if (4 != DATA[offset++]) EXCEPT(SW_WRONG_DATA);
     if (offset + 4 >= LC) EXCEPT(SW_WRONG_LENGTH);
+    if (4 != DATA[offset++]) EXCEPT(SW_WRONG_DATA);
     if ((alg & OATH_TYPE_MASK) != OATH_TYPE_HOTP) EXCEPT(SW_WRONG_DATA);
     memcpy(chal + 4, DATA + offset, 4);
     offset += 4;
