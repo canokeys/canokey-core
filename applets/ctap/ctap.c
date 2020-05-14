@@ -862,7 +862,9 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = u2f_select(capdu, rapdu);
     break;
   case CTAP_INS_MSG:
-    ret = ctap_process_cbor(DATA, LC, RDATA, &len);
+    // ignore the ret of ctap_process_cbor
+    // because it has its own error report
+    ctap_process_cbor(DATA, LC, RDATA, &len);
     LL = len;
     break;
   default:
