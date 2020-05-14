@@ -54,7 +54,13 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 Install honggfuzz from source first, then enable fuzz tests:
 
-```
+```bash
 cd build
 cmake .. -DENABLE_FUZZING=TRUE -DENABLE_TESTS=TRUE -DCMAKE_C_COMPILER=hfuzz-clang -DCMAKE_BUILD_TYPE=Debug
+```
+
+Then, run fuzzing tests:
+
+```bash
+./fuzzer/run-fuzzer.sh honggfuzz ${id}
 ```
