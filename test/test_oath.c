@@ -97,6 +97,25 @@ static void test_calc_all(void **state) {
   print_hex(RDATA, LL);
 }
 
+static void test_put_no_length(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  // only tag, no length nor data
+  uint8_t data[] = {0x71};
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  capdu->ins = OATH_INS_PUT;
+  capdu->data = data;
+  capdu->lc = sizeof(data);
+
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_LENGTH);
+  print_hex(RDATA, LL);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -123,6 +142,7 @@ int main() {
       cmocka_unit_test(test_calc),
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
+      cmocka_unit_test(test_put_no_length),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
