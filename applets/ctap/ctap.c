@@ -847,7 +847,8 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (CLA != 0x00 && (CLA != 0x80 || INS != CTAP_INS_MSG)) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   int ret = 0;
-  size_t len = 0;
+  // rapdu buffer size: APDU_BUFFER_SIZE
+  size_t len = APDU_BUFFER_SIZE;
   switch (INS) {
   case U2F_REGISTER:
     ret = u2f_register(capdu, rapdu);
@@ -862,9 +863,8 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = u2f_select(capdu, rapdu);
     break;
   case CTAP_INS_MSG:
-    // ignore the ret of ctap_process_cbor
-    // because it has its own error report
-    ctap_process_cbor(DATA, LC, RDATA, &len);
+    ret = ctap_process_cbor(DATA, LC, RDATA, &len);
+    // len is the actual len written to RDATA
     LL = len;
     break;
   default:
