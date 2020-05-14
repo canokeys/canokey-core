@@ -97,23 +97,49 @@ static void test_calc_all(void **state) {
   print_hex(RDATA, LL);
 }
 
-static void test_put_no_length(void **state) {
-  (void)state;
-
+static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error) {
   uint8_t c_buf[1024], r_buf[1024];
   // only tag, no length nor data
-  uint8_t data[] = {0x71};
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
 
-  capdu->ins = OATH_INS_PUT;
+  capdu->ins = ins;
   capdu->data = data;
-  capdu->lc = sizeof(data);
+  capdu->lc = data_len;
 
   oath_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_WRONG_LENGTH);
+  assert_int_equal(rapdu->sw, expected_error);
   print_hex(RDATA, LL);
+}
+
+// regression tests for crashes discovered by fuzzing
+static void test_regression_fuzz(void **state) {
+  (void)state;
+
+  if (1) {
+    // put only tag, no length nor data
+    uint8_t data[] = {0x71};
+    test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_LENGTH);
+  }
+
+  if (1) {
+    // put with broken HOTP tag
+    uint8_t data[] = {
+      // name tag
+      0x71, 0x01, 0x20,
+      // key tag
+      0x73, 0x03, 0x11, 0x10, 0x00,
+      // HOTP tag
+      0x7A, 0x04};
+    test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_LENGTH);
+  }
+
+  if (1) {
+    // delete with dummy data
+    uint8_t data[] = {0x00};
+    test_helper(data, sizeof(data), OATH_INS_DELETE, SW_WRONG_LENGTH);
+  }
 }
 
 int main() {
@@ -142,7 +168,7 @@ int main() {
       cmocka_unit_test(test_calc),
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
-      cmocka_unit_test(test_put_no_length),
+      cmocka_unit_test(test_regression_fuzz),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
