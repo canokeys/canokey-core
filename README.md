@@ -49,3 +49,18 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    Or instead, you may implement the cryptography algorithms by yourself.
 
 5. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 1 second **IN A TIMER**.
+
+## Fuzz testing
+
+Install honggfuzz from source first, then enable fuzz tests:
+
+```bash
+cd build
+cmake .. -DENABLE_FUZZING=TRUE -DENABLE_TESTS=TRUE -DCMAKE_C_COMPILER=hfuzz-clang -DCMAKE_BUILD_TYPE=Debug
+```
+
+Then, run fuzzing tests:
+
+```bash
+./fuzzer/run-fuzzer.sh honggfuzz ${id}
+```

@@ -31,9 +31,8 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
 
   // parse name
   uint8_t offset = 0;
-  if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
+  if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
   uint8_t name_len = DATA[offset++];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   name_offset = offset;
@@ -55,7 +54,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
 
   // parse property (optional tag)
   uint8_t prop = 0;
-  if (offset < LC && DATA[offset] == OATH_TAG_PROPERTY) {
+  if (offset + 1 < LC && DATA[offset] == OATH_TAG_PROPERTY) {
     offset++;
     prop = DATA[offset++];
     if ((prop & ~(OATH_PROP_INC | OATH_PROP_TOUCH)) != 0) EXCEPT(SW_WRONG_DATA);
@@ -63,8 +62,9 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
 
   // parse HOTP counter (optional tag)
   uint8_t chal[MAX_CHALLENGE_LEN] = {0};
-  if (offset < LC && DATA[offset] == OATH_TAG_COUNTER) {
+  if (offset + 1 < LC && DATA[offset] == OATH_TAG_COUNTER) {
     offset++;
+    if (offset + 4 >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (4 != DATA[offset++]) EXCEPT(SW_WRONG_DATA);
     if ((alg & OATH_TYPE_MASK) != OATH_TYPE_HOTP) EXCEPT(SW_WRONG_DATA);
     memcpy(chal + 4, DATA + offset, 4);
@@ -97,6 +97,7 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   uint8_t offset = 0;
+  if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
@@ -214,6 +215,7 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   uint8_t offset = 0;
+  if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
@@ -239,6 +241,7 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   uint8_t offset = 0;
+  if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset++];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);

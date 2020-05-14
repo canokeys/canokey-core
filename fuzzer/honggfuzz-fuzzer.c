@@ -60,7 +60,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
     memcpy(bulkout_data[Lun].abData, buf, len);
     bulkout_data[Lun].dwLength = len;
-    PC_to_RDR_XfrBlock(Lun);
+    // FIXME
+    PC_to_RDR_XfrBlock();
 
   } else { // Applet Fuzzing Test
     if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
@@ -73,6 +74,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     rapdu.len = APDU_BUFFER_SIZE;
     if (build_capdu(&capdu, bulkout_data[0].abData, len) < 0) {
       return 0;
+    }
+    // realloc data to let asan find out buffer overflow
+    if (capdu.lc > 0) {
+      uint8_t *new_data = malloc(capdu.lc);
+      memcpy(new_data, capdu.data, capdu.lc);
+      capdu.data = new_data;
+    } else {
+      // should never read data when lc=0
+      capdu.data = NULL;
     }
     PRINT_HEX(buf, len);
     capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);
