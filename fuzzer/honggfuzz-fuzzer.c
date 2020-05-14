@@ -80,6 +80,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
       uint8_t *new_data = malloc(capdu.lc);
       memcpy(new_data, capdu.data, capdu.lc);
       capdu.data = new_data;
+    } else {
+      // should never read data when lc=0
+      capdu.data = NULL;
     }
     PRINT_HEX(buf, len);
     capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);

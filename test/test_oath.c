@@ -105,10 +105,20 @@ static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t ex
   RAPDU *rapdu = &R;
 
   capdu->ins = ins;
-  capdu->data = data;
   capdu->lc = data_len;
+  if (data_len > 0) {
+    // re alloc to help asan find overflow error
+    capdu->data = malloc(data_len);
+    memcpy(capdu->data, data, data_len);
+  } else {
+    // when lc = 0, data should never be read
+    capdu->data = NULL;
+  }
 
   oath_process_apdu(capdu, rapdu);
+  if (data_len > 0) {
+    free(capdu->data);
+  }
   assert_int_equal(rapdu->sw, expected_error);
   print_hex(RDATA, LL);
 }
@@ -136,20 +146,20 @@ static void test_regression_fuzz(void **state) {
   }
 
   if (1) {
-    // delete with dummy data
-    uint8_t data[] = {0x00};
+    // delete with only tag
+    uint8_t data[] = {0x71};
     test_helper(data, sizeof(data), OATH_INS_DELETE, SW_WRONG_LENGTH);
   }
 
   if (1) {
-    // calculate with dummy data
-    uint8_t data[] = {0x00};
+    // calculate with only tag
+    uint8_t data[] = {0x71};
     test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_LENGTH);
   }
 
   if (1) {
-    // set default with dummy data
-    uint8_t data[] = {0x00};
+    // set default with only tag
+    uint8_t data[] = {0x71};
     test_helper(data, sizeof(data), OATH_INS_SET_DEFAULT, SW_WRONG_LENGTH);
   }
 }
