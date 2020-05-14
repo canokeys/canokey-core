@@ -10,7 +10,7 @@
 #include <lfs.h>
 #include <oath.h>
 
-static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error) {
+static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error, uint8_t *expected_resp, size_t resp_len) {
   uint8_t c_buf[1024], r_buf[1024];
   // only tag, no length nor data
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
@@ -34,13 +34,22 @@ static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t ex
   }
   assert_int_equal(rapdu->sw, expected_error);
   print_hex(RDATA, LL);
+  if (expected_resp != NULL) {
+    assert_int_equal(rapdu->len, resp_len);
+    assert_memory_equal(RDATA, expected_resp, resp_len);
+  }
 }
 
+static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error) {
+  // don't check resp
+  test_helper_resp(data, data_len, ins, expected_error, NULL, 0);
+}
 
 static void test_put(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
+  // name: abc, algo: TOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
   uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
@@ -60,11 +69,21 @@ static void test_put(void **state) {
   }
 }
 
+// should be called after test_put
 static void test_calc(void **state) {
   (void)state;
 
-  uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x74, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
-  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR);
+  uint8_t data[] = {
+    // name
+    OATH_TAG_NAME, 0x03, 'a', 'b', 'c',
+    // challenge: 0x21 0x06 0x00 0x01 0x02
+    OATH_TAG_CHALLENGE, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
+  uint8_t resp[] = {
+    // hmac: cbba68f6d4c567bc4b0ffff136befc3d2d86231a
+    // part of hmac:             fff136be
+    // mask:                     7f000000
+    OATH_TAG_RESPONSE, 0x05, 0x06, 0x7F, 0xF1, 0x36, 0xBE};
+  test_helper_resp(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR, resp, sizeof(resp));
 }
 
 static void test_list(void **state) {

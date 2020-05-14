@@ -64,8 +64,15 @@ if (ENABLE_TESTS)
             virt-card/fido-hid-over-udp.c
             littlefs/bd/lfs_filebd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
-    target_link_libraries(fido-hid-over-udp general canokey-core asan)
+    target_link_libraries(fido-hid-over-udp general canokey-core "-fsanitize=address")
     target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
+
+    add_executable(usbip
+            virt-card/usbip.c
+            littlefs/bd/lfs_filebd.c)
+    target_include_directories(usbip SYSTEM PRIVATE littlefs)
+    target_link_libraries(usbip general canokey-core "-fsanitize=address")
+    target_compile_options(usbip PRIVATE "-fsanitize=address")
 
     pkg_search_module(PCSCLITE libpcsclite)
 
