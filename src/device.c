@@ -11,6 +11,15 @@ static uint8_t has_rf, is_blinking;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 
+void device_loop(void) {
+  CCID_Loop();
+  CTAPHID_Loop(0);
+  WebUSB_Loop();
+  KBDHID_Loop();
+}
+
+#ifndef TEST
+
 uint8_t wait_for_user_presence(void) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
@@ -84,14 +93,7 @@ void stop_blinking(void) {
   }
 }
 
-void device_loop(void) {
-  CCID_Loop();
-  CTAPHID_Loop(0);
-  WebUSB_Loop();
-  KBDHID_Loop();
-}
-
-#ifdef TEST
+#else
 
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
   // Not really working, for test only
@@ -105,5 +107,7 @@ void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
 
 void led_on(void) {}
 void led_off(void) {}
+uint8_t get_touch_result(void) { return 0; }
+void set_touch_result(uint8_t result) { }
 
 #endif

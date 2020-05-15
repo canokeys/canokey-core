@@ -483,7 +483,7 @@ int main() {
         printf("\n");
 
         WebUSB_Loop();
-        CCID_Loop();
+        device_loop();
 
         int direction_out = ntohl(current_cmd_submit_body.direction) == 0;
 
