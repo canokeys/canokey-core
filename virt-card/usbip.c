@@ -257,6 +257,22 @@ int main() {
   usb_device.ep_in[0].maxpacket = -1;
   usb_device.ep_out[0].maxpacket = -1;
 
+  // oath init
+  uint8_t r_buf[1024];
+  // name: abc, algo: HOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
+  uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x73, 0x05, 0x11, 0x06, 0x00, 0x01, 0x02};
+  CAPDU C = {.data = data, .ins = OATH_INS_PUT, .lc = sizeof(data)};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  oath_process_apdu(capdu, rapdu);
+  // set default
+  uint8_t data2[] = {0x71, 0x03, 'a', 'b', 'c'};
+  capdu->data = data2;
+  capdu->ins = OATH_INS_SET_DEFAULT;
+  capdu->lc = sizeof(data2);
+  oath_process_apdu(capdu, rapdu);
+
   while (1) {
     struct sockaddr_storage client_addr;
     socklen_t sock_len = sizeof(client_addr);
