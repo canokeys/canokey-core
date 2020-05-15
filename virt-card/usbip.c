@@ -1,3 +1,4 @@
+#include "ccid.h"
 #include "device.h"
 #include "fabrication.h"
 #include "usb_device.h"
@@ -5,7 +6,6 @@
 #include "usbd_core.h"
 #include "usbd_desc.h"
 #include "webusb.h"
-#include "ccid.h"
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -235,6 +235,9 @@ int main() {
   USBD_LL_SetupStage(&usb_device, set_address);
   // disable stdout buffer
   setvbuf(stdout, NULL, _IONBF, 0);
+  // unlimited max packet for ep0
+  usb_device.ep_in[0].maxpacket = -1;
+  usb_device.ep_out[0].maxpacket = -1;
 
   while (1) {
     struct sockaddr_storage client_addr;
@@ -473,24 +476,26 @@ int main() {
         uint32_t ep = ntohl(current_cmd_submit_body.ep);
         printf("\tEndpoint: %d with type %d\n", ep, endpoints[ep].type);
         // print setup bytes
-        int valid = 0;
         printf("\tSetup:");
         for (int i = 0; i < 8; i++) {
           printf(" %02X", current_cmd_submit_body.setup[i]);
-          if (current_cmd_submit_body.setup[i]) {
-            valid = 1;
-          }
         }
         printf("\n");
-        WebUSB_Loop();
-        if (valid) {
-          USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
-        }
 
-        if (endpoints[ep].buffer != NULL) {
-          if (ntohl(current_cmd_submit_body.direction) == 0) {
-            // OUT
-            printf("->\tOUT\n");
+        WebUSB_Loop();
+
+        int direction_out = ntohl(current_cmd_submit_body.direction) == 0;
+
+        // control
+        if (endpoints[ep].type == USBD_EP_TYPE_CTRL) {
+          // control transfer
+          if (direction_out) {
+            // control out:
+            // setup, in, out
+            printf("->\tSETUP\n");
+            USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
+
+            printf("->\tIN\n");
             uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
             uint8_t *transfer_buffer = endpoints[ep].buffer;
             printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
@@ -501,22 +506,65 @@ int main() {
               printf(" %02X", transfer_buffer[i]);
             }
             endpoints[ep].rx_size = transfer_buffer_length;
-            printf("\n");
+            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
+
+            printf("<-\tOUT\n");
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
-            if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
-              USBD_LL_Transmit(&usb_device, ep, NULL, 0);
-            }
-          } else if (ntohl(current_cmd_submit_body.direction) == 1) {
-            // IN
+          } else {
+            // control in:
+            // setup, out, in
+            printf("->\tSETUP\n");
+            USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
+            printf("<-\tOUT\n");
+            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
             printf("->\tIN\n");
             USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
-            if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
-              USBD_LL_Transmit(&usb_device, ep, NULL, 0);
-            } else {
-              CCID_Loop();
-            }
+          }
+        } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
+          // bulk transfer
+          if (direction_out) {
+            // bulk out
+            printf("<-\tOUT\n");
+            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
+          } else {
+            // bulk in
+            printf("<-\tIN\n");
+            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
           }
         }
+
+        /*
+                if (endpoints[ep].buffer != NULL) {
+                  if (ntohl(current_cmd_submit_body.direction) == 0) {
+                    // OUT
+                    printf("->\tOUT\n");
+                    uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
+                    uint8_t *transfer_buffer = endpoints[ep].buffer;
+                    printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
+                    if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
+                      break;
+                    }
+                    for (int i = 0; i < transfer_buffer_length; i++) {
+                      printf(" %02X", transfer_buffer[i]);
+                    }
+                    endpoints[ep].rx_size = transfer_buffer_length;
+                    printf("\n");
+                    USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
+                    if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
+                      USBD_LL_Transmit(&usb_device, ep, NULL, 0);
+                    }
+                  } else if (ntohl(current_cmd_submit_body.direction) == 1) {
+                    // IN
+                    printf("->\tIN\n");
+                    USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
+                    if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
+                      USBD_LL_Transmit(&usb_device, ep, NULL, 0);
+                    } else {
+                      CCID_Loop();
+                    }
+                  }
+                }
+                */
 
       } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x02) {
         // CMD_UNLINK
