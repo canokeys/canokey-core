@@ -293,7 +293,7 @@ int main() {
   usb_device.ep_out[0].maxpacket = -1;
 
   // oath init
-  uint8_t r_buf[1024];
+  uint8_t r_buf[1024] = {0};
   // name: abc, algo: HOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
   uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x73, 0x05, 0x11, 0x06, 0x00, 0x01, 0x02};
   CAPDU C = {.data = data, .ins = OATH_INS_PUT, .lc = sizeof(data)};
