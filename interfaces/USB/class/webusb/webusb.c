@@ -2,9 +2,9 @@
 #include <webusb.h>
 
 enum {
-  STATE_IDLE,
-  STATE_PROCESS,
-  STATE_SEND_RESP,
+  STATE_IDLE = -1,
+  STATE_PROCESS = 1,
+  STATE_SEND_RESP = 0,
 };
 
 static uint8_t state, apdu_buffer[APDU_BUFFER_SIZE];
@@ -47,17 +47,9 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
     }
     break;
 
-  case WEBUSB_REQ_STAT: {
-    static uint8_t in_progress;
-    if (state == STATE_PROCESS)
-      in_progress = 1;
-    else if (state == STATE_SEND_RESP)
-      in_progress = 0;
-    else
-      in_progress = 2;
-    USBD_CtlSendData(pdev, &in_progress, 1, WEBUSB_EP0_SENDER);
+  case WEBUSB_REQ_STAT:
+    USBD_CtlSendData(pdev, &state, 1, WEBUSB_EP0_SENDER);
     break;
-  }
 
   default:
     USBD_CtlError(pdev, req);
@@ -90,10 +82,4 @@ void WebUSB_Loop(void) {
   DBG_MSG("R: ");
   PRINT_HEX(apdu_buffer, apdu_buffer_size);
   state = STATE_SEND_RESP;
-}
-
-uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
-  UNUSED(pdev);
-
-  return USBD_OK;
 }

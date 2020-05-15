@@ -9,11 +9,9 @@ static uint8_t USBD_CANOKEY_DeInit(USBD_HandleTypeDef *pdev, uint8_t cfgidx);
 static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req);
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum);
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum);
-static uint8_t USBD_CANOKEY_EP0_TxSent(USBD_HandleTypeDef *pdev);
 
 const USBD_ClassTypeDef USBD_CANOKEY = {
-    USBD_CANOKEY_Init,   USBD_CANOKEY_DeInit,  USBD_CANOKEY_Setup, USBD_CANOKEY_EP0_TxSent, NULL,
-    USBD_CANOKEY_DataIn, USBD_CANOKEY_DataOut,
+    USBD_CANOKEY_Init, USBD_CANOKEY_DeInit, USBD_CANOKEY_Setup, NULL, NULL, USBD_CANOKEY_DataIn, USBD_CANOKEY_DataOut,
 };
 
 static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
@@ -66,9 +64,4 @@ static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == EP_OUT(ccid)) return USBD_CCID_DataOut(pdev);
 
   return USBD_FAIL;
-}
-
-static uint8_t USBD_CANOKEY_EP0_TxSent(USBD_HandleTypeDef *pdev) {
-  if (pdev->ep0_sender == WEBUSB_EP0_SENDER) return USBD_WEBUSB_TxSent(pdev);
-  return USBD_OK;
 }
