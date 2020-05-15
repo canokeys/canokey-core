@@ -103,8 +103,10 @@ uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint1
   volatile CTAPHID_StateTypeDef *state = &hid_handle.state;
 
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
+#ifndef TEST
     while (*state != CTAPHID_IDLE)
       device_delay(1);
+#endif
     hid_handle.state = CTAPHID_BUSY;
     USBD_LL_Transmit(pdev, EP_IN(ctap_hid), report, len);
   }

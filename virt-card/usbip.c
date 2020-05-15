@@ -49,11 +49,15 @@ struct RetSubmitBody {
   uint8_t setup[8];
 };
 
+#define MAX_TX_BUFFERS 16
 struct Endpoint {
   uint8_t *rx_buffer;
   uint16_t rx_size;
-  uint8_t *tx_buffer;
-  uint16_t tx_size;
+  // ring buffer as a queue
+  uint8_t *tx_buffer[MAX_TX_BUFFERS];
+  uint16_t tx_size[MAX_TX_BUFFERS];
+  uint32_t tx_from;
+  uint32_t tx_to;
   uint8_t type;
   uint8_t mps;
 };
@@ -146,8 +150,13 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
   } else {
     // save to buffer
     uint32_t ep = ep_num & 0x7F;
-    endpoints[ep].tx_buffer = pbuf;
-    endpoints[ep].tx_size = size;
+    if (size > 0) {
+      uint8_t *buffer = malloc(size);
+      memcpy(buffer, pbuf, size);
+      endpoints[ep].tx_buffer[endpoints[ep].tx_to] = buffer;
+      endpoints[ep].tx_size[endpoints[ep].tx_to] = size;
+      endpoints[ep].tx_to = (endpoints[ep].tx_to + 1) % MAX_TX_BUFFERS;
+    }
   }
   return USBD_OK;
 }
@@ -204,6 +213,32 @@ void sigint_handler() {
     last_time = cur_time;
     set_touch_result(!get_touch_result());
     fprintf(stderr, "Toggling touch status to %d, re-type Ctrl-C again quickly to quit\n", get_touch_result());
+  }
+}
+
+void endpoint_rx(uint32_t ep) {
+  uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
+  uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
+  printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
+  if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
+    return;
+  }
+  for (int i = 0; i < transfer_buffer_length; i++) {
+    printf(" %02X", transfer_buffer[i]);
+  }
+  printf("\n");
+  endpoints[ep].rx_size = transfer_buffer_length;
+}
+
+void endpoint_tx(uint32_t ep) {
+  if (endpoints[ep].tx_from != endpoints[ep].tx_to) {
+    uint32_t tx_from = endpoints[ep].tx_from;
+    SendRetSubmit(endpoints[ep].tx_buffer[tx_from], endpoints[ep].tx_size[tx_from]);
+    free(endpoints[ep].tx_buffer[tx_from]);
+    endpoints[ep].tx_size[tx_from] = 0;
+    endpoints[ep].tx_from = (endpoints[ep].tx_from + 1) % MAX_TX_BUFFERS;
+  } else {
+    SendRetSubmit(NULL, 0);
   }
 }
 
@@ -516,7 +551,6 @@ int main() {
         }
         printf("\n");
 
-        WebUSB_Loop();
         device_loop();
 
         int direction_out = ntohl(current_cmd_submit_body.direction) == 0;
@@ -547,15 +581,8 @@ int main() {
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
             printf("->\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
-            if (endpoints[ep].tx_size > 0) {
-              // have data to send
-              SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
-              endpoints[ep].tx_size = 0;
-            } else {
-              // zero length
-              SendRetSubmit(NULL, 0);
-            }
+            USBD_LL_DataInStage(&usb_device, ep, NULL);
+            endpoint_tx(ep);
 
           } else {
             // control in:
@@ -566,15 +593,8 @@ int main() {
             USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
 
             printf("->\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
-            if (endpoints[ep].tx_size > 0) {
-              // have data to send
-              SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
-              endpoints[ep].tx_size = 0;
-            } else {
-              // zero length
-              SendRetSubmit(NULL, 0);
-            }
+            USBD_LL_DataInStage(&usb_device, ep, NULL);
+            endpoint_tx(ep);
 
             printf("<-\tOUT\n");
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
@@ -586,17 +606,7 @@ int main() {
             printf("->BULK OUT\n");
 
             printf("<-\tOUT\n");
-            uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
-            uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-            printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
-            if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
-              break;
-            }
-            for (int i = 0; i < transfer_buffer_length; i++) {
-              printf(" %02X", transfer_buffer[i]);
-            }
-            printf("\n");
-            endpoints[ep].rx_size = transfer_buffer_length;
+            endpoint_rx(ep);
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
             // zero length packet
@@ -606,9 +616,7 @@ int main() {
             printf("->BULK IN\n");
 
             printf("<-\tIN\n");
-            SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
-            endpoints[ep].tx_size = 0;
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
+            endpoint_tx(ep);
           }
         } else if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
           // interrupt transfer
@@ -616,20 +624,19 @@ int main() {
             // intr out
             printf("->INTR OUT\n");
 
+            printf("->\tOUT\n");
+            endpoint_rx(ep);
+            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
+
+            // zero length packet
+            SendRetSubmit(NULL, 0);
           } else {
             // intr in
             printf("->INTR IN\n");
 
             printf("<-\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
-            if (endpoints[ep].tx_size > 0) {
-              // have data to send
-              SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
-              endpoints[ep].tx_size = 0;
-            } else {
-              // zero length
-              SendRetSubmit(NULL, 0);
-            }
+            USBD_LL_DataInStage(&usb_device, ep, NULL);
+            endpoint_tx(ep);
           }
         }
 
