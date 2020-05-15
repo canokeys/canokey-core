@@ -48,9 +48,7 @@
 #define NFC_STATE_BUSY 0x01
 
 void nfc_init(void);
-int nfc_has_rf(void);
 void nfc_handler(void);
 void nfc_loop(void);
-void nfc_wtx(void);
 
 #endif // _NFC_H_

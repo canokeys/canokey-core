@@ -26,12 +26,6 @@ void nfc_init(void) {
   fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
 }
 
-int nfc_has_rf(void) {
-  uint8_t val;
-  fm_read_reg(REG_RF_STATUS, &val, 1);
-  return (val & RF_STATE_MASK) != 0;
-}
-
 static void nfc_error_handler(int code) {
   DBG_MSG("NFC Error %d\n", code);
   block_number = 1;
