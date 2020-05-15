@@ -26,7 +26,6 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
-    state = STATE_PROCESS;
     apdu_buffer_size = 0;
     if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
@@ -35,6 +34,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
     }
     USBD_CtlPrepareRx(pdev, apdu_buffer, req->wLength);
     apdu_buffer_size += req->wLength;
+    state = STATE_PROCESS;
     break;
 
   case WEBUSB_REQ_RESP:
