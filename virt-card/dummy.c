@@ -41,4 +41,4 @@ uint32_t device_get_tick(void) {
 void device_disable_irq(void) {}
 void device_enable_irq(void) {}
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
-int fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) { return 0; }
+void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) { return ; }

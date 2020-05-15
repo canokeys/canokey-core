@@ -6,8 +6,6 @@
 #include <usbd_desc.h>
 #include <usbd_kbdhid.h>
 
-#define USBD_VID 0x0483
-#define USBD_PID 0x0007
 #define USBD_LANGID_STRING 0x0409
 #define USBD_MANUFACTURER_STRING "Canokeys"
 #define USBD_PRODUCT_STRING "Canokey"
