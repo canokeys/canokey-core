@@ -75,8 +75,6 @@ uint8_t KBDHID_Init() {
   return 0;
 }
 
-#ifndef TEST
-
 uint8_t KBDHID_Loop(void) {
   static uint32_t active_ts;
   if (!active_ts) {
@@ -93,5 +91,3 @@ uint8_t KBDHID_Loop(void) {
   if (state != KBDHID_Idle) KBDHID_TypeKeySeq();
   return 0;
 }
-
-#endif

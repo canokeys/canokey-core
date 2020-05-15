@@ -6,8 +6,6 @@
 #include <kbdhid.h>
 #include <webusb.h>
 
-#ifndef TEST
-
 volatile static uint8_t touch_result;
 static uint8_t has_rf, is_blinking;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
@@ -93,7 +91,7 @@ void device_loop(void) {
   KBDHID_Loop();
 }
 
-#else
+#ifdef TEST
 
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
   // Not really working, for test only
@@ -104,5 +102,8 @@ int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
   return 0;
 }
 void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
+
+void led_on(void) {}
+void led_off(void) {}
 
 #endif

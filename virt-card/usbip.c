@@ -159,10 +159,6 @@ void device_disable_irq(void) {}
 void device_enable_irq(void) {}
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
 void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) { return; }
-void led_on(void) {}
-void led_off(void) {}
-int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) { return 0; }
-void device_spinlock_unlock(volatile uint32_t *lock) {}
 
 /* Override the function defined in usb_device.c */
 void usb_resources_alloc(void) {
