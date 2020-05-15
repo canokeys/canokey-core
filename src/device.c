@@ -18,6 +18,10 @@ void device_loop(void) {
   KBDHID_Loop();
 }
 
+uint8_t get_touch_result(void) { return touch_result; }
+
+void set_touch_result(uint8_t result) { touch_result = result; }
+
 #ifndef TEST
 
 uint8_t wait_for_user_presence(void) {
@@ -40,10 +44,6 @@ uint8_t wait_for_user_presence(void) {
   touch_result = TOUCH_NO;
   return USER_PRESENCE_OK;
 }
-
-uint8_t get_touch_result(void) { return touch_result; }
-
-void set_touch_result(uint8_t result) { touch_result = result; }
 
 void set_nfc_state(uint8_t val) { has_rf = val; }
 
@@ -107,7 +107,5 @@ void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
 
 void led_on(void) {}
 void led_off(void) {}
-uint8_t get_touch_result(void) { return 0; }
-void set_touch_result(uint8_t result) { }
 
 #endif

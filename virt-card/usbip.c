@@ -1,6 +1,8 @@
+#include "apdu.h"
 #include "ccid.h"
 #include "device.h"
 #include "fabrication.h"
+#include "oath.h"
 #include "usb_device.h"
 #include "usbd_conf.h"
 #include "usbd_core.h"
@@ -10,6 +12,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,9 +50,10 @@ struct RetSubmitBody {
 };
 
 struct Endpoint {
-  uint8_t *buffer;
-  uint16_t size;
+  uint8_t *rx_buffer;
   uint16_t rx_size;
+  uint8_t *tx_buffer;
+  uint16_t tx_size;
   uint8_t type;
   uint8_t mps;
 };
@@ -105,16 +109,11 @@ USBD_StatusTypeDef USBD_LL_ClearStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_add
 uint8_t USBD_LL_IsStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return 0; }
 USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_addr) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint16_t size) {
-  endpoints[ep_addr].buffer = pbuf;
-  endpoints[ep_addr].size = size;
+  endpoints[ep_addr].rx_buffer = pbuf;
+  endpoints[ep_addr].rx_size = size;
   return USBD_OK;
 }
-USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
-  if (client_fd == -1) {
-    // ignore
-    return USBD_OK;
-  }
-
+void SendRetSubmit(const uint8_t *pbuf, uint16_t size) {
   printf("<- RET_SUBMIT:\n\t");
   for (size_t i = 0; i < size; i++) {
     printf("%02X ", pbuf[i]);
@@ -123,9 +122,7 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
 
   // command
   uint8_t command[4] = {0, 0, 0, 3};
-  if (write_exact(client_fd, command, sizeof(command)) < 0) {
-    return USBD_OK;
-  }
+  write_exact(client_fd, command, sizeof(command));
 
   struct RetSubmitBody body;
   body.seq_num = current_cmd_submit_body.seq_num;
@@ -138,13 +135,19 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
   body.number_of_packets = 0;
   body.error_count = 0;
   memcpy(body.setup, current_cmd_submit_body.setup, 8);
-  if (write_exact(client_fd, (uint8_t *)&body, sizeof(body)) < 0) {
-    return USBD_OK;
-  }
+  write_exact(client_fd, (uint8_t *)&body, sizeof(body));
 
   // data
-  if (write_exact(client_fd, pbuf, size) < 0) {
-    return USBD_OK;
+  write_exact(client_fd, pbuf, size);
+}
+USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
+  if (client_fd == -1) {
+    // ignore
+  } else {
+    // save to buffer
+    uint32_t ep = ep_num & 0x7F;
+    endpoints[ep].tx_buffer = pbuf;
+    endpoints[ep].tx_size = size;
   }
   return USBD_OK;
 }
@@ -191,12 +194,27 @@ void usb_resources_alloc(void) {
   EP_SIZE_TABLE.kbd_hid = 8;
 }
 
+void sigint_handler() {
+  static time_t last_time = 0;
+  time_t cur_time = time(NULL);
+  if (cur_time - last_time < 2) {
+    fprintf(stderr, "Received Ctrl-C, quitting\n");
+    exit(0);
+  } else {
+    last_time = cur_time;
+    set_touch_result(!get_touch_result());
+    fprintf(stderr, "Toggling touch status to %d, re-type Ctrl-C again quickly to quit\n", get_touch_result());
+  }
+}
+
 int main() {
   int fd;
   uint8_t bus_id[32];
   strcpy((char *)bus_id, "1-1");
   uint8_t path[256];
   strcpy((char *)path, "/sys/device/pci0000:00/0000:00:01.2/usb1/1-1");
+
+  signal(SIGINT, sigint_handler);
 
   fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) {
@@ -500,7 +518,7 @@ int main() {
 
             printf("<-\tOUT\n");
             uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
-            uint8_t *transfer_buffer = endpoints[ep].buffer;
+            uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
             printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
             if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
               break;
@@ -510,10 +528,18 @@ int main() {
             }
             printf("\n");
             endpoints[ep].rx_size = transfer_buffer_length;
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
+            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
             printf("->\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
+            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
+            if (endpoints[ep].tx_size > 0) {
+              // have data to send
+              SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
+              endpoints[ep].tx_size = 0;
+            } else {
+              // zero length
+              SendRetSubmit(NULL, 0);
+            }
 
           } else {
             // control in:
@@ -524,10 +550,18 @@ int main() {
             USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
 
             printf("->\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
+            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
+            if (endpoints[ep].tx_size > 0) {
+              // have data to send
+              SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
+              endpoints[ep].tx_size = 0;
+            } else {
+              // zero length
+              SendRetSubmit(NULL, 0);
+            }
 
             printf("<-\tOUT\n");
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
+            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
           }
         } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
           // bulk transfer
@@ -537,7 +571,7 @@ int main() {
 
             printf("<-\tOUT\n");
             uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
-            uint8_t *transfer_buffer = endpoints[ep].buffer;
+            uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
             printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
             if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
               break;
@@ -547,50 +581,41 @@ int main() {
             }
             printf("\n");
             endpoints[ep].rx_size = transfer_buffer_length;
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
+            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
             // zero length packet
-            USBD_LL_Transmit(&usb_device, ep, NULL, 0);
+            SendRetSubmit(NULL, 0);
           } else {
             // bulk in
             printf("->BULK IN\n");
+
             printf("<-\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
+            SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
+            endpoints[ep].tx_size = 0;
+            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
+          }
+        } else if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
+          // interrupt transfer
+          if (direction_out) {
+            // intr out
+            printf("->INTR OUT\n");
+
+          } else {
+            // intr in
+            printf("->INTR IN\n");
+
+            printf("<-\tIN\n");
+            USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].tx_buffer);
+            if (endpoints[ep].tx_size > 0) {
+              // have data to send
+              SendRetSubmit(endpoints[ep].tx_buffer, endpoints[ep].tx_size);
+              endpoints[ep].tx_size = 0;
+            } else {
+              // zero length
+              SendRetSubmit(NULL, 0);
+            }
           }
         }
-
-        /*
-                if (endpoints[ep].buffer != NULL) {
-                  if (ntohl(current_cmd_submit_body.direction) == 0) {
-                    // OUT
-                    printf("->\tOUT\n");
-                    uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
-                    uint8_t *transfer_buffer = endpoints[ep].buffer;
-                    printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
-                    if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
-                      break;
-                    }
-                    for (int i = 0; i < transfer_buffer_length; i++) {
-                      printf(" %02X", transfer_buffer[i]);
-                    }
-                    endpoints[ep].rx_size = transfer_buffer_length;
-                    printf("\n");
-                    USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].buffer);
-                    if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
-                      USBD_LL_Transmit(&usb_device, ep, NULL, 0);
-                    }
-                  } else if (ntohl(current_cmd_submit_body.direction) == 1) {
-                    // IN
-                    printf("->\tIN\n");
-                    USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
-                    if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
-                      USBD_LL_Transmit(&usb_device, ep, NULL, 0);
-                    } else {
-                      CCID_Loop();
-                    }
-                  }
-                }
-                */
 
       } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x02) {
         // CMD_UNLINK
