@@ -3,12 +3,11 @@
 
 enum {
   STATE_IDLE,
-  STATE_RECV_CMD,
   STATE_PROCESS,
   STATE_SEND_RESP,
 };
 
-static uint8_t expected_cmd_seq, state, apdu_buffer[APDU_BUFFER_SIZE];
+static uint8_t state, apdu_buffer[APDU_BUFFER_SIZE];
 static uint16_t apdu_buffer_size;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
@@ -27,38 +26,16 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
-    // restart the whole process whenever WEBUSB_REQ_FIRST_PACKET received
-    if (state != STATE_PROCESS && (req->wValue & WEBUSB_REQ_FIRST_PACKET)) {
-      state = STATE_RECV_CMD;
-      expected_cmd_seq = 0;
-      apdu_buffer_size = 0;
-    } else if (state == STATE_RECV_CMD && (req->wValue & WEBUSB_REQ_MORE_PACKET))
-      ++expected_cmd_seq;
-    else {
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
-    }
-    if ((req->wValue & 0xFF) != expected_cmd_seq) {
-      ERR_MSG("Wrong seq\n");
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
-    }
-    if (apdu_buffer_size + req->wLength > APDU_BUFFER_SIZE) {
+    state = STATE_PROCESS;
+    apdu_buffer_size = 0;
+    if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
-    USBD_CtlPrepareRx(pdev, apdu_buffer + apdu_buffer_size, req->wLength);
+    USBD_CtlPrepareRx(pdev, apdu_buffer, req->wLength);
     apdu_buffer_size += req->wLength;
     break;
-
-  case WEBUSB_REQ_CALC: {
-    if (state == STATE_RECV_CMD) state = STATE_PROCESS;
-    static uint8_t dummy;
-    dummy = 0;
-    USBD_CtlSendData(pdev, &dummy, 1, WEBUSB_EP0_SENDER);
-    break;
-  }
 
   case WEBUSB_REQ_RESP:
     if (state == STATE_SEND_RESP) {

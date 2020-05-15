@@ -4,6 +4,8 @@
 #include "usbd_conf.h"
 #include "usbd_core.h"
 #include "usbd_desc.h"
+#include "webusb.h"
+#include "ccid.h"
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -480,11 +482,12 @@ int main() {
           }
         }
         printf("\n");
+        WebUSB_Loop();
         if (valid) {
           USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
         }
 
-        if (ep != 0 && endpoints[ep].type != 0) {
+        if (endpoints[ep].buffer != NULL) {
           if (ntohl(current_cmd_submit_body.direction) == 0) {
             // OUT
             printf("->\tOUT\n");
@@ -509,8 +512,8 @@ int main() {
             USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
             if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
               USBD_LL_Transmit(&usb_device, ep, NULL, 0);
-            } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
-              device_loop();
+            } else {
+              CCID_Loop();
             }
           }
         }
