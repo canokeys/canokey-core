@@ -3,6 +3,7 @@
 #include "usb_device.h"
 #include "usbd_conf.h"
 #include "usbd_core.h"
+#include "usbd_desc.h"
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -313,14 +314,14 @@ int main() {
             0x00,
             0x03,
             // idVendor
-            0x00,
-            0x07,
+            LO(USBD_VID),
+            HI(USBD_VID),
             // idProduct
-            0x04,
-            0x83,
+            LO(USBD_PID),
+            HI(USBD_PID),
             // bcdDevice
-            0x01,
             0x00,
+            0x01,
             // bDeviceClass
             0x00,
             // bDeviceSubClass
@@ -434,14 +435,14 @@ int main() {
             0x00,
             0x03,
             // idVendor
-            0x00,
-            0x07,
+            LO(USBD_VID),
+            HI(USBD_VID),
             // idProduct
-            0x04,
-            0x83,
+            LO(USBD_PID),
+            HI(USBD_PID),
             // bcdDevice
-            0x01,
             0x00,
+            0x01,
             // bDeviceClass
             0x00,
             // bDeviceSubClass
