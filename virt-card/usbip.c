@@ -229,6 +229,8 @@ int main() {
   // set address to 1
   uint8_t set_address[] = {0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00};
   USBD_LL_SetupStage(&usb_device, set_address);
+  // disable stdout buffer
+  setvbuf(stdout, NULL, _IONBF, 0);
 
   while (1) {
     struct sockaddr_storage client_addr;
@@ -505,6 +507,8 @@ int main() {
             USBD_LL_DataInStage(&usb_device, ep, endpoints[ep].buffer);
             if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
               USBD_LL_Transmit(&usb_device, ep, NULL, 0);
+            } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
+              device_loop();
             }
           }
         }
@@ -515,8 +519,6 @@ int main() {
       } else {
         printf("unknown command\n");
       }
-
-      device_loop();
     }
     printf("closing connection\n");
 

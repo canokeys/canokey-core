@@ -51,6 +51,15 @@ target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
+
+add_executable(usbip
+        virt-card/usbip.c
+        virt-card/fabrication.c
+        littlefs/bd/lfs_filebd.c)
+target_include_directories(usbip SYSTEM PRIVATE littlefs)
+target_link_libraries(usbip general canokey-core "-fsanitize=address")
+target_compile_options(usbip PRIVATE "-fsanitize=address")
+
 if (ENABLE_TESTS)
     find_package(CMocka CONFIG REQUIRED)
     include(AddCMockaTest)
@@ -66,13 +75,6 @@ if (ENABLE_TESTS)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core "-fsanitize=address")
     target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
-
-    add_executable(usbip
-            virt-card/usbip.c
-            littlefs/bd/lfs_filebd.c)
-    target_include_directories(usbip SYSTEM PRIVATE littlefs)
-    target_link_libraries(usbip general canokey-core "-fsanitize=address")
-    target_compile_options(usbip PRIVATE "-fsanitize=address")
 
     pkg_search_module(PCSCLITE libpcsclite)
 
