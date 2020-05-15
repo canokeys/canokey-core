@@ -53,7 +53,7 @@ struct Endpoint {
 
 // global state
 struct CmdSubmitBody current_cmd_submit_body;
-int client_fd;
+int client_fd = -1;
 struct Endpoint endpoints[256];
 
 // utilities
@@ -107,6 +107,11 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   return USBD_OK;
 }
 USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
+  if (client_fd == -1) {
+    // ignore
+    return USBD_OK;
+  }
+
   printf("<- RET_SUBMIT:\n\t");
   for (size_t i = 0; i < size; i++) {
     printf("%02X ", pbuf[i]);
