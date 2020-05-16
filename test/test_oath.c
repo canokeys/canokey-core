@@ -96,7 +96,7 @@ static void test_list(void **state) {
 
   capdu->ins = OATH_INS_LIST;
   capdu->lc = 0;
-  capdu->le = 32;
+  capdu->le = 64;
 
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, 0x61FF);
