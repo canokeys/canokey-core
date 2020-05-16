@@ -20,7 +20,7 @@ void oath_poweroff(void) { oath_remaining_type = REMAINING_NONE; }
 
 int oath_install(uint8_t reset) {
   oath_poweroff();
-  if (!reset && get_file_size(OATH_FILE) == 0) return 0;
+  if (!reset && get_file_size(OATH_FILE) >= 0) return 0;
   return write_file(OATH_FILE, NULL, 0, 0, 1);
 }
 
