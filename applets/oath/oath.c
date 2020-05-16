@@ -133,14 +133,18 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
     }
     if (read_file(OATH_FILE, &record, record_idx++ * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == 0) continue;
-    if (off + 2 + record.name_len > LE) {
+    if (off + 2 + record.name_len + 4 > LE) {
       SW = 0x61FF;
       break;
     }
-    RDATA[off++] = OATH_TAG_NAME_LIST;
+    RDATA[off++] = OATH_TAG_NAME;
     RDATA[off++] = record.name_len;
     memcpy(RDATA + off, record.name, record.name_len);
     off += record.name_len;
+    RDATA[off++] = OATH_TAG_META;
+    RDATA[off++] = 2;
+    RDATA[off++] = record.key[0];
+    RDATA[off++] = record.key[1];
   }
   LL = off;
 

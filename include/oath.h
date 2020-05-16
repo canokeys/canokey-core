@@ -9,6 +9,7 @@
 #define OATH_TAG_NAME_LIST 0x72
 #define OATH_TAG_KEY 0x73
 #define OATH_TAG_CHALLENGE 0x74
+#define OATH_TAG_META 0x75
 #define OATH_TAG_RESPONSE 0x76
 #define OATH_TAG_NO_RESP 0x77
 #define OATH_TAG_PROPERTY 0x78
@@ -43,6 +44,9 @@ typedef struct {
   uint8_t name_len;
   uint8_t name[MAX_NAME_LEN];
   uint8_t key_len;
+  // Byte 0 is type(higher half)/algorithm(lower half).
+  // Byte 1 is number of digits.
+  // Remaining is the secret.
   uint8_t key[MAX_KEY_LEN];
   uint8_t prop;
   uint8_t challenge[MAX_CHALLENGE_LEN];
