@@ -4,7 +4,8 @@
 enum {
   STATE_IDLE = -1,
   STATE_PROCESS = 1,
-  STATE_SEND_RESP = 0,
+  STATE_SENDING_RESP = 0,
+  STATE_SENT_RESP = 2,
 };
 
 static uint8_t state, apdu_buffer[APDU_BUFFER_SIZE];
@@ -16,7 +17,6 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
 
   state = STATE_IDLE;
-  apdu_buffer_size = 0;
   apdu_cmd.data = apdu_buffer;
   apdu_resp.data = apdu_buffer;
 
@@ -26,21 +26,20 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
-    apdu_buffer_size = 0;
     if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
     USBD_CtlPrepareRx(pdev, apdu_buffer, req->wLength);
-    apdu_buffer_size += req->wLength;
-    state = STATE_PROCESS;
+    apdu_buffer_size = req->wLength;
     break;
 
   case WEBUSB_REQ_RESP:
-    if (state == STATE_SEND_RESP) {
+    if (state == STATE_SENDING_RESP) {
       uint16_t len = MIN(apdu_buffer_size, req->wLength);
       USBD_CtlSendData(pdev, apdu_buffer, len, WEBUSB_EP0_SENDER);
+      state = STATE_SENT_RESP;
     } else {
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
@@ -81,5 +80,21 @@ void WebUSB_Loop(void) {
   apdu_buffer[LL + 1] = LO(SW);
   DBG_MSG("R: ");
   PRINT_HEX(apdu_buffer, apdu_buffer_size);
-  state = STATE_SEND_RESP;
+  state = STATE_SENDING_RESP;
+}
+
+uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
+  UNUSED(pdev);
+
+  if (state == STATE_SENT_RESP) state = STATE_IDLE;
+
+  return USBD_OK;
+}
+
+uint8_t USBD_WEBUSB_RxReady(USBD_HandleTypeDef *pdev) {
+  UNUSED(pdev);
+
+  state = STATE_PROCESS;
+
+  return USBD_OK;
 }
