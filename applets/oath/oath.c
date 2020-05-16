@@ -131,12 +131,15 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
       oath_remaining_type = REMAINING_NONE;
       break;
     }
-    if (read_file(OATH_FILE, &record, record_idx++ * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == 0) continue;
+    if (read_file(OATH_FILE, &record, record_idx * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (off + 2 + record.name_len + 4 > LE) {
+      // shouldn't increase the record_idx in this case
       SW = 0x61FF;
       break;
     }
+    record_idx++;
+    if (record.name_len == 0) continue;
+
     RDATA[off++] = OATH_TAG_NAME;
     RDATA[off++] = record.name_len;
     memcpy(RDATA + off, record.name, record.name_len);
@@ -322,14 +325,16 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
       oath_remaining_type = REMAINING_NONE;
       break;
     }
-    size_t file_offset = record_idx++ * sizeof(OATH_RECORD);
+    size_t file_offset = record_idx * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == 0) continue;
     size_t estimated_len = 2 + record.name_len + 2 + 5;
     if (estimated_len + off_out > LE) {
+      // shouldn't increase the record_idx in this case
       SW = 0x61FF; // more data available
       break;
     }
+    record_idx++;
+    if (record.name_len == 0) continue;
 
     RDATA[off_out++] = OATH_TAG_NAME;
     RDATA[off_out++] = record.name_len;

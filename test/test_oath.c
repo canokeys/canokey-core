@@ -103,6 +103,7 @@ static void test_list(void **state) {
   print_hex(RDATA, LL);
 
   capdu->ins = OATH_INS_SEND_REMAINING;
+  capdu->le = 0xFF;
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
   print_hex(RDATA, LL);
@@ -127,6 +128,7 @@ static void test_calc_all(void **state) {
   print_hex(RDATA, LL);
 
   capdu->ins = OATH_INS_SEND_REMAINING;
+  capdu->le = 0xFF;
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
   print_hex(RDATA, LL);
