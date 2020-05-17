@@ -11,8 +11,8 @@
 #define ADMIN_INS_VERIFY 0x20
 #define ADMIN_INS_CHANGE_PIN 0x21
 #define ADMIN_INS_WRITE_SN 0x30
+#define ADMIN_INS_READ_VERSION 0x31
 #define ADMIN_INS_CONFIG 0x40
-#define ADMIN_INS_CONFIG_NFC 0x41
 #define ADMIN_INS_SELECT 0xA4
 #define ADMIN_INS_VENDOR_SPECIFIC 0xFF
 
@@ -30,6 +30,7 @@ void admin_poweroff(void);
 int admin_install(void);
 int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu);
+int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu);
 
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_kbd_interface_enable(void);

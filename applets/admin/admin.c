@@ -1,6 +1,5 @@
 #include <admin.h>
 #include <ctap.h>
-#include <device.h>
 #include <fs.h>
 #include <oath.h>
 #include <openpgp.h>
@@ -15,7 +14,12 @@
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
 static const admin_device_config_t default_cfg = {.led_normally_on = 1};
-admin_device_config_t current_config;
+
+static admin_device_config_t current_config;
+
+__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+
+__attribute__((weak)) int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
 
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
 
@@ -82,17 +86,6 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
 }
 
-static int admin_config_nfc(const CAPDU *capdu, RAPDU *rapdu) {
-  uint16_t addr = (P1 << 8) | P2;
-  if (addr < 0x000C || addr > 0x03CF) EXCEPT(SW_WRONG_P1P2);
-  if (LC > 16) EXCEPT(SW_WRONG_LENGTH);
-  fm_write_eeprom(addr, DATA, LC);
-  device_delay(15);
-  return 0;
-}
-
-__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
-
 void fill_sn(uint8_t *buf) {
   int err = read_file(SN_FILE, buf, 0, 4);
   if (err != 4) memset(buf, 0, 4);
@@ -103,11 +96,15 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   SW = SW_NO_ERROR;
 
   int ret;
-  if (INS == ADMIN_INS_SELECT) {
+  switch (INS) {
+  case ADMIN_INS_SELECT:
     if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     return 0;
-  }
-  if (INS == ADMIN_INS_VERIFY) {
+  case ADMIN_INS_READ_VERSION:
+    if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    ret = admin_vendor_version(capdu, rapdu);
+    goto done;
+  case ADMIN_INS_VERIFY:
     ret = admin_verify(capdu, rapdu);
     goto done;
   }
@@ -140,9 +137,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_CONFIG:
     ret = admin_config(capdu, rapdu);
-    break;
-  case ADMIN_INS_CONFIG_NFC:
-    ret = admin_config_nfc(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);
