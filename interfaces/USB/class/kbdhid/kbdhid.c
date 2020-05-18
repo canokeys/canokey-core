@@ -14,6 +14,7 @@ static enum {
 static char key_sequence[10];
 static uint8_t key_seq_position;
 static keyboard_report_t report;
+static uint32_t last_sent;
 
 static uint8_t ascii2keycode(char ch) {
   if ('1' <= ch && ch <= '9')
@@ -71,22 +72,17 @@ static void KBDHID_TypeKeySeq(void) {
 }
 
 uint8_t KBDHID_Init() {
+  last_sent = 0;
+  memset(&report, 0, sizeof(report));
   state = KBDHID_Idle;
   return 0;
 }
 
 uint8_t KBDHID_Loop(void) {
-  static uint32_t active_ts;
-  if (!active_ts) {
-    if (get_touch_result() == TOUCH_SHORT) {
-      active_ts = device_get_tick();
-      if (state == KBDHID_Idle) {
-        KBDHID_UserTouchHandle();
-      }
-    }
-  } else if (device_get_tick() - active_ts > 200) {
+  if (get_touch_result() == TOUCH_SHORT && state == KBDHID_Idle && device_get_tick() - last_sent > 1000) {
+    KBDHID_UserTouchHandle();
+    last_sent = device_get_tick();
     set_touch_result(TOUCH_NO);
-    active_ts = 0;
   }
   if (state != KBDHID_Idle) KBDHID_TypeKeySeq();
   return 0;

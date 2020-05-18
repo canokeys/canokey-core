@@ -22,7 +22,7 @@
 typedef struct {
     uint32_t reserved;
     uint32_t led_normally_on : 1;
-    uint32_t gpg_interface_en : 1;
+    uint32_t unused : 1;
     uint32_t kbd_interface_en : 1;
 } __packed admin_device_config_t;
 

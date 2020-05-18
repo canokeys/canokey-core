@@ -161,7 +161,6 @@ static int oath_update_challenge_field(OATH_RECORD *record, size_t file_offset) 
 
 static int oath_enforce_increasing(OATH_RECORD *record, size_t file_offset) {
   if ((record->prop & OATH_PROP_INC)) {
-
     if (challenge_len != sizeof(record->challenge)) return -1;
     if (memcmp(record->challenge, challenge, sizeof(record->challenge)) > 0) return -2;
     oath_update_challenge_field(record, file_offset);
@@ -204,7 +203,6 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
     ERR_MSG("TOTP is not supported");
     return -1;
   } else if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
-
     if (oath_increase_counter(&record) < 0) return -1;
     oath_update_challenge_field(&record, file_offset);
 
@@ -239,6 +237,7 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
     if (record.name_len == name_len && memcmp(record.name, DATA + 2, name_len) == 0) break;
   }
   if (i == nRecords) EXCEPT(SW_DATA_INVALID);
+  if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &file_offset, sizeof(file_offset)) < 0) return -1;
   return 0;
@@ -380,7 +379,7 @@ int oath_process_one_touch(char *output, size_t maxlen) {
   uint32_t offset, otp_code;
   if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -1;
   if (oath_calculate_by_offset(offset, (uint8_t *)&otp_code) < 0) return -1;
-  snprintf(output, maxlen, "%06d", (int)otp_code % 1000000);
+  snprintf(output, maxlen, "%06u", otp_code % 1000000);
   return 0;
 }
 
