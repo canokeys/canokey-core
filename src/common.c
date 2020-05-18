@@ -7,19 +7,22 @@ uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, s
   } else if (data[0] < 0x80) {
     ret = data[0];
     *length_size = 1;
+    *fail = 0;
   } else if (data[0] == 0x81) {
     if (len < 2) {
       *fail = 1;
     } else {
       ret = data[1];
-      *length_size = 1;
+      *length_size = 2;
+      *fail = 0;
     }
   } else if (data[0] == 0x82) {
     if (len < 3) {
       *fail = 1;
     } else {
       ret = (uint16_t)(data[1] << 8u) | data[2];
-      *length_size = 2;
+      *length_size = 3;
+      *fail = 0;
     }
   } else {
     *fail = 1;
