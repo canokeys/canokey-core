@@ -660,9 +660,10 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
     p += p_len;
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
-    int q_len = tlv_get_length(p);
+    int q_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (q_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
-    p += tlv_length_size(q_len);
+    p += length_size;
     memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
     if (rsa_complete_key(&key) < 0) {
       memzero(&key, sizeof(key));
