@@ -281,6 +281,7 @@ static const char *get_key_path(uint8_t id) {
 }
 
 static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
   if (*DATA != 0x7C) EXCEPT(SW_WRONG_DATA);
 
   const char *key_path = get_key_path(P2);
@@ -293,12 +294,15 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
   int16_t len[6] = {0};
-  uint16_t dat_len = tlv_get_length(DATA + 1);
+  int fail;
+  uint16_t dat_len = tlv_get_length_safe(DATA + 1, LC - 1, &fail);
+  if (fail) EXCEPT(SW_WRONG_LENGTH);
   uint16_t dat_pos = 1 + tlv_length_size(dat_len);
   while (dat_pos < LC) {
     uint8_t tag = DATA[dat_pos++];
     if (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85) EXCEPT(SW_WRONG_DATA);
-    len[tag - 0x80] = tlv_get_length(DATA + dat_pos);
+    len[tag - 0x80] = tlv_get_length_safe(DATA + dat_pos, LC - dat_pos, &fail);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
     dat_pos += tlv_length_size(len[tag - 0x80]);
     pos[tag - 0x80] = dat_pos;
     dat_pos += len[tag - 0x80];
