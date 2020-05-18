@@ -546,7 +546,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
-  if (LC < 4) EXCEPT(SW_WRONG_LENGTH);
+  if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(DATA[4]);
