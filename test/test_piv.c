@@ -70,6 +70,24 @@ static void test_regression_fuzz(void **state) {
     uint8_t data[] = {0x7C, 0x80};
     test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0x00, 0x9B, SW_WRONG_LENGTH);
   }
+
+  if (1) {
+    // empty input
+    uint8_t data[] = {};
+    test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9B, SW_WRONG_LENGTH);
+  }
+
+  if (1) {
+    // empty input
+    uint8_t data[] = {};
+    test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
+  }
+
+  if (1) {
+    // empty input
+    uint8_t data[] = {};
+    test_helper(data, sizeof(data), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
+  }
 }
 
 int main() {
