@@ -59,6 +59,7 @@ script:
   - ./test/test_apdu
   - ./test/test_openpgp
   - ./test/test_oath
+  - ./test/test_piv
   - popd
   - # Start pcscd
   - sudo killall -9 pcscd || true

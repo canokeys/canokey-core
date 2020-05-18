@@ -173,6 +173,7 @@ static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
  */
 static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] + 2 != LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[1] == 1) {
@@ -281,6 +282,7 @@ static const char *get_key_path(uint8_t id) {
 }
 
 static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
   if (*DATA != 0x7C) EXCEPT(SW_WRONG_DATA);
 
   const char *key_path = get_key_path(P2);
@@ -293,13 +295,19 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
   int16_t len[6] = {0};
-  uint16_t dat_len = tlv_get_length(DATA + 1);
-  uint16_t dat_pos = 1 + tlv_length_size(dat_len);
+  int fail;
+  size_t length_size;
+  uint16_t dat_len = tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
+  (void)dat_len;
+  if (fail) EXCEPT(SW_WRONG_LENGTH);
+  uint16_t dat_pos = 1 + length_size;
   while (dat_pos < LC) {
     uint8_t tag = DATA[dat_pos++];
     if (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85) EXCEPT(SW_WRONG_DATA);
-    len[tag - 0x80] = tlv_get_length(DATA + dat_pos);
-    dat_pos += tlv_length_size(len[tag - 0x80]);
+    size_t length_size;
+    len[tag - 0x80] = tlv_get_length_safe(DATA + dat_pos, LC - dat_pos, &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    dat_pos += length_size;
     pos[tag - 0x80] = dat_pos;
     dat_pos += len[tag - 0x80];
     DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
@@ -539,6 +547,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(DATA[4]);
@@ -557,6 +566,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
+  if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
   if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
       DATA[3] != 0x01)
     EXCEPT(SW_WRONG_DATA);
@@ -639,16 +649,21 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     key.e[1] = 1;
     key.e[3] = 1;
     uint8_t *p = DATA;
+    if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
-    int p_len = tlv_get_length(p);
+    int fail;
+    size_t length_size;
+    int p_len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (p_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
-    p += tlv_length_size(p_len);
+    p += length_size;
     memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
     p += p_len;
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
-    int q_len = tlv_get_length(p);
+    int q_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (q_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
-    p += tlv_length_size(q_len);
+    p += length_size;
     memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
     if (rsa_complete_key(&key) < 0) {
       memzero(&key, sizeof(key));
@@ -663,6 +678,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
   case ALG_ECC_256: {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
+    if (LC < 2 + ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
     if (DATA[0] != 0x06 || DATA[1] != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     memcpy(key, DATA + 2, ECC_KEY_SIZE);
     if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
