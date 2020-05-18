@@ -298,6 +298,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   int fail;
   size_t length_size;
   uint16_t dat_len = tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
+  (void)dat_len;
   if (fail) EXCEPT(SW_WRONG_LENGTH);
   uint16_t dat_pos = 1 + length_size;
   while (dat_pos < LC) {
