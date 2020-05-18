@@ -100,6 +100,12 @@ static void test_regression_fuzz(void **state) {
     uint8_t data[] = {0x5C, 0x03, 0x5F, 0xC1};
     test_helper(data, sizeof(data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
   }
+
+  if (1) {
+    // empty object path
+    uint8_t data[] = {0xAC, 0x00, 0x80, 0x01};
+    test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
+  }
 }
 
 int main() {

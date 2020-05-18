@@ -566,7 +566,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-  if (LC < 4) EXCEPT(SW_WRONG_LENGTH);
+  if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
   if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
       DATA[3] != 0x01)
     EXCEPT(SW_WRONG_DATA);
@@ -677,7 +677,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
   case ALG_ECC_256: {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
-    if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
+    if (LC < 2 + ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
     if (DATA[0] != 0x06 || DATA[1] != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     memcpy(key, DATA + 2, ECC_KEY_SIZE);
     if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
