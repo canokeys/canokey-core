@@ -43,7 +43,8 @@
 #define __packed __attribute__((packed))
 
 uint16_t tlv_get_length(const uint8_t *data);
-uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail);
+// get length of tlv with bounds checking
+uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, size_t *length_size);
 uint8_t tlv_length_size(uint16_t length);
 
 /**

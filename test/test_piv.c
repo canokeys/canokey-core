@@ -88,6 +88,12 @@ static void test_regression_fuzz(void **state) {
     uint8_t data[] = {};
     test_helper(data, sizeof(data), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
   }
+
+  if (1) {
+    // empty input
+    uint8_t data[] = {};
+    test_helper(data, sizeof(data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
+  }
 }
 
 int main() {

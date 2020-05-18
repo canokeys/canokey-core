@@ -296,15 +296,17 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t pos[6] = {0};
   int16_t len[6] = {0};
   int fail;
-  uint16_t dat_len = tlv_get_length_safe(DATA + 1, LC - 1, &fail);
+  size_t length_size;
+  uint16_t dat_len = tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
-  uint16_t dat_pos = 1 + tlv_length_size(dat_len);
+  uint16_t dat_pos = 1 + length_size;
   while (dat_pos < LC) {
     uint8_t tag = DATA[dat_pos++];
     if (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85) EXCEPT(SW_WRONG_DATA);
-    len[tag - 0x80] = tlv_get_length_safe(DATA + dat_pos, LC - dat_pos, &fail);
+    size_t length_size;
+    len[tag - 0x80] = tlv_get_length_safe(DATA + dat_pos, LC - dat_pos, &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    dat_pos += tlv_length_size(len[tag - 0x80]);
+    dat_pos += length_size;
     pos[tag - 0x80] = dat_pos;
     dat_pos += len[tag - 0x80];
     DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
@@ -544,6 +546,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (LC < 4) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(DATA[4]);
@@ -647,9 +650,12 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t *p = DATA;
     if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
-    int p_len = tlv_get_length(p);
+    int fail;
+    size_t length_size;
+    int p_len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (p_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
-    p += tlv_length_size(p_len);
+    p += length_size;
     memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
     p += p_len;
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
