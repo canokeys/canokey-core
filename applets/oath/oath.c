@@ -105,9 +105,9 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   // find and delete the record
   int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  size_t nRecords = size / sizeof(OATH_RECORD), i;
+  size_t nRecords = size / sizeof(OATH_RECORD);
   OATH_RECORD record;
-  for (i = 0; i != nRecords; ++i) {
+  for (size_t i = 0; i != nRecords; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, DATA + 2, name_len) == 0) {
       record.name_len = 0;
@@ -199,10 +199,15 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   OATH_RECORD record;
   if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
 
+  if (record.name_len == 0) {
+    ERR_MSG("Record deleted");
+    return -1;
+  }
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) {
     ERR_MSG("TOTP is not supported");
     return -1;
-  } else if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
+  }
+  if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
     if (oath_increase_counter(&record) < 0) return -1;
     oath_update_challenge_field(&record, file_offset);
 
