@@ -18,7 +18,7 @@ if (ENABLE_TESTS)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage --coverage")
 endif (ENABLE_TESTS)
 if (ENABLE_FUZZING)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address,undefined")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
 endif (ENABLE_FUZZING)
 
 add_subdirectory(canokey-crypto)
@@ -66,7 +66,7 @@ if (ENABLE_TESTS)
             littlefs/bd/lfs_filebd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core asan)
-    target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address,undefined")
+    target_compile_options(fido-hid-over-udp PRIVATE "-fsanitize=address")
 
     add_executable(usbip
             virt-card/usbip.c
@@ -74,7 +74,7 @@ if (ENABLE_TESTS)
             littlefs/bd/lfs_filebd.c)
     target_include_directories(usbip SYSTEM PRIVATE littlefs)
     target_link_libraries(usbip general canokey-core asan)
-    target_compile_options(usbip PRIVATE "-fsanitize=address,undefined")
+    target_compile_options(usbip PRIVATE "-fsanitize=address")
 
     pkg_search_module(PCSCLITE libpcsclite)
 
