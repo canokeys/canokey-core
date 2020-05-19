@@ -9,6 +9,7 @@
 #include "usbd_desc.h"
 #include "webusb.h"
 #include <arpa/inet.h>
+#include <assert.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -118,6 +119,7 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   return USBD_OK;
 }
 void SendRetSubmit(const uint8_t *pbuf, uint16_t size) {
+  assert(size == 0 || pbuf != NULL);
   printf("<- RET_SUBMIT:\n\t");
   for (size_t i = 0; i < size; i++) {
     printf("%02X ", pbuf[i]);

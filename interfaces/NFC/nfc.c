@@ -39,7 +39,8 @@ static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   if (len > 29) return;
 
   tx_frame_buf[0] = prologue;
-  memcpy(tx_frame_buf + 1, data, len);
+  if (data != NULL)
+    memcpy(tx_frame_buf + 1, data, len);
 
   DBG_MSG("TX: ");
   PRINT_HEX(tx_frame_buf, len + 1);
