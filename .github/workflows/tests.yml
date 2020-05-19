@@ -260,10 +260,10 @@ jobs:
         yubico-piv-tool -r "$RDID" -a reset
         yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
     
-    - name: Upload the Converage Stat
+    - name: Upload the Test Coverage Stat
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TRAVIS_JOB_ID: $GITHUB_RUN_ID
+        TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
       run: coveralls # read options from .coveralls.yml
     
     - name: Upload log files
