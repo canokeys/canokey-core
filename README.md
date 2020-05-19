@@ -1,7 +1,7 @@
 # Canokey Core
 
-[![Build Status](https://travis-ci.com/canokeys/canokey-core.svg?branch=master)](https://travis-ci.com/canokeys/canokey-core)
-[![Coverage Status](https://coveralls.io/repos/github/canokeys/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canokeys/canokey-core?branch=master)
+[![Tests](https://github.com/canokeys/canokey-core/workflows/tests/badge.svg?branch=master)]
+[![Coverage](https://coveralls.io/repos/github/canokeys/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canokeys/canokey-core?branch=master)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/de791a6a112a4b9f8da8df6fb96bcb12)](https://www.codacy.com/manual/zz593141477/canokey-core?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=canokeys/canokey-core&amp;utm_campaign=Badge_Grade)
 
 ## Introduction
