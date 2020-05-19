@@ -264,7 +264,10 @@ jobs:
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
-      run: coveralls # read options from .coveralls.yml
+      run: |
+        sudo killall pcscd || true # To flush the cov files
+        sleep 2
+        coveralls # read options from .coveralls.yml
     
     - name: Upload log files
       if: ${{ always() }}
