@@ -22,8 +22,8 @@ int oath_install(uint8_t reset) {
   uint32_t default_item = 0xffffffff;
   oath_poweroff();
   if (!reset && get_file_size(OATH_FILE) >= 0) return 0;
-  if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
-  return write_file(OATH_FILE, NULL, 0, 0, 1);
+  if (write_file(OATH_FILE, NULL, 0, 0, 1) < 0) return -1;
+  return write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item));
 }
 
 static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
