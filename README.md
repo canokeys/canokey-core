@@ -34,11 +34,12 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
    * `void device_delay(int ms);`
    * `uint32_t device_get_tick(void);`
-   * `void device_disable_irq(void);`
-   * `void device_enable_irq(void);`
-   * `uint8_t is_nfc(void);`
-   * `void device_start_blinking(uint8_t sec);`
-   * `void device_stop_blinking(void);`
+   * `int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);`
+   * `void device_spinlock_unlock(volatile uint32_t *lock);`
+   * `void led_on(void);`
+   * `void led_off(void);`
+   * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
+      * A hardware timer with IRQ is required
 
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
 
@@ -48,7 +49,10 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
    Or instead, you may implement the cryptography algorithms by yourself.
 
-5. You should call the `device_loop` in the main loop, and call the `CCID_TimeExtensionLoop` every 1 second **IN A TIMER**.
+5. You should call the `device_loop` in the main loop, and the `device_update_led` in a periodic interrupt. 
+
+6. You may call the `set_touch_result` to report touch sensing result.
+
 
 ## Fuzz testing
 
