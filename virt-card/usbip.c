@@ -119,7 +119,10 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   return USBD_OK;
 }
 void SendRetSubmit(const uint8_t *pbuf, uint16_t size) {
-  assert(size == 0 || pbuf != NULL);
+  if (size == 0 || pbuf != NULL) {
+    printf("error size=%hu pbuf=%p\n", size, pbuf);
+    return;
+  }
   printf("<- RET_SUBMIT:\n\t");
   for (size_t i = 0; i < size; i++) {
     printf("%02X ", pbuf[i]);
@@ -214,14 +217,14 @@ void sigint_handler() {
   } else {
     last_time = cur_time;
     set_touch_result(!get_touch_result());
-    fprintf(stderr, "Toggling touch status to %d, re-type Ctrl-C again quickly to quit\n", get_touch_result());
+    fprintf(stderr, "Toggling touch status to %hhu, re-type Ctrl-C again quickly to quit\n", get_touch_result());
   }
 }
 
 void endpoint_rx(uint32_t ep) {
   uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
   uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-  printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
+  printf("\tTransfer buffer: %u bytes\n\t", transfer_buffer_length);
   if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
     return;
   }
