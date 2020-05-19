@@ -74,6 +74,38 @@ static void test_put(void **state) {
   }
 }
 
+static void test_hotp_touch(void **state) {
+  // name: H1, algo: HOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
+  uint8_t data[] = {
+    OATH_TAG_NAME, 0x02, 'H', '1',
+    OATH_TAG_KEY, 0x05, 0x11, 0x06, 0x00, 0x01, 0x02,
+    OATH_TAG_COUNTER, 0x04, 0x01, 0x00, 0xf1, 0x02,
+  };
+  int ret;
+  char buf[7];
+
+  test_helper(data, sizeof(data), OATH_INS_PUT, SW_NO_ERROR);
+
+  // default item isn't set yet
+  ret = oath_process_one_touch(buf, sizeof(buf));
+  assert_int_equal(ret, -1);
+
+  test_helper(data, 4, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+
+  ret = oath_process_one_touch(buf, sizeof(buf));
+  assert_int_equal(ret, 0);
+  printf("%s\n", buf);
+
+  ret = oath_process_one_touch(buf, sizeof(buf));
+  assert_int_equal(ret, 0);
+  printf("%s\n", buf);
+
+  test_helper(data, 4, OATH_INS_DELETE, SW_NO_ERROR);
+
+  ret = oath_process_one_touch(buf, sizeof(buf));
+  assert_int_equal(ret, -1);
+}
+
 // should be called after test_put
 static void test_calc(void **state) {
   (void)state;
@@ -276,6 +308,7 @@ int main() {
       cmocka_unit_test(test_calc),
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
+      cmocka_unit_test(test_hotp_touch),
       cmocka_unit_test(test_regression_fuzz),
   };
 

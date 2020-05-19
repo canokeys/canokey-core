@@ -205,11 +205,11 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
 
   if (record.name_len == 0) {
-    ERR_MSG("Record deleted");
+    ERR_MSG("Record deleted\n");
     return -1;
   }
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) {
-    ERR_MSG("TOTP is not supported");
+    ERR_MSG("TOTP is not supported\n");
     return -1;
   }
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
