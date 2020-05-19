@@ -45,6 +45,11 @@ static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t ex
   test_helper_resp(data, data_len, ins, expected_error, NULL, 0);
 }
 
+static void test_invalid_ins(void **state) {
+  test_helper(NULL, 0, 0xDD, 0x6D00);
+  test_helper(NULL, 0, 0x06, 0x6985);
+}
+
 static void test_put(void **state) {
   (void)state;
 
@@ -236,6 +241,7 @@ int main() {
   oath_install(1);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_invalid_ins),
       cmocka_unit_test(test_put),
       cmocka_unit_test(test_put_long_key),
       cmocka_unit_test(test_put_unsupported_algo),
