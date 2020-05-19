@@ -545,7 +545,7 @@ int main() {
         }
 
         uint32_t ep = ntohl(current_cmd_submit_body.ep);
-        printf("\tEndpoint: %d with type %d\n", ep, endpoints[ep].type);
+        printf("\tEndpoint: %u with type %hhu\n", ep, endpoints[ep].type);
         // print setup bytes
         printf("\tSetup:");
         for (int i = 0; i < 8; i++) {
@@ -571,7 +571,7 @@ int main() {
             printf("<-\tOUT\n");
             uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
             uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-            printf("\tTransfer buffer: %d bytes\n\t", transfer_buffer_length);
+            printf("\tTransfer buffer: %u bytes\n\t", transfer_buffer_length);
             if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
               break;
             }
