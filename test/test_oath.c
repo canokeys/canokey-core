@@ -89,6 +89,21 @@ static void test_calc(void **state) {
     // mask:                     7f000000
     OATH_TAG_RESPONSE, 0x05, 0x06, 0x7F, 0xF1, 0x36, 0xBE};
   test_helper_resp(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR, resp, sizeof(resp));
+
+  // length of data exceeds the Lc
+  test_helper(data, sizeof(data) - 1, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
+  test_helper(data, 1, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
+  test_helper(data, 2, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
+
+  // omit the TAG_CHALLENGE
+  test_helper(data, 5, OATH_INS_CALCULATE, SW_WRONG_DATA);
+
+  // zero-length challenge
+  data[6] = 0;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_DATA);
+
+  data[6] = MAX_CHALLENGE_LEN + 1;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_DATA);
 }
 
 static void test_list(void **state) {
@@ -137,6 +152,18 @@ static void test_calc_all(void **state) {
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
   print_hex(RDATA, LL);
+
+  // length of data exceeds the Lc
+  test_helper(data, sizeof(data) - 1, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
+  test_helper(data, 1, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
+  test_helper(data, 2, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
+
+  // zero-length challenge
+  data[1] = 0;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_DATA);
+
+  data[1] = MAX_CHALLENGE_LEN + 1;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_DATA);
 }
 
 // regression tests for crashes discovered by fuzzing
