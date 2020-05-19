@@ -22,8 +22,18 @@ jobs:
       with:
         submodules: recursive
 
+    - name: Cache Patched GPG
+      uses: actions/cache@v1
+      env:
+        cache-name: cache_gpg_binary
+      with:
+        path: gnupg
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
+
     - name: Build Patched GPG
-      run: ./test-via-pcsc/build_gpg.sh
+      run: |
+        ./test-via-pcsc/build_gpg.sh
+        gpg --version
     
     - name: Build FIDO Tests
       run: |
@@ -74,14 +84,17 @@ jobs:
       run: go test -v test-via-pcsc/oath_test.go
 
     - name: Test the OpenPGP
+      # GPG requires a tty to work
+      shell: |
+        script -e -c "bash --noprofile --norc -eo pipefail {0}"
       run: |
+        set -o xtrace
         go test -v test-via-pcsc/openpgp_test.go
         pkill gpg-agent || true
         #echo 'enable-ssh-support' > ~/.gnupg/gpg-agent.conf
-        gpg --version
         export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
-        mkdir /tmp/mock
-        base64 /dev/urandom | head -c 1152 > /tmp/random.txt
+        mkdir -p ~/.ssh /tmp/mock
+        python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1152)]),end='')" > /tmp/random.txt
         echo 9876543210 >"/tmp/mock/Reset Code"
         echo 12345678 >"/tmp/mock/Passphrase:"
         echo 12345678 >"/tmp/mock/Admin PIN"
@@ -91,10 +104,18 @@ jobs:
         Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
         Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; gpg --card-status; }
         Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg --expert --command-fd 0 --yes --edit-key $KEYID; }
-        ChangeUsage() { SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1); echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
+        ChangeUsage() {
+          SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1)
+          echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID
+        }
         GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }
         GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }
-        GPGAuth() { gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol;ssh-add -L >~/.ssh/authorized_keys;ssh -v -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id; }
+        GPGAuth() {
+          gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
+          ssh-add -L
+          #ssh-add -L >~/.ssh/authorized_keys
+          #ssh -v -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id;
+        }
         GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
         Key2card 1 1 # key[1] to Signature key
         GPGSign
@@ -166,6 +187,7 @@ jobs:
 
     - name: Test the PIV
       run: |
+        set -o xtrace
         RDID="Canokey [PIV OATH Admin OpenPGP] 00 00"
         yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
         opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
