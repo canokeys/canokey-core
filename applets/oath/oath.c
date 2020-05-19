@@ -19,8 +19,10 @@ static uint8_t challenge[MAX_CHALLENGE_LEN], challenge_len, record_idx;
 void oath_poweroff(void) { oath_remaining_type = REMAINING_NONE; }
 
 int oath_install(uint8_t reset) {
+  uint32_t default_item = 0xffffffff;
   oath_poweroff();
   if (!reset && get_file_size(OATH_FILE) >= 0) return 0;
+  if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
   return write_file(OATH_FILE, NULL, 0, 0, 1);
 }
 
