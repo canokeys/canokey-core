@@ -161,6 +161,10 @@ void nfc_loop(void) {
 void nfc_handler(void) {
   uint8_t irq[3];
   fm_read_reg(REG_MAIN_IRQ, irq, sizeof(irq));
+  if (!is_nfc()) {
+    ERR_MSG("IRQ %02x in non-NFC mode\n", irq[0]);
+    return;
+  }
 
   if (irq[0] & MAIN_IRQ_RX_DONE) {
     fm_read_reg(REG_FIFO_WORDCNT, &rx_frame_size, 1);
