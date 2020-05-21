@@ -205,7 +205,6 @@ jobs:
         # Private DO 1/2 is not implemented
         gpgconf --kill gpg-agent
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
-        gpg --card-status
 
     - name: Test the PIV
       run: |
