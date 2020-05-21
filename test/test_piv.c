@@ -10,6 +10,8 @@
 #include <lfs.h>
 #include <piv.h>
 
+extern void set_admin_status(int status);
+
 static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint8_t p1, uint8_t p2,
                              uint16_t expected_error, uint8_t *expected_resp, size_t resp_len) {
   uint8_t c_buf[1024], r_buf[1024];
@@ -77,15 +79,14 @@ static void test_regression_fuzz(void **state) {
     test_helper(data, sizeof(data), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
   }
 
-
-#ifdef FUZZ
+  // bypass authentication, testing only
+  set_admin_status(1);
 
   if (1) {
     // empty input
     uint8_t data[] = {};
     test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9B, SW_WRONG_LENGTH);
   }
-
 
   if (1) {
     // empty input
@@ -110,7 +111,16 @@ static void test_regression_fuzz(void **state) {
     uint8_t data[] = {0xAC, 0x00, 0x80, 0x01};
     test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
   }
-#endif
+
+  if (1) {
+    // import symmetric key
+    // 00FE079C 91
+    // 013E4C9CA1020204000000000000005B08020C00000000000000020202020202020202020202020202020202022D0D0202020202020202020202020202020202025050505050505002505050505002020202025002020202020202028202020202E78DE4F3D506F6B7A3F8BD10CB29DADE18B83B6ED7AB37A3B73A9A11348E17B60B65119055DD2497942D363431323734
+    uint8_t data[] = {0x01,
+                      // TLV
+                      0x3E, 0x01, 0x00};
+    test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9C, SW_WRONG_LENGTH);
+  }
 }
 
 int main() {

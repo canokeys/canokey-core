@@ -27,5 +27,12 @@ uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, s
   } else {
     *fail = 1;
   }
+
+  if (*fail == 0 && ret + *length_size > len) {
+    // length does not overflow,
+    // but data does
+    *fail = 1;
+  }
+
   return ret;
 }
