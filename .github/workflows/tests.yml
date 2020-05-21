@@ -285,7 +285,11 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
         yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
         yubico-piv-tool -r "$RDID" -a reset
-        yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
+        yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
+        ## Fill this applet as much as possible
+        yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
+        longName=ThisIsAVeryLongName
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/OU=$longName/O=Canokeys" RSA2048; done
     
     - name: Upload the Test Coverage Stat
       env:
@@ -303,3 +307,10 @@ jobs:
       with:
         name: logs
         path: /tmp/*.log
+    
+    - name: Upload data files
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: data
+        path: /tmp/[lc][fe]*
