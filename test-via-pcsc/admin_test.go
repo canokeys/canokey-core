@@ -199,6 +199,29 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 	}
 }
 
+func TestFSUsage(t *testing.T) {
+
+	Convey("Connecting to applet", t, func(ctx C) {
+
+		app, err := New()
+		So(err, ShouldBeNil)
+		defer app.Close()
+
+		_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00})
+		So(err, ShouldBeNil)
+		So(code, ShouldEqual, 0x9000)
+
+		pin := []byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36}
+		_, code, err = app.Send(append([]byte{0x00, 0x20, 0x00, 0x00, byte(len(pin))}, pin...))
+		So(err, ShouldBeNil)
+
+		data, code, err := app.Send([]byte{0x00, 0x41, 0x00, 0x00, 0x01})
+		So(err, ShouldBeNil)
+		So(len(data), ShouldEqual, 1)
+		fmt.Printf("\n\nFile system usage: %d KB\n", int(data[0]))
+	})
+}
+
 func TestAdminApplet(t *testing.T) {
 
 	Convey("Connecting to applet", t, func(ctx C) {
