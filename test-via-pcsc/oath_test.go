@@ -257,9 +257,9 @@ func TestOath(t *testing.T) {
 				So(err, ShouldBeNil)
 			}
 
-			cResult, err := oath.CalculateAll()
+			lResult, err := oath.List()
 			So(err, ShouldBeNil)
-			So(len(cResult), ShouldEqual, NumKeys)
+			So(len(lResult), ShouldEqual, NumKeys)
 		})
 	})
 
