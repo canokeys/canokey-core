@@ -86,10 +86,11 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
 }
 
-static int admin_read_flash_cap(const CAPDU *capdu, RAPDU *rapdu) {
+static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  RDATA[0] = get_fs_size();
-  LL = 1;
+  RDATA[0] = get_fs_usage();
+  RDATA[1] = get_fs_size();
+  LL = 2;
   return 0;
 }
 
@@ -145,8 +146,8 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_CONFIG:
     ret = admin_config(capdu, rapdu);
     break;
-  case ADMIN_INS_READ_FLASH_CAP:
-    ret = admin_read_flash_cap(capdu, rapdu);
+  case ADMIN_INS_FLASH_USAGE:
+    ret = admin_flash_usage(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);
