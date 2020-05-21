@@ -24,8 +24,8 @@ applet_process_t *applets[] = {
     piv_process_apdu, ctap_process_apdu, oath_process_apdu, admin_process_apdu, openpgp_process_apdu,
 };
 
-extern ccid_bulkin_data_t bulkin_data[2];
-extern ccid_bulkout_data_t bulkout_data[2];
+extern ccid_bulkin_data_t bulkin_data;
+extern ccid_bulkout_data_t bulkout_data;
 static applet_process_t *process_func;
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
@@ -51,28 +51,21 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
 
 int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
   if (!process_func) { // CCID Fuzzing Test
-    int Lun;
-    if (len < 1 || buf[0] > 1) return 0;
-    Lun = buf[0];
-    len--;
-    buf++;
-
     if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
-    memcpy(bulkout_data[Lun].abData, buf, len);
-    bulkout_data[Lun].dwLength = len;
-    // FIXME
+    memcpy(bulkout_data.abData, buf, len);
+    bulkout_data.dwLength = len;
     PC_to_RDR_XfrBlock();
 
   } else { // Applet Fuzzing Test
     if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
-    memcpy(bulkout_data[0].abData, buf, len);
+    memcpy(bulkout_data.abData, buf, len);
 
     CAPDU capdu;
     RAPDU rapdu;
-    capdu.data = bulkout_data[0].abData;
-    rapdu.data = bulkout_data[0].abData;
+    capdu.data = bulkout_data.abData;
+    rapdu.data = bulkout_data.abData;
     rapdu.len = APDU_BUFFER_SIZE;
-    if (build_capdu(&capdu, bulkout_data[0].abData, len) < 0) {
+    if (build_capdu(&capdu, bulkout_data.abData, len) < 0) {
       return 0;
     }
     // realloc data to let asan find out buffer overflow
