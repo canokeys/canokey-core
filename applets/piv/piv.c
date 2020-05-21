@@ -125,6 +125,7 @@ int piv_install(uint8_t reset) {
 }
 
 static const char *get_object_path_by_tag(uint8_t tag) {
+  // Part 1 Table 3 0x5FC1XX
   switch (tag) {
   case 0x01: // X.509 Certificate for Card Authentication
     return CARD_AUTH_CERT_PATH;
@@ -138,6 +139,27 @@ static const char *get_object_path_by_tag(uint8_t tag) {
     return SIG_CERT_PATH;
   case 0x0B: // X.509 Certificate for Key Management
     return KEY_MANAGEMENT_CERT_PATH;
+  default:
+    return NULL;
+  }
+}
+
+static uint16_t get_capacity_by_tag(uint8_t tag) {
+  // Part 1 Table 7 Container Minimum Capacity
+  // 5FC1XX
+  switch (tag) {
+  case 0x01: // X.509 Certificate for Card Authentication
+    return 1905;
+  case 0x02: // Card Holder Unique Identifier
+    return 2916;
+  case 0x05: // X.509 Certificate for PIV Authentication
+    return 1905;
+  case 0x07: // Card Capability Container
+    return 287;
+  case 0x0A: // X.509 Certificate for Digital Signature
+    return 1905;
+  case 0x0B: // X.509 Certificate for Key Management
+    return 1905;
   default:
     return NULL;
   }
@@ -550,10 +572,13 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
   if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
+  // Part 1 Table 3 0x5FC1XX
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(DATA[4]);
   DBG_MSG("%s length %d\n", path, LC - 5);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
+  uint16_t cap = get_capacity_by_tag(DATA[4]);
+  if (LC - 5 > cap) EXCEPT(SW_NOT_ENOUGH_SPACE);
   if (write_file(path, DATA + 5, 0, LC - 5, 1) < 0) return -1;
 #ifdef DEBUG_OUTPUT
   int len =

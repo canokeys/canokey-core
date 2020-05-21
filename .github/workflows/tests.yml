@@ -1,5 +1,5 @@
 name: tests
-on: [push]
+on: [push, pull_request]
 jobs:
   build_test:
     name: Build and Test
@@ -139,13 +139,6 @@ jobs:
         Key2card 3 3 # key[3] to Authentication key
         GPGAuth
         GPGEnc
-        echo -e 'admin\nname\nfirstname\nlastname\nurl\nexample.com\nlogin\nmyuserid\nlang\ncn\nsex\nm\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        gpg --card-status
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
         echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
         GPGReset
         gpg --card-status |grep -E 'Signature key.+none'
@@ -196,8 +189,22 @@ jobs:
         Addcardkey 3 # generate Authentication key on card
         ChangeUsage
         GPGAuth
+        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        gpgconf --kill gpg-agent # restart agent to clear cached info
+        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        diff /tmp/random-read.txt /tmp/random.txt
         GPGReset
+        # Fill this applet as much as possible
+        Addcardkey 1 # generate Signature key on card
+        Addcardkey 2 # generate Encryption key on card
+        Addcardkey 3 # generate Authentication key on card
+        echo -e 'admin\nname\nTheFirstNameQQQQQQ\nTheLastNamePPPPPPPP\nlang\nlanguage\nsex\nm\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\nurl\nexample.com/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\nlogin\naaaaaaaaaaaa000000000000000000000001111111111111111122222222222\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --edit-card
+        # Private DO 1/2 is not implemented
         gpgconf --kill gpg-agent
+        go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
     - name: Test the PIV
       run: |
@@ -214,28 +221,39 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
         yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
         yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
+        yubico-piv-tool -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
+        yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
         ## Key generation
-        yubico-piv-tool -r "$RDID" -a set-mgm-key -n 010203040506070801020304050607080102030405060708
-        yubico-piv-tool -r "$RDID" -a generate -s 9e >/tmp/pubkey-9e.pem # generate key at 9E
-        yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9e -S '/CN=CertAtSlot9e' < /tmp/pubkey-9e.pem >/tmp/cert-9e.pem
-        yubico-piv-tool -r "$RDID" -a import-certificate -s 9e < /tmp/cert-9e.pem
+        PIVGenKeyCert() {
+          key=$1
+          subject="$2"
+          algo="$3"
+          yubico-piv-tool -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
+          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
+          yubico-piv-tool -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
+        }
+        PIVSignDec() {
+          key=$1
+          pinArgs=
+          op=$3
+          if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
+          if [[ -z "$op" || s = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-signature -s $key < /tmp/cert-$key.pem; fi
+          if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key < /tmp/cert-$key.pem; fi
+        }
+        ## RSA2048 tests
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" RSA2048; done
         yubico-piv-tool -r "$RDID" -a status
-        yubico-piv-tool -r "$RDID" -a test-signature -s 9e < /tmp/cert-9e.pem
-        yubico-piv-tool -r "$RDID" -a test-decipher -s 9e < /tmp/cert-9e.pem
+        PIVSignDec 9e # PIN not required for key 9e
+        for s in 9a 9c 9d; do PIVSignDec $s 1; done
         pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
         echo -n hello >/tmp/hello.txt
         pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
         openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
-        yubico-piv-tool -r "$RDID" -a generate -s 9a >/tmp/pubkey-9a.pem # generate key at 9a
-        yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9a -S '/CN=CertAtSlot9a' < /tmp/pubkey-9a.pem >/tmp/cert-9a.pem
-        yubico-piv-tool -r "$RDID" -a import-certificate -s 9a < /tmp/cert-9a.pem
-        yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9c >/tmp/pubkey-9c.pem # generate key at 9c
-        yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9c -S '/CN=CertAtSlot9c' < /tmp/pubkey-9c.pem >/tmp/cert-9c.pem
-        yubico-piv-tool -r "$RDID" -a import-certificate -s 9c < /tmp/cert-9c.pem
-        yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9d >/tmp/pubkey-9d.pem # generate key at 9d
-        yubico-piv-tool -r "$RDID" -a selfsign-certificate -s 9d -S '/CN=CertAtSlot9d' < /tmp/pubkey-9d.pem >/tmp/cert-9d.pem
-        yubico-piv-tool -r "$RDID" -a import-certificate -s 9d < /tmp/cert-9d.pem
+        ## ECC tests
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" ECCP256; done
         yubico-piv-tool -r "$RDID" -a status
+        for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
+        PIVSignDec 9d 1 d # 9d only do the ECDH
         ## PIN unblock
         yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a < /tmp/cert-9a.pem
         yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c < /tmp/cert-9c.pem
@@ -266,16 +284,22 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
         yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
         yubico-piv-tool -r "$RDID" -a reset
-        yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 123456 2>&1 | grep 'Successfully unblocked the pin code'
+        yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
+        ## Fill this applet as much as possible
+        yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
+        longName=ThisIsAVeryLongName
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/OU=$longName/O=Canokeys" RSA2048; done
     
     - name: Upload the Test Coverage Stat
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
       run: |
+        go test test-via-pcsc/admin_test.go -v -run TestFSUsage
         sudo killall pcscd || true # To flush the cov files
+        ls /tmp
         sleep 2
-        coveralls # read options from .coveralls.yml
+        coveralls # options are read from .coveralls.yml
     
     - name: Upload log files
       if: ${{ always() }}
@@ -283,3 +307,10 @@ jobs:
       with:
         name: logs
         path: /tmp/*.log
+    
+    - name: Upload data files
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: data
+        path: /tmp/[lc][fe]*

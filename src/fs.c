@@ -61,6 +61,10 @@ int get_file_size(const char *path) {
 }
 
 int get_fs_size(void) {
+  return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024;
+}
+
+int get_fs_usage(void) {
   int blocks = lfs_fs_size(&lfs);
   if (blocks < 0) return blocks;
   return (int)(lfs.cfg->block_size * blocks) / 1024;

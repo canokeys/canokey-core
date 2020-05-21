@@ -57,11 +57,32 @@ func TestOath(t *testing.T) {
 
 		NumKeys := 100
 
+		clearRecords := func(NKeys int) {
+			lResult, err := oath.List()
+			So(err, ShouldBeNil)
+			if NKeys != -1 {
+				So(len(lResult), ShouldEqual, NKeys)
+			}
+
+			for _, item := range lResult {
+				err := oath.Delete(item.Name)
+				So(err, ShouldBeNil)
+			}
+
+			lResult, err = oath.List()
+			So(err, ShouldBeNil)
+			So(lResult, ShouldBeEmpty)
+		}
+
 		Convey("With invalid parameters", func(ctx C) {
 			name := strings.Repeat("O", 64)
 			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), false, false, 1)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldEqual, "wrong syntax")
+		})
+
+		Convey("When deleting all keys", func(ctx C) {
+			clearRecords(-1)
 		})
 
 		Convey("When name is too long or empty", func(ctx C) {
@@ -99,6 +120,7 @@ func TestOath(t *testing.T) {
 
 		Convey("Firstly add several keys", func(ctx C) {
 
+			CurKeys := 0
 			allKeys := make(map[string]*otp.Key)
 			key2Alg := make(map[string]otp.Algorithm)
 			hotpCnt := make(map[string]uint64)
@@ -112,13 +134,19 @@ func TestOath(t *testing.T) {
 				alg1, alg2 := chooseAlgorithm()
 
 				name := fmt.Sprintf("Index%054dHmac%d", i, alg1)
-				key := make([]byte, 50)
-				_, err := crand.Read(key)
+
+				keyLen := make([]byte, 1)
+				_, err := crand.Read(keyLen)
+				So(err, ShouldBeNil)
+
+				key := make([]byte, int(keyLen[0])%64+1)
+				_, err = crand.Read(key)
 				So(err, ShouldBeNil)
 
 				// fmt.Printf("adding key %d %s %s\n", i, name, hex.EncodeToString(key))
 				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
 				So(err, ShouldBeNil)
+				CurKeys++
 
 				if i%2 == 0 {
 					opts := totp.GenerateOpts{
@@ -142,16 +170,7 @@ func TestOath(t *testing.T) {
 				key2Alg[name] = alg2
 			}
 
-			Reset(func() {
-				for name := range allKeys {
-					err := oath.Delete(name)
-					So(err, ShouldBeNil)
-				}
-
-				lResult, err := oath.List()
-				So(err, ShouldBeNil)
-				So(lResult, ShouldBeEmpty)
-			})
+			defer clearRecords(CurKeys)
 
 			validateTotp := func(name string, otp string) {
 				// fmt.Printf("%s %s\n", otp, name)
@@ -192,6 +211,7 @@ func TestOath(t *testing.T) {
 
 				uniqueNames := make(map[string]bool)
 				items, _ := oath.List()
+				So(len(items), ShouldEqual, CurKeys)
 				for _, item := range items {
 					name := item.Name
 					So(allKeys, ShouldContainKey, name)
@@ -199,9 +219,11 @@ func TestOath(t *testing.T) {
 					uniqueNames[name] = true
 				}
 			})
+
 			Convey("Then calculate all of them at once", func(ctx C) {
 				results, err := oath.CalculateAll()
 				So(err, ShouldBeNil)
+				So(len(results), ShouldEqual, CurKeys)
 				for name, otp := range results {
 					So(allKeys, ShouldContainKey, name)
 					if allKeys[name].Type() == "hotp" {
@@ -214,6 +236,7 @@ func TestOath(t *testing.T) {
 			Convey("Then calculate each of them", func(ctx C) {
 				items, err := oath.List()
 				So(err, ShouldBeNil)
+				So(len(items), ShouldEqual, CurKeys)
 
 				for _, item := range items {
 					name := item.Name
@@ -240,6 +263,38 @@ func TestOath(t *testing.T) {
 					So(err, ShouldBeNil)
 					validateHotp(name, otp)
 				}
+			})
+		})
+
+		Convey("Fill all slots in the end", func(ctx C) {
+			var name string
+			type1 := ykoath.Hotp
+			alg1, _ := chooseAlgorithm()
+			key := make([]byte, 64)
+			for i := 0; i < NumKeys; i++ {
+				alg1, _ = chooseAlgorithm()
+
+				name = fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
+				_, err := crand.Read(key)
+				So(err, ShouldBeNil)
+
+				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
+				So(err, ShouldBeNil)
+			}
+
+			lResult, err := oath.List()
+			So(err, ShouldBeNil)
+			So(len(lResult), ShouldEqual, NumKeys)
+
+			Convey("Then put one more key should fail", func(ctx C) {
+				err = oath.Put("name", alg1, type1, 6, key, false, true, 0)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "unknown (6a 84)")
+
+				Convey("Then set the last key as default", func(ctx C) {
+					err := oath.SetAsDefault(name)
+					So(err, ShouldBeNil)
+				})
 			})
 		})
 	})
