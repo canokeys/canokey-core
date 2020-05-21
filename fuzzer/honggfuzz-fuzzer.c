@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include <libhfuzz/libhfuzz.h>
 
@@ -80,6 +81,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     PRINT_HEX(buf, len);
     capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);
     process_func(&capdu, &rapdu);
+
+    if (capdu.lc > 0) {
+      free(capdu.data);
+    }
   }
   return 0;
 }

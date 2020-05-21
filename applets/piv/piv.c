@@ -799,3 +799,8 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }
+
+// for testing without authentication
+#ifdef TEST
+void set_admin_status(int status) { in_admin_status = status; }
+#endif
