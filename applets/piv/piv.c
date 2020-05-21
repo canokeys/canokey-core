@@ -30,6 +30,7 @@
 #define ALG_ECC_256 0x11
 #define TDEA_BLOCK_SIZE 8
 #define RSA2048_N_LENGTH 256
+#define RSA2048_PQ_LENGTH 128
 
 // tags for general auth
 #define TAG_WITNESS 0x80
@@ -614,7 +615,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[6] = 0x82;
     RDATA[7] = HI(RSA2048_N_LENGTH);
     RDATA[8] = LO(RSA2048_N_LENGTH);
-    memcpy(RDATA + 9, key.n, RSA2048_N_LENGTH);
+    rsa_get_public_key(&key, RDATA + 9);
     RDATA[9 + RSA2048_N_LENGTH] = 0x82; // exponent
     RDATA[10 + RSA2048_N_LENGTH] = E_LENGTH;
     memcpy(RDATA + 11 + RSA2048_N_LENGTH, key.e, E_LENGTH);
@@ -681,20 +682,16 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     size_t length_size;
     int p_len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (p_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (p_len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.p + (PQ_LENGTH - p_len), p, p_len);
+    memcpy(key.p + (RSA2048_PQ_LENGTH - p_len), p, p_len);
     p += p_len;
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
     int q_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (q_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (q_len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.q + (PQ_LENGTH - q_len), p, q_len);
-    if (rsa_complete_key(&key) < 0) {
-      memzero(&key, sizeof(key));
-      return -1;
-    }
+    memcpy(key.q + (RSA2048_PQ_LENGTH - q_len), p, q_len);
     if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
       return -1;
