@@ -671,27 +671,57 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t alg = P1;
   switch (alg) {
   case ALG_RSA_2048: {
+    if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
+
     rsa_key_t key;
     memset(&key, 0, sizeof(key));
+    key.nbits = 2048;
     key.e[1] = 1;
     key.e[3] = 1;
-    uint8_t *p = DATA;
-    if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
+
     int fail;
     size_t length_size;
-    int p_len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
+    uint8_t *p = DATA;
+
+    if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
+    int len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (p_len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.p + (RSA2048_PQ_LENGTH - p_len), p, p_len);
-    p += p_len;
+    memcpy(key.p + (RSA2048_PQ_LENGTH - len), p, len);
+    p += len;
+
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
-    int q_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (q_len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.q + (RSA2048_PQ_LENGTH - q_len), p, q_len);
+    memcpy(key.q + (RSA2048_PQ_LENGTH - len), p, len);
+    p += len;
+
+    if (*p++ != 0x03) EXCEPT(SW_WRONG_DATA);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+    memcpy(key.dp + (RSA2048_PQ_LENGTH - len), p, len);
+    p += len;
+
+    if (*p++ != 0x04) EXCEPT(SW_WRONG_DATA);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+    memcpy(key.dq + (RSA2048_PQ_LENGTH - len), p, len);
+    p += len;
+
+    if (*p++ != 0x05) EXCEPT(SW_WRONG_DATA);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+    memcpy(key.qinv + (RSA2048_PQ_LENGTH - len), p, len);
+
     if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
       return -1;
@@ -700,8 +730,9 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   }
   case ALG_ECC_256: {
-    uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
     if (LC < 2 + ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+
+    uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
     if (DATA[0] != 0x06 || DATA[1] != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     memcpy(key, DATA + 2, ECC_KEY_SIZE);
     if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
