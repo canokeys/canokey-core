@@ -35,8 +35,8 @@
 #define MAX_PIN_LENGTH 64
 #define MAX_CERT_LENGTH 0x480
 #define MAX_DO_LENGTH 0xFF
-#define MAX_KEY_LENGTH 0x200
-#define MAX_KEY_TEMPLATE_LENGTH 14
+#define MAX_KEY_LENGTH 0x600
+#define MAX_KEY_TEMPLATE_LENGTH 17
 #define DIGITAL_SIG_COUNTER_LENGTH 3
 #define PW_STATUS_LENGTH 7
 
@@ -933,7 +933,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
-  if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);
+  if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);  // TODO: find a specific value
   uint8_t off = length_size;
   if (len + off + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
   p += off;
@@ -996,13 +996,12 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (len != pq_len) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);  // TODO: find a specific value
     p += length_size;
 
     ((rsa_key_t *)key)->nbits = nbits;
@@ -1012,11 +1011,11 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += pq_len;
     memcpy(((rsa_key_t *)key)->q, p, pq_len);
     p += pq_len;
+    memcpy(((rsa_key_t *)key)->qinv, p, pq_len);
+    p += pq_len;
     memcpy(((rsa_key_t *)key)->dp, p, pq_len);
     p += pq_len;
     memcpy(((rsa_key_t *)key)->dq, p, pq_len);
-    p += pq_len;
-    memcpy(((rsa_key_t *)key)->qinv, p, pq_len);
   } else {
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
     key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
