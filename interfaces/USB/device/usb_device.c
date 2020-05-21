@@ -3,7 +3,7 @@
 #include <usbd_core.h>
 #include <usbd_desc.h>
 
-USBD_HandleTypeDef usb_device;
+USBD_HandleTypeDef usb_device = {};
 IFACE_TABLE_t IFACE_TABLE;
 EP_TABLE_t EP_TABLE;
 EP_SIZE_TABLE_t EP_SIZE_TABLE;
