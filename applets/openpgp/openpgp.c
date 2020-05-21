@@ -35,8 +35,8 @@
 #define MAX_PIN_LENGTH 64
 #define MAX_CERT_LENGTH 0x480
 #define MAX_DO_LENGTH 0xFF
-#define MAX_KEY_LENGTH 0x200
-#define MAX_KEY_TEMPLATE_LENGTH 14
+#define MAX_KEY_LENGTH 0x600
+#define MAX_KEY_TEMPLATE_LENGTH 17
 #define DIGITAL_SIG_COUNTER_LENGTH 3
 #define PW_STATUS_LENGTH 7
 
@@ -61,10 +61,10 @@ attr[0] can be KEY_TYPE_RSA, KEY_TYPE_ECDSA, KEY_TYPE_ED25519, and KEY_TYPE_ECDH
 ECDSA contains p256r1 and p256k1 (not support now)
 ECDH contains p256r1, p256k1 (not support now), and cv25519
  */
-static const uint8_t rsa2k_attr[] = {KEY_TYPE_RSA,
-                                     0x08, 0x00,  // Length modulus: 2048
-                                     0x00, 0x20,  // length exponent: 32
-                                     0x00};       // import with P and Q
+static const uint8_t rsa_attr[] = {KEY_TYPE_RSA,
+                                   0x08, 0x00,  // Reserved for length of modulus, default: 2048
+                                   0x00, 0x20,  // length of exponent: 32 bit
+                                   0x02};       // import using crt (Chinese Remainder Theorem)
 
 static const uint8_t p256r1_attr[] = {0x00, // reserve for algorithm: ECDSA or ECDH
                                       0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
@@ -184,17 +184,17 @@ int openpgp_install(uint8_t reset) {
   if (write_file(SIG_KEY_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (openpgp_key_set_fingerprint(SIG_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_datetime(SIG_KEY_PATH, buf) < 0) return -1;
-  if (openpgp_key_set_attributes(SIG_KEY_PATH, rsa2k_attr, sizeof(rsa2k_attr)) < 0) return -1;
+  if (openpgp_key_set_attributes(SIG_KEY_PATH, rsa_attr, sizeof(rsa_attr)) < 0) return -1;
   if (openpgp_key_set_status(SIG_KEY_PATH, KEY_NOT_PRESENT) < 0) return -1;
   if (write_file(DEC_KEY_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (openpgp_key_set_fingerprint(DEC_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_datetime(DEC_KEY_PATH, buf) < 0) return -1;
-  if (openpgp_key_set_attributes(DEC_KEY_PATH, rsa2k_attr, sizeof(rsa2k_attr)) < 0) return -1;
+  if (openpgp_key_set_attributes(DEC_KEY_PATH, rsa_attr, sizeof(rsa_attr)) < 0) return -1;
   if (openpgp_key_set_status(DEC_KEY_PATH, KEY_NOT_PRESENT) < 0) return -1;
   if (write_file(AUT_KEY_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (openpgp_key_set_fingerprint(AUT_KEY_PATH, buf) < 0) return -1;
   if (openpgp_key_set_datetime(AUT_KEY_PATH, buf) < 0) return -1;
-  if (openpgp_key_set_attributes(AUT_KEY_PATH, rsa2k_attr, sizeof(rsa2k_attr)) < 0) return -1;
+  if (openpgp_key_set_attributes(AUT_KEY_PATH, rsa_attr, sizeof(rsa_attr)) < 0) return -1;
   if (openpgp_key_set_status(AUT_KEY_PATH, KEY_NOT_PRESENT) < 0) return -1;
   if (write_attr(DATA_PATH, ATTR_CA1_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
   if (write_attr(DATA_PATH, ATTR_CA2_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
@@ -552,8 +552,9 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     ASSERT_ADMIN();
 #endif
     if (attr[0] == KEY_TYPE_RSA) {
+      uint16_t nbits = (attr[1] << 8) | attr[2];
       key_len = sizeof(rsa_key_t);
-      if (rsa_generate_key((rsa_key_t *)key) < 0) {
+      if (rsa_generate_key((rsa_key_t *)key, nbits) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -605,18 +606,20 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   RDATA[0] = 0x7F;
   RDATA[1] = 0x49;
   if (attr[0] == KEY_TYPE_RSA) {
+    uint16_t nbits = (attr[1] << 8) | attr[2];
+    uint16_t n_len = nbits / 8;
     RDATA[2] = 0x82;
-    RDATA[3] = HI(6 + N_LENGTH + E_LENGTH);
-    RDATA[4] = LO(6 + N_LENGTH + E_LENGTH);
+    RDATA[3] = HI(6 + n_len + E_LENGTH);
+    RDATA[4] = LO(6 + n_len + E_LENGTH);
     RDATA[5] = 0x81; // modulus
     RDATA[6] = 0x82;
-    RDATA[7] = HI(N_LENGTH);
-    RDATA[8] = LO(N_LENGTH);
-    memcpy(RDATA + 9, ((rsa_key_t *)key)->n, N_LENGTH);
-    RDATA[9 + N_LENGTH] = 0x82; // exponent
-    RDATA[10 + N_LENGTH] = E_LENGTH;
-    memcpy(RDATA + 11 + N_LENGTH, ((rsa_key_t *)key)->e, E_LENGTH);
-    LL = 11 + N_LENGTH + E_LENGTH;
+    RDATA[7] = HI(n_len);
+    RDATA[8] = LO(n_len);
+    rsa_get_public_key((rsa_key_t *)key, RDATA + 9);
+    RDATA[9 + n_len] = 0x82; // exponent
+    RDATA[10 + n_len] = E_LENGTH;
+    memcpy(RDATA + 11 + n_len, ((rsa_key_t *)key)->e, E_LENGTH);
+    LL = 11 + n_len + E_LENGTH;
   } else if (attr_len == sizeof(p256r1_attr)) {
     RDATA[2] = ECC_PUB_KEY_SIZE + 3;
     RDATA[3] = 0x86;
@@ -665,8 +668,8 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       return -1;
     }
+    LL = key.nbits / 8;
     memzero(&key, sizeof(key));
-    LL = N_LENGTH;
   } else if (attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) {
     if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
     uint8_t key[ECC_KEY_SIZE];
@@ -817,8 +820,11 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     else
       key_path = AUT_KEY_PATH;
     if (DATA[0] == KEY_TYPE_RSA) {
-      if (LC != sizeof(rsa2k_attr) || memcmp(DATA, rsa2k_attr, sizeof(rsa2k_attr)) != 0) EXCEPT(SW_WRONG_DATA);
-      if (openpgp_key_set_attributes(key_path, rsa2k_attr, LC) < 0) return -1;
+      if (LC != sizeof(rsa_attr)) EXCEPT(SW_WRONG_DATA);
+      uint16_t nbits = (DATA[1] << 8) | DATA[2];
+      if (nbits != 2048 && nbits != 4096) EXCEPT(SW_WRONG_DATA);
+      if (memcmp(DATA + 2, rsa_attr + 2, 3) != 0) EXCEPT(SW_WRONG_DATA);
+      if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
     } else if (DATA[0] == KEY_TYPE_ECDSA) {
       if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
       // TODO: allow p256k1
@@ -927,7 +933,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
-  if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);
+  if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);  // TODO: find a specific value
   uint8_t off = length_size;
   if (len + off + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
   p += off;
@@ -952,39 +958,64 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t key_len;
 
   if (attr[0] == KEY_TYPE_RSA) {
+    uint16_t nbits = (attr[1] << 8) | attr[2];
+    uint16_t pq_len = nbits / 16;
     key_len = sizeof(rsa_key_t);
+
     if (*p++ != 0x91) EXCEPT(SW_WRONG_DATA);
-    int e_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (e_len > E_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len != E_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
+
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
-    int p_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (p_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
+
     if (*p++ != 0x93) EXCEPT(SW_WRONG_DATA);
-    int q_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (q_len > PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+
+    if (*p++ != 0x94) EXCEPT(SW_WRONG_DATA);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+
+    if (*p++ != 0x95) EXCEPT(SW_WRONG_DATA);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+
+    if (*p++ != 0x96) EXCEPT(SW_WRONG_DATA);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);  // TODO: find a specific value
     p += length_size;
 
-    memcpy(((rsa_key_t *)key)->e + (E_LENGTH - e_len), p, e_len);
-    p += e_len;
-    memcpy(((rsa_key_t *)key)->p + (PQ_LENGTH - p_len), p, p_len);
-    p += p_len;
-    memcpy(((rsa_key_t *)key)->q + (PQ_LENGTH - q_len), p, q_len);
-
-    if (rsa_complete_key((rsa_key_t *)key) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
+    ((rsa_key_t *)key)->nbits = nbits;
+    memcpy(((rsa_key_t *)key)->e, p, E_LENGTH);
+    p += E_LENGTH;
+    memcpy(((rsa_key_t *)key)->p, p, pq_len);
+    p += pq_len;
+    memcpy(((rsa_key_t *)key)->q, p, pq_len);
+    p += pq_len;
+    memcpy(((rsa_key_t *)key)->qinv, p, pq_len);
+    p += pq_len;
+    memcpy(((rsa_key_t *)key)->dp, p, pq_len);
+    p += pq_len;
+    memcpy(((rsa_key_t *)key)->dq, p, pq_len);
   } else {
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
     key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
@@ -1063,8 +1094,8 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       return -1;
     }
+    LL = key.nbits / 8;
     memzero(&key, sizeof(key));
-    LL = N_LENGTH;
   } else if (attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) {
     if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
     uint8_t key[ECC_KEY_SIZE];
