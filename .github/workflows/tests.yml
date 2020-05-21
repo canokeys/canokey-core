@@ -200,7 +200,7 @@ jobs:
         echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
         echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --edit-card
         # Private DO 1/2 is not implemented
-        # TODO: put 3 certificates
+        go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
         gpgconf --kill gpg-agent # restart agent to clear cached info
         gpg --card-status
         echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
