@@ -267,13 +267,14 @@ func TestOath(t *testing.T) {
 		})
 
 		Convey("Fill all slots in the end", func(ctx C) {
+			var name string
 			type1 := ykoath.Hotp
 			alg1, _ := chooseAlgorithm()
 			key := make([]byte, 64)
 			for i := 0; i < NumKeys; i++ {
 				alg1, _ = chooseAlgorithm()
 
-				name := fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
+				name = fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
 				_, err := crand.Read(key)
 				So(err, ShouldBeNil)
 
@@ -289,6 +290,13 @@ func TestOath(t *testing.T) {
 			err = oath.Put("name", alg1, type1, 6, key, false, true, 0)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldEqual, "unknown (6a 84)")
+
+
+			Convey("Then set the last key as default", func(ctx C) {
+				err := oath.SetAsDefault(name)
+				So(err, ShouldBeNil)
+			})
+
 		})
 	})
 
