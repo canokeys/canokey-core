@@ -296,10 +296,11 @@ jobs:
         COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
       run: |
+        go test test-via-pcsc/admin_test.go -v -run TestFSUsage
         sudo killall pcscd || true # To flush the cov files
         ls /tmp
         sleep 2
-        coveralls # read options from .coveralls.yml
+        coveralls # options are read from .coveralls.yml
     
     - name: Upload log files
       if: ${{ always() }}
