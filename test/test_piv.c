@@ -79,14 +79,14 @@ static void test_regression_fuzz(void **state) {
     test_helper(data, sizeof(data), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
   }
 
+  // bypass authentication, testing only
+  set_admin_status(1);
+
   if (1) {
     // empty input
     uint8_t data[] = {};
     test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9B, SW_WRONG_LENGTH);
   }
-
-  // bypass authentication, testing only
-  set_admin_status(1);
 
   if (1) {
     // empty input
