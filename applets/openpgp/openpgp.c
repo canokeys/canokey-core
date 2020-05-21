@@ -920,23 +920,27 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
 
-  const uint8_t *p = DATA;
-  if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
   size_t length_size;
   int fail;
+  const uint8_t *p = DATA;
+  // Extended Header list for RSA / ECDSA and ECDH, 4D
+  if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
   if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);
   uint8_t off = length_size;
   if (len + off + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
   p += off;
+  // Control Reference Template to indicate the private key: B6, B8 or A4
   const char *key_path = get_key_path(*p);
   if (key_path == NULL) EXCEPT(SW_WRONG_DATA);
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(key_path, attr);
   if (attr_len < 0) return -1;
   ++p;
-  if (*p++ != 0x00) EXCEPT(SW_WRONG_DATA);
+  if (*p != 0x00 && *p != 0x03) EXCEPT(SW_WRONG_DATA);
+  p += *p + 1;
+  // Cardholder private key template
   if (*p++ != 0x7F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
   uint16_t template_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -986,15 +990,17 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     // the length is identical for EcDSA/EdDSA/ECDH
-    if (key_len != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+    if (key_len > ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > MAX_KEY_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key, p, key_len);
+    int nLeadingZeros = ECC_KEY_SIZE - len;
+    memzero(key, nLeadingZeros);
+    memcpy(key + nLeadingZeros, p, key_len);
 
     if ((attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) ||
         (attr[0] == KEY_TYPE_ECDH && attr_len == sizeof(p256r1_attr))) {
