@@ -223,28 +223,38 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
         yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
         yubico-piv-tool -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
-        yubico-piv-tool -r "$RDID" -k F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -a set-mgm-key -n 010203040506070801020304050607080102030405060708
+        yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
         ## Key generation
         PIVGenKeyCert() {
-          slot=$1
+          key=$1
           subject="$2"
           algo="$3"
-          yubico-piv-tool -r "$RDID" -a generate -A $algo -s $slot >/tmp/pubkey-$slot.pem # generate key at $slot
-          yubico-piv-tool -r "$RDID" -a selfsign-certificate -s $slot -S "$subject" < /tmp/pubkey-$slot.pem >/tmp/cert-$slot.pem
-          yubico-piv-tool -r "$RDID" -a import-certificate -s $slot < /tmp/cert-$slot.pem
+          yubico-piv-tool -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
+          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
+          yubico-piv-tool -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
         }
-        PIVGenKeyCert 9e '/CN=CertAtSlot9e' RSA2048
+        PIVSignDec() {
+          key=$1
+          pinArgs=
+          op=$3
+          if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
+          if [[ -z "$op" || s = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-signature -s $key < /tmp/cert-$key.pem; fi
+          if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key < /tmp/cert-$key.pem; fi
+        }
+        ## RSA2048 tests
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" RSA2048; done
         yubico-piv-tool -r "$RDID" -a status
-        yubico-piv-tool -r "$RDID" -a test-signature -s 9e < /tmp/cert-9e.pem
-        yubico-piv-tool -r "$RDID" -a test-decipher -s 9e < /tmp/cert-9e.pem
+        PIVSignDec 9e # PIN not required for key 9e
+        for s in 9a 9c 9d; do PIVSignDec $s 1; done
         pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
         echo -n hello >/tmp/hello.txt
         pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
         openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
-        PIVGenKeyCert 9a '/CN=CertAtSlot9a' RSA2048
-        PIVGenKeyCert 9c '/CN=CertAtSlot9c' ECCP256
-        PIVGenKeyCert 9d '/CN=CertAtSlot9d' ECCP256
+        ## ECC tests
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" ECCP256; done
         yubico-piv-tool -r "$RDID" -a status
+        for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
+        PIVSignDec 9d 1 d # 9d only do the ECDH
         ## PIN unblock
         yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a < /tmp/cert-9a.pem
         yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c < /tmp/cert-9c.pem
@@ -283,6 +293,7 @@ jobs:
         TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
       run: |
         sudo killall pcscd || true # To flush the cov files
+        ls /tmp
         sleep 2
         coveralls # read options from .coveralls.yml
     
