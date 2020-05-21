@@ -286,17 +286,16 @@ func TestOath(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(len(lResult), ShouldEqual, NumKeys)
 
-			// put one more item should fail
-			err = oath.Put("name", alg1, type1, 6, key, false, true, 0)
-			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldEqual, "unknown (6a 84)")
+			Convey("Then put one more key should fail", func(ctx C) {
+				err = oath.Put("name", alg1, type1, 6, key, false, true, 0)
+				So(err, ShouldNotBeNil)
+				So(err.Error(), ShouldEqual, "unknown (6a 84)")
 
-
-			Convey("Then set the last key as default", func(ctx C) {
-				err := oath.SetAsDefault(name)
-				So(err, ShouldBeNil)
+				Convey("Then set the last key as default", func(ctx C) {
+					err := oath.SetAsDefault(name)
+					So(err, ShouldBeNil)
+				})
 			})
-
 		})
 	})
 
