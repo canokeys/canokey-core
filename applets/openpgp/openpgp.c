@@ -27,8 +27,8 @@
 #define KEY_GENERATED 0x01
 #define KEY_IMPORTED 0x02
 
-#define MAX_LOGIN_LENGTH 254
-#define MAX_URL_LENGTH 254
+#define MAX_LOGIN_LENGTH 63
+#define MAX_URL_LENGTH 255
 #define MAX_NAME_LENGTH 39
 #define MAX_LANG_LENGTH 8
 #define MAX_SEX_LENGTH 1
@@ -168,7 +168,6 @@ int openpgp_install(uint8_t reset) {
   // Cardholder Data
   if (write_file(DATA_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0) < 0) return -1;
-  if (write_attr(DATA_PATH, LO(TAG_URL), NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_NAME, NULL, 0)) return -1;
   // default lang = NULL
   if (write_attr(DATA_PATH, LO(TAG_LANG), NULL, 0) < 0) return -1;
@@ -239,7 +238,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_URL:
-    len = read_attr(DATA_PATH, LO(TAG_URL), RDATA, MAX_URL_LENGTH);
+    len = read_file(DATA_PATH, RDATA, 0, MAX_URL_LENGTH);
     if (len < 0) return -1;
     LL = len;
     break;
@@ -789,7 +788,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   case TAG_URL:
     if (LC > MAX_URL_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (write_attr(DATA_PATH, LO(TAG_URL), DATA, LC) < 0) return -1;
+    if (write_file(DATA_PATH, DATA, 0, LC, 1) < 0) return -1;
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
