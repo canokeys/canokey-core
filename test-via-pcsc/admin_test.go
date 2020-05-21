@@ -215,9 +215,9 @@ func TestFSUsage(t *testing.T) {
 		_, code, err = app.Send(append([]byte{0x00, 0x20, 0x00, 0x00, byte(len(pin))}, pin...))
 		So(err, ShouldBeNil)
 
-		data, code, err := app.Send([]byte{0x00, 0x41, 0x00, 0x00, 0x01})
+		data, code, err := app.Send([]byte{0x00, 0x41, 0x00, 0x00, 0x02})
 		So(err, ShouldBeNil)
-		So(len(data), ShouldEqual, 1)
+		So(len(data), ShouldEqual, 2)
 		fmt.Printf("\n\nFile system usage: %d KB\n", int(data[0]))
 	})
 }
