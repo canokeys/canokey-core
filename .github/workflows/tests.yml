@@ -88,7 +88,10 @@ jobs:
       run: go test -v test-via-pcsc/admin_test.go
 
     - name: Test the FIDO2
-      run: cd fido2-tests; ~/.local/bin/pytest --color=yes --nfc tests/standard/
+      run: |
+        cd fido2-tests
+        ~/.local/bin/pytest --color=yes --nfc tests/standard/
+        ~/.local/bin/pytest --color=yes --nfc tests/standard/fido2/test_resident_key_canokeys.py --capture=no 
 
     - name: Test the U2F
       run: |
