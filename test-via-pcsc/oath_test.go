@@ -112,8 +112,13 @@ func TestOath(t *testing.T) {
 				alg1, alg2 := chooseAlgorithm()
 
 				name := fmt.Sprintf("Index%054dHmac%d", i, alg1)
-				key := make([]byte, 50)
-				_, err := crand.Read(key)
+
+				keyLen := make([]byte, 1)
+				_, err := crand.Read(keyLen)
+				So(err, ShouldBeNil)
+
+				key := make([]byte, int(keyLen[0])%64+1)
+				_, err = crand.Read(key)
 				So(err, ShouldBeNil)
 
 				// fmt.Printf("adding key %d %s %s\n", i, name, hex.EncodeToString(key))
