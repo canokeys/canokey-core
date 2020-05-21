@@ -242,6 +242,25 @@ func TestOath(t *testing.T) {
 				}
 			})
 		})
+
+		Convey("Fill all slots in the end", func(ctx C) {
+			for i := 0; i < NumKeys; i++ {
+				type1 := ykoath.Hotp
+				alg1, _ := chooseAlgorithm()
+
+				name := fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
+				key := make([]byte, 64)
+				_, err := crand.Read(key)
+				So(err, ShouldBeNil)
+
+				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
+				So(err, ShouldBeNil)
+			}
+
+			cResult, err := oath.CalculateAll()
+			So(err, ShouldBeNil)
+			So(len(cResult), ShouldEqual, NumKeys)
+		})
 	})
 
 }
