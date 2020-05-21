@@ -88,6 +88,7 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LE < 2) EXCEPT(SW_WRONG_LENGTH);
   RDATA[0] = get_fs_usage();
   RDATA[1] = get_fs_size();
   LL = 2;
