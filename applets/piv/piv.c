@@ -29,6 +29,7 @@
 #define ALG_RSA_2048 0x07
 #define ALG_ECC_256 0x11
 #define TDEA_BLOCK_SIZE 8
+#define RSA2048_N_LENGTH 256
 
 // tags for general auth
 #define TAG_WITNESS 0x80
@@ -82,7 +83,7 @@ static int get_input_size(uint8_t alg) {
   case ALG_TDEA_3KEY:
     return TDEA_BLOCK_SIZE;
   case ALG_RSA_2048:
-    return N_LENGTH;
+    return RSA2048_N_LENGTH;
   case ALG_ECC_256:
     return ECC_KEY_SIZE;
   default:
@@ -574,7 +575,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t alg = DATA[4];
   if (alg == ALG_RSA_2048) {
     rsa_key_t key;
-    if (rsa_generate_key(&key) < 0) return -1;
+    if (rsa_generate_key(&key, 2048) < 0) return -1;
     if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
       return -1;
@@ -582,17 +583,17 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[0] = 0x7F;
     RDATA[1] = 0x49;
     RDATA[2] = 0x82;
-    RDATA[3] = HI(6 + N_LENGTH + E_LENGTH);
-    RDATA[4] = LO(6 + N_LENGTH + E_LENGTH);
+    RDATA[3] = HI(6 + RSA2048_N_LENGTH + E_LENGTH);
+    RDATA[4] = LO(6 + RSA2048_N_LENGTH + E_LENGTH);
     RDATA[5] = 0x81; // modulus
     RDATA[6] = 0x82;
-    RDATA[7] = HI(N_LENGTH);
-    RDATA[8] = LO(N_LENGTH);
-    memcpy(RDATA + 9, key.n, N_LENGTH);
-    RDATA[9 + N_LENGTH] = 0x82; // exponent
-    RDATA[10 + N_LENGTH] = E_LENGTH;
-    memcpy(RDATA + 11 + N_LENGTH, key.e, E_LENGTH);
-    LL = 11 + N_LENGTH + E_LENGTH;
+    RDATA[7] = HI(RSA2048_N_LENGTH);
+    RDATA[8] = LO(RSA2048_N_LENGTH);
+    memcpy(RDATA + 9, key.n, RSA2048_N_LENGTH);
+    RDATA[9 + RSA2048_N_LENGTH] = 0x82; // exponent
+    RDATA[10 + RSA2048_N_LENGTH] = E_LENGTH;
+    memcpy(RDATA + 11 + RSA2048_N_LENGTH, key.e, E_LENGTH);
+    LL = 11 + RSA2048_N_LENGTH + E_LENGTH;
     memzero(&key, sizeof(key));
   } else if (alg == ALG_ECC_256) {
     uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
