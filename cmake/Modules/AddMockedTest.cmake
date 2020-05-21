@@ -53,5 +53,5 @@ function(add_mocked_test name)
                   LINK_OPTIONS ${link_flags} ${ADD_MOCKED_TEST_LINK_OPTIONS})
 
   # allow using includes from src/ directory
-  target_include_directories(test_${name} PRIVATE ${CMAKE_SOURCE_DIR}/littlefs)
+  target_include_directories(test_${name} PRIVATE ${CMAKE_SOURCE_DIR}/littlefs /usr/local/include)
 endfunction(add_mocked_test)
