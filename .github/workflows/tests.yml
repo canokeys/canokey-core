@@ -9,7 +9,6 @@ jobs:
       run: |
         sudo apt update
         sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov
-        sudo pip install cpp-coveralls
 
     - name: Set up Go 1.13
       uses: actions/setup-go@v1
@@ -293,16 +292,14 @@ jobs:
         longName=OU=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName0000000/O=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/L=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/ST=State0/C=CN
         for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/$longName" RSA2048; done
     
-    - name: Upload the Test Coverage Stat
-      env:
-        COVERALLS_REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        TRAVIS_JOB_ID: ${{ env.GITHUB_RUN_ID }}
+    - name: Prepare the Test Coverage Report
       run: |
         go test test-via-pcsc/admin_test.go -v -run TestFSUsage
         sudo killall pcscd || true # To flush the cov files
         ls /tmp
         sleep 2
         mkdir coverage
+        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interface)/' | xargs rm
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Coveralls
