@@ -165,6 +165,7 @@ jobs:
         GPGSign
         GPGReset
         echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card
+        ## RSA2048 generation on card
         echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to RSA2048
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
@@ -174,6 +175,17 @@ jobs:
         ChangeUsage
         GPGAuth
         GPGReset
+        ## RSA4096 generation on card
+        echo -e 'admin\nkey-attr\n1\n4096\n1\n4096\n1\n4096\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to RSA4096
+        Addcardkey 1 # generate Signature key on card
+        Addcardkey 2 # generate Encryption key on card
+        GPGEnc
+        GPGSign
+        Addcardkey 3 # generate Authentication key on card
+        ChangeUsage
+        GPGAuth
+        GPGReset
+        ## 25519 generation on card
         echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
@@ -183,6 +195,7 @@ jobs:
         ChangeUsage
         GPGAuth
         GPGReset
+        ## NIST P-256 generation on card
         echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
