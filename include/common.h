@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define APDU_BUFFER_SIZE 1280
+#define APDU_BUFFER_SIZE 1340
 
 #ifdef DEBUG_OUTPUT
 #include <crypto-util.h>
