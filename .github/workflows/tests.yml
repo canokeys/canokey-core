@@ -154,6 +154,7 @@ jobs:
         Key2card 6 1 # key[6] to Signature key
         GPGSign
         GPGReset
+        ## 25519 key import
         Addkey 12 1 # [7] cv25519 encrypt key
         Addkey 10 1 # [8] ed25519 sign key
         Key2card 7 2 # key[7] to Encryption key
@@ -162,6 +163,17 @@ jobs:
         GPGEnc
         Addkey 10 1 # [9] ed25519 sign key
         Key2card 9 1 # key[9] to Signature key
+        GPGSign
+        GPGReset
+        ## RSA4096 key import
+        Addkey 4 4096 # [10] gen RSA4096 key
+        Key2card 10 3 # key[10] to Authentication key
+        Addkey 6 4096 # [11] gen RSA4096 key
+        Key2card 11 2 # key[11] to Encryption key
+        GPGAuth
+        GPGEnc
+        Addkey 4 4096 # [12] gen RSA4096 key
+        Key2card 12 1 # key[12] to Signature key
         GPGSign
         GPGReset
         echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card
