@@ -303,7 +303,7 @@ jobs:
         ls /tmp
         sleep 2
         mkdir coverage
-        lcov --base-directory build -c -o ./coverage/lcov.info
+        lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Coveralls
       uses: coverallsapp/github-action@master
