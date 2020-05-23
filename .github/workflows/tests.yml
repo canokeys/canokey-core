@@ -8,7 +8,7 @@ jobs:
     - name: Package Install
       run: |
         sudo apt update
-        sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel
+        sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov
         sudo pip install cpp-coveralls
 
     - name: Set up Go 1.13
@@ -309,7 +309,6 @@ jobs:
       uses: coverallsapp/github-action@master
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
-        base-path: 'build'
     
     - name: Upload log files
       if: ${{ always() }}
