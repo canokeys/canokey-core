@@ -302,7 +302,14 @@ jobs:
         sudo killall pcscd || true # To flush the cov files
         ls /tmp
         sleep 2
-        coveralls # options are read from .coveralls.yml
+        mkdir coverage
+        lcov --base-directory build -c -o ./coverage/lcov.info
+
+    - name: Coveralls
+      uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        base-path: 'build'
     
     - name: Upload log files
       if: ${{ always() }}
