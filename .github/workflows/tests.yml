@@ -11,18 +11,6 @@ jobs:
         sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel
         sudo pip install cpp-coveralls
 
-    - name: Set up Go 1.13
-      uses: actions/setup-go@v1
-      with:
-        go-version: 1.13
-      id: go
-
-    - name: Cache GO Modules
-      uses: actions/cache@v1
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-global
-
     - name: Check out code
       uses: actions/checkout@v2
       with:
@@ -30,7 +18,7 @@ jobs:
     
     - name: Build FIDO Tests
       run: |
-        git clone --depth 1 https://github.com/solokeys/fido2-tests.git
+        git clone --depth 1 https://github.com/canokeys/fido2-tests.git
         pushd fido2-tests; pip3 install --user -r requirements.txt; popd
 
     - name: Build for Test
