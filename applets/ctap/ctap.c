@@ -385,13 +385,16 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     }
     if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
   } else {
-    int size;
+    int size = 0;
     if (credential_idx == 0) {
       size = get_file_size(RK_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      size_t nRk = size / sizeof(CTAP_residentKey);
+      int nRk = (int)(size / sizeof(CTAP_residentKey));
       credential_numbers = 0;
-      for (size_t i = 0; i != nRk; ++i) {
+      // GA step 9: If more than one credential was located in step 1 and allowList is present and not empty, select any
+      // applicable credential and proceed to step 12. Otherwise, order the credentials by the time when they were
+      // created in reverse order. The first credential is the most recent credential that was created.
+      for (int i = nRk - 1; i >= 0; --i) {
         size = read_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (memcmp(ga.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0)
