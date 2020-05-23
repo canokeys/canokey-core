@@ -59,7 +59,7 @@
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin related
-static uint8_t key_agreement_pri_key[ECC_KEY_SIZE];
+static uint8_t key_agreement_keypair[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter;
 // assertion related
@@ -70,6 +70,9 @@ uint8_t ctap_install(uint8_t reset) {
   credential_numbers = 0;
   credential_idx = 0;
   last_cmd = 0xff;
+  random_buffer(pin_token, sizeof(pin_token));
+  if (ecc_generate(ECC_SECP256R1, key_agreement_keypair, key_agreement_keypair + ECC_KEY_SIZE) < 0)
+    return CTAP2_ERR_UNHANDLED_REQUEST;
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -138,7 +141,7 @@ static void build_cose_key(uint8_t *data, uint8_t ecdh) {
 }
 
 static uint8_t get_shared_secret(uint8_t *pub_key) {
-  int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_pri_key, pub_key, pub_key);
+  int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_keypair, pub_key, pub_key);
   if (ret < 0) return 1;
   sha256_raw(pub_key, ECC_KEY_SIZE, pub_key);
   return 0;
@@ -385,13 +388,16 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     }
     if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
   } else {
-    int size;
+    int size = 0;
     if (credential_idx == 0) {
       size = get_file_size(RK_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      size_t nRk = size / sizeof(CTAP_residentKey);
+      int nRk = (int)(size / sizeof(CTAP_residentKey));
       credential_numbers = 0;
-      for (size_t i = 0; i != nRk; ++i) {
+      // GA step 9: If more than one credential was located in step 1 and allowList is present and not empty, select any
+      // applicable credential and proceed to step 12. Otherwise, order the credentials by the time when they were
+      // created in reverse order. The first credential is the most recent credential that was created.
+      for (int i = nRk - 1; i >= 0; --i) {
         size = read_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (memcmp(ga.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0)
@@ -410,7 +416,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   uint8_t extensionBuffer[79], extensionSize = 0;
   uint8_t iv[16] = {0};
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  if (ga.parsedParams & PARAM_hmacSecret) {
+  if ((ga.parsedParams & PARAM_hmacSecret) && credential_idx == 0) {
     ret = get_shared_secret(ga.hmacSecretKeyAgreement);
     CHECK_PARSER_RET(ret);
     uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
@@ -661,8 +667,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = cbor_encoder_create_map(&map, &key_map, 0);
     CHECK_CBOR_RET(ret);
     ptr = key_map.data.ptr - 1;
-    ret = ecc_generate(ECC_SECP256R1, key_agreement_pri_key, ptr);
-    if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    memcpy(ptr, key_agreement_keypair + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
     build_cose_key(ptr, 1);
     key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);
@@ -689,7 +694,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     i = 63;
     while (i > 0 && cp.newPinEnc[i] == 0)
       --i;
-    if (i <= 3 || i >= 63) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+    if (i < 3 || i >= 63) return CTAP2_ERR_PIN_POLICY_VIOLATION;
     err = set_pin(cp.newPinEnc, i + 1);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     break;
@@ -738,7 +743,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     i = 63;
     while (i > 0 && cp.newPinEnc[i] == 0)
       --i;
-    if (i <= 3 || i >= 63) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+    if (i < 3 || i >= 63) return CTAP2_ERR_PIN_POLICY_VIOLATION;
     err = set_pin(cp.newPinEnc, i + 1);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     break;
@@ -775,7 +780,6 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     consecutive_pin_counter = 3;
     err = set_pin_retries(8);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    random_buffer(pin_token, sizeof(pin_token));
     cfg.in_size = PIN_TOKEN_SIZE;
     cfg.in = pin_token;
     cfg.out = hmac_buf;
