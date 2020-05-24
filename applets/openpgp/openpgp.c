@@ -1152,9 +1152,9 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    int nLeadingZeros = ec_pri_key_len - len;
-    memzero(key, nLeadingZeros);
-    memcpy(key + nLeadingZeros, p, len);
+    int n_leading_zeros = ec_pri_key_len - len;
+    memzero(key, n_leading_zeros);
+    memcpy(key + n_leading_zeros, p, len);
 
     ECC_Curve curve = ECC_SECP384R1;
     switch (algo) {
