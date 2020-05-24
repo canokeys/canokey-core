@@ -633,6 +633,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
         else {
           swap_big_number_endian(key);
           x25519(key + ec_pri_key_len, key, gx);
+          swap_big_number_endian(key + ec_pri_key_len);
         }
         break;
 
@@ -861,6 +862,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         return -1;
       }
       swap_big_number_endian(DATA + 7);
+      swap_big_number_endian(key);
       x25519(RDATA, key, DATA + 7);
       swap_big_number_endian(RDATA);
       memzero(key, sizeof(key));
@@ -1180,6 +1182,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 
     case X25519:
       x25519(key + KEY_SIZE_25519, key, gx);
+      swap_big_number_endian(key + KEY_SIZE_25519);
       key_len = KEY_SIZE_25519 * 2;
       break;
 
