@@ -8,13 +8,6 @@
 #include <rand.h>
 #include <rsa.h>
 
-#define SWAP(x, y, T)                                                                                                  \
-  do {                                                                                                                 \
-    T SWAP = x;                                                                                                        \
-    x = y;                                                                                                             \
-    y = SWAP;                                                                                                          \
-  } while (0)
-
 #define DATA_PATH "pgp-data"
 #define SIG_KEY_PATH "pgp-sigk"
 #define DEC_KEY_PATH "pgp-deck"
@@ -121,8 +114,10 @@ static const uint8_t extended_capabilities[] = {
     0x00,              // No MSE
 };
 
-static const ed25519_public_key gx = {9};
 // clang-format on
+// big endian
+static const ed25519_public_key gx = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9};
 
 static uint8_t pw1_mode, current_occurrence, state;
 static pin_t pw1 = {.min_length = 6, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw1"};
@@ -635,8 +630,10 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
         key[31] |= 64;
         if (algo == ED25519)
           ed25519_publickey(key, key + ec_pri_key_len);
-        else
-          curve25519_scalarmult(key + ec_pri_key_len, key, gx);
+        else {
+          swap_big_number_endian(key);
+          x25519(key + ec_pri_key_len, key, gx);
+        }
         break;
 
       default:
@@ -863,7 +860,9 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(key, sizeof(key));
         return -1;
       }
-      curve25519_scalarmult(RDATA, key, DATA + 7);
+      swap_big_number_endian(DATA + 7);
+      x25519(RDATA, key, DATA + 7);
+      swap_big_number_endian(RDATA);
       memzero(key, sizeof(key));
       LL = KEY_SIZE_25519;
       break;
@@ -1180,9 +1179,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
       break;
 
     case X25519:
-      for (int i = 0; i < 16; ++i)
-        SWAP(key[31 - i], key[i], uint8_t);
-      curve25519_scalarmult(key + KEY_SIZE_25519, key, gx);
+      x25519(key + KEY_SIZE_25519, key, gx);
       key_len = KEY_SIZE_25519 * 2;
       break;
 
