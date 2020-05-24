@@ -128,7 +128,7 @@ static void test_calc(void **state) {
   test_helper(data, 2, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
 
   // omit the TAG_CHALLENGE
-  test_helper(data, 5, OATH_INS_CALCULATE, SW_WRONG_DATA);
+  test_helper(data, 5, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
 
   // zero-length challenge
   data[6] = 0;

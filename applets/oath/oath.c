@@ -281,13 +281,14 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   if (i == nRecords) EXCEPT(SW_DATA_INVALID);
 
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) {
-
+    if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
     challenge_len = DATA[offset++];
     if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) {
       challenge_len = 0;
       EXCEPT(SW_WRONG_DATA);
     }
+    if (offset + challenge_len > LC) EXCEPT(SW_WRONG_LENGTH);
     memcpy(challenge, DATA + offset, challenge_len);
     offset += challenge_len;
     if (offset > LC) EXCEPT(SW_WRONG_LENGTH);
@@ -331,6 +332,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
       challenge_len = 0;
       EXCEPT(SW_WRONG_DATA);
     }
+    if (off_in + challenge_len > LC) EXCEPT(SW_WRONG_LENGTH);
     memcpy(challenge, DATA + off_in, challenge_len);
     off_in += challenge_len;
     if (off_in > LC) EXCEPT(SW_WRONG_LENGTH);
