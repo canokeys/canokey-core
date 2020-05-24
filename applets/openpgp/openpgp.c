@@ -53,32 +53,37 @@
 #define KEY_TYPE_ECDSA 0x13
 #define KEY_TYPE_ED25519 0x16
 
-#define ECC_256_PRI_KEY_SIZE 32
-#define ECC_256_PUB_KEY_SIZE 64
+#define KEY_SIZE_25519 32
+
+typedef enum {
+  ECDSA_P256R1,
+  ECDSA_P256K1,
+  ECDSA_P384R1,
+  ECDH_P256R1,
+  ECDH_P256K1,
+  ECDH_P384R1,
+  ED25519,
+  X25519,
+  EC_ERROR = -1,
+} EC_Algorithm;
 
 // clang-format off
 
-/**
-attr[0] can be KEY_TYPE_RSA, KEY_TYPE_ECDSA, KEY_TYPE_ED25519, and KEY_TYPE_ECDH
-ECDSA contains p256r1 and p256k1 (not support now)
-ECDH contains p256r1, p256k1 (not support now), and cv25519
- */
 static const uint8_t rsa_attr[] = {KEY_TYPE_RSA,
                                    0x08, 0x00,  // Reserved for length of modulus, default: 2048
                                    0x00, 0x20,  // length of exponent: 32 bit
                                    0x02};       // import using crt (Chinese Remainder Theorem)
 
-static const uint8_t p256r1_attr[] = {0x00, // reserve for algorithm: ECDSA or ECDH
-                                      0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07};
-
-//static const uint8_t p256k1_attr[] = {0x00, // reserve for algorithm: ECDSA or ECDH
-//                                      0x2B, 0x81, 0x04, 0x00, 0x0A};
-
-static const uint8_t ed25519_attr[] = {KEY_TYPE_ED25519,
-                                       0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01};
-
-static const uint8_t cv25519_attr[] = {KEY_TYPE_ECDH,
-                                       0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01};
+static const uint8_t ec_attr[][13] = {
+    {ECDSA_P256R1, 9, KEY_TYPE_ECDSA, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
+    {ECDSA_P256K1, 6, KEY_TYPE_ECDSA, 0x2B, 0x81, 0x04, 0x00, 0x0A},
+    {ECDSA_P384R1, 6, KEY_TYPE_ECDSA, 0x2B, 0x81, 0x04, 0x00, 0x22},
+    {ECDH_P256R1, 9, KEY_TYPE_ECDH, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
+    {ECDH_P256K1, 6, KEY_TYPE_ECDH, 0x2B, 0x81, 0x04, 0x00, 0x0A},
+    {ECDH_P384R1, 6, KEY_TYPE_ECDH, 0x2B, 0x81, 0x04, 0x00, 0x22},
+    {ED25519, 10, KEY_TYPE_ED25519, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01},
+    {X25519, 11, KEY_TYPE_ECDH, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01},
+};
 
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
                               0x03, 0x04,                         // version
@@ -135,20 +140,35 @@ static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated 
   } while (0)
 
 static const char *get_key_path(uint8_t tag) {
-  if (tag == 0xB6)
+  switch (tag) {
+  case 0xB6:
     return SIG_KEY_PATH;
-  else if (tag == 0xB8)
+  case 0xB8:
     return DEC_KEY_PATH;
-  else if (tag == 0xA4)
+  case 0xA4:
     return AUT_KEY_PATH;
-  else
+  default:
     return NULL;
+  }
 }
 
 static int reset_sig_counter(void) {
   uint8_t buf[3] = {0};
   if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, buf, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
   return 0;
+}
+
+static EC_Algorithm get_ec_algo(const uint8_t *attr, int len) {
+  for (int i = 0; i < 8; ++i) {
+    if (len == ec_attr[i][1] && memcmp(attr, ec_attr[i] + 2, len) == 0) return (EC_Algorithm)ec_attr[0];
+  }
+
+  return EC_ERROR;
+}
+
+static inline int get_ec_key_length(EC_Algorithm algo) {
+  if (algo == ECDSA_P384R1 || algo == ECDH_P384R1) return 48;
+  return 32;
 }
 
 void openpgp_poweroff(void) {
@@ -542,14 +562,27 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
 static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x02 && LC != 0x05) EXCEPT(SW_WRONG_LENGTH);
+
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL) EXCEPT(SW_WRONG_DATA);
+
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(key_path, attr);
   if (attr_len < 0) return -1;
+
+  EC_Algorithm algo = EC_ERROR;
+  int ec_pri_key_len = 0;
+  int ec_pub_key_len = 0;
+  if (attr[0] != KEY_TYPE_RSA) {
+    algo = get_ec_algo(attr, attr_len);
+    ec_pri_key_len = get_ec_key_length(algo);
+    ec_pub_key_len = ec_pri_key_len * 2;
+  }
+
   uint8_t key[sizeof(rsa_key_t)];
+
   if (P1 == 0x80) {
-    uint16_t key_len;
+    uint16_t key_len = 0;
 #ifndef FUZZ
     ASSERT_ADMIN();
 #endif
@@ -560,24 +593,51 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
         memzero(key, sizeof(key));
         return -1;
       }
-    } else if (attr_len == sizeof(p256r1_attr)) {
-      key_len = ECC_256_PRI_KEY_SIZE + ECC_256_PUB_KEY_SIZE;
-      if (ecc_generate(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) {
-        memzero(key, sizeof(key));
+    } else {
+      key_len = ec_pri_key_len + ec_pub_key_len;
+      switch (algo) {
+      case ECDSA_P256R1:
+      case ECDH_P256R1:
+        if (ecc_generate(ECC_SECP256R1, key, key + ec_pri_key_len) < 0) {
+          memzero(key, sizeof(key));
+          return -1;
+        }
+        break;
+
+      case ECDSA_P256K1:
+      case ECDH_P256K1:
+        if (ecc_generate(ECC_SECP256K1, key, key + ec_pri_key_len) < 0) {
+          memzero(key, sizeof(key));
+          return -1;
+        }
+        break;
+
+      case ECDSA_P384R1:
+      case ECDH_P384R1:
+        if (ecc_generate(ECC_SECP384R1, key, key + ec_pri_key_len) < 0) {
+          memzero(key, sizeof(key));
+          return -1;
+        }
+        break;
+
+      case ED25519:
+      case X25519:
+        key_len = KEY_SIZE_25519 * 2;
+        random_buffer(key, ec_pri_key_len);
+        key[0] &= 248;
+        key[31] &= 127;
+        key[31] |= 64;
+        if (algo == ED25519)
+          ed25519_publickey(key, key + ec_pri_key_len);
+        else
+          curve25519_scalarmult(key + ec_pri_key_len, key, gx);
+        break;
+
+      default:
         return -1;
       }
-    } else if (attr_len == sizeof(ed25519_attr) || attr_len == sizeof(cv25519_attr)) {
-      key_len = ED_KEY_SIZE + ED_PUB_KEY_SIZE;
-      random_buffer(key, ED_KEY_SIZE);
-      key[0] &= 248;
-      key[31] &= 127;
-      key[31] |= 64;
-      if (attr_len == sizeof(ed25519_attr))
-        ed25519_publickey(key, key + ED_KEY_SIZE);
-      else
-        curve25519_scalarmult(key + ED_KEY_SIZE, key, gx);
-    } else
-      return -1;
+    }
+
     if (openpgp_key_set_key(key_path, key, key_len) < 0) {
       memzero(key, sizeof(key));
       return -1;
@@ -622,22 +682,35 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     RDATA[10 + n_len] = E_LENGTH;
     memcpy(RDATA + 11 + n_len, ((rsa_key_t *)key)->e, E_LENGTH);
     LL = 11 + n_len + E_LENGTH;
-  } else if (attr_len == sizeof(p256r1_attr)) {
-    RDATA[2] = ECC_256_PUB_KEY_SIZE + 3;
-    RDATA[3] = 0x86;
-    RDATA[4] = ECC_256_PUB_KEY_SIZE + 1;
-    RDATA[5] = 0x04;
-    memcpy(RDATA + 6, key + ECC_256_PRI_KEY_SIZE, ECC_256_PUB_KEY_SIZE);
-    LL = ECC_256_PUB_KEY_SIZE + 6;
-  } else if (attr_len == sizeof(ed25519_attr) || attr_len == sizeof(cv25519_attr)) {
-    RDATA[2] = ED_PUB_KEY_SIZE + 2;
-    RDATA[3] = 0x86;
-    RDATA[4] = ED_PUB_KEY_SIZE;
-    memcpy(RDATA + 5, key + ED_KEY_SIZE, ED_PUB_KEY_SIZE);
-    LL = ECC_256_PUB_KEY_SIZE + 6;
   } else {
-    memzero(key, sizeof(key));
-    return -1;
+    switch (algo) {
+    case ECDSA_P256R1:
+    case ECDSA_P256K1:
+    case ECDSA_P384R1:
+    case ECDH_P256R1:
+    case ECDH_P256K1:
+    case ECDH_P384R1:
+      RDATA[2] = ec_pub_key_len + 3;
+      RDATA[3] = 0x86;
+      RDATA[4] = ec_pub_key_len + 1;
+      RDATA[5] = 0x04;
+      memcpy(RDATA + 6, key + ec_pri_key_len, ec_pub_key_len);
+      LL = ec_pub_key_len + 6;
+      break;
+
+    case ED25519:
+    case X25519:
+      RDATA[2] = KEY_SIZE_25519 + 2;
+      RDATA[3] = 0x86;
+      RDATA[4] = KEY_SIZE_25519;
+      memcpy(RDATA + 5, key + KEY_SIZE_25519, KEY_SIZE_25519);
+      LL = KEY_SIZE_25519 + 6;
+      break;
+
+    default:
+      memzero(key, sizeof(key));
+      return -1;
+    }
   }
 
   memzero(key, sizeof(key));
@@ -656,9 +729,11 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   int status = openpgp_key_get_status(SIG_KEY_PATH);
   if (status < 0) return -1;
   if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(SIG_KEY_PATH, attr);
   if (attr_len < 0) return -1;
+
   if (attr[0] == KEY_TYPE_RSA) {
     if (LC > 102) EXCEPT(SW_WRONG_LENGTH);
     rsa_key_t key;
@@ -672,32 +747,49 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     }
     LL = key.nbits / 8;
     memzero(&key, sizeof(key));
-  } else if (attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) {
-    if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
-    uint8_t key[ECC_256_PRI_KEY_SIZE];
-    if (openpgp_key_get_key(SIG_KEY_PATH, key, ECC_256_PRI_KEY_SIZE) < 0) {
+  } else {
+    EC_Algorithm algo = get_ec_algo(attr, attr_len);
+    int ec_pri_key_len = get_ec_key_length(algo);
+    uint8_t key[64]; // max possible length: ecdsa: length of the private key; eddsa: length of the key pair
+    uint8_t sig[64]; // signature buffer for ed25519
+
+    switch (algo) {
+    case ECDSA_P256R1:
+    case ECDSA_P256K1:
+    case ECDSA_P384R1:
+      if (LC != ec_pri_key_len) EXCEPT(SW_WRONG_LENGTH);
+      if (openpgp_key_get_key(SIG_KEY_PATH, key, ec_pri_key_len) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      ECC_Curve curve = ECC_SECP384R1;
+      if (algo == ECDSA_P256R1)
+        curve = ECC_SECP256R1;
+      else if (algo == ECDSA_P256K1)
+        curve = ECC_SECP256K1;
+      if (ecdsa_sign(curve, key, DATA, RDATA) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
       memzero(key, sizeof(key));
+      LL = ec_pri_key_len * 2;
+      break;
+
+    case ED25519:
+      if (openpgp_key_get_key(SIG_KEY_PATH, key, KEY_SIZE_25519 * 2) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      ed25519_sign(DATA, LC, key, key + KEY_SIZE_25519, sig);
+      memzero(key, sizeof(key));
+      memcpy(RDATA, sig, KEY_SIZE_25519 * 2);
+      LL = KEY_SIZE_25519 * 2;
+      break;
+
+    default:
       return -1;
     }
-    if (ecdsa_sign(ECC_SECP256R1, key, DATA, RDATA) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-    memzero(key, sizeof(key));
-    LL = ECC_256_PRI_KEY_SIZE * 2;
-  } else if (attr[0] == KEY_TYPE_ED25519) {
-    // if (LC != ED_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
-    uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
-    if (openpgp_key_get_key(SIG_KEY_PATH, key, ED_KEY_SIZE + ED_PUB_KEY_SIZE) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-    ed25519_sign(DATA, LC, key, key + ED_KEY_SIZE, sig);
-    memzero(key, sizeof(key));
-    memcpy(RDATA, sig, ED_KEY_SIZE * 2);
-    LL = ED_KEY_SIZE * 2;
-  } else
-    return -1;
+  }
 
   uint8_t ctr[3];
   if (read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
@@ -714,9 +806,11 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   int status = openpgp_key_get_status(DEC_KEY_PATH);
   if (status < 0) return -1;
   if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(DEC_KEY_PATH, attr);
   if (attr_len < 0) return -1;
+
   if (attr[0] == KEY_TYPE_RSA) {
     rsa_key_t key;
     if (openpgp_key_get_key(DEC_KEY_PATH, &key, sizeof(key)) < 0) {
@@ -731,35 +825,55 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
     LL = olen;
   } else if (attr[0] == KEY_TYPE_ECDH) {
+    // 7.2.11 PSO: DECIPHER
     if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) EXCEPT(SW_WRONG_DATA);
-    if (attr_len == sizeof(p256r1_attr)) {
-      if (DATA[1] != 70 || DATA[4] != 67 || DATA[6] != ECC_256_PUB_KEY_SIZE + 1 || DATA[7] != 0x04) EXCEPT(SW_WRONG_DATA);
-      uint8_t key[ECC_256_PRI_KEY_SIZE];
-      if (openpgp_key_get_key(DEC_KEY_PATH, key, ECC_256_PRI_KEY_SIZE) < 0) {
+
+    EC_Algorithm algo = get_ec_algo(attr, attr_len);
+    int ec_pri_key_len = get_ec_key_length(algo);
+    int ec_pub_key_len = ec_pri_key_len * 2;
+    uint8_t key[48]; // max possible length of the private key
+
+    switch (algo) {
+    case ECDH_P256R1:
+    case ECDH_P256K1:
+    case ECDH_P384R1:
+      if (DATA[1] != ec_pub_key_len + 6 || DATA[4] != ec_pub_key_len + 3 || DATA[6] != ec_pub_key_len + 1 ||
+          DATA[7] != 0x04)
+        EXCEPT(SW_WRONG_DATA);
+      if (openpgp_key_get_key(DEC_KEY_PATH, key, ec_pri_key_len) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
+      ECC_Curve curve = ECC_SECP384R1;
+      if (algo == ECDSA_P256R1)
+        curve = ECC_SECP256R1;
+      else if (algo == ECDSA_P256K1)
+        curve = ECC_SECP256K1;
       RDATA[0] = 0x04;
-      if (ecdh_decrypt(ECC_SECP256R1, key, DATA + 8, RDATA + 1) < 0) {
+      if (ecdh_decrypt(curve, key, DATA + 8, RDATA + 1) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
       memzero(key, sizeof(key));
-      LL = ECC_256_PUB_KEY_SIZE + 1;
-    } else if (attr_len == sizeof(cv25519_attr)) {
-      if (DATA[1] != 37 || DATA[4] != 34 || DATA[6] != ED_PUB_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
-      uint8_t key[ED_KEY_SIZE];
-      if (openpgp_key_get_key(DEC_KEY_PATH, key, ED_KEY_SIZE) < 0) {
+      LL = ec_pub_key_len + 1;
+      break;
+
+    case X25519:
+      if (DATA[1] != KEY_SIZE_25519 + 5 || DATA[4] != KEY_SIZE_25519 + 2 || DATA[6] != KEY_SIZE_25519)
+        EXCEPT(SW_WRONG_DATA);
+      if (openpgp_key_get_key(DEC_KEY_PATH, key, KEY_SIZE_25519) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
       curve25519_scalarmult(RDATA, key, DATA + 7);
       memzero(key, sizeof(key));
-      LL = ED_PUB_KEY_SIZE;
-    } else
+      LL = KEY_SIZE_25519;
+      break;
+
+    default:
       return -1;
-  } else
-    return -1;
+    }
+  }
 
   return 0;
 }
@@ -814,43 +928,41 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_ALGORITHM_ATTRIBUTES_DEC:
   case TAG_ALGORITHM_ATTRIBUTES_AUT:
     if (LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    const char *key_path;
+
+    const char *key_path = NULL;
     if (tag == TAG_ALGORITHM_ATTRIBUTES_SIG)
       key_path = SIG_KEY_PATH;
     else if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC)
       key_path = DEC_KEY_PATH;
     else
       key_path = AUT_KEY_PATH;
+
     if (DATA[0] == KEY_TYPE_RSA) {
       if (LC != sizeof(rsa_attr)) EXCEPT(SW_WRONG_DATA);
       uint16_t nbits = (DATA[1] << 8) | DATA[2];
       if (nbits != 2048 && nbits != 4096) EXCEPT(SW_WRONG_DATA);
-      if (memcmp(DATA + 2, rsa_attr + 2, 3) != 0) EXCEPT(SW_WRONG_DATA);
-      if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
-    } else if (DATA[0] == KEY_TYPE_ECDSA) {
-      if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
-      // TODO: allow p256k1
-      if (LC == sizeof(p256r1_attr)) {
-        if (memcmp(DATA + 1, p256r1_attr + 1, sizeof(p256r1_attr) - 1) != 0) EXCEPT(SW_WRONG_DATA);
-      } else
+      if (DATA[3] != 0x00 || DATA[4] != 0x20 || DATA[5] != 0x02) EXCEPT(SW_WRONG_DATA);
+    } else {
+      switch (get_ec_algo(DATA, LC)) {
+      case ECDSA_P256R1:
+      case ECDSA_P256K1:
+      case ECDSA_P384R1:
+      case ED25519:
+        if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
+        break;
+
+      case ECDH_P256R1:
+      case ECDH_P256K1:
+      case ECDH_P384R1:
+      case X25519:
+        if (tag != TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
+        break;
+
+      default:
         EXCEPT(SW_WRONG_DATA);
-      if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
-    } else if (DATA[0] == KEY_TYPE_ED25519) {
-      if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
-      if (LC != sizeof(ed25519_attr) || memcmp(DATA, ed25519_attr, sizeof(ed25519_attr)) != 0) EXCEPT(SW_WRONG_DATA);
-      if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
-    } else if (DATA[0] == KEY_TYPE_ECDH) {
-      if (tag != TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
-      // TODO: allow p256k1
-      if (LC == sizeof(p256r1_attr)) {
-        if (memcmp(DATA + 1, p256r1_attr + 1, sizeof(p256r1_attr) - 1) != 0) EXCEPT(SW_WRONG_DATA);
-      } else if (LC == sizeof(cv25519_attr)) {
-        if (memcmp(DATA + 1, cv25519_attr + 1, sizeof(cv25519_attr) - 1) != 0) EXCEPT(SW_WRONG_DATA);
-      } else
-        EXCEPT(SW_WRONG_DATA);
-      if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
-    } else
-      EXCEPT(SW_WRONG_DATA);
+      }
+    }
+    if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
     break;
 
   case TAG_PW_STATUS:
@@ -931,22 +1043,28 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   size_t length_size;
   int fail;
   const uint8_t *p = DATA;
-  // Extended Header list for RSA / ECDSA and ECDH, 4D
+  // Extended Header list, 4D
   if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
+
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
-  uint8_t off = length_size;
-  if (len + off + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
-  p += off;
+
+  if (len + length_size + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
+  p += length_size;
+
   // Control Reference Template to indicate the private key: B6, B8 or A4
   const char *key_path = get_key_path(*p);
   if (key_path == NULL) EXCEPT(SW_WRONG_DATA);
+
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(key_path, attr);
   if (attr_len < 0) return -1;
+
+  // XX 00 or XX 03 84 01 01, XX = B6 / B8 / A4
   ++p;
   if (*p != 0x00 && *p != 0x03) EXCEPT(SW_WRONG_DATA);
   p += *p + 1;
+
   // Cardholder private key template
   if (*p++ != 0x7F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
   uint16_t template_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
@@ -954,9 +1072,9 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (template_len > MAX_KEY_TEMPLATE_LENGTH) EXCEPT(SW_WRONG_DATA);
   p += length_size;
 
-  const uint8_t *data_tag = p + template_len;
-  uint8_t key[sizeof(rsa_key_t)];
-  uint16_t key_len;
+  const uint8_t *data_tag = p + template_len; // saved for tag 5F48
+  uint8_t key[sizeof(rsa_key_t)];             // rsa_key_t is larger than any ec key
+  uint16_t key_len = 0;
 
   if (attr[0] == KEY_TYPE_RSA) {
     uint16_t nbits = (attr[1] << 8) | attr[2];
@@ -1018,42 +1136,60 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += pq_len;
     memcpy(((rsa_key_t *)key)->dq, p, pq_len);
   } else {
+    EC_Algorithm algo = get_ec_algo(attr, attr_len);
+    int ec_pri_key_len = get_ec_key_length(algo);
+    key_len = ec_pri_key_len * 3;
+
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
-    key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    // the length is identical for EcDSA/EdDSA/ECDH
-    if (key_len > ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+    if (len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+    if (len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    int nLeadingZeros = ECC_256_PRI_KEY_SIZE - len;
+    int nLeadingZeros = ec_pri_key_len - len;
     memzero(key, nLeadingZeros);
-    memcpy(key + nLeadingZeros, p, key_len);
+    memcpy(key + nLeadingZeros, p, len);
 
-    if ((attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) ||
-        (attr[0] == KEY_TYPE_ECDH && attr_len == sizeof(p256r1_attr))) {
-      if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
+    ECC_Curve curve = ECC_SECP384R1;
+    switch (algo) {
+    case ECDSA_P256R1:
+    case ECDSA_P256K1:
+    case ECDSA_P384R1:
+    case ECDH_P256R1:
+    case ECDH_P256K1:
+    case ECDH_P384R1:
+      if (algo == ECDSA_P256R1 || algo == ECDH_P256R1)
+        curve = ECC_SECP256R1;
+      else if (algo == ECDSA_P256K1 || algo == ECDH_P256K1)
+        curve = ECC_SECP256K1;
+      if (!ecc_verify_private_key(curve, key)) {
         memzero(key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
-      if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) {
+      if (ecc_get_public_key(curve, key, key + ec_pri_key_len) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
-      key_len += ECC_256_PUB_KEY_SIZE;
-    } else if (attr[0] == KEY_TYPE_ED25519) {
-      ed25519_publickey(key, key + ED_KEY_SIZE);
-      key_len += ED_PUB_KEY_SIZE;
-    } else if (attr[0] == KEY_TYPE_ECDH && attr_len == sizeof(cv25519_attr)) {
+      break;
+
+    case ED25519:
+      ed25519_publickey(key, key + KEY_SIZE_25519);
+      key_len = KEY_SIZE_25519 * 2;
+      break;
+
+    case X25519:
       for (int i = 0; i < 16; ++i)
         SWAP(key[31 - i], key[i], uint8_t);
-      curve25519_scalarmult(key + ED_KEY_SIZE, key, gx);
-      key_len += ED_PUB_KEY_SIZE;
-    } else {
+      curve25519_scalarmult(key + KEY_SIZE_25519, key, gx);
+      key_len = KEY_SIZE_25519 * 2;
+      break;
+
+    default:
       memzero(key, sizeof(key));
       return -1;
     }
@@ -1081,9 +1217,11 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   int status = openpgp_key_get_status(AUT_KEY_PATH);
   if (status < 0) return -1;
   if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(AUT_KEY_PATH, attr);
   if (attr_len < 0) return -1;
+
   if (attr[0] == KEY_TYPE_RSA) {
     if (LC > 102) EXCEPT(SW_WRONG_LENGTH);
     rsa_key_t key;
@@ -1097,31 +1235,49 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     }
     LL = key.nbits / 8;
     memzero(&key, sizeof(key));
-  } else if (attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) {
-    if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
-    uint8_t key[ECC_256_PRI_KEY_SIZE];
-    if (openpgp_key_get_key(AUT_KEY_PATH, key, ECC_256_PRI_KEY_SIZE) < 0) {
+  } else {
+    EC_Algorithm algo = get_ec_algo(attr, attr_len);
+    int ec_pri_key_len = get_ec_key_length(algo);
+    uint8_t key[64]; // max possible length: ecdsa: length of the private key; eddsa: length of the key pair
+    uint8_t sig[64]; // signature buffer for ed25519
+
+    switch (algo) {
+    case ECDSA_P256R1:
+    case ECDSA_P256K1:
+    case ECDSA_P384R1:
+      if (LC != ec_pri_key_len) EXCEPT(SW_WRONG_LENGTH);
+      if (openpgp_key_get_key(AUT_KEY_PATH, key, ec_pri_key_len) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      ECC_Curve curve = ECC_SECP384R1;
+      if (algo == ECDSA_P256R1)
+        curve = ECC_SECP256R1;
+      else if (algo == ECDSA_P256K1)
+        curve = ECC_SECP256K1;
+      if (ecdsa_sign(curve, key, DATA, RDATA) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
       memzero(key, sizeof(key));
+      LL = ec_pri_key_len * 2;
+      break;
+
+    case ED25519:
+      if (openpgp_key_get_key(AUT_KEY_PATH, key, KEY_SIZE_25519 * 2) < 0) {
+        memzero(key, sizeof(key));
+        return -1;
+      }
+      ed25519_sign(DATA, LC, key, key + KEY_SIZE_25519, sig);
+      memzero(key, sizeof(key));
+      memcpy(RDATA, sig, KEY_SIZE_25519 * 2);
+      LL = KEY_SIZE_25519 * 2;
+      break;
+
+    default:
       return -1;
     }
-    if (ecdsa_sign(ECC_SECP256R1, key, DATA, RDATA) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-    memzero(key, sizeof(key));
-    LL = ECC_256_PRI_KEY_SIZE * 2;
-  } else if (attr[0] == KEY_TYPE_ED25519) {
-    uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
-    if (openpgp_key_get_key(AUT_KEY_PATH, key, ED_KEY_SIZE + ED_PUB_KEY_SIZE) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-    ed25519_sign(DATA, LC, key, key + ED_KEY_SIZE, sig);
-    memzero(key, sizeof(key));
-    memcpy(RDATA, sig, ED_KEY_SIZE * 2);
-    LL = ED_KEY_SIZE * 2;
-  } else
-    return -1;
+  }
 
   return 0;
 }
