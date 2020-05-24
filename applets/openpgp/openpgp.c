@@ -67,6 +67,15 @@ typedef enum {
   EC_ERROR = -1,
 } EC_Algorithm;
 
+static const ECC_Curve ec_algo2curve[] = {
+    [ECDSA_P256R1] = ECC_SECP256R1,
+    [ECDSA_P256K1] = ECC_SECP256K1,
+    [ECDSA_P384R1] = ECC_SECP384R1,
+    [ECDH_P256R1] = ECC_SECP256R1,
+    [ECDH_P256K1] = ECC_SECP256K1,
+    [ECDH_P384R1] = ECC_SECP384R1,
+};
+
 // clang-format off
 
 static const uint8_t rsa_attr[] = {KEY_TYPE_RSA,
@@ -763,11 +772,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(key, sizeof(key));
         return -1;
       }
-      ECC_Curve curve = ECC_SECP384R1;
-      if (algo == ECDSA_P256R1)
-        curve = ECC_SECP256R1;
-      else if (algo == ECDSA_P256K1)
-        curve = ECC_SECP256K1;
+      ECC_Curve curve = ec_algo2curve[algo];
       if (ecdsa_sign(curve, key, DATA, RDATA) < 0) {
         memzero(key, sizeof(key));
         return -1;
@@ -845,11 +850,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(key, sizeof(key));
         return -1;
       }
-      ECC_Curve curve = ECC_SECP384R1;
-      if (algo == ECDSA_P256R1)
-        curve = ECC_SECP256R1;
-      else if (algo == ECDSA_P256K1)
-        curve = ECC_SECP256K1;
+      ECC_Curve curve = ec_algo2curve[algo];
       RDATA[0] = 0x04;
       if (ecdh_decrypt(curve, key, DATA + 8, RDATA + 1) < 0) {
         memzero(key, sizeof(key));
@@ -1156,7 +1157,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(key, n_leading_zeros);
     memcpy(key + n_leading_zeros, p, len);
 
-    ECC_Curve curve = ECC_SECP384R1;
+    ECC_Curve curve = 0;
     switch (algo) {
     case ECDSA_P256R1:
     case ECDSA_P256K1:
@@ -1164,10 +1165,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     case ECDH_P256R1:
     case ECDH_P256K1:
     case ECDH_P384R1:
-      if (algo == ECDSA_P256R1 || algo == ECDH_P256R1)
-        curve = ECC_SECP256R1;
-      else if (algo == ECDSA_P256K1 || algo == ECDH_P256K1)
-        curve = ECC_SECP256K1;
+      curve = ec_algo2curve[algo];
       if (!ecc_verify_private_key(curve, key)) {
         memzero(key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
@@ -1251,11 +1249,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(key, sizeof(key));
         return -1;
       }
-      ECC_Curve curve = ECC_SECP384R1;
-      if (algo == ECDSA_P256R1)
-        curve = ECC_SECP256R1;
-      else if (algo == ECDSA_P256K1)
-        curve = ECC_SECP256K1;
+      ECC_Curve curve = ec_algo2curve[algo];
       if (ecdsa_sign(curve, key, DATA, RDATA) < 0) {
         memzero(key, sizeof(key));
         return -1;
