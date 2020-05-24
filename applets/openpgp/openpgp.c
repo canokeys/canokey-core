@@ -68,12 +68,8 @@ typedef enum {
 } EC_Algorithm;
 
 static const ECC_Curve ec_algo2curve[] = {
-    [ECDSA_P256R1] = ECC_SECP256R1,
-    [ECDSA_P256K1] = ECC_SECP256K1,
-    [ECDSA_P384R1] = ECC_SECP384R1,
-    [ECDH_P256R1] = ECC_SECP256R1,
-    [ECDH_P256K1] = ECC_SECP256K1,
-    [ECDH_P384R1] = ECC_SECP384R1,
+    [ECDSA_P256R1] = ECC_SECP256R1, [ECDSA_P256K1] = ECC_SECP256K1, [ECDSA_P384R1] = ECC_SECP384R1,
+    [ECDH_P256R1] = ECC_SECP256R1,  [ECDH_P256K1] = ECC_SECP256K1,  [ECDH_P384R1] = ECC_SECP384R1,
 };
 
 // clang-format off
@@ -943,7 +939,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
       if (LC != sizeof(rsa_attr)) EXCEPT(SW_WRONG_DATA);
       uint16_t nbits = (DATA[1] << 8) | DATA[2];
       if (nbits != 2048 && nbits != 4096) EXCEPT(SW_WRONG_DATA);
-      if (DATA[3] != 0x00 || DATA[4] != 0x20 || DATA[5] != 0x02) EXCEPT(SW_WRONG_DATA);
+      DATA[3] = 0x00;
+      DATA[4] = 0x20;
+      DATA[5] = 0x02;
     } else {
       switch (get_ec_algo(DATA, LC)) {
       case ECDSA_P256R1:
