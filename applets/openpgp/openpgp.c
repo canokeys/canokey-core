@@ -74,7 +74,7 @@ static const uint8_t rsa_attr[] = {KEY_TYPE_RSA,
                                    0x00, 0x20,  // length of exponent: 32 bit
                                    0x02};       // import using crt (Chinese Remainder Theorem)
 
-static const uint8_t ec_attr[][13] = {
+static const uint8_t ec_attr[][MAX_ATTR_LENGTH] = {
     {ECDSA_P256R1, 9, KEY_TYPE_ECDSA, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
     {ECDSA_P256K1, 6, KEY_TYPE_ECDSA, 0x2B, 0x81, 0x04, 0x00, 0x0A},
     {ECDSA_P384R1, 6, KEY_TYPE_ECDSA, 0x2B, 0x81, 0x04, 0x00, 0x22},
@@ -160,7 +160,8 @@ static int reset_sig_counter(void) {
 
 static EC_Algorithm get_ec_algo(const uint8_t *attr, int len) {
   for (int i = 0; i < 8; ++i) {
-    if (len == ec_attr[i][1] && memcmp(attr, ec_attr[i] + 2, len) == 0) return (EC_Algorithm)ec_attr[0];
+    uint8_t *r = (uint8_t *)ec_attr[i];
+    if (len == r[1] && memcmp(attr, r + 2, len) == 0) return (EC_Algorithm)r[0];
   }
 
   return EC_ERROR;
