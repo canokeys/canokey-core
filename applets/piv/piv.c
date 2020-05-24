@@ -31,6 +31,8 @@
 #define TDEA_BLOCK_SIZE 8
 #define RSA2048_N_LENGTH 256
 #define RSA2048_PQ_LENGTH 128
+#define ECC_256_PRI_KEY_SIZE 32
+#define ECC_256_PUB_KEY_SIZE 64
 
 // tags for general auth
 #define TAG_WITNESS 0x80
@@ -86,7 +88,7 @@ static int get_input_size(uint8_t alg) {
   case ALG_RSA_2048:
     return RSA2048_N_LENGTH;
   case ALG_ECC_256:
-    return ECC_KEY_SIZE;
+    return ECC_256_PRI_KEY_SIZE;
   default:
     return 0;
   }
@@ -378,7 +380,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[7] = LO(length);
       LL = length + 8;
     } else if (alg == ALG_ECC_256) {
-      uint8_t key[ECC_KEY_SIZE];
+      uint8_t key[ECC_256_PRI_KEY_SIZE];
       if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
       if (ecdsa_sign(ECC_SECP256R1, key, DATA + pos[IDX_CHALLENGE], RDATA + 4) < 0) {
         memzero(key, sizeof(key));
@@ -539,20 +541,20 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
     if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (len[IDX_EXP] != 2 * ECC_KEY_SIZE + 1) EXCEPT(SW_WRONG_DATA);
+    if (len[IDX_EXP] != 2 * ECC_256_PRI_KEY_SIZE + 1) EXCEPT(SW_WRONG_DATA);
     if (P2 == 0x9D) pin.is_validated = 0;
-    uint8_t key[ECC_KEY_SIZE];
-    if (read_file(key_path, key, 0, ECC_KEY_SIZE) < 0) return -1;
+    uint8_t key[ECC_256_PRI_KEY_SIZE];
+    if (read_file(key_path, key, 0, ECC_256_PRI_KEY_SIZE) < 0) return -1;
     if (ecdh_decrypt(ECC_SECP256R1, key, DATA + pos[IDX_EXP] + 1, RDATA + 4) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
     memzero(key, sizeof(key));
     RDATA[0] = 0x7C;
-    RDATA[1] = ECC_KEY_SIZE + 2;
+    RDATA[1] = ECC_256_PRI_KEY_SIZE + 2;
     RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = ECC_KEY_SIZE;
-    LL = ECC_KEY_SIZE + 4;
+    RDATA[3] = ECC_256_PRI_KEY_SIZE;
+    LL = ECC_256_PRI_KEY_SIZE + 4;
   }
 
   //
@@ -622,20 +624,20 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     LL = 11 + RSA2048_N_LENGTH + E_LENGTH;
     memzero(&key, sizeof(key));
   } else if (alg == ALG_ECC_256) {
-    uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
-    if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) return -1;
+    uint8_t key[ECC_256_PRI_KEY_SIZE + ECC_256_PUB_KEY_SIZE];
+    if (ecc_generate(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) return -1;
     if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
     RDATA[0] = 0x7F;
     RDATA[1] = 0x49;
-    RDATA[2] = ECC_PUB_KEY_SIZE + 3;
+    RDATA[2] = ECC_256_PUB_KEY_SIZE + 3;
     RDATA[3] = 0x86;
-    RDATA[4] = ECC_PUB_KEY_SIZE + 1;
+    RDATA[4] = ECC_256_PUB_KEY_SIZE + 1;
     RDATA[5] = 0x04;
-    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
-    LL = ECC_PUB_KEY_SIZE + 6;
+    memcpy(RDATA + 6, key + ECC_256_PRI_KEY_SIZE, ECC_256_PUB_KEY_SIZE);
+    LL = ECC_256_PUB_KEY_SIZE + 6;
     memzero(key, sizeof(key));
   } else
     EXCEPT(SW_WRONG_DATA);
@@ -730,16 +732,16 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   }
   case ALG_ECC_256: {
-    if (LC < 2 + ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+    if (LC < 2 + ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
 
-    uint8_t key[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
-    if (DATA[0] != 0x06 || DATA[1] != ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
-    memcpy(key, DATA + 2, ECC_KEY_SIZE);
+    uint8_t key[ECC_256_PRI_KEY_SIZE + ECC_256_PUB_KEY_SIZE];
+    if (DATA[0] != 0x06 || DATA[1] != ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+    memcpy(key, DATA + 2, ECC_256_PRI_KEY_SIZE);
     if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
       memzero(key, sizeof(key));
       EXCEPT(SW_WRONG_DATA);
     }
-    if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
+    if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }

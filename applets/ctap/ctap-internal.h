@@ -104,6 +104,8 @@
 
 #define KH_KEY_SIZE 32
 #define HE_KEY_SIZE 32
+#define PRI_KEY_SIZE 32
+#define PUB_KEY_SIZE 64
 #define SHARED_SECRET_SIZE 32
 #define MAX_COSE_KEY_SIZE 78
 #define MAX_PIN_SIZE 63
@@ -183,7 +185,7 @@ typedef struct {
   uint8_t uv;
   uint8_t pinAuth[PIN_AUTH_SIZE];
   size_t pinAuthLength;
-  uint8_t hmacSecretKeyAgreement[ECC_PUB_KEY_SIZE];
+  uint8_t hmacSecretKeyAgreement[PUB_KEY_SIZE];
   uint8_t hmacSecretSaltEnc[HMAC_SECRET_SALT_SIZE];
   uint8_t hmacSecretSaltAuth[HMAC_SECRET_SALT_AUTH_SIZE];
   uint8_t hmacSecretSaltLen;
@@ -192,7 +194,7 @@ typedef struct {
 typedef struct {
   uint16_t parsedParams;
   uint8_t subCommand;
-  uint8_t keyAgreement[ECC_PUB_KEY_SIZE];
+  uint8_t keyAgreement[PUB_KEY_SIZE];
   uint8_t pinAuth[PIN_AUTH_SIZE];
   uint8_t newPinEnc[MAX_PIN_SIZE + 1];
   uint8_t pinHashEnc[PIN_HASH_SIZE];

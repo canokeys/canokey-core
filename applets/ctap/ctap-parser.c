@@ -293,19 +293,19 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
 
     case COSE_KEY_LABEL_X:
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      len = ECC_KEY_SIZE;
+      len = PRI_KEY_SIZE;
       ret = cbor_value_copy_byte_string(&map, public_key, &len, NULL);
       CHECK_CBOR_RET(ret);
-      if (len != ECC_KEY_SIZE) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (len != PRI_KEY_SIZE) return CTAP2_ERR_UNHANDLED_REQUEST;
       ++parsed_keys;
       break;
 
     case COSE_KEY_LABEL_Y:
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      len = ECC_KEY_SIZE;
-      ret = cbor_value_copy_byte_string(&map, public_key + ECC_KEY_SIZE, &len, NULL);
+      len = PRI_KEY_SIZE;
+      ret = cbor_value_copy_byte_string(&map, public_key + PRI_KEY_SIZE, &len, NULL);
       CHECK_CBOR_RET(ret);
-      if (len != ECC_KEY_SIZE) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (len != PRI_KEY_SIZE) return CTAP2_ERR_UNHANDLED_REQUEST;
       ++parsed_keys;
       break;
 

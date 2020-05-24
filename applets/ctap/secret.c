@@ -7,7 +7,7 @@
 #include <rand.h>
 
 static int read_pri_key(uint8_t *pri_key) {
-  int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, ECC_KEY_SIZE);
+  int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
   if (ret < 0) return ret;
   return 0;
 }

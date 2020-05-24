@@ -26,7 +26,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)RDATA;
   CredentialId kh;
   uint8_t digest[SHA256_DIGEST_LENGTH];
-  uint8_t pubkey[ECC_PUB_KEY_SIZE];
+  uint8_t pubkey[PUB_KEY_SIZE];
 
   memcpy(kh.rpIdHash, req->appId, U2F_APPID_SIZE);
   int err = generate_key_handle(&kh, pubkey);
@@ -43,7 +43,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   resp->registerId = U2F_REGISTER_ID;
   // PUBLIC KEY (65)
   resp->pubKey.pointFormat = U2F_POINT_UNCOMPRESSED;
-  memcpy(resp->pubKey.x, pubkey, ECC_PUB_KEY_SIZE);
+  memcpy(resp->pubKey.x, pubkey, PUB_KEY_SIZE);
   // KEY HANDLE LENGTH (1)
   resp->keyHandleLen = sizeof(CredentialId);
   // KEY HANDLE (128)
@@ -66,7 +66,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
   CTAP_authData auth_data;
   size_t len;
-  uint8_t priv_key[ECC_KEY_SIZE];
+  uint8_t priv_key[PRI_KEY_SIZE];
 
   if (LC != sizeof(U2F_AUTHENTICATE_REQ)) EXCEPT(SW_WRONG_LENGTH);
   if (req->keyHandleLen != sizeof(CredentialId)) EXCEPT(SW_WRONG_LENGTH);

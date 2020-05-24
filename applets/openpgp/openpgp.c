@@ -53,6 +53,9 @@
 #define KEY_TYPE_ECDSA 0x13
 #define KEY_TYPE_ED25519 0x16
 
+#define ECC_256_PRI_KEY_SIZE 32
+#define ECC_256_PUB_KEY_SIZE 64
+
 // clang-format off
 
 /**
@@ -558,8 +561,8 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
         return -1;
       }
     } else if (attr_len == sizeof(p256r1_attr)) {
-      key_len = ECC_KEY_SIZE + ECC_PUB_KEY_SIZE;
-      if (ecc_generate(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
+      key_len = ECC_256_PRI_KEY_SIZE + ECC_256_PUB_KEY_SIZE;
+      if (ecc_generate(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -620,18 +623,18 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     memcpy(RDATA + 11 + n_len, ((rsa_key_t *)key)->e, E_LENGTH);
     LL = 11 + n_len + E_LENGTH;
   } else if (attr_len == sizeof(p256r1_attr)) {
-    RDATA[2] = ECC_PUB_KEY_SIZE + 3;
+    RDATA[2] = ECC_256_PUB_KEY_SIZE + 3;
     RDATA[3] = 0x86;
-    RDATA[4] = ECC_PUB_KEY_SIZE + 1;
+    RDATA[4] = ECC_256_PUB_KEY_SIZE + 1;
     RDATA[5] = 0x04;
-    memcpy(RDATA + 6, key + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
-    LL = ECC_PUB_KEY_SIZE + 6;
+    memcpy(RDATA + 6, key + ECC_256_PRI_KEY_SIZE, ECC_256_PUB_KEY_SIZE);
+    LL = ECC_256_PUB_KEY_SIZE + 6;
   } else if (attr_len == sizeof(ed25519_attr) || attr_len == sizeof(cv25519_attr)) {
     RDATA[2] = ED_PUB_KEY_SIZE + 2;
     RDATA[3] = 0x86;
     RDATA[4] = ED_PUB_KEY_SIZE;
     memcpy(RDATA + 5, key + ED_KEY_SIZE, ED_PUB_KEY_SIZE);
-    LL = ECC_PUB_KEY_SIZE + 6;
+    LL = ECC_256_PUB_KEY_SIZE + 6;
   } else {
     memzero(key, sizeof(key));
     return -1;
@@ -671,8 +674,8 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
   } else if (attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) {
     if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
-    uint8_t key[ECC_KEY_SIZE];
-    if (openpgp_key_get_key(SIG_KEY_PATH, key, ECC_KEY_SIZE) < 0) {
+    uint8_t key[ECC_256_PRI_KEY_SIZE];
+    if (openpgp_key_get_key(SIG_KEY_PATH, key, ECC_256_PRI_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
@@ -681,7 +684,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
     memzero(key, sizeof(key));
-    LL = ECC_KEY_SIZE * 2;
+    LL = ECC_256_PRI_KEY_SIZE * 2;
   } else if (attr[0] == KEY_TYPE_ED25519) {
     // if (LC != ED_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
     uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
@@ -730,9 +733,9 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   } else if (attr[0] == KEY_TYPE_ECDH) {
     if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) EXCEPT(SW_WRONG_DATA);
     if (attr_len == sizeof(p256r1_attr)) {
-      if (DATA[1] != 70 || DATA[4] != 67 || DATA[6] != ECC_PUB_KEY_SIZE + 1 || DATA[7] != 0x04) EXCEPT(SW_WRONG_DATA);
-      uint8_t key[ECC_KEY_SIZE];
-      if (openpgp_key_get_key(DEC_KEY_PATH, key, ECC_KEY_SIZE) < 0) {
+      if (DATA[1] != 70 || DATA[4] != 67 || DATA[6] != ECC_256_PUB_KEY_SIZE + 1 || DATA[7] != 0x04) EXCEPT(SW_WRONG_DATA);
+      uint8_t key[ECC_256_PRI_KEY_SIZE];
+      if (openpgp_key_get_key(DEC_KEY_PATH, key, ECC_256_PRI_KEY_SIZE) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
@@ -742,7 +745,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         return -1;
       }
       memzero(key, sizeof(key));
-      LL = ECC_PUB_KEY_SIZE + 1;
+      LL = ECC_256_PUB_KEY_SIZE + 1;
     } else if (attr_len == sizeof(cv25519_attr)) {
       if (DATA[1] != 37 || DATA[4] != 34 || DATA[6] != ED_PUB_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
       uint8_t key[ED_KEY_SIZE];
@@ -1019,15 +1022,15 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     // the length is identical for EcDSA/EdDSA/ECDH
-    if (key_len > ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+    if (key_len > ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > ECC_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
+    if (len > ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    int nLeadingZeros = ECC_KEY_SIZE - len;
+    int nLeadingZeros = ECC_256_PRI_KEY_SIZE - len;
     memzero(key, nLeadingZeros);
     memcpy(key + nLeadingZeros, p, key_len);
 
@@ -1037,11 +1040,11 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
-      if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_KEY_SIZE) < 0) {
+      if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
-      key_len += ECC_PUB_KEY_SIZE;
+      key_len += ECC_256_PUB_KEY_SIZE;
     } else if (attr[0] == KEY_TYPE_ED25519) {
       ed25519_publickey(key, key + ED_KEY_SIZE);
       key_len += ED_PUB_KEY_SIZE;
@@ -1096,8 +1099,8 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
   } else if (attr[0] == KEY_TYPE_ECDSA && attr_len == sizeof(p256r1_attr)) {
     if (LC != 32) EXCEPT(SW_WRONG_LENGTH);
-    uint8_t key[ECC_KEY_SIZE];
-    if (openpgp_key_get_key(AUT_KEY_PATH, key, ECC_KEY_SIZE) < 0) {
+    uint8_t key[ECC_256_PRI_KEY_SIZE];
+    if (openpgp_key_get_key(AUT_KEY_PATH, key, ECC_256_PRI_KEY_SIZE) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
@@ -1106,7 +1109,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
     memzero(key, sizeof(key));
-    LL = ECC_KEY_SIZE * 2;
+    LL = ECC_256_PRI_KEY_SIZE * 2;
   } else if (attr[0] == KEY_TYPE_ED25519) {
     uint8_t key[ED_KEY_SIZE + ED_PUB_KEY_SIZE], sig[ED_KEY_SIZE * 2];
     if (openpgp_key_get_key(AUT_KEY_PATH, key, ED_KEY_SIZE + ED_PUB_KEY_SIZE) < 0) {

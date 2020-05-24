@@ -59,7 +59,7 @@
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin related
-static uint8_t key_agreement_keypair[ECC_KEY_SIZE + ECC_PUB_KEY_SIZE];
+static uint8_t key_agreement_keypair[PRI_KEY_SIZE + PUB_KEY_SIZE];
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter;
 // assertion related
@@ -71,7 +71,7 @@ uint8_t ctap_install(uint8_t reset) {
   credential_idx = 0;
   last_cmd = 0xff;
   random_buffer(pin_token, sizeof(pin_token));
-  if (ecc_generate(ECC_SECP256R1, key_agreement_keypair, key_agreement_keypair + ECC_KEY_SIZE) < 0)
+  if (ecc_generate(ECC_SECP256R1, key_agreement_keypair, key_agreement_keypair + PRI_KEY_SIZE) < 0)
     return CTAP2_ERR_UNHANDLED_REQUEST;
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
@@ -88,7 +88,7 @@ uint8_t ctap_install(uint8_t reset) {
 }
 
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC != ECC_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  if (LC != PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
   return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
 }
 
@@ -143,7 +143,7 @@ static void build_cose_key(uint8_t *data, uint8_t ecdh) {
 static uint8_t get_shared_secret(uint8_t *pub_key) {
   int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_keypair, pub_key, pub_key);
   if (ret < 0) return 1;
-  sha256_raw(pub_key, ECC_KEY_SIZE, pub_key);
+  sha256_raw(pub_key, PRI_KEY_SIZE, pub_key);
   return 0;
 }
 
@@ -208,7 +208,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   uint8_t data_buf[sizeof(CTAP_authData)];
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
-      uint8_t pri_key[ECC_KEY_SIZE];
+      uint8_t pri_key[PRI_KEY_SIZE];
       parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
       CredentialId *kh = (CredentialId *)data_buf;
       // compare rpId first
@@ -370,7 +370,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 #endif
   }
 
-  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[ECC_KEY_SIZE];
+  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[PRI_KEY_SIZE];
   CTAP_residentKey rk;
   if (ga.allowListSize > 0) {
     size_t i;
@@ -667,7 +667,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = cbor_encoder_create_map(&map, &key_map, 0);
     CHECK_CBOR_RET(ret);
     ptr = key_map.data.ptr - 1;
-    memcpy(ptr, key_agreement_keypair + ECC_KEY_SIZE, ECC_PUB_KEY_SIZE);
+    memcpy(ptr, key_agreement_keypair + PRI_KEY_SIZE, PUB_KEY_SIZE);
     build_cose_key(ptr, 1);
     key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);
