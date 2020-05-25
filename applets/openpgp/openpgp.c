@@ -625,13 +625,13 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
       case X25519:
         key_len = KEY_SIZE_25519 * 2;
         random_buffer(key, ec_pri_key_len);
-        key[0] &= 248;
-        key[31] &= 127;
-        key[31] |= 64;
-        if (algo == ED25519)
+        if (algo == ED25519) {
+          key[0] &= 248;
+          key[31] &= 127;
+          key[31] |= 64;
           ed25519_publickey(key, key + ec_pri_key_len);
-        else {
-          swap_big_number_endian(key);
+        } else {
+          curve25519_key_from_random(key);
           // public key and secret key use big endian
           x25519(key + ec_pri_key_len, key, gx);
         }
