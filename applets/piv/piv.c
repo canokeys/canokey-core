@@ -388,7 +388,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       }
       memzero(key, sizeof(key));
 
-      int sig_len = ecdsa_sig2ansi(RDATA + 4, RDATA + 4);
+      int sig_len = ecdsa_sig2ansi(ECC_256_PRI_KEY_SIZE, RDATA + 4, RDATA + 4);
       RDATA[0] = 0x7C;
       RDATA[1] = sig_len + 2;
       RDATA[2] = TAG_RESPONSE;

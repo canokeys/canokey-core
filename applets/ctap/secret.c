@@ -69,12 +69,12 @@ size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   if (ret < 0) return ret;
   ecdsa_sign(ECC_SECP256R1, key, digest, sig);
   memzero(key, sizeof(key));
-  return ecdsa_sig2ansi(sig, sig);
+  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
 size_t sign_with_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
   ecdsa_sign(ECC_SECP256R1, key, digest, sig);
-  return ecdsa_sig2ansi(sig, sig);
+  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
