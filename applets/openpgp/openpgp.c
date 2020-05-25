@@ -1184,6 +1184,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     case X25519:
       x25519(key + KEY_SIZE_25519, key, gx);
       swap_big_number_endian(key + KEY_SIZE_25519);
+      swap_big_number_endian(key);
       key_len = KEY_SIZE_25519 * 2;
       break;
 
