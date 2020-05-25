@@ -633,6 +633,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
         else {
           swap_big_number_endian(key);
           x25519(key + ec_pri_key_len, key, gx);
+          swap_big_number_endian(key);
           swap_big_number_endian(key + ec_pri_key_len);
         }
         break;
