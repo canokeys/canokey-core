@@ -237,6 +237,12 @@ static void test_regression_fuzz(void **state) {
     uint8_t data[] = {OATH_TAG_NAME};
     test_helper(data, sizeof(data), OATH_INS_SET_DEFAULT, SW_WRONG_LENGTH);
   }
+
+  if (1) {
+    // put with empty key tag
+    uint8_t data[] = {OATH_TAG_NAME, 0x01, 0x00, OATH_TAG_KEY, 3};
+    test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_LENGTH);
+  }
 }
 
 static void test_put_long_key(void **state) {
