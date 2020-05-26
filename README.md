@@ -41,6 +41,13 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
       * A hardware timer with IRQ is required
 
+  If you need NFC, you also need to implement the following functions:
+  
+  * `void fm_nss_low(void);`
+  * `void fm_nss_high(void);`
+  * `void fm_transmit(uint8_t *buf, uint8_t len);`
+  * `void fm_receive(uint8_t *buf, uint8_t len);`
+
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
 
 3. You need to configure the littlefs properly.
@@ -49,9 +56,9 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
    Or instead, you may implement the cryptography algorithms by yourself.
 
-5. You should call the `device_loop` in the main loop, and the `device_update_led` in a periodic interrupt. 
+5. You should call the `device_loop` or `nfc_loop` in the main loop, and the `device_update_led` in a periodic interrupt. 
 
-6. You may call the `set_touch_result` to report touch sensing result.
+6. You should call the `set_touch_result` to report touch sensing result, and `set_nfc_state` to report NFC state.
 
 
 ## Fuzz testing
