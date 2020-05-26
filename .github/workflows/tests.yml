@@ -243,7 +243,7 @@ jobs:
         GPGSign
         Addcardkey 3 # generate Authentication key on card
         ChangeUsage
-        GPGAuth
+        # GPGAuth # ssh does not support secp256k1
         echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
         gpgconf --kill gpg-agent # restart agent to clear cached info
         echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
