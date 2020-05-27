@@ -28,11 +28,14 @@
 #define ALG_TDEA_3KEY 0x03
 #define ALG_RSA_2048 0x07
 #define ALG_ECC_256 0x11
+#define ALG_ECC_384 0x14
 #define TDEA_BLOCK_SIZE 8
 #define RSA2048_N_LENGTH 256
 #define RSA2048_PQ_LENGTH 128
 #define ECC_256_PRI_KEY_SIZE 32
 #define ECC_256_PUB_KEY_SIZE 64
+#define ECC_384_PRI_KEY_SIZE 48
+#define ECC_384_PUB_KEY_SIZE 96
 
 // tags for general auth
 #define TAG_WITNESS 0x80
@@ -89,6 +92,8 @@ static int get_input_size(uint8_t alg) {
     return RSA2048_N_LENGTH;
   case ALG_ECC_256:
     return ECC_256_PRI_KEY_SIZE;
+  case ALG_ECC_384:
+    return ECC_384_PRI_KEY_SIZE;
   default:
     return 0;
   }
@@ -379,16 +384,20 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[6] = HI(length);
       RDATA[7] = LO(length);
       LL = length + 8;
-    } else if (alg == ALG_ECC_256) {
-      uint8_t key[ECC_256_PRI_KEY_SIZE];
+    } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
+      size_t key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
+      ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
+      uint8_t key[key_len];
+
       if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
-      if (ecdsa_sign(ECC_SECP256R1, key, DATA + pos[IDX_CHALLENGE], RDATA + 4) < 0) {
+
+      if (ecdsa_sign(curve, key, DATA + pos[IDX_CHALLENGE], RDATA + 4) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
       memzero(key, sizeof(key));
 
-      int sig_len = ecdsa_sig2ansi(ECC_256_PRI_KEY_SIZE, RDATA + 4, RDATA + 4);
+      int sig_len = ecdsa_sig2ansi(key_len, RDATA + 4, RDATA + 4);
       RDATA[0] = 0x7C;
       RDATA[1] = sig_len + 2;
       RDATA[2] = TAG_RESPONSE;
@@ -623,21 +632,25 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(RDATA + 11 + RSA2048_N_LENGTH, key.e, E_LENGTH);
     LL = 11 + RSA2048_N_LENGTH + E_LENGTH;
     memzero(&key, sizeof(key));
-  } else if (alg == ALG_ECC_256) {
-    uint8_t key[ECC_256_PRI_KEY_SIZE + ECC_256_PUB_KEY_SIZE];
-    if (ecc_generate(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) return -1;
+  } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
+    size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
+    size_t pub_key_len = pri_key_len * 2;
+    ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
+    uint8_t key[pri_key_len + pub_key_len];
+
+    if (ecc_generate(curve, key, key + pri_key_len) < 0) return -1;
     if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
     RDATA[0] = 0x7F;
     RDATA[1] = 0x49;
-    RDATA[2] = ECC_256_PUB_KEY_SIZE + 3;
+    RDATA[2] = pub_key_len + 3;
     RDATA[3] = 0x86;
-    RDATA[4] = ECC_256_PUB_KEY_SIZE + 1;
+    RDATA[4] = pub_key_len + 1;
     RDATA[5] = 0x04;
-    memcpy(RDATA + 6, key + ECC_256_PRI_KEY_SIZE, ECC_256_PUB_KEY_SIZE);
-    LL = ECC_256_PUB_KEY_SIZE + 6;
+    memcpy(RDATA + 6, key + pri_key_len, pub_key_len);
+    LL = pub_key_len + 6;
     memzero(key, sizeof(key));
   } else
     EXCEPT(SW_WRONG_DATA);
@@ -671,6 +684,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
   uint8_t alg = P1;
+
   switch (alg) {
   case ALG_RSA_2048: {
     if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
@@ -731,27 +745,39 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
     break;
   }
-  case ALG_ECC_256: {
-    if (LC < 2 + ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
 
-    uint8_t key[ECC_256_PRI_KEY_SIZE + ECC_256_PUB_KEY_SIZE];
-    if (DATA[0] != 0x06 || DATA[1] != ECC_256_PRI_KEY_SIZE) EXCEPT(SW_WRONG_DATA);
-    memcpy(key, DATA + 2, ECC_256_PRI_KEY_SIZE);
-    if (!ecc_verify_private_key(ECC_SECP256R1, key)) {
+  case ALG_ECC_256:
+  case ALG_ECC_384: {
+    size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
+    size_t pub_key_len = pri_key_len * 2;
+    ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
+    if (LC < 2 + pri_key_len) EXCEPT(SW_WRONG_LENGTH);
+
+    uint8_t key[pri_key_len + pub_key_len];
+
+    if (DATA[0] != 0x06 || DATA[1] != pri_key_len) EXCEPT(SW_WRONG_DATA);
+
+    memcpy(key, DATA + 2, pri_key_len);
+
+    if (!ecc_verify_private_key(curve, key)) {
       memzero(key, sizeof(key));
       EXCEPT(SW_WRONG_DATA);
     }
-    if (ecc_get_public_key(ECC_SECP256R1, key, key + ECC_256_PRI_KEY_SIZE) < 0) {
+
+    if (ecc_get_public_key(curve, key, key + pri_key_len) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
+
     if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
+
     memzero(key, sizeof(key));
     break;
   }
+
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
