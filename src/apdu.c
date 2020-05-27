@@ -8,6 +8,7 @@
 #include <string.h>
 
 volatile uint32_t apdu_lock;
+uint8_t global_buffer[APDU_BUFFER_SIZE];
 
 enum APPLET {
   APPLET_NULL,
@@ -39,14 +40,11 @@ static const uint8_t AID_Size[] = {
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
 };
 
-static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
-
 static CAPDU_CHAINING capdu_chaining = {
-    .max_size = sizeof(chaining_buffer),
-    .capdu.data = chaining_buffer,
+    .capdu.data = global_buffer,
 };
 static RAPDU_CHAINING rapdu_chaining = {
-    .rapdu.data = chaining_buffer,
+    .rapdu.data = global_buffer,
 };
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
@@ -108,7 +106,7 @@ restart:
     goto restart;
   }
   ex->in_chaining = 1;
-  if (ex->capdu.lc + sh->lc > ex->max_size) return APDU_CHAINING_OVERFLOW;
+  if (ex->capdu.lc + sh->lc > APDU_BUFFER_SIZE) return APDU_CHAINING_OVERFLOW;
   memcpy(ex->capdu.data + ex->capdu.lc, sh->data, sh->lc);
   ex->capdu.lc += sh->lc;
 

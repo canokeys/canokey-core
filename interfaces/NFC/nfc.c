@@ -7,7 +7,7 @@
 static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
-static uint8_t apdu_buffer[APDU_BUFFER_SIZE], inf_sending;
+static uint8_t inf_sending;
 static uint16_t apdu_buffer_rx_size, apdu_buffer_tx_size;
 static uint16_t apdu_buffer_sent, last_sent;
 static CAPDU apdu_cmd;
@@ -21,8 +21,8 @@ void nfc_init(void) {
   inf_sending = 0;
   state_spinlock = 0;
   next_state = TO_RECEIVE;
-  apdu_cmd.data = apdu_buffer;
-  apdu_resp.data = apdu_buffer;
+  apdu_cmd.data = global_buffer;
+  apdu_resp.data = global_buffer;
   fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
 }
 
@@ -39,8 +39,7 @@ static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   if (len > 29) return;
 
   tx_frame_buf[0] = prologue;
-  if (data != NULL)
-    memcpy(tx_frame_buf + 1, data, len);
+  if (data != NULL) memcpy(tx_frame_buf + 1, data, len);
 
   DBG_MSG("TX: ");
   PRINT_HEX(tx_frame_buf, len + 1);
@@ -74,7 +73,7 @@ static void send_apdu_buffer(uint8_t resend) {
   if (last_sent > 29) last_sent = 29;
   uint8_t prologue = block_number | 0x02;
   if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent) prologue |= PCB_I_CHAINING;
-  nfc_send_frame(prologue, apdu_buffer + apdu_buffer_sent, last_sent);
+  nfc_send_frame(prologue, global_buffer + apdu_buffer_sent, last_sent);
   apdu_buffer_sent += last_sent;
   if (apdu_buffer_tx_size == apdu_buffer_sent) inf_sending = 0;
 }
@@ -97,7 +96,7 @@ void nfc_loop(void) {
     block_number ^= 1;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
-      memcpy(apdu_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
+      memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
       if (apdu_buffer_rx_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
         nfc_error_handler(-3);
         return;
@@ -105,7 +104,7 @@ void nfc_loop(void) {
       apdu_buffer_rx_size += rx_frame_size - 3;
       nfc_send_frame(R_ACK | block_number, NULL, 0);
     } else {
-      memcpy(apdu_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
+      memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
       if (apdu_buffer_rx_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
         nfc_error_handler(-4);
         return;
@@ -115,7 +114,7 @@ void nfc_loop(void) {
       CAPDU *capdu = &apdu_cmd;
       RAPDU *rapdu = &apdu_resp;
 
-      if (build_capdu(&apdu_cmd, apdu_buffer, apdu_buffer_rx_size) < 0) {
+      if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_rx_size) < 0) {
         LL = 0;
         SW = SW_CHECKING_ERROR;
       } else {
@@ -125,8 +124,8 @@ void nfc_loop(void) {
       }
 
       apdu_buffer_tx_size = LL + 2;
-      apdu_buffer[LL] = HI(SW);
-      apdu_buffer[LL + 1] = LO(SW);
+      global_buffer[LL] = HI(SW);
+      global_buffer[LL + 1] = LO(SW);
 
       apdu_buffer_rx_size = 0;
       apdu_buffer_sent = 0;

@@ -12,7 +12,7 @@ static void test_input_chaining(void **state) {
   uint8_t c_buf[1024], total_buf[2048];
   uint8_t data[] = {0x74, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
   CAPDU C = {.data = c_buf};
-  CAPDU_CHAINING CC = {.capdu.data = total_buf, .max_size = 2048, .in_chaining = 0};
+  CAPDU_CHAINING CC = {.capdu.data = total_buf, .in_chaining = 0};
 
   // test no chaining
   C.cla = 0x80;

@@ -15,7 +15,7 @@ enum {
   WEBUSB_OVERFLOW = 2,
 };
 
-static uint8_t state, apdu_buffer[APDU_BUFFER_SIZE];
+static uint8_t state;
 static uint16_t apdu_buffer_size;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
@@ -24,8 +24,8 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
 
   state = STATE_IDLE;
-  apdu_cmd.data = apdu_buffer;
-  apdu_resp.data = apdu_buffer;
+  apdu_cmd.data = global_buffer;
+  apdu_resp.data = global_buffer;
 
   return USBD_OK;
 }
@@ -46,14 +46,14 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       USBD_CtlSendData(pdev, &ret, 1, WEBUSB_EP0_SENDER);
       return USBD_OK;
     }
-    USBD_CtlPrepareRx(pdev, apdu_buffer, req->wLength);
+    USBD_CtlPrepareRx(pdev, global_buffer, req->wLength);
     apdu_buffer_size = req->wLength;
     break;
 
   case WEBUSB_REQ_RESP:
     if (state == STATE_SENDING_RESP) {
       uint16_t len = MIN(apdu_buffer_size, req->wLength);
-      USBD_CtlSendData(pdev, apdu_buffer, len, WEBUSB_EP0_SENDER);
+      USBD_CtlSendData(pdev, global_buffer, len, WEBUSB_EP0_SENDER);
       state = STATE_SENT_RESP;
     } else {
       USBD_CtlError(pdev, req);
@@ -77,12 +77,12 @@ void WebUSB_Loop(void) {
   if (state != STATE_PROCESS) return;
 
   DBG_MSG("C: ");
-  PRINT_HEX(apdu_buffer, apdu_buffer_size);
+  PRINT_HEX(global_buffer, apdu_buffer_size);
 
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
-  if (build_capdu(&apdu_cmd, apdu_buffer, apdu_buffer_size) < 0) {
+  if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_size) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_CHECKING_ERROR;
@@ -91,10 +91,10 @@ void WebUSB_Loop(void) {
   }
 
   apdu_buffer_size = LL + 2;
-  apdu_buffer[LL] = HI(SW);
-  apdu_buffer[LL + 1] = LO(SW);
+  global_buffer[LL] = HI(SW);
+  global_buffer[LL + 1] = LO(SW);
   DBG_MSG("R: ");
-  PRINT_HEX(apdu_buffer, apdu_buffer_size);
+  PRINT_HEX(global_buffer, apdu_buffer_size);
   state = STATE_SENDING_RESP;
   device_spinlock_unlock(&apdu_lock);
 }
