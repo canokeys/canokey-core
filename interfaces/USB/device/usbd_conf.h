@@ -2,7 +2,7 @@
 #define __USBD_CONF__H__
 
 #if !defined(DEVICE_CONFIG_FILE)
-#error "DEVICE_CONFIG_FILE should be provided"
+#include "device-config-default.h"
 #else
 #include DEVICE_CONFIG_FILE
 #endif
