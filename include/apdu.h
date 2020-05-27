@@ -66,7 +66,6 @@ typedef struct {
 
 typedef struct {
   CAPDU capdu;
-  uint16_t max_size;
   uint8_t in_chaining;
 } CAPDU_CHAINING;
 
@@ -76,6 +75,7 @@ typedef struct {
 } RAPDU_CHAINING;
 
 extern volatile uint32_t apdu_lock;
+extern uint8_t global_buffer[APDU_BUFFER_SIZE];
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
