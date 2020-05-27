@@ -8,7 +8,6 @@
 #include <string.h>
 
 volatile uint32_t apdu_lock;
-volatile uint8_t apdu_busy;
 
 enum APPLET {
   APPLET_NULL,

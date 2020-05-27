@@ -91,12 +91,10 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_POWERSELECT;
   }
 
-  if (device_spinlock_lock(&apdu_lock, false) != 0 || apdu_busy) {
+  if (device_spinlock_lock(&apdu_lock, false) != 0) {
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
     return SLOTERROR_BAD_GUARDTIME;
   }
-  apdu_busy = 1;
-  device_spinlock_unlock(&apdu_lock);
 
   applet_poweroff();
   memcpy(bulkin_data.abData, atr_ccid, sizeof(atr_ccid));
@@ -116,7 +114,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   if (error != 0) return error;
 
   applet_poweroff();
-  apdu_busy = 0;
+  device_spinlock_unlock(&apdu_lock);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }

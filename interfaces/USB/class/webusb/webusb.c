@@ -9,6 +9,12 @@ enum {
   STATE_SENT_RESP = 2,
 };
 
+enum {
+  WEBUSB_OK = 0,
+  WEBUSB_BUSY = 1,
+  WEBUSB_OVERFLOW = 2,
+};
+
 static uint8_t state, apdu_buffer[APDU_BUFFER_SIZE];
 static uint16_t apdu_buffer_size;
 static CAPDU apdu_cmd;
@@ -25,19 +31,20 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 }
 
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
+  uint8_t ret = WEBUSB_OK;
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
-    if (device_spinlock_lock(&apdu_lock, false) != 0 || apdu_busy) {
+    if (device_spinlock_lock(&apdu_lock, false) != 0) {
       ERR_MSG("Busy\n");
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
+      ret = WEBUSB_BUSY;
+      USBD_CtlSendData(pdev, &ret, 1, WEBUSB_EP0_SENDER);
+      return USBD_OK;
     }
-    apdu_busy = 1;
-    device_spinlock_unlock(&apdu_lock);
     if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
+      ret = WEBUSB_OVERFLOW;
+      USBD_CtlSendData(pdev, &ret, 1, WEBUSB_EP0_SENDER);
+      return USBD_OK;
     }
     USBD_CtlPrepareRx(pdev, apdu_buffer, req->wLength);
     apdu_buffer_size = req->wLength;
@@ -89,7 +96,7 @@ void WebUSB_Loop(void) {
   DBG_MSG("R: ");
   PRINT_HEX(apdu_buffer, apdu_buffer_size);
   state = STATE_SENDING_RESP;
-  apdu_busy = 0;
+  device_spinlock_unlock(&apdu_lock);
 }
 
 uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {

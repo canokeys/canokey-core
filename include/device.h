@@ -12,9 +12,29 @@
 #define USER_PRESENCE_TIMEOUT 2
 
 // functions should be implemented by device
+/**
+ * Delay processing for specific milliseconds
+ *
+ * @param ms Time to delay
+ */
 void device_delay(int ms);
 uint32_t device_get_tick(void);
+
+/**
+ * Get a spinlock.
+ *
+ * @param lock      The lock handler, which should be pointed to a uint32_t variable.
+ * @param blocking  If we should wait the lock to be released.
+ *
+ * @return 0 for locking successfully, -1 for failure.
+ */
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);
+
+/**
+ * Unlock the specific handler.
+ *
+ * @param lock  The lock handler.
+ */
 void device_spinlock_unlock(volatile uint32_t *lock);
 void led_on(void);
 void led_off(void);
