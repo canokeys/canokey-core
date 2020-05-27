@@ -75,6 +75,9 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
+extern volatile uint32_t apdu_lock;
+extern volatile uint8_t apdu_busy;
+
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);

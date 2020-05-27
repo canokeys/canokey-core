@@ -7,6 +7,9 @@
 #include <piv.h>
 #include <string.h>
 
+volatile uint32_t apdu_lock;
+volatile uint8_t apdu_busy;
+
 enum APPLET {
   APPLET_NULL,
   APPLET_PIV,
@@ -15,7 +18,7 @@ enum APPLET {
   APPLET_ADMIN,
   APPLET_OPENPGP,
   APPLET_ENUM_END,
-};
+} current_applet;
 
 static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
@@ -46,8 +49,6 @@ static CAPDU_CHAINING capdu_chaining = {
 static RAPDU_CHAINING rapdu_chaining = {
     .rapdu.data = chaining_buffer,
 };
-
-static enum APPLET current_applet;
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
   if (len < 4) return -1;
@@ -138,22 +139,10 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 }
 
 void applet_poweroff(void) {
-  switch (current_applet) {
-  case APPLET_PIV:
-    piv_poweroff();
-    break;
-  case APPLET_OATH:
-    oath_poweroff();
-    break;
-  case APPLET_ADMIN:
-    admin_poweroff();
-    break;
-  case APPLET_OPENPGP:
-    openpgp_poweroff();
-    break;
-  default:
-    break;
-  }
+  piv_poweroff();
+  oath_poweroff();
+  admin_poweroff();
+  openpgp_poweroff();
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {

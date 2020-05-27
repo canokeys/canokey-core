@@ -1,4 +1,5 @@
 #include <apdu.h>
+#include <device.h>
 #include <webusb.h>
 
 enum {
@@ -26,6 +27,13 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
+    if (device_spinlock_lock(&apdu_lock, false) != 0 || apdu_busy) {
+      ERR_MSG("Busy\n");
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
+    }
+    apdu_busy = 1;
+    device_spinlock_unlock(&apdu_lock);
     if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
       USBD_CtlError(pdev, req);
@@ -81,6 +89,7 @@ void WebUSB_Loop(void) {
   DBG_MSG("R: ");
   PRINT_HEX(apdu_buffer, apdu_buffer_size);
   state = STATE_SENDING_RESP;
+  apdu_busy = 0;
 }
 
 uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
