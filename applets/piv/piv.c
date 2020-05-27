@@ -550,20 +550,22 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
     if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (len[IDX_EXP] != 2 * ECC_256_PRI_KEY_SIZE + 1) EXCEPT(SW_WRONG_DATA);
+    uint8_t key[ECC_384_PRI_KEY_SIZE];
+    int pri_key_len = read_file(key_path, key, 0, ECC_384_PRI_KEY_SIZE);
+    if (pri_key_len < 0) return -1;
+    if (len[IDX_EXP] != 2 * pri_key_len + 1) EXCEPT(SW_WRONG_DATA);
     if (P2 == 0x9D) pin.is_validated = 0;
-    uint8_t key[ECC_256_PRI_KEY_SIZE];
-    if (read_file(key_path, key, 0, ECC_256_PRI_KEY_SIZE) < 0) return -1;
-    if (ecdh_decrypt(ECC_SECP256R1, key, DATA + pos[IDX_EXP] + 1, RDATA + 4) < 0) {
+    ECC_Curve curve = pri_key_len == ECC_256_PRI_KEY_SIZE ? ECC_SECP256R1 : ECC_SECP384R1;
+    if (ecdh_decrypt(curve, key, DATA + pos[IDX_EXP] + 1, RDATA + 4) < 0) {
       memzero(key, sizeof(key));
       return -1;
     }
     memzero(key, sizeof(key));
     RDATA[0] = 0x7C;
-    RDATA[1] = ECC_256_PRI_KEY_SIZE + 2;
+    RDATA[1] = pri_key_len + 2;
     RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = ECC_256_PRI_KEY_SIZE;
-    LL = ECC_256_PRI_KEY_SIZE + 4;
+    RDATA[3] = pri_key_len;
+    LL = pri_key_len + 4;
   }
 
   //
@@ -634,7 +636,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
   } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
     size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-    size_t pub_key_len = pri_key_len * 2;
+    size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
     ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
     uint8_t key[pri_key_len + pub_key_len];
 
@@ -749,7 +751,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   case ALG_ECC_256:
   case ALG_ECC_384: {
     size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-    size_t pub_key_len = pri_key_len * 2;
+    size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
     ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
     if (LC < 2 + pri_key_len) EXCEPT(SW_WRONG_LENGTH);
 
