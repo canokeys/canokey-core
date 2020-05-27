@@ -164,7 +164,7 @@ static uint16_t get_capacity_by_tag(uint8_t tag) {
   case 0x0B: // X.509 Certificate for Key Management
     return 1905;
   default:
-    return NULL;
+    return 0;
   }
 }
 
