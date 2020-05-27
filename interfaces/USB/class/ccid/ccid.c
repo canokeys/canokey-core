@@ -29,7 +29,6 @@ uint8_t CCID_Init(void) {
   bulkout_state = CCID_STATE_IDLE;
   has_cmd = 0;
   apdu_lock = 0;
-  apdu_busy = 0;
   bulkout_data.abData = bulkin_data.abData;
   apdu_cmd.data = bulkin_data.abData;
   apdu_resp.data = bulkin_data.abData;
