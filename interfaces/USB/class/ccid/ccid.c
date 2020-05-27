@@ -1,4 +1,4 @@
-#include <admin.h>
+#include <apdu.h>
 #include <ccid.h>
 #include <common.h>
 #include <device.h>
@@ -28,6 +28,7 @@ uint8_t CCID_Init(void) {
   send_data_spinlock = 0;
   bulkout_state = CCID_STATE_IDLE;
   has_cmd = 0;
+  apdu_lock = 0;
   bulkout_data.abData = bulkin_data.abData;
   apdu_cmd.data = bulkin_data.abData;
   apdu_resp.data = bulkin_data.abData;
@@ -89,6 +90,12 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_POWERSELECT;
   }
 
+  if (device_spinlock_lock(&apdu_lock, false) != 0) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+    return SLOTERROR_BAD_GUARDTIME;
+  }
+
+  applet_poweroff();
   memcpy(bulkin_data.abData, atr_ccid, sizeof(atr_ccid));
   bulkin_data.dwLength = sizeof(atr_ccid);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
@@ -104,7 +111,9 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
 static uint8_t PC_to_RDR_IccPowerOff(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH);
   if (error != 0) return error;
+
   applet_poweroff();
+  device_spinlock_unlock(&apdu_lock);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }
