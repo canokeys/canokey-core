@@ -107,11 +107,40 @@ TestImport() {
     GPGEnc
 }
 
-TestGenerate() {
+TestGenerateRsa2048() {
     # generate rsa2048 keys
     GPGReset
     echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | $GPG --edit-card # key-attr set to RSA2048
     Addcardkey 1
+    Addcardkey 2
+    GPGEnc
+    GPGSign
 }
 
-TestImport
+TestGenerate25519() {
+    # generate 25519 keys
+    GPGReset
+    echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
+    Addcardkey 1
+    Addcardkey 2
+    GPGEnc
+    GPGSign
+}
+
+TestGenerateP256() {
+    # generate 25519 keys
+    GPGReset
+    echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
+    Addcardkey 1
+    Addcardkey 2
+    GPGEnc
+    GPGSign
+}
+
+TestGenerate() {
+    TestGenerateRsa2048
+    TestGenerate25519
+}
+
+#TestImport
+#TestGenerate
