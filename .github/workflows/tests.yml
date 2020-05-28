@@ -305,8 +305,13 @@ jobs:
         echo -n hello >/tmp/hello.txt
         pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
         openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
-        ## ECC tests
+        ## ECC256 tests
         for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" ECCP256; done
+        yubico-piv-tool -r "$RDID" -a status
+        for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
+        PIVSignDec 9d 1 d # 9d only do the ECDH
+        ## ECC384 tests
+        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" ECCP384; done
         yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
         PIVSignDec 9d 1 d # 9d only do the ECDH

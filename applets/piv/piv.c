@@ -319,23 +319,21 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
 
-  uint8_t alg;
+  uint8_t alg = ALG_DEFAULT;
   if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
   if (!(P1 == ALG_DEFAULT && alg == ALG_TDEA_3KEY) && alg != P1) EXCEPT(SW_WRONG_P1P2);
 
   uint16_t length = get_input_size(alg);
   uint16_t pos[6] = {0};
   int16_t len[6] = {0};
-  int fail;
-  size_t length_size;
-  uint16_t dat_len = tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
-  (void)dat_len;
+  int fail = 0;
+  size_t length_size = 0;
+  tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
   uint16_t dat_pos = 1 + length_size;
   while (dat_pos < LC) {
     uint8_t tag = DATA[dat_pos++];
     if (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85) EXCEPT(SW_WRONG_DATA);
-    size_t length_size;
     len[tag - 0x80] = tlv_get_length_safe(DATA + dat_pos, LC - dat_pos, &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     dat_pos += length_size;
@@ -363,10 +361,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
     if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (length != len[IDX_CHALLENGE]) EXCEPT(SW_WRONG_DATA);
     if (P2 == 0x9D) pin.is_validated = 0;
 
     if (alg == ALG_RSA_2048) {
+      if (length != len[IDX_CHALLENGE]) EXCEPT(SW_WRONG_DATA);
+
       rsa_key_t key;
       if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
       if (rsa_private(&key, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
@@ -385,13 +384,17 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[7] = LO(length);
       LL = length + 8;
     } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
+      if (len[IDX_CHALLENGE] > length) EXCEPT(SW_WRONG_DATA);
+
       size_t key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
       ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-      uint8_t key[key_len];
+      uint8_t key[key_len], digest[key_len];
 
       if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
 
-      if (ecdsa_sign(curve, key, DATA + pos[IDX_CHALLENGE], RDATA + 4) < 0) {
+      memset(digest, 0, sizeof(digest));
+      memcpy(digest + (length - len[IDX_CHALLENGE]), DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE]);
+      if (ecdsa_sign(curve, key, digest, RDATA + 4) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
