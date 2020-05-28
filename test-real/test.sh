@@ -137,11 +137,17 @@ TestGenerateP384() {
     GenerateKey 2 4
 }
 
+TestGenerateSecp256K1() {
+    # generate secp256k1 keys
+    GenerateKey 2 9
+}
+
 TestGenerate() {
     TestGenerateRsa2048
     TestGenerate25519
     TestGenerateP256
     TestGenerateP384
+    TestGenerateSecp256K1
 }
 
 #TestImport
