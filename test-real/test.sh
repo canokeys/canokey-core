@@ -44,6 +44,16 @@ GPGEnc()  {
     date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; 
 }
 
+GenerateKey() {
+    GPGReset
+    echo -e "admin\nkey-attr\n$1\n$2\n$1\n$2\n$1\n$2\n" | $GPG --edit-card
+    Addcardkey 1
+    Addcardkey 2
+    GPGEnc
+    GPGSign
+}
+
+
 # begin testing
 killall gpg-agent || true
 echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key -v
@@ -109,37 +119,29 @@ TestImport() {
 
 TestGenerateRsa2048() {
     # generate rsa2048 keys
-    GPGReset
-    echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | $GPG --edit-card # key-attr set to RSA2048
-    Addcardkey 1
-    Addcardkey 2
-    GPGEnc
-    GPGSign
+    GenerateKey 1 2048
 }
 
 TestGenerate25519() {
     # generate 25519 keys
-    GPGReset
-    echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
-    Addcardkey 1
-    Addcardkey 2
-    GPGEnc
-    GPGSign
+    GenerateKey 2 1
 }
 
 TestGenerateP256() {
-    # generate 25519 keys
-    GPGReset
-    echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
-    Addcardkey 1
-    Addcardkey 2
-    GPGEnc
-    GPGSign
+    # generate p-256 keys
+    GenerateKey 2 3
+}
+
+TestGenerateP384() {
+    # generate p-384 keys
+    GenerateKey 2 4
 }
 
 TestGenerate() {
     TestGenerateRsa2048
     TestGenerate25519
+    TestGenerateP256
+    TestGenerateP384
 }
 
 #TestImport
