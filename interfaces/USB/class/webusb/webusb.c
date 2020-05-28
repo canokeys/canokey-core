@@ -9,12 +9,6 @@ enum {
   STATE_SENT_RESP = 2,
 };
 
-enum {
-  WEBUSB_OK = 0,
-  WEBUSB_BUSY = 1,
-  WEBUSB_OVERFLOW = 2,
-};
-
 static uint8_t state;
 static uint16_t apdu_buffer_size;
 static CAPDU apdu_cmd;
@@ -31,20 +25,17 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 }
 
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
-  uint8_t ret = WEBUSB_OK;
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
     if (device_spinlock_lock(&apdu_lock, false) != 0) {
       ERR_MSG("Busy\n");
-      ret = WEBUSB_BUSY;
-      USBD_CtlSendData(pdev, &ret, 1, WEBUSB_EP0_SENDER);
-      return USBD_OK;
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
     }
     if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
-      ret = WEBUSB_OVERFLOW;
-      USBD_CtlSendData(pdev, &ret, 1, WEBUSB_EP0_SENDER);
-      return USBD_OK;
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
     }
     USBD_CtlPrepareRx(pdev, global_buffer, req->wLength);
     apdu_buffer_size = req->wLength;
