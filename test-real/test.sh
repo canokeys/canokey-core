@@ -67,6 +67,24 @@ TestImport() {
     Key2card 9 2 # Key 9 to Encryption
     Addkey 10 1 # Key 10 gen ed25519
     Key2card 10 3 # Key 10 to Authentication
+
+    # import ecc p-384 keys
+    GPGReset
+    Addkey 10 4 # Key 11 gen ECDSA P-384
+    Key2card 11 1 # Key 11 to Signature
+    Addkey 12 4 # Key 12 gen ECDH P-384
+    Key2card 12 2 # Key 12 to Encryption
+    Addkey 10 4 # Key 13 gen ECDSA P-384
+    Key2card 13 3 # Key 13 to Authentication
+
+    # import ecc secp256k1 keys
+    GPGReset
+    Addkey 10 9 # Key 11 gen ECDSA secp256k1
+    Key2card 14 1 # Key 14 to Signature
+    Addkey 12 9 # Key 12 gen ECDH secp256k1
+    Key2card 15 2 # Key 15 to Encryption
+    Addkey 10 9 # Key 13 gen ECDSA secp256k1
+    Key2card 16 3 # Key 16 to Authentication
 }
 
 TestGenerate() {
