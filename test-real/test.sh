@@ -53,7 +53,7 @@ TestImport() {
     # import rsa2048 keys
     GPGReset
     Addkey 4 2048 # Key 5 gen RSA2048
-    Key2card 5 2 # Key 5 to Signature
+    Key2card 5 1 # Key 5 to Signature
     Addkey 6 2048 # Key 6 gen RSA2048
     Key2card 6 2 # Key 6 to Encryption
     Addkey 4 2048 # Key 7 gen RSA2048
