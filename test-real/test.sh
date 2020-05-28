@@ -34,6 +34,16 @@ GPGReset() {
     echo -e 'admin\nfactory-reset\ny\nyes' | $GPG --edit-card;
 }
 
+# test signing
+GPGSign() { 
+    date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; 
+}
+
+# test encryption
+GPGEnc()  {
+    date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; 
+}
+
 # begin testing
 killall gpg-agent || true
 echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key -v
@@ -49,6 +59,8 @@ TestImport() {
     Key2card 3 2 # Key 3 to Encryption
     Addkey 10 3 # Key 4 gen ECDSA P-256
     Key2card 4 3 # Key 4 to Authentication
+    GPGSign
+    GPGEnc
 
     # import rsa2048 keys
     GPGReset
@@ -58,6 +70,8 @@ TestImport() {
     Key2card 6 2 # Key 6 to Encryption
     Addkey 4 2048 # Key 7 gen RSA2048
     Key2card 7 3 # Key 7 to Authentication
+    GPGSign
+    GPGEnc
 
     # import 25519 keys
     GPGReset
@@ -67,6 +81,8 @@ TestImport() {
     Key2card 9 2 # Key 9 to Encryption
     Addkey 10 1 # Key 10 gen ed25519
     Key2card 10 3 # Key 10 to Authentication
+    GPGSign
+    GPGEnc
 
     # import ecc p-384 keys
     GPGReset
@@ -76,6 +92,8 @@ TestImport() {
     Key2card 12 2 # Key 12 to Encryption
     Addkey 10 4 # Key 13 gen ECDSA P-384
     Key2card 13 3 # Key 13 to Authentication
+    GPGSign
+    GPGEnc
 
     # import ecc secp256k1 keys
     GPGReset
@@ -85,6 +103,8 @@ TestImport() {
     Key2card 15 2 # Key 15 to Encryption
     Addkey 10 9 # Key 13 gen ECDSA secp256k1
     Key2card 16 3 # Key 16 to Authentication
+    GPGSign
+    GPGEnc
 }
 
 TestGenerate() {
