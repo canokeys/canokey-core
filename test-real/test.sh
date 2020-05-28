@@ -122,6 +122,11 @@ TestGenerateRsa2048() {
     GenerateKey 1 2048
 }
 
+TestGenerateRsa4096() {
+    # generate rsa4096 keys
+    GenerateKey 1 4096
+}
+
 TestGenerate25519() {
     # generate 25519 keys
     GenerateKey 2 1
@@ -144,6 +149,7 @@ TestGenerateSecp256K1() {
 
 TestGenerate() {
     TestGenerateRsa2048
+    TestGenerateRsa4096
     TestGenerate25519
     TestGenerateP256
     TestGenerateP384
