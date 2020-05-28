@@ -78,12 +78,10 @@ jobs:
         sudo killall -9 pcscd || true
         sudo cp build/libu2f-virt-card.so /usr/local/lib/
         sudo cp test-via-pcsc/pcscd-reader.conf /etc/reader.conf.d/
-        bash -c "sudo pcscd -a -f >/tmp/pcscd.log &"
+        bash -c "sudo ASAN_OPTIONS=verify_asan_link_order=0 pcscd -a -f >/tmp/pcscd.log &"
         sleep 3
         timeout 1s pcsc_scan || true
         go env -w GO111MODULE=on
-      env:
-       ASAN_OPTIONS: verify_asan_link_order=0
 
     - name: Test the Admin
       run: go test -v test-via-pcsc/admin_test.go
