@@ -34,6 +34,7 @@ const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *lengt
 const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
 const uint8_t *USBD_MSOS20Descriptor(USBD_SpeedTypeDef speed, uint16_t *length);
 const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uint16_t *length);
+const uint8_t *USBD_UrlDescriptor(USBD_SpeedTypeDef speed, uint16_t *length);
 
 const USBD_DescriptorsTypeDef usbdDescriptors = {
     USBD_DeviceDescriptor,
@@ -44,7 +45,8 @@ const USBD_DescriptorsTypeDef usbdDescriptors = {
     USBD_SerialStrDescriptor,
     USBD_BOSDescriptor,
     USBD_MSOS20Descriptor,
-    USBD_UsrStrDescriptor
+    USBD_UsrStrDescriptor,
+    USBD_UrlDescriptor,
 };
 
 /** USB standard device descriptor. */
@@ -240,7 +242,7 @@ static const uint8_t USBD_FS_BOSDesc[] = {
     0x88, 0x15, 0xB6, 0x65,
     0x00, 0x01,             /*Version 1.0*/
     0x01,                   /*Vendor request code*/
-    0x00,                   /*No landing page*/
+    0x01,                   /*iLandingPage*/
 
     /*Microsoft OS 2.0 Platform Capability Descriptor (MS_VendorCode == 0x02)*/
     0x1C,                   /*bLength*/
@@ -300,6 +302,13 @@ static const uint8_t USBD_FS_MSOS20Desc[] = {
     '1', 0x00, 'F', 0x00, 'E', 0x00, '-', 0x00, '1', 0x00, 'F', 0x00, '2', 0x00,
     '0', 0x00, 'F', 0x00, '8', 0x00, 'D', 0x00, '3', 0x00, 'B', 0x00, '8', 0x00,
     'F', 0x00, '4', 0x00, '}', 0x00, 0x00, 0x00, 0x00, 0x00};
+
+static const uint8_t USBD_FS_URL_DESCRIPTOR[] = {
+    23,   // bLength
+    0x03, // bDescriptorType: URL descriptor
+    0x01, // bScheme: https://
+    'c', 'o', 'n', 's', 'o', 'l', 'e', '.', 'c', 'a', 'n', 'o', 'k', 'e', 'y', 's', '.', 'o', 'r', 'g'
+};
 
 /** USB lang identifier descriptor. */
 static const uint8_t USBD_LangIDDesc[] = {
@@ -424,4 +433,9 @@ const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed, uint8_t index, uin
   }
   *length = 0;
   return NULL;
+}
+
+const uint8_t *USBD_UrlDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
+  *length = sizeof(USBD_FS_URL_DESCRIPTOR);
+  return USBD_FS_URL_DESCRIPTOR;
 }

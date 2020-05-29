@@ -146,6 +146,7 @@ typedef struct {
   const uint8_t *(*GetBOSDescriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
   const uint8_t *(*GetMSOS20Descriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
   const uint8_t *(*GetUsrStrDescriptor)(USBD_SpeedTypeDef speed, uint8_t index, uint16_t *length);
+  const uint8_t *(*GetUrlDescriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
 } USBD_DescriptorsTypeDef;
 
 /* USB Device handle structure */

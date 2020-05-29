@@ -288,8 +288,15 @@ USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqType
 
   switch (req->bRequest) {
   case 0x01: // WebUSB
-    ERR_MSG("Request WebUSB URL\n");
-    USBD_CtlError(pdev, req);
+    if (req->wValue == 0x01 && req->wIndex == 0x02) {
+      pbuf = pdev->pDesc->GetUrlDescriptor(pdev->dev_speed, &len);
+      if ((len != 0) && (req->wLength != 0)) {
+        len = MIN(len, req->wLength);
+        USBD_CtlSendData(pdev, pbuf, len, 0);
+      }
+    } else {
+      USBD_CtlError(pdev, req);
+    }
     break;
 
   case 0x02: // MS OS 2.0
