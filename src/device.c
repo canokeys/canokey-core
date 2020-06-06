@@ -11,11 +11,11 @@ static uint8_t has_rf, is_blinking;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 
-void device_loop(void) {
+void device_loop(uint8_t has_touch) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
-  KBDHID_Loop();
+  if (has_touch) KBDHID_Loop();
 }
 
 uint8_t get_touch_result(void) { return touch_result; }
