@@ -32,6 +32,7 @@ int admin_install(void);
 int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu);
+int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu);
 
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_kbd_interface_enable(void);
