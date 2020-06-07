@@ -3,6 +3,7 @@
 [![Tests](https://github.com/canokeys/canokey-core/workflows/tests/badge.svg?branch=master)](https://github.com/canokeys/canokey-core/actions?query=branch%3Amaster)
 [![Coverage](https://coveralls.io/repos/github/canokeys/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canokeys/canokey-core?branch=master)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/de791a6a112a4b9f8da8df6fb96bcb12)](https://www.codacy.com/manual/zz593141477/canokey-core?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=canokeys/canokey-core&amp;utm_campaign=Badge_Grade)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_shield)
 
 ## Introduction
 
@@ -75,3 +76,7 @@ Then, run fuzzing tests:
 ```bash
 ./fuzzer/run-fuzzer.sh honggfuzz ${id}
 ```
+
+
+## License
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_large)
