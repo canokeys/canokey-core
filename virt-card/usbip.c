@@ -556,7 +556,7 @@ int main() {
         }
         printf("\n");
 
-        device_loop();
+        device_loop(1);
 
         int direction_out = ntohl(current_cmd_submit_body.direction) == 0;
 
