@@ -1078,10 +1078,11 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   const uint8_t *data_tag = p + template_len; // saved for tag 5F48
   uint8_t key[sizeof(rsa_key_t)];             // rsa_key_t is larger than any ec key
   uint16_t key_len = 0;
+  memzero(key, sizeof(key));
 
   if (attr[0] == KEY_TYPE_RSA) {
     uint16_t nbits = (attr[1] << 8) | attr[2];
-    uint16_t pq_len = nbits / 16;
+    uint16_t pq_len = nbits / 16, qinv_len, dp_len, dq_len;
     key_len = sizeof(rsa_key_t);
 
     if (*p++ != 0x91) EXCEPT(SW_WRONG_DATA);
@@ -1103,21 +1104,21 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += length_size;
 
     if (*p++ != 0x94) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    qinv_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
+    if (qinv_len > pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
     if (*p++ != 0x95) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    dp_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
+    if (dp_len > pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
     if (*p++ != 0x96) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    dq_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len != pq_len) EXCEPT(SW_WRONG_DATA);
+    if (dq_len > pq_len) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
@@ -1133,11 +1134,11 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += pq_len;
     memcpy(((rsa_key_t *)key)->q, p, pq_len);
     p += pq_len;
-    memcpy(((rsa_key_t *)key)->qinv, p, pq_len);
-    p += pq_len;
-    memcpy(((rsa_key_t *)key)->dp, p, pq_len);
-    p += pq_len;
-    memcpy(((rsa_key_t *)key)->dq, p, pq_len);
+    memcpy(((rsa_key_t *)key)->qinv + pq_len - qinv_len, p, qinv_len);
+    p += qinv_len;
+    memcpy(((rsa_key_t *)key)->dp + pq_len - dp_len, p, dp_len);
+    p += dp_len;
+    memcpy(((rsa_key_t *)key)->dq + pq_len - dq_len, p, dq_len);
   } else {
     EC_Algorithm algo = get_ec_algo(attr, attr_len);
     int ec_pri_key_len = get_ec_key_length(algo);
