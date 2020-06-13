@@ -590,7 +590,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     if (attr[0] == KEY_TYPE_RSA) {
       uint16_t nbits = (attr[1] << 8) | attr[2];
       key_len = sizeof(rsa_key_t);
-      if (rsa_generate_key((rsa_key_t *)key, nbits) < 0) {
+      if (nbits != 2048 || rsa_generate_key((rsa_key_t *)key, nbits) < 0) {
         memzero(key, sizeof(key));
         return -1;
       }
