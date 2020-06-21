@@ -3,6 +3,7 @@ echo "OK Pleased to meet you"
 password="12345678"
 prompt=PIN
 while read -r line; do
+  # echo "$line" >> /tmp/mock-pin.log
   if [[ "$line" =~ SETPROMPT ]]; then
     prompt="$line"
   fi

@@ -1,10 +1,14 @@
 #!/bin/bash
-rm -rf ./temp_gnupg
-mkdir -p ./temp_gnupg
-chmod 700 ./temp_gnupg
-export GNUPGHOME=$(pwd)/temp_gnupg
-cp pinentry-mock ./temp_gnupg/
-echo "pinentry-program $(pwd)/pinentry-mock" > ${GNUPGHOME}/gpg-agent.conf
+export LANGUAGE=en_US
+export LANG=en_US.UTF8
+export GNUPGHOME="$(pwd)/temp_gnupg"
+rm -rf "$GNUPGHOME"
+mkdir -p "$GNUPGHOME"
+chmod 700 "$GNUPGHOME"
+cp pinentry-mock "$GNUPGHOME/"
+echo "pinentry-program $(pwd)/pinentry-mock" > "${GNUPGHOME}/gpg-agent.conf"
+echo "debug 6145" > "${GNUPGHOME}/scdaemon.conf"
+echo "log-file /tmp/canokey-test-scd.log" >> "${GNUPGHOME}/scdaemon.conf"
 gpg --list-keys
 
 set -e
@@ -149,12 +153,12 @@ TestGenerateSecp256K1() {
 
 TestGenerate() {
     TestGenerateRsa2048
-    TestGenerateRsa4096
+    # TestGenerateRsa4096
     TestGenerate25519
     TestGenerateP256
     TestGenerateP384
     TestGenerateSecp256K1
 }
 
-#TestImport
-#TestGenerate
+TestImport
+TestGenerate
