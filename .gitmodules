@@ -7,3 +7,6 @@
 [submodule "tinycbor"]
 	path = tinycbor
 	url = https://github.com/intel/tinycbor.git
+[submodule "test-real/shunit2"]
+	path = test-real/shunit2
+	url = https://github.com/kward/shunit2.git
