@@ -1124,7 +1124,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len != pq_len * 5 + 4) EXCEPT(SW_WRONG_DATA);
+    if (len != pq_len * 2 + qinv_len + dp_len + dq_len + E_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
     ((rsa_key_t *)key)->nbits = nbits;
