@@ -7,6 +7,9 @@ mkdir -p "$GNUPGHOME"
 chmod 700 "$GNUPGHOME"
 cp pinentry-mock "$GNUPGHOME/"
 echo "pinentry-program $(pwd)/pinentry-mock" > "${GNUPGHOME}/gpg-agent.conf"
+echo "debug 1031" >> "${GNUPGHOME}/gpg-agent.conf"
+echo "debug-level 8" >> "${GNUPGHOME}/gpg-agent.conf"
+echo "log-file /tmp/canokey-test-gpg-agent.log" >> "${GNUPGHOME}/gpg-agent.conf"
 echo "debug 6145" > "${GNUPGHOME}/scdaemon.conf"
 echo "log-file /tmp/canokey-test-scd.log" >> "${GNUPGHOME}/scdaemon.conf"
 gpg --list-keys
@@ -95,7 +98,7 @@ TestImport() {
     Key2card 9 2 # Key 9 to Encryption
     Addkey 10 1 # Key 10 gen ed25519
     Key2card 10 3 # Key 10 to Authentication
-    GPGSign
+    # GPGSign
     GPGEnc
 
     # import ecc p-384 keys
@@ -111,12 +114,23 @@ TestImport() {
 
     # import ecc secp256k1 keys
     GPGReset
-    Addkey 10 9 # Key 11 gen ECDSA secp256k1
+    Addkey 10 9 # Key 14 gen ECDSA secp256k1
     Key2card 14 1 # Key 14 to Signature
-    Addkey 12 9 # Key 12 gen ECDH secp256k1
+    Addkey 12 9 # Key 15 gen ECDH secp256k1
     Key2card 15 2 # Key 15 to Encryption
-    Addkey 10 9 # Key 13 gen ECDSA secp256k1
+    Addkey 10 9 # Key 16 gen ECDSA secp256k1
     Key2card 16 3 # Key 16 to Authentication
+    GPGSign
+    GPGEnc
+
+    # import rsa4096 keys
+    GPGReset
+    Addkey 4 4096 # Key 17 gen RSA4096
+    Key2card 17 1 # Key 17 to Signature
+    Addkey 6 4096 # Key 18 gen RSA4096
+    Key2card 18 2 # Key 18 to Encryption
+    Addkey 4 4096 # Key 19 gen RSA4096
+    Key2card 19 3 # Key 19 to Authentication
     GPGSign
     GPGEnc
 }
