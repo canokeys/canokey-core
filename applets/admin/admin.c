@@ -118,6 +118,11 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     else
       ret = admin_vendor_hw_variant(capdu, rapdu);
     goto done;
+  case ADMIN_INS_ECHO:
+    memmove(RDATA, DATA, LC);
+    LL = LC;
+    ret = 0;
+    goto done;
   case ADMIN_INS_VERIFY:
     ret = admin_verify(capdu, rapdu);
     goto done;
