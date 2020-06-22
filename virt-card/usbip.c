@@ -119,10 +119,6 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   return USBD_OK;
 }
 void SendRetSubmit(const uint8_t *pbuf, uint16_t size) {
-  if (size == 0 || pbuf != NULL) {
-    printf("error size=%hu pbuf=%p\n", size, pbuf);
-    return;
-  }
   printf("<- RET_SUBMIT:\n\t");
   for (size_t i = 0; i < size; i++) {
     printf("%02X ", pbuf[i]);
@@ -648,6 +644,11 @@ int main() {
       } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x02) {
         // CMD_UNLINK
         printf("-> OP_CMD_UNLINK\n");
+        // body
+        if (read_exact(client_fd, (uint8_t *)&current_cmd_submit_body, sizeof(current_cmd_submit_body)) < 0) {
+          break;
+        }
+        // ignore
       } else {
         printf("unknown command\n");
       }
