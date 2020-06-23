@@ -15,15 +15,8 @@ oneTimeSetUp(){
     echo "debug 1031" >> "${GNUPGHOME}/gpg-agent.conf"
     echo "debug-level 8" >> "${GNUPGHOME}/gpg-agent.conf"
     echo "log-file /tmp/canokey-test-gpg-agent.log" >> "${GNUPGHOME}/gpg-agent.conf"
-    cat > "${GNUPGHOME}/scdaemon.conf" <<EOF
-pcsc-driver /usr/lib/x86_64-linux-gnu/libpcsclite.so.1
-disable-ccid
-debug 6145
-log-file /tmp/canokey-test-scd.log
-card-timeout 5
-
-reader-port "CanoKey Test"
-EOF
+    echo "debug 6145" > "${GNUPGHOME}/scdaemon.conf"
+    echo "log-file /tmp/canokey-test-scd.log" >> "${GNUPGHOME}/scdaemon.conf"
     gpg --list-keys
     # begin testing
     killall gpg-agent || true
@@ -115,9 +108,9 @@ test_Import25519(){
     Key2card 9 2 # Key 9 to Encryption
     Addkey 10 1 # Key 10 gen ed25519
     Key2card 10 3 # Key 10 to Authentication
-    #startSkipping
+    startSkipping
     GPGSign
-    #endSkipping
+    endSkipping
     GPGEnc
 }
 test_ImportP384(){
