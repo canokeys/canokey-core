@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+GPG_VER=2.2.12
 mkdir ~/.gnupg || true
 echo "pinentry-program /usr/local/bin/pinentry-tty" >~/.gnupg/gpg-agent.conf
 mkdir gnupg || true
@@ -16,14 +17,14 @@ else
 fi
 sudo make install
 popd
-if [ ! -d gnupg-2.2.17 ];then
-    wget https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.2.17.tar.bz2
-    tar -xf gnupg-2.2.17.tar.bz2
-    pushd gnupg-2.2.17
+if [ ! -d gnupg-$GPG_VER ];then
+    wget https://gnupg.org/ftp/gcrypt/gnupg/gnupg-$GPG_VER.tar.bz2
+    tar -xf gnupg-$GPG_VER.tar.bz2
+    pushd gnupg-$GPG_VER
     ./configure --prefix=/usr --disable-doc --disable-wks-tools --disable-gpgtar --disable-photo-viewers --disable-ldap
     make -j2
 else
-    pushd gnupg-2.2.17
+    pushd gnupg-$GPG_VER
 fi
 sudo make install
 popd
