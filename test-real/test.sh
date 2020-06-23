@@ -17,9 +17,10 @@ oneTimeSetUp(){
     echo "log-file /tmp/canokey-test-gpg-agent.log" >> "${GNUPGHOME}/gpg-agent.conf"
     echo "debug 6145" > "${GNUPGHOME}/scdaemon.conf"
     echo "log-file /tmp/canokey-test-scd.log" >> "${GNUPGHOME}/scdaemon.conf"
-    gpg --list-keys
     # begin testing
-    killall gpg-agent || true
+    killall -9 gpg-agent || true
+    gpg --card-status # The first try may fail
+    gpg --card-status || exit 1
     echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key -v
     export KEYID=$(gpg -K --with-colons |egrep '^sec'|egrep -o '\w{16}')
     echo 'Key Id is:' $KEYID
@@ -64,6 +65,11 @@ GPGEnc()  {
     assertEquals 'GPG encrypt failed' 0 $?
 }
 
+# test authentication
+GPGAuth() {
+    echo "TODO: test auth"
+}
+
 GenerateKey() {
     GPGReset
     echo -e "admin\nkey-attr\n$1\n$2\n$1\n$2\n$1\n$2\n" | $GPG --edit-card
@@ -81,10 +87,11 @@ test_ImportP256() {
     Key2card 2 1 # Key 2 to Signature
     Addkey 12 3 # Key 3 gen ECDH P-256
     Key2card 3 2 # Key 3 to Encryption
-    Addkey 10 3 # Key 4 gen ECDSA P-256
-    Key2card 4 3 # Key 4 to Authentication
     GPGSign
     GPGEnc
+    Addkey 10 3 # Key 4 gen ECDSA P-256
+    Key2card 4 3 # Key 4 to Authentication
+    GPGAuth
 }
 test_ImportRsa2048(){
     # import rsa2048 keys
@@ -93,10 +100,11 @@ test_ImportRsa2048(){
     Key2card 5 1 # Key 5 to Signature
     Addkey 6 2048 # Key 6 gen RSA2048
     Key2card 6 2 # Key 6 to Encryption
-    Addkey 4 2048 # Key 7 gen RSA2048
-    Key2card 7 3 # Key 7 to Authentication
     GPGSign
     GPGEnc
+    Addkey 4 2048 # Key 7 gen RSA2048
+    Key2card 7 3 # Key 7 to Authentication
+    GPGAuth
 }
 test_Import25519(){
 
@@ -106,12 +114,11 @@ test_Import25519(){
     Key2card 8 1 # Key 8 to Signature
     Addkey 12 1 # Key 9 gen cv25519
     Key2card 9 2 # Key 9 to Encryption
+    GPGSign
+    GPGEnc
     Addkey 10 1 # Key 10 gen ed25519
     Key2card 10 3 # Key 10 to Authentication
-    startSkipping
-    GPGSign
-    endSkipping
-    GPGEnc
+    GPGAuth
 }
 test_ImportP384(){
 
@@ -121,10 +128,11 @@ test_ImportP384(){
     Key2card 11 1 # Key 11 to Signature
     Addkey 12 4 # Key 12 gen ECDH P-384
     Key2card 12 2 # Key 12 to Encryption
-    Addkey 10 4 # Key 13 gen ECDSA P-384
-    Key2card 13 3 # Key 13 to Authentication
     GPGSign
     GPGEnc
+    Addkey 10 4 # Key 13 gen ECDSA P-384
+    Key2card 13 3 # Key 13 to Authentication
+    GPGAuth
 }
 test_ImportSecp256k1(){
 
@@ -134,10 +142,11 @@ test_ImportSecp256k1(){
     Key2card 14 1 # Key 14 to Signature
     Addkey 12 9 # Key 15 gen ECDH secp256k1
     Key2card 15 2 # Key 15 to Encryption
-    Addkey 10 9 # Key 16 gen ECDSA secp256k1
-    Key2card 16 3 # Key 16 to Authentication
     GPGSign
     GPGEnc
+    Addkey 10 9 # Key 16 gen ECDSA secp256k1
+    Key2card 16 3 # Key 16 to Authentication
+    GPGAuth
 }
 test_ImportRsa4096(){
 
@@ -147,10 +156,11 @@ test_ImportRsa4096(){
     Key2card 17 1 # Key 17 to Signature
     Addkey 6 4096 # Key 18 gen RSA4096
     Key2card 18 2 # Key 18 to Encryption
-    Addkey 4 4096 # Key 19 gen RSA4096
-    Key2card 19 3 # Key 19 to Authentication
     GPGSign
     GPGEnc
+    Addkey 4 4096 # Key 19 gen RSA4096
+    Key2card 19 3 # Key 19 to Authentication
+    GPGAuth
 }
 
 test_GenerateRsa2048() {
