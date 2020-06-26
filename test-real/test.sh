@@ -2,23 +2,41 @@
 export LANGUAGE=en_US
 export LANG=en_US.UTF8
 export GNUPGHOME="$(pwd)/temp_gnupg"
+export SSHDIR="$(pwd)/temp_ssh"
 GPG="gpg --command-fd 0 --yes --expert"
 kEYID=""
 
 oneTimeSetUp(){
     gpg --version
-    rm -rf "$GNUPGHOME"
-    mkdir -p "$GNUPGHOME"
-    chmod 700 "$GNUPGHOME"
+    rm -rf "$GNUPGHOME" "$SSHDIR"
+    mkdir -p "$GNUPGHOME" "$SSHDIR"
+    > "$SSHDIR/authorized_keys"
+    chmod 700 "$GNUPGHOME" "$SSHDIR" "$SSHDIR/authorized_keys"
+
+    ssh-keygen -t ecdsa -f "$SSHDIR/hostkey" -N ''
+    cat >"$SSHDIR/sshd_config" <<EOF
+StrictModes no
+UsePAM no
+UsePrivilegeSeparation no
+HostKey $SSHDIR/hostkey
+AuthorizedKeysFile $SSHDIR/authorized_keys
+Port 22022
+EOF
+
     cp pinentry-mock "$GNUPGHOME/"
-    echo "pinentry-program $(pwd)/pinentry-mock" > "${GNUPGHOME}/gpg-agent.conf"
-    echo "debug 1031" >> "${GNUPGHOME}/gpg-agent.conf"
-    echo "debug-level 8" >> "${GNUPGHOME}/gpg-agent.conf"
-    echo "log-file /tmp/canokey-test-gpg-agent.log" >> "${GNUPGHOME}/gpg-agent.conf"
+    cat >"${GNUPGHOME}/gpg-agent.conf" <<EOF
+pinentry-program ${GNUPGHOME}/pinentry-mock
+enable-ssh-support
+debug 1031
+debug-level 8
+log-file /tmp/canokey-test-gpg-agent.log
+EOF
     echo "debug 6145" > "${GNUPGHOME}/scdaemon.conf"
     echo "log-file /tmp/canokey-test-scd.log" >> "${GNUPGHOME}/scdaemon.conf"
     # begin testing
-    killall -9 gpg-agent || true
+    killall -u $USER sshd || true
+    killall -u $USER -9 gpg-agent || true
+    /usr/sbin/sshd -f "$SSHDIR/sshd_config" -E /tmp/canokey-test-sshd.log
     gpg --card-status # The first try may fail
     gpg --card-status || exit 1
     echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key -v
@@ -67,7 +85,10 @@ GPGEnc()  {
 
 # test authentication
 GPGAuth() {
-    echo "TODO: test auth"
+    export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
+    gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >"$GNUPGHOME/sshcontrol"
+    ssh-add -L >"$SSHDIR/authorized_keys"
+    ssh -v -p 22022 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost "echo +++ Passed GPG Auth Key Test +++"
 }
 
 GenerateKey() {
