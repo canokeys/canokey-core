@@ -1,6 +1,7 @@
 #!/bin/bash
 export LANGUAGE=en_US
 export LANG=en_US.UTF8
+export TEST_TMP_DIR=/tmp/canokey-piv
 
 YPT() {
     sleep 0.8
@@ -11,11 +12,11 @@ PIVGenKeyCert() {
     key=$1
     subject="$2"
     algo="$3"
-    YPT -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
+    YPT -r "$RDID" -a generate -A $algo -s $key >$TEST_TMP_DIR/pubkey-$key.pem # generate key at $key
     assertEquals 'yubico-piv-tool generate' 0 $?
-    YPT -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
+    YPT -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < $TEST_TMP_DIR/pubkey-$key.pem >$TEST_TMP_DIR/cert-$key.pem
     assertEquals 'yubico-piv-tool selfsign-certificate' 0 $?
-    YPT -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
+    YPT -r "$RDID" -a import-certificate -s $key < $TEST_TMP_DIR/cert-$key.pem
     assertEquals 'yubico-piv-tool import-certificate' 0 $?
 }
 
@@ -25,16 +26,18 @@ PIVSignDec() {
     op=$3
     if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
     if [[ -z "$op" || s = "$op" ]]; then 
-        YPT -r "$RDID" $pinArgs -a test-signature -s $key < /tmp/cert-$key.pem;
+        YPT -r "$RDID" $pinArgs -a test-signature -s $key < $TEST_TMP_DIR/cert-$key.pem;
         assertEquals 'yubico-piv-tool test-signature' 0 $?
     fi
     if [[ -z "$op" || d = "$op" ]]; then 
-        YPT -r "$RDID" $pinArgs -a test-decipher -s $key < /tmp/cert-$key.pem;
+        YPT -r "$RDID" $pinArgs -a test-decipher -s $key < $TEST_TMP_DIR/cert-$key.pem;
         assertEquals 'yubico-piv-tool test-decipher' 0 $?
     fi
 }
 
 oneTimeSetUp() {
+    rm -rf "$TEST_TMP_DIR"
+    mkdir "$TEST_TMP_DIR"
     killall -u $USER -9 gpg-agent || true
     export RDID=$(yubico-piv-tool -r '' -a list-readers | head -n 1)
 }
@@ -77,10 +80,10 @@ test_RSA2048() {
     for s in 9a 9c 9d; do PIVSignDec $s 1; done
 
     pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
-    echo -n hello >/tmp/hello.txt
-    pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
+    echo -n hello >$TEST_TMP_DIR/hello.txt
+    pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i $TEST_TMP_DIR/hello.txt -o $TEST_TMP_DIR/hello-signed --pin 654321
     assertEquals 'pkcs11-tool sign' 0 $?
-    openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
+    openssl dgst -sha256 -verify $TEST_TMP_DIR/pubkey-9e.pem -signature $TEST_TMP_DIR/hello-signed $TEST_TMP_DIR/hello.txt
     assertEquals 'openssl dgst verify' 0 $?
 }
 
@@ -116,23 +119,23 @@ test_PinBlock() {
 }
 
 test_ECCKeyImport() {
-    openssl ecparam -name prime256v1 -out p256.pem
-    openssl req -x509 -newkey ec:p256.pem -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-    YPT -r "$RDID" -a import-key -s 9a -i key.pem
+    openssl ecparam -name prime256v1 -out $TEST_TMP_DIR/p256.pem
+    openssl req -x509 -newkey ec:$TEST_TMP_DIR/p256.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+    YPT -r "$RDID" -a import-key -s 9a -i $TEST_TMP_DIR/key.pem
     assertEquals 'import-key' 0 $?
-    YPT -r "$RDID" -a import-certificate -s 9a -i cert.pem
+    YPT -r "$RDID" -a import-certificate -s 9a -i $TEST_TMP_DIR/cert.pem
     assertEquals 'import-certificate' 0 $?
-    YPT -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a <cert.pem
+    YPT -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a <$TEST_TMP_DIR/cert.pem
     assertEquals 'test-signature' 0 $?
 }
 
 test_RSAKeyImport() {
-    openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-    YPT -r "$RDID" -a import-key -s 9c -i key.pem
+    openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+    YPT -r "$RDID" -a import-key -s 9c -i $TEST_TMP_DIR/key.pem
     assertEquals 'import-key' 0 $?
-    YPT -r "$RDID" -a import-certificate -s 9c -i cert.pem
+    YPT -r "$RDID" -a import-certificate -s 9c -i $TEST_TMP_DIR/cert.pem
     assertEquals 'import-certificate' 0 $?
-    YPT -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c <cert.pem
+    YPT -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c <$TEST_TMP_DIR/cert.pem
     assertEquals 'test-signature' 0 $?
 }
 
@@ -160,12 +163,12 @@ test_FactoryReset() {
 test_FillData() {
     YPT -r "$RDID" -a set-ccc -a set-chuid -a status
     longName=OU=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/O=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/L=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/ST=ThisIsAVeryLongName/C=CN
-    openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=CertAtSlot$s/$longName"
+    openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=CertAtSlot$s/$longName"
     assertEquals 'openssl gen key' 0 $?
     for s in 9a 9c 9d 9e; do
-        YPT -r "$RDID" -a import-key -s $s -i key.pem
+        YPT -r "$RDID" -a import-key -s $s -i $TEST_TMP_DIR/key.pem
         assertEquals 'import-key' 0 $?
-        YPT -r "$RDID" -a import-certificate -s $s -i cert.pem
+        YPT -r "$RDID" -a import-certificate -s $s -i $TEST_TMP_DIR/cert.pem
         assertEquals 'import-certificate' 0 $?
     done
 }
