@@ -88,7 +88,8 @@ GPGAuth() {
     export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
     gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >"$GNUPGHOME/sshcontrol"
     ssh-add -L >"$SSHDIR/authorized_keys"
-    ssh -v -p 22022 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost "echo +++ Passed GPG Auth Key Test +++"
+    ssh -p 22022 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost "echo +++ Passed GPG Auth Key Test +++"
+    assertEquals 'SSH failed' 0 $?
 }
 
 GenerateKey() {
@@ -167,7 +168,7 @@ test_ImportSecp256k1(){
     GPGEnc
     Addkey 10 9 # Key 16 gen ECDSA secp256k1
     Key2card 16 3 # Key 16 to Authentication
-    GPGAuth
+    # GPGAuth # not supported by ssh
 }
 test_ImportRsa4096(){
 
