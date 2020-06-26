@@ -120,7 +120,7 @@ uint8_t USBD_KBDHID_DataOut(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_KBDHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
   volatile KBDHID_StateTypeDef *state = &hid_handle.state;
 
-  if (pdev->dev_state == USBD_STATE_CONFIGURED) {
+  if (pdev->dev_state == USBD_STATE_CONFIGURED && EP_OUT(kbd_hid) != 0xFF) {
     while (*state != KBDHID_IDLE)
       device_delay(1);
     hid_handle.state = KBDHID_BUSY;
