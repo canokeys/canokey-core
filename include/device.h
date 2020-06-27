@@ -36,6 +36,16 @@ int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);
  * @param lock  The lock handler.
  */
 void device_spinlock_unlock(volatile uint32_t *lock);
+
+/**
+ * Update the value of a variable atomically.
+ *
+ * @param var    The address of variable to update.
+ * @param expect The current value of variable.
+ * @param var    The new value of variable.
+ */
+int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update);
+
 void led_on(void);
 void led_off(void);
 void device_set_timeout(void (*callback)(void), uint16_t timeout);

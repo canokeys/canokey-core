@@ -37,6 +37,7 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    * `uint32_t device_get_tick(void);`
    * `int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking);`
    * `void device_spinlock_unlock(volatile uint32_t *lock);`
+   * `int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update);`
    * `void led_on(void);`
    * `void led_off(void);`
    * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
