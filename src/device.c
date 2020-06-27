@@ -95,6 +95,15 @@ void stop_blinking(void) {
 
 #else
 
+int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
+  if (*var == expect) {
+    *var = update;
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
   // Not really working, for test only
   while (*lock) {
