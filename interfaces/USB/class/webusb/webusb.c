@@ -27,7 +27,7 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
-    if (device_spinlock_lock(&apdu_lock, false) != 0) {
+    if (acquire_global_buffer(BUFFER_OWNER_WEBUSB) != 0) {
       ERR_MSG("Busy\n");
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
@@ -87,7 +87,7 @@ void WebUSB_Loop(void) {
   DBG_MSG("R: ");
   PRINT_HEX(global_buffer, apdu_buffer_size);
   state = STATE_SENDING_RESP;
-  device_spinlock_unlock(&apdu_lock);
+  release_global_buffer(BUFFER_OWNER_WEBUSB);
 }
 
 uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {

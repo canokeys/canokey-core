@@ -74,13 +74,20 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
-extern volatile uint32_t apdu_lock;
 extern uint8_t global_buffer[APDU_BUFFER_SIZE];
+
+enum {
+  BUFFER_OWNER_NONE = 0,
+  BUFFER_OWNER_CCID,
+  BUFFER_OWNER_WEBUSB,
+};
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
 void applet_poweroff(void);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
+int acquire_global_buffer(uint8_t owner);
+int release_global_buffer(uint8_t owner);
 
 #endif // CANOKEY_CORE__APDU_H

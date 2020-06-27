@@ -7,7 +7,7 @@
 #include <piv.h>
 #include <string.h>
 
-volatile uint32_t apdu_lock;
+static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
 uint8_t global_buffer[APDU_BUFFER_SIZE];
 
 enum APPLET {
@@ -220,4 +220,14 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     LL = 0;
     SW = SW_CHECKING_ERROR;
   }
+}
+
+int acquire_global_buffer(uint8_t owner) {
+  device_atomic_compare_and_swap(&buffer_owner, BUFFER_OWNER_NONE, owner);
+  return buffer_owner == owner ? 0 : -1;
+}
+
+int release_global_buffer(uint8_t owner) {
+  device_atomic_compare_and_swap(&buffer_owner, owner, BUFFER_OWNER_NONE);
+  return buffer_owner == BUFFER_OWNER_NONE ? 0 : -1;
 }
