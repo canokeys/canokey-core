@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <crypto-util.h>
 #include <fs.h>
 #include <memzero.h>

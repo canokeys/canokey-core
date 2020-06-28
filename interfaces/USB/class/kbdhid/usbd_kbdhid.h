@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef __USB_KBDHID_H
 #define __USB_KBDHID_H
 

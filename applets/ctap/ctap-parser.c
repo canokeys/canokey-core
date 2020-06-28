@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include "ctap-parser.h"
 #include "cose-key.h"
 #include "ctap-errors.h"

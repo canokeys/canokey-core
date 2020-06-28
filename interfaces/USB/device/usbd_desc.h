@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef __USBD_DESC__H__
 #define __USBD_DESC__H__
 

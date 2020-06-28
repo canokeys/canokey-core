@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef FIDO_INTERNAL_H_
 #define FIDO_INTERNAL_H_
 

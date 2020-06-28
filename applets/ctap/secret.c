@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include "secret.h"
 #include <apdu.h>
 #include <ecc.h>

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <ctaphid.h>
 #include <device.h>
 #include <usb_device.h>

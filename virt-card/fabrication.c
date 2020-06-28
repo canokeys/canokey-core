@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"

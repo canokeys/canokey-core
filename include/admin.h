@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef CANOKEY_CORE_ADMIN_ADMIN_H_
 #define CANOKEY_CORE_ADMIN_ADMIN_H_
 

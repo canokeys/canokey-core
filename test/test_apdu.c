@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>

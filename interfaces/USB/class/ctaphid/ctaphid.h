@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef __CTAPHID_H_INCLUDED__
 #define __CTAPHID_H_INCLUDED__
 

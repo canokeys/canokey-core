@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef __KBDHID_H_INCLUDED__
 #define __KBDHID_H_INCLUDED__
 

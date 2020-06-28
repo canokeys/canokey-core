@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef _CCID_H_
 #define _CCID_H_
 

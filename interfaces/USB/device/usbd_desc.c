@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <stdio.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>

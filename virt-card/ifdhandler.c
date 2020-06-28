@@ -1,13 +1,4 @@
-/*****************************************************************
-/
-/ File   :   ifdhandler.c
-/ Author :   David Corcoran <corcoran@linuxnet.com>
-/ Date   :   June 15, 2000
-/ Purpose:   This provides reader specific low-level calls.
-/            See http://www.linuxnet.com for more information.
-/ License:   See file LICENSE
-/
-******************************************************************/
+// SPDX-License-Identifier: Apache-2.0
 
 #include "ccid.h"
 #include "fabrication.h"

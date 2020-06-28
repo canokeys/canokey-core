@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include "device.h"
 #include "usbd_core.h"
 #include <time.h>

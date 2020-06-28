@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef __USB_DEVICE__H__
 #define __USB_DEVICE__H__
 

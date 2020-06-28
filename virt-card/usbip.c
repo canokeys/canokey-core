@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include "apdu.h"
 #include "ccid.h"
 #include "device.h"
