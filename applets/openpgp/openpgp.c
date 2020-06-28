@@ -86,7 +86,7 @@ static const uint8_t ec_attr[][MAX_ATTR_LENGTH] = {
 
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
                               0x03, 0x04,                         // version
-                              0x80, 0x86,                         // manufacturer
+                              0xf1, 0xd0,                         // manufacturer
                               0x00, 0x00, 0x00, 0x00,             // serial number
                               0x00, 0x00};
 
