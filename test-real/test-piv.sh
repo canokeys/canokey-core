@@ -4,7 +4,6 @@ export LANG=en_US.UTF8
 export TEST_TMP_DIR=/tmp/canokey-piv
 
 YPT() {
-    sleep 0.8
     yubico-piv-tool $@
 }
 
@@ -39,6 +38,7 @@ oneTimeSetUp() {
     rm -rf "$TEST_TMP_DIR"
     mkdir "$TEST_TMP_DIR"
     killall -u $USER -9 gpg-agent || true
+    sleep 2
     export RDID=$(yubico-piv-tool -r '' -a list-readers | head -n 1)
 }
 
