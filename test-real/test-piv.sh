@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: Apache-2.0
 export LANGUAGE=en_US
 export LANG=en_US.UTF8
 export TEST_TMP_DIR=/tmp/canokey-piv
