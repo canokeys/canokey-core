@@ -16,7 +16,11 @@ void device_loop(uint8_t has_touch) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
-  if (has_touch && cfg_is_kbd_interface_enable()) KBDHID_Loop();
+  if (has_touch &&                  // hardware features the touch pad
+      !is_blinking &&               // U2F is not waiting for touch
+      cfg_is_kbd_interface_enable() // keyboard emulation enabled
+  )
+    KBDHID_Loop();
 }
 
 uint8_t get_touch_result(void) { return touch_result; }
