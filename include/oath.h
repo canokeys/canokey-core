@@ -36,6 +36,8 @@
 
 #define OATH_PROP_INC 0x01
 #define OATH_PROP_TOUCH 0x02
+#define OATH_PROP_EXPORTABLE 0x04
+#define OATH_PROP_ALL_FLAGS 0x07 // OR of flags above
 
 #define MAX_NAME_LEN 64
 #define MAX_KEY_LEN 66 // 64 + 2 for algo & digits

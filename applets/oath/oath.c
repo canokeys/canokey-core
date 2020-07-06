@@ -62,7 +62,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   if (offset + 1 < LC && DATA[offset] == OATH_TAG_PROPERTY) {
     offset++;
     prop = DATA[offset++];
-    if ((prop & ~(OATH_PROP_INC | OATH_PROP_TOUCH)) != 0) EXCEPT(SW_WRONG_DATA);
+    if ((prop & ~OATH_PROP_ALL_FLAGS) != 0) EXCEPT(SW_WRONG_DATA);
   }
 
   // parse HOTP counter (optional tag)
