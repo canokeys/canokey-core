@@ -8,16 +8,18 @@
 #include <webusb.h>
 
 volatile static uint8_t touch_result;
-static uint8_t has_rf, is_blinking;
+static uint8_t has_rf;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
+
+#define IS_BLINKING (last_blink != UINT32_MAX)
 
 void device_loop(uint8_t has_touch) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
   if (has_touch &&                  // hardware features the touch pad
-      !is_blinking &&               // U2F is not waiting for touch
+      !IS_BLINKING &&               // applets are not waiting for touch
       cfg_is_kbd_interface_enable() // keyboard emulation enabled
   )
     KBDHID_Loop();
@@ -74,20 +76,18 @@ void device_update_led(void) {
 }
 
 void start_blinking(uint8_t sec) {
-  if (is_blinking) return;
+  if (IS_BLINKING) return;
   last_blink = device_get_tick();
+  blink_interval = 200;
   if (sec == 0) {
     blink_timeout = UINT32_MAX;
-    blink_interval = 512;
   } else {
     blink_timeout = last_blink + sec * 1000;
-    blink_interval = sec * 500;
   }
   toggle_led();
 }
 
 void stop_blinking(void) {
-  is_blinking = 0;
   last_blink = UINT32_MAX;
   if (cfg_is_led_normally_on()) {
     led_on();
