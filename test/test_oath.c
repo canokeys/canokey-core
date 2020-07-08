@@ -68,6 +68,10 @@ static void test_put(void **state) {
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
+  // duplicated name
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_CONDITIONS_NOT_SATISFIED);
+
   for (int i = 0; i != 10; ++i) {
     data[2] = 'b' + i;
     oath_process_apdu(capdu, rapdu);
@@ -284,6 +288,43 @@ static void test_put_unsupported_counter(void **state) {
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_DATA);
 }
 
+static void test_space_full(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  // name: abc, algo: TOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
+  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  capdu->ins = OATH_INS_PUT;
+  capdu->data = data;
+  capdu->lc = sizeof(data);
+
+  // make it full
+  for (int i = 0; i != 100; ++i) {
+    data[2] = ' ' + i;
+    oath_process_apdu(capdu, rapdu);
+    if(rapdu->sw != SW_NO_ERROR)
+      break;
+  }
+  assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
+
+  memcpy(c_buf, data, sizeof(data));
+  c_buf[2] = ' '; // delete the first one we put
+  test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
+
+  // then try again
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  // leave some space for further tests
+  for (int i = 1; i != 20; ++i) {
+    c_buf[2] = ' ' + i;
+    test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
+  }
+}
 
 int main() {
   struct lfs_config cfg;
@@ -316,6 +357,7 @@ int main() {
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),
+      cmocka_unit_test(test_space_full),
       cmocka_unit_test(test_regression_fuzz),
   };
 
