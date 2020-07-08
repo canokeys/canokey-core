@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/canokeys/ykoath"
+	"github.com/canokeys/ykoath/v2"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/hotp"
 	"github.com/pquerna/otp/totp"
@@ -145,7 +145,7 @@ func TestOath(t *testing.T) {
 				So(err, ShouldBeNil)
 
 				// fmt.Printf("adding key %d %s %s\n", i, name, hex.EncodeToString(key))
-				err = oath.Put(name, alg1, type1, 6, key, oath.OathIncreasing, 0)
+				err = oath.Put(name, alg1, type1, 6, key, ykoath.OathIncreasing, 0)
 				So(err, ShouldBeNil)
 				CurKeys++
 
@@ -279,7 +279,7 @@ func TestOath(t *testing.T) {
 				_, err := crand.Read(key)
 				So(err, ShouldBeNil)
 
-				err = oath.Put(name, alg1, type1, 6, key, oath.OathIncreasing, 0)
+				err = oath.Put(name, alg1, type1, 6, key, ykoath.OathIncreasing, 0)
 				So(err, ShouldBeNil)
 			}
 
@@ -288,7 +288,7 @@ func TestOath(t *testing.T) {
 			So(len(lResult), ShouldEqual, NumKeys)
 
 			Convey("Then put one more key should fail", func(ctx C) {
-				err = oath.Put("name", alg1, type1, 6, key, oath.OathIncreasing, 0)
+				err = oath.Put("name", alg1, type1, 6, key, ykoath.OathIncreasing, 0)
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "unknown (6a 84)")
 
