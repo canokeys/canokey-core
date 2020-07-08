@@ -77,6 +77,13 @@ static void test_put(void **state) {
     oath_process_apdu(capdu, rapdu);
     assert_int_equal(rapdu->sw, SW_NO_ERROR);
   }
+
+  // property: increasing-only
+  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01, 0x01};
+  capdu->data = data_with_prop;
+  capdu->lc = sizeof(data_with_prop);
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
 static void test_hotp_touch(void **state) {
@@ -127,6 +134,9 @@ static void test_calc(void **state) {
     OATH_TAG_RESPONSE, 0x05, 0x06, 0x7F, 0xF1, 0x36, 0xBE};
   test_helper_resp(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR, resp, sizeof(resp));
 
+  data[sizeof(data)-1] = 1; // decrease the value of challenge
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR);
+
   // length of data exceeds the Lc
   test_helper(data, sizeof(data) - 1, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
   test_helper(data, 1, OATH_INS_CALCULATE, SW_WRONG_LENGTH);
@@ -141,6 +151,30 @@ static void test_calc(void **state) {
 
   data[6] = MAX_CHALLENGE_LEN + 1;
   test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_WRONG_DATA);
+}
+
+
+// should be called after test_put
+static void test_increasing_only(void **state) {
+  (void)state;
+
+  uint8_t data[] = {
+    OATH_TAG_NAME, 0x03, 'i', 'n', 'c',
+    OATH_TAG_CHALLENGE, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02};
+
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR);
+
+  data[sizeof(data)-1] = 1; // decrease the value of challenge
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  data[sizeof(data)-1] = 2;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR);
+
+  data[sizeof(data)-1] = 3;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_NO_ERROR);
+
+  data[sizeof(data)-1] = 2;
+  test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_SECURITY_STATUS_NOT_SATISFIED);
 }
 
 static void test_list(void **state) {
@@ -170,7 +204,7 @@ static void test_calc_all(void **state) {
   (void)state;
 
   uint8_t c_buf[1024], r_buf[1024];
-  uint8_t data[] = {0x74, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
+  uint8_t data[] = {0x74, 0x08, 0x00, 0x00, 0x00, 0x21, 0x06, 0x00, 0x01, 0x03};
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
@@ -354,6 +388,7 @@ int main() {
       cmocka_unit_test(test_put_unsupported_algo),
       cmocka_unit_test(test_put_unsupported_counter),
       cmocka_unit_test(test_calc),
+      cmocka_unit_test(test_increasing_only),
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),

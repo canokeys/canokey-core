@@ -186,7 +186,9 @@ static int oath_update_challenge_field(OATH_RECORD *record, size_t file_offset) 
 static int oath_enforce_increasing(OATH_RECORD *record, size_t file_offset) {
   if ((record->prop & OATH_PROP_INC)) {
     if (challenge_len != sizeof(record->challenge)) return -1;
+    // DBG_MSG("challenge_len=%u %hhu %hhu\n", challenge_len, record->challenge[7], challenge[7]);
     if (memcmp(record->challenge, challenge, sizeof(record->challenge)) > 0) return -2;
+    memcpy(record->challenge, challenge, sizeof(record->challenge));
     oath_update_challenge_field(record, file_offset);
     return 0;
   }
