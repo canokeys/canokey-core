@@ -16,6 +16,7 @@
 #define OATH_TAG_PROPERTY 0x78
 #define OATH_TAG_COUNTER 0x7A
 #define OATH_TAG_REQ_TOUCH 0x7C
+#define OATH_TAG_NEXT_IDX 0x7D
 
 #define OATH_INS_PUT 0x01
 #define OATH_INS_DELETE 0x02
@@ -59,5 +60,6 @@ void oath_poweroff(void);
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int oath_process_one_touch(char *output, size_t maxlen);
+int oath_export(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_OATH_OATH_H_
