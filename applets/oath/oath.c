@@ -82,13 +82,24 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   // find an empty slot to save the record
   int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  size_t nRecords = size / sizeof(OATH_RECORD), i;
+  size_t nRecords = size / sizeof(OATH_RECORD), unoccupied;
   OATH_RECORD record;
-  for (i = 0; i != nRecords; ++i) {
+  unoccupied = nRecords; // append by default
+  for (size_t i = 0; i != nRecords; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == 0) break;
+    // duplicated name found
+    if (record.name_len == name_len && memcmp(record.name, DATA + name_offset, name_len) == 0) {
+      DBG_MSG("dup name\n");
+      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    }
+    // empty slot found
+    if (record.name_len == 0 && unoccupied == nRecords) unoccupied = i;
   }
-  if (i >= MAX_RECORDS) EXCEPT(SW_NOT_ENOUGH_SPACE);
+  // DBG_MSG("unoccupied=%zu nRecords=%zu\n", unoccupied, nRecords);
+  if (unoccupied == nRecords && // empty slot not found
+      unoccupied >= MAX_RECORDS // number of records exceeded the limit
+  )
+    EXCEPT(SW_NOT_ENOUGH_SPACE);
 
   record.name_len = name_len;
   memcpy(record.name, DATA + name_offset, name_len);
@@ -96,7 +107,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(record.key, DATA + key_offset, key_len);
   record.prop = prop;
   memcpy(record.challenge, chal, MAX_CHALLENGE_LEN);
-  return write_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
+  return write_file(OATH_FILE, &record, unoccupied * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
 }
 
 static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
