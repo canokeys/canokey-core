@@ -20,7 +20,7 @@ jobs:
       uses: actions/cache@v1
       with:
         path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-global
+        key: ${{ runner.os }}-go-${{ hashFiles('./go.mod') }}
 
     - name: Check out code
       uses: actions/checkout@v2
