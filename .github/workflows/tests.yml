@@ -16,16 +16,18 @@ jobs:
         go-version: 1.13
       id: go
 
-    - name: Cache GO Modules
-      uses: actions/cache@v1
-      with:
-        path: ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('./go.mod') }}
-
     - name: Check out code
       uses: actions/checkout@v2
       with:
         submodules: recursive
+
+    - name: Cache GO Modules
+      uses: actions/cache@v1
+      env:
+        cache-name: go_mod
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
     - name: Cache Patched GPG
       uses: actions/cache@v1
