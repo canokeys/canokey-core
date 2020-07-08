@@ -59,19 +59,23 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
 
   // parse property (optional tag)
   uint8_t prop = 0;
-  if (offset + 3 <= LC && DATA[offset] == OATH_TAG_PROPERTY) {
+  if (offset < LC && DATA[offset] == OATH_TAG_PROPERTY) {
     offset++;
-    if (1 != DATA[offset++]) EXCEPT(SW_WRONG_LENGTH);
+    if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
+    if (1 != DATA[offset++]) EXCEPT(SW_WRONG_DATA);
+    if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
     prop = DATA[offset++];
     if ((prop & ~OATH_PROP_ALL_FLAGS) != 0) EXCEPT(SW_WRONG_DATA);
   }
 
   // parse HOTP counter (optional tag)
   uint8_t chal[MAX_CHALLENGE_LEN] = {0};
-  if (offset + 2 + 4 <= LC && DATA[offset] == OATH_TAG_COUNTER) {
+  if (offset < LC && DATA[offset] == OATH_TAG_COUNTER) {
     offset++;
-    if (4 != DATA[offset++]) EXCEPT(SW_WRONG_LENGTH);
+    if (offset >= LC) EXCEPT(SW_WRONG_LENGTH);
+    if (4 != DATA[offset++]) EXCEPT(SW_WRONG_DATA);
     if ((alg & OATH_TYPE_MASK) != OATH_TYPE_HOTP) EXCEPT(SW_WRONG_DATA);
+    if (offset + 4 > LC) EXCEPT(SW_WRONG_LENGTH);
     memcpy(chal + 4, DATA + offset, 4);
     offset += 4;
   }
