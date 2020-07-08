@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/canokeys/ykoath/v2"
+	"gopkg.in/canokeys/ykoath.v2"
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/hotp"
 	"github.com/pquerna/otp/totp"
