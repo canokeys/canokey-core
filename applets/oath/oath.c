@@ -6,6 +6,7 @@
 #include <oath.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 
 #define OATH_FILE "oath"
 #define MAX_RECORDS 100
@@ -432,7 +433,7 @@ int oath_process_one_touch(char *output, size_t maxlen) {
   uint32_t offset, otp_code;
   if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -1;
   if (oath_calculate_by_offset(offset, (uint8_t *)&otp_code) < 0) return -1;
-  snprintf(output, maxlen, "%06u", otp_code % 1000000);
+  snprintf(output, maxlen, "%06"PRIu32, otp_code % 1000000);
   return 0;
 }
 
