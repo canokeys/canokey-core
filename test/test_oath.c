@@ -357,9 +357,9 @@ static void test_put_unsupported_counter(void **state) {
 static void test_space_full(void **state) {
   (void)state;
 
-  uint8_t c_buf[1024], r_buf[1024];
+  uint8_t c_buf[128], r_buf[128];
   // name: abc, algo: TOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
-  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02};
+  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01, OATH_PROP_EXPORTABLE};
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
@@ -369,11 +369,13 @@ static void test_space_full(void **state) {
   capdu->lc = sizeof(data);
 
   // make it full
+  int record_added = 0;
   for (int i = 0; i != 100; ++i) {
     data[2] = ' ' + i;
     oath_process_apdu(capdu, rapdu);
     if(rapdu->sw != SW_NO_ERROR)
       break;
+    record_added++;
   }
   assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
 
@@ -384,6 +386,29 @@ static void test_space_full(void **state) {
   // then try again
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  capdu->lc = 0;
+  capdu->p2 = 0;
+  capdu->le = sizeof(r_buf);
+  int export_called = 0, record_exported = 0;
+  for(;;) {
+    export_called++;
+    oath_export(capdu, rapdu);
+    assert_in_range(rapdu->len, 3, sizeof(r_buf));
+    for (int i = 0; i < rapdu->len;) {
+      if(r_buf[i++] == OATH_TAG_NAME) record_exported++;
+      i += r_buf[i] + 1; // skip the L and V
+    }
+    if(rapdu->sw == SW_NO_ERROR)
+      break;
+    const uint8_t tag_next[] = {OATH_TAG_NEXT_IDX, 1};
+    assert_int_equal(rapdu->sw, 0x61FF);
+    assert_memory_equal(&r_buf[rapdu->len-3], tag_next, 2);
+    assert_in_range(r_buf[rapdu->len-1], capdu->p2+1, 99);
+    capdu->p2 = r_buf[rapdu->len-1];
+  }
+  printf("export called: %d\nrecord exported: %d\n", export_called, record_exported);
+  assert_int_equal(record_exported, record_added + 1); // one from test_put()
 
   // leave some space for further tests
   for (int i = 1; i != 20; ++i) {
