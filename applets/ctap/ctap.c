@@ -603,11 +603,15 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_int(&map, RESP_options);
   CHECK_CBOR_RET(ret);
   CborEncoder option_map;
-  ret = cbor_encoder_create_map(&map, &option_map, 1);
+  ret = cbor_encoder_create_map(&map, &option_map, 2);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&option_map, "clientPin");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&option_map, has_pin() > 0);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&option_map, "rk");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&option_map, true);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &option_map);
   CHECK_CBOR_RET(ret);
