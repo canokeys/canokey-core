@@ -77,7 +77,7 @@ void WebUSB_Loop(void) {
   if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_size) < 0) {
     // abandon malformed apdu
     LL = 0;
-    SW = SW_CHECKING_ERROR;
+    SW = SW_WRONG_LENGTH;
   } else {
     process_apdu(capdu, rapdu);
   }

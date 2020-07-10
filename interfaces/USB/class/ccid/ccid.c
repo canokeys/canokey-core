@@ -151,7 +151,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   if (build_capdu(&apdu_cmd, bulkout_data.abData, bulkout_data.dwLength) < 0) {
     // abandon malformed apdu
     LL = 0;
-    SW = SW_CHECKING_ERROR;
+    SW = SW_WRONG_LENGTH;
   } else {
     device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
     process_apdu(capdu, rapdu);

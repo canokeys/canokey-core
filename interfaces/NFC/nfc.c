@@ -125,7 +125,7 @@ void nfc_loop(void) {
 
       if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_rx_size) < 0) {
         LL = 0;
-        SW = SW_CHECKING_ERROR;
+        SW = SW_WRONG_LENGTH;
       } else {
         device_set_timeout(send_wtx, WTX_PERIOD);
         process_apdu(capdu, rapdu);
