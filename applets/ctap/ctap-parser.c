@@ -129,7 +129,8 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
   ret = cbor_value_copy_text_string(&cred, type_str, &sz, NULL);
   CHECK_CBOR_RET(ret);
 
-  if (strncmp(type_str, "public-key", 10) != 0) return CTAP2_ERR_INVALID_CBOR;
+  // required by FIDO Conformance Tool
+  if (strncmp(type_str, "public-key", 10) != 0) return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
 
   ret = cbor_value_get_int_checked(&alg, (int *)alg_type);
   CHECK_CBOR_RET(ret);
@@ -147,14 +148,18 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val) {
   CHECK_CBOR_RET(ret);
 
   int32_t alg_type;
+  size_t chosen = arr_length;
+  // all elements in array must be examined
   for (size_t i = 0; i < arr_length; ++i) {
     ret = parse_pub_key_cred_param(&arr, &alg_type);
     CHECK_PARSER_RET(ret);
-    if (ret == 0 && alg_type == COSE_ALG_ES256) return 0;
+    if (ret == 0 && alg_type == COSE_ALG_ES256) chosen = i;
     ret = cbor_value_advance(&arr);
     CHECK_CBOR_RET(ret);
   }
-  return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
+  if (chosen == arr_length) return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
+
+  return 0;
 }
 
 uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
@@ -443,6 +448,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
   CborValue it, map;
   size_t map_length;
   int key, pinProtocol;
+  uint8_t tmp_up;
   memset(mc, 0, sizeof(CTAP_makeCredential));
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
@@ -505,7 +511,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       CHECK_CBOR_RET(ret);
       ret = cbor_value_get_array_length(&map, &mc->excludeListSize);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("excludeList size: %d\n", (int) mc->excludeListSize);
+      DBG_MSG("excludeList size: %d\n", (int)mc->excludeListSize);
       break;
 
     case MC_extensions:
@@ -517,8 +523,11 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_options:
       DBG_MSG("options found\n");
-      ret = parse_options(&mc->rk, &mc->uv, NULL, &map);
+      tmp_up = false;
+      ret = parse_options(&mc->rk, &mc->uv, &tmp_up, &map);
       CHECK_PARSER_RET(ret);
+      // required by FIDO Conformance Tool
+      if (tmp_up) return CTAP2_ERR_INVALID_OPTION;
       mc->parsedParams |= PARAM_options;
       break;
 
@@ -615,7 +624,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       CHECK_CBOR_RET(ret);
       ret = cbor_value_get_array_length(&map, &ga->allowListSize);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("allowList size: %d\n", (int) ga->allowListSize);
+      DBG_MSG("allowList size: %d\n", (int)ga->allowListSize);
       break;
 
     case GA_extensions:
