@@ -113,7 +113,7 @@ static void CTAPHID_Execute_Cbor(void) {
   ctap_process_cbor(channel.data, channel.bcnt_total, channel.data, &len);
   DBG_MSG("R: ");
   PRINT_HEX(channel.data, len);
-  CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, len);
+  CTAPHID_SendResponse(channel.cid, CTAPHID_CBOR, channel.data, len);
 }
 
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
