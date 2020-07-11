@@ -200,13 +200,6 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       else
         CTAPHID_Execute_Init();
       break;
-    case CTAPHID_WINK:
-      DBG_MSG("WINK\n");
-      if (wait_for_user)
-        CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
-      else
-        CTAPHID_SendResponse(channel.cid, channel.cmd, NULL, 0);
-      break;
     case CTAPHID_PING:
       DBG_MSG("PING\n");
       if (wait_for_user)
