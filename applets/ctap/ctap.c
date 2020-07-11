@@ -511,15 +511,18 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // user
   if (ga.allowListSize == 0) {
+    // CTAP Spec: User identifiable information (name, DisplayName, icon) MUST not
+    // be returned if user verification is not done by the authenticator.
+    bool user_details = (ga.parsedParams & PARAM_pinAuth) && credential_numbers > 1;
     ret = cbor_encode_int(&map, RESP_publicKeyCredentialUserEntity);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, credential_numbers > 1 ? 4 : 1);
+    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 4 : 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "id");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_byte_string(&sub_map, rk.user.id, rk.user.id_size);
     CHECK_CBOR_RET(ret);
-    if (credential_numbers > 1) {
+    if (user_details) {
       ret = cbor_encode_text_stringz(&sub_map, "icon");
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.icon);
