@@ -387,7 +387,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       ret = cbor_value_advance(&ga.allowList);
       CHECK_CBOR_RET(ret);
     }
-    if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
+    if (i == ga.allowListSize) {
+      if (ga.up) WAIT();
+      return CTAP2_ERR_NO_CREDENTIALS;
+    }
   } else {
     int size = 0;
     if (credential_idx == 0) {
@@ -404,7 +407,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
         if (memcmp(ga.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0)
           credential_list[credential_numbers++] = i;
       }
-      if (credential_numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      if (credential_numbers == 0) {
+        if (ga.up) WAIT();
+        return CTAP2_ERR_NO_CREDENTIALS;
+      }
     }
     // fetch rk and get private key
     size =
