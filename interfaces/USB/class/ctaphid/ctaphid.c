@@ -139,7 +139,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   channel.cid = frame.cid;
 
   if (FRAME_TYPE(frame) == TYPE_INIT) {
-    DBG_MSG("CTAP init frame, cmd=0x%x\n", (int)frame.init.cmd);
+    // DBG_MSG("CTAP init frame, cmd=0x%x\n", (int)frame.init.cmd);
     if (!wait_for_user && channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) { // self abort is ok
       channel.state = CTAPHID_IDLE;
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
@@ -158,7 +158,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     memcpy(channel.data, frame.init.data, copied);
     channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
   } else if (FRAME_TYPE(frame) == TYPE_CONT) {
-    DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd, (int)FRAME_SEQ(frame));
+    // DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd, (int)FRAME_SEQ(frame));
     if (channel.state == CTAPHID_IDLE) return LOOP_SUCCESS; // ignore spurious continuation packet
     if (FRAME_SEQ(frame) != channel.seq++) {
       channel.state = CTAPHID_IDLE;
