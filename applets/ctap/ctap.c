@@ -387,7 +387,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       ret = cbor_value_advance(&ga.allowList);
       CHECK_CBOR_RET(ret);
     }
-    if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
+    if (i == ga.allowListSize) {
+      if (ga.up) WAIT();
+      return CTAP2_ERR_NO_CREDENTIALS;
+    }
   } else {
     int size = 0;
     if (credential_idx == 0) {
@@ -404,7 +407,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
         if (memcmp(ga.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0)
           credential_list[credential_numbers++] = i;
       }
-      if (credential_numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      if (credential_numbers == 0) {
+        if (ga.up) WAIT();
+        return CTAP2_ERR_NO_CREDENTIALS;
+      }
     }
     // fetch rk and get private key
     size =
@@ -511,15 +517,18 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // user
   if (ga.allowListSize == 0) {
+    // CTAP Spec: User identifiable information (name, DisplayName, icon) MUST not
+    // be returned if user verification is not done by the authenticator.
+    bool user_details = (ga.parsedParams & PARAM_pinAuth) && credential_numbers > 1;
     ret = cbor_encode_int(&map, RESP_publicKeyCredentialUserEntity);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, credential_numbers > 1 ? 4 : 1);
+    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 4 : 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "id");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_byte_string(&sub_map, rk.user.id, rk.user.id_size);
     CHECK_CBOR_RET(ret);
-    if (credential_numbers > 1) {
+    if (user_details) {
       ret = cbor_encode_text_stringz(&sub_map, "icon");
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.icon);
@@ -603,7 +612,11 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_int(&map, RESP_options);
   CHECK_CBOR_RET(ret);
   CborEncoder option_map;
-  ret = cbor_encoder_create_map(&map, &option_map, 1);
+  ret = cbor_encoder_create_map(&map, &option_map, 2);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&option_map, "rk");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&option_map, true);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&option_map, "clientPin");
   CHECK_CBOR_RET(ret);
@@ -847,34 +860,42 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
 }
 
 int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+  int ret = 0;
   LL = 0;
   SW = SW_NO_ERROR;
-  if (CLA != 0x00 && (CLA != 0x80 || INS != CTAP_INS_MSG)) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (CLA == 0x80) {
+    if (INS == CTAP_INS_MSG) {
+      // rapdu buffer size: APDU_BUFFER_SIZE
+      size_t len = APDU_BUFFER_SIZE;
 
-  int ret = 0;
-  // rapdu buffer size: APDU_BUFFER_SIZE
-  size_t len = APDU_BUFFER_SIZE;
-  switch (INS) {
-  case U2F_REGISTER:
-    ret = u2f_register(capdu, rapdu);
-    break;
-  case U2F_AUTHENTICATE:
-    ret = u2f_authenticate(capdu, rapdu);
-    break;
-  case U2F_VERSION:
-    ret = u2f_version(capdu, rapdu);
-    break;
-  case U2F_SELECT:
-    ret = u2f_select(capdu, rapdu);
-    break;
-  case CTAP_INS_MSG:
-    ret = ctap_process_cbor(DATA, LC, RDATA, &len);
-    // len is the actual len written to RDATA
-    LL = len;
-    break;
-  default:
-    EXCEPT(SW_INS_NOT_SUPPORTED);
-  }
+      ret = ctap_process_cbor(DATA, LC, RDATA, &len);
+      // len is the actual len written to RDATA
+      LL = len;
+    } else {
+      EXCEPT(SW_INS_NOT_SUPPORTED);
+    }
+  } else if (CLA == 0x00) {
+    switch (INS) {
+    case U2F_REGISTER:
+      ret = u2f_register(capdu, rapdu);
+      break;
+    case U2F_AUTHENTICATE:
+      ret = u2f_authenticate(capdu, rapdu);
+      break;
+    case U2F_VERSION:
+      ret = u2f_version(capdu, rapdu);
+      break;
+    case U2F_SELECT:
+      ret = u2f_select(capdu, rapdu);
+      break;
+    case CTAP_INS_MSG:
+      break;
+    default:
+      EXCEPT(SW_INS_NOT_SUPPORTED);
+    }
+  } else
+    EXCEPT(SW_CLA_NOT_SUPPORTED);
+
   if (ret < 0)
     EXCEPT(SW_UNABLE_TO_PROCESS);
   else

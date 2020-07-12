@@ -24,6 +24,14 @@ void nfc_init(void) {
   next_state = TO_RECEIVE;
   apdu_cmd.data = global_buffer;
   apdu_resp.data = global_buffer;
+  uint8_t cfg;
+  fm_read_reg(REG_NFC_CFG, &cfg, 1);
+  if (cfg == 0) { // EEPROM in FM11 unconfigured
+    uint8_t l3cfg[] = {0x44, 0x00, 0x04, 0x20};
+    uint8_t l4cfg[] = {0x05, 0x72, 0x03, 0x00, 0xB3, 0x99, 0x00};
+    fm_write_eeprom(0x3A0, l3cfg, sizeof(l3cfg));
+    fm_write_eeprom(0x3B0, l4cfg, sizeof(l4cfg));
+  }
   fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
 }
 
@@ -117,7 +125,7 @@ void nfc_loop(void) {
 
       if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_rx_size) < 0) {
         LL = 0;
-        SW = SW_CHECKING_ERROR;
+        SW = SW_WRONG_LENGTH;
       } else {
         device_set_timeout(send_wtx, WTX_PERIOD);
         process_apdu(capdu, rapdu);
