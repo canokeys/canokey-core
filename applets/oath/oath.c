@@ -244,7 +244,6 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
 
   uint8_t hash[SHA256_DIGEST_LENGTH];
   memcpy(result, oath_digest(&record, hash), 4);
-  result[3] &= 0x7F;
   return 0;
 }
 
@@ -491,6 +490,7 @@ int oath_process_one_touch(char *output, size_t maxlen) {
   uint32_t offset, otp_code;
   if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -1;
   if (oath_calculate_by_offset(offset, (uint8_t *)&otp_code) < 0) return -1;
+  otp_code = htobe32(otp_code);
   snprintf(output, maxlen, "%06" PRIu32, otp_code % 1000000);
   return 0;
 }
