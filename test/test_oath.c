@@ -135,7 +135,7 @@ static void test_hotp_touch(void **state) {
   int ret;
   char buf[7];
 
-  // add an record w/o inital counter value
+  // add an record w/o initial counter value
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_NO_ERROR);
 
   // default item isn't set yet
@@ -155,13 +155,39 @@ static void test_hotp_touch(void **state) {
   ret = oath_process_one_touch(buf, sizeof(buf));
   assert_int_equal(ret, -1);
 
-  // add an record w/ inital counter value
+  // add an record w/ initial counter value
   test_helper(data2, sizeof(data2), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(data2, 5, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
 
   ret = oath_process_one_touch(buf, sizeof(buf));
   assert_int_equal(ret, 0);
   assert_string_equal(buf, codes[2]);
+
+  uint8_t rfc4226example[] = {
+    OATH_TAG_NAME, 0x05, '.', '4', '2', '2', '6',
+    OATH_TAG_KEY, 22, 0x11, 0x06, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30
+  };
+  const char * results[] = {
+    "755224",
+    "287082",
+    "359152",
+    "969429",
+    "338314",
+    "254676",
+    "287922",
+    "162583",
+    "399871",
+    "520489",
+    "403154",
+  };
+  test_helper(rfc4226example, sizeof(rfc4226example), OATH_INS_PUT, SW_NO_ERROR);
+  test_helper(rfc4226example, 7, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  for (int i = 1; i <= 10; i++) {
+    ret = oath_process_one_touch(buf, sizeof(buf));
+    assert_int_equal(ret, 0);
+    // printf("code[%d]: %s\n", i, buf);
+    assert_string_equal(buf, results[i]);
+  }
 }
 
 // should be called after test_put

@@ -216,8 +216,10 @@ static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA256_DIGEST_LE
     hmac_sha256(record->key + 2, record->key_len - 2, challenge, challenge_len, buffer);
     digest_length = SHA256_DIGEST_LENGTH;
   }
+  // print_hex(buffer, digest_length);
 
   uint8_t offset = buffer[digest_length - 1] & 0xF;
+  buffer[offset] &= 0x7F;
   return buffer + offset;
 }
 
@@ -242,10 +244,12 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
 
     challenge_len = sizeof(record.challenge);
     memcpy(challenge, record.challenge, challenge_len);
+    // print_hex(challenge, challenge_len);
   }
 
   uint8_t hash[SHA256_DIGEST_LENGTH];
   memcpy(result, oath_digest(&record, hash), 4);
+  // print_hex(result, 4);
   return 0;
 }
 
@@ -344,7 +348,6 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
 
   uint8_t hash[SHA256_DIGEST_LENGTH];
   memcpy(RDATA + 3, oath_digest(&record, hash), 4);
-  RDATA[3] &= 0x7F;
   LL = 7;
   return 0;
 }
@@ -416,7 +419,6 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
     uint8_t hash[SHA256_DIGEST_LENGTH];
     memmove(RDATA + off_out, oath_digest(&record, hash), 4);
-    RDATA[off_out] &= 0x7F;
     off_out += 4;
   }
   LL = off_out;
