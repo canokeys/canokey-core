@@ -140,7 +140,7 @@ static void test_hotp_touch(void **state) {
 
   // default item isn't set yet
   ret = oath_process_one_touch(buf, sizeof(buf));
-  assert_int_equal(ret, -1);
+  assert_int_equal(ret, -2);
 
   test_helper(data, 4, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
 
@@ -153,7 +153,7 @@ static void test_hotp_touch(void **state) {
   test_helper(data, 4, OATH_INS_DELETE, SW_NO_ERROR);
 
   ret = oath_process_one_touch(buf, sizeof(buf));
-  assert_int_equal(ret, -1);
+  assert_int_equal(ret, -2);
 
   // add an record w/ initial counter value
   test_helper(data2, sizeof(data2), OATH_INS_PUT, SW_NO_ERROR);

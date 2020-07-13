@@ -224,15 +224,15 @@ static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA256_DIGEST_LE
 }
 
 static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
-  if (file_offset % sizeof(OATH_RECORD) != 0) return -1;
+  if (file_offset % sizeof(OATH_RECORD) != 0) return -2;
   int size = get_file_size(OATH_FILE);
-  if (size < 0 || file_offset >= size) return -1;
+  if (size < 0 || file_offset >= size) return -2;
   OATH_RECORD record;
   if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
 
   if (record.name_len == 0) {
     ERR_MSG("Record deleted\n");
-    return -1;
+    return -2;
   }
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) {
     ERR_MSG("TOTP is not supported\n");
@@ -491,9 +491,10 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int oath_process_one_touch(char *output, size_t maxlen) {
-  uint32_t offset, otp_code;
-  if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -1;
-  if (oath_calculate_by_offset(offset, (uint8_t *)&otp_code) < 0) return -1;
+  uint32_t offset = 0xffffffff, otp_code;
+  if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -2;
+  int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
+  if (ret < 0) return ret;
   otp_code = htobe32(otp_code);
   snprintf(output, maxlen, "%06" PRIu32, otp_code % 1000000);
   return 0;

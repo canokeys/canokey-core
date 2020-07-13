@@ -12,7 +12,7 @@ static enum {
   KBDHID_KeyDown,
   KBDHID_KeyUp,
 } state;
-static char key_sequence[10];
+static char key_sequence[8 + 2];
 static uint8_t key_seq_position;
 static keyboard_report_t report;
 static uint32_t last_sent;
@@ -26,17 +26,29 @@ static uint8_t ascii2keycode(char ch) {
     return 40;
   else if ('a' <= ch && ch <= 'z')
     return 4 + ch - 'a';
+  else if ('-' == ch)
+    return 0x2d;
   else
     return 0; // do not support non-digits for now
 }
 
 static void KBDHID_UserTouchHandle(void) {
-  if (oath_process_one_touch(key_sequence, sizeof(key_sequence)) < 0) {
-    ERR_MSG("Failed to get the OTP code\n");
-    memcpy(key_sequence, "error", 6);
+  int ret;
+  memset(key_sequence, 0, sizeof(key_sequence));
+  ret = oath_process_one_touch(key_sequence, sizeof(key_sequence));
+  if (ret < 0) {
+    ERR_MSG("Failed to get the OTP code: %d\n", ret);
+    if (ret == -2)
+      memcpy(key_sequence, "not-set\r", 8);
+    else
+      memcpy(key_sequence, "error\r", 6);
   } else {
-    key_sequence[6] = '\r';
-    key_sequence[7] = '\0';
+    for (size_t i = 0; i < sizeof(key_sequence) - 1; i++) {
+      if (key_sequence[i] == '\0') {
+        key_sequence[i] = '\r';
+        break;
+      }
+    }
   }
   key_seq_position = 0;
   state = KBDHID_Typing;
