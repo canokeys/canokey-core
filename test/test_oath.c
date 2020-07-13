@@ -124,16 +124,21 @@ static void test_hotp_touch(void **state) {
     OATH_TAG_NAME, 0x02, 'H', '1',
     OATH_TAG_KEY, 0x0c, 0x11, 0x06, 'H', 'e', 'l', 'l', 'o', '!', 0xDE, 0xAD, 0xBE, 0xEF,
   };
-  uint8_t data2[] = {
+  // name: H1n, algo: HOTP+SHA1, digit: 8, key in base32: JBSWY3DPEHPK3PXP
+  uint8_t data8[] = {
     OATH_TAG_NAME, 0x03, 'H', '1', 'n',
-    OATH_TAG_KEY, 0x0c, 0x11, 0x06, 'H', 'e', 'l', 'l', 'o', '!', 0xDE, 0xAD, 0xBE, 0xEF,
+    OATH_TAG_KEY, 0x0c, 0x11, 0x08, 'H', 'e', 'l', 'l', 'o', '!', 0xDE, 0xAD, 0xBE, 0xEF,
     OATH_TAG_COUNTER, 0x04, 0x00, 0x00, 0x00, 0x02,
   };
   const char * codes[] = {
     "996554", "602287", "143627"
   };
+  const char * codes8[] = {
+    "41996554", "88602287", "91143627",
+    "05960129", "38768897", "68883951",
+  };
   int ret;
-  char buf[7];
+  char buf[9];
 
   // add an record w/o initial counter value
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_NO_ERROR);
@@ -156,12 +161,19 @@ static void test_hotp_touch(void **state) {
   assert_int_equal(ret, -2);
 
   // add an record w/ initial counter value
-  test_helper(data2, sizeof(data2), OATH_INS_PUT, SW_NO_ERROR);
-  test_helper(data2, 5, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  test_helper(data8, sizeof(data8), OATH_INS_PUT, SW_NO_ERROR);
+  test_helper(data8, 5, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
 
+  for (int i = 2; i < 6; i++) {
+    ret = oath_process_one_touch(buf, sizeof(buf));
+    assert_int_equal(ret, 0);
+    // printf("code[%d]: %s\n", i+1, buf);
+    assert_string_equal(buf, codes8[i]);
+  }
+  ret = oath_process_one_touch(buf, 8);
+  assert_int_equal(ret, -1);
   ret = oath_process_one_touch(buf, sizeof(buf));
   assert_int_equal(ret, 0);
-  assert_string_equal(buf, codes[2]);
 
   uint8_t rfc4226example[] = {
     OATH_TAG_NAME, 0x05, '.', '4', '2', '2', '6',

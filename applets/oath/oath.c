@@ -250,7 +250,7 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   uint8_t hash[SHA256_DIGEST_LENGTH];
   memcpy(result, oath_digest(&record, hash), 4);
   // print_hex(result, 4);
-  return 0;
+  return record.key[1]; // the number of digits
 }
 
 static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
@@ -495,8 +495,13 @@ int oath_process_one_touch(char *output, size_t maxlen) {
   if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -2;
   int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
   if (ret < 0) return ret;
+  if (ret + 1 > maxlen) return -1;
+  output[ret] = '\0';
   otp_code = htobe32(otp_code);
-  snprintf(output, maxlen, "%06" PRIu32, otp_code % 1000000);
+  while (ret--) {
+    output[ret] = otp_code % 10 + '0';
+    otp_code /= 10;
+  }
   return 0;
 }
 
