@@ -56,6 +56,8 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   if (((alg & OATH_TYPE_MASK) != OATH_TYPE_HOTP && (alg & OATH_TYPE_MASK) != OATH_TYPE_TOTP) ||
       ((alg & OATH_ALG_MASK) != OATH_ALG_SHA1 && (alg & OATH_ALG_MASK) != OATH_ALG_SHA256))
     EXCEPT(SW_WRONG_DATA);
+  uint8_t digits = DATA[offset + 1];
+  if (digits < 4 || digits > 8) EXCEPT(SW_WRONG_DATA);
   offset += key_len;
 
   // parse property (optional tag)

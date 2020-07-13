@@ -299,7 +299,7 @@ static void test_regression_fuzz(void **state) {
       // name tag
       OATH_TAG_NAME, 0x01, 0x20,
       // key tag
-      OATH_TAG_KEY, 0x03, 0x11, 0x10, 0x00,
+      OATH_TAG_KEY, 0x03, 0x11, 0x04, 0x00,
       // HOTP tag
       OATH_TAG_COUNTER, 0x04};
     test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_LENGTH);
