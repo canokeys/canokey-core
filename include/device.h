@@ -65,9 +65,13 @@ void set_touch_result(uint8_t result);
 void device_update_led(void);
 /**
  * Blink for several time
- * @param sec 0 for infinite
+ * @param sec duration, 0 for infinite
+ * @param interval controls blinking frequency
  */
-void start_blinking(uint8_t sec);
+void start_blinking_interval(uint8_t sec, uint32_t interval);
+static inline void start_blinking(uint8_t sec) {
+  start_blinking_interval(sec, 200);
+}
 void stop_blinking(void);
 void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len);
 void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len);

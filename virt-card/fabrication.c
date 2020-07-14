@@ -89,7 +89,7 @@ int card_fabrication_procedure(const char * lfs_root) {
   lfs_filebd_create(&cfg, lfs_root);
 
   fs_init(&cfg);
-  admin_install();
+  admin_install(0);
   oath_install(0);
 
   fido2_init();

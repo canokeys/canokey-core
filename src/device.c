@@ -75,10 +75,10 @@ void device_update_led(void) {
   }
 }
 
-void start_blinking(uint8_t sec) {
+void start_blinking_interval(uint8_t sec, uint32_t interval) {
   if (IS_BLINKING) return;
   last_blink = device_get_tick();
-  blink_interval = 200;
+  blink_interval = interval;
   if (sec == 0) {
     blink_timeout = UINT32_MAX;
   } else {
