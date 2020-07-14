@@ -282,6 +282,8 @@ int main() {
 
   printf("listening on 0.0.0.0:3240\n");
 
+  // emulate the NFC mode, where user-presence tests are skipped
+  set_nfc_state(1);
   // init usb stack
   usb_device_init();
   card_fabrication_procedure("/tmp/lfs-root");

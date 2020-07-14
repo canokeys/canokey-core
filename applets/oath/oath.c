@@ -307,7 +307,6 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   }
   if (i == nRecords) EXCEPT(SW_DATA_INVALID);
 
-#ifndef TEST
   if ((record.prop & OATH_PROP_TOUCH)) {
     if (!is_nfc()) {
       start_blinking(2);
@@ -316,7 +315,6 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
       stop_blinking();
     }
   }
-#endif
 
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) {
     if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);

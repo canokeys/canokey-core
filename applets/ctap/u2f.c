@@ -14,14 +14,12 @@
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
 
-#ifndef TEST
   if (!is_nfc()) {
     start_blinking(2);
     if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     set_touch_result(TOUCH_NO);
     stop_blinking();
   }
-#endif
 
   U2F_REGISTER_REQ *req = (U2F_REGISTER_REQ *)DATA;
   U2F_REGISTER_RESP *resp = (U2F_REGISTER_RESP *)RDATA;
@@ -76,14 +74,12 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (err) EXCEPT(SW_WRONG_DATA);
 
   if (P1 == U2F_AUTH_CHECK_ONLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-#ifndef TEST
   if (!is_nfc()) {
     start_blinking(2);
     if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     set_touch_result(TOUCH_NO);
     stop_blinking();
   }
-#endif
 
   len = sizeof(auth_data);
   uint8_t flags = FLAGS_UP;

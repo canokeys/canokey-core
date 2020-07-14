@@ -29,8 +29,6 @@ uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
-#ifndef TEST
-
 uint8_t wait_for_user_presence(void) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
@@ -98,8 +96,7 @@ void stop_blinking(void) {
   }
 }
 
-#else
-
+#ifdef TEST
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
   if (*var == expect) {
     *var = update;
