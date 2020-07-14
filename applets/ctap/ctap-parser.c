@@ -124,13 +124,12 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
   if (cbor_value_get_type(&cred) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
   if (cbor_value_get_type(&alg) != CborIntegerType) return CTAP2_ERR_MISSING_PARAMETER;
 
-  char type_str[10];
-  size_t sz = sizeof(type_str);
-  ret = cbor_value_copy_text_string(&cred, type_str, &sz, NULL);
+  bool is_public_key;
+  ret = cbor_value_text_string_equals(&cred, "public-key", &is_public_key);
   CHECK_CBOR_RET(ret);
 
   // required by FIDO Conformance Tool
-  if (strncmp(type_str, "public-key", 10) != 0) return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
+  if (!is_public_key) return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
 
   ret = cbor_value_get_int_checked(&alg, (int *)alg_type);
   CHECK_CBOR_RET(ret);
@@ -208,8 +207,6 @@ uint8_t parse_public_key_credential_list(CborValue *lst) {
 
 uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val) {
   size_t map_length;
-  char key[2];
-  bool b;
   CborValue map;
 
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -221,25 +218,32 @@ uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    size_t sz = sizeof(key);
-    ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
-    if (ret != CborErrorOutOfMemory) CHECK_CBOR_RET(ret);
-
+    size_t sz;
+    char key[2];
+    bool b;
+    ret = cbor_value_calculate_string_length(&map, &sz);
+    CHECK_CBOR_RET(ret);
+    if (sz == sizeof(key)) {
+      ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
+      CHECK_CBOR_RET(ret);
+    } else {
+      key[0] = key[1] = 0;
+    }
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
     if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
-    if (strncmp(key, "rk", 2) == 0) {
+    if (memcmp(key, "rk", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("rk: %d\n", b);
       if (rk) *rk = b;
-    } else if (strncmp(key, "uv", 2) == 0) {
+    } else if (memcmp(key, "uv", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("uv: %d\n", b);
       if (uv) *uv = b;
-    } else if (strncmp(key, "up", 2) == 0) {
+    } else if (memcmp(key, "up", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("up: %d\n", b);
@@ -332,8 +336,6 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
 uint8_t parse_mc_extensions(uint8_t *hmac_secret, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   size_t map_length;
-  char key[11];
-  bool b;
   CborValue map;
   int ret = cbor_value_enter_container(val, &map);
   CHECK_CBOR_RET(ret);
@@ -342,20 +344,21 @@ uint8_t parse_mc_extensions(uint8_t *hmac_secret, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    size_t sz = sizeof(key);
-    ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
-    if (ret != CborErrorOutOfMemory) CHECK_CBOR_RET(ret);
+    bool is_hmac_secret;
+    ret = cbor_value_text_string_equals(&map, "hmac-secret", &is_hmac_secret);
+    CHECK_CBOR_RET(ret);
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
     if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
-    if (strncmp(key, "hmac-secret", 11) == 0) {
+    if (is_hmac_secret) {
+      bool b;
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("hmac-secret: %d\n", b);
       if (hmac_secret) *hmac_secret = b;
     } else {
-      DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
+      DBG_MSG("ignoring option specified\n");
     }
 
     ret = cbor_value_advance(&map);
@@ -367,7 +370,6 @@ uint8_t parse_mc_extensions(uint8_t *hmac_secret, CborValue *val) {
 uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   size_t map_length;
-  char key[11];
   CborValue map;
   int ret = cbor_value_enter_container(val, &map);
   CHECK_CBOR_RET(ret);
@@ -376,13 +378,14 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    size_t sz = sizeof(key);
-    ret = cbor_value_copy_text_string(&map, key, &sz, NULL);
-    if (ret != CborErrorOutOfMemory) CHECK_CBOR_RET(ret);
+
+    bool is_hmac_secret;
+    ret = cbor_value_text_string_equals(&map, "hmac-secret", &is_hmac_secret);
+    CHECK_CBOR_RET(ret);
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
 
-    if (strncmp(key, "hmac-secret", 11) == 0) {
+    if (is_hmac_secret) {
       DBG_MSG("hmac-secret found\n");
       ga->parsedParams |= PARAM_hmacSecret;
       if (cbor_value_get_type(&map) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -435,7 +438,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
         CHECK_CBOR_RET(ret);
       }
     } else {
-      DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
+      DBG_MSG("ignoring option specified\n");
     }
 
     ret = cbor_value_advance(&map);
