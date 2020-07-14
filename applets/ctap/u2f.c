@@ -42,7 +42,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   resp->registerId = U2F_REGISTER_ID;
   // PUBLIC KEY (65)
   resp->pubKey.pointFormat = U2F_POINT_UNCOMPRESSED;
-  memcpy(resp->pubKey.x, pubkey, PUB_KEY_SIZE);
+  memcpy(resp->pubKey.x, pubkey, PUB_KEY_SIZE); // accessing out of bounds is intentional.
   // KEY HANDLE LENGTH (1)
   resp->keyHandleLen = sizeof(CredentialId);
   // KEY HANDLE (128)

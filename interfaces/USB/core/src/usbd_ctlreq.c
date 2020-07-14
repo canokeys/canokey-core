@@ -1,20 +1,20 @@
 /**
-  * <h2><center>&copy; COPYRIGHT 2015 STMicroelectronics</center></h2>
-  *
-  * Licensed under MCD-ST Liberty SW License Agreement V2, (the "License");
-  * You may not use this file except in compliance with the License.
-  * You may obtain a copy of the License at:
-  *
-  *        http://www.st.com/software_license_agreement_liberty_v2
-  *
-  * Unless required by applicable law or agreed to in writing, software
-  * distributed under the License is distributed on an "AS IS" BASIS,
-  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  * See the License for the specific language governing permissions and
-  * limitations under the License.
-  *
-  ******************************************************************************
-  */
+ * <h2><center>&copy; COPYRIGHT 2015 STMicroelectronics</center></h2>
+ *
+ * Licensed under MCD-ST Liberty SW License Agreement V2, (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ *        http://www.st.com/software_license_agreement_liberty_v2
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ ******************************************************************************
+ */
 #include <usbd_ctlreq.h>
 #include <usbd_ioreq.h>
 
@@ -299,7 +299,7 @@ USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqType
     }
     break;
 
-  case 0x02: // MS OS 2.0
+  case 0x02:                   // MS OS 2.0
     if (req->wIndex == 0x07) { // MS_OS_20_REQUEST_DESCRIPTOR
       pbuf = pdev->pDesc->GetMSOS20Descriptor(pdev->dev_speed, &len);
       if ((len != 0) && (req->wLength != 0)) {
@@ -327,10 +327,8 @@ USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqType
  * @retval status
  */
 static void USBD_SetAddress(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
-  uint8_t dev_addr;
-
   if ((req->wIndex == 0) && (req->wLength == 0)) {
-    dev_addr = (uint8_t)((req->wValue) & 0x7F);
+    uint8_t dev_addr = (uint8_t)((req->wValue) & 0x7F);
 
     if (pdev->dev_state == USBD_STATE_CONFIGURED) {
       USBD_CtlError(pdev, req);
@@ -547,9 +545,8 @@ void USBD_CtlError(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
  * @retval None
  */
 void USBD_GetString(uint8_t *desc, uint8_t *unicode, uint16_t *len) {
-  uint8_t idx = 0;
-
   if (desc != NULL) {
+    uint8_t idx = 0;
     *len = (uint16_t)(USBD_GetLen(desc) * 2 + 2);
     unicode[idx++] = (uint8_t)*len;
     unicode[idx++] = USB_DESC_TYPE_STRING;
