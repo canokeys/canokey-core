@@ -253,7 +253,7 @@ jobs:
     - name: Test the PIV
       run: |
         set -o xtrace
-        RDID="Canokey [PIV OATH Admin OpenPGP] 00 00"
+        RDID="Canokey [OpenPGP PIV OATH] 00 00"
         yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
         opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
         opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
@@ -289,7 +289,7 @@ jobs:
         yubico-piv-tool -r "$RDID" -a status
         PIVSignDec 9e # PIN not required for key 9e
         for s in 9a 9c 9d; do PIVSignDec $s 1; done
-        pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
+        pkcs15-tool --reader "$RDID" --read-certificate 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
         echo -n hello >/tmp/hello.txt
         pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
         openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt

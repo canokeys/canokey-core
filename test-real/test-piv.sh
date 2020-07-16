@@ -80,7 +80,8 @@ test_RSA2048() {
     PIVSignDec 9e # PIN not required for key 9e
     for s in 9a 9c 9d; do PIVSignDec $s 1; done
 
-    pkcs15-tool --reader "$RDID" -r 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
+    out=$(pkcs15-tool --reader "$RDID" --read-certificate 04 | openssl x509 -text)
+    assertContains 'CERT' "$out" 'CN = CertAtSlot9e'
     echo -n hello >$TEST_TMP_DIR/hello.txt
     pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i $TEST_TMP_DIR/hello.txt -o $TEST_TMP_DIR/hello-signed --pin 654321
     assertEquals 'pkcs11-tool sign' 0 $?
@@ -93,6 +94,8 @@ test_ECC256() {
     YPT -r "$RDID" -a status
     for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
     PIVSignDec 9d 1 d # 9d only do the ECDH
+    out=$(pkcs15-tool --reader "$RDID" --read-certificate 01 | openssl x509 -text)
+    assertContains 'CERT' "$out" 'CN = CertAtSlot9a'
 }
 
 test_ECC384() {
