@@ -92,7 +92,7 @@ jobs:
       run: |
         cd fido2-tests
         ~/.local/bin/pytest --color=yes --nfc tests/standard/
-        ~/.local/bin/pytest --color=yes --nfc tests/standard/fido2/test_resident_key_canokeys.py --capture=no 
+        ~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no 
 
     - name: Test the U2F
       run: |
