@@ -161,14 +161,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       uint8_t i, end = APPLET_ENUM_END;
       for (i = APPLET_NULL + 1; i != end; ++i) {
         if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
-#ifndef TEST
           if (i == APPLET_FIDO && !is_nfc()) {
             LL = 0;
             SW = SW_CONDITIONS_NOT_SATISFIED;
             DBG_MSG("should not use FIDO via CCID\n");
             return;
           }
-#endif
           if (i != current_applet) applet_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "device.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
@@ -89,13 +90,12 @@ int card_fabrication_procedure(const char * lfs_root) {
   lfs_filebd_create(&cfg, lfs_root);
 
   fs_init(&cfg);
-  admin_install();
+  admin_install(0);
   oath_install(0);
-
   fido2_init();
-
   piv_install(0);
-
   openpgp_install(0);
+  // emulate the NFC mode, where user-presence tests are skipped
+  set_nfc_state(1);
   return 0;
 }

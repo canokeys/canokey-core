@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
 #include <ctap.h>
+#include <device.h>
 #include <fs.h>
 #include <oath.h>
 #include <openpgp.h>
@@ -30,16 +31,17 @@ uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_
 
 void admin_poweroff(void) { pin.is_validated = 0; }
 
-int admin_install(void) {
+int admin_install(uint8_t reset) {
   admin_poweroff();
-  if (get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
+  if (reset || get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
     current_config = default_cfg;
     if (write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1) < 0) return -1;
   } else {
     if (read_file(CFG_FILE, &current_config, 0, sizeof(current_config)) < 0) return -1;
   }
-  if (get_file_size(pin.path) >= 0) return 0;
-  if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
+  if (reset || get_file_size(pin.path) < 0) {
+    if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
+  }
   return 0;
 }
 
@@ -98,6 +100,47 @@ static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
+  int ret;
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
+  if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
+  ret = pin_get_retries(&pin);
+  if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+
+  for (int i = 0; i < 5; i++) {
+    const uint8_t wait_sec = 2;
+    start_blinking_interval(wait_sec, (i & 1) ? 200 : 50);
+    uint32_t now, begin = device_get_tick();
+    bool user_presence = false;
+    do {
+      if (get_touch_result() == TOUCH_SHORT) {
+        user_presence = true;
+        set_touch_result(TOUCH_NO);
+        stop_blinking();
+        // wait for some time before next user-precense test
+        begin = device_get_tick();
+      }
+      now = device_get_tick();
+    } while (now - begin < 1000 * wait_sec);
+    if (!user_presence) {
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    }
+  }
+  DBG_MSG("factory reset begins\n");
+  ret = openpgp_install(1);
+  if (ret < 0) return ret;
+  ret = piv_install(1);
+  if (ret < 0) return ret;
+  ret = oath_install(1);
+  if (ret < 0) return ret;
+  ret = ctap_install(1);
+  if (ret < 0) return ret;
+  ret = admin_install(1);
+  if (ret < 0) return ret;
+  return 0;
+}
+
 void fill_sn(uint8_t *buf) {
   int err = read_file(SN_FILE, buf, 0, 4);
   if (err != 4) memset(buf, 0, 4);
@@ -123,6 +166,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     memmove(RDATA, DATA, LC);
     LL = LC;
     ret = 0;
+    goto done;
+  case ADMIN_INS_FACTORY_RESET:
+    ret = admin_factory_reset(capdu, rapdu);
     goto done;
   case ADMIN_INS_VERIFY:
     ret = admin_verify(capdu, rapdu);
