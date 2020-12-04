@@ -10,6 +10,7 @@
 #include <rsa.h>
 
 #define DATA_PATH "pgp-data"
+#define URL_PATH "pgp-url"
 #define SIG_KEY_PATH "pgp-sigk"
 #define DEC_KEY_PATH "pgp-deck"
 #define AUT_KEY_PATH "pgp-autk"
@@ -201,6 +202,7 @@ int openpgp_install(uint8_t reset) {
   if (write_attr(DATA_PATH, TAG_PW_STATUS, &default_pin_strategy, 1) < 0) return -1;
   uint8_t terminated = 0x00; // Terminated: no
   if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
+  if (write_file(URL_PATH, NULL, 0, 0, 1) < 0) return -1;
 
   // Key data
   uint8_t buf[20];
@@ -262,7 +264,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_URL:
-    len = read_file(DATA_PATH, RDATA, 0, MAX_URL_LENGTH);
+    len = read_file(URL_PATH, RDATA, 0, MAX_URL_LENGTH);
     if (len < 0) return -1;
     LL = len;
     break;
@@ -909,7 +911,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   case TAG_URL:
     if (LC > MAX_URL_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (write_file(DATA_PATH, DATA, 0, LC, 1) < 0) return -1;
+    if (write_file(URL_PATH, DATA, 0, LC, 1) < 0) return -1;
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
