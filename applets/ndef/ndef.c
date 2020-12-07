@@ -3,7 +3,8 @@
 #include <memzero.h>
 #include <udef.h>
 
-#define CC_FILE "E103" // file identifier also 0xE103
+//#define CC_FILE "E103" // file identifier also 0xE103
+#define ATTR_CC 0xCC
 #define NDEF_FILE "NDEF"
 
 static const ndef_cc_t init_cc = {
@@ -26,7 +27,7 @@ static const ndef_cc_t current_cc;
 void ndef_poweroff(void) {
 }
 
-int ndef_create_empty_ndef() {
+int ndef_create_init_ndef() {
   return 0;
 }
 
@@ -34,10 +35,11 @@ int ndef_install(uint8_t reset) {
   if (reset || get_file_size(CC_FILE) != sizeof(ndef_cc_t)
             || get_file_size(NDEF_FILE) <= 0) {
     current_cc = init_cc;
-    if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
-    if (ndef_create_empty_ndef() < 0) return -1;
+    if (write_attr(NDEF_FILE, ATTR_CC, &current_cc, sizeof(current_cc)) < 0) return -1;
+    if (ndef_create_init_ndef() < 0) return -1;
   } else {
-    if (read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0) return -1;
+    if (read_attr(NDEF_FILE, ATTR_CC, &current_cc, sizeof(current_cc)) < 0) return -1;
+    // should check sanity, by standard
   }
   return 0;
 }
