@@ -18,6 +18,7 @@ enum APPLET {
   APPLET_OATH,
   APPLET_ADMIN,
   APPLET_OPENPGP,
+  APPLET_NDEF,
   APPLET_ENUM_END,
 } current_applet;
 
@@ -26,10 +27,12 @@ static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
+static const uint8_t NDEF_AID[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
 
 static const uint8_t *const AID[] = {
     [APPLET_NULL] = NULL,     [APPLET_PIV] = PIV_AID,     [APPLET_FIDO] = FIDO_AID,
     [APPLET_OATH] = OATH_AID, [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID,
+    [APPLET_NDEF] = NDEF_AID,
 };
 
 static const uint8_t AID_Size[] = {
@@ -39,6 +42,7 @@ static const uint8_t AID_Size[] = {
     [APPLET_OATH] = sizeof(OATH_AID),
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
+    [APPLET_NDEF] = sizeof(NDEF_AID),
 };
 
 static CAPDU_CHAINING capdu_chaining = {
@@ -210,6 +214,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       break;
     case APPLET_ADMIN:
       admin_process_apdu(capdu, rapdu);
+      break;
+    case APPLET_NDEF:
       break;
     default:
       LL = 0;
