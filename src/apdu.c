@@ -216,6 +216,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       admin_process_apdu(capdu, rapdu);
       break;
     case APPLET_NDEF:
+      ndef_process_apdu(capdu, rapdu);
       break;
     default:
       LL = 0;
