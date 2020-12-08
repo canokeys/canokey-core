@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "key.h"
 #include <common.h>
+#include <device.h>
 #include <ecc.h>
 #include <ed25519.h>
 #include <memzero.h>
@@ -155,6 +156,15 @@ static int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 > 2) return -1;
   touch_policy[P1] = P2;
   return 0;
+}
+
+static int openpgp_touch(const CAPDU *capdu, RAPDU *rapdu){
+  if (!is_nfc()) {
+    start_blinking(2);
+    if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    set_touch_result(TOUCH_NO);
+    stop_blinking();
+  }
 }
 
 static const char *get_key_path(uint8_t tag) {
@@ -743,6 +753,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
 }
 
 static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+  if (touch_policy[TOUCH_SIG]) openpgp_touch(capdu, rapdu);
 #ifndef FUZZ
   if (PW1_MODE81() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
@@ -820,6 +831,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+  if (touch_policy[TOUCH_DEC]) openpgp_touch(capdu, rapdu);
 #ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
@@ -1228,6 +1240,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  if (touch_policy[TOUCH_AUT]) openpgp_touch(capdu, rapdu);
 #ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
