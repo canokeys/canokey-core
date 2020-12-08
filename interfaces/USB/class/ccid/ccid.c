@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <apdu.h>
+#include <applets.h>
 #include <ccid.h>
 #include <common.h>
 #include <device.h>
@@ -95,7 +96,7 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_GUARDTIME;
   }
 
-  applet_poweroff();
+  applets_poweroff();
   memcpy(bulkin_data.abData, atr_ccid, sizeof(atr_ccid));
   bulkin_data.dwLength = sizeof(atr_ccid);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
@@ -112,7 +113,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH);
   if (error != 0) return error;
 
-  applet_poweroff();
+  applets_poweroff();
   release_global_buffer(BUFFER_OWNER_CCID);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;

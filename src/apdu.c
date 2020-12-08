@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
 #include <apdu.h>
+#include <applets.h>
 #include <ctap.h>
 #include <device.h>
 #include <ndef.h>
@@ -140,14 +141,6 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
   return 0;
 }
 
-void applet_poweroff(void) {
-  piv_poweroff();
-  oath_poweroff();
-  admin_poweroff();
-  openpgp_poweroff();
-  ndef_poweroff();
-}
-
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
@@ -172,7 +165,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
             DBG_MSG("should not use FIDO via CCID\n");
             return;
           }
-          if (i != current_applet) applet_poweroff();
+          if (i != current_applet) applets_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);
           break;
