@@ -31,6 +31,23 @@ static enum { NONE, CC, NDEF } selected;
 
 void ndef_poweroff(void) { selected = NONE; }
 
+int ndef_toggle(const CAPDU *capdu, RAPDU *rapdu) {
+  switch(CC_W) {
+  case 0xFF:
+    CC_W = 0x00;
+    break;
+  case 0x00:
+    CC_W = 0xFF;
+    break;
+  default:
+    return -1; // invalid inner CC state
+  }
+  if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
+  RDATA[0] = CC_W;
+  LL = 1;
+  return 0;
+}
+
 int ndef_create_init_ndef() {
   uint8_t empty[] = {0x00, 0x03, 0xD0, 0x00, 0x00}; // specified in Type 4 doc
   if (write_file(NDEF_FILE, empty, 0, sizeof(empty), 1) < -1) return -1;

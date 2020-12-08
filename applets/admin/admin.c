@@ -202,6 +202,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_RESET_NDEF:
     ret = ndef_install(1);
     break;
+  case ADMIN_INS_TOGGLE_NDEF:
+    ret = ndef_toggle(capdu, rapdu);
+    break;
   case ADMIN_INS_EXPORT_OATH:
     ret = oath_export(capdu, rapdu);
     break;

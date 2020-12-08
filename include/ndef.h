@@ -11,5 +11,6 @@
 void ndef_poweroff(void);
 int ndef_install(uint8_t reset);
 int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int ndef_toggle(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_INCLUDE_NDEF_H
