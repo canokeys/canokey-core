@@ -3,9 +3,11 @@
 #include <memzero.h>
 #include <udef.h>
 
-//#define CC_FILE "E103" // file identifier also 0xE103
-#define ATTR_CC 0xCC
+#define CC_FILE "E103" // file identifier also 0xE103
+//#define ATTR_CC 0xCC
 #define NDEF_FILE "NDEF"
+
+#define OFFSET_P1P2 ((uint16_t(P1)<<8)&P2)
 
 static const uint8_t init_cc[] = {
 0x00, 0x0F, // len
@@ -21,10 +23,10 @@ static const uint8_t init_cc[] = {
 0x00 // write access without any security
 };
 
-#define CC_R(cc) (cc[13])
-#define CC_W(cc) (cc[14])
-
 static ndef_cc_t current_cc[15];
+
+#define CC_R (current_cc[13])
+#define CC_W (current_cc[14])
 
 static enum {NONE, CC, NDEF} selected;
 
@@ -43,10 +45,10 @@ int ndef_install(uint8_t reset) {
   if (reset || get_file_size(CC_FILE) != sizeof(current_cc)
             || get_file_size(NDEF_FILE) <= 0) {
     current_cc = init_cc;
-    if (write_attr(NDEF_FILE, ATTR_CC, &current_cc, sizeof(current_cc)) < 0) return -1;
+    if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
     if (ndef_create_init_ndef() < 0) return -1;
   } else {
-    if (read_attr(NDEF_FILE, ATTR_CC, &current_cc, sizeof(current_cc)) < 0) return -1;
+    if (read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0) return -1;
     // should check sanity, by standard
   }
   return 0;
@@ -65,6 +67,27 @@ int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
+  switch(selected) {
+  case CC:
+    if (read_attr(CC_FILE, RDATA, OFFSET_P1P2, LE) < 0) return -1;
+    LL = LE;
+    break;
+  case NDEF:
+    if (CC_R != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (read_file(NDEF_FILE, RDATA, OFFSET_P1P2, LE) < 0) return -1;
+    LL = LE;
+    break;
+  case NONE:
+    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    break;
+  }
+  return 0;
+}
+
+int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
+}
+
 int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
@@ -72,11 +95,13 @@ int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   int ret;
   switch (INS) {
   case NDEF_INS_SELECT:
-    ndef_select(capdu, rapdu);
+    ret = ndef_select(capdu, rapdu);
     break;
   case NDEF_INS_READ_BINARY:
+    ret = ndef_read_binary(capdu, rapdu);
     break;
   case NDEF_INS_UPDATE:
+    ret = ndef_update(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
