@@ -52,6 +52,19 @@ int ndef_install(uint8_t reset) {
   return 0;
 }
 
+int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x0C) EXCEPT(SW_WRONG_P1P2);
+  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
+  if (DATA[0] == 0xE1 && DATA[1] == 0x03)
+      selected = CC;
+  else if (DATA[0] == 0x00 && DATA[1] == 0x01)
+      selected = NDEF;
+      // TODO: detect possible collision in file name
+  else
+      EXCEPT(SW_FILE_NOT_FOUND);
+  return 0;
+}
+
 int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
@@ -59,14 +72,11 @@ int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   int ret;
   switch (INS) {
   case NDEF_INS_SELECT:
-    if (P1 != 0x00 || P2 != 0x0C) EXCEPT(SW_WRONG_P1P2);
-    if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
-    if (DATA[0] == 0xE1 && DATA[1] == 0x03)
-        selected = CC;
-    else if (DATA[0] == 0x00 && DATA[1] == 0x01)
-        selected = NDEF;
-    else
-        EXCEPT(SW_FILE_NOT_FOUND);
+    ndef_select(capdu, rapdu);
+    break;
+  case NDEF_INS_READ_BINARY:
+    break;
+  case NDEF_INS_UPDATE:
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);
