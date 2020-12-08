@@ -3,6 +3,7 @@
 #include <apdu.h>
 #include <ctap.h>
 #include <device.h>
+#include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
@@ -30,9 +31,8 @@ static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x0
 static const uint8_t NDEF_AID[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
 
 static const uint8_t *const AID[] = {
-    [APPLET_NULL] = NULL,     [APPLET_PIV] = PIV_AID,     [APPLET_FIDO] = FIDO_AID,
-    [APPLET_OATH] = OATH_AID, [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID,
-    [APPLET_NDEF] = NDEF_AID,
+    [APPLET_NULL] = NULL,       [APPLET_PIV] = PIV_AID,         [APPLET_FIDO] = FIDO_AID, [APPLET_OATH] = OATH_AID,
+    [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID, [APPLET_NDEF] = NDEF_AID,
 };
 
 static const uint8_t AID_Size[] = {
@@ -145,6 +145,7 @@ void applet_poweroff(void) {
   oath_poweroff();
   admin_poweroff();
   openpgp_poweroff();
+  ndef_poweroff();
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
