@@ -7,32 +7,36 @@
 #define ATTR_CC 0xCC
 #define NDEF_FILE "NDEF"
 
-static const ndef_cc_t init_cc = {
-.len = 0x000F,
-.ver = 0x20,// 2.0
-.mle = 0x000F, // default now, hareware info needed
-.mlc = 0x0001, // default now, hardware info needed
-.tlv = {
-  .t = 0x04,
-  .l = 0x06,
-  .id = 0x0001, // not determined now
-  .max_size = 0xFFFE, // not determined now
-  .r = 0x00, // read access without any security
-  .w = 0x00 // write access without any security
-  }
+static const uint8_t init_cc[] = {
+0x00, 0x0F, // len
+0x20,// version, 2.0
+0x00, 0x0F, // mle, default now, hareware info needed
+0x00, 0x01, // mlc, default now, hardware info needed
+// the following are tlv data
+0x04, // t
+0x06, // l
+0x00, 0x01, // v, not determined now
+0xFF, 0xFE, // max_size, not determined now
+0x00, // read access without any security
+0x00 // write access without any security
 };
 
-static const ndef_cc_t current_cc;
+#define CC_R(cc) (cc[13])
+#define CC_W(cc) (cc[14])
+
+static ndef_cc_t current_cc[15];
 
 void ndef_poweroff(void) {
 }
 
 int ndef_create_init_ndef() {
+  uint8_t empty[] = {0x00, 0x03, 0xD0, 0x00, 0x00}; // specified in Type 4 doc
+  if (write_file(NDEF_FILE, empty, 0, sizeof(empty), 1) < -1) return -1;
   return 0;
 }
 
 int ndef_install(uint8_t reset) {
-  if (reset || get_file_size(CC_FILE) != sizeof(ndef_cc_t)
+  if (reset || get_file_size(CC_FILE) != sizeof(current_cc)
             || get_file_size(NDEF_FILE) <= 0) {
     current_cc = init_cc;
     if (write_attr(NDEF_FILE, ATTR_CC, &current_cc, sizeof(current_cc)) < 0) return -1;
