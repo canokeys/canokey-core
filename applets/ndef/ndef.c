@@ -32,19 +32,17 @@ static enum { NONE, CC, NDEF } selected;
 void ndef_poweroff(void) { selected = NONE; }
 
 int ndef_toggle(const CAPDU *capdu, RAPDU *rapdu) {
-  switch(CC_W) {
-  case 0xFF:
+  switch(P1) {
+  case 0x00: // read and write
     CC_W = 0x00;
     break;
-  case 0x00:
+  case 0x01: // read only
     CC_W = 0xFF;
     break;
   default:
-    return -1; // invalid inner CC state
+    EXCEPT(SW_WRONG_P1P2);
   }
   if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
-  RDATA[0] = CC_W;
-  LL = 1;
   return 0;
 }
 
