@@ -8,6 +8,7 @@
 #include <openpgp.h>
 #include <pin.h>
 #include <piv.h>
+#include <ndef.h>
 #include <string.h>
 
 #define PIN_RETRY_COUNTER 3
@@ -139,6 +140,8 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) return ret;
   ret = admin_install(1);
   if (ret < 0) return ret;
+  ret = ndef_install(1);
+  if (ret < 0) return ret;
   return 0;
 }
 
@@ -195,6 +198,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_RESET_OATH:
     ret = oath_install(1);
+    break;
+  case ADMIN_INS_RESET_NDEF:
+    ret = ndef_install(1);
     break;
   case ADMIN_INS_EXPORT_OATH:
     ret = oath_export(capdu, rapdu);
