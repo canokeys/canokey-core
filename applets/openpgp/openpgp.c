@@ -140,6 +140,23 @@ static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated 
     }                                                                                                                  \
   } while (0)
 
+#define TOUCH_SIG 0
+#define TOUCH_DEC 1
+#define TOUCH_AUT 2
+
+#define TOUCH_POLICY_NO 0
+#define TOUCH_POLICY_REQUIRED 1
+#define TOUCH_POLICY_CACHED 2 // not supported now, 2-255 is num of sec
+
+// SIG DEC AUT
+static uint8_t touch_policy[3] = {0, 0, 0};
+
+static int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 > 2) return -1;
+  touch_policy[P1] = P2;
+  return 0;
+}
+
 static const char *get_key_path(uint8_t tag) {
   switch (tag) {
   case 0xB6:
