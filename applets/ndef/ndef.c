@@ -86,6 +86,20 @@ int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
+  switch(selected) {
+  case CC:
+    // do not allow change CC, only modified via admin
+    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    break;
+  case NDEF:
+    if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (write_file(NDEF_FILE, DATA, OFFSET_P1P2, LC, 0) < 0) return -1;
+    break;
+  case NONE:
+    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    break;
+  }
+  return 0;
 }
 
 int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
