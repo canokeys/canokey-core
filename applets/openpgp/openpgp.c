@@ -38,6 +38,7 @@
 #define ATTR_CA2_FP 0xFE
 #define ATTR_CA3_FP 0xFD
 #define ATTR_TERMINATED 0xFC
+#define ATTR_TOUCH_POLICY 0xFB
 
 #define STATE_NORMAL 0x00
 #define STATE_SELECT_DATA 0x01
@@ -150,11 +151,12 @@ static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated 
 #define TOUCH_POLICY_CACHED 2 // not supported now, 2-255 is num of sec
 
 // SIG DEC AUT
-static uint8_t touch_policy[3] = {0, 0, 0};
+static uint8_t touch_policy[3];
 
 static int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 > 2) return -1;
   touch_policy[P1] = P2;
+  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
   return 0;
 }
 
@@ -256,6 +258,8 @@ int openpgp_install(uint8_t reset) {
   if (write_attr(DATA_PATH, ATTR_CA1_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
   if (write_attr(DATA_PATH, ATTR_CA2_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
   if (write_attr(DATA_PATH, ATTR_CA3_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
+  memzero(touch_policy, sizeof(touch_policy));
+  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
 
   // Digital Sig Counter
   if (reset_sig_counter() < 0) return -1;
@@ -271,6 +275,7 @@ int openpgp_install(uint8_t reset) {
 static int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 6 || memcmp(DATA, aid, LC) != 0) EXCEPT(SW_FILE_NOT_FOUND);
+  if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
   return 0;
 }
 
