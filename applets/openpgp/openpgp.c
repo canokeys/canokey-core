@@ -126,6 +126,7 @@ static uint8_t pw1_mode, current_occurrence, state;
 static pin_t pw1 = {.min_length = 6, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw1"};
 static pin_t pw3 = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw3"};
 static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-rc"};
+static uint8_t touch_policy[3]; // SIG DEC AUT
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
 #define PW1_MODE81_OFF() pw1_mode &= 0XFEu
@@ -149,16 +150,6 @@ static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated 
 #define TOUCH_POLICY_NO 0
 #define TOUCH_POLICY_REQUIRED 1
 #define TOUCH_POLICY_CACHED 2 // not supported now, 2-255 is num of sec
-
-// SIG DEC AUT
-static uint8_t touch_policy[3];
-
-static int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 > 2) return -1;
-  touch_policy[P1] = P2;
-  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
-  return 0;
-}
 
 #define OPENPGP_TOUCH()                                                                                                \
   do {                                                                                                                 \
@@ -202,6 +193,13 @@ static EC_Algorithm get_ec_algo(const uint8_t *attr, int len) {
 static inline int get_ec_key_length(EC_Algorithm algo) {
   if (algo == ECDSA_P384R1 || algo == ECDH_P384R1) return 48;
   return 32;
+}
+
+int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 > 2) return -1;
+  touch_policy[P1] = P2;
+  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
+  return 0;
 }
 
 void openpgp_poweroff(void) {

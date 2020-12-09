@@ -38,8 +38,8 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   DBG_MSG("start %u\n", start);
 
   wait_status_t shallow = wait_status;
-  if (wait_status == WAIT_NONE)
-    switch(entry) {
+  if (wait_status == WAIT_NONE) {
+    switch (entry) {
     case WAIT_ENTRY_CCID:
       wait_status = WAIT_CCID;
       break;
@@ -47,13 +47,15 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       wait_status = WAIT_CTAPHID;
       break;
     }
-  else wait_status = WAIT_DEEP;
-  while (touch_result == TOUCH_NO || wait_status != WAIT_DEEP_TOUCHED || wait_status != WAIT_DEEP_CANCAL) {
+  } else
+    wait_status = WAIT_DEEP;
+  while (touch_result == TOUCH_NO) {
+    if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
     if (wait_status == WAIT_CTAPHID) CCID_Loop();
     if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
-      if(wait_status != WAIT_DEEP) {
+      if (wait_status != WAIT_DEEP) {
         stop_blinking();
-        wait_status = WAIT_NO; // namely shallow
+        wait_status = WAIT_NONE; // namely shallow
       } else
         wait_status = WAIT_DEEP_CANCEL;
       return USER_PRESENCE_CANCEL;
@@ -61,25 +63,23 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
-      if(wait_status != WAIT_DEEP) stop_blinking();
+      if (wait_status != WAIT_DEEP) stop_blinking();
       wait_status = shallow;
       return USER_PRESENCE_TIMEOUT;
     }
     if (now - last >= 300) {
       last = now;
-      if (wait_status != WAIT_CCID)
-        CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+      if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
   touch_result = TOUCH_NO;
-  if(wait_status != WAIT_DEEP) stop_blinking();
+  if (wait_status != WAIT_DEEP) stop_blinking();
   if (wait_status == WAIT_DEEP)
     wait_status = WAIT_DEEP_TOUCHED;
   else if (wait_status == WAIT_DEEP_CANCEL) {
     wait_status = WAIT_NONE;
     return USER_PRESENCE_TIMEOUT;
-  }
-  else
+  } else
     wait_status = WAIT_NONE;
   return USER_PRESENCE_OK;
 }
