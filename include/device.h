@@ -12,6 +12,9 @@
 #define USER_PRESENCE_CANCEL 1
 #define USER_PRESENCE_TIMEOUT 2
 
+#define WAIT_ENTRY_CCID 0
+#define WAIT_ENTRY_CTAPHID 1
+
 // functions should be implemented by device
 /**
  * Delay processing for specific milliseconds
@@ -56,7 +59,7 @@ void fm_transmit(uint8_t *buf, uint8_t len);
 void fm_receive(uint8_t *buf, uint8_t len);
 
 // platform independent functions
-uint8_t wait_for_user_presence(void);
+uint8_t wait_for_user_presence(uint8_t entry);
 void device_loop(uint8_t has_touch);
 uint8_t is_nfc(void);
 void set_nfc_state(uint8_t state);

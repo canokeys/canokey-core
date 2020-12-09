@@ -11,6 +11,8 @@ volatile static uint8_t touch_result;
 static uint8_t has_rf;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
+typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED } wait_status_t;
+volatile static wait_status_t wait_status; // need init!
 
 #define IS_BLINKING (last_blink != UINT32_MAX)
 
@@ -29,24 +31,45 @@ uint8_t get_touch_result(void) { return touch_result; }
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
-uint8_t wait_for_user_presence(void) {
+uint8_t wait_for_user_presence(uint8_t entry) {
   uint32_t start = device_get_tick();
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
-  while (touch_result == TOUCH_NO) {
-    CCID_Loop();
-    if (CTAPHID_Loop(1) == LOOP_CANCEL) return USER_PRESENCE_CANCEL;
+
+  wait_status_t shallow = wait_status;
+  if (wait_status == WAIT_NONE)
+    switch(entry) {
+    case WAIT_ENTRY_CCID:
+      wait_status = WAIT_CCID;
+      break;
+    case WAIT_ENTRY_CTAPHID:
+      wait_status = WAIT_CTAPHID;
+      break;
+    }
+  else wait_status = WAIT_DEEP;
+  while (touch_result == TOUCH_NO && wait_status != WAIT_DEEP_TOUCHED) {
+    if (wait_status == WAIT_CTAPHID) CCID_Loop();
+    if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+      wait_status = shallow;
+      return USER_PRESENCE_CANCEL;
+    }
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
+      wait_status = shallow;
       return USER_PRESENCE_TIMEOUT;
     }
     if (now - last >= 300) {
       last = now;
-      CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+      if (wait_status != WAIT_CCID)
+        CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
   touch_result = TOUCH_NO;
+  if (wait_status == WAIT_DEEP)
+    wait_status = WAIT_DEEP_TOUCHED;
+  else
+    wait_status = WAIT_NONE;
   return USER_PRESENCE_OK;
 }
 
