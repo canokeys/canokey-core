@@ -39,16 +39,12 @@
 #define WAIT()                                                                                                         \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
-    start_blinking(0);                                                                                                 \
     switch (wait_for_user_presence(WAIT_ENTRY_CTAPHID)) {                                                              \
     case USER_PRESENCE_CANCEL:                                                                                         \
-      stop_blinking();                                                                                                 \
       return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
-      stop_blinking();                                                                                                 \
       return CTAP2_ERR_USER_ACTION_TIMEOUT;                                                                            \
     }                                                                                                                  \
-    stop_blinking();                                                                                                   \
   } while (0)
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,

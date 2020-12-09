@@ -32,6 +32,7 @@ uint8_t get_touch_result(void) { return touch_result; }
 void set_touch_result(uint8_t result) { touch_result = result; }
 
 uint8_t wait_for_user_presence(uint8_t entry) {
+  start_blinking(0);
   uint32_t start = device_get_tick();
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
@@ -50,12 +51,14 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   while (touch_result == TOUCH_NO || wait_status != WAIT_DEEP_TOUCHED) {
     if (wait_status == WAIT_CTAPHID) CCID_Loop();
     if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+      if(wait_status != WAIT_DEEP) stop_blinking();
       wait_status = shallow;
       return USER_PRESENCE_CANCEL;
     }
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
+      if(wait_status != WAIT_DEEP) stop_blinking();
       wait_status = shallow;
       return USER_PRESENCE_TIMEOUT;
     }
@@ -66,6 +69,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     }
   }
   touch_result = TOUCH_NO;
+  if(wait_status != WAIT_DEEP) stop_blinking();
   if (wait_status == WAIT_DEEP)
     wait_status = WAIT_DEEP_TOUCHED;
   else

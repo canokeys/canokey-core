@@ -160,19 +160,15 @@ static int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-#define OPENPGP_TOUCH()                                                                                                         \
+#define OPENPGP_TOUCH()                                                                                                \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
-    start_blinking(0);                                                                                                 \
-    switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                              \
+    switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
     case USER_PRESENCE_CANCEL:                                                                                         \
-      stop_blinking();                                                                                                 \
       EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
-      stop_blinking();                                                                                                 \
       EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
     }                                                                                                                  \
-    stop_blinking();                                                                                                   \
   } while (0)
 
 static const char *get_key_path(uint8_t tag) {
