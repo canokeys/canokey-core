@@ -767,23 +767,39 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (touch_policy[TOUCH_SIG]) OPENPGP_TOUCH();
 
+  start_blinking_interval(0, 25);
+
   int status = openpgp_key_get_status(SIG_KEY_PATH);
-  if (status < 0) return -1;
-  if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (status < 0) {
+    stop_blinking();
+    return -1;
+  }
+  if (status == KEY_NOT_PRESENT) {
+    stop_blinking();
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  }
 
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(SIG_KEY_PATH, attr);
-  if (attr_len < 0) return -1;
+  if (attr_len < 0) {
+    stop_blinking();
+    return -1;
+  }
 
   if (attr[0] == KEY_TYPE_RSA) {
-    if (LC > 102) EXCEPT(SW_WRONG_LENGTH);
+    if (LC > 102) {
+      stop_blinking();
+      EXCEPT(SW_WRONG_LENGTH);
+    }
     rsa_key_t key;
     if (openpgp_key_get_key(SIG_KEY_PATH, &key, sizeof(key)) < 0) {
       memzero(&key, sizeof(key));
+      stop_blinking();
       return -1;
     }
     if (rsa_sign_pkcs_v15(&key, DATA, LC, RDATA) < 0) {
       memzero(&key, sizeof(key));
+      stop_blinking();
       return -1;
     }
     LL = key.nbits / 8;
@@ -798,14 +814,19 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     case ECDSA_P256R1:
     case ECDSA_P256K1:
     case ECDSA_P384R1:
-      if (LC != ec_pri_key_len) EXCEPT(SW_WRONG_LENGTH);
+      if (LC != ec_pri_key_len) {
+        stop_blinking();
+        EXCEPT(SW_WRONG_LENGTH);
+      }
       if (openpgp_key_get_key(SIG_KEY_PATH, key, ec_pri_key_len) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       ECC_Curve curve = ec_algo2curve[algo];
       if (ecdsa_sign(curve, key, DATA, RDATA) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       memzero(key, sizeof(key));
@@ -815,6 +836,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     case ED25519:
       if (openpgp_key_get_key(SIG_KEY_PATH, key, KEY_SIZE_25519 * 2) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       ed25519_sign(DATA, LC, key, key + KEY_SIZE_25519, sig);
@@ -824,15 +846,24 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
       break;
 
     default:
+      stop_blinking();
       return -1;
     }
   }
 
   uint8_t ctr[3];
-  if (read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
+  if (read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) {
+    stop_blinking();
+    return -1;
+  }
   for (int i = 3; i > 0; --i)
     if (++ctr[i - 1] != 0) break;
-  if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
+  if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) {
+    stop_blinking();
+    return -1;
+  }
+
+  stop_blinking();
   return 0;
 }
 
@@ -843,30 +874,46 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (touch_policy[TOUCH_DEC]) OPENPGP_TOUCH();
 
+  start_blinking_interval(0, 25);
+
   int status = openpgp_key_get_status(DEC_KEY_PATH);
-  if (status < 0) return -1;
-  if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (status < 0) {
+    stop_blinking();
+    return -1;
+  }
+  if (status == KEY_NOT_PRESENT) {
+    stop_blinking();
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  }
 
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(DEC_KEY_PATH, attr);
-  if (attr_len < 0) return -1;
+  if (attr_len < 0) {
+    stop_blinking();
+    return -1;
+  }
 
   if (attr[0] == KEY_TYPE_RSA) {
     rsa_key_t key;
     if (openpgp_key_get_key(DEC_KEY_PATH, &key, sizeof(key)) < 0) {
       memzero(&key, sizeof(key));
+      stop_blinking();
       return -1;
     }
     size_t olen;
     if (rsa_decrypt_pkcs_v15(&key, DATA + 1, &olen, RDATA) < 0) {
       memzero(&key, sizeof(key));
+      stop_blinking();
       return -1;
     }
     memzero(&key, sizeof(key));
     LL = olen;
   } else if (attr[0] == KEY_TYPE_ECDH) {
     // 7.2.11 PSO: DECIPHER
-    if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) EXCEPT(SW_WRONG_DATA);
+    if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
+      stop_blinking();
+      EXCEPT(SW_WRONG_DATA);
+    }
 
     EC_Algorithm algo = get_ec_algo(attr, attr_len);
     int ec_pri_key_len = get_ec_key_length(algo);
@@ -878,16 +925,20 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     case ECDH_P256K1:
     case ECDH_P384R1:
       if (DATA[1] != ec_pub_key_len + 6 || DATA[4] != ec_pub_key_len + 3 || DATA[6] != ec_pub_key_len + 1 ||
-          DATA[7] != 0x04)
+          DATA[7] != 0x04) {
+        stop_blinking();
         EXCEPT(SW_WRONG_DATA);
+      }
       if (openpgp_key_get_key(DEC_KEY_PATH, key, ec_pri_key_len) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       ECC_Curve curve = ec_algo2curve[algo];
       RDATA[0] = 0x04;
       if (ecdh_decrypt(curve, key, DATA + 8, RDATA + 1) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       memzero(key, sizeof(key));
@@ -895,10 +946,13 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       break;
 
     case X25519:
-      if (DATA[1] != KEY_SIZE_25519 + 5 || DATA[4] != KEY_SIZE_25519 + 2 || DATA[6] != KEY_SIZE_25519)
+      if (DATA[1] != KEY_SIZE_25519 + 5 || DATA[4] != KEY_SIZE_25519 + 2 || DATA[6] != KEY_SIZE_25519) {
+        stop_blinking();
         EXCEPT(SW_WRONG_DATA);
+      }
       if (openpgp_key_get_key(DEC_KEY_PATH, key, KEY_SIZE_25519) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       swap_big_number_endian(DATA + 7);
@@ -910,10 +964,12 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       break;
 
     default:
+      stop_blinking();
       return -1;
     }
   }
 
+  stop_blinking();
   return 0;
 }
 
@@ -1254,23 +1310,39 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (touch_policy[TOUCH_AUT]) OPENPGP_TOUCH();
 
+  start_blinking_interval(0, 25);
+
   int status = openpgp_key_get_status(AUT_KEY_PATH);
-  if (status < 0) return -1;
-  if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (status < 0) {
+    stop_blinking();
+    return -1;
+  }
+  if (status == KEY_NOT_PRESENT) {
+    stop_blinking();
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  }
 
   uint8_t attr[MAX_ATTR_LENGTH];
   int attr_len = openpgp_key_get_attributes(AUT_KEY_PATH, attr);
-  if (attr_len < 0) return -1;
+  if (attr_len < 0) {
+    stop_blinking();
+    return -1;
+  }
 
   if (attr[0] == KEY_TYPE_RSA) {
-    if (LC > 102) EXCEPT(SW_WRONG_LENGTH);
+    if (LC > 102) {
+      stop_blinking();
+      EXCEPT(SW_WRONG_LENGTH);
+    }
     rsa_key_t key;
     if (openpgp_key_get_key(AUT_KEY_PATH, &key, sizeof(key)) < 0) {
       memzero(&key, sizeof(key));
+      stop_blinking();
       return -1;
     }
     if (rsa_sign_pkcs_v15(&key, DATA, LC, RDATA) < 0) {
       memzero(&key, sizeof(key));
+      stop_blinking();
       return -1;
     }
     LL = key.nbits / 8;
@@ -1285,14 +1357,19 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     case ECDSA_P256R1:
     case ECDSA_P256K1:
     case ECDSA_P384R1:
-      if (LC != ec_pri_key_len) EXCEPT(SW_WRONG_LENGTH);
+      if (LC != ec_pri_key_len) {
+        stop_blinking();
+        EXCEPT(SW_WRONG_LENGTH);
+      }
       if (openpgp_key_get_key(AUT_KEY_PATH, key, ec_pri_key_len) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       ECC_Curve curve = ec_algo2curve[algo];
       if (ecdsa_sign(curve, key, DATA, RDATA) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       memzero(key, sizeof(key));
@@ -1302,6 +1379,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     case ED25519:
       if (openpgp_key_get_key(AUT_KEY_PATH, key, KEY_SIZE_25519 * 2) < 0) {
         memzero(key, sizeof(key));
+        stop_blinking();
         return -1;
       }
       ed25519_sign(DATA, LC, key, key + KEY_SIZE_25519, sig);
@@ -1311,10 +1389,12 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       break;
 
     default:
+      stop_blinking();
       return -1;
     }
   }
 
+  stop_blinking();
   return 0;
 }
 
