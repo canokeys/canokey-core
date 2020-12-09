@@ -13,6 +13,7 @@ Core implementations of an open-source secure key, with supports of:
 * OpenPGP Card V3.4 with EcDSA / EdDSA / ECDH support
 * PIV (NIST SP 800-73-4)
 * HOTP / TOTP
+* NDEF
 
 The USB mode contains 3 different interfaces:
 
