@@ -158,14 +158,20 @@ static int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_touch(const CAPDU *capdu, RAPDU *rapdu){
-  if (!is_nfc()) {
-    start_blinking(2);
-    if (get_touch_result() == TOUCH_NO) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    set_touch_result(TOUCH_NO);
-    stop_blinking();
-  }
-}
+#define OPENPGP_TOUCH()                                                                                                         \
+  do {                                                                                                                 \
+    if (is_nfc()) break;                                                                                               \
+    start_blinking(0);                                                                                                 \
+    switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                              \
+    case USER_PRESENCE_CANCEL:                                                                                         \
+      stop_blinking();                                                                                                 \
+      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
+    case USER_PRESENCE_TIMEOUT:                                                                                        \
+      stop_blinking();                                                                                                 \
+      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
+    }                                                                                                                  \
+    stop_blinking();                                                                                                   \
+  } while (0)
 
 static const char *get_key_path(uint8_t tag) {
   switch (tag) {
@@ -753,13 +759,14 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
 }
 
 static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
-  if (touch_policy[TOUCH_SIG]) openpgp_touch(capdu, rapdu);
 #ifndef FUZZ
   if (PW1_MODE81() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   uint8_t pw1_status;
   if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
   if (pw1_status == 0x00) PW1_MODE81_OFF();
+
+  if (touch_policy[TOUCH_SIG]) OPENPGP_TOUCH();
 
   int status = openpgp_key_get_status(SIG_KEY_PATH);
   if (status < 0) return -1;
@@ -831,10 +838,12 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
-  if (touch_policy[TOUCH_DEC]) openpgp_touch(capdu, rapdu);
 #ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
+
+  if (touch_policy[TOUCH_DEC]) OPENPGP_TOUCH();
+
   int status = openpgp_key_get_status(DEC_KEY_PATH);
   if (status < 0) return -1;
   if (status == KEY_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
@@ -1240,10 +1249,11 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
-  if (touch_policy[TOUCH_AUT]) openpgp_touch(capdu, rapdu);
 #ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
+
+  if (touch_policy[TOUCH_AUT]) OPENPGP_TOUCH();
 
   int status = openpgp_key_get_status(AUT_KEY_PATH);
   if (status < 0) return -1;
