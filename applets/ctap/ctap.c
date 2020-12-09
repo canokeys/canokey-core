@@ -40,7 +40,7 @@
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
     start_blinking(0);                                                                                                 \
-    switch (wait_for_user_presence()) {                                                                                \
+    switch (wait_for_user_presence(WAIT_ENTRY_CTAPHID)) {                                                              \
     case USER_PRESENCE_CANCEL:                                                                                         \
       stop_blinking();                                                                                                 \
       return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
