@@ -11,8 +11,8 @@ volatile static uint8_t touch_result;
 static uint8_t has_rf;
 static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
-typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED } wait_status_t;
-volatile static wait_status_t wait_status; // need init!
+typedef enum { WAIT_NONE = 1, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED } wait_status_t;
+volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, hence inited
 
 #define IS_BLINKING (last_blink != UINT32_MAX)
 
@@ -47,7 +47,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       break;
     }
   else wait_status = WAIT_DEEP;
-  while (touch_result == TOUCH_NO && wait_status != WAIT_DEEP_TOUCHED) {
+  while (touch_result == TOUCH_NO || wait_status != WAIT_DEEP_TOUCHED) {
     if (wait_status == WAIT_CTAPHID) CCID_Loop();
     if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
       wait_status = shallow;
