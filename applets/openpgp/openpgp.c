@@ -127,7 +127,7 @@ static pin_t pw1 = {.min_length = 6, .max_length = MAX_PIN_LENGTH, .is_validated
 static pin_t pw3 = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw3"};
 static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-rc"};
 static uint8_t touch_policy[3]; // SIG DEC AUT
-static uint32_t last_touch=UINT32_MAX;
+static uint32_t last_touch = UINT32_MAX;
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
 #define PW1_MODE81_OFF() pw1_mode &= 0XFEu
