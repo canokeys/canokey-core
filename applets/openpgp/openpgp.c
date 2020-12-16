@@ -189,6 +189,7 @@ static EC_Algorithm get_ec_algo(const uint8_t *attr, int len) {
   for (int i = 0; i < 8; ++i) {
     uint8_t *r = (uint8_t *)ec_attr[i];
     if (len == r[1] && memcmp(attr, r + 2, len) == 0) return (EC_Algorithm)r[0];
+    if (len == r[1] + 1 && memcmp(attr, r + 2, r[1]) == 0) return (EC_Algorithm)r[0];
   }
 
   return EC_ERROR;
@@ -1049,14 +1050,14 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
       case ECDSA_P256K1:
       case ECDSA_P384R1:
       case ED25519:
-        if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
+        if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) DATA[0] = KEY_TYPE_ECDH;
         break;
 
       case ECDH_P256R1:
       case ECDH_P256K1:
       case ECDH_P384R1:
       case X25519:
-        if (tag != TAG_ALGORITHM_ATTRIBUTES_DEC) EXCEPT(SW_WRONG_DATA);
+        if (tag != TAG_ALGORITHM_ATTRIBUTES_DEC) DATA[0] = KEY_TYPE_ECDSA;
         break;
 
       default:
@@ -1243,19 +1244,18 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     key_len = ec_pri_key_len * 3;
 
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
+    int data_pri_key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
+    if (data_pri_key_len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    int n_leading_zeros = ec_pri_key_len - len;
+    int n_leading_zeros = ec_pri_key_len - data_pri_key_len;
     memzero(key, n_leading_zeros);
-    memcpy(key + n_leading_zeros, p, len);
+    memcpy(key + n_leading_zeros, p, data_pri_key_len);
 
     ECC_Curve curve = 0;
     switch (algo) {
