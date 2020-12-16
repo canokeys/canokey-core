@@ -148,10 +148,6 @@ static uint32_t last_touch = UINT32_MAX;
 #define TOUCH_DEC 1
 #define TOUCH_AUT 2
 
-#define TOUCH_POLICY_NO 0
-#define TOUCH_POLICY_REQUIRED 1
-#define TOUCH_POLICY_CACHED 2 // not supported now, 2-255 is num of sec
-
 #define OPENPGP_TOUCH(K)                                                                                               \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
