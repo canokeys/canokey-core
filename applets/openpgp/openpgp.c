@@ -815,7 +815,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
     case ECDSA_P256R1:
     case ECDSA_P256K1:
     case ECDSA_P384R1:
-      if (LC != ec_pri_key_len) {
+      if (LC < ec_pri_key_len) {
         stop_blinking();
         EXCEPT(SW_WRONG_LENGTH);
       }
@@ -1357,7 +1357,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     case ECDSA_P256R1:
     case ECDSA_P256K1:
     case ECDSA_P384R1:
-      if (LC != ec_pri_key_len) {
+      if (LC < ec_pri_key_len) {
         stop_blinking();
         EXCEPT(SW_WRONG_LENGTH);
       }
