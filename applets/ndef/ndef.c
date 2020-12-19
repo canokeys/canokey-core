@@ -16,7 +16,7 @@ static const uint8_t init_cc[CC_LENGTH] = {
     // the following are tlv data
     0x04,                                               // t
     0x06,                                               // l
-    0x00, 0x01,                                         // v, not determined now
+    0x00, 0x01,                                         // file id
     HI(NDEF_FILE_MAX_LENGTH), LO(NDEF_FILE_MAX_LENGTH), // max_size
     0x00,                                               // read access without any security
     0x00                                                // write access without any security
@@ -32,7 +32,7 @@ static enum { NONE, CC, NDEF } selected;
 void ndef_poweroff(void) { selected = NONE; }
 
 int ndef_toggle(const CAPDU *capdu, RAPDU *rapdu) {
-  switch(P1) {
+  switch (P1) {
   case 0x00: // read and write
     CC_W = 0x00;
     break;
@@ -47,8 +47,26 @@ int ndef_toggle(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_create_init_ndef() {
-  uint8_t empty[] = {0x00, 0x03, 0xD0, 0x00, 0x00}; // specified in Type 4 doc
-  if (write_file(NDEF_FILE, empty, 0, sizeof(empty), 1) < -1) return -1;
+  memset(global_buffer, 0, sizeof(global_buffer));
+  global_buffer[1] = 0x11;
+  global_buffer[2] = 0xD1;
+  global_buffer[3] = 0x01;
+  global_buffer[4] = 0x0D;
+  global_buffer[5] = 0x55;
+  global_buffer[6] = 0x04;
+  global_buffer[7] = 'c';
+  global_buffer[8] = 'a';
+  global_buffer[9] = 'n';
+  global_buffer[10] = 'o';
+  global_buffer[11] = 'k';
+  global_buffer[12] = 'e';
+  global_buffer[13] = 'y';
+  global_buffer[14] = 's';
+  global_buffer[15] = '.';
+  global_buffer[16] = 'o';
+  global_buffer[17] = 'r';
+  global_buffer[18] = 'g';
+  if (write_file(NDEF_FILE, global_buffer, 0, NDEF_FILE_MAX_LENGTH, 1) < -1) return -1;
   return 0;
 }
 
