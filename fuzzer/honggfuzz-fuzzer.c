@@ -90,6 +90,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
         capdu.data = NULL;
       }
       PRINT_HEX(buf, apdu_len);
+      buf += apdu_len;
       capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);
       process_func(&capdu, &rapdu);
 
