@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include <assert.h>
 #include <fcntl.h>
 #include <setjmp.h>
 #include <stdint.h>
@@ -8,7 +9,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <assert.h>
 
 #include <libhfuzz/libhfuzz.h>
 
@@ -16,15 +16,15 @@
 #include "ccid.h"
 #include "ctap.h"
 #include "fabrication.h"
+#include "ndef.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
 
 typedef int applet_process_t(const CAPDU *capdu, RAPDU *rapdu);
 
-applet_process_t *applets[] = {
-    piv_process_apdu, ctap_process_apdu, oath_process_apdu, admin_process_apdu, openpgp_process_apdu,
-};
+applet_process_t *applets[] = {piv_process_apdu,   ctap_process_apdu,    oath_process_apdu,
+                               admin_process_apdu, openpgp_process_apdu, ndef_process_apdu};
 
 extern ccid_bulkin_data_t bulkin_data;
 extern ccid_bulkout_data_t bulkout_data;
@@ -41,7 +41,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
       sprintf(lfs_root, "/tmp/fuzz_%d", idx);
     }
   }
-  if(!process_func){
+  if (!process_func) {
     printf("CCID Fuzzing Test\n");
     sprintf(lfs_root, "/tmp/fuzz_ccid");
   }
