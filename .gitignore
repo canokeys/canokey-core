@@ -1,4 +1,3 @@
 cmake-build-*
 build/
-fuzzing/applet*
 lfs-root
