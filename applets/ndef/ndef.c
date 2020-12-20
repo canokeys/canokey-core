@@ -128,7 +128,7 @@ int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case NDEF:
     if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (offset + LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (offset + LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     if (write_file(NDEF_FILE, DATA, offset, LC, 0) < 0) return -1;
     break;
   case NONE:
