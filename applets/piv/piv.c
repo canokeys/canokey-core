@@ -704,6 +704,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     size_t length_size;
     uint8_t *p = DATA;
 
+    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
     int len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -712,6 +713,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(key.p + (RSA2048_PQ_LENGTH - len), p, len);
     p += len;
 
+    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -720,6 +722,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(key.q + (RSA2048_PQ_LENGTH - len), p, len);
     p += len;
 
+    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x03) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -728,6 +731,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(key.dp + (RSA2048_PQ_LENGTH - len), p, len);
     p += len;
 
+    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x04) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -736,6 +740,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(key.dq + (RSA2048_PQ_LENGTH - len), p, len);
     p += len;
 
+    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x05) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
