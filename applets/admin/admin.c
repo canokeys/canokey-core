@@ -4,11 +4,11 @@
 #include <ctap.h>
 #include <device.h>
 #include <fs.h>
+#include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <pin.h>
 #include <piv.h>
-#include <ndef.h>
 #include <string.h>
 
 #define PIN_RETRY_COUNTER 3
@@ -79,6 +79,15 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0x04) EXCEPT(SW_WRONG_LENGTH);
   if (get_file_size(SN_FILE) >= 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   return write_file(SN_FILE, DATA, 0, LC, 1);
+}
+
+static int admin_read_sn(const CAPDU *capdu, RAPDU *rapdu) {
+  fill_sn(RDATA);
+
+  LL = 4;
+  if (LL > LE) LL = LE;
+
+  return 0;
 }
 
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
@@ -161,20 +170,31 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_SELECT:
     if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     return 0;
+
   case ADMIN_INS_READ_VERSION:
     if (P1 > 1 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     if (P1 == 0)
       ret = admin_vendor_version(capdu, rapdu);
     else if (P1 == 1)
       ret = admin_vendor_hw_variant(capdu, rapdu);
-    else if (P1 == 2)
+    else
+      ret = 0;
+    goto done;
+
+  case ADMIN_INS_READ_SN:
+    if (P1 > 1 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    if (P1 == 0)
+      ret = admin_read_sn(capdu, rapdu);
+    else if (P1 == 1)
       ret = admin_vendor_hw_sn(capdu, rapdu);
     else
       ret = 0;
     goto done;
+
   case ADMIN_INS_FACTORY_RESET:
     ret = admin_factory_reset(capdu, rapdu);
     goto done;
+
   case ADMIN_INS_VERIFY:
     ret = admin_verify(capdu, rapdu);
     goto done;
