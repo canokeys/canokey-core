@@ -27,6 +27,8 @@ __attribute__((weak)) int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu)
 
 __attribute__((weak)) int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
 
+__attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
 
 uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_en; }
@@ -163,13 +165,12 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     if (P1 > 1 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     if (P1 == 0)
       ret = admin_vendor_version(capdu, rapdu);
-    else
+    else if (P1 == 1)
       ret = admin_vendor_hw_variant(capdu, rapdu);
-    goto done;
-  case ADMIN_INS_ECHO:
-    memmove(RDATA, DATA, LC);
-    LL = LC;
-    ret = 0;
+    else if (P1 == 2)
+      ret = admin_vendor_hw_sn(capdu, rapdu);
+    else
+      ret = 0;
     goto done;
   case ADMIN_INS_FACTORY_RESET:
     ret = admin_factory_reset(capdu, rapdu);
@@ -202,7 +203,7 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_RESET_NDEF:
     ret = ndef_install(1);
     break;
-  case ADMIN_INS_TOGGLE_NDEF:
+  case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
     ret = ndef_toggle(capdu, rapdu);
     break;
   case ADMIN_INS_TOUCH_OPENPGP:

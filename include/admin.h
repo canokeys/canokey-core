@@ -11,7 +11,7 @@
 #define ADMIN_INS_RESET_OATH 0x05
 #define ADMIN_INS_RESET_NDEF 0x07
 #define ADMIN_INS_EXPORT_OATH 0x06
-#define ADMIN_INS_TOGGLE_NDEF 0x08
+#define ADMIN_INS_TOGGLE_NDEF_READ_ONLY 0x08
 #define ADMIN_INS_TOUCH_OPENPGP 0x09
 #define ADMIN_INS_VERIFY 0x20
 #define ADMIN_INS_CHANGE_PIN 0x21
@@ -21,7 +21,6 @@
 #define ADMIN_INS_FLASH_USAGE 0x41
 #define ADMIN_INS_FACTORY_RESET 0x50
 #define ADMIN_INS_SELECT 0xA4
-#define ADMIN_INS_ECHO 0xAA
 #define ADMIN_INS_VENDOR_SPECIFIC 0xFF
 
 #define ADMIN_P1_CFG_LED_ON 0x01
@@ -40,6 +39,7 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu);
+int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
 
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_kbd_interface_enable(void);
