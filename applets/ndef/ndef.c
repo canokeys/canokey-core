@@ -8,7 +8,7 @@
 #define NDEF_FILE_MAX_LENGTH (NDEF_MSG_MAX_LENGTH + 2)
 #define CC_LENGTH 15
 
-static const uint8_t init_cc[CC_LENGTH] = {
+static uint8_t current_cc[CC_LENGTH] = {
     0x00, 0x0F,                                         // len
     0x20,                                               // version, 2.0
     HI(NDEF_FILE_MAX_LENGTH), LO(NDEF_FILE_MAX_LENGTH), // mle
@@ -22,8 +22,6 @@ static const uint8_t init_cc[CC_LENGTH] = {
     0x00                                                // write access without any security
 };
 
-static uint8_t current_cc[CC_LENGTH];
-
 #define CC_R (current_cc[13])
 #define CC_W (current_cc[14])
 
@@ -31,7 +29,11 @@ static enum { NONE, CC, NDEF } selected;
 
 void ndef_poweroff(void) { selected = NONE; }
 
-int ndef_toggle(const CAPDU *capdu, RAPDU *rapdu) {
+int ndef_get_read_only(void) {
+  return CC_W == 0xFF ? 1 : 0;
+}
+
+int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
   switch (P1) {
   case 0x00: // read and write
     CC_W = 0x00;
@@ -73,7 +75,6 @@ int ndef_create_init_ndef() {
 int ndef_install(uint8_t reset) {
   ndef_poweroff();
   if (reset || get_file_size(CC_FILE) != sizeof(current_cc) || get_file_size(NDEF_FILE) <= 0) {
-    memcpy(current_cc, init_cc, sizeof(current_cc));
     if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
     if (ndef_create_init_ndef() < 0) return -1;
   } else {

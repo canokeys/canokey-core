@@ -82,10 +82,11 @@ static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int admin_read_sn(const CAPDU *capdu, RAPDU *rapdu) {
-  fill_sn(RDATA);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LE < 4) EXCEPT(SW_WRONG_LENGTH);
 
+  fill_sn(RDATA);
   LL = 4;
-  if (LL > LE) LL = LE;
 
   return 0;
 }
@@ -101,15 +102,32 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  return write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
+  int ret = write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
+  stop_blinking();
+  return ret;
+}
+
+static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LE < 6) EXCEPT(SW_WRONG_LENGTH);
+
+  RDATA[0] = current_config.led_normally_on;
+  RDATA[1] = current_config.kbd_interface_en;
+  RDATA[2] = ndef_get_read_only();
+  openpgp_get_touch_policy(RDATA + 3);
+  LL = 6;
+
+  return 0;
 }
 
 static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LE < 2) EXCEPT(SW_WRONG_LENGTH);
+
   RDATA[0] = get_fs_usage();
   RDATA[1] = get_fs_size();
   LL = 2;
+
   return 0;
 }
 
@@ -224,7 +242,7 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = ndef_install(1);
     break;
   case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
-    ret = ndef_toggle(capdu, rapdu);
+    ret = ndef_toggle_read_only(capdu, rapdu);
     break;
   case ADMIN_INS_TOUCH_OPENPGP:
     ret = openpgp_set_touch_policy(capdu, rapdu);
@@ -243,6 +261,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_FLASH_USAGE:
     ret = admin_flash_usage(capdu, rapdu);
+    break;
+  case ADMIN_INS_READ_CONFIG:
+    ret = admin_read_config(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);
