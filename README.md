@@ -10,7 +10,7 @@
 Core implementations of an open-source secure key, with supports of:
 
 * U2F / FIDO2
-* OpenPGP Card V3.4 with EcDSA / EdDSA / ECDH support
+* OpenPGP Card V3.4, [Supported Algorithm List](https://docs.canokeys.org/userguide/openpgp/#supported-algorithm)
 * PIV (NIST SP 800-73-4)
 * HOTP / TOTP
 * NDEF
@@ -26,7 +26,7 @@ The WebUSB interface is used to configure the key via a web-based interface.
 
 ## Protocol
 
-Please refer to the [documentation](https://canokeys.github.io/doc/).
+Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).
 
 ## Porting
 
