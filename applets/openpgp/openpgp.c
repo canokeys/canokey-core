@@ -210,6 +210,7 @@ int openpgp_get_touch_policy(uint8_t *buf) {
 
 int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 > 3) EXCEPT(SW_WRONG_P1P2);
+  if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
   touch_policy[P1] = P2;
   if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
   return 0;
