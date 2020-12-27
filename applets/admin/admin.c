@@ -109,13 +109,13 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  if (LE < 6) EXCEPT(SW_WRONG_LENGTH);
+  if (LE < 7) EXCEPT(SW_WRONG_LENGTH);
 
   RDATA[0] = current_config.led_normally_on;
   RDATA[1] = current_config.kbd_interface_en;
   RDATA[2] = ndef_get_read_only();
   openpgp_get_touch_policy(RDATA + 3);
-  LL = 6;
+  LL = 7;
 
   return 0;
 }

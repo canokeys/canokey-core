@@ -126,7 +126,7 @@ static uint8_t pw1_mode, current_occurrence, state;
 static pin_t pw1 = {.min_length = 6, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw1"};
 static pin_t pw3 = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw3"};
 static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-rc"};
-static uint8_t touch_policy[3]; // SIG DEC AUT
+static uint8_t touch_policy[4]; // SIG DEC AUT, time
 static uint32_t last_touch = UINT32_MAX;
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
@@ -148,14 +148,13 @@ static uint32_t last_touch = UINT32_MAX;
 #define TOUCH_DEC 1
 #define TOUCH_AUT 2
 
-#define OPENPGP_TOUCH(K)                                                                                               \
+#define OPENPGP_TOUCH()                                                                                                \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
     uint32_t current_tick = device_get_tick();                                                                         \
-    if (current_tick > last_touch && current_tick - last_touch < touch_policy[K] * 1000) break;                        \
+    if (current_tick > last_touch && current_tick - last_touch < touch_policy[3] * 1000) break;                        \
     switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
     case USER_PRESENCE_CANCEL:                                                                                         \
-      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
       EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
     }                                                                                                                  \
@@ -210,7 +209,7 @@ int openpgp_get_touch_policy(uint8_t *buf) {
 }
 
 int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 > 2) EXCEPT(SW_WRONG_P1P2);
+  if (P1 > 3) EXCEPT(SW_WRONG_P1P2);
   touch_policy[P1] = P2;
   if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
   return 0;
@@ -779,7 +778,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
   if (pw1_status == 0x00) PW1_MODE81_OFF();
 
-  if (touch_policy[TOUCH_SIG]) OPENPGP_TOUCH(TOUCH_SIG);
+  if (touch_policy[TOUCH_SIG]) OPENPGP_TOUCH();
 
   openpgp_start_blinking();
 
@@ -886,7 +885,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  if (touch_policy[TOUCH_DEC]) OPENPGP_TOUCH(TOUCH_DEC);
+  if (touch_policy[TOUCH_DEC]) OPENPGP_TOUCH();
 
   openpgp_start_blinking();
 
@@ -1321,7 +1320,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  if (touch_policy[TOUCH_AUT]) OPENPGP_TOUCH(TOUCH_AUT);
+  if (touch_policy[TOUCH_AUT]) OPENPGP_TOUCH();
 
   openpgp_start_blinking();
 
