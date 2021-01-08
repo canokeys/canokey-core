@@ -114,7 +114,7 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   RDATA[0] = current_config.led_normally_on;
   RDATA[1] = current_config.kbd_interface_en;
   RDATA[2] = ndef_get_read_only();
-  openpgp_get_touch_policy(RDATA + 3);
+  admin_get_touch_policy(RDATA + 3);
   LL = 7;
 
   return 0;
@@ -245,7 +245,7 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = ndef_toggle_read_only(capdu, rapdu);
     break;
   case ADMIN_INS_TOUCH_OPENPGP:
-    ret = openpgp_set_touch_policy(capdu, rapdu);
+    ret = admin_set_touch_policy(capdu, rapdu);
     break;
   case ADMIN_INS_EXPORT_OATH:
     ret = oath_export(capdu, rapdu);

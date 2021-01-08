@@ -56,7 +56,7 @@
 void openpgp_poweroff(void);
 int openpgp_install(uint8_t reset);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
-int openpgp_get_touch_policy(uint8_t *buf);
-int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu);
+int admin_get_touch_policy(uint8_t *buf);
+int admin_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H

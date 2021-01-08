@@ -203,16 +203,17 @@ static inline void openpgp_stop_blinking(void) {
   if (!is_nfc()) stop_blinking();
 }
 
-int openpgp_get_touch_policy(uint8_t *buf) {
+int admin_get_touch_policy(uint8_t *buf) {
   if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, buf, sizeof(touch_policy)) < 0) return -1;
   return 0;
 }
 
-int openpgp_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
+int admin_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 > 3) EXCEPT(SW_WRONG_P1P2);
-  if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
-  touch_policy[P1] = P2;
-  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
+  uint8_t t[sizeof(touch_policy)];
+  if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, t, sizeof(touch_policy)) < 0) return -1;
+  t[P1] = P2;
+  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, t, sizeof(touch_policy)) < 0) return -1;
   return 0;
 }
 
