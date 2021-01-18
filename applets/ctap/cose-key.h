@@ -12,6 +12,7 @@
 #define COSE_KEY_CRV_P256 1
 
 #define COSE_ALG_ES256 -7
+#define COSE_ALG_EDDSA -8
 #define COSE_ALG_ECDH_ES_HKDF_256 -25
 
 #endif // CANOKEY_CORE_FIDO2_COSE_KEY_H_

@@ -139,6 +139,7 @@ typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
   uint8_t nonce[CREDENTIAL_NONCE_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
+  int32_t alg_type;
 } __packed CredentialId;
 
 typedef struct {
@@ -206,6 +207,6 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu);
 uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
-                            const uint8_t *extension, size_t *len);
+                            const uint8_t *extension, size_t *len, int32_t alg_type);
 
 #endif

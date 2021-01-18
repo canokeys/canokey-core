@@ -131,6 +131,26 @@ static void build_cose_key(uint8_t *data, uint8_t ecdh) {
   }
 }
 
+static void build_ed25519_cose_key(uint8_t *data) {
+  // A4                                    # map(4)
+  //  01                                   # unsigned(1)  kty =
+  //  01                                   # unsigned(2)    OKP (1)
+  //  03                                   # unsigned(3)  alg =
+  //  27                                   # negative(7)    EdDSA (-8)
+  //  20                                   # negative(0)  crv =
+  //  06                                   # unsigned(6)    Ed25519 (6)
+  //  21                                   # negative(1)  x =
+  //  58 20                                # bytes(32)      [bstr]
+  //     (32 bytes x)
+
+  memmove(data + 10, data, 32);
+  data[0] = 0xa4;
+  data[1] = 0x01; data[2] = 0x01;
+  data[3] = 0x03; data[4] = 0x27;
+  data[5] = 0x20; data[6] = 0x06;
+  data[7] = 0x21; data[8] = 0x58; data[9] = 0x20;
+}
+
 static uint8_t get_shared_secret(uint8_t *pub_key) {
   int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_keypair, pub_key, pub_key);
   if (ret < 0) return 1;
@@ -139,7 +159,7 @@ static uint8_t get_shared_secret(uint8_t *pub_key) {
 }
 
 uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
-                            const uint8_t *extension, size_t *len) {
+                            const uint8_t *extension, size_t *len, int32_t alg_type) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -173,10 +193,18 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credentialIdLength = htobe16(sizeof(CredentialId));
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
-    if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-
-    build_cose_key(ad->at.publicKey, 0);
-    outLen += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
+    if (alg_type == COSE_ALG_ES256) {
+      if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      build_cose_key(ad->at.publicKey, 0);
+      outLen += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
+    } else if (alg_type == COSE_ALG_EDDSA) {
+      if (generate_ed25519_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      build_ed25519_cose_key(ad->at.publicKey);
+      // FIXME: Make this length a #define somewhere
+      outLen += sizeof(ad->at) - sizeof(ad->at.publicKey) + 42;
+    } else {
+      return CTAP2_ERR_UNHANDLED_REQUEST;
+    }
   }
   if (flags & FLAGS_ED) {
     if (*len < outLen + extensionSize) return CTAP2_ERR_LIMIT_EXCEEDED;
@@ -193,7 +221,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CTAP_makeCredential mc;
   // CBOR of {"hmac-secret": true}
   const uint8_t hmacExt[] = {0xA1, 0x6B, 0x68, 0x6D, 0x61, 0x63, 0x2D, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0xF5};
-  int ret = parse_make_credential(&parser, &mc, params, len);
+
+  int32_t alg_type;
+  int ret = parse_make_credential(&parser, &mc, params, len, &alg_type);
   CHECK_PARSER_RET(ret);
 
   uint8_t data_buf[sizeof(CTAP_authData)];
@@ -248,7 +278,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // auth data
   len = sizeof(data_buf);
   uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (has_pin() > 0 ? FLAGS_UV : 0) | FLAGS_UP;
-  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, flags, sizeof(hmacExt), hmacExt, &len);
+  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, flags, sizeof(hmacExt), hmacExt, &len, alg_type);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -361,7 +391,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 #endif
   }
 
-  uint8_t data_buf[sizeof(CTAP_authData)], pri_key[PRI_KEY_SIZE];
+  // FIXME: How to Ed25519 sign a concatenation of two buffers?
+  uint8_t data_buf[sizeof(CTAP_authData) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
   CTAP_residentKey rk;
   if (ga.allowListSize > 0) {
     size_t i;
@@ -487,7 +518,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   len = sizeof(data_buf);
   uint8_t flags = ((ga.parsedParams & PARAM_hmacSecret) ? FLAGS_ED : 0) |
                   (has_pin() && (ga.parsedParams & PARAM_pinAuth) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
-  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len);
+  ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len, rk.credential_id.alg_type);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);
@@ -497,11 +528,18 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // signature
   ret = cbor_encode_int(&map, RESP_signature);
   CHECK_CBOR_RET(ret);
-  sha256_init();
-  sha256_update(data_buf, len);
-  sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
-  sha256_final(data_buf);
-  len = sign_with_private_key(pri_key, data_buf, data_buf);
+  if (rk.credential_id.alg_type == COSE_ALG_ES256) {
+    sha256_init();
+    sha256_update(data_buf, len);
+    sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
+    sha256_final(data_buf);
+    len = sign_with_private_key(pri_key, data_buf, data_buf);
+  } else if (rk.credential_id.alg_type == COSE_ALG_EDDSA) {
+    // FIXME: NOT WORKING
+    // FIXME: How to Ed25519 sign a concatenation of two buffers?
+    memcpy(data_buf + len, ga.clientDataHash, CLIENT_DATA_HASH_SIZE);
+    len = sign_with_ed25519_private_key(pri_key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  }
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 

@@ -136,7 +136,7 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
   return 0;
 }
 
-uint8_t parse_verify_pub_key_cred_params(CborValue *val) {
+uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
   if (cbor_value_get_type(val) != CborArrayType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue arr;
@@ -146,13 +146,22 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val) {
   ret = cbor_value_get_array_length(val, &arr_length);
   CHECK_CBOR_RET(ret);
 
-  int32_t alg_type;
+  int32_t cur_alg_type;
   size_t chosen = arr_length;
   // all elements in array must be examined
   for (size_t i = 0; i < arr_length; ++i) {
-    ret = parse_pub_key_cred_param(&arr, &alg_type);
+    ret = parse_pub_key_cred_param(&arr, &cur_alg_type);
     CHECK_PARSER_RET(ret);
-    if (ret == 0 && alg_type == COSE_ALG_ES256) chosen = i;
+    if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA)) {
+      // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
+      //
+      // > This sequence is ordered from most preferred (by the RP) to least preferred.
+
+      if (chosen == arr_length) {
+        *alg_type = cur_alg_type;
+        chosen = i;
+      }
+    }
     ret = cbor_value_advance(&arr);
     CHECK_CBOR_RET(ret);
   }
@@ -447,7 +456,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
   return 0;
 }
 
-uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len) {
+uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len, int32_t *alg_type) {
   CborValue it, map;
   size_t map_length;
   int key, pinProtocol;
@@ -500,9 +509,11 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_pubKeyCredParams:
       DBG_MSG("pubKeyCredParams found\n");
-      ret = parse_verify_pub_key_cred_params(&map);
+      ret = parse_verify_pub_key_cred_params(&map, alg_type);
       CHECK_PARSER_RET(ret);
-      DBG_MSG("EcDSA found\n");
+      if (*alg_type == COSE_ALG_ES256) DBG_MSG("EcDSA found\n");
+      else if (*alg_type == COSE_ALG_EDDSA) DBG_MSG("EdDSA found\n");
+      else DBG_MSG("Found other algorithm\n");
       mc->parsedParams |= PARAM_pubKeyCredParams;
       break;
 

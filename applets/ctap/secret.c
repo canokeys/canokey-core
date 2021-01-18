@@ -2,10 +2,12 @@
 #include "secret.h"
 #include <apdu.h>
 #include <ecc.h>
+#include <ed25519.h>
 #include <fs.h>
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
+#include "cose-key.h"
 
 static int read_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
@@ -45,17 +47,45 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
     hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
     memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
   } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
+  kh->alg_type = COSE_ALG_ES256;
+  return 0;
+}
+
+int generate_ed25519_key_handle(CredentialId *kh, uint8_t *pubkey) {
+  // Use pubkey output as private key buffer
+  int ret = read_kh_key(pubkey);
+  if (ret < 0) return ret;
+  random_buffer(kh->nonce, sizeof(kh->nonce));
+  hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
+  hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
+  memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
+  // FIXME
+  pubkey[0] &= 248;
+  pubkey[31] &= 127;
+  pubkey[31] |= 64;
+  // Convert private key into public key in-place
+  ed25519_publickey(pubkey, pubkey);
+  kh->alg_type = COSE_ALG_EDDSA;
   return 0;
 }
 
 int verify_key_handle(const CredentialId *kh, uint8_t *pri_key) {
   uint8_t kh_key[KH_KEY_SIZE];
+  if (kh->alg_type != COSE_ALG_ES256 && kh->alg_type != COSE_ALG_EDDSA) {
+    return 1;
+  }
   int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
   // get private key
   hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pri_key);
   // get tag, store in kh_key, which should be verified first outside of this function
   hmac_sha256(pri_key, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh_key);
+  if (kh->alg_type == COSE_ALG_EDDSA) {
+      // FIXME
+      pri_key[0] &= 248;
+      pri_key[31] &= 127;
+      pri_key[31] |= 64;
+  }
   if (memcmp(kh_key, kh->tag, sizeof(kh->tag)) == 0) {
     memzero(kh_key, sizeof(kh_key));
     return 0;
@@ -76,6 +106,16 @@ size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
 size_t sign_with_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
   ecdsa_sign(ECC_SECP256R1, key, digest, sig);
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
+}
+
+size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, size_t data_len, uint8_t *sig) {
+  ed25519_public_key pk;
+  ed25519_publickey(key, pk);
+  ed25519_signature sig_tmp;
+  ed25519_sign(data, data_len, key, pk, sig_tmp);
+  memcpy(sig, sig_tmp, sizeof(ed25519_signature));
+  memzero(pk, sizeof(pk));
+  return sizeof(ed25519_signature);
 }
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }

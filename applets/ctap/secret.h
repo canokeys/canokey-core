@@ -18,4 +18,7 @@ int get_pin_retries(void);
 int set_pin_retries(uint8_t ctr);
 int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output);
 
+int generate_ed25519_key_handle(CredentialId *kh, uint8_t *pubkey);
+size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *digest, size_t digest_len, uint8_t *sig);
+
 #endif // CANOKEY_CORE_FIDO2_SECRET_H_
