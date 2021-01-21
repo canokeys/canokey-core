@@ -14,6 +14,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -51,23 +52,45 @@ struct RetSubmitBody {
   uint8_t setup[8];
 };
 
-#define MAX_TX_BUFFERS 16
+struct CmdUnlinkBody {
+  uint32_t seq_num;
+  uint32_t dev_id;
+  uint32_t direction;
+  uint32_t ep;
+  uint32_t seq_num_submit;
+  uint8_t padding[24];
+};
+
+struct RetUnlinkBody {
+  uint32_t seq_num;
+  uint32_t dev_id;
+  uint32_t direction;
+  uint32_t ep;
+  uint32_t status;
+  uint8_t padding[24];
+};
+
+#define EP_TX_BUFFER_MAXSIZE 65535
 struct Endpoint {
   uint8_t *rx_buffer;
   uint16_t rx_size;
-  // ring buffer as a queue
-  uint8_t *tx_buffer[MAX_TX_BUFFERS];
-  uint16_t tx_size[MAX_TX_BUFFERS];
-  uint32_t tx_from;
-  uint32_t tx_to;
+  uint8_t tx_buffer[EP_TX_BUFFER_MAXSIZE];
+  uint16_t tx_size;
+  uint8_t tx_ready;
   uint8_t type;
   uint8_t mps;
+  struct CmdSubmitBody submit;
+  uint8_t data_in; // is host ready
 };
 
 // global state
 struct CmdSubmitBody current_cmd_submit_body;
 int client_fd = -1;
 struct Endpoint endpoints[256];
+int flag = 0;
+char *canokey_file = "/tmp/canokey-file";
+int port = 3240;
+int touch = 0;
 
 // utilities
 int write_exact(int fd, const uint8_t *buffer, size_t write_len) {
@@ -103,6 +126,7 @@ USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_Stop(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_OpenEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps) {
+  DBG_MSG("%d %d\n", ep_type, ep_mps);
   endpoints[ep_addr].type = ep_type;
   endpoints[ep_addr].mps = ep_mps;
   return USBD_OK;
@@ -115,72 +139,63 @@ USBD_StatusTypeDef USBD_LL_ClearStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_add
 uint8_t USBD_LL_IsStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return 0; }
 USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_addr) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint16_t size) {
+  DBG_MSG("%d\n", size);
   endpoints[ep_addr].rx_buffer = pbuf;
   endpoints[ep_addr].rx_size = size;
   return USBD_OK;
 }
-void SendRetSubmit(const uint8_t *pbuf, uint16_t size) {
-  printf("<- RET_SUBMIT:\n\t");
-  for (size_t i = 0; i < size; i++) {
-    printf("%02X ", pbuf[i]);
+void SendRetSubmit(const uint8_t *pbuf, uint16_t size, uint8_t ep) {
+  if (size != 0) {
+    printf("<- RET_SUBMIT:\n");
+    for (size_t i = 0; i < size; i++) {
+      printf("%02X ", pbuf[i]);
+    }
+    printf("\n");
   }
-  printf("\n");
 
   // command
   uint8_t command[4] = {0, 0, 0, 3};
   write_exact(client_fd, command, sizeof(command));
 
   struct RetSubmitBody body;
-  body.seq_num = current_cmd_submit_body.seq_num;
-  body.dev_id = current_cmd_submit_body.dev_id;
-  body.direction = current_cmd_submit_body.direction;
-  body.ep = current_cmd_submit_body.ep;
+  body.seq_num = endpoints[ep].submit.seq_num;
+  body.dev_id = endpoints[ep].submit.dev_id;
+  body.direction = endpoints[ep].submit.direction;
+  body.ep = ep;
   body.status = 0;
   body.actual_length = htonl(size);
   body.start_frame = 0;
   body.number_of_packets = 0;
   body.error_count = 0;
-  memcpy(body.setup, current_cmd_submit_body.setup, 8);
+  memcpy(body.setup, endpoints[ep].submit.setup, 8);
   write_exact(client_fd, (uint8_t *)&body, sizeof(body));
 
   // data
   write_exact(client_fd, pbuf, size);
+  if(size != 0) printf("<- RET_SUBMIT: FINISH\n");
 }
 USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
+  uint8_t ep = ep_num;
+  DBG_MSG("%d %d %d %d\n", ep, size, endpoints[ep].data_in, endpoints[ep].tx_ready);
   if (client_fd == -1) {
     // ignore
   } else {
-    // save to buffer
-    uint32_t ep = ep_num & 0x7F;
-    if (size > 0) {
-      uint8_t *buffer = malloc(size);
-      memcpy(buffer, pbuf, size);
-      endpoints[ep].tx_buffer[endpoints[ep].tx_to] = buffer;
-      endpoints[ep].tx_size[endpoints[ep].tx_to] = size;
-      endpoints[ep].tx_to = (endpoints[ep].tx_to + 1) % MAX_TX_BUFFERS;
+    flag = 1;
+    if (endpoints[ep].data_in) { // if host ready, send to host
+      SendRetSubmit(pbuf, size, ep_num);
+      endpoints[ep].tx_size = 0;
+      endpoints[ep].tx_ready = 0;
+      endpoints[ep].data_in = 0;
+    } else { // buffer it until host ready
+      memcpy(endpoints[ep].tx_buffer, pbuf, size);
+      endpoints[ep].tx_size = size;
+      endpoints[ep].tx_ready = 1;
+      DBG_MSG("buffer\n");
     }
   }
   return USBD_OK;
 }
 uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return endpoints[ep_addr].rx_size; }
-void device_delay(int ms) {
-  struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
-  nanosleep(&spec, NULL);
-}
-uint32_t device_get_tick(void) {
-  uint64_t ms, s;
-  struct timespec spec;
-
-  clock_gettime(CLOCK_MONOTONIC, &spec);
-
-  s = spec.tv_sec;
-  ms = spec.tv_nsec / 1000000;
-  return (uint32_t)(s * 1000 + ms);
-}
-void device_disable_irq(void) {}
-void device_enable_irq(void) {}
-void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
-void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) { return; }
 
 /* Override the function defined in usb_device.c */
 void usb_resources_alloc(void) {
@@ -221,10 +236,11 @@ void sigint_handler() {
 void endpoint_rx(uint32_t ep) {
   uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
   uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-  printf("\tTransfer buffer: %u bytes\n\t", transfer_buffer_length);
+  printf("[DBG] endpoint_rx:\tTransfer buffer: %u bytes\n\t", transfer_buffer_length);
   if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
     return;
   }
+  
   for (int i = 0; i < transfer_buffer_length; i++) {
     printf(" %02X", transfer_buffer[i]);
   }
@@ -233,18 +249,75 @@ void endpoint_rx(uint32_t ep) {
 }
 
 void endpoint_tx(uint32_t ep) {
-  if (endpoints[ep].tx_from != endpoints[ep].tx_to) {
-    uint32_t tx_from = endpoints[ep].tx_from;
-    SendRetSubmit(endpoints[ep].tx_buffer[tx_from], endpoints[ep].tx_size[tx_from]);
-    free(endpoints[ep].tx_buffer[tx_from]);
-    endpoints[ep].tx_size[tx_from] = 0;
-    endpoints[ep].tx_from = (endpoints[ep].tx_from + 1) % MAX_TX_BUFFERS;
-  } else {
-    SendRetSubmit(NULL, 0);
+  endpoints[ep].data_in = 1;
+  if (endpoints[ep].tx_ready) {
+    // ready for data transfer 
+    USBD_LL_Transmit(&usb_device, ep, endpoints[ep].tx_buffer, endpoints[ep].tx_size);
+  }
+  else {
+    // wait for another thread
+    USBD_LL_DataInStage(&usb_device, ep & 0x7F, NULL); // for all interfaces, no difference on IN and OUT
   }
 }
 
-int main() {
+void device_delay(int ms) {
+  struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
+  nanosleep(&spec, NULL);
+}
+uint32_t device_get_tick(void) {
+  uint64_t ms, s;
+  struct timespec spec;
+
+  clock_gettime(CLOCK_MONOTONIC, &spec);
+
+  s = spec.tv_sec;
+  ms = spec.tv_nsec / 1000000;
+  return (uint32_t)(s * 1000 + ms);
+}
+void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
+int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
+    DBG_MSG("%d\n", *lock);
+    if (*lock != 0 && !blocking) {
+        return -1;
+    } else {
+        *lock = 1;
+        return 0;
+    }
+}
+void device_spinlock_unlock(volatile uint32_t *lock) {
+    DBG_MSG("%d\n", *lock);
+    *lock = 0;
+}
+int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
+    DBG_MSG("\n");
+    if (*var != expect)
+        return -1;
+    *var = update;
+    return 0;
+}
+void led_on(void) {}
+void led_off(void) {}
+
+void* device_thread(void *vargp) {
+  while(1) {
+    device_loop(0);
+    usleep(1);
+  }
+  return NULL;
+}
+
+int main(int argc, char **argv) {
+  if (argc > 1)
+    canokey_file = argv[1];
+  printf("Using file: %s\n", canokey_file);
+
+  if (argc > 2)
+    port = atoi(argv[2]);
+
+  if (argc > 3)
+    touch = 1;
+
+
   int fd;
   uint8_t bus_id[32];
   strcpy((char *)bus_id, "1-1");
@@ -262,8 +335,8 @@ int main() {
   struct sockaddr_in addr;
   bzero(&addr, sizeof(addr));
   addr.sin_family = AF_INET;
-  addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = htons(3240);
+  addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+  addr.sin_port = htons(port);
 
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
     perror("setsockopt");
@@ -280,37 +353,31 @@ int main() {
     return 1;
   }
 
-  printf("listening on 0.0.0.0:3240\n");
+  printf("listening on 127.0.0.1:%d\n", port);
 
-  // emulate the NFC mode, where user-presence tests are skipped
-  set_nfc_state(1);
   // init usb stack
   usb_device_init();
-  card_fabrication_procedure("/tmp/lfs-root");
+  if (access(canokey_file, F_OK) == 0) {
+    card_read(canokey_file);
+  } else {
+    card_fabrication_procedure(canokey_file);
+  }
+  // if touch is not on,
+  // emulate the NFC mode, where user-presence tests are skipped
+  set_nfc_state(!touch);
   // set address to 1
   uint8_t set_address[] = {0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00};
   USBD_LL_SetupStage(&usb_device, set_address);
   // disable stdout buffer
   setvbuf(stdout, NULL, _IONBF, 0);
+
   // unlimited max packet for ep0
   usb_device.ep_in[0].maxpacket = -1;
   usb_device.ep_out[0].maxpacket = -1;
 
-  // oath init
-  uint8_t r_buf[1024] = {0};
-  // name: abc, algo: HOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
-  uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x73, 0x05, 0x11, 0x06, 0x00, 0x01, 0x02};
-  CAPDU C = {.data = data, .ins = OATH_INS_PUT, .lc = sizeof(data)};
-  RAPDU R = {.data = r_buf};
-  CAPDU *capdu = &C;
-  RAPDU *rapdu = &R;
-  oath_process_apdu(capdu, rapdu);
-  // set default
-  uint8_t data2[] = {0x71, 0x03, 'a', 'b', 'c'};
-  capdu->data = data2;
-  capdu->ins = OATH_INS_SET_DEFAULT;
-  capdu->lc = sizeof(data2);
-  oath_process_apdu(capdu, rapdu);
+  // start device loop in another thread
+  pthread_t device_thread_id;
+  pthread_create(&device_thread_id, NULL, device_thread, NULL);
 
   while (1) {
     struct sockaddr_storage client_addr;
@@ -327,7 +394,6 @@ int main() {
     printf("got connection\n");
 
     while (1) {
-      printf("reading command\n");
       uint8_t command[4];
       if (read_exact(client_fd, command, sizeof(command)) < 0) {
         break;
@@ -539,7 +605,7 @@ int main() {
         }
       } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x01) {
         // CMD_SUBMIT
-        printf("-> OP_CMD_SUBMIT\n");
+        //printf("-> OP_CMD_SUBMIT %d\n", command[3]);
 
         // body
         if (read_exact(client_fd, (uint8_t *)&current_cmd_submit_body, sizeof(current_cmd_submit_body)) < 0) {
@@ -547,17 +613,13 @@ int main() {
         }
 
         uint32_t ep = ntohl(current_cmd_submit_body.ep);
-        printf("\tEndpoint: %u with type %hhu\n", ep, endpoints[ep].type);
-        // print setup bytes
-        printf("\tSetup:");
-        for (int i = 0; i < 8; i++) {
-          printf(" %02X", current_cmd_submit_body.setup[i]);
-        }
-        printf("\n");
-
-        device_loop(1);
-
         int direction_out = ntohl(current_cmd_submit_body.direction) == 0;
+        if (ep != 0 && !direction_out && endpoints[ep].type == USBD_EP_TYPE_INTR) {
+          // special endpoint for INTR IN
+          memcpy(&endpoints[ep | 0x80].submit, &current_cmd_submit_body, sizeof(current_cmd_submit_body));
+        } else {
+          memcpy(&endpoints[ep].submit, &current_cmd_submit_body, sizeof(current_cmd_submit_body));
+        }
 
         // control
         if (endpoints[ep].type == USBD_EP_TYPE_CTRL) {
@@ -567,40 +629,27 @@ int main() {
             printf("->CONTROL OUT\n");
 
             // setup, out, in
-            printf("->\tSETUP\n");
+            printf("->CTL\tSETUP\n");
             USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
 
-            printf("<-\tOUT\n");
-            uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
-            uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-            printf("\tTransfer buffer: %u bytes\n\t", transfer_buffer_length);
-            if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
-              break;
-            }
-            for (int i = 0; i < transfer_buffer_length; i++) {
-              printf(" %02X", transfer_buffer[i]);
-            }
-            printf("\n");
-            endpoints[ep].rx_size = transfer_buffer_length;
+            printf("<-CTL\tOUT\n");
+            endpoint_rx(ep);
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
-            printf("->\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, NULL);
+            printf("->CTL\tIN\n");
             endpoint_tx(ep);
-
           } else {
             // control in:
             printf("->CONTROL IN\n");
 
             // setup, in, out
-            printf("->\tSETUP\n");
+            printf("->CTL\tSETUP\n");
             USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
 
-            printf("->\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, NULL);
+            printf("->CTL\tIN\n");
             endpoint_tx(ep);
-
-            printf("<-\tOUT\n");
+            
+            printf("<-CTL\tOUT\n");
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
           }
         } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
@@ -609,52 +658,71 @@ int main() {
             // bulk out
             printf("->BULK OUT\n");
 
-            printf("<-\tOUT\n");
             endpoint_rx(ep);
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
             // zero length packet
-            SendRetSubmit(NULL, 0);
+            SendRetSubmit(NULL, 0, ep);
+            printf("<-BULK OUT\n");
           } else {
             // bulk in
             printf("->BULK IN\n");
-
-            printf("<-\tIN\n");
             endpoint_tx(ep);
+            printf("<-BULK IN\n");
           }
         } else if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
           // interrupt transfer
           if (direction_out) {
             // intr out
-            printf("->INTR OUT\n");
-
-            printf("->\tOUT\n");
+            printf("->INTR OUT %d\n", ep);
             endpoint_rx(ep);
             USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 
             // zero length packet
-            SendRetSubmit(NULL, 0);
+            SendRetSubmit(NULL, 0, ep);
+            printf("<-\tOUT\n");
           } else {
             // intr in
-            printf("->INTR IN\n");
+            if (ep != 3) printf("->INTR IN\n"); // ignore keyboard poll
 
-            printf("<-\tIN\n");
-            USBD_LL_DataInStage(&usb_device, ep, NULL);
-            endpoint_tx(ep);
+            endpoint_tx(ep | 0x80); // special ep for INTR IN
+            if (ep != 3) printf("<-\tIN\n"); // ignore keyboard poll
           }
+        } else {
+            printf("SUBMIT unhandled: %d\n", endpoints[ep].type);
+            assert(false);
         }
 
       } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x02) {
         // CMD_UNLINK
         printf("-> OP_CMD_UNLINK\n");
         // body
-        if (read_exact(client_fd, (uint8_t *)&current_cmd_submit_body, sizeof(current_cmd_submit_body)) < 0) {
+        struct CmdUnlinkBody body;
+        if (read_exact(client_fd, (uint8_t *)&body, sizeof(body)) < 0) {
           break;
         }
-        // ignore
+        // ret
+        struct RetUnlinkBody ret;
+        ret.seq_num = body.seq_num;
+        ret.dev_id = body.dev_id;
+        ret.direction = body.direction;
+        ret.ep = body.ep;
+        ret.status = 0;
+
+        uint8_t command[4] = {0, 0, 0, 4};
+        write_exact(client_fd, command, sizeof(command));
+      
+        if (write_exact(client_fd, (uint8_t *)&ret, sizeof(ret)) < 0) {
+          break;
+        }
+        flag = 1;
+        printf("<- OP_CMD_UNLINK\n");
       } else {
-        printf("unknown command\n");
+        printf("-> OP_UNKNOWN\n");
+        assert(false);
       }
+      if (flag) printf("\n\n");
+      flag = 0;
     }
     printf("closing connection\n");
 
@@ -662,3 +730,4 @@ int main() {
   }
   return 0;
 }
+// vim: sts=2 ts=2 sw=2

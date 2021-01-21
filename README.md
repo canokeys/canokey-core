@@ -63,6 +63,24 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 6. You should call the `set_touch_result` to report touch sensing result, and `set_nfc_state` to report NFC state.
 
+## Virt Card (USB/IP)
+
+For developing and user playing, a virtual canokey is implemented based on USB/IP.
+
+Use the following commands to compile and you would find a `canokey-usbip` there.
+```
+cd build
+cmake .. -DUSBIP=ON
+```
+
+Usage:
+```
+canokey-usbip [canokey-file [port [touch]]]
+```
+
+- `canokey-file`: the file system of the virtual canokey, default value: `/tmp/canokey-file`
+- `port`: the port where usbip server listens on, default value 3240. Currently only localhost is supported. 
+- `touch`: if presents, you could use `Ctrl-C` to issue an touch. Otherwise touch is ignored by the firmware.
 
 ## Fuzz testing
 

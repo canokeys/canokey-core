@@ -5,6 +5,7 @@ project(canokey-core C)
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
+option(USBIP "Virtual Canokey using USBIP" OFF)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -54,6 +55,15 @@ target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
+if (USBIP)
+    add_executable(canokey-usbip
+            virt-card/usbip.c
+            virt-card/fabrication.c
+            littlefs/bd/lfs_filebd.c)
+    target_include_directories(canokey-usbip SYSTEM PRIVATE littlefs)
+    target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address")
+    target_compile_options(canokey-usbip PRIVATE "-fsanitize=address")
+endif (USBIP)
 
 if (ENABLE_TESTS)
     find_package(CMocka CONFIG REQUIRED)

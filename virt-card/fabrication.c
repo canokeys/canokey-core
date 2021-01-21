@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "applets.h"
 #include "device.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
+#include "ndef.h"
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
@@ -68,12 +70,30 @@ static void fake_fido_personalization() {
 }
 
 static void fido2_init() {
-  ctap_install(0);
+  ctap_install(1);
   fake_fido_personalization();
 }
 
+static void oath_init() {
+  oath_install(1);
+  // oath init
+  uint8_t r_buf[1024] = {0};
+  // name: abc, algo: HOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
+  uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x73, 0x05, 0x11, 0x06, 0x00, 0x01, 0x02};
+  CAPDU C = {.data = data, .ins = OATH_INS_PUT, .lc = sizeof(data)};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  oath_process_apdu(capdu, rapdu);
+  // set default
+  uint8_t data2[] = {0x71, 0x03, 'a', 'b', 'c'};
+  capdu->data = data2;
+  capdu->ins = OATH_INS_SET_DEFAULT;
+  capdu->lc = sizeof(data2);
+  oath_process_apdu(capdu, rapdu);
+}
 
-int card_fabrication_procedure(const char * lfs_root) {
+void card_fs_init(const char * lfs_root) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
@@ -90,11 +110,27 @@ int card_fabrication_procedure(const char * lfs_root) {
   lfs_filebd_create(&cfg, lfs_root);
 
   fs_init(&cfg);
-  admin_install(0);
-  oath_install(0);
+}
+
+
+int card_fabrication_procedure(const char * lfs_root) {
+  card_fs_init(lfs_root);
+
+  admin_install(1);
+  oath_init();
   fido2_init();
-  piv_install(0);
-  openpgp_install(0);
+  piv_install(1);
+  openpgp_install(1);
+  ndef_install(1);
+  // emulate the NFC mode, where user-presence tests are skipped
+  set_nfc_state(1);
+  return 0;
+}
+
+int card_read(const char * lfs_root) {
+  card_fs_init(lfs_root);
+
+  applets_install();
   // emulate the NFC mode, where user-presence tests are skipped
   set_nfc_state(1);
   return 0;
