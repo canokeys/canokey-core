@@ -11,6 +11,7 @@
 #include "webusb.h"
 #include <arpa/inet.h>
 #include <assert.h>
+#include <errno.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -76,7 +77,7 @@ struct Endpoint {
   uint16_t rx_size;
   uint8_t tx_buffer[EP_TX_BUFFER_MAXSIZE];
   uint16_t tx_size;
-  uint8_t tx_ready;
+  uint8_t tx_ready; // is device ready
   uint8_t type;
   uint8_t mps;
   struct CmdSubmitBody submit;
@@ -86,7 +87,8 @@ struct Endpoint {
 // global state
 struct CmdSubmitBody current_cmd_submit_body;
 int client_fd = -1;
-struct Endpoint endpoints[256];
+#define EP_NUM 256
+struct Endpoint endpoints[EP_NUM];
 int flag = 0;
 char *canokey_file = "/tmp/canokey-file";
 int port = 3240;
@@ -145,13 +147,11 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   return USBD_OK;
 }
 void SendRetSubmit(const uint8_t *pbuf, uint16_t size, uint8_t ep) {
-  if (size != 0) {
-    printf("<- RET_SUBMIT:\n");
-    for (size_t i = 0; i < size; i++) {
-      printf("%02X ", pbuf[i]);
-    }
-    printf("\n");
+  printf("<- RET_SUBMIT: %d\n", size);
+  for (size_t i = 0; i < size; i++) {
+    printf("%02X ", pbuf[i]);
   }
+  printf("\n");
 
   // command
   uint8_t command[4] = {0, 0, 0, 3};
@@ -172,7 +172,10 @@ void SendRetSubmit(const uint8_t *pbuf, uint16_t size, uint8_t ep) {
 
   // data
   write_exact(client_fd, pbuf, size);
-  if(size != 0) printf("<- RET_SUBMIT: FINISH\n");
+  printf("<- RET_SUBMIT: FINISH\n");
+
+  // clear out processed request
+  bzero(&endpoints[ep].submit, sizeof(endpoints[ep].submit));
 }
 USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
   uint8_t ep = ep_num;
@@ -202,6 +205,8 @@ void usb_resources_alloc(void) {
   uint8_t iface = 0;
   uint8_t ep = 1;
 
+  // 0xFF for disable
+  // doc: interfaces/USB/device/usb_device.h
   memset(&IFACE_TABLE, 0xFF, sizeof(IFACE_TABLE));
   memset(&EP_TABLE, 0xFF, sizeof(EP_TABLE));
 
@@ -215,9 +220,9 @@ void usb_resources_alloc(void) {
   IFACE_TABLE.ccid = iface++;
   EP_SIZE_TABLE.ccid = 64;
 
-  EP_TABLE.kbd_hid = ep;
-  IFACE_TABLE.kbd_hid = iface;
-  EP_SIZE_TABLE.kbd_hid = 8;
+  //EP_TABLE.kbd_hid = ep;
+  //IFACE_TABLE.kbd_hid = iface;
+  //EP_SIZE_TABLE.kbd_hid = 8;
 }
 
 void sigint_handler() {
@@ -276,24 +281,27 @@ uint32_t device_get_tick(void) {
 }
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
-    DBG_MSG("%d\n", *lock);
-    if (*lock != 0 && !blocking) {
-        return -1;
-    } else {
-        *lock = 1;
-        return 0;
-    }
+  // since device loop is single threaded, naive impl is ok
+  DBG_MSG("%d\n", *lock);
+  if (*lock != 0 && !blocking) {
+      return -1;
+  } else {
+      *lock = 1;
+      return 0;
+  }
 }
 void device_spinlock_unlock(volatile uint32_t *lock) {
-    DBG_MSG("%d\n", *lock);
-    *lock = 0;
+  // since device loop is single threaded, naive impl is ok
+  DBG_MSG("%d\n", *lock);
+  *lock = 0;
 }
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
-    DBG_MSG("\n");
-    if (*var != expect)
-        return -1;
-    *var = update;
-    return 0;
+  // since device loop is single threaded, naive impl is ok
+  DBG_MSG("\n");
+  if (*var != expect)
+      return -1;
+  *var = update;
+  return 0;
 }
 void led_on(void) {}
 void led_off(void) {}
@@ -476,8 +484,9 @@ int main(int argc, char **argv) {
             0x01,
             // bNumConfigurations
             USBD_MAX_NUM_CONFIGURATION,
-            // bInterfaces
-            USBD_MAX_NUM_INTERFACES,
+            // bNumInterfaces
+            // disable keyboard interface
+            0x03,//USBD_MAX_NUM_INTERFACES,
             // interface 1
             // bInterfaceClass
             0x03,
@@ -487,15 +496,16 @@ int main(int argc, char **argv) {
             0x00,
             // bPadding
             0x00,
-            // interface 2
-            // bInterfaceClass
-            0x03,
-            // bInterfaceSubClass
-            0x00,
-            // bInterfaceProtocol
-            0x00,
-            // bPadding
-            0x00,
+            // disable keyboard interface
+            //// interface 2
+            //// bInterfaceClass
+            //0x03,
+            //// bInterfaceSubClass
+            //0x00,
+            //// bInterfaceProtocol
+            //0x00,
+            //// bPadding
+            //0x00,
             // interface 3
             // bInterfaceClass
             0xFF,
@@ -597,8 +607,9 @@ int main(int argc, char **argv) {
             0x01,
             // bNumConfigurations
             USBD_MAX_NUM_CONFIGURATION,
-            // bInterfaces
-            USBD_MAX_NUM_INTERFACES,
+            // bNumInterfaces
+            // disable keyboard interface
+            0x03,//USBD_MAX_NUM_INTERFACES,
         };
         if (write_exact(client_fd, resp_body, sizeof(resp_body)) < 0) {
           break;
@@ -683,10 +694,10 @@ int main(int argc, char **argv) {
             printf("<-\tOUT\n");
           } else {
             // intr in
-            if (ep != 3) printf("->INTR IN\n"); // ignore keyboard poll
+            printf("->INTR IN\n");
 
             endpoint_tx(ep | 0x80); // special ep for INTR IN
-            if (ep != 3) printf("<-\tIN\n"); // ignore keyboard poll
+            printf("<-\tIN\n");
           }
         } else {
             printf("SUBMIT unhandled: %d\n", endpoints[ep].type);
