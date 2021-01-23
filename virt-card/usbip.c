@@ -27,6 +27,16 @@
 #include <time.h>
 #include <unistd.h>
 
+/* canoncial protocol for interrupt in/out
+ * captured in wire
+ */
+/*
+SubIntrIN:  00000001 00000d05 0001000f 00000001 00000001 00000200 00000040 ffffffff 00000000 00000004 00000000 00000000 
+SubIntrOUT: 00000001 00000d06 0001000f 00000000 00000001 00000000 00000040 ffffffff 00000000 00000004 00000000 00000000 ffffffff860008a784ce5ae212376300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+RetIntrOut: 00000003 00000d06 00000000 00000000 00000000 00000000 00000040 ffffffff 00000000 00000000 00000000 00000000 
+RetIntrIn:  00000003 00000d05 00000000 00000000 00000000 00000000 00000040 ffffffff 00000000 00000000 00000000 00000000 ffffffff860011a784ce5ae2123763612891b1020100000400000000000000000000000000000000000000000000000000000000000000000000000000000000
+*/
+
 struct CmdSubmitBody {
   uint32_t seq_num;
   uint32_t dev_id;
@@ -82,6 +92,8 @@ struct Endpoint {
   uint8_t mps;
   struct CmdSubmitBody submit;
   uint8_t data_in; // is host ready
+  pthread_mutex_t mutex;
+  uint8_t unlink;
 };
 
 // global state
@@ -89,7 +101,8 @@ struct CmdSubmitBody current_cmd_submit_body;
 int client_fd = -1;
 #define EP_NUM 256
 struct Endpoint endpoints[EP_NUM];
-int flag = 0;
+pthread_mutex_t endpoint_tx_mutex;
+
 char *canokey_file = "/tmp/canokey-file";
 int port = 3240;
 int touch = 0;
@@ -121,6 +134,13 @@ int read_exact(int fd, uint8_t *buffer, size_t read_len) {
   return 0;
 }
 
+void endpoints_init() {
+  pthread_mutex_init(&endpoint_tx_mutex, 0);
+  for(int ep = 0; ep != EP_NUM; ++ep) {
+    pthread_mutex_init(&endpoints[ep].mutex, 0);
+  }
+}
+
 // mock device functions
 
 USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev) { return USBD_OK; }
@@ -148,30 +168,48 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
 }
 void SendRetSubmit(const uint8_t *pbuf, uint16_t size, uint8_t ep) {
   printf("<- RET_SUBMIT: %d\n", size);
-  for (size_t i = 0; i < size; i++) {
-    printf("%02X ", pbuf[i]);
-  }
-  printf("\n");
 
   // command
   uint8_t command[4] = {0, 0, 0, 3};
-  write_exact(client_fd, command, sizeof(command));
 
   struct RetSubmitBody body;
   body.seq_num = endpoints[ep].submit.seq_num;
-  body.dev_id = endpoints[ep].submit.dev_id;
-  body.direction = endpoints[ep].submit.direction;
-  body.ep = ep;
+  body.dev_id = 0;
+  body.direction = 0;
+  body.ep = 0; // see wire format above
   body.status = 0;
-  body.actual_length = htonl(size);
-  body.start_frame = 0;
+  // for interrupt, special value for actual length
+  if(endpoints[ep].type == USBD_EP_TYPE_INTR) { // interrupt ep
+    body.actual_length = endpoints[ep].submit.transfer_buffer_length;
+  } else {
+    body.actual_length = htonl(size);
+  }
+  body.start_frame = 0xffffffff; // see wire data above
   body.number_of_packets = 0;
   body.error_count = 0;
-  memcpy(body.setup, endpoints[ep].submit.setup, 8);
+  bzero(body.setup, 8);
+
+  pthread_mutex_lock(&endpoints[ep].mutex);
+  printf("-- RET_SUBMIT: mutex unlink %d seqnum %u\n", endpoints[ep].unlink, htonl(endpoints[ep].submit.seq_num));
+  if (endpoints[ep].unlink == 1) { // lock obtained earlier by main
+    pthread_mutex_unlock(&endpoints[ep].mutex);
+    return;
+  } else if (endpoints[ep].unlink == 0) {
+    endpoints[ep].unlink = 2;
+    pthread_mutex_unlock(&endpoints[ep].mutex);
+  } else {
+    assert(false);
+  }
+
+  // only one thread may send data
+  // for unlink, another mutex is used above
+  pthread_mutex_lock(&endpoint_tx_mutex);
+  write_exact(client_fd, command, sizeof(command));
   write_exact(client_fd, (uint8_t *)&body, sizeof(body));
 
   // data
   write_exact(client_fd, pbuf, size);
+  pthread_mutex_unlock(&endpoint_tx_mutex);
   printf("<- RET_SUBMIT: FINISH\n");
 
   // clear out processed request
@@ -183,7 +221,6 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
   if (client_fd == -1) {
     // ignore
   } else {
-    flag = 1;
     if (endpoints[ep].data_in) { // if host ready, send to host
       SendRetSubmit(pbuf, size, ep_num);
       endpoints[ep].tx_size = 0;
@@ -241,7 +278,7 @@ void sigint_handler() {
 void endpoint_rx(uint32_t ep) {
   uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
   uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-  printf("[DBG] endpoint_rx:\tTransfer buffer: %u bytes\n\t", transfer_buffer_length);
+  printf("[DBG] endpoint_rx:\tTransfer buffer: %u bytes\n", transfer_buffer_length);
   if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
     return;
   }
@@ -282,7 +319,6 @@ uint32_t device_get_tick(void) {
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
 int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
   // since device loop is single threaded, naive impl is ok
-  DBG_MSG("%d\n", *lock);
   if (*lock != 0 && !blocking) {
       return -1;
   } else {
@@ -292,12 +328,10 @@ int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
 }
 void device_spinlock_unlock(volatile uint32_t *lock) {
   // since device loop is single threaded, naive impl is ok
-  DBG_MSG("%d\n", *lock);
   *lock = 0;
 }
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
   // since device loop is single threaded, naive impl is ok
-  DBG_MSG("\n");
   if (*var != expect)
       return -1;
   *var = update;
@@ -365,6 +399,7 @@ int main(int argc, char **argv) {
 
   // init usb stack
   usb_device_init();
+  endpoints_init();
   if (access(canokey_file, F_OK) == 0) {
     card_read(canokey_file);
   } else {
@@ -628,8 +663,10 @@ int main(int argc, char **argv) {
         if (ep != 0 && !direction_out && endpoints[ep].type == USBD_EP_TYPE_INTR) {
           // special endpoint for INTR IN
           memcpy(&endpoints[ep | 0x80].submit, &current_cmd_submit_body, sizeof(current_cmd_submit_body));
+          endpoints[ep | 0x80].unlink = 0; // not locked ever before
         } else {
           memcpy(&endpoints[ep].submit, &current_cmd_submit_body, sizeof(current_cmd_submit_body));
+          endpoints[ep].unlink = 0; // not locked ever before
         }
 
         // control
@@ -694,7 +731,7 @@ int main(int argc, char **argv) {
             printf("<-\tOUT\n");
           } else {
             // intr in
-            printf("->INTR IN\n");
+            printf("->INTR IN %d\n", ep);
 
             endpoint_tx(ep | 0x80); // special ep for INTR IN
             printf("<-\tIN\n");
@@ -712,28 +749,46 @@ int main(int argc, char **argv) {
         if (read_exact(client_fd, (uint8_t *)&body, sizeof(body)) < 0) {
           break;
         }
-        // ret
+        // full policy doc: linux/latest/source/drivers/usb/usbip/stub_rx.c#L251
+        uint32_t status = 0;
+        for (int ep = 0; ep != EP_NUM; ++ep) {
+          if (endpoints[ep].submit.seq_num != body.seq_num_submit) continue;
+
+          pthread_mutex_lock(&endpoints[ep].mutex);
+          printf("-- OP_CMD_UNLINK: ep %u mutex unlink %d seqnum %u to %u\n", ep, endpoints[ep].unlink, htonl(body.seq_num), htonl(endpoints[ep].submit.seq_num));
+          if (endpoints[ep].unlink == 2) { // lock obtained earlier by device
+            // ignore
+          } else if (endpoints[ep].unlink == 0) {
+            endpoints[ep].unlink = 1;
+
+            // note that in original policy, this RetUnlink is done by callback func `stub_complete`,
+            // for ease of handling(we do not have callback), we implement callback here
+            status = htonl(-ECONNRESET);
+            // clear old submit
+            bzero(&endpoints[ep].submit, sizeof(endpoints[ep].submit));
+          }
+          pthread_mutex_unlock(&endpoints[ep].mutex);
+        }
+
         struct RetUnlinkBody ret;
         ret.seq_num = body.seq_num;
-        ret.dev_id = body.dev_id;
-        ret.direction = body.direction;
-        ret.ep = body.ep;
-        ret.status = 0;
+        ret.dev_id = 0;
+        ret.direction = 0;
+        ret.ep = 0;
+        ret.status = status;
+        bzero(ret.padding, sizeof(ret.padding));
 
         uint8_t command[4] = {0, 0, 0, 4};
         write_exact(client_fd, command, sizeof(command));
-      
         if (write_exact(client_fd, (uint8_t *)&ret, sizeof(ret)) < 0) {
           break;
         }
-        flag = 1;
         printf("<- OP_CMD_UNLINK\n");
       } else {
         printf("-> OP_UNKNOWN\n");
         assert(false);
       }
-      if (flag) printf("\n\n");
-      flag = 0;
+      printf("\n");
     }
     printf("closing connection\n");
 
