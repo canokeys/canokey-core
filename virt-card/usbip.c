@@ -343,7 +343,7 @@ void led_off(void) {}
 void* device_thread(void *vargp) {
   while(1) {
     device_loop(0);
-    usleep(1);
+    usleep(10);
   }
   return NULL;
 }
