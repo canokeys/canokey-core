@@ -29,7 +29,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t pubkey[PUB_KEY_SIZE];
 
   memcpy(kh.rpIdHash, req->appId, U2F_APPID_SIZE);
-  int err = generate_key_handle(&kh, pubkey);
+  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256);
   if (err < 0) return err;
 
   // there are overlaps between req and resp

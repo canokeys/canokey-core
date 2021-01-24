@@ -36,37 +36,27 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-int generate_key_handle(CredentialId *kh, uint8_t *pubkey) {
+int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
   int ret = read_kh_key(pubkey); // use pubkey as key buffer
   if (ret < 0) return ret;
-  do {
-    random_buffer(kh->nonce, sizeof(kh->nonce));
-    // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
-    hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
-    // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in pubkey[32, 64)
-    hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
-    memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
-  } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
-  kh->alg_type = COSE_ALG_ES256;
-  return 0;
-}
 
-int generate_ed25519_key_handle(CredentialId *kh, uint8_t *pubkey) {
-  // Use pubkey output as private key buffer
-  int ret = read_kh_key(pubkey);
-  if (ret < 0) return ret;
   random_buffer(kh->nonce, sizeof(kh->nonce));
+  // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
   hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
+  // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in pubkey[32, 64)
   hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
   memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
-  // FIXME
-  pubkey[0] &= 248;
-  pubkey[31] &= 127;
-  pubkey[31] |= 64;
-  // Convert private key into public key in-place
-  ed25519_publickey(pubkey, pubkey);
-  kh->alg_type = COSE_ALG_EDDSA;
-  return 0;
+
+  if (alg_type == COSE_ALG_ES256) {
+    kh->alg_type = COSE_ALG_ES256;
+    return ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey);
+  } else if (alg_type == COSE_ALG_EDDSA) {
+    kh->alg_type = COSE_ALG_EDDSA;
+    ed25519_publickey(pubkey, pubkey);
+    return 0;
+  } else {
+    return -1;
+  }
 }
 
 int verify_key_handle(const CredentialId *kh, uint8_t *pri_key) {
@@ -80,12 +70,6 @@ int verify_key_handle(const CredentialId *kh, uint8_t *pri_key) {
   hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pri_key);
   // get tag, store in kh_key, which should be verified first outside of this function
   hmac_sha256(pri_key, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh_key);
-  if (kh->alg_type == COSE_ALG_EDDSA) {
-      // FIXME
-      pri_key[0] &= 248;
-      pri_key[31] &= 127;
-      pri_key[31] |= 64;
-  }
   if (memcmp(kh_key, kh->tag, sizeof(kh->tag)) == 0) {
     memzero(kh_key, sizeof(kh_key));
     return 0;
@@ -103,7 +87,7 @@ size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
-size_t sign_with_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
+size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
   ecdsa_sign(ECC_SECP256R1, key, digest, sig);
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
@@ -112,6 +96,9 @@ size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, si
   ed25519_public_key pk;
   ed25519_publickey(key, pk);
   ed25519_signature sig_tmp;
+  // ed25519_sign(m, mlen, sk, pk, RS)
+  // m and RS can not share the same buffer
+  // (they are shared outside of this func)
   ed25519_sign(data, data_len, key, pk, sig_tmp);
   memcpy(sig, sig_tmp, sizeof(ed25519_signature));
   memzero(pk, sizeof(pk));

@@ -193,15 +193,13 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credentialIdLength = htobe16(sizeof(CredentialId));
     memcpy(ad->at.credentialId.rpIdHash, rpIdHash, sizeof(ad->at.credentialId.rpIdHash));
+    if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey, alg_type) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (alg_type == COSE_ALG_ES256) {
-      if (generate_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       build_cose_key(ad->at.publicKey, 0);
-      outLen += sizeof(ad->at) - 1; // ecdsa public key is 1 byte shorter than max value
+      outLen += sizeof(ad->at) - sizeof(ad->at.publicKey) + COSE_KEY_ES256_SIZE;
     } else if (alg_type == COSE_ALG_EDDSA) {
-      if (generate_ed25519_key_handle(&ad->at.credentialId, ad->at.publicKey) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       build_ed25519_cose_key(ad->at.publicKey);
-      // FIXME: Make this length a #define somewhere
-      outLen += sizeof(ad->at) - sizeof(ad->at.publicKey) + 42;
+      outLen += sizeof(ad->at) - sizeof(ad->at.publicKey) + COSE_KEY_EDDSA_SIZE;
     } else {
       return CTAP2_ERR_UNHANDLED_REQUEST;
     }
@@ -391,7 +389,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 #endif
   }
 
-  // FIXME: How to Ed25519 sign a concatenation of two buffers?
   uint8_t data_buf[sizeof(CTAP_authData) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
   CTAP_residentKey rk;
   if (ga.allowListSize > 0) {
@@ -533,10 +530,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     sha256_update(data_buf, len);
     sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
     sha256_final(data_buf);
-    len = sign_with_private_key(pri_key, data_buf, data_buf);
+    len = sign_with_ecdsa_private_key(pri_key, data_buf, data_buf);
   } else if (rk.credential_id.alg_type == COSE_ALG_EDDSA) {
-    // FIXME: NOT WORKING
-    // FIXME: How to Ed25519 sign a concatenation of two buffers?
     memcpy(data_buf + len, ga.clientDataHash, CLIENT_DATA_HASH_SIZE);
     len = sign_with_ed25519_private_key(pri_key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
   }
