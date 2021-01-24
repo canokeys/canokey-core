@@ -220,8 +220,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // CBOR of {"hmac-secret": true}
   const uint8_t hmacExt[] = {0xA1, 0x6B, 0x68, 0x6D, 0x61, 0x63, 0x2D, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0xF5};
 
-  int32_t alg_type;
-  int ret = parse_make_credential(&parser, &mc, params, len, &alg_type);
+  int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
   uint8_t data_buf[sizeof(CTAP_authData)];
@@ -276,7 +275,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // auth data
   len = sizeof(data_buf);
   uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (has_pin() > 0 ? FLAGS_UV : 0) | FLAGS_UP;
-  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, flags, sizeof(hmacExt), hmacExt, &len, alg_type);
+  ret = ctap_make_auth_data(mc.rpIdHash, data_buf, flags, sizeof(hmacExt), hmacExt, &len, mc.alg_type);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
   CHECK_CBOR_RET(ret);

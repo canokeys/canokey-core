@@ -456,7 +456,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
   return 0;
 }
 
-uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len, int32_t *alg_type) {
+uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len) {
   CborValue it, map;
   size_t map_length;
   int key, pinProtocol;
@@ -509,10 +509,10 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_pubKeyCredParams:
       DBG_MSG("pubKeyCredParams found\n");
-      ret = parse_verify_pub_key_cred_params(&map, alg_type);
+      ret = parse_verify_pub_key_cred_params(&map, &mc->alg_type);
       CHECK_PARSER_RET(ret);
-      if (*alg_type == COSE_ALG_ES256) DBG_MSG("EcDSA found\n");
-      else if (*alg_type == COSE_ALG_EDDSA) DBG_MSG("EdDSA found\n");
+      if (mc->alg_type == COSE_ALG_ES256) DBG_MSG("EcDSA found\n");
+      else if (mc->alg_type == COSE_ALG_EDDSA) DBG_MSG("EdDSA found\n");
       else DBG_MSG("Found other algorithm\n");
       mc->parsedParams |= PARAM_pubKeyCredParams;
       break;

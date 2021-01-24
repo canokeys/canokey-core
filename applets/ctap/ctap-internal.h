@@ -168,6 +168,7 @@ typedef struct {
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   UserEntity user;
+  int32_t alg_type;
   CborValue excludeList;
   size_t excludeListSize;
   uint8_t rk;

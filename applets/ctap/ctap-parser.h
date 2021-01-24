@@ -13,7 +13,7 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id);
 uint8_t parse_public_key_credential_list(CborValue *lst);
 uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val);
 uint8_t parse_cose_key(CborValue *val, uint8_t *public_key);
-uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len, int32_t *alg_type);
+uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len);
 uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uint8_t *buf, size_t len);
 uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *buf, size_t len);
 
