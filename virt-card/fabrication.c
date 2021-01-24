@@ -135,3 +135,38 @@ int card_read(const char * lfs_root) {
   set_nfc_state(1);
   return 0;
 }
+
+// constants for vendor
+#ifdef VIRT_VENDOR
+#include "git-rev.h"
+int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
+  LL = strlen(GIT_REV);
+  memcpy(RDATA, GIT_REV, LL);
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+
+int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+
+  static const char *const hw_variant_str = "CanoKey Virt-Card";
+  size_t len = strlen(hw_variant_str);
+  memcpy(RDATA, hw_variant_str, len);
+  LL = len;
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+
+int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+
+  static const char *const hw_sn = "\x00";
+  memcpy(RDATA, hw_sn, 1);
+  LL = 1;
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+#endif // VIRT_VENDOR

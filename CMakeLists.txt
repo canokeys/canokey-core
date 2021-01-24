@@ -61,8 +61,17 @@ if (USBIP)
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
     target_include_directories(canokey-usbip SYSTEM PRIVATE littlefs)
-    target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address")
+    target_compile_definitions(canokey-usbip PRIVATE VIRT_VENDOR)
     target_compile_options(canokey-usbip PRIVATE "-fsanitize=address")
+    target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address")
+    add_dependencies(canokey-usbip gitrev)
+    set(gitrev_in virt-card/git-rev.h.in)
+    set(gitrev virt-card/git-rev.h)
+    add_custom_target(gitrev
+            ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in} ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+            COMMAND git describe --always --tags --long --abbrev=8 --dirty >> ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+            )
 endif (USBIP)
 
 if (ENABLE_TESTS)
