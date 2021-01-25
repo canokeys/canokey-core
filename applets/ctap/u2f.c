@@ -10,6 +10,7 @@
 
 #include "ctap-internal.h"
 #include "secret.h"
+#include "cose-key.h"
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
@@ -28,7 +29,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t pubkey[PUB_KEY_SIZE];
 
   memcpy(kh.rpIdHash, req->appId, U2F_APPID_SIZE);
-  int err = generate_key_handle(&kh, pubkey);
+  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256);
   if (err < 0) return err;
 
   // there are overlaps between req and resp
@@ -83,7 +84,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   len = sizeof(auth_data);
   uint8_t flags = FLAGS_UP;
-  err = ctap_make_auth_data(req->appId, (uint8_t *)&auth_data, flags, 0, NULL, &len);
+  err = ctap_make_auth_data(req->appId, (uint8_t *)&auth_data, flags, 0, NULL, &len, COSE_ALG_ES256);
   if (err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   sha256_init();

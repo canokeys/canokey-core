@@ -8,7 +8,7 @@
 
 uint8_t parse_rp(uint8_t *rpIdHash, CborValue *val);
 uint8_t parse_user(UserEntity *user, CborValue *val);
-uint8_t parse_verify_pub_key_cred_params(CborValue *val);
+uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type);
 uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id);
 uint8_t parse_public_key_credential_list(CborValue *lst);
 uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val);
