@@ -36,22 +36,29 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
-  int ret = read_kh_key(pubkey); // use pubkey as key buffer
-  if (ret < 0) return ret;
-
+static void generate_credential_id_nonce_tag(CredentialId *kh, uint8_t *pubkey) {
+  // works for es256 and ed25519 since their pubkeys share the same length
   random_buffer(kh->nonce, sizeof(kh->nonce));
   // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
   hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
   // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in pubkey[32, 64)
   hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
   memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
+}
+
+int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
+  int ret = read_kh_key(pubkey); // use pubkey as key buffer
+  if (ret < 0) return ret;
 
   if (alg_type == COSE_ALG_ES256) {
     kh->alg_type = COSE_ALG_ES256;
-    return ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey);
+    do {
+      generate_credential_id_nonce_tag(kh, pubkey);
+    } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
+    return 0;
   } else if (alg_type == COSE_ALG_EDDSA) {
     kh->alg_type = COSE_ALG_EDDSA;
+    generate_credential_id_nonce_tag(kh, pubkey);
     ed25519_publickey(pubkey, pubkey);
     return 0;
   } else {
