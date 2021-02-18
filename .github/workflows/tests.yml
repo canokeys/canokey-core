@@ -9,6 +9,7 @@ jobs:
       run: |
         sudo apt update
         sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov
+        pip3 install --upgrade pip
 
     - name: Set up Go 1.13
       uses: actions/setup-go@v1
