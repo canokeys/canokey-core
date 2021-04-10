@@ -404,7 +404,14 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
       CHECK_CBOR_RET(ret);
       ret = cbor_value_get_map_length(&map, &hmac_map_length);
       CHECK_CBOR_RET(ret);
-      if (hmac_map_length != 3) return CTAP2_ERR_MISSING_PARAMETER;
+      enum {
+        GA_HS_MAP_ENTRY_NONE = 0,
+        GA_HS_MAP_ENTRY_keyAgreement = 0b001,
+        GA_HS_MAP_ENTRY_saltEnc = 0b010,
+        GA_HS_MAP_ENTRY_saltAuth = 0b100,
+        GA_HS_MAP_ENTRY_ALL_REQUIRED = 0b111,
+      } map_has_entry = GA_HS_MAP_ENTRY_NONE;
+      if (hmac_map_length < 3) return CTAP2_ERR_MISSING_PARAMETER;
       for (size_t j = 0; j < hmac_map_length; ++j) {
         if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         size_t len;
@@ -417,6 +424,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
         case HMAC_SECRET_keyAgreement:
           ret = parse_cose_key(&hmac_map, ga->hmacSecretKeyAgreement);
           CHECK_CBOR_RET(ret);
+          map_has_entry |= GA_HS_MAP_ENTRY_keyAgreement;
           DBG_MSG("keyAgreement: ");
           PRINT_HEX(ga->hmacSecretKeyAgreement, 64);
           break;
@@ -428,6 +436,7 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
           CHECK_CBOR_RET(ret);
           if (len != HMAC_SECRET_SALT_SIZE && len != HMAC_SECRET_SALT_SIZE / 2) return CTAP1_ERR_INVALID_LENGTH;
           ga->hmacSecretSaltLen = len;
+          map_has_entry |= GA_HS_MAP_ENTRY_saltEnc;
           DBG_MSG("saltEnc: ");
           PRINT_HEX(ga->hmacSecretSaltEnc, ga->hmacSecretSaltLen);
           break;
@@ -437,15 +446,20 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
           ret = cbor_value_copy_byte_string(&hmac_map, ga->hmacSecretSaltAuth, &len, NULL);
           CHECK_CBOR_RET(ret);
           if (len != HMAC_SECRET_SALT_AUTH_SIZE) return CTAP1_ERR_INVALID_LENGTH;
+          map_has_entry |= GA_HS_MAP_ENTRY_saltAuth;
           DBG_MSG("saltAuth: ");
           PRINT_HEX(ga->hmacSecretSaltAuth, 16);
           break;
         default:
-          return CTAP1_ERR_INVALID_PARAMETER;
+          // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#message-encoding
+          DBG_MSG("Ignoring unsupported entry %0x\n", hmac_key);
+          break;
         }
         ret = cbor_value_advance(&hmac_map);
         CHECK_CBOR_RET(ret);
       }
+      if ((map_has_entry & GA_HS_MAP_ENTRY_ALL_REQUIRED) != GA_HS_MAP_ENTRY_ALL_REQUIRED)
+        return CTAP2_ERR_MISSING_PARAMETER;
     } else {
       DBG_MSG("ignoring option specified\n");
     }
