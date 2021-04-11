@@ -81,31 +81,30 @@ struct RetUnlinkBody {
   uint8_t padding[24];
 };
 
-#define EP_TX_BUFFER_MAXSIZE 65535
+#define EP_TX_BUFFER_MAXSIZE 256
 struct Endpoint {
   uint8_t *rx_buffer;
   uint16_t rx_size;
   uint8_t tx_buffer[EP_TX_BUFFER_MAXSIZE];
   uint16_t tx_size;
-  uint8_t tx_ready; // is device ready
+
   uint8_t type;
   uint8_t mps;
+
   struct CmdSubmitBody submit;
-  uint8_t data_in; // is host ready
+
+  uint8_t host_ready; // host sent IN
+  uint8_t device_ready; // device did LL transmit
+  uint8_t zero_ready; // host sent OUT, need zero length ack
+
   pthread_mutex_t mutex;
-  uint8_t unlink;
 };
 
 // global state
-struct CmdSubmitBody current_cmd_submit_body;
-int client_fd = -1;
 #define EP_NUM 256
 struct Endpoint endpoints[EP_NUM];
-pthread_mutex_t endpoint_tx_mutex;
-
-char *canokey_file = "/tmp/canokey-file";
-int port = 3240;
-int touch = 0;
+struct RetUnlinkBody unlink_ret;
+pthread_mutex_t unlink_mutex;
 
 // utilities
 int write_exact(int fd, const uint8_t *buffer, size_t write_len) {
@@ -134,11 +133,20 @@ int read_exact(int fd, uint8_t *buffer, size_t read_len) {
   return 0;
 }
 
+void endpoint_clear(int ep) {
+	// must obtain mutex before using this func
+  bzero(&endpoints[ep].submit, sizeof(endpoints[ep].submit));
+	endpoints[ep].device_ready = 0;
+	endpoints[ep].host_ready = 0;
+	endpoints[ep].zero_ready = 0;
+}
 void endpoints_init() {
-  pthread_mutex_init(&endpoint_tx_mutex, 0);
   for(int ep = 0; ep != EP_NUM; ++ep) {
     pthread_mutex_init(&endpoints[ep].mutex, 0);
+		endpoint_clear(ep);
   }
+  pthread_mutex_init(&unlink_mutex, 0);
+	bzero(&unlink_ret, sizeof(unlink_ret));
 }
 
 // mock device functions
@@ -148,91 +156,35 @@ USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_Stop(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_OpenEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps) {
+	// too early, no mutex needed
   DBG_MSG("%d %d\n", ep_type, ep_mps);
   endpoints[ep_addr].type = ep_type;
   endpoints[ep_addr].mps = ep_mps;
   return USBD_OK;
 }
-
 USBD_StatusTypeDef USBD_LL_CloseEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_FlushEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_StallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_ClearStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return USBD_OK; }
 uint8_t USBD_LL_IsStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return 0; }
 USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_addr) { return USBD_OK; }
-USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint16_t size) {
+USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep, uint8_t *pbuf, uint16_t size) {
+	// should only be called by device loop, hence mutex needed
   DBG_MSG("%d\n", size);
-  endpoints[ep_addr].rx_buffer = pbuf;
-  endpoints[ep_addr].rx_size = size;
+  pthread_mutex_lock(&endpoints[ep].mutex);
+  endpoints[ep].rx_buffer = pbuf;
+  endpoints[ep].rx_size = size;
+  pthread_mutex_unlock(&endpoints[ep].mutex);
   return USBD_OK;
 }
-void SendRetSubmit(const uint8_t *pbuf, uint16_t size, uint8_t ep) {
-  printf("<- RET_SUBMIT: %d\n", size);
-
-  // command
-  uint8_t command[4] = {0, 0, 0, 3};
-
-  struct RetSubmitBody body;
-  body.seq_num = endpoints[ep].submit.seq_num;
-  body.dev_id = 0;
-  body.direction = 0;
-  body.ep = 0; // see wire format above
-  body.status = 0;
-  // for interrupt, special value for actual length
-  if(endpoints[ep].type == USBD_EP_TYPE_INTR) { // interrupt ep
-    body.actual_length = endpoints[ep].submit.transfer_buffer_length;
-  } else {
-    body.actual_length = htonl(size);
-  }
-  body.start_frame = 0xffffffff; // see wire data above
-  body.number_of_packets = 0;
-  body.error_count = 0;
-  bzero(body.setup, 8);
-
+USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep, const uint8_t *pbuf, uint16_t size) {
+  DBG_MSG("%d %d\n", ep, size);
+	// should only be called by device loop, hence mutex needed
   pthread_mutex_lock(&endpoints[ep].mutex);
-  printf("-- RET_SUBMIT: mutex unlink %d seqnum %u\n", endpoints[ep].unlink, htonl(endpoints[ep].submit.seq_num));
-  if (endpoints[ep].unlink == 1) { // lock obtained earlier by main
-    pthread_mutex_unlock(&endpoints[ep].mutex);
-    return;
-  } else if (endpoints[ep].unlink == 0) {
-    endpoints[ep].unlink = 2;
-    pthread_mutex_unlock(&endpoints[ep].mutex);
-  } else {
-    assert(false);
-  }
-
-  // only one thread may send data
-  // for unlink, another mutex is used above
-  pthread_mutex_lock(&endpoint_tx_mutex);
-  write_exact(client_fd, command, sizeof(command));
-  write_exact(client_fd, (uint8_t *)&body, sizeof(body));
-
-  // data
-  write_exact(client_fd, pbuf, size);
-  pthread_mutex_unlock(&endpoint_tx_mutex);
-  printf("<- RET_SUBMIT: FINISH\n");
-
-  // clear out processed request
-  bzero(&endpoints[ep].submit, sizeof(endpoints[ep].submit));
-}
-USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
-  uint8_t ep = ep_num;
-  DBG_MSG("%d %d %d %d\n", ep, size, endpoints[ep].data_in, endpoints[ep].tx_ready);
-  if (client_fd == -1) {
-    // ignore
-  } else {
-    if (endpoints[ep].data_in) { // if host ready, send to host
-      SendRetSubmit(pbuf, size, ep_num);
-      endpoints[ep].tx_size = 0;
-      endpoints[ep].tx_ready = 0;
-      endpoints[ep].data_in = 0;
-    } else { // buffer it until host ready
-      memcpy(endpoints[ep].tx_buffer, pbuf, size);
-      endpoints[ep].tx_size = size;
-      endpoints[ep].tx_ready = 1;
-      DBG_MSG("buffer\n");
-    }
-  }
+  memcpy(endpoints[ep].tx_buffer, pbuf, size);
+  endpoints[ep].tx_size = size;
+  endpoints[ep].device_ready = 1;
+  pthread_mutex_unlock(&endpoints[ep].mutex);
   return USBD_OK;
 }
 uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return endpoints[ep_addr].rx_size; }
@@ -275,31 +227,33 @@ void sigint_handler() {
   }
 }
 
-void endpoint_rx(uint32_t ep) {
-  uint32_t transfer_buffer_length = ntohl(current_cmd_submit_body.transfer_buffer_length);
+void usbip_payload_rx(int client_fd, uint32_t ep) {
+  pthread_mutex_lock(&endpoints[ep].mutex);
+  uint32_t transfer_buffer_length = ntohl(endpoints[ep].submit.transfer_buffer_length);
   uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
-  printf("[DBG] endpoint_rx:\tTransfer buffer: %u bytes\n", transfer_buffer_length);
-  if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) {
-    return;
-  }
+  printf("[DBG] usbip_payload_rx:\tTransfer buffer: %u bytes\n", transfer_buffer_length);
+  if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) return;
   
   for (int i = 0; i < transfer_buffer_length; i++) {
     printf(" %02X", transfer_buffer[i]);
   }
   printf("\n");
   endpoints[ep].rx_size = transfer_buffer_length;
+  pthread_mutex_unlock(&endpoints[ep].mutex);
+  USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 }
 
-void endpoint_tx(uint32_t ep) {
-  endpoints[ep].data_in = 1;
-  if (endpoints[ep].tx_ready) {
-    // ready for data transfer 
-    USBD_LL_Transmit(&usb_device, ep, endpoints[ep].tx_buffer, endpoints[ep].tx_size);
-  }
-  else {
-    // wait for another thread
-    USBD_LL_DataInStage(&usb_device, ep & 0x7F, NULL); // for all interfaces, no difference on IN and OUT
-  }
+void usbip_tx_ready(uint32_t ep) {
+  pthread_mutex_lock(&endpoints[ep].mutex);
+  endpoints[ep].host_ready = 1;
+  pthread_mutex_unlock(&endpoints[ep].mutex);
+  USBD_LL_DataInStage(&usb_device, ep & 0x7F, NULL); // for all interfaces, no difference on IN and OUT
+}
+
+void usbip_zero_ready(uint32_t ep) {
+  pthread_mutex_lock(&endpoints[ep].mutex);
+  endpoints[ep].zero_ready = 1;
+  pthread_mutex_unlock(&endpoints[ep].mutex);
 }
 
 void device_delay(int ms) {
@@ -309,9 +263,7 @@ void device_delay(int ms) {
 uint32_t device_get_tick(void) {
   uint64_t ms, s;
   struct timespec spec;
-
   clock_gettime(CLOCK_MONOTONIC, &spec);
-
   s = spec.tv_sec;
   ms = spec.tv_nsec / 1000000;
   return (uint32_t)(s * 1000 + ms);
@@ -348,53 +300,475 @@ void* device_thread(void *vargp) {
   return NULL;
 }
 
+void usbip_tx_submit_zero(int client_fd, uint8_t ep) {
+	// mainly used for BULK OUT, and INTR OUT
+  printf("<- RET_SUBMIT_ZERO: %d\n", ntohl(endpoints[ep].submit.seq_num));
+
+  uint8_t command[4] = {0, 0, 0, 3};
+
+  struct RetSubmitBody body;
+  body.seq_num = endpoints[ep].submit.seq_num;
+  body.dev_id = 0;
+  body.direction = 0;
+  body.ep = 0; // see wire format above
+  body.status = 0;
+  // for interrupt, special value for actual length
+  if(endpoints[ep].type == USBD_EP_TYPE_INTR) { // interrupt ep
+    body.actual_length = endpoints[ep].submit.transfer_buffer_length;
+  } else {
+		body.actual_length = 0; // why not endpoints[ep].tx_size? BULK IN/OUT share one Endpoint!
+  }
+  body.start_frame = 0xffffffff; // see wire data above
+  body.number_of_packets = 0;
+  body.error_count = 0;
+  bzero(body.setup, 8);
+
+  write_exact(client_fd, command, sizeof(command));
+  write_exact(client_fd, (uint8_t *)&body, sizeof(body));
+  printf("<- RET_SUBMIT_ZERO: FINISH\n\n");
+
+  // clear out processed request
+  endpoints[ep].zero_ready = 0;
+}
+
+void usbip_tx_submit(int client_fd, uint8_t ep) {
+  printf("<- RET_SUBMIT: %d %d\n", ntohl(endpoints[ep].submit.seq_num), endpoints[ep].tx_size);
+
+  uint8_t command[4] = {0, 0, 0, 3};
+
+  struct RetSubmitBody body;
+  body.seq_num = endpoints[ep].submit.seq_num;
+  body.dev_id = 0;
+  body.direction = 0;
+  body.ep = 0; // see wire format above
+  body.status = 0;
+  // for interrupt, special value for actual length
+  if(endpoints[ep].type == USBD_EP_TYPE_INTR) { // interrupt ep
+    body.actual_length = endpoints[ep].submit.transfer_buffer_length;
+  } else {
+		body.actual_length = htonl(endpoints[ep].tx_size);
+  }
+  body.start_frame = 0xffffffff; // see wire data above
+  body.number_of_packets = 0;
+  body.error_count = 0;
+  bzero(body.setup, 8);
+
+  write_exact(client_fd, command, sizeof(command));
+  write_exact(client_fd, (uint8_t *)&body, sizeof(body));
+  // data
+  write_exact(client_fd, endpoints[ep].tx_buffer, endpoints[ep].tx_size);
+  printf("<- RET_SUBMIT: FINISH\n\n");
+
+  // clear out processed request
+  endpoint_clear(ep);
+}
+
+void usbip_tx_unlink(int client_fd) {
+  printf("<- RET_UNLINK\n");
+  uint8_t command[4] = {0, 0, 0, 4};
+  write_exact(client_fd, command, sizeof(command));
+  write_exact(client_fd, (uint8_t *)&unlink_ret, sizeof(unlink_ret));
+  bzero(&unlink_ret, sizeof(unlink_ret));
+  printf("<- RET_UNLINK: FINISH\n\n");
+}
+
+void* tx_thread(void *vargp) {
+	int client_fd = *(int*) vargp;
+  while(1) {
+		for (int ep = 0; ep != EP_NUM; ++ep) {
+			if (endpoints[ep].zero_ready) {
+				pthread_mutex_lock(&endpoints[ep].mutex);
+				usbip_tx_submit_zero(client_fd, ep);
+				pthread_mutex_unlock(&endpoints[ep].mutex);
+			} else if(endpoints[ep].device_ready && endpoints[ep].host_ready) {
+				pthread_mutex_lock(&endpoints[ep].mutex);
+				usbip_tx_submit(client_fd, ep);
+				pthread_mutex_unlock(&endpoints[ep].mutex);
+			}
+		}
+		if (unlink_ret.seq_num != 0) { // some assumption here
+			pthread_mutex_lock(&unlink_mutex);
+			usbip_tx_unlink(client_fd);
+			pthread_mutex_unlock(&unlink_mutex);
+		}
+    usleep(10);
+  }
+  return NULL;
+}
+
+int usbip_devlist(int client_fd) {
+  // REQ_DEVLIST
+  printf("-> OP_REQ_DEVLIST\n");
+
+  // status
+  uint8_t status[4];
+  if (read_exact(client_fd, status, sizeof(status)) < 0) return -1;
+
+  printf("<- OP_RET_DEVLIST\n");
+	// NOTE: devlist and import must before submit/unlink
+	//			 hence calling write_exact is acceptable 
+  // resp
+  uint8_t resp_header[] = {
+      // version 273
+      0x01,
+      0x11,
+      // reply code
+      0x00,
+      0x05,
+      // status
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      // number of exported devices=1
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+  };
+  if (write_exact(client_fd, resp_header, sizeof(resp_header)) < 0) return -1;
+
+  uint8_t path[256];
+  strcpy((char *)path, "/sys/device/pci0000:00/0000:00:01.2/usb1/1-1");
+  if (write_exact(client_fd, path, sizeof(path)) < 0) return -1;
+
+  uint8_t bus_id[32];
+  strcpy((char *)bus_id, "1-1");
+  if (write_exact(client_fd, bus_id, sizeof(bus_id)) < 0) return -1;
+
+  uint8_t resp_body[] = {
+      // bus num
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      // dev num
+      0x00,
+      0x00,
+      0x00,
+      0x02,
+      // speed = high
+      0x00,
+      0x00,
+      0x00,
+      0x03,
+      // idVendor
+      LO(USBD_VID),
+      HI(USBD_VID),
+      // idProduct
+      LO(USBD_PID),
+      HI(USBD_PID),
+      // bcdDevice
+      0x00,
+      0x01,
+      // bDeviceClass
+      0x00,
+      // bDeviceSubClass
+      0x00,
+      // bDeviceProtocol
+      0x00,
+      // bConfigurationValue
+      0x01,
+      // bNumConfigurations
+      USBD_MAX_NUM_CONFIGURATION,
+      // bNumInterfaces
+      // disable keyboard interface
+      0x03,//USBD_MAX_NUM_INTERFACES,
+      // interface 1
+      // bInterfaceClass
+      0x03,
+      // bInterfaceSubClass
+      0x00,
+      // bInterfaceProtocol
+      0x00,
+      // bPadding
+      0x00,
+      // disable keyboard interface
+      //// interface 2
+      //// bInterfaceClass
+      //0x03,
+      //// bInterfaceSubClass
+      //0x00,
+      //// bInterfaceProtocol
+      //0x00,
+      //// bPadding
+      //0x00,
+      // interface 3
+      // bInterfaceClass
+      0xFF,
+      // bInterfaceSubClass
+      0xFF,
+      // bInterfaceProtocol
+      0xFF,
+      // bPadding
+      0x00,
+      // interface 4
+      // bInterfaceClass
+      0x0B,
+      // bInterfaceSubClass
+      0x00,
+      // bInterfaceProtocol
+      0x00,
+      // bPadding
+      0x00,
+  };
+  if (write_exact(client_fd, resp_body, sizeof(resp_body)) < 0) return -1;
+	return 0;
+}
+
+int usbip_import(int client_fd) {
+  // REQ_IMPORT
+  printf("-> OP_REQ_IMPORT\n");
+
+  uint8_t status[4];
+  if (read_exact(client_fd, status, sizeof(status)) < 0) return -1;
+
+  uint8_t bus_id[32];
+  if (read_exact(client_fd, bus_id, sizeof(bus_id)) < 0) return -1;
+
+  printf("->\tBus Id: %s\n", bus_id);
+
+  printf("<- OP_RET_IMPORT\n");
+	// NOTE: devlist and import must before submit/unlink
+	//			 hence calling write_exact is acceptable 
+  uint8_t resp_header[] = {
+      // version 273
+      0x01,
+      0x11,
+      // reply code
+      0x00,
+      0x03,
+      // status
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+  };
+  if (write_exact(client_fd, resp_header, sizeof(resp_header)) < 0) return -1;
+
+  uint8_t path[256];
+  strcpy((char *)path, "/sys/device/pci0000:00/0000:00:01.2/usb1/1-1");
+  if (write_exact(client_fd, path, sizeof(path)) < 0) return -1;
+
+  if (write_exact(client_fd, bus_id, sizeof(bus_id)) < 0) return -1;
+
+  uint8_t resp_body[] = {
+      // bus num
+      0x00,
+      0x00,
+      0x00,
+      0x01,
+      // dev num
+      0x00,
+      0x00,
+      0x00,
+      0x02,
+      // speed = high
+      0x00,
+      0x00,
+      0x00,
+      0x03,
+      // idVendor
+      LO(USBD_VID),
+      HI(USBD_VID),
+      // idProduct
+      LO(USBD_PID),
+      HI(USBD_PID),
+      // bcdDevice
+      0x00,
+      0x01,
+      // bDeviceClass
+      0x00,
+      // bDeviceSubClass
+      0x00,
+      // bDeviceProtocol
+      0x00,
+      // bConfigurationValue
+      0x01,
+      // bNumConfigurations
+      USBD_MAX_NUM_CONFIGURATION,
+      // bNumInterfaces
+      // disable keyboard interface
+      0x03,//USBD_MAX_NUM_INTERFACES,
+  };
+  if (write_exact(client_fd, resp_body, sizeof(resp_body)) < 0) return -1;
+	return 0;
+}
+
+int usbip_submit(int client_fd) {
+  // body
+  struct CmdSubmitBody body;
+  if (read_exact(client_fd, (uint8_t *)&body, sizeof(body)) < 0) return -1;
+
+  uint32_t ep = ntohl(body.ep);
+  int direction_out = ntohl(body.direction) == 0;
+	uint32_t seq_num = ntohl(body.seq_num);
+
+  if (ep != 0 && !direction_out && endpoints[ep].type == USBD_EP_TYPE_INTR)
+    // special endpoint for INTR IN
+		ep = ep | 0x80;
+
+  pthread_mutex_lock(&endpoints[ep].mutex);
+  memcpy(&endpoints[ep].submit, &body, sizeof(body));
+  pthread_mutex_unlock(&endpoints[ep].mutex);
+
+  // control
+  if (endpoints[ep].type == USBD_EP_TYPE_CTRL) {
+    // control transfer
+    if (direction_out) {
+      // control out:
+      printf("->CONTROL OUT %d\n", seq_num);
+      // setup, out, in
+      printf("->CTL\tSETUP\n");
+      USBD_LL_SetupStage(&usb_device, body.setup);
+      printf("<-CTL\tOUT\n");
+      usbip_payload_rx(client_fd, ep);
+      printf("->CTL\tIN\n");
+      usbip_tx_ready(ep);
+    } else {
+      // control in:
+      printf("->CONTROL IN %d\n", seq_num);
+      // setup, in, out
+      printf("->CTL\tSETUP\n");
+      USBD_LL_SetupStage(&usb_device, body.setup);
+      printf("->CTL\tIN\n");
+      usbip_tx_ready(ep);
+      printf("<-CTL\tOUT\n");
+			// FIXME: should be here according to usb protocol?
+			//				not clear for usbip protocol
+      //usbip_payload_rx(client_fd, ep);
+    }
+  } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
+    // bulk transfer
+    if (direction_out) {
+      // bulk out
+      printf("->BULK OUT ep %d seqnum %d\n", ep, seq_num);
+      usbip_payload_rx(client_fd, ep);
+      // zero length packet
+      usbip_zero_ready(ep);
+      printf("<-BULK OUT\n");
+    } else {
+      // bulk in
+      printf("->BULK IN ep %d seqnum %d\n", ep, seq_num);
+      usbip_tx_ready(ep);
+      printf("<-BULK IN\n");
+    }
+  } else if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
+    // interrupt transfer
+    if (direction_out) {
+      // intr out
+      printf("->INTR OUT ep %d seqnum %d\n", ep, seq_num);
+      usbip_payload_rx(client_fd, ep);
+      // zero length packet
+      usbip_zero_ready(ep);
+      printf("<-\tOUT\n");
+    } else {
+      // intr in
+      printf("->INTR IN ep %d seqnum %d\n", ep, seq_num);
+      usbip_tx_ready(ep); // special ep for INTR IN
+      printf("<-\tIN\n");
+    }
+  } else {
+      printf("SUBMIT unhandled: %d\n", endpoints[ep].type);
+      assert(false);
+  }
+	return 0;
+}
+
+int usbip_unlink(int client_fd) {
+  // CMD_UNLINK
+  printf("-> OP_CMD_UNLINK\n");
+  // body
+  struct CmdUnlinkBody body;
+  if (read_exact(client_fd, (uint8_t *)&body, sizeof(body)) < 0) return -1;
+  // full policy doc: linux/latest/source/drivers/usb/usbip/stub_rx.c#L251
+  uint32_t status = 0;
+  for (int ep = 0; ep != EP_NUM; ++ep) {
+    pthread_mutex_lock(&endpoints[ep].mutex);
+    if (endpoints[ep].submit.seq_num == body.seq_num_submit) {
+      printf("-- OP_CMD_UNLINK: ep %u seqnum %u to %u\n", ep, htonl(body.seq_num), htonl(endpoints[ep].submit.seq_num));
+      // note that in original policy, this RetUnlink is done by callback func `stub_complete`,
+      // for ease of handling(we do not have callback), we implement callback here
+      status = htonl(-ECONNRESET);
+      // clear old submit
+      // FIXME: should have some way of notifying USBD, may be USBD_LL_UNLINK
+      endpoint_clear(ep);
+    }
+    pthread_mutex_unlock(&endpoints[ep].mutex);
+  }
+
+  struct RetUnlinkBody ret;
+  ret.seq_num = body.seq_num;
+  ret.dev_id = 0;
+  ret.direction = 0;
+  ret.ep = 0;
+  ret.status = status;
+  bzero(ret.padding, sizeof(ret.padding));
+
+  pthread_mutex_lock(&unlink_mutex);
+	memcpy(&unlink_ret, &ret, sizeof(unlink_ret));
+  pthread_mutex_unlock(&unlink_mutex);
+	return 0;
+}
+
+void usbip_rx_loop(int client_fd) {
+  while (1) {
+    uint8_t command[4];
+    if (read_exact(client_fd, command, sizeof(command)) < 0) return;
+
+    if (command[2] == 0x80 && command[3] == 0x05) {
+			if(usbip_devlist(client_fd) < 0) return;
+    } else if (command[2] == 0x80 && command[3] == 0x03) {
+			if(usbip_import(client_fd) < 0) return;
+    } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x01) {
+			if(usbip_submit(client_fd) < 0) return;
+    } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x02) {
+			if(usbip_unlink(client_fd) < 0) return;
+    } else {
+      printf("-> OP_UNKNOWN\n");
+      assert(false);
+    }
+    printf("\n");
+  }
+}
+
 int main(int argc, char **argv) {
+	char *canokey_file = "/tmp/canokey-file";
+	int port = 3240;
+	int touch = 0;
   if (argc > 1)
     canokey_file = argv[1];
   printf("Using file: %s\n", canokey_file);
-
   if (argc > 2)
     port = atoi(argv[2]);
-
   if (argc > 3)
     touch = 1;
 
-
-  int fd;
-  uint8_t bus_id[32];
-  strcpy((char *)bus_id, "1-1");
-  uint8_t path[256];
-  strcpy((char *)path, "/sys/device/pci0000:00/0000:00:01.2/usb1/1-1");
-
   signal(SIGINT, sigint_handler);
 
+  int fd;
   fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) {
     perror("socket");
     return 1;
   }
-
   struct sockaddr_in addr;
   bzero(&addr, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = inet_addr("127.0.0.1");
   addr.sin_port = htons(port);
-
   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
     perror("setsockopt");
     return 1;
   }
-
   if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     perror("bind");
     return 1;
   }
-
   if (listen(fd, SOMAXCONN) < 0) {
     perror("listen");
     return 1;
   }
-
   printf("listening on 127.0.0.1:%d\n", port);
 
   // init usb stack
@@ -425,7 +799,7 @@ int main(int argc, char **argv) {
   while (1) {
     struct sockaddr_storage client_addr;
     socklen_t sock_len = sizeof(client_addr);
-    client_fd = accept(fd, (struct sockaddr *)&client_addr, &sock_len);
+    int client_fd = accept(fd, (struct sockaddr *)&client_addr, &sock_len);
     if (client_fd < 0) {
       perror("accept");
       return 1;
@@ -435,363 +809,14 @@ int main(int argc, char **argv) {
       return 1;
     }
     printf("got connection\n");
+    // start tx loop in another thread
+    pthread_t tx_thread_id;
+    pthread_create(&tx_thread_id, NULL, tx_thread, &client_fd);
 
-    while (1) {
-      uint8_t command[4];
-      if (read_exact(client_fd, command, sizeof(command)) < 0) {
-        break;
-      }
+    usbip_rx_loop(client_fd);
 
-      if (command[2] == 0x80 && command[3] == 0x05) {
-        // REQ_DEVLIST
-        printf("-> OP_REQ_DEVLIST\n");
-
-        // status
-        uint8_t status[4];
-        if (read_exact(client_fd, status, sizeof(status)) < 0) {
-          break;
-        }
-
-        printf("<- OP_RET_DEVLIST\n");
-        // resp
-        uint8_t resp_header[] = {
-            // version 273
-            0x01,
-            0x11,
-            // reply code
-            0x00,
-            0x05,
-            // status
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-            // number of exported devices=1
-            0x00,
-            0x00,
-            0x00,
-            0x01,
-        };
-        if (write_exact(client_fd, resp_header, sizeof(resp_header)) < 0) {
-          break;
-        }
-
-        if (write_exact(client_fd, path, sizeof(path)) < 0) {
-          break;
-        }
-
-        if (write_exact(client_fd, bus_id, sizeof(bus_id)) < 0) {
-          break;
-        }
-
-        uint8_t resp_body[] = {
-            // bus num
-            0x00,
-            0x00,
-            0x00,
-            0x01,
-            // dev num
-            0x00,
-            0x00,
-            0x00,
-            0x02,
-            // speed = high
-            0x00,
-            0x00,
-            0x00,
-            0x03,
-            // idVendor
-            LO(USBD_VID),
-            HI(USBD_VID),
-            // idProduct
-            LO(USBD_PID),
-            HI(USBD_PID),
-            // bcdDevice
-            0x00,
-            0x01,
-            // bDeviceClass
-            0x00,
-            // bDeviceSubClass
-            0x00,
-            // bDeviceProtocol
-            0x00,
-            // bConfigurationValue
-            0x01,
-            // bNumConfigurations
-            USBD_MAX_NUM_CONFIGURATION,
-            // bNumInterfaces
-            // disable keyboard interface
-            0x03,//USBD_MAX_NUM_INTERFACES,
-            // interface 1
-            // bInterfaceClass
-            0x03,
-            // bInterfaceSubClass
-            0x00,
-            // bInterfaceProtocol
-            0x00,
-            // bPadding
-            0x00,
-            // disable keyboard interface
-            //// interface 2
-            //// bInterfaceClass
-            //0x03,
-            //// bInterfaceSubClass
-            //0x00,
-            //// bInterfaceProtocol
-            //0x00,
-            //// bPadding
-            //0x00,
-            // interface 3
-            // bInterfaceClass
-            0xFF,
-            // bInterfaceSubClass
-            0xFF,
-            // bInterfaceProtocol
-            0xFF,
-            // bPadding
-            0x00,
-            // interface 4
-            // bInterfaceClass
-            0x0B,
-            // bInterfaceSubClass
-            0x00,
-            // bInterfaceProtocol
-            0x00,
-            // bPadding
-            0x00,
-        };
-        if (write_exact(client_fd, resp_body, sizeof(resp_body)) < 0) {
-          break;
-        }
-      } else if (command[2] == 0x80 && command[3] == 0x03) {
-        // REQ_IMPORT
-        printf("-> OP_REQ_IMPORT\n");
-
-        // status
-        uint8_t status[4];
-        if (read_exact(client_fd, status, sizeof(status)) < 0) {
-          break;
-        }
-
-        // status
-        uint8_t bus_id[32];
-        if (read_exact(client_fd, bus_id, sizeof(bus_id)) < 0) {
-          break;
-        }
-
-        printf("->\tBus Id: %s\n", bus_id);
-
-        printf("<- OP_RET_IMPORT\n");
-        uint8_t resp_header[] = {
-            // version 273
-            0x01,
-            0x11,
-            // reply code
-            0x00,
-            0x03,
-            // status
-            0x00,
-            0x00,
-            0x00,
-            0x00,
-        };
-        if (write_exact(client_fd, resp_header, sizeof(resp_header)) < 0) {
-          break;
-        }
-
-        if (write_exact(client_fd, path, sizeof(path)) < 0) {
-          break;
-        }
-
-        if (write_exact(client_fd, bus_id, sizeof(bus_id)) < 0) {
-          break;
-        }
-
-        uint8_t resp_body[] = {
-            // bus num
-            0x00,
-            0x00,
-            0x00,
-            0x01,
-            // dev num
-            0x00,
-            0x00,
-            0x00,
-            0x02,
-            // speed = high
-            0x00,
-            0x00,
-            0x00,
-            0x03,
-            // idVendor
-            LO(USBD_VID),
-            HI(USBD_VID),
-            // idProduct
-            LO(USBD_PID),
-            HI(USBD_PID),
-            // bcdDevice
-            0x00,
-            0x01,
-            // bDeviceClass
-            0x00,
-            // bDeviceSubClass
-            0x00,
-            // bDeviceProtocol
-            0x00,
-            // bConfigurationValue
-            0x01,
-            // bNumConfigurations
-            USBD_MAX_NUM_CONFIGURATION,
-            // bNumInterfaces
-            // disable keyboard interface
-            0x03,//USBD_MAX_NUM_INTERFACES,
-        };
-        if (write_exact(client_fd, resp_body, sizeof(resp_body)) < 0) {
-          break;
-        }
-      } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x01) {
-        // CMD_SUBMIT
-        //printf("-> OP_CMD_SUBMIT %d\n", command[3]);
-
-        // body
-        if (read_exact(client_fd, (uint8_t *)&current_cmd_submit_body, sizeof(current_cmd_submit_body)) < 0) {
-          break;
-        }
-
-        uint32_t ep = ntohl(current_cmd_submit_body.ep);
-        int direction_out = ntohl(current_cmd_submit_body.direction) == 0;
-        if (ep != 0 && !direction_out && endpoints[ep].type == USBD_EP_TYPE_INTR) {
-          // special endpoint for INTR IN
-          memcpy(&endpoints[ep | 0x80].submit, &current_cmd_submit_body, sizeof(current_cmd_submit_body));
-          endpoints[ep | 0x80].unlink = 0; // not locked ever before
-        } else {
-          memcpy(&endpoints[ep].submit, &current_cmd_submit_body, sizeof(current_cmd_submit_body));
-          endpoints[ep].unlink = 0; // not locked ever before
-        }
-
-        // control
-        if (endpoints[ep].type == USBD_EP_TYPE_CTRL) {
-          // control transfer
-          if (direction_out) {
-            // control out:
-            printf("->CONTROL OUT\n");
-
-            // setup, out, in
-            printf("->CTL\tSETUP\n");
-            USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
-
-            printf("<-CTL\tOUT\n");
-            endpoint_rx(ep);
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
-
-            printf("->CTL\tIN\n");
-            endpoint_tx(ep);
-          } else {
-            // control in:
-            printf("->CONTROL IN\n");
-
-            // setup, in, out
-            printf("->CTL\tSETUP\n");
-            USBD_LL_SetupStage(&usb_device, current_cmd_submit_body.setup);
-
-            printf("->CTL\tIN\n");
-            endpoint_tx(ep);
-            
-            printf("<-CTL\tOUT\n");
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
-          }
-        } else if (endpoints[ep].type == USBD_EP_TYPE_BULK) {
-          // bulk transfer
-          if (direction_out) {
-            // bulk out
-            printf("->BULK OUT\n");
-
-            endpoint_rx(ep);
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
-
-            // zero length packet
-            SendRetSubmit(NULL, 0, ep);
-            printf("<-BULK OUT\n");
-          } else {
-            // bulk in
-            printf("->BULK IN\n");
-            endpoint_tx(ep);
-            printf("<-BULK IN\n");
-          }
-        } else if (endpoints[ep].type == USBD_EP_TYPE_INTR) {
-          // interrupt transfer
-          if (direction_out) {
-            // intr out
-            printf("->INTR OUT %d\n", ep);
-            endpoint_rx(ep);
-            USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
-
-            // zero length packet
-            SendRetSubmit(NULL, 0, ep);
-            printf("<-\tOUT\n");
-          } else {
-            // intr in
-            printf("->INTR IN %d\n", ep);
-
-            endpoint_tx(ep | 0x80); // special ep for INTR IN
-            printf("<-\tIN\n");
-          }
-        } else {
-            printf("SUBMIT unhandled: %d\n", endpoints[ep].type);
-            assert(false);
-        }
-
-      } else if (command[0] == 0x00 && command[1] == 0x00 && command[2] == 0x00 && command[3] == 0x02) {
-        // CMD_UNLINK
-        printf("-> OP_CMD_UNLINK\n");
-        // body
-        struct CmdUnlinkBody body;
-        if (read_exact(client_fd, (uint8_t *)&body, sizeof(body)) < 0) {
-          break;
-        }
-        // full policy doc: linux/latest/source/drivers/usb/usbip/stub_rx.c#L251
-        uint32_t status = 0;
-        for (int ep = 0; ep != EP_NUM; ++ep) {
-          if (endpoints[ep].submit.seq_num != body.seq_num_submit) continue;
-
-          pthread_mutex_lock(&endpoints[ep].mutex);
-          printf("-- OP_CMD_UNLINK: ep %u mutex unlink %d seqnum %u to %u\n", ep, endpoints[ep].unlink, htonl(body.seq_num), htonl(endpoints[ep].submit.seq_num));
-          if (endpoints[ep].unlink == 2) { // lock obtained earlier by device
-            // ignore
-          } else if (endpoints[ep].unlink == 0) {
-            endpoints[ep].unlink = 1;
-
-            // note that in original policy, this RetUnlink is done by callback func `stub_complete`,
-            // for ease of handling(we do not have callback), we implement callback here
-            status = htonl(-ECONNRESET);
-            // clear old submit
-            bzero(&endpoints[ep].submit, sizeof(endpoints[ep].submit));
-          }
-          pthread_mutex_unlock(&endpoints[ep].mutex);
-        }
-
-        struct RetUnlinkBody ret;
-        ret.seq_num = body.seq_num;
-        ret.dev_id = 0;
-        ret.direction = 0;
-        ret.ep = 0;
-        ret.status = status;
-        bzero(ret.padding, sizeof(ret.padding));
-
-        uint8_t command[4] = {0, 0, 0, 4};
-        write_exact(client_fd, command, sizeof(command));
-        if (write_exact(client_fd, (uint8_t *)&ret, sizeof(ret)) < 0) {
-          break;
-        }
-        printf("<- OP_CMD_UNLINK\n");
-      } else {
-        printf("-> OP_UNKNOWN\n");
-        assert(false);
-      }
-      printf("\n");
-    }
+    pthread_cancel(tx_thread_id);
     printf("closing connection\n");
-
     close(client_fd);
   }
   return 0;
