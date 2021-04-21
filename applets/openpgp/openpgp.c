@@ -950,14 +950,13 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         return -1;
       }
       ECC_Curve curve = ec_algo2curve[algo];
-      RDATA[0] = 0x04;
-      if (ecdh_decrypt(curve, key, DATA + 8, RDATA + 1) < 0) {
+      if (ecdh_decrypt(curve, key, DATA + 8, RDATA) < 0) {
         memzero(key, sizeof(key));
         openpgp_stop_blinking();
         return -1;
       }
       memzero(key, sizeof(key));
-      LL = ec_pub_key_len + 1;
+      LL = ec_pri_key_len;
       break;
 
     case X25519:
