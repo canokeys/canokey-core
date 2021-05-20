@@ -27,7 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 
-/* canoncial protocol for interrupt in/out
+/* canonical protocol for interrupt in/out
  * captured in wire
  */
 /*
