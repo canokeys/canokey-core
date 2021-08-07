@@ -127,7 +127,7 @@ int main() {
                             "\x5b\xb2\x6e\xb7\x7a\x73\xea\xa4\x78\x13\xf6\xb4"
                             "\x9a\x72\x50\xdc";
       if (memcmp(magic_cmd, buf, 64) == 0) {
-        printf("MAGIC REBOOT command recieved!\r\n");
+        printf("MAGIC REBOOT command received!\r\n");
         // exit(0);
         char *const argv[] = {"fido-hid-over-udp", NULL};
         int ret = execv("/proc/self/exe", argv);
