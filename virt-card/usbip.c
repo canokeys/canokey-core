@@ -81,7 +81,7 @@ struct RetUnlinkBody {
   uint8_t padding[24];
 };
 
-#define EP_TX_BUFFER_MAXSIZE 256
+#define EP_TX_BUFFER_MAXSIZE 1024
 struct Endpoint {
   uint8_t *rx_buffer;
   uint16_t rx_size;
@@ -228,19 +228,24 @@ void sigint_handler() {
 }
 
 void usbip_payload_rx(int client_fd, uint32_t ep) {
-  pthread_mutex_lock(&endpoints[ep].mutex);
   uint32_t transfer_buffer_length = ntohl(endpoints[ep].submit.transfer_buffer_length);
-  uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
   printf("[DBG] usbip_payload_rx:\tTransfer buffer: %u bytes\n", transfer_buffer_length);
-  if (read_exact(client_fd, transfer_buffer, transfer_buffer_length) < 0) return;
-  
-  for (int i = 0; i < transfer_buffer_length; i++) {
-    printf(" %02X", transfer_buffer[i]);
+  while (transfer_buffer_length > 0) {
+    pthread_mutex_lock(&endpoints[ep].mutex);
+    uint8_t *transfer_buffer = endpoints[ep].rx_buffer;
+    uint32_t transfer_size = endpoints[ep].rx_size;
+    if (transfer_buffer_length < transfer_size) transfer_size = transfer_buffer_length;
+    if (read_exact(client_fd, transfer_buffer, transfer_size) < 0) return;
+    transfer_buffer_length -= transfer_size;
+
+    for (int i = 0; i < transfer_size; i++) {
+      printf(" %02X", transfer_buffer[i]);
+    }
+    printf("\n");
+    endpoints[ep].rx_size = transfer_size;
+    pthread_mutex_unlock(&endpoints[ep].mutex);
+    USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
   }
-  printf("\n");
-  endpoints[ep].rx_size = transfer_buffer_length;
-  pthread_mutex_unlock(&endpoints[ep].mutex);
-  USBD_LL_DataOutStage(&usb_device, ep, endpoints[ep].rx_buffer);
 }
 
 void usbip_tx_ready(uint32_t ep) {
