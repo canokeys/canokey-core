@@ -165,6 +165,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
             DBG_MSG("should not use FIDO via CCID\n");
             return;
           }
+          if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
+            LL = 0;
+            SW = SW_FILE_NOT_FOUND;
+            DBG_MSG("NDEF is disable\n");
+            return;
+          }
           if (i != current_applet) applets_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);

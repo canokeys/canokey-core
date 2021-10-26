@@ -17,7 +17,7 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-static const admin_device_config_t default_cfg = {.led_normally_on = 1};
+static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1};
 
 static admin_device_config_t current_config;
 
@@ -32,6 +32,8 @@ __attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
 
 uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_en; }
+
+uint8_t cfg_is_ndef_enable(void) { return current_config.ndef_en; }
 
 void admin_poweroff(void) { pin.is_validated = 0; }
 
@@ -99,6 +101,9 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_P1_CFG_KBDIFACE:
     current_config.kbd_interface_en = P2 & 1;
     break;
+  case ADMIN_P1_CFG_NDEF:
+    current_config.ndef_en = P2 & 1;
+    break;
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -107,15 +112,19 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   return ret;
 }
 
+/**
+ * Before 037a846, the response is 7-byte long.
+ */
 static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  if (LE < 7) EXCEPT(SW_WRONG_LENGTH);
+  if (LE < 8) EXCEPT(SW_WRONG_LENGTH);
 
   RDATA[0] = current_config.led_normally_on;
   RDATA[1] = current_config.kbd_interface_en;
   RDATA[2] = ndef_get_read_only();
   admin_get_touch_policy(RDATA + 3);
-  LL = 7;
+  RDATA[7] = current_config.ndef_en;
+  LL = 8;
 
   return 0;
 }

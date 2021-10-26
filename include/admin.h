@@ -27,12 +27,14 @@
 
 #define ADMIN_P1_CFG_LED_ON 0x01
 #define ADMIN_P1_CFG_KBDIFACE 0x03
+#define ADMIN_P1_CFG_NDEF 0x04
 
 typedef struct {
     uint32_t reserved;
     uint32_t led_normally_on : 1;
     uint32_t unused : 1;
     uint32_t kbd_interface_en : 1;
+    uint32_t ndef_en : 1;
 } __packed admin_device_config_t;
 
 void admin_poweroff(void);
@@ -45,5 +47,6 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
 
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_kbd_interface_enable(void);
+uint8_t cfg_is_ndef_enable(void);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_
