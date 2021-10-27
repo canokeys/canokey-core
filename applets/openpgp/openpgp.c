@@ -158,7 +158,7 @@ static uint32_t last_touch = UINT32_MAX;
     switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
     case USER_PRESENCE_CANCEL:                                                                                         \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
-      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);                                                                             \
+      EXCEPT(SW_ERROR_WHILE_RECEIVING);                                                                                \
     }                                                                                                                  \
     last_touch = device_get_tick();                                                                                    \
   } while (0)
@@ -595,6 +595,7 @@ static int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (LC < pw_length) EXCEPT(SW_WRONG_LENGTH);
   err = pin_update(pw, DATA + pw_length, LC - pw_length);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);

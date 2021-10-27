@@ -39,6 +39,7 @@ typedef struct {
 #define SW_INS_NOT_SUPPORTED 0x6D00
 #define SW_CLA_NOT_SUPPORTED 0x6E00
 #define SW_CHECKING_ERROR 0x6F00
+#define SW_ERROR_WHILE_RECEIVING 0x6600
 
 // Macros
 
