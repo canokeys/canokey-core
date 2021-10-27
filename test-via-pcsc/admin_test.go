@@ -101,6 +101,17 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				So(code, ShouldEqual, 0x6982)
 			}
 		})
+		Convey("Read Version", func(ctx C) {
+			ret, code, err := app.Send([]byte{0x00, 0x31, 0x00, 0x00, 0x00})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			So(len(ret), ShouldBeGreaterThanOrEqualTo, 8) // Git short commit hash
+
+			ret, code, err = app.Send([]byte{0x00, 0x31, 0x01, 0x00, 0x00})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			So(ret, ShouldResemble, []byte("CanoKey Virt-Card"))
+		})
 		Convey("Vendor-specific", func(ctx C) {
 			apdu := []byte{0x00, 0xFF, 0x00, 0x00}
 			_, code, err := app.Send(apdu)
@@ -178,6 +189,11 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			if verified { // make sure that the SN is written before
 				So(readSN, ShouldResemble, sn)
 			}
+
+			readSN, code, err = app.Send([]byte{0x00, 0x32, 0x01, 0x00, 0x00}) // admin_vendor_hw_sn
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			So(readSN, ShouldResemble, []byte{0x00})
 		})
 		Convey("Change PIN", func(ctx C) {
 			pinTooLong := make([]byte, 65)

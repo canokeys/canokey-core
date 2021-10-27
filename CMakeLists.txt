@@ -55,6 +55,16 @@ target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
+if (USBIP OR ENABLE_TESTS)
+    set(gitrev_in virt-card/git-rev.h.in)
+    set(gitrev virt-card/git-rev.h)
+    add_custom_target(gitrev
+            ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in} ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+            COMMAND git describe --always --tags --long --abbrev=8 --dirty >> ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+            )
+endif()
+
 if (USBIP)
     add_executable(canokey-usbip
             virt-card/usbip.c
@@ -66,13 +76,6 @@ if (USBIP)
     find_package (Threads)
     target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address" Threads::Threads)
     add_dependencies(canokey-usbip gitrev)
-    set(gitrev_in virt-card/git-rev.h.in)
-    set(gitrev virt-card/git-rev.h)
-    add_custom_target(gitrev
-            ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in} ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-            COMMAND git describe --always --tags --long --abbrev=8 --dirty >> ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-            )
 endif (USBIP)
 
 if (ENABLE_TESTS)
@@ -100,6 +103,8 @@ if (ENABLE_TESTS)
                 littlefs/bd/lfs_filebd.c)
         target_include_directories(u2f-virt-card SYSTEM PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs)
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
+        target_compile_definitions(u2f-virt-card PRIVATE VIRT_VENDOR)
+        add_dependencies(u2f-virt-card gitrev)
     endif ()
 endif (ENABLE_TESTS)
 
