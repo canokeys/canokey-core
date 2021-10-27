@@ -280,7 +280,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
-  uint8_t off = 0;
+  uint16_t off = 0;
   int len, retries, status;
 
   switch (tag) {
