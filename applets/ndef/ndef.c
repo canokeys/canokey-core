@@ -8,7 +8,8 @@
 #define NDEF_FILE_MAX_LENGTH (NDEF_MSG_MAX_LENGTH + 2)
 #define CC_LENGTH 15
 
-static uint8_t current_cc[CC_LENGTH] = {
+static uint8_t current_cc[CC_LENGTH];
+static const uint8_t default_cc[CC_LENGTH] = {
     0x00, 0x0F,                                         // len
     0x20,                                               // version, 2.0
     HI(NDEF_FILE_MAX_LENGTH), LO(NDEF_FILE_MAX_LENGTH), // mle
@@ -75,6 +76,7 @@ int ndef_create_init_ndef() {
 int ndef_install(uint8_t reset) {
   ndef_poweroff();
   if (reset || get_file_size(CC_FILE) != sizeof(current_cc) || get_file_size(NDEF_FILE) <= 0) {
+    memcpy(current_cc, default_cc, sizeof(current_cc));
     if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
     if (ndef_create_init_ndef() < 0) return -1;
   } else {
