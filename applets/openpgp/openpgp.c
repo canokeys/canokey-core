@@ -280,7 +280,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
-  uint8_t off = 0;
+  uint16_t off = 0;
   int len, retries, status;
 
   switch (tag) {
@@ -355,11 +355,6 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = 0x81;
     RDATA[off++] = 0x01;
     RDATA[off++] = 0x20; // announces a button
-
-    RDATA[off++] = TAG_DISCRETIONARY_DATA_OBJECTS;
-    uint8_t length_pos = off + 1;
-    RDATA[off++] = 0x81;
-    RDATA[off++] = 0; // for length
 
     RDATA[off++] = TAG_EXTENDED_CAPABILITIES;
     RDATA[off++] = sizeof(extended_capabilities);
@@ -466,7 +461,6 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = touch_policy[UIF_AUT];
     RDATA[off++] = 0x20;
 
-    RDATA[length_pos] = off - length_pos - 1;
     LL = off;
     break;
 
@@ -534,24 +528,6 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[4] = 0x03;
     RDATA[5] = status;
     LL = 6;
-    break;
-
-  case TAG_UIF_SIG:
-    RDATA[0] = touch_policy[UIF_SIG];
-    RDATA[1] = 0x20;
-    LL = 2;
-    break;
-
-  case TAG_UIF_DEC:
-    RDATA[0] = touch_policy[UIF_DEC];
-    RDATA[1] = 0x20;
-    LL = 2;
-    break;
-
-  case TAG_UIF_AUT:
-    RDATA[0] = touch_policy[UIF_AUT];
-    RDATA[1] = 0x20;
-    LL = 2;
     break;
 
   case TAG_UIF_CACHE_TIME:
