@@ -123,7 +123,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Configuration", func(ctx C) {
-			shadowCfg := []byte{0x00, 0x00, 0x00, 0x01, 0x01}
+			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01}
 			P1toIdx := map[int]int{
 				1: 0, // ADMIN_P1_CFG_LED_ON
 				2: 2, // ndef_get_read_only

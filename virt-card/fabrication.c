@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "applets.h"
 #include "device.h"
+#include "ndef.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
-#include "ndef.h"
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
-#include <ctap.h>
+#include <assert.h>
 #include <bd/lfs_filebd.h>
+#include <ctap.h>
 #include <fs.h>
 #include <lfs.h>
 
@@ -19,7 +20,7 @@ static lfs_filebd_t bd;
 uint8_t private_key[] = {0xD9, 0x5C, 0x12, 0x15, 0xD1, 0x0A, 0xBB, 0x57, 0x91, 0xB6, 0x47,
                          0x52, 0xDF, 0x9D, 0x25, 0x3C, 0xA4, 0x17, 0x31, 0x37, 0x5D, 0x41,
                          0xCD, 0x9C, 0xD9, 0x3C, 0xDA, 0x00, 0x51, 0x36, 0xE6, 0x4E};
-uint8_t cert[] = {
+uint8_t cert[] = { // TODO: replace this
     0x30, 0x82, 0x01, 0xc3, 0x30, 0x82, 0x01, 0x6a, 0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x08, 0x1b, 0xde, 0x06, 0x7b,
     0x4c, 0xd9, 0x49, 0xe8, 0x30, 0x0a, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02, 0x30, 0x4f, 0x31,
     0x0b, 0x30, 0x09, 0x06, 0x03, 0x55, 0x04, 0x06, 0x13, 0x02, 0x63, 0x6e, 0x31, 0x0d, 0x30, 0x0b, 0x06, 0x03, 0x55,
@@ -55,6 +56,7 @@ static void fake_fido_personalization() {
 
   build_capdu(&capdu, (uint8_t *)"\x00\x20\x00\x00\x06\x31\x32\x33\x34\x35\x36", 11);
   admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
 
   capdu.cla = 0x00;
   capdu.ins = ADMIN_INS_WRITE_FIDO_PRIVATE_KEY;
@@ -62,21 +64,20 @@ static void fake_fido_personalization() {
   capdu.lc = 32;
 
   admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
 
   capdu.ins = ADMIN_INS_WRITE_FIDO_CERT;
   capdu.data = cert;
   capdu.lc = sizeof(cert);
   admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
 }
 
 static void fido2_init() {
-  ctap_install(1);
   fake_fido_personalization();
 }
 
 static void oath_init() {
-  oath_install(1);
-  // oath init
   uint8_t r_buf[1024] = {0};
   // name: abc, algo: HOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
   uint8_t data[] = {0x71, 0x03, 'a', 'b', 'c', 0x73, 0x05, 0x11, 0x06, 0x00, 0x01, 0x02};
@@ -93,7 +94,7 @@ static void oath_init() {
   oath_process_apdu(capdu, rapdu);
 }
 
-void card_fs_init(const char * lfs_root) {
+void card_fs_init(const char *lfs_root) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
@@ -109,25 +110,34 @@ void card_fs_init(const char * lfs_root) {
   cfg.lookahead_size = 16;
   lfs_filebd_create(&cfg, lfs_root);
 
-  fs_init(&cfg);
+  assert(fs_init(&cfg) == 0);
 }
 
-
-int card_fabrication_procedure(const char * lfs_root) {
+int card_fabrication_procedure(const char *lfs_root) {
   card_fs_init(lfs_root);
+  applets_install();
 
-  admin_install(1);
+  // reset state of applets
+  uint8_t c_buf[1024] = "RESET", r_buf[1024];
+  RAPDU rapdu = {.data = r_buf};
+  CAPDU capdu = {.data = c_buf, .cla = 0x00, .ins = ADMIN_INS_VERIFY, .p1 = 0, .p2 = 0, .lc = 6};
+  admin_process_apdu(&capdu, &rapdu);
+  admin_process_apdu(&capdu, &rapdu);
+  admin_process_apdu(&capdu, &rapdu);
+  // now the admin PIN has been locked
+  capdu.ins = ADMIN_INS_FACTORY_RESET;
+  capdu.lc = 5;
+  admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
   oath_init();
   fido2_init();
-  piv_install(1);
-  openpgp_install(1);
-  ndef_install(1);
+
   // emulate the NFC mode, where user-presence tests are skipped
   set_nfc_state(1);
   return 0;
 }
 
-int card_read(const char * lfs_root) {
+int card_read(const char *lfs_root) {
   card_fs_init(lfs_root);
 
   applets_install();

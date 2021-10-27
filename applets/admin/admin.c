@@ -145,14 +145,7 @@ static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
-  int ret;
-  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
-  if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
-  ret = pin_get_retries(&pin);
-  if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-
+static int admin_factory_reset_verification(void) {
   for (int i = 0; i < 5; i++) {
     const uint8_t wait_sec = 2;
     start_blinking_interval(wait_sec, (i & 1) ? 200 : 50);
@@ -169,9 +162,26 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
       now = device_get_tick();
     } while (now - begin < 1000 * wait_sec);
     if (!user_presence) {
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+      return -1;
     }
   }
+  return 0;
+}
+
+static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
+  int ret;
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
+  if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
+  ret = pin_get_retries(&pin);
+  if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+
+#ifdef TEST
+  DBG_MSG("user verification skipped\n");
+#else
+  if (admin_factory_reset_verification() < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+
   DBG_MSG("factory reset begins\n");
   ret = openpgp_install(1);
   if (ret < 0) return ret;
