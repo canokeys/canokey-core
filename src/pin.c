@@ -60,8 +60,8 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
 }
 
 int pin_update(pin_t *pin, const void *buf, uint8_t len) {
-  pin->is_validated = 0;
   if (len < pin->min_length || len > pin->max_length) return PIN_LENGTH_INVALID;
+  pin->is_validated = 0;
   int err = write_file(pin->path, buf, 0, len, 1);
   if (err < 0) return PIN_IO_FAIL;
   uint8_t ctr;
