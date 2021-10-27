@@ -144,9 +144,11 @@ static uint32_t last_touch = UINT32_MAX;
     }                                                                                                                  \
   } while (0)
 
-#define TOUCH_SIG 0
-#define TOUCH_DEC 1
-#define TOUCH_AUT 2
+#define UIF_SIG 0
+#define UIF_DEC 1
+#define UIF_AUT 2
+#define UIF_CACHE_TIME 3
+#define UIF_PERMANENTLY 2
 
 #define OPENPGP_TOUCH()                                                                                                \
   do {                                                                                                                 \
@@ -201,20 +203,6 @@ static inline void openpgp_start_blinking(void) {
 
 static inline void openpgp_stop_blinking(void) {
   if (!is_nfc()) stop_blinking();
-}
-
-int admin_get_touch_policy(uint8_t *buf) {
-  if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, buf, sizeof(touch_policy)) < 0) return -1;
-  return 0;
-}
-
-int admin_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 > 3) EXCEPT(SW_WRONG_P1P2);
-  uint8_t t[sizeof(touch_policy)];
-  if (read_attr(DATA_PATH, ATTR_TOUCH_POLICY, t, sizeof(touch_policy)) < 0) return -1;
-  t[P1] = P2;
-  if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, t, sizeof(touch_policy)) < 0) return -1;
-  return 0;
 }
 
 void openpgp_poweroff(void) {
@@ -361,6 +349,13 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(RDATA + off, extended_length_info, sizeof(extended_length_info));
     off += sizeof(extended_length_info);
 
+    RDATA[off++] = HI(TAG_GENERAL_FEATURE_MANAGEMENT);
+    RDATA[off++] = LO(TAG_GENERAL_FEATURE_MANAGEMENT);
+    RDATA[off++] = 0x03;
+    RDATA[off++] = 0x81;
+    RDATA[off++] = 0x01;
+    RDATA[off++] = 0x20; // announces a button
+
     RDATA[off++] = TAG_DISCRETIONARY_DATA_OBJECTS;
     uint8_t length_pos = off + 1;
     RDATA[off++] = 0x81;
@@ -456,6 +451,21 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = 0x03;
     RDATA[off++] = status;
 
+    RDATA[off++] = TAG_UIF_SIG;
+    RDATA[off++] = 2;
+    RDATA[off++] = touch_policy[UIF_SIG];
+    RDATA[off++] = 0x20;
+
+    RDATA[off++] = TAG_UIF_DEC;
+    RDATA[off++] = 2;
+    RDATA[off++] = touch_policy[UIF_DEC];
+    RDATA[off++] = 0x20;
+
+    RDATA[off++] = TAG_UIF_AUT;
+    RDATA[off++] = 2;
+    RDATA[off++] = touch_policy[UIF_AUT];
+    RDATA[off++] = 0x20;
+
     RDATA[length_pos] = off - length_pos - 1;
     LL = off;
     break;
@@ -484,6 +494,13 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_EXTENDED_LENGTH_INFO:
     memcpy(RDATA, extended_length_info, sizeof(extended_length_info));
     LL = sizeof(extended_length_info);
+    break;
+
+  case TAG_GENERAL_FEATURE_MANAGEMENT:
+    RDATA[0] = 0x81;
+    RDATA[1] = 0x01;
+    RDATA[2] = 0x20;
+    LL = 3;
     break;
 
   case TAG_PW_STATUS:
@@ -517,6 +534,29 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[4] = 0x03;
     RDATA[5] = status;
     LL = 6;
+    break;
+
+  case TAG_UIF_SIG:
+    RDATA[0] = touch_policy[UIF_SIG];
+    RDATA[1] = 0x20;
+    LL = 2;
+    break;
+
+  case TAG_UIF_DEC:
+    RDATA[0] = touch_policy[UIF_DEC];
+    RDATA[1] = 0x20;
+    LL = 2;
+    break;
+
+  case TAG_UIF_AUT:
+    RDATA[0] = touch_policy[UIF_AUT];
+    RDATA[1] = 0x20;
+    LL = 2;
+    break;
+
+  case TAG_UIF_CACHE_TIME:
+    RDATA[0] = touch_policy[UIF_CACHE_TIME];
+    LL = 1;
     break;
 
   default:
@@ -780,7 +820,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
   if (pw1_status == 0x00) PW1_MODE81_OFF();
 
-  if (touch_policy[TOUCH_SIG]) OPENPGP_TOUCH();
+  if (touch_policy[UIF_SIG]) OPENPGP_TOUCH();
 
   openpgp_start_blinking();
 
@@ -887,7 +927,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  if (touch_policy[TOUCH_DEC]) OPENPGP_TOUCH();
+  if (touch_policy[UIF_DEC]) OPENPGP_TOUCH();
 
   openpgp_start_blinking();
 
@@ -1139,6 +1179,32 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
       return 0;
     }
 
+  case TAG_UIF_SIG:
+    if (touch_policy[UIF_SIG] == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
+    touch_policy[UIF_SIG] = DATA[0];
+    if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
+    break;
+
+  case TAG_UIF_DEC:
+    if (touch_policy[UIF_DEC] == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
+    touch_policy[UIF_DEC] = DATA[0];
+    if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
+    break;
+
+  case TAG_UIF_AUT:
+    if (touch_policy[UIF_AUT] == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
+    touch_policy[UIF_AUT] = DATA[0];
+    if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
+    break;
+
+  case TAG_UIF_CACHE_TIME:
+    touch_policy[UIF_CACHE_TIME] = DATA[0];
+    if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
+    break;
+
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -1321,7 +1387,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  if (touch_policy[TOUCH_AUT]) OPENPGP_TOUCH();
+  if (touch_policy[UIF_AUT]) OPENPGP_TOUCH();
 
   openpgp_start_blinking();
 

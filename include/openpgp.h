@@ -51,12 +51,15 @@
 #define TAG_DIGITAL_SIG_COUNTER 0x93
 #define TAG_CARDHOLDER_CERTIFICATE 0x7F21
 #define TAG_EXTENDED_LENGTH_INFO 0x7F66
+#define TAG_GENERAL_FEATURE_MANAGEMENT 0x7F74
 #define TAG_KEY_INFO 0xDE
+#define TAG_UIF_SIG 0xD6
+#define TAG_UIF_DEC 0xD7
+#define TAG_UIF_AUT 0xD8
+#define TAG_UIF_CACHE_TIME 0xD9
 
 void openpgp_poweroff(void);
 int openpgp_install(uint8_t reset);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
-int admin_get_touch_policy(uint8_t *buf);
-int admin_set_touch_policy(const CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H

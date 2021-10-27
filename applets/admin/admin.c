@@ -122,15 +122,14 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
  */
 static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  if (LE < 9) EXCEPT(SW_WRONG_LENGTH);
+  if (LE < 5) EXCEPT(SW_WRONG_LENGTH);
 
   RDATA[0] = current_config.led_normally_on;
   RDATA[1] = current_config.kbd_interface_en;
   RDATA[2] = ndef_get_read_only();
-  admin_get_touch_policy(RDATA + 3);
-  RDATA[7] = current_config.ndef_en;
-  RDATA[8] = current_config.webusb_landing_en;
-  LL = 9;
+  RDATA[3] = current_config.ndef_en;
+  RDATA[4] = current_config.webusb_landing_en;
+  LL = 5;
 
   return 0;
 }
@@ -258,9 +257,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
     ret = ndef_toggle_read_only(capdu, rapdu);
-    break;
-  case ADMIN_INS_TOUCH_OPENPGP:
-    ret = admin_set_touch_policy(capdu, rapdu);
     break;
   case ADMIN_INS_EXPORT_OATH:
     ret = oath_export(capdu, rapdu);
