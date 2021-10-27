@@ -181,9 +181,9 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) return ret;
   ret = ctap_install(1);
   if (ret < 0) return ret;
-  ret = admin_install(1);
-  if (ret < 0) return ret;
   ret = ndef_install(1);
+  if (ret < 0) return ret;
+  ret = admin_install(1);
   if (ret < 0) return ret;
   return 0;
 }
