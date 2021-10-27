@@ -39,6 +39,7 @@ func New() (*AdminApplet, error) {
 		return nil, errors.Wrapf(err, errFailedToListReaders)
 	}
 	for _, reader := range readers {
+		fmt.Printf("Reader: %s\n", reader)
 		if strings.Contains(reader, "Canokey") && strings.Contains(reader, "OATH") {
 			card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
 			if err != nil {
@@ -111,8 +112,16 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Configuration", func(ctx C) {
-			for P1 := 1; P1 <= 3; P1++ {
-				for P2 := 1; P2 >= 0; P2-- {
+			shadowCfg := []byte{0x00, 0x00, 0x00, 0x01, 0x01}
+			P1toIdx := map[int]int{
+				1: 0, // ADMIN_P1_CFG_LED_ON
+				2: 2, // ndef_get_read_only
+				3: 1, // ADMIN_P1_CFG_KBDIFACE
+				4: 3, // ADMIN_P1_CFG_NDEF
+				5: 4, // ADMIN_P1_CFG_WEBUSB_LANDING
+			}
+			for P1 := 1; P1 <= 5; P1++ {
+				for _, P2 := range []int{0, 1, 0, 1} {
 					apdu := []byte{0x00, 0x40, uint8(P1), uint8(P2)}
 					_, code, err := app.Send(apdu)
 					So(err, ShouldBeNil)
@@ -121,7 +130,31 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 							So(code, ShouldEqual, 0x6A86)
 						} else {
 							So(code, ShouldEqual, 0x9000)
+							shadowCfg[P1toIdx[P1]] = byte(P2)
 						}
+					} else {
+						So(code, ShouldEqual, 0x6982)
+					}
+
+					if P1 == 2 {
+						apdu = []byte{0x00, 0x08, uint8(P2), 0x00} // ADMIN_INS_TOGGLE_NDEF_READ_ONLY
+						_, code, err = app.Send(apdu)
+						So(err, ShouldBeNil)
+						if verified {
+							So(code, ShouldEqual, 0x9000)
+							shadowCfg[P1toIdx[P1]] = byte(P2)
+						} else {
+							So(code, ShouldEqual, 0x6982)
+						}
+
+					}
+
+					apdu = []byte{0x00, 0x42, 0x00, 0x00, 0x00}
+					cfg, code, err := app.Send(apdu)
+					So(err, ShouldBeNil)
+					if verified {
+						So(code, ShouldEqual, 0x9000)
+						So(cfg, ShouldResemble, shadowCfg)
 					} else {
 						So(code, ShouldEqual, 0x6982)
 					}
@@ -129,7 +162,8 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Write SN", func(ctx C) {
-			apdu := []byte{0x00, 0x30, 0x00, 0x00, 0x04, 0xA1, 0xB2, 0xC3, 0xD4}
+			sn := []byte{0xA1, 0xB2, 0xC3, 0xD4}
+			apdu := append([]byte{0x00, 0x30, 0x00, 0x00, byte(len(sn))}, sn...)
 			_, code, err := app.Send(apdu)
 			So(err, ShouldBeNil)
 			if verified {
@@ -137,14 +171,28 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			} else {
 				So(code, ShouldEqual, 0x6982)
 			}
+
+			apdu = []byte{0x00, 0x32, 0x00, 0x00, byte(len(sn))}
+			readSN, code, err := app.Send(apdu)
+			So(code, ShouldEqual, 0x9000)
+			if verified { // make sure that the SN is written before
+				So(readSN, ShouldResemble, sn)
+			}
 		})
 		Convey("Change PIN", func(ctx C) {
+			pinTooLong := make([]byte, 65)
+			pinTooShort := []byte{0x31, 0x32, 0x33, 0x34, 0x35}
 			sixZeros := []byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x30}
-			code := setPinTo(sixZeros)
+			code := setPinTo(pinTooLong)
 			if !verified {
 				So(code, ShouldEqual, 0x6982)
 				return
 			}
+			So(code, ShouldEqual, 0x6700)
+			code = setPinTo(pinTooShort)
+			So(code, ShouldEqual, 0x6700)
+
+			code = setPinTo(sixZeros)
 			So(code, ShouldEqual, 0x9000)
 
 			// security status is cleared after pin change
@@ -197,6 +245,15 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				So(code, ShouldEqual, 0x6982)
 			}
 		})
+		Convey("Reset NDEF", func(ctx C) {
+			_, code, err := app.Send([]byte{0x00, 0x07, 0x00, 0x00})
+			So(err, ShouldBeNil)
+			if verified {
+				So(code, ShouldEqual, 0x9000)
+			} else {
+				So(code, ShouldEqual, 0x6982)
+			}
+		})
 	}
 }
 
@@ -237,9 +294,12 @@ func TestAdminApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
-			Convey("If pin is too long", func(ctx C) {
+			Convey("If pin is too long or too short", func(ctx C) {
 				pin := make([]byte, 129)
 				_, code, err := app.Send(append([]byte{0x00, 0x20, 0x00, 0x00, byte(len(pin))}, pin...))
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x6700)
+				_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01})
 				So(err, ShouldBeNil)
 				So(code, ShouldEqual, 0x6700)
 			})
