@@ -197,7 +197,7 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
 
-  int ret;
+  int ret = 0;
   switch (INS) {
   case ADMIN_INS_SELECT:
     if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
@@ -209,8 +209,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       ret = admin_vendor_version(capdu, rapdu);
     else if (P1 == 1)
       ret = admin_vendor_hw_variant(capdu, rapdu);
-    else
-      ret = 0;
     goto done;
 
   case ADMIN_INS_READ_SN:
@@ -219,8 +217,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       ret = admin_read_sn(capdu, rapdu);
     else if (P1 == 1)
       ret = admin_vendor_hw_sn(capdu, rapdu);
-    else
-      ret = 0;
     goto done;
 
   case ADMIN_INS_FACTORY_RESET:
