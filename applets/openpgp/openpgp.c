@@ -356,6 +356,12 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = 0x01;
     RDATA[off++] = 0x20; // announces a button
 
+    RDATA[off++] = TAG_DISCRETIONARY_DATA_OBJECTS;
+    RDATA[off++] = 0x82;
+    uint8_t length_pos = off;
+    RDATA[off++] = 0; // these two bytes are for length
+    RDATA[off++] = 0;
+
     RDATA[off++] = TAG_EXTENDED_CAPABILITIES;
     RDATA[off++] = sizeof(extended_capabilities);
     memcpy(RDATA + off, extended_capabilities, sizeof(extended_capabilities));
@@ -461,6 +467,9 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = touch_policy[UIF_AUT];
     RDATA[off++] = 0x20;
 
+    uint16_t ddo_length = off - length_pos - 2;
+    RDATA[length_pos] = HI(ddo_length);
+    RDATA[length_pos + 1] = LO(ddo_length);
     LL = off;
     break;
 
