@@ -138,6 +138,8 @@ jobs:
           ssh-add -L >~/.ssh/authorized_keys
           ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
         }
+        SetUIF() { echo -e 'admin\nuif $1 $2\nq' | gpg --yes --command-fd 0 --edit-card }
+        UserChecked() {  } # TODO
         GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
         Key2card 1 1 # key[1] to Signature key
         GPGSign
@@ -148,6 +150,26 @@ jobs:
         GPGAuth
         GPGEnc
         echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
+        
+        SetUIF 1 on
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
+        GPGSign
+        UserChecked 1
+        GPGEnc
+        UserChecked 0
+        GPGAuth
+        UserChecked 0
+        SetUIF 2 on
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
+        GPGEnc
+        UserChecked 1
+        GPGAuth
+        UserChecked 0
+        SetUIF 3 on
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
+        GPGAuth
+        UserChecked 1
+        
         GPGReset
         gpg --card-status |grep -E 'Signature key.+none'
         Addkey 4 2048 # [4] gen RSA2048 key
