@@ -101,6 +101,8 @@ int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
 
 int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = (uint16_t)(P1 << 8) | P2;
+  if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+  if (LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
   switch (selected) {
   case CC:
@@ -123,6 +125,8 @@ int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
 
 int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = (uint16_t)(P1 << 8) | P2;
+  if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+  if (LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
   switch (selected) {
   case CC:
