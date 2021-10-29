@@ -28,8 +28,9 @@ type Applet struct {
 	card    *scard.Card
 }
 
-var defaultNDEF = []byte{0x00, 0x11, 0xD1, 0x01, 0x0D, 0x55, 0x04, 'c', 'a', 'n', 'o', 'k', 'e', 'y', 's', '.', 'o', 'r', 'g'}
-var currentNDEF []byte
+var defaultNDEF = append([]byte{0x00, 0x11, 0xD1, 0x01, 0x0D, 0x55, 0x04, 'c', 'a', 'n', 'o', 'k', 'e', 'y', 's', '.', 'o', 'r', 'g'},
+	make([]byte, 1005)...)
+var currentNDEF = make([]byte, len(defaultNDEF))
 var defaultCC = []byte{0, 15, 32, 4, 0, 4, 0, 4, 6, 0, 1, 4, 0, 0, 0}
 
 func New() (*Applet, error) {
@@ -213,20 +214,10 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 			So(code, ShouldEqual, 0x9000)
 			So(data, ShouldResemble, currentNDEF[maxLen-1:maxLen])
 		})
-		// TODO: test reset
-		// Convey("Reset NDEF", func(ctx C) {
-		// 	_, code, err := app.Send([]byte{0x00, 0x07, 0x00, 0x00})
-		// 	So(err, ShouldBeNil)
-		// 	if verified {
-		// 		So(code, ShouldEqual, 0x9000)
-		// 	} else {
-		// 		So(code, ShouldEqual, 0x6982)
-		// 	}
-		// })
 	}
 }
 
-func updateReadOnlyOption(app *Applet, readOnly bool) {
+func updateOptions(app *Applet, option int, state bool) {
 
 	_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00})
 	So(err, ShouldBeNil)
@@ -238,18 +229,39 @@ func updateReadOnlyOption(app *Applet, readOnly bool) {
 	So(code, ShouldEqual, 0x9000)
 
 	var opt byte
-	if readOnly {
+	if state {
 		opt = 1
 	} else {
 		opt = 0
 	}
-	_, code, err = app.Send([]byte{0x00, 0x08, opt, 0x00})
+	if option == 1 {
+		_, code, err = app.Send([]byte{0x00, 0x08, opt, 0x00})
+	} else if option == 2 {
+		_, code, err = app.Send([]byte{0x00, 0x40, 0x04, opt})
+	}
+	So(err, ShouldBeNil)
+	So(code, ShouldEqual, 0x9000)
+}
+
+func resetNDEF(app *Applet) {
+
+	_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00})
+	So(err, ShouldBeNil)
+	So(code, ShouldEqual, 0x9000)
+
+	pin := []byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36}
+	_, code, err = app.Send(append([]byte{0x00, 0x20, 0x00, 0x00, byte(len(pin))}, pin...))
+	So(err, ShouldBeNil)
+	So(code, ShouldEqual, 0x9000)
+
+	_, code, err = app.Send([]byte{0x00, 0x07, 0x00, 0x00})
 	So(err, ShouldBeNil)
 	So(code, ShouldEqual, 0x9000)
 }
 
 func TestNDEFApplet(t *testing.T) {
-	currentNDEF = defaultNDEF
+	resetOnce := false
+	copy(currentNDEF, defaultNDEF)
 
 	Convey("Connecting to applet", t, func(ctx C) {
 
@@ -260,13 +272,37 @@ func TestNDEFApplet(t *testing.T) {
 		Convey("NDEF applet behaves correctly", func(ctx C) {
 
 			Convey("When it is not read-only", func(ctx C) {
-				updateReadOnlyOption(app, false)
+				updateOptions(app, 1, false)
 				(commandTests(false, app))(ctx)
 			})
 
 			Convey("When it is read-only", func(ctx C) {
-				updateReadOnlyOption(app, true)
+				updateOptions(app, 1, true)
 				(commandTests(true, app))(ctx)
+			})
+
+			Convey("When it is disabled", func(ctx C) {
+				updateOptions(app, 2, false)
+				_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x07, 0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x6A82)
+
+				updateOptions(app, 2, true)
+				_, code, err = app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x07, 0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x9000)
+				_, code, err = app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x06, 0xD2, 0x76, 0x00, 0x00, 0x85, 0x01})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x6A82)
+			})
+
+			Convey("After reset", func(ctx C) {
+				if !resetOnce {
+					resetNDEF(app)
+					copy(currentNDEF, defaultNDEF)
+					resetOnce = true
+				}
+				(commandTests(false, app))(ctx)
 			})
 
 		})

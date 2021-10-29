@@ -39,7 +39,7 @@ func New() (*AdminApplet, error) {
 		return nil, errors.Wrapf(err, errFailedToListReaders)
 	}
 	for _, reader := range readers {
-		fmt.Printf("Reader: %s\n", reader)
+		// fmt.Printf("Reader: %s\n", reader)
 		if strings.Contains(reader, "Canokey") && strings.Contains(reader, "OATH") {
 			card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
 			if err != nil {
