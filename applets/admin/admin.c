@@ -176,11 +176,8 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   ret = pin_get_retries(&pin);
   if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
-#ifdef TEST
-  DBG_MSG("user verification skipped\n");
-#else
+  if (is_nfc()) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   if (admin_factory_reset_verification() < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-#endif
 
   DBG_MSG("factory reset begins\n");
   ret = openpgp_install(1);

@@ -27,7 +27,12 @@ void device_loop(uint8_t has_touch) {
     KBDHID_Loop();
 }
 
-uint8_t get_touch_result(void) { return touch_result; }
+uint8_t get_touch_result(void) {
+#ifdef TEST // emulate user interaction in test mode
+  testmode_emulate_user_presence();
+#endif
+  return touch_result;
+}
 
 void set_touch_result(uint8_t result) { touch_result = result; }
 
@@ -49,7 +54,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     }
   } else
     wait_status = WAIT_DEEP;
-  while (touch_result == TOUCH_NO) {
+  while (get_touch_result() == TOUCH_NO) {
     if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
     if (wait_status == WAIT_CTAPHID) CCID_Loop();
     if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
@@ -72,7 +77,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
-  touch_result = TOUCH_NO;
+  set_touch_result(TOUCH_NO);
   if (wait_status != WAIT_DEEP) stop_blinking();
   if (wait_status == WAIT_DEEP)
     wait_status = WAIT_DEEP_TOUCHED;
@@ -86,7 +91,12 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
 void set_nfc_state(uint8_t val) { has_rf = val; }
 
-uint8_t is_nfc(void) { return has_rf; }
+uint8_t is_nfc(void) {
+#ifdef TEST // read NFC emulation config from a file
+  testmode_get_is_nfc_mode();
+#endif
+  return has_rf;
+}
 
 static void toggle_led(void) {
   if (led_status == ON) {
@@ -131,6 +141,42 @@ void stop_blinking(void) {
 }
 
 #ifdef TEST
+#include <stdio.h>
+int testmode_emulate_user_presence(void) {
+  if (!IS_BLINKING) return; // user only touches while blinking
+
+  int counter = 0;
+  FILE *f_cnt = fopen("/tmp/canokey-test-up", "r");
+  if (f_cnt != NULL) {
+    fscanf(f_cnt, "%d", &counter);
+    fclose(f_cnt);
+  } else {
+    ERR_MSG("Failed to open canokey-test-up for reading\n");
+  }
+  counter++;
+  DBG_MSG("counter=%d\n", counter);
+  f_cnt = fopen("/tmp/canokey-test-up", "w");
+  if (f_cnt != NULL) {
+    fprintf(f_cnt, "%d", counter);
+    fclose(f_cnt);
+  } else {
+    ERR_MSG("Failed to open canokey-test-up for writing\n");
+  }
+
+  set_touch_result(TOUCH_SHORT);
+  return 0;
+}
+
+int testmode_get_is_nfc_mode(void) {
+  uint32_t nfc_mode = 0;
+  FILE *f_cfg = fopen("/tmp/canokey-test-nfc", "r");
+  if (f_cfg == NULL) return -1;
+  if (fscanf(f_cfg, "%u", &nfc_mode) < 1) return -1;
+  fclose(f_cfg);
+  set_nfc_state((uint8_t)nfc_mode);
+  return 0;
+}
+
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
   if (*var == expect) {
     *var = update;

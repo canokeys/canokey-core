@@ -140,8 +140,6 @@ int card_fabrication_procedure(const char *lfs_root) {
   oath_init();
   fido2_init();
 
-  // emulate the NFC mode, where user-presence tests are skipped
-  set_nfc_state(1);
   return 0;
 }
 
@@ -149,8 +147,6 @@ int card_read(const char *lfs_root) {
   card_fs_init(lfs_root);
 
   applets_install();
-  // emulate the NFC mode, where user-presence tests are skipped
-  set_nfc_state(1);
   return 0;
 }
 
