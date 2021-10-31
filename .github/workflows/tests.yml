@@ -78,13 +78,17 @@ jobs:
         
     - name: Start the pcscd
       run: |
+        echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
         sudo killall -9 pcscd || true
         sudo cp build/libu2f-virt-card.so /usr/local/lib/
         sudo cp test-via-pcsc/pcscd-reader.conf /etc/reader.conf.d/
         bash -c "sudo LD_PRELOAD=$(gcc -print-file-name=libasan.so) pcscd -a -f >/tmp/pcscd.log &"
-        sleep 3
+        sleep 12
         timeout 1s pcsc_scan || true
         go env -w GO111MODULE=on
+        sudo chmod 777 /tmp/canokey-*
+        sudo chown root:root /tmp/canokey-*
+        ls -l /tmp
 
     - name: Test the Admin
       run: go test -v test-via-pcsc/admin_test.go
@@ -94,6 +98,7 @@ jobs:
 
     - name: Test the FIDO2
       run: |
+        echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
         cd fido2-tests
         ~/.local/bin/pytest --color=yes --nfc tests/standard/
         ~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no 
@@ -138,37 +143,59 @@ jobs:
           ssh-add -L >~/.ssh/authorized_keys
           ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
         }
-        SetUIF() { echo -e 'admin\nuif $1 $2\nq' | gpg --yes --command-fd 0 --edit-card }
-        UserChecked() {  } # TODO
+        SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg --yes --command-fd 0 --edit-card; }
+        UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
         GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
-        Key2card 1 1 # key[1] to Signature key
-        GPGSign
-        Addkey 12 3 # [2] ECDH P-256 encrypt key
-        Addkey 10 3 # [3] ECDSA P-256 sign key
-        Key2card 2 2 # key[2] to Encryption key
-        Key2card 3 3 # key[3] to Authentication key
-        GPGAuth
-        GPGEnc
+        echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
+        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
         echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
-        
+        Key2card 1 1 # key[1] to Signature key
+        echo 0 >/tmp/canokey-test-up
+        GPGSign
+        UserChecked 0
         SetUIF 1 on
         gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
         GPGSign
         UserChecked 1
-        GPGEnc
-        UserChecked 0
+        Addkey 12 3 # [2] ECDH P-256 encrypt key
+        Addkey 10 3 # [3] ECDSA P-256 sign key
+        Key2card 2 2 # key[2] to Encryption key
+        Key2card 3 3 # key[3] to Authentication key
+        echo 0 >/tmp/canokey-test-up
         GPGAuth
+        UserChecked 0
+        GPGEnc
         UserChecked 0
         SetUIF 2 on
         gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
         GPGEnc
         UserChecked 1
-        GPGAuth
-        UserChecked 0
         SetUIF 3 on
         gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
         GPGAuth
         UserChecked 1
+        SetUIF 1 off
+        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=on Auth=on'
+        SetUIF 2 off
+        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=on'
+        SetUIF 3 off
+        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
+        echo 0 >/tmp/canokey-test-up
+        GPGEnc
+        UserChecked 0
+        SetUIF 1 permanent
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
+        SetUIF 2 permanent
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
+        SetUIF 3 permanent
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
+        SetUIF 3 off || true # can not revert a permanent setting
+        SetUIF 2 off || true # can not revert a permanent setting
+        SetUIF 1 off || true # can not revert a permanent setting
+        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
+        GPGEnc
+        UserChecked 1
+        echo 1 >/tmp/canokey-test-nfc
         
         GPGReset
         gpg --card-status |grep -E 'Signature key.+none'

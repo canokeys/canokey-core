@@ -58,6 +58,10 @@ void fm_nss_high(void);
 void fm_transmit(uint8_t *buf, uint8_t len);
 void fm_receive(uint8_t *buf, uint8_t len);
 
+// only for test
+int testmode_emulate_user_presence(void);
+int testmode_get_is_nfc_mode(void);
+
 // platform independent functions
 uint8_t wait_for_user_presence(uint8_t entry);
 void device_loop(uint8_t has_touch);
