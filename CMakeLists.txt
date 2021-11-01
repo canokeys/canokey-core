@@ -22,7 +22,7 @@ if (ENABLE_TESTS)
     endif()
 endif (ENABLE_TESTS)
 if (ENABLE_FUZZING)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address -fsanitize=undefined")
 endif (ENABLE_FUZZING)
 
 add_subdirectory(canokey-crypto)

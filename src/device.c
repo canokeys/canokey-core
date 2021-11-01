@@ -143,8 +143,9 @@ void stop_blinking(void) {
 #ifdef TEST
 #include <stdio.h>
 int testmode_emulate_user_presence(void) {
-  if (!IS_BLINKING) return; // user only touches while blinking
+  if (!IS_BLINKING) return 0; // user only touches while blinking
 
+#ifndef FUZZ // speed up fuzzing
   int counter = 0;
   FILE *f_cnt = fopen("/tmp/canokey-test-up", "r");
   if (f_cnt != NULL) {
@@ -162,18 +163,21 @@ int testmode_emulate_user_presence(void) {
   } else {
     ERR_MSG("Failed to open canokey-test-up for writing\n");
   }
+#endif
 
   set_touch_result(TOUCH_SHORT);
   return 0;
 }
 
 int testmode_get_is_nfc_mode(void) {
+#ifndef FUZZ // speed up fuzzing
   uint32_t nfc_mode = 0;
   FILE *f_cfg = fopen("/tmp/canokey-test-nfc", "r");
   if (f_cfg == NULL) return -1;
   if (fscanf(f_cfg, "%u", &nfc_mode) < 1) return -1;
   fclose(f_cfg);
   set_nfc_state((uint8_t)nfc_mode);
+#endif
   return 0;
 }
 

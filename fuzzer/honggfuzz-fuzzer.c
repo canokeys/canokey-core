@@ -20,6 +20,7 @@
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
+#include "device.h"
 
 typedef int applet_process_t(const CAPDU *capdu, RAPDU *rapdu);
 
@@ -38,16 +39,18 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     if (idx >= 0 && idx < sizeof(applets) / sizeof(applets[0])) {
       process_func = applets[idx];
       printf("Applet %d Fuzzing Test\n", idx);
-      sprintf(lfs_root, "/tmp/fuzz_%d", idx);
+      sprintf(lfs_root, "/tmp/fuzz_applet%d", idx);
     }
   }
   if (!process_func) {
     printf("CCID Fuzzing Test\n");
     sprintf(lfs_root, "/tmp/fuzz_ccid");
   }
-  mkdir(lfs_root, 0777);
+  unlink(lfs_root);
   CCID_Init();
+  set_nfc_state(1);
   card_fabrication_procedure(lfs_root);
+  printf("Finished initialization\n");
   return 0;
 }
 
@@ -89,7 +92,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
         // should never read data when lc=0
         capdu.data = NULL;
       }
-      PRINT_HEX(buf, apdu_len);
+      // PRINT_HEX(buf, apdu_len);
       buf += apdu_len;
       capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);
       process_func(&capdu, &rapdu);
