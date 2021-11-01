@@ -65,7 +65,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     // allow more than one apdu in a file
     while (len > 2) {
       // two bytes length
-      uint16_t apdu_len = *(uint16_t *)buf;
+      uint16_t apdu_len = buf[1];
+      apdu_len = (apdu_len << 8) | buf[0];
       buf += sizeof(uint16_t);
       len -= 2;
 
