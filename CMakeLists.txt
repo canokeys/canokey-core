@@ -36,9 +36,6 @@ add_library(canokey-core ${SRC})
 if (ENABLE_TESTS)
     target_compile_definitions(canokey-core PUBLIC -DTEST)
 endif (ENABLE_TESTS)
-if (ENABLE_FUZZING)
-    target_compile_definitions(canokey-core PUBLIC -DTEST -DFUZZ)
-endif (ENABLE_FUZZING)
 
 target_include_directories(canokey-core SYSTEM
         PUBLIC
@@ -115,5 +112,6 @@ if (ENABLE_FUZZING)
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
     target_include_directories(honggfuzz-fuzzer SYSTEM PRIVATE virt-card littlefs)
+    target_compile_definitions(honggfuzz-fuzzer PRIVATE TEST FUZZ)
     target_link_libraries(honggfuzz-fuzzer canokey-core)
 endif (ENABLE_FUZZING)
