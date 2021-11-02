@@ -29,7 +29,7 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
   uint8_t pin_buf[PIN_MAX_LENGTH];
   int real_len = read_file(pin->path, pin_buf, 0, PIN_MAX_LENGTH);
   if (real_len < 0) return PIN_IO_FAIL;
-  if ((real_len != len) + memcmp_s(buf, pin_buf, len) > 0) {  // the two conditions should be both evaluated
+  if (((real_len != (int)len) - memcmp_s(buf, pin_buf, len)) != 0) { // the two conditions should be both evaluated
     --ctr;
     if (retries) *retries = ctr;
     err = write_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
