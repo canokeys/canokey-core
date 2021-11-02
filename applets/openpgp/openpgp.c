@@ -600,7 +600,7 @@ static int openpgp_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   int pw_length = pin_get_size(pw);
   uint8_t ctr;
-  int err = pin_verify(pw, DATA, pw_length, &ctr);
+  int err = pin_verify(pw, DATA, (LC < pw_length ? LC : pw_length), &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -618,7 +618,7 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
     offset = pin_get_size(&rc);
     if (offset == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     uint8_t ctr;
-    err = pin_verify(&rc, DATA, offset, &ctr);
+    err = pin_verify(&rc, DATA, (LC < offset ? LC : offset), &ctr);
     if (err == PIN_IO_FAIL) return -1;
     if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
     if (err == PIN_AUTH_FAIL) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -628,6 +628,7 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
     offset = 0;
   }
+  if (LC < offset) EXCEPT(SW_WRONG_LENGTH);
   err = pin_update(&pw1, DATA + offset, LC - offset);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
@@ -1062,7 +1063,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_ALGORITHM_ATTRIBUTES_SIG:
   case TAG_ALGORITHM_ATTRIBUTES_DEC:
   case TAG_ALGORITHM_ATTRIBUTES_AUT:
-    if (LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (LC < 1 || LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
     const char *key_path = NULL;
     if (tag == TAG_ALGORITHM_ATTRIBUTES_SIG)
@@ -1166,6 +1167,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
   case TAG_UIF_SIG:
+    if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
     if (touch_policy[UIF_SIG] == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
     touch_policy[UIF_SIG] = DATA[0];
@@ -1173,6 +1175,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_UIF_DEC:
+    if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
     if (touch_policy[UIF_DEC] == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
     touch_policy[UIF_DEC] = DATA[0];
@@ -1180,6 +1183,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_UIF_AUT:
+    if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
     if (touch_policy[UIF_AUT] == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
     touch_policy[UIF_AUT] = DATA[0];
@@ -1187,6 +1191,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_UIF_CACHE_TIME:
+    if (LC != 1) EXCEPT(SW_WRONG_LENGTH);
     touch_policy[UIF_CACHE_TIME] = DATA[0];
     if (write_attr(DATA_PATH, ATTR_TOUCH_POLICY, touch_policy, sizeof(touch_policy)) < 0) return -1;
     break;
@@ -1207,6 +1212,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   int fail;
   const uint8_t *p = DATA;
   // Extended Header list, 4D
+  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
 
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
