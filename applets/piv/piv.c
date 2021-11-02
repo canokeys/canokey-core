@@ -617,7 +617,11 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t alg = DATA[4];
   if (alg == ALG_RSA_2048) {
     rsa_key_t key;
+#ifndef FUZZ // to speed up fuzzing
     if (rsa_generate_key(&key, 2048) < 0) return -1;
+#else
+    key.nbits = 2048;
+#endif // FUZZ
     if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
       return -1;
