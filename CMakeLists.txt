@@ -56,7 +56,7 @@ target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
-if (USBIP OR ENABLE_TESTS)
+if (USBIP OR ENABLE_TESTS OR ENABLE_FUZZING)
     set(gitrev_in virt-card/git-rev.h.in)
     set(gitrev virt-card/git-rev.h)
     add_custom_target(gitrev
