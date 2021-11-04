@@ -15,12 +15,12 @@
 #include "admin.h"
 #include "ccid.h"
 #include "ctap.h"
+#include "device.h"
 #include "fabrication.h"
 #include "ndef.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
-#include "device.h"
 
 typedef int applet_process_t(const CAPDU *capdu, RAPDU *rapdu);
 
@@ -46,10 +46,14 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     printf("CCID Fuzzing Test\n");
     sprintf(lfs_root, "/tmp/fuzz_ccid");
   }
-  unlink(lfs_root);
   CCID_Init();
   set_nfc_state(1);
-  card_fabrication_procedure(lfs_root);
+  if (*argc > 2 && strcmp((*argv)[2], "--keep") == 0) { // keep data in littlefs
+    card_read(lfs_root);
+  } else {
+    unlink(lfs_root);
+    card_fabrication_procedure(lfs_root);
+  }
   printf("Finished initialization\n");
   return 0;
 }

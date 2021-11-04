@@ -38,6 +38,7 @@ if (ENABLE_FUZZING)
     if (ENABLE_TESTS)
         message(WARNING "ENABLE_FUZZING will cause some tests to FAIL")
     endif (ENABLE_TESTS)
+    # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-coverage=bb -finstrument-functions")
 endif (ENABLE_FUZZING)
 
 target_include_directories(canokey-core SYSTEM
@@ -116,4 +117,14 @@ if (ENABLE_FUZZING)
     target_include_directories(honggfuzz-fuzzer SYSTEM PRIVATE virt-card littlefs)
     target_compile_definitions(honggfuzz-fuzzer PUBLIC VIRT_VENDOR)
     target_link_libraries(honggfuzz-fuzzer canokey-core)
+
+    add_executable(honggfuzz-debug
+            fuzzer/honggfuzz-debug.c
+            fuzzer/honggfuzz-fuzzer.c
+            virt-card/dummy.c
+            virt-card/fabrication.c
+            littlefs/bd/lfs_filebd.c)
+    target_include_directories(honggfuzz-debug SYSTEM PRIVATE virt-card littlefs)
+    target_compile_definitions(honggfuzz-debug PUBLIC VIRT_VENDOR)
+    target_link_libraries(honggfuzz-debug canokey-core)
 endif (ENABLE_FUZZING)
