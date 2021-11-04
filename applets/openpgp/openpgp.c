@@ -1337,7 +1337,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p = data_tag;
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
+    if (fail || len != data_pri_key_len) EXCEPT(SW_WRONG_LENGTH);
     p += length_size;
     int n_leading_zeros = ec_pri_key_len - data_pri_key_len;
     memzero(key, n_leading_zeros);
