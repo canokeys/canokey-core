@@ -50,26 +50,9 @@ int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_create_init_ndef() {
-  memset(global_buffer, 0, APDU_BUFFER_SIZE);
-  global_buffer[1] = 0x11;
-  global_buffer[2] = 0xD1;
-  global_buffer[3] = 0x01;
-  global_buffer[4] = 0x0D;
-  global_buffer[5] = 0x55;
-  global_buffer[6] = 0x04;
-  global_buffer[7] = 'c';
-  global_buffer[8] = 'a';
-  global_buffer[9] = 'n';
-  global_buffer[10] = 'o';
-  global_buffer[11] = 'k';
-  global_buffer[12] = 'e';
-  global_buffer[13] = 'y';
-  global_buffer[14] = 's';
-  global_buffer[15] = '.';
-  global_buffer[16] = 'o';
-  global_buffer[17] = 'r';
-  global_buffer[18] = 'g';
-  if (write_file(NDEF_FILE, global_buffer, 0, NDEF_FILE_MAX_LENGTH, 1) < -1) return -1;
+  const char *init_data = "\x00\x11\xD1\x01\x0D\x55\x04""canokeys.org";
+  if (write_file(NDEF_FILE, init_data, 0, 19, 1) < -1) return -1;
+  if (truncate_file(NDEF_FILE, NDEF_FILE_MAX_LENGTH) < -1) return -1; // Fill the file with zeros
   return 0;
 }
 
