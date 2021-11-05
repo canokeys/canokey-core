@@ -123,6 +123,7 @@ void card_fs_init(const char *lfs_root) {
 
 int card_fabrication_procedure(const char *lfs_root) {
   card_fs_init(lfs_root);
+  init_apdu_buffer();
   applets_install();
 
   // reset state of applets
