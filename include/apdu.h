@@ -77,7 +77,7 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
-extern uint8_t global_buffer[APDU_BUFFER_SIZE];
+extern uint8_t *global_buffer;
 
 enum {
   BUFFER_OWNER_NONE = 1,
@@ -85,6 +85,7 @@ enum {
   BUFFER_OWNER_WEBUSB,
 };
 
+void init_apdu_buffer(void); // implement in ccid.c for reusing the ccid buffer
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);

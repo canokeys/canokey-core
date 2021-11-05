@@ -25,6 +25,11 @@ static volatile uint8_t has_cmd;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
+uint8_t *global_buffer;
+
+void init_apdu_buffer(void) {
+  global_buffer = bulkin_data.abData;
+}
 
 uint8_t CCID_Init(void) {
   send_data_spinlock = 0;
