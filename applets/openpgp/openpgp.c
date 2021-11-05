@@ -1557,6 +1557,9 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     if (INS == OPENPGP_INS_ACTIVATE) {
       if (openpgp_activate(capdu, rapdu) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
       return 0;
+    } else
+    {
+      EXCEPT(SW_TERMINATED);
     }
   }
 #endif

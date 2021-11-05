@@ -23,6 +23,7 @@ typedef struct {
 // Command status responses
 
 #define SW_NO_ERROR 0x9000
+#define SW_TERMINATED 0x6285
 #define SW_PIN_RETRIES 0x63C0
 #define SW_WRONG_LENGTH 0x6700
 #define SW_UNABLE_TO_PROCESS 0x6900
