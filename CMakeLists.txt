@@ -117,6 +117,7 @@ if (ENABLE_FUZZING)
     target_include_directories(honggfuzz-fuzzer SYSTEM PRIVATE virt-card littlefs)
     target_compile_definitions(honggfuzz-fuzzer PUBLIC VIRT_VENDOR)
     target_link_libraries(honggfuzz-fuzzer canokey-core)
+    add_dependencies(honggfuzz-fuzzer gitrev)
 
     add_executable(honggfuzz-debug
             fuzzer/honggfuzz-debug.c
@@ -127,4 +128,5 @@ if (ENABLE_FUZZING)
     target_include_directories(honggfuzz-debug SYSTEM PRIVATE virt-card littlefs)
     target_compile_definitions(honggfuzz-debug PUBLIC VIRT_VENDOR)
     target_link_libraries(honggfuzz-debug canokey-core)
-endif (ENABLE_FUZZING)
+    add_dependencies(honggfuzz-debug gitrev)
+    endif (ENABLE_FUZZING)
