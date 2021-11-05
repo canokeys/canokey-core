@@ -83,6 +83,7 @@ func (o *Applet) Send(apdu []byte) ([]byte, uint16, error) {
 }
 
 func commandTests(readOnlyMode bool, app *Applet) func(C) {
+	maxLen := uint16(1024)
 	selectFile := func(name uint16) uint16 {
 		_, code, err := app.Send([]byte{0x00, 0xA4, 0x00, 0x0C, 0x02, byte(name >> 8), byte(name & 0xFF)})
 		So(err, ShouldBeNil)
@@ -127,10 +128,17 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(len(data), ShouldEqual, 0)
+			data, code, err = app.Send([]byte{0x00, 0xB0, byte(maxLen >> 8), byte(maxLen & 0xFF)})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			So(len(data), ShouldEqual, 0)
 			if !readOnlyMode {
 				_, code, err = app.Send([]byte{0x00, 0xD6, 0x00, 0x00})
 				So(err, ShouldBeNil)
-				So(code, ShouldEqual, 0x9000) // todo
+				So(code, ShouldEqual, 0x9000)
+				_, code, err = app.Send([]byte{0x00, 0xD6, byte(maxLen >> 8), byte(maxLen & 0xFF)})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x9000)
 			}
 		})
 		Convey("Read/Write CC", func(ctx C) {
@@ -185,7 +193,6 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 			code := selectFile(0x0001)
 			So(code, ShouldEqual, 0x9000)
 
-			maxLen := uint16(1024)
 			largest := make([]byte, maxLen)
 			crand.Read(largest)
 			code = writeFile(1, largest)
@@ -305,6 +312,10 @@ func TestNDEFApplet(t *testing.T) {
 				(commandTests(false, app))(ctx)
 			})
 
+			Convey("Reset twice", func(ctx C) {
+				resetNDEF(app)
+				copy(currentNDEF, defaultNDEF)
+			})
 		})
 	})
 
