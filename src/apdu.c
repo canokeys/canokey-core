@@ -10,9 +10,6 @@
 #include <piv.h>
 #include <string.h>
 
-static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
-uint8_t global_buffer[APDU_BUFFER_SIZE];
-
 enum APPLET {
   APPLET_NULL,
   APPLET_PIV,
@@ -46,11 +43,13 @@ static const uint8_t AID_Size[] = {
     [APPLET_NDEF] = sizeof(NDEF_AID),
 };
 
+static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
+static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
 static CAPDU_CHAINING capdu_chaining = {
-    .capdu.data = global_buffer,
+    .capdu.data = chaining_buffer,
 };
 static RAPDU_CHAINING rapdu_chaining = {
-    .rapdu.data = global_buffer,
+    .rapdu.data = chaining_buffer,
 };
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {

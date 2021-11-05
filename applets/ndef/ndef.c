@@ -50,7 +50,7 @@ int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_create_init_ndef() {
-  memset(global_buffer, 0, sizeof(global_buffer));
+  memset(global_buffer, 0, APDU_BUFFER_SIZE);
   global_buffer[1] = 0x11;
   global_buffer[2] = 0xD1;
   global_buffer[3] = 0x01;
