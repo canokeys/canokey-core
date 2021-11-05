@@ -14,15 +14,22 @@ int fs_init(struct lfs_config *cfg) {
 
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   lfs_file_t f;
+  lfs_ssize_t read_length;
   int err = lfs_file_open(&lfs, &f, path, LFS_O_RDONLY);
   if (err < 0) return err;
   err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
-  if (err < 0) return err;
-  lfs_ssize_t read_length = lfs_file_read(&lfs, &f, buf, len);
-  if (read_length < 0) return read_length;
+  if (err < 0) goto err_close;
+  read_length = lfs_file_read(&lfs, &f, buf, len);
+  if (read_length < 0) {
+    err = read_length;
+    goto err_close;
+  }
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return read_length;
+err_close:
+  lfs_file_close(&lfs, &f);
+  return err;
 }
 
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
@@ -32,14 +39,32 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
   int err = lfs_file_open(&lfs, &f, path, flags);
   if (err < 0) return err;
   err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
-  if (err < 0) return err;
+  if (err < 0) goto err_close;
   if (len > 0) {
     err = lfs_file_write(&lfs, &f, buf, len);
-    if (err < 0) return err;
+    if (err < 0) goto err_close;
   }
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
+err_close:
+  lfs_file_close(&lfs, &f);
+  return err;
+}
+
+int truncate_file(const char *path, lfs_size_t len) {
+  lfs_file_t f;
+  int flags = LFS_O_WRONLY | LFS_O_CREAT;
+  int err = lfs_file_open(&lfs, &f, path, flags);
+  if (err < 0) return err;
+  err = lfs_file_truncate(&lfs, &f, len);
+  if (err < 0) goto err_close;
+  err = lfs_file_close(&lfs, &f);
+  if (err < 0) return err;
+  return 0;
+err_close:
+  lfs_file_close(&lfs, &f);
+  return err;
 }
 
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
@@ -55,10 +80,16 @@ int get_file_size(const char *path) {
   int err = lfs_file_open(&lfs, &f, path, LFS_O_RDONLY);
   if (err < 0) return err;
   int size = lfs_file_size(&lfs, &f);
-  if (size < 0) return size;
+  if (size < 0) {
+    err = size;
+    goto err_close;
+  }
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return size;
+err_close:
+  lfs_file_close(&lfs, &f);
+  return err;
 }
 
 int get_fs_size(void) {
