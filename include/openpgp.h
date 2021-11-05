@@ -56,7 +56,7 @@
 #define TAG_UIF_SIG 0xD6
 #define TAG_UIF_DEC 0xD7
 #define TAG_UIF_AUT 0xD8
-#define TAG_UIF_CACHE_TIME 0x0101
+#define TAG_UIF_CACHE_TIME 0x0102
 
 void openpgp_poweroff(void);
 int openpgp_install(uint8_t reset);
