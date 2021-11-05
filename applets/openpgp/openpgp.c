@@ -955,6 +955,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if (attr[0] == KEY_TYPE_RSA) {
+    if (LC < 10) EXCEPT(SW_WRONG_LENGTH); // TODO: more accurate checking
     rsa_key_t key;
     if (openpgp_key_get_key(DEC_KEY_PATH, &key, sizeof(key)) < 0) {
       memzero(&key, sizeof(key));
@@ -971,6 +972,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     LL = olen;
   } else if (attr[0] == KEY_TYPE_ECDH) {
     // 7.2.11 PSO: DECIPHER
+    if (LC < 8) EXCEPT(SW_WRONG_LENGTH);
     if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
       openpgp_stop_blinking();
       EXCEPT(SW_WRONG_DATA);
@@ -990,6 +992,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         openpgp_stop_blinking();
         EXCEPT(SW_WRONG_DATA);
       }
+      if (LC < 7 + DATA[6]) EXCEPT(SW_WRONG_LENGTH);
       if (openpgp_key_get_key(DEC_KEY_PATH, key, ec_pri_key_len) < 0) {
         memzero(key, sizeof(key));
         openpgp_stop_blinking();
@@ -1010,6 +1013,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         openpgp_stop_blinking();
         EXCEPT(SW_WRONG_DATA);
       }
+      if (LC < 7 + DATA[6]) EXCEPT(SW_WRONG_LENGTH);
       if (openpgp_key_get_key(DEC_KEY_PATH, key, KEY_SIZE_25519) < 0) {
         memzero(key, sizeof(key));
         openpgp_stop_blinking();
@@ -1235,7 +1239,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
 
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
-  if (fail) EXCEPT(SW_WRONG_LENGTH);
+  if (fail || len < 2) EXCEPT(SW_WRONG_LENGTH);
 
   if (len + length_size + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
   p += length_size;
@@ -1254,6 +1258,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   p += *p + 1;
 
   // Cardholder private key template
+  if (p + 2 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (*p++ != 0x7F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
   uint16_t template_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
   if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -1270,48 +1275,56 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     uint16_t pq_len = nbits / 16, qinv_len, dp_len, dq_len;
     key_len = sizeof(rsa_key_t);
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x91) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (len != E_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (len != pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x93) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (len != pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x94) EXCEPT(SW_WRONG_DATA);
     qinv_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (qinv_len > pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x95) EXCEPT(SW_WRONG_DATA);
     dp_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (dp_len > pq_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x96) EXCEPT(SW_WRONG_DATA);
     dq_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (dq_len > pq_len) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
+    if (p + 2 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (len != pq_len * 2 + qinv_len + dp_len + dq_len + E_LENGTH) EXCEPT(SW_WRONG_DATA);
     p += length_size;
 
+    if (p + len - DATA > LC) EXCEPT(SW_WRONG_LENGTH);
     ((rsa_key_t *)key)->nbits = nbits;
     memcpy(((rsa_key_t *)key)->e, p, E_LENGTH);
     p += E_LENGTH;
@@ -1329,17 +1342,20 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     int ec_pri_key_len = get_ec_key_length(algo);
     key_len = ec_pri_key_len * 3;
 
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x92) EXCEPT(SW_WRONG_DATA);
     int data_pri_key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
     if (data_pri_key_len > ec_pri_key_len) EXCEPT(SW_WRONG_DATA);
 
     p = data_tag;
+    if (p + 2 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
     if (fail || len != data_pri_key_len) EXCEPT(SW_WRONG_LENGTH);
     p += length_size;
     int n_leading_zeros = ec_pri_key_len - data_pri_key_len;
+    if (p + data_pri_key_len - DATA > LC) EXCEPT(SW_WRONG_LENGTH);
     memzero(key, n_leading_zeros);
     memcpy(key + n_leading_zeros, p, data_pri_key_len);
 
