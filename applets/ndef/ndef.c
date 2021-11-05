@@ -77,8 +77,8 @@ int ndef_install(uint8_t reset) {
   ndef_poweroff();
   if (reset || get_file_size(CC_FILE) != sizeof(current_cc) || get_file_size(NDEF_FILE) <= 0) {
     memcpy(current_cc, default_cc, sizeof(current_cc));
-    if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
     if (ndef_create_init_ndef() < 0) return -1;
+    if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
   } else {
     if (read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0) return -1;
     // should check sanity, by standard

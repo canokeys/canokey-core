@@ -106,10 +106,6 @@ int piv_install(uint8_t reset) {
   piv_poweroff();
   if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0) return 0;
 
-  // PIN data
-  if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0) return -1;
-  if (pin_create(&puk, "12345678", 8, 3) < 0) return -1;
-
   // objects
   if (write_file(PIV_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
@@ -129,6 +125,10 @@ int piv_install(uint8_t reset) {
     return -1;
   uint8_t alg = ALG_TDEA_3KEY;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
+
+  // PIN data
+  if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0) return -1;
+  if (pin_create(&puk, "12345678", 8, 3) < 0) return -1;
 
   return 0;
 }

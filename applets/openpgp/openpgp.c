@@ -216,13 +216,10 @@ int openpgp_install(uint8_t reset) {
   openpgp_poweroff();
   if (!reset && get_file_size(DATA_PATH) >= 0) return 0;
 
-  // PIN data
-  if (pin_create(&pw1, "123456", 6, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
-  if (pin_create(&pw3, "12345678", 8, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
-  if (pin_create(&rc, NULL, 0, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
-
   // Cardholder Data
   if (write_file(DATA_PATH, NULL, 0, 0, 1) < 0) return -1;
+  uint8_t terminated = 0x01; // Terminated: yes
+  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_NAME, NULL, 0)) return -1;
   // default lang = NULL
@@ -231,8 +228,6 @@ int openpgp_install(uint8_t reset) {
   if (write_attr(DATA_PATH, LO(TAG_SEX), &default_sex, 1) < 0) return -1;
   uint8_t default_pin_strategy = 0x00; // verify PIN every time
   if (write_attr(DATA_PATH, TAG_PW_STATUS, &default_pin_strategy, 1) < 0) return -1;
-  uint8_t terminated = 0x00; // Terminated: no
-  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
 
   // Key data
   uint8_t buf[20];
@@ -265,6 +260,14 @@ int openpgp_install(uint8_t reset) {
   if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(DEC_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(AUT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+
+  // PIN data
+  if (pin_create(&pw1, "123456", 6, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
+  if (pin_create(&pw3, "12345678", 8, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
+  if (pin_create(&rc, NULL, 0, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
+
+  terminated = 0x00; // Terminated: no
+  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
 
   return 0;
 }
