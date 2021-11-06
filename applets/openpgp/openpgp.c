@@ -1205,7 +1205,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
 
   uint16_t len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
-  if (fail || len < 2) EXCEPT(SW_WRONG_LENGTH);
+  if (fail || len < 2) EXCEPT(SW_WRONG_DATA);
 
   if (len + length_size + 1 != LC) EXCEPT(SW_WRONG_LENGTH);
   p += length_size;
@@ -1316,6 +1316,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += length_size;
 
     int data_pub_key_len = 0; // this is optional
+    if (p + 1 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ == 0x99) {
       data_pub_key_len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
       if (fail) EXCEPT(SW_WRONG_LENGTH);
@@ -1326,7 +1327,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (p + 2 - DATA >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x5F || *p++ != 0x48) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size); // Concatenation of key data
-    if (fail || len != data_pri_key_len + data_pub_key_len) EXCEPT(SW_WRONG_LENGTH);
+    if (fail || len != data_pri_key_len + data_pub_key_len) EXCEPT(SW_WRONG_DATA);
     p += length_size;
     int n_leading_zeros = ec_pri_key_len - data_pri_key_len;
     if (p + data_pri_key_len - DATA > LC) EXCEPT(SW_WRONG_LENGTH);
