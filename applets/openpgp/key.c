@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "key.h"
 #include <fs.h>
+#include <memzero.h>
 
 #define ATTR_FINGERPRINT 0x00
 #define ATTR_DATETIME 0x01
@@ -42,7 +43,10 @@ int openpgp_key_set_status(const char *path, uint8_t status) {
 
 int openpgp_key_get_key(const char *path, void *buf, uint16_t len) {
   int err = read_file(path, buf, 0, len);
-  if (err < 0) return err;
+  if (err < 0) {
+    memzero(buf, len);
+    return err;
+  }
   return 0;
 }
 
