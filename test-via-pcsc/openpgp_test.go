@@ -232,7 +232,7 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x61FF) // more data available
 
-			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x67}, make([]byte, 0x67)...))
+			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0xFE}, make([]byte, 0xFE)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6700) // data too long
 
@@ -315,7 +315,7 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x61FF) // more data available
 
-			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x67}, make([]byte, 0x67)...))
+			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0xFE}, make([]byte, 0xFE)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6700) // data too long
 
