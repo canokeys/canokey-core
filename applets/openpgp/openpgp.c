@@ -927,13 +927,14 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (attr_len < 0) return -1;
 
   if (attr[0] == KEY_TYPE_RSA) {
-    if (LC < 10) EXCEPT(SW_WRONG_LENGTH); // TODO: more accurate checking
     rsa_key_t key;
     if (openpgp_key_get_key(DEC_KEY_PATH, &key, sizeof(key)) < 0) return -1;
 
     size_t olen;
-    if (rsa_decrypt_pkcs_v15(&key, DATA + 1, &olen, RDATA) < 0) {
+    uint8_t invalid_padding;
+    if (rsa_decrypt_pkcs_v15(&key, DATA + 1, &olen, RDATA, &invalid_padding) < 0) {
       memzero(&key, sizeof(key));
+      if (invalid_padding) EXCEPT(SW_WRONG_DATA);
       return -1;
     }
     memzero(&key, sizeof(key));

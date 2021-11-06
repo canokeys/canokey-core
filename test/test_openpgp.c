@@ -216,11 +216,19 @@ static void test_generate_key(void **state) {
   capdu->p1 = 0x80;
   capdu->p2 = 0x00;
   capdu->lc = 0x02;
-  capdu->data[0] = 0xB6;
+  capdu->data[0] = 0xB8;
   capdu->data[1] = 0x00;
   openpgp_process_apdu(capdu, rapdu);
   print_hex(rapdu->data, rapdu->len);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  // Decipher with invalid input data
+  capdu->ins = OPENPGP_INS_PSO;
+  capdu->p1 = 0x80;
+  capdu->p2 = 0x86;
+  openpgp_process_apdu(capdu, rapdu);
+  print_hex(rapdu->data, rapdu->len);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
 }
 
 static void test_special(void **state) {

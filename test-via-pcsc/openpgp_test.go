@@ -232,9 +232,9 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x61FF) // more data available
 
-			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0xFE}, make([]byte, 0xFE)...))
+			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6700) // data too long
+			So(code, ShouldEqual, 0x6A80) // data is longer than 40% of 2048-bits
 
 			// Decipher
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x80, 0x86, 0x02, 0xA4, 0x00})
@@ -315,13 +315,9 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x61FF) // more data available
 
-			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0xFE}, make([]byte, 0xFE)...))
+			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6700) // data too long
-
-			// _, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x66}, make([]byte, 0x66)...))
-			// So(err, ShouldBeNil)
-			// So(code, ShouldEqual, 0x9000)
+			So(code, ShouldEqual, 0x6A80) // data is longer than 40% of 2048-bits
 
 		})
 	})
