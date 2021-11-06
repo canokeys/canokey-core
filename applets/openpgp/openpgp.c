@@ -739,6 +739,10 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
       }
     }
 
+    if (openpgp_key_set_status(key_path, KEY_NOT_PRESENT) < 0) {
+      memzero(key, sizeof(key));
+      return -1;
+    }
     if (openpgp_key_set_key(key_path, key, key_len) < 0) {
       memzero(key, sizeof(key));
       return -1;
@@ -1126,6 +1130,15 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
         EXCEPT(SW_WRONG_DATA);
       }
     }
+    uint8_t attr[MAX_ATTR_LENGTH];
+    int attr_len = openpgp_key_get_attributes(key_path, attr);
+    if (attr_len < 0) return -1;
+    if (attr_len == LC && memcmp(attr, DATA, attr_len) == 0) {
+      // key attribute unchanged
+      break;
+    }
+    // invalidate the key if the attribute changes
+    if (openpgp_key_set_status(key_path, KEY_NOT_PRESENT) < 0) return -1;
     if (openpgp_key_set_attributes(key_path, DATA, LC) < 0) return -1;
     break;
 
@@ -1406,6 +1419,10 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     }
   }
 
+  if (openpgp_key_set_status(key_path, KEY_NOT_PRESENT) < 0) {
+    memzero(key, sizeof(key));
+    return -1;
+  }
   if (openpgp_key_set_key(key_path, key, key_len) < 0) {
     memzero(key, sizeof(key));
     return -1;
@@ -1568,8 +1585,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     if (INS == OPENPGP_INS_ACTIVATE) {
       if (openpgp_activate(capdu, rapdu) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
       return 0;
-    } else
-    {
+    } else {
       EXCEPT(SW_TERMINATED);
     }
   }
