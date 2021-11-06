@@ -847,11 +847,9 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if (attr_len < 0) return -1;
 
   if (attr[0] == KEY_TYPE_RSA) {
-    if (LC > 102) {
-      EXCEPT(SW_WRONG_LENGTH);
-    }
     rsa_key_t key;
     if (openpgp_key_get_key(SIG_KEY_PATH, &key, sizeof(key)) < 0) return -1;
+    if (LC > key.nbits * 2 / 5 / 8) EXCEPT(SW_WRONG_DATA); // DigestInfo should be not longer than 40% of the length of the modulus
     if (rsa_sign_pkcs_v15(&key, DATA, LC, RDATA) < 0) {
       memzero(&key, sizeof(key));
       return -1;
@@ -1406,12 +1404,9 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (attr_len < 0) return -1;
 
   if (attr[0] == KEY_TYPE_RSA) {
-    if (LC > 102) {
-      EXCEPT(SW_WRONG_LENGTH);
-    }
     rsa_key_t key;
     if (openpgp_key_get_key(AUT_KEY_PATH, &key, sizeof(key)) < 0) return -1;
-
+    if (LC > key.nbits * 2 / 5 / 8) EXCEPT(SW_WRONG_DATA); // DigestInfo should be not longer than 40% of the length of the modulus
     if (rsa_sign_pkcs_v15(&key, DATA, LC, RDATA) < 0) {
       memzero(&key, sizeof(key));
       return -1;
