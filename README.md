@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/canokeys/canokey-core/workflows/tests/badge.svg?branch=master)](https://github.com/canokeys/canokey-core/actions?query=branch%3Amaster)
 [![Coverage](https://coveralls.io/repos/github/canokeys/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canokeys/canokey-core?branch=master)
+[![Apache License 2.0](https://img.shields.io/badge/license-apache2.0-blue.svg)](https://github.com/canokeys/canokey-core/blob/master/LICENSE)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_shield)
 
 ## Introduction
