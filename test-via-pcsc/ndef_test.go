@@ -114,6 +114,8 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 		Convey("If nothing is selected", func(ctx C) {
 			_, code := readFile(0, 1)
 			So(code, ShouldEqual, 0x6985)
+			code = writeFile(0, []byte{0x00, 0xA4, 0x04})
+			So(code, ShouldEqual, 0x6985)
 		})
 		Convey("Select an invalid file", func(ctx C) {
 			code := selectFile(0xE101)
@@ -224,7 +226,7 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 	}
 }
 
-func updateOptions(app *Applet, option int, state bool) {
+func updateOptions(app *Applet, option int, state byte) {
 
 	_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00})
 	So(err, ShouldBeNil)
@@ -235,19 +237,17 @@ func updateOptions(app *Applet, option int, state bool) {
 	So(err, ShouldBeNil)
 	So(code, ShouldEqual, 0x9000)
 
-	var opt byte
-	if state {
-		opt = 1
-	} else {
-		opt = 0
-	}
 	if option == 1 {
-		_, code, err = app.Send([]byte{0x00, 0x08, opt, 0x00})
+		_, code, err = app.Send([]byte{0x00, 0x08, state, 0x00})
 	} else if option == 2 {
-		_, code, err = app.Send([]byte{0x00, 0x40, 0x04, opt})
+		_, code, err = app.Send([]byte{0x00, 0x40, 0x04, state})
 	}
 	So(err, ShouldBeNil)
-	So(code, ShouldEqual, 0x9000)
+	if state < 2 {
+		So(code, ShouldEqual, 0x9000)
+	} else {
+		So(code, ShouldEqual, 0x6A86)
+	}
 }
 
 func resetNDEF(app *Applet) {
@@ -279,22 +279,22 @@ func TestNDEFApplet(t *testing.T) {
 		Convey("NDEF applet behaves correctly", func(ctx C) {
 
 			Convey("When it is not read-only", func(ctx C) {
-				updateOptions(app, 1, false)
+				updateOptions(app, 1, 0)
 				(commandTests(false, app))(ctx)
 			})
 
 			Convey("When it is read-only", func(ctx C) {
-				updateOptions(app, 1, true)
+				updateOptions(app, 1, 1)
 				(commandTests(true, app))(ctx)
 			})
 
 			Convey("When it is disabled", func(ctx C) {
-				updateOptions(app, 2, false)
+				updateOptions(app, 2, 0)
 				_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x07, 0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01})
 				So(err, ShouldBeNil)
 				So(code, ShouldEqual, 0x6A82)
 
-				updateOptions(app, 2, true)
+				updateOptions(app, 2, 1)
 				_, code, err = app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x07, 0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01})
 				So(err, ShouldBeNil)
 				So(code, ShouldEqual, 0x9000)
@@ -310,6 +310,7 @@ func TestNDEFApplet(t *testing.T) {
 					resetOnce = true
 				}
 				(commandTests(false, app))(ctx)
+				updateOptions(app, 1, 9)
 			})
 
 			Convey("Reset twice", func(ctx C) {
