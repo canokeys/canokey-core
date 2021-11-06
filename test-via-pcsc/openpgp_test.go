@@ -161,7 +161,11 @@ func TestOpenPGPApplet(t *testing.T) {
 		})
 
 		Convey("Error handling", func(ctx C) {
-			_, code, err := app.Send([]byte{0x00, 0xCA, 0x01, 0x01, 0x00})
+			_, code, err := app.Send([]byte{0x00, 0xFF, 0x01, 0x01, 0x00})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x6D00)
+
+			_, code, err = app.Send([]byte{0x00, 0xCA, 0x01, 0x01, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88)
 
