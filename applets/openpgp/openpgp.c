@@ -1508,19 +1508,6 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   SW = SW_NO_ERROR;
   if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
-  uint8_t terminated;
-  if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
-#ifndef FUZZ
-  if (terminated == 1) {
-    if (INS == OPENPGP_INS_ACTIVATE) {
-      if (openpgp_activate(capdu, rapdu) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
-      return 0;
-    } else {
-      EXCEPT(SW_TERMINATED);
-    }
-  }
-#endif
-
   if (INS == OPENPGP_INS_SELECT_DATA) {
     state = STATE_SELECT_DATA;
   } else if (state == STATE_NORMAL) {
@@ -1543,10 +1530,19 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     }
   }
 
+  uint8_t terminated;
+  if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+#ifndef FUZZ
+  if (terminated == 1 && INS != OPENPGP_INS_ACTIVATE && INS != OPENPGP_INS_SELECT) EXCEPT(SW_TERMINATED);
+#endif
+
   int ret;
   switch (INS) {
   case OPENPGP_INS_SELECT:
     ret = openpgp_select(capdu, rapdu);
+    break;
+  case OPENPGP_INS_ACTIVATE:
+    ret = openpgp_activate(capdu, rapdu);
     break;
   case OPENPGP_INS_GET_DATA:
     ret = openpgp_get_data(capdu, rapdu);
