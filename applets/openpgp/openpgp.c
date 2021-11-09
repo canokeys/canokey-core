@@ -1542,6 +1542,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = openpgp_select(capdu, rapdu);
     break;
   case OPENPGP_INS_ACTIVATE:
+    if (terminated == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     ret = openpgp_activate(capdu, rapdu);
     break;
   case OPENPGP_INS_GET_DATA:
