@@ -66,45 +66,32 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     PC_to_RDR_XfrBlock();
 
   } else { // Applet Fuzzing Test
-    // allow more than one apdu in a file
-    while (len > 2) {
-      // two bytes length
-      uint16_t apdu_len = buf[1];
-      apdu_len = (apdu_len << 8) | buf[0];
-      buf += sizeof(uint16_t);
-      len -= 2;
+    uint16_t apdu_len = len & 0xffff;
+    if (apdu_len > APDU_BUFFER_SIZE) apdu_len = APDU_BUFFER_SIZE;
 
-      // after length: data
-      if (apdu_len > APDU_BUFFER_SIZE) apdu_len = APDU_BUFFER_SIZE;
-      if (apdu_len > len) apdu_len = len;
-      memcpy(bulkout_data.abData, buf, apdu_len);
-      len -= apdu_len;
+    CAPDU capdu;
+    RAPDU rapdu;
+    capdu.data = bulkout_data.abData;
+    rapdu.data = bulkout_data.abData;
+    rapdu.len = APDU_BUFFER_SIZE;
+    if (build_capdu(&capdu, buf, apdu_len) < 0) {
+      return 0;
+    }
+    // realloc data to let the sanitizer find out buffer overflow
+    if (capdu.lc > 0) {
+      uint8_t *new_data = malloc(capdu.lc);
+      memcpy(new_data, capdu.data, capdu.lc);
+      capdu.data = new_data;
+    } else {
+      // should never read data when lc=0
+      capdu.data = NULL;
+    }
+    PRINT_HEX(buf, apdu_len);
+    capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);
+    process_func(&capdu, &rapdu);
 
-      CAPDU capdu;
-      RAPDU rapdu;
-      capdu.data = bulkout_data.abData;
-      rapdu.data = bulkout_data.abData;
-      rapdu.len = APDU_BUFFER_SIZE;
-      if (build_capdu(&capdu, bulkout_data.abData, apdu_len) < 0) {
-        return 0;
-      }
-      // realloc data to let asan find out buffer overflow
-      if (capdu.lc > 0) {
-        uint8_t *new_data = malloc(capdu.lc);
-        memcpy(new_data, capdu.data, capdu.lc);
-        capdu.data = new_data;
-      } else {
-        // should never read data when lc=0
-        capdu.data = NULL;
-      }
-      // PRINT_HEX(buf, apdu_len);
-      buf += apdu_len;
-      capdu.le = MIN(capdu.le, APDU_BUFFER_SIZE);
-      process_func(&capdu, &rapdu);
-
-      if (capdu.lc > 0) {
-        free(capdu.data);
-      }
+    if (capdu.lc > 0) {
+      free(capdu.data);
     }
   }
   return 0;

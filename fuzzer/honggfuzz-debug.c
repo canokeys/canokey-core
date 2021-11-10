@@ -22,12 +22,16 @@
 #include "openpgp.h"
 #include "piv.h"
 
-// ./honggfuzz-debug 4 --keep '../fuzzing/applet4/working/SIGABRT...fuzz'
+// ./build/honggfuzz-debug 4 --keep 'fuzzing/applet4/working/SIGABRT.xxx.fuzz'
+// export ASAN_OPTIONS=detect_leaks=0
+// gdb -tui ./build/honggfuzz-debug
+//  r 4 --keep 'fuzzing/applet4/working/SIGABRT.xxx.fuzz'
 int main(int argc, char **argv) {
   LLVMFuzzerInitialize(&argc, &argv);
   if (argc > 3) { // run commands
+    printf("Opening: %s\n", argv[3]);
     FILE *fin = fopen(argv[3], "r");
-    if (!fin) return 0;
+    assert(fin != NULL);
     fseek(fin, 0, SEEK_END);
     long sz = ftell(fin);
     printf("Input file size: %ld\n", sz);
