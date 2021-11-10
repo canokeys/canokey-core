@@ -548,10 +548,23 @@ func TestAppletReset(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6285)
 
+			_, code, err = app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x06, 0xD2, 0x76, 0x00, 0x01, 0x24, 0x01})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+
 			// activate
 			_, code, err = app.Send([]byte{0x00, 0x44, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
+
+			_, code, err = app.Send([]byte{0x00, 0xCA, 0x00, 0xDE, 0x00})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+
+			// activate again
+			_, code, err = app.Send([]byte{0x00, 0x44, 0x00, 0x00})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x6985)
 		})
 
 	})
