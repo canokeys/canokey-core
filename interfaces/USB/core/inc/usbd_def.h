@@ -99,6 +99,8 @@
 #define USBD_EP_TYPE_BULK 2
 #define USBD_EP_TYPE_INTR 3
 
+#define USBD_EP_SIZE 4
+
 typedef struct usb_setup_req {
   uint8_t bmRequest;
   uint8_t bRequest;
@@ -164,8 +166,8 @@ typedef struct _USBD_HandleTypeDef {
   uint32_t dev_default_config;
   uint32_t dev_config_status;
   USBD_SpeedTypeDef dev_speed;
-  USBD_EndpointTypeDef ep_in[4];
-  USBD_EndpointTypeDef ep_out[4];
+  USBD_EndpointTypeDef ep_in[USBD_EP_SIZE];
+  USBD_EndpointTypeDef ep_out[USBD_EP_SIZE];
   uint32_t ep0_state;
   uint32_t ep0_data_len;
   uint8_t ep0_sender;
