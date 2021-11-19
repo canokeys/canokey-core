@@ -124,6 +124,9 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
   USBD_EndpointTypeDef *pep;
   ep_addr = LO(req->wIndex);
 
+  if ((ep_addr & 0x7F) >= USBD_EP_SIZE)
+    return USBD_FAIL;
+
   /* Check if it is a class request */
   if ((req->bmRequest & 0x60) == 0x20) {
     pdev->pClass->Setup(pdev, req);
