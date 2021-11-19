@@ -49,6 +49,7 @@ static int EmulateUSBEnumeration() {
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
   static char lfs_root[64];
   process_func = NULL;
+  setbuf(stdout, 0);
   if (*argc > 1) {
     int idx = atoi((*argv)[1]);
     if (idx >= 0 && idx < sizeof(applets) / sizeof(applets[0])) {
@@ -86,6 +87,7 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
   if ((ep_num & 0x80) != 0) {
     // EP IN
 
+    DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
     if (ep->num == 0) {
       USBD_LL_DataInStage(&usb_device, ep->num, ep->xfer_buff);
     } else {
@@ -97,14 +99,22 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
   } else {
     // EP OUT
 
-    if (is_setup) {
+    if (is_setup && ep->num == 0) {
       ep->xfer_buff = setup_buffer;
       ep->xfer_count = len;
+      DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       memcpy(setup_buffer, buf, ep->xfer_count);
+      ep->xfer_buff =+ ep->xfer_count;
       USBD_LL_SetupStage(&usb_device, setup_buffer);
     } else {
+      if (len > ep->xfer_len) {
+        USBD_LL_StallEP(NULL, ep->addr);
+        return;
+      }
+      DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       ep->xfer_count = len;
       memcpy(ep->xfer_buff, buf, ep->xfer_count);
+      ep->xfer_buff += ep->xfer_count;
       if (ep->num == 0) {
         USBD_LL_DataOutStage(&usb_device, ep->num, ep->xfer_buff);
       } else {

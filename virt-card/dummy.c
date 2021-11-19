@@ -59,6 +59,7 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   EPType *ep = dummy_get_ep_by_addr(ep_addr);
   ep->xfer_buff = pbuf;
   ep->xfer_len = size;
+  DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_len=%d\n", ep_addr, ep->xfer_buff, ep->xfer_len);
   uint32_t len = ep->xfer_len;
   if (ep->xfer_len > ep->maxpacket) {
     len = ep->maxpacket;
@@ -74,7 +75,7 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
   if (ep->xfer_len > ep->maxpacket) len = ep->maxpacket;
   ep->xfer_len -= len;
   while (len-- > 0)
-    *ep->xfer_buff++; // transmit data here
+    ep->xfer_buff++; // transmit data here
 
   return USBD_OK;
 }
