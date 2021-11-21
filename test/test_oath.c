@@ -61,7 +61,6 @@ static void test_select_ins(void **state) {
 
 static void test_invalid_ins(void **state) {
   test_helper(NULL, 0, 0xDD, 0x6D00);
-  test_helper(NULL, 0, 0x06, 0x6985);
 }
 
 static void test_put(void **state) {
@@ -92,7 +91,7 @@ static void test_put(void **state) {
   }
 
   // property: increasing-only, exportable
-  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01, 0x01|0x04};
+  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01|0x04};
   capdu->data = data_with_prop;
   capdu->lc = sizeof(data_with_prop);
   oath_process_apdu(capdu, rapdu);
@@ -104,7 +103,7 @@ static void test_export(void **state) {
   uint8_t c_buf[1024], r_buf[1024];
   uint8_t exported[]={OATH_TAG_NAME, 0x03, 'i', 'n', 'c', 
                       OATH_TAG_KEY, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 
-                      OATH_TAG_PROPERTY, 0x01, 0x01|0x04,
+                      OATH_TAG_PROPERTY, 0x01|0x04,
                       OATH_TAG_CHALLENGE, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
                       };
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
