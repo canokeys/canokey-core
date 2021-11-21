@@ -3,7 +3,7 @@ module github.com/canokeys/canokey-core
 go 1.13
 
 require (
-	github.com/canokeys/ykoath v0.0.0-20211121074628-058a4cd0d1e2
+	github.com/yawn/ykoath v1.0.4
 	github.com/ebfe/scard v0.0.0-20190212122703-c3d1b1916a95
 	github.com/pkg/errors v0.9.1
 	github.com/pquerna/otp v1.2.0
