@@ -391,7 +391,7 @@ static void test_space_full(void **state) {
 
   uint8_t c_buf[128], r_buf[128];
   // name: abc, algo: TOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
-  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01, OATH_PROP_EXPORTABLE};
+  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, OATH_PROP_TOUCH};
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
