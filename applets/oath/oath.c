@@ -600,9 +600,8 @@ int oath_export(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(RDATA + off_out, record.key, record.key_len);
     off_out += record.key_len;
 
-    // length: 3
+    // length: 2
     RDATA[off_out++] = OATH_TAG_PROPERTY;
-    RDATA[off_out++] = 1;
     RDATA[off_out++] = record.prop;
 
     // length: 2 + MAX_CHALLENGE_LEN
