@@ -57,7 +57,10 @@ static int oath_select(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[7 + HANDLE_LEN] = OATH_TAG_CHALLENGE;
     RDATA[8 + HANDLE_LEN] = sizeof(challenge);
     memcpy(RDATA + 9 + HANDLE_LEN, challenge, sizeof(challenge));
-    LL += 2 + sizeof(challenge);
+    RDATA[9 + HANDLE_LEN + sizeof(challenge)] = OATH_TAG_ALGORITHM;
+    RDATA[10 + HANDLE_LEN + sizeof(challenge)] = 1;
+    RDATA[11 + HANDLE_LEN + sizeof(challenge)] = OATH_ALG_SHA1;
+    LL += 5 + sizeof(challenge);
   }
 
   return 0;
