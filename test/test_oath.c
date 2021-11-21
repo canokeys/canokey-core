@@ -46,6 +46,19 @@ static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t ex
   test_helper_resp(data, data_len, ins, expected_error, NULL, 0);
 }
 
+static void test_select_ins(void **state) {
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  INS = OATH_INS_SELECT;
+  P1 = 0x04;
+
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+}
+
 static void test_invalid_ins(void **state) {
   test_helper(NULL, 0, 0xDD, 0x6D00);
   test_helper(NULL, 0, 0x06, 0x6985);
