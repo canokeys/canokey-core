@@ -77,7 +77,7 @@ func TestOath(t *testing.T) {
 
 		Convey("With invalid parameters", func(ctx C) {
 			name := strings.Repeat("O", 64)
-			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), false, false, 0)
+			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 65), false, false, 0)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldEqual, "wrong syntax")
 		})

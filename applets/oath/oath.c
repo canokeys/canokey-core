@@ -146,7 +146,7 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   uint16_t offset = 0;
-  if (LC <= 2) EXCEPT(SW_WRONG_LENGTH);
+  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
   uint8_t name_len = DATA[offset++];
   uint8_t *name_ptr = &DATA[offset];
