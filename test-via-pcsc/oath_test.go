@@ -77,7 +77,7 @@ func TestOath(t *testing.T) {
 
 		Convey("With invalid parameters", func(ctx C) {
 			name := strings.Repeat("O", 64)
-			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), 0, 1)
+			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 65), false, false, 0)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldEqual, "wrong syntax")
 		})
@@ -93,7 +93,7 @@ func TestOath(t *testing.T) {
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "wrong syntax")
 
-				err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), 0, 0)
+				err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 64), false, false, 0)
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "wrong syntax")
 
@@ -145,7 +145,7 @@ func TestOath(t *testing.T) {
 				So(err, ShouldBeNil)
 
 				// fmt.Printf("adding key %d %s %s\n", i, name, hex.EncodeToString(key))
-				err = oath.Put(name, alg1, type1, 6, key, ykoath.OathIncreasing, 0)
+				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
 				So(err, ShouldBeNil)
 				CurKeys++
 
@@ -279,7 +279,7 @@ func TestOath(t *testing.T) {
 				_, err := crand.Read(key)
 				So(err, ShouldBeNil)
 
-				err = oath.Put(name, alg1, type1, 6, key, ykoath.OathIncreasing, 0)
+				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
 				So(err, ShouldBeNil)
 			}
 
@@ -288,7 +288,7 @@ func TestOath(t *testing.T) {
 			So(len(lResult), ShouldEqual, NumKeys)
 
 			Convey("Then put one more key should fail", func(ctx C) {
-				err = oath.Put("name", alg1, type1, 6, key, ykoath.OathIncreasing, 0)
+				err = oath.Put("name", alg1, type1, 6, key, false, true, 0)
 				So(err, ShouldNotBeNil)
 				So(err.Error(), ShouldEqual, "unknown (6a 84)")
 

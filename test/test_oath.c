@@ -46,9 +46,21 @@ static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t ex
   test_helper_resp(data, data_len, ins, expected_error, NULL, 0);
 }
 
+static void test_select_ins(void **state) {
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  INS = OATH_INS_SELECT;
+  P1 = 0x04;
+
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+}
+
 static void test_invalid_ins(void **state) {
   test_helper(NULL, 0, 0xDD, 0x6D00);
-  test_helper(NULL, 0, 0x06, 0x6985);
 }
 
 static void test_put(void **state) {
@@ -78,44 +90,12 @@ static void test_put(void **state) {
     assert_int_equal(rapdu->sw, SW_NO_ERROR);
   }
 
-  // property: increasing-only, exportable
-  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01, 0x01|0x04};
+  // property: increasing-only
+  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01};
   capdu->data = data_with_prop;
   capdu->lc = sizeof(data_with_prop);
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
-}
-
-// should be called right after test_put
-static void test_export(void **state) {
-  uint8_t c_buf[1024], r_buf[1024];
-  uint8_t exported[]={OATH_TAG_NAME, 0x03, 'i', 'n', 'c', 
-                      OATH_TAG_KEY, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 
-                      OATH_TAG_PROPERTY, 0x01, 0x01|0x04,
-                      OATH_TAG_CHALLENGE, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-                      };
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
-  CAPDU *capdu = &C;
-  RAPDU *rapdu = &R;
-
-  LC = 0;
-  LE = 2;
-  oath_export(capdu, rapdu);
-  assert_int_equal(SW, SW_UNABLE_TO_PROCESS);
-
-  LE = 3;
-  oath_export(capdu, rapdu);
-  assert_int_equal(SW, 0x61FF);
-  assert_int_equal(RDATA[0], OATH_TAG_NEXT_IDX);
-  assert_int_equal(RDATA[1], 1);
-
-  P2 = RDATA[2];
-  LE = sizeof(exported) + 3;
-  oath_export(capdu, rapdu);
-  assert_int_equal(SW, SW_NO_ERROR);
-  assert_int_equal(LL, sizeof(exported));
-  assert_memory_equal(RDATA, exported, sizeof(exported));
-
 }
 
 static void test_hotp_touch(void **state) {
@@ -293,7 +273,7 @@ static void test_calc_all(void **state) {
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
 
-  capdu->ins = OATH_INS_CALCULATE_ALL;
+  capdu->ins = OATH_INS_SELECT;
   capdu->data = data;
   capdu->lc = sizeof(data);
   capdu->le = 64;
@@ -309,9 +289,9 @@ static void test_calc_all(void **state) {
   print_hex(RDATA, LL);
 
   // length of data exceeds the Lc
-  test_helper(data, sizeof(data) - 1, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
-  test_helper(data, 1, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
-  test_helper(data, 2, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
+  test_helper(data, sizeof(data) - 1, OATH_INS_SELECT, SW_WRONG_LENGTH);
+  test_helper(data, 1, OATH_INS_SELECT, SW_WRONG_LENGTH);
+  test_helper(data, 2, OATH_INS_SELECT, SW_WRONG_LENGTH);
 
   // zero-length challenge
   data[1] = 0;
@@ -411,7 +391,7 @@ static void test_space_full(void **state) {
 
   uint8_t c_buf[128], r_buf[128];
   // name: abc, algo: TOTP+SHA1, digit: 6, key: 0x00 0x01 0x02
-  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01, OATH_PROP_EXPORTABLE};
+  uint8_t data[] = {0x71, 0x03, 'A', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, OATH_PROP_TOUCH};
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
@@ -437,28 +417,6 @@ static void test_space_full(void **state) {
   // then try again
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
-
-  capdu->lc = 0;
-  capdu->p2 = 0;
-  capdu->le = sizeof(r_buf);
-  int export_called = 0, record_exported = 0;
-  for (;;) {
-    export_called++;
-    oath_export(capdu, rapdu);
-    assert_in_range(rapdu->len, 3, sizeof(r_buf));
-    for (int i = 0; i < rapdu->len;) {
-      if (r_buf[i++] == OATH_TAG_NAME) record_exported++;
-      i += r_buf[i] + 1; // skip the L and V
-    }
-    if (rapdu->sw == SW_NO_ERROR) break;
-    const uint8_t tag_next[] = {OATH_TAG_NEXT_IDX, 1};
-    assert_int_equal(rapdu->sw, 0x61FF);
-    assert_memory_equal(&r_buf[rapdu->len - 3], tag_next, 2);
-    assert_in_range(r_buf[rapdu->len - 1], capdu->p2 + 1, 99);
-    capdu->p2 = r_buf[rapdu->len - 1];
-  }
-  printf("export called: %d\nrecord exported: %d\n", export_called, record_exported);
-  assert_int_equal(record_exported, record_added + 1); // one from test_put()
 
   // leave some space for further tests
   for (int i = 1; i != 20; ++i) {
@@ -489,9 +447,9 @@ int main() {
   oath_install(1);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_select_ins),
       cmocka_unit_test(test_invalid_ins),
       cmocka_unit_test(test_put),
-      cmocka_unit_test(test_export),
       cmocka_unit_test(test_put_long_key),
       cmocka_unit_test(test_put_unsupported_algo),
       cmocka_unit_test(test_put_unsupported_counter),

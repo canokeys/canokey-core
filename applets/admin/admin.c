@@ -263,9 +263,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
     ret = ndef_toggle_read_only(capdu, rapdu);
     break;
-  case ADMIN_INS_EXPORT_OATH:
-    ret = oath_export(capdu, rapdu);
-    break;
   case ADMIN_INS_CHANGE_PIN:
     ret = admin_change_pin(capdu, rapdu);
     break;
