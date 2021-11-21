@@ -502,6 +502,7 @@ int main() {
   oath_install(1);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_select_ins),
       cmocka_unit_test(test_invalid_ins),
       cmocka_unit_test(test_put),
       cmocka_unit_test(test_export),
