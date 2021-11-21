@@ -90,8 +90,8 @@ static void test_put(void **state) {
     assert_int_equal(rapdu->sw, SW_NO_ERROR);
   }
 
-  // property: increasing-only, exportable
-  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01|0x04};
+  // property: increasing-only
+  uint8_t data_with_prop[] = {0x71, 0x03, 'i', 'n', 'c', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, 0x01};
   capdu->data = data_with_prop;
   capdu->lc = sizeof(data_with_prop);
   oath_process_apdu(capdu, rapdu);
