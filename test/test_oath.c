@@ -293,7 +293,7 @@ static void test_calc_all(void **state) {
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
 
-  capdu->ins = OATH_INS_CALCULATE_ALL;
+  capdu->ins = OATH_INS_SELECT;
   capdu->data = data;
   capdu->lc = sizeof(data);
   capdu->le = 64;
@@ -309,9 +309,9 @@ static void test_calc_all(void **state) {
   print_hex(RDATA, LL);
 
   // length of data exceeds the Lc
-  test_helper(data, sizeof(data) - 1, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
-  test_helper(data, 1, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
-  test_helper(data, 2, OATH_INS_CALCULATE_ALL, SW_WRONG_LENGTH);
+  test_helper(data, sizeof(data) - 1, OATH_INS_SELECT, SW_WRONG_LENGTH);
+  test_helper(data, 1, OATH_INS_SELECT, SW_WRONG_LENGTH);
+  test_helper(data, 2, OATH_INS_SELECT, SW_WRONG_LENGTH);
 
   // zero-length challenge
   data[1] = 0;
