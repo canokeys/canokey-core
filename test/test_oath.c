@@ -418,28 +418,6 @@ static void test_space_full(void **state) {
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
-  capdu->lc = 0;
-  capdu->p2 = 0;
-  capdu->le = sizeof(r_buf);
-  int export_called = 0, record_exported = 0;
-  for (;;) {
-    export_called++;
-    oath_export(capdu, rapdu);
-    assert_in_range(rapdu->len, 3, sizeof(r_buf));
-    for (int i = 0; i < rapdu->len;) {
-      if (r_buf[i++] == OATH_TAG_NAME) record_exported++;
-      i += r_buf[i] + 1; // skip the L and V
-    }
-    if (rapdu->sw == SW_NO_ERROR) break;
-    const uint8_t tag_next[] = {OATH_TAG_NEXT_IDX, 1};
-    assert_int_equal(rapdu->sw, 0x61FF);
-    assert_memory_equal(&r_buf[rapdu->len - 3], tag_next, 2);
-    assert_in_range(r_buf[rapdu->len - 1], capdu->p2 + 1, 99);
-    capdu->p2 = r_buf[rapdu->len - 1];
-  }
-  printf("export called: %d\nrecord exported: %d\n", export_called, record_exported);
-  assert_int_equal(record_exported, record_added + 1); // one from test_put()
-
   // leave some space for further tests
   for (int i = 1; i != 20; ++i) {
     c_buf[2] = ' ' + i;
