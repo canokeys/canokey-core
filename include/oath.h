@@ -47,7 +47,7 @@
 #define MAX_NAME_LEN 64
 #define MAX_KEY_LEN 66 // 64 + 2 for algo & digits
 #define MAX_CHALLENGE_LEN 8
-#define HANDLE_LEN 16
+#define HANDLE_LEN 8
 #define KEY_LEN 16
 
 typedef struct {

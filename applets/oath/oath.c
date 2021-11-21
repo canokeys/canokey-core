@@ -43,7 +43,7 @@ static int oath_select(const CAPDU *capdu, RAPDU *rapdu) {
 
   memcpy(RDATA, (uint8_t[]){OATH_TAG_VERSION, 3, 0x05, 0x05, 0x05, OATH_TAG_NAME, HANDLE_LEN}, 7);
   if (read_attr(OATH_FILE, ATTR_HANDLE, RDATA + 7, HANDLE_LEN) < 0) return -1;
-  LL = 23;
+  LL = 7 + HANDLE_LEN;
 
   // check if there is a key
   uint8_t dummy;
@@ -54,9 +54,9 @@ static int oath_select(const CAPDU *capdu, RAPDU *rapdu) {
     is_validated = true;
   } else {
     random_buffer(challenge, sizeof(challenge));
-    RDATA[23] = OATH_TAG_CHALLENGE;
-    RDATA[24] = sizeof(challenge);
-    memcpy(RDATA + 25, challenge, sizeof(challenge));
+    RDATA[7 + HANDLE_LEN] = OATH_TAG_CHALLENGE;
+    RDATA[8 + HANDLE_LEN] = sizeof(challenge);
+    memcpy(RDATA + 9 + HANDLE_LEN, challenge, sizeof(challenge));
     LL += 2 + sizeof(challenge);
   }
 
