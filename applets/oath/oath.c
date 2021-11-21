@@ -559,63 +559,6 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int oath_export(const CAPDU *capdu, RAPDU *rapdu) {
-  LL = 0;
-  SW = SW_NO_ERROR;
-
-  size_t record_idx = P2;
-  if (P1 != 0x00 || P2 >= MAX_RECORDS) EXCEPT(SW_WRONG_P1P2);
-  if (LE < 3) EXCEPT(SW_UNABLE_TO_PROCESS);
-  size_t free_length = LE - 3; // reserve space for OATH_TAG_NEXT_IDX
-
-  int size = get_file_size(OATH_FILE);
-  if (size < 0) return -1;
-
-  OATH_RECORD record;
-  size_t nRecords = size / sizeof(OATH_RECORD), off_out = 0;
-  for (; record_idx < nRecords; record_idx++) {
-    size_t file_offset = record_idx * sizeof(OATH_RECORD);
-    if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    // skip empty or non-exportable slots
-    if (!record.name_len || !(record.prop & OATH_PROP_EXPORTABLE)) continue;
-
-    size_t record_len = 2 + record.name_len + 2 + record.key_len + 3 + 2 + MAX_CHALLENGE_LEN;
-    if (record_len > free_length) {
-      SW = 0x61FF; // more data available
-      RDATA[off_out++] = OATH_TAG_NEXT_IDX;
-      RDATA[off_out++] = 1;
-      RDATA[off_out++] = record_idx;
-      break;
-    }
-
-    // length: 2 + record.name_len
-    RDATA[off_out++] = OATH_TAG_NAME;
-    RDATA[off_out++] = record.name_len;
-    memcpy(RDATA + off_out, record.name, record.name_len);
-    off_out += record.name_len;
-
-    // length: 2 + record.key_len
-    RDATA[off_out++] = OATH_TAG_KEY;
-    RDATA[off_out++] = record.key_len;
-    memcpy(RDATA + off_out, record.key, record.key_len);
-    off_out += record.key_len;
-
-    // length: 2
-    RDATA[off_out++] = OATH_TAG_PROPERTY;
-    RDATA[off_out++] = record.prop;
-
-    // length: 2 + MAX_CHALLENGE_LEN
-    RDATA[off_out++] = OATH_TAG_CHALLENGE;
-    RDATA[off_out++] = MAX_CHALLENGE_LEN;
-    memcpy(RDATA + off_out, record.challenge, MAX_CHALLENGE_LEN);
-    off_out += MAX_CHALLENGE_LEN;
-
-    free_length -= record_len;
-  }
-  LL = off_out;
-  return 0;
-}
-
 static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   if (oath_remaining_type == REMAINING_LIST) return oath_list(capdu, rapdu);
   if (oath_remaining_type == REMAINING_CALC) return oath_calculate_all(capdu, rapdu);

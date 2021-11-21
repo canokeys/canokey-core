@@ -98,38 +98,6 @@ static void test_put(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
-// should be called right after test_put
-static void test_export(void **state) {
-  uint8_t c_buf[1024], r_buf[1024];
-  uint8_t exported[]={OATH_TAG_NAME, 0x03, 'i', 'n', 'c', 
-                      OATH_TAG_KEY, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 
-                      OATH_TAG_PROPERTY, 0x01|0x04,
-                      OATH_TAG_CHALLENGE, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-                      };
-  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
-  CAPDU *capdu = &C;
-  RAPDU *rapdu = &R;
-
-  LC = 0;
-  LE = 2;
-  oath_export(capdu, rapdu);
-  assert_int_equal(SW, SW_UNABLE_TO_PROCESS);
-
-  LE = 3;
-  oath_export(capdu, rapdu);
-  assert_int_equal(SW, 0x61FF);
-  assert_int_equal(RDATA[0], OATH_TAG_NEXT_IDX);
-  assert_int_equal(RDATA[1], 1);
-
-  P2 = RDATA[2];
-  LE = sizeof(exported) + 3;
-  oath_export(capdu, rapdu);
-  assert_int_equal(SW, SW_NO_ERROR);
-  assert_int_equal(LL, sizeof(exported));
-  assert_memory_equal(RDATA, exported, sizeof(exported));
-
-}
-
 static void test_hotp_touch(void **state) {
   // name: H1, algo: HOTP+SHA1, digit: 6, key in base32: JBSWY3DPEHPK3PXP
   uint8_t data[] = {
@@ -504,7 +472,6 @@ int main() {
       cmocka_unit_test(test_select_ins),
       cmocka_unit_test(test_invalid_ins),
       cmocka_unit_test(test_put),
-      cmocka_unit_test(test_export),
       cmocka_unit_test(test_put_long_key),
       cmocka_unit_test(test_put_unsupported_algo),
       cmocka_unit_test(test_put_unsupported_counter),
