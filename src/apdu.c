@@ -145,11 +145,6 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
-  if (!is_applets_ready()) {
-    LL = 0;
-    SW = SW_UNABLE_TO_PROCESS;
-    return;
-  }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
     LL = 0;
