@@ -118,7 +118,7 @@ void card_fs_init(const char *lfs_root) {
   cfg.lookahead_size = 16;
   lfs_filebd_create(&cfg, lfs_root);
 
-  assert(fs_init(&cfg) == 0);
+  fs_init(&cfg);
 }
 
 int card_fabrication_procedure(const char *lfs_root) {
