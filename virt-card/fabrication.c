@@ -125,6 +125,7 @@ int card_fabrication_procedure(const char *lfs_root) {
   card_fs_init(lfs_root);
   init_apdu_buffer();
   applets_install();
+  set_applets_ready(1);
 
   // reset state of applets
   uint8_t c_buf[1024] = "RESET", r_buf[1024];
