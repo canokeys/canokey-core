@@ -8,6 +8,7 @@ int fs_init(struct lfs_config *cfg) {
   if (err) { // should happen for the first boot
     lfs_format(&lfs, cfg);
     lfs_mount(&lfs, cfg);
+    return 1;
   }
   return 0;
 }
