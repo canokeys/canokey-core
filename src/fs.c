@@ -3,7 +3,7 @@
 
 static lfs_t lfs;
 
-int fs_init(struct lfs_config *cfg) {
+int fs_init(const struct lfs_config *cfg) {
   int err = lfs_mount(&lfs, cfg);
   if (err) { // should happen for the first boot
     lfs_format(&lfs, cfg);

@@ -4,7 +4,7 @@
 
 #include <lfs.h>
 
-int fs_init(struct lfs_config *cfg);
+int fs_init(const struct lfs_config *cfg);
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len);
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc);
 int truncate_file(const char *path, lfs_size_t len);
