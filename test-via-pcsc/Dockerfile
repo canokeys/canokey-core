@@ -15,7 +15,7 @@ RUN ls -la /root
 
 RUN cd /root && ./test-via-pcsc/build_gpg.sh && gpg --version
 RUN cd /root && ./test-via-pcsc/build_fido_tests.sh
-RUN echo -e '\
+RUN cp /root/test-real/libccid_Info.plist /etc/libccid_Info.plist && echo -e '\
 StrictModes no \n\
 UsePAM no \n\
 Port 2200 \n\
@@ -29,4 +29,4 @@ RUN cd /root &&\
     true # build tests
 
 WORKDIR /root
-
+USER root
