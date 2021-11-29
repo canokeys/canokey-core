@@ -2,6 +2,7 @@ github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc h1:biVzkmvwrH8
 github.com/boombuler/barcode v1.0.1-0.20190219062509-6c824513bacc/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/canokeys/ykoath v0.0.0-20200708041515-98c5e2932416 h1:8A0ENciDVkJUf7HrY0PwzK9QaJkwE1Cb94ihQij7Nx4=
 github.com/canokeys/ykoath v0.0.0-20200708041515-98c5e2932416/go.mod h1:pGZ+w2arP2kR3jYiMpiqJXOZAHxZy4RmdO7UWKPdpK0=
+github.com/canokeys/ykoath v0.0.0-20211121150138-f004278d71b9/go.mod h1:pGZ+w2arP2kR3jYiMpiqJXOZAHxZy4RmdO7UWKPdpK0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
