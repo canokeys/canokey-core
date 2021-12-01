@@ -50,7 +50,7 @@ func New() (*Applet, error) {
 	} else {
 		for _, reader = range readers {
 			// fmt.Printf("Reader: %s\n", reader)
-			if strings.Contains(reader, "Canokey") {
+			if strings.Contains(strings.ToLower(reader), "canokey") {
 				break
 			}
 		}

@@ -44,7 +44,7 @@ func New() (*AdminApplet, error) {
 	} else {
 		for _, reader = range readers {
 			// fmt.Printf("Reader: %s\n", reader)
-			if strings.Contains(reader, "Canokey") && strings.Contains(reader, "OATH") {
+			if strings.Contains(strings.ToLower(reader), "canokey") && strings.Contains(reader, "OATH") {
 				break
 			}
 		}
