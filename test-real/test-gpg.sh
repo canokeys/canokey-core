@@ -206,4 +206,11 @@ test_GeneratedKeys() {
     done
 }
 
+# test_Sign() {
+#     GenerateKeyOnCard 2 1
+#     while GPGSign;do
+#         echo ''
+#     done
+# }
+
 . ./shunit2/shunit2
