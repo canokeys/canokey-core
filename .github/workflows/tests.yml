@@ -8,8 +8,8 @@ jobs:
     - name: Package Install
       run: |
         sudo apt-add-repository ppa:yubico/stable
-        sudo apt update
-        sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager
+        sudo apt-get update
+        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager
         pip3 install --upgrade pip
 
     - name: Set up Go 1.13
