@@ -44,20 +44,28 @@ func New() (*Applet, error) {
 		context.Release()
 		return nil, errors.Wrapf(err, errFailedToListReaders)
 	}
-	for _, reader := range readers {
-		// fmt.Printf("Reader: %s\n", reader)
-		if strings.Contains(reader, "Canokey") && strings.Contains(reader, "OATH") {
-			card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
-			if err != nil {
-				context.Release()
-				return nil, errors.Wrapf(err, errFailedToConnect)
+	reader := ""
+	if len(readers) == 1 {
+		reader = readers[0]
+	} else {
+		for _, reader = range readers {
+			// fmt.Printf("Reader: %s\n", reader)
+			if strings.Contains(strings.ToLower(reader), "canokey") {
+				break
 			}
-
-			return &Applet{
-				card:    card,
-				context: context,
-			}, nil
 		}
+	}
+	if reader != "" {
+		card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
+		if err != nil {
+			context.Release()
+			return nil, errors.Wrapf(err, errFailedToConnect)
+		}
+
+		return &Applet{
+			card:    card,
+			context: context,
+		}, nil
 	}
 	context.Release()
 	return nil, fmt.Errorf(errFailedToListSuitableReader, len(readers))

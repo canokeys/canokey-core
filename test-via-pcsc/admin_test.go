@@ -38,20 +38,28 @@ func New() (*AdminApplet, error) {
 		context.Release()
 		return nil, errors.Wrapf(err, errFailedToListReaders)
 	}
-	for _, reader := range readers {
-		// fmt.Printf("Reader: %s\n", reader)
-		if strings.Contains(reader, "Canokey") && strings.Contains(reader, "OATH") {
-			card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
-			if err != nil {
-				context.Release()
-				return nil, errors.Wrapf(err, errFailedToConnect)
+	reader := ""
+	if len(readers) == 1 {
+		reader = readers[0]
+	} else {
+		for _, reader = range readers {
+			// fmt.Printf("Reader: %s\n", reader)
+			if strings.Contains(strings.ToLower(reader), "canokey") && strings.Contains(reader, "OATH") {
+				break
 			}
-
-			return &AdminApplet{
-				card:    card,
-				context: context,
-			}, nil
 		}
+	}
+	if reader != "" {
+		card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
+		if err != nil {
+			context.Release()
+			return nil, errors.Wrapf(err, errFailedToConnect)
+		}
+
+		return &AdminApplet{
+			card:    card,
+			context: context,
+		}, nil
 	}
 	context.Release()
 	return nil, fmt.Errorf(errFailedToListSuitableReader, len(readers))
@@ -110,14 +118,14 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			ret, code, err = app.Send([]byte{0x00, 0x31, 0x01, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(ret, ShouldResemble, []byte("CanoKey Virt-Card"))
+			So(ret[:7], ShouldResemble, []byte("CanoKey"))
 		})
 		Convey("Vendor-specific", func(ctx C) {
-			apdu := []byte{0x00, 0xFF, 0x00, 0x00}
+			apdu := []byte{0x00, 0xFF, 0x77, 0x88}
 			_, code, err := app.Send(apdu)
 			So(err, ShouldBeNil)
 			if verified {
-				So(code, ShouldEqual, 0x9000)
+				So(code, ShouldBeIn, []uint16{0x9000, 0x6A86})
 			} else {
 				So(code, ShouldEqual, 0x6982)
 			}
@@ -193,7 +201,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			readSN, code, err = app.Send([]byte{0x00, 0x32, 0x01, 0x00, 0x00}) // admin_vendor_hw_sn
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(readSN, ShouldResemble, []byte{0x00})
+			So(len(readSN), ShouldBeGreaterThan, 0)
 		})
 		Convey("Change PIN", func(ctx C) {
 			pinTooLong := make([]byte, 65)

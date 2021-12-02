@@ -3,21 +3,33 @@
 export LANGUAGE=en_US
 export LANG=en_US.UTF8
 export TEST_TMP_DIR=/tmp/canokey-piv
+export USER=`id -nu`
 
 YPT() {
-    yubico-piv-tool $@
+    yubico-piv-tool -r "$RDID" $@
 }
 
 PIVGenKeyCert() {
     key=$1
     subject="$2"
     algo="$3"
-    YPT -r "$RDID" -a generate -A $algo -s $key >$TEST_TMP_DIR/pubkey-$key.pem # generate key at $key
+    YPT -a generate -A $algo -s $key >$TEST_TMP_DIR/pubkey-$key.pem # generate key at $key
     assertEquals 'yubico-piv-tool generate' 0 $?
-    YPT -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < $TEST_TMP_DIR/pubkey-$key.pem >$TEST_TMP_DIR/cert-$key.pem
+    YPT -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < $TEST_TMP_DIR/pubkey-$key.pem >$TEST_TMP_DIR/cert-$key.pem
     assertEquals 'yubico-piv-tool selfsign-certificate' 0 $?
-    YPT -r "$RDID" -a import-certificate -s $key < $TEST_TMP_DIR/cert-$key.pem
+    YPT -a import-certificate -s $key < $TEST_TMP_DIR/cert-$key.pem
     assertEquals 'yubico-piv-tool import-certificate' 0 $?
+}
+
+PIVImportKeyCert() {
+    key=$1
+    priv_pem="$2"
+    cert_pem="$3"
+    YPT -a import-key -s $key -i "$priv_pem"
+    assertEquals 'import-key' 0 $?
+    YPT -a import-certificate -s $key -i "$cert_pem"
+    assertEquals 'import-certificate' 0 $?
+    cp "$cert_pem" "$TEST_TMP_DIR/cert-$key.pem"
 }
 
 PIVSignDec() {
@@ -26,11 +38,11 @@ PIVSignDec() {
     op=$3
     if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
     if [[ -z "$op" || s = "$op" ]]; then 
-        YPT -r "$RDID" $pinArgs -a test-signature -s $key < $TEST_TMP_DIR/cert-$key.pem;
+        YPT $pinArgs -a test-signature -s $key < $TEST_TMP_DIR/cert-$key.pem;
         assertEquals 'yubico-piv-tool test-signature' 0 $?
     fi
     if [[ -z "$op" || d = "$op" ]]; then 
-        YPT -r "$RDID" $pinArgs -a test-decipher -s $key < $TEST_TMP_DIR/cert-$key.pem;
+        YPT $pinArgs -a test-decipher -s $key < $TEST_TMP_DIR/cert-$key.pem;
         assertEquals 'yubico-piv-tool test-decipher' 0 $?
     fi
 }
@@ -45,13 +57,13 @@ oneTimeSetUp() {
 
 test_PivInfo() {
     echo "Reader: {$RDID}"
-    YPT -r "$RDID" -v -a set-ccc -a set-chuid -a status
+    YPT -v -a set-ccc -a set-chuid -a status
     assertEquals 'yubico-piv-tool status' 0 $?
 
-    out=$(opensc-tool -r "$RDID" -s '00 F8 00 00') # PIV_INS_GET_SERIAL, Yubico
+    out=$(opensc-tool -s '00 F8 00 00') # PIV_INS_GET_SERIAL, Yubico
     assertContains 'PIV_INS_GET_SERIAL' "$out" 'SW1=0x90, SW2=0x00'
 
-    out=$(opensc-tool -r "$RDID" -s '00 FD 00 00') # PIV_INS_GET_VERSION, Yubico
+    out=$(opensc-tool -s '00 FD 00 00') # PIV_INS_GET_VERSION, Yubico
     assertContains 'PIV_INS_GET_VERSION' "$out" 'SW1=0x90, SW2=0x00'
 
     pkcs15-tool --reader "$RDID" -D
@@ -59,24 +71,24 @@ test_PivInfo() {
 }
 
 test_ChangePin() {
-    YPT -r "$RDID" -a verify-pin -P 123456
-    YPT -r "$RDID" -a change-pin -P 123456 -N 654321
-    YPT -r "$RDID" -a verify-pin -P 654321
-    out=$(YPT -r "$RDID" -a verify-pin -P 123456 2>&1)
+    YPT -a verify-pin -P 123456
+    YPT -a change-pin -P 123456 -N 654321
+    YPT -a verify-pin -P 654321
+    out=$(YPT -a verify-pin -P 123456 2>&1)
     assertContains 'verify-pin' "$out" '2 tries left before pin is blocked.'
-    out=$(YPT -r "$RDID" -a verify-pin -P 123456 2>&1)
+    out=$(YPT -a verify-pin -P 123456 2>&1)
     assertContains 'verify-pin' "$out" '1 tries left before pin is blocked.'
-    YPT -r "$RDID" -a verify-pin -P 654321
+    YPT -a verify-pin -P 654321
     assertEquals 'verify-pin' 0 $?
-    YPT -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
+    YPT -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
     assertEquals 'set-mgm-key' 0 $?
-    YPT -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
+    YPT -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
     assertEquals 'set-mgm-key' 0 $?
 }
 
 test_RSA2048() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" RSA2048; done
-    YPT -r "$RDID" -a status
+    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
+    YPT -a status
     PIVSignDec 9e # PIN not required for key 9e
     for s in 9a 9c 9d; do PIVSignDec $s 1; done
 
@@ -90,8 +102,8 @@ test_RSA2048() {
 }
 
 test_ECC256() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" ECCP256; done
-    YPT -r "$RDID" -a status
+    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ECCP256; done
+    YPT -a status
     for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
     PIVSignDec 9d 1 d # 9d only do the ECDH
     out=$(pkcs15-tool --reader "$RDID" --read-certificate 01 | openssl x509 -text)
@@ -99,80 +111,90 @@ test_ECC256() {
 }
 
 test_ECC384() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s" ECCP384; done
-    YPT -r "$RDID" -a status
+    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ECCP384; done
+    YPT -a status
+    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
+    PIVSignDec 9d 1 d # 9d only do the ECDH
+    out=$(pkcs15-tool --reader "$RDID" --read-certificate 02 | openssl x509 -text)
+    assertContains 'CERT' "$out" 'CN = CertAtSlot9c'
+}
+
+test_PinBlock() {
+    out=$(YPT -a verify-pin -P 222222 2>&1)
+    assertContains 'verify-pin' "$out" '2 tries left before pin is blocked.'
+    out=$(YPT -a verify-pin -P 222222 2>&1)
+    assertContains 'verify-pin' "$out" '1 tries left before pin is blocked.'
+    out=$(YPT -a verify-pin -P 222222 2>&1)
+    assertContains 'verify-pin' "$out" 'Pin code blocked'
+    out=$(YPT -a verify-pin -P 654321 2>&1)
+    assertContains 'verify-pin' "$out" 'Pin code blocked'
+    out=$(YPT -a unblock-pin -P 12345678 -N 999999 2>&1)
+    assertContains 'verify-pin' "$out" 'Successfully unblocked the pin code'
+    out=$(YPT -a change-puk -P 12345678 -N 87654321 2>&1)
+    assertContains 'verify-pin' "$out" 'Successfully changed the puk code'
+    out=$(YPT -a unblock-pin -P 87654321 -N 654321 2>&1)
+    assertContains 'verify-pin' "$out" 'Successfully unblocked the pin code'
+}
+
+test_P256KeyImport() {
+    openssl ecparam -name prime256v1 -out $TEST_TMP_DIR/p256.pem
+    openssl req -x509 -newkey ec:$TEST_TMP_DIR/p256.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+    
+    for s in 9a 9c 9d 9e; do PIVImportKeyCert $s $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem; done
+    YPT -a status
     for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
     PIVSignDec 9d 1 d # 9d only do the ECDH
 }
 
-test_PinBlock() {
-    out=$(YPT -r "$RDID" -a verify-pin -P 222222 2>&1)
-    assertContains 'verify-pin' "$out" '2 tries left before pin is blocked.'
-    out=$(YPT -r "$RDID" -a verify-pin -P 222222 2>&1)
-    assertContains 'verify-pin' "$out" '1 tries left before pin is blocked.'
-    out=$(YPT -r "$RDID" -a verify-pin -P 222222 2>&1)
-    assertContains 'verify-pin' "$out" 'Pin code blocked'
-    out=$(YPT -r "$RDID" -a verify-pin -P 654321 2>&1)
-    assertContains 'verify-pin' "$out" 'Pin code blocked'
-    out=$(YPT -r "$RDID" -a unblock-pin -P 12345678 -N 999999 2>&1)
-    assertContains 'verify-pin' "$out" 'Successfully unblocked the pin code'
-    out=$(YPT -r "$RDID" -a change-puk -P 12345678 -N 87654321 2>&1)
-    assertContains 'verify-pin' "$out" 'Successfully changed the puk code'
-    out=$(YPT -r "$RDID" -a unblock-pin -P 87654321 -N 654321 2>&1)
-    assertContains 'verify-pin' "$out" 'Successfully unblocked the pin code'
-}
-
-test_ECCKeyImport() {
-    openssl ecparam -name prime256v1 -out $TEST_TMP_DIR/p256.pem
-    openssl req -x509 -newkey ec:$TEST_TMP_DIR/p256.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-    YPT -r "$RDID" -a import-key -s 9a -i $TEST_TMP_DIR/key.pem
-    assertEquals 'import-key' 0 $?
-    YPT -r "$RDID" -a import-certificate -s 9a -i $TEST_TMP_DIR/cert.pem
-    assertEquals 'import-certificate' 0 $?
-    YPT -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a <$TEST_TMP_DIR/cert.pem
-    assertEquals 'test-signature' 0 $?
+test_P384KeyImport() {
+    openssl ecparam -name secp384r1 -out $TEST_TMP_DIR/p384.pem
+    openssl req -x509 -newkey ec:$TEST_TMP_DIR/p384.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+    
+    for s in 9a 9c 9d 9e; do PIVImportKeyCert $s $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem; done
+    YPT -a status
+    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
+    PIVSignDec 9d 1 d # 9d only do the ECDH
 }
 
 test_RSAKeyImport() {
     openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-    YPT -r "$RDID" -a import-key -s 9c -i $TEST_TMP_DIR/key.pem
-    assertEquals 'import-key' 0 $?
-    YPT -r "$RDID" -a import-certificate -s 9c -i $TEST_TMP_DIR/cert.pem
-    assertEquals 'import-certificate' 0 $?
-    YPT -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c <$TEST_TMP_DIR/cert.pem
-    assertEquals 'test-signature' 0 $?
+    
+    for s in 9a 9c 9d 9e; do PIVImportKeyCert $s $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem; done
+    YPT -a status
+    PIVSignDec 9e # PIN not required for key 9e
+    for s in 9a 9c 9d; do PIVSignDec $s 1; done 
 }
 
 test_FactoryReset() {
-    out=$(YPT -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1)
+    out=$(YPT -a change-puk -P 12345678 -N 11111111 2>&1)
     assertContains "change-puk" "$out" 'Failed verifying puk code, now 2 tries left before blocked'
-    out=$(YPT -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1)
+    out=$(YPT -a change-puk -P 12345678 -N 11111111 2>&1)
     assertContains "change-puk" "$out" 'Failed verifying puk code, now 1 tries left before blocked'
-    out=$(YPT -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1)
+    out=$(YPT -a change-puk -P 12345678 -N 11111111 2>&1)
     assertContains "change-puk" "$out" 'The puk code is blocked'
-    out=$(YPT -r "$RDID" -a change-puk -P 87654321 -N 11111111 2>&1)
+    out=$(YPT -a change-puk -P 87654321 -N 11111111 2>&1)
     assertContains "change-puk" "$out" 'The puk code is blocked'
-    out=$(YPT -r "$RDID" -a verify-pin -P 222222 2>&1)
+    out=$(YPT -a verify-pin -P 222222 2>&1)
     assertContains "verify-pin" "$out" '2 tries left before pin is blocked.'
-    out=$(YPT -r "$RDID" -a verify-pin -P 222222 2>&1)
+    out=$(YPT -a verify-pin -P 222222 2>&1)
     assertContains "verify-pin" "$out" '1 tries left before pin is blocked.'
-    out=$(YPT -r "$RDID" -a verify-pin -P 222222 2>&1)
+    out=$(YPT -a verify-pin -P 222222 2>&1)
     assertContains "verify-pin" "$out" 'Pin code blocked'
-    YPT -r "$RDID" -a reset
+    YPT -a reset
     assertEquals 'reset' 0 $?
-    out=$(YPT -r "$RDID" -a unblock-pin -P 12345678 -N 654321 2>&1)
+    out=$(YPT -a unblock-pin -P 12345678 -N 654321 2>&1)
     assertContains "unblock-pin" "$out" 'Successfully unblocked the pin code'
 }
 
 test_FillData() {
-    YPT -r "$RDID" -a set-ccc -a set-chuid -a status
+    YPT -a set-ccc -a set-chuid -a status
     longName=OU=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/O=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/L=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/ST=ThisIsAVeryLongName/C=CN
     openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=CertAtSlot$s/$longName"
     assertEquals 'openssl gen key' 0 $?
     for s in 9a 9c 9d 9e; do
-        YPT -r "$RDID" -a import-key -s $s -i $TEST_TMP_DIR/key.pem
+        YPT -a import-key -s $s -i $TEST_TMP_DIR/key.pem
         assertEquals 'import-key' 0 $?
-        YPT -r "$RDID" -a import-certificate -s $s -i $TEST_TMP_DIR/cert.pem
+        YPT -a import-certificate -s $s -i $TEST_TMP_DIR/cert.pem
         assertEquals 'import-certificate' 0 $?
     done
 }
