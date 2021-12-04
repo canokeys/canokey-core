@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.7)
 include(FindPkgConfig)
+include(CMakeDependentOption)
 project(canokey-core C)
+
+option(USBIP "Virtual Canokey using USBIP" OFF)
+option(QEMU "Virtual Canokey for QEMU" OFF)
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
-option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
-option(USBIP "Virtual Canokey using USBIP" OFF)
+cmake_dependent_option(ENABLE_DEBUG_OUTPUT "Print debug messages" OFF "QEMU" ON)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -21,8 +24,11 @@ if (ENABLE_TESTS OR ENABLE_FUZZING)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage")
     endif()
 endif ()
+if (QEMU)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif (QEMU)
 
-add_subdirectory(canokey-crypto)
+add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
 
 file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
@@ -30,9 +36,9 @@ file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
 
-if (USBIP)
+if (USBIP OR QEMU)
     target_compile_definitions(canokey-core PUBLIC USBIP)
-endif (USBIP)
+endif (USBIP OR QEMU)
 if (ENABLE_TESTS)
     target_compile_definitions(canokey-core PUBLIC TEST)
 endif (ENABLE_TESTS)
@@ -59,7 +65,7 @@ target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
-if (USBIP OR ENABLE_TESTS OR ENABLE_FUZZING)
+if (USBIP OR QEMU OR ENABLE_TESTS OR ENABLE_FUZZING)
     set(gitrev_in virt-card/git-rev.h.in)
     set(gitrev virt-card/git-rev.h)
     add_custom_target(gitrev
@@ -69,13 +75,39 @@ if (USBIP OR ENABLE_TESTS OR ENABLE_FUZZING)
             )
 endif()
 
+if (QEMU)
+    include(GNUInstallDirs)
+    set(LIBCANOKEY_QEMU_SO_VERSION 0)
+    set(LIBCANOKEY_QEMU_PREFIX ${CMAKE_INSTALL_PREFIX})
+    set(LIBCANOKEY_QEMU_LIBDIR ${CMAKE_INSTALL_FULL_LIBDIR})
+    set(LIBCANOKEY_QEMU_INCLUDEDIR ${CMAKE_INSTALL_FULL_INCLUDEDIR})
+
+    add_library(canokey-qemu SHARED
+            virt-card/qemu.c
+            virt-card/fabrication.c
+            littlefs/bd/lfs_filebd.c)
+    set_target_properties(canokey-qemu PROPERTIES PUBLIC_HEADER virt-card/canokey-qemu.h)
+    set_target_properties(canokey-qemu PROPERTIES SOVERSION ${LIBCANOKEY_QEMU_SO_VERSION})
+    target_include_directories(canokey-qemu SYSTEM PRIVATE littlefs)
+    target_compile_definitions(canokey-qemu PRIVATE VIRT_VENDOR VIRT_VENDOR_QEMU)
+    target_compile_options(canokey-qemu PRIVATE)
+    target_link_libraries(canokey-qemu general canokey-core)
+    add_dependencies(canokey-qemu gitrev)
+    install(TARGETS canokey-qemu LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+    configure_file(virt-card/canokey-qemu.pc.in canokey-qemu.pc @ONLY)
+    install(FILES ${CMAKE_BINARY_DIR}/canokey-qemu.pc
+            DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig)
+endif (QEMU)
+
 if (USBIP)
     add_executable(canokey-usbip
             virt-card/usbip.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
     target_include_directories(canokey-usbip SYSTEM PRIVATE littlefs)
-    target_compile_definitions(canokey-usbip PRIVATE VIRT_VENDOR)
+    target_compile_definitions(canokey-usbip PRIVATE VIRT_VENDOR VIRT_VENDOR_USBIP)
     target_compile_options(canokey-usbip PRIVATE "-fsanitize=address")
     find_package (Threads)
     target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address" Threads::Threads)

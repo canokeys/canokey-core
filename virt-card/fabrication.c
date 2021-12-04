@@ -102,7 +102,7 @@ static void oath_init() {
   oath_process_apdu(capdu, rapdu);
 }
 
-void card_fs_init(const char *lfs_root) {
+int card_fs_init(const char *lfs_root) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
@@ -116,13 +116,14 @@ void card_fs_init(const char *lfs_root) {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 16;
-  lfs_filebd_create(&cfg, lfs_root);
+  if (lfs_filebd_create(&cfg, lfs_root)) return 1;
 
   fs_init(&cfg);
+  return 0;
 }
 
 int card_fabrication_procedure(const char *lfs_root) {
-  card_fs_init(lfs_root);
+  if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
   applets_install();
 
@@ -145,7 +146,7 @@ int card_fabrication_procedure(const char *lfs_root) {
 }
 
 int card_read(const char *lfs_root) {
-  card_fs_init(lfs_root);
+  if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
   applets_install();
   return 0;
@@ -165,7 +166,13 @@ int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
 int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
 
+#if defined(VIRT_VENDOR_USBIP)
+  static const char *const hw_variant_str = "CanoKey USB/IP";
+#elif defined(VIRT_VENDOR_QEMU)
+  static const char *const hw_variant_str = "CanoKey QEMU";
+#else
   static const char *const hw_variant_str = "CanoKey Virt-Card";
+#endif
   size_t len = strlen(hw_variant_str);
   memcpy(RDATA, hw_variant_str, len);
   LL = len;
