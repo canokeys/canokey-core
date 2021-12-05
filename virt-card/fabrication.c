@@ -146,7 +146,7 @@ int card_fabrication_procedure(const char *lfs_root) {
 
 int card_read(const char *lfs_root) {
   card_fs_init(lfs_root);
-
+  init_apdu_buffer();
   applets_install();
   return 0;
 }
