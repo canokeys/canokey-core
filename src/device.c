@@ -89,6 +89,29 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   return USER_PRESENCE_OK;
 }
 
+__attribute__((weak)) int strong_user_presence_test(void) {
+  for (int i = 0; i < 5; i++) {
+    const uint8_t wait_sec = 2;
+    start_blinking_interval(wait_sec, (i & 1) ? 200 : 50);
+    uint32_t now, begin = device_get_tick();
+    bool user_presence = false;
+    do {
+      if (get_touch_result() == TOUCH_SHORT) {
+        user_presence = true;
+        set_touch_result(TOUCH_NO);
+        stop_blinking();
+        // wait for some time before next user-precense test
+        begin = device_get_tick();
+      }
+      now = device_get_tick();
+    } while (now - begin < 1000 * wait_sec);
+    if (!user_presence) {
+      return -1;
+    }
+  }
+  return 0;
+}
+
 void set_nfc_state(uint8_t val) { has_rf = val; }
 
 uint8_t is_nfc(void) {

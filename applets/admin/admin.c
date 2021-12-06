@@ -145,29 +145,6 @@ static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int admin_factory_reset_verification(void) {
-  for (int i = 0; i < 5; i++) {
-    const uint8_t wait_sec = 2;
-    start_blinking_interval(wait_sec, (i & 1) ? 200 : 50);
-    uint32_t now, begin = device_get_tick();
-    bool user_presence = false;
-    do {
-      if (get_touch_result() == TOUCH_SHORT) {
-        user_presence = true;
-        set_touch_result(TOUCH_NO);
-        stop_blinking();
-        // wait for some time before next user-precense test
-        begin = device_get_tick();
-      }
-      now = device_get_tick();
-    } while (now - begin < 1000 * wait_sec);
-    if (!user_presence) {
-      return -1;
-    }
-  }
-  return 0;
-}
-
 static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   int ret;
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
@@ -178,7 +155,7 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   if (is_nfc()) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  if (admin_factory_reset_verification() < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (strong_user_presence_test() < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
   DBG_MSG("factory reset begins\n");
