@@ -16,7 +16,7 @@
 #include "ccid.h"
 #include "ctap.h"
 #include "device.h"
-#include "dummy.h"
+#include "device-sim.h"
 #include "fabrication.h"
 #include "ndef.h"
 #include "oath.h"

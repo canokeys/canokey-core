@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+// implement software-simulated device funtions (LED, Touch, Timer, etc.)
 #include "device.h"
-#include "dummy.h"
+#include "device-sim.h"
 #include "usb_device.h"
 #include "usbd_core.h"
 #include <time.h>
