@@ -301,7 +301,7 @@ jobs:
       run: |
         set -o xtrace
         RDID="Canokey [OpenPGP PIV OATH] 00 00"
-        yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
+        yubico-piv-tool -r "$RDID" -a status -a set-ccc -a set-chuid -a status
         opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
         opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
         pkcs15-tool --reader "$RDID" -D
