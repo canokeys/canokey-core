@@ -14,14 +14,14 @@ static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE = 1, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
 volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, hence inited
 
-#define IS_BLINKING (last_blink != UINT32_MAX)
+uint8_t device_is_blinking(void) { return last_blink != UINT32_MAX; }
 
 void device_loop(uint8_t has_touch) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
   if (has_touch &&                  // hardware features the touch pad
-      !IS_BLINKING &&               // applets are not waiting for touch
+      !device_is_blinking() &&      // applets are not waiting for touch
       cfg_is_kbd_interface_enable() // keyboard emulation enabled
   )
     KBDHID_Loop();
@@ -118,7 +118,7 @@ void device_update_led(void) {
 }
 
 void start_blinking_interval(uint8_t sec, uint32_t interval) {
-  if (IS_BLINKING) return;
+  if (device_is_blinking()) return;
   last_blink = device_get_tick();
   blink_interval = interval;
   if (sec == 0) {
@@ -139,68 +139,3 @@ void stop_blinking(void) {
     led_status = OFF;
   }
 }
-
-#ifdef TEST
-#include <stdio.h>
-int testmode_emulate_user_presence(void) {
-  if (!IS_BLINKING) return 0; // user only touches while blinking
-
-#ifndef FUZZ // speed up fuzzing
-  int counter = 0;
-  FILE *f_cnt = fopen("/tmp/canokey-test-up", "r");
-  if (f_cnt != NULL) {
-    fscanf(f_cnt, "%d", &counter);
-    fclose(f_cnt);
-  } else {
-    ERR_MSG("Failed to open canokey-test-up for reading\n");
-  }
-  counter++;
-  DBG_MSG("counter=%d\n", counter);
-  f_cnt = fopen("/tmp/canokey-test-up", "w");
-  if (f_cnt != NULL) {
-    fprintf(f_cnt, "%d", counter);
-    fclose(f_cnt);
-  } else {
-    ERR_MSG("Failed to open canokey-test-up for writing\n");
-  }
-#endif
-
-  set_touch_result(TOUCH_SHORT);
-  return 0;
-}
-
-int testmode_get_is_nfc_mode(void) {
-#ifndef FUZZ // speed up fuzzing
-  uint32_t nfc_mode = 0;
-  FILE *f_cfg = fopen("/tmp/canokey-test-nfc", "r");
-  if (f_cfg == NULL) return -1;
-  if (fscanf(f_cfg, "%u", &nfc_mode) < 1) return -1;
-  fclose(f_cfg);
-  set_nfc_state((uint8_t)nfc_mode);
-#endif
-  return 0;
-}
-
-int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
-  if (*var == expect) {
-    *var = update;
-    return 0;
-  } else {
-    return -1;
-  }
-}
-
-int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
-  // Not really working, for test only
-  while (*lock) {
-    if (!blocking) return -1;
-  }
-  *lock = 1;
-  return 0;
-}
-void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
-
-void led_on(void) {}
-void led_off(void) {}
-
-#endif

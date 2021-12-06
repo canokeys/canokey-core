@@ -1,90 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // implement software-simulated device funtions (LED, Touch, Timer, etc.)
 #include "device.h"
-#include "device-sim.h"
-#include "usb_device.h"
-#include "usbd_core.h"
+#include <stdio.h>
 #include <time.h>
 #include <unistd.h>
 
-static EPType _EP[8];
-
-EPType *dummy_get_ep_by_addr(uint8_t addr) {
-  uint8_t index = ((addr & 0x7Fu) << 1u) + ((addr & 0x80U) ? 1 : 0);
-  return &_EP[index];
-}
-
-USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev) {
-
-  for (uint8_t i = 0; i < 8; ++i) {
-    _EP[i].index = i;
-    _EP[i].num = (uint8_t)(i / 2);
-    _EP[i].is_in = (uint8_t)(i & 1u);
-    _EP[i].addr = (uint8_t)((uint8_t)(_EP[i].is_in << 7u) | _EP[i].num);
-    _EP[i].is_stall = 0;
-    _EP[i].maxpacket = (uint32_t)((i < 4) ? 16 : 64);
-    _EP[i].xfer_buff = 0;
-    _EP[i].xfer_len = 0;
-  }
-  return USBD_OK;
-}
-USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev) { return USBD_OK; }
-USBD_StatusTypeDef USBD_LL_Start(USBD_HandleTypeDef *pdev) {
-  USBD_LL_SetSpeed(&usb_device, USBD_SPEED_FULL);
-  USBD_LL_Reset(&usb_device);
-  return USBD_OK;
-}
-USBD_StatusTypeDef USBD_LL_Stop(USBD_HandleTypeDef *pdev) { return USBD_OK; }
-USBD_StatusTypeDef USBD_LL_OpenEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t ep_type, uint16_t ep_mps) {
-  return USBD_OK;
-}
-
-USBD_StatusTypeDef USBD_LL_CloseEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return USBD_OK; }
-USBD_StatusTypeDef USBD_LL_FlushEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return USBD_OK; }
-USBD_StatusTypeDef USBD_LL_StallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
-  EPType *ep = dummy_get_ep_by_addr(ep_addr);
-  ep->is_stall = 1;
-  return USBD_OK;
-}
-USBD_StatusTypeDef USBD_LL_ClearStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
-  EPType *ep = dummy_get_ep_by_addr(ep_addr);
-  ep->is_stall = 0;
-  return USBD_OK;
-}
-uint8_t USBD_LL_IsStallEP(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
-  EPType *ep = dummy_get_ep_by_addr(ep_addr);
-  return ep->is_stall;
-}
-USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_addr) { return USBD_OK; }
-USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_addr, uint8_t *pbuf, uint16_t size) {
-  EPType *ep = dummy_get_ep_by_addr(ep_addr);
-  ep->xfer_buff = pbuf;
-  ep->xfer_len = size;
-  DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_len=%d\n", ep_addr, ep->xfer_buff, ep->xfer_len);
-  uint32_t len = ep->xfer_len;
-  if (ep->xfer_len > ep->maxpacket) {
-    len = ep->maxpacket;
-  }
-  ep->xfer_len -= len;
-  return USBD_OK;
-}
-USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, const uint8_t *pbuf, uint16_t size) {
-  EPType *ep = dummy_get_ep_by_addr((uint8_t)(ep_num | 0x80u));
-  ep->xfer_buff = (uint8_t *)pbuf; // use xfer_buff as bidirectional buffer
-  ep->xfer_len = size;
-  uint32_t len = ep->xfer_len;
-  if (ep->xfer_len > ep->maxpacket) len = ep->maxpacket;
-  ep->xfer_len -= len;
-  while (len-- > 0)
-    ep->xfer_buff++; // transmit data here
-
-  return USBD_OK;
-}
-uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
-  EPType *ep = dummy_get_ep_by_addr(ep_addr);
-  return ep->xfer_count;
-  return 0;
-}
 void device_delay(int ms) {
   struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
   nanosleep(&spec, NULL);
@@ -103,3 +23,64 @@ void device_disable_irq(void) {}
 void device_enable_irq(void) {}
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
 void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) { return; }
+
+int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
+  if (*var == expect) {
+    *var = update;
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
+int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
+  // Not really working, for test only
+  while (*lock) {
+    if (!blocking) return -1;
+  }
+  *lock = 1;
+  return 0;
+}
+void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
+
+void led_on(void) {}
+void led_off(void) {}
+
+int testmode_emulate_user_presence(void) {
+  if (!device_is_blinking()) return 0; // user only touches while blinking
+
+#ifndef FUZZ // speed up fuzzing
+  int counter = 0;
+  FILE *f_cnt = fopen("/tmp/canokey-test-up", "r");
+  if (f_cnt != NULL) {
+    fscanf(f_cnt, "%d", &counter);
+    fclose(f_cnt);
+  } else {
+    ERR_MSG("Failed to open canokey-test-up for reading\n");
+  }
+  counter++;
+  DBG_MSG("counter=%d\n", counter);
+  f_cnt = fopen("/tmp/canokey-test-up", "w");
+  if (f_cnt != NULL) {
+    fprintf(f_cnt, "%d", counter);
+    fclose(f_cnt);
+  } else {
+    ERR_MSG("Failed to open canokey-test-up for writing\n");
+  }
+#endif
+
+  set_touch_result(TOUCH_SHORT);
+  return 0;
+}
+
+int testmode_get_is_nfc_mode(void) {
+#ifndef FUZZ // speed up fuzzing
+  uint32_t nfc_mode = 0;
+  FILE *f_cfg = fopen("/tmp/canokey-test-nfc", "r");
+  if (f_cfg == NULL) return -1;
+  if (fscanf(f_cfg, "%u", &nfc_mode) < 1) return -1;
+  fclose(f_cfg);
+  set_nfc_state((uint8_t)nfc_mode);
+#endif
+  return 0;
+}

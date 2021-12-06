@@ -80,6 +80,7 @@ static inline void start_blinking(uint8_t sec) {
   start_blinking_interval(sec, 200);
 }
 void stop_blinking(void);
+uint8_t device_is_blinking(void);
 void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len);
 void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len);
 void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);

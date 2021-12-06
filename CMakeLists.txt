@@ -87,6 +87,7 @@ if (ENABLE_TESTS)
     enable_testing()
 
     add_executable(fido-hid-over-udp
+            virt-card/usb-dummy.c
             virt-card/device-sim.c
             virt-card/fabrication.c
             virt-card/fido-hid-over-udp.c
@@ -97,6 +98,7 @@ if (ENABLE_TESTS)
     pkg_search_module(PCSCLITE libpcsclite)
     if (PCSCLITE_FOUND)
         add_library(u2f-virt-card SHARED
+                virt-card/usb-dummy.c
                 virt-card/device-sim.c
                 virt-card/ifdhandler.c
                 virt-card/fabrication.c
@@ -111,6 +113,7 @@ endif (ENABLE_TESTS)
 if (ENABLE_FUZZING)
     add_executable(honggfuzz-fuzzer
             fuzzer/honggfuzz-fuzzer.c
+            virt-card/usb-dummy.c
             virt-card/device-sim.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
@@ -122,6 +125,7 @@ if (ENABLE_FUZZING)
     add_executable(honggfuzz-debug
             fuzzer/honggfuzz-debug.c
             fuzzer/honggfuzz-fuzzer.c
+            virt-card/usb-dummy.c
             virt-card/device-sim.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
