@@ -68,6 +68,7 @@ endif()
 
 if (USBIP)
     add_executable(canokey-usbip
+            virt-card/device-sim.c
             virt-card/usbip.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)

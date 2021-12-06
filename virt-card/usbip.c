@@ -261,42 +261,6 @@ void usbip_zero_ready(uint32_t ep) {
   pthread_mutex_unlock(&endpoints[ep].mutex);
 }
 
-void device_delay(int ms) {
-  struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
-  nanosleep(&spec, NULL);
-}
-uint32_t device_get_tick(void) {
-  uint64_t ms, s;
-  struct timespec spec;
-  clock_gettime(CLOCK_MONOTONIC, &spec);
-  s = spec.tv_sec;
-  ms = spec.tv_nsec / 1000000;
-  return (uint32_t)(s * 1000 + ms);
-}
-void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
-int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
-  // since device loop is single threaded, naive impl is ok
-  if (*lock != 0 && !blocking) {
-      return -1;
-  } else {
-      *lock = 1;
-      return 0;
-  }
-}
-void device_spinlock_unlock(volatile uint32_t *lock) {
-  // since device loop is single threaded, naive impl is ok
-  *lock = 0;
-}
-int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
-  // since device loop is single threaded, naive impl is ok
-  if (*var != expect)
-      return -1;
-  *var = update;
-  return 0;
-}
-void led_on(void) {}
-void led_off(void) {}
-
 void* device_thread(void *vargp) {
   while(1) {
     device_loop(0);
