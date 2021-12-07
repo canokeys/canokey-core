@@ -45,16 +45,24 @@ jobs:
         sudo usbip attach -r 127.0.0.1 -b 1-1
         sleep 3
         lsusb
-
-    - name: Test the OpenPGP
+        
+    - name: Start the pcscd
       run: |
-        cd test-real
-        ./test-gpg.sh
+        sudo killall -9 pcscd || true
+        sudo cp test-real/libccid_Info.plist /etc/
+        bash -c 'sudo pcscd -a -f >/tmp/pcscd.log &'
+        sleep 3
+        timeout 1s pcsc_scan || true
 
     - name: Test the PIV
       run: |
         cd test-real
         ./test-piv.sh
+
+    - name: Test the OpenPGP
+      run: |
+        cd test-real
+        ./test-gpg.sh
     
     - name: Upload log files
       if: ${{ always() }}
