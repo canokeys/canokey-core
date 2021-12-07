@@ -9,6 +9,10 @@
 // constants for vendor
 #include "git-rev.h"
 
+#ifndef HW_VARIANT_NAME
+#define HW_VARIANT_NAME "CanoKey Virt-Card"
+#endif
+
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
   memcpy(RDATA, GIT_REV, LL);
@@ -20,7 +24,7 @@ int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
 int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
 
-  static const char *const hw_variant_str = "CanoKey Virt-Card";
+  static const char *const hw_variant_str = HW_VARIANT_NAME;
   size_t len = strlen(hw_variant_str);
   memcpy(RDATA, hw_variant_str, len);
   LL = len;
@@ -41,7 +45,7 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int strong_user_presence_test(void) {
-  DBG_MSG("Strong user-presence test is skipped.\n")
+  DBG_MSG("Strong user-presence test is skipped.\n");
   return 0; 
 }
 
