@@ -84,6 +84,7 @@ if (QEMU)
 
     add_library(canokey-qemu SHARED
             virt-card/qemu.c
+            virt-card/device-sim.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
     set_target_properties(canokey-qemu PROPERTIES PUBLIC_HEADER virt-card/canokey-qemu.h)

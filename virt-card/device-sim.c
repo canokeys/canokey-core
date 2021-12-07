@@ -49,7 +49,8 @@ int strong_user_presence_test(void) {
   return 0; 
 }
 
-void device_delay(int ms) {
+void device_delay(int tick) {
+  int ms = tick * 100; // 100ms per tick in software simulation
   struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
   nanosleep(&spec, NULL);
 }
@@ -61,7 +62,7 @@ uint32_t device_get_tick(void) {
 
   s = spec.tv_sec;
   ms = spec.tv_nsec / 1000000;
-  return (uint32_t)(s * 1000 + ms);
+  return (uint32_t)(s * 1000 + ms) / 100;  // 100ms per tick in software simulation
 }
 void device_disable_irq(void) {}
 void device_enable_irq(void) {}
