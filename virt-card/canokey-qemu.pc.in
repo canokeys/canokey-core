@@ -1,0 +1,9 @@
+prefix=@LIBCANOKEY_QEMU_PREFIX@
+libdir=@LIBCANOKEY_QEMU_LIBDIR@
+includedir=@LIBCANOKEY_QEMU_INCLUDEDIR@
+
+Name: libcanokey-qemu
+Description: CanoKey lib for QEMU
+Version: @LIBCANOKEY_QEMU_SO_VERSION@
+Libs: -L${libdir} -lcanokey-qemu
+Cflags: -I${includedir}

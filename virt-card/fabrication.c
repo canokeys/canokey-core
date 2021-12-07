@@ -102,7 +102,7 @@ static void oath_init() {
   oath_process_apdu(capdu, rapdu);
 }
 
-void card_fs_init(const char *lfs_root) {
+int card_fs_init(const char *lfs_root) {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
@@ -116,13 +116,14 @@ void card_fs_init(const char *lfs_root) {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 16;
-  lfs_filebd_create(&cfg, lfs_root);
+  if (lfs_filebd_create(&cfg, lfs_root)) return 1;
 
   fs_init(&cfg);
+  return 0;
 }
 
 int card_fabrication_procedure(const char *lfs_root) {
-  card_fs_init(lfs_root);
+  if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
   applets_install();
 
@@ -145,7 +146,7 @@ int card_fabrication_procedure(const char *lfs_root) {
 }
 
 int card_read(const char *lfs_root) {
-  card_fs_init(lfs_root);
+  if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
   applets_install();
   return 0;

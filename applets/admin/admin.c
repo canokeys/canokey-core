@@ -150,7 +150,7 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
   if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
-#ifndef FUZZ // skip verification while fuzzing
+#if !defined(FUZZ) && !defined(USBIP) // skip verification while fuzzing or usbip virt-card
   ret = pin_get_retries(&pin);
   if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
