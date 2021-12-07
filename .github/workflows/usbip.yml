@@ -45,3 +45,21 @@ jobs:
         sudo usbip attach -r 127.0.0.1 -b 1-1
         sleep 3
         lsusb
+
+    - name: Test the OpenPGP
+      run: |
+        cd test-real
+        ./test-gpg.sh
+
+    - name: Test the PIV
+      run: |
+        cd test-real
+        ./test-piv.sh
+    
+    - name: Upload log files
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: logs
+        path: /tmp/*.log
+
