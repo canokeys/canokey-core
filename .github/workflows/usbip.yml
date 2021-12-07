@@ -1,0 +1,47 @@
+name: usbip
+on: [push,pull_request]
+jobs:
+  build_test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+    - name: prepare kernel module
+      run: |
+        wget -q https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.15.5.tar.xz
+        tar xf linux-5.15.5.tar.xz
+        cd linux-5.15.5/drivers/usb/usbip
+        sed -i 's/$(CONFIG_USBIP_CORE)/m/' Makefile
+        sed -i 's/$(CONFIG_USBIP_VHCI_HCD)/m/' Makefile
+        sudo make -C /lib/modules/`uname -r`/build M=${PWD} modules
+        sudo insmod usbip-core.ko
+        sudo insmod vhci-hcd.ko
+        lsmod | grep usbip
+
+    - name: Package Install
+      run: |
+        sudo apt-add-repository ppa:yubico/stable
+        sudo apt update
+        sudo apt install gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager linux-tools-generic
+        pip3 install --upgrade pip
+
+    - name: Check out code
+      uses: actions/checkout@v2
+      with:
+        submodules: recursive
+
+    - name: Build for Test
+      run: |
+        mkdir build && pushd build
+        cmake .. -DUSBIP=ON -DCMAKE_BUILD_TYPE=Debug
+        make -j2
+      
+    - name: Setup Canokey-usbip
+      run: |
+        cd build
+        # run canokey-usbip in background
+        ./canokey-usbip &> /tmp/canokey-usbip-log &
+        sleep 3
+        sudo usbip list -r 127.0.0.1
+        sudo usbip attach -r 127.0.0.1 -b 1-1
+        sleep 3
+        lsusb
