@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #ifndef CANOKEY_QEMU_H
 #define CANOKEY_QEMU_H
 
