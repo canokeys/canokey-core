@@ -3,15 +3,9 @@
 
 static lfs_t lfs;
 
-int fs_init(const struct lfs_config *cfg) {
-  int err = lfs_mount(&lfs, cfg);
-  if (err) { // should happen for the first boot
-    lfs_format(&lfs, cfg);
-    lfs_mount(&lfs, cfg);
-    return 1;
-  }
-  return 0;
-}
+int fs_format(const struct lfs_config *cfg) { return lfs_format(&lfs, cfg); }
+
+int fs_mount(const struct lfs_config *cfg) { return lfs_mount(&lfs, cfg); }
 
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   lfs_file_t f;
@@ -93,9 +87,7 @@ err_close:
   return err;
 }
 
-int get_fs_size(void) {
-  return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024;
-}
+int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
 
 int get_fs_usage(void) {
   int blocks = lfs_fs_size(&lfs);
