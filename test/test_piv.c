@@ -142,7 +142,8 @@ int main() {
   cfg.lookahead_size = 16;
   lfs_filebd_create(&cfg, "lfs-root");
 
-  fs_init(&cfg);
+  fs_format(&cfg);
+  fs_mount(&cfg);
   piv_install(1);
 
   const struct CMUnitTest tests[] = {
