@@ -118,7 +118,11 @@ int card_fs_init(const char *lfs_root) {
   cfg.lookahead_size = 16;
   if (lfs_filebd_create(&cfg, lfs_root)) return 1;
 
-  fs_init(&cfg);
+  int err = fs_mount(&cfg);
+  if (err) { // should happen for the first boot
+    fs_format(&cfg);
+    fs_mount(&cfg);
+  }
   return 0;
 }
 
