@@ -609,9 +609,8 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC - 5 > cap) EXCEPT(SW_NOT_ENOUGH_SPACE);
   if (write_file(path, DATA + 5, 0, LC - 5, 1) < 0) return -1;
 #ifdef DEBUG_OUTPUT
-  int len =
+  int len = read_file(path, DATA + 5, 0, LC - 5);
 #endif
-      read_file(path, DATA + 5, 0, LC - 5);
   DBG_MSG("length %d\n", len);
   return 0;
 }
