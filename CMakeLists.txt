@@ -22,7 +22,7 @@ if (ENABLE_TESTS OR ENABLE_FUZZING)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage -fsanitize=address -fsanitize=undefined")
     if (NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage")
-    endif()
+    endif ()
 endif ()
 if (QEMU)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -30,6 +30,9 @@ endif (QEMU)
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
+if (DEFINED USBD_PRODUCT_STRING)
+    add_definitions(-DUSBD_PRODUCT_STRING="${USBD_PRODUCT_STRING}")
+endif ()
 
 file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
         littlefs/lfs.c littlefs/lfs_util.c
@@ -73,7 +76,7 @@ if (USBIP OR QEMU OR ENABLE_TESTS OR ENABLE_FUZZING)
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in} ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
             COMMAND git describe --always --tags --long --abbrev=8 --dirty >> ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
             )
-endif()
+endif ()
 
 if (QEMU)
     include(GNUInstallDirs)
@@ -111,7 +114,7 @@ if (USBIP)
     target_include_directories(canokey-usbip SYSTEM PRIVATE littlefs)
     target_compile_definitions(canokey-usbip PRIVATE HW_VARIANT_NAME="CanoKey USB/IP")
     target_compile_options(canokey-usbip PRIVATE "-fsanitize=address")
-    find_package (Threads)
+    find_package(Threads)
     target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address" Threads::Threads)
     add_dependencies(canokey-usbip gitrev)
 endif (USBIP)
@@ -167,4 +170,4 @@ if (ENABLE_FUZZING)
     target_include_directories(honggfuzz-debug SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(honggfuzz-debug canokey-core)
     add_dependencies(honggfuzz-debug gitrev)
-    endif (ENABLE_FUZZING)
+endif (ENABLE_FUZZING)
