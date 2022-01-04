@@ -5,6 +5,7 @@ project(canokey-core C)
 
 option(USBIP "Virtual Canokey using USBIP" OFF)
 option(QEMU "Virtual Canokey for QEMU" OFF)
+option(FFS "Virtual Canokey using FunctionFS" OFF)
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
@@ -65,7 +66,7 @@ target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
-if (USBIP OR QEMU OR ENABLE_TESTS OR ENABLE_FUZZING)
+if (USBIP OR QEMU OR FFS OR ENABLE_TESTS OR ENABLE_FUZZING)
     set(gitrev_in virt-card/git-rev.h.in)
     set(gitrev virt-card/git-rev.h)
     add_custom_target(gitrev
@@ -115,6 +116,20 @@ if (USBIP)
     target_link_libraries(canokey-usbip general canokey-core "-fsanitize=address" Threads::Threads)
     add_dependencies(canokey-usbip gitrev)
 endif (USBIP)
+
+if (FFS)
+    add_executable(canokey-ffs
+            virt-card/device-sim.c
+            virt-card/ffs.c
+            virt-card/fabrication.c
+            littlefs/bd/lfs_filebd.c)
+    target_include_directories(canokey-ffs SYSTEM PRIVATE littlefs)
+    target_compile_definitions(canokey-ffs PRIVATE HW_VARIANT_NAME="CanoKey FunctionFS")
+    target_compile_options(canokey-ffs PRIVATE "-fsanitize=address")
+    find_package (Threads)
+    target_link_libraries(canokey-ffs general canokey-core "-fsanitize=address" Threads::Threads)
+    add_dependencies(canokey-ffs gitrev)
+endif (FFS)
 
 if (ENABLE_TESTS)
     find_package(CMocka CONFIG REQUIRED)

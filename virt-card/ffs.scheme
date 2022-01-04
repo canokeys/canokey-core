@@ -1,0 +1,30 @@
+attrs :
+  {
+      idVendor = 0x20A0;
+      idProduct = 0x42D4;
+  };
+  strings = (
+      {
+          lang = 0x409;
+          manufacturer = "canokeys.org";
+          product = "CanoKey FunctionFS";
+      }
+  );
+  functions :
+  {
+      canokey :
+      {
+          instance = "canokey";
+          type = "ffs";
+      };
+  };
+  configs = (
+      {
+          id = 1;
+          name = "c";
+          functions = (
+              {
+                  name = "canokey";
+                  function = "canokey";
+              } );
+      } );
