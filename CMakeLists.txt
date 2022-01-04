@@ -39,9 +39,6 @@ file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
 
-if (USBIP OR QEMU)
-    target_compile_definitions(canokey-core PUBLIC USBIP)
-endif (USBIP OR QEMU)
 if (ENABLE_TESTS)
     target_compile_definitions(canokey-core PUBLIC TEST)
 endif (ENABLE_TESTS)
