@@ -36,6 +36,8 @@
 #include "device.h"
 #include "ccid.h"
 #include "usbd_ccid.h"
+#include "ctaphid.h"
+#include "usbd_ctaphid.h"
 
 struct ccid_descriptor {
   __u8  bLength;
@@ -62,6 +64,18 @@ struct ccid_descriptor {
   __u8  bMaxCCIDBusySlots;
 } __attribute__ ((packed));
 
+struct hid_descriptor {
+    __u8  bLength;
+    __u8  bDescriptorType;
+    __le16 bcdHID;
+    __u8  bCountryCode;
+    __u8  bNumDescriptors;
+
+    __u8  class_bDescriptorType;
+    __le16 class_wDescriptorLength;
+} __attribute__ ((packed));
+
+
 /******************** Little Endian Handling ********************************/
 
 /*
@@ -87,7 +101,7 @@ struct ccid_descriptor {
 
 static const char argv0[] = "canokey-ffs";
 
-static unsigned verbosity = 7;
+static unsigned verbosity = 6;
 
 static void _msg(unsigned level, const char *fmt, ...)
 {
@@ -148,9 +162,10 @@ static const struct {
     struct ccid_descriptor ccid_desc;
     struct usb_endpoint_descriptor_no_audio ccid_in;
     struct usb_endpoint_descriptor_no_audio ccid_out;
-    //struct usb_interface_descriptor fido;
-    //struct usb_endpoint_descriptor_no_audio fido_in;
-    //struct usb_endpoint_descriptor_no_audio fido_out;
+    struct usb_interface_descriptor fido;
+    struct hid_descriptor fido_desc;
+    struct usb_endpoint_descriptor_no_audio fido_in;
+    struct usb_endpoint_descriptor_no_audio fido_out;
   } __attribute__((packed)) hs_descs;
 } __attribute__((packed)) descriptors = {
   .header = {
@@ -158,7 +173,7 @@ static const struct {
     .flags = cpu_to_le32(FUNCTIONFS_HAS_HS_DESC),
     .length = cpu_to_le32(sizeof descriptors),
   },
-  .hs_count = cpu_to_le32(4),
+  .hs_count = cpu_to_le32(8),
   .hs_descs = {
     //.webusb = {
     //  .bLength = sizeof descriptors.hs_descs.webusb,
@@ -218,30 +233,39 @@ static const struct {
       .wMaxPacketSize = cpu_to_le16(512),
       .bInterval = 1, /* NAK every 1 uframe */
     },
-    //.fido = {
-    //  .bLength = sizeof descriptors.hs_descs.fido,
-    //  .bInterfaceNumber = 2,
-    //  .bDescriptorType = USB_DT_INTERFACE,
-    //  .bNumEndpoints = 2,
-    //  .bInterfaceClass = USB_CLASS_HID,
-    //  .iInterface = 1, /* TODO */
-    //},
-    //.fido_in = {
-    //  .bLength = sizeof descriptors.hs_descs.fido_in,
-    //  .bDescriptorType = USB_DT_ENDPOINT,
-    //  .bEndpointAddress = 3 | USB_DIR_IN,
-    //  .bmAttributes = USB_ENDPOINT_XFER_INT,
-    //  .wMaxPacketSize = 64,
-    //  .bInterval = 1,
-    //},
-    //.fido_out = {
-    //  .bLength = sizeof descriptors.hs_descs.fido_out,
-    //  .bDescriptorType = USB_DT_ENDPOINT,
-    //  .bEndpointAddress = 4 | USB_DIR_OUT,
-    //  .bmAttributes = USB_ENDPOINT_XFER_INT,
-    //  .wMaxPacketSize = 64,
-    //  .bInterval = 1,
-    //},
+    .fido = {
+      .bLength = sizeof descriptors.hs_descs.fido,
+      .bInterfaceNumber = 2,
+      .bDescriptorType = USB_DT_INTERFACE,
+      .bNumEndpoints = 2,
+      .bInterfaceClass = USB_CLASS_HID,
+      .iInterface = 5,
+    },
+    .fido_desc = {
+      .bLength = sizeof descriptors.hs_descs.fido_desc,
+      .bDescriptorType = 0x21,
+      .bcdHID = cpu_to_le16(0x0111),
+      .bCountryCode = 0,
+      .bNumDescriptors = 1,
+      .class_bDescriptorType = 0x22,
+      .class_wDescriptorLength = cpu_to_le16(34),
+    },
+    .fido_in = {
+      .bLength = sizeof descriptors.hs_descs.fido_in,
+      .bDescriptorType = USB_DT_ENDPOINT,
+      .bEndpointAddress = 3 | USB_DIR_IN,
+      .bmAttributes = USB_ENDPOINT_XFER_INT,
+      .wMaxPacketSize = 64,
+      .bInterval = 1,
+    },
+    .fido_out = {
+      .bLength = sizeof descriptors.hs_descs.fido_out,
+      .bDescriptorType = USB_DT_ENDPOINT,
+      .bEndpointAddress = 4 | USB_DIR_OUT,
+      .bmAttributes = USB_ENDPOINT_XFER_INT,
+      .wMaxPacketSize = 64,
+      .bInterval = 1,
+    },
   },
 };
 
@@ -249,6 +273,7 @@ static const struct {
 #define STR_PRODUCT      "CanoKey FFS"
 #define STR_SERIAL       "00114514"
 #define STR_CCID         "OpenPGP PIV OATH"
+#define STR_FIDO         "FIDO2/U2F"
 
 static const struct {
   struct usb_functionfs_strings_head header;
@@ -258,12 +283,13 @@ static const struct {
     const char str2[sizeof STR_PRODUCT     ];
     const char str3[sizeof STR_SERIAL      ];
     const char str4[sizeof STR_CCID        ];
+    const char str5[sizeof STR_FIDO        ];
   } __attribute__((packed)) lang0;
 } __attribute__((packed)) strings = {
   .header = {
     .magic = cpu_to_le32(FUNCTIONFS_STRINGS_MAGIC),
     .length = cpu_to_le32(sizeof strings),
-    .str_count = cpu_to_le32(4),
+    .str_count = cpu_to_le32(5),
     .lang_count = cpu_to_le32(1),
   },
   .lang0 = {
@@ -272,15 +298,21 @@ static const struct {
     STR_PRODUCT,
     STR_SERIAL,
     STR_CCID,
+    STR_FIDO,
   },
 };
 
 /* Implement USBD from canokey-core */
-/* Only support CCID now */
 
+uint8_t setup_buffer[1500];
+ssize_t setup_buffer_size;
+bool setup_ready;
 uint8_t ccid_buffer[1500];
 ssize_t ccid_buffer_size;
 bool ccid_ready;
+uint8_t fido_buffer[1500];
+ssize_t fido_buffer_size;
+bool fido_ready;
 
 USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_DeInit(USBD_HandleTypeDef *pdev) { return USBD_OK; }
@@ -296,9 +328,21 @@ USBD_StatusTypeDef USBD_LL_SetUSBAddress(USBD_HandleTypeDef *pdev, uint8_t dev_a
 USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep, uint8_t *pbuf, uint16_t size) { return USBD_OK; }
 USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep, const uint8_t *pbuf, uint16_t size) {
   DBG_MSG("%d %d\n", ep, size);
-  memcpy(ccid_buffer, pbuf, size);
-  ccid_buffer_size = size;
-  ccid_ready = true;
+  if ((ep & 0x7F) == EP_OUT(ccid)) {
+    memcpy(ccid_buffer, pbuf, size);
+    ccid_buffer_size = size;
+    ccid_ready = true;
+  } else if ((ep & 0x7F) == EP_OUT(ctap_hid)) {
+    memcpy(fido_buffer, pbuf, size);
+    fido_buffer_size = size;
+    fido_ready = true;
+  } else if (ep == 0) {
+    memcpy(setup_buffer, pbuf, size);
+    setup_buffer_size = size;
+    setup_ready = true;
+  } else {
+    DBG_MSG("ep %d unknown!", ep);
+  }
   return USBD_OK;
 }
 uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) { return 0; } // not used
@@ -313,20 +357,22 @@ static ssize_t write_wrap(struct thread *t, const void *buf, size_t nbytes);
 static ssize_t ep0_consume(struct thread *t, const void *buf, size_t nbytes);
 
 static ssize_t do_nothing(struct thread *t, const void *buf, size_t nbytes);
-static ssize_t transmit(struct thread *t, const void *buf, size_t nbytes);
+static ssize_t ccid_transmit(struct thread *t, const void *buf, size_t nbytes);
+static ssize_t fido_transmit(struct thread *t, const void *buf, size_t nbytes);
 
 static ssize_t handle_ccid_out(struct thread *t, void *buf, size_t nbytes);
 static ssize_t handle_ccid_in(struct thread *t, void *buf, size_t nbytes);
+
+static ssize_t handle_fido_out(struct thread *t, void *buf, size_t nbytes);
+static ssize_t handle_fido_in(struct thread *t, void *buf, size_t nbytes);
 
 static struct thread {
   const char *const filename;
   size_t buf_size;
 
   ssize_t (*in)(struct thread *, void *, size_t);
-  const char *const in_name;
 
   ssize_t (*out)(struct thread *, const void *, size_t);
-  const char *const out_name;
 
   int fd;
   pthread_t id;
@@ -334,21 +380,33 @@ static struct thread {
   ssize_t status;
 } threads[] = {
   {
-    "ep0", 4 * sizeof(struct usb_functionfs_event),
-    read_wrap, NULL,
-    ep0_consume, "<consume>",
+    "ep0", 8 * 1024,
+    read_wrap,
+    ep0_consume,
     0, 0, NULL, 0
   },
   {
     "ep1", 8 * 1024,
-    handle_ccid_in, "<in>",
-    transmit, NULL,
+    handle_ccid_in,
+    ccid_transmit,
     0, 0, NULL, 0
   },
   {
     "ep2", 8 * 1024,
-    handle_ccid_out, NULL,
-    do_nothing, "<out>",
+    handle_ccid_out,
+    do_nothing,
+    0, 0, NULL, 0
+  },
+  {
+    "ep3", 64,
+    handle_fido_in,
+    fido_transmit,
+    0, 0, NULL, 0
+  },
+  {
+    "ep4", 64,
+    handle_fido_out,
+    do_nothing,
     0, 0, NULL, 0
   },
 };
@@ -396,13 +454,10 @@ static void cleanup_thread(void *arg)
 
 static void *start_thread_helper(void *arg)
 {
-  const char *name, *op, *in_name, *out_name;
   struct thread *t = arg;
   ssize_t ret;
 
   info("%s: starts\n", t->filename);
-  in_name = t->in_name ? t->in_name : t->filename;
-  out_name = t->out_name ? t->out_name : t->filename;
 
   pthread_cleanup_push(cleanup_thread, arg);
 
@@ -412,22 +467,17 @@ static void *start_thread_helper(void *arg)
     ret = t->in(t, t->buf, t->buf_size);
     if (ret > 0) {
       ret = t->out(t, t->buf, ret);
-      name = out_name;
-      op = "write";
-    } else {
-      name = in_name;
-      op = "read";
     }
 
     if (ret > 0) {
       /* nop */
     } else if (!ret) {
-      debug("%s: %s: EOF", name, op);
+      debug("EOF");
       break;
     } else if (errno == EINTR || errno == EAGAIN) {
-      debug("%s: %s", name, op);
+      debug("EINTR|EAGAIN");
     } else {
-      warn("%s: %s", name, op);
+      warn("WARN");
       break;
     }
   }
@@ -502,35 +552,88 @@ static ssize_t handle_ccid_out(struct thread *t, void *buf, size_t nbytes) {
 }
 
 static ssize_t handle_ccid_in(struct thread *t, void *buf, size_t nbytes) {
-  while (!ccid_ready) {} // block here
+  while (!ccid_ready) { usleep(10); } // block here
   return ccid_buffer_size;
+}
+
+static ssize_t handle_fido_out(struct thread *t, void *buf, size_t nbytes) {
+  ssize_t ret = read_wrap(t, buf, nbytes);
+  debug("fido_out: %d\n", ret);
+  CTAPHID_OutEvent(buf);
+  return ret;
+}
+
+static ssize_t handle_fido_in(struct thread *t, void *buf, size_t nbytes) {
+  while (!fido_ready) { usleep(10); } // block here
+  return fido_buffer_size;
 }
 
 static ssize_t do_nothing(struct thread *t, const void *buf, size_t nbytes) {
   return 1;
 }
 
-static ssize_t transmit(struct thread *t, const void *buf, size_t nbytes) {
-  debug("transmit: len %d\n", ccid_buffer_size);
+static ssize_t ccid_transmit(struct thread *t, const void *buf, size_t nbytes) {
+  debug("ccid_transmit: len %d\n", ccid_buffer_size);
   ssize_t in = write_wrap(t, ccid_buffer, ccid_buffer_size);
   ccid_ready = false;
   USBD_CCID_DataIn(&usb_device);
   return in;
 }
 
+static ssize_t fido_transmit(struct thread *t, const void *buf, size_t nbytes) {
+  debug("fido_transmit: len %d\n", fido_buffer_size);
+  ssize_t in = write_wrap(t, fido_buffer, fido_buffer_size);
+  fido_ready = false;
+  USBD_CTAPHID_DataIn();
+  return in;
+}
+
 /******************** Endpoints routines ************************************/
 
-static void handle_setup(const struct usb_ctrlrequest *setup)
+// clang-format off
+static const uint8_t report_desc[] = {
+    0x06, 0xD0, 0xF1, // USAGE_PAGE (CTAP Usage Page)
+    0x09, 0x01,       // USAGE (CTAP HID)
+    0xA1, 0x01,       // COLLECTION (Application)
+    0x09, 0x20,       //   USAGE (Usage Data In)
+    0x15, 0x00,       //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x00, //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08,       //   REPORT_SIZE (8)
+    0x95, 0x40,       //   REPORT_COUNT (64)
+    0x81, 0x02,       //   INPUT (Data,Var,Abs)
+    0x09, 0x21,       //   USAGE (Usage Data Out)
+    0x15, 0x00,       //   LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x00, //   LOGICAL_MAXIMUM (255)
+    0x75, 0x08,       //   REPORT_SIZE (8)
+    0x95, 0x40,       //   REPORT_COUNT (64)
+    0x91, 0x02,       //   OUTPUT (Data,Var,Abs)
+    0xC0              // END_COLLECTION
+};
+// clang-format on
+
+static void handle_setup(struct thread *t, const struct usb_ctrlrequest *setup)
 {
+  uint16_t value = le16_to_cpu(setup->wValue),
+           index = le16_to_cpu(setup->wIndex),
+           length = le16_to_cpu(setup->wLength);
   printf("bRequestType = %d\n", setup->bRequestType);
   printf("bRequest     = %d\n", setup->bRequest);
-  printf("wValue       = %d\n", le16_to_cpu(setup->wValue));
-  printf("wIndex       = %d\n", le16_to_cpu(setup->wIndex));
-  printf("wLength      = %d\n", le16_to_cpu(setup->wLength));
+  printf("wValue       = %d\n", value);
+  printf("wIndex       = %d\n", index);
+  printf("wLength      = %d\n", length);
+
+  // hack for CTAPHID only
+  if (setup->bRequestType == 0x21) {
+    read_wrap(t, t->buf, t->buf_size);
+    write_wrap(t, setup_buffer, 0);
+  }
+  else if (setup->bRequestType & 0x80 && ((value >> 8) == 0x22)) {
+    write_wrap(t, report_desc, sizeof(report_desc));
+  }
 }
 
 static ssize_t
-ep0_consume(struct thread *ignore, const void *buf, size_t nbytes)
+ep0_consume(struct thread *t, const void *buf, size_t nbytes)
 {
   static const char *const names[] = {
     [FUNCTIONFS_BIND] = "BIND",
@@ -545,8 +648,6 @@ ep0_consume(struct thread *ignore, const void *buf, size_t nbytes)
   const struct usb_functionfs_event *event = buf;
   size_t n;
 
-  (void)ignore;
-
   for (n = nbytes / sizeof *event; n; --n, ++event)
     switch (event->type) {
     case FUNCTIONFS_BIND:
@@ -558,7 +659,7 @@ ep0_consume(struct thread *ignore, const void *buf, size_t nbytes)
     case FUNCTIONFS_RESUME:
       printf("Event %s\n", names[event->type]);
       if (event->type == FUNCTIONFS_SETUP)
-        handle_setup(&event->u.setup);
+        handle_setup(t, &event->u.setup);
       break;
 
     default:
@@ -596,12 +697,17 @@ void usb_resources_alloc(void) {
   EP_TABLE.ccid = ep++;
   IFACE_TABLE.ccid = iface++;
   EP_SIZE_TABLE.ccid = 64; // note: must less than 255 as it is uint8_t
+
+
+  EP_TABLE.ctap_hid = ep++;
+  IFACE_TABLE.ctap_hid = iface++;
+  EP_SIZE_TABLE.ctap_hid = 64;
 }
 
 void* device_thread(void *vargp) {
   while(1) {
     device_loop(0);
-    //usleep(10);
+    usleep(10);
   }
   return NULL;
 }
@@ -619,6 +725,7 @@ void device_init() {
   usb_device.dev_state = USBD_STATE_CONFIGURED; // ignore canokey udc
 
   CCID_Init();
+  USBD_CTAPHID_Init(&usb_device);
 
   // start device loop in another thread
   pthread_t device_thread_id;
