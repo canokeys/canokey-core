@@ -809,7 +809,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
       RDATA[3] = 0x86;
       RDATA[4] = KEY_SIZE_25519;
       memcpy(RDATA + 5, key + KEY_SIZE_25519, KEY_SIZE_25519);
-      LL = KEY_SIZE_25519 + 6;
+      LL = KEY_SIZE_25519 + 5;
       break;
 
     default:
