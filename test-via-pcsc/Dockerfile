@@ -4,7 +4,7 @@ FROM ubuntu:20.04
 ARG UBUNTU_MIRROR
 RUN [ -z "${UBUNTU_MIRROR}" ] || sed -i.bak s/archive.ubuntu.com/${UBUNTU_MIRROR}/g /etc/apt/sources.list
 
-RUN apt update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q sudo software-properties-common golang-go git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov &&\
+RUN apt update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q sudo software-properties-common golang-go git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libusb-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov &&\
     apt-add-repository -y ppa:yubico/stable && DEBIAN_FRONTEND=noninteractive apt-get install -y -q yubikey-manager
 RUN pip3 install --upgrade pip
 

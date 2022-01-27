@@ -44,14 +44,14 @@ else
 fi
 sudo make install
 popd
-if [ ! -d gnupg-2.3.3 ];then
-    wget https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.3.3.tar.bz2
-    tar -xf gnupg-2.3.3.tar.bz2
-    pushd gnupg-2.3.3
+if [ ! -d gnupg-2.3.4 ];then
+    wget https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.3.4.tar.bz2
+    tar -xf gnupg-2.3.4.tar.bz2
+    pushd gnupg-2.3.4
     ./configure --prefix=/usr --disable-doc --disable-wks-tools --disable-gpgtar --disable-photo-viewers --disable-ldap
     make -j2
 else
-    pushd gnupg-2.3.3
+    pushd gnupg-2.3.4
 fi
 sudo make install
 popd
