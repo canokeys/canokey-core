@@ -96,7 +96,7 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_POWERSELECT;
   }
 
-  if (acquire_global_buffer(BUFFER_OWNER_CCID) != 0) {
+  if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
     return SLOTERROR_BAD_GUARDTIME;
   }
@@ -119,7 +119,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   if (error != 0) return error;
 
   applets_poweroff();
-  release_global_buffer(BUFFER_OWNER_CCID);
+  release_apdu_buffer(BUFFER_OWNER_CCID);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }

@@ -86,11 +86,12 @@ enum {
 };
 
 void init_apdu_buffer(void); // implement in ccid.c for reusing the ccid buffer
+int acquire_apdu_buffer(uint8_t owner);
+int release_apdu_buffer(uint8_t owner);
+
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
-int acquire_global_buffer(uint8_t owner);
-int release_global_buffer(uint8_t owner);
 
 #endif // CANOKEY_CORE__APDU_H

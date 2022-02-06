@@ -22,6 +22,7 @@ void nfc_init(void) {
   inf_sending = 0;
   state_spinlock = 0;
   next_state = TO_RECEIVE;
+  // NFC interface uses global_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = global_buffer;
   apdu_resp.data = global_buffer;
   fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
