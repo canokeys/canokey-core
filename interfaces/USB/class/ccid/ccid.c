@@ -243,6 +243,20 @@ static void RDR_to_PC_Parameters(uint8_t errorCode) {
 }
 
 /**
+ * @brief  RDR_to_PC_Escape
+ *         Provide the Escape response to the host
+ *          Response for PC_to_RDR_Escape
+ * @param  uint8_t errorCode: code to be returned to the host
+ * @retval None
+ */
+static void RDR_to_PC_Escape(uint8_t errorCode) {
+  bulkin_data.bMessageType = RDR_TO_PC_ESCAPE;
+  bulkin_data.dwLength = 0;
+  bulkin_data.bError = errorCode;
+  bulkin_data.bSpecific = 0;
+}
+
+/**
  * @brief  CCID_CheckCommandParams
  *         Checks the specific parameters requested by the function and update
  *          status accordingly. This function is called from all
@@ -316,6 +330,21 @@ void CCID_Loop(void) {
     errorCode = PC_to_RDR_GetParameters();
     RDR_to_PC_Parameters(errorCode);
     break;
+  case PC_TO_RDR_RESETPARAMETERS:
+  case PC_TO_RDR_SETPARAMETERS:
+    RDR_to_PC_Parameters(SLOTERROR_CMD_NOT_SUPPORTED);
+    break;
+  case PC_TO_RDR_ESCAPE:
+    RDR_to_PC_Escape(SLOTERROR_CMD_NOT_SUPPORTED);
+    break;
+  case PC_TO_RDR_SECURE:
+    bulkin_data.dwLength = 0;
+    RDR_to_PC_DataBlock(SLOTERROR_CMD_NOT_SUPPORTED);
+    break;
+  case PC_TO_RDR_ICCCLOCK:
+  case PC_TO_RDR_T0APDU:
+  case PC_TO_RDR_MECHANICAL:
+  case PC_TO_RDR_ABORT:
   default:
     RDR_to_PC_SlotStatus(SLOTERROR_CMD_NOT_SUPPORTED);
     break;
