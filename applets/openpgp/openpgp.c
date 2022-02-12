@@ -542,6 +542,55 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     LL = 6;
     break;
 
+  case TAG_ALGORITHM_INFORMATION:
+#define RSA2048(tag)                                                                                                   \
+  do {                                                                                                                 \
+    RDATA[off++] = tag;                                                                                                \
+    RDATA[off++] = sizeof(rsa_attr);                                                                                   \
+    memcpy(RDATA + off, rsa_attr, sizeof(rsa_attr));                                                                   \
+    off += sizeof(rsa_attr);                                                                                           \
+  } while (0)
+#define RSA4096(tag)                                                                                                   \
+  do {                                                                                                                 \
+    RDATA[off++] = tag;                                                                                                \
+    RDATA[off++] = sizeof(rsa_attr);                                                                                   \
+    memcpy(RDATA + off, rsa_attr, sizeof(rsa_attr));                                                                   \
+    RDATA[off + 1] = 0x10;                                                                                             \
+    off += sizeof(rsa_attr);                                                                                           \
+  } while (0)
+#define EC(tag, algo)                                                                                                  \
+  do {                                                                                                                 \
+    RDATA[off++] = tag;                                                                                                \
+    RDATA[off++] = ec_attr[algo][1];                                                                                   \
+    memcpy(RDATA + off, ec_attr[algo] + 2, ec_attr[algo][1]);                                                          \
+    off += ec_attr[algo][1];                                                                                           \
+  } while (0)
+
+    // SIG
+    RSA2048(TAG_ALGORITHM_ATTRIBUTES_SIG);
+    RSA4096(TAG_ALGORITHM_ATTRIBUTES_SIG);
+    EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ECDSA_P256R1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ECDSA_P256K1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ECDSA_P384R1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519);
+    // DEC
+    RSA2048(TAG_ALGORITHM_ATTRIBUTES_DEC);
+    RSA4096(TAG_ALGORITHM_ATTRIBUTES_DEC);
+    EC(TAG_ALGORITHM_ATTRIBUTES_DEC, ECDH_P256R1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_DEC, ECDH_P256K1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_DEC, ECDH_P384R1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_DEC, X25519);
+    // AUT
+    RSA2048(TAG_ALGORITHM_ATTRIBUTES_AUT);
+    RSA4096(TAG_ALGORITHM_ATTRIBUTES_AUT);
+    EC(TAG_ALGORITHM_ATTRIBUTES_AUT, ECDSA_P256R1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_AUT, ECDSA_P256K1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_AUT, ECDSA_P384R1);
+    EC(TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519);
+
+    LL = off;
+    break;
+
   case TAG_UIF_CACHE_TIME:
     RDATA[0] = touch_policy[UIF_CACHE_TIME];
     LL = 1;
