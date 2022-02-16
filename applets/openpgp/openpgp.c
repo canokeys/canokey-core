@@ -853,6 +853,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     case X25519:
       // swap endianness only for x25519
       swap_big_number_endian(key + KEY_SIZE_25519);
+      __attribute__ ((fallthrough));
     case ED25519:
       RDATA[2] = KEY_SIZE_25519 + 2;
       RDATA[3] = 0x86;
