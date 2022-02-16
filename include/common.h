@@ -17,9 +17,9 @@
 #define ERR_MSG(format, ...) printf("[ERR] %s(%d): " format, __func__, __LINE__, ##__VA_ARGS__)
 #define PRINT_HEX(...) print_hex(__VA_ARGS__)
 #else
-#define DBG_MSG(...)
-#define ERR_MSG(...)
-#define PRINT_HEX(...)
+#define DBG_MSG(...) do {} while(0)
+#define ERR_MSG(...) do {} while(0)
+#define PRINT_HEX(...) do {} while(0)
 #endif
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
