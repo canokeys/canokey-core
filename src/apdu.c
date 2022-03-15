@@ -163,6 +163,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
           capdu->path[0] = 0;
         }
       }
+      return;
     }
     if (INS == 0xC0) { // get response
       int size = get_file_size(rapdu->path);
@@ -186,8 +187,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
         else
           SW = 0x6100 + remains;
       }
+      return;
     }
-    return;
   }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
