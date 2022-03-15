@@ -244,25 +244,23 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("read file size %s error: %d\n", rapdu->path, size);
       return -1;
     }
-    int read = read_file(path, RDATA, 0, 0xFF); // return first chunk
+    int read = read_file(path, RDATA, 0, LE); // return first chunk
     if (read < 0) {
       ERR_MSG("read file %s error: %d\n", path, read);
       return -1;
     }
     if (read == 0) EXCEPT(SW_FILE_NOT_FOUND);
+    strcpy(rapdu->path, path);
+    rapdu->off = LE;
     int remains = size - read;
     if (remains == 0) { // sent all
       LL = read;
+    } else if (remains > 0xFF) {
+      LL = 0xFF;
+      SW = 0x61FF;
     } else {
-      strcpy(rapdu->path, path);
-      rapdu->off = 0xFF;
-      if (remains > 0xFF) {
-        LL = 0xFF;
-        SW = 0x61FF;
-      } else {
-        LL = read;
-        SW = 0x6100 + remains;
-      }
+      LL = read;
+      SW = 0x6100 + remains;
     }
   } else
     EXCEPT(SW_FILE_NOT_FOUND);
