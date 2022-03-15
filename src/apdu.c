@@ -167,21 +167,21 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       return;
     }
     if (INS == 0xC0) { // get response, note that metadata is written to rapdu_chaining
-      int size = get_file_size(rapdu_chaining.rapdu->path);
+      int size = get_file_size(rapdu_chaining.rapdu.path);
       if (size < 0) {
-        ERR_MSG("read file size %s error: %d\n", rapdu_chaining.rapdu->path, size);
+        ERR_MSG("read file size %s error: %d\n", rapdu_chaining.rapdu.path, size);
         LL = 0;
         SW = SW_UNABLE_TO_PROCESS;
         return;
       }
-      if ((rc = read_file(rapdu_chaining.rapdu->path, RDATA, rapdu_chaining.rapdu->off, LE)) < 0) {
-        ERR_MSG("read file %s error: %d\n", rapdu_chaining.rapdu->path, rc);
+      if ((rc = read_file(rapdu_chaining.rapdu.path, RDATA, rapdu_chaining.rapdu.off, LE)) < 0) {
+        ERR_MSG("read file %s error: %d\n", rapdu_chaining.rapdu.path, rc);
         LL = 0;
         SW = SW_UNABLE_TO_PROCESS;
       } else {
         LL = rc;
-        rapdu_chaining.rapdu->off += rc;
-        int remains = size - rapdu_chaining.rapdu->off;
+        rapdu_chaining.rapdu.off += rc;
+        int remains = size - rapdu_chaining.rapdu.off;
         if (remains == 0)
           SW = SW_NO_ERROR;
         else if (remains > 0xFF)
