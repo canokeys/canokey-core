@@ -251,17 +251,14 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
     if (read == 0) EXCEPT(SW_FILE_NOT_FOUND);
     strcpy(rapdu->path, path);
-    rapdu->off = LE;
+    rapdu->off = LL = read;
     int remains = size - read;
-    if (remains == 0) { // sent all
-      LL = read;
-    } else if (remains > 0xFF) {
-      LL = 0xFF;
+    if (remains == 0) // sent all
+      SW = SW_NO_ERROR;
+    else if (remains > 0xFF)
       SW = 0x61FF;
-    } else {
-      LL = read;
+    else
       SW = 0x6100 + remains;
-    }
   } else
     EXCEPT(SW_FILE_NOT_FOUND);
   return 0;
@@ -621,7 +618,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
   // Part 1 Table 3 0x5FC1XX, only first chunk is processed here
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
-  int size = LC - 5;  // size of the first chunk
+  int size = LC - 5; // size of the first chunk
   const char *path = get_object_path_by_tag(DATA[4]);
   DBG_MSG("%s total length %d\n", path, size);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
