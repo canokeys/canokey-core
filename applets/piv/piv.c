@@ -249,6 +249,7 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("read file %s error: %d\n", path, read);
       return -1;
     }
+    DBG_MSG("read file %s, expected: %d, read: %d\n", path, LE, read);
     if (read == 0) EXCEPT(SW_FILE_NOT_FOUND);
     strcpy(rapdu->path, path);
     rapdu->off = LL = read;
