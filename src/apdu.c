@@ -166,23 +166,27 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       }
       return;
     }
+    if (INS == PIV_INS_GET_DATA) {
+      piv_process_apdu(capdu, rapdu);
+      return;
+    }
     if (INS == 0xC0) { // get response, note that metadata is written to rapdu_chaining
-      int size = get_file_size(rapdu_chaining.rapdu.path);
+      int size = get_file_size(rapdu->path);
       if (size < 0) {
-        ERR_MSG("read file size %s error: %d\n", rapdu_chaining.rapdu.path, size);
+        ERR_MSG("read file size %s error: %d\n", rapdu->path, size);
         LL = 0;
         SW = SW_UNABLE_TO_PROCESS;
         return;
       }
-      DBG_MSG("read file %s, off: %d, len: %d\n", rapdu_chaining.rapdu.path, rapdu_chaining.rapdu.off, LE);
-      if ((rc = read_file(rapdu_chaining.rapdu.path, RDATA, rapdu_chaining.rapdu.off, LE)) < 0) {
-        ERR_MSG("read file %s error: %d\n", rapdu_chaining.rapdu.path, rc);
+      DBG_MSG("read file %s, off: %d, len: %d\n", rapdu->path, rapdu->off, LE);
+      if ((rc = read_file(rapdu->path, RDATA, rapdu->off, LE)) < 0) {
+        ERR_MSG("read file %s error: %d\n", rapdu->path, rc);
         LL = 0;
         SW = SW_UNABLE_TO_PROCESS;
       } else {
         LL = rc;
-        rapdu_chaining.rapdu.off += rc;
-        int remains = size - rapdu_chaining.rapdu.off;
+        rapdu->off += rc;
+        int remains = size - rapdu->off;
         if (remains == 0)
           SW = SW_NO_ERROR;
         else if (remains > 0xFF)
