@@ -174,6 +174,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
         SW = SW_UNABLE_TO_PROCESS;
         return;
       }
+      DBG_MSG("read file %s, off: %d, len: %d\n", rapdu_chaining.rapdu.path, rapdu_chaining.rapdu.off, LE);
       if ((rc = read_file(rapdu_chaining.rapdu.path, RDATA, rapdu_chaining.rapdu.off, LE)) < 0) {
         ERR_MSG("read file %s error: %d\n", rapdu_chaining.rapdu.path, rc);
         LL = 0;
