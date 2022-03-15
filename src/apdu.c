@@ -152,6 +152,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       if (capdu->path[0] == 0) { // first chunk of put data
         piv_process_apdu(capdu, rapdu);
       } else { // not first chunk, append data
+        // TODO: check cap
         if ((rc = append_file(capdu->path, DATA, LC)) < 0) {
           ERR_MSG("append file %s error: %d\n", capdu->path, rc);
           SW = SW_UNABLE_TO_PROCESS;

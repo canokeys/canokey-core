@@ -621,15 +621,21 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
   if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
-  // Part 1 Table 3 0x5FC1XX
+  // Part 1 Table 3 0x5FC1XX, only first chunk is processed here
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
+  int size = LC - 5;  // size of the first chunk
   const char *path = get_object_path_by_tag(DATA[4]);
-  DBG_MSG("%s total length %d\n", path, LC - 5);
+  DBG_MSG("%s total length %d\n", path, size);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-  uint16_t cap = get_capacity_by_tag(DATA[4]);
-  if (LC - 5 > cap) EXCEPT(SW_NOT_ENOUGH_SPACE);
-  if (write_file(path, DATA + 5, 0, LC - 5, 1) < 0) return -1;
-  strcpy((char *)capdu->path, path);
+  int written = write_file(path, DATA + 5, 0, size, 1);
+  if (written < 0) {
+    ERR_MSG("write file %s error: %d\n", path, written);
+    return -1;
+  }
+  if (CLA & 0x10) {
+    DBG_MSG("not finished\n");
+    strcpy((char *)capdu->path, path);
+  }
   DBG_MSG("%s writen length %d\n", path, get_file_size(path));
   return 0;
 }
