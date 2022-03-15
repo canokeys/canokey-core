@@ -12,12 +12,15 @@ typedef struct {
   uint8_t p2;
   uint32_t le; // Le can be 65536 bytes long as per ISO7816-3
   uint16_t lc;
+  char path[9]; // for piv put data
 } __packed CAPDU;
 
 typedef struct {
   uint8_t *data;
   uint16_t len;
   uint16_t sw;
+  char path[9]; // for path in piv get response after getting data
+  uint16_t off; // for offset in piv get response after getting data
 } __packed RAPDU;
 
 // Command status responses
@@ -66,6 +69,7 @@ typedef struct {
 #define APDU_CHAINING_NOT_LAST_BLOCK 0x01
 #define APDU_CHAINING_LAST_BLOCK 0x02
 #define APDU_CHAINING_OVERFLOW 0x03
+#define APDU_CHAINING_PIV_DO 0x04
 
 typedef struct {
   CAPDU capdu;

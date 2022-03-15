@@ -2,6 +2,7 @@
 #include <admin.h>
 #include <apdu.h>
 #include <applets.h>
+#include <common.h>
 #include <ctap.h>
 #include <device.h>
 #include <meta.h>
@@ -9,7 +10,6 @@
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
-#include <string.h>
 
 enum APPLET {
   APPLET_NULL,
@@ -145,6 +145,50 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
+  int rc;
+  if (current_applet == APPLET_PIV) {
+    if (INS == PIV_INS_PUT_DATA) {
+      LL = 0;
+      if (capdu->path[0] == 0) { // first chunk of put data
+        piv_process_apdu(capdu, rapdu);
+      } else { // not first chunk, append data
+        if ((rc = append_file(capdu->path, DATA, LC)) < 0) {
+          ERR_MSG("append file %s error: %d\n", capdu->path, rc);
+          SW = SW_UNABLE_TO_PROCESS;
+          return;
+        }
+        DBG_MSG("%s writen length %d\n", capdu->path, get_file_size(capdu->path));
+        SW = SW_NO_ERROR;
+        if ((CLA & 0x10) == 0) { // last chunk
+          capdu->path[0] = 0;
+        }
+      }
+    }
+    if (INS == 0xC0) { // get response
+      int size = get_file_size(rapdu->path);
+      if (size < 0) {
+        ERR_MSG("read file size %s error: %d\n", rapdu->path, size);
+        LL = 0;
+        SW = SW_UNABLE_TO_PROCESS;
+        return;
+      }
+      if ((rc = read_file(rapdu->path, RDATA, rapdu->off, LE)) < 0) {
+        ERR_MSG("read file %s error: %d\n", rapdu->path, rc);
+        LL = 0;
+        SW = SW_UNABLE_TO_PROCESS;
+      } else {
+        LL = rc;
+        int remains = size - (rapdu->off + rc);
+        if (remains == 0)
+          SW = SW_NO_ERROR;
+        else if (remains > 0xFF)
+          SW = 0x61FF;
+        else
+          SW = 0x6100 + remains;
+      }
+    }
+    return;
+  }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
     LL = 0;

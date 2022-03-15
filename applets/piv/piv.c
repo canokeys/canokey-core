@@ -239,10 +239,31 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-    int len = read_file(path, RDATA, 0, APDU_BUFFER_SIZE);
-    if (len < 0) return -1;
-    if (len == 0) EXCEPT(SW_FILE_NOT_FOUND);
-    LL = len;
+    int size = get_file_size(path);
+    if (size < 0) {
+      ERR_MSG("read file size %s error: %d\n", rapdu->path, size);
+      return -1;
+    }
+    int read = read_file(path, RDATA, 0, 0xFF); // return first chunk
+    if (read < 0) {
+      ERR_MSG("read file %s error: %d\n", path, read);
+      return -1;
+    }
+    if (read == 0) EXCEPT(SW_FILE_NOT_FOUND);
+    int remains = size - read;
+    if (remains == 0) { // sent all
+      LL = read;
+    } else {
+      strcpy(rapdu->path, path);
+      rapdu->off = 0xFF;
+      if (remains > 0xFF) {
+        LL = 0xFF;
+        SW = 0x61FF;
+      } else {
+        LL = read;
+        SW = 0x6100 + remains;
+      }
+    }
   } else
     EXCEPT(SW_FILE_NOT_FOUND);
   return 0;
@@ -603,15 +624,13 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   // Part 1 Table 3 0x5FC1XX
   if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
   const char *path = get_object_path_by_tag(DATA[4]);
-  DBG_MSG("%s length %d\n", path, LC - 5);
+  DBG_MSG("%s total length %d\n", path, LC - 5);
   if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
   uint16_t cap = get_capacity_by_tag(DATA[4]);
   if (LC - 5 > cap) EXCEPT(SW_NOT_ENOUGH_SPACE);
   if (write_file(path, DATA + 5, 0, LC - 5, 1) < 0) return -1;
-#ifdef DEBUG_OUTPUT
-  int len = read_file(path, DATA + 5, 0, LC - 5);
-#endif
-  DBG_MSG("length %d\n", len);
+  strcpy((char *)capdu->path, path);
+  DBG_MSG("%s writen length %d\n", path, get_file_size(path));
   return 0;
 }
 
