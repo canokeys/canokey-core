@@ -70,6 +70,9 @@ static uint8_t in_admin_status;
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
 
+static char piv_do_path[9];
+static int piv_do_read; // -1: not in read mode, else: do offset
+
 static void authenticate_reset(void) {
   auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_NONE;
   auth_ctx[OFFSET_AUTH_KEY_ID] = 0;
@@ -241,27 +244,55 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     int size = get_file_size(path);
     if (size < 0) {
-      ERR_MSG("read file size %s error: %d\n", rapdu->path, size);
+      ERR_MSG("read file size %s error: %d\n", path, size);
       return -1;
     }
+    if (size == 0) EXCEPT(SW_FILE_NOT_FOUND);
     int read = read_file(path, RDATA, 0, LE); // return first chunk
     if (read < 0) {
       ERR_MSG("read file %s error: %d\n", path, read);
       return -1;
     }
     DBG_MSG("read file %s, expected: %d, read: %d\n", path, LE, read);
-    if (read == 0) EXCEPT(SW_FILE_NOT_FOUND);
-    strcpy(rapdu->path, path);
-    rapdu->off = LL = read;
     int remains = size - read;
-    if (remains == 0) // sent all
+    if (remains == 0) { // sent all
+      piv_do_read = -1;
       SW = SW_NO_ERROR;
-    else if (remains > 0xFF)
-      SW = 0x61FF;
-    else
-      SW = 0x6100 + remains;
+    } else {
+      strcpy(piv_do_path, path);
+      piv_do_read = read;
+      if (remains > 0xFF)
+        SW = 0x61FF;
+      else
+        SW = 0x6100 + remains;
+    }
   } else
     EXCEPT(SW_FILE_NOT_FOUND);
+  return 0;
+}
+
+static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
+  int size = get_file_size(piv_do_path);
+  if (size < 0) {
+    ERR_MSG("read file size %s error: %d\n", piv_do_path, size);
+    return -1;
+  }
+  int read = read_file(piv_do_path, RDATA, piv_do_read, LE); // return first chunk
+  if (read < 0) {
+    ERR_MSG("read file %s error: %d\n", piv_do_path, read);
+    return -1;
+  }
+  DBG_MSG("continue to read file %s, expected: %d, read: %d\n", piv_do_path, LE, read);
+  piv_do_read += read;
+
+  int remains = size - piv_do_read;
+  if (remains == 0) // sent all
+    SW = SW_NO_ERROR;
+  else if (remains > 0xFF)
+    SW = 0x61FF;
+  else
+    SW = 0x6100 + remains;
+
   return 0;
 }
 
@@ -614,25 +645,36 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
+
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
-  if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
-  if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
-  // Part 1 Table 3 0x5FC1XX, only first chunk is processed here
-  if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
-  int size = LC - 5; // size of the first chunk
-  const char *path = get_object_path_by_tag(DATA[4]);
-  DBG_MSG("%s total length %d\n", path, size);
-  if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-  int written = write_file(path, DATA + 5, 0, size, 1);
-  if (written < 0) {
-    ERR_MSG("write file %s error: %d\n", path, written);
-    return -1;
+
+  if (piv_do_path[0] == 0) {
+    if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
+    // Part 1 Table 3 0x5FC1XX
+    if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
+    const char *path = get_object_path_by_tag(DATA[4]);
+    if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
+    int size = LC - 5;
+    DBG_MSG("write file %s, first chunk length %d\n", path, size);
+    int rc = write_file(path, DATA + 5, 0, size, 1);
+    if (rc < 0) {
+      ERR_MSG("write file %s error: %d\n", path, rc);
+      return -1;
+    }
+  } else {
+    DBG_MSG("write file %s, continuous chunk length %d\n", piv_do_path, LC);
+    int rc = append_file(piv_do_path, DATA, LC);
+    if (rc < 0) {
+      ERR_MSG("write file %s error: %d\n", piv_do_path, rc);
+      return -1;
+    }
   }
-  if (CLA & 0x10) {
-    DBG_MSG("not finished\n");
-    strcpy((char *)capdu->path, path);
+
+  if ((CLA & 0x10) == 0) { // last chunk
+    piv_do_path[0] = 0;
   }
-  DBG_MSG("%s writen length %d\n", path, get_file_size(path));
+
   return 0;
 }
 
@@ -866,7 +908,9 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (CLA != 0x00 || (CLA == 0x10 && INS == PIV_INS_PUT_DATA)) EXCEPT(SW_CLA_NOT_SUPPORTED);
+
+  if (INS != PIV_INS_PUT_DATA && INS != PIV_INS_GET_DATA_RESPONSE) piv_do_path[0] = 0;
 
   int ret = 0;
   switch (INS) {
@@ -875,6 +919,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GET_DATA:
     ret = piv_get_data(capdu, rapdu);
+    break;
+  case PIV_INS_GET_DATA_RESPONSE:
+    ret = piv_get_data_response(capdu, rapdu);
     break;
   case PIV_INS_VERIFY:
     ret = piv_verify(capdu, rapdu);

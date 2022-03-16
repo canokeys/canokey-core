@@ -23,6 +23,12 @@ enum APPLET {
   APPLET_ENUM_END,
 } current_applet;
 
+enum PIV_STATE {
+  PIV_STATE_GET_DATA,
+  PIV_STATE_GET_DATA_RESPONSE,
+  PIV_STATE_OTHER,
+};
+
 static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
@@ -145,57 +151,16 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
-  int rc;
+  static enum PIV_STATE piv_state;
   if (current_applet == APPLET_PIV) {
-    if (INS == PIV_INS_PUT_DATA) {
-      LL = 0;
-      if (capdu->path[0] == 0) { // first chunk of put data
-        piv_process_apdu(capdu, rapdu);
-      } else { // not first chunk, append data
-        // TODO: check cap
-        if ((rc = append_file(capdu->path, DATA, LC)) < 0) {
-          ERR_MSG("append file %s error: %d\n", capdu->path, rc);
-          SW = SW_UNABLE_TO_PROCESS;
-          return;
-        }
-        DBG_MSG("%s writen length %d\n", capdu->path, get_file_size(capdu->path));
-        SW = SW_NO_ERROR;
-        if ((CLA & 0x10) == 0) { // last chunk
-          capdu->path[0] = 0;
-        }
-      }
-      return;
-    }
-    if (INS == PIV_INS_GET_DATA) {
+    if (INS == PIV_INS_GET_DATA)
+      piv_state = PIV_STATE_GET_DATA;
+    else if (piv_state == PIV_STATE_GET_DATA && INS == 0xC0)
+      piv_state = PIV_STATE_GET_DATA_RESPONSE;
+    else
+      piv_state = PIV_STATE_OTHER;
+    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA)
       piv_process_apdu(capdu, rapdu);
-      return;
-    }
-    if (INS == 0xC0) { // get response, note that metadata is written to rapdu_chaining
-      int size = get_file_size(rapdu->path);
-      if (size < 0) {
-        ERR_MSG("read file size %s error: %d\n", rapdu->path, size);
-        LL = 0;
-        SW = SW_UNABLE_TO_PROCESS;
-        return;
-      }
-      DBG_MSG("read file %s, off: %d, len: %d\n", rapdu->path, rapdu->off, LE);
-      if ((rc = read_file(rapdu->path, RDATA, rapdu->off, LE)) < 0) {
-        ERR_MSG("read file %s error: %d\n", rapdu->path, rc);
-        LL = 0;
-        SW = SW_UNABLE_TO_PROCESS;
-      } else {
-        LL = rc;
-        rapdu->off += rc;
-        int remains = size - rapdu->off;
-        if (remains == 0)
-          SW = SW_NO_ERROR;
-        else if (remains > 0xFF)
-          SW = 0x61FF;
-        else
-          SW = 0x6100 + remains;
-      }
-      return;
-    }
   }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
@@ -220,6 +185,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
             DBG_MSG("NDEF is disable\n");
             return;
           }
+          if (i == APPLET_PIV) piv_state = PIV_STATE_OTHER; // Reset `piv_state`
           if (i != current_applet) applets_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);
