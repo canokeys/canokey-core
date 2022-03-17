@@ -284,6 +284,7 @@ static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
     return -1;
   }
   DBG_MSG("continue to read file %s, expected: %d, read: %d\n", piv_do_path, LE, read);
+  LL = read;
   piv_do_read += read;
 
   int remains = size - piv_do_read;
