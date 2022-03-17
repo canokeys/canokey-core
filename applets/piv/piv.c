@@ -167,22 +167,20 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 }
 
 static uint16_t get_capacity_by_tag(uint8_t tag) {
-  // Part 1 Table 7 Container Minimum Capacity
-  // 5FC1XX
-  const uint16_t maximum = APDU_BUFFER_SIZE - 5; // capacity is limit by data buffer of PUT DATA
+  // Part 1 Table 7 Container Minimum Capacity, 5FC1XX
   switch (tag) {
   case 0x01:        // X.509 Certificate for Card Authentication
-    return maximum; // 1905;
+    return 6144;
   case 0x02:        // Card Holder Unique Identifier
-    return maximum; // 2916;
+    return 2916;
   case 0x05:        // X.509 Certificate for PIV Authentication
-    return maximum; // 1905;
+    return 6144;
   case 0x07:        // Card Capability Container
     return 287;
   case 0x0A:        // X.509 Certificate for Digital Signature
-    return maximum; // 1905;
+    return 6144;
   case 0x0B:        // X.509 Certificate for Key Management
-    return maximum; // 1905;
+    return 6144;
   default:
     return 0;
   }
