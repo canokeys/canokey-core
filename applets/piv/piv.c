@@ -271,6 +271,8 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
+  if (piv_do_read == -1) EXCEPT(SW_INS_NOT_SUPPORTED);
+
   int size = get_file_size(piv_do_path);
   if (size < 0) {
     ERR_MSG("read file size %s error: %d\n", piv_do_path, size);
@@ -286,9 +288,10 @@ static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
   piv_do_read += read;
 
   int remains = size - piv_do_read;
-  if (remains == 0) // sent all
+  if (remains == 0) { // sent all
+    piv_do_read = -1;
     SW = SW_NO_ERROR;
-  else if (remains > 0xFF)
+  } else if (remains > 0xFF)
     SW = 0x61FF;
   else
     SW = 0x6100 + remains;
@@ -912,6 +915,7 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (!(CLA == 0x00 || (CLA == 0x10 && INS == PIV_INS_PUT_DATA))) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   if (INS != PIV_INS_PUT_DATA && INS != PIV_INS_GET_DATA_RESPONSE) piv_do_path[0] = 0;
+  if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
 
   int ret = 0;
   switch (INS) {
