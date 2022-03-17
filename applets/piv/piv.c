@@ -253,6 +253,7 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("read file %s error: %d\n", path, read);
       return -1;
     }
+    LL = read;
     DBG_MSG("read file %s, expected: %d, read: %d\n", path, LE, read);
     int remains = size - read;
     if (remains == 0) { // sent all
@@ -908,7 +909,7 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (CLA != 0x00 || (CLA == 0x10 && INS == PIV_INS_PUT_DATA)) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (!(CLA == 0x00 || (CLA == 0x10 && INS == PIV_INS_PUT_DATA))) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   if (INS != PIV_INS_PUT_DATA && INS != PIV_INS_GET_DATA_RESPONSE) piv_do_path[0] = 0;
 
