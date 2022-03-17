@@ -155,7 +155,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   if (current_applet == APPLET_PIV) {
     if (INS == PIV_INS_GET_DATA)
       piv_state = PIV_STATE_GET_DATA;
-    else if (piv_state == PIV_STATE_GET_DATA && INS == 0xC0)
+    else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0)
       piv_state = PIV_STATE_GET_DATA_RESPONSE;
     else
       piv_state = PIV_STATE_OTHER;
