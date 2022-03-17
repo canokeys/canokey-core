@@ -664,6 +664,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("write file %s error: %d\n", path, rc);
       return -1;
     }
+    strcpy(piv_do_path, path);
   } else {
     DBG_MSG("write file %s, continuous chunk length %d\n", piv_do_path, LC);
     int rc = append_file(piv_do_path, DATA, LC);
