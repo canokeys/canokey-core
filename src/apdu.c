@@ -159,8 +159,10 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       piv_state = PIV_STATE_GET_DATA_RESPONSE;
     else
       piv_state = PIV_STATE_OTHER;
-    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA)
+    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA) {
       piv_process_apdu(capdu, rapdu);
+      return;
+    }
   }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
