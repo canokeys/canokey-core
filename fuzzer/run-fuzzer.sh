@@ -9,6 +9,7 @@ fi
 INIT_DIR="fuzzing/seeds"
 DATA_DIR="fuzzing/$TARGET/data"
 WORK_DIR="fuzzing/$TARGET/working"
+mkdir -p "$INIT_DIR"
 mkdir -p "$DATA_DIR"
 mkdir -p "$WORK_DIR"
 # echo '00 01 00 00' > "$DATA_DIR/initial"
