@@ -2,6 +2,7 @@
 #include <admin.h>
 #include <apdu.h>
 #include <applets.h>
+#include <common.h>
 #include <ctap.h>
 #include <device.h>
 #include <meta.h>
@@ -9,7 +10,6 @@
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
-#include <string.h>
 
 enum APPLET {
   APPLET_NULL,
@@ -22,6 +22,12 @@ enum APPLET {
   APPLET_META,
   APPLET_ENUM_END,
 } current_applet;
+
+enum PIV_STATE {
+  PIV_STATE_GET_DATA,
+  PIV_STATE_GET_DATA_RESPONSE,
+  PIV_STATE_OTHER,
+};
 
 static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
@@ -145,6 +151,19 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
+  static enum PIV_STATE piv_state;
+  if (current_applet == APPLET_PIV) {
+    if (INS == PIV_INS_GET_DATA)
+      piv_state = PIV_STATE_GET_DATA;
+    else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0)
+      piv_state = PIV_STATE_GET_DATA_RESPONSE;
+    else
+      piv_state = PIV_STATE_OTHER;
+    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA) {
+      piv_process_apdu(capdu, rapdu);
+      return;
+    }
+  }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
     LL = 0;
@@ -168,6 +187,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
             DBG_MSG("NDEF is disable\n");
             return;
           }
+          if (i == APPLET_PIV) piv_state = PIV_STATE_OTHER; // Reset `piv_state`
           if (i != current_applet) applets_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);

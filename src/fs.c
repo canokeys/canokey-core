@@ -47,6 +47,24 @@ err_close:
   return err;
 }
 
+int append_file(const char *path, const void *buf, lfs_size_t len) {
+  lfs_file_t f;
+  int err = lfs_file_open(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT);
+  if (err < 0) return err;
+  err = lfs_file_seek(&lfs, &f, 0, LFS_SEEK_END);
+  if (err < 0) goto err_close;
+  if (len > 0) {
+    err = lfs_file_write(&lfs, &f, buf, len);
+    if (err < 0) goto err_close;
+  }
+  err = lfs_file_close(&lfs, &f);
+  if (err < 0) return err;
+  return 0;
+err_close:
+  lfs_file_close(&lfs, &f);
+  return err;
+}
+
 int truncate_file(const char *path, lfs_size_t len) {
   lfs_file_t f;
   int flags = LFS_O_WRONLY | LFS_O_CREAT;

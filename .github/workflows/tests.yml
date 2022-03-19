@@ -381,10 +381,12 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
         yubico-piv-tool -r "$RDID" -a reset
         yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
-        ## Fill this applet as much as possible
+        ## Test long data object
         yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
-        longName=OU=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName0000/O=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/L=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/ST=ThisIsAVeryLongNameThisIsAVeryLongName/C=CN
-        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/$longName/" RSA2048; done
+        for s in 9a 9c 9d 9e; do 
+          PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048
+          yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
+        done
     
     - name: Prepare the Test Coverage Report
       run: |
