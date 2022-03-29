@@ -9,6 +9,7 @@
 #include <rsa.h>
 
 // data object path
+#define MAX_DO_PATH_LEN 9
 #define PIV_AUTH_CERT_PATH "piv-pauc"
 #define SIG_CERT_PATH "piv-sigc"
 #define KEY_MANAGEMENT_CERT_PATH "piv-mntc"
@@ -66,12 +67,12 @@ static const uint8_t pix[] = {0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 static const uint8_t pin_policy[] = {0x40, 0x10};
 static uint8_t auth_ctx[LENGTH_AUTH_STATE];
 static uint8_t in_admin_status;
+static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
+static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
+static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
 
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
-
-static char piv_do_path[9];
-static int piv_do_read; // -1: not in read mode, else: do offset
 
 static void authenticate_reset(void) {
   auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_NONE;
@@ -103,7 +104,12 @@ static int get_input_size(uint8_t alg) {
   }
 }
 
-void piv_poweroff(void) { in_admin_status = 0; }
+void piv_poweroff(void) {
+  in_admin_status = 0;
+  piv_do_write = -1;
+  piv_do_read = -1;
+  piv_do_path[0] = '\0';
+}
 
 int piv_install(uint8_t reset) {
   piv_poweroff();
@@ -169,17 +175,17 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 static uint16_t get_capacity_by_tag(uint8_t tag) {
   // Part 1 Table 7 Container Minimum Capacity, 5FC1XX
   switch (tag) {
-  case 0x01:        // X.509 Certificate for Card Authentication
+  case 0x01: // X.509 Certificate for Card Authentication
     return 3000;
-  case 0x02:        // Card Holder Unique Identifier
+  case 0x02: // Card Holder Unique Identifier
     return 2916;
-  case 0x05:        // X.509 Certificate for PIV Authentication
+  case 0x05: // X.509 Certificate for PIV Authentication
     return 3000;
-  case 0x07:        // Card Capability Container
+  case 0x07: // Card Capability Container
     return 287;
-  case 0x0A:        // X.509 Certificate for Digital Signature
+  case 0x0A: // X.509 Certificate for Digital Signature
     return 3000;
-  case 0x0B:        // X.509 Certificate for Key Management
+  case 0x0B: // X.509 Certificate for Key Management
     return 3000;
   default:
     return 0;
@@ -201,6 +207,31 @@ static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(RDATA + 8 + sizeof(pix), rid, sizeof(rid));
   LL = 8 + sizeof(pix) + sizeof(rid);
 
+  return 0;
+}
+
+static int piv_get_large_data(const CAPDU *capdu, RAPDU *rapdu, const char *path, int size) {
+  // piv_do_read should equal to -1 before calling this function
+
+  int read = read_file(path, RDATA, 0, LE); // return first chunk
+  if (read < 0) {
+    ERR_MSG("read file %s error: %d\n", path, read);
+    return -1;
+  }
+  LL = read;
+  DBG_MSG("read file %s, expected: %d, read: %d\n", path, LE, read);
+  int remains = size - read;
+  if (remains == 0) { // sent all
+    SW = SW_NO_ERROR;
+  } else {
+    // save state for GET REPONSE command
+    strcpy(piv_do_path, path);
+    piv_do_read = read;
+    if (remains > 0xFF)
+      SW = 0x61FF;
+    else
+      SW = 0x6100 + remains;
+  }
   return 0;
 }
 
@@ -246,39 +277,22 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
     if (size == 0) EXCEPT(SW_FILE_NOT_FOUND);
-    int read = read_file(path, RDATA, 0, LE); // return first chunk
-    if (read < 0) {
-      ERR_MSG("read file %s error: %d\n", path, read);
-      return -1;
-    }
-    LL = read;
-    DBG_MSG("read file %s, expected: %d, read: %d\n", path, LE, read);
-    int remains = size - read;
-    if (remains == 0) { // sent all
-      piv_do_read = -1;
-      SW = SW_NO_ERROR;
-    } else {
-      strcpy(piv_do_path, path);
-      piv_do_read = read;
-      if (remains > 0xFF)
-        SW = 0x61FF;
-      else
-        SW = 0x6100 + remains;
-    }
+    return piv_get_large_data(capdu, rapdu, path, size);
   } else
     EXCEPT(SW_FILE_NOT_FOUND);
   return 0;
 }
 
 static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
-  if (piv_do_read == -1) EXCEPT(SW_INS_NOT_SUPPORTED);
+  if (piv_do_read == -1) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  if (piv_do_path[0] == '\0') return -1;
 
   int size = get_file_size(piv_do_path);
   if (size < 0) {
     ERR_MSG("read file size %s error: %d\n", piv_do_path, size);
     return -1;
   }
-  int read = read_file(piv_do_path, RDATA, piv_do_read, LE); // return first chunk
+  int read = read_file(piv_do_path, RDATA, piv_do_read, LE);
   if (read < 0) {
     ERR_MSG("read file %s error: %d\n", piv_do_path, read);
     return -1;
@@ -290,6 +304,7 @@ static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
   int remains = size - piv_do_read;
   if (remains == 0) { // sent all
     piv_do_read = -1;
+    piv_do_path[0] = '\0';
     SW = SW_NO_ERROR;
   } else if (remains > 0xFF)
     SW = 0x61FF;
@@ -651,32 +666,48 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
 
-  if (piv_do_path[0] == 0) {
+  if (piv_do_write == -1) { // not in chaining write
     if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
+    int size = LC - 5;
     if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
     // Part 1 Table 3 0x5FC1XX
     if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     const char *path = get_object_path_by_tag(DATA[4]);
+    int max_len = get_capacity_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-    int size = LC - 5;
+    if (size > max_len) EXCEPT(SW_WRONG_LENGTH);
     DBG_MSG("write file %s, first chunk length %d\n", path, size);
     int rc = write_file(path, DATA + 5, 0, size, 1);
     if (rc < 0) {
       ERR_MSG("write file %s error: %d\n", path, rc);
       return -1;
     }
-    strcpy(piv_do_path, path);
+    if ((CLA & 0x10) != 0 && size < max_len) {
+      // enter chaining write mode
+      piv_do_write = max_len - size;
+      strcpy(piv_do_path, path);
+    }
   } else {
+    // piv_do_path should be valid
+    if (piv_do_path[0] == '\0') return -1;
+    // data length exceeded, terminate chaining write
+    if (LC > piv_do_write) {
+      piv_do_write = -1;
+      piv_do_path[0] = '\0';
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+    piv_do_write -= LC;
+
     DBG_MSG("write file %s, continuous chunk length %d\n", piv_do_path, LC);
     int rc = append_file(piv_do_path, DATA, LC);
     if (rc < 0) {
       ERR_MSG("write file %s error: %d\n", piv_do_path, rc);
       return -1;
     }
-  }
-
-  if ((CLA & 0x10) == 0) { // last chunk
-    piv_do_path[0] = 0;
+    if ((CLA & 0x10) == 0) { // last chunk
+      piv_do_write = -1;
+      piv_do_path[0] = '\0';
+    }
   }
 
   return 0;
@@ -914,7 +945,7 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   SW = SW_NO_ERROR;
   if (!(CLA == 0x00 || (CLA == 0x10 && INS == PIV_INS_PUT_DATA))) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
-  if (INS != PIV_INS_PUT_DATA && INS != PIV_INS_GET_DATA_RESPONSE) piv_do_path[0] = 0;
+  if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;
   if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
 
   int ret = 0;

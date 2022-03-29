@@ -150,11 +150,13 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
   if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
+#ifndef FUZZ
   ret = pin_get_retries(&pin);
   if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   if (is_nfc()) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   if (strong_user_presence_test() < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
 
   DBG_MSG("factory reset begins\n");
   ret = openpgp_install(1);

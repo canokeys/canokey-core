@@ -153,6 +153,8 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   static enum PIV_STATE piv_state;
   if (current_applet == APPLET_PIV) {
+    // Offload some APDU chaining commands of PIV applet,
+    // because the length of concatenated payloads may exceed chaining buffer size.
     if (INS == PIV_INS_GET_DATA)
       piv_state = PIV_STATE_GET_DATA;
     else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0)
@@ -160,6 +162,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     else
       piv_state = PIV_STATE_OTHER;
     if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA) {
+      LE = MIN(LE, APDU_BUFFER_SIZE); // Always clamp the Le to valid range
       piv_process_apdu(capdu, rapdu);
       return;
     }
