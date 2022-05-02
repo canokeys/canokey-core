@@ -550,6 +550,14 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(RDATA + off, rsa_attr, sizeof(rsa_attr));                                                                   \
     off += sizeof(rsa_attr);                                                                                           \
   } while (0)
+#define RSA3072(tag)                                                                                                   \
+  do {                                                                                                                 \
+    RDATA[off++] = tag;                                                                                                \
+    RDATA[off++] = sizeof(rsa_attr);                                                                                   \
+    memcpy(RDATA + off, rsa_attr, sizeof(rsa_attr));                                                                   \
+    RDATA[off + 1] = 0x0c;                                                                                             \
+    off += sizeof(rsa_attr);                                                                                           \
+  } while (0)
 #define RSA4096(tag)                                                                                                   \
   do {                                                                                                                 \
     RDATA[off++] = tag;                                                                                                \
@@ -568,6 +576,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     // SIG
     RSA2048(TAG_ALGORITHM_ATTRIBUTES_SIG);
+    RSA3072(TAG_ALGORITHM_ATTRIBUTES_SIG);
     RSA4096(TAG_ALGORITHM_ATTRIBUTES_SIG);
     EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ECDSA_P256R1);
     EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ECDSA_P256K1);
@@ -575,6 +584,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     EC(TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519);
     // DEC
     RSA2048(TAG_ALGORITHM_ATTRIBUTES_DEC);
+    RSA3072(TAG_ALGORITHM_ATTRIBUTES_DEC);
     RSA4096(TAG_ALGORITHM_ATTRIBUTES_DEC);
     EC(TAG_ALGORITHM_ATTRIBUTES_DEC, ECDH_P256R1);
     EC(TAG_ALGORITHM_ATTRIBUTES_DEC, ECDH_P256K1);
@@ -582,6 +592,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     EC(TAG_ALGORITHM_ATTRIBUTES_DEC, X25519);
     // AUT
     RSA2048(TAG_ALGORITHM_ATTRIBUTES_AUT);
+    RSA3072(TAG_ALGORITHM_ATTRIBUTES_AUT);
     RSA4096(TAG_ALGORITHM_ATTRIBUTES_AUT);
     EC(TAG_ALGORITHM_ATTRIBUTES_AUT, ECDSA_P256R1);
     EC(TAG_ALGORITHM_ATTRIBUTES_AUT, ECDSA_P256K1);
@@ -1108,7 +1119,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (DATA[0] == KEY_TYPE_RSA) {
       if (LC != sizeof(rsa_attr)) EXCEPT(SW_WRONG_DATA);
       uint16_t nbits = (DATA[1] << 8) | DATA[2];
-      if (nbits != 2048 && nbits != 4096) EXCEPT(SW_WRONG_DATA);
+      if (nbits != 2048 && nbits != 3072 && nbits != 4096) EXCEPT(SW_WRONG_DATA);
       DATA[3] = 0x00;
       DATA[4] = 0x20;
       DATA[5] = 0x02;
