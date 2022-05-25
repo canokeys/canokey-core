@@ -7,6 +7,9 @@ option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
 option(VIRTCARD "Virt Card" OFF)
 
+# To be override by MCU specific cmakelists
+set(TINYUSB_MCU "OPT_MCU_NONE" CACHE STRING "TinyUSB MCU name")
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer")
@@ -27,6 +30,8 @@ add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 if (DEFINED USBD_PRODUCT_STRING)
     add_definitions(-DUSBD_PRODUCT_STRING="${USBD_PRODUCT_STRING}")
 endif ()
+
+add_definitions(-DCFG_TUSB_MCU=${TINYUSB_MCU})
 
 file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c 
         tinyusb/src/*.c littlefs/lfs.c littlefs/lfs_util.c

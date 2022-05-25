@@ -36,8 +36,7 @@
 
 // defined by board.mk
 #ifndef CFG_TUSB_MCU
-//   #error CFG_TUSB_MCU must be defined
-  #define CFG_TUSB_MCU CFG_TUSB_MCU_STM32F103
+  #error CFG_TUSB_MCU must be defined
 #endif
 
 // RHPort number used for device can be defined by board.mk, default to port 0
