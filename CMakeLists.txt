@@ -28,8 +28,8 @@ if (DEFINED USBD_PRODUCT_STRING)
     add_definitions(-DUSBD_PRODUCT_STRING="${USBD_PRODUCT_STRING}")
 endif ()
 
-file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
-        littlefs/lfs.c littlefs/lfs_util.c
+file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c 
+        tinyusb/src/*.c littlefs/lfs.c littlefs/lfs_util.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
 
@@ -50,11 +50,8 @@ target_include_directories(canokey-core SYSTEM
         littlefs
         tinycbor/src
         interfaces/USB/device
-        interfaces/USB/core/inc
-        interfaces/USB/class/ccid
         interfaces/USB/class/ctaphid
-        interfaces/USB/class/kbdhid
-        interfaces/USB/class/webusb)
+        tinyusb/src)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")

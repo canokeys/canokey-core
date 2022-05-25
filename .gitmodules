@@ -10,3 +10,6 @@
 [submodule "test-real/shunit2"]
 	path = test-real/shunit2
 	url = https://github.com/kward/shunit2.git
+[submodule "tinyusb"]
+	path = tinyusb
+	url = https://github.com/canokeys/tinyusb
