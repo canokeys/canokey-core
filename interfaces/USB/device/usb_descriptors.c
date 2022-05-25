@@ -55,7 +55,8 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+#define WEBUSB_DESC_LEN 9
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + WEBUSB_DESC_LEN)
 
 uint8_t desc_configuration[CONFIG_TOTAL_LEN] = {
   // Config number, interface count, string index, total length, attribute, power in mA
@@ -67,6 +68,12 @@ uint8_t const desc_configuration_hid[] = {
   TUD_HID_INOUT_DESCRIPTOR(
     PLACEHOLDER_IFACE_NUM, USBD_IDX_HID_STR, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report),
     PLACEHOLDER_EPOUT_ADDR, PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 5)
+};
+
+uint8_t const desc_configuration_webusb[] = {
+  /* Interface */
+  WEBUSB_DESC_LEN, TUSB_DESC_INTERFACE, PLACEHOLDER_IFACE_NUM, 0, 2,
+  TUSB_CLASS_VENDOR_SPECIFIC, 0x00, 0x00, USBD_IDX_WEBUSB_STR
 };
 
 static void patch_interface_descriptor(uint8_t *desc, uint8_t *desc_end, 
@@ -101,6 +108,12 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
   memcpy(desc, desc_configuration_hid, sizeof(desc_configuration_hid));
   patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_HID_IF, EP_IN(hid), EP_OUT(hid), CFG_TUD_HID_EP_BUFSIZE);
 
+  // patch WEBUSB descriptor
+  desc = desc_configuration + TUD_CONFIG_DESC_LEN + sizeof(desc_configuration_hid);
+  desc_end = desc + sizeof(desc_configuration_webusb);
+  memcpy(desc, desc_configuration_webusb, sizeof(desc_configuration_webusb));
+  patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_WEBUSB_IF, 0, 0, 0);
+
   return desc_configuration;
 }
 
@@ -114,7 +127,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
 #define MS_OS_20_DESC_LEN  0xB2
 
 // BOS Descriptor is required for webUSB
-uint8_t const desc_bos[] = {
+uint8_t desc_bos[] = {
   // total length, number of device caps
   TUD_BOS_DESCRIPTOR(BOS_TOTAL_LEN, 2),
 
@@ -126,6 +139,7 @@ uint8_t const desc_bos[] = {
 };
 
 uint8_t const * tud_descriptor_bos_cb(void) {
+  desc_bos[28] = cfg_is_webusb_landing_enable();
   return desc_bos;
 }
 
