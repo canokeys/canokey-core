@@ -56,9 +56,11 @@ target_include_directories(canokey-core SYSTEM
         littlefs
         tinycbor/src
         interfaces/USB/device
+        interfaces/USB/class/hid
         interfaces/USB/class/ctaphid
         interfaces/USB/class/ccid
         interfaces/USB/class/webusb
+        interfaces/USB/class/kbdhid
         tinyusb/src
         ${TINYUSB_DCD_INCLUDES})
 target_link_libraries(canokey-core canokey-crypto)

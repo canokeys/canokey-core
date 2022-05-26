@@ -60,11 +60,13 @@
 #endif
 
 #ifndef CFG_TUSB_OS
-#define CFG_TUSB_OS               OPT_OS_NONE
+  #define CFG_TUSB_OS               OPT_OS_NONE
 #endif
 
 // CFG_TUSB_DEBUG is defined by compiler in DEBUG build
-// #define CFG_TUSB_DEBUG           0
+#ifdef DEBUG_OUTPUT
+  #define CFG_TUSB_DEBUG           2
+#endif
 
 /* USB DMA on some MCUs can only access a specific SRAM region with restriction on alignment.
  * Tinyusb use follows macros to declare transferring memory so that they can be put
@@ -90,14 +92,16 @@
 #endif
 
 //------------- CLASS -------------//
-#define CFG_TUD_HID               1
+#define CFG_TUD_HID               2
 #define CFG_TUD_CDC               0
 #define CFG_TUD_MSC               0
 #define CFG_TUD_MIDI              0
 #define CFG_TUD_VENDOR            1
 
 // HID buffer size Should be sufficient to hold ID (if any) + Data
-#define CFG_TUD_HID_EP_BUFSIZE    8
+#define CFG_TUD_CTAPHID_EP_BUFSIZE  64
+
+#define CFG_TUD_KBDHID_EP_BUFSIZE   8
 
 // Vendor FIFO size of TX and RX
 // If not configured vendor endpoints will not be buffered

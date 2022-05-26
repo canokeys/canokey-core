@@ -39,17 +39,22 @@ uint8_t const * tud_descriptor_device_cb(void) {
 //--------------------------------------------------------------------+
 // HID report Descriptor
 //--------------------------------------------------------------------+
-uint8_t const desc_hid_report[] = {
-  TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(REPORT_ID_KEYBOARD)),
-  TUD_HID_REPORT_DESC_FIDO_U2F(HID_REPORT_ID(REPORT_ID_CTAP))
+uint8_t const desc_ctaphid_report[] = {
+  TUD_HID_REPORT_DESC_FIDO_U2F()
+};
+
+uint8_t const desc_kbdhid_report[] = {
+  TUD_HID_REPORT_DESC_KEYBOARD()
 };
 
 // Invoked when received GET HID REPORT DESCRIPTOR
 // Application return pointer to descriptor
 // Descriptor contents must exist long enough for transfer to complete
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
-  if (itf == 0) {
-    return desc_hid_report;
+  if (itf == HID_ITF_CTAP) {
+    return desc_ctaphid_report;
+  } else if (itf == HID_ITF_KBD && cfg_is_kbd_interface_enable()) {
+    return desc_kbdhid_report;
   }
 
   return NULL;
@@ -58,15 +63,21 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
 //--------------------------------------------------------------------+
 // Configuration Descriptor
 //--------------------------------------------------------------------+
-uint8_t const desc_configuration_hid[] = {
+uint8_t const desc_configuration_ctaphid[] = {
   TUD_HID_INOUT_DESCRIPTOR(
-    PLACEHOLDER_IFACE_NUM, USBD_IDX_HID_STR, HID_ITF_PROTOCOL_NONE, sizeof(desc_hid_report),
+    PLACEHOLDER_IFACE_NUM, USBD_IDX_CTAPHID_STR, HID_ITF_PROTOCOL_NONE, sizeof(desc_ctaphid_report),
     PLACEHOLDER_EPOUT_ADDR, PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 5)
+};
+
+uint8_t const desc_configuration_kbdhid[] = {
+  TUD_HID_DESCRIPTOR(
+    PLACEHOLDER_IFACE_NUM, USBD_IDX_KBDHID_STR, HID_ITF_PROTOCOL_KEYBOARD, sizeof(desc_kbdhid_report),
+    PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 5),
 };
 
 uint8_t const desc_configuration_webusb[] = {
   /* Interface */
-  0x09, TUSB_DESC_INTERFACE, PLACEHOLDER_IFACE_NUM, 0, 2,
+  0x09, TUSB_DESC_INTERFACE, PLACEHOLDER_IFACE_NUM, 0, 0,
   TUSB_CLASS_VENDOR_SPECIFIC, 0xFF, 0xFF, USBD_IDX_WEBUSB_STR
 
   /* No endpoints */
@@ -117,7 +128,7 @@ uint8_t const desc_configuration_ccid_endpoints[] = {
 #define CCID_DESC_LEN (sizeof(desc_configuration_ccid_interface) + \
   sizeof(tusb_ccid_descriptor_t) + sizeof(desc_configuration_ccid_endpoints))
 #define CONFIG_TOTAL_LEN (\
-  TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + WEBUSB_DESC_LEN + CCID_DESC_LEN)
+  TUD_CONFIG_DESC_LEN + 2*TUD_HID_DESC_LEN + WEBUSB_DESC_LEN + CCID_DESC_LEN)
 
 uint8_t const desc_configuration[TUD_CONFIG_DESC_LEN] = {
   // Config number, interface count, string index, total length, attribute, power in mA
@@ -159,11 +170,11 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
   // copy configuration descriptor
   memcpy(_desc_configuration, desc_configuration, TUD_CONFIG_DESC_LEN);
 
-  // patch HID descriptor
+  // patch CTAPHID descriptor
   uint8_t *desc = _desc_configuration + TUD_CONFIG_DESC_LEN;
-  uint8_t *desc_end = desc + sizeof(desc_configuration_hid);
-  memcpy(desc, desc_configuration_hid, sizeof(desc_configuration_hid));
-  patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_HID_IF, EP_IN(hid), EP_OUT(hid), CFG_TUD_HID_EP_BUFSIZE);
+  uint8_t *desc_end = desc + sizeof(desc_configuration_ctaphid);
+  memcpy(desc, desc_configuration_ctaphid, sizeof(desc_configuration_ctaphid));
+  patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_CTAPHID_IF, EP_IN(ctap_hid), EP_OUT(ctap_hid), CFG_TUD_CTAPHID_EP_BUFSIZE);
 
   // patch WEBUSB descriptor
   desc = desc_end;
@@ -185,6 +196,15 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
   memcpy(_desc_ptr, desc_configuration_ccid_endpoints, sizeof(desc_configuration_ccid_endpoints));
 
   patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_CCID_IF, EP_IN(ccid), EP_OUT(ccid), CFG_TUD_CCIDD_EP_BUFSIZE);
+
+  // patch KBDHID descriptor
+  if(cfg_is_kbd_interface_enable()) {
+    desc = desc_end;
+    desc_end = desc + sizeof(desc_configuration_kbdhid);
+    memcpy(desc, desc_configuration_kbdhid, sizeof(desc_configuration_kbdhid));
+    patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_KBDHID_IF, EP_IN(kbd_hid), EP_OUT(kbd_hid), CFG_TUD_KBDHID_EP_BUFSIZE);
+    n_interface++;
+  }
 
   // patch configuration descriptor
   _desc_configuration[4] = n_interface;
@@ -242,7 +262,6 @@ uint8_t const desc_ms_os_20[] = {
   0, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A),
 
   // Function Subset header: length, type, first interface, reserved, subset length
-  // TODO: check first interface number
   U16_TO_U8S_LE(0x0008), U16_TO_U8S_LE(MS_OS_20_SUBSET_HEADER_FUNCTION), 
   1, 0, U16_TO_U8S_LE(MS_OS_20_DESC_LEN-0x0A-0x08),
 
@@ -293,9 +312,10 @@ char const* string_desc_arr_std[] = {
 
 // array of pointer to custom string descriptors
 char const* string_desc_arr_custom[] = {
-  USBD_HID_INTERFACE_STRING,
+  USBD_CTAPHID_INTERFACE_STRING,
   USBD_CCID_INTERFACE_STRING,
-  USBD_WEBUSB_INTERFACE_STRING
+  USBD_WEBUSB_INTERFACE_STRING,
+  USBD_KBDHID_INTERFACE_STRING
 };
 
 static uint16_t _desc_str[USBD_MAX_STR_DESC_SIZE];

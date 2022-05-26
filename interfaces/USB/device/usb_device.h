@@ -6,15 +6,17 @@
 
 // 0xFF indicates corresponding interface disabled
 typedef struct {
-  uint8_t hid;
+  uint8_t ctap_hid;
   uint8_t webusb;
   uint8_t ccid;
+  uint8_t kbd_hid;
 } IFACE_TABLE_t;
 
 // 0xFF indicates corresponding interface disabled
 typedef struct {
   uint8_t ccid;
-  uint8_t hid;
+  uint8_t ctap_hid;
+  uint8_t kbd_hid;
 } EP_TABLE_t;
 
 #define EP_OUT(x) (EP_TABLE.x)
