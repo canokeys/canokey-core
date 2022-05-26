@@ -104,6 +104,9 @@
 #define CFG_TUD_VENDOR_RX_BUFSIZE 64
 #define CFG_TUD_VENDOR_TX_BUFSIZE 64
 
+// CCID buffer size
+#define CFG_TUD_CCIDD_EP_BUFSIZE 64
+
 #ifdef __cplusplus
  }
 #endif

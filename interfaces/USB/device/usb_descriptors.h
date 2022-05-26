@@ -26,7 +26,7 @@ enum {
   USBD_IDX_PRODUCT_STR      = 0x02,
   USBD_IDX_SERIAL_STR       = 0x03,
 
-  USBD_IDX_STD_STR_MAX      = 0x03,
+  USBD_IDX_STD_STR_MAX,
 
   // Custom strings
   USBD_IDX_CUSTOM_STR_BASE  = 0x10,
@@ -35,7 +35,7 @@ enum {
   USBD_IDX_CCID_STR         = 0x11,
   USBD_IDX_WEBUSB_STR       = 0x12,
 
-  USBD_IDX_CUSTOM_STR_MAX   = 0x12
+  USBD_IDX_CUSTOM_STR_MAX
 };
 
 #define PLACEHOLDER_IFACE_NUM 0xFF
@@ -52,7 +52,9 @@ enum {
 // HID report id
 enum {
   REPORT_ID_KEYBOARD = 1,
-  REPORT_ID_CTAP
+  REPORT_ID_CTAP,
+  
+  REPORT_ID_COUNT
 };
 
 // WebUSB vendor request

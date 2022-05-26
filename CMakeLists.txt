@@ -9,6 +9,7 @@ option(VIRTCARD "Virt Card" OFF)
 
 # To be override by MCU specific cmakelists
 set(TINYUSB_MCU "OPT_MCU_NONE" CACHE STRING "TinyUSB MCU name")
+set(TINYUSB_DCD_INCLUDES "" CACHE STRING "TinyUSB DCD include paths")
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
@@ -56,7 +57,10 @@ target_include_directories(canokey-core SYSTEM
         tinycbor/src
         interfaces/USB/device
         interfaces/USB/class/ctaphid
-        tinyusb/src)
+        interfaces/USB/class/ccid
+        interfaces/USB/class/webusb
+        tinyusb/src
+        ${TINYUSB_DCD_INCLUDES})
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
