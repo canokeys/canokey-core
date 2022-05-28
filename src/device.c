@@ -24,7 +24,7 @@ void device_loop(uint8_t has_touch) {
   tud_task();   // TinyUSB stack task
   
   // CCID_Loop();
-  // CTAPHID_Loop(0);
+  ctap_hid_loop(0);
   // WebUSB_Loop();
   if (has_touch &&                  // hardware features the touch pad
       !device_is_blinking() &&      // applets are not waiting for touch
@@ -63,14 +63,14 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   while (get_touch_result() == TOUCH_NO) {
     if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
     // if (wait_status == WAIT_CTAPHID) CCID_Loop();
-    // if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
-    //   if (wait_status != WAIT_DEEP) {
-    //     stop_blinking();
-    //     wait_status = WAIT_NONE; // namely shallow
-    //   } else
-    //     wait_status = WAIT_DEEP_CANCEL;
-    //   return USER_PRESENCE_CANCEL;
-    // }
+    if (ctap_hid_loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+      if (wait_status != WAIT_DEEP) {
+        stop_blinking();
+        wait_status = WAIT_NONE; // namely shallow
+      } else
+        wait_status = WAIT_DEEP_CANCEL;
+      return USER_PRESENCE_CANCEL;
+    }
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
