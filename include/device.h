@@ -65,6 +65,7 @@ int testmode_get_is_nfc_mode(void);
 // platform independent functions
 uint8_t wait_for_user_presence(uint8_t entry);
 int strong_user_presence_test(void);
+void device_mounted(void);
 void device_loop(uint8_t has_touch);
 uint8_t is_nfc(void);
 void set_nfc_state(uint8_t state);
