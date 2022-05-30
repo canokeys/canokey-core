@@ -23,9 +23,8 @@ void device_mounted() { kbd_hid_init(); }
 void device_loop(uint8_t has_touch) {
   tud_task();   // TinyUSB stack task
   
-  // CCID_Loop();
+  ccid_loop();
   ctap_hid_loop(0);
-  // WebUSB_Loop();
   if (has_touch &&                  // hardware features the touch pad
       !device_is_blinking() &&      // applets are not waiting for touch
       cfg_is_kbd_interface_enable() // keyboard emulation enabled

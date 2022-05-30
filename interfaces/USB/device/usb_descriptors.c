@@ -2,10 +2,10 @@
 #include <ccid.h>
 #include <tusb.h>
 
-#include "usb_descriptors.h"
-#include "usb_device.h"
+#include <usb_descriptors.h>
+#include <usb_device.h>
 
-#include "tusb_ccid.h"
+#include <ccid_device.h>
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -195,7 +195,7 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
 
   memcpy(_desc_ptr, desc_configuration_ccid_endpoints, sizeof(desc_configuration_ccid_endpoints));
 
-  patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_CCID_IF, EP_IN(ccid), EP_OUT(ccid), CFG_TUD_CCIDD_EP_BUFSIZE);
+  patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_CCID_IF, EP_IN(ccid), EP_OUT(ccid), CFG_TUD_CCID_EPSIZE);
 
   // patch KBDHID descriptor
   if(cfg_is_kbd_interface_enable()) {

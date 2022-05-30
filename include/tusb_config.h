@@ -96,6 +96,7 @@
 #define CFG_TUD_CDC               0
 #define CFG_TUD_MSC               0
 #define CFG_TUD_MIDI              0
+#define CFG_TUD_CCID              1
 #define CFG_TUD_VENDOR            1
 
 // HID buffer size Should be sufficient to hold ID (if any) + Data
@@ -108,7 +109,9 @@
 #define CFG_TUD_VENDOR_TX_BUFSIZE 0
 
 // CCID buffer size
-#define CFG_TUD_CCIDD_EP_BUFSIZE 64
+#define CFG_TUD_CCID_EPSIZE 64
+
+#define CFG_TUD_CCID_RX_BUFSIZE 64
 
 #ifdef __cplusplus
  }
