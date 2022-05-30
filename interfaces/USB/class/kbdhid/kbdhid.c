@@ -4,8 +4,8 @@
 #include <device.h>
 #include <oath.h>
 
-#include "kbdhid.h"
-#include "usb_descriptors.h"
+#include <kbdhid.h>
+#include <usb_descriptors.h>
 
 static enum {
   KBDHID_Idle,

@@ -1,9 +1,9 @@
 #include <tusb.h>
 #include <usb_descriptors.h>
 
-#include "ctaphid.h"
-#include "hid.h"
-#include "kbdhid.h"
+#include <ctaphid.h>
+#include <hid.h>
+#include <kbdhid.h>
 
 // Dispatch HID callback to ctap/kbd handlers
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint8_t len) {
