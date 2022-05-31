@@ -18,7 +18,12 @@ volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, he
 uint8_t device_is_blinking(void) { return last_blink != UINT32_MAX; }
 
 // Called when usb device is connected and initialized
-void device_mounted() { kbd_hid_init(); }
+void device_mounted() {
+  ccid_init();
+  ctap_hid_init();
+  webusb_init();
+  kbd_hid_init();
+}
 
 void device_loop(uint8_t has_touch) {
   tud_task();   // TinyUSB stack task
