@@ -46,6 +46,16 @@
       return CTAP2_ERR_USER_ACTION_TIMEOUT;                                                                            \
     }                                                                                                                  \
   } while (0)
+#define WAIT_NEW(timeout_response)                                                                                     \
+  do {                                                                                                                 \
+    if (is_nfc()) break;                                                                                               \
+    switch (wait_for_user_presence(WAIT_ENTRY_CTAPHID)) {                                                              \
+    case USER_PRESENCE_CANCEL:                                                                                         \
+      return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
+    case USER_PRESENCE_TIMEOUT:                                                                                        \
+      return timeout_response;                                                                            \
+    }                                                                                                                  \
+  } while (0)
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
@@ -214,7 +224,8 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
 }
 
 static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_t len) {
-  // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
+  // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-makeCred-authnr-alg
+  uint8_t data_buf[sizeof(CTAP_authData)];
   CborParser parser;
   CTAP_makeCredential mc;
   // CBOR of {"hmac-secret": true}
@@ -223,7 +234,105 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
-  uint8_t data_buf[sizeof(CTAP_authData)];
+  // 1. If authenticator supports clientPin features and the platform sends a zero length pinUvAuthParam
+  if ((mc.parsedParams & PARAM_pinUvAuthParam) && mc.pinUvAuthParamLength == 0) {
+    // a. Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
+    // b. If the user declines permission, or the operation times out, then end the operation by returning
+    //    CTAP2_ERR_OPERATION_DENIED.
+    WAIT_NEW(CTAP2_ERR_OPERATION_DENIED);
+    // c. If evidence of user interaction is provided in this step then return either CTAP2_ERR_PIN_NOT_SET
+    //    if PIN is not set or CTAP2_ERR_PIN_INVALID if PIN has been set.
+    if (has_pin())
+      return CTAP2_ERR_PIN_INVALID;
+    else
+      return CTAP2_ERR_PIN_NOT_SET;
+  }
+
+  // 2. If the pinUvAuthParam parameter is present
+  if (mc.parsedParams & PARAM_pinUvAuthParam) {
+    // a. If the pinUvAuthProtocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
+    if (mc.pinUvAuthProtocol != 1) return CTAP1_ERR_INVALID_PARAMETER;
+    // b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
+    if ((mc.parsedParams & PARAM_pinUvAuthProtocol) == 0) return CTAP2_ERR_MISSING_PARAMETER;
+  }
+
+  // 3. Validate pubKeyCredParams with the following steps
+  //    > This has been processed when parsing.
+
+  // 4. Create a new authenticatorMakeCredential response structure and initialize both its "uv" bit and "up" bit as false.
+  bool uv = false, up = false;
+
+  // 5. If the options parameter is present, process all option keys and values present in the parameter.
+  //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
+  if (mc.uv == OPTION_ABSENT) mc.uv = OPTION_FALSE;
+  //    b. If the pinUvAuthParam is present, let the "uv" option be treated as being present with the value false.
+  if (mc.parsedParams & PARAM_pinUvAuthParam) mc.uv = OPTION_FALSE;
+  //    c. If the "uv" option is true then
+  if (mc.uv == 1) {
+    //     1) If the authenticator does not support a built-in user verification method end the operation
+    //        by returning CTAP2_ERR_INVALID_OPTION.
+    DBG_MSG("Rule 5-c-1 not satisfied.\n");
+    return CTAP2_ERR_INVALID_OPTION;
+    //     2) [N/A] If the built-in user verification method has not yet been enabled, end the operation
+    //        by returning CTAP2_ERR_INVALID_OPTION.
+  }
+  //    d. If the "rk" option is present then: DO NOTHING
+  //    e. Else: (the "rk" option is absent): Let the "rk" option be treated as being present with the value false.
+  if (mc.rk == 0xFF) mc.rk = OPTION_FALSE;
+  //    f. If the "up" option is present then:
+  //       If the "up" option is false, end the operation by returning CTAP2_ERR_INVALID_OPTION.
+  if (mc.up == OPTION_FALSE) {
+    DBG_MSG("Rule 5-f not satisfied.\n");
+    return CTAP2_ERR_INVALID_OPTION;
+  }
+  //    g. If the "up" option is absent, let the "up" option be treated as being present with the value true
+  mc.up = OPTION_TRUE;
+
+  // 6. [N/A] If the alwaysUv option ID is present and true
+  // 7. If the makeCredUvNotRqd option ID is present and set to true in the authenticatorGetInfo response
+  //    If the following statements are all true:
+  //    a) The authenticator is protected by some form of user verification.
+  //    b) [ALWAYS TRUE] The "uv" option is set to false.
+  //    c) The pinUvAuthParam parameter is not present.
+  //    d) The "rk" option is present and set to true.
+  if (has_pin() /* a) */ && (mc.parsedParams & PARAM_pinUvAuthParam) == 0 /* b) */ &&mc.rk == OPTION_TRUE) {
+    // If ClientPin option ID is true and the noMcGaPermissionsWithClientPin option ID is absent or false,
+    // end the operation by returning CTAP2_ERR_PUAT_REQUIRED.
+    return CTAP2_ERR_PUAT_REQUIRED;
+    // [N/A] Otherwise, end the operation by returning CTAP2_ERR_OPERATION_DENIED.
+  }
+
+  // 8. [N/A] Else (the makeCredUvNotRqd option ID is present with the value false or is absent)
+
+  // 9. [N/A] If the enterpriseAttestation parameter is present
+
+  // 10. If the following statements are all true
+  //     a) "rk" and "uv" [ALWAYS TRUE] options are both set to false or omitted.
+  //     b) [ALWAYS TRUE] the makeCredUvNotRqd option ID in authenticatorGetInfo's response is present with the value true.
+  //     c) the pinUvAuthParam parameter is not present.
+  //     Then go to Step 12.
+  if (mc.rk == OPTION_FALSE && (mc.parsedParams & PARAM_pinUvAuthParam) == 0) goto step12;
+
+  // 11. If the authenticator is protected by some form of user verification, then:
+  //     [N/A] If the "uv" option is present and set to true
+  //     If pinUvAuthParam parameter is present (implying the "uv" option is false (see Step 5)):
+  //     a) Call verify(pinUvAuthToken, clientDataHash, pinUvAuthParam).
+  //        If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
+  hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), data_buf);
+  if (memcmp(data_buf, mc.pinUvAuthParam, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+  // TODO
+  //     b) Verify that the pinUvAuthToken has the mc permission, if not, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  //     c) If the pinUvAuthToken has a permissions RP ID associated:
+  //        If the permissions RP ID does not match the rp.id in this request, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  //     d) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
+  //     e) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  //     f) If userVerifiedFlagValue is true then set the "uv" bit to true in the response.
+  //     g) If the pinUvAuthToken does not have a permissions RP ID associated:
+  //        Associate the request’s rp.id parameter value with the pinUvAuthToken as its permissions RP ID.
+
+step12:
+  // 12. If the excludeList parameter is present and contains a credential ID created by this authenticator, that is bound to the specified rp.id:
+  //     a) If the credential’s credProtect value is not userVerificationRequired, then:
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
       uint8_t pri_key[PRI_KEY_SIZE];
@@ -237,6 +346,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
+        // TODO: follow the spec
         WAIT();
         return CTAP2_ERR_CREDENTIAL_EXCLUDED;
       }
@@ -245,36 +355,40 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     }
   }
 
-  if (has_pin() && (mc.parsedParams & PARAM_pinAuth) == 0) return CTAP2_ERR_PIN_REQUIRED;
-  if (mc.parsedParams & PARAM_pinAuth) {
-    if (mc.pinAuthLength == 0) {
-      WAIT();
-      if (has_pin())
-        return CTAP2_ERR_PIN_INVALID;
-      else
-        return CTAP2_ERR_PIN_NOT_SET;
-    }
-    if ((mc.parsedParams & PARAM_pinProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-    hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), params);
-    if (memcmp(params, mc.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+  // 13. If evidence of user interaction was provided as part of Step 11
+  // TODO: follow the spec
+
+  // 14. [ALWAYS TRUE] If the "up" option is set to true
+  //     a) If the pinUvAuthParam parameter is present then:
+  if (mc.parsedParams & PARAM_pinUvAuthParam) {
+    // TODO:
+  } else {
+    //   b) Else (implying the pinUvAuthParam parameter is not present)
+    // TODO
   }
+  //     c) Set the "up" bit to true in the response
+  up = true;
+  //     d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
+  // TODO
 
-  WAIT();
-
-  // build response
+  // NOW PREPARE THE RESPONSE
   CborEncoder map;
   ret = cbor_encoder_create_map(encoder, &map, 3);
   CHECK_CBOR_RET(ret);
 
-  // fmt
+  // [member name] fmt
   ret = cbor_encode_int(&map, RESP_fmt);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&map, "packed");
   CHECK_CBOR_RET(ret);
 
-  // auth data
+  // 15. If the extensions parameter is present:
+  // > Here, we only process the hmac-secret extension in ctap_make_auth_data()
+  // TODO: more extensions
+  // 16. Generate a new credential key pair for the algorithm chosen in step 3.
+  // [member name] authData
   len = sizeof(data_buf);
-  uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (has_pin() > 0 ? FLAGS_UV : 0) | FLAGS_UP;
+  uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(mc.rpIdHash, data_buf, flags, sizeof(hmacExt), hmacExt, &len, mc.alg_type);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
@@ -282,7 +396,12 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 
-  // process rk
+  // 17. If the "rk" option is set to true:
+  //     a) The authenticator MUST create a discoverable credential.
+  //     b) If a credential for the same rp.id and account ID already exists on the authenticator:
+  //        Overwrite that credential.
+  //     c) Store the user parameter along with the newly-created key pair.
+  //     d) If authenticator does not have enough internal storage to persist the new credential, return CTAP2_ERR_KEY_STORE_FULL.
   if (mc.rk) {
     CTAP_residentKey rk;
     int size = get_file_size(RK_FILE);
@@ -291,18 +410,23 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     for (i = 0; i != nRk; ++i) {
       size = read_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      // b
       if (memcmp(mc.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0 &&
           mc.user.id_size == rk.user.id_size && memcmp(mc.user.id, rk.user.id, mc.user.id_size) == 0)
         break;
     }
+    // d
     if (i >= MAX_RK_NUM) return CTAP2_ERR_KEY_STORE_FULL;
     memcpy(&rk.credential_id, data_buf + 55, sizeof(rk.credential_id));
-    memcpy(&rk.user, &mc.user, sizeof(UserEntity));
+    memcpy(&rk.user, &mc.user, sizeof(UserEntity)); // c
     ret = write_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey), 0);
     if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
-  // attestation statement
+  // 18. Otherwise, if the "rk" option is false: the authenticator MUST create a non-discoverable credential.
+  // 19. Generate an attestation statement for the newly-created credential using clientDataHash
+
+  // [member name] attStmt
   // https://www.w3.org/TR/webauthn/#packed-attestation
   // {
   //   alg: COSE_ALG_ES256,
@@ -373,7 +497,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CHECK_PARSER_RET(ret);
   }
 
-  if (ga.parsedParams & PARAM_pinAuth) {
+  if (ga.parsedParams & PARAM_pinUvAuthParam) {
     if (ga.pinAuthLength == 0) {
       WAIT();
       if (has_pin())
@@ -381,7 +505,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       else
         return CTAP2_ERR_PIN_NOT_SET;
     }
-    if ((ga.parsedParams & PARAM_pinProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if ((ga.parsedParams & PARAM_pinUvAuthProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), pinAuth);
 #ifndef FUZZ
     if (memcmp(pinAuth, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
@@ -513,7 +637,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // auth data
   len = sizeof(data_buf);
   uint8_t flags = ((ga.parsedParams & PARAM_hmacSecret) ? FLAGS_ED : 0) |
-                  (has_pin() && (ga.parsedParams & PARAM_pinAuth) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
+                  (has_pin() && (ga.parsedParams & PARAM_pinUvAuthParam) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len, rk.credential_id.alg_type);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);
@@ -541,7 +665,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   if (ga.allowListSize == 0) {
     // CTAP Spec: User identifiable information (name, DisplayName, icon) MUST not
     // be returned if user verification is not done by the authenticator.
-    bool user_details = (ga.parsedParams & PARAM_pinAuth) && credential_numbers > 1;
+    bool user_details = (ga.parsedParams & PARAM_pinUvAuthParam) && credential_numbers > 1;
     ret = cbor_encode_int(&map, RESP_publicKeyCredentialUserEntity);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 4 : 1);
@@ -591,8 +715,7 @@ static uint8_t ctap_get_next_assertion(CborEncoder *encoder) {
 }
 
 static uint8_t ctap_get_info(CborEncoder *encoder) {
-  // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorGetInfo
-  // Currently, we respond versions, aaguid, pin protocol.
+  // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetInfo
   CborEncoder map;
   int ret = cbor_encoder_create_map(encoder, &map, 6);
   CHECK_CBOR_RET(ret);
@@ -604,7 +727,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
+    ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&array, "U2F_V2");
     CHECK_CBOR_RET(ret);
@@ -654,7 +777,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
 
   // pin protocol
-  ret = cbor_encode_int(&map, RESP_pinProtocols);
+  ret = cbor_encode_int(&map, RESP_pinUvAuthProtocols);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_array(&map, &array, 1);
   CHECK_CBOR_RET(ret);

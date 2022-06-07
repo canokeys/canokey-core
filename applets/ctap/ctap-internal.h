@@ -32,17 +32,22 @@
 #define PARAM_pubKeyCredParams (1 << 3)
 #define PARAM_extensions (1 << 4)
 #define PARAM_options (1 << 5)
-#define PARAM_pinAuth (1 << 6)
-#define PARAM_pinProtocol (1 << 7)
+#define PARAM_pinUvAuthParam (1 << 6)
+#define PARAM_pinUvAuthProtocol (1 << 7)
 #define PARAM_subCommand (1 << 8)
 #define PARAM_keyAgreement (1 << 9)
 #define PARAM_newPinEnc (1 << 10)
 #define PARAM_pinHashEnc (1 << 11)
 #define PARAM_hmacSecret (1 << 12)
+#define PARAM_enterpriseAttestation (1 << 13)
 
 #define MC_requiredMask (PARAM_clientDataHash | PARAM_rpId | PARAM_user | PARAM_pubKeyCredParams)
 #define GA_requiredMask (PARAM_clientDataHash | PARAM_rpId)
-#define CP_requiredMask (PARAM_pinProtocol | PARAM_subCommand)
+#define CP_requiredMask (PARAM_pinUvAuthProtocol | PARAM_subCommand)
+
+#define OPTION_TRUE 0x01
+#define OPTION_FALSE 0x00
+#define OPTION_ABSENT 0xFF
 
 #define MC_clientDataHash 0x01
 #define MC_rp 0x02
@@ -53,6 +58,7 @@
 #define MC_options 0x07
 #define MC_pinAuth 0x08
 #define MC_pinProtocol 0x09
+#define MC_enterpriseAttestation 0x0A
 
 #define GA_rpId 0x01
 #define GA_clientDataHash 0x02
@@ -83,7 +89,7 @@
 #define RESP_aaguid 0x3
 #define RESP_options 0x4
 #define RESP_maxMsgSize 0x5
-#define RESP_pinProtocols 0x6
+#define RESP_pinUvAuthProtocols 0x6
 
 #define RESP_fmt 0x01
 #define RESP_authData 0x02
@@ -172,10 +178,12 @@ typedef struct {
   CborValue excludeList;
   size_t excludeListSize;
   uint8_t rk;
-  uint8_t extension_hmac_secret;
   uint8_t uv;
-  uint8_t pinAuth[PIN_AUTH_SIZE];
-  size_t pinAuthLength;
+  uint8_t up;
+  uint8_t extension_hmac_secret;
+  uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
+  size_t pinUvAuthParamLength;
+  uint8_t pinUvAuthProtocol;
 } CTAP_makeCredential;
 
 typedef struct {

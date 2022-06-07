@@ -474,8 +474,12 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
   CborValue it, map;
   size_t map_length;
   int key, pinProtocol;
-  uint8_t tmp_up;
   memset(mc, 0, sizeof(CTAP_makeCredential));
+
+  // options are absent by default
+  mc->rk = OPTION_ABSENT;
+  mc->uv = OPTION_ABSENT;
+  mc->up = OPTION_ABSENT;
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
   CHECK_CBOR_RET(ret);
@@ -551,25 +555,22 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_options:
       DBG_MSG("options found\n");
-      tmp_up = false;
-      ret = parse_options(&mc->rk, &mc->uv, &tmp_up, &map);
+      ret = parse_options(&mc->rk, &mc->uv, &mc->up, &map);
       CHECK_PARSER_RET(ret);
-      // required by FIDO Conformance Tool
-      if (tmp_up) return CTAP2_ERR_INVALID_OPTION;
       mc->parsedParams |= PARAM_options;
       break;
 
     case MC_pinAuth:
-      DBG_MSG("pinAuth found\n");
+      DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &mc->pinAuthLength);
+      ret = cbor_value_get_string_length(&map, &mc->pinUvAuthParamLength);
       CHECK_CBOR_RET(ret);
-      if (mc->pinAuthLength != 0 && mc->pinAuthLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
-      ret = cbor_value_copy_byte_string(&map, mc->pinAuth, &mc->pinAuthLength, NULL);
+      if (mc->pinUvAuthParamLength != 0 && mc->pinUvAuthParamLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
+      ret = cbor_value_copy_byte_string(&map, mc->pinUvAuthParam, &mc->pinUvAuthParamLength, NULL);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("pinAuth: ");
-      PRINT_HEX(mc->pinAuth, mc->pinAuthLength);
-      mc->parsedParams |= PARAM_pinAuth;
+      DBG_MSG("pinUvAuthParam: ");
+      PRINT_HEX(mc->pinUvAuthParam, mc->pinUvAuthParamLength);
+      mc->parsedParams |= PARAM_pinUvAuthParam;
       break;
 
     case MC_pinProtocol:
@@ -578,8 +579,14 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       ret = cbor_value_get_int_checked(&map, &pinProtocol);
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinProtocol: %d\n", pinProtocol);
-      if (pinProtocol != 1) return CTAP2_ERR_PIN_AUTH_INVALID;
-      mc->parsedParams |= PARAM_pinProtocol;
+      mc->pinUvAuthProtocol = pinProtocol;
+      mc->parsedParams |= PARAM_pinUvAuthProtocol;
+      break;
+
+    case MC_enterpriseAttestation:
+      DBG_MSG("enterpriseAttestation found\n");
+      mc->parsedParams |= PARAM_enterpriseAttestation;
+      // TODO: parse enterpriseAttestation
       break;
 
     default:
@@ -669,16 +676,16 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       break;
 
     case GA_pinAuth:
-      DBG_MSG("pinAuth found\n");
+      DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &ga->pinAuthLength);
       CHECK_CBOR_RET(ret);
       if (ga->pinAuthLength != 0 && ga->pinAuthLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cbor_value_copy_byte_string(&map, ga->pinAuth, &ga->pinAuthLength, NULL);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("pinAuth: ");
+      DBG_MSG("pinUvAuthParam: ");
       PRINT_HEX(ga->pinAuth, ga->pinAuthLength);
-      ga->parsedParams |= PARAM_pinAuth;
+      ga->parsedParams |= PARAM_pinUvAuthParam;
       break;
 
     case GA_pinProtocol:
@@ -688,7 +695,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinProtocol: %d\n", pinProtocol);
       if (pinProtocol != 1) return CTAP2_ERR_PIN_AUTH_INVALID;
-      ga->parsedParams |= PARAM_pinProtocol;
+      ga->parsedParams |= PARAM_pinUvAuthProtocol;
       break;
 
     default:
@@ -733,7 +740,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinProtocol: %d\n", pinProtocol);
       if (pinProtocol != 1) return CTAP2_ERR_PIN_AUTH_INVALID;
-      cp->parsedParams |= PARAM_pinProtocol;
+      cp->parsedParams |= PARAM_pinUvAuthProtocol;
       break;
 
     case CP_subCommand:
@@ -754,14 +761,14 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       break;
 
     case CP_pinAuth:
-      DBG_MSG("pinAuth found\n");
+      DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
       if (len != PIN_AUTH_SIZE) return CTAP2_ERR_INVALID_CBOR;
       ret = cbor_value_copy_byte_string(&map, cp->pinAuth, &len, NULL);
       CHECK_CBOR_RET(ret);
-      cp->parsedParams |= PARAM_pinAuth;
+      cp->parsedParams |= PARAM_pinUvAuthParam;
       break;
 
     case CP_newPinEnc:
@@ -801,7 +808,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
     return CTAP2_ERR_MISSING_PARAMETER;
   if (cp->subCommand == CP_cmdChangePin &&
       ((cp->parsedParams & PARAM_keyAgreement) == 0 || (cp->parsedParams & PARAM_pinHashEnc) == 0 ||
-       (cp->parsedParams & PARAM_newPinEnc) == 0 || (cp->parsedParams & PARAM_pinAuth) == 0))
+       (cp->parsedParams & PARAM_newPinEnc) == 0 || (cp->parsedParams & PARAM_pinUvAuthParam) == 0))
     return CTAP2_ERR_MISSING_PARAMETER;
   if (cp->subCommand == CP_cmdGetPinToken &&
       ((cp->parsedParams & PARAM_keyAgreement) == 0 || (cp->parsedParams & PARAM_pinHashEnc) == 0))
