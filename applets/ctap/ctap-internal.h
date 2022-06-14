@@ -45,9 +45,9 @@
 #define GA_requiredMask (PARAM_clientDataHash | PARAM_rpId)
 #define CP_requiredMask (PARAM_pinUvAuthProtocol | PARAM_subCommand)
 
-#define OPTION_TRUE 0x01
-#define OPTION_FALSE 0x00
-#define OPTION_ABSENT 0xFF
+#define OPTION_FALSE 0x0
+#define OPTION_TRUE 0x1
+#define OPTION_ABSENT 0x2
 
 #define MC_clientDataHash 0x01
 #define MC_rp 0x02
@@ -170,6 +170,12 @@ typedef struct {
 } __packed CTAP_authData;
 
 typedef struct {
+  uint8_t up : 2;
+  uint8_t uv : 2;
+  uint8_t rk : 2;
+} CTAP_options;
+
+typedef struct {
   uint16_t parsedParams;
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
@@ -177,9 +183,7 @@ typedef struct {
   int32_t alg_type;
   CborValue excludeList;
   size_t excludeListSize;
-  uint8_t rk;
-  uint8_t uv;
-  uint8_t up;
+  CTAP_options options;
   uint8_t extension_hmac_secret;
   uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
   size_t pinUvAuthParamLength;
@@ -192,10 +196,10 @@ typedef struct {
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
   CborValue allowList;
   size_t allowListSize;
-  uint8_t up;
-  uint8_t uv;
-  uint8_t pinAuth[PIN_AUTH_SIZE];
-  size_t pinAuthLength;
+  CTAP_options options;
+  uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
+  size_t pinUvAuthParamLength;
+  uint8_t pinUvAuthProtocol;
   uint8_t hmacSecretKeyAgreement[PUB_KEY_SIZE];
   uint8_t hmacSecretSaltEnc[HMAC_SECRET_SALT_SIZE];
   uint8_t hmacSecretSaltAuth[HMAC_SECRET_SALT_AUTH_SIZE];

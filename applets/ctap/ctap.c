@@ -264,11 +264,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   // 5. If the options parameter is present, process all option keys and values present in the parameter.
   //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
-  if (mc.uv == OPTION_ABSENT) mc.uv = OPTION_FALSE;
+  if (mc.options.uv == OPTION_ABSENT) mc.options.uv = OPTION_FALSE;
   //    b. If the pinUvAuthParam is present, let the "uv" option be treated as being present with the value false.
-  if (mc.parsedParams & PARAM_pinUvAuthParam) mc.uv = OPTION_FALSE;
+  if (mc.parsedParams & PARAM_pinUvAuthParam) mc.options.uv = OPTION_FALSE;
   //    c. If the "uv" option is true then
-  if (mc.uv == 1) {
+  if (mc.options.uv == OPTION_TRUE) {
     //     1) If the authenticator does not support a built-in user verification method end the operation
     //        by returning CTAP2_ERR_INVALID_OPTION.
     DBG_MSG("Rule 5-c-1 not satisfied.\n");
@@ -278,15 +278,15 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
   //    d. If the "rk" option is present then: DO NOTHING
   //    e. Else: (the "rk" option is absent): Let the "rk" option be treated as being present with the value false.
-  if (mc.rk == 0xFF) mc.rk = OPTION_FALSE;
+  if (mc.options.rk == OPTION_ABSENT) mc.options.rk = OPTION_FALSE;
   //    f. If the "up" option is present then:
   //       If the "up" option is false, end the operation by returning CTAP2_ERR_INVALID_OPTION.
-  if (mc.up == OPTION_FALSE) {
+  if (mc.options.up == OPTION_FALSE) {
     DBG_MSG("Rule 5-f not satisfied.\n");
     return CTAP2_ERR_INVALID_OPTION;
   }
   //    g. If the "up" option is absent, let the "up" option be treated as being present with the value true
-  mc.up = OPTION_TRUE;
+  mc.options.up = OPTION_TRUE;
 
   // 6. [N/A] If the alwaysUv option ID is present and true
   // 7. If the makeCredUvNotRqd option ID is present and set to true in the authenticatorGetInfo response
@@ -295,7 +295,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //    b) [ALWAYS TRUE] The "uv" option is set to false.
   //    c) The pinUvAuthParam parameter is not present.
   //    d) The "rk" option is present and set to true.
-  if (has_pin() /* a) */ && (mc.parsedParams & PARAM_pinUvAuthParam) == 0 /* b) */ &&mc.rk == OPTION_TRUE) {
+  if (has_pin() /* a) */ && (mc.parsedParams & PARAM_pinUvAuthParam) == 0 /* b) */ &&mc.options.rk == OPTION_TRUE) {
     // If ClientPin option ID is true and the noMcGaPermissionsWithClientPin option ID is absent or false,
     // end the operation by returning CTAP2_ERR_PUAT_REQUIRED.
     return CTAP2_ERR_PUAT_REQUIRED;
@@ -311,11 +311,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     b) [ALWAYS TRUE] the makeCredUvNotRqd option ID in authenticatorGetInfo's response is present with the value true.
   //     c) the pinUvAuthParam parameter is not present.
   //     Then go to Step 12.
-  if (mc.rk == OPTION_FALSE && (mc.parsedParams & PARAM_pinUvAuthParam) == 0) goto step12;
+  if (mc.options.rk == OPTION_FALSE && (mc.parsedParams & PARAM_pinUvAuthParam) == 0) goto step12;
 
   // 11. If the authenticator is protected by some form of user verification, then:
-  //     [N/A] If the "uv" option is present and set to true
-  //     If pinUvAuthParam parameter is present (implying the "uv" option is false (see Step 5)):
+  //     11.2 [N/A] If the "uv" option is present and set to true
+  //     11.1 If pinUvAuthParam parameter is present (implying the "uv" option is false (see Step 5)):
   //     a) Call verify(pinUvAuthToken, clientDataHash, pinUvAuthParam).
   //        If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
   hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), data_buf);
@@ -402,7 +402,7 @@ step12:
   //        Overwrite that credential.
   //     c) Store the user parameter along with the newly-created key pair.
   //     d) If authenticator does not have enough internal storage to persist the new credential, return CTAP2_ERR_KEY_STORE_FULL.
-  if (mc.rk) {
+  if (mc.options.rk == OPTION_TRUE) {
     CTAP_residentKey rk;
     int size = get_file_size(RK_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -488,79 +488,179 @@ step12:
 }
 
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len) {
+  // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_getAssertion ga;
+  uint8_t data_buf[sizeof(CTAP_authData) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
   CborParser parser;
+
   int ret;
-  uint8_t pinAuth[SHA256_DIGEST_LENGTH];
   if (credential_idx == 0) {
     ret = parse_get_assertion(&parser, &ga, params, len);
     CHECK_PARSER_RET(ret);
   }
 
-  if (ga.parsedParams & PARAM_pinUvAuthParam) {
-    if (ga.pinAuthLength == 0) {
-      WAIT();
-      if (has_pin())
-        return CTAP2_ERR_PIN_INVALID;
-      else
-        return CTAP2_ERR_PIN_NOT_SET;
-    }
-    if ((ga.parsedParams & PARAM_pinUvAuthProtocol) == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-    hmac_sha256(pin_token, PIN_TOKEN_SIZE, ga.clientDataHash, sizeof(ga.clientDataHash), pinAuth);
-#ifndef FUZZ
-    if (memcmp(pinAuth, ga.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-#endif
+  // 1. If authenticator supports clientPin features and the platform sends a zero length pinUvAuthParam
+  if ((ga.parsedParams & PARAM_pinUvAuthParam) && ga.pinUvAuthParamLength == 0) {
+    // a. Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
+    // b. If the user declines permission, or the operation times out, then end the operation by returning
+    //    CTAP2_ERR_OPERATION_DENIED.
+    WAIT_NEW(CTAP2_ERR_OPERATION_DENIED);
+    // c. If evidence of user interaction is provided in this step then return either CTAP2_ERR_PIN_NOT_SET
+    //    if PIN is not set or CTAP2_ERR_PIN_INVALID if PIN has been set.
+    if (has_pin())
+      return CTAP2_ERR_PIN_INVALID;
+    else
+      return CTAP2_ERR_PIN_NOT_SET;
   }
 
-  uint8_t data_buf[sizeof(CTAP_authData) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
-  CTAP_residentKey rk;
-  if (ga.allowListSize > 0) {
+  // 2. If the pinUvAuthParam parameter is present
+  if (ga.parsedParams & PARAM_pinUvAuthParam) {
+    // a. If the pinUvAuthProtocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
+    if (ga.pinUvAuthProtocol != 1) return CTAP1_ERR_INVALID_PARAMETER;
+    // b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
+    if ((ga.parsedParams & PARAM_pinUvAuthProtocol) == 0) return CTAP2_ERR_MISSING_PARAMETER;
+  }
+
+  // 3. Create a new authenticatorGetAssertion response structure and initialize both its "uv" bit and "up" bit as false.
+  bool uv = false, up = false;
+
+  // 4. If the options parameter is present, process all option keys and values present in the parameter.
+  //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
+  if (ga.options.uv == OPTION_ABSENT) ga.options.uv = OPTION_FALSE;
+  //    b. If the pinUvAuthParam is present, let the "uv" option be treated as being present with the value false.
+  if (ga.parsedParams & PARAM_pinUvAuthParam) ga.options.uv = OPTION_FALSE;
+  //    c. If the "uv" option is true then
+  if (ga.options.uv == OPTION_TRUE) {
+    //     1) If the authenticator does not support a built-in user verification method end the operation
+    //        by returning CTAP2_ERR_INVALID_OPTION.
+    DBG_MSG("Rule 4-c-1 not satisfied.\n");
+    return CTAP2_ERR_INVALID_OPTION;
+    //     2) [N/A] If the built-in user verification method has not yet been enabled, end the operation
+    //        by returning CTAP2_ERR_INVALID_OPTION.
+  }
+  //    d. If the "rk" option is present then: Return CTAP2_ERR_UNSUPPORTED_OPTION.
+  if (ga.options.rk != OPTION_ABSENT) return CTAP2_ERR_UNSUPPORTED_OPTION;
+  //    e. If the "up" option is not present then: Let the "up" option be treated as being present with the value true.
+  if (ga.options.up == OPTION_ABSENT) ga.options.up = OPTION_TRUE;
+
+  // 5. [N/A] If the alwaysUv option ID is present and true and the "up" option is present and true
+
+  // 6. If authenticator is protected by some form of user verification, then:
+  // TODO
+  //    6.2 [N/A] If the "uv" option is present and set to true
+  //    6.1 If pinUvAuthParam parameter is present
+  //    a) Call verify(pinUvAuthToken, clientDataHash pinUvAuthParam).
+  //       If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
+  //       If the verification returns success, set the "uv" bit to true in the response.
+  //    b) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
+  //    c) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  //    d) Verify that the pinUvAuthToken has the ga permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
+  //    e) If the pinUvAuthToken has a permissions RP ID associated:
+  //       If the permissions RP ID does not match the rpId in this request, return CTAP2_ERR_PIN_AUTH_INVALID.
+  //    f) If the pinUvAuthToken does not have a permissions RP ID associated:
+  //       Associate the request’s rpId parameter value with the pinUvAuthToken as its permissions RP ID.
+
+  // 7. Locate all credentials that are eligible for retrieval under the specified criteria
+  //    a) If the allowList parameter is present and is non-empty, locate all denoted credentials created by this
+  //       authenticator and bound to the specified rpId.
+  //    b) If an allowList is not present, locate all discoverable credentials that are created by this authenticator
+  //       and bound to the specified rpId.
+  //    c) Create an applicable credentials list populated with the located credentials.
+  //    d) Iterate through the applicable credentials list, and if credential protection for a credential is marked
+  //       as userVerificationRequired, and the "uv" bit is false in the response, remove that credential from the
+  //       applicable credentials list.
+  //    e) Iterate through the applicable credentials list, and if credential protection for a credential is marked
+  //       as userVerificationOptionalWithCredentialIDList and there is no allowList passed by the client and the "uv"
+  //       bit is false in the response, remove that credential from the applicable credentials list.
+  //    f) If the applicable credentials list is empty, return CTAP2_ERR_NO_CREDENTIALS.
+  //    g) Let numberOfCredentials be the number of applicable credentials found.
+  // NOTE: only one credential is used as stated in Step 11 & 12; therefore, we select that credential according to
+  //       Step 11 & 12:
+  // 11. If the allowList parameter is present:
+  //     Select any credential from the applicable credentials list.
+  //     Delete the numberOfCredentials member.
+  // 12. If allowList is not present:
+  //     a) If numberOfCredentials is one: Select that credential.
+  //     b) If numberOfCredentials is more than one:
+  //        1) Order the credentials in the applicable credentials list by the time when they were created in
+  //           reverse order. (I.e. the first credential is the most recently created.)
+  //        2）If the authenticator does not have a display:
+  //           i. Remember the authenticatorGetAssertion parameters.
+  //           ii. Create a credential counter (credentialCounter) and set it to 1. This counter signifies the next
+  //               credential to be returned by the authenticator, assuming zero-based indexing.
+  //           iii. Start a timer. This is used during authenticatorGetNextAssertion command. This step is OPTIONAL
+  //                if transport is done over NFC.
+  //           iv. Select the first credential.
+  //        3) [N/A] If authenticator has a display and at least one of the "uv" and "up" options is true.
+  //    c) Update the response to include the selected credential’s publicKeyCredentialUserEntity information.
+  //       User identifiable information (name, DisplayName, icon) inside the publicKeyCredentialUserEntity
+  //       MUST NOT be returned if user verification is not done by the authenticator.
+  CTAP_residentKey rk; // We use rk to store the selected credential
+  if (ga.allowListSize > 0) { // Step 11
     size_t i;
     for (i = 0; i < ga.allowListSize; ++i) {
-      parse_credential_descriptor(&ga.allowList, (uint8_t *)&rk.credential_id);
-      // compare rpId first
+      parse_credential_descriptor(&ga.allowList, (uint8_t *) &rk.credential_id);
+      // compare the rpId first
       if (memcmp(rk.credential_id.rpIdHash, ga.rpIdHash, sizeof(rk.credential_id.rpIdHash)) != 0) goto next;
-      // then verify key handle and get private key
+      // then verify the key handle and get private key
       int err = verify_key_handle(&rk.credential_id, pri_key);
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (err == 0) break; // only process one support credential
-    next:
+      if (err == 0) break; // Step 11: Select any credential from the applicable credentials list.
+      next:
       ret = cbor_value_advance(&ga.allowList);
       CHECK_CBOR_RET(ret);
     }
-    if (i == ga.allowListSize) {
-      if (ga.up) WAIT();
-      return CTAP2_ERR_NO_CREDENTIALS;
-    }
-  } else {
+    // 7-f
+    if (i == ga.allowListSize) return CTAP2_ERR_NO_CREDENTIALS;
+  } else { // Step 12
     int size = 0;
     if (credential_idx == 0) {
+      // TODO: 12-b-2-iii
       size = get_file_size(RK_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       int nRk = (int)(size / sizeof(CTAP_residentKey));
       credential_numbers = 0;
-      // GA step 9: If more than one credential was located in step 1 and allowList is present and not empty, select any
-      // applicable credential and proceed to step 12. Otherwise, order the credentials by the time when they were
-      // created in reverse order. The first credential is the most recent credential that was created.
-      for (int i = nRk - 1; i >= 0; --i) {
+      for (int i = nRk - 1; i >= 0; --i) {  // 12-b-1
         size = read_file(RK_FILE, &rk, i * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (memcmp(ga.rpIdHash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0)
           credential_list[credential_numbers++] = i;
       }
-      if (credential_numbers == 0) {
-        if (ga.up) WAIT();
-        return CTAP2_ERR_NO_CREDENTIALS;
-      }
+      // 7-f
+      if (credential_numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     }
     // fetch rk and get private key
     size =
-        read_file(RK_FILE, &rk, credential_list[credential_idx] * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
+            read_file(RK_FILE, &rk, credential_list[credential_idx] * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     int err = verify_key_handle(&rk.credential_id, pri_key);
     if (err != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
+  // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
+  // 9. If the "up" option is set to true or not present:
+  //    a) If the pinUvAuthParam parameter is present then:
+  //       TODO
+  //    b) Else (implying the pinUvAuthParam parameter is not present):
+  //       1) If the "up" bit is false in the response:
+  if (up == false) {
+    //        Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
+    //        If the authenticator has a display, show the rpId parameter value to the user, and request permission
+    //        to create an assertion.
+    //        If the user declines permission, or the operation times out, then end the operation by
+    //        returning CTAP2_ERR_OPERATION_DENIED.
+    WAIT_NEW(CTAP2_ERR_OPERATION_DENIED);
+  }
+  //    c) Set the "up" bit to true in the response.
+  up = true;
+  //    d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
+  //    TODO
+
+  // 10. If the extensions parameter is present:
+  //     a) Process any extensions that this authenticator supports, ignoring any that it does not support.
+  //     b) Authenticator extension outputs generated by the authenticator extension processing are returned in the
+  //        authenticator data. The set of keys in the authenticator extension outputs map MUST be equal to, or a subset
+  //        of, the keys of the authenticator extension inputs map.
   uint8_t extensionBuffer[79], extensionSize = 0;
   uint8_t iv[16] = {0};
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
@@ -576,9 +676,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     cfg.out = ga.hmacSecretSaltEnc;
     block_cipher_dec(&cfg);
   }
-
-  if (ga.uv) return CTAP2_ERR_UNSUPPORTED_OPTION;
-  if (ga.up) WAIT();
 
   if (ga.parsedParams & PARAM_hmacSecret) {
     ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen,
@@ -610,7 +707,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     DBG_MSG("extensionSize=%hhu\n", extensionSize);
   }
 
-  // build response
+  // 13. Sign the clientDataHash along with authData with the selected credential.
   CborEncoder map, sub_map;
   uint8_t map_items = 3;
   if (ga.allowListSize == 0) ++map_items;
@@ -636,8 +733,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // auth data
   len = sizeof(data_buf);
-  uint8_t flags = ((ga.parsedParams & PARAM_hmacSecret) ? FLAGS_ED : 0) |
-                  (has_pin() && (ga.parsedParams & PARAM_pinUvAuthParam) > 0 ? FLAGS_UV : 0) | (ga.up ? FLAGS_UP : 0);
+  uint8_t flags = ((ga.parsedParams & PARAM_hmacSecret) ? FLAGS_ED : 0) | (uv > 0 ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rpIdHash, data_buf, flags, extensionSize, extensionBuffer, &len, rk.credential_id.alg_type);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, RESP_authData);

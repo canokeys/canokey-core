@@ -214,7 +214,7 @@ uint8_t parse_public_key_credential_list(CborValue *lst) {
   return 0;
 }
 
-uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val) {
+uint8_t parse_options(CTAP_options *options, CborValue *val) {
   size_t map_length;
   CborValue map;
 
@@ -246,17 +246,17 @@ uint8_t parse_options(uint8_t *rk, uint8_t *uv, uint8_t *up, CborValue *val) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("rk: %d\n", b);
-      if (rk) *rk = b;
+      options->rk = b;
     } else if (memcmp(key, "uv", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("uv: %d\n", b);
-      if (uv) *uv = b;
+      options->uv = b;
     } else if (memcmp(key, "up", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("up: %d\n", b);
-      if (up) *up = b;
+      options->up = b;
     } else {
       DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
     }
@@ -477,9 +477,9 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
   memset(mc, 0, sizeof(CTAP_makeCredential));
 
   // options are absent by default
-  mc->rk = OPTION_ABSENT;
-  mc->uv = OPTION_ABSENT;
-  mc->up = OPTION_ABSENT;
+  mc->options.rk = OPTION_ABSENT;
+  mc->options.uv = OPTION_ABSENT;
+  mc->options.up = OPTION_ABSENT;
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
   CHECK_CBOR_RET(ret);
@@ -555,7 +555,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
 
     case MC_options:
       DBG_MSG("options found\n");
-      ret = parse_options(&mc->rk, &mc->uv, &mc->up, &map);
+      ret = parse_options(&mc->options, &map);
       CHECK_PARSER_RET(ret);
       mc->parsedParams |= PARAM_options;
       break;
@@ -608,7 +608,11 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
   int key, pinProtocol;
   char domain[DOMAIN_NAME_MAX_SIZE];
   memset(ga, 0, sizeof(CTAP_getAssertion));
-  ga->up = 1;
+
+  // options are absent by default
+  ga->options.rk = OPTION_ABSENT;
+  ga->options.uv = OPTION_ABSENT;
+  ga->options.up = OPTION_ABSENT;
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
   CHECK_CBOR_RET(ret);
@@ -670,7 +674,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
 
     case GA_options:
       DBG_MSG("options found\n");
-      ret = parse_options(NULL, &ga->uv, &ga->up, &map);
+      ret = parse_options(&ga->options, &map);
       CHECK_PARSER_RET(ret);
       ga->parsedParams |= PARAM_options;
       break;
@@ -678,13 +682,13 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
     case GA_pinAuth:
       DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &ga->pinAuthLength);
+      ret = cbor_value_get_string_length(&map, &ga->pinUvAuthParamLength);
       CHECK_CBOR_RET(ret);
-      if (ga->pinAuthLength != 0 && ga->pinAuthLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
-      ret = cbor_value_copy_byte_string(&map, ga->pinAuth, &ga->pinAuthLength, NULL);
+      if (ga->pinUvAuthParamLength != 0 && ga->pinUvAuthParamLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
+      ret = cbor_value_copy_byte_string(&map, ga->pinUvAuthParam, &ga->pinUvAuthParamLength, NULL);
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinUvAuthParam: ");
-      PRINT_HEX(ga->pinAuth, ga->pinAuthLength);
+      PRINT_HEX(ga->pinUvAuthParam, ga->pinUvAuthParamLength);
       ga->parsedParams |= PARAM_pinUvAuthParam;
       break;
 
@@ -694,7 +698,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       ret = cbor_value_get_int_checked(&map, &pinProtocol);
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinProtocol: %d\n", pinProtocol);
-      if (pinProtocol != 1) return CTAP2_ERR_PIN_AUTH_INVALID;
+      ga->pinUvAuthProtocol = pinProtocol;
       ga->parsedParams |= PARAM_pinUvAuthProtocol;
       break;
 
