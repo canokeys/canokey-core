@@ -187,11 +187,6 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&val) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
 
-  // char type_str[10];
-  // len = sizeof(type_str);
-  // ret = cbor_value_copy_text_string(&val, type_str, &len, NULL);
-  // CHECK_CBOR_RET(ret);
-
   return 0;
 }
 
@@ -679,7 +674,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       ga->parsedParams |= PARAM_options;
       break;
 
-    case GA_pinAuth:
+    case GA_pinUvAuthParam:
       DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &ga->pinUvAuthParamLength);
@@ -692,7 +687,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       ga->parsedParams |= PARAM_pinUvAuthParam;
       break;
 
-    case GA_pinProtocol:
+    case GA_pinUvAuthProtocol:
       DBG_MSG("pinProtocol found\n");
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_int_checked(&map, &pinProtocol);
@@ -737,20 +732,20 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
     CHECK_CBOR_RET(ret);
 
     switch (key) {
-    case CP_pinProtocol:
+    case CP_pinUvAuthProtocol:
       DBG_MSG("pinProtocol found\n");
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_int_checked(&map, &pinProtocol);
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinProtocol: %d\n", pinProtocol);
-      if (pinProtocol != 1) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (pinProtocol != 1) return CTAP1_ERR_INVALID_PARAMETER;
       cp->parsedParams |= PARAM_pinUvAuthProtocol;
       break;
 
     case CP_subCommand:
       DBG_MSG("subCommand found\n");
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &pinProtocol); // use pinProtocol as a buffer
+      ret = cbor_value_get_int_checked(&map, &pinProtocol); // use pinProtocol as the buffer
       CHECK_CBOR_RET(ret);
       cp->subCommand = pinProtocol;
       DBG_MSG("subCommand: %d\n", cp->subCommand);
@@ -761,16 +756,18 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       DBG_MSG("keyAgreement found\n");
       ret = parse_cose_key(&map, cp->keyAgreement);
       CHECK_PARSER_RET(ret);
+      DBG_MSG("keyAgreement: ");
+      PRINT_HEX(cp->keyAgreement, PUB_KEY_SIZE);
       cp->parsedParams |= PARAM_keyAgreement;
       break;
 
-    case CP_pinAuth:
+    case CP_pinUvAuthParam:
       DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
       if (len != PIN_AUTH_SIZE) return CTAP2_ERR_INVALID_CBOR;
-      ret = cbor_value_copy_byte_string(&map, cp->pinAuth, &len, NULL);
+      ret = cbor_value_copy_byte_string(&map, cp->pinUvAuthParam, &len, NULL);
       CHECK_CBOR_RET(ret);
       cp->parsedParams |= PARAM_pinUvAuthParam;
       break;
@@ -797,6 +794,18 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       cp->parsedParams |= PARAM_pinHashEnc;
       break;
 
+    case CP_permissions:
+      DBG_MSG("permissions found\n");
+      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_int_checked(&map, &pinProtocol); // use pinProtocol as the buffer
+      CHECK_CBOR_RET(ret);
+      cp->permissions = pinProtocol;
+      DBG_MSG("permissions: %d\n", cp->permissions);
+      if (cp->permissions == 0) return CTAP1_ERR_INVALID_PARAMETER;
+      // TODO: check permissions
+      cp->parsedParams |= PARAM_permissions;
+      break;
+
     default:
       DBG_MSG("Unknown key: %d\n", key);
       break;
@@ -807,15 +816,40 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
   }
 
   if ((cp->parsedParams & CP_requiredMask) != CP_requiredMask) return CTAP2_ERR_MISSING_PARAMETER;
-  if (cp->subCommand == CP_cmdSetPin &&
-      ((cp->parsedParams & PARAM_keyAgreement) == 0 || (cp->parsedParams & PARAM_newPinEnc) == 0))
+
+  if (cp->subCommand == CP_cmdGetKeyAgreement && (cp->parsedParams & PARAM_pinUvAuthProtocol) == 0)
     return CTAP2_ERR_MISSING_PARAMETER;
+
+  if (cp->subCommand == CP_cmdSetPin &&
+      ((cp->parsedParams & PARAM_pinUvAuthProtocol) == 0 ||
+       (cp->parsedParams & PARAM_keyAgreement) == 0 ||
+       (cp->parsedParams & PARAM_newPinEnc) == 0 ||
+       (cp->parsedParams & PARAM_pinUvAuthParam) == 0))
+    return CTAP2_ERR_MISSING_PARAMETER;
+
   if (cp->subCommand == CP_cmdChangePin &&
-      ((cp->parsedParams & PARAM_keyAgreement) == 0 || (cp->parsedParams & PARAM_pinHashEnc) == 0 ||
-       (cp->parsedParams & PARAM_newPinEnc) == 0 || (cp->parsedParams & PARAM_pinUvAuthParam) == 0))
+      ((cp->parsedParams & PARAM_pinUvAuthProtocol) == 0 ||
+       (cp->parsedParams & PARAM_keyAgreement) == 0 ||
+       (cp->parsedParams & PARAM_pinHashEnc) == 0 ||
+       (cp->parsedParams & PARAM_newPinEnc) == 0 ||
+       (cp->parsedParams & PARAM_pinUvAuthParam) == 0))
+    return CTAP2_ERR_MISSING_PARAMETER;
+
+  if (cp->subCommand == CP_cmdGetPinToken &&
+      ((cp->parsedParams & PARAM_pinUvAuthProtocol) == 0 ||
+       (cp->parsedParams & PARAM_keyAgreement) == 0 ||
+       (cp->parsedParams & PARAM_pinHashEnc) == 0))
     return CTAP2_ERR_MISSING_PARAMETER;
   if (cp->subCommand == CP_cmdGetPinToken &&
-      ((cp->parsedParams & PARAM_keyAgreement) == 0 || (cp->parsedParams & PARAM_pinHashEnc) == 0))
+      ((cp->parsedParams & PARAM_permissions) != 0 ||
+       (cp->parsedParams & PARAM_rpId) != 0))
+    return CTAP1_ERR_INVALID_PARAMETER;
+
+  if (cp->subCommand == CP_cmdGetPinUvAuthTokenUsingPinWithPermissions &&
+      ((cp->parsedParams & PARAM_pinUvAuthProtocol) == 0 ||
+       (cp->parsedParams & PARAM_keyAgreement) == 0 ||
+       (cp->parsedParams & PARAM_pinHashEnc) == 0 ||
+       (cp->parsedParams & PARAM_permissions) == 0))
     return CTAP2_ERR_MISSING_PARAMETER;
 
   return 0;

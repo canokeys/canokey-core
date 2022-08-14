@@ -3,6 +3,7 @@
 #include "ctap-errors.h"
 #include "ctap-internal.h"
 #include "ctap-parser.h"
+#include "pin.h"
 #include "secret.h"
 #include "u2f.h"
 #include <aes.h>
@@ -12,7 +13,6 @@
 #include <ctap.h>
 #include <ctaphid.h>
 #include <device.h>
-#include <ecc.h>
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
@@ -36,17 +36,7 @@
       *resp_len = 1;                                                                                                   \
   } while (0)
 
-#define WAIT()                                                                                                         \
-  do {                                                                                                                 \
-    if (is_nfc()) break;                                                                                               \
-    switch (wait_for_user_presence(WAIT_ENTRY_CTAPHID)) {                                                              \
-    case USER_PRESENCE_CANCEL:                                                                                         \
-      return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
-    case USER_PRESENCE_TIMEOUT:                                                                                        \
-      return CTAP2_ERR_USER_ACTION_TIMEOUT;                                                                            \
-    }                                                                                                                  \
-  } while (0)
-#define WAIT_NEW(timeout_response)                                                                                     \
+#define WAIT(timeout_response)                                                                                     \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
     switch (wait_for_user_presence(WAIT_ENTRY_CTAPHID)) {                                                              \
@@ -60,8 +50,6 @@
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin related
-static uint8_t key_agreement_keypair[PRI_KEY_SIZE + PUB_KEY_SIZE];
-static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter;
 // assertion related
 static uint8_t credential_list[MAX_RK_NUM], credential_numbers, credential_idx, last_cmd;
@@ -71,10 +59,11 @@ uint8_t ctap_install(uint8_t reset) {
   credential_numbers = 0;
   credential_idx = 0;
   last_cmd = 0xff;
-  random_buffer(pin_token, sizeof(pin_token));
-  if (ecc_generate(ECC_SECP256R1, key_agreement_keypair, key_agreement_keypair + PRI_KEY_SIZE) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
+  cp_initialize();
+  if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) {
+    DBG_MSG("CTAP initialized\n");
+    return 0;
+  }
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -85,6 +74,7 @@ uint8_t ctap_install(uint8_t reset) {
   random_buffer(kh_key, sizeof(kh_key));
   if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   memzero(kh_key, sizeof(kh_key));
+  DBG_MSG("CTAP reset and initialized\n");
   return 0;
 }
 
@@ -161,13 +151,6 @@ static void build_ed25519_cose_key(uint8_t *data) {
   data[7] = 0x21; data[8] = 0x58; data[9] = 0x20;
 }
 
-static uint8_t get_shared_secret(uint8_t *pub_key) {
-  int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_keypair, pub_key, pub_key);
-  if (ret < 0) return 1;
-  sha256_raw(pub_key, PRI_KEY_SIZE, pub_key);
-  return 0;
-}
-
 uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
                             const uint8_t *extension, size_t *len, int32_t alg_type) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
@@ -239,7 +222,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     // a. Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
     // b. If the user declines permission, or the operation times out, then end the operation by returning
     //    CTAP2_ERR_OPERATION_DENIED.
-    WAIT_NEW(CTAP2_ERR_OPERATION_DENIED);
+    WAIT(CTAP2_ERR_OPERATION_DENIED);
     // c. If evidence of user interaction is provided in this step then return either CTAP2_ERR_PIN_NOT_SET
     //    if PIN is not set or CTAP2_ERR_PIN_INVALID if PIN has been set.
     if (has_pin())
@@ -318,17 +301,21 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     11.1 If pinUvAuthParam parameter is present (implying the "uv" option is false (see Step 5)):
   //     a) Call verify(pinUvAuthToken, clientDataHash, pinUvAuthParam).
   //        If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
-  hmac_sha256(pin_token, PIN_TOKEN_SIZE, mc.clientDataHash, sizeof(mc.clientDataHash), data_buf);
-  if (memcmp(data_buf, mc.pinUvAuthParam, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-  // TODO
+  if (!cp_verify_pin_token(mc.clientDataHash, sizeof(mc.clientDataHash), mc.pinUvAuthParam))
+    return CTAP2_ERR_PIN_AUTH_INVALID;
   //     b) Verify that the pinUvAuthToken has the mc permission, if not, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  if (!pin_has_permission(CP_PERMISSION_MC)) return CTAP2_ERR_PIN_AUTH_INVALID;
   //     c) If the pinUvAuthToken has a permissions RP ID associated:
   //        If the permissions RP ID does not match the rp.id in this request, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  if (!pin_verify_rp_id(mc.rpIdHash)) return CTAP2_ERR_PIN_AUTH_INVALID;
   //     d) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
   //     e) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+  if (!cp_get_user_verified_flag_value()) return CTAP2_ERR_PIN_AUTH_INVALID;
   //     f) If userVerifiedFlagValue is true then set the "uv" bit to true in the response.
+  uv = true;
   //     g) If the pinUvAuthToken does not have a permissions RP ID associated:
   //        Associate the request’s rp.id parameter value with the pinUvAuthToken as its permissions RP ID.
+  pin_associate_rp_id(mc.rpIdHash);
 
 step12:
   // 12. If the excludeList parameter is present and contains a credential ID created by this authenticator, that is bound to the specified rp.id:
@@ -347,7 +334,7 @@ step12:
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
         // TODO: follow the spec
-        WAIT();
+//        WAIT();
         return CTAP2_ERR_CREDENTIAL_EXCLUDED;
       }
       ret = cbor_value_advance(&mc.excludeList);
@@ -355,21 +342,24 @@ step12:
     }
   }
 
-  // 13. If evidence of user interaction was provided as part of Step 11
-  // TODO: follow the spec
+  // 13. [N/A] If evidence of user interaction was provided as part of Step 11
 
   // 14. [ALWAYS TRUE] If the "up" option is set to true
   //     a) If the pinUvAuthParam parameter is present then:
   if (mc.parsedParams & PARAM_pinUvAuthParam) {
-    // TODO:
+    if (!cp_get_user_present_flag_value()) {
+      WAIT(CTAP2_ERR_OPERATION_DENIED);
+    }
   } else {
     //   b) Else (implying the pinUvAuthParam parameter is not present)
-    // TODO
+    WAIT(CTAP2_ERR_OPERATION_DENIED);
   }
   //     c) Set the "up" bit to true in the response
   up = true;
   //     d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
-  // TODO
+  cp_clear_user_present_flag();
+  cp_clear_user_verified_flag();
+  cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   // NOW PREPARE THE RESPONSE
   CborEncoder map;
@@ -504,7 +494,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     // a. Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
     // b. If the user declines permission, or the operation times out, then end the operation by returning
     //    CTAP2_ERR_OPERATION_DENIED.
-    WAIT_NEW(CTAP2_ERR_OPERATION_DENIED);
+    WAIT(CTAP2_ERR_OPERATION_DENIED);
     // c. If evidence of user interaction is provided in this step then return either CTAP2_ERR_PIN_NOT_SET
     //    if PIN is not set or CTAP2_ERR_PIN_INVALID if PIN has been set.
     if (has_pin())
@@ -546,19 +536,27 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // 5. [N/A] If the alwaysUv option ID is present and true and the "up" option is present and true
 
   // 6. If authenticator is protected by some form of user verification, then:
-  // TODO
   //    6.2 [N/A] If the "uv" option is present and set to true
   //    6.1 If pinUvAuthParam parameter is present
-  //    a) Call verify(pinUvAuthToken, clientDataHash pinUvAuthParam).
-  //       If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
-  //       If the verification returns success, set the "uv" bit to true in the response.
-  //    b) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
-  //    c) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  //    d) Verify that the pinUvAuthToken has the ga permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
-  //    e) If the pinUvAuthToken has a permissions RP ID associated:
-  //       If the permissions RP ID does not match the rpId in this request, return CTAP2_ERR_PIN_AUTH_INVALID.
-  //    f) If the pinUvAuthToken does not have a permissions RP ID associated:
-  //       Associate the request’s rpId parameter value with the pinUvAuthToken as its permissions RP ID.
+  if (ga.parsedParams & PARAM_pinUvAuthParam) {
+    //  a) Call verify(pinUvAuthToken, clientDataHash, pinUvAuthParam).
+    //     If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
+    //     If the verification returns success, set the "uv" bit to true in the response.
+    if (!cp_verify_pin_token(ga.clientDataHash, sizeof(ga.clientDataHash), ga.pinUvAuthParam))
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    uv = true;
+    //  b) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
+    //  c) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+    if (!cp_get_user_verified_flag_value()) return CTAP2_ERR_PIN_AUTH_INVALID;
+    //  d) Verify that the pinUvAuthToken has the ga permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
+    if (!pin_has_permission(CP_PERMISSION_GA)) return CTAP2_ERR_PIN_AUTH_INVALID;
+    //  e) If the pinUvAuthToken has a permissions RP ID associated:
+    //     If the permissions RP ID does not match the rpId in this request, return CTAP2_ERR_PIN_AUTH_INVALID.
+    if (!pin_verify_rp_id(ga.rpIdHash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+    //  f) If the pinUvAuthToken does not have a permissions RP ID associated:
+    //     Associate the request’s rpId parameter value with the pinUvAuthToken as its permissions RP ID.
+    pin_associate_rp_id(ga.rpIdHash);
+  }
 
   // 7. Locate all credentials that are eligible for retrieval under the specified criteria
   //    a) If the allowList parameter is present and is non-empty, locate all denoted credentials created by this
@@ -640,21 +638,20 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
   // 9. If the "up" option is set to true or not present:
   //    a) If the pinUvAuthParam parameter is present then:
-  //       TODO
+  if (ga.parsedParams & PARAM_pinUvAuthParam) {
+    if (!cp_get_user_present_flag_value()) {
+      WAIT(CTAP2_ERR_OPERATION_DENIED);
+    }
+  } else {
   //    b) Else (implying the pinUvAuthParam parameter is not present):
-  //       1) If the "up" bit is false in the response:
-  if (up == false) {
-    //        Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
-    //        If the authenticator has a display, show the rpId parameter value to the user, and request permission
-    //        to create an assertion.
-    //        If the user declines permission, or the operation times out, then end the operation by
-    //        returning CTAP2_ERR_OPERATION_DENIED.
-    WAIT_NEW(CTAP2_ERR_OPERATION_DENIED);
+    WAIT(CTAP2_ERR_OPERATION_DENIED);
   }
   //    c) Set the "up" bit to true in the response.
   up = true;
   //    d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
-  //    TODO
+  cp_clear_user_present_flag();
+  cp_clear_user_verified_flag();
+  cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   // 10. If the extensions parameter is present:
   //     a) Process any extensions that this authenticator supports, ignoring any that it does not support.
@@ -665,8 +662,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   uint8_t iv[16] = {0};
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   if ((ga.parsedParams & PARAM_hmacSecret) && credential_idx == 0) {
-    ret = get_shared_secret(ga.hmacSecretKeyAgreement);
-    CHECK_PARSER_RET(ret);
+    // TODO
+//    ret = get_shared_secret(ga.hmacSecretKeyAgreement);
+//    CHECK_PARSER_RET(ret);
     uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
     hmac_sha256(ga.hmacSecretKeyAgreement, SHARED_SECRET_SIZE, ga.hmacSecretSaltEnc, ga.hmacSecretSaltLen, hmac_buf);
     if (memcmp(hmac_buf, ga.hmacSecretSaltAuth, HMAC_SECRET_SALT_AUTH_SIZE) != 0) return CTAP2_ERR_EXTENSION_FIRST;
@@ -805,8 +803,21 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 }
 
 static uint8_t ctap_get_next_assertion(CborEncoder *encoder) {
+  // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetNextAssertion
+  // 1. If authenticator does not remember any authenticatorGetAssertion parameters, return CTAP2_ERR_NOT_ALLOWED.
   if (last_cmd != CTAP_GET_ASSERTION && last_cmd != CTAP_GET_NEXT_ASSERTION) return CTAP2_ERR_NOT_ALLOWED;
+  // 2. If the credentialCounter is equal to or greater than numberOfCredentials, return CTAP2_ERR_NOT_ALLOWED.
   if (credential_idx >= credential_numbers) return CTAP2_ERR_NOT_ALLOWED;
+  // 3. [TODO] If timer since the last call to authenticatorGetAssertion/authenticatorGetNextAssertion is greater than
+  //    30 seconds, discard the current authenticatorGetAssertion state and return CTAP2_ERR_NOT_ALLOWED.
+  //    This step is OPTIONAL if transport is done over NFC.
+  // 4. Select the credential indexed by credentialCounter. (I.e. credentials[n] assuming a zero-based array.)
+  // 5. Update the response to include the selected credential’s publicKeyCredentialUserEntity information.
+  //    User identifiable information (name, DisplayName, icon) inside the publicKeyCredentialUserEntity MUST NOT be
+  //    returned if user verification was not done by the authenticator in the original authenticatorGetAssertion call.
+  // 6. Sign the clientDataHash along with authData with the selected credential.
+  // 7. [TODO] Reset the timer. This step is OPTIONAL if transport is done over NFC.
+  // 8. Increment credentialCounter.
   return ctap_get_assertion(encoder, NULL, 0);
 }
 
@@ -853,15 +864,23 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_int(&map, RESP_options);
   CHECK_CBOR_RET(ret);
   CborEncoder option_map;
-  ret = cbor_encoder_create_map(&map, &option_map, 2);
+  ret = cbor_encoder_create_map(&map, &option_map, 4);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&option_map, "rk");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&option_map, true);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&option_map, "credMgmt");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&option_map, true);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&option_map, "clientPin");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&option_map, has_pin() > 0);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&option_map, true);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &option_map);
   CHECK_CBOR_RET(ret);
@@ -896,16 +915,15 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   CHECK_PARSER_RET(ret);
 
   CborEncoder map, key_map;
-  uint8_t iv[16], hmac_buf[80], i;
+  uint8_t iv[16], buf[80], i;
   memzero(iv, sizeof(iv));
-  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   uint8_t *ptr;
-  int err, retries = 0;
+  int err, retries;
   switch (cp.subCommand) {
-  case CP_cmdGetRetries:
+  case CP_cmdGetPINRetries:
     ret = cbor_encoder_create_map(encoder, &map, 1);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, RESP_retries);
+    ret = cbor_encode_int(&map, RESP_pinRetries);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, get_pin_retries());
     CHECK_CBOR_RET(ret);
@@ -922,7 +940,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = cbor_encoder_create_map(&map, &key_map, 0);
     CHECK_CBOR_RET(ret);
     ptr = key_map.data.ptr - 1;
-    memcpy(ptr, key_agreement_keypair + PRI_KEY_SIZE, PUB_KEY_SIZE);
+    cp_get_public_key(ptr);
     build_cose_key(ptr, 1);
     key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);
@@ -935,17 +953,13 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     err = has_pin();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err > 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-    ret = get_shared_secret(cp.keyAgreement);
+    ret = cp_decapsulate(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
-    hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), hmac_buf);
-#ifndef FUZZ
-    if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-#endif
-    cfg.key = cp.keyAgreement;
-    cfg.in_size = MAX_PIN_SIZE + 1;
-    cfg.in = cp.newPinEnc;
-    cfg.out = cp.newPinEnc;
-    block_cipher_dec(&cfg);
+    DBG_MSG("Shared Secret: ");
+    PRINT_HEX(cp.keyAgreement, SHARED_SECRET_SIZE);
+    if (!cp_verify(cp.keyAgreement, SHARED_SECRET_SIZE, cp.newPinEnc, sizeof(cp.newPinEnc), cp.pinUvAuthParam))
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (cp_decrypt(cp.keyAgreement, cp.newPinEnc, MAX_PIN_SIZE + 1, cp.newPinEnc)) return CTAP2_ERR_UNHANDLED_REQUEST;
     i = 63;
     while (i > 0 && cp.newPinEnc[i] == 0)
       --i;
@@ -964,25 +978,20 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
     retries = err - 1;
 #endif
-    ret = get_shared_secret(cp.keyAgreement);
+    ret = cp_decapsulate(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
-    memcpy(hmac_buf, cp.newPinEnc, sizeof(cp.newPinEnc));
-    memcpy(hmac_buf + sizeof(cp.newPinEnc), cp.pinHashEnc, sizeof(cp.pinHashEnc));
-    hmac_sha256(cp.keyAgreement, SHARED_SECRET_SIZE, hmac_buf, sizeof(cp.newPinEnc) + sizeof(cp.pinHashEnc), hmac_buf);
-#ifndef FUZZ
-    if (memcmp(hmac_buf, cp.pinAuth, PIN_AUTH_SIZE) != 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-#endif
+    memcpy(buf, cp.newPinEnc, sizeof(cp.newPinEnc));
+    memcpy(buf + sizeof(cp.newPinEnc), cp.pinHashEnc, sizeof(cp.pinHashEnc));
+    if (!cp_verify(cp.keyAgreement, SHARED_SECRET_SIZE, buf, sizeof(cp.newPinEnc) + sizeof(cp.pinHashEnc), cp.pinUvAuthParam))
+      return CTAP2_ERR_PIN_AUTH_INVALID;
     err = set_pin_retries(retries);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    cfg.key = cp.keyAgreement;
-    cfg.in_size = PIN_HASH_SIZE;
-    cfg.in = cp.pinHashEnc;
-    cfg.out = cp.pinHashEnc;
-    block_cipher_dec(&cfg);
+    if (cp_decrypt(cp.keyAgreement, cp.pinHashEnc, PIN_HASH_SIZE, cp.pinHashEnc)) return CTAP2_ERR_UNHANDLED_REQUEST;
     err = verify_pin_hash(cp.pinHashEnc);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 #ifndef FUZZ
     if (err > 0) {
+      cp_regenerate();
       if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
       if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       --consecutive_pin_counter;
@@ -990,11 +999,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     }
 #endif
     consecutive_pin_counter = 3;
-    cfg.key = cp.keyAgreement;
-    cfg.in_size = MAX_PIN_SIZE + 1;
-    cfg.in = cp.newPinEnc;
-    cfg.out = cp.newPinEnc;
-    block_cipher_dec(&cfg);
+    if (cp_decrypt(cp.keyAgreement, cp.newPinEnc, MAX_PIN_SIZE + 1, cp.newPinEnc)) return CTAP2_ERR_UNHANDLED_REQUEST;
     i = 63;
     while (i > 0 && cp.newPinEnc[i] == 0)
       --i;
@@ -1004,6 +1009,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     break;
 
   case CP_cmdGetPinToken:
+  case CP_cmdGetPinUvAuthTokenUsingPinWithPermissions:
     err = has_pin();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
@@ -1013,15 +1019,11 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
     retries = err - 1;
 #endif
-    ret = get_shared_secret(cp.keyAgreement);
+    ret = cp_decapsulate(cp.keyAgreement);
     CHECK_PARSER_RET(ret);
     err = set_pin_retries(retries);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    cfg.key = cp.keyAgreement;
-    cfg.in_size = PIN_HASH_SIZE;
-    cfg.in = cp.pinHashEnc;
-    cfg.out = cp.pinHashEnc;
-    block_cipher_dec(&cfg);
+    if (cp_decrypt(cp.keyAgreement, cp.pinHashEnc, PIN_HASH_SIZE, cp.pinHashEnc)) return CTAP2_ERR_UNHANDLED_REQUEST;
     err = verify_pin_hash(cp.pinHashEnc);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 #ifndef FUZZ
@@ -1035,21 +1037,31 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     consecutive_pin_counter = 3;
     err = set_pin_retries(8);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    cfg.in_size = PIN_TOKEN_SIZE;
-    cfg.in = pin_token;
-    cfg.out = hmac_buf;
-    block_cipher_enc(&cfg);
+    cp_reset_pin_uv_auth_token();
+    cp_begin_using_uv_auth_token(false);
+    // TODO: set permission and rpid
+    cp_set_permission(CP_PERMISSION_MC | CP_PERMISSION_GA);
+    cp_encrypt_pin_token(cp.keyAgreement, buf);
     ret = cbor_encoder_create_map(encoder, &map, 1);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, RESP_pinToken);
+    ret = cbor_encode_int(&map, RESP_pinUvAuthToken);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, hmac_buf, PIN_TOKEN_SIZE);
+    ret = cbor_encode_byte_string(&map, buf, PIN_TOKEN_SIZE);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_close_container(encoder, &map);
     CHECK_CBOR_RET(ret);
     break;
   }
 
+  return 0;
+}
+
+static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *params, size_t len) {
+  return 0;
+}
+
+static uint8_t ctap_selection(void) {
+  WAIT(CTAP2_ERR_USER_ACTION_TIMEOUT);
   return 0;
 }
 
@@ -1090,6 +1102,26 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
     DBG_MSG("----------------RESET-----------------\n");
     *resp = ctap_install(1);
     *resp_len = 1;
+    break;
+  case CTAP_CREDENTIAL_MANAGEMENT:
+    DBG_MSG("----------------CM--------------------\n");
+    *resp = ctap_credential_management(&encoder, req, req_len);
+    SET_RESP();
+    break;
+  case CTAP_SELECTION:
+    DBG_MSG("----------------SELECTION-------------\n");
+    *resp = ctap_selection();
+    SET_RESP();
+    break;
+  case CTAP_LARGE_BLOBS:
+    DBG_MSG("----------------LB--------------------\n");
+    *resp = ctap_credential_management(&encoder, req, req_len);
+    SET_RESP();
+    break;
+  case CTAP_CONFIG:
+    DBG_MSG("----------------CONFIG----------------\n");
+    *resp = ctap_credential_management(&encoder, req, req_len);
+    SET_RESP();
     break;
   default:
     *resp = CTAP2_ERR_UNHANDLED_REQUEST;

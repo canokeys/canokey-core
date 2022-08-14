@@ -25,6 +25,10 @@
 #define CTAP_CLIENT_PIN 0x06
 #define CTAP_RESET 0x07
 #define CTAP_GET_NEXT_ASSERTION 0x08
+#define CTAP_CREDENTIAL_MANAGEMENT 0x0A
+#define CTAP_SELECTION 0x0B
+#define CTAP_LARGE_BLOBS 0x0C
+#define CTAP_CONFIG 0x0D
 
 #define PARAM_clientDataHash (1 << 0)
 #define PARAM_rpId (1 << 1)
@@ -40,10 +44,11 @@
 #define PARAM_pinHashEnc (1 << 11)
 #define PARAM_hmacSecret (1 << 12)
 #define PARAM_enterpriseAttestation (1 << 13)
+#define PARAM_permissions (1 << 14)
 
 #define MC_requiredMask (PARAM_clientDataHash | PARAM_rpId | PARAM_user | PARAM_pubKeyCredParams)
 #define GA_requiredMask (PARAM_clientDataHash | PARAM_rpId)
-#define CP_requiredMask (PARAM_pinUvAuthProtocol | PARAM_subCommand)
+#define CP_requiredMask (PARAM_subCommand)
 
 #define OPTION_FALSE 0x0
 #define OPTION_TRUE 0x1
@@ -65,24 +70,27 @@
 #define GA_allowList 0x03
 #define GA_extensions 0x04
 #define GA_options 0x05
-#define GA_pinAuth 0x06
-#define GA_pinProtocol 0x07
+#define GA_pinUvAuthParam 0x06
+#define GA_pinUvAuthProtocol 0x07
 
 #define HMAC_SECRET_keyAgreement 0x01
 #define HMAC_SECRET_saltEnc 0x02
 #define HMAC_SECRET_saltAuth 0x03
 
-#define CP_pinProtocol 0x01
+#define CP_pinUvAuthProtocol 0x01
 #define CP_subCommand 0x02
-#define CP_cmdGetRetries 0x01
+#define CP_keyAgreement 0x03
+#define CP_pinUvAuthParam 0x04
+#define CP_newPinEnc 0x05
+#define CP_pinHashEnc 0x06
+#define CP_permissions 0x09
+#define CP_rpId 0x0A
+#define CP_cmdGetPINRetries 0x01
 #define CP_cmdGetKeyAgreement 0x02
 #define CP_cmdSetPin 0x03
 #define CP_cmdChangePin 0x04
 #define CP_cmdGetPinToken 0x05
-#define CP_keyAgreement 0x03
-#define CP_pinAuth 0x04
-#define CP_newPinEnc 0x05
-#define CP_pinHashEnc 0x06
+#define CP_cmdGetPinUvAuthTokenUsingPinWithPermissions 0x09
 
 #define RESP_versions 0x1
 #define RESP_extensions 0x2
@@ -101,8 +109,8 @@
 #define RESP_numberOfCredentials 0x05
 
 #define RESP_keyAgreement 0x01
-#define RESP_pinToken 0x02
-#define RESP_retries 0x03
+#define RESP_pinUvAuthToken 0x02
+#define RESP_pinRetries 0x03
 
 #define FLAGS_UP (1)
 #define FLAGS_UV (1 << 2)
@@ -210,9 +218,10 @@ typedef struct {
   uint16_t parsedParams;
   uint8_t subCommand;
   uint8_t keyAgreement[PUB_KEY_SIZE];
-  uint8_t pinAuth[PIN_AUTH_SIZE];
+  uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
   uint8_t newPinEnc[MAX_PIN_SIZE + 1];
   uint8_t pinHashEnc[PIN_HASH_SIZE];
+  uint8_t permissions;
 } CTAP_clientPin;
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
