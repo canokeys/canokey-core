@@ -1,4 +1,5 @@
 #include <apdu.h>
+#include <applets.h>
 #include <ccid.h>
 #include <common.h>
 #include <device.h>
@@ -52,6 +53,8 @@ uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time
 
   bulkin_state = len % CFG_TUD_CCID_EPSIZE == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
   ret = tud_ccid_write(buf, len);
+
+  return ret;
 }
 
 /**

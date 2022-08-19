@@ -85,7 +85,7 @@ uint32_t tud_ccid_n_write(uint8_t itf, const void *buffer, uint32_t bufsize) {
   TU_VERIFY(usbd_edpt_claim(rhport, p_itf->ep_in), 0);
 
   // Write data to endpoint
-  TU_ASSERT(usbd_edpt_xfer(TUD_OPT_RHPORT, p_itf->ep_in, buffer, bufsize), 0);
+  TU_ASSERT(usbd_edpt_xfer(TUD_OPT_RHPORT, p_itf->ep_in, (uint8_t *)buffer, bufsize), 0);
 
   return bufsize;
 }
@@ -170,7 +170,7 @@ bool ccidd_xfer_cb(uint8_t rhport, uint8_t ep_addr, xfer_result_t result, uint32
   (void)rhport;
   (void)result;
 
-  TU_LOG2("CCIDD: xfer_cb, ep_addr: %d, result: %d, xferred_bytes: %d\n", ep_addr, result, xferred_bytes);
+  TU_LOG2("CCIDD: xfer_cb, ep_addr: %d, result: %d, xferred_bytes: %ld\n", ep_addr, result, xferred_bytes);
 
   uint8_t itf = 0;
   ccidd_interface_t *p_itf = _ccidd_itf;

@@ -58,7 +58,7 @@ static inline bool tud_ccid_peek(uint8_t *ui8) { return tud_ccid_n_peek(0, ui8);
 static inline void tud_ccid_read_flush(void) { tud_ccid_n_read_flush(0); }
 
 static inline uint32_t tud_ccid_write(const void *buffer, uint32_t bufsize) {
-  tud_ccid_n_write(0, buffer, bufsize);
+  return tud_ccid_n_write(0, buffer, bufsize);
 }
 
 //--------------------------------------------------------------------+
