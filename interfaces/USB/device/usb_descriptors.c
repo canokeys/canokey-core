@@ -128,7 +128,7 @@ uint8_t const desc_configuration_ccid_endpoints[] = {
 #define CCID_DESC_LEN (sizeof(desc_configuration_ccid_interface) + \
   sizeof(tusb_ccid_descriptor_t) + sizeof(desc_configuration_ccid_endpoints))
 #define CONFIG_TOTAL_LEN (\
-  TUD_CONFIG_DESC_LEN + 2*TUD_HID_DESC_LEN + WEBUSB_DESC_LEN + CCID_DESC_LEN)
+  TUD_CONFIG_DESC_LEN + TUD_HID_INOUT_DESC_LEN + WEBUSB_DESC_LEN + CCID_DESC_LEN + TUD_HID_DESC_LEN)
 
 uint8_t const desc_configuration[TUD_CONFIG_DESC_LEN] = {
   // Config number, interface count, string index, total length, attribute, power in mA
