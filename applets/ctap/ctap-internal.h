@@ -16,6 +16,7 @@
 #define KH_KEY_ATTR 0x04
 #define HE_KEY_ATTR 0x05
 #define RK_FILE "ctap_rk"
+#define RK_NUMBERS_ATTR 0x00
 
 #define CTAP_INS_MSG 0x10
 
@@ -61,7 +62,7 @@
 #define MC_excludeList 0x05
 #define MC_extensions 0x06
 #define MC_options 0x07
-#define MC_pinAuth 0x08
+#define MC_pinUvAuthParam 0x08
 #define MC_pinProtocol 0x09
 #define MC_enterpriseAttestation 0x0A
 
@@ -92,6 +93,33 @@
 #define CP_cmdGetPinToken 0x05
 #define CP_cmdGetPinUvAuthTokenUsingPinWithPermissions 0x09
 
+#define CM_subCommand 0x01
+#define CM_subCommandParams 0x02
+#define CM_pinUvAuthProtocol 0x03
+#define CM_pinUvAuthParam 0x04
+#define CM_cmdGetCredsMetadata 0x01
+#define CM_cmdEnumerateRPsBegin 0x02
+#define CM_cmdEnumerateRPsGetNextRP 0x03
+#define CM_cmdEnumerateCredentialsBegin 0x04
+#define CM_cmdEnumerateCredentialsGetNextCredential 0x05
+#define CM_cmdDeleteCredential 0x06
+#define CM_cmdUpdateUserInformation 0x07
+#define CM_paramRpIdHash 0x01
+#define CM_paramCredentialId 0x02
+#define CM_paramUser 0x03
+#define CM_respExistingResidentCredentialsCount 0x01
+#define CM_respMaxPossibleRemainingResidentCredentialsCount 0x02
+#define CM_respRp 0x03
+#define CM_respRpIDHash 0x04
+#define CM_respTotalRPs 0x05
+#define CM_respUser 0x06
+#define CM_respCredentialID 0x07
+#define CM_respPublicKey 0x08
+#define CM_respTotalCredentials 0x09
+#define CM_respCredProtect 0x0A
+#define CM_respLargeBlobKey 0x0B
+
+// TODO rename these constants
 #define RESP_versions 0x1
 #define RESP_extensions 0x2
 #define RESP_aaguid 0x3
@@ -123,12 +151,14 @@
 #define PUB_KEY_SIZE 64
 #define SHARED_SECRET_SIZE 32
 #define MAX_COSE_KEY_SIZE 78
-#define MAX_PIN_SIZE 63
-#define PIN_HASH_SIZE 16
+#define PIN_ENC_SIZE_P1 64
+#define PIN_ENC_SIZE_P2 80
+#define PIN_HASH_SIZE_P1 16
+#define PIN_HASH_SIZE_P2 32
 #define MAX_CERT_SIZE 1152
 #define AAGUID_SIZE 16
-#define PIN_AUTH_SIZE 16
-#define PIN_TOKEN_SIZE 16
+#define PIN_AUTH_SIZE_P1 16
+#define PIN_TOKEN_SIZE 32
 #define HMAC_SECRET_SALT_SIZE 64
 #define HMAC_SECRET_SALT_AUTH_SIZE 16
 #define CREDENTIAL_TAG_SIZE 16
@@ -193,7 +223,7 @@ typedef struct {
   size_t excludeListSize;
   CTAP_options options;
   uint8_t extension_hmac_secret;
-  uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
+  uint8_t pinUvAuthParam[SHA256_DIGEST_LENGTH];
   size_t pinUvAuthParamLength;
   uint8_t pinUvAuthProtocol;
 } CTAP_makeCredential;
@@ -205,7 +235,7 @@ typedef struct {
   CborValue allowList;
   size_t allowListSize;
   CTAP_options options;
-  uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
+  uint8_t pinUvAuthParam[SHA256_DIGEST_LENGTH];
   size_t pinUvAuthParamLength;
   uint8_t pinUvAuthProtocol;
   uint8_t hmacSecretKeyAgreement[PUB_KEY_SIZE];
@@ -217,12 +247,23 @@ typedef struct {
 typedef struct {
   uint16_t parsedParams;
   uint8_t subCommand;
+  uint8_t pinUvAuthProtocol;
   uint8_t keyAgreement[PUB_KEY_SIZE];
-  uint8_t pinUvAuthParam[PIN_AUTH_SIZE];
-  uint8_t newPinEnc[MAX_PIN_SIZE + 1];
-  uint8_t pinHashEnc[PIN_HASH_SIZE];
+  uint8_t pinUvAuthParam[SHA256_DIGEST_LENGTH];
+  uint8_t newPinEnc[PIN_ENC_SIZE_P2];
+  uint8_t pinHashEnc[PIN_HASH_SIZE_P2];
   uint8_t permissions;
 } CTAP_clientPin;
+
+typedef struct {
+  uint16_t parsedParams;
+  uint8_t subCommand;
+  uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
+  CredentialId credentialId;
+  UserEntity user;
+  uint8_t pinUvAuthProtocol;
+  uint8_t pinUvAuthParam[SHA256_DIGEST_LENGTH];
+} CTAP_credentialManagement;
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);

@@ -16,5 +16,6 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key);
 uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len);
 uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uint8_t *buf, size_t len);
 uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *buf, size_t len);
+uint8_t parse_credential_management(CborParser *parser, CTAP_credentialManagement *cm, const uint8_t *buf, size_t len);
 
 #endif // CANOKEY_CORE_FIDO2_CTAP_PARSER_H_

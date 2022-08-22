@@ -23,16 +23,17 @@ void cp_initialize(void);
 void cp_regenerate(void);
 void cp_reset_pin_uv_auth_token(void);
 void cp_get_public_key(uint8_t *buf);
-int cp_decapsulate(uint8_t *buf);
-int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out);
-int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out);
-int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out);
-bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig);
-bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig);
+int cp_decapsulate(uint8_t *buf, int pin_protocol);
+int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol);
+int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol);
+int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol);
+bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
+bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
 
 void cp_set_permission(int new_permissions);
-bool pin_has_permission(int permission);
-bool pin_verify_rp_id(const uint8_t *rp_id_hash);
-void pin_associate_rp_id(const uint8_t *rp_id_hash);
+bool cp_has_permission(int permission);
+bool cp_has_associated_rp_id(void);
+bool cp_verify_rp_id(const uint8_t *rp_id_hash);
+void cp_associate_rp_id(const uint8_t *rp_id_hash);
 
 #endif //CANOKEY_CORE_PIN_H

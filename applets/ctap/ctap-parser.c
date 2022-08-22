@@ -465,6 +465,60 @@ uint8_t parse_ga_extensions(CTAP_getAssertion *ga, CborValue *val) {
   return 0;
 }
 
+uint8_t parse_cm_params(CTAP_credentialManagement *cm, CborValue *val) {
+  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  size_t map_length, len;
+  CborValue map;
+  int key;
+  int ret = cbor_value_enter_container(val, &map);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_get_map_length(val, &map_length);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; ++i) {
+    if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    ret = cbor_value_get_int_checked(&map, &key);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+
+    switch (key) {
+      case CM_paramRpIdHash:
+        DBG_MSG("rpIDHash found\n");
+        if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_string_length(&map, &len);
+        CHECK_CBOR_RET(ret);
+        if (len != SHA256_DIGEST_LENGTH) return CTAP2_ERR_INVALID_CBOR;
+        ret = cbor_value_copy_byte_string(&map, cm->rpIdHash, &len, NULL);
+        CHECK_CBOR_RET(ret);
+        cm->parsedParams |= PARAM_rpId;
+        break;
+
+      case CM_paramCredentialId:
+        DBG_MSG("credentialId found\n");
+        ret = parse_credential_descriptor(&map, (uint8_t *) &cm->credentialId);
+        CHECK_CBOR_RET(ret);
+//        cm->parsedParams |= ;
+        break;
+
+      case CM_paramUser:
+        DBG_MSG("user found\n");
+        ret = parse_user(&cm->user, &map);
+        CHECK_CBOR_RET(ret);
+        break;
+
+      default:
+        DBG_MSG("Unknown key: %d\n", key);
+        break;
+    }
+
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+  }
+
+  return 0;
+}
+
 uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const uint8_t *buf, size_t len) {
   CborValue it, map;
   size_t map_length;
@@ -555,12 +609,12 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       mc->parsedParams |= PARAM_options;
       break;
 
-    case MC_pinAuth:
+    case MC_pinUvAuthParam:
       DBG_MSG("pinUvAuthParam found\n");
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &mc->pinUvAuthParamLength);
       CHECK_CBOR_RET(ret);
-      if (mc->pinUvAuthParamLength != 0 && mc->pinUvAuthParamLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (mc->pinUvAuthParamLength != 0 && mc->pinUvAuthParamLength > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cbor_value_copy_byte_string(&map, mc->pinUvAuthParam, &mc->pinUvAuthParamLength, NULL);
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinUvAuthParam: ");
@@ -679,7 +733,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &ga->pinUvAuthParamLength);
       CHECK_CBOR_RET(ret);
-      if (ga->pinUvAuthParamLength != 0 && ga->pinUvAuthParamLength != PIN_AUTH_SIZE) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (ga->pinUvAuthParamLength != 0 && ga->pinUvAuthParamLength  > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cbor_value_copy_byte_string(&map, ga->pinUvAuthParam, &ga->pinUvAuthParamLength, NULL);
       CHECK_CBOR_RET(ret);
       DBG_MSG("pinUvAuthParam: ");
@@ -713,7 +767,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
 uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *buf, size_t len) {
   CborValue it, map;
   size_t map_length;
-  int key, pinProtocol;
+  int key;
   memset(cp, 0, sizeof(CTAP_clientPin));
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
@@ -735,19 +789,23 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
     case CP_pinUvAuthProtocol:
       DBG_MSG("pinProtocol found\n");
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &pinProtocol);
+      ret = cbor_value_get_int_checked(&map, &key);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("pinProtocol: %d\n", pinProtocol);
-      if (pinProtocol != 1) return CTAP1_ERR_INVALID_PARAMETER;
+      DBG_MSG("pinProtocol: %d\n", key);
+      if (key != 1 && key != 2) {
+        ERR_MSG("Invalid pinProtocol\n");
+        return CTAP1_ERR_INVALID_PARAMETER;
+      }
+      cp->pinUvAuthProtocol = key;
       cp->parsedParams |= PARAM_pinUvAuthProtocol;
       break;
 
     case CP_subCommand:
       DBG_MSG("subCommand found\n");
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &pinProtocol); // use pinProtocol as the buffer
+      ret = cbor_value_get_int_checked(&map, &key);
       CHECK_CBOR_RET(ret);
-      cp->subCommand = pinProtocol;
+      cp->subCommand = key;
       DBG_MSG("subCommand: %d\n", cp->subCommand);
       cp->parsedParams |= PARAM_subCommand;
       break;
@@ -766,7 +824,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
-      if (len != PIN_AUTH_SIZE) return CTAP2_ERR_INVALID_CBOR;
+      if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_INVALID_CBOR;
       ret = cbor_value_copy_byte_string(&map, cp->pinUvAuthParam, &len, NULL);
       CHECK_CBOR_RET(ret);
       cp->parsedParams |= PARAM_pinUvAuthParam;
@@ -777,9 +835,15 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
-      if (len != MAX_PIN_SIZE + 1) return CTAP2_ERR_INVALID_CBOR;
+      if ((cp->pinUvAuthProtocol == 1 && len != PIN_ENC_SIZE_P1) ||
+          (cp->pinUvAuthProtocol == 2 && len != PIN_ENC_SIZE_P2)) {
+        ERR_MSG("Invalid newPinEnc length\n");
+        return CTAP2_ERR_INVALID_CBOR;
+      }
       ret = cbor_value_copy_byte_string(&map, cp->newPinEnc, &len, NULL);
       CHECK_CBOR_RET(ret);
+      DBG_MSG("newPinEnc: ");
+      PRINT_HEX(cp->newPinEnc, len);
       cp->parsedParams |= PARAM_newPinEnc;
       break;
 
@@ -788,7 +852,11 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
-      if (len != PIN_HASH_SIZE) return CTAP2_ERR_INVALID_CBOR;
+      if ((cp->pinUvAuthProtocol == 1 && len != PIN_HASH_SIZE_P1) ||
+          (cp->pinUvAuthProtocol == 2 && len != PIN_HASH_SIZE_P2)) {
+        ERR_MSG("Invalid pinHashEnc length\n");
+        return CTAP2_ERR_INVALID_CBOR;
+      }
       ret = cbor_value_copy_byte_string(&map, cp->pinHashEnc, &len, NULL);
       CHECK_CBOR_RET(ret);
       cp->parsedParams |= PARAM_pinHashEnc;
@@ -797,11 +865,14 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
     case CP_permissions:
       DBG_MSG("permissions found\n");
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &pinProtocol); // use pinProtocol as the buffer
+      ret = cbor_value_get_int_checked(&map, &key);
       CHECK_CBOR_RET(ret);
-      cp->permissions = pinProtocol;
+      cp->permissions = key;
       DBG_MSG("permissions: %d\n", cp->permissions);
-      if (cp->permissions == 0) return CTAP1_ERR_INVALID_PARAMETER;
+      if (cp->permissions == 0) {
+        ERR_MSG("Invalid permissions\n");
+        return CTAP1_ERR_INVALID_PARAMETER;
+      }
       // TODO: check permissions
       cp->parsedParams |= PARAM_permissions;
       break;
@@ -851,6 +922,84 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_clientPin *cp, const uint8_t *
        (cp->parsedParams & PARAM_pinHashEnc) == 0 ||
        (cp->parsedParams & PARAM_permissions) == 0))
     return CTAP2_ERR_MISSING_PARAMETER;
+
+  return 0;
+}
+
+uint8_t parse_credential_management(CborParser *parser, CTAP_credentialManagement *cm, const uint8_t *buf, size_t len) {
+  CborValue it, map;
+  size_t map_length;
+  int key, tmp;
+  memset(cm, 0, sizeof(CTAP_credentialManagement));
+
+  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  CHECK_CBOR_RET(ret);
+  if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  ret = cbor_value_enter_container(&it, &map);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_get_map_length(&it, &map_length);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; ++i) {
+    if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    ret = cbor_value_get_int_checked(&map, &key);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+
+    switch (key) {
+      case CM_subCommand:
+        DBG_MSG("subCommand found\n");
+        if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_int_checked(&map, &tmp);
+        CHECK_CBOR_RET(ret);
+        cm->subCommand = tmp;
+        DBG_MSG("subCommand: %d\n", cm->subCommand);
+        cm->parsedParams |= PARAM_subCommand;
+        break;
+
+      case CM_subCommandParams:
+        DBG_MSG("subCommandParams found\n");
+        ret = parse_cm_params(cm, &map);
+        CHECK_CBOR_RET(ret);
+        break;
+
+      case CM_pinUvAuthProtocol:
+        DBG_MSG("pinUvAuthProtocol found\n");
+        if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_int_checked(&map, &tmp);
+        CHECK_CBOR_RET(ret);
+        DBG_MSG("pinUvAuthProtocol: %d\n", tmp);
+        if (tmp != 1) return CTAP1_ERR_INVALID_PARAMETER;
+        cm->parsedParams |= PARAM_pinUvAuthProtocol;
+        break;
+
+      case CM_pinUvAuthParam:
+        DBG_MSG("pinUvAuthParam found\n");
+        if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_string_length(&map, &len);
+        CHECK_CBOR_RET(ret);
+        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_INVALID_CBOR;
+        ret = cbor_value_copy_byte_string(&map, cm->pinUvAuthParam, &len, NULL);
+        CHECK_CBOR_RET(ret);
+        cm->parsedParams |= PARAM_pinUvAuthParam;
+        break;
+
+      default:
+        DBG_MSG("Unknown key: %d\n", key);
+        break;
+    }
+
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+  }
+
+  if ((cm->subCommand == CM_cmdGetCredsMetadata || cm->subCommand == CM_cmdEnumerateRPsBegin) &&
+      (cm->parsedParams & PARAM_pinUvAuthParam) == 0)
+    return CTAP2_ERR_PUAT_REQUIRED; // See Section 6.8.2 and 6.8.3
+  if ((cm->subCommand == CM_cmdGetCredsMetadata || cm->subCommand == CM_cmdEnumerateRPsBegin) &&
+      (cm->parsedParams & PARAM_pinUvAuthProtocol) == 0)
+    return CTAP2_ERR_MISSING_PARAMETER; // See Section 6.8.2 and 6.8.3
 
   return 0;
 }

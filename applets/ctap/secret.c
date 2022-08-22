@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "secret.h"
-#include <apdu.h>
 #include <ecc.h>
 #include <ed25519.h>
 #include <fs.h>
@@ -102,7 +101,7 @@ size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, si
   ed25519_signature sig_tmp;
   // ed25519_sign(m, mlen, sk, pk, RS)
   // m and RS can not share the same buffer
-  // (they are shared outside of this func)
+  // (they are shared outside this func)
   ed25519_sign(data, data_len, key, pk, sig_tmp);
   memcpy(sig, sig_tmp, sizeof(ed25519_signature));
   memzero(pk, sizeof(pk));
@@ -122,7 +121,7 @@ int set_pin(uint8_t *buf, uint8_t length) {
     err = write_attr(CTAP_CERT_FILE, PIN_ATTR, NULL, 0);
   } else {
     sha256_raw(buf, length, buf);
-    err = write_attr(CTAP_CERT_FILE, PIN_ATTR, buf, PIN_HASH_SIZE);
+    err = write_attr(CTAP_CERT_FILE, PIN_ATTR, buf, PIN_HASH_SIZE_P1); // We only compare the first 16 bytes
   }
   if (err < 0) return err;
   uint8_t ctr = 8;
@@ -130,10 +129,10 @@ int set_pin(uint8_t *buf, uint8_t length) {
 }
 
 int verify_pin_hash(uint8_t *buf) {
-  uint8_t storedPinHash[PIN_HASH_SIZE];
-  int err = read_attr(CTAP_CERT_FILE, PIN_ATTR, storedPinHash, PIN_HASH_SIZE);
+  uint8_t storedPinHash[PIN_HASH_SIZE_P1]; // We only compare the first 16 bytes
+  int err = read_attr(CTAP_CERT_FILE, PIN_ATTR, storedPinHash, PIN_HASH_SIZE_P1);
   if (err < 0) return err;
-  if (memcmp(storedPinHash, buf, PIN_HASH_SIZE) == 0) return 0;
+  if (memcmp(storedPinHash, buf, PIN_HASH_SIZE_P1) == 0) return 0;
   return 1;
 }
 

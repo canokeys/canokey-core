@@ -68,6 +68,17 @@ void cp_stop_using_pin_uv_auth_token(void) {
 
 // pin auth protocol
 
+static void hkdf(uint8_t *salt, size_t salt_len, uint8_t *ikm, size_t ikm_len, uint8_t *out) {
+  hmac_sha256(salt, salt_len, ikm, ikm_len, salt);
+  hmac_sha256(salt, SHA256_DIGEST_LENGTH, "CTAP2 HMAC key\x01", 15, out);
+  hmac_sha256(salt, SHA256_DIGEST_LENGTH, "CTAP2 AES key\x01", 14, out + SHA256_DIGEST_LENGTH);
+}
+
+static void cp2_kdf(uint8_t *z, size_t z_len, uint8_t *out) {
+  uint8_t salt[32] = {0};
+  hkdf(salt, sizeof(salt), z, z_len, out);
+}
+
 void cp_initialize(void) {
   cp_regenerate();
   cp_reset_pin_uv_auth_token();
@@ -93,48 +104,71 @@ void cp_get_public_key(uint8_t *buf) {
   memcpy(buf, ka_keypair + PRI_KEY_SIZE, PUB_KEY_SIZE);
 }
 
-int cp_decapsulate(uint8_t *buf) {
+int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh_decrypt(ECC_SECP256R1, ka_keypair, buf, buf);
   if (ret < 0) return 1;
-  sha256_raw(buf, PRI_KEY_SIZE, buf);
+  if (pin_protocol == 1)
+    sha256_raw(buf, PRI_KEY_SIZE, buf);
+  else
+    cp2_kdf(buf, PRI_KEY_SIZE, buf);
   return 0;
 }
 
-int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out) {
+int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
-  memzero(iv, sizeof(iv));
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  cfg.key = key;
   cfg.in_size = in_size;
   cfg.in = in;
-  cfg.out = out;
+  if (pin_protocol == 1) {
+    memzero(iv, sizeof(iv));
+    cfg.key = key;
+    cfg.out = out;
+  } else {
+    random_buffer(iv, sizeof(iv));
+    cfg.key = key + 32;
+    cfg.out = out + sizeof(iv);
+    memcpy(out, iv, sizeof(iv));
+  }
   return block_cipher_enc(&cfg);
 }
 
-int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out) {
-  return cp_encrypt(key, pin_token, PIN_TOKEN_SIZE, out);
+int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
+  return cp_encrypt(key, pin_token, PIN_TOKEN_SIZE, out, pin_protocol);
 }
 
-int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out) {
+int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
-  memzero(iv, sizeof(iv));
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  cfg.key = key;
-  cfg.in_size = in_size;
-  cfg.in = in;
-  cfg.out = out;
+  if (pin_protocol == 1) {
+    memzero(iv, sizeof(iv));
+    cfg.key = key;
+    cfg.in_size = in_size;
+    cfg.in = in;
+    cfg.out = out;
+  } else {
+    if (in_size < sizeof(iv)) return -1;
+    memcpy(iv, in, sizeof(iv));
+    cfg.key = key + 32;
+    cfg.in_size = in_size - sizeof(iv);
+    cfg.in = in + sizeof(iv);
+    cfg.out = out;
+  }
   return block_cipher_dec(&cfg);
 }
 
-bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig) {
+bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
   uint8_t buf[SHA256_DIGEST_LENGTH];
+  if (pin_protocol == 2 && key_len > SHA256_DIGEST_LENGTH) key_len = SHA256_DIGEST_LENGTH;
   hmac_sha256(key, key_len, msg, msg_len, buf);
-  return memcmp(buf, sig, PIN_AUTH_SIZE) == 0;
+  if (pin_protocol == 1)
+    return memcmp(buf, sig, PIN_AUTH_SIZE_P1) == 0;
+  else
+    return memcmp(buf, sig, SHA256_DIGEST_LENGTH) == 0;
 }
 
-bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig) {
+bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
   if (!in_use) return false;
-  return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig);
+  return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
 
 
@@ -142,15 +176,20 @@ void cp_set_permission(int new_permissions) {
   permissions |= new_permissions;
 }
 
-bool pin_has_permission(int permission) {
+bool cp_has_permission(int permission) {
   return permissions & permission;
 }
 
-bool pin_verify_rp_id(const uint8_t *rp_id_hash) {
+bool cp_has_associated_rp_id(void) {
+  // TODO
+  return false;
+}
+
+bool cp_verify_rp_id(const uint8_t *rp_id_hash) {
   // TODO
   return true;
 }
 
-void pin_associate_rp_id(const uint8_t *rp_id_hash) {
+void cp_associate_rp_id(const uint8_t *rp_id_hash) {
   // TODO
 }
