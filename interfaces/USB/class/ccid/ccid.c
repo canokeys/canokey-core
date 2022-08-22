@@ -385,9 +385,9 @@ void tud_ccid_rx_cb(uint8_t itf) {
       tud_ccid_read(bulkout_data.abData, ab_data_length);
 
       TU_LOG2("CCID: First packet %lu bytes: \r\n  Header: ", len);
-      TU_LOG2_ARR(&bulkout_data, CCID_CMD_HEADER_SIZE);
+      TU_LOG2_MEM(&bulkout_data, CCID_CMD_HEADER_SIZE, 1);
       TU_LOG2("\r\n  Data: ");
-      TU_LOG2_ARR(bulkout_data.abData, ab_data_length);
+      TU_LOG2_MEM(bulkout_data.abData, ab_data_length, 1);
       TU_LOG2("\r\n");
 
       bulkout_data.dwLength = tu_le32toh(bulkout_data.dwLength);
@@ -412,14 +412,14 @@ void tud_ccid_rx_cb(uint8_t itf) {
       ab_data_length += len;
 
       TU_LOG2("CCID: Continue packet %lu bytes: \r\n  Data: ", len);
-      TU_LOG2_ARR(bulkout_data.abData + ab_data_length, len);
+      TU_LOG_MEM(2, bulkout_data.abData + ab_data_length, len, 1);
       TU_LOG2("\r\n");
 
     } else if (ab_data_length + len == bulkout_data.dwLength) {
       tud_ccid_read(bulkout_data.abData + ab_data_length, len);
 
       TU_LOG2("CCID: Last packet %lu bytes: \r\n  Data: ", len);
-      TU_LOG2_ARR(bulkout_data.abData + ab_data_length, len);
+      TU_LOG_MEM(2, bulkout_data.abData + ab_data_length, len, 1);
       TU_LOG2("\r\n");
 
       bulkout_state = CCID_STATE_IDLE;
