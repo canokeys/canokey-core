@@ -40,14 +40,19 @@ static void generate_credential_id_nonce_tag(CredentialId *kh, uint8_t *pubkey) 
   random_buffer(kh->nonce, sizeof(kh->nonce));
   // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
   hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
-  // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in pubkey[32, 64)
+  // tag = left(hmac-sha256(private key, rp_id_hash or appid), 16), stored in pubkey[32, 64)
   hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
   memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
 }
 
-int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
+int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type, bool dc) {
   int ret = read_kh_key(pubkey); // use pubkey as key buffer
   if (ret < 0) return ret;
+
+  if (dc) { // flip the first half as the kh key for discoverable credential
+    for (int i = 0; i < 16; ++i)
+      pubkey[i] = ~pubkey[i];
+  }
 
   if (alg_type == COSE_ALG_ES256) {
     kh->alg_type = COSE_ALG_ES256;
@@ -65,10 +70,16 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
   }
 }
 
-int verify_key_handle(const CredentialId *kh, uint8_t *pri_key) {
+int verify_key_handle(const CredentialId *kh, uint8_t *pri_key, bool dc) {
   uint8_t kh_key[KH_KEY_SIZE];
   int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
+
+  if (dc) { // flip the first half as the kh key for discoverable credential
+    for (int i = 0; i < 16; ++i)
+      kh_key[i] = ~kh_key[i];
+  }
+
   // get private key
   hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pri_key);
   // get tag, store in kh_key, which should be verified first outside of this function

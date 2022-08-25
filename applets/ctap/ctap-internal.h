@@ -16,6 +16,7 @@
 #define KH_KEY_ATTR 0x04
 #define HE_KEY_ATTR 0x05
 #define RK_FILE "ctap_rk"
+#define RK_META_FILE "ctap_rkm"
 #define RK_NUMBERS_ATTR 0x00
 
 #define CTAP_INS_MSG 0x10
@@ -46,6 +47,7 @@
 #define PARAM_hmacSecret (1 << 12)
 #define PARAM_enterpriseAttestation (1 << 13)
 #define PARAM_permissions (1 << 14)
+#define PARAM_credential_id (1 << 15)
 
 #define MC_requiredMask (PARAM_clientDataHash | PARAM_rpId | PARAM_user | PARAM_pubKeyCredParams)
 #define GA_requiredMask (PARAM_clientDataHash | PARAM_rpId)
@@ -170,6 +172,7 @@
 #define DISPLAY_NAME_LIMIT 65 // Must be minimum of 64 bytes but can be more.
 #define ICON_LIMIT 129        // Must be minimum of 64 bytes but can be more.
 #define MAX_RK_NUM 64
+#define MAX_STORED_RPID_LENGTH 32
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -189,7 +192,15 @@ typedef struct {
 typedef struct {
   CredentialId credential_id;
   UserEntity user;
+  bool deleted;
 } __packed CTAP_residentKey;
+
+typedef struct {
+  uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
+  uint8_t rp_id[MAX_STORED_RPID_LENGTH];
+  size_t rp_id_len;
+  uint64_t slots;
+} __packed CTAP_rp_meta;
 
 typedef struct {
   uint8_t aaguid[AAGUID_SIZE];
@@ -216,6 +227,8 @@ typedef struct {
 typedef struct {
   uint16_t parsedParams;
   uint8_t clientDataHash[CLIENT_DATA_HASH_SIZE];
+  uint8_t rpId[MAX_STORED_RPID_LENGTH];
+  size_t rpIdLen;
   uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
   UserEntity user;
   int32_t alg_type;
@@ -270,6 +283,6 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu);
 uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
-                            const uint8_t *extension, size_t *len, int32_t alg_type);
+                            const uint8_t *extension, size_t *len, int32_t alg_type, bool dc);
 
 #endif

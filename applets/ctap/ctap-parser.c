@@ -16,11 +16,44 @@
     if (ret != CborNoError) return CTAP2_ERR_INVALID_CBOR;                                                             \
   } while (0)
 
-uint8_t parse_rp(uint8_t *rpIdHash, CborValue *val) {
+static void maybe_truncate_rpid(uint8_t stored_rpid[MAX_STORED_RPID_LENGTH], size_t *stored_len, const uint8_t *rpid,
+                                size_t rpid_len) {
+  if (rpid_len <= MAX_STORED_RPID_LENGTH) {
+    memcpy(stored_rpid, rpid, rpid_len);
+    *stored_len = rpid_len;
+    return;
+  }
+
+  size_t used = 0;
+  const uint8_t *colon_position = memchr(rpid, ':', rpid_len);
+  if (colon_position != NULL) {
+    const size_t protocol_len = colon_position - rpid + 1;
+    const size_t to_copy = protocol_len <= MAX_STORED_RPID_LENGTH ? protocol_len : MAX_STORED_RPID_LENGTH;
+    memcpy(stored_rpid, rpid, to_copy);
+    used += to_copy;
+  }
+
+  if (MAX_STORED_RPID_LENGTH - used < 3) {
+    *stored_len = used;
+    return;
+  }
+
+  // U+2026, horizontal ellipsis.
+  stored_rpid[used++] = 0xe2;
+  stored_rpid[used++] = 0x80;
+  stored_rpid[used++] = 0xa6;
+
+  const size_t to_copy = MAX_STORED_RPID_LENGTH - used;
+  memcpy(&stored_rpid[used], rpid + rpid_len - to_copy, to_copy);
+  assert(used + to_copy == MAX_STORED_RPID_LENGTH);
+  *stored_len = MAX_STORED_RPID_LENGTH;
+}
+
+static uint8_t parse_rp(CTAP_makeCredential *mc, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[4], domain[DOMAIN_NAME_MAX_SIZE];
+  char key[4], domain[DOMAIN_NAME_MAX_SIZE + 1];
   size_t map_length, len;
 
   int ret = cbor_value_enter_container(val, &map);
@@ -42,9 +75,10 @@ uint8_t parse_rp(uint8_t *rpIdHash, CborValue *val) {
       len = DOMAIN_NAME_MAX_SIZE;
       ret = cbor_value_copy_text_string(&map, domain, &len, NULL);
       CHECK_CBOR_RET(ret);
-      domain[DOMAIN_NAME_MAX_SIZE - 1] = 0;
-      DBG_MSG("rpId: %s\n", domain);
-      sha256_raw((uint8_t *)domain, len, rpIdHash);
+      domain[len] = 0;
+      DBG_MSG("rp_id: %s\n", domain);
+      maybe_truncate_rpid(mc->rpId, &mc->rpIdLen, (const uint8_t *) domain, len);
+      sha256_raw((uint8_t *) domain, len, mc->rpIdHash);
     }
 
     ret = cbor_value_advance(&map);
@@ -498,13 +532,14 @@ uint8_t parse_cm_params(CTAP_credentialManagement *cm, CborValue *val) {
         DBG_MSG("credentialId found\n");
         ret = parse_credential_descriptor(&map, (uint8_t *) &cm->credentialId);
         CHECK_CBOR_RET(ret);
-//        cm->parsedParams |= ;
+        cm->parsedParams |= PARAM_credential_id;
         break;
 
       case CM_paramUser:
         DBG_MSG("user found\n");
         ret = parse_user(&cm->user, &map);
         CHECK_CBOR_RET(ret);
+        cm->parsedParams |= PARAM_user;
         break;
 
       default:
@@ -559,10 +594,10 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_makeCredential *mc, const
       break;
 
     case MC_rp:
-      DBG_MSG("rpId found\n");
-      ret = parse_rp(mc->rpIdHash, &map);
+      DBG_MSG("rp_id found\n");
+      ret = parse_rp(mc, &map);
       CHECK_PARSER_RET(ret);
-      DBG_MSG("rpIdHash: ");
+      DBG_MSG("rp_id_hash: ");
       PRINT_HEX(mc->rpIdHash, len);
       mc->parsedParams |= PARAM_rpId;
       break;
@@ -680,13 +715,13 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_getAssertion *ga, const uin
 
     switch (key) {
     case GA_rpId:
-      DBG_MSG("rpId found\n");
+      DBG_MSG("rp_id found\n");
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = DOMAIN_NAME_MAX_SIZE;
       ret = cbor_value_copy_text_string(&map, domain, &len, NULL);
       CHECK_CBOR_RET(ret);
       domain[DOMAIN_NAME_MAX_SIZE - 1] = 0;
-      DBG_MSG("rpId: %s; hash: ", domain);
+      DBG_MSG("rp_id: %s; hash: ", domain);
       sha256_raw((uint8_t *)domain, len, ga->rpIdHash);
       PRINT_HEX(ga->rpIdHash, SHA256_DIGEST_LENGTH);
       ga->parsedParams |= PARAM_rpId;
@@ -970,7 +1005,7 @@ uint8_t parse_credential_management(CborParser *parser, CTAP_credentialManagemen
         ret = cbor_value_get_int_checked(&map, &tmp);
         CHECK_CBOR_RET(ret);
         DBG_MSG("pinUvAuthProtocol: %d\n", tmp);
-        if (tmp != 1) return CTAP1_ERR_INVALID_PARAMETER;
+        if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
         cm->parsedParams |= PARAM_pinUvAuthProtocol;
         break;
 
@@ -979,7 +1014,7 @@ uint8_t parse_credential_management(CborParser *parser, CTAP_credentialManagemen
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &len);
         CHECK_CBOR_RET(ret);
-        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_INVALID_CBOR;
+        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, cm->pinUvAuthParam, &len, NULL);
         CHECK_CBOR_RET(ret);
         cm->parsedParams |= PARAM_pinUvAuthParam;
@@ -994,12 +1029,22 @@ uint8_t parse_credential_management(CborParser *parser, CTAP_credentialManagemen
     CHECK_CBOR_RET(ret);
   }
 
-  if ((cm->subCommand == CM_cmdGetCredsMetadata || cm->subCommand == CM_cmdEnumerateRPsBegin) &&
+  if ((cm->subCommand == CM_cmdGetCredsMetadata ||
+       cm->subCommand == CM_cmdEnumerateRPsBegin ||
+       cm->subCommand == CM_cmdEnumerateCredentialsBegin ||
+       cm->subCommand == CM_cmdDeleteCredential) &&
       (cm->parsedParams & PARAM_pinUvAuthParam) == 0)
-    return CTAP2_ERR_PUAT_REQUIRED; // See Section 6.8.2 and 6.8.3
-  if ((cm->subCommand == CM_cmdGetCredsMetadata || cm->subCommand == CM_cmdEnumerateRPsBegin) &&
+    return CTAP2_ERR_PUAT_REQUIRED; // See Section 6.8.2, 6.8.3, 6.8.4, 6.8.5
+  if ((cm->subCommand == CM_cmdGetCredsMetadata ||
+       cm->subCommand == CM_cmdEnumerateRPsBegin ||
+       cm->subCommand == CM_cmdEnumerateCredentialsBegin ||
+       cm->subCommand == CM_cmdDeleteCredential) &&
       (cm->parsedParams & PARAM_pinUvAuthProtocol) == 0)
-    return CTAP2_ERR_MISSING_PARAMETER; // See Section 6.8.2 and 6.8.3
+    return CTAP2_ERR_MISSING_PARAMETER; // See Section 6.8.2, 6.8.3, 6.8.4, 6.8.5
+  if (cm->subCommand == CM_cmdEnumerateCredentialsBegin && (cm->parsedParams & PARAM_rpId) == 0)
+    return CTAP2_ERR_MISSING_PARAMETER;
+  if (cm->subCommand == CM_cmdDeleteCredential && (cm->parsedParams & PARAM_credential_id) == 0)
+    return CTAP2_ERR_MISSING_PARAMETER;
 
   return 0;
 }
