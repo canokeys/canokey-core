@@ -168,18 +168,14 @@
 #define CREDENTIAL_NONCE_SIZE 16
 #define DOMAIN_NAME_MAX_SIZE 254
 #define USER_ID_MAX_SIZE 64
-#define USER_NAME_LIMIT 65    // Must be minimum of 64 bytes but can be more.
 #define DISPLAY_NAME_LIMIT 65 // Must be minimum of 64 bytes but can be more.
-#define ICON_LIMIT 129        // Must be minimum of 64 bytes but can be more.
 #define MAX_RK_NUM 64
 #define MAX_STORED_RPID_LENGTH 32
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
   uint8_t id_size;
-  uint8_t name[USER_NAME_LIMIT];
   uint8_t displayName[DISPLAY_NAME_LIMIT];
-  uint8_t icon[ICON_LIMIT];
 } __packed UserEntity;
 
 typedef struct {

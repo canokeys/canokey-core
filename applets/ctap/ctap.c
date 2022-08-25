@@ -822,21 +822,13 @@ step7:
     bool user_details = (ga.parsedParams & PARAM_pinUvAuthParam) && credential_numbers > 1;
     ret = cbor_encode_int(&map, RESP_publicKeyCredentialUserEntity);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 4 : 1);
+    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 2 : 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "id");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_byte_string(&sub_map, rk.user.id, rk.user.id_size);
     CHECK_CBOR_RET(ret);
     if (user_details) {
-      ret = cbor_encode_text_stringz(&sub_map, "icon");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.icon);
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, "name");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.name);
-      CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, "displayName");
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, (char *)rk.user.displayName);

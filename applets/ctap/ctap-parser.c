@@ -117,13 +117,6 @@ uint8_t parse_user(UserEntity *user, CborValue *val) {
       user->id_size = len;
       DBG_MSG("id: ");
       PRINT_HEX(user->id, len);
-    } else if (strcmp(key, "name") == 0) {
-      if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      len = USER_NAME_LIMIT;
-      ret = cbor_value_copy_text_string(&map, (char *)user->name, &len, NULL);
-      CHECK_CBOR_RET(ret);
-      user->name[USER_NAME_LIMIT - 1] = 0;
-      DBG_MSG("name: %s\n", user->name);
     } else if (strcmp(key, "displayName") == 0) {
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = DISPLAY_NAME_LIMIT;
@@ -131,13 +124,6 @@ uint8_t parse_user(UserEntity *user, CborValue *val) {
       CHECK_CBOR_RET(ret);
       user->displayName[DISPLAY_NAME_LIMIT - 1] = 0;
       DBG_MSG("displayName: %s\n", user->displayName);
-    } else if (strcmp(key, "icon") == 0) {
-      if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      len = ICON_LIMIT;
-      ret = cbor_value_copy_text_string(&map, (char *)user->icon, &len, NULL);
-      CHECK_CBOR_RET(ret);
-      user->icon[ICON_LIMIT - 1] = 0;
-      DBG_MSG("icon: %s\n", user->icon);
     }
 
     ret = cbor_value_advance(&map);
