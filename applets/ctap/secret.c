@@ -35,7 +35,7 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-static void generate_credential_id_nonce_tag(CredentialId *kh, uint8_t *pubkey) {
+static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t *pubkey) {
   // works for es256 and ed25519 since their pubkeys share the same length
   random_buffer(kh->nonce, sizeof(kh->nonce));
   // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
@@ -45,7 +45,7 @@ static void generate_credential_id_nonce_tag(CredentialId *kh, uint8_t *pubkey) 
   memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
 }
 
-int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type, bool dc) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, bool dc) {
   int ret = read_kh_key(pubkey); // use pubkey as key buffer
   if (ret < 0) return ret;
 
@@ -70,7 +70,7 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type, boo
   }
 }
 
-int verify_key_handle(const CredentialId *kh, uint8_t *pri_key, bool dc) {
+int verify_key_handle(const credential_id *kh, uint8_t *pri_key, bool dc) {
   uint8_t kh_key[KH_KEY_SIZE];
   int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
@@ -158,7 +158,7 @@ int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATT
 
 int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output) {
   uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
-  // use hmac-sha256(HE_KEY, CredentialId::nonce) as CredRandom
+  // use hmac-sha256(HE_KEY, credential_id::nonce) as CredRandom
   int err = read_he_key(hmac_buf);
   if (err < 0) return err;
 

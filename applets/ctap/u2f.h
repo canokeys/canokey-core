@@ -10,7 +10,7 @@
 // General constants
 #define U2F_EC_KEY_SIZE 32               // EC key size in bytes
 #define U2F_EC_PUB_KEY_SIZE 64           // EC public key size in bytes
-#define U2F_KH_SIZE sizeof(CredentialId) // Key handle size
+#define U2F_KH_SIZE sizeof(credential_id) // Key handle size
 #define U2F_MAX_ATT_CERT_SIZE 1152       // Max size of attestation certificate
 #define U2F_MAX_EC_SIG_SIZE 72           // Max size of DER coded EC signature
 #define U2F_CTR_SIZE 4                   // Size of counter field
