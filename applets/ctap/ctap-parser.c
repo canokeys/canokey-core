@@ -10,6 +10,7 @@
     if (ret > 0) DBG_MSG("CHECK_PARSER_RET %#x\n", ret);                                                               \
     if (ret > 0) return ret;                                                                                           \
   } while (0)
+
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
     if (ret != CborNoError) DBG_MSG("CHECK_CBOR_RET %#x\n", ret);                                                      \
@@ -117,13 +118,16 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
       user->id_size = len;
       DBG_MSG("id: ");
       PRINT_HEX(user->id, len);
-    } else if (strcmp(key, "display_name") == 0) {
+    } else if (strcmp(key, "displayName") == 0) {
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = DISPLAY_NAME_LIMIT;
       ret = cbor_value_copy_text_string(&map, (char *) user->display_name, &len, NULL);
       CHECK_CBOR_RET(ret);
       user->display_name[DISPLAY_NAME_LIMIT - 1] = 0;
-      DBG_MSG("display_name: %s\n", user->display_name);
+      DBG_MSG("displayName: %s\n", user->display_name);
+    } else if (strcmp(key, "name") == 0 || strcmp(key, "icon") == 0) {
+      // We do not store them
+      if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     }
 
     ret = cbor_value_advance(&map);
@@ -173,7 +177,7 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
     ret = parse_pub_key_cred_param(&arr, &cur_alg_type);
     CHECK_PARSER_RET(ret);
     if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA)) {
-      // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#authenticatorMakeCredential
+      // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#authenticatorMakeCredential
       //
       // > This sequence is ordered from most preferred (by the RP) to least preferred.
 
@@ -421,9 +425,9 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
       CHECK_CBOR_RET(ret);
       enum {
         GA_HS_MAP_ENTRY_NONE = 0,
-        GA_HS_MAP_ENTRY_keyAgreement = 0b001,
-        GA_HS_MAP_ENTRY_saltEnc = 0b010,
-        GA_HS_MAP_ENTRY_saltAuth = 0b100,
+        GA_HS_MAP_ENTRY_KEY_AGREEMENT = 0b001,
+        GA_HS_MAP_ENTRY_SALT_ENC = 0b010,
+        GA_HS_MAP_ENTRY_SALT_AUTH = 0b100,
         GA_HS_MAP_ENTRY_ALL_REQUIRED = 0b111,
       } map_has_entry = GA_HS_MAP_ENTRY_NONE;
       if (hmac_map_length < 3) return CTAP2_ERR_MISSING_PARAMETER;
@@ -439,7 +443,7 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
           case GA_REQ_HMAC_SECRET_KEY_AGREEMENT:
             ret = parse_cose_key(&hmac_map, ga->hmac_secret_key_agreement);
             CHECK_CBOR_RET(ret);
-            map_has_entry |= GA_HS_MAP_ENTRY_keyAgreement;
+            map_has_entry |= GA_HS_MAP_ENTRY_KEY_AGREEMENT;
             DBG_MSG("key_agreement: ");
             PRINT_HEX(ga->hmac_secret_key_agreement, 64);
             break;
@@ -451,8 +455,8 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
             CHECK_CBOR_RET(ret);
             if (len != HMAC_SECRET_SALT_SIZE && len != HMAC_SECRET_SALT_SIZE / 2) return CTAP1_ERR_INVALID_LENGTH;
             ga->hmac_secret_salt_len = len;
-            map_has_entry |= GA_HS_MAP_ENTRY_saltEnc;
-            DBG_MSG("saltEnc: ");
+            map_has_entry |= GA_HS_MAP_ENTRY_SALT_ENC;
+            DBG_MSG("salt_enc: ");
             PRINT_HEX(ga->hmac_secret_salt_enc, ga->hmac_secret_salt_len);
             break;
           case GA_REQ_HMAC_SECRET_SALT_AUTH:
@@ -461,8 +465,8 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
             ret = cbor_value_copy_byte_string(&hmac_map, ga->hmac_secret_salt_auth, &len, NULL);
             CHECK_CBOR_RET(ret);
             if (len != HMAC_SECRET_SALT_AUTH_SIZE) return CTAP1_ERR_INVALID_LENGTH;
-            map_has_entry |= GA_HS_MAP_ENTRY_saltAuth;
-            DBG_MSG("saltAuth: ");
+            map_has_entry |= GA_HS_MAP_ENTRY_SALT_AUTH;
+            DBG_MSG("salt_auth: ");
             PRINT_HEX(ga->hmac_secret_salt_auth, 16);
             break;
           default:
@@ -504,7 +508,7 @@ uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val) {
 
     switch (key) {
       case CM_PARAM_RP_ID_HASH:
-        DBG_MSG("rpIDHash found\n");
+        DBG_MSG("rp_id_hash found\n");
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &len);
         CHECK_CBOR_RET(ret);
@@ -543,7 +547,7 @@ uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val) {
 uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, const uint8_t *buf, size_t len) {
   CborValue it, map;
   size_t map_length;
-  int key, pinProtocol;
+  int key, pin_uv_auth_protocol;
   memset(mc, 0, sizeof(CTAP_make_credential));
 
   // options are absent by default
@@ -636,8 +640,10 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &mc->pin_uv_auth_param_len);
         CHECK_CBOR_RET(ret);
-        if (mc->pin_uv_auth_param_len != 0 && mc->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH)
+        if (mc->pin_uv_auth_param_len != 0 && mc->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH) {
+          DBG_MSG("pin_uv_auth_param is too long\n");
           return CTAP2_ERR_PIN_AUTH_INVALID;
+        }
         ret = cbor_value_copy_byte_string(&map, mc->pin_uv_auth_param, &mc->pin_uv_auth_param_len, NULL);
         CHECK_CBOR_RET(ret);
         DBG_MSG("pin_uv_auth_param: ");
@@ -646,12 +652,16 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
         break;
 
       case MC_REQ_PIN_PROTOCOL:
-        DBG_MSG("pinProtocol found\n");
+        DBG_MSG("pin_uv_auth_protocol found\n");
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-        ret = cbor_value_get_int_checked(&map, &pinProtocol);
+        ret = cbor_value_get_int_checked(&map, &pin_uv_auth_protocol);
         CHECK_CBOR_RET(ret);
-        DBG_MSG("pinProtocol: %d\n", pinProtocol);
-        mc->pin_uv_auth_protocol = pinProtocol;
+        DBG_MSG("pin_uv_auth_protocol: %d\n", pin_uv_auth_protocol);
+        if (pin_uv_auth_protocol != 1 && pin_uv_auth_protocol != 2) {
+          DBG_MSG("Unknown pin_uv_auth_protocol\n");
+          return CTAP1_ERR_INVALID_PARAMETER;
+        }
+        mc->pin_uv_auth_protocol = pin_uv_auth_protocol;
         mc->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
         break;
 
@@ -670,14 +680,22 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
     CHECK_CBOR_RET(ret);
   }
 
-  if ((mc->parsed_params & MC_REQUIRED_MASK) != MC_REQUIRED_MASK) return CTAP2_ERR_MISSING_PARAMETER;
+  if ((mc->parsed_params & MC_REQUIRED_MASK) != MC_REQUIRED_MASK) {
+    DBG_MSG("Missing required params\n");
+    return CTAP2_ERR_MISSING_PARAMETER;
+  }
+  if ((mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) &&
+      !(mc->parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
+    DBG_MSG("Missing required pin_uv_auth_protocol\n");
+    return CTAP2_ERR_MISSING_PARAMETER;
+  }
   return 0;
 }
 
 uint8_t parse_get_assertion(CborParser *parser, CTAP_get_assertion *ga, const uint8_t *buf, size_t len) {
   CborValue it, map;
   size_t map_length;
-  int key, pinProtocol;
+  int key, pin_uv_auth_protocol;
   char domain[DOMAIN_NAME_MAX_SIZE];
   memset(ga, 0, sizeof(CTAP_get_assertion));
 
@@ -766,12 +784,16 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_get_assertion *ga, const ui
         break;
 
       case GA_REQ_PIN_UV_AUTH_PROTOCOL:
-        DBG_MSG("pinProtocol found\n");
+        DBG_MSG("pin_uv_auth_protocol found\n");
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-        ret = cbor_value_get_int_checked(&map, &pinProtocol);
+        ret = cbor_value_get_int_checked(&map, &pin_uv_auth_protocol);
         CHECK_CBOR_RET(ret);
-        DBG_MSG("pinProtocol: %d\n", pinProtocol);
-        ga->pin_uv_auth_protocol = pinProtocol;
+        DBG_MSG("pin_uv_auth_protocol: %d\n", pin_uv_auth_protocol);
+        if (pin_uv_auth_protocol != 1 && pin_uv_auth_protocol != 2) {
+          DBG_MSG("Unknown pin_uv_auth_protocol\n");
+          return CTAP1_ERR_INVALID_PARAMETER;
+        }
+        ga->pin_uv_auth_protocol = pin_uv_auth_protocol;
         ga->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
         break;
 
@@ -792,6 +814,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
   CborValue it, map;
   size_t map_length;
   int key;
+  char domain[DOMAIN_NAME_MAX_SIZE + 1];
   memset(cp, 0, sizeof(CTAP_client_pin));
 
   int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
@@ -848,7 +871,10 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &len);
         CHECK_CBOR_RET(ret);
-        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_INVALID_CBOR;
+        if (len > SHA256_DIGEST_LENGTH) {
+          DBG_MSG("pin_uv_auth_param too long\n");
+          return CTAP2_ERR_INVALID_CBOR;
+        }
         ret = cbor_value_copy_byte_string(&map, cp->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
         cp->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
@@ -897,8 +923,23 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
           ERR_MSG("Invalid permissions\n");
           return CTAP1_ERR_INVALID_PARAMETER;
         }
-        // TODO: check permissions
+        if (cp->permissions & (CP_PERMISSION_BE | CP_PERMISSION_ACFG)) {
+          DBG_MSG("Unsupported permissions\n");
+          return CTAP2_ERR_UNAUTHORIZED_PERMISSION;
+        }
         cp->parsed_params |= PARAM_PERMISSIONS;
+        break;
+
+      case CP_REQ_RP_ID:
+        DBG_MSG("rp id found\n");
+        if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        len = DOMAIN_NAME_MAX_SIZE;
+        ret = cbor_value_copy_text_string(&map, domain, &len, NULL);
+        CHECK_CBOR_RET(ret);
+        domain[len] = 0;
+        DBG_MSG("rp_id: %s\n", domain);
+        sha256_raw((uint8_t *) domain, len, cp->rp_id_hash);
+        cp->parsed_params |= PARAM_RP;
         break;
 
       default:

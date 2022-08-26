@@ -124,6 +124,12 @@
 #define CP_RESP_KEY_AGREEMENT                                   0x01
 #define CP_RESP_PIN_UV_AUTH_TOKEN                               0x02
 #define CP_RESP_PIN_RETRIES                                     0x03
+#define CP_PERMISSION_MC                                        0x01
+#define CP_PERMISSION_GA                                        0x02
+#define CP_PERMISSION_CM                                        0x04
+#define CP_PERMISSION_BE                                        0x08
+#define CP_PERMISSION_LBW                                       0x10
+#define CP_PERMISSION_ACFG                                      0x20
 
 #define CM_REQ_SUB_COMMAND                                        0x01
 #define CM_REQ_SUB_COMMAND_PARAMS                                 0x02
@@ -142,7 +148,7 @@
 #define CM_RESP_EXISTING_RESIDENT_CREDENTIALS_COUNT               0x01
 #define CM_RESP_MAX_POSSIBLE_REMAINING_RESIDENT_CREDENTIALS_COUNT 0x02
 #define CM_RESP_RP                                                0x03
-#define CM_RESP_RP_IDHASH                                         0x04
+#define CM_RESP_RP_ID_HASH                                        0x04
 #define CM_RESP_TOTAL_RPS                                         0x05
 #define CM_RESP_USER                                              0x06
 #define CM_RESP_CREDENTIAL_ID                                     0x07
@@ -187,7 +193,7 @@ typedef struct {
 typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
   uint8_t nonce[CREDENTIAL_NONCE_SIZE];
-  uint8_t rpIdHash[SHA256_DIGEST_LENGTH];
+  uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   int32_t alg_type;
 } __packed credential_id;
 
@@ -268,6 +274,7 @@ typedef struct {
   uint8_t new_pin_enc[PIN_ENC_SIZE_P2];
   uint8_t pin_hash_enc[PIN_HASH_SIZE_P2];
   uint8_t permissions;
+  uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
 } CTAP_client_pin;
 
 typedef struct {

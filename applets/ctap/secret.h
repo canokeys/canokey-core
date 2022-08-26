@@ -5,6 +5,34 @@
 #include "ctap-internal.h"
 #include <ctap.h>
 
+// utility functions
+void cp_begin_using_uv_auth_token(bool user_is_present);
+void cp_pin_uv_auth_token_usage_timer_observer(void);
+bool cp_get_user_present_flag_value(void);
+bool cp_get_user_verified_flag_value(void);
+void cp_clear_user_present_flag(void);
+void cp_clear_user_verified_flag(void);
+void cp_clear_pin_uv_auth_token_permissions_except_lbw(void);
+void cp_stop_using_pin_uv_auth_token(void);
+
+// pin auth protocol
+void cp_initialize(void);
+void cp_regenerate(void);
+void cp_reset_pin_uv_auth_token(void);
+void cp_get_public_key(uint8_t *buf);
+int cp_decapsulate(uint8_t *buf, int pin_protocol);
+int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol);
+int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol);
+int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol);
+bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
+bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
+
+void cp_set_permission(int new_permissions);
+bool cp_has_permission(int permission);
+bool cp_has_associated_rp_id(void);
+bool cp_verify_rp_id(const uint8_t *rp_id_hash);
+void cp_associate_rp_id(const uint8_t *rp_id_hash);
+
 int increase_counter(uint32_t *counter);
 int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, bool dc);
 size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig);

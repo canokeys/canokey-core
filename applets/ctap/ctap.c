@@ -3,7 +3,6 @@
 #include "ctap-errors.h"
 #include "ctap-internal.h"
 #include "ctap-parser.h"
-#include "pin.h"
 #include "secret.h"
 #include "u2f.h"
 #include <aes.h>
@@ -23,6 +22,7 @@
     if (ret != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
     if (ret > 0) return ret;                                                                                           \
   } while (0)
+
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
     if (ret != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
@@ -53,11 +53,11 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
 // pin related
 static uint8_t consecutive_pin_counter;
 // assertion related
-static uint8_t credential_list[MAX_RK_NUM], credential_numbers, credential_idx, last_cmd;
+static uint8_t credential_list[MAX_RK_NUM], credential_counter, credential_idx, last_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
-  credential_numbers = 0;
+  credential_counter = 0;
   credential_idx = 0;
   last_cmd = 0xff;
   cp_initialize();
@@ -184,18 +184,25 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
   ad->flags = flags;
 
   uint32_t ctr;
-  int ret = increase_counter(&ctr);
-  if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (increase_counter(&ctr) < 0) {
+    DBG_MSG("Fail to increase the counter\n");
+    return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
   ad->sign_count = htobe32(ctr);
 
   if (flags & FLAGS_AT) {
-    if (*len < outLen + sizeof(ad->at) - 1) return CTAP2_ERR_LIMIT_EXCEEDED;
+    if (*len < outLen + sizeof(ad->at) - 1) {
+      DBG_MSG("Attestation is too long\n");
+      return CTAP2_ERR_LIMIT_EXCEEDED;
+    }
 
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credential_id_length = htobe16(sizeof(credential_id));
-    memcpy(ad->at.credential_id.rpIdHash, rpIdHash, sizeof(ad->at.credential_id.rpIdHash));
-    if (generate_key_handle(&ad->at.credential_id, ad->at.public_key, alg_type, dc) < 0)
+    memcpy(ad->at.credential_id.rp_id_hash, rpIdHash, sizeof(ad->at.credential_id.rp_id_hash));
+    if (generate_key_handle(&ad->at.credential_id, ad->at.public_key, alg_type, dc) < 0) {
+      DBG_MSG("Fail to generate a key handle\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
+    }
     if (alg_type == COSE_ALG_ES256) {
       build_cose_key(ad->at.public_key, 0);
       outLen += sizeof(ad->at) - sizeof(ad->at.public_key) + COSE_KEY_ES256_SIZE;
@@ -203,11 +210,15 @@ uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint
       build_ed25519_cose_key(ad->at.public_key);
       outLen += sizeof(ad->at) - sizeof(ad->at.public_key) + COSE_KEY_EDDSA_SIZE;
     } else {
+      DBG_MSG("Unknown algorithm type\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
     }
   }
   if (flags & FLAGS_ED) {
-    if (*len < outLen + extensionSize) return CTAP2_ERR_LIMIT_EXCEEDED;
+    if (*len < outLen + extensionSize) {
+      DBG_MSG("Extension is too long\n");
+      return CTAP2_ERR_LIMIT_EXCEEDED;
+    }
     memcpy(buf + outLen, extension, extensionSize);
     outLen += extensionSize;
   }
@@ -220,7 +231,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   uint8_t data_buf[sizeof(CTAP_auth_data)];
   CborParser parser;
   CTAP_make_credential mc;
-  // CBOR of {"hmac-secret": true}
+  // CBOR of {"hmac-secret": true}, TODO: add more extensions
   const uint8_t hmacExt[] = {0xA1, 0x6B, 0x68, 0x6D, 0x61, 0x63, 0x2D, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0xF5};
 
   int ret = parse_make_credential(&parser, &mc, params, len);
@@ -241,19 +252,12 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
 
   // 2. If the pin_uv_auth_param parameter is present
-  if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
-    // a. If the pin_uv_auth_protocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
-    if (mc.pin_uv_auth_protocol != 1 && mc.pin_uv_auth_protocol != 2) return CTAP1_ERR_INVALID_PARAMETER;
-    // b. If the pin_uv_auth_protocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
-    if ((mc.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL) == 0) return CTAP2_ERR_MISSING_PARAMETER;
-  }
-  DBG_MSG("PIN checked\n");
-
+  //    > This has been processed when parsing.
   // 3. Validate pubKeyCredParams with the following steps
   //    > This has been processed when parsing.
 
   // 4. Create a new authenticatorMakeCredential response structure and initialize both its "uv" bit and "up" bit as false.
-  bool uv = false, up = false;
+  bool uv = false; // up is always true, see 14.c
 
   // 5. If the options parameter is present, process all option keys and values present in the parameter.
   //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
@@ -275,13 +279,14 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //    f. If the "up" option is present then:
   //       If the "up" option is false, end the operation by returning CTAP2_ERR_INVALID_OPTION.
   if (mc.options.up == OPTION_FALSE) {
-    DBG_MSG("Rule 5-f not satisfied.\n");
+    DBG_MSG("Rule 5-f not satisfied\n");
     return CTAP2_ERR_INVALID_OPTION;
   }
   //    g. If the "up" option is absent, let the "up" option be treated as being present with the value true
   mc.options.up = OPTION_TRUE;
 
   // 6. [N/A] If the alwaysUv option ID is present and true
+
   // 7. If the makeCredUvNotRqd option ID is present and set to true in the authenticatorGetInfo response
   //    If the following statements are all true:
   //    a) The authenticator is protected by some form of user verification.
@@ -292,10 +297,10 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       mc.options.rk == OPTION_TRUE) {
     // If ClientPin option ID is true and the noMcGaPermissionsWithClientPin option ID is absent or false,
     // end the operation by returning CTAP2_ERR_PUAT_REQUIRED.
+    DBG_MSG("Rule 7 not satisfied\n");
     return CTAP2_ERR_PUAT_REQUIRED;
     // [N/A] Otherwise, end the operation by returning CTAP2_ERR_OPERATION_DENIED.
   }
-  DBG_MSG("Options checked\n");
 
   // 8. [N/A] Else (the makeCredUvNotRqd option ID is present with the value false or is absent)
 
@@ -306,7 +311,10 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     b) [ALWAYS TRUE] the makeCredUvNotRqd option ID in authenticatorGetInfo's response is present with the value true.
   //     c) the pin_uv_auth_param parameter is not present.
   //     Then go to Step 12.
-  if (mc.options.rk == OPTION_FALSE && (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0) goto step12;
+  if (mc.options.rk == OPTION_FALSE && (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0) {
+    DBG_MSG("Rule 10 satisfied, go to Step 12\n");
+    goto step12;
+  }
 
   // 11. If the authenticator is protected by some form of user verification, then:
   //     11.2 [N/A] If the "uv" option is present and set to true
@@ -314,16 +322,27 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
   //        If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
   if (!cp_verify_pin_token(mc.client_data_hash, sizeof(mc.client_data_hash), mc.pin_uv_auth_param,
-                           mc.pin_uv_auth_protocol))
+                           mc.pin_uv_auth_protocol)) {
+    DBG_MSG("Fail to verify pin token\n");
     return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
   //     b) Verify that the pinUvAuthToken has the mc permission, if not, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  if (!cp_has_permission(CP_PERMISSION_MC)) return CTAP2_ERR_PIN_AUTH_INVALID;
+  if (!cp_has_permission(CP_PERMISSION_MC)) {
+    DBG_MSG("Fail to verify pin permission\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
   //     c) If the pinUvAuthToken has a permissions RP ID associated:
   //        If the permissions RP ID does not match the rp.id in this request, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  if (!cp_verify_rp_id(mc.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+  if (!cp_verify_rp_id(mc.rp_id_hash)) {
+    DBG_MSG("Fail to verify pin rp id\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
   //     d) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
   //     e) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  if (!cp_get_user_verified_flag_value()) return CTAP2_ERR_PIN_AUTH_INVALID;
+  if (!cp_get_user_verified_flag_value()) {
+    DBG_MSG("userVerifiedFlagValue is false\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
   //     f) If userVerifiedFlagValue is true then set the "uv" bit to true in the response.
   uv = true;
   //     g) If the pinUvAuthToken does not have a permissions RP ID associated:
@@ -340,7 +359,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       parse_credential_descriptor(&mc.exclude_list, data_buf); // save credential id in data_buf
       credential_id *kh = (credential_id *) data_buf;
       // compare rp_id first
-      if (memcmp(kh->rpIdHash, mc.rp_id_hash, sizeof(kh->rpIdHash)) != 0) continue;
+      if (memcmp(kh->rp_id_hash, mc.rp_id_hash, sizeof(kh->rp_id_hash)) != 0) continue;
       // then verify key handle and get private key in rp_id_hash
       ret = verify_key_handle(kh, pri_key, false);
       memzero(pri_key, sizeof(pri_key));
@@ -368,8 +387,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     //   b) Else (implying the pin_uv_auth_param parameter is not present)
     WAIT(CTAP2_ERR_OPERATION_DENIED);
   }
-  //     c) Set the "up" bit to true in the response
-  up = true;
+  //     c) [N/A] Set the "up" bit to true in the response
   //     d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
   cp_clear_user_present_flag();
   cp_clear_user_verified_flag();
@@ -392,7 +410,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // 16. Generate a new credential key pair for the algorithm chosen in step 3.
   // [member name] authData
   len = sizeof(data_buf);
-  uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
+  uint8_t flags = FLAGS_AT | (mc.extension_hmac_secret ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | FLAGS_UP;
   ret = ctap_make_auth_data(mc.rp_id_hash, data_buf, flags, sizeof(hmacExt), hmacExt, &len, mc.alg_type,
                             mc.options.rk == OPTION_TRUE);
   if (ret != 0) return ret;
@@ -408,37 +426,41 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     c) Store the user parameter along with the newly-created key pair.
   //     d) If authenticator does not have enough internal storage to persist the new credential, return CTAP2_ERR_KEY_STORE_FULL.
   if (mc.options.rk == OPTION_TRUE) {
-    DBG_MSG("Processing rk\n");
-    CTAP_discoverable_credential rk;
+    DBG_MSG("Processing discoverable credential\n");
+    CTAP_discoverable_credential dc;
     int size = get_file_size(RK_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    size_t nRk = size / sizeof(CTAP_discoverable_credential), pos, firstDeleted = MAX_RK_NUM;
-    for (pos = 0; pos != nRk; ++pos) {
-      size = read_file(RK_FILE, &rk, pos * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential));
-      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (rk.deleted) {
-        if (firstDeleted == MAX_RK_NUM) firstDeleted = pos;
+    int n_rk = size / (int) sizeof(CTAP_discoverable_credential), pos, first_deleted = MAX_RK_NUM;
+    for (pos = 0; pos != n_rk; ++pos) {
+      if (read_file(RK_FILE, &dc, pos * (int) sizeof(CTAP_discoverable_credential),
+                    sizeof(CTAP_discoverable_credential)) < 0) {
+        ERR_MSG("Unable to read RK_FILE\n");
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      }
+      if (dc.deleted) {
+        if (first_deleted == MAX_RK_NUM) first_deleted = pos;
         continue;
       }
       // b
-      if (memcmp(mc.rp_id_hash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0 &&
-          mc.user.id_size == rk.user.id_size && memcmp(mc.user.id, rk.user.id, mc.user.id_size) == 0)
+      if (memcmp(mc.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0 &&
+          mc.user.id_size == dc.user.id_size && memcmp(mc.user.id, dc.user.id, mc.user.id_size) == 0)
         break;
     }
     // d
-    if (pos == nRk && firstDeleted != MAX_RK_NUM) {
-      DBG_MSG("Use slot %lu\n", firstDeleted);
-      pos = firstDeleted;
+    if (pos == n_rk && first_deleted != MAX_RK_NUM) {
+      DBG_MSG("Use slot %d\n", first_deleted);
+      pos = first_deleted;
     }
     if (pos >= MAX_RK_NUM) {
       DBG_MSG("Storage full\n");
       return CTAP2_ERR_KEY_STORE_FULL;
     }
-    memcpy(&rk.credential_id, data_buf + 55, sizeof(rk.credential_id));
-    memcpy(&rk.user, &mc.user, sizeof(user_entity)); // c
-    rk.deleted = false;
-    ret = write_file(RK_FILE, &rk, pos * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential), 0);
-    if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    memcpy(&dc.credential_id, data_buf + 55, sizeof(dc.credential_id));
+    memcpy(&dc.user, &mc.user, sizeof(user_entity)); // c
+    dc.deleted = false;
+    if (write_file(RK_FILE, &dc, pos * (int) sizeof(CTAP_discoverable_credential),
+                   sizeof(CTAP_discoverable_credential), 0) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
     uint8_t numbers;
     if (read_attr(RK_FILE, RK_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     ++numbers;
@@ -447,28 +469,28 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     // Process metadata
     size = get_file_size(RK_META_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    size_t n_rp = size / sizeof(CTAP_rp_meta), meta_pos;
+    int n_rp = size / (int) sizeof(CTAP_rp_meta), meta_pos;
     CTAP_rp_meta meta;
-    firstDeleted = MAX_RK_NUM;
+    first_deleted = MAX_RK_NUM;
     for (meta_pos = 0; meta_pos != n_rp; ++meta_pos) {
-      size = read_file(RK_META_FILE, &meta, meta_pos * sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
+      size = read_file(RK_META_FILE, &meta, meta_pos * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (meta.slots == 0) { // deleted
-        if (firstDeleted == MAX_RK_NUM) firstDeleted = meta_pos;
+        if (first_deleted == MAX_RK_NUM) first_deleted = meta_pos;
         continue;
       }
       if (memcmp(mc.rp_id_hash, meta.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) break;
     }
-    if (meta_pos == n_rp && firstDeleted != MAX_RK_NUM) {
-      DBG_MSG("Use slot %lu for meta\n", firstDeleted);
-      meta_pos = firstDeleted;
+    if (meta_pos == n_rp && first_deleted != MAX_RK_NUM) {
+      DBG_MSG("Use slot %d for meta\n", first_deleted);
+      meta_pos = first_deleted;
     }
     if (meta_pos == n_rp) meta.slots = 0; // a new entry's slot should be empty
     memcpy(meta.rp_id_hash, mc.rp_id_hash, SHA256_DIGEST_LENGTH);
     memcpy(meta.rp_id, mc.rp_id, MAX_STORED_RPID_LENGTH);
     meta.rp_id_len = mc.rp_id_len;
     meta.slots |= 1 << pos;
-    if (write_file(RK_META_FILE, &meta, meta_pos * sizeof(CTAP_rp_meta),
+    if (write_file(RK_META_FILE, &meta, meta_pos * (int) sizeof(CTAP_rp_meta),
                    sizeof(CTAP_rp_meta), 0) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
   }
@@ -540,7 +562,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_get_assertion ga;
-  CTAP_discoverable_credential rk; // We use rk to store the selected credential
+  CTAP_discoverable_credential dc; // We use dc to store the selected credential
   uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
   CborParser parser;
   int ret;
@@ -564,12 +586,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   // 2. If the pin_uv_auth_param parameter is present
-  if (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
-    // a. If the pin_uv_auth_protocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
-    if (ga.pin_uv_auth_protocol != 1 && ga.pin_uv_auth_protocol != 2) return CTAP1_ERR_INVALID_PARAMETER;
-    // b. If the pin_uv_auth_protocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
-    if ((ga.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL) == 0) return CTAP2_ERR_MISSING_PARAMETER;
-  }
+  //    > This has been processed when parsing.
 
   // 3. Create a new authenticatorGetAssertion response structure and initialize both its "uv" bit and "up" bit as false.
   bool uv = false, up = false;
@@ -588,8 +605,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     //     2) [N/A] If the built-in user verification method has not yet been enabled, end the operation
     //        by returning CTAP2_ERR_INVALID_OPTION.
   }
-  //    d. If the "rk" option is present then: Return CTAP2_ERR_UNSUPPORTED_OPTION.
-  if (ga.options.rk != OPTION_ABSENT) return CTAP2_ERR_UNSUPPORTED_OPTION;
+  //    d. If the "dc" option is present then: Return CTAP2_ERR_UNSUPPORTED_OPTION.
+  if (ga.options.rk != OPTION_ABSENT) {
+    DBG_MSG("Rule 4-d not satisfied.\n");
+    return CTAP2_ERR_UNSUPPORTED_OPTION;
+  }
   //    e. If the "up" option is not present then: Let the "up" option be treated as being present with the value true.
   if (ga.options.up == OPTION_ABSENT) ga.options.up = OPTION_TRUE;
 
@@ -603,17 +623,28 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     //     If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
     //     If the verification returns success, set the "uv" bit to true in the response.
     if (!cp_verify_pin_token(ga.client_data_hash, sizeof(ga.client_data_hash), ga.pin_uv_auth_param,
-                             ga.pin_uv_auth_protocol))
+                             ga.pin_uv_auth_protocol)) {
+      DBG_MSG("Fail to verify pin token\n");
       return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
     uv = true;
     //  b) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
     //  c) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_get_user_verified_flag_value()) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (!cp_get_user_verified_flag_value()) {
+      DBG_MSG("userVerifiedFlagValue is false\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
     //  d) Verify that the pinUvAuthToken has the ga permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_has_permission(CP_PERMISSION_GA)) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (!cp_has_permission(CP_PERMISSION_GA)) {
+      DBG_MSG("Fail to verify pin permission\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
     //  e) If the pinUvAuthToken has a permissions RP ID associated:
     //     If the permissions RP ID does not match the rp_id in this request, return CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_verify_rp_id(ga.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (!cp_verify_rp_id(ga.rp_id_hash)) {
+      DBG_MSG("Fail to verify pin rp id\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
     //  f) If the pinUvAuthToken does not have a permissions RP ID associated:
     //     Associate the request’s rp_id parameter value with the pinUvAuthToken as its permissions RP ID.
     cp_associate_rp_id(ga.rp_id_hash);
@@ -658,11 +689,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   if (ga.allow_list_size > 0) { // Step 11
     size_t i;
     for (i = 0; i < ga.allow_list_size; ++i) {
-      parse_credential_descriptor(&ga.allow_list, (uint8_t *) &rk.credential_id);
+      parse_credential_descriptor(&ga.allow_list, (uint8_t *) &dc.credential_id);
       // compare the rp_id first
-      if (memcmp(rk.credential_id.rpIdHash, ga.rp_id_hash, sizeof(rk.credential_id.rpIdHash)) != 0) goto next;
+      if (memcmp(dc.credential_id.rp_id_hash, ga.rp_id_hash, sizeof(dc.credential_id.rp_id_hash)) != 0) goto next;
       // then verify the key handle and get private key
-      int err = verify_key_handle(&rk.credential_id, pri_key, false);
+      int err = verify_key_handle(&dc.credential_id, pri_key, false);
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) break; // Step 11: Select any credential from the applicable credentials list.
       next:
@@ -672,35 +703,31 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     // 7-f
     if (i == ga.allow_list_size) return CTAP2_ERR_NO_CREDENTIALS;
   } else { // Step 12
-    int size = 0;
+    int size;
     if (credential_idx == 0) {
-      // TODO: 12-b-2-iii
       size = get_file_size(RK_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      int nRk = (int) (size / sizeof(CTAP_discoverable_credential));
-      credential_numbers = 0;
-      for (int i = nRk - 1; i >= 0; --i) {  // 12-b-1
-        if (read_file(RK_FILE, &rk, i * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential)) < 0)
+      int n_rk = (int) (size / sizeof(CTAP_discoverable_credential));
+      credential_counter = 0;
+      for (int i = n_rk - 1; i >= 0; --i) {  // 12-b-1
+        if (read_file(RK_FILE, &dc, i * (int) sizeof(CTAP_discoverable_credential),
+                      sizeof(CTAP_discoverable_credential)) < 0)
           return CTAP2_ERR_UNHANDLED_REQUEST;
-        DBG_MSG("Discoverable Credential: ");
-        PRINT_HEX(&rk, sizeof(CTAP_discoverable_credential));
-        if (rk.deleted) {
+        if (dc.deleted) {
           DBG_MSG("Skipped\n");
           continue;
         }
-        if (memcmp(ga.rp_id_hash, rk.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0)
-          credential_list[credential_numbers++] = i;
+        if (memcmp(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0)
+          credential_list[credential_counter++] = i;
       }
       // 7-f
-      if (credential_numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      if (credential_counter == 0) return CTAP2_ERR_NO_CREDENTIALS;
     }
-    // fetch rk and get private key
-    size =
-        read_file(RK_FILE, &rk, credential_list[credential_idx] * sizeof(CTAP_discoverable_credential),
-                  sizeof(CTAP_discoverable_credential));
-    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    int err = verify_key_handle(&rk.credential_id, pri_key, true);
-    if (err != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    // fetch dc and get private key
+    if (read_file(RK_FILE, &dc, credential_list[credential_idx] * (int) sizeof(CTAP_discoverable_credential),
+                  sizeof(CTAP_discoverable_credential)) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (verify_key_handle(&dc.credential_id, pri_key, true) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
   // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
@@ -726,7 +753,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //     b) Authenticator extension outputs generated by the authenticator extension processing are returned in the
   //        authenticator data. The set of keys in the authenticator extension outputs map MUST be equal to, or a subset
   //        of, the keys of the authenticator extension inputs map.
-  uint8_t extensionBuffer[79], extensionSize = 0;
+  uint8_t extension_buffer[79], extension_size = 0;
   uint8_t iv[16] = {0};
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   if ((ga.parsed_params & PARAM_HMAC_SECRET) && credential_idx == 0) {
@@ -745,10 +772,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   if (ga.parsed_params & PARAM_HMAC_SECRET) {
-    ret = make_hmac_secret_output(rk.credential_id.nonce, ga.hmac_secret_salt_enc, ga.hmac_secret_salt_len,
+    ret = make_hmac_secret_output(dc.credential_id.nonce, ga.hmac_secret_salt_enc, ga.hmac_secret_salt_len,
                                   ga.hmac_secret_salt_enc);
     if (ret) return ret;
-    DBG_MSG("hmac-secret(plain): ");
+    DBG_MSG("hmac-secret (plain): ");
     PRINT_HEX(ga.hmac_secret_salt_enc, ga.hmac_secret_salt_len);
     cfg.key = ga.hmac_secret_key_agreement;
     cfg.in_size = ga.hmac_secret_salt_len;
@@ -760,7 +787,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CborEncoder extensionEncoder;
     CborEncoder map;
     // build extensions
-    cbor_encoder_init(&extensionEncoder, extensionBuffer, sizeof(extensionBuffer), 0);
+    cbor_encoder_init(&extensionEncoder, extension_buffer, sizeof(extension_buffer), 0);
     ret = cbor_encoder_create_map(&extensionEncoder, &map, 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&map, "hmac-secret");
@@ -770,15 +797,15 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     ret = cbor_encoder_close_container(&extensionEncoder, &map);
     CHECK_CBOR_RET(ret);
 
-    extensionSize = cbor_encoder_get_buffer_size(&extensionEncoder, extensionBuffer);
-    DBG_MSG("extensionSize=%hhu\n", extensionSize);
+    extension_size = cbor_encoder_get_buffer_size(&extensionEncoder, extension_buffer);
+    DBG_MSG("extension_size=%hhu\n", extension_size);
   }
 
   // 13. Sign the client_data_hash along with authData with the selected credential.
   CborEncoder map, sub_map;
   uint8_t map_items = 3;
   if (ga.allow_list_size == 0) ++map_items;
-  if (credential_idx == 0 && credential_numbers > 1) ++map_items;
+  if (credential_idx == 0 && credential_counter > 1) ++map_items;
   ret = cbor_encoder_create_map(encoder, &map, map_items);
   CHECK_CBOR_RET(ret);
 
@@ -789,7 +816,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub_map, "id");
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_byte_string(&sub_map, (const uint8_t *) &rk.credential_id, sizeof(credential_id));
+  ret = cbor_encode_byte_string(&sub_map, (const uint8_t *) &dc.credential_id, sizeof(credential_id));
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub_map, "type");
   CHECK_CBOR_RET(ret);
@@ -800,10 +827,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // auth data
   len = sizeof(data_buf);
-  uint8_t flags =
-      ((ga.parsed_params & PARAM_HMAC_SECRET) ? FLAGS_ED : 0) | (uv > 0 ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
-  ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extensionSize, extensionBuffer, &len,
-                            rk.credential_id.alg_type, ga.allow_list_size == 0);
+  uint8_t flags = ((ga.parsed_params & PARAM_HMAC_SECRET) ? FLAGS_ED : 0) | (uv > 0 ? FLAGS_UV : 0) | FLAGS_UP;
+  ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extension_size, extension_buffer, &len,
+                            dc.credential_id.alg_type, ga.allow_list_size == 0);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, MC_RESP_AUTH_DATA);
   CHECK_CBOR_RET(ret);
@@ -813,13 +839,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // signature
   ret = cbor_encode_int(&map, GA_RESP_SIGNATURE);
   CHECK_CBOR_RET(ret);
-  if (rk.credential_id.alg_type == COSE_ALG_ES256) {
+  if (dc.credential_id.alg_type == COSE_ALG_ES256) {
     sha256_init();
     sha256_update(data_buf, len);
     sha256_update(ga.client_data_hash, sizeof(ga.client_data_hash));
     sha256_final(data_buf);
     len = sign_with_ecdsa_private_key(pri_key, data_buf, data_buf);
-  } else if (rk.credential_id.alg_type == COSE_ALG_EDDSA) {
+  } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
     memcpy(data_buf + len, ga.client_data_hash, CLIENT_DATA_HASH_SIZE);
     len = sign_with_ed25519_private_key(pri_key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
   }
@@ -828,31 +854,29 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // user
   if (ga.allow_list_size == 0) {
-    // CTAP Spec: User identifiable information (name, DisplayName, icon) MUST not
-    // be returned if user verification is not done by the authenticator.
-    bool user_details = (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && credential_numbers > 1;
+    bool user_details = (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && credential_counter > 1;
     ret = cbor_encode_int(&map, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 2 : 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "id");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&sub_map, rk.user.id, rk.user.id_size);
+    ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
     CHECK_CBOR_RET(ret);
     if (user_details) {
       ret = cbor_encode_text_stringz(&sub_map, "display_name");
       CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, (char *) rk.user.display_name);
+      ret = cbor_encode_text_stringz(&sub_map, (char *) dc.user.display_name);
       CHECK_CBOR_RET(ret);
     }
     ret = cbor_encoder_close_container(&map, &sub_map);
     CHECK_CBOR_RET(ret);
   }
 
-  if (credential_idx == 0 && credential_numbers > 1) {
+  if (credential_idx == 0 && credential_counter > 1) {
     ret = cbor_encode_int(&map, GA_RESP_NUMBER_OF_CREDENTIALS);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, credential_numbers);
+    ret = cbor_encode_int(&map, credential_counter);
     CHECK_CBOR_RET(ret);
   }
 
@@ -870,7 +894,7 @@ static uint8_t ctap_get_next_assertion(CborEncoder *encoder) {
   // 1. If authenticator does not remember any authenticatorGetAssertion parameters, return CTAP2_ERR_NOT_ALLOWED.
   if (last_cmd != CTAP_GET_ASSERTION && last_cmd != CTAP_GET_NEXT_ASSERTION) return CTAP2_ERR_NOT_ALLOWED;
   // 2. If the credentialCounter is equal to or greater than numberOfCredentials, return CTAP2_ERR_NOT_ALLOWED.
-  if (credential_idx >= credential_numbers) return CTAP2_ERR_NOT_ALLOWED;
+  if (credential_idx >= credential_counter) return CTAP2_ERR_NOT_ALLOWED;
   // 3. [TODO] If timer since the last call to authenticatorGetAssertion/authenticatorGetNextAssertion is greater than
   //    30 seconds, discard the current authenticatorGetAssertion state and return CTAP2_ERR_NOT_ALLOWED.
   //    This step is OPTIONAL if transport is done over NFC.
@@ -1107,6 +1131,8 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
 
     case CP_CMD_GET_PIN_TOKEN:
     case CP_CMD_GET_PIN_UV_AUTH_TOKEN_USING_PIN_WITH_PERMISSIONS:
+      // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#getPinToken
+      // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#getPinUvAuthTokenUsingPinWithPermissions
       err = has_pin();
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
@@ -1141,8 +1167,12 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       cp_reset_pin_uv_auth_token();
       cp_begin_using_uv_auth_token(false);
-      // TODO: set permission and rpid
-      cp_set_permission(CP_PERMISSION_MC | CP_PERMISSION_GA);
+      if (cp.sub_command == CP_CMD_GET_PIN_TOKEN) {
+        cp_set_permission(CP_PERMISSION_MC | CP_PERMISSION_GA);
+      } else {
+        cp_set_permission(cp.permissions);
+        if (cp.parsed_params & PARAM_RP) cp_associate_rp_id(cp.rp_id_hash);
+      }
       cp_encrypt_pin_token(cp.key_agreement, buf, cp.pin_uv_auth_protocol);
       ret = cbor_encoder_create_map(encoder, &map, 1);
       CHECK_CBOR_RET(ret);
@@ -1157,36 +1187,6 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
 
   return 0;
 }
-
-//static int sort(uint8_t indices[], int size, CTAP_discoverable_credential *rk) {
-//  CTAP_discoverable_credential rk_j;
-//
-//  for (int i = 1; i < size; ++i) {
-//    if (read_file(RK_FILE, rk, indices[i] * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential)) < 0) return -1;
-//    int key = indices[i];
-//    int j = i - 1;
-//
-//    while (1) {
-//      if (read_file(RK_FILE, &rk_j, indices[j] * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential)) < 0) return -1;
-//      if (memcmp(rk->credential_id.rp_id_hash, rk_j.credential_id.rp_id_hash, 32) >= 0) break;
-//      indices[j + 1] = indices[j];
-//      if (--j < 0) break;
-//    }
-//    indices[j + 1] = key;
-//  }
-//
-//  uint8_t counter = 0;
-//  if (read_file(RK_FILE, rk, indices[0] * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential)) < 0) return -1;
-//  for (int j = 1; j < size; ++j) {
-//    if (read_file(RK_FILE, &rk_j, indices[j] * sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential)) < 0) return -1;
-//    if (memcmp(rk->credential_id.rp_id_hash, rk_j.credential_id.rp_id_hash, 32) != 0) {
-//      ++counter;
-//      memcpy(rk->credential_id.rp_id_hash, rk_j.credential_id.rp_id_hash, 32);
-//    }
-//  }
-//
-//  return counter;
-//}
 
 static int get_next_slot(uint64_t *slots, uint8_t *numbers) {
   int idx = -1;
@@ -1275,7 +1275,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       CHECK_CBOR_RET(ret);
       ret = cbor_encoder_close_container(&map, &sub_map);
       CHECK_CBOR_RET(ret);
-      ret = cbor_encode_int(&map, CM_RESP_RP_IDHASH);
+      ret = cbor_encode_int(&map, CM_RESP_RP_ID_HASH);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_byte_string(&map, meta.rp_id_hash, SHA256_DIGEST_LENGTH);
       CHECK_CBOR_RET(ret);
@@ -1306,7 +1306,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       CHECK_CBOR_RET(ret);
       ret = cbor_encoder_close_container(&map, &sub_map);
       CHECK_CBOR_RET(ret);
-      ret = cbor_encode_int(&map, CM_RESP_RP_IDHASH);
+      ret = cbor_encode_int(&map, CM_RESP_RP_ID_HASH);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_byte_string(&map, meta.rp_id_hash, SHA256_DIGEST_LENGTH);
       CHECK_CBOR_RET(ret);
@@ -1439,7 +1439,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         if (dc.deleted) continue;
         if (memcmp(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
           DBG_MSG("Found, rp_id_hash: ");
-          PRINT_HEX(dc.credential_id.rpIdHash, SHA256_DIGEST_LENGTH);
+          PRINT_HEX(dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH);
           break;
         }
       }
@@ -1460,7 +1460,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       for (int i = 0; i < numbers; ++i) {
         size = read_file(RK_META_FILE, &meta, idx * sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        if (memcmp(meta.rp_id_hash, dc.credential_id.rpIdHash, SHA256_DIGEST_LENGTH) == 0) {
+        if (memcmp(meta.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
           meta.slots &= ~(1 << idx);
           size = write_file(RK_META_FILE, &meta, idx * sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
