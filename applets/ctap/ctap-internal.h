@@ -16,9 +16,9 @@
 #define PIN_CTR_ATTR    0x03
 #define KH_KEY_ATTR     0x04
 #define HE_KEY_ATTR     0x05
-#define RK_FILE         "ctap_rk"
-#define RK_NUMBERS_ATTR 0x00
-#define RK_META_FILE    "ctap_rkm"
+#define DC_FILE         "ctap_dc"
+#define DC_NUMBERS_ATTR 0x00
+#define DC_META_FILE    "ctap_dm"
 
 // Commands
 #define CTAP_INS_MSG               0x10
@@ -65,6 +65,10 @@
 #define FLAGS_UV (1 << 2)
 #define FLAGS_AT (1 << 6)
 #define FLAGS_ED (1 << 7)
+
+#define CRED_PROTECT_VERIFICATION_OPTIONAL                         0x01
+#define CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST 0x02
+#define CRED_PROTECT_VERIFICATION_REQUIRED                         0x03
 
 // Params for each command
 #define MC_REQ_CLIENT_DATA_HASH       0x01
@@ -177,12 +181,14 @@
 #define CREDENTIAL_TAG_SIZE        16
 #define CLIENT_DATA_HASH_SIZE      32
 #define CREDENTIAL_NONCE_SIZE      16
+#define CREDENTIAL_NONCE_DC_POS    16
+#define CREDENTIAL_NONCE_CP_POS    17
 #define DOMAIN_NAME_MAX_SIZE       254
 #define USER_ID_MAX_SIZE           64
 #define DISPLAY_NAME_LIMIT         65
-#define MAX_RK_NUM                 64
+#define MAX_DC_NUM                 64
 #define MAX_STORED_RPID_LENGTH     32
-
+#define MAX_EXTENSION_SIZE_IN_AUTH 37
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -192,7 +198,7 @@ typedef struct {
 
 typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
-  uint8_t nonce[CREDENTIAL_NONCE_SIZE];
+  uint8_t nonce[CREDENTIAL_NONCE_SIZE + 2]; // 16-byte random nonce + 1-byte dc + 1-byte cp
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   int32_t alg_type;
 } __packed credential_id;
@@ -223,7 +229,7 @@ typedef struct {
   uint8_t flags;
   uint32_t sign_count;
   CTAP_attested_data at;
-  uint8_t extensions[14];
+  uint8_t extensions[MAX_EXTENSION_SIZE_IN_AUTH];
 } __packed CTAP_auth_data;
 
 typedef struct {
@@ -243,10 +249,13 @@ typedef struct {
   CborValue exclude_list;
   size_t exclude_list_size;
   CTAP_options options;
-  uint8_t extension_hmac_secret;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
   size_t pin_uv_auth_param_len;
   uint8_t pin_uv_auth_protocol;
+  bool extension_hmac_secret;
+  bool extension_large_blob_key;
+  uint8_t extension_cred_protect;
+  uint8_t extension_cred_blob[SHA256_DIGEST_LENGTH];
 } CTAP_make_credential;
 
 typedef struct {
@@ -291,7 +300,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu);
-uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extensionSize,
-                            const uint8_t *extension, size_t *len, int32_t alg_type, bool dc);
+uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extension_size,
+                            const uint8_t *extension, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect);
 
 #endif

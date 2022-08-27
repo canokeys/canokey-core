@@ -29,7 +29,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t pubkey[PUB_KEY_SIZE];
 
   memcpy(kh.rp_id_hash, req->appId, U2F_APPID_SIZE);
-  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256, false);
+  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256);
   if (err < 0) return err;
 
   // there are overlaps between req and resp
@@ -71,7 +71,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != sizeof(U2F_AUTHENTICATE_REQ)) EXCEPT(SW_WRONG_DATA); // required by FIDO Conformance Tool
   if (req->keyHandleLen != sizeof(credential_id)) EXCEPT(SW_WRONG_LENGTH);
   if (memcmp(req->appId, ((credential_id *) req->keyHandle)->rp_id_hash, U2F_APPID_SIZE) != 0) EXCEPT(SW_WRONG_DATA);
-  uint8_t err = verify_key_handle((credential_id *) req->keyHandle, priv_key, false);
+  uint8_t err = verify_key_handle((credential_id *) req->keyHandle, priv_key);
   if (err) EXCEPT(SW_WRONG_DATA);
 
   if (P1 == U2F_AUTH_CHECK_ONLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
@@ -84,7 +84,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   len = sizeof(auth_data);
   uint8_t flags = FLAGS_UP;
-  err = ctap_make_auth_data(req->appId, (uint8_t *) &auth_data, flags, 0, NULL, &len, COSE_ALG_ES256, false);
+  err = ctap_make_auth_data(req->appId, (uint8_t *) &auth_data, flags, 0, NULL, &len, COSE_ALG_ES256, false, 0);
   if (err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   sha256_init();

@@ -361,10 +361,14 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
   return 0;
 }
 
-uint8_t parse_mc_extensions(uint8_t *hmac_secret, CborValue *val) {
+uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-  size_t map_length;
+
   CborValue map;
+  char key[13];
+  size_t map_length, len;
+  int tmp;
+
   int ret = cbor_value_enter_container(val, &map);
   CHECK_CBOR_RET(ret);
   ret = cbor_value_get_map_length(val, &map_length);
@@ -372,21 +376,44 @@ uint8_t parse_mc_extensions(uint8_t *hmac_secret, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    bool is_hmac_secret;
-    ret = cbor_value_text_string_equals(&map, "hmac-secret", &is_hmac_secret);
+    len = sizeof(key);
+    ret = cbor_value_copy_text_string(&map, key, &len, NULL);
+    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
     CHECK_CBOR_RET(ret);
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
-    if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
-    if (is_hmac_secret) {
+    if (strcmp(key, "credProtect") == 0) {
+      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_int_checked(&map, &tmp);
+      CHECK_CBOR_RET(ret);
+      mc->extension_cred_protect = tmp;
+      DBG_MSG("credProtect: %d\n", tmp);
+    } else if (strcmp(key, "credBlob") == 0) {
+      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      len = SHA256_DIGEST_LENGTH;
+      ret = cbor_value_copy_byte_string(&map, mc->extension_cred_blob, &len, NULL);
+      if (ret == CborErrorOutOfMemory) {
+        ERR_MSG("credProtect is too long\n");
+        return CTAP2_ERR_LIMIT_EXCEEDED;
+      }
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("credBlob: ");
+      PRINT_HEX(mc->extension_cred_blob, SHA256_DIGEST_LENGTH);
+    } else if (strcmp(key, "largeBlobKey") == 0) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      bool b;
+      ret = cbor_value_get_boolean(&map, &b);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("largeBlobKey: %d\n", b);
+      mc->extension_large_blob_key = b;
+    } else if (strcmp(key, "hmac-secret") == 0) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       bool b;
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       DBG_MSG("hmac-secret: %d\n", b);
-      if (hmac_secret) *hmac_secret = b;
-    } else {
-      DBG_MSG("ignoring option specified\n");
+      mc->extension_hmac_secret = b;
     }
 
     ret = cbor_value_advance(&map);
@@ -623,7 +650,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
 
       case MC_REQ_EXTENSIONS:
         DBG_MSG("extensions found\n");
-        ret = parse_mc_extensions(&mc->extension_hmac_secret, &map);
+        ret = parse_mc_extensions(mc, &map);
         CHECK_PARSER_RET(ret);
         mc->parsed_params |= PARAM_EXTENSIONS;
         break;

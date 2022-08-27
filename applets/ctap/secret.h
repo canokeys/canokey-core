@@ -34,11 +34,11 @@ bool cp_verify_rp_id(const uint8_t *rp_id_hash);
 void cp_associate_rp_id(const uint8_t *rp_id_hash);
 
 int increase_counter(uint32_t *counter);
-int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, bool dc);
+int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type);
 size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig);
 size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig);
 size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *digest, size_t digest_len, uint8_t *sig);
-int verify_key_handle(const credential_id *kh, uint8_t *pri_key, bool dc);
+int verify_key_handle(const credential_id *kh, uint8_t *pri_key);
 int get_cert(uint8_t *buf);
 int has_pin(void);
 int set_pin(uint8_t *buf, uint8_t length);
