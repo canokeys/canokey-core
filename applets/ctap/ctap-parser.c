@@ -406,6 +406,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       ret = cbor_value_get_boolean(&map, &mc->ext_large_blob_key);
       CHECK_CBOR_RET(ret);
       DBG_MSG("largeBlobKey: %d\n", mc->ext_large_blob_key);
+      if (!mc->ext_large_blob_key) return CTAP2_ERR_INVALID_OPTION;
     } else if (strcmp(key, "hmac-secret") == 0) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &mc->ext_hmac_secret);
@@ -513,13 +514,16 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
         return CTAP2_ERR_MISSING_PARAMETER;
       ga->parsed_params |= PARAM_HMAC_SECRET;
     } else if (strcmp(key, "credBlob") == 0) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &ga->ext_cred_blob);
       CHECK_CBOR_RET(ret);
       DBG_MSG("credBlob: %d\n", ga->ext_cred_blob);
     } else if (strcmp(key, "largeBlobKey") == 0) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &ga->ext_large_blob_key);
       CHECK_CBOR_RET(ret);
       DBG_MSG("largeBlobKey: %d\n", ga->ext_large_blob_key);
+      if (!ga->ext_large_blob_key) return CTAP2_ERR_INVALID_OPTION;
     }
 
     ret = cbor_value_advance(&map);

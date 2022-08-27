@@ -399,7 +399,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
   ret = cbor_encoder_create_map(&extension_encoder, &map,
                                 (mc.ext_hmac_secret ? 1 : 0) +
-                                (mc.ext_large_blob_key ? 1 : 0) +
+                                // largeBlobKey has no outputs here
                                 (mc.ext_cred_protect > 0 ? 1 : 0) +
                                 (mc.ext_cred_blob_len > 0 ? 1 : 0));
   CHECK_CBOR_RET(ret);
@@ -410,10 +410,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     CHECK_CBOR_RET(ret);
   }
   if (mc.ext_large_blob_key) {
-    ret = cbor_encode_text_stringz(&map, "largeBlobKey");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&map, true);
-    CHECK_CBOR_RET(ret);
+    if (mc.options.rk != OPTION_TRUE) {
+      DBG_MSG("largeBlobKey requires rk\n");
+      return CTAP2_ERR_INVALID_OPTION;
+    }
+    // Generate key in Step 17
   }
   if (mc.ext_cred_protect > 0) {
     ret = cbor_encode_text_stringz(&map, "credProtect");
@@ -434,8 +435,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CHECK_CBOR_RET(ret);
   size_t extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
 
-  // NOW PREPARE THE RESPONSE
-  ret = cbor_encoder_create_map(encoder, &map, 3);
+  // Now prepare the response
+  ret = cbor_encoder_create_map(encoder, &map, 3 /*fmt, authData, attStmt*/ + (mc.ext_large_blob_key ? 1 : 0));
   CHECK_CBOR_RET(ret);
 
   // [member name] fmt
@@ -443,6 +444,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&map, "packed");
   CHECK_CBOR_RET(ret);
+
   // 16. Generate a new credential key pair for the algorithm chosen in step 3.
   // [member name] authData
   len = sizeof(data_buf);
@@ -461,9 +463,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //        Overwrite that credential.
   //     c) Store the user parameter along with the newly-created key pair.
   //     d) If authenticator does not have enough internal storage to persist the new credential, return CTAP2_ERR_KEY_STORE_FULL.
+  CTAP_discoverable_credential dc;
   if (mc.options.rk == OPTION_TRUE) {
     DBG_MSG("Processing discoverable credential\n");
-    CTAP_discoverable_credential dc;
     int size = get_file_size(DC_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     int n_dc = size / (int) sizeof(CTAP_discoverable_credential), pos, first_deleted = MAX_DC_NUM;
@@ -493,6 +495,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     }
     memcpy(&dc.credential_id, data_buf + 55, sizeof(dc.credential_id));
     memcpy(&dc.user, &mc.user, sizeof(user_entity)); // c
+    dc.has_large_blob_key = mc.ext_large_blob_key;
+    if (dc.has_large_blob_key) random_buffer(dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
     dc.deleted = false;
     if (write_file(DC_FILE, &dc, pos * (int) sizeof(CTAP_discoverable_credential),
                    sizeof(CTAP_discoverable_credential), 0) < 0)
@@ -588,6 +592,13 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
   ret = cbor_encoder_close_container(&map, &att_map);
   CHECK_CBOR_RET(ret);
+
+  if (mc.ext_large_blob_key) {
+    ret = cbor_encode_int(&map, MC_RESP_LARGE_BLOB_KEY);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&map, dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
+    CHECK_CBOR_RET(ret);
+  }
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
@@ -820,7 +831,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
   ret = cbor_encoder_create_map(&extension_encoder, &map,
                                 (ga.ext_cred_blob ? 1 : 0) +
-                                (ga.ext_large_blob_key ? 1 : 0) +
+                                // largeBlobKey has no outputs here
                                 ((ga.parsed_params & PARAM_HMAC_SECRET) ? 1 : 0));
   CHECK_CBOR_RET(ret);
 
@@ -888,8 +899,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // 13. Sign the client_data_hash along with authData with the selected credential.
   uint8_t map_items = 3;
-  if (ga.allow_list_size == 0) ++map_items;
-  if (credential_idx == 0 && credential_counter > 1) ++map_items;
+  if (ga.allow_list_size == 0) ++map_items; // user
+  if (credential_idx == 0 && credential_counter > 1) ++map_items; // numberOfCredentials
+  if (dc.has_large_blob_key) ++map_items; // numberOfCredentials
   ret = cbor_encoder_create_map(encoder, &map, map_items);
   CHECK_CBOR_RET(ret);
 
@@ -962,6 +974,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     ret = cbor_encode_int(&map, GA_RESP_NUMBER_OF_CREDENTIALS);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, credential_counter);
+    CHECK_CBOR_RET(ret);
+  }
+
+  if (dc.has_large_blob_key) {
+    ret = cbor_encode_int(&map, GA_RESP_LARGE_BLOB_KEY);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&map, dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
     CHECK_CBOR_RET(ret);
   }
 

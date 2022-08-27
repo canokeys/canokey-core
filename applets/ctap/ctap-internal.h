@@ -201,6 +201,7 @@
 #define MAX_EXTENSION_SIZE_IN_AUTH   51
 #define MAX_CREDENTIAL_COUNT_IN_LIST 8
 #define MAX_CRED_BLOB_LENGTH         32
+#define LARGE_BLOB_KEY_SIZE          32
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -220,6 +221,8 @@ typedef struct {
 typedef struct {
   credential_id credential_id;
   user_entity user;
+  bool has_large_blob_key;
+  uint8_t large_blob_key[LARGE_BLOB_KEY_SIZE];
   bool deleted;
 } __packed CTAP_discoverable_credential;
 
