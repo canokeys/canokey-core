@@ -387,33 +387,30 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_int_checked(&map, &tmp);
       CHECK_CBOR_RET(ret);
-      mc->extension_cred_protect = tmp;
+      mc->ext_cred_protect = tmp;
       DBG_MSG("credProtect: %d\n", tmp);
     } else if (strcmp(key, "credBlob") == 0) {
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = SHA256_DIGEST_LENGTH;
-      ret = cbor_value_copy_byte_string(&map, mc->extension_cred_blob, &len, NULL);
+      ret = cbor_value_copy_byte_string(&map, mc->ext_cred_blob, &len, NULL);
       if (ret == CborErrorOutOfMemory) {
         ERR_MSG("credProtect is too long\n");
         return CTAP2_ERR_LIMIT_EXCEEDED;
       }
       CHECK_CBOR_RET(ret);
+      mc->ext_cred_blob_len = len;
       DBG_MSG("credBlob: ");
-      PRINT_HEX(mc->extension_cred_blob, SHA256_DIGEST_LENGTH);
+      PRINT_HEX(mc->ext_cred_blob, len);
     } else if (strcmp(key, "largeBlobKey") == 0) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      bool b;
-      ret = cbor_value_get_boolean(&map, &b);
+      ret = cbor_value_get_boolean(&map, &mc->ext_large_blob_key);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("largeBlobKey: %d\n", b);
-      mc->extension_large_blob_key = b;
+      DBG_MSG("largeBlobKey: %d\n", mc->ext_large_blob_key);
     } else if (strcmp(key, "hmac-secret") == 0) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      bool b;
-      ret = cbor_value_get_boolean(&map, &b);
+      ret = cbor_value_get_boolean(&map, &mc->ext_hmac_secret);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("hmac-secret: %d\n", b);
-      mc->extension_hmac_secret = b;
+      DBG_MSG("hmac-secret: %d\n", mc->ext_hmac_secret);
     }
 
     ret = cbor_value_advance(&map);
@@ -446,7 +443,7 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
 
     if (strcmp(key, "hmac-secret") == 0) {
       DBG_MSG("hmac-secret found\n");
-      ga->hmac_secret_pin_protocol = 1; // pinUvAuthProtocol(0x04): (optional) as selected when getting the shared secret. CTAP2.1 platforms MUST include this parameter if the value of pinUvAuthProtocol is not 1.
+      ga->ext_hmac_secret_pin_protocol = 1; // pinUvAuthProtocol(0x04): (optional) as selected when getting the shared secret. CTAP2.1 platforms MUST include this parameter if the value of pinUvAuthProtocol is not 1.
       if (cbor_value_get_type(&map) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       size_t hmac_map_length;
       CborValue hmac_map;
@@ -470,39 +467,39 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
         CHECK_CBOR_RET(ret);
         switch (hmac_key) {
           case GA_REQ_HMAC_SECRET_KEY_AGREEMENT:
-            ret = parse_cose_key(&hmac_map, ga->hmac_secret_key_agreement);
+            ret = parse_cose_key(&hmac_map, ga->ext_hmac_secret_key_agreement);
             CHECK_CBOR_RET(ret);
             map_has_entry |= GA_HS_MAP_ENTRY_KEY_AGREEMENT;
             DBG_MSG("key_agreement: ");
-            PRINT_HEX(ga->hmac_secret_key_agreement, 64);
+            PRINT_HEX(ga->ext_hmac_secret_key_agreement, 64);
             break;
           case GA_REQ_HMAC_SECRET_SALT_ENC:
             if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-            len = sizeof(ga->hmac_secret_salt_enc);
-            ret = cbor_value_copy_byte_string(&hmac_map, ga->hmac_secret_salt_enc, &len, NULL);
+            len = sizeof(ga->ext_hmac_secret_salt_enc);
+            ret = cbor_value_copy_byte_string(&hmac_map, ga->ext_hmac_secret_salt_enc, &len, NULL);
             if (ret == CborErrorOutOfMemory) return CTAP1_ERR_INVALID_LENGTH;
             CHECK_CBOR_RET(ret);
             if (len != HMAC_SECRET_SALT_SIZE && len != HMAC_SECRET_SALT_SIZE / 2) return CTAP1_ERR_INVALID_LENGTH;
-            ga->hmac_secret_salt_len = len;
+            ga->ext_hmac_secret_salt_len = len;
             map_has_entry |= GA_HS_MAP_ENTRY_SALT_ENC;
             DBG_MSG("salt_enc: ");
-            PRINT_HEX(ga->hmac_secret_salt_enc, ga->hmac_secret_salt_len);
+            PRINT_HEX(ga->ext_hmac_secret_salt_enc, ga->ext_hmac_secret_salt_len);
             break;
           case GA_REQ_HMAC_SECRET_SALT_AUTH:
             if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-            len = sizeof(ga->hmac_secret_salt_auth);
-            ret = cbor_value_copy_byte_string(&hmac_map, ga->hmac_secret_salt_auth, &len, NULL);
+            len = sizeof(ga->ext_hmac_secret_salt_auth);
+            ret = cbor_value_copy_byte_string(&hmac_map, ga->ext_hmac_secret_salt_auth, &len, NULL);
             CHECK_CBOR_RET(ret);
             if (len != HMAC_SECRET_SALT_AUTH_SIZE) return CTAP1_ERR_INVALID_LENGTH;
             map_has_entry |= GA_HS_MAP_ENTRY_SALT_AUTH;
             DBG_MSG("salt_auth: ");
-            PRINT_HEX(ga->hmac_secret_salt_auth, 16);
+            PRINT_HEX(ga->ext_hmac_secret_salt_auth, 16);
             break;
           case GA_REQ_HMAC_SECRET_PIN_PROTOCOL:
             if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
             ret = cbor_value_get_int_checked(&hmac_map, &tmp);
             CHECK_CBOR_RET(ret);
-            ga->hmac_secret_pin_protocol = tmp;
+            ga->ext_hmac_secret_pin_protocol = tmp;
             DBG_MSG("pin_protocol: %d\n", tmp);
             break;
           default:
@@ -515,6 +512,14 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
       if ((map_has_entry & GA_HS_MAP_ENTRY_ALL_REQUIRED) != GA_HS_MAP_ENTRY_ALL_REQUIRED)
         return CTAP2_ERR_MISSING_PARAMETER;
       ga->parsed_params |= PARAM_HMAC_SECRET;
+    } else if (strcmp(key, "credBlob") == 0) {
+      ret = cbor_value_get_boolean(&map, &ga->ext_cred_blob);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("credBlob: %d\n", ga->ext_cred_blob);
+    } else if (strcmp(key, "largeBlobKey") == 0) {
+      ret = cbor_value_get_boolean(&map, &ga->ext_large_blob_key);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("largeBlobKey: %d\n", ga->ext_large_blob_key);
     }
 
     ret = cbor_value_advance(&map);
