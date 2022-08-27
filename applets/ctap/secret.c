@@ -332,11 +332,16 @@ int get_pin_retries(void) {
 
 int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1); }
 
-int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output) {
+int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
   uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
   // use hmac-sha256(HE_KEY, credential_id::nonce) as CredRandom
   int err = read_he_key(hmac_buf);
   if (err < 0) return err;
+
+  if (uv) {
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
+      hmac_buf[i] = ~hmac_buf[i];
+  }
 
   hmac_sha256(hmac_buf, HE_KEY_SIZE, nonce, CREDENTIAL_NONCE_SIZE, hmac_buf);
   hmac_sha256(hmac_buf, HE_KEY_SIZE, salt, 32, output);

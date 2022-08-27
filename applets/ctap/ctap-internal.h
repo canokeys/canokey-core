@@ -97,6 +97,7 @@
 #define GA_REQ_HMAC_SECRET_KEY_AGREEMENT          0x01
 #define GA_REQ_HMAC_SECRET_SALT_ENC               0x02
 #define GA_REQ_HMAC_SECRET_SALT_AUTH              0x03
+#define GA_REQ_HMAC_SECRET_PIN_PROTOCOL           0x04
 #define GA_RESP_CREDENTIAL                        0x01
 #define GA_RESP_AUTH_DATA                         0x02
 #define GA_RESP_SIGNATURE                         0x03
@@ -272,6 +273,7 @@ typedef struct {
   uint8_t hmac_secret_salt_enc[HMAC_SECRET_SALT_SIZE];
   uint8_t hmac_secret_salt_auth[HMAC_SECRET_SALT_AUTH_SIZE];
   uint8_t hmac_secret_salt_len;
+  uint8_t hmac_secret_pin_protocol;
 } CTAP_get_assertion;
 
 typedef struct {

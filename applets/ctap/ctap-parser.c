@@ -424,8 +424,12 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
 
 uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-  size_t map_length;
+
   CborValue map;
+  char key[13];
+  size_t map_length, len;
+  int tmp;
+
   int ret = cbor_value_enter_container(val, &map);
   CHECK_CBOR_RET(ret);
   ret = cbor_value_get_map_length(val, &map_length);
@@ -433,16 +437,16 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-
-    bool is_hmac_secret;
-    ret = cbor_value_text_string_equals(&map, "hmac-secret", &is_hmac_secret);
+    len = sizeof(key);
+    ret = cbor_value_copy_text_string(&map, key, &len, NULL);
+    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
     CHECK_CBOR_RET(ret);
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
 
-    if (is_hmac_secret) {
+    if (strcmp(key, "hmac-secret") == 0) {
       DBG_MSG("hmac-secret found\n");
-      ga->parsed_params |= PARAM_HMAC_SECRET;
+      ga->hmac_secret_pin_protocol = 1; // pinUvAuthProtocol(0x04): (optional) as selected when getting the shared secret. CTAP2.1 platforms MUST include this parameter if the value of pinUvAuthProtocol is not 1.
       if (cbor_value_get_type(&map) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       size_t hmac_map_length;
       CborValue hmac_map;
@@ -457,10 +461,8 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
         GA_HS_MAP_ENTRY_SALT_AUTH = 0b100,
         GA_HS_MAP_ENTRY_ALL_REQUIRED = 0b111,
       } map_has_entry = GA_HS_MAP_ENTRY_NONE;
-      if (hmac_map_length < 3) return CTAP2_ERR_MISSING_PARAMETER;
       for (size_t j = 0; j < hmac_map_length; ++j) {
         if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-        size_t len;
         int hmac_key;
         ret = cbor_value_get_int_checked(&hmac_map, &hmac_key);
         CHECK_CBOR_RET(ret);
@@ -496,8 +498,14 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
             DBG_MSG("salt_auth: ");
             PRINT_HEX(ga->hmac_secret_salt_auth, 16);
             break;
+          case GA_REQ_HMAC_SECRET_PIN_PROTOCOL:
+            if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+            ret = cbor_value_get_int_checked(&hmac_map, &tmp);
+            CHECK_CBOR_RET(ret);
+            ga->hmac_secret_pin_protocol = tmp;
+            DBG_MSG("pin_protocol: %d\n", tmp);
+            break;
           default:
-            // https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html#message-encoding
             DBG_MSG("Ignoring unsupported entry %0x\n", hmac_key);
             break;
         }
@@ -506,8 +514,7 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
       }
       if ((map_has_entry & GA_HS_MAP_ENTRY_ALL_REQUIRED) != GA_HS_MAP_ENTRY_ALL_REQUIRED)
         return CTAP2_ERR_MISSING_PARAMETER;
-    } else {
-      DBG_MSG("ignoring option specified\n");
+      ga->parsed_params |= PARAM_HMAC_SECRET;
     }
 
     ret = cbor_value_advance(&map);
