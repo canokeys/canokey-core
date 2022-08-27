@@ -394,7 +394,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       len = SHA256_DIGEST_LENGTH;
       ret = cbor_value_copy_byte_string(&map, mc->ext_cred_blob, &len, NULL);
       if (ret == CborErrorOutOfMemory) {
-        ERR_MSG("credProtect is too long\n");
+        ERR_MSG("credBlob is too long\n");
         return CTAP2_ERR_LIMIT_EXCEEDED;
       }
       CHECK_CBOR_RET(ret);

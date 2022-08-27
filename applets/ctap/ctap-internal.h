@@ -318,7 +318,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu);
-uint8_t ctap_make_auth_data(uint8_t *rpIdHash, uint8_t *buf, uint8_t flags, uint8_t extension_size,
-                            const uint8_t *extension, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect);
+uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, const uint8_t *extension,
+                            uint8_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect);
 
 #endif

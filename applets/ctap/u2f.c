@@ -84,7 +84,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   len = sizeof(auth_data);
   uint8_t flags = FLAGS_UP;
-  err = ctap_make_auth_data(req->appId, (uint8_t *) &auth_data, flags, 0, NULL, &len, COSE_ALG_ES256, false, 0);
+  err = ctap_make_auth_data(req->appId, (uint8_t *) &auth_data, flags, NULL, 0, &len, COSE_ALG_ES256, false, 0);
   if (err) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   sha256_init();

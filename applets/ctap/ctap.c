@@ -159,8 +159,8 @@ static void build_ed25519_cose_key(uint8_t *data) {
   data[9] = 0x20;
 }
 
-uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, uint8_t extension_size,
-                            const uint8_t *extension, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect) {
+uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, const uint8_t *extension,
+                            uint8_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -446,8 +446,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // 16. Generate a new credential key pair for the algorithm chosen in step 3.
   // [member name] authData
   len = sizeof(data_buf);
-  uint8_t flags = FLAGS_AT | (mc.ext_hmac_secret ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | FLAGS_UP;
-  ret = ctap_make_auth_data(mc.rp_id_hash, data_buf, flags, extension_size, extension_buffer, &len,
+  uint8_t flags = FLAGS_AT | (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | FLAGS_UP;
+  ret = ctap_make_auth_data(mc.rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
                             mc.alg_type, mc.options.rk == OPTION_TRUE, mc.ext_cred_protect);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, MC_RESP_AUTH_DATA);
@@ -912,7 +912,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // auth data
   len = sizeof(data_buf);
   uint8_t flags = (extension_size > 0 ? FLAGS_ED : 0) | (uv > 0 ? FLAGS_UV : 0) | FLAGS_UP;
-  ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extension_size, extension_buffer, &len,
+  ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
                             dc.credential_id.alg_type, dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS],
                             dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
   if (ret != 0) return ret;
@@ -1562,7 +1562,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       }
       ret = cbor_encode_int(&map, CM_RESP_CRED_PROTECT);
       CHECK_CBOR_RET(ret);
-      ret = cbor_encode_int(&map, 3);
+      ret = cbor_encode_int(&map, dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
       CHECK_CBOR_RET(ret);
       ret = cbor_encoder_close_container(encoder, &map);
       CHECK_CBOR_RET(ret);
@@ -1632,6 +1632,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
           break;
         }
       }
+      break;
+
+    case CM_CMD_UPDATE_USER_INFORMATION:
+      // TODO
       break;
   }
 
