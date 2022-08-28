@@ -5,6 +5,7 @@
 #include <apdu.h>
 #include <cbor.h>
 #include <common.h>
+#include <ctaphid.h>
 #include <ecc.h>
 #include <sha.h>
 
@@ -21,6 +22,8 @@
 #define DC_FILE         "ctap_dc"
 #define DC_NUMBERS_ATTR 0x00
 #define DC_META_FILE    "ctap_dm"
+#define LB_FILE         "ctap_lb"
+#define LB_FILE_TMP     "ctap_lbt"
 
 // Commands
 #define CTAP_INS_MSG               0x10
@@ -53,6 +56,10 @@
 #define PARAM_ENTERPRISE_ATTESTATION (1 << 13)
 #define PARAM_PERMISSIONS            (1 << 14)
 #define PARAM_CREDENTIAL_ID          (1 << 15)
+#define PARAM_GET                    (1 << 16)
+#define PARAM_SET                    (1 << 17)
+#define PARAM_OFFSET                 (1 << 18)
+#define PARAM_LENGTH                 (1 << 19)
 
 #define MC_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP | PARAM_USER | PARAM_PUB_KEY_CRED_PARAMS)
 #define GA_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP)
@@ -171,6 +178,14 @@
 #define CM_RESP_CRED_PROTECT                                      0x0A
 #define CM_RESP_LARGE_BLOB_KEY                                    0x0B
 
+#define LB_REQ_GET 0x01
+#define LB_REQ_SET 0x02
+#define LB_REQ_OFFSET 0x03
+#define LB_REQ_LENGTH 0x04
+#define LB_REQ_PIN_UV_AUTH_PARAM 0x05
+#define LB_REQ_PIN_UV_AUTH_PROTOCOL 0x06
+#define LB_RESP_CONFIG 0x01
+
 // Size limits
 #define KH_KEY_SIZE                  32
 #define HE_KEY_SIZE                  32
@@ -202,6 +217,8 @@
 #define MAX_CREDENTIAL_COUNT_IN_LIST 8
 #define MAX_CRED_BLOB_LENGTH         32
 #define LARGE_BLOB_KEY_SIZE          32
+#define LARGE_BLOB_SIZE_LIMIT        4096
+#define MAX_FRAGMENT_LENGTH          (MAX_CTAP_BUFSIZE - 64)
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -316,6 +333,17 @@ typedef struct {
   uint8_t pin_uv_auth_protocol;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
 } CTAP_credential_management;
+
+typedef struct {
+  uint32_t parsed_params;
+  uint16_t get;
+  uint8_t *set;
+  size_t set_len;
+  uint16_t offset;
+  uint16_t length;
+  uint8_t pin_uv_auth_protocol;
+  uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
+} CTAP_large_blobs;
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);

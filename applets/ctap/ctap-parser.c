@@ -1124,3 +1124,121 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
 
   return 0;
 }
+
+uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_t *buf, size_t len) {
+  CborValue it, map;
+  size_t map_length;
+  int key, tmp;
+  memset(lb, 0, sizeof(CTAP_large_blobs));
+
+  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  CHECK_CBOR_RET(ret);
+  if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  ret = cbor_value_enter_container(&it, &map);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_get_map_length(&it, &map_length);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; ++i) {
+    if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    ret = cbor_value_get_int_checked(&map, &key);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+
+    switch (key) {
+      case LB_REQ_GET:
+        DBG_MSG("get found\n");
+        if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_int_checked(&map, &tmp);
+        CHECK_CBOR_RET(ret);
+        lb->get = tmp;
+        DBG_MSG("get: %d\n", tmp);
+        lb->parsed_params |= PARAM_GET;
+        break;
+
+      case LB_REQ_SET:
+        DBG_MSG("set found\n");
+        if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_string_length(&map, &lb->set_len);
+        CHECK_CBOR_RET(ret);
+        lb->set = (uint8_t *) map.ptr + 1;
+        if (lb->set_len >= 24) ++lb->set;
+        if (lb->set_len >= 256) ++lb->set;
+        DBG_MSG("set: ");
+        PRINT_HEX(lb->set, 8);
+        lb->parsed_params |= PARAM_SET;
+        break;
+
+      case LB_REQ_OFFSET:
+        DBG_MSG("offset found\n");
+        if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_int_checked(&map, &tmp);
+        CHECK_CBOR_RET(ret);
+        lb->offset = tmp;
+        DBG_MSG("offset: %d\n", tmp);
+        lb->parsed_params |= PARAM_OFFSET;
+        break;
+
+      case LB_REQ_LENGTH:
+        DBG_MSG("length found\n");
+        if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_int_checked(&map, &tmp);
+        CHECK_CBOR_RET(ret);
+        lb->length = tmp;
+        DBG_MSG("length: %d\n", tmp);
+        lb->parsed_params |= PARAM_LENGTH;
+        break;
+
+      case LB_REQ_PIN_UV_AUTH_PROTOCOL:
+        DBG_MSG("pin_uv_auth_protocol found\n");
+        if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_int_checked(&map, &tmp);
+        CHECK_CBOR_RET(ret);
+        DBG_MSG("pin_uv_auth_protocol: %d\n", tmp);
+        if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
+        lb->pin_uv_auth_protocol = tmp;
+        lb->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
+        break;
+
+      case LB_REQ_PIN_UV_AUTH_PARAM:
+        DBG_MSG("pin_uv_auth_param found\n");
+        if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        ret = cbor_value_get_string_length(&map, &len);
+        CHECK_CBOR_RET(ret);
+        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
+        ret = cbor_value_copy_byte_string(&map, lb->pin_uv_auth_param, &len, NULL);
+        CHECK_CBOR_RET(ret);
+        lb->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
+        break;
+
+      default:
+        DBG_MSG("Unknown key: %d\n", key);
+        break;
+    }
+
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+  }
+
+  if (!(lb->parsed_params & PARAM_OFFSET)) return CTAP1_ERR_INVALID_PARAMETER;
+  if (!((lb->parsed_params & PARAM_GET) ^ (lb->parsed_params & PARAM_SET))) return CTAP1_ERR_INVALID_PARAMETER;
+  if (lb->parsed_params & PARAM_GET) {
+    if (lb->parsed_params & PARAM_LENGTH) return CTAP1_ERR_INVALID_PARAMETER;
+    if ((lb->parsed_params & PARAM_PIN_UV_AUTH_PARAM) || (lb->parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL))
+      return CTAP1_ERR_INVALID_PARAMETER;
+    if (lb->length > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
+  }
+  if (lb->parsed_params & PARAM_SET) {
+    if (lb->set_len > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
+    if (lb->offset == 0) {
+      if (!(lb->parsed_params & PARAM_LENGTH)) return CTAP1_ERR_INVALID_PARAMETER;
+      if (lb->length > LARGE_BLOB_SIZE_LIMIT) return CTAP2_ERR_LARGE_BLOB_STORAGE_FULL;
+      if (lb->length < 17) return CTAP1_ERR_INVALID_PARAMETER;
+    } else {
+      if (lb->parsed_params & PARAM_LENGTH) return CTAP1_ERR_INVALID_PARAMETER;
+    }
+  }
+
+  return 0;
+}

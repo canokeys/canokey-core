@@ -22,7 +22,7 @@ int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return read_length;
-err_close:
+  err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
@@ -42,7 +42,7 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
-err_close:
+  err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
@@ -60,7 +60,7 @@ int append_file(const char *path, const void *buf, lfs_size_t len) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
-err_close:
+  err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
@@ -75,7 +75,7 @@ int truncate_file(const char *path, lfs_size_t len) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
-err_close:
+  err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
@@ -100,15 +100,17 @@ int get_file_size(const char *path) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return size;
-err_close:
+  err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
 
-int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
+int get_fs_size(void) { return (int) (lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
 
 int get_fs_usage(void) {
   int blocks = lfs_fs_size(&lfs);
   if (blocks < 0) return blocks;
-  return (int)(lfs.cfg->block_size * blocks) / 1024;
+  return (int) (lfs.cfg->block_size * blocks) / 1024;
 }
+
+int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }

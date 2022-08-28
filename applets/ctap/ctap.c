@@ -76,6 +76,10 @@ uint8_t ctap_install(uint8_t reset) {
   if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   random_buffer(kh_key, sizeof(kh_key));
   if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  memcpy(kh_key,
+         (uint8_t[]) {0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d,
+                      0x3c}, 17);
+  if (write_file(LB_FILE, kh_key, 0, 17, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   memzero(kh_key, sizeof(kh_key));
   DBG_MSG("CTAP reset and initialized\n");
   return 0;
@@ -910,14 +914,16 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_map(&map, &sub_map, 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "id");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_byte_string(&sub_map, (const uint8_t *) &dc.credential_id, sizeof(credential_id));
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "type");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "public-key");
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&sub_map, "id");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&sub_map, (const uint8_t *) &dc.credential_id, sizeof(credential_id));
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "type");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "public-key");
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &sub_map);
   CHECK_CBOR_RET(ret);
 
@@ -956,15 +962,17 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 2 : 1);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "id");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
-    CHECK_CBOR_RET(ret);
-    if (user_details) {
-      ret = cbor_encode_text_stringz(&sub_map, "display_name");
+    {
+      ret = cbor_encode_text_stringz(&sub_map, "id");
       CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, (char *) dc.user.display_name);
+      ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
       CHECK_CBOR_RET(ret);
+      if (user_details) {
+        ret = cbor_encode_text_stringz(&sub_map, "display_name");
+        CHECK_CBOR_RET(ret);
+        ret = cbor_encode_text_stringz(&sub_map, (char *) dc.user.display_name);
+        CHECK_CBOR_RET(ret);
+      }
     }
     ret = cbor_encoder_close_container(&map, &sub_map);
     CHECK_CBOR_RET(ret);
@@ -1024,10 +1032,12 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CborEncoder array;
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "U2F_V2");
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "U2F_V2");
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
 
@@ -1036,14 +1046,16 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_array(&map, &array, 4);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "hmac-secret");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "credProtect");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "largeBlobKey");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "credBlob");
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&array, "hmac-secret");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "credProtect");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "largeBlobKey");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "credBlob");
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
 
@@ -1059,26 +1071,28 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CborEncoder option_map;
   ret = cbor_encoder_create_map(&map, &option_map, 5);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&option_map, "rk");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&option_map, true);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&option_map, "credMgmt");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&option_map, true);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&option_map, "clientPin");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&option_map, has_pin() > 0);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&option_map, true);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&option_map, "largeBlobs");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&option_map, true);
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&option_map, "rk");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&option_map, true);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&option_map, "credMgmt");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&option_map, true);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&option_map, "clientPin");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&option_map, has_pin() > 0);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&option_map, true);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&option_map, "largeBlobs");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&option_map, true);
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &option_map);
   CHECK_CBOR_RET(ret);
 
@@ -1093,10 +1107,12 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&array, 2);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&array, 1);
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_int(&array, 2);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&array, 1);
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
 
@@ -1117,10 +1133,12 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "usb");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&array, "nfc");
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&array, "usb");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "nfc");
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
 
@@ -1131,26 +1149,30 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_map(&array, &sub_map, 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "type");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "public-key");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "alg");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&sub_map, -7); // ES256 (P-256)
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&sub_map, "type");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "public-key");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "alg");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&sub_map, -7); // ES256 (P-256)
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&array, &sub_map);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_map(&array, &sub_map, 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "type");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "public-key");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub_map, "alg");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&sub_map, -8); // EdDSA
-  CHECK_CBOR_RET(ret);
+  {
+    ret = cbor_encode_text_stringz(&sub_map, "type");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "public-key");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "alg");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&sub_map, -8); // EdDSA
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&array, &sub_map);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &array);
@@ -1666,6 +1688,160 @@ static uint8_t ctap_selection(void) {
   return 0;
 }
 
+static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {
+  static uint16_t expectedNextOffset, expectedLength;
+
+  CborParser parser;
+  CborEncoder map;
+  CTAP_large_blobs lb;
+  uint8_t buf[256]; // for pin auth
+  int ret = parse_large_blobs(&parser, &lb, params, len);
+  CHECK_PARSER_RET(ret);
+
+  // 1. If offset is not present in the input map, return CTAP1_ERR_INVALID_PARAMETER.
+  // 2. If neither get nor set are present in the input map, return CTAP1_ERR_INVALID_PARAMETER.
+  // 3. If both get and set are present in the input map, return CTAP1_ERR_INVALID_PARAMETER.
+  // > Step 1-3 are checked when parsing.
+
+  // 4. If get is present in the input map:
+  if (lb.parsed_params & PARAM_GET) {
+    //  a) If length is present, return CTAP1_ERR_INVALID_PARAMETER.
+    //  b) If either of pinUvAuthParam or pinUvAuthProtocol are present, return CTAP1_ERR_INVALID_PARAMETER.
+    //  c) If the value of get is greater than maxFragmentLength, return CTAP1_ERR_INVALID_LENGTH.
+    //  > Step a-c are checked when parsing.
+    //  d) If the value of offset is greater than the length of the stored serialized large-blob array,
+    //     return CTAP1_ERR_INVALID_PARAMETER.
+    int size = get_file_size(LB_FILE);
+    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (lb.offset > size) {
+      DBG_MSG("4-d not satisfied\n");
+      return CTAP1_ERR_INVALID_PARAMETER;
+    }
+    //  e) Return a CBOR map, as defined below, where the value of config is a substring of the stored serialized
+    //     large-blob array. The substring SHOULD start at the offset given in offset and contain the number of bytes
+    //     specified as get's value. If too few bytes exist at that offset, return the maximum number available.
+    //     Note that if offset is equal to the length of the serialized large-blob array then this will result
+    //     in a zero-length substring.
+    if (lb.offset + lb.get > size) {
+      lb.get = size - lb.offset;
+      DBG_MSG("read %d bytes at %d\n", lb.get, lb.offset);
+    }
+    ret = cbor_encoder_create_map(encoder, &map, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&map, LB_RESP_CONFIG);
+    CHECK_CBOR_RET(ret);
+    // to save RAM, we encode the buffer manually
+    uint8_t *ptr = map.data.ptr;
+    ret = cbor_encode_uint(&map, lb.get);
+    CHECK_CBOR_RET(ret);
+    *ptr |= 0x40;
+    if (read_file(LB_FILE, map.data.ptr, lb.offset, lb.get) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    map.data.ptr += lb.get;
+    ret = cbor_encoder_close_container(encoder, &map);
+    CHECK_CBOR_RET(ret);
+  } else {
+    // 5. Else (implying that set is present in the input map):
+    //    a) If the length of the value of set is greater than maxFragmentLength, return CTAP1_ERR_INVALID_LENGTH.
+    //       > Checked when paring.
+    //    b) If the value of offset is zero:
+    if (lb.offset == 0) {
+      //     i. If length is not present, return CTAP1_ERR_INVALID_PARAMETER.
+      //     ii. If the value of length is greater than 1024 bytes and exceeds the capacity of the device,
+      //         return CTAP2_ERR_LARGE_BLOB_STORAGE_FULL. (Authenticators MUST be capable of storing at least 1024 bytes.)
+      //     iii. If the value of length is less than 17, return CTAP1_ERR_INVALID_PARAMETER.
+      //     > Step i - iii are checked when parsing.
+      //     iv. Set expectedLength to the value of length.
+      expectedLength = lb.length;
+      //     v. Set expectedNextOffset to zero.
+      expectedNextOffset = 0;
+    }
+    //    c) Else (i.e. the value of offset is not zero):
+    //       If length is present, return CTAP1_ERR_INVALID_PARAMETER.
+    //       > Checked when paring.
+    //    d) If the value of offset is not equal to expectedNextOffset, return CTAP1_ERR_INVALID_SEQ.
+    if (lb.offset != expectedNextOffset) {
+      DBG_MSG("5-d not satisfied\n");
+      return CTAP1_ERR_INVALID_SEQ;
+    }
+    //    e) If the authenticator is protected by some form of user verification
+    //       or the alwaysUv option ID is present and true:
+    if (has_pin()) {
+      //     i. If pinUvAuthParam is absent from the input map, then end the operation by
+      //        returning CTAP2_ERR_PUAT_REQUIRED.
+      if (!(lb.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {
+        DBG_MSG("5-e-i not satisfied\n");
+        return CTAP2_ERR_PUAT_REQUIRED;
+      }
+      //     ii. If pinUvAuthProtocol is absent from the input map, then end the operation by
+      //         returning CTAP2_ERR_MISSING_PARAMETER.
+      if (!(lb.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
+        DBG_MSG("5-e-ii not satisfied\n");
+        return CTAP2_ERR_MISSING_PARAMETER;
+      }
+      //     iii. If pinUvAuthProtocol is not supported, return CTAP1_ERR_INVALID_PARAMETER.
+      //       > Checked when paring.
+      //     iv. The authenticator calls verify(pinUvAuthToken, 32×0xff || h’0c00' || uint32LittleEndian(offset) ||
+      //         SHA-256(contents of set byte string, i.e. not including an outer CBOR tag with major type two),
+      //         pinUvAuthParam).
+      //         If the verification fails, return CTAP2_ERR_PIN_AUTH_INVALID.
+      memset(buf, 0xFF, 32);
+      buf[32] = 0x0C;
+      buf[33] = 0x00;
+      buf[34] = 0x00;
+      buf[35] = 0x00;
+      buf[36] = lb.offset >> 8;
+      buf[37] = lb.offset & 0xFF;
+      sha256_raw(lb.set, lb.set_len, buf + 38);
+      if (!cp_verify_pin_token(buf, 70, lb.pin_uv_auth_param, lb.pin_uv_auth_protocol)) {
+        DBG_MSG("Fail to verify pin token\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
+    }
+    //    f) Check if the pinUvAuthToken has the lbw permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
+    if (!cp_has_permission(CP_PERMISSION_LBW)) {
+      DBG_MSG("Fail to verify pin permission\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
+    //    g) If the sum of offset and the length of the value of set is greater than the value of expectedLength,
+    //       return CTAP1_ERR_INVALID_PARAMETER.
+    if (lb.offset + lb.set_len > expectedLength) {
+      DBG_MSG("5-g not satisfied\n");
+      return CTAP2_ERR_MISSING_PARAMETER;
+    }
+    //    h) If the value of offset is zero, prepare a buffer to receive a new serialized large-blob array.
+    //    i) Append the value of set to the buffer containing the pending serialized large-blob array.
+    if (write_file(LB_FILE_TMP, lb.set, lb.offset, lb.set_len, lb.offset == 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    //    j) Update expectedNextOffset to be the new length of the pending serialized large-blob array.
+    expectedNextOffset += lb.set_len;
+    //    k) If the length of the pending serialized large-blob array is equal to expectedLength:
+    if (expectedNextOffset == expectedLength) {
+      //     i. Verify that the final 16 bytes in the buffer are the truncated SHA-256 hash of the preceding bytes.
+      //        If the hash does not match, return CTAP2_ERR_INTEGRITY_FAILURE.
+      int offset = 0;
+      expectedLength -= 16;
+      sha256_init();
+      while (offset < expectedLength) {
+        int to_read = sizeof(buf);
+        if (to_read > expectedLength - offset) to_read = expectedLength - offset;
+        if (read_file(LB_FILE_TMP, buf, offset, to_read) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        sha256_update(buf, to_read);
+        offset += to_read;
+      }
+      sha256_final(buf);
+      if (read_file(LB_FILE_TMP, buf, offset, 16) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (!memcmp(buf, buf + 16, 16)) return CTAP2_ERR_INTEGRITY_FAILURE;
+      //     ii. Commit the contents of the buffer as the new serialized large-blob array for this authenticator.
+      if (fs_rename(LB_FILE_TMP, LB_FILE) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      //     iii. Return CTAP2_OK and an empty response.
+    }
+    //    l) Else:
+    //       i. More data is needed to complete the pending serialized large-blob array.
+    //       ii. Return CTAP2_OK and an empty response. Await further writes.
+    //    > DO NOTHING
+  }
+  return 0;
+}
+
 int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
   CborEncoder encoder;
@@ -1716,13 +1892,13 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
       break;
     case CTAP_LARGE_BLOBS:
       DBG_MSG("----------------LB--------------------\n");
-      *resp = ctap_credential_management(&encoder, req, req_len);
+      *resp = ctap_large_blobs(&encoder, req, req_len);
       SET_RESP();
       break;
     case CTAP_CONFIG:
       DBG_MSG("----------------CONFIG----------------\n");
-      *resp = ctap_credential_management(&encoder, req, req_len);
-      SET_RESP();
+      *resp = CTAP2_ERR_UNHANDLED_REQUEST;
+      *resp_len = 1;
       break;
     default:
       *resp = CTAP2_ERR_UNHANDLED_REQUEST;
