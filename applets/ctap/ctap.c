@@ -829,7 +829,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //        authenticator data. The set of keys in the authenticator extension outputs map MUST be equal to, or a subset
   //        of, the keys of the authenticator extension inputs map.
 
-  uint8_t extension_buffer[79], extension_size = 0; // TODO: fix the length
+  uint8_t extension_buffer[134], extension_size = 0;
   CborEncoder extension_encoder, map, sub_map;
   // build extensions
   cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
@@ -1181,7 +1181,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // maxSerializedLargeBlobArray
   ret = cbor_encode_int(&map, GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, 1024);   // TODO: update
+  ret = cbor_encode_int(&map, LARGE_BLOB_SIZE_LIMIT);
   CHECK_CBOR_RET(ret);
 
   // firmwareVersion
