@@ -32,7 +32,11 @@ void cp_begin_using_uv_auth_token(bool user_is_present) {
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-pinuvauthtokenusagetimerobserver
 void cp_pin_uv_auth_token_usage_timer_observer(void) {
-  // TODO
+  if (!in_use) return;
+  if (device_get_tick() > timeout_value) {
+    cp_clear_user_present_flag();
+    cp_stop_using_pin_uv_auth_token();
+  }
 }
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-getuserpresentflagvalue
@@ -57,12 +61,17 @@ void cp_clear_user_verified_flag(void) {
   if (in_use) user_verified = false;
 }
 
+// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-clearpinuvauthtokenpermissionsexceptlbw
 void cp_clear_pin_uv_auth_token_permissions_except_lbw(void) {
-
+  if (in_use) permissions &= ~CP_PERMISSION_LBW;
 }
 
 void cp_stop_using_pin_uv_auth_token(void) {
-
+  permissions_rp_id[0] = 0;
+  permissions = 0;
+  in_use = false;
+  user_verified = false;
+  user_present = false;
 }
 
 // pin auth protocol
@@ -87,16 +96,11 @@ void cp_regenerate(void) {
   ecc_generate(ECC_SECP256R1, ka_keypair, ka_keypair + PRI_KEY_SIZE);
   DBG_MSG("Regenerate: ");
   PRINT_HEX(ka_keypair, PUB_KEY_SIZE + PRI_KEY_SIZE);
-  // TODO the return value of ecc_generate
 }
 
 void cp_reset_pin_uv_auth_token(void) {
   random_buffer(pin_token, sizeof(pin_token));
-  permissions_rp_id[0] = 0;
-  permissions = 0;
-  in_use = false;
-  user_verified = false;
-  user_present = false;
+  cp_stop_using_pin_uv_auth_token();
 }
 
 void cp_get_public_key(uint8_t *buf) {
@@ -168,9 +172,9 @@ bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t ms
 
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
   if (!in_use) return false;
+  timeout_value = device_get_tick() + 30000;
   return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
-
 
 void cp_set_permission(int new_permissions) {
   permissions |= new_permissions;

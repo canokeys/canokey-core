@@ -50,10 +50,12 @@
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
-// pin related
-static uint8_t consecutive_pin_counter;
+// pin & command states
+static uint8_t consecutive_pin_counter, last_cmd;
 // assertion related
-static uint8_t credential_list[MAX_DC_NUM], credential_counter, credential_idx, last_cmd;
+static uint8_t credential_list[MAX_DC_NUM], credential_counter, credential_idx;
+// credential management related
+static uint8_t last_cm_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
@@ -355,8 +357,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   DBG_MSG("PIN verified\n");
 
   step12:
-  // 12. If the exclude_list parameter is present and contains a credential ID created by this authenticator, that is bound to the specified rp.id:
-  //     a) If the credential’s credProtect value is not userVerificationRequired, then:
+  // 12. If the exclude_list parameter is present and contains a credential ID created by this authenticator,
+  //     that is bound to the specified rp.id:
   if (mc.exclude_list_size > 0) {
     for (size_t i = 0; i < mc.exclude_list_size; ++i) {
       uint8_t pri_key[PRI_KEY_SIZE];
@@ -370,8 +372,21 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
-        // TODO: follow the spec
-//        WAIT();
+        // a) If the credential’s credProtect value is not userVerificationRequired, then:
+        // b) Else (implying the credential’s credProtect value is userVerificationRequired)
+        //    NOTE THAT b-i is always true
+        //    i. Let userPresentFlagValue be false.
+        bool userPresentFlagValue = false;
+        //    ii. If the pinUvAuthParam parameter is present then let userPresentFlagValue be the result of calling
+        //        getUserPresentFlagValue().
+        if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) userPresentFlagValue = cp_get_user_present_flag_value();
+        //    iii. [N/A] Else, if evidence of user interaction was provided as part of Step 11 let userPresentFlagValue be true.
+        //    iv. If userPresentFlagValue is false, then:
+        //        (1) Wait for user presence.
+        //        (2) Regardless of whether user presence is obtained or the authenticator times out,
+        //            terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
+        //    v. Else, (implying userPresentFlagValue is true) terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
+        if (!userPresentFlagValue) WAIT(CTAP2_ERR_CREDENTIAL_EXCLUDED);
         return CTAP2_ERR_CREDENTIAL_EXCLUDED;
       }
       ret = cbor_value_advance(&mc.exclude_list);
@@ -1492,7 +1507,9 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_RPS_GET_NEXT_RP:
-      // TODO: make sure the last cmd was CM_CMD_ENUMERATE_RPS_BEGIN
+      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT) return CTAP2_ERR_NOT_ALLOWED;
+      if (last_cm_cmd != CM_CMD_ENUMERATE_RPS_BEGIN && last_cm_cmd != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP)
+        return CTAP2_ERR_NOT_ALLOWED;
       for (int i = idx + 1; i < n_rp; ++i) {
         size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1610,7 +1627,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL:
-      // TODO: check last command
+      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT) return CTAP2_ERR_NOT_ALLOWED;
+      if (last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
+          last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)
+        return CTAP2_ERR_NOT_ALLOWED;
       include_numbers = false;
       goto generate_credential_response;
 
@@ -1679,6 +1699,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       // TODO
       break;
   }
+
+  last_cm_cmd = cm.sub_command;
 
   return 0;
 }
@@ -1844,6 +1866,9 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
 
 int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
+
+  cp_pin_uv_auth_token_usage_timer_observer();
+
   CborEncoder encoder;
   cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);
 
