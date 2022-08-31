@@ -622,7 +622,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_get_assertion ga;
-  static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter, timer;
+  static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
+  static uint32_t timer;
 
   CTAP_discoverable_credential dc; // We use dc to store the selected credential
   uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
