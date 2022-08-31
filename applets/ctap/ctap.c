@@ -52,15 +52,9 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
-// assertion related
-static uint8_t credential_list[MAX_DC_NUM], credential_counter, credential_idx;
-// credential management related
-static uint8_t last_cm_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
-  credential_counter = 0;
-  credential_idx = 0;
   last_cmd = 0xff;
   cp_initialize();
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) {
@@ -628,12 +622,35 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_get_assertion ga;
+  static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter, timer;
+
   CTAP_discoverable_credential dc; // We use dc to store the selected credential
   uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
   CborParser parser;
   int ret;
 
-  if (in_get_next_assertion) goto step7;
+  if (!in_get_next_assertion) {
+    credential_counter = 0;
+  } else {
+    // GET_NEXT_ASSERTION
+    // 1. If authenticator does not remember any authenticatorGetAssertion parameters, return CTAP2_ERR_NOT_ALLOWED.
+    if (last_cmd != CTAP_GET_ASSERTION && last_cmd != CTAP_GET_NEXT_ASSERTION) return CTAP2_ERR_NOT_ALLOWED;
+    // 2. If the credentialCounter is equal to or greater than numberOfCredentials, return CTAP2_ERR_NOT_ALLOWED.
+    if (credential_counter >= number_of_credentials) return CTAP2_ERR_NOT_ALLOWED;
+    // 3. If timer since the last call to authenticatorGetAssertion/authenticatorGetNextAssertion is greater than
+    //    30 seconds, discard the current authenticatorGetAssertion state and return CTAP2_ERR_NOT_ALLOWED.
+    //    This step is OPTIONAL if transport is done over NFC.
+    if (device_get_tick() - timer > 30000) return CTAP2_ERR_NOT_ALLOWED;
+    // 4. Select the credential indexed by credentialCounter. (I.e. credentials[n] assuming a zero-based array.)
+    // 5. Update the response to include the selected credential’s publicKeyCredentialUserEntity information.
+    //    User identifiable information (name, DisplayName, icon) inside the publicKeyCredentialUserEntity MUST NOT be
+    //    returned if user verification was not done by the authenticator in the original authenticatorGetAssertion call.
+    // 6. Sign the client_data_hash along with authData with the selected credential.
+    goto step7;
+    // 7. Reset the timer. This step is OPTIONAL if transport is done over NFC.
+    // 8. Increment credentialCounter.
+    // > Process at the end of this function.
+  }
   ret = parse_get_assertion(&parser, &ga, params, len);
   CHECK_PARSER_RET(ret);
 
@@ -795,11 +812,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     }
   } else { // Step 12
     int size;
-    if (credential_idx == 0) {
+    if (credential_counter == 0) {
       size = get_file_size(DC_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
-      credential_counter = 0;
+      number_of_credentials = 0;
       for (int i = n_dc - 1; i >= 0; --i) {  // 12-b-1
         if (read_file(DC_FILE, &dc, i * (int) sizeof(CTAP_discoverable_credential),
                       sizeof(CTAP_discoverable_credential)) < 0)
@@ -809,13 +826,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
           continue;
         }
         if (memcmp(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0)
-          credential_list[credential_counter++] = i;
+          credential_list[number_of_credentials++] = i;
       }
       // 7-f
-      if (credential_counter == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      if (number_of_credentials == 0) return CTAP2_ERR_NO_CREDENTIALS;
     }
     // fetch dc and get private key
-    if (read_file(DC_FILE, &dc, credential_list[credential_idx] * (int) sizeof(CTAP_discoverable_credential),
+    if (read_file(DC_FILE, &dc, credential_list[credential_counter] * (int) sizeof(CTAP_discoverable_credential),
                   sizeof(CTAP_discoverable_credential)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     if (verify_key_handle(&dc.credential_id, pri_key) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -879,7 +896,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   if (ga.parsed_params & PARAM_HMAC_SECRET) {
     uint8_t iv[16] = {0};
     block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-    if (credential_idx == 0) {
+    if (credential_counter == 0) {
       ret = cp_decapsulate(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol);
       CHECK_PARSER_RET(ret);
       uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
@@ -914,12 +931,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   ret = cbor_encoder_close_container(&extension_encoder, &map);
   CHECK_CBOR_RET(ret);
   extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
+  if (extension_size == 1) extension_size = 0; // Skip the empty map
   DBG_MSG("extension_size=%hhu\n", extension_size);
 
   // 13. Sign the client_data_hash along with authData with the selected credential.
   uint8_t map_items = 3;
   if (ga.allow_list_size == 0) ++map_items; // user
-  if (credential_idx == 0 && credential_counter > 1) ++map_items; // numberOfCredentials
+  if (credential_counter == 0 && number_of_credentials > 1) ++map_items; // numberOfCredentials
   if (dc.has_large_blob_key) ++map_items; // numberOfCredentials
   ret = cbor_encoder_create_map(encoder, &map, map_items);
   CHECK_CBOR_RET(ret);
@@ -972,7 +990,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // user
   if (ga.allow_list_size == 0) {
-    bool user_details = (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && credential_counter > 1;
+    bool user_details = (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && number_of_credentials > 1;
     ret = cbor_encode_int(&map, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 3 : 1);
@@ -997,10 +1015,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CHECK_CBOR_RET(ret);
   }
 
-  if (credential_idx == 0 && credential_counter > 1) {
+  if (credential_counter == 0 && number_of_credentials > 1) {
     ret = cbor_encode_int(&map, GA_RESP_NUMBER_OF_CREDENTIALS);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, credential_counter);
+    ret = cbor_encode_int(&map, number_of_credentials);
     CHECK_CBOR_RET(ret);
   }
 
@@ -1015,27 +1033,14 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   CHECK_CBOR_RET(ret);
 
   memzero(pri_key, sizeof(pri_key));
-  ++credential_idx;
+  ++credential_counter;
+  timer = device_get_tick();
 
   return 0;
 }
 
+// https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetNextAssertion
 static uint8_t ctap_get_next_assertion(CborEncoder *encoder) {
-  // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetNextAssertion
-  // 1. If authenticator does not remember any authenticatorGetAssertion parameters, return CTAP2_ERR_NOT_ALLOWED.
-  if (last_cmd != CTAP_GET_ASSERTION && last_cmd != CTAP_GET_NEXT_ASSERTION) return CTAP2_ERR_NOT_ALLOWED;
-  // 2. If the credentialCounter is equal to or greater than numberOfCredentials, return CTAP2_ERR_NOT_ALLOWED.
-  if (credential_idx >= credential_counter) return CTAP2_ERR_NOT_ALLOWED;
-  // 3. [TODO] If timer since the last call to authenticatorGetAssertion/authenticatorGetNextAssertion is greater than
-  //    30 seconds, discard the current authenticatorGetAssertion state and return CTAP2_ERR_NOT_ALLOWED.
-  //    This step is OPTIONAL if transport is done over NFC.
-  // 4. Select the credential indexed by credentialCounter. (I.e. credentials[n] assuming a zero-based array.)
-  // 5. Update the response to include the selected credential’s publicKeyCredentialUserEntity information.
-  //    User identifiable information (name, DisplayName, icon) inside the publicKeyCredentialUserEntity MUST NOT be
-  //    returned if user verification was not done by the authenticator in the original authenticatorGetAssertion call.
-  // 6. Sign the client_data_hash along with authData with the selected credential.
-  // 7. [TODO] Reset the timer. This step is OPTIONAL if transport is done over NFC.
-  // 8. Increment credentialCounter.
   return ctap_get_assertion(encoder, NULL, 0, true);
 }
 
@@ -1427,6 +1432,8 @@ static int get_next_slot(uint64_t *slots, uint8_t *numbers) {
 }
 
 static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *params, size_t len) {
+  static uint8_t last_cm_cmd;
+
   CborParser parser;
   CTAP_credential_management cm;
   int ret = parse_credential_management(&parser, &cm, params, len);
@@ -1893,7 +1900,6 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
       break;
     case CTAP_GET_ASSERTION:
       DBG_MSG("-----------------GA-------------------\n");
-      credential_idx = 0;
       *resp = ctap_get_assertion(&encoder, req, req_len, false);
       SET_RESP();
       break;
