@@ -211,6 +211,7 @@
 #define DOMAIN_NAME_MAX_SIZE         254
 #define USER_ID_MAX_SIZE             64
 #define DISPLAY_NAME_LIMIT           65
+#define USER_NAME_LIMIT              65
 #define MAX_DC_NUM                   64
 #define MAX_STORED_RPID_LENGTH       32
 #define MAX_EXTENSION_SIZE_IN_AUTH   51
@@ -223,7 +224,8 @@
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
   uint8_t id_size;
-  uint8_t display_name[DISPLAY_NAME_LIMIT];
+  char name[USER_NAME_LIMIT];
+  char display_name[DISPLAY_NAME_LIMIT];
 } __packed user_entity;
 
 typedef struct {

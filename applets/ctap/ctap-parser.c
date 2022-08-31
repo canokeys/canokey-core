@@ -123,10 +123,17 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
       len = DISPLAY_NAME_LIMIT;
       ret = cbor_value_copy_text_string(&map, (char *) user->display_name, &len, NULL);
       CHECK_CBOR_RET(ret);
-      user->display_name[DISPLAY_NAME_LIMIT - 1] = 0;
+      user->display_name[len] = 0;
       DBG_MSG("displayName: %s\n", user->display_name);
-    } else if (strcmp(key, "name") == 0 || strcmp(key, "icon") == 0) {
-      // We do not store them
+    } else if (strcmp(key, "name") == 0) {
+      if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      len = USER_NAME_LIMIT;
+      ret = cbor_value_copy_text_string(&map, (char *) user->name, &len, NULL);
+      CHECK_CBOR_RET(ret);
+      user->name[len] = 0;
+      DBG_MSG("name: %s\n", user->name);
+    } else if (strcmp(key, "icon") == 0) {
+      // We do not store it
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     }
 

@@ -975,7 +975,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     bool user_details = (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && credential_counter > 1;
     ret = cbor_encode_int(&map, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 2 : 1);
+    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 3 : 1);
     CHECK_CBOR_RET(ret);
     {
       ret = cbor_encode_text_stringz(&sub_map, "id");
@@ -983,9 +983,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
       CHECK_CBOR_RET(ret);
       if (user_details) {
-        ret = cbor_encode_text_stringz(&sub_map, "display_name");
+        ret = cbor_encode_text_stringz(&sub_map, "name");
         CHECK_CBOR_RET(ret);
-        ret = cbor_encode_text_stringz(&sub_map, (char *) dc.user.display_name);
+        ret = cbor_encode_text_stringz(&sub_map, dc.user.name);
+        CHECK_CBOR_RET(ret);
+        ret = cbor_encode_text_stringz(&sub_map, "displayName");
+        CHECK_CBOR_RET(ret);
+        ret = cbor_encode_text_stringz(&sub_map, dc.user.display_name);
         CHECK_CBOR_RET(ret);
       }
     }
@@ -1062,13 +1066,13 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_array(&map, &array, 4);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&array, "hmac-secret");
+    ret = cbor_encode_text_stringz(&array, "credBlob");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&array, "credProtect");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "largeBlobKey");
+    ret = cbor_encode_text_stringz(&array, "hmac-secret");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "credBlob");
+    ret = cbor_encode_text_stringz(&array, "largeBlobKey");
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&map, &array);
@@ -1099,11 +1103,11 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&option_map, has_pin() > 0);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
+    ret = cbor_encode_text_stringz(&option_map, "largeBlobs");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&option_map, true);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "largeBlobs");
+    ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&option_map, true);
     CHECK_CBOR_RET(ret);
@@ -1165,13 +1169,13 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_map(&array, &sub_map, 2);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&sub_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "public-key");
-    CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "alg");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&sub_map, -7); // ES256 (P-256)
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "type");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "public-key");
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&array, &sub_map);
@@ -1179,13 +1183,13 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_map(&array, &sub_map, 2);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&sub_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "public-key");
-    CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "alg");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&sub_map, -8); // EdDSA
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "type");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "public-key");
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&array, &sub_map);
@@ -1571,11 +1575,19 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CM_RESP_USER);
       CHECK_CBOR_RET(ret);
-      ret = cbor_encoder_create_map(&map, &sub_map, 1);
+      ret = cbor_encoder_create_map(&map, &sub_map, 3);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, "id");
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&sub_map, "name");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&sub_map, dc.user.name);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&sub_map, "displayName");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&sub_map, dc.user.display_name);
       CHECK_CBOR_RET(ret);
       ret = cbor_encoder_close_container(&map, &sub_map);
       CHECK_CBOR_RET(ret);
