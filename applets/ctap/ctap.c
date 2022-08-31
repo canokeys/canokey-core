@@ -75,7 +75,7 @@ uint8_t ctap_install(uint8_t reset) {
   memcpy(kh_key,
          (uint8_t[]) {0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d,
                       0x3c}, 17);
-  if (write_file(LB_FILE, kh_key, 0, 17, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_file(LB_FILE, kh_key, 0, 17, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   memzero(kh_key, sizeof(kh_key));
   DBG_MSG("CTAP reset and initialized\n");
   return 0;
@@ -1764,10 +1764,8 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     //     specified as get's value. If too few bytes exist at that offset, return the maximum number available.
     //     Note that if offset is equal to the length of the serialized large-blob array then this will result
     //     in a zero-length substring.
-    if (lb.offset + lb.get > size) {
-      lb.get = size - lb.offset;
-      DBG_MSG("read %d bytes at %d\n", lb.get, lb.offset);
-    }
+    if (lb.offset + lb.get > size) lb.get = size - lb.offset;
+    DBG_MSG("read %d bytes at %d\n", lb.get, lb.offset);
     ret = cbor_encoder_create_map(encoder, &map, 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, LB_RESP_CONFIG);
