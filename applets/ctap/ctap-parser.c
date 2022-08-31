@@ -605,7 +605,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
   mc->options.uv = OPTION_ABSENT;
   mc->options.up = OPTION_ABSENT;
 
-  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  int ret = cbor_parser_init(buf, len, 0, parser, &it);
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   ret = cbor_value_enter_container(&it, &map);
@@ -754,7 +754,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_get_assertion *ga, const ui
   ga->options.uv = OPTION_ABSENT;
   ga->options.up = OPTION_ABSENT;
 
-  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  int ret = cbor_parser_init(buf, len, 0, parser, &it);
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   ret = cbor_value_enter_container(&it, &map);
@@ -867,7 +867,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
   char domain[DOMAIN_NAME_MAX_SIZE + 1];
   memset(cp, 0, sizeof(CTAP_client_pin));
 
-  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  int ret = cbor_parser_init(buf, len, 0, parser, &it);
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   ret = cbor_value_enter_container(&it, &map);
@@ -1048,7 +1048,7 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
   int key, tmp;
   memset(cm, 0, sizeof(CTAP_credential_management));
 
-  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  int ret = cbor_parser_init(buf, len, 0, parser, &it);
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   ret = cbor_value_enter_container(&it, &map);
@@ -1138,7 +1138,7 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
   int key, tmp;
   memset(lb, 0, sizeof(CTAP_large_blobs));
 
-  int ret = cbor_parser_init(buf, len, CborValidateCanonicalFormat, parser, &it);
+  int ret = cbor_parser_init(buf, len, 0, parser, &it);
   CHECK_CBOR_RET(ret);
   if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   ret = cbor_value_enter_container(&it, &map);
@@ -1169,7 +1169,7 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &lb->set_len);
         CHECK_CBOR_RET(ret);
-        lb->set = (uint8_t *) map.ptr + 1;
+        lb->set = (uint8_t *) map.source.ptr + 1;
         if (lb->set_len >= 24) ++lb->set;
         if (lb->set_len >= 256) ++lb->set;
         DBG_MSG("set: ");
