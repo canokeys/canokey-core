@@ -38,6 +38,7 @@
 #define CTAP_SELECTION             0x0B
 #define CTAP_LARGE_BLOBS           0x0C
 #define CTAP_CONFIG                0x0D
+#define CTAP_CRED_MANAGE_LEGACY    0x41
 
 // Parsed params
 #define PARAM_CLIENT_DATA_HASH       (1 << 0)

@@ -1922,6 +1922,8 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
       *resp = ctap_install(1);
       *resp_len = 1;
       break;
+    case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2
+      cmd = CTAP_CREDENTIAL_MANAGEMENT;
     case CTAP_CREDENTIAL_MANAGEMENT:
       DBG_MSG("----------------CM--------------------\n");
       *resp = ctap_credential_management(&encoder, req, req_len);
