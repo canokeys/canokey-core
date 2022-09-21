@@ -1559,7 +1559,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         DBG_MSG("PIN verification error\n");
         return CTAP2_ERR_PIN_AUTH_INVALID;
       }
-      if (!cp_has_permission(CP_PERMISSION_CM) || cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (!cp_has_permission(CP_PERMISSION_CM) || !cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       size = get_file_size(DC_META_FILE);
       n_rp = size / (int) sizeof(CTAP_rp_meta);
@@ -1672,7 +1672,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         DBG_MSG("PIN verification error\n");
         return CTAP2_ERR_PIN_AUTH_INVALID;
       }
-      if (!cp_has_permission(CP_PERMISSION_CM) || cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (!cp_has_permission(CP_PERMISSION_CM) || !cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       size = get_file_size(DC_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
