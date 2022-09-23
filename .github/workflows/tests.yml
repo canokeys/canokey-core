@@ -9,7 +9,7 @@ jobs:
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager
+        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager fido2-tools
         pip3 install --upgrade pip
 
     - name: Set up Go 1.13
@@ -93,6 +93,7 @@ jobs:
     - name: Test the FIDO2
       run: |
         echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
+        test-real/test-libfido2.sh
         cd fido2-tests
         ~/.local/bin/pytest --color=yes --nfc tests/standard/
         ~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no 
