@@ -24,7 +24,7 @@ jobs:
         submodules: recursive
 
     - name: Cache GO Modules
-      uses: actions/cache@v1
+      uses: actions/cache@v3
       env:
         cache-name: go_mod
       with:
@@ -32,7 +32,7 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
     - name: Cache Patched GPG
-      uses: actions/cache@v1
+      uses: actions/cache@v3
       env:
         cache-name: cache_gpg_binary
       with:
@@ -45,7 +45,11 @@ jobs:
         gpg --version
     
     - name: Build FIDO Tests
-      run: ./test-via-pcsc/build_fido_tests.sh
+      run: |
+        ./test-via-pcsc/build_fido_tests.sh
+        sudo ldconfig
+        which fido2-token
+        ldd fido2-token
 
     - name: Build for Test
       run: |
