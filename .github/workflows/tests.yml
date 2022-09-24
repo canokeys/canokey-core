@@ -39,6 +39,16 @@ jobs:
         path: gnupg
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
+    - name: Cache FIDO Tools
+      uses: actions/cache@v3
+      env:
+        cache-name: cache_fido_tools
+      with:
+        path: |
+          u2f-ref-code
+          libfido2
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
+
     - name: Build Patched GPG
       run: |
         ./test-via-pcsc/build_gpg.sh
