@@ -502,6 +502,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       DBG_MSG("Use slot %d\n", first_deleted);
       pos = first_deleted;
     }
+    DBG_MSG("Finally use slot %d\n", pos);
     if (pos >= MAX_DC_NUM) {
       DBG_MSG("Storage full\n");
       return CTAP2_ERR_KEY_STORE_FULL;
@@ -538,6 +539,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       DBG_MSG("Use slot %d for meta\n", first_deleted);
       meta_pos = first_deleted;
     }
+    DBG_MSG("Finally use slot %d for meta\n", meta_pos);
     if (meta_pos == n_rp) meta.slots = 0; // a new entry's slot should be empty
     memcpy(meta.rp_id_hash, mc.rp_id_hash, SHA256_DIGEST_LENGTH);
     memcpy(meta.rp_id, mc.rp_id, MAX_STORED_RPID_LENGTH);
@@ -1492,6 +1494,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
           ++counter;
         }
       }
+      DBG_MSG("%d RPs found\n", counter);
       size = read_file(DC_META_FILE, &meta, idx * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       ret = cbor_encoder_create_map(encoder, &map, 3);
@@ -1525,7 +1528,11 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       for (int i = idx + 1; i < n_rp; ++i) {
         size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        if (meta.slots > 0) break;
+        if (meta.slots > 0) {
+          DBG_MSG("Fetch RP at %d\n", i);
+          idx = i;
+          break;
+        }
       }
       ret = cbor_encoder_create_map(encoder, &map, 2);
       CHECK_CBOR_RET(ret);
