@@ -15,7 +15,7 @@ pip3 install --user -r requirements.txt
 popd
 
 if [ ! -d libfido2 ];then
-git clone --depth 1 https://github.com/Yubico/libfido2.git
+git clone --depth 1 --branch 1.11.0 https://github.com/Yubico/libfido2.git
 mkdir libfido2/build
 pushd libfido2/build
 cmake -DUSE_PCSC=ON ..
