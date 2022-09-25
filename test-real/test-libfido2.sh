@@ -48,7 +48,7 @@ FIDO2SetName() {
     userid="$2"
     name="$3"
     display_name="$4"
-    echo "Set Cred=$credid User=$userid to $name $display_name"
+    echo "Set Cred[$credid] User[$userid] to $name $display_name"
     ToolHelper fido2-token -S -c -i "$credid" -k "$userid" -n "$name" -p "$display_name"
 }
 
@@ -72,6 +72,11 @@ makeUserName() {
     printf "USERNAME_aaaaaaaaaaaaabbbbbbbbbbbb_ccccccccccccccdddddddddddddd%02x" $1
 }
 
+makeDispName() {
+    # USER_NAME_LIMIT=65
+    printf "DisplayName_AAAAAAAAAAAAAAAAAA_XXXXXXXXXX_YYYYYYYYYYYYYYYYYYYYY%02x" $1
+}
+
 makeCredAndStore() {
     fields=($(FIDO2MakeCred $1 $2))
     userid=${fields[0]}
@@ -92,7 +97,7 @@ test_ListRK() {
 }
 
 test_MC() {
-    echo $'RelyingPartyID                   UserID                                                           UserName                                                          CredID'
+    echo $'RelyingPartyID                   UserID                                                                                UserName                                                          CredID'
     >"$TEST_TMP_DIR/rks"
     for((i=1;i<=64;i++)); do
         rpid=$(makeRPID $i)
@@ -114,14 +119,17 @@ test_MC() {
 }
 
 test_DispName() {
-    for i in 1 ;do #32 64
+    randSeq=$(seq 1 64 | shuf)
+    for i in $randSeq; do
         rpid=$(makeRPID $i)
         fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
         userid=${fields[1]}
         credid=${fields[3]}
-        display_name=DISP_NAME
-        FIDO2SetName "$credid" "$userid" "new_username" "$display_name"
+        display_name=$(makeDispName $i)
+        user_name="new_username$i"
+        FIDO2SetName "$credid" "$userid" "$user_name" "$display_name"
         fields=($(FIDO2GetRkByRp $rpid))
+        assertEquals "$credid"       "${fields[1]}"
         assertEquals "$display_name" "${fields[2]}"
         assertEquals "$userid"       "${fields[3]}"
         assertEquals es256           "${fields[4]}"
@@ -140,10 +148,10 @@ test_DelRk() {
     done
 }
 
-test_Debug() {
-    # FIDO2MakeCred rp1 un2
-    # FIDO2GetRkByRp RPID_aaaaaaaaaaaaabbbbbbbbbbbb01
-    # FIDO2DelRkByID "6AwF68LTVupyLx5ddpFRQiPS9+UmkSktTXYWREijOjIBAGO0QIKafRKTv8hiGj4aZxPQSQbfySYyH7CGSbLfBM8/d+Az/H8AABB24DP8fwAA/7CVQft/AAAAAAAAAAAAACB1+f///w==" RPID_aaaaaaaaaaaaabbbbbbbbbbbb40
-}
+# test_Debug() {
+#     FIDO2MakeCred rp1 un2
+#     FIDO2GetRkByRp RPID_aaaaaaaaaaaaabbbbbbbbbbbb01
+#     FIDO2DelRkByID "6AwF68LTVupyLx5ddpFRQiPS9+UmkSktTXYWREijOjIBAGO0QIKafRKTv8hiGj4aZxPQSQbfySYyH7CGSbLfBM8/d+Az/H8AABB24DP8fwAA/7CVQft/AAAAAAAAAAAAACB1+f///w==" RPID_aaaaaaaaaaaaabbbbbbbbbbbb40
+# }
 
 . ./shunit2/shunit2
