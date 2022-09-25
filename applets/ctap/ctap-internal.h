@@ -330,6 +330,8 @@ typedef struct {
 typedef struct {
   uint32_t parsed_params;
   uint8_t sub_command;
+  uint8_t *sub_command_params_ptr;
+  size_t param_len;
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   credential_id credential_id;
   user_entity user;

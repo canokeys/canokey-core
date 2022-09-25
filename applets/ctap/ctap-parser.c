@@ -539,7 +539,8 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
   return 0;
 }
 
-uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val) {
+uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val, size_t *total_length) {
+  *total_length = 0;
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
   size_t map_length, len;
   CborValue map;
@@ -591,6 +592,7 @@ uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val) {
     CHECK_CBOR_RET(ret);
   }
 
+  *total_length = map.source.ptr - val->source.ptr;
   return 0;
 }
 
@@ -1076,7 +1078,10 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
 
       case CM_REQ_SUB_COMMAND_PARAMS:
         DBG_MSG("subCommandParams found\n");
-        ret = parse_cm_params(cm, &map);
+        cm->sub_command_params_ptr = (uint8_t *) map.source.ptr;
+        ret = parse_cm_params(cm, &map, &cm->param_len);
+        DBG_MSG("sub_command_params (%zu): ", cm->param_len);
+        PRINT_HEX(cm->sub_command_params_ptr, cm->param_len);
         CHECK_CBOR_RET(ret);
         break;
 

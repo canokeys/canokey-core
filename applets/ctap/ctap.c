@@ -1453,14 +1453,23 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   bool include_numbers;
   if (read_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
+  if (cm.sub_command == CM_CMD_GET_CREDS_METADATA ||
+      cm.sub_command == CM_CMD_ENUMERATE_RPS_BEGIN ||
+      cm.sub_command == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN ||
+      cm.sub_command == CM_CMD_DELETE_CREDENTIAL ||
+      cm.sub_command == CM_CMD_UPDATE_USER_INFORMATION) {
+    buf[0] = cm.sub_command;
+    memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
+    if (!cp_verify_pin_token(buf, cm.param_len + 1, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
+      DBG_MSG("PIN verification error\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
+    if (!cp_has_permission(CP_PERMISSION_CM)) return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
+
   switch (cm.sub_command) {
     case CM_CMD_GET_CREDS_METADATA:
-      if (!cp_verify_pin_token((uint8_t[]) {CM_CMD_GET_CREDS_METADATA}, 1, cm.pin_uv_auth_param,
-                               cm.pin_uv_auth_protocol)) {
-        DBG_MSG("PIN verification error\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      if (!cp_has_permission(CP_PERMISSION_CM) || cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cbor_encoder_create_map(encoder, &map, 2);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CM_RESP_EXISTING_RESIDENT_CREDENTIALS_COUNT);
@@ -1477,12 +1486,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_RPS_BEGIN:
-      if (!cp_verify_pin_token((uint8_t[]) {CM_CMD_ENUMERATE_RPS_BEGIN}, 1, cm.pin_uv_auth_param,
-                               cm.pin_uv_auth_protocol)) {
-        DBG_MSG("PIN verification error\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      if (!cp_has_permission(CP_PERMISSION_CM) || cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       size = get_file_size(DC_META_FILE), counter = 0;
       n_rp = size / (int) sizeof(CTAP_rp_meta);
@@ -1555,19 +1559,9 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_CREDENTIALS_BEGIN:
-      include_numbers = true;
-      buf[0] = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
-      buf[1] = 0xA1;
-      buf[2] = 0x01;
-      buf[3] = 0x58;
-      buf[4] = 0x20;
-      memcpy(&buf[5], cm.rp_id_hash, SHA256_DIGEST_LENGTH);
-      if (!cp_verify_pin_token(buf, SHA256_DIGEST_LENGTH + 5, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
-        DBG_MSG("PIN verification error\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      if (!cp_has_permission(CP_PERMISSION_CM) || !cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      include_numbers = true;
       size = get_file_size(DC_META_FILE);
       n_rp = size / (int) sizeof(CTAP_rp_meta);
       for (idx = 0; idx < n_rp; ++idx) {
@@ -1662,24 +1656,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       goto generate_credential_response;
 
     case CM_CMD_DELETE_CREDENTIAL:
-      buf[0] = CM_CMD_DELETE_CREDENTIAL;
-      buf[1] = 0xA1;
-      buf[2] = 0x02;
-      buf[3] = 0xA2;
-      buf[4] = 0x62;
-      buf[5] = 0x69;
-      buf[6] = 0x64;
-      buf[7] = 0x58;
-      buf[8] = sizeof(credential_id);
-      memcpy(&buf[9], &cm.credential_id, sizeof(credential_id));
-      memcpy(&buf[9 + sizeof(credential_id)], "\x64type\x6Apublic-key", 16);
-      DBG_MSG("Pin Auth Msg: ");
-      PRINT_HEX(buf, sizeof(credential_id) + 25);
-      if (!cp_verify_pin_token(buf, sizeof(credential_id) + 25, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
-        DBG_MSG("PIN verification error\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      if (!cp_has_permission(CP_PERMISSION_CM) || !cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       size = get_file_size(DC_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1690,8 +1667,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (dc.deleted) continue;
         if (memcmp(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
-          DBG_MSG("Found, rp_id_hash: ");
-          PRINT_HEX(dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH);
+          DBG_MSG("Found, credential_id_hash: ");
+          PRINT_HEX((const uint8_t *) &dc.credential_id, sizeof(credential_id));
           break;
         }
       }
@@ -1723,7 +1700,29 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_UPDATE_USER_INFORMATION:
-      // TODO
+      if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      // TODO: refactor this
+      size = get_file_size(DC_FILE);
+      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      numbers = size / sizeof(CTAP_discoverable_credential);
+      for (idx = 0; idx < numbers; ++idx) {
+        size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
+                         sizeof(CTAP_discoverable_credential));
+        if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        if (dc.deleted) continue;
+        if (memcmp(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
+          DBG_MSG("Found, credential_id_hash: ");
+          PRINT_HEX((const uint8_t *) &dc.credential_id, sizeof(credential_id));
+          break;
+        }
+      }
+      if (idx == numbers) return CTAP2_ERR_NO_CREDENTIALS;
+      memcpy(&dc.user, &cm.user, sizeof(user_entity));
+      if (write_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
+                     sizeof(CTAP_discoverable_credential),
+                     0) < 0)
+        return CTAP2_ERR_UNHANDLED_REQUEST;
       break;
   }
 
