@@ -1580,6 +1580,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                        sizeof(CTAP_discoverable_credential));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      DBG_MSG("Slot %d printed\n", idx);
       ret = cbor_encoder_create_map(encoder, &map, include_numbers ? 5 : 4);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CM_RESP_USER);
@@ -1680,6 +1681,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
                      sizeof(CTAP_discoverable_credential),
                      0) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
+      DBG_MSG("Slot %d deleted\n", idx);
       if (read_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       --numbers;
       if (write_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1723,6 +1725,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
                      sizeof(CTAP_discoverable_credential),
                      0) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
+      DBG_MSG("Slot %d updated\n", idx);
       break;
   }
 
