@@ -535,16 +535,18 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       }
       if (memcmp(mc.rp_id_hash, meta.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) break;
     }
-    if (meta_pos == n_rp && first_deleted != MAX_DC_NUM) {
-      DBG_MSG("Use slot %d for meta\n", first_deleted);
-      meta_pos = first_deleted;
+    if (meta_pos == n_rp) {
+      meta.slots = 0; // a new entry's slot should be empty
+      if (first_deleted != MAX_DC_NUM) {
+        DBG_MSG("Use deleted slot %d for meta\n", first_deleted);
+        meta_pos = first_deleted;
+      }
     }
     DBG_MSG("Finally use slot %d for meta\n", meta_pos);
-    if (meta_pos == n_rp) meta.slots = 0; // a new entry's slot should be empty
     memcpy(meta.rp_id_hash, mc.rp_id_hash, SHA256_DIGEST_LENGTH);
     memcpy(meta.rp_id, mc.rp_id, MAX_STORED_RPID_LENGTH);
     meta.rp_id_len = mc.rp_id_len;
-    meta.slots |= 1 << pos;
+    meta.slots |= 1ull << pos;
     DBG_MSG("New meta.slots =  %llu\n", meta.slots);
     if (write_file(DC_META_FILE, &meta, meta_pos * (int) sizeof(CTAP_rp_meta),
                    sizeof(CTAP_rp_meta), 0) < 0)
@@ -1431,7 +1433,7 @@ static int get_next_slot(uint64_t *slots, uint8_t *numbers) {
     }
     val >>= 1;
   }
-  if (idx != -1) *slots &= ~(1 << idx);
+  if (idx != -1) *slots &= ~(1ull << idx);
   return idx;
 }
 
@@ -1697,7 +1699,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         size = read_file(DC_META_FILE, &meta, idx * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (memcmp(meta.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
-          meta.slots &= ~(1 << idx);
+          meta.slots &= ~(1ull << idx);
           size = write_file(DC_META_FILE, &meta, idx * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
           break;
