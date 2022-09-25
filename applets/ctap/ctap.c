@@ -1576,6 +1576,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       }
       slots = meta.slots;
     generate_credential_response:
+      DBG_MSG("Current slots: %llu\n", slots);
       idx = get_next_slot(&slots, &numbers);
       size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                        sizeof(CTAP_discoverable_credential));
