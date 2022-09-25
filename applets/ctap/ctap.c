@@ -545,6 +545,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     memcpy(meta.rp_id, mc.rp_id, MAX_STORED_RPID_LENGTH);
     meta.rp_id_len = mc.rp_id_len;
     meta.slots |= 1 << pos;
+    DBG_MSG("New meta.slots =  %llu\n", meta.slots);
     if (write_file(DC_META_FILE, &meta, meta_pos * (int) sizeof(CTAP_rp_meta),
                    sizeof(CTAP_rp_meta), 0) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
