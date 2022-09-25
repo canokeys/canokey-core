@@ -1574,6 +1574,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         DBG_MSG("Specified RP not found\n");
         return CTAP2_ERR_NO_CREDENTIALS;
       }
+      DBG_MSG("Use meta at slot %d: ", idx);
+      PRINT_HEX((const uint8_t *) &meta, sizeof(meta));
       slots = meta.slots;
     generate_credential_response:
       DBG_MSG("Current slots: %llu\n", slots);
