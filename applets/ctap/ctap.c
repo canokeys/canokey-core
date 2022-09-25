@@ -1667,7 +1667,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (dc.deleted) continue;
         if (memcmp(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
-          DBG_MSG("Found, credential_id_hash: ");
+          DBG_MSG("Found, credential_id: ");
           PRINT_HEX((const uint8_t *) &dc.credential_id, sizeof(credential_id));
           break;
         }
@@ -1712,7 +1712,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (dc.deleted) continue;
         if (memcmp(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
-          DBG_MSG("Found, credential_id_hash: ");
+          DBG_MSG("Found, credential_id: ");
           PRINT_HEX((const uint8_t *) &dc.credential_id, sizeof(credential_id));
           break;
         }

@@ -68,13 +68,13 @@ makeRPID() {
 }
 
 makeUserName() {
-    # USER_NAME_LIMIT=65
-    printf "USERNAME_aaaaaaaaaaaaabbbbbbbbbbbb_ccccccccccccccdddddddddddddd%02x" $1
+    # USER_NAME_LIMIT=65-1
+    printf "USERNAME_aaaaaaaaaaaabbbbbbbbbbbb_ccccccccccccccdddddddddddddd%02x" $1
 }
 
 makeDispName() {
-    # USER_NAME_LIMIT=65
-    printf "DisplayName_AAAAAAAAAAAAAAAAAA_XXXXXXXXXX_YYYYYYYYYYYYYYYYYYYYY%02x" $1
+    # USER_NAME_LIMIT=65-1
+    printf "DisplayName_AAAAAAAAAAAAAAAAA_XXXXXXXXXX_YYYYYYYYYYYYYYYYYYYYY%02x" $1
 }
 
 makeCredAndStore() {
