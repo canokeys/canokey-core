@@ -101,7 +101,7 @@ static const uint8_t USBD_FS_IfDesc_CTAPHID[] = {
     PLACEHOLDER_EPIN_ADDR,        /* bEndpointAddress: Endpoint Address (IN) */
     0x03,                         /* bmAttributes: Interrupt endpoint */
     PLACEHOLDER_EPIN_SIZE, 0x00,  /* wMaxPacketSize: 64 Byte max */
-    0x05,                         /* bInterval: Polling Interval (5 ms) */
+    0x02,                         /* bInterval: Polling Interval (2 ms) */
     0x07,                         /* bLength: Endpoint Descriptor size */
     USB_DESC_TYPE_ENDPOINT,       /* bDescriptorType: */
     PLACEHOLDER_EPOUT_ADDR,       /* bEndpointAddress: Endpoint Address (OUT) */
@@ -136,7 +136,7 @@ static const uint8_t USBD_FS_IfDesc_KBDHID[] = {
     PLACEHOLDER_EPIN_ADDR,        /* bEndpointAddress: Endpoint Address (IN) */
     0x03,                         /* bmAttributes: Interrupt endpoint */
     PLACEHOLDER_EPIN_SIZE, 0x00,  /* wMaxPacketSize: 8 Bytes max */
-    0x05,                         /* bInterval: Polling Interval (5 ms) */
+    0x0A,                         /* bInterval: Polling Interval (10 ms) */
     0x07,                         /* bLength: Endpoint Descriptor size */
     USB_DESC_TYPE_ENDPOINT,       /* bDescriptorType: */
     PLACEHOLDER_EPOUT_ADDR,       /* bEndpointAddress: Endpoint Address (OUT) */
