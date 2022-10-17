@@ -17,7 +17,7 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
+static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1, .kbd_with_return_en = 1};
 
 static admin_device_config_t current_config;
 
@@ -36,6 +36,8 @@ uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_
 uint8_t cfg_is_ndef_enable(void) { return current_config.ndef_en; }
 
 uint8_t cfg_is_webusb_landing_enable(void) { return current_config.webusb_landing_en; }
+
+uint8_t cfg_is_kbd_with_return_enable(void) { return current_config.kbd_with_return_en; }
 
 void admin_poweroff(void) { pin.is_validated = 0; }
 
@@ -109,6 +111,9 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_P1_CFG_WEBUSB_LANDING:
     current_config.webusb_landing_en = P2 & 1;
     break;
+  case ADMIN_P1_CFG_KBD_WITH_RETURN:
+    current_config.kbd_with_return_en = P2 & 1;
+    break;
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -117,9 +122,6 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   return ret;
 }
 
-/**
- * Before 037a846, the response is 7-byte long.
- */
 static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LE < 5) EXCEPT(SW_WRONG_LENGTH);
@@ -129,7 +131,8 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   RDATA[2] = ndef_get_read_only();
   RDATA[3] = current_config.ndef_en;
   RDATA[4] = current_config.webusb_landing_en;
-  LL = 5;
+  RDATA[5] = current_config.kbd_with_return_en;
+  LL = 6;
 
   return 0;
 }

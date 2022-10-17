@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: Apache-2.0
 #include <apdu.h>
 #include <applets.h>
 #include <ccid.h>
 #include <common.h>
 #include <device.h>
-#include <usb_device.h>
-#include <usbd_ccid.h>
+#include <tusb.h>
+
+#include <ccid_device.h>
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data.bStatus = (cmd_status | icc_status)
 
@@ -21,62 +21,40 @@ ccid_bulkin_data_t bulkin_data;
 ccid_bulkout_data_t bulkout_data;
 static uint16_t ab_data_length;
 static volatile uint8_t bulkout_state;
+static volatile uint8_t bulkin_state;
 static volatile uint8_t has_cmd;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 uint8_t *global_buffer;
 
-void init_apdu_buffer(void) {
-  global_buffer = bulkin_data.abData;
-}
+//--------------------------------------------------------------------+
+// CCID internal functions
+//--------------------------------------------------------------------+
+void init_apdu_buffer(void) { global_buffer = bulkin_data.abData; }
 
-uint8_t CCID_Init(void) {
-  send_data_spinlock = 0;
-  bulkout_state = CCID_STATE_IDLE;
-  has_cmd = 0;
-  bulkout_data.abData = bulkin_data.abData;
-  apdu_cmd.data = bulkin_data.abData;
-  apdu_resp.data = bulkin_data.abData;
-  return 0;
-}
+uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time_extension_request) {
+  if (!tud_ccid_mounted()) return 0;
 
-uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
-  switch (bulkout_state) {
-  case CCID_STATE_IDLE:
-    if (len == 0)
-      bulkout_state = CCID_STATE_IDLE;
-    else if (len >= CCID_CMD_HEADER_SIZE) {
-      ab_data_length = len - CCID_CMD_HEADER_SIZE;
-      memcpy(&bulkout_data, data, CCID_CMD_HEADER_SIZE);
-      memcpy(bulkout_data.abData, data + CCID_CMD_HEADER_SIZE, ab_data_length);
-      bulkout_data.dwLength = letoh32(bulkout_data.dwLength);
-      bulkin_data.bSlot = bulkout_data.bSlot;
-      bulkin_data.bSeq = bulkout_data.bSeq;
-      if (ab_data_length == bulkout_data.dwLength)
-        has_cmd = 1;
-      else if (ab_data_length < bulkout_data.dwLength) {
-        if (bulkout_data.dwLength > ABDATA_SIZE)
-          bulkout_state = CCID_STATE_IDLE;
-        else
-          bulkout_state = CCID_STATE_RECEIVE_DATA;
-      } else
-        bulkout_state = CCID_STATE_IDLE;
-    }
-    break;
+  DBG_MSG("CCID_Response_SendData %d bytes:\r\n", len);
+  PRINT_HEX(buf, len);
+  DBG_MSG("\r\n");
 
-  case CCID_STATE_RECEIVE_DATA:
-    if (ab_data_length + len < bulkout_data.dwLength) {
-      memcpy(bulkout_data.abData + ab_data_length, data, len);
-      ab_data_length += len;
-    } else if (ab_data_length + len == bulkout_data.dwLength) {
-      memcpy(bulkout_data.abData + ab_data_length, data, len);
-      bulkout_state = CCID_STATE_IDLE;
-      has_cmd = 1;
-    } else
-      bulkout_state = CCID_STATE_IDLE;
+  uint8_t ret;
+  int retry = 0;
+  while (bulkin_state != CCID_STATE_IDLE) {
+    if (is_time_extension_request)
+      return 0;
+    else if (++retry > 50)
+      return 0;
+    else
+      device_delay(1);
   }
-  return 0;
+
+  bulkin_state = len % CFG_TUD_CCID_EPSIZE == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
+  ret = tud_ccid_write(buf, len);
+
+  return ret;
 }
 
 /**
@@ -300,7 +278,37 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
   return 0;
 }
 
-void CCID_Loop(void) {
+void CCID_TimeExtensionLoop(void) {
+  if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
+    DBG_MSG("send t-ext\r\n");
+    bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
+    bulkin_time_extension.dwLength = 0;
+    bulkin_time_extension.bSlot = bulkout_data.bSlot;
+    bulkin_time_extension.bSeq = bulkout_data.bSeq;
+    bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
+    bulkin_time_extension.bError = 1; // Request another 1 BTWs (5.7s)
+    bulkin_time_extension.bSpecific = 0;
+    CCID_Response_SendData((uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, 1);
+    device_spinlock_unlock(&send_data_spinlock);
+  }
+
+  device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
+}
+
+//--------------------------------------------------------------------+
+// CCID init and loop
+//--------------------------------------------------------------------+
+uint8_t ccid_init(void) {
+  send_data_spinlock = 0;
+  bulkout_state = CCID_STATE_IDLE;
+  has_cmd = 0;
+  bulkout_data.abData = bulkin_data.abData;
+  apdu_cmd.data = bulkin_data.abData;
+  apdu_resp.data = bulkin_data.abData;
+  return 0;
+}
+
+void ccid_loop(void) {
   if (!has_cmd) return;
   has_cmd = 0;
 
@@ -353,23 +361,81 @@ void CCID_Loop(void) {
   uint16_t len = bulkin_data.dwLength;
   bulkin_data.dwLength = htole32(bulkin_data.dwLength);
   device_spinlock_lock(&send_data_spinlock, true);
-  CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_data, len + CCID_CMD_HEADER_SIZE, 0);
+  CCID_Response_SendData((uint8_t *)&bulkin_data, len + CCID_CMD_HEADER_SIZE, 0);
   device_spinlock_unlock(&send_data_spinlock);
 }
 
-void CCID_TimeExtensionLoop(void) {
-  if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
-    DBG_MSG("send t-ext\r\n");
-    bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
-    bulkin_time_extension.dwLength = 0;
-    bulkin_time_extension.bSlot = bulkout_data.bSlot;
-    bulkin_time_extension.bSeq = bulkout_data.bSeq;
-    bulkin_time_extension.bStatus = BM_COMMAND_STATUS_TIME_EXTN;
-    bulkin_time_extension.bError = 1; // Request another 1 BTWs (5.7s)
-    bulkin_time_extension.bSpecific = 0;
-    CCID_Response_SendData(&usb_device, (uint8_t *)&bulkin_time_extension, CCID_CMD_HEADER_SIZE, 1);
-    device_spinlock_unlock(&send_data_spinlock);
-  }
+//--------------------------------------------------------------------+
+// TinyUSB stack callbacks
+//--------------------------------------------------------------------+
+// Invoked when received new data
+void tud_ccid_rx_cb(uint8_t itf) {
+  DBG_MSG("tud_ccid_rx_cb, itf: %d\r\n", itf);
 
-  device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
+  if (itf != 0) return;
+  uint32_t len = tud_ccid_available();
+
+  switch (bulkout_state) {
+  case CCID_STATE_IDLE:
+    if (len == 0)
+      bulkout_state = CCID_STATE_IDLE;
+    else if (len >= CCID_CMD_HEADER_SIZE) {
+      ab_data_length = len - CCID_CMD_HEADER_SIZE;
+      tud_ccid_read(&bulkout_data, CCID_CMD_HEADER_SIZE);
+      tud_ccid_read(bulkout_data.abData, ab_data_length);
+
+      TU_LOG2("CCID: First packet %lu bytes: \r\n  Header: ", len);
+      TU_LOG2_MEM(&bulkout_data, CCID_CMD_HEADER_SIZE, 1);
+      TU_LOG2("\r\n  Data: ");
+      TU_LOG2_MEM(bulkout_data.abData, ab_data_length, 1);
+      TU_LOG2("\r\n");
+
+      bulkout_data.dwLength = tu_le32toh(bulkout_data.dwLength);
+      bulkin_data.bSlot = bulkout_data.bSlot;
+      bulkin_data.bSeq = bulkout_data.bSeq;
+
+      if (ab_data_length == bulkout_data.dwLength)
+        has_cmd = 1;
+      else if (ab_data_length < bulkout_data.dwLength) {
+        if (bulkout_data.dwLength > ABDATA_SIZE)
+          bulkout_state = CCID_STATE_IDLE;
+        else
+          bulkout_state = CCID_STATE_RECEIVE_DATA;
+      } else
+        bulkout_state = CCID_STATE_IDLE;
+    }
+    break;
+
+  case CCID_STATE_RECEIVE_DATA:
+    if (ab_data_length + len < bulkout_data.dwLength) {
+      tud_ccid_read(bulkout_data.abData + ab_data_length, len);
+      ab_data_length += len;
+
+      TU_LOG2("CCID: Continue packet %lu bytes: \r\n  Data: ", len);
+      TU_LOG_MEM(2, bulkout_data.abData + ab_data_length, len, 1);
+      TU_LOG2("\r\n");
+
+    } else if (ab_data_length + len == bulkout_data.dwLength) {
+      tud_ccid_read(bulkout_data.abData + ab_data_length, len);
+
+      TU_LOG2("CCID: Last packet %lu bytes: \r\n  Data: ", len);
+      TU_LOG_MEM(2, bulkout_data.abData + ab_data_length, len, 1);
+      TU_LOG2("\r\n");
+
+      bulkout_state = CCID_STATE_IDLE;
+      has_cmd = 1;
+    } else
+      bulkout_state = CCID_STATE_IDLE;
+  }
+}
+
+// Invoked when last tx transfer finished
+void tud_ccid_tx_cb(uint8_t itf, uint32_t sent_bytes) {
+  DBG_MSG("tud_ccid_tx_cb, itf=%d, sent_bytes=%d\r\n", itf, sent_bytes);
+  if (bulkin_state == CCID_STATE_DATA_IN_WITH_ZLP) {
+    bulkin_state = CCID_STATE_DATA_IN;
+    tud_ccid_write(NULL, 0);
+  } else {
+    bulkin_state = CCID_STATE_IDLE;
+  }
 }

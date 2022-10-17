@@ -5,6 +5,7 @@
 #include <ctaphid.h>
 #include <device.h>
 #include <kbdhid.h>
+#include <tusb.h>
 #include <webusb.h>
 
 volatile static uint8_t touch_result;
@@ -16,15 +17,24 @@ volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, he
 
 uint8_t device_is_blinking(void) { return last_blink != UINT32_MAX; }
 
+// Called when usb device is connected and initialized
+void device_mounted() {
+  ccid_init();
+  ctap_hid_init(CTAPHID_SendReport);
+  webusb_init();
+  kbd_hid_init();
+}
+
 void device_loop(uint8_t has_touch) {
-  CCID_Loop();
-  CTAPHID_Loop(0);
-  WebUSB_Loop();
+  tud_task(); // TinyUSB stack task
+
+  ccid_loop();
+  ctap_hid_loop(0);
   if (has_touch &&                  // hardware features the touch pad
       !device_is_blinking() &&      // applets are not waiting for touch
       cfg_is_kbd_interface_enable() // keyboard emulation enabled
   )
-    KBDHID_Loop();
+    kbd_hid_loop();
 }
 
 uint8_t get_touch_result(void) {
@@ -56,8 +66,8 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     wait_status = WAIT_DEEP;
   while (get_touch_result() == TOUCH_NO) {
     if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
-    if (wait_status == WAIT_CTAPHID) CCID_Loop();
-    if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+    // if (wait_status == WAIT_CTAPHID) CCID_Loop();
+    if (ctap_hid_loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
       if (wait_status != WAIT_DEEP) {
         stop_blinking();
         wait_status = WAIT_NONE; // namely shallow
@@ -74,7 +84,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     }
     if (now - last >= 300) {
       last = now;
-      if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+      // if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
   set_touch_result(TOUCH_NO);

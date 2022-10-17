@@ -7,6 +7,10 @@ option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
 option(VIRTCARD "Virt Card" OFF)
 
+# To be override by MCU specific cmakelists
+set(TINYUSB_MCU "OPT_MCU_NONE" CACHE STRING "TinyUSB MCU name")
+set(TINYUSB_DCD_INCLUDES "" CACHE STRING "TinyUSB DCD include paths")
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer")
@@ -28,8 +32,10 @@ if (DEFINED USBD_PRODUCT_STRING)
     add_definitions(-DUSBD_PRODUCT_STRING="${USBD_PRODUCT_STRING}")
 endif ()
 
-file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
-        littlefs/lfs.c littlefs/lfs_util.c
+add_definitions(-DCFG_TUSB_MCU=${TINYUSB_MCU})
+
+file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c 
+        tinyusb/src/*.c littlefs/lfs.c littlefs/lfs_util.c
         tinycbor/src/cborencoder.c tinycbor/src/cborparser.c)
 add_library(canokey-core ${SRC})
 
@@ -50,11 +56,13 @@ target_include_directories(canokey-core SYSTEM
         littlefs
         tinycbor/src
         interfaces/USB/device
-        interfaces/USB/core/inc
-        interfaces/USB/class/ccid
+        interfaces/USB/class/hid
         interfaces/USB/class/ctaphid
+        interfaces/USB/class/ccid
+        interfaces/USB/class/webusb
         interfaces/USB/class/kbdhid
-        interfaces/USB/class/webusb)
+        tinyusb/src
+        ${TINYUSB_DCD_INCLUDES})
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
@@ -77,7 +85,6 @@ if (ENABLE_TESTS)
     enable_testing()
 
     add_executable(fido-hid-over-udp
-            virt-card/usb-dummy.c
             virt-card/device-sim.c
             virt-card/fabrication.c
             virt-card/fido-hid-over-udp.c
@@ -88,7 +95,6 @@ if (ENABLE_TESTS)
     pkg_search_module(PCSCLITE libpcsclite)
     if (PCSCLITE_FOUND)
         add_library(u2f-virt-card SHARED
-                virt-card/usb-dummy.c
                 virt-card/device-sim.c
                 virt-card/ifdhandler.c
                 virt-card/fabrication.c
@@ -102,7 +108,6 @@ endif (ENABLE_TESTS)
 if (ENABLE_FUZZING)
     add_executable(honggfuzz-fuzzer
             fuzzer/honggfuzz-fuzzer.c
-            virt-card/usb-dummy.c
             virt-card/device-sim.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)
@@ -113,7 +118,6 @@ if (ENABLE_FUZZING)
     add_executable(honggfuzz-debug
             fuzzer/honggfuzz-debug.c
             fuzzer/honggfuzz-fuzzer.c
-            virt-card/usb-dummy.c
             virt-card/device-sim.c
             virt-card/fabrication.c
             littlefs/bd/lfs_filebd.c)

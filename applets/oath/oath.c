@@ -435,7 +435,7 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
   size_t nRecords = size / sizeof(OATH_RECORD), i;
-  size_t file_offset;
+  size_t file_offset = 0;
   OATH_RECORD record;
   for (i = 0; i != nRecords; ++i) {
     file_offset = i * sizeof(OATH_RECORD);

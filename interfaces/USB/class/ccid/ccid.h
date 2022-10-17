@@ -9,6 +9,15 @@
 #define CCID_NUMBER_OF_SLOTS 1
 #define TIME_EXTENSION_PERIOD 1500
 
+// CCID Bulk State machine
+enum {
+  CCID_STATE_IDLE = 0,
+  CCID_STATE_RECEIVE_DATA = 1,
+  CCID_STATE_DATA_IN = 2,
+  CCID_STATE_DATA_IN_WITH_ZLP = 3,
+  CCID_STATE_PROCESS_DATA = 4,
+};
+
 typedef struct {
   uint8_t bMessageType; /* Offset = 0*/
   uint32_t dwLength;    /* Offset = 1, The length field (dwLength) is the length
@@ -127,10 +136,21 @@ typedef enum {
 #define RDR_TO_PC_ESCAPE 0x83
 #define RDR_TO_PC_DATARATEANDCLOCKFREQUENCY 0x84
 
-uint8_t CCID_Init(void);
-uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
-void CCID_Loop(void);
+uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time_extension_request);
 void CCID_TimeExtensionLoop(void);
-uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes
+
+uint8_t ccid_init(void);
+void ccid_loop(void);
+
+// uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes
+
+//--------------------------------------------------------------------+
+// USBD Class Callback API
+//--------------------------------------------------------------------+
+// Invoked when received new data
+void tud_ccid_rx_cb(uint8_t itf);
+
+// Invoked when last rx transfer finished
+void tud_ccid_tx_cb(uint8_t itf, uint32_t sent_bytes);
 
 #endif //_CCID_H_

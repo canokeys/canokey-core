@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef __CTAPHID_H_INCLUDED__
-#define __CTAPHID_H_INCLUDED__
+#ifndef _CTAPHID_H_
+#define _CTAPHID_H_
 
 #include <common.h>
+#include <tusb.h>
 
 #define HID_RPT_SIZE 64 // Default size of raw HID report
 
@@ -95,6 +96,8 @@ typedef struct {
 
 #define MAX_CTAP_BUFSIZE 1280
 
+typedef enum { CTAPHID_IDLE = 0, CTAPHID_BUSY } CTAPHID_StateTypeDef;
+
 typedef struct {
   uint32_t cid;
   uint16_t bcnt_total;
@@ -106,11 +109,14 @@ typedef struct {
   alignas(4) uint8_t data[MAX_CTAP_BUFSIZE];
 } CTAPHID_Channel;
 
-typedef struct _USBD_HandleTypeDef USBD_HandleTypeDef;
-
-uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len));
-uint8_t CTAPHID_OutEvent(uint8_t *data);
 void CTAPHID_SendKeepAlive(uint8_t status);
-uint8_t CTAPHID_Loop(uint8_t wait_for_user);
+void CTAPHID_SendReport(uint8_t *report, uint16_t len);
 
-#endif // __CTAPHID_H_INCLUDED__
+void ctap_hid_init(uint8_t (*send_report)(uint8_t *report, uint16_t len));
+uint8_t ctap_hid_loop(uint8_t wait_for_user);
+
+void ctap_hid_report_complete_cb(uint8_t const *report, uint8_t len);
+uint16_t ctap_hid_get_report_cb(uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen);
+void ctap_hid_set_report_cb(uint8_t report_id, hid_report_type_t report_type, uint8_t const *buffer, uint16_t bufsize);
+
+#endif /* _CTAPHID_H_ */
