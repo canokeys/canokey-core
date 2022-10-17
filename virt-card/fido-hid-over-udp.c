@@ -103,7 +103,7 @@ static void udp_send(int fd, uint8_t *buf, int size) {
 }
 
 static int current_fd;
-static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+static uint8_t udp_send_current_fd(uint8_t *report, uint16_t len) {
   // printf("udp_send_current_fd %hu\n", len);
   udp_send(current_fd, report, len);
   return 0;
@@ -114,7 +114,7 @@ int main() {
   card_fabrication_procedure("/tmp/lfs-root");
   // emulate the NFC mode, where user-presence tests are skipped
   set_nfc_state(1);
-  CTAPHID_Init(udp_send_current_fd);
+  ctap_hid_init(udp_send_current_fd);
   for (;;) {
     uint8_t buf[HID_RPT_SIZE];
     int length = udp_recv(current_fd, buf, sizeof(buf));
@@ -134,9 +134,9 @@ int main() {
         printf("ERROR exec %d", ret);
         return 0;
       }
-      CTAPHID_OutEvent(buf);
+      ctap_hid_set_report_cb(0, HID_REPORT_TYPE_INVALID, buf, length);
     }
-    CTAPHID_Loop(0);
+    ctap_hid_loop(0);
   }
   return 0;
 }

@@ -18,7 +18,7 @@ RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
 {
     printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
     if(!applet_init) {
-        CCID_Init();
+        ccid_init();
         card_fabrication_procedure("/tmp/lfs-root");
         applet_init = 1;
     }
