@@ -26,8 +26,8 @@ void device_mounted() {
 }
 
 void device_loop(uint8_t has_touch) {
-  tud_task();   // TinyUSB stack task
-  
+  tud_task(); // TinyUSB stack task
+
   ccid_loop();
   ctap_hid_loop(0);
   if (has_touch &&                  // hardware features the touch pad

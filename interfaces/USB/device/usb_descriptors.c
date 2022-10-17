@@ -40,7 +40,7 @@ uint8_t const * tud_descriptor_device_cb(void) {
 // HID report Descriptor
 //--------------------------------------------------------------------+
 uint8_t const desc_ctaphid_report[] = {
-  TUD_HID_REPORT_DESC_FIDO_U2F()
+  TUD_HID_REPORT_DESC_FIDO_U2F(CFG_TUD_HID_EP_BUFSIZE)
 };
 
 uint8_t const desc_kbdhid_report[] = {
@@ -317,7 +317,7 @@ char const* string_desc_arr_custom[] = {
   USBD_WEBUSB_INTERFACE_STRING,
   USBD_KBDHID_INTERFACE_STRING
 };
-
+ 
 static uint16_t _desc_str[USBD_MAX_STR_DESC_SIZE];
 
 // Invoked when received GET STRING DESCRIPTOR request
