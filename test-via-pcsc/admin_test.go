@@ -131,15 +131,16 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Configuration", func(ctx C) {
-			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01}
+			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x01}
 			P1toIdx := map[int]int{
 				1: 0, // ADMIN_P1_CFG_LED_ON
 				2: 2, // ndef_get_read_only
 				3: 1, // ADMIN_P1_CFG_KBDIFACE
 				4: 3, // ADMIN_P1_CFG_NDEF
 				5: 4, // ADMIN_P1_CFG_WEBUSB_LANDING
+				6: 5, // ADMIN_P1_CFG_KBD_WITH_RETURN
 			}
-			for P1 := 1; P1 <= 5; P1++ {
+			for P1 := 1; P1 <= 6; P1++ {
 				for _, P2 := range []int{0, 1, 0, 1} {
 					apdu := []byte{0x00, 0x40, uint8(P1), uint8(P2)}
 					_, code, err := app.Send(apdu)

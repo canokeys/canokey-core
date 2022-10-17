@@ -66,13 +66,13 @@ uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
 uint8_t const desc_configuration_ctaphid[] = {
   TUD_HID_INOUT_DESCRIPTOR(
     PLACEHOLDER_IFACE_NUM, USBD_IDX_CTAPHID_STR, HID_ITF_PROTOCOL_NONE, sizeof(desc_ctaphid_report),
-    PLACEHOLDER_EPOUT_ADDR, PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 5)
+    PLACEHOLDER_EPOUT_ADDR, PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 2)
 };
 
 uint8_t const desc_configuration_kbdhid[] = {
   TUD_HID_DESCRIPTOR(
     PLACEHOLDER_IFACE_NUM, USBD_IDX_KBDHID_STR, HID_ITF_PROTOCOL_KEYBOARD, sizeof(desc_kbdhid_report),
-    PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 5),
+    PLACEHOLDER_EPIN_ADDR, PLACEHOLDER_EPIN_SIZE, 10),
 };
 
 uint8_t const desc_configuration_webusb[] = {

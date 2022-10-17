@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <tusb.h>
 
+#include <admin.h>
 #include <common.h>
 #include <device.h>
 #include <oath.h>
@@ -27,24 +29,27 @@ static uint32_t last_sent;
 //--------------------------------------------------------------------+
 
 static void KBDHID_UserTouchHandle(void) {
-  int ret;
+  int ret, len;
   memset(key_sequence, 0, sizeof(key_sequence));
   ret = oath_process_one_touch(key_sequence, sizeof(key_sequence));
   if (ret < 0) {
-    ERR_MSG("Failed to get the OTP code: %d\r\n", ret);
-    if (ret == -2)
-      memcpy(key_sequence, "not-set\r", 8);
-    else
-      memcpy(key_sequence, "error\r", 6);
+    ERR_MSG("Failed to get the OTP code: %d\n", ret);
+    if (ret == -2) {
+      memcpy(key_sequence, "not-set", 7);
+      len = 7;
+    } else {
+      memcpy(key_sequence, "error", 5);
+      len = 5;
+    }
   } else {
-    for (size_t i = 0; i < sizeof(key_sequence) - 1; i++) {
+    for (int i = 0; i < sizeof(key_sequence) - 1; i++) {
       if (key_sequence[i] == '\0') {
-        key_sequence[i] = '\r';
+        len = i;
         break;
       }
     }
   }
-
+  if (cfg_is_kbd_with_return_enable()) key_sequence[len] = '\r';
   key_seq_position = 0;
   state = KBDHID_Typing;
   DBG_MSG("Start typing %s\r\n", key_sequence);
