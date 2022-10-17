@@ -13,6 +13,7 @@ static volatile uint8_t has_frame;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 static CTAPHID_StateTypeDef hid_state;
+static uint8_t (*callback_send_report)(uint8_t *report, uint16_t len);
 
 const uint16_t ISIZE = sizeof(frame.init.data);
 const uint16_t CSIZE = sizeof(frame.cont.data);
@@ -20,7 +21,7 @@ const uint16_t CSIZE = sizeof(frame.cont.data);
 //==============================================================================
 // CTAPHID functions
 //==============================================================================
-static void CTAPHID_SendFrame(void) {
+void CTAPHID_SendReport(uint8_t *report, uint16_t len) {
   if (!tud_mounted()) return;
 
   int retry = 0;
@@ -35,7 +36,11 @@ static void CTAPHID_SendFrame(void) {
 
   hid_state = CTAPHID_BUSY;
   // Report ID is always 0
-  tud_hid_n_report(HID_ITF_CTAP, 0, &frame, sizeof(frame));
+  tud_hid_n_report(HID_ITF_CTAP, 0, (const void *)report, len);
+}
+
+static void CTAPHID_SendFrame(void) {
+  callback_send_report((uint8_t *)&frame, sizeof(CTAPHID_FRAME));
 }
 
 static void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, uint8_t *data, uint16_t len) {
@@ -137,7 +142,8 @@ static void CTAPHID_Execute_Cbor(void) {
 //==============================================================================
 // Class init and loop
 //==============================================================================
-void ctap_hid_init() {
+void ctap_hid_init(uint8_t (*send_report)(uint8_t *report, uint16_t len)) {
+  callback_send_report = send_report;
   channel.state = CTAPHID_IDLE;
   hid_state = CTAPHID_IDLE;
   has_frame = 0;

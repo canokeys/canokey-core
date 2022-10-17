@@ -110,8 +110,9 @@ typedef struct {
 } CTAPHID_Channel;
 
 void CTAPHID_SendKeepAlive(uint8_t status);
+void CTAPHID_SendReport(uint8_t *report, uint16_t len);
 
-void ctap_hid_init();
+void ctap_hid_init(uint8_t (*send_report)(uint8_t *report, uint16_t len));
 uint8_t ctap_hid_loop(uint8_t wait_for_user);
 
 void ctap_hid_report_complete_cb(uint8_t const *report, uint8_t len);

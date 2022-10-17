@@ -20,7 +20,7 @@ uint8_t device_is_blinking(void) { return last_blink != UINT32_MAX; }
 // Called when usb device is connected and initialized
 void device_mounted() {
   ccid_init();
-  ctap_hid_init();
+  ctap_hid_init(CTAPHID_SendReport);
   webusb_init();
   kbd_hid_init();
 }
