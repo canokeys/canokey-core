@@ -11,60 +11,153 @@ oneTimeSetUp() {
     # rm -rf "$TEST_TMP_DIR"
     mkdir -p "$TEST_TMP_DIR"
     killall -u $USER -9 gpg-agent && sleep 2 || true
-    export RDID=$(fido2-token -L | grep -Po '^pcsc:.*(?=: )' | tail -n 1)
+    export RDID=$(fido2-token -L | grep -Po '^(pcsc:|/dev).*(?=: )' | tail -n 1)
 }
 
 ToolHelper() {
     # echo "PIN is $PIN"
     echo $PIN | $NON_TTY $* "$RDID" 2>"$TEST_TMP_DIR/stderr"
-    grep -v "Enter PIN " "$TEST_TMP_DIR/stderr" 1>&2 || true
+    local res=$?
+    sed -i -E 's/Enter.*PIN for \S+ *//g' "$TEST_TMP_DIR/stderr"
+    cat "$TEST_TMP_DIR/stderr" 1>&2
+    return $res
 }
 
 FIDO2MakeCred() {
-    rpid=$1
-    username=$2
-    userid=$(dd status=none if=/dev/urandom bs=64 count=1 | base64 -w 0)
+    local rpid=$1
+    local username=$2
+    local userid=$(dd status=none if=/dev/urandom bs=64 count=1 | base64 -w 0)
     openssl rand -base64 32 >"$TEST_TMP_DIR/cred_param" # client data hash
+    assertTrue "openssl failed" $?
     echo "$rpid" >>"$TEST_TMP_DIR/cred_param"
     echo "$username" >>"$TEST_TMP_DIR/cred_param"
     echo "$userid" >>"$TEST_TMP_DIR/cred_param" # user id
-    ToolHelper fido2-cred -M -r -i "$TEST_TMP_DIR/cred_param" | fido2-cred -V -o "$TEST_TMP_DIR/cred"
-    credid=$(head -n 1 "$TEST_TMP_DIR/cred")
-    echo $userid $credid
+    ToolHelper fido2-cred -M -r -b -i "$TEST_TMP_DIR/cred_param" >"$TEST_TMP_DIR/mc"
+    assertTrue "fido2-cred -M failed" $?
+    local largeBlobKey=$(tail -n 1 "$TEST_TMP_DIR/mc")
+    head -n -1 "$TEST_TMP_DIR/mc" | fido2-cred -V -o "$TEST_TMP_DIR/verified"
+    local ret=$?
+    assertTrue "fido2-cred -V failed" $ret
+    if [[ $ret != 0 ]];then
+        return 1
+    fi
+    local credid=$(head -n 1 "$TEST_TMP_DIR/verified")
+    echo $userid $credid $largeBlobKey
+}
+
+FIDO2GetAssert() {
+    local rpid=$1
+    local credid=$2
+    local userid=$(dd status=none if=/dev/urandom bs=64 count=1 | base64 -w 0)
+    openssl rand -base64 32 >"$TEST_TMP_DIR/assert_param" # client data hash
+    echo "$rpid" >>"$TEST_TMP_DIR/assert_param"
+    echo "$credid" >>"$TEST_TMP_DIR/assert_param"
+    ToolHelper fido2-assert -G -b -i "$TEST_TMP_DIR/assert_param" >"$TEST_TMP_DIR/assert"
+    assertTrue "fido2-assert -G failed" $?
+    #cat "$TEST_TMP_DIR/assert"
+    local largeBlobKey=$(head -n 1 "$TEST_TMP_DIR/assert")
+    echo $largeBlobKey
 }
 
 FIDO2ListRP() {
-    nrRk=$(ToolHelper fido2-token -I -c | grep 'existing rk')
+    local nrRk=$(ToolHelper fido2-token -I -c | grep 'existing rk')
     echo "$nrRk" # existing rk(s): 64
     if [[ $nrRk != *" 0" ]]; then
         # Idx Credential                                   RpID
         # 00: NBuC7jAK2Ty/3ileQvETIZ8BUQ+93GoraEm3Su3KvC0= RPID_aaaaaaaaaaaaabbbbbbbbbbbb01
         ToolHelper fido2-token -L -r
+        assertTrue "FIDO2ListRP failed" $?
     fi
-}
-
-FIDO2SetName() {
-    credid="$1"
-    userid="$2"
-    name="$3"
-    display_name="$4"
-    echo "Set Cred[$credid] User[$userid] to $name $display_name"
-    ToolHelper fido2-token -S -c -i "$credid" -k "$userid" -n "$name" -p "$display_name"
 }
 
 FIDO2GetRkByRp() {
     # Idx: CredID DispName UserID Algo Prot
     # 00: +CSO/Hjxmj8YJ0Iv+TQw018+a+8y+AE36XlODTT6vhUBADQbgu4wCtk8v94pXkLxEyGfAVEPvdxqK2hJt0rtyrwtd+Az/H8AABB24DP8fwAA/7CVQft/AAAAAAAAAAAAACB1+f///w== DispName E+It8WJq4TJbPzfjSqeJDPpP+XkKVMBzIAk0sKAVu8IaZDhG2vOEH4rqw0eP6yWg es256 unknown
     ToolHelper fido2-token -L -k "$1"
+    assertTrue "FIDO2GetRkByRp failed" $?
+}
+
+FIDO2ListRK() {
+    local rps=$(FIDO2ListRP)
+    while IFS= read -r rp_line
+    do
+        local fields=($rp_line)
+        if [[ ${fields[0]} == [0-9][0-9]: ]]; then
+            rpid=${fields[2]}
+            FIDO2GetRkByRp $rpid
+        fi
+    done <<< "$rps"
+}
+
+FIDO2SetName() {
+    local credid="$1"
+    local userid="$2"
+    local name="$3"
+    local display_name="$4"
+    echo "Set Cred[$credid] User[$userid] to $name $display_name"
+    ToolHelper fido2-token -S -c -i "$credid" -k "$userid" -n "$name" -p "$display_name"
+    assertTrue "FIDO2SetName failed" $?
+}
+
+FIDO2SetBlob() {
+    local rpid="$1"
+    local credid="$2"
+    local blobPath="$TEST_TMP_DIR/blob"
+    echo "Set RP[$rpid] Cred[$credid] to $blobPath"
+    # ToolHelper fido2-token -Sb -n "$rpid" -i "$credid" "$blobPath"
+    ToolHelper fido2-token -Sb -k "$TEST_TMP_DIR/blobkey" "$blobPath"
+    local ret=$?
+    assertTrue "FIDO2SetBlob failed" $ret
+    return $ret
+}
+
+FIDO2GetBlob() {
+    local rpid="$1"
+    local credid="$2"
+    local blobPath="$TEST_TMP_DIR/blob"
+    >"$blobPath"
+    ToolHelper fido2-token -Gb -n "$rpid" -i "$credid" "$blobPath"
+    local ret=$?
+    assertTrue "FIDO2GetBlob failed" $ret
+    return $ret
 }
 
 FIDO2DelRkByID() {
-    ToolHelper fido2-token -D -i "$1" -n "$2"
+    echo "Deleting cred: $1"
+    ToolHelper fido2-token -D -i "$1"
+    assertTrue "FIDO2DelRkByID failed" $?
+}
+
+compareAllRk() {
+    local allRk=""
+    local rps=$(FIDO2ListRP)
+    while IFS= read -r rp_line
+    do
+        local fields=($rp_line)
+        if [[ ${fields[0]} == [0-9][0-9]: ]]; then
+            local rpid=${fields[2]}
+            local rks=$(FIDO2GetRkByRp $rpid)
+            while IFS= read -r rk_line
+            do
+                fields=($rk_line)
+                # RpID UserID CredID
+                allRk+="$rpid ${fields[3]} ${fields[1]}"
+                allRk+=$'\n'
+            done <<< "$rks"
+        fi
+    done <<< "$rps"
+    echo -n "$allRk" | sort > "$TEST_TMP_DIR/sorted_allRk"
+    awk '{print $1,$2,$4}' "$TEST_TMP_DIR/rks" | sort | diff -w "$TEST_TMP_DIR/sorted_allRk" -
 }
 
 makeRPID() {
     # MAX_STORED_RPID_LENGTH=32
     printf "RPID_aaaaaaaaaaaaabbbbbbbbbbbb%02x" $1
+}
+
+makeBlob() {
+    # Length = 64
+    printf "LargeBlob_aaaaaaaaaaaabbbbbbbbbbb_ccccccccccccccdddddddddddddd%02x" $1
 }
 
 makeUserName() {
@@ -78,39 +171,62 @@ makeDispName() {
 }
 
 makeCredAndStore() {
+    local fields
+    # "$1=rpid" "$2=uname"
     fields=($(FIDO2MakeCred $1 $2))
-    userid=${fields[0]}
-    credid=${fields[1]}
+    if [[ $? != 0 ]]; then
+        return 1
+    fi
+    local userid=${fields[0]}
+    local credid=${fields[1]}
+    # RpID UserID UserName CredID
     echo $1 $userid $2 $credid | tee -a "$TEST_TMP_DIR/rks"
 }
 
 test_Reset() {
+    local origPin=$PIN
     fido2-token -R "$RDID"
+    if [[ $? != 0 ]];then
+        echo "Cannot reset the key"
+    fi
     # Set PIN
-    PIN=$'123456\r123456\r'
+    PIN=$origPin$'\r'$origPin$'\r'
     ToolHelper fido2-token -S
-    PIN=123456
+    PIN=$origPin
 }
 
-test_ListRK() {
+test_List() {
     FIDO2ListRP
+    FIDO2ListRK
+}
+
+test_DelAllRk() {
+    local rps=$(FIDO2ListRK)
+    while IFS= read -r rp_line
+    do
+        local fields=($rp_line)
+        if [[ ${fields[0]} == [0-9][0-9]: ]]; then
+            local credid=${fields[1]}
+            FIDO2DelRkByID $credid
+        fi
+    done <<< "$rps"
 }
 
 test_MC() {
     echo $'RelyingPartyID                   UserID                                                                                UserName                                                          CredID'
     >"$TEST_TMP_DIR/rks"
     for((i=1;i<=64;i++)); do
-        rpid=$(makeRPID $i)
-        uname=$(makeUserName $i)
-        makeCredAndStore "$rpid" "$uname"
+        local rpid=$(makeRPID $i)
+        local uname=$(makeUserName $i)
+        makeCredAndStore "$rpid" "$uname" || return 1
     done
-    nline=0
+    local nline=0
     while IFS= read -r line
     do
         if [[ $nline == 0 ]]; then
             assertEquals 'existing rk(s): 64' "$line"
         else
-            fields=($line)
+            local fields=($line)
             rpid=$(makeRPID $nline)
             assertEquals $rpid ${fields[2]}
         fi
@@ -119,14 +235,17 @@ test_MC() {
 }
 
 test_DispName() {
-    randSeq=$(seq 1 64 | shuf)
+    local randSeq=$(seq 1 64 | shuf)
     for i in $randSeq; do
-        rpid=$(makeRPID $i)
-        fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
-        userid=${fields[1]}
-        credid=${fields[3]}
-        display_name=$(makeDispName $i)
-        user_name="new_username$i"
+        local rpid=$(makeRPID $i)
+        local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
+        if [[ ${#fields[@]} != 4 ]];then
+            break;
+        fi
+        local userid=${fields[1]}
+        local credid=${fields[3]}
+        local display_name=$(makeDispName $i)
+        local user_name="new_username$i"
         FIDO2SetName "$credid" "$userid" "$user_name" "$display_name"
         fields=($(FIDO2GetRkByRp $rpid))
         assertEquals "$credid"       "${fields[1]}"
@@ -137,21 +256,75 @@ test_DispName() {
 
 }
 
-test_DelRk() {
+test_LargeBlob() {
+    ToolHelper fido2-token -L -b
+    
+    local randSeq=$(seq 1 64 | shuf)
+    for i in $randSeq; do
+        local rpid=$(makeRPID $i)
+        local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
+        if [[ ${#fields[@]} != 4 ]];then
+            break;
+        fi
+        local credid=${fields[3]}
+        fields=($(FIDO2GetAssert "$rpid" "$credid"))
+        echo ${fields[0]} > "$TEST_TMP_DIR/blobkey"
+        makeBlob $i > "$TEST_TMP_DIR/blob"
+        FIDO2SetBlob "$rpid" "$credid" || return 1
+    done
     randSeq=$(seq 1 64 | shuf)
     for i in $randSeq; do
         rpid=$(makeRPID $i)
-        fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
+        fields=($(grep "$rpid" "$TEST_TMP_DIR/rks"))
+        if [[ ${#fields[@]} != 4 ]];then
+            break;
+        fi
         credid=${fields[3]}
-        FIDO2DelRkByID $credid $rpid
-        sed -i "/$rpid/d" "$TEST_TMP_DIR/rks"
+        FIDO2GetBlob "$rpid" "$credid" || return 1
+        echo "$rpid: $(cat $TEST_TMP_DIR/blob)"
+        makeBlob $i | diff "$TEST_TMP_DIR/blob" -
+        if [[ $? != 0 ]]; then
+            return 1
+        fi
     done
 }
 
-# test_Debug() {
-#     FIDO2MakeCred rp1 un2
-#     FIDO2GetRkByRp RPID_aaaaaaaaaaaaabbbbbbbbbbbb01
-#     FIDO2DelRkByID "6AwF68LTVupyLx5ddpFRQiPS9+UmkSktTXYWREijOjIBAGO0QIKafRKTv8hiGj4aZxPQSQbfySYyH7CGSbLfBM8/d+Az/H8AABB24DP8fwAA/7CVQft/AAAAAAAAAAAAACB1+f///w==" RPID_aaaaaaaaaaaaabbbbbbbbbbbb40
-# }
+test_DelRk() {
+    local randSeq=$(seq 1 64 | shuf)
+    local nrDel=0
+    for i in $randSeq; do
+        local rpid=$(makeRPID $i)
+        local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
+        if [[ ${#fields[@]} != 4 ]];then
+            break;
+        fi
+        local credid=${fields[3]}
+        echo "[$nrDel]" Deleting $credid of $rpid
+        FIDO2DelRkByID $credid
+        sed -i "/$rpid/d" "$TEST_TMP_DIR/rks"
+        ((nrDel++))
+        if [[ $nrDel == 1 || $nrDel == 2 || $nrDel == 10 || $nrDel == 64 ]];then
+            compareAllRk || return 1
+        fi
+    done
+}
+
+test_Debug() {
+    true
+    # echo "For debug only"
+    # FIDO2MakeCred rp1 un2
+    makeCredAndStore thisRP thisUser
+    local rpid=thisRP
+    local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
+    local credid=${fields[3]}
+    fields=($(FIDO2GetAssert "$rpid" "$credid"))
+    echo ${fields[0]} > "$TEST_TMP_DIR/blobkey"
+    makeBlob $i > "$TEST_TMP_DIR/blob"
+    FIDO2SetBlob "$rpid" "$credid" || return 1
+    # FIDO2GetRkByRp rp1
+    # FIDO2DelRkByID "6AwF68LTVupyLx5ddpFRQiPS9+UmkSktTXYWREijOjIBAGO0QIKafRKTv8hiGj4aZxPQSQbfySYyH7CGSbLfBM8/d+Az/H8AABB24DP8fwAA/7CVQft/AAAAAAAAAAAAACB1+f///w==" RPID_aaaaaaaaaaaaabbbbbbbbbbbb40
+    # compareAllRk
+    # FIDO2GetAssert RPID_aaaaaaaaaaaaabbbbbbbbbbbb01 pE23+fIh21aLmVNPJ+HVRnepBYZq+NzYwcz7jCw/prcBADQbgu4wCtk8v94pXkLxEyGfAVEPvdxqK2hJt0rtyrwt6gNn/38AACDpA2f/fwAA/+CkegR/AAAAAAAAAAAAADDo+f///w==
+}
 
 . ./shunit2/shunit2
