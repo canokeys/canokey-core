@@ -31,9 +31,15 @@
 #define ALG_RSA_2048 0x07
 #define ALG_ECC_256 0x11
 #define ALG_ECC_384 0x14
+#define ALG_RSA_3072 0x20 // Not defined in NIST SP 800-78-4
+#define ALG_RSA_4096 0x21 // Not defined in NIST SP 800-78-4
 #define TDEA_BLOCK_SIZE 8
 #define RSA2048_N_LENGTH 256
 #define RSA2048_PQ_LENGTH 128
+#define RSA3072_N_LENGTH 384
+#define RSA3072_PQ_LENGTH 192
+#define RSA4096_N_LENGTH 512
+#define RSA4096_PQ_LENGTH 256
 #define ECC_256_PRI_KEY_SIZE 32
 #define ECC_256_PUB_KEY_SIZE 64
 #define ECC_384_PRI_KEY_SIZE 48
@@ -99,6 +105,10 @@ static int get_input_size(uint8_t alg) {
     return ECC_256_PRI_KEY_SIZE;
   case ALG_ECC_384:
     return ECC_384_PRI_KEY_SIZE;
+  case ALG_RSA_3072:
+    return RSA3072_N_LENGTH;
+  case ALG_RSA_4096:
+    return RSA4096_N_LENGTH;
   default:
     return 0;
   }
@@ -441,7 +451,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
     if (P2 == 0x9D) pin.is_validated = 0;
 
-    if (alg == ALG_RSA_2048) {
+    if (alg == ALG_RSA_2048 || alg == ALG_RSA_3072 || alg == ALG_RSA_4096) {
       if (length != len[IDX_CHALLENGE]) EXCEPT(SW_WRONG_DATA);
 
       rsa_key_t key;
@@ -723,10 +733,22 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_DATA);
   const char *key_path = get_key_path(P2);
   uint8_t alg = DATA[4];
-  if (alg == ALG_RSA_2048) {
+  if (alg == ALG_RSA_2048 || alg == ALG_RSA_3072 || alg == ALG_RSA_4096) {
+    int bits, n_length;
+    if (alg == ALG_RSA_2048) {
+      bits = 2048;
+      n_length = RSA2048_N_LENGTH;
+    } else if (alg == ALG_RSA_3072) {
+      bits = 3072;
+      n_length = RSA3072_N_LENGTH;
+    } else {
+      bits = 4096;
+      n_length = RSA4096_N_LENGTH;
+    }
+
     rsa_key_t key;
 #ifndef FUZZ // to speed up fuzzing
-    if (rsa_generate_key(&key, 2048) < 0) return -1;
+    if (rsa_generate_key(&key, bits) < 0) return -1;
 #else
     memcpy(
         &key,
@@ -749,20 +771,21 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       return -1;
     }
+
     RDATA[0] = 0x7F;
     RDATA[1] = 0x49;
     RDATA[2] = 0x82;
-    RDATA[3] = HI(6 + RSA2048_N_LENGTH + E_LENGTH);
-    RDATA[4] = LO(6 + RSA2048_N_LENGTH + E_LENGTH);
+    RDATA[3] = HI(6 + n_length + E_LENGTH);
+    RDATA[4] = LO(6 + n_length + E_LENGTH);
     RDATA[5] = 0x81; // modulus
     RDATA[6] = 0x82;
-    RDATA[7] = HI(RSA2048_N_LENGTH);
-    RDATA[8] = LO(RSA2048_N_LENGTH);
+    RDATA[7] = HI(n_length);
+    RDATA[8] = LO(n_length);
     rsa_get_public_key(&key, RDATA + 9);
-    RDATA[9 + RSA2048_N_LENGTH] = 0x82; // exponent
-    RDATA[10 + RSA2048_N_LENGTH] = E_LENGTH;
-    memcpy(RDATA + 11 + RSA2048_N_LENGTH, key.e, E_LENGTH);
-    LL = 11 + RSA2048_N_LENGTH + E_LENGTH;
+    RDATA[9 + n_length] = 0x82; // exponent
+    RDATA[10 + n_length] = E_LENGTH;
+    memcpy(RDATA + 11 + n_length, key.e, E_LENGTH);
+    LL = 11 + n_length + E_LENGTH;
     memzero(&key, sizeof(key));
   } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
     size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
@@ -818,9 +841,19 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t alg = P1;
 
   switch (alg) {
-  case ALG_RSA_2048: {
+  case ALG_RSA_2048:
+  case ALG_RSA_3072:
+  case ALG_RSA_4096: {
     if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
 
+    int pq_length;
+    if (alg == ALG_RSA_2048) {
+      pq_length = RSA2048_PQ_LENGTH;
+    } else if (alg == ALG_RSA_3072) {
+      pq_length = RSA3072_PQ_LENGTH;
+    } else {
+      pq_length = RSA4096_PQ_LENGTH;
+    }
     rsa_key_t key;
     memset(&key, 0, sizeof(key));
     key.nbits = 2048;
@@ -835,45 +868,45 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
     int len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.p + (RSA2048_PQ_LENGTH - len), p, len);
+    memcpy(key.p + (pq_length - len), p, len);
     p += len;
 
     if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.q + (RSA2048_PQ_LENGTH - len), p, len);
+    memcpy(key.q + (pq_length - len), p, len);
     p += len;
 
     if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x03) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.dp + (RSA2048_PQ_LENGTH - len), p, len);
+    memcpy(key.dp + (pq_length - len), p, len);
     p += len;
 
     if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x04) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.dq + (RSA2048_PQ_LENGTH - len), p, len);
+    memcpy(key.dq + (pq_length - len), p, len);
     p += len;
 
     if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
     if (*p++ != 0x05) EXCEPT(SW_WRONG_DATA);
     len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
     if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > RSA2048_PQ_LENGTH) EXCEPT(SW_WRONG_DATA);
+    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
     p += length_size;
-    memcpy(key.qinv + (RSA2048_PQ_LENGTH - len), p, len);
+    memcpy(key.qinv + (pq_length - len), p, len);
 
     if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
       memzero(&key, sizeof(key));
