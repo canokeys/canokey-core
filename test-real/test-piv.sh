@@ -187,16 +187,13 @@ test_FactoryReset() {
 }
 
 test_FillData() {
-    YPT -a set-ccc -a set-chuid -a status
-    longName=OU=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/O=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/L=ThisIsAVeryLongNameThisIsAVeryLongNameThisIsAVeryLongName/ST=ThisIsAVeryLongName/C=CN
-    openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=CertAtSlot$s/$longName"
+    openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
     assertEquals 'openssl gen key' 0 $?
     for s in 9a 9c 9d 9e; do
-        YPT -a import-key -s $s -i $TEST_TMP_DIR/key.pem
+        PIVImportKeyCert $s $TEST_TMP_DIR/key.pem ../test-via-pcsc/long-cert.pem
         assertEquals 'import-key' 0 $?
-        YPT -a import-certificate -s $s -i $TEST_TMP_DIR/cert.pem
-        assertEquals 'import-certificate' 0 $?
     done
+    YPT -a status
 }
 
 . ./shunit2/shunit2
