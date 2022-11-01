@@ -80,6 +80,14 @@ int pin_get_retries(const pin_t *pin) {
   return ctr;
 }
 
+int pin_get_default_retries(const pin_t *pin) {
+  if (pin_get_size(pin) == 0) return 0;
+  uint8_t ctr;
+  int err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
+  if (err < 0) return PIN_IO_FAIL;
+  return ctr;
+}
+
 int pin_clear(const pin_t *pin) {
   int err = write_file(pin->path, NULL, 0, 0, 1);
   if (err < 0) return PIN_IO_FAIL;
