@@ -869,17 +869,20 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   case ALG_RSA_4096: {
     if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
 
-    int pq_length;
+    int pq_length, nbits;
     if (alg == ALG_RSA_2048) {
       pq_length = RSA2048_PQ_LENGTH;
+      nbits = 2048;
     } else if (alg == ALG_RSA_3072) {
       pq_length = RSA3072_PQ_LENGTH;
+      nbits = 3072;
     } else {
       pq_length = RSA4096_PQ_LENGTH;
+      nbits = 4096;
     }
     rsa_key_t key;
     memset(&key, 0, sizeof(key));
-    key.nbits = 2048;
+    key.nbits = nbits;
     key.e[1] = 1;
     key.e[3] = 1;
 
