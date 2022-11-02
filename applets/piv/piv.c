@@ -37,11 +37,11 @@
 #define ALG_RSA_2048  0x07
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
-#define ALG_RSA_3072  0x20 // Not defined in NIST SP 800-78-4
-#define ALG_RSA_4096  0x21 // Not defined in NIST SP 800-78-4
-#define ALG_ED_25519  0x22 // Not defined in NIST SP 800-78-4
-#define ALG_X_25519   0x23 // Not defined in NIST SP 800-78-4
-#define ALG_SM2       0x24 // Not defined in NIST SP 800-78-4
+#define ALG_ED_25519  0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
+#define ALG_RSA_3072  0x50 // Not defined in NIST SP 800-78-4
+#define ALG_RSA_4096  0x51 // Not defined in NIST SP 800-78-4
+#define ALG_X_25519   0x52 // Not defined in NIST SP 800-78-4
+#define ALG_SM2       0x53 // Not defined in NIST SP 800-78-4
 
 #define TDEA_BLOCK_SIZE      8
 #define RSA2048_N_LENGTH     256
