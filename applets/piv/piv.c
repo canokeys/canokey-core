@@ -1056,7 +1056,6 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
       if (alg == ALG_RSA_4096 || alg == ALG_RSA_3072 || alg == ALG_RSA_2048) {
         rsa_key_t key;
         if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
-        rsa_get_public_key(&key, RDATA + pos++);
         int n_length;
         if (alg == ALG_RSA_2048) {
           n_length = RSA2048_N_LENGTH;
@@ -1065,13 +1064,14 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
         } else {
           n_length = RSA4096_N_LENGTH;
         }
-        RDATA[pos++] = 0x82;
+        RDATA[pos++] = 0x82;  // length of the public key (two bytes), including the modulus and the exponent
         RDATA[pos++] = HI(6 + n_length + E_LENGTH);
         RDATA[pos++] = LO(6 + n_length + E_LENGTH);
         RDATA[pos++] = 0x81; // modulus
         RDATA[pos++] = 0x82;
         RDATA[pos++] = HI(n_length);
         RDATA[pos++] = LO(n_length);
+        rsa_get_public_key(&key, RDATA + pos++);
         RDATA[pos++ + n_length] = 0x82; // exponent
         RDATA[pos++ + n_length] = E_LENGTH;
         memcpy(RDATA + pos++ + n_length, key.e, E_LENGTH);
@@ -1086,7 +1086,7 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
           memzero(key, sizeof(key));
           return -1;
         }
-        RDATA[pos++] = pub_key_len + 3;
+        RDATA[pos++] = pub_key_len + 3; // length of the public key (compressed)
         RDATA[pos++] = 0x86;
         RDATA[pos++] = pub_key_len + 1;
         RDATA[pos++] = 0x04;
