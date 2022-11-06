@@ -681,16 +681,18 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   if (P1 == 0x80) {
     openpgp_start_blinking();
     if (ck_generate_key(&key) < 0) {
-      DBG_MSG("Generate key %s failed\n", key_path);
+      ERR_MSG("Generate key %s failed\n", key_path);
       return -1;
     }
     if (ck_write_key(key_path, &key) < 0) {
-      DBG_MSG("Write key %s failed\n", key_path);
+      ERR_MSG("Write key %s failed\n", key_path);
       return -1;
     }
+    DBG_MSG("Generate key %s successful\n", key_path);
     DBG_KEY_META(&key.meta);
   } else if (P1 == 0x81) {
     if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) {
+      DBG_MSG("Generate key %s not set\n", key_path);
       memzero(&key, sizeof(key));
       EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     }
@@ -763,8 +765,8 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if ((key.meta.usage & ENCRYPT) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   openpgp_start_blinking();
 
-  if (ck_read_key(SIG_KEY_PATH, &key) < 0) {
-    DBG_MSG("Read SIG key failed\n");
+  if (ck_read_key(DEC_KEY_PATH, &key) < 0) {
+    ERR_MSG("Read DEC key failed\n");
     return -1;
   }
 
@@ -788,7 +790,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
     if (rsa_decrypt_pkcs_v15(&key.rsa, DATA + 1, &olen, RDATA, &invalid_padding) < 0) {
-      DBG_MSG("Decrypt failed\n");
+      ERR_MSG("Decrypt failed\n");
       memzero(&key, sizeof(key));
       if (invalid_padding) EXCEPT(SW_WRONG_DATA);
       return -1;
@@ -830,7 +832,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
     if (ecdh(key.meta.type, key.ecc.pri, DATA, RDATA) < 0) {
-      DBG_MSG("ECDH failed\n");
+      ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
       return -1;
     }
