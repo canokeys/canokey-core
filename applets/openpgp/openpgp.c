@@ -870,7 +870,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
     memzero(&key, sizeof(key));
-    LL = PUBLIC_KEY_LENGTH[key.meta.type];
+    LL = PRIVATE_KEY_LENGTH[key.meta.type];
   }
 
   return 0;
