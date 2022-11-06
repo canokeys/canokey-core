@@ -24,13 +24,13 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
   case SECP384R1:
   case SM2:
     if (include_length) {
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] / 2 + 3; // tag, length, and 0x04
+      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 3; // tag, length, and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] / 2 + 1; // 0x04
+    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
     buf[off++] = 0x04;
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type] / 2);
-    off += PUBLIC_KEY_LENGTH[key->meta.type] / 2;
+    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
+    off += PUBLIC_KEY_LENGTH[key->meta.type];
     break;
 
   case ED25519:
