@@ -349,7 +349,7 @@ int ck_write_key(const char *path, const ck_key_t *key) {
 }
 
 int ck_generate_key(ck_key_t *key) {
-  key->meta.origin = KEY_ORIGIN_IMPORTED;
+  key->meta.origin = KEY_ORIGIN_GENERATED;
 
   if (IS_ECC(key->meta.type)) {
     if (ecc_generate(key->meta.type, &key->ecc) < 0) {
