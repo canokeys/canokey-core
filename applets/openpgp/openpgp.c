@@ -680,8 +680,15 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
 
   if (P1 == 0x80) {
     openpgp_start_blinking();
-    if (ck_generate_key(&key) < 0) return -1;
-    if (ck_write_key(key_path, &key) < 0) return -1;
+    if (ck_generate_key(&key) < 0) {
+      DBG_MSG("Generate key %s failed\n", key_path);
+      return -1;
+    }
+    if (ck_write_key(key_path, &key) < 0) {
+      DBG_MSG("Write key %s failed\n", key_path);
+      return -1;
+    }
+    DBG_KEY_META(&key.meta);
   } else if (P1 == 0x81) {
     if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) {
       memzero(&key, sizeof(key));
@@ -697,7 +704,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   int len = ck_encode_public_key(&key, &RDATA[2], true);
   memzero(&key, sizeof(key));
   if (len < 0) return -1;
-  LL = len;
+  LL = len + 2;
   if (P1 == 0x80 && strcmp(key_path, SIG_KEY_PATH) == 0) return reset_sig_counter();
 
   return 0;
@@ -756,7 +763,12 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if ((key.meta.usage & ENCRYPT) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   openpgp_start_blinking();
 
-  if (ck_read_key(SIG_KEY_PATH, &key) < 0) return -1;
+  if (ck_read_key(SIG_KEY_PATH, &key) < 0) {
+    DBG_MSG("Read SIG key failed\n");
+    return -1;
+  }
+
+  DBG_KEY_META(&key.meta);
 
   if (IS_RSA(key.meta.type)) {
     DBG_MSG("Using RSA key: %d\n", key.meta.type);

@@ -15,10 +15,12 @@
 #include <stdio.h>
 #define DBG_MSG(format, ...) printf("[DBG] %s(%d): " format, __func__, __LINE__, ##__VA_ARGS__)
 #define ERR_MSG(format, ...) printf("[ERR] %s(%d): " format, __func__, __LINE__, ##__VA_ARGS__)
+#define DBG_KEY_META(meta) printf("[DBG] %s(%d): type: %d, origin: %d, usage: %d, pin: %d, touch: %d\n", __func__, __LINE__, (meta)->type, (meta)->origin, (meta)->usage, (meta)->pin_policy, (meta)->touch_policy);
 #define PRINT_HEX(...) print_hex(__VA_ARGS__)
 #else
 #define DBG_MSG(...) do {} while(0)
 #define ERR_MSG(...) do {} while(0)
+#define DBG_KEY_META(...) do {} while(0)
 #define PRINT_HEX(...) do {} while(0)
 #endif
 
