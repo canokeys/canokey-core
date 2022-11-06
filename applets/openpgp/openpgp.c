@@ -681,6 +681,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   if (P1 == 0x80) {
     openpgp_start_blinking();
     if (ck_generate_key(&key) < 0) return -1;
+    if (ck_write_key(key_path, &key) < 0) return -1;
   } else if (P1 == 0x81) {
     if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) {
       memzero(&key, sizeof(key));

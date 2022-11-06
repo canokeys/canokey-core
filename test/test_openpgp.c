@@ -98,7 +98,7 @@ static void test_reset_retry_counter(void **state) {
 
   capdu->ins = OPENPGP_INS_VERIFY;
   capdu->p1 = 0x00;
-  capdu->p2 = 0x81;
+  capdu->p2 = 0x82;
   capdu->lc = 6;
   strcpy((char *)capdu->data, "654321");
   openpgp_process_apdu(capdu, rapdu);
@@ -175,7 +175,7 @@ static void test_generate_key(void **state) {
   capdu->p2 = 0x86;
   openpgp_process_apdu(capdu, rapdu);
   print_hex(rapdu->data, rapdu->len);
-  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
+  assert_int_equal(rapdu->sw, SW_WRONG_LENGTH);
 }
 
 static void test_special(void **state) {
