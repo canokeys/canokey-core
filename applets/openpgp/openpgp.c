@@ -757,6 +757,8 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
     return -1;
   }
 
+  DBG_KEY_META(&key.meta);
+
   int len = ck_sign(&key, DATA, LC, RDATA);
   if (len < 0) {
     ERR_MSG("Sign failed\n");
