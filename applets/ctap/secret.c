@@ -52,9 +52,9 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
 
   if (alg_type == COSE_ALG_ES256) {
     kh->alg_type = COSE_ALG_ES256;
-    do {
-      generate_credential_id_nonce_tag(kh, pubkey);
-    } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
+//    do {
+//      generate_credential_id_nonce_tag(kh, pubkey);
+//    } while (ecc_complete_key(SECP256R1, pubkey, pubkey) < 0);
     return 0;
   } else if (alg_type == COSE_ALG_EDDSA) {
     kh->alg_type = COSE_ALG_EDDSA;
@@ -86,13 +86,13 @@ size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
   uint8_t key[32];
   int ret = read_pri_key(key);
   if (ret < 0) return ret;
-  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
+//  ecc_sign(SECP256R1, key, digest, sig);
   memzero(key, sizeof(key));
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
 size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
-  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
+//  ecc_sign(SECP256R1, key, digest, sig);
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 

@@ -92,7 +92,7 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_update(req->chal, U2F_CHAL_SIZE);
   sha256_final(req->appId);
   memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.signCount));
-  ecdsa_sign(ECC_SECP256R1, priv_key, req->appId, resp->sig);
+  ecc_sign(SECP256R1, priv_key, req->appId, resp->sig);
   memzero(priv_key, sizeof(priv_key));
   size_t signature_len = ecdsa_sig2ansi(U2F_EC_KEY_SIZE, resp->sig, resp->sig);
   LL = signature_len + 5;

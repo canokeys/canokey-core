@@ -62,8 +62,8 @@ uint8_t ctap_install(uint8_t reset) {
   credential_idx = 0;
   last_cmd = 0xff;
   random_buffer(pin_token, sizeof(pin_token));
-  if (ecc_generate(ECC_SECP256R1, key_agreement_keypair, key_agreement_keypair + PRI_KEY_SIZE) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
+//  if (ecc_generate(SECP256R1, key_agreement_keypair, key_agreement_keypair + PRI_KEY_SIZE) < 0)
+//    return CTAP2_ERR_UNHANDLED_REQUEST;
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -152,7 +152,7 @@ static void build_ed25519_cose_key(uint8_t *data) {
 }
 
 static uint8_t get_shared_secret(uint8_t *pub_key) {
-  int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_keypair, pub_key, pub_key);
+  int ret = ecdh(SECP256R1, key_agreement_keypair, pub_key, pub_key);
   if (ret < 0) return 1;
   sha256_raw(pub_key, PRI_KEY_SIZE, pub_key);
   return 0;
