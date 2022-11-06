@@ -3,7 +3,6 @@
 #include <common.h>
 #include <device.h>
 #include <ecc.h>
-#include <ed25519.h>
 #include <key.h>
 #include <memzero.h>
 #include <openpgp.h>
@@ -1031,7 +1030,10 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 
   ck_key_t key;
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
-  if (ck_parse_openpgp(&key, p, LC - (p - DATA)) < 0) return -1;
+  int err = ck_parse_openpgp(&key, p, LC - (p - DATA));
+  if (err == KEY_ERR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+  else if (err == KEY_ERR_DATA) EXCEPT(SW_WRONG_DATA);
+  else if (err < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   if (ck_write_key(key_path, &key) < 0) {
     memzero(&key, sizeof(key));
     return -1;

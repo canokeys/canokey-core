@@ -5,7 +5,7 @@
 #include <key.h>
 #include <memory.h>
 
-#define KEY_META_ATTR 0
+#define KEY_META_ATTR 0xFF
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
@@ -70,8 +70,7 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
 }
 
 int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, ck_key_t *key) {
-  memzero(key, sizeof(ck_key_t));
-  key->meta.type = type;
+  memzero(key->data, sizeof(rsa_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
 
   switch (type) {
@@ -179,7 +178,7 @@ int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, ck_key_t *
  * 5F48 xx Concatenation of key data as defined in DO 7F48
  */
 int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
-  memzero(key, sizeof(ck_key_t));
+  memzero(key->data, sizeof(rsa_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
 
   const uint8_t *p = buf;
@@ -329,24 +328,24 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   }
 }
 
-int ck_read_key_metadata(const char *path, key_meta_t *key) {
-  return read_attr(path, KEY_META_ATTR, key, sizeof(key_meta_t));
+int ck_read_key_metadata(const char *path, key_meta_t *meta) {
+  return read_attr(path, KEY_META_ATTR, meta, sizeof(key_meta_t));
 }
 
-int ck_write_key_metadata(const char *path, const key_meta_t *key) {
-  return write_attr(path, KEY_META_ATTR, key, sizeof(key_meta_t));
+int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
+  return write_attr(path, KEY_META_ATTR, meta, sizeof(key_meta_t));
 }
 
 int ck_read_key(const char *path, ck_key_t *key) {
   int err = ck_read_key_metadata(path, &key->meta);
   if (err < 0) return err;
-  return read_file(path, key->data, 0, sizeof(ck_key_t));
+  return read_file(path, key->data, 0, sizeof(rsa_key_t));
 }
 
 int ck_write_key(const char *path, const ck_key_t *key) {
-  int err = ck_write_key_metadata(path, &key->meta);
+  int err = write_file(path, key->data, 0, sizeof(rsa_key_t), 1);
   if (err < 0) return err;
-  return write_file(path, key->data, 0, sizeof(ck_key_t), 1);
+  return ck_write_key_metadata(path, &key->meta);
 }
 
 int ck_generate_key(ck_key_t *key) {
@@ -369,7 +368,7 @@ int ck_generate_key(ck_key_t *key) {
 
 int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig) {
   if (IS_ECC(key->meta.type)) {
-    if (ecc_sign(key->meta.type, &key->ecc, input, sig) < 0) return -1;
+    if (ecc_sign(key->meta.type, &key->ecc, input, input_len, sig) < 0) return -1;
   } else {
     if (rsa_sign_pkcs_v15(&key->rsa, input, input_len, sig) < 0) return -1;
   }

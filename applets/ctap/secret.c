@@ -2,7 +2,6 @@
 #include "secret.h"
 #include <apdu.h>
 #include <ecc.h>
-#include <ed25519.h>
 #include <fs.h>
 #include <hmac.h>
 #include <memzero.h>
@@ -59,7 +58,7 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
   } else if (alg_type == COSE_ALG_EDDSA) {
     kh->alg_type = COSE_ALG_EDDSA;
     generate_credential_id_nonce_tag(kh, pubkey);
-    ed25519_publickey(pubkey, pubkey);
+//    ed25519_publickey(pubkey, pubkey);
     return 0;
   } else {
     return -1;
@@ -97,16 +96,16 @@ size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, ui
 }
 
 size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, size_t data_len, uint8_t *sig) {
-  ed25519_public_key pk;
-  ed25519_publickey(key, pk);
-  ed25519_signature sig_tmp;
-  // ed25519_sign(m, mlen, sk, pk, RS)
-  // m and RS can not share the same buffer
-  // (they are shared outside of this func)
-  ed25519_sign(data, data_len, key, pk, sig_tmp);
-  memcpy(sig, sig_tmp, sizeof(ed25519_signature));
-  memzero(pk, sizeof(pk));
-  return sizeof(ed25519_signature);
+//  ed25519_public_key pk;
+//  ed25519_publickey(key, pk);
+//  ed25519_signature sig_tmp;
+//  // ed25519_sign(m, mlen, sk, pk, RS)
+//  // m and RS can not share the same buffer
+//  // (they are shared outside of this func)
+//  ed25519_sign(data, data_len, key, pk, sig_tmp);
+//  memcpy(sig, sig_tmp, sizeof(ed25519_signature));
+//  memzero(pk, sizeof(pk));
+  return sizeof(K__ed25519_signature);
 }
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
