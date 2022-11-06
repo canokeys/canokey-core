@@ -694,10 +694,12 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
 
   RDATA[0] = 0x7F;
   RDATA[1] = 0x49;
-  ck_encode_public_key(&key, &RDATA[2], true);
-
+  int len = ck_encode_public_key(&key, &RDATA[2], true);
   memzero(&key, sizeof(key));
+  if (len < 0) return -1;
+  LL = len;
   if (P1 == 0x80 && strcmp(key_path, SIG_KEY_PATH) == 0) return reset_sig_counter();
+
   return 0;
 }
 
