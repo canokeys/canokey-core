@@ -847,6 +847,8 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_DATA);
     }
+
+    int public_key_offset;
     if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
       if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 6 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 3 ||
           DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 || DATA[7] != 0x04) {
@@ -854,6 +856,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(&key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
+      public_key_offset = 8;
     } else {
       if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 5 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 2 ||
           DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type]) {
@@ -861,9 +864,10 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(&key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
+      public_key_offset = 7;
     }
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA, RDATA) < 0) {
+    if (ecdh(key.meta.type, key.ecc.pri, DATA + public_key_offset, RDATA) < 0) {
       ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
       return -1;
