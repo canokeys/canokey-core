@@ -717,8 +717,12 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   openpgp_start_blinking();
 
-  if (IS_RSA(key.meta.type) && LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
-    EXCEPT(SW_WRONG_DATA); // DigestInfo should be not longer than 40% of the length of the modulus
+  if (IS_RSA(key.meta.type)) {
+    if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5)
+      EXCEPT(SW_WRONG_LENGTH); // DigestInfo should be not longer than 40% of the length of the modulus
+  } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+    if (LC != PRIVATE_KEY_LENGTH[key.meta.type])
+      EXCEPT(SW_WRONG_LENGTH);
   }
 
   if (ck_read_key(SIG_KEY_PATH, &key) < 0) return -1;
