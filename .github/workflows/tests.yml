@@ -50,7 +50,7 @@ jobs:
     - name: Build for Test
       run: |
         mkdir build && pushd build
-        cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+        cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
         make -j2
       
     - name: Setup a SSH Server
