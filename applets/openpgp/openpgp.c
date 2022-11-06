@@ -712,16 +712,28 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   return 0;
 }
 
-static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
+static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) {
 #ifndef FUZZ
-  if (PW1_MODE81() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (is_sign) {
+    if (PW1_MODE81() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  } else {
+    if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  }
 #endif
-  uint8_t pw1_status;
-  if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
-  if (pw1_status == 0x00) PW1_MODE81_OFF();
+
+  if (is_sign) {
+    uint8_t pw1_status;
+    if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
+    if (pw1_status == 0x00) PW1_MODE81_OFF();
+  }
+
+  const char *key_path = is_sign ? SIG_KEY_PATH : AUT_KEY_PATH;
 
   ck_key_t key;
-  if (ck_read_key_metadata(SIG_KEY_PATH, &key.meta) < 0) return -1;
+  if (ck_read_key_metadata(key_path, &key.meta) < 0) {
+    ERR_MSG("Read metadata failed\n");
+    return -1;
+  }
 
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
   if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
@@ -729,25 +741,45 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   openpgp_start_blinking();
 
   if (IS_RSA(key.meta.type)) {
-    if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5)
-      EXCEPT(SW_WRONG_LENGTH); // DigestInfo should be not longer than 40% of the length of the modulus
-  } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-    if (LC != PRIVATE_KEY_LENGTH[key.meta.type])
+    if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
+      DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
+    }
+  } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+    if (LC != PRIVATE_KEY_LENGTH[key.meta.type]) {
+      DBG_MSG("digest should has the same length as the private key\n");
+      EXCEPT(SW_WRONG_LENGTH);
+    }
   }
 
-  if (ck_read_key(SIG_KEY_PATH, &key) < 0) return -1;
+  if (ck_read_key(key_path, &key) < 0) {
+    ERR_MSG("Read key failed\n");
+    return -1;
+  }
+
   int len = ck_sign(&key, DATA, LC, RDATA);
-  if (len < 0) return -1;
+  if (len < 0) {
+    ERR_MSG("Sign failed\n");
+    return -1;
+  }
 
   memzero(&key, sizeof(key));
   LL = len;
 
-  uint8_t ctr[3];
-  if (read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
-  for (int i = 3; i > 0; --i)
-    if (++ctr[i - 1] != 0) break;
-  if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) return -1;
+  if (is_sign) {
+    uint8_t ctr[3];
+    if (read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) {
+      ERR_MSG("Read sig counter failed\n");
+      return -1;
+    }
+    for (int i = 3; i > 0; --i)
+      if (++ctr[i - 1] != 0) break;
+    if (write_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, ctr, DIGITAL_SIG_COUNTER_LENGTH) < 0) {
+      ERR_MSG("Write sig counter failed\n");
+      return -1;
+    }
+
+  }
 
   return 0;
 }
@@ -1018,7 +1050,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (get_touch_policy(meta.touch_policy) == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
     meta.touch_policy = UIF_TO_TOUCH_POLICY[DATA[0]];
-    if (ck_write_key_metadata(SIG_KEY_PATH, &meta) < 0) return -1;
+    if (ck_write_key_metadata(DEC_KEY_PATH, &meta) < 0) return -1;
     break;
 
   case TAG_UIF_AUT:
@@ -1026,7 +1058,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (get_touch_policy(meta.touch_policy) == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
     meta.touch_policy = UIF_TO_TOUCH_POLICY[DATA[0]];
-    if (ck_write_key_metadata(SIG_KEY_PATH, &meta) < 0) return -1;
+    if (ck_write_key_metadata(AUT_KEY_PATH, &meta) < 0) return -1;
     break;
 
   case TAG_UIF_CACHE_TIME:
@@ -1090,33 +1122,6 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   memzero(&key, sizeof(key));
 
   if (key_ref == 0xB6) return reset_sig_counter();
-  return 0;
-}
-
-static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
-#ifndef FUZZ
-  if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-#endif
-
-  ck_key_t key;
-  if (ck_read_key_metadata(AUT_KEY_PATH, &key.meta) < 0) return -1;
-
-  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
-  if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  openpgp_start_blinking();
-
-  if (IS_RSA(key.meta.type) && LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
-    EXCEPT(SW_WRONG_DATA); // DigestInfo should be not longer than 40% of the length of the modulus
-  }
-
-  if (ck_read_key(SIG_KEY_PATH, &key) < 0) return -1;
-  int len = ck_sign(&key, DATA, LC, RDATA);
-  if (len < 0) return -1;
-
-  memzero(&key, sizeof(key));
-  LL = len;
-
   return 0;
 }
 
@@ -1234,7 +1239,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case OPENPGP_INS_PSO:
     if (P1 == 0x9E && P2 == 0x9A) {
-      ret = openpgp_compute_digital_signature(capdu, rapdu);
+      ret = openpgp_sign_or_auth(capdu, rapdu, true);
       openpgp_stop_blinking();
       break;
     }
@@ -1245,7 +1250,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     }
     EXCEPT(SW_WRONG_P1P2);
   case OPENPGP_INS_INTERNAL_AUTHENTICATE:
-    ret = openpgp_internal_authenticate(capdu, rapdu);
+    ret = openpgp_sign_or_auth(capdu, rapdu, false);
     openpgp_stop_blinking();
     break;
   case OPENPGP_INS_TERMINATE:
