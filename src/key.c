@@ -5,6 +5,12 @@
 #include <key.h>
 #include <memory.h>
 
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define be32toh(x) (x)
+#else
+#define be32toh(x) __builtin_bswap32(x)
+#endif
+
 #define KEY_META_ATTR 0xFF
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
@@ -315,7 +321,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     memcpy(key->rsa.dp + PRIVATE_KEY_LENGTH[key->meta.type] - dp_len, p, dp_len);
     p += dp_len;
     memcpy(key->rsa.dq + PRIVATE_KEY_LENGTH[key->meta.type] - dq_len, p, dq_len);
-    if (*(uint32_t *)key->rsa.p < CEIL_DIV_SQRT2 || *(uint32_t *)key->rsa.q < CEIL_DIV_SQRT2) {
+    if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
