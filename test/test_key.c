@@ -77,7 +77,7 @@ static void test_encode_rsa(void **state) {
       0x22, 0x9a, 0x72, 0x58, 0x66, 0x7a, 0x39, 0x64, 0xf0, 0x8e, 0x06, 0xdf, 0xbf, 0xe3, 0xe3, 0xc1, 0xcf, 0x91, 0x83,
       0x95, 0xb8, 0x9c, 0x1f, 0xdb, 0x18, 0x90, 0x77, 0x11};
 
-  key_t key = {.meta.type = RSA4096, .meta.origin = KEY_ORIGIN_IMPORTED, .meta.usage = SIGN};
+  ck_key_t key = {.meta.type = RSA4096, .meta.origin = KEY_ORIGIN_IMPORTED, .meta.usage = SIGN};
   key.rsa.nbits = 4096;
   memcpy(key.rsa.p, p, 256);
   memcpy(key.rsa.q, q, 256);
@@ -96,7 +96,7 @@ static void test_encode_ecdsa(void **state) {
 
   uint8_t buf[1024], expected[1024];
 
-  key_t key = {.meta.type = SECP256R1, .meta.origin = KEY_ORIGIN_IMPORTED, .meta.usage = SIGN};
+  ck_key_t key = {.meta.type = SECP256R1, .meta.origin = KEY_ORIGIN_IMPORTED, .meta.usage = SIGN};
   memcpy(key.ecc.pri,
          "\xd3\x05\x19\xbc\xae\x8d\x18\x0d\xbf\xcc\x94\xfe\x0b\x83\x83\xdc\x31\x01\x85\xb0\xbe\x97\xb4\x36\x50\x83\xeb"
          "\xce\xcc\xd7\x57\x59",
@@ -124,7 +124,7 @@ static void test_encode_eddsa(void **state) {
 
   uint8_t buf[1024], expected[1024];
 
-  key_t key = {.meta.type = ED25519, .meta.origin = KEY_ORIGIN_IMPORTED, .meta.usage = SIGN};
+  ck_key_t key = {.meta.type = ED25519, .meta.origin = KEY_ORIGIN_IMPORTED, .meta.usage = SIGN};
   memcpy(key.ecc.pri,
          "\x9d\x61\xb1\x9d\xef\xfd\x5a\x60\xba\x84\x4a\xf4\x92\xec\x2c\xc4\x44\x49\xc5\x69\x7b\x32\x69\x19\x70\x3b\xac\x03\x1c\xae\x7f\x60",
          32);

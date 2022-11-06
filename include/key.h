@@ -52,7 +52,7 @@ typedef struct {
     ecc_key_t ecc;
     uint8_t data[0];
   };
-} key_t;
+} ck_key_t;
 
 
 /**
@@ -63,7 +63,7 @@ typedef struct {
  * @param include_length encode the length or not
  * @return encoded length
  */
-int ck_encode_public_key(const key_t *key, uint8_t *buf, bool include_length);
+int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length);
 
 /**
  * Parse the key imported to PIV
@@ -74,20 +74,20 @@ int ck_encode_public_key(const key_t *key, uint8_t *buf, bool include_length);
  * @param key     parsed key. origin will be set to KEY_ORIGIN_IMPORTED.
  * @return 0 for success. Negative values for errors.
  */
-int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, key_t *key);
+int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, ck_key_t *key);
 
-int ck_parse_openpgp(key_t *key, const uint8_t *buf, size_t buf_len);
+int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len);
 
 int ck_read_key_metadata(const char *path, key_meta_t *key);
 
 int ck_write_key_metadata(const char *path, const key_meta_t *key);
 
-int ck_read_key(const char *path, key_t *key);
+int ck_read_key(const char *path, ck_key_t *key);
 
-int ck_write_key(const char *path, const key_t *key);
+int ck_write_key(const char *path, const ck_key_t *key);
 
-int ck_generate_key(key_t *key);
+int ck_generate_key(ck_key_t *key);
 
-int ck_sign(const key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig);
+int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig);
 
 #endif // CANOKEY_CORE_KEY_H

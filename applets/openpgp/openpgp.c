@@ -216,7 +216,7 @@ int openpgp_install(uint8_t reset) {
   // Key data, default to RSA2048
   uint8_t buf[20];
   memzero(buf, sizeof(buf));
-  key_t key = {.meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.type = RSA2048};
+  ck_key_t key = {.meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.type = RSA2048};
 
   key.meta.usage = SIGN;
   if (ck_write_key(SIG_KEY_PATH, &key) < 0) return -1;
@@ -676,7 +676,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL) EXCEPT(SW_WRONG_DATA);
 
-  key_t key;
+  ck_key_t key;
   if (ck_read_key(key_path, &key) < 0) return -1;
 
   if (P1 == 0x80) {
@@ -709,7 +709,7 @@ static int openpgp_compute_digital_signature(const CAPDU *capdu, RAPDU *rapdu) {
   if (read_attr(DATA_PATH, TAG_PW_STATUS, &pw1_status, 1) < 0) return -1;
   if (pw1_status == 0x00) PW1_MODE81_OFF();
 
-  key_t key;
+  ck_key_t key;
   if (ck_read_key_metadata(SIG_KEY_PATH, &key.meta) < 0) return -1;
 
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
@@ -742,7 +742,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  key_t key;
+  ck_key_t key;
   if (ck_read_key_metadata(DEC_KEY_PATH, &key.meta) < 0) return -1;
 
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
@@ -1029,7 +1029,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p != 0x00 && *p != 0x03) EXCEPT(SW_WRONG_DATA);
   p += *p + 1;
 
-  key_t key;
+  ck_key_t key;
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
   if (ck_parse_openpgp(&key, p, LC - (p - DATA)) < 0) return -1;
   if (ck_write_key(key_path, &key) < 0) {
@@ -1047,7 +1047,7 @@ static int openpgp_internal_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  key_t key;
+  ck_key_t key;
   if (ck_read_key_metadata(AUT_KEY_PATH, &key.meta) < 0) return -1;
 
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();

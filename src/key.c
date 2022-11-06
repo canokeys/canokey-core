@@ -9,7 +9,7 @@
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
-int ck_encode_public_key(const key_t *key, uint8_t *buf, bool include_length) {
+int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length) {
   int off = 0;
 
   switch (key->meta.type) {
@@ -69,8 +69,8 @@ int ck_encode_public_key(const key_t *key, uint8_t *buf, bool include_length) {
   return off;
 }
 
-int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, key_t *key) {
-  memzero(key, sizeof(key_t));
+int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, ck_key_t *key) {
+  memzero(key, sizeof(ck_key_t));
   key->meta.type = type;
   key->meta.origin = KEY_ORIGIN_IMPORTED;
 
@@ -85,11 +85,11 @@ int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, key_t *key
     if (buf[0] != 0x06 && buf[1] != PRIVATE_KEY_LENGTH[type]) return KEY_ERR_DATA;
     memcpy(key->ecc.pri, &buf[2], PRIVATE_KEY_LENGTH[type]);
     if (!ecc_verify_private_key(type, &key->ecc)) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
     if (ecc_complete_key(type, &key->ecc) < 0) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return KEY_ERR_PROC;
     }
     return 0;
@@ -149,7 +149,7 @@ int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, key_t *key
     memcpy(key->rsa.qinv + (PRIVATE_KEY_LENGTH[type] - len), p, len);
 
     if (*(uint32_t *)key->rsa.p < CEIL_DIV_SQRT2 || *(uint32_t *)key->rsa.q < CEIL_DIV_SQRT2) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
 
@@ -178,8 +178,8 @@ int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, key_t *key
  *         99 xx public key (optional)
  * 5F48 xx Concatenation of key data as defined in DO 7F48
  */
-int ck_parse_openpgp(key_t *key, const uint8_t *buf, size_t buf_len) {
-  memzero(key, sizeof(key_t));
+int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
+  memzero(key, sizeof(ck_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
 
   const uint8_t *p = buf;
@@ -231,11 +231,11 @@ int ck_parse_openpgp(key_t *key, const uint8_t *buf, size_t buf_len) {
     memcpy(key->ecc.pri + n_leading_zeros, p, data_pri_key_len);
 
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
     if (ecc_complete_key(key->meta.type, &key->ecc) < 0) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return KEY_ERR_PROC;
     }
 
@@ -317,7 +317,7 @@ int ck_parse_openpgp(key_t *key, const uint8_t *buf, size_t buf_len) {
     p += dp_len;
     memcpy(key->rsa.dq + PRIVATE_KEY_LENGTH[key->meta.type] - dq_len, p, dq_len);
     if (*(uint32_t *)key->rsa.p < CEIL_DIV_SQRT2 || *(uint32_t *)key->rsa.q < CEIL_DIV_SQRT2) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
 
@@ -337,37 +337,37 @@ int ck_write_key_metadata(const char *path, const key_meta_t *key) {
   return write_attr(path, KEY_META_ATTR, key, sizeof(key_meta_t));
 }
 
-int ck_read_key(const char *path, key_t *key) {
+int ck_read_key(const char *path, ck_key_t *key) {
   int err = ck_read_key_metadata(path, &key->meta);
   if (err < 0) return err;
-  return read_file(path, key->data, 0, sizeof(key_t));
+  return read_file(path, key->data, 0, sizeof(ck_key_t));
 }
 
-int ck_write_key(const char *path, const key_t *key) {
+int ck_write_key(const char *path, const ck_key_t *key) {
   int err = ck_write_key_metadata(path, &key->meta);
   if (err < 0) return err;
-  return write_file(path, key->data, 0, sizeof(key_t), 1);
+  return write_file(path, key->data, 0, sizeof(ck_key_t), 1);
 }
 
-int ck_generate_key(key_t *key) {
+int ck_generate_key(ck_key_t *key) {
   key->meta.origin = KEY_ORIGIN_IMPORTED;
 
   if (IS_ECC(key->meta.type)) {
     if (ecc_generate(key->meta.type, &key->ecc) < 0) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return -1;
     }
     return 0;
   } else {
     if (rsa_generate_key(&key->rsa, PUBLIC_KEY_LENGTH[key->meta.type] * 8) < 0) {
-      memzero(key, sizeof(key_t));
+      memzero(key, sizeof(ck_key_t));
       return -1;
     }
     return 0;
   }
 }
 
-int ck_sign(const key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig) {
+int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig) {
   if (IS_ECC(key->meta.type)) {
     if (ecc_sign(key->meta.type, &key->ecc, input, sig) < 0) return -1;
   } else {
