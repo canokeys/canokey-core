@@ -759,19 +759,24 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (ck_read_key(SIG_KEY_PATH, &key) < 0) return -1;
 
   if (IS_RSA(key.meta.type)) {
+    DBG_MSG("Using RSA key: %d\n", key.meta.type);
+
     size_t olen;
     uint8_t invalid_padding;
 
     if (LC < PUBLIC_KEY_LENGTH[key.meta.type] + 1) {
+      DBG_MSG("Incorrect LC\n");
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_LENGTH);
     }
     if (DATA[0] != 0x00) { // Padding indicator byte (00) for RSA
+      DBG_MSG("Incorrect padding indicator\n");
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_DATA);
     }
 
     if (rsa_decrypt_pkcs_v15(&key.rsa, DATA + 1, &olen, RDATA, &invalid_padding) < 0) {
+      DBG_MSG("Decrypt failed\n");
       memzero(&key, sizeof(key));
       if (invalid_padding) EXCEPT(SW_WRONG_DATA);
       return -1;
@@ -780,33 +785,43 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
     LL = olen;
   } else {
+    DBG_MSG("Using ECC key: %d\n", key.meta.type);
+
     // check data and length first
     // A6 xx Cipher DO
     //       7F49 xx Public Key DO
     //               86 xx // External Public Key (04 || x || y, for short Weierstrass; x for X25519)
     if (LC < 8) {
+      DBG_MSG("Incorrect LC\n");
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_LENGTH);
     }
     if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
+      DBG_MSG("Incorrect data\n");
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_DATA);
     }
     if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
       if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 6 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 3 ||
           DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 || DATA[7] != 0x04) {
+        DBG_MSG("Incorrect length data\n");
         memzero(&key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
     } else {
       if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 5 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 2 ||
           DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type]) {
+        DBG_MSG("Incorrect length data\n");
         memzero(&key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
     }
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA, RDATA) < 0) return -1;
+    if (ecdh(key.meta.type, key.ecc.pri, DATA, RDATA) < 0) {
+      DBG_MSG("ECDH failed\n");
+      memzero(&key, sizeof(key));
+      return -1;
+    }
 
     memzero(&key, sizeof(key));
     LL = PUBLIC_KEY_LENGTH[key.meta.type];
