@@ -890,7 +890,11 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
         break;
       }
     }
-    if (type == KEY_TYPE_END) EXCEPT(SW_WRONG_DATA);
+    if (type == KEY_TYPE_END) {
+      DBG_MSG("Invalid attr type\n");
+      EXCEPT(SW_WRONG_DATA);
+    }
+    DBG_MSG("New attr type: %d\n", type);
 
     const char *key_path = NULL;
     if (tag == TAG_ALGORITHM_ATTRIBUTES_SIG) {
@@ -902,11 +906,20 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
     if (ck_read_key_metadata(key_path, &meta) < 0) return -1;
-    if (type == meta.type) break; // Key algorithm attribute unchanged
+    if (type == meta.type) { // Key algorithm attribute unchanged
+      DBG_MSG("Attr unchanged\n");
+      break;
+    }
     if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) {
-      if (type == ED25519) EXCEPT(SW_WRONG_DATA);
+      if (type == ED25519) {
+        DBG_MSG("DEC key disallows ed25519\n");
+        EXCEPT(SW_WRONG_DATA);
+      }
     } else { // TAG_ALGORITHM_ATTRIBUTES_SIG or TAG_ALGORITHM_ATTRIBUTES_AUT
-      if (type == X25519) EXCEPT(SW_WRONG_DATA);
+      if (type == X25519) {
+        DBG_MSG("SIG/AUT key disallows x25519\n");
+        EXCEPT(SW_WRONG_DATA);
+      }
     }
     meta.type = type;
     meta.origin = KEY_ORIGIN_NOT_PRESENT;
