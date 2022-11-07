@@ -373,10 +373,27 @@ int ck_generate_key(ck_key_t *key) {
 }
 
 int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig) {
+  DBG_MSG("Data: ");
+  PRINT_HEX(input, input_len);
   if (IS_ECC(key->meta.type)) {
-    if (ecc_sign(key->meta.type, &key->ecc, input, input_len, sig) < 0) return -1;
+    DBG_MSG("Key: ");
+    PRINT_HEX(key->ecc.pub, PRIVATE_KEY_LENGTH[key->meta.type]);
+    if (ecc_sign(key->meta.type, &key->ecc, input, input_len, sig) < 0) {
+      ERR_MSG("ECC signing failed\n");
+      DBG_KEY_META(&key->meta);
+      return -1;
+    }
   } else {
-    if (rsa_sign_pkcs_v15(&key->rsa, input, input_len, sig) < 0) return -1;
+    DBG_MSG("Key: ");
+    PRINT_HEX(key->rsa.p, PRIVATE_KEY_LENGTH[key->meta.type]);
+    PRINT_HEX(key->rsa.q, PRIVATE_KEY_LENGTH[key->meta.type]);
+    if (rsa_sign_pkcs_v15(&key->rsa, input, input_len, sig) < 0) {
+      ERR_MSG("RSA signing failed\n");
+      DBG_KEY_META(&key->meta);
+      return -1;
+    }
   }
+  DBG_MSG("Sig: ");
+  PRINT_HEX(sig, SIGNATURE_LENGTH[key->meta.type]);
   return SIGNATURE_LENGTH[key->meta.type];
 }
