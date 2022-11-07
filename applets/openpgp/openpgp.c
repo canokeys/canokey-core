@@ -875,10 +875,8 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
 
-    memzero(&key, sizeof(key));
     LL = PRIVATE_KEY_LENGTH[key.meta.type];
-    DBG_MSG("Sig (%d): ", LL);
-    PRINT_HEX(RDATA, LL);
+    memzero(&key, sizeof(key));
   }
 
   return 0;
