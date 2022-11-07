@@ -938,9 +938,30 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     key_type_t type;
     for (type = SECP256R1 /* i.e., 0 */; type < KEY_TYPE_END; ++type) {
       const uint8_t *attr = algo_attr[type];
-      if (LC == attr[0] && memcmp(&attr[2], &DATA[1], LC - 1) == 0) { // OID or RSA params
-        break;
+      if (LC == attr[0]) {
+        if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
+          if (DATA[2] != 0) {
+            DBG_MSG("Invalid attr type\n");
+            EXCEPT(SW_WRONG_DATA);
+          }
+          if (DATA[1] == 0x08) {
+            type = RSA2048;
+            break;
+          } else if (DATA[1] == 0x0C) {
+            type = RSA3072;
+            break;
+          } else if (DATA[1] == 0x10) {
+            type = RSA4096;
+            break;
+          } else {
+            DBG_MSG("Invalid attr type\n");
+            EXCEPT(SW_WRONG_DATA);
+          }
+        } else if (memcmp(&attr[2], &DATA[1], LC - 1) == 0) { // OID
+          break;
+        }
       }
+
     }
     if (type == KEY_TYPE_END) {
       DBG_MSG("Invalid attr type\n");
