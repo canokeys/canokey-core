@@ -45,13 +45,6 @@
 #define __weak __attribute__((weak))
 #define __packed __attribute__((packed))
 
-#define SWAP(x, y, T)                                                                                                  \
-  do {                                                                                                                 \
-    T SWAP = x;                                                                                                        \
-    x = y;                                                                                                             \
-    y = SWAP;                                                                                                          \
-  } while (0)
-
 
 // get length of tlv with bounds checking
 uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, size_t *length_size);
@@ -61,7 +54,5 @@ uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, s
  * @param buf buffer to be filled
  */
 void fill_sn(uint8_t *buf);
-
-void swap_big_number_endian(uint8_t buf[32]);
 
 #endif // CANOKEY_CORE_INCLUDE_COMMON_H
