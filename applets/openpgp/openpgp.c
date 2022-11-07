@@ -671,7 +671,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   if (ck_read_key(key_path, &key) < 0) return -1;
 
   if (P1 == 0x80) {
-    start_blinking(0);
+    start_quick_blinking(0);
     if (ck_generate_key(&key) < 0) {
       ERR_MSG("Generate key %s failed\n", key_path);
       return -1;
@@ -730,7 +730,7 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
   if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  start_blinking(0);
+  start_quick_blinking(0);
 
   if (IS_RSA(key.meta.type)) {
     if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
@@ -789,7 +789,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
   if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if ((key.meta.usage & ENCRYPT) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  start_blinking(0);
+  start_quick_blinking(0);
 
   if (ck_read_key(DEC_KEY_PATH, &key) < 0) {
     ERR_MSG("Read DEC key failed\n");

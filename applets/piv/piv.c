@@ -778,7 +778,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
-  start_blinking(0);
+  start_quick_blinking(0);
   if (ck_generate_key(&key) < 0) {
     ERR_MSG("Generate key %s failed\n", key_path);
     return -1;
