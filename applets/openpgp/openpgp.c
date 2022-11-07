@@ -180,14 +180,6 @@ static int UIF_TO_TOUCH_POLICY[3] = {[UIF_DISABLED] = TOUCH_POLICY_DEFAULT,
                                      [UIF_ENABLED] = TOUCH_POLICY_CACHED,
                                      [UIF_PERMANENTLY] = TOUCH_POLICY_PERMANENT};
 
-static inline void openpgp_start_blinking(void) {
-  if (!is_nfc()) start_blinking_interval(0, 25);
-}
-
-static inline void openpgp_stop_blinking(void) {
-  if (!is_nfc()) stop_blinking();
-}
-
 void openpgp_poweroff(void) {
   pw1_mode = 0;
   pw1.is_validated = 0;
@@ -679,7 +671,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   if (ck_read_key(key_path, &key) < 0) return -1;
 
   if (P1 == 0x80) {
-    openpgp_start_blinking();
+    start_blinking(0);
     if (ck_generate_key(&key) < 0) {
       ERR_MSG("Generate key %s failed\n", key_path);
       return -1;
@@ -738,7 +730,7 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
   if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  openpgp_start_blinking();
+  start_blinking(0);
 
   if (IS_RSA(key.meta.type)) {
     if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
@@ -797,7 +789,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
   if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if ((key.meta.usage & ENCRYPT) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  openpgp_start_blinking();
+  start_blinking(0);
 
   if (ck_read_key(DEC_KEY_PATH, &key) < 0) {
     ERR_MSG("Read DEC key failed\n");
@@ -1262,23 +1254,23 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR:
     ret = openpgp_generate_asymmetric_key_pair(capdu, rapdu);
-    openpgp_stop_blinking();
+    stop_blinking();
     break;
   case OPENPGP_INS_PSO:
     if (P1 == 0x9E && P2 == 0x9A) {
       ret = openpgp_sign_or_auth(capdu, rapdu, true);
-      openpgp_stop_blinking();
+      stop_blinking();
       break;
     }
     if (P1 == 0x80 && P2 == 0x86) {
       ret = openpgp_decipher(capdu, rapdu);
-      openpgp_stop_blinking();
+      stop_blinking();
       break;
     }
     EXCEPT(SW_WRONG_P1P2);
   case OPENPGP_INS_INTERNAL_AUTHENTICATE:
     ret = openpgp_sign_or_auth(capdu, rapdu, false);
-    openpgp_stop_blinking();
+    stop_blinking();
     break;
   case OPENPGP_INS_TERMINATE:
     ret = openpgp_terminate(capdu, rapdu);

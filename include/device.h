@@ -78,7 +78,7 @@ void device_update_led(void);
  */
 void start_blinking_interval(uint8_t sec, uint32_t interval);
 static inline void start_blinking(uint8_t sec) {
-  start_blinking_interval(sec, 200);
+  if (is_nfc()) start_blinking_interval(sec, 200);
 }
 void stop_blinking(void);
 uint8_t device_is_blinking(void);
