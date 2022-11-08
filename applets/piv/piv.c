@@ -512,9 +512,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       // The input has been padded
       if (rsa_private(&key.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
         ERR_MSG("Sign failed\n");
+        memzero(&key, sizeof(key));
         return -1;
       }
-      memzero(&key, sizeof(key));
       RDATA[0] = 0x7C;
       RDATA[1] = 0x82;
       RDATA[2] = HI(SIGNATURE_LENGTH[key.meta.type] + 4);
@@ -524,21 +524,26 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[6] = HI(SIGNATURE_LENGTH[key.meta.type]);
       RDATA[7] = LO(SIGNATURE_LENGTH[key.meta.type]);
       LL = SIGNATURE_LENGTH[key.meta.type] + 8;
+
+      memzero(&key, sizeof(key));
     } else if (IS_ECC(key.meta.type)) {
       int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
         return -1;
       }
-      memzero(&key, sizeof(key));
+
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
         sig_len = (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
       }
+
       RDATA[0] = 0x7C;
       RDATA[1] = sig_len + 2;
       RDATA[2] = TAG_RESPONSE;
       RDATA[3] = sig_len;
       LL = sig_len + 4;
+
+      memzero(&key, sizeof(key));
     } else {
       return -1;
     }
@@ -703,12 +708,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
 
-    memzero(&key, sizeof(key));
     RDATA[0] = 0x7C;
     RDATA[1] = SIGNATURE_LENGTH[key.meta.type] + 2;
     RDATA[2] = TAG_RESPONSE;
     RDATA[3] = SIGNATURE_LENGTH[key.meta.type];
     LL = SIGNATURE_LENGTH[key.meta.type] + 4;
+
+    memzero(&key, sizeof(key));
   }
 
   //
