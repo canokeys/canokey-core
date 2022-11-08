@@ -714,10 +714,10 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
     RDATA[0] = 0x7C;
-    RDATA[1] = SIGNATURE_LENGTH[key.meta.type] + 2;
+    RDATA[1] = PRIVATE_KEY_LENGTH[key.meta.type] + 2;
     RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = SIGNATURE_LENGTH[key.meta.type];
-    LL = SIGNATURE_LENGTH[key.meta.type] + 4;
+    RDATA[3] = PRIVATE_KEY_LENGTH[key.meta.type];
+    LL = PRIVATE_KEY_LENGTH[key.meta.type] + 4;
 
     memzero(&key, sizeof(key));
   }
