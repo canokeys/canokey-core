@@ -572,6 +572,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
+    }
+    DBG_KEY_META(&key.meta);
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
@@ -611,6 +616,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
+    }
+    DBG_KEY_META(&key.meta);
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
     random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, TDEA_BLOCK_SIZE);
 
@@ -655,6 +665,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[3] = TDEA_BLOCK_SIZE;
     LL = TDEA_BLOCK_SIZE + 4;
 
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
+    }
+    DBG_KEY_META(&key.meta);
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
