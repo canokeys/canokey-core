@@ -105,197 +105,197 @@ jobs:
 #    - name: Test the OATH
 #      run: go test -v test-via-pcsc/oath_test.go
 
-    - name: Test the OpenPGP
-      # GPG requires a tty to work
-      shell: |
-        script -e -c "bash --noprofile --norc -eo pipefail {0}"
-      run: |
-        set -o xtrace
-        go test -v test-via-pcsc/openpgp_test.go
-        pkill gpg-agent || true
-        #echo 'enable-ssh-support' > ~/.gnupg/gpg-agent.conf
-        export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
-        mkdir -p ~/.ssh /tmp/mock
-        python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1152)]),end='')" > /tmp/random.txt
-        echo 9876543210 >"/tmp/mock/Reset Code"
-        echo 12345678 >"/tmp/mock/Passphrase:"
-        echo 12345678 >"/tmp/mock/Admin PIN"
-        echo 123456 >"/tmp/mock/PIN"
-        echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key
-        KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
-        Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
-        Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; gpg --card-status; }
-        Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg --expert --command-fd 0 --yes --edit-key $KEYID; }
-        ChangeUsage() {
-          SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1)
-          echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID
-        }
-        GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }
-        GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }
-        GPGAuth() {
-          gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
-          ssh-add -L >~/.ssh/authorized_keys
-          ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
-        }
-        SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg --yes --command-fd 0 --edit-card; }
-        UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
-        GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
-        echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
-        echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
-        Key2card 1 1 # key[1] to Signature key
-        echo 0 >/tmp/canokey-test-up
-        GPGSign
-        UserChecked 0
-        SetUIF 1 on
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
-        GPGSign
-        UserChecked 1
-        Addkey 12 3 # [2] ECDH P-256 encrypt key
-        Addkey 10 3 # [3] ECDSA P-256 sign key
-        Key2card 2 2 # key[2] to Encryption key
-        Key2card 3 3 # key[3] to Authentication key
-        echo 0 >/tmp/canokey-test-up
-        GPGAuth
-        UserChecked 0
-        GPGEnc
-        UserChecked 0
-        SetUIF 2 on
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
-        GPGEnc
-        UserChecked 1
-        SetUIF 3 on
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
-        GPGAuth
-        UserChecked 1
-        SetUIF 1 off
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=on Auth=on'
-        SetUIF 2 off
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=on'
-        SetUIF 3 off
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
-        echo 0 >/tmp/canokey-test-up
-        GPGEnc
-        UserChecked 0
-        SetUIF 1 permanent
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
-        SetUIF 2 permanent
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
-        SetUIF 3 permanent
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
-        SetUIF 3 off || true # can not revert a permanent setting
-        SetUIF 2 off || true # can not revert a permanent setting
-        SetUIF 1 off || true # can not revert a permanent setting
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
-        GPGEnc
-        UserChecked 1
-        echo 1 >/tmp/canokey-test-nfc
-        
-        GPGReset
-        gpg --card-status |grep -E 'Signature key.+none'
-        Addkey 4 2048 # [4] gen RSA2048 key
-        Key2card 4 3 # key[4] to Authentication key
-        Addkey 6 2048 # [5] gen RSA2048 key
-        Key2card 5 2 # key[5] to Encryption key
-        GPGAuth
-        GPGEnc
-        Addkey 10 3 # [6] gen ECDSA P-256 key
-        Key2card 6 1 # key[6] to Signature key
-        GPGSign
-        GPGReset
-        ## 25519 key import
-        Addkey 12 1 # [7] cv25519 encrypt key
-        Addkey 10 1 # [8] ed25519 sign key
-        Key2card 7 2 # key[7] to Encryption key
-        Key2card 8 3 # key[8] to Authentication key
-        GPGAuth
-        GPGEnc
-        Addkey 10 1 # [9] ed25519 sign key
-        Key2card 9 1 # key[9] to Signature key
-        GPGSign
-        GPGReset
-        ## RSA4096 key import
-        Addkey 4 4096 # [10] gen RSA4096 key
-        Key2card 10 3 # key[10] to Authentication key
-        Addkey 6 4096 # [11] gen RSA4096 key
-        Key2card 11 2 # key[11] to Encryption key
-        GPGAuth
-        GPGEnc
-        Addkey 4 4096 # [12] gen RSA4096 key
-        Key2card 12 1 # key[12] to Signature key
-        GPGSign
-        GPGReset
-        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card
-        ## RSA2048 generation on card
-        echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to RSA2048
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        GPGReset
-        ## 25519 generation on card
-        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        GPGReset
-        ## NIST P-256 generation on card
-        echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        ## NIST P-384 generation on card
-        echo -e 'admin\nkey-attr\n2\n4\n2\n4\n2\n4\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-384
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        ## secp256k1 generation on card
-        echo -e 'admin\nkey-attr\n2\n9\n2\n9\n2\n9\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC secp256k1
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        # GPGAuth # ssh does not support secp256k1
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        # Fill this applet as much as possible
-        echo -e 'admin\nname\nTheFirstNameQQQQQQ\nTheLastNamePPPPPPPP\nlang\nlanguage\nsex\nm\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\nurl\nexample.com/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\nlogin\naaaaaaaaaaaa000000000000000000000001111111111111111122222222222\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --edit-card
-        # Private DO 1/2 is not implemented
-        gpgconf --kill gpg-agent
-        go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
+#    - name: Test the OpenPGP
+#      # GPG requires a tty to work
+#      shell: |
+#        script -e -c "bash --noprofile --norc -eo pipefail {0}"
+#      run: |
+#        set -o xtrace
+#        go test -v test-via-pcsc/openpgp_test.go
+#        pkill gpg-agent || true
+#        #echo 'enable-ssh-support' > ~/.gnupg/gpg-agent.conf
+#        export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
+#        mkdir -p ~/.ssh /tmp/mock
+#        python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1152)]),end='')" > /tmp/random.txt
+#        echo 9876543210 >"/tmp/mock/Reset Code"
+#        echo 12345678 >"/tmp/mock/Passphrase:"
+#        echo 12345678 >"/tmp/mock/Admin PIN"
+#        echo 123456 >"/tmp/mock/PIN"
+#        echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key
+#        KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
+#        Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
+#        Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; gpg --card-status; }
+#        Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg --expert --command-fd 0 --yes --edit-key $KEYID; }
+#        ChangeUsage() {
+#          SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1)
+#          echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID
+#        }
+#        GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }
+#        GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }
+#        GPGAuth() {
+#          gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
+#          ssh-add -L >~/.ssh/authorized_keys
+#          ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
+#        }
+#        SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg --yes --command-fd 0 --edit-card; }
+#        UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
+#        GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
+#        echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
+#        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
+#        echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
+#        Key2card 1 1 # key[1] to Signature key
+#        echo 0 >/tmp/canokey-test-up
+#        GPGSign
+#        UserChecked 0
+#        SetUIF 1 on
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
+#        GPGSign
+#        UserChecked 1
+#        Addkey 12 3 # [2] ECDH P-256 encrypt key
+#        Addkey 10 3 # [3] ECDSA P-256 sign key
+#        Key2card 2 2 # key[2] to Encryption key
+#        Key2card 3 3 # key[3] to Authentication key
+#        echo 0 >/tmp/canokey-test-up
+#        GPGAuth
+#        UserChecked 0
+#        GPGEnc
+#        UserChecked 0
+#        SetUIF 2 on
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
+#        GPGEnc
+#        UserChecked 1
+#        SetUIF 3 on
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
+#        GPGAuth
+#        UserChecked 1
+#        SetUIF 1 off
+#        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=on Auth=on'
+#        SetUIF 2 off
+#        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=on'
+#        SetUIF 3 off
+#        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
+#        echo 0 >/tmp/canokey-test-up
+#        GPGEnc
+#        UserChecked 0
+#        SetUIF 1 permanent
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
+#        SetUIF 2 permanent
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
+#        SetUIF 3 permanent
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
+#        SetUIF 3 off || true # can not revert a permanent setting
+#        SetUIF 2 off || true # can not revert a permanent setting
+#        SetUIF 1 off || true # can not revert a permanent setting
+#        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
+#        GPGEnc
+#        UserChecked 1
+#        echo 1 >/tmp/canokey-test-nfc
+#
+#        GPGReset
+#        gpg --card-status |grep -E 'Signature key.+none'
+#        Addkey 4 2048 # [4] gen RSA2048 key
+#        Key2card 4 3 # key[4] to Authentication key
+#        Addkey 6 2048 # [5] gen RSA2048 key
+#        Key2card 5 2 # key[5] to Encryption key
+#        GPGAuth
+#        GPGEnc
+#        Addkey 10 3 # [6] gen ECDSA P-256 key
+#        Key2card 6 1 # key[6] to Signature key
+#        GPGSign
+#        GPGReset
+#        ## 25519 key import
+#        Addkey 12 1 # [7] cv25519 encrypt key
+#        Addkey 10 1 # [8] ed25519 sign key
+#        Key2card 7 2 # key[7] to Encryption key
+#        Key2card 8 3 # key[8] to Authentication key
+#        GPGAuth
+#        GPGEnc
+#        Addkey 10 1 # [9] ed25519 sign key
+#        Key2card 9 1 # key[9] to Signature key
+#        GPGSign
+#        GPGReset
+#        ## RSA4096 key import
+#        Addkey 4 4096 # [10] gen RSA4096 key
+#        Key2card 10 3 # key[10] to Authentication key
+#        Addkey 6 4096 # [11] gen RSA4096 key
+#        Key2card 11 2 # key[11] to Encryption key
+#        GPGAuth
+#        GPGEnc
+#        Addkey 4 4096 # [12] gen RSA4096 key
+#        Key2card 12 1 # key[12] to Signature key
+#        GPGSign
+#        GPGReset
+#        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card
+#        ## RSA2048 generation on card
+#        echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to RSA2048
+#        Addcardkey 1 # generate Signature key on card
+#        Addcardkey 2 # generate Encryption key on card
+#        GPGEnc
+#        GPGSign
+#        Addcardkey 3 # generate Authentication key on card
+#        ChangeUsage
+#        GPGAuth
+#        GPGReset
+#        ## 25519 generation on card
+#        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
+#        Addcardkey 1 # generate Signature key on card
+#        Addcardkey 2 # generate Encryption key on card
+#        GPGEnc
+#        GPGSign
+#        Addcardkey 3 # generate Authentication key on card
+#        ChangeUsage
+#        GPGAuth
+#        GPGReset
+#        ## NIST P-256 generation on card
+#        echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
+#        Addcardkey 1 # generate Signature key on card
+#        Addcardkey 2 # generate Encryption key on card
+#        GPGEnc
+#        GPGSign
+#        Addcardkey 3 # generate Authentication key on card
+#        ChangeUsage
+#        GPGAuth
+#        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+#        gpgconf --kill gpg-agent # restart agent to clear cached info
+#        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+#        diff /tmp/random-read.txt /tmp/random.txt
+#        GPGReset
+#        ## NIST P-384 generation on card
+#        echo -e 'admin\nkey-attr\n2\n4\n2\n4\n2\n4\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-384
+#        Addcardkey 1 # generate Signature key on card
+#        Addcardkey 2 # generate Encryption key on card
+#        GPGEnc
+#        GPGSign
+#        Addcardkey 3 # generate Authentication key on card
+#        ChangeUsage
+#        GPGAuth
+#        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+#        gpgconf --kill gpg-agent # restart agent to clear cached info
+#        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+#        diff /tmp/random-read.txt /tmp/random.txt
+#        GPGReset
+#        ## secp256k1 generation on card
+#        echo -e 'admin\nkey-attr\n2\n9\n2\n9\n2\n9\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC secp256k1
+#        Addcardkey 1 # generate Signature key on card
+#        Addcardkey 2 # generate Encryption key on card
+#        GPGEnc
+#        GPGSign
+#        Addcardkey 3 # generate Authentication key on card
+#        ChangeUsage
+#        # GPGAuth # ssh does not support secp256k1
+#        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+#        gpgconf --kill gpg-agent # restart agent to clear cached info
+#        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+#        diff /tmp/random-read.txt /tmp/random.txt
+#        GPGReset
+#        # Fill this applet as much as possible
+#        echo -e 'admin\nname\nTheFirstNameQQQQQQ\nTheLastNamePPPPPPPP\nlang\nlanguage\nsex\nm\nquit' | gpg --yes --command-fd 0 --edit-card
+#        echo -e 'admin\nurl\nexample.com/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\nquit' | gpg --yes --command-fd 0 --edit-card
+#        echo -e 'admin\nlogin\naaaaaaaaaaaa000000000000000000000001111111111111111122222222222\nquit' | gpg --yes --command-fd 0 --edit-card
+#        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --edit-card
+#        # Private DO 1/2 is not implemented
+#        gpgconf --kill gpg-agent
+#        go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
     - name: Test the PIV
       run: |

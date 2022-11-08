@@ -496,7 +496,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
     if (P2 == 0x9D) pin.is_validated = 0;
 
-    if (LC != PRIVATE_KEY_LENGTH[key.meta.type]) {
+    if ((IS_SHORT_WEIERSTRASS(key.meta.type) || IS_RSA(key.meta.type)) &&
+        len[IDX_CHALLENGE] != PRIVATE_KEY_LENGTH[key.meta.type]) {
       DBG_MSG("digest should has the same length as the private key\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
