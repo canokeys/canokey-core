@@ -18,8 +18,9 @@
 #define KEY_MANAGEMENT_CERT_PATH    "piv-mntc" // 9D
 #define KEY_MANAGEMENT_82_CERT_PATH "piv-82c"  // 82
 #define KEY_MANAGEMENT_83_CERT_PATH "piv-83c"  // 83
-#define CHUID_PATH                  "piv-chu"
-#define CCC_PATH                    "piv-ccc"
+#define CHUID_PATH                  "piv-chu"  // card holder uid
+#define CCC_PATH                    "piv-ccc"  // card capability container
+#define PI_PATH                     "piv-pi"   // printed information
 
 // key tags and path
 #define TAG_PIN_KEY_DEFAULT        0x81       // DO if pin or admin key is default
@@ -150,11 +151,14 @@ int piv_install(uint8_t reset) {
   if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(CARD_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0x00, 0x00, 0x00, 0x00, 0x00,
+  if (write_file(KEY_MANAGEMENT_82_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(KEY_MANAGEMENT_83_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(PI_PATH, NULL, 0, 0, 1) < 0) return -1;
+  uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf1, 0x01, 0x21,
                        0xf2, 0x01, 0x21, 0xf3, 0x00, 0xf4, 0x01, 0x00, 0xf5, 0x01, 0x10, 0xf6, 0x00, 0xf7,
                        0x00, 0xfa, 0x00, 0xfb, 0x00, 0xfc, 0x00, 0xfd, 0x00, 0xfe, 0x00};
-  random_buffer(ccc_tpl + 9, 16);
+  random_buffer(ccc_tpl + 4, 21);
   if (write_file(CCC_PATH, ccc_tpl, 0, sizeof(ccc_tpl), 1) < 0) return -1;
   uint8_t chuid_tpl[] = {0x53, 0x3b, 0x30, 0x19, 0xd4, 0xe7, 0x39, 0xda, 0x73, 0x9c, 0xed, 0x39, 0xce, 0x73, 0x9d, 0x83,
                          0x68, 0x58, 0x21, 0x08, 0x42, 0x10, 0x84, 0x21, 0xc8, 0x42, 0x10, 0xc3, 0xeb, 0x34, 0x10, 0x00,
@@ -168,6 +172,8 @@ int piv_install(uint8_t reset) {
   if (create_key(SIG_KEY_PATH, SIGN) < 0) return -1;
   if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
   if (create_key(CARD_AUTH_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, SIGN) < 0) return -1;
 
   // TDEA admin key
   ck_key_t admin_key = {.meta = {.type = TDEA,
@@ -195,18 +201,24 @@ int piv_install(uint8_t reset) {
 static const char *get_object_path_by_tag(uint8_t tag) {
   // Part 1 Table 3 0x5FC1XX
   switch (tag) {
-  case 0x01: // X.509 Certificate for Card Authentication
-    return CARD_AUTH_CERT_PATH;
-  case 0x02: // Card Holder Unique Identifier
-    return CHUID_PATH;
   case 0x05: // X.509 Certificate for PIV Authentication
     return PIV_AUTH_CERT_PATH;
-  case 0x07: // Card Capability Container
-    return CCC_PATH;
   case 0x0A: // X.509 Certificate for Digital Signature
     return SIG_CERT_PATH;
   case 0x0B: // X.509 Certificate for Key Management
     return KEY_MANAGEMENT_CERT_PATH;
+  case 0x01: // X.509 Certificate for Card Authentication
+    return CARD_AUTH_CERT_PATH;
+  case 0x0D: // Retired X.509 Certificate for Key Management 1
+    return KEY_MANAGEMENT_82_CERT_PATH;
+  case 0x0E: // Retired X.509 Certificate for Key Management 2
+    return KEY_MANAGEMENT_83_CERT_PATH;
+  case 0x02: // Card Holder Unique Identifier
+    return CHUID_PATH;
+  case 0x07: // Card Capability Container
+    return CCC_PATH;
+  case 0x09: // Printed Information
+    return PI_PATH;
   default:
     return NULL;
   }
@@ -215,18 +227,19 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 static uint16_t get_capacity_by_tag(uint8_t tag) {
   // Part 1 Table 7 Container Minimum Capacity, 5FC1XX
   switch (tag) {
-  case 0x01: // X.509 Certificate for Card Authentication
+  case 0x05: // X.509 Certificate for PIV Authentication (9A)
+  case 0x0A: // X.509 Certificate for Digital Signature (9C)
+  case 0x0B: // X.509 Certificate for Key Management (9D)
+  case 0x01: // X.509 Certificate for Card Authentication (9E)
+  case 0x0D: // Retired X.509 Certificate for Key Management 1 (82)
+  case 0x0E: // Retired X.509 Certificate for Key Management 2 (83)
     return 3000;
   case 0x02: // Card Holder Unique Identifier
     return 2916;
-  case 0x05: // X.509 Certificate for PIV Authentication
-    return 3000;
   case 0x07: // Card Capability Container
     return 287;
-  case 0x0A: // X.509 Certificate for Digital Signature
-    return 3000;
-  case 0x0B: // X.509 Certificate for Key Management
-    return 3000;
+  case 0x09: // Printed Information
+    return 245;
   default:
     return 0;
   }
@@ -505,6 +518,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     }
     DBG_KEY_META(&key.meta);
 
+    start_quick_blinking(0);
+
     if (IS_RSA(key.meta.type)) {
       // The input has been padded
       DBG_MSG("e: ");
@@ -721,6 +736,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     }
     DBG_KEY_META(&key.meta);
 
+    start_quick_blinking(0);
+
     if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA + 4) < 0) {
       ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
@@ -827,6 +844,22 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   if (ck_generate_key(&key) < 0) {
     ERR_MSG("Generate key %s failed\n", key_path);
     return -1;
+  }
+  int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
+  if (err == KEY_ERR_LENGTH) {
+    DBG_MSG("Wrong length when importing\n");
+    memzero(&key, sizeof(key));
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  else if (err == KEY_ERR_DATA) {
+    DBG_MSG("Wrong data when importing\n");
+    memzero(&key, sizeof(key));
+    EXCEPT(SW_WRONG_DATA);
+  }
+  else if (err < 0) {
+    DBG_MSG("Error when importing\n");
+    memzero(&key, sizeof(key));
+    EXCEPT(SW_UNABLE_TO_PROCESS);
   }
   if (ck_write_key(key_path, &key) < 0) {
     ERR_MSG("Write key %s failed\n", key_path);
@@ -1043,12 +1076,14 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GENERAL_AUTHENTICATE:
     ret = piv_general_authenticate(capdu, rapdu);
+    stop_blinking();
     break;
   case PIV_INS_PUT_DATA:
     ret = piv_put_data(capdu, rapdu);
     break;
   case PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR:
     ret = piv_generate_asymmetric_key_pair(capdu, rapdu);
+    stop_blinking();
     break;
   case PIV_INS_SET_MANAGEMENT_KEY:
     ret = piv_set_management_key(capdu, rapdu);

@@ -69,9 +69,51 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
   return off;
 }
 
+int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
+  const uint8_t *end = buf + buf_len;
+
+  if (buf < end) {
+    DBG_MSG("May have pin policy\n");
+    if (buf < end && *buf++ != 0xAA) {
+      DBG_MSG("Wrong tag for pin policy\n");
+      return KEY_ERR_DATA;
+    }
+    if (buf < end && *buf++ != 0x01) {
+      DBG_MSG("Wrong length for pin policy\n");
+      return KEY_ERR_LENGTH;
+    }
+    if (buf < end && *buf > PIN_POLICY_ALWAYS) {
+      DBG_MSG("Wrong data for pin policy\n");
+      return KEY_ERR_DATA;
+    }
+    key->meta.pin_policy = *buf++;
+  }
+
+  if (buf < end) {
+    DBG_MSG("May have touch policy\n");
+    if (buf < end && *buf++ != 0xAB) {
+      DBG_MSG("Wrong tag for touch policy\n");
+      return KEY_ERR_DATA;
+    }
+    if (buf < end && *buf++ != 0x01) {
+      DBG_MSG("Wrong length for touch policy\n");
+      return KEY_ERR_LENGTH;
+    }
+    if (buf < end && *buf++ > TOUCH_POLICY_CACHED) {
+      DBG_MSG("Wrong data for touch policy\n");
+      return KEY_ERR_DATA;
+    }
+    key->meta.touch_policy = *buf++;
+  }
+
+  return 0;
+}
+
 int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   memzero(key->data, sizeof(rsa_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
+
+  const uint8_t *p = buf;
 
   switch (key->meta.type) {
   case SECP256R1:
@@ -80,9 +122,20 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case SM2:
   case ED25519:
   case X25519: {
-    if (buf_len < PRIVATE_KEY_LENGTH[key->meta.type] + 2) return KEY_ERR_LENGTH;
-    if (buf[0] != 0x06 && buf[1] != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    memcpy(key->ecc.pri, &buf[2], PRIVATE_KEY_LENGTH[key->meta.type]);
+
+    if (buf_len < PRIVATE_KEY_LENGTH[key->meta.type] + 2) {
+      DBG_MSG("too short\n");
+      return KEY_ERR_LENGTH;
+    }
+    if (*p++ != 0x06) {
+      DBG_MSG("invalid tag\n");
+      return KEY_ERR_DATA;
+    }
+    if (*p++ != PRIVATE_KEY_LENGTH[key->meta.type]) {
+      DBG_MSG("invalid private key length\n");
+      return KEY_ERR_LENGTH;
+    }
+    memcpy(key->ecc.pri, p, PRIVATE_KEY_LENGTH[key->meta.type]);
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
@@ -91,7 +144,8 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_PROC;
     }
-    return 0;
+    p += PRIVATE_KEY_LENGTH[key->meta.type];
+    break;
   }
 
   case RSA2048:
@@ -99,7 +153,6 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case RSA4096: {
     int fail, len;
     size_t length_size;
-    const uint8_t *p = buf;
 
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
     *(uint32_t *)key->rsa.e = htobe32(65537);
@@ -152,12 +205,14 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       return KEY_ERR_DATA;
     }
 
-    return 0;
+    break;
   }
 
   default:
     return -1;
   }
+
+  return ck_parse_piv_policies(key, p, buf + buf_len - p);
 }
 
 /*
