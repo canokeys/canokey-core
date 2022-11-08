@@ -452,10 +452,12 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   } else if (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 82 && P2 != 83) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  } else if (ck_read_key_metadata(key_path, &key.meta) < 0) {
+  }
+  if (ck_read_key_metadata(key_path, &key.meta) < 0) {
     ERR_MSG("Read metadata of %s failed\n", key_path);
     return -1;
   }
+  DBG_KEY_META(&key.meta);
 
   uint16_t pos[6] = {0}, len[6] = {0};
   int fail = 0;
@@ -498,14 +500,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if ((IS_SHORT_WEIERSTRASS(key.meta.type) || IS_RSA(key.meta.type)) &&
         len[IDX_CHALLENGE] != PRIVATE_KEY_LENGTH[key.meta.type]) {
-      DBG_MSG("digest should has the same length as the private key\n");
+      DBG_MSG("data should has the same length as the private key\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
     if (ck_read_key(key_path, &key) < 0) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
-    DBG_KEY_META(&key.meta);
 
     if (IS_RSA(key.meta.type)) {
       // The input has been padded
@@ -569,7 +570,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
-    DBG_KEY_META(&key.meta);
+
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
@@ -622,7 +623,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
-    DBG_KEY_META(&key.meta);
+
     if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
@@ -662,7 +663,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
-    DBG_KEY_META(&key.meta);
+
     if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
