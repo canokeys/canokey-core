@@ -5,12 +5,6 @@
 #include <key.h>
 #include <memory.h>
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define be32toh(x) (x)
-#else
-#define be32toh(x) __builtin_bswap32(x)
-#endif
-
 #define KEY_META_ATTR 0xFF
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
@@ -108,7 +102,7 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     const uint8_t *p = buf;
 
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
-    *(uint32_t *)key->rsa.e = 65537;
+    *(uint32_t *)key->rsa.e = htobe32(65537);
 
     if (*p++ != 0x01) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);

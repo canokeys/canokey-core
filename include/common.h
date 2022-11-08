@@ -29,11 +29,13 @@
 #define htobe16(x) (x)
 #define letoh32(x) __builtin_bswap32(x)
 #define htole32(x) __builtin_bswap32(x)
+#define be32toh(x) (x)
 #else
 #define htobe32(x) __builtin_bswap32(x)
 #define htobe16(x) __builtin_bswap16(x)
 #define letoh32(x) (x)
 #define htole32(x) (x)
+#define be32toh(x) __builtin_bswap32(x)
 #endif
 
 #define LO(x) ((uint8_t)((x)&0x00FF))
