@@ -511,6 +511,12 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (IS_RSA(key.meta.type)) {
       // The input has been padded
+      DBG_MSG("e: ");
+      PRINT_HEX(key.rsa.e, E_LENGTH);
+      DBG_MSG("p: ");
+      PRINT_HEX(key.rsa.p, PRIVATE_KEY_LENGTH[key.meta.type]);
+      DBG_MSG("q: ");
+      PRINT_HEX(key.rsa.q, PRIVATE_KEY_LENGTH[key.meta.type]);
       if (rsa_private(&key.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
         ERR_MSG("Sign failed\n");
         memzero(&key, sizeof(key));
