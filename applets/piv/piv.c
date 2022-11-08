@@ -686,6 +686,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   //
 
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
+    DBG_MSG("Case 6\n");
     authenticate_reset();
 #ifndef FUZZ
     if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -700,6 +701,10 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (len[IDX_EXP] != PUBLIC_KEY_LENGTH[key.meta.type] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0)) {
       DBG_MSG("Incorrect data length\n");
       EXCEPT(SW_WRONG_DATA);
+    }
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
     }
 
     if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA) < 0) {
