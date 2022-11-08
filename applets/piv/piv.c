@@ -498,7 +498,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
     if (P2 == 0x9D) pin.is_validated = 0;
 
-    if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] != PRIVATE_KEY_LENGTH[key.meta.type]) ||
+    if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
         (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
       DBG_MSG("Incorrect challenge data length\n");
       EXCEPT(SW_WRONG_LENGTH);
@@ -528,6 +528,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
       memzero(&key, sizeof(key));
     } else if (IS_ECC(key.meta.type)) {
+      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+        // prepend zeros
+        memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]),
+                DATA + pos[IDX_CHALLENGE],
+                len[IDX_CHALLENGE]);
+        memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
+      }
       int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
