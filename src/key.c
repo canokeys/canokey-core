@@ -68,7 +68,7 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
     off += E_LENGTH;
     break;
 
-  case KEY_TYPE_PKC_END:
+  default:
     return -1;
   }
 
@@ -153,7 +153,7 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     p += length_size;
     memcpy(key->rsa.qinv + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
 
-    if (*(uint32_t *)key->rsa.p < CEIL_DIV_SQRT2 || *(uint32_t *)key->rsa.q < CEIL_DIV_SQRT2) {
+    if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
