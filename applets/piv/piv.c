@@ -517,13 +517,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       RDATA[0] = 0x7C;
       RDATA[1] = 0x82;
-      RDATA[2] = HI(PRIVATE_KEY_LENGTH[key.meta.type] + 4);
-      RDATA[3] = LO(PRIVATE_KEY_LENGTH[key.meta.type] + 4);
+      RDATA[2] = HI(SIGNATURE_LENGTH[key.meta.type] + 4);
+      RDATA[3] = LO(SIGNATURE_LENGTH[key.meta.type] + 4);
       RDATA[4] = TAG_RESPONSE;
       RDATA[5] = 0x82;
-      RDATA[6] = HI(PRIVATE_KEY_LENGTH[key.meta.type]);
-      RDATA[7] = LO(PRIVATE_KEY_LENGTH[key.meta.type]);
-      LL = PRIVATE_KEY_LENGTH[key.meta.type] + 8;
+      RDATA[6] = HI(SIGNATURE_LENGTH[key.meta.type]);
+      RDATA[7] = LO(SIGNATURE_LENGTH[key.meta.type]);
+      LL = SIGNATURE_LENGTH[key.meta.type] + 8;
     } else if (IS_ECC(key.meta.type)) {
       int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 4);
       if (sig_len < 0) {
