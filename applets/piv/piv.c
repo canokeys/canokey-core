@@ -507,6 +507,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
+    DBG_KEY_META(&key.meta);
 
     if (IS_RSA(key.meta.type)) {
       // The input has been padded
@@ -575,6 +576,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
+    DBG_KEY_META(&key.meta);
 
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
@@ -628,6 +630,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
+    DBG_KEY_META(&key.meta);
 
     if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
@@ -668,6 +671,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
+    DBG_KEY_META(&key.meta);
 
     if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
@@ -706,8 +710,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       ERR_MSG("Read key failed\n");
       return -1;
     }
+    DBG_KEY_META(&key.meta);
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA) < 0) {
+    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA + 4) < 0) {
       ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
       return -1;
