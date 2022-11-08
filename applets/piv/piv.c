@@ -496,18 +496,10 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
     if (P2 == 0x9D) pin.is_validated = 0;
 
-    if (IS_RSA(key.meta.type)) {
-      if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
-        DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
-        EXCEPT(SW_WRONG_LENGTH);
-      }
-    } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-      if (LC != PRIVATE_KEY_LENGTH[key.meta.type]) {
-        DBG_MSG("digest should has the same length as the private key\n");
-        EXCEPT(SW_WRONG_LENGTH);
-      }
+    if (LC != PRIVATE_KEY_LENGTH[key.meta.type]) {
+      DBG_MSG("digest should has the same length as the private key\n");
+      EXCEPT(SW_WRONG_LENGTH);
     }
-
     if (ck_read_key(key_path, &key) < 0) {
       ERR_MSG("Read key failed\n");
       return -1;
@@ -515,21 +507,21 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_KEY_META(&key.meta);
 
     if (IS_RSA(key.meta.type)) {
-      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 8);
-      if (sig_len < 0) {
+      // The input has been padded
+      if (rsa_private(&key.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
         ERR_MSG("Sign failed\n");
         return -1;
       }
       memzero(&key, sizeof(key));
       RDATA[0] = 0x7C;
       RDATA[1] = 0x82;
-      RDATA[2] = HI(sig_len + 4);
-      RDATA[3] = LO(sig_len + 4);
+      RDATA[2] = HI(PRIVATE_KEY_LENGTH[key.meta.type] + 4);
+      RDATA[3] = LO(PRIVATE_KEY_LENGTH[key.meta.type] + 4);
       RDATA[4] = TAG_RESPONSE;
       RDATA[5] = 0x82;
-      RDATA[6] = HI(sig_len);
-      RDATA[7] = LO(sig_len);
-      LL = sig_len + 8;
+      RDATA[6] = HI(PRIVATE_KEY_LENGTH[key.meta.type]);
+      RDATA[7] = LO(PRIVATE_KEY_LENGTH[key.meta.type]);
+      LL = PRIVATE_KEY_LENGTH[key.meta.type] + 8;
     } else if (IS_ECC(key.meta.type)) {
       int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 4);
       if (sig_len < 0) {
