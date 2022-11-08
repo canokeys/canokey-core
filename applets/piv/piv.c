@@ -498,9 +498,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
     if (P2 == 0x9D) pin.is_validated = 0;
 
-    if ((IS_SHORT_WEIERSTRASS(key.meta.type) || IS_RSA(key.meta.type)) &&
-        len[IDX_CHALLENGE] != PRIVATE_KEY_LENGTH[key.meta.type]) {
-      DBG_MSG("data should has the same length as the private key\n");
+    if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] != PRIVATE_KEY_LENGTH[key.meta.type]) ||
+        (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
+      DBG_MSG("Incorrect challenge data length\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
     if (ck_read_key(key_path, &key) < 0) {
