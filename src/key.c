@@ -68,7 +68,7 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
     off += E_LENGTH;
     break;
 
-  case KEY_TYPE_END:
+  case KEY_TYPE_PKC_END:
     return -1;
   }
 
@@ -363,12 +363,14 @@ int ck_generate_key(ck_key_t *key) {
       return -1;
     }
     return 0;
-  } else {
+  } else if (IS_RSA(key->meta.type)) {
     if (rsa_generate_key(&key->rsa, PUBLIC_KEY_LENGTH[key->meta.type] * 8) < 0) {
       memzero(key, sizeof(ck_key_t));
       return -1;
     }
     return 0;
+  } else {
+    return -1;
   }
 }
 
@@ -385,7 +387,7 @@ int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t
       DBG_KEY_META(&key->meta);
       return -1;
     }
-  } else {
+  } else if (IS_RSA(key->meta.type)) {
     DBG_MSG("Key: ");
     PRINT_HEX(key->rsa.p, PRIVATE_KEY_LENGTH[key->meta.type]);
     PRINT_HEX(key->rsa.q, PRIVATE_KEY_LENGTH[key->meta.type]);
@@ -394,6 +396,8 @@ int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t
       DBG_KEY_META(&key->meta);
       return -1;
     }
+  } else {
+    return -1;
   }
   DBG_MSG("Sig: ");
   PRINT_HEX(sig, SIGNATURE_LENGTH[key->meta.type]);

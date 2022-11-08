@@ -101,7 +101,7 @@ static void authenticate_reset(void) {
 }
 
 static int create_key(const char *path, key_usage_t usage) {
-  ck_key_t key = {.meta = {.type = KEY_TYPE_END,
+  ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
                            .origin = KEY_ORIGIN_NOT_PRESENT,
                            .usage = usage,
                            .pin_policy = PIN_POLICY_DEFAULT,
@@ -134,7 +134,7 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
   case ALG_RSA_4096:
     return RSA4096;
   default:
-    return KEY_TYPE_END;
+    return KEY_TYPE_PKC_END;
   }
 }
 
@@ -174,9 +174,16 @@ int piv_install(uint8_t reset) {
   if (create_key(CARD_AUTH_KEY_PATH, SIGN) < 0) return -1;
 
   // TDEA admin key
-  if (write_file(CARD_ADMIN_KEY_PATH,
-                 (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 0, 24, 1) < 0)
+  ck_key_t admin_key = {.meta = {.type = TDEA,
+                                 .origin = KEY_ORIGIN_GENERATED,
+                                 .usage = ENCRYPT,
+                                 .pin_policy = PIN_POLICY_DEFAULT,
+                                 .touch_policy = TOUCH_POLICY_DEFAULT}};
+  memcpy(admin_key.data, (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 24);
+  if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) {
+    ERR_MSG("Write admin key failed\n");
     return -1;
+  }
   uint8_t tmp = 0x01;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
@@ -482,6 +489,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application sends a challenge to the PIV Card Application
   if (pos[IDX_WITNESS] == 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
       len[IDX_RESPONSE] == 0) {
+    DBG_MSG("Case 1\n");
     authenticate_reset();
 #ifndef FUZZ
     if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -522,7 +530,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[6] = HI(sig_len);
       RDATA[7] = LO(sig_len);
       LL = sig_len + 8;
-    } else {
+    } else if (IS_ECC(key.meta.type)) {
       int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
@@ -537,6 +545,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[2] = TAG_RESPONSE;
       RDATA[3] = sig_len;
       LL = sig_len + 4;
+    } else {
+      return -1;
     }
   }
 
@@ -547,6 +557,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] == 0) {
+    DBG_MSG("Case 2\n");
     authenticate_reset();
     in_admin_status = 0;
 
@@ -561,7 +572,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
-    if (read_file(key_path, key.data, 0, 24) < 0) return -1;
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
@@ -576,6 +586,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
+    DBG_MSG("Case 3\n");
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL ||
         P2 != 0x9B ||
         TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
@@ -594,6 +605,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a WITNESS from the PIV Card Application.
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] == 0) {
+    DBG_MSG("Case 4\n");
     authenticate_reset();
     in_admin_status = 0;
 
@@ -608,7 +620,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[3] = TDEA_BLOCK_SIZE;
     LL = TDEA_BLOCK_SIZE + 4;
 
-    if (read_file(key_path, key.data, 0, 24) < 0) return -1;
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
@@ -624,6 +635,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application returns the decrypted witness referencing the original
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
+    DBG_MSG("Case 5\n");
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL ||
         P2 != 0x9B ||
         TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
@@ -643,7 +655,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[3] = TDEA_BLOCK_SIZE;
     LL = TDEA_BLOCK_SIZE + 4;
 
-    if (read_file(key_path, key.data, 0, 24) < 0) return -1;
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));

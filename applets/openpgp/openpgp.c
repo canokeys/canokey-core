@@ -824,7 +824,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 
     memzero(&key, sizeof(key));
     LL = olen;
-  } else {
+  } else if (IS_ECC(key.meta.type)) {
     DBG_MSG("Using ECC key: %d\n", key.meta.type);
 
     // check data and length first
@@ -869,6 +869,8 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 
     LL = PRIVATE_KEY_LENGTH[key.meta.type];
     memzero(&key, sizeof(key));
+  } else {
+    return -1;
   }
 
   return 0;
@@ -928,7 +930,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC < 1 || LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
     key_type_t type;
-    for (type = SECP256R1 /* i.e., 0 */; type < KEY_TYPE_END; ++type) {
+    for (type = SECP256R1 /* i.e., 0 */; type < KEY_TYPE_PKC_END; ++type) {
       const uint8_t *attr = algo_attr[type];
       if (LC == attr[0]) {
         if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
@@ -955,7 +957,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
       }
 
     }
-    if (type == KEY_TYPE_END) {
+    if (type == KEY_TYPE_PKC_END) {
       DBG_MSG("Invalid attr type\n");
       EXCEPT(SW_WRONG_DATA);
     }
