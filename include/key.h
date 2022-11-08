@@ -68,13 +68,12 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
 /**
  * Parse the key imported to PIV
  *
- * @param type    key type
+ * @param key     parsed key. origin will be set to KEY_ORIGIN_IMPORTED.
  * @param buf     data buffer that contains the key
  * @param buf_len data buffer length
- * @param key     parsed key. origin will be set to KEY_ORIGIN_IMPORTED.
  * @return 0 for success. Negative values for errors.
  */
-int ck_parse_piv(key_type_t type, const uint8_t *buf, size_t buf_len, ck_key_t *key);
+int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len);
 
 int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len);
 

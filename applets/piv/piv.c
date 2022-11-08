@@ -869,128 +869,35 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
-  uint8_t alg = P1;
-
-  switch (alg) {
-  case ALG_RSA_2048:
-  case ALG_RSA_3072:
-  case ALG_RSA_4096: {
-    if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
-
-    int pq_length, nbits;
-    if (alg == ALG_RSA_2048) {
-      pq_length = RSA2048_PQ_LENGTH;
-      nbits = 2048;
-    } else if (alg == ALG_RSA_3072) {
-      pq_length = RSA3072_PQ_LENGTH;
-      nbits = 3072;
-    } else {
-      pq_length = RSA4096_PQ_LENGTH;
-      nbits = 4096;
-    }
-    rsa_key_t key;
-    memset(&key, 0, sizeof(key));
-    key.nbits = nbits;
-    key.e[1] = 1;
-    key.e[3] = 1;
-
-    int fail;
-    size_t length_size;
-    uint8_t *p = DATA;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
-    int len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.p + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.q + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x03) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.dp + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x04) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.dq + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x05) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.qinv + (pq_length - len), p, len);
-
-    if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
-      memzero(&key, sizeof(key));
-      return -1;
-    }
-    memzero(&key, sizeof(key));
-    break;
-  }
-
-  case ALG_ECC_256:
-  case ALG_ECC_384: {
-//    size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-//    size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
-//    ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-//    if (LC < 2 + pri_key_len) EXCEPT(SW_WRONG_LENGTH);
-//
-//    uint8_t key[pri_key_len + pub_key_len];
-//
-//    if (DATA[0] != 0x06 || DATA[1] != pri_key_len) EXCEPT(SW_WRONG_DATA);
-//
-//    memcpy(key, DATA + 2, pri_key_len);
-//
-//    if (!ecc_verify_private_key(curve, key)) {
-//      memzero(key, sizeof(key));
-//      EXCEPT(SW_WRONG_DATA);
-//    }
-//
-//    if (ecc_complete_key(curve, key, key + pri_key_len) < 0) {
-//      memzero(key, sizeof(key));
-//      return -1;
-//    }
-//
-//    if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
-//      memzero(key, sizeof(key));
-//      return -1;
-//    }
-//
-//    memzero(key, sizeof(key));
-    break;
-  }
-
-  default:
+  if (key_path == NULL) {
+    DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
+  ck_key_t key;
+  if (ck_read_key(key_path, &key) < 0) {
+    ERR_MSG("Fail to read key %s\n", key_path);
+    return -1;
+  }
 
-  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
-
-  uint8_t origin = KEY_ORIGIN_GENERATED;
-  if (write_attr(key_path, TAG_KEY_ORIGIN, &origin, sizeof(origin)) < 0) return -1;
+  key.meta.type = algo_id_to_key_type(P1);
+  int err = ck_parse_piv(&key, DATA, LC);
+  if (err == KEY_ERR_LENGTH) {
+    DBG_MSG("Wrong length when importing\n");
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  else if (err == KEY_ERR_DATA) {
+    DBG_MSG("Wrong data when importing\n");
+    EXCEPT(SW_WRONG_DATA);
+  }
+  else if (err < 0) {
+    DBG_MSG("Error when importing\n");
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
+  if (ck_write_key(key_path, &key) < 0) {
+    memzero(&key, sizeof(key));
+    return -1;
+  }
+  memzero(&key, sizeof(key));
 
   return 0;
 }
