@@ -199,6 +199,7 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
     p += length_size;
     memcpy(key->rsa.qinv + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
+    p += len;
 
     if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
