@@ -22,9 +22,7 @@
 #define CCC_PATH                    "piv-ccc"
 
 // key tags and path
-#define TAG_KEY_ALG                0x00
-#define TAG_KEY_ORIGIN             0x02
-#define TAG_PIN_KEY_DEFAULT        0x81
+#define TAG_PIN_KEY_DEFAULT        0x81       // DO if pin or admin key is default
 #define AUTH_KEY_PATH              "piv-pauk" // 9A
 #define SIG_KEY_PATH               "piv-sigk" // 9C
 #define CARD_AUTH_KEY_PATH         "piv-cauk" // 9E
@@ -32,10 +30,6 @@
 #define KEY_MANAGEMENT_82_KEY_PATH "piv-82"   // 82
 #define KEY_MANAGEMENT_83_KEY_PATH "piv-83"   // 83
 #define CARD_ADMIN_KEY_PATH        "piv-admk" // 9B
-
-// key origin
-#define KEY_ORIGIN_GENERATED    0x01
-#define KEY_ORIGIN_IMPORTED     0x02
 
 // alg
 #define ALG_DEFAULT   0x00
@@ -51,16 +45,6 @@
 #define ALG_SM2       0x54 // Not defined in NIST SP 800-78-4
 
 #define TDEA_BLOCK_SIZE      8
-#define RSA2048_N_LENGTH     256
-#define RSA2048_PQ_LENGTH    128
-#define RSA3072_N_LENGTH     384
-#define RSA3072_PQ_LENGTH    192
-#define RSA4096_N_LENGTH     512
-#define RSA4096_PQ_LENGTH    256
-#define ECC_256_PRI_KEY_SIZE 32
-#define ECC_256_PUB_KEY_SIZE 64
-#define ECC_384_PRI_KEY_SIZE 48
-#define ECC_384_PUB_KEY_SIZE 96
 
 // tags for general auth
 #define TAG_WITNESS   0x80
@@ -137,6 +121,18 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
     return KEY_TYPE_PKC_END;
   }
 }
+
+static uint8_t key_type_to_algo_id[] = {
+    [SECP256R1] = ALG_ECC_256,
+    [SECP256K1] = ALG_SECP256K1,
+    [SECP384R1] = ALG_ECC_384,
+    [SM2] = ALG_SM2,
+    [ED25519] = ALG_ED25519,
+    [X25519] = ALG_X25519,
+    [RSA2048] = ALG_RSA_2048,
+    [RSA3072] = ALG_RSA_3072,
+    [RSA4096] = ALG_RSA_4096,
+};
 
 void piv_poweroff(void) {
   in_admin_status = 0;
@@ -959,62 +955,37 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     case 0x9E:  // Card Authentication
     {
       const char *key_path = get_key_path(P2);
-      if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
-      uint8_t alg, origin;
-      if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
-      if (read_attr(key_path, TAG_KEY_ORIGIN, &origin, sizeof(origin)) < 0) return -1;
+      if (key_path == NULL) {
+        DBG_MSG("Key file not found\n");
+        EXCEPT(SW_WRONG_P1P2);
+      }
+
+      ck_key_t key;
+      if (ck_read_key(key_path, &key) < 0) {
+        ERR_MSG("Read key failed\n");
+        return -1;
+      }
+      DBG_KEY_META(&key.meta);
 
       RDATA[pos++] = 0x01; // Algorithm
       RDATA[pos++] = 0x01;
-      RDATA[pos++] = alg;
+      RDATA[pos++] = key_type_to_algo_id[key.meta.type];
       RDATA[pos++] = 0x02; // Policy
       RDATA[pos++] = 0x02;
-      RDATA[pos++] = 0x00; // PIN: default
-      RDATA[pos++] = 0x01; // Touch: never
+      RDATA[pos++] = key.meta.pin_policy;
+      RDATA[pos++] = key.meta.touch_policy;
       RDATA[pos++] = 0x03; // Origin
       RDATA[pos++] = 0x01;
-      RDATA[pos++] = origin;
+      RDATA[pos++] = key.meta.origin;
       RDATA[pos++] = 0x04; // Public
-      if (alg == ALG_RSA_4096 || alg == ALG_RSA_3072 || alg == ALG_RSA_2048) {
-        rsa_key_t key;
-        if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
-        int n_length;
-        if (alg == ALG_RSA_2048) {
-          n_length = RSA2048_N_LENGTH;
-        } else if (alg == ALG_RSA_3072) {
-          n_length = RSA3072_N_LENGTH;
-        } else {
-          n_length = RSA4096_N_LENGTH;
-        }
-        RDATA[pos++] = 0x82;  // length of the public key (two bytes), including the modulus and the exponent
-        RDATA[pos++] = HI(6 + n_length + E_LENGTH);
-        RDATA[pos++] = LO(6 + n_length + E_LENGTH);
-        RDATA[pos++] = 0x81; // modulus
-        RDATA[pos++] = 0x82;
-        RDATA[pos++] = HI(n_length);
-        RDATA[pos++] = LO(n_length);
-        rsa_get_public_key(&key, RDATA + pos++);
-        RDATA[pos++ + n_length] = 0x82; // exponent
-        RDATA[pos++ + n_length] = E_LENGTH;
-        memcpy(RDATA + pos++ + n_length, key.e, E_LENGTH);
+      int len = ck_encode_public_key(&key, &RDATA[pos], true);
+      if (len < 0) {
+        ERR_MSG("Encode public key failed\n");
         memzero(&key, sizeof(key));
-      } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
-//        size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-//        size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
-//        ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-//        uint8_t key[pri_key_len + pub_key_len];
-//        if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
-//        if (ecc_complete_key(curve, key, key + pri_key_len) < 0) {
-//          memzero(key, sizeof(key));
-//          return -1;
-//        }
-//        RDATA[pos++] = pub_key_len + 3; // length of the public key (compressed)
-//        RDATA[pos++] = 0x86;
-//        RDATA[pos++] = pub_key_len + 1;
-//        RDATA[pos++] = 0x04;
-//        memcpy(RDATA + pos++, key + pri_key_len, pub_key_len);
-//        memzero(key, sizeof(key));
+        return -1;
       }
+      pos += len;
+      memzero(&key, sizeof(key));
       break;
     }
   }
@@ -1050,7 +1021,7 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;
   if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
 
-  int ret = 0;
+  int ret;
   switch (INS) {
   case PIV_INS_SELECT:
     ret = piv_select(capdu, rapdu);
