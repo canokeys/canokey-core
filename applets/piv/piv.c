@@ -535,7 +535,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
                 len[IDX_CHALLENGE]);
         memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
       }
-      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE], RDATA + 4);
+      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
         return -1;
