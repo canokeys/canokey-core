@@ -155,6 +155,8 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
       ERR_MSG("Failed to sign\n");
       return -1;
     }
+    DBG_MSG("Raw signature: ");
+    PRINT_HEX(sig, SIGNATURE_LENGTH[key_type]);
     return (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_type], sig, sig);
   }
 }
