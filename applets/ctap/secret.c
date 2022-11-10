@@ -117,12 +117,11 @@ int verify_key_handle(const CredentialId *kh, ecc_key_t *key) {
   PRINT_HEX(key->pri, KH_KEY_SIZE);
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), key->pub);
-  if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) == 0) {
+  if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
     memzero(key, sizeof(ecc_key_t));
-    return 0;
+    return 1;
   }
-  memzero(key->pub, sizeof(key->pub));
-  return 1;
+  return 0;
 }
 
 size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
