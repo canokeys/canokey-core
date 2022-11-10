@@ -136,6 +136,8 @@ size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
   key_type_t key_type = cose_alg_to_key_type(alg_type);
+  DBG_MSG("Sign key type: %d, private key: ", key_type);
+  PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
 
   if (key_type == ED25519) {
     if (ecc_complete_key(key_type, key) < 0) {
