@@ -97,6 +97,8 @@ int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
   } while (ecc_complete_key(key_type, &key) < 0);
 
   memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+  DBG_MSG("Public: ");
+  PRINT_HEX(pubkey, PUBLIC_KEY_LENGTH[key_type]);
   memzero(&key, sizeof(key));
 
   return 0;
