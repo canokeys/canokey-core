@@ -528,7 +528,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   ret = cbor_encode_int(&map, RESP_signature);
   CHECK_CBOR_RET(ret);
   memcpy(data_buf + len, ga.clientDataHash, CLIENT_DATA_HASH_SIZE);
+  DBG_MSG("Message: ");
+  PRINT_HEX(data_buf, len + CLIENT_DATA_HASH_SIZE);
   len = sign_with_private_key(rk.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  DBG_MSG("Signature: ");
+  PRINT_HEX(data_buf, len);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 

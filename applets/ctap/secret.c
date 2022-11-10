@@ -159,19 +159,6 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
   }
 }
 
-size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, size_t data_len, uint8_t *sig) {
-//  ed25519_public_key pk;
-//  ed25519_publickey(key, pk);
-//  ed25519_signature sig_tmp;
-//  // ed25519_sign(m, mlen, sk, pk, RS)
-//  // m and RS can not share the same buffer
-//  // (they are shared outside of this func)
-//  ed25519_sign(data, data_len, key, pk, sig_tmp);
-//  memcpy(sig, sig_tmp, sizeof(ed25519_signature));
-//  memzero(pk, sizeof(pk));
-  return sizeof(K__ed25519_signature);
-}
-
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
 
 int has_pin(void) {
