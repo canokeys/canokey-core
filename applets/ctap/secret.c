@@ -118,6 +118,7 @@ int verify_key_handle(const CredentialId *kh, ecc_key_t *key) {
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), key->pub);
   if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
+    DBG_MSG("Incorrect key handle\n");
     memzero(key, sizeof(ecc_key_t));
     return 1;
   }
