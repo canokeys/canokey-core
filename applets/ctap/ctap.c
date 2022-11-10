@@ -19,13 +19,13 @@
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
-    if (ret != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
-    if (ret > 0) return ret;                                                                                           \
+    if ((ret) != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
+    if ((ret) > 0) return ret;                                                                                           \
   } while (0)
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
-    if (ret != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
-    if (ret != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
+    if ((ret) != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
+    if ((ret) != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
   } while (0)
 
 #define SET_RESP()                                                                                                     \
@@ -50,7 +50,7 @@
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin related
-static uint8_t key_agreement_keypair[PRI_KEY_SIZE + PUB_KEY_SIZE];
+static ecc_key_t key_agreement_key;
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter;
 // assertion related
@@ -62,8 +62,10 @@ uint8_t ctap_install(uint8_t reset) {
   credential_idx = 0;
   last_cmd = 0xff;
   random_buffer(pin_token, sizeof(pin_token));
-//  if (ecc_generate(SECP256R1, key_agreement_keypair, key_agreement_keypair + PRI_KEY_SIZE) < 0)
-//    return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (ecc_generate(SECP256R1, &key_agreement_key) < 0) {
+    ERR_MSG("Key agreement generation failed\n");
+    return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -152,7 +154,7 @@ static void build_ed25519_cose_key(uint8_t *data) {
 }
 
 static uint8_t get_shared_secret(uint8_t *pub_key) {
-  int ret = ecdh(SECP256R1, key_agreement_keypair, pub_key, pub_key);
+  int ret = ecdh(SECP256R1, key_agreement_key.pri, pub_key, pub_key);
   if (ret < 0) return 1;
   sha256_raw(pub_key, PRI_KEY_SIZE, pub_key);
   return 0;
@@ -695,7 +697,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = cbor_encoder_create_map(&map, &key_map, 0);
     CHECK_CBOR_RET(ret);
     ptr = key_map.data.ptr - 1;
-    memcpy(ptr, key_agreement_keypair + PRI_KEY_SIZE, PUB_KEY_SIZE);
+    memcpy(ptr, key_agreement_key.pub, PUB_KEY_SIZE);
     build_cose_key(ptr, 1);
     key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);
