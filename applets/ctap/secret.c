@@ -151,7 +151,9 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
     sha256_init();
     sha256_update(input, len);
     sha256_final(sig);
-    if (ecc_sign(key_type, key, sig, len, sig) < 0) {
+    DBG_MSG("Digest: ");
+    PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
+    if (ecc_sign(key_type, key, sig, PRIVATE_KEY_LENGTH[key_type], sig) < 0) {
       ERR_MSG("Failed to sign\n");
       return -1;
     }
