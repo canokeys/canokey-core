@@ -66,6 +66,12 @@ static void generate_credential_id_nonce_tag(CredentialId *kh, ecc_key_t *key) {
   random_buffer(kh->nonce, sizeof(kh->nonce));
   // private key = hmac-sha256(device private key, nonce), stored in key.pri
   hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  DBG_MSG("Device key: ");
+  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  DBG_MSG("Nonce: ");
+  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
+  DBG_MSG("Private key: ");
+  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in kh.tag via key.pub
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), key->pub);
   memcpy(kh->tag, key->pub, sizeof(kh->tag));
@@ -101,6 +107,12 @@ int verify_key_handle(const CredentialId *kh, ecc_key_t *key) {
   if (ret < 0) return ret;
   // get private key
   hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  DBG_MSG("Device key: ");
+  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  DBG_MSG("Nonce: ");
+  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
+  DBG_MSG("Private key: ");
+  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), key->pub);
   if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) == 0) {
