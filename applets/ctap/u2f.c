@@ -55,7 +55,8 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_update((const uint8_t *)&kh, sizeof(CredentialId));
   sha256_update((const uint8_t *)&resp->pubKey, U2F_EC_PUB_KEY_SIZE + 1);
   sha256_final(digest);
-  size_t signature_len = sign_with_device_key(digest, resp->keyHandleCertSig + sizeof(CredentialId) + cert_len);
+  size_t signature_len = sign_with_device_key(digest, PRIVATE_KEY_LENGTH[SECP256R1],
+                                              resp->keyHandleCertSig + sizeof(CredentialId) + cert_len);
   LL = 67 + sizeof(CredentialId) + cert_len + signature_len;
 
   return 0;
@@ -66,12 +67,12 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
   CTAP_authData auth_data;
   size_t len;
-  uint8_t priv_key[PRI_KEY_SIZE];
+  ecc_key_t key; // TODO: cleanup
 
   if (LC != sizeof(U2F_AUTHENTICATE_REQ)) EXCEPT(SW_WRONG_DATA); // required by FIDO Conformance Tool
   if (req->keyHandleLen != sizeof(CredentialId)) EXCEPT(SW_WRONG_LENGTH);
   if (memcmp(req->appId, ((CredentialId *)req->keyHandle)->rpIdHash, U2F_APPID_SIZE) != 0) EXCEPT(SW_WRONG_DATA);
-  uint8_t err = verify_key_handle((CredentialId *)req->keyHandle, priv_key);
+  uint8_t err = verify_key_handle((CredentialId *)req->keyHandle, &key);
   if (err) EXCEPT(SW_WRONG_DATA);
 
   if (P1 == U2F_AUTH_CHECK_ONLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
@@ -92,8 +93,8 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_update(req->chal, U2F_CHAL_SIZE);
   sha256_final(req->appId);
   memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.signCount));
-  ecdsa_sign(ECC_SECP256R1, priv_key, req->appId, resp->sig);
-  memzero(priv_key, sizeof(priv_key));
+  ecc_sign(SECP256R1, &key, req->appId, PRIVATE_KEY_LENGTH[SECP256R1], resp->sig);
+  memzero(&key, sizeof(key));
   size_t signature_len = ecdsa_sig2ansi(U2F_EC_KEY_SIZE, resp->sig, resp->sig);
   LL = signature_len + 5;
 

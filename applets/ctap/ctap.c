@@ -19,13 +19,13 @@
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
-    if (ret != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
-    if (ret > 0) return ret;                                                                                           \
+    if ((ret) != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
+    if ((ret) > 0) return ret;                                                                                           \
   } while (0)
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
-    if (ret != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
-    if (ret != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
+    if ((ret) != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
+    if ((ret) != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
   } while (0)
 
 #define SET_RESP()                                                                                                     \
@@ -50,7 +50,7 @@
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 // pin related
-static uint8_t key_agreement_keypair[PRI_KEY_SIZE + PUB_KEY_SIZE];
+static ecc_key_t key_agreement_key;
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static uint8_t consecutive_pin_counter;
 // assertion related
@@ -62,8 +62,10 @@ uint8_t ctap_install(uint8_t reset) {
   credential_idx = 0;
   last_cmd = 0xff;
   random_buffer(pin_token, sizeof(pin_token));
-  if (ecc_generate(ECC_SECP256R1, key_agreement_keypair, key_agreement_keypair + PRI_KEY_SIZE) < 0)
+  if (ecc_generate(SECP256R1, &key_agreement_key) < 0) {
+    ERR_MSG("Key agreement generation failed\n");
     return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) return 0;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(RK_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -152,7 +154,7 @@ static void build_ed25519_cose_key(uint8_t *data) {
 }
 
 static uint8_t get_shared_secret(uint8_t *pub_key) {
-  int ret = ecdh_decrypt(ECC_SECP256R1, key_agreement_keypair, pub_key, pub_key);
+  int ret = ecdh(SECP256R1, key_agreement_key.pri, pub_key, pub_key);
   if (ret < 0) return 1;
   sha256_raw(pub_key, PRI_KEY_SIZE, pub_key);
   return 0;
@@ -226,14 +228,14 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   uint8_t data_buf[sizeof(CTAP_authData)];
   if (mc.excludeListSize > 0) {
     for (size_t i = 0; i < mc.excludeListSize; ++i) {
-      uint8_t pri_key[PRI_KEY_SIZE];
+      ecc_key_t key;
       parse_credential_descriptor(&mc.excludeList, data_buf); // save credential id in data_buf
       CredentialId *kh = (CredentialId *)data_buf;
       // compare rpId first
       if (memcmp(kh->rpIdHash, mc.rpIdHash, sizeof(kh->rpIdHash)) != 0) continue;
       // then verify key handle and get private key in rpIdHash
-      ret = verify_key_handle(kh, pri_key);
-      memzero(pri_key, sizeof(pri_key));
+      ret = verify_key_handle(kh, &key);
+      memzero(&key, sizeof(key));
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
@@ -328,7 +330,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     sha256_update(data_buf, len);
     sha256_update(mc.clientDataHash, sizeof(mc.clientDataHash));
     sha256_final(data_buf);
-    len = sign_with_device_key(data_buf, data_buf);
+    len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
     ret = cbor_encode_byte_string(&att_map, data_buf, len);
     CHECK_CBOR_RET(ret);
 
@@ -388,7 +390,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 #endif
   }
 
-  uint8_t data_buf[sizeof(CTAP_authData) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
+  uint8_t data_buf[sizeof(CTAP_authData) + CLIENT_DATA_HASH_SIZE];
+  ecc_key_t key;  // TODO: cleanup
   CTAP_residentKey rk;
   if (ga.allowListSize > 0) {
     size_t i;
@@ -397,7 +400,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       // compare rpId first
       if (memcmp(rk.credential_id.rpIdHash, ga.rpIdHash, sizeof(rk.credential_id.rpIdHash)) != 0) goto next;
       // then verify key handle and get private key
-      int err = verify_key_handle(&rk.credential_id, pri_key);
+      int err = verify_key_handle(&rk.credential_id, &key);
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) break; // only process one support credential
     next:
@@ -433,7 +436,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     size =
         read_file(RK_FILE, &rk, credential_list[credential_idx] * sizeof(CTAP_residentKey), sizeof(CTAP_residentKey));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    int err = verify_key_handle(&rk.credential_id, pri_key);
+    int err = verify_key_handle(&rk.credential_id, &key);
     if (err != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
@@ -524,16 +527,12 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // signature
   ret = cbor_encode_int(&map, RESP_signature);
   CHECK_CBOR_RET(ret);
-  if (rk.credential_id.alg_type == COSE_ALG_ES256) {
-    sha256_init();
-    sha256_update(data_buf, len);
-    sha256_update(ga.clientDataHash, sizeof(ga.clientDataHash));
-    sha256_final(data_buf);
-    len = sign_with_ecdsa_private_key(pri_key, data_buf, data_buf);
-  } else if (rk.credential_id.alg_type == COSE_ALG_EDDSA) {
-    memcpy(data_buf + len, ga.clientDataHash, CLIENT_DATA_HASH_SIZE);
-    len = sign_with_ed25519_private_key(pri_key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
-  }
+  memcpy(data_buf + len, ga.clientDataHash, CLIENT_DATA_HASH_SIZE);
+  DBG_MSG("Message: ");
+  PRINT_HEX(data_buf, len + CLIENT_DATA_HASH_SIZE);
+  len = sign_with_private_key(rk.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  DBG_MSG("Signature: ");
+  PRINT_HEX(data_buf, len);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 
@@ -578,7 +577,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
 
-  memzero(pri_key, sizeof(pri_key));
   ++credential_idx;
 
   return 0;
@@ -703,7 +701,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     ret = cbor_encoder_create_map(&map, &key_map, 0);
     CHECK_CBOR_RET(ret);
     ptr = key_map.data.ptr - 1;
-    memcpy(ptr, key_agreement_keypair + PRI_KEY_SIZE, PUB_KEY_SIZE);
+    memcpy(ptr, key_agreement_key.pub, PUB_KEY_SIZE);
     build_cose_key(ptr, 1);
     key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
     ret = cbor_encoder_close_container(&map, &key_map);

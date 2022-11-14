@@ -7,10 +7,9 @@
 
 int increase_counter(uint32_t *counter);
 int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type);
-size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig);
-size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig);
-size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *digest, size_t digest_len, uint8_t *sig);
-int verify_key_handle(const CredentialId *kh, uint8_t *pri_key);
+size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig);
+int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig);
+int verify_key_handle(const CredentialId *kh, ecc_key_t *key);
 int get_cert(uint8_t *buf);
 int has_pin(void);
 int set_pin(uint8_t *buf, uint8_t length);

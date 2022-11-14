@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <common.h>
 #include <des.h>
+#include <device.h>
 #include <ecc.h>
+#include <key.h>
 #include <memzero.h>
 #include <pin.h>
 #include <piv.h>
@@ -9,27 +11,26 @@
 #include <rsa.h>
 
 // data object path
-#define MAX_DO_PATH_LEN          9
-#define PIV_AUTH_CERT_PATH       "piv-pauc"
-#define SIG_CERT_PATH            "piv-sigc"
-#define KEY_MANAGEMENT_CERT_PATH "piv-mntc"
-#define CARD_AUTH_CERT_PATH      "piv-cauc"
-#define CHUID_PATH               "piv-chu"
-#define CCC_PATH                 "piv-ccc"
+#define MAX_DO_PATH_LEN             9
+#define PIV_AUTH_CERT_PATH          "piv-pauc" // 9A
+#define SIG_CERT_PATH               "piv-sigc" // 9C
+#define CARD_AUTH_CERT_PATH         "piv-cauc" // 9E
+#define KEY_MANAGEMENT_CERT_PATH    "piv-mntc" // 9D
+#define KEY_MANAGEMENT_82_CERT_PATH "piv-82c"  // 82
+#define KEY_MANAGEMENT_83_CERT_PATH "piv-83c"  // 83
+#define CHUID_PATH                  "piv-chu"  // card holder uid
+#define CCC_PATH                    "piv-ccc"  // card capability container
+#define PI_PATH                     "piv-pi"   // printed information
 
 // key tags and path
-#define TAG_KEY_ALG             0x00
-#define TAG_KEY_ORIGIN          0x02
-#define TAG_PIN_KEY_DEFAULT     0x81
-#define AUTH_KEY_PATH           "piv-pauk"
-#define SIG_KEY_PATH            "piv-sigk"
-#define KEY_MANAGEMENT_KEY_PATH "piv-mntk"
-#define CARD_AUTH_KEY_PATH      "piv-cauk"
-#define CARD_ADMIN_KEY_PATH     "piv-admk"
-
-// key origin
-#define KEY_ORIGIN_GENERATED    0x01
-#define KEY_ORIGIN_IMPORTED     0x02
+#define TAG_PIN_KEY_DEFAULT        0x81       // DO if pin or admin key is default
+#define AUTH_KEY_PATH              "piv-pauk" // 9A
+#define SIG_KEY_PATH               "piv-sigk" // 9C
+#define CARD_AUTH_KEY_PATH         "piv-cauk" // 9E
+#define KEY_MANAGEMENT_KEY_PATH    "piv-mntk" // 9D
+#define KEY_MANAGEMENT_82_KEY_PATH "piv-82"   // 82
+#define KEY_MANAGEMENT_83_KEY_PATH "piv-83"   // 83
+#define CARD_ADMIN_KEY_PATH        "piv-admk" // 9B
 
 // alg
 #define ALG_DEFAULT   0x00
@@ -37,23 +38,14 @@
 #define ALG_RSA_2048  0x07
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
-#define ALG_ED_25519  0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
+#define ALG_ED25519   0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
 #define ALG_RSA_3072  0x50 // Not defined in NIST SP 800-78-4
 #define ALG_RSA_4096  0x51 // Not defined in NIST SP 800-78-4
-#define ALG_X_25519   0x52 // Not defined in NIST SP 800-78-4
-#define ALG_SM2       0x53 // Not defined in NIST SP 800-78-4
+#define ALG_X25519    0x52 // Not defined in NIST SP 800-78-4
+#define ALG_SECP256K1 0x53 // Not defined in NIST SP 800-78-4
+#define ALG_SM2       0x54 // Not defined in NIST SP 800-78-4
 
 #define TDEA_BLOCK_SIZE      8
-#define RSA2048_N_LENGTH     256
-#define RSA2048_PQ_LENGTH    128
-#define RSA3072_N_LENGTH     384
-#define RSA3072_PQ_LENGTH    192
-#define RSA4096_N_LENGTH     512
-#define RSA4096_PQ_LENGTH    256
-#define ECC_256_PRI_KEY_SIZE 32
-#define ECC_256_PUB_KEY_SIZE 64
-#define ECC_384_PRI_KEY_SIZE 48
-#define ECC_384_PUB_KEY_SIZE 96
 
 // tags for general auth
 #define TAG_WITNESS   0x80
@@ -67,11 +59,9 @@
 
 // offsets for auth
 #define OFFSET_AUTH_STATE     0
-#define OFFSET_AUTH_KEY_ID    1
-#define OFFSET_AUTH_ALGO      2
-#define OFFSET_AUTH_CHALLENGE 3
+#define OFFSET_AUTH_CHALLENGE 1
 #define LENGTH_CHALLENGE      16
-#define LENGTH_AUTH_STATE     (5 + LENGTH_CHALLENGE)
+#define LENGTH_AUTH_STATE     (1 + LENGTH_CHALLENGE)
 
 // states for auth
 #define AUTH_STATE_NONE     0
@@ -92,37 +82,61 @@ static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path =
 
 static void authenticate_reset(void) {
   auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_NONE;
-  auth_ctx[OFFSET_AUTH_KEY_ID] = 0;
-  auth_ctx[OFFSET_AUTH_ALGO] = 0;
   memset(auth_ctx + OFFSET_AUTH_CHALLENGE, 0, LENGTH_CHALLENGE);
 }
 
-static int create_key(const char *path) {
-  if (write_file(path, NULL, 0, 0, 1) < 0) return -1;
-  uint8_t alg = 0xFF;
-  if (write_attr(path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
+static int create_key(const char *path, key_usage_t usage) {
+  ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
+                           .origin = KEY_ORIGIN_NOT_PRESENT,
+                           .usage = usage,
+                           .pin_policy = PIN_POLICY_DEFAULT,
+                           .touch_policy = TOUCH_POLICY_DEFAULT}};
+  if (ck_write_key(path, &key) < 0) {
+    ERR_MSG("Create key %s failed\n", path);
+    return -1;
+  }
   return 0;
 }
 
-static int get_input_size(uint8_t alg) {
-  switch (alg) {
+static key_type_t algo_id_to_key_type(uint8_t id) {
+  switch (id) {
+  case ALG_ECC_256:
+    return SECP256R1;
+  case ALG_ECC_384:
+    return SECP384R1;
+  case ALG_RSA_2048:
+    return RSA2048;
+  case ALG_ED25519:
+    return ED25519;
+  case ALG_X25519:
+    return X25519;
+  case ALG_SECP256K1:
+    return SECP256K1;
+  case ALG_SM2:
+    return SM2;
+  case ALG_RSA_3072:
+    return RSA3072;
+  case ALG_RSA_4096:
+    return RSA4096;
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
-    return TDEA_BLOCK_SIZE;
-  case ALG_RSA_2048:
-    return RSA2048_N_LENGTH;
-  case ALG_ECC_256:
-    return ECC_256_PRI_KEY_SIZE;
-  case ALG_ECC_384:
-    return ECC_384_PRI_KEY_SIZE;
-  case ALG_RSA_3072:
-    return RSA3072_N_LENGTH;
-  case ALG_RSA_4096:
-    return RSA4096_N_LENGTH;
+    return TDEA;
   default:
-    return 0;
+    return KEY_TYPE_PKC_END;
   }
 }
+
+static uint8_t key_type_to_algo_id[] = {
+    [SECP256R1] = ALG_ECC_256,
+    [SECP256K1] = ALG_SECP256K1,
+    [SECP384R1] = ALG_ECC_384,
+    [SM2] = ALG_SM2,
+    [ED25519] = ALG_ED25519,
+    [X25519] = ALG_X25519,
+    [RSA2048] = ALG_RSA_2048,
+    [RSA3072] = ALG_RSA_3072,
+    [RSA4096] = ALG_RSA_4096,
+};
 
 void piv_poweroff(void) {
   in_admin_status = 0;
@@ -140,11 +154,14 @@ int piv_install(uint8_t reset) {
   if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(CARD_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0x00, 0x00, 0x00, 0x00, 0x00,
+  if (write_file(KEY_MANAGEMENT_82_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(KEY_MANAGEMENT_83_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(PI_PATH, NULL, 0, 0, 1) < 0) return -1;
+  uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf1, 0x01, 0x21,
                        0xf2, 0x01, 0x21, 0xf3, 0x00, 0xf4, 0x01, 0x00, 0xf5, 0x01, 0x10, 0xf6, 0x00, 0xf7,
                        0x00, 0xfa, 0x00, 0xfb, 0x00, 0xfc, 0x00, 0xfd, 0x00, 0xfe, 0x00};
-  random_buffer(ccc_tpl + 9, 16);
+  random_buffer(ccc_tpl + 4, 21);
   if (write_file(CCC_PATH, ccc_tpl, 0, sizeof(ccc_tpl), 1) < 0) return -1;
   uint8_t chuid_tpl[] = {0x53, 0x3b, 0x30, 0x19, 0xd4, 0xe7, 0x39, 0xda, 0x73, 0x9c, 0xed, 0x39, 0xce, 0x73, 0x9d, 0x83,
                          0x68, 0x58, 0x21, 0x08, 0x42, 0x10, 0x84, 0x21, 0xc8, 0x42, 0x10, 0xc3, 0xeb, 0x34, 0x10, 0x00,
@@ -154,17 +171,25 @@ int piv_install(uint8_t reset) {
   if (write_file(CHUID_PATH, chuid_tpl, 0, sizeof(chuid_tpl), 1) < 0) return -1;
 
   // keys
-  if (create_key(AUTH_KEY_PATH) < 0) return -1;
-  if (create_key(SIG_KEY_PATH) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_KEY_PATH) < 0) return -1;
-  if (create_key(CARD_AUTH_KEY_PATH) < 0) return -1;
-  if (create_key(CARD_ADMIN_KEY_PATH) < 0) return -1;
-  if (write_file(CARD_ADMIN_KEY_PATH,
-                 (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 0, 24, 1) < 0)
+  if (create_key(AUTH_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(SIG_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
+  if (create_key(CARD_AUTH_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, SIGN) < 0) return -1;
+
+  // TDEA admin key
+  ck_key_t admin_key = {.meta = {.type = TDEA,
+                                 .origin = KEY_ORIGIN_GENERATED,
+                                 .usage = ENCRYPT,
+                                 .pin_policy = PIN_POLICY_DEFAULT,
+                                 .touch_policy = TOUCH_POLICY_DEFAULT}};
+  memcpy(admin_key.data, (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 24);
+  if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) {
+    ERR_MSG("Write admin key failed\n");
     return -1;
-  uint8_t tmp = ALG_TDEA_3KEY;
-  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_KEY_ALG, &tmp, sizeof(tmp)) < 0) return -1;
-  tmp = 0x01;
+  }
+  uint8_t tmp = 0x01;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   // PIN data
@@ -179,18 +204,24 @@ int piv_install(uint8_t reset) {
 static const char *get_object_path_by_tag(uint8_t tag) {
   // Part 1 Table 3 0x5FC1XX
   switch (tag) {
-  case 0x01: // X.509 Certificate for Card Authentication
-    return CARD_AUTH_CERT_PATH;
-  case 0x02: // Card Holder Unique Identifier
-    return CHUID_PATH;
   case 0x05: // X.509 Certificate for PIV Authentication
     return PIV_AUTH_CERT_PATH;
-  case 0x07: // Card Capability Container
-    return CCC_PATH;
   case 0x0A: // X.509 Certificate for Digital Signature
     return SIG_CERT_PATH;
   case 0x0B: // X.509 Certificate for Key Management
     return KEY_MANAGEMENT_CERT_PATH;
+  case 0x01: // X.509 Certificate for Card Authentication
+    return CARD_AUTH_CERT_PATH;
+  case 0x0D: // Retired X.509 Certificate for Key Management 1
+    return KEY_MANAGEMENT_82_CERT_PATH;
+  case 0x0E: // Retired X.509 Certificate for Key Management 2
+    return KEY_MANAGEMENT_83_CERT_PATH;
+  case 0x02: // Card Holder Unique Identifier
+    return CHUID_PATH;
+  case 0x07: // Card Capability Container
+    return CCC_PATH;
+  case 0x09: // Printed Information
+    return PI_PATH;
   default:
     return NULL;
   }
@@ -199,18 +230,19 @@ static const char *get_object_path_by_tag(uint8_t tag) {
 static uint16_t get_capacity_by_tag(uint8_t tag) {
   // Part 1 Table 7 Container Minimum Capacity, 5FC1XX
   switch (tag) {
-  case 0x01: // X.509 Certificate for Card Authentication
+  case 0x05: // X.509 Certificate for PIV Authentication (9A)
+  case 0x0A: // X.509 Certificate for Digital Signature (9C)
+  case 0x0B: // X.509 Certificate for Key Management (9D)
+  case 0x01: // X.509 Certificate for Card Authentication (9E)
+  case 0x0D: // Retired X.509 Certificate for Key Management 1 (82)
+  case 0x0E: // Retired X.509 Certificate for Key Management 2 (83)
     return 3000;
   case 0x02: // Card Holder Unique Identifier
     return 2916;
-  case 0x05: // X.509 Certificate for PIV Authentication
-    return 3000;
   case 0x07: // Card Capability Container
     return 287;
-  case 0x0A: // X.509 Certificate for Digital Signature
-    return 3000;
-  case 0x0B: // X.509 Certificate for Key Management
-    return 3000;
+  case 0x09: // Printed Information
+    return 245;
   default:
     return 0;
   }
@@ -423,13 +455,28 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
 
-  uint8_t alg = ALG_DEFAULT;
-  if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
-  if (!(P1 == ALG_DEFAULT && alg == ALG_TDEA_3KEY) && alg != P1) EXCEPT(SW_WRONG_P1P2);
+  ck_key_t key;
+  if (P2 == 0x9B) { // Card admin
+    if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
+      DBG_MSG("Invalid P1/P2 for card admin key\n");
+      EXCEPT(SW_WRONG_P1P2);
+    }
+  } else if (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 0x82 && P2 != 0x83) {
+    DBG_MSG("Invalid key ref\n");
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  }
+  if (ck_read_key_metadata(key_path, &key.meta) < 0) {
+    ERR_MSG("Read metadata of %s failed\n", key_path);
+    return -1;
+  }
+  DBG_KEY_META(&key.meta);
 
-  uint16_t length = get_input_size(alg);
-  uint16_t pos[6] = {0};
-  int16_t len[6] = {0};
+  if (algo_id_to_key_type(P1) != key.meta.type) {
+    DBG_MSG("The value of P1 mismatches the key specified by P2\n");
+    EXCEPT(SW_WRONG_P1P2);
+  }
+
+  uint16_t pos[6] = {0}, len[6] = {0};
   int fail = 0;
   size_t length_size = 0;
   tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
@@ -461,57 +508,78 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application sends a challenge to the PIV Card Application
   if (pos[IDX_WITNESS] == 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0 && pos[IDX_RESPONSE] > 0 &&
       len[IDX_RESPONSE] == 0) {
+    DBG_MSG("Case 1\n");
     authenticate_reset();
 #ifndef FUZZ
     if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
     if (P2 == 0x9D) pin.is_validated = 0;
 
-    if (alg == ALG_RSA_2048 || alg == ALG_RSA_3072 || alg == ALG_RSA_4096) {
-      if (length != len[IDX_CHALLENGE]) EXCEPT(SW_WRONG_DATA);
+    if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
+        (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
+      DBG_MSG("Incorrect challenge data length\n");
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
+    }
+    DBG_KEY_META(&key.meta);
 
-      rsa_key_t key;
-      if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
-      if (rsa_private(&key, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
+    start_quick_blinking(0);
+
+    if (IS_RSA(key.meta.type)) {
+      // The input has been padded
+      DBG_MSG("e: ");
+      PRINT_HEX(key.rsa.e, E_LENGTH);
+      DBG_MSG("p: ");
+      PRINT_HEX(key.rsa.p, PRIVATE_KEY_LENGTH[key.meta.type]);
+      DBG_MSG("q: ");
+      PRINT_HEX(key.rsa.q, PRIVATE_KEY_LENGTH[key.meta.type]);
+      if (rsa_private(&key.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
+        ERR_MSG("Sign failed\n");
         memzero(&key, sizeof(key));
         return -1;
       }
-      memzero(&key, sizeof(key));
-
       RDATA[0] = 0x7C;
       RDATA[1] = 0x82;
-      RDATA[2] = HI(length + 4);
-      RDATA[3] = LO(length + 4);
+      RDATA[2] = HI(SIGNATURE_LENGTH[key.meta.type] + 4);
+      RDATA[3] = LO(SIGNATURE_LENGTH[key.meta.type] + 4);
       RDATA[4] = TAG_RESPONSE;
       RDATA[5] = 0x82;
-      RDATA[6] = HI(length);
-      RDATA[7] = LO(length);
-      LL = length + 8;
-    } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
-      if (len[IDX_CHALLENGE] > length) EXCEPT(SW_WRONG_DATA);
+      RDATA[6] = HI(SIGNATURE_LENGTH[key.meta.type]);
+      RDATA[7] = LO(SIGNATURE_LENGTH[key.meta.type]);
+      LL = SIGNATURE_LENGTH[key.meta.type] + 8;
 
-      size_t key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-      ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-      uint8_t key[key_len], digest[key_len];
-
-      if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
-
-      memset(digest, 0, sizeof(digest));
-      memcpy(digest + (length - len[IDX_CHALLENGE]), DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE]);
-      if (ecdsa_sign(curve, key, digest, RDATA + 4) < 0) {
-        memzero(key, sizeof(key));
+      memzero(&key, sizeof(key));
+    } else if (IS_ECC(key.meta.type)) {
+      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+        // prepend zeros
+        memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]),
+                DATA + pos[IDX_CHALLENGE],
+                len[IDX_CHALLENGE]);
+        memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
+      }
+      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4);
+      if (sig_len < 0) {
+        ERR_MSG("Sign failed\n");
         return -1;
       }
-      memzero(key, sizeof(key));
 
-      int sig_len = ecdsa_sig2ansi(key_len, RDATA + 4, RDATA + 4);
+      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+        sig_len = (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
+      }
+
       RDATA[0] = 0x7C;
       RDATA[1] = sig_len + 2;
       RDATA[2] = TAG_RESPONSE;
       RDATA[3] = sig_len;
       LL = sig_len + 4;
-    } else
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+
+      memzero(&key, sizeof(key));
+    } else {
+      return -1;
+    }
   }
 
   //
@@ -521,34 +589,33 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] == 0) {
+    DBG_MSG("Case 2\n");
     authenticate_reset();
     in_admin_status = 0;
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
     RDATA[0] = 0x7C;
-    RDATA[1] = length + 2;
+    RDATA[1] = TDEA_BLOCK_SIZE + 2;
     RDATA[2] = TAG_CHALLENGE;
-    RDATA[3] = length;
-    random_buffer(RDATA + 4, length);
-    LL = length + 4;
+    RDATA[3] = TDEA_BLOCK_SIZE;
+    random_buffer(RDATA + 4, TDEA_BLOCK_SIZE);
+    LL = TDEA_BLOCK_SIZE + 4;
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
-    auth_ctx[OFFSET_AUTH_KEY_ID] = P2;
-    auth_ctx[OFFSET_AUTH_ALGO] = alg;
 
-    if (alg == ALG_TDEA_3KEY) {
-      uint8_t key[24];
-      if (read_file(key_path, key, 0, 24) < 0) return -1;
-      if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key) < 0) {
-        memzero(key, sizeof(key));
-        return -1;
-      }
-      memzero(key, sizeof(key));
-    } else {
-      authenticate_reset();
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
     }
+    DBG_KEY_META(&key.meta);
+
+    if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
+      ERR_MSG("TDEA failed\n");
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+    memzero(&key, sizeof(key));
   }
 
   //
@@ -557,9 +624,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
-        auth_ctx[OFFSET_AUTH_ALGO] != alg || length != len[IDX_RESPONSE] ||
-        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_RESPONSE], length) != 0) {
+    DBG_MSG("Case 3\n");
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL ||
+        P2 != 0x9B ||
+        TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
+        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_RESPONSE], TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -574,35 +643,33 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a WITNESS from the PIV Card Application.
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] == 0) {
+    DBG_MSG("Case 4\n");
     authenticate_reset();
     in_admin_status = 0;
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
-    auth_ctx[OFFSET_AUTH_KEY_ID] = P2;
-    auth_ctx[OFFSET_AUTH_ALGO] = alg;
-    if (OFFSET_AUTH_CHALLENGE + length > sizeof(auth_ctx)) EXCEPT(SW_WRONG_DATA);
-    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, length);
+    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, TDEA_BLOCK_SIZE);
 
     RDATA[0] = 0x7C;
-    RDATA[1] = length + 2;
+    RDATA[1] = TDEA_BLOCK_SIZE + 2;
     RDATA[2] = TAG_WITNESS;
-    RDATA[3] = length;
-    LL = length + 4;
+    RDATA[3] = TDEA_BLOCK_SIZE;
+    LL = TDEA_BLOCK_SIZE + 4;
 
-    if (alg == ALG_TDEA_3KEY) {
-      uint8_t key[24];
-      if (read_file(key_path, key, 0, 24) < 0) return -1;
-      if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key) < 0) {
-        memzero(key, sizeof(key));
-        return -1;
-      }
-      memzero(key, sizeof(key));
-    } else {
-      authenticate_reset();
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
     }
+    DBG_KEY_META(&key.meta);
+
+    if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
+      ERR_MSG("TDEA failed\n");
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+    memzero(&key, sizeof(key));
   }
 
   //
@@ -612,36 +679,38 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application returns the decrypted witness referencing the original
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || auth_ctx[OFFSET_AUTH_KEY_ID] != P2 ||
-        auth_ctx[OFFSET_AUTH_ALGO] != alg || length != len[IDX_WITNESS] ||
-        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_WITNESS], length) != 0) {
+    DBG_MSG("Case 5\n");
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL ||
+        P2 != 0x9B ||
+        TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
+        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_WITNESS], TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
 
-    if (length != len[IDX_CHALLENGE]) {
+    if (TDEA_BLOCK_SIZE != len[IDX_CHALLENGE]) {
       authenticate_reset();
       EXCEPT(SW_WRONG_LENGTH);
     }
 
     RDATA[0] = 0x7C;
-    RDATA[1] = length + 2;
+    RDATA[1] = TDEA_BLOCK_SIZE + 2;
     RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = length;
-    LL = length + 4;
+    RDATA[3] = TDEA_BLOCK_SIZE;
+    LL = TDEA_BLOCK_SIZE + 4;
 
-    if (alg == ALG_TDEA_3KEY) {
-      uint8_t key[24];
-      if (read_file(key_path, key, 0, 24) < 0) return -1;
-      if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key) < 0) {
-        memzero(key, sizeof(key));
-        return -1;
-      }
-      memzero(key, sizeof(key));
-    } else {
-      authenticate_reset();
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
+      return -1;
     }
+    DBG_KEY_META(&key.meta);
+
+    if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
+      ERR_MSG("TDEA failed\n");
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+    memzero(&key, sizeof(key));
 
     authenticate_reset();
     in_admin_status = 1;
@@ -653,25 +722,43 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   //
 
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
+    DBG_MSG("Case 6\n");
     authenticate_reset();
 #ifndef FUZZ
     if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (len[IDX_EXP] != 2 * length + 1) EXCEPT(SW_WRONG_DATA);
     if (P2 == 0x9D) pin.is_validated = 0;
-    uint8_t key[length];
-    if (read_file(key_path, key, 0, length) < 0) return -1;
-    ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-    if (ecdh_decrypt(curve, key, DATA + pos[IDX_EXP] + 1, RDATA + 4) < 0) {
-      memzero(key, sizeof(key));
+
+    if ((key.meta.usage & KEY_AGREEMENT) == 0) {
+      DBG_MSG("Incorrect key is used\n");
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    }
+
+    if (len[IDX_EXP] != PUBLIC_KEY_LENGTH[key.meta.type] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0)) {
+      DBG_MSG("Incorrect data length\n");
+      EXCEPT(SW_WRONG_DATA);
+    }
+    if (ck_read_key(key_path, &key) < 0) {
+      ERR_MSG("Read key failed\n");
       return -1;
     }
-    memzero(key, sizeof(key));
+    DBG_KEY_META(&key.meta);
+
+    start_quick_blinking(0);
+
+    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA + 4) < 0) {
+      ERR_MSG("ECDH failed\n");
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+
     RDATA[0] = 0x7C;
-    RDATA[1] = length + 2;
+    RDATA[1] = PRIVATE_KEY_LENGTH[key.meta.type] + 2;
     RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = length;
-    LL = length + 4;
+    RDATA[3] = PRIVATE_KEY_LENGTH[key.meta.type];
+    LL = PRIVATE_KEY_LENGTH[key.meta.type] + 4;
+
+    memzero(&key, sizeof(key));
   }
 
   //
@@ -743,93 +830,58 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-  if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
+  if (LC < 5) {
+    DBG_MSG("Wrong length\n");
+    EXCEPT(SW_WRONG_LENGTH);
+  }
   if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
-      DATA[3] != 0x01)
+      DATA[3] != 0x01) {
+    DBG_MSG("Wrong P1/P2 or tags\n");
     EXCEPT(SW_WRONG_DATA);
+  }
+
   const char *key_path = get_key_path(P2);
-  uint8_t alg = DATA[4];
-  if (alg == ALG_RSA_2048 || alg == ALG_RSA_3072 || alg == ALG_RSA_4096) {
-    int bits, n_length;
-    if (alg == ALG_RSA_2048) {
-      bits = 2048;
-      n_length = RSA2048_N_LENGTH;
-    } else if (alg == ALG_RSA_3072) {
-      bits = 3072;
-      n_length = RSA3072_N_LENGTH;
-    } else {
-      bits = 4096;
-      n_length = RSA4096_N_LENGTH;
-    }
+  ck_key_t key;
+  if (ck_read_key(key_path, &key) < 0) {
+    ERR_MSG("Fail to read key %s\n", key_path);
+    return -1;
+  }
 
-    rsa_key_t key;
-#ifndef FUZZ // to speed up fuzzing
-    if (rsa_generate_key(&key, bits) < 0) return -1;
-#else
-    memcpy(
-        &key,
-        "\x00\x08\x00\x00\x00\x01\x00\x01\xD7\x5A\x04\xFF\x4A\x3A\xD8\xCA\x21\x65\xDD\x61\x0C\x3C\x31\x4B\xFB\xC7\x07\x89\x1E\x1D\x05\xD3\xE5\x61\x39\xD5\x00\x2A\xB7\x7C\x5F\x15\x78\xA6\x32\xE3\x52\x9F\xE9\x68\x0C\x8A\x34\x1D\x9E\x6F\x03\x27\x2D\xC1\x86\x20\x90\xD8\x2D\xFE\xCB\xD5\xA8\xC9\x75\x31\xE7\x20\x2B\x5F\x1A\xA9\x4A\x77\xB1\xE5\x23\x8E\x5C\x23\x0F\x30\x0B\x67\x46\x29\xEE\x90\x23\x72\x75\x23\x3A\x5B\x50\x5E\
-        \xF0\x7E\x6F\x9D\x07\xAA\x02\x2C\x63\x47\x79\xFB\x32\xAC\x84\xEE\x08\xDA\x13\xA8\xCF\x28\x56\x0E\xCD\x75\xBD\xF1\xF4\x51\xF8\x87\xA5\x99\x87\x96\x4D\xD4\x44\x7F\x00\x00\xF0\xC6\x5F\xD4\x44\x7F\x00\x00\xA0\xB4\x64\xD4\x44\x7F\x00\x01\xD8\xC6\x5F\xD4\x44\x7F\x00\x00\x80\x96\x4D\xD4\x44\x7F\x00\x00\xB8\x7C\x84\xD2\x44\x7F\x01\x00\xC0\xC6\x5F\xD4\x44\x7F\x00\x00\x18\xBC\x64\xD4\x44\x7F\x00\x00\xA8\xC6\x5F\x00\
-        \x00\x00\x00\x00\xA0\x5C\x84\xD2\x44\x7F\x00\x00\x49\xE5\x6F\xDD\x44\x7F\x00\x00\xF8\xBB\x64\xD4\x44\x7F\x00\x00\x49\xE5\x6F\xDD\x44\x7F\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\xF6\x96\xD7\xD3\x44\x7F\x00\x00\xC8\xBB\x64\xD4\x01\x00\x00\x00\xB7\x2E\x83\x4D\xAA\x3C\x94\x00\x01\xC4\xBB\x40\x6C\x4D\x29\x7A\xDB\xE9\xEC\x74\x7E\x15\x07\x68\xC5\x3E\xA9\x70\x60\xA1\x46\x85\x3F\x65\xB1\xE7\x92\x31\xEF\x91\xC9\xA3\
-        \x96\xCA\x94\x5A\xF8\x89\xE3\x84\x96\x0A\xE6\x24\x31\xB9\x0D\x77\x17\xD3\x08\x2D\x54\xEE\xC7\x6C\x6E\x46\x7A\xC3\xD0\x6E\x91\x7C\xD5\x21\xBC\x0C\x11\x2E\xEB\x80\xBB\x9C\x4E\x21\x45\x7E\x55\xB8\xD4\x71\xB0\x2D\xFB\xC5\x4F\x65\x94\xD4\x62\x92\x0C\x0D\x59\x6E\xF7\x33\xE4\x03\xA8\x3C\xF3\xFD\xC7\xA3\xB6\xAA\x80\x09\x9D\x22\xC2\xA7\x58\x43\x6A\x7D\x24\x51\x84\xD2\x44\x7F\x00\x01\xC0\xBA\x61\xD4\x44\x7F\x00\x00\
-        \x80\x96\x4D\xD4\x44\x7F\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x68\xBB\x64\xD4\x44\x7F\x00\x00\x52\x00\x00\x00\x06\x00\x00\x01\x40\xBA\x61\xD4\x44\x7F\x00\x00\xE8\xC5\x5F\xD4\x44\x7F\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x50\xBB\x64\xD4\x44\x7F\x00\x00\xB8\xE2\x63\xD4\x44\x7F\x01\x01\x40\xBA\x61\xD4\x44\x7F\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x40\xBA\x61\xD4\x44\x7F\x00\x00\x40\xBB\x64\xD4\x44\x7F\
-        \x00\x00\xA0\xE2\x63\xD4\x44\x7F\x00\x01\x00\x05\x00\x00\x44\x7F\x04\x00\xB8\xC5\x5F\xD4\x44\x7F\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xA0\xC5\x5F\xD4\x44\x7F\x00\x00\x98\xE2\x63\xD4\x44\x7F\x00\x06\x80\x96\x4D\xD4\x44\x7F\x00\x00\x04\x00\x00\x00\x00\x00\x00\x01\x90\xC5\x5F\xD4\x44\x7F\x00\x00\x24\x51\x84\x00\x06\x00\x00\x00\x70\xC5\x5F\xD4\x44\x7F\x00\x00\x46\x00\x00\x00\x00\x00\x00\x01\xF8\xBA\x64\xD4\
-        \x44\x7F\x00\x00\x41\xE5\x6F\xDD\x44\x7F\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\xD8\xBA\x64\xD4\x44\x7F\x00\x00\x42\xE5\x6F\xDD\x44\x7F\x00\x01\x50\x51\x5E\xD4\x44\x7F\x00\x00\x58\xC5\x5F\xD4\x44\x7F\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\xC0\xBA\x64\xD4\x44\x7F\x00\x00\x41\xE5\x6F\xDD\x44\x7F\x00\x01\x20\x51\x5E\xD4\x44\x7F\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x44\xBA\x61\xD4\x44\x01\x01\x01\xA8\xBA\
-        \x64\xD4\x44\x7F\x00\x00\xCC\x02\x00\x00\x00\x00\x00\x01\xC0\xBA\x61\xD4\x44\x7F\x00\x00\x04\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x90\xBA\x64\xD4\x44\x7F\x00\x00\x24\x51\x84\xD2\x44\x7F\x00\x01\x40\xBA\x61\xD4\x44\x7F\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x01\x00\x01\x04\x30\x01\x00\x00\x44\x7F\x00\x00\x24\x51\x84\xD2\x44\x7F\x00\x01\xF8\xC4\x5F\xD4\x44\x7F\x00\x00\
-        \x98\x0F\x64\xD4\x44\x01\x01\x01\x40\xE5\x6F\xDD\x44\x7F\x00\x00\x40\xBA\x61\xD4\x44\x7F\x00\xFF\x40\xE5\x6F\xDD\x44\x7F\x00\x00\xF0\xE4\x6F\xDD\x44\x7F\x00\x00\x37\x00\x00\x00\x00\x00\x00\x00\x87\x96\x4D\xD4\x44\x7F\x00\x00\xE0\xC4\x5F\xD4\x44\x7F\x00\x00\x20\x51\x84\xD2\x44\x7F\x00\x01\xC8\xC4\x5F\xD4\x44\x7F\x00\x00\x80\x96\x4D\xD4\x44\x7F\x00\x00\x01\x00\x00\x00\x7C\x00\x00\x01\xB0\xC4\x5F\xD4\x44\x7F\
-        \x00\x00\x4A\x00\x00\x00\x06\x00\x00\x00\x50\x00\x00\x00\x44\x7F\xFF\x00\x98\xC4\x5F\xD4\x44\x7F\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x80\xC4\x5F\xD4\x44\x7F\x00\x00\xD0\xB2\x64\xD4\x44\x7F\x00\x01\x39\xE5\x6F\xDD\x44\x7F\x00\x00\x28\xE1\x63\xD4\x44\x7F\x00\xFF\x39\xE5\x6F\xDD\x44\x7F\x00\x00\xF0\xE4\x6F\xDD\x44\x7F\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x87\x96\x4D\xD4\x44\x7F\x00\x00\x68\xC4\x5F\xD4\
-        \x44\x7F\x00\x00\x01\x00\x00\x00\x00\x00\x00\x01\x50\xC4\x5F\xD4\x44\x7F\x00\x00\x18\x7C\x84\xD2\x44\x7F\x00\x06\x80\x96\x4D\xD4\x44\x7F\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x40\xC4\x5F\xD4\x44\x7F\x00\x00\x40\xBA\x61\x00\x06\x00\x00\x00\x20\xC4\x5F\xD4\x44\x7F\x00\x00\x44\xBA\x61\xD4\x44\x7F\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x39\xE5\x6F\xDD\x44\x7F\x00\x00\xA4\x02\x00\x00\x00\x00\x00\x00\xA5\x02\
-        \x00\x00\x00\x00\x00\x00\x3A\xE5\x6F\xDD\x44\x7F\x00\x00\x3A\xE5\x6F\xDD\x44\x7F\x00\x00\x08\xC4\x5F\xD4\x44\x7F\x00\x00\xD8\x0E\x64\xD4\x44\x01\x01\x00\x49\x00\x00\x00\x00\x00\x00\x00\x39\xE5\x6F\xDD\x44\x7F\x00\x00\x88\xB9\x64\xD4\x44\x7F\x00\x00\x39\xE5\x6F\xDD\x44\x7F\x01\x04\xCC\xFC\x0F\x50\x00\x00\x04\x04\xD2\xDC\xD6\x60\x00\x00\x04\x00\x60\xB9\x64\xD4\x44\x7F\x00\x00\xF0\xE4\x6F\xDD\x44\x7F\x00\x01\
-        \x36\x87\x84\xD2\x44\x7F\x00\x00\x87\x96\x4D\xD4\x44\x7F\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x48\xB9\x64\xD4\x44\x7F\x00\x00\xD8\xC3\x5F\xD4\x44\x7F\x00\x01\x20\x87\x84\xD2\x44\x7F\x00\x00\xC0\x51\x84\xD2\x44\x7F\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00",
-        sizeof(rsa_key_t));
-#endif // FUZZ
-    if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
-      memzero(&key, sizeof(key));
-      return -1;
-    }
-
-    RDATA[0] = 0x7F;
-    RDATA[1] = 0x49;
-    RDATA[2] = 0x82;
-    RDATA[3] = HI(6 + n_length + E_LENGTH);
-    RDATA[4] = LO(6 + n_length + E_LENGTH);
-    RDATA[5] = 0x81; // modulus
-    RDATA[6] = 0x82;
-    RDATA[7] = HI(n_length);
-    RDATA[8] = LO(n_length);
-    rsa_get_public_key(&key, RDATA + 9);
-    RDATA[9 + n_length] = 0x82; // exponent
-    RDATA[10 + n_length] = E_LENGTH;
-    memcpy(RDATA + 11 + n_length, key.e, E_LENGTH);
-    LL = 11 + n_length + E_LENGTH;
+  key.meta.type = algo_id_to_key_type(DATA[4]);
+  start_quick_blinking(0);
+  if (ck_generate_key(&key) < 0) {
+    ERR_MSG("Generate key %s failed\n", key_path);
+    return -1;
+  }
+  int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
+  if (err == KEY_ERR_LENGTH) {
+    DBG_MSG("Wrong length when importing\n");
     memzero(&key, sizeof(key));
-  } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
-    size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-    size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
-    ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-    uint8_t key[pri_key_len + pub_key_len];
-
-    if (ecc_generate(curve, key, key + pri_key_len) < 0) return -1;
-    if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-    RDATA[0] = 0x7F;
-    RDATA[1] = 0x49;
-    RDATA[2] = pub_key_len + 3;
-    RDATA[3] = 0x86;
-    RDATA[4] = pub_key_len + 1;
-    RDATA[5] = 0x04;
-    memcpy(RDATA + 6, key + pri_key_len, pub_key_len);
-    LL = pub_key_len + 6;
-    memzero(key, sizeof(key));
-  } else
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  else if (err == KEY_ERR_DATA) {
+    DBG_MSG("Wrong data when importing\n");
+    memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_DATA);
+  }
+  else if (err < 0) {
+    DBG_MSG("Error when importing\n");
+    memzero(&key, sizeof(key));
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
+  if (ck_write_key(key_path, &key) < 0) {
+    ERR_MSG("Write key %s failed\n", key_path);
+    return -1;
+  }
+  DBG_MSG("Generate key %s successful\n", key_path);
+  DBG_KEY_META(&key.meta);
 
-  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
-
-  uint8_t origin = KEY_ORIGIN_GENERATED;
-  if (write_attr(key_path, TAG_KEY_ORIGIN, &origin, sizeof(origin)) < 0) return -1;
+  RDATA[0] = 0x7F;
+  RDATA[1] = 0x49;
+  int len = ck_encode_public_key(&key, &RDATA[2], true);
+  memzero(&key, sizeof(key));
+  if (len < 0) return -1;
+  LL = len + 2;
 
   return 0;
 }
@@ -860,128 +912,40 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
-  uint8_t alg = P1;
-
-  switch (alg) {
-  case ALG_RSA_2048:
-  case ALG_RSA_3072:
-  case ALG_RSA_4096: {
-    if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
-
-    int pq_length, nbits;
-    if (alg == ALG_RSA_2048) {
-      pq_length = RSA2048_PQ_LENGTH;
-      nbits = 2048;
-    } else if (alg == ALG_RSA_3072) {
-      pq_length = RSA3072_PQ_LENGTH;
-      nbits = 3072;
-    } else {
-      pq_length = RSA4096_PQ_LENGTH;
-      nbits = 4096;
-    }
-    rsa_key_t key;
-    memset(&key, 0, sizeof(key));
-    key.nbits = nbits;
-    key.e[1] = 1;
-    key.e[3] = 1;
-
-    int fail;
-    size_t length_size;
-    uint8_t *p = DATA;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x01) EXCEPT(SW_WRONG_DATA);
-    int len = tlv_get_length_safe(p, LC - 1, &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.p + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x02) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.q + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x03) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.dp + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x04) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.dq + (pq_length - len), p, len);
-    p += len;
-
-    if ((p - DATA) >= LC) EXCEPT(SW_WRONG_LENGTH);
-    if (*p++ != 0x05) EXCEPT(SW_WRONG_DATA);
-    len = tlv_get_length_safe(p, LC - (p - DATA), &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    if (len > pq_length) EXCEPT(SW_WRONG_DATA);
-    p += length_size;
-    memcpy(key.qinv + (pq_length - len), p, len);
-
-    if (write_file(key_path, &key, 0, sizeof(key), 1) < 0) {
-      memzero(&key, sizeof(key));
-      return -1;
-    }
-    memzero(&key, sizeof(key));
-    break;
+  if (key_path == NULL) {
+    DBG_MSG("Unknown key file\n");
+    EXCEPT(SW_WRONG_P1P2);
+  }
+  ck_key_t key;
+  if (ck_read_key(key_path, &key) < 0) {
+    ERR_MSG("Fail to read key %s\n", key_path);
+    return -1;
   }
 
-  case ALG_ECC_256:
-  case ALG_ECC_384: {
-    size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-    size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
-    ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-    if (LC < 2 + pri_key_len) EXCEPT(SW_WRONG_LENGTH);
-
-    uint8_t key[pri_key_len + pub_key_len];
-
-    if (DATA[0] != 0x06 || DATA[1] != pri_key_len) EXCEPT(SW_WRONG_DATA);
-
-    memcpy(key, DATA + 2, pri_key_len);
-
-    if (!ecc_verify_private_key(curve, key)) {
-      memzero(key, sizeof(key));
-      EXCEPT(SW_WRONG_DATA);
-    }
-
-    if (ecc_get_public_key(curve, key, key + pri_key_len) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-
-    if (write_file(key_path, key, 0, sizeof(key), 1) < 0) {
-      memzero(key, sizeof(key));
-      return -1;
-    }
-
-    memzero(key, sizeof(key));
-    break;
-  }
-
-  default:
+  key.meta.type = algo_id_to_key_type(P1);
+  if (key.meta.type == KEY_TYPE_PKC_END) {
+    DBG_MSG("Error P1 value\n");
     EXCEPT(SW_WRONG_P1P2);
   }
 
-  if (write_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
-
-  uint8_t origin = KEY_ORIGIN_GENERATED;
-  if (write_attr(key_path, TAG_KEY_ORIGIN, &origin, sizeof(origin)) < 0) return -1;
+  int err = ck_parse_piv(&key, DATA, LC);
+  if (err == KEY_ERR_LENGTH) {
+    DBG_MSG("Wrong length when importing\n");
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  else if (err == KEY_ERR_DATA) {
+    DBG_MSG("Wrong data when importing\n");
+    EXCEPT(SW_WRONG_DATA);
+  }
+  else if (err < 0) {
+    DBG_MSG("Error when importing\n");
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
+  if (ck_write_key(key_path, &key) < 0) {
+    memzero(&key, sizeof(key));
+    return -1;
+  }
+  memzero(&key, sizeof(key));
 
   return 0;
 }
@@ -1037,62 +1001,37 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     case 0x9E:  // Card Authentication
     {
       const char *key_path = get_key_path(P2);
-      if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
-      uint8_t alg, origin;
-      if (read_attr(key_path, TAG_KEY_ALG, &alg, sizeof(alg)) < 0) return -1;
-      if (read_attr(key_path, TAG_KEY_ORIGIN, &origin, sizeof(origin)) < 0) return -1;
+      if (key_path == NULL) {
+        DBG_MSG("Key file not found\n");
+        EXCEPT(SW_WRONG_P1P2);
+      }
+
+      ck_key_t key;
+      if (ck_read_key(key_path, &key) < 0) {
+        ERR_MSG("Read key failed\n");
+        return -1;
+      }
+      DBG_KEY_META(&key.meta);
 
       RDATA[pos++] = 0x01; // Algorithm
       RDATA[pos++] = 0x01;
-      RDATA[pos++] = alg;
+      RDATA[pos++] = key_type_to_algo_id[key.meta.type];
       RDATA[pos++] = 0x02; // Policy
       RDATA[pos++] = 0x02;
-      RDATA[pos++] = 0x00; // PIN: default
-      RDATA[pos++] = 0x01; // Touch: never
+      RDATA[pos++] = key.meta.pin_policy;
+      RDATA[pos++] = key.meta.touch_policy;
       RDATA[pos++] = 0x03; // Origin
       RDATA[pos++] = 0x01;
-      RDATA[pos++] = origin;
+      RDATA[pos++] = key.meta.origin;
       RDATA[pos++] = 0x04; // Public
-      if (alg == ALG_RSA_4096 || alg == ALG_RSA_3072 || alg == ALG_RSA_2048) {
-        rsa_key_t key;
-        if (read_file(key_path, &key, 0, sizeof(rsa_key_t)) < 0) return -1;
-        int n_length;
-        if (alg == ALG_RSA_2048) {
-          n_length = RSA2048_N_LENGTH;
-        } else if (alg == ALG_RSA_3072) {
-          n_length = RSA3072_N_LENGTH;
-        } else {
-          n_length = RSA4096_N_LENGTH;
-        }
-        RDATA[pos++] = 0x82;  // length of the public key (two bytes), including the modulus and the exponent
-        RDATA[pos++] = HI(6 + n_length + E_LENGTH);
-        RDATA[pos++] = LO(6 + n_length + E_LENGTH);
-        RDATA[pos++] = 0x81; // modulus
-        RDATA[pos++] = 0x82;
-        RDATA[pos++] = HI(n_length);
-        RDATA[pos++] = LO(n_length);
-        rsa_get_public_key(&key, RDATA + pos++);
-        RDATA[pos++ + n_length] = 0x82; // exponent
-        RDATA[pos++ + n_length] = E_LENGTH;
-        memcpy(RDATA + pos++ + n_length, key.e, E_LENGTH);
+      int len = ck_encode_public_key(&key, &RDATA[pos], true);
+      if (len < 0) {
+        ERR_MSG("Encode public key failed\n");
         memzero(&key, sizeof(key));
-      } else if (alg == ALG_ECC_256 || alg == ALG_ECC_384) {
-        size_t pri_key_len = alg == ALG_ECC_256 ? ECC_256_PRI_KEY_SIZE : ECC_384_PRI_KEY_SIZE;
-        size_t pub_key_len = alg == ALG_ECC_256 ? ECC_256_PUB_KEY_SIZE : ECC_384_PUB_KEY_SIZE;
-        ECC_Curve curve = alg == ALG_ECC_256 ? ECC_SECP256R1 : ECC_SECP384R1;
-        uint8_t key[pri_key_len + pub_key_len];
-        if (read_file(key_path, key, 0, sizeof(key)) < 0) return -1;
-        if (ecc_get_public_key(curve, key, key + pri_key_len) < 0) {
-          memzero(key, sizeof(key));
-          return -1;
-        }
-        RDATA[pos++] = pub_key_len + 3; // length of the public key (compressed)
-        RDATA[pos++] = 0x86;
-        RDATA[pos++] = pub_key_len + 1;
-        RDATA[pos++] = 0x04;
-        memcpy(RDATA + pos++, key + pri_key_len, pub_key_len);
-        memzero(key, sizeof(key));
+        return -1;
       }
+      pos += len;
+      memzero(&key, sizeof(key));
       break;
     }
   }
@@ -1128,7 +1067,7 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;
   if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
 
-  int ret = 0;
+  int ret;
   switch (INS) {
   case PIV_INS_SELECT:
     ret = piv_select(capdu, rapdu);
@@ -1150,12 +1089,14 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GENERAL_AUTHENTICATE:
     ret = piv_general_authenticate(capdu, rapdu);
+    stop_blinking();
     break;
   case PIV_INS_PUT_DATA:
     ret = piv_put_data(capdu, rapdu);
     break;
   case PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR:
     ret = piv_generate_asymmetric_key_pair(capdu, rapdu);
+    stop_blinking();
     break;
   case PIV_INS_SET_MANAGEMENT_KEY:
     ret = piv_set_management_key(capdu, rapdu);

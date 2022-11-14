@@ -43,14 +43,14 @@ jobs:
       run: |
         ./test-via-pcsc/build_gpg.sh
         gpg --version
-    
+
     - name: Build FIDO Tests
       run: ./test-via-pcsc/build_fido_tests.sh
 
     - name: Build for Test
       run: |
         mkdir build && pushd build
-        cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+        cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
         make -j2
       
     - name: Setup a SSH Server
@@ -95,7 +95,7 @@ jobs:
         echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
         cd fido2-tests
         ~/.local/bin/pytest --color=yes --nfc tests/standard/
-        ~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no 
+        ~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no
 
     - name: Test the U2F
       run: |
@@ -190,7 +190,7 @@ jobs:
         GPGEnc
         UserChecked 1
         echo 1 >/tmp/canokey-test-nfc
-        
+
         GPGReset
         gpg --card-status |grep -E 'Signature key.+none'
         Addkey 4 2048 # [4] gen RSA2048 key
@@ -383,7 +383,7 @@ jobs:
         yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
         ## Test long data object
         yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
-        for s in 9a 9c 9d 9e; do 
+        for s in 9a 9c 9d 9e; do
           PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048
           yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
         done

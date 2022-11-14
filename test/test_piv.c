@@ -86,12 +86,6 @@ static void test_regression_fuzz(void **state) {
   if (1) {
     // empty input
     uint8_t data[] = {};
-    test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9B, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // empty input
-    uint8_t data[] = {};
     test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
   }
 

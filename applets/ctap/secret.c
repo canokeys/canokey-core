@@ -2,14 +2,39 @@
 #include "secret.h"
 #include <apdu.h>
 #include <ecc.h>
-#include <ed25519.h>
 #include <fs.h>
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
 #include "cose-key.h"
 
-static int read_pri_key(uint8_t *pri_key) {
+static int key_type_to_cose_alg(key_type_t type) {
+  switch (type) {
+  case SECP256R1:
+    return COSE_ALG_ES256;
+  case ED25519:
+    return COSE_ALG_EDDSA;
+  case SM2:
+    return COSE_ALG_SM2;
+  default:
+    return -65536;
+  }
+}
+
+static key_type_t cose_alg_to_key_type(int alg) {
+  switch (alg) {
+  case COSE_ALG_ES256:
+    return SECP256R1;
+  case COSE_ALG_EDDSA:
+    return ED25519;
+  case COSE_ALG_SM2:
+    return SM2;
+  default:
+    return KEY_TYPE_PKC_END;
+  }
+}
+
+static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
   if (ret < 0) return ret;
   return 0;
@@ -36,77 +61,108 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-static void generate_credential_id_nonce_tag(CredentialId *kh, uint8_t *pubkey) {
-  // works for es256 and ed25519 since their pubkeys share the same length
+static void generate_credential_id_nonce_tag(CredentialId *kh, ecc_key_t *key) {
+  // works for ECC algorithms with a 256-bit private key
   random_buffer(kh->nonce, sizeof(kh->nonce));
-  // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
-  hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
-  // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in pubkey[32, 64)
-  hmac_sha256(pubkey, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), pubkey + KH_KEY_SIZE);
-  memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
+  // private key = hmac-sha256(device private key, nonce), stored in key.pri
+  hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  DBG_MSG("Device key: ");
+  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  DBG_MSG("Nonce: ");
+  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
+  DBG_MSG("Private key: ");
+  PRINT_HEX(key->pri, KH_KEY_SIZE);
+  // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in kh.tag via key.pub
+  hmac_sha256(key->pri, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), key->pub);
+  memcpy(kh->tag, key->pub, sizeof(kh->tag));
 }
 
 int generate_key_handle(CredentialId *kh, uint8_t *pubkey, int32_t alg_type) {
-  int ret = read_kh_key(pubkey); // use pubkey as key buffer
+  ecc_key_t key;
+
+  int ret = read_kh_key(key.pub); // use key.pub to store kh key first
   if (ret < 0) return ret;
 
-  if (alg_type == COSE_ALG_ES256) {
-    kh->alg_type = COSE_ALG_ES256;
-    do {
-      generate_credential_id_nonce_tag(kh, pubkey);
-    } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
-    return 0;
-  } else if (alg_type == COSE_ALG_EDDSA) {
-    kh->alg_type = COSE_ALG_EDDSA;
-    generate_credential_id_nonce_tag(kh, pubkey);
-    ed25519_publickey(pubkey, pubkey);
-    return 0;
-  } else {
+  if (alg_type != COSE_ALG_ES256 && alg_type != COSE_ALG_EDDSA && alg_type != COSE_ALG_SM2) {
+    DBG_MSG("Unsupported algo key_type\n");
+    memzero(&key, sizeof(key));
     return -1;
   }
+
+  kh->alg_type = alg_type;
+  key_type_t key_type = cose_alg_to_key_type(alg_type);
+
+  do {
+    generate_credential_id_nonce_tag(kh, &key);
+  } while (ecc_complete_key(key_type, &key) < 0);
+
+  memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+  DBG_MSG("Public: ");
+  PRINT_HEX(pubkey, PUBLIC_KEY_LENGTH[key_type]);
+  memzero(&key, sizeof(key));
+
+  return 0;
 }
 
-int verify_key_handle(const CredentialId *kh, uint8_t *pri_key) {
-  uint8_t kh_key[KH_KEY_SIZE];
-  int ret = read_kh_key(kh_key);
+int verify_key_handle(const CredentialId *kh, ecc_key_t *key) {
+  int ret = read_kh_key(key->pub); // use key.pub to store kh key first
   if (ret < 0) return ret;
   // get private key
-  hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pri_key);
-  // get tag, store in kh_key, which should be verified first outside of this function
-  hmac_sha256(pri_key, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), kh_key);
-  if (memcmp(kh_key, kh->tag, sizeof(kh->tag)) == 0) {
-    memzero(kh_key, sizeof(kh_key));
-    return 0;
+  hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  DBG_MSG("Device key: ");
+  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  DBG_MSG("Nonce: ");
+  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
+  DBG_MSG("Private key: ");
+  PRINT_HEX(key->pri, KH_KEY_SIZE);
+  // get tag, store in key->pub, which should be verified first outside this function
+  hmac_sha256(key->pri, KH_KEY_SIZE, kh->rpIdHash, sizeof(kh->rpIdHash), key->pub);
+  if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
+    DBG_MSG("Incorrect key handle\n");
+    memzero(key, sizeof(ecc_key_t));
+    return 1;
   }
-  memzero(kh_key, sizeof(kh_key));
-  return 1;
+  return 0;
 }
 
-size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
-  uint8_t key[32];
-  int ret = read_pri_key(key);
+size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
+  ecc_key_t key;
+  int ret = read_device_pri_key(key.pri);
   if (ret < 0) return ret;
-  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
-  memzero(key, sizeof(key));
+  ecc_sign(SECP256R1, &key, input, input_len, sig);
+  memzero(&key, sizeof(key));
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
-size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
-  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
-  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
-}
+int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
+  key_type_t key_type = cose_alg_to_key_type(alg_type);
+  DBG_MSG("Sign key type: %d, private key: ", key_type);
+  PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
 
-size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, size_t data_len, uint8_t *sig) {
-  ed25519_public_key pk;
-  ed25519_publickey(key, pk);
-  ed25519_signature sig_tmp;
-  // ed25519_sign(m, mlen, sk, pk, RS)
-  // m and RS can not share the same buffer
-  // (they are shared outside of this func)
-  ed25519_sign(data, data_len, key, pk, sig_tmp);
-  memcpy(sig, sig_tmp, sizeof(ed25519_signature));
-  memzero(pk, sizeof(pk));
-  return sizeof(ed25519_signature);
+  if (key_type == ED25519) {
+    if (ecc_complete_key(key_type, key) < 0) {
+      ERR_MSG("Failed to complete key\n");
+      return -1;
+    }
+    if (ecc_sign(key_type, key, input, len, sig) < 0) {
+      ERR_MSG("Failed to sign\n");
+      return -1;
+    }
+    return SIGNATURE_LENGTH[key_type];
+  } else {
+    sha256_init();
+    sha256_update(input, len);
+    sha256_final(sig);
+    DBG_MSG("Digest: ");
+    PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
+    if (ecc_sign(key_type, key, sig, PRIVATE_KEY_LENGTH[key_type], sig) < 0) {
+      ERR_MSG("Failed to sign\n");
+      return -1;
+    }
+    DBG_MSG("Raw signature: ");
+    PRINT_HEX(sig, SIGNATURE_LENGTH[key_type]);
+    return (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_type], sig, sig);
+  }
 }
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }

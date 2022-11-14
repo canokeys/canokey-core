@@ -38,8 +38,3 @@ uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, s
 
   return ret;
 }
-
-void swap_big_number_endian(uint8_t buf[32]) {
-  for (int i = 0; i < 16; ++i)
-    SWAP(buf[31 - i], buf[i], uint8_t);
-}
