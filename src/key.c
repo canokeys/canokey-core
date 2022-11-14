@@ -157,49 +157,18 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
     *(uint32_t *)key->rsa.e = htobe32(65537);
 
-    if (*p++ != 0x01) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-    memcpy(key->rsa.p + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
-    p += len;
+    uint8_t *data_ptr[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
 
-    if ((p - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x02) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-    memcpy(key->rsa.q + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
-    p += len;
-
-    if ((p - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x03) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-    memcpy(key->rsa.dp + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
-    p += len;
-
-    if ((p - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x04) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-    memcpy(key->rsa.dq + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
-    p += len;
-
-    if ((p - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x05) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-    memcpy(key->rsa.qinv + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
-    p += len;
+    for (int i = 1; i <= 5; ++i) {
+      if ((p - buf) >= buf_len) return KEY_ERR_LENGTH;
+      if (*p++ != i) return KEY_ERR_DATA;
+      len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+      if (fail) return KEY_ERR_LENGTH;
+      if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
+      p += length_size;
+      memcpy(data_ptr[i - 1] + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
+      p += len;
+    }
 
     if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));

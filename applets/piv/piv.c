@@ -454,11 +454,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   ck_key_t key;
   if (P2 == 0x9B) { // Card admin
-    if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
+    if (P1 != ALG_TDEA_3KEY) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
       EXCEPT(SW_WRONG_P1P2);
     }
-  } else if (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 82 && P2 != 83) {
+  } else if (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 0x82 && P2 != 0x83) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
@@ -467,6 +467,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     return -1;
   }
   DBG_KEY_META(&key.meta);
+
+  if (algo_id_to_key_type(P1) != key.meta.type) {
+    DBG_MSG("The value of P1 mismatches the key specified by P2\n");
+    EXCEPT(SW_WRONG_P1P2);
+  }
 
   uint16_t pos[6] = {0}, len[6] = {0};
   int fail = 0;
@@ -915,6 +920,11 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   key.meta.type = algo_id_to_key_type(P1);
+  if (key.meta.type == KEY_TYPE_PKC_END) {
+    DBG_MSG("Error P1 value\n");
+    EXCEPT(SW_WRONG_P1P2);
+  }
+
   int err = ck_parse_piv(&key, DATA, LC);
   if (err == KEY_ERR_LENGTH) {
     DBG_MSG("Wrong length when importing\n");
