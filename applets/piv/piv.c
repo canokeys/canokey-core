@@ -118,6 +118,9 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
     return RSA3072;
   case ALG_RSA_4096:
     return RSA4096;
+  case ALG_DEFAULT:
+  case ALG_TDEA_3KEY:
+    return TDEA;
   default:
     return KEY_TYPE_PKC_END;
   }
