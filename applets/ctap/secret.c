@@ -4,7 +4,6 @@
 #include <aes.h>
 #include <block-cipher.h>
 #include <ecc.h>
-#include <ed25519.h>
 #include <fs.h>
 #include <hmac.h>
 #include <memzero.h>
@@ -12,7 +11,7 @@
 #include <device.h>
 
 static uint8_t pin_token[PIN_TOKEN_SIZE];
-static uint8_t ka_keypair[PRI_KEY_SIZE + PUB_KEY_SIZE];
+static ecc_key_t ka_key;
 static uint8_t permissions_rp_id[SHA256_DIGEST_LENGTH + 1]; // the first byte indicates nullable (0: null, 1: not null)
 static uint8_t permissions;
 static bool in_use;
@@ -93,9 +92,11 @@ void cp_initialize(void) {
 }
 
 void cp_regenerate(void) {
-  ecc_generate(ECC_SECP256R1, ka_keypair, ka_keypair + PRI_KEY_SIZE);
-  DBG_MSG("Regenerate: ");
-  PRINT_HEX(ka_keypair, PUB_KEY_SIZE + PRI_KEY_SIZE);
+  ecc_generate(SECP256R1, &ka_key);
+  DBG_MSG("Regenerate:\nPri: ");
+  PRINT_HEX(ka_key.pri, PRIVATE_KEY_LENGTH[SECP256R1]);
+  DBG_MSG("Pub: ");
+  PRINT_HEX(ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
 }
 
 void cp_reset_pin_uv_auth_token(void) {
@@ -104,11 +105,11 @@ void cp_reset_pin_uv_auth_token(void) {
 }
 
 void cp_get_public_key(uint8_t *buf) {
-  memcpy(buf, ka_keypair + PRI_KEY_SIZE, PUB_KEY_SIZE);
+  memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
 }
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
-  int ret = ecdh_decrypt(ECC_SECP256R1, ka_keypair, buf, buf);
+  int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
   if (ret < 0) return 1;
   if (pin_protocol == 1)
     sha256_raw(buf, PRI_KEY_SIZE, buf);
@@ -198,7 +199,20 @@ void cp_associate_rp_id(const uint8_t *rp_id_hash) {
   memcpy(&permissions_rp_id[1], rp_id_hash, SHA256_DIGEST_LENGTH);
 }
 
-static int read_pri_key(uint8_t *pri_key) {
+key_type_t cose_alg_to_key_type(int alg) {
+  switch (alg) {
+  case COSE_ALG_ES256:
+    return SECP256R1;
+  case COSE_ALG_EDDSA:
+    return ED25519;
+  case COSE_ALG_SM2:
+    return SM2;
+  default:
+    return KEY_TYPE_PKC_END;
+  }
+}
+
+static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
   if (ret < 0) return ret;
   return 0;
@@ -225,78 +239,109 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t *pubkey) {
-  // works for es256 and ed25519 since their public keys share the same length
-  random_buffer(kh->nonce, CREDENTIAL_NONCE_SIZE);
-  // private key = hmac-sha256(device private key, nonce), stored in pubkey[0:32)
-  hmac_sha256(pubkey, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pubkey);
-  // tag = left(hmac-sha256(private key, rp_id_hash or appid), 16), stored in pubkey[32, 64)
-  hmac_sha256(pubkey, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), pubkey + KH_KEY_SIZE);
-  memcpy(kh->tag, pubkey + KH_KEY_SIZE, sizeof(kh->tag));
+static void generate_credential_id_nonce_tag(credential_id *kh, ecc_key_t *key) {
+  // works for ECC algorithms with a 256-bit private key
+  random_buffer(kh->nonce, sizeof(kh->nonce));
+  // private key = hmac-sha256(device private key, nonce), stored in key.pri
+  hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  DBG_MSG("Device key: ");
+  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  DBG_MSG("Nonce: ");
+  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
+  DBG_MSG("Private key: ");
+  PRINT_HEX(key->pri, KH_KEY_SIZE);
+  // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in kh.tag via key.pub
+  hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
+  memcpy(kh->tag, key->pub, sizeof(kh->tag));
 }
 
 int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type) {
-  int ret = read_kh_key(pubkey); // use pubkey as key buffer
+  ecc_key_t key;
+
+  int ret = read_kh_key(key.pub); // use key.pub to store kh key first
   if (ret < 0) return ret;
 
-  if (alg_type == COSE_ALG_ES256) {
-    kh->alg_type = COSE_ALG_ES256;
-    do {
-      generate_credential_id_nonce_tag(kh, pubkey);
-    } while (ecc_get_public_key(ECC_SECP256R1, pubkey, pubkey) < 0);
-    return 0;
-  } else if (alg_type == COSE_ALG_EDDSA) {
-    kh->alg_type = COSE_ALG_EDDSA;
-    generate_credential_id_nonce_tag(kh, pubkey);
-    ed25519_publickey(pubkey, pubkey);
-    return 0;
-  } else {
+  if (alg_type != COSE_ALG_ES256 && alg_type != COSE_ALG_EDDSA && alg_type != COSE_ALG_SM2) {
+    DBG_MSG("Unsupported algo key_type\n");
+    memzero(&key, sizeof(key));
     return -1;
   }
+
+  kh->alg_type = alg_type;
+  key_type_t key_type = cose_alg_to_key_type(alg_type);
+
+  do {
+    generate_credential_id_nonce_tag(kh, &key);
+  } while (ecc_complete_key(key_type, &key) < 0);
+
+  memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+  DBG_MSG("Public: ");
+  PRINT_HEX(pubkey, PUBLIC_KEY_LENGTH[key_type]);
+  memzero(&key, sizeof(key));
+
+  return 0;
 }
 
-int verify_key_handle(const credential_id *kh, uint8_t *pri_key) {
-  uint8_t kh_key[KH_KEY_SIZE];
-  int ret = read_kh_key(kh_key);
+int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
+  int ret = read_kh_key(key->pub); // use key.pub to store kh key first
   if (ret < 0) return ret;
 
   // get private key
-  hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), pri_key);
-  // get tag, store in kh_key, which should be verified first outside this function
-  hmac_sha256(pri_key, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), kh_key);
-  if (memcmp(kh_key, kh->tag, sizeof(kh->tag)) == 0) {
-    memzero(kh_key, sizeof(kh_key));
-    return 0;
+  hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  DBG_MSG("Device key: ");
+  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  DBG_MSG("Nonce: ");
+  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
+  DBG_MSG("Private key: ");
+  PRINT_HEX(key->pri, KH_KEY_SIZE);
+  // get tag, store in key->pub, which should be verified first outside this function
+  hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
+  if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
+    DBG_MSG("Incorrect key handle\n");
+    memzero(key, sizeof(ecc_key_t));
+    return 1;
   }
-  memzero(kh_key, sizeof(kh_key));
-  return 1;
+  return 0;
 }
 
-size_t sign_with_device_key(const uint8_t *digest, uint8_t *sig) {
-  uint8_t key[32];
-  int ret = read_pri_key(key);
+size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
+  ecc_key_t key;
+  int ret = read_device_pri_key(key.pri);
   if (ret < 0) return ret;
-  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
-  memzero(key, sizeof(key));
+  ecc_sign(SECP256R1, &key, input, input_len, sig);
+  memzero(&key, sizeof(key));
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
-size_t sign_with_ecdsa_private_key(const uint8_t *key, const uint8_t *digest, uint8_t *sig) {
-  ecdsa_sign(ECC_SECP256R1, key, digest, sig);
-  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
-}
+int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
+  key_type_t key_type = cose_alg_to_key_type(alg_type);
+  DBG_MSG("Sign key type: %d, private key: ", key_type);
+  PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
 
-size_t sign_with_ed25519_private_key(const uint8_t *key, const uint8_t *data, size_t data_len, uint8_t *sig) {
-  ed25519_public_key pk;
-  ed25519_publickey(key, pk);
-  ed25519_signature sig_tmp;
-  // ed25519_sign(m, mlen, sk, pk, RS)
-  // m and RS can not share the same buffer
-  // (they are shared outside this func)
-  ed25519_sign(data, data_len, key, pk, sig_tmp);
-  memcpy(sig, sig_tmp, sizeof(ed25519_signature));
-  memzero(pk, sizeof(pk));
-  return sizeof(ed25519_signature);
+  if (key_type == ED25519) {
+    if (ecc_complete_key(key_type, key) < 0) {
+      ERR_MSG("Failed to complete key\n");
+      return -1;
+    }
+    if (ecc_sign(key_type, key, input, len, sig) < 0) {
+      ERR_MSG("Failed to sign\n");
+      return -1;
+    }
+    return SIGNATURE_LENGTH[key_type];
+  } else {
+    sha256_init();
+    sha256_update(input, len);
+    sha256_final(sig);
+    DBG_MSG("Digest: ");
+    PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
+    if (ecc_sign(key_type, key, sig, PRIVATE_KEY_LENGTH[key_type], sig) < 0) {
+      ERR_MSG("Failed to sign\n");
+      return -1;
+    }
+    DBG_MSG("Raw signature: ");
+    PRINT_HEX(sig, SIGNATURE_LENGTH[key_type]);
+    return (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_type], sig, sig);
+  }
 }
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }

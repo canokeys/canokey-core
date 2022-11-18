@@ -12,21 +12,20 @@
 #include <ctap.h>
 #include <ctaphid.h>
 #include <device.h>
-#include <ed25519.h>
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
 
 #define CHECK_PARSER_RET(ret)                                                                                          \
   do {                                                                                                                 \
-    if (ret != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                              \
-    if (ret > 0) return ret;                                                                                           \
+    if ((ret) != 0) ERR_MSG("CHECK_PARSER_RET %#x\n", ret);                                                            \
+    if ((ret) > 0) return ret;                                                                                         \
   } while (0)
 
 #define CHECK_CBOR_RET(ret)                                                                                            \
   do {                                                                                                                 \
-    if (ret != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                                \
-    if (ret != 0) return CTAP2_ERR_INVALID_CBOR;                                                                       \
+    if ((ret) != 0) ERR_MSG("CHECK_CBOR_RET %#x\n", ret);                                                              \
+    if ((ret) != 0) return CTAP2_ERR_INVALID_CBOR;                                                                     \
   } while (0)
 
 #define SET_RESP()                                                                                                     \
@@ -50,6 +49,7 @@
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
+
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
 
@@ -355,14 +355,14 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     that is bound to the specified rp.id:
   if (mc.exclude_list_size > 0) {
     for (size_t i = 0; i < mc.exclude_list_size; ++i) {
-      uint8_t pri_key[PRI_KEY_SIZE];
+      ecc_key_t key;
       parse_credential_descriptor(&mc.exclude_list, data_buf); // save credential id in data_buf
       credential_id *kh = (credential_id *) data_buf;
       // compare rp_id first
       if (memcmp(kh->rp_id_hash, mc.rp_id_hash, sizeof(kh->rp_id_hash)) != 0) continue;
       // then verify key handle and get private key in rp_id_hash
-      ret = verify_key_handle(kh, pri_key);
-      memzero(pri_key, sizeof(pri_key));
+      ret = verify_key_handle(kh, &key);
+      memzero(&key, sizeof(key));
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
@@ -582,7 +582,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     sha256_update(data_buf, len);
     sha256_update(mc.client_data_hash, sizeof(mc.client_data_hash));
     sha256_final(data_buf);
-    len = sign_with_device_key(data_buf, data_buf);
+    len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
     ret = cbor_encode_byte_string(&att_map, data_buf, len);
     CHECK_CBOR_RET(ret);
 
@@ -631,7 +631,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   static uint32_t timer;
 
   CTAP_discoverable_credential dc; // We use dc to store the selected credential
-  uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE], pri_key[PRI_KEY_SIZE];
+  uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
+  ecc_key_t key;  // TODO: cleanup
   CborParser parser;
   int ret;
 
@@ -782,7 +783,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       // compare the rp_id first
       if (memcmp(dc.credential_id.rp_id_hash, ga.rp_id_hash, sizeof(dc.credential_id.rp_id_hash)) != 0) goto next;
       // then verify the key handle and get private key
-      int err = verify_key_handle(&dc.credential_id, pri_key);
+      int err = verify_key_handle(&dc.credential_id, &key);
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) {
         if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) { // Verify if it's a valid dc.
@@ -841,7 +842,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     if (read_file(DC_FILE, &dc, credential_list[credential_counter] * (int) sizeof(CTAP_discoverable_credential),
                   sizeof(CTAP_discoverable_credential)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
-    if (verify_key_handle(&dc.credential_id, pri_key) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (verify_key_handle(&dc.credential_id, &key) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
   // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
@@ -981,16 +982,12 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // signature
   ret = cbor_encode_int(&map, GA_RESP_SIGNATURE);
   CHECK_CBOR_RET(ret);
-  if (dc.credential_id.alg_type == COSE_ALG_ES256) {
-    sha256_init();
-    sha256_update(data_buf, len);
-    sha256_update(ga.client_data_hash, sizeof(ga.client_data_hash));
-    sha256_final(data_buf);
-    len = sign_with_ecdsa_private_key(pri_key, data_buf, data_buf);
-  } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
-    memcpy(data_buf + len, ga.client_data_hash, CLIENT_DATA_HASH_SIZE);
-    len = sign_with_ed25519_private_key(pri_key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
-  }
+  memcpy(data_buf + len, ga.client_data_hash, CLIENT_DATA_HASH_SIZE);
+  DBG_MSG("Message: ");
+  PRINT_HEX(data_buf, len + CLIENT_DATA_HASH_SIZE);
+  len = sign_with_private_key(dc.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  DBG_MSG("Signature: ");
+  PRINT_HEX(data_buf, len);
   ret = cbor_encode_byte_string(&map, data_buf, len);
   CHECK_CBOR_RET(ret);
 
@@ -1038,7 +1035,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
 
-  memzero(pri_key, sizeof(pri_key));
   ++credential_counter;
   timer = device_get_tick();
 
@@ -1626,15 +1622,20 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       // to save RAM, generate an empty key first, then fill it manually
       ret = cbor_encoder_create_map(&map, &sub_map, 0);
       CHECK_CBOR_RET(ret);
-      uint8_t *ptr = sub_map.data.ptr - 1;
-      ret = verify_key_handle(&dc.credential_id, ptr);
+      ecc_key_t key;
+      ret = verify_key_handle(&dc.credential_id, &key);
       if (ret != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      key_type_t key_type = cose_alg_to_key_type(dc.credential_id.alg_type);
+      if (ecc_complete_key(key_type, &key) < 0) {
+        ERR_MSG("Failed to complete key\n");
+        return -1;
+      }
+      uint8_t *ptr = sub_map.data.ptr - 1;
+      memcpy(ptr, key.pub, PUBLIC_KEY_LENGTH[key_type]);
       if (dc.credential_id.alg_type == COSE_ALG_ES256) {
-        ecc_get_public_key(ECC_SECP256R1, ptr, ptr);
         build_cose_key(ptr, 0);
         sub_map.data.ptr = ptr + COSE_KEY_ES256_SIZE;
       } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
-        ed25519_publickey(ptr, ptr);
         build_ed25519_cose_key(ptr);
         sub_map.data.ptr = ptr + COSE_KEY_EDDSA_SIZE;
       }

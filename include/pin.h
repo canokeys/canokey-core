@@ -22,6 +22,7 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries);
 int pin_update(pin_t *pin, const void *buf, uint8_t len);
 int pin_get_size(const pin_t *pin);
 int pin_get_retries(const pin_t *pin);
+int pin_get_default_retries(const pin_t *pin);
 int pin_clear(const pin_t *pin);
 
 #endif // CANOKEY_CORE_SRC_PIN_H
