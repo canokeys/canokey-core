@@ -594,7 +594,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     CHECK_CBOR_RET(ret);
     {
       // to save RAM, generate an empty cert first, then fill it manually
-      ret = cbor_encode_byte_string(&x5carr, NULL, 0);
+      // data_buf is never read here because length=0
+      ret = cbor_encode_byte_string(&x5carr, data_buf, 0);
       CHECK_CBOR_RET(ret);
       uint8_t *ptr = x5carr.data.ptr - 1;
       ret = get_cert(ptr + 3);
