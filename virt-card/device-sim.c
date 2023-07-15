@@ -13,6 +13,8 @@
 #define HW_VARIANT_NAME "CanoKey Virt-Card"
 #endif
 
+static uint32_t initial_ticks = 0;
+
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
   memcpy(RDATA, GIT_REV, LL);
@@ -62,7 +64,7 @@ uint32_t device_get_tick(void) {
 
   s = spec.tv_sec;
   ms = spec.tv_nsec / 1000000;
-  return (uint32_t)(s * 1000 + ms) / 100;  // 100ms per tick in software simulation
+  return (uint32_t)(s * 1000 + ms) - initial_ticks;
 }
 void device_disable_irq(void) {}
 void device_enable_irq(void) {}
@@ -128,4 +130,8 @@ int testmode_get_is_nfc_mode(void) {
   set_nfc_state((uint8_t)nfc_mode);
 #endif
   return 0;
+}
+
+void testmode_set_initial_ticks(uint32_t ticks) {
+  initial_ticks = ticks;
 }

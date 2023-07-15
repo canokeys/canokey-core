@@ -1747,6 +1747,14 @@ static uint8_t ctap_selection(void) {
   return 0;
 }
 
+static uint8_t ctap_reset_data(void) {
+  // If the request comes after 10 seconds of powering up, the authenticator returns CTAP2_ERR_NOT_ALLOWED.
+  if (device_get_tick() > 10000) {
+    return CTAP2_ERR_NOT_ALLOWED;
+  }
+  return ctap_install(1);
+}
+
 static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {
   static uint16_t expectedNextOffset, expectedLength;
 
@@ -1936,7 +1944,7 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
       break;
     case CTAP_RESET:
       DBG_MSG("----------------RESET-----------------\n");
-      *resp = ctap_install(1);
+      *resp = ctap_reset_data();
       *resp_len = 1;
       break;
     case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2

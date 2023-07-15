@@ -109,12 +109,18 @@ static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, ui
   return 0;
 }
 
+static void emulate_reboot(void) {
+  testmode_set_initial_ticks(0);
+  testmode_set_initial_ticks(device_get_tick());
+}
+
 int main() {
   current_fd = udp_server();
   card_fabrication_procedure("/tmp/lfs-root");
   // emulate the NFC mode, where user-presence tests are skipped
   set_nfc_state(1);
   CTAPHID_Init(udp_send_current_fd);
+  emulate_reboot();
   for (;;) {
     uint8_t buf[HID_RPT_SIZE];
     int length = udp_recv(current_fd, buf, sizeof(buf));
@@ -129,10 +135,13 @@ int main() {
       if (memcmp(magic_cmd, buf, 64) == 0) {
         printf("MAGIC REBOOT command received!\r\n");
         // exit(0);
-        char *const argv[] = {"fido-hid-over-udp", NULL};
-        int ret = execv("/proc/self/exe", argv);
-        printf("ERROR exec %d", ret);
-        return 0;
+        emulate_reboot();
+        continue;
+        // close(current_fd);
+        // char *const argv[] = {"fido-hid-over-udp", NULL};
+        // int ret = execv("/proc/self/exe", argv);
+        // printf("ERROR exec %d", ret);
+        // return 0;
       }
       CTAPHID_OutEvent(buf);
     }
