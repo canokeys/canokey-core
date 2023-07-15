@@ -476,7 +476,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //        Overwrite that credential.
   //     c) Store the user parameter along with the newly-created key pair.
   //     d) If authenticator does not have enough internal storage to persist the new credential, return CTAP2_ERR_KEY_STORE_FULL.
-  CTAP_discoverable_credential dc;
+  CTAP_discoverable_credential dc = {0};
   if (mc.options.rk == OPTION_TRUE) {
     DBG_MSG("Processing discoverable credential\n");
     int size = get_file_size(DC_FILE);
