@@ -631,7 +631,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
   static uint32_t timer;
 
-  CTAP_discoverable_credential dc; // We use dc to store the selected credential
+  CTAP_discoverable_credential dc = {0}; // We use dc to store the selected credential
   uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
   ecc_key_t key;  // TODO: cleanup
   CborParser parser;
@@ -696,7 +696,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     //     2) [N/A] If the built-in user verification method has not yet been enabled, end the operation
     //        by returning CTAP2_ERR_INVALID_OPTION.
   }
-  //    d. If the "dc" option is present then: Return CTAP2_ERR_UNSUPPORTED_OPTION.
+  //    d. If the "rk" option is present then: Return CTAP2_ERR_UNSUPPORTED_OPTION.
   if (ga.options.rk != OPTION_ABSENT) {
     DBG_MSG("Rule 4-d not satisfied.\n");
     return CTAP2_ERR_UNSUPPORTED_OPTION;
@@ -792,6 +792,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
           int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
           bool found = false;
+          DBG_MSG("%d discoverable credentials\n", n_dc);
           for (int j = 0; j < n_dc; ++j) {
             if (read_file(DC_FILE, &dc, j * (int) sizeof(CTAP_discoverable_credential),
                           sizeof(CTAP_discoverable_credential)) < 0)
@@ -805,6 +806,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
               break;
             }
           }
+          DBG_MSG("matching rp_id_hash found: %hhu\n", found);
           if (!found) return CTAP2_ERR_NO_CREDENTIALS;
         }
         break; // Step 11: Select any credential from the applicable credentials list.
