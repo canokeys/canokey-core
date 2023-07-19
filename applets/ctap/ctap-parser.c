@@ -1092,6 +1092,7 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
         CHECK_CBOR_RET(ret);
         DBG_MSG("pin_uv_auth_protocol: %d\n", tmp);
         if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
+        cm->pin_uv_auth_protocol = tmp;
         cm->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
         break;
 
