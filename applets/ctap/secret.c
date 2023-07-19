@@ -241,7 +241,7 @@ int increase_counter(uint32_t *counter) {
 
 static void generate_credential_id_nonce_tag(credential_id *kh, ecc_key_t *key) {
   // works for ECC algorithms with a 256-bit private key
-  random_buffer(kh->nonce, sizeof(kh->nonce));
+  random_buffer(kh->nonce, CREDENTIAL_NONCE_SIZE);
   // private key = hmac-sha256(device private key, nonce), stored in key.pri
   hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
   DBG_MSG("Device key: ");
