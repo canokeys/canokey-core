@@ -1060,9 +1060,9 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
-    CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&array, "U2F_V2");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&map, &array);
@@ -1135,9 +1135,9 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_int(&array, 2);
-    CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&array, 1);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&array, 2);
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&map, &array);
@@ -1161,9 +1161,9 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encoder_create_array(&map, &array, 2);
   CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&array, "usb");
-    CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&array, "nfc");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "usb");
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&map, &array);
