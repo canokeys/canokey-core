@@ -1451,7 +1451,6 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   uint8_t numbers;
   CTAP_rp_meta meta;
   CTAP_discoverable_credential dc;
-  uint8_t *buf = (uint8_t *) &dc;
   bool include_numbers;
   if (read_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
@@ -1460,8 +1459,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       cm.sub_command == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN ||
       cm.sub_command == CM_CMD_DELETE_CREDENTIAL ||
       cm.sub_command == CM_CMD_UPDATE_USER_INFORMATION) {
+    uint8_t *buf = (uint8_t *) &dc; // buffer reuse
     buf[0] = cm.sub_command;
-    memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
+    if (cm.param_len + 1 > sizeof(dc)) return CTAP1_ERR_INVALID_LENGTH;
+    if (cm.param_len > 0) memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
     if (!cp_verify_pin_token(buf, cm.param_len + 1, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
       DBG_MSG("PIN verification error\n");
       return CTAP2_ERR_PIN_AUTH_INVALID;
