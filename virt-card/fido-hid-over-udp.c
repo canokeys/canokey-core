@@ -22,6 +22,7 @@
 #include "device.h"
 #include "ctaphid.h"
 #include "fabrication.h"
+#include "applets.h"
 
 static int udp_server() {
   static bool run_already = false;
@@ -112,6 +113,7 @@ static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, ui
 static void emulate_reboot(void) {
   testmode_set_initial_ticks(0);
   testmode_set_initial_ticks(device_get_tick());
+  applets_install();
 }
 
 int main() {
