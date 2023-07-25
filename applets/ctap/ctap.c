@@ -293,7 +293,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //    b) [ALWAYS TRUE] The "uv" option is set to false.
   //    c) The pin_uv_auth_param parameter is not present.
   //    d) The "rk" option is present and set to true.
-  if (has_pin() /* a) */ && (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0 /* b) */ &&
+  if (has_pin() /* a) */ && (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0 /* c) */ &&
       mc.options.rk == OPTION_TRUE) {
     // If ClientPin option ID is true and the noMcGaPermissionsWithClientPin option ID is absent or false,
     // end the operation by returning CTAP2_ERR_PUAT_REQUIRED.
@@ -317,38 +317,42 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
 
   // 11. If the authenticator is protected by some form of user verification, then:
-  //     11.2 [N/A] If the "uv" option is present and set to true
-  //     11.1 If pin_uv_auth_param parameter is present (implying the "uv" option is false (see Step 5)):
-  //     a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
-  //        If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
-  if (!cp_verify_pin_token(mc.client_data_hash, sizeof(mc.client_data_hash), mc.pin_uv_auth_param,
-                           mc.pin_uv_auth_protocol)) {
-    DBG_MSG("Fail to verify pin token\n");
-    return CTAP2_ERR_PIN_AUTH_INVALID;
+  if (has_pin()) {
+    //   11.1 If pin_uv_auth_param parameter is present (implying the "uv" option is false (see Step 5)):
+    if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
+      //   a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
+      //      If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
+      if (!cp_verify_pin_token(mc.client_data_hash, sizeof(mc.client_data_hash), mc.pin_uv_auth_param,
+                              mc.pin_uv_auth_protocol)) {
+        DBG_MSG("Fail to verify pin token\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
+      //   b) Verify that the pinUvAuthToken has the mc permission, if not, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+      if (!cp_has_permission(CP_PERMISSION_MC)) {
+        DBG_MSG("Fail to verify pin permission\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
+      //   c) If the pinUvAuthToken has a permissions RP ID associated:
+      //      If the permissions RP ID does not match the rp.id in this request, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+      if (!cp_verify_rp_id(mc.rp_id_hash)) {
+        DBG_MSG("Fail to verify pin rp id\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
+      //   d) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
+      //   e) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
+      if (!cp_get_user_verified_flag_value()) {
+        DBG_MSG("userVerifiedFlagValue is false\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
+      //   f) If userVerifiedFlagValue is true then set the "uv" bit to true in the response.
+      uv = true;
+      //   g) If the pinUvAuthToken does not have a permissions RP ID associated:
+      //      Associate the request’s rp.id parameter value with the pinUvAuthToken as its permissions RP ID.
+      cp_associate_rp_id(mc.rp_id_hash);
+      DBG_MSG("PIN verified\n");
+    }
+    //   11.2 [N/A] If the "uv" option is present and set to true
   }
-  //     b) Verify that the pinUvAuthToken has the mc permission, if not, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  if (!cp_has_permission(CP_PERMISSION_MC)) {
-    DBG_MSG("Fail to verify pin permission\n");
-    return CTAP2_ERR_PIN_AUTH_INVALID;
-  }
-  //     c) If the pinUvAuthToken has a permissions RP ID associated:
-  //        If the permissions RP ID does not match the rp.id in this request, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  if (!cp_verify_rp_id(mc.rp_id_hash)) {
-    DBG_MSG("Fail to verify pin rp id\n");
-    return CTAP2_ERR_PIN_AUTH_INVALID;
-  }
-  //     d) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
-  //     e) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-  if (!cp_get_user_verified_flag_value()) {
-    DBG_MSG("userVerifiedFlagValue is false\n");
-    return CTAP2_ERR_PIN_AUTH_INVALID;
-  }
-  //     f) If userVerifiedFlagValue is true then set the "uv" bit to true in the response.
-  uv = true;
-  //     g) If the pinUvAuthToken does not have a permissions RP ID associated:
-  //        Associate the request’s rp.id parameter value with the pinUvAuthToken as its permissions RP ID.
-  cp_associate_rp_id(mc.rp_id_hash);
-  DBG_MSG("PIN verified\n");
 
   step12:
   // 12. If the exclude_list parameter is present and contains a credential ID created by this authenticator,
@@ -1098,7 +1102,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_int(&map, GI_RESP_OPTIONS);
   CHECK_CBOR_RET(ret);
   CborEncoder option_map;
-  ret = cbor_encoder_create_map(&map, &option_map, 5);
+  ret = cbor_encoder_create_map(&map, &option_map, 6);
   CHECK_CBOR_RET(ret);
   {
     ret = cbor_encode_text_stringz(&option_map, "rk");
@@ -1118,6 +1122,10 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
     ret = cbor_encode_boolean(&option_map, true);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&option_map, true);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&option_map, "makeCredUvNotRqd");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&option_map, true);
     CHECK_CBOR_RET(ret);
@@ -1470,6 +1478,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (!cp_has_permission(CP_PERMISSION_CM)) return CTAP2_ERR_PIN_AUTH_INVALID;
   }
 
+  DBG_MSG("processing cm.sub_command %hhu\n", cm.sub_command);
   switch (cm.sub_command) {
     case CM_CMD_GET_CREDS_METADATA:
       if (cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;

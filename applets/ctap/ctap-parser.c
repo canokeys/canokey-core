@@ -271,17 +271,14 @@ uint8_t parse_options(CTAP_options *options, CborValue *val) {
     if (memcmp(key, "rk", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("rk: %d\n", b);
       options->rk = b;
     } else if (memcmp(key, "uv", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("uv: %d\n", b);
       options->uv = b;
     } else if (memcmp(key, "up", 2) == 0) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("up: %d\n", b);
       options->up = b;
     } else {
       DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
@@ -289,6 +286,7 @@ uint8_t parse_options(CTAP_options *options, CborValue *val) {
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
   }
+  DBG_MSG("up: %hhu, uv: %hhu, rk: %hhu\n", options->up, options->uv, options->rk);
   return 0;
 }
 
@@ -1104,6 +1102,7 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
         if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, cm->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
+        PRINT_HEX(cm->pin_uv_auth_param, len);
         cm->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
         break;
 
