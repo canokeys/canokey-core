@@ -690,6 +690,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &mc->pin_uv_auth_param_len);
         CHECK_CBOR_RET(ret);
+        if (mc->pin_uv_auth_param_len == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
         if (mc->pin_uv_auth_param_len != 0 && mc->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH) {
           DBG_MSG("pin_uv_auth_param is too long\n");
           return CTAP2_ERR_PIN_AUTH_INVALID;
@@ -824,6 +825,7 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_get_assertion *ga, const ui
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &ga->pin_uv_auth_param_len);
         CHECK_CBOR_RET(ret);
+        if (ga->pin_uv_auth_param_len == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
         if (ga->pin_uv_auth_param_len != 0 && ga->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH)
           return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, ga->pin_uv_auth_param, &ga->pin_uv_auth_param_len, NULL);
@@ -921,10 +923,7 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &len);
         CHECK_CBOR_RET(ret);
-        if (len > SHA256_DIGEST_LENGTH) {
-          DBG_MSG("pin_uv_auth_param too long\n");
-          return CTAP2_ERR_INVALID_CBOR;
-        }
+        if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, cp->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
         cp->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
@@ -1099,7 +1098,7 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &len);
         CHECK_CBOR_RET(ret);
-        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
+        if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, cm->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
         PRINT_HEX(cm->pin_uv_auth_param, len);
@@ -1218,7 +1217,7 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &len);
         CHECK_CBOR_RET(ret);
-        if (len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
+        if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, lb->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
         lb->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
