@@ -802,6 +802,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       int err = verify_key_handle(&dc.credential_id, &key);
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) {
+        // Skip the credential which is protected
+        if (!check_credential_protect_requirements(&dc.credential_id, true, uv)) goto next;
         if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) { // Verify if it's a valid dc.
           int size = get_file_size(DC_FILE);
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -851,6 +853,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
           DBG_MSG("Skipped DC at %d\n", i);
           continue;
         }
+        // Skip the credential which is protected
+        if (!check_credential_protect_requirements(&dc.credential_id, false, uv)) continue;
         if (memcmp(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0)
           credential_list[number_of_credentials++] = i;
       }
@@ -911,17 +915,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   // Process credProtect extension
-  if (dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
-    if (uv == false && ga.allow_list_size == 0) {
-      DBG_MSG("credentialProtectionPolicy (0x02) failed\n");
-      return CTAP2_ERR_NO_CREDENTIALS;
-    }
-  } else if (dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED) {
-    if (uv == false) {
-      DBG_MSG("credentialProtectionPolicy (0x03) failed\n");
-      return CTAP2_ERR_NO_CREDENTIALS;
-    }
-  }
+  if (!check_credential_protect_requirements(&dc.credential_id, ga.allow_list_size > 0, uv)) return CTAP2_ERR_NO_CREDENTIALS;
 
   // Process hmac-secret extension
   if (ga.parsed_params & PARAM_HMAC_SECRET) {

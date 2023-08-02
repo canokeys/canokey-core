@@ -255,6 +255,22 @@ static void generate_credential_id_nonce_tag(credential_id *kh, ecc_key_t *key) 
   memcpy(kh->tag, key->pub, sizeof(kh->tag));
 }
 
+bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv) {
+  DBG_MSG("credProtect: %hhu\n", kh->nonce[CREDENTIAL_NONCE_CP_POS]);
+  if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
+    if (!uv && !with_cred_list) {
+      DBG_MSG("credentialProtectionPolicy (0x02) failed\n");
+      return false;
+    }
+  } else if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED) {
+    if (!uv) {
+      DBG_MSG("credentialProtectionPolicy (0x03) failed\n");
+      return false;
+    }
+  }
+  return true;
+}
+
 int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type) {
   ecc_key_t key;
 
