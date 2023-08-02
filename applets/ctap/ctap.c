@@ -724,7 +724,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // 6. If authenticator is protected by some form of user verification, then:
   //    6.2 [N/A] If the "uv" option is present and set to true
   //    6.1 If pin_uv_auth_param parameter is present
-  if (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
+  if (has_pin() && (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {
     //  a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
     //     If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
     //     If the verification returns success, set the "uv" bit to true in the response.
