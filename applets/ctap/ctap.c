@@ -363,30 +363,40 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       parse_credential_descriptor(&mc.exclude_list, data_buf); // save credential id in data_buf
       credential_id *kh = (credential_id *) data_buf;
       // compare rp_id first
-      if (memcmp(kh->rp_id_hash, mc.rp_id_hash, sizeof(kh->rp_id_hash)) != 0) continue;
+      if (memcmp(kh->rp_id_hash, mc.rp_id_hash, sizeof(kh->rp_id_hash)) != 0) goto next_exclude_list;
       // then verify key handle and get private key in rp_id_hash
       ret = verify_key_handle(kh, &key);
       memzero(&key, sizeof(key));
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
-        // a) If the credential’s credProtect value is not userVerificationRequired, then:
+        // a) If the credential’s credProtect value is not userVerificationRequired
+        if (kh->nonce[CREDENTIAL_NONCE_CP_POS] != CRED_PROTECT_VERIFICATION_REQUIRED ||
         // b) Else (implying the credential’s credProtect value is userVerificationRequired)
-        //    NOTE THAT b-i is always true
-        //    i. Let userPresentFlagValue be false.
-        bool userPresentFlagValue = false;
-        //    ii. If the pinUvAuthParam parameter is present then let userPresentFlagValue be the result of calling
-        //        getUserPresentFlagValue().
-        if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) userPresentFlagValue = cp_get_user_present_flag_value();
-        //    iii. [N/A] Else, if evidence of user interaction was provided as part of Step 11 let userPresentFlagValue be true.
-        //    iv. If userPresentFlagValue is false, then:
-        //        (1) Wait for user presence.
-        //        (2) Regardless of whether user presence is obtained or the authenticator times out,
-        //            terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
-        //    v. Else, (implying userPresentFlagValue is true) terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
-        if (!userPresentFlagValue) WAIT(CTAP2_ERR_CREDENTIAL_EXCLUDED);
-        return CTAP2_ERR_CREDENTIAL_EXCLUDED;
+        //    AND If the "uv" bit is true in the response:
+          (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED && uv)) {
+
+          //    i. Let userPresentFlagValue be false.
+          bool userPresentFlagValue = false;
+          //    ii. If the pinUvAuthParam parameter is present then let userPresentFlagValue be the result of calling
+          //        getUserPresentFlagValue().
+          if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) userPresentFlagValue = cp_get_user_present_flag_value();
+          //    iii. [N/A] Else, if evidence of user interaction was provided as part of Step 11 let userPresentFlagValue be true.
+          //    iv. If userPresentFlagValue is false, then:
+          //        (1) Wait for user presence.
+          //        (2) Regardless of whether user presence is obtained or the authenticator times out,
+          //            terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
+          if (!userPresentFlagValue) WAIT(CTAP2_ERR_CREDENTIAL_EXCLUDED);
+          //    v. Else, (implying userPresentFlagValue is true) terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
+          return CTAP2_ERR_CREDENTIAL_EXCLUDED;
+
+        // c) Else (implying user verification was not collected in Step 11), 
+        //    remove the credential from the excludeList and continue parsing the rest of the list.
+        } else {
+          DBG_MSG("Ignore this Exclude ID\n");
+        }
       }
+      next_exclude_list:
       ret = cbor_value_advance(&mc.exclude_list);
       CHECK_CBOR_RET(ret);
     }
@@ -402,6 +412,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     }
   } else {
     //   b) Else (implying the pin_uv_auth_param parameter is not present)
+    //     1. [ALWAYS TRUE] If the "up" bit is false in the response :
     WAIT(CTAP2_ERR_OPERATION_DENIED);
   }
   //     c) [N/A] Set the "up" bit to true in the response
