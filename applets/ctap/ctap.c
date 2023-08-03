@@ -322,6 +322,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
       //   a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
       //      If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
+      if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       if (!cp_verify_pin_token(mc.client_data_hash, sizeof(mc.client_data_hash), mc.pin_uv_auth_param,
                               mc.pin_uv_auth_protocol)) {
         DBG_MSG("Fail to verify pin token\n");
@@ -728,6 +729,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     //  a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
     //     If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
     //     If the verification returns success, set the "uv" bit to true in the response.
+    if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
     if (!cp_verify_pin_token(ga.client_data_hash, sizeof(ga.client_data_hash), ga.pin_uv_auth_param,
                              ga.pin_uv_auth_protocol)) {
       DBG_MSG("Fail to verify pin token\n");
@@ -1327,6 +1329,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 #ifndef FUZZ
       if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
+      if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       retries = err - 1;
 #endif
       ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
@@ -1360,8 +1363,8 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       if (err > 0) {
         cp_regenerate();
         if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
-        if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
         --consecutive_pin_counter;
+        if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
         return CTAP2_ERR_PIN_INVALID;
       }
 #endif
@@ -1391,6 +1394,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 #ifndef FUZZ
       if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
+      if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       retries = err - 1;
 #endif
       ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
@@ -1408,8 +1412,8 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
 #ifndef FUZZ
       if (err > 0) {
         if (retries == 0) return CTAP2_ERR_PIN_BLOCKED;
-        if (consecutive_pin_counter == 1) return CTAP2_ERR_PIN_AUTH_BLOCKED;
         --consecutive_pin_counter;
+        if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
         return CTAP2_ERR_PIN_INVALID;
       }
 #endif
@@ -1481,6 +1485,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     buf[0] = cm.sub_command;
     if (cm.param_len + 1 > sizeof(dc)) return CTAP1_ERR_INVALID_LENGTH;
     if (cm.param_len > 0) memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
+    if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
     if (!cp_verify_pin_token(buf, cm.param_len + 1, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
       DBG_MSG("PIN verification error\n");
       return CTAP2_ERR_PIN_AUTH_INVALID;
@@ -1879,6 +1884,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       buf[36] = lb.offset >> 8;
       buf[37] = lb.offset & 0xFF;
       sha256_raw(lb.set, lb.set_len, buf + 38);
+      if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       if (!cp_verify_pin_token(buf, 70, lb.pin_uv_auth_param, lb.pin_uv_auth_protocol)) {
         DBG_MSG("Fail to verify pin token\n");
         return CTAP2_ERR_PIN_AUTH_INVALID;
