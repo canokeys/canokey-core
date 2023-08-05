@@ -147,6 +147,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     }
     channel.bcnt_total = (uint16_t)MSG_LEN(frame);
     if (channel.bcnt_total > MAX_CTAP_BUFSIZE) {
+      DBG_MSG("bcnt_total=%hu exceeds MAX_CTAP_BUFSIZE\n", channel.bcnt_total);
       CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_LEN);
       return LOOP_SUCCESS;
     }
