@@ -1481,6 +1481,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       cm.sub_command == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN ||
       cm.sub_command == CM_CMD_DELETE_CREDENTIAL ||
       cm.sub_command == CM_CMD_UPDATE_USER_INFORMATION) {
+    last_cm_cmd = cm.sub_command;
     uint8_t *buf = (uint8_t *) &dc; // buffer reuse
     buf[0] = cm.sub_command;
     if (cm.param_len + 1 > sizeof(dc)) return CTAP1_ERR_INVALID_LENGTH;
@@ -1553,9 +1554,12 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_RPS_GET_NEXT_RP:
-      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT) return CTAP2_ERR_NOT_ALLOWED;
-      if (last_cm_cmd != CM_CMD_ENUMERATE_RPS_BEGIN && last_cm_cmd != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP)
+      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || 
+        (last_cm_cmd != CM_CMD_ENUMERATE_RPS_BEGIN && last_cm_cmd != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP)) {
+        last_cm_cmd = 0;
         return CTAP2_ERR_NOT_ALLOWED;
+      }
+      last_cm_cmd = cm.sub_command;
       for (int i = idx + 1; i < n_rp; ++i) {
         size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1605,7 +1609,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       PRINT_HEX((const uint8_t *) &meta, sizeof(meta));
       slots = meta.slots;
     generate_credential_response:
-      DBG_MSG("Current slots: %llu\n", slots);
+      DBG_MSG("Current slot bitmap: 0x%llx\n", slots);
       idx = get_next_slot(&slots, &numbers);
       size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                        sizeof(CTAP_discoverable_credential));
@@ -1684,10 +1688,13 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL:
-      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT) return CTAP2_ERR_NOT_ALLOWED;
-      if (last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
-          last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)
+      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || (
+          last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
+          last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)) {
+        last_cm_cmd = 0;
         return CTAP2_ERR_NOT_ALLOWED;
+      }
+      last_cm_cmd = cm.sub_command;
       include_numbers = false;
       goto generate_credential_response;
 
@@ -1764,7 +1771,6 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
   }
 
-  last_cm_cmd = cm.sub_command;
 
   return 0;
 }
