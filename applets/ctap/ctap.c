@@ -1732,11 +1732,13 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       numbers = size / sizeof(CTAP_rp_meta);
       for (int i = 0; i < numbers; ++i) {
-        size = read_file(DC_META_FILE, &meta, idx * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
+        size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        if (memcmp(meta.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
+        if (memcmp(meta.rp_id_hash, cm.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
+          DBG_MSG("Orig slot bitmap: 0x%llx\n", meta.slots);
           meta.slots &= ~(1ull << idx);
-          size = write_file(DC_META_FILE, &meta, idx * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
+          DBG_MSG("New slot bitmap: 0x%llx\n", meta.slots);
+          size = write_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
           break;
         }
