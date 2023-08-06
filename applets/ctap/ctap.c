@@ -923,27 +923,35 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   if (ga.parsed_params & PARAM_HMAC_SECRET) {
     uint8_t iv[16] = {0};
     block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
+    uint8_t *hmac_enc_key = ga.ext_hmac_secret_pin_protocol == 2 ?
+                            ga.ext_hmac_secret_key_agreement + SHARED_SECRET_SIZE :
+                            ga.ext_hmac_secret_key_agreement;
     if (credential_counter == 0) {
       ret = cp_decapsulate(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol);
       CHECK_PARSER_RET(ret);
+      DBG_MSG("ext_hmac_secret_key_agreement: ");
+      PRINT_HEX(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol == 2 ? 64 : 32);
       uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
       hmac_sha256(ga.ext_hmac_secret_key_agreement, SHARED_SECRET_SIZE, ga.ext_hmac_secret_salt_enc,
                   ga.ext_hmac_secret_salt_len,
                   hmac_buf);
       if (memcmp(hmac_buf, ga.ext_hmac_secret_salt_auth, HMAC_SECRET_SALT_AUTH_SIZE) != 0)
         return CTAP2_ERR_EXTENSION_FIRST;
-      cfg.key = ga.ext_hmac_secret_key_agreement;
+      cfg.key = hmac_enc_key;
       cfg.in_size = ga.ext_hmac_secret_salt_len;
       cfg.in = ga.ext_hmac_secret_salt_enc;
       cfg.out = ga.ext_hmac_secret_salt_enc;
       block_cipher_dec(&cfg);
     }
+    // TODO: when credential_counter != 0
+    DBG_MSG("hmac-secret-salt: ");
+    PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len);
     ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len,
                                   ga.ext_hmac_secret_salt_enc, uv);
     CHECK_PARSER_RET(ret);
     DBG_MSG("hmac-secret (plain): ");
     PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len);
-    cfg.key = ga.ext_hmac_secret_key_agreement;
+    cfg.key = hmac_enc_key;
     cfg.in_size = ga.ext_hmac_secret_salt_len;
     cfg.in = ga.ext_hmac_secret_salt_enc;
     cfg.out = ga.ext_hmac_secret_salt_enc;
