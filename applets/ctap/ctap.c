@@ -943,24 +943,26 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       cfg.out = ga.ext_hmac_secret_salt_enc;
       block_cipher_dec(&cfg);
     }
-    // TODO: when credential_counter != 0
+    uint8_t hmac_secret_output[HMAC_SECRET_SALT_SIZE];
     DBG_MSG("hmac-secret-salt: ");
     PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len);
     ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len,
-                                  ga.ext_hmac_secret_salt_enc, uv);
+                                  hmac_secret_output, uv);
     CHECK_PARSER_RET(ret);
     DBG_MSG("hmac-secret (plain): ");
-    PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len);
+    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_len);
     cfg.key = hmac_enc_key;
     cfg.in_size = ga.ext_hmac_secret_salt_len;
-    cfg.in = ga.ext_hmac_secret_salt_enc;
-    cfg.out = ga.ext_hmac_secret_salt_enc;
+    cfg.in = hmac_secret_output;
+    cfg.out = hmac_secret_output;
     block_cipher_enc(&cfg);
-    memzero(ga.ext_hmac_secret_key_agreement, sizeof(ga.ext_hmac_secret_key_agreement));
+    if (credential_counter + 1 == number_of_credentials) { // encryption key will not be used any more
+      memzero(ga.ext_hmac_secret_key_agreement, sizeof(ga.ext_hmac_secret_key_agreement));
+    }
 
     ret = cbor_encode_text_stringz(&map, "hmac-secret");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len);
+    ret = cbor_encode_byte_string(&map, hmac_secret_output, ga.ext_hmac_secret_salt_len);
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
