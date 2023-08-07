@@ -459,6 +459,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&map, true);
     CHECK_CBOR_RET(ret);
+  } else {
+    ((CTAP_auth_data *) data_buf)->at.credential_id.cred_blob_len = 0;
+    random_buffer(((CTAP_auth_data *) data_buf)->at.credential_id.cred_blob, MAX_CRED_BLOB_LENGTH);
   }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
   CHECK_CBOR_RET(ret);
