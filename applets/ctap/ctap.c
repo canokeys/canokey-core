@@ -810,6 +810,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
         // Skip the credential which is protected
         if (!check_credential_protect_requirements(&dc.credential_id, true, uv)) goto next;
         if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) { // Verify if it's a valid dc.
+          memcpy(data_buf, dc.credential_id.nonce, sizeof(dc.credential_id.nonce)); // use data_buf to store the nonce temporarily
           int size = get_file_size(DC_FILE);
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
           int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
@@ -823,15 +824,18 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
               DBG_MSG("Skipped DC at %d\n", j);
               continue;
             }
-            if (memcmp(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
+            if (memcmp(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0 &&
+                memcmp(data_buf, dc.credential_id.nonce, sizeof(dc.credential_id.nonce)) == 0) {
               found = true;
               break;
             }
           }
-          DBG_MSG("matching rp_id_hash found: %hhu\n", found);
-          if (!found) return CTAP2_ERR_NO_CREDENTIALS;
+          DBG_MSG("matching credential_id%s found\n", (found ? "" : " not"));
+          if (found) break;
+          // if (!found) return CTAP2_ERR_NO_CREDENTIALS;
+        } else { // not DC
+          break; // Step 11: Select any credential from the applicable credentials list.
         }
-        break; // Step 11: Select any credential from the applicable credentials list.
       }
       next:
       ret = cbor_value_advance(&ga.allow_list);
@@ -894,6 +898,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   cp_clear_user_present_flag();
   cp_clear_user_verified_flag();
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
+
+  DBG_MSG("Credential id: ");
+  PRINT_HEX((const uint8_t *) &dc.credential_id, sizeof(dc.credential_id));
 
   // 10. If the extensions parameter is present:
   //     a) Process any extensions that this authenticator supports, ignoring any that it does not support.
