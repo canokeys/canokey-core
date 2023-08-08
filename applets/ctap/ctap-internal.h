@@ -233,17 +233,17 @@ typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
   uint8_t nonce[CREDENTIAL_NONCE_SIZE + 2]; // 16-byte random nonce + 1-byte dc + 1-byte cp
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
-  uint8_t cred_blob[MAX_CRED_BLOB_LENGTH];
-  uint8_t cred_blob_len;
   int32_t alg_type;
 } __packed credential_id;
 
 typedef struct {
   credential_id credential_id;
   user_entity user;
+  bool deleted;
   bool has_large_blob_key;
   uint8_t large_blob_key[LARGE_BLOB_KEY_SIZE];
-  bool deleted;
+  uint8_t cred_blob_len;
+  uint8_t cred_blob[MAX_CRED_BLOB_LENGTH];
 } __packed CTAP_discoverable_credential;
 
 typedef struct {
@@ -292,8 +292,9 @@ typedef struct {
   bool ext_hmac_secret;
   bool ext_large_blob_key;
   uint8_t ext_cred_protect;
-  uint8_t ext_cred_blob[SHA256_DIGEST_LENGTH];
-  uint8_t ext_cred_blob_len;
+  uint8_t ext_cred_blob[MAX_CRED_BLOB_LENGTH];
+  uint8_t ext_has_cred_blob: 1;
+  uint8_t ext_cred_blob_len: 7;
 } CTAP_make_credential;
 
 typedef struct {

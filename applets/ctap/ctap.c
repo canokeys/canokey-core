@@ -430,7 +430,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
                                 (mc.ext_hmac_secret ? 1 : 0) +
                                 // largeBlobKey has no outputs here
                                 (mc.ext_cred_protect > 0 ? 1 : 0) +
-                                (mc.ext_cred_blob_len > 0 ? 1 : 0));
+                                (mc.ext_has_cred_blob ? 1 : 0));
   CHECK_CBOR_RET(ret);
   if (mc.ext_hmac_secret) {
     ret = cbor_encode_text_stringz(&map, "hmac-secret");
@@ -451,17 +451,15 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     ret = cbor_encode_int(&map, mc.ext_cred_protect);
     CHECK_CBOR_RET(ret);
   }
-  if (mc.ext_cred_blob_len > 0) {
-    ((CTAP_auth_data *) data_buf)->at.credential_id.cred_blob_len = mc.ext_cred_blob_len;
-    memcpy(((CTAP_auth_data *) data_buf)->at.credential_id.cred_blob, mc.ext_cred_blob,
-           mc.ext_cred_blob_len);
+  if (mc.ext_has_cred_blob) {
+    bool accepted = false;
+    if (mc.ext_cred_blob_len <= MAX_CRED_BLOB_LENGTH && mc.options.rk == OPTION_TRUE) {
+      accepted = true;
+    }
     ret = cbor_encode_text_stringz(&map, "credBlob");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&map, true);
+    ret = cbor_encode_boolean(&map, accepted);
     CHECK_CBOR_RET(ret);
-  } else {
-    ((CTAP_auth_data *) data_buf)->at.credential_id.cred_blob_len = 0;
-    random_buffer(((CTAP_auth_data *) data_buf)->at.credential_id.cred_blob, MAX_CRED_BLOB_LENGTH);
   }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
   CHECK_CBOR_RET(ret);
@@ -530,6 +528,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     memcpy(&dc.user, &mc.user, sizeof(user_entity)); // c
     dc.has_large_blob_key = mc.ext_large_blob_key;
     if (dc.has_large_blob_key) random_buffer(dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
+    dc.cred_blob_len = 0;
+    if (mc.ext_has_cred_blob && mc.ext_cred_blob_len <= MAX_CRED_BLOB_LENGTH) {
+      dc.cred_blob_len = mc.ext_cred_blob_len;
+      memcpy(dc.cred_blob, mc.ext_cred_blob, mc.ext_cred_blob_len);
+    }
     dc.deleted = false;
     if (write_file(DC_FILE, &dc, pos * (int) sizeof(CTAP_discoverable_credential),
                    sizeof(CTAP_discoverable_credential), 0) < 0)
@@ -922,7 +925,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   if (ga.ext_cred_blob) {
     ret = cbor_encode_text_stringz(&map, "credBlob");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, dc.credential_id.cred_blob, dc.credential_id.cred_blob_len);
+    ret = cbor_encode_byte_string(&map, dc.cred_blob, dc.cred_blob_len);
     CHECK_CBOR_RET(ret);
   }
 

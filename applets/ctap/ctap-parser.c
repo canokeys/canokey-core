@@ -396,16 +396,20 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       DBG_MSG("credProtect: %d\n", tmp);
     } else if (strcmp(key, "credBlob") == 0) {
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      len = SHA256_DIGEST_LENGTH;
+      mc->ext_has_cred_blob = 1;
+      len = MAX_CRED_BLOB_LENGTH;
       ret = cbor_value_copy_byte_string(&map, mc->ext_cred_blob, &len, NULL);
       if (ret == CborErrorOutOfMemory) {
         ERR_MSG("credBlob is too long\n");
-        return CTAP2_ERR_LIMIT_EXCEEDED;
+        // use this value to mark that credBlob is too long
+        mc->ext_cred_blob_len = MAX_CRED_BLOB_LENGTH + 1;
+        // return CTAP2_ERR_LIMIT_EXCEEDED;
+      } else {
+        CHECK_CBOR_RET(ret);
+        mc->ext_cred_blob_len = len;
+        DBG_MSG("credBlob: ");
+        PRINT_HEX(mc->ext_cred_blob, len);
       }
-      CHECK_CBOR_RET(ret);
-      mc->ext_cred_blob_len = len;
-      DBG_MSG("credBlob: ");
-      PRINT_HEX(mc->ext_cred_blob, len);
     } else if (strcmp(key, "largeBlobKey") == 0) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &mc->ext_large_blob_key);
