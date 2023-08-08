@@ -649,6 +649,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_get_assertion ga;
   static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
+  static bool uv, user_details;
   static uint32_t timer;
 
   CTAP_discoverable_credential dc = {0}; // We use dc to store the selected credential
@@ -700,7 +701,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //    > This has been processed when parsing.
 
   // 3. Create a new authenticatorGetAssertion response structure and initialize both its "uv" bit and "up" bit as false.
-  bool uv = false; // up is always true, see 9.c
+  uv = false;
+  //    up is always true, see 9.c
 
   // 4. If the options parameter is present, process all option keys and values present in the parameter.
   //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
@@ -881,7 +883,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // For single account per RP case, authenticator returns "id" field to the platform which will be returned to the [WebAuthn] layer.
   // For multiple accounts per RP case, where the authenticator does not have a display, authenticator returns "id" as well as other fields to the platform.
   // User identifiable information (name, DisplayName, icon) MUST NOT be returned if user verification is not done by the authenticator.
-  bool user_details = uv && number_of_credentials > 1;
+  user_details = uv && number_of_credentials > 1;
 
   // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
   // 9. If the "up" option is set to true or not present:
@@ -960,7 +962,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len,
                                   hmac_secret_output, uv);
     CHECK_PARSER_RET(ret);
-    DBG_MSG("hmac-secret (plain): ");
+    DBG_MSG("hmac-secret %s UV (plain): ", uv ? "with" : "without");
     PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_len);
     cfg.key = hmac_enc_key;
     cfg.in_size = ga.ext_hmac_secret_salt_len;
