@@ -649,7 +649,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_get_assertion ga;
   static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
-  static bool uv, user_details;
+  static bool uv, up, user_details;
   static uint32_t timer;
 
   CTAP_discoverable_credential dc = {0}; // We use dc to store the selected credential
@@ -702,7 +702,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // 3. Create a new authenticatorGetAssertion response structure and initialize both its "uv" bit and "up" bit as false.
   uv = false;
-  //    up is always true, see 9.c
+  up = false;
 
   // 4. If the options parameter is present, process all option keys and values present in the parameter.
   //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
@@ -887,20 +887,23 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
   // 9. If the "up" option is set to true or not present:
-  //    a) If the pin_uv_auth_param parameter is present then:
-  if (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
-    if (!cp_get_user_present_flag_value()) {
+  if (ga.options.up == OPTION_TRUE) {
+    //    a) If the pin_uv_auth_param parameter is present then:
+    if (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
+      if (!cp_get_user_present_flag_value()) {
+        WAIT(CTAP2_ERR_OPERATION_DENIED);
+      }
+    } else {
+      //    b) Else (implying the pin_uv_auth_param parameter is not present):
       WAIT(CTAP2_ERR_OPERATION_DENIED);
     }
-  } else {
-    //    b) Else (implying the pin_uv_auth_param parameter is not present):
-    WAIT(CTAP2_ERR_OPERATION_DENIED);
+    //    c) Set the "up" bit to true in the response.
+    up = true;
+    //    d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
+    cp_clear_user_present_flag();
+    cp_clear_user_verified_flag();
+    cp_clear_pin_uv_auth_token_permissions_except_lbw();
   }
-  //    c) Set the "up" bit to true in the response.
-  //    d) Call clearUserPresentFlag(), clearUserVerifiedFlag(), and clearPinUvAuthTokenPermissionsExceptLbw().
-  cp_clear_user_present_flag();
-  cp_clear_user_verified_flag();
-  cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   DBG_MSG("Credential id: ");
   PRINT_HEX((const uint8_t *) &dc.credential_id, sizeof(dc.credential_id));
@@ -1012,7 +1015,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // auth data
   len = sizeof(data_buf);
-  uint8_t flags = (extension_size > 0 ? FLAGS_ED : 0) | (uv > 0 ? FLAGS_UV : 0) | FLAGS_UP;
+  uint8_t flags = (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
                             dc.credential_id.alg_type, dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS],
                             dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
