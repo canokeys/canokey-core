@@ -9,7 +9,7 @@ cd ../HID; make
 popd
 fi
 
-git clone --depth 1 https://github.com/canokeys/fido2-tests.git
+git clone --depth 1 -b dev-fido2v1 https://github.com/canokeys/fido2-tests.git
 pushd fido2-tests
 pip3 install --user -r requirements.txt
 popd

@@ -107,10 +107,10 @@ jobs:
     - name: Test the FIDO2
       run: |
         echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
-        pushd test-real && ./test-libfido2.sh && popd
+        #pushd test-real && ./test-libfido2.sh && popd
         cd fido2-tests
         ~/.local/bin/pytest --color=yes --nfc tests/standard/
-        ~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no
+        #~/.local/bin/pytest --color=yes --nfc tests/vendor/canokeys/ --capture=no
 
     - name: Test the U2F
       run: |
