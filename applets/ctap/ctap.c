@@ -199,9 +199,7 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credential_id_length = htobe16(sizeof(credential_id));
     memcpy(ad->at.credential_id.rp_id_hash, rp_id_hash, sizeof(ad->at.credential_id.rp_id_hash));
-    ad->at.credential_id.nonce[CREDENTIAL_NONCE_DC_POS] = dc ? 1 : 0;
-    ad->at.credential_id.nonce[CREDENTIAL_NONCE_CP_POS] = cred_protect;
-    if (generate_key_handle(&ad->at.credential_id, ad->at.public_key, alg_type) < 0) {
+    if (generate_key_handle(&ad->at.credential_id, ad->at.public_key, alg_type, (uint8_t)dc, cred_protect) < 0) {
       DBG_MSG("Fail to generate a key handle\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
     }

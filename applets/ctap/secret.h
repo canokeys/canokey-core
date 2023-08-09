@@ -35,7 +35,7 @@ void cp_associate_rp_id(const uint8_t *rp_id_hash);
 key_type_t cose_alg_to_key_type(int alg);
 
 int increase_counter(uint32_t *counter);
-int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type);
+int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, uint8_t dc, uint8_t cp);
 size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig);
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig);
 int verify_key_handle(const credential_id *kh, ecc_key_t *key);

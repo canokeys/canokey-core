@@ -271,7 +271,7 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
   return true;
 }
 
-int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, uint8_t dc, uint8_t cp) {
   ecc_key_t key;
 
   int ret = read_kh_key(key.pub); // use key.pub to store kh key first
@@ -286,6 +286,8 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type) {
   kh->alg_type = alg_type;
   key_type_t key_type = cose_alg_to_key_type(alg_type);
 
+  kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
+  kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
   do {
     generate_credential_id_nonce_tag(kh, &key);
   } while (ecc_complete_key(key_type, &key) < 0);
