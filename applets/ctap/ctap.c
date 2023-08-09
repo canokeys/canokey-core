@@ -1101,10 +1101,12 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   ret = cbor_encode_int(&map, GI_RESP_VERSIONS);
   CHECK_CBOR_RET(ret);
   CborEncoder array;
-  ret = cbor_encoder_create_array(&map, &array, 2);
+  ret = cbor_encoder_create_array(&map, &array, 3);
   CHECK_CBOR_RET(ret);
   {
     ret = cbor_encode_text_stringz(&array, "U2F_V2");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
     CHECK_CBOR_RET(ret);
