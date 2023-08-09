@@ -208,6 +208,11 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       else
         CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
       break;
+     case CTAPHID_WINK:
+      DBG_MSG("WINK\n");
+      if (!wait_for_user) ctap_wink();
+      CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, 0);
+      break;
     case CTAPHID_CANCEL:
       DBG_MSG("CANCEL\n");
       ret = LOOP_CANCEL;
