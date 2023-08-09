@@ -432,24 +432,12 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
                                 (mc.ext_cred_protect > 0 ? 1 : 0) +
                                 (mc.ext_has_cred_blob ? 1 : 0));
   CHECK_CBOR_RET(ret);
-  if (mc.ext_hmac_secret) {
-    ret = cbor_encode_text_stringz(&map, "hmac-secret");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&map, true);
-    CHECK_CBOR_RET(ret);
-  }
   if (mc.ext_large_blob_key) {
     if (mc.options.rk != OPTION_TRUE) {
       DBG_MSG("largeBlobKey requires rk\n");
       return CTAP2_ERR_INVALID_OPTION;
     }
     // Generate key in Step 17
-  }
-  if (mc.ext_cred_protect > 0) {
-    ret = cbor_encode_text_stringz(&map, "credProtect");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, mc.ext_cred_protect);
-    CHECK_CBOR_RET(ret);
   }
   if (mc.ext_has_cred_blob) {
     bool accepted = false;
@@ -459,6 +447,18 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     ret = cbor_encode_text_stringz(&map, "credBlob");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&map, accepted);
+    CHECK_CBOR_RET(ret);
+  }
+  if (mc.ext_cred_protect > 0) {
+    ret = cbor_encode_text_stringz(&map, "credProtect");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_int(&map, mc.ext_cred_protect);
+    CHECK_CBOR_RET(ret);
+  }
+  if (mc.ext_hmac_secret) {
+    ret = cbor_encode_text_stringz(&map, "hmac-secret");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_boolean(&map, true);
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
