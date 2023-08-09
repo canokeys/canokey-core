@@ -118,7 +118,7 @@ static void emulate_reboot(void) {
 
 int main() {
   current_fd = udp_server();
-  card_fabrication_procedure("/tmp/lfs-root");
+  card_fabrication_procedure("lfs-root");
   // emulate the NFC mode, where user-presence tests are skipped
   set_nfc_state(1);
   CTAPHID_Init(udp_send_current_fd);
