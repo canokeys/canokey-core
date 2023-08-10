@@ -219,6 +219,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
 #ifdef TEST
       if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
         printf("MAGIC REBOOT command received!\r\n");
+        testmode_set_initial_ticks(0);
+        testmode_set_initial_ticks(device_get_tick());
         ctap_install(0);
         SW = 0x9000;
         LL = 0;
