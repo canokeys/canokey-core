@@ -109,10 +109,10 @@ jobs:
         #echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
         #pushd test-real && ./test-libfido2.sh && popd
         cd fido2-tests
-        ../build/fido-hid-over-udp &
-        ~/.local/bin/pytest --color=yes --sim tests/standard/ -k "not test_keep_alive"
+        #../build/fido-hid-over-udp &
+        ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/standard/
         #~/.local/bin/pytest --color=yes --sim tests/vendor/canokeys/
-        kill %1
+        #kill %1
 
     - name: Test the U2F
       run: |
