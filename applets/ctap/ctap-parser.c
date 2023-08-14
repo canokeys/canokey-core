@@ -698,15 +698,16 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &mc->pin_uv_auth_param_len);
         CHECK_CBOR_RET(ret);
-        if (mc->pin_uv_auth_param_len == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-        if (mc->pin_uv_auth_param_len != 0 && mc->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH) {
+        if (mc->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH) {
           DBG_MSG("pin_uv_auth_param is too long\n");
           return CTAP2_ERR_PIN_AUTH_INVALID;
         }
-        ret = cbor_value_copy_byte_string(&map, mc->pin_uv_auth_param, &mc->pin_uv_auth_param_len, NULL);
-        CHECK_CBOR_RET(ret);
-        DBG_MSG("pin_uv_auth_param: ");
-        PRINT_HEX(mc->pin_uv_auth_param, mc->pin_uv_auth_param_len);
+        if (mc->pin_uv_auth_param_len > 0) {
+          ret = cbor_value_copy_byte_string(&map, mc->pin_uv_auth_param, &mc->pin_uv_auth_param_len, NULL);
+          CHECK_CBOR_RET(ret);
+          DBG_MSG("pin_uv_auth_param: ");
+          PRINT_HEX(mc->pin_uv_auth_param, mc->pin_uv_auth_param_len);
+        }
         mc->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
         break;
 
@@ -833,13 +834,14 @@ uint8_t parse_get_assertion(CborParser *parser, CTAP_get_assertion *ga, const ui
         if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_string_length(&map, &ga->pin_uv_auth_param_len);
         CHECK_CBOR_RET(ret);
-        if (ga->pin_uv_auth_param_len == 0) return CTAP2_ERR_PIN_AUTH_INVALID;
-        if (ga->pin_uv_auth_param_len != 0 && ga->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH)
+        if (ga->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH)
           return CTAP2_ERR_PIN_AUTH_INVALID;
-        ret = cbor_value_copy_byte_string(&map, ga->pin_uv_auth_param, &ga->pin_uv_auth_param_len, NULL);
-        CHECK_CBOR_RET(ret);
-        DBG_MSG("pin_uv_auth_param: ");
-        PRINT_HEX(ga->pin_uv_auth_param, ga->pin_uv_auth_param_len);
+        if (ga->pin_uv_auth_param_len > 0) {
+          ret = cbor_value_copy_byte_string(&map, ga->pin_uv_auth_param, &ga->pin_uv_auth_param_len, NULL);
+          CHECK_CBOR_RET(ret);
+          DBG_MSG("pin_uv_auth_param: ");
+          PRINT_HEX(ga->pin_uv_auth_param, ga->pin_uv_auth_param_len);
+        }
         ga->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
         break;
 

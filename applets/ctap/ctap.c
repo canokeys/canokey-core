@@ -2087,5 +2087,6 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 
 int ctap_wink(void) {
     start_blinking_interval(1, 50);
+    return 0;
 }
 
