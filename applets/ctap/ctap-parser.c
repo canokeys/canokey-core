@@ -744,11 +744,6 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
     DBG_MSG("Missing required params\n");
     return CTAP2_ERR_MISSING_PARAMETER;
   }
-  if ((mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) &&
-      !(mc->parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
-    DBG_MSG("Missing required pin_uv_auth_protocol\n");
-    return CTAP2_ERR_MISSING_PARAMETER;
-  }
   return 0;
 }
 

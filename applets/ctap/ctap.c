@@ -250,7 +250,14 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
 
   // 2. If the pin_uv_auth_param parameter is present
-  //    > This has been processed when parsing.
+  //   a. If the pinUvAuthProtocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
+  //     > This has been processed when parsing.
+  //   b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
+  if ((mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) &&
+      !(mc.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
+    DBG_MSG("Missing required pin_uv_auth_protocol\n");
+    return CTAP2_ERR_MISSING_PARAMETER;
+  }
   // 3. Validate pubKeyCredParams with the following steps
   //    > This has been processed when parsing.
 
@@ -698,7 +705,14 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   // 2. If the pin_uv_auth_param parameter is present
-  //    > This has been processed when parsing.
+  //   a. If the pinUvAuthProtocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
+  //     > This has been processed when parsing.
+  //   b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
+  if ((ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) &&
+      !(ga.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
+    DBG_MSG("Missing required pin_uv_auth_protocol\n");
+    return CTAP2_ERR_MISSING_PARAMETER;
+  }
 
   // 3. Create a new authenticatorGetAssertion response structure and initialize both its "uv" bit and "up" bit as false.
   uv = false;
