@@ -112,7 +112,7 @@ jobs:
         #../build/fido-hid-over-udp &
         git pull
         ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/standard/
-        #~/.local/bin/pytest --color=yes --sim tests/vendor/canokeys/
+        ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
         #kill %1
 
     - name: Test the U2F
