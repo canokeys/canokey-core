@@ -1741,7 +1741,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       goto generate_credential_response;
 
     case CM_CMD_DELETE_CREDENTIAL:
-      if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       size = get_file_size(DC_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1788,7 +1788,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_UPDATE_USER_INFORMATION:
-      if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+      if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       // TODO: refactor this
       size = get_file_size(DC_FILE);
@@ -1805,7 +1805,14 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
           break;
         }
       }
-      if (idx == numbers) return CTAP2_ERR_NO_CREDENTIALS;
+      if (idx == numbers) {
+        DBG_MSG("No matching credential\n");
+        return CTAP2_ERR_NO_CREDENTIALS;
+      }
+      if (dc.user.id_size != cm.user.id_size || memcmp(&dc.user.id, &cm.user.id, dc.user.id_size) != 0) {
+        DBG_MSG("Incorrect user id\n");
+        return CTAP1_ERR_INVALID_PARAMETER;
+      }
       memcpy(&dc.user, &cm.user, sizeof(user_entity));
       if (write_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                      sizeof(CTAP_discoverable_credential),

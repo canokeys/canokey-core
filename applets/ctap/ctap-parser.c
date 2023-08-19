@@ -1139,7 +1139,7 @@ parse_credential_management(CborParser *parser, CTAP_credential_management *cm, 
     return CTAP2_ERR_MISSING_PARAMETER;
   if (cm->sub_command == CM_CMD_DELETE_CREDENTIAL && (cm->parsed_params & PARAM_CREDENTIAL_ID) == 0)
     return CTAP2_ERR_MISSING_PARAMETER;
-  if (cm->sub_command == CM_CMD_UPDATE_USER_INFORMATION && (cm->parsed_params & PARAM_USER) == 0)
+  if (cm->sub_command == CM_CMD_UPDATE_USER_INFORMATION && (cm->parsed_params & (PARAM_USER|PARAM_CREDENTIAL_ID)) != (PARAM_USER|PARAM_CREDENTIAL_ID))
     return CTAP2_ERR_MISSING_PARAMETER;
 
   return 0;
