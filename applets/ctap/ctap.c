@@ -1860,11 +1860,12 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     //  b) If either of pinUvAuthParam or pinUvAuthProtocol are present, return CTAP1_ERR_INVALID_PARAMETER.
     //  c) If the value of get is greater than maxFragmentLength, return CTAP1_ERR_INVALID_LENGTH.
     //  > Step a-c are checked when parsing.
-    //  d) If the value of offset is greater than the length of the stored serialized large-blob array,
-    //     return CTAP1_ERR_INVALID_PARAMETER.
+
     int size = get_file_size(LB_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    if (lb.offset > size) {
+    //  d) If the value of offset is greater than the length of the stored serialized large-blob array,
+    //     return CTAP1_ERR_INVALID_PARAMETER.
+    if ((int)lb.offset > size) {
       DBG_MSG("4-d not satisfied\n");
       return CTAP1_ERR_INVALID_PARAMETER;
     }
@@ -1873,8 +1874,8 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     //     specified as get's value. If too few bytes exist at that offset, return the maximum number available.
     //     Note that if offset is equal to the length of the serialized large-blob array then this will result
     //     in a zero-length substring.
-    if (lb.offset + lb.get > size) lb.get = size - lb.offset;
-    DBG_MSG("read %d bytes at %d\n", lb.get, lb.offset);
+    if (lb.offset + (int)lb.get > size) lb.get = size - lb.offset;
+    DBG_MSG("read %hu bytes at %hu\n", lb.get, lb.offset);
     ret = cbor_encoder_create_map(encoder, &map, 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, LB_RESP_CONFIG);
@@ -1883,7 +1884,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     uint8_t *ptr = map.data.ptr;
     ret = cbor_encode_uint(&map, lb.get);
     CHECK_CBOR_RET(ret);
-    *ptr |= 0x40;
+    *ptr |= 0x40; // CBOR Major type 2
     if (read_file(LB_FILE, map.data.ptr, lb.offset, lb.get) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     map.data.ptr += lb.get;
     ret = cbor_encoder_close_container(encoder, &map);
@@ -1898,7 +1899,8 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       //     ii. If the value of length is greater than 1024 bytes and exceeds the capacity of the device,
       //         return CTAP2_ERR_LARGE_BLOB_STORAGE_FULL. (Authenticators MUST be capable of storing at least 1024 bytes.)
       //     iii. If the value of length is less than 17, return CTAP1_ERR_INVALID_PARAMETER.
-      //     > Step i - iii are checked when parsing.
+      //         > Step i - iii are checked when parsing.
+
       //     iv. Set expectedLength to the value of length.
       expectedLength = lb.length;
       //     v. Set expectedNextOffset to zero.
@@ -1936,10 +1938,10 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       memset(buf, 0xFF, 32);
       buf[32] = 0x0C;
       buf[33] = 0x00;
-      buf[34] = 0x00;
-      buf[35] = 0x00;
-      buf[36] = lb.offset >> 8;
-      buf[37] = lb.offset & 0xFF;
+      buf[34] = lb.offset & 0xFF;
+      buf[35] = lb.offset >> 8;
+      buf[36] = 0x00;
+      buf[37] = 0x00;
       sha256_raw(lb.set, lb.set_len, buf + 38);
       if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       if (!cp_verify_pin_token(buf, 70, lb.pin_uv_auth_param, lb.pin_uv_auth_protocol)) {
@@ -1954,9 +1956,9 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     }
     //    g) If the sum of offset and the length of the value of set is greater than the value of expectedLength,
     //       return CTAP1_ERR_INVALID_PARAMETER.
-    if (lb.offset + lb.set_len > expectedLength) {
-      DBG_MSG("5-g not satisfied\n");
-      return CTAP2_ERR_MISSING_PARAMETER;
+    if (lb.offset + lb.set_len > (size_t)expectedLength) {
+      DBG_MSG("5-g not satisfied, %hu + %zu > %hu\n", lb.offset, lb.set_len, expectedLength);
+      return CTAP1_ERR_INVALID_PARAMETER;
     }
     //    h) If the value of offset is zero, prepare a buffer to receive a new serialized large-blob array.
     //    i) Append the value of set to the buffer containing the pending serialized large-blob array.
@@ -1978,8 +1980,8 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
         offset += to_read;
       }
       sha256_final(buf);
-      if (read_file(LB_FILE_TMP, buf, offset, 16) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (!memcmp(buf, buf + 16, 16)) return CTAP2_ERR_INTEGRITY_FAILURE;
+      if (read_file(LB_FILE_TMP, buf + 16, offset, 16) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (memcmp(buf, buf + 16, 16)) return CTAP2_ERR_INTEGRITY_FAILURE;
       //     ii. Commit the contents of the buffer as the new serialized large-blob array for this authenticator.
       if (fs_rename(LB_FILE_TMP, LB_FILE) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       //     iii. Return CTAP2_OK and an empty response.
