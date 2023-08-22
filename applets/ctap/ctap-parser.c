@@ -1172,8 +1172,10 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_int_checked(&map, &tmp);
         CHECK_CBOR_RET(ret);
-        lb->get = tmp;
         DBG_MSG("get: %d\n", tmp);
+        if (tmp < 0) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE; // should be unsigned integer
+        if (tmp > UINT16_MAX) tmp = UINT16_MAX;
+        lb->get = tmp;
         lb->parsed_params |= PARAM_GET;
         break;
 
@@ -1185,8 +1187,8 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
         lb->set = (uint8_t *) map.source.ptr + 1;
         if (lb->set_len >= 24) ++lb->set;
         if (lb->set_len >= 256) ++lb->set;
-        DBG_MSG("set: ");
-        PRINT_HEX(lb->set, 8);
+        DBG_MSG("set(%zuB): ", lb->set_len);
+        PRINT_HEX(lb->set, lb->set_len < 17 ? lb->set_len : 17);
         lb->parsed_params |= PARAM_SET;
         break;
 
@@ -1195,8 +1197,10 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_int_checked(&map, &tmp);
         CHECK_CBOR_RET(ret);
-        lb->offset = tmp;
         DBG_MSG("offset: %d\n", tmp);
+        if (tmp < 0) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE; // should be unsigned integer
+        if (tmp > UINT16_MAX) tmp = UINT16_MAX;
+        lb->offset = tmp;
         lb->parsed_params |= PARAM_OFFSET;
         break;
 
@@ -1205,8 +1209,10 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_int_checked(&map, &tmp);
         CHECK_CBOR_RET(ret);
-        lb->length = tmp;
         DBG_MSG("length: %d\n", tmp);
+        if (tmp < 0) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE; // should be unsigned integer
+        if (tmp > UINT16_MAX) tmp = UINT16_MAX;
+        lb->length = tmp;
         lb->parsed_params |= PARAM_LENGTH;
         break;
 
@@ -1247,7 +1253,7 @@ uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_
     if (lb->parsed_params & PARAM_LENGTH) return CTAP1_ERR_INVALID_PARAMETER;
     if ((lb->parsed_params & PARAM_PIN_UV_AUTH_PARAM) || (lb->parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL))
       return CTAP1_ERR_INVALID_PARAMETER;
-    if (lb->length > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
+    if (lb->get > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
   }
   if (lb->parsed_params & PARAM_SET) {
     if (lb->set_len > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
