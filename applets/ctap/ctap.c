@@ -1948,24 +1948,24 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
         DBG_MSG("Fail to verify pin token\n");
         return CTAP2_ERR_PIN_AUTH_INVALID;
       }
+      //     v. Check if the pinUvAuthToken has the lbw permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
+      if (!cp_has_permission(CP_PERMISSION_LBW)) {
+        DBG_MSG("Fail to verify pin permission\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
     }
-    //    f) Check if the pinUvAuthToken has the lbw permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_has_permission(CP_PERMISSION_LBW)) {
-      DBG_MSG("Fail to verify pin permission\n");
-      return CTAP2_ERR_PIN_AUTH_INVALID;
-    }
-    //    g) If the sum of offset and the length of the value of set is greater than the value of expectedLength,
+    //    f) If the sum of offset and the length of the value of set is greater than the value of expectedLength,
     //       return CTAP1_ERR_INVALID_PARAMETER.
     if (lb.offset + lb.set_len > (size_t)expectedLength) {
       DBG_MSG("5-g not satisfied, %hu + %zu > %hu\n", lb.offset, lb.set_len, expectedLength);
       return CTAP1_ERR_INVALID_PARAMETER;
     }
-    //    h) If the value of offset is zero, prepare a buffer to receive a new serialized large-blob array.
-    //    i) Append the value of set to the buffer containing the pending serialized large-blob array.
+    //    g) If the value of offset is zero, prepare a buffer to receive a new serialized large-blob array.
+    //    h) Append the value of set to the buffer containing the pending serialized large-blob array.
     if (write_file(LB_FILE_TMP, lb.set, lb.offset, lb.set_len, lb.offset == 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    //    j) Update expectedNextOffset to be the new length of the pending serialized large-blob array.
+    //    i) Update expectedNextOffset to be the new length of the pending serialized large-blob array.
     expectedNextOffset += lb.set_len;
-    //    k) If the length of the pending serialized large-blob array is equal to expectedLength:
+    //    j) If the length of the pending serialized large-blob array is equal to expectedLength:
     if (expectedNextOffset == expectedLength) {
       //     i. Verify that the final 16 bytes in the buffer are the truncated SHA-256 hash of the preceding bytes.
       //        If the hash does not match, return CTAP2_ERR_INTEGRITY_FAILURE.
@@ -1986,7 +1986,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       if (fs_rename(LB_FILE_TMP, LB_FILE) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       //     iii. Return CTAP2_OK and an empty response.
     }
-    //    l) Else:
+    //    k) Else:
     //       i. More data is needed to complete the pending serialized large-blob array.
     //       ii. Return CTAP2_OK and an empty response. Await further writes.
     //    > DO NOTHING
