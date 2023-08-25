@@ -1657,7 +1657,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
                        sizeof(CTAP_discoverable_credential));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       DBG_MSG("Slot %d printed\n", idx);
-      ret = cbor_encoder_create_map(encoder, &map, include_numbers ? 5 : 4);
+      ret = cbor_encoder_create_map(encoder, &map, 4 + (uint8_t)include_numbers + (uint8_t)dc.has_large_blob_key);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CM_RESP_USER);
       CHECK_CBOR_RET(ret);
@@ -1725,6 +1725,12 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
       CHECK_CBOR_RET(ret);
+      if (dc.has_large_blob_key) {
+        ret = cbor_encode_int(&map, CM_RESP_LARGE_BLOB_KEY);
+        CHECK_CBOR_RET(ret);
+        ret = cbor_encode_byte_string(&map, dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
+        CHECK_CBOR_RET(ret);
+      }
       ret = cbor_encoder_close_container(encoder, &map);
       CHECK_CBOR_RET(ret);
       break;
