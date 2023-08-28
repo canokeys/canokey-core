@@ -20,7 +20,7 @@
 #define KH_KEY_ATTR     0x04
 #define HE_KEY_ATTR     0x05
 #define DC_FILE         "ctap_dc"
-#define DC_NUMBERS_ATTR 0x00
+#define DC_GENERAL_ATTR 0x00
 #define DC_META_FILE    "ctap_dm"
 #define LB_FILE         "ctap_lb"
 #define LB_FILE_TMP     "ctap_lbt"
@@ -245,6 +245,13 @@ typedef struct {
   uint8_t cred_blob_len;
   uint8_t cred_blob[MAX_CRED_BLOB_LENGTH];
 } __packed CTAP_discoverable_credential;
+
+typedef struct {
+  uint8_t numbers;
+  uint8_t index; // enough when MAX_DC_NUM == 64
+  uint8_t pending_add: 1;
+  uint8_t pending_delete: 1;
+} __packed CTAP_dc_general_attr;
 
 typedef struct {
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];

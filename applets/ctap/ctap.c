@@ -63,7 +63,7 @@ uint8_t ctap_install(uint8_t reset) {
   }
   uint8_t kh_key[KH_KEY_SIZE] = {0};
   if (write_file(DC_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (write_attr(DC_FILE, DC_NUMBERS_ATTR, kh_key, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_attr(DC_FILE, DC_GENERAL_ATTR, kh_key, sizeof(CTAP_dc_general_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(DC_META_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, kh_key, 4) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -159,6 +159,52 @@ static void build_ed25519_cose_key(uint8_t *data) {
   data[9] = 0x20;
 }
 
+int ctap_consistency_check(void) {
+  CTAP_dc_general_attr attr;
+  if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (attr.pending_add || attr.pending_delete) {
+    DBG_MSG("Rolling back credential operations\n");
+    if (get_file_size(DC_FILE) >= ((int) attr.index + 1) * (int) sizeof(CTAP_discoverable_credential)) {
+      CTAP_discoverable_credential dc;
+      if (read_file(DC_FILE, &dc, attr.index * (int) sizeof(CTAP_discoverable_credential),
+                    sizeof(CTAP_discoverable_credential)) < 0)
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (!dc.deleted) {
+        // delete the credential that had been written
+        DBG_MSG("Delete cred at %hhu\n", attr.index);
+        dc.deleted = 1;
+        if (write_file(DC_FILE, &dc, attr.index * (int) sizeof(CTAP_discoverable_credential),
+                      sizeof(CTAP_discoverable_credential), 0) < 0)
+          return CTAP2_ERR_UNHANDLED_REQUEST;
+      }
+    }
+    // delete the meta then
+    int nr_rp = get_file_size(DC_META_FILE);
+    if (nr_rp < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    nr_rp /= sizeof(CTAP_rp_meta);
+    for (int i = 0; i < nr_rp; ++i) {
+      CTAP_rp_meta meta;
+      int size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
+      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if ((meta.slots & (1ull << attr.index)) != 0) {
+        DBG_MSG("Orig slot bitmap: 0x%llx\n", meta.slots);
+        meta.slots &= ~(1ull << attr.index);
+        DBG_MSG("New slot bitmap: 0x%llx\n", meta.slots);
+        size = write_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
+        if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        break;
+      }
+    }
+    if (attr.pending_delete)
+      attr.numbers--;
+
+    attr.pending_add = 0;
+    attr.pending_delete = 0;
+    if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
+  return 0;
+}
+
 uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, const uint8_t *extension,
                             uint8_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
@@ -233,6 +279,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CTAP_make_credential mc;
 
   int ret = parse_make_credential(&parser, &mc, params, len);
+  CHECK_PARSER_RET(ret);
+
+  ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
 
   // 1. If authenticator supports clientPin features and the platform sends a zero length pin_uv_auth_param
@@ -539,13 +588,15 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       memcpy(dc.cred_blob, mc.ext_cred_blob, mc.ext_cred_blob_len);
     }
     dc.deleted = false;
+
+    CTAP_dc_general_attr attr;
+    if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    attr.pending_add = 1;
+    attr.index = (uint8_t)pos;
+    if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (write_file(DC_FILE, &dc, pos * (int) sizeof(CTAP_discoverable_credential),
                    sizeof(CTAP_discoverable_credential), 0) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
-    uint8_t numbers;
-    if (read_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    ++numbers;
-    if (write_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
     // Process metadata
     size = get_file_size(DC_META_FILE);
@@ -578,6 +629,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     if (write_file(DC_META_FILE, &meta, meta_pos * (int) sizeof(CTAP_rp_meta),
                    sizeof(CTAP_rp_meta), 0) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
+    attr.pending_add = 0;
+    ++attr.numbers;
+    if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
 
   // 18. Otherwise, if the "rk" option is false: the authenticator MUST create a non-discoverable credential.
@@ -667,6 +721,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   if (!in_get_next_assertion) {
     credential_counter = 0;
+    ret = ctap_consistency_check();
+    CHECK_PARSER_RET(ret);
   } else {
     // GET_NEXT_ASSERTION
     // 1. If authenticator does not remember any authenticatorGetAssertion parameters, return CTAP2_ERR_NOT_ALLOWED.
@@ -1507,16 +1563,17 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   CTAP_credential_management cm;
   int ret = parse_credential_management(&parser, &cm, params, len);
   CHECK_PARSER_RET(ret);
+  ret = ctap_consistency_check();
+  CHECK_PARSER_RET(ret);
 
   static int idx, n_rp; // for rp enumeration
   static uint64_t slots; // for credential enumeration
   int size, counter;
   CborEncoder map, sub_map;
-  uint8_t numbers;
+  uint8_t numbers = 0;
   CTAP_rp_meta meta;
   CTAP_discoverable_credential dc;
   bool include_numbers;
-  if (read_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
   if (cm.sub_command == CM_CMD_GET_CREDS_METADATA ||
       cm.sub_command == CM_CMD_ENUMERATE_RPS_BEGIN ||
@@ -1525,6 +1582,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       cm.sub_command == CM_CMD_UPDATE_USER_INFORMATION) {
     last_cm_cmd = cm.sub_command;
     uint8_t *buf = (uint8_t *) &dc; // buffer reuse
+    _Static_assert(sizeof(CTAP_dc_general_attr) < sizeof(dc), "CTAP_dc_general_attr buffer overflow");
+    if (read_attr(DC_FILE, DC_GENERAL_ATTR, buf, sizeof(CTAP_dc_general_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    numbers = ((CTAP_dc_general_attr*)buf)->numbers;
+
     buf[0] = cm.sub_command;
     if (cm.param_len + 1 > sizeof(dc)) return CTAP1_ERR_INVALID_LENGTH;
     if (cm.param_len > 0) memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
@@ -1764,7 +1825,13 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         }
       }
       if (idx == numbers) return CTAP2_ERR_NO_CREDENTIALS;
-      // TODO: how to achieve the consistency?
+
+      CTAP_dc_general_attr attr;
+      if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      attr.index = (uint8_t)idx;
+      attr.pending_delete = 1;
+      if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+
       // delete dc first
       dc.deleted = true;
       if (write_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
@@ -1772,9 +1839,6 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
                      0) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
       DBG_MSG("Slot %d deleted\n", idx);
-      if (read_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      --numbers;
-      if (write_attr(DC_FILE, DC_NUMBERS_ATTR, &numbers, sizeof(numbers)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       // delete the meta then
       size = get_file_size(DC_META_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1791,6 +1855,9 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
           break;
         }
       }
+      attr.numbers--;
+      attr.pending_delete = 0;
+      if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       break;
 
     case CM_CMD_UPDATE_USER_INFORMATION:
