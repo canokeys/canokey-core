@@ -144,6 +144,10 @@ int main() {
         // int ret = execv("/proc/self/exe", argv);
         // printf("ERROR exec %d", ret);
         // return 0;
+      } else if (length > 14 && memcmp(buf, "\x99\x10\x52\xca\x95\xe5\x69\xde\x69\xe0\x2e\xbf", 12) == 0) {
+        uint8_t *data = buf + 12;
+        testmode_inject_error(data[0], data[1], length-14, data+2);
+        continue;
       }
       CTAPHID_OutEvent(buf);
     }

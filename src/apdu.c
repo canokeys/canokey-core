@@ -226,6 +226,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
         LL = 0;
         break;
       }
+      if (CLA == 0x00 && INS == 0xEF) {
+        testmode_inject_error(P1, P2, LC, DATA);
+        SW = 0x9000;
+        LL = 0;
+        break;
+      }
 #endif
       ctap_process_apdu(capdu, &rapdu_chaining.rapdu);
       rapdu->len = LE;

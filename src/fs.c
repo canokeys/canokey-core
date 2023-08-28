@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <fs.h>
+#include <device.h>
 
 static lfs_t lfs;
 
@@ -29,6 +30,11 @@ int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
 
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
   lfs_file_t f;
+#ifdef TEST
+  if (testmode_err_triggered(path, true)) {
+    return LFS_ERR_IO;
+  }
+#endif
   int flags = LFS_O_WRONLY | LFS_O_CREAT;
   if (trunc) flags |= LFS_O_TRUNC;
   int err = lfs_file_open(&lfs, &f, path, flags);

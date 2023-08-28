@@ -62,6 +62,8 @@ void fm_receive(uint8_t *buf, uint8_t len);
 int testmode_emulate_user_presence(void);
 int testmode_get_is_nfc_mode(void);
 void testmode_set_initial_ticks(uint32_t ticks);
+void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data);
+bool testmode_err_triggered(const char* filename, bool file_wr);
 
 // platform independent functions
 uint8_t wait_for_user_presence(uint8_t entry);
