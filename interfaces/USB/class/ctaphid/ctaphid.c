@@ -218,7 +218,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       ret = LOOP_CANCEL;
       break;
     default:
-      DBG_MSG("Invalid CMD\n");
+      DBG_MSG("Invalid CMD 0x%hhx\n", channel.cmd);
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
       break;
     }

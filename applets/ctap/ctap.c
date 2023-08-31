@@ -172,7 +172,7 @@ int ctap_consistency_check(void) {
       if (!dc.deleted) {
         // delete the credential that had been written
         DBG_MSG("Delete cred at %hhu\n", attr.index);
-        dc.deleted = 1;
+        dc.deleted = true;
         if (write_file(DC_FILE, &dc, attr.index * (int) sizeof(CTAP_discoverable_credential),
                       sizeof(CTAP_discoverable_credential), 0) < 0)
           return CTAP2_ERR_UNHANDLED_REQUEST;
