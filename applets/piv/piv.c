@@ -628,7 +628,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL ||
         P2 != 0x9B ||
         TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
-        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_RESPONSE], TDEA_BLOCK_SIZE) != 0) {
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_RESPONSE], TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -683,7 +683,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL ||
         P2 != 0x9B ||
         TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
-        memcmp(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_WITNESS], TDEA_BLOCK_SIZE) != 0) {
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_WITNESS], TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }

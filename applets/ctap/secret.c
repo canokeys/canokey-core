@@ -166,9 +166,9 @@ bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t ms
   if (pin_protocol == 2 && key_len > SHA256_DIGEST_LENGTH) key_len = SHA256_DIGEST_LENGTH;
   hmac_sha256(key, key_len, msg, msg_len, buf);
   if (pin_protocol == 1)
-    return memcmp(buf, sig, PIN_AUTH_SIZE_P1) == 0;
+    return memcmp_s(buf, sig, PIN_AUTH_SIZE_P1) == 0;
   else
-    return memcmp(buf, sig, SHA256_DIGEST_LENGTH) == 0;
+    return memcmp_s(buf, sig, SHA256_DIGEST_LENGTH) == 0;
 }
 
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
@@ -191,7 +191,7 @@ bool cp_has_associated_rp_id(void) {
 
 bool cp_verify_rp_id(const uint8_t *rp_id_hash) {
   if (permissions_rp_id[0] == 0) return true;
-  return memcmp(&permissions_rp_id[1], rp_id_hash, SHA256_DIGEST_LENGTH) == 0;
+  return memcmp_s(&permissions_rp_id[1], rp_id_hash, SHA256_DIGEST_LENGTH) == 0;
 }
 
 void cp_associate_rp_id(const uint8_t *rp_id_hash) {
@@ -314,7 +314,7 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
   PRINT_HEX(key->pri, KH_KEY_SIZE);
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
-  if (memcmp(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
+  if (memcmp_s(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
     DBG_MSG("Incorrect key handle\n");
     memzero(key, sizeof(ecc_key_t));
     return 1;
@@ -364,9 +364,9 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
 
-int has_pin(void) {
+bool has_pin(void) {
   uint8_t tmp;
-  return read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1);
+  return read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1) != 0;
 }
 
 int set_pin(uint8_t *buf, uint8_t length) {
@@ -386,7 +386,7 @@ int verify_pin_hash(uint8_t *buf) {
   uint8_t storedPinHash[PIN_HASH_SIZE_P1]; // We only compare the first 16 bytes
   int err = read_attr(CTAP_CERT_FILE, PIN_ATTR, storedPinHash, PIN_HASH_SIZE_P1);
   if (err < 0) return err;
-  if (memcmp(storedPinHash, buf, PIN_HASH_SIZE_P1) == 0) return 0;
+  if (memcmp_s(storedPinHash, buf, PIN_HASH_SIZE_P1) == 0) return 0;
   return 1;
 }
 

@@ -239,7 +239,7 @@ static int oath_set_code(const CAPDU *capdu, RAPDU *rapdu) {
   // verify the response
   uint8_t hmac[SHA1_DIGEST_LENGTH];
   hmac_sha1(key_ptr + 1, KEY_LEN, chal_ptr, chal_len, hmac);
-  if (memcmp(hmac, resp_ptr, SHA1_DIGEST_LENGTH) != 0) EXCEPT(SW_DATA_INVALID);
+  if (memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) != 0) EXCEPT(SW_DATA_INVALID);
 
   // save the key
   return write_attr(OATH_FILE, ATTR_KEY, key_ptr + 1, key_len - 1);
@@ -270,7 +270,7 @@ static int oath_validate(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret == 0) EXCEPT(SW_DATA_INVALID);
   uint8_t hmac[SHA1_DIGEST_LENGTH];
   hmac_sha1(key, KEY_LEN, challenge, sizeof(challenge), hmac);
-  if (memcmp(hmac, resp_ptr, SHA1_DIGEST_LENGTH) != 0) EXCEPT(SW_DATA_INVALID);
+  if (memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) != 0) EXCEPT(SW_DATA_INVALID);
   is_validated = true;
 
   // build the response

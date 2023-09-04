@@ -41,7 +41,7 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
 int verify_key_handle(const credential_id *kh, ecc_key_t *key);
 bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv);
 int get_cert(uint8_t *buf);
-int has_pin(void);
+bool has_pin(void);
 int set_pin(uint8_t *buf, uint8_t length);
 int verify_pin_hash(uint8_t *buf);
 int get_pin_retries(void);
