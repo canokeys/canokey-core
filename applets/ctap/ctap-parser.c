@@ -379,9 +379,6 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
   ret = cbor_value_get_map_length(val, &map_length);
   CHECK_CBOR_RET(ret);
 
-  // If no credProtect extension was included in the request the authenticator SHOULD use the default value of 1 for compatibility with CTAP2.0 platforms.
-  mc->ext_cred_protect = CRED_PROTECT_VERIFICATION_OPTIONAL;
-
   for (size_t i = 0; i < map_length; ++i) {
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);

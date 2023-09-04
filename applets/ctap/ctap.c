@@ -242,6 +242,9 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
       return CTAP2_ERR_LIMIT_EXCEEDED;
     }
 
+    // If no credProtect extension was included in the request the authenticator SHOULD use the default value of 1 for compatibility with CTAP2.0 platforms.
+    if (cred_protect == CRED_PROTECT_ABSENT) cred_protect = CRED_PROTECT_VERIFICATION_OPTIONAL;
+
     memcpy(ad->at.aaguid, aaguid, sizeof(aaguid));
     ad->at.credential_id_length = htobe16(sizeof(credential_id));
     memcpy(ad->at.credential_id.rp_id_hash, rp_id_hash, sizeof(ad->at.credential_id.rp_id_hash));
@@ -483,7 +486,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   ret = cbor_encoder_create_map(&extension_encoder, &map,
                                 (mc.ext_hmac_secret ? 1 : 0) +
                                 // largeBlobKey has no outputs here
-                                (mc.ext_cred_protect > 0 ? 1 : 0) +
+                                (mc.ext_cred_protect != CRED_PROTECT_ABSENT ? 1 : 0) +
                                 (mc.ext_has_cred_blob ? 1 : 0));
   CHECK_CBOR_RET(ret);
   if (mc.ext_large_blob_key) {
@@ -503,7 +506,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     ret = cbor_encode_boolean(&map, accepted);
     CHECK_CBOR_RET(ret);
   }
-  if (mc.ext_cred_protect > 0) {
+  if (mc.ext_cred_protect != CRED_PROTECT_ABSENT) {
     ret = cbor_encode_text_stringz(&map, "credProtect");
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, mc.ext_cred_protect);
@@ -1225,7 +1228,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&option_map, "clientPin");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, has_pin() > 0);
+    ret = cbor_encode_boolean(&option_map, has_pin());
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&option_map, "largeBlobs");
     CHECK_CBOR_RET(ret);

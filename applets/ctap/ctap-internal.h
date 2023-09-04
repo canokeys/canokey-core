@@ -76,6 +76,7 @@
 #define FLAGS_AT (1 << 6)
 #define FLAGS_ED (1 << 7)
 
+#define CRED_PROTECT_ABSENT                                        0x00
 #define CRED_PROTECT_VERIFICATION_OPTIONAL                         0x01
 #define CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST 0x02
 #define CRED_PROTECT_VERIFICATION_REQUIRED                         0x03
