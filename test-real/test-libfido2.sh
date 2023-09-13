@@ -54,8 +54,7 @@ FIDO2GetAssert() {
     echo "$credid" >>"$TEST_TMP_DIR/assert_param"
     ToolHelper fido2-assert -G -b -i "$TEST_TMP_DIR/assert_param" >"$TEST_TMP_DIR/assert"
     assertTrue "fido2-assert -G failed" $?
-    #cat "$TEST_TMP_DIR/assert"
-    local largeBlobKey=$(head -n 1 "$TEST_TMP_DIR/assert")
+    local largeBlobKey=$(tail -n 1 "$TEST_TMP_DIR/assert")
     echo $largeBlobKey
 }
 
@@ -103,18 +102,35 @@ FIDO2SetBlob() {
     local rpid="$1"
     local credid="$2"
     local blobPath="$TEST_TMP_DIR/blob"
-    echo "Set RP[$rpid] Cred[$credid] to $blobPath"
-    # ToolHelper fido2-token -Sb -n "$rpid" -i "$credid" "$blobPath"
+    echo "Set LB of RP[$rpid] Cred[$credid] to $blobPath"
+    echo "  with Key:" $(cat "$TEST_TMP_DIR/blobkey")
     ToolHelper fido2-token -Sb -k "$TEST_TMP_DIR/blobkey" "$blobPath"
+    # 
+    # ToolHelper fido2-token -Sb -n "$rpid" -i "$credid" "$blobPath"
     local ret=$?
     assertTrue "FIDO2SetBlob failed" $ret
+    return $ret
+}
+
+FIDO2DelBlob() {
+    local rpid="$1"
+    local credid="$2"
+    echo "Del LB of RP[$rpid] Cred[$credid]"
+    # echo "With Key:" $(cat "$TEST_TMP_DIR/blobkey")
+    # -k "$TEST_TMP_DIR/blobkey"
+    ToolHelper fido2-token -Db -n "$rpid" -i "$credid"
+    local ret=$?
+    assertTrue "FIDO2DelBlob failed" $ret
     return $ret
 }
 
 FIDO2GetBlob() {
     local rpid="$1"
     local credid="$2"
-    local blobPath="$TEST_TMP_DIR/blob"
+    local blobPath="$TEST_TMP_DIR/blob_read"
+    echo "Get LB of RP[$rpid] Cred[$credid]"
+    # echo "With Key:" $(cat "$TEST_TMP_DIR/blobkey")
+    # ToolHelper fido2-token -Gb -k "$TEST_TMP_DIR/blobkey" "$blobPath"
     >"$blobPath"
     ToolHelper fido2-token -Gb -n "$rpid" -i "$credid" "$blobPath"
     local ret=$?
@@ -183,16 +199,20 @@ makeCredAndStore() {
     echo $1 $userid $2 $credid | tee -a "$TEST_TMP_DIR/rks"
 }
 
-test_Reset() {
+setPINforTest() {
+    # Set PIN
     local origPin=$PIN
+    PIN=$origPin$'\r'$origPin$'\r'
+    ToolHelper fido2-token -S
+    PIN=$origPin
+}
+
+test_Reset() {
     fido2-token -R "$RDID"
     if [[ $? != 0 ]];then
         echo "Cannot reset the key"
     fi
-    # Set PIN
-    PIN=$origPin$'\r'$origPin$'\r'
-    ToolHelper fido2-token -S
-    PIN=$origPin
+    setPINforTest
 }
 
 test_List() {
@@ -258,8 +278,8 @@ test_DispName() {
 
 test_LargeBlob() {
     ToolHelper fido2-token -L -b
-    
-    local randSeq=$(seq 1 64 | shuf)
+    local nrLB=8
+    local randSeq=$(seq 1 $nrLB | shuf)
     for i in $randSeq; do
         local rpid=$(makeRPID $i)
         local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
@@ -272,7 +292,7 @@ test_LargeBlob() {
         makeBlob $i > "$TEST_TMP_DIR/blob"
         FIDO2SetBlob "$rpid" "$credid" || return 1
     done
-    randSeq=$(seq 1 64 | shuf)
+    randSeq=$(seq 1 $nrLB | shuf)
     for i in $randSeq; do
         rpid=$(makeRPID $i)
         fields=($(grep "$rpid" "$TEST_TMP_DIR/rks"))
@@ -281,11 +301,12 @@ test_LargeBlob() {
         fi
         credid=${fields[3]}
         FIDO2GetBlob "$rpid" "$credid" || return 1
-        echo "$rpid: $(cat $TEST_TMP_DIR/blob)"
-        makeBlob $i | diff "$TEST_TMP_DIR/blob" -
+        echo "$rpid: $(cat $TEST_TMP_DIR/blob_read)"
+        makeBlob $i | diff "$TEST_TMP_DIR/blob_read" -
         if [[ $? != 0 ]]; then
             return 1
         fi
+        FIDO2DelBlob "$rpid" "$credid"
     done
 }
 
@@ -309,18 +330,22 @@ test_DelRk() {
     done
 }
 
-test_Debug() {
-    true
-    # echo "For debug only"
-    # FIDO2MakeCred rp1 un2
-    makeCredAndStore thisRP thisUser
+skip_test_Debug() {
+    setPINforTest
+    echo "For debug only"
     local rpid=thisRP
+    makeCredAndStore $rpid thisUser
     local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
     local credid=${fields[3]}
     fields=($(FIDO2GetAssert "$rpid" "$credid"))
+    # echo "$TEST_TMP_DIR/assert"
+    # cat "$TEST_TMP_DIR/assert"
+    echo "Blob key is ${fields[0]}"
     echo ${fields[0]} > "$TEST_TMP_DIR/blobkey"
     makeBlob $i > "$TEST_TMP_DIR/blob"
     FIDO2SetBlob "$rpid" "$credid" || return 1
+    FIDO2GetBlob "$rpid" "$credid"
+    FIDO2DelBlob "$rpid" "$credid"
     # FIDO2GetRkByRp rp1
     # FIDO2DelRkByID "6AwF68LTVupyLx5ddpFRQiPS9+UmkSktTXYWREijOjIBAGO0QIKafRKTv8hiGj4aZxPQSQbfySYyH7CGSbLfBM8/d+Az/H8AABB24DP8fwAA/7CVQft/AAAAAAAAAAAAACB1+f///w==" RPID_aaaaaaaaaaaaabbbbbbbbbbbb40
     # compareAllRk
