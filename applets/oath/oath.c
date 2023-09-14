@@ -165,6 +165,13 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   for (size_t i = 0; i != nRecords; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) {
+      uint32_t default_item;
+      if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
+      if (default_item == i) { // clear the default set if it is to be deleted
+        default_item = 0xffffffff;
+        if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
+      }
+
       record.name_len = 0;
       return write_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
     }
@@ -193,45 +200,55 @@ static int oath_rename(const CAPDU *capdu, RAPDU *rapdu) {
   // find the record
   int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  uint32_t nRecords = size / sizeof(OATH_RECORD), i;
+  uint32_t nRecords = size / sizeof(OATH_RECORD), i, idx_old;
   uint32_t file_offset;
   OATH_RECORD record;
-  for (i = 0; i != nRecords; ++i) {
+  for (i = 0, idx_old = nRecords; i < nRecords; ++i) {
     file_offset = i * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == old_name_len && memcmp(record.name, old_name_ptr, old_name_len) == 0) break;
+    if (idx_old == nRecords && record.name_len == old_name_len && memcmp(record.name, old_name_ptr, old_name_len) == 0) idx_old = i;
+    if (record.name_len == new_name_len && memcmp(record.name, new_name_ptr, new_name_len) == 0) {
+      DBG_MSG("dup name\n");
+      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    }
   }
-  if (i == nRecords) EXCEPT(SW_DATA_INVALID);
+  if (idx_old == nRecords) EXCEPT(SW_DATA_INVALID);
 
   // update the name
+  if (read_file(OATH_FILE, &record, idx_old * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
   record.name_len = new_name_len;
   memcpy(record.name, new_name_ptr, new_name_len);
-  return write_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
+  return write_file(OATH_FILE, &record, idx_old * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
 }
 
 static int oath_set_code(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
+  uint8_t key_len, chal_len, resp_len;
+  uint8_t *key_ptr, *chal_ptr, *resp_ptr;
   // check input data first
   uint16_t offset = 0;
+  if (LC == 0) goto clear_code;
   if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_KEY) EXCEPT(SW_WRONG_DATA);
-  uint8_t key_len = DATA[offset++];
-  uint8_t *key_ptr = &DATA[offset];
+  key_len = DATA[offset++];
+  key_ptr = &DATA[offset];
   if (key_len == 0) { // clear the code
+clear_code:
+    is_validated = 1;
     return write_attr(OATH_FILE, ATTR_KEY, NULL, 0);
   }
   if (key_len != KEY_LEN + 1) EXCEPT(SW_WRONG_DATA);
   offset += key_len;
   if (LC <= offset + 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
-  uint8_t chal_len = DATA[offset++];
-  uint8_t *chal_ptr = &DATA[offset];
+  chal_len = DATA[offset++];
+  chal_ptr = &DATA[offset];
   offset += chal_len;
   if (LC <= offset + 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_FULL_RESPONSE) EXCEPT(SW_WRONG_DATA);
-  uint8_t resp_len = DATA[offset++];
-  uint8_t *resp_ptr = &DATA[offset];
+  resp_len = DATA[offset++];
+  resp_ptr = &DATA[offset];
   if (resp_len != SHA1_DIGEST_LENGTH) EXCEPT(SW_WRONG_DATA);
   offset += resp_len;
   if (LC != offset) EXCEPT(SW_WRONG_LENGTH);
@@ -241,6 +258,7 @@ static int oath_set_code(const CAPDU *capdu, RAPDU *rapdu) {
   hmac_sha1(key_ptr + 1, KEY_LEN, chal_ptr, chal_len, hmac);
   if (memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) != 0) EXCEPT(SW_DATA_INVALID);
 
+  is_validated = 0;
   // save the key
   return write_attr(OATH_FILE, ATTR_KEY, key_ptr + 1, key_len - 1);
 }
@@ -270,8 +288,8 @@ static int oath_validate(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret == 0) EXCEPT(SW_DATA_INVALID);
   uint8_t hmac[SHA1_DIGEST_LENGTH];
   hmac_sha1(key, KEY_LEN, challenge, sizeof(challenge), hmac);
-  if (memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) != 0) EXCEPT(SW_DATA_INVALID);
-  is_validated = true;
+  is_validated = (memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) == 0);
+  if (!is_validated) EXCEPT(SW_WRONG_DATA);
 
   // build the response
   hmac_sha1(key, KEY_LEN, chal_ptr, chal_len, hmac);
