@@ -19,12 +19,16 @@ import (
 )
 
 func chooseAlgorithm() (alg1 ykoath.Algorithm, alg2 otp.Algorithm) {
-	if rand.Int()%2 == 0 {
+	r := rand.Int() % 3
+	if r == 0 {
 		alg1 = ykoath.HmacSha1
 		alg2 = otp.AlgorithmSHA1
-	} else {
+	} else if r == 1 {
 		alg1 = ykoath.HmacSha256
 		alg2 = otp.AlgorithmSHA256
+	} else {
+		alg1 = ykoath.HmacSha512
+		alg2 = otp.AlgorithmSHA512
 	}
 	return
 }
@@ -117,6 +121,78 @@ func TestOath(t *testing.T) {
 			err := oath.Delete("foo")
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldEqual, "no such object")
+		})
+
+		Convey("When we set the code", func(cts C) {
+			key := make([]byte, 16)
+			crand.Read(key)
+
+			// activate authentication
+			err = oath.SetPassword(key)
+			So(err, ShouldBeNil)
+
+			_, err = oath.List()
+			So(err.Error(), ShouldEqual, "auth required")
+
+			s, err := oath.Select()
+			So(err, ShouldBeNil)
+
+			err = oath.Validate(s.Challenge, key)
+			So(err, ShouldBeNil)
+
+			name := "n1"
+			alg1, _ := chooseAlgorithm()
+			err = oath.Put(name, alg1, ykoath.Hotp, 6, key, false, true, 999)
+			So(err, ShouldBeNil)
+
+			_, err = oath.List()
+			So(err, ShouldBeNil)
+
+			_, err = oath.CalculateAll()
+			So(err, ShouldBeNil)
+
+			wrongKey := make([]byte, 16)
+			crand.Read(wrongKey)
+
+			err = oath.Validate(s.Challenge, wrongKey)
+			So(err.Error(), ShouldEqual, "wrong syntax")
+
+			_, err = oath.List()
+			So(err.Error(), ShouldEqual, "auth required")
+
+			_, err = oath.CalculateAll()
+			So(err.Error(), ShouldEqual, "auth required")
+
+			err = oath.Validate(s.Challenge, key)
+			So(err, ShouldBeNil)
+
+			oldChal := s.Challenge
+			// new challenge
+			s, err = oath.Select()
+			So(err, ShouldBeNil)
+			So(s.Challenge, ShouldNotEqual, oldChal)
+
+			err = oath.Validate(s.Challenge, key)
+			So(err, ShouldBeNil)
+
+			_, err = oath.CalculateAll()
+			So(err, ShouldBeNil)
+
+			// deactivate authentication
+			err = oath.SetPassword(nil)
+			So(err, ShouldBeNil)
+
+			_, err = oath.List()
+			So(err, ShouldBeNil)
+
+			s, err = oath.Select()
+			So(err, ShouldBeNil)
+
+			_, err = oath.CalculateAll()
+			So(err, ShouldBeNil)
+
+			err = oath.Delete(name)
+			So(err, ShouldBeNil)
 		})
 
 		Convey("Firstly add several keys", func(ctx C) {
@@ -232,6 +308,43 @@ func TestOath(t *testing.T) {
 					} else {
 						validateTotp(name, otp)
 					}
+				}
+			})
+			Convey("Then rename one of them", func(ctx C) {
+				var name, another string
+				// pick one
+				picked := CurKeys / 3
+				i := 0
+				for n := range allKeys {
+					if i == picked {
+						name = n
+					} else if i == picked+2 {
+						another = n
+						break
+					}
+					i++
+				}
+				otp, err := oath.Calculate(name, nil)
+				So(err, ShouldBeNil)
+				if allKeys[name].Type() == "hotp" {
+					validateHotp(name, otp)
+				} else {
+					validateTotp(name, otp)
+				}
+
+				err = oath.Rename(name, another) // duplicated name
+				So(err.Error(), ShouldEqual, "conditions not satisfied")
+
+				newName := "ThisIsNew"
+				err = oath.Rename(name, newName)
+				So(err, ShouldBeNil)
+
+				otp, err = oath.Calculate(newName, nil)
+				So(err, ShouldBeNil)
+				if allKeys[name].Type() == "hotp" {
+					validateHotp(name, otp)
+				} else {
+					validateTotp(name, otp)
 				}
 			})
 			Convey("Then calculate each of them", func(ctx C) {
