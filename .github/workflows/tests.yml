@@ -12,10 +12,10 @@ jobs:
         sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
         pip3 install --upgrade pip
 
-    - name: Set up Go 1.13
-      uses: actions/setup-go@v1
+    - name: Set up Go 1.16
+      uses: actions/setup-go@v4
       with:
-        go-version: 1.13
+        go-version: "^1.16.1"
       id: go
 
     - name: Check out code
