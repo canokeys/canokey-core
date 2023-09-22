@@ -325,6 +325,8 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     LL = 7 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
   } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
+    // Printed Information requires PIN verification
+    if (DATA[4] == 0x09 && !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     int size = get_file_size(path);
