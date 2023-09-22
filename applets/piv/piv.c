@@ -73,6 +73,7 @@ static const uint8_t pix[] = {0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 static const uint8_t pin_policy[] = {0x40, 0x10};
 static uint8_t auth_ctx[LENGTH_AUTH_STATE];
 static uint8_t in_admin_status;
+static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
@@ -138,8 +139,30 @@ static uint8_t key_type_to_algo_id[] = {
     [RSA4096] = ALG_RSA_4096,
 };
 
+int piv_security_status_check(uint8_t id, const key_meta_t *meta) {
+  switch (meta->pin_policy) {
+    default:
+    case PIN_POLICY_DEFAULT:
+      if (id != 0x9E && pin.is_validated == 0) return 1;
+      break;
+    case PIN_POLICY_NEVER:
+      break;
+    case PIN_POLICY_ONCE:
+      if (pin.is_validated == 0) return 1;
+      break;
+    case PIN_POLICY_ALWAYS:
+      if (pin.is_validated == 0 || pin_is_consumed) return 1;
+      break;
+  }
+  pin_is_consumed = 1;
+  return 0;
+}
+
 void piv_poweroff(void) {
   in_admin_status = 0;
+  pin_is_consumed = 0;
+  pin.is_validated = 0;
+  puk.is_validated = 0;
   piv_do_write = -1;
   piv_do_read = -1;
   piv_do_path[0] = '\0';
@@ -250,6 +273,15 @@ static uint16_t get_capacity_by_tag(uint8_t tag) {
 
 static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  // reset internal states
+  in_admin_status = 0;
+  pin_is_consumed = 0;
+  pin.is_validated = 0;
+  puk.is_validated = 0;
+  piv_do_write = -1;
+  piv_do_read = -1;
+  authenticate_reset();
 
   RDATA[0] = 0x61;
   RDATA[1] = 6 + sizeof(pix) + sizeof(rid);
@@ -378,6 +410,7 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 == 0xFF) {
     if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     pin.is_validated = 0;
+    pin_is_consumed = 0;
     return 0;
   }
   if (LC == 0) {
@@ -392,6 +425,7 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
+  pin_is_consumed = 0;
   return 0;
 }
 
@@ -513,9 +547,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Case 1\n");
     authenticate_reset();
 #ifndef FUZZ
-    if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (P2 == 0x9D) pin.is_validated = 0;
+    // TODO: if (P2 == 0x9D) pin.is_validated = 0;
 
     if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
         (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
@@ -725,11 +759,12 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
     DBG_MSG("Case 6\n");
+    if (P2 != 0x9D) EXCEPT(SW_WRONG_DATA);
     authenticate_reset();
 #ifndef FUZZ
-    if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (P2 == 0x9D) pin.is_validated = 0;
+    // TODO: if (P2 == 0x9D) pin.is_validated = 0;
 
     if ((key.meta.usage & KEY_AGREEMENT) == 0) {
       DBG_MSG("Incorrect key is used\n");
@@ -850,6 +885,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
+  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
   start_quick_blinking(0);
   if (ck_generate_key(&key) < 0) {
     ERR_MSG("Generate key %s failed\n", key_path);
@@ -925,10 +961,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   key.meta.type = algo_id_to_key_type(P1);
-  if (key.meta.type == KEY_TYPE_PKC_END) {
-    DBG_MSG("Error P1 value\n");
-    EXCEPT(SW_WRONG_P1P2);
-  }
+  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
 
   int err = ck_parse_piv(&key, DATA, LC);
   if (err == KEY_ERR_LENGTH) {
