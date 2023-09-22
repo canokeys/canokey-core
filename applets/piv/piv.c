@@ -759,17 +759,17 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
     DBG_MSG("Case 6\n");
-    if (P2 != 0x9D) EXCEPT(SW_WRONG_DATA);
+    // TODO: if (P2 != 0x9D) EXCEPT(SW_WRONG_DATA);
     authenticate_reset();
 #ifndef FUZZ
     if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
     // TODO: if (P2 == 0x9D) pin.is_validated = 0;
 
-    if ((key.meta.usage & KEY_AGREEMENT) == 0) {
-      DBG_MSG("Incorrect key is used\n");
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    }
+    // if ((key.meta.usage & KEY_AGREEMENT) == 0) {
+    //   DBG_MSG("Incorrect key is used\n");
+    //   EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    // }
 
     if (len[IDX_EXP] != PUBLIC_KEY_LENGTH[key.meta.type] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0)) {
       DBG_MSG("Incorrect data length\n");
