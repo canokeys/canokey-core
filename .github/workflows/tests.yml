@@ -19,9 +19,15 @@ jobs:
       id: go
 
     - name: Check out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         submodules: recursive
+
+    - name: Check out piv-go
+      uses: actions/checkout@v4
+      with:
+        repository: canokeys/piv-go
+        path: piv-go
 
     - name: Cache GO Modules
       uses: actions/cache@v3
@@ -323,7 +329,9 @@ jobs:
         opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
         opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
         pkcs15-tool --reader "$RDID" -D
-        PIV_EXT_AUTH_KEY=test-via-pcsc/PIV_EXT_AUTH_KEY.txt piv-tool --reader "$RDID" --admin A:9B:03 || true # External Auth
+
+        cd piv-go; go test -v ./piv --wipe-yubikey; cd -
+
         yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
         yubico-piv-tool -r "$RDID" -a change-pin -P 123456 -N 654321
         yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
@@ -332,6 +340,9 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
         yubico-piv-tool -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
         yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
+        #export PIV_EXT_AUTH_KEY=test-via-pcsc/PIV_EXT_AUTH_KEY.txt 
+        #piv-tool --reader "$RDID" --admin A:9B:03  # External Auth
+        #piv-tool --reader "$RDID" --admin M:9B:03  # Mutual Auth
         ## Key generation
         PIVGenKeyCert() {
           key=$1
