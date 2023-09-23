@@ -198,8 +198,8 @@ int piv_install(uint8_t reset) {
   if (create_key(SIG_KEY_PATH, SIGN) < 0) return -1;
   if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
   if (create_key(CARD_AUTH_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
 
   // TDEA admin key
   ck_key_t admin_key = {.meta = {.type = TDEA,
@@ -479,6 +479,10 @@ static const char *get_key_path(uint8_t id) {
     return KEY_MANAGEMENT_KEY_PATH;
   case 0x9E:
     return CARD_AUTH_KEY_PATH;
+  case 0x82:
+    return KEY_MANAGEMENT_82_KEY_PATH;
+  case 0x83:
+    return KEY_MANAGEMENT_83_KEY_PATH;
   default:
     return NULL;
   }
@@ -549,7 +553,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
     if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    // TODO: if (P2 == 0x9D) pin.is_validated = 0;
 
     if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
         (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
@@ -759,17 +762,10 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] == 0 && pos[IDX_EXP] > 0 && len[IDX_EXP] > 0) {
     DBG_MSG("Case 6\n");
-    // TODO: if (P2 != 0x9D) EXCEPT(SW_WRONG_DATA);
     authenticate_reset();
 #ifndef FUZZ
     if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    // TODO: if (P2 == 0x9D) pin.is_validated = 0;
-
-    // if ((key.meta.usage & KEY_AGREEMENT) == 0) {
-    //   DBG_MSG("Incorrect key is used\n");
-    //   EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    // }
 
     if (len[IDX_EXP] != PUBLIC_KEY_LENGTH[key.meta.type] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0)) {
       DBG_MSG("Incorrect data length\n");
@@ -871,7 +867,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Wrong length\n");
     EXCEPT(SW_WRONG_LENGTH);
   }
-  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
+  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 0x82 && P2 != 0x83) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
       DATA[3] != 0x01) {
     DBG_MSG("Wrong P1/P2 or tags\n");
     EXCEPT(SW_WRONG_DATA);
@@ -1034,6 +1030,8 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     case 0x9C:  // Signing
     case 0x9D:  // Key Management
     case 0x9E:  // Card Authentication
+    case 0x82:  // Retired Key Management 1
+    case 0x83:  // Retired Key Management 2
     {
       const char *key_path = get_key_path(P2);
       if (key_path == NULL) {
