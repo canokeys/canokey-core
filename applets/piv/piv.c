@@ -68,6 +68,10 @@
 #define AUTH_STATE_EXTERNAL 1
 #define AUTH_STATE_MUTUAL   2
 
+static const uint8_t DEFAULT_MGMT_KEY[] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
+static const char *DEFAULT_PIN = "123456\xFF\xFF";
+static const char *DEFAULT_PUK = "12345678";
+
 static const uint8_t rid[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t pix[] = {0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 static const uint8_t pin_policy[] = {0x40, 0x10};
@@ -86,12 +90,12 @@ static void authenticate_reset(void) {
   memset(auth_ctx + OFFSET_AUTH_CHALLENGE, 0, LENGTH_CHALLENGE);
 }
 
-static int create_key(const char *path, key_usage_t usage) {
+static int create_key(const char *path, key_usage_t usage, pin_policy_t pin_policy) {
   ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
                            .origin = KEY_ORIGIN_NOT_PRESENT,
                            .usage = usage,
-                           .pin_policy = PIN_POLICY_DEFAULT,
-                           .touch_policy = TOUCH_POLICY_DEFAULT}};
+                           .pin_policy = pin_policy,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
   if (ck_write_key(path, &key) < 0) {
     ERR_MSG("Create key %s failed\n", path);
     return -1;
@@ -141,12 +145,9 @@ static uint8_t key_type_to_algo_id[] = {
 
 int piv_security_status_check(uint8_t id, const key_meta_t *meta) {
   switch (meta->pin_policy) {
-    default:
-    case PIN_POLICY_DEFAULT:
-      if (id != 0x9E && pin.is_validated == 0) return 1;
-      break;
     case PIN_POLICY_NEVER:
       break;
+    default:
     case PIN_POLICY_ONCE:
       if (pin.is_validated == 0) return 1;
       break;
@@ -194,20 +195,20 @@ int piv_install(uint8_t reset) {
   if (write_file(CHUID_PATH, chuid_tpl, 0, sizeof(chuid_tpl), 1) < 0) return -1;
 
   // keys
-  if (create_key(AUTH_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(SIG_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
-  if (create_key(CARD_AUTH_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
+  if (create_key(AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
 
   // TDEA admin key
   ck_key_t admin_key = {.meta = {.type = TDEA,
                                  .origin = KEY_ORIGIN_GENERATED,
                                  .usage = ENCRYPT,
-                                 .pin_policy = PIN_POLICY_DEFAULT,
-                                 .touch_policy = TOUCH_POLICY_DEFAULT}};
-  memcpy(admin_key.data, (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 24);
+                                 .pin_policy = PIN_POLICY_NEVER,
+                                 .touch_policy = TOUCH_POLICY_NEVER}};
+  memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
   if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) {
     ERR_MSG("Write admin key failed\n");
     return -1;
@@ -216,9 +217,9 @@ int piv_install(uint8_t reset) {
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   // PIN data
-  if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0) return -1;
+  if (pin_create(&pin, DEFAULT_PIN, 8, 3) < 0) return -1;
   if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
-  if (pin_create(&puk, "12345678", 8, 3) < 0) return -1;
+  if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   return 0;
@@ -432,10 +433,11 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
 static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   pin_t *p;
+  const char *default_val;
   if (P2 == 0x80)
-    p = &pin;
+    p = &pin, default_val = DEFAULT_PIN;
   else if (P2 == 0x81)
-    p = &puk;
+    p = &puk, default_val = DEFAULT_PUK;
   else
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if (LC != 16) EXCEPT(SW_WRONG_LENGTH);
@@ -447,8 +449,8 @@ static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   err = pin_update(p, DATA + 8, 8);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
-  uint8_t default_value = 0x00;
-  if (write_attr(p->path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) < 0) return -1;
+  uint8_t is_default = !memcmp(DATA + 8, default_val, 8);
+  if (write_attr(p->path, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
   return 0;
 }
 
@@ -928,8 +930,8 @@ static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (write_file(CARD_ADMIN_KEY_PATH, DATA + 3, 0, 24, 1) < 0) return -1;
-  uint8_t default_value = 0x00;
-  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) < 0) return -1;
+  uint8_t is_default = !memcmp(DATA + 3, DEFAULT_MGMT_KEY, 24);
+  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
   return 0;
 }
 
@@ -1078,7 +1080,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   RDATA[0] = 0x05;
-  RDATA[1] = 0x00;
+  RDATA[1] = 0x03;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;
