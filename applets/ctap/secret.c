@@ -239,13 +239,13 @@ int increase_counter(uint32_t *counter) {
   return 0;
 }
 
-static void generate_credential_id_nonce_tag(credential_id *kh, ecc_key_t *key) {
+static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t kh_key[KH_KEY_SIZE], ecc_key_t *key) {
   // works for ECC algorithms with a 256-bit private key
   random_buffer(kh->nonce, CREDENTIAL_NONCE_SIZE);
-  // private key = hmac-sha256(device private key, nonce), stored in key.pri
-  hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
+  // private key = hmac-sha256(device private key, nonce)
+  hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
   DBG_MSG("Device key: ");
-  PRINT_HEX(key->pub, KH_KEY_SIZE);
+  PRINT_HEX(kh_key, KH_KEY_SIZE);
   DBG_MSG("Nonce: ");
   PRINT_HEX(kh->nonce, sizeof(kh->nonce));
   DBG_MSG("Private key: ");
@@ -273,13 +273,10 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
 
 int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, uint8_t dc, uint8_t cp) {
   ecc_key_t key;
-
-  int ret = read_kh_key(key.pub); // use key.pub to store kh key first
-  if (ret < 0) return ret;
+  uint8_t kh_key[KH_KEY_SIZE];
 
   if (alg_type != COSE_ALG_ES256 && alg_type != COSE_ALG_EDDSA && alg_type != COSE_ALG_SM2) {
     DBG_MSG("Unsupported algo key_type\n");
-    memzero(&key, sizeof(key));
     return -1;
   }
 
@@ -288,9 +285,13 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, ui
 
   kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
   kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
+
+  int ret = read_kh_key(kh_key);
+  if (ret < 0) return ret;
   do {
-    generate_credential_id_nonce_tag(kh, &key);
+    generate_credential_id_nonce_tag(kh, kh_key, &key);
   } while (ecc_complete_key(key_type, &key) < 0);
+  memzero(kh_key, KH_KEY_SIZE);
 
   memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
   DBG_MSG("Public: ");
