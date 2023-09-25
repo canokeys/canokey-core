@@ -896,20 +896,10 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     return -1;
   }
   int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
-  if (err == KEY_ERR_LENGTH) {
-    DBG_MSG("Wrong length when importing\n");
-    memzero(&key, sizeof(key));
-    EXCEPT(SW_WRONG_LENGTH);
-  }
-  else if (err == KEY_ERR_DATA) {
-    DBG_MSG("Wrong data when importing\n");
+  if (err != 0) {
+    DBG_MSG("Wrong metadata\n");
     memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_DATA);
-  }
-  else if (err < 0) {
-    DBG_MSG("Error when importing\n");
-    memzero(&key, sizeof(key));
-    EXCEPT(SW_UNABLE_TO_PROCESS);
   }
   if (ck_write_key(key_path, &key) < 0) {
     ERR_MSG("Write key %s failed\n", key_path);
@@ -954,7 +944,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL) {
+  if (key_path == NULL || P2 == 0x9B) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
