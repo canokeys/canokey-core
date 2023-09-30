@@ -42,6 +42,23 @@ func otpCodeShouldEqual(actual interface{}, expected ...interface{}) string {
 		expected[0], actual, hex.EncodeToString(b), expected[2], expected[3])
 }
 
+func clearRecords(oath *ykoath.OATH, NKeys int) {
+	lResult, err := oath.List()
+	So(err, ShouldBeNil)
+	if NKeys != -1 {
+		So(len(lResult), ShouldEqual, NKeys)
+	}
+
+	for _, item := range lResult {
+		err := oath.Delete(item.Name)
+		So(err, ShouldBeNil)
+	}
+
+	lResult, err = oath.List()
+	So(err, ShouldBeNil)
+	So(lResult, ShouldBeEmpty)
+}
+
 func TestOath(t *testing.T) {
 
 	Convey("OATH should work", t, func(ctx C) {
@@ -62,23 +79,6 @@ func TestOath(t *testing.T) {
 
 		NumKeys := 100
 
-		clearRecords := func(NKeys int) {
-			lResult, err := oath.List()
-			So(err, ShouldBeNil)
-			if NKeys != -1 {
-				So(len(lResult), ShouldEqual, NKeys)
-			}
-
-			for _, item := range lResult {
-				err := oath.Delete(item.Name)
-				So(err, ShouldBeNil)
-			}
-
-			lResult, err = oath.List()
-			So(err, ShouldBeNil)
-			So(lResult, ShouldBeEmpty)
-		}
-
 		Convey("With invalid parameters", func(ctx C) {
 			name := strings.Repeat("O", 64)
 			err = oath.Put(name, ykoath.HmacSha1, ykoath.Totp, 6, make([]byte, 65), false, false, 0)
@@ -87,7 +87,7 @@ func TestOath(t *testing.T) {
 		})
 
 		Convey("When deleting all keys", func(ctx C) {
-			clearRecords(-1)
+			clearRecords(oath, -1)
 		})
 
 		Convey("When name is too long or empty", func(ctx C) {
@@ -247,7 +247,7 @@ func TestOath(t *testing.T) {
 				key2Alg[name] = alg2
 			}
 
-			defer clearRecords(CurKeys)
+			defer clearRecords(oath, CurKeys)
 
 			validateTotp := func(name string, otp string) {
 				// fmt.Printf("%s %s\n", otp, name)
@@ -379,14 +379,34 @@ func TestOath(t *testing.T) {
 				}
 			})
 		})
+	})
 
-		Convey("Fill all slots in the end", func(ctx C) {
+}
+
+func TestFullOath(t *testing.T) {
+	Convey("OATH should work", t, func(ctx C) {
+		oath, err := ykoath.New()
+		So(err, ShouldBeNil)
+		defer oath.Close()
+
+		// enable OATH for this session
+		_, err = oath.Select()
+		So(err, ShouldBeNil)
+
+		clearRecords(oath, -1)
+
+		NumKeys := 100
+
+		Convey("If we fill all slots in the end", func(ctx C) {
 			var name string
-			type1 := ykoath.Hotp
+			type1 := ykoath.Totp
 			alg1, _ := chooseAlgorithm()
 			key := make([]byte, 64)
 			for i := 0; i < NumKeys; i++ {
 				alg1, _ = chooseAlgorithm()
+				if i == NumKeys-1 {
+					type1 = ykoath.Hotp
+				}
 
 				name = fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
 				_, err := crand.Read(key)
@@ -412,5 +432,4 @@ func TestOath(t *testing.T) {
 			})
 		})
 	})
-
 }
