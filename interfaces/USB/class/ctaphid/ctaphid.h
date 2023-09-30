@@ -93,7 +93,7 @@ typedef struct {
 #define LOOP_SUCCESS 0x00
 #define LOOP_CANCEL 0x01
 
-#define MAX_CTAP_BUFSIZE 1280
+#define MAX_CTAP_BUFSIZE 1300
 
 typedef struct {
   uint32_t cid;

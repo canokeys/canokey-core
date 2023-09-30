@@ -147,6 +147,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     }
     channel.bcnt_total = (uint16_t)MSG_LEN(frame);
     if (channel.bcnt_total > MAX_CTAP_BUFSIZE) {
+      DBG_MSG("bcnt_total=%hu exceeds MAX_CTAP_BUFSIZE\n", channel.bcnt_total);
       CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_LEN);
       return LOOP_SUCCESS;
     }
@@ -207,12 +208,17 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       else
         CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
       break;
+     case CTAPHID_WINK:
+      DBG_MSG("WINK\n");
+      if (!wait_for_user) ctap_wink();
+      CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, 0);
+      break;
     case CTAPHID_CANCEL:
       DBG_MSG("CANCEL\n");
       ret = LOOP_CANCEL;
       break;
     default:
-      DBG_MSG("Invalid CMD\n");
+      DBG_MSG("Invalid CMD 0x%hhx\n", channel.cmd);
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
       break;
     }
