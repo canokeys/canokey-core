@@ -23,7 +23,6 @@ typedef enum {
 } key_origin_t;
 
 typedef enum {
-  PIN_POLICY_DEFAULT = 0x00,
   PIN_POLICY_NEVER = 0x01,
   PIN_POLICY_ONCE = 0x02,
   PIN_POLICY_ALWAYS = 0x03,

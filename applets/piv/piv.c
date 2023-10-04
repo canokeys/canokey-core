@@ -39,11 +39,13 @@
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
 #define ALG_ED25519   0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
+#ifdef PIV_CUSTOM_ALG_EXT
 #define ALG_RSA_3072  0x50 // Not defined in NIST SP 800-78-4
 #define ALG_RSA_4096  0x51 // Not defined in NIST SP 800-78-4
 #define ALG_X25519    0x52 // Not defined in NIST SP 800-78-4
 #define ALG_SECP256K1 0x53 // Not defined in NIST SP 800-78-4
 #define ALG_SM2       0x54 // Not defined in NIST SP 800-78-4
+#endif
 
 #define TDEA_BLOCK_SIZE      8
 
@@ -68,11 +70,16 @@
 #define AUTH_STATE_EXTERNAL 1
 #define AUTH_STATE_MUTUAL   2
 
+static const uint8_t DEFAULT_MGMT_KEY[] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
+static const char *DEFAULT_PIN = "123456\xFF\xFF";
+static const char *DEFAULT_PUK = "12345678";
+
 static const uint8_t rid[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t pix[] = {0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 static const uint8_t pin_policy[] = {0x40, 0x10};
 static uint8_t auth_ctx[LENGTH_AUTH_STATE];
 static uint8_t in_admin_status;
+static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
@@ -85,12 +92,12 @@ static void authenticate_reset(void) {
   memset(auth_ctx + OFFSET_AUTH_CHALLENGE, 0, LENGTH_CHALLENGE);
 }
 
-static int create_key(const char *path, key_usage_t usage) {
+static int create_key(const char *path, key_usage_t usage, pin_policy_t pin_policy) {
   ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
                            .origin = KEY_ORIGIN_NOT_PRESENT,
                            .usage = usage,
-                           .pin_policy = PIN_POLICY_DEFAULT,
-                           .touch_policy = TOUCH_POLICY_DEFAULT}};
+                           .pin_policy = pin_policy,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
   if (ck_write_key(path, &key) < 0) {
     ERR_MSG("Create key %s failed\n", path);
     return -1;
@@ -108,6 +115,7 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
     return RSA2048;
   case ALG_ED25519:
     return ED25519;
+#ifdef PIV_CUSTOM_ALG_EXT
   case ALG_X25519:
     return X25519;
   case ALG_SECP256K1:
@@ -118,6 +126,7 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
     return RSA3072;
   case ALG_RSA_4096:
     return RSA4096;
+#endif
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
     return TDEA;
@@ -128,18 +137,39 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
 
 static uint8_t key_type_to_algo_id[] = {
     [SECP256R1] = ALG_ECC_256,
-    [SECP256K1] = ALG_SECP256K1,
     [SECP384R1] = ALG_ECC_384,
-    [SM2] = ALG_SM2,
     [ED25519] = ALG_ED25519,
-    [X25519] = ALG_X25519,
     [RSA2048] = ALG_RSA_2048,
+#ifdef PIV_CUSTOM_ALG_EXT
+    [SM2] = ALG_SM2,
+    [SECP256K1] = ALG_SECP256K1,
+    [X25519] = ALG_X25519,
     [RSA3072] = ALG_RSA_3072,
     [RSA4096] = ALG_RSA_4096,
+#endif
 };
+
+int piv_security_status_check(uint8_t id, const key_meta_t *meta) {
+  switch (meta->pin_policy) {
+    case PIN_POLICY_NEVER:
+      break;
+    default:
+    case PIN_POLICY_ONCE:
+      if (pin.is_validated == 0) return 1;
+      break;
+    case PIN_POLICY_ALWAYS:
+      if (pin.is_validated == 0 || pin_is_consumed) return 1;
+      break;
+  }
+  pin_is_consumed = 1;
+  return 0;
+}
 
 void piv_poweroff(void) {
   in_admin_status = 0;
+  pin_is_consumed = 0;
+  pin.is_validated = 0;
+  puk.is_validated = 0;
   piv_do_write = -1;
   piv_do_read = -1;
   piv_do_path[0] = '\0';
@@ -171,20 +201,20 @@ int piv_install(uint8_t reset) {
   if (write_file(CHUID_PATH, chuid_tpl, 0, sizeof(chuid_tpl), 1) < 0) return -1;
 
   // keys
-  if (create_key(AUTH_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(SIG_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT) < 0) return -1;
-  if (create_key(CARD_AUTH_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, SIGN) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, SIGN) < 0) return -1;
+  if (create_key(AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
+  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
 
   // TDEA admin key
   ck_key_t admin_key = {.meta = {.type = TDEA,
                                  .origin = KEY_ORIGIN_GENERATED,
                                  .usage = ENCRYPT,
-                                 .pin_policy = PIN_POLICY_DEFAULT,
-                                 .touch_policy = TOUCH_POLICY_DEFAULT}};
-  memcpy(admin_key.data, (uint8_t[]){1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8}, 24);
+                                 .pin_policy = PIN_POLICY_NEVER,
+                                 .touch_policy = TOUCH_POLICY_NEVER}};
+  memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
   if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) {
     ERR_MSG("Write admin key failed\n");
     return -1;
@@ -193,9 +223,9 @@ int piv_install(uint8_t reset) {
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   // PIN data
-  if (pin_create(&pin, "123456\xFF\xFF", 8, 3) < 0) return -1;
+  if (pin_create(&pin, DEFAULT_PIN, 8, 3) < 0) return -1;
   if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
-  if (pin_create(&puk, "12345678", 8, 3) < 0) return -1;
+  if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   return 0;
@@ -250,6 +280,15 @@ static uint16_t get_capacity_by_tag(uint8_t tag) {
 
 static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  // reset internal states
+  in_admin_status = 0;
+  pin_is_consumed = 0;
+  pin.is_validated = 0;
+  puk.is_validated = 0;
+  piv_do_write = -1;
+  piv_do_read = -1;
+  authenticate_reset();
 
   RDATA[0] = 0x61;
   RDATA[1] = 6 + sizeof(pix) + sizeof(rid);
@@ -325,6 +364,8 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     LL = 7 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
   } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
+    // Printed Information requires PIN verification
+    if (DATA[4] == 0x09 && !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     int size = get_file_size(path);
@@ -376,6 +417,7 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 == 0xFF) {
     if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     pin.is_validated = 0;
+    pin_is_consumed = 0;
     return 0;
   }
   if (LC == 0) {
@@ -390,16 +432,18 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
   if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
+  pin_is_consumed = 0;
   return 0;
 }
 
 static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   pin_t *p;
+  const char *default_val;
   if (P2 == 0x80)
-    p = &pin;
+    p = &pin, default_val = DEFAULT_PIN;
   else if (P2 == 0x81)
-    p = &puk;
+    p = &puk, default_val = DEFAULT_PUK;
   else
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   if (LC != 16) EXCEPT(SW_WRONG_LENGTH);
@@ -411,8 +455,8 @@ static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   err = pin_update(p, DATA + 8, 8);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
-  uint8_t default_value = 0x00;
-  if (write_attr(p->path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) < 0) return -1;
+  uint8_t is_default = !memcmp(DATA + 8, default_val, 8);
+  if (write_attr(p->path, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
   return 0;
 }
 
@@ -443,6 +487,10 @@ static const char *get_key_path(uint8_t id) {
     return KEY_MANAGEMENT_KEY_PATH;
   case 0x9E:
     return CARD_AUTH_KEY_PATH;
+  case 0x82:
+    return KEY_MANAGEMENT_82_KEY_PATH;
+  case 0x83:
+    return KEY_MANAGEMENT_83_KEY_PATH;
   default:
     return NULL;
   }
@@ -511,9 +559,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Case 1\n");
     authenticate_reset();
 #ifndef FUZZ
-    if (P2 != 0x9E && pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (P2 == 0x9D) pin.is_validated = 0;
 
     if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
         (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
@@ -725,14 +772,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Case 6\n");
     authenticate_reset();
 #ifndef FUZZ
-    if (P2 != 0x9D || pin.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-    if (P2 == 0x9D) pin.is_validated = 0;
-
-    if ((key.meta.usage & KEY_AGREEMENT) == 0) {
-      DBG_MSG("Incorrect key is used\n");
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    }
 
     if (len[IDX_EXP] != PUBLIC_KEY_LENGTH[key.meta.type] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0)) {
       DBG_MSG("Incorrect data length\n");
@@ -834,7 +875,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Wrong length\n");
     EXCEPT(SW_WRONG_LENGTH);
   }
-  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
+  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 0x82 && P2 != 0x83) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
       DATA[3] != 0x01) {
     DBG_MSG("Wrong P1/P2 or tags\n");
     EXCEPT(SW_WRONG_DATA);
@@ -848,26 +889,17 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
+  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
   start_quick_blinking(0);
   if (ck_generate_key(&key) < 0) {
     ERR_MSG("Generate key %s failed\n", key_path);
     return -1;
   }
   int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
-  if (err == KEY_ERR_LENGTH) {
-    DBG_MSG("Wrong length when importing\n");
-    memzero(&key, sizeof(key));
-    EXCEPT(SW_WRONG_LENGTH);
-  }
-  else if (err == KEY_ERR_DATA) {
-    DBG_MSG("Wrong data when importing\n");
+  if (err != 0) {
+    DBG_MSG("Wrong metadata\n");
     memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_DATA);
-  }
-  else if (err < 0) {
-    DBG_MSG("Error when importing\n");
-    memzero(&key, sizeof(key));
-    EXCEPT(SW_UNABLE_TO_PROCESS);
   }
   if (ck_write_key(key_path, &key) < 0) {
     ERR_MSG("Write key %s failed\n", key_path);
@@ -894,8 +926,8 @@ static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (write_file(CARD_ADMIN_KEY_PATH, DATA + 3, 0, 24, 1) < 0) return -1;
-  uint8_t default_value = 0x00;
-  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) < 0) return -1;
+  uint8_t is_default = !memcmp(DATA + 3, DEFAULT_MGMT_KEY, 24);
+  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
   return 0;
 }
 
@@ -912,7 +944,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL) {
+  if (key_path == NULL || P2 == 0x9B) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -923,10 +955,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   key.meta.type = algo_id_to_key_type(P1);
-  if (key.meta.type == KEY_TYPE_PKC_END) {
-    DBG_MSG("Error P1 value\n");
-    EXCEPT(SW_WRONG_P1P2);
-  }
+  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
 
   int err = ck_parse_piv(&key, DATA, LC);
   if (err == KEY_ERR_LENGTH) {
@@ -999,6 +1028,8 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     case 0x9C:  // Signing
     case 0x9D:  // Key Management
     case 0x9E:  // Card Authentication
+    case 0x82:  // Retired Key Management 1
+    case 0x83:  // Retired Key Management 2
     {
       const char *key_path = get_key_path(P2);
       if (key_path == NULL) {
@@ -1045,7 +1076,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   RDATA[0] = 0x05;
-  RDATA[1] = 0x00;
+  RDATA[1] = 0x03;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;

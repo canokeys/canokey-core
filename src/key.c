@@ -82,7 +82,7 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       DBG_MSG("Wrong length for pin policy\n");
       return KEY_ERR_LENGTH;
     }
-    if (buf < end && *buf > PIN_POLICY_ALWAYS) {
+    if (buf < end && (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER)) {
       DBG_MSG("Wrong data for pin policy\n");
       return KEY_ERR_DATA;
     }
@@ -99,7 +99,7 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       DBG_MSG("Wrong length for touch policy\n");
       return KEY_ERR_LENGTH;
     }
-    if (buf < end && *buf++ > TOUCH_POLICY_CACHED) {
+    if (buf < end && (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER)) {
       DBG_MSG("Wrong data for touch policy\n");
       return KEY_ERR_DATA;
     }
