@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <common.h>
+#include <admin.h>
 #include <des.h>
 #include <device.h>
 #include <ecc.h>
@@ -39,13 +40,11 @@
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
 #define ALG_ED25519   0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
-#ifdef PIV_CUSTOM_ALG_EXT
 #define ALG_RSA_3072  0x50 // Not defined in NIST SP 800-78-4
 #define ALG_RSA_4096  0x51 // Not defined in NIST SP 800-78-4
 #define ALG_X25519    0x52 // Not defined in NIST SP 800-78-4
 #define ALG_SECP256K1 0x53 // Not defined in NIST SP 800-78-4
 #define ALG_SM2       0x54 // Not defined in NIST SP 800-78-4
-#endif
 
 #define TDEA_BLOCK_SIZE      8
 
@@ -115,38 +114,42 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
     return RSA2048;
   case ALG_ED25519:
     return ED25519;
-#ifdef PIV_CUSTOM_ALG_EXT
-  case ALG_X25519:
-    return X25519;
-  case ALG_SECP256K1:
-    return SECP256K1;
-  case ALG_SM2:
-    return SM2;
-  case ALG_RSA_3072:
-    return RSA3072;
-  case ALG_RSA_4096:
-    return RSA4096;
-#endif
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
     return TDEA;
   default:
-    return KEY_TYPE_PKC_END;
+    
+    if (!cfg_is_piv_algo_extension_enable()) return KEY_TYPE_PKC_END;
+
+    switch (id) {
+    case ALG_X25519:
+      return X25519;
+    case ALG_SECP256K1:
+      return SECP256K1;
+    case ALG_SM2:
+      return SM2;
+    case ALG_RSA_3072:
+      return RSA3072;
+    case ALG_RSA_4096:
+      return RSA4096;
+    default:
+      return KEY_TYPE_PKC_END;
+    }
   }
 }
 
 static uint8_t key_type_to_algo_id[] = {
     [SECP256R1] = ALG_ECC_256,
     [SECP384R1] = ALG_ECC_384,
-    [ED25519] = ALG_ED25519,
     [RSA2048] = ALG_RSA_2048,
-#ifdef PIV_CUSTOM_ALG_EXT
-    [SM2] = ALG_SM2,
-    [SECP256K1] = ALG_SECP256K1,
+    [ED25519] = ALG_ED25519,
     [X25519] = ALG_X25519,
+    [SECP256K1] = ALG_SECP256K1,
+    [SM2] = ALG_SM2,
     [RSA3072] = ALG_RSA_3072,
     [RSA4096] = ALG_RSA_4096,
-#endif
+    [TDEA] = ALG_TDEA_3KEY,
+    [KEY_TYPE_PKC_END] = ALG_DEFAULT,
 };
 
 int piv_security_status_check(uint8_t id, const key_meta_t *meta) {
@@ -519,6 +522,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   }
   DBG_KEY_META(&key.meta);
 
+  // empty slot after reset
+  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   if (algo_id_to_key_type(P1) != key.meta.type) {
     DBG_MSG("The value of P1 mismatches the key specified by P2\n");
     EXCEPT(SW_WRONG_P1P2);
