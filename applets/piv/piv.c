@@ -69,6 +69,19 @@
 #define AUTH_STATE_EXTERNAL 1
 #define AUTH_STATE_MUTUAL   2
 
+#define PIV_TOUCH(cached)                                                                                                    \
+  do {                                                                                                                 \
+    if (is_nfc()) break;                                                                                               \
+    uint32_t current_tick = device_get_tick();                                                                         \
+    if ((cached) && current_tick > last_touch && current_tick - last_touch < 15000) break;                                         \
+    switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
+    case USER_PRESENCE_CANCEL:                                                                                         \
+    case USER_PRESENCE_TIMEOUT:                                                                                        \
+      EXCEPT(SW_ERROR_WHILE_RECEIVING);                                                                                \
+    }                                                                                                                  \
+    last_touch = device_get_tick();                                                                                    \
+  } while (0)
+
 static const uint8_t DEFAULT_MGMT_KEY[] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
 static const char *DEFAULT_PIN = "123456\xFF\xFF";
 static const char *DEFAULT_PUK = "12345678";
@@ -82,6 +95,7 @@ static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
+static uint32_t last_touch = UINT32_MAX;
 
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
@@ -538,6 +552,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     dat_pos += len[tag - 0x80];
     DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
   }
+
+  // User presence test
+  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS) PIV_TOUCH(key.meta.touch_policy == TOUCH_POLICY_CACHED);
 
   //
   // CASE 1 - INTERNAL AUTHENTICATE (Key ID = 9A / 9E)
