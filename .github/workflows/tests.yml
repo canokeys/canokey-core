@@ -391,7 +391,7 @@ jobs:
         yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
         export PIV_EXT_AUTH_KEY=$PWD/test-via-pcsc/PIV_EXT_AUTH_KEY.txt 
         # opensc 0.22.0~0.23.0 has a bug on External Auth. See opensc commit: a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479
-        piv-tool -vvv --reader "$RDID" --admin A:9B:03  # External Auth
+        piv-tool --reader "$RDID" --admin A:9B:03  # External Auth
         piv-tool --reader "$RDID" --admin M:9B:03  # Mutual Auth
         ## Key generation
         PIVGenKeyCert() {
