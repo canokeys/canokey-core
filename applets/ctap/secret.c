@@ -110,6 +110,8 @@ void cp_get_public_key(uint8_t *buf) {
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
+  DBG_MSG("ECDH: ");
+  PRINT_HEX(buf, PUBLIC_KEY_LENGTH[SECP256R1]);
   if (ret < 0) return 1;
   if (pin_protocol == 1)
     sha256_raw(buf, PRI_KEY_SIZE, buf);

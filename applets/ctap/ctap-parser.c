@@ -928,6 +928,8 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
         if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, cp->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
+        DBG_MSG("pin_uv_auth_param: ");
+        PRINT_HEX(cp->pin_uv_auth_param, len);
         cp->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
         break;
 

@@ -1364,6 +1364,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   int err, retries;
   switch (cp.sub_command) {
     case CP_CMD_GET_PIN_RETRIES:
+    DBG_MSG("Subcommand Get Pin Retries\n");
       ret = cbor_encoder_create_map(encoder, &map, 1);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CP_RESP_PIN_RETRIES);
@@ -1375,6 +1376,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       break;
 
     case CP_CMD_GET_KEY_AGREEMENT:
+      DBG_MSG("Subcommand Get Key Agreement\n");
       ret = cbor_encoder_create_map(encoder, &map, 1);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CP_RESP_KEY_AGREEMENT);
@@ -1393,13 +1395,14 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       break;
 
     case CP_CMD_SET_PIN:
+      DBG_MSG("Subcommand Set Pin\n");
       err = has_pin();
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err > 0) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
       CHECK_PARSER_RET(ret);
       DBG_MSG("Shared Secret: ");
-      PRINT_HEX(cp.key_agreement, PUB_KEY_SIZE);
+      PRINT_HEX(cp.key_agreement, SHARED_SECRET_SIZE);
       if (!cp_verify(cp.key_agreement, SHARED_SECRET_SIZE, cp.new_pin_enc,
                      cp.pin_uv_auth_protocol == 1 ? PIN_ENC_SIZE_P1 : PIN_ENC_SIZE_P2, cp.pin_uv_auth_param,
                      cp.pin_uv_auth_protocol)) {
@@ -1423,6 +1426,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       break;
 
     case CP_CMD_CHANGE_PIN:
+      DBG_MSG("Subcommand Change Pin\n");
       err = has_pin();
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
@@ -1486,6 +1490,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
 
     case CP_CMD_GET_PIN_TOKEN:
     case CP_CMD_GET_PIN_UV_AUTH_TOKEN_USING_PIN_WITH_PERMISSIONS:
+      DBG_MSG("Subcommand Get Pin Token\n");
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#getPinToken
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#getPinUvAuthTokenUsingPinWithPermissions
       err = has_pin();
