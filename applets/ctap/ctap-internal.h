@@ -189,39 +189,43 @@
 #define LB_RESP_CONFIG 0x01
 
 // Size limits
-#define KH_KEY_SIZE                  32
-#define HE_KEY_SIZE                  32
-#define PRI_KEY_SIZE                 32
-#define PUB_KEY_SIZE                 64
-#define SHARED_SECRET_SIZE           32
-#define MAX_COSE_KEY_SIZE            78
-#define PIN_ENC_SIZE_P1              64
-#define PIN_ENC_SIZE_P2              80
-#define PIN_HASH_SIZE_P1             16
-#define PIN_HASH_SIZE_P2             32
-#define MAX_CERT_SIZE                1152
-#define AAGUID_SIZE                  16
-#define PIN_AUTH_SIZE_P1             16
-#define PIN_TOKEN_SIZE               32
-#define HMAC_SECRET_SALT_SIZE        64
-#define HMAC_SECRET_SALT_AUTH_SIZE   16
-#define CREDENTIAL_TAG_SIZE          16
-#define CLIENT_DATA_HASH_SIZE        32
-#define CREDENTIAL_NONCE_SIZE        16
-#define CREDENTIAL_NONCE_DC_POS      16
-#define CREDENTIAL_NONCE_CP_POS      17
-#define DOMAIN_NAME_MAX_SIZE         254
-#define USER_ID_MAX_SIZE             64
-#define DISPLAY_NAME_LIMIT           65
-#define USER_NAME_LIMIT              65
-#define MAX_DC_NUM                   64
-#define MAX_STORED_RPID_LENGTH       32
-#define MAX_EXTENSION_SIZE_IN_AUTH   51
-#define MAX_CREDENTIAL_COUNT_IN_LIST 8
-#define MAX_CRED_BLOB_LENGTH         32
-#define LARGE_BLOB_KEY_SIZE          32
-#define LARGE_BLOB_SIZE_LIMIT        4096
-#define MAX_FRAGMENT_LENGTH          (MAX_CTAP_BUFSIZE - 64)
+#define KH_KEY_SIZE                   32
+#define HE_KEY_SIZE                   32
+#define PRI_KEY_SIZE                  32
+#define PUB_KEY_SIZE                  64
+#define SHARED_SECRET_SIZE_P1         32
+#define SHARED_SECRET_SIZE_P2         64
+#define SHARED_SECRET_SIZE_HMAC       32
+#define MAX_COSE_KEY_SIZE             78
+#define PIN_ENC_SIZE_P1               64
+#define PIN_ENC_SIZE_P2               80
+#define PIN_HASH_SIZE_P1              16
+#define PIN_HASH_SIZE_P2              32
+#define MAX_CERT_SIZE                 1152
+#define AAGUID_SIZE                   16
+#define PIN_AUTH_SIZE_P1              16
+#define PIN_TOKEN_SIZE                32
+#define HMAC_SECRET_SALT_SIZE         64
+#define HMAC_SECRET_SALT_IV_SIZE      16
+#define HMAC_SECRET_SALT_AUTH_SIZE_P1 16
+#define HMAC_SECRET_SALT_AUTH_SIZE_P2 32
+#define CREDENTIAL_TAG_SIZE           16
+#define CLIENT_DATA_HASH_SIZE         32
+#define CREDENTIAL_NONCE_SIZE         16
+#define CREDENTIAL_NONCE_DC_POS       16
+#define CREDENTIAL_NONCE_CP_POS       17
+#define DOMAIN_NAME_MAX_SIZE          254
+#define USER_ID_MAX_SIZE              64
+#define DISPLAY_NAME_LIMIT            65
+#define USER_NAME_LIMIT               65
+#define MAX_DC_NUM                    64
+#define MAX_STORED_RPID_LENGTH        32
+#define MAX_EXTENSION_SIZE_IN_AUTH    51
+#define MAX_CREDENTIAL_COUNT_IN_LIST  8
+#define MAX_CRED_BLOB_LENGTH          32
+#define LARGE_BLOB_KEY_SIZE           32
+#define LARGE_BLOB_SIZE_LIMIT         4096
+#define MAX_FRAGMENT_LENGTH           (MAX_CTAP_BUFSIZE - 64)
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -316,9 +320,10 @@ typedef struct {
   size_t pin_uv_auth_param_len;
   uint8_t pin_uv_auth_protocol;
   uint8_t ext_hmac_secret_key_agreement[PUB_KEY_SIZE];
-  uint8_t ext_hmac_secret_salt_enc[HMAC_SECRET_SALT_SIZE];
-  uint8_t ext_hmac_secret_salt_auth[HMAC_SECRET_SALT_AUTH_SIZE];
-  uint8_t ext_hmac_secret_salt_len;
+  uint8_t ext_hmac_secret_salt_enc[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
+  uint8_t ext_hmac_secret_salt_enc_len;
+  uint8_t ext_hmac_secret_salt_auth[HMAC_SECRET_SALT_AUTH_SIZE_P2];
+  uint8_t ext_hmac_secret_salt_auth_len;
   uint8_t ext_hmac_secret_pin_protocol;
   bool ext_large_blob_key;
   bool ext_cred_blob;

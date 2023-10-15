@@ -8,6 +8,10 @@
         {
             "major": 1,
             "minor": 1
+        },
+        {
+            "major": 1,
+            "minor": 0
         }
     ],
     "authenticationAlgorithms": ["secp256r1_ecdsa_sha256_raw", "ed25519_eddsa_sha512_raw"],

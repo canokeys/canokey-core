@@ -131,11 +131,13 @@ int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
     cfg.out = out;
   } else {
     random_buffer(iv, sizeof(iv));
-    cfg.key = key + 32;
+    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
     cfg.out = out + sizeof(iv);
-    memcpy(out, iv, sizeof(iv));
   }
-  return block_cipher_enc(&cfg);
+  int ret = block_cipher_enc(&cfg);
+  if (pin_protocol == 2)
+    memcpy(out, iv, sizeof(iv));
+  return ret;
 }
 
 int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
@@ -154,7 +156,7 @@ int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
   } else {
     if (in_size < sizeof(iv)) return -1;
     memcpy(iv, in, sizeof(iv));
-    cfg.key = key + 32;
+    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
     cfg.in_size = in_size - sizeof(iv);
     cfg.in = in + sizeof(iv);
     cfg.out = out;
