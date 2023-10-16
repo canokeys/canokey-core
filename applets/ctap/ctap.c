@@ -55,7 +55,7 @@ static uint8_t consecutive_pin_counter, last_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
-  last_cmd = 0xff;
+  last_cmd = CTAP_INVALID_CMD;
   cp_initialize();
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) {
     DBG_MSG("CTAP initialized\n");
@@ -1011,6 +1011,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // Process hmac-secret extension
   if (ga.parsed_params & PARAM_HMAC_SECRET) {
     if (credential_counter == 0) {
+      // If "up" is set to false, authenticator returns CTAP2_ERR_UNSUPPORTED_OPTION.
+      if (!up) return CTAP2_ERR_UNSUPPORTED_OPTION;
       ret = cp_decapsulate(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol);
       CHECK_PARSER_RET(ret);
       DBG_MSG("Shared secret: ");
@@ -1026,7 +1028,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
         return CTAP2_ERR_UNHANDLED_REQUEST;
       }
     }
-    uint8_t hmac_secret_output[HMAC_SECRET_SALT_SIZE];
+    uint8_t hmac_secret_output[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
     DBG_MSG("hmac-secret-salt: ");
     PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol == 1
                                                ? ga.ext_hmac_secret_salt_enc_len
@@ -1044,17 +1046,17 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     if (cp_encrypt(ga.ext_hmac_secret_key_agreement, hmac_secret_output,
                    ga.ext_hmac_secret_pin_protocol == 1 ? ga.ext_hmac_secret_salt_enc_len
                                                         : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
-                   ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol) < 0)
+                   hmac_secret_output, ga.ext_hmac_secret_pin_protocol) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     DBG_MSG("hmac-secret output: ");
-    PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_enc_len);
+    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
     if (credential_counter + 1 == number_of_credentials) { // encryption key will not be used any more
       memzero(ga.ext_hmac_secret_key_agreement, sizeof(ga.ext_hmac_secret_key_agreement));
     }
 
     ret = cbor_encode_text_stringz(&map, "hmac-secret");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_enc_len);
+    ret = cbor_encode_byte_string(&map, hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
@@ -2146,6 +2148,9 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
       break;
   }
   last_cmd = cmd;
+  if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
+    last_cmd = CTAP_INVALID_CMD;
+  }
   return 0;
 }
 

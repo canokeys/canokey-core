@@ -125,18 +125,20 @@ int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   cfg.in_size = in_size;
   cfg.in = in;
+  cfg.out = out;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
     cfg.key = key;
-    cfg.out = out;
   } else {
     random_buffer(iv, sizeof(iv));
     cfg.key = key + SHARED_SECRET_SIZE_HMAC;
-    cfg.out = out + sizeof(iv);
   }
   int ret = block_cipher_enc(&cfg);
-  if (pin_protocol == 2)
+  if (pin_protocol == 2) {
+    // "in" and "out" arguments can be the same pointer 
+    memmove(out + sizeof(iv), out, in_size);
     memcpy(out, iv, sizeof(iv));
+  }
   return ret;
 }
 

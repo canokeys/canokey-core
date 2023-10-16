@@ -528,12 +528,12 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
            ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE / 2) ||
           (ga->ext_hmac_secret_pin_protocol == 2 && ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE + HMAC_SECRET_SALT_IV_SIZE &&
            ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE / 2 + HMAC_SECRET_SALT_IV_SIZE)) {
-        ERR_MSG("Invalid hmac_secret_salt_len\n");
+        ERR_MSG("Invalid hmac_secret_salt_enc_len %hhu\n", ga->ext_hmac_secret_salt_enc_len);
         return CTAP1_ERR_INVALID_LENGTH;
       }
-      if ((ga->ext_hmac_secret_pin_protocol == 1 && len != HMAC_SECRET_SALT_AUTH_SIZE_P1) ||
-          (ga->ext_hmac_secret_pin_protocol == 2 && len != HMAC_SECRET_SALT_AUTH_SIZE_P2)) {
-        ERR_MSG("Invalid hmac_secret_auth_size\n");
+      if ((ga->ext_hmac_secret_pin_protocol == 1 && ga->ext_hmac_secret_salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P1) ||
+          (ga->ext_hmac_secret_pin_protocol == 2 && ga->ext_hmac_secret_salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P2)) {
+        ERR_MSG("Invalid hmac_secret_salt_auth_len %hhu\n", ga->ext_hmac_secret_salt_auth_len);
         return CTAP1_ERR_INVALID_LENGTH;
       }
       ga->parsed_params |= PARAM_HMAC_SECRET;
