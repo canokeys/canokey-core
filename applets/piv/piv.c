@@ -69,11 +69,11 @@
 #define AUTH_STATE_EXTERNAL 1
 #define AUTH_STATE_MUTUAL   2
 
-#define PIV_TOUCH(cached)                                                                                                    \
+#define PIV_TOUCH(cached)                                                                                              \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
     uint32_t current_tick = device_get_tick();                                                                         \
-    if ((cached) && current_tick > last_touch && current_tick - last_touch < 15000) break;                                         \
+    if ((cached) && current_tick > last_touch && current_tick - last_touch < 15000) break;                             \
     switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
     case USER_PRESENCE_CANCEL:                                                                                         \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
