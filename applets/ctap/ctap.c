@@ -55,7 +55,7 @@ static uint8_t consecutive_pin_counter, last_cmd;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
-  last_cmd = 0xff;
+  last_cmd = CTAP_INVALID_CMD;
   cp_initialize();
   if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) {
     DBG_MSG("CTAP initialized\n");
@@ -448,7 +448,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
           //    v. Else, (implying userPresentFlagValue is true) terminate this procedure and return CTAP2_ERR_CREDENTIAL_EXCLUDED.
           return CTAP2_ERR_CREDENTIAL_EXCLUDED;
 
-        // c) Else (implying user verification was not collected in Step 11), 
+        // c) Else (implying user verification was not collected in Step 11),
         //    remove the credential from the excludeList and continue parsing the rest of the list.
         } else {
           DBG_MSG("Ignore this Exclude ID\n");
@@ -1010,48 +1010,53 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // Process hmac-secret extension
   if (ga.parsed_params & PARAM_HMAC_SECRET) {
-    uint8_t iv[16] = {0};
-    block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-    uint8_t *hmac_enc_key = ga.ext_hmac_secret_pin_protocol == 2 ?
-                            ga.ext_hmac_secret_key_agreement + SHARED_SECRET_SIZE :
-                            ga.ext_hmac_secret_key_agreement;
     if (credential_counter == 0) {
+      // If "up" is set to false, authenticator returns CTAP2_ERR_UNSUPPORTED_OPTION.
+      if (!up) return CTAP2_ERR_UNSUPPORTED_OPTION;
       ret = cp_decapsulate(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol);
       CHECK_PARSER_RET(ret);
-      DBG_MSG("ext_hmac_secret_key_agreement: ");
-      PRINT_HEX(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol == 2 ? 64 : 32);
-      uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
-      hmac_sha256(ga.ext_hmac_secret_key_agreement, SHARED_SECRET_SIZE, ga.ext_hmac_secret_salt_enc,
-                  ga.ext_hmac_secret_salt_len,
-                  hmac_buf);
-      if (memcmp_s(hmac_buf, ga.ext_hmac_secret_salt_auth, HMAC_SECRET_SALT_AUTH_SIZE) != 0)
-        return CTAP2_ERR_EXTENSION_FIRST;
-      cfg.key = hmac_enc_key;
-      cfg.in_size = ga.ext_hmac_secret_salt_len;
-      cfg.in = ga.ext_hmac_secret_salt_enc;
-      cfg.out = ga.ext_hmac_secret_salt_enc;
-      block_cipher_dec(&cfg);
+      DBG_MSG("Shared secret: ");
+      PRINT_HEX(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol == 2 ? SHARED_SECRET_SIZE_P2 : SHARED_SECRET_SIZE_P1);
+      if (!cp_verify(ga.ext_hmac_secret_key_agreement, SHARED_SECRET_SIZE_HMAC, ga.ext_hmac_secret_salt_enc,
+                     ga.ext_hmac_secret_salt_enc_len, ga.ext_hmac_secret_salt_auth, ga.ext_hmac_secret_pin_protocol)) {
+        ERR_MSG("Hmac verification failed\n");
+        return CTAP2_ERR_PIN_AUTH_INVALID;
+      }
+      if (cp_decrypt(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_enc_len,
+                     ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol) != 0) {
+        ERR_MSG("Hmac decryption failed\n");
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      }
     }
-    uint8_t hmac_secret_output[HMAC_SECRET_SALT_SIZE];
+    uint8_t hmac_secret_output[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
     DBG_MSG("hmac-secret-salt: ");
-    PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len);
-    ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_len,
+    PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol == 1
+                                               ? ga.ext_hmac_secret_salt_enc_len
+                                               : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE);
+    ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc,
+                                  ga.ext_hmac_secret_pin_protocol == 1
+                                      ? ga.ext_hmac_secret_salt_enc_len
+                                      : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
                                   hmac_secret_output, uv);
     CHECK_PARSER_RET(ret);
     DBG_MSG("hmac-secret %s UV (plain): ", uv ? "with" : "without");
-    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_len);
-    cfg.key = hmac_enc_key;
-    cfg.in_size = ga.ext_hmac_secret_salt_len;
-    cfg.in = hmac_secret_output;
-    cfg.out = hmac_secret_output;
-    block_cipher_enc(&cfg);
+    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_pin_protocol == 1
+                                      ? ga.ext_hmac_secret_salt_enc_len
+                                      : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE);
+    if (cp_encrypt(ga.ext_hmac_secret_key_agreement, hmac_secret_output,
+                   ga.ext_hmac_secret_pin_protocol == 1 ? ga.ext_hmac_secret_salt_enc_len
+                                                        : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
+                   hmac_secret_output, ga.ext_hmac_secret_pin_protocol) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
+    DBG_MSG("hmac-secret output: ");
+    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
     if (credential_counter + 1 == number_of_credentials) { // encryption key will not be used any more
       memzero(ga.ext_hmac_secret_key_agreement, sizeof(ga.ext_hmac_secret_key_agreement));
     }
 
     ret = cbor_encode_text_stringz(&map, "hmac-secret");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, hmac_secret_output, ga.ext_hmac_secret_salt_len);
+    ret = cbor_encode_byte_string(&map, hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
     CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
@@ -1364,6 +1369,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   int err, retries;
   switch (cp.sub_command) {
     case CP_CMD_GET_PIN_RETRIES:
+    DBG_MSG("Subcommand Get Pin Retries\n");
       ret = cbor_encoder_create_map(encoder, &map, 1);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CP_RESP_PIN_RETRIES);
@@ -1375,6 +1381,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       break;
 
     case CP_CMD_GET_KEY_AGREEMENT:
+      DBG_MSG("Subcommand Get Key Agreement\n");
       ret = cbor_encoder_create_map(encoder, &map, 1);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_int(&map, CP_RESP_KEY_AGREEMENT);
@@ -1393,14 +1400,15 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       break;
 
     case CP_CMD_SET_PIN:
+      DBG_MSG("Subcommand Set Pin\n");
       err = has_pin();
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err > 0) return CTAP2_ERR_PIN_AUTH_INVALID;
       ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
       CHECK_PARSER_RET(ret);
       DBG_MSG("Shared Secret: ");
-      PRINT_HEX(cp.key_agreement, PUB_KEY_SIZE);
-      if (!cp_verify(cp.key_agreement, SHARED_SECRET_SIZE, cp.new_pin_enc,
+      PRINT_HEX(cp.key_agreement, cp.pin_uv_auth_protocol == 2 ? SHARED_SECRET_SIZE_P2 : SHARED_SECRET_SIZE_P1);
+      if (!cp_verify(cp.key_agreement, SHARED_SECRET_SIZE_HMAC, cp.new_pin_enc,
                      cp.pin_uv_auth_protocol == 1 ? PIN_ENC_SIZE_P1 : PIN_ENC_SIZE_P2, cp.pin_uv_auth_param,
                      cp.pin_uv_auth_protocol)) {
         ERR_MSG("CP verification failed\n");
@@ -1423,6 +1431,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       break;
 
     case CP_CMD_CHANGE_PIN:
+      DBG_MSG("Subcommand Change Pin\n");
       err = has_pin();
       if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
@@ -1438,12 +1447,12 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       if (cp.pin_uv_auth_protocol == 1) {
         memcpy(buf, cp.new_pin_enc, PIN_ENC_SIZE_P1);
         memcpy(buf + PIN_ENC_SIZE_P1, cp.pin_hash_enc, PIN_HASH_SIZE_P1);
-        ret = cp_verify(cp.key_agreement, SHARED_SECRET_SIZE, buf, PIN_ENC_SIZE_P1 + PIN_HASH_SIZE_P1,
+        ret = cp_verify(cp.key_agreement, SHARED_SECRET_SIZE_HMAC, buf, PIN_ENC_SIZE_P1 + PIN_HASH_SIZE_P1,
                         cp.pin_uv_auth_param, cp.pin_uv_auth_protocol);
       } else {
         memcpy(buf, cp.new_pin_enc, PIN_ENC_SIZE_P2);
         memcpy(buf + PIN_ENC_SIZE_P2, cp.pin_hash_enc, PIN_HASH_SIZE_P2);
-        ret = cp_verify(cp.key_agreement, SHARED_SECRET_SIZE, buf, PIN_ENC_SIZE_P2 + PIN_HASH_SIZE_P2,
+        ret = cp_verify(cp.key_agreement, SHARED_SECRET_SIZE_HMAC, buf, PIN_ENC_SIZE_P2 + PIN_HASH_SIZE_P2,
                         cp.pin_uv_auth_param, cp.pin_uv_auth_protocol);
       }
       if (ret == false) {
@@ -1486,6 +1495,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
 
     case CP_CMD_GET_PIN_TOKEN:
     case CP_CMD_GET_PIN_UV_AUTH_TOKEN_USING_PIN_WITH_PERMISSIONS:
+      DBG_MSG("Subcommand Get Pin Token\n");
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#getPinToken
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#getPinUvAuthTokenUsingPinWithPermissions
       err = has_pin();
@@ -1660,7 +1670,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       break;
 
     case CM_CMD_ENUMERATE_RPS_GET_NEXT_RP:
-      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || 
+      if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT ||
         (last_cm_cmd != CM_CMD_ENUMERATE_RPS_BEGIN && last_cm_cmd != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP)) {
         last_cm_cmd = 0;
         return CTAP2_ERR_NOT_ALLOWED;
@@ -2138,6 +2148,9 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
       break;
   }
   last_cmd = cmd;
+  if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
+    last_cmd = CTAP_INVALID_CMD;
+  }
   return 0;
 }
 

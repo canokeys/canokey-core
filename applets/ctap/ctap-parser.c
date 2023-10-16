@@ -488,23 +488,25 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
             if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
             len = sizeof(ga->ext_hmac_secret_salt_enc);
             ret = cbor_value_copy_byte_string(&hmac_map, ga->ext_hmac_secret_salt_enc, &len, NULL);
-            if (ret == CborErrorOutOfMemory) return CTAP1_ERR_INVALID_LENGTH;
+            if (ret == CborErrorOutOfMemory) {
+              ERR_MSG("ext_hmac_secret_salt_enc is too long\n");
+              return CTAP1_ERR_INVALID_LENGTH;
+            }
             CHECK_CBOR_RET(ret);
-            if (len != HMAC_SECRET_SALT_SIZE && len != HMAC_SECRET_SALT_SIZE / 2) return CTAP1_ERR_INVALID_LENGTH;
-            ga->ext_hmac_secret_salt_len = len;
+            ga->ext_hmac_secret_salt_enc_len = len;
             map_has_entry |= GA_HS_MAP_ENTRY_SALT_ENC;
             DBG_MSG("salt_enc: ");
-            PRINT_HEX(ga->ext_hmac_secret_salt_enc, ga->ext_hmac_secret_salt_len);
+            PRINT_HEX(ga->ext_hmac_secret_salt_enc, ga->ext_hmac_secret_salt_enc_len);
             break;
           case GA_REQ_HMAC_SECRET_SALT_AUTH:
             if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
             len = sizeof(ga->ext_hmac_secret_salt_auth);
             ret = cbor_value_copy_byte_string(&hmac_map, ga->ext_hmac_secret_salt_auth, &len, NULL);
             CHECK_CBOR_RET(ret);
-            if (len != HMAC_SECRET_SALT_AUTH_SIZE) return CTAP1_ERR_INVALID_LENGTH;
+            ga->ext_hmac_secret_salt_auth_len = len;
             map_has_entry |= GA_HS_MAP_ENTRY_SALT_AUTH;
             DBG_MSG("salt_auth: ");
-            PRINT_HEX(ga->ext_hmac_secret_salt_auth, 16);
+            PRINT_HEX(ga->ext_hmac_secret_salt_auth, ga->ext_hmac_secret_salt_auth_len);
             break;
           case GA_REQ_HMAC_SECRET_PIN_PROTOCOL:
             if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -522,6 +524,18 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
       }
       if ((map_has_entry & GA_HS_MAP_ENTRY_ALL_REQUIRED) != GA_HS_MAP_ENTRY_ALL_REQUIRED)
         return CTAP2_ERR_MISSING_PARAMETER;
+      if ((ga->ext_hmac_secret_pin_protocol == 1 && ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE &&
+           ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE / 2) ||
+          (ga->ext_hmac_secret_pin_protocol == 2 && ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE + HMAC_SECRET_SALT_IV_SIZE &&
+           ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE / 2 + HMAC_SECRET_SALT_IV_SIZE)) {
+        ERR_MSG("Invalid hmac_secret_salt_enc_len %hhu\n", ga->ext_hmac_secret_salt_enc_len);
+        return CTAP1_ERR_INVALID_LENGTH;
+      }
+      if ((ga->ext_hmac_secret_pin_protocol == 1 && ga->ext_hmac_secret_salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P1) ||
+          (ga->ext_hmac_secret_pin_protocol == 2 && ga->ext_hmac_secret_salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P2)) {
+        ERR_MSG("Invalid hmac_secret_salt_auth_len %hhu\n", ga->ext_hmac_secret_salt_auth_len);
+        return CTAP1_ERR_INVALID_LENGTH;
+      }
       ga->parsed_params |= PARAM_HMAC_SECRET;
     } else if (strcmp(key, "credBlob") == 0) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -928,6 +942,8 @@ uint8_t parse_client_pin(CborParser *parser, CTAP_client_pin *cp, const uint8_t 
         if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
         ret = cbor_value_copy_byte_string(&map, cp->pin_uv_auth_param, &len, NULL);
         CHECK_CBOR_RET(ret);
+        DBG_MSG("pin_uv_auth_param: ");
+        PRINT_HEX(cp->pin_uv_auth_param, len);
         cp->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
         break;
 

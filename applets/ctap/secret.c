@@ -110,6 +110,8 @@ void cp_get_public_key(uint8_t *buf) {
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
+  DBG_MSG("ECDH: ");
+  PRINT_HEX(buf, PUBLIC_KEY_LENGTH[SECP256R1]);
   if (ret < 0) return 1;
   if (pin_protocol == 1)
     sha256_raw(buf, PRI_KEY_SIZE, buf);
@@ -123,17 +125,21 @@ int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   cfg.in_size = in_size;
   cfg.in = in;
+  cfg.out = out;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
     cfg.key = key;
-    cfg.out = out;
   } else {
     random_buffer(iv, sizeof(iv));
-    cfg.key = key + 32;
-    cfg.out = out + sizeof(iv);
+    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
+  }
+  int ret = block_cipher_enc(&cfg);
+  if (pin_protocol == 2) {
+    // "in" and "out" arguments can be the same pointer 
+    memmove(out + sizeof(iv), out, in_size);
     memcpy(out, iv, sizeof(iv));
   }
-  return block_cipher_enc(&cfg);
+  return ret;
 }
 
 int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
@@ -152,7 +158,7 @@ int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
   } else {
     if (in_size < sizeof(iv)) return -1;
     memcpy(iv, in, sizeof(iv));
-    cfg.key = key + 32;
+    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
     cfg.in_size = in_size - sizeof(iv);
     cfg.in = in + sizeof(iv);
     cfg.out = out;
