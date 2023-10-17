@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <common.h>
+#include <admin.h>
 #include <des.h>
 #include <device.h>
 #include <ecc.h>
@@ -39,13 +40,11 @@
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
 #define ALG_ED25519   0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
-#ifdef PIV_CUSTOM_ALG_EXT
 #define ALG_RSA_3072  0x50 // Not defined in NIST SP 800-78-4
 #define ALG_RSA_4096  0x51 // Not defined in NIST SP 800-78-4
 #define ALG_X25519    0x52 // Not defined in NIST SP 800-78-4
 #define ALG_SECP256K1 0x53 // Not defined in NIST SP 800-78-4
 #define ALG_SM2       0x54 // Not defined in NIST SP 800-78-4
-#endif
 
 #define TDEA_BLOCK_SIZE      8
 
@@ -70,6 +69,19 @@
 #define AUTH_STATE_EXTERNAL 1
 #define AUTH_STATE_MUTUAL   2
 
+#define PIV_TOUCH(cached)                                                                                              \
+  do {                                                                                                                 \
+    if (is_nfc()) break;                                                                                               \
+    uint32_t current_tick = device_get_tick();                                                                         \
+    if ((cached) && current_tick > last_touch && current_tick - last_touch < 15000) break;                             \
+    switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
+    case USER_PRESENCE_CANCEL:                                                                                         \
+    case USER_PRESENCE_TIMEOUT:                                                                                        \
+      EXCEPT(SW_ERROR_WHILE_RECEIVING);                                                                                \
+    }                                                                                                                  \
+    last_touch = device_get_tick();                                                                                    \
+  } while (0)
+
 static const uint8_t DEFAULT_MGMT_KEY[] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
 static const char *DEFAULT_PIN = "123456\xFF\xFF";
 static const char *DEFAULT_PUK = "12345678";
@@ -83,6 +95,7 @@ static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
+static uint32_t last_touch = UINT32_MAX;
 
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
@@ -99,7 +112,6 @@ static int create_key(const char *path, key_usage_t usage, pin_policy_t pin_poli
                            .pin_policy = pin_policy,
                            .touch_policy = TOUCH_POLICY_NEVER}};
   if (ck_write_key(path, &key) < 0) {
-    ERR_MSG("Create key %s failed\n", path);
     return -1;
   }
   return 0;
@@ -115,38 +127,42 @@ static key_type_t algo_id_to_key_type(uint8_t id) {
     return RSA2048;
   case ALG_ED25519:
     return ED25519;
-#ifdef PIV_CUSTOM_ALG_EXT
-  case ALG_X25519:
-    return X25519;
-  case ALG_SECP256K1:
-    return SECP256K1;
-  case ALG_SM2:
-    return SM2;
-  case ALG_RSA_3072:
-    return RSA3072;
-  case ALG_RSA_4096:
-    return RSA4096;
-#endif
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
     return TDEA;
   default:
-    return KEY_TYPE_PKC_END;
+    
+    if (!cfg_is_piv_algo_extension_enable()) return KEY_TYPE_PKC_END;
+
+    switch (id) {
+    case ALG_X25519:
+      return X25519;
+    case ALG_SECP256K1:
+      return SECP256K1;
+    case ALG_SM2:
+      return SM2;
+    case ALG_RSA_3072:
+      return RSA3072;
+    case ALG_RSA_4096:
+      return RSA4096;
+    default:
+      return KEY_TYPE_PKC_END;
+    }
   }
 }
 
 static uint8_t key_type_to_algo_id[] = {
     [SECP256R1] = ALG_ECC_256,
     [SECP384R1] = ALG_ECC_384,
-    [ED25519] = ALG_ED25519,
     [RSA2048] = ALG_RSA_2048,
-#ifdef PIV_CUSTOM_ALG_EXT
-    [SM2] = ALG_SM2,
-    [SECP256K1] = ALG_SECP256K1,
+    [ED25519] = ALG_ED25519,
     [X25519] = ALG_X25519,
+    [SECP256K1] = ALG_SECP256K1,
+    [SM2] = ALG_SM2,
     [RSA3072] = ALG_RSA_3072,
     [RSA4096] = ALG_RSA_4096,
-#endif
+    [TDEA] = ALG_TDEA_3KEY,
+    [KEY_TYPE_PKC_END] = ALG_DEFAULT,
 };
 
 int piv_security_status_check(uint8_t id, const key_meta_t *meta) {
@@ -216,7 +232,6 @@ int piv_install(uint8_t reset) {
                                  .touch_policy = TOUCH_POLICY_NEVER}};
   memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
   if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) {
-    ERR_MSG("Write admin key failed\n");
     return -1;
   }
   uint8_t tmp = 0x01;
@@ -310,7 +325,6 @@ static int piv_get_large_data(const CAPDU *capdu, RAPDU *rapdu, const char *path
 
   int read = read_file(path, RDATA, 0, LE); // return first chunk
   if (read < 0) {
-    ERR_MSG("read file %s error: %d\n", path, read);
     return -1;
   }
   LL = read;
@@ -370,7 +384,6 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     int size = get_file_size(path);
     if (size < 0) {
-      ERR_MSG("read file size %s error: %d\n", path, size);
       return -1;
     }
     if (size == 0) EXCEPT(SW_FILE_NOT_FOUND);
@@ -386,12 +399,10 @@ static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
 
   int size = get_file_size(piv_do_path);
   if (size < 0) {
-    ERR_MSG("read file size %s error: %d\n", piv_do_path, size);
     return -1;
   }
   int read = read_file(piv_do_path, RDATA, piv_do_read, LE);
   if (read < 0) {
-    ERR_MSG("read file %s error: %d\n", piv_do_path, read);
     return -1;
   }
   DBG_MSG("continue to read file %s, expected: %d, read: %d\n", piv_do_path, LE, read);
@@ -514,11 +525,12 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
   if (ck_read_key_metadata(key_path, &key.meta) < 0) {
-    ERR_MSG("Read metadata of %s failed\n", key_path);
     return -1;
   }
   DBG_KEY_META(&key.meta);
 
+  // empty slot after reset
+  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   if (algo_id_to_key_type(P1) != key.meta.type) {
     DBG_MSG("The value of P1 mismatches the key specified by P2\n");
     EXCEPT(SW_WRONG_P1P2);
@@ -540,6 +552,9 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     dat_pos += len[tag - 0x80];
     DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
   }
+
+  // User presence test
+  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS) PIV_TOUCH(key.meta.touch_policy == TOUCH_POLICY_CACHED);
 
   //
   // CASE 1 - INTERNAL AUTHENTICATE (Key ID = 9A / 9E)
@@ -568,7 +583,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       EXCEPT(SW_WRONG_LENGTH);
     }
     if (ck_read_key(key_path, &key) < 0) {
-      ERR_MSG("Read key failed\n");
       return -1;
     }
     DBG_KEY_META(&key.meta);
@@ -652,13 +666,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
     if (ck_read_key(key_path, &key) < 0) {
-      ERR_MSG("Read key failed\n");
       return -1;
     }
     DBG_KEY_META(&key.meta);
 
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
-      ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -706,13 +718,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     LL = TDEA_BLOCK_SIZE + 4;
 
     if (ck_read_key(key_path, &key) < 0) {
-      ERR_MSG("Read key failed\n");
       return -1;
     }
     DBG_KEY_META(&key.meta);
 
     if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
-      ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -747,13 +757,11 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     LL = TDEA_BLOCK_SIZE + 4;
 
     if (ck_read_key(key_path, &key) < 0) {
-      ERR_MSG("Read key failed\n");
       return -1;
     }
     DBG_KEY_META(&key.meta);
 
     if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
-      ERR_MSG("TDEA failed\n");
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -780,7 +788,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       EXCEPT(SW_WRONG_DATA);
     }
     if (ck_read_key(key_path, &key) < 0) {
-      ERR_MSG("Read key failed\n");
       return -1;
     }
     DBG_KEY_META(&key.meta);
@@ -833,7 +840,6 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("write file %s, first chunk length %d\n", path, size);
     int rc = write_file(path, DATA + 5, 0, size, 1);
     if (rc < 0) {
-      ERR_MSG("write file %s error: %d\n", path, rc);
       return -1;
     }
     if ((CLA & 0x10) != 0 && size < max_len) {
@@ -855,7 +861,6 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("write file %s, continuous chunk length %d\n", piv_do_path, LC);
     int rc = append_file(piv_do_path, DATA, LC);
     if (rc < 0) {
-      ERR_MSG("write file %s error: %d\n", piv_do_path, rc);
       return -1;
     }
     if ((CLA & 0x10) == 0) { // last chunk
@@ -884,7 +889,6 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   const char *key_path = get_key_path(P2);
   ck_key_t key;
   if (ck_read_key(key_path, &key) < 0) {
-    ERR_MSG("Fail to read key %s\n", key_path);
     return -1;
   }
 
@@ -892,7 +896,6 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
   start_quick_blinking(0);
   if (ck_generate_key(&key) < 0) {
-    ERR_MSG("Generate key %s failed\n", key_path);
     return -1;
   }
   int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
@@ -902,7 +905,6 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_DATA);
   }
   if (ck_write_key(key_path, &key) < 0) {
-    ERR_MSG("Write key %s failed\n", key_path);
     return -1;
   }
   DBG_MSG("Generate key %s successful\n", key_path);
@@ -950,7 +952,6 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
   ck_key_t key;
   if (ck_read_key(key_path, &key) < 0) {
-    ERR_MSG("Fail to read key %s\n", key_path);
     return -1;
   }
 
@@ -1039,7 +1040,6 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
 
       ck_key_t key;
       if (ck_read_key(key_path, &key) < 0) {
-        ERR_MSG("Read key failed\n");
         return -1;
       }
       DBG_KEY_META(&key.meta);
@@ -1057,7 +1057,6 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[pos++] = 0x04; // Public
       int len = ck_encode_public_key(&key, &RDATA[pos], true);
       if (len < 0) {
-        ERR_MSG("Encode public key failed\n");
         memzero(&key, sizeof(key));
         return -1;
       }

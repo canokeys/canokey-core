@@ -1,15 +1,63 @@
 name: tests
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 jobs:
+  build_opensc:
+    name: Build opensc package
+    #if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Cache deb files
+      uses: actions/cache@v3
+      env:
+        cache-name: opensc-deb
+      with:
+        path: opensc*.deb
+        key: ${{ runner.os }}-${{ env.cache-name }}
+    - name: Check file existence
+      id: check_deb_files
+      uses: andstor/file-existence-action@v1
+      with:
+        files: "opensc*.deb"
+    - name: Package Install
+      if: steps.check_deb_files.outputs.files_exists == 'false'
+      run: |
+        sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
+        sudo apt-get update
+        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts
+        sudo apt-get build-dep -q -y opensc
+        sudo rm -f /usr/bin/clang-tidy
+    - name: Build the package
+      if: steps.check_deb_files.outputs.files_exists == 'false'
+      run: |
+        dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
+        cd opensc-0.23.0
+        curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
+        dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
+        DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
+    - name: Upload package files
+      uses: actions/upload-artifact@v3
+      with:
+        name: opensc-deb
+        path: opensc*.deb
+
+
+
   build_test:
     name: Build and Test
     runs-on: ubuntu-latest
+    needs: build_opensc
     steps:
+    - name: Download backport OpenSC package
+      uses: actions/download-artifact@v3
+      with:
+        name: opensc-deb
+
     - name: Package Install
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo dpkg -i opensc*.deb
         pip3 install --upgrade pip
 
     - name: Set up Go 1.16
@@ -324,6 +372,7 @@ jobs:
     - name: Test the PIV
       run: |
         set -o xtrace
+        go test -v test-via-pcsc/piv_test.go
         RDID="Canokey [OpenPGP PIV OATH] 00 00"
         yubico-piv-tool -r "$RDID" -a status -a set-ccc -a set-chuid -a status
         opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
@@ -340,9 +389,10 @@ jobs:
         yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
         yubico-piv-tool -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
         yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
-        #export PIV_EXT_AUTH_KEY=test-via-pcsc/PIV_EXT_AUTH_KEY.txt 
-        #piv-tool --reader "$RDID" --admin A:9B:03  # External Auth
-        #piv-tool --reader "$RDID" --admin M:9B:03  # Mutual Auth
+        export PIV_EXT_AUTH_KEY=$PWD/test-via-pcsc/PIV_EXT_AUTH_KEY.txt 
+        # opensc 0.22.0~0.23.0 has a bug on External Auth. See opensc commit: a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479
+        piv-tool --reader "$RDID" --admin A:9B:03  # External Auth
+        piv-tool --reader "$RDID" --admin M:9B:03  # Mutual Auth
         ## Key generation
         PIVGenKeyCert() {
           key=$1

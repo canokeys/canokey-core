@@ -71,38 +71,38 @@ int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length)
 int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   const uint8_t *end = buf + buf_len;
 
-  if (buf < end) {
-    DBG_MSG("May have pin policy\n");
-    if (buf < end && *buf++ != 0xAA) {
-      DBG_MSG("Wrong tag for pin policy\n");
-      return KEY_ERR_DATA;
-    }
-    if (buf < end && *buf++ != 0x01) {
-      DBG_MSG("Wrong length for pin policy\n");
-      return KEY_ERR_LENGTH;
-    }
-    if (buf < end && (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER)) {
-      DBG_MSG("Wrong data for pin policy\n");
-      return KEY_ERR_DATA;
-    }
-    key->meta.pin_policy = *buf++;
-  }
+  while (buf < end) {
+    switch (*buf++) {
+    case 0xAA:
+      DBG_MSG("May have pin policy\n");
+      if (buf < end && *buf++ != 0x01) {
+        DBG_MSG("Wrong length for pin policy\n");
+        return KEY_ERR_LENGTH;
+      }
+      if (buf < end && (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER)) {
+        DBG_MSG("Wrong data for pin policy\n");
+        return KEY_ERR_DATA;
+      }
+      key->meta.pin_policy = *buf++;
+      break;
 
-  if (buf < end) {
-    DBG_MSG("May have touch policy\n");
-    if (buf < end && *buf++ != 0xAB) {
-      DBG_MSG("Wrong tag for touch policy\n");
-      return KEY_ERR_DATA;
+    case 0xAB:
+      DBG_MSG("May have touch policy\n");
+      if (buf < end && *buf++ != 0x01) {
+        DBG_MSG("Wrong length for touch policy\n");
+        return KEY_ERR_LENGTH;
+      }
+      if (buf < end && (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER)) {
+        DBG_MSG("Wrong data for touch policy\n");
+        return KEY_ERR_DATA;
+      }
+      key->meta.touch_policy = *buf++;
+      break;
+    
+    default:
+      buf = end;
+      break;
     }
-    if (buf < end && *buf++ != 0x01) {
-      DBG_MSG("Wrong length for touch policy\n");
-      return KEY_ERR_LENGTH;
-    }
-    if (buf < end && (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER)) {
-      DBG_MSG("Wrong data for touch policy\n");
-      return KEY_ERR_DATA;
-    }
-    key->meta.touch_policy = *buf++;
   }
 
   return 0;
