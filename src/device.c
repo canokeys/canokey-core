@@ -72,7 +72,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       wait_status = shallow;
       return USER_PRESENCE_TIMEOUT;
     }
-    if (now - last >= 300) {
+    if (now - last >= 100) {
       last = now;
       if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
