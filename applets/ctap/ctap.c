@@ -47,6 +47,12 @@
     }                                                                                                                  \
   } while (0)
 
+#define KEEPALIVE()                                                                                                    \
+  do {                                                                                                                 \
+    if (is_nfc()) break;                                                                                               \
+    send_keepalive_during_processing(WAIT_ENTRY_CTAPHID);                                                              \
+  } while (0)
+
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 
@@ -286,6 +292,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
+  KEEPALIVE();
 
   // 1. If authenticator supports clientPin features and the platform sends a zero length pin_uv_auth_param
   if ((mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && mc.pin_uv_auth_param_len == 0) {
@@ -748,6 +755,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
   ret = parse_get_assertion(&parser, &ga, params, len);
   CHECK_PARSER_RET(ret);
+  KEEPALIVE();
 
   // 1. If authenticator supports clientPin features and the platform sends a zero length pin_uv_auth_param
   if ((ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && ga.pin_uv_auth_param_len == 0) {
@@ -1634,6 +1642,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       size = get_file_size(DC_META_FILE), counter = 0;
       n_rp = size / (int) sizeof(CTAP_rp_meta);
+      KEEPALIVE();
       for (int i = n_rp - 1; i >= 0; --i) {
         size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1711,6 +1720,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       include_numbers = true;
       size = get_file_size(DC_META_FILE);
       n_rp = size / (int) sizeof(CTAP_rp_meta);
+      KEEPALIVE();
       for (idx = 0; idx < n_rp; ++idx) {
         size = read_file(DC_META_FILE, &meta, idx * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1856,6 +1866,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       size = get_file_size(DC_META_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       numbers = size / sizeof(CTAP_rp_meta);
+      KEEPALIVE();
       for (int i = 0; i < numbers; ++i) {
         size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1880,6 +1891,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       size = get_file_size(DC_FILE);
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       numbers = size / sizeof(CTAP_discoverable_credential);
+      KEEPALIVE();
       for (idx = 0; idx < numbers; ++idx) {
         size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                          sizeof(CTAP_discoverable_credential));
@@ -1962,6 +1974,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     //     in a zero-length substring.
     if (lb.offset + (int)lb.get > size) lb.get = size - lb.offset;
     DBG_MSG("read %hu bytes at %hu\n", lb.get, lb.offset);
+    KEEPALIVE();
     ret = cbor_encoder_create_map(encoder, &map, 1);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, LB_RESP_CONFIG);
@@ -2048,6 +2061,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     }
     //    g) If the value of offset is zero, prepare a buffer to receive a new serialized large-blob array.
     //    h) Append the value of set to the buffer containing the pending serialized large-blob array.
+    KEEPALIVE();
     if (write_file(LB_FILE_TMP, lb.set, lb.offset, lb.set_len, lb.offset == 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     //    i) Update expectedNextOffset to be the new length of the pending serialized large-blob array.
     expectedNextOffset += lb.set_len;

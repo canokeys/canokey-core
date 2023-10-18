@@ -220,7 +220,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, 0);
       break;
     case CTAPHID_CANCEL:
-      DBG_MSG("CANCEL\n");
+      DBG_MSG("CANCEL when wait_for_user=%d\n", (int)wait_for_user);
       ret = LOOP_CANCEL;
       break;
     default:
