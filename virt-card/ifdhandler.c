@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "ccid.h"
+#include "ctaphid.h"
 #include "fabrication.h"
 #include <ifdhandler.h>
 #include <reader.h>
@@ -14,10 +15,16 @@ const static UCHAR ATR[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65
                             0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 static int applet_init = 0;
 
+static uint8_t send_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len)
+{
+    return 0;
+}
+
 RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
 {
     printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
     if(!applet_init) {
+        CTAPHID_Init(send_hid_report);
         CCID_Init();
         card_fabrication_procedure("/tmp/lfs-root");
         applet_init = 1;
