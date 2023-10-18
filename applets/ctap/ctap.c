@@ -591,7 +591,6 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     memcpy(&dc.credential_id, data_buf + 55, sizeof(dc.credential_id));
     memcpy(&dc.user, &mc.user, sizeof(user_entity)); // c
     dc.has_large_blob_key = mc.ext_large_blob_key;
-    if (dc.has_large_blob_key) random_buffer(dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
     dc.cred_blob_len = 0;
     if (mc.ext_has_cred_blob && mc.ext_cred_blob_len <= MAX_CRED_BLOB_LENGTH) {
       dc.cred_blob_len = mc.ext_cred_blob_len;
@@ -704,9 +703,13 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CHECK_CBOR_RET(ret);
 
   if (mc.ext_large_blob_key) {
+    uint8_t *large_blob_key = dc.cred_blob; // reuse buffer
+    static_assert(LARGE_BLOB_KEY_SIZE <= MAX_CRED_BLOB_LENGTH, "Reuse buffer");
+    ret = make_large_blob_key(dc.credential_id.nonce, large_blob_key);
+    CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, MC_RESP_LARGE_BLOB_KEY);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
+    ret = cbor_encode_byte_string(&map, large_blob_key, LARGE_BLOB_KEY_SIZE);
     CHECK_CBOR_RET(ret);
   }
 
@@ -1157,9 +1160,13 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   if (dc.has_large_blob_key) {
+    uint8_t *large_blob_key = dc.cred_blob; // reuse buffer
+    static_assert(LARGE_BLOB_KEY_SIZE <= MAX_CRED_BLOB_LENGTH, "Reuse buffer");
+    ret = make_large_blob_key(dc.credential_id.nonce, large_blob_key);
+    CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, GA_RESP_LARGE_BLOB_KEY);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
+    ret = cbor_encode_byte_string(&map, large_blob_key, LARGE_BLOB_KEY_SIZE);
     CHECK_CBOR_RET(ret);
   }
 
@@ -1810,9 +1817,13 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       ret = cbor_encode_int(&map, dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
       CHECK_CBOR_RET(ret);
       if (dc.has_large_blob_key) {
+        uint8_t *large_blob_key = dc.cred_blob; // reuse buffer
+        static_assert(LARGE_BLOB_KEY_SIZE <= MAX_CRED_BLOB_LENGTH, "Reuse buffer");
+        ret = make_large_blob_key(dc.credential_id.nonce, large_blob_key);
+        CHECK_CBOR_RET(ret);
         ret = cbor_encode_int(&map, CM_RESP_LARGE_BLOB_KEY);
         CHECK_CBOR_RET(ret);
-        ret = cbor_encode_byte_string(&map, dc.large_blob_key, LARGE_BLOB_KEY_SIZE);
+        ret = cbor_encode_byte_string(&map, large_blob_key, LARGE_BLOB_KEY_SIZE);
         CHECK_CBOR_RET(ret);
       }
       ret = cbor_encoder_close_container(encoder, &map);

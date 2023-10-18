@@ -422,3 +422,19 @@ int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t 
   if (len == 64) hmac_sha256(hmac_buf, HE_KEY_SIZE, salt + 32, 32, output + 32);
   return 0;
 }
+
+int make_large_blob_key(uint8_t *nonce, uint8_t *output) {
+  static_assert(LARGE_BLOB_KEY_SIZE == HE_KEY_SIZE, "Reuse buffer");
+  // use hmac-sha256(transform(HE_KEY), credential_id::nonce) as LargeBlobKey
+  int err = read_he_key(output);
+  if (err < 0) return err;
+
+  // make it different from hmac extension key
+  output[0] ^= output[1];
+  output[1] ^= output[2];
+  output[HE_KEY_SIZE-2] ^= output[0];
+  output[HE_KEY_SIZE-1] ^= output[3];
+
+  hmac_sha256(output, HE_KEY_SIZE, nonce, CREDENTIAL_NONCE_SIZE, output);
+  return 0;
+}
