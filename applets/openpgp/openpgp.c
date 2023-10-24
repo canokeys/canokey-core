@@ -294,6 +294,8 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_CARDHOLDER_RELATED_DATA:
+    RDATA[off++] = TAG_CARDHOLDER_RELATED_DATA;
+    RDATA[off++] = 0; // to be filled later
     RDATA[off++] = TAG_NAME;
     len = read_attr(DATA_PATH, TAG_NAME, RDATA + off + 1, MAX_NAME_LENGTH);
     if (len < 0) return -1;
@@ -313,10 +315,15 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (len < 0) return -1;
     RDATA[off++] = len;
     off += len;
+    RDATA[1] = off - 2;
     LL = off;
     break;
 
   case TAG_APPLICATION_RELATED_DATA:
+    RDATA[off++] = TAG_APPLICATION_RELATED_DATA;
+    RDATA[off++] = 0x82; // extended length
+    RDATA[off++] = 0; // to be filled later
+    RDATA[off++] = 0; // to be filled later
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
@@ -344,7 +351,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_DISCRETIONARY_DATA_OBJECTS;
     RDATA[off++] = 0x82;
-    uint8_t length_pos = off;
+    uint16_t length_pos = off;
     RDATA[off++] = 0; // these two bytes are for length
     RDATA[off++] = 0;
 
@@ -447,15 +454,21 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     uint16_t ddo_length = off - length_pos - 2;
     RDATA[length_pos] = HI(ddo_length);
     RDATA[length_pos + 1] = LO(ddo_length);
+
+    ddo_length = off - 4;
+    RDATA[2] = HI(ddo_length);
+    RDATA[3] = LO(ddo_length);
     LL = off;
     break;
 
   case TAG_SECURITY_SUPPORT_TEMPLATE:
-    RDATA[0] = TAG_DIGITAL_SIG_COUNTER;
-    RDATA[1] = DIGITAL_SIG_COUNTER_LENGTH;
-    len = read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, RDATA + 2, DIGITAL_SIG_COUNTER_LENGTH);
+    RDATA[0] = TAG_SECURITY_SUPPORT_TEMPLATE;
+    RDATA[1] = DIGITAL_SIG_COUNTER_LENGTH + 2;
+    RDATA[2] = TAG_DIGITAL_SIG_COUNTER;
+    RDATA[3] = DIGITAL_SIG_COUNTER_LENGTH;
+    len = read_attr(DATA_PATH, TAG_DIGITAL_SIG_COUNTER, RDATA + 4, DIGITAL_SIG_COUNTER_LENGTH);
     if (len < 0) return -1;
-    LL = 2 + DIGITAL_SIG_COUNTER_LENGTH;
+    LL = 4 + DIGITAL_SIG_COUNTER_LENGTH;
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
