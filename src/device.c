@@ -58,6 +58,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
     if (wait_status == WAIT_CTAPHID) CCID_Loop();
     if (CTAPHID_Loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+      DBG_MSG("Cancelled by host\n");
       if (wait_status != WAIT_DEEP) {
         stop_blinking();
         wait_status = WAIT_NONE; // namely shallow
@@ -72,7 +73,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       wait_status = shallow;
       return USER_PRESENCE_TIMEOUT;
     }
-    if (now - last >= 300) {
+    if (now - last >= 100) {
       last = now;
       if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
@@ -87,6 +88,12 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   } else
     wait_status = WAIT_NONE;
   return USER_PRESENCE_OK;
+}
+
+int send_keepalive_during_processing(uint8_t entry) {
+  if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+  DBG_MSG("KEEPALIVE\n");
+  return 0;
 }
 
 __attribute__((weak)) int strong_user_presence_test(void) {

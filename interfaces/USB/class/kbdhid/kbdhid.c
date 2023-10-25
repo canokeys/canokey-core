@@ -34,7 +34,7 @@ static uint8_t ascii2keycode(char ch) {
 }
 
 static void KBDHID_UserTouchHandle(void) {
-  int ret, len;
+  int ret, len = 0;
   memset(key_sequence, 0, sizeof(key_sequence));
   ret = oath_process_one_touch(key_sequence, sizeof(key_sequence));
   if (ret < 0) {

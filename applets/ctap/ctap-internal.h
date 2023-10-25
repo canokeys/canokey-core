@@ -247,7 +247,6 @@ typedef struct {
   user_entity user;
   bool deleted;
   bool has_large_blob_key;
-  uint8_t large_blob_key[LARGE_BLOB_KEY_SIZE];
   uint8_t cred_blob_len;
   uint8_t cred_blob[MAX_CRED_BLOB_LENGTH];
 } __packed CTAP_discoverable_credential;

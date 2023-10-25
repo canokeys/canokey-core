@@ -47,5 +47,6 @@ int verify_pin_hash(uint8_t *buf);
 int get_pin_retries(void);
 int set_pin_retries(uint8_t ctr);
 int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output, bool uv);
+int make_large_blob_key(uint8_t *nonce, uint8_t *output);
 
 #endif // CANOKEY_CORE_FIDO2_SECRET_H_
