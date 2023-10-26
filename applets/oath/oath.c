@@ -14,7 +14,8 @@
 
 static enum {
   REMAINING_NONE,
-  REMAINING_CALC,
+  REMAINING_CALC_FULL,
+  REMAINING_CALC_TRUNC,
   REMAINING_LIST,
 } oath_remaining_type;
 
@@ -529,7 +530,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (P2 != 0x00 && P2 != 0x01) EXCEPT(SW_WRONG_P1P2);
 
-  oath_remaining_type = REMAINING_CALC;
+  oath_remaining_type = P2 ? REMAINING_CALC_TRUNC : REMAINING_CALC_FULL;
   int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
 
@@ -558,7 +559,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     }
     size_t file_offset = record_idx * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    size_t estimated_len = 2 + record.name_len + 2 + 1 + (P2 ? 4 : SHA512_DIGEST_LENGTH);
+    size_t estimated_len = 2 + record.name_len + 2 + 1 + (oath_remaining_type == REMAINING_CALC_TRUNC ? 4 : SHA512_DIGEST_LENGTH);
     if (estimated_len + off_out > LE) {
       // shouldn't increase the record_idx in this case
       SW = 0x61FF; // more data available
@@ -587,7 +588,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (oath_enforce_increasing(&record, file_offset, challenge_len, challenge) < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
-    if (P2) {
+    if (oath_remaining_type == REMAINING_CALC_TRUNC) {
       RDATA[off_out++] = OATH_TAG_RESPONSE;
       RDATA[off_out++] = 5;
       RDATA[off_out++] = record.key[1];
@@ -610,7 +611,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   if (oath_remaining_type == REMAINING_LIST) return oath_list(capdu, rapdu);
-  if (oath_remaining_type == REMAINING_CALC) return oath_calculate_all(capdu, rapdu);
+  if (oath_remaining_type == REMAINING_CALC_FULL || oath_remaining_type == REMAINING_CALC_TRUNC) return oath_calculate_all(capdu, rapdu);
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 }
 
