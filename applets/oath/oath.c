@@ -362,7 +362,7 @@ static int oath_increase_counter(OATH_RECORD *record) {
   return i >= 0 ? 0 : -1;
 }
 
-static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA512_DIGEST_LENGTH], uint8_t challenge_len, uint8_t challenge[MAX_CHALLENGE_LEN]) {
+static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA512_DIGEST_LENGTH], uint8_t challenge_len, uint8_t challenge[MAX_CHALLENGE_LEN], bool truncated) {
   uint8_t digest_length;
   if ((record->key[0] & OATH_ALG_MASK) == OATH_ALG_SHA1) {
     hmac_sha1(record->key + 2, record->key_len - 2, challenge, challenge_len, buffer);
@@ -373,6 +373,9 @@ static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA512_DIGEST_LE
   } else {
     hmac_sha512(record->key + 2, record->key_len - 2, challenge, challenge_len, buffer);
     digest_length = SHA512_DIGEST_LENGTH;
+  }
+  if (!truncated) {
+    return (uint8_t*)(uintptr_t) digest_length;
   }
 
   uint8_t offset = buffer[digest_length - 1] & 0xF;
@@ -408,7 +411,7 @@ static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   }
 
   uint8_t hash[SHA512_DIGEST_LENGTH];
-  memcpy(result, oath_digest(&record, hash, challenge_len, challenge), 4);
+  memcpy(result, oath_digest(&record, hash, challenge_len, challenge, true), 4);
   return record.key[1]; // the number of digits
 }
 
@@ -504,13 +507,19 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
     return -1;
   }
 
-  RDATA[0] = OATH_TAG_RESPONSE;
-  RDATA[1] = 5;
-  RDATA[2] = record.key[1];
+  if (P2) {
+    RDATA[0] = OATH_TAG_RESPONSE;
+    RDATA[1] = 5;
 
-  uint8_t hash[SHA512_DIGEST_LENGTH];
-  memcpy(RDATA + 3, oath_digest(&record, hash, challenge_len, challenge), 4);
-  LL = 7;
+    uint8_t hash[SHA512_DIGEST_LENGTH];
+    memcpy(RDATA + 3, oath_digest(&record, hash, challenge_len, challenge, true), 4);
+  } else {
+    RDATA[0] = OATH_TAG_FULL_RESPONSE;
+    RDATA[1] = 1 + (uint8_t)(uintptr_t)oath_digest(&record, &RDATA[3], challenge_len, challenge, false);
+  }
+  RDATA[2] = record.key[1];
+  LL = RDATA[1] + 2;
+
   return 0;
 }
 
@@ -549,7 +558,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     }
     size_t file_offset = record_idx * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    size_t estimated_len = 2 + record.name_len + 2 + 5;
+    size_t estimated_len = 2 + record.name_len + 2 + 1 + (P2 ? 4 : SHA512_DIGEST_LENGTH);
     if (estimated_len + off_out > LE) {
       // shouldn't increase the record_idx in this case
       SW = 0x61FF; // more data available
@@ -578,13 +587,21 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (oath_enforce_increasing(&record, file_offset, challenge_len, challenge) < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
-    RDATA[off_out++] = OATH_TAG_RESPONSE;
-    RDATA[off_out++] = 5;
-    RDATA[off_out++] = record.key[1];
+    if (P2) {
+      RDATA[off_out++] = OATH_TAG_RESPONSE;
+      RDATA[off_out++] = 5;
+      RDATA[off_out++] = record.key[1];
 
-    uint8_t hash[SHA512_DIGEST_LENGTH];
-    memmove(RDATA + off_out, oath_digest(&record, hash, challenge_len, challenge), 4);
-    off_out += 4;
+      uint8_t hash[SHA512_DIGEST_LENGTH];
+      memcpy(RDATA + off_out, oath_digest(&record, hash, challenge_len, challenge, true), 4);
+      off_out += 4;
+    } else {
+      uint8_t *hash = &RDATA[off_out + 3];
+      RDATA[off_out++] = OATH_TAG_FULL_RESPONSE;
+      RDATA[off_out++] = 1 + (uint8_t)(uintptr_t)oath_digest(&record, hash, challenge_len, challenge, false);
+      RDATA[off_out] = record.key[1];
+      off_out += RDATA[off_out - 1];
+    }
   }
   LL = off_out;
 
