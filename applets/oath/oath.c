@@ -530,7 +530,6 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (P2 != 0x00 && P2 != 0x01) EXCEPT(SW_WRONG_P1P2);
 
-  oath_remaining_type = P2 ? REMAINING_CALC_TRUNC : REMAINING_CALC_FULL;
   int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
 
@@ -548,6 +547,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(challenge, DATA + off_in, challenge_len);
     off_in += challenge_len;
     if (off_in > LC) EXCEPT(SW_WRONG_LENGTH);
+    oath_remaining_type = P2 ? REMAINING_CALC_TRUNC : REMAINING_CALC_FULL;
   }
 
   OATH_RECORD record;
