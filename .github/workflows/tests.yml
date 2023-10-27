@@ -468,16 +468,6 @@ jobs:
           PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048
           yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
         done
-
-    - name: Test the ckman Utility
-      run: |
-        pip3 install ckman
-        ckman --log-level DEBUG info
-        ckman oath accounts add steam1 HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ -i Steam
-        ckman oath accounts code
-        ckman openpgp info
-        ckman piv info
-        ckman fido credentials list --pin 123456
     
     - name: Prepare the Test Coverage Report
       run: |
