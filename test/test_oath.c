@@ -19,6 +19,7 @@ static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16
   RAPDU *rapdu = &R;
 
   capdu->ins = ins;
+  if (ins == OATH_INS_CALCULATE || ins == OATH_INS_SELECT) capdu->p2 = 1;
   capdu->lc = data_len;
   if (data_len > 0) {
     // re alloc to help asan find overflow error
@@ -275,6 +276,7 @@ static void test_calc_all(void **state) {
 
   capdu->ins = OATH_INS_SELECT;
   capdu->data = data;
+  capdu->p2 = 1;
   capdu->lc = sizeof(data);
   capdu->le = 64;
 
@@ -283,6 +285,7 @@ static void test_calc_all(void **state) {
   print_hex(RDATA, LL);
 
   capdu->ins = OATH_INS_SEND_REMAINING;
+  capdu->p2 = 0;
   capdu->le = 0xFF;
   oath_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
