@@ -7,6 +7,7 @@
 #include <usbd_ctaphid.h>
 #include <usbd_desc.h>
 #include <usbd_kbdhid.h>
+#include <apdu.h>
 
 #define USBD_LANGID_STRING 0x0409
 #define USBD_MANUFACTURER_STRING "canokeys.org"
@@ -213,11 +214,7 @@ static const uint8_t USBD_FS_IfDesc_CCID[] = {
     0x00,                         /* bInterval: Polling Interval */
 };
 
-static uint8_t USBD_FS_CfgDesc[USB_LEN_CFG_DESC +
-                              sizeof(USBD_FS_IfDesc_CCID) +
-                              sizeof(USBD_FS_IfDesc_WEBUSB) +
-                              sizeof(USBD_FS_IfDesc_KBDHID) +
-                              sizeof(USBD_FS_IfDesc_CTAPHID)] = {
+static const uint8_t USBD_FS_CfgDescHeader[USB_LEN_CFG_DESC] = {
     USB_LEN_CFG_DESC,            /* bLength: Configuration Descriptor size */
     USB_DESC_TYPE_CONFIGURATION, /* bDescriptorType: Configuration */
     0x00, 0x00,                  /* wTotalLength: To be filled by program */
@@ -343,8 +340,12 @@ static void patch_interface_descriptor(uint8_t *desc, uint8_t *desc_end, uint8_t
 }
 
 void USBD_DescriptorInit(void) {
-  uint8_t *desc = USBD_FS_CfgDesc + USB_LEN_CFG_DESC;
+  uint8_t *USBD_FS_CfgDesc = global_buffer;
+  uint8_t *desc = USBD_FS_CfgDesc;
   uint8_t nIface = 3;
+
+  memcpy(desc, USBD_FS_CfgDescHeader, USB_LEN_CFG_DESC);
+  desc += USB_LEN_CFG_DESC;
 
   memcpy(desc, USBD_FS_IfDesc_CTAPHID, sizeof(USBD_FS_IfDesc_CTAPHID));
   patch_interface_descriptor(desc, desc + sizeof(USBD_FS_IfDesc_CTAPHID), USBD_CANOKEY_CTAPHID_IF, EP_IN(ctap_hid),
@@ -382,8 +383,13 @@ const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) 
 }
 
 const uint8_t *USBD_ConfigurationDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
-  *length = sizeof(USBD_FS_CfgDesc);
-  return USBD_FS_CfgDesc;
+  USBD_DescriptorInit();
+  *length = USB_LEN_CFG_DESC +
+            sizeof(USBD_FS_IfDesc_CCID) +
+            sizeof(USBD_FS_IfDesc_WEBUSB) +
+            sizeof(USBD_FS_IfDesc_KBDHID) +
+            sizeof(USBD_FS_IfDesc_CTAPHID);
+  return global_buffer;
 }
 
 const uint8_t *USBD_LangIDStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
@@ -411,6 +417,7 @@ const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed, uint16_t *lengt
 }
 
 const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed, uint16_t *length) {
+  static_assert(sizeof(USBD_FS_BOSDesc) <= USBD_MAX_STR_DESC_SIZ);
   *length = sizeof(USBD_FS_BOSDesc);
   memcpy(USBD_StrDesc, USBD_FS_BOSDesc, sizeof(USBD_FS_BOSDesc)); // use USBD_StrDesc to store this descriptor
   USBD_StrDesc[28] = cfg_is_webusb_landing_enable();
