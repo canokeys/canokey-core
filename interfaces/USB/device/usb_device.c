@@ -11,7 +11,7 @@ EP_SIZE_TABLE_t EP_SIZE_TABLE;
 
 void usb_device_init(void) {
   usb_resources_alloc();
-  USBD_DescriptorInit();
+  // USBD_DescriptorInit();
   USBD_Init(&usb_device, &usbdDescriptors, 0);
   USBD_RegisterClass(&usb_device, &USBD_CANOKEY);
   USBD_Start(&usb_device);
