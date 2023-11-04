@@ -977,7 +977,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   // 8. [N/A] If evidence of user interaction was provided as part of Step 6.2
   // 9. If the "up" option is set to true or not present:
-  if (ga.options.up == OPTION_TRUE) {
+  //    Note: This step is skipped in authenticatorGetNextAssertion
+  if (credential_counter == 0 && ga.options.up == OPTION_TRUE) {
     //    a) If the pin_uv_auth_param parameter is present then:
     if (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
       if (!cp_get_user_present_flag_value()) {
