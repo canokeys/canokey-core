@@ -212,7 +212,7 @@ int ctap_consistency_check(void) {
 }
 
 uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, const uint8_t *extension,
-                            uint8_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect) {
+                            size_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect) {
   // See https://www.w3.org/TR/webauthn/#sec-authenticator-data
   // auth data is a byte string
   // --------------------------------------------------------------------------------
@@ -486,16 +486,47 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   cp_clear_user_verified_flag();
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
-  // 15. If the extensions parameter is present:
+  CborEncoder map;
   uint8_t extension_buffer[MAX_EXTENSION_SIZE_IN_AUTH];
-  CborEncoder extension_encoder, map;
-  cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
-  ret = cbor_encoder_create_map(&extension_encoder, &map,
-                                (mc.ext_hmac_secret ? 1 : 0) +
+  size_t extension_size = 0;
+  // 15. If the extensions parameter is present:
+  uint8_t extension_map_items = (mc.ext_hmac_secret ? 1 : 0) +
                                 // largeBlobKey has no outputs here
                                 (mc.ext_cred_protect != CRED_PROTECT_ABSENT ? 1 : 0) +
-                                (mc.ext_has_cred_blob ? 1 : 0));
-  CHECK_CBOR_RET(ret);
+                                (mc.ext_has_cred_blob ? 1 : 0);
+  if (extension_map_items > 0) {
+    CborEncoder extension_encoder;
+    cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
+    ret = cbor_encoder_create_map(&extension_encoder, &map, extension_map_items);
+    CHECK_CBOR_RET(ret);
+
+    if (mc.ext_has_cred_blob) {
+      bool accepted = false;
+      if (mc.ext_cred_blob_len <= MAX_CRED_BLOB_LENGTH && mc.options.rk == OPTION_TRUE) {
+        accepted = true;
+      }
+      ret = cbor_encode_text_stringz(&map, "credBlob");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_boolean(&map, accepted);
+      CHECK_CBOR_RET(ret);
+    }
+    if (mc.ext_cred_protect != CRED_PROTECT_ABSENT) {
+      ret = cbor_encode_text_stringz(&map, "credProtect");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_int(&map, mc.ext_cred_protect);
+      CHECK_CBOR_RET(ret);
+    }
+    if (mc.ext_hmac_secret) {
+      ret = cbor_encode_text_stringz(&map, "hmac-secret");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_boolean(&map, true);
+      CHECK_CBOR_RET(ret);
+    }
+    ret = cbor_encoder_close_container(&extension_encoder, &map);
+    CHECK_CBOR_RET(ret);
+    extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
+    DBG_MSG("extension_size=%zu\n", extension_size);
+  }
   if (mc.ext_large_blob_key) {
     if (mc.options.rk != OPTION_TRUE) {
       DBG_MSG("largeBlobKey requires rk\n");
@@ -503,31 +534,6 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     }
     // Generate key in Step 17
   }
-  if (mc.ext_has_cred_blob) {
-    bool accepted = false;
-    if (mc.ext_cred_blob_len <= MAX_CRED_BLOB_LENGTH && mc.options.rk == OPTION_TRUE) {
-      accepted = true;
-    }
-    ret = cbor_encode_text_stringz(&map, "credBlob");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&map, accepted);
-    CHECK_CBOR_RET(ret);
-  }
-  if (mc.ext_cred_protect != CRED_PROTECT_ABSENT) {
-    ret = cbor_encode_text_stringz(&map, "credProtect");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, mc.ext_cred_protect);
-    CHECK_CBOR_RET(ret);
-  }
-  if (mc.ext_hmac_secret) {
-    ret = cbor_encode_text_stringz(&map, "hmac-secret");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&map, true);
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&extension_encoder, &map);
-  CHECK_CBOR_RET(ret);
-  size_t extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
 
   // Now prepare the response
   ret = cbor_encoder_create_map(encoder, &map, 3 /*fmt, authData, attStmt*/ + (mc.ext_large_blob_key ? 1 : 0));
@@ -998,83 +1004,86 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //        authenticator data. The set of keys in the authenticator extension outputs map MUST be equal to, or a subset
   //        of, the keys of the authenticator extension inputs map.
 
-  uint8_t extension_buffer[134], extension_size = 0;
-  CborEncoder extension_encoder, map, sub_map;
-  // build extensions
-  cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
-  ret = cbor_encoder_create_map(&extension_encoder, &map,
-                                (ga.ext_cred_blob ? 1 : 0) +
-                                // largeBlobKey has no outputs here
-                                ((ga.parsed_params & PARAM_HMAC_SECRET) ? 1 : 0));
-  CHECK_CBOR_RET(ret);
-
-  // Process credBlob extension
-  if (ga.ext_cred_blob) {
-    ret = cbor_encode_text_stringz(&map, "credBlob");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, dc.cred_blob, dc.cred_blob_len);
-    CHECK_CBOR_RET(ret);
-  }
-
   // Process credProtect extension
   if (!check_credential_protect_requirements(&dc.credential_id, ga.allow_list_size > 0, uv)) return CTAP2_ERR_NO_CREDENTIALS;
 
-  // Process hmac-secret extension
-  if (ga.parsed_params & PARAM_HMAC_SECRET) {
-    if (credential_counter == 0) {
-      // If "up" is set to false, authenticator returns CTAP2_ERR_UNSUPPORTED_OPTION.
-      if (!up) return CTAP2_ERR_UNSUPPORTED_OPTION;
-      ret = cp_decapsulate(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol);
-      CHECK_PARSER_RET(ret);
-      DBG_MSG("Shared secret: ");
-      PRINT_HEX(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol == 2 ? SHARED_SECRET_SIZE_P2 : SHARED_SECRET_SIZE_P1);
-      if (!cp_verify(ga.ext_hmac_secret_key_agreement, SHARED_SECRET_SIZE_HMAC, ga.ext_hmac_secret_salt_enc,
-                     ga.ext_hmac_secret_salt_enc_len, ga.ext_hmac_secret_salt_auth, ga.ext_hmac_secret_pin_protocol)) {
-        ERR_MSG("Hmac verification failed\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      if (cp_decrypt(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_enc_len,
-                     ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol) != 0) {
-        ERR_MSG("Hmac decryption failed\n");
-        return CTAP2_ERR_UNHANDLED_REQUEST;
-      }
-    }
-    uint8_t hmac_secret_output[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
-    DBG_MSG("hmac-secret-salt: ");
-    PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol == 1
-                                               ? ga.ext_hmac_secret_salt_enc_len
-                                               : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE);
-    ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc,
-                                  ga.ext_hmac_secret_pin_protocol == 1
-                                      ? ga.ext_hmac_secret_salt_enc_len
-                                      : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
-                                  hmac_secret_output, uv);
-    CHECK_PARSER_RET(ret);
-    DBG_MSG("hmac-secret %s UV (plain): ", uv ? "with" : "without");
-    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_pin_protocol == 1
-                                      ? ga.ext_hmac_secret_salt_enc_len
-                                      : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE);
-    if (cp_encrypt(ga.ext_hmac_secret_key_agreement, hmac_secret_output,
-                   ga.ext_hmac_secret_pin_protocol == 1 ? ga.ext_hmac_secret_salt_enc_len
-                                                        : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
-                   hmac_secret_output, ga.ext_hmac_secret_pin_protocol) < 0)
-      return CTAP2_ERR_UNHANDLED_REQUEST;
-    DBG_MSG("hmac-secret output: ");
-    PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
-    if (credential_counter + 1 == number_of_credentials) { // encryption key will not be used any more
-      memzero(ga.ext_hmac_secret_key_agreement, sizeof(ga.ext_hmac_secret_key_agreement));
+  CborEncoder map, sub_map;
+  uint8_t extension_buffer[MAX_EXTENSION_SIZE_IN_AUTH];
+  size_t extension_size = 0;
+  uint8_t extension_map_items = (ga.ext_cred_blob ? 1 : 0) +
+                                // largeBlobKey has no outputs here
+                                ((ga.parsed_params & PARAM_HMAC_SECRET) ? 1 : 0);
+  if (extension_map_items > 0) {
+    CborEncoder extension_encoder;
+    // build extensions
+    cbor_encoder_init(&extension_encoder, extension_buffer, sizeof(extension_buffer), 0);
+    ret = cbor_encoder_create_map(&extension_encoder, &map, extension_map_items);
+    CHECK_CBOR_RET(ret);
+
+    // Process credBlob extension
+    if (ga.ext_cred_blob) {
+      ret = cbor_encode_text_stringz(&map, "credBlob");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_byte_string(&map, dc.cred_blob, dc.cred_blob_len);
+      CHECK_CBOR_RET(ret);
     }
 
-    ret = cbor_encode_text_stringz(&map, "hmac-secret");
+    // Process hmac-secret extension
+    if (ga.parsed_params & PARAM_HMAC_SECRET) {
+      if (credential_counter == 0) {
+        // If "up" is set to false, authenticator returns CTAP2_ERR_UNSUPPORTED_OPTION.
+        if (!up) return CTAP2_ERR_UNSUPPORTED_OPTION;
+        ret = cp_decapsulate(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol);
+        CHECK_PARSER_RET(ret);
+        DBG_MSG("Shared secret: ");
+        PRINT_HEX(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_pin_protocol == 2 ? SHARED_SECRET_SIZE_P2 : SHARED_SECRET_SIZE_P1);
+        if (!cp_verify(ga.ext_hmac_secret_key_agreement, SHARED_SECRET_SIZE_HMAC, ga.ext_hmac_secret_salt_enc,
+                      ga.ext_hmac_secret_salt_enc_len, ga.ext_hmac_secret_salt_auth, ga.ext_hmac_secret_pin_protocol)) {
+          ERR_MSG("Hmac verification failed\n");
+          return CTAP2_ERR_PIN_AUTH_INVALID;
+        }
+        if (cp_decrypt(ga.ext_hmac_secret_key_agreement, ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_salt_enc_len,
+                      ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol) != 0) {
+          ERR_MSG("Hmac decryption failed\n");
+          return CTAP2_ERR_UNHANDLED_REQUEST;
+        }
+      }
+      uint8_t hmac_secret_output[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
+      DBG_MSG("hmac-secret-salt: ");
+      PRINT_HEX(ga.ext_hmac_secret_salt_enc, ga.ext_hmac_secret_pin_protocol == 1
+                                                ? ga.ext_hmac_secret_salt_enc_len
+                                                : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE);
+      ret = make_hmac_secret_output(dc.credential_id.nonce, ga.ext_hmac_secret_salt_enc,
+                                    ga.ext_hmac_secret_pin_protocol == 1
+                                        ? ga.ext_hmac_secret_salt_enc_len
+                                        : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
+                                    hmac_secret_output, uv);
+      CHECK_PARSER_RET(ret);
+      DBG_MSG("hmac-secret %s UV (plain): ", uv ? "with" : "without");
+      PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_pin_protocol == 1
+                                        ? ga.ext_hmac_secret_salt_enc_len
+                                        : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE);
+      if (cp_encrypt(ga.ext_hmac_secret_key_agreement, hmac_secret_output,
+                    ga.ext_hmac_secret_pin_protocol == 1 ? ga.ext_hmac_secret_salt_enc_len
+                                                          : ga.ext_hmac_secret_salt_enc_len - HMAC_SECRET_SALT_IV_SIZE,
+                    hmac_secret_output, ga.ext_hmac_secret_pin_protocol) < 0)
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      DBG_MSG("hmac-secret output: ");
+      PRINT_HEX(hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
+      if (credential_counter + 1 == number_of_credentials) { // encryption key will not be used any more
+        memzero(ga.ext_hmac_secret_key_agreement, sizeof(ga.ext_hmac_secret_key_agreement));
+      }
+
+      ret = cbor_encode_text_stringz(&map, "hmac-secret");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_byte_string(&map, hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
+      CHECK_CBOR_RET(ret);
+    }
+    ret = cbor_encoder_close_container(&extension_encoder, &map);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, hmac_secret_output, ga.ext_hmac_secret_salt_enc_len);
-    CHECK_CBOR_RET(ret);
+    extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
+    DBG_MSG("extension_size=%zu\n", extension_size);
   }
-  ret = cbor_encoder_close_container(&extension_encoder, &map);
-  CHECK_CBOR_RET(ret);
-  extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
-  if (extension_size == 1) extension_size = 0; // Skip the empty map
-  DBG_MSG("extension_size=%hhu\n", extension_size);
 
   // 13. Sign the client_data_hash along with authData with the selected credential.
   uint8_t map_items = 3;
