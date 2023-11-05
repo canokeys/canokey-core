@@ -4,7 +4,7 @@
 
 static lfs_t lfs;
 
-static uint8_t file_buffer[CACHE_SIZE];
+static uint8_t file_buffer[LFS_CACHE_SIZE];
 
 static struct lfs_file_config file_config = {
     .buffer = file_buffer
