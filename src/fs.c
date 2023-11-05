@@ -4,6 +4,12 @@
 
 static lfs_t lfs;
 
+static uint8_t file_buffer[CACHE_SIZE];
+
+static struct lfs_file_config file_config = {
+    .buffer = file_buffer
+};
+
 int fs_format(const struct lfs_config *cfg) { return lfs_format(&lfs, cfg); }
 
 int fs_mount(const struct lfs_config *cfg) { return lfs_mount(&lfs, cfg); }
@@ -11,7 +17,7 @@ int fs_mount(const struct lfs_config *cfg) { return lfs_mount(&lfs, cfg); }
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   lfs_file_t f;
   lfs_ssize_t read_length;
-  int err = lfs_file_open(&lfs, &f, path, LFS_O_RDONLY);
+  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
   if (err < 0) return err;
   err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
   if (err < 0) goto err_close;
@@ -37,7 +43,7 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
 #endif
   int flags = LFS_O_WRONLY | LFS_O_CREAT;
   if (trunc) flags |= LFS_O_TRUNC;
-  int err = lfs_file_open(&lfs, &f, path, flags);
+  int err = lfs_file_opencfg(&lfs, &f, path, flags, &file_config);
   if (err < 0) return err;
   err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
   if (err < 0) goto err_close;
@@ -55,7 +61,7 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
 
 int append_file(const char *path, const void *buf, lfs_size_t len) {
   lfs_file_t f;
-  int err = lfs_file_open(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT);
+  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT, &file_config);
   if (err < 0) return err;
   err = lfs_file_seek(&lfs, &f, 0, LFS_SEEK_END);
   if (err < 0) goto err_close;
@@ -74,7 +80,7 @@ int append_file(const char *path, const void *buf, lfs_size_t len) {
 int truncate_file(const char *path, lfs_size_t len) {
   lfs_file_t f;
   int flags = LFS_O_WRONLY | LFS_O_CREAT;
-  int err = lfs_file_open(&lfs, &f, path, flags);
+  int err = lfs_file_opencfg(&lfs, &f, path, flags, &file_config);
   if (err < 0) return err;
   err = lfs_file_truncate(&lfs, &f, len);
   if (err < 0) goto err_close;
@@ -96,7 +102,7 @@ int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len) 
 
 int get_file_size(const char *path) {
   lfs_file_t f;
-  int err = lfs_file_open(&lfs, &f, path, LFS_O_RDONLY);
+  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
   if (err < 0) return err;
   int size = lfs_file_size(&lfs, &f);
   if (size < 0) {
