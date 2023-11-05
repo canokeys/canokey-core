@@ -221,7 +221,7 @@
 #define USER_NAME_LIMIT               65
 #define MAX_DC_NUM                    64
 #define MAX_STORED_RPID_LENGTH        32
-#define MAX_EXTENSION_SIZE_IN_AUTH    51
+#define MAX_EXTENSION_SIZE_IN_AUTH    140
 #define MAX_CREDENTIAL_COUNT_IN_LIST  8
 #define MAX_CRED_BLOB_LENGTH          32
 #define LARGE_BLOB_KEY_SIZE           32
@@ -369,6 +369,6 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_version(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_select(const CAPDU *capdu, RAPDU *rapdu);
 uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, const uint8_t *extension,
-                            uint8_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect);
+                            size_t extension_size, size_t *len, int32_t alg_type, bool dc, uint8_t cred_protect);
 
 #endif
