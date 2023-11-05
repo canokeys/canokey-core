@@ -16,6 +16,7 @@
 
 static struct lfs_config cfg;
 static lfs_filebd_t bd;
+static struct lfs_filebd_config bdcfg = {.read_size = 1, .prog_size = 512, .erase_size = 512, .erase_count = 256};
 
 uint8_t private_key[] = {0x46, 0x5b, 0x44, 0x5d, 0x8e, 0x78, 0x34, 0x53, 0xf7, 0x4b, 0x90,
                          0x00, 0xd2, 0x20, 0x32, 0x51, 0x99, 0x5e, 0x12, 0xdc, 0xd1, 0x21,
@@ -103,6 +104,7 @@ static void oath_init() {
 }
 
 int card_fs_init(const char *lfs_root) {
+  bd.cfg = &bdcfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
@@ -115,8 +117,8 @@ int card_fs_init(const char *lfs_root) {
   cfg.block_count = 256;
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
-  cfg.lookahead_size = 16;
-  if (lfs_filebd_create(&cfg, lfs_root)) return 1;
+  cfg.lookahead_size = 32;
+  if (lfs_filebd_create(&cfg, lfs_root, &bdcfg)) return 1;
 
   int err = fs_mount(&cfg);
   if (err) { // should happen for the first boot
