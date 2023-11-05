@@ -162,6 +162,7 @@ test_ImportedKeys() {
                 "10 9,12 9" #secp256k1
                 "10 1,12 1" #25519
                 "4 2048,6 2048" #RSA2048
+                "4 3072,6 3072" #RSA3072
                 "4 4096,6 4096" #RSA4096
                 )
     for ((i = 0; i < ${#ALGO_PAIRS[@]}; i++)); do
@@ -188,10 +189,12 @@ test_ImportedKeys() {
 }
 
 test_GeneratedKeys() {
-    ALGO_PAIRS=("2 3" #ECC p-256
+    ALGO_PAIRS=("1 2048" #RSA2048
+                "1 3072" #RSA3072
+                "1 4096" #RSA4096
+                "2 3" #ECC p-256
                 "2 4" #ECC p-384
                 "2 9" #secp256k1
-                "1 2048" #RSA2048
                 "2 1" #25519
                 )
     for ((i = 0; i < ${#ALGO_PAIRS[@]}; i++)); do

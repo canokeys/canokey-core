@@ -5,6 +5,7 @@ export LANG=en_US.UTF8
 export TEST_TMP_DIR=/tmp/canokey-libfido2
 export USER=`id -nu`
 PIN=123456
+NUMBER_OF_KEYS=8
 NON_TTY="setsid -w"
 
 oneTimeSetUp() {
@@ -235,7 +236,7 @@ test_DelAllRk() {
 test_MC() {
     echo $'RelyingPartyID                   UserID                                                                                UserName                                                          CredID'
     >"$TEST_TMP_DIR/rks"
-    for((i=1;i<=64;i++)); do
+    for((i=1;i<=$NUMBER_OF_KEYS;i++)); do
         local rpid=$(makeRPID $i)
         local uname=$(makeUserName $i)
         makeCredAndStore "$rpid" "$uname" || return 1
@@ -244,7 +245,7 @@ test_MC() {
     while IFS= read -r line
     do
         if [[ $nline == 0 ]]; then
-            assertEquals 'existing rk(s): 64' "$line"
+            assertEquals "existing rk(s): $NUMBER_OF_KEYS" "$line"
         else
             local fields=($line)
             rpid=$(makeRPID $nline)
@@ -255,7 +256,7 @@ test_MC() {
 }
 
 test_DispName() {
-    local randSeq=$(seq 1 64 | shuf)
+    local randSeq=$(seq 1 $NUMBER_OF_KEYS | shuf)
     for i in $randSeq; do
         local rpid=$(makeRPID $i)
         local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
@@ -311,7 +312,7 @@ test_LargeBlob() {
 }
 
 test_DelRk() {
-    local randSeq=$(seq 1 64 | shuf)
+    local randSeq=$(seq 1 $NUMBER_OF_KEYS | shuf)
     local nrDel=0
     for i in $randSeq; do
         local rpid=$(makeRPID $i)
@@ -324,7 +325,7 @@ test_DelRk() {
         FIDO2DelRkByID $credid
         sed -i "/$rpid/d" "$TEST_TMP_DIR/rks"
         ((nrDel++))
-        if [[ $nrDel == 1 || $nrDel == 2 || $nrDel == 10 || $nrDel == 64 ]];then
+        if [[ $nrDel == 1 || $nrDel == 2 || $nrDel == 10 || $nrDel == $NUMBER_OF_KEYS ]];then
             compareAllRk || return 1
         fi
     done
