@@ -1043,6 +1043,7 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
         return -1;
       }
       DBG_KEY_META(&key.meta);
+      if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
       RDATA[pos++] = 0x01; // Algorithm
       RDATA[pos++] = 0x01;
