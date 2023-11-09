@@ -1065,6 +1065,8 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       break;
     }
+    default:
+      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
 
   LL = pos;
