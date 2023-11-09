@@ -4,6 +4,8 @@
 
 #include <lfs.h>
 
+#define LFS_CACHE_SIZE 512
+
 int fs_format(const struct lfs_config *cfg);
 int fs_mount(const struct lfs_config *cfg);
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len);
