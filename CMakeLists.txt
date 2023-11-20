@@ -84,6 +84,7 @@ if (ENABLE_TESTS)
             littlefs/bd/lfs_filebd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core "-fsanitize=address")
+    add_dependencies(fido-hid-over-udp gitrev)
 
     pkg_search_module(PCSCLITE libpcsclite)
     if (PCSCLITE_FOUND)
