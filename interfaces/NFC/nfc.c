@@ -25,11 +25,7 @@ void nfc_init(void) {
   // NFC interface uses global_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = global_buffer;
   apdu_resp.data = global_buffer;
-#if _NFC_CHIP == NFC_CHIP_FM11NC
-  fm_write_reg(FM_REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
-  fm_write(FM_REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
-#endif
+  fm_write_reg(FM_REG_FIFO_FLUSH, 0); // writing anything to this reg will flush FIFO buffer
 }
 
 static void nfc_error_handler(int code) {
@@ -52,14 +48,8 @@ static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   DBG_MSG("TX: ");
   PRINT_HEX(tx_frame_buf, len + 1);
 
-  uint8_t val = 0x55;
-#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_write_fifo(tx_frame_buf, len + 1);
-  fm_write_reg(REG_RF_TXEN, &val, 1);
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
-  fm_write(FM_REG_FIFO_ACCESS, tx_frame_buf, len + 1);
-  fm_write(FM_REG_RF_TXEN, &val, 1);
-#endif
+  fm_write_reg(FM_REG_RF_TXEN, 0x55);
 }
 
 void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
@@ -132,9 +122,7 @@ void nfc_loop(void) {
         SW = SW_WRONG_LENGTH;
       } else {
         device_set_timeout(send_wtx, WTX_PERIOD);
-        // process_apdu(capdu, rapdu);
-        rapdu->len = 0;
-        rapdu->sw = 0x6a82;
+        process_apdu(capdu, rapdu);
         device_set_timeout(NULL, 0);
       }
 
@@ -174,28 +162,15 @@ void nfc_loop(void) {
 
 void nfc_handler(void) {
   uint8_t irq[3];
-#if _NFC_CHIP == NFC_CHIP_FM11NC
-  fm_read_reg(FM_REG_MAIN_IRQ, irq, sizeof(irq));
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
-  fm_read(FM_REG_MAIN_IRQ, irq, sizeof(irq));
-#endif
-  DBG_MSG("IRQ: ");
-  PRINT_HEX(irq, 3);
+  fm_read_regs(FM_REG_MAIN_IRQ, irq, sizeof(irq));
   if (!is_nfc()) {
     ERR_MSG("IRQ %02x in non-NFC mode\n", irq[0]);
     return;
   }
-  fm_read(FM_REG_RF_STATUS, irq, 1);
-  DBG_MSG("RF Stat: %02X\n", irq[0]);
 
   if (irq[0] & MAIN_IRQ_RX_DONE) {
-#if _NFC_CHIP == NFC_CHIP_FM11NC
-    fm_read_reg(REG_FIFO_WORDCNT, &rx_frame_size, 1);
+    rx_frame_size = fm_read_reg(FM_REG_FIFO_WORDCNT);
     fm_read_fifo(rx_frame_buf, rx_frame_size);
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
-    fm_read(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1);
-    fm_read(FM_REG_FIFO_ACCESS, rx_frame_buf, rx_frame_size);
-#endif
     DBG_MSG("RX: ");
     PRINT_HEX(rx_frame_buf, rx_frame_size);
     if (next_state == TO_SEND) DBG_MSG("Wrong State!\n");

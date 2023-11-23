@@ -55,11 +55,19 @@ void led_on(void);
 void led_off(void);
 void device_set_timeout(void (*callback)(void), uint16_t timeout);
 
+// NFC related
+/**
+ * Enable FM chip by pull down CSN
+ */
 void fm_csn_low(void);
+
+/**
+ * Disable FM chip by pull up CSN
+ */
 void fm_csn_high(void);
 #if _NFC_CHIP == NFC_CHIP_FM11NC
-void fm_transmit(uint8_t *buf, uint8_t len);
-void fm_receive(uint8_t *buf, uint8_t len);
+void spi_transmit(uint8_t *buf, uint8_t len);
+void spi_receive(uint8_t *buf, uint8_t len);
 #elif _NFC_CHIP == NFC_CHIP_FM11NT
 void i2c_start(void);
 void i2c_stop(void);
@@ -77,6 +85,8 @@ int testmode_get_is_nfc_mode(void);
 void testmode_set_initial_ticks(uint32_t ticks);
 void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data);
 bool testmode_err_triggered(const char* filename, bool file_wr);
+
+// -----------------------------------------------------------------------------------
 
 // platform independent functions
 uint8_t wait_for_user_presence(uint8_t entry);
@@ -102,16 +112,18 @@ static inline void start_quick_blinking(uint8_t sec) {
 }
 void stop_blinking(void);
 uint8_t device_is_blinking(void);
-#if _NFC_CHIP == NFC_CHIP_FM11NC
-void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len);
-void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len);
+void fm11_init(void);
+uint8_t fm_read_reg(uint16_t reg);
+void fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
+void fm_write_reg(uint16_t reg, uint8_t val);
+void fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
 void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
-void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
+void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len);
 void fm_read_fifo(uint8_t *buf, uint8_t len);
 void fm_write_fifo(uint8_t *buf, uint8_t len);
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
-void fm_read(uint16_t addr, uint8_t *buf, uint8_t len);
-void fm_write(uint16_t addr, const uint8_t *buf, uint8_t len);
+#if _NFC_CHIP == NFC_CHIP_FM11NT
+void fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
+void fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
 #endif
 

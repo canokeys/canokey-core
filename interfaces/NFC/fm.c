@@ -2,38 +2,78 @@
 #include "device.h"
 #include <stdint.h>
 
-#if _NFC_CHIP == NFC_CHIP_FM11NC
-
 static void device_delay_us(int us) {
   for (int i = 0; i < us * 10; ++i)
     asm volatile("nop");
 }
 
-void fm_read_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
+uint8_t fm_read_reg(uint16_t reg) {
+  uint8_t val;
+#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_nss_low();
-  reg |= 0x20;
-  fm_transmit(&reg, 1);
-  fm_receive(buf, len);
+  uint8_t addr = reg;
+  addr |= 0x20;
+  fm_transmit(&addr, 1);
+  fm_receive(&val, 1);
   fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_read(reg, &val, 1);
+#endif
+  return val;
 }
 
-void fm_write_reg(uint8_t reg, uint8_t *buf, uint8_t len) {
+void fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_nss_low();
-  fm_transmit(&reg, 1);
+  uint8_t addr = reg;
+  addr |= 0x20;
+  fm_transmit(&addr, 1);
+  fm_receive(buf, len);
+  fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_read(reg, buf, len);
+#endif
+}
+
+void fm_write_reg(uint16_t reg, uint8_t val) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
+  fm_nss_low();
+  uint8_t addr = reg;
+  fm_transmit(&addr, 1);
+  fm_transmit(&val, 1);
+  fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_write(reg, &val, 1);
+#endif
+}
+
+void fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
+  fm_nss_low();
+  uint8_t addr = reg;
+  fm_transmit(&addr, 1);
   fm_transmit(buf, len);
   fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_write(reg, buf, len);
+#endif
 }
 
 void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_nss_low();
   device_delay_us(100);
   uint8_t data[2] = {0x60 | (addr >> 8), addr & 0xFF};
   fm_transmit(data, 2);
   fm_receive(buf, len);
   fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_read(addr, buf, len);
+#endif
 }
 
-void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) {
+void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_nss_low();
   device_delay_us(100);
   uint8_t data[2] = {0xCE, 0x55};
@@ -48,29 +88,72 @@ void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) {
   fm_transmit(data, 2);
   fm_transmit(buf, len);
   fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_write(addr, buf, len);
+  device_delay(10);
+#endif
 }
 
 void fm_read_fifo(uint8_t *buf, uint8_t len) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_nss_low();
   uint8_t addr = 0xA0;
   fm_transmit(&addr, 1);
   fm_receive(buf, len);
   fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_read(FM_REG_FIFO_ACCESS, buf, len);
+#endif
 }
 
 void fm_write_fifo(uint8_t *buf, uint8_t len) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
   fm_nss_low();
   uint8_t addr = 0x80;
   fm_transmit(&addr, 1);
   fm_transmit(buf, len);
   fm_nss_high();
+#elif _NFC_CHIP == NFC_CHIP_FM11NT
+  fm11nt_write(FM_REG_FIFO_ACCESS, buf, len);
+#endif
 }
 
+void fm11_init(void) {
+#if _NFC_CHIP == NFC_CHIP_FM11NC
+  uint8_t buf[7];
+  uint8_t data1[] = {0x44, 0x00, 0x04, 0x20};
+  uint8_t data2[] = {0x05, 0x72, 0x02, 0x00, 0xB3, 0x99, 0x00};
+  do {
+    fm_write_eeprom(0x3A0, data1, sizeof(data1));
+    fm_read_eeprom(0x3A0, buf, sizeof(data1));
+  } while (memcmp(data1, buf, sizeof(data1)) != 0);
+  do {
+    fm_write_eeprom(0x3B0, data2, sizeof(data2));
+    fm_read_eeprom(0x3B0, buf, sizeof(data2));
+  } while (memcmp(data2, buf, sizeof(data2)) != 0);
 #elif _NFC_CHIP == NFC_CHIP_FM11NT
+  uint8_t crc_buffer[13];
+  const uint8_t user_cfg[] = {0x91, 0x82, 0x21, 0xCD};
+  const uint8_t atqa_sak[] = {0x44, 0x00, 0x04, 0x20};
+  fm_csn_low();
+  device_delay_us(200);
+  fm_write_regs(FM_EEPROM_USER_CFG0, user_cfg, sizeof(user_cfg));
+  fm_write_eeprom(FM_EEPROM_ATQA, atqa_sak, sizeof(atqa_sak));
+  fm_read_eeprom(FM_EEPROM_SN, crc_buffer, 9);
+  DBG_MSG("SN: "); PRINT_HEX(crc_buffer, 9);
+  memcpy(crc_buffer + 9, atqa_sak, sizeof(atqa_sak));
+  const uint8_t crc8 = fm_crc8(crc_buffer, sizeof(crc_buffer));
+  fm_write_eeprom(FM_EEPROM_CRC8, &crc8, 1);
+  device_delay_us(1000);
+  fm_csn_high();
+#endif
+}
+
+#if _NFC_CHIP == NFC_CHIP_FM11NT
 
 #define I2C_ADDR 0x57
 
-void fm_read(uint16_t addr, uint8_t *buf, uint8_t len) {
+void fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len) {
   uint8_t slave_id = (I2C_ADDR << 1) | 0;
   i2c_start();
   i2c_write_byte(slave_id);
@@ -102,7 +185,7 @@ void fm_read(uint16_t addr, uint8_t *buf, uint8_t len) {
   }
 }
 
-void fm_write(uint16_t addr, const uint8_t *buf, uint8_t len) {
+void fm11nt_write(const uint16_t addr, const uint8_t *buf, const uint8_t len) {
   const uint8_t slave_id = (I2C_ADDR << 1) | 0;
   i2c_start();
   i2c_write_byte(slave_id);
@@ -133,6 +216,5 @@ uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length) {
   }
   return crc8 & 0xff;
 }
-
 
 #endif
