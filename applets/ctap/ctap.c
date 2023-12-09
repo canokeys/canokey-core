@@ -9,6 +9,7 @@
 #include <block-cipher.h>
 #include <cbor.h>
 #include <common.h>
+#include <crypto-util.h>
 #include <ctap.h>
 #include <ctaphid.h>
 #include <device.h>

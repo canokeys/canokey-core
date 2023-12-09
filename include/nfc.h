@@ -6,7 +6,7 @@
 #define NFC_CHIP_FM11NT 1
 #define NFC_CHIP_NA -1
 
-#if _NFC_CHIP == NFC_CHIP_FM11NC
+#if NFC_CHIP == NFC_CHIP_FM11NC
 
 #define REG_FIFO_FLUSH 0x1
 #define REG_FIFO_WORDCNT 0x2
@@ -25,7 +25,7 @@
 
 #define RF_STATE_MASK 0xE0
 
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
+#elif NFC_CHIP == NFC_CHIP_FM11NT
 
 #define FM_REG_USER_CFG0     0xFFE0
 #define FM_REG_USER_CFG1     0xFFE1

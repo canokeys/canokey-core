@@ -35,8 +35,10 @@ static void nfc_error_handler(int code) {
   apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
-
-  // TODO: reset
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  fm_write_reg(FM_REG_RF_TXEN, 0x77); // set NFC to IDLE
+  fm_write_reg(FM_REG_RESET_SILENCE, 0x55); // reset
+#endif
 }
 
 static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {

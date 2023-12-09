@@ -24,8 +24,8 @@ endif ()
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
-if (DEFINED USBD_PRODUCT_STRING)
-    add_definitions(-DUSBD_PRODUCT_STRING="${USBD_PRODUCT_STRING}")
+if (DEFINED PRODUCT_NAME)
+    add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif ()
 
 file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c

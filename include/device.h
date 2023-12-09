@@ -65,10 +65,10 @@ void fm_csn_low(void);
  * Disable FM chip by pull up CSN
  */
 void fm_csn_high(void);
-#if _NFC_CHIP == NFC_CHIP_FM11NC
+#if NFC_CHIP == NFC_CHIP_FM11NC
 void spi_transmit(uint8_t *buf, uint8_t len);
 void spi_receive(uint8_t *buf, uint8_t len);
-#elif _NFC_CHIP == NFC_CHIP_FM11NT
+#elif NFC_CHIP == NFC_CHIP_FM11NT
 void i2c_start(void);
 void i2c_stop(void);
 void scl_delay(void);
@@ -121,7 +121,7 @@ void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
 void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len);
 void fm_read_fifo(uint8_t *buf, uint8_t len);
 void fm_write_fifo(uint8_t *buf, uint8_t len);
-#if _NFC_CHIP == NFC_CHIP_FM11NT
+#if NFC_CHIP == NFC_CHIP_FM11NT
 void fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
 void fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
