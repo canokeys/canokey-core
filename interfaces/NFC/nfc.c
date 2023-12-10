@@ -35,6 +35,8 @@ static void nfc_error_handler(int code) {
   apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
+  state_spinlock = 0;
+  next_state = TO_RECEIVE;
 #if NFC_CHIP == NFC_CHIP_FM11NT
   fm_write_reg(FM_REG_RF_TXEN, 0x77); // set NFC to IDLE
   fm_write_reg(FM_REG_RESET_SILENCE, 0x55); // reset
@@ -172,6 +174,10 @@ void nfc_handler(void) {
 
   if (irq[0] & MAIN_IRQ_RX_DONE) {
     rx_frame_size = fm_read_reg(FM_REG_FIFO_WORDCNT);
+    if (rx_frame_size > 32) {
+      nfc_error_handler(-5);
+      return;
+    }
     fm_read_fifo(rx_frame_buf, rx_frame_size);
     DBG_MSG("RX: ");
     PRINT_HEX(rx_frame_buf, rx_frame_size);

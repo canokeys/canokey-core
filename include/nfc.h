@@ -8,20 +8,20 @@
 
 #if NFC_CHIP == NFC_CHIP_FM11NC
 
-#define REG_FIFO_FLUSH 0x1
-#define REG_FIFO_WORDCNT 0x2
-#define REG_RF_STATUS 0x3
-#define REG_RF_TXEN 0x4
-#define REG_RF_BAUD 0x5
-#define REG_RF_RATS 0x6
-#define REG_MAIN_IRQ 0x7
-#define REG_FIFO_IRQ 0x8
-#define REG_AUX_IRQ 0x9
-#define REG_MAIN_IRQ_MASK 0xA
-#define REG_FIFO_IRQ_MASK 0xB
-#define REG_AUX_IRQ_MASK 0xC
-#define REG_NFC_CFG 0xD
-#define REG_REGU_CFG 0xE
+#define FM_REG_FIFO_FLUSH    0x1
+#define FM_REG_FIFO_WORDCNT  0x2
+#define FM_REG_RF_STATUS     0x3
+#define FM_REG_RF_TXEN       0x4
+#define FM_REG_RF_BAUD       0x5
+#define FM_REG_RF_RATS       0x6
+#define FM_REG_MAIN_IRQ      0x7
+#define FM_REG_FIFO_IRQ      0x8
+#define FM_REG_AUX_IRQ       0x9
+#define FM_REG_MAIN_IRQ_MASK 0xA
+#define FM_REG_FIFO_IRQ_MASK 0xB
+#define FM_REG_AUX_IRQ_MASK  0xC
+#define FM_REG_NFC_CFG       0xD
+#define FM_REG_REGU_CFG      0xE
 
 #define RF_STATE_MASK 0xE0
 
