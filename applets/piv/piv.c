@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <common.h>
 #include <admin.h>
+#include <common.h>
+#include <crypto-util.h>
 #include <des.h>
 #include <device.h>
 #include <ecc.h>

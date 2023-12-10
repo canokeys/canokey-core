@@ -24,8 +24,8 @@ endif ()
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
-if (DEFINED USBD_PRODUCT_STRING)
-    add_definitions(-DUSBD_PRODUCT_STRING="${USBD_PRODUCT_STRING}")
+if (DEFINED PRODUCT_NAME)
+    add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif ()
 
 file(GLOB_RECURSE SRC src/*.c applets/*.c interfaces/*.c
@@ -84,6 +84,7 @@ if (ENABLE_TESTS)
             littlefs/bd/lfs_filebd.c)
     target_include_directories(fido-hid-over-udp SYSTEM PRIVATE virt-card littlefs)
     target_link_libraries(fido-hid-over-udp general canokey-core "-fsanitize=address")
+    add_dependencies(fido-hid-over-udp gitrev)
 
     pkg_search_module(PCSCLITE libpcsclite)
     if (PCSCLITE_FOUND)

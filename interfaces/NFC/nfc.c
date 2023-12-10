@@ -3,6 +3,14 @@
 #include "apdu.h"
 #include "device.h"
 
+#if NFC_CHIP == NFC_CHIP_NA
+
+void nfc_init(void) {}
+void nfc_loop(void) {}
+void nfc_handler(void) {}
+
+#else
+
 #define WTX_PERIOD 150
 
 static volatile uint32_t state_spinlock;
@@ -25,7 +33,7 @@ void nfc_init(void) {
   // NFC interface uses global_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = global_buffer;
   apdu_resp.data = global_buffer;
-  fm_write_reg(REG_FIFO_FLUSH, &inf_sending, 1); // writing anything to this reg will flush FIFO buffer
+  fm_write_reg(FM_REG_FIFO_FLUSH, 0); // writing anything to this reg will flush FIFO buffer
 }
 
 static void nfc_error_handler(int code) {
@@ -35,6 +43,12 @@ static void nfc_error_handler(int code) {
   apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
+  state_spinlock = 0;
+  next_state = TO_RECEIVE;
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  fm_write_reg(FM_REG_RF_TXEN, 0x77); // set NFC to IDLE
+  fm_write_reg(FM_REG_RESET_SILENCE, 0x55); // reset
+#endif
 }
 
 static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
@@ -46,9 +60,8 @@ static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   DBG_MSG("TX: ");
   PRINT_HEX(tx_frame_buf, len + 1);
 
-  uint8_t val = 0x55;
   fm_write_fifo(tx_frame_buf, len + 1);
-  fm_write_reg(REG_RF_TXEN, &val, 1);
+  fm_write_reg(FM_REG_RF_TXEN, 0x55);
 }
 
 void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
@@ -161,14 +174,18 @@ void nfc_loop(void) {
 
 void nfc_handler(void) {
   uint8_t irq[3];
-  fm_read_reg(REG_MAIN_IRQ, irq, sizeof(irq));
+  fm_read_regs(FM_REG_MAIN_IRQ, irq, sizeof(irq));
   if (!is_nfc()) {
     ERR_MSG("IRQ %02x in non-NFC mode\n", irq[0]);
     return;
   }
 
   if (irq[0] & MAIN_IRQ_RX_DONE) {
-    fm_read_reg(REG_FIFO_WORDCNT, &rx_frame_size, 1);
+    rx_frame_size = fm_read_reg(FM_REG_FIFO_WORDCNT);
+    if (rx_frame_size > 32) {
+      nfc_error_handler(-5);
+      return;
+    }
     fm_read_fifo(rx_frame_buf, rx_frame_size);
     DBG_MSG("RX: ");
     PRINT_HEX(rx_frame_buf, rx_frame_size);
@@ -180,3 +197,5 @@ void nfc_handler(void) {
     nfc_error_handler(-1);
   }
 }
+
+#endif
