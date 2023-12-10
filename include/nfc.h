@@ -6,6 +6,10 @@
 #define NFC_CHIP_FM11NT 1
 #define NFC_CHIP_NA -1
 
+#ifndef NFC_CHIP
+#define NFC_CHIP NFC_CHIP_NA
+#endif
+
 #if NFC_CHIP == NFC_CHIP_FM11NC
 
 #define FM_REG_FIFO_FLUSH    0x1
