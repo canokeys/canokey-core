@@ -3,6 +3,14 @@
 #include "apdu.h"
 #include "device.h"
 
+#if NFC_CHIP == NFC_CHIP_NA
+
+void nfc_init(void) {}
+void nfc_loop(void) {}
+void nfc_handler(void) {}
+
+#else
+
 #define WTX_PERIOD 150
 
 static volatile uint32_t state_spinlock;
@@ -189,3 +197,5 @@ void nfc_handler(void) {
     nfc_error_handler(-1);
   }
 }
+
+#endif
