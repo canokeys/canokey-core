@@ -166,7 +166,7 @@ static uint8_t key_type_to_algo_id[] = {
     [KEY_TYPE_PKC_END] = ALG_DEFAULT,
 };
 
-int piv_security_status_check(uint8_t id, const key_meta_t *meta) {
+int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta_t *meta) {
   switch (meta->pin_policy) {
     case PIN_POLICY_NEVER:
       break;

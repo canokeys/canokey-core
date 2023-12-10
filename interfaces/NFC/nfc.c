@@ -36,7 +36,7 @@ void nfc_init(void) {
   fm_write_reg(FM_REG_FIFO_FLUSH, 0); // writing anything to this reg will flush FIFO buffer
 }
 
-static void nfc_error_handler(int code) {
+static void nfc_error_handler(int code __attribute__((unused))) {
   DBG_MSG("NFC Error %d\n", code);
   block_number = 1;
   apdu_buffer_rx_size = 0;

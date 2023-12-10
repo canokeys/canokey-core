@@ -387,7 +387,7 @@ static uint8_t *oath_digest(const OATH_RECORD *record, uint8_t buffer[SHA512_DIG
 static int oath_calculate_by_offset(const size_t file_offset, uint8_t result[4]) {
   if (file_offset % sizeof(OATH_RECORD) != 0) return -2;
   const int size = get_file_size(OATH_FILE);
-  if (size < 0 || file_offset >= size) return -2;
+  if (size < 0 || file_offset >= (size_t)size) return -2;
   uint8_t challenge_len;
   uint8_t challenge[MAX_CHALLENGE_LEN];
   OATH_RECORD record;
@@ -623,7 +623,7 @@ int oath_process_one_touch(char *output, const size_t maxlen) {
   if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -2;
   int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
   if (ret < 0) return ret;
-  if (ret + 1 > maxlen) return -1;
+  if ((size_t)(ret + 1) > maxlen) return -1;
   output[ret] = '\0';
   otp_code = htobe32(otp_code);
   while (ret--) {
@@ -633,6 +633,7 @@ int oath_process_one_touch(char *output, const size_t maxlen) {
   return 0;
 }
 
+// ReSharper disable once CppDFAConstantFunctionResult
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;

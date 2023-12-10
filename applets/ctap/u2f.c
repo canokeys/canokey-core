@@ -109,8 +109,7 @@ int u2f_version(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int u2f_select(const CAPDU *capdu, RAPDU *rapdu) {
-  (void) capdu;
+int u2f_select(const CAPDU *capdu __attribute__((unused)), RAPDU *rapdu) {
   LL = 6;
   memcpy(RDATA, "U2F_V2", 6);
   return 0;
