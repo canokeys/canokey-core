@@ -128,7 +128,7 @@ USBD_StatusTypeDef USBD_Stop(USBD_HandleTypeDef *pdev) {
  * @param  pdev: device instance
  * @retval status
  */
-USBD_StatusTypeDef USBD_RunTestMode(USBD_HandleTypeDef *pdev) { return USBD_OK; }
+USBD_StatusTypeDef USBD_RunTestMode(USBD_HandleTypeDef *pdev __attribute__((unused))) { return USBD_OK; }
 
 /**
  * @brief  USBD_SetClassConfig
@@ -341,23 +341,7 @@ USBD_StatusTypeDef USBD_LL_Resume(USBD_HandleTypeDef *pdev) {
  * @param  pdev: device instance
  * @retval status
  */
-USBD_StatusTypeDef USBD_LL_SOF(USBD_HandleTypeDef *pdev) { return USBD_OK; }
-
-/**
- * @brief  USBD_IsoINIncomplete
- *         Handle iso in incomplete event
- * @param  pdev: device instance
- * @retval status
- */
-USBD_StatusTypeDef USBD_LL_IsoINIncomplete(USBD_HandleTypeDef *pdev, uint8_t epnum) { return USBD_OK; }
-
-/**
- * @brief  USBD_IsoOUTIncomplete
- *         Handle iso out incomplete event
- * @param  pdev: device instance
- * @retval status
- */
-USBD_StatusTypeDef USBD_LL_IsoOUTIncomplete(USBD_HandleTypeDef *pdev, uint8_t epnum) { return USBD_OK; }
+USBD_StatusTypeDef USBD_LL_SOF(USBD_HandleTypeDef *pdev __attribute__((unused))) { return USBD_OK; }
 
 /**
  * @brief  USBD_DevConnected
@@ -365,7 +349,7 @@ USBD_StatusTypeDef USBD_LL_IsoOUTIncomplete(USBD_HandleTypeDef *pdev, uint8_t ep
  * @param  pdev: device instance
  * @retval status
  */
-USBD_StatusTypeDef USBD_LL_DevConnected(USBD_HandleTypeDef *pdev) { return USBD_OK; }
+USBD_StatusTypeDef USBD_LL_DevConnected(USBD_HandleTypeDef *pdev __attribute__((unused))) { return USBD_OK; }
 
 /**
  * @brief  USBD_DevDisconnected

@@ -26,11 +26,11 @@ void oath_poweroff(void) {
   is_validated = false;
 }
 
-int oath_install(uint8_t reset) {
+int oath_install(const uint8_t reset) {
   oath_poweroff();
   if (!reset && get_file_size(OATH_FILE) >= 0) return 0;
   if (write_file(OATH_FILE, NULL, 0, 0, 1) < 0) return -1;
-  uint32_t default_item = 0xffffffff;
+  const uint32_t default_item = 0xffffffff;
   if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
   if (write_attr(OATH_FILE, ATTR_KEY, NULL, 0) < 0) return -1;
   uint8_t handle[HANDLE_LEN];
@@ -48,7 +48,7 @@ static int oath_select(const CAPDU *capdu, RAPDU *rapdu) {
 
   // check if there is a key
   uint8_t dummy;
-  int32_t ret = read_attr(OATH_FILE, ATTR_KEY, &dummy, 1);
+  const int32_t ret = read_attr(OATH_FILE, ATTR_KEY, &dummy, 1);
   if (ret < 0) return -1;
 
   if (ret == 0) { // no key is set
@@ -74,24 +74,24 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = 0;
   if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  uint8_t name_len = DATA[offset++];
-  uint8_t *name_ptr = &DATA[offset];
+  const uint8_t name_len = DATA[offset++];
+  const uint8_t *name_ptr = &DATA[offset];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
 
   // parse key
   if (LC <= offset + 4) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_KEY) EXCEPT(SW_WRONG_DATA);
-  uint8_t key_len = DATA[offset++];
-  uint8_t *key_ptr = &DATA[offset];
+  const uint8_t key_len = DATA[offset++];
+  const uint8_t *key_ptr = &DATA[offset];
   if (key_len > MAX_KEY_LEN || key_len <= 2) // 2 for algo & digits
     EXCEPT(SW_WRONG_DATA);
-  uint8_t alg = DATA[offset];
-  if (((alg & OATH_TYPE_MASK) != OATH_TYPE_HOTP && (alg & OATH_TYPE_MASK) != OATH_TYPE_TOTP)) EXCEPT(SW_WRONG_DATA);
-  if (((alg & OATH_ALG_MASK) != OATH_ALG_SHA1 && (alg & OATH_ALG_MASK) != OATH_ALG_SHA256 &&
-       (alg & OATH_ALG_MASK) != OATH_ALG_SHA512))
+  const uint8_t alg = DATA[offset];
+  if ((alg & OATH_TYPE_MASK) != OATH_TYPE_HOTP && (alg & OATH_TYPE_MASK) != OATH_TYPE_TOTP) EXCEPT(SW_WRONG_DATA);
+  if ((alg & OATH_ALG_MASK) != OATH_ALG_SHA1 && (alg & OATH_ALG_MASK) != OATH_ALG_SHA256 &&
+      (alg & OATH_ALG_MASK) != OATH_ALG_SHA512)
     EXCEPT(SW_WRONG_DATA);
-  uint8_t digits = DATA[offset + 1];
+  const uint8_t digits = DATA[offset + 1];
   if (digits < 4 || digits > 8) EXCEPT(SW_WRONG_DATA);
   offset += key_len;
 
@@ -117,12 +117,12 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != offset) EXCEPT(SW_WRONG_LENGTH);
 
   // find an empty slot to save the record
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  size_t nRecords = size / sizeof(OATH_RECORD), unoccupied;
+  const size_t n_records = size / sizeof(OATH_RECORD);
   OATH_RECORD record;
-  unoccupied = nRecords; // append by default
-  for (size_t i = 0; i != nRecords; ++i) {
+  size_t unoccupied = n_records; // append by default
+  for (size_t i = 0; i != n_records; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     // duplicated name found
     if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) {
@@ -130,10 +130,10 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
       EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     }
     // empty slot found
-    if (record.name_len == 0 && unoccupied == nRecords) unoccupied = i;
+    if (record.name_len == 0 && unoccupied == n_records) unoccupied = i;
   }
-  DBG_MSG("unoccupied=%zu nRecords=%zu\n", unoccupied, nRecords);
-  if (unoccupied == nRecords &&  // empty slot not found
+  DBG_MSG("unoccupied=%zu n_records=%zu\n", unoccupied, n_records);
+  if (unoccupied == n_records &&  // empty slot not found
       unoccupied >= MAX_RECORDS) // number of records exceeded the limit
     EXCEPT(SW_NOT_ENOUGH_SPACE);
 
@@ -152,18 +152,18 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = 0;
   if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  uint8_t name_len = DATA[offset++];
-  uint8_t *name_ptr = &DATA[offset];
+  const uint8_t name_len = DATA[offset++];
+  const uint8_t *name_ptr = &DATA[offset];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
   if (LC < offset) EXCEPT(SW_WRONG_LENGTH);
 
   // find and delete the record
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  size_t nRecords = size / sizeof(OATH_RECORD);
+  const size_t n_records = size / sizeof(OATH_RECORD);
   OATH_RECORD record;
-  for (size_t i = 0; i != nRecords; ++i) {
+  for (size_t i = 0; i != n_records; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) {
       uint32_t default_item;
@@ -186,34 +186,34 @@ static int oath_rename(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = 0;
   if (LC <= 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  uint8_t old_name_len = DATA[offset++];
-  uint8_t *old_name_ptr = &DATA[offset];
+  const uint8_t old_name_len = DATA[offset++];
+  const uint8_t *old_name_ptr = &DATA[offset];
   if (old_name_len > MAX_NAME_LEN || old_name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += old_name_len;
   if (LC <= offset + 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  uint8_t new_name_len = DATA[offset++];
-  uint8_t *new_name_ptr = &DATA[offset];
+  const uint8_t new_name_len = DATA[offset++];
+  const uint8_t *new_name_ptr = &DATA[offset];
   if (new_name_len > MAX_NAME_LEN || new_name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += new_name_len;
   if (LC < offset) EXCEPT(SW_WRONG_LENGTH);
 
   // find the record
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  uint32_t nRecords = size / sizeof(OATH_RECORD), i, idx_old;
-  uint32_t file_offset;
+  const uint32_t n_records = size / sizeof(OATH_RECORD);
+  uint32_t i, idx_old;
   OATH_RECORD record;
-  for (i = 0, idx_old = nRecords; i < nRecords; ++i) {
-    file_offset = i * sizeof(OATH_RECORD);
+  for (i = 0, idx_old = n_records; i < n_records; ++i) {
+    const uint32_t file_offset = i * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    if (idx_old == nRecords && record.name_len == old_name_len && memcmp(record.name, old_name_ptr, old_name_len) == 0) idx_old = i;
+    if (idx_old == n_records && record.name_len == old_name_len && memcmp(record.name, old_name_ptr, old_name_len) == 0) idx_old = i;
     if (record.name_len == new_name_len && memcmp(record.name, new_name_ptr, new_name_len) == 0) {
       DBG_MSG("dup name\n");
       EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     }
   }
-  if (idx_old == nRecords) EXCEPT(SW_DATA_INVALID);
+  if (idx_old == n_records) EXCEPT(SW_DATA_INVALID);
 
   // update the name
   if (read_file(OATH_FILE, &record, idx_old * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
@@ -225,15 +225,13 @@ static int oath_rename(const CAPDU *capdu, RAPDU *rapdu) {
 static int oath_set_code(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
-  uint8_t key_len, chal_len, resp_len;
-  uint8_t *key_ptr, *chal_ptr, *resp_ptr;
   // check input data first
   uint16_t offset = 0;
   if (LC == 0) goto clear_code;
   if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_KEY) EXCEPT(SW_WRONG_DATA);
-  key_len = DATA[offset++];
-  key_ptr = &DATA[offset];
+  const uint8_t key_len = DATA[offset++];
+  const uint8_t *key_ptr = &DATA[offset];
   if (key_len == 0) { // clear the code
 clear_code:
     is_validated = 1;
@@ -243,13 +241,13 @@ clear_code:
   offset += key_len;
   if (LC <= offset + 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
-  chal_len = DATA[offset++];
-  chal_ptr = &DATA[offset];
+  const uint8_t chal_len = DATA[offset++];
+  const uint8_t *chal_ptr = &DATA[offset];
   offset += chal_len;
   if (LC <= offset + 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_FULL_RESPONSE) EXCEPT(SW_WRONG_DATA);
-  resp_len = DATA[offset++];
-  resp_ptr = &DATA[offset];
+  const uint8_t resp_len = DATA[offset++];
+  const uint8_t *resp_ptr = &DATA[offset];
   if (resp_len != SHA1_DIGEST_LENGTH) EXCEPT(SW_WRONG_DATA);
   offset += resp_len;
   if (LC != offset) EXCEPT(SW_WRONG_LENGTH);
@@ -271,25 +269,25 @@ static int oath_validate(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = 0;
   if (LC <= 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_FULL_RESPONSE) EXCEPT(SW_WRONG_DATA);
-  uint8_t resp_len = DATA[offset++];
-  uint8_t *resp_ptr = &DATA[offset];
+  const uint8_t resp_len = DATA[offset++];
+  const uint8_t *resp_ptr = &DATA[offset];
   if (resp_len != SHA1_DIGEST_LENGTH) EXCEPT(SW_WRONG_DATA);
   offset += resp_len;
   if (LC <= offset + 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
-  uint8_t chal_len = DATA[offset++];
-  uint8_t *chal_ptr = &DATA[offset];
+  const uint8_t chal_len = DATA[offset++];
+  const uint8_t *chal_ptr = &DATA[offset];
   offset += chal_len;
   if (LC != offset) EXCEPT(SW_WRONG_LENGTH);
 
   // verify the response
   uint8_t key[KEY_LEN];
-  int32_t ret = read_attr(OATH_FILE, ATTR_KEY, key, KEY_LEN);
+  const int32_t ret = read_attr(OATH_FILE, ATTR_KEY, key, KEY_LEN);
   if (ret < 0) return -1;
   if (ret == 0) EXCEPT(SW_DATA_INVALID);
   uint8_t hmac[SHA1_DIGEST_LENGTH];
   hmac_sha1(key, KEY_LEN, auth_challenge, sizeof(auth_challenge), hmac);
-  is_validated = (memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) == 0);
+  is_validated = memcmp_s(hmac, resp_ptr, SHA1_DIGEST_LENGTH) == 0;
   if (!is_validated) EXCEPT(SW_WRONG_DATA);
 
   // build the response
@@ -307,13 +305,14 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   oath_remaining_type = REMAINING_LIST;
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
   OATH_RECORD record;
-  size_t nRecords = size / sizeof(OATH_RECORD), off = 0;
+  const size_t n_records = size / sizeof(OATH_RECORD);
+  size_t off = 0;
 
   while (off < LE) {
-    if (record_idx >= nRecords) {
+    if (record_idx >= n_records) {
       oath_remaining_type = REMAINING_NONE;
       break;
     }
@@ -337,13 +336,13 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int oath_update_challenge_field(OATH_RECORD *record, size_t file_offset) {
+static int oath_update_challenge_field(const OATH_RECORD *record, const size_t file_offset) {
   return write_file(OATH_FILE, record->challenge, file_offset + (size_t) & ((OATH_RECORD *)0)->challenge,
                     sizeof(record->challenge), 0);
 }
 
-static int oath_enforce_increasing(OATH_RECORD *record, size_t file_offset, uint8_t challenge_len, uint8_t challenge[MAX_CHALLENGE_LEN]) {
-  if ((record->prop & OATH_PROP_INC)) {
+static int oath_enforce_increasing(OATH_RECORD *record, const size_t file_offset, const uint8_t challenge_len, uint8_t challenge[MAX_CHALLENGE_LEN]) {
+  if (record->prop & OATH_PROP_INC) {
     if (challenge_len != sizeof(record->challenge)) return -1;
     DBG_MSG("challenge_len=%u %hhu %hhu\n", challenge_len, record->challenge[7], challenge[7]);
     if (memcmp(record->challenge, challenge, sizeof(record->challenge)) > 0) return -2;
@@ -363,7 +362,8 @@ static int oath_increase_counter(OATH_RECORD *record) {
   return i >= 0 ? 0 : -1;
 }
 
-static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA512_DIGEST_LENGTH], uint8_t challenge_len, uint8_t challenge[MAX_CHALLENGE_LEN], bool truncated) {
+static uint8_t *oath_digest(const OATH_RECORD *record, uint8_t buffer[SHA512_DIGEST_LENGTH],
+                            const uint8_t challenge_len, uint8_t challenge[MAX_CHALLENGE_LEN], const bool truncated) {
   uint8_t digest_length;
   if ((record->key[0] & OATH_ALG_MASK) == OATH_ALG_SHA1) {
     hmac_sha1(record->key + 2, record->key_len - 2, challenge, challenge_len, buffer);
@@ -376,18 +376,18 @@ static uint8_t *oath_digest(OATH_RECORD *record, uint8_t buffer[SHA512_DIGEST_LE
     digest_length = SHA512_DIGEST_LENGTH;
   }
   if (!truncated) {
-    return (uint8_t*)(uintptr_t) digest_length;
+    return (uint8_t *)(uintptr_t)digest_length;
   }
 
-  uint8_t offset = buffer[digest_length - 1] & 0xF;
+  const uint8_t offset = buffer[digest_length - 1] & 0xF;
   buffer[offset] &= 0x7F;
   return buffer + offset;
 }
 
-static int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
+static int oath_calculate_by_offset(const size_t file_offset, uint8_t result[4]) {
   if (file_offset % sizeof(OATH_RECORD) != 0) return -2;
-  int size = get_file_size(OATH_FILE);
-  if (size < 0 || file_offset >= size) return -2;
+  const int size = get_file_size(OATH_FILE);
+  if (size < 0 || file_offset >= (size_t)size) return -2;
   uint8_t challenge_len;
   uint8_t challenge[MAX_CHALLENGE_LEN];
   OATH_RECORD record;
@@ -422,24 +422,25 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = 0;
   if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  uint8_t name_len = DATA[offset++];
-  uint8_t *name_ptr = &DATA[offset];
+  const uint8_t name_len = DATA[offset++];
+  const uint8_t *name_ptr = &DATA[offset];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
   if (offset > LC) EXCEPT(SW_WRONG_LENGTH);
 
   // find the record
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  uint32_t nRecords = size / sizeof(OATH_RECORD), i;
+  const uint32_t n_records = size / sizeof(OATH_RECORD);
+  uint32_t i;
   uint32_t file_offset;
   OATH_RECORD record;
-  for (i = 0; i != nRecords; ++i) {
+  for (i = 0; i != n_records; ++i) {
     file_offset = i * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) break;
   }
-  if (i == nRecords) EXCEPT(SW_DATA_INVALID);
+  if (i == n_records) EXCEPT(SW_DATA_INVALID);
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &file_offset, sizeof(file_offset)) < 0) return -1;
@@ -452,30 +453,33 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t offset = 0;
   if (LC <= 2) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[offset++] != OATH_TAG_NAME) EXCEPT(SW_WRONG_DATA);
-  uint8_t name_len = DATA[offset++];
+  const uint8_t name_len = DATA[offset++];
   if (name_len > MAX_NAME_LEN || name_len == 0) EXCEPT(SW_WRONG_DATA);
   offset += name_len;
   if (LC < offset) EXCEPT(SW_WRONG_LENGTH);
 
   // find the record
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
-  size_t nRecords = size / sizeof(OATH_RECORD), i;
-  size_t file_offset;
+  const size_t n_records = size / sizeof(OATH_RECORD);
+  size_t i;
+  size_t file_offset = 0;
   OATH_RECORD record;
-  for (i = 0; i != nRecords; ++i) {
+  for (i = 0; i != n_records; ++i) {
     file_offset = i * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, DATA + 2, name_len) == 0) break;
   }
-  if (i == nRecords) EXCEPT(SW_DATA_INVALID);
+  if (i == n_records) EXCEPT(SW_DATA_INVALID);
 
-  if ((record.prop & OATH_PROP_TOUCH)) {
+  if (record.prop & OATH_PROP_TOUCH) {
     if (!is_nfc()) {
       switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {
       case USER_PRESENCE_CANCEL:
       case USER_PRESENCE_TIMEOUT:
         EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+      default: // USER_PRESENCE_OK
+        break;
       }
     }
   }
@@ -487,7 +491,6 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
     if (DATA[offset++] != OATH_TAG_CHALLENGE) EXCEPT(SW_WRONG_DATA);
     challenge_len = DATA[offset++];
     if (challenge_len > MAX_CHALLENGE_LEN || challenge_len == 0) {
-      challenge_len = 0;
       EXCEPT(SW_WRONG_DATA);
     }
     if (offset + challenge_len > LC) EXCEPT(SW_WRONG_LENGTH);
@@ -495,10 +498,9 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
     offset += challenge_len;
     if (offset > LC) EXCEPT(SW_WRONG_LENGTH);
 
-    if (oath_enforce_increasing(&record, file_offset, challenge_len, challenge) < 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-
+    if (oath_enforce_increasing(&record, file_offset, challenge_len, challenge) < 0)
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
   } else if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
-
     if (oath_increase_counter(&record) < 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
     oath_update_challenge_field(&record, file_offset);
 
@@ -530,7 +532,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (P2 != 0x00 && P2 != 0x01) EXCEPT(SW_WRONG_P1P2);
 
-  int size = get_file_size(OATH_FILE);
+  const int size = get_file_size(OATH_FILE);
   if (size < 0) return -1;
 
   // store challenge in the first call
@@ -551,15 +553,16 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   OATH_RECORD record;
-  size_t nRecords = size / sizeof(OATH_RECORD), off_out = 0;
+  const size_t n_records = size / sizeof(OATH_RECORD);
+  size_t off_out = 0;
   while (off_out < LE) {
-    if (record_idx >= nRecords) {
+    if (record_idx >= n_records) {
       oath_remaining_type = REMAINING_NONE;
       break;
     }
-    size_t file_offset = record_idx * sizeof(OATH_RECORD);
+    const size_t file_offset = record_idx * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    size_t estimated_len = 2 + record.name_len + 2 + 1 + (oath_remaining_type == REMAINING_CALC_TRUNC ? 4 : SHA512_DIGEST_LENGTH);
+    const size_t estimated_len = 2 + record.name_len + 2 + 1 + (oath_remaining_type == REMAINING_CALC_TRUNC ? 4 : SHA512_DIGEST_LENGTH);
     if (estimated_len + off_out > LE) {
       // shouldn't increase the record_idx in this case
       SW = 0x61FF; // more data available
@@ -579,7 +582,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[off_out++] = record.key[1];
       continue;
     }
-    if ((record.prop & OATH_PROP_TOUCH)) {
+    if (record.prop & OATH_PROP_TOUCH) {
       RDATA[off_out++] = OATH_TAG_REQ_TOUCH;
       RDATA[off_out++] = 1;
       RDATA[off_out++] = record.key[1];
@@ -615,12 +618,12 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 }
 
-int oath_process_one_touch(char *output, size_t maxlen) {
+int oath_process_one_touch(char *output, const size_t maxlen) {
   uint32_t offset = 0xffffffff, otp_code;
   if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -2;
   int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
   if (ret < 0) return ret;
-  if (ret + 1 > maxlen) return -1;
+  if ((size_t)(ret + 1) > maxlen) return -1;
   output[ret] = '\0';
   otp_code = htobe32(otp_code);
   while (ret--) {
@@ -630,13 +633,14 @@ int oath_process_one_touch(char *output, size_t maxlen) {
   return 0;
 }
 
+// ReSharper disable once CppDFAConstantFunctionResult
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
 
   if (!is_validated && INS != OATH_INS_SELECT && INS != OATH_INS_VALIDATE) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
-  int ret = 0;
+  int ret;
   switch (INS) {
   case OATH_INS_PUT:
     ret = oath_put(capdu, rapdu);

@@ -9,7 +9,6 @@
 #include <openpgp.h>
 #include <pin.h>
 #include <piv.h>
-#include <string.h>
 
 #define PIN_RETRY_COUNTER 3
 #define SN_FILE "sn"
@@ -21,13 +20,29 @@ static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en
 
 static admin_device_config_t current_config;
 
-__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
-__attribute__((weak)) int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
-__attribute__((weak)) int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
-__attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
 
@@ -43,7 +58,7 @@ uint8_t cfg_is_piv_algo_extension_enable(void) { return current_config.piv_algo_
 
 void admin_poweroff(void) { pin.is_validated = 0; }
 
-int admin_install(uint8_t reset) {
+int admin_install(const uint8_t reset) {
   admin_poweroff();
   if (reset || get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
     current_config = default_cfg;
@@ -61,12 +76,12 @@ static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC == 0) {
     if (pin.is_validated) return 0;
-    int retries = pin_get_retries(&pin);
+    const int retries = pin_get_retries(&pin);
     if (retries < 0) return -1;
     EXCEPT(SW_PIN_RETRIES + retries);
   }
   uint8_t ctr;
-  int err = pin_verify(&pin, DATA, LC, &ctr);
+  const int err = pin_verify(&pin, DATA, LC, &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
@@ -76,7 +91,7 @@ static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int admin_change_pin(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  int err = pin_update(&pin, DATA, LC);
+  const int err = pin_update(&pin, DATA, LC);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   return 0;
@@ -122,7 +137,7 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  int ret = write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
+  const int ret = write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
   stop_blinking();
   return ret;
 }
@@ -157,7 +172,7 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   int ret;
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
-  if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
+  if (memcmp_s(DATA, "RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
 #ifndef FUZZ
   ret = pin_get_retries(&pin);
   if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
@@ -183,7 +198,7 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 void fill_sn(uint8_t *buf) {
-  int err = read_file(SN_FILE, buf, 0, 4);
+  const int err = read_file(SN_FILE, buf, 0, 4);
   if (err != 4) memset(buf, 0, 4);
 }
 
@@ -220,6 +235,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_VERIFY:
     ret = admin_verify(capdu, rapdu);
     goto done;
+
+  default:
+    break;
   }
 
 #ifndef FUZZ

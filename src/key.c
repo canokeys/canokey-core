@@ -8,7 +8,7 @@
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
-int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length) {
+int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   int off = 0;
 
   switch (key->meta.type) {
@@ -150,7 +150,7 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case RSA2048:
   case RSA3072:
   case RSA4096: {
-    int fail, len;
+    int fail;
     size_t length_size;
 
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
@@ -159,9 +159,9 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     uint8_t *data_ptr[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
 
     for (int i = 1; i <= 5; ++i) {
-      if ((p - buf) >= buf_len) return KEY_ERR_LENGTH;
+      if ((size_t)(p - buf) >= buf_len) return KEY_ERR_LENGTH;
       if (*p++ != i) return KEY_ERR_DATA;
-      len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+      const size_t len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
       if (fail) return KEY_ERR_LENGTH;
       if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
       p += length_size;
@@ -206,13 +206,13 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   key->meta.origin = KEY_ORIGIN_IMPORTED;
 
   const uint8_t *p = buf;
-  int fail, len;
+  int fail;
   size_t length_size;
 
   // Cardholder private key template
-  if (p + 2 - buf >= buf_len) return KEY_ERR_LENGTH;
+  if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
   if (*p++ != 0x7F || *p++ != 0x48) return KEY_ERR_DATA;
-  len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+  size_t len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
   if (fail) return KEY_ERR_LENGTH;
   if (len > MAX_KEY_TEMPLATE_LENGTH) return KEY_ERR_DATA;
   p += length_size;
@@ -225,16 +225,16 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case SM2:
   case ED25519:
   case X25519: {
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x92) return KEY_ERR_DATA;
-    int data_pri_key_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+    const size_t data_pri_key_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
     if (data_pri_key_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
     p += length_size;
 
-    int data_pub_key_len = 0; // this is optional
+    size_t data_pub_key_len = 0; // this is optional
     if (p < data_tag) {
-      if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+      if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
       if (*p++ == 0x99) {
         data_pub_key_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
         if (fail) return KEY_ERR_LENGTH;
@@ -244,13 +244,13 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
 
     // Concatenation of key data
     p = data_tag;
-    if (p + 2 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail || len != data_pri_key_len + data_pub_key_len) return KEY_ERR_DATA;
     p += length_size;
-    int n_leading_zeros = PRIVATE_KEY_LENGTH[key->meta.type] - data_pri_key_len;
-    if (p + data_pri_key_len - buf > buf_len) return KEY_ERR_LENGTH;
+    const int n_leading_zeros = PRIVATE_KEY_LENGTH[key->meta.type] - data_pri_key_len;
+    if ((size_t)(p + data_pri_key_len - buf) > buf_len) return KEY_ERR_LENGTH;
     memcpy(key->ecc.pri + n_leading_zeros, p, data_pri_key_len);
 
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
@@ -268,10 +268,8 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case RSA2048:
   case RSA3072:
   case RSA4096: {
-    int qinv_len, dp_len, dq_len;
-
     // 0x91: e
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x91) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
@@ -279,7 +277,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     p += length_size;
 
     // 0x92: p
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x92) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
@@ -287,7 +285,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     p += length_size;
 
     // 0x93: q
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x93) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
@@ -295,38 +293,38 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     p += length_size;
 
     // 0x94: qinv, may be less than p/q's length
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x94) return KEY_ERR_DATA;
-    qinv_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+    const size_t qinv_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
     if (qinv_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
     p += length_size;
 
     // 0x94: dp, may be less than p/q's length
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x95) return KEY_ERR_DATA;
-    dp_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+    const size_t dp_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
     if (dp_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
     p += length_size;
 
     // 0x94: dq, may be less than p/q's length
-    if (p + 1 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x96) return KEY_ERR_DATA;
-    dq_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+    const size_t dq_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
     if (dq_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
 
     // Concatenation of key data
     p = data_tag;
-    if (p + 2 - buf >= buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
     if (len != PRIVATE_KEY_LENGTH[key->meta.type] * 2 + qinv_len + dp_len + dq_len + E_LENGTH) return KEY_ERR_DATA;
     p += length_size;
 
-    if (p + len - buf > buf_len) return KEY_ERR_LENGTH;
+    if ((size_t)(p + len - buf) > buf_len) return KEY_ERR_LENGTH;
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
     memcpy(key->rsa.e, p, E_LENGTH);
     p += E_LENGTH;
@@ -361,13 +359,13 @@ int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
 }
 
 int ck_read_key(const char *path, ck_key_t *key) {
-  int err = ck_read_key_metadata(path, &key->meta);
+  const int err = ck_read_key_metadata(path, &key->meta);
   if (err < 0) return err;
   return read_file(path, key->data, 0, sizeof(rsa_key_t));
 }
 
 int ck_write_key(const char *path, const ck_key_t *key) {
-  int err = write_file(path, key->data, 0, sizeof(rsa_key_t), 1);
+  const int err = write_file(path, key->data, 0, sizeof(rsa_key_t), 1);
   if (err < 0) return err;
   return ck_write_key_metadata(path, &key->meta);
 }
