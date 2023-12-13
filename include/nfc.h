@@ -56,6 +56,7 @@
 #define FM_EEPROM_USER_CFG0  0x0390
 #define FM_EEPROM_USER_CFG1  0x0391
 #define FM_EEPROM_USER_CFG2  0x0392
+#define FM_EEPROM_ATS        0x03B0
 #define FM_EEPROM_ATQA       0x03BC
 #define FM_EEPROM_CRC8       0x03BB
 
