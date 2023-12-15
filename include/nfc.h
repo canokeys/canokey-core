@@ -27,6 +27,9 @@
 #define FM_REG_NFC_CFG       0xD
 #define FM_REG_REGU_CFG      0xE
 
+#define FM_EEPROM_ATQA       0x03A0
+#define FM_EEPROM_ATS        0x03B0
+
 #define RF_STATE_MASK 0xE0
 
 #elif NFC_CHIP == NFC_CHIP_FM11NT

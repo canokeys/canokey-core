@@ -66,7 +66,7 @@ void fm_csn_low(void);
  */
 void fm_csn_high(void);
 #if NFC_CHIP == NFC_CHIP_FM11NC
-void spi_transmit(uint8_t *buf, uint8_t len);
+void spi_transmit(const uint8_t *buf, uint8_t len);
 void spi_receive(uint8_t *buf, uint8_t len);
 #elif NFC_CHIP == NFC_CHIP_FM11NT
 void i2c_start(void);
