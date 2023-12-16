@@ -121,23 +121,25 @@ void fm_write_fifo(uint8_t *buf, uint8_t len) {
 void fm11_init(void) {
 #if NFC_CHIP == NFC_CHIP_FM11NC
   uint8_t buf[7];
-  uint8_t data1[] = {0x44, 0x00, 0x04, 0x20};
-  uint8_t data2[] = {0x05, 0x72, 0x02, 0x00, 0xB3, 0x99, 0x00};
+  uint8_t atqa_sak[] = {0x44, 0x00, 0x04, 0x20};
+  uint8_t ats[] = {0x05, 0x72, 0x02, 0x00, 0xB3, 0x99, 0x00};
   do {
-    fm_write_eeprom(0x3A0, data1, sizeof(data1));
-    fm_read_eeprom(0x3A0, buf, sizeof(data1));
-  } while (memcmp(data1, buf, sizeof(data1)) != 0);
+    fm_write_eeprom(FM_EEPROM_ATQA, atqa_sak, sizeof(atqa_sak));
+    fm_read_eeprom(FM_EEPROM_ATQA, buf, sizeof(atqa_sak));
+  } while (memcmp(atqa_sak, buf, sizeof(atqa_sak)) != 0);
   do {
-    fm_write_eeprom(0x3B0, data2, sizeof(data2));
-    fm_read_eeprom(0x3B0, buf, sizeof(data2));
-  } while (memcmp(data2, buf, sizeof(data2)) != 0);
+    fm_write_eeprom(FM_EEPROM_ATS, ats, sizeof(ats));
+    fm_read_eeprom(FM_EEPROM_ATS, buf, sizeof(ats));
+  } while (memcmp(ats, buf, sizeof(ats)) != 0);
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   uint8_t crc_buffer[13];
   const uint8_t user_cfg[] = {0x91, 0x82, 0x21, 0xCD};
   const uint8_t atqa_sak[] = {0x44, 0x00, 0x04, 0x20};
+  const uint8_t ats[] = {0x05, 0x72, 0x80, 0x57, 0x00, 0x99, 0x00};
   fm_csn_low();
-  device_delay_us(200);
+  device_delay_us(500);
   fm_write_eeprom(FM_EEPROM_USER_CFG0, user_cfg, sizeof(user_cfg));
+  fm_write_eeprom(FM_EEPROM_ATS, ats, sizeof(ats));
   fm_write_eeprom(FM_EEPROM_ATQA, atqa_sak, sizeof(atqa_sak));
   fm_read_eeprom(FM_EEPROM_SN, crc_buffer, 9);
   DBG_MSG("SN: "); PRINT_HEX(crc_buffer, 9);
