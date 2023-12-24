@@ -1099,7 +1099,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   RDATA[0] = 0x05;
-  RDATA[1] = 0x03;
+  RDATA[1] = 0x04;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;
@@ -1110,6 +1110,23 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   fill_sn(RDATA);
   LL = 4;
+  return 0;
+}
+
+static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);
+  if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  if (P1 == 0x01) {
+    if (read_file(ALGORITHM_EXT_CONFIG_PATH, RDATA, 0, sizeof(alg_ext_cfg)) < 0) return -1;
+    LL = sizeof(alg_ext_cfg);
+  } else {
+    if (LC != sizeof(alg_ext_cfg)) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[0] != 0 && DATA[0] != 1) EXCEPT(SW_WRONG_DATA);
+    // We trust the rest data because no dangerous result will be caused even if the IDs are not unique.
+    if (write_file(ALGORITHM_EXT_CONFIG_PATH, DATA, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
+  }
+
   return 0;
 }
 
@@ -1169,6 +1186,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GET_METADATA:
     ret = piv_get_metadata(capdu, rapdu);
+    break;
+  case PIV_INS_ALGORITHM_EXTENSION:
+    ret = piv_algorithm_extension(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);

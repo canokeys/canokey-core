@@ -20,6 +20,8 @@
 #define PIV_INS_IMPORT_ASYMMETRIC_KEY        0xFE
 #define PIV_INS_SET_MANAGEMENT_KEY           0xFF
 
+#define PIV_INS_ALGORITHM_EXTENSION          0xEE
+
 typedef struct {
   uint8_t enabled;
   uint8_t ed25519;
