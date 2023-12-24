@@ -1114,6 +1114,10 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+
   if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
