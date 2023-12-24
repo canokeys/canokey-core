@@ -20,6 +20,16 @@
 #define PIV_INS_IMPORT_ASYMMETRIC_KEY        0xFE
 #define PIV_INS_SET_MANAGEMENT_KEY           0xFF
 
+typedef struct {
+  uint8_t enabled;
+  uint8_t ed25519;
+  uint8_t rsa3072;
+  uint8_t rsa4096;
+  uint8_t x25519;
+  uint8_t secp256k1;
+  uint8_t sm2;
+} __packed piv_algorithm_extension_config_t;
+
 int piv_install(uint8_t reset);
 void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);

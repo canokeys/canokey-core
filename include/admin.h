@@ -28,7 +28,6 @@
 #define ADMIN_P1_CFG_NDEF 0x04
 #define ADMIN_P1_CFG_WEBUSB_LANDING 0x05
 #define ADMIN_P1_CFG_KBD_WITH_RETURN 0x06
-#define ADMIN_P1_CFG_PIV_ALGO_EXT 0x07
 
 typedef struct {
     uint32_t reserved;
@@ -38,7 +37,6 @@ typedef struct {
     uint32_t ndef_en : 1;
     uint32_t webusb_landing_en : 1;
     uint32_t kbd_with_return_en : 1;
-    uint32_t piv_algo_ext_en : 1;
 } __packed admin_device_config_t;
 
 void admin_poweroff(void);
@@ -54,6 +52,5 @@ uint8_t cfg_is_kbd_interface_enable(void);
 uint8_t cfg_is_ndef_enable(void);
 uint8_t cfg_is_webusb_landing_enable(void);
 uint8_t cfg_is_kbd_with_return_enable(void);
-uint8_t cfg_is_piv_algo_extension_enable(void);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_

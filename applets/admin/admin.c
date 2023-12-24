@@ -54,8 +54,6 @@ uint8_t cfg_is_webusb_landing_enable(void) { return current_config.webusb_landin
 
 uint8_t cfg_is_kbd_with_return_enable(void) { return current_config.kbd_with_return_en; }
 
-uint8_t cfg_is_piv_algo_extension_enable(void) { return current_config.piv_algo_ext_en; }
-
 void admin_poweroff(void) { pin.is_validated = 0; }
 
 int admin_install(const uint8_t reset) {
@@ -130,9 +128,6 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_P1_CFG_KBD_WITH_RETURN:
     current_config.kbd_with_return_en = P2 & 1;
-    break;
-  case ADMIN_P1_CFG_PIV_ALGO_EXT:
-    current_config.piv_algo_ext_en = P2 & 1;
     break;
   default:
     EXCEPT(SW_WRONG_P1P2);
