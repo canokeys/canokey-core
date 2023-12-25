@@ -1129,6 +1129,8 @@ static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
     if (DATA[0] != 0 && DATA[0] != 1) EXCEPT(SW_WRONG_DATA);
     // We trust the rest data because no dangerous result will be caused even if the IDs are not unique.
     if (write_file(ALGORITHM_EXT_CONFIG_PATH, DATA, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
+    // Effective immediately
+    memcpy(&alg_ext_cfg, DATA, sizeof(alg_ext_cfg));
   }
 
   return 0;
