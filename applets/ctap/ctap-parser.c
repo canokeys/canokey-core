@@ -314,7 +314,7 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_int_checked(&map, &key);
         CHECK_CBOR_RET(ret);
-        if (key != COSE_ALG_ES256 && key != COSE_ALG_ECDH_ES_HKDF_256) return CTAP2_ERR_UNHANDLED_REQUEST;
+        if (key != COSE_ALG_ECDH_ES_HKDF_256) return CTAP2_ERR_UNHANDLED_REQUEST;
         ++parsed_keys;
         break;
 

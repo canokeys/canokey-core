@@ -10,6 +10,9 @@
 #include <memzero.h>
 #include <rand.h>
 #include <device.h>
+#include <sm3.h>
+
+extern CTAP_sm2_attr ctap_sm2_attr;
 
 static uint8_t pin_token[PIN_TOKEN_SIZE];
 static ecc_key_t ka_key;
@@ -212,9 +215,8 @@ key_type_t cose_alg_to_key_type(int alg) {
     return SECP256R1;
   case COSE_ALG_EDDSA:
     return ED25519;
-  case COSE_ALG_SM2:
-    return SM2;
   default:
+    if (ctap_sm2_attr.enabled && alg == ctap_sm2_attr.algo_id) return SM2;
     return KEY_TYPE_PKC_END;
   }
 }
@@ -282,18 +284,17 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, ui
   ecc_key_t key;
   uint8_t kh_key[KH_KEY_SIZE];
 
-  if (alg_type != COSE_ALG_ES256 && alg_type != COSE_ALG_EDDSA && alg_type != COSE_ALG_SM2) {
+  kh->alg_type = alg_type;
+  const key_type_t key_type = cose_alg_to_key_type(alg_type);
+  if (key_type == KEY_TYPE_PKC_END) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
   }
 
-  kh->alg_type = alg_type;
-  key_type_t key_type = cose_alg_to_key_type(alg_type);
-
   kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
   kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
 
-  int ret = read_kh_key(kh_key);
+  const int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
   do {
     generate_credential_id_nonce_tag(kh, kh_key, &key);
@@ -340,9 +341,13 @@ size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig
 }
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
-  key_type_t key_type = cose_alg_to_key_type(alg_type);
+  const key_type_t key_type = cose_alg_to_key_type(alg_type);
   DBG_MSG("Sign key type: %d, private key: ", key_type);
   PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
+  if (key_type == KEY_TYPE_PKC_END) {
+    DBG_MSG("Unsupported algo key_type\n");
+    return -1;
+  }
 
   if (key_type == ED25519) {
     if (ecc_complete_key(key_type, key) < 0) {
@@ -354,20 +359,28 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
       return -1;
     }
     return SIGNATURE_LENGTH[key_type];
+  }
+  if (key_type == SM2) {
+    uint8_t z[SM3_DIGEST_LENGTH];
+    sm2_z(SM2_ID_DEFAULT, key, z);
+    sm3_init();
+    sm3_update(z, SM3_DIGEST_LENGTH);
+    sm3_update(input, len);
+    sm3_final(sig);
   } else {
     sha256_init();
     sha256_update(input, len);
     sha256_final(sig);
-    DBG_MSG("Digest: ");
-    PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
-    if (ecc_sign(key_type, key, sig, PRIVATE_KEY_LENGTH[key_type], sig) < 0) {
-      ERR_MSG("Failed to sign\n");
-      return -1;
-    }
-    DBG_MSG("Raw signature: ");
-    PRINT_HEX(sig, SIGNATURE_LENGTH[key_type]);
-    return (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_type], sig, sig);
   }
+  DBG_MSG("Digest: ");
+  PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
+  if (ecc_sign(key_type, key, sig, PRIVATE_KEY_LENGTH[key_type], sig) < 0) {
+    ERR_MSG("Failed to sign\n");
+    return -1;
+  }
+  DBG_MSG("Raw signature: ");
+  PRINT_HEX(sig, SIGNATURE_LENGTH[key_type]);
+  return ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_type], sig, sig);
 }
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
