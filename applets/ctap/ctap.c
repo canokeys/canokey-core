@@ -104,6 +104,21 @@ int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(CTAP_CERT_FILE, DATA, 0, LC, 1);
 }
 
+int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  const int ret = read_attr(CTAP_CERT_FILE, SM2_ATTR, RDATA, sizeof(ctap_sm2_attr));
+  if (ret < 0) return ret;
+  LL = ret;
+  return 0;
+}
+
+int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC != sizeof(ctap_sm2_attr)) EXCEPT(SW_WRONG_LENGTH);
+  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, DATA, sizeof(ctap_sm2_attr));
+  memcpy(&ctap_sm2_attr, DATA, sizeof(ctap_sm2_attr));
+  return ret;
+}
+
 static int build_ecdsa_cose_key(uint8_t *data, int algo, int curve) {
   uint8_t buf[80];
   CborEncoder encoder, map_encoder;

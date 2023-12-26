@@ -187,7 +187,7 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
     CHECK_PARSER_RET(ret);
     if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 ||
                      cur_alg_type == COSE_ALG_EDDSA ||
-                     ctap_sm2_attr.enabled && cur_alg_type == ctap_sm2_attr.algo_id)) {
+                     (ctap_sm2_attr.enabled && cur_alg_type == ctap_sm2_attr.algo_id))) {
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#authenticatorMakeCredential
       //
       // > This sequence is ordered from most preferred (by the RP) to least preferred.
