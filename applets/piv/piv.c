@@ -255,7 +255,7 @@ int piv_install(const uint8_t reset) {
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   // Algorithm extensions
-  alg_ext_cfg.enabled = 0;
+  alg_ext_cfg.enabled = 1;
   alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
   alg_ext_cfg.rsa3072 = ALG_RSA_3072_DEFAULT;
   alg_ext_cfg.rsa4096 = ALG_RSA_4096_DEFAULT;
