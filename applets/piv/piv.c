@@ -42,7 +42,7 @@
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
 #define ALG_ED25519_DEFAULT   0x22 // defined in https://github.com/go-piv/piv-go/pull/69
-#define ALG_RSA_3072_DEFAULT  0x50
+#define ALG_RSA_3072_DEFAULT  0x05 // defined in NIST SP 800-78-5 (Initial Public Draft)
 #define ALG_RSA_4096_DEFAULT  0x51
 #define ALG_X25519_DEFAULT    0x52
 #define ALG_SECP256K1_DEFAULT 0x53
