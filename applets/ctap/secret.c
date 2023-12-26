@@ -361,6 +361,10 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
     return SIGNATURE_LENGTH[key_type];
   }
   if (key_type == SM2) {
+    if (ecc_complete_key(key_type, key) < 0) {  // Compute Z requiring the public key
+      ERR_MSG("Failed to complete key\n");
+      return -1;
+    }
     uint8_t z[SM3_DIGEST_LENGTH];
     sm2_z(SM2_ID_DEFAULT, key, z);
     sm3_init();
@@ -378,6 +382,10 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
     ERR_MSG("Failed to sign\n");
     return -1;
   }
+
+  if (key_type == SM2) return SIGNATURE_LENGTH[key_type];
+
+  // For ES256, convert the signature to ansi format
   DBG_MSG("Raw signature: ");
   PRINT_HEX(sig, SIGNATURE_LENGTH[key_type]);
   return ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_type], sig, sig);
