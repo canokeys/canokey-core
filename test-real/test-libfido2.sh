@@ -7,6 +7,7 @@ export USER=`id -nu`
 PIN=123456
 NUMBER_OF_KEYS=8
 NON_TTY="setsid -w"
+ALGO_LIST=(es256 eddsa rs256)
 
 oneTimeSetUp() {
     # rm -rf "$TEST_TMP_DIR"
@@ -28,32 +29,34 @@ FIDO2MakeCred() {
     local rpid=$1
     local username=$2
     local userid=$(dd status=none if=/dev/urandom bs=64 count=1 | base64 -w 0)
+    local algo=${ALGO_LIST[$(($RANDOM%3))]}
     openssl rand -base64 32 >"$TEST_TMP_DIR/cred_param" # client data hash
     assertTrue "openssl failed" $?
     echo "$rpid" >>"$TEST_TMP_DIR/cred_param"
     echo "$username" >>"$TEST_TMP_DIR/cred_param"
     echo "$userid" >>"$TEST_TMP_DIR/cred_param" # user id
-    ToolHelper fido2-cred -M -r -b -i "$TEST_TMP_DIR/cred_param" >"$TEST_TMP_DIR/mc"
+    ToolHelper fido2-cred -M -r -b -i "$TEST_TMP_DIR/cred_param" $algo >"$TEST_TMP_DIR/mc"
     assertTrue "fido2-cred -M failed" $?
     local largeBlobKey=$(tail -n 1 "$TEST_TMP_DIR/mc")
-    head -n -1 "$TEST_TMP_DIR/mc" | fido2-cred -V -o "$TEST_TMP_DIR/verified"
+    head -n -1 "$TEST_TMP_DIR/mc" | fido2-cred -V -o "$TEST_TMP_DIR/verified" $algo
     local ret=$?
     assertTrue "fido2-cred -V failed" $ret
     if [[ $ret != 0 ]];then
         return 1
     fi
     local credid=$(head -n 1 "$TEST_TMP_DIR/verified")
-    echo $userid $credid $largeBlobKey
+    echo $userid $credid $largeBlobKey $algo
 }
 
 FIDO2GetAssert() {
     local rpid=$1
     local credid=$2
+    local algo=$3
     local userid=$(dd status=none if=/dev/urandom bs=64 count=1 | base64 -w 0)
     openssl rand -base64 32 >"$TEST_TMP_DIR/assert_param" # client data hash
     echo "$rpid" >>"$TEST_TMP_DIR/assert_param"
     echo "$credid" >>"$TEST_TMP_DIR/assert_param"
-    ToolHelper fido2-assert -G -b -i "$TEST_TMP_DIR/assert_param" >"$TEST_TMP_DIR/assert"
+    ToolHelper fido2-assert -G -b -i "$TEST_TMP_DIR/assert_param" $algo >"$TEST_TMP_DIR/assert"
     assertTrue "fido2-assert -G failed" $?
     local largeBlobKey=$(tail -n 1 "$TEST_TMP_DIR/assert")
     echo $largeBlobKey
@@ -196,8 +199,9 @@ makeCredAndStore() {
     fi
     local userid=${fields[0]}
     local credid=${fields[1]}
-    # RpID UserID UserName CredID
-    echo $1 $userid $2 $credid | tee -a "$TEST_TMP_DIR/rks"
+    local algo=${fields[3]}
+    # RpID UserID UserName CredID Algorithm
+    echo $1 $userid $2 $credid $algo | tee -a "$TEST_TMP_DIR/rks"
 }
 
 setPINforTest() {
@@ -284,11 +288,12 @@ test_LargeBlob() {
     for i in $randSeq; do
         local rpid=$(makeRPID $i)
         local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
-        if [[ ${#fields[@]} != 4 ]];then
+        if [[ ${#fields[@]} < 5 ]];then
             break;
         fi
         local credid=${fields[3]}
-        fields=($(FIDO2GetAssert "$rpid" "$credid"))
+        local algo=${fields[4]}
+        fields=($(FIDO2GetAssert "$rpid" "$credid" $algo))
         echo ${fields[0]} > "$TEST_TMP_DIR/blobkey"
         makeBlob $i > "$TEST_TMP_DIR/blob"
         FIDO2SetBlob "$rpid" "$credid" || return 1
@@ -297,7 +302,7 @@ test_LargeBlob() {
     for i in $randSeq; do
         rpid=$(makeRPID $i)
         fields=($(grep "$rpid" "$TEST_TMP_DIR/rks"))
-        if [[ ${#fields[@]} != 4 ]];then
+        if [[ ${#fields[@]} < 4 ]];then
             break;
         fi
         credid=${fields[3]}
@@ -317,7 +322,7 @@ test_DelRk() {
     for i in $randSeq; do
         local rpid=$(makeRPID $i)
         local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
-        if [[ ${#fields[@]} != 4 ]];then
+        if [[ ${#fields[@]} < 4 ]];then
             break;
         fi
         local credid=${fields[3]}
@@ -338,7 +343,8 @@ skip_test_Debug() {
     makeCredAndStore $rpid thisUser
     local fields=($(grep $rpid "$TEST_TMP_DIR/rks"))
     local credid=${fields[3]}
-    fields=($(FIDO2GetAssert "$rpid" "$credid"))
+    local algo=${fields[4]}
+    fields=($(FIDO2GetAssert "$rpid" "$credid" $algo))
     # echo "$TEST_TMP_DIR/assert"
     # cat "$TEST_TMP_DIR/assert"
     echo "Blob key is ${fields[0]}"
