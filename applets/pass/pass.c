@@ -9,6 +9,21 @@
 #define SLOT_SHORT 0
 #define SLOT_LONG  1
 
+typedef enum {
+  PASS_SLOT_OFF,
+  PASS_SLOT_OATH,
+  PASS_SLOT_STATIC,
+} slot_type_t;
+
+typedef struct {
+  slot_type_t type;
+  union {
+    uint8_t password[33]; // 1-byte length + at most 32-byte content
+    uint32_t oath_offset;
+  };
+  uint8_t with_enter;
+} __packed pass_slot_t;
+
 static pass_slot_t slots[2];
 
 int pass_install(const uint8_t reset) {
@@ -32,17 +47,18 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
 
   switch (slot->type) {
   case PASS_SLOT_OFF:
+    break;
+
   case PASS_SLOT_STATIC:
-    // For OFF and STATIC, the second byte is with_enter
-    buffer[1] = slot->with_enter;
-    length++;
+    // For STATIC, the second byte is with_enter
+    buffer[length++] = slot->with_enter;
     break;
 
   case PASS_SLOT_OATH:
     // For OATH, the next 4 bytes are oath_offset
-    memcpy(&buffer[1], &slot->oath_offset, sizeof(slot->oath_offset));
-    buffer[5] = slot->with_enter;
-    length += 5;
+    memcpy(&buffer[length], &slot->oath_offset, sizeof(slot->oath_offset));
+    length += sizeof(slot->oath_offset);
+    buffer[length++] = slot->with_enter;
     break;
   }
 
@@ -81,8 +97,8 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
         EXCEPT(SW_WRONG_DATA);
       }
       slots[i].type = type;
-      memcpy(slots[i].password, &DATA[index], sizeof(slots[0].password));
-      index += sizeof(slots[0].password);
+      memcpy(slots[i].password, &DATA[index], DATA[index]);
+      index += DATA[index];
       slots[i].with_enter = DATA[index++];
       break;
 

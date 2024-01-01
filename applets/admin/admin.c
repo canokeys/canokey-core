@@ -7,6 +7,7 @@
 #include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
+#include <pass.h>
 #include <pin.h>
 #include <piv.h>
 
@@ -180,6 +181,8 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) return ret;
   ret = ndef_install(1);
   if (ret < 0) return ret;
+  ret = pass_install(1);
+  if (ret < 0) return ret;
   ret = admin_install(1);
   if (ret < 0) return ret;
   return 0;
@@ -254,6 +257,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
     ret = ndef_toggle_read_only(capdu, rapdu);
     break;
+  case ADMIN_INS_RESET_PASS:
+    ret = pass_install(1);
+    break;
   case ADMIN_INS_CHANGE_PIN:
     ret = admin_change_pin(capdu, rapdu);
     break;
@@ -268,6 +274,12 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_READ_CONFIG:
     ret = admin_read_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_READ_PASS_CONFIG:
+    ret = pass_read_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_WRITE_PASS_CONFIG:
+    ret = pass_write_config(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);

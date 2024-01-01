@@ -5,6 +5,7 @@
 #include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
+#include <pass.h>
 #include <piv.h>
 
 void applets_install(void) {
@@ -14,6 +15,7 @@ void applets_install(void) {
   ctap_install(0);
   admin_install(0);
   ndef_install(0);
+  pass_install(0);
 }
 
 void applets_poweroff(void) {
