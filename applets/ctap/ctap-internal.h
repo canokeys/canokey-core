@@ -369,7 +369,7 @@ typedef struct {
   uint8_t enabled;
   int32_t curve_id;
   int32_t algo_id;
-} CTAP_sm2_attr;
+} __packed CTAP_sm2_attr;
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
