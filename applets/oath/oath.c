@@ -384,7 +384,7 @@ static uint8_t *oath_digest(const OATH_RECORD *record, uint8_t buffer[SHA512_DIG
   return buffer + offset;
 }
 
-static int oath_calculate_by_offset(const size_t file_offset, uint8_t result[4]) {
+int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   if (file_offset % sizeof(OATH_RECORD) != 0) return -2;
   const int size = get_file_size(OATH_FILE);
   if (size < 0 || file_offset >= (size_t)size) return -2;
@@ -616,21 +616,6 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   if (oath_remaining_type == REMAINING_LIST) return oath_list(capdu, rapdu);
   if (oath_remaining_type == REMAINING_CALC_FULL || oath_remaining_type == REMAINING_CALC_TRUNC) return oath_calculate_all(capdu, rapdu);
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-}
-
-int oath_process_one_touch(char *output, const size_t maxlen) {
-  uint32_t offset = 0xffffffff, otp_code;
-  if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -2;
-  int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
-  if (ret < 0) return ret;
-  if ((size_t)(ret + 1) > maxlen) return -1;
-  output[ret] = '\0';
-  otp_code = htobe32(otp_code);
-  while (ret--) {
-    output[ret] = otp_code % 10 + '0';
-    otp_code /= 10;
-  }
-  return 0;
 }
 
 // ReSharper disable once CppDFAConstantFunctionResult

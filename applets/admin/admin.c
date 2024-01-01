@@ -16,7 +16,7 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1, .kbd_with_return_en = 1};
+static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
 
 static admin_device_config_t current_config;
 
@@ -46,13 +46,9 @@ __attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
 
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
 
-uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_en; }
-
 uint8_t cfg_is_ndef_enable(void) { return current_config.ndef_en; }
 
 uint8_t cfg_is_webusb_landing_enable(void) { return current_config.webusb_landing_en; }
-
-uint8_t cfg_is_kbd_with_return_enable(void) { return current_config.kbd_with_return_en; }
 
 uint8_t cfg_is_piv_algo_extension_enable(void) { return current_config.piv_algo_ext_en; }
 
@@ -119,17 +115,11 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_P1_CFG_LED_ON:
     current_config.led_normally_on = P2 & 1;
     break;
-  case ADMIN_P1_CFG_KBDIFACE:
-    current_config.kbd_interface_en = P2 & 1;
-    break;
   case ADMIN_P1_CFG_NDEF:
     current_config.ndef_en = P2 & 1;
     break;
   case ADMIN_P1_CFG_WEBUSB_LANDING:
     current_config.webusb_landing_en = P2 & 1;
-    break;
-  case ADMIN_P1_CFG_KBD_WITH_RETURN:
-    current_config.kbd_with_return_en = P2 & 1;
     break;
   case ADMIN_P1_CFG_PIV_ALGO_EXT:
     current_config.piv_algo_ext_en = P2 & 1;
@@ -147,11 +137,9 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LE < 5) EXCEPT(SW_WRONG_LENGTH);
 
   RDATA[0] = current_config.led_normally_on;
-  RDATA[1] = current_config.kbd_interface_en;
-  RDATA[2] = ndef_get_read_only();
-  RDATA[3] = current_config.ndef_en;
-  RDATA[4] = current_config.webusb_landing_en;
-  RDATA[5] = current_config.kbd_with_return_en;
+  RDATA[1] = ndef_get_read_only();
+  RDATA[2] = current_config.ndef_en;
+  RDATA[3] = current_config.webusb_landing_en;
   LL = 6;
 
   return 0;

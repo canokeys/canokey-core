@@ -66,6 +66,6 @@ typedef struct {
 void oath_poweroff(void);
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
-int oath_process_one_touch(char *output, size_t maxlen);
+int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]);
 
 #endif // CANOKEY_CORE_OATH_OATH_H_

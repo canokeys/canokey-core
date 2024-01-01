@@ -22,7 +22,7 @@ void device_loop(uint8_t has_touch) {
   WebUSB_Loop();
   if (has_touch &&                  // hardware features the touch pad
       !device_is_blinking() &&      // applets are not waiting for touch
-      cfg_is_kbd_interface_enable() // keyboard emulation enabled
+      device_get_tick() > 2000      // ignore touch for the first 2 seconds
   )
     KBDHID_Loop();
 }
