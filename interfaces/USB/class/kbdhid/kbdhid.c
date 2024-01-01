@@ -29,6 +29,7 @@ static uint8_t ascii2keycode(char ch) {
     return 4 + ch - 'A';
 
   switch(ch) {
+  case 13: return 0x28; // \r
   case 32: return 0x2C; // space
   case 33: return 0x1E; // !
   case 34: return 0x34; // "
@@ -107,7 +108,7 @@ uint8_t KBDHID_Loop(void) {
     if (touch != TOUCH_NO) {
       const int len = pass_handle_touch(touch, key_sequence);
       if (len <= 0) {
-        DBG_MSG("HID: do nothing\n");
+        DBG_MSG("Do nothing\n");
         return 0;
       }
       key_sequence[len] = 0;

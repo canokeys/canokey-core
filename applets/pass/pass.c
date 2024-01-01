@@ -33,7 +33,7 @@ int pass_install(const uint8_t reset) {
   }
 
   memzero(slots, sizeof(slots));
-  if (write_file(PASS_FILE, slots, 0, 0, 1) < 0) return -1;
+  if (write_file(PASS_FILE, slots, 0, sizeof(slots), 1) < 0) return -1;
 
   return 0;
 }
@@ -91,14 +91,13 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
       break;
 
     case PASS_SLOT_STATIC:
-      if (index + sizeof(slots[0].password) + sizeof(slots[0].with_enter) > LC ||
-          slots[i].password[0] > PASS_MAX_PASSWORD_LENGTH) {
-        // Not enough data for PASS_SLOT_STATIC or password is too long
+      if (DATA[index] > PASS_MAX_PASSWORD_LENGTH) {
+        // Password is too long
         EXCEPT(SW_WRONG_DATA);
       }
       slots[i].type = type;
-      memcpy(slots[i].password, &DATA[index], DATA[index]);
-      index += DATA[index];
+      memcpy(slots[i].password, &DATA[index], DATA[index] + 1);
+      index += DATA[index] + 1;
       slots[i].with_enter = DATA[index++];
       break;
 
