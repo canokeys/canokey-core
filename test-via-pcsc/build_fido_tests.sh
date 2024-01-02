@@ -26,6 +26,7 @@ patch -p1 -u -d ~/.local/lib/python3.*/site-packages/fido2 <<EOF
                  pin_uv_param=pin_uv_param,
              )
 EOF
+patch -p1 -u -d ~/.local/lib/python3.*/site-packages/fido2 <../test-via-pcsc/fido2_SM2_COSE_key.patch
 popd
 
 if [ ! -d libfido2 ];then

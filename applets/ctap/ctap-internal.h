@@ -19,6 +19,7 @@
 #define PIN_CTR_ATTR    0x03
 #define KH_KEY_ATTR     0x04
 #define HE_KEY_ATTR     0x05
+#define SM2_ATTR        0x06
 #define DC_FILE         "ctap_dc"
 #define DC_GENERAL_ATTR 0x00
 #define DC_META_FILE    "ctap_dm"
@@ -363,6 +364,12 @@ typedef struct {
   uint8_t pin_uv_auth_protocol;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
 } CTAP_large_blobs;
+
+typedef struct {
+  uint8_t enabled;
+  int32_t curve_id;
+  int32_t algo_id;
+} __packed CTAP_sm2_attr;
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu);
 int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu);
