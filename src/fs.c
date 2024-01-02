@@ -29,7 +29,8 @@ int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return read_length;
-  err_close:
+
+err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }

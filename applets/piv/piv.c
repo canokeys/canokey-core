@@ -35,17 +35,18 @@
 #define CARD_ADMIN_KEY_PATH        "piv-admk" // 9B
 
 // alg
+#define ALGORITHM_EXT_CONFIG_PATH  "piv-alg"
 #define ALG_DEFAULT   0x00
 #define ALG_TDEA_3KEY 0x03
 #define ALG_RSA_2048  0x07
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
-#define ALG_ED25519   0x22 // Not defined in NIST SP 800-78-4, defined in https://github.com/go-piv/piv-go/pull/69
-#define ALG_RSA_3072  0x50 // Not defined in NIST SP 800-78-4
-#define ALG_RSA_4096  0x51 // Not defined in NIST SP 800-78-4
-#define ALG_X25519    0x52 // Not defined in NIST SP 800-78-4
-#define ALG_SECP256K1 0x53 // Not defined in NIST SP 800-78-4
-#define ALG_SM2       0x54 // Not defined in NIST SP 800-78-4
+#define ALG_ED25519_DEFAULT   0x22 // defined in https://github.com/go-piv/piv-go/pull/69
+#define ALG_RSA_3072_DEFAULT  0x05 // defined in NIST SP 800-78-5 (Initial Public Draft)
+#define ALG_RSA_4096_DEFAULT  0x51
+#define ALG_X25519_DEFAULT    0x52
+#define ALG_SECP256K1_DEFAULT 0x53
+#define ALG_SM2_DEFAULT       0x54
 
 #define TDEA_BLOCK_SIZE      8
 
@@ -97,6 +98,7 @@ static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaini
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
 static uint32_t last_touch = UINT32_MAX;
+static piv_algorithm_extension_config_t alg_ext_cfg;
 
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
@@ -126,45 +128,50 @@ static key_type_t algo_id_to_key_type(const uint8_t id) {
     return SECP384R1;
   case ALG_RSA_2048:
     return RSA2048;
-  case ALG_ED25519:
-    return ED25519;
   case ALG_DEFAULT:
   case ALG_TDEA_3KEY:
     return TDEA;
   default:
-    
-    if (!cfg_is_piv_algo_extension_enable()) return KEY_TYPE_PKC_END;
-
-    switch (id) {
-    case ALG_X25519:
-      return X25519;
-    case ALG_SECP256K1:
-      return SECP256K1;
-    case ALG_SM2:
-      return SM2;
-    case ALG_RSA_3072:
-      return RSA3072;
-    case ALG_RSA_4096:
-      return RSA4096;
-    default:
-      return KEY_TYPE_PKC_END;
-    }
+    break;
   }
+
+  if (alg_ext_cfg.enabled == 0) return KEY_TYPE_PKC_END;
+  if (id == alg_ext_cfg.ed25519) return ED25519;
+  if (id == alg_ext_cfg.rsa3072) return RSA3072;
+  if (id == alg_ext_cfg.rsa4096) return RSA4096;
+  if (id == alg_ext_cfg.x25519) return X25519;
+  if (id == alg_ext_cfg.secp256k1) return SECP256K1;
+  if (id == alg_ext_cfg.sm2) return SM2;
+  return KEY_TYPE_PKC_END;
 }
 
-static uint8_t key_type_to_algo_id[] = {
-    [SECP256R1] = ALG_ECC_256,
-    [SECP384R1] = ALG_ECC_384,
-    [RSA2048] = ALG_RSA_2048,
-    [ED25519] = ALG_ED25519,
-    [X25519] = ALG_X25519,
-    [SECP256K1] = ALG_SECP256K1,
-    [SM2] = ALG_SM2,
-    [RSA3072] = ALG_RSA_3072,
-    [RSA4096] = ALG_RSA_4096,
-    [TDEA] = ALG_TDEA_3KEY,
-    [KEY_TYPE_PKC_END] = ALG_DEFAULT,
-};
+static uint8_t key_type_to_algo_id(const key_type_t type) {
+  switch (type) {
+  case SECP256R1:
+    return ALG_ECC_256;
+  case SECP384R1:
+    return ALG_ECC_384;
+  case RSA2048:
+    return ALG_RSA_2048;
+  case ED25519:
+    return alg_ext_cfg.ed25519;
+  case X25519:
+    return alg_ext_cfg.x25519;
+  case SECP256K1:
+    return alg_ext_cfg.secp256k1;
+  case SM2:
+    return alg_ext_cfg.sm2;
+  case RSA3072:
+    return alg_ext_cfg.rsa3072;
+  case RSA4096:
+    return alg_ext_cfg.rsa4096;
+  case TDEA:
+    return ALG_TDEA_3KEY;
+  case KEY_TYPE_PKC_END:
+  default:
+    return ALG_DEFAULT;
+  }
+}
 
 int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta_t *meta) {
   switch (meta->pin_policy) {
@@ -194,7 +201,10 @@ void piv_poweroff(void) {
 
 int piv_install(const uint8_t reset) {
   piv_poweroff();
-  if (!reset && get_file_size(PIV_AUTH_CERT_PATH) >= 0) return 0;
+  if (!reset && get_file_size(ALGORITHM_EXT_CONFIG_PATH) >= 0) {
+    if (read_file(ALGORITHM_EXT_CONFIG_PATH, &alg_ext_cfg, 0, sizeof(alg_ext_cfg)) < 0) return -1;
+    return 0;
+  }
 
   // objects
   if (write_file(PIV_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
@@ -243,6 +253,16 @@ int piv_install(const uint8_t reset) {
   if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
+
+  // Algorithm extensions
+  alg_ext_cfg.enabled = 1;
+  alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
+  alg_ext_cfg.rsa3072 = ALG_RSA_3072_DEFAULT;
+  alg_ext_cfg.rsa4096 = ALG_RSA_4096_DEFAULT;
+  alg_ext_cfg.x25519 = ALG_X25519_DEFAULT;
+  alg_ext_cfg.secp256k1 = ALG_SECP256K1_DEFAULT;
+  alg_ext_cfg.sm2 = ALG_SM2_DEFAULT;
+  if (write_file(ALGORITHM_EXT_CONFIG_PATH, &alg_ext_cfg, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
 
   return 0;
 }
@@ -1048,7 +1068,7 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
 
       RDATA[pos++] = 0x01; // Algorithm
       RDATA[pos++] = 0x01;
-      RDATA[pos++] = key_type_to_algo_id[key.meta.type];
+      RDATA[pos++] = key_type_to_algo_id(key.meta.type);
       RDATA[pos++] = 0x02; // Policy
       RDATA[pos++] = 0x02;
       RDATA[pos++] = key.meta.pin_policy;
@@ -1079,7 +1099,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   RDATA[0] = 0x05;
-  RDATA[1] = 0x03;
+  RDATA[1] = 0x04;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;
@@ -1090,6 +1110,29 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   fill_sn(RDATA);
   LL = 4;
+  return 0;
+}
+
+static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+
+  if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);
+  if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  if (P1 == 0x01) {
+    if (read_file(ALGORITHM_EXT_CONFIG_PATH, RDATA, 0, sizeof(alg_ext_cfg)) < 0) return -1;
+    LL = sizeof(alg_ext_cfg);
+  } else {
+    if (LC != sizeof(alg_ext_cfg)) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[0] != 0 && DATA[0] != 1) EXCEPT(SW_WRONG_DATA);
+    // We trust the rest data because no dangerous result will be caused even if the IDs are not unique.
+    if (write_file(ALGORITHM_EXT_CONFIG_PATH, DATA, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
+    // Effective immediately
+    memcpy(&alg_ext_cfg, DATA, sizeof(alg_ext_cfg));
+  }
+
   return 0;
 }
 
@@ -1149,6 +1192,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GET_METADATA:
     ret = piv_get_metadata(capdu, rapdu);
+    break;
+  case PIV_INS_ALGORITHM_EXTENSION:
+    ret = piv_algorithm_extension(capdu, rapdu);
     break;
   default:
     EXCEPT(SW_INS_NOT_SUPPORTED);

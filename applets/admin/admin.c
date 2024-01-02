@@ -51,8 +51,6 @@ uint8_t cfg_is_ndef_enable(void) { return current_config.ndef_en; }
 
 uint8_t cfg_is_webusb_landing_enable(void) { return current_config.webusb_landing_en; }
 
-uint8_t cfg_is_piv_algo_extension_enable(void) { return current_config.piv_algo_ext_en; }
-
 void admin_poweroff(void) { pin.is_validated = 0; }
 
 int admin_install(const uint8_t reset) {
@@ -121,9 +119,6 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_P1_CFG_WEBUSB_LANDING:
     current_config.webusb_landing_en = P2 & 1;
-    break;
-  case ADMIN_P1_CFG_PIV_ALGO_EXT:
-    current_config.piv_algo_ext_en = P2 & 1;
     break;
   default:
     EXCEPT(SW_WRONG_P1P2);
@@ -259,6 +254,14 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_RESET_PASS:
     ret = pass_install(1);
+  case ADMIN_INS_RESET_CTAP:
+    ret = ctap_install(1);
+    break;
+  case ADMIN_INS_READ_CTAP_SM2_CONFIG:
+    ret = ctap_read_sm2_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_WRITE_CTAP_SM2_CONFIG:
+    ret = ctap_write_sm2_config(capdu, rapdu);
     break;
   case ADMIN_INS_CHANGE_PIN:
     ret = admin_change_pin(capdu, rapdu);

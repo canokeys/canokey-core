@@ -11,6 +11,9 @@
 #define ADMIN_INS_RESET_OATH 0x05
 #define ADMIN_INS_RESET_NDEF 0x07
 #define ADMIN_INS_TOGGLE_NDEF_READ_ONLY 0x08
+#define ADMIN_INS_RESET_CTAP 0x09
+#define ADMIN_INS_READ_CTAP_SM2_CONFIG 0x11
+#define ADMIN_INS_WRITE_CTAP_SM2_CONFIG 0x12
 #define ADMIN_INS_RESET_PASS 0x13
 #define ADMIN_INS_VERIFY 0x20
 #define ADMIN_INS_CHANGE_PIN 0x21
@@ -29,13 +32,11 @@
 #define ADMIN_P1_CFG_LED_ON 0x01
 #define ADMIN_P1_CFG_NDEF 0x04
 #define ADMIN_P1_CFG_WEBUSB_LANDING 0x05
-#define ADMIN_P1_CFG_PIV_ALGO_EXT 0x07
 
 typedef struct {
     uint32_t led_normally_on : 1;
     uint32_t ndef_en : 1;
     uint32_t webusb_landing_en : 1;
-    uint32_t piv_algo_ext_en : 1;
 } __packed admin_device_config_t;
 
 void admin_poweroff(void);
@@ -49,6 +50,5 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_ndef_enable(void);
 uint8_t cfg_is_webusb_landing_enable(void);
-uint8_t cfg_is_piv_algo_extension_enable(void);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_
