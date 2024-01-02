@@ -133,9 +133,11 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LE < 5) EXCEPT(SW_WRONG_LENGTH);
 
   RDATA[0] = current_config.led_normally_on;
-  RDATA[1] = ndef_get_read_only();
-  RDATA[2] = current_config.ndef_en;
-  RDATA[3] = current_config.webusb_landing_en;
+  RDATA[1] = 0; // reserved
+  RDATA[2] = ndef_get_read_only();
+  RDATA[3] = current_config.ndef_en;
+  RDATA[4] = current_config.webusb_landing_en;
+  RDATA[5] = 0; // reserved
   LL = 6;
 
   return 0;
