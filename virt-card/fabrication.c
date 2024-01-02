@@ -5,6 +5,7 @@
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
+#include <../applets/ctap/ctap-internal.h>
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
@@ -62,6 +63,7 @@ static void fake_fido_personalization() {
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU capdu;
   RAPDU rapdu;
+  CTAP_sm2_attr sm2_attr;
   capdu.data = c_buf;
   rapdu.data = r_buf;
 
@@ -80,6 +82,20 @@ static void fake_fido_personalization() {
   capdu.ins = ADMIN_INS_WRITE_FIDO_CERT;
   capdu.data = cert;
   capdu.lc = sizeof(cert);
+  admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
+
+  capdu.ins = ADMIN_INS_READ_CTAP_SM2_CONFIG;
+  capdu.lc = 0;
+  admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
+
+  memcpy(&sm2_attr, r_buf, sizeof(sm2_attr));
+  sm2_attr.enabled = 1;
+
+  capdu.ins = ADMIN_INS_WRITE_CTAP_SM2_CONFIG;
+  capdu.data = &sm2_attr;
+  capdu.lc = sizeof(sm2_attr);
   admin_process_apdu(&capdu, &rapdu);
   assert(rapdu.sw == 0x9000);
 }

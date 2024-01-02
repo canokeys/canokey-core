@@ -81,10 +81,6 @@ uint8_t ctap_install(uint8_t reset) {
   if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   random_buffer(kh_key, sizeof(kh_key));
   if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  ctap_sm2_attr.enabled = 0;
-  ctap_sm2_attr.curve_id = 9; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
-  ctap_sm2_attr.algo_id = -48; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms
-  if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   memcpy(kh_key,
          (uint8_t[]) {0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d,
                       0x3c}, 17);
@@ -96,6 +92,11 @@ uint8_t ctap_install(uint8_t reset) {
 
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  // initialize SM2 config
+  ctap_sm2_attr.enabled = 0;
+  ctap_sm2_attr.curve_id = 9; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
+  ctap_sm2_attr.algo_id = -48; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms
+  if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
 }
 
