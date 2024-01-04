@@ -16,13 +16,24 @@ oneTimeSetUp() {
     export RDID=$(fido2-token -L | grep -Po '^(pcsc:|/dev).*(?=: )' | tail -n 1)
 }
 
-ToolHelper() {
+ToolHelperRaw() {
+    # echo "CMD: $NON_TTY $*"
     # echo "PIN is $PIN"
-    echo $PIN | $NON_TTY $* "$RDID" 2>"$TEST_TMP_DIR/stderr"
+    echo $PIN | $NON_TTY $* 2>"$TEST_TMP_DIR/stderr"
     local res=$?
     sed -i -E 's/Enter.*PIN for \S+ *//g' "$TEST_TMP_DIR/stderr"
     cat "$TEST_TMP_DIR/stderr" 1>&2
     return $res
+}
+
+ToolHelper() {
+    ToolHelperRaw $* "$RDID"
+}
+
+ToolHelperWithAlgo() {
+    algo=$1
+    shift
+    ToolHelperRaw $* "$RDID" $algo
 }
 
 FIDO2MakeCred() {
@@ -35,7 +46,7 @@ FIDO2MakeCred() {
     echo "$rpid" >>"$TEST_TMP_DIR/cred_param"
     echo "$username" >>"$TEST_TMP_DIR/cred_param"
     echo "$userid" >>"$TEST_TMP_DIR/cred_param" # user id
-    ToolHelper fido2-cred -M -r -b -i "$TEST_TMP_DIR/cred_param" $algo >"$TEST_TMP_DIR/mc"
+    ToolHelperWithAlgo $algo fido2-cred -M -r -b -i "$TEST_TMP_DIR/cred_param" >"$TEST_TMP_DIR/mc"
     assertTrue "fido2-cred -M failed" $?
     local largeBlobKey=$(tail -n 1 "$TEST_TMP_DIR/mc")
     head -n -1 "$TEST_TMP_DIR/mc" | fido2-cred -V -o "$TEST_TMP_DIR/verified" $algo
@@ -56,7 +67,7 @@ FIDO2GetAssert() {
     openssl rand -base64 32 >"$TEST_TMP_DIR/assert_param" # client data hash
     echo "$rpid" >>"$TEST_TMP_DIR/assert_param"
     echo "$credid" >>"$TEST_TMP_DIR/assert_param"
-    ToolHelper fido2-assert -G -b -i "$TEST_TMP_DIR/assert_param" $algo >"$TEST_TMP_DIR/assert"
+    ToolHelperWithAlgo $algo fido2-assert -G -b -i "$TEST_TMP_DIR/assert_param" >"$TEST_TMP_DIR/assert"
     assertTrue "fido2-assert -G failed" $?
     local largeBlobKey=$(tail -n 1 "$TEST_TMP_DIR/assert")
     echo $largeBlobKey
