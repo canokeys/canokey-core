@@ -20,7 +20,7 @@ typedef struct {
   union {
     uint8_t password[33]; // 1-byte length + at most 32-byte content
     uint32_t oath_offset;
-  };
+  } __packed;
   uint8_t with_enter;
 } __packed pass_slot_t;
 
