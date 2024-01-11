@@ -18,26 +18,37 @@ typedef enum {
 typedef struct {
   slot_type_t type;
   union {
-    uint8_t password[33]; // 1-byte length + at most 32-byte content
-    uint32_t oath_offset;
-  } __packed;
+    struct {
+      uint8_t password_len;
+      uint8_t password[PASS_MAX_PASSWORD_LENGTH];
+    } __packed;
+    struct {
+      uint32_t oath_offset;
+      uint8_t name_len;
+      uint8_t name[MAX_NAME_LEN];
+    } __packed;
+  };
   uint8_t with_enter;
 } __packed pass_slot_t;
 
 static pass_slot_t slots[2];
 
 int pass_install(const uint8_t reset) {
-  if (!reset && get_file_size(PASS_FILE) >= 0) {
+  if (reset || get_file_size(PASS_FILE) != sizeof(slots)) {
+    memzero(slots, sizeof(slots));
+    if (write_file(PASS_FILE, slots, 0, sizeof(slots), 1) < 0) return -1;
+  } else {
     if (read_file(PASS_FILE, slots, 0, sizeof(slots)) < 0) return -1;
-    return 0;
   }
-
-  memzero(slots, sizeof(slots));
-  if (write_file(PASS_FILE, slots, 0, sizeof(slots), 1) < 0) return -1;
 
   return 0;
 }
 
+// Dump slots to buffer, return the length of the buffer
+// For each slot, the first byte is the type.
+// For PASS_SLOT_OFF, there is no more data
+// For PASS_SLOT_STATIC, the second byte is with_enter
+// For PASS_SLOT_OATH, the next byte is the length of the name, followed by the name, and the next byte is with_enter
 static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
   int length = 0;
 
@@ -55,9 +66,12 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
     break;
 
   case PASS_SLOT_OATH:
-    // For OATH, the next 4 bytes are oath_offset
-    memcpy(&buffer[length], &slot->oath_offset, sizeof(slot->oath_offset));
-    length += sizeof(slot->oath_offset);
+    // For OATH, the second byte is the length of the name
+    buffer[length++] = slot->name_len;
+    // The next bytes are the name
+    memcpy(buffer + length, slot->name, slot->name_len);
+    length += slot->name_len;
+    // The next byte is with_enter
     buffer[length++] = slot->with_enter;
     break;
   }
@@ -75,53 +89,46 @@ int pass_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+// P1 for the slot index, 1 for short slot, 2 for long slot
+// DATA contains the slot data:
+// The first byte is the slot type
+// For OFF, there is no more data
+// For STATIC, the second byte is the length of the password, followed by the password, and the next byte is with_enter
+// OATH is not allowed to be written here
 int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
-  size_t index = 0;
+  if (P1 != 1 && P1 != 2) EXCEPT(SW_WRONG_P1P2);
+  if (LC < 1) EXCEPT(SW_WRONG_LENGTH);
 
-  for (int i = 0; i < 2; i++) {
-    if (index >= LC) {
-      // Data is not enough to parse a slot
-      EXCEPT(SW_WRONG_LENGTH);
-    }
+  pass_slot_t *slot = &slots[P1 - 1];
+  slot->type = (slot_type_t)DATA[0];
 
-    const slot_type_t type = DATA[index++];
-    switch (type) {
-    case PASS_SLOT_OFF:
-      slots[i].type = type;
-      break;
+  switch (slot->type) {
+  case PASS_SLOT_OFF:
+    if (LC != 1) EXCEPT(SW_WRONG_LENGTH);
+    break;
 
-    case PASS_SLOT_STATIC:
-      if (DATA[index] > PASS_MAX_PASSWORD_LENGTH) {
-        // Password is too long
-        EXCEPT(SW_WRONG_DATA);
-      }
-      slots[i].type = type;
-      memcpy(slots[i].password, &DATA[index], DATA[index] + 1);
-      index += DATA[index] + 1;
-      slots[i].with_enter = DATA[index++];
-      break;
+  case PASS_SLOT_STATIC:
+    if (LC < 3) EXCEPT(SW_WRONG_LENGTH);
+    slot->password_len = DATA[1];
+    if (slot->password_len > PASS_MAX_PASSWORD_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    memcpy(slot->password, DATA + 2, slot->password_len);
+    slot->with_enter = DATA[2 + slot->password_len];
+    if (LC != 3 + slot->password_len) EXCEPT(SW_WRONG_LENGTH);
+    break;
 
-    case PASS_SLOT_OATH:
-      if (index + sizeof(slots[0].oath_offset) + sizeof(slots[0].with_enter) > LC) {
-        // Not enough data for PASS_SLOT_OATH
-        EXCEPT(SW_WRONG_DATA);
-      }
-      slots[i].type = type;
-      memcpy(&slots[i].oath_offset, &DATA[index], sizeof(slots[0].oath_offset));
-      index += sizeof(slots[0].oath_offset);
-      slots[i].with_enter = DATA[index++];
-      break;
-
-    default:
-      // Invalid slot type
-      EXCEPT(SW_WRONG_DATA);
-    }
+  default:
+    EXCEPT(SW_WRONG_DATA);
   }
 
-  if (index != LC) {
-    // Extra data present that doesn't fit in the slot structure
-    EXCEPT(SW_WRONG_LENGTH);
-  }
+  return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
+}
+
+int pass_update_oath(uint8_t slot_index, uint32_t offset, uint8_t name_len, const uint8_t *name) {
+  pass_slot_t *slot = &slots[slot_index];
+  slot->type = PASS_SLOT_OATH;
+  slot->oath_offset = offset;
+  slot->name_len = name_len;
+  memcpy(slot->name, name, name_len);
 
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }

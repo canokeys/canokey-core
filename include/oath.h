@@ -4,7 +4,6 @@
 
 #include <apdu.h>
 
-#define ATTR_DEFAULT_RECORD 0x01
 #define ATTR_KEY 0x02
 #define ATTR_HANDLE 0x03
 
