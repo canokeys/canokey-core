@@ -165,14 +165,7 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   for (size_t i = 0; i != n_records; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) {
-      // uint32_t default_item;
-      // if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
-      // if (default_item == i) { // clear the default set if it is to be deleted
-      //   default_item = 0xffffffff;
-      //   if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
-      // }
-      // TODO: delete pass config
-
+      if (pass_delete_oath(i * sizeof(OATH_RECORD)) < 0) return -1;
       record.name_len = 0;
       return write_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
     }

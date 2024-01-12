@@ -123,10 +123,10 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }
 
-int pass_update_oath(uint8_t slot_index, uint32_t offset, uint8_t name_len, const uint8_t *name, uint8_t with_enter) {
+int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len, const uint8_t *name, uint8_t with_enter) {
   pass_slot_t *slot = &slots[slot_index];
   slot->type = PASS_SLOT_OATH;
-  slot->oath_offset = offset;
+  slot->oath_offset = file_offset;
   slot->name_len = name_len;
   memcpy(slot->name, name, name_len);
   slot->with_enter = with_enter;
@@ -134,9 +134,21 @@ int pass_update_oath(uint8_t slot_index, uint32_t offset, uint8_t name_len, cons
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }
 
-static int oath_process_offset(uint32_t offset, char *output) {
+int pass_delete_oath(uint32_t file_offset) {
+  if (slots[0].type == PASS_SLOT_OATH && slots[0].oath_offset == file_offset) {
+    slots[0].type = PASS_SLOT_OFF;
+    return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
+  }
+  if (slots[1].type == PASS_SLOT_OATH && slots[1].oath_offset == file_offset) {
+    slots[1].type = PASS_SLOT_OFF;
+    return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
+  }
+  return 0;
+}
+
+static int oath_process_offset(uint32_t file_offset, char *output) {
   uint32_t otp_code;
-  int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
+  int ret = oath_calculate_by_offset(file_offset, (uint8_t *)&otp_code);
   if (ret < 0) return ret;
   const int len = ret;
 
