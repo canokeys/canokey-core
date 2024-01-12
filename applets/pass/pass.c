@@ -123,12 +123,13 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }
 
-int pass_update_oath(uint8_t slot_index, uint32_t offset, uint8_t name_len, const uint8_t *name) {
+int pass_update_oath(uint8_t slot_index, uint32_t offset, uint8_t name_len, const uint8_t *name, uint8_t with_enter) {
   pass_slot_t *slot = &slots[slot_index];
   slot->type = PASS_SLOT_OATH;
   slot->oath_offset = offset;
   slot->name_len = name_len;
   memcpy(slot->name, name, name_len);
+  slot->with_enter = with_enter;
 
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }
@@ -166,8 +167,8 @@ int pass_handle_touch(uint8_t touch_type, char *output) {
     length = oath_process_offset(slot->oath_offset, output);
     break;
   case PASS_SLOT_STATIC:
-    memcpy(output, slot->password + 1, slot->password[0]);
-    length = slot->password[0];
+    memcpy(output, slot->password, slot->password_len);
+    length = slot->password_len;
     break;
   default:
     return -1;
