@@ -120,6 +120,65 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			So(code, ShouldEqual, 0x9000)
 			So(ret[:7], ShouldResemble, []byte("CanoKey"))
 		})
+		Convey("Config Pass", func(ctx C) {
+			if !verified {
+				_, code, err := app.Send([]byte{0x00, 0x44, 0x01, 0x00})
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x6982)
+				return
+			}
+			buildCfg := func(ptype uint8, randSeed int) (ret []byte) {
+				if ptype == 0 {
+					ret = []byte {ptype}
+				} else {
+					data := []byte(fmt.Sprintf("%032d", randSeed))
+					withEnter := uint8(randSeed & 1)
+					ret = []byte {ptype, uint8(len(data))}
+					ret = append(ret, data...)
+					ret = append(ret, withEnter)
+				}
+				return
+			}
+			for slot := uint8(0); slot < 4; slot++ {
+				for ptype := uint8(0); ptype < 3; ptype++ {
+					randSeed := int(slot) * 10000 + int(ptype)
+					cfg := buildCfg(ptype, randSeed)
+					lc := uint8(len(cfg))
+					_, code, err := app.Send(append([]byte{0x00, 0x44, slot, 0x00, lc}, cfg...))
+					So(err, ShouldBeNil)
+					if slot > 2 || slot < 1 {
+						So(code, ShouldEqual, 0x6A86)
+					} else if ptype == 1 || ptype > 2 {
+						So(code, ShouldEqual, 0x6A80)
+					// } else if code!=0x9000{
+					// 	fmt.Printf("%d %d\n", slot, ptype)
+					} else {
+						So(code, ShouldEqual, 0x9000)
+					}
+				}
+			}
+			resp, code, err := app.Send([]byte{0x00, 0x42, 0x00, 0x00, 0x60})
+			So(code, ShouldEqual, 0x9000)
+			So(err, ShouldBeNil)
+			slot := 1
+			for i := 0; i < len(resp); {
+				ptype := resp[i]
+				i++
+				randSeed := slot * 10000 + int(ptype)
+				if ptype == 2 {
+					nameLen := int(resp[i])
+					i++
+					name := resp[i:i+nameLen]
+					i += nameLen
+					enter := resp[i]
+					i++
+					So(enter, ShouldEqual, (randSeed & 1))
+					So(name, ShouldResemble, []byte(fmt.Sprintf("%032d", randSeed)))
+				}
+
+				slot++
+			}
+		})
 		Convey("Vendor-specific", func(ctx C) {
 			apdu := []byte{0x00, 0xFF, 0x77, 0x88}
 			_, code, err := app.Send(apdu)
@@ -131,16 +190,16 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Configuration", func(ctx C) {
-			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x01}
+			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x00}
 			P1toIdx := map[int]int{
 				1: 0, // ADMIN_P1_CFG_LED_ON
 				2: 2, // ndef_get_read_only
-				3: 1, // ADMIN_P1_CFG_KBDIFACE
+				// 3: 1, // ADMIN_P1_CFG_KBDIFACE (obsolete)
 				4: 3, // ADMIN_P1_CFG_NDEF
 				5: 4, // ADMIN_P1_CFG_WEBUSB_LANDING
-				6: 5, // ADMIN_P1_CFG_KBD_WITH_RETURN
+				// 6: 5, // ADMIN_P1_CFG_KBD_WITH_RETURN (obsolete)
 			}
-			for P1 := 1; P1 <= 6; P1++ {
+			for P1 := range P1toIdx {
 				for _, P2 := range []int{0, 1, 0, 1} {
 					apdu := []byte{0x00, 0x40, uint8(P1), uint8(P2)}
 					_, code, err := app.Send(apdu)
