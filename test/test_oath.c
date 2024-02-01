@@ -7,9 +7,11 @@
 #include <apdu.h>
 #include <crypto-util.h>
 #include <bd/lfs_filebd.h>
+#include <device.h>
 #include <fs.h>
 #include <lfs.h>
 #include <oath.h>
+#include <pass.h>
 
 static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error, uint8_t *expected_resp, size_t resp_len) {
   uint8_t c_buf[1024], r_buf[1024];
@@ -20,6 +22,7 @@ static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16
 
   capdu->ins = ins;
   if (ins == OATH_INS_CALCULATE || ins == OATH_INS_SELECT) capdu->p2 = 1;
+  if (ins == OATH_INS_SET_DEFAULT) capdu->p1 = 1;
   capdu->lc = data_len;
   if (data_len > 0) {
     // re alloc to help asan find overflow error
@@ -120,41 +123,42 @@ static void test_hotp_touch(void **state) {
   };
   int ret;
   char buf[9];
+  uint32_t touch_type = TOUCH_SHORT;
 
   // add an record w/o initial counter value
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_NO_ERROR);
 
-  // default item isn't set yet
-  ret = oath_process_one_touch(buf, sizeof(buf));
-  assert_int_equal(ret, -2);
-
   test_helper(data, 4, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
 
   for (int i = 0; i < 3; i++) {
-    ret = oath_process_one_touch(buf, sizeof(buf));
-    assert_int_equal(ret, 0);
+    ret = pass_handle_touch(touch_type, buf);
+    assert_int_equal(ret, 6);
+    buf[ret] = '\0';
     assert_string_equal(buf, codes[i]);
   }
 
   test_helper(data, 4, OATH_INS_DELETE, SW_NO_ERROR);
 
-  ret = oath_process_one_touch(buf, sizeof(buf));
-  assert_int_equal(ret, -2);
+  ret = pass_handle_touch(touch_type, buf);
+  assert_int_equal(ret, 0);
 
   // add an record w/ initial counter value
   test_helper(data8, sizeof(data8), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(data8, 5, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
 
   for (int i = 2; i < 6; i++) {
-    ret = oath_process_one_touch(buf, sizeof(buf));
-    assert_int_equal(ret, 0);
+    ret = pass_handle_touch(touch_type, buf);
+    assert_int_equal(ret, 8);
+    buf[ret] = '\0';
     // printf("code[%d]: %s\n", i+1, buf);
     assert_string_equal(buf, codes8[i]);
   }
-  ret = oath_process_one_touch(buf, 8);
-  assert_int_equal(ret, -1);
-  ret = oath_process_one_touch(buf, sizeof(buf));
+
+  ret = pass_handle_touch(TOUCH_LONG, buf);
   assert_int_equal(ret, 0);
+
+  ret = pass_handle_touch(199, buf);
+  assert_int_equal(ret, -1);
 
   uint8_t rfc4226example[] = {
     OATH_TAG_NAME, 0x05, '.', '4', '2', '2', '6',
@@ -176,8 +180,9 @@ static void test_hotp_touch(void **state) {
   test_helper(rfc4226example, sizeof(rfc4226example), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(rfc4226example, 7, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
   for (int i = 1; i <= 10; i++) {
-    ret = oath_process_one_touch(buf, sizeof(buf));
-    assert_int_equal(ret, 0);
+    ret = pass_handle_touch(touch_type, buf);
+    assert_int_equal(ret, 6);
+    buf[ret] = '\0';
     // printf("code[%d]: %s\n", i, buf);
     assert_string_equal(buf, results[i]);
   }
@@ -451,6 +456,7 @@ int main() {
   fs_format(&cfg);
   fs_mount(&cfg);
   oath_install(1);
+  pass_install(1);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_select_ins),

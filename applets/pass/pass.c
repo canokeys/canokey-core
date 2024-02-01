@@ -177,6 +177,7 @@ int pass_handle_touch(uint8_t touch_type, char *output) {
     return 0;
   case PASS_SLOT_OATH:
     length = oath_process_offset(slot->oath_offset, output);
+    if (length < 0) return -1;
     break;
   case PASS_SLOT_STATIC:
     memcpy(output, slot->password, slot->password_len);
