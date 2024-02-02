@@ -22,7 +22,7 @@ static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16
 
   capdu->ins = ins;
   if (ins == OATH_INS_CALCULATE || ins == OATH_INS_SELECT) capdu->p2 = 1;
-  if (ins == OATH_INS_SET_DEFAULT) capdu->p1 = 1;
+  if (ins == OATH_INS_SET_DEFAULT) capdu->p1 = 1 + (data_len & 1); // choose one slot
   capdu->lc = data_len;
   if (data_len > 0) {
     // re alloc to help asan find overflow error
@@ -43,6 +43,37 @@ static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16
     assert_int_equal(rapdu->len, resp_len);
     assert_memory_equal(RDATA, expected_resp, resp_len);
   }
+}
+
+static void check_pass_config(bool present, uint8_t slot, uint8_t *data) {
+  int i, s;
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  pass_read_config(&C, &R);
+  print_hex(R.data, R.len);
+  printf(" R\n");
+  for (i = 0, s = 1; i < R.len; s++) {
+    uint8_t ptype, name_len, with_enter;
+    uint8_t *name;
+    ptype = R.data[i++];
+    if (ptype == PASS_SLOT_OATH) {
+      name_len = R.data[i++];
+      name = &R.data[i];
+      i += name_len;
+    }
+    if (ptype > PASS_SLOT_OFF) with_enter = R.data[i++];
+    if (s == slot) {
+      if (present) {
+        assert_int_equal(ptype, PASS_SLOT_OATH);
+        assert_int_equal(name_len, data[1]);
+        assert_memory_equal(name, &data[2], name_len);
+        assert_int_equal(with_enter, 0);
+      } else {
+        assert_int_equal(ptype, PASS_SLOT_OFF);
+      }
+    }
+  }
+  assert_int_equal(i, R.len);
 }
 
 static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error) {
@@ -123,38 +154,40 @@ static void test_hotp_touch(void **state) {
   };
   int ret;
   char buf[9];
-  uint32_t touch_type = TOUCH_SHORT;
 
   // add an record w/o initial counter value
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_NO_ERROR);
 
   test_helper(data, 4, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  check_pass_config(true, 1, data);
 
   for (int i = 0; i < 3; i++) {
-    ret = pass_handle_touch(touch_type, buf);
+    ret = pass_handle_touch(TOUCH_SHORT, buf);
     assert_int_equal(ret, 6);
     buf[ret] = '\0';
     assert_string_equal(buf, codes[i]);
   }
 
   test_helper(data, 4, OATH_INS_DELETE, SW_NO_ERROR);
+  check_pass_config(false, 1, data);
 
-  ret = pass_handle_touch(touch_type, buf);
+  ret = pass_handle_touch(TOUCH_SHORT, buf);
   assert_int_equal(ret, 0);
 
   // add an record w/ initial counter value
   test_helper(data8, sizeof(data8), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(data8, 5, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  check_pass_config(true, 2, data8);
 
   for (int i = 2; i < 6; i++) {
-    ret = pass_handle_touch(touch_type, buf);
+    ret = pass_handle_touch(TOUCH_LONG, buf);
     assert_int_equal(ret, 8);
     buf[ret] = '\0';
     // printf("code[%d]: %s\n", i+1, buf);
     assert_string_equal(buf, codes8[i]);
   }
 
-  ret = pass_handle_touch(TOUCH_LONG, buf);
+  ret = pass_handle_touch(TOUCH_SHORT, buf);
   assert_int_equal(ret, 0);
 
   ret = pass_handle_touch(199, buf);
@@ -179,13 +212,20 @@ static void test_hotp_touch(void **state) {
   };
   test_helper(rfc4226example, sizeof(rfc4226example), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(rfc4226example, 7, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  check_pass_config(true, 2, rfc4226example);
+
+  ret = pass_handle_touch(TOUCH_SHORT, buf);
+  assert_int_equal(ret, 0);
+  
   for (int i = 1; i <= 10; i++) {
-    ret = pass_handle_touch(touch_type, buf);
+    ret = pass_handle_touch(TOUCH_LONG, buf);
     assert_int_equal(ret, 6);
     buf[ret] = '\0';
     // printf("code[%d]: %s\n", i, buf);
     assert_string_equal(buf, results[i]);
   }
+  test_helper(rfc4226example, 7, OATH_INS_DELETE, SW_NO_ERROR);
+  check_pass_config(false, 2, rfc4226example);
 }
 
 // should be called after test_put

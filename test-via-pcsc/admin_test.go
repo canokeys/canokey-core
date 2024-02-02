@@ -140,7 +140,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				return
 			}
 			for slot := uint8(0); slot < 4; slot++ {
-				for ptype := uint8(0); ptype < 3; ptype++ {
+				for ptype := uint8(0); ptype < 4; ptype++ {
 					randSeed := int(slot) * 10000 + int(ptype)
 					cfg := buildCfg(ptype, randSeed)
 					lc := uint8(len(cfg))
@@ -148,35 +148,35 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 					So(err, ShouldBeNil)
 					if slot > 2 || slot < 1 {
 						So(code, ShouldEqual, 0x6A86)
+						break
 					} else if ptype == 1 || ptype > 2 {
 						So(code, ShouldEqual, 0x6A80)
+						continue
 					// } else if code!=0x9000{
 					// 	fmt.Printf("%d %d\n", slot, ptype)
 					} else {
+						// fmt.Printf("write %d %d %v\n",slot,ptype,cfg)
 						So(code, ShouldEqual, 0x9000)
 					}
-				}
-			}
-			resp, code, err := app.Send([]byte{0x00, 0x42, 0x00, 0x00, 0x60})
-			So(code, ShouldEqual, 0x9000)
-			So(err, ShouldBeNil)
-			slot := 1
-			for i := 0; i < len(resp); {
-				ptype := resp[i]
-				i++
-				randSeed := slot * 10000 + int(ptype)
-				if ptype == 2 {
-					nameLen := int(resp[i])
-					i++
-					name := resp[i:i+nameLen]
-					i += nameLen
-					enter := resp[i]
-					i++
-					So(enter, ShouldEqual, (randSeed & 1))
-					So(name, ShouldResemble, []byte(fmt.Sprintf("%032d", randSeed)))
-				}
 
-				slot++
+					resp, code, err := app.Send([]byte{0x00, 0x43, 0x00, 0x00, 0x60})
+					So(code, ShouldEqual, 0x9000)
+					So(err, ShouldBeNil)
+					slot_rb := 1
+					for i := 0; i < len(resp); {
+						ptype_rb := resp[i]
+						i++
+						if ptype_rb == 2 {
+							enter := resp[i]
+							i++
+							So(enter, ShouldEqual, (randSeed & 1))
+						}
+						if int(slot) == slot_rb {
+							So(ptype_rb, ShouldEqual, ptype)
+						}
+						slot_rb++
+					}
+				}
 			}
 		})
 		Convey("Vendor-specific", func(ctx C) {
