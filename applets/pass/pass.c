@@ -9,12 +9,6 @@
 #define SLOT_SHORT 0
 #define SLOT_LONG  1
 
-typedef enum {
-  PASS_SLOT_OFF,
-  PASS_SLOT_OATH,
-  PASS_SLOT_STATIC,
-} slot_type_t;
-
 typedef struct {
   slot_type_t type;
   union {
@@ -74,6 +68,10 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
     // The next byte is with_enter
     buffer[length++] = slot->with_enter;
     break;
+
+  default:
+    ERR_MSG("Invalid type %p %d\n", slot, slot->type);
+    return 0;
   }
 
   return length;
@@ -100,25 +98,26 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC < 1) EXCEPT(SW_WRONG_LENGTH);
 
   pass_slot_t *slot = &slots[P1 - 1];
-  slot->type = (slot_type_t)DATA[0];
 
-  switch (slot->type) {
+  switch (DATA[0]) {
   case PASS_SLOT_OFF:
     if (LC != 1) EXCEPT(SW_WRONG_LENGTH);
     break;
 
   case PASS_SLOT_STATIC:
     if (LC < 3) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[1] > PASS_MAX_PASSWORD_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (LC != 3 + DATA[1]) EXCEPT(SW_WRONG_LENGTH);
     slot->password_len = DATA[1];
-    if (slot->password_len > PASS_MAX_PASSWORD_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     memcpy(slot->password, DATA + 2, slot->password_len);
     slot->with_enter = DATA[2 + slot->password_len];
-    if (LC != 3 + slot->password_len) EXCEPT(SW_WRONG_LENGTH);
     break;
 
   default:
     EXCEPT(SW_WRONG_DATA);
   }
+  slot->type = (slot_type_t)DATA[0];
+  DBG_MSG("Set type %p %d\n", slot, slot->type);
 
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }

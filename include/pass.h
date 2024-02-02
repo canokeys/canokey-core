@@ -6,6 +6,12 @@
 
 #define PASS_MAX_PASSWORD_LENGTH 32
 
+typedef enum {
+  PASS_SLOT_OFF,
+  PASS_SLOT_OATH,
+  PASS_SLOT_STATIC,
+} slot_type_t;
+
 int pass_install(uint8_t reset);
 int pass_read_config(const CAPDU *capdu, RAPDU *rapdu);
 int pass_write_config(const CAPDU *capdu, RAPDU *rapdu);
