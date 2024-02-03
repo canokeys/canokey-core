@@ -49,7 +49,8 @@ static void check_pass_config(bool present, uint8_t slot, uint8_t *data) {
   int i, s;
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
-  pass_read_config(&C, &R);
+  s = pass_read_config(&C, &R);
+  assert_int_equal(s, 0);
   print_hex(R.data, R.len);
   printf(" R\n");
   for (i = 0, s = 1; i < R.len; s++) {
@@ -226,6 +227,54 @@ static void test_hotp_touch(void **state) {
   }
   test_helper(rfc4226example, 7, OATH_INS_DELETE, SW_NO_ERROR);
   check_pass_config(false, 2, rfc4226example);
+}
+
+static void test_static_pass(void **state) {
+  int len, ret;
+  uint8_t c_buf[1024], r_buf[1024];
+  const char static_pass[PASS_MAX_PASSWORD_LENGTH+1] = 
+    "a0aaa0a0a0aaaaa0a0a00a0a0bbabba0";
+  char readback[PASS_MAX_PASSWORD_LENGTH*2];
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  P1 = 2;
+  c_buf[0] = PASS_SLOT_STATIC;
+  c_buf[1] = sizeof(static_pass);
+  memcpy(c_buf+2, static_pass, c_buf[1]);
+  c_buf[c_buf[1]+2] = 0;
+  LC = c_buf[1]+3;
+  pass_write_config(&C, &R);
+  assert_int_equal(SW, SW_WRONG_LENGTH);
+
+  len = c_buf[1] = PASS_MAX_PASSWORD_LENGTH;
+  memcpy(c_buf+2, static_pass, c_buf[1]);
+  c_buf[c_buf[1]+2] = 0;
+  LC = c_buf[1]+3;
+  ret = pass_write_config(&C, &R);
+  assert_int_equal(ret, 0);
+
+  ret = pass_handle_touch(TOUCH_LONG, readback);
+  assert_int_equal(ret, len);
+  assert_memory_equal(readback, static_pass, len);
+
+  c_buf[c_buf[1]+2] = 1;
+  LC = c_buf[1]+3;
+  ret = pass_write_config(&C, &R);
+  assert_int_equal(ret, 0);
+
+  ret = pass_handle_touch(TOUCH_LONG, readback);
+  assert_int_equal(ret, len+1);
+  assert_memory_equal(readback, static_pass, len);
+  assert_int_equal(readback[len], '\r');
+
+  pass_install(0); // reload from file
+  
+  ret = pass_handle_touch(TOUCH_LONG, readback);
+  assert_int_equal(ret, len+1);
+  assert_memory_equal(readback, static_pass, len);
+  assert_int_equal(readback[len], '\r');
 }
 
 // should be called after test_put
@@ -510,6 +559,7 @@ int main() {
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),
+      cmocka_unit_test(test_static_pass),
       cmocka_unit_test(test_space_full),
       cmocka_unit_test(test_regression_fuzz),
   };

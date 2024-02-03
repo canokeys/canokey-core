@@ -70,7 +70,7 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
     break;
 
   default:
-    ERR_MSG("Invalid type %p %d\n", slot, slot->type);
+    // ERR_MSG("Invalid type %p %d\n", slot, slot->type);
     return 0;
   }
 
