@@ -7,9 +7,11 @@
 #include <apdu.h>
 #include <crypto-util.h>
 #include <bd/lfs_filebd.h>
+#include <device.h>
 #include <fs.h>
 #include <lfs.h>
 #include <oath.h>
+#include <pass.h>
 
 static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error, uint8_t *expected_resp, size_t resp_len) {
   uint8_t c_buf[1024], r_buf[1024];
@@ -20,6 +22,7 @@ static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16
 
   capdu->ins = ins;
   if (ins == OATH_INS_CALCULATE || ins == OATH_INS_SELECT) capdu->p2 = 1;
+  if (ins == OATH_INS_SET_DEFAULT) capdu->p1 = 1 + (data_len & 1); // choose one slot
   capdu->lc = data_len;
   if (data_len > 0) {
     // re alloc to help asan find overflow error
@@ -40,6 +43,38 @@ static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint16
     assert_int_equal(rapdu->len, resp_len);
     assert_memory_equal(RDATA, expected_resp, resp_len);
   }
+}
+
+static void check_pass_config(bool present, uint8_t slot, uint8_t *data) {
+  int i, s;
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  s = pass_read_config(&C, &R);
+  assert_int_equal(s, 0);
+  print_hex(R.data, R.len);
+  printf(" R\n");
+  for (i = 0, s = 1; i < R.len; s++) {
+    uint8_t ptype, name_len, with_enter;
+    uint8_t *name;
+    ptype = R.data[i++];
+    if (ptype == PASS_SLOT_OATH) {
+      name_len = R.data[i++];
+      name = &R.data[i];
+      i += name_len;
+    }
+    if (ptype > PASS_SLOT_OFF) with_enter = R.data[i++];
+    if (s == slot) {
+      if (present) {
+        assert_int_equal(ptype, PASS_SLOT_OATH);
+        assert_int_equal(name_len, data[1]);
+        assert_memory_equal(name, &data[2], name_len);
+        assert_int_equal(with_enter, 0);
+      } else {
+        assert_int_equal(ptype, PASS_SLOT_OFF);
+      }
+    }
+  }
+  assert_int_equal(i, R.len);
 }
 
 static void test_helper(uint8_t *data, size_t data_len, uint8_t ins, uint16_t expected_error) {
@@ -124,37 +159,40 @@ static void test_hotp_touch(void **state) {
   // add an record w/o initial counter value
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_NO_ERROR);
 
-  // default item isn't set yet
-  ret = oath_process_one_touch(buf, sizeof(buf));
-  assert_int_equal(ret, -2);
-
   test_helper(data, 4, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  check_pass_config(true, 1, data);
 
   for (int i = 0; i < 3; i++) {
-    ret = oath_process_one_touch(buf, sizeof(buf));
-    assert_int_equal(ret, 0);
+    ret = pass_handle_touch(TOUCH_SHORT, buf);
+    assert_int_equal(ret, 6);
+    buf[ret] = '\0';
     assert_string_equal(buf, codes[i]);
   }
 
   test_helper(data, 4, OATH_INS_DELETE, SW_NO_ERROR);
+  check_pass_config(false, 1, data);
 
-  ret = oath_process_one_touch(buf, sizeof(buf));
-  assert_int_equal(ret, -2);
+  ret = pass_handle_touch(TOUCH_SHORT, buf);
+  assert_int_equal(ret, 0);
 
   // add an record w/ initial counter value
   test_helper(data8, sizeof(data8), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(data8, 5, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  check_pass_config(true, 2, data8);
 
   for (int i = 2; i < 6; i++) {
-    ret = oath_process_one_touch(buf, sizeof(buf));
-    assert_int_equal(ret, 0);
+    ret = pass_handle_touch(TOUCH_LONG, buf);
+    assert_int_equal(ret, 8);
+    buf[ret] = '\0';
     // printf("code[%d]: %s\n", i+1, buf);
     assert_string_equal(buf, codes8[i]);
   }
-  ret = oath_process_one_touch(buf, 8);
-  assert_int_equal(ret, -1);
-  ret = oath_process_one_touch(buf, sizeof(buf));
+
+  ret = pass_handle_touch(TOUCH_SHORT, buf);
   assert_int_equal(ret, 0);
+
+  ret = pass_handle_touch(199, buf);
+  assert_int_equal(ret, -1);
 
   uint8_t rfc4226example[] = {
     OATH_TAG_NAME, 0x05, '.', '4', '2', '2', '6',
@@ -175,12 +213,68 @@ static void test_hotp_touch(void **state) {
   };
   test_helper(rfc4226example, sizeof(rfc4226example), OATH_INS_PUT, SW_NO_ERROR);
   test_helper(rfc4226example, 7, OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+  check_pass_config(true, 2, rfc4226example);
+
+  ret = pass_handle_touch(TOUCH_SHORT, buf);
+  assert_int_equal(ret, 0);
+  
   for (int i = 1; i <= 10; i++) {
-    ret = oath_process_one_touch(buf, sizeof(buf));
-    assert_int_equal(ret, 0);
+    ret = pass_handle_touch(TOUCH_LONG, buf);
+    assert_int_equal(ret, 6);
+    buf[ret] = '\0';
     // printf("code[%d]: %s\n", i, buf);
     assert_string_equal(buf, results[i]);
   }
+  test_helper(rfc4226example, 7, OATH_INS_DELETE, SW_NO_ERROR);
+  check_pass_config(false, 2, rfc4226example);
+}
+
+static void test_static_pass(void **state) {
+  int len, ret;
+  uint8_t c_buf[1024], r_buf[1024];
+  const char static_pass[PASS_MAX_PASSWORD_LENGTH+1] = 
+    "a0aaa0a0a0aaaaa0a0a00a0a0bbabba0";
+  char readback[PASS_MAX_PASSWORD_LENGTH*2];
+  CAPDU C = {.data = c_buf}; RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  P1 = 2;
+  c_buf[0] = PASS_SLOT_STATIC;
+  c_buf[1] = sizeof(static_pass);
+  memcpy(c_buf+2, static_pass, c_buf[1]);
+  c_buf[c_buf[1]+2] = 0;
+  LC = c_buf[1]+3;
+  pass_write_config(&C, &R);
+  assert_int_equal(SW, SW_WRONG_LENGTH);
+
+  len = c_buf[1] = PASS_MAX_PASSWORD_LENGTH;
+  memcpy(c_buf+2, static_pass, c_buf[1]);
+  c_buf[c_buf[1]+2] = 0;
+  LC = c_buf[1]+3;
+  ret = pass_write_config(&C, &R);
+  assert_int_equal(ret, 0);
+
+  ret = pass_handle_touch(TOUCH_LONG, readback);
+  assert_int_equal(ret, len);
+  assert_memory_equal(readback, static_pass, len);
+
+  c_buf[c_buf[1]+2] = 1;
+  LC = c_buf[1]+3;
+  ret = pass_write_config(&C, &R);
+  assert_int_equal(ret, 0);
+
+  ret = pass_handle_touch(TOUCH_LONG, readback);
+  assert_int_equal(ret, len+1);
+  assert_memory_equal(readback, static_pass, len);
+  assert_int_equal(readback[len], '\r');
+
+  pass_install(0); // reload from file
+  
+  ret = pass_handle_touch(TOUCH_LONG, readback);
+  assert_int_equal(ret, len+1);
+  assert_memory_equal(readback, static_pass, len);
+  assert_int_equal(readback[len], '\r');
 }
 
 // should be called after test_put
@@ -451,6 +545,7 @@ int main() {
   fs_format(&cfg);
   fs_mount(&cfg);
   oath_install(1);
+  pass_install(1);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_select_ins),
@@ -464,6 +559,7 @@ int main() {
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),
+      cmocka_unit_test(test_static_pass),
       cmocka_unit_test(test_space_full),
       cmocka_unit_test(test_regression_fuzz),
   };

@@ -4,7 +4,6 @@
 
 #include <apdu.h>
 
-#define ATTR_DEFAULT_RECORD 0x01
 #define ATTR_KEY 0x02
 #define ATTR_HANDLE 0x03
 
@@ -66,6 +65,6 @@ typedef struct {
 void oath_poweroff(void);
 int oath_install(uint8_t reset);
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
-int oath_process_one_touch(char *output, size_t maxlen);
+int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]);
 
 #endif // CANOKEY_CORE_OATH_OATH_H_

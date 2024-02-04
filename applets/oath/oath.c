@@ -6,6 +6,7 @@
 #include <hmac.h>
 #include <memzero.h>
 #include <oath.h>
+#include <pass.h>
 #include <rand.h>
 #include <string.h>
 
@@ -30,8 +31,6 @@ int oath_install(const uint8_t reset) {
   oath_poweroff();
   if (!reset && get_file_size(OATH_FILE) >= 0) return 0;
   if (write_file(OATH_FILE, NULL, 0, 0, 1) < 0) return -1;
-  const uint32_t default_item = 0xffffffff;
-  if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
   if (write_attr(OATH_FILE, ATTR_KEY, NULL, 0) < 0) return -1;
   uint8_t handle[HANDLE_LEN];
   random_buffer(handle, sizeof(handle));
@@ -42,7 +41,7 @@ int oath_install(const uint8_t reset) {
 static int oath_select(const CAPDU *capdu, RAPDU *rapdu) {
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
-  memcpy(RDATA, (uint8_t[]){OATH_TAG_VERSION, 3, 0x05, 0x05, 0x05, OATH_TAG_NAME, HANDLE_LEN}, 7);
+  memcpy(RDATA, (uint8_t[]){OATH_TAG_VERSION, 3, 0x06, 0x00, 0x00, OATH_TAG_NAME, HANDLE_LEN}, 7);
   if (read_attr(OATH_FILE, ATTR_HANDLE, RDATA + 7, HANDLE_LEN) < 0) return -1;
   LL = 7 + HANDLE_LEN;
 
@@ -166,13 +165,7 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   for (size_t i = 0; i != n_records; ++i) {
     if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) {
-      uint32_t default_item;
-      if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
-      if (default_item == i) { // clear the default set if it is to be deleted
-        default_item = 0xffffffff;
-        if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &default_item, sizeof(default_item)) < 0) return -1;
-      }
-
+      if (pass_delete_oath(i * sizeof(OATH_RECORD)) < 0) return -1;
       record.name_len = 0;
       return write_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
     }
@@ -384,7 +377,7 @@ static uint8_t *oath_digest(const OATH_RECORD *record, uint8_t buffer[SHA512_DIG
   return buffer + offset;
 }
 
-static int oath_calculate_by_offset(const size_t file_offset, uint8_t result[4]) {
+int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   if (file_offset % sizeof(OATH_RECORD) != 0) return -2;
   const int size = get_file_size(OATH_FILE);
   if (size < 0 || file_offset >= (size_t)size) return -2;
@@ -417,7 +410,8 @@ static int oath_calculate_by_offset(const size_t file_offset, uint8_t result[4])
 }
 
 static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);
+  if (P2 != 0x00 && P2 != 0x01) EXCEPT(SW_WRONG_P1P2);
 
   uint16_t offset = 0;
   if (offset + 1 >= LC) EXCEPT(SW_WRONG_LENGTH);
@@ -433,7 +427,7 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
   if (size < 0) return -1;
   const uint32_t n_records = size / sizeof(OATH_RECORD);
   uint32_t i;
-  uint32_t file_offset;
+  uint32_t file_offset = 0;
   OATH_RECORD record;
   for (i = 0; i != n_records; ++i) {
     file_offset = i * sizeof(OATH_RECORD);
@@ -443,8 +437,7 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
   if (i == n_records) EXCEPT(SW_DATA_INVALID);
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
-  if (write_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &file_offset, sizeof(file_offset)) < 0) return -1;
-  return 0;
+  return pass_update_oath(P1 -1, file_offset, record.name_len, record.name, P2);
 }
 
 static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
@@ -616,21 +609,6 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   if (oath_remaining_type == REMAINING_LIST) return oath_list(capdu, rapdu);
   if (oath_remaining_type == REMAINING_CALC_FULL || oath_remaining_type == REMAINING_CALC_TRUNC) return oath_calculate_all(capdu, rapdu);
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-}
-
-int oath_process_one_touch(char *output, const size_t maxlen) {
-  uint32_t offset = 0xffffffff, otp_code;
-  if (read_attr(OATH_FILE, ATTR_DEFAULT_RECORD, &offset, sizeof(offset)) < 0) return -2;
-  int ret = oath_calculate_by_offset(offset, (uint8_t *)&otp_code);
-  if (ret < 0) return ret;
-  if ((size_t)(ret + 1) > maxlen) return -1;
-  output[ret] = '\0';
-  otp_code = htobe32(otp_code);
-  while (ret--) {
-    output[ret] = otp_code % 10 + '0';
-    otp_code /= 10;
-  }
-  return 0;
 }
 
 // ReSharper disable once CppDFAConstantFunctionResult
