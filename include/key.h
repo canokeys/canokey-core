@@ -62,7 +62,7 @@ typedef struct {
  * @param include_length encode the length or not
  * @return encoded length
  */
-int ck_encode_public_key(const ck_key_t *key, uint8_t *buf, bool include_length);
+int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length);
 
 /**
  * Parse the key imported to PIV

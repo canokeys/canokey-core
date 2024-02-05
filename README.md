@@ -44,12 +44,25 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
       * A hardware timer with IRQ is required
 
-  If you need NFC, you also need to implement the following functions:
+  If you need NFC, you also need to implement the following functions for FM11NC08:
   
-  * `void fm_nss_low(void);`
-  * `void fm_nss_high(void);`
-  * `void fm_transmit(uint8_t *buf, uint8_t len);`
-  * `void fm_receive(uint8_t *buf, uint8_t len);`
+  * `void fm_csn_low(void);`
+  * `void fm_csn_high(void);`
+  * `void spi_transmit(uint8_t *buf, uint8_t len);`
+  * `void spi_receive(uint8_t *buf, uint8_t len);`
+
+  or the following functions if you use FM11NT08:
+
+  * `void fm_csn_low(void);`
+  * `void fm_csn_high(void);`
+  * `void i2c_start(void);`
+  * `void i2c_stop(void);`
+  * `void scl_delay(void);`
+  * `uint8_t i2c_read_ack(void);`
+  * `void i2c_send_ack(void);`
+  * `void i2c_send_nack(void);`
+  * `void i2c_write_byte(uint8_t data);`
+  * `uint8_t i2c_read_byte(void);`
 
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
 

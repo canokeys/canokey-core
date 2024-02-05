@@ -77,19 +77,7 @@ func (o *PIVApplet) Send(apdu []byte) ([]byte, uint16, error) {
 	return res[0 : len(res)-2], uint16(res[len(res)-2])<<8 | uint16(res[len(res)-1]), nil
 }
 func (app *PIVApplet) ConfigPIVAlgoExt(enable uint8) {
-	verifyPin := func(pin []byte) (code uint16) {
-		_, code, err := app.Send(append([]byte{0x00, 0x20, 0x00, 0x00, byte(len(pin))}, pin...))
-		So(err, ShouldBeNil)
-		return
-	}
-
-	_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00})
-	So(err, ShouldBeNil)
-	So(code, ShouldEqual, 0x9000)
-	So(verifyPin([]byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36}), ShouldEqual, 0x9000)
-
-	apdu := []byte{0x00, 0x40, uint8(ADMIN_P1_CFG_PIV_ALGO_EXT), enable}
-	_, code, err = app.Send(apdu)
+	_, code, err := app.Send([]byte{0x00, 0xEE, 0x02, 0x00, 0x07, enable, 0x22, 0x50, 0x51, 0x52, 0x53, 0x54})
 	So(err, ShouldBeNil)
 	So(code, ShouldEqual, 0x9000)
 }
@@ -129,13 +117,13 @@ func TestPIVExtensions(t *testing.T) {
 		So(err, ShouldBeNil)
 		defer app.Close()
 
-		Convey("Enable algorithm extension", func(ctx C) {
-			app.ConfigPIVAlgoExt(1)
-		})
-
 		Convey("Select the Applet and Authenticate", func(ctx C) {
 			app.Select()
 			app.Authenticate()
+		})
+
+		Convey("Enable algorithm extension", func(ctx C) {
+			app.ConfigPIVAlgoExt(1)
 		})
 
 		Convey("Generate the key", func(ctx C) {
@@ -150,11 +138,6 @@ func TestPIVExtensions(t *testing.T) {
 
 		Convey("Disable algorithm extension", func(ctx C) {
 			app.ConfigPIVAlgoExt(0)
-		})
-
-		Convey("Select the Applet and Authenticate again", func(ctx C) {
-			app.Select()
-			app.Authenticate()
 		})
 
 		Convey("Generate the key again", func(ctx C) {

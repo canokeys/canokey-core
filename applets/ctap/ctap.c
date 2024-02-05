@@ -5,10 +5,10 @@
 #include "ctap-parser.h"
 #include "secret.h"
 #include "u2f.h"
-#include <aes.h>
 #include <block-cipher.h>
 #include <cbor.h>
 #include <common.h>
+#include <crypto-util.h>
 #include <ctap.h>
 #include <ctaphid.h>
 #include <device.h>
@@ -58,12 +58,15 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
 
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
+// SM2 attr
+CTAP_sm2_attr ctap_sm2_attr;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
   last_cmd = CTAP_INVALID_CMD;
   cp_initialize();
-  if (!reset && get_file_size(CTAP_CERT_FILE) >= 0) {
+  if (!reset && get_file_size(LB_FILE) >= 0) {
+    if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     DBG_MSG("CTAP initialized\n");
     return 0;
   }
@@ -89,6 +92,11 @@ uint8_t ctap_install(uint8_t reset) {
 
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  // initialize SM2 config
+  ctap_sm2_attr.enabled = 0;
+  ctap_sm2_attr.curve_id = 9; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
+  ctap_sm2_attr.algo_id = -48; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms
+  if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
 }
 
@@ -97,72 +105,85 @@ int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(CTAP_CERT_FILE, DATA, 0, LC, 1);
 }
 
-static void build_cose_key(uint8_t *data, uint8_t ecdh) {
-  // format public key as
-  // A5
-  // 01 02
-  // 03 26 (ecdsa) or 03 38 18 (ecdh)
-  // 20 01
-  // 21 58 20 x
-  // 22 58 20 y
-  if (ecdh) {
-    memmove(data + 46, data + 32, 32);
-    memmove(data + 11, data, 32);
-  } else {
-    memmove(data + 45, data + 32, 32);
-    memmove(data + 10, data, 32);
-  }
-  data[0] = 0xA5;
-  data[1] = 0x01;
-  data[2] = 0x02;
-  data[3] = 0x03;
-  if (ecdh) {
-    data[4] = 0x38;
-    data[5] = 0x18;
-    data[6] = 0x20;
-    data[7] = 0x01;
-    data[8] = 0x21;
-    data[9] = 0x58;
-    data[10] = 0x20;
-    data[43] = 0x22;
-    data[44] = 0x58;
-    data[45] = 0x20;
-  } else {
-    data[4] = 0x26;
-    data[5] = 0x20;
-    data[6] = 0x01;
-    data[7] = 0x21;
-    data[8] = 0x58;
-    data[9] = 0x20;
-    data[42] = 0x22;
-    data[43] = 0x58;
-    data[44] = 0x20;
-  }
+int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  const int ret = read_attr(CTAP_CERT_FILE, SM2_ATTR, RDATA, sizeof(ctap_sm2_attr));
+  if (ret < 0) return ret;
+  LL = ret;
+  return 0;
 }
 
-static void build_ed25519_cose_key(uint8_t *data) {
-  // A4                                    # map(4)
-  //  01                                   # unsigned(1)  kty =
-  //  01                                   # unsigned(2)    OKP (1)
-  //  03                                   # unsigned(3)  alg =
-  //  27                                   # negative(7)    EdDSA (-8)
-  //  20                                   # negative(0)  crv =
-  //  06                                   # unsigned(6)    Ed25519 (6)
-  //  21                                   # negative(1)  x =
-  //  58 20                                # bytes(32)      [bstr]
-  //     (32 bytes x)
+int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC != sizeof(ctap_sm2_attr)) EXCEPT(SW_WRONG_LENGTH);
+  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, DATA, sizeof(ctap_sm2_attr));
+  memcpy(&ctap_sm2_attr, DATA, sizeof(ctap_sm2_attr));
+  return ret;
+}
 
-  memmove(data + 10, data, 32);
-  data[0] = 0xa4;
-  data[1] = 0x01;
-  data[2] = 0x01;
-  data[3] = 0x03;
-  data[4] = 0x27;
-  data[5] = 0x20;
-  data[6] = 0x06;
-  data[7] = 0x21;
-  data[8] = 0x58;
-  data[9] = 0x20;
+static int build_ecdsa_cose_key(uint8_t *data, int algo, int curve) {
+  uint8_t buf[80];
+  CborEncoder encoder, map_encoder;
+
+  cbor_encoder_init(&encoder, buf, sizeof(buf), 0);
+  CborError ret = cbor_encoder_create_map(&encoder, &map_encoder, 5);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_KTY);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_KTY_EC2);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_ALG);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, algo);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_CRV);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, curve);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_X);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&map_encoder, data, 32);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_Y);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&map_encoder, data + 32, 32);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_close_container(&encoder, &map_encoder);
+  CHECK_CBOR_RET(ret);
+
+  const int len = cbor_encoder_get_buffer_size(&encoder, buf);
+  memcpy(data, buf, len);
+  return len;
+}
+
+static int build_ed25519_cose_key(uint8_t *data) {
+  uint8_t buf[50];
+  CborEncoder encoder, map_encoder;
+
+  cbor_encoder_init(&encoder, buf, sizeof(buf), 0);
+  CborError ret = cbor_encoder_create_map(&encoder, &map_encoder, 4);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_KTY);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_KTY_OKP);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_ALG);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_ALG_EDDSA);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_CRV);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_CRV_ED25519);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_X);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&map_encoder, data, 32);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_close_container(&encoder, &map_encoder);
+  CHECK_CBOR_RET(ret);
+
+  const int len = cbor_encoder_get_buffer_size(&encoder, buf);
+  memcpy(data, buf, len);
+  return len;
 }
 
 int ctap_consistency_check(CTAP_dc_general_attr *attr) {
@@ -257,16 +278,18 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
       DBG_MSG("Fail to generate a key handle\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
     }
+    int cose_key_size;
     if (alg_type == COSE_ALG_ES256) {
-      build_cose_key(ad->at.public_key, 0);
-      outLen += sizeof(ad->at) - sizeof(ad->at.public_key) + COSE_KEY_ES256_SIZE;
+      cose_key_size = build_ecdsa_cose_key(ad->at.public_key, COSE_ALG_ES256, COSE_KEY_CRV_P256);
     } else if (alg_type == COSE_ALG_EDDSA) {
-      build_ed25519_cose_key(ad->at.public_key);
-      outLen += sizeof(ad->at) - sizeof(ad->at.public_key) + COSE_KEY_EDDSA_SIZE;
+      cose_key_size = build_ed25519_cose_key(ad->at.public_key);
+    } else if (alg_type == ctap_sm2_attr.algo_id) {
+      cose_key_size = build_ecdsa_cose_key(ad->at.public_key, ctap_sm2_attr.algo_id, ctap_sm2_attr.curve_id);
     } else {
       DBG_MSG("Unknown algorithm type\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
     }
+    outLen += sizeof(ad->at) - sizeof(ad->at.public_key) + cose_key_size;
   }
   if (flags & FLAGS_ED) {
     if (*len < outLen + extension_size) {
@@ -1333,14 +1356,14 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // algorithms
   ret = cbor_encode_int(&map, GI_RESP_ALGORITHMS);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&map, &array, 2);
+  ret = cbor_encoder_create_array(&map, &array, ctap_sm2_attr.enabled ? 3 : 2);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_map(&array, &sub_map, 2);
   CHECK_CBOR_RET(ret);
   {
     ret = cbor_encode_text_stringz(&sub_map, "alg");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&sub_map, -7); // ES256 (P-256)
+    ret = cbor_encode_int(&sub_map, COSE_ALG_ES256);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "type");
     CHECK_CBOR_RET(ret);
@@ -1354,7 +1377,7 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   {
     ret = cbor_encode_text_stringz(&sub_map, "alg");
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&sub_map, -8); // EdDSA
+    ret = cbor_encode_int(&sub_map, COSE_ALG_EDDSA);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_text_stringz(&sub_map, "type");
     CHECK_CBOR_RET(ret);
@@ -1363,6 +1386,22 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   }
   ret = cbor_encoder_close_container(&array, &sub_map);
   CHECK_CBOR_RET(ret);
+  if (ctap_sm2_attr.enabled) {
+    ret = cbor_encoder_create_map(&array, &sub_map, 2);
+    CHECK_CBOR_RET(ret);
+    {
+      ret = cbor_encode_text_stringz(&sub_map, "alg");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_int(&sub_map, ctap_sm2_attr.algo_id);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&sub_map, "type");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_text_stringz(&sub_map, "public-key");
+      CHECK_CBOR_RET(ret);
+    }
+    ret = cbor_encoder_close_container(&array, &sub_map);
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
 
@@ -1399,7 +1438,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
   uint8_t iv[16], buf[PIN_ENC_SIZE_P2 + PIN_HASH_SIZE_P2], i;
   memzero(iv, sizeof(iv));
   uint8_t *ptr;
-  int err, retries;
+  int err, retries, cose_key_size;
   switch (cp.sub_command) {
     case CP_CMD_GET_PIN_RETRIES:
     DBG_MSG("Subcommand Get Pin Retries\n");
@@ -1424,8 +1463,8 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
       CHECK_CBOR_RET(ret);
       ptr = key_map.data.ptr - 1;
       cp_get_public_key(ptr);
-      build_cose_key(ptr, 1);
-      key_map.data.ptr = ptr + MAX_COSE_KEY_SIZE;
+      cose_key_size = build_ecdsa_cose_key(ptr, COSE_ALG_ECDH_ES_HKDF_256, COSE_KEY_CRV_P256);
+      key_map.data.ptr = ptr + cose_key_size;
       ret = cbor_encoder_close_container(&map, &key_map);
       CHECK_CBOR_RET(ret);
       ret = cbor_encoder_close_container(encoder, &map);
@@ -1821,11 +1860,11 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       uint8_t *ptr = sub_map.data.ptr - 1;
       memcpy(ptr, key.pub, PUBLIC_KEY_LENGTH[key_type]);
       if (dc.credential_id.alg_type == COSE_ALG_ES256) {
-        build_cose_key(ptr, 0);
-        sub_map.data.ptr = ptr + COSE_KEY_ES256_SIZE;
+        int cose_key_size = build_ecdsa_cose_key(ptr, COSE_ALG_ES256, COSE_KEY_CRV_P256);
+        sub_map.data.ptr = ptr + cose_key_size;
       } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
-        build_ed25519_cose_key(ptr);
-        sub_map.data.ptr = ptr + COSE_KEY_EDDSA_SIZE;
+        int cose_key_size = build_ed25519_cose_key(ptr);
+        sub_map.data.ptr = ptr + cose_key_size;
       }
       ret = cbor_encoder_close_container(&map, &sub_map);
       CHECK_CBOR_RET(ret);

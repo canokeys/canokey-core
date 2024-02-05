@@ -1,0 +1,47 @@
+--- fido2/cose.py	(revision 5cd89c999aa556770b0c3a83f6ac238dca4e8df5)
++++ fido2.new/cose.py	(date 1703602648515)
+@@ -27,10 +27,13 @@
+ 
+ from __future__ import absolute_import, unicode_literals
+ 
++from cryptography.exceptions import InvalidSignature
++
+ from .utils import bytes2int, int2bytes
+ from cryptography.hazmat.backends import default_backend
+ from cryptography.hazmat.primitives import hashes, serialization
+ from cryptography.hazmat.primitives.asymmetric import ec, rsa, padding
++from gmssl import sm2
+ 
+ try:
+     from cryptography.hazmat.primitives.asymmetric import ed25519
+@@ -149,6 +152,30 @@
+         return cls({1: 2, 3: cls.ALGORITHM, -1: 1, -2: data[1:33], -3: data[33:65]})
+ 
+ 
++class SM2(CoseKey):
++    ALGORITHM = -48
++
++    def verify(self, message, signature):
++        if self[-1] != 9:
++            raise ValueError("Unsupported elliptic curve")
++        key = sm2.CryptSM2(None, self[-2].hex() + self[-3].hex())
++        if not key.verify_with_sm3(signature.hex(), message):
++            raise InvalidSignature
++
++    @classmethod
++    def from_cryptography_key(cls, public_key):
++        pn = public_key.public_numbers()
++        return cls(
++            {
++                1: 2,
++                3: cls.ALGORITHM,
++                -1: 9,
++                -2: int2bytes(pn.x, 32),
++                -3: int2bytes(pn.y, 32),
++            }
++        )
++
++
+ class RS256(CoseKey):
+     ALGORITHM = -257
+     _HASH_ALG = hashes.SHA256()

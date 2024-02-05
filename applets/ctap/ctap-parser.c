@@ -17,6 +17,8 @@
     if (ret != CborNoError) return CTAP2_ERR_INVALID_CBOR;                                                             \
   } while (0)
 
+extern CTAP_sm2_attr ctap_sm2_attr;
+
 static void maybe_truncate_rpid(uint8_t stored_rpid[MAX_STORED_RPID_LENGTH], size_t *stored_len, const uint8_t *rpid,
                                 size_t rpid_len) {
   if (rpid_len <= MAX_STORED_RPID_LENGTH) {
@@ -183,7 +185,9 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
   for (size_t i = 0; i < arr_length; ++i) {
     ret = parse_pub_key_cred_param(&arr, &cur_alg_type);
     CHECK_PARSER_RET(ret);
-    if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA)) {
+    if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 ||
+                     cur_alg_type == COSE_ALG_EDDSA ||
+                     (ctap_sm2_attr.enabled && cur_alg_type == ctap_sm2_attr.algo_id))) {
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#authenticatorMakeCredential
       //
       // > This sequence is ordered from most preferred (by the RP) to least preferred.
@@ -314,7 +318,7 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
         if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         ret = cbor_value_get_int_checked(&map, &key);
         CHECK_CBOR_RET(ret);
-        if (key != COSE_ALG_ES256 && key != COSE_ALG_ECDH_ES_HKDF_256) return CTAP2_ERR_UNHANDLED_REQUEST;
+        if (key != COSE_ALG_ECDH_ES_HKDF_256) return CTAP2_ERR_UNHANDLED_REQUEST;
         ++parsed_keys;
         break;
 
@@ -674,6 +678,7 @@ uint8_t parse_make_credential(CborParser *parser, CTAP_make_credential *mc, cons
         CHECK_PARSER_RET(ret);
         if (mc->alg_type == COSE_ALG_ES256) DBG_MSG("EcDSA found\n");
         else if (mc->alg_type == COSE_ALG_EDDSA) DBG_MSG("EdDSA found\n");
+        else if (mc->alg_type == ctap_sm2_attr.algo_id) DBG_MSG("SM2 found\n");
         else
           DBG_MSG("Found other algorithm\n");
         mc->parsed_params |= PARAM_PUB_KEY_CRED_PARAMS;

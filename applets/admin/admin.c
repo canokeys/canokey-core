@@ -7,9 +7,9 @@
 #include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
+#include <pass.h>
 #include <pin.h>
 #include <piv.h>
-#include <string.h>
 
 #define PIN_RETRY_COUNTER 3
 #define SN_FILE "sn"
@@ -17,33 +17,43 @@
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
-static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1, .kbd_with_return_en = 1};
+static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
 
 static admin_device_config_t current_config;
 
-__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
-__attribute__((weak)) int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
-__attribute__((weak)) int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
-__attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) { return 0; }
+__attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  return 0;
+}
 
 uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
-
-uint8_t cfg_is_kbd_interface_enable(void) { return current_config.kbd_interface_en; }
 
 uint8_t cfg_is_ndef_enable(void) { return current_config.ndef_en; }
 
 uint8_t cfg_is_webusb_landing_enable(void) { return current_config.webusb_landing_en; }
 
-uint8_t cfg_is_kbd_with_return_enable(void) { return current_config.kbd_with_return_en; }
-
-uint8_t cfg_is_piv_algo_extension_enable(void) { return current_config.piv_algo_ext_en; }
-
 void admin_poweroff(void) { pin.is_validated = 0; }
 
-int admin_install(uint8_t reset) {
+int admin_install(const uint8_t reset) {
   admin_poweroff();
   if (reset || get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
     current_config = default_cfg;
@@ -61,12 +71,12 @@ static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC == 0) {
     if (pin.is_validated) return 0;
-    int retries = pin_get_retries(&pin);
+    const int retries = pin_get_retries(&pin);
     if (retries < 0) return -1;
     EXCEPT(SW_PIN_RETRIES + retries);
   }
   uint8_t ctr;
-  int err = pin_verify(&pin, DATA, LC, &ctr);
+  const int err = pin_verify(&pin, DATA, LC, &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
@@ -76,7 +86,7 @@ static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int admin_change_pin(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  int err = pin_update(&pin, DATA, LC);
+  const int err = pin_update(&pin, DATA, LC);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   return 0;
@@ -104,25 +114,16 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_P1_CFG_LED_ON:
     current_config.led_normally_on = P2 & 1;
     break;
-  case ADMIN_P1_CFG_KBDIFACE:
-    current_config.kbd_interface_en = P2 & 1;
-    break;
   case ADMIN_P1_CFG_NDEF:
     current_config.ndef_en = P2 & 1;
     break;
   case ADMIN_P1_CFG_WEBUSB_LANDING:
     current_config.webusb_landing_en = P2 & 1;
     break;
-  case ADMIN_P1_CFG_KBD_WITH_RETURN:
-    current_config.kbd_with_return_en = P2 & 1;
-    break;
-  case ADMIN_P1_CFG_PIV_ALGO_EXT:
-    current_config.piv_algo_ext_en = P2 & 1;
-    break;
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  int ret = write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
+  const int ret = write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
   stop_blinking();
   return ret;
 }
@@ -132,11 +133,11 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LE < 5) EXCEPT(SW_WRONG_LENGTH);
 
   RDATA[0] = current_config.led_normally_on;
-  RDATA[1] = current_config.kbd_interface_en;
+  RDATA[1] = 0; // reserved
   RDATA[2] = ndef_get_read_only();
   RDATA[3] = current_config.ndef_en;
   RDATA[4] = current_config.webusb_landing_en;
-  RDATA[5] = current_config.kbd_with_return_en;
+  RDATA[5] = 0; // reserved
   LL = 6;
 
   return 0;
@@ -157,7 +158,7 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   int ret;
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 5) EXCEPT(SW_WRONG_LENGTH);
-  if (memcmp_s(DATA, (const uint8_t *)"RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
+  if (memcmp_s(DATA, "RESET", 5) != 0) EXCEPT(SW_WRONG_DATA);
 #ifndef FUZZ
   ret = pin_get_retries(&pin);
   if (ret > 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
@@ -177,13 +178,16 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) return ret;
   ret = ndef_install(1);
   if (ret < 0) return ret;
+  ret = pass_install(1);
+  if (ret < 0) return ret;
   ret = admin_install(1);
   if (ret < 0) return ret;
+
   return 0;
 }
 
 void fill_sn(uint8_t *buf) {
-  int err = read_file(SN_FILE, buf, 0, 4);
+  const int err = read_file(SN_FILE, buf, 0, 4);
   if (err != 4) memset(buf, 0, 4);
 }
 
@@ -220,6 +224,9 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_VERIFY:
     ret = admin_verify(capdu, rapdu);
     goto done;
+
+  default:
+    break;
   }
 
 #ifndef FUZZ
@@ -248,6 +255,18 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
     ret = ndef_toggle_read_only(capdu, rapdu);
     break;
+  case ADMIN_INS_RESET_PASS:
+    ret = pass_install(1);
+    break;
+  case ADMIN_INS_RESET_CTAP:
+    ret = ctap_install(1);
+    break;
+  case ADMIN_INS_READ_CTAP_SM2_CONFIG:
+    ret = ctap_read_sm2_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_WRITE_CTAP_SM2_CONFIG:
+    ret = ctap_write_sm2_config(capdu, rapdu);
+    break;
   case ADMIN_INS_CHANGE_PIN:
     ret = admin_change_pin(capdu, rapdu);
     break;
@@ -262,6 +281,12 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_READ_CONFIG:
     ret = admin_read_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_READ_PASS_CONFIG:
+    ret = pass_read_config(capdu, rapdu);
+    break;
+  case ADMIN_INS_WRITE_PASS_CONFIG:
+    ret = pass_write_config(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);
