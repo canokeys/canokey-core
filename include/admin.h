@@ -15,6 +15,7 @@
 #define ADMIN_INS_READ_CTAP_SM2_CONFIG 0x11
 #define ADMIN_INS_WRITE_CTAP_SM2_CONFIG 0x12
 #define ADMIN_INS_RESET_PASS 0x13
+#define ADMIN_INS_NFC_ENABLE 0x14
 #define ADMIN_INS_VERIFY 0x20
 #define ADMIN_INS_CHANGE_PIN 0x21
 #define ADMIN_INS_WRITE_SN 0x30
@@ -46,6 +47,7 @@ int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
+int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu);
 
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_ndef_enable(void);
