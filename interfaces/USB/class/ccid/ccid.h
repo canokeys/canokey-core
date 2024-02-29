@@ -132,5 +132,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
 void CCID_Loop(void);
 void CCID_TimeExtensionLoop(void);
 uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes
+void CCID_eject(void);
+void CCID_insert(void);
 
 #endif //_CCID_H_

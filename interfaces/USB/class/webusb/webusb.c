@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <apdu.h>
+#include <ccid.h>
 #include <device.h>
 #include <webusb.h>
 
@@ -14,6 +15,7 @@ static uint8_t state;
 static uint16_t apdu_buffer_size;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
+static uint32_t last_keepalive;
 
 uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
@@ -21,11 +23,14 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   state = STATE_IDLE;
   apdu_cmd.data = global_buffer;
   apdu_resp.data = global_buffer;
+  last_keepalive = 0;
 
   return USBD_OK;
 }
 
 uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
+  CCID_eject();
+  last_keepalive = device_get_tick();
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
     if (acquire_apdu_buffer(BUFFER_OWNER_WEBUSB) != 0) {
@@ -66,6 +71,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
 }
 
 void WebUSB_Loop(void) {
+  if (device_get_tick() - last_keepalive > 2000) CCID_insert();
   if (state != STATE_PROCESS) return;
 
   DBG_MSG("C: ");

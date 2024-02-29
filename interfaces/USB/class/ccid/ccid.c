@@ -26,6 +26,7 @@ static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 uint8_t *global_buffer;
+static uint8_t card_status;
 
 void init_apdu_buffer(void) {
   global_buffer = bulkin_data.abData;
@@ -38,6 +39,7 @@ uint8_t CCID_Init(void) {
   bulkout_data.abData = bulkin_data.abData;
   apdu_cmd.data = bulkin_data.abData;
   apdu_resp.data = bulkin_data.abData;
+  card_status = BM_ICC_PRESENT_ACTIVE;
   return 0;
 }
 
@@ -96,11 +98,6 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_POWERSELECT;
   }
 
-  if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
-    return SLOTERROR_BAD_GUARDTIME;
-  }
-
   applets_poweroff();
   memcpy(bulkin_data.abData, atr_ccid, sizeof(atr_ccid));
   bulkin_data.dwLength = sizeof(atr_ccid);
@@ -119,7 +116,6 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   if (error != 0) return error;
 
   applets_poweroff();
-  release_apdu_buffer(BUFFER_OWNER_CCID);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -133,7 +129,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
 static uint8_t PC_to_RDR_GetSlotStatus(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
   if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, card_status);
   return SLOT_NO_ERROR;
 }
 
@@ -147,6 +143,16 @@ static uint8_t PC_to_RDR_GetSlotStatus(void) {
 uint8_t PC_to_RDR_XfrBlock(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT);
   if (error != 0) return error;
+
+  if (card_status == BM_ICC_NO_ICC_PRESENT) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
+    return SLOTERROR_ICC_MUTE;
+  }
+
+  if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+    return SLOTERROR_BAD_GUARDTIME;
+  }
 
   DBG_MSG("O: ");
   PRINT_HEX(bulkout_data.abData, bulkout_data.dwLength);
@@ -169,7 +175,10 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   bulkin_data.abData[LL + 1] = LO(SW);
   DBG_MSG("I: ");
   PRINT_HEX(bulkin_data.abData, bulkin_data.dwLength);
+
+  release_apdu_buffer(BUFFER_OWNER_CCID);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
+
   return SLOT_NO_ERROR;
 }
 
@@ -372,4 +381,12 @@ void CCID_TimeExtensionLoop(void) {
   }
 
   device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
+}
+
+void CCID_eject(void) {
+  card_status = BM_ICC_NO_ICC_PRESENT;
+}
+
+void CCID_insert(void) {
+  card_status = BM_ICC_PRESENT_ACTIVE;
 }
