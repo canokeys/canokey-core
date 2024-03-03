@@ -5,6 +5,7 @@
 #include <common.h>
 
 #define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
+#define SHORT_ABDATA_SIZE 8  /* Enough for most CCID messages except XfrBlock/Secure */
 #define CCID_CMD_HEADER_SIZE 10
 #define CCID_NUMBER_OF_SLOTS 1
 #define TIME_EXTENSION_PERIOD 1500
@@ -18,7 +19,7 @@ typedef struct {
   uint8_t bSpecific_0;  /* Offset = 7*/
   uint8_t bSpecific_1;  /* Offset = 8*/
   uint8_t bSpecific_2;  /* Offset = 9*/
-  uint8_t *abData;      /* Offset = 10*/
+  uint8_t abDataShort[SHORT_ABDATA_SIZE]; /* Offset = 10*/
 } __packed ccid_bulkout_data_t;
 
 typedef struct {
@@ -121,6 +122,8 @@ typedef enum {
 #define PC_TO_RDR_ABORT 0x72
 #define PC_TO_RDR_SETDATARATEANDCLOCKFREQUENCY 0x73
 
+#define PC_TO_RDR_DISCARDED 0xDD /* For internal use only */
+
 #define RDR_TO_PC_DATABLOCK 0x80
 #define RDR_TO_PC_SLOTSTATUS 0x81
 #define RDR_TO_PC_PARAMETERS 0x82
@@ -129,6 +132,7 @@ typedef enum {
 
 uint8_t CCID_Init(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
+void CCID_InFinished(uint8_t is_time_extension_request);
 void CCID_Loop(void);
 void CCID_TimeExtensionLoop(void);
 uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes

@@ -94,13 +94,15 @@ void WebUSB_Loop(void) {
   DBG_MSG("R: ");
   PRINT_HEX(global_buffer, apdu_buffer_size);
   state = STATE_SENDING_RESP;
-  release_apdu_buffer(BUFFER_OWNER_WEBUSB);
 }
 
 uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
 
-  if (state == STATE_SENT_RESP) state = STATE_IDLE;
+  if (state == STATE_SENT_RESP) {
+    release_apdu_buffer(BUFFER_OWNER_WEBUSB);
+    state = STATE_IDLE;
+  }
 
   return USBD_OK;
 }
