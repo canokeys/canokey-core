@@ -8,6 +8,7 @@
 #include <usbd_ccid.h>
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data.bStatus = (cmd_status | icc_status)
+#define CCID_CardStatus() (bulkin_data.bStatus & BM_ICC_STATUS_MASK)
 #define CCID_IsShortCommand() (bulkout_data.dwLength <= SHORT_ABDATA_SIZE)
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
@@ -27,7 +28,6 @@ static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 uint8_t *global_buffer;
-static uint8_t card_status;
 
 void init_apdu_buffer(void) {
   global_buffer = bulkin_data.abData;
@@ -39,7 +39,7 @@ uint8_t CCID_Init(void) {
   has_cmd = 0;
   apdu_cmd.data = bulkin_data.abData;
   apdu_resp.data = bulkin_data.abData;
-  card_status = BM_ICC_PRESENT_INACTIVE;
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return 0;
 }
 
@@ -66,6 +66,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
           // global_buffer is not available, discarding abData
           // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
           bulkout_data.bMessageType = PC_TO_RDR_DISCARDED;
+          DBG_MSG("Discard data because of buffer conflict\n");
         } else {
           // global_buffer is acquired before use
           abData = global_buffer;
@@ -122,12 +123,13 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
 
   uint8_t voltage = bulkout_data.bSpecific_0;
   if (voltage != 0x00) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     return SLOTERROR_BAD_POWERSELECT;
   }
 
   // acquire the global buffer before using bulkin_data.abData
   if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
+    DBG_MSG("Cannot acquire the buffer\n");
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
     return SLOTERROR_ICC_MUTE;
   }
@@ -162,7 +164,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
 static uint8_t PC_to_RDR_GetSlotStatus(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
   if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, card_status);
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return SLOT_NO_ERROR;
 }
 
@@ -178,13 +180,14 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT);
   if (error != 0) return error;
 
-  if (card_status == BM_ICC_NO_ICC_PRESENT) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
+  if (CCID_CardStatus() == BM_ICC_NO_ICC_PRESENT) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     return SLOTERROR_ICC_MUTE;
   }
 
   // acquire the global buffer before using bulkin_data.abData
   if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
+    DBG_MSG("Cannot acquire the buffer for R-APDU\n");
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
     return SLOTERROR_ICC_MUTE;
   }
@@ -225,7 +228,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
 static uint8_t PC_to_RDR_GetParameters(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
   if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return SLOT_NO_ERROR;
 }
 
@@ -275,6 +278,7 @@ static void RDR_to_PC_Parameters(uint8_t errorCode) {
 
   // acquire the global buffer before using bulkin_data.abData
   if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
+    DBG_MSG("Cannot acquire the buffer\n");
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
     bulkin_data.bError = SLOTERROR_ICC_MUTE;
     return;
@@ -314,37 +318,37 @@ static void RDR_to_PC_Escape(uint8_t errorCode) {
  * @retval uint8_t status
  */
 static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
-  bulkin_data.bStatus = BM_ICC_PRESENT_ACTIVE | BM_COMMAND_STATUS_NO_ERROR;
   uint32_t parameter = param_type;
 
   if (parameter & CHK_PARAM_SLOT) {
     if (bulkout_data.bSlot >= CCID_NUMBER_OF_SLOTS) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_SLOT;
     }
   }
 
   if (parameter & CHK_PARAM_DWLENGTH) {
     if (bulkout_data.dwLength != 0) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_LENTGH;
     }
   }
 
   if (parameter & CHK_PARAM_abRFU2) {
     if ((bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_ABRFU_2B;
     }
   }
 
   if (parameter & CHK_PARAM_abRFU3) {
     if ((bulkout_data.bSpecific_0 != 0) || (bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_ABRFU_3B;
     }
   }
 
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return 0;
 }
 
@@ -353,7 +357,6 @@ void CCID_Loop(void) {
   has_cmd = 0;
 
   uint8_t errorCode;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, card_status);
   switch (bulkout_data.bMessageType) {
   case PC_TO_RDR_ICCPOWERON:
     DBG_MSG("Slot power on\n");
@@ -366,7 +369,7 @@ void CCID_Loop(void) {
     RDR_to_PC_SlotStatus(errorCode);
     break;
   case PC_TO_RDR_GETSLOTSTATUS:
-    DBG_MSG("Slot get status\n");
+    // DBG_MSG("Slot get status\n");
     errorCode = PC_to_RDR_GetSlotStatus();
     RDR_to_PC_SlotStatus(errorCode);
     break;
@@ -391,6 +394,7 @@ void CCID_Loop(void) {
     RDR_to_PC_DataBlock(SLOTERROR_CMD_NOT_SUPPORTED);
     break;
   case PC_TO_RDR_DISCARDED:
+    DBG_MSG("Respond to a data-discarded message\n");
     bulkin_data.dwLength = 0;
     CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
     RDR_to_PC_DataBlock(SLOTERROR_ICC_MUTE);
@@ -413,7 +417,10 @@ void CCID_Loop(void) {
 
 void CCID_InFinished(uint8_t is_time_extension_request)
 {
-  if (is_time_extension_request) return;
+  if (is_time_extension_request) {
+    DBG_MSG("Time-ext sent\n");
+    return;
+  }
 
   // Release the buffer after bulkin_data is transmitted
   // If the buffer has not been acquired by CCID, ownership is unchanged
@@ -437,10 +444,12 @@ void CCID_TimeExtensionLoop(void) {
   device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
 }
 
-void CCID_eject(void) {
-  card_status = BM_ICC_NO_ICC_PRESENT;
-}
+// void CCID_eject(void) {
+//   DBG_MSG("EJ\n");
+//   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
+// }
 
-void CCID_insert(void) {
-  card_status = BM_ICC_PRESENT_INACTIVE;
-}
+// void CCID_insert(void) {
+//   DBG_MSG("INS\n");
+//   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
+// }
