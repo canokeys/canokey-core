@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include "apdu.h"
 #include "ccid.h"
 #include "ctaphid.h"
 #include "fabrication.h"
@@ -26,6 +27,7 @@ RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
     if(!applet_init) {
         CTAPHID_Init(send_hid_report);
         CCID_Init();
+        init_apdu_buffer();
         card_fabrication_procedure("/tmp/lfs-root");
         applet_init = 1;
     }
@@ -125,12 +127,13 @@ RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
     RecvPci->Protocol = SendPci.Protocol;
     //SCARD_IO_HEADER::Length is not used according to document
 
-    if(TxLength > sizeof(bulkin_data[Lun].abData)) {
+    if(TxLength > ABDATA_SIZE) {
         printf("warning TxLength(%lu) too large\n", TxLength);
         *RxLength = 0;
         return IFD_ERROR_INSUFFICIENT_BUFFER;
     }
-    memcpy(bulkout_data[Lun].abData, TxBuffer, TxLength);
+    uint8_t *abData = TxLength <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : global_buffer;
+    memcpy(abData, TxBuffer, TxLength);
     bulkout_data[Lun].dwLength = TxLength;
 
     uint8_t ret = PC_to_RDR_XfrBlock();
