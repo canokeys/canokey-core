@@ -34,6 +34,17 @@ typedef struct {
 } __packed ccid_bulkin_data_t;
 
 typedef struct {
+  uint8_t bMessageType;        /* Offset = 0*/
+  uint32_t dwLength;           /* Offset = 1*/
+  uint8_t bSlot;               /* Offset = 5, Same as Bulk-OUT message */
+  uint8_t bSeq;                /* Offset = 6, Same as Bulk-OUT message */
+  uint8_t bStatus;             /* Offset = 7, Slot status as defined in § 6.2.6*/
+  uint8_t bError;              /* Offset = 8, Slot error  as defined in § 6.2.6*/
+  uint8_t bSpecific;           /* Offset = 9*/
+  uint8_t abData[17];          /* Offset = 10*/
+} __packed ccid_bulkin_short_t;
+
+typedef struct {
   uint8_t bMessageType; /* Offset = 0*/
   uint32_t dwLength;    /* Offset = 1*/
   uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
@@ -122,8 +133,6 @@ typedef enum {
 #define PC_TO_RDR_MECHANICAL 0x71
 #define PC_TO_RDR_ABORT 0x72
 #define PC_TO_RDR_SETDATARATEANDCLOCKFREQUENCY 0x73
-
-#define PC_TO_RDR_DISCARDED 0xDD /* For internal use only */
 
 #define RDR_TO_PC_DATABLOCK 0x80
 #define RDR_TO_PC_SLOTSTATUS 0x81
