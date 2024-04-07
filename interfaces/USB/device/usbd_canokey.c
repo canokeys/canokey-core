@@ -23,6 +23,7 @@ static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   USBD_KBDHID_Init(pdev);
   USBD_CCID_Init(pdev);
   USBD_WEBUSB_Init(pdev);
+  USBD_LL_Init_Done();
 
   return 0;
 }
