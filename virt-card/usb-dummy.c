@@ -84,3 +84,4 @@ uint32_t USBD_LL_GetRxDataSize(USBD_HandleTypeDef *pdev, uint8_t ep_addr) {
   return ep->xfer_count;
   return 0;
 }
+void USBD_LL_Init_Done(void) {}
