@@ -6,5 +6,6 @@
 
 uint8_t KBDHID_Init(void);
 uint8_t KBDHID_Loop(void);
+void KBDHID_Eject(void);
 
 #endif // __KBDHID_H_INCLUDED__

@@ -90,6 +90,7 @@ static void KBDHID_TypeKeySeq(void) {
         report.modifier = 0; // No modifier key
       }
       report.keycode[0] = keycode;
+      report.id = 1;
       // Emulate the key press
       USBD_KBDHID_SendReport(&usb_device, (uint8_t *)&report, sizeof(report));
       state = KBDHID_KeyDown;
@@ -99,6 +100,7 @@ static void KBDHID_TypeKeySeq(void) {
   case KBDHID_KeyDown:
     if (USBD_KBDHID_IsIdle()) {
       memset(&report, 0, sizeof(report)); // Clear the report
+      report.id = 1;
       // Emulate the key release
       USBD_KBDHID_SendReport(&usb_device, (uint8_t *)&report, sizeof(report));
       key_seq_position++;
@@ -106,6 +108,14 @@ static void KBDHID_TypeKeySeq(void) {
       break;
     }
   }
+}
+
+void KBDHID_Eject() {
+  report.id = 2;
+  report.modifier = 0xB8;
+  USBD_KBDHID_SendReport(&usb_device, (uint8_t *)&report, 2);
+  report.modifier = 0x00;
+  USBD_KBDHID_SendReport(&usb_device, (uint8_t *)&report, 2);
 }
 
 uint8_t KBDHID_Init() {
