@@ -56,7 +56,7 @@ int ndef_create_init_ndef() {
   return 0;
 }
 
-int ndef_install(uint8_t reset) {
+int ndef_install(const uint8_t reset) {
   ndef_poweroff();
   if (reset || get_file_size(CC_FILE) != sizeof(current_cc) || get_file_size(NDEF_FILE) <= 0) {
     memcpy(current_cc, default_cc, sizeof(current_cc));
@@ -83,7 +83,7 @@ int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
-  uint16_t offset = (uint16_t)(P1 << 8) | P2;
+  const uint16_t offset = (uint16_t)(P1 << 8) | P2;
   if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
   if (LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
@@ -101,13 +101,12 @@ int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case NONE:
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    break;
   }
   return 0;
 }
 
 int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
-  uint16_t offset = (uint16_t)(P1 << 8) | P2;
+  const uint16_t offset = (uint16_t)(P1 << 8) | P2;
   if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
   if (LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
@@ -115,7 +114,6 @@ int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
   case CC:
     // do not allow change CC, only modified via admin
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    break;
   case NDEF:
     if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     if (offset + LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
@@ -123,7 +121,6 @@ int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case NONE:
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    break;
   }
   return 0;
 }

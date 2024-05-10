@@ -13,6 +13,9 @@
 #define HW_VARIANT_NAME "CanoKey Virt-Card"
 #endif
 
+static uint32_t initial_ticks = 0;
+static char err_trigger_filename[64];
+
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
   memcpy(RDATA, GIT_REV, LL);
@@ -62,12 +65,12 @@ uint32_t device_get_tick(void) {
 
   s = spec.tv_sec;
   ms = spec.tv_nsec / 1000000;
-  return (uint32_t)(s * 1000 + ms) / 100;  // 100ms per tick in software simulation
+  return (uint32_t)(s * 1000 + ms) - initial_ticks;
 }
 void device_disable_irq(void) {}
 void device_enable_irq(void) {}
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
-void fm_write_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) { return; }
+void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) { return; }
 
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
   if (*var == expect) {
@@ -128,4 +131,27 @@ int testmode_get_is_nfc_mode(void) {
   set_nfc_state((uint8_t)nfc_mode);
 #endif
   return 0;
+}
+
+void testmode_set_initial_ticks(uint32_t ticks) {
+  initial_ticks = ticks;
+}
+
+void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data)
+{
+  DBG_MSG("%hhu %hhu ", p1, p2);
+  PRINT_HEX(data, len);
+  if (!p1 && !p2) {
+    if (len < sizeof(err_trigger_filename)) {
+      memcpy(err_trigger_filename, data, len);
+      err_trigger_filename[len] = 0;
+    }
+  }
+}
+
+bool testmode_err_triggered(const char* filename, bool file_wr)
+{
+  bool ret = (strcmp(filename, err_trigger_filename) == 0);
+  if (ret) err_trigger_filename[0] = 0;
+  return ret;
 }

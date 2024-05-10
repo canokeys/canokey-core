@@ -32,7 +32,7 @@ void device_loop(uint8_t has_touch) {
   ctap_hid_loop(0);
   if (has_touch &&                  // hardware features the touch pad
       !device_is_blinking() &&      // applets are not waiting for touch
-      cfg_is_kbd_interface_enable() // keyboard emulation enabled
+      device_get_tick() > 2000      // ignore touch for the first 2 seconds
   )
     kbd_hid_loop();
 }
@@ -68,6 +68,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
     // if (wait_status == WAIT_CTAPHID) CCID_Loop();
     if (ctap_hid_loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+      DBG_MSG("Cancelled by host\n");
       if (wait_status != WAIT_DEEP) {
         stop_blinking();
         wait_status = WAIT_NONE; // namely shallow
@@ -82,7 +83,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       wait_status = shallow;
       return USER_PRESENCE_TIMEOUT;
     }
-    if (now - last >= 300) {
+    if (now - last >= 100) {
       last = now;
       // if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
@@ -97,6 +98,12 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   } else
     wait_status = WAIT_NONE;
   return USER_PRESENCE_OK;
+}
+
+int send_keepalive_during_processing(uint8_t entry) {
+  if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+  DBG_MSG("KEEPALIVE\n");
+  return 0;
 }
 
 __attribute__((weak)) int strong_user_presence_test(void) {

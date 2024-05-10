@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #include <apdu.h>
 #include <applets.h>
 #include <ccid.h>
@@ -7,7 +8,9 @@
 
 #include <ccid_device.h>
 
-#define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_data.bStatus = (cmd_status | icc_status)
+#define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
+#define CCID_CardStatus() (bulkin_short.bStatus & BM_ICC_STATUS_MASK)
+#define CCID_IsShortCommand() (bulkout_data.dwLength <= SHORT_ABDATA_SIZE)
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
 
@@ -17,6 +20,7 @@ static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xF
                                    0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 
 static empty_ccid_bulkin_data_t bulkin_time_extension;
+static ccid_bulkin_short_t bulkin_short;
 ccid_bulkin_data_t bulkin_data;
 ccid_bulkout_data_t bulkout_data;
 static uint16_t ab_data_length;
@@ -50,11 +54,81 @@ uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time
     else
       device_delay(1);
   }
-
-  bulkin_state = len % CFG_TUD_CCID_EPSIZE == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
+  if (is_time_extension_request)
+    bulkin_state = CCID_STATE_DATA_IN_TIME_EXTENSION;
+  else
+    bulkin_state = len % CFG_TUD_CCID_EPSIZE == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
   ret = tud_ccid_write(buf, len);
 
   return ret;
+}
+
+uint8_t CCID_OutEvent(uint32_t len) {
+  uint8_t *abData = NULL;
+  switch (bulkout_state) {
+  case CCID_STATE_IDLE:
+    if (len == 0)
+      bulkout_state = CCID_STATE_IDLE;
+    else if (len >= CCID_CMD_HEADER_SIZE) {
+      tud_ccid_read(&bulkout_data, CCID_CMD_HEADER_SIZE);
+      bulkout_data.dwLength = letoh32(bulkout_data.dwLength);
+      bulkin_data.bSlot = bulkout_data.bSlot;
+      bulkin_data.bSeq = bulkout_data.bSeq;
+      bulkin_short.bSlot = bulkout_data.bSlot;
+      bulkin_short.bSeq = bulkout_data.bSeq;
+      ab_data_length = len - CCID_CMD_HEADER_SIZE;
+      if (ab_data_length > bulkout_data.dwLength)
+        ab_data_length = bulkout_data.dwLength; // abnormal packet received, truncate data
+
+      if (bulkout_data.bMessageType == PC_TO_RDR_XFRBLOCK) {
+        // always acquire the APDU buffer for XFRBLOCK, because the buffer is used during APDU process and response
+        if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
+          // global_buffer is not available, discarding abData
+          // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
+          DBG_MSG("Discard data because of buffer conflict\n");
+        } else {
+          abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+        }
+      } else if (CCID_IsShortCommand()) {
+        // abDataShort is large enough for most commands
+        abData = bulkout_data.abDataShort;
+      } else {
+        // this should not happen
+        ERR_MSG("Discard data of MSG %u\n", bulkout_data.bMessageType);
+      }
+      if (abData) tud_ccid_read(abData, ab_data_length);
+      if (ab_data_length >= bulkout_data.dwLength)
+        has_cmd = abData ? 1 : 2;
+      else { // ab_data_length < bulkout_data.dwLength
+        bulkout_state = abData ? CCID_STATE_RECEIVE_DATA : CCID_STATE_DISCARD_DATA;
+      }
+    }
+    break;
+
+  case CCID_STATE_RECEIVE_DATA:
+    abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+    if (ab_data_length + len < bulkout_data.dwLength) {
+      tud_ccid_read(abData + ab_data_length, len);
+      ab_data_length += len;
+    } else {
+      if (ab_data_length + len > bulkout_data.dwLength)
+        len = bulkout_data.dwLength - ab_data_length; // abnormal packet received, truncate data
+      tud_ccid_read(abData + ab_data_length, len);
+      bulkout_state = CCID_STATE_IDLE;
+      has_cmd = 1;
+    }
+    break;
+
+  case CCID_STATE_DISCARD_DATA:
+    if (ab_data_length + len < bulkout_data.dwLength) {
+      ab_data_length += len;
+    } else {
+      bulkout_state = CCID_STATE_IDLE;
+      has_cmd = 2;
+    }
+    break;
+  }
+  return 0;
 }
 
 /**
@@ -64,24 +138,20 @@ uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time
  * @retval uint8_t status of the command execution
  */
 static uint8_t PC_to_RDR_IccPowerOn(void) {
-  bulkin_data.dwLength = 0;
+  bulkin_short.dwLength = 0;
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU2);
   if (error != 0) return error;
 
   uint8_t voltage = bulkout_data.bSpecific_0;
   if (voltage != 0x00) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
     return SLOTERROR_BAD_POWERSELECT;
   }
 
-  if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
-    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
-    return SLOTERROR_BAD_GUARDTIME;
-  }
-
   applets_poweroff();
-  memcpy(bulkin_data.abData, atr_ccid, sizeof(atr_ccid));
-  bulkin_data.dwLength = sizeof(atr_ccid);
+  _Static_assert(sizeof(bulkin_short.abData) >= sizeof(atr_ccid), "bulkin_short.abData is not large enough");
+  memcpy(bulkin_short.abData, atr_ccid, sizeof(atr_ccid));
+  bulkin_short.dwLength = sizeof(atr_ccid);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -97,7 +167,6 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   if (error != 0) return error;
 
   applets_poweroff();
-  release_apdu_buffer(BUFFER_OWNER_CCID);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -111,7 +180,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
 static uint8_t PC_to_RDR_GetSlotStatus(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
   if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return SLOT_NO_ERROR;
 }
 
@@ -123,16 +192,17 @@ static uint8_t PC_to_RDR_GetSlotStatus(void) {
  * @retval uint8_t status of the command execution
  */
 uint8_t PC_to_RDR_XfrBlock(void) {
+  uint8_t *abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT);
   if (error != 0) return error;
 
   DBG_MSG("O: ");
-  PRINT_HEX(bulkout_data.abData, bulkout_data.dwLength);
+  PRINT_HEX(abData, bulkout_data.dwLength);
 
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
-  if (build_capdu(&apdu_cmd, bulkout_data.abData, bulkout_data.dwLength) < 0) {
+  if (build_capdu(&apdu_cmd, abData, bulkout_data.dwLength) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
@@ -147,7 +217,9 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   bulkin_data.abData[LL + 1] = LO(SW);
   DBG_MSG("I: ");
   PRINT_HEX(bulkin_data.abData, bulkin_data.dwLength);
+
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
+
   return SLOT_NO_ERROR;
 }
 
@@ -161,7 +233,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
 static uint8_t PC_to_RDR_GetParameters(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
   if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_ACTIVE);
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return SLOT_NO_ERROR;
 }
 
@@ -172,10 +244,12 @@ static uint8_t PC_to_RDR_GetParameters(void) {
  * @param  uint8_t errorCode: code to be returned to the host
  * @retval None
  */
-static void RDR_to_PC_DataBlock(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_DATABLOCK;
-  bulkin_data.bError = errorCode;
-  bulkin_data.bSpecific = 0;
+static void RDR_to_PC_DataBlock(uint8_t errorCode, uint8_t isShort) {
+  ccid_bulkin_data_t *pBulkin = &bulkin_data;
+  if (isShort) pBulkin = (ccid_bulkin_data_t*)&bulkin_short;
+  pBulkin->bMessageType = RDR_TO_PC_DATABLOCK;
+  pBulkin->bError = errorCode;
+  pBulkin->bSpecific = 0;
 }
 
 /**
@@ -187,10 +261,10 @@ static void RDR_to_PC_DataBlock(uint8_t errorCode) {
  * @retval None
  */
 static void RDR_to_PC_SlotStatus(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_SLOTSTATUS;
-  bulkin_data.dwLength = 0;
-  bulkin_data.bError = errorCode;
-  bulkin_data.bSpecific = 0;
+  bulkin_short.bMessageType = RDR_TO_PC_SLOTSTATUS;
+  bulkin_short.dwLength = 0;
+  bulkin_short.bError = errorCode;
+  bulkin_short.bSpecific = 0;
 }
 
 /**
@@ -201,23 +275,23 @@ static void RDR_to_PC_SlotStatus(uint8_t errorCode) {
  * @retval None
  */
 static void RDR_to_PC_Parameters(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_PARAMETERS;
-  bulkin_data.bError = errorCode;
+  bulkin_short.bMessageType = RDR_TO_PC_PARAMETERS;
+  bulkin_short.bError = errorCode;
 
   if (errorCode == SLOT_NO_ERROR)
-    bulkin_data.dwLength = 7;
+    bulkin_short.dwLength = 7;
   else
-    bulkin_data.dwLength = 0;
+    bulkin_short.dwLength = 0;
 
-  bulkin_data.abData[0] = 0x11; // Fi=372, Di=1
-  bulkin_data.abData[1] = 0x10; // Checksum: LRC, Convention: direct, ignored by CCID
-  bulkin_data.abData[2] = 0x00; // No extra guard time
-  bulkin_data.abData[3] = 0x15; // BWI = 1, CWI = 5
-  bulkin_data.abData[4] = 0x00; // Stopping the Clock is not allowed
-  bulkin_data.abData[5] = 0xFE; // IFSC = 0xFE
-  bulkin_data.abData[6] = 0x00; // NAD
+  bulkin_short.abData[0] = 0x11; // Fi=372, Di=1
+  bulkin_short.abData[1] = 0x10; // Checksum: LRC, Convention: direct, ignored by CCID
+  bulkin_short.abData[2] = 0x00; // No extra guard time
+  bulkin_short.abData[3] = 0x15; // BWI = 1, CWI = 5
+  bulkin_short.abData[4] = 0x00; // Stopping the Clock is not allowed
+  bulkin_short.abData[5] = 0xFE; // IFSC = 0xFE
+  bulkin_short.abData[6] = 0x00; // NAD
 
-  bulkin_data.bSpecific = 0x01;
+  bulkin_short.bSpecific = 0x01;
 }
 
 /**
@@ -228,10 +302,10 @@ static void RDR_to_PC_Parameters(uint8_t errorCode) {
  * @retval None
  */
 static void RDR_to_PC_Escape(uint8_t errorCode) {
-  bulkin_data.bMessageType = RDR_TO_PC_ESCAPE;
-  bulkin_data.dwLength = 0;
-  bulkin_data.bError = errorCode;
-  bulkin_data.bSpecific = 0;
+  bulkin_short.bMessageType = RDR_TO_PC_ESCAPE;
+  bulkin_short.dwLength = 0;
+  bulkin_short.bError = errorCode;
+  bulkin_short.bSpecific = 0;
 }
 
 /**
@@ -244,38 +318,130 @@ static void RDR_to_PC_Escape(uint8_t errorCode) {
  * @retval uint8_t status
  */
 static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
-  bulkin_data.bStatus = BM_ICC_PRESENT_ACTIVE | BM_COMMAND_STATUS_NO_ERROR;
   uint32_t parameter = param_type;
 
   if (parameter & CHK_PARAM_SLOT) {
     if (bulkout_data.bSlot >= CCID_NUMBER_OF_SLOTS) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_SLOT;
     }
   }
 
   if (parameter & CHK_PARAM_DWLENGTH) {
     if (bulkout_data.dwLength != 0) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_LENTGH;
     }
   }
 
   if (parameter & CHK_PARAM_abRFU2) {
     if ((bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_ABRFU_2B;
     }
   }
 
   if (parameter & CHK_PARAM_abRFU3) {
     if ((bulkout_data.bSpecific_0 != 0) || (bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_PRESENT_ACTIVE);
+      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
       return SLOTERROR_BAD_ABRFU_3B;
     }
   }
 
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return 0;
+}
+
+//--------------------------------------------------------------------+
+// CCID init and loop
+//--------------------------------------------------------------------+
+uint8_t ccid_init(void) {
+  send_data_spinlock = 0;
+  bulkout_state = CCID_STATE_IDLE;
+  has_cmd = 0;
+  apdu_cmd.data = bulkin_data.abData;
+  apdu_resp.data = bulkin_data.abData;
+  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
+  return 0;
+}
+
+void ccid_loop(void) {
+  if (!has_cmd) return;
+
+  uint8_t errorCode;
+  ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t*)&bulkin_short;
+  switch (bulkout_data.bMessageType) {
+  case PC_TO_RDR_ICCPOWERON:
+    DBG_MSG("Slot power on\n");
+    errorCode = PC_to_RDR_IccPowerOn();
+    RDR_to_PC_DataBlock(errorCode, 1);
+    break;
+  case PC_TO_RDR_ICCPOWEROFF:
+    DBG_MSG("Slot power off\n");
+    errorCode = PC_to_RDR_IccPowerOff();
+    RDR_to_PC_SlotStatus(errorCode);
+    break;
+  case PC_TO_RDR_GETSLOTSTATUS:
+    // DBG_MSG("Slot get status\n");
+    errorCode = PC_to_RDR_GetSlotStatus();
+    RDR_to_PC_SlotStatus(errorCode);
+    break;
+  case PC_TO_RDR_XFRBLOCK:
+    if (has_cmd == 2) {
+      DBG_MSG("Respond to a data-discarded message\n");
+      pBulkin->dwLength = 2;
+      pBulkin->abData[0] = HI(SW_ERR_NOT_PERSIST);
+      pBulkin->abData[1] = LO(SW_ERR_NOT_PERSIST);
+      RDR_to_PC_DataBlock(SLOT_NO_ERROR, 1);
+    } else {
+      errorCode = PC_to_RDR_XfrBlock();
+      RDR_to_PC_DataBlock(errorCode, 0);
+      pBulkin = &bulkin_data;
+    }
+    break;
+  case PC_TO_RDR_GETPARAMETERS:
+    DBG_MSG("Slot get param\n");
+    errorCode = PC_to_RDR_GetParameters();
+    RDR_to_PC_Parameters(errorCode);
+    break;
+  case PC_TO_RDR_RESETPARAMETERS:
+  case PC_TO_RDR_SETPARAMETERS:
+    RDR_to_PC_Parameters(SLOTERROR_CMD_NOT_SUPPORTED);
+    break;
+  case PC_TO_RDR_ESCAPE:
+    RDR_to_PC_Escape(SLOTERROR_CMD_NOT_SUPPORTED);
+    break;
+  case PC_TO_RDR_SECURE:
+    pBulkin->dwLength = 0;
+    RDR_to_PC_DataBlock(SLOTERROR_CMD_NOT_SUPPORTED, 1);
+    break;
+  case PC_TO_RDR_ICCCLOCK:
+  case PC_TO_RDR_T0APDU:
+  case PC_TO_RDR_MECHANICAL:
+  case PC_TO_RDR_ABORT:
+  default:
+    RDR_to_PC_SlotStatus(SLOTERROR_CMD_NOT_SUPPORTED);
+    break;
+  }
+
+  uint16_t len = pBulkin->dwLength;
+  pBulkin->dwLength = htole32(pBulkin->dwLength);
+  device_spinlock_lock(&send_data_spinlock, true);
+  CCID_Response_SendData((uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
+  device_spinlock_unlock(&send_data_spinlock);
+  has_cmd = 0;
+}
+
+void CCID_InFinished(uint8_t is_time_extension_request)
+{
+  if (is_time_extension_request) {
+    DBG_MSG("Time-ext sent\n");
+    return;
+  }
+
+  // Release the buffer after bulkin_data is transmitted
+  // If the buffer has not been acquired by CCID, ownership is unchanged
+  release_apdu_buffer(BUFFER_OWNER_CCID);
 }
 
 void CCID_TimeExtensionLoop(void) {
@@ -296,76 +462,6 @@ void CCID_TimeExtensionLoop(void) {
 }
 
 //--------------------------------------------------------------------+
-// CCID init and loop
-//--------------------------------------------------------------------+
-uint8_t ccid_init(void) {
-  send_data_spinlock = 0;
-  bulkout_state = CCID_STATE_IDLE;
-  has_cmd = 0;
-  bulkout_data.abData = bulkin_data.abData;
-  apdu_cmd.data = bulkin_data.abData;
-  apdu_resp.data = bulkin_data.abData;
-  return 0;
-}
-
-void ccid_loop(void) {
-  if (!has_cmd) return;
-  has_cmd = 0;
-
-  uint8_t errorCode;
-  switch (bulkout_data.bMessageType) {
-  case PC_TO_RDR_ICCPOWERON:
-    DBG_MSG("Slot power on\n");
-    errorCode = PC_to_RDR_IccPowerOn();
-    RDR_to_PC_DataBlock(errorCode);
-    break;
-  case PC_TO_RDR_ICCPOWEROFF:
-    DBG_MSG("Slot power off\n");
-    errorCode = PC_to_RDR_IccPowerOff();
-    RDR_to_PC_SlotStatus(errorCode);
-    break;
-  case PC_TO_RDR_GETSLOTSTATUS:
-    DBG_MSG("Slot get status\n");
-    errorCode = PC_to_RDR_GetSlotStatus();
-    RDR_to_PC_SlotStatus(errorCode);
-    break;
-  case PC_TO_RDR_XFRBLOCK:
-    errorCode = PC_to_RDR_XfrBlock();
-    RDR_to_PC_DataBlock(errorCode);
-    break;
-  case PC_TO_RDR_GETPARAMETERS:
-    DBG_MSG("Slot get param\n");
-    errorCode = PC_to_RDR_GetParameters();
-    RDR_to_PC_Parameters(errorCode);
-    break;
-  case PC_TO_RDR_RESETPARAMETERS:
-  case PC_TO_RDR_SETPARAMETERS:
-    RDR_to_PC_Parameters(SLOTERROR_CMD_NOT_SUPPORTED);
-    break;
-  case PC_TO_RDR_ESCAPE:
-    RDR_to_PC_Escape(SLOTERROR_CMD_NOT_SUPPORTED);
-    break;
-  case PC_TO_RDR_SECURE:
-    bulkin_data.dwLength = 0;
-    RDR_to_PC_DataBlock(SLOTERROR_CMD_NOT_SUPPORTED);
-    break;
-  case PC_TO_RDR_ICCCLOCK:
-  case PC_TO_RDR_T0APDU:
-  case PC_TO_RDR_MECHANICAL:
-  case PC_TO_RDR_ABORT:
-  default:
-    RDR_to_PC_SlotStatus(SLOTERROR_CMD_NOT_SUPPORTED);
-    break;
-  }
-
-  uint16_t len = bulkin_data.dwLength;
-  bulkin_data.dwLength = htole32(bulkin_data.dwLength);
-  device_spinlock_lock(&send_data_spinlock, true);
-  CCID_Response_SendData((uint8_t *)&bulkin_data, len + CCID_CMD_HEADER_SIZE, 0);
-  device_spinlock_unlock(&send_data_spinlock);
-}
-
-//--------------------------------------------------------------------+
 // TinyUSB stack callbacks
 //--------------------------------------------------------------------+
 // Invoked when received new data
@@ -374,59 +470,7 @@ void tud_ccid_rx_cb(uint8_t itf) {
 
   if (itf != 0) return;
   uint32_t len = tud_ccid_available();
-
-  switch (bulkout_state) {
-  case CCID_STATE_IDLE:
-    if (len == 0)
-      bulkout_state = CCID_STATE_IDLE;
-    else if (len >= CCID_CMD_HEADER_SIZE) {
-      ab_data_length = len - CCID_CMD_HEADER_SIZE;
-      tud_ccid_read(&bulkout_data, CCID_CMD_HEADER_SIZE);
-      tud_ccid_read(bulkout_data.abData, ab_data_length);
-
-      TU_LOG2("CCID: First packet %lu bytes: \r\n  Header: ", len);
-      TU_LOG2_MEM(&bulkout_data, CCID_CMD_HEADER_SIZE, 1);
-      TU_LOG2("\r\n  Data: ");
-      TU_LOG2_MEM(bulkout_data.abData, ab_data_length, 1);
-      TU_LOG2("\r\n");
-
-      bulkout_data.dwLength = tu_le32toh(bulkout_data.dwLength);
-      bulkin_data.bSlot = bulkout_data.bSlot;
-      bulkin_data.bSeq = bulkout_data.bSeq;
-
-      if (ab_data_length == bulkout_data.dwLength)
-        has_cmd = 1;
-      else if (ab_data_length < bulkout_data.dwLength) {
-        if (bulkout_data.dwLength > ABDATA_SIZE)
-          bulkout_state = CCID_STATE_IDLE;
-        else
-          bulkout_state = CCID_STATE_RECEIVE_DATA;
-      } else
-        bulkout_state = CCID_STATE_IDLE;
-    }
-    break;
-
-  case CCID_STATE_RECEIVE_DATA:
-    if (ab_data_length + len < bulkout_data.dwLength) {
-      tud_ccid_read(bulkout_data.abData + ab_data_length, len);
-      ab_data_length += len;
-
-      TU_LOG2("CCID: Continue packet %lu bytes: \r\n  Data: ", len);
-      TU_LOG_MEM(2, bulkout_data.abData + ab_data_length, len, 1);
-      TU_LOG2("\r\n");
-
-    } else if (ab_data_length + len == bulkout_data.dwLength) {
-      tud_ccid_read(bulkout_data.abData + ab_data_length, len);
-
-      TU_LOG2("CCID: Last packet %lu bytes: \r\n  Data: ", len);
-      TU_LOG_MEM(2, bulkout_data.abData + ab_data_length, len, 1);
-      TU_LOG2("\r\n");
-
-      bulkout_state = CCID_STATE_IDLE;
-      has_cmd = 1;
-    } else
-      bulkout_state = CCID_STATE_IDLE;
-  }
+  CCID_OutEvent(len);
 }
 
 // Invoked when last tx transfer finished
@@ -436,6 +480,17 @@ void tud_ccid_tx_cb(uint8_t itf, uint32_t sent_bytes) {
     bulkin_state = CCID_STATE_DATA_IN;
     tud_ccid_write(NULL, 0);
   } else {
+    CCID_InFinished(bulkin_state == CCID_STATE_DATA_IN_TIME_EXTENSION);
     bulkin_state = CCID_STATE_IDLE;
   }
 }
+
+// void CCID_eject(void) {
+//   DBG_MSG("EJ\n");
+//   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
+// }
+
+// void CCID_insert(void) {
+//   DBG_MSG("INS\n");
+//   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
+// }

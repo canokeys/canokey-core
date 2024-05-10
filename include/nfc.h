@@ -2,22 +2,68 @@
 #ifndef _NFC_H_
 #define _NFC_H_
 
-#define REG_FIFO_FLUSH 0x1
-#define REG_FIFO_WORDCNT 0x2
-#define REG_RF_STATUS 0x3
-#define REG_RF_TXEN 0x4
-#define REG_RF_BAUD 0x5
-#define REG_RF_RATS 0x6
-#define REG_MAIN_IRQ 0x7
-#define REG_FIFO_IRQ 0x8
-#define REG_AUX_IRQ 0x9
-#define REG_MAIN_IRQ_MASK 0xA
-#define REG_FIFO_IRQ_MASK 0xB
-#define REG_AUX_IRQ_MASK 0xC
-#define REG_NFC_CFG 0xD
-#define REG_REGU_CFG 0xE
+#define NFC_CHIP_FM11NC 0
+#define NFC_CHIP_FM11NT 1
+#define NFC_CHIP_NA -1
+
+#ifndef NFC_CHIP
+#define NFC_CHIP NFC_CHIP_NA
+#endif
+
+#if NFC_CHIP == NFC_CHIP_FM11NC
+
+#define FM_REG_FIFO_FLUSH    0x1
+#define FM_REG_FIFO_WORDCNT  0x2
+#define FM_REG_RF_STATUS     0x3
+#define FM_REG_RF_TXEN       0x4
+#define FM_REG_RF_BAUD       0x5
+#define FM_REG_RF_RATS       0x6
+#define FM_REG_MAIN_IRQ      0x7
+#define FM_REG_FIFO_IRQ      0x8
+#define FM_REG_AUX_IRQ       0x9
+#define FM_REG_MAIN_IRQ_MASK 0xA
+#define FM_REG_FIFO_IRQ_MASK 0xB
+#define FM_REG_AUX_IRQ_MASK  0xC
+#define FM_REG_NFC_CFG       0xD
+#define FM_REG_REGU_CFG      0xE
+
+#define FM_EEPROM_ATQA       0x03A0
+#define FM_EEPROM_ATS        0x03B0
 
 #define RF_STATE_MASK 0xE0
+
+#elif NFC_CHIP == NFC_CHIP_FM11NT
+
+#define FM_REG_USER_CFG0     0xFFE0
+#define FM_REG_USER_CFG1     0xFFE1
+#define FM_REG_USER_CFG2     0xFFE2
+#define FM_REG_RESET_SILENCE 0xFFE6
+#define FM_REG_STATUS        0xFFE7
+#define FM_REG_VOUT_EN_CFG   0xFFE9
+#define FM_REG_VOUT_RES_CFG  0xFFEA
+#define FM_REG_FIFO_ACCESS   0xFFF0
+#define FM_REG_FIFO_FLUSH    0xFFF1
+#define FM_REG_FIFO_WORDCNT  0xFFF2
+#define FM_REG_RF_STATUS     0xFFF3
+#define FM_REG_RF_TXEN       0xFFF4
+#define FM_REG_RF_CFG        0xFFF5
+#define FM_REG_RF_RATS       0xFFF6
+#define FM_REG_MAIN_IRQ      0xFFF7
+#define FM_REG_FIFO_IRQ      0xFFF8
+#define FM_REG_AUX_IRQ       0xFFF9
+#define FM_REG_MAIN_IRQ_MASK 0xFFFA
+#define FM_REG_FIFO_IRQ_MASK 0xFFFB
+#define FM_REG_AUX_IRQ_MASK  0xFFFC
+
+#define FM_EEPROM_SN         0x0000
+#define FM_EEPROM_USER_CFG0  0x0390
+#define FM_EEPROM_USER_CFG1  0x0391
+#define FM_EEPROM_USER_CFG2  0x0392
+#define FM_EEPROM_ATS        0x03B0
+#define FM_EEPROM_ATQA       0x03BC
+#define FM_EEPROM_CRC8       0x03BB
+
+#endif
 
 #define MAIN_IRQ_AUX (1 << 0)
 #define MAIN_IRQ_FIFO (1 << 1)

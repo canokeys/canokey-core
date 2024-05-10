@@ -94,7 +94,7 @@ typedef struct {
 #define LOOP_SUCCESS 0x00
 #define LOOP_CANCEL 0x01
 
-#define MAX_CTAP_BUFSIZE 1280
+#define MAX_CTAP_BUFSIZE 1300
 
 typedef enum { CTAPHID_IDLE = 0, CTAPHID_BUSY } CTAPHID_StateTypeDef;
 
@@ -112,7 +112,7 @@ typedef struct {
 void CTAPHID_SendKeepAlive(uint8_t status);
 void CTAPHID_SendReport(uint8_t *report, uint16_t len);
 
-void ctap_hid_init(uint8_t (*send_report)(uint8_t *report, uint16_t len));
+void ctap_hid_init(void (*send_report)(uint8_t *report, uint16_t len));
 uint8_t ctap_hid_loop(uint8_t wait_for_user);
 
 void ctap_hid_report_complete_cb(uint8_t const *report, uint8_t len);

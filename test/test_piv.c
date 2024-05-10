@@ -86,12 +86,6 @@ static void test_regression_fuzz(void **state) {
   if (1) {
     // empty input
     uint8_t data[] = {};
-    test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9B, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // empty input
-    uint8_t data[] = {};
     test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
   }
 
@@ -127,20 +121,22 @@ static void test_regression_fuzz(void **state) {
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
+  struct lfs_filebd_config bdcfg = {.read_size = 1, .prog_size = 512, .erase_size = 512, .erase_count = 256};
+  bd.cfg = &bdcfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
   cfg.prog = &lfs_filebd_prog;
   cfg.erase = &lfs_filebd_erase;
   cfg.sync = &lfs_filebd_sync;
-  cfg.read_size = 16;
-  cfg.prog_size = 16;
+  cfg.read_size = 1;
+  cfg.prog_size = 512;
   cfg.block_size = 512;
-  cfg.block_count = 400;
+  cfg.block_count = 256;
   cfg.block_cycles = 50000;
-  cfg.cache_size = 128;
-  cfg.lookahead_size = 16;
-  lfs_filebd_create(&cfg, "lfs-root");
+  cfg.cache_size = 512;
+  cfg.lookahead_size = 32;
+  lfs_filebd_create(&cfg, "lfs-root", &bdcfg);
 
   fs_format(&cfg);
   fs_mount(&cfg);

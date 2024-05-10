@@ -53,7 +53,7 @@ uint8_t const desc_kbdhid_report[] = {
 uint8_t const * tud_hid_descriptor_report_cb(uint8_t itf) {
   if (itf == HID_ITF_CTAP) {
     return desc_ctaphid_report;
-  } else if (itf == HID_ITF_KBD && cfg_is_kbd_interface_enable()) {
+  } else if (itf == HID_ITF_KBD) {
     return desc_kbdhid_report;
   }
 
@@ -198,13 +198,13 @@ uint8_t const * tud_descriptor_configuration_cb(uint8_t index) {
   patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_CCID_IF, EP_IN(ccid), EP_OUT(ccid), CFG_TUD_CCID_EPSIZE);
 
   // patch KBDHID descriptor
-  if(cfg_is_kbd_interface_enable()) {
+  // if(cfg_is_kbd_interface_enable()) {
     desc = desc_end;
     desc_end = desc + sizeof(desc_configuration_kbdhid);
     memcpy(desc, desc_configuration_kbdhid, sizeof(desc_configuration_kbdhid));
     patch_interface_descriptor(desc, desc_end, USBD_CANOKEY_KBDHID_IF, EP_IN(kbd_hid), EP_OUT(kbd_hid), CFG_TUD_KBDHID_EP_BUFSIZE);
     n_interface++;
-  }
+  // }
 
   // patch configuration descriptor
   _desc_configuration[4] = n_interface;

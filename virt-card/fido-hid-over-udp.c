@@ -22,6 +22,7 @@
 #include "device.h"
 #include "ctaphid.h"
 #include "fabrication.h"
+#include "applets.h"
 
 static int udp_server() {
   static bool run_already = false;
@@ -109,12 +110,19 @@ static uint8_t udp_send_current_fd(uint8_t *report, uint16_t len) {
   return 0;
 }
 
+static void emulate_reboot(void) {
+  testmode_set_initial_ticks(0);
+  testmode_set_initial_ticks(device_get_tick());
+  applets_install();
+}
+
 int main() {
   current_fd = udp_server();
-  card_fabrication_procedure("/tmp/lfs-root");
+  card_fabrication_procedure("lfs-root");
   // emulate the NFC mode, where user-presence tests are skipped
   set_nfc_state(1);
   ctap_hid_init(udp_send_current_fd);
+  emulate_reboot();
   for (;;) {
     uint8_t buf[HID_RPT_SIZE];
     int length = udp_recv(current_fd, buf, sizeof(buf));
@@ -129,10 +137,17 @@ int main() {
       if (memcmp(magic_cmd, buf, 64) == 0) {
         printf("MAGIC REBOOT command received!\r\n");
         // exit(0);
-        char *const argv[] = {"fido-hid-over-udp", NULL};
-        int ret = execv("/proc/self/exe", argv);
-        printf("ERROR exec %d", ret);
-        return 0;
+        emulate_reboot();
+        continue;
+        // close(current_fd);
+        // char *const argv[] = {"fido-hid-over-udp", NULL};
+        // int ret = execv("/proc/self/exe", argv);
+        // printf("ERROR exec %d", ret);
+        // return 0;
+      } else if (length > 14 && memcmp(buf, "\x99\x10\x52\xca\x95\xe5\x69\xde\x69\xe0\x2e\xbf", 12) == 0) {
+        uint8_t *data = buf + 12;
+        testmode_inject_error(data[0], data[1], length-14, data+2);
+        continue;
       }
       ctap_hid_set_report_cb(0, HID_REPORT_TYPE_INVALID, buf, length);
     }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include "apdu.h"
 #include "ccid.h"
+#include "ctaphid.h"
 #include "fabrication.h"
 #include <ifdhandler.h>
 #include <reader.h>
@@ -14,11 +16,18 @@ const static UCHAR ATR[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65
                             0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 static int applet_init = 0;
 
+static uint8_t send_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len)
+{
+    return 0;
+}
+
 RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
 {
     printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
     if(!applet_init) {
+        ctap_hid_init(send_hid_report);
         ccid_init();
+        init_apdu_buffer();
         card_fabrication_procedure("/tmp/lfs-root");
         applet_init = 1;
     }
@@ -118,12 +127,13 @@ RESPONSECODE IFDHTransmitToICC ( DWORD Lun, SCARD_IO_HEADER SendPci,
     RecvPci->Protocol = SendPci.Protocol;
     //SCARD_IO_HEADER::Length is not used according to document
 
-    if(TxLength > sizeof(bulkin_data[Lun].abData)) {
+    if(TxLength > ABDATA_SIZE) {
         printf("warning TxLength(%lu) too large\n", TxLength);
         *RxLength = 0;
         return IFD_ERROR_INSUFFICIENT_BUFFER;
     }
-    memcpy(bulkout_data[Lun].abData, TxBuffer, TxLength);
+    uint8_t *abData = TxLength <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : global_buffer;
+    memcpy(abData, TxBuffer, TxLength);
     bulkout_data[Lun].dwLength = TxLength;
 
     uint8_t ret = PC_to_RDR_XfrBlock();

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef _WEBUSB_H_
 #define _WEBUSB_H_
 

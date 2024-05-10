@@ -4,7 +4,7 @@
 #include <admin.h>
 #include <common.h>
 #include <device.h>
-#include <oath.h>
+#include <pass.h>
 
 #include <kbdhid.h>
 #include <usb_descriptors.h>
@@ -15,47 +15,66 @@ static enum {
   KBDHID_KeyDown,
   KBDHID_KeyUp,
 } state;
-
-static const uint8_t ascii_to_keycode[128][2] = {HID_ASCII_TO_KEYCODE};
-static char key_sequence[8 + 2];
-static uint8_t keycode[6];
-static uint8_t modifier;
-
+static char key_sequence[PASS_MAX_PASSWORD_LENGTH + 2]; // one for enter and one for '\0'
 static uint8_t key_seq_position;
-static uint32_t last_sent;
 
-//--------------------------------------------------------------------+
-// User class code
-//--------------------------------------------------------------------+
+static uint8_t ascii2keycode(char ch) {
+  const uint8_t shift = 0x80; // Shift key flag
 
-static void KBDHID_UserTouchHandle(void) {
-  int ret, len;
-  memset(key_sequence, 0, sizeof(key_sequence));
-  ret = oath_process_one_touch(key_sequence, sizeof(key_sequence));
-  if (ret < 0) {
-    ERR_MSG("Failed to get the OTP code: %d\n", ret);
-    if (ret == -2) {
-      memcpy(key_sequence, "not-set", 7);
-      len = 7;
-    } else {
-      memcpy(key_sequence, "error", 5);
-      len = 5;
-    }
-  } else {
-    for (int i = 0; i < sizeof(key_sequence) - 1; i++) {
-      if (key_sequence[i] == '\0') {
-        len = i;
-        break;
-      }
-    }
+  // digits and lowercase letters
+  if ('1' <= ch && ch <= '9')
+    return 30 + ch - '1';
+  if ('0' == ch)
+    return 39;
+  if ('a' <= ch && ch <= 'z')
+    return 4 + ch - 'a';
+
+  // uppercase letters
+  if ('A' <= ch && ch <= 'Z')
+    return (4 + ch - 'A') | shift;
+
+  // symbols and special characters
+  switch(ch) {
+  case 13: return 0x28; // \r
+  case 32: return 0x2C; // space
+  case 33: return 0x1E | shift; // !
+  case 34: return 0x34 | shift; // "
+  case 35: return 0x20 | shift; // #
+  case 36: return 0x21 | shift; // $
+  case 37: return 0x22 | shift; // %
+  case 38: return 0x24 | shift; // &
+  case 39: return 0x34; // '
+  case 40: return 0x26 | shift; // (
+  case 41: return 0x27 | shift; // )
+  case 42: return 0x25 | shift; // *
+  case 43: return 0x2E | shift; // +
+  case 44: return 0x36; // ,
+  case 45: return 0x2D; // -
+  case 46: return 0x37; // .
+  case 47: return 0x38; // /
+  case 58: return 0x33 | shift; // :
+  case 59: return 0x33; // ;
+  case 60: return 0x36 | shift; // <
+  case 61: return 0x2E; // =
+  case 62: return 0x37 | shift; // >
+  case 63: return 0x38 | shift; // ?
+  case 64: return 0x1F | shift; // @
+  case 91: return 0x2F; // [
+  case 92: return 0x31; // "\"
+  case 93: return 0x30; // ]
+  case 94: return 0x23 | shift; // ^
+  case 95: return 0x2D | shift; // _
+  case 96: return 0x35; // `
+  case 123: return 0x2F | shift; // {
+  case 124: return 0x31 | shift; // |
+  case 125: return 0x30 | shift; // }
+  case 126: return 0x35 | shift; // ~
+  default: return 0; // undefined
   }
-  if (cfg_is_kbd_with_return_enable()) key_sequence[len] = '\r';
-  key_seq_position = 0;
-  state = KBDHID_Typing;
-  DBG_MSG("Start typing %s\r\n", key_sequence);
 }
 
-static void KBDHID_TypeKeySeq() {
+static void KBDHID_TypeKeySeq(void) {
+  static uint8_t modifier, keycode[6];
   switch (state) {
   case KBDHID_Idle:
     break;
@@ -63,13 +82,17 @@ static void KBDHID_TypeKeySeq() {
   case KBDHID_Typing:
   case KBDHID_KeyUp:
     if (key_sequence[key_seq_position] == '\0') {
-      DBG_MSG("Key typing ended\r\n");
+      DBG_MSG("Key typing ended\n");
       state = KBDHID_Idle;
     } else if (tud_hid_n_ready(HID_ITF_KBD)) {
       // Emulate key down
-      uint8_t chr = (uint8_t)key_sequence[key_seq_position];
-      modifier = (ascii_to_keycode[chr][0]) ? KEYBOARD_MODIFIER_LEFTSHIFT : 0;
-      keycode[0] = ascii_to_keycode[chr][1];
+      keycode[0] = ascii2keycode(key_sequence[key_seq_position]);
+      if (keycode[0] & 0x80) { // Check for shift flag
+        modifier = 0x02; // Shift key
+        keycode[0] &= 0x7F; // Clear shift flag
+      } else {
+        modifier = 0; // No modifier key
+      }
       tud_hid_n_keyboard_report(HID_ITF_KBD, 0, modifier, keycode);
 
       state = KBDHID_KeyDown;
@@ -94,22 +117,27 @@ void kbd_hid_init(void) {
   state = KBDHID_Idle;
 
   key_seq_position = 0;
-  last_sent = 0;
-
-  memset(keycode, 0, sizeof(keycode));
-  modifier = 0;
 }
 
 void kbd_hid_loop(void) {
-  if (get_touch_result() == TOUCH_SHORT && state == KBDHID_Idle && device_get_tick() - last_sent > 1000) {
-    DBG_MSG("Short touch detected\r\n");
-
-    KBDHID_UserTouchHandle();
-    last_sent = device_get_tick();
+  if (state == KBDHID_Idle) {
+    const uint8_t touch = get_touch_result();
+    if (touch != TOUCH_NO) {
+      const int len = pass_handle_touch(touch, key_sequence);
+      if (len <= 0) {
+        DBG_MSG("Do nothing\n");
+        return;
+      }
+      key_sequence[len] = 0;
+      key_seq_position = 0;
+      state = KBDHID_Typing;
+      DBG_MSG("Start typing %s", key_sequence);
+    }
     set_touch_result(TOUCH_NO);
+  } else {
+    KBDHID_TypeKeySeq();
   }
 
-  if (state != KBDHID_Idle) KBDHID_TypeKeySeq();
 }
 
 //--------------------------------------------------------------------+

@@ -234,7 +234,7 @@ func TestOpenPGPApplet(t *testing.T) {
 
 			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6A80) // data is longer than 40% of 2048-bits
+			So(code, ShouldEqual, 0x6700) // data is longer than 40% of 2048-bits
 
 			// Decipher
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x80, 0x86, 0x02, 0xA4, 0x00})
@@ -317,7 +317,7 @@ func TestOpenPGPApplet(t *testing.T) {
 
 			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6A80) // data is longer than 40% of 2048-bits
+			So(code, ShouldEqual, 0x6700) // data is longer than 40% of 2048-bits
 
 		})
 	})
@@ -481,6 +481,55 @@ func TestOpenPGPCerts(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A80)
 		})
+	})
+}
+
+func TestOpenPGPED25519(t *testing.T) {
+	doGenerate := true
+
+	Convey("Connecting to applet", t, func(ctx C) {
+
+		app, err := New()
+		So(err, ShouldBeNil)
+		defer app.Close()
+		_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x06, 0xD2, 0x76, 0x00, 0x01, 0x24, 0x01})
+		So(err, ShouldBeNil)
+		So(code, ShouldEqual, 0x9000)
+
+		if doGenerate {
+			// Admin PIN
+			_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x83, 0x08, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			// ED25519 key-attr
+			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC1, 0x0A, 0x16, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			// generate
+			_, code, err = app.Send([]byte{0x00, 0x47, 0x80, 0x00, 0x02, 0xB6, 0x00})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+		}
+		verifyPin := []byte{0x00, 0x20, 0x00, 0x81, 0x06, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36}
+		// compute digital signature
+		signAPDU := []byte{0x00, 0x2A, 0x9E, 0x9A, 0x20, 0x61, 0x1C, 0xE6, 0x47, 0x96, 0xBC, 0x6A, 0xC0, 0x0F, 0x3D, 0xD7, 0x0A, 0x73, 0x67, 0xD2, 0xAD, 0xA6, 0xEB, 0x34, 0xCD, 0x28, 0xA2, 0xA2, 0x52, 0x52, 0xF1, 0xB3, 0xD4, 0x63, 0xEA, 0x3A, 0xAF, 0x00}
+		_, code, err = app.Send(verifyPin)
+		So(err, ShouldBeNil)
+		So(code, ShouldEqual, 0x9000)
+		rsp1, code, err := app.Send(signAPDU)
+		So(err, ShouldBeNil)
+		So(code, ShouldEqual, 0x9000)
+		_, code, err = app.Send(verifyPin)
+		So(err, ShouldBeNil)
+		rsp2, code, err := app.Send(signAPDU)
+		So(code, ShouldEqual, 0x9000)
+		_, code, err = app.Send(verifyPin)
+		So(err, ShouldBeNil)
+		rsp3, code, err := app.Send(signAPDU)
+		So(code, ShouldEqual, 0x9000)
+		So(rsp3, ShouldResemble, rsp2)
+		So(rsp1, ShouldResemble, rsp2)
+
 	})
 }
 

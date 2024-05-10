@@ -25,6 +25,8 @@ typedef struct {
 #define SW_NO_ERROR 0x9000
 #define SW_TERMINATED 0x6285
 #define SW_PIN_RETRIES 0x63C0
+#define SW_ERR_NOT_PERSIST 0x6400
+#define SW_ERR_PERSIST 0x6500
 #define SW_WRONG_LENGTH 0x6700
 #define SW_UNABLE_TO_PROCESS 0x6900
 #define SW_SECURITY_STATUS_NOT_SATISFIED 0x6982
@@ -83,6 +85,7 @@ enum {
   BUFFER_OWNER_NONE = 1,
   BUFFER_OWNER_CCID,
   BUFFER_OWNER_WEBUSB,
+  BUFFER_OWNER_USBD, // store the configuration descriptor during a control transfer
 };
 
 void init_apdu_buffer(void); // implement in ccid.c for reusing the ccid buffer

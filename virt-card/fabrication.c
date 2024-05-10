@@ -5,6 +5,7 @@
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
+#include <../applets/ctap/ctap-internal.h>
 #include <admin.h>
 #include <aes.h>
 #include <apdu.h>
@@ -16,6 +17,7 @@
 
 static struct lfs_config cfg;
 static lfs_filebd_t bd;
+static struct lfs_filebd_config bdcfg = {.read_size = 1, .prog_size = 512, .erase_size = 512, .erase_count = 256};
 
 uint8_t private_key[] = {0x46, 0x5b, 0x44, 0x5d, 0x8e, 0x78, 0x34, 0x53, 0xf7, 0x4b, 0x90,
                          0x00, 0xd2, 0x20, 0x32, 0x51, 0x99, 0x5e, 0x12, 0xdc, 0xd1, 0x21,
@@ -61,6 +63,7 @@ static void fake_fido_personalization() {
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU capdu;
   RAPDU rapdu;
+  CTAP_sm2_attr sm2_attr;
   capdu.data = c_buf;
   rapdu.data = r_buf;
 
@@ -79,6 +82,20 @@ static void fake_fido_personalization() {
   capdu.ins = ADMIN_INS_WRITE_FIDO_CERT;
   capdu.data = cert;
   capdu.lc = sizeof(cert);
+  admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
+
+  capdu.ins = ADMIN_INS_READ_CTAP_SM2_CONFIG;
+  capdu.lc = 0;
+  admin_process_apdu(&capdu, &rapdu);
+  assert(rapdu.sw == 0x9000);
+
+  memcpy(&sm2_attr, r_buf, sizeof(sm2_attr));
+  sm2_attr.enabled = 1;
+
+  capdu.ins = ADMIN_INS_WRITE_CTAP_SM2_CONFIG;
+  capdu.data = &sm2_attr;
+  capdu.lc = sizeof(sm2_attr);
   admin_process_apdu(&capdu, &rapdu);
   assert(rapdu.sw == 0x9000);
 }
@@ -103,6 +120,7 @@ static void oath_init() {
 }
 
 int card_fs_init(const char *lfs_root) {
+  bd.cfg = &bdcfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
@@ -115,8 +133,8 @@ int card_fs_init(const char *lfs_root) {
   cfg.block_count = 256;
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
-  cfg.lookahead_size = 16;
-  if (lfs_filebd_create(&cfg, lfs_root)) return 1;
+  cfg.lookahead_size = 32;
+  if (lfs_filebd_create(&cfg, lfs_root, &bdcfg)) return 1;
 
   int err = fs_mount(&cfg);
   if (err) { // should happen for the first boot
