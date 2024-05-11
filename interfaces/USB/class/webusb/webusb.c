@@ -97,6 +97,27 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
   }
 }
 
+bool webusb_control_xfer_complete_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request) {
+  switch (state)
+  {
+  case STATE_RECVING:
+    if (stage == CONTROL_STAGE_DATA)
+      state = STATE_PROCESS;
+    break;
+
+  case STATE_SENT_RESP:
+    if (stage == CONTROL_STAGE_DATA) {
+      // release_apdu_buffer(BUFFER_OWNER_WEBUSB);
+      state = STATE_HOLD_BUF;
+    }
+    break;
+
+  default:
+    break;
+  }
+  return true;
+}
+
 // Recipient = device, for BOS and URL descriptors
 bool webusb_handle_device_request(uint8_t rhport, tusb_control_request_t const *request) {
   switch (request->bRequest) {
@@ -145,6 +166,8 @@ bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t cons
       ERR_MSG("Overflow\n");
       return false;
     }
+    if (request->wLength == 0) return true; // Host shouldn't send an empty command
+    usbd_control_set_complete_callback(webusb_control_xfer_complete_cb);
     tud_control_xfer(rhport, request, global_buffer, request->wLength);
     apdu_buffer_size = request->wLength;
     state = STATE_RECVING;
@@ -168,23 +191,4 @@ bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t cons
 
   // stall unknown request
   return false;
-}
-
-uint8_t USBD_WEBUSB_TxSent() {
-
-  //DBG_MSG("state = %d\n", state);
-  if (state == STATE_SENT_RESP) {
-    // release_apdu_buffer(BUFFER_OWNER_WEBUSB);
-    state = STATE_HOLD_BUF;
-  }
-
-  return 0;
-}
-
-uint8_t USBD_WEBUSB_RxReady() {
-
-  //  state should be STATE_RECVING now
-  state = STATE_PROCESS;
-
-  return 0;
 }
