@@ -8,7 +8,7 @@
 #define KBDHID_REPORT_DESC 0x22
 #define KBDHID_REQ_SET_IDLE 0x0A
 #define USBD_KBDHID_REPORT_BUF_SIZE 8
-#define KBDHID_REPORT_DESC_SIZE 63
+#define KBDHID_REPORT_DESC_SIZE 87
 
 typedef enum { KBDHID_IDLE = 0, KBDHID_BUSY } KBDHID_StateTypeDef;
 
@@ -19,9 +19,10 @@ typedef struct {
 } USBD_KBDHID_HandleTypeDef;
 
 typedef struct {
+  uint8_t id;
   uint8_t modifier;
   uint8_t reserved;
-  uint8_t keycode[6];
+  uint8_t keycode[5];
 } keyboard_report_t;
 
 uint8_t USBD_KBDHID_Init(USBD_HandleTypeDef *pdev);
