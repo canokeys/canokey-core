@@ -41,7 +41,7 @@ int oath_install(const uint8_t reset) {
 static int oath_select(const CAPDU *capdu, RAPDU *rapdu) {
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
-  memcpy(RDATA, (uint8_t[]){OATH_TAG_VERSION, 3, 0x06, 0x00, 0x00, OATH_TAG_NAME, HANDLE_LEN}, 7);
+  memcpy(RDATA, ((uint8_t[]){OATH_TAG_VERSION, 3, 0x06, 0x00, 0x00, OATH_TAG_NAME, HANDLE_LEN}), 7);
   if (read_attr(OATH_FILE, ATTR_HANDLE, RDATA + 7, HANDLE_LEN) < 0) return -1;
   LL = 7 + HANDLE_LEN;
 
