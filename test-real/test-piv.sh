@@ -86,8 +86,8 @@ test_ChangePin() {
     assertEquals 'set-mgm-key' 0 $?
 }
 
-test_RSA2048() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
+rsa_tests() {
+    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" $1; done
     YPT -a status
     PIVSignDec 9e # PIN not required for key 9e
     for s in 9a 9c 9d; do PIVSignDec $s 1; done
@@ -99,6 +99,18 @@ test_RSA2048() {
     assertEquals 'pkcs11-tool sign' 0 $?
     openssl dgst -sha256 -verify $TEST_TMP_DIR/pubkey-9e.pem -signature $TEST_TMP_DIR/hello-signed $TEST_TMP_DIR/hello.txt
     assertEquals 'openssl dgst verify' 0 $?
+}
+
+test_RSA2048() {
+    rsa_tests RSA2048
+}
+
+test_RSA3072() {
+    rsa_tests RSA3072
+}
+
+test_RSA4096() {
+    rsa_tests RSA4096
 }
 
 test_ECC256() {
@@ -117,6 +129,16 @@ test_ECC384() {
     PIVSignDec 9d 1 d # 9d only do the ECDH
     out=$(pkcs15-tool --reader "$RDID" --read-certificate 02 | openssl x509 -text)
     assertContains 'CERT' "$out" 'CN = CertAtSlot9c'
+}
+
+test_25519() {
+    for s in 9a 9c 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ED25519; done
+    for s in 9d; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
+    YPT -a status
+    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the EDDSA
+    # PIVSignDec 9d 1 d # 9d only do the EDDH
+    # out=$(pkcs15-tool --reader "$RDID" --read-certificate 01 | openssl x509 -text)
+    # assertContains 'CERT' "$out" 'CN = CertAtSlot9a'
 }
 
 test_PinBlock() {
