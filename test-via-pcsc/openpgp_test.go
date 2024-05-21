@@ -107,6 +107,13 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(res, ShouldResemble, []byte{2, 2, 0x05, 0x3C, 2, 2, 0x05, 0x3C}) // 1340 bytes
 		})
 
+		Convey("Get challenge", func(ctx C) {
+			res, code, err := app.Send([]byte{0x00, 0x84, 0x00, 0x00, 0x00, 0x05, 0x3C})
+			So(err, ShouldBeNil)
+			So(code, ShouldEqual, 0x9000)
+			So(len(res), ShouldEqual, 0x53C) // 1340 bytes
+		})
+
 		Convey("Admin PIN retry times", func(ctx C) {
 			_, code, err := app.Send([]byte{0x00, 0x20, 0x00, 0x83})
 			So(err, ShouldBeNil)
