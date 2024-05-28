@@ -40,9 +40,8 @@ void init_apdu_buffer(void) { global_buffer = bulkin_data.abData; }
 uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time_extension_request) {
   if (!tud_ccid_mounted()) return 0;
 
-  DBG_MSG("CCID_Response_SendData %d bytes:\r\n", len);
-  PRINT_HEX(buf, len);
-  DBG_MSG("\r\n");
+  // DBG_MSG("%d bytes @%p: ", len, buf);
+  // PRINT_HEX(buf, len);
 
   uint8_t ret;
   int retry = 0;
@@ -445,6 +444,7 @@ void CCID_InFinished(uint8_t is_time_extension_request)
 }
 
 void CCID_TimeExtensionLoop(void) {
+  tud_task_ext(0, true);
   if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
     DBG_MSG("send t-ext\r\n");
     bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
@@ -466,7 +466,7 @@ void CCID_TimeExtensionLoop(void) {
 //--------------------------------------------------------------------+
 // Invoked when received new data
 void tud_ccid_rx_cb(uint8_t itf) {
-  DBG_MSG("tud_ccid_rx_cb, itf: %d\r\n", itf);
+  // DBG_MSG("itf=%d\r\n", itf);
 
   if (itf != 0) return;
   uint32_t len = tud_ccid_available();
@@ -475,7 +475,7 @@ void tud_ccid_rx_cb(uint8_t itf) {
 
 // Invoked when last tx transfer finished
 void tud_ccid_tx_cb(uint8_t itf, uint32_t sent_bytes) {
-  DBG_MSG("tud_ccid_tx_cb, itf=%d, sent_bytes=%d\r\n", itf, sent_bytes);
+  // DBG_MSG("itf=%d, sent_bytes=%d bulkin_state=%d\r\n", itf, sent_bytes, bulkin_state);
   if (bulkin_state == CCID_STATE_DATA_IN_WITH_ZLP) {
     bulkin_state = CCID_STATE_DATA_IN;
     tud_ccid_write(NULL, 0);
@@ -484,13 +484,3 @@ void tud_ccid_tx_cb(uint8_t itf, uint32_t sent_bytes) {
     bulkin_state = CCID_STATE_IDLE;
   }
 }
-
-// void CCID_eject(void) {
-//   DBG_MSG("EJ\n");
-//   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, BM_ICC_NO_ICC_PRESENT);
-// }
-
-// void CCID_insert(void) {
-//   DBG_MSG("INS\n");
-//   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
-// }
