@@ -30,11 +30,8 @@ void device_loop(uint8_t has_touch) {
 
   ccid_loop();
   ctap_hid_loop(0);
-  if (has_touch &&                  // hardware features the touch pad
-      !device_is_blinking() &&      // applets are not waiting for touch
-      device_get_tick() > 2000      // ignore touch for the first 2 seconds
-  )
-    kbd_hid_loop();
+  webusb_loop();
+  kbd_hid_loop();
 }
 
 uint8_t get_touch_result(void) {

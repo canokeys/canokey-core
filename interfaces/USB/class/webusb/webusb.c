@@ -78,15 +78,12 @@ void webusb_loop() {
 // Driver response accordingly to the request and the transfer stage (setup/data/ack)
 // return false to stall control endpoint (e.g unsupported request)
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request) {
-  // nothing to with DATA & ACK stage
-  if (stage != CONTROL_STAGE_SETUP) return true;
+  if (stage != CONTROL_STAGE_SETUP) return webusb_control_xfer_complete_cb(rhport, stage, request);
 
   // we are only interested in vendor requests
   if (request->bmRequestType_bit.type != TUSB_REQ_TYPE_VENDOR) return false;
 
   // parse recipient
-  DBG_MSG("tud_vendor_control_xfer_cb: recipient: %02X\r\n", request->bmRequestType_bit.recipient);
-  
   switch (request->bmRequestType_bit.recipient) {
   case TUSB_REQ_RCPT_DEVICE:
     return webusb_handle_device_request(rhport, request);
@@ -98,15 +95,17 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
 }
 
 bool webusb_control_xfer_complete_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const * request) {
+  // if(state != STATE_IDLE)
+  //   DBG_MSG("state=%u stage=%u recipient=%02X\r\n",state, stage, request->bmRequestType_bit.recipient);
   switch (state)
   {
   case STATE_RECVING:
-    if (stage == CONTROL_STAGE_DATA)
+    if (stage == CONTROL_STAGE_ACK)
       state = STATE_PROCESS;
     break;
 
   case STATE_SENT_RESP:
-    if (stage == CONTROL_STAGE_DATA) {
+    if (stage == CONTROL_STAGE_ACK) {
       // release_apdu_buffer(BUFFER_OWNER_WEBUSB);
       state = STATE_HOLD_BUF;
     }
@@ -147,7 +146,7 @@ bool webusb_handle_device_request(uint8_t rhport, tusb_control_request_t const *
 
 // Recipient = interface
 bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t const *request) {
-  DBG_MSG("%s, bRequest=%d, wLength=%d\r\n", __func__, request->bRequest, request->wLength);
+  // DBG_MSG("bRequest=%d, wLength=%d\r\n", request->bRequest, request->wLength);
 
   last_keepalive = device_get_tick();
   switch (request->bRequest) {
@@ -167,7 +166,8 @@ bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t cons
       return false;
     }
     if (request->wLength == 0) return true; // Host shouldn't send an empty command
-    usbd_control_set_complete_callback(webusb_control_xfer_complete_cb);
+    // usbd_control_set_complete_callback(webusb_control_xfer_complete_cb);
+    DBG_MSG("Recv data %u bytes\n", request->wLength);
     tud_control_xfer(rhport, request, global_buffer, request->wLength);
     apdu_buffer_size = request->wLength;
     state = STATE_RECVING;
@@ -176,6 +176,7 @@ bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t cons
   case WEBUSB_REQ_RESP:
     if (state == STATE_SENDING_RESP) {
       uint16_t len = MIN(apdu_buffer_size, request->wLength);
+      DBG_MSG("Send data %u bytes\n", len);
       tud_control_xfer(rhport, request, global_buffer, len);
       state = STATE_SENT_RESP;
     } else {
@@ -184,6 +185,7 @@ bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t cons
     return true;
 
   case WEBUSB_REQ_STAT:
+    // DBG_MSG("Send data %u bytes\n", 1);
     tud_control_xfer(rhport, request, &state, 1);
     return true;
 
