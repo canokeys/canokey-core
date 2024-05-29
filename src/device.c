@@ -31,7 +31,10 @@ void device_loop(uint8_t has_touch) {
   ccid_loop();
   ctap_hid_loop(0);
   webusb_loop();
-  kbd_hid_loop();
+  if (has_touch &&                  // hardware features the touch pad
+      !device_is_blinking()         // applets are not waiting for touch
+  )
+    kbd_hid_loop();
 }
 
 uint8_t get_touch_result(void) {
@@ -63,7 +66,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     wait_status = WAIT_DEEP;
   while (get_touch_result() == TOUCH_NO) {
     if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
-    // if (wait_status == WAIT_CTAPHID) CCID_Loop();
+    if (wait_status == WAIT_CTAPHID) ccid_loop();
     if (ctap_hid_loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
       if (wait_status != WAIT_DEEP) {
@@ -82,7 +85,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     }
     if (now - last >= 100) {
       last = now;
-      // if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+      if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
   set_touch_result(TOUCH_NO);
