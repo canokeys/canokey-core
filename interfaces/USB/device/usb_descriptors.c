@@ -44,7 +44,8 @@ uint8_t const desc_ctaphid_report[] = {
 };
 
 uint8_t const desc_kbdhid_report[] = {
-  TUD_HID_REPORT_DESC_KEYBOARD()
+  TUD_HID_REPORT_DESC_KEYBOARD( HID_REPORT_ID(1) ) ,
+  TUD_HID_REPORT_DESC_CONSUMER( HID_REPORT_ID(2) ) ,
 };
 
 // Invoked when received GET HID REPORT DESCRIPTOR

@@ -6,6 +6,7 @@
 
 void kbd_hid_init();
 void kbd_hid_loop();
+void KBDHID_Eject(void);
 
 void kbd_hid_report_complete_cb(uint8_t const* report, uint8_t len);
 uint16_t kbd_hid_get_report_cb(uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen);

@@ -10,6 +10,7 @@
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
+#include <kbdhid.h>
 
 enum APPLET {
   APPLET_NULL,
@@ -151,6 +152,13 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
+  if (CLA == 0xFF && INS == 0xEE && P1 == 0xFF && P2 == 0xEE) {
+      // A special APDU to trigger Eject
+      KBDHID_Eject();
+      LL = 0;
+      SW = SW_NO_ERROR;
+      return;
+  }
   static enum PIV_STATE piv_state;
   if (current_applet == APPLET_PIV) {
     // Offload some APDU chaining commands of PIV applet,

@@ -9,6 +9,8 @@
 #include <kbdhid.h>
 #include <usb_descriptors.h>
 
+#define EJECT_KEY 0x03
+
 static enum {
   KBDHID_Idle,
   KBDHID_Typing,
@@ -85,15 +87,22 @@ static void KBDHID_TypeKeySeq(void) {
       DBG_MSG("Key typing ended\n");
       state = KBDHID_Idle;
     } else if (tud_hid_n_ready(HID_ITF_KBD)) {
-      // Emulate key down
-      keycode[0] = ascii2keycode(key_sequence[key_seq_position]);
-      if (keycode[0] & 0x80) { // Check for shift flag
-        modifier = 0x02; // Shift key
-        keycode[0] &= 0x7F; // Clear shift flag
+      uint8_t report_id = 1;
+      if (key_sequence[key_seq_position] == EJECT_KEY) {
+        report_id = 2;
+        keycode[0] = 0;
+        modifier = 0xB8;
       } else {
-        modifier = 0; // No modifier key
+        // Emulate key down
+        keycode[0] = ascii2keycode(key_sequence[key_seq_position]);
+        if (keycode[0] & 0x80) { // Check for shift flag
+          modifier = 0x02; // Shift key
+          keycode[0] &= 0x7F; // Clear shift flag
+        } else {
+          modifier = 0; // No modifier key
+        }
       }
-      tud_hid_n_keyboard_report(HID_ITF_KBD, 0, modifier, keycode);
+      tud_hid_n_keyboard_report(HID_ITF_KBD, report_id, modifier, keycode);
 
       state = KBDHID_KeyDown;
     }
@@ -104,13 +113,26 @@ static void KBDHID_TypeKeySeq(void) {
       // Emulate key release
       modifier = 0;
       keycode[0] = 0;
-      tud_hid_n_keyboard_report(HID_ITF_KBD, 0, modifier, keycode);
+      if (key_sequence[key_seq_position] == EJECT_KEY) {
+        // Emulate the key release
+        tud_hid_n_keyboard_report(HID_ITF_KBD, 2, modifier, keycode);
+      } else {
+        // Emulate the key release
+        tud_hid_n_keyboard_report(HID_ITF_KBD, 1, modifier, keycode);
+      }
 
       key_seq_position++;
       state = KBDHID_KeyUp;
       break;
     }
   }
+}
+
+void KBDHID_Eject() {
+  key_sequence[0] = EJECT_KEY;
+  key_sequence[1] = 0;
+  key_seq_position = 0;
+  state = KBDHID_Typing;
 }
 
 void kbd_hid_init(void) {

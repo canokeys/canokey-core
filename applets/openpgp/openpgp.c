@@ -78,10 +78,10 @@ static const uint8_t extended_length_info[] = {0x02, 0x02, HI(APDU_BUFFER_SIZE),
                                                0x02, 0x02, HI(APDU_BUFFER_SIZE), LO(APDU_BUFFER_SIZE)};
 
 static const uint8_t extended_capabilities[] = {
-    0x34, // Support key import, pw1 status change, and algorithm attributes changes
+    0x74, // Support get challenge, key import, pw1 status change, and algorithm attributes changes
     0x00, // No SM algorithm
-    0x00,
-    0x00, // No challenge support
+    HI(APDU_BUFFER_SIZE),
+    LO(APDU_BUFFER_SIZE), // Challenge size
     HI(MAX_CERT_LENGTH),
     LO(MAX_CERT_LENGTH), // Cert length
     HI(MAX_DO_LENGTH),
@@ -1201,6 +1201,14 @@ static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
   return openpgp_install(1);
 }
 
+static int openpgp_get_challenge(const CAPDU *capdu, RAPDU *rapdu) {
+    if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    if (LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
+    random_buffer(RDATA, LE);
+    LL = LE;
+    return 0;
+}
+
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
@@ -1286,6 +1294,9 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case OPENPGP_INS_INTERNAL_AUTHENTICATE:
     ret = openpgp_sign_or_auth(capdu, rapdu, false);
     stop_blinking();
+    break;
+  case OPENPGP_INS_GET_CHALLENGE:
+    ret = openpgp_get_challenge(capdu, rapdu);
     break;
   case OPENPGP_INS_TERMINATE:
     ret = openpgp_terminate(capdu, rapdu);
