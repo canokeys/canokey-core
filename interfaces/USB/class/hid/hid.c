@@ -6,7 +6,7 @@
 #include <kbdhid.h>
 
 // Dispatch HID callback to ctap/kbd handlers
-void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint8_t len) {
+void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint16_t len) {
   if (instance == HID_ITF_CTAP) {
     ctap_hid_report_complete_cb(report, len);
   } else if (instance == HID_ITF_KBD) {
