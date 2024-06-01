@@ -18,6 +18,8 @@ uint8_t fm_read_reg(uint16_t reg) {
   fm_csn_high();
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   fm11nt_read(reg, &val, 1);
+#else
+  val = 0;
 #endif
   return val;
 }

@@ -186,7 +186,7 @@ bool webusb_handle_interface_request(uint8_t rhport, tusb_control_request_t cons
 
   case WEBUSB_REQ_STAT:
     // DBG_MSG("Send data %u bytes\n", 1);
-    tud_control_xfer(rhport, request, &state, 1);
+    tud_control_xfer(rhport, request, (uint8_t*)&state, 1);
     return true;
 
   }
