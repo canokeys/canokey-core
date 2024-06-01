@@ -334,7 +334,7 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
 size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
   ecc_key_t key;
   int ret = read_device_pri_key(key.pri);
-  if (ret < 0) return ret;
+  if (ret < 0) return 0;
   ecc_sign(SECP256R1, &key, input, input_len, sig);
   memzero(&key, sizeof(key));
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);

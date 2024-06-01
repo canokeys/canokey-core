@@ -702,6 +702,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     sha256_update(mc.client_data_hash, sizeof(mc.client_data_hash));
     sha256_final(data_buf);
     len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
+    if (!len) return CTAP2_ERR_UNHANDLED_REQUEST;
     ret = cbor_encode_byte_string(&att_map, data_buf, len);
     CHECK_CBOR_RET(ret);
 
@@ -1154,6 +1155,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   DBG_MSG("Message: ");
   PRINT_HEX(data_buf, len + CLIENT_DATA_HASH_SIZE);
   len = sign_with_private_key(dc.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  if (len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   DBG_MSG("Signature: ");
   PRINT_HEX(data_buf, len);
   ret = cbor_encode_byte_string(&map, data_buf, len);
