@@ -69,7 +69,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
     break;
 
   case WEBUSB_REQ_STAT:
-    USBD_CtlSendData(pdev, &state, 1, WEBUSB_EP0_SENDER);
+    USBD_CtlSendData(pdev, (uint8_t*)&state, 1, WEBUSB_EP0_SENDER);
     break;
 
   default:
