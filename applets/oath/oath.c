@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <apdu.h>
+#include <crypto-util.h>
 #include <device.h>
 #include <fs.h>
 #include <hmac.h>

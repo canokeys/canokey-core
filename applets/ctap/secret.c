@@ -3,6 +3,7 @@
 #include "secret.h"
 #include <aes.h>
 #include <block-cipher.h>
+#include <crypto-util.h>
 #include <ecc.h>
 #include <fs.h>
 #include <hmac.h>
