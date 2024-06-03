@@ -7,6 +7,8 @@
 
 #include <ccid_device.h>
 
+#include "common.h"
+
 //--------------------------------------------------------------------+
 // Device Descriptors
 //--------------------------------------------------------------------+
@@ -244,10 +246,8 @@ uint8_t const * tud_descriptor_bos_cb(void) {
   memcpy(_desc_bos, desc_bos, sizeof(desc_bos));
   _desc_bos[28] = cfg_is_webusb_landing_enable();
 
-  TU_LOG2("\nBOS Descriptor:\n");
-  for (uint8_t i = 0; i < BOS_TOTAL_LEN; i++) {
-    TU_LOG2("%02X ", _desc_bos[i]);
-  }
+  DBG_MSG("BOS Descriptor: ");
+  PRINT_HEX(_desc_bos, BOS_TOTAL_LEN);
 
   return _desc_bos;
 }
@@ -308,7 +308,7 @@ char const* string_desc_arr_std[] = {
   (const char[]) { USBD_LANGID_STRING },  // 0: supported language
   USBD_MANUFACTURER_STRING,               // 1: Manufacturer
   USBD_PRODUCT_STRING,                    // 2: Product
-  "123456",                               // 3: Serials Number Placeholder
+  NULL,                                   // 3: Serials Number Placeholder
 };
 
 // array of pointer to custom string descriptors
@@ -327,10 +327,12 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
   uint8_t chr_count;
   const char* _str;  // This will get copied to _desc_str
 
-  if (index == USBD_IDX_LANGID_STR) {   // language ID
-    memcpy(&_desc_str[1], string_desc_arr_std[0], 2);
-    _desc_str[0] = (TUSB_DESC_STRING << 8 ) | 0x04;
-    return _desc_str;
+  if (index < USBD_IDX_STD_STR_MAX) {   // standard string, excluding sn
+    _str = string_desc_arr_std[index];
+  } else if (index >= USBD_IDX_CUSTOM_STR_BASE && index < USBD_IDX_CUSTOM_STR_MAX) {
+    _str = string_desc_arr_custom[index - USBD_IDX_CUSTOM_STR_BASE];
+  } else {
+    return NULL;
   }
 
   if (index == USBD_IDX_SERIAL_STR) {   // serial number
@@ -339,14 +341,6 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     fill_sn(sn);
     sprintf(sn_str, "%02X%02X%02X%02X", sn[0], sn[1], sn[2], sn[3]);
     _str = (const char*) sn_str;
-  }
-  
-  if (index < USBD_IDX_STD_STR_MAX) {   // standard string, excluding sn
-    _str = string_desc_arr_std[index];
-  } else if (index >= USBD_IDX_CUSTOM_STR_BASE && index < USBD_IDX_CUSTOM_STR_MAX) {
-    _str = string_desc_arr_custom[index - USBD_IDX_CUSTOM_STR_BASE];
-  } else {
-    return NULL;
   }
 
   // Cap at max chararcter count
@@ -361,11 +355,10 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
   // first byte is length (including header), second byte is string type
   _desc_str[0] = (TUSB_DESC_STRING << 8 ) | (2 * chr_count + 2);
 
-  TU_LOG2("String Descriptor [%d], chr: %d", index, chr_count);
-  for (uint8_t i = 0; i < chr_count; i++)
-    TU_LOG2("%04X ", _desc_str[i]);
-  
-  TU_LOG2("\r\n");
+  DBG_MSG("String Descriptor [%d], chr: %d\n", index, chr_count);
+  // for (uint8_t i = 0; i < chr_count; i++)
+  //   DBG_MSG("%04X ", _desc_str[i]);
+  // DBG_MSG("\r\n");
 
   return _desc_str;
 }
