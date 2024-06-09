@@ -9,22 +9,31 @@
 
 volatile static uint8_t touch_result;
 static uint8_t has_rf;
-static uint32_t last_blink = UINT32_MAX, blink_timeout, blink_interval;
+static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE = 1, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
 volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, hence inited
 
-uint8_t device_is_blinking(void) { return last_blink != UINT32_MAX; }
+uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(uint8_t has_touch) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
-  if (has_touch &&                  // hardware features the touch pad
-      !device_is_blinking() &&      // applets are not waiting for touch
-      device_get_tick() > 2000      // ignore touch for the first 2 seconds
-  )
-    KBDHID_Loop();
+  KBDHID_Loop();
+}
+
+bool device_allow_kbd_touch(void) {
+  uint32_t now = device_get_tick();
+  if (!device_is_blinking() &&      // applets are not waiting for touch
+      now > 2000   &&               // ignore touch for the first 2 seconds
+      now - 1000 > last_blink &&
+      get_touch_result() != TOUCH_NO
+  ) {
+    DBG_MSG("now=%lu last_blink=%lu\n", now, last_blink);
+    return true;
+  }
+  return false;
 }
 
 uint8_t get_touch_result(void) {
@@ -140,8 +149,9 @@ static void toggle_led(void) {
 
 void device_update_led(void) {
   uint32_t now = device_get_tick();
+  if (!device_is_blinking()) return;
   if (now > blink_timeout) stop_blinking();
-  if (now >= last_blink && now - last_blink >= blink_interval) {
+  else if (now >= last_blink && now - last_blink >= blink_interval) {
     last_blink = now;
     toggle_led();
   }
@@ -160,7 +170,7 @@ void start_blinking_interval(uint8_t sec, uint32_t interval) {
 }
 
 void stop_blinking(void) {
-  last_blink = UINT32_MAX;
+  blink_timeout = 0;
   if (cfg_is_led_normally_on()) {
     led_on();
     led_status = ON;
