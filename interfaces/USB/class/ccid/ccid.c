@@ -52,6 +52,7 @@ uint8_t CCID_Response_SendData(const uint8_t *buf, uint16_t len, uint8_t is_time
       return 0;
     else
       device_delay(1);
+    tud_task_ext(0, false);
   }
   if (is_time_extension_request)
     bulkin_state = CCID_STATE_DATA_IN_TIME_EXTENSION;

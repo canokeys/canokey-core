@@ -32,6 +32,7 @@ void CTAPHID_SendReport(uint8_t *report, uint16_t len) {
       return;
     }
 
+    tud_task_ext(0, false);
     device_delay(1);
   }
 
