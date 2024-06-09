@@ -113,6 +113,7 @@ static inline void start_quick_blinking(uint8_t sec) {
 }
 void stop_blinking(void);
 uint8_t device_is_blinking(void);
+bool device_allow_kbd_touch(void);
 void fm11_init(void);
 uint8_t fm_read_reg(uint16_t reg);
 void fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);

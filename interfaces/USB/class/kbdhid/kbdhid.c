@@ -142,7 +142,7 @@ void kbd_hid_init(void) {
 }
 
 void kbd_hid_loop(void) {
-  if (state == KBDHID_Idle) {
+  if (state == KBDHID_Idle && device_allow_kbd_touch()) {
     const uint8_t touch = get_touch_result();
     if (touch != TOUCH_NO) {
       const int len = pass_handle_touch(touch, key_sequence);
@@ -153,9 +153,9 @@ void kbd_hid_loop(void) {
       key_sequence[len] = 0;
       key_seq_position = 0;
       state = KBDHID_Typing;
-      DBG_MSG("Start typing %s", key_sequence);
+      DBG_MSG("Start typing %s\n", key_sequence);
+      set_touch_result(TOUCH_NO);
     }
-    set_touch_result(TOUCH_NO);
   } else {
     KBDHID_TypeKeySeq();
   }
