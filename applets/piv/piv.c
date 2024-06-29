@@ -253,7 +253,8 @@ int piv_install(const uint8_t reset) {
   if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
-
+  
+  if (get_file_size(ALGORITHM_EXT_CONFIG_PATH) == sizeof(alg_ext_cfg))  return 0;
   // Algorithm extensions
   alg_ext_cfg.enabled = 1;
   alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
