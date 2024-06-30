@@ -41,10 +41,10 @@
 #define ALG_RSA_2048  0x07
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
-#define ALG_ED25519_DEFAULT   0x22 // defined in https://github.com/go-piv/piv-go/pull/69
+#define ALG_ED25519_DEFAULT   0xE0
 #define ALG_RSA_3072_DEFAULT  0x05 // defined in NIST SP 800-78-5 (Initial Public Draft)
-#define ALG_RSA_4096_DEFAULT  0x51
-#define ALG_X25519_DEFAULT    0x52
+#define ALG_RSA_4096_DEFAULT  0x16
+#define ALG_X25519_DEFAULT    0xE1
 #define ALG_SECP256K1_DEFAULT 0x53
 #define ALG_SM2_DEFAULT       0x54
 
@@ -253,7 +253,8 @@ int piv_install(const uint8_t reset) {
   if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
-
+  
+  if (get_file_size(ALGORITHM_EXT_CONFIG_PATH) == sizeof(alg_ext_cfg))  return 0;
   // Algorithm extensions
   alg_ext_cfg.enabled = 1;
   alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
@@ -1099,7 +1100,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   RDATA[0] = 0x05;
-  RDATA[1] = 0x04;
+  RDATA[1] = 0x07;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;
