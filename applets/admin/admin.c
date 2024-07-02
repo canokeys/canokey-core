@@ -70,6 +70,7 @@ int admin_install(const uint8_t reset) {
   if (reset || get_file_size(pin.path) < 0) {
     if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
   }
+  stop_blinking();
   return 0;
 }
 
