@@ -15,6 +15,7 @@ PIVGenKeyCert() {
     algo="$3"
     YPT -a generate -A $algo -s $key >$TEST_TMP_DIR/pubkey-$key.pem # generate key at $key
     assertEquals 'yubico-piv-tool generate' 0 $?
+    if [[ $algo == "X25519" ]]; then return; fi
     YPT -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < $TEST_TMP_DIR/pubkey-$key.pem >$TEST_TMP_DIR/cert-$key.pem
     assertEquals 'yubico-piv-tool selfsign-certificate' 0 $?
     YPT -a import-certificate -s $key < $TEST_TMP_DIR/cert-$key.pem
@@ -36,13 +37,15 @@ PIVSignDec() {
     key=$1
     pinArgs=
     op=$3
+    inp_file=$TEST_TMP_DIR/cert-$key.pem
+    if [[ $key == X25519 ]]; then inp_file=$TEST_TMP_DIR/pubkey-$key.pem; fi
     if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
     if [[ -z "$op" || s = "$op" ]]; then 
-        YPT $pinArgs -a test-signature -s $key < $TEST_TMP_DIR/cert-$key.pem;
+        YPT $pinArgs -a test-signature -s $key < $inp_file;
         assertEquals 'yubico-piv-tool test-signature' 0 $?
     fi
     if [[ -z "$op" || d = "$op" ]]; then 
-        YPT $pinArgs -a test-decipher -s $key < $TEST_TMP_DIR/cert-$key.pem;
+        YPT $pinArgs -a test-decipher -s $key < $inp_file;
         assertEquals 'yubico-piv-tool test-decipher' 0 $?
     fi
 }
@@ -86,8 +89,8 @@ test_ChangePin() {
     assertEquals 'set-mgm-key' 0 $?
 }
 
-test_RSA2048() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
+rsa_tests() {
+    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" $1; done
     YPT -a status
     PIVSignDec 9e # PIN not required for key 9e
     for s in 9a 9c 9d; do PIVSignDec $s 1; done
@@ -101,22 +104,44 @@ test_RSA2048() {
     assertEquals 'openssl dgst verify' 0 $?
 }
 
-test_ECC256() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ECCP256; done
+test_RSA2048() {
+    rsa_tests RSA2048
+}
+
+test_RSA3072() {
+    rsa_tests RSA3072
+}
+
+test_RSA4096() {
+    rsa_tests RSA4096
+}
+
+ec_tests() {
+    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" $1; done
     YPT -a status
-    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
-    PIVSignDec 9d 1 d # 9d only do the ECDH
-    out=$(pkcs15-tool --reader "$RDID" --read-certificate 01 | openssl x509 -text)
-    assertContains 'CERT' "$out" 'CN = CertAtSlot9a'
+    for s in 9a 9c 9d 9e; do
+        if [[ $1 != "X25519" ]]; then PIVSignDec $s 1 s; fi
+        if [[ $1 != "ED25519" ]]; then PIVSignDec $s 1 d; fi
+    done
+    if [[ $1 != *25519 ]]; then
+        out=$(pkcs15-tool --reader "$RDID" --read-certificate 01 | openssl x509 -text)
+        assertContains 'CERT' "$out" 'CN = CertAtSlot9a'
+        out=$(pkcs15-tool --reader "$RDID" --read-certificate 02 | openssl x509 -text)
+        assertContains 'CERT' "$out" 'CN = CertAtSlot9c'
+    fi
+}
+
+test_ECC256() {
+    ec_tests ECCP256
 }
 
 test_ECC384() {
-    for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ECCP384; done
-    YPT -a status
-    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
-    PIVSignDec 9d 1 d # 9d only do the ECDH
-    out=$(pkcs15-tool --reader "$RDID" --read-certificate 02 | openssl x509 -text)
-    assertContains 'CERT' "$out" 'CN = CertAtSlot9c'
+    ec_tests ECCP384
+}
+
+test_25519() {
+    ec_tests ED25519
+    ec_tests X25519
 }
 
 test_PinBlock() {
