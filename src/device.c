@@ -134,7 +134,7 @@ static void toggle_led(void) {
 void device_update_led(void) {
   uint32_t now = device_get_tick();
   if (now > blink_timeout) stop_blinking();
-  if (now >= last_blink && now - last_blink >= blink_interval) {
+  if (device_is_blinking() && now >= last_blink && now - last_blink >= blink_interval) {
     last_blink = now;
     toggle_led();
   }
