@@ -28,9 +28,17 @@ jobs:
       run: |
         sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
         sudo apt-get update
-        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts
+        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
         sudo apt-get build-dep -q -y opensc
         sudo rm -f /usr/bin/clang-tidy
+    - name: Build the package
+      if: steps.check_opensc.outputs.files_exists == 'false'
+      run: |
+        dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
+        cd opensc-0.23.0
+        curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
+        dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
+        DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
     - name: Build yubico-piv-tool package
       run: |
         set -x
@@ -45,14 +53,6 @@ jobs:
         dpkg --build debian/tmp build_dir/
         mv build_dir/yubico-piv-tool_*_amd64.deb .
         sudo apt install ./yubico-piv-tool_*_amd64.deb
-    - name: Build the package
-      if: steps.check_opensc.outputs.files_exists == 'false'
-      run: |
-        dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
-        cd opensc-0.23.0
-        curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
-        dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
-        DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
     - name: Upload package files
       uses: actions/upload-artifact@v3
       with:
