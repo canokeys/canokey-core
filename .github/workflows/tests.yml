@@ -11,7 +11,9 @@ jobs:
       env:
         cache-name: opensc-deb
       with:
-        path: opensc*.deb
+        path: |
+          opensc*.deb
+          yubico-piv-tool*.deb
         key: ${{ runner.os }}-${{ env.cache-name }}
     - name: Check file existence
       id: check_opensc
@@ -31,7 +33,7 @@ jobs:
         sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
         sudo apt-get build-dep -q -y opensc
         sudo rm -f /usr/bin/clang-tidy
-    - name: Build the package
+    - name: Build opensc package
       if: steps.check_opensc.outputs.files_exists == 'false'
       run: |
         dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
@@ -57,7 +59,9 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: opensc-deb
-        path: opensc*.deb
+        path: |
+          opensc*.deb
+          yubico-piv-tool*.deb
 
 
 
@@ -76,7 +80,7 @@ jobs:
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
         sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
-        sudo dpkg -i opensc*.deb
+        sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
         pip3 install --upgrade pip
 
     - name: Set up Go 1.16
