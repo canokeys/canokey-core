@@ -37,15 +37,17 @@ PIVSignDec() {
     key=$1
     pinArgs=
     op=$3
+    algoArgs=
     inp_file=$TEST_TMP_DIR/cert-$key.pem
-    if [[ $key == X25519 ]]; then inp_file=$TEST_TMP_DIR/pubkey-$key.pem; fi
+    if [[ $algo == X25519 ]]; then inp_file=$TEST_TMP_DIR/pubkey-$key.pem; fi
     if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
+    if [[ -n "$4" ]]; then algoArgs="-A $4"; fi
     if [[ -z "$op" || s = "$op" ]]; then 
         YPT $pinArgs -a test-signature -s $key < $inp_file;
         assertEquals 'yubico-piv-tool test-signature' 0 $?
     fi
     if [[ -z "$op" || d = "$op" ]]; then 
-        YPT $pinArgs -a test-decipher -s $key < $inp_file;
+        YPT $pinArgs -a test-decipher -s $key $algoArgs < $inp_file;
         assertEquals 'yubico-piv-tool test-decipher' 0 $?
     fi
 }
@@ -120,8 +122,8 @@ ec_tests() {
     for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" $1; done
     YPT -a status
     for s in 9a 9c 9d 9e; do
-        if [[ $1 != "X25519" ]]; then PIVSignDec $s 1 s; fi
-        if [[ $1 != "ED25519" ]]; then PIVSignDec $s 1 d; fi
+        if [[ $1 != "X25519" ]]; then PIVSignDec $s 1 s $1; fi
+        if [[ $1 != "ED25519" ]]; then PIVSignDec $s 1 d $1; fi
     done
     if [[ $1 != *25519 ]]; then
         out=$(pkcs15-tool --reader "$RDID" --read-certificate 01 | openssl x509 -text)
