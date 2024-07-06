@@ -7,38 +7,62 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
-        cache-name: opensc-deb
+        cache-name: tools-deb
       with:
-        path: opensc*.deb
+        path: |
+          opensc*.deb
+          yubico-piv-tool*.deb
         key: ${{ runner.os }}-${{ env.cache-name }}
     - name: Check file existence
-      id: check_deb_files
+      id: check_opensc
       uses: andstor/file-existence-action@v1
       with:
         files: "opensc*.deb"
+    - name: Check file existence
+      id: check_yubico_piv
+      uses: andstor/file-existence-action@v1
+      with:
+        files: "yubico-piv-tool*.deb"
     - name: Package Install
-      if: steps.check_deb_files.outputs.files_exists == 'false'
+      if: steps.check_opensc.outputs.files_exists == 'false' || steps.check_yubico_piv.outputs.files_exists == 'false'
       run: |
         sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
         sudo apt-get update
-        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts
+        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
         sudo apt-get build-dep -q -y opensc
         sudo rm -f /usr/bin/clang-tidy
-    - name: Build the package
-      if: steps.check_deb_files.outputs.files_exists == 'false'
+    - name: Build opensc package
+      if: steps.check_opensc.outputs.files_exists == 'false'
       run: |
         dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
         cd opensc-0.23.0
         curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
         dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
         DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
+    - name: Build yubico-piv-tool package
+      if: steps.check_yubico_piv.outputs.files_exists == 'false'
+      run: |
+        set -x
+        git clone https://github.com/z4yx/yubico-piv-tool.git
+        cd yubico-piv-tool
+        mkdir build_dir;
+        pushd build_dir; cmake -DCMAKE_INSTALL_PREFIX=../debian/tmp/usr .. -B .; popd
+        make -C build_dir
+        pushd build_dir; cmake -P cmake_install.cmake; popd
+        mkdir debian/tmp/DEBIAN
+        dpkg-gencontrol -pyubico-piv-tool
+        dpkg --build debian/tmp build_dir/
+        mv build_dir/yubico-piv-tool_*_amd64.deb ..
+        sudo apt install ../yubico-piv-tool_*_amd64.deb
     - name: Upload package files
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: opensc-deb
-        path: opensc*.deb
+        name: tools-deb
+        path: |
+          opensc*.deb
+          yubico-piv-tool*.deb
 
 
 
@@ -48,20 +72,20 @@ jobs:
     needs: build_opensc
     steps:
     - name: Download backport OpenSC package
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
-        name: opensc-deb
+        name: tools-deb
 
     - name: Package Install
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
-        sudo dpkg -i opensc*.deb
+        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
         pip3 install --upgrade pip
 
     - name: Set up Go 1.16
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: "^1.16.1"
       id: go
@@ -78,7 +102,7 @@ jobs:
         path: piv-go
 
     - name: Cache GO Modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: go_mod
       with:
@@ -86,7 +110,7 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
     - name: Cache Patched GPG
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: cache_gpg_binary
       with:
@@ -94,7 +118,7 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
     - name: Cache FIDO Tools
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: cache_fido_tools
       with:
@@ -412,6 +436,7 @@ jobs:
           subject="$2"
           algo="$3"
           yubico-piv-tool -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
+          if [[ "$algo" == "X25519" ]]; then return; fi
           yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
           yubico-piv-tool -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
         }
@@ -419,11 +444,27 @@ jobs:
           key=$1
           pinArgs=
           op=$3
+          algoArgs=
+          inp_file=/tmp/cert-$key.pem
           if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
+          if [[ -n "$4" ]]; then algoArgs="-A $4"; fi
+          if [[ "$4" == X25519 ]]; then inp_file=/tmp/pubkey-$key.pem; fi
           if [[ -z "$op" || s = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-signature -s $key < /tmp/cert-$key.pem; fi
-          if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key < /tmp/cert-$key.pem; fi
+          if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key $algoArgs < $inp_file; fi
         }
-        ## RSA2048 tests
+        ## ED25519 tests
+        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ED25519; done
+        yubico-piv-tool -r "$RDID" -a status
+        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 s; done
+        ## X25519 tests
+        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
+        yubico-piv-tool -r "$RDID" -a status
+        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
+        ## RSA tests
+        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA3072; done
+        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
+        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096; done
+        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
         yubico-piv-tool -r "$RDID" -a status
         PIVSignDec 9e # PIN not required for key 9e
@@ -478,7 +519,7 @@ jobs:
         ## Test long data object
         yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
         for s in 9a 9c 9d 9e 82 83; do
-          PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048
+          PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096
           yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
         done
 
@@ -499,14 +540,14 @@ jobs:
     
     - name: Upload log files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: logs
         path: /tmp/*.log
     
     - name: Upload data files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: data
         path: /tmp/[lc][fe]*
