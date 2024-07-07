@@ -9,7 +9,7 @@ jobs:
     - name: Cache deb files
       uses: actions/cache@v4
       env:
-        cache-name: opensc-deb
+        cache-name: tools-deb
       with:
         path: |
           opensc*.deb
@@ -58,7 +58,7 @@ jobs:
     - name: Upload package files
       uses: actions/upload-artifact@v3
       with:
-        name: opensc-deb
+        name: tools-deb
         path: |
           opensc*.deb
           yubico-piv-tool*.deb
@@ -73,7 +73,7 @@ jobs:
     - name: Download backport OpenSC package
       uses: actions/download-artifact@v4
       with:
-        name: opensc-deb
+        name: tools-deb
 
     - name: Package Install
       run: |
