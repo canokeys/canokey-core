@@ -436,6 +436,7 @@ jobs:
           subject="$2"
           algo="$3"
           yubico-piv-tool -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
+          if [[ $algo == "X25519" ]]; then return; fi
           yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
           yubico-piv-tool -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
         }
