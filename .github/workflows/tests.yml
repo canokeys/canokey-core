@@ -53,8 +53,8 @@ jobs:
         mkdir debian/tmp/DEBIAN
         dpkg-gencontrol -pyubico-piv-tool
         dpkg --build debian/tmp build_dir/
-        mv build_dir/yubico-piv-tool_*_amd64.deb .
-        sudo apt install ./yubico-piv-tool_*_amd64.deb
+        mv build_dir/yubico-piv-tool_*_amd64.deb ..
+        sudo apt install ../yubico-piv-tool_*_amd64.deb
     - name: Upload package files
       uses: actions/upload-artifact@v3
       with:
