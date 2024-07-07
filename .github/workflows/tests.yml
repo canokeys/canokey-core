@@ -42,6 +42,7 @@ jobs:
         dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
         DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
     - name: Build yubico-piv-tool package
+      if: steps.check_yubico_piv.outputs.files_exists == 'false'
       run: |
         set -x
         git clone https://github.com/z4yx/yubico-piv-tool.git
