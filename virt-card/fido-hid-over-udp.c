@@ -104,10 +104,9 @@ static void udp_send(int fd, uint8_t *buf, int size) {
 }
 
 static int current_fd;
-static uint8_t udp_send_current_fd(uint8_t *report, uint16_t len) {
+static void udp_send_current_fd(uint8_t *report, uint16_t len) {
   // printf("udp_send_current_fd %hu\n", len);
   udp_send(current_fd, report, len);
-  return 0;
 }
 
 static void emulate_reboot(void) {
