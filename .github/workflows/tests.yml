@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: opensc-deb
       with:
@@ -71,7 +71,7 @@ jobs:
     needs: build_opensc
     steps:
     - name: Download backport OpenSC package
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: opensc-deb
 
@@ -84,7 +84,7 @@ jobs:
         pip3 install --upgrade pip
 
     - name: Set up Go 1.16
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: "^1.16.1"
       id: go
@@ -101,7 +101,7 @@ jobs:
         path: piv-go
 
     - name: Cache GO Modules
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: go_mod
       with:
@@ -109,7 +109,7 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
     - name: Cache Patched GPG
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: cache_gpg_binary
       with:
@@ -117,7 +117,7 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
     - name: Cache FIDO Tools
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env:
         cache-name: cache_fido_tools
       with:
@@ -451,16 +451,18 @@ jobs:
           if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key $algoArgs < $inp_file; fi
         }
         ## ED25519 tests
-        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ED25519; done
+        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ED25519; done
         yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 s; done
         ## X25519 tests
-        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
+        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
         yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
         ## RSA tests
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA3072; done
+        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096; done
+        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
         yubico-piv-tool -r "$RDID" -a status
         PIVSignDec 9e # PIN not required for key 9e
@@ -536,14 +538,14 @@ jobs:
     
     - name: Upload log files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: logs
         path: /tmp/*.log
     
     - name: Upload data files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: data
         path: /tmp/[lc][fe]*
