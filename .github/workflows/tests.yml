@@ -57,7 +57,7 @@ jobs:
         mv build_dir/yubico-piv-tool_*_amd64.deb ..
         sudo apt install ../yubico-piv-tool_*_amd64.deb
     - name: Upload package files
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: tools-deb
         path: |
@@ -539,14 +539,14 @@ jobs:
     
     - name: Upload log files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: logs
         path: /tmp/*.log
     
     - name: Upload data files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: data
         path: /tmp/[lc][fe]*
