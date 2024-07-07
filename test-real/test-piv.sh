@@ -39,7 +39,7 @@ PIVSignDec() {
     op=$3
     algoArgs=
     inp_file=$TEST_TMP_DIR/cert-$key.pem
-    if [[ $algo == X25519 ]]; then inp_file=$TEST_TMP_DIR/pubkey-$key.pem; fi
+    if [[ "$4" == X25519 ]]; then inp_file=$TEST_TMP_DIR/pubkey-$key.pem; fi
     if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
     if [[ -n "$4" ]]; then algoArgs="-A $4"; fi
     if [[ -z "$op" || s = "$op" ]]; then 
