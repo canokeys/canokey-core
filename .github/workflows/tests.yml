@@ -436,7 +436,7 @@ jobs:
           subject="$2"
           algo="$3"
           yubico-piv-tool -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
-          if [[ $algo == "X25519" ]]; then return; fi
+          if [[ "$algo" == "X25519" ]]; then return; fi
           yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
           yubico-piv-tool -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
         }
@@ -445,10 +445,10 @@ jobs:
           pinArgs=
           op=$3
           algoArgs=
-          inp_file=$TEST_TMP_DIR/cert-$key.pem
+          inp_file=/tmp/cert-$key.pem
           if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
           if [[ -n "$4" ]]; then algoArgs="-A $4"; fi
-          if [[ $4 == X25519 ]]; then inp_file= /tmp/pubkey-$key.pem; fi
+          if [[ "$4" == X25519 ]]; then inp_file=/tmp/pubkey-$key.pem; fi
           if [[ -z "$op" || s = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-signature -s $key < /tmp/cert-$key.pem; fi
           if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key $algoArgs < $inp_file; fi
         }
