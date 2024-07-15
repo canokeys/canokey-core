@@ -186,20 +186,21 @@ static int build_ed25519_cose_key(uint8_t *data) {
   return len;
 }
 
-int ctap_consistency_check(CTAP_dc_general_attr *attr) {
-  if (read_attr(DC_FILE, DC_GENERAL_ATTR, attr, sizeof(*attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (attr->pending_add || attr->pending_delete) {
+int ctap_consistency_check(void) {
+  CTAP_dc_general_attr attr;
+  if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (attr.pending_add || attr.pending_delete) {
     DBG_MSG("Rolling back credential operations\n");
-    if (get_file_size(DC_FILE) >= ((int) attr->index + 1) * (int) sizeof(CTAP_discoverable_credential)) {
+    if (get_file_size(DC_FILE) >= ((int) attr.index + 1) * (int) sizeof(CTAP_discoverable_credential)) {
       CTAP_discoverable_credential dc;
-      if (read_file(DC_FILE, &dc, attr->index * (int) sizeof(CTAP_discoverable_credential),
+      if (read_file(DC_FILE, &dc, attr.index * (int) sizeof(CTAP_discoverable_credential),
                     sizeof(CTAP_discoverable_credential)) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
       if (!dc.deleted) {
         // delete the credential that had been written
-        DBG_MSG("Delete cred at %hhu\n", attr->index);
+        DBG_MSG("Delete cred at %hhu\n", attr.index);
         dc.deleted = true;
-        if (write_file(DC_FILE, &dc, attr->index * (int) sizeof(CTAP_discoverable_credential),
+        if (write_file(DC_FILE, &dc, attr.index * (int) sizeof(CTAP_discoverable_credential),
                       sizeof(CTAP_discoverable_credential), 0) < 0)
           return CTAP2_ERR_UNHANDLED_REQUEST;
       }
@@ -212,21 +213,21 @@ int ctap_consistency_check(CTAP_dc_general_attr *attr) {
       CTAP_rp_meta meta;
       int size = read_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if ((meta.slots & (1ull << attr->index)) != 0) {
+      if ((meta.slots & (1ull << attr.index)) != 0) {
         DBG_MSG("Orig slot bitmap: 0x%llx\n", meta.slots);
-        meta.slots &= ~(1ull << attr->index);
+        meta.slots &= ~(1ull << attr.index);
         DBG_MSG("New slot bitmap: 0x%llx\n", meta.slots);
         size = write_file(DC_META_FILE, &meta, i * (int) sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         break;
       }
     }
-    if (attr->pending_delete)
-      attr->numbers--;
+    if (attr.pending_delete)
+      attr.numbers--;
 
-    attr->pending_add = 0;
-    attr->pending_delete = 0;
-    if (write_attr(DC_FILE, DC_GENERAL_ATTR, attr, sizeof(*attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    attr.pending_add = 0;
+    attr.pending_delete = 0;
+    if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   }
   return 0;
 }
@@ -308,12 +309,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   uint8_t data_buf[sizeof(CTAP_auth_data)];
   CborParser parser;
   CTAP_make_credential mc;
-  CTAP_dc_general_attr attr;
 
   int ret = parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
-  ret = ctap_consistency_check(&attr);
+  ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
   KEEPALIVE();
 
@@ -592,7 +592,6 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     int size = get_file_size(DC_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     int n_dc = size / (int) sizeof(CTAP_discoverable_credential), pos, first_deleted = MAX_DC_NUM;
-    int cnt_valid = 0;
     for (pos = 0; pos != n_dc; ++pos) {
       if (read_file(DC_FILE, &dc, pos * (int) sizeof(CTAP_discoverable_credential),
                     sizeof(CTAP_discoverable_credential)) < 0) {
@@ -601,25 +600,19 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       }
       if (dc.deleted) {
         if (first_deleted == MAX_DC_NUM) first_deleted = pos;
-        if (cnt_valid == attr.numbers) {
-          DBG_MSG("Break on slot %d\n", pos);
-          break;
-        }
         continue;
       }
       // b
       if (memcmp_s(mc.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0 &&
           mc.user.id_size == dc.user.id_size && memcmp_s(mc.user.id, dc.user.id, mc.user.id_size) == 0)
         break;
-      ++cnt_valid;
     }
-    // If all slots have been scanned and nothing matches, use the first empty slot.
-    if ((pos == n_dc || cnt_valid == attr.numbers) && first_deleted != MAX_DC_NUM) {
-      DBG_MSG("Use empty slot %d\n", first_deleted);
+    // d
+    if (pos == n_dc && first_deleted != MAX_DC_NUM) {
+      DBG_MSG("Use slot %d\n", first_deleted);
       pos = first_deleted;
     }
     DBG_MSG("Finally use slot %d\n", pos);
-    // d
     if (pos >= MAX_DC_NUM) {
       DBG_MSG("Storage full\n");
       return CTAP2_ERR_KEY_STORE_FULL;
@@ -634,6 +627,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     }
     dc.deleted = false;
 
+    CTAP_dc_general_attr attr;
+    if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     attr.pending_add = 1;
     attr.index = (uint8_t)pos;
     if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -756,7 +751,6 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   static CTAP_get_assertion ga;
-  static CTAP_dc_general_attr attr;
   static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
   static bool uv, up, user_details;
   static uint32_t timer;
@@ -769,7 +763,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
 
   if (!in_get_next_assertion) {
     credential_counter = 0;
-    ret = ctap_consistency_check(&attr);
+    ret = ctap_consistency_check();
     CHECK_PARSER_RET(ret);
   } else {
     // GET_NEXT_ASSERTION
@@ -937,8 +931,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
           int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
           bool found = false;
-          DBG_MSG("%d discoverable credentials\n", attr.numbers);
-          for (int j = 0, cnt_valid = 0; j < n_dc && cnt_valid != attr.numbers; ++j) {
+          DBG_MSG("%d discoverable credentials\n", n_dc);
+          for (int j = 0; j < n_dc; ++j) {
             if (read_file(DC_FILE, &dc, j * (int) sizeof(CTAP_discoverable_credential),
                           sizeof(CTAP_discoverable_credential)) < 0)
               return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -946,7 +940,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
               DBG_MSG("Skipped DC at %d\n", j);
               continue;
             }
-            ++cnt_valid;
             if (memcmp_s(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0 &&
                 memcmp_s(data_buf, dc.credential_id.nonce, sizeof(dc.credential_id.nonce)) == 0) {
               found = true;
@@ -977,7 +970,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
       number_of_credentials = 0;
-      for (int i = n_dc - 1, cnt_valid = 0; i >= 0 && cnt_valid != attr.numbers; --i) {  // 12-b-1
+      for (int i = n_dc - 1; i >= 0; --i) {  // 12-b-1
         if (read_file(DC_FILE, &dc, i * (int) sizeof(CTAP_discoverable_credential),
                       sizeof(CTAP_discoverable_credential)) < 0)
           return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -985,7 +978,6 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
           DBG_MSG("Skipped DC at %d\n", i);
           continue;
         }
-        ++cnt_valid;
         // Skip the credential which is protected
         if (!check_credential_protect_requirements(&dc.credential_id, false, uv)) continue;
         if (memcmp_s(ga.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0)
@@ -1648,13 +1640,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   CTAP_credential_management cm;
   int ret = parse_credential_management(&parser, &cm, params, len);
   CHECK_PARSER_RET(ret);
-
-  if (cm.sub_command != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP &&
-      cm.sub_command != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL) {
-    CTAP_dc_general_attr attr;
-    ret = ctap_consistency_check(&attr);
-    CHECK_PARSER_RET(ret);
-  }
+  ret = ctap_consistency_check();
+  CHECK_PARSER_RET(ret);
 
   static int idx, n_rp; // for rp enumeration
   static uint64_t slots; // for credential enumeration
