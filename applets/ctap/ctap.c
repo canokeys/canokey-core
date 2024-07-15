@@ -1640,8 +1640,12 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   CTAP_credential_management cm;
   int ret = parse_credential_management(&parser, &cm, params, len);
   CHECK_PARSER_RET(ret);
-  ret = ctap_consistency_check();
-  CHECK_PARSER_RET(ret);
+
+  if (cm.sub_command != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP &&                                                                              
+      cm.sub_command != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL) {
+    ret = ctap_consistency_check();
+    CHECK_PARSER_RET(ret);
+  }
 
   static int idx, n_rp; // for rp enumeration
   static uint64_t slots; // for credential enumeration
