@@ -214,10 +214,10 @@ test_FactoryReset() {
 }
 
 test_FillData() {
-    openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+    openssl req -x509 -newkey rsa:4096 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
     assertEquals 'openssl gen key' 0 $?
     for s in 9a 9c 9d 9e 82 83; do
-        PIVImportKeyCert $s $TEST_TMP_DIR/key.pem ../test-via-pcsc/long-cert.pem
+        PIVImportKeyCert $s $TEST_TMP_DIR/key.pem  $TEST_TMP_DIR/cert.pem
         assertEquals 'import-key' 0 $?
     done
     YPT -a status
