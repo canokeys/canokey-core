@@ -16,7 +16,7 @@ volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, he
 
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
-void device_loop(uint8_t has_touch) {
+void device_loop(void) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
