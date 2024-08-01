@@ -23,6 +23,7 @@
 #define DC_FILE         "ctap_dc"
 #define DC_GENERAL_ATTR 0x00
 #define DC_META_FILE    "ctap_dm"
+#define DC_INDEX_FILE   "ctap_di"
 #define LB_FILE         "ctap_lb"
 #define LB_FILE_TMP     "ctap_lbt"
 
@@ -229,6 +230,12 @@
 #define LARGE_BLOB_SIZE_LIMIT         4096
 #define MAX_FRAGMENT_LENGTH           (MAX_CTAP_BUFSIZE - 64)
 
+#define BUILD_RPID_HASH0(hash0, vld)  ((0x7F & (hash0)) | (vld))
+enum {
+  INDEX_MATCH_VALID = 1,
+  INDEX_MATCH_RPID = 0xFF,
+};
+
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
   uint8_t id_size;
@@ -251,6 +258,12 @@ typedef struct {
   uint8_t cred_blob_len;
   uint8_t cred_blob[MAX_CRED_BLOB_LENGTH];
 } __packed CTAP_discoverable_credential;
+
+typedef struct {
+  // bit[0] is valid
+  // bit[7:1] equals rp_id_hash[0][7:1]
+  uint8_t rp_id_hash0[MAX_DC_NUM];
+} __packed discoverable_credential_idx;
 
 typedef struct {
   uint8_t numbers;
