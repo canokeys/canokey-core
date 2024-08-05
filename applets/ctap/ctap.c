@@ -935,7 +935,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //       MUST NOT be returned if user verification is not done by the authenticator.
   if (ga.allow_list_size > 0) { // Step 11
     size_t i;
-    if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx) < 0))
+    if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     for (i = 0; i < ga.allow_list_size; ++i) {
       parse_credential_descriptor(&ga.allow_list, (uint8_t *) &dc.credential_id);
@@ -953,9 +953,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
           if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
           int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
           bool found = false;
-          int j = 0;
           DBG_MSG("%d discoverable credentials\n", n_dc);
-          while (find_dc_index(&dc_idx, &j, INDEX_MATCH_RPID, ga.rp_id_hash, true)) {
+          for (int j = 0; find_dc_index(&dc_idx, &j, INDEX_MATCH_RPID, ga.rp_id_hash, true); j++) {
             if (read_file(DC_FILE, &dc, j * (int) sizeof(CTAP_discoverable_credential),
                           sizeof(CTAP_discoverable_credential)) < 0)
               return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -984,12 +983,12 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     number_of_credentials = 1;
   } else { // Step 12
     if (credential_counter == 0) {
-      int i = 0;
+      
       number_of_credentials = 0;
-      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx) < 0))
+      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx)) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
       // 12-b-1
-      while (find_dc_index(&dc_idx, &i, INDEX_MATCH_RPID, ga.rp_id_hash, true)) {
+      for (int i = 0; find_dc_index(&dc_idx, &i, INDEX_MATCH_RPID, ga.rp_id_hash, true); i++) {
         // read dc.credential_id for comparsion
         if (read_file(DC_FILE, &dc.credential_id,
                       (int)(i*sizeof(CTAP_discoverable_credential)+offsetof(CTAP_discoverable_credential, credential_id)),
@@ -1795,16 +1794,16 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     case CM_CMD_ENUMERATE_CREDENTIALS_BEGIN:
       if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
-      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx) < 0))
+      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx)) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
 
       include_numbers = true;
       slots = 0ull;
       KEEPALIVE();
-      for (idx = 0; find_dc_index(&dc_idx, &idx, INDEX_MATCH_RPID, cm.rp_id_hash, true); ) {
+      for (idx = 0; find_dc_index(&dc_idx, &idx, INDEX_MATCH_RPID, cm.rp_id_hash, true); idx++) {
         size = read_file(DC_FILE, &dc.credential_id.rp_id_hash,
                         (int)(idx*sizeof(CTAP_discoverable_credential)+offsetof(CTAP_discoverable_credential, credential_id.rp_id_hash)),
-                        sizeof(CTAP_discoverable_credential));
+                        sizeof(dc.credential_id.rp_id_hash));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (memcmp_s(dc.credential_id.rp_id_hash, cm.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
           slots |= 1ull << idx;
@@ -1917,10 +1916,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     case CM_CMD_DELETE_CREDENTIAL:
       if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
-      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx) < 0))
+      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx)) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
 
-      for (idx = 0; find_dc_index(&dc_idx, &idx, INDEX_MATCH_RPID, cm.credential_id.rp_id_hash, true); ) {
+      for (idx = 0; find_dc_index(&dc_idx, &idx, INDEX_MATCH_RPID, cm.credential_id.rp_id_hash, true); idx++) {
         size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                          sizeof(CTAP_discoverable_credential));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1973,11 +1972,11 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     case CM_CMD_UPDATE_USER_INFORMATION:
       if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
-      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx) < 0))
+      if (read_file(DC_INDEX_FILE, &dc_idx, 0, sizeof(dc_idx) ) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
 
       KEEPALIVE();
-      for (idx = 0; find_dc_index(&dc_idx, &idx, INDEX_MATCH_RPID, cm.credential_id.rp_id_hash, true); ) {
+      for (idx = 0; find_dc_index(&dc_idx, &idx, INDEX_MATCH_RPID, cm.credential_id.rp_id_hash, true); idx++) {
         size = read_file(DC_FILE, &dc, idx * (int) sizeof(CTAP_discoverable_credential),
                          sizeof(CTAP_discoverable_credential));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
