@@ -997,6 +997,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
       }
       // 7-f
       if (number_of_credentials == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      for (int i = 0; i < number_of_credentials/2; i++) { // reverse the list
+        int tmp = credential_list[number_of_credentials-1-i];
+        credential_list[number_of_credentials-1-i] = credential_list[i];
+        credential_list[i] = tmp;
+      }
     }
     // fetch dc and get private key
     if (read_file(DC_FILE, &dc, credential_list[credential_counter] * (int) sizeof(CTAP_discoverable_credential),
