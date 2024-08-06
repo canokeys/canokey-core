@@ -949,11 +949,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
         if (!check_credential_protect_requirements(&dc.credential_id, true, uv)) goto next;
         if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) { // Verify if it's a valid dc.
           memcpy(data_buf, dc.credential_id.nonce, sizeof(dc.credential_id.nonce)); // use data_buf to store the nonce temporarily
-          int size = get_file_size(DC_FILE);
-          if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-          int n_dc = (int) (size / sizeof(CTAP_discoverable_credential));
           bool found = false;
-          DBG_MSG("%d discoverable credentials\n", n_dc);
           for (int j = 0; find_dc_index(&dc_idx, &j, INDEX_MATCH_RPID, ga.rp_id_hash, true); j++) {
             if (read_file(DC_FILE, &dc, j * (int) sizeof(CTAP_discoverable_credential),
                           sizeof(CTAP_discoverable_credential)) < 0)
