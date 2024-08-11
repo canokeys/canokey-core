@@ -9,11 +9,14 @@
 
 Core implementations of an open-source secure key, with supports of:
 
-* U2F / FIDO2 with ed25519 and HMAC-secret
+* U2F
+* FIDO v2.1 with ed25519
+  - Extensions: HMAC Secret, Credential Protection, Credential Blob, Large Blob 
 * OpenPGP Card V3.4, [Supported Algorithm List](https://docs.canokeys.org/userguide/openpgp/#supported-algorithm)
 * PIV (NIST SP 800-73-4)
 * HOTP / TOTP
 * NDEF
+* Static Password
 
 The USB mode contains 3 different interfaces:
 
