@@ -178,3 +178,9 @@ void stop_blinking(void) {
     led_status = OFF;
   }
 }
+
+void device_init(void) {
+  last_blink = 0;
+  stop_blinking();
+  set_touch_result(TOUCH_NO);
+}
