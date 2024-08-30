@@ -170,7 +170,6 @@ void start_blinking_interval(uint8_t sec, uint32_t interval) {
 
 void stop_blinking(void) {
   blink_timeout = 0;
-  last_blink = 0;
   if (cfg_is_led_normally_on()) {
     led_on();
     led_status = ON;
@@ -178,4 +177,9 @@ void stop_blinking(void) {
     led_off();
     led_status = OFF;
   }
+}
+
+void init_led(void) {
+  last_blink = 0;
+  stop_blinking();
 }
