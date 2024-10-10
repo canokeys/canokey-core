@@ -522,18 +522,18 @@ jobs:
           PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096
           yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
         done
-        openssl rand -base64 -out /tmp/rand-pi 254
-        openssl rand -base64 -out /tmp/rand-fig 512
-        openssl rand -base64 -out /tmp/rand-face 512
+        openssl rand -base64 -out /tmp/rand-pi 242
+        openssl rand -base64 -out /tmp/rand-fig 509
+        openssl rand -base64 -out /tmp/rand-face 509
         yubico-piv-tool -r "$RDID" -a write-object --id 0x5fc109 -i /tmp/rand-pi -f base64
         yubico-piv-tool -r "$RDID" -a write-object --id 0x5fc108 -i /tmp/rand-face -f base64
         yubico-piv-tool -r "$RDID" -a write-object --id 0x5fc103 -i /tmp/rand-fig -f base64
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc103 -i /tmp/read-fig -f base64
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc109 -i /tmp/read-pi -f base64
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc108 -i /tmp/read-face -f base64
-        diff /tmp/rand-pi   /tmp/read-pi
-        diff /tmp/rand-face /tmp/read-face
-        diff /tmp/rand-fig  /tmp/read-fig
+        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc103 -o /tmp/read-fig -f base64
+        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc109 -o /tmp/read-pi -f base64
+        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc108 -o /tmp/read-face -f base64
+        diff -s /tmp/rand-pi   /tmp/read-pi
+        diff -s /tmp/rand-face /tmp/read-face
+        diff -s /tmp/rand-fig  /tmp/read-fig
 
     - name: Prepare the Test Coverage Report
       run: |
