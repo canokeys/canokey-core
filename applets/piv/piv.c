@@ -23,6 +23,8 @@
 #define CHUID_PATH                  "piv-chu"  // card holder uid
 #define CCC_PATH                    "piv-ccc"  // card capability container
 #define PI_PATH                     "piv-pi"   // printed information
+#define FINGER_PATH                 "piv-fig"  // card holder fingerprints
+#define FACE_PATH                   "piv-face" // card holder facial image
 
 // key tags and path
 #define TAG_PIN_KEY_DEFAULT        0x81       // DO if pin or admin key is default
@@ -214,6 +216,8 @@ int piv_install(const uint8_t reset) {
   if (write_file(KEY_MANAGEMENT_82_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(KEY_MANAGEMENT_83_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
   if (write_file(PI_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(FINGER_PATH, NULL, 0, 0, 1) < 0) return -1;
+  if (write_file(FACE_PATH, NULL, 0, 0, 1) < 0) return -1;
   uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf1, 0x01, 0x21,
                        0xf2, 0x01, 0x21, 0xf3, 0x00, 0xf4, 0x01, 0x00, 0xf5, 0x01, 0x10, 0xf6, 0x00, 0xf7,
@@ -289,6 +293,10 @@ static const char *get_object_path_by_tag(const uint8_t tag) {
     return CCC_PATH;
   case 0x09: // Printed Information
     return PI_PATH;
+  case 0x03: // Fingerprints
+    return FINGER_PATH;
+  case 0x08: // Facial Images
+    return FACE_PATH;
   default:
     return NULL;
   }
@@ -310,6 +318,9 @@ static uint16_t get_capacity_by_tag(const uint8_t tag) {
     return 287;
   case 0x09: // Printed Information
     return 245;
+  case 0x03: // Fingerprints
+  case 0x08: // Facial Images
+    return 512;
   default:
     return 0;
   }
@@ -400,8 +411,9 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     LL = 7 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
   } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
-    // Printed Information requires PIN verification
-    if (DATA[4] == 0x09 && !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    // Reading Printed Information, Fingerprints, and Facial Images requires PIN verification
+    if ((DATA[4] == 0x09 || DATA[4] == 0x03 || DATA[4] == 0x08) && 
+      !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     const int size = get_file_size(path);
