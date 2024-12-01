@@ -62,7 +62,6 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
 
-  wait_status_t shallow = wait_status;
   if (wait_status == WAIT_NONE) {
     switch (entry) {
     case WAIT_ENTRY_CCID:
@@ -72,41 +71,36 @@ uint8_t wait_for_user_presence(uint8_t entry) {
       wait_status = WAIT_CTAPHID;
       break;
     }
-  } else
-    wait_status = WAIT_DEEP;
+  } else {
+    // New user presence test is denied while a test is ongoing
+    DBG_MSG("Denied\n");
+    return USER_PRESENCE_TIMEOUT;
+  }
   while (get_touch_result() == TOUCH_NO) {
-    if (wait_status == WAIT_DEEP_TOUCHED || wait_status == WAIT_DEEP_CANCEL) break;
-    if (wait_status == WAIT_CTAPHID) ccid_loop();
-    if (ctap_hid_loop(wait_status != WAIT_CCID) == LOOP_CANCEL) {
+    // Nested CCID processing is not allowed
+    if (entry != WAIT_ENTRY_CCID) ccid_loop();
+    if (ctap_hid_loop(entry == WAIT_ENTRY_CTAPHID) == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
-      if (wait_status != WAIT_DEEP) {
-        stop_blinking();
-        wait_status = WAIT_NONE; // namely shallow
-      } else
-        wait_status = WAIT_DEEP_CANCEL;
+      stop_blinking();
+      wait_status = WAIT_NONE;
       return USER_PRESENCE_CANCEL;
     }
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
-      if (wait_status != WAIT_DEEP) stop_blinking();
-      wait_status = shallow;
+      stop_blinking();
+      wait_status = WAIT_NONE;
       return USER_PRESENCE_TIMEOUT;
     }
     if (now - last >= 100) {
       last = now;
-      if (wait_status != WAIT_CCID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+      if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
     }
   }
+  // Consume this touch event
   set_touch_result(TOUCH_NO);
-  if (wait_status != WAIT_DEEP) stop_blinking();
-  if (wait_status == WAIT_DEEP)
-    wait_status = WAIT_DEEP_TOUCHED;
-  else if (wait_status == WAIT_DEEP_CANCEL) {
-    wait_status = WAIT_NONE;
-    return USER_PRESENCE_TIMEOUT;
-  } else
-    wait_status = WAIT_NONE;
+  stop_blinking();
+  wait_status = WAIT_NONE;
   return USER_PRESENCE_OK;
 }
 
@@ -188,4 +182,10 @@ void stop_blinking(void) {
     led_off();
     led_status = OFF;
   }
+}
+
+void device_init(void) {
+  last_blink = 0;
+  stop_blinking();
+  set_touch_result(TOUCH_NO);
 }

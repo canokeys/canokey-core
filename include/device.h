@@ -111,6 +111,7 @@ static inline void start_blinking(uint8_t sec) {
 static inline void start_quick_blinking(uint8_t sec) {
   if (!is_nfc()) start_blinking_interval(sec, 25);
 }
+void device_init(void);
 void stop_blinking(void);
 uint8_t device_is_blinking(void);
 bool device_allow_kbd_touch(void);

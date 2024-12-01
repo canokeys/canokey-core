@@ -124,7 +124,7 @@ static void CTAPHID_Execute_Msg(void) {
   RDATA = channel.data;
   DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
-  ctap_process_apdu(capdu, rapdu);
+  ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_HID);
   channel.data[LL] = HI(SW);
   channel.data[LL + 1] = LO(SW);
   DBG_MSG("R: ");
