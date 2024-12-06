@@ -26,8 +26,8 @@ void device_loop(void) {
 bool device_allow_kbd_touch(void) {
   uint32_t now = device_get_tick();
   if (!device_is_blinking() &&      // applets are not waiting for touch
-      now > 2000   &&               // ignore touch for the first 2 seconds
-      now - 1000 > last_blink &&
+      now > TOUCH_AFTER_PWRON &&    // ignore touch for some time after power-on
+      now - TOUCH_EXPIRE_TIME > last_blink &&
       get_touch_result() != TOUCH_NO
   ) {
     DBG_MSG("now=%lu last_blink=%lu\n", now, last_blink);
@@ -145,8 +145,9 @@ static void toggle_led(void) {
 
 void device_update_led(void) {
   uint32_t now = device_get_tick();
-  if (now > blink_timeout) stop_blinking();
-  if (device_is_blinking() && now >= last_blink && now - last_blink >= blink_interval) {
+  if (now > blink_timeout) {
+    stop_blinking();
+  } else if (device_is_blinking() && now >= last_blink && now - last_blink >= blink_interval) {
     last_blink = now;
     toggle_led();
   }

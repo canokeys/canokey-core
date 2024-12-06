@@ -143,6 +143,7 @@ uint8_t KBDHID_Loop(void) {
     const uint8_t touch = get_touch_result();
     if (touch != TOUCH_NO) {
       const int len = pass_handle_touch(touch, key_sequence);
+      set_touch_result(TOUCH_NO);
       if (len <= 0) {
         DBG_MSG("Do nothing\n");
         return 0;
@@ -151,7 +152,6 @@ uint8_t KBDHID_Loop(void) {
       key_seq_position = 0;
       state = KBDHID_Typing;
       DBG_MSG("Start typing %s\n", key_sequence);
-      set_touch_result(TOUCH_NO);
     }
   } else {
     KBDHID_TypeKeySeq();
