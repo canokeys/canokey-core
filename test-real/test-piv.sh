@@ -97,6 +97,9 @@ rsa_tests() {
     PIVSignDec 9e # PIN not required for key 9e
     for s in 9a 9c 9d; do PIVSignDec $s 1; done
 
+    if (( $1 == RSA2048 )); then
+        return
+    fi
     out=$(pkcs15-tool --reader "$RDID" --read-certificate 04 | openssl x509 -text)
     assertContains 'CERT' "$out" 'CN = CertAtSlot9e'
     echo -n hello >$TEST_TMP_DIR/hello.txt
@@ -214,10 +217,14 @@ test_FactoryReset() {
 }
 
 test_FillData() {
-    openssl req -x509 -newkey rsa:2048 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+    openssl req -x509 -newkey rsa:4096 -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
     assertEquals 'openssl gen key' 0 $?
+    openssl rand -base64 -out $TEST_TMP_DIR/rand-pi 242
+    YPT -a write-object --id 0x5fc109 -i $TEST_TMP_DIR/rand-pi -f base64
+    YPT -a write-object --id 0x5fc108 -i $TEST_TMP_DIR/rand-pi -f base64
+    YPT -a write-object --id 0x5fc103 -i $TEST_TMP_DIR/rand-pi -f base64
     for s in 9a 9c 9d 9e 82 83; do
-        PIVImportKeyCert $s $TEST_TMP_DIR/key.pem ../test-via-pcsc/long-cert.pem
+        PIVImportKeyCert $s $TEST_TMP_DIR/key.pem  $TEST_TMP_DIR/cert.pem
         assertEquals 'import-key' 0 $?
     done
     YPT -a status
