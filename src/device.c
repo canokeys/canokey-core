@@ -37,7 +37,7 @@ bool device_allow_kbd_touch(void) {
 }
 
 uint8_t get_touch_result(void) {
-#ifdef TEST // emulate user interaction in test mode
+#if defined(TEST) || defined(DUMB_DONGLE) // emulate user interaction in test mode
   testmode_emulate_user_presence();
 #endif
   return touch_result;
