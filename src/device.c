@@ -80,8 +80,8 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     // Keep blinking, in case other applet stops it 
     start_blinking(0);
     // Nested CCID processing is not allowed
-    if (entry != WAIT_ENTRY_CCID) CCID_Loop();
-    if (CTAPHID_Loop(entry == WAIT_ENTRY_CTAPHID) == LOOP_CANCEL) {
+    if (entry != WAIT_ENTRY_CCID) ccid_loop();
+    if (ctap_hid_loop(entry == WAIT_ENTRY_CTAPHID) == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
       stop_blinking();
       wait_status = WAIT_NONE;
