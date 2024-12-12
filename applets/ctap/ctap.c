@@ -2245,10 +2245,10 @@ int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size
 
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
   int ret = 0;
+  LL = 0;
   if (current_cmd_src != CTAP_SRC_NONE) EXCEPT(SW_UNABLE_TO_PROCESS);
   // Must set current_cmd_src to CTAP_SRC_NONE before return
   current_cmd_src = src;
-  LL = 0;
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
     if (INS == CTAP_INS_MSG) {
