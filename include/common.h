@@ -9,6 +9,8 @@
 #include <string.h>
 
 #define APDU_BUFFER_SIZE 1340
+#define TOUCH_EXPIRE_TIME 1000
+#define TOUCH_AFTER_PWRON 1500
 
 #ifdef DEBUG_OUTPUT
 #include <crypto-util.h>

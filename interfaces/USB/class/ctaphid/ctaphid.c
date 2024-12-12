@@ -124,7 +124,7 @@ static void CTAPHID_Execute_Msg(void) {
   RDATA = channel.data;
   DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
-  ctap_process_apdu(capdu, rapdu);
+  ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_HID);
   channel.data[LL] = HI(SW);
   channel.data[LL + 1] = LO(SW);
   DBG_MSG("R: ");
@@ -136,7 +136,7 @@ static void CTAPHID_Execute_Cbor(void) {
   DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
   size_t len = sizeof(channel.data);
-  ctap_process_cbor(channel.data, channel.bcnt_total, channel.data, &len);
+  ctap_process_cbor_with_src(channel.data, channel.bcnt_total, channel.data, &len, CTAP_SRC_HID);
   DBG_MSG("R: ");
   PRINT_HEX(channel.data, len);
   CTAPHID_SendResponse(channel.cid, CTAPHID_CBOR, channel.data, len);

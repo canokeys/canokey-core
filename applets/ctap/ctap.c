@@ -38,8 +38,8 @@
 
 #define WAIT(timeout_response)                                                                                         \
   do {                                                                                                                 \
-    if (is_nfc()) break;                                                                                               \
-    switch (wait_for_user_presence(WAIT_ENTRY_CTAPHID)) {                                                              \
+    if (is_nfc()) break;\
+    switch (wait_for_user_presence(current_cmd_src == CTAP_SRC_HID ? WAIT_ENTRY_CTAPHID : WAIT_ENTRY_CCID)) {                                                              \
     case USER_PRESENCE_CANCEL:                                                                                         \
       return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
     case USER_PRESENCE_TIMEOUT:                                                                                        \
@@ -50,7 +50,7 @@
 #define KEEPALIVE()                                                                                                    \
   do {                                                                                                                 \
     if (is_nfc()) break;                                                                                               \
-    send_keepalive_during_processing(WAIT_ENTRY_CTAPHID);                                                              \
+    send_keepalive_during_processing(current_cmd_src == CTAP_SRC_HID ? WAIT_ENTRY_CTAPHID : WAIT_ENTRY_CCID);                                                              \
   } while (0)
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
@@ -58,12 +58,15 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
 
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
+// source of APDU in process 
+static ctap_src_t current_cmd_src;
 // SM2 attr
 CTAP_sm2_attr ctap_sm2_attr;
 
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
   last_cmd = CTAP_INVALID_CMD;
+  current_cmd_src = CTAP_SRC_NONE;
   cp_initialize();
   if (!reset && get_file_size(LB_FILE) >= 0) {
     if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -2156,7 +2159,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
   return 0;
 }
 
-int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
+static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
 
   cp_pin_uv_auth_token_usage_timer_observer();
@@ -2230,8 +2233,21 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
   return 0;
 }
 
-int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len, ctap_src_t src) {
+  
+  if (current_cmd_src != CTAP_SRC_NONE) return -1;
+  // Must set current_cmd_src to CTAP_SRC_NONE before return
+  current_cmd_src = src;
+  int ret = ctap_process_cbor(req, req_len, resp, resp_len);
+  current_cmd_src = CTAP_SRC_NONE;
+  return ret;
+}
+
+int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
   int ret = 0;
+  if (current_cmd_src != CTAP_SRC_NONE) EXCEPT(SW_UNABLE_TO_PROCESS);
+  // Must set current_cmd_src to CTAP_SRC_NONE before return
+  current_cmd_src = src;
   LL = 0;
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
@@ -2243,6 +2259,7 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       // len is the actual len written to RDATA
       LL = len;
     } else {
+      current_cmd_src = CTAP_SRC_NONE;
       EXCEPT(SW_INS_NOT_SUPPORTED);
     }
   } else if (CLA == 0x00) {
@@ -2262,11 +2279,15 @@ int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       case CTAP_INS_MSG:
         break;
       default:
+        current_cmd_src = CTAP_SRC_NONE;
         EXCEPT(SW_INS_NOT_SUPPORTED);
     }
-  } else
+  } else {
+    current_cmd_src = CTAP_SRC_NONE;
     EXCEPT(SW_CLA_NOT_SUPPORTED);
+  }
 
+  current_cmd_src = CTAP_SRC_NONE;
   if (ret < 0)
     EXCEPT(SW_UNABLE_TO_PROCESS);
   else
