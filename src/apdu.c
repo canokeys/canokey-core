@@ -241,7 +241,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
         break;
       }
 #endif
-      ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+      ctap_process_apdu(capdu, &rapdu_chaining.rapdu);
       rapdu->len = LE;
       apdu_output(&rapdu_chaining, rapdu);
       break;
