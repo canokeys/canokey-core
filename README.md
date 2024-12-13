@@ -61,7 +61,7 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
   * `uint8_t i2c_read_ack(void);`
   * `void i2c_send_ack(void);`
   * `void i2c_send_nack(void);`
-  * `void i2c_write_byte(uint8_t data);`
+  * `bool i2c_write_byte(uint8_t data);`
   * `uint8_t i2c_read_byte(void);`
 
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.

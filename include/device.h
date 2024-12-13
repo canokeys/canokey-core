@@ -75,7 +75,7 @@ void scl_delay(void);
 uint8_t i2c_read_ack(void);
 void i2c_send_ack(void);
 void i2c_send_nack(void);
-void i2c_write_byte(uint8_t data);
+bool i2c_write_byte(uint8_t data);
 uint8_t i2c_read_byte(void);
 #endif
 
@@ -115,17 +115,15 @@ void stop_blinking(void);
 uint8_t device_is_blinking(void);
 bool device_allow_kbd_touch(void);
 void fm11_init(void);
-uint8_t fm_read_reg(uint16_t reg);
-void fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
-void fm_write_reg(uint16_t reg, uint8_t val);
-void fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
-void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
-void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len);
-void fm_read_fifo(uint8_t *buf, uint8_t len);
-void fm_write_fifo(uint8_t *buf, uint8_t len);
+bool fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
+bool fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
+bool fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
+bool fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len);
+bool fm_read_fifo(uint8_t *buf, uint8_t len);
+bool fm_write_fifo(uint8_t *buf, uint8_t len);
 #if NFC_CHIP == NFC_CHIP_FM11NT
-void fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
-void fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
+bool fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
+bool fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
 #endif
 
