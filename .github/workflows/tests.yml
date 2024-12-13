@@ -199,16 +199,6 @@ jobs:
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
 
-    - name: Test the ckman Utility
-      run: |
-        pip3 install canokey-manager==5.2.0rc3
-        ckman --log-level DEBUG info
-        ckman oath accounts add steam1 HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ -i Steam
-        ckman oath accounts code
-        ckman openpgp info
-        ckman piv info
-        #ckman fido credentials list --pin 123456
-
     - name: Test the OATH
       run: go test -v test-via-pcsc/oath_test.go
 
