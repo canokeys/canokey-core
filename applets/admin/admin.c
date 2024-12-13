@@ -45,7 +45,7 @@ __attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-__attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu) {
+__attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu, bool pin_validated) {
   UNUSED(capdu);
   UNUSED(rapdu);
   return 0;
