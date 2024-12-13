@@ -81,7 +81,7 @@ jobs:
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo apt-get install -q -y libeac3 git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
         sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
         pip3 install --upgrade pip
 
