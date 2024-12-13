@@ -2,9 +2,9 @@
 #include "device.h"
 #include <stdint.h>
 
-#define I2C_WRITE_WITH_CHECK(data)                               \
-  do {                                                           \
-    if (i2c_write_byte(data) == DEVICE_NACK) return DEVICE_NACK; \
+#define I2C_WRITE_WITH_CHECK(data)                                     \
+  do {                                                                 \
+    if (i2c_write_byte(data) == FM_STATUS_NACK) return FM_STATUS_NACK; \
   } while (0)
 
 static void device_delay_us(int us) {
@@ -20,7 +20,7 @@ fm_status_t fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len) {
   spi_transmit(&addr, 1);
   spi_receive(buf, len);
   fm_csn_high();
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_read(reg, buf, len);
 #endif
@@ -33,7 +33,7 @@ fm_status_t fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len) {
   spi_transmit(&addr, 1);
   spi_transmit(buf, len);
   fm_csn_high();
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_write(reg, buf, len);
 #endif
@@ -47,7 +47,7 @@ fm_status_t fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) {
   spi_transmit(data, 2);
   spi_receive(buf, len);
   fm_csn_high();
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_read(addr, buf, len);
 #endif
@@ -69,7 +69,7 @@ fm_status_t fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) {
   spi_transmit(data, 2);
   spi_transmit(buf, len);
   fm_csn_high();
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   const bool ret = fm11nt_write(addr, buf, len);
   device_delay(10);
@@ -84,7 +84,7 @@ fm_status_t fm_read_fifo(uint8_t *buf, uint8_t len) {
   spi_transmit(&addr, 1);
   spi_receive(buf, len);
   fm_csn_high();
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_read(FM_REG_FIFO_ACCESS, buf, len);
 #endif
@@ -97,7 +97,7 @@ fm_status_t fm_write_fifo(uint8_t *buf, uint8_t len) {
   spi_transmit(&addr, 1);
   spi_transmit(buf, len);
   fm_csn_high();
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_write(FM_REG_FIFO_ACCESS, buf, len);
 #endif
@@ -171,7 +171,7 @@ fm_status_t fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len) {
     scl_delay();
   }
 
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 }
 
 fm_status_t fm11nt_write(const uint16_t addr, const uint8_t *buf, const uint8_t len) {
@@ -190,7 +190,7 @@ fm_status_t fm11nt_write(const uint16_t addr, const uint8_t *buf, const uint8_t 
   }
   i2c_stop();
 
-  return DEVICE_OK;
+  return FM_STATUS_OK;
 }
 
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length) {

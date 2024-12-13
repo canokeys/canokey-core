@@ -17,8 +17,8 @@
 #define WAIT_ENTRY_CTAPHID 1
 
 typedef enum {
-  DEVICE_OK = 0,
-  DEVICE_NACK = 1,
+  FM_STATUS_OK = 0,
+  FM_STATUS_NACK = 1,
 } fm_status_t;
 
 // functions should be implemented by device
