@@ -201,7 +201,7 @@ jobs:
 
     - name: Test the ckman Utility
       run: |
-        pip3 install canokey-manager
+        pip3 install canokey-manager==5.2.0rc3
         ckman --log-level DEBUG info
         ckman oath accounts add steam1 HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ -i Steam
         ckman oath accounts code
