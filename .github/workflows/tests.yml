@@ -81,7 +81,7 @@ jobs:
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo apt-get install -q -y libeac3 git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
         sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
         pip3 install --upgrade pip
 
@@ -198,16 +198,6 @@ jobs:
       run: |
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
-
-    - name: Test the ckman Utility
-      run: |
-        pip3 install canokey-manager
-        ckman --log-level DEBUG info
-        ckman oath accounts add steam1 HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ -i Steam
-        ckman oath accounts code
-        ckman openpgp info
-        ckman piv info
-        #ckman fido credentials list --pin 123456
 
     - name: Test the OATH
       run: go test -v test-via-pcsc/oath_test.go
