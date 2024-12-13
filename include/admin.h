@@ -47,7 +47,7 @@ int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
-int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu);
+int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu, bool pin_validated);
 
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_ndef_enable(void);

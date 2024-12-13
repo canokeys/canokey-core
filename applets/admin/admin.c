@@ -45,9 +45,10 @@ __attribute__((weak)) int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-__attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu) {
+__attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu, bool pin_validated) {
   UNUSED(capdu);
   UNUSED(rapdu);
+  UNUSED(pin_validated);
   return 0;
 }
 
@@ -223,6 +224,10 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       ret = admin_vendor_hw_sn(capdu, rapdu);
     goto done;
 
+  case ADMIN_INS_NFC_ENABLE:
+    ret = admin_vendor_nfc_enable(capdu, rapdu, pin.is_validated);
+    goto done;
+
   case ADMIN_INS_FACTORY_RESET:
     ret = admin_factory_reset(capdu, rapdu);
     goto done;
@@ -266,9 +271,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_RESET_CTAP:
     ret = ctap_install(1);
-    break;
-  case ADMIN_INS_NFC_ENABLE:
-    ret = admin_vendor_nfc_enable(capdu, rapdu);
     break;
   case ADMIN_INS_READ_CTAP_SM2_CONFIG:
     ret = ctap_read_sm2_config(capdu, rapdu);
