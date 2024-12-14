@@ -2159,11 +2159,8 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
   return 0;
 }
 
-int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
+static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
   if (req_len-- == 0) return -1;
-  if (current_cmd_src != CTAP_SRC_NONE) return -1;
-  // Must set current_cmd_src to CTAP_SRC_NONE before return
-  current_cmd_src = CTAP_SRC_HID;
 
   cp_pin_uv_auth_token_usage_timer_observer();
 
@@ -2233,16 +2230,25 @@ int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_
   if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
     last_cmd = CTAP_INVALID_CMD;
   }
-  current_cmd_src = CTAP_SRC_NONE;
   return 0;
+}
+
+int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len, ctap_src_t src) {
+  
+  if (current_cmd_src != CTAP_SRC_NONE) return -1;
+  // Must set current_cmd_src to CTAP_SRC_NONE before return
+  current_cmd_src = src;
+  int ret = ctap_process_cbor(req, req_len, resp, resp_len);
+  current_cmd_src = CTAP_SRC_NONE;
+  return ret;
 }
 
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
   int ret = 0;
+  LL = 0;
   if (current_cmd_src != CTAP_SRC_NONE) EXCEPT(SW_UNABLE_TO_PROCESS);
   // Must set current_cmd_src to CTAP_SRC_NONE before return
   current_cmd_src = src;
-  LL = 0;
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
     if (INS == CTAP_INS_MSG) {

@@ -16,7 +16,7 @@ int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu);
-int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len);
+int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len, ctap_src_t src);
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
 static int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     return ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_CCID);

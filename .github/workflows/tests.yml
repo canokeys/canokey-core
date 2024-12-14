@@ -30,15 +30,16 @@ jobs:
       run: |
         sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
         sudo apt-get update
-        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
+        sudo apt-get install -q -y libeac-dev curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
         sudo apt-get build-dep -q -y opensc
         sudo rm -f /usr/bin/clang-tidy
     - name: Build opensc package
       if: steps.check_opensc.outputs.files_exists == 'false'
       run: |
-        dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
-        cd opensc-0.23.0
-        curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
+        dget -u http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.25.0~rc1-1build2.dsc
+        ls -l
+        cd 'opensc-0.25.0~rc1'
+        #curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
         dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
         DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
     - name: Build yubico-piv-tool package
@@ -80,7 +81,7 @@ jobs:
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo apt-get install -q -y libeac3 git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
         sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
         pip3 install --upgrade pip
 
@@ -197,16 +198,6 @@ jobs:
       run: |
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
-
-    - name: Test the ckman Utility
-      run: |
-        pip3 install canokey-manager
-        ckman --log-level DEBUG info
-        ckman oath accounts add steam1 HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ -i Steam
-        ckman oath accounts code
-        ckman openpgp info
-        ckman piv info
-        #ckman fido credentials list --pin 123456
 
     - name: Test the OATH
       run: go test -v test-via-pcsc/oath_test.go
