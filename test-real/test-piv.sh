@@ -166,24 +166,40 @@ test_PinBlock() {
     assertContains 'verify-pin' "$out" 'Successfully unblocked the pin code'
 }
 
-test_P256KeyImport() {
-    openssl ecparam -name prime256v1 -out $TEST_TMP_DIR/p256.pem
-    openssl req -x509 -newkey ec:$TEST_TMP_DIR/p256.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-    
-    for s in 9a 9c 9d 9e; do PIVImportKeyCert $s $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem; done
-    YPT -a status
-    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
-    PIVSignDec 9d 1 d # 9d only do the ECDH
-}
-
-test_P384KeyImport() {
-    openssl ecparam -name secp384r1 -out $TEST_TMP_DIR/p384.pem
-    openssl req -x509 -newkey ec:$TEST_TMP_DIR/p384.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-    
-    for s in 9a 9c 9d 9e; do PIVImportKeyCert $s $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem; done
-    YPT -a status
-    for s in 9a 9c 9e; do PIVSignDec $s 1 s; done # 9a/9c/9e only do the ECDSA
-    PIVSignDec 9d 1 d # 9d only do the ECDH
+test_ECKeyImport() {
+    declare -A OPTS
+        # [ECCP256]="-algorithm EC -pkeyopt ec_paramgen_curve:prime256v1" \
+        # [ECCP384]="-algorithm EC -pkeyopt ec_paramgen_curve:secp384r1" \
+        # [ED25519]="-algorithm ED25519" \
+    OPTS=(\
+        [X25519]="-algorithm X25519" \
+    )
+    for algo in ${!OPTS[@]}
+    do
+        # openssl ecparam -name $curve -out $TEST_TMP_DIR/$curve.pem
+        # openssl req -x509 -newkey ec:$TEST_TMP_DIR/$curve.pem -keyout $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+        opt=${OPTS[${algo}]}
+        openssl genpkey $opt -out $TEST_TMP_DIR/key.pem
+        openssl req -x509 -key $TEST_TMP_DIR/key.pem -out $TEST_TMP_DIR/cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+        
+        for s in 9a 9c 9d 9e; do
+            if [[ $algo != X25519 ]]; then
+                PIVImportKeyCert $s $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem;
+            else
+                openssl pkey -in $TEST_TMP_DIR/key.pem -pubout -out $TEST_TMP_DIR/pubkey-$s.pem
+            fi
+        done
+        YPT -a status
+        for s in 9a 9c 9d 9e; do 
+            if [[ $algo != X25519 ]]; then
+                PIVSignDec $s 1 s $algo;
+            fi
+            if [[ $algo != ED25519 ]]; then
+                PIVSignDec $s 1 d $algo;
+            fi
+        done
+        # rm $TEST_TMP_DIR/key.pem $TEST_TMP_DIR/cert.pem
+    done
 }
 
 test_RSAKeyImport() {

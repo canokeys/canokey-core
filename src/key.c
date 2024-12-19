@@ -126,10 +126,11 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       DBG_MSG("too short\n");
       return KEY_ERR_LENGTH;
     }
-    if (*p++ != 0x06) {
+    if (*p < 0x06 || *p > 0x08) {
       DBG_MSG("invalid tag\n");
       return KEY_ERR_DATA;
     }
+    p++;
     if (*p++ != PRIVATE_KEY_LENGTH[key->meta.type]) {
       DBG_MSG("invalid private key length\n");
       return KEY_ERR_LENGTH;
