@@ -304,11 +304,7 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
   const size_t n_records = size / sizeof(OATH_RECORD);
   size_t off = 0;
 
-  while (off < LE) {
-    if (record_idx >= n_records) {
-      oath_remaining_type = REMAINING_NONE;
-      break;
-    }
+  while (record_idx < n_records) {
     if (read_file(OATH_FILE, &record, record_idx * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
     if (off + 3 + record.name_len > LE) { // tag (1) + name_len (1) + algo (1) + name
       // shouldn't increase the record_idx in this case
@@ -323,6 +319,9 @@ static int oath_list(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = record.key[0];
     memcpy(RDATA + off, record.name, record.name_len);
     off += record.name_len;
+  }
+  if (record_idx >= n_records) {
+    oath_remaining_type = REMAINING_NONE;
   }
   LL = off;
 
@@ -548,11 +547,7 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
   OATH_RECORD record;
   const size_t n_records = size / sizeof(OATH_RECORD);
   size_t off_out = 0;
-  while (off_out < LE) {
-    if (record_idx >= n_records) {
-      oath_remaining_type = REMAINING_NONE;
-      break;
-    }
+  while (record_idx < n_records) {
     const size_t file_offset = record_idx * sizeof(OATH_RECORD);
     if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
     const size_t estimated_len = 2 + record.name_len + 2 + 1 + (oath_remaining_type == REMAINING_CALC_TRUNC ? 4 : SHA512_DIGEST_LENGTH);
@@ -599,6 +594,9 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
       RDATA[off_out] = record.key[1];
       off_out += RDATA[off_out - 1];
     }
+  }
+  if (record_idx >= n_records) {
+    oath_remaining_type = REMAINING_NONE;
   }
   LL = off_out;
 
