@@ -497,6 +497,19 @@ jobs:
             yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
             yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
         done
+        openssl genpkey -algorithm ED25519 -out key.pem
+        openssl req -x509 -key key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+        for s in 9a 9e; do
+          yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
+          yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
+          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
+        done
+        openssl genpkey -algorithm X25519 -out key.pem
+        openssl pkey -in key.pem -pubout -out pubkey.pem
+        for s in 9d 83; do
+          yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
+          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-decipher -A X25519 -s $s <pubkey.pem
+        done
         ## Factory reset
         yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
         yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 1 tries left before blocked'
