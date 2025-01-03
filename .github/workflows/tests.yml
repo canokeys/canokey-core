@@ -451,10 +451,17 @@ jobs:
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
         yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
+        ## Error tests
+        yubico-piv-tool -r "$RDID" -a generate -A RSA2048 -s 84 2>&1 | grep "Key generation failed"; # Unsupported slot
+        yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9e
+        yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
+        yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Wrong slot
         ## RSA tests
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA3072; done
+        yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096; done
+        yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
         yubico-piv-tool -r "$RDID" -a status
