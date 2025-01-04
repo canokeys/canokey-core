@@ -534,7 +534,10 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (*DATA != 0x7C) EXCEPT(SW_WRONG_DATA);
 
   const char *key_path = get_key_path(P2);
-  if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
+  if (key_path == NULL) {
+    DBG_MSG("Invalid key ref\n");
+    EXCEPT(SW_WRONG_P1P2);
+  }
 
   ck_key_t key;
   if (P2 == 0x9B) { // Card admin
@@ -542,9 +545,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
       EXCEPT(SW_WRONG_P1P2);
     }
-  } else if (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 0x82 && P2 != 0x83) {
-    DBG_MSG("Invalid key ref\n");
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
   DBG_KEY_META(&key.meta);
@@ -884,13 +884,16 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Wrong length\n");
     EXCEPT(SW_WRONG_LENGTH);
   }
-  if (P1 != 0x00 || (P2 != 0x9A && P2 != 0x9C && P2 != 0x9D && P2 != 0x9E && P2 != 0x82 && P2 != 0x83) || DATA[0] != 0xAC || DATA[2] != 0x80 ||
-      DATA[3] != 0x01) {
+  if (P1 != 0x00 || DATA[0] != 0xAC || DATA[2] != 0x80 || DATA[3] != 0x01) {
     DBG_MSG("Wrong P1/P2 or tags\n");
     EXCEPT(SW_WRONG_DATA);
   }
 
   const char *key_path = get_key_path(P2);
+  if (key_path == NULL || P2 == 0x9B) {
+    DBG_MSG("Invalid key ref\n");
+    EXCEPT(SW_WRONG_P1P2);
+  }
   ck_key_t key;
   if (ck_read_key(key_path, &key) < 0) return -1;
 
