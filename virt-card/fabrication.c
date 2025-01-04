@@ -147,6 +147,7 @@ int card_fs_init(const char *lfs_root) {
 int card_fabrication_procedure(const char *lfs_root) {
   if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
+  device_init();
   applets_install();
 
   // reset state of applets

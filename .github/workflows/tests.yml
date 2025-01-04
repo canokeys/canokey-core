@@ -407,6 +407,7 @@ jobs:
 
         # change the algorithm identifier of ED25519
         piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 22 05 51 52 53 54' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_ALGORITHM_EXTENSION, Yubico
+        piv-tool --admin M:9B:03 -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 54'
         cd piv-go; go test -v ./piv --wipe-yubikey; cd -
         piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 E0 05 16 E1 53 54' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_ALGORITHM_EXTENSION, Yubico
 
@@ -456,6 +457,10 @@ jobs:
         yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9e
         yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
         yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Wrong slot
+        yubico-piv-tool -r "$RDID" -a test-decipher -s 84 -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Unsupported slot
+        opensc-tool -r "$RDID" -s '00 24 00 01 02 00 00' | grep 'SW1=0x6A, SW2=0x88' # change ref data, not found
+        opensc-tool -r "$RDID" -s '00 87 FF 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80' # general auth, wrong data
+        opensc-tool -r "$RDID" -s '00 87 FF 9B 02 7C 00' | grep 'SW1=0x6A, SW2=0x86' # general auth, invalid P1
         ## RSA tests
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA3072; done
         yubico-piv-tool -r "$RDID" -a status
