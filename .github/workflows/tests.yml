@@ -559,7 +559,7 @@ jobs:
         ls /tmp
         sleep 2
         mkdir coverage
-        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interface)/' | xargs rm
+        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interfaces)/' | xargs rm
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Coveralls
