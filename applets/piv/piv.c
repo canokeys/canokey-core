@@ -116,9 +116,7 @@ static int create_key(const char *path, const key_usage_t usage, const pin_polic
                            .usage = usage,
                            .pin_policy = pin_policy,
                            .touch_policy = TOUCH_POLICY_NEVER}};
-  if (ck_write_key(path, &key) < 0) {
-    return -1;
-  }
+  if (ck_write_key(path, &key) < 0) return -1;
   return 0;
 }
 
@@ -246,9 +244,7 @@ int piv_install(const uint8_t reset) {
                                  .pin_policy = PIN_POLICY_NEVER,
                                  .touch_policy = TOUCH_POLICY_NEVER}};
   memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
-  if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) {
-    return -1;
-  }
+  if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) return -1;
   const uint8_t tmp = 0x01;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
@@ -357,9 +353,7 @@ static int piv_get_large_data(const CAPDU *capdu, RAPDU *rapdu, const char *path
   // piv_do_read should equal to -1 before calling this function
 
   const int read = read_file(path, RDATA, 0, LE); // return first chunk
-  if (read < 0) {
-    return -1;
-  }
+  if (read < 0) return -1;
   LL = read;
   DBG_MSG("read file %s, expected: %d, read: %d\n", path, LE, read);
   const int remains = size - read;
@@ -417,9 +411,7 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     const int size = get_file_size(path);
-    if (size < 0) {
-      return -1;
-    }
+    if (size < 0) return -1;
     if (size == 0) EXCEPT(SW_FILE_NOT_FOUND);
     return piv_get_large_data(capdu, rapdu, path, size);
   } else
@@ -432,13 +424,9 @@ static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
   if (piv_do_path[0] == '\0') return -1;
 
   const int size = get_file_size(piv_do_path);
-  if (size < 0) {
-    return -1;
-  }
+  if (size < 0) return -1;
   const int read = read_file(piv_do_path, RDATA, piv_do_read, LE);
-  if (read < 0) {
-    return -1;
-  }
+  if (read < 0) return -1;
   DBG_MSG("continue to read file %s, expected: %d, read: %d\n", piv_do_path, LE, read);
   LL = read;
   piv_do_read += read;
@@ -558,9 +546,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
-  if (ck_read_key_metadata(key_path, &key.meta) < 0) {
-    return -1;
-  }
+  if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
   DBG_KEY_META(&key.meta);
 
   // empty slot after reset
@@ -616,9 +602,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       DBG_MSG("Incorrect challenge data length\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-    if (ck_read_key(key_path, &key) < 0) {
-      return -1;
-    }
+    if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     start_quick_blinking(0);
@@ -672,9 +656,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       LL = sig_len + 4;
 
       memzero(&key, sizeof(key));
-    } else {
-      return -1;
-    }
+    } else return -1;
   }
 
   //
@@ -699,9 +681,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
-    if (ck_read_key(key_path, &key) < 0) {
-      return -1;
-    }
+    if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
@@ -751,9 +731,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[3] = TDEA_BLOCK_SIZE;
     LL = TDEA_BLOCK_SIZE + 4;
 
-    if (ck_read_key(key_path, &key) < 0) {
-      return -1;
-    }
+    if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
@@ -790,9 +768,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[3] = TDEA_BLOCK_SIZE;
     LL = TDEA_BLOCK_SIZE + 4;
 
-    if (ck_read_key(key_path, &key) < 0) {
-      return -1;
-    }
+    if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
@@ -821,9 +797,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       DBG_MSG("Incorrect data length\n");
       EXCEPT(SW_WRONG_DATA);
     }
-    if (ck_read_key(key_path, &key) < 0) {
-      return -1;
-    }
+    if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     start_quick_blinking(0);
@@ -873,9 +847,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (size > max_len) EXCEPT(SW_WRONG_LENGTH);
     DBG_MSG("write file %s, first chunk length %d\n", path, size);
     const int rc = write_file(path, DATA + 5, 0, size, 1);
-    if (rc < 0) {
-      return -1;
-    }
+    if (rc < 0) return -1;
     if ((CLA & 0x10) != 0 && size < max_len) {
       // enter chaining write mode
       piv_do_write = max_len - size;
@@ -894,9 +866,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     DBG_MSG("write file %s, continuous chunk length %d\n", piv_do_path, LC);
     const int rc = append_file(piv_do_path, DATA, LC);
-    if (rc < 0) {
-      return -1;
-    }
+    if (rc < 0) return -1;
     if ((CLA & 0x10) == 0) { // last chunk
       piv_do_write = -1;
       piv_do_path[0] = '\0';
@@ -922,25 +892,19 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 
   const char *key_path = get_key_path(P2);
   ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) {
-    return -1;
-  }
+  if (ck_read_key(key_path, &key) < 0) return -1;
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
   if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
   start_quick_blinking(0);
-  if (ck_generate_key(&key) < 0) {
-    return -1;
-  }
+  if (ck_generate_key(&key) < 0) return -1;
   const int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
   if (err != 0) {
     DBG_MSG("Wrong metadata\n");
     memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_DATA);
   }
-  if (ck_write_key(key_path, &key) < 0) {
-    return -1;
-  }
+  if (ck_write_key(key_path, &key) < 0) return -1;
   DBG_MSG("Generate key %s successful\n", key_path);
   DBG_KEY_META(&key.meta);
 
@@ -985,9 +949,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   }
   ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) {
-    return -1;
-  }
+  if (ck_read_key(key_path, &key) < 0) return -1;
 
   key.meta.type = algo_id_to_key_type(P1);
   if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
@@ -1067,15 +1029,10 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     case 0x83:  // Retired Key Management 2
     {
       const char *key_path = get_key_path(P2);
-      if (key_path == NULL) {
-        DBG_MSG("Key file not found\n");
-        EXCEPT(SW_WRONG_P1P2);
-      }
+      if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
 
       ck_key_t key;
-      if (ck_read_key(key_path, &key) < 0) {
-        return -1;
-      }
+      if (ck_read_key(key_path, &key) < 0) return -1;
       DBG_KEY_META(&key.meta);
       if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
