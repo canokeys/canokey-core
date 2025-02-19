@@ -745,13 +745,12 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   start_quick_blinking(0);
 
-  size_t input_size = 0;
+  size_t input_size = LC;
   if (IS_RSA(key.meta.type)) {
     if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
       DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-    input_size = LC;
   } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
     if (LC > PRIVATE_KEY_LENGTH[key.meta.type]) {
       DBG_MSG("digest should has the same length as the private key\n");
