@@ -745,16 +745,21 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   start_quick_blinking(0);
 
+  size_t input_size = LC;
   if (IS_RSA(key.meta.type)) {
     if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
       DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
   } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-    if (LC != PRIVATE_KEY_LENGTH[key.meta.type]) {
+    if (LC > PRIVATE_KEY_LENGTH[key.meta.type]) {
       DBG_MSG("digest should has the same length as the private key\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
+    // prepend zeros
+    memmove(DATA + (PRIVATE_KEY_LENGTH[key.meta.type] - LC), DATA, LC);
+    memzero(DATA, PRIVATE_KEY_LENGTH[key.meta.type] - LC);
+    input_size = PRIVATE_KEY_LENGTH[key.meta.type];
   }
 
   if (ck_read_key(key_path, &key) < 0) {
@@ -764,14 +769,14 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
 
   DBG_KEY_META(&key.meta);
 
-  int len = ck_sign(&key, DATA, LC, RDATA);
-  if (len < 0) {
+  const int sig_len = ck_sign(&key, DATA, input_size, RDATA);
+  if (sig_len < 0) {
     ERR_MSG("Sign failed\n");
     return -1;
   }
 
   memzero(&key, sizeof(key));
-  LL = len;
+  LL = sig_len;
 
   if (is_sign) {
     uint8_t ctr[3];

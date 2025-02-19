@@ -221,9 +221,9 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
-			_, code, err = app.Send([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x01, 0xF1})
+			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x31}, make([]byte, 0x31)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6700) // data too short for ECDSA
+			So(code, ShouldEqual, 0x6700) // data too long for ECDSA
 
 			// add a RSA key
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC1, 0x06, 0x01, 0x08, 0x00, 0x00, 0x20, 0x02})
@@ -304,9 +304,9 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
-			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x01}, make([]byte, 0x01)...))
+			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x31}, make([]byte, 0x31)...))
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x6700) // data too short for ECDSA
+			So(code, ShouldEqual, 0x6700) // data too long for ECDSA
 
 			// add a RSA key
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC3, 0x06, 0x01, 0x08, 0x00, 0x00, 0x20, 0x02})
