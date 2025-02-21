@@ -33,7 +33,7 @@ void nfc_init(void) {
   // NFC interface uses global_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = global_buffer;
   apdu_resp.data = global_buffer;
-  fm_write_reg(FM_REG_FIFO_FLUSH, 0); // writing anything to this reg will flush FIFO buffer
+  fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1); // writing anything to this reg will flush FIFO buffer
 }
 
 static void nfc_error_handler(int code __attribute__((unused))) {
@@ -46,8 +46,10 @@ static void nfc_error_handler(int code __attribute__((unused))) {
   state_spinlock = 0;
   next_state = TO_RECEIVE;
 #if NFC_CHIP == NFC_CHIP_FM11NT
-  fm_write_reg(FM_REG_RF_TXEN, 0x77); // set NFC to IDLE
-  fm_write_reg(FM_REG_RESET_SILENCE, 0x55); // reset
+  uint8_t data = 0x77; // set NFC to IDLE
+  fm_write_regs(FM_REG_RF_TXEN, &data, 1);
+  data = 0x55; // reset
+  fm_write_regs(FM_REG_RESET_SILENCE, &data, 1);
 #endif
 }
 
@@ -61,7 +63,8 @@ static void do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   PRINT_HEX(tx_frame_buf, len + 1);
 
   fm_write_fifo(tx_frame_buf, len + 1);
-  fm_write_reg(FM_REG_RF_TXEN, 0x55);
+  const uint8_t val = 0x55;
+  fm_write_regs(FM_REG_RF_TXEN, &val, 1);
 }
 
 void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
@@ -181,7 +184,7 @@ void nfc_handler(void) {
   }
 
   if (irq[0] & MAIN_IRQ_RX_DONE) {
-    rx_frame_size = fm_read_reg(FM_REG_FIFO_WORDCNT);
+    fm_read_regs(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1);
     if (rx_frame_size > 32) {
       nfc_error_handler(-5);
       return;

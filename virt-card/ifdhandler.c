@@ -26,7 +26,6 @@ RESPONSECODE IFDHCreateChannel ( DWORD Lun, DWORD Channel )
     if(!applet_init) {
         ctap_hid_init(send_hid_report);
         ccid_init();
-        init_apdu_buffer();
         card_fabrication_procedure("/tmp/lfs-root");
         applet_init = 1;
     }

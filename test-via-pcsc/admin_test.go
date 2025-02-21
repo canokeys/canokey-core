@@ -408,6 +408,11 @@ func TestAdminApplet(t *testing.T) {
 					So(code, ShouldEqual, 0x9000)
 				})
 				Convey("Until the pin is locked", func(ctx C) {
+					// Factory reset not allowed
+					_, code, err = app.Send([]byte{0x00, 0x50, 0x00, 0x00, 0x05, 'R', 'E', 'S', 'E', 'T'})
+					So(err, ShouldBeNil)
+					So(code, ShouldEqual, 0x6985)
+
 					_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x07, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37})
 					So(err, ShouldBeNil)
 					So(code, ShouldEqual, 0x6983)

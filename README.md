@@ -1,6 +1,6 @@
 # Canokey Core
 
-[![Tests](https://github.com/canokeys/canokey-core/workflows/tests/badge.svg?branch=master)](https://github.com/canokeys/canokey-core/actions?query=branch%3Amaster)
+[![Tests](https://github.com/canokeys/canokey-core/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/canokeys/canokey-core/actions?query=branch%3Amaster)
 [![Coverage](https://coveralls.io/repos/github/canokeys/canokey-core/badge.svg?branch=master)](https://coveralls.io/github/canokeys/canokey-core?branch=master)
 [![Apache License 2.0](https://img.shields.io/badge/license-apache2.0-blue.svg)](https://github.com/canokeys/canokey-core/blob/master/LICENSE)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_shield)
@@ -64,7 +64,7 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
   * `uint8_t i2c_read_ack(void);`
   * `void i2c_send_ack(void);`
   * `void i2c_send_nack(void);`
-  * `void i2c_write_byte(uint8_t data);`
+  * `bool i2c_write_byte(uint8_t data);`
   * `uint8_t i2c_read_byte(void);`
 
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.

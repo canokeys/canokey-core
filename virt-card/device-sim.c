@@ -47,11 +47,6 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int strong_user_presence_test(void) {
-  DBG_MSG("Strong user-presence test is skipped.\n");
-  return 0; 
-}
-
 void device_delay(int tick) {
   int ms = tick * 100; // 100ms per tick in software simulation
   struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
@@ -70,7 +65,7 @@ uint32_t device_get_tick(void) {
 void device_disable_irq(void) {}
 void device_enable_irq(void) {}
 void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
-void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) { return; }
+fm_status_t fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) { return FM_STATUS_OK; }
 
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
   if (*var == expect) {

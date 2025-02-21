@@ -16,6 +16,11 @@
 #define WAIT_ENTRY_CCID 0
 #define WAIT_ENTRY_CTAPHID 1
 
+typedef enum {
+  FM_STATUS_OK = 0,
+  FM_STATUS_NACK = 1,
+} fm_status_t;
+
 // functions should be implemented by device
 /**
  * Delay processing for specific milliseconds
@@ -72,10 +77,10 @@ void spi_receive(uint8_t *buf, uint8_t len);
 void i2c_start(void);
 void i2c_stop(void);
 void scl_delay(void);
-uint8_t i2c_read_ack(void);
+fm_status_t i2c_read_ack(void);
 void i2c_send_ack(void);
 void i2c_send_nack(void);
-void i2c_write_byte(uint8_t data);
+fm_status_t i2c_write_byte(uint8_t data);
 uint8_t i2c_read_byte(void);
 #endif
 
@@ -116,17 +121,15 @@ void stop_blinking(void);
 uint8_t device_is_blinking(void);
 bool device_allow_kbd_touch(void);
 void fm11_init(void);
-uint8_t fm_read_reg(uint16_t reg);
-void fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
-void fm_write_reg(uint16_t reg, uint8_t val);
-void fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
-void fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
-void fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len);
-void fm_read_fifo(uint8_t *buf, uint8_t len);
-void fm_write_fifo(uint8_t *buf, uint8_t len);
+fm_status_t fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
+fm_status_t fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
+fm_status_t fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len);
+fm_status_t fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len);
+fm_status_t fm_read_fifo(uint8_t *buf, uint8_t len);
+fm_status_t fm_write_fifo(uint8_t *buf, uint8_t len);
 #if NFC_CHIP == NFC_CHIP_FM11NT
-void fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
-void fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
+fm_status_t fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
+fm_status_t fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
 #endif
 

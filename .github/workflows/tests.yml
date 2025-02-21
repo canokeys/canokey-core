@@ -4,7 +4,7 @@ jobs:
   build_opensc:
     name: Build opensc package
     #if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
     - name: Cache deb files
       uses: actions/cache@v4
@@ -30,15 +30,16 @@ jobs:
       run: |
         sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
         sudo apt-get update
-        sudo apt-get install -q -y curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
+        sudo apt-get install -q -y libeac-dev curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
         sudo apt-get build-dep -q -y opensc
         sudo rm -f /usr/bin/clang-tidy
     - name: Build opensc package
       if: steps.check_opensc.outputs.files_exists == 'false'
       run: |
-        dget http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.23.0-0.1ubuntu1.dsc  
-        cd opensc-0.23.0
-        curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
+        dget -u http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.25.0~rc1-1build2.dsc
+        ls -l
+        cd 'opensc-0.25.0~rc1'
+        #curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
         dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
         DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
     - name: Build yubico-piv-tool package
@@ -68,7 +69,7 @@ jobs:
 
   build_test:
     name: Build and Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     needs: build_opensc
     steps:
     - name: Download backport OpenSC package
@@ -80,7 +81,7 @@ jobs:
       run: |
         sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
+        sudo apt-get install -q -y libeac3 git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
         sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
         pip3 install --upgrade pip
 
@@ -169,7 +170,7 @@ jobs:
         sudo cp build/libu2f-virt-card.so /usr/local/lib/
         sudo cp test-via-pcsc/pcscd-reader.conf /etc/reader.conf.d/
         bash -c 'sudo LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" pcscd -a -f >/tmp/pcscd.log &'
-        sleep 12
+        sleep 15 # wait for admin applet reset
         timeout 1s pcsc_scan || true
         go env -w GO111MODULE=on
         sudo chmod 777 /tmp/canokey-*
@@ -197,16 +198,6 @@ jobs:
       run: |
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
-
-    - name: Test the ckman Utility
-      run: |
-        pip3 install canokey-manager
-        ckman --log-level DEBUG info
-        ckman oath accounts add steam1 HXDMVJECJJWSRB3HWIZR4IFUGFTMXBOZ -i Steam
-        ckman oath accounts code
-        ckman openpgp info
-        ckman piv info
-        #ckman fido credentials list --pin 123456
 
     - name: Test the OATH
       run: go test -v test-via-pcsc/oath_test.go
@@ -416,6 +407,7 @@ jobs:
 
         # change the algorithm identifier of ED25519
         piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 22 05 51 52 53 54' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_ALGORITHM_EXTENSION, Yubico
+        piv-tool --admin M:9B:03 -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 54'
         cd piv-go; go test -v ./piv --wipe-yubikey; cd -
         piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 E0 05 16 E1 53 54' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_ALGORITHM_EXTENSION, Yubico
 
@@ -460,10 +452,21 @@ jobs:
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
         yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
+        ## Error tests
+        yubico-piv-tool -r "$RDID" -a generate -A RSA2048 -s 84 2>&1 | grep "Key generation failed"; # Unsupported slot
+        yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9e
+        yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
+        yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Wrong slot
+        yubico-piv-tool -r "$RDID" -a test-decipher -s 84 -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Unsupported slot
+        opensc-tool -r "$RDID" -s '00 24 00 01 02 00 00' | grep 'SW1=0x6A, SW2=0x88' # change ref data, not found
+        opensc-tool -r "$RDID" -s '00 87 FF 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80' # general auth, wrong data
+        opensc-tool -r "$RDID" -s '00 87 FF 9B 02 7C 00' | grep 'SW1=0x6A, SW2=0x86' # general auth, invalid P1
         ## RSA tests
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA3072; done
+        yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096; done
+        yubico-piv-tool -r "$RDID" -a status
         for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
         for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
         yubico-piv-tool -r "$RDID" -a status
@@ -506,6 +509,19 @@ jobs:
             yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
             yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
         done
+        openssl genpkey -algorithm ED25519 -out key.pem
+        openssl req -x509 -key key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
+        for s in 9a 9e; do
+          yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
+          yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
+          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
+        done
+        openssl genpkey -algorithm X25519 -out key.pem
+        openssl pkey -in key.pem -pubout -out pubkey.pem
+        for s in 9d 83; do
+          yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
+          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-decipher -A X25519 -s $s <pubkey.pem
+        done
         ## Factory reset
         yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
         yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 1 tries left before blocked'
@@ -543,7 +559,7 @@ jobs:
         ls /tmp
         sleep 2
         mkdir coverage
-        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interface)/' | xargs rm
+        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interfaces)/' | xargs rm
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Coveralls

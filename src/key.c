@@ -126,15 +126,19 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       DBG_MSG("too short\n");
       return KEY_ERR_LENGTH;
     }
-    if (*p++ != 0x06) {
+    if (*p != 0x06 && !(key->meta.type == ED25519 && *p == 0x07) && !(key->meta.type == X25519 && *p == 0x08)) {
       DBG_MSG("invalid tag\n");
       return KEY_ERR_DATA;
     }
+    p++;
     if (*p++ != PRIVATE_KEY_LENGTH[key->meta.type]) {
       DBG_MSG("invalid private key length\n");
       return KEY_ERR_LENGTH;
     }
     memcpy(key->ecc.pri, p, PRIVATE_KEY_LENGTH[key->meta.type]);
+    if (key->meta.type == X25519) {
+      swap_big_number_endian(key->ecc.pri); // Private key of x25519 is encoded in little endian
+    }
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;

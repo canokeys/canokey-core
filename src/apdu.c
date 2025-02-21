@@ -5,7 +5,6 @@
 #include <common.h>
 #include <ctap.h>
 #include <device.h>
-#include <meta.h>
 #include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
@@ -20,7 +19,6 @@ enum APPLET {
   APPLET_ADMIN,
   APPLET_OPENPGP,
   APPLET_NDEF,
-  APPLET_META,
   APPLET_ENUM_END,
 } current_applet;
 
@@ -36,11 +34,10 @@ static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
 static const uint8_t NDEF_AID[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
-static const uint8_t META_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x47, 0x11, 0x17};
 
 static const uint8_t *const AID[] = {
     [APPLET_NULL] = NULL,       [APPLET_PIV] = PIV_AID,         [APPLET_FIDO] = FIDO_AID, [APPLET_OATH] = OATH_AID,
-    [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID, [APPLET_NDEF] = NDEF_AID, [APPLET_META] = META_AID,
+    [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID, [APPLET_NDEF] = NDEF_AID,
 };
 
 static const uint8_t AID_Size[] = {
@@ -51,7 +48,6 @@ static const uint8_t AID_Size[] = {
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
     [APPLET_NDEF] = sizeof(NDEF_AID),
-    [APPLET_META] = sizeof(META_AID),
 };
 
 static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
@@ -253,9 +249,6 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       break;
     case APPLET_NDEF:
       ndef_process_apdu(capdu, rapdu);
-      break;
-    case APPLET_META:
-      meta_process_apdu(capdu, rapdu);
       break;
     default:
       LL = 0;
