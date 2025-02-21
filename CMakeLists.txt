@@ -5,6 +5,7 @@ project(canokey-core C)
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
+option(ENABLE_DUMB_DONGLE "Skip all user-presence test (USE AT YOUR OWN RISK)" OFF)
 option(VIRTCARD "Virt Card" OFF)
 
 # To be override by MCU specific cmakelists
@@ -25,6 +26,9 @@ if (ENABLE_TESTS OR ENABLE_FUZZING)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage")
     endif ()
 endif ()
+if (ENABLE_DUMB_DONGLE)
+    add_definitions(-DDUMB_DONGLE)
+endif (ENABLE_DUMB_DONGLE)
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 

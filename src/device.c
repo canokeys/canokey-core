@@ -77,6 +77,9 @@ uint8_t wait_for_user_presence(uint8_t entry) {
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
   while (get_touch_result() == TOUCH_NO) {
+#ifdef DUMB_DONGLE
+    break;
+#endif
     // Keep blinking, in case other applet stops it 
     start_blinking(0);
     // Nested CCID processing is not allowed
@@ -113,6 +116,9 @@ int send_keepalive_during_processing(uint8_t entry) {
 }
 
 __attribute__((weak)) int strong_user_presence_test(void) {
+#ifdef DUMB_DONGLE
+  return 0;
+#endif
   for (int i = 0; i < 5; i++) {
     const uint8_t wait_sec = 2;
     start_blinking_interval(wait_sec, (i & 1) ? 200 : 50);
