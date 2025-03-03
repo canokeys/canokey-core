@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "algo.h"
 #include "key.h"
 #include <common.h>
 #include <device.h>
@@ -50,6 +51,7 @@ static const uint8_t algo_attr[][12] = {
     [SECP256R1] = {9, 0x00, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
     [SECP256K1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x0A},
     [SECP384R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x22},
+    [SECP521R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x23},
     [SM2] = {11, 0x00, 0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82, 0x2D},
     [ED25519] = {10, ALGO_ID_ED25519, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01},
     [X25519] = {11, ALGO_ID_ECDH, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01},
@@ -322,8 +324,8 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_APPLICATION_RELATED_DATA:
     RDATA[off++] = TAG_APPLICATION_RELATED_DATA;
     RDATA[off++] = 0x82; // extended length
-    RDATA[off++] = 0; // to be filled later
-    RDATA[off++] = 0; // to be filled later
+    RDATA[off++] = 0;    // to be filled later
+    RDATA[off++] = 0;    // to be filled later
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
@@ -540,6 +542,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256K1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP384R1, ALGO_ID_ECDSA);
+    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP521R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519, ALGO_ID_ED25519);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SM2, ALGO_ID_ECDSA);
     // DEC
@@ -549,6 +552,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256R1, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256K1, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP384R1, ALGO_ID_ECDH);
+    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP521R1, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, X25519, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SM2, ALGO_ID_ECDH);
     // AUT
@@ -558,6 +562,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256K1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP384R1, ALGO_ID_ECDSA);
+    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP521R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519, ALGO_ID_ED25519);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SM2, ALGO_ID_ECDSA);
 
@@ -790,7 +795,6 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
       ERR_MSG("Write sig counter failed\n");
       return -1;
     }
-
   }
 
   return 0;
@@ -973,7 +977,6 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
           break;
         }
       }
-
     }
     if (type == KEY_TYPE_PKC_END) {
       DBG_MSG("Invalid attr type\n");
@@ -1151,9 +1154,12 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   ck_key_t key;
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
   int err = ck_parse_openpgp(&key, p, LC - (p - DATA));
-  if (err == KEY_ERR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-  else if (err == KEY_ERR_DATA) EXCEPT(SW_WRONG_DATA);
-  else if (err < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (err == KEY_ERR_LENGTH)
+    EXCEPT(SW_WRONG_LENGTH);
+  else if (err == KEY_ERR_DATA)
+    EXCEPT(SW_WRONG_DATA);
+  else if (err < 0)
+    EXCEPT(SW_UNABLE_TO_PROCESS);
   if (ck_write_key(key_path, &key) < 0) {
     memzero(&key, sizeof(key));
     return -1;
@@ -1207,11 +1213,11 @@ static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_get_challenge(const CAPDU *capdu, RAPDU *rapdu) {
-    if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-    if (LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
-    random_buffer(RDATA, LE);
-    LL = LE;
-    return 0;
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  random_buffer(RDATA, LE);
+  LL = LE;
+  return 0;
 }
 
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
