@@ -371,6 +371,20 @@ jobs:
         echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
         diff /tmp/random-read.txt /tmp/random.txt
         GPGReset
+        ## NIST P-521 generation on card
+        echo -e 'admin\nkey-attr\n2\n5\n2\n5\n2\n5\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-521
+        Addcardkey 1 # generate Signature key on card
+        Addcardkey 2 # generate Encryption key on card
+        GPGEnc
+        GPGSign
+        Addcardkey 3 # generate Authentication key on card
+        ChangeUsage
+        GPGAuth
+        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        gpgconf --kill gpg-agent # restart agent to clear cached info
+        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        diff /tmp/random-read.txt /tmp/random.txt
+        GPGReset
         ## secp256k1 generation on card
         echo -e 'admin\nkey-attr\n2\n9\n2\n9\n2\n9\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC secp256k1
         Addcardkey 1 # generate Signature key on card
