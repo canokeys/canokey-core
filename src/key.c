@@ -15,6 +15,7 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   case SECP256R1:
   case SECP256K1:
   case SECP384R1:
+  case SECP521R1:
   case SM2:
     if (include_length) {
       buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 3; // tag, length, and 0x04
@@ -226,6 +227,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case SECP256R1:
   case SECP256K1:
   case SECP384R1:
+  case SECP521R1:
   case SM2:
   case ED25519:
   case X25519: {
