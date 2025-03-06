@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 mkdir ~/.gnupg || true
-echo "pinentry-program /usr/local/bin/pinentry-tty" >~/.gnupg/gpg-agent.conf
+echo -e 'pinentry-program /usr/local/bin/pinentry-tty\ndebug 1024\nlog-file /tmp/gpg-agent.log\n' >~/.gnupg/gpg-agent.conf
 mkdir gnupg || true
 pushd gnupg
 # Remove old versions on system
