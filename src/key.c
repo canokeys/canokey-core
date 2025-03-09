@@ -8,6 +8,7 @@
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
+// TODO: include_length is always TRUE
 int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   int off = 0;
 
@@ -15,12 +16,24 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   case SECP256R1:
   case SECP256K1:
   case SECP384R1:
-  case SECP521R1:
   case SM2:
     if (include_length) {
       buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 3; // tag, length, and 0x04
     }
     buf[off++] = 0x86;
+    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
+    buf[off++] = 0x04;
+    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
+    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    break;
+
+  case SECP521R1:
+    if (include_length) {
+      buf[off++] = 0x81; // Two-byte length
+      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 4; // tag, length (two bytes), and 0x04
+    }
+    buf[off++] = 0x86;
+    buf[off++] = 0x81; // Two-byte length
     buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
     buf[off++] = 0x04;
     memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
