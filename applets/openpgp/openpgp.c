@@ -858,29 +858,46 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_LENGTH);
     }
-    if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
-      DBG_MSG("Incorrect data\n");
-      memzero(&key, sizeof(key));
-      EXCEPT(SW_WRONG_DATA);
-    }
 
     int public_key_offset;
-    if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-      if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 6 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 3 ||
-          DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 || DATA[7] != 0x04) {
-        DBG_MSG("Incorrect length data\n");
+
+    if (key.meta.type == SECP521R1) {
+      if (DATA[0] != 0xA6 ||
+          DATA[1] != 0x81 || DATA[2] != PUBLIC_KEY_LENGTH[key.meta.type] + 8 ||
+          DATA[3] != 0x7F || DATA[4] != 0x49 ||
+          DATA[5] != 0x81 || DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 4 ||
+          DATA[7] != 0x86 ||
+          DATA[8] != 0x81 || DATA[9] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 ||
+          DATA[10] != 0x04) {
+        DBG_MSG("Incorrect data\n");
         memzero(&key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
-      public_key_offset = 8;
+      public_key_offset = 11;
     } else {
-      if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 5 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 2 ||
-          DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type]) {
-        DBG_MSG("Incorrect length data\n");
+      if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
+        DBG_MSG("Incorrect data\n");
         memzero(&key, sizeof(key));
         EXCEPT(SW_WRONG_DATA);
       }
-      public_key_offset = 7;
+
+      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+        if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 6 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 3 ||
+            DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 || DATA[7] != 0x04) {
+          DBG_MSG("Incorrect length data\n");
+          memzero(&key, sizeof(key));
+          EXCEPT(SW_WRONG_DATA);
+        }
+        public_key_offset = 8;
+      } else {
+        if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 5 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 2 ||
+            DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type]) {
+          DBG_MSG("Incorrect length data\n");
+          memzero(&key, sizeof(key));
+          EXCEPT(SW_WRONG_DATA);
+        }
+        public_key_offset = 7;
+      }
     }
 
     if (ecdh(key.meta.type, key.ecc.pri, DATA + public_key_offset, RDATA) < 0) {
