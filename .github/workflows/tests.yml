@@ -1,10 +1,11 @@
 name: tests
 on: [push, pull_request, workflow_dispatch]
+
 jobs:
   build_tools:
     name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
       uses: actions/cache@v4
@@ -12,80 +13,76 @@ jobs:
         cache-name: tools-deb
       with:
         path: |
-          yubico-piv-tool*.deb
+          yubico-piv-tool_*.deb
+          libykpiv1_*.deb
         key: ${{ runner.os }}-${{ env.cache-name }}
     - name: Check file existence
       id: check_yubico_piv
-      uses: andstor/file-existence-action@v1
-      with:
-        files: "yubico-piv-tool*.deb"
-    - name: Package Install
-      if: steps.check_yubico_piv.outputs.files_exists == 'false'
       run: |
-        sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
+        if test -n "$(find . -maxdepth 1 -name 'yubico-piv-tool_*.deb' -print)"; then
+          echo "need_build=false" >> $GITHUB_OUTPUT
+        else
+          echo "need_build=true" >> $GITHUB_OUTPUT
+        fi
+    - name: Package Install
+      if: steps.check_yubico_piv.outputs.need_build == 'true'
+      run: |
         sudo apt-get update
-        sudo apt-get install -q -y libeac-dev curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
-        sudo rm -f /usr/bin/clang-tidy
+        sudo apt-get install -q -y build-essential cmake devscripts equivs
     - name: Build yubico-piv-tool package
-      if: steps.check_yubico_piv.outputs.files_exists == 'false'
+      if: steps.check_yubico_piv.outputs.need_build == 'true'
       run: |
         set -x
         git clone https://github.com/z4yx/yubico-piv-tool.git
+        sudo mk-build-deps yubico-piv-tool/debian/control -i
+        rm -f *.deb # remove useless build-deps pseudo package
         cd yubico-piv-tool
-        mkdir build_dir;
-        pushd build_dir; cmake -DCMAKE_INSTALL_PREFIX=../debian/tmp/usr .. -B .; popd
-        make -C build_dir
-        pushd build_dir; cmake -P cmake_install.cmake; popd
-        mkdir debian/tmp/DEBIAN
-        dpkg-gencontrol -pyubico-piv-tool
-        dpkg --build debian/tmp build_dir/
-        mv build_dir/yubico-piv-tool_*_amd64.deb ..
-        sudo apt install ../yubico-piv-tool_*_amd64.deb
+        eval $(dpkg-architecture -s)
+        dpkg-buildpackage -b -uc -us --no-sign
+        rm -rf ../*dbgsym*.deb
+        DEB_SUFFIX="$(dpkg-parsechangelog | sed -n 's/^Version: //p')_${DEB_HOST_ARCH}"
+        sudo apt-get install -q -y ../yubico-piv-tool_${DEB_SUFFIX}.deb ../libykpiv1_${DEB_SUFFIX}.deb # test installation
     - name: Upload package files
       uses: actions/upload-artifact@v4
       with:
         name: tools-deb
-        path: |
-          yubico-piv-tool*.deb
-
-
+        path: "*.deb"
 
   build_test:
     name: Build and Test
     runs-on: ubuntu-latest
     needs: build_tools
     steps:
-    - name: Download packages
+    - name: Prepare - Download packages
       uses: actions/download-artifact@v4
       with:
         name: tools-deb
 
-    - name: Package Install
+    - name: Prepare - Install dependencies
       run: |
-        # sudo apt-add-repository ppa:yubico/stable
-        # sudo apt-get update
-        sudo apt-get install -q -y gpg scdaemon opensc libeac3 git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
-        sudo dpkg -i yubico-piv-tool*.deb
+        sudo apt-get update
+        sudo apt-get install -q -y gpg scdaemon opensc libeac3 git build-essential cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcbor-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager
+        sudo apt-get install -q -y ./yubico-piv-tool_*.deb ./libykpiv1_*.deb
         pip3 install --upgrade pip
 
-    - name: Set up Go 1.16
+    - name: Prepare - Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: "^1.16.1"
+        go-version: "^1.24"
       id: go
 
-    - name: Check out code
+    - name: Prepare - Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Check out piv-go
+    - name: Prepare - Checkout piv-go
       uses: actions/checkout@v4
       with:
         repository: canokeys/piv-go
         path: piv-go
 
-    - name: Cache GO Modules
+    - name: Cache - GO Modules
       uses: actions/cache@v4
       env:
         cache-name: go_mod
@@ -93,7 +90,7 @@ jobs:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
-    - name: Cache Patched GPG
+    - name: Cache - Patched GnuPG
       uses: actions/cache@v4
       env:
         cache-name: cache_gpg_binary
@@ -101,7 +98,7 @@ jobs:
         path: gnupg
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
-    - name: Cache FIDO Tools
+    - name: Cache - FIDO tools
       uses: actions/cache@v4
       env:
         cache-name: cache_fido_tools
@@ -111,25 +108,25 @@ jobs:
           libfido2
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
 
-    - name: Build Patched GPG
+    - name: Build - Patched GnuPG
       run: |
         ./test-via-pcsc/build_gpg.sh
         gpg --version
 
-    - name: Build FIDO Tests
+    - name: Build - FIDO tests
       run: |
         ./test-via-pcsc/build_fido_tests.sh
         sudo ldconfig
         which fido2-token
         ldd $(which fido2-token)
 
-    - name: Build for Test
+    - name: Build - CanoKey tests
       run: |
         mkdir build && pushd build
         cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
         make -j2
       
-    - name: Setup a SSH Server
+    - name: Prepare - Start SSH server
       run: |
         cat >/tmp/sshd_config <<EOF
         StrictModes no
@@ -139,7 +136,7 @@ jobs:
         sudo mkdir -p /run/sshd
         sudo /usr/sbin/sshd -f /tmp/sshd_config
 
-    - name: Smoking Tests
+    - name: Tests - Smoking tests
       run: |
         cd build
         ./test/test_apdu
@@ -147,7 +144,7 @@ jobs:
         ./test/test_oath
         ./test/test_piv
         
-    - name: Start the pcscd
+    - name: Prepare - Start pcscd
       run: |
         echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
         sudo killall -9 pcscd || true
@@ -161,13 +158,13 @@ jobs:
         sudo chown root:root /tmp/canokey-*
         ls -l /tmp
 
-    - name: Test the Admin
+    - name: Tests - Admin applet
       run: go test -v test-via-pcsc/admin_test.go
 
-    - name: Test the NDEF
+    - name: Tests - NDEF applet
       run: go test -v test-via-pcsc/ndef_test.go
 
-    - name: Test the FIDO2
+    - name: Tests - FIDO2 applet
       run: |
         #echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
         #pushd test-real && ./test-libfido2.sh && popd
@@ -178,15 +175,15 @@ jobs:
         ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
         #kill %1
 
-    - name: Test the U2F
+    - name: Tests - U2F applet
       run: |
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
 
-    - name: Test the OATH
+    - name: Tests - OATH applet
       run: go test -v test-via-pcsc/oath_test.go
 
-    - name: Test the OpenPGP
+    - name: Tests - OpenPGP applet
       # GPG requires a tty to work
       shell: |
         script -e -c "bash --noprofile --norc -eo pipefail {0}"
@@ -379,7 +376,7 @@ jobs:
         gpgconf --kill gpg-agent
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
-    - name: Test the PIV
+    - name: Tests - PIV applet
       run: |
         set -o xtrace
         go test -v test-via-pcsc/piv_test.go
@@ -537,29 +534,29 @@ jobs:
         diff -s /tmp/rand-face /tmp/read-face
         diff -s /tmp/rand-fig  /tmp/read-fig
 
-    - name: Prepare the Test Coverage Report
+    - name: Wrap-up - Prepare test coverage report
       run: |
         go test test-via-pcsc/admin_test.go -v -run TestFSUsage
-        sudo killall pcscd || true # To flush the cov files
+        sudo killall pcscd || true # To flush cov files
         ls /tmp
         sleep 2
         mkdir coverage
         find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interfaces)/' | xargs rm
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
-    - name: Coveralls
+    - name: Wrap-up - Coveralls
       uses: coverallsapp/github-action@master
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Upload log files
+    - name: Wrap-up - Upload log files
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: logs
         path: /tmp/*.log
     
-    - name: Upload data files
+    - name: Wrap-up - Upload data files
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
