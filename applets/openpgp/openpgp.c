@@ -818,7 +818,7 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
 
   // Get Cipher DO length
   length = tlv_get_length_safe(p, remaining, &fail, &length_size);
-  if (fail || length > remaining - length_size) {
+  if (fail || length != remaining - length_size) {
     DBG_MSG("Invalid Cipher DO length\n");
     return -1;
   }
@@ -835,7 +835,7 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
 
   // Get Public Key DO length
   length = tlv_get_length_safe(p, remaining, &fail, &length_size);
-  if (fail || length > remaining - length_size) {
+  if (fail || length != remaining - length_size) {
     DBG_MSG("Invalid Public Key DO length\n");
     return -1;
   }
@@ -852,7 +852,7 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
 
   // Get External Public Key length
   length = tlv_get_length_safe(p, remaining, &fail, &length_size);
-  if (fail || length > remaining - length_size) {
+  if (fail || length != remaining - length_size) {
     DBG_MSG("Invalid External Public Key length\n");
     return -1;
   }
