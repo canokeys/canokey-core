@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "algo.h"
 #include "key.h"
 #include <common.h>
 #include <device.h>
@@ -50,6 +51,7 @@ static const uint8_t algo_attr[][12] = {
     [SECP256R1] = {9, 0x00, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
     [SECP256K1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x0A},
     [SECP384R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x22},
+    [SECP521R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x23},
     [SM2] = {11, 0x00, 0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82, 0x2D},
     [ED25519] = {10, ALGO_ID_ED25519, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01},
     [X25519] = {11, ALGO_ID_ECDH, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01},
@@ -322,8 +324,8 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   case TAG_APPLICATION_RELATED_DATA:
     RDATA[off++] = TAG_APPLICATION_RELATED_DATA;
     RDATA[off++] = 0x82; // extended length
-    RDATA[off++] = 0; // to be filled later
-    RDATA[off++] = 0; // to be filled later
+    RDATA[off++] = 0;    // to be filled later
+    RDATA[off++] = 0;    // to be filled later
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
@@ -540,6 +542,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256K1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP384R1, ALGO_ID_ECDSA);
+    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP521R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519, ALGO_ID_ED25519);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SM2, ALGO_ID_ECDSA);
     // DEC
@@ -549,6 +552,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256R1, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256K1, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP384R1, ALGO_ID_ECDH);
+    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP521R1, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, X25519, ALGO_ID_ECDH);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SM2, ALGO_ID_ECDH);
     // AUT
@@ -558,6 +562,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256K1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP384R1, ALGO_ID_ECDSA);
+    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP521R1, ALGO_ID_ECDSA);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519, ALGO_ID_ED25519);
     ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SM2, ALGO_ID_ECDSA);
 
@@ -790,7 +795,86 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
       ERR_MSG("Write sig counter failed\n");
       return -1;
     }
+  }
 
+  return 0;
+}
+
+// Parse and validate the specific TLV structure for ECC key
+static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t key_type, int *public_key_offset) {
+  const uint8_t *p = data;
+  size_t remaining = data_len;
+  int fail;
+  size_t length_size;
+  uint16_t length;
+
+  // 1. Check Cipher DO (A6)
+  if (remaining < 1 || *p != 0xA6) {
+    DBG_MSG("Invalid Cipher DO tag\n");
+    return -1;
+  }
+  p++;
+  remaining--;
+
+  // Get Cipher DO length
+  length = tlv_get_length_safe(p, remaining, &fail, &length_size);
+  if (fail || length != remaining - length_size) {
+    DBG_MSG("Invalid Cipher DO length\n");
+    return -1;
+  }
+  p += length_size;
+  remaining -= length_size;
+
+  // 2. Check Public Key DO (7F49)
+  if (remaining < 2 || *p != 0x7F || *(p + 1) != 0x49) {
+    DBG_MSG("Invalid Public Key DO\n");
+    return -1;
+  }
+  p += 2; // Skip 7F49 tag
+  remaining -= 2;
+
+  // Get Public Key DO length
+  length = tlv_get_length_safe(p, remaining, &fail, &length_size);
+  if (fail || length != remaining - length_size) {
+    DBG_MSG("Invalid Public Key DO length\n");
+    return -1;
+  }
+  p += length_size;
+  remaining -= length_size;
+
+  // 3. Check External Public Key (86)
+  if (remaining < 1 || *p != 0x86) {
+    DBG_MSG("Invalid External Public Key\n");
+    return -1;
+  }
+  p++;
+  remaining--;
+
+  // Get External Public Key length
+  length = tlv_get_length_safe(p, remaining, &fail, &length_size);
+  if (fail || length != remaining - length_size) {
+    DBG_MSG("Invalid External Public Key length\n");
+    return -1;
+  }
+  p += length_size;
+  remaining -= length_size;
+
+  // 4. Validate key data based on key type
+  uint16_t expected_pubkey_len = PUBLIC_KEY_LENGTH[key_type];
+
+  // For Short Weierstrass curves (SECP*, BP*), we need the 0x04 prefix
+  if (IS_SHORT_WEIERSTRASS(key_type)) {
+    if (length != expected_pubkey_len + 1 || *p != 0x04) {
+      DBG_MSG("Invalid public key format for Short Weierstrass curve\n");
+      return -1;
+    }
+    *public_key_offset = (p - data) + 1; // Skip 0x04 prefix
+  } else {                               // For X25519
+    if (length != expected_pubkey_len) {
+      DBG_MSG("Invalid public key length for X25519\n");
+      return -1;
+    }
+    *public_key_offset = p - data;
   }
 
   return 0;
@@ -854,29 +938,14 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
       memzero(&key, sizeof(key));
       EXCEPT(SW_WRONG_LENGTH);
     }
-    if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
-      DBG_MSG("Incorrect data\n");
-      memzero(&key, sizeof(key));
-      EXCEPT(SW_WRONG_DATA);
-    }
 
     int public_key_offset;
-    if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-      if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 6 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 3 ||
-          DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 || DATA[7] != 0x04) {
-        DBG_MSG("Incorrect length data\n");
-        memzero(&key, sizeof(key));
-        EXCEPT(SW_WRONG_DATA);
-      }
-      public_key_offset = 8;
-    } else {
-      if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 5 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 2 ||
-          DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type]) {
-        DBG_MSG("Incorrect length data\n");
-        memzero(&key, sizeof(key));
-        EXCEPT(SW_WRONG_DATA);
-      }
-      public_key_offset = 7;
+
+    // Use our new TLV parsing function to process the data
+    if (parse_ecc_key_tlv(DATA, LC, key.meta.type, &public_key_offset) < 0) {
+      DBG_MSG("Incorrect TLV data structure\n");
+      memzero(&key, sizeof(key));
+      EXCEPT(SW_WRONG_DATA);
     }
 
     if (ecdh(key.meta.type, key.ecc.pri, DATA + public_key_offset, RDATA) < 0) {
@@ -973,7 +1042,6 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
           break;
         }
       }
-
     }
     if (type == KEY_TYPE_PKC_END) {
       DBG_MSG("Invalid attr type\n");
@@ -1151,9 +1219,12 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   ck_key_t key;
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
   int err = ck_parse_openpgp(&key, p, LC - (p - DATA));
-  if (err == KEY_ERR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-  else if (err == KEY_ERR_DATA) EXCEPT(SW_WRONG_DATA);
-  else if (err < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (err == KEY_ERR_LENGTH)
+    EXCEPT(SW_WRONG_LENGTH);
+  else if (err == KEY_ERR_DATA)
+    EXCEPT(SW_WRONG_DATA);
+  else if (err < 0)
+    EXCEPT(SW_UNABLE_TO_PROCESS);
   if (ck_write_key(key_path, &key) < 0) {
     memzero(&key, sizeof(key));
     return -1;
@@ -1207,11 +1278,11 @@ static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int openpgp_get_challenge(const CAPDU *capdu, RAPDU *rapdu) {
-    if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-    if (LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
-    random_buffer(RDATA, LE);
-    LL = LE;
-    return 0;
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  random_buffer(RDATA, LE);
+  LL = LE;
+  return 0;
 }
 
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
