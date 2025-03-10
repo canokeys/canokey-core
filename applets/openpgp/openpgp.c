@@ -800,6 +800,86 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   return 0;
 }
 
+// Parse and validate the specific TLV structure for ECC key
+static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t key_type, int *public_key_offset) {
+  const uint8_t *p = data;
+  size_t remaining = data_len;
+  int fail;
+  size_t length_size;
+  uint16_t length;
+
+  // 1. Check Cipher DO (A6)
+  if (remaining < 1 || *p != 0xA6) {
+    DBG_MSG("Invalid Cipher DO tag\n");
+    return -1;
+  }
+  p++;
+  remaining--;
+
+  // Get Cipher DO length
+  length = tlv_get_length_safe(p, remaining, &fail, &length_size);
+  if (fail || length > remaining - length_size) {
+    DBG_MSG("Invalid Cipher DO length\n");
+    return -1;
+  }
+  p += length_size;
+  remaining -= length_size;
+
+  // 2. Check Public Key DO (7F49)
+  if (remaining < 2 || *p != 0x7F || *(p + 1) != 0x49) {
+    DBG_MSG("Invalid Public Key DO\n");
+    return -1;
+  }
+  p += 2; // Skip 7F49 tag
+  remaining -= 2;
+
+  // Get Public Key DO length
+  length = tlv_get_length_safe(p, remaining, &fail, &length_size);
+  if (fail || length > remaining - length_size) {
+    DBG_MSG("Invalid Public Key DO length\n");
+    return -1;
+  }
+  p += length_size;
+  remaining -= length_size;
+
+  // 3. Check External Public Key (86)
+  if (remaining < 1 || *p != 0x86) {
+    DBG_MSG("Invalid External Public Key\n");
+    return -1;
+  }
+  p++;
+  remaining--;
+
+  // Get External Public Key length
+  length = tlv_get_length_safe(p, remaining, &fail, &length_size);
+  if (fail || length > remaining - length_size) {
+    DBG_MSG("Invalid External Public Key length\n");
+    return -1;
+  }
+  p += length_size;
+  remaining -= length_size;
+
+  // 4. Validate key data based on key type
+  uint16_t expected_pubkey_len = PUBLIC_KEY_LENGTH[key_type];
+
+  // For Short Weierstrass curves (SECP*, BP*), we need the 0x04 prefix
+  if (IS_SHORT_WEIERSTRASS(key_type)) {
+    if (length != expected_pubkey_len + 1 || *p != 0x04) {
+      DBG_MSG("Invalid public key format for Short Weierstrass curve\n");
+      return -1;
+    }
+    *public_key_offset = (p - data) + 1; // Skip 0x04 prefix
+  } else {                               // For X25519
+    if (length != expected_pubkey_len) {
+      DBG_MSG("Invalid public key length for X25519\n");
+      return -1;
+    }
+    *public_key_offset = p - data;
+  }
+
+  return 0;
+}
+
 static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -861,43 +941,11 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 
     int public_key_offset;
 
-    if (key.meta.type == SECP521R1) {
-      if (DATA[0] != 0xA6 ||
-          DATA[1] != 0x81 || DATA[2] != PUBLIC_KEY_LENGTH[key.meta.type] + 8 ||
-          DATA[3] != 0x7F || DATA[4] != 0x49 ||
-          DATA[5] != 0x81 || DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 4 ||
-          DATA[7] != 0x86 ||
-          DATA[8] != 0x81 || DATA[9] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 ||
-          DATA[10] != 0x04) {
-        DBG_MSG("Incorrect data\n");
-        memzero(&key, sizeof(key));
-        EXCEPT(SW_WRONG_DATA);
-      }
-      public_key_offset = 11;
-    } else {
-      if (DATA[0] != 0xA6 || DATA[2] != 0x7F || DATA[3] != 0x49 || DATA[5] != 0x86) {
-        DBG_MSG("Incorrect data\n");
-        memzero(&key, sizeof(key));
-        EXCEPT(SW_WRONG_DATA);
-      }
-
-      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-        if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 6 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 3 ||
-            DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type] + 1 || DATA[7] != 0x04) {
-          DBG_MSG("Incorrect length data\n");
-          memzero(&key, sizeof(key));
-          EXCEPT(SW_WRONG_DATA);
-        }
-        public_key_offset = 8;
-      } else {
-        if (DATA[1] != PUBLIC_KEY_LENGTH[key.meta.type] + 5 || DATA[4] != PUBLIC_KEY_LENGTH[key.meta.type] + 2 ||
-            DATA[6] != PUBLIC_KEY_LENGTH[key.meta.type]) {
-          DBG_MSG("Incorrect length data\n");
-          memzero(&key, sizeof(key));
-          EXCEPT(SW_WRONG_DATA);
-        }
-        public_key_offset = 7;
-      }
+    // Use our new TLV parsing function to process the data
+    if (parse_ecc_key_tlv(DATA, LC, key.meta.type, &public_key_offset) < 0) {
+      DBG_MSG("Incorrect TLV data structure\n");
+      memzero(&key, sizeof(key));
+      EXCEPT(SW_WRONG_DATA);
     }
 
     if (ecdh(key.meta.type, key.ecc.pri, DATA + public_key_offset, RDATA) < 0) {
