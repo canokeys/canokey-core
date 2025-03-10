@@ -1,10 +1,11 @@
 name: tests
 on: [push, pull_request, workflow_dispatch]
+
 jobs:
-  build_opensc:
-    name: Build opensc package
+  build_tools:
+    name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
       uses: actions/cache@v4
@@ -12,97 +13,76 @@ jobs:
         cache-name: tools-deb
       with:
         path: |
-          opensc*.deb
-          yubico-piv-tool*.deb
+          yubico-piv-tool_*.deb
+          libykpiv1_*.deb
         key: ${{ runner.os }}-${{ env.cache-name }}
     - name: Check file existence
-      id: check_opensc
-      uses: andstor/file-existence-action@v1
-      with:
-        files: "opensc*.deb"
-    - name: Check file existence
       id: check_yubico_piv
-      uses: andstor/file-existence-action@v1
-      with:
-        files: "yubico-piv-tool*.deb"
+      run: |
+        if test -n "$(find . -maxdepth 1 -name 'yubico-piv-tool_*.deb' -print)"; then
+          echo "need_build=false" >> $GITHUB_OUTPUT
+        else
+          echo "need_build=true" >> $GITHUB_OUTPUT
+        fi
     - name: Package Install
-      if: steps.check_opensc.outputs.files_exists == 'false' || steps.check_yubico_piv.outputs.files_exists == 'false'
+      if: steps.check_yubico_piv.outputs.need_build == 'true'
       run: |
-        sudo sed -i 's/^# deb-src/deb-src/' /etc/apt/sources.list  
         sudo apt-get update
-        sudo apt-get install -q -y libeac-dev curl git gcc g++ cmake swig psmisc procps debian-keyring devscripts libpcsclite-dev check gengetopt help2man openssl zlib1g-dev
-        sudo apt-get build-dep -q -y opensc
-        sudo rm -f /usr/bin/clang-tidy
-    - name: Build opensc package
-      if: steps.check_opensc.outputs.files_exists == 'false'
-      run: |
-        dget -u http://archive.ubuntu.com/ubuntu/pool/universe/o/opensc/opensc_0.25.0~rc1-1build2.dsc
-        ls -l
-        cd 'opensc-0.25.0~rc1'
-        #curl https://github.com/OpenSC/OpenSC/commit/a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479.diff | patch -p1
-        dch --local ppa~jammy --distribution jammy "Apply a patch. Backports to Jammy."
-        DEB_BUILD_OPTIONS='parallel=2' debuild --no-sign -b
+        sudo apt-get install -q -y build-essential cmake devscripts equivs
     - name: Build yubico-piv-tool package
-      if: steps.check_yubico_piv.outputs.files_exists == 'false'
+      if: steps.check_yubico_piv.outputs.need_build == 'true'
       run: |
         set -x
         git clone https://github.com/z4yx/yubico-piv-tool.git
+        sudo mk-build-deps yubico-piv-tool/debian/control -i
+        rm -f *.deb # remove useless build-deps pseudo package
         cd yubico-piv-tool
-        mkdir build_dir;
-        pushd build_dir; cmake -DCMAKE_INSTALL_PREFIX=../debian/tmp/usr .. -B .; popd
-        make -C build_dir
-        pushd build_dir; cmake -P cmake_install.cmake; popd
-        mkdir debian/tmp/DEBIAN
-        dpkg-gencontrol -pyubico-piv-tool
-        dpkg --build debian/tmp build_dir/
-        mv build_dir/yubico-piv-tool_*_amd64.deb ..
-        sudo apt install ../yubico-piv-tool_*_amd64.deb
+        eval $(dpkg-architecture -s)
+        dpkg-buildpackage -b -uc -us --no-sign
+        rm -rf ../*dbgsym*.deb
+        DEB_SUFFIX="$(dpkg-parsechangelog | sed -n 's/^Version: //p')_${DEB_HOST_ARCH}"
+        sudo apt-get install -q -y ../yubico-piv-tool_${DEB_SUFFIX}.deb ../libykpiv1_${DEB_SUFFIX}.deb # test installation
     - name: Upload package files
       uses: actions/upload-artifact@v4
       with:
         name: tools-deb
-        path: |
-          opensc*.deb
-          yubico-piv-tool*.deb
-
-
+        path: "*.deb"
 
   build_test:
     name: Build and Test
-    runs-on: ubuntu-22.04
-    needs: build_opensc
+    runs-on: ubuntu-latest
+    needs: build_tools
     steps:
-    - name: Download backport OpenSC package
+    - name: Prepare - Download packages
       uses: actions/download-artifact@v4
       with:
         name: tools-deb
 
-    - name: Package Install
+    - name: Prepare - Install dependencies
       run: |
-        sudo apt-add-repository ppa:yubico/stable
         sudo apt-get update
-        sudo apt-get install -q -y libeac3 git gcc g++ cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager libcbor-dev
-        sudo dpkg -i opensc*.deb yubico-piv-tool*.deb
+        sudo apt-get install -q -y gpg scdaemon opensc libeac3 git build-essential cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libnpth0-dev libssl3 zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcbor-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager
+        sudo apt-get install -q -y ./yubico-piv-tool_*.deb ./libykpiv1_*.deb
         pip3 install --upgrade pip
 
-    - name: Set up Go 1.16
+    - name: Prepare - Setup Go
       uses: actions/setup-go@v5
       with:
-        go-version: "^1.16.1"
+        go-version: "^1.24"
       id: go
 
-    - name: Check out code
+    - name: Prepare - Checkout code
       uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Check out piv-go
+    - name: Prepare - Checkout piv-go
       uses: actions/checkout@v4
       with:
         repository: canokeys/piv-go
         path: piv-go
 
-    - name: Cache GO Modules
+    - name: Cache - GO Modules
       uses: actions/cache@v4
       env:
         cache-name: go_mod
@@ -110,7 +90,7 @@ jobs:
         path: ~/go/pkg/mod
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
-    - name: Cache Patched GPG
+    - name: Cache - Patched GnuPG
       uses: actions/cache@v4
       env:
         cache-name: cache_gpg_binary
@@ -118,7 +98,7 @@ jobs:
         path: gnupg
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
-    - name: Cache FIDO Tools
+    - name: Cache - FIDO tools
       uses: actions/cache@v4
       env:
         cache-name: cache_fido_tools
@@ -128,34 +108,35 @@ jobs:
           libfido2
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
 
-    - name: Build Patched GPG
+    - name: Build - Patched GnuPG
       run: |
         ./test-via-pcsc/build_gpg.sh
         gpg --version
 
-    - name: Build FIDO Tests
+    - name: Build - FIDO tests
       run: |
         ./test-via-pcsc/build_fido_tests.sh
         sudo ldconfig
         which fido2-token
         ldd $(which fido2-token)
 
-    - name: Build for Test
+    - name: Build - CanoKey tests
       run: |
         mkdir build && pushd build
         cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
         make -j2
       
-    - name: Setup a SSH Server
+    - name: Prepare - Start SSH server
       run: |
         cat >/tmp/sshd_config <<EOF
         StrictModes no
         UsePAM no
         Port 2200
         EOF
+        sudo mkdir -p /run/sshd
         sudo /usr/sbin/sshd -f /tmp/sshd_config
 
-    - name: Smoking Tests
+    - name: Tests - Smoking tests
       run: |
         cd build
         ./test/test_apdu
@@ -163,13 +144,13 @@ jobs:
         ./test/test_oath
         ./test/test_piv
         
-    - name: Start the pcscd
+    - name: Prepare - Start pcscd
       run: |
         echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
         sudo killall -9 pcscd || true
         sudo cp build/libu2f-virt-card.so /usr/local/lib/
         sudo cp test-via-pcsc/pcscd-reader.conf /etc/reader.conf.d/
-        bash -c 'sudo LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" pcscd -a -f >/tmp/pcscd.log &'
+        bash -c 'sudo LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" pcscd --disable-polkit -a -f >/tmp/pcscd.log &'
         sleep 15 # wait for admin applet reset
         timeout 1s pcsc_scan || true
         go env -w GO111MODULE=on
@@ -177,13 +158,13 @@ jobs:
         sudo chown root:root /tmp/canokey-*
         ls -l /tmp
 
-    - name: Test the Admin
+    - name: Tests - Admin applet
       run: go test -v test-via-pcsc/admin_test.go
 
-    - name: Test the NDEF
+    - name: Tests - NDEF applet
       run: go test -v test-via-pcsc/ndef_test.go
 
-    - name: Test the FIDO2
+    - name: Tests - FIDO2 applet
       run: |
         #echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
         #pushd test-real && ./test-libfido2.sh && popd
@@ -194,15 +175,15 @@ jobs:
         ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
         #kill %1
 
-    - name: Test the U2F
+    - name: Tests - U2F applet
       run: |
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
 
-    - name: Test the OATH
+    - name: Tests - OATH applet
       run: go test -v test-via-pcsc/oath_test.go
 
-    - name: Test the OpenPGP
+    - name: Tests - OpenPGP applet
       # GPG requires a tty to work
       shell: |
         script -e -c "bash --noprofile --norc -eo pipefail {0}"
@@ -220,12 +201,13 @@ jobs:
         echo 123456 >"/tmp/mock/PIN"
         echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key
         KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
-        Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID; }
-        Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg --yes --command-fd 0 --edit-key $KEYID; gpg --card-status; }
-        Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg --expert --command-fd 0 --yes --edit-key $KEYID; }
+        gpg_alias () { gpg --yes --expert --command-fd 0 --status-fd 1 "$@"; }
+        Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg_alias --edit-key $KEYID; }
+        Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg_alias --edit-key $KEYID; gpg --card-status; }
+        Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg_alias --edit-key $KEYID; }
         ChangeUsage() {
           SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1)
-          echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg --yes --expert --command-fd 0 --edit-key $KEYID
+          echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg_alias --edit-key $KEYID
         }
         GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }
         GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }
@@ -234,12 +216,12 @@ jobs:
           ssh-add -L >~/.ssh/authorized_keys
           ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
         }
-        SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg --yes --command-fd 0 --edit-card; }
+        SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg_alias --edit-card; }
         UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
-        GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg --command-fd 0 --edit-card; } # clear all keys, no pin verification at all
+        GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg_alias --edit-card; } # clear all keys, no pin verification at all
         echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
         gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
-        echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg --yes --command-fd 0 --edit-card # change PIN,Admin PIN,Reset Code
+        echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg_alias --edit-card # change PIN,Admin PIN,Reset Code
         Key2card 1 1 # key[1] to Signature key
         echo 0 >/tmp/canokey-test-up
         GPGSign
@@ -322,9 +304,9 @@ jobs:
         Key2card 12 1 # key[12] to Signature key
         GPGSign
         GPGReset
-        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card
+        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg_alias --edit-card
         ## RSA2048 generation on card
-        echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to RSA2048
+        echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | gpg_alias --edit-card # key-attr set to RSA2048
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
         GPGEnc
@@ -334,7 +316,7 @@ jobs:
         GPGAuth
         GPGReset
         ## 25519 generation on card
-        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to 25519
+        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg_alias --edit-card # key-attr set to 25519
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
         GPGEnc
@@ -344,7 +326,7 @@ jobs:
         GPGAuth
         GPGReset
         ## NIST P-256 generation on card
-        echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-256
+        echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg_alias --edit-card # key-attr set to ECC P-256
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
         GPGEnc
@@ -352,13 +334,13 @@ jobs:
         Addcardkey 3 # generate Authentication key on card
         ChangeUsage
         GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
         gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
         diff /tmp/random-read.txt /tmp/random.txt
         GPGReset
         ## NIST P-384 generation on card
-        echo -e 'admin\nkey-attr\n2\n4\n2\n4\n2\n4\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC P-384
+        echo -e 'admin\nkey-attr\n2\n4\n2\n4\n2\n4\n' | gpg_alias --edit-card # key-attr set to ECC P-384
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
         GPGEnc
@@ -366,9 +348,9 @@ jobs:
         Addcardkey 3 # generate Authentication key on card
         ChangeUsage
         GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
         gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
         diff /tmp/random-read.txt /tmp/random.txt
         GPGReset
         ## NIST P-521 generation on card
@@ -386,7 +368,7 @@ jobs:
         diff /tmp/random-read.txt /tmp/random.txt
         GPGReset
         ## secp256k1 generation on card
-        echo -e 'admin\nkey-attr\n2\n9\n2\n9\n2\n9\n' | gpg --command-fd 0 --yes --expert --edit-card # key-attr set to ECC secp256k1
+        echo -e 'admin\nkey-attr\n2\n9\n2\n9\n2\n9\n' | gpg_alias --edit-card # key-attr set to ECC secp256k1
         Addcardkey 1 # generate Signature key on card
         Addcardkey 2 # generate Encryption key on card
         GPGEnc
@@ -394,21 +376,21 @@ jobs:
         Addcardkey 3 # generate Authentication key on card
         ChangeUsage
         # GPGAuth # ssh does not support secp256k1
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
         gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
         diff /tmp/random-read.txt /tmp/random.txt
         GPGReset
         # Fill this applet as much as possible
-        echo -e 'admin\nname\nTheFirstNameQQQQQQ\nTheLastNamePPPPPPPP\nlang\nlanguage\nsex\nm\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\nurl\nexample.com/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\nlogin\naaaaaaaaaaaa000000000000000000000001111111111111111122222222222\nquit' | gpg --yes --command-fd 0 --edit-card
-        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg --yes --command-fd 0 --edit-card
+        echo -e 'admin\nname\nTheFirstNameQQQQQQ\nTheLastNamePPPPPPPP\nlang\nlanguage\nsex\nm\nquit' | gpg_alias --edit-card
+        echo -e 'admin\nurl\nexample.com/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\nquit' | gpg_alias --edit-card
+        echo -e 'admin\nlogin\naaaaaaaaaaaa000000000000000000000001111111111111111122222222222\nquit' | gpg_alias --edit-card
+        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg_alias --edit-card
         # Private DO 1/2 is not implemented
         gpgconf --kill gpg-agent
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
-    - name: Test the PIV
+    - name: Tests - PIV applet
       run: |
         set -o xtrace
         go test -v test-via-pcsc/piv_test.go
@@ -566,29 +548,29 @@ jobs:
         diff -s /tmp/rand-face /tmp/read-face
         diff -s /tmp/rand-fig  /tmp/read-fig
 
-    - name: Prepare the Test Coverage Report
+    - name: Wrap-up - Prepare test coverage report
       run: |
         go test test-via-pcsc/admin_test.go -v -run TestFSUsage
-        sudo killall pcscd || true # To flush the cov files
+        sudo killall pcscd || true # To flush cov files
         ls /tmp
         sleep 2
         mkdir coverage
         find build/ -name '*.gcda' | grep -P '/(canokey-crypto|virt-card|tinycbor|littlefs|interfaces)/' | xargs rm
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
-    - name: Coveralls
+    - name: Wrap-up - Coveralls
       uses: coverallsapp/github-action@master
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
     
-    - name: Upload log files
+    - name: Wrap-up - Upload log files
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:
         name: logs
         path: /tmp/*.log
     
-    - name: Upload data files
+    - name: Wrap-up - Upload data files
       if: ${{ always() }}
       uses: actions/upload-artifact@v4
       with:

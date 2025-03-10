@@ -1,58 +1,44 @@
 #!/bin/bash
+
 set -e
-mkdir ~/.gnupg || true
-echo -e 'pinentry-program /usr/local/bin/pinentry-tty\ndebug 1024\nlog-file /tmp/gpg-agent.log\n' >~/.gnupg/gpg-agent.conf
+mkdir -m 700 ~/.gnupg || true
+echo -e 'pinentry-program /usr/local/bin/pinentry-tty\ndebug-pinentry\ndebug 1024\nlog-file /tmp/agent.log\n' >~/.gnupg/gpg-agent.conf
+cat >~/.gnupg/scdaemon.conf <<EOF
+pcsc-driver /usr/lib/x86_64-linux-gnu/libpcsclite.so.1
+disable-ccid
+EOF
+
+sudo tee /etc/apt/sources.list <<EOF
+deb http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
+deb-src http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
+
+deb http://archive.ubuntu.com/ubuntu/ noble-updates main restricted universe multiverse
+deb-src http://archive.ubuntu.com/ubuntu/ noble-updates main restricted universe multiverse
+EOF
+
+gpg-connect-agent reloadagent /bye
+gpgconf --list-components
+ 
+sudo apt-get update
+sudo apt-get build-dep -q -y pinentry-tty
+
 mkdir gnupg || true
 pushd gnupg
-# Remove old versions on system
-sudo rm /usr/lib/x86_64-linux-gnu/pkgconfig/gpg-error.pc
-sudo rm /usr/lib/x86_64-linux-gnu/pkgconfig/libgcrypt.pc
-sudo rm /usr/include/x86_64-linux-gnu/gpg*
-sudo rm /usr/lib/x86_64-linux-gnu/libgpg-error.*
-sudo rm /usr/lib/x86_64-linux-gnu/libgcrypt.*
-if [ ! -d libgpg-error-1.42 ];then
-    wget https://gnupg.org/ftp/gcrypt/libgpg-error/libgpg-error-1.42.tar.bz2
-    tar -xf libgpg-error-1.42.tar.bz2
-    pushd libgpg-error-1.42
-    ./configure --prefix=/usr
-    make -j2
-else
-    pushd libgpg-error-1.42
-fi
-sudo make install
-popd
-if [ ! -d libgcrypt-1.9.4 ];then
-    wget https://gnupg.org/ftp/gcrypt/libgcrypt/libgcrypt-1.9.4.tar.bz2
-    tar -xf libgcrypt-1.9.4.tar.bz2
-    pushd libgcrypt-1.9.4
-    ./configure --prefix=/usr
-    make -j2
-else
-    pushd libgcrypt-1.9.4
-fi
-sudo make install
-popd
-if [ ! -d pinentry-1.1.0 ];then
-    wget https://gnupg.org/ftp/gcrypt/pinentry/pinentry-1.1.0.tar.bz2
-    tar -xf pinentry-1.1.0.tar.bz2
-    patch -p1 <../test-via-pcsc/pinentry-mock.patch
-    pushd pinentry-1.1.0
+
+if [ ! -d pinentry-1.2.1 ];then
+    wget https://gnupg.org/ftp/gcrypt/pinentry/pinentry-1.2.1.tar.bz2
+    tar -xf pinentry-1.2.1.tar.bz2
+
+    pushd pinentry-1.2.1
+    patch -p1 < ../../test-via-pcsc/pinentry-mock.patch
     ./configure --disable-pinentry-qt --enable-pinentry-tty --disable-pinentry-curses --disable-pinentry-gtk2
     make -j2
 else
-    pushd pinentry-1.1.0
+    pushd pinentry-1.2.1
 fi
 sudo make install
 popd
-if [ ! -d gnupg-2.3.4 ];then
-    wget https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.3.4.tar.bz2
-    tar -xf gnupg-2.3.4.tar.bz2
-    pushd gnupg-2.3.4
-    ./configure --prefix=/usr --disable-doc --disable-wks-tools --disable-gpgtar --disable-photo-viewers --disable-ldap
-    make -j2
-else
-    pushd gnupg-2.3.4
-fi
-sudo make install
-popd
+
+sudo ln -sf  /usr/local/bin/pinentry-tty  /usr/bin/pinentry
+
 popd
