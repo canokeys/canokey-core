@@ -180,6 +180,65 @@ static int UIF_TO_TOUCH_POLICY[3] = {[UIF_DISABLED] = TOUCH_POLICY_DEFAULT,
                                      [UIF_ENABLED] = TOUCH_POLICY_CACHED,
                                      [UIF_PERMANENTLY] = TOUCH_POLICY_PERMANENT};
 
+// Algorithm information structure to reduce code size
+typedef struct {
+  uint8_t tag;
+  int algo_index; // Algorithm index in algo_attr array
+  uint8_t id;
+} algo_info_t;
+
+// Add a single algorithm information to the buffer
+static uint16_t add_algo_info(uint8_t *buffer, uint16_t offset, uint8_t tag, int algo_index, uint8_t id) {
+  buffer[offset++] = tag;
+  const uint8_t *attr = algo_attr[algo_index];
+  memcpy(buffer + offset, attr, attr[0] + 1);
+  buffer[offset + 1] = id;
+  return offset + attr[0] + 1;
+}
+
+// Add all supported algorithm information to the buffer
+static uint16_t add_all_algorithm_info(uint8_t *buffer) {
+  uint16_t offset = 0;
+
+  // Define a static array of all algorithm information to avoid duplicate code
+  static const algo_info_t all_algo_infos[] = {
+      // SIG algorithms
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, RSA2048, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, RSA3072, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, RSA4096, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256R1, ALGO_ID_ECDSA},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256K1, ALGO_ID_ECDSA},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, SECP384R1, ALGO_ID_ECDSA},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519, ALGO_ID_ED25519},
+      {TAG_ALGORITHM_ATTRIBUTES_SIG, SM2, ALGO_ID_ECDSA},
+      // DEC algorithms
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA2048, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA3072, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA4096, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256R1, ALGO_ID_ECDH},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256K1, ALGO_ID_ECDH},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, SECP384R1, ALGO_ID_ECDH},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, X25519, ALGO_ID_ECDH},
+      {TAG_ALGORITHM_ATTRIBUTES_DEC, SM2, ALGO_ID_ECDH},
+      // AUT algorithms
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA2048, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA3072, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA4096, ALGO_ID_RSA},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256R1, ALGO_ID_ECDSA},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256K1, ALGO_ID_ECDSA},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, SECP384R1, ALGO_ID_ECDSA},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519, ALGO_ID_ED25519},
+      {TAG_ALGORITHM_ATTRIBUTES_AUT, SM2, ALGO_ID_ECDSA},
+  };
+
+  // Use a loop to iterate through all algorithm information instead of repeated code blocks
+  for (size_t i = 0; i < sizeof(all_algo_infos) / sizeof(algo_info_t); i++) {
+    offset = add_algo_info(buffer, offset, all_algo_infos[i].tag, all_algo_infos[i].algo_index, all_algo_infos[i].id);
+  }
+
+  return offset;
+}
+
 void openpgp_poweroff(void) {
   pw1_mode = 0;
   pw1.is_validated = 0;
@@ -524,44 +583,9 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_ALGORITHM_INFORMATION:
-#define ALGO_INFO(tag, algo, id)                                                                                       \
-  do {                                                                                                                 \
-    RDATA[off++] = tag;                                                                                                \
-    const uint8_t *attr = algo_attr[algo];                                                                             \
-    memcpy(RDATA + off, attr, attr[0] + 1);                                                                            \
-    RDATA[off + 1] = id;                                                                                               \
-    off += attr[0] + 1;                                                                                                \
-  } while (0)
-
-    // SIG
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, RSA2048, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, RSA3072, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, RSA4096, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256R1, ALGO_ID_ECDSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP256K1, ALGO_ID_ECDSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SECP384R1, ALGO_ID_ECDSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519, ALGO_ID_ED25519);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_SIG, SM2, ALGO_ID_ECDSA);
-    // DEC
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, RSA2048, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, RSA3072, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, RSA4096, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256R1, ALGO_ID_ECDH);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP256K1, ALGO_ID_ECDH);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SECP384R1, ALGO_ID_ECDH);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, X25519, ALGO_ID_ECDH);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_DEC, SM2, ALGO_ID_ECDH);
-    // AUT
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, RSA2048, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, RSA3072, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, RSA4096, ALGO_ID_RSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256R1, ALGO_ID_ECDSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP256K1, ALGO_ID_ECDSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SECP384R1, ALGO_ID_ECDSA);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519, ALGO_ID_ED25519);
-    ALGO_INFO(TAG_ALGORITHM_ATTRIBUTES_AUT, SM2, ALGO_ID_ECDSA);
-
-    LL = off;
+    RDATA[0] = TAG_ALGORITHM_INFORMATION;
+    RDATA[1] = add_all_algorithm_info(RDATA + 2);
+    LL = RDATA[1] + 2;
     break;
 
   case TAG_UIF_CACHE_TIME:
