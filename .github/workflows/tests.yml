@@ -548,6 +548,19 @@ jobs:
         diff -s /tmp/rand-face /tmp/read-face
         diff -s /tmp/rand-fig  /tmp/read-fig
 
+    - name: Prepare - Checkout ckman
+      uses: actions/checkout@v4
+      with:
+        repository: canokeys/yubikey-manager
+        ref: canokey-next
+        path: yubikey-manager
+
+    - name: Tests - Interoperate with ckman
+      run: |
+        cd yubikey-manager
+        pipx install poetry
+        poetry run pytest --reader 'Canokey ' --device 0 --use-version 6.6.6 -s ./tests/device/test_openpgp.py -k test_generate_x25519 -v
+
     - name: Wrap-up - Prepare test coverage report
       run: |
         go test test-via-pcsc/admin_test.go -v -run TestFSUsage
