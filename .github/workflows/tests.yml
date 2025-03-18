@@ -173,7 +173,7 @@ jobs:
         cd yubikey-manager
         pipx install poetry
         poetry install
-        poetry run pytest --reader 'Canokey ' --device 0 --use-version 6.6.6 -s ./tests/device/test_openpgp.py -k test_generate_x25519 -v
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 6.6.6 -s ./tests/device/test_openpgp.py -k test_generate_x25519 -v
 
     - name: Tests - NDEF applet
       run: go test -v test-via-pcsc/ndef_test.go
