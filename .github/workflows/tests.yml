@@ -161,6 +161,20 @@ jobs:
     - name: Tests - Admin applet
       run: go test -v test-via-pcsc/admin_test.go
 
+    - name: Prepare - Checkout ckman
+      uses: actions/checkout@v4
+      with:
+        repository: canokeys/yubikey-manager
+        ref: canokey-next
+        path: yubikey-manager
+
+    - name: Tests - Interoperate with ckman
+      run: |
+        cd yubikey-manager
+        pipx install poetry
+        poetry install
+        poetry run pytest --reader 'Canokey ' --device 0 --use-version 6.6.6 -s ./tests/device/test_openpgp.py -k test_generate_x25519 -v
+
     - name: Tests - NDEF applet
       run: go test -v test-via-pcsc/ndef_test.go
 
@@ -547,19 +561,6 @@ jobs:
         diff -s /tmp/rand-pi   /tmp/read-pi
         diff -s /tmp/rand-face /tmp/read-face
         diff -s /tmp/rand-fig  /tmp/read-fig
-
-    - name: Prepare - Checkout ckman
-      uses: actions/checkout@v4
-      with:
-        repository: canokeys/yubikey-manager
-        ref: canokey-next
-        path: yubikey-manager
-
-    - name: Tests - Interoperate with ckman
-      run: |
-        cd yubikey-manager
-        pipx install poetry
-        poetry run pytest --reader 'Canokey ' --device 0 --use-version 6.6.6 -s ./tests/device/test_openpgp.py -k test_generate_x25519 -v
 
     - name: Wrap-up - Prepare test coverage report
       run: |

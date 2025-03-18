@@ -589,8 +589,9 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   case TAG_ALGORITHM_INFORMATION:
     RDATA[0] = TAG_ALGORITHM_INFORMATION;
-    RDATA[1] = add_all_algorithm_info(RDATA + 2);
-    LL = RDATA[1] + 2;
+    RDATA[1] = 0x81;
+    RDATA[2] = add_all_algorithm_info(RDATA + 3);
+    LL = RDATA[2] + 3;
     break;
 
   case TAG_UIF_CACHE_TIME:
