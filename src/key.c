@@ -230,9 +230,11 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   // Cardholder private key template
   if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
   if (*p++ != 0x7F || *p++ != 0x48) return KEY_ERR_DATA;
+  DBG_MSG("first\n");
   size_t len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
   if (fail) return KEY_ERR_LENGTH;
   if (len > MAX_KEY_TEMPLATE_LENGTH) return KEY_ERR_DATA;
+  DBG_MSG("2nd\n");
   p += length_size;
   const uint8_t *data_tag = p + len; // saved for tag 5F48
 
@@ -288,6 +290,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case RSA3072:
   case RSA4096: {
     // 0x91: e
+  DBG_MSG("3rd\n");
     if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x91) return KEY_ERR_DATA;
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
@@ -295,6 +298,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if (len != E_LENGTH) return KEY_ERR_DATA;
     p += length_size;
 
+  DBG_MSG("4\n");
     // 0x92: p
     if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x92) return KEY_ERR_DATA;
@@ -303,6 +307,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if (len != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
     p += length_size;
 
+  DBG_MSG("5\n");
     // 0x93: q
     if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x93) return KEY_ERR_DATA;
@@ -311,6 +316,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if (len != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
     p += length_size;
 
+  DBG_MSG("6\n");
     // 0x94: qinv, may be less than p/q's length
     if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x94) return KEY_ERR_DATA;
@@ -334,6 +340,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if (fail) return KEY_ERR_LENGTH;
     if (dq_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
 
+  DBG_MSG("7\n");
     // Concatenation of key data
     p = data_tag;
     if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
@@ -343,6 +350,7 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if (len != PRIVATE_KEY_LENGTH[key->meta.type] * 2 + qinv_len + dp_len + dq_len + E_LENGTH) return KEY_ERR_DATA;
     p += length_size;
 
+  DBG_MSG("8\n");
     if ((size_t)(p + len - buf) > buf_len) return KEY_ERR_LENGTH;
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
     memcpy(key->rsa.e, p, E_LENGTH);

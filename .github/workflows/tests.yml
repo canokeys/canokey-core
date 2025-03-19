@@ -82,6 +82,13 @@ jobs:
         repository: canokeys/piv-go
         path: piv-go
 
+    - name: Prepare - Checkout ckman
+      uses: actions/checkout@v4
+      with:
+        repository: canokeys/yubikey-manager
+        ref: canokey-next
+        path: yubikey-manager
+
     - name: Cache - GO Modules
       uses: actions/cache@v4
       env:
@@ -160,20 +167,6 @@ jobs:
 
     - name: Tests - Admin applet
       run: go test -v test-via-pcsc/admin_test.go
-
-    - name: Prepare - Checkout ckman
-      uses: actions/checkout@v4
-      with:
-        repository: canokeys/yubikey-manager
-        ref: canokey-next
-        path: yubikey-manager
-
-    - name: Tests - Interoperate with ckman
-      run: |
-        cd yubikey-manager
-        pipx install poetry
-        poetry install
-        poetry run pytest --reader 'Canokey ' --no-serial --use-version 6.6.6 -s ./tests/device/test_openpgp.py -k test_generate_x25519 -v
 
     - name: Tests - NDEF applet
       run: go test -v test-via-pcsc/ndef_test.go
@@ -403,6 +396,13 @@ jobs:
         # Private DO 1/2 is not implemented
         gpgconf --kill gpg-agent
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
+
+    - name: Tests - Interoperate with ckman openpgp
+      run: |
+        cd yubikey-manager
+        pipx install poetry
+        poetry install
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 6.6.6 -s ./tests/device/test_openpgp.py -v
 
     - name: Tests - PIV applet
       run: |
