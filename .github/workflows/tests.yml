@@ -402,7 +402,8 @@ jobs:
         cd yubikey-manager
         pipx install poetry
         poetry install
-        poetry run pytest --reader 'Canokey ' --no-serial --use-version 6.6.6 -s ./tests/device/test_openpgp.py -v
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
 
     - name: Tests - PIV applet
       run: |
@@ -561,6 +562,7 @@ jobs:
         diff -s /tmp/rand-pi   /tmp/read-pi
         diff -s /tmp/rand-face /tmp/read-face
         diff -s /tmp/rand-fig  /tmp/read-fig
+        yubico-piv-tool -r "$RDID" -a change-pin -N 123456 -P 654321
 
     - name: Wrap-up - Prepare test coverage report
       run: |
