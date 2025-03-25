@@ -82,6 +82,13 @@ jobs:
         repository: canokeys/piv-go
         path: piv-go
 
+    - name: Prepare - Checkout ckman
+      uses: actions/checkout@v4
+      with:
+        repository: canokeys/yubikey-manager
+        ref: canokey-next
+        path: yubikey-manager
+
     - name: Cache - GO Modules
       uses: actions/cache@v4
       env:
@@ -376,6 +383,14 @@ jobs:
         gpgconf --kill gpg-agent
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
+    - name: Tests - Interoperate with ckman openpgp
+      run: |
+        cd yubikey-manager
+        pipx install poetry
+        poetry install
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
+
     - name: Tests - PIV applet
       run: |
         set -o xtrace
@@ -533,6 +548,7 @@ jobs:
         diff -s /tmp/rand-pi   /tmp/read-pi
         diff -s /tmp/rand-face /tmp/read-face
         diff -s /tmp/rand-fig  /tmp/read-fig
+        yubico-piv-tool -r "$RDID" -a change-pin -N 123456 -P 654321
 
     - name: Wrap-up - Prepare test coverage report
       run: |
