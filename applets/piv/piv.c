@@ -632,14 +632,16 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
       memzero(&key, sizeof(key));
     } else if (IS_ECC(key.meta.type)) {
+      size_t input_len = len[IDX_CHALLENGE];
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
         // prepend zeros
         memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]),
                 DATA + pos[IDX_CHALLENGE],
                 len[IDX_CHALLENGE]);
         memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
+        input_len = PRIVATE_KEY_LENGTH[key.meta.type];
       }
-      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4);
+      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], input_len, RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
         return -1;
