@@ -113,21 +113,23 @@ void nfc_loop(void) {
   if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {
     block_number ^= 1;
 
+    if (rx_frame_size < 3) {
+      nfc_error_handler(-6);
+      return;
+    }
+    const uint16_t payload_len = rx_frame_size - 3;
+    if (apdu_buffer_rx_size + payload_len > APDU_BUFFER_SIZE) {
+      nfc_error_handler(-7);
+      return;
+    }
+
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
-      memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
-      if (apdu_buffer_rx_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
-        nfc_error_handler(-3);
-        return;
-      }
-      apdu_buffer_rx_size += rx_frame_size - 3;
+      memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, payload_len);
+      apdu_buffer_rx_size += payload_len;
       nfc_send_frame(R_ACK | block_number, NULL, 0);
     } else {
-      memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, rx_frame_size - 3);
-      if (apdu_buffer_rx_size + rx_frame_size - 3 > APDU_BUFFER_SIZE) {
-        nfc_error_handler(-4);
-        return;
-      }
-      apdu_buffer_rx_size += rx_frame_size - 3;
+      memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, payload_len);
+      apdu_buffer_rx_size += payload_len;
 
       CAPDU *capdu = &apdu_cmd;
       RAPDU *rapdu = &apdu_resp;
