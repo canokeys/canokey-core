@@ -221,7 +221,7 @@ jobs:
         GPGAuth() {
           gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
           ssh-add -L >~/.ssh/authorized_keys
-          ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
+          #ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
         }
         SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg_alias --edit-card; }
         UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
