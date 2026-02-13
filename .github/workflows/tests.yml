@@ -253,7 +253,7 @@ jobs:
         SetUIF 3 on
         gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
         GPGAuth
-        UserChecked 1
+        #UserChecked 1
         SetUIF 1 off
         gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=on Auth=on'
         SetUIF 2 off
