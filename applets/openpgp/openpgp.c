@@ -336,6 +336,27 @@ static int openpgp_select(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+/**
+ * Fill PW_STATUS bytes into buf[0..PW_STATUS_LENGTH-1].
+ * Returns PW_STATUS_LENGTH on success, -1 on I/O error.
+ */
+static int fill_pw_status(uint8_t *buf) {
+  if (read_attr(DATA_PATH, TAG_PW_STATUS, buf, 1) < 0) return -1;
+  buf[1] = MAX_PIN_LENGTH;
+  buf[2] = MAX_PIN_LENGTH;
+  buf[3] = MAX_PIN_LENGTH;
+  int retries = pin_get_retries(&pw1);
+  if (retries < 0) return -1;
+  buf[4] = retries;
+  retries = pin_get_retries(&rc);
+  if (retries < 0) return -1;
+  buf[5] = retries;
+  retries = pin_get_retries(&pw3);
+  if (retries < 0) return -1;
+  buf[6] = retries;
+  return PW_STATUS_LENGTH;
+}
+
 static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
@@ -447,19 +468,8 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_PW_STATUS;
     RDATA[off++] = PW_STATUS_LENGTH;
-    if (read_attr(DATA_PATH, TAG_PW_STATUS, RDATA + off++, 1) < 0) return -1;
-    RDATA[off++] = MAX_PIN_LENGTH;
-    RDATA[off++] = MAX_PIN_LENGTH;
-    RDATA[off++] = MAX_PIN_LENGTH;
-    retries = pin_get_retries(&pw1);
-    if (retries < 0) return -1;
-    RDATA[off++] = retries;
-    retries = pin_get_retries(&rc);
-    if (retries < 0) return -1;
-    RDATA[off++] = retries;
-    retries = pin_get_retries(&pw3);
-    if (retries < 0) return -1;
-    RDATA[off++] = retries;
+    if (fill_pw_status(RDATA + off) < 0) return -1;
+    off += PW_STATUS_LENGTH;
 
     RDATA[off++] = TAG_KEY_FINGERPRINTS;
     RDATA[off++] = KEY_FINGERPRINT_LENGTH * NUM_KEYS;
@@ -539,19 +549,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_PW_STATUS:
-    if (read_attr(DATA_PATH, TAG_PW_STATUS, RDATA, 1) < 0) return -1;
-    RDATA[1] = MAX_PIN_LENGTH;
-    RDATA[2] = MAX_PIN_LENGTH;
-    RDATA[3] = MAX_PIN_LENGTH;
-    retries = pin_get_retries(&pw1);
-    if (retries < 0) return -1;
-    RDATA[4] = retries;
-    retries = pin_get_retries(&rc);
-    if (retries < 0) return -1;
-    RDATA[5] = retries;
-    retries = pin_get_retries(&pw3);
-    if (retries < 0) return -1;
-    RDATA[6] = retries;
+    if (fill_pw_status(RDATA) < 0) return -1;
     LL = PW_STATUS_LENGTH;
     break;
 
