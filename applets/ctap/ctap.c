@@ -2170,7 +2170,7 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
   cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);
 
   uint8_t cmd = *req++;
-  uint8_t status;
+  uint8_t status = CTAP2_ERR_UNHANDLED_REQUEST;
   switch (cmd) {
     case CTAP_MAKE_CREDENTIAL:
       DBG_MSG("-----------------MC-------------------\n");
