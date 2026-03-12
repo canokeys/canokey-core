@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // implement software-simulated device funtions (LED, Touch, Timer, etc.)
-#include "device.h"
 #include "admin.h"
+#include "device.h"
 #include <stdio.h>
 #include <time.h>
 #include <unistd.h>
@@ -128,12 +128,9 @@ int testmode_get_is_nfc_mode(void) {
   return 0;
 }
 
-void testmode_set_initial_ticks(uint32_t ticks) {
-  initial_ticks = ticks;
-}
+void testmode_set_initial_ticks(uint32_t ticks) { initial_ticks = ticks; }
 
-void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data)
-{
+void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data) {
   DBG_MSG("%hhu %hhu ", p1, p2);
   PRINT_HEX(data, len);
   if (!p1 && !p2) {
@@ -144,8 +141,7 @@ void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *
   }
 }
 
-bool testmode_err_triggered(const char* filename, bool file_wr)
-{
+bool testmode_err_triggered(const char *filename, bool file_wr) {
   bool ret = (strcmp(filename, err_trigger_filename) == 0);
   if (ret) err_trigger_filename[0] = 0;
   return ret;

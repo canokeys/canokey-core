@@ -16,12 +16,12 @@
 #include "ccid.h"
 #include "ctap.h"
 #include "device.h"
-#include "usb-dummy.h"
 #include "fabrication.h"
 #include "ndef.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
+#include "usb-dummy.h"
 #include "usb_device.h"
 #include "usbd_core.h"
 
@@ -104,7 +104,7 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
       ep->xfer_count = len;
       DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       memcpy(setup_buffer, buf, ep->xfer_count);
-      ep->xfer_buff =+ ep->xfer_count;
+      ep->xfer_buff = +ep->xfer_count;
       USBD_LL_SetupStage(&usb_device, setup_buffer);
     } else {
       if (len > ep->xfer_len) {

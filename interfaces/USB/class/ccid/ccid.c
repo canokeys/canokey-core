@@ -7,7 +7,8 @@
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
-#define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
+#define CCID_UpdateCommandStatus(cmd_status, icc_status)                                                               \
+  bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
 #define CCID_CardStatus() (bulkin_short.bStatus & BM_ICC_STATUS_MASK)
 #define CCID_IsShortCommand() (bulkout_data.dwLength <= SHORT_ABDATA_SIZE)
 
@@ -30,9 +31,7 @@ static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 uint8_t *global_buffer;
 
-void init_apdu_buffer(void) {
-  global_buffer = bulkin_data.abData;
-}
+void init_apdu_buffer(void) { global_buffer = bulkin_data.abData; }
 
 uint8_t CCID_Init(void) {
   send_data_spinlock = 0;
@@ -227,7 +226,7 @@ static uint8_t PC_to_RDR_GetParameters(void) {
  */
 static void RDR_to_PC_DataBlock(uint8_t errorCode, uint8_t isShort) {
   ccid_bulkin_data_t *pBulkin = &bulkin_data;
-  if (isShort) pBulkin = (ccid_bulkin_data_t*)&bulkin_short;
+  if (isShort) pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
   pBulkin->bMessageType = RDR_TO_PC_DATABLOCK;
   pBulkin->bError = errorCode;
   pBulkin->bSpecific = 0;
@@ -337,7 +336,7 @@ void CCID_Loop(void) {
   if (!has_cmd) return;
 
   uint8_t errorCode;
-  ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t*)&bulkin_short;
+  ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
   switch (bulkout_data.bMessageType) {
   case PC_TO_RDR_ICCPOWERON:
     DBG_MSG("Slot power on\n");
@@ -400,8 +399,7 @@ void CCID_Loop(void) {
   has_cmd = 0;
 }
 
-void CCID_InFinished(uint8_t is_time_extension_request)
-{
+void CCID_InFinished(uint8_t is_time_extension_request) {
   if (is_time_extension_request) {
     DBG_MSG("Time-ext sent\n");
     return;

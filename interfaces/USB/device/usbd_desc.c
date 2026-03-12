@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
+#include <apdu.h>
 #include <stdio.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
@@ -7,7 +8,6 @@
 #include <usbd_ctaphid.h>
 #include <usbd_desc.h>
 #include <usbd_kbdhid.h>
-#include <apdu.h>
 
 #define USBD_LANGID_STRING 0x0409
 #define USBD_MANUFACTURER_STRING "canokeys.org"
@@ -381,11 +381,8 @@ const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed __attribute__((unus
 
 const uint8_t *USBD_ConfigurationDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
   USBD_DescriptorInit();
-  *length = USB_LEN_CFG_DESC +
-            sizeof(USBD_FS_IfDesc_CCID) +
-            sizeof(USBD_FS_IfDesc_WEBUSB) +
-            sizeof(USBD_FS_IfDesc_KBDHID) +
-            sizeof(USBD_FS_IfDesc_CTAPHID);
+  *length = USB_LEN_CFG_DESC + sizeof(USBD_FS_IfDesc_CCID) + sizeof(USBD_FS_IfDesc_WEBUSB) +
+            sizeof(USBD_FS_IfDesc_KBDHID) + sizeof(USBD_FS_IfDesc_CTAPHID);
   return global_buffer;
 }
 

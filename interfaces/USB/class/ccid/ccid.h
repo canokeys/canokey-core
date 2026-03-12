@@ -5,20 +5,20 @@
 #include <common.h>
 
 #define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
-#define SHORT_ABDATA_SIZE 8  /* Enough for most CCID messages except XfrBlock/Secure */
+#define SHORT_ABDATA_SIZE 8 /* Enough for most CCID messages except XfrBlock/Secure */
 #define CCID_CMD_HEADER_SIZE 10
 #define CCID_NUMBER_OF_SLOTS 1
 #define TIME_EXTENSION_PERIOD 1500
 
 typedef struct {
-  uint8_t bMessageType; /* Offset = 0*/
-  uint32_t dwLength;    /* Offset = 1, The length field (dwLength) is the length
-                           of the message not including the 10-byte header.*/
-  uint8_t bSlot;        /* Offset = 5*/
-  uint8_t bSeq;         /* Offset = 6*/
-  uint8_t bSpecific_0;  /* Offset = 7*/
-  uint8_t bSpecific_1;  /* Offset = 8*/
-  uint8_t bSpecific_2;  /* Offset = 9*/
+  uint8_t bMessageType;                   /* Offset = 0*/
+  uint32_t dwLength;                      /* Offset = 1, The length field (dwLength) is the length
+                                             of the message not including the 10-byte header.*/
+  uint8_t bSlot;                          /* Offset = 5*/
+  uint8_t bSeq;                           /* Offset = 6*/
+  uint8_t bSpecific_0;                    /* Offset = 7*/
+  uint8_t bSpecific_1;                    /* Offset = 8*/
+  uint8_t bSpecific_2;                    /* Offset = 9*/
   uint8_t abDataShort[SHORT_ABDATA_SIZE]; /* Offset = 10*/
 } __packed ccid_bulkout_data_t;
 
@@ -34,14 +34,14 @@ typedef struct {
 } __packed ccid_bulkin_data_t;
 
 typedef struct {
-  uint8_t bMessageType;        /* Offset = 0*/
-  uint32_t dwLength;           /* Offset = 1*/
-  uint8_t bSlot;               /* Offset = 5, Same as Bulk-OUT message */
-  uint8_t bSeq;                /* Offset = 6, Same as Bulk-OUT message */
-  uint8_t bStatus;             /* Offset = 7, Slot status as defined in § 6.2.6*/
-  uint8_t bError;              /* Offset = 8, Slot error  as defined in § 6.2.6*/
-  uint8_t bSpecific;           /* Offset = 9*/
-  uint8_t abData[17];          /* Offset = 10*/
+  uint8_t bMessageType; /* Offset = 0*/
+  uint32_t dwLength;    /* Offset = 1*/
+  uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
+  uint8_t bSeq;         /* Offset = 6, Same as Bulk-OUT message */
+  uint8_t bStatus;      /* Offset = 7, Slot status as defined in § 6.2.6*/
+  uint8_t bError;       /* Offset = 8, Slot error  as defined in § 6.2.6*/
+  uint8_t bSpecific;    /* Offset = 9*/
+  uint8_t abData[17];   /* Offset = 10*/
 } __packed ccid_bulkin_short_t;
 
 typedef struct {
@@ -97,7 +97,7 @@ typedef struct {
 #define SLOTERROR_CMD_SLOT_BUSY 0xE0
 #define SLOTERROR_CMD_NOT_SUPPORTED 0x00
 
-#define BM_ICC_STATUS_MASK    0x03
+#define BM_ICC_STATUS_MASK 0x03
 #define BM_ICC_PRESENT_ACTIVE 0x00
 #define BM_ICC_PRESENT_INACTIVE 0x01
 #define BM_ICC_NO_ICC_PRESENT 0x02

@@ -4,6 +4,7 @@
 
 #include <apdu.h>
 
+// clang-format off
 #define PIV_INS_VERIFY                       0x20
 #define PIV_INS_CHANGE_REFERENCE_DATA        0x24
 #define PIV_INS_RESET_RETRY_COUNTER          0x2C
@@ -21,6 +22,7 @@
 #define PIV_INS_SET_MANAGEMENT_KEY           0xFF
 
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
+// clang-format on
 
 typedef struct {
   uint8_t enabled;
