@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <device.h>
 #include <fs.h>
+#include <device.h>
 
 static lfs_t lfs;
 

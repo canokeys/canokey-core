@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <cmocka.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <cmocka.h>
 
 #include <apdu.h>
-#include <bd/lfs_filebd.h>
 #include <crypto-util.h>
+#include <bd/lfs_filebd.h>
 #include <device.h>
 #include <fs.h>
 #include <lfs.h>

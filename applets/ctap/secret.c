@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "secret.h"
 #include "cose-key.h"
+#include "secret.h"
 #include <aes.h>
 #include <block-cipher.h>
 #include <crypto-util.h>
-#include <device.h>
 #include <ecc.h>
 #include <fs.h>
 #include <hmac.h>
 #include <memzero.h>
 #include <rand.h>
+#include <device.h>
 #include <sm3.h>
 
 extern CTAP_sm2_attr ctap_sm2_attr;

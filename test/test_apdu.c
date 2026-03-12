@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <cmocka.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <cmocka.h>
 
 #include <apdu.h>
 #include <string.h>

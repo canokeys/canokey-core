@@ -19,10 +19,10 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "applets.h"
-#include "ctaphid.h"
 #include "device.h"
+#include "ctaphid.h"
 #include "fabrication.h"
+#include "applets.h"
 
 static int udp_server() {
   static bool run_already = false;

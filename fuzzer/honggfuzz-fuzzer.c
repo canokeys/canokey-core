@@ -16,12 +16,12 @@
 #include "ccid.h"
 #include "ctap.h"
 #include "device.h"
+#include "usb-dummy.h"
 #include "fabrication.h"
 #include "ndef.h"
 #include "oath.h"
 #include "openpgp.h"
 #include "piv.h"
-#include "usb-dummy.h"
 #include "usb_device.h"
 #include "usbd_core.h"
 

@@ -5,11 +5,11 @@
 #include <common.h>
 #include <ctap.h>
 #include <device.h>
-#include <kbdhid.h>
 #include <ndef.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
+#include <kbdhid.h>
 
 enum APPLET {
   APPLET_NULL,

@@ -9,9 +9,9 @@
 #include <sha.h>
 #include <string.h>
 
-#include "cose-key.h"
 #include "ctap-internal.h"
 #include "secret.h"
+#include "cose-key.h"
 
 int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);

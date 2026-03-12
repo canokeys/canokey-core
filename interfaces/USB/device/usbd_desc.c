@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
-#include <apdu.h>
 #include <stdio.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
@@ -8,6 +7,7 @@
 #include <usbd_ctaphid.h>
 #include <usbd_desc.h>
 #include <usbd_kbdhid.h>
+#include <apdu.h>
 
 #define USBD_LANGID_STRING 0x0409
 #define USBD_MANUFACTURER_STRING "canokeys.org"
