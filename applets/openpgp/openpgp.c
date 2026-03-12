@@ -182,12 +182,7 @@ static int UIF_TO_TOUCH_POLICY[3] = {[UIF_DISABLED] = TOUCH_POLICY_DEFAULT,
                                      [UIF_ENABLED] = TOUCH_POLICY_CACHED,
                                      [UIF_PERMANENTLY] = TOUCH_POLICY_PERMANENT};
 
-enum PGP_KEY_TYPE {
-  SIG_KEY_IDX = 0,
-  DEC_KEY_IDX,
-  AUT_KEY_IDX,
-  NUM_KEYS
-};
+enum PGP_KEY_TYPE { SIG_KEY_IDX = 0, DEC_KEY_IDX, AUT_KEY_IDX, NUM_KEYS };
 
 /* Per-key constant data for SIG, DEC, and AUT keys.
  * All tag fields hold single-byte BER-TLV tags (≤ 0xFF) and are stored
@@ -208,9 +203,12 @@ typedef struct {
 } openpgp_key_info_t;
 
 static const openpgp_key_info_t key_info[NUM_KEYS] = {
-    [SIG_KEY_IDX] = {SIG_KEY_PATH, SIG_CERT_PATH, SIGN,    ATTR_CA1_FP, TAG_ALGORITHM_ATTRIBUTES_SIG, 0x01, TAG_UIF_SIG, TAG_KEY_SIG_FINGERPRINT, TAG_KEY_CA1_FINGERPRINT, TAG_KEY_SIG_GENERATION_DATES},
-    [DEC_KEY_IDX] = {DEC_KEY_PATH, DEC_CERT_PATH, ENCRYPT, ATTR_CA2_FP, TAG_ALGORITHM_ATTRIBUTES_DEC, 0x02, TAG_UIF_DEC, TAG_KEY_DEC_FINGERPRINT, TAG_KEY_CA2_FINGERPRINT, TAG_KEY_DEC_GENERATION_DATES},
-    [AUT_KEY_IDX] = {AUT_KEY_PATH, AUT_CERT_PATH, SIGN,    ATTR_CA3_FP, TAG_ALGORITHM_ATTRIBUTES_AUT, 0x03, TAG_UIF_AUT, TAG_KEY_AUT_FINGERPRINT, TAG_KEY_CA3_FINGERPRINT, TAG_KEY_AUT_GENERATION_DATES},
+    [SIG_KEY_IDX] = {SIG_KEY_PATH, SIG_CERT_PATH, SIGN, ATTR_CA1_FP, TAG_ALGORITHM_ATTRIBUTES_SIG, 0x01, TAG_UIF_SIG,
+                     TAG_KEY_SIG_FINGERPRINT, TAG_KEY_CA1_FINGERPRINT, TAG_KEY_SIG_GENERATION_DATES},
+    [DEC_KEY_IDX] = {DEC_KEY_PATH, DEC_CERT_PATH, ENCRYPT, ATTR_CA2_FP, TAG_ALGORITHM_ATTRIBUTES_DEC, 0x02, TAG_UIF_DEC,
+                     TAG_KEY_DEC_FINGERPRINT, TAG_KEY_CA2_FINGERPRINT, TAG_KEY_DEC_GENERATION_DATES},
+    [AUT_KEY_IDX] = {AUT_KEY_PATH, AUT_CERT_PATH, SIGN, ATTR_CA3_FP, TAG_ALGORITHM_ATTRIBUTES_AUT, 0x03, TAG_UIF_AUT,
+                     TAG_KEY_AUT_FINGERPRINT, TAG_KEY_CA3_FINGERPRINT, TAG_KEY_AUT_GENERATION_DATES},
 };
 
 // Algorithm information structure to reduce code size
@@ -1063,7 +1061,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (key_index == DEC_KEY_IDX && type == ED25519) {
       DBG_MSG("DEC key disallows ed25519\n");
       EXCEPT(SW_WRONG_DATA);
-    } 
+    }
     if (key_index != DEC_KEY_IDX && type == X25519) {
       DBG_MSG("SIG/AUT key disallows x25519\n");
       EXCEPT(SW_WRONG_DATA);
@@ -1080,9 +1078,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_SIG_FINGERPRINT:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_KEY_DEC_FINGERPRINT:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_KEY_AUT_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1094,9 +1092,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_CA1_FINGERPRINT:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_KEY_CA2_FINGERPRINT:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_KEY_CA3_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1108,9 +1106,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_SIG_GENERATION_DATES:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_KEY_DEC_GENERATION_DATES:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_KEY_AUT_GENERATION_DATES:
     if (LC != KEY_DATETIME_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1134,9 +1132,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
   case TAG_UIF_SIG:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_UIF_DEC:
-    [[fallthrough]];
+    CNK_FALLTHROUGH;
   case TAG_UIF_AUT:
     if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
