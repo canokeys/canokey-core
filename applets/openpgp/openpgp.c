@@ -182,7 +182,12 @@ static int UIF_TO_TOUCH_POLICY[3] = {[UIF_DISABLED] = TOUCH_POLICY_DEFAULT,
                                      [UIF_ENABLED] = TOUCH_POLICY_CACHED,
                                      [UIF_PERMANENTLY] = TOUCH_POLICY_PERMANENT};
 
-#define NUM_KEYS 3
+enum PGP_KEY_TYPE {
+  SIG_KEY_IDX = 0,
+  DEC_KEY_IDX,
+  AUT_KEY_IDX,
+  NUM_KEYS
+};
 
 /* Per-key constant data for SIG, DEC, and AUT keys.
  * All tag fields hold single-byte BER-TLV tags (≤ 0xFF) and are stored
@@ -203,9 +208,9 @@ typedef struct {
 } openpgp_key_info_t;
 
 static const openpgp_key_info_t key_info[NUM_KEYS] = {
-    {SIG_KEY_PATH, SIG_CERT_PATH, SIGN,    ATTR_CA1_FP, TAG_ALGORITHM_ATTRIBUTES_SIG, 0x01, TAG_UIF_SIG, TAG_KEY_SIG_FINGERPRINT, TAG_KEY_CA1_FINGERPRINT, TAG_KEY_SIG_GENERATION_DATES},
-    {DEC_KEY_PATH, DEC_CERT_PATH, ENCRYPT, ATTR_CA2_FP, TAG_ALGORITHM_ATTRIBUTES_DEC, 0x02, TAG_UIF_DEC, TAG_KEY_DEC_FINGERPRINT, TAG_KEY_CA2_FINGERPRINT, TAG_KEY_DEC_GENERATION_DATES},
-    {AUT_KEY_PATH, AUT_CERT_PATH, SIGN,    ATTR_CA3_FP, TAG_ALGORITHM_ATTRIBUTES_AUT, 0x03, TAG_UIF_AUT, TAG_KEY_AUT_FINGERPRINT, TAG_KEY_CA3_FINGERPRINT, TAG_KEY_AUT_GENERATION_DATES},
+    [SIG_KEY_IDX] = {SIG_KEY_PATH, SIG_CERT_PATH, SIGN,    ATTR_CA1_FP, TAG_ALGORITHM_ATTRIBUTES_SIG, 0x01, TAG_UIF_SIG, TAG_KEY_SIG_FINGERPRINT, TAG_KEY_CA1_FINGERPRINT, TAG_KEY_SIG_GENERATION_DATES},
+    [DEC_KEY_IDX] = {DEC_KEY_PATH, DEC_CERT_PATH, ENCRYPT, ATTR_CA2_FP, TAG_ALGORITHM_ATTRIBUTES_DEC, 0x02, TAG_UIF_DEC, TAG_KEY_DEC_FINGERPRINT, TAG_KEY_CA2_FINGERPRINT, TAG_KEY_DEC_GENERATION_DATES},
+    [AUT_KEY_IDX] = {AUT_KEY_PATH, AUT_CERT_PATH, SIGN,    ATTR_CA3_FP, TAG_ALGORITHM_ATTRIBUTES_AUT, 0x03, TAG_UIF_AUT, TAG_KEY_AUT_FINGERPRINT, TAG_KEY_CA3_FINGERPRINT, TAG_KEY_AUT_GENERATION_DATES},
 };
 
 // Algorithm information structure to reduce code size
@@ -517,7 +522,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
-    if (current_occurrence > 2) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    if (current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     len = read_file(key_info[current_occurrence].cert_path, RDATA, 0, MAX_CERT_LENGTH);
     if (len < 0) return -1;
     LL = len;
@@ -968,6 +973,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   int err;
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
   key_meta_t meta;
+  size_t key_index = 0;
 
   switch (tag) {
   case TAG_NAME:
@@ -997,15 +1003,22 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   case TAG_CARDHOLDER_CERTIFICATE:
     if (LC > MAX_CERT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (current_occurrence > 2) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    if (current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     err = write_file(key_info[current_occurrence].cert_path, DATA, 0, LC, 1);
     if (err < 0) return -1;
     current_occurrence = 0;
     break;
 
   case TAG_ALGORITHM_ATTRIBUTES_SIG:
+    key_index = SIG_KEY_IDX;
+    goto handle_algo_attr;
   case TAG_ALGORITHM_ATTRIBUTES_DEC:
+    key_index = DEC_KEY_IDX;
+    goto handle_algo_attr;
   case TAG_ALGORITHM_ATTRIBUTES_AUT:
+    key_index = AUT_KEY_IDX;
+
+  handle_algo_attr:
     if (LC < 1 || LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
     key_type_t type;
@@ -1041,19 +1054,18 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
     DBG_MSG("New attr type: %d\n", type);
 
-    size_t key_index = tag == TAG_ALGORITHM_ATTRIBUTES_SIG ? 0 : tag == TAG_ALGORITHM_ATTRIBUTES_DEC ? 1 : 2;
     const char *key_path = key_info[key_index].key_path;
-
     if (ck_read_key_metadata(key_path, &meta) < 0) return -1;
     if (type == meta.type) { // Key algorithm attribute unchanged
       DBG_MSG("Attr unchanged\n");
       break;
     }
-    if ((key_index == 1 && type == ED25519) || (key_index != 1 && type == X25519)) {
-      if (key_index == 1)
-        DBG_MSG("DEC key disallows ed25519\n");
-      else
-        DBG_MSG("SIG/AUT key disallows x25519\n");
+    if (key_index == DEC_KEY_IDX && type == ED25519) {
+      DBG_MSG("DEC key disallows ed25519\n");
+      EXCEPT(SW_WRONG_DATA);
+    } 
+    if (key_index != DEC_KEY_IDX && type == X25519) {
+      DBG_MSG("SIG/AUT key disallows x25519\n");
       EXCEPT(SW_WRONG_DATA);
     }
     meta.type = type;
@@ -1068,7 +1080,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_SIG_FINGERPRINT:
+    [[fallthrough]];
   case TAG_KEY_DEC_FINGERPRINT:
+    [[fallthrough]];
   case TAG_KEY_AUT_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1080,7 +1094,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_CA1_FINGERPRINT:
+    [[fallthrough]];
   case TAG_KEY_CA2_FINGERPRINT:
+    [[fallthrough]];
   case TAG_KEY_CA3_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1092,7 +1108,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_SIG_GENERATION_DATES:
+    [[fallthrough]];
   case TAG_KEY_DEC_GENERATION_DATES:
+    [[fallthrough]];
   case TAG_KEY_AUT_GENERATION_DATES:
     if (LC != KEY_DATETIME_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1116,7 +1134,9 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
   case TAG_UIF_SIG:
+    [[fallthrough]];
   case TAG_UIF_DEC:
+    [[fallthrough]];
   case TAG_UIF_AUT:
     if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
     for (size_t i = 0; i < NUM_KEYS; ++i) {
@@ -1199,7 +1219,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int openpgp_select_data(const CAPDU *capdu, RAPDU *rapdu) {
   current_occurrence = 0;
-  if (P1 > 2 || P2 != 0x04) EXCEPT(SW_WRONG_P1P2);
+  if (P1 > 0x02 || P2 != 0x04) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x06) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x60 || DATA[1] != 0x04 || DATA[2] != 0x5C || DATA[3] != 0x02 || DATA[4] != 0x7F || DATA[5] != 0x21)
     EXCEPT(SW_WRONG_DATA);
@@ -1211,14 +1231,8 @@ static int openpgp_get_next_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x7F || P2 != 0x21) EXCEPT(SW_WRONG_P1P2);
   if (LC > 0) EXCEPT(SW_WRONG_LENGTH);
   int len;
-  ++current_occurrence;
-  if (current_occurrence == 1) {
-    len = read_file(DEC_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
-  } else if (current_occurrence == 2) {
-    len = read_file(AUT_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
-  } else {
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  }
+  if (++current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  len = read_file(key_info[current_occurrence].cert_path, RDATA, 0, MAX_CERT_LENGTH);
   if (len < 0) return -1;
   LL = len;
   return 0;
