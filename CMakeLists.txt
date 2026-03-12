@@ -34,6 +34,11 @@ endif(ENABLE_DUMB_DONGLE)
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
+# tinycbor: freestanding mode (no floating-point, no tools/examples/json)
+set(WITH_FREESTANDING ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+add_subdirectory(tinycbor EXCLUDE_FROM_ALL)
+
 if(DEFINED PRODUCT_NAME)
     add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif()
@@ -45,8 +50,6 @@ file(
     interfaces/*.c
     littlefs/lfs.c
     littlefs/lfs_util.c
-    tinycbor/src/cborencoder.c
-    tinycbor/src/cborparser.c
 )
 add_library(canokey-core ${SRC})
 
@@ -67,7 +70,6 @@ target_include_directories(
     PUBLIC
         include
         littlefs
-        tinycbor/src
         interfaces/USB/device
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
@@ -75,7 +77,7 @@ target_include_directories(
         interfaces/USB/class/kbdhid
         interfaces/USB/class/webusb
 )
-target_link_libraries(canokey-core canokey-crypto)
+target_link_libraries(canokey-core canokey-crypto tinycbor)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
