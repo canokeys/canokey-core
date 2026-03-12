@@ -564,14 +564,14 @@ static int oath_calculate_all(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(RDATA + off_out, record.name, record.name_len);
     off_out += record.name_len;
 
+    uint8_t tag = 0;
     if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
-      RDATA[off_out++] = OATH_TAG_NO_RESP;
-      RDATA[off_out++] = 1;
-      RDATA[off_out++] = record.key[1];
-      continue;
+      tag = OATH_TAG_NO_RESP;
+    } else if (record.prop & OATH_PROP_TOUCH) {
+      tag = OATH_TAG_REQ_TOUCH;
     }
-    if (record.prop & OATH_PROP_TOUCH) {
-      RDATA[off_out++] = OATH_TAG_REQ_TOUCH;
+    if (tag != 0) {
+      RDATA[off_out++] = tag;
       RDATA[off_out++] = 1;
       RDATA[off_out++] = record.key[1];
       continue;

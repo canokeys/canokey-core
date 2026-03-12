@@ -1114,9 +1114,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   // 13. Sign the client_data_hash along with authData with the selected credential.
+  bool has_user = dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS];
+  bool has_multiple_credentials = ga.allow_list_size == 0 && credential_counter == 0 && number_of_credentials > 1;
   uint8_t map_items = 3;
-  if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) ++map_items; // user. For discoverable credentials on FIDO devices, at least user "id" is mandatory.
-  if (ga.allow_list_size == 0 && credential_counter == 0 && number_of_credentials > 1) ++map_items; // numberOfCredentials
+  if (has_user) ++map_items; // user. For discoverable credentials on FIDO devices, at least user "id" is mandatory.
+  if (has_multiple_credentials) ++map_items; // numberOfCredentials
   if (dc.has_large_blob_key) ++map_items; // largeBlobKey
   ret = cbor_encoder_create_map(encoder, &map, map_items);
   CHECK_CBOR_RET(ret);
@@ -1143,7 +1145,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   len = sizeof(data_buf);
   uint8_t flags = (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
-                            dc.credential_id.alg_type, dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS],
+                            dc.credential_id.alg_type, has_user,
                             dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, MC_RESP_AUTH_DATA);
@@ -1165,7 +1167,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   CHECK_CBOR_RET(ret);
 
   // user
-  if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) {
+  if (has_user) {
     ret = cbor_encode_int(&map, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 3 : 1);
@@ -1190,7 +1192,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CHECK_CBOR_RET(ret);
   }
 
-  if (ga.allow_list_size == 0 && credential_counter == 0 && number_of_credentials > 1) {
+  if (has_multiple_credentials) {
     ret = cbor_encode_int(&map, GA_RESP_NUMBER_OF_CREDENTIALS);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, number_of_credentials);
@@ -2168,64 +2170,64 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
   cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);
 
   uint8_t cmd = *req++;
+  uint8_t status = CTAP2_ERR_UNHANDLED_REQUEST;
   switch (cmd) {
     case CTAP_MAKE_CREDENTIAL:
       DBG_MSG("-----------------MC-------------------\n");
-      *resp = ctap_make_credential(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_make_credential(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_GET_ASSERTION:
       DBG_MSG("-----------------GA-------------------\n");
-      *resp = ctap_get_assertion(&encoder, req, req_len, false);
-      SET_RESP();
-      break;
+      status = ctap_get_assertion(&encoder, req, req_len, false);
+      goto set_resp;
     case CTAP_GET_NEXT_ASSERTION:
       DBG_MSG("----------------NEXT------------------\n");
-      *resp = ctap_get_next_assertion(&encoder);
-      SET_RESP();
-      break;
+      status = ctap_get_next_assertion(&encoder);
+      goto set_resp;
     case CTAP_GET_INFO:
       DBG_MSG("-----------------GI-------------------\n");
-      *resp = ctap_get_info(&encoder);
-      SET_RESP();
-      break;
+      status = ctap_get_info(&encoder);
+      goto set_resp;
     case CTAP_CLIENT_PIN:
       DBG_MSG("-----------------CP-------------------\n");
-      *resp = ctap_client_pin(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_client_pin(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_RESET:
       DBG_MSG("----------------RESET-----------------\n");
       *resp = ctap_reset_data();
-      *resp_len = 1;
-      break;
+      goto finish_status_only;
     case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2
       cmd = CTAP_CREDENTIAL_MANAGEMENT;
     case CTAP_CREDENTIAL_MANAGEMENT:
       DBG_MSG("----------------CM--------------------\n");
-      *resp = ctap_credential_management(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_credential_management(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_SELECTION:
       DBG_MSG("----------------SELECTION-------------\n");
-      *resp = ctap_selection();
-      SET_RESP();
-      break;
+      status = ctap_selection();
+      goto set_resp;
     case CTAP_LARGE_BLOBS:
       DBG_MSG("----------------LB--------------------\n");
-      *resp = ctap_large_blobs(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_large_blobs(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_CONFIG:
       DBG_MSG("----------------CONFIG----------------\n");
       *resp = CTAP2_ERR_UNHANDLED_REQUEST;
-      *resp_len = 1;
-      break;
+      goto finish_status_only;
     default:
       *resp = CTAP2_ERR_UNHANDLED_REQUEST;
-      *resp_len = 1;
-      break;
+      goto finish_status_only;
   }
+
+set_resp:
+  *resp = status;
+  SET_RESP();
+  goto finish;
+
+finish_status_only:
+  *resp_len = 1;
+
+finish:
   last_cmd = cmd;
   if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
     last_cmd = CTAP_INVALID_CMD;
