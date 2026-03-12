@@ -2168,32 +2168,28 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
   cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);
 
   uint8_t cmd = *req++;
+  uint8_t status;
   switch (cmd) {
     case CTAP_MAKE_CREDENTIAL:
       DBG_MSG("-----------------MC-------------------\n");
-      *resp = ctap_make_credential(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_make_credential(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_GET_ASSERTION:
       DBG_MSG("-----------------GA-------------------\n");
-      *resp = ctap_get_assertion(&encoder, req, req_len, false);
-      SET_RESP();
-      break;
+      status = ctap_get_assertion(&encoder, req, req_len, false);
+      goto set_resp;
     case CTAP_GET_NEXT_ASSERTION:
       DBG_MSG("----------------NEXT------------------\n");
-      *resp = ctap_get_next_assertion(&encoder);
-      SET_RESP();
-      break;
+      status = ctap_get_next_assertion(&encoder);
+      goto set_resp;
     case CTAP_GET_INFO:
       DBG_MSG("-----------------GI-------------------\n");
-      *resp = ctap_get_info(&encoder);
-      SET_RESP();
-      break;
+      status = ctap_get_info(&encoder);
+      goto set_resp;
     case CTAP_CLIENT_PIN:
       DBG_MSG("-----------------CP-------------------\n");
-      *resp = ctap_client_pin(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_client_pin(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_RESET:
       DBG_MSG("----------------RESET-----------------\n");
       *resp = ctap_reset_data();
@@ -2203,19 +2199,16 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
       cmd = CTAP_CREDENTIAL_MANAGEMENT;
     case CTAP_CREDENTIAL_MANAGEMENT:
       DBG_MSG("----------------CM--------------------\n");
-      *resp = ctap_credential_management(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_credential_management(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_SELECTION:
       DBG_MSG("----------------SELECTION-------------\n");
-      *resp = ctap_selection();
-      SET_RESP();
-      break;
+      status = ctap_selection();
+      goto set_resp;
     case CTAP_LARGE_BLOBS:
       DBG_MSG("----------------LB--------------------\n");
-      *resp = ctap_large_blobs(&encoder, req, req_len);
-      SET_RESP();
-      break;
+      status = ctap_large_blobs(&encoder, req, req_len);
+      goto set_resp;
     case CTAP_CONFIG:
       DBG_MSG("----------------CONFIG----------------\n");
       *resp = CTAP2_ERR_UNHANDLED_REQUEST;
@@ -2226,6 +2219,15 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
       *resp_len = 1;
       break;
   }
+  last_cmd = cmd;
+  if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
+    last_cmd = CTAP_INVALID_CMD;
+  }
+  return 0;
+
+set_resp:
+  *resp = status;
+  SET_RESP();
   last_cmd = cmd;
   if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
     last_cmd = CTAP_INVALID_CMD;
