@@ -127,16 +127,16 @@ int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   return ret;
 }
 
-static int build_ecdsa_cose_key(uint8_t *data, int algo, int curve) {
+static int build_cose_key(uint8_t *data, int kty, int algo, int curve, bool has_y) {
   uint8_t buf[80];
   CborEncoder encoder, map_encoder;
 
   cbor_encoder_init(&encoder, buf, sizeof(buf), 0);
-  CborError ret = cbor_encoder_create_map(&encoder, &map_encoder, 5);
+  CborError ret = cbor_encoder_create_map(&encoder, &map_encoder, has_y ? 5 : 4);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_KTY);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_KTY_EC2);
+  ret = cbor_encode_int(&map_encoder, kty);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_ALG);
   CHECK_CBOR_RET(ret);
@@ -150,41 +150,12 @@ static int build_ecdsa_cose_key(uint8_t *data, int algo, int curve) {
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_byte_string(&map_encoder, data, 32);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_Y);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_byte_string(&map_encoder, data + 32, 32);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_close_container(&encoder, &map_encoder);
-  CHECK_CBOR_RET(ret);
-
-  const int len = cbor_encoder_get_buffer_size(&encoder, buf);
-  memcpy(data, buf, len);
-  return len;
-}
-
-static int build_ed25519_cose_key(uint8_t *data) {
-  uint8_t buf[50];
-  CborEncoder encoder, map_encoder;
-
-  cbor_encoder_init(&encoder, buf, sizeof(buf), 0);
-  CborError ret = cbor_encoder_create_map(&encoder, &map_encoder, 4);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_KTY);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_KTY_OKP);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_ALG);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_ALG_EDDSA);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_CRV);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_CRV_ED25519);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_X);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_byte_string(&map_encoder, data, 32);
-  CHECK_CBOR_RET(ret);
+  if (has_y) {
+    ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_Y);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_byte_string(&map_encoder, data + 32, 32);
+    CHECK_CBOR_RET(ret);
+  }
   ret = cbor_encoder_close_container(&encoder, &map_encoder);
   CHECK_CBOR_RET(ret);
 
@@ -288,11 +259,11 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
     }
     int cose_key_size;
     if (alg_type == COSE_ALG_ES256) {
-      cose_key_size = build_ecdsa_cose_key(ad->at.public_key, COSE_ALG_ES256, COSE_KEY_CRV_P256);
+      cose_key_size = build_cose_key(ad->at.public_key, COSE_KEY_KTY_EC2, COSE_ALG_ES256, COSE_KEY_CRV_P256, true);
     } else if (alg_type == COSE_ALG_EDDSA) {
-      cose_key_size = build_ed25519_cose_key(ad->at.public_key);
+      cose_key_size = build_cose_key(ad->at.public_key, COSE_KEY_KTY_OKP, COSE_ALG_EDDSA, COSE_KEY_CRV_ED25519, false);
     } else if (alg_type == ctap_sm2_attr.algo_id) {
-      cose_key_size = build_ecdsa_cose_key(ad->at.public_key, ctap_sm2_attr.algo_id, ctap_sm2_attr.curve_id);
+      cose_key_size = build_cose_key(ad->at.public_key, COSE_KEY_KTY_EC2, ctap_sm2_attr.algo_id, ctap_sm2_attr.curve_id, true);
     } else {
       DBG_MSG("Unknown algorithm type\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1365,49 +1336,23 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_array(&map, &array, ctap_sm2_attr.enabled ? 3 : 2);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_map(&array, &sub_map, 2);
-  CHECK_CBOR_RET(ret);
   {
-    ret = cbor_encode_text_stringz(&sub_map, "alg");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&sub_map, COSE_ALG_ES256);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "public-key");
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&array, &sub_map);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_map(&array, &sub_map, 2);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_text_stringz(&sub_map, "alg");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&sub_map, COSE_ALG_EDDSA);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "public-key");
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&array, &sub_map);
-  CHECK_CBOR_RET(ret);
-  if (ctap_sm2_attr.enabled) {
-    ret = cbor_encoder_create_map(&array, &sub_map, 2);
-    CHECK_CBOR_RET(ret);
-    {
+    const int algs[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, ctap_sm2_attr.algo_id};
+    int n_algs = ctap_sm2_attr.enabled ? 3 : 2;
+    for (int i = 0; i < n_algs; ++i) {
+      ret = cbor_encoder_create_map(&array, &sub_map, 2);
+      CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, "alg");
       CHECK_CBOR_RET(ret);
-      ret = cbor_encode_int(&sub_map, ctap_sm2_attr.algo_id);
+      ret = cbor_encode_int(&sub_map, algs[i]);
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, "type");
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_text_stringz(&sub_map, "public-key");
       CHECK_CBOR_RET(ret);
+      ret = cbor_encoder_close_container(&array, &sub_map);
+      CHECK_CBOR_RET(ret);
     }
-    ret = cbor_encoder_close_container(&array, &sub_map);
-    CHECK_CBOR_RET(ret);
   }
   ret = cbor_encoder_close_container(&map, &array);
   CHECK_CBOR_RET(ret);
@@ -1470,7 +1415,7 @@ static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size
     CHECK_CBOR_RET(ret);
     ptr = key_map.data.ptr - 1;
     cp_get_public_key(ptr);
-    cose_key_size = build_ecdsa_cose_key(ptr, COSE_ALG_ECDH_ES_HKDF_256, COSE_KEY_CRV_P256);
+    cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_EC2, COSE_ALG_ECDH_ES_HKDF_256, COSE_KEY_CRV_P256, true);
     key_map.data.ptr = ptr + cose_key_size;
     ret = cbor_encoder_close_container(&map, &key_map);
     CHECK_CBOR_RET(ret);
@@ -1721,29 +1666,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     DBG_MSG("%d RPs found\n", counter);
     size = read_file(DC_META_FILE, &meta, idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    ret = cbor_encoder_create_map(encoder, &map, 3);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, CM_RESP_RP);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, 1);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "id");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_string(&sub_map, (const char *)meta.rp_id, meta.rp_id_len);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_close_container(&map, &sub_map);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, CM_RESP_RP_ID_HASH);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&map, meta.rp_id_hash, SHA256_DIGEST_LENGTH);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, CM_RESP_TOTAL_RPS);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, counter);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_close_container(encoder, &map);
-    CHECK_CBOR_RET(ret);
-    break;
+    goto encode_rp_begin;
 
   case CM_CMD_ENUMERATE_RPS_GET_NEXT_RP:
     if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT ||
@@ -1761,7 +1684,9 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
         break;
       }
     }
-    ret = cbor_encoder_create_map(encoder, &map, 2);
+    counter = -1; // signal: no TOTAL_RPS field
+  encode_rp_begin:
+    ret = cbor_encoder_create_map(encoder, &map, counter >= 0 ? 3 : 2);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, CM_RESP_RP);
     CHECK_CBOR_RET(ret);
@@ -1777,6 +1702,12 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_byte_string(&map, meta.rp_id_hash, SHA256_DIGEST_LENGTH);
     CHECK_CBOR_RET(ret);
+    if (counter >= 0) {
+      ret = cbor_encode_int(&map, CM_RESP_TOTAL_RPS);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_int(&map, counter);
+      CHECK_CBOR_RET(ret);
+    }
     ret = cbor_encoder_close_container(encoder, &map);
     CHECK_CBOR_RET(ret);
     break;
@@ -1858,10 +1789,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     uint8_t *ptr = sub_map.data.ptr - 1;
     memcpy(ptr, key.pub, PUBLIC_KEY_LENGTH[key_type]);
     if (dc.credential_id.alg_type == COSE_ALG_ES256) {
-      int cose_key_size = build_ecdsa_cose_key(ptr, COSE_ALG_ES256, COSE_KEY_CRV_P256);
+      int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_EC2, COSE_ALG_ES256, COSE_KEY_CRV_P256, true);
       sub_map.data.ptr = ptr + cose_key_size;
     } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
-      int cose_key_size = build_ed25519_cose_key(ptr);
+      int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_OKP, COSE_ALG_EDDSA, COSE_KEY_CRV_ED25519, false);
       sub_map.data.ptr = ptr + cose_key_size;
     }
     ret = cbor_encoder_close_container(&map, &sub_map);
