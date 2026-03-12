@@ -263,7 +263,8 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
     } else if (alg_type == COSE_ALG_EDDSA) {
       cose_key_size = build_cose_key(ad->at.public_key, COSE_KEY_KTY_OKP, COSE_ALG_EDDSA, COSE_KEY_CRV_ED25519, false);
     } else if (alg_type == ctap_sm2_attr.algo_id) {
-      cose_key_size = build_cose_key(ad->at.public_key, COSE_KEY_KTY_EC2, ctap_sm2_attr.algo_id, ctap_sm2_attr.curve_id, true);
+      cose_key_size =
+          build_cose_key(ad->at.public_key, COSE_KEY_KTY_EC2, ctap_sm2_attr.algo_id, ctap_sm2_attr.curve_id, true);
     } else {
       DBG_MSG("Unknown algorithm type\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1675,14 +1676,19 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       return CTAP2_ERR_NOT_ALLOWED;
     }
     last_cm_cmd = cm.sub_command;
-    for (int i = idx + 1; i < n_rp; ++i) {
-      size = read_file(DC_META_FILE, &meta, i * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
-      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (meta.slots > 0) {
-        DBG_MSG("Fetch RP at %d\n", i);
-        idx = i;
-        break;
+    {
+      bool found = false;
+      for (int i = idx + 1; i < n_rp; ++i) {
+        size = read_file(DC_META_FILE, &meta, i * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
+        if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        if (meta.slots > 0) {
+          DBG_MSG("Fetch RP at %d\n", i);
+          idx = i;
+          found = true;
+          break;
+        }
       }
+      if (!found) return CTAP2_ERR_NOT_ALLOWED;
     }
     counter = -1; // signal: no TOTAL_RPS field
   encode_rp_begin:

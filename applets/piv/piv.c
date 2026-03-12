@@ -69,10 +69,10 @@
 #define IDX_RESPONSE  (TAG_RESPONSE  - 0x80)
 
 /**
- * Build a 0x7C TLV wrapper around data already placed in RDATA.
- * For short lengths (< 128): header at RDATA[0..3], data starts at RDATA+4.
- * For extended lengths (>= 128): header at RDATA[0..7], data starts at RDATA+8.
- * Returns the total LL value and sets *data_offset to where data should be written.
+ * Build a 0x7C TLV wrapper in rdata.
+ * For short lengths (< 128): header at rdata[0..3], data starts at rdata+4.
+ * For extended lengths (>= 128): header at rdata[0..7], data starts at rdata+8.
+ * Returns the total response length (header + data_len).
  */
 static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len) {
   if (data_len < 128) {
@@ -794,7 +794,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       EXCEPT(SW_WRONG_LENGTH);
     }
 
-        LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
@@ -837,7 +837,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
 
-        LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PRIVATE_KEY_LENGTH[key.meta.type]);
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PRIVATE_KEY_LENGTH[key.meta.type]);
 
     memzero(&key, sizeof(key));
   }

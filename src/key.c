@@ -308,7 +308,8 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
     size_t total_data = 0;
-    for (int i = 0; i < 6; ++i) total_data += comp_len[i];
+    for (int i = 0; i < 6; ++i)
+      total_data += comp_len[i];
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
     if (len != total_data) return KEY_ERR_DATA;
