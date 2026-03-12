@@ -2193,8 +2193,7 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     case CTAP_RESET:
       DBG_MSG("----------------RESET-----------------\n");
       *resp = ctap_reset_data();
-      *resp_len = 1;
-      break;
+      goto finish_status_only;
     case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2
       cmd = CTAP_CREDENTIAL_MANAGEMENT;
     case CTAP_CREDENTIAL_MANAGEMENT:
@@ -2212,22 +2211,21 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     case CTAP_CONFIG:
       DBG_MSG("----------------CONFIG----------------\n");
       *resp = CTAP2_ERR_UNHANDLED_REQUEST;
-      *resp_len = 1;
-      break;
+      goto finish_status_only;
     default:
       *resp = CTAP2_ERR_UNHANDLED_REQUEST;
-      *resp_len = 1;
-      break;
+      goto finish_status_only;
   }
-  last_cmd = cmd;
-  if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
-    last_cmd = CTAP_INVALID_CMD;
-  }
-  return 0;
 
 set_resp:
   *resp = status;
   SET_RESP();
+  goto finish;
+
+finish_status_only:
+  *resp_len = 1;
+
+finish:
   last_cmd = cmd;
   if (*resp != 0) { // do not allow GET_NEXT_ASSERTION if error occurs
     last_cmd = CTAP_INVALID_CMD;
