@@ -272,25 +272,19 @@ int openpgp_install(uint8_t reset) {
   uint8_t buf[20];
   memzero(buf, sizeof(buf));
   ck_key_t key = {.meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.type = RSA2048};
+  static const char *const key_paths[] = {SIG_KEY_PATH, DEC_KEY_PATH, AUT_KEY_PATH};
+  static const uint8_t key_usages[] = {SIGN, ENCRYPT, SIGN};
+  static const uint8_t ca_attrs[] = {ATTR_CA1_FP, ATTR_CA2_FP, ATTR_CA3_FP};
+  static const char *const cert_paths[] = {SIG_CERT_PATH, DEC_CERT_PATH, AUT_CERT_PATH};
 
-  key.meta.usage = SIGN;
-  if (ck_write_key(SIG_KEY_PATH, &key) < 0) return -1;
-  if (openpgp_key_set_fingerprint(SIG_KEY_PATH, buf) < 0) return -1;
-  if (openpgp_key_set_datetime(SIG_KEY_PATH, buf) < 0) return -1;
-
-  key.meta.usage = ENCRYPT;
-  if (ck_write_key(DEC_KEY_PATH, &key) < 0) return -1;
-  if (openpgp_key_set_fingerprint(DEC_KEY_PATH, buf) < 0) return -1;
-  if (openpgp_key_set_datetime(DEC_KEY_PATH, buf) < 0) return -1;
-
-  key.meta.usage = SIGN;
-  if (ck_write_key(AUT_KEY_PATH, &key) < 0) return -1;
-  if (openpgp_key_set_fingerprint(AUT_KEY_PATH, buf) < 0) return -1;
-  if (openpgp_key_set_datetime(AUT_KEY_PATH, buf) < 0) return -1;
-
-  if (write_attr(DATA_PATH, ATTR_CA1_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
-  if (write_attr(DATA_PATH, ATTR_CA2_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
-  if (write_attr(DATA_PATH, ATTR_CA3_FP, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
+  for (size_t i = 0; i < 3; ++i) {
+    key.meta.usage = key_usages[i];
+    if (ck_write_key(key_paths[i], &key) < 0) return -1;
+    if (openpgp_key_set_fingerprint(key_paths[i], buf) < 0) return -1;
+    if (openpgp_key_set_datetime(key_paths[i], buf) < 0) return -1;
+    if (write_attr(DATA_PATH, ca_attrs[i], buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
+    if (write_file(cert_paths[i], NULL, 0, 0, 1) < 0) return -1;
+  }
 
   // Touch policy
   touch_cache_time = 0;
@@ -298,11 +292,6 @@ int openpgp_install(uint8_t reset) {
 
   // Digital Sig Counter
   if (reset_sig_counter() < 0) return -1;
-
-  // Certs
-  if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(DEC_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(AUT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
 
   // PIN data
   if (pin_create(&pw1, "123456", 6, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
@@ -328,10 +317,16 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
   uint16_t off = 0;
   int len, retries;
-  key_meta_t sig_meta, dec_meta, aut_meta;
-  if (ck_read_key_metadata(SIG_KEY_PATH, &sig_meta) < 0) return -1;
-  if (ck_read_key_metadata(DEC_KEY_PATH, &dec_meta) < 0) return -1;
-  if (ck_read_key_metadata(AUT_KEY_PATH, &aut_meta) < 0) return -1;
+  key_meta_t metas[3];
+  static const char *const key_paths[] = {SIG_KEY_PATH, DEC_KEY_PATH, AUT_KEY_PATH};
+  static const char *const cert_paths[] = {SIG_CERT_PATH, DEC_CERT_PATH, AUT_CERT_PATH};
+  static const uint8_t ca_attrs[] = {ATTR_CA1_FP, ATTR_CA2_FP, ATTR_CA3_FP};
+  static const uint16_t alg_tags[] = {TAG_ALGORITHM_ATTRIBUTES_SIG, TAG_ALGORITHM_ATTRIBUTES_DEC, TAG_ALGORITHM_ATTRIBUTES_AUT};
+  static const uint8_t key_refs[] = {0x01, 0x02, 0x03};
+  static const uint8_t uif_tags[] = {TAG_UIF_SIG, TAG_UIF_DEC, TAG_UIF_AUT};
+  for (size_t i = 0; i < 3; ++i) {
+    if (ck_read_key_metadata(key_paths[i], &metas[i]) < 0) return -1;
+  }
 
   switch (tag) {
   case TAG_AID:
@@ -424,20 +419,12 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     memcpy(RDATA + off, extended_capabilities, sizeof(extended_capabilities));
     off += sizeof(extended_capabilities);
 
-    RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_SIG;
-    len = fill_attr(&sig_meta, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
-
-    RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_DEC;
-    len = fill_attr(&dec_meta, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
-
-    RDATA[off++] = TAG_ALGORITHM_ATTRIBUTES_AUT;
-    len = fill_attr(&aut_meta, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
+    for (size_t i = 0; i < 3; ++i) {
+      RDATA[off++] = alg_tags[i];
+      len = fill_attr(&metas[i], RDATA + off);
+      if (len < 0) return -1;
+      off += len;
+    }
 
     RDATA[off++] = TAG_PW_STATUS;
     RDATA[off++] = PW_STATUS_LENGTH;
@@ -457,63 +444,41 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     RDATA[off++] = TAG_KEY_FINGERPRINTS;
     RDATA[off++] = KEY_FINGERPRINT_LENGTH * 3;
-    len = openpgp_key_get_fingerprint(SIG_KEY_PATH, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
-    len = openpgp_key_get_fingerprint(DEC_KEY_PATH, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
-    len = openpgp_key_get_fingerprint(AUT_KEY_PATH, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
+    for (size_t i = 0; i < 3; ++i) {
+      len = openpgp_key_get_fingerprint(key_paths[i], RDATA + off);
+      if (len < 0) return -1;
+      off += len;
+    }
 
     RDATA[off++] = TAG_CA_FINGERPRINTS;
     RDATA[off++] = KEY_FINGERPRINT_LENGTH * 3;
-    len = read_attr(DATA_PATH, ATTR_CA1_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
-    if (len < 0) return -1;
-    off += len;
-    len = read_attr(DATA_PATH, ATTR_CA2_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
-    if (len < 0) return -1;
-    off += len;
-    len = read_attr(DATA_PATH, ATTR_CA3_FP, RDATA + off, KEY_FINGERPRINT_LENGTH);
-    if (len < 0) return -1;
-    off += len;
+    for (size_t i = 0; i < 3; ++i) {
+      len = read_attr(DATA_PATH, ca_attrs[i], RDATA + off, KEY_FINGERPRINT_LENGTH);
+      if (len < 0) return -1;
+      off += len;
+    }
 
     RDATA[off++] = TAG_KEY_GENERATION_DATES;
     RDATA[off++] = KEY_DATETIME_LENGTH * 3;
-    len = openpgp_key_get_datetime(SIG_KEY_PATH, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
-    len = openpgp_key_get_datetime(DEC_KEY_PATH, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
-    len = openpgp_key_get_datetime(AUT_KEY_PATH, RDATA + off);
-    if (len < 0) return -1;
-    off += len;
+    for (size_t i = 0; i < 3; ++i) {
+      len = openpgp_key_get_datetime(key_paths[i], RDATA + off);
+      if (len < 0) return -1;
+      off += len;
+    }
 
     RDATA[off++] = TAG_KEY_INFO;
     RDATA[off++] = 6;
-    RDATA[off++] = 0x01; // Key-ref: sig
-    RDATA[off++] = sig_meta.origin;
-    RDATA[off++] = 0x02; // Key-ref: dec
-    RDATA[off++] = dec_meta.origin;
-    RDATA[off++] = 0x03; // Key-ref: aut
-    RDATA[off++] = aut_meta.origin;
+    for (size_t i = 0; i < 3; ++i) {
+      RDATA[off++] = key_refs[i];
+      RDATA[off++] = metas[i].origin;
+    }
 
-    RDATA[off++] = TAG_UIF_SIG;
-    RDATA[off++] = 2;
-    RDATA[off++] = get_touch_policy(sig_meta.touch_policy);
-    RDATA[off++] = 0x20; // button
-
-    RDATA[off++] = TAG_UIF_DEC;
-    RDATA[off++] = 2;
-    RDATA[off++] = get_touch_policy(dec_meta.touch_policy);
-    RDATA[off++] = 0x20; // button
-
-    RDATA[off++] = TAG_UIF_AUT;
-    RDATA[off++] = 2;
-    RDATA[off++] = get_touch_policy(aut_meta.touch_policy);
-    RDATA[off++] = 0x20; // button
+    for (size_t i = 0; i < 3; ++i) {
+      RDATA[off++] = uif_tags[i];
+      RDATA[off++] = 2;
+      RDATA[off++] = get_touch_policy(metas[i].touch_policy);
+      RDATA[off++] = 0x20; // button
+    }
 
     uint16_t ddo_length = off - length_pos - 2;
     RDATA[length_pos] = HI(ddo_length);
@@ -536,14 +501,8 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_CARDHOLDER_CERTIFICATE:
-    if (current_occurrence == 0)
-      len = read_file(SIG_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
-    else if (current_occurrence == 1)
-      len = read_file(DEC_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
-    else if (current_occurrence == 2)
-      len = read_file(AUT_CERT_PATH, RDATA, 0, MAX_CERT_LENGTH);
-    else
-      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    if (current_occurrence > 2) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    len = read_file(cert_paths[current_occurrence], RDATA, 0, MAX_CERT_LENGTH);
     if (len < 0) return -1;
     LL = len;
     break;
@@ -578,12 +537,10 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_INFO:
-    RDATA[0] = 0x01; // Key-ref: sig
-    RDATA[1] = sig_meta.origin;
-    RDATA[2] = 0x02; // Key-ref: dec
-    RDATA[3] = dec_meta.origin;
-    RDATA[4] = 0x03; // Key-ref: aut
-    RDATA[5] = aut_meta.origin;
+    for (size_t i = 0; i < 3; ++i) {
+      RDATA[i * 2] = key_refs[i];
+      RDATA[i * 2 + 1] = metas[i].origin;
+    }
     LL = 6;
     break;
 
@@ -995,6 +952,13 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   int err;
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
   key_meta_t meta;
+  static const char *const cert_paths[] = {SIG_CERT_PATH, DEC_CERT_PATH, AUT_CERT_PATH};
+  static const uint16_t fp_tags[] = {TAG_KEY_SIG_FINGERPRINT, TAG_KEY_DEC_FINGERPRINT, TAG_KEY_AUT_FINGERPRINT};
+  static const char *const key_paths[] = {SIG_KEY_PATH, DEC_KEY_PATH, AUT_KEY_PATH};
+  static const uint16_t ca_fp_tags[] = {TAG_KEY_CA1_FINGERPRINT, TAG_KEY_CA2_FINGERPRINT, TAG_KEY_CA3_FINGERPRINT};
+  static const uint8_t ca_attrs[] = {ATTR_CA1_FP, ATTR_CA2_FP, ATTR_CA3_FP};
+  static const uint16_t dt_tags[] = {TAG_KEY_SIG_GENERATION_DATES, TAG_KEY_DEC_GENERATION_DATES, TAG_KEY_AUT_GENERATION_DATES};
+  static const uint16_t uif_tags[] = {TAG_UIF_SIG, TAG_UIF_DEC, TAG_UIF_AUT};
 
   switch (tag) {
   case TAG_NAME:
@@ -1024,14 +988,8 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   case TAG_CARDHOLDER_CERTIFICATE:
     if (LC > MAX_CERT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (current_occurrence == 0)
-      err = write_file(SIG_CERT_PATH, DATA, 0, LC, 1);
-    else if (current_occurrence == 1)
-      err = write_file(DEC_CERT_PATH, DATA, 0, LC, 1);
-    else if (current_occurrence == 2)
-      err = write_file(AUT_CERT_PATH, DATA, 0, LC, 1);
-    else
-      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    if (current_occurrence > 2) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    err = write_file(cert_paths[current_occurrence], DATA, 0, LC, 1);
     if (err < 0) return -1;
     current_occurrence = 0;
     break;
@@ -1074,30 +1032,20 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
     DBG_MSG("New attr type: %d\n", type);
 
-    const char *key_path = NULL;
-    if (tag == TAG_ALGORITHM_ATTRIBUTES_SIG) {
-      key_path = SIG_KEY_PATH;
-    } else if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) {
-      key_path = DEC_KEY_PATH;
-    } else {
-      key_path = AUT_KEY_PATH;
-    }
+    size_t key_index = tag == TAG_ALGORITHM_ATTRIBUTES_SIG ? 0 : tag == TAG_ALGORITHM_ATTRIBUTES_DEC ? 1 : 2;
+    const char *key_path = key_paths[key_index];
 
     if (ck_read_key_metadata(key_path, &meta) < 0) return -1;
     if (type == meta.type) { // Key algorithm attribute unchanged
       DBG_MSG("Attr unchanged\n");
       break;
     }
-    if (tag == TAG_ALGORITHM_ATTRIBUTES_DEC) {
-      if (type == ED25519) {
+    if ((key_index == 1 && type == ED25519) || (key_index != 1 && type == X25519)) {
+      if (key_index == 1)
         DBG_MSG("DEC key disallows ed25519\n");
-        EXCEPT(SW_WRONG_DATA);
-      }
-    } else { // TAG_ALGORITHM_ATTRIBUTES_SIG or TAG_ALGORITHM_ATTRIBUTES_AUT
-      if (type == X25519) {
+      else
         DBG_MSG("SIG/AUT key disallows x25519\n");
-        EXCEPT(SW_WRONG_DATA);
-      }
+      EXCEPT(SW_WRONG_DATA);
     }
     meta.type = type;
     meta.origin = KEY_ORIGIN_NOT_PRESENT;
@@ -1111,48 +1059,39 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     break;
 
   case TAG_KEY_SIG_FINGERPRINT:
-    if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_fingerprint(SIG_KEY_PATH, DATA) < 0) return -1;
-    break;
-
   case TAG_KEY_DEC_FINGERPRINT:
-    if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_fingerprint(DEC_KEY_PATH, DATA) < 0) return -1;
-    break;
-
   case TAG_KEY_AUT_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_fingerprint(AUT_KEY_PATH, DATA) < 0) return -1;
+    for (size_t i = 0; i < 3; ++i) {
+      if (tag == fp_tags[i]) {
+        if (openpgp_key_set_fingerprint(key_paths[i], DATA) < 0) return -1;
+        break;
+      }
+    }
     break;
 
   case TAG_KEY_CA1_FINGERPRINT:
-    if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (write_attr(DATA_PATH, ATTR_CA1_FP, DATA, KEY_FINGERPRINT_LENGTH) < 0) return -1;
-    break;
-
   case TAG_KEY_CA2_FINGERPRINT:
-    if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (write_attr(DATA_PATH, ATTR_CA2_FP, DATA, KEY_FINGERPRINT_LENGTH) < 0) return -1;
-    break;
-
   case TAG_KEY_CA3_FINGERPRINT:
     if (LC != KEY_FINGERPRINT_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (write_attr(DATA_PATH, ATTR_CA3_FP, DATA, KEY_FINGERPRINT_LENGTH) < 0) return -1;
+    for (size_t i = 0; i < 3; ++i) {
+      if (tag == ca_fp_tags[i]) {
+        if (write_attr(DATA_PATH, ca_attrs[i], DATA, KEY_FINGERPRINT_LENGTH) < 0) return -1;
+        break;
+      }
+    }
     break;
 
   case TAG_KEY_SIG_GENERATION_DATES:
-    if (LC != KEY_DATETIME_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_datetime(SIG_KEY_PATH, DATA) < 0) return -1;
-    break;
-
   case TAG_KEY_DEC_GENERATION_DATES:
-    if (LC != KEY_DATETIME_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_datetime(DEC_KEY_PATH, DATA) < 0) return -1;
-    break;
-
   case TAG_KEY_AUT_GENERATION_DATES:
     if (LC != KEY_DATETIME_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (openpgp_key_set_datetime(AUT_KEY_PATH, DATA) < 0) return -1;
+    for (size_t i = 0; i < 3; ++i) {
+      if (tag == dt_tags[i]) {
+        if (openpgp_key_set_datetime(key_paths[i], DATA) < 0) return -1;
+        break;
+      }
+    }
     break;
 
   case TAG_RESETTING_CODE:
@@ -1168,29 +1107,18 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     }
 
   case TAG_UIF_SIG:
-    if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
-    if (ck_read_key_metadata(SIG_KEY_PATH, &meta) < 0) return -1;
-    if (get_touch_policy(meta.touch_policy) == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
-    meta.touch_policy = UIF_TO_TOUCH_POLICY[DATA[0]];
-    if (ck_write_key_metadata(SIG_KEY_PATH, &meta) < 0) return -1;
-    break;
-
   case TAG_UIF_DEC:
-    if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
-    if (ck_read_key_metadata(DEC_KEY_PATH, &meta) < 0) return -1;
-    if (get_touch_policy(meta.touch_policy) == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
-    meta.touch_policy = UIF_TO_TOUCH_POLICY[DATA[0]];
-    if (ck_write_key_metadata(DEC_KEY_PATH, &meta) < 0) return -1;
-    break;
-
   case TAG_UIF_AUT:
-    if (ck_read_key_metadata(AUT_KEY_PATH, &meta) < 0) return -1;
-    if (get_touch_policy(meta.touch_policy) == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
-    meta.touch_policy = UIF_TO_TOUCH_POLICY[DATA[0]];
-    if (ck_write_key_metadata(AUT_KEY_PATH, &meta) < 0) return -1;
+    if (LC != 2) EXCEPT(SW_WRONG_LENGTH);
+    for (size_t i = 0; i < 3; ++i) {
+      if (tag != uif_tags[i]) continue;
+      if (ck_read_key_metadata(key_paths[i], &meta) < 0) return -1;
+      if (get_touch_policy(meta.touch_policy) == UIF_PERMANENTLY) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+      if (DATA[0] > UIF_PERMANENTLY) EXCEPT(SW_WRONG_DATA);
+      meta.touch_policy = UIF_TO_TOUCH_POLICY[DATA[0]];
+      if (ck_write_key_metadata(key_paths[i], &meta) < 0) return -1;
+      break;
+    }
     break;
 
   case TAG_UIF_CACHE_TIME:

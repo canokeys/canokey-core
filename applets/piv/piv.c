@@ -206,16 +206,24 @@ int piv_install(const uint8_t reset) {
     return 0;
   }
 
+  static const char *const object_paths[] = {
+      PIV_AUTH_CERT_PATH,       SIG_CERT_PATH,           KEY_MANAGEMENT_CERT_PATH, CARD_AUTH_CERT_PATH, KEY_MANAGEMENT_82_CERT_PATH,
+      KEY_MANAGEMENT_83_CERT_PATH, PI_PATH,             FINGER_PATH,              FACE_PATH,
+  };
+  static const struct {
+    const char *path;
+    key_usage_t usage;
+    pin_policy_t pin_policy;
+  } key_specs[] = {
+      {AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE},          {SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE},
+      {KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE}, {CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER},
+      {KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE}, {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+  };
+
   // objects
-  if (write_file(PIV_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(SIG_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(KEY_MANAGEMENT_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(CARD_AUTH_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(KEY_MANAGEMENT_82_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(KEY_MANAGEMENT_83_CERT_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(PI_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(FINGER_PATH, NULL, 0, 0, 1) < 0) return -1;
-  if (write_file(FACE_PATH, NULL, 0, 0, 1) < 0) return -1;
+  for (size_t i = 0; i < sizeof(object_paths) / sizeof(object_paths[0]); ++i) {
+    if (write_file(object_paths[i], NULL, 0, 0, 1) < 0) return -1;
+  }
   uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf1, 0x01, 0x21,
                        0xf2, 0x01, 0x21, 0xf3, 0x00, 0xf4, 0x01, 0x00, 0xf5, 0x01, 0x10, 0xf6, 0x00, 0xf7,
@@ -230,12 +238,9 @@ int piv_install(const uint8_t reset) {
   if (write_file(CHUID_PATH, chuid_tpl, 0, sizeof(chuid_tpl), 1) < 0) return -1;
 
   // keys
-  if (create_key(AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE) < 0) return -1;
-  if (create_key(SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
-  if (create_key(CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
-  if (create_key(KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE) < 0) return -1;
+  for (size_t i = 0; i < sizeof(key_specs) / sizeof(key_specs[0]); ++i) {
+    if (create_key(key_specs[i].path, key_specs[i].usage, key_specs[i].pin_policy) < 0) return -1;
+  }
 
   // TDEA admin key
   ck_key_t admin_key = {.meta = {.type = TDEA,
@@ -253,8 +258,8 @@ int piv_install(const uint8_t reset) {
   if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
-  
-  if (get_file_size(ALGORITHM_EXT_CONFIG_PATH) == sizeof(alg_ext_cfg))  return 0;
+
+  if (get_file_size(ALGORITHM_EXT_CONFIG_PATH) == sizeof(alg_ext_cfg)) return 0;
   // Algorithm extensions
   alg_ext_cfg.enabled = 1;
   alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
