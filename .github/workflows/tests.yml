@@ -2,13 +2,28 @@ name: tests
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
+  format_check:
+    name: Check code formatting
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        submodules: false
+
+    - name: Run clang-format check
+      run: |
+        find . -path ./canokey-crypto -prune -o -path ./littlefs -prune -o -path ./tinycbor -prune -o \
+          \( -name '*.c' -o -name '*.h' \) -print \
+          | xargs clang-format --dry-run --Werror
+
   build_tools:
     name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       env:
         cache-name: tools-deb
       with:
@@ -66,31 +81,31 @@ jobs:
         pip3 install --upgrade pip
 
     - name: Prepare - Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: "^1.24"
       id: go
 
     - name: Prepare - Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
 
     - name: Prepare - Checkout piv-go
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: canokeys/piv-go
         path: piv-go
 
     - name: Prepare - Checkout ckman
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: canokeys/yubikey-manager
         ref: canokey-next
         path: yubikey-manager
 
     - name: Cache - GO Modules
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       env:
         cache-name: go_mod
       with:
@@ -98,7 +113,7 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
     - name: Cache - Patched GnuPG
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       env:
         cache-name: cache_gpg_binary
       with:
@@ -106,7 +121,7 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
     - name: Cache - FIDO tools
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       env:
         cache-name: cache_fido_tools
       with:
@@ -577,7 +592,7 @@ jobs:
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Wrap-up - Coveralls
-      uses: coverallsapp/github-action@master
+      uses: coverallsapp/github-action@v2
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
     
