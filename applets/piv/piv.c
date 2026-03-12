@@ -1003,14 +1003,13 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
       const int retries = pin_get_retries(p);
       if (retries < 0) return -1;
 
-      RDATA[pos++] = 0x01; // Algorithm
-      RDATA[pos++] = 0x01;
-      RDATA[pos++] = 0xFF;
-      RDATA[pos++] = 0x05;
-      RDATA[pos++] = 0x01;
+      static const uint8_t pin_meta_prefix[] = {0x01, 0x01, 0xFF, 0x05, 0x01};
+      static const uint8_t pin_meta_mid[] = {0x06, 0x02};
+      memcpy(RDATA + pos, pin_meta_prefix, sizeof(pin_meta_prefix));
+      pos += sizeof(pin_meta_prefix);
       RDATA[pos++] = default_value;
-      RDATA[pos++] = 0x06;
-      RDATA[pos++] = 0x02;
+      memcpy(RDATA + pos, pin_meta_mid, sizeof(pin_meta_mid));
+      pos += sizeof(pin_meta_mid);
       RDATA[pos++] = default_retries;
       RDATA[pos++] = retries;
       break;
@@ -1019,15 +1018,9 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     {
       uint8_t default_value;
       if (read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
-      RDATA[pos++] = 0x01; // Algorithm
-      RDATA[pos++] = 0x01;
-      RDATA[pos++] = 0x03;
-      RDATA[pos++] = 0x02; // Policy
-      RDATA[pos++] = 0x02;
-      RDATA[pos++] = 0x00;
-      RDATA[pos++] = 0x01;
-      RDATA[pos++] = 0x05;
-      RDATA[pos++] = 0x01;
+      static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, 0x03, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
+      memcpy(RDATA + pos, mgmt_meta_prefix, sizeof(mgmt_meta_prefix));
+      pos += sizeof(mgmt_meta_prefix);
       RDATA[pos++] = default_value;
       break;
     }
