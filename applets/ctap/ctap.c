@@ -1114,9 +1114,11 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   // 13. Sign the client_data_hash along with authData with the selected credential.
+  bool has_user = dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS];
+  bool has_multiple_credentials = ga.allow_list_size == 0 && credential_counter == 0 && number_of_credentials > 1;
   uint8_t map_items = 3;
-  if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) ++map_items; // user. For discoverable credentials on FIDO devices, at least user "id" is mandatory.
-  if (ga.allow_list_size == 0 && credential_counter == 0 && number_of_credentials > 1) ++map_items; // numberOfCredentials
+  if (has_user) ++map_items; // user. For discoverable credentials on FIDO devices, at least user "id" is mandatory.
+  if (has_multiple_credentials) ++map_items; // numberOfCredentials
   if (dc.has_large_blob_key) ++map_items; // largeBlobKey
   ret = cbor_encoder_create_map(encoder, &map, map_items);
   CHECK_CBOR_RET(ret);
@@ -1143,7 +1145,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   len = sizeof(data_buf);
   uint8_t flags = (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | (up ? FLAGS_UP : 0);
   ret = ctap_make_auth_data(ga.rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
-                            dc.credential_id.alg_type, dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS],
+                            dc.credential_id.alg_type, has_user,
                             dc.credential_id.nonce[CREDENTIAL_NONCE_CP_POS]);
   if (ret != 0) return ret;
   ret = cbor_encode_int(&map, MC_RESP_AUTH_DATA);
@@ -1165,7 +1167,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   CHECK_CBOR_RET(ret);
 
   // user
-  if (dc.credential_id.nonce[CREDENTIAL_NONCE_DC_POS]) {
+  if (has_user) {
     ret = cbor_encode_int(&map, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
     CHECK_CBOR_RET(ret);
     ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 3 : 1);
@@ -1190,7 +1192,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     CHECK_CBOR_RET(ret);
   }
 
-  if (ga.allow_list_size == 0 && credential_counter == 0 && number_of_credentials > 1) {
+  if (has_multiple_credentials) {
     ret = cbor_encode_int(&map, GA_RESP_NUMBER_OF_CREDENTIALS);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, number_of_credentials);
