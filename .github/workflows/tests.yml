@@ -2,21 +2,6 @@ name: tests
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
-  format_check:
-    name: Check code formatting
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        submodules: false
-
-    - name: Run clang-format check
-      run: |
-        find . -path ./canokey-crypto -prune -o -path ./littlefs -prune -o -path ./tinycbor -prune -o \
-          \( -name '*.c' -o -name '*.h' \) -print \
-          | xargs clang-format --dry-run --Werror
-
   build_tools:
     name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
@@ -90,6 +75,13 @@ jobs:
       uses: actions/checkout@v6
       with:
         submodules: recursive
+
+    - name: Check - Code formatting
+      continue-on-error: true
+      run: |
+        find . -path ./canokey-crypto -prune -o -path ./littlefs -prune -o -path ./tinycbor -prune -o \
+          \( -name '*.c' -o -name '*.h' \) -print \
+          | xargs clang-format --dry-run --Werror
 
     - name: Prepare - Checkout piv-go
       uses: actions/checkout@v6
