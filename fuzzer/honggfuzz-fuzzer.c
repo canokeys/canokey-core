@@ -104,7 +104,7 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
       ep->xfer_count = len;
       DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       memcpy(setup_buffer, buf, ep->xfer_count);
-      ep->xfer_buff =+ ep->xfer_count;
+      ep->xfer_buff = +ep->xfer_count;
       USBD_LL_SetupStage(&usb_device, setup_buffer);
     } else {
       if (len > ep->xfer_len) {

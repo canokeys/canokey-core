@@ -30,11 +30,11 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
 
   case SECP521R1:
     if (include_length) {
-      buf[off++] = 0x81; // Two-byte length
+      buf[off++] = 0x81;        // Two-byte length
       buf[off++] = key_len + 4; // tag, length (two bytes), and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = 0x81; // Two-byte length
+    buf[off++] = 0x81;        // Two-byte length
     buf[off++] = key_len + 1; // 0x04
     buf[off++] = 0x04;
     memcpy(&buf[off], key->ecc.pub, key_len);
@@ -113,7 +113,7 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       }
       key->meta.touch_policy = *buf++;
       break;
-    
+
     default:
       buf = end;
       break;

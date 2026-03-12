@@ -141,7 +141,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   }
 
   channel.cid = frame.cid;
-  
+
   if (FRAME_TYPE(frame) == TYPE_INIT) {
     // DBG_MSG("CTAP init frame, cmd=0x%x\n", (int)frame.init.cmd);
     if (!wait_for_user && channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) { // self abort is ok
@@ -164,7 +164,8 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     memcpy(channel.data, frame.init.data, copied);
     channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
   } else {
-    // DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd, (int)FRAME_SEQ(frame));
+    // DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd,
+    // (int)FRAME_SEQ(frame));
     if (channel.state == CTAPHID_IDLE) goto consume_frame; // ignore spurious continuation packet
     if (FRAME_SEQ(frame) != channel.seq++) {
       DBG_MSG("seq=%d\n", (int)FRAME_SEQ(frame));
@@ -214,7 +215,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       else
         CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
       break;
-     case CTAPHID_WINK:
+    case CTAPHID_WINK:
       DBG_MSG("WINK\n");
       if (!wait_for_user) ctap_wink();
       CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, 0);

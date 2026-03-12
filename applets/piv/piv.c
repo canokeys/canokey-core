@@ -13,6 +13,7 @@
 #include <rsa.h>
 
 // data object path
+// clang-format off
 #define MAX_DO_PATH_LEN             9
 #define PIV_AUTH_CERT_PATH          "piv-pauc" // 9A
 #define SIG_CERT_PATH               "piv-sigc" // 9C
@@ -25,8 +26,10 @@
 #define PI_PATH                     "piv-pi"   // printed information
 #define FINGER_PATH                 "piv-fig"  // card holder fingerprints
 #define FACE_PATH                   "piv-face" // card holder facial image
+// clang-format on
 
 // key tags and path
+// clang-format off
 #define TAG_PIN_KEY_DEFAULT        0x81       // DO if pin or admin key is default
 #define AUTH_KEY_PATH              "piv-pauk" // 9A
 #define SIG_KEY_PATH               "piv-sigk" // 9C
@@ -35,8 +38,10 @@
 #define KEY_MANAGEMENT_82_KEY_PATH "piv-82"   // 82
 #define KEY_MANAGEMENT_83_KEY_PATH "piv-83"   // 83
 #define CARD_ADMIN_KEY_PATH        "piv-admk" // 9B
+// clang-format on
 
 // alg
+// clang-format off
 #define ALGORITHM_EXT_CONFIG_PATH  "piv-alg"
 #define ALG_DEFAULT   0x00
 #define ALG_TDEA_3KEY 0x03
@@ -51,8 +56,10 @@
 #define ALG_SM2_DEFAULT       0x54
 
 #define TDEA_BLOCK_SIZE      8
+// clang-format on
 
 // tags for general auth
+// clang-format off
 #define TAG_WITNESS   0x80
 #define TAG_CHALLENGE 0x81
 #define TAG_RESPONSE  0x82
@@ -61,17 +68,22 @@
 #define IDX_CHALLENGE (TAG_CHALLENGE - 0x80)
 #define IDX_RESPONSE  (TAG_RESPONSE  - 0x80)
 #define IDX_EXP       (TAG_EXP       - 0x80)
+// clang-format on
 
 // offsets for auth
+// clang-format off
 #define OFFSET_AUTH_STATE     0
 #define OFFSET_AUTH_CHALLENGE 1
 #define LENGTH_CHALLENGE      16
 #define LENGTH_AUTH_STATE     (1 + LENGTH_CHALLENGE)
+// clang-format on
 
 // states for auth
+// clang-format off
 #define AUTH_STATE_NONE     0
 #define AUTH_STATE_EXTERNAL 1
 #define AUTH_STATE_MUTUAL   2
+// clang-format on
 
 #define PIV_TOUCH(cached)                                                                                              \
   do {                                                                                                                 \
@@ -112,10 +124,10 @@ static void authenticate_reset(void) {
 
 static int create_key(const char *path, const key_usage_t usage, const pin_policy_t pin_policy) {
   const ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
-                           .origin = KEY_ORIGIN_NOT_PRESENT,
-                           .usage = usage,
-                           .pin_policy = pin_policy,
-                           .touch_policy = TOUCH_POLICY_NEVER}};
+                                 .origin = KEY_ORIGIN_NOT_PRESENT,
+                                 .usage = usage,
+                                 .pin_policy = pin_policy,
+                                 .touch_policy = TOUCH_POLICY_NEVER}};
   if (ck_write_key(path, &key) < 0) return -1;
   return 0;
 }
@@ -175,15 +187,15 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
 
 int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta_t *meta) {
   switch (meta->pin_policy) {
-    case PIN_POLICY_NEVER:
-      break;
-    default:
-    case PIN_POLICY_ONCE:
-      if (pin.is_validated == 0) return 1;
-      break;
-    case PIN_POLICY_ALWAYS:
-      if (pin.is_validated == 0 || pin_is_consumed) return 1;
-      break;
+  case PIN_POLICY_NEVER:
+    break;
+  default:
+  case PIN_POLICY_ONCE:
+    if (pin.is_validated == 0) return 1;
+    break;
+  case PIN_POLICY_ALWAYS:
+    if (pin.is_validated == 0 || pin_is_consumed) return 1;
+    break;
   }
   pin_is_consumed = 1;
   return 0;
@@ -207,17 +219,27 @@ int piv_install(const uint8_t reset) {
   }
 
   static const char *const object_paths[] = {
-      PIV_AUTH_CERT_PATH,       SIG_CERT_PATH,           KEY_MANAGEMENT_CERT_PATH, CARD_AUTH_CERT_PATH, KEY_MANAGEMENT_82_CERT_PATH,
-      KEY_MANAGEMENT_83_CERT_PATH, PI_PATH,             FINGER_PATH,              FACE_PATH,
+      PIV_AUTH_CERT_PATH,
+      SIG_CERT_PATH,
+      KEY_MANAGEMENT_CERT_PATH,
+      CARD_AUTH_CERT_PATH,
+      KEY_MANAGEMENT_82_CERT_PATH,
+      KEY_MANAGEMENT_83_CERT_PATH,
+      PI_PATH,
+      FINGER_PATH,
+      FACE_PATH,
   };
   static const struct {
     const char *path;
     key_usage_t usage;
     pin_policy_t pin_policy;
   } key_specs[] = {
-      {AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE},          {SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE},
-      {KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE}, {CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER},
-      {KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE}, {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+      {AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE},
+      {SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE},
+      {KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+      {CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER},
+      {KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+      {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
   };
 
   // objects
@@ -411,8 +433,8 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   } else if (DATA[1] == 3) {
     if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
     // Reading Printed Information, Fingerprints, and Facial Images requires PIN verification
-    if ((DATA[4] == 0x09 || DATA[4] == 0x03 || DATA[4] == 0x08) && 
-      !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if ((DATA[4] == 0x09 || DATA[4] == 0x03 || DATA[4] == 0x08) && !pin.is_validated)
+      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     const char *path = get_object_path_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     const int size = get_file_size(path);
@@ -579,7 +601,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   // User presence test
-  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS) PIV_TOUCH(key.meta.touch_policy == TOUCH_POLICY_CACHED);
+  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS)
+    PIV_TOUCH(key.meta.touch_policy == TOUCH_POLICY_CACHED);
 
   //
   // CASE 1 - INTERNAL AUTHENTICATE (Key ID = 9A / 9E)
@@ -641,8 +664,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
         // prepend zeros
         memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]),
-                DATA + pos[IDX_CHALLENGE],
-                len[IDX_CHALLENGE]);
+                DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE]);
         memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
         input_len = PRIVATE_KEY_LENGTH[key.meta.type];
       }
@@ -653,7 +675,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       }
 
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-        sig_len = (int) ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
+        sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
       }
 
       RDATA[0] = 0x7C;
@@ -663,7 +685,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       LL = sig_len + 4;
 
       memzero(&key, sizeof(key));
-    } else return -1;
+    } else
+      return -1;
   }
 
   //
@@ -705,9 +728,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
     DBG_MSG("Case 3\n");
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL ||
-        P2 != 0x9B ||
-        TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
         memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_RESPONSE], TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -756,9 +777,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
     DBG_MSG("Case 5\n");
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL ||
-        P2 != 0x9B ||
-        TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
         memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_WITNESS], TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
@@ -809,7 +828,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     start_quick_blinking(0);
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA + 4) < 0) {
+    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0),
+             RDATA + 4) < 0) {
       ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
       return -1;
@@ -992,75 +1012,75 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
 
   int pos = 0;
   switch (P2) {
-    case 0x80:  // PIN
-    case 0x81:  // PUK
-    {
-      const pin_t *p = P2 == 0x80 ? &pin : &puk;
-      uint8_t default_value;
-      if (read_attr(p->path, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
-      const int default_retries = pin_get_default_retries(p);
-      if (default_value < 0) return -1;
-      const int retries = pin_get_retries(p);
-      if (retries < 0) return -1;
+  case 0x80: // PIN
+  case 0x81: // PUK
+  {
+    const pin_t *p = P2 == 0x80 ? &pin : &puk;
+    uint8_t default_value;
+    if (read_attr(p->path, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
+    const int default_retries = pin_get_default_retries(p);
+    if (default_value < 0) return -1;
+    const int retries = pin_get_retries(p);
+    if (retries < 0) return -1;
 
-      static const uint8_t pin_meta_prefix[] = {0x01, 0x01, 0xFF, 0x05, 0x01};
-      static const uint8_t pin_meta_mid[] = {0x06, 0x02};
-      memcpy(RDATA + pos, pin_meta_prefix, sizeof(pin_meta_prefix));
-      pos += sizeof(pin_meta_prefix);
-      RDATA[pos++] = default_value;
-      memcpy(RDATA + pos, pin_meta_mid, sizeof(pin_meta_mid));
-      pos += sizeof(pin_meta_mid);
-      RDATA[pos++] = default_retries;
-      RDATA[pos++] = retries;
-      break;
-    }
-    case 0x9B:  // Management
-    {
-      uint8_t default_value;
-      if (read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
-      static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, 0x03, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
-      memcpy(RDATA + pos, mgmt_meta_prefix, sizeof(mgmt_meta_prefix));
-      pos += sizeof(mgmt_meta_prefix);
-      RDATA[pos++] = default_value;
-      break;
-    }
-    case 0x9A:  // Authentication
-    case 0x9C:  // Signing
-    case 0x9D:  // Key Management
-    case 0x9E:  // Card Authentication
-    case 0x82:  // Retired Key Management 1
-    case 0x83:  // Retired Key Management 2
-    {
-      const char *key_path = get_key_path(P2);
-      if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
+    static const uint8_t pin_meta_prefix[] = {0x01, 0x01, 0xFF, 0x05, 0x01};
+    static const uint8_t pin_meta_mid[] = {0x06, 0x02};
+    memcpy(RDATA + pos, pin_meta_prefix, sizeof(pin_meta_prefix));
+    pos += sizeof(pin_meta_prefix);
+    RDATA[pos++] = default_value;
+    memcpy(RDATA + pos, pin_meta_mid, sizeof(pin_meta_mid));
+    pos += sizeof(pin_meta_mid);
+    RDATA[pos++] = default_retries;
+    RDATA[pos++] = retries;
+    break;
+  }
+  case 0x9B: // Management
+  {
+    uint8_t default_value;
+    if (read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
+    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, 0x03, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
+    memcpy(RDATA + pos, mgmt_meta_prefix, sizeof(mgmt_meta_prefix));
+    pos += sizeof(mgmt_meta_prefix);
+    RDATA[pos++] = default_value;
+    break;
+  }
+  case 0x9A: // Authentication
+  case 0x9C: // Signing
+  case 0x9D: // Key Management
+  case 0x9E: // Card Authentication
+  case 0x82: // Retired Key Management 1
+  case 0x83: // Retired Key Management 2
+  {
+    const char *key_path = get_key_path(P2);
+    if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
 
-      ck_key_t key;
-      if (ck_read_key(key_path, &key) < 0) return -1;
-      DBG_KEY_META(&key.meta);
-      if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    ck_key_t key;
+    if (ck_read_key(key_path, &key) < 0) return -1;
+    DBG_KEY_META(&key.meta);
+    if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
-      RDATA[pos++] = 0x01; // Algorithm
-      RDATA[pos++] = 0x01;
-      RDATA[pos++] = key_type_to_algo_id(key.meta.type);
-      RDATA[pos++] = 0x02; // Policy
-      RDATA[pos++] = 0x02;
-      RDATA[pos++] = key.meta.pin_policy;
-      RDATA[pos++] = key.meta.touch_policy;
-      RDATA[pos++] = 0x03; // Origin
-      RDATA[pos++] = 0x01;
-      RDATA[pos++] = key.meta.origin;
-      RDATA[pos++] = 0x04; // Public
-      const int len = ck_encode_public_key(&key, &RDATA[pos], true);
-      if (len < 0) {
-        memzero(&key, sizeof(key));
-        return -1;
-      }
-      pos += len;
+    RDATA[pos++] = 0x01; // Algorithm
+    RDATA[pos++] = 0x01;
+    RDATA[pos++] = key_type_to_algo_id(key.meta.type);
+    RDATA[pos++] = 0x02; // Policy
+    RDATA[pos++] = 0x02;
+    RDATA[pos++] = key.meta.pin_policy;
+    RDATA[pos++] = key.meta.touch_policy;
+    RDATA[pos++] = 0x03; // Origin
+    RDATA[pos++] = 0x01;
+    RDATA[pos++] = key.meta.origin;
+    RDATA[pos++] = 0x04; // Public
+    const int len = ck_encode_public_key(&key, &RDATA[pos], true);
+    if (len < 0) {
       memzero(&key, sizeof(key));
-      break;
+      return -1;
     }
-    default:
-      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    pos += len;
+    memzero(&key, sizeof(key));
+    break;
+  }
+  default:
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
 
   LL = pos;

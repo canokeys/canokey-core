@@ -12,6 +12,7 @@
 #define FIRMWARE_VERSION 201
 
 // Filesystem Meta
+// clang-format off
 #define CTAP_CERT_FILE  "ctap_cert"
 #define KEY_ATTR        0x00
 #define SIGN_CTR_ATTR   0x01
@@ -25,8 +26,10 @@
 #define DC_META_FILE    "ctap_dm"
 #define LB_FILE         "ctap_lb"
 #define LB_FILE_TMP     "ctap_lbt"
+// clang-format on
 
 // Commands
+// clang-format off
 #define CTAP_INS_MSG               0x10
 
 #define CTAP_MAKE_CREDENTIAL       0x01
@@ -41,8 +44,10 @@
 #define CTAP_CONFIG                0x0D
 #define CTAP_CRED_MANAGE_LEGACY    0x41
 #define CTAP_INVALID_CMD           0xFF
+// clang-format on
 
 // Parsed params
+// clang-format off
 #define PARAM_CLIENT_DATA_HASH       (1 << 0)
 #define PARAM_RP                     (1 << 1)
 #define PARAM_USER                   (1 << 2)
@@ -63,27 +68,33 @@
 #define PARAM_SET                    (1 << 17)
 #define PARAM_OFFSET                 (1 << 18)
 #define PARAM_LENGTH                 (1 << 19)
+// clang-format on
 
 #define MC_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP | PARAM_USER | PARAM_PUB_KEY_CRED_PARAMS)
 #define GA_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP)
 #define CP_REQUIRED_MASK (PARAM_SUB_COMMAND)
 #define CM_REQUIRED_MASK (PARAM_SUB_COMMAND)
 
+// clang-format off
 #define OPTION_FALSE  0x0
 #define OPTION_TRUE   0x1
 #define OPTION_ABSENT 0x2
+// clang-format on
 
 #define FLAGS_UP (1)
 #define FLAGS_UV (1 << 2)
 #define FLAGS_AT (1 << 6)
 #define FLAGS_ED (1 << 7)
 
+// clang-format off
 #define CRED_PROTECT_ABSENT                                        0x00
 #define CRED_PROTECT_VERIFICATION_OPTIONAL                         0x01
 #define CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST 0x02
 #define CRED_PROTECT_VERIFICATION_REQUIRED                         0x03
+// clang-format on
 
 // Params for each command
+// clang-format off
 #define MC_REQ_CLIENT_DATA_HASH       0x01
 #define MC_REQ_RP                     0x02
 #define MC_REQ_USER                   0x03
@@ -181,6 +192,7 @@
 #define CM_RESP_TOTAL_CREDENTIALS                                 0x09
 #define CM_RESP_CRED_PROTECT                                      0x0A
 #define CM_RESP_LARGE_BLOB_KEY                                    0x0B
+// clang-format on
 
 #define LB_REQ_GET 0x01
 #define LB_REQ_SET 0x02
@@ -191,6 +203,7 @@
 #define LB_RESP_CONFIG 0x01
 
 // Size limits
+// clang-format off
 #define KH_KEY_SIZE                   32
 #define HE_KEY_SIZE                   32
 #define PRI_KEY_SIZE                  32
@@ -228,6 +241,7 @@
 #define LARGE_BLOB_KEY_SIZE           32
 #define LARGE_BLOB_SIZE_LIMIT         4096
 #define MAX_FRAGMENT_LENGTH           (MAX_CTAP_BUFSIZE - 64)
+// clang-format on
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -255,8 +269,8 @@ typedef struct {
 typedef struct {
   uint8_t numbers;
   uint8_t index; // enough when MAX_DC_NUM == 64
-  uint8_t pending_add: 1;
-  uint8_t pending_delete: 1;
+  uint8_t pending_add : 1;
+  uint8_t pending_delete : 1;
 } __packed CTAP_dc_general_attr;
 
 typedef struct {
@@ -283,9 +297,9 @@ typedef struct {
 } __packed CTAP_auth_data;
 
 typedef struct {
-  uint8_t up: 2;
-  uint8_t uv: 2;
-  uint8_t rk: 2;
+  uint8_t up : 2;
+  uint8_t uv : 2;
+  uint8_t rk : 2;
 } CTAP_options;
 
 typedef struct {
@@ -306,8 +320,8 @@ typedef struct {
   bool ext_large_blob_key;
   uint8_t ext_cred_protect;
   uint8_t ext_cred_blob[MAX_CRED_BLOB_LENGTH];
-  uint8_t ext_has_cred_blob: 1;
-  uint8_t ext_cred_blob_len: 7;
+  uint8_t ext_has_cred_blob : 1;
+  uint8_t ext_cred_blob_len : 7;
 } CTAP_make_credential;
 
 typedef struct {

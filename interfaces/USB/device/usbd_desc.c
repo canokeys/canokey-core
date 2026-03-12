@@ -381,11 +381,8 @@ const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed __attribute__((unus
 
 const uint8_t *USBD_ConfigurationDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
   USBD_DescriptorInit();
-  *length = USB_LEN_CFG_DESC +
-            sizeof(USBD_FS_IfDesc_CCID) +
-            sizeof(USBD_FS_IfDesc_WEBUSB) +
-            sizeof(USBD_FS_IfDesc_KBDHID) +
-            sizeof(USBD_FS_IfDesc_CTAPHID);
+  *length = USB_LEN_CFG_DESC + sizeof(USBD_FS_IfDesc_CCID) + sizeof(USBD_FS_IfDesc_WEBUSB) +
+            sizeof(USBD_FS_IfDesc_KBDHID) + sizeof(USBD_FS_IfDesc_CTAPHID);
   return global_buffer;
 }
 

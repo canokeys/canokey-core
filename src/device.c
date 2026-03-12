@@ -25,11 +25,9 @@ void device_loop(void) {
 
 bool device_allow_kbd_touch(void) {
   uint32_t now = device_get_tick();
-  if (!device_is_blinking() &&      // applets are not waiting for touch
-      now > TOUCH_AFTER_PWRON &&    // ignore touch for some time after power-on
-      now - TOUCH_EXPIRE_TIME > last_blink &&
-      get_touch_result() != TOUCH_NO
-  ) {
+  if (!device_is_blinking() &&   // applets are not waiting for touch
+      now > TOUCH_AFTER_PWRON && // ignore touch for some time after power-on
+      now - TOUCH_EXPIRE_TIME > last_blink && get_touch_result() != TOUCH_NO) {
     DBG_MSG("now=%lu last_blink=%lu\n", now, last_blink);
     return true;
   }
@@ -61,7 +59,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     DBG_MSG("Denied\n");
     return USER_PRESENCE_TIMEOUT;
   }
-  
+
   uint32_t start = device_get_tick();
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
@@ -69,7 +67,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 #ifdef DUMB_DONGLE
     break;
 #endif
-    // Keep blinking, in case other applet stops it 
+    // Keep blinking, in case other applet stops it
     start_blinking(0);
     // Nested CCID processing is not allowed
     if (entry != WAIT_ENTRY_CCID) CCID_Loop();

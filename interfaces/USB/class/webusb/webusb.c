@@ -46,7 +46,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       return USBD_FAIL;
     }
     state = STATE_HOLD_BUF;
-    //DBG_MSG("Buf Acquired\n");
+    // DBG_MSG("Buf Acquired\n");
     if (req->wLength > APDU_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
       USBD_CtlError(pdev, req);
@@ -69,7 +69,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
     break;
 
   case WEBUSB_REQ_STAT:
-    USBD_CtlSendData(pdev, (uint8_t*)&state, 1, WEBUSB_EP0_SENDER);
+    USBD_CtlSendData(pdev, (uint8_t *)&state, 1, WEBUSB_EP0_SENDER);
     break;
 
   default:
@@ -114,7 +114,7 @@ void WebUSB_Loop(void) {
 uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
 
-  //DBG_MSG("state = %d\n", state);
+  // DBG_MSG("state = %d\n", state);
   if (state == STATE_SENT_RESP) {
     // release_apdu_buffer(BUFFER_OWNER_WEBUSB);
     state = STATE_HOLD_BUF;

@@ -30,9 +30,7 @@ static enum { NONE, CC, NDEF } selected;
 
 void ndef_poweroff(void) { selected = NONE; }
 
-int ndef_get_read_only(void) {
-  return CC_W == 0xFF ? 1 : 0;
-}
+int ndef_get_read_only(void) { return CC_W == 0xFF ? 1 : 0; }
 
 int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
   switch (P1) {
@@ -50,7 +48,8 @@ int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_create_init_ndef() {
-  const char *init_data = "\x00\x11\xD1\x01\x0D\x55\x04""canokeys.org";
+  const char *init_data = "\x00\x11\xD1\x01\x0D\x55\x04"
+                          "canokeys.org";
   if (write_file(NDEF_FILE, init_data, 0, 19, 1) < -1) return -1;
   if (truncate_file(NDEF_FILE, NDEF_FILE_MAX_LENGTH) < -1) return -1; // Fill the file with zeros
   return 0;
