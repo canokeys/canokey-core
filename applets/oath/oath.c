@@ -13,6 +13,22 @@
 #define OATH_FILE "oath"
 #define MAX_RECORDS 100
 
+/**
+ * Find a record by name. On success, populates *record and *file_offset, returns slot index.
+ * Returns -1 if not found, -2 on I/O error.
+ */
+static int oath_find_record(const uint8_t *name, uint8_t name_len, OATH_RECORD *record, size_t *file_offset) {
+  const int size = get_file_size(OATH_FILE);
+  if (size < 0) return -2;
+  const size_t n_records = size / sizeof(OATH_RECORD);
+  for (size_t i = 0; i < n_records; ++i) {
+    *file_offset = i * sizeof(OATH_RECORD);
+    if (read_file(OATH_FILE, record, *file_offset, sizeof(OATH_RECORD)) < 0) return -2;
+    if (record->name_len == name_len && memcmp(record->name, name, name_len) == 0) return (int)i;
+  }
+  return -1;
+}
+
 static enum {
   REMAINING_NONE,
   REMAINING_CALC_FULL,
@@ -158,19 +174,14 @@ static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC < offset) EXCEPT(SW_WRONG_LENGTH);
 
   // find and delete the record
-  const int size = get_file_size(OATH_FILE);
-  if (size < 0) return -1;
-  const size_t n_records = size / sizeof(OATH_RECORD);
   OATH_RECORD record;
-  for (size_t i = 0; i != n_records; ++i) {
-    if (read_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) {
-      if (pass_delete_oath(i * sizeof(OATH_RECORD)) < 0) return -1;
-      record.name_len = 0;
-      return write_file(OATH_FILE, &record, i * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
-    }
-  }
-  EXCEPT(SW_DATA_INVALID);
+  size_t file_offset;
+  int idx = oath_find_record(name_ptr, name_len, &record, &file_offset);
+  if (idx == -2) return -1;
+  if (idx == -1) EXCEPT(SW_DATA_INVALID);
+  if (pass_delete_oath(file_offset) < 0) return -1;
+  record.name_len = 0;
+  return write_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD), 0);
 }
 
 static int oath_rename(const CAPDU *capdu, RAPDU *rapdu) {
@@ -424,18 +435,11 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
   if (offset > LC) EXCEPT(SW_WRONG_LENGTH);
 
   // find the record
-  const int size = get_file_size(OATH_FILE);
-  if (size < 0) return -1;
-  const uint32_t n_records = size / sizeof(OATH_RECORD);
-  uint32_t i;
-  uint32_t file_offset = 0;
   OATH_RECORD record;
-  for (i = 0; i != n_records; ++i) {
-    file_offset = i * sizeof(OATH_RECORD);
-    if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == name_len && memcmp(record.name, name_ptr, name_len) == 0) break;
-  }
-  if (i == n_records) EXCEPT(SW_DATA_INVALID);
+  size_t file_offset;
+  int idx = oath_find_record(name_ptr, name_len, &record, &file_offset);
+  if (idx == -2) return -1;
+  if (idx == -1) EXCEPT(SW_DATA_INVALID);
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   return pass_update_oath(P1 - 1, file_offset, record.name_len, record.name, P2);
@@ -453,18 +457,11 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC < offset) EXCEPT(SW_WRONG_LENGTH);
 
   // find the record
-  const int size = get_file_size(OATH_FILE);
-  if (size < 0) return -1;
-  const size_t n_records = size / sizeof(OATH_RECORD);
-  size_t i;
-  size_t file_offset = 0;
   OATH_RECORD record;
-  for (i = 0; i != n_records; ++i) {
-    file_offset = i * sizeof(OATH_RECORD);
-    if (read_file(OATH_FILE, &record, file_offset, sizeof(OATH_RECORD)) < 0) return -1;
-    if (record.name_len == name_len && memcmp(record.name, DATA + 2, name_len) == 0) break;
-  }
-  if (i == n_records) EXCEPT(SW_DATA_INVALID);
+  size_t file_offset;
+  int idx = oath_find_record(DATA + 2, name_len, &record, &file_offset);
+  if (idx == -2) return -1;
+  if (idx == -1) EXCEPT(SW_DATA_INVALID);
 
   if (record.prop & OATH_PROP_TOUCH) {
     if (!is_nfc()) {

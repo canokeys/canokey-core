@@ -34,10 +34,17 @@ endif(ENABLE_DUMB_DONGLE)
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
-# tinycbor: freestanding mode (no floating-point, no tools/examples/json)
-set(WITH_FREESTANDING ON CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-add_subdirectory(tinycbor EXCLUDE_FROM_ALL)
+# tinycbor: build sources directly instead of add_subdirectory.
+# tinycbor 7.0's CMakeLists.txt declares project(... LANGUAGES C CXX), which
+# triggers CXX compiler detection. On ARM cross-compilation the CXX test
+# program fails to link against the scatter file (L6236E: no RESET section).
+# Avoid this by not using tinycbor's own CMake build system.
+set(TINYCBOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tinycbor)
+# Generate the two headers that tinycbor 7.0's cbor.h expects
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-export.h
+    "#ifndef CBOR_API\n#define CBOR_API\n#endif\n")
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-version.h
+    "#define TINYCBOR_VERSION_MAJOR 7\n#define TINYCBOR_VERSION_MINOR 0\n#define TINYCBOR_VERSION_PATCH 0\n")
 
 if(DEFINED PRODUCT_NAME)
     add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
@@ -50,6 +57,8 @@ file(
     interfaces/*.c
     littlefs/lfs.c
     littlefs/lfs_util.c
+    tinycbor/src/cborencoder.c
+    tinycbor/src/cborparser.c
 )
 add_library(canokey-core ${SRC})
 
@@ -70,6 +79,8 @@ target_include_directories(
     PUBLIC
         include
         littlefs
+        tinycbor/src
+        ${CMAKE_CURRENT_BINARY_DIR}/tinycbor
         interfaces/USB/device
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
@@ -77,7 +88,8 @@ target_include_directories(
         interfaces/USB/class/kbdhid
         interfaces/USB/class/webusb
 )
-target_link_libraries(canokey-core canokey-crypto tinycbor)
+target_compile_definitions(canokey-core PRIVATE CBOR_NO_FLOATING_POINT CBOR_STATIC_DEFINE)
+target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 

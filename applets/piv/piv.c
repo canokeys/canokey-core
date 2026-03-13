@@ -67,6 +67,32 @@
 #define IDX_WITNESS   (TAG_WITNESS   - 0x80)
 #define IDX_CHALLENGE (TAG_CHALLENGE - 0x80)
 #define IDX_RESPONSE  (TAG_RESPONSE  - 0x80)
+
+/**
+ * Build a 0x7C TLV wrapper in rdata.
+ * For short lengths (< 128): header at rdata[0..3], data starts at rdata+4.
+ * For extended lengths (>= 128): header at rdata[0..7], data starts at rdata+8.
+ * Returns the total response length (header + data_len).
+ */
+static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len) {
+  if (data_len < 128) {
+    rdata[0] = 0x7C;
+    rdata[1] = (uint8_t)(data_len + 2);
+    rdata[2] = inner_tag;
+    rdata[3] = (uint8_t)data_len;
+    return data_len + 4;
+  } else {
+    rdata[0] = 0x7C;
+    rdata[1] = 0x82;
+    rdata[2] = HI(data_len + 4);
+    rdata[3] = LO(data_len + 4);
+    rdata[4] = inner_tag;
+    rdata[5] = 0x82;
+    rdata[6] = HI(data_len);
+    rdata[7] = LO(data_len);
+    return data_len + 8;
+  }
+}
 #define IDX_EXP       (TAG_EXP       - 0x80)
 // clang-format on
 
@@ -648,15 +674,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
         memzero(&key, sizeof(key));
         return -1;
       }
-      RDATA[0] = 0x7C;
-      RDATA[1] = 0x82;
-      RDATA[2] = HI(SIGNATURE_LENGTH[key.meta.type] + 4);
-      RDATA[3] = LO(SIGNATURE_LENGTH[key.meta.type] + 4);
-      RDATA[4] = TAG_RESPONSE;
-      RDATA[5] = 0x82;
-      RDATA[6] = HI(SIGNATURE_LENGTH[key.meta.type]);
-      RDATA[7] = LO(SIGNATURE_LENGTH[key.meta.type]);
-      LL = SIGNATURE_LENGTH[key.meta.type] + 8;
+      LL = piv_7c_wrap(RDATA, TAG_RESPONSE, SIGNATURE_LENGTH[key.meta.type]);
 
       memzero(&key, sizeof(key));
     } else if (IS_ECC(key.meta.type)) {
@@ -678,11 +696,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
         sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
       }
 
-      RDATA[0] = 0x7C;
-      RDATA[1] = sig_len + 2;
-      RDATA[2] = TAG_RESPONSE;
-      RDATA[3] = sig_len;
-      LL = sig_len + 4;
+      LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sig_len);
 
       memzero(&key, sizeof(key));
     } else
@@ -702,12 +716,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
-    RDATA[0] = 0x7C;
-    RDATA[1] = TDEA_BLOCK_SIZE + 2;
-    RDATA[2] = TAG_CHALLENGE;
-    RDATA[3] = TDEA_BLOCK_SIZE;
+    LL = piv_7c_wrap(RDATA, TAG_CHALLENGE, TDEA_BLOCK_SIZE);
     random_buffer(RDATA + 4, TDEA_BLOCK_SIZE);
-    LL = TDEA_BLOCK_SIZE + 4;
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
@@ -753,11 +763,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
     random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, TDEA_BLOCK_SIZE);
 
-    RDATA[0] = 0x7C;
-    RDATA[1] = TDEA_BLOCK_SIZE + 2;
-    RDATA[2] = TAG_WITNESS;
-    RDATA[3] = TDEA_BLOCK_SIZE;
-    LL = TDEA_BLOCK_SIZE + 4;
+    LL = piv_7c_wrap(RDATA, TAG_WITNESS, TDEA_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
@@ -788,11 +794,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       EXCEPT(SW_WRONG_LENGTH);
     }
 
-    RDATA[0] = 0x7C;
-    RDATA[1] = TDEA_BLOCK_SIZE + 2;
-    RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = TDEA_BLOCK_SIZE;
-    LL = TDEA_BLOCK_SIZE + 4;
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
@@ -835,11 +837,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       return -1;
     }
 
-    RDATA[0] = 0x7C;
-    RDATA[1] = PRIVATE_KEY_LENGTH[key.meta.type] + 2;
-    RDATA[2] = TAG_RESPONSE;
-    RDATA[3] = PRIVATE_KEY_LENGTH[key.meta.type];
-    LL = PRIVATE_KEY_LENGTH[key.meta.type] + 4;
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PRIVATE_KEY_LENGTH[key.meta.type]);
 
     memzero(&key, sizeof(key));
   }
