@@ -4,6 +4,8 @@
 #include <common.h>
 #include <key.h>
 
+ck_key_t key_buffer;
+
 #define KEY_META_ATTR 0xFF
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16

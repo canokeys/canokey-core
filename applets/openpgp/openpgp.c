@@ -300,11 +300,13 @@ int openpgp_install(uint8_t reset) {
   // Key data, default to RSA2048
   uint8_t buf[20];
   memzero(buf, sizeof(buf));
-  ck_key_t key = {.meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.type = RSA2048};
+  memzero(&key_buffer, sizeof(key_buffer));
+  key_buffer.meta.origin = KEY_ORIGIN_NOT_PRESENT;
+  key_buffer.meta.type = RSA2048;
 
   for (size_t i = 0; i < NUM_KEYS; ++i) {
-    key.meta.usage = key_info[i].key_usage;
-    if (ck_write_key(key_info[i].key_path, &key) < 0) return -1;
+    key_buffer.meta.usage = key_info[i].key_usage;
+    if (ck_write_key(key_info[i].key_path, &key_buffer) < 0) return -1;
     if (openpgp_key_set_fingerprint(key_info[i].key_path, buf) < 0) return -1;
     if (openpgp_key_set_datetime(key_info[i].key_path, buf) < 0) return -1;
     if (write_attr(DATA_PATH, key_info[i].ca_attr, buf, KEY_FINGERPRINT_LENGTH) < 0) return -1;
@@ -684,36 +686,35 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   const char *key_path = get_key_path(DATA[0]);
   if (key_path == NULL) EXCEPT(SW_WRONG_DATA);
 
-  ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) return -1;
+  if (ck_read_key(key_path, &key_buffer) < 0) return -1;
 
   if (P1 == 0x80) {
     start_quick_blinking(0);
-    if (ck_generate_key(&key) < 0) {
+    if (ck_generate_key(&key_buffer) < 0) {
       ERR_MSG("Generate key %s failed\n", key_path);
       return -1;
     }
-    if (ck_write_key(key_path, &key) < 0) {
+    if (ck_write_key(key_path, &key_buffer) < 0) {
       ERR_MSG("Write key %s failed\n", key_path);
       return -1;
     }
     DBG_MSG("Generate key %s successful\n", key_path);
-    DBG_KEY_META(&key.meta);
+    DBG_KEY_META(&key_buffer.meta);
   } else if (P1 == 0x81) {
-    if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) {
+    if (key_buffer.meta.origin == KEY_ORIGIN_NOT_PRESENT) {
       DBG_MSG("Generate key %s not set\n", key_path);
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
     }
   } else {
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
     EXCEPT(SW_WRONG_P1P2);
   }
 
   RDATA[0] = 0x7F;
   RDATA[1] = 0x49;
-  int len = ck_encode_public_key(&key, &RDATA[2], true);
-  memzero(&key, sizeof(key));
+  int len = ck_encode_public_key(&key_buffer, &RDATA[2], true);
+  memzero(&key_buffer, sizeof(key_buffer));
   if (len < 0) return -1;
   LL = len + 2;
   if (P1 == 0x80 && strcmp(key_path, SIG_KEY_PATH) == 0) return reset_sig_counter();
@@ -738,48 +739,48 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
 
   const char *key_path = is_sign ? SIG_KEY_PATH : AUT_KEY_PATH;
 
-  ck_key_t key;
-  if (ck_read_key_metadata(key_path, &key.meta) < 0) {
+  if (ck_read_key_metadata(key_path, &key_buffer.meta) < 0) {
     ERR_MSG("Read metadata failed\n");
     return -1;
   }
 
-  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
-  if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  if (key_buffer.meta.touch_policy == TOUCH_POLICY_CACHED || key_buffer.meta.touch_policy == TOUCH_POLICY_PERMANENT)
+    OPENPGP_TOUCH();
+  if (key_buffer.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if ((key_buffer.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   start_quick_blinking(0);
 
   size_t input_size = LC;
-  if (IS_RSA(key.meta.type)) {
-    if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
+  if (IS_RSA(key_buffer.meta.type)) {
+    if (LC > PUBLIC_KEY_LENGTH[key_buffer.meta.type] * 2 / 5) {
       DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-  } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-    if (LC > PRIVATE_KEY_LENGTH[key.meta.type]) {
+  } else if (IS_SHORT_WEIERSTRASS(key_buffer.meta.type)) {
+    if (LC > PRIVATE_KEY_LENGTH[key_buffer.meta.type]) {
       DBG_MSG("digest should has the same length as the private key\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
     // prepend zeros
-    memmove(DATA + (PRIVATE_KEY_LENGTH[key.meta.type] - LC), DATA, LC);
-    memzero(DATA, PRIVATE_KEY_LENGTH[key.meta.type] - LC);
-    input_size = PRIVATE_KEY_LENGTH[key.meta.type];
+    memmove(DATA + (PRIVATE_KEY_LENGTH[key_buffer.meta.type] - LC), DATA, LC);
+    memzero(DATA, PRIVATE_KEY_LENGTH[key_buffer.meta.type] - LC);
+    input_size = PRIVATE_KEY_LENGTH[key_buffer.meta.type];
   }
 
-  if (ck_read_key(key_path, &key) < 0) {
+  if (ck_read_key(key_path, &key_buffer) < 0) {
     ERR_MSG("Read key failed\n");
     return -1;
   }
 
-  DBG_KEY_META(&key.meta);
+  DBG_KEY_META(&key_buffer.meta);
 
-  const int sig_len = ck_sign(&key, DATA, input_size, RDATA);
+  const int sig_len = ck_sign(&key_buffer, DATA, input_size, RDATA);
   if (sig_len < 0) {
     ERR_MSG("Sign failed\n");
     return -1;
   }
 
-  memzero(&key, sizeof(key));
+  memzero(&key_buffer, sizeof(key_buffer));
   LL = sig_len;
 
   if (is_sign) {
@@ -884,49 +885,49 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   if (PW1_MODE82() == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-  ck_key_t key;
-  if (ck_read_key_metadata(DEC_KEY_PATH, &key.meta) < 0) return -1;
+  if (ck_read_key_metadata(DEC_KEY_PATH, &key_buffer.meta) < 0) return -1;
 
-  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_PERMANENT) OPENPGP_TOUCH();
-  if (key.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  if ((key.meta.usage & ENCRYPT) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  if (key_buffer.meta.touch_policy == TOUCH_POLICY_CACHED || key_buffer.meta.touch_policy == TOUCH_POLICY_PERMANENT)
+    OPENPGP_TOUCH();
+  if (key_buffer.meta.origin == KEY_ORIGIN_NOT_PRESENT) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if ((key_buffer.meta.usage & ENCRYPT) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   start_quick_blinking(0);
 
-  if (ck_read_key(DEC_KEY_PATH, &key) < 0) {
+  if (ck_read_key(DEC_KEY_PATH, &key_buffer) < 0) {
     ERR_MSG("Read DEC key failed\n");
     return -1;
   }
 
-  DBG_KEY_META(&key.meta);
+  DBG_KEY_META(&key_buffer.meta);
 
-  if (IS_RSA(key.meta.type)) {
-    DBG_MSG("Using RSA key: %d\n", key.meta.type);
+  if (IS_RSA(key_buffer.meta.type)) {
+    DBG_MSG("Using RSA key: %d\n", key_buffer.meta.type);
 
     size_t olen;
     uint8_t invalid_padding;
 
-    if (LC < PUBLIC_KEY_LENGTH[key.meta.type] + 1) {
+    if (LC < PUBLIC_KEY_LENGTH[key_buffer.meta.type] + 1) {
       DBG_MSG("Incorrect LC\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       EXCEPT(SW_WRONG_LENGTH);
     }
     if (DATA[0] != 0x00) { // Padding indicator byte (00) for RSA
       DBG_MSG("Incorrect padding indicator\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       EXCEPT(SW_WRONG_DATA);
     }
 
-    if (rsa_decrypt_pkcs_v15(&key.rsa, DATA + 1, &olen, RDATA, &invalid_padding) < 0) {
+    if (rsa_decrypt_pkcs_v15(&key_buffer.rsa, DATA + 1, &olen, RDATA, &invalid_padding) < 0) {
       ERR_MSG("Decrypt failed\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       if (invalid_padding) EXCEPT(SW_WRONG_DATA);
       return -1;
     }
 
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
     LL = olen;
-  } else if (IS_ECC(key.meta.type)) {
-    DBG_MSG("Using ECC key: %d\n", key.meta.type);
+  } else if (IS_ECC(key_buffer.meta.type)) {
+    DBG_MSG("Using ECC key: %d\n", key_buffer.meta.type);
 
     // check data and length first
     // A6 xx Cipher DO
@@ -934,27 +935,27 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
     //               86 xx // External Public Key (04 || x || y, for short Weierstrass; x for X25519)
     if (LC < 8) {
       DBG_MSG("Incorrect LC\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       EXCEPT(SW_WRONG_LENGTH);
     }
 
     int public_key_offset;
 
     // Use our new TLV parsing function to process the data
-    if (parse_ecc_key_tlv(DATA, LC, key.meta.type, &public_key_offset) < 0) {
+    if (parse_ecc_key_tlv(DATA, LC, key_buffer.meta.type, &public_key_offset) < 0) {
       DBG_MSG("Incorrect TLV data structure\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       EXCEPT(SW_WRONG_DATA);
     }
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA + public_key_offset, RDATA) < 0) {
+    if (ecdh(key_buffer.meta.type, key_buffer.ecc.pri, DATA + public_key_offset, RDATA) < 0) {
       ERR_MSG("ECDH failed\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       return -1;
     }
 
-    LL = PRIVATE_KEY_LENGTH[key.meta.type];
-    memzero(&key, sizeof(key));
+    LL = PRIVATE_KEY_LENGTH[key_buffer.meta.type];
+    memzero(&key_buffer, sizeof(key_buffer));
   } else {
     return -1;
   }
@@ -1194,20 +1195,19 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (*p != 0x00 && *p != 0x03) EXCEPT(SW_WRONG_DATA);
   p += *p + 1;
 
-  ck_key_t key;
-  if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
-  int err = ck_parse_openpgp(&key, p, LC - (p - DATA));
+  if (ck_read_key_metadata(key_path, &key_buffer.meta) < 0) return -1;
+  int err = ck_parse_openpgp(&key_buffer, p, LC - (p - DATA));
   if (err == KEY_ERR_LENGTH)
     EXCEPT(SW_WRONG_LENGTH);
   else if (err == KEY_ERR_DATA)
     EXCEPT(SW_WRONG_DATA);
   else if (err < 0)
     EXCEPT(SW_UNABLE_TO_PROCESS);
-  if (ck_write_key(key_path, &key) < 0) {
-    memzero(&key, sizeof(key));
+  if (ck_write_key(key_path, &key_buffer) < 0) {
+    memzero(&key_buffer, sizeof(key_buffer));
     return -1;
   }
-  memzero(&key, sizeof(key));
+  memzero(&key_buffer, sizeof(key_buffer));
 
   if (key_ref == 0xB6) return reset_sig_counter();
   return 0;

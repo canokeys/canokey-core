@@ -149,12 +149,13 @@ static void authenticate_reset(void) {
 }
 
 static int create_key(const char *path, const key_usage_t usage, const pin_policy_t pin_policy) {
-  const ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
-                                 .origin = KEY_ORIGIN_NOT_PRESENT,
-                                 .usage = usage,
-                                 .pin_policy = pin_policy,
-                                 .touch_policy = TOUCH_POLICY_NEVER}};
-  if (ck_write_key(path, &key) < 0) return -1;
+  memzero(&key_buffer, sizeof(key_buffer));
+  key_buffer.meta.type = KEY_TYPE_PKC_END;
+  key_buffer.meta.origin = KEY_ORIGIN_NOT_PRESENT;
+  key_buffer.meta.usage = usage;
+  key_buffer.meta.pin_policy = pin_policy;
+  key_buffer.meta.touch_policy = TOUCH_POLICY_NEVER;
+  if (ck_write_key(path, &key_buffer) < 0) return -1;
   return 0;
 }
 
@@ -291,13 +292,14 @@ int piv_install(const uint8_t reset) {
   }
 
   // TDEA admin key
-  ck_key_t admin_key = {.meta = {.type = TDEA,
-                                 .origin = KEY_ORIGIN_GENERATED,
-                                 .usage = ENCRYPT,
-                                 .pin_policy = PIN_POLICY_NEVER,
-                                 .touch_policy = TOUCH_POLICY_NEVER}};
-  memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
-  if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) return -1;
+  memzero(&key_buffer, sizeof(key_buffer));
+  key_buffer.meta.type = TDEA;
+  key_buffer.meta.origin = KEY_ORIGIN_GENERATED;
+  key_buffer.meta.usage = ENCRYPT;
+  key_buffer.meta.pin_policy = PIN_POLICY_NEVER;
+  key_buffer.meta.touch_policy = TOUCH_POLICY_NEVER;
+  memcpy(key_buffer.data, DEFAULT_MGMT_KEY, 24);
+  if (ck_write_key(CARD_ADMIN_KEY_PATH, &key_buffer) < 0) return -1;
   const uint8_t tmp = 0x01;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
@@ -592,19 +594,19 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_P1P2);
   }
 
-  ck_key_t key;
+  // key_buffer used instead of local ck_key_t
   if (P2 == 0x9B) { // Card admin
     if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
       EXCEPT(SW_WRONG_P1P2);
     }
   }
-  if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
-  DBG_KEY_META(&key.meta);
+  if (ck_read_key_metadata(key_path, &key_buffer.meta) < 0) return -1;
+  DBG_KEY_META(&key_buffer.meta);
 
   // empty slot after reset
-  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  if (algo_id_to_key_type(P1) != key.meta.type) {
+  if (key_buffer.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  if (algo_id_to_key_type(P1) != key_buffer.meta.type) {
     DBG_MSG("The value of P1 mismatches the key specified by P2\n");
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -627,8 +629,8 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   // User presence test
-  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS)
-    PIV_TOUCH(key.meta.touch_policy == TOUCH_POLICY_CACHED);
+  if (key_buffer.meta.touch_policy == TOUCH_POLICY_CACHED || key_buffer.meta.touch_policy == TOUCH_POLICY_ALWAYS)
+    PIV_TOUCH(key_buffer.meta.touch_policy == TOUCH_POLICY_CACHED);
 
   //
   // CASE 1 - INTERNAL AUTHENTICATE (Key ID = 9A / 9E)
@@ -648,57 +650,57 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Case 1\n");
     authenticate_reset();
 #ifndef FUZZ
-    if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (piv_security_status_check(P2, &key_buffer.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-    if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
-        (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
+    if ((IS_SHORT_WEIERSTRASS(key_buffer.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key_buffer.meta.type]) ||
+        (IS_RSA(key_buffer.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key_buffer.meta.type])) {
       DBG_MSG("Incorrect challenge data length\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-    if (ck_read_key(key_path, &key) < 0) return -1;
-    DBG_KEY_META(&key.meta);
+    if (ck_read_key(key_path, &key_buffer) < 0) return -1;
+    DBG_KEY_META(&key_buffer.meta);
 
     start_quick_blinking(0);
 
-    if (IS_RSA(key.meta.type)) {
+    if (IS_RSA(key_buffer.meta.type)) {
       // The input has been padded
       DBG_MSG("e: ");
-      PRINT_HEX(key.rsa.e, E_LENGTH);
+      PRINT_HEX(key_buffer.rsa.e, E_LENGTH);
       DBG_MSG("p: ");
-      PRINT_HEX(key.rsa.p, PRIVATE_KEY_LENGTH[key.meta.type]);
+      PRINT_HEX(key_buffer.rsa.p, PRIVATE_KEY_LENGTH[key_buffer.meta.type]);
       DBG_MSG("q: ");
-      PRINT_HEX(key.rsa.q, PRIVATE_KEY_LENGTH[key.meta.type]);
-      if (rsa_private(&key.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
+      PRINT_HEX(key_buffer.rsa.q, PRIVATE_KEY_LENGTH[key_buffer.meta.type]);
+      if (rsa_private(&key_buffer.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
         ERR_MSG("Sign failed\n");
-        memzero(&key, sizeof(key));
+        memzero(&key_buffer, sizeof(key_buffer));
         return -1;
       }
-      LL = piv_7c_wrap(RDATA, TAG_RESPONSE, SIGNATURE_LENGTH[key.meta.type]);
+      LL = piv_7c_wrap(RDATA, TAG_RESPONSE, SIGNATURE_LENGTH[key_buffer.meta.type]);
 
-      memzero(&key, sizeof(key));
-    } else if (IS_ECC(key.meta.type)) {
+      memzero(&key_buffer, sizeof(key_buffer));
+    } else if (IS_ECC(key_buffer.meta.type)) {
       size_t input_len = len[IDX_CHALLENGE];
-      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+      if (IS_SHORT_WEIERSTRASS(key_buffer.meta.type)) {
         // prepend zeros
-        memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]),
+        memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key_buffer.meta.type] - len[IDX_CHALLENGE]),
                 DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE]);
-        memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
-        input_len = PRIVATE_KEY_LENGTH[key.meta.type];
+        memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key_buffer.meta.type] - len[IDX_CHALLENGE]);
+        input_len = PRIVATE_KEY_LENGTH[key_buffer.meta.type];
       }
-      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], input_len, RDATA + 4);
+      int sig_len = ck_sign(&key_buffer, DATA + pos[IDX_CHALLENGE], input_len, RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
         return -1;
       }
 
-      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-        sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
+      if (IS_SHORT_WEIERSTRASS(key_buffer.meta.type)) {
+        sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key_buffer.meta.type], RDATA + 4, RDATA + 4);
       }
 
       LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sig_len);
 
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
     } else
       return -1;
   }
@@ -721,14 +723,14 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
-    if (ck_read_key(key_path, &key) < 0) return -1;
-    DBG_KEY_META(&key.meta);
+    if (ck_read_key(key_path, &key_buffer) < 0) return -1;
+    DBG_KEY_META(&key_buffer.meta);
 
-    if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
-      memzero(&key, sizeof(key));
+    if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key_buffer.data) < 0) {
+      memzero(&key_buffer, sizeof(key_buffer));
       return -1;
     }
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
   }
 
   //
@@ -765,14 +767,14 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     LL = piv_7c_wrap(RDATA, TAG_WITNESS, TDEA_BLOCK_SIZE);
 
-    if (ck_read_key(key_path, &key) < 0) return -1;
-    DBG_KEY_META(&key.meta);
+    if (ck_read_key(key_path, &key_buffer) < 0) return -1;
+    DBG_KEY_META(&key_buffer.meta);
 
-    if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
-      memzero(&key, sizeof(key));
+    if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key_buffer.data) < 0) {
+      memzero(&key_buffer, sizeof(key_buffer));
       return -1;
     }
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
   }
 
   //
@@ -796,14 +798,14 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
     LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
 
-    if (ck_read_key(key_path, &key) < 0) return -1;
-    DBG_KEY_META(&key.meta);
+    if (ck_read_key(key_path, &key_buffer) < 0) return -1;
+    DBG_KEY_META(&key_buffer.meta);
 
-    if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
-      memzero(&key, sizeof(key));
+    if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key_buffer.data) < 0) {
+      memzero(&key_buffer, sizeof(key_buffer));
       return -1;
     }
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
 
     authenticate_reset();
     in_admin_status = 1;
@@ -818,28 +820,29 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Case 6\n");
     authenticate_reset();
 #ifndef FUZZ
-    if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (piv_security_status_check(P2, &key_buffer.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
-    if (len[IDX_EXP] != PUBLIC_KEY_LENGTH[key.meta.type] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0)) {
+    if (len[IDX_EXP] !=
+        PUBLIC_KEY_LENGTH[key_buffer.meta.type] + (IS_SHORT_WEIERSTRASS(key_buffer.meta.type) ? 1 : 0)) {
       DBG_MSG("Incorrect data length\n");
       EXCEPT(SW_WRONG_DATA);
     }
-    if (ck_read_key(key_path, &key) < 0) return -1;
-    DBG_KEY_META(&key.meta);
+    if (ck_read_key(key_path, &key_buffer) < 0) return -1;
+    DBG_KEY_META(&key_buffer.meta);
 
     start_quick_blinking(0);
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0),
-             RDATA + 4) < 0) {
+    if (ecdh(key_buffer.meta.type, key_buffer.ecc.pri,
+             DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key_buffer.meta.type) ? 1 : 0), RDATA + 4) < 0) {
       ERR_MSG("ECDH failed\n");
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       return -1;
     }
 
-    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PRIVATE_KEY_LENGTH[key.meta.type]);
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PRIVATE_KEY_LENGTH[key_buffer.meta.type]);
 
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
   }
 
   //
@@ -919,27 +922,27 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
-  ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) return -1;
+  // key_buffer used instead of local ck_key_t
+  if (ck_read_key(key_path, &key_buffer) < 0) return -1;
 
-  key.meta.type = algo_id_to_key_type(DATA[4]);
-  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
+  key_buffer.meta.type = algo_id_to_key_type(DATA[4]);
+  if (key_buffer.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
   start_quick_blinking(0);
-  if (ck_generate_key(&key) < 0) return -1;
-  const int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
+  if (ck_generate_key(&key_buffer) < 0) return -1;
+  const int err = ck_parse_piv_policies(&key_buffer, &DATA[5], LC - 5);
   if (err != 0) {
     DBG_MSG("Wrong metadata\n");
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
     EXCEPT(SW_WRONG_DATA);
   }
-  if (ck_write_key(key_path, &key) < 0) return -1;
+  if (ck_write_key(key_path, &key_buffer) < 0) return -1;
   DBG_MSG("Generate key %s successful\n", key_path);
-  DBG_KEY_META(&key.meta);
+  DBG_KEY_META(&key_buffer.meta);
 
   RDATA[0] = 0x7F;
   RDATA[1] = 0x49;
-  const int len = ck_encode_public_key(&key, &RDATA[2], true);
-  memzero(&key, sizeof(key));
+  const int len = ck_encode_public_key(&key_buffer, &RDATA[2], true);
+  memzero(&key_buffer, sizeof(key_buffer));
   if (len < 0) return -1;
   LL = len + 2;
 
@@ -976,13 +979,13 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
-  ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) return -1;
+  // key_buffer used instead of local ck_key_t
+  if (ck_read_key(key_path, &key_buffer) < 0) return -1;
 
-  key.meta.type = algo_id_to_key_type(P1);
-  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
+  key_buffer.meta.type = algo_id_to_key_type(P1);
+  if (key_buffer.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
 
-  const int err = ck_parse_piv(&key, DATA, LC);
+  const int err = ck_parse_piv(&key_buffer, DATA, LC);
   if (err == KEY_ERR_LENGTH) {
     DBG_MSG("Wrong length when importing\n");
     EXCEPT(SW_WRONG_LENGTH);
@@ -995,11 +998,11 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Error when importing\n");
     EXCEPT(SW_UNABLE_TO_PROCESS);
   }
-  if (ck_write_key(key_path, &key) < 0) {
-    memzero(&key, sizeof(key));
+  if (ck_write_key(key_path, &key_buffer) < 0) {
+    memzero(&key_buffer, sizeof(key_buffer));
     return -1;
   }
-  memzero(&key, sizeof(key));
+  memzero(&key_buffer, sizeof(key_buffer));
 
   return 0;
 }
@@ -1052,29 +1055,29 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     const char *key_path = get_key_path(P2);
     if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
 
-    ck_key_t key;
-    if (ck_read_key(key_path, &key) < 0) return -1;
-    DBG_KEY_META(&key.meta);
-    if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    // key_buffer used instead of local ck_key_t
+    if (ck_read_key(key_path, &key_buffer) < 0) return -1;
+    DBG_KEY_META(&key_buffer.meta);
+    if (key_buffer.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
     RDATA[pos++] = 0x01; // Algorithm
     RDATA[pos++] = 0x01;
-    RDATA[pos++] = key_type_to_algo_id(key.meta.type);
+    RDATA[pos++] = key_type_to_algo_id(key_buffer.meta.type);
     RDATA[pos++] = 0x02; // Policy
     RDATA[pos++] = 0x02;
-    RDATA[pos++] = key.meta.pin_policy;
-    RDATA[pos++] = key.meta.touch_policy;
+    RDATA[pos++] = key_buffer.meta.pin_policy;
+    RDATA[pos++] = key_buffer.meta.touch_policy;
     RDATA[pos++] = 0x03; // Origin
     RDATA[pos++] = 0x01;
-    RDATA[pos++] = key.meta.origin;
+    RDATA[pos++] = key_buffer.meta.origin;
     RDATA[pos++] = 0x04; // Public
-    const int len = ck_encode_public_key(&key, &RDATA[pos], true);
+    const int len = ck_encode_public_key(&key_buffer, &RDATA[pos], true);
     if (len < 0) {
-      memzero(&key, sizeof(key));
+      memzero(&key_buffer, sizeof(key_buffer));
       return -1;
     }
     pos += len;
-    memzero(&key, sizeof(key));
+    memzero(&key_buffer, sizeof(key_buffer));
     break;
   }
   default:

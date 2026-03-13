@@ -54,6 +54,13 @@ typedef struct {
 } ck_key_t;
 
 /**
+ * Shared key buffer for OpenPGP/PIV operations.
+ * Safe to share because only one APDU is processed at a time (single-threaded).
+ * MUST be zeroed with memzero() after each use.
+ */
+extern ck_key_t key_buffer;
+
+/**
  * Encode public key
  *
  * @param key            key type
