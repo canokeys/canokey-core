@@ -1208,14 +1208,17 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   // 4. SM2 entry (conditional)
   if (ctap_sm2_attr.enabled) {
     memcpy(p, cbor_gi_alg_sm2, sizeof(cbor_gi_alg_sm2));
-    // Patch SM2 algo_id (CBOR negative int, -1 to -256 range)
+    // Patch SM2 algo_id (CBOR negative int). The CBOR template encodes this
+    // as a 2-byte negative integer (range [-256, -25]), so we must ensure
+    // that the configured value has the same canonical encoding length.
     int algo = ctap_sm2_attr.algo_id;
-    if (algo >= -24 && algo < 0) {
-      p[CTAP_GI_SM2_ALGO_OFFSET] = (uint8_t)(0x20 | (-1 - algo));
-    } else if (algo >= -256 && algo < -24) {
-      p[CTAP_GI_SM2_ALGO_OFFSET] = 0x38;
-      p[CTAP_GI_SM2_ALGO_OFFSET + 1] = (uint8_t)(-1 - algo);
+    if (algo < -256 || algo > -25) {
+      // Reject values that would not use the 2-byte encoding; emitting them
+      // would corrupt the surrounding CBOR template.
+      return CTAP2_ERR_INVALID_CBOR;
     }
+    p[CTAP_GI_SM2_ALGO_OFFSET] = 0x38;
+    p[CTAP_GI_SM2_ALGO_OFFSET + 1] = (uint8_t)(-1 - algo);
     p += sizeof(cbor_gi_alg_sm2);
   }
 

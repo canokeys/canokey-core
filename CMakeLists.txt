@@ -53,7 +53,8 @@ endif()
 # Generate pre-encoded CBOR segments for ctap_get_info.
 # Constants are parsed directly from headers — no duplication.
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-execute_process(
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
     COMMAND ${Python3_EXECUTABLE}
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
         --headers
@@ -61,11 +62,16 @@ execute_process(
             ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
         --credential-id-size 70
         --output ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
-    RESULT_VARIABLE GEN_RESULT
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
+    COMMENT "Generating ctap_get_info_cbor.inc"
 )
-if(NOT GEN_RESULT EQUAL 0)
-    message(FATAL_ERROR "Failed to generate ctap_get_info CBOR template")
-endif()
+add_custom_target(
+    generate_ctap_get_info_cbor
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
+)
 
 file(
     GLOB_RECURSE SRC
@@ -78,6 +84,7 @@ file(
     tinycbor/src/cborparser.c
 )
 add_library(canokey-core ${SRC})
+add_dependencies(canokey-core generate_ctap_get_info_cbor)
 
 if(ENABLE_TESTS)
     target_compile_definitions(canokey-core PUBLIC TEST)

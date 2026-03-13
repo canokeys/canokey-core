@@ -304,11 +304,9 @@ def main():
         f.write(f"// Byte offset of SM2 algo_id within cbor_gi_alg_sm2\n")
         f.write(f"#define CTAP_GI_SM2_ALGO_OFFSET {sm2_algo_off}\n")
         f.write(f"// SM2 algo_id encoding length in default template\n")
-        sm2_enc_len = len(build_algorithm_entry(args.sm2_algo_id)) - \
-                      len(build_algorithm_entry(0))  # diff is just the int encoding
-        # Actually, easier: just record the encoding length of the default algo_id
+        # Record the encoding length of the default algo_id by locating where the
+        # \"type\" text key starts after the integer encoding.
         from_offset = sm2_algo_off
-        default_enc = bytearray(alg_sm2[from_offset:])
         # Find where "type" text starts after the int
         type_text = encode_text("type")
         type_pos = alg_sm2.index(bytes(type_text), from_offset)
