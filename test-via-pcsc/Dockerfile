@@ -1,20 +1,29 @@
-FROM ubuntu:20.04
-
+FROM ubuntu:24.04
 
 ARG UBUNTU_MIRROR
-RUN [ -z "${UBUNTU_MIRROR}" ] || sed -i.bak s/archive.ubuntu.com/${UBUNTU_MIRROR}/g /etc/apt/sources.list
+RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
+        if [ -s /etc/apt/sources.list ]; then \
+            sed -i.bak "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" /etc/apt/sources.list; \
+        elif [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+            sed -i.bak "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources; \
+        fi; \
+    fi
 
-RUN apt update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q sudo software-properties-common golang-go git gcc g++ cmake swig psmisc procps pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server libpcsclite-dev libudev-dev libusb-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov &&\
-    apt-add-repository -y ppa:yubico/stable && DEBIAN_FRONTEND=noninteractive apt-get install -y -q yubikey-manager
-RUN pip3 install --upgrade pip
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
+    sudo software-properties-common git gcc g++ cmake swig psmisc procps \
+    pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev \
+    libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server \
+    libpcsclite-dev libudev-dev libusb-1.0-0-dev libcmocka-dev libcbor-dev \
+    python3-pip python3-setuptools python3-wheel lcov wget golang-go \
+    yubikey-manager
 
 COPY go.mod go.sum /root/
 COPY test-via-pcsc /root/test-via-pcsc
 COPY test-real /root/test-real
 RUN ls -la /root
 
-RUN cd /root && ./test-via-pcsc/build_fido_tests.sh
-RUN cd /root && ./test-via-pcsc/build_gpg.sh && gpg --version
+RUN cd /root && ./test-via-pcsc/build_fido_tests.sh && ./test-via-pcsc/install_fido_tests.sh
+RUN cd /root && ./test-via-pcsc/build_gpg.sh && ./test-via-pcsc/install_gpg.sh && gpg --version
 RUN cp /root/test-real/libccid_Info.plist /etc/libccid_Info.plist && echo -e '\
 StrictModes no \n\
 UsePAM no \n\
