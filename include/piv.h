@@ -37,5 +37,9 @@ typedef struct {
 int piv_install(uint8_t reset);
 void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int piv_streaming_import_key(const CAPDU *capdu, RAPDU *rapdu, bool is_first);
+int piv_streaming_import_key_finish(void);
+void piv_streaming_import_key_abort(void);
+bool piv_key_import_streaming(void);
 
 #endif // CANOKEY_CORE_INCLUDE_PIV_H_

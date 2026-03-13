@@ -265,6 +265,44 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     admin_cert_streaming = false;
   }
 
+  // Streaming bypass for PIV key import (chained IMPORT ASYMMETRIC KEY 0xFE).
+  static bool piv_key_streaming = false;
+  if (current_applet == APPLET_PIV) {
+    bool is_chaining = (CLA & 0x10) != 0;
+    if (!piv_key_streaming && is_chaining && INS == PIV_INS_IMPORT_ASYMMETRIC_KEY) {
+      piv_streaming_import_key(capdu, rapdu, true);
+      if (SW == SW_NO_ERROR && piv_key_import_streaming()) piv_key_streaming = true;
+      return;
+    }
+    if (piv_key_streaming) {
+      if (INS != PIV_INS_IMPORT_ASYMMETRIC_KEY) {
+        piv_streaming_import_key_abort();
+        piv_key_streaming = false;
+      } else {
+        bool is_last = !is_chaining;
+        piv_streaming_import_key(capdu, rapdu, false);
+        if (is_last && SW == SW_NO_ERROR) {
+          int err = piv_streaming_import_key_finish();
+          if (err == KEY_ERR_LENGTH) {
+            LL = 0;
+            SW = SW_WRONG_LENGTH;
+          } else if (err == KEY_ERR_DATA) {
+            LL = 0;
+            SW = SW_WRONG_DATA;
+          } else if (err < 0) {
+            LL = 0;
+            SW = SW_UNABLE_TO_PROCESS;
+          }
+        }
+        if (!is_chaining || SW != SW_NO_ERROR) piv_key_streaming = false;
+        return;
+      }
+    }
+  } else if (piv_key_streaming) {
+    piv_streaming_import_key_abort();
+    piv_key_streaming = false;
+  }
+
   static enum PIV_STATE piv_state;
   if (current_applet == APPLET_PIV) {
     // Offload some APDU chaining commands of PIV applet,

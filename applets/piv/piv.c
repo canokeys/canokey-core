@@ -970,6 +970,99 @@ static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+// Streaming state for PIV key import
+static struct {
+  bool active;
+  const char *key_path;
+} piv_key_import_stream;
+
+int piv_streaming_import_key(const CAPDU *capdu, RAPDU *rapdu, bool is_first) {
+  if (is_first) {
+    if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    piv_key_import_stream.key_path = get_key_path(P2);
+    if (piv_key_import_stream.key_path == NULL || P2 == 0x9B) EXCEPT(SW_WRONG_P1P2);
+
+    if (ck_read_key(piv_key_import_stream.key_path, &key_buffer) < 0) return -1;
+    key_buffer.meta.type = algo_id_to_key_type(P1);
+    if (key_buffer.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
+
+    // Try streaming init (RSA only)
+    int header_consumed = ck_parse_piv_stream_init(&key_buffer, DATA, LC);
+    if (header_consumed < 0) {
+      if (header_consumed == KEY_ERR_LENGTH)
+        EXCEPT(SW_WRONG_LENGTH);
+      else if (header_consumed == KEY_ERR_DATA) {
+        // ECC — try non-streaming parse
+        int err = ck_parse_piv(&key_buffer, DATA, LC);
+        if (err == KEY_ERR_LENGTH)
+          EXCEPT(SW_WRONG_LENGTH);
+        else if (err == KEY_ERR_DATA)
+          EXCEPT(SW_WRONG_DATA);
+        else if (err < 0)
+          EXCEPT(SW_UNABLE_TO_PROCESS);
+        if (ck_write_key(piv_key_import_stream.key_path, &key_buffer) < 0) {
+          memzero(&key_buffer, sizeof(key_buffer));
+          return -1;
+        }
+        memzero(&key_buffer, sizeof(key_buffer));
+        LL = 0;
+        SW = SW_NO_ERROR;
+        return 0;
+      } else
+        EXCEPT(SW_UNABLE_TO_PROCESS);
+    }
+
+    // Feed remaining data from first block
+    const uint8_t *data_start = DATA + header_consumed;
+    size_t remaining = LC - header_consumed;
+    if (remaining > 0) {
+      int err = ck_key_stream_feed(&key_buffer, data_start, remaining);
+      if (err < 0) {
+        ck_key_stream_abort();
+        memzero(&key_buffer, sizeof(key_buffer));
+        EXCEPT(SW_WRONG_DATA);
+      }
+    }
+    piv_key_import_stream.active = true;
+  } else {
+    if (LC > 0) {
+      int err = ck_key_stream_feed(&key_buffer, DATA, LC);
+      if (err < 0) {
+        ck_key_stream_abort();
+        piv_key_import_stream.active = false;
+        memzero(&key_buffer, sizeof(key_buffer));
+        EXCEPT(SW_WRONG_DATA);
+      }
+    }
+  }
+  LL = 0;
+  SW = SW_NO_ERROR;
+  return 0;
+}
+
+int piv_streaming_import_key_finish(void) {
+  piv_key_import_stream.active = false;
+  int err = ck_key_stream_finalize(&key_buffer);
+  if (err < 0) {
+    memzero(&key_buffer, sizeof(key_buffer));
+    return err;
+  }
+  if (ck_write_key(piv_key_import_stream.key_path, &key_buffer) < 0) {
+    memzero(&key_buffer, sizeof(key_buffer));
+    return -1;
+  }
+  memzero(&key_buffer, sizeof(key_buffer));
+  return 0;
+}
+
+void piv_streaming_import_key_abort(void) {
+  piv_key_import_stream.active = false;
+  ck_key_stream_abort();
+  memzero(&key_buffer, sizeof(key_buffer));
+}
+
+bool piv_key_import_streaming(void) { return piv_key_import_stream.active; }
+
 static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
