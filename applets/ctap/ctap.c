@@ -1204,180 +1204,50 @@ step7:
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetNextAssertion
 static uint8_t ctap_get_next_assertion(CborEncoder *encoder) { return ctap_get_assertion(encoder, NULL, 0, true); }
 
+// Pre-encoded CBOR segments for authenticatorGetInfo response.
+// Generated at build time by scripts/gen_ctap_get_info.py.
+// Constants are parsed from headers — see the .inc file for details.
+#include "ctap_get_info_cbor.inc"
+
 static uint8_t ctap_get_info(CborEncoder *encoder) {
-  // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetInfo
-  CborEncoder map, sub_map;
-  int ret = cbor_encoder_create_map(encoder, &map, 13);
-  CHECK_CBOR_RET(ret);
+  uint8_t *p = encoder->data.ptr;
+  uint8_t *end = encoder->end;
+  size_t need = sizeof(cbor_gi_prefix) + 1 /* array header */
+              + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix)
+              + (ctap_sm2_attr.enabled ? sizeof(cbor_gi_alg_sm2) : 0);
+  if (p + need > end) return CTAP2_ERR_LIMIT_EXCEEDED;
 
-  // versions
-  ret = cbor_encode_int(&map, GI_RESP_VERSIONS);
-  CHECK_CBOR_RET(ret);
-  CborEncoder array;
-  ret = cbor_encoder_create_array(&map, &array, 3);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_text_stringz(&array, "U2F_V2");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "FIDO_2_0");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "FIDO_2_1");
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&map, &array);
-  CHECK_CBOR_RET(ret);
+  // 1. Prefix: map header through algorithms key
+  memcpy(p, cbor_gi_prefix, sizeof(cbor_gi_prefix));
+  p[CTAP_GI_CLIENT_PIN_OFFSET] = has_pin() ? 0xF5 : 0xF4;
+  p += sizeof(cbor_gi_prefix);
 
-  // extensions
-  ret = cbor_encode_int(&map, GI_RESP_EXTENSIONS);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&map, &array, 4);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_text_stringz(&array, "credBlob");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "credProtect");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "hmac-secret");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "largeBlobKey");
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&map, &array);
-  CHECK_CBOR_RET(ret);
+  // 2. Algorithms array header: 2 or 3 entries
+  *p++ = ctap_sm2_attr.enabled ? 0x83 : 0x82;
 
-  // aaguid
-  ret = cbor_encode_int(&map, GI_RESP_AAGUID);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_byte_string(&map, aaguid, sizeof(aaguid));
-  CHECK_CBOR_RET(ret);
+  // 3. Base algorithm entries (ES256 + EdDSA)
+  memcpy(p, cbor_gi_alg_base, sizeof(cbor_gi_alg_base));
+  p += sizeof(cbor_gi_alg_base);
 
-  // options
-  ret = cbor_encode_int(&map, GI_RESP_OPTIONS);
-  CHECK_CBOR_RET(ret);
-  CborEncoder option_map;
-  ret = cbor_encoder_create_map(&map, &option_map, 6);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_text_stringz(&option_map, "rk");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, true);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "credMgmt");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, true);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "clientPin");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, has_pin());
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "largeBlobs");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, true);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "pinUvAuthToken");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, true);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&option_map, "makeCredUvNotRqd");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&option_map, true);
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&map, &option_map);
-  CHECK_CBOR_RET(ret);
-
-  // maxMsgSize
-  ret = cbor_encode_int(&map, GI_RESP_MAX_MSG_SIZE);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, MAX_CTAP_BUFSIZE);
-  CHECK_CBOR_RET(ret);
-
-  // pinUvAuthProtocols
-  ret = cbor_encode_int(&map, GI_RESP_PIN_UV_AUTH_PROTOCOLS);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&map, &array, 2);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_int(&array, 1);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&array, 2);
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&map, &array);
-  CHECK_CBOR_RET(ret);
-
-  // maxCredentialCountInList
-  ret = cbor_encode_int(&map, GI_RESP_MAX_CREDENTIAL_COUNT_IN_LIST);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, MAX_CREDENTIAL_COUNT_IN_LIST);
-  CHECK_CBOR_RET(ret);
-
-  // maxCredentialIdLength
-  ret = cbor_encode_int(&map, GI_RESP_MAX_CREDENTIAL_ID_LENGTH);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, sizeof(credential_id));
-  CHECK_CBOR_RET(ret);
-
-  // transports
-  ret = cbor_encode_int(&map, GI_RESP_TRANSPORTS);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&map, &array, 2);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_text_stringz(&array, "nfc");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&array, "usb");
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&map, &array);
-  CHECK_CBOR_RET(ret);
-
-  // algorithms
-  ret = cbor_encode_int(&map, GI_RESP_ALGORITHMS);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&map, &array, ctap_sm2_attr.enabled ? 3 : 2);
-  CHECK_CBOR_RET(ret);
-  {
-    const int algs[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, ctap_sm2_attr.algo_id};
-    int n_algs = ctap_sm2_attr.enabled ? 3 : 2;
-    for (int i = 0; i < n_algs; ++i) {
-      ret = cbor_encoder_create_map(&array, &sub_map, 2);
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, "alg");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_int(&sub_map, algs[i]);
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, "type");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_text_stringz(&sub_map, "public-key");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encoder_close_container(&array, &sub_map);
-      CHECK_CBOR_RET(ret);
+  // 4. SM2 entry (conditional)
+  if (ctap_sm2_attr.enabled) {
+    memcpy(p, cbor_gi_alg_sm2, sizeof(cbor_gi_alg_sm2));
+    // Patch SM2 algo_id (CBOR negative int, -1 to -256 range)
+    int algo = ctap_sm2_attr.algo_id;
+    if (algo >= -24 && algo < 0) {
+      p[CTAP_GI_SM2_ALGO_OFFSET] = (uint8_t)(0x20 | (-1 - algo));
+    } else if (algo >= -256 && algo < -24) {
+      p[CTAP_GI_SM2_ALGO_OFFSET] = 0x38;
+      p[CTAP_GI_SM2_ALGO_OFFSET + 1] = (uint8_t)(-1 - algo);
     }
+    p += sizeof(cbor_gi_alg_sm2);
   }
-  ret = cbor_encoder_close_container(&map, &array);
-  CHECK_CBOR_RET(ret);
 
-  // maxSerializedLargeBlobArray
-  ret = cbor_encode_int(&map, GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, LARGE_BLOB_SIZE_LIMIT);
-  CHECK_CBOR_RET(ret);
+  // 5. Suffix: remaining fields
+  memcpy(p, cbor_gi_suffix, sizeof(cbor_gi_suffix));
+  p += sizeof(cbor_gi_suffix);
 
-  // firmwareVersion
-  ret = cbor_encode_int(&map, GI_RESP_FIRMWARE_VERSION);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, FIRMWARE_VERSION);
-  CHECK_CBOR_RET(ret);
-
-  // maxCredBlobLength
-  ret = cbor_encode_int(&map, GI_RESP_MAX_CRED_BLOB_LENGTH);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_int(&map, MAX_CRED_BLOB_LENGTH);
-  CHECK_CBOR_RET(ret);
-
-  ret = cbor_encoder_close_container(encoder, &map);
-  CHECK_CBOR_RET(ret);
+  encoder->data.ptr = p;
   return 0;
 }
 

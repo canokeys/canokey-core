@@ -50,6 +50,23 @@ if(DEFINED PRODUCT_NAME)
     add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif()
 
+# Generate pre-encoded CBOR segments for ctap_get_info.
+# Constants are parsed directly from headers — no duplication.
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
+        --headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
+        --credential-id-size 70
+        --output ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
+    RESULT_VARIABLE GEN_RESULT
+)
+if(NOT GEN_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to generate ctap_get_info CBOR template")
+endif()
+
 file(
     GLOB_RECURSE SRC
     src/*.c
@@ -81,6 +98,7 @@ target_include_directories(
         littlefs
         tinycbor/src
         ${CMAKE_CURRENT_BINARY_DIR}/tinycbor
+        ${CMAKE_CURRENT_BINARY_DIR}
         interfaces/USB/device
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
