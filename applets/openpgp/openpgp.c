@@ -98,6 +98,13 @@ static pin_t pw1 = {.min_length = 6, .max_length = MAX_PIN_LENGTH, .is_validated
 static pin_t pw3 = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw3"};
 static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-rc"};
 static uint8_t touch_cache_time;
+
+// Streaming state for cert import (bypasses chaining buffer)
+static struct {
+  bool active;
+  uint16_t total_len;
+  uint8_t occurrence;
+} cert_stream;
 static uint32_t last_touch = UINT32_MAX;
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
@@ -962,6 +969,37 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
 
   return 0;
 }
+
+int openpgp_streaming_put_data(const CAPDU *capdu, RAPDU *rapdu, bool is_first) {
+  if (is_first) {
+    if (pw3.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    cert_stream.active = true;
+    cert_stream.total_len = 0;
+    cert_stream.occurrence = current_occurrence;
+    // Truncate and write first block
+    if (write_file(key_info[cert_stream.occurrence].cert_path, DATA, 0, LC, 1) < 0) {
+      cert_stream.active = false;
+      return -1;
+    }
+  } else {
+    // Append subsequent blocks
+    if (append_file(key_info[cert_stream.occurrence].cert_path, DATA, LC) < 0) {
+      cert_stream.active = false;
+      return -1;
+    }
+  }
+  cert_stream.total_len += LC;
+  if (cert_stream.total_len > MAX_CERT_LENGTH) {
+    cert_stream.active = false;
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  LL = 0;
+  SW = SW_NO_ERROR;
+  return 0;
+}
+
+void openpgp_streaming_put_data_abort(void) { cert_stream.active = false; }
 
 static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ

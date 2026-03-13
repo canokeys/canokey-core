@@ -63,5 +63,7 @@
 void openpgp_poweroff(void);
 int openpgp_install(uint8_t reset);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int openpgp_streaming_put_data(const CAPDU *capdu, RAPDU *rapdu, bool is_first);
+void openpgp_streaming_put_data_abort(void);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H

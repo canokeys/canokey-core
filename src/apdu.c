@@ -6,6 +6,7 @@
 #include <ctap.h>
 #include <device.h>
 #include <ndef.h>
+#include <openpgp.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
@@ -155,6 +156,37 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     SW = SW_NO_ERROR;
     return;
   }
+  // Streaming bypass for OpenPGP cert import (chained PUT DATA 0x7F21).
+  // Writes each chain block directly to flash, bypassing chaining buffer.
+  static bool openpgp_cert_streaming = false;
+  if (current_applet == APPLET_OPENPGP) {
+    bool is_chaining = (CLA & 0x10) != 0;
+    // Detect start of chained cert import
+    if (!openpgp_cert_streaming && is_chaining && INS == OPENPGP_INS_PUT_DATA && P1 == HI(TAG_CARDHOLDER_CERTIFICATE) &&
+        P2 == LO(TAG_CARDHOLDER_CERTIFICATE)) {
+      openpgp_streaming_put_data(capdu, rapdu, true);
+      if (SW == SW_NO_ERROR) openpgp_cert_streaming = true;
+      return;
+    }
+    // Continue streaming
+    if (openpgp_cert_streaming) {
+      if (INS != OPENPGP_INS_PUT_DATA || P1 != HI(TAG_CARDHOLDER_CERTIFICATE) || P2 != LO(TAG_CARDHOLDER_CERTIFICATE)) {
+        // Interrupted by different command — abort stream
+        openpgp_streaming_put_data_abort();
+        openpgp_cert_streaming = false;
+        // Fall through to normal processing
+      } else {
+        openpgp_streaming_put_data(capdu, rapdu, false);
+        if (!is_chaining || SW != SW_NO_ERROR) openpgp_cert_streaming = false;
+        return;
+      }
+    }
+  } else if (openpgp_cert_streaming) {
+    // Applet changed — abort stream
+    openpgp_streaming_put_data_abort();
+    openpgp_cert_streaming = false;
+  }
+
   static enum PIV_STATE piv_state;
   if (current_applet == APPLET_PIV) {
     // Offload some APDU chaining commands of PIV applet,
