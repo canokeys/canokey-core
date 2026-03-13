@@ -14,9 +14,9 @@ pcsc-driver /usr/lib/x86_64-linux-gnu/libpcsclite.so.1
 disable-ccid
 EOF
 
-pushd gnupg/pinentry-1.2.1
-sudo make install
-popd
+# Copy the pre-built binary directly — avoid `make install` which
+# recurses into all subdirs (gnome3, etc.) and triggers recompilation.
+sudo install -m 755 gnupg/pinentry-1.2.1/tty/pinentry-tty /usr/local/bin/pinentry-tty
 
 sudo ln -sf /usr/local/bin/pinentry-tty /usr/bin/pinentry
 gpg-connect-agent reloadagent /bye || true
