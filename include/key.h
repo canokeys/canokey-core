@@ -103,20 +103,31 @@ int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t
  *
  * Usage:
  *   1. Call ck_parse_openpgp_stream_init / ck_parse_piv_stream_init with the first block
- *      (must contain complete TLV headers). Returns header_consumed bytes.
+ *      (must contain complete TLV headers for OpenPGP, or first data for PIV).
+ *      Returns header_consumed bytes.
  *   2. Call ck_key_stream_feed with subsequent data until all component data is received.
  *   3. Call ck_key_stream_finalize to validate and return the result.
+ *
+ * PIV RSA uses interleaved TLV headers (tag+length before each component's data),
+ * so headers are parsed inline during feed rather than all up front.
  */
 typedef struct {
   bool active;
+  bool piv_interleaved;    // PIV mode: TLV headers interleaved with data
+  bool piv_need_header;    // PIV mode: next bytes are a TLV header, not data
   uint8_t n_components;    // Number of components (6 for OpenPGP RSA, 5 for PIV RSA)
   uint8_t current_comp;    // Current component being received
+  uint8_t piv_hdr_buf[4];  // PIV mode: partial TLV header accumulation buffer
+  uint8_t piv_hdr_len;     // PIV mode: bytes accumulated in piv_hdr_buf
+  uint16_t piv_pri_len;    // PIV mode: PRIVATE_KEY_LENGTH for right-alignment
   uint16_t comp_len[6];    // Length of each component
   uint16_t comp_received;  // Bytes received for current component
   uint8_t *comp_dest[6];   // Destination pointers into key_buffer
   uint16_t comp_offset[6]; // Write offset within destination (for right-alignment)
   uint16_t total_data;     // Total data bytes expected
   uint16_t total_received; // Total data bytes received
+  uint8_t policy_buf[8];   // PIV mode: trailing policy bytes (AA/AB tags)
+  uint8_t policy_len;      // PIV mode: bytes in policy_buf
 } ck_key_stream_t;
 
 extern ck_key_stream_t key_stream;

@@ -442,8 +442,25 @@ int ck_parse_openpgp_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_l
     for (int i = 0; i < 6; ++i) {
       if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
       if (*p++ != rsa_tags[i]) return KEY_ERR_DATA;
-      key_stream.comp_len[i] = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-      if (fail) return KEY_ERR_LENGTH;
+      // Parse length field only (no data completeness check for streaming)
+      {
+        const size_t lb_avail = buf_len - (p - buf);
+        if (lb_avail < 1) return KEY_ERR_LENGTH;
+        if (*p < 0x80) {
+          key_stream.comp_len[i] = *p;
+          length_size = 1;
+        } else if (*p == 0x81) {
+          if (lb_avail < 2) return KEY_ERR_LENGTH;
+          key_stream.comp_len[i] = p[1];
+          length_size = 2;
+        } else if (*p == 0x82) {
+          if (lb_avail < 3) return KEY_ERR_LENGTH;
+          key_stream.comp_len[i] = ((uint16_t)p[1] << 8) | p[2];
+          length_size = 3;
+        } else {
+          return KEY_ERR_LENGTH;
+        }
+      }
       if (expected_exact[i] > 0 ? key_stream.comp_len[i] != expected_exact[i] : key_stream.comp_len[i] > pri_len)
         return KEY_ERR_DATA;
       p += length_size;
@@ -451,15 +468,33 @@ int ck_parse_openpgp_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_l
       key_stream.comp_offset[i] = (i >= 3) ? pri_len - key_stream.comp_len[i] : 0;
     }
 
-    // Parse 5F48 tag and length
+    // Parse 5F48 tag and data length.
+    // Note: we parse only the length field, not validating data completeness,
+    // because in streaming mode the first chunk won't contain all the data.
     p = data_tag;
     if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
     size_t total_data = 0;
     for (int i = 0; i < 6; ++i)
       total_data += key_stream.comp_len[i];
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
+    {
+      const size_t lb_avail = buf_len - (p - buf);
+      if (lb_avail < 1) return KEY_ERR_LENGTH;
+      if (*p < 0x80) {
+        len = *p;
+        length_size = 1;
+      } else if (*p == 0x81) {
+        if (lb_avail < 2) return KEY_ERR_LENGTH;
+        len = p[1];
+        length_size = 2;
+      } else if (*p == 0x82) {
+        if (lb_avail < 3) return KEY_ERR_LENGTH;
+        len = ((size_t)p[1] << 8) | p[2];
+        length_size = 3;
+      } else {
+        return KEY_ERR_LENGTH;
+      }
+    }
     if (len != total_data) return KEY_ERR_DATA;
     p += length_size;
 
@@ -483,48 +518,110 @@ int ck_parse_piv_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_len) 
   key->meta.origin = KEY_ORIGIN_IMPORTED;
   memset(&key_stream, 0, sizeof(key_stream));
 
-  const uint8_t *p = buf;
-  int fail;
-  size_t length_size;
   const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
 
   switch (key->meta.type) {
   case RSA2048:
   case RSA3072:
   case RSA4096: {
+    /*
+     * PIV RSA key import: TLV headers and data are interleaved:
+     *   [01][len][p data][02][len][q data]...[05][len][qinv data]
+     *
+     * Unlike OpenPGP (where all headers come first), we cannot parse all
+     * headers up front. Instead, we set up the state machine to parse
+     * each component's tag+length inline during feed, before streaming
+     * its data bytes.
+     */
     uint8_t *dests[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
 
     key->rsa.nbits = pri_len * 16;
     *(uint32_t *)key->rsa.e = htobe32(65537);
     key_stream.n_components = 5;
+    key_stream.piv_interleaved = true;
+    key_stream.piv_pri_len = pri_len;
 
     for (int i = 0; i < 5; ++i) {
-      if ((size_t)(p - buf) >= buf_len) return KEY_ERR_LENGTH;
-      if (*p++ != (i + 1)) return KEY_ERR_DATA;
-      const size_t clen = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-      if (fail) return KEY_ERR_LENGTH;
-      if (clen > pri_len) return KEY_ERR_DATA;
-      p += length_size;
-      key_stream.comp_len[i] = clen;
       key_stream.comp_dest[i] = dests[i];
-      key_stream.comp_offset[i] = pri_len - clen;
+      // comp_len and comp_offset will be set when we parse each TLV header during feed
     }
 
-    size_t total_data = 0;
-    for (int i = 0; i < 5; ++i)
-      total_data += key_stream.comp_len[i];
-
-    key_stream.total_data = total_data;
+    key_stream.total_data = 0; // will accumulate as headers are parsed
     key_stream.total_received = 0;
     key_stream.current_comp = 0;
     key_stream.comp_received = 0;
+    key_stream.piv_need_header = true; // first component needs header parsing
     key_stream.active = true;
-    return (int)(p - buf); // header bytes consumed
+
+    // Feed the initial data through the normal feed path
+    // (which will handle inline TLV header parsing)
+    int err = ck_key_stream_feed(key, buf, buf_len);
+    if (err < 0) {
+      key_stream.active = false;
+      return err;
+    }
+    return (int)buf_len; // all bytes consumed via feed
   }
 
   default:
     return KEY_ERR_DATA;
   }
+}
+
+/**
+ * Parse a PIV interleaved TLV header (tag + length) from the stream.
+ * Accumulates bytes in piv_hdr_buf across calls if the header spans a block boundary.
+ * Returns: >0 = bytes consumed from data[], header fully parsed
+ *           0 = need more data (header incomplete, all of data[] consumed into buf)
+ *          <0 = error
+ */
+static int piv_parse_inline_header(const uint8_t *data, size_t len) {
+  const uint8_t before = key_stream.piv_hdr_len;
+  size_t di = 0; // index into data[]
+
+  // Accumulate bytes into piv_hdr_buf until we can parse or run out
+  while (key_stream.piv_hdr_len < sizeof(key_stream.piv_hdr_buf) && di < len) {
+    key_stream.piv_hdr_buf[key_stream.piv_hdr_len++] = data[di++];
+  }
+
+  if (key_stream.piv_hdr_len < 2) return 0; // need at least tag + 1 length byte
+
+  const uint8_t ci = key_stream.current_comp;
+  const uint8_t expected_tag = ci + 1; // PIV tags: 01, 02, 03, 04, 05
+  if (key_stream.piv_hdr_buf[0] != expected_tag) return KEY_ERR_DATA;
+
+  // Parse length field manually (not using tlv_get_length_safe because it also
+  // validates that the *value data* fits in the buffer, which it won't in
+  // streaming mode where we only have the header bytes).
+  size_t clen, length_size;
+  const uint8_t *lb = key_stream.piv_hdr_buf + 1;
+  const uint8_t lb_avail = key_stream.piv_hdr_len - 1;
+  if (lb[0] < 0x80) {
+    clen = lb[0];
+    length_size = 1;
+  } else if (lb[0] == 0x81) {
+    if (lb_avail < 2) return 0; // need one more byte
+    clen = lb[1];
+    length_size = 2;
+  } else if (lb[0] == 0x82) {
+    if (lb_avail < 3) return 0; // need more bytes
+    clen = ((size_t)lb[1] << 8) | lb[2];
+    length_size = 3;
+  } else {
+    return KEY_ERR_LENGTH;
+  }
+  if (clen > key_stream.piv_pri_len) return KEY_ERR_DATA;
+
+  // Header fully parsed: 1 (tag) + length_size bytes total
+  const size_t header_total = 1 + length_size;
+  key_stream.comp_len[ci] = clen;
+  key_stream.comp_offset[ci] = key_stream.piv_pri_len - clen;
+  key_stream.total_data += clen;
+  key_stream.piv_need_header = false;
+  key_stream.piv_hdr_len = 0;
+
+  // Bytes consumed from data[] = header_total - bytes that were already in buf before this call
+  return (int)(header_total - before);
 }
 
 int ck_key_stream_feed(ck_key_t *key, const uint8_t *data, size_t len) {
@@ -533,6 +630,21 @@ int ck_key_stream_feed(ck_key_t *key, const uint8_t *data, size_t len) {
 
   size_t pos = 0;
   while (pos < len && key_stream.current_comp < key_stream.n_components) {
+    // PIV interleaved mode: parse TLV header before each component's data
+    if (key_stream.piv_interleaved && key_stream.piv_need_header) {
+      int hdr_consumed = piv_parse_inline_header(data + pos, len - pos);
+      if (hdr_consumed < 0) {
+        key_stream.active = false;
+        return hdr_consumed;
+      }
+      if (hdr_consumed == 0) {
+        // Header incomplete, need more data
+        return 0;
+      }
+      pos += hdr_consumed;
+      continue;
+    }
+
     const uint8_t ci = key_stream.current_comp;
     const size_t need = key_stream.comp_len[ci] - key_stream.comp_received;
     const size_t avail = len - pos;
@@ -546,13 +658,23 @@ int ck_key_stream_feed(ck_key_t *key, const uint8_t *data, size_t len) {
     if (key_stream.comp_received >= key_stream.comp_len[ci]) {
       key_stream.current_comp++;
       key_stream.comp_received = 0;
+      // In PIV interleaved mode, next component starts with a TLV header
+      if (key_stream.piv_interleaved && key_stream.current_comp < key_stream.n_components) {
+        key_stream.piv_need_header = true;
+      }
     }
   }
 
-  if (pos < len) {
-    // Extra data beyond expected components
-    key_stream.active = false;
-    return KEY_ERR_DATA;
+  if (pos < len && key_stream.current_comp >= key_stream.n_components) {
+    // Trailing bytes after all components — buffer for policy parsing (PIV)
+    const size_t trailing = len - pos;
+    if (key_stream.piv_interleaved && key_stream.policy_len + trailing <= sizeof(key_stream.policy_buf)) {
+      memcpy(key_stream.policy_buf + key_stream.policy_len, data + pos, trailing);
+      key_stream.policy_len += trailing;
+    } else {
+      key_stream.active = false;
+      return KEY_ERR_DATA;
+    }
   }
 
   return 0;
@@ -568,6 +690,15 @@ int ck_key_stream_finalize(ck_key_t *key) {
   if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
     memzero(key, sizeof(ck_key_t));
     return KEY_ERR_DATA;
+  }
+
+  // Parse trailing policy bytes (PIV mode)
+  if (key_stream.piv_interleaved && key_stream.policy_len > 0) {
+    int err = ck_parse_piv_policies(key, key_stream.policy_buf, key_stream.policy_len);
+    if (err < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return err;
+    }
   }
 
   return 0;
