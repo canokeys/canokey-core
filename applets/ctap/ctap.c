@@ -283,6 +283,37 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
   return 0;
 }
 
+/**
+ * Verify PIN/UV auth token for MC and GA commands.
+ * Checks: token validity, permission, RP ID, user verified flag.
+ * On success, associates the RP ID with the token.
+ *
+ * @return 0 on success, CTAP2 error code on failure.
+ */
+static uint8_t verify_pin_uv_auth_token(const uint8_t *client_data_hash, const uint8_t *pin_uv_auth_param,
+                                         uint8_t pin_uv_auth_protocol, uint8_t permission,
+                                         const uint8_t *rp_id_hash) {
+  if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
+  if (!cp_verify_pin_token(client_data_hash, CLIENT_DATA_HASH_SIZE, pin_uv_auth_param, pin_uv_auth_protocol)) {
+    DBG_MSG("Fail to verify pin token\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
+  if (!cp_has_permission(permission)) {
+    DBG_MSG("Fail to verify pin permission\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
+  if (!cp_verify_rp_id(rp_id_hash)) {
+    DBG_MSG("Fail to verify pin rp id\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
+  if (!cp_get_user_verified_flag_value()) {
+    DBG_MSG("userVerifiedFlagValue is false\n");
+    return CTAP2_ERR_PIN_AUTH_INVALID;
+  }
+  cp_associate_rp_id(rp_id_hash);
+  return 0;
+}
+
 static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_t len) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-makeCred-authnr-alg
   uint8_t data_buf[sizeof(CTAP_auth_data)];
@@ -311,7 +342,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
 
   // 2. If the pin_uv_auth_param parameter is present
-  //   a. If the pinUvAuthProtocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
+  //   a. If the pinUvAuthProtocol parameter's value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
   //     > This has been processed when parsing.
   //   b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
   if ((mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && !(mc.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
@@ -385,38 +416,10 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   if (has_pin()) {
     //   11.1 If pin_uv_auth_param parameter is present (implying the "uv" option is false (see Step 5)):
     if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
-      //   a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
-      //      If the verification returns error, then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID error.
-      if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
-      if (!cp_verify_pin_token(mc.client_data_hash, sizeof(mc.client_data_hash), mc.pin_uv_auth_param,
-                               mc.pin_uv_auth_protocol)) {
-        DBG_MSG("Fail to verify pin token\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      //   b) Verify that the pinUvAuthToken has the mc permission, if not, then end the operation by returning
-      //   CTAP2_ERR_PIN_AUTH_INVALID.
-      if (!cp_has_permission(CP_PERMISSION_MC)) {
-        DBG_MSG("Fail to verify pin permission\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      //   c) If the pinUvAuthToken has a permissions RP ID associated:
-      //      If the permissions RP ID does not match the rp.id in this request, then end the operation by returning
-      //      CTAP2_ERR_PIN_AUTH_INVALID.
-      if (!cp_verify_rp_id(mc.rp_id_hash)) {
-        DBG_MSG("Fail to verify pin rp id\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      //   d) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
-      //   e) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-      if (!cp_get_user_verified_flag_value()) {
-        DBG_MSG("userVerifiedFlagValue is false\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
-      //   f) If userVerifiedFlagValue is true then set the "uv" bit to true in the response.
+      uint8_t err = verify_pin_uv_auth_token(mc.client_data_hash, mc.pin_uv_auth_param,
+                                              mc.pin_uv_auth_protocol, CP_PERMISSION_MC, mc.rp_id_hash);
+      if (err) return err;
       uv = true;
-      //   g) If the pinUvAuthToken does not have a permissions RP ID associated:
-      //      Associate the request’s rp.id parameter value with the pinUvAuthToken as its permissions RP ID.
-      cp_associate_rp_id(mc.rp_id_hash);
       DBG_MSG("PIN verified\n");
     }
     //   11.2 [N/A] If the "uv" option is present and set to true
@@ -438,9 +441,9 @@ step12:
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
         DBG_MSG("Exclude ID found\n");
-        // a) If the credential’s credProtect value is not userVerificationRequired
+        // a) If the credential's credProtect value is not userVerificationRequired
         if (kh->nonce[CREDENTIAL_NONCE_CP_POS] != CRED_PROTECT_VERIFICATION_REQUIRED ||
-            // b) Else (implying the credential’s credProtect value is userVerificationRequired)
+            // b) Else (implying the credential's credProtect value is userVerificationRequired)
             //    AND If the "uv" bit is true in the response:
             (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED && uv)) {
 
@@ -757,7 +760,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     //    This step is OPTIONAL if transport is done over NFC.
     if (device_get_tick() - timer > 30000) return CTAP2_ERR_NOT_ALLOWED;
     // 4. Select the credential indexed by credentialCounter. (I.e. credentials[n] assuming a zero-based array.)
-    // 5. Update the response to include the selected credential’s publicKeyCredentialUserEntity information.
+    // 5. Update the response to include the selected credential's publicKeyCredentialUserEntity information.
     //    User identifiable information (name, DisplayName, icon) inside the publicKeyCredentialUserEntity MUST NOT be
     //    returned if user verification was not done by the authenticator in the original authenticatorGetAssertion
     //    call.
@@ -786,7 +789,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   }
 
   // 2. If the pin_uv_auth_param parameter is present
-  //   a. If the pinUvAuthProtocol parameter’s value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
+  //   a. If the pinUvAuthProtocol parameter's value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
   //     > This has been processed when parsing.
   //   b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
   if ((ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && !(ga.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
@@ -827,36 +830,10 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //    6.2 [N/A] If the "uv" option is present and set to true
   //    6.1 If pin_uv_auth_param parameter is present
   if (has_pin() && (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {
-    //  a) Call verify(pinUvAuthToken, client_data_hash, pin_uv_auth_param).
-    //     If the verification returns error, return CTAP2_ERR_PIN_AUTH_INVALID error.
-    //     If the verification returns success, set the "uv" bit to true in the response.
-    if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
-    if (!cp_verify_pin_token(ga.client_data_hash, sizeof(ga.client_data_hash), ga.pin_uv_auth_param,
-                             ga.pin_uv_auth_protocol)) {
-      DBG_MSG("Fail to verify pin token\n");
-      return CTAP2_ERR_PIN_AUTH_INVALID;
-    }
+    uint8_t err = verify_pin_uv_auth_token(ga.client_data_hash, ga.pin_uv_auth_param,
+                                            ga.pin_uv_auth_protocol, CP_PERMISSION_GA, ga.rp_id_hash);
+    if (err) return err;
     uv = true;
-    //  b) Let userVerifiedFlagValue be the result of calling getUserVerifiedFlagValue().
-    //  c) If userVerifiedFlagValue is false then end the operation by returning CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_get_user_verified_flag_value()) {
-      DBG_MSG("userVerifiedFlagValue is false\n");
-      return CTAP2_ERR_PIN_AUTH_INVALID;
-    }
-    //  d) Verify that the pinUvAuthToken has the ga permission, if not, return CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_has_permission(CP_PERMISSION_GA)) {
-      DBG_MSG("Fail to verify pin permission\n");
-      return CTAP2_ERR_PIN_AUTH_INVALID;
-    }
-    //  e) If the pinUvAuthToken has a permissions RP ID associated:
-    //     If the permissions RP ID does not match the rp_id in this request, return CTAP2_ERR_PIN_AUTH_INVALID.
-    if (!cp_verify_rp_id(ga.rp_id_hash)) {
-      DBG_MSG("Fail to verify pin rp id\n");
-      return CTAP2_ERR_PIN_AUTH_INVALID;
-    }
-    //  f) If the pinUvAuthToken does not have a permissions RP ID associated:
-    //     Associate the request’s rp_id parameter value with the pinUvAuthToken as its permissions RP ID.
-    cp_associate_rp_id(ga.rp_id_hash);
   }
 
 step7:
@@ -892,7 +869,7 @@ step7:
   //                if transport is done over NFC.
   //           iv. Select the first credential.
   //        3) [N/A] If authenticator has a display and at least one of the "uv" and "up" options is true.
-  //    c) Update the response to include the selected credential’s publicKeyCredentialUserEntity information.
+  //    c) Update the response to include the selected credential's publicKeyCredentialUserEntity information.
   //       User identifiable information (name, DisplayName, icon) inside the publicKeyCredentialUserEntity
   //       MUST NOT be returned if user verification is not done by the authenticator.
   if (ga.allow_list_size > 0) { // Step 11
@@ -1206,7 +1183,7 @@ static uint8_t ctap_get_next_assertion(CborEncoder *encoder) { return ctap_get_a
 
 // Pre-encoded CBOR segments for authenticatorGetInfo response.
 // Generated at build time by scripts/gen_ctap_get_info.py.
-// Constants are parsed from headers — see the .inc file for details.
+// Constants are parsed from headers - see the .inc file for details.
 #include "ctap_get_info_cbor.inc"
 
 static uint8_t ctap_get_info(CborEncoder *encoder) {
@@ -1905,7 +1882,7 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       }
       //     iii. If pinUvAuthProtocol is not supported, return CTAP1_ERR_INVALID_PARAMETER.
       //       > Checked when paring.
-      //     iv. The authenticator calls verify(pinUvAuthToken, 32×0xff || h’0c00' || uint32LittleEndian(offset) ||
+      //     iv. The authenticator calls verify(pinUvAuthToken, 32×0xff || h'0c00' || uint32LittleEndian(offset) ||
       //         SHA-256(contents of set byte string, i.e. not including an outer CBOR tag with major type two),
       //         pinUvAuthParam).
       //         If the verification fails, return CTAP2_ERR_PIN_AUTH_INVALID.
