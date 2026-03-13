@@ -104,14 +104,14 @@ func TestOpenPGPApplet(t *testing.T) {
 			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x66, 0x08})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(res, ShouldResemble, []byte{2, 2, 0x05, 0x3C, 2, 2, 0x05, 0x3C}) // 1340 bytes
+			So(res, ShouldResemble, []byte{2, 2, 0x04, 0x00, 2, 2, 0x04, 0x00}) // 1024 bytes
 		})
 
 		Convey("Get challenge", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0x84, 0x00, 0x00, 0x00, 0x05, 0x3C})
+			res, code, err := app.Send([]byte{0x00, 0x84, 0x00, 0x00, 0x00, 0x04, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(len(res), ShouldEqual, 0x53C) // 1340 bytes
+			So(len(res), ShouldEqual, 0x400) // 1024 bytes
 		})
 
 		Convey("Admin PIN retry times", func(ctx C) {
@@ -333,9 +333,9 @@ func TestOpenPGPApplet(t *testing.T) {
 func TestOpenPGPCerts(t *testing.T) {
 	certContent := [][]byte{
 		{},
-		make([]byte, 0x480),
-		make([]byte, 0x480),
-		make([]byte, 0x480),
+		make([]byte, 0x400),
+		make([]byte, 0x400),
+		make([]byte, 0x400),
 	}
 	for i := 1; i <= 3; i++ {
 		crand.Read(certContent[i])

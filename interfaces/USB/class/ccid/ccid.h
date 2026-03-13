@@ -4,7 +4,11 @@
 
 #include <common.h>
 
-#define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
+// ABDATA_SIZE must accommodate the largest raw extended APDU, including
+// RSA-4096 key import (~1320 data + 7 header). This is intentionally larger
+// than APDU_BUFFER_SIZE because streaming bypasses handle large key/cert
+// operations without going through the chaining buffer.
+#define ABDATA_SIZE 1340
 #define SHORT_ABDATA_SIZE 8 /* Enough for most CCID messages except XfrBlock/Secure */
 #define CCID_CMD_HEADER_SIZE 10
 #define CCID_NUMBER_OF_SLOTS 1

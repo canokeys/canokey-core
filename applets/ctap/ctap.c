@@ -700,6 +700,12 @@ step12:
       uint8_t *ptr = x5carr.data.ptr - 1;
       ret = get_cert(ptr + 3);
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      // Check that cert fits in the remaining response buffer.
+      // x5carr.end points past the output buffer (shared with all nested encoders).
+      if (ptr + 3 + ret > x5carr.end) {
+        ERR_MSG("Attestation cert too large for response buffer (%d bytes)\n", ret);
+        return CTAP2_ERR_REQUEST_TOO_LARGE;
+      }
       *ptr++ = 0x59;
       *ptr++ = HI(ret);
       *ptr++ = LO(ret);

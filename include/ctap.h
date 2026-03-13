@@ -12,7 +12,7 @@ typedef enum {
 } ctap_src_t;
 
 #define CTAP_CERT_FILE "ctap_cert"
-#define MAX_CERT_SIZE 1152
+#define MAX_CERT_SIZE 640
 
 uint8_t ctap_install(uint8_t reset);
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu);

@@ -206,10 +206,31 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   static bool openpgp_key_streaming = false;
   if (current_applet == APPLET_OPENPGP) {
     bool is_chaining = (CLA & 0x10) != 0;
-    if (!openpgp_key_streaming && is_chaining && INS == OPENPGP_INS_IMPORT_KEY) {
-      openpgp_streaming_import_key(capdu, rapdu, true);
-      if (SW == SW_NO_ERROR && openpgp_key_import_streaming()) openpgp_key_streaming = true;
-      return;
+    if (!openpgp_key_streaming && INS == OPENPGP_INS_IMPORT_KEY) {
+      if (is_chaining) {
+        // First chained block — start streaming
+        openpgp_streaming_import_key(capdu, rapdu, true);
+        if (SW == SW_NO_ERROR && openpgp_key_import_streaming()) openpgp_key_streaming = true;
+        return;
+      }
+      if (!is_chaining && LC > APDU_BUFFER_SIZE) {
+        // Extended APDU too large for chaining buffer — single-shot streaming
+        openpgp_streaming_import_key(capdu, rapdu, true);
+        if (SW == SW_NO_ERROR && openpgp_key_import_streaming()) {
+          int err = openpgp_streaming_import_key_finish();
+          if (err == KEY_ERR_LENGTH) {
+            LL = 0;
+            SW = SW_WRONG_LENGTH;
+          } else if (err == KEY_ERR_DATA) {
+            LL = 0;
+            SW = SW_WRONG_DATA;
+          } else if (err < 0) {
+            LL = 0;
+            SW = SW_UNABLE_TO_PROCESS;
+          }
+        }
+        return;
+      }
     }
     if (openpgp_key_streaming) {
       if (INS != OPENPGP_INS_IMPORT_KEY) {
@@ -269,10 +290,30 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   static bool piv_key_streaming = false;
   if (current_applet == APPLET_PIV) {
     bool is_chaining = (CLA & 0x10) != 0;
-    if (!piv_key_streaming && is_chaining && INS == PIV_INS_IMPORT_ASYMMETRIC_KEY) {
-      piv_streaming_import_key(capdu, rapdu, true);
-      if (SW == SW_NO_ERROR && piv_key_import_streaming()) piv_key_streaming = true;
-      return;
+    if (!piv_key_streaming && INS == PIV_INS_IMPORT_ASYMMETRIC_KEY) {
+      if (is_chaining) {
+        piv_streaming_import_key(capdu, rapdu, true);
+        if (SW == SW_NO_ERROR && piv_key_import_streaming()) piv_key_streaming = true;
+        return;
+      }
+      if (!is_chaining && LC > APDU_BUFFER_SIZE) {
+        // Extended APDU too large for chaining buffer — single-shot streaming
+        piv_streaming_import_key(capdu, rapdu, true);
+        if (SW == SW_NO_ERROR && piv_key_import_streaming()) {
+          int err = piv_streaming_import_key_finish();
+          if (err == KEY_ERR_LENGTH) {
+            LL = 0;
+            SW = SW_WRONG_LENGTH;
+          } else if (err == KEY_ERR_DATA) {
+            LL = 0;
+            SW = SW_WRONG_DATA;
+          } else if (err < 0) {
+            LL = 0;
+            SW = SW_UNABLE_TO_PROCESS;
+          }
+        }
+        return;
+      }
     }
     if (piv_key_streaming) {
       if (INS != PIV_INS_IMPORT_ASYMMETRIC_KEY) {
@@ -325,9 +366,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     SW = SW_NO_ERROR;
   } else if (ret == APDU_CHAINING_LAST_BLOCK) {
     capdu = &capdu_chaining.capdu;
-    LE = MIN(LE, APDU_BUFFER_SIZE);
     if ((CLA == 0x80 || CLA == 0x00) && INS == 0xC0) { // GET RESPONSE
-      rapdu->len = LE;
+      rapdu->len = MIN(LE, APDU_BUFFER_SIZE);
       apdu_output(&rapdu_chaining, rapdu);
       return;
     }
@@ -367,13 +407,13 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
           SW = SW_UNABLE_TO_PROCESS;
         }
       } else {
-        rapdu->len = LE;
+        rapdu->len = MIN(LE, APDU_BUFFER_SIZE);
         apdu_output(&rapdu_chaining, rapdu);
       }
       break;
     case APPLET_PIV:
       piv_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
+      rapdu->len = MIN(LE, APDU_BUFFER_SIZE);
       apdu_output(&rapdu_chaining, rapdu);
       break;
     case APPLET_FIDO:
@@ -395,7 +435,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       }
 #endif
       ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-      rapdu->len = LE;
+      rapdu->len = MIN(LE, APDU_BUFFER_SIZE);
       apdu_output(&rapdu_chaining, rapdu);
       break;
     case APPLET_OATH:
@@ -411,6 +451,9 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       LL = 0;
       SW = SW_FILE_NOT_FOUND;
     }
+  } else if (ret == APDU_CHAINING_OVERFLOW) {
+    LL = 0;
+    SW = SW_WRONG_LENGTH;
   } else {
     LL = 0;
     SW = SW_CHECKING_ERROR;

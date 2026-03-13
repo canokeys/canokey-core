@@ -8,14 +8,14 @@
 #include "ctap-internal.h"
 
 // General constants
-#define U2F_EC_KEY_SIZE 32                // EC key size in bytes
-#define U2F_EC_PUB_KEY_SIZE 64            // EC public key size in bytes
-#define U2F_KH_SIZE sizeof(credential_id) // Key handle size
-#define U2F_MAX_ATT_CERT_SIZE 1152        // Max size of attestation certificate
-#define U2F_MAX_EC_SIG_SIZE 72            // Max size of DER coded EC signature
-#define U2F_CTR_SIZE 4                    // Size of counter field
-#define U2F_APPID_SIZE 32                 // Size of application id
-#define U2F_CHAL_SIZE 32                  // Size of challenge
+#define U2F_EC_KEY_SIZE 32                  // EC key size in bytes
+#define U2F_EC_PUB_KEY_SIZE 64              // EC public key size in bytes
+#define U2F_KH_SIZE sizeof(credential_id)   // Key handle size
+#define U2F_MAX_ATT_CERT_SIZE MAX_CERT_SIZE // keep in sync with MAX_CERT_SIZE // Max size of attestation certificate
+#define U2F_MAX_EC_SIG_SIZE 72              // Max size of DER coded EC signature
+#define U2F_CTR_SIZE 4                      // Size of counter field
+#define U2F_APPID_SIZE 32                   // Size of application id
+#define U2F_CHAL_SIZE 32                    // Size of challenge
 
 // EC (uncompressed) point
 #define U2F_POINT_UNCOMPRESSED 0x04 // Uncompressed point format

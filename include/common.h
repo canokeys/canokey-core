@@ -8,7 +8,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#define APDU_BUFFER_SIZE 1340
+/*
+ * Maximum APDU data size for the internal chaining buffer.
+ * Must be >= MAX_CTAP_BUFSIZE because CTAP CBOR responses over CCID
+ * are written directly into chaining_buffer before output chaining.
+ *
+ * Large payloads (certs, key imports) are handled via streaming and
+ * do not depend on this size.
+ */
+#define APDU_BUFFER_SIZE 1024
 #define TOUCH_EXPIRE_TIME 1000
 #define TOUCH_AFTER_PWRON 1500
 
