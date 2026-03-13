@@ -52,10 +52,10 @@ endif()
 
 # Generate pre-encoded CBOR segments for ctap_get_info.
 # Constants are parsed directly from headers — no duplication.
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
+find_program(PYTHON_EXE NAMES python3 python REQUIRED)
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
-    COMMAND ${Python3_EXECUTABLE}
+    COMMAND ${PYTHON_EXE}
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
         --headers
             ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
