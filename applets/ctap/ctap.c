@@ -1188,9 +1188,12 @@ static uint8_t ctap_get_next_assertion(CborEncoder *encoder) { return ctap_get_a
 static uint8_t ctap_get_info(CborEncoder *encoder) {
   uint8_t *p = encoder->data.ptr;
   uint8_t *end = encoder->end;
+  int sm2_algo = ctap_sm2_attr.algo_id;
+  int sm2_in_alg_list = ctap_sm2_attr.enabled &&
+                        (sm2_algo >= -256 && sm2_algo <= -25);
   size_t need = sizeof(cbor_gi_prefix) + 1 /* array header */
                 + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix) +
-                (ctap_sm2_attr.enabled ? sizeof(cbor_gi_alg_sm2) : 0);
+                (sm2_in_alg_list ? sizeof(cbor_gi_alg_sm2) : 0);
   if (p + need > end) return CTAP2_ERR_LIMIT_EXCEEDED;
 
   // 1. Prefix: map header through algorithms key
@@ -1199,26 +1202,20 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   p += sizeof(cbor_gi_prefix);
 
   // 2. Algorithms array header: 2 or 3 entries
-  *p++ = ctap_sm2_attr.enabled ? 0x83 : 0x82;
+  *p++ = sm2_in_alg_list ? 0x83 : 0x82;
 
   // 3. Base algorithm entries (ES256 + EdDSA)
   memcpy(p, cbor_gi_alg_base, sizeof(cbor_gi_alg_base));
   p += sizeof(cbor_gi_alg_base);
 
   // 4. SM2 entry (conditional)
-  if (ctap_sm2_attr.enabled) {
+  if (sm2_in_alg_list) {
     memcpy(p, cbor_gi_alg_sm2, sizeof(cbor_gi_alg_sm2));
     // Patch SM2 algo_id (CBOR negative int). The CBOR template encodes this
-    // as a 2-byte negative integer (range [-256, -25]), so we must ensure
-    // that the configured value has the same canonical encoding length.
-    int algo = ctap_sm2_attr.algo_id;
-    if (algo < -256 || algo > -25) {
-      // Reject values that would not use the 2-byte encoding; emitting them
-      // would corrupt the surrounding CBOR template.
-      return CTAP2_ERR_INVALID_CBOR;
-    }
+    // as a 2-byte negative integer (range [-256, -25]); we only include SM2
+    // when the configured value matches this canonical encoding length.
     p[CTAP_GI_SM2_ALGO_OFFSET] = 0x38;
-    p[CTAP_GI_SM2_ALGO_OFFSET + 1] = (uint8_t)(-1 - algo);
+    p[CTAP_GI_SM2_ALGO_OFFSET + 1] = (uint8_t)(-1 - sm2_algo);
     p += sizeof(cbor_gi_alg_sm2);
   }
 
