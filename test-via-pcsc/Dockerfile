@@ -1,7 +1,13 @@
 FROM ubuntu:24.04
 
 ARG UBUNTU_MIRROR
-RUN [ -z "${UBUNTU_MIRROR}" ] || sed -i.bak s/archive.ubuntu.com/${UBUNTU_MIRROR}/g /etc/apt/sources.list
+RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
+        if [ -s /etc/apt/sources.list ]; then \
+            sed -i.bak "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" /etc/apt/sources.list; \
+        elif [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+            sed -i.bak "s|http://archive.ubuntu.com/ubuntu|${UBUNTU_MIRROR}|g" /etc/apt/sources.list.d/ubuntu.sources; \
+        fi; \
+    fi
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
     sudo software-properties-common git gcc g++ cmake swig psmisc procps \

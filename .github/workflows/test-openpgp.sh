@@ -11,7 +11,7 @@ echo "=== Phase: Setup GPG environment ==="
 pkill gpg-agent || true
 export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
 mkdir -p ~/.ssh /tmp/mock
-python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1000)]),end='')" > /tmp/random.txt
+python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1152)]),end='')" > /tmp/random.txt
 echo 9876543210 >"/tmp/mock/Reset Code"
 echo 12345678 >"/tmp/mock/Passphrase:"
 echo 12345678 >"/tmp/mock/Admin PIN"
