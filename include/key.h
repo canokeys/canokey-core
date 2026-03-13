@@ -96,4 +96,59 @@ int ck_generate_key(ck_key_t *key);
 
 int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t *sig);
 
+/**
+ * Streaming key import state for RSA keys.
+ * Allows receiving key data across multiple chain blocks without buffering
+ * the entire key in the chaining buffer.
+ *
+ * Usage:
+ *   1. Call ck_parse_openpgp_stream_init / ck_parse_piv_stream_init with the first block
+ *      (must contain complete TLV headers). Returns header_consumed bytes.
+ *   2. Call ck_key_stream_feed with subsequent data until all component data is received.
+ *   3. Call ck_key_stream_finalize to validate and return the result.
+ */
+typedef struct {
+  bool active;
+  uint8_t n_components;    // Number of components (6 for OpenPGP RSA, 5 for PIV RSA)
+  uint8_t current_comp;    // Current component being received
+  uint16_t comp_len[6];    // Length of each component
+  uint16_t comp_received;  // Bytes received for current component
+  uint8_t *comp_dest[6];   // Destination pointers into key_buffer
+  uint16_t comp_offset[6]; // Write offset within destination (for right-alignment)
+  uint16_t total_data;     // Total data bytes expected
+  uint16_t total_received; // Total data bytes received
+} ck_key_stream_t;
+
+extern ck_key_stream_t key_stream;
+
+/**
+ * Initialize streaming parse for OpenPGP RSA key import.
+ * Parses TLV headers from buf and prepares streaming state.
+ * @return offset to first data byte (header bytes consumed), or negative error.
+ */
+int ck_parse_openpgp_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_len);
+
+/**
+ * Initialize streaming parse for PIV RSA key import.
+ * @return offset to first data byte (header bytes consumed), or negative error.
+ */
+int ck_parse_piv_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_len);
+
+/**
+ * Feed data to the streaming key import.
+ * @return 0 on success, negative on error.
+ */
+int ck_key_stream_feed(ck_key_t *key, const uint8_t *data, size_t len);
+
+/**
+ * Finalize streaming key import. Validates key data.
+ * @return 0 on success, negative error code on failure.
+ */
+int ck_key_stream_finalize(ck_key_t *key);
+
+/**
+ * Abort streaming key import.
+ */
+void ck_key_stream_abort(void);
+
 #endif // CANOKEY_CORE_KEY_H

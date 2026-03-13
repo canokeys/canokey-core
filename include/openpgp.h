@@ -68,5 +68,9 @@ void openpgp_streaming_put_data_abort(void);
 int openpgp_streaming_read_cert(RAPDU *rapdu);
 bool openpgp_cert_read_streaming(void);
 void openpgp_cert_read_abort(void);
+int openpgp_streaming_import_key(const CAPDU *capdu, RAPDU *rapdu, bool is_first);
+int openpgp_streaming_import_key_finish(void);
+void openpgp_streaming_import_key_abort(void);
+bool openpgp_key_import_streaming(void);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H

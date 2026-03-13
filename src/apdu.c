@@ -5,8 +5,8 @@
 #include <common.h>
 #include <ctap.h>
 #include <device.h>
+#include <key.h>
 #include <ndef.h>
-#include <openpgp.h>
 #include <oath.h>
 #include <openpgp.h>
 #include <piv.h>
@@ -200,6 +200,45 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     // Applet changed — abort stream
     openpgp_streaming_put_data_abort();
     openpgp_cert_streaming = false;
+  }
+
+  // Streaming bypass for OpenPGP key import (chained IMPORT KEY 0xDB).
+  static bool openpgp_key_streaming = false;
+  if (current_applet == APPLET_OPENPGP) {
+    bool is_chaining = (CLA & 0x10) != 0;
+    if (!openpgp_key_streaming && is_chaining && INS == OPENPGP_INS_IMPORT_KEY) {
+      openpgp_streaming_import_key(capdu, rapdu, true);
+      if (SW == SW_NO_ERROR && openpgp_key_import_streaming()) openpgp_key_streaming = true;
+      return;
+    }
+    if (openpgp_key_streaming) {
+      if (INS != OPENPGP_INS_IMPORT_KEY) {
+        openpgp_streaming_import_key_abort();
+        openpgp_key_streaming = false;
+      } else {
+        bool is_last = !is_chaining;
+        openpgp_streaming_import_key(capdu, rapdu, false);
+        if (is_last && SW == SW_NO_ERROR) {
+          // Last block — finalize
+          int err = openpgp_streaming_import_key_finish();
+          if (err == KEY_ERR_LENGTH) {
+            LL = 0;
+            SW = SW_WRONG_LENGTH;
+          } else if (err == KEY_ERR_DATA) {
+            LL = 0;
+            SW = SW_WRONG_DATA;
+          } else if (err < 0) {
+            LL = 0;
+            SW = SW_UNABLE_TO_PROCESS;
+          }
+        }
+        if (!is_chaining || SW != SW_NO_ERROR) openpgp_key_streaming = false;
+        return;
+      }
+    }
+  } else if (openpgp_key_streaming) {
+    openpgp_streaming_import_key_abort();
+    openpgp_key_streaming = false;
   }
 
   // Streaming bypass for CTAP cert install via admin applet (chained INS 0x02).

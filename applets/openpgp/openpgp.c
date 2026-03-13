@@ -1243,6 +1243,125 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+// Streaming state for key import
+static struct {
+  bool active;
+  const char *key_path;
+  uint8_t key_ref;
+} key_import_stream;
+
+int openpgp_streaming_import_key(const CAPDU *capdu, RAPDU *rapdu, bool is_first) {
+  if (is_first) {
+    if (pw3.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+
+    const uint8_t *p = DATA;
+    int fail;
+    size_t length_size;
+
+    // Parse outer header: 4D + CRT (must be in first block)
+    if (LC < 6) EXCEPT(SW_WRONG_LENGTH);
+    if (*p++ != 0x4D) EXCEPT(SW_WRONG_DATA);
+    // Skip extended header list length
+    tlv_get_length_safe(p, LC - 1, &fail, &length_size);
+    if (fail) EXCEPT(SW_WRONG_DATA);
+    p += length_size;
+
+    // Control Reference Template
+    key_import_stream.key_ref = *p;
+    key_import_stream.key_path = get_key_path(*p);
+    if (key_import_stream.key_path == NULL) EXCEPT(SW_WRONG_DATA);
+
+    ++p;
+    if (*p != 0x00 && *p != 0x03) EXCEPT(SW_WRONG_DATA);
+    p += *p + 1;
+
+    // Read existing key metadata for type info
+    if (ck_read_key_metadata(key_import_stream.key_path, &key_buffer.meta) < 0) return -1;
+
+    // Try streaming init (RSA only)
+    size_t remaining = LC - (p - DATA);
+    int header_consumed = ck_parse_openpgp_stream_init(&key_buffer, p, remaining);
+    if (header_consumed < 0) {
+      // Non-RSA or parse error — for ECC, fall back handled by caller detecting stream not active
+      if (header_consumed == KEY_ERR_LENGTH)
+        EXCEPT(SW_WRONG_LENGTH);
+      else if (header_consumed == KEY_ERR_DATA) {
+        // Could be ECC — try non-streaming parse
+        int err = ck_parse_openpgp(&key_buffer, p, remaining);
+        if (err == KEY_ERR_LENGTH)
+          EXCEPT(SW_WRONG_LENGTH);
+        else if (err == KEY_ERR_DATA)
+          EXCEPT(SW_WRONG_DATA);
+        else if (err < 0)
+          EXCEPT(SW_UNABLE_TO_PROCESS);
+        // ECC key parsed successfully in single block — write immediately
+        if (ck_write_key(key_import_stream.key_path, &key_buffer) < 0) {
+          memzero(&key_buffer, sizeof(key_buffer));
+          return -1;
+        }
+        memzero(&key_buffer, sizeof(key_buffer));
+        if (key_import_stream.key_ref == 0xB6) return reset_sig_counter();
+        LL = 0;
+        SW = SW_NO_ERROR;
+        return 0;
+      } else
+        EXCEPT(SW_UNABLE_TO_PROCESS);
+    }
+
+    // Feed remaining data from first block
+    p += header_consumed;
+    remaining -= header_consumed;
+    if (remaining > 0) {
+      int err = ck_key_stream_feed(&key_buffer, p, remaining);
+      if (err < 0) {
+        ck_key_stream_abort();
+        memzero(&key_buffer, sizeof(key_buffer));
+        EXCEPT(SW_WRONG_DATA);
+      }
+    }
+    key_import_stream.active = true;
+  } else {
+    // Subsequent block — feed data
+    if (LC > 0) {
+      int err = ck_key_stream_feed(&key_buffer, DATA, LC);
+      if (err < 0) {
+        ck_key_stream_abort();
+        key_import_stream.active = false;
+        memzero(&key_buffer, sizeof(key_buffer));
+        EXCEPT(SW_WRONG_DATA);
+      }
+    }
+  }
+  LL = 0;
+  SW = SW_NO_ERROR;
+  return 0;
+}
+
+int openpgp_streaming_import_key_finish(void) {
+  key_import_stream.active = false;
+  int err = ck_key_stream_finalize(&key_buffer);
+  if (err < 0) {
+    memzero(&key_buffer, sizeof(key_buffer));
+    return err;
+  }
+  if (ck_write_key(key_import_stream.key_path, &key_buffer) < 0) {
+    memzero(&key_buffer, sizeof(key_buffer));
+    return -1;
+  }
+  memzero(&key_buffer, sizeof(key_buffer));
+  if (key_import_stream.key_ref == 0xB6) return reset_sig_counter();
+  return 0;
+}
+
+void openpgp_streaming_import_key_abort(void) {
+  key_import_stream.active = false;
+  ck_key_stream_abort();
+  memzero(&key_buffer, sizeof(key_buffer));
+}
+
+bool openpgp_key_import_streaming(void) { return key_import_stream.active; }
+
 static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   ASSERT_ADMIN();

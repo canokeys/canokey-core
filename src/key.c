@@ -408,3 +408,169 @@ int ck_sign(const ck_key_t *key, const uint8_t *input, size_t input_len, uint8_t
   PRINT_HEX(sig, SIGNATURE_LENGTH[key->meta.type]);
   return SIGNATURE_LENGTH[key->meta.type];
 }
+
+ck_key_stream_t key_stream;
+
+int ck_parse_openpgp_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
+  memzero(key->data, sizeof(rsa_key_t));
+  key->meta.origin = KEY_ORIGIN_IMPORTED;
+  memset(&key_stream, 0, sizeof(key_stream));
+
+  const uint8_t *p = buf;
+  int fail;
+  size_t length_size;
+
+  // Parse 7F48 header
+  if (buf_len < 4) return KEY_ERR_LENGTH;
+  if (*p++ != 0x7F || *p++ != 0x48) return KEY_ERR_DATA;
+  size_t len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+  if (fail) return KEY_ERR_LENGTH;
+  if (len > MAX_KEY_TEMPLATE_LENGTH) return KEY_ERR_DATA;
+  p += length_size;
+  const uint8_t *data_tag = p + len; // points to 5F48
+
+  switch (key->meta.type) {
+  case RSA2048:
+  case RSA3072:
+  case RSA4096: {
+    static const uint8_t rsa_tags[] = {0x91, 0x92, 0x93, 0x94, 0x95, 0x96};
+    const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+    const size_t expected_exact[] = {E_LENGTH, pri_len, pri_len, 0, 0, 0};
+    uint8_t *dests[] = {key->rsa.e, key->rsa.p, key->rsa.q, key->rsa.qinv, key->rsa.dp, key->rsa.dq};
+
+    key_stream.n_components = 6;
+    for (int i = 0; i < 6; ++i) {
+      if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
+      if (*p++ != rsa_tags[i]) return KEY_ERR_DATA;
+      key_stream.comp_len[i] = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+      if (fail) return KEY_ERR_LENGTH;
+      if (expected_exact[i] > 0 ? key_stream.comp_len[i] != expected_exact[i] : key_stream.comp_len[i] > pri_len)
+        return KEY_ERR_DATA;
+      p += length_size;
+      key_stream.comp_dest[i] = dests[i];
+      key_stream.comp_offset[i] = (i >= 3) ? pri_len - key_stream.comp_len[i] : 0;
+    }
+
+    // Parse 5F48 tag and length
+    p = data_tag;
+    if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
+    if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
+    size_t total_data = 0;
+    for (int i = 0; i < 6; ++i)
+      total_data += key_stream.comp_len[i];
+    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+    if (fail) return KEY_ERR_LENGTH;
+    if (len != total_data) return KEY_ERR_DATA;
+    p += length_size;
+
+    key->rsa.nbits = pri_len * 16;
+    key_stream.total_data = total_data;
+    key_stream.total_received = 0;
+    key_stream.current_comp = 0;
+    key_stream.comp_received = 0;
+    key_stream.active = true;
+    return (int)(p - buf); // header bytes consumed
+  }
+
+  default:
+    // Non-RSA: use the normal (non-streaming) parser
+    return KEY_ERR_DATA;
+  }
+}
+
+int ck_parse_piv_stream_init(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
+  memzero(key->data, sizeof(rsa_key_t));
+  key->meta.origin = KEY_ORIGIN_IMPORTED;
+  memset(&key_stream, 0, sizeof(key_stream));
+
+  const uint8_t *p = buf;
+  int fail;
+  size_t length_size;
+  const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+
+  switch (key->meta.type) {
+  case RSA2048:
+  case RSA3072:
+  case RSA4096: {
+    uint8_t *dests[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
+
+    key->rsa.nbits = pri_len * 16;
+    *(uint32_t *)key->rsa.e = htobe32(65537);
+    key_stream.n_components = 5;
+
+    for (int i = 0; i < 5; ++i) {
+      if ((size_t)(p - buf) >= buf_len) return KEY_ERR_LENGTH;
+      if (*p++ != (i + 1)) return KEY_ERR_DATA;
+      const size_t clen = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+      if (fail) return KEY_ERR_LENGTH;
+      if (clen > pri_len) return KEY_ERR_DATA;
+      p += length_size;
+      key_stream.comp_len[i] = clen;
+      key_stream.comp_dest[i] = dests[i];
+      key_stream.comp_offset[i] = pri_len - clen;
+    }
+
+    size_t total_data = 0;
+    for (int i = 0; i < 5; ++i)
+      total_data += key_stream.comp_len[i];
+
+    key_stream.total_data = total_data;
+    key_stream.total_received = 0;
+    key_stream.current_comp = 0;
+    key_stream.comp_received = 0;
+    key_stream.active = true;
+    return (int)(p - buf); // header bytes consumed
+  }
+
+  default:
+    return KEY_ERR_DATA;
+  }
+}
+
+int ck_key_stream_feed(ck_key_t *key, const uint8_t *data, size_t len) {
+  (void)key;
+  if (!key_stream.active) return KEY_ERR_DATA;
+
+  size_t pos = 0;
+  while (pos < len && key_stream.current_comp < key_stream.n_components) {
+    const uint8_t ci = key_stream.current_comp;
+    const size_t need = key_stream.comp_len[ci] - key_stream.comp_received;
+    const size_t avail = len - pos;
+    const size_t take = need < avail ? need : avail;
+
+    memcpy(key_stream.comp_dest[ci] + key_stream.comp_offset[ci] + key_stream.comp_received, data + pos, take);
+    key_stream.comp_received += take;
+    key_stream.total_received += take;
+    pos += take;
+
+    if (key_stream.comp_received >= key_stream.comp_len[ci]) {
+      key_stream.current_comp++;
+      key_stream.comp_received = 0;
+    }
+  }
+
+  if (pos < len) {
+    // Extra data beyond expected components
+    key_stream.active = false;
+    return KEY_ERR_DATA;
+  }
+
+  return 0;
+}
+
+int ck_key_stream_finalize(ck_key_t *key) {
+  if (!key_stream.active) return KEY_ERR_DATA;
+  key_stream.active = false;
+
+  if (key_stream.total_received != key_stream.total_data) return KEY_ERR_LENGTH;
+
+  // Validate RSA key: p and q must be >= ceil(sqrt(2)) * 2^(nbits/2 - 32)
+  if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
+    memzero(key, sizeof(ck_key_t));
+    return KEY_ERR_DATA;
+  }
+
+  return 0;
+}
+
+void ck_key_stream_abort(void) { key_stream.active = false; }
