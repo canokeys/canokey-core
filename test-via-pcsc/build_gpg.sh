@@ -2,13 +2,19 @@
 # Build patched pinentry-tty (only runs on cache miss)
 set -e
 
-sudo tee /etc/apt/sources.list <<EOF
-deb http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
-deb-src http://archive.ubuntu.com/ubuntu/ noble main restricted universe multiverse
-
-deb http://archive.ubuntu.com/ubuntu/ noble-updates main restricted universe multiverse
-deb-src http://archive.ubuntu.com/ubuntu/ noble-updates main restricted universe multiverse
+# Enable deb-src for build-dep (works on both 22.04 and 24.04)
+if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+  # 24.04+ uses deb822 format
+  sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
+elif [ -f /etc/apt/sources.list ]; then
+  # 22.04 and earlier
+  sudo tee /etc/apt/sources.list <<EOF
+deb http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs) main restricted universe multiverse
+deb-src http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs) main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs)-updates main restricted universe multiverse
+deb-src http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs)-updates main restricted universe multiverse
 EOF
+fi
 
 sudo apt-get update
 sudo apt-get build-dep -q -y pinentry-tty
