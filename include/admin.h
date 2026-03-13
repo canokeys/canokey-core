@@ -52,5 +52,7 @@ int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu, bool pin_validated
 uint8_t cfg_is_led_normally_on(void);
 uint8_t cfg_is_ndef_enable(void);
 uint8_t cfg_is_webusb_landing_enable(void);
+int admin_streaming_cert_install(const CAPDU *capdu, RAPDU *rapdu, bool is_first);
+void admin_streaming_cert_install_abort(void);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_

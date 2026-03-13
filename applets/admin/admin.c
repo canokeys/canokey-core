@@ -310,3 +310,36 @@ done:
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }
+
+// Streaming state for CTAP cert install (bypasses chaining buffer)
+static struct {
+  bool active;
+  uint16_t total_len;
+} ctap_cert_stream;
+
+int admin_streaming_cert_install(const CAPDU *capdu, RAPDU *rapdu, bool is_first) {
+  if (is_first) {
+    if (!pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    ctap_cert_stream.active = true;
+    ctap_cert_stream.total_len = 0;
+    if (write_file(CTAP_CERT_FILE, DATA, 0, LC, 1) < 0) {
+      ctap_cert_stream.active = false;
+      return -1;
+    }
+  } else {
+    if (append_file(CTAP_CERT_FILE, DATA, LC) < 0) {
+      ctap_cert_stream.active = false;
+      return -1;
+    }
+  }
+  ctap_cert_stream.total_len += LC;
+  if (ctap_cert_stream.total_len > MAX_CERT_SIZE) {
+    ctap_cert_stream.active = false;
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  LL = 0;
+  SW = SW_NO_ERROR;
+  return 0;
+}
+
+void admin_streaming_cert_install_abort(void) { ctap_cert_stream.active = false; }

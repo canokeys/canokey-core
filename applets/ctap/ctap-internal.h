@@ -3,6 +3,7 @@
 #define FIDO_INTERNAL_H_
 
 #include <apdu.h>
+#include <ctap.h>
 #include <cbor.h>
 #include <common.h>
 #include <ctaphid.h>
@@ -13,7 +14,7 @@
 
 // Filesystem Meta
 // clang-format off
-#define CTAP_CERT_FILE  "ctap_cert"
+// CTAP_CERT_FILE defined in ctap.h
 #define KEY_ATTR        0x00
 #define SIGN_CTR_ATTR   0x01
 #define PIN_ATTR        0x02
@@ -216,7 +217,7 @@
 #define PIN_ENC_SIZE_P2               80
 #define PIN_HASH_SIZE_P1              16
 #define PIN_HASH_SIZE_P2              32
-#define MAX_CERT_SIZE                 1152
+// MAX_CERT_SIZE defined in ctap.h
 #define AAGUID_SIZE                   16
 #define PIN_AUTH_SIZE_P1              16
 #define PIN_TOKEN_SIZE                32

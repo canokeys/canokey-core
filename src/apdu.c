@@ -187,6 +187,30 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     openpgp_cert_streaming = false;
   }
 
+  // Streaming bypass for CTAP cert install via admin applet (chained INS 0x02).
+  static bool admin_cert_streaming = false;
+  if (current_applet == APPLET_ADMIN) {
+    bool is_chaining = (CLA & 0x10) != 0;
+    if (!admin_cert_streaming && is_chaining && INS == ADMIN_INS_WRITE_FIDO_CERT) {
+      admin_streaming_cert_install(capdu, rapdu, true);
+      if (SW == SW_NO_ERROR) admin_cert_streaming = true;
+      return;
+    }
+    if (admin_cert_streaming) {
+      if (INS != ADMIN_INS_WRITE_FIDO_CERT) {
+        admin_streaming_cert_install_abort();
+        admin_cert_streaming = false;
+      } else {
+        admin_streaming_cert_install(capdu, rapdu, false);
+        if (!is_chaining || SW != SW_NO_ERROR) admin_cert_streaming = false;
+        return;
+      }
+    }
+  } else if (admin_cert_streaming) {
+    admin_streaming_cert_install_abort();
+    admin_cert_streaming = false;
+  }
+
   static enum PIV_STATE piv_state;
   if (current_applet == APPLET_PIV) {
     // Offload some APDU chaining commands of PIV applet,
