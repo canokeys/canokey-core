@@ -156,6 +156,21 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     SW = SW_NO_ERROR;
     return;
   }
+  // Streaming bypass for OpenPGP cert read response.
+  // When cert read streaming is active, handle GET RESPONSE by reading directly from flash.
+  if (openpgp_cert_read_streaming()) {
+    if (current_applet == APPLET_OPENPGP && (CLA == 0x00 || CLA == 0x80) && INS == 0xC0) {
+      rapdu->len = MIN(LE, APDU_BUFFER_SIZE);
+      if (openpgp_streaming_read_cert(rapdu) < 0) {
+        LL = 0;
+        SW = SW_UNABLE_TO_PROCESS;
+      }
+      return;
+    }
+    // Different command or applet change — abort cert read streaming
+    openpgp_cert_read_abort();
+  }
+
   // Streaming bypass for OpenPGP cert import (chained PUT DATA 0x7F21).
   // Writes each chain block directly to flash, bypassing chaining buffer.
   static bool openpgp_cert_streaming = false;
@@ -267,8 +282,17 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     switch (current_applet) {
     case APPLET_OPENPGP:
       openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
+      if (openpgp_cert_read_streaming()) {
+        // Cert read set up streaming — read first chunk directly from flash
+        rapdu->len = MIN(LE, APDU_BUFFER_SIZE);
+        if (openpgp_streaming_read_cert(rapdu) < 0) {
+          LL = 0;
+          SW = SW_UNABLE_TO_PROCESS;
+        }
+      } else {
+        rapdu->len = LE;
+        apdu_output(&rapdu_chaining, rapdu);
+      }
       break;
     case APPLET_PIV:
       piv_process_apdu(capdu, &rapdu_chaining.rapdu);

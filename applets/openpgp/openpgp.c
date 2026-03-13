@@ -104,7 +104,15 @@ static struct {
   bool active;
   uint16_t total_len;
   uint8_t occurrence;
-} cert_stream;
+} cert_write_stream;
+
+// Streaming state for cert read response (bypasses chaining buffer)
+static struct {
+  bool active;
+  uint16_t total_len;
+  uint16_t sent;
+  uint8_t occurrence;
+} cert_read_stream;
 static uint32_t last_touch = UINT32_MAX;
 
 #define PW1_MODE81_ON() pw1_mode |= 1u
@@ -540,9 +548,18 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   case TAG_CARDHOLDER_CERTIFICATE:
     if (current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-    len = read_file(key_info[current_occurrence].cert_path, RDATA, 0, MAX_CERT_LENGTH);
+    len = get_file_size(key_info[current_occurrence].cert_path);
     if (len < 0) return -1;
-    LL = len;
+    if (len == 0) {
+      LL = 0;
+      break;
+    }
+    // Set up streaming read — process_apdu will read chunks from flash
+    cert_read_stream.active = true;
+    cert_read_stream.total_len = len;
+    cert_read_stream.sent = 0;
+    cert_read_stream.occurrence = current_occurrence;
+    LL = 0; // Data will be streamed by process_apdu, not placed in RDATA
     break;
 
   case TAG_EXTENDED_LENGTH_INFO:
@@ -974,24 +991,24 @@ int openpgp_streaming_put_data(const CAPDU *capdu, RAPDU *rapdu, bool is_first) 
   if (is_first) {
     if (pw3.is_validated == 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     if (current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-    cert_stream.active = true;
-    cert_stream.total_len = 0;
-    cert_stream.occurrence = current_occurrence;
+    cert_write_stream.active = true;
+    cert_write_stream.total_len = 0;
+    cert_write_stream.occurrence = current_occurrence;
     // Truncate and write first block
-    if (write_file(key_info[cert_stream.occurrence].cert_path, DATA, 0, LC, 1) < 0) {
-      cert_stream.active = false;
+    if (write_file(key_info[cert_write_stream.occurrence].cert_path, DATA, 0, LC, 1) < 0) {
+      cert_write_stream.active = false;
       return -1;
     }
   } else {
     // Append subsequent blocks
-    if (append_file(key_info[cert_stream.occurrence].cert_path, DATA, LC) < 0) {
-      cert_stream.active = false;
+    if (append_file(key_info[cert_write_stream.occurrence].cert_path, DATA, LC) < 0) {
+      cert_write_stream.active = false;
       return -1;
     }
   }
-  cert_stream.total_len += LC;
-  if (cert_stream.total_len > MAX_CERT_LENGTH) {
-    cert_stream.active = false;
+  cert_write_stream.total_len += LC;
+  if (cert_write_stream.total_len > MAX_CERT_LENGTH) {
+    cert_write_stream.active = false;
     EXCEPT(SW_WRONG_LENGTH);
   }
   LL = 0;
@@ -999,7 +1016,36 @@ int openpgp_streaming_put_data(const CAPDU *capdu, RAPDU *rapdu, bool is_first) 
   return 0;
 }
 
-void openpgp_streaming_put_data_abort(void) { cert_stream.active = false; }
+void openpgp_streaming_put_data_abort(void) { cert_write_stream.active = false; }
+
+int openpgp_streaming_read_cert(RAPDU *rapdu) {
+  if (!cert_read_stream.active) return -1;
+
+  uint16_t to_send = cert_read_stream.total_len - cert_read_stream.sent;
+  if (to_send > rapdu->len) to_send = rapdu->len;
+
+  int ret = read_file(key_info[cert_read_stream.occurrence].cert_path, rapdu->data, cert_read_stream.sent, to_send);
+  if (ret < 0) {
+    cert_read_stream.active = false;
+    return -1;
+  }
+
+  rapdu->len = ret;
+  cert_read_stream.sent += ret;
+
+  uint16_t remaining = cert_read_stream.total_len - cert_read_stream.sent;
+  if (remaining > 0)
+    rapdu->sw = 0x6100 | (remaining > 0xFF ? 0 : remaining);
+  else {
+    rapdu->sw = SW_NO_ERROR;
+    cert_read_stream.active = false;
+  }
+  return 0;
+}
+
+bool openpgp_cert_read_streaming(void) { return cert_read_stream.active; }
+
+void openpgp_cert_read_abort(void) { cert_read_stream.active = false; }
 
 static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
@@ -1266,9 +1312,17 @@ static int openpgp_get_next_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC > 0) EXCEPT(SW_WRONG_LENGTH);
   int len;
   if (++current_occurrence >= NUM_KEYS) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-  len = read_file(key_info[current_occurrence].cert_path, RDATA, 0, MAX_CERT_LENGTH);
+  len = get_file_size(key_info[current_occurrence].cert_path);
   if (len < 0) return -1;
-  LL = len;
+  if (len == 0) {
+    LL = 0;
+    return 0;
+  }
+  cert_read_stream.active = true;
+  cert_read_stream.total_len = len;
+  cert_read_stream.sent = 0;
+  cert_read_stream.occurrence = current_occurrence;
+  LL = 0;
   return 0;
 }
 
