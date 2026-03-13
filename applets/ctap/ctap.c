@@ -284,6 +284,53 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
 }
 
 /**
+ * Encode a PublicKeyCredentialDescriptor: {id: <bytes>, type: "public-key"}
+ */
+static uint8_t cbor_encode_credential_id(CborEncoder *map, const credential_id *cid) {
+  CborEncoder sub_map;
+  int ret = cbor_encoder_create_map(map, &sub_map, 2);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "id");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&sub_map, (const uint8_t *)cid, sizeof(credential_id));
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "type");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "public-key");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encoder_close_container(map, &sub_map);
+  CHECK_CBOR_RET(ret);
+  return 0;
+}
+
+/**
+ * Encode a PublicKeyCredentialUserEntity.
+ * @param detail If true, include name and displayName; otherwise only id.
+ */
+static uint8_t cbor_encode_user_entity(CborEncoder *map, const user_entity *user, bool detail) {
+  CborEncoder sub_map;
+  int ret = cbor_encoder_create_map(map, &sub_map, detail ? 3 : 1);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub_map, "id");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_byte_string(&sub_map, user->id, user->id_size);
+  CHECK_CBOR_RET(ret);
+  if (detail) {
+    ret = cbor_encode_text_stringz(&sub_map, "name");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, user->name);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, "displayName");
+    CHECK_CBOR_RET(ret);
+    ret = cbor_encode_text_stringz(&sub_map, user->display_name);
+    CHECK_CBOR_RET(ret);
+  }
+  ret = cbor_encoder_close_container(map, &sub_map);
+  CHECK_CBOR_RET(ret);
+  return 0;
+}
+
+/**
  * Verify PIN/UV auth token for MC and GA commands.
  * Checks: token validity, permission, RP ID, user verified flag.
  * On success, associates the RP ID with the token.
@@ -992,7 +1039,7 @@ step7:
   if (!check_credential_protect_requirements(&dc.credential_id, ga.allow_list_size > 0, uv))
     return CTAP2_ERR_NO_CREDENTIALS;
 
-  CborEncoder map, sub_map;
+  CborEncoder map;
   uint8_t extension_buffer[MAX_EXTENSION_SIZE_IN_AUTH];
   size_t extension_size = 0;
   uint8_t extension_map_items = (ga.ext_cred_blob ? 1 : 0) +
@@ -1085,19 +1132,7 @@ step7:
   // build credential id
   ret = cbor_encode_int(&map, GA_RESP_CREDENTIAL);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_map(&map, &sub_map, 2);
-  CHECK_CBOR_RET(ret);
-  {
-    ret = cbor_encode_text_stringz(&sub_map, "id");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&sub_map, (const uint8_t *)&dc.credential_id, sizeof(credential_id));
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "public-key");
-    CHECK_CBOR_RET(ret);
-  }
-  ret = cbor_encoder_close_container(&map, &sub_map);
+  ret = cbor_encode_credential_id(&map, &dc.credential_id);
   CHECK_CBOR_RET(ret);
 
   // auth data
@@ -1128,25 +1163,7 @@ step7:
   if (has_user) {
     ret = cbor_encode_int(&map, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, user_details ? 3 : 1);
-    CHECK_CBOR_RET(ret);
-    {
-      ret = cbor_encode_text_stringz(&sub_map, "id");
-      CHECK_CBOR_RET(ret);
-      ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
-      CHECK_CBOR_RET(ret);
-      if (user_details) {
-        ret = cbor_encode_text_stringz(&sub_map, "name");
-        CHECK_CBOR_RET(ret);
-        ret = cbor_encode_text_stringz(&sub_map, dc.user.name);
-        CHECK_CBOR_RET(ret);
-        ret = cbor_encode_text_stringz(&sub_map, "displayName");
-        CHECK_CBOR_RET(ret);
-        ret = cbor_encode_text_stringz(&sub_map, dc.user.display_name);
-        CHECK_CBOR_RET(ret);
-      }
-    }
-    ret = cbor_encoder_close_container(&map, &sub_map);
+    ret = cbor_encode_user_entity(&map, &dc.user, user_details);
     CHECK_CBOR_RET(ret);
   }
 
@@ -1189,11 +1206,9 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   uint8_t *p = encoder->data.ptr;
   uint8_t *end = encoder->end;
   int sm2_algo = ctap_sm2_attr.algo_id;
-  int sm2_in_alg_list = ctap_sm2_attr.enabled &&
-                        (sm2_algo >= -256 && sm2_algo <= -25);
+  int sm2_in_alg_list = ctap_sm2_attr.enabled && (sm2_algo >= -256 && sm2_algo <= -25);
   size_t need = sizeof(cbor_gi_prefix) + 1 /* array header */
-                + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix) +
-                (sm2_in_alg_list ? sizeof(cbor_gi_alg_sm2) : 0);
+                + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix) + (sm2_in_alg_list ? sizeof(cbor_gi_alg_sm2) : 0);
   if (p + need > end) return CTAP2_ERR_LIMIT_EXCEEDED;
 
   // 1. Prefix: map header through algorithms key
@@ -1619,35 +1634,11 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, CM_RESP_USER);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, 3);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "id");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&sub_map, dc.user.id, dc.user.id_size);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "name");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, dc.user.name);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "displayName");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, dc.user.display_name);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_close_container(&map, &sub_map);
+    ret = cbor_encode_user_entity(&map, &dc.user, true);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, CM_RESP_CREDENTIAL_ID);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_create_map(&map, &sub_map, 2);
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "id");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_byte_string(&sub_map, (const uint8_t *)&dc.credential_id, sizeof(credential_id));
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "type");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_text_stringz(&sub_map, "public-key");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encoder_close_container(&map, &sub_map);
+    ret = cbor_encode_credential_id(&map, &dc.credential_id);
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_int(&map, CM_RESP_PUBLIC_KEY);
     CHECK_CBOR_RET(ret);
