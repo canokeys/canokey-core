@@ -291,8 +291,7 @@ uint8_t ctap_make_auth_data(uint8_t *rp_id_hash, uint8_t *buf, uint8_t flags, co
  * @return 0 on success, CTAP2 error code on failure.
  */
 static uint8_t verify_pin_uv_auth_token(const uint8_t *client_data_hash, const uint8_t *pin_uv_auth_param,
-                                         uint8_t pin_uv_auth_protocol, uint8_t permission,
-                                         const uint8_t *rp_id_hash) {
+                                        uint8_t pin_uv_auth_protocol, uint8_t permission, const uint8_t *rp_id_hash) {
   if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
   if (!cp_verify_pin_token(client_data_hash, CLIENT_DATA_HASH_SIZE, pin_uv_auth_param, pin_uv_auth_protocol)) {
     DBG_MSG("Fail to verify pin token\n");
@@ -416,8 +415,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   if (has_pin()) {
     //   11.1 If pin_uv_auth_param parameter is present (implying the "uv" option is false (see Step 5)):
     if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
-      uint8_t err = verify_pin_uv_auth_token(mc.client_data_hash, mc.pin_uv_auth_param,
-                                              mc.pin_uv_auth_protocol, CP_PERMISSION_MC, mc.rp_id_hash);
+      uint8_t err = verify_pin_uv_auth_token(mc.client_data_hash, mc.pin_uv_auth_param, mc.pin_uv_auth_protocol,
+                                             CP_PERMISSION_MC, mc.rp_id_hash);
       if (err) return err;
       uv = true;
       DBG_MSG("PIN verified\n");
@@ -830,8 +829,8 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   //    6.2 [N/A] If the "uv" option is present and set to true
   //    6.1 If pin_uv_auth_param parameter is present
   if (has_pin() && (ga.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {
-    uint8_t err = verify_pin_uv_auth_token(ga.client_data_hash, ga.pin_uv_auth_param,
-                                            ga.pin_uv_auth_protocol, CP_PERMISSION_GA, ga.rp_id_hash);
+    uint8_t err = verify_pin_uv_auth_token(ga.client_data_hash, ga.pin_uv_auth_param, ga.pin_uv_auth_protocol,
+                                           CP_PERMISSION_GA, ga.rp_id_hash);
     if (err) return err;
     uv = true;
   }
@@ -1190,8 +1189,8 @@ static uint8_t ctap_get_info(CborEncoder *encoder) {
   uint8_t *p = encoder->data.ptr;
   uint8_t *end = encoder->end;
   size_t need = sizeof(cbor_gi_prefix) + 1 /* array header */
-              + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix)
-              + (ctap_sm2_attr.enabled ? sizeof(cbor_gi_alg_sm2) : 0);
+                + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix) +
+                (ctap_sm2_attr.enabled ? sizeof(cbor_gi_alg_sm2) : 0);
   if (p + need > end) return CTAP2_ERR_LIMIT_EXCEEDED;
 
   // 1. Prefix: map header through algorithms key
@@ -1437,6 +1436,30 @@ static int get_next_slot(uint64_t *slots, uint8_t *numbers) {
   }
   if (idx != -1) *slots &= ~(1ull << idx);
   return idx;
+}
+
+/**
+ * Find a discoverable credential by credential_id.
+ * On success, *dc is filled and *out_idx is set to the file index.
+ *
+ * @return 0 on success, CTAP2 error code on failure.
+ */
+static uint8_t cm_find_credential(const credential_id *target, CTAP_discoverable_credential *dc, int *out_idx) {
+  int size = get_file_size(DC_FILE);
+  if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  int n = size / (int)sizeof(CTAP_discoverable_credential);
+  for (int i = 0; i < n; ++i) {
+    size = read_file(DC_FILE, dc, i * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential));
+    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (dc->deleted) continue;
+    if (memcmp_s(&dc->credential_id, target, sizeof(credential_id)) == 0) {
+      DBG_MSG("Found, credential_id: ");
+      PRINT_HEX((const uint8_t *)target, sizeof(credential_id));
+      *out_idx = i;
+      return 0;
+    }
+  }
+  return CTAP2_ERR_NO_CREDENTIALS;
 }
 
 static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *params, size_t len) {
@@ -1687,21 +1710,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   case CM_CMD_DELETE_CREDENTIAL:
     if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
-    size = get_file_size(DC_FILE);
-    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    numbers = size / sizeof(CTAP_discoverable_credential);
-    for (idx = 0; idx < numbers; ++idx) {
-      size = read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential),
-                       sizeof(CTAP_discoverable_credential));
-      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (dc.deleted) continue;
-      if (memcmp_s(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
-        DBG_MSG("Found, credential_id: ");
-        PRINT_HEX((const uint8_t *)&dc.credential_id, sizeof(credential_id));
-        break;
-      }
+    {
+      uint8_t err = cm_find_credential(&cm.credential_id, &dc, &idx);
+      if (err) return err;
     }
-    if (idx == numbers) return CTAP2_ERR_NO_CREDENTIALS;
 
     CTAP_dc_general_attr attr;
     if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1740,25 +1752,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   case CM_CMD_UPDATE_USER_INFORMATION:
     if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
-    // TODO: refactor this
-    size = get_file_size(DC_FILE);
-    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    numbers = size / sizeof(CTAP_discoverable_credential);
     KEEPALIVE();
-    for (idx = 0; idx < numbers; ++idx) {
-      size = read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential),
-                       sizeof(CTAP_discoverable_credential));
-      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (dc.deleted) continue;
-      if (memcmp_s(&dc.credential_id, &cm.credential_id, sizeof(credential_id)) == 0) {
-        DBG_MSG("Found, credential_id: ");
-        PRINT_HEX((const uint8_t *)&dc.credential_id, sizeof(credential_id));
-        break;
-      }
-    }
-    if (idx == numbers) {
-      DBG_MSG("No matching credential\n");
-      return CTAP2_ERR_NO_CREDENTIALS;
+    {
+      uint8_t err = cm_find_credential(&cm.credential_id, &dc, &idx);
+      if (err) return err;
     }
     if (dc.user.id_size != cm.user.id_size || memcmp_s(&dc.user.id, &cm.user.id, dc.user.id_size) != 0) {
       DBG_MSG("Incorrect user id\n");
