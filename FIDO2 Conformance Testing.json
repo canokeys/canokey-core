@@ -34,6 +34,7 @@
     ],
     "keyProtection": ["hardware", "secure_element"],
     "matcherProtection": ["on_chip"],
+    "attachmentHint": ["external", "wired", "nfc"],
     "tcDisplay": [],
     "attestationRootCertificates": [
         "MIIBpzCCAUygAwIBAgIUatn9Rj8uCMjLrmFfCQYY5/X9xq4wCgYIKoZIzj0EAwIw\nMTEvMC0GA1UEAwwmQ2Fub0tleXMgRklETyBBdHRlc3RhdGlvbiBSb290IENBIE5v\nLjIwHhcNMjExMjI3MTE0OTMzWhcNNDEwNjI1MTE0OTMzWjAxMS8wLQYDVQQDDCZD\nYW5vS2V5cyBGSURPIEF0dGVzdGF0aW9uIFJvb3QgQ0EgTm8uMjBZMBMGByqGSM49\nAgEGCCqGSM49AwEHA0IABNgW7CwchH80l4sj8luhwjbNoohB9Uqnvsh0SLor18w8\nIMy6rnzzdDP9PgSSbuUZw302mBhyYJqJY1q9Ke0niZujQjBAMB0GA1UdDgQWBBRU\nGAKiwvk2vLP5Zi6ul73RiWyr0jAPBgNVHRMECDAGAQH/AgEAMA4GA1UdDwEB/wQE\nAwIBBjAKBggqhkjOPQQDAgNJADBGAiEAlRNyrmngE3A1YZuwsuwBHLXY7wZC/4CO\nJNA30mtp2+YCIQDA88Pp+Kjx3c4nrgRgSaSueC5IlvwpTSGBGwRYDSdMTA=="
