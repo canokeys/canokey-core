@@ -222,6 +222,13 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       break;
     case CTAPHID_CANCEL:
       DBG_MSG("CANCEL when wait_for_user=%d\n", (int)wait_for_user);
+      if (wait_for_user) {
+        // A KEEPALIVE frame may still occupy the USB IN endpoint. Wait for
+        // the host to read it so the subsequent error response (sent by the
+        // caller after the call-chain unwinds) is not silently dropped by
+        // USBD_CTAPHID_SendReport's 50 ms busy-wait timeout.
+        USBD_CTAPHID_WaitIdle();
+      }
       ret = LOOP_CANCEL;
       break;
     default:
