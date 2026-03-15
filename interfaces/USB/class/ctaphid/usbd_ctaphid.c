@@ -100,17 +100,26 @@ uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
   return USBD_OK;
 }
 
+/**
+ * Busy-wait until the USB IN endpoint finishes transmitting, up to max_ms.
+ * Returns USBD_OK if idle, USBD_BUSY on timeout.
+ */
+static uint8_t wait_ep_idle(int max_ms) {
+  volatile CTAPHID_StateTypeDef *state = &hid_handle.state;
+  for (int i = 0; i < max_ms; ++i) {
+    if (*state == CTAPHID_IDLE) return USBD_OK;
+    device_delay(1);
+  }
+  return (*state == CTAPHID_IDLE) ? USBD_OK : USBD_BUSY;
+}
+
 uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
-    volatile CTAPHID_StateTypeDef *state = &hid_handle.state;
-    int retry = 0;
-    while (*state != CTAPHID_IDLE) {
-      // if reports are not being processed on host, we may get stuck here
-      if (++retry > 50) return USBD_BUSY;
-      device_delay(1);
-    }
+    if (wait_ep_idle(50) != USBD_OK) return USBD_BUSY;
     hid_handle.state = CTAPHID_BUSY;
     USBD_LL_Transmit(pdev, EP_IN(ctap_hid), report, len);
   }
   return USBD_OK;
 }
+
+uint8_t USBD_CTAPHID_WaitIdle(void) { return wait_ep_idle(100); }

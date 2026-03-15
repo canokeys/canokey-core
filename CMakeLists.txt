@@ -50,6 +50,29 @@ if(DEFINED PRODUCT_NAME)
     add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif()
 
+# Generate pre-encoded CBOR segments for ctap_get_info.
+# Constants are parsed directly from headers — no duplication.
+find_program(PYTHON_EXE NAMES python3 python REQUIRED)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
+    COMMAND ${PYTHON_EXE}
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
+        --headers
+            ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
+        --credential-id-size 70
+        --output ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
+        ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
+    COMMENT "Generating ctap_get_info_cbor.inc"
+)
+add_custom_target(
+    generate_ctap_get_info_cbor
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
+)
+
 file(
     GLOB_RECURSE SRC
     src/*.c
@@ -61,6 +84,7 @@ file(
     tinycbor/src/cborparser.c
 )
 add_library(canokey-core ${SRC})
+add_dependencies(canokey-core generate_ctap_get_info_cbor)
 
 if(ENABLE_TESTS)
     target_compile_definitions(canokey-core PUBLIC TEST)
@@ -81,6 +105,7 @@ target_include_directories(
         littlefs
         tinycbor/src
         ${CMAKE_CURRENT_BINARY_DIR}/tinycbor
+        ${CMAKE_CURRENT_BINARY_DIR}
         interfaces/USB/device
         interfaces/USB/core/inc
         interfaces/USB/class/ccid
