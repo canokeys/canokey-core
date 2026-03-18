@@ -98,8 +98,18 @@
 #define NFC_STATE_IDLE 0x00
 #define NFC_STATE_BUSY 0x01
 
+#ifndef ENABLE_NFC
+#define ENABLE_NFC 1
+#endif
+
+#if ENABLE_NFC
 void nfc_init(void);
 void nfc_handler(void);
 void nfc_loop(void);
+#else
+static inline void nfc_init(void) {}
+static inline void nfc_handler(void) {}
+static inline void nfc_loop(void) {}
+#endif
 
 #endif // _NFC_H_

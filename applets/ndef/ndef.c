@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <common.h>
 #include <ndef.h>
+
+#if ENABLE_NFC
+
+#include <common.h>
 
 #define CC_FILE "E103" // file identifier also 0xE103
 #define NDEF_FILE "NDEF"
@@ -145,3 +148,5 @@ int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }
+
+#endif // ENABLE_NFC

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "device.h"
+
+#if ENABLE_NFC
+
 #include <stdint.h>
 
 #define I2C_WRITE_WITH_CHECK(data)                                                                                     \
@@ -208,4 +211,6 @@ uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length) {
   return crc8 & 0xff;
 }
 
-#endif
+#endif // NFC_CHIP == NFC_CHIP_FM11NT
+
+#endif // ENABLE_NFC

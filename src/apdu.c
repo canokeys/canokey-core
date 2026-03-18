@@ -18,7 +18,9 @@ enum APPLET {
   APPLET_OATH,
   APPLET_ADMIN,
   APPLET_OPENPGP,
+#if ENABLE_NFC
   APPLET_NDEF,
+#endif
   APPLET_ENUM_END,
 } current_applet;
 
@@ -33,11 +35,16 @@ static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
 static const uint8_t FIDO_AID[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
+#if ENABLE_NFC
 static const uint8_t NDEF_AID[] = {0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01};
+#endif
 
 static const uint8_t *const AID[] = {
-    [APPLET_NULL] = NULL,       [APPLET_PIV] = PIV_AID,         [APPLET_FIDO] = FIDO_AID, [APPLET_OATH] = OATH_AID,
-    [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID, [APPLET_NDEF] = NDEF_AID,
+    [APPLET_NULL] = NULL,     [APPLET_PIV] = PIV_AID,     [APPLET_FIDO] = FIDO_AID,
+    [APPLET_OATH] = OATH_AID, [APPLET_ADMIN] = ADMIN_AID, [APPLET_OPENPGP] = OPENPGP_AID,
+#if ENABLE_NFC
+    [APPLET_NDEF] = NDEF_AID,
+#endif
 };
 
 static const uint8_t AID_Size[] = {
@@ -47,7 +54,9 @@ static const uint8_t AID_Size[] = {
     [APPLET_OATH] = sizeof(OATH_AID),
     [APPLET_ADMIN] = sizeof(ADMIN_AID),
     [APPLET_OPENPGP] = sizeof(OPENPGP_AID),
+#if ENABLE_NFC
     [APPLET_NDEF] = sizeof(NDEF_AID),
+#endif
 };
 
 static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
@@ -188,12 +197,14 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       uint8_t i, end = APPLET_ENUM_END;
       for (i = APPLET_NULL + 1; i != end; ++i) {
         if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+#if ENABLE_NFC
           if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
             LL = 0;
             SW = SW_FILE_NOT_FOUND;
             DBG_MSG("NDEF is disable\n");
             return;
           }
+#endif
           if (i == APPLET_PIV) piv_state = PIV_STATE_OTHER; // Reset `piv_state`
           if (i != current_applet) applets_poweroff();
           current_applet = i;
@@ -247,9 +258,11 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     case APPLET_ADMIN:
       admin_process_apdu(capdu, rapdu);
       break;
+#if ENABLE_NFC
     case APPLET_NDEF:
       ndef_process_apdu(capdu, rapdu);
       break;
+#endif
     default:
       LL = 0;
       SW = SW_FILE_NOT_FOUND;
