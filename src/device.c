@@ -8,7 +8,9 @@
 #include <webusb.h>
 
 volatile static uint8_t touch_result;
+#if ENABLE_NFC
 static uint8_t has_rf;
+#endif
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE = 1, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
@@ -128,6 +130,7 @@ __attribute__((weak)) int strong_user_presence_test(void) {
   return 0;
 }
 
+#if ENABLE_NFC
 void set_nfc_state(uint8_t val) { has_rf = val; }
 
 uint8_t is_nfc(void) {
@@ -136,6 +139,7 @@ uint8_t is_nfc(void) {
 #endif
   return has_rf;
 }
+#endif
 
 static void toggle_led(void) {
   if (led_status == ON) {

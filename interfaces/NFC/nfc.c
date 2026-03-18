@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "nfc.h"
+
+#if ENABLE_NFC
+
 #include "apdu.h"
 #include "device.h"
 
@@ -201,4 +204,6 @@ void nfc_handler(void) {
   }
 }
 
-#endif
+#endif // NFC_CHIP != NFC_CHIP_NA
+
+#endif // ENABLE_NFC
