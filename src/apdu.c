@@ -197,11 +197,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       uint8_t i, end = APPLET_ENUM_END;
       for (i = APPLET_NULL + 1; i != end; ++i) {
         if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
-          if (0) {
-            (void)0;
-          }
 #if ENABLE_NFC
-          else if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
+          if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
             LL = 0;
             SW = SW_FILE_NOT_FOUND;
             DBG_MSG("NDEF is disable\n");
