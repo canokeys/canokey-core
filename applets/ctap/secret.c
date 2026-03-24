@@ -357,15 +357,17 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
       return -1;
     }
     uint8_t z[SM3_DIGEST_LENGTH];
+    sm3_ctx_t sm3;
     sm2_z(SM2_ID_DEFAULT, key, z);
-    sm3_init();
-    sm3_update(z, SM3_DIGEST_LENGTH);
-    sm3_update(input, len);
-    sm3_final(sig);
+    sm3_init(&sm3);
+    sm3_update(&sm3, z, SM3_DIGEST_LENGTH);
+    sm3_update(&sm3, input, len);
+    sm3_final(&sm3, sig);
   } else {
-    sha256_init();
-    sha256_update(input, len);
-    sha256_final(sig);
+    sha256_ctx_t sha256;
+    sha256_init(&sha256);
+    sha256_update(&sha256, input, len);
+    sha256_final(&sha256, sig);
   }
   DBG_MSG("Digest: ");
   PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);

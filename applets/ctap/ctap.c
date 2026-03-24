@@ -726,10 +726,11 @@ step12:
     // sig (asn.1)
     ret = cbor_encode_text_stringz(&att_map, "sig");
     CHECK_CBOR_RET(ret);
-    sha256_init();
-    sha256_update(data_buf, len);
-    sha256_update(mc.client_data_hash, sizeof(mc.client_data_hash));
-    sha256_final(data_buf);
+    sha256_ctx_t sha256;
+    sha256_init(&sha256);
+    sha256_update(&sha256, data_buf, len);
+    sha256_update(&sha256, mc.client_data_hash, sizeof(mc.client_data_hash));
+    sha256_final(&sha256, data_buf);
     len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
     if (!len) return CTAP2_ERR_UNHANDLED_REQUEST;
     ret = cbor_encode_byte_string(&att_map, data_buf, len);
@@ -1911,15 +1912,16 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       //        If the hash does not match, return CTAP2_ERR_INTEGRITY_FAILURE.
       int offset = 0;
       expectedLength -= 16;
-      sha256_init();
+      sha256_ctx_t sha256;
+      sha256_init(&sha256);
       while (offset < expectedLength) {
         int to_read = sizeof(buf);
         if (to_read > expectedLength - offset) to_read = expectedLength - offset;
         if (read_file(LB_FILE_TMP, buf, offset, to_read) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        sha256_update(buf, to_read);
+        sha256_update(&sha256, buf, to_read);
         offset += to_read;
       }
-      sha256_final(buf);
+      sha256_final(&sha256, buf);
       if (read_file(LB_FILE_TMP, buf + 16, offset, 16) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (memcmp_s(buf, buf + 16, 16)) return CTAP2_ERR_INTEGRITY_FAILURE;
       //     ii. Commit the contents of the buffer as the new serialized large-blob array for this authenticator.
