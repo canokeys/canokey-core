@@ -5,16 +5,14 @@ project(canokey-core C)
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build for fuzzing" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
-option(
-    ENABLE_DUMB_DONGLE
-    "Skip all user-presence test (USE AT YOUR OWN RISK)"
-    OFF
-)
+option(ENABLE_BYPASS_USER_PRESENCE "Skip all user-presence tests (USE AT YOUR OWN RISK)" OFF)
 option(VIRTCARD "Virt Card" OFF)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
-set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer")
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+add_compile_options(-Wall)
+add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
 
 if(NOT DEFINED ENABLE_NFC)
     set(ENABLE_NFC 1)
@@ -28,22 +26,19 @@ endif()
 if(NOT DEFINED ENABLE_IFACE_KBDHID)
     set(ENABLE_IFACE_KBDHID 1)
 endif()
+if(ENABLE_DUMB_DONGLE)
+    message(DEPRECATION "ENABLE_DUMB_DONGLE is deprecated; use ENABLE_BYPASS_USER_PRESENCE instead")
+    set(ENABLE_BYPASS_USER_PRESENCE ON)
+endif()
 
-if(ENABLE_DEBUG_OUTPUT)
-    add_definitions(-DDEBUG_OUTPUT)
-endif(ENABLE_DEBUG_OUTPUT)
 if(ENABLE_TESTS OR ENABLE_FUZZING)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    set(CMAKE_C_FLAGS
-        "${CMAKE_C_FLAGS} --coverage -fsanitize=address -fsanitize=undefined"
-    )
+    add_compile_options(--coverage -fsanitize=address -fsanitize=undefined)
+    add_link_options(--coverage -fsanitize=address -fsanitize=undefined)
     if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-usage")
+        add_compile_options(-fstack-usage)
     endif()
 endif()
-if(ENABLE_DUMB_DONGLE)
-    add_definitions(-DDUMB_DONGLE)
-endif(ENABLE_DUMB_DONGLE)
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
@@ -58,17 +53,6 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-export.h
     "#ifndef CBOR_API\n#define CBOR_API\n#endif\n")
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-version.h
     "#define TINYCBOR_VERSION_MAJOR 7\n#define TINYCBOR_VERSION_MINOR 0\n#define TINYCBOR_VERSION_PATCH 0\n")
-
-if(DEFINED PRODUCT_NAME)
-    add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
-endif()
-
-add_definitions(
-    -DENABLE_NFC=${ENABLE_NFC}
-    -DENABLE_APPLET_NDEF=${ENABLE_APPLET_NDEF}
-    -DENABLE_PASS=${ENABLE_PASS}
-    -DENABLE_IFACE_KBDHID=${ENABLE_IFACE_KBDHID}
-)
 
 # Generate pre-encoded CBOR segments for ctap_get_info.
 # Constants are parsed directly from headers — no duplication.
@@ -116,16 +100,44 @@ endif()
 add_library(canokey-core ${SRC})
 add_dependencies(canokey-core generate_ctap_get_info_cbor)
 
+set(canokey_core_public_defs
+    ENABLE_NFC=${ENABLE_NFC}
+    ENABLE_APPLET_NDEF=${ENABLE_APPLET_NDEF}
+    ENABLE_PASS=${ENABLE_PASS}
+    ENABLE_IFACE_KBDHID=${ENABLE_IFACE_KBDHID}
+)
+
+set(canokey_core_private_defs
+    CBOR_NO_FLOATING_POINT
+    CBOR_STATIC_DEFINE
+)
+
+if(ENABLE_DEBUG_OUTPUT)
+    list(APPEND canokey_core_private_defs DEBUG_OUTPUT)
+endif()
+if(ENABLE_BYPASS_USER_PRESENCE)
+    list(APPEND canokey_core_private_defs BYPASS_USER_PRESENCE)
+endif()
+if(DEFINED PRODUCT_NAME)
+    list(APPEND canokey_core_private_defs USBD_PRODUCT_STRING="${PRODUCT_NAME}")
+endif()
+
 if(ENABLE_TESTS)
-    target_compile_definitions(canokey-core PUBLIC TEST)
+    list(APPEND canokey_core_public_defs TEST)
 endif(ENABLE_TESTS)
 if(ENABLE_FUZZING)
-    target_compile_definitions(canokey-core PUBLIC TEST FUZZ)
+    list(APPEND canokey_core_public_defs TEST FUZZ)
     if(ENABLE_TESTS)
         message(WARNING "ENABLE_FUZZING will cause some tests to FAIL")
     endif(ENABLE_TESTS)
     # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-coverage=bb -finstrument-functions")
 endif(ENABLE_FUZZING)
+
+target_compile_definitions(
+    canokey-core
+    PUBLIC ${canokey_core_public_defs}
+    PRIVATE ${canokey_core_private_defs}
+)
 
 target_include_directories(
     canokey-core
@@ -143,7 +155,6 @@ target_include_directories(
         interfaces/USB/class/kbdhid
         interfaces/USB/class/webusb
 )
-target_compile_definitions(canokey-core PRIVATE CBOR_NO_FLOATING_POINT CBOR_STATIC_DEFINE)
 target_link_libraries(canokey-core canokey-crypto)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
