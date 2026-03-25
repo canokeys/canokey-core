@@ -16,6 +16,19 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer")
 
+if(NOT DEFINED ENABLE_NFC)
+    set(ENABLE_NFC 1)
+endif()
+if(NOT DEFINED ENABLE_APPLET_NDEF)
+    set(ENABLE_APPLET_NDEF ${ENABLE_NFC})
+endif()
+if(NOT DEFINED ENABLE_PASS)
+    set(ENABLE_PASS 1)
+endif()
+if(NOT DEFINED ENABLE_IFACE_KBDHID)
+    set(ENABLE_IFACE_KBDHID 1)
+endif()
+
 if(ENABLE_DEBUG_OUTPUT)
     add_definitions(-DDEBUG_OUTPUT)
 endif(ENABLE_DEBUG_OUTPUT)
@@ -49,6 +62,13 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-version.h
 if(DEFINED PRODUCT_NAME)
     add_definitions(-DUSBD_PRODUCT_STRING="${PRODUCT_NAME}")
 endif()
+
+add_definitions(
+    -DENABLE_NFC=${ENABLE_NFC}
+    -DENABLE_APPLET_NDEF=${ENABLE_APPLET_NDEF}
+    -DENABLE_PASS=${ENABLE_PASS}
+    -DENABLE_IFACE_KBDHID=${ENABLE_IFACE_KBDHID}
+)
 
 # Generate pre-encoded CBOR segments for ctap_get_info.
 # Constants are parsed directly from headers — no duplication.
