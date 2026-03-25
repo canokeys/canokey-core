@@ -343,7 +343,7 @@ static void patch_interface_descriptor(uint8_t *desc, uint8_t *desc_end, uint8_t
   }
 }
 
-static uint16_t USBD_DescriptorInit(void) {
+void USBD_DescriptorInit(void) {
   uint8_t *USBD_FS_CfgDesc = global_buffer;
   uint8_t *desc = USBD_FS_CfgDesc;
   uint8_t nIface = 3;
@@ -378,7 +378,6 @@ static uint16_t USBD_DescriptorInit(void) {
   USBD_FS_CfgDesc[4] = nIface;
   USBD_FS_CfgDesc[2] = totalLen & 0xFF;
   USBD_FS_CfgDesc[3] = totalLen >> 8;
-  return totalLen;
 }
 
 const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
@@ -387,7 +386,9 @@ const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed __attribute__((unus
 }
 
 const uint8_t *USBD_ConfigurationDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
-  *length = USBD_DescriptorInit();
+  USBD_DescriptorInit();
+  // Bytes 2-3 of the configuration descriptor header store wTotalLength in little-endian order.
+  *length = (uint16_t)(global_buffer[2] | (global_buffer[3] << 8));
   return global_buffer;
 }
 
