@@ -121,10 +121,10 @@ add_library(canokey-core ${SRC})
 add_dependencies(canokey-core generate_ctap_get_info_cbor)
 
 set(canokey_core_public_defs
-    ENABLE_NFC=${ENABLE_NFC}
-    ENABLE_APPLET_NDEF=${ENABLE_APPLET_NDEF}
-    ENABLE_PASS=${ENABLE_PASS}
-    ENABLE_IFACE_KBDHID=${ENABLE_IFACE_KBDHID}
+    ENABLE_NFC=$<BOOL:${ENABLE_NFC}>
+    ENABLE_APPLET_NDEF=$<BOOL:${ENABLE_APPLET_NDEF}>
+    ENABLE_PASS=$<BOOL:${ENABLE_PASS}>
+    ENABLE_IFACE_KBDHID=$<BOOL:${ENABLE_IFACE_KBDHID}>
 )
 
 set(canokey_core_private_defs
