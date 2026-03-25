@@ -4,7 +4,9 @@
 #include <ccid.h>
 #include <ctaphid.h>
 #include <device.h>
+#if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
+#endif
 #include <webusb.h>
 
 volatile static uint8_t touch_result;
@@ -22,7 +24,9 @@ void device_loop(void) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
+#if ENABLE_IFACE_KBDHID
   KBDHID_Loop();
+#endif
 }
 
 bool device_allow_kbd_touch(void) {

@@ -422,6 +422,11 @@ int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
 }
 
 static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
+#if !ENABLE_PASS
+  UNUSED(capdu);
+  UNUSED(rapdu);
+  EXCEPT(SW_INS_NOT_SUPPORTED);
+#else
   if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);
   if (P2 != 0x00 && P2 != 0x01) EXCEPT(SW_WRONG_P1P2);
 
@@ -443,6 +448,7 @@ static int oath_set_default(const CAPDU *capdu, RAPDU *rapdu) {
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_TOTP) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 
   return pass_update_oath(P1 - 1, file_offset, record.name_len, record.name, P2);
+#endif
 }
 
 static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {

@@ -83,6 +83,16 @@ file(
     tinycbor/src/cborencoder.c
     tinycbor/src/cborparser.c
 )
+
+if(NOT ENABLE_NFC)
+    list(FILTER SRC EXCLUDE REGEX ".*/interfaces/NFC/.*\\.c$")
+    list(FILTER SRC EXCLUDE REGEX ".*/applets/ndef/.*\\.c$")
+endif()
+
+if(NOT ENABLE_IFACE_KBDHID)
+    list(FILTER SRC EXCLUDE REGEX ".*/interfaces/USB/class/kbdhid/.*\\.c$")
+endif()
+
 add_library(canokey-core ${SRC})
 add_dependencies(canokey-core generate_ctap_get_info_cbor)
 
