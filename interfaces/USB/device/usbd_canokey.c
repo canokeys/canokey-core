@@ -2,7 +2,9 @@
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
 #include <usbd_ctaphid.h>
+#if ENABLE_IFACE_KBDHID
 #include <usbd_kbdhid.h>
+#endif
 #include <webusb.h>
 
 static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx);
@@ -20,7 +22,9 @@ static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   UNUSED(cfgidx);
 
   USBD_CTAPHID_Init(pdev);
+#if ENABLE_IFACE_KBDHID
   USBD_KBDHID_Init(pdev);
+#endif
   USBD_CCID_Init(pdev);
   USBD_WEBUSB_Init(pdev);
   USBD_LL_Init_Done();
@@ -42,9 +46,11 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
   if ((recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_CTAPHID_IF) ||
       (recipient == USB_REQ_RECIPIENT_ENDPOINT && (req->wIndex == EP_IN(ctap_hid) || req->wIndex == EP_OUT(ctap_hid))))
     return USBD_CTAPHID_Setup(pdev, req);
+#if ENABLE_IFACE_KBDHID
   if ((recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_KBDHID_IF) ||
       (recipient == USB_REQ_RECIPIENT_ENDPOINT && (req->wIndex == EP_IN(kbd_hid) || req->wIndex == EP_OUT(kbd_hid))))
     return USBD_KBDHID_Setup(pdev, req);
+#endif
   if (recipient == USB_REQ_RECIPIENT_INTERFACE && req->wIndex == USBD_CANOKEY_WEBUSB_IF)
     return USBD_WEBUSB_Setup(pdev, req);
 
@@ -55,7 +61,9 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
 
 static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == (0x7F & EP_IN(ctap_hid))) return USBD_CTAPHID_DataIn();
+#if ENABLE_IFACE_KBDHID
   if (epnum == (0x7F & EP_IN(kbd_hid))) return USBD_KBDHID_DataIn();
+#endif
   if (epnum == (0x7F & EP_IN(ccid))) return USBD_CCID_DataIn(pdev);
 
   return USBD_FAIL;
@@ -63,7 +71,9 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
 
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == EP_OUT(ctap_hid)) return USBD_CTAPHID_DataOut(pdev);
+#if ENABLE_IFACE_KBDHID
   if (epnum == EP_OUT(kbd_hid)) return USBD_KBDHID_DataOut(pdev);
+#endif
   if (epnum == EP_OUT(ccid)) return USBD_CCID_DataOut(pdev);
 
   return USBD_FAIL;

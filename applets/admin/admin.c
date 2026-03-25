@@ -4,7 +4,9 @@
 #include <ctap.h>
 #include <device.h>
 #include <fs.h>
+#if ENABLE_APPLET_NDEF
 #include <ndef.h>
+#endif
 #include <oath.h>
 #include <openpgp.h>
 #include <pass.h>
@@ -141,7 +143,11 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
 
   RDATA[0] = current_config.led_normally_on;
   RDATA[1] = 0; // reserved
+#if ENABLE_APPLET_NDEF
   RDATA[2] = ndef_get_read_only();
+#else
+  RDATA[2] = 0;
+#endif
   RDATA[3] = current_config.ndef_en;
   RDATA[4] = current_config.webusb_landing_en;
   RDATA[5] = 0; // reserved
@@ -183,8 +189,10 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) return ret;
   ret = ctap_install(1);
   if (ret < 0) return ret;
+#if ENABLE_APPLET_NDEF
   ret = ndef_install(1);
   if (ret < 0) return ret;
+#endif
   ret = pass_install(1);
   if (ret < 0) return ret;
   ret = admin_install(1);
@@ -261,13 +269,25 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = oath_install(1);
     break;
   case ADMIN_INS_RESET_NDEF:
+#if ENABLE_APPLET_NDEF
     ret = ndef_install(1);
+#else
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+#endif
     break;
   case ADMIN_INS_TOGGLE_NDEF_READ_ONLY:
+#if ENABLE_APPLET_NDEF
     ret = ndef_toggle_read_only(capdu, rapdu);
+#else
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+#endif
     break;
   case ADMIN_INS_RESET_PASS:
+#if ENABLE_PASS
     ret = pass_install(1);
+#else
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+#endif
     break;
   case ADMIN_INS_RESET_CTAP:
     ret = ctap_install(1);
@@ -294,10 +314,18 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = admin_read_config(capdu, rapdu);
     break;
   case ADMIN_INS_READ_PASS_CONFIG:
+#if ENABLE_PASS
     ret = pass_read_config(capdu, rapdu);
+#else
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+#endif
     break;
   case ADMIN_INS_WRITE_PASS_CONFIG:
+#if ENABLE_PASS
     ret = pass_write_config(capdu, rapdu);
+#else
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+#endif
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);
