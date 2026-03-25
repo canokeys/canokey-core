@@ -26,6 +26,9 @@ endif()
 if(NOT DEFINED ENABLE_APPLET_NDEF)
     set(ENABLE_APPLET_NDEF ${ENABLE_NFC})
 endif()
+if(ENABLE_APPLET_NDEF AND NOT ENABLE_NFC)
+    message(FATAL_ERROR "ENABLE_APPLET_NDEF requires ENABLE_NFC")
+endif()
 if(NOT DEFINED ENABLE_PASS)
     if(DEFINED HAS_TOUCH)
         set(ENABLE_PASS ${HAS_TOUCH})
@@ -104,6 +107,9 @@ file(
 
 if(NOT ENABLE_NFC)
     list(FILTER SRC EXCLUDE REGEX ".*/interfaces/NFC/.*\\.c$")
+endif()
+
+if(NOT ENABLE_APPLET_NDEF)
     list(FILTER SRC EXCLUDE REGEX ".*/applets/ndef/.*\\.c$")
 endif()
 
