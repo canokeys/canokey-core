@@ -43,6 +43,14 @@ USBD_StatusTypeDef USBD_Init(USBD_HandleTypeDef *pdev, const USBD_DescriptorsTyp
 
   /* Set Device initial State */
   pdev->dev_state = USBD_STATE_DEFAULT;
+  pdev->dev_old_state = USBD_STATE_DEFAULT;
+  pdev->dev_config = 0;
+  pdev->dev_default_config = 0;
+  pdev->dev_config_status = 0;
+  pdev->dev_remote_wakeup = 0;
+  pdev->ep0_state = USBD_EP0_IDLE;
+  pdev->ep0_data_len = 0;
+  pdev->ep0_sender = 0;
   pdev->id = id;
   /* Initialize low level driver */
   USBD_LL_Init(pdev);
@@ -293,6 +301,8 @@ USBD_StatusTypeDef USBD_LL_Reset(USBD_HandleTypeDef *pdev) {
   pdev->ep_in[0].maxpacket = USB_MAX_EP0_SIZE;
   /* Upon Reset call user call back */
   pdev->dev_state = USBD_STATE_DEFAULT;
+  pdev->dev_config = 0;
+  pdev->dev_remote_wakeup = 0;
 
   pdev->pClass->DeInit(pdev, pdev->dev_config);
 

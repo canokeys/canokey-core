@@ -71,6 +71,20 @@ static CAPDU_CHAINING capdu_chaining = {
 static RAPDU_CHAINING rapdu_chaining = {
     .rapdu.data = chaining_buffer,
 };
+static uint8_t apdu_fallback_buffer[APDU_BUFFER_SIZE + 2];
+
+uint8_t *global_buffer;
+
+#if ENABLE_IFACE_CCID
+extern void ccid_init_apdu_buffer(void);
+#endif
+
+void init_apdu_buffer(void) {
+  global_buffer = apdu_fallback_buffer;
+#if ENABLE_IFACE_CCID
+  ccid_init_apdu_buffer();
+#endif
+}
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
   if (len < 4) return -1;

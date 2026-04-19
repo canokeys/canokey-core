@@ -43,6 +43,15 @@ if(NOT DEFINED ENABLE_IFACE_KBDHID)
         set(ENABLE_IFACE_KBDHID 1)
     endif()
 endif()
+if(NOT DEFINED ENABLE_IFACE_CTAPHID)
+    set(ENABLE_IFACE_CTAPHID 1)
+endif()
+if(NOT DEFINED ENABLE_IFACE_WEBUSB)
+    set(ENABLE_IFACE_WEBUSB 1)
+endif()
+if(NOT DEFINED ENABLE_IFACE_CCID)
+    set(ENABLE_IFACE_CCID 1)
+endif()
 if(ENABLE_DUMB_DONGLE)
     message(DEPRECATION "ENABLE_DUMB_DONGLE is deprecated; use ENABLE_BYPASS_USER_PRESENCE instead")
     set(ENABLE_BYPASS_USER_PRESENCE ON)
@@ -113,6 +122,18 @@ if(NOT ENABLE_APPLET_NDEF)
     list(FILTER SRC EXCLUDE REGEX ".*/applets/ndef/.*\\.c$")
 endif()
 
+if(NOT ENABLE_IFACE_CTAPHID)
+    list(FILTER SRC EXCLUDE REGEX ".*/interfaces/USB/class/ctaphid/.*\\.c$")
+endif()
+
+if(NOT ENABLE_IFACE_WEBUSB)
+    list(FILTER SRC EXCLUDE REGEX ".*/interfaces/USB/class/webusb/.*\\.c$")
+endif()
+
+if(NOT ENABLE_IFACE_CCID)
+    list(FILTER SRC EXCLUDE REGEX ".*/interfaces/USB/class/ccid/.*\\.c$")
+endif()
+
 if(NOT ENABLE_IFACE_KBDHID)
     list(FILTER SRC EXCLUDE REGEX ".*/interfaces/USB/class/kbdhid/.*\\.c$")
 endif()
@@ -124,6 +145,9 @@ set(canokey_core_public_defs
     ENABLE_NFC=$<BOOL:${ENABLE_NFC}>
     ENABLE_APPLET_NDEF=$<BOOL:${ENABLE_APPLET_NDEF}>
     ENABLE_PASS=$<BOOL:${ENABLE_PASS}>
+    ENABLE_IFACE_CTAPHID=$<BOOL:${ENABLE_IFACE_CTAPHID}>
+    ENABLE_IFACE_WEBUSB=$<BOOL:${ENABLE_IFACE_WEBUSB}>
+    ENABLE_IFACE_CCID=$<BOOL:${ENABLE_IFACE_CCID}>
     ENABLE_IFACE_KBDHID=$<BOOL:${ENABLE_IFACE_KBDHID}>
 )
 

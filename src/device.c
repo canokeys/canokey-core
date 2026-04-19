@@ -1,13 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "common.h"
 #include <admin.h>
+#if ENABLE_IFACE_CCID
 #include <ccid.h>
+#endif
+#if ENABLE_IFACE_CTAPHID
 #include <ctaphid.h>
+#endif
 #include <device.h>
 #if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
 #endif
+#if ENABLE_IFACE_WEBUSB
 #include <webusb.h>
+#endif
 
 volatile static uint8_t touch_result;
 #if ENABLE_NFC
@@ -21,9 +27,15 @@ volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, he
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
+#if ENABLE_IFACE_CCID
   CCID_Loop();
+#endif
+#if ENABLE_IFACE_CTAPHID
   CTAPHID_Loop(0);
+#endif
+#if ENABLE_IFACE_WEBUSB
   WebUSB_Loop();
+#endif
 #if ENABLE_IFACE_KBDHID
   KBDHID_Loop();
 #endif
@@ -76,13 +88,17 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     // Keep blinking, in case other applet stops it
     start_blinking(0);
     // Nested CCID processing is not allowed
+#if ENABLE_IFACE_CCID
     if (entry != WAIT_ENTRY_CCID) CCID_Loop();
+#endif
+#if ENABLE_IFACE_CTAPHID
     if (CTAPHID_Loop(entry == WAIT_ENTRY_CTAPHID) == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
       stop_blinking();
       wait_status = WAIT_NONE;
       return USER_PRESENCE_CANCEL;
     }
+#endif
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
@@ -92,7 +108,9 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     }
     if (now - last >= 100) {
       last = now;
+#if ENABLE_IFACE_CTAPHID
       if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+#endif
     }
   }
   // Consume this touch event
@@ -103,7 +121,11 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 }
 
 int send_keepalive_during_processing(uint8_t entry) {
+#if ENABLE_IFACE_CTAPHID
   if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+#else
+  UNUSED(entry);
+#endif
   DBG_MSG("KEEPALIVE\n");
   return 0;
 }

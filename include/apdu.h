@@ -88,7 +88,7 @@ enum {
   BUFFER_OWNER_USBD, // store the configuration descriptor during a control transfer
 };
 
-void init_apdu_buffer(void); // implement in ccid.c for reusing the ccid buffer
+void init_apdu_buffer(void);
 int acquire_apdu_buffer(uint8_t owner);
 int release_apdu_buffer(uint8_t owner);
 

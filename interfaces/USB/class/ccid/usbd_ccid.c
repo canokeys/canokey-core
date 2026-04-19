@@ -20,7 +20,7 @@ uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev) {
 uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev) {
   if (bulk_in_state == CCID_STATE_DATA_IN_WITH_ZLP) {
     bulk_in_state = CCID_STATE_DATA_IN;
-    uint8_t addr = EP_OUT(ccid);
+    uint8_t addr = EP_IN(ccid);
     USBD_LL_Transmit(pdev, addr, NULL, 0);
   } else {
     CCID_InFinished(bulk_in_state == CCID_STATE_DATA_IN_TIME_EXTENSION);
@@ -54,13 +54,12 @@ uint8_t CCID_Response_SendData(USBD_HandleTypeDef *pdev, const uint8_t *buf, uin
       else
         device_delay(1);
     }
-    uint8_t addr = EP_OUT(ccid);
     uint8_t ep_size = EP_SIZE(ccid);
     if (is_time_extension_request)
       bulk_in_state = CCID_STATE_DATA_IN_TIME_EXTENSION;
     else
       bulk_in_state = len % ep_size == 0 ? CCID_STATE_DATA_IN_WITH_ZLP : CCID_STATE_DATA_IN;
-    ret = USBD_LL_Transmit(pdev, addr, buf, len);
+    ret = USBD_LL_Transmit(pdev, EP_IN(ccid), buf, len);
   }
   return ret;
 }
