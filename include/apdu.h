@@ -82,7 +82,7 @@ typedef struct {
 extern uint8_t *global_buffer;
 
 enum {
-  BUFFER_OWNER_NONE = 1,
+  BUFFER_OWNER_NONE,
   BUFFER_OWNER_CCID,
   BUFFER_OWNER_WEBUSB,
   BUFFER_OWNER_USBD, // store the configuration descriptor during a control transfer

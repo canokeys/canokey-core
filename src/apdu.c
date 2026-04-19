@@ -63,7 +63,7 @@ static const uint8_t AID_Size[] = {
 #endif
 };
 
-static volatile uint32_t buffer_owner = BUFFER_OWNER_NONE;
+static volatile uint32_t buffer_owner;
 static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
 static CAPDU_CHAINING capdu_chaining = {
     .capdu.data = chaining_buffer,
