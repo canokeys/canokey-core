@@ -151,31 +151,22 @@ typedef struct {
   const uint8_t *(*GetUrlDescriptor)(USBD_SpeedTypeDef speed, uint16_t *length);
 } USBD_DescriptorsTypeDef;
 
-/* USB Device handle structure */
+/* EP0 transfer state used by the control request engine. */
 typedef struct {
-  uint32_t status;
-  uint32_t total_length;
-  uint32_t rem_length;
-  uint32_t maxpacket;
+  uint16_t total_length;
+  uint16_t rem_length;
 } USBD_EndpointTypeDef;
 
 /* USB Device handle structure */
 typedef struct _USBD_HandleTypeDef {
-  uint8_t id;
-  uint32_t dev_config;
-  uint32_t dev_default_config;
-  uint32_t dev_config_status;
-  USBD_SpeedTypeDef dev_speed;
-  USBD_EndpointTypeDef ep_in[USBD_EP_SIZE];
-  USBD_EndpointTypeDef ep_out[USBD_EP_SIZE];
-  uint32_t ep0_state;
-  uint32_t ep0_data_len;
-  uint8_t ep0_sender;
+  uint8_t dev_config;
+  USBD_EndpointTypeDef ep0_in;
+  USBD_EndpointTypeDef ep0_out;
+  uint8_t ep0_state;
+  uint16_t ep0_data_len;
   uint8_t dev_state;
-  uint8_t dev_old_state;
-  uint32_t dev_remote_wakeup;
+  uint8_t dev_remote_wakeup;
 
-  USBD_SetupReqTypedef request;
   const USBD_DescriptorsTypeDef *pDesc;
   const USBD_ClassTypeDef *pClass;
 } USBD_HandleTypeDef;
