@@ -63,6 +63,72 @@ static ctap_src_t current_cmd_src;
 // SM2 attr
 CTAP_sm2_attr ctap_sm2_attr;
 
+typedef struct {
+  uint8_t *buf;
+  size_t prefix_len;
+  size_t suffix_off;
+  size_t suffix_len;
+  size_t total_len;
+  int cert_len;
+  int cert_off;
+  size_t emitted;
+  bool prepared;
+} CTAP_make_credential_stream_state;
+
+typedef struct {
+  uint8_t *buf;
+  size_t len;
+  size_t emitted;
+} CTAP_mem_stream_state;
+
+static CTAP_make_credential_stream_state mc_stream_state;
+static CTAP_mem_stream_state mem_stream_state;
+static uint8_t *stream_resp_base;
+static bool stream_make_credential_response;
+
+static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  CTAP_mem_stream_state *state = (CTAP_mem_stream_state *)ctx;
+  size_t copied = MIN(state->len - state->emitted, max_len);
+  if (copied != 0) memcpy(out, state->buf + state->emitted, copied);
+  state->emitted += copied;
+  *written = copied;
+  return 0;
+}
+
+static void ctap_hid_stream_close(void *ctx) {
+  (void)ctx;
+  release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+}
+
+static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  CTAP_make_credential_stream_state *state = (CTAP_make_credential_stream_state *)ctx;
+  size_t copied = 0;
+
+  while (copied < max_len && state->emitted < state->total_len) {
+    if (state->emitted < state->prefix_len) {
+      size_t n = MIN(state->prefix_len - state->emitted, max_len - copied);
+      memcpy(out + copied, state->buf + state->emitted, n);
+      state->emitted += n;
+      copied += n;
+    } else if (state->cert_off < state->cert_len) {
+      size_t n = MIN((size_t)(state->cert_len - state->cert_off), max_len - copied);
+      if (read_file(CTAP_CERT_FILE, out + copied, state->cert_off, n) < 0) return -1;
+      state->cert_off += (int)n;
+      state->emitted += n;
+      copied += n;
+    } else {
+      size_t suffix_emitted = state->emitted - state->prefix_len - (size_t)state->cert_len;
+      size_t n = MIN(state->suffix_len - suffix_emitted, max_len - copied);
+      memcpy(out + copied, state->buf + state->suffix_off + suffix_emitted, n);
+      state->emitted += n;
+      copied += n;
+    }
+  }
+
+  *written = copied;
+  return 0;
+}
+
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
   last_cmd = CTAP_INVALID_CMD;
@@ -748,12 +814,23 @@ step12:
       ret = cbor_encode_byte_string(&x5carr, data_buf, 0);
       CHECK_CBOR_RET(ret);
       uint8_t *ptr = x5carr.data.ptr - 1;
-      ret = get_cert(ptr + 3);
+      ret = get_file_size(CTAP_CERT_FILE);
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       *ptr++ = 0x59;
       *ptr++ = HI(ret);
       *ptr++ = LO(ret);
-      x5carr.data.ptr = ptr + ret;
+      if (stream_make_credential_response) {
+        mc_stream_state.buf = stream_resp_base;
+        mc_stream_state.prefix_len = (size_t)(ptr - stream_resp_base);
+        mc_stream_state.cert_len = ret;
+        mc_stream_state.cert_off = 0;
+        mc_stream_state.emitted = 0;
+        mc_stream_state.prepared = true;
+        x5carr.data.ptr = ptr;
+      } else {
+        if (get_cert(ptr) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        x5carr.data.ptr = ptr + ret;
+      }
     }
     ret = cbor_encoder_close_container(&att_map, &x5carr);
     CHECK_CBOR_RET(ret);
@@ -775,6 +852,15 @@ step12:
 
   ret = cbor_encoder_close_container(encoder, &map);
   CHECK_CBOR_RET(ret);
+
+  if (stream_make_credential_response && mc_stream_state.prepared) {
+    const size_t encoded_len = 1 + cbor_encoder_get_buffer_size(encoder, stream_resp_base + 1);
+    mc_stream_state.suffix_off = mc_stream_state.prefix_len;
+    mc_stream_state.suffix_len = encoded_len - mc_stream_state.prefix_len;
+    mc_stream_state.total_len = encoded_len + (size_t)mc_stream_state.cert_len;
+    DBG_MSG("makeCredential stream prefix=%zu cert=%d suffix=%zu total=%zu\n", mc_stream_state.prefix_len,
+            mc_stream_state.cert_len, mc_stream_state.suffix_len, mc_stream_state.total_len);
+  }
 
   return 0;
 }
@@ -2018,6 +2104,71 @@ int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size
   int ret = ctap_process_cbor(req, req_len, resp, resp_len);
   current_cmd_src = CTAP_SRC_NONE;
   return ret;
+}
+
+int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scratch, size_t scratch_len,
+                                      CTAPHID_TxSource *source, ctap_src_t src) {
+  if (req_len == 0 || !scratch || scratch_len == 0 || !source) return -1;
+  if (current_cmd_src != CTAP_SRC_NONE) return -1;
+
+  memset(source, 0, sizeof(*source));
+  memset(&mc_stream_state, 0, sizeof(mc_stream_state));
+  memset(&mem_stream_state, 0, sizeof(mem_stream_state));
+  if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) return -1;
+  uint8_t *resp = global_buffer;
+  size_t resp_len = APDU_BUFFER_SIZE;
+
+  if (*req != CTAP_MAKE_CREDENTIAL) {
+    current_cmd_src = src;
+    int ret = ctap_process_cbor(req, req_len, resp, &resp_len);
+    current_cmd_src = CTAP_SRC_NONE;
+    if (ret < 0) {
+      release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+      return -1;
+    }
+
+    mem_stream_state.buf = resp;
+    mem_stream_state.len = resp_len;
+    mem_stream_state.emitted = 0;
+    source->total_len = mem_stream_state.len;
+    source->read = ctap_mem_stream_read;
+    source->close = ctap_hid_stream_close;
+    source->ctx = &mem_stream_state;
+    return 1;
+  }
+
+  stream_resp_base = resp;
+  stream_make_credential_response = true;
+
+  CborEncoder encoder;
+  cbor_encoder_init(&encoder, resp + 1, resp_len - 1, 0);
+
+  current_cmd_src = src;
+  uint8_t status = ctap_make_credential(&encoder, req + 1, req_len - 1);
+  current_cmd_src = CTAP_SRC_NONE;
+  stream_make_credential_response = false;
+  stream_resp_base = NULL;
+
+  resp[0] = status;
+  last_cmd = CTAP_MAKE_CREDENTIAL;
+  if (status != 0) last_cmd = CTAP_INVALID_CMD;
+
+  if (status == 0 && mc_stream_state.prepared) {
+    source->total_len = mc_stream_state.total_len;
+    source->read = ctap_make_credential_stream_read;
+    source->close = ctap_hid_stream_close;
+    source->ctx = &mc_stream_state;
+    return 1;
+  }
+
+  mem_stream_state.buf = resp;
+  mem_stream_state.len = status == 0 ? 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1) : 1;
+  mem_stream_state.emitted = 0;
+  source->total_len = mem_stream_state.len;
+  source->read = ctap_mem_stream_read;
+  source->close = ctap_hid_stream_close;
+  source->ctx = &mem_stream_state;
+  return 1;
 }
 
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {

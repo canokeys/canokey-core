@@ -24,5 +24,6 @@ uint8_t USBD_CTAPHID_DataIn(void);
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len);
 uint8_t USBD_CTAPHID_WaitIdle(void);
+void USBD_CTAPHID_PrepareReceive(void);
 
 #endif /* __USB_CTAPHID_H */

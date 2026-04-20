@@ -39,16 +39,32 @@ def parse_defines(header_paths, needed):
     
     Returns dict {name: int_value}. Raises if any needed key is missing.
     """
-    # Match: #define NAME value  (decimal, hex, or negative)
-    pattern = re.compile(r'^\s*#define\s+(\w+)\s+(-?(?:0[xX][0-9a-fA-F]+|\d+))\b')
-    found = {}
+    # Match: #define NAME value  (decimal, hex, negative, or simple alias)
+    pattern = re.compile(r'^\s*#define\s+(\w+)\s+(-?(?:0[xX][0-9a-fA-F]+|\d+)|\w+)\b')
+    raw = {}
     for path in header_paths:
         with open(path) as f:
             for line in f:
                 m = pattern.match(line)
-                if m and m.group(1) in needed:
-                    val_str = m.group(2)
-                    found[m.group(1)] = int(val_str, 0)
+                if m:
+                    raw[m.group(1)] = m.group(2)
+
+    def resolve(name, seen=None):
+        if seen is None:
+            seen = set()
+        if name in seen or name not in raw:
+            return None
+        seen.add(name)
+        val_str = raw[name]
+        if re.match(r'-?(?:0[xX][0-9a-fA-F]+|\d+)$', val_str):
+            return int(val_str, 0)
+        return resolve(val_str, seen)
+
+    found = {}
+    for name in needed:
+        value = resolve(name)
+        if value is not None:
+            found[name] = value
 
     missing = [k for k in needed if k not in found]
     if missing:

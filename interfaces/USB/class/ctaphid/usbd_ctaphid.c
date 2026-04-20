@@ -39,12 +39,17 @@ static const uint8_t USBD_CTAPHID_Desc[] = {
 };
 // clang-format on
 
+void USBD_CTAPHID_PrepareReceive(void) {
+  USBD_LL_PrepareReceive(&usb_device, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+}
+
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = CTAPHID_IDLE;
+  CTAPHID_TxReset();
   USBD_LL_OpenEP(pdev, EP_IN(ctap_hid), USBD_EP_TYPE_INTR, EP_SIZE(ctap_hid));
   USBD_LL_OpenEP(pdev, EP_OUT(ctap_hid), USBD_EP_TYPE_INTR, EP_SIZE(ctap_hid));
   CTAPHID_Init(USBD_CTAPHID_SendReport);
-  USBD_LL_PrepareReceive(pdev, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  USBD_CTAPHID_PrepareReceive();
   return USBD_OK;
 }
 
@@ -91,12 +96,13 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
 
 uint8_t USBD_CTAPHID_DataIn() {
   hid_handle.state = CTAPHID_IDLE;
+  CTAPHID_TxContinue();
   return USBD_OK;
 }
 
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
-  CTAPHID_OutEvent(hid_handle.report_buf);
-  USBD_LL_PrepareReceive(pdev, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  (void)pdev;
+  if (!CTAPHID_OutEvent(hid_handle.report_buf)) USBD_CTAPHID_PrepareReceive();
   return USBD_OK;
 }
 
