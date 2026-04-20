@@ -212,6 +212,8 @@ key_type_t cose_alg_to_key_type(int alg) {
   }
 }
 
+bool cose_alg_is_mldsa65(int32_t alg) { return alg == COSE_ALG_ML_DSA_65; }
+
 static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
   if (ret < 0) return ret;
@@ -300,6 +302,23 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, ui
   return 0;
 }
 
+int generate_mldsa65_key_handle(credential_id *kh, uint8_t seed[PRI_KEY_SIZE], uint8_t dc, uint8_t cp) {
+  uint8_t kh_key[KH_KEY_SIZE];
+  ecc_key_t key;
+
+  kh->alg_type = COSE_ALG_ML_DSA_65;
+  kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
+  kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
+
+  int ret = read_kh_key(kh_key);
+  if (ret < 0) return ret;
+  generate_credential_id_nonce_tag(kh, kh_key, &key);
+  memzero(kh_key, sizeof(kh_key));
+  memcpy(seed, key.pri, PRI_KEY_SIZE);
+  memzero(&key, sizeof(key));
+  return 0;
+}
+
 int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
   int ret = read_kh_key(key->pub); // use key.pub to store kh key first
   if (ret < 0) return ret;
@@ -319,6 +338,15 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
     memzero(key, sizeof(ecc_key_t));
     return 1;
   }
+  return 0;
+}
+
+int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]) {
+  ecc_key_t key;
+  int ret = verify_key_handle(kh, &key);
+  if (ret != 0) return ret;
+  memcpy(seed, key.pri, PRI_KEY_SIZE);
+  memzero(&key, sizeof(key));
   return 0;
 }
 
