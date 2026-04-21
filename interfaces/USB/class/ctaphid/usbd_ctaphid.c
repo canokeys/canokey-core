@@ -102,7 +102,8 @@ uint8_t USBD_CTAPHID_DataIn() {
 
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
   (void)pdev;
-  if (!CTAPHID_OutEvent(hid_handle.report_buf)) USBD_CTAPHID_PrepareReceive();
+  CTAPHID_OutEvent(hid_handle.report_buf);
+  USBD_CTAPHID_PrepareReceive();
   return USBD_OK;
 }
 

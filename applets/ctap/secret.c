@@ -273,13 +273,13 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
   return true;
 }
 
-int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, uint8_t dc, uint8_t cp) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp) {
   ecc_key_t key;
   uint8_t kh_key[KH_KEY_SIZE];
 
   kh->alg_type = alg_type;
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  if (key_type == KEY_TYPE_PKC_END) {
+  if (key_type == KEY_TYPE_PKC_END && !cose_alg_is_mldsa65(alg_type)) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
   }
@@ -289,33 +289,20 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, ui
 
   const int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
-  do {
+  do
     generate_credential_id_nonce_tag(kh, kh_key, &key);
-  } while (ecc_complete_key(key_type, &key) < 0);
+  while (!cose_alg_is_mldsa65(alg_type) && ecc_complete_key(key_type, &key) < 0);
   memzero(kh_key, KH_KEY_SIZE);
 
-  memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
-  DBG_MSG("Public: ");
-  PRINT_HEX(pubkey, PUBLIC_KEY_LENGTH[key_type]);
+  if (cose_alg_is_mldsa65(alg_type)) {
+    memcpy(pubkey_or_seed, key.pri, PRI_KEY_SIZE);
+  } else {
+    memcpy(pubkey_or_seed, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+    DBG_MSG("Public: ");
+    PRINT_HEX(pubkey_or_seed, PUBLIC_KEY_LENGTH[key_type]);
+  }
   memzero(&key, sizeof(key));
 
-  return 0;
-}
-
-int generate_mldsa65_key_handle(credential_id *kh, uint8_t seed[PRI_KEY_SIZE], uint8_t dc, uint8_t cp) {
-  uint8_t kh_key[KH_KEY_SIZE];
-  ecc_key_t key;
-
-  kh->alg_type = COSE_ALG_ML_DSA_65;
-  kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
-  kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
-
-  int ret = read_kh_key(kh_key);
-  if (ret < 0) return ret;
-  generate_credential_id_nonce_tag(kh, kh_key, &key);
-  memzero(kh_key, sizeof(kh_key));
-  memcpy(seed, key.pri, PRI_KEY_SIZE);
-  memzero(&key, sizeof(key));
   return 0;
 }
 

@@ -6,10 +6,14 @@
 #include <usb_device.h>
 #include <usbd_ctaphid.h>
 
+#define CTAPHID_RX_QUEUE_SIZE 6
+
 static CTAPHID_FRAME rx_frame;
+static CTAPHID_FRAME rx_queue[CTAPHID_RX_QUEUE_SIZE];
 static CTAPHID_FRAME tx_frame;
 static CTAPHID_Channel channel;
-static volatile uint8_t has_frame;
+static volatile uint8_t rx_head;
+static volatile uint8_t rx_tail;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 static uint8_t (*callback_send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len);
@@ -41,7 +45,8 @@ const uint16_t CSIZE = sizeof(tx_frame.cont.data);
 uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len)) {
   callback_send_report = send_report;
   channel.state = CTAPHID_IDLE;
-  has_frame = 0;
+  rx_head = 0;
+  rx_tail = 0;
   CTAPHID_TxReset();
   return 0;
 }
@@ -51,12 +56,13 @@ uint8_t CTAPHID_OutEvent(uint8_t *data) {
     DBG_MSG("CTAPHID TX busy, dropping incoming report\n");
     return 0;
   }
-  if (has_frame) {
+  uint8_t next_head = (uint8_t)((rx_head + 1) % CTAPHID_RX_QUEUE_SIZE);
+  if (next_head == rx_tail) {
     ERR_MSG("overrun\n");
     return 0;
   }
-  memcpy(&rx_frame, data, sizeof(rx_frame));
-  has_frame = 1;
+  memcpy(&rx_queue[rx_head], data, sizeof(rx_queue[rx_head]));
+  rx_head = next_head;
   return 1;
 }
 
@@ -165,11 +171,32 @@ static int CTAPHID_TxPump(void) {
 }
 
 int CTAPHID_SendStreamSource(uint32_t cid, uint8_t cmd, const CTAPHID_TxSource *source) {
-  if (!source) return -1;
-  if (tx_stream.active) return -1;
-  if (source->total_len > UINT16_MAX) return -1;
-  if (source->total_len > (size_t)ISIZE + 128u * (size_t)CSIZE) return -1;
-  if (source->total_len != 0 && source->read == NULL) return -1;
+  if (!source) {
+    DBG_MSG("CTAPHID source stream missing source\n");
+    return -1;
+  }
+  if (tx_stream.active) {
+    DBG_MSG("CTAPHID source stream busy active=%u finishing=%u offset=%zu len=%zu\n", tx_stream.active,
+            tx_stream.finishing, tx_stream.offset, tx_stream.len);
+    if (!tx_stream.finishing) return -1;
+    CTAPHID_TxReset();
+  }
+  if (source->total_len > UINT16_MAX) {
+    DBG_MSG("CTAPHID source stream len exceeds u16: %zu\n", source->total_len);
+    return -1;
+  }
+  if (source->total_len > (size_t)ISIZE + 128u * (size_t)CSIZE) {
+    DBG_MSG("CTAPHID source stream len exceeds HID seq window: %zu\n", source->total_len);
+    return -1;
+  }
+  if (source->total_len != 0 && source->read == NULL) {
+    DBG_MSG("CTAPHID source stream missing reader len=%zu\n", source->total_len);
+    return -1;
+  }
+  if (USBD_CTAPHID_WaitIdle() != USBD_OK) {
+    DBG_MSG("CTAPHID source stream wait idle timeout len=%zu\n", source->total_len);
+    return -1;
+  }
 
   tx_stream.active = 1;
   tx_stream.finishing = 0;
@@ -348,7 +375,10 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_MSG_TIMEOUT);
   }
 
-  if (!has_frame) return LOOP_SUCCESS;
+  if (rx_head == rx_tail) return LOOP_SUCCESS;
+
+  memcpy(&rx_frame, &rx_queue[rx_tail], sizeof(rx_frame));
+  rx_tail = (uint8_t)((rx_tail + 1) % CTAPHID_RX_QUEUE_SIZE);
 
   if (CTAPHID_TxBusy()) {
     DBG_MSG("CTAPHID TX busy, dropping incoming frame\n");
@@ -402,9 +432,6 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     memcpy(channel.data + channel.bcnt_current, rx_frame.cont.data, copied);
     channel.bcnt_current += copied;
   }
-  has_frame = 0;
-  USBD_CTAPHID_PrepareReceive();
-
   if (channel.bcnt_current == channel.bcnt_total) {
     channel.expire = UINT32_MAX;
     switch (channel.cmd) {
@@ -465,10 +492,6 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   }
 
 consume_frame:
-  if (has_frame) {
-    has_frame = 0;
-    USBD_CTAPHID_PrepareReceive();
-  }
   return ret;
 }
 
