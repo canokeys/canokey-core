@@ -140,19 +140,20 @@ static int openpgp_pke_acquire(void) {
 
 static void openpgp_pke_release(void) {
   if (!openpgp_pke_owned) return;
-  memzero(pke_buffer_data(), pke_buffer_size());
+  pke_buffer_clear();
   pke_buffer_release(PKE_BUFFER_OWNER_OPENPGP);
   openpgp_pke_owned = 0;
 }
-
-static uint8_t *openpgp_pke_result_buffer(void) { return pke_buffer_data(); }
-
-static ck_key_t *openpgp_import_key_obj(void) { return pke_buffer_key(); }
 
 static int openpgp_buffer_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
   const uint8_t *data = (const uint8_t *)ctx;
   memcpy(buf, data + offset, len);
   return len;
+}
+
+static int openpgp_pke_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
 }
 
 static void openpgp_pke_source_close(void *ctx) {
@@ -241,10 +242,7 @@ static void openpgp_cert_write_reset(void) {
 }
 
 static void openpgp_import_reset(void) {
-  if (import_key_path != NULL) {
-    memzero(openpgp_import_key_obj(), sizeof(*openpgp_import_key_obj()));
-    openpgp_pke_release();
-  }
+  openpgp_pke_release();
   import_key_path = NULL;
   import_key_ref = 0;
   import_total_len = 0;
@@ -793,7 +791,12 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   if (key_path == NULL) EXCEPT(SW_WRONG_DATA);
 
   ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) return -1;
+  if (ck_read_key(key_path, &key) < 0) {
+    DBG_MSG("Generate/read key failed: p1=%02X key_ref=%02X path=%s\n", P1, DATA[0], key_path);
+    return -1;
+  }
+  DBG_MSG("Generate/read key ok: p1=%02X key_ref=%02X type=%u origin=%u nbits=%u\n", P1, DATA[0], key.meta.type,
+          key.meta.origin, key.rsa.nbits);
 
   if (P1 == 0x80) {
     start_quick_blinking(0);
@@ -819,6 +822,8 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   }
 
   const int encoded_len = ck_encoded_public_key_length(key.meta.type, true);
+  DBG_MSG("Generate pubkey length: type=%u encoded=%d inline_limit=%u\n", key.meta.type, encoded_len,
+          APDU_COMMAND_BUFFER_SIZE - 2);
   if (encoded_len < 0 || encoded_len + 2 > MAX_PUBKEY_RESPONSE_LENGTH) {
     memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_LENGTH);
@@ -826,26 +831,36 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
 
   if (encoded_len + 2 > APDU_COMMAND_BUFFER_SIZE) {
     if (openpgp_pke_acquire() < 0) {
+      DBG_MSG("Generate pubkey acquire PKE failed\n");
       memzero(&key, sizeof(key));
       return -1;
     }
-    uint8_t *response = openpgp_pke_result_buffer();
+    uint8_t response[MAX_PUBKEY_RESPONSE_LENGTH];
     response[0] = 0x7F;
     response[1] = 0x49;
     int len = ck_encode_public_key(&key, &response[2], true);
+    DBG_MSG("Generate pubkey encoded: len=%d\n", len);
     memzero(&key, sizeof(key));
     if (len < 0) {
+      DBG_MSG("Generate pubkey encode failed\n");
       openpgp_pke_release();
       return -1;
     }
-    apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, openpgp_buffer_source_read, openpgp_pke_source_close,
-                             response);
+    if (pke_buffer_write(0, response, (size_t)(len + 2)) < 0) {
+      DBG_MSG("Generate pubkey buffer write failed: len=%d\n", len + 2);
+      openpgp_pke_release();
+      return -1;
+    }
+    DBG_MSG("Generate pubkey response streaming: total=%d\n", len + 2);
+    apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, openpgp_pke_source_read, openpgp_pke_source_close,
+                             NULL);
     LL = 0;
   } else {
     uint8_t *response = RDATA;
     response[0] = 0x7F;
     response[1] = 0x49;
     int len = ck_encode_public_key(&key, &response[2], true);
+    DBG_MSG("Generate pubkey inline encoded: len=%d\n", len);
     memzero(&key, sizeof(key));
     if (len < 0) return -1;
     LL = len + 2;
@@ -1396,7 +1411,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   ASSERT_ADMIN();
 #endif
-  ck_key_t *key = openpgp_import_key_obj();
+  ck_key_t key;
   DBG_MSG("Import enter: cla=%02X p1=%02X p2=%02X lc=%u received=%u path=%p\n", CLA, P1, P2, LC, import_received,
           (const void *)import_key_path);
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
@@ -1406,6 +1421,15 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   //       Below are processed by ck_parse_openpgp
   //       7F48 ...
   //       5F48 ...
+
+  if (import_key_path != NULL) {
+    if (pke_buffer_read(0, &key, sizeof(key)) < 0) {
+      openpgp_import_reset();
+      return -1;
+    }
+  } else {
+    memzero(&key, sizeof(key));
+  }
 
   if (import_key_path == NULL) {
     const uint8_t *p = DATA;
@@ -1476,12 +1500,13 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     p += *p + 1;
 
     if (openpgp_pke_acquire() < 0) return -1;
-    if (ck_read_key_metadata(key_path, &key->meta) < 0) {
+    if (ck_read_key_metadata(key_path, &key.meta) < 0) {
+      memzero(&key, sizeof(key));
       openpgp_import_reset();
       return -1;
     }
-    ck_parse_openpgp_stream_init(&import_stream, key, import_total_len - (p - DATA));
-    DBG_MSG("Import init: key_ref=%02X type=%u total=%u stream_total=%u header=%u lc=%u\n", key_ref, key->meta.type,
+    ck_parse_openpgp_stream_init(&import_stream, &key, import_total_len - (p - DATA));
+    DBG_MSG("Import init: key_ref=%02X type=%u total=%u stream_total=%u header=%u lc=%u\n", key_ref, key.meta.type,
             import_total_len, import_stream.total_len, (unsigned)(p - DATA), LC);
     import_key_path = key_path;
     import_key_ref = key_ref;
@@ -1497,39 +1522,54 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   const bool final = (CLA & 0x10) == 0;
   DBG_MSG("Import chunk: received=%u lc=%u offset=%u len=%u final=%u\n", import_received, LC, chunk_offset, chunk_len,
           final);
-  int err = ck_parse_openpgp_stream_update(&import_stream, key, DATA + chunk_offset, chunk_len, final);
+  int err = ck_parse_openpgp_stream_update(&import_stream, &key, DATA + chunk_offset, chunk_len, final);
   if (err == KEY_ERR_LENGTH) {
     DBG_MSG("Import length err: phase=%u processed=%u comp_idx=%u comp_off=%u data_len=%u template_end=%u\n",
             import_stream.phase, import_stream.processed, import_stream.comp_idx, import_stream.comp_off,
             import_stream.data_len, import_stream.template_end);
+    memzero(&key, sizeof(key));
     openpgp_import_reset();
     EXCEPT(SW_WRONG_LENGTH);
   } else if (err == KEY_ERR_DATA) {
     DBG_MSG("Import data err: type=%u phase=%u processed=%u comp_idx=%u comp_off=%u data_len=%u template_end=%u\n",
-            key->meta.type, import_stream.phase, import_stream.processed, import_stream.comp_idx, import_stream.comp_off,
+            key.meta.type, import_stream.phase, import_stream.processed, import_stream.comp_idx, import_stream.comp_off,
             import_stream.data_len, import_stream.template_end);
+    memzero(&key, sizeof(key));
     openpgp_import_reset();
     EXCEPT(SW_WRONG_DATA);
   } else if (err < 0) {
     DBG_MSG("Import proc err: err=%d phase=%u processed=%u\n", err, import_stream.phase, import_stream.processed);
+    memzero(&key, sizeof(key));
     openpgp_import_reset();
     EXCEPT(SW_UNABLE_TO_PROCESS);
   }
   import_received += LC;
-  if ((CLA & 0x10) != 0) return 0;
+  if ((CLA & 0x10) != 0) {
+    if (pke_buffer_write(0, &key, sizeof(key)) < 0) {
+      memzero(&key, sizeof(key));
+      openpgp_import_reset();
+      return -1;
+    }
+    memzero(&key, sizeof(key));
+    return 0;
+  }
   if (import_received != import_total_len) {
+    memzero(&key, sizeof(key));
     openpgp_import_reset();
     EXCEPT(SW_WRONG_LENGTH);
   }
   if (err != 1) {
+    memzero(&key, sizeof(key));
     openpgp_import_reset();
     EXCEPT(SW_WRONG_LENGTH);
   }
-  if (ck_write_key(import_key_path, key) < 0) {
+  if (ck_write_key(import_key_path, &key) < 0) {
+    memzero(&key, sizeof(key));
     openpgp_import_reset();
     return -1;
   }
 
+  memzero(&key, sizeof(key));
   uint8_t key_ref = import_key_ref;
   openpgp_import_reset();
   if (key_ref == 0xB6) return reset_sig_counter();
