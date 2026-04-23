@@ -4,8 +4,12 @@
 #include <ccid.h>
 #include <common.h>
 #include <device.h>
+#include <key.h>
+#include <openpgp.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
+
+#define HAS_CMD_DISCARDED   2
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status)                                                               \
   bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
@@ -29,7 +33,6 @@ static volatile uint8_t has_cmd;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
-
 void ccid_init_apdu_buffer(void) { global_buffer = bulkin_data.abData; }
 
 uint8_t CCID_Init(void) {
@@ -65,6 +68,9 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
           // global_buffer is not available, discarding abData
           // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
           DBG_MSG("Discard data because of buffer conflict\n");
+        } else if (bulkout_data.dwLength > ABDATA_SIZE) {
+          DBG_MSG("Discard oversized XfrBlock: %u\n", bulkout_data.dwLength);
+          release_apdu_buffer(BUFFER_OWNER_CCID);
         } else {
           abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
         }
@@ -186,6 +192,10 @@ uint8_t PC_to_RDR_XfrBlock(void) {
     LL = 0;
     SW = SW_WRONG_LENGTH;
   } else {
+    if (INS == OPENPGP_INS_IMPORT_KEY) {
+      DBG_MSG("Import parsed: cla=%02X p1=%02X p2=%02X lc=%u data=%02X%02X%02X%02X\n", CLA, P1, P2, LC,
+              LC > 0 ? DATA[0] : 0, LC > 1 ? DATA[1] : 0, LC > 2 ? DATA[2] : 0, LC > 3 ? DATA[3] : 0);
+    }
     device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
     process_apdu(capdu, rapdu);
     device_set_timeout(NULL, 0);
@@ -353,7 +363,7 @@ void CCID_Loop(void) {
     RDR_to_PC_SlotStatus(errorCode);
     break;
   case PC_TO_RDR_XFRBLOCK:
-    if (has_cmd == 2) {
+    if (has_cmd == HAS_CMD_DISCARDED) {
       DBG_MSG("Respond to a data-discarded message\n");
       pBulkin->dwLength = 2;
       pBulkin->abData[0] = HI(SW_ERR_NOT_PERSIST);

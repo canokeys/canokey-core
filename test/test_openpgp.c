@@ -186,6 +186,45 @@ static void test_generate_key(void **state) {
   assert_int_equal(rapdu->sw, SW_WRONG_LENGTH);
 }
 
+static void test_decipher_chaining(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x82\x06\x31\x32\x33\x34\x35\x36", 11);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  capdu->cla = 0x00;
+  capdu->ins = OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
+  capdu->p1 = 0x80;
+  capdu->p2 = 0x00;
+  capdu->lc = 0x02;
+  capdu->data[0] = 0xB8;
+  capdu->data[1] = 0x00;
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  capdu->cla = 0x10;
+  capdu->ins = OPENPGP_INS_PSO;
+  capdu->p1 = 0x80;
+  capdu->p2 = 0x86;
+  capdu->lc = 254;
+  memset(capdu->data, 0, capdu->lc);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  capdu->cla = 0x00;
+  capdu->lc = 3;
+  memset(capdu->data, 0, capdu->lc);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
+}
+
 static void test_special(void **state) {
   (void)state;
 
@@ -247,6 +286,7 @@ int main() {
       cmocka_unit_test(test_get_data),
       cmocka_unit_test(test_import_key),
       cmocka_unit_test(test_generate_key),
+      cmocka_unit_test(test_decipher_chaining),
       cmocka_unit_test(test_special),
   };
 

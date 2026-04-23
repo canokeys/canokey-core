@@ -8,7 +8,12 @@
 #include <stdint.h>
 #include <string.h>
 
-#define APDU_BUFFER_SIZE 1340
+#ifndef APDU_BUFFER_SIZE
+#define APDU_BUFFER_SIZE 256
+#endif
+// Raw transport storage also has to hold APDU headers/trailers and the final SW bytes.
+#define APDU_COMMAND_OVERHEAD 32
+#define APDU_COMMAND_BUFFER_SIZE (APDU_BUFFER_SIZE + APDU_COMMAND_OVERHEAD)
 #define TOUCH_EXPIRE_TIME 1000
 #define TOUCH_AFTER_PWRON 1500
 

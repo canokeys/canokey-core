@@ -47,7 +47,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
     }
     state = STATE_HOLD_BUF;
     // DBG_MSG("Buf Acquired\n");
-    if (req->wLength > APDU_BUFFER_SIZE) {
+    if (req->wLength > APDU_COMMAND_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
       USBD_CtlError(pdev, req);
       return USBD_FAIL;

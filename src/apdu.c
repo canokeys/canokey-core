@@ -34,7 +34,7 @@ enum PIV_STATE {
   PIV_STATE_OTHER,
 };
 
-static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
+static const uint8_t PIV_AID[] = {0xA0};//, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
@@ -71,7 +71,24 @@ static CAPDU_CHAINING capdu_chaining = {
 static RAPDU_CHAINING rapdu_chaining = {
     .rapdu.data = chaining_buffer,
 };
-static uint8_t apdu_fallback_buffer[APDU_BUFFER_SIZE + 2];
+static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
+static uint16_t response_tail_offset;
+static uint16_t response_tail_len;
+#if !ENABLE_IFACE_CCID
+static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
+#endif
+
+typedef struct {
+  uint8_t active;
+  uint32_t total_len;
+  uint32_t sent;
+  uint16_t sw;
+  APDU_RESPONSE_SOURCE_READ read;
+  APDU_RESPONSE_SOURCE_CLOSE close;
+  void *ctx;
+} APDU_RESPONSE_SOURCE;
+
+static APDU_RESPONSE_SOURCE response_source;
 
 uint8_t *global_buffer;
 
@@ -80,10 +97,14 @@ extern void ccid_init_apdu_buffer(void);
 #endif
 
 void init_apdu_buffer(void) {
+#if !ENABLE_IFACE_CCID
   global_buffer = apdu_fallback_buffer;
+#endif
+  apdu_response_source_clear();
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
 #endif
+  rapdu_chaining.rapdu.data = global_buffer;
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
@@ -159,9 +180,49 @@ restart:
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
+  if (ex->sent == 0) {
+    response_tail_offset = 0;
+    response_tail_len = 0;
+  }
+
+  if (response_source.active) {
+    uint32_t remaining = response_source.total_len - response_source.sent;
+    uint16_t to_send = (uint16_t)MIN(remaining, sh->len);
+    int read = response_source.read(response_source.ctx, response_source.sent, sh->data, to_send);
+    if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {
+      apdu_response_source_clear();
+      sh->len = 0;
+      sh->sw = SW_UNABLE_TO_PROCESS;
+      return -1;
+    }
+
+    sh->len = (uint16_t)read;
+    response_source.sent += (uint16_t)read;
+    remaining = response_source.total_len - response_source.sent;
+    if (remaining != 0) {
+      sh->sw = remaining > 0xFF ? 0x61FF : 0x6100 + remaining;
+    } else {
+      sh->sw = response_source.sw;
+      apdu_response_source_clear();
+    }
+    return 0;
+  }
+
   uint16_t to_send = ex->rapdu.len - ex->sent;
   if (to_send > sh->len) to_send = sh->len;
-  memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
+  if (ex->sent == 0 && ex->rapdu.data == sh->data && ex->rapdu.len > to_send) {
+    const uint16_t tail_len = ex->rapdu.len - to_send;
+    if (tail_len <= sizeof(response_tail)) {
+      memcpy(response_tail, ex->rapdu.data + to_send, tail_len);
+      response_tail_offset = to_send;
+      response_tail_len = tail_len;
+    }
+  }
+  if (response_tail_len != 0 && ex->sent >= response_tail_offset) {
+    memcpy(sh->data, response_tail + ex->sent - response_tail_offset, to_send);
+  } else {
+    memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
+  }
   sh->len = to_send;
   ex->sent += to_send;
   if (ex->sent < ex->rapdu.len) {
@@ -169,10 +230,32 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
       sh->sw = 0x61FF;
     else
       sh->sw = 0x6100 + (ex->rapdu.len - ex->sent);
-  } else
+  } else {
     sh->sw = ex->rapdu.sw;
+    response_tail_offset = 0;
+    response_tail_len = 0;
+  }
   return 0;
 }
+
+void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
+                              APDU_RESPONSE_SOURCE_CLOSE close, void *ctx) {
+  apdu_response_source_clear();
+  response_source.active = 1;
+  response_source.total_len = total_len;
+  response_source.sent = 0;
+  response_source.sw = sw;
+  response_source.read = read;
+  response_source.close = close;
+  response_source.ctx = ctx;
+}
+
+void apdu_response_source_clear(void) {
+  if (response_source.active && response_source.close) response_source.close(response_source.ctx);
+  memset(&response_source, 0, sizeof(response_source));
+}
+
+int apdu_response_source_active(void) { return response_source.active != 0; }
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
 #if ENABLE_IFACE_KBDHID
@@ -185,6 +268,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   }
 #endif
   static enum PIV_STATE piv_state;
+  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
+  if (!is_get_response) apdu_response_source_clear();
   if (current_applet == APPLET_PIV) {
     // Offload some APDU chaining commands of PIV applet,
     // because the length of concatenated payloads may exceed chaining buffer size.
@@ -194,11 +279,19 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       piv_state = PIV_STATE_GET_DATA_RESPONSE;
     else
       piv_state = PIV_STATE_OTHER;
-    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA) {
+    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA ||
+        INS == PIV_INS_IMPORT_ASYMMETRIC_KEY || INS == PIV_INS_GENERAL_AUTHENTICATE) {
       LE = MIN(LE, APDU_BUFFER_SIZE); // Always clamp the Le to valid range
       piv_process_apdu(capdu, rapdu);
       return;
     }
+  }
+  if (current_applet == APPLET_OPENPGP &&
+      ((INS == OPENPGP_INS_PUT_DATA && P1 == 0x7F && P2 == 0x21) || INS == OPENPGP_INS_IMPORT_KEY ||
+       (INS == OPENPGP_INS_PSO && P1 == 0x80 && P2 == 0x86))) {
+    LE = MIN(LE, APDU_BUFFER_SIZE);
+    openpgp_process_apdu(capdu, rapdu);
+    return;
   }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
@@ -207,7 +300,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   } else if (ret == APDU_CHAINING_LAST_BLOCK) {
     capdu = &capdu_chaining.capdu;
     LE = MIN(LE, APDU_BUFFER_SIZE);
-    if ((CLA == 0x80 || CLA == 0x00) && INS == 0xC0) { // GET RESPONSE
+    if (is_get_response) { // GET RESPONSE
       rapdu->len = LE;
       apdu_output(&rapdu_chaining, rapdu);
       return;

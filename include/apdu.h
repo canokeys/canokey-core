@@ -79,6 +79,9 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
+typedef int (*APDU_RESPONSE_SOURCE_READ)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+typedef void (*APDU_RESPONSE_SOURCE_CLOSE)(void *ctx);
+
 extern uint8_t *global_buffer;
 
 enum {
@@ -96,6 +99,10 @@ int release_apdu_buffer(uint8_t owner);
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
+void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
+                              APDU_RESPONSE_SOURCE_CLOSE close, void *ctx);
+void apdu_response_source_clear(void);
+int apdu_response_source_active(void);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE__APDU_H
