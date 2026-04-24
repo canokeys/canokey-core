@@ -6,6 +6,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifndef PLATFORM_HAS_PKE_BUFFER
+#define PLATFORM_HAS_PKE_BUFFER 0
+#endif
+
 #define PKE_BUFFER_SIZE (sizeof(ck_key_t))
 
 enum {
