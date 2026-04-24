@@ -83,13 +83,13 @@ typedef struct {
 typedef int (*APDU_RESPONSE_SOURCE_READ)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 typedef void (*APDU_RESPONSE_SOURCE_CLOSE)(void *ctx);
 
-extern uint8_t *global_buffer;
+extern uint8_t *shared_io_buffer;
 
 enum {
   BUFFER_OWNER_NONE,
   BUFFER_OWNER_CCID,
   BUFFER_OWNER_WEBUSB,
-  BUFFER_OWNER_USBD, // store the configuration descriptor during a control transfer
+  BUFFER_OWNER_USBD, // store USB descriptors during a control transfer
   BUFFER_OWNER_CTAPHID,
 };
 

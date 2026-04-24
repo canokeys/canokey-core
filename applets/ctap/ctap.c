@@ -102,6 +102,8 @@ static CTAP_make_credential_stream_state mc_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
 static uint8_t *stream_resp_base;
+static uint8_t *stream_work_buffer;
+static size_t stream_work_buffer_len;
 static bool stream_make_credential_response;
 
 static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
@@ -230,22 +232,19 @@ static int ctap_mldsa_stream_read(void *ctx, uint8_t *out, size_t max_len, size_
   return 0;
 }
 
-static int ctap_mldsa65_tr_from_seed(const uint8_t seed[PRI_KEY_SIZE], uint8_t tr[MLDSA_TRBYTES]) {
+static int ctap_mldsa65_tr_from_seed(const uint8_t seed[PRI_KEY_SIZE], uint8_t tr[MLDSA_TRBYTES], uint8_t *scratch,
+                                     size_t scratch_len) {
   mldsa_keygen_state_t st = {0};
   int ret;
+  if (!scratch || scratch_len == 0) return -1;
   memcpy(st.seed, seed, PRI_KEY_SIZE);
-  ret = ml_dsa_65_keygen_streaming(global_buffer, APDU_BUFFER_SIZE, &st, tr);
+  ret = ml_dsa_65_keygen_streaming(scratch, scratch_len, &st, tr);
   if (ret < 0) return -1;
   while (st.phase != 0) {
-    ret = ml_dsa_65_keygen_streaming(global_buffer, APDU_BUFFER_SIZE, &st, NULL);
+    ret = ml_dsa_65_keygen_streaming(scratch, scratch_len, &st, NULL);
     if (ret < 0) return -1;
   }
   return 0;
-}
-
-static void ctap_hid_stream_close(void *ctx) {
-  (void)ctx;
-  release_apdu_buffer(BUFFER_OWNER_CTAPHID);
 }
 
 static int ctap_make_credential_stream_add_segment(CTAP_make_credential_stream_segment_kind kind, const uint8_t *buf,
@@ -700,7 +699,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   if (stream_make_credential_response) *p++ = 0;
   if (mldsa) {
     memset(state, 0, sizeof(*state));
-    state->stage = global_buffer;
+    state->stage = stream_work_buffer;
   }
 
   if (cbor_put_uint(&p, 3 + (mc->ext_large_blob_key ? 1 : 0), 0xA0) < 0 || cbor_put_int(&p, MC_RESP_FMT) < 0 ||
@@ -741,9 +740,9 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
     memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
     do {
       KEEPALIVE();
-      int pk_len = ml_dsa_65_keygen_streaming(global_buffer, APDU_BUFFER_SIZE, &state->keygen, NULL);
+      int pk_len = ml_dsa_65_keygen_streaming(state->stage, stream_work_buffer_len, &state->keygen, NULL);
       if (pk_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (pk_len != 0) sha256_update(&sha256, global_buffer, (size_t)pk_len);
+      if (pk_len != 0) sha256_update(&sha256, state->stage, (size_t)pk_len);
     } while (state->keygen.phase != 0);
     if (extension_size != 0) sha256_update(&sha256, extension, extension_size);
   } else {
@@ -1439,7 +1438,7 @@ step7:
     CTAP_mldsa_stream_state *state = &mldsa_stream_state;
     uint8_t *p;
     memset(state, 0, sizeof(*state));
-    state->stage = global_buffer;
+    state->stage = stream_work_buffer;
     memcpy(state->seed, key.pri, PRI_KEY_SIZE);
     p = state->prefix;
     *p++ = 0;
@@ -1447,7 +1446,8 @@ step7:
     p += map.data.ptr - stream_resp_start;
     cbor_put_bytes_header(&p, MLDSA_SIG_BYTES);
     state->prefix_len = (size_t)(p - state->prefix);
-    if (ctap_mldsa65_tr_from_seed(state->seed, state->tr) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (ctap_mldsa65_tr_from_seed(state->seed, state->tr, state->stage, stream_work_buffer_len) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
     memcpy(data_buf + len, ga.client_data_hash, CLIENT_DATA_HASH_SIZE);
     memcpy(state->msg, data_buf, len + CLIENT_DATA_HASH_SIZE);
     state->msg_len = len + CLIENT_DATA_HASH_SIZE;
@@ -1982,7 +1982,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       CTAP_mldsa_stream_state *state = &mldsa_stream_state;
       uint8_t *p;
       memset(state, 0, sizeof(*state));
-      state->stage = global_buffer;
+      state->stage = stream_work_buffer;
       if (verify_mldsa65_key_handle(&dc.credential_id, state->seed) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       p = state->prefix;
       *p++ = 0;
@@ -2404,23 +2404,29 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   memset(&mc_stream_state, 0, sizeof(mc_stream_state));
   memset(&mem_stream_state, 0, sizeof(mem_stream_state));
   memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
-  if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) return -1;
-  uint8_t *resp = global_buffer;
-  size_t resp_len = APDU_BUFFER_SIZE;
+  uint8_t *resp = NULL;
+  size_t resp_len = 0;
+  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) return -1;
+  stream_work_buffer = resp;
+  stream_work_buffer_len = resp_len;
 
   if (*req != CTAP_MAKE_CREDENTIAL) {
     current_cmd_src = src;
     int ret = ctap_process_cbor(req, req_len, resp, &resp_len);
     current_cmd_src = CTAP_SRC_NONE;
     if (ret < 0) {
-      release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+      stream_work_buffer = NULL;
+      stream_work_buffer_len = 0;
+      CTAPHID_ReleaseSharedBuffer();
       return -1;
     }
     if (mldsa_stream_state.pending && resp[0] == 0) {
       source->total_len = mldsa_stream_state.total_len;
       source->read = ctap_mldsa_stream_read;
-      source->close = ctap_hid_stream_close;
+      source->close = CTAPHID_CloseSharedBufferSource;
       source->ctx = &mldsa_stream_state;
+      stream_work_buffer = NULL;
+      stream_work_buffer_len = 0;
       return 1;
     }
 
@@ -2429,8 +2435,10 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
     mem_stream_state.emitted = 0;
     source->total_len = mem_stream_state.len;
     source->read = ctap_mem_stream_read;
-    source->close = ctap_hid_stream_close;
+    source->close = CTAPHID_CloseSharedBufferSource;
     source->ctx = &mem_stream_state;
+    stream_work_buffer = NULL;
+    stream_work_buffer_len = 0;
     return 1;
   }
 
@@ -2453,8 +2461,10 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   if (status == 0 && mc_stream_state.prepared) {
     source->total_len = mc_stream_state.total_len;
     source->read = ctap_make_credential_stream_read;
-    source->close = ctap_hid_stream_close;
+    source->close = CTAPHID_CloseSharedBufferSource;
     source->ctx = &mc_stream_state;
+    stream_work_buffer = NULL;
+    stream_work_buffer_len = 0;
     return 1;
   }
 
@@ -2463,8 +2473,10 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   mem_stream_state.emitted = 0;
   source->total_len = mem_stream_state.len;
   source->read = ctap_mem_stream_read;
-  source->close = ctap_hid_stream_close;
+  source->close = CTAPHID_CloseSharedBufferSource;
   source->ctx = &mem_stream_state;
+  stream_work_buffer = NULL;
+  stream_work_buffer_len = 0;
   return 1;
 }
 

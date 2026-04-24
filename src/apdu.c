@@ -90,7 +90,7 @@ typedef struct {
 
 static APDU_RESPONSE_SOURCE response_source;
 
-uint8_t *global_buffer;
+uint8_t *shared_io_buffer;
 
 #if ENABLE_IFACE_CCID
 extern void ccid_init_apdu_buffer(void);
@@ -98,13 +98,13 @@ extern void ccid_init_apdu_buffer(void);
 
 void init_apdu_buffer(void) {
 #if !ENABLE_IFACE_CCID
-  global_buffer = apdu_fallback_buffer;
+  shared_io_buffer = apdu_fallback_buffer;
 #endif
   apdu_response_source_clear();
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
 #endif
-  rapdu_chaining.rapdu.data = global_buffer;
+  rapdu_chaining.rapdu.data = shared_io_buffer;
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {

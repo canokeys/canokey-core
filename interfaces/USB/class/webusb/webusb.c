@@ -23,8 +23,8 @@ uint8_t USBD_WEBUSB_Init(USBD_HandleTypeDef *pdev) {
   UNUSED(pdev);
 
   state = STATE_IDLE;
-  apdu_cmd.data = global_buffer;
-  apdu_resp.data = global_buffer;
+  apdu_cmd.data = shared_io_buffer;
+  apdu_resp.data = shared_io_buffer;
   last_keepalive = 0;
 
   return USBD_OK;
@@ -60,7 +60,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
-    USBD_CtlPrepareRx(pdev, global_buffer, req->wLength);
+    USBD_CtlPrepareRx(pdev, shared_io_buffer, req->wLength);
     apdu_buffer_size = req->wLength;
     state = STATE_RECVING;
     break;
@@ -73,7 +73,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       }
       device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
       uint16_t len = MIN(apdu_buffer_size, req->wLength);
-      USBD_CtlSendData(pdev, global_buffer, len, WEBUSB_EP0_SENDER);
+      USBD_CtlSendData(pdev, shared_io_buffer, len, WEBUSB_EP0_SENDER);
       state = STATE_SENT_RESP;
     } else {
       USBD_CtlError(pdev, req);
@@ -103,12 +103,12 @@ void WebUSB_Loop(void) {
   if (state != STATE_PROCESS) return;
 
   DBG_MSG("C: ");
-  PRINT_HEX(global_buffer, apdu_buffer_size);
+  PRINT_HEX(shared_io_buffer, apdu_buffer_size);
 
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
-  if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_size) < 0) {
+  if (build_capdu(&apdu_cmd, shared_io_buffer, apdu_buffer_size) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
@@ -121,10 +121,10 @@ void WebUSB_Loop(void) {
   }
 
   apdu_buffer_size = LL + 2;
-  global_buffer[LL] = HI(SW);
-  global_buffer[LL + 1] = LO(SW);
+  shared_io_buffer[LL] = HI(SW);
+  shared_io_buffer[LL + 1] = LO(SW);
   DBG_MSG("R: ");
-  PRINT_HEX(global_buffer, apdu_buffer_size);
+  PRINT_HEX(shared_io_buffer, apdu_buffer_size);
   state = STATE_SENDING_RESP;
 }
 

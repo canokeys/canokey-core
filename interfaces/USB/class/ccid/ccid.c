@@ -33,7 +33,7 @@ static volatile uint8_t has_cmd;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
-void ccid_init_apdu_buffer(void) { global_buffer = bulkin_data.abData; }
+void ccid_init_apdu_buffer(void) { shared_io_buffer = bulkin_data.abData; }
 
 uint8_t CCID_Init(void) {
   send_data_spinlock = 0;
@@ -67,7 +67,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
         if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID) != 0) {
           DBG_MSG("Discard data because of applet session conflict\n");
         } else if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
-          // global_buffer is not available, discarding abData
+          // shared_io_buffer is not available, discarding abData
           // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
           DBG_MSG("Discard data because of buffer conflict\n");
         } else if (bulkout_data.dwLength > ABDATA_SIZE) {
@@ -76,7 +76,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
           device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
         } else {
           device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
-          abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+          abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
         }
       } else if (CCID_IsShortCommand()) {
         // abDataShort is large enough for most commands
@@ -95,7 +95,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
     break;
 
   case CCID_STATE_RECEIVE_DATA:
-    abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+    abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
     if (ab_data_length + len < bulkout_data.dwLength) {
       memcpy(abData + ab_data_length, data, len);
       ab_data_length += len;
@@ -182,7 +182,7 @@ static uint8_t PC_to_RDR_GetSlotStatus(void) {
  * @retval uint8_t status of the command execution
  */
 uint8_t PC_to_RDR_XfrBlock(void) {
-  uint8_t *abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+  uint8_t *abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT);
   if (error != 0) return error;
 

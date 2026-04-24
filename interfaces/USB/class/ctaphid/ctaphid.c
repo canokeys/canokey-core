@@ -118,7 +118,21 @@ static int CTAPHID_MemSourceRead(void *ctx, uint8_t *out, size_t max_len, size_t
 
 static void CTAPHID_GlobalBufferSourceClose(void *ctx) {
   (void)ctx;
-  release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+  CTAPHID_ReleaseSharedBuffer();
+}
+
+int CTAPHID_AcquireSharedBuffer(uint8_t **buf, size_t *len) {
+  if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) return -1;
+  if (buf) *buf = shared_io_buffer;
+  if (len) *len = APDU_BUFFER_SIZE;
+  return 0;
+}
+
+void CTAPHID_ReleaseSharedBuffer(void) { release_apdu_buffer(BUFFER_OWNER_CTAPHID); }
+
+void CTAPHID_CloseSharedBufferSource(void *ctx) {
+  (void)ctx;
+  CTAPHID_ReleaseSharedBuffer();
 }
 
 static int CTAPHID_TxFillFrame(void) {
@@ -261,16 +275,16 @@ static int CTAPHID_SendSourceResponseAuto(uint32_t cid, uint8_t cmd, CTAPHID_TxS
 
 static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_t len) {
   if (len > UINT16_MAX) {
-    release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+    CTAPHID_ReleaseSharedBuffer();
     return -1;
   }
   if (len <= CTAPHID_STREAM_THRESHOLD) {
-    CTAPHID_SendResponse(cid, cmd, global_buffer, (uint16_t)len);
-    release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+    CTAPHID_SendResponse(cid, cmd, shared_io_buffer, (uint16_t)len);
+    CTAPHID_ReleaseSharedBuffer();
     return 0;
   }
 
-  tx_mem_source.data = global_buffer;
+  tx_mem_source.data = shared_io_buffer;
   tx_mem_source.offset = 0;
   CTAPHID_TxSource source = {
       .total_len = len,
@@ -279,7 +293,7 @@ static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_
       .ctx = &tx_mem_source,
   };
   if (CTAPHID_SendStreamSource(cid, cmd, &source) != 0) {
-    release_apdu_buffer(BUFFER_OWNER_CTAPHID);
+    CTAPHID_ReleaseSharedBuffer();
     return -1;
   }
   return 0;
@@ -328,7 +342,7 @@ static void CTAPHID_Execute_Msg(void) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     return;
   }
-  if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) {
+  if (CTAPHID_AcquireSharedBuffer(NULL, NULL) != 0) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     return;
   }
@@ -342,12 +356,12 @@ static void CTAPHID_Execute_Msg(void) {
   LC = (channel.data[5] << 8) | channel.data[6];
   DATA = &channel.data[7];
   LE = 0x10000;
-  RDATA = global_buffer;
+  RDATA = shared_io_buffer;
   DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
   ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_HID);
-  global_buffer[LL] = HI(SW);
-  global_buffer[LL + 1] = LO(SW);
+  shared_io_buffer[LL] = HI(SW);
+  shared_io_buffer[LL + 1] = LO(SW);
   DBG_MSG("R: ");
   PRINT_HEX(RDATA, LL + 2);
   if (CTAPHID_SendGlobalBufferResponseAuto(channel.cid, channel.cmd, LL + 2) != 0)

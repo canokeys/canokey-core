@@ -112,7 +112,7 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     *RxLength = 0;
     return IFD_ERROR_INSUFFICIENT_BUFFER;
   }
-  uint8_t *abData = TxLength <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : global_buffer;
+  uint8_t *abData = TxLength <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : shared_io_buffer;
   memcpy(abData, TxBuffer, TxLength);
   bulkout_data[Lun].dwLength = TxLength;
 

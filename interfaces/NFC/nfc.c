@@ -33,9 +33,9 @@ void nfc_init(void) {
   inf_sending = 0;
   state_spinlock = 0;
   next_state = TO_RECEIVE;
-  // NFC interface uses global_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
-  apdu_cmd.data = global_buffer;
-  apdu_resp.data = global_buffer;
+  // NFC interface uses shared_io_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
+  apdu_cmd.data = shared_io_buffer;
+  apdu_resp.data = shared_io_buffer;
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1); // writing anything to this reg will flush FIFO buffer
 }
 
@@ -94,7 +94,7 @@ static void send_apdu_buffer(uint8_t resend) {
   if (last_sent > 29) last_sent = 29;
   uint8_t prologue = block_number | 0x02;
   if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent) prologue |= PCB_I_CHAINING;
-  nfc_send_frame(prologue, global_buffer + apdu_buffer_sent, last_sent);
+  nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, last_sent);
   apdu_buffer_sent += last_sent;
   if (apdu_buffer_tx_size == apdu_buffer_sent) inf_sending = 0;
 }
@@ -125,7 +125,7 @@ void nfc_loop(void) {
       nfc_error_handler(-3);
       return;
     }
-    memcpy(global_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, payload_len);
+    memcpy(shared_io_buffer + apdu_buffer_rx_size, rx_frame_buf + 1, payload_len);
     apdu_buffer_rx_size += payload_len;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
@@ -135,7 +135,7 @@ void nfc_loop(void) {
       CAPDU *capdu = &apdu_cmd;
       RAPDU *rapdu = &apdu_resp;
 
-      if (build_capdu(&apdu_cmd, global_buffer, apdu_buffer_rx_size) < 0) {
+      if (build_capdu(&apdu_cmd, shared_io_buffer, apdu_buffer_rx_size) < 0) {
         LL = 0;
         SW = SW_WRONG_LENGTH;
       } else {
@@ -145,8 +145,8 @@ void nfc_loop(void) {
       }
 
       apdu_buffer_tx_size = LL + 2;
-      global_buffer[LL] = HI(SW);
-      global_buffer[LL + 1] = LO(SW);
+      shared_io_buffer[LL] = HI(SW);
+      shared_io_buffer[LL + 1] = LO(SW);
 
       apdu_buffer_rx_size = 0;
       apdu_buffer_sent = 0;
