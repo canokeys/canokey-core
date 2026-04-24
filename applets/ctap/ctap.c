@@ -5,6 +5,7 @@
 #include "ctap-parser.h"
 #include "secret.h"
 #include "u2f.h"
+#include <applet-scratch.h>
 #include <block-cipher.h>
 #include <cbor.h>
 #include <common.h>
@@ -71,33 +72,6 @@ typedef struct {
   size_t emitted;
 } CTAP_mem_stream_state;
 
-typedef enum {
-  CTAP_MLDSA_STREAM_NONE,
-  CTAP_MLDSA_STREAM_PK,
-  CTAP_MLDSA_STREAM_SIG,
-} CTAP_mldsa_stream_kind;
-
-typedef struct {
-  CTAP_mldsa_stream_kind kind;
-  uint8_t prefix[384];
-  size_t prefix_len;
-  size_t prefix_off;
-  uint8_t suffix[512];
-  size_t suffix_len;
-  size_t suffix_off;
-  uint8_t *stage;
-  size_t stage_len;
-  size_t stage_off;
-  uint8_t seed[PRI_KEY_SIZE];
-  uint8_t tr[MLDSA_TRBYTES];
-  uint8_t msg[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
-  size_t msg_len;
-  mldsa_keygen_state_t keygen;
-  mldsa_sign_state_t sign;
-  size_t total_len;
-  bool pending;
-} CTAP_mldsa_stream_state;
-
 #define CTAP_MC_STREAM_MAX_SEGMENTS 5
 
 typedef enum {
@@ -126,7 +100,7 @@ typedef struct {
 
 static CTAP_make_credential_stream_state mc_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
-static CTAP_mldsa_stream_state mldsa_stream_state;
+#define mldsa_stream_state applet_session_scratch.ctap_mldsa
 static uint8_t *stream_resp_base;
 static bool stream_make_credential_response;
 

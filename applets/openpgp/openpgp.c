@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "algo.h"
 #include "key.h"
+#include <applet-scratch.h>
 #include <common.h>
 #include <device.h>
 #include <ecc.h>
@@ -116,7 +117,7 @@ static ck_openpgp_stream_t import_stream;
 static uint16_t decipher_received;
 static uint8_t openpgp_crypto_owned;
 static uint8_t openpgp_pke_owned;
-static uint8_t openpgp_crypto_buffer_storage[OPENPGP_CRYPTO_BUFFER_LENGTH];
+#define openpgp_crypto_buffer_storage applet_session_scratch.openpgp_crypto
 
 static int openpgp_crypto_acquire(void) {
   openpgp_crypto_owned = 1;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
+#include <applet-scratch.h>
 #include <common.h>
 #include <crypto-util.h>
 #include <des.h>
@@ -153,8 +154,8 @@ static uint32_t last_touch = UINT32_MAX;
 static piv_algorithm_extension_config_t alg_ext_cfg;
 static uint8_t piv_pke_owned;
 static uint8_t piv_pke_use;
-static uint8_t piv_crypto_buffer[RSA_N_BIT_MAX / 8];
-static uint8_t piv_response_buffer[PIV_MAX_7C_RESPONSE_LENGTH];
+#define piv_crypto_buffer applet_session_scratch.piv.crypto
+#define piv_response_buffer applet_session_scratch.piv.response
 
 enum {
   PIV_PKE_USE_NONE,

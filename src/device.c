@@ -2,6 +2,7 @@
 #include "common.h"
 #include <admin.h>
 #include <apdu.h>
+#include <applet-scratch.h>
 #include <applets.h>
 #if ENABLE_IFACE_CCID
 #include <ccid.h>
@@ -26,6 +27,7 @@ static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
 volatile static wait_status_t wait_status;
+applet_session_scratch_t applet_session_scratch;
 static device_applet_session_owner_t session_owner;
 static uint32_t session_deadline;
 
