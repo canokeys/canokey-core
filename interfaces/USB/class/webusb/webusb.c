@@ -10,7 +10,7 @@ enum {
   STATE_SENDING_RESP = 0,
   STATE_SENT_RESP = 2,
   STATE_RECVING = 3,
-  STATE_HOLD_BUF = 4,
+  STATE_HOLD_SESSION = 4,
 };
 
 static int8_t state;
@@ -35,7 +35,7 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
   last_keepalive = device_get_tick();
   switch (req->bRequest) {
   case WEBUSB_REQ_CMD:
-    if (state != STATE_IDLE && state != STATE_HOLD_BUF) {
+    if (state != STATE_IDLE && state != STATE_HOLD_SESSION) {
       ERR_MSG("Wrong state %d\n", state);
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
@@ -52,7 +52,6 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       return USBD_FAIL;
     }
     device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
-    state = STATE_HOLD_BUF;
     // DBG_MSG("Buf Acquired\n");
     if (req->wLength > APDU_COMMAND_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
@@ -95,9 +94,8 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
 }
 
 void WebUSB_Loop(void) {
-  if (device_get_tick() - last_keepalive > 2000 && state == STATE_HOLD_BUF) {
-    DBG_MSG("Release buffer after time-out\n");
-    release_apdu_buffer(BUFFER_OWNER_WEBUSB);
+  if (device_get_tick() - last_keepalive > 2000 && state == STATE_HOLD_SESSION) {
+    DBG_MSG("Release session after time-out\n");
     device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
     // CCID_insert();
     state = STATE_IDLE;
@@ -135,8 +133,8 @@ uint8_t USBD_WEBUSB_TxSent(USBD_HandleTypeDef *pdev) {
 
   // DBG_MSG("state = %d\n", state);
   if (state == STATE_SENT_RESP) {
-    // release_apdu_buffer(BUFFER_OWNER_WEBUSB);
-    state = STATE_HOLD_BUF;
+    release_apdu_buffer(BUFFER_OWNER_WEBUSB);
+    state = STATE_HOLD_SESSION;
   }
 
   return USBD_OK;

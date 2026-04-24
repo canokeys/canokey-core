@@ -338,6 +338,13 @@ static const uint8_t USBD_LangIDDesc[] = {
 
 #define MSOS20_FIRST_INTERFACE_NUMBER_OFFSET 22
 
+static uint8_t *usbd_descriptor_buffer_acquire(void) {
+  if (acquire_apdu_buffer(BUFFER_OWNER_USBD) < 0) {
+    return NULL;
+  }
+  return global_buffer;
+}
+
 static void patch_interface_descriptor(uint8_t *desc, uint8_t *desc_end, uint8_t ifnum, uint8_t epin, uint8_t epout,
                                        uint8_t ep_size) {
   while (desc < desc_end) {
@@ -409,6 +416,10 @@ const uint8_t *USBD_DeviceDescriptor(USBD_SpeedTypeDef speed __attribute__((unus
 }
 
 const uint8_t *USBD_ConfigurationDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   USBD_DescriptorInit();
   // Bytes 2-3 of the configuration descriptor header store wTotalLength in little-endian order.
   *length = (uint16_t)(global_buffer[2] | (global_buffer[3] << 8));
@@ -421,11 +432,19 @@ const uint8_t *USBD_LangIDStrDescriptor(USBD_SpeedTypeDef speed __attribute__((u
 }
 
 const uint8_t *USBD_ProductStrDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   USBD_GetString((uint8_t *)USBD_PRODUCT_STRING, global_buffer, length);
   return global_buffer;
 }
 
 const uint8_t *USBD_ManufacturerStrDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   USBD_GetString((uint8_t *)USBD_MANUFACTURER_STRING, global_buffer, length);
   return global_buffer;
 }
@@ -433,6 +452,10 @@ const uint8_t *USBD_ManufacturerStrDescriptor(USBD_SpeedTypeDef speed __attribut
 const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint16_t *length) {
   uint8_t sn[4];
   char sn_str[9];
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   fill_sn(sn);
   sprintf(sn_str, "%02X%02X%02X%02X", sn[0], sn[1], sn[2], sn[3]);
   USBD_GetString((uint8_t *)sn_str, global_buffer, length);
@@ -444,6 +467,10 @@ const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)
   *length = 0;
   return NULL;
 #else
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   *length = sizeof(USBD_FS_BOSDesc);
   memcpy(global_buffer, USBD_FS_BOSDesc, sizeof(USBD_FS_BOSDesc)); // use global_buffer to store this descriptor
   global_buffer[28] = cfg_is_webusb_landing_enable();
@@ -456,6 +483,10 @@ const uint8_t *USBD_MSOS20Descriptor(USBD_SpeedTypeDef speed __attribute__((unus
   *length = 0;
   return NULL;
 #else
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   *length = sizeof(USBD_FS_MSOS20Desc);
   memcpy(global_buffer, USBD_FS_MSOS20Desc, sizeof(USBD_FS_MSOS20Desc));
   global_buffer[MSOS20_FIRST_INTERFACE_NUMBER_OFFSET] = USBD_CANOKEY_WEBUSB_IF;
@@ -464,6 +495,10 @@ const uint8_t *USBD_MSOS20Descriptor(USBD_SpeedTypeDef speed __attribute__((unus
 }
 
 const uint8_t *USBD_UsrStrDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)), uint8_t index, uint16_t *length) {
+  if (usbd_descriptor_buffer_acquire() == NULL) {
+    *length = 0;
+    return NULL;
+  }
   switch (index) {
 #if ENABLE_IFACE_CTAPHID
   case USBD_CTAPHID_INTERFACE_IDX:
