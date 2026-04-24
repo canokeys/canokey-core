@@ -403,14 +403,17 @@ void CCID_Loop(void) {
   uint16_t len = pBulkin->dwLength;
   pBulkin->dwLength = htole32(pBulkin->dwLength);
   device_spinlock_lock(&send_data_spinlock, true);
-  CCID_Response_SendData(&usb_device, (uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
+  const uint8_t send_status = CCID_Response_SendData(&usb_device, (uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
   device_spinlock_unlock(&send_data_spinlock);
+  if (send_status != USBD_OK) {
+    ERR_MSG("CCID send timeout: msg=%u len=%u status=%u\n", pBulkin->bMessageType, len, send_status);
+    release_apdu_buffer(BUFFER_OWNER_CCID);
+  }
   has_cmd = 0;
 }
 
 void CCID_InFinished(uint8_t is_time_extension_request) {
   if (is_time_extension_request) {
-    DBG_MSG("Time-ext sent\n");
     return;
   }
 
@@ -421,7 +424,6 @@ void CCID_InFinished(uint8_t is_time_extension_request) {
 
 void CCID_TimeExtensionLoop(void) {
   if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
-    DBG_MSG("send t-ext\r\n");
     bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
     bulkin_time_extension.dwLength = 0;
     bulkin_time_extension.bSlot = bulkout_data.bSlot;

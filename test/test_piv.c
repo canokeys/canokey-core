@@ -118,6 +118,20 @@ static void test_regression_fuzz(void **state) {
   }
 }
 
+static void test_delete_certificate_object(void **state) {
+  (void)state;
+
+  set_admin_status(1);
+
+  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
+  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_int_equal(get_file_size("piv-pauc"), 3);
+
+  uint8_t delete_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x00};
+  test_helper(delete_cert, sizeof(delete_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_int_equal(get_file_size("piv-pauc"), 0);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -144,6 +158,7 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
+      cmocka_unit_test(test_delete_certificate_object),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

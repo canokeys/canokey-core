@@ -12,6 +12,7 @@ typedef struct {
   uint8_t p2;
   uint32_t le; // Le can be 65536 bytes long as per ISO7816-3
   uint16_t lc;
+  uint8_t extended;
 } __packed CAPDU;
 
 typedef struct {

@@ -34,7 +34,7 @@ enum PIV_STATE {
   PIV_STATE_OTHER,
 };
 
-static const uint8_t PIV_AID[] = {0xA0};//, 0x00, 0x00, 0x03, 0x08};
+static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
@@ -115,6 +115,7 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
   P2 = cmd[3];
   LC = 0;
   LE = 0;
+  capdu->extended = 0;
 
   if (len == 4) // Case 1
     return 0;
@@ -124,25 +125,31 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
     LC = 0;
     if (LE == 0) LE = 0x100;
   } else if (LC > 0 && len == 5 + LC) { // Case 3S
+    if (LC > APDU_BUFFER_SIZE) return -1;
     memmove(DATA, cmd + 5, LC);
     LE = 0x100;
   } else if (LC > 0 && len == 6 + LC) { // Case 4S
+    if (LC > APDU_BUFFER_SIZE) return -1;
     memmove(DATA, cmd + 5, LC);
     LE = cmd[5 + LC];
     if (LE == 0) LE = 0x100;
   } else if (len == 7) { // Case 2E
     if (LC != 0) return -1;
+    capdu->extended = 1;
     LE = (cmd[5] << 8) | cmd[6];
     if (LE == 0) LE = 0x10000;
   } else {
     if (LC != 0 || len < 7) return -1;
+    capdu->extended = 1;
     LC = (cmd[5] << 8) | cmd[6];
     if (LC == 0) return -1;
     if (len == 7 + LC) { // Case 3E
+      if (LC > APDU_BUFFER_SIZE) return -1;
       memmove(DATA, cmd + 7, LC);
       LE = 0x10000;
       return 0;
     } else if (len == 9 + LC) { // Case 4E
+      if (LC > APDU_BUFFER_SIZE) return -1;
       memmove(DATA, cmd + 7, LC);
       LE = (cmd[7 + LC] << 8) | cmd[8 + LC];
       if (LE == 0) LE = 0x10000;
@@ -160,6 +167,7 @@ restart:
     ex->capdu.p1 = sh->p1;
     ex->capdu.p2 = sh->p2;
     ex->capdu.lc = 0;
+    ex->capdu.extended = sh->extended;
   } else if (ex->capdu.cla != (sh->cla & 0xEF) || ex->capdu.ins != sh->ins || ex->capdu.p1 != sh->p1 ||
              ex->capdu.p2 != sh->p2) {
     ex->in_chaining = 0;
@@ -271,6 +279,11 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
   if (!is_get_response) apdu_response_source_clear();
   if (current_applet == APPLET_PIV) {
+    if (capdu->extended) {
+      LL = 0;
+      SW = SW_WRONG_LENGTH;
+      return;
+    }
     // Offload some APDU chaining commands of PIV applet,
     // because the length of concatenated payloads may exceed chaining buffer size.
     if (INS == PIV_INS_GET_DATA)
@@ -282,7 +295,15 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA ||
         INS == PIV_INS_IMPORT_ASYMMETRIC_KEY || INS == PIV_INS_GENERAL_AUTHENTICATE) {
       LE = MIN(LE, APDU_BUFFER_SIZE); // Always clamp the Le to valid range
-      piv_process_apdu(capdu, rapdu);
+      rapdu_chaining.sent = 0;
+      piv_process_apdu(capdu, &rapdu_chaining.rapdu);
+      if (apdu_response_source_active() || rapdu_chaining.rapdu.len > LE) {
+        rapdu->len = LE;
+        apdu_output(&rapdu_chaining, rapdu);
+      } else {
+        rapdu->len = rapdu_chaining.rapdu.len;
+        rapdu->sw = rapdu_chaining.rapdu.sw;
+      }
       return;
     }
   }

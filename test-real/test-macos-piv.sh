@@ -170,9 +170,6 @@ rsa_tests() {
         PIVSignDec "$s" 1
     done
 
-    if [[ "$algo" == RSA2048 ]]; then
-        return
-    fi
     out=$(PKCS15 --read-certificate 04 | "$OPENSSL_BIN" x509 -text)
     assertContains 'CERT' "$out" 'CN = CertAtSlot9e'
     echo -n hello >"$TEST_TMP_DIR/hello.txt"
