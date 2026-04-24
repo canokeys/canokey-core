@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "common.h"
 #include <admin.h>
+#include <apdu.h>
+#include <applets.h>
 #if ENABLE_IFACE_CCID
 #include <ccid.h>
 #endif
@@ -19,14 +21,33 @@ volatile static uint8_t touch_result;
 #if ENABLE_NFC
 static uint8_t has_rf;
 #endif
+#define APPLET_SESSION_TIMEOUT_MS 2000u
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
 volatile static wait_status_t wait_status;
+static device_applet_session_owner_t session_owner;
+static uint32_t session_deadline;
+
+static void device_applet_session_expire(void) {
+  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
+  applets_poweroff();
+  apdu_response_source_clear();
+  session_owner = DEVICE_APPLET_SESSION_NONE;
+  session_deadline = 0;
+}
+
+static void device_applet_session_poll(void) {
+  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
+  if (device_get_tick() > session_deadline) {
+    device_applet_session_expire();
+  }
+}
 
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
+  device_applet_session_poll();
 #if ENABLE_IFACE_CCID
   CCID_Loop();
 #endif
@@ -62,6 +83,10 @@ uint8_t get_touch_result(void) {
 void set_touch_result(uint8_t result) { touch_result = result; }
 
 uint8_t wait_for_user_presence(uint8_t entry) {
+  device_applet_session_owner_t owner = device_applet_session_owner();
+  if (owner == DEVICE_APPLET_SESSION_NONE) {
+    owner = entry == WAIT_ENTRY_CTAPHID ? DEVICE_APPLET_SESSION_CTAPHID : DEVICE_APPLET_SESSION_CCID;
+  }
 
   if (wait_status == WAIT_NONE) {
     switch (entry) {
@@ -85,14 +110,11 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 #ifdef BYPASS_USER_PRESENCE
     break;
 #endif
+    device_applet_session_touch(owner);
     // Keep blinking, in case other applet stops it
     start_blinking(0);
-    // Nested CCID processing is not allowed
-#if ENABLE_IFACE_CCID
-    if (entry != WAIT_ENTRY_CCID) CCID_Loop();
-#endif
 #if ENABLE_IFACE_CTAPHID
-    if (CTAPHID_Loop(entry == WAIT_ENTRY_CTAPHID) == LOOP_CANCEL) {
+    if (owner == DEVICE_APPLET_SESSION_CTAPHID && CTAPHID_Loop(1) == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
       stop_blinking();
       wait_status = WAIT_NONE;
@@ -109,7 +131,7 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     if (now - last >= 100) {
       last = now;
 #if ENABLE_IFACE_CTAPHID
-      if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+      if (owner == DEVICE_APPLET_SESSION_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
 #endif
     }
   }
@@ -122,10 +144,20 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
 int send_keepalive_during_processing(uint8_t entry) {
 #if ENABLE_IFACE_CTAPHID
-  if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID)
+    CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
 #else
   UNUSED(entry);
 #endif
+  switch (session_owner) {
+  case DEVICE_APPLET_SESSION_CCID:
+  case DEVICE_APPLET_SESSION_CTAPHID:
+  case DEVICE_APPLET_SESSION_WEBUSB:
+    device_applet_session_touch(session_owner);
+    break;
+  default:
+    break;
+  }
   DBG_MSG("KEEPALIVE\n");
   return 0;
 }
@@ -214,4 +246,29 @@ void device_init(void) {
   last_blink = 0;
   stop_blinking();
   set_touch_result(TOUCH_NO);
+  session_owner = DEVICE_APPLET_SESSION_NONE;
+  session_deadline = 0;
+}
+
+int device_applet_session_acquire(device_applet_session_owner_t owner) {
+  device_applet_session_poll();
+  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) return -1;
+  session_owner = owner;
+  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
+  return 0;
+}
+
+void device_applet_session_touch(device_applet_session_owner_t owner) {
+  if (owner == DEVICE_APPLET_SESSION_NONE || session_owner != owner) return;
+  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
+}
+
+void device_applet_session_release(device_applet_session_owner_t owner) {
+  if (session_owner != owner) return;
+  device_applet_session_expire();
+}
+
+device_applet_session_owner_t device_applet_session_owner(void) {
+  device_applet_session_poll();
+  return session_owner;
 }

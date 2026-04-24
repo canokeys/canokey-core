@@ -287,6 +287,7 @@ static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_
 
 void CTAPHID_TxContinue(void) {
   if (!tx_stream.active) return;
+  device_applet_session_touch(DEVICE_APPLET_SESSION_CTAPHID);
   if (tx_stream.finishing) {
     DBG_MSG("CTAPHID stream done len=%zu\n", tx_stream.len);
     CTAPHID_TxReset();
@@ -323,10 +324,15 @@ static void CTAPHID_Execute_Init(void) {
 }
 
 static void CTAPHID_Execute_Msg(void) {
+  if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
+    CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+    return;
+  }
   if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     return;
   }
+  device_applet_session_touch(DEVICE_APPLET_SESSION_CTAPHID);
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
   CLA = channel.data[0];
@@ -349,6 +355,11 @@ static void CTAPHID_Execute_Msg(void) {
 }
 
 static void CTAPHID_Execute_Cbor(void) {
+  if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
+    CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+    return;
+  }
+  device_applet_session_touch(DEVICE_APPLET_SESSION_CTAPHID);
   DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
   CTAPHID_TxSource source;

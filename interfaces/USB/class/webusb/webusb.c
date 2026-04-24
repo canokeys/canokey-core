@@ -40,15 +40,24 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
-    if (acquire_apdu_buffer(BUFFER_OWNER_WEBUSB) != 0) {
-      ERR_MSG("Busy\n");
+    if (device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB) != 0) {
+      ERR_MSG("Applet session busy\n");
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
+    if (acquire_apdu_buffer(BUFFER_OWNER_WEBUSB) != 0) {
+      ERR_MSG("Busy\n");
+      device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
+    }
+    device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
     state = STATE_HOLD_BUF;
     // DBG_MSG("Buf Acquired\n");
     if (req->wLength > APDU_COMMAND_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
+      release_apdu_buffer(BUFFER_OWNER_WEBUSB);
+      device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
@@ -59,6 +68,11 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
 
   case WEBUSB_REQ_RESP:
     if (state == STATE_SENDING_RESP) {
+      if (device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB) != 0) {
+        USBD_CtlError(pdev, req);
+        return USBD_FAIL;
+      }
+      device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
       uint16_t len = MIN(apdu_buffer_size, req->wLength);
       USBD_CtlSendData(pdev, global_buffer, len, WEBUSB_EP0_SENDER);
       state = STATE_SENT_RESP;
@@ -84,6 +98,7 @@ void WebUSB_Loop(void) {
   if (device_get_tick() - last_keepalive > 2000 && state == STATE_HOLD_BUF) {
     DBG_MSG("Release buffer after time-out\n");
     release_apdu_buffer(BUFFER_OWNER_WEBUSB);
+    device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
     // CCID_insert();
     state = STATE_IDLE;
   }
@@ -99,7 +114,11 @@ void WebUSB_Loop(void) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
+  } else if (device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB) != 0) {
+    LL = 0;
+    SW = SW_CONDITIONS_NOT_SATISFIED;
   } else {
+    device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
     process_apdu(capdu, rapdu);
   }
 

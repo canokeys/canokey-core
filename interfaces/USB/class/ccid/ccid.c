@@ -64,14 +64,18 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
 
       if (bulkout_data.bMessageType == PC_TO_RDR_XFRBLOCK) {
         // always acquire the APDU buffer for XFRBLOCK, because the buffer is used during APDU process and response
-        if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
+        if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID) != 0) {
+          DBG_MSG("Discard data because of applet session conflict\n");
+        } else if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
           // global_buffer is not available, discarding abData
           // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
           DBG_MSG("Discard data because of buffer conflict\n");
         } else if (bulkout_data.dwLength > ABDATA_SIZE) {
           DBG_MSG("Discard oversized XfrBlock: %u\n", bulkout_data.dwLength);
           release_apdu_buffer(BUFFER_OWNER_CCID);
+          device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
         } else {
+          device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
           abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
         }
       } else if (CCID_IsShortCommand()) {
@@ -152,6 +156,7 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   if (error != 0) return error;
 
   applets_poweroff();
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -191,7 +196,11 @@ uint8_t PC_to_RDR_XfrBlock(void) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
+  } else if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID) != 0) {
+    LL = 0;
+    SW = SW_CONDITIONS_NOT_SATISFIED;
   } else {
+    device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
     if (INS == OPENPGP_INS_IMPORT_KEY) {
       DBG_MSG("Import parsed: cla=%02X p1=%02X p2=%02X lc=%u data=%02X%02X%02X%02X\n", CLA, P1, P2, LC,
               LC > 0 ? DATA[0] : 0, LC > 1 ? DATA[1] : 0, LC > 2 ? DATA[2] : 0, LC > 3 ? DATA[3] : 0);
