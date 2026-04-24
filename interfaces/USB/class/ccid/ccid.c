@@ -95,6 +95,7 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
     break;
 
   case CCID_STATE_RECEIVE_DATA:
+    device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
     abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
     if (ab_data_length + len < bulkout_data.dwLength) {
       memcpy(abData + ab_data_length, data, len);
@@ -192,15 +193,12 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
+  device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
   if (build_capdu(&apdu_cmd, abData, bulkout_data.dwLength) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
-  } else if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID) != 0) {
-    LL = 0;
-    SW = SW_CONDITIONS_NOT_SATISFIED;
   } else {
-    device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
     if (INS == OPENPGP_INS_IMPORT_KEY) {
       DBG_MSG("Import parsed: cla=%02X p1=%02X p2=%02X lc=%u data=%02X%02X%02X%02X\n", CLA, P1, P2, LC,
               LC > 0 ? DATA[0] : 0, LC > 1 ? DATA[1] : 0, LC > 2 ? DATA[2] : 0, LC > 3 ? DATA[3] : 0);
