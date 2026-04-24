@@ -72,6 +72,22 @@ typedef struct {
   size_t emitted;
 } CTAP_mem_stream_state;
 
+typedef struct {
+  const uint8_t *buf;
+  size_t len;
+} CTAP_const_stream_segment;
+
+#define CTAP_CONST_STREAM_MAX_SEGMENTS 12
+
+typedef struct {
+  CTAP_const_stream_segment segments[CTAP_CONST_STREAM_MAX_SEGMENTS];
+  size_t segment_count;
+  size_t current_segment;
+  size_t segment_off;
+  size_t total_len;
+  uint8_t inline_bytes[5];
+} CTAP_const_stream_state;
+
 #define CTAP_MC_STREAM_MAX_SEGMENTS 5
 
 typedef enum {
@@ -100,6 +116,7 @@ typedef struct {
 
 static CTAP_make_credential_stream_state mc_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
+static CTAP_const_stream_state const_stream_state;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
 static uint8_t *stream_resp_base;
 static uint8_t *stream_work_buffer;
@@ -111,6 +128,44 @@ static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t 
   size_t copied = MIN(state->len - state->emitted, max_len);
   if (copied != 0) memcpy(out, state->buf + state->emitted, copied);
   state->emitted += copied;
+  *written = copied;
+  return 0;
+}
+
+static void ctap_const_stream_reset(CTAP_const_stream_state *state) { memset(state, 0, sizeof(*state)); }
+
+static int ctap_const_stream_add_mem(CTAP_const_stream_state *state, const uint8_t *buf, size_t len) {
+  if (len == 0) return 0;
+  if (!buf || state->segment_count >= CTAP_CONST_STREAM_MAX_SEGMENTS) return -1;
+  state->segments[state->segment_count++] = (CTAP_const_stream_segment){.buf = buf, .len = len};
+  state->total_len += len;
+  return 0;
+}
+
+static int ctap_const_stream_add_byte(CTAP_const_stream_state *state, size_t slot, uint8_t value) {
+  if (slot >= sizeof(state->inline_bytes)) return -1;
+  state->inline_bytes[slot] = value;
+  return ctap_const_stream_add_mem(state, &state->inline_bytes[slot], 1);
+}
+
+static int ctap_const_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  CTAP_const_stream_state *state = (CTAP_const_stream_state *)ctx;
+  size_t copied = 0;
+
+  while (copied < max_len && state->current_segment < state->segment_count) {
+    CTAP_const_stream_segment *segment = &state->segments[state->current_segment];
+    if (state->segment_off == segment->len) {
+      ++state->current_segment;
+      state->segment_off = 0;
+      continue;
+    }
+
+    size_t n = MIN(segment->len - state->segment_off, max_len - copied);
+    memcpy(out + copied, segment->buf + state->segment_off, n);
+    state->segment_off += n;
+    copied += n;
+  }
+
   *written = copied;
   return 0;
 }
@@ -1537,6 +1592,40 @@ static uint8_t ctap_get_next_assertion(CborEncoder *encoder) { return ctap_get_a
 // Constants are parsed from headers - see the .inc file for details.
 #include "ctap_get_info_cbor.inc"
 
+static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
+  const int sm2_algo = ctap_sm2_attr.algo_id;
+  const bool sm2_in_alg_list = ctap_sm2_attr.enabled && (sm2_algo >= -256 && sm2_algo <= -25);
+  const size_t client_pin_off = CTAP_GI_CLIENT_PIN_OFFSET;
+  const size_t client_pin_tail_len = sizeof(cbor_gi_prefix) - client_pin_off - 1;
+
+  ctap_const_stream_reset(&const_stream_state);
+  if (ctap_const_stream_add_byte(&const_stream_state, 0, 0) != 0 ||
+      ctap_const_stream_add_mem(&const_stream_state, cbor_gi_prefix, client_pin_off) != 0 ||
+      ctap_const_stream_add_byte(&const_stream_state, 1, has_pin() ? 0xF5 : 0xF4) != 0 ||
+      ctap_const_stream_add_mem(&const_stream_state, cbor_gi_prefix + client_pin_off + 1, client_pin_tail_len) != 0 ||
+      ctap_const_stream_add_byte(&const_stream_state, 2, sm2_in_alg_list ? 0x84 : 0x83) != 0 ||
+      ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_base, sizeof(cbor_gi_alg_base)) != 0) {
+    return -1;
+  }
+
+  if (sm2_in_alg_list &&
+      (ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_sm2, CTAP_GI_SM2_ALGO_OFFSET) != 0 ||
+       ctap_const_stream_add_byte(&const_stream_state, 3, 0x38) != 0 ||
+       ctap_const_stream_add_byte(&const_stream_state, 4, (uint8_t)(-1 - sm2_algo)) != 0 ||
+       ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_sm2 + CTAP_GI_SM2_ALGO_OFFSET + CTAP_GI_SM2_ALGO_ENC_LEN,
+                                 sizeof(cbor_gi_alg_sm2) - CTAP_GI_SM2_ALGO_OFFSET - CTAP_GI_SM2_ALGO_ENC_LEN) != 0)) {
+    return -1;
+  }
+
+  if (ctap_const_stream_add_mem(&const_stream_state, cbor_gi_suffix, sizeof(cbor_gi_suffix)) != 0) return -1;
+
+  source->total_len = const_stream_state.total_len;
+  source->read = ctap_const_stream_read;
+  source->close = CTAPHID_CloseSharedBufferSource;
+  source->ctx = &const_stream_state;
+  return 0;
+}
+
 static uint8_t ctap_get_info(CborEncoder *encoder) {
   uint8_t *p = encoder->data.ptr;
   uint8_t *end = encoder->end;
@@ -2403,12 +2492,36 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   memset(source, 0, sizeof(*source));
   memset(&mc_stream_state, 0, sizeof(mc_stream_state));
   memset(&mem_stream_state, 0, sizeof(mem_stream_state));
+  ctap_const_stream_reset(&const_stream_state);
   memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
   uint8_t *resp = NULL;
   size_t resp_len = 0;
   if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) return -1;
   stream_work_buffer = resp;
   stream_work_buffer_len = resp_len;
+
+  if (*req == CTAP_GET_INFO) {
+    cp_pin_uv_auth_token_usage_timer_observer();
+    if (ctap_prepare_get_info_stream(source) == 0) {
+      last_cmd = CTAP_GET_INFO;
+      stream_work_buffer = NULL;
+      stream_work_buffer_len = 0;
+      return 1;
+    }
+
+    resp[0] = CTAP2_ERR_UNHANDLED_REQUEST;
+    last_cmd = CTAP_INVALID_CMD;
+    mem_stream_state.buf = resp;
+    mem_stream_state.len = 1;
+    mem_stream_state.emitted = 0;
+    source->total_len = mem_stream_state.len;
+    source->read = ctap_mem_stream_read;
+    source->close = CTAPHID_CloseSharedBufferSource;
+    source->ctx = &mem_stream_state;
+    stream_work_buffer = NULL;
+    stream_work_buffer_len = 0;
+    return 1;
+  }
 
   if (*req != CTAP_MAKE_CREDENTIAL) {
     current_cmd_src = src;
