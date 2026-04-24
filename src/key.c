@@ -8,63 +8,6 @@
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
-typedef struct {
-  const char *path;
-  size_t off;
-  size_t end;
-} CK_PARSE_FILE_READER;
-
-static int ck_read_exact(CK_PARSE_FILE_READER *reader, uint8_t *buf, size_t len) {
-  if (reader->off + len > reader->end) return KEY_ERR_LENGTH;
-  int read = read_file(reader->path, buf, reader->off, len);
-  if (read != (int)len) return read < 0 ? read : KEY_ERR_LENGTH;
-  reader->off += len;
-  return 0;
-}
-
-static int ck_read_u8(CK_PARSE_FILE_READER *reader, uint8_t *out) {
-  return ck_read_exact(reader, out, 1);
-}
-
-static int ck_skip(CK_PARSE_FILE_READER *reader, size_t len) {
-  if (reader->off + len > reader->end) return KEY_ERR_LENGTH;
-  reader->off += len;
-  return 0;
-}
-
-static int ck_read_tlv_len(CK_PARSE_FILE_READER *reader, size_t *out) {
-  uint8_t b;
-  int ret = ck_read_u8(reader, &b);
-  if (ret < 0) return ret;
-
-  if ((b & 0x80) == 0) {
-    *out = b;
-    return 0;
-  }
-  uint8_t n = b & 0x7F;
-  if (n == 0 || n > 2) return KEY_ERR_LENGTH;
-
-  size_t len = 0;
-  for (uint8_t i = 0; i < n; ++i) {
-    ret = ck_read_u8(reader, &b);
-    if (ret < 0) return ret;
-    len = (len << 8) | b;
-  }
-  *out = len;
-  return 0;
-}
-
-static int ck_copy_component(CK_PARSE_FILE_READER *reader, uint8_t *dest, size_t dest_len, size_t comp_len,
-                             bool right_align) {
-  if (comp_len > dest_len) return KEY_ERR_DATA;
-  size_t off = right_align ? dest_len - comp_len : 0;
-  return ck_read_exact(reader, dest + off, comp_len);
-}
-
-static int ck_expect_end(const CK_PARSE_FILE_READER *reader) {
-  return reader->off == reader->end ? 0 : KEY_ERR_DATA;
-}
-
 // TODO: include_length is always TRUE
 int ck_encoded_public_key_length(key_type_t type, bool include_length) {
   if (type >= KEY_TYPE_PKC_END) return -1;
@@ -153,7 +96,10 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
     buf[off++] = 0x82;
     buf[off++] = HI(key_len);
     buf[off++] = LO(key_len);
-    rsa_get_public_key(&key->rsa, &buf[off]);
+    if (rsa_get_public_key(&key->rsa, &buf[off]) < 0) {
+      DBG_MSG("RSA public key derive failed: type=%u nbits=%u\n", key->meta.type, key->rsa.nbits);
+      return -1;
+    }
     off += key_len;
     buf[off++] = 0x82; // exponent
     buf[off++] = E_LENGTH;
@@ -202,33 +148,6 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     default:
       buf = end;
       break;
-    }
-  }
-
-  return 0;
-}
-
-static int ck_parse_piv_policies_file(ck_key_t *key, CK_PARSE_FILE_READER *reader) {
-  while (reader->off < reader->end) {
-    uint8_t tag, len, value;
-    int ret = ck_read_u8(reader, &tag);
-    if (ret < 0) return ret;
-    if (tag != 0xAA && tag != 0xAB) {
-      reader->off = reader->end;
-      return 0;
-    }
-    ret = ck_read_u8(reader, &len);
-    if (ret < 0) return ret;
-    if (len != 1) return KEY_ERR_LENGTH;
-    ret = ck_read_u8(reader, &value);
-    if (ret < 0) return ret;
-
-    if (tag == 0xAA) {
-      if (value > PIN_POLICY_ALWAYS || value < PIN_POLICY_NEVER) return KEY_ERR_DATA;
-      key->meta.pin_policy = value;
-    } else {
-      if (value > TOUCH_POLICY_CACHED || value < TOUCH_POLICY_NEVER) return KEY_ERR_DATA;
-      key->meta.touch_policy = value;
     }
   }
 
@@ -313,73 +232,6 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   }
 
   return ck_parse_piv_policies(key, p, buf + buf_len - p);
-}
-
-int ck_parse_piv_file(ck_key_t *key, const char *path, size_t file_len) {
-  if (file_len > CK_KEY_IMPORT_MAX_LENGTH) return KEY_ERR_LENGTH;
-  memzero(key->data, sizeof(rsa_key_t));
-  key->meta.origin = KEY_ORIGIN_IMPORTED;
-
-  CK_PARSE_FILE_READER reader = {.path = path, .off = 0, .end = file_len};
-  uint8_t b;
-  int ret;
-
-  switch (key->meta.type) {
-  case SECP256R1:
-  case SECP256K1:
-  case SECP384R1:
-  case SM2:
-  case ED25519:
-  case X25519:
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != 0x06 && !(key->meta.type == ED25519 && b == 0x07) && !(key->meta.type == X25519 && b == 0x08))
-      return KEY_ERR_DATA;
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_LENGTH;
-    ret = ck_read_exact(&reader, key->ecc.pri, PRIVATE_KEY_LENGTH[key->meta.type]);
-    if (ret < 0) return ret;
-    if (key->meta.type == X25519) swap_big_number_endian(key->ecc.pri);
-    if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_DATA;
-    }
-    if (ecc_complete_key(key->meta.type, &key->ecc) < 0) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_PROC;
-    }
-    return ck_parse_piv_policies_file(key, &reader);
-
-  case RSA2048:
-  case RSA3072:
-  case RSA4096: {
-    const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
-    key->rsa.nbits = pri_len * 16;
-    *(uint32_t *)key->rsa.e = htobe32(65537);
-
-    uint8_t *data_ptr[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
-    for (int i = 1; i <= 5; ++i) {
-      ret = ck_read_u8(&reader, &b);
-      if (ret < 0) return ret;
-      if (b != i) return KEY_ERR_DATA;
-      size_t len;
-      ret = ck_read_tlv_len(&reader, &len);
-      if (ret < 0) return ret;
-      ret = ck_copy_component(&reader, data_ptr[i - 1], pri_len, len, true);
-      if (ret < 0) return ret;
-    }
-
-    if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_DATA;
-    }
-    return ck_parse_piv_policies_file(key, &reader);
-  }
-
-  default:
-    return -1;
-  }
 }
 
 /*
@@ -508,131 +360,6 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       return KEY_ERR_DATA;
     }
 
-    return 0;
-  }
-
-  default:
-    return -1;
-  }
-}
-
-int ck_parse_openpgp_file(ck_key_t *key, const char *path, size_t file_offset, size_t file_len) {
-  if (file_len > CK_KEY_IMPORT_MAX_LENGTH || file_offset > file_len) return KEY_ERR_LENGTH;
-  memzero(key->data, sizeof(rsa_key_t));
-  key->meta.origin = KEY_ORIGIN_IMPORTED;
-
-  CK_PARSE_FILE_READER reader = {.path = path, .off = file_offset, .end = file_len};
-  uint8_t b;
-  int ret = ck_read_u8(&reader, &b);
-  if (ret < 0) return ret;
-  if (b != 0x7F) return KEY_ERR_DATA;
-  ret = ck_read_u8(&reader, &b);
-  if (ret < 0) return ret;
-  if (b != 0x48) return KEY_ERR_DATA;
-
-  size_t len;
-  ret = ck_read_tlv_len(&reader, &len);
-  if (ret < 0) return ret;
-  if (len > MAX_KEY_TEMPLATE_LENGTH || reader.off + len > reader.end) return KEY_ERR_DATA;
-  const size_t data_tag = reader.off + len;
-
-  switch (key->meta.type) {
-  case SECP256R1:
-  case SECP256K1:
-  case SECP384R1:
-  case SECP521R1:
-  case SM2:
-  case ED25519:
-  case X25519: {
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != 0x92) return KEY_ERR_DATA;
-    size_t data_pri_key_len;
-    ret = ck_read_tlv_len(&reader, &data_pri_key_len);
-    if (ret < 0) return ret;
-    if (data_pri_key_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-
-    size_t data_pub_key_len = 0;
-    if (reader.off < data_tag) {
-      ret = ck_read_u8(&reader, &b);
-      if (ret < 0) return ret;
-      if (b != 0x99) return KEY_ERR_DATA;
-      ret = ck_read_tlv_len(&reader, &data_pub_key_len);
-      if (ret < 0) return ret;
-      if (data_pub_key_len > PUBLIC_KEY_LENGTH[key->meta.type] + 1) return KEY_ERR_DATA;
-    }
-    if (reader.off != data_tag) return KEY_ERR_DATA;
-
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != 0x5F) return KEY_ERR_DATA;
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != 0x48) return KEY_ERR_DATA;
-    ret = ck_read_tlv_len(&reader, &len);
-    if (ret < 0) return ret;
-    if (len != data_pri_key_len + data_pub_key_len) return KEY_ERR_DATA;
-    ret = ck_copy_component(&reader, key->ecc.pri, PRIVATE_KEY_LENGTH[key->meta.type], data_pri_key_len, true);
-    if (ret < 0) return ret;
-    if (data_pub_key_len != 0) {
-      ret = ck_skip(&reader, data_pub_key_len);
-      if (ret < 0) return ret;
-    }
-    if (ck_expect_end(&reader) < 0) return KEY_ERR_DATA;
-
-    if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_DATA;
-    }
-    if (ecc_complete_key(key->meta.type, &key->ecc) < 0) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_PROC;
-    }
-    return 0;
-  }
-
-  case RSA2048:
-  case RSA3072:
-  case RSA4096: {
-    static const uint8_t rsa_tags[] = {0x91, 0x92, 0x93, 0x94, 0x95, 0x96};
-    const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
-    const size_t expected_exact[] = {E_LENGTH, pri_len, pri_len, 0, 0, 0};
-    size_t comp_len[6];
-    for (int i = 0; i < 6; ++i) {
-      ret = ck_read_u8(&reader, &b);
-      if (ret < 0) return ret;
-      if (b != rsa_tags[i]) return KEY_ERR_DATA;
-      ret = ck_read_tlv_len(&reader, &comp_len[i]);
-      if (ret < 0) return ret;
-      if (expected_exact[i] > 0 ? comp_len[i] != expected_exact[i] : comp_len[i] > pri_len) return KEY_ERR_DATA;
-    }
-    if (reader.off != data_tag) return KEY_ERR_DATA;
-
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != 0x5F) return KEY_ERR_DATA;
-    ret = ck_read_u8(&reader, &b);
-    if (ret < 0) return ret;
-    if (b != 0x48) return KEY_ERR_DATA;
-    size_t total_data = 0;
-    for (int i = 0; i < 6; ++i)
-      total_data += comp_len[i];
-    ret = ck_read_tlv_len(&reader, &len);
-    if (ret < 0) return ret;
-    if (len != total_data) return KEY_ERR_DATA;
-
-    key->rsa.nbits = pri_len * 16;
-    uint8_t *dests[] = {key->rsa.e, key->rsa.p, key->rsa.q, key->rsa.qinv, key->rsa.dp, key->rsa.dq};
-    for (int i = 0; i < 6; ++i) {
-      ret = ck_copy_component(&reader, dests[i], i == 0 ? E_LENGTH : pri_len, comp_len[i], i >= 3);
-      if (ret < 0) return ret;
-    }
-    if (ck_expect_end(&reader) < 0) return KEY_ERR_DATA;
-
-    if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_DATA;
-    }
     return 0;
   }
 

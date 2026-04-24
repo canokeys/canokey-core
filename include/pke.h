@@ -15,9 +15,10 @@ enum {
   PKE_BUFFER_OWNER_CTAP,
 };
 
-uint8_t *pke_buffer_data(void);
-ck_key_t *pke_buffer_key(void);
 size_t pke_buffer_size(void);
+int pke_buffer_read(size_t offset, void *buf, size_t len);
+int pke_buffer_write(size_t offset, const void *buf, size_t len);
+int pke_buffer_clear(void);
 int pke_buffer_acquire(uint8_t owner);
 int pke_buffer_release(uint8_t owner);
 
