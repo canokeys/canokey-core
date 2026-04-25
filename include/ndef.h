@@ -13,6 +13,7 @@
 void ndef_poweroff(void);
 int ndef_install(uint8_t reset);
 int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int ndef_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
 int ndef_get_read_only(void);
 int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu);
 #else
@@ -22,6 +23,12 @@ static inline int ndef_install(uint8_t reset) {
   return 0;
 }
 static inline int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+  (void)capdu;
+  (void)rapdu;
+  return 0;
+}
+static inline int ndef_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {
+  (void)rapdu_chaining;
   (void)capdu;
   (void)rapdu;
   return 0;

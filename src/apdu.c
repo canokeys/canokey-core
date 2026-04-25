@@ -272,6 +272,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       openpgp_process_apdu_message(&rapdu_chaining, capdu, rapdu);
       return;
     }
+#if ENABLE_APPLET_NDEF
+    if (current_applet == APPLET_NDEF) {
+      ndef_process_apdu_message(&rapdu_chaining, capdu, rapdu);
+      return;
+    }
+#endif
   }
   const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
   if (!is_get_response) apdu_response_source_clear();

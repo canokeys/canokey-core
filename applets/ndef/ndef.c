@@ -30,8 +30,30 @@ static const uint8_t default_cc[CC_LENGTH] = {
 #define CC_W (current_cc[14])
 
 static enum { NONE, CC, NDEF } selected;
+static int16_t ndef_write_remaining = -1;
+static uint16_t ndef_write_offset;
 
-void ndef_poweroff(void) { selected = NONE; }
+typedef struct {
+  const char *path;
+  uint16_t offset;
+} ndef_response_source_t;
+
+static ndef_response_source_t ndef_response_source;
+
+static void ndef_write_reset(void) {
+  ndef_write_remaining = -1;
+  ndef_write_offset = 0;
+}
+
+static int ndef_response_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  const ndef_response_source_t *source = (const ndef_response_source_t *)ctx;
+  return read_file(source->path, buf, source->offset + (uint16_t)offset, len);
+}
+
+void ndef_poweroff(void) {
+  selected = NONE;
+  ndef_write_reset();
+}
 
 int ndef_get_read_only(void) { return CC_W == 0xFF ? 1 : 0; }
 
@@ -72,6 +94,7 @@ int ndef_install(const uint8_t reset) {
 }
 
 int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
+  ndef_write_reset();
   if (P1 == 0x04 && P2 == 0x00) return 0;
   if (P1 != 0x00 || P2 != 0x0C) EXCEPT(SW_WRONG_P1P2);
   if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
@@ -98,8 +121,15 @@ int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
   case NDEF:
     if (CC_R != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     if (offset + LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (read_file(NDEF_FILE, RDATA, offset, LE) < 0) return -1;
-    LL = LE;
+    if (LE > APDU_COMMAND_BUFFER_SIZE) {
+      ndef_response_source.path = NDEF_FILE;
+      ndef_response_source.offset = offset;
+      apdu_response_source_set(LE, SW_NO_ERROR, ndef_response_source_read, NULL, &ndef_response_source);
+      LL = 0;
+    } else {
+      if (read_file(NDEF_FILE, RDATA, offset, LE) < 0) return -1;
+      LL = LE;
+    }
     break;
   case NONE:
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
@@ -115,13 +145,30 @@ int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
   switch (selected) {
   case CC:
     // do not allow change CC, only modified via admin
+    ndef_write_reset();
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   case NDEF:
     if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (offset + LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (write_file(NDEF_FILE, DATA, offset, LC, 0) < 0) return -1;
+    if (ndef_write_remaining < 0) {
+      if (offset + LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+      if (write_file(NDEF_FILE, DATA, offset, LC, 0) < 0) return -1;
+      if ((CLA & 0x10) != 0) {
+        ndef_write_offset = offset + LC;
+        ndef_write_remaining = NDEF_FILE_MAX_LENGTH - ndef_write_offset;
+      }
+    } else {
+      if (LC > ndef_write_remaining) {
+        ndef_write_reset();
+        EXCEPT(SW_WRONG_LENGTH);
+      }
+      if (write_file(NDEF_FILE, DATA, ndef_write_offset, LC, 0) < 0) return -1;
+      ndef_write_offset += LC;
+      ndef_write_remaining -= LC;
+      if ((CLA & 0x10) == 0) ndef_write_reset();
+    }
     break;
   case NONE:
+    ndef_write_reset();
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   }
   return 0;
@@ -130,6 +177,7 @@ int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
 int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
+  if (INS != NDEF_INS_UPDATE) ndef_write_reset();
 
   int ret;
   switch (INS) {
@@ -146,6 +194,25 @@ int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_INS_NOT_SUPPORTED);
   }
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+  return 0;
+}
+
+int ndef_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {
+  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
+
+  if (!is_get_response) apdu_response_source_clear();
+  if (is_get_response) {
+    capdu->le = MIN(capdu->le, APDU_BUFFER_SIZE);
+    rapdu->len = capdu->le;
+    apdu_output(rapdu_chaining, rapdu);
+    return 0;
+  }
+
+  rapdu_chaining->sent = 0;
+  const uint32_t requested_le = capdu->le;
+  ndef_process_apdu(capdu, &rapdu_chaining->rapdu);
+  rapdu->len = (uint16_t)MIN(requested_le, APDU_BUFFER_SIZE);
+  apdu_output(rapdu_chaining, rapdu);
   return 0;
 }
 
