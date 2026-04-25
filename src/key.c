@@ -8,14 +8,6 @@
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
-static void ck_set_default_rsa_exponent(rsa_key_t *key) { *(uint32_t *)key->e = htobe32(65537); }
-
-static void ck_complete_piv_rsa_key(ck_key_t *key) {
-  if (rsa_recover_public_exponent(&key->rsa) < 0) {
-    ck_set_default_rsa_exponent(&key->rsa);
-  }
-}
-
 // TODO: include_length is always TRUE
 int ck_encoded_public_key_length(key_type_t type, bool include_length) {
   if (type >= KEY_TYPE_PKC_END) return -1;
@@ -212,6 +204,7 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     size_t length_size;
 
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
+    *(uint32_t *)key->rsa.e = htobe32(65537);
 
     uint8_t *data_ptr[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
 
@@ -225,8 +218,6 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       memcpy(data_ptr[i - 1] + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
       p += len;
     }
-
-    ck_complete_piv_rsa_key(key);
 
     if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
@@ -669,7 +660,10 @@ void ck_parse_piv_stream_init(ck_piv_stream_t *st, ck_key_t *key) {
   memzero(key->data, sizeof(rsa_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
   st->rsa = IS_RSA(key->meta.type);
-  if (st->rsa) key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
+  if (st->rsa) {
+    key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
+    *(uint32_t *)key->rsa.e = htobe32(65537);
+  }
 }
 
 static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
@@ -677,7 +671,6 @@ static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
 
   if (st->rsa) {
     if (st->comp_idx != 5) return KEY_ERR_LENGTH;
-    ck_complete_piv_rsa_key(key);
     if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
