@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
-#include <stdio.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
 #include <usbd_core.h>
@@ -55,6 +54,18 @@ const USBD_DescriptorsTypeDef usbdDescriptors = {
     USBD_UsrStrDescriptor,
     USBD_UrlDescriptor,
 };
+
+static char hex_digit(uint8_t nibble) {
+  return (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
+}
+
+static void bytes_to_hex(const uint8_t *src, uint8_t len, char *dst) {
+  for (uint8_t i = 0; i < len; ++i) {
+    dst[i * 2] = hex_digit(src[i] >> 4);
+    dst[i * 2 + 1] = hex_digit(src[i] & 0x0F);
+  }
+  dst[len * 2] = '\0';
+}
 
 /** USB standard device descriptor. */
 static const uint8_t USBD_FS_DeviceDesc[] = {
@@ -457,7 +468,7 @@ const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed __attribute__((u
     return NULL;
   }
   fill_sn(sn);
-  sprintf(sn_str, "%02X%02X%02X%02X", sn[0], sn[1], sn[2], sn[3]);
+  bytes_to_hex(sn, sizeof(sn), sn_str);
   USBD_GetString((uint8_t *)sn_str, shared_io_buffer, length);
   return shared_io_buffer;
 }

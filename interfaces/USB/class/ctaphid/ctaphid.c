@@ -39,8 +39,8 @@ typedef struct {
 
 static CTAPHID_MemSource tx_mem_source;
 
-const uint16_t ISIZE = sizeof(tx_frame.init.data);
-const uint16_t CSIZE = sizeof(tx_frame.cont.data);
+static const uint16_t ISIZE = sizeof(tx_frame.init.data);
+static const uint16_t CSIZE = sizeof(tx_frame.cont.data);
 
 uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len)) {
   callback_send_report = send_report;
