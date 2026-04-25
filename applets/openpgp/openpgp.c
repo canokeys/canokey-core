@@ -1728,3 +1728,40 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
 }
+
+int openpgp_process_apdu_message(CAPDU_CHAINING *capdu_chaining, RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu,
+                                 RAPDU *rapdu) {
+  CAPDU *cmd = capdu;
+  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
+  const uint8_t use_raw = (INS == OPENPGP_INS_PUT_DATA && P1 == 0x7F && P2 == 0x21) || INS == OPENPGP_INS_IMPORT_KEY ||
+                          (INS == OPENPGP_INS_PSO && P1 == 0x80 && P2 == 0x86);
+
+  if (!is_get_response) apdu_response_source_clear();
+  if (!use_raw) {
+    const int ret = apdu_input(capdu_chaining, capdu);
+    if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
+      LL = 0;
+      SW = SW_NO_ERROR;
+      return 0;
+    }
+    if (ret != APDU_CHAINING_LAST_BLOCK) {
+      LL = 0;
+      SW = SW_CHECKING_ERROR;
+      return 0;
+    }
+    cmd = &capdu_chaining->capdu;
+  }
+
+  cmd->le = MIN(cmd->le, APDU_BUFFER_SIZE);
+  if (is_get_response) {
+    rapdu->len = cmd->le;
+    apdu_output(rapdu_chaining, rapdu);
+    return 0;
+  }
+
+  rapdu_chaining->sent = 0;
+  openpgp_process_apdu(cmd, &rapdu_chaining->rapdu);
+  rapdu->len = cmd->le;
+  apdu_output(rapdu_chaining, rapdu);
+  return 0;
+}

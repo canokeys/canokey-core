@@ -58,6 +58,13 @@
 #define ALG_SM2_DEFAULT       0x54
 
 #define TDEA_BLOCK_SIZE      8
+
+enum PIV_STATE {
+  PIV_STATE_GET_DATA,
+  PIV_STATE_GET_DATA_RESPONSE,
+  PIV_STATE_OTHER,
+};
+static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 // clang-format on
 
 // tags for general auth
@@ -450,6 +457,7 @@ static void piv_auth_reset(void) {
 }
 
 void piv_poweroff(void) {
+  piv_state = PIV_STATE_OTHER;
   in_admin_status = 0;
   pin_is_consumed = 0;
   pin.is_validated = 0;
@@ -1553,6 +1561,61 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+  return 0;
+}
+
+int piv_process_apdu_message(CAPDU_CHAINING *capdu_chaining, RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {
+  CAPDU *cmd = capdu;
+  uint8_t applet_get_response = 0;
+  uint8_t use_raw;
+
+  if (capdu->extended) {
+    LL = 0;
+    SW = SW_WRONG_LENGTH;
+    return 0;
+  }
+
+  if (INS == PIV_INS_GET_DATA) {
+    piv_state = PIV_STATE_GET_DATA;
+    applet_get_response = 1;
+  } else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0) {
+    piv_state = PIV_STATE_GET_DATA_RESPONSE;
+    applet_get_response = 1;
+  } else {
+    piv_state = PIV_STATE_OTHER;
+  }
+
+  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0 && !applet_get_response;
+  if (!is_get_response) apdu_response_source_clear();
+
+  use_raw = applet_get_response || INS == PIV_INS_PUT_DATA || INS == PIV_INS_IMPORT_ASYMMETRIC_KEY ||
+            INS == PIV_INS_GENERAL_AUTHENTICATE;
+  if (!use_raw) {
+    const int ret = apdu_input(capdu_chaining, capdu);
+    if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
+      LL = 0;
+      SW = SW_NO_ERROR;
+      return 0;
+    }
+    if (ret != APDU_CHAINING_LAST_BLOCK) {
+      LL = 0;
+      SW = SW_CHECKING_ERROR;
+      return 0;
+    }
+    cmd = &capdu_chaining->capdu;
+  }
+
+  cmd->le = MIN(cmd->le, APDU_BUFFER_SIZE);
+  if (is_get_response) {
+    rapdu->len = cmd->le;
+    apdu_output(rapdu_chaining, rapdu);
+    return 0;
+  }
+
+  rapdu_chaining->sent = 0;
+  piv_process_apdu(cmd, &rapdu_chaining->rapdu);
+  rapdu->len = cmd->le;
+  apdu_output(rapdu_chaining, rapdu);
   return 0;
 }
 

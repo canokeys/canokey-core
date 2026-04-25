@@ -28,12 +28,6 @@ enum APPLET {
   APPLET_ENUM_END,
 } current_applet;
 
-enum PIV_STATE {
-  PIV_STATE_GET_DATA,
-  PIV_STATE_GET_DATA_RESPONSE,
-  PIV_STATE_OTHER,
-};
-
 static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
@@ -275,45 +269,18 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     return;
   }
 #endif
-  static enum PIV_STATE piv_state;
+  if (!(CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00)) {
+    if (current_applet == APPLET_PIV) {
+      piv_process_apdu_message(&capdu_chaining, &rapdu_chaining, capdu, rapdu);
+      return;
+    }
+    if (current_applet == APPLET_OPENPGP) {
+      openpgp_process_apdu_message(&capdu_chaining, &rapdu_chaining, capdu, rapdu);
+      return;
+    }
+  }
   const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
   if (!is_get_response) apdu_response_source_clear();
-  if (current_applet == APPLET_PIV) {
-    if (capdu->extended) {
-      LL = 0;
-      SW = SW_WRONG_LENGTH;
-      return;
-    }
-    // Offload some APDU chaining commands of PIV applet,
-    // because the length of concatenated payloads may exceed chaining buffer size.
-    if (INS == PIV_INS_GET_DATA)
-      piv_state = PIV_STATE_GET_DATA;
-    else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0)
-      piv_state = PIV_STATE_GET_DATA_RESPONSE;
-    else
-      piv_state = PIV_STATE_OTHER;
-    if (piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE || INS == PIV_INS_PUT_DATA ||
-        INS == PIV_INS_IMPORT_ASYMMETRIC_KEY || INS == PIV_INS_GENERAL_AUTHENTICATE) {
-      LE = MIN(LE, APDU_BUFFER_SIZE); // Always clamp the Le to valid range
-      rapdu_chaining.sent = 0;
-      piv_process_apdu(capdu, &rapdu_chaining.rapdu);
-      if (apdu_response_source_active() || rapdu_chaining.rapdu.len > LE) {
-        rapdu->len = LE;
-        apdu_output(&rapdu_chaining, rapdu);
-      } else {
-        rapdu->len = rapdu_chaining.rapdu.len;
-        rapdu->sw = rapdu_chaining.rapdu.sw;
-      }
-      return;
-    }
-  }
-  if (current_applet == APPLET_OPENPGP &&
-      ((INS == OPENPGP_INS_PUT_DATA && P1 == 0x7F && P2 == 0x21) || INS == OPENPGP_INS_IMPORT_KEY ||
-       (INS == OPENPGP_INS_PSO && P1 == 0x80 && P2 == 0x86))) {
-    LE = MIN(LE, APDU_BUFFER_SIZE);
-    openpgp_process_apdu(capdu, rapdu);
-    return;
-  }
   int ret = apdu_input(&capdu_chaining, capdu);
   if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
     LL = 0;
@@ -339,7 +306,6 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
             return;
           }
 #endif
-          if (i == APPLET_PIV) piv_state = PIV_STATE_OTHER; // Reset `piv_state`
           if (i != current_applet) applets_poweroff();
           current_applet = i;
           DBG_MSG("applet switched to: %d\n", current_applet);
