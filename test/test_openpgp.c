@@ -178,6 +178,10 @@ static void test_generate_key(void **state) {
   print_hex(rapdu->data, rapdu->len);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x82\x06\x31\x32\x33\x34\x35\x36", 11);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
   // Decipher with invalid input data
   capdu->ins = OPENPGP_INS_PSO;
   capdu->p1 = 0x80;
