@@ -830,6 +830,7 @@ static const char *get_key_path(const uint8_t id) {
 
 static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len,
                                              piv_data_read_t read, void *ctx) {
+  if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) {
     DBG_MSG("Invalid key ref\n");
@@ -854,7 +855,6 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   }
 
   uint16_t pos[6] = {0}, len[6] = {0};
-  if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
   if (piv_parse_general_authenticate(auth_len, read, ctx, pos, len) < 0) EXCEPT(SW_WRONG_LENGTH);
 
   // User presence test
