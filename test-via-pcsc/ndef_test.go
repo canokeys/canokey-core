@@ -90,6 +90,53 @@ func (o *Applet) Send(apdu []byte) ([]byte, uint16, error) {
 	return res[0 : len(res)-2], (uint16(res[len(res)-2])<<8 | uint16(res[len(res)-1])), nil
 }
 
+func (o *Applet) SendWithGetResponse(apdu []byte) ([]byte, uint16, error) {
+	data, code, err := o.Send(apdu)
+	if err != nil {
+		return nil, code, err
+	}
+
+	out := append([]byte{}, data...)
+	for code&0xFF00 == 0x6100 {
+		le := byte(code)
+		if le == 0x00 || le == 0xFF {
+			le = 0x00
+		}
+
+		data, code, err = o.Send([]byte{0x00, 0xC0, 0x00, 0x00, le})
+		if err != nil {
+			return nil, code, err
+		}
+		out = append(out, data...)
+	}
+
+	return out, code, nil
+}
+
+func (o *Applet) SendUpdateBinaryChained(offset uint16, data []byte) (uint16, error) {
+	const maxChunkSize = 0xFF
+
+	for len(data) > 0 {
+		chunkSize := len(data)
+		cla := byte(0x00)
+		if chunkSize > maxChunkSize {
+			chunkSize = maxChunkSize
+			cla = 0x10
+		}
+
+		_, code, err := o.Send(append([]byte{cla, 0xD6, byte(offset >> 8), byte(offset & 0xFF), byte(chunkSize)}, data[:chunkSize]...))
+		if err != nil {
+			return 0, err
+		}
+		if code != 0x9000 {
+			return code, nil
+		}
+		data = data[chunkSize:]
+	}
+
+	return 0x9000, nil
+}
+
 func commandTests(readOnlyMode bool, app *Applet) func(C) {
 	maxLen := uint16(1024)
 	selectFile := func(name uint16) uint16 {
@@ -99,17 +146,14 @@ func commandTests(readOnlyMode bool, app *Applet) func(C) {
 	}
 	readFile := func(offset uint16, len uint16) (data []byte, code uint16) {
 		So(len, ShouldBeGreaterThan, 0)
-		data, code, err := app.Send([]byte{0x00, 0xB0, byte(offset >> 8), byte(offset & 0xFF), 0x00, byte(len >> 8), byte(len & 0xFF)})
+		data, code, err := app.SendWithGetResponse([]byte{0x00, 0xB0, byte(offset >> 8), byte(offset & 0xFF), 0x00, byte(len >> 8), byte(len & 0xFF)})
 		So(err, ShouldBeNil)
 		return
 	}
 	writeFile := func(offset uint16, data []byte) (code uint16) {
 		len := len(data)
 		So(len, ShouldBeGreaterThan, 0)
-		_, code, err := app.Send(append(
-			[]byte{0x00, 0xD6, byte(offset >> 8), byte(offset & 0xFF),
-				0x00, byte(len >> 8), byte(len & 0xFF)},
-			data...))
+		code, err := app.SendUpdateBinaryChained(offset, data)
 		So(err, ShouldBeNil)
 		return
 	}
