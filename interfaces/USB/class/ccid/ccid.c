@@ -18,13 +18,22 @@
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
 
+typedef union {
+  empty_ccid_bulkin_data_t time_extension;
+  ccid_bulkin_short_t short_resp;
+} ccid_bulkin_ephemeral_t;
+
+#define bulkin_time_extension (bulkin_ephemeral.time_extension)
+#define bulkin_short (bulkin_ephemeral.short_resp)
+
 // Fi=372, Di=1, 372 cycles/ETU 10752 bits/s at 4.00 MHz
 // BWT = 5.7s
 static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65,
                                    0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 
-static empty_ccid_bulkin_data_t bulkin_time_extension;
-static ccid_bulkin_short_t bulkin_short;
+// Time-extension and short responses are both single-packet replies and never
+// need to coexist, so they can share the same storage.
+static ccid_bulkin_ephemeral_t bulkin_ephemeral;
 ccid_bulkin_data_t bulkin_data;
 ccid_bulkout_data_t bulkout_data;
 static uint16_t ab_data_length;

@@ -58,13 +58,7 @@ static const uint8_t AID_Size[] = {
 };
 
 static volatile uint32_t buffer_owner;
-static uint8_t chaining_buffer[APDU_BUFFER_SIZE];
-static CAPDU_CHAINING capdu_chaining = {
-    .capdu.data = chaining_buffer,
-};
-static RAPDU_CHAINING rapdu_chaining = {
-    .rapdu.data = chaining_buffer,
-};
+static RAPDU_CHAINING rapdu_chaining;
 static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
 static uint16_t response_tail_offset;
 static uint16_t response_tail_len;
@@ -271,105 +265,95 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
 #endif
   if (!(CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00)) {
     if (current_applet == APPLET_PIV) {
-      piv_process_apdu_message(&capdu_chaining, &rapdu_chaining, capdu, rapdu);
+      piv_process_apdu_message(&rapdu_chaining, capdu, rapdu);
       return;
     }
     if (current_applet == APPLET_OPENPGP) {
-      openpgp_process_apdu_message(&capdu_chaining, &rapdu_chaining, capdu, rapdu);
+      openpgp_process_apdu_message(&rapdu_chaining, capdu, rapdu);
       return;
     }
   }
   const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
   if (!is_get_response) apdu_response_source_clear();
-  int ret = apdu_input(&capdu_chaining, capdu);
-  if (ret == APDU_CHAINING_NOT_LAST_BLOCK) {
-    LL = 0;
-    SW = SW_NO_ERROR;
-  } else if (ret == APDU_CHAINING_LAST_BLOCK) {
-    capdu = &capdu_chaining.capdu;
-    LE = MIN(LE, APDU_BUFFER_SIZE);
-    if (is_get_response) { // GET RESPONSE
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      return;
-    }
-    rapdu_chaining.sent = 0;
-    if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
-      uint8_t i, end = APPLET_ENUM_END;
-      for (i = APPLET_NULL + 1; i != end; ++i) {
-        if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+  LE = MIN(LE, APDU_BUFFER_SIZE);
+  if (is_get_response) { // GET RESPONSE
+    rapdu->len = LE;
+    apdu_output(&rapdu_chaining, rapdu);
+    return;
+  }
+  rapdu_chaining.sent = 0;
+  if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
+    uint8_t i, end = APPLET_ENUM_END;
+    for (i = APPLET_NULL + 1; i != end; ++i) {
+      if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
 #if ENABLE_APPLET_NDEF
-          if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
-            LL = 0;
-            SW = SW_FILE_NOT_FOUND;
-            DBG_MSG("NDEF is disable\n");
-            return;
-          }
-#endif
-          if (i != current_applet) applets_poweroff();
-          current_applet = i;
-          DBG_MSG("applet switched to: %d\n", current_applet);
-          break;
+        if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
+          LL = 0;
+          SW = SW_FILE_NOT_FOUND;
+          DBG_MSG("NDEF is disable\n");
+          return;
         }
-      }
-      if (i == end) {
-        LL = 0;
-        SW = SW_FILE_NOT_FOUND;
-        DBG_MSG("applet not found\n");
-        return;
+#endif
+        if (i != current_applet) applets_poweroff();
+        current_applet = i;
+        DBG_MSG("applet switched to: %d\n", current_applet);
+        break;
       }
     }
-    switch (current_applet) {
-    case APPLET_OPENPGP:
-      openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_PIV:
-      piv_process_apdu(capdu, &rapdu_chaining.rapdu);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_FIDO:
-#ifdef TEST
-      if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
-        printf("MAGIC REBOOT command received!\r\n");
-        testmode_set_initial_ticks(0);
-        testmode_set_initial_ticks(device_get_tick());
-        ctap_install(0);
-        SW = 0x9000;
-        LL = 0;
-        break;
-      }
-      if (CLA == 0x00 && INS == 0xEF) {
-        testmode_inject_error(P1, P2, LC, DATA);
-        SW = 0x9000;
-        LL = 0;
-        break;
-      }
-#endif
-      ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-      rapdu->len = LE;
-      apdu_output(&rapdu_chaining, rapdu);
-      break;
-    case APPLET_OATH:
-      oath_process_apdu(capdu, rapdu);
-      break;
-    case APPLET_ADMIN:
-      admin_process_apdu(capdu, rapdu);
-      break;
-#if ENABLE_APPLET_NDEF
-    case APPLET_NDEF:
-      ndef_process_apdu(capdu, rapdu);
-      break;
-#endif
-    default:
+    if (i == end) {
       LL = 0;
       SW = SW_FILE_NOT_FOUND;
+      DBG_MSG("applet not found\n");
+      return;
     }
-  } else {
+  }
+  switch (current_applet) {
+  case APPLET_OPENPGP:
+    openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
+    rapdu->len = LE;
+    apdu_output(&rapdu_chaining, rapdu);
+    break;
+  case APPLET_PIV:
+    piv_process_apdu(capdu, &rapdu_chaining.rapdu);
+    rapdu->len = LE;
+    apdu_output(&rapdu_chaining, rapdu);
+    break;
+  case APPLET_FIDO:
+#ifdef TEST
+    if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
+      printf("MAGIC REBOOT command received!\r\n");
+      testmode_set_initial_ticks(0);
+      testmode_set_initial_ticks(device_get_tick());
+      ctap_install(0);
+      SW = 0x9000;
+      LL = 0;
+      break;
+    }
+    if (CLA == 0x00 && INS == 0xEF) {
+      testmode_inject_error(P1, P2, LC, DATA);
+      SW = 0x9000;
+      LL = 0;
+      break;
+    }
+#endif
+    ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    rapdu->len = LE;
+    apdu_output(&rapdu_chaining, rapdu);
+    break;
+  case APPLET_OATH:
+    oath_process_apdu(capdu, rapdu);
+    break;
+  case APPLET_ADMIN:
+    admin_process_apdu(capdu, rapdu);
+    break;
+#if ENABLE_APPLET_NDEF
+  case APPLET_NDEF:
+    ndef_process_apdu(capdu, rapdu);
+    break;
+#endif
+  default:
     LL = 0;
-    SW = SW_CHECKING_ERROR;
+    SW = SW_FILE_NOT_FOUND;
   }
 }
 
