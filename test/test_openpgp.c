@@ -103,6 +103,7 @@ static void test_reset_retry_counter(void **state) {
   strcpy((char *)capdu->data, "654321");
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  openpgp_install(1);
 }
 
 static void test_get_data(void **state) {
