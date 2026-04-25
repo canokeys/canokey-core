@@ -2,10 +2,22 @@
 # Install FIDO tools + patch fido2 python lib (runs every time)
 set -e
 
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
 pushd fido2-tests
-pip3 install --user -r requirements.txt
+"${PYTHON_BIN}" -m pip install --user -r requirements.txt
+FIDO2_PACKAGE_DIR="$("${PYTHON_BIN}" - <<'PY'
+from importlib.util import find_spec
+from pathlib import Path
+
+spec = find_spec("fido2")
+if spec is None or spec.origin is None:
+    raise SystemExit("python-fido2 is not installed")
+print(Path(spec.origin).resolve().parent)
+PY
+)"
 echo "Fixing a bug in python-fido2 0.9.3"
-patch -p1 -u --forward -d ~/.local/lib/python3.*/site-packages/fido2 <<'EOF' || true
+patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <<'EOF' || true
 --- fido2/ctap2/blob.py 2023-08-22 21:09:59.905129124 +0800
 +++ fido2.fix/ctap2/blob.py  2023-08-22 21:14:07.014840263 +0800
 @@ -150,7 +150,7 @@
@@ -18,7 +30,7 @@ patch -p1 -u --forward -d ~/.local/lib/python3.*/site-packages/fido2 <<'EOF' || 
                  pin_uv_param=pin_uv_param,
              )
 EOF
-patch -p1 -u --forward -d ~/.local/lib/python3.*/site-packages/fido2 <../test-via-pcsc/fido2_SM2_COSE_key.patch || true
+patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <../test-via-pcsc/fido2_SM2_COSE_key.patch || true
 popd
 
 pushd libfido2/build

@@ -141,6 +141,16 @@ jobs:
     - name: Install - FIDO tests
       run: |
         ./test-via-pcsc/install_fido_tests.sh
+        python3 - <<'PY'
+        import importlib.metadata
+        import pathlib
+        import sys
+        import fido2
+
+        print("python:", sys.executable)
+        print("fido2_version:", importlib.metadata.version("fido2"))
+        print("fido2_path:", pathlib.Path(fido2.__file__).resolve())
+        PY
         which fido2-token
         ldd $(which fido2-token)
 
@@ -194,9 +204,8 @@ jobs:
         #pushd test-real && ./test-libfido2.sh && popd
         cd fido2-tests
         #../build/fido-hid-over-udp &
-        git pull
-        ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/standard/
-        ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
+        python3 -m pytest --color=yes --vendor canokeys --nfc tests/standard/
+        python3 -m pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
         #kill %1
 
     - name: Tests - U2F applet

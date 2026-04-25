@@ -2,6 +2,8 @@
 # Build FIDO test tools (only runs on cache miss)
 set -e
 
+readonly FIDO2_TESTS_REF=dd55b6ba1ba2af4160af9aee3f0be8a1bc463e14
+
 if [ ! -d u2f-ref-code ]; then
   git clone --depth 1 https://github.com/google/u2f-ref-code.git
   pushd u2f-ref-code/u2f-tests/HID
@@ -13,6 +15,7 @@ fi
 
 if [ ! -d fido2-tests ]; then
   git clone --depth 1 -b dev-fido2v1 https://github.com/canokeys/fido2-tests.git
+  git -C fido2-tests checkout "${FIDO2_TESTS_REF}"
 fi
 
 if [ ! -d libfido2 ]; then
