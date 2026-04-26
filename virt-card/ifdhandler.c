@@ -115,6 +115,11 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
   uint8_t *abData = TxLength <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : shared_io_buffer;
   memcpy(abData, TxBuffer, TxLength);
   bulkout_data[Lun].dwLength = TxLength;
+  bulkout_data[Lun].bSlot = (uint8_t)Lun;
+  bulkout_data[Lun].bSeq = 0;
+  bulkout_data[Lun].bSpecific_0 = 0;
+  bulkout_data[Lun].bSpecific_1 = 0;
+  bulkout_data[Lun].bSpecific_2 = 0;
 
   uint8_t ret = PC_to_RDR_XfrBlock();
   if (ret != SLOT_NO_ERROR) {
