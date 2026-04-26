@@ -434,15 +434,29 @@ static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
   if (!is_nfc() || !nfc_pending_state.active || !nfc_pending_state.allow_poll) return -1;
   if (nfc_pending_state.touch_granted) return -1;
 
-  if (nfc_pending_state.wait_start == 0) nfc_pending_state.wait_start = device_get_tick();
+  if (nfc_pending_state.wait_start == 0) {
+    nfc_pending_state.wait_start = device_get_tick();
+    // Testmode only auto-generates a touch while blinking. Start blinking once
+    // and return a keepalive so the next NFC poll can complete the command.
+    start_blinking_interval(0, 200);
+#ifdef TEST
+    testmode_emulate_user_presence();
+#endif
+    nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
+    return CTAP_NFC_KEEPALIVE_PENDING;
+  }
 
   if (get_touch_result() != TOUCH_NO) {
     set_touch_result(TOUCH_NO);
+    stop_blinking();
     nfc_pending_state.touch_granted = 1;
     return -1;
   }
 
-  if (device_get_tick() - nfc_pending_state.wait_start >= 30000) return timeout_response;
+  if (device_get_tick() - nfc_pending_state.wait_start >= 30000) {
+    stop_blinking();
+    return timeout_response;
+  }
 
   nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
   return CTAP_NFC_KEEPALIVE_PENDING;
