@@ -96,6 +96,7 @@ void init_apdu_buffer(void) {
   ccid_init_apdu_buffer();
 #endif
   rapdu_chaining.rapdu.data = shared_io_buffer;
+  fido_capdu_chaining.capdu.data = shared_io_buffer;
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {

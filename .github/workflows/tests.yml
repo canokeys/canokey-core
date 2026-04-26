@@ -200,7 +200,8 @@ jobs:
 
     - name: Tests - FIDO2 applet
       run: |
-        #echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
+        echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode for PCSC/NFC tests
+        cat /tmp/canokey-test-nfc
         #pushd test-real && ./test-libfido2.sh && popd
         cd fido2-tests
         #../build/fido-hid-over-udp &
@@ -210,11 +211,14 @@ jobs:
 
     - name: Tests - U2F applet
       run: |
+        echo 1 >/tmp/canokey-test-nfc
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
 
     - name: Tests - OATH applet
-      run: go test -v test-via-pcsc/oath_test.go
+      run: |
+        echo 0 >/tmp/canokey-test-nfc
+        go test -v test-via-pcsc/oath_test.go
 
     - name: Tests - OpenPGP applet
       # GPG requires a tty to work
