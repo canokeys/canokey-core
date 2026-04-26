@@ -42,7 +42,11 @@
 
 #define WAIT(timeout_response)                                                                                         \
   do {                                                                                                                 \
-    if (is_nfc()) break;                                                                                               \
+    if (is_nfc()) {                                                                                                    \
+      int __nfc_wait = ctap_nfc_wait_for_user_presence(timeout_response);                                              \
+      if (__nfc_wait < 0) break;                                                                                       \
+      return (uint8_t)__nfc_wait;                                                                                      \
+    }                                                                                                                  \
     switch (wait_for_user_presence(current_cmd_src == CTAP_SRC_HID ? WAIT_ENTRY_CTAPHID : WAIT_ENTRY_CCID)) {          \
     case USER_PRESENCE_CANCEL:                                                                                         \
       return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
@@ -56,6 +60,9 @@
     if (is_nfc()) break;                                                                                               \
     send_keepalive_during_processing(current_cmd_src == CTAP_SRC_HID ? WAIT_ENTRY_CTAPHID : WAIT_ENTRY_CCID);          \
   } while (0)
+
+#define CTAP_NFC_KEEPALIVE_PENDING 0xFE
+#define CTAP_NFC_GET_RESPONSE      0x11
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
@@ -112,12 +119,24 @@ typedef struct {
   size_t segment_count;
   size_t current_segment;
   size_t total_len;
+  size_t emitted;
   bool prepared;
 } CTAP_make_credential_stream_state;
+
+typedef struct {
+  uint8_t active;
+  uint8_t allow_poll;
+  uint8_t touch_granted;
+  uint8_t keepalive_status;
+  uint32_t wait_start;
+  uint16_t request_len;
+  uint8_t request[APDU_BUFFER_SIZE];
+} CTAP_nfc_pending_state;
 
 static CTAP_make_credential_stream_state mc_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
 static CTAP_const_stream_state const_stream_state;
+static CTAP_nfc_pending_state nfc_pending_state;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
 static uint8_t *stream_resp_base;
 static uint8_t *stream_work_buffer;
@@ -388,10 +407,52 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_
   return 0;
 }
 
+static int ctap_make_credential_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, uint16_t max_len) {
+  CTAP_make_credential_stream_state *state = (CTAP_make_credential_stream_state *)ctx;
+  size_t written = 0;
+
+  if (offset != state->emitted) return -1;
+  if (ctap_make_credential_stream_read(ctx, out, max_len, &written) < 0) return -1;
+  state->emitted += written;
+  return (int)written;
+}
+
+static void ctap_nfc_pending_reset(void) { memset(&nfc_pending_state, 0, sizeof(nfc_pending_state)); }
+
+static int ctap_nfc_pending_store(const uint8_t *req, size_t req_len, uint8_t allow_poll) {
+  if (!req || req_len == 0 || req_len > sizeof(nfc_pending_state.request)) return -1;
+  ctap_nfc_pending_reset();
+  memcpy(nfc_pending_state.request, req, req_len);
+  nfc_pending_state.request_len = (uint16_t)req_len;
+  nfc_pending_state.allow_poll = allow_poll;
+  nfc_pending_state.active = 1;
+  nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
+  return 0;
+}
+
+static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
+  if (!is_nfc() || !nfc_pending_state.active || !nfc_pending_state.allow_poll) return -1;
+  if (nfc_pending_state.touch_granted) return -1;
+
+  if (nfc_pending_state.wait_start == 0) nfc_pending_state.wait_start = device_get_tick();
+
+  if (get_touch_result() != TOUCH_NO) {
+    set_touch_result(TOUCH_NO);
+    nfc_pending_state.touch_granted = 1;
+    return -1;
+  }
+
+  if (device_get_tick() - nfc_pending_state.wait_start >= 30000) return timeout_response;
+
+  nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
+  return CTAP_NFC_KEEPALIVE_PENDING;
+}
+
 uint8_t ctap_install(uint8_t reset) {
   consecutive_pin_counter = 3;
   last_cmd = CTAP_INVALID_CMD;
   current_cmd_src = CTAP_SRC_NONE;
+  ctap_nfc_pending_reset();
   cp_initialize();
   if (!reset && get_file_size(LB_FILE) >= 0) {
     if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
@@ -2483,6 +2544,12 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
   }
 
 set_resp:
+  if (status == CTAP_NFC_KEEPALIVE_PENDING) {
+    *resp = nfc_pending_state.keepalive_status;
+    *resp_len = 1;
+    last_cmd = cmd;
+    return 1;
+  }
   *resp = status;
   SET_RESP();
   goto finish;
@@ -2617,6 +2684,81 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   return 1;
 }
 
+static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_len, RAPDU *rapdu) {
+  uint8_t *resp = rapdu->data;
+  size_t resp_len = APDU_BUFFER_SIZE;
+
+  memset(&mc_stream_state, 0, sizeof(mc_stream_state));
+  memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
+  stream_resp_base = resp;
+  stream_work_buffer = resp;
+  stream_work_buffer_len = resp_len;
+  stream_make_credential_response = true;
+
+  CborEncoder encoder;
+  cbor_encoder_init(&encoder, resp + 1, resp_len - 1, 0);
+
+  uint8_t status = ctap_make_credential(&encoder, req + 1, req_len - 1);
+
+  stream_make_credential_response = false;
+  stream_resp_base = NULL;
+  stream_work_buffer = NULL;
+  stream_work_buffer_len = 0;
+
+  resp[0] = status;
+  last_cmd = CTAP_MAKE_CREDENTIAL;
+  if (status != 0) last_cmd = CTAP_INVALID_CMD;
+
+  if (status == CTAP_NFC_KEEPALIVE_PENDING) {
+    rapdu->data[0] = nfc_pending_state.keepalive_status;
+    rapdu->len = 1;
+    rapdu->sw = 0x9100;
+    return 1;
+  }
+
+  if (status == 0 && mc_stream_state.prepared) {
+    apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR, ctap_make_credential_stream_read_at,
+                             NULL, &mc_stream_state);
+    return 0;
+  }
+
+  rapdu->len = status == 0 ? (uint16_t)(1 + cbor_encoder_get_buffer_size(&encoder, resp + 1)) : 1;
+  return 0;
+}
+
+static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *rapdu) {
+  if (req_len == 0) {
+    rapdu->sw = SW_WRONG_LENGTH;
+    return 0;
+  }
+
+  if (*req == CTAP_GET_INFO) {
+    cp_pin_uv_auth_token_usage_timer_observer();
+    CTAPHID_TxSource source;
+    memset(&source, 0, sizeof(source));
+    if (ctap_prepare_get_info_stream(&source) == 0) {
+      apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at, NULL,
+                               &const_stream_state);
+      last_cmd = CTAP_GET_INFO;
+      return 0;
+    }
+    last_cmd = CTAP_INVALID_CMD;
+    rapdu->sw = SW_UNABLE_TO_PROCESS;
+    return 0;
+  }
+
+  if (*req == CTAP_MAKE_CREDENTIAL) return ctap_prepare_make_credential_apdu_response(req, req_len, rapdu);
+
+  size_t len = APDU_BUFFER_SIZE;
+  int ret = ctap_process_cbor(req, req_len, rapdu->data, &len);
+  rapdu->len = (uint16_t)len;
+  if (ret == 1) {
+    rapdu->sw = 0x9100;
+    return 1;
+  }
+  return ret;
+}
+
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
   int ret = 0;
   LL = 0;
@@ -2626,29 +2768,36 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
     if (INS == CTAP_INS_MSG) {
-      if (LC != 0 && DATA[0] == CTAP_GET_INFO) {
-        cp_pin_uv_auth_token_usage_timer_observer();
-        CTAPHID_TxSource source;
-        memset(&source, 0, sizeof(source));
-        if (ctap_prepare_get_info_stream(&source) == 0) {
-          apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at, NULL,
-                                   &const_stream_state);
-          last_cmd = CTAP_GET_INFO;
-        } else {
-          SW = SW_UNABLE_TO_PROCESS;
-          last_cmd = CTAP_INVALID_CMD;
-        }
+      if (is_nfc() && (P1 & 0x80) != 0 && ctap_nfc_pending_store(DATA, LC, 1) < 0) {
         current_cmd_src = CTAP_SRC_NONE;
-        return 0;
+        EXCEPT(SW_WRONG_LENGTH);
       }
 
-      // rapdu buffer size: APDU_BUFFER_SIZE
-      size_t len = APDU_BUFFER_SIZE;
-
-      ret = ctap_process_cbor(DATA, LC, RDATA, &len);
-      // len is the actual len written to RDATA
-      LL = len;
+      ret = ctap_process_apdu_cbor_message(DATA, LC, rapdu);
+      if (ret != 1) ctap_nfc_pending_reset();
     } else {
+      if (is_nfc() && INS == CTAP_NFC_GET_RESPONSE) {
+        if (!nfc_pending_state.active || !nfc_pending_state.allow_poll) {
+          current_cmd_src = CTAP_SRC_NONE;
+          EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+        }
+
+        if (P1 == CTAP_NFC_GET_RESPONSE) {
+          RDATA[0] = CTAP2_ERR_KEEPALIVE_CANCEL;
+          LL = 1;
+          ctap_nfc_pending_reset();
+          current_cmd_src = CTAP_SRC_NONE;
+          return 0;
+        }
+
+        ret = ctap_process_apdu_cbor_message(nfc_pending_state.request, nfc_pending_state.request_len, rapdu);
+        if (ret != 1) ctap_nfc_pending_reset();
+        current_cmd_src = CTAP_SRC_NONE;
+        if (ret < 0)
+          EXCEPT(SW_UNABLE_TO_PROCESS);
+        else
+          return 0;
+      }
       current_cmd_src = CTAP_SRC_NONE;
       EXCEPT(SW_INS_NOT_SUPPORTED);
     }

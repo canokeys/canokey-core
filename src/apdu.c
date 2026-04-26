@@ -59,6 +59,7 @@ static const uint8_t AID_Size[] = {
 
 static volatile uint32_t buffer_owner;
 static RAPDU_CHAINING rapdu_chaining;
+static CAPDU_CHAINING fido_capdu_chaining;
 static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
 static uint16_t response_tail_offset;
 static uint16_t response_tail_len;
@@ -344,6 +345,20 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       break;
     }
 #endif
+    if (((CLA & 0xEF) == 0x80) && ((CLA & 0x10) != 0 || fido_capdu_chaining.in_chaining)) {
+      const int chaining = apdu_input(&fido_capdu_chaining, capdu);
+      if (chaining == APDU_CHAINING_OVERFLOW) {
+        LL = 0;
+        SW = SW_WRONG_LENGTH;
+        break;
+      }
+      if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {
+        LL = 0;
+        SW = SW_NO_ERROR;
+        break;
+      }
+      capdu = &fido_capdu_chaining.capdu;
+    }
     ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
     apdu_output(&rapdu_chaining, rapdu);
