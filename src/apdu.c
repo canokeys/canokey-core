@@ -78,8 +78,6 @@ typedef struct {
 
 static APDU_RESPONSE_SOURCE response_source;
 
-#define APDU_RESPONSE_CHUNK_SIZE 250
-
 uint8_t *shared_io_buffer;
 
 #if ENABLE_IFACE_CCID
@@ -285,7 +283,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   if (!is_get_response) apdu_response_source_clear();
   LE = MIN(LE, APDU_BUFFER_SIZE);
   if (is_get_response) { // GET RESPONSE
-    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+    rapdu->len = LE;
     apdu_output(&rapdu_chaining, rapdu);
     return;
   }
@@ -318,12 +316,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   switch (current_applet) {
   case APPLET_OPENPGP:
     openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);
-    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+    rapdu->len = LE;
     apdu_output(&rapdu_chaining, rapdu);
     break;
   case APPLET_PIV:
     piv_process_apdu(capdu, &rapdu_chaining.rapdu);
-    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+    rapdu->len = LE;
     apdu_output(&rapdu_chaining, rapdu);
     break;
   case APPLET_FIDO:
@@ -345,7 +343,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     }
 #endif
     ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-    rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
+    rapdu->len = LE;
     apdu_output(&rapdu_chaining, rapdu);
     break;
   case APPLET_OATH:

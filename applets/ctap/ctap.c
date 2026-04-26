@@ -123,6 +123,8 @@ static uint8_t *stream_resp_base;
 static uint8_t *stream_work_buffer;
 static size_t stream_work_buffer_len;
 static bool stream_make_credential_response;
+static bool ctap_apdu_stream_active;
+static size_t ctap_apdu_stream_off;
 
 static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAP_mem_stream_state *state = (CTAP_mem_stream_state *)ctx;
@@ -194,7 +196,31 @@ static int ctap_const_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, u
   return (int)copied;
 }
 
-static void ctap_const_stream_close(void *ctx) { ctap_const_stream_reset((CTAP_const_stream_state *)ctx); }
+static void ctap_apdu_stream_reset(void) {
+  ctap_apdu_stream_active = false;
+  ctap_apdu_stream_off = 0;
+  ctap_const_stream_reset(&const_stream_state);
+}
+
+static int ctap_apdu_stream_send_chunk(RAPDU *rapdu) {
+  if (!ctap_apdu_stream_active) return -1;
+
+  int read = ctap_const_stream_read_at(&const_stream_state, (uint32_t)ctap_apdu_stream_off, RDATA, 250);
+  if (read <= 0) {
+    ctap_apdu_stream_reset();
+    return -1;
+  }
+
+  LL = (uint16_t)read;
+  ctap_apdu_stream_off += (size_t)read;
+  if (ctap_apdu_stream_off < const_stream_state.total_len) {
+    SW = 0x9100;
+  } else {
+    SW = SW_NO_ERROR;
+    ctap_apdu_stream_reset();
+  }
+  return 0;
+}
 
 static int cbor_put_uint(uint8_t **p, uint64_t v, uint8_t major) {
   if (v < 24) {
@@ -2627,20 +2653,28 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
   current_cmd_src = src;
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
+    if (INS == CTAP_INS_GET_RESPONSE) {
+      ret = ctap_apdu_stream_send_chunk(rapdu);
+      current_cmd_src = CTAP_SRC_NONE;
+      if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+      return 0;
+    }
+
     if (INS == CTAP_INS_MSG) {
+      ctap_apdu_stream_reset();
       if (LC != 0 && DATA[0] == CTAP_GET_INFO) {
-        CTAPHID_TxSource source;
-        memset(&source, 0, sizeof(source));
         cp_pin_uv_auth_token_usage_timer_observer();
-        if (ctap_prepare_get_info_stream(&source) == 0) {
-          apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at,
-                                   ctap_const_stream_close, &const_stream_state);
-          last_cmd = CTAP_GET_INFO;
+        if (ctap_prepare_get_info_stream(&(CTAPHID_TxSource){0}) == 0) {
+          ctap_apdu_stream_active = true;
+          ctap_apdu_stream_off = 0;
+          ret = ctap_apdu_stream_send_chunk(rapdu);
+          if (ret == 0) last_cmd = CTAP_GET_INFO;
         } else {
           SW = SW_UNABLE_TO_PROCESS;
           last_cmd = CTAP_INVALID_CMD;
         }
         current_cmd_src = CTAP_SRC_NONE;
+        if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
         return 0;
       }
 
@@ -2655,6 +2689,7 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
       EXCEPT(SW_INS_NOT_SUPPORTED);
     }
   } else if (CLA == 0x00) {
+    ctap_apdu_stream_reset();
     switch (INS) {
     case U2F_REGISTER:
       ret = u2f_register(capdu, rapdu);
@@ -2675,6 +2710,7 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
       EXCEPT(SW_INS_NOT_SUPPORTED);
     }
   } else {
+    ctap_apdu_stream_reset();
     current_cmd_src = CTAP_SRC_NONE;
     EXCEPT(SW_CLA_NOT_SUPPORTED);
   }

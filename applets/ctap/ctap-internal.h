@@ -31,6 +31,7 @@
 // Commands
 // clang-format off
 #define CTAP_INS_MSG               0x10
+#define CTAP_INS_GET_RESPONSE      0x11
 
 #define CTAP_MAKE_CREDENTIAL       0x01
 #define CTAP_GET_ASSERTION         0x02
