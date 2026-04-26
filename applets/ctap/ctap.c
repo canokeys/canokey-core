@@ -62,7 +62,7 @@
   } while (0)
 
 #define CTAP_NFC_KEEPALIVE_PENDING 0xFE
-#define CTAP_NFC_GET_RESPONSE      0x11
+#define CTAP_NFC_GET_RESPONSE 0x11
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
@@ -921,7 +921,10 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   sig_len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
   if (!sig_len) return CTAP2_ERR_UNHANDLED_REQUEST;
 
-  uint8_t *suffix = mldsa ? state->suffix : p;
+  // For non-MLDSA streaming, write att_stmt / suffix to scratch to avoid
+  // overflowing stream_resp_base (shared_io_buffer, only APDU_BUFFER_SIZE bytes).
+  uint8_t *suffix =
+      mldsa ? state->suffix : (stream_make_credential_response ? applet_session_scratch.openpgp_crypto : p);
   uint8_t *q = suffix;
   if (mldsa && extension_size != 0) {
     memcpy(q, extension, extension_size);
@@ -964,11 +967,11 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   }
 
   if (stream_make_credential_response) {
-    const size_t prefix_len = mldsa ? state->prefix_len : (size_t)(suffix + cert_prefix_len - prefix);
+    const size_t prefix_len = mldsa ? state->prefix_len : (size_t)(p - prefix);
     const size_t tail_len = mldsa ? state->suffix_len - cert_prefix_len : (size_t)(q - tail);
     if (ctap_make_credential_stream_add_mem(prefix, prefix_len) < 0 ||
         (mldsa && ctap_make_credential_stream_add_mldsa(state, MLDSA_PK_BYTES) < 0) ||
-        (mldsa && ctap_make_credential_stream_add_mem(state->suffix, cert_prefix_len) < 0) ||
+        ctap_make_credential_stream_add_mem(mldsa ? state->suffix : suffix, cert_prefix_len) < 0 ||
         ctap_make_credential_stream_add_file(CTAP_CERT_FILE, 0, (size_t)cert_len) < 0 ||
         ctap_make_credential_stream_add_mem(tail, tail_len) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -1711,7 +1714,8 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
       (ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_sm2, CTAP_GI_SM2_ALGO_OFFSET) != 0 ||
        ctap_const_stream_add_byte(&const_stream_state, 3, 0x38) != 0 ||
        ctap_const_stream_add_byte(&const_stream_state, 4, (uint8_t)(-1 - sm2_algo)) != 0 ||
-       ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_sm2 + CTAP_GI_SM2_ALGO_OFFSET + CTAP_GI_SM2_ALGO_ENC_LEN,
+       ctap_const_stream_add_mem(&const_stream_state,
+                                 cbor_gi_alg_sm2 + CTAP_GI_SM2_ALGO_OFFSET + CTAP_GI_SM2_ALGO_ENC_LEN,
                                  sizeof(cbor_gi_alg_sm2) - CTAP_GI_SM2_ALGO_OFFSET - CTAP_GI_SM2_ALGO_ENC_LEN) != 0)) {
     return -1;
   }
