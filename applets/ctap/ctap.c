@@ -5,6 +5,7 @@
 #include "ctap-parser.h"
 #include "secret.h"
 #include "u2f.h"
+#include <apdu.h>
 #include <applet-scratch.h>
 #include <block-cipher.h>
 #include <cbor.h>
@@ -169,6 +170,31 @@ static int ctap_const_stream_read(void *ctx, uint8_t *out, size_t max_len, size_
   *written = copied;
   return 0;
 }
+
+static int ctap_const_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, uint16_t max_len) {
+  CTAP_const_stream_state *state = (CTAP_const_stream_state *)ctx;
+  size_t copied = 0;
+  size_t off = offset;
+
+  if (off >= state->total_len) return 0;
+
+  for (size_t i = 0; i < state->segment_count && copied < max_len; ++i) {
+    const CTAP_const_stream_segment *segment = &state->segments[i];
+    if (off >= segment->len) {
+      off -= segment->len;
+      continue;
+    }
+
+    size_t n = MIN(segment->len - off, (size_t)max_len - copied);
+    memcpy(out + copied, segment->buf + off, n);
+    copied += n;
+    off = 0;
+  }
+
+  return (int)copied;
+}
+
+static void ctap_const_stream_close(void *ctx) { ctap_const_stream_reset((CTAP_const_stream_state *)ctx); }
 
 static int cbor_put_uint(uint8_t **p, uint64_t v, uint8_t major) {
   if (v < 24) {
@@ -2602,6 +2628,22 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
     if (INS == CTAP_INS_MSG) {
+      if (LC != 0 && DATA[0] == CTAP_GET_INFO) {
+        CTAPHID_TxSource source;
+        memset(&source, 0, sizeof(source));
+        cp_pin_uv_auth_token_usage_timer_observer();
+        if (ctap_prepare_get_info_stream(&source) == 0) {
+          apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at,
+                                   ctap_const_stream_close, &const_stream_state);
+          last_cmd = CTAP_GET_INFO;
+        } else {
+          SW = SW_UNABLE_TO_PROCESS;
+          last_cmd = CTAP_INVALID_CMD;
+        }
+        current_cmd_src = CTAP_SRC_NONE;
+        return 0;
+      }
+
       // rapdu buffer size: APDU_BUFFER_SIZE
       size_t len = APDU_BUFFER_SIZE;
 

@@ -31,34 +31,6 @@ patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <<'EOF' || true
              )
 EOF
 patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <../test-via-pcsc/fido2_SM2_COSE_key.patch || true
-"${PYTHON_BIN}" - <<'PY'
-from pathlib import Path
-
-path = Path("tests/conftest.py")
-text = path.read_text()
-
-if "import traceback\n" not in text:
-    text = text.replace("import os\n", "import os\nimport traceback\n")
-
-old_import = "from fido2.ctap2 import AttestedCredentialData, PinProtocolV1\n"
-new_import = (
-    "from fido2.ctap2 import AttestedCredentialData, ClientPin, Ctap2, PinProtocolV1\n"
-)
-if old_import in text:
-    text = text.replace(old_import, new_import)
-
-needle = """    def find_device(self, nfcInterfaceOnly=False):\n"""
-helper = """    def _init_client(self, dev):\n        try:\n            ctap2 = Ctap2(dev)\n            print(\"CTAP2 probe info:\", ctap2.info)\n        except Exception as e:\n            print(\"CTAP2 constructor failed: %r\" % (e,))\n            traceback.print_exc()\n            raise\n\n        try:\n            ClientPin(ctap2)\n            print(\"ClientPin probe: supported\")\n        except ValueError as e:\n            print(\"ClientPin probe: unavailable (%r)\" % (e,))\n        except Exception as e:\n            print(\"ClientPin probe failed: %r\" % (e,))\n            traceback.print_exc()\n            raise\n\n        client = Fido2Client(dev, self.origin)\n        if not hasattr(client, \"ctap2\"):\n            raise RuntimeError(\"Fido2Client unexpectedly fell back to CTAP1\")\n        return client, client.ctap2\n\n"""
-if "def _init_client(self, dev):\n" not in text and needle in text:
-    text = text.replace(needle, helper + needle)
-
-old_init = """        self.client = Fido2Client(dev, self.origin)\n        self.ctap2 = self.client.ctap2\n"""
-new_init = """        self.client, self.ctap2 = self._init_client(dev)\n"""
-if old_init in text:
-    text = text.replace(old_init, new_init)
-
-path.write_text(text)
-PY
 popd
 
 pushd libfido2/build
