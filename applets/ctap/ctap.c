@@ -510,12 +510,18 @@ static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
 }
 
 uint8_t ctap_install(uint8_t reset) {
-  consecutive_pin_counter = 3;
-  last_cmd = CTAP_INVALID_CMD;
+  const bool has_persistent_state = get_file_size(LB_FILE) >= 0;
+  // Reader reconnects may re-run ctap_install(0) without a real device reset.
+  // Preserve in-flight CTAP command state in that case so CM/GA "next" commands
+  // can continue across implicit PowerICC cycles.
+  if (reset || !has_persistent_state) {
+    consecutive_pin_counter = 3;
+    last_cmd = CTAP_INVALID_CMD;
+  }
   current_cmd_src = CTAP_SRC_NONE;
   ctap_nfc_pending_reset();
   cp_initialize(reset != 0);
-  if (!reset && get_file_size(LB_FILE) >= 0) {
+  if (!reset && has_persistent_state) {
     if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     DBG_MSG("CTAP initialized\n");
