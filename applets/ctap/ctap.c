@@ -36,10 +36,16 @@
 #define SET_RESP()                                                                                                     \
   do {                                                                                                                 \
     if (*resp == 0)                                                                                                    \
-      *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1);                                                \
+      *resp_len = 1 + cbor_encoder_get_buffer_size(&encoder, encode_buf);                                              \
     else                                                                                                               \
       *resp_len = 1;                                                                                                   \
   } while (0)
+
+static int ctap_large_response_read_at(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  const uint8_t *src = (const uint8_t *)ctx;
+  memcpy(buf, src + offset, len);
+  return (int)len;
+}
 
 #define WAIT(timeout_response)                                                                                         \
   do {                                                                                                                 \
@@ -2539,8 +2545,16 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
 
   cp_pin_uv_auth_token_usage_timer_observer();
 
+  // Use applet_session_scratch.openpgp_crypto as the encoder buffer so that
+  // large responses (e.g. getAssertion with hmac-secret, ~320 bytes) do not
+  // overflow the APDU response buffer (shared_io_buffer, 256 bytes).  When the
+  // response fits the APDU buffer it is copied back; otherwise it is streamed
+  // via apdu_response_source_set.
+  uint8_t *encode_buf = applet_session_scratch.openpgp_crypto;
+  const size_t encode_buf_size = sizeof(applet_session_scratch.openpgp_crypto);
+
   CborEncoder encoder;
-  cbor_encoder_init(&encoder, resp + 1, *resp_len - 1, 0);
+  cbor_encoder_init(&encoder, encode_buf, encode_buf_size, 0);
 
   uint8_t cmd = *req++;
   uint8_t status = CTAP2_ERR_UNHANDLED_REQUEST;
@@ -2601,6 +2615,17 @@ set_resp:
   }
   *resp = status;
   SET_RESP();
+  if (*resp_len > APDU_BUFFER_SIZE && status == 0) {
+    // Response is too large for the APDU buffer; stream it from encode_buf.
+    // Prepend the status byte by shifting the CBOR data right.
+    size_t cbor_len = *resp_len - 1;
+    memmove(encode_buf + 1, encode_buf, cbor_len);
+    encode_buf[0] = *resp;
+    apdu_response_source_set((uint32_t)*resp_len, SW_NO_ERROR, ctap_large_response_read_at, NULL, encode_buf);
+    *resp_len = 1; // initial payload: status byte only
+  } else if (*resp_len > 1 && status == 0) {
+    memmove(resp + 1, encode_buf, *resp_len - 1);
+  }
   goto finish;
 
 finish_status_only:
