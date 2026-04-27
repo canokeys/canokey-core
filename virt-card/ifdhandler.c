@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "apdu.h"
+#include "applets.h"
 #include "ccid.h"
 #include "ctaphid.h"
 #include "fabrication.h"
@@ -88,6 +89,9 @@ RESPONSECODE IFDHSetProtocolParameters(DWORD Lun, DWORD Protocol, UCHAR Flags, U
 RESPONSECODE IFDHPowerICC(DWORD Lun, DWORD Action, PUCHAR Atr, PDWORD AtrLength) {
   printf("IFDHPowerICC %ld Action=%#lx\n", Lun, Action);
   if (Action == IFD_POWER_UP || Action == IFD_RESET) {
+    init_apdu_buffer();
+    device_init();
+    applets_install();
     *AtrLength = sizeof(ATR);
     memcpy(Atr, ATR, *AtrLength);
   } else if (Action == IFD_POWER_DOWN) {

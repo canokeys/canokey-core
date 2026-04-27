@@ -92,6 +92,9 @@ void init_apdu_buffer(void) {
   shared_io_buffer = apdu_fallback_buffer;
 #endif
   apdu_response_source_clear();
+  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
+  memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
+  current_applet = APPLET_NULL;
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
 #endif
