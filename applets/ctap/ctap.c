@@ -131,6 +131,7 @@ typedef struct {
   uint8_t keepalive_status;
   uint32_t wait_start;
   uint16_t request_len;
+  uint8_t request[APDU_INCOMING_DATA_SIZE];
   uint8_t request_in_pke;
 } CTAP_nfc_pending_state;
 
@@ -443,12 +444,17 @@ static void ctap_nfc_pending_reset(void) {
 static int ctap_nfc_pending_store(const uint8_t *req, size_t req_len, uint8_t allow_poll) {
   if (!req || req_len == 0 || req_len > CTAP_MAX_REQUEST_SIZE || req_len > pke_buffer_size()) return -1;
   ctap_nfc_pending_reset();
-  if (!current_apdu_request_from_pke && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
-  const int ret = pke_buffer_write(0, req, req_len);
-  if (!current_apdu_request_from_pke) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
-  if (ret < 0) return -1;
   nfc_pending_state.request_len = (uint16_t)req_len;
-  nfc_pending_state.request_in_pke = 1;
+  if (req_len <= sizeof(nfc_pending_state.request)) {
+    memcpy(nfc_pending_state.request, req, req_len);
+    nfc_pending_state.request_in_pke = 0;
+  } else {
+    if (!current_apdu_request_from_pke && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
+    const int ret = pke_buffer_write(0, req, req_len);
+    if (!current_apdu_request_from_pke) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+    if (ret < 0) return -1;
+    nfc_pending_state.request_in_pke = 1;
+  }
   nfc_pending_state.allow_poll = allow_poll;
   nfc_pending_state.active = 1;
   nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
@@ -2833,13 +2839,17 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
           return 0;
         }
 
-        if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
-          ctap_nfc_pending_reset();
-          current_cmd_src = CTAP_SRC_NONE;
-          EXCEPT(SW_UNABLE_TO_PROCESS);
+        uint8_t *pending_req = nfc_pending_state.request;
+        if (nfc_pending_state.request_in_pke) {
+          if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
+            ctap_nfc_pending_reset();
+            current_cmd_src = CTAP_SRC_NONE;
+            EXCEPT(SW_UNABLE_TO_PROCESS);
+          }
+          pending_req = ctap_request_workspace;
         }
 
-        ret = ctap_process_apdu_cbor_message(ctap_request_workspace, nfc_pending_state.request_len, rapdu);
+        ret = ctap_process_apdu_cbor_message(pending_req, nfc_pending_state.request_len, rapdu);
         if (ret != 1) ctap_nfc_pending_reset();
         current_cmd_src = CTAP_SRC_NONE;
         if (ret < 0)
