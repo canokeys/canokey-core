@@ -431,9 +431,9 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
     else
       ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-    fido_capdu_reset();
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
     apdu_output(&rapdu_chaining, rapdu);
+    fido_capdu_reset();
     break;
   case APPLET_OATH:
     oath_process_apdu(capdu, rapdu);
