@@ -79,6 +79,22 @@ typedef struct {
   void *ctx;
 } APDU_RESPONSE_SOURCE;
 
+static uint8_t is_fido_apdu(const CAPDU *capdu) {
+  if (capdu->cla == 0x80 && capdu->ins == 0x10) return 1;
+  if (capdu->cla != 0x00) return 0;
+
+  switch (capdu->ins) {
+  case 0x01: // U2F_REGISTER
+  case 0x02: // U2F_AUTHENTICATE
+  case 0x03: // U2F_VERSION
+    return 1;
+  case 0xA4: // U2F_SELECT, distinct from ISO SELECT by P1/P2
+    return !(capdu->p1 == 0x04 && capdu->p2 == 0x00);
+  default:
+    return 0;
+  }
+}
+
 static APDU_RESPONSE_SOURCE response_source;
 
 #define APDU_RESPONSE_CHUNK_SIZE 250
@@ -400,6 +416,13 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       DBG_MSG("applet not found\n");
       return;
     }
+  }
+  if (current_applet == APPLET_NULL && is_fido_apdu(capdu)) {
+    // Some PC/SC stacks reconnect or reset the card between CTAP INIT and the
+    // next CBOR/U2F exchange. Accepting unmistakably FIDO APDUs here keeps the
+    // FIDO CCID path usable across those implicit resets.
+    current_applet = APPLET_FIDO;
+    DBG_MSG("implicit applet switched to: %d\n", current_applet);
   }
   switch (current_applet) {
   case APPLET_OPENPGP:

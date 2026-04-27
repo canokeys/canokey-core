@@ -217,6 +217,36 @@ static void test_fido_ctap1_register_nfc(void **state) {
   assert_true(total >= rapdu.len);
 }
 
+static void test_fido_cbor_after_reset_without_select(void **state) {
+  (void)state;
+
+  static const uint8_t get_info_apdu[] = {
+      0x80,
+      0x10,
+      0x80,
+      0x00,
+      0x01,
+      0x04,
+      0x00,
+  };
+
+  uint8_t c_buf[64], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
+  process_apdu(&capdu, &rapdu);
+
+  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_true(rapdu.sw == SW_NO_ERROR || (rapdu.sw & 0xFF00) == 0x6100);
+  assert_true(rapdu.len > 0);
+  assert_int_equal(rapdu.data[0], 0x00);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -249,6 +279,7 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
+      cmocka_unit_test(test_fido_cbor_after_reset_without_select),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
