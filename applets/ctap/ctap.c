@@ -130,7 +130,7 @@ typedef struct {
   uint8_t keepalive_status;
   uint32_t wait_start;
   uint16_t request_len;
-  uint8_t request[APDU_BUFFER_SIZE];
+  uint8_t request[APDU_INCOMING_DATA_SIZE];
 } CTAP_nfc_pending_state;
 
 static CTAP_make_credential_stream_state mc_stream_state;

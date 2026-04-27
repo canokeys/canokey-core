@@ -120,11 +120,11 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
     LC = 0;
     if (LE == 0) LE = 0x100;
   } else if (LC > 0 && len == 5 + LC) { // Case 3S
-    if (LC > APDU_BUFFER_SIZE) return -1;
+    if (LC > APDU_INCOMING_DATA_SIZE) return -1;
     memmove(DATA, cmd + 5, LC);
     LE = 0x100;
   } else if (LC > 0 && len == 6 + LC) { // Case 4S
-    if (LC > APDU_BUFFER_SIZE) return -1;
+    if (LC > APDU_INCOMING_DATA_SIZE) return -1;
     memmove(DATA, cmd + 5, LC);
     LE = cmd[5 + LC];
     if (LE == 0) LE = 0x100;
@@ -139,12 +139,12 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
     LC = (cmd[5] << 8) | cmd[6];
     if (LC == 0) return -1;
     if (len == 7 + LC) { // Case 3E
-      if (LC > APDU_BUFFER_SIZE) return -1;
+      if (LC > APDU_INCOMING_DATA_SIZE) return -1;
       memmove(DATA, cmd + 7, LC);
       LE = 0x10000;
       return 0;
     } else if (len == 9 + LC) { // Case 4E
-      if (LC > APDU_BUFFER_SIZE) return -1;
+      if (LC > APDU_INCOMING_DATA_SIZE) return -1;
       memmove(DATA, cmd + 7, LC);
       LE = (cmd[7 + LC] << 8) | cmd[8 + LC];
       if (LE == 0) LE = 0x10000;
@@ -169,7 +169,7 @@ restart:
     goto restart;
   }
   ex->in_chaining = 1;
-  if (ex->capdu.lc + sh->lc > APDU_BUFFER_SIZE) return APDU_CHAINING_OVERFLOW;
+  if (ex->capdu.lc + sh->lc > APDU_INCOMING_DATA_SIZE) return APDU_CHAINING_OVERFLOW;
   memcpy(ex->capdu.data + ex->capdu.lc, sh->data, sh->lc);
   ex->capdu.lc += sh->lc;
 

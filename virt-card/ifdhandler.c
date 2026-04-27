@@ -4,6 +4,7 @@
 #include "applets.h"
 #include "ccid.h"
 #include "ctaphid.h"
+#include "device.h"
 #include "fabrication.h"
 #include <ifdhandler.h>
 #include <reader.h>
