@@ -432,9 +432,12 @@ static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acqu
   // Requests that fit in the workspace are copied there; larger ones stay in
   // pke_buffer and the caller must use pke_buffer_get_ptr() directly.
   if (req_len > sizeof(ctap_request_workspace)) return 0;
-  if (acquire_owner && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
+  int acquired = 0;
+  if (acquire_owner) {
+    acquired = (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0);
+  }
   int ret = pke_buffer_read(0, dst, req_len);
-  if (acquire_owner) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+  if (acquired) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
   return ret;
 }
 
@@ -443,6 +446,10 @@ static void ctap_nfc_pending_reset(void) {
     if (current_apdu_request_from_pke) {
       pke_buffer_clear();
     } else if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0) {
+      pke_buffer_clear();
+      pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+    } else {
+      // Buffer already owned by CTAP from fido_apdu_input chaining
       pke_buffer_clear();
       pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
     }
@@ -2077,10 +2084,15 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (cm.param_len > 0) memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
     if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
     if (!cp_verify_pin_token(buf, cm.param_len + 1, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
-      DBG_MSG("PIN verification error\n");
+      DBG_MSG("PIN token verification failed (msg_len=%zu, protocol=%d)\n", cm.param_len + 1, cm.pin_uv_auth_protocol);
+      PRINT_HEX(buf, cm.param_len + 1);
+      PRINT_HEX(cm.pin_uv_auth_param, 16);
       return CTAP2_ERR_PIN_AUTH_INVALID;
     }
-    if (!cp_has_permission(CP_PERMISSION_CM)) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (!cp_has_permission(CP_PERMISSION_CM)) {
+      DBG_MSG("CM permission check failed\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
   }
 
   DBG_MSG("processing cm.sub_command %hhu\n", cm.sub_command);
@@ -2349,7 +2361,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     break;
 
   case CM_CMD_UPDATE_USER_INFORMATION:
-    if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
+    if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) {
+      DBG_MSG("RP ID verification failed in update_user_info\n");
+      return CTAP2_ERR_PIN_AUTH_INVALID;
+    }
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     KEEPALIVE();
     {

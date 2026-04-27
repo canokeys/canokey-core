@@ -179,7 +179,10 @@ bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t ms
 }
 
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
-  if (!in_use) return false;
+  if (!in_use) {
+    DBG_MSG("cp_verify_pin_token: not in use\n");
+    return false;
+  }
   timeout_value = device_get_tick() + 30000;
   return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
