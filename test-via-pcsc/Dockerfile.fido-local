@@ -14,7 +14,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-
     pcscd pcsc-tools \
     libhidapi-dev libssl-dev libpcsclite-dev libudev-dev libusb-1.0-0-dev \
     libcmocka-dev libcbor-dev zlib1g-dev \
-    python3-pip python3-setuptools python3-wheel python3-jsonschema \
+    patch swig \
+    python3-dev python3-pip python3-setuptools python3-wheel python3-jsonschema python3-jinja2 python3-venv \
   && rm -rf /var/lib/apt/lists/*
 
 COPY test-via-pcsc /root/test-via-pcsc

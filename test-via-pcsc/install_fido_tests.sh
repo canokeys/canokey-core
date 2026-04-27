@@ -3,15 +3,21 @@
 set -e
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-PIP_ARGS=(install --user -r requirements.txt)
-
-if "${PYTHON_BIN}" -m pip help install 2>/dev/null | grep -q -- '--break-system-packages'; then
-  PIP_ARGS+=(--break-system-packages)
-fi
 
 pushd fido2-tests
-"${PYTHON_BIN}" -m pip "${PIP_ARGS[@]}"
-FIDO2_PACKAGE_DIR="$("${PYTHON_BIN}" - <<'PY'
+VENV_DIR="${PWD}/.venv"
+if [ ! -x "${VENV_DIR}/bin/python" ]; then
+  "${PYTHON_BIN}" -m venv "${VENV_DIR}"
+fi
+VENV_PYTHON="${VENV_DIR}/bin/python"
+"${VENV_PYTHON}" -m pip install --upgrade pip setuptools wheel
+tmp_requirements="$(mktemp)"
+grep -v '^pyscard\b' requirements.txt >"${tmp_requirements}"
+"${VENV_PYTHON}" -m pip install -r "${tmp_requirements}"
+rm -f "${tmp_requirements}"
+# fido2==0.9.3 still imports smartcard.pcsc.PCSCContext, removed by newer pyscard.
+"${VENV_PYTHON}" -m pip install "pyscard==2.0.7"
+FIDO2_PACKAGE_DIR="$("${VENV_PYTHON}" - <<'PY'
 from importlib.util import find_spec
 from pathlib import Path
 

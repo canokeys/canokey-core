@@ -45,6 +45,7 @@ for tool_dir in u2f-ref-code libfido2 fido2-tests; do
 done
 
 ./test-via-pcsc/install_fido_tests.sh
+FIDO_PYTHON="/work/fido2-tests/.venv/bin/python"
 
 cmake -S . -B "${BUILD_DIR}" -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build "${BUILD_DIR}" -j2
@@ -70,7 +71,7 @@ timeout 1s pcsc_scan || true
 chmod 777 /tmp/canokey-* 2>/dev/null || true
 chown root:root /tmp/canokey-* 2>/dev/null || true
 
-python3 - <<'PY'
+"${FIDO_PYTHON}" - <<'PY'
 import importlib.metadata
 import pathlib
 import sys
@@ -83,7 +84,7 @@ PY
 echo 1 >/tmp/canokey-test-nfc
 pushd fido2-tests >/dev/null
 for target in "$@"; do
-  if ! python3 -m pytest --color=yes --vendor canokeys --nfc "${target}"; then
+  if ! "${FIDO_PYTHON}" -m pytest --color=yes --vendor canokeys --nfc "${target}"; then
     echo "===== /tmp/pcscd.log ====="
     cat /tmp/pcscd.log || true
     exit 1

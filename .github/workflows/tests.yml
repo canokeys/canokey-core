@@ -141,7 +141,7 @@ jobs:
     - name: Install - FIDO tests
       run: |
         ./test-via-pcsc/install_fido_tests.sh
-        python3 - <<'PY'
+        fido2-tests/.venv/bin/python - <<'PY'
         import importlib.metadata
         import pathlib
         import sys
@@ -151,8 +151,8 @@ jobs:
         print("fido2_version:", importlib.metadata.version("fido2"))
         print("fido2_path:", pathlib.Path(fido2.__file__).resolve())
         PY
-        which fido2-token
-        ldd $(which fido2-token)
+        ls -l fido2-tests/.venv/bin/fido2-token
+        ldd fido2-tests/.venv/bin/fido2-token
 
     - name: Build - CanoKey tests
       run: |
@@ -205,8 +205,8 @@ jobs:
         #pushd test-real && ./test-libfido2.sh && popd
         cd fido2-tests
         #../build/fido-hid-over-udp &
-        python3 -m pytest --color=yes --vendor canokeys --nfc tests/standard/
-        python3 -m pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/standard/
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
         #kill %1
 
     - name: Tests - U2F applet
