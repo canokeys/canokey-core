@@ -428,7 +428,10 @@ static int ctap_make_credential_stream_read_at(void *ctx, uint32_t offset, uint8
 }
 
 static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acquire_owner) {
-  if (!dst || req_len == 0 || req_len > sizeof(ctap_request_workspace) || req_len > pke_buffer_size()) return -1;
+  if (!dst || req_len == 0 || req_len > pke_buffer_size()) return -1;
+  // Requests that fit in the workspace are copied there; larger ones stay in
+  // pke_buffer and the caller must use pke_buffer_get_ptr() directly.
+  if (req_len > sizeof(ctap_request_workspace)) return 0;
   if (acquire_owner && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
   int ret = pke_buffer_read(0, dst, req_len);
   if (acquire_owner) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
@@ -2865,12 +2868,17 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
 
         uint8_t *pending_req = nfc_pending_state.request;
         if (nfc_pending_state.request_in_pke) {
-          if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
-            ctap_nfc_pending_reset();
-            current_cmd_src = CTAP_SRC_NONE;
-            EXCEPT(SW_UNABLE_TO_PROCESS);
+          if (nfc_pending_state.request_len > sizeof(ctap_request_workspace)) {
+            // Request is too large for workspace, use pke_buffer directly.
+            pending_req = (uint8_t *)pke_buffer_get_ptr();
+          } else {
+            if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
+              ctap_nfc_pending_reset();
+              current_cmd_src = CTAP_SRC_NONE;
+              EXCEPT(SW_UNABLE_TO_PROCESS);
+            }
+            pending_req = ctap_request_workspace;
           }
-          pending_req = ctap_request_workspace;
         }
 
         ret = ctap_process_apdu_cbor_message(pending_req, nfc_pending_state.request_len, rapdu);
@@ -2917,19 +2925,27 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
 }
 
 int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
-  if (!capdu || capdu->lc == 0 || capdu->lc > sizeof(ctap_request_workspace)) {
+  if (!capdu || capdu->lc == 0 || capdu->lc > pke_buffer_size()) {
     rapdu->len = 0;
     rapdu->sw = SW_WRONG_LENGTH;
     return 0;
   }
-  if (ctap_request_load_from_pke(ctap_request_workspace, capdu->lc, 0) < 0) {
-    rapdu->len = 0;
-    rapdu->sw = SW_UNABLE_TO_PROCESS;
-    return 0;
+
+  // Load request: use workspace for small requests, pke_buffer directly for large ones.
+  uint8_t *req_data;
+  if (capdu->lc > sizeof(ctap_request_workspace)) {
+    req_data = (uint8_t *)pke_buffer_get_ptr();
+  } else {
+    if (ctap_request_load_from_pke(ctap_request_workspace, capdu->lc, 0) < 0) {
+      rapdu->len = 0;
+      rapdu->sw = SW_UNABLE_TO_PROCESS;
+      return 0;
+    }
+    req_data = ctap_request_workspace;
   }
 
   CAPDU request = *capdu;
-  request.data = ctap_request_workspace;
+  request.data = req_data;
   current_apdu_request_from_pke = true;
   const int ret = ctap_process_apdu_with_src(&request, rapdu, src);
   current_apdu_request_from_pke = false;

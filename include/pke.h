@@ -20,6 +20,7 @@ enum {
 };
 
 size_t pke_buffer_size(void);
+const uint8_t *pke_buffer_get_ptr(void);
 int pke_buffer_read(size_t offset, void *buf, size_t len);
 int pke_buffer_write(size_t offset, const void *buf, size_t len);
 int pke_buffer_clear(void);

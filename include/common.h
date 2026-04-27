@@ -19,8 +19,8 @@
 #define APDU_INCOMING_DATA_SIZE APDU_COMMAND_BUFFER_SIZE
 // FIDO CBOR requests over NFC/PCSC can legitimately exceed the generic APDU
 // payload limit, so chained FIDO commands use a dedicated larger reassembly
-// buffer.
-#define CTAP_MAX_REQUEST_SIZE 512
+// buffer (pke_buffer).  The effective limit is pke_buffer_size().
+#define CTAP_MAX_REQUEST_SIZE pke_buffer_size()
 #define TOUCH_EXPIRE_TIME 1000
 #define TOUCH_AFTER_PWRON 1500
 
