@@ -69,6 +69,7 @@ typedef struct {
 #define APDU_CHAINING_NOT_LAST_BLOCK 0x01
 #define APDU_CHAINING_LAST_BLOCK 0x02
 #define APDU_CHAINING_OVERFLOW 0x03
+#define APDU_CHAINING_ERROR 0x04
 
 typedef struct {
   CAPDU capdu;

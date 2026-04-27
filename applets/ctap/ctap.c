@@ -17,6 +17,7 @@
 #include <hmac.h>
 #include <ml-dsa-65.h>
 #include <memzero.h>
+#include <pke.h>
 #include <rand.h>
 #include <string.h>
 
@@ -130,7 +131,7 @@ typedef struct {
   uint8_t keepalive_status;
   uint32_t wait_start;
   uint16_t request_len;
-  uint8_t request[APDU_INCOMING_DATA_SIZE];
+  uint8_t request_in_pke;
 } CTAP_nfc_pending_state;
 
 static CTAP_make_credential_stream_state mc_stream_state;
@@ -138,10 +139,12 @@ static CTAP_mem_stream_state mem_stream_state;
 static CTAP_const_stream_state const_stream_state;
 static CTAP_nfc_pending_state nfc_pending_state;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
+#define ctap_request_workspace applet_session_scratch.openpgp_crypto
 static uint8_t *stream_resp_base;
 static uint8_t *stream_work_buffer;
 static size_t stream_work_buffer_len;
 static bool stream_make_credential_response;
+static bool current_apdu_request_from_pke;
 
 static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAP_mem_stream_state *state = (CTAP_mem_stream_state *)ctx;
@@ -417,13 +420,35 @@ static int ctap_make_credential_stream_read_at(void *ctx, uint32_t offset, uint8
   return (int)written;
 }
 
-static void ctap_nfc_pending_reset(void) { memset(&nfc_pending_state, 0, sizeof(nfc_pending_state)); }
+static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acquire_owner) {
+  if (!dst || req_len == 0 || req_len > sizeof(ctap_request_workspace) || req_len > pke_buffer_size()) return -1;
+  if (acquire_owner && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
+  int ret = pke_buffer_read(0, dst, req_len);
+  if (acquire_owner) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+  return ret;
+}
+
+static void ctap_nfc_pending_reset(void) {
+  if (nfc_pending_state.request_in_pke) {
+    if (current_apdu_request_from_pke) {
+      pke_buffer_clear();
+    } else if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0) {
+      pke_buffer_clear();
+      pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+    }
+  }
+  memset(&nfc_pending_state, 0, sizeof(nfc_pending_state));
+}
 
 static int ctap_nfc_pending_store(const uint8_t *req, size_t req_len, uint8_t allow_poll) {
-  if (!req || req_len == 0 || req_len > sizeof(nfc_pending_state.request)) return -1;
+  if (!req || req_len == 0 || req_len > CTAP_MAX_REQUEST_SIZE || req_len > pke_buffer_size()) return -1;
   ctap_nfc_pending_reset();
-  memcpy(nfc_pending_state.request, req, req_len);
+  if (!current_apdu_request_from_pke && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
+  const int ret = pke_buffer_write(0, req, req_len);
+  if (!current_apdu_request_from_pke) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+  if (ret < 0) return -1;
   nfc_pending_state.request_len = (uint16_t)req_len;
+  nfc_pending_state.request_in_pke = 1;
   nfc_pending_state.allow_poll = allow_poll;
   nfc_pending_state.active = 1;
   nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
@@ -2808,7 +2833,13 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
           return 0;
         }
 
-        ret = ctap_process_apdu_cbor_message(nfc_pending_state.request, nfc_pending_state.request_len, rapdu);
+        if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
+          ctap_nfc_pending_reset();
+          current_cmd_src = CTAP_SRC_NONE;
+          EXCEPT(SW_UNABLE_TO_PROCESS);
+        }
+
+        ret = ctap_process_apdu_cbor_message(ctap_request_workspace, nfc_pending_state.request_len, rapdu);
         if (ret != 1) ctap_nfc_pending_reset();
         current_cmd_src = CTAP_SRC_NONE;
         if (ret < 0)
@@ -2850,6 +2881,28 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
   else
     return 0;
 }
+
+int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
+  if (!capdu || capdu->lc == 0 || capdu->lc > sizeof(ctap_request_workspace)) {
+    rapdu->len = 0;
+    rapdu->sw = SW_WRONG_LENGTH;
+    return 0;
+  }
+  if (ctap_request_load_from_pke(ctap_request_workspace, capdu->lc, 0) < 0) {
+    rapdu->len = 0;
+    rapdu->sw = SW_UNABLE_TO_PROCESS;
+    return 0;
+  }
+
+  CAPDU request = *capdu;
+  request.data = ctap_request_workspace;
+  current_apdu_request_from_pke = true;
+  const int ret = ctap_process_apdu_with_src(&request, rapdu, src);
+  current_apdu_request_from_pke = false;
+  return ret;
+}
+
+int ctap_nfc_pending_active(void) { return nfc_pending_state.active != 0; }
 
 int ctap_wink(void) {
   start_blinking_interval(1, 50);

@@ -5,6 +5,7 @@
 #include <common.h>
 #include <ctap.h>
 #include <device.h>
+#include <pke.h>
 #if ENABLE_APPLET_NDEF
 #include <ndef.h>
 #endif
@@ -60,6 +61,7 @@ static const uint8_t AID_Size[] = {
 static volatile uint32_t buffer_owner;
 static RAPDU_CHAINING rapdu_chaining;
 static CAPDU_CHAINING fido_capdu_chaining;
+static uint8_t fido_capdu_uses_pke;
 static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
 static uint16_t response_tail_offset;
 static uint16_t response_tail_len;
@@ -94,6 +96,7 @@ void init_apdu_buffer(void) {
   apdu_response_source_clear();
   memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
   memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
+  fido_capdu_uses_pke = 0;
   current_applet = APPLET_NULL;
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
@@ -180,6 +183,60 @@ restart:
     ex->capdu.le = sh->le;
     return APDU_CHAINING_LAST_BLOCK;
   }
+}
+
+static void fido_capdu_reset(void) {
+  if (fido_capdu_uses_pke && !ctap_nfc_pending_active()) {
+    pke_buffer_clear();
+    pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+  }
+  memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
+  fido_capdu_chaining.capdu.data = shared_io_buffer;
+  fido_capdu_uses_pke = 0;
+}
+
+static int fido_apdu_input(const CAPDU *sh) {
+restart:
+  if (!fido_capdu_chaining.in_chaining) {
+    fido_capdu_chaining.capdu.cla = sh->cla & 0xEF;
+    fido_capdu_chaining.capdu.ins = sh->ins;
+    fido_capdu_chaining.capdu.p1 = sh->p1;
+    fido_capdu_chaining.capdu.p2 = sh->p2;
+    fido_capdu_chaining.capdu.lc = 0;
+    fido_capdu_chaining.capdu.extended = sh->extended;
+    fido_capdu_chaining.capdu.data = shared_io_buffer;
+  } else if (fido_capdu_chaining.capdu.cla != (sh->cla & 0xEF) || fido_capdu_chaining.capdu.ins != sh->ins ||
+             fido_capdu_chaining.capdu.p1 != sh->p1 || fido_capdu_chaining.capdu.p2 != sh->p2) {
+    fido_capdu_reset();
+    goto restart;
+  }
+
+  const uint32_t new_len = (uint32_t)fido_capdu_chaining.capdu.lc + sh->lc;
+  if (new_len > CTAP_MAX_REQUEST_SIZE || new_len > pke_buffer_size()) return APDU_CHAINING_OVERFLOW;
+
+  if (!fido_capdu_uses_pke && new_len > APDU_INCOMING_DATA_SIZE) {
+    if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return APDU_CHAINING_ERROR;
+    if (fido_capdu_chaining.capdu.lc != 0 &&
+        pke_buffer_write(0, fido_capdu_chaining.capdu.data, fido_capdu_chaining.capdu.lc) < 0) {
+      pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+      return APDU_CHAINING_ERROR;
+    }
+    fido_capdu_uses_pke = 1;
+  }
+
+  fido_capdu_chaining.in_chaining = 1;
+  if (fido_capdu_uses_pke) {
+    if (pke_buffer_write(fido_capdu_chaining.capdu.lc, sh->data, sh->lc) < 0) return APDU_CHAINING_ERROR;
+  } else {
+    memcpy(fido_capdu_chaining.capdu.data + fido_capdu_chaining.capdu.lc, sh->data, sh->lc);
+  }
+  fido_capdu_chaining.capdu.lc = (uint16_t)new_len;
+
+  if (sh->cla & 0x10) return APDU_CHAINING_NOT_LAST_BLOCK;
+
+  fido_capdu_chaining.in_chaining = 0;
+  fido_capdu_chaining.capdu.le = sh->le;
+  return APDU_CHAINING_LAST_BLOCK;
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
@@ -350,10 +407,17 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     }
 #endif
     if (((CLA & 0xEF) == 0x80) && ((CLA & 0x10) != 0 || fido_capdu_chaining.in_chaining)) {
-      const int chaining = apdu_input(&fido_capdu_chaining, capdu);
+      const int chaining = fido_apdu_input(capdu);
       if (chaining == APDU_CHAINING_OVERFLOW) {
+        fido_capdu_reset();
         LL = 0;
         SW = SW_WRONG_LENGTH;
+        break;
+      }
+      if (chaining == APDU_CHAINING_ERROR) {
+        fido_capdu_reset();
+        LL = 0;
+        SW = SW_UNABLE_TO_PROCESS;
         break;
       }
       if (chaining == APDU_CHAINING_NOT_LAST_BLOCK) {
@@ -363,7 +427,11 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       }
       capdu = &fido_capdu_chaining.capdu;
     }
-    ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    if (fido_capdu_uses_pke)
+      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    else
+      ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    fido_capdu_reset();
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
     apdu_output(&rapdu_chaining, rapdu);
     break;

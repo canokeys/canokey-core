@@ -17,6 +17,10 @@
 // Parsed incoming APDU data can reuse the whole command buffer after the
 // transport header is stripped, so the input limit may exceed APDU_BUFFER_SIZE.
 #define APDU_INCOMING_DATA_SIZE APDU_COMMAND_BUFFER_SIZE
+// FIDO CBOR requests over NFC/PCSC can legitimately exceed the generic APDU
+// payload limit, so chained FIDO commands use a dedicated larger reassembly
+// buffer.
+#define CTAP_MAX_REQUEST_SIZE 512
 #define TOUCH_EXPIRE_TIME 1000
 #define TOUCH_AFTER_PWRON 1500
 
