@@ -214,7 +214,12 @@ restart:
   const uint32_t new_len = (uint32_t)fido_capdu_chaining.capdu.lc + sh->lc;
   if (new_len > CTAP_MAX_REQUEST_SIZE || new_len > pke_buffer_size()) return APDU_CHAINING_OVERFLOW;
 
-  if (!fido_capdu_uses_pke && new_len > APDU_INCOMING_DATA_SIZE) {
+  // Once a chained FIDO request spans multiple APDUs, the next build_capdu()
+  // call will reuse shared_io_buffer for the incoming fragment. Move the
+  // accumulated payload out of shared_io_buffer before that can overwrite the
+  // earlier bytes.
+  if (!fido_capdu_uses_pke &&
+      ((sh->cla & 0x10) != 0 || fido_capdu_chaining.in_chaining || new_len > APDU_INCOMING_DATA_SIZE)) {
     if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return APDU_CHAINING_ERROR;
     if (fido_capdu_chaining.capdu.lc != 0 &&
         pke_buffer_write(0, fido_capdu_chaining.capdu.data, fido_capdu_chaining.capdu.lc) < 0) {
