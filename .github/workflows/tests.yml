@@ -151,8 +151,8 @@ jobs:
         print("fido2_version:", importlib.metadata.version("fido2"))
         print("fido2_path:", pathlib.Path(fido2.__file__).resolve())
         PY
-        ls -l fido2-tests/.venv/bin/fido2-token
-        ldd fido2-tests/.venv/bin/fido2-token
+        which fido2-token
+        ldd $(which fido2-token)
 
     - name: Build - CanoKey tests
       run: |
