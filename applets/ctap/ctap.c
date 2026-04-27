@@ -2738,7 +2738,6 @@ static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_l
   size_t resp_len = APDU_BUFFER_SIZE;
 
   memset(&mc_stream_state, 0, sizeof(mc_stream_state));
-  memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
   stream_resp_base = resp;
   stream_work_buffer = resp;
   stream_work_buffer_len = resp_len;
