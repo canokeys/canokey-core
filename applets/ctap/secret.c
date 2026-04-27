@@ -22,6 +22,7 @@ static bool in_use;
 static bool user_verified;
 static bool user_present;
 static uint32_t timeout_value;
+static bool cp_initialized;
 
 // utility functions
 
@@ -90,9 +91,11 @@ static void cp2_kdf(uint8_t *z, size_t z_len, uint8_t *out) {
   hkdf(salt, sizeof(salt), z, z_len, out);
 }
 
-void cp_initialize(void) {
+void cp_initialize(bool force_reset) {
+  if (!force_reset && cp_initialized) return;
   cp_regenerate();
   cp_reset_pin_uv_auth_token();
+  cp_initialized = true;
 }
 
 void cp_regenerate(void) {

@@ -16,7 +16,7 @@ void cp_clear_pin_uv_auth_token_permissions_except_lbw(void);
 void cp_stop_using_pin_uv_auth_token(void);
 
 // pin auth protocol
-void cp_initialize(void);
+void cp_initialize(bool force_reset);
 void cp_regenerate(void);
 void cp_reset_pin_uv_auth_token(void);
 void cp_get_public_key(uint8_t *buf);

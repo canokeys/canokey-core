@@ -514,7 +514,7 @@ uint8_t ctap_install(uint8_t reset) {
   last_cmd = CTAP_INVALID_CMD;
   current_cmd_src = CTAP_SRC_NONE;
   ctap_nfc_pending_reset();
-  cp_initialize();
+  cp_initialize(reset != 0);
   if (!reset && get_file_size(LB_FILE) >= 0) {
     if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
