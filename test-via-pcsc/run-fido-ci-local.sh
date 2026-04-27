@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 IMAGE_TAG="${IMAGE_TAG:-canokey-fido-ci-local}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 BUILD_DIR="${BUILD_DIR:-build-fido-local}"
+DOCKERFILE="${DOCKERFILE:-${SCRIPT_DIR}/Dockerfile.fido-local}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required" >&2
@@ -14,10 +15,15 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
-  docker build --platform "${DOCKER_PLATFORM}" -t "${IMAGE_TAG}" -f "${SCRIPT_DIR}/Dockerfile" "${REPO_ROOT}"
+  docker build --platform "${DOCKER_PLATFORM}" -t "${IMAGE_TAG}" -f "${DOCKERFILE}" "${REPO_ROOT}"
 fi
 
-docker run --rm -it \
+DOCKER_RUN_FLAGS=(--rm -i)
+if [ -t 0 ] && [ -t 1 ]; then
+  DOCKER_RUN_FLAGS+=( -t )
+fi
+
+docker run "${DOCKER_RUN_FLAGS[@]}" \
   --platform "${DOCKER_PLATFORM}" \
   -v "${REPO_ROOT}:/work" \
   -w /work \
@@ -77,7 +83,11 @@ PY
 echo 1 >/tmp/canokey-test-nfc
 pushd fido2-tests >/dev/null
 for target in "$@"; do
-  python3 -m pytest --color=yes --vendor canokeys --nfc "${target}"
+  if ! python3 -m pytest --color=yes --vendor canokeys --nfc "${target}"; then
+    echo "===== /tmp/pcscd.log ====="
+    cat /tmp/pcscd.log || true
+    exit 1
+  fi
 done
 popd >/dev/null
 EOF

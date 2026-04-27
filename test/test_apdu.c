@@ -177,6 +177,46 @@ static void test_fido_chained_make_credential_nfc(void **state) {
   assert_int_equal(rapdu.data[0], 0x02);
 }
 
+static void test_fido_ctap1_register_nfc(void **state) {
+  (void)state;
+
+  static const uint8_t select_fido[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+  };
+  static const uint8_t register_apdu[] = {
+      0x00, 0x01, 0x00, 0x00, 0x40, 0xE0, 0x78, 0xA7, 0xB2, 0xCA, 0xC4, 0x1D, 0xDC, 0x13, 0x14, 0x72,
+      0x90, 0x76, 0xB6, 0xDF, 0xC1, 0xCD, 0x53, 0x45, 0x50, 0xFE, 0x0A, 0x78, 0xB8, 0x28, 0x5D, 0x8F,
+      0x06, 0xEC, 0x37, 0xC9, 0xBD, 0xBF, 0xAB, 0xC3, 0x74, 0x32, 0x95, 0x8B, 0x06, 0x33, 0x60, 0xD3,
+      0xAD, 0x64, 0x61, 0xC9, 0xC4, 0x73, 0x5A, 0xE7, 0xF8, 0xED, 0xD4, 0x65, 0x92, 0xA5, 0xE0, 0xF0,
+      0x14, 0x52, 0xB2, 0xE4, 0xB5, 0x00,
+  };
+
+  uint8_t c_buf[512], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  set_nfc_state(1);
+
+  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, register_apdu, sizeof(register_apdu)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_true(rapdu.len > 0);
+  assert_int_equal(rapdu.data[0], 0x05);
+
+  uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+  size_t total = rapdu.len;
+  while (rapdu.sw != SW_NO_ERROR) {
+    assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+    process_apdu(&capdu, &rapdu);
+    total += rapdu.len;
+  }
+
+  assert_true(total >= rapdu.len);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -208,6 +248,7 @@ int main() {
       cmocka_unit_test(test_output_chaining),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
+      cmocka_unit_test(test_fido_ctap1_register_nfc),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
