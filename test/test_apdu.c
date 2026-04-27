@@ -247,6 +247,62 @@ static void test_fido_cbor_after_reset_without_select(void **state) {
   assert_int_equal(rapdu.data[0], 0x00);
 }
 
+static void test_get_response_after_reset_without_pending_response(void **state) {
+  (void)state;
+
+  static const uint8_t get_response[] = {
+      0x00,
+      0xC0,
+      0x00,
+      0x00,
+      0x2D,
+  };
+
+  uint8_t c_buf[64], r_buf[64];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
+static void test_fido_magic_reboot_after_reset_without_select(void **state) {
+  (void)state;
+
+  static const uint8_t magic_reboot_apdu[] = {
+      0x00,
+      0xEE,
+      0x00,
+      0x00,
+      0x04,
+      0x12,
+      0x56,
+      0xAB,
+      0xF0,
+  };
+
+  uint8_t c_buf[64], r_buf[64];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(build_capdu(&capdu, magic_reboot_apdu, sizeof(magic_reboot_apdu)), 0);
+  process_apdu(&capdu, &rapdu);
+
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -280,6 +336,8 @@ int main() {
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
+      cmocka_unit_test(test_get_response_after_reset_without_pending_response),
+      cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

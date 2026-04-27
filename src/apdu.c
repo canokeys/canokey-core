@@ -81,6 +81,9 @@ typedef struct {
 
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
   if (capdu->cla == 0x80 && capdu->ins == 0x10) return 1;
+#ifdef TEST
+  if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
+#endif
   if (capdu->cla != 0x00) return 0;
 
   switch (capdu->ins) {
@@ -387,6 +390,11 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   if (!is_get_response) apdu_response_source_clear();
   LE = MIN(LE, APDU_BUFFER_SIZE);
   if (is_get_response) { // GET RESPONSE
+    if (!apdu_response_source_active() && rapdu_chaining.sent >= rapdu_chaining.rapdu.len) {
+      LL = 0;
+      SW = SW_COMMAND_NOT_ALLOWED;
+      return;
+    }
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
     apdu_output(&rapdu_chaining, rapdu);
     return;
