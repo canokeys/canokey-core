@@ -245,7 +245,7 @@ restart:
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
-  if (ex->sent == 0) {
+  if (ex->sent == 0 && !response_source.active) {
     response_tail_offset = 0;
     response_tail_len = 0;
   }
@@ -253,12 +253,31 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
   if (response_source.active) {
     uint32_t remaining = response_source.total_len - response_source.sent;
     uint16_t to_send = (uint16_t)MIN(remaining, sh->len);
+
+    // The caller writes SW to sh->data + sh->len after we return, which
+    // overwrites bytes that the response source may still need (e.g. the
+    // tail of the auth_data in the first chunk of an MC streaming response).
+    // Restore any bytes saved on the previous call.
+    if (response_tail_len != 0 && response_source.sent == response_tail_offset) {
+      memcpy(sh->data + response_tail_offset, response_tail, response_tail_len);
+      response_tail_len = 0;
+    }
+
     int read = response_source.read(response_source.ctx, response_source.sent, sh->data, to_send);
     if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {
       apdu_response_source_clear();
       sh->len = 0;
       sh->sw = SW_UNABLE_TO_PROCESS;
       return -1;
+    }
+
+    // Save the two bytes at the end of this chunk so that the SW byte
+    // write by the caller does not corrupt response source data.
+    if (sh->data == shared_io_buffer && remaining > (uint32_t)read) {
+      const uint16_t tail_len = 2;
+      memcpy(response_tail, sh->data + read, tail_len);
+      response_tail_offset = (uint16_t)read;
+      response_tail_len = tail_len;
     }
 
     sh->len = (uint16_t)read;
