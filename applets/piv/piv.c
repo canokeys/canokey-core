@@ -319,30 +319,33 @@ static int piv_read_tlv_len(piv_data_read_t read, void *ctx, size_t *off, uint16
   return 0;
 }
 
-static int piv_parse_general_authenticate(uint16_t auth_len, piv_data_read_t read, void *ctx, uint16_t pos[6],
-                                          uint16_t len[6]) {
+static uint16_t piv_parse_general_authenticate(uint16_t auth_len, piv_data_read_t read, void *ctx, uint16_t pos[6],
+                                               uint16_t len[6]) {
   uint8_t b;
-  if (auth_len < 2 || piv_read_u8(read, ctx, 0, &b) < 0 || b != 0x7C) return -1;
+  if (auth_len < 2 || piv_read_u8(read, ctx, 0, &b) < 0) return SW_WRONG_LENGTH;
+  if (b != 0x7C) return SW_WRONG_DATA;
 
   size_t off = 1;
   uint16_t value_len;
-  if (piv_read_tlv_len(read, ctx, &off, auth_len, &value_len) < 0 || off + value_len != auth_len) return -1;
+  if (piv_read_tlv_len(read, ctx, &off, auth_len, &value_len) < 0 || off + value_len != auth_len)
+    return SW_WRONG_LENGTH;
 
   const size_t value_end = off + value_len;
   while (off < value_end) {
     uint8_t tag;
     if (piv_read_u8(read, ctx, off++, &tag) < 0 || (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85))
-      return -1;
+      return SW_WRONG_DATA;
 
     uint16_t data_len;
-    if (piv_read_tlv_len(read, ctx, &off, auth_len, &data_len) < 0 || off + data_len > value_end) return -1;
+    if (piv_read_tlv_len(read, ctx, &off, auth_len, &data_len) < 0 || off + data_len > value_end)
+      return SW_WRONG_LENGTH;
     len[tag - 0x80] = data_len;
     pos[tag - 0x80] = off;
     off += data_len;
     DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
   }
 
-  return off == value_end ? 0 : -1;
+  return off == value_end ? SW_NO_ERROR : SW_WRONG_LENGTH;
 }
 
 static int piv_set_7c_response(uint8_t inner_tag, const uint8_t *data, uint16_t data_len, uint8_t *rdata,
@@ -837,11 +840,15 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     EXCEPT(SW_WRONG_P1P2);
   }
 
+  uint16_t pos[6] = {0}, len[6] = {0};
+  const uint16_t parse_sw = piv_parse_general_authenticate(auth_len, read, ctx, pos, len);
+  if (parse_sw != SW_NO_ERROR) EXCEPT(parse_sw);
+
   ck_key_t key;
   if (P2 == 0x9B) { // Card admin
     if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
-      EXCEPT(SW_WRONG_DATA);
+      EXCEPT(SW_WRONG_P1P2);
     }
   }
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
@@ -853,9 +860,6 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     DBG_MSG("The value of P1 mismatches the key specified by P2\n");
     EXCEPT(SW_WRONG_P1P2);
   }
-
-  uint16_t pos[6] = {0}, len[6] = {0};
-  if (piv_parse_general_authenticate(auth_len, read, ctx, pos, len) < 0) EXCEPT(SW_WRONG_LENGTH);
 
   // User presence test
   if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS)
