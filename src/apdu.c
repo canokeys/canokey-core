@@ -413,6 +413,9 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
         }
 #endif
         if (i != current_applet) {
+          if (current_applet == APPLET_FIDO) {
+            ctap_deselect();
+          }
           applets_poweroff();
           fido_capdu_reset();
         }

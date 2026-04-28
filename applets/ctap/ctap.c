@@ -547,11 +547,14 @@ static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
 
 void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
 
+void ctap_deselect(void) {
+  last_cmd = CTAP_INVALID_CMD;
+  ctap_get_assertion_reset_state();
+}
+
 void ctap_poweroff(void) {
   current_cmd_src = CTAP_SRC_NONE;
   current_apdu_request_from_pke = false;
-  last_cmd = CTAP_INVALID_CMD;
-  ctap_get_assertion_reset_state();
   ctap_credential_management_reset_state();
   ctap_nfc_pending_reset();
   if (pke_buffer_release(PKE_BUFFER_OWNER_CTAP) == 0) {

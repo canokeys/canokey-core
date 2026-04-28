@@ -248,7 +248,7 @@ static void test_fido_cbor_after_reset_without_select(void **state) {
   assert_int_equal(rapdu.data[0], 0x00);
 }
 
-static void test_ctap_poweroff_clears_get_next_assertion_state(void **state) {
+static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
   (void)state;
 
   uint8_t req[] = {0x08};
@@ -260,7 +260,7 @@ static void test_ctap_poweroff_clears_get_next_assertion_state(void **state) {
   applets_install();
 
   ctap_test_seed_get_next_assertion_state();
-  ctap_poweroff();
+  ctap_deselect();
 
   assert_int_equal(ctap_process_cbor_with_src(req, sizeof(req), resp, &resp_len, CTAP_SRC_CCID), 0);
   assert_int_equal(resp_len, 1);
@@ -356,7 +356,7 @@ int main() {
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
-      cmocka_unit_test(test_ctap_poweroff_clears_get_next_assertion_state),
+      cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
   };
