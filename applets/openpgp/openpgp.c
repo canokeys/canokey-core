@@ -134,7 +134,10 @@ static uint8_t *openpgp_crypto_buffer(void) { return openpgp_crypto_buffer_stora
 
 static int openpgp_pke_acquire(void) {
   if (openpgp_pke_owned) return 0;
-  if (pke_buffer_acquire(PKE_BUFFER_OWNER_OPENPGP) < 0) return -1;
+  if (pke_buffer_acquire(PKE_BUFFER_OWNER_OPENPGP) < 0) {
+    DBG_MSG("OpenPGP PKE acquire failed\n");
+    return -1;
+  }
   openpgp_pke_owned = 1;
   return 0;
 }
@@ -1425,6 +1428,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (import_key_path != NULL) {
     if (pke_buffer_read(0, &key, sizeof(key)) < 0) {
+      DBG_MSG("Import state restore failed\n");
       openpgp_import_reset();
       return -1;
     }
@@ -1500,8 +1504,12 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     }
     p += *p + 1;
 
-    if (openpgp_pke_acquire() < 0) return -1;
+    if (openpgp_pke_acquire() < 0) {
+      DBG_MSG("Import could not acquire PKE buffer\n");
+      return -1;
+    }
     if (ck_read_key_metadata(key_path, &key.meta) < 0) {
+      DBG_MSG("Import metadata read failed for %s\n", key_path);
       memzero(&key, sizeof(key));
       openpgp_import_reset();
       return -1;
@@ -1547,6 +1555,7 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   import_received += LC;
   if ((CLA & 0x10) != 0) {
     if (pke_buffer_write(0, &key, sizeof(key)) < 0) {
+      DBG_MSG("Import state save failed\n");
       memzero(&key, sizeof(key));
       openpgp_import_reset();
       return -1;
