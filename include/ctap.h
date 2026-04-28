@@ -13,6 +13,7 @@ typedef enum {
 } ctap_src_t;
 
 uint8_t ctap_install(uint8_t reset);
+void ctap_poweroff(void);
 void ctap_schedule_runtime_reset(void);
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu);

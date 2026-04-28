@@ -412,7 +412,10 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
           return;
         }
 #endif
-        if (i != current_applet) applets_poweroff();
+        if (i != current_applet) {
+          applets_poweroff();
+          fido_capdu_reset();
+        }
         current_applet = i;
         DBG_MSG("applet switched to: %d\n", current_applet);
         break;

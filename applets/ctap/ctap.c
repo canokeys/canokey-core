@@ -522,6 +522,16 @@ static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
 
 void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
 
+void ctap_poweroff(void) {
+  current_cmd_src = CTAP_SRC_NONE;
+  current_apdu_request_from_pke = false;
+  ctap_credential_management_reset_state();
+  ctap_nfc_pending_reset();
+  if (pke_buffer_release(PKE_BUFFER_OWNER_CTAP) == 0) {
+    pke_buffer_clear();
+  }
+}
+
 uint8_t ctap_install(uint8_t reset) {
   const bool has_persistent_state = get_file_size(LB_FILE) >= 0;
   const bool runtime_reset = reset || runtime_reset_pending || !has_persistent_state;

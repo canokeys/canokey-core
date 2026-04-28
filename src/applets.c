@@ -23,6 +23,7 @@ void applets_install(void) {
 }
 
 void applets_poweroff(void) {
+  ctap_poweroff();
   piv_poweroff();
   oath_poweroff();
   admin_poweroff();
