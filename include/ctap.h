@@ -25,6 +25,9 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
 int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
 int ctap_nfc_pending_active(void);
+#ifdef TEST
+void ctap_test_seed_get_next_assertion_state(void);
+#endif
 static int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   return ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_CCID);
 }

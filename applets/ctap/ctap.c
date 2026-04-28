@@ -154,6 +154,10 @@ static CTAP_mem_stream_state mem_stream_state;
 static CTAP_const_stream_state const_stream_state;
 static CTAP_nfc_pending_state nfc_pending_state;
 static CTAP_credential_management_state cred_mgmt_state;
+static CTAP_get_assertion ga;
+static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
+static bool uv, up, user_details;
+static uint32_t timer;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
 #define ctap_request_workspace applet_session_scratch.openpgp_crypto
 static uint8_t *stream_resp_base;
@@ -452,6 +456,27 @@ static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acqu
 
 static void ctap_credential_management_reset_state(void) { memset(&cred_mgmt_state, 0, sizeof(cred_mgmt_state)); }
 
+static void ctap_get_assertion_reset_state(void) {
+  memset(&ga, 0, sizeof(ga));
+  memset(credential_list, 0, sizeof(credential_list));
+  number_of_credentials = 0;
+  credential_counter = 0;
+  uv = false;
+  up = false;
+  user_details = false;
+  timer = 0;
+}
+
+#ifdef TEST
+void ctap_test_seed_get_next_assertion_state(void) {
+  ctap_get_assertion_reset_state();
+  last_cmd = CTAP_GET_ASSERTION;
+  number_of_credentials = 2;
+  credential_counter = 1;
+  timer = device_get_tick();
+}
+#endif
+
 static void ctap_nfc_pending_reset(void) {
   if (nfc_pending_state.request_in_pke) {
     if (current_apdu_request_from_pke) {
@@ -525,6 +550,8 @@ void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
 void ctap_poweroff(void) {
   current_cmd_src = CTAP_SRC_NONE;
   current_apdu_request_from_pke = false;
+  last_cmd = CTAP_INVALID_CMD;
+  ctap_get_assertion_reset_state();
   ctap_credential_management_reset_state();
   ctap_nfc_pending_reset();
   if (pke_buffer_release(PKE_BUFFER_OWNER_CTAP) == 0) {
@@ -541,6 +568,7 @@ uint8_t ctap_install(uint8_t reset) {
   if (runtime_reset) {
     consecutive_pin_counter = 3;
     last_cmd = CTAP_INVALID_CMD;
+    ctap_get_assertion_reset_state();
     ctap_credential_management_reset_state();
   }
   current_cmd_src = CTAP_SRC_NONE;
@@ -1301,11 +1329,6 @@ step12:
 
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
-  static CTAP_get_assertion ga;
-  static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_counter;
-  static bool uv, up, user_details;
-  static uint32_t timer;
-
   CTAP_discoverable_credential dc = {0}; // We use dc to store the selected credential
   uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
   ecc_key_t key; // TODO: cleanup
