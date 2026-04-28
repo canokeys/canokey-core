@@ -20,10 +20,47 @@ static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
 static uint8_t inf_sending;
+static uint8_t aggregate_get_response;
 static uint16_t apdu_buffer_rx_size, apdu_buffer_tx_size;
 static uint16_t apdu_buffer_sent, last_sent;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
+
+static uint8_t is_native_u2f_apdu(const CAPDU *capdu) {
+  if (capdu->cla != 0x00) return 0;
+
+  switch (capdu->ins) {
+  case 0x01: // U2F_REGISTER
+  case 0x02: // U2F_AUTHENTICATE
+  case 0x03: // U2F_VERSION
+    return 1;
+  case 0xA4: // U2F_SELECT, distinct from ISO SELECT by P1/P2
+    return !(capdu->p1 == 0x04 && capdu->p2 == 0x00);
+  default:
+    return 0;
+  }
+}
+
+static int load_next_aggregated_chunk(void) {
+  CAPDU capdu = {
+      .data = shared_io_buffer, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .le = 0x100, .lc = 0, .extended = 0};
+  RAPDU rapdu = {.data = shared_io_buffer};
+
+  device_set_timeout(send_wtx, WTX_PERIOD);
+  process_apdu(&capdu, &rapdu);
+  device_set_timeout(NULL, 0);
+
+  apdu_buffer_sent = 0;
+  if (HI(rapdu.sw) == 0x61) {
+    apdu_buffer_tx_size = rapdu.len;
+    return 1;
+  }
+
+  shared_io_buffer[rapdu.len] = HI(rapdu.sw);
+  shared_io_buffer[rapdu.len + 1] = LO(rapdu.sw);
+  apdu_buffer_tx_size = rapdu.len + 2;
+  return 0;
+}
 
 void nfc_init(void) {
   block_number = 1;
@@ -31,6 +68,7 @@ void nfc_init(void) {
   apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
+  aggregate_get_response = 0;
   state_spinlock = 0;
   next_state = TO_RECEIVE;
   // NFC interface uses shared_io_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
@@ -46,6 +84,7 @@ static void nfc_error_handler(int code __attribute__((unused))) {
   apdu_buffer_tx_size = 0;
   last_sent = 0;
   inf_sending = 0;
+  aggregate_get_response = 0;
   state_spinlock = 0;
   next_state = TO_RECEIVE;
 #if NFC_CHIP == NFC_CHIP_FM11NT
@@ -86,6 +125,14 @@ void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
 
 static void send_apdu_buffer(uint8_t resend) {
   if (resend) apdu_buffer_sent -= last_sent;
+  else if (aggregate_get_response && apdu_buffer_sent == apdu_buffer_tx_size) {
+    const int more = load_next_aggregated_chunk();
+    if (more < 0) {
+      nfc_error_handler(-7);
+      return;
+    }
+    aggregate_get_response = (uint8_t)more;
+  }
   last_sent = apdu_buffer_tx_size - apdu_buffer_sent;
   if (last_sent == 0) {
     nfc_error_handler(-2);
@@ -93,10 +140,10 @@ static void send_apdu_buffer(uint8_t resend) {
   }
   if (last_sent > 29) last_sent = 29;
   uint8_t prologue = block_number | 0x02;
-  if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent) prologue |= PCB_I_CHAINING;
+  if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent || aggregate_get_response) prologue |= PCB_I_CHAINING;
   nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, last_sent);
   apdu_buffer_sent += last_sent;
-  if (apdu_buffer_tx_size == apdu_buffer_sent) inf_sending = 0;
+  if (apdu_buffer_tx_size == apdu_buffer_sent && !aggregate_get_response) inf_sending = 0;
 }
 
 static void send_wtx(void) {
@@ -144,9 +191,14 @@ void nfc_loop(void) {
         device_set_timeout(NULL, 0);
       }
 
-      apdu_buffer_tx_size = LL + 2;
-      shared_io_buffer[LL] = HI(SW);
-      shared_io_buffer[LL + 1] = LO(SW);
+      aggregate_get_response = capdu->extended && is_native_u2f_apdu(capdu) && HI(SW) == 0x61;
+      if (aggregate_get_response) {
+        apdu_buffer_tx_size = LL;
+      } else {
+        apdu_buffer_tx_size = LL + 2;
+        shared_io_buffer[LL] = HI(SW);
+        shared_io_buffer[LL + 1] = LO(SW);
+      }
 
       apdu_buffer_rx_size = 0;
       apdu_buffer_sent = 0;
