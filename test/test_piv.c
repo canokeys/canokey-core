@@ -76,6 +76,12 @@ static void test_regression_fuzz(void **state) {
   }
 
   if (1) {
+    // valid card admin key ref with unsupported algorithm
+    uint8_t data[] = {0x00, 0x00};
+    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0xFF, 0x9B, SW_WRONG_DATA);
+  }
+
+  if (1) {
     // empty input
     uint8_t data[] = {};
     test_helper(data, sizeof(data), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);

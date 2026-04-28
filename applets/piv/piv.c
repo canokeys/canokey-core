@@ -841,7 +841,7 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   if (P2 == 0x9B) { // Card admin
     if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
-      EXCEPT(SW_WRONG_P1P2);
+      EXCEPT(SW_WRONG_DATA);
     }
   }
   if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
