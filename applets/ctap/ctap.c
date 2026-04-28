@@ -74,6 +74,13 @@ static int ctap_large_response_read_at(void *ctx, uint32_t offset, uint8_t *buf,
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
 
+typedef struct {
+  uint8_t last_subcommand;
+  int idx;
+  int n_rp;
+  uint64_t slots;
+} CTAP_credential_management_state;
+
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
 static bool runtime_reset_pending;
@@ -146,6 +153,7 @@ static CTAP_make_credential_stream_state mc_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
 static CTAP_const_stream_state const_stream_state;
 static CTAP_nfc_pending_state nfc_pending_state;
+static CTAP_credential_management_state cred_mgmt_state;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
 #define ctap_request_workspace applet_session_scratch.openpgp_crypto
 static uint8_t *stream_resp_base;
@@ -442,6 +450,8 @@ static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acqu
   return ret;
 }
 
+static void ctap_credential_management_reset_state(void) { memset(&cred_mgmt_state, 0, sizeof(cred_mgmt_state)); }
+
 static void ctap_nfc_pending_reset(void) {
   if (nfc_pending_state.request_in_pke) {
     if (current_apdu_request_from_pke) {
@@ -521,6 +531,7 @@ uint8_t ctap_install(uint8_t reset) {
   if (runtime_reset) {
     consecutive_pin_counter = 3;
     last_cmd = CTAP_INVALID_CMD;
+    ctap_credential_management_reset_state();
   }
   current_cmd_src = CTAP_SRC_NONE;
   ctap_nfc_pending_reset();
@@ -627,6 +638,7 @@ int ctap_consistency_check(void) {
   if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (attr.pending_add || attr.pending_delete) {
     DBG_MSG("Rolling back credential operations\n");
+    ctap_credential_management_reset_state();
     if (get_file_size(DC_FILE) >= ((int)attr.index + 1) * (int)sizeof(CTAP_discoverable_credential)) {
       CTAP_discoverable_credential dc;
       if (read_file(DC_FILE, &dc, attr.index * (int)sizeof(CTAP_discoverable_credential),
@@ -2063,17 +2075,14 @@ static uint8_t cm_find_credential(const credential_id *target, CTAP_discoverable
 }
 
 static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *params, size_t len) {
-  static uint8_t last_cm_cmd;
-
   CborParser parser;
   CTAP_credential_management cm;
+  CTAP_credential_management_state *state = &cred_mgmt_state;
   int ret = parse_credential_management(&parser, &cm, params, len);
   CHECK_PARSER_RET(ret);
   ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
 
-  static int idx, n_rp;  // for rp enumeration
-  static uint64_t slots; // for credential enumeration
   int size, counter;
   CborEncoder map, sub_map;
   uint8_t numbers = 0;
@@ -2084,7 +2093,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   if (cm.sub_command == CM_CMD_GET_CREDS_METADATA || cm.sub_command == CM_CMD_ENUMERATE_RPS_BEGIN ||
       cm.sub_command == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN || cm.sub_command == CM_CMD_DELETE_CREDENTIAL ||
       cm.sub_command == CM_CMD_UPDATE_USER_INFORMATION) {
-    last_cm_cmd = cm.sub_command;
+    ctap_credential_management_reset_state();
+    state->last_subcommand = cm.sub_command;
     uint8_t *buf = (uint8_t *)&dc; // buffer reuse
     _Static_assert(sizeof(CTAP_dc_general_attr) < sizeof(dc), "CTAP_dc_general_attr buffer overflow");
     if (read_attr(DC_FILE, DC_GENERAL_ATTR, buf, sizeof(CTAP_dc_general_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -2129,41 +2139,44 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (cp_has_associated_rp_id()) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     size = get_file_size(DC_META_FILE), counter = 0;
-    n_rp = size / (int)sizeof(CTAP_rp_meta);
+    state->n_rp = size / (int)sizeof(CTAP_rp_meta);
     KEEPALIVE();
-    for (int i = n_rp - 1; i >= 0; --i) {
+    for (int i = state->n_rp - 1; i >= 0; --i) {
       size = read_file(DC_META_FILE, &meta, i * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (meta.slots > 0) {
-        idx = i;
+        state->idx = i;
         ++counter;
       }
     }
     DBG_MSG("%d RPs found\n", counter);
-    size = read_file(DC_META_FILE, &meta, idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
+    size = read_file(DC_META_FILE, &meta, state->idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     goto encode_rp_begin;
 
   case CM_CMD_ENUMERATE_RPS_GET_NEXT_RP:
-    if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT ||
-        (last_cm_cmd != CM_CMD_ENUMERATE_RPS_BEGIN && last_cm_cmd != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP)) {
-      last_cm_cmd = 0;
+    if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || (state->last_subcommand != CM_CMD_ENUMERATE_RPS_BEGIN &&
+                                                   state->last_subcommand != CM_CMD_ENUMERATE_RPS_GET_NEXT_RP)) {
+      ctap_credential_management_reset_state();
       return CTAP2_ERR_NOT_ALLOWED;
     }
-    last_cm_cmd = cm.sub_command;
+    state->last_subcommand = cm.sub_command;
     {
       bool found = false;
-      for (int i = idx + 1; i < n_rp; ++i) {
+      for (int i = state->idx + 1; i < state->n_rp; ++i) {
         size = read_file(DC_META_FILE, &meta, i * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
         if (meta.slots > 0) {
           DBG_MSG("Fetch RP at %d\n", i);
-          idx = i;
+          state->idx = i;
           found = true;
           break;
         }
       }
-      if (!found) return CTAP2_ERR_NOT_ALLOWED;
+      if (!found) {
+        ctap_credential_management_reset_state();
+        return CTAP2_ERR_NOT_ALLOWED;
+      }
     }
     counter = -1; // signal: no TOTAL_RPS field
   encode_rp_begin:
@@ -2198,28 +2211,39 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     include_numbers = true;
     size = get_file_size(DC_META_FILE);
-    n_rp = size / (int)sizeof(CTAP_rp_meta);
+    state->n_rp = size / (int)sizeof(CTAP_rp_meta);
     KEEPALIVE();
-    for (idx = 0; idx < n_rp; ++idx) {
-      size = read_file(DC_META_FILE, &meta, idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
+    for (state->idx = 0; state->idx < state->n_rp; ++state->idx) {
+      size = read_file(DC_META_FILE, &meta, state->idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (meta.slots == 0) continue;
       if (memcmp_s(meta.rp_id_hash, cm.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) break;
     }
-    if (idx == n_rp) {
+    if (state->idx == state->n_rp) {
       DBG_MSG("Specified RP not found\n");
       return CTAP2_ERR_NO_CREDENTIALS;
     }
-    DBG_MSG("Use meta at slot %d: ", idx);
+    DBG_MSG("Use meta at slot %d: ", state->idx);
     PRINT_HEX((const uint8_t *)&meta, sizeof(meta));
-    slots = meta.slots;
+    state->slots = meta.slots;
   generate_credential_response:
-    DBG_MSG("Current slot bitmap: 0x%llx\n", slots);
-    idx = get_next_slot(&slots, &numbers);
-    size =
-        read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential));
-    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    DBG_MSG("Slot %d printed\n", idx);
+    for (;;) {
+      DBG_MSG("Current slot bitmap: 0x%llx\n", state->slots);
+      state->idx = get_next_slot(&state->slots, &numbers);
+      if (state->idx < 0) {
+        ctap_credential_management_reset_state();
+        return include_numbers ? CTAP2_ERR_NO_CREDENTIALS : CTAP2_ERR_NOT_ALLOWED;
+      }
+      size = read_file(DC_FILE, &dc, state->idx * (int)sizeof(CTAP_discoverable_credential),
+                       sizeof(CTAP_discoverable_credential));
+      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (dc.deleted) {
+        DBG_MSG("Skip deleted slot %d\n", state->idx);
+        continue;
+      }
+      DBG_MSG("Slot %d printed\n", state->idx);
+      break;
+    }
     uint8_t *stream_resp_start = encoder->data.ptr;
     ret = cbor_encoder_create_map(encoder, &map, 4 + (uint8_t)include_numbers + (uint8_t)dc.has_large_blob_key);
     CHECK_CBOR_RET(ret);
@@ -2320,12 +2344,12 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     break;
 
   case CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL:
-    if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || (last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
-                                                   last_cm_cmd != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)) {
-      last_cm_cmd = 0;
+    if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || (state->last_subcommand != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
+                                                   state->last_subcommand != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)) {
+      ctap_credential_management_reset_state();
       return CTAP2_ERR_NOT_ALLOWED;
     }
-    last_cm_cmd = cm.sub_command;
+    state->last_subcommand = cm.sub_command;
     include_numbers = false;
     goto generate_credential_response;
 
@@ -2333,22 +2357,22 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     {
-      uint8_t err = cm_find_credential(&cm.credential_id, &dc, &idx);
+      uint8_t err = cm_find_credential(&cm.credential_id, &dc, &state->idx);
       if (err) return err;
     }
 
     CTAP_dc_general_attr attr;
     if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    attr.index = (uint8_t)idx;
+    attr.index = (uint8_t)state->idx;
     attr.pending_delete = 1;
     if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 
     // delete dc first
     dc.deleted = true;
-    if (write_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential),
-                   0) < 0)
+    if (write_file(DC_FILE, &dc, state->idx * (int)sizeof(CTAP_discoverable_credential),
+                   sizeof(CTAP_discoverable_credential), 0) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
-    DBG_MSG("Slot %d deleted\n", idx);
+    DBG_MSG("Slot %d deleted\n", state->idx);
     // delete the meta then
     size = get_file_size(DC_META_FILE);
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -2359,7 +2383,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (memcmp_s(meta.rp_id_hash, cm.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
         DBG_MSG("Orig slot bitmap: 0x%llx\n", meta.slots);
-        meta.slots &= ~(1ull << idx);
+        meta.slots &= ~(1ull << state->idx);
         DBG_MSG("New slot bitmap: 0x%llx\n", meta.slots);
         size = write_file(DC_META_FILE, &meta, i * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
         if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -2379,7 +2403,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     KEEPALIVE();
     {
-      uint8_t err = cm_find_credential(&cm.credential_id, &dc, &idx);
+      uint8_t err = cm_find_credential(&cm.credential_id, &dc, &state->idx);
       if (err) return err;
     }
     if (dc.user.id_size != cm.user.id_size || memcmp_s(&dc.user.id, &cm.user.id, dc.user.id_size) != 0) {
@@ -2387,10 +2411,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       return CTAP1_ERR_INVALID_PARAMETER;
     }
     memcpy(&dc.user, &cm.user, sizeof(user_entity));
-    if (write_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential),
-                   0) < 0)
+    if (write_file(DC_FILE, &dc, state->idx * (int)sizeof(CTAP_discoverable_credential),
+                   sizeof(CTAP_discoverable_credential), 0) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
-    DBG_MSG("Slot %d updated\n", idx);
+    DBG_MSG("Slot %d updated\n", state->idx);
     break;
   }
 
