@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "device.h"
+#include "ctap.h"
 #include "ctaphid.h"
 #include "fabrication.h"
 #include "applets.h"
@@ -113,6 +114,7 @@ static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, ui
 static void emulate_reboot(void) {
   testmode_set_initial_ticks(0);
   testmode_set_initial_ticks(device_get_tick());
+  ctap_schedule_runtime_reset();
   applets_install();
 }
 

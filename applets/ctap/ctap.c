@@ -76,6 +76,7 @@ static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
 
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
+static bool runtime_reset_pending;
 // source of APDU in process
 static ctap_src_t current_cmd_src;
 // SM2 attr
@@ -509,18 +510,22 @@ static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
   return CTAP_NFC_KEEPALIVE_PENDING;
 }
 
+void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
+
 uint8_t ctap_install(uint8_t reset) {
   const bool has_persistent_state = get_file_size(LB_FILE) >= 0;
+  const bool runtime_reset = reset || runtime_reset_pending || !has_persistent_state;
   // Reader reconnects may re-run ctap_install(0) without a real device reset.
   // Preserve in-flight CTAP command state in that case so CM/GA "next" commands
   // can continue across implicit PowerICC cycles.
-  if (reset || !has_persistent_state) {
+  if (runtime_reset) {
     consecutive_pin_counter = 3;
     last_cmd = CTAP_INVALID_CMD;
   }
   current_cmd_src = CTAP_SRC_NONE;
   ctap_nfc_pending_reset();
-  cp_initialize(reset != 0);
+  cp_initialize(runtime_reset);
+  runtime_reset_pending = false;
   if (!reset && has_persistent_state) {
     if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;

@@ -449,6 +449,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
       printf("MAGIC REBOOT command received!\r\n");
       testmode_set_initial_ticks(0);
       testmode_set_initial_ticks(device_get_tick());
+      ctap_schedule_runtime_reset();
       ctap_install(0);
       SW = 0x9000;
       LL = 0;
