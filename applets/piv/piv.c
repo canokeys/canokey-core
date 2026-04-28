@@ -926,15 +926,10 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
         input_len = PRIVATE_KEY_LENGTH[key.meta.type];
         memmove(piv_crypto_buffer + (input_len - len[IDX_CHALLENGE]), piv_crypto_buffer, len[IDX_CHALLENGE]);
         memzero(piv_crypto_buffer, input_len - len[IDX_CHALLENGE]);
-      } else {
-        input_len = PRIVATE_KEY_LENGTH[key.meta.type];
-        if (len[IDX_CHALLENGE] > input_len) {
-          memzero(&key, sizeof(key));
-          memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
-          EXCEPT(SW_WRONG_LENGTH);
-        }
+      } else if (key.meta.type == ED25519) {
         input_len = len[IDX_CHALLENGE];
-      }
+      } else
+        EXCEPT(SW_WRONG_DATA);
       int sig_len = ck_sign(&key, piv_crypto_buffer, input_len, RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");

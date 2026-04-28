@@ -8,6 +8,7 @@
 #include <cmocka.h>
 #include <crypto-util.h>
 #include <fs.h>
+#include <key.h>
 #include <lfs.h>
 #include <piv.h>
 
@@ -132,6 +133,41 @@ static void test_delete_certificate_object(void **state) {
   assert_int_equal(get_file_size("piv-pauc"), 0);
 }
 
+static void test_ed25519_general_authenticate_long_message(void **state) {
+  (void)state;
+
+  ck_key_t key = {.meta = {.type = ED25519,
+                           .origin = KEY_ORIGIN_GENERATED,
+                           .usage = SIGN,
+                           .pin_policy = PIN_POLICY_NEVER,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  assert_int_equal(ck_generate_key(&key), 0);
+  assert_int_equal(ck_write_key("piv-pauk", &key), 0);
+
+  enum { MSG_LEN = 130 };
+  uint8_t data[8 + MSG_LEN] = {0};
+  data[0] = 0x7C;
+  data[1] = 0x81;
+  data[2] = MSG_LEN + 5;
+  data[3] = 0x82;
+  data[4] = 0x00;
+  data[5] = 0x81;
+  data[6] = 0x81;
+  data[7] = MSG_LEN;
+  for (uint8_t i = 0; i < MSG_LEN; ++i)
+    data[8 + i] = i;
+
+  uint8_t r_buf[128];
+  CAPDU C = {.data = data, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0xE0, .p2 = 0x9A, .lc = sizeof(data)};
+  RAPDU R = {.data = r_buf};
+
+  piv_process_apdu(&C, &R);
+
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 68);
+  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -159,6 +195,7 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_delete_certificate_object),
+      cmocka_unit_test(test_ed25519_general_authenticate_long_message),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
