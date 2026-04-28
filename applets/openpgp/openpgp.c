@@ -270,6 +270,25 @@ static int openpgp_set_result(const uint8_t *data, uint16_t len, uint8_t *inline
   return 0;
 }
 
+static int openpgp_encoded_public_key_length(key_type_t type, bool include_length) {
+  int len = ck_encoded_public_key_length(type, include_length);
+  if (len < 0) return len;
+  return type == X25519 ? len + 1 : len;
+}
+
+static int openpgp_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
+  if (key->meta.type != X25519) return ck_encode_public_key(key, buf, include_length);
+
+  int off = 0;
+  if (include_length) buf[off++] = PUBLIC_KEY_LENGTH[X25519] + 3; // tag, length, and OpenPGP native-MPI prefix
+  buf[off++] = 0x86;
+  buf[off++] = PUBLIC_KEY_LENGTH[X25519] + 1;
+  buf[off++] = 0x40;
+  memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[X25519]);
+  swap_big_number_endian(&buf[off]);
+  return off + PUBLIC_KEY_LENGTH[X25519];
+}
+
 static int openpgp_send_cert(const CAPDU *capdu, RAPDU *rapdu, const char *path) {
   UNUSED(capdu);
   int len = get_file_size(path);
@@ -825,7 +844,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     EXCEPT(SW_WRONG_P1P2);
   }
 
-  const int encoded_len = ck_encoded_public_key_length(key.meta.type, true);
+  const int encoded_len = openpgp_encoded_public_key_length(key.meta.type, true);
   DBG_MSG("Generate pubkey length: type=%u encoded=%d inline_limit=%u\n", key.meta.type, encoded_len,
           APDU_COMMAND_BUFFER_SIZE - 2);
   if (encoded_len < 0 || encoded_len + 2 > MAX_PUBKEY_RESPONSE_LENGTH) {
@@ -842,7 +861,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     uint8_t response[MAX_PUBKEY_RESPONSE_LENGTH];
     response[0] = 0x7F;
     response[1] = 0x49;
-    int len = ck_encode_public_key(&key, &response[2], true);
+    int len = openpgp_encode_public_key(&key, &response[2], true);
     DBG_MSG("Generate pubkey encoded: len=%d\n", len);
     memzero(&key, sizeof(key));
     if (len < 0) {
@@ -863,7 +882,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     uint8_t *response = RDATA;
     response[0] = 0x7F;
     response[1] = 0x49;
-    int len = ck_encode_public_key(&key, &response[2], true);
+    int len = openpgp_encode_public_key(&key, &response[2], true);
     DBG_MSG("Generate pubkey inline encoded: len=%d\n", len);
     memzero(&key, sizeof(key));
     if (len < 0) return -1;
@@ -1032,12 +1051,15 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
       return -1;
     }
     *public_key_offset = (p - data) + 1; // Skip 0x04 prefix
-  } else {                               // For X25519
-    if (length != expected_pubkey_len) {
+  } else { // For X25519
+    if (length == expected_pubkey_len + 1 && *p == 0x40) {
+      *public_key_offset = (p - data) + 1;
+    } else if (length == expected_pubkey_len) {
+      *public_key_offset = p - data;
+    } else {
       DBG_MSG("Invalid public key length for X25519\n");
       return -1;
     }
-    *public_key_offset = p - data;
   }
 
   return 0;

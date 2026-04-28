@@ -606,7 +606,6 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
       return KEY_ERR_DATA;
     }
   } else {
-    if (key->meta.type == X25519) swap_big_number_endian(key->ecc.pri);
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
