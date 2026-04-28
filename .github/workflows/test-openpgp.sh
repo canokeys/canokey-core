@@ -86,6 +86,9 @@ LatestSubkey() {
   local cap=$1
   gpg -K --with-colons | awk -F: -v cap="$cap" '$1=="ssb" && $12 ~ cap {id=$5} END {if (id != "") print id}'
 }
+LatestAddedSubkey() {
+  gpg -K --with-colons | awk -F: '$1=="ssb" {id=$5} END {if (id != "") print id}'
+}
 LatestSubkeyGrip() {
   local cap=$1
   gpg -K --with-colons | awk -F: -v cap="$cap" '$1=="ssb" && $12 ~ cap {want=NR+2} NR==want {grip=$10} END {if (grip != "") print grip}'
@@ -129,9 +132,9 @@ gpg --card-status | grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
 GPGSign
 UserChecked 1
 Addkey 12 3
+Key2card "$(LatestAddedSubkey)" 2
 Addkey 10 3
-Key2cardLatest 'e' 2
-Key2cardLatest 'a' 3
+Key2card "$(LatestAddedSubkey)" 3
 echo 0 >/tmp/canokey-test-up
 GPGAuth
 UserChecked 0
@@ -171,37 +174,37 @@ echo "=== Phase: RSA-2048 key import ==="
 GPGReset
 gpg --card-status | grep -E 'Signature key.+none'
 Addkey 4 2048
-Key2cardLatest 'a' 3
+Key2card "$(LatestAddedSubkey)" 3
 Addkey 6 2048
-Key2cardLatest 'e' 2
+Key2card "$(LatestAddedSubkey)" 2
 GPGAuth
 GPGEnc
 Addkey 10 3
-Key2cardLatest 's' 1
+Key2card "$(LatestAddedSubkey)" 1
 GPGSign
 
 echo "=== Phase: ED25519/CV25519 key import ==="
 GPGReset
 Addkey 12 1
+Key2card "$(LatestAddedSubkey)" 2
 Addkey 10 1
-Key2cardLatest 'e' 2
-Key2cardLatest 'a' 3
+Key2card "$(LatestAddedSubkey)" 3
 GPGAuth
 GPGEnc
 Addkey 10 1
-Key2cardLatest 's' 1
+Key2card "$(LatestAddedSubkey)" 1
 GPGSign
 
 echo "=== Phase: RSA-4096 key import ==="
 GPGReset
 Addkey 4 4096
-Key2cardLatest 'a' 3
+Key2card "$(LatestAddedSubkey)" 3
 Addkey 6 4096
-Key2cardLatest 'e' 2
+Key2card "$(LatestAddedSubkey)" 2
 GPGAuth
 GPGEnc
 Addkey 4 4096
-Key2cardLatest 's' 1
+Key2card "$(LatestAddedSubkey)" 1
 GPGSign
 
 echo "=== Phase: RSA-2048 on-card generation ==="
