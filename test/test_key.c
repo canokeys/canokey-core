@@ -168,6 +168,26 @@ static void test_encode_eddsa(void **state) {
   assert_memory_equal(buf, expected, 35);
 }
 
+static void test_parse_openpgp_x25519(void **state) {
+  (void)state;
+
+  uint8_t buf[1024];
+  uint8_t imported[] = {
+      0x7F, 0x48, 0x02, 0x92, 0x20, 0x5F, 0x48, 0x20, 0x4F, 0x58, 0x3E, 0xB8, 0x7B, 0xDE, 0x05, 0x5D, 0x94, 0xEA,
+      0x5C, 0xC2, 0x08, 0xB8, 0x97, 0xD7, 0xA0, 0x7E, 0x59, 0xB8, 0xBA, 0x90, 0xF1, 0x03, 0xEE, 0x26, 0x9F, 0xF1,
+      0x4F, 0xE1, 0x7B, 0x70};
+
+  ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = ENCRYPT};
+  assert_int_equal(ck_parse_openpgp(&key, imported, sizeof(imported)), 0);
+
+  int size = ck_encode_public_key(&key, buf, true);
+  assert_int_equal(size, 35);
+  assert_int_not_equal(memcmp(buf + 3, "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+                                       "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+                              32),
+                       0);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -195,6 +215,7 @@ int main() {
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_eddsa),
+      cmocka_unit_test(test_parse_openpgp_x25519),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

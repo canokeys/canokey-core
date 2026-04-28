@@ -303,6 +303,9 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     const int n_leading_zeros = PRIVATE_KEY_LENGTH[key->meta.type] - data_pri_key_len;
     if ((size_t)(p + data_pri_key_len - buf) > buf_len) return KEY_ERR_LENGTH;
     memcpy(key->ecc.pri + n_leading_zeros, p, data_pri_key_len);
+    if (key->meta.type == X25519) {
+      swap_big_number_endian(key->ecc.pri); // OpenPGP imports X25519 private keys in little endian.
+    }
 
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
