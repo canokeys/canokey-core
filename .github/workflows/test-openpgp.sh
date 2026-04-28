@@ -60,6 +60,8 @@ debug-level 8
 log-file /tmp/canokey-test-gpg-agent.log
 EOF
 cat >~/.gnupg/scdaemon.conf <<'EOF'
+pcsc-driver /usr/lib/x86_64-linux-gnu/libpcsclite.so.1
+disable-ccid
 debug 6145
 log-file /tmp/canokey-test-scd.log
 EOF
