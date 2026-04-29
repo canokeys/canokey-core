@@ -14,7 +14,7 @@ if [ ! -d u2f-ref-code ]; then
 fi
 
 if [ ! -d fido2-tests ]; then
-  git clone --depth 1 -b dev-fido2v1 https://github.com/canokeys/fido2-tests.git
+  git clone https://github.com/canokeys/fido2-tests.git
   git -C fido2-tests checkout "${FIDO2_TESTS_REF}"
 fi
 
