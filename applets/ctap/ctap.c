@@ -2954,8 +2954,10 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
 
         uint8_t *pending_req = nfc_pending_state.request;
         if (nfc_pending_state.request_in_pke) {
-          if (nfc_pending_state.request_len > sizeof(ctap_request_workspace)) {
-            // Request is too large for workspace, use pke_buffer directly.
+          const uint8_t pending_cmd = ((const uint8_t *)pke_buffer_get_ptr())[0];
+          if (pending_cmd == CTAP_MAKE_CREDENTIAL || nfc_pending_state.request_len > sizeof(ctap_request_workspace)) {
+            // Keep large pending requests, and makeCredential replay, on the
+            // original PKE-backed buffer instead of aliasing openpgp_crypto.
             pending_req = (uint8_t *)pke_buffer_get_ptr();
           } else {
             if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
