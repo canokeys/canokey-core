@@ -348,19 +348,19 @@ uint8_t apdu_is_get_response(const CAPDU *capdu) {
 
 int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu,
                                    uint8_t is_get_response, uint16_t le_limit, APDU_MESSAGE_HANDLER handler) {
+  const uint16_t response_le = (uint16_t)MIN(capdu->le, le_limit);
   if (!handler) return -1;
 
   if (!is_get_response) apdu_response_source_clear();
-  capdu->le = MIN(capdu->le, le_limit);
   if (is_get_response) {
-    rapdu->len = (uint16_t)capdu->le;
+    rapdu->len = response_le;
     apdu_output(rapdu_chaining, rapdu);
     return 0;
   }
 
   rapdu_chaining->sent = 0;
   handler(capdu, &rapdu_chaining->rapdu);
-  rapdu->len = (uint16_t)capdu->le;
+  rapdu->len = response_le;
   apdu_output(rapdu_chaining, rapdu);
   return 0;
 }

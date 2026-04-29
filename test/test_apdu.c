@@ -135,6 +135,43 @@ static void test_ccid_power_on_clears_stale_session(void **state) {
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
 }
 
+static uint32_t observed_streaming_le;
+
+static int record_streaming_capdu_le(const CAPDU *capdu, RAPDU *rapdu) {
+  observed_streaming_le = capdu->le;
+  rapdu->len = 0;
+  rapdu->sw = SW_NO_ERROR;
+  return 0;
+}
+
+static void test_streaming_message_preserves_original_le_for_handler(void **state) {
+  (void)state;
+
+  static const uint8_t read_binary_extended[] = {
+      0x00,
+      0xB0,
+      0x00,
+      0x00,
+      0x00,
+      0x04,
+      0x01,
+  };
+
+  uint8_t c_buf[16], r_buf[16];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+  RAPDU_CHAINING rapdu_chaining = {.rapdu.data = r_buf};
+
+  observed_streaming_le = 0;
+
+  assert_int_equal(build_capdu(&capdu, read_binary_extended, sizeof(read_binary_extended)), 0);
+  assert_int_equal(capdu.le, 0x0401);
+  assert_int_equal(apdu_process_streaming_message(&rapdu_chaining, &capdu, &rapdu, 0, APDU_BUFFER_SIZE,
+                                                  record_streaming_capdu_le),
+                   0);
+  assert_int_equal(observed_streaming_le, 0x0401);
+}
+
 static void test_pke_buffer_fallback_for_ctap(void **state) {
   (void)state;
 
@@ -420,6 +457,7 @@ int main() {
       cmocka_unit_test(test_output_chaining),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
       cmocka_unit_test(test_ccid_power_on_clears_stale_session),
+      cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
