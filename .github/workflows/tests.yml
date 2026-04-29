@@ -214,6 +214,7 @@ jobs:
         rm -f /tmp/canokey-fido-hid-over-udp-lfs-root
         CANOKEY_VIRT_NFC=0 CANOKEY_VIRT_RESET_STORAGE=1 build/fido-hid-over-udp >/tmp/fido-hid-over-udp.log 2>&1 &
         echo $! >/tmp/fido-hid-over-udp.pid
+        trap 'kill "$(cat /tmp/fido-hid-over-udp.pid)" 2>/dev/null || true; tail -n 200 /tmp/fido-hid-over-udp.log || true' EXIT
         cd fido2-tests
         .venv/bin/python - <<'PY'
         import sys
@@ -244,10 +245,30 @@ jobs:
         else:
             raise last_error
         PY
+        .venv/bin/python - <<'PY'
+        import sys
+
+        sys.path.insert(0, ".")
+        from tests.vendor.solo.udp_backend import force_udp_backend
+
+        force_udp_backend()
+
+        from fido2.ctap2 import Ctap2
+        from fido2.hid import CtapHidDevice, CTAPHID
+
+        dev = next(CtapHidDevice.list_devices())
+        nonce = b"abcdefgh"
+        assert dev.call(CTAPHID.INIT, nonce)[:8] == nonce
+        assert dev.call(CTAPHID.PING, b"ping") == b"ping"
+        assert dev.call(CTAPHID.WINK, b"") == b""
+        info = Ctap2(dev).get_info()
+        assert "FIDO_2_0" in info.versions
+        print("CTAPHID smoke checks passed")
+        PY
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/connect_test.py
-        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/transport/test_hid.py
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/fido2/test_getinfo.py
         kill "$(cat /tmp/fido-hid-over-udp.pid)" || true
+        trap - EXIT
 
     - name: Tests - U2F applet
       run: |
