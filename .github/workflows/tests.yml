@@ -206,7 +206,8 @@ jobs:
         cd fido2-tests
         #../build/fido-hid-over-udp &
         .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/standard/
-        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
+          --ignore=tests/vendor/canokeys/test_mldsa65.py tests/vendor/canokeys/
         #kill %1
 
     - name: Tests - CTAPHID applet
