@@ -40,23 +40,15 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
-    if (device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB) != 0) {
-      ERR_MSG("Applet session busy\n");
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
-    }
-    if (acquire_apdu_buffer(BUFFER_OWNER_WEBUSB) != 0) {
+    if (acquire_apdu_interface(DEVICE_APPLET_SESSION_WEBUSB, BUFFER_OWNER_WEBUSB) != 0) {
       ERR_MSG("Busy\n");
-      device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }
-    device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
     // DBG_MSG("Buf Acquired\n");
     if (req->wLength > APDU_COMMAND_BUFFER_SIZE) {
       ERR_MSG("Overflow\n");
-      release_apdu_buffer(BUFFER_OWNER_WEBUSB);
-      device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
+      release_apdu_interface(DEVICE_APPLET_SESSION_WEBUSB, BUFFER_OWNER_WEBUSB);
       USBD_CtlError(pdev, req);
       return USBD_FAIL;
     }

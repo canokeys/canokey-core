@@ -1419,6 +1419,8 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   ASSERT_ADMIN();
 #endif
   ck_key_t key;
+  uint16_t error_sw = SW_NO_ERROR;
+  uint8_t key_ref = 0;
   DBG_MSG("Import enter: cla=%02X p1=%02X p2=%02X lc=%u received=%u path=%p\n", CLA, P1, P2, LC, import_received,
           (const void *)import_key_path);
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
@@ -1447,16 +1449,19 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     // Extended Header list
     if (LC < 5) {
       DBG_MSG("Import short lc=%u\n", LC);
-      EXCEPT(SW_WRONG_LENGTH);
+      error_sw = SW_WRONG_LENGTH;
+      goto fail;
     }
     if (*p++ != 0x4D) {
       DBG_MSG("Import bad first tag=%02X\n", DATA[0]);
-      EXCEPT(SW_WRONG_DATA);
+      error_sw = SW_WRONG_DATA;
+      goto fail;
     }
 
     if (LC < 2) {
       DBG_MSG("Import bad 4D len: lc=%u\n", LC);
-      EXCEPT(SW_WRONG_LENGTH);
+      error_sw = SW_WRONG_LENGTH;
+      goto fail;
     }
     if (*p < 0x80) {
       len = *p;
@@ -1464,46 +1469,53 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     } else if (*p == 0x81) {
       if (LC < 3) {
         DBG_MSG("Import bad 4D len: need 2-byte len lc=%u\n", LC);
-        EXCEPT(SW_WRONG_LENGTH);
+        error_sw = SW_WRONG_LENGTH;
+        goto fail;
       }
       len = p[1];
       length_size = 2;
     } else if (*p == 0x82) {
       if (LC < 4) {
         DBG_MSG("Import bad 4D len: need 3-byte len lc=%u\n", LC);
-        EXCEPT(SW_WRONG_LENGTH);
+        error_sw = SW_WRONG_LENGTH;
+        goto fail;
       }
       len = ((uint16_t)p[1] << 8u) | p[2];
       length_size = 3;
     } else {
       DBG_MSG("Import bad 4D len tag=%02X\n", *p);
-      EXCEPT(SW_WRONG_DATA);
+      error_sw = SW_WRONG_DATA;
+      goto fail;
     }
     if (len < 2) {
       DBG_MSG("Import bad 4D value len=%d size=%u\n", len, (unsigned)length_size);
-      EXCEPT(SW_WRONG_DATA);
+      error_sw = SW_WRONG_DATA;
+      goto fail;
     }
     if ((uint32_t)len + length_size + 1 > CK_KEY_IMPORT_MAX_LENGTH) {
       DBG_MSG("Import total too large: len=%d size=%u total=%u\n", len, (unsigned)length_size,
               (unsigned)(len + length_size + 1));
-      EXCEPT(SW_WRONG_LENGTH);
+      error_sw = SW_WRONG_LENGTH;
+      goto fail;
     }
     import_total_len = len + length_size + 1;
     p += length_size;
 
     // Control Reference Template to indicate the private key: B6, B8 or A4
-    uint8_t key_ref = *p;
+    key_ref = *p;
     const char *key_path = get_key_path(key_ref);
     if (key_path == NULL) {
       DBG_MSG("Import bad key ref=%02X\n", key_ref);
-      EXCEPT(SW_WRONG_DATA);
+      error_sw = SW_WRONG_DATA;
+      goto fail;
     }
 
     // XX 00 or XX 03 84 01 01, XX = B6 / B8 / A4
     ++p;
     if (p >= DATA + LC || (*p != 0x00 && *p != 0x03) || p + *p + 1 > DATA + LC) {
       DBG_MSG("Import bad CRT len: p_off=%u len=%u lc=%u\n", (unsigned)(p - DATA), *p, LC);
-      EXCEPT(SW_WRONG_DATA);
+      error_sw = SW_WRONG_DATA;
+      goto fail;
     }
     p += *p + 1;
 
@@ -1526,8 +1538,8 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if ((uint32_t)import_received + LC > import_total_len) {
-    openpgp_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
   const uint16_t chunk_offset = import_received == 0 ? (import_total_len - import_stream.total_len) : 0;
   const uint16_t chunk_len = LC - chunk_offset;
@@ -1539,54 +1551,55 @@ static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Import length err: phase=%u processed=%u comp_idx=%u comp_off=%u data_len=%u template_end=%u\n",
             import_stream.phase, import_stream.processed, import_stream.comp_idx, import_stream.comp_off,
             import_stream.data_len, import_stream.template_end);
-    memzero(&key, sizeof(key));
-    openpgp_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   } else if (err == KEY_ERR_DATA) {
     DBG_MSG("Import data err: type=%u phase=%u processed=%u comp_idx=%u comp_off=%u data_len=%u template_end=%u\n",
             key.meta.type, import_stream.phase, import_stream.processed, import_stream.comp_idx, import_stream.comp_off,
             import_stream.data_len, import_stream.template_end);
-    memzero(&key, sizeof(key));
-    openpgp_import_reset();
-    EXCEPT(SW_WRONG_DATA);
+    error_sw = SW_WRONG_DATA;
+    goto fail;
   } else if (err < 0) {
     DBG_MSG("Import proc err: err=%d phase=%u processed=%u\n", err, import_stream.phase, import_stream.processed);
-    memzero(&key, sizeof(key));
-    openpgp_import_reset();
-    EXCEPT(SW_UNABLE_TO_PROCESS);
+    error_sw = SW_UNABLE_TO_PROCESS;
+    goto fail;
   }
   import_received += LC;
   if ((CLA & 0x10) != 0) {
     if (pke_buffer_write(0, &key, sizeof(key)) < 0) {
       DBG_MSG("Import state save failed\n");
-      memzero(&key, sizeof(key));
-      openpgp_import_reset();
-      return -1;
+      goto fail_proc;
     }
     memzero(&key, sizeof(key));
     return 0;
   }
   if (import_received != import_total_len) {
-    memzero(&key, sizeof(key));
-    openpgp_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
   if (err != 1) {
-    memzero(&key, sizeof(key));
-    openpgp_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
   if (ck_write_key(import_key_path, &key) < 0) {
-    memzero(&key, sizeof(key));
-    openpgp_import_reset();
-    return -1;
+    goto fail_proc;
   }
 
   memzero(&key, sizeof(key));
-  uint8_t key_ref = import_key_ref;
+  key_ref = import_key_ref;
   openpgp_import_reset();
   if (key_ref == 0xB6) return reset_sig_counter();
   return 0;
+
+fail:
+  memzero(&key, sizeof(key));
+  openpgp_import_reset();
+  EXCEPT(error_sw);
+
+fail_proc:
+  memzero(&key, sizeof(key));
+  openpgp_import_reset();
+  return -1;
 }
 
 static int openpgp_select_data(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1742,19 +1755,6 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int openpgp_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {
-  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
-
-  if (!is_get_response) apdu_response_source_clear();
-  capdu->le = MIN(capdu->le, APDU_BUFFER_SIZE);
-  if (is_get_response) {
-    rapdu->len = capdu->le;
-    apdu_output(rapdu_chaining, rapdu);
-    return 0;
-  }
-
-  rapdu_chaining->sent = 0;
-  openpgp_process_apdu(capdu, &rapdu_chaining->rapdu);
-  rapdu->len = capdu->le;
-  apdu_output(rapdu_chaining, rapdu);
-  return 0;
+  return apdu_process_streaming_message(rapdu_chaining, capdu, rapdu, apdu_is_get_response(capdu), APDU_BUFFER_SIZE,
+                                        openpgp_process_apdu);
 }

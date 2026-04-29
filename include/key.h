@@ -13,6 +13,13 @@
 #define CK_KEY_IMPORT_MAX_LENGTH 2048
 
 typedef struct {
+  uint8_t state;
+  uint8_t count;
+  uint8_t seen;
+  uint8_t buf[2];
+} ck_tlv_len_stream_t;
+
+typedef struct {
   uint16_t total_len;
   uint16_t processed;
   uint16_t template_end;
@@ -20,12 +27,9 @@ typedef struct {
   uint16_t data_len;
   uint16_t comp_off;
   uint8_t phase;
-  uint8_t len_state;
-  uint8_t len_count;
-  uint8_t len_seen;
   uint8_t comp_idx;
   uint8_t rsa;
-  uint8_t len_buf[2];
+  ck_tlv_len_stream_t tlv_len;
 } ck_openpgp_stream_t;
 
 typedef struct {
@@ -33,13 +37,10 @@ typedef struct {
   uint16_t comp_len;
   uint16_t comp_off;
   uint8_t phase;
-  uint8_t len_state;
-  uint8_t len_count;
-  uint8_t len_seen;
   uint8_t comp_idx;
   uint8_t policy_tag;
   uint8_t rsa;
-  uint8_t len_buf[2];
+  ck_tlv_len_stream_t tlv_len;
 } ck_piv_stream_t;
 
 typedef enum {

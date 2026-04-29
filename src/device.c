@@ -69,7 +69,7 @@ bool device_allow_kbd_touch(void) {
   if (!device_is_blinking() &&   // applets are not waiting for touch
       now > TOUCH_AFTER_PWRON && // ignore touch for some time after power-on
       now - TOUCH_EXPIRE_TIME > last_blink && get_touch_result() != TOUCH_NO) {
-    DBG_MSG("now=%lu last_blink=%lu\n", now, last_blink);
+    DBG_MSG("now=%u last_blink=%u\n", now, last_blink);
     return true;
   }
   return false;

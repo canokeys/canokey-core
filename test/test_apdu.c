@@ -7,6 +7,7 @@
 #include <applets.h>
 #include <apdu.h>
 #include <bd/lfs_filebd.h>
+#include <ccid.h>
 #include <ctap.h>
 #include <device.h>
 #include <fs.h>
@@ -96,6 +97,42 @@ static void test_output_chaining(void **state) {
   assert_int_equal(ret, 0);
   assert_int_equal(R.len, 4);
   assert_int_equal(R.sw, 0x9000);
+}
+
+static void test_acquire_apdu_interface_releases_session_on_buffer_conflict(void **state) {
+  (void)state;
+
+  init_apdu_buffer();
+  device_init();
+
+  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CCID), 0);
+  assert_int_equal(acquire_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID), -1);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+  assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CCID), 0);
+}
+
+static void test_ccid_power_on_clears_stale_session(void **state) {
+  (void)state;
+
+  static const uint8_t power_on[] = {
+      PC_TO_RDR_ICCPOWERON,
+      0x00, 0x00, 0x00, 0x00,
+      0x00,
+      0x01,
+      0x00, 0x00, 0x00,
+  };
+
+  init_apdu_buffer();
+  device_init();
+  CCID_Init();
+
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+
+  assert_int_equal(CCID_OutEvent((uint8_t *)power_on, sizeof(power_on)), 0);
+  CCID_Loop();
+
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
 }
 
 static void test_pke_buffer_fallback_for_ctap(void **state) {
@@ -381,6 +418,8 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_input_chaining),
       cmocka_unit_test(test_output_chaining),
+      cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
+      cmocka_unit_test(test_ccid_power_on_clears_stale_session),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),

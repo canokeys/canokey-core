@@ -73,18 +73,12 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
 
       if (bulkout_data.bMessageType == PC_TO_RDR_XFRBLOCK) {
         // always acquire the APDU buffer for XFRBLOCK, because the buffer is used during APDU process and response
-        if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID) != 0) {
+        if (acquire_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID) != 0) {
           DBG_MSG("Discard data because of applet session conflict\n");
-        } else if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
-          // shared_io_buffer is not available, discarding abData
-          // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
-          DBG_MSG("Discard data because of buffer conflict\n");
         } else if (bulkout_data.dwLength > ABDATA_SIZE) {
           DBG_MSG("Discard oversized XfrBlock: %u\n", bulkout_data.dwLength);
-          release_apdu_buffer(BUFFER_OWNER_CCID);
-          device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+          release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
         } else {
-          device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
           abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
         }
       } else if (CCID_IsShortCommand()) {

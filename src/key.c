@@ -381,28 +381,28 @@ enum {
   CK_PGP_STREAM_DONE,
 };
 
-static int ck_stream_tlv_len_feed(ck_openpgp_stream_t *st, uint8_t b, uint16_t *out) {
-  if (st->len_state == 0) {
+static int ck_stream_tlv_len_feed(ck_tlv_len_stream_t *st, uint8_t b, uint16_t *out) {
+  if (st->state == 0) {
     if ((b & 0x80) == 0) {
       *out = b;
       return 1;
     }
-    st->len_count = b & 0x7F;
-    if (st->len_count == 0 || st->len_count > sizeof(st->len_buf)) return KEY_ERR_LENGTH;
-    st->len_seen = 0;
-    st->len_state = 1;
+    st->count = b & 0x7F;
+    if (st->count == 0 || st->count > sizeof(st->buf)) return KEY_ERR_LENGTH;
+    st->seen = 0;
+    st->state = 1;
     return 0;
   }
 
-  st->len_buf[st->len_seen++] = b;
-  if (st->len_seen < st->len_count) return 0;
+  st->buf[st->seen++] = b;
+  if (st->seen < st->count) return 0;
 
   uint16_t len = 0;
-  for (uint8_t i = 0; i < st->len_count; ++i)
-    len = (len << 8u) | st->len_buf[i];
-  st->len_state = 0;
-  st->len_count = 0;
-  st->len_seen = 0;
+  for (uint8_t i = 0; i < st->count; ++i)
+    len = (len << 8u) | st->buf[i];
+  st->state = 0;
+  st->count = 0;
+  st->seen = 0;
   *out = len;
   return 1;
 }
@@ -543,7 +543,7 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
     case CK_PGP_STREAM_TEMPLATE_LEN:
     case CK_PGP_STREAM_TEMPLATE_VALUE_LEN: {
       uint16_t len;
-      int ret = ck_stream_tlv_len_feed(st, b, &len);
+      int ret = ck_stream_tlv_len_feed(&st->tlv_len, b, &len);
       if (ret < 0) return ret;
       if (ret > 0) {
         ret = ck_openpgp_stream_template_len(st, key, len);
@@ -575,7 +575,7 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
       break;
     case CK_PGP_STREAM_DATA_LEN: {
       uint16_t len;
-      int ret = ck_stream_tlv_len_feed(st, b, &len);
+      int ret = ck_stream_tlv_len_feed(&st->tlv_len, b, &len);
       if (ret < 0) return ret;
       if (ret > 0) {
         if (len != st->data_len) return KEY_ERR_DATA;
@@ -627,32 +627,6 @@ enum {
   CK_PIV_STREAM_POLICY_VALUE,
   CK_PIV_STREAM_IGNORE_REST,
 };
-
-static int ck_piv_stream_tlv_len_feed(ck_piv_stream_t *st, uint8_t b, uint16_t *out) {
-  if (st->len_state == 0) {
-    if ((b & 0x80) == 0) {
-      *out = b;
-      return 1;
-    }
-    st->len_count = b & 0x7F;
-    if (st->len_count == 0 || st->len_count > sizeof(st->len_buf)) return KEY_ERR_LENGTH;
-    st->len_seen = 0;
-    st->len_state = 1;
-    return 0;
-  }
-
-  st->len_buf[st->len_seen++] = b;
-  if (st->len_seen < st->len_count) return 0;
-
-  uint16_t len = 0;
-  for (uint8_t i = 0; i < st->len_count; ++i)
-    len = (len << 8u) | st->len_buf[i];
-  st->len_state = 0;
-  st->len_count = 0;
-  st->len_seen = 0;
-  *out = len;
-  return 1;
-}
 
 void ck_parse_piv_stream_init(ck_piv_stream_t *st, ck_key_t *key) {
   memzero(st, sizeof(*st));
@@ -707,7 +681,7 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
 
     case CK_PIV_STREAM_LEN: {
       uint16_t len;
-      int ret = ck_piv_stream_tlv_len_feed(st, b, &len);
+      int ret = ck_stream_tlv_len_feed(&st->tlv_len, b, &len);
       if (ret < 0) return ret;
       if (ret > 0) {
         if (st->rsa) {

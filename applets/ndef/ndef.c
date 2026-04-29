@@ -198,22 +198,8 @@ int ndef_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 int ndef_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {
-  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
-
-  if (!is_get_response) apdu_response_source_clear();
-  if (is_get_response) {
-    capdu->le = MIN(capdu->le, APDU_BUFFER_SIZE);
-    rapdu->len = capdu->le;
-    apdu_output(rapdu_chaining, rapdu);
-    return 0;
-  }
-
-  rapdu_chaining->sent = 0;
-  const uint32_t requested_le = capdu->le;
-  ndef_process_apdu(capdu, &rapdu_chaining->rapdu);
-  rapdu->len = (uint16_t)MIN(requested_le, APDU_BUFFER_SIZE);
-  apdu_output(rapdu_chaining, rapdu);
-  return 0;
+  return apdu_process_streaming_message(rapdu_chaining, capdu, rapdu, apdu_is_get_response(capdu), APDU_BUFFER_SIZE,
+                                        ndef_process_apdu);
 }
 
 #endif // ENABLE_NFC

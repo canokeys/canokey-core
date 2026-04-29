@@ -342,6 +342,29 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
   return 0;
 }
 
+uint8_t apdu_is_get_response(const CAPDU *capdu) {
+  return (capdu->cla == 0x00 || capdu->cla == 0x80) && capdu->ins == 0xC0;
+}
+
+int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu,
+                                   uint8_t is_get_response, uint16_t le_limit, APDU_MESSAGE_HANDLER handler) {
+  if (!handler) return -1;
+
+  if (!is_get_response) apdu_response_source_clear();
+  capdu->le = MIN(capdu->le, le_limit);
+  if (is_get_response) {
+    rapdu->len = (uint16_t)capdu->le;
+    apdu_output(rapdu_chaining, rapdu);
+    return 0;
+  }
+
+  rapdu_chaining->sent = 0;
+  handler(capdu, &rapdu_chaining->rapdu);
+  rapdu->len = (uint16_t)capdu->le;
+  apdu_output(rapdu_chaining, rapdu);
+  return 0;
+}
+
 void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx) {
   apdu_response_source_clear();
@@ -360,6 +383,21 @@ void apdu_response_source_clear(void) {
 }
 
 int apdu_response_source_active(void) { return response_source.active != 0; }
+
+int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
+  if (device_applet_session_acquire((device_applet_session_owner_t)session_owner) != 0) return -1;
+  if (acquire_apdu_buffer(buffer_owner) != 0) {
+    device_applet_session_release((device_applet_session_owner_t)session_owner);
+    return -1;
+  }
+  device_applet_session_touch((device_applet_session_owner_t)session_owner);
+  return 0;
+}
+
+void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
+  release_apdu_buffer(buffer_owner);
+  device_applet_session_release((device_applet_session_owner_t)session_owner);
+}
 
 void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
 #if ENABLE_IFACE_KBDHID

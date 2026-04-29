@@ -338,15 +338,10 @@ static void CTAPHID_Execute_Init(void) {
 }
 
 static void CTAPHID_Execute_Msg(void) {
-  if (device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID) != 0) {
+  if (acquire_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID) != 0) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     return;
   }
-  if (CTAPHID_AcquireSharedBuffer(NULL, NULL) != 0) {
-    CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
-    return;
-  }
-  device_applet_session_touch(DEVICE_APPLET_SESSION_CTAPHID);
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
   CLA = channel.data[0];
@@ -364,8 +359,10 @@ static void CTAPHID_Execute_Msg(void) {
   shared_io_buffer[LL + 1] = LO(SW);
   DBG_MSG("R: ");
   PRINT_HEX(RDATA, LL + 2);
-  if (CTAPHID_SendGlobalBufferResponseAuto(channel.cid, channel.cmd, LL + 2) != 0)
+  if (CTAPHID_SendGlobalBufferResponseAuto(channel.cid, channel.cmd, LL + 2) != 0) {
+    device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+  }
 }
 
 static void CTAPHID_Execute_Cbor(void) {
@@ -381,14 +378,18 @@ static void CTAPHID_Execute_Cbor(void) {
                                                      sizeof(channel.data), &source, CTAP_SRC_HID);
   if (stream_ret > 0) {
     DBG_MSG("R: response len=%zu\n", source.total_len);
-    if (CTAPHID_SendSourceResponseAuto(channel.cid, CTAPHID_CBOR, &source) != 0)
+    if (CTAPHID_SendSourceResponseAuto(channel.cid, CTAPHID_CBOR, &source) != 0) {
+      device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
       CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+    }
     return;
   }
   if (stream_ret < 0) {
+    device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
     return;
   }
+  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
   CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
 }
 

@@ -1285,6 +1285,9 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (key_type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
 
   ck_key_t key;
+  uint16_t error_sw = SW_NO_ERROR;
+  int write_err;
+
   if (piv_import_key_path == NULL) {
     if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
     key.meta.type = key_type;
@@ -1293,8 +1296,8 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     piv_import_key_type = key_type;
     piv_import_len = 0;
   } else if (piv_import_key_path != key_path || piv_import_key_type != key_type) {
-    piv_import_reset();
-    EXCEPT(SW_WRONG_DATA);
+    error_sw = SW_WRONG_DATA;
+    goto fail;
   } else {
     if (pke_buffer_read(0, &key, sizeof(key)) < 0) {
       piv_import_reset();
@@ -1303,53 +1306,56 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if ((uint32_t)piv_import_len + LC > CK_KEY_IMPORT_MAX_LENGTH) {
-    memzero(&key, sizeof(key));
-    piv_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
   const bool final = (CLA & 0x10) == 0;
   if (final) piv_pke_release(PIV_PKE_USE_IMPORT);
   const int err = ck_parse_piv_stream_update(&piv_import_stream, &key, DATA, LC, final);
   if (err == KEY_ERR_LENGTH) {
     DBG_MSG("Wrong length when importing\n");
-    memzero(&key, sizeof(key));
-    piv_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
   if (err == KEY_ERR_DATA) {
     DBG_MSG("Wrong data when importing\n");
-    memzero(&key, sizeof(key));
-    piv_import_reset();
-    EXCEPT(SW_WRONG_DATA);
+    error_sw = SW_WRONG_DATA;
+    goto fail;
   }
   if (err < 0) {
     DBG_MSG("Error when importing\n");
-    memzero(&key, sizeof(key));
-    piv_import_reset();
-    EXCEPT(SW_UNABLE_TO_PROCESS);
+    error_sw = SW_UNABLE_TO_PROCESS;
+    goto fail;
   }
   piv_import_len += LC;
   if ((CLA & 0x10) != 0) {
     if (piv_pke_acquire(PIV_PKE_USE_IMPORT) < 0 || pke_buffer_write(0, &key, sizeof(key)) < 0) {
-      memzero(&key, sizeof(key));
-      piv_import_reset();
-      return -1;
+      goto fail_proc;
     }
     memzero(&key, sizeof(key));
     return 0;
   }
 
   if (err != 1) {
-    memzero(&key, sizeof(key));
-    piv_import_reset();
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
-  const int write_err = ck_write_key(key_path, &key);
+  write_err = ck_write_key(key_path, &key);
   memzero(&key, sizeof(key));
   piv_import_reset();
   if (write_err < 0) return -1;
 
   return 0;
+
+fail:
+  memzero(&key, sizeof(key));
+  piv_import_reset();
+  EXCEPT(error_sw);
+
+fail_proc:
+  memzero(&key, sizeof(key));
+  piv_import_reset();
+  return -1;
 }
 
 static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1582,20 +1588,9 @@ int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU
     piv_state = PIV_STATE_OTHER;
   }
 
-  const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0 && !applet_get_response;
-  if (!is_get_response) apdu_response_source_clear();
-  capdu->le = MIN(capdu->le, APDU_BUFFER_SIZE);
-  if (is_get_response) {
-    rapdu->len = capdu->le;
-    apdu_output(rapdu_chaining, rapdu);
-    return 0;
-  }
-
-  rapdu_chaining->sent = 0;
-  piv_process_apdu(capdu, &rapdu_chaining->rapdu);
-  rapdu->len = capdu->le;
-  apdu_output(rapdu_chaining, rapdu);
-  return 0;
+  return apdu_process_streaming_message(rapdu_chaining, capdu, rapdu,
+                                        apdu_is_get_response(capdu) && !applet_get_response, APDU_BUFFER_SIZE,
+                                        piv_process_apdu);
 }
 
 // for testing without authentication

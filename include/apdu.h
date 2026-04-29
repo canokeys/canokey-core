@@ -81,6 +81,7 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
+typedef int (*APDU_MESSAGE_HANDLER)(const CAPDU *capdu, RAPDU *rapdu);
 typedef int (*APDU_RESPONSE_SOURCE_READ)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 typedef void (*APDU_RESPONSE_SOURCE_CLOSE)(void *ctx);
 
@@ -101,10 +102,15 @@ int release_apdu_buffer(uint8_t owner);
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
+uint8_t apdu_is_get_response(const CAPDU *capdu);
+int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu,
+                                   uint8_t is_get_response, uint16_t le_limit, APDU_MESSAGE_HANDLER handler);
 void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx);
 void apdu_response_source_clear(void);
 int apdu_response_source_active(void);
+int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
+void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE__APDU_H
