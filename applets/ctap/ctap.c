@@ -1835,46 +1835,6 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
   return 0;
 }
 
-static uint8_t ctap_get_info(CborEncoder *encoder) {
-  uint8_t *p = encoder->data.ptr;
-  uint8_t *end = encoder->end;
-  int sm2_algo = ctap_sm2_attr.algo_id;
-  int sm2_in_alg_list = ctap_sm2_attr.enabled && (sm2_algo >= -256 && sm2_algo <= -25);
-  size_t need = sizeof(cbor_gi_prefix) + 1 /* array header */
-                + sizeof(cbor_gi_alg_base) + sizeof(cbor_gi_suffix) + (sm2_in_alg_list ? sizeof(cbor_gi_alg_sm2) : 0);
-  if (p + need > end) return CTAP2_ERR_LIMIT_EXCEEDED;
-
-  // 1. Prefix: map header through algorithms key
-  memcpy(p, cbor_gi_prefix, sizeof(cbor_gi_prefix));
-  p[CTAP_GI_CLIENT_PIN_OFFSET] = has_pin() ? 0xF5 : 0xF4;
-  p += sizeof(cbor_gi_prefix);
-
-  // 2. Algorithms array header: 3 or 4 entries
-  *p++ = sm2_in_alg_list ? 0x84 : 0x83;
-
-  // 3. Base algorithm entries (ES256 + EdDSA + ML-DSA-65)
-  memcpy(p, cbor_gi_alg_base, sizeof(cbor_gi_alg_base));
-  p += sizeof(cbor_gi_alg_base);
-
-  // 4. SM2 entry (conditional)
-  if (sm2_in_alg_list) {
-    memcpy(p, cbor_gi_alg_sm2, sizeof(cbor_gi_alg_sm2));
-    // Patch SM2 algo_id (CBOR negative int). The CBOR template encodes this
-    // as a 2-byte negative integer (range [-256, -25]); we only include SM2
-    // when the configured value matches this canonical encoding length.
-    p[CTAP_GI_SM2_ALGO_OFFSET] = 0x38;
-    p[CTAP_GI_SM2_ALGO_OFFSET + 1] = (uint8_t)(-1 - sm2_algo);
-    p += sizeof(cbor_gi_alg_sm2);
-  }
-
-  // 5. Suffix: remaining fields
-  memcpy(p, cbor_gi_suffix, sizeof(cbor_gi_suffix));
-  p += sizeof(cbor_gi_suffix);
-
-  encoder->data.ptr = p;
-  return 0;
-}
-
 static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
   CborParser parser;
   CTAP_client_pin cp;
@@ -2659,10 +2619,6 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
   case CTAP_GET_NEXT_ASSERTION:
     DBG_MSG("----------------NEXT------------------\n");
     status = ctap_get_next_assertion(&encoder);
-    goto set_resp;
-  case CTAP_GET_INFO:
-    DBG_MSG("-----------------GI-------------------\n");
-    status = ctap_get_info(&encoder);
     goto set_resp;
   case CTAP_CLIENT_PIN:
     DBG_MSG("-----------------CP-------------------\n");
