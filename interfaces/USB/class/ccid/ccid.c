@@ -147,7 +147,11 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_POWERSELECT;
   }
 
-  applets_poweroff();
+  const device_applet_session_owner_t owner = device_applet_session_owner();
+  if (owner != DEVICE_APPLET_SESSION_NONE)
+    device_applet_session_release(owner);
+  else
+    applets_poweroff();
   _Static_assert(sizeof(bulkin_short.abData) >= sizeof(atr_ccid), "bulkin_short.abData is not large enough");
   memcpy(bulkin_short.abData, atr_ccid, sizeof(atr_ccid));
   bulkin_short.dwLength = sizeof(atr_ccid);
