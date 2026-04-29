@@ -209,6 +209,18 @@ jobs:
         .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
         #kill %1
 
+    - name: Tests - CTAPHID applet
+      run: |
+        rm -f /tmp/canokey-fido-hid-over-udp-lfs-root
+        CANOKEY_VIRT_NFC=0 CANOKEY_VIRT_RESET_STORAGE=1 build/fido-hid-over-udp >/tmp/fido-hid-over-udp.log 2>&1 &
+        echo $! >/tmp/fido-hid-over-udp.pid
+        sleep 2
+        cd fido2-tests
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/connect_test.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/transport/test_hid.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/fido2/test_getinfo.py
+        kill "$(cat /tmp/fido-hid-over-udp.pid)" || true
+
     - name: Tests - U2F applet
       run: |
         echo 1 >/tmp/canokey-test-nfc
@@ -239,6 +251,7 @@ jobs:
     - name: Wrap-up - Prepare test coverage report
       run: |
         go test test-via-pcsc/admin_test.go -v -run TestFSUsage
+        kill "$(cat /tmp/fido-hid-over-udp.pid)" 2>/dev/null || true
         sudo killall pcscd || true # To flush cov files
         ls /tmp
         sleep 2
