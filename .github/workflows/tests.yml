@@ -214,8 +214,36 @@ jobs:
         rm -f /tmp/canokey-fido-hid-over-udp-lfs-root
         CANOKEY_VIRT_NFC=0 CANOKEY_VIRT_RESET_STORAGE=1 build/fido-hid-over-udp >/tmp/fido-hid-over-udp.log 2>&1 &
         echo $! >/tmp/fido-hid-over-udp.pid
-        sleep 2
         cd fido2-tests
+        .venv/bin/python - <<'PY'
+        import sys
+        import time
+
+        sys.path.insert(0, ".")
+        from tests.vendor.solo.udp_backend import force_udp_backend
+
+        force_udp_backend()
+
+        from fido2.hid import CtapHidDevice, CTAPHID
+
+        deadline = time.time() + 30
+        last_error = None
+        while time.time() < deadline:
+            try:
+                dev = next(CtapHidDevice.list_devices())
+                nonce = b"12345678"
+                if dev.call(CTAPHID.INIT, nonce)[:8] != nonce:
+                    raise RuntimeError("CTAPHID INIT nonce mismatch")
+                if dev.call(CTAPHID.PING, b"ping") != b"ping":
+                    raise RuntimeError("CTAPHID PING mismatch")
+                print("CTAPHID simulator is ready")
+                break
+            except Exception as exc:
+                last_error = exc
+                time.sleep(1)
+        else:
+            raise last_error
+        PY
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/connect_test.py
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/transport/test_hid.py
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/fido2/test_getinfo.py
