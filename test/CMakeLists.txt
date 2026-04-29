@@ -37,3 +37,9 @@ add_mocked_test(key
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
         LINK_LIBRARIES canokey-core
 )
+
+add_mocked_test(core_helpers
+        SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
+        LINK_LIBRARIES canokey-core
+)
