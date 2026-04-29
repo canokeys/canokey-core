@@ -267,6 +267,7 @@ jobs:
         PY
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/connect_test.py
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/fido2/test_getinfo.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/vendor/canokeys/test_mldsa65.py -s
         kill "$(cat /tmp/fido-hid-over-udp.pid)" || true
         trap - EXIT
 
