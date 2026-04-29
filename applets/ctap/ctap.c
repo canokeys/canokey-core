@@ -281,11 +281,11 @@ static int ctap_mldsa_stream_fill_stage(CTAP_mldsa_stream_state *state) {
   state->stage_off = 0;
   if (state->kind == CTAP_MLDSA_STREAM_PK) {
     if (state->keygen.phase == 0) memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
-    ret = ml_dsa_65_keygen_streaming(state->stage, APDU_BUFFER_SIZE, &state->keygen, NULL);
+    ret = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage_buf), &state->keygen, NULL);
   } else if (state->kind == CTAP_MLDSA_STREAM_SIG) {
     if (state->sign.phase == 0) memcpy(state->sign.seed, state->seed, PRI_KEY_SIZE);
-    ret = ml_dsa_65_sign_seed_streaming(state->stage, APDU_BUFFER_SIZE, &state->sign, state->msg, state->msg_len, NULL,
-                                        0, state->tr);
+    ret = ml_dsa_65_sign_seed_streaming(state->stage, sizeof(state->stage_buf), &state->sign, state->msg,
+                                        state->msg_len, NULL, 0, state->tr);
   } else {
     return -1;
   }
@@ -441,10 +441,7 @@ static int ctap_make_credential_stream_read_at(void *ctx, uint32_t offset, uint8
 }
 
 static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acquire_owner) {
-  if (!dst || req_len == 0 || req_len > pke_buffer_size()) return -1;
-  // Requests that fit in the workspace are copied there; larger ones stay in
-  // pke_buffer and the caller must use pke_buffer_get_ptr() directly.
-  if (req_len > sizeof(ctap_request_workspace)) return 0;
+  if (!dst || req_len == 0 || req_len > sizeof(ctap_request_workspace) || req_len > pke_buffer_size()) return -1;
   int acquired = 0;
   if (acquire_owner) {
     acquired = (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0);
@@ -964,7 +961,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   if (stream_make_credential_response) *p++ = 0;
   if (mldsa) {
     memset(state, 0, sizeof(*state));
-    state->stage = stream_work_buffer;
+    state->stage = state->stage_buf;
   }
 
   if (cbor_put_uint(&p, 3 + (mc->ext_large_blob_key ? 1 : 0), 0xA0) < 0 || cbor_put_int(&p, MC_RESP_FMT) < 0 ||
@@ -1005,7 +1002,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
     memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
     do {
       KEEPALIVE();
-      int pk_len = ml_dsa_65_keygen_streaming(state->stage, stream_work_buffer_len, &state->keygen, NULL);
+      int pk_len = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage_buf), &state->keygen, NULL);
       if (pk_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (pk_len != 0) sha256_update(&sha256, state->stage, (size_t)pk_len);
     } while (state->keygen.phase != 0);
@@ -1699,17 +1696,21 @@ step7:
   CHECK_CBOR_RET(ret);
   if (dc.credential_id.alg_type == COSE_ALG_ML_DSA_65) {
     CTAP_mldsa_stream_state *state = &mldsa_stream_state;
+    uint8_t prefix_snapshot[sizeof(state->prefix)];
+    size_t prefix_snapshot_len = (size_t)(map.data.ptr - stream_resp_start);
     uint8_t *p;
+    if (prefix_snapshot_len > sizeof(prefix_snapshot)) return CTAP2_ERR_UNHANDLED_REQUEST;
+    memcpy(prefix_snapshot, stream_resp_start, prefix_snapshot_len);
     memset(state, 0, sizeof(*state));
-    state->stage = stream_work_buffer;
+    state->stage = state->stage_buf;
     memcpy(state->seed, key.pri, PRI_KEY_SIZE);
     p = state->prefix;
     *p++ = 0;
-    memcpy(p, stream_resp_start, map.data.ptr - stream_resp_start);
-    p += map.data.ptr - stream_resp_start;
+    memcpy(p, prefix_snapshot, prefix_snapshot_len);
+    p += prefix_snapshot_len;
     cbor_put_bytes_header(&p, MLDSA_SIG_BYTES);
     state->prefix_len = (size_t)(p - state->prefix);
-    if (ctap_mldsa65_tr_from_seed(state->seed, state->tr, state->stage, stream_work_buffer_len) < 0)
+    if (ctap_mldsa65_tr_from_seed(state->seed, state->tr, state->stage, sizeof(state->stage_buf)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     memcpy(data_buf + len, ga.client_data_hash, CLIENT_DATA_HASH_SIZE);
     memcpy(state->msg, data_buf, len + CLIENT_DATA_HASH_SIZE);
@@ -2255,14 +2256,18 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     CHECK_CBOR_RET(ret);
     if (dc.credential_id.alg_type == COSE_ALG_ML_DSA_65) {
       CTAP_mldsa_stream_state *state = &mldsa_stream_state;
+      uint8_t prefix_snapshot[sizeof(state->prefix)];
+      size_t prefix_snapshot_len = (size_t)(map.data.ptr - stream_resp_start);
       uint8_t *p;
+      if (prefix_snapshot_len > sizeof(prefix_snapshot)) return CTAP2_ERR_UNHANDLED_REQUEST;
+      memcpy(prefix_snapshot, stream_resp_start, prefix_snapshot_len);
       memset(state, 0, sizeof(*state));
-      state->stage = stream_work_buffer;
+      state->stage = state->stage_buf;
       if (verify_mldsa65_key_handle(&dc.credential_id, state->seed) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       p = state->prefix;
       *p++ = 0;
-      memcpy(p, stream_resp_start, map.data.ptr - stream_resp_start);
-      p += map.data.ptr - stream_resp_start;
+      memcpy(p, prefix_snapshot, prefix_snapshot_len);
+      p += prefix_snapshot_len;
       if (cbor_put_mldsa65_cose_prefix(&p) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       state->prefix_len = (size_t)(p - state->prefix);
 
@@ -2910,19 +2915,12 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
 
         uint8_t *pending_req = nfc_pending_state.request;
         if (nfc_pending_state.request_in_pke) {
-          const uint8_t pending_cmd = ((const uint8_t *)pke_buffer_get_ptr())[0];
-          if (pending_cmd == CTAP_MAKE_CREDENTIAL || nfc_pending_state.request_len > sizeof(ctap_request_workspace)) {
-            // Keep large pending requests, and makeCredential replay, on the
-            // original PKE-backed buffer instead of aliasing openpgp_crypto.
-            pending_req = (uint8_t *)pke_buffer_get_ptr();
-          } else {
-            if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
-              ctap_nfc_pending_reset();
-              current_cmd_src = CTAP_SRC_NONE;
-              EXCEPT(SW_UNABLE_TO_PROCESS);
-            }
-            pending_req = ctap_request_workspace;
+          if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
+            ctap_nfc_pending_reset();
+            current_cmd_src = CTAP_SRC_NONE;
+            EXCEPT(SW_UNABLE_TO_PROCESS);
           }
+          pending_req = ctap_request_workspace;
         }
 
         ret = ctap_process_apdu_cbor_message(pending_req, nfc_pending_state.request_len, rapdu);
@@ -2975,21 +2973,14 @@ int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t 
     return 0;
   }
 
-  // Load request: use workspace for small requests, pke_buffer directly for large ones.
-  uint8_t *req_data;
-  if (capdu->lc > sizeof(ctap_request_workspace)) {
-    req_data = (uint8_t *)pke_buffer_get_ptr();
-  } else {
-    if (ctap_request_load_from_pke(ctap_request_workspace, capdu->lc, 0) < 0) {
-      rapdu->len = 0;
-      rapdu->sw = SW_UNABLE_TO_PROCESS;
-      return 0;
-    }
-    req_data = ctap_request_workspace;
+  if (capdu->lc > sizeof(ctap_request_workspace) || ctap_request_load_from_pke(ctap_request_workspace, capdu->lc, 0) < 0) {
+    rapdu->len = 0;
+    rapdu->sw = SW_UNABLE_TO_PROCESS;
+    return 0;
   }
 
   CAPDU request = *capdu;
-  request.data = req_data;
+  request.data = ctap_request_workspace;
   current_apdu_request_from_pke = true;
   const int ret = ctap_process_apdu_with_src(&request, rapdu, src);
   current_apdu_request_from_pke = false;
