@@ -80,7 +80,8 @@ typedef struct {
 } APDU_RESPONSE_SOURCE;
 
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
-  if (capdu->cla == 0x80 && capdu->ins == 0x10) return 1;
+  // Allow implicit routing for both standalone and chained CTAP2 CBOR APDUs.
+  if ((capdu->cla & 0xEF) == 0x80 && capdu->ins == 0x10) return 1;
 #ifdef TEST
   if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
 #endif
