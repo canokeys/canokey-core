@@ -42,6 +42,22 @@ patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <<'EOF' || true
                  pin_uv_param=pin_uv_param,
              )
 EOF
+patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <<'EOF' || true
+--- fido2/pcsc.py
++++ fido2/pcsc.py
+@@ -200,8 +200,10 @@
+                 # NFCCTAP_GETRESPONSE
+                 resp, sw1, sw2 = self._chain_apdus(0x80, 0x11, 0x00, 0x00)
+ 
+             if (sw1, sw2) != SW_SUCCESS:
+-                raise CtapError(CtapError.ERR.OTHER)  # TODO: Map from SW error
++                logger.error("NFC CTAP failure SW=%02X%02X resp=%s", sw1, sw2, b2a_hex(resp))
++                raise CtapError(CtapError.ERR.OTHER)
+ 
+             return resp
+ 
+         raise CtapError(CtapError.ERR.KEEPALIVE_CANCEL)
+EOF
 patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <../test-via-pcsc/fido2_SM2_COSE_key.patch || true
 popd
 
