@@ -2071,6 +2071,32 @@ static int get_next_slot(uint64_t *slots, uint8_t *numbers) {
   return idx;
 }
 
+static int cm_sanitize_slots(uint64_t *slots, uint8_t *numbers) {
+  uint64_t live_slots = 0;
+  uint64_t val = *slots;
+  CTAP_discoverable_credential dc;
+  int idx = 0;
+  uint8_t count = 0;
+
+  while (val != 0) {
+    if (val & 1) {
+      int size = read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential),
+                           sizeof(CTAP_discoverable_credential));
+      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (!dc.deleted) {
+        live_slots |= 1ull << idx;
+        ++count;
+      }
+    }
+    val >>= 1;
+    ++idx;
+  }
+
+  *slots = live_slots;
+  *numbers = count;
+  return 0;
+}
+
 /**
  * Find a discoverable credential by credential_id.
  * On success, *dc is filled and *out_idx is set to the file index.
@@ -2247,6 +2273,18 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     DBG_MSG("Use meta at slot %d: ", state->idx);
     PRINT_HEX((const uint8_t *)&meta, sizeof(meta));
     state->slots = meta.slots;
+    {
+      uint64_t orig_slots = meta.slots;
+      int err = cm_sanitize_slots(&state->slots, &numbers);
+      if (err != 0) return (uint8_t)err;
+      if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+      if (state->slots != orig_slots) {
+        DBG_MSG("Sanitize slot bitmap: 0x%llx -> 0x%llx\n", orig_slots, state->slots);
+        meta.slots = state->slots;
+        size = write_file(DC_META_FILE, &meta, state->idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
+        if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      }
+    }
   generate_credential_response:
     for (;;) {
       DBG_MSG("Current slot bitmap: 0x%llx\n", state->slots);
@@ -2260,6 +2298,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (dc.deleted) {
         DBG_MSG("Skip deleted slot %d\n", state->idx);
+        int err = cm_sanitize_slots(&state->slots, &numbers);
+        if (err != 0) return (uint8_t)err;
         continue;
       }
       DBG_MSG("Slot %d printed\n", state->idx);
