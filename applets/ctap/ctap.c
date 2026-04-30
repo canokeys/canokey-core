@@ -2098,6 +2098,29 @@ static int cm_sanitize_slots(uint64_t *slots, uint8_t *numbers, const uint8_t *r
   return 0;
 }
 
+static int cm_collect_slots(uint64_t *slots, uint8_t *numbers, const uint8_t *rp_id_hash) {
+  CTAP_discoverable_credential dc;
+  int size = get_file_size(DC_FILE);
+  if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+
+  const int n_dc = MIN(size / (int)sizeof(CTAP_discoverable_credential), MAX_DC_NUM);
+  uint64_t live_slots = 0;
+  uint8_t count = 0;
+
+  for (int idx = 0; idx < n_dc; ++idx) {
+    size = read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential));
+    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (dc.deleted) continue;
+    if (rp_id_hash != NULL && memcmp_s(dc.credential_id.rp_id_hash, rp_id_hash, SHA256_DIGEST_LENGTH) != 0) continue;
+    live_slots |= 1ull << idx;
+    ++count;
+  }
+
+  *slots = live_slots;
+  *numbers = count;
+  return 0;
+}
+
 /**
  * Find a discoverable credential by credential_id.
  * On success, *dc is filled and *out_idx is set to the file index.
@@ -2258,33 +2281,10 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     include_numbers = true;
-    size = get_file_size(DC_META_FILE);
-    state->n_rp = size / (int)sizeof(CTAP_rp_meta);
-    KEEPALIVE();
-    for (state->idx = 0; state->idx < state->n_rp; ++state->idx) {
-      size = read_file(DC_META_FILE, &meta, state->idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta));
-      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (meta.slots == 0) continue;
-      if (memcmp_s(meta.rp_id_hash, cm.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) break;
-    }
-    if (state->idx == state->n_rp) {
-      DBG_MSG("Specified RP not found\n");
-      return CTAP2_ERR_NO_CREDENTIALS;
-    }
-    DBG_MSG("Use meta at slot %d: ", state->idx);
-    PRINT_HEX((const uint8_t *)&meta, sizeof(meta));
-    state->slots = meta.slots;
     {
-      uint64_t orig_slots = meta.slots;
-      int err = cm_sanitize_slots(&state->slots, &numbers, cm.rp_id_hash);
+      int err = cm_collect_slots(&state->slots, &numbers, cm.rp_id_hash);
       if (err != 0) return (uint8_t)err;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
-      if (state->slots != orig_slots) {
-        DBG_MSG("Sanitize slot bitmap: 0x%llx -> 0x%llx\n", orig_slots, state->slots);
-        meta.slots = state->slots;
-        size = write_file(DC_META_FILE, &meta, state->idx * (int)sizeof(CTAP_rp_meta), sizeof(CTAP_rp_meta), 0);
-        if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      }
     }
   generate_credential_response:
     for (;;) {

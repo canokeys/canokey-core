@@ -73,6 +73,14 @@ patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <../test-via-pcsc/fido2_SM2_COS
 popd
 
 pushd libfido2/build
-sudo make install
+if command -v sudo >/dev/null 2>&1; then
+  sudo make install
+else
+  make install
+fi
 popd
-sudo ldconfig
+if command -v sudo >/dev/null 2>&1; then
+  sudo ldconfig
+else
+  ldconfig
+fi
