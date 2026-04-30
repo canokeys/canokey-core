@@ -214,11 +214,16 @@ jobs:
       run: |
         echo 1 >/tmp/canokey-test-nfc
         cd fido2-tests
-        for seed in $(seq 1 10); do
+        max_seed=200
+        for seed in $(seq 1 "${max_seed}"); do
           echo "Running credMgmt repro with CANOKEY_TEST_SEED=${seed}"
-          CANOKEY_TEST_SEED="${seed}" .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc -s \
-            'tests/standard/fido2v1/test_credmgmt.py::TestCredentialManagement::test_interleaved_add_delete[123456]'
+          if ! CANOKEY_TEST_SEED="${seed}" .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc -s \
+            'tests/standard/fido2v1/test_credmgmt.py::TestCredentialManagement::test_interleaved_add_delete[123456]'; then
+            echo "credMgmt repro failed with CANOKEY_TEST_SEED=${seed}"
+            exit 1
+          fi
         done
+        echo "credMgmt repro seeds 1..${max_seed} all passed"
 
     - name: Tests - CTAPHID applet
       run: |
