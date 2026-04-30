@@ -38,6 +38,11 @@ static uint8_t is_native_u2f_extended_apdu(const uint8_t *buf, DWORD len) {
   }
 }
 
+static uint8_t is_fido_pcsc_apdu(const uint8_t *buf, DWORD len) {
+  if (len >= 4 && buf[0] == 0x80) return 1; // CTAP2 CBOR / NFC GET RESPONSE
+  return is_native_u2f_extended_apdu(buf, len);
+}
+
 static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len) {
   uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : shared_io_buffer;
   memcpy(abData, tx, tx_len);
@@ -144,7 +149,7 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     *RxLength = 0;
     return IFD_ERROR_INSUFFICIENT_BUFFER;
   }
-  const uint8_t aggregate_get_response = is_nfc() && is_native_u2f_extended_apdu(TxBuffer, TxLength);
+  const uint8_t aggregate_get_response = is_nfc() && is_fido_pcsc_apdu(TxBuffer, TxLength);
   uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength);
   if (ret != SLOT_NO_ERROR) {
     *RxLength = 0;
