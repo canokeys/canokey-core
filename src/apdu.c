@@ -285,6 +285,8 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 
     int read = response_source.read(response_source.ctx, response_source.sent, sh->data, to_send);
     if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {
+      DBG_MSG("apdu_output stream read failed sent=%lu remaining=%lu to_send=%u read=%d\n",
+              (unsigned long)response_source.sent, (unsigned long)remaining, to_send, read);
       apdu_response_source_clear();
       sh->len = 0;
       sh->sw = SW_UNABLE_TO_PROCESS;
@@ -309,6 +311,9 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
       sh->sw = response_source.sw;
       apdu_response_source_clear();
     }
+    DBG_MSG("apdu_output stream sent=%u total_sent=%lu remaining=%lu sw=%04x tail_off=%u tail_len=%u\n", sh->len,
+            (unsigned long)response_source.sent, (unsigned long)remaining, sh->sw, response_tail_offset,
+            response_tail_len);
     return 0;
   }
 

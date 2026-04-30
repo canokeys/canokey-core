@@ -4,9 +4,12 @@
 
 #include "../applets/ctap/ctap-internal.h"
 #include <ml-dsa-65.h>
+#include <pke.h>
 #include <rsa.h>
 
-#define OPENPGP_SESSION_CRYPTO_BUFFER_LENGTH 513
+#define OPENPGP_SESSION_CRYPTO_BASE_LENGTH 513
+#define OPENPGP_SESSION_CRYPTO_BUFFER_LENGTH                                                                     \
+  ((OPENPGP_SESSION_CRYPTO_BASE_LENGTH > PKE_BUFFER_SIZE) ? OPENPGP_SESSION_CRYPTO_BASE_LENGTH : PKE_BUFFER_SIZE)
 #define PIV_SESSION_CRYPTO_BUFFER_LENGTH (RSA_N_BIT_MAX / 8)
 #define PIV_SESSION_RESPONSE_BUFFER_LENGTH (PIV_SESSION_CRYPTO_BUFFER_LENGTH + 8)
 
@@ -24,6 +27,7 @@ typedef struct {
   uint8_t suffix[512];
   size_t suffix_len;
   size_t suffix_off;
+  uint8_t stage_buf[MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES];
   uint8_t *stage;
   size_t stage_len;
   size_t stage_off;
