@@ -41,6 +41,11 @@ static uint8_t is_native_u2f_apdu(const CAPDU *capdu) {
   }
 }
 
+static uint8_t is_fido_nfc_apdu(const CAPDU *capdu) {
+  if (capdu->cla == 0x80) return 1; // CTAP2 CBOR / NFC GET RESPONSE
+  return is_native_u2f_apdu(capdu);
+}
+
 static int load_next_aggregated_chunk(void) {
   CAPDU capdu = {
       .data = shared_io_buffer, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .le = 0x100, .lc = 0, .extended = 0};
@@ -191,7 +196,10 @@ void nfc_loop(void) {
         device_set_timeout(NULL, 0);
       }
 
-      aggregate_get_response = capdu->extended && is_native_u2f_apdu(capdu) && HI(SW) == 0x61;
+      // Aggregate FIDO follow-up GET RESPONSE exchanges inside the NFC
+      // transport so the host receives a single APDU response over T=CL
+      // chaining, instead of relying on an extra ISO GET RESPONSE round-trip.
+      aggregate_get_response = is_fido_nfc_apdu(capdu) && HI(SW) == 0x61;
       if (aggregate_get_response) {
         apdu_buffer_tx_size = LL;
       } else {
