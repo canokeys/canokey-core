@@ -127,7 +127,6 @@ RESPONSECODE IFDHPowerICC(DWORD Lun, DWORD Action, PUCHAR Atr, PDWORD AtrLength)
   if (Action == IFD_POWER_UP || Action == IFD_RESET) {
     init_apdu_buffer();
     device_init();
-    ctap_schedule_runtime_reset();
     applets_install();
     *AtrLength = sizeof(ATR);
     memcpy(Atr, ATR, *AtrLength);

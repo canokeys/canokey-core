@@ -3,11 +3,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+WORKSPACE_ROOT="$(cd "${REPO_ROOT}/.." && pwd)"
 
 IMAGE_TAG="${IMAGE_TAG:-canokey-fido-ci-local}"
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
 BUILD_DIR="${BUILD_DIR:-build-fido-local}"
 DOCKERFILE="${DOCKERFILE:-${SCRIPT_DIR}/Dockerfile.fido-local}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-${REPO_ROOT}/test-via-pcsc/local-artifacts}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker is required" >&2
@@ -25,27 +27,29 @@ fi
 
 docker run "${DOCKER_RUN_FLAGS[@]}" \
   --platform "${DOCKER_PLATFORM}" \
-  -v "${REPO_ROOT}:/work" \
-  -w /work \
+  -v "${WORKSPACE_ROOT}:/workspace" \
+  -v "${ARTIFACT_DIR}:/artifacts" \
+  -w /workspace/canokey-core \
   "${IMAGE_TAG}" \
   bash -s -- "${BUILD_DIR}" "$@" <<'EOF'
 set -euo pipefail
 
 BUILD_DIR="$1"
 shift || true
+WORKDIR="/workspace/canokey-core"
 
 if [ "$#" -eq 0 ]; then
   set -- tests/standard/ tests/vendor/canokeys/
 fi
 
 for tool_dir in u2f-ref-code libfido2 fido2-tests; do
-  if [ ! -d "/work/${tool_dir}" ] && [ -d "/root/${tool_dir}" ]; then
-    cp -a "/root/${tool_dir}" "/work/${tool_dir}"
+  if [ ! -d "${WORKDIR}/${tool_dir}" ] && [ -d "/root/${tool_dir}" ]; then
+    cp -a "/root/${tool_dir}" "${WORKDIR}/${tool_dir}"
   fi
 done
 
 ./test-via-pcsc/install_fido_tests.sh
-FIDO_PYTHON="/work/fido2-tests/.venv/bin/python"
+FIDO_PYTHON="${WORKDIR}/fido2-tests/.venv/bin/python"
 
 cmake -S . -B "${BUILD_DIR}" -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build "${BUILD_DIR}" -j2
@@ -84,7 +88,10 @@ PY
 echo 1 >/tmp/canokey-test-nfc
 pushd fido2-tests >/dev/null
 for target in "$@"; do
-  if ! "${FIDO_PYTHON}" -m pytest --color=yes --vendor canokeys --nfc "${target}"; then
+  target_name="$(printf '%s' "${target}" | tr '/:[]' '_____' | tr -cd '[:alnum:]_.-')"
+  pytest_log="/artifacts/${target_name}.pytest.log"
+  if ! "${FIDO_PYTHON}" -m pytest --color=yes --vendor canokeys --nfc "${target}" 2>&1 | tee "${pytest_log}"; then
+    cp /tmp/pcscd.log "/artifacts/${target_name}.pcscd.log" 2>/dev/null || true
     echo "===== /tmp/pcscd.log ====="
     cat /tmp/pcscd.log || true
     exit 1

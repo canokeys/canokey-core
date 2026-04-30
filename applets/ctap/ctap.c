@@ -901,8 +901,9 @@ static uint8_t ctap_store_discoverable_credential(const CTAP_make_credential *mc
   int n_dc = size / (int)sizeof(CTAP_discoverable_credential), pos, first_deleted = MAX_DC_NUM;
   for (pos = 0; pos != n_dc; ++pos) {
     if (read_file(DC_FILE, dc, pos * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential)) <
-        0)
+        0) {
       return CTAP2_ERR_UNHANDLED_REQUEST;
+    }
     if (dc->deleted) {
       if (first_deleted == MAX_DC_NUM) first_deleted = pos;
       continue;
@@ -930,8 +931,9 @@ static uint8_t ctap_store_discoverable_credential(const CTAP_make_credential *mc
   attr.index = (uint8_t)pos;
   if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(DC_FILE, dc, pos * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential),
-                 0) < 0)
+                 0) < 0) {
     return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
 
   size = get_file_size(DC_META_FILE);
   if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;

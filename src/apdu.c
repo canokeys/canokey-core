@@ -115,14 +115,16 @@ void init_apdu_buffer(void) {
 #endif
   apdu_response_source_clear();
   memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
-  memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
-  fido_capdu_uses_pke = 0;
+  if (!fido_capdu_chaining.in_chaining) {
+    memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
+    fido_capdu_uses_pke = 0;
+  }
   current_applet = APPLET_NULL;
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
 #endif
   rapdu_chaining.rapdu.data = shared_io_buffer;
-  fido_capdu_chaining.capdu.data = shared_io_buffer;
+  if (!fido_capdu_uses_pke) fido_capdu_chaining.capdu.data = shared_io_buffer;
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
