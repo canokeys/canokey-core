@@ -10,8 +10,6 @@ static uint8_t pke_buffer_storage[PKE_BUFFER_SIZE];
 
 size_t pke_buffer_size(void) { return sizeof(pke_buffer_storage); }
 
-const uint8_t *pke_buffer_get_ptr(void) { return pke_buffer_storage; }
-
 int pke_buffer_read(size_t offset, void *buf, size_t len) {
   if (offset > sizeof(pke_buffer_storage) || len > sizeof(pke_buffer_storage) - offset) return -1;
   memcpy(buf, pke_buffer_storage + offset, len);

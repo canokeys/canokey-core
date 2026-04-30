@@ -3,6 +3,7 @@
 #define __CTAPHID_H_INCLUDED__
 
 #include <common.h>
+#include <pke.h>
 
 #define HID_RPT_SIZE 64 // Default size of raw HID report
 
@@ -96,7 +97,8 @@ typedef struct {
 #ifndef CTAPHID_STREAM_THRESHOLD
 #define CTAPHID_STREAM_THRESHOLD 256
 #endif
-#define MAX_CTAP_BUFSIZE CTAPHID_STREAM_THRESHOLD
+#define MAX_CTAP_BUFSIZE PKE_BUFFER_SIZE
+#define CTAPHID_INLINE_BUFSIZE CTAPHID_STREAM_THRESHOLD
 
 typedef struct {
   uint32_t cid;
@@ -104,9 +106,13 @@ typedef struct {
   uint16_t bcnt_current;
   uint32_t expire;
   uint8_t state;
+  uint8_t ready;
+  uint8_t executing;
+  uint8_t cancel_pending;
   uint8_t cmd;
   uint8_t seq;
-  alignas(4) uint8_t data[MAX_CTAP_BUFSIZE];
+  uint8_t use_pke_buffer;
+  alignas(4) uint8_t data[CTAPHID_INLINE_BUFSIZE];
 } CTAPHID_Channel;
 
 typedef struct _USBD_HandleTypeDef USBD_HandleTypeDef;

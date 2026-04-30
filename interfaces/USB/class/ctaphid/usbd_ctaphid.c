@@ -130,3 +130,5 @@ uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint1
 }
 
 uint8_t USBD_CTAPHID_WaitIdle(void) { return wait_ep_idle(100); }
+
+void USBD_CTAPHID_ServiceReceive(void) {}

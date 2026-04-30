@@ -10,6 +10,7 @@
 #include <sha.h>
 
 #define FIRMWARE_VERSION 201
+#define CTAP_MAX_MSG_SIZE 1500
 
 // Filesystem Meta
 // clang-format off

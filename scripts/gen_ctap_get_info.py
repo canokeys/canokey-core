@@ -291,13 +291,13 @@ def main():
     # Constants we need from headers
     needed = {
         'FIRMWARE_VERSION': None,
-        'CTAPHID_STREAM_THRESHOLD': None,
+        'CTAP_MAX_MSG_SIZE': None,
         'MAX_CREDENTIAL_COUNT_IN_LIST': None,
         'LARGE_BLOB_SIZE_LIMIT': None,
         'MAX_CRED_BLOB_LENGTH': None,
     }
     consts = parse_defines(args.headers, needed)
-    consts['MAX_CTAP_BUFSIZE'] = consts['CTAPHID_STREAM_THRESHOLD']
+    consts['MAX_CTAP_BUFSIZE'] = consts['CTAP_MAX_MSG_SIZE']
     consts['CREDENTIAL_ID_SIZE'] = args.credential_id_size
 
     prefix, alg_base, alg_sm2, suffix, pin_off, sm2_algo_off = \
