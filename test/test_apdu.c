@@ -370,6 +370,27 @@ static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
   assert_int_equal(resp[0], 0x30);
 }
 
+static void test_ctap_hid_get_info_stream_source(void **state) {
+  (void)state;
+
+  uint8_t req[] = {0x04};
+  uint8_t scratch[64] = {0};
+  uint8_t chunk[320] = {0};
+  CTAPHID_TxSource source = {0};
+  size_t written = 0;
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
+  assert_true(source.total_len > 1);
+  assert_non_null(source.read);
+  assert_int_equal(source.read(source.ctx, chunk, source.total_len, &written), 0);
+  assert_int_equal(written, source.total_len);
+  assert_int_equal(chunk[0], 0x00);
+}
+
 static void test_get_response_after_reset_without_pending_response(void **state) {
   (void)state;
 
@@ -464,6 +485,7 @@ int main() {
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
+      cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
   };

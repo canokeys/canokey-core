@@ -102,9 +102,11 @@ static void CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, const uint8_t *data,
 uint8_t CTAPHID_TxBusy(void) { return tx_stream.active; }
 
 void CTAPHID_TxReset(void) {
+  const uint8_t had_stream = tx_stream.active;
   if (tx_stream.active && tx_stream.source.close) tx_stream.source.close(tx_stream.source.ctx);
   memset(&tx_stream, 0, sizeof(tx_stream));
   memset(&tx_mem_source, 0, sizeof(tx_mem_source));
+  if (had_stream) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
 }
 
 static int CTAPHID_MemSourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
@@ -362,7 +364,9 @@ static void CTAPHID_Execute_Msg(void) {
   if (CTAPHID_SendGlobalBufferResponseAuto(channel.cid, channel.cmd, LL + 2) != 0) {
     device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+    return;
   }
+  if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
 }
 
 static void CTAPHID_Execute_Cbor(void) {
@@ -381,7 +385,9 @@ static void CTAPHID_Execute_Cbor(void) {
     if (CTAPHID_SendSourceResponseAuto(channel.cid, CTAPHID_CBOR, &source) != 0) {
       device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
       CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+      return;
     }
+    if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     return;
   }
   if (stream_ret < 0) {

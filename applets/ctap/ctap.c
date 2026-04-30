@@ -2773,11 +2773,6 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   memset(&mem_stream_state, 0, sizeof(mem_stream_state));
   ctap_const_stream_reset(&const_stream_state);
   memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
-  uint8_t *resp = NULL;
-  size_t resp_len = 0;
-  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) return -1;
-  stream_work_buffer = resp;
-  stream_work_buffer_len = resp_len;
 
   if (*req == CTAP_GET_INFO) {
     cp_pin_uv_auth_token_usage_timer_observer();
@@ -2787,20 +2782,14 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
       stream_work_buffer_len = 0;
       return 1;
     }
-
-    resp[0] = CTAP2_ERR_UNHANDLED_REQUEST;
-    last_cmd = CTAP_INVALID_CMD;
-    mem_stream_state.buf = resp;
-    mem_stream_state.len = 1;
-    mem_stream_state.emitted = 0;
-    source->total_len = mem_stream_state.len;
-    source->read = ctap_mem_stream_read;
-    source->close = CTAPHID_CloseSharedBufferSource;
-    source->ctx = &mem_stream_state;
-    stream_work_buffer = NULL;
-    stream_work_buffer_len = 0;
-    return 1;
+    return -1;
   }
+
+  uint8_t *resp = NULL;
+  size_t resp_len = 0;
+  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) return -1;
+  stream_work_buffer = resp;
+  stream_work_buffer_len = resp_len;
 
   if (*req != CTAP_MAKE_CREDENTIAL) {
     current_cmd_src = src;
