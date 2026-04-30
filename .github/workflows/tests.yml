@@ -198,18 +198,6 @@ jobs:
     - name: Tests - NDEF applet
       run: go test -v test-via-pcsc/ndef_test.go
 
-    - name: Tests - FIDO2 applet
-      run: |
-        echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode for PCSC/NFC tests
-        cat /tmp/canokey-test-nfc
-        #pushd test-real && ./test-libfido2.sh && popd
-        cd fido2-tests
-        #../build/fido-hid-over-udp &
-        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/standard/
-        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
-          --ignore=tests/vendor/canokeys/test_mldsa65.py tests/vendor/canokeys/
-        #kill %1
-
     - name: Tests - FIDO2 credMgmt repro
       run: |
         echo 1 >/tmp/canokey-test-nfc
@@ -224,6 +212,21 @@ jobs:
           fi
         done
         echo "credMgmt repro seeds 1..${max_seed} all passed"
+
+    - name: Tests - FIDO2 applet
+      run: |
+        echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode for PCSC/NFC tests
+        cat /tmp/canokey-test-nfc
+        #pushd test-real && ./test-libfido2.sh && popd
+        cd fido2-tests
+        #../build/fido-hid-over-udp &
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
+          --ignore=tests/standard/fido2v1/test_credmgmt.py tests/standard/
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
+          -k 'not interleaved_add_delete' tests/standard/fido2v1/test_credmgmt.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
+          --ignore=tests/vendor/canokeys/test_mldsa65.py tests/vendor/canokeys/
+        #kill %1
 
     - name: Tests - CTAPHID applet
       run: |
