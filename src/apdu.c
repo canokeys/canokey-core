@@ -434,7 +434,12 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   if (!is_get_response) apdu_response_source_clear();
   LE = MIN(LE, APDU_BUFFER_SIZE);
   if (is_get_response) { // GET RESPONSE
+    DBG_MSG("GET RESPONSE cla=%02x ins=%02x le=%u sent=%u total=%u src_active=%u src_sent=%lu src_total=%lu\n", CLA, INS,
+            LE, rapdu_chaining.sent, rapdu_chaining.rapdu.len, apdu_response_source_active(),
+            (unsigned long)response_source.sent, (unsigned long)response_source.total_len);
     if (!apdu_response_source_active() && rapdu_chaining.sent >= rapdu_chaining.rapdu.len) {
+      DBG_MSG("GET RESPONSE rejected sent=%u total=%u src_active=%u\n", rapdu_chaining.sent, rapdu_chaining.rapdu.len,
+              apdu_response_source_active());
       LL = 0;
       SW = SW_COMMAND_NOT_ALLOWED;
       return;
