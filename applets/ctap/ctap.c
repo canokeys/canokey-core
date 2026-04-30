@@ -165,6 +165,8 @@ static uint8_t *stream_work_buffer;
 static size_t stream_work_buffer_len;
 static bool stream_make_credential_response;
 static bool current_apdu_request_from_pke;
+static bool cert_write_active;
+static uint16_t cert_write_len;
 
 static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAP_mem_stream_state *state = (CTAP_mem_stream_state *)ctx;
@@ -552,6 +554,8 @@ void ctap_deselect(void) {
 void ctap_poweroff(void) {
   current_cmd_src = CTAP_SRC_NONE;
   current_apdu_request_from_pke = false;
+  cert_write_active = false;
+  cert_write_len = 0;
   ctap_credential_management_reset_state();
   ctap_nfc_pending_reset();
   if (pke_buffer_release(PKE_BUFFER_OWNER_CTAP) == 0) {
@@ -568,6 +572,8 @@ uint8_t ctap_install(uint8_t reset) {
   if (runtime_reset) {
     consecutive_pin_counter = 3;
     last_cmd = CTAP_INVALID_CMD;
+    cert_write_active = false;
+    cert_write_len = 0;
     ctap_get_assertion_reset_state();
     ctap_credential_management_reset_state();
   }
@@ -616,7 +622,25 @@ int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
 
 int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC > MAX_CERT_SIZE) EXCEPT(SW_WRONG_LENGTH);
-  return write_file(CTAP_CERT_FILE, DATA, 0, LC, 1);
+  if (!cert_write_active) {
+    if (write_file(CTAP_CERT_FILE, DATA, 0, LC, 1) < 0) return -1;
+    cert_write_len = LC;
+  } else {
+    if ((uint32_t)cert_write_len + LC > MAX_CERT_SIZE) {
+      cert_write_active = false;
+      cert_write_len = 0;
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+    if (append_file(CTAP_CERT_FILE, DATA, LC) < 0) {
+      cert_write_active = false;
+      cert_write_len = 0;
+      return -1;
+    }
+    cert_write_len += LC;
+  }
+  cert_write_active = (CLA & 0x10) != 0;
+  if (!cert_write_active) cert_write_len = 0;
+  return 0;
 }
 
 int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
