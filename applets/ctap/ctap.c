@@ -2071,7 +2071,7 @@ static int get_next_slot(uint64_t *slots, uint8_t *numbers) {
   return idx;
 }
 
-static int cm_sanitize_slots(uint64_t *slots, uint8_t *numbers) {
+static int cm_sanitize_slots(uint64_t *slots, uint8_t *numbers, const uint8_t *rp_id_hash) {
   uint64_t live_slots = 0;
   uint64_t val = *slots;
   CTAP_discoverable_credential dc;
@@ -2083,7 +2083,8 @@ static int cm_sanitize_slots(uint64_t *slots, uint8_t *numbers) {
       int size = read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential),
                            sizeof(CTAP_discoverable_credential));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (!dc.deleted) {
+      if (!dc.deleted &&
+          (rp_id_hash == NULL || memcmp_s(dc.credential_id.rp_id_hash, rp_id_hash, SHA256_DIGEST_LENGTH) == 0)) {
         live_slots |= 1ull << idx;
         ++count;
       }
@@ -2275,7 +2276,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     state->slots = meta.slots;
     {
       uint64_t orig_slots = meta.slots;
-      int err = cm_sanitize_slots(&state->slots, &numbers);
+      int err = cm_sanitize_slots(&state->slots, &numbers, cm.rp_id_hash);
       if (err != 0) return (uint8_t)err;
       if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
       if (state->slots != orig_slots) {
@@ -2298,7 +2299,7 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (dc.deleted) {
         DBG_MSG("Skip deleted slot %d\n", state->idx);
-        int err = cm_sanitize_slots(&state->slots, &numbers);
+        int err = cm_sanitize_slots(&state->slots, &numbers, cm.rp_id_hash);
         if (err != 0) return (uint8_t)err;
         continue;
       }
