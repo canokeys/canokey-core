@@ -28,39 +28,47 @@ if spec is None or spec.origin is None:
 print(Path(spec.origin).resolve().parent)
 PY
 )"
+FIDO2_SITE_PACKAGES_DIR="$(dirname "${FIDO2_PACKAGE_DIR}")"
 echo "Fixing a bug in python-fido2 0.9.3"
-"${VENV_PYTHON}" - "${FIDO2_PACKAGE_DIR}" <<'PY'
-from pathlib import Path
-import sys
-
-pkg = Path(sys.argv[1])
-
-updates = [
-    (
-        pkg / "ctap2" / "blob.py",
-        "                length=ln,\n",
-        "                length=(size if offset == 0 else None),\n",
-        "length=(size if offset == 0 else None),",
-    ),
-    (
-        pkg / "pcsc.py",
-        "            if (sw1, sw2) != SW_SUCCESS:\n"
-        "                raise CtapError(CtapError.ERR.OTHER)  # TODO: Map from SW error\n",
-        "            if (sw1, sw2) != SW_SUCCESS:\n"
-        "                logger.error(\"NFC CTAP failure SW=%02X%02X resp=%s\", sw1, sw2, b2a_hex(resp))\n"
-        "                raise CtapError(CtapError.ERR.OTHER)\n",
-        "logger.error(\"NFC CTAP failure SW=%02X%02X resp=%s\", sw1, sw2, b2a_hex(resp))",
-    ),
-]
-
-for path, old, new, marker in updates:
-    text = path.read_text()
-    if marker in text:
-        continue
-    if old not in text:
-        raise SystemExit(f"failed to patch {path}")
-    path.write_text(text.replace(old, new, 1))
-PY
+if ! grep -q 'length=(size if offset == 0 else None)' "${FIDO2_PACKAGE_DIR}/ctap2/blob.py"; then
+  blob_patch="$(mktemp)"
+  cat >"${blob_patch}" <<'EOF'
+--- fido2/ctap2/blob.py
++++ fido2/ctap2/blob.py
+@@ -150,7 +150,7 @@
+             self.ctap.large_blobs(
+                 offset,
+                 set=_set,
+-                length=ln,
++                length=(size if offset == 0 else None),
+                 pin_uv_protocol=pin_uv_protocol,
+                 pin_uv_param=pin_uv_param,
+             )
+EOF
+  patch -p0 -u --forward -d "${FIDO2_SITE_PACKAGES_DIR}" -i "${blob_patch}"
+  rm -f "${blob_patch}"
+fi
+if ! grep -q 'NFC CTAP failure SW=%02X%02X resp=%s' "${FIDO2_PACKAGE_DIR}/pcsc.py"; then
+  pcsc_patch="$(mktemp)"
+  cat >"${pcsc_patch}" <<'EOF'
+--- fido2/pcsc.py
++++ fido2/pcsc.py
+@@ -200,9 +200,10 @@
+                 # NFCCTAP_GETRESPONSE
+                 resp, sw1, sw2 = self._chain_apdus(0x80, 0x11, 0x00, 0x00)
+ 
+             if (sw1, sw2) != SW_SUCCESS:
+-                raise CtapError(CtapError.ERR.OTHER)  # TODO: Map from SW error
++                logger.error("NFC CTAP failure SW=%02X%02X resp=%s", sw1, sw2, b2a_hex(resp))
++                raise CtapError(CtapError.ERR.OTHER)
+ 
+             return resp
+ 
+         raise CtapError(CtapError.ERR.KEEPALIVE_CANCEL)
+EOF
+  patch -p0 -u --forward -d "${FIDO2_SITE_PACKAGES_DIR}" -i "${pcsc_patch}"
+  rm -f "${pcsc_patch}"
+fi
 patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <../test-via-pcsc/fido2_SM2_COSE_key.patch || true
 popd
 
