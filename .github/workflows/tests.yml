@@ -210,6 +210,16 @@ jobs:
           --ignore=tests/vendor/canokeys/test_mldsa65.py tests/vendor/canokeys/
         #kill %1
 
+    - name: Tests - FIDO2 credMgmt repro
+      run: |
+        echo 1 >/tmp/canokey-test-nfc
+        cd fido2-tests
+        for seed in $(seq 1 10); do
+          echo "Running credMgmt repro with CANOKEY_TEST_SEED=${seed}"
+          CANOKEY_TEST_SEED="${seed}" .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc -s \
+            'tests/standard/fido2v1/test_credmgmt.py::TestCredentialManagement::test_interleaved_add_delete[123456]'
+        done
+
     - name: Tests - CTAPHID applet
       run: |
         rm -f /tmp/canokey-fido-hid-over-udp-lfs-root
