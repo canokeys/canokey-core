@@ -124,7 +124,8 @@ void nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
 }
 
 static void send_apdu_buffer(uint8_t resend) {
-  if (resend) apdu_buffer_sent -= last_sent;
+  if (resend)
+    apdu_buffer_sent -= last_sent;
   else if (aggregate_get_response && apdu_buffer_sent == apdu_buffer_tx_size) {
     const int more = load_next_aggregated_chunk();
     if (more < 0) {

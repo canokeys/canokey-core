@@ -136,9 +136,7 @@ static void write_testmode_file(const char *path, int value) {
   fclose(fp);
 }
 
-static void configure_testmode_files(void) {
-  write_testmode_file("/tmp/canokey-test-up", 0);
-}
+static void configure_testmode_files(void) { write_testmode_file("/tmp/canokey-test-up", 0); }
 
 static void reset_storage_if_requested(const char *lfs_root) {
   if (!get_env_flag("CANOKEY_VIRT_RESET_STORAGE", 1)) return;

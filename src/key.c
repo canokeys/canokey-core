@@ -474,8 +474,8 @@ static int ck_openpgp_stream_copy_data(ck_openpgp_stream_t *st, ck_key_t *key, u
     const uint16_t off = st->comp_idx >= 3 ? pri_len - st->comp_len[st->comp_idx] + st->comp_off : st->comp_off;
     const uint16_t limit = st->comp_idx == 0 ? E_LENGTH : pri_len;
     if (off >= limit) {
-      DBG_MSG("OpenPGP stream OOB: type=%u idx=%u off=%u limit=%u comp_len=%u comp_off=%u processed=%u\n", key->meta.type,
-              st->comp_idx, off, limit, st->comp_len[st->comp_idx], st->comp_off, st->processed);
+      DBG_MSG("OpenPGP stream OOB: type=%u idx=%u off=%u limit=%u comp_len=%u comp_off=%u processed=%u\n",
+              key->meta.type, st->comp_idx, off, limit, st->comp_len[st->comp_idx], st->comp_off, st->processed);
       return KEY_ERR_DATA;
     }
     if ((st->comp_off & 0x3F) == 0) {
@@ -488,8 +488,9 @@ static int ck_openpgp_stream_copy_data(ck_openpgp_stream_t *st, ck_key_t *key, u
       const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
       const uint16_t off = pri_len - st->comp_len[0] + st->comp_off;
       if (off >= pri_len) {
-        DBG_MSG("OpenPGP stream OOB: type=%u idx=%u off=%u limit=%u comp_len=%u comp_off=%u processed=%u\n", key->meta.type,
-                st->comp_idx, off, (unsigned)pri_len, st->comp_len[st->comp_idx], st->comp_off, st->processed);
+        DBG_MSG("OpenPGP stream OOB: type=%u idx=%u off=%u limit=%u comp_len=%u comp_off=%u processed=%u\n",
+                key->meta.type, st->comp_idx, off, (unsigned)pri_len, st->comp_len[st->comp_idx], st->comp_off,
+                st->processed);
         return KEY_ERR_DATA;
       }
       key->ecc.pri[off] = b;

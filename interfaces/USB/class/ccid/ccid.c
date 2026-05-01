@@ -9,7 +9,7 @@
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
-#define HAS_CMD_DISCARDED   2
+#define HAS_CMD_DISCARDED 2
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status)                                                               \
   bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)

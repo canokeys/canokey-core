@@ -856,8 +856,7 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
       return -1;
     }
     DBG_MSG("Generate pubkey response streaming: total=%d\n", len + 2);
-    apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, openpgp_pke_source_read, openpgp_pke_source_close,
-                             NULL);
+    apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, openpgp_pke_source_read, openpgp_pke_source_close, NULL);
     LL = 0;
   } else {
     uint8_t *response = RDATA;
@@ -1032,7 +1031,7 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
       return -1;
     }
     *public_key_offset = (p - data) + 1; // Skip 0x04 prefix
-  } else { // For X25519
+  } else {                               // For X25519
     if (length == expected_pubkey_len + 1 && *p == 0x40) {
       *public_key_offset = (p - data) + 1;
     } else if (length == expected_pubkey_len) {
@@ -1645,9 +1644,9 @@ static int openpgp_get_challenge(const CAPDU *capdu, RAPDU *rapdu) {
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (!(CLA == 0x00 || (CLA == 0x10 && ((INS == OPENPGP_INS_PUT_DATA && P1 == 0x7F && P2 == 0x21) ||
-                                        INS == OPENPGP_INS_IMPORT_KEY ||
-                                        (INS == OPENPGP_INS_PSO && P1 == 0x80 && P2 == 0x86)))))
+  if (!(CLA == 0x00 ||
+        (CLA == 0x10 && ((INS == OPENPGP_INS_PUT_DATA && P1 == 0x7F && P2 == 0x21) || INS == OPENPGP_INS_IMPORT_KEY ||
+                         (INS == OPENPGP_INS_PSO && P1 == 0x80 && P2 == 0x86)))))
     EXCEPT(SW_CLA_NOT_SUPPORTED);
   if (INS != OPENPGP_INS_PUT_DATA || P1 != 0x7F || P2 != 0x21) openpgp_cert_write_reset();
   if (INS != OPENPGP_INS_IMPORT_KEY) openpgp_import_reset();

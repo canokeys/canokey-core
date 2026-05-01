@@ -206,7 +206,8 @@ static ctap_req_src_t ctap_param_req_src(void) {
 static int ctap_nfc_pending_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
   const CTAP_nfc_pending_state *pending = (const CTAP_nfc_pending_state *)ctx;
   if (!pending) return -1;
-  if (pending->request_in_file) return read_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)offset, (lfs_size_t)len) < 0 ? -1 : 0;
+  if (pending->request_in_file)
+    return read_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)offset, (lfs_size_t)len) < 0 ? -1 : 0;
   memcpy(buf, pending->request + offset, len);
   return 0;
 }
@@ -534,8 +535,7 @@ static int ctap_nfc_pending_store(const uint8_t *req, size_t req_len, uint8_t al
       } else {
         memcpy(buf, req + written, chunk);
       }
-      if (write_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)written, (lfs_size_t)chunk, written == 0) < 0)
-        return -1;
+      if (write_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)written, (lfs_size_t)chunk, written == 0) < 0) return -1;
       written += chunk;
     }
     nfc_pending_state.request_in_file = 1;
@@ -1090,8 +1090,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
 
   // For non-MLDSA streaming, write att_stmt / suffix to scratch to avoid
   // overflowing stream_resp_base (shared_io_buffer, only APDU_BUFFER_SIZE bytes).
-  uint8_t *suffix =
-      mldsa ? state->suffix : (stream_make_credential_response ? applet_session_scratch.buffer : p);
+  uint8_t *suffix = mldsa ? state->suffix : (stream_make_credential_response ? applet_session_scratch.buffer : p);
   uint8_t *q = suffix;
   if (mldsa && extension_size != 0) {
     memcpy(q, extension, extension_size);
@@ -1162,8 +1161,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   CTAP_make_credential mc;
 
   ctap_req_src_t param_src = ctap_param_req_src();
-  int ret =
-      current_req_src.read ? parse_make_credential_src(&parser, &mc, &param_src, len) : parse_make_credential(&parser, &mc, params, len);
+  int ret = current_req_src.read ? parse_make_credential_src(&parser, &mc, &param_src, len)
+                                 : parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
   ret = ctap_consistency_check();
@@ -2145,7 +2144,8 @@ static int cm_collect_slots(uint64_t *slots, uint8_t *numbers, const uint8_t *rp
   uint8_t count = 0;
 
   for (int idx = 0; idx < n_dc; ++idx) {
-    size = read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential));
+    size =
+        read_file(DC_FILE, &dc, idx * (int)sizeof(CTAP_discoverable_credential), sizeof(CTAP_discoverable_credential));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (dc.deleted) continue;
     if (rp_id_hash != NULL && memcmp_s(dc.credential_id.rp_id_hash, rp_id_hash, SHA256_DIGEST_LENGTH) != 0) continue;
@@ -2450,8 +2450,9 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
     break;
 
   case CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL:
-    if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT || (state->last_subcommand != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
-                                                   state->last_subcommand != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)) {
+    if (last_cmd != CTAP_CREDENTIAL_MANAGEMENT ||
+        (state->last_subcommand != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN &&
+         state->last_subcommand != CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL)) {
       ctap_credential_management_reset_state();
       return CTAP2_ERR_NOT_ALLOWED;
     }
@@ -3055,8 +3056,7 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
   return ret;
 }
 
-int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu,
-                                      ctap_src_t src) {
+int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu, ctap_src_t src) {
   int ret = 0;
   LL = 0;
   if (!capdu || !req_src || !req_src->read || req_src->len != LC) EXCEPT(SW_WRONG_LENGTH);
@@ -3099,9 +3099,9 @@ int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *
         current_req_src.ctx = &nfc_pending_state;
         current_req_src.base_offset = 0;
         current_req_src.len = nfc_pending_state.request_len;
+        uint8_t pending_req_head[1];
         uint8_t *pending_req = nfc_pending_state.request;
         if (nfc_pending_state.request_in_file) {
-          uint8_t pending_req_head[1];
           if (ctap_req_read_payload_bytes(0, pending_req_head, sizeof(pending_req_head)) < 0) {
             ctap_nfc_pending_reset();
             current_cmd_src = CTAP_SRC_NONE;

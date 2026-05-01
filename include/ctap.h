@@ -37,8 +37,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
                                              CTAPHID_TxSource *source, ctap_src_t src);
 int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scratch, size_t scratch_len,
                                       CTAPHID_TxSource *source, ctap_src_t src);
-int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu,
-                                      ctap_src_t src);
+int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu, ctap_src_t src);
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
 int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
 int ctap_nfc_pending_active(void);

@@ -103,8 +103,8 @@ int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
 uint8_t apdu_is_get_response(const CAPDU *capdu);
-int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu,
-                                   uint8_t is_get_response, uint16_t le_limit, APDU_MESSAGE_HANDLER handler);
+int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu, uint8_t is_get_response,
+                                   uint16_t le_limit, APDU_MESSAGE_HANDLER handler);
 void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx);
 void apdu_response_source_clear(void);

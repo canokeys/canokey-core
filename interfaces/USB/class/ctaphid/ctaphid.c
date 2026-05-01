@@ -89,7 +89,8 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
     if (USBD_CTAPHID_WaitIdle() == USBD_OK) return LOOP_CANCEL;
   }
   if (channel.executing) return LOOP_SUCCESS;
-  if (!channel.ready || channel.state != CTAPHID_BUSY || channel.bcnt_current != channel.bcnt_total) return LOOP_SUCCESS;
+  if (!channel.ready || channel.state != CTAPHID_BUSY || channel.bcnt_current != channel.bcnt_total)
+    return LOOP_SUCCESS;
 
   uint8_t ret = LOOP_SUCCESS;
   channel.executing = 1;
@@ -132,7 +133,8 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
           .close = CTAPHID_PKERequestSourceClose,
           .ctx = &tx_pke_source_offset,
       };
-      if (CTAPHID_SendStreamSource(channel.cid, channel.cmd, &source) != 0) CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+      if (CTAPHID_SendStreamSource(channel.cid, channel.cmd, &source) != 0)
+        CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
     } else {
       CTAPHID_SendResponseAuto(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
     }
@@ -690,7 +692,8 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     channel.cid = rx_frame.cid;
 
     if (FRAME_TYPE(rx_frame) == TYPE_INIT) {
-      if (rx_frame.init.cmd == CTAPHID_CANCEL && channel.executing && rx_frame.cid == channel.cid && MSG_LEN(rx_frame) == 0) {
+      if (rx_frame.init.cmd == CTAPHID_CANCEL && channel.executing && rx_frame.cid == channel.cid &&
+          MSG_LEN(rx_frame) == 0) {
         CTAPHID_MarkCancelPending(rx_frame.cid);
         goto consume_frame;
       }
@@ -764,7 +767,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     }
     ret = CTAPHID_DispatchComplete(wait_for_user);
 
-consume_frame:
+  consume_frame:
     USBD_CTAPHID_ServiceReceive();
     if (ret != LOOP_SUCCESS) break;
   }

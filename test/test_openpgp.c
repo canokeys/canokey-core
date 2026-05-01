@@ -248,12 +248,11 @@ static void test_x25519_public_key_encoding(void **state) {
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
-  build_capdu(
-      capdu,
-      (uint8_t *)"\x00\xDB\x3F\xFF\x2C\x4D\x2A\xB8\x00\x7F\x48\x02\x92\x20\x5F\x48\x20\x5A\x83\x40\xFB"
-                 "\x62\x3E\x85\x36\xB1\x11\x4E\xD6\xC4\x68\xDC\xA9\x49\x57\x89\x72\xE8\x3C\xB0\x2A"
-                 "\xAF\x1C\xE3\x34\x9D\xCA\x0D\x68",
-      49);
+  build_capdu(capdu,
+              (uint8_t *)"\x00\xDB\x3F\xFF\x2C\x4D\x2A\xB8\x00\x7F\x48\x02\x92\x20\x5F\x48\x20\x5A\x83\x40\xFB"
+                         "\x62\x3E\x85\x36\xB1\x11\x4E\xD6\xC4\x68\xDC\xA9\x49\x57\x89\x72\xE8\x3C\xB0\x2A"
+                         "\xAF\x1C\xE3\x34\x9D\xCA\x0D\x68",
+              49);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
@@ -262,9 +261,8 @@ static void test_x25519_public_key_encoding(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
   uint8_t expected[] = {
-      0x7F, 0x49, 0x22, 0x86, 0x20, 0xA8, 0x2E, 0x8B, 0x07, 0xB3, 0x5E, 0x0B,
-      0xFF, 0xB5, 0xD3, 0x3D, 0x7C, 0xA6, 0x53, 0x4F, 0x0C, 0x2B, 0x03, 0xB0,
-      0x0F, 0x65, 0xA4, 0x9A, 0xA9, 0x85, 0xF1, 0x16, 0xDE, 0x49, 0x42, 0x15, 0x3D,
+      0x7F, 0x49, 0x22, 0x86, 0x20, 0xA8, 0x2E, 0x8B, 0x07, 0xB3, 0x5E, 0x0B, 0xFF, 0xB5, 0xD3, 0x3D, 0x7C, 0xA6, 0x53,
+      0x4F, 0x0C, 0x2B, 0x03, 0xB0, 0x0F, 0x65, 0xA4, 0x9A, 0xA9, 0x85, 0xF1, 0x16, 0xDE, 0x49, 0x42, 0x15, 0x3D,
   };
   assert_int_equal(rapdu->len, sizeof(expected));
   assert_memory_equal(rapdu->data, expected, sizeof(expected));

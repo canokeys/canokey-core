@@ -358,8 +358,8 @@ uint8_t apdu_is_get_response(const CAPDU *capdu) {
   return (capdu->cla == 0x00 || capdu->cla == 0x80) && capdu->ins == 0xC0;
 }
 
-int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu,
-                                   uint8_t is_get_response, uint16_t le_limit, APDU_MESSAGE_HANDLER handler) {
+int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu, uint8_t is_get_response,
+                                   uint16_t le_limit, APDU_MESSAGE_HANDLER handler) {
   const uint16_t response_le = (uint16_t)MIN(capdu->le, le_limit);
   if (!handler) return -1;
 
@@ -441,8 +441,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
   if (!is_get_response) apdu_response_source_clear();
   LE = MIN(LE, APDU_BUFFER_SIZE);
   if (is_get_response) { // GET RESPONSE
-    DBG_MSG("GET RESPONSE cla=%02x ins=%02x le=%u sent=%u total=%u src_active=%u src_sent=%lu src_total=%lu\n", CLA, INS,
-            LE, rapdu_chaining.sent, rapdu_chaining.rapdu.len, apdu_response_source_active(),
+    DBG_MSG("GET RESPONSE cla=%02x ins=%02x le=%u sent=%u total=%u src_active=%u src_sent=%lu src_total=%lu\n", CLA,
+            INS, LE, rapdu_chaining.sent, rapdu_chaining.rapdu.len, apdu_response_source_active(),
             (unsigned long)response_source.sent, (unsigned long)response_source.total_len);
     if (!apdu_response_source_active() && rapdu_chaining.sent >= rapdu_chaining.rapdu.len) {
       DBG_MSG("GET RESPONSE rejected sent=%u total=%u src_active=%u\n", rapdu_chaining.sent, rapdu_chaining.rapdu.len,

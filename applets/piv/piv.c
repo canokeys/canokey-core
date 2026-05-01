@@ -868,8 +868,8 @@ static const char *get_key_path(const uint8_t id) {
   }
 }
 
-static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len,
-                                             piv_data_read_t read, void *ctx) {
+static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
+                                             void *ctx) {
   if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) {
@@ -1028,8 +1028,8 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     uint8_t response[TDEA_BLOCK_SIZE];
 
     DBG_MSG("Case 3\n");
-    if (len[IDX_RESPONSE] != TDEA_BLOCK_SIZE || read(ctx, pos[IDX_RESPONSE], response, sizeof(response)) !=
-                                                    (int)sizeof(response))
+    if (len[IDX_RESPONSE] != TDEA_BLOCK_SIZE ||
+        read(ctx, pos[IDX_RESPONSE], response, sizeof(response)) != (int)sizeof(response))
       return -1;
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
         memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, response, TDEA_BLOCK_SIZE) != 0) {
@@ -1128,8 +1128,8 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
     start_quick_blinking(0);
 
-    if (ecdh(key.meta.type, key.ecc.pri, piv_crypto_buffer + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0),
-             RDATA + 4) < 0) {
+    if (ecdh(key.meta.type, key.ecc.pri, piv_crypto_buffer + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA + 4) <
+        0) {
       ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
       memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
@@ -1201,8 +1201,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     const int max_len = get_capacity_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     if (size > max_len) EXCEPT(SW_WRONG_LENGTH);
-    if ((CLA & 0x10) == 0 && is_certificate_object_tag(DATA[4]) && size == 2 && DATA[5] == 0x53 &&
-        DATA[6] == 0x00) {
+    if ((CLA & 0x10) == 0 && is_certificate_object_tag(DATA[4]) && size == 2 && DATA[5] == 0x53 && DATA[6] == 0x00) {
       DBG_MSG("delete certificate file %s\n", path);
       const int rc = write_file(path, NULL, 0, 0, 1);
       if (rc < 0) return -1;

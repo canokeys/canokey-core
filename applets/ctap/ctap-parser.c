@@ -247,7 +247,8 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
       len = sizeof(cred);
       ret = ctap_cbor_copy_text(&map, cred, &len);
-      if (ret == CborNoError) is_public_key = strcmp(cred, "public-key") == 0;
+      if (ret == CborNoError)
+        is_public_key = strcmp(cred, "public-key") == 0;
       else if (ret != CborErrorOutOfMemory)
         CHECK_CBOR_RET(ret);
     } else if (strcmp(key, "alg") == 0) {
@@ -289,9 +290,9 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
   for (size_t i = 0; i < arr_length; ++i) {
     ret = parse_pub_key_cred_param(&arr, &cur_alg_type);
     CHECK_PARSER_RET(ret);
-    if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA ||
-                     cur_alg_type == COSE_ALG_ML_DSA_65 ||
-                     (ctap_sm2_attr.enabled && cur_alg_type == ctap_sm2_attr.algo_id))) {
+    if (ret == 0 &&
+        (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA || cur_alg_type == COSE_ALG_ML_DSA_65 ||
+         (ctap_sm2_attr.enabled && cur_alg_type == ctap_sm2_attr.algo_id))) {
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#authenticatorMakeCredential
       //
       // > This sequence is ordered from most preferred (by the RP) to least preferred.
@@ -1370,7 +1371,8 @@ static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credent
   return 0;
 }
 
-uint8_t parse_credential_management(CborParser *parser, CTAP_credential_management *cm, const uint8_t *buf, size_t len) {
+uint8_t parse_credential_management(CborParser *parser, CTAP_credential_management *cm, const uint8_t *buf,
+                                    size_t len) {
   return parse_credential_management_impl(parser, cm, buf, len, NULL);
 }
 
