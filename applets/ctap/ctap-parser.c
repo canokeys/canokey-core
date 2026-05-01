@@ -1434,6 +1434,7 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &lb->set_len);
       CHECK_CBOR_RET(ret);
+      if (lb->set_len > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
       lb->set_offset = (uint32_t)(value_offset + 1);
       if (lb->set_len >= 24) ++lb->set_offset;
       if (lb->set_len >= 256) ++lb->set_offset;
@@ -1513,7 +1514,6 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
     if (lb->get > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
   }
   if (lb->parsed_params & PARAM_SET) {
-    if (lb->set_len > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
     if (lb->offset == 0) {
       if (!(lb->parsed_params & PARAM_LENGTH)) return CTAP1_ERR_INVALID_PARAMETER;
       if (lb->length > LARGE_BLOB_SIZE_LIMIT) return CTAP2_ERR_LARGE_BLOB_STORAGE_FULL;

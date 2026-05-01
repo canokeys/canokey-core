@@ -2652,9 +2652,11 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       sha256_init(&set_sha256);
       size_t hashed = 0;
       while (hashed < lb.set_len) {
-        size_t chunk = MIN(sizeof(buf), lb.set_len - hashed);
-        if (ctap_req_read_param_bytes(lb.set_offset + hashed, buf, chunk) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        sha256_update(&set_sha256, buf, chunk);
+        size_t chunk = MIN(sizeof(buf) - 70, lb.set_len - hashed);
+        if (ctap_req_read_param_bytes(lb.set_offset + hashed, buf + 70, chunk) < 0) {
+          return CTAP2_ERR_UNHANDLED_REQUEST;
+        }
+        sha256_update(&set_sha256, buf + 70, chunk);
         hashed += chunk;
       }
       sha256_final(&set_sha256, buf + 38);
