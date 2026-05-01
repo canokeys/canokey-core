@@ -235,7 +235,7 @@
 #define MAX_DC_NUM                    64
 #define MAX_STORED_RPID_LENGTH        32
 #define MAX_EXTENSION_SIZE_IN_AUTH    140
-#define MAX_CREDENTIAL_COUNT_IN_LIST  8
+#define MAX_CREDENTIAL_COUNT_IN_LIST  16
 #define MAX_CRED_BLOB_LENGTH          32
 #define LARGE_BLOB_KEY_SIZE           32
 #define LARGE_BLOB_SIZE_LIMIT         4096

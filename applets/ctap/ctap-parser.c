@@ -542,7 +542,16 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
     } else if (strcmp(key, "credBlob") == 0) {
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       mc->ext_has_cred_blob = 1;
-      len = MAX_CRED_BLOB_LENGTH;
+      ret = cbor_value_get_string_length(&map, &len);
+      CHECK_CBOR_RET(ret);
+      if (len > MAX_CRED_BLOB_LENGTH) {
+        ERR_MSG("credBlob is too long\n");
+        // use this value to mark that credBlob is too long
+        mc->ext_cred_blob_len = MAX_CRED_BLOB_LENGTH + 1;
+        ret = cbor_value_advance(&map);
+        CHECK_CBOR_RET(ret);
+        continue;
+      }
       ret = ctap_cbor_copy_bytes(&map, mc->ext_cred_blob, &len);
       if (ret == CborErrorOutOfMemory) {
         ERR_MSG("credBlob is too long\n");
