@@ -960,7 +960,7 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
       LL = response_len;
 
       memzero(&key, sizeof(key));
-      memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
+      if (response_len != 0) memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
     } else if (IS_ECC(key.meta.type)) {
       size_t input_len;
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
