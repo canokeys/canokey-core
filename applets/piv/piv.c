@@ -161,8 +161,7 @@ static uint32_t last_touch = UINT32_MAX;
 static piv_algorithm_extension_config_t alg_ext_cfg;
 static uint8_t piv_pke_owned;
 static uint8_t piv_pke_use;
-#define piv_crypto_buffer applet_session_scratch.piv.crypto
-#define piv_response_buffer applet_session_scratch.piv.response
+#define piv_crypto_buffer applet_session_scratch.buffer
 
 enum {
   PIV_PKE_USE_NONE,
@@ -285,6 +284,42 @@ static void piv_buffer_source_close(void *ctx) {
 
 typedef int (*piv_data_read_t)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 
+typedef struct {
+  uint8_t header[8];
+  uint8_t header_len;
+  piv_data_read_t payload_read;
+  void *payload_ctx;
+  APDU_RESPONSE_SOURCE_CLOSE payload_close;
+} piv_7c_stream_source_t;
+
+static piv_7c_stream_source_t piv_7c_stream_source;
+
+static int piv_7c_stream_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  piv_7c_stream_source_t *source = (piv_7c_stream_source_t *)ctx;
+  size_t copied = 0;
+
+  if (offset < source->header_len) {
+    size_t n = MIN((size_t)len, (size_t)source->header_len - offset);
+    memcpy(buf, source->header + offset, n);
+    copied += n;
+    offset += (uint32_t)n;
+  }
+
+  if (copied < len) {
+    int ret = source->payload_read(source->payload_ctx, offset - source->header_len, buf + copied, len - copied);
+    if (ret < 0) return ret;
+    copied += (size_t)ret;
+  }
+
+  return (int)copied;
+}
+
+static void piv_7c_stream_source_close(void *ctx) {
+  piv_7c_stream_source_t *source = (piv_7c_stream_source_t *)ctx;
+  if (source->payload_close) source->payload_close(source->payload_ctx);
+  memzero(source, sizeof(*source));
+}
+
 static int piv_capdu_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
   const CAPDU *capdu = (const CAPDU *)ctx;
 
@@ -354,25 +389,27 @@ static int piv_set_7c_response(uint8_t inner_tag, const uint8_t *data, uint16_t 
   const uint16_t total_len = data_len + header_len;
 
   if (total_len > APDU_COMMAND_BUFFER_SIZE) {
+    piv_7c_stream_source.header_len = (uint8_t)header_len;
     if (data_len < 128) {
-      piv_response_buffer[0] = 0x7C;
-      piv_response_buffer[1] = data_len + 2;
-      piv_response_buffer[2] = inner_tag;
-      piv_response_buffer[3] = data_len;
-      memcpy(piv_response_buffer + 4, data, data_len);
+      piv_7c_stream_source.header[0] = 0x7C;
+      piv_7c_stream_source.header[1] = data_len + 2;
+      piv_7c_stream_source.header[2] = inner_tag;
+      piv_7c_stream_source.header[3] = data_len;
     } else {
-      piv_response_buffer[0] = 0x7C;
-      piv_response_buffer[1] = 0x82;
-      piv_response_buffer[2] = HI(data_len + 4);
-      piv_response_buffer[3] = LO(data_len + 4);
-      piv_response_buffer[4] = inner_tag;
-      piv_response_buffer[5] = 0x82;
-      piv_response_buffer[6] = HI(data_len);
-      piv_response_buffer[7] = LO(data_len);
-      memcpy(piv_response_buffer + 8, data, data_len);
+      piv_7c_stream_source.header[0] = 0x7C;
+      piv_7c_stream_source.header[1] = 0x82;
+      piv_7c_stream_source.header[2] = HI(data_len + 4);
+      piv_7c_stream_source.header[3] = LO(data_len + 4);
+      piv_7c_stream_source.header[4] = inner_tag;
+      piv_7c_stream_source.header[5] = 0x82;
+      piv_7c_stream_source.header[6] = HI(data_len);
+      piv_7c_stream_source.header[7] = LO(data_len);
     }
-    apdu_response_source_set(total_len, SW_NO_ERROR, piv_buffer_source_read, piv_buffer_source_close,
-                             piv_response_buffer);
+    piv_7c_stream_source.payload_read = piv_buffer_source_read;
+    piv_7c_stream_source.payload_ctx = (void *)data;
+    piv_7c_stream_source.payload_close = piv_buffer_source_close;
+    apdu_response_source_set(total_len, SW_NO_ERROR, piv_7c_stream_source_read, piv_7c_stream_source_close,
+                             &piv_7c_stream_source);
     *out_len = 0;
     return 0;
   }
@@ -405,9 +442,9 @@ static int piv_set_public_key_response(ck_key_t *key, const uint8_t *prefix, uin
   const uint32_t total_len = prefix_len + (uint32_t)encoded_len;
 
   if (total_len > APDU_COMMAND_BUFFER_SIZE) {
-    uint8_t response[PIV_MAX_PUBKEY_RESPONSE_LENGTH];
+    uint8_t *response = piv_crypto_buffer;
 
-    if (total_len > sizeof(response)) return -1;
+    if (total_len > PIV_MAX_PUBKEY_RESPONSE_LENGTH) return -1;
     memcpy(response, prefix, prefix_len);
     if (ck_encode_public_key(key, response + prefix_len, true) != encoded_len) return -1;
     apdu_response_source_clear();

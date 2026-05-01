@@ -250,6 +250,8 @@ static void test_fido_chained_make_credential_nfc(void **state) {
   assert_int_equal(rapdu.sw, 0x9100);
   assert_int_equal(rapdu.len, 1);
   assert_int_equal(rapdu.data[0], 0x02);
+  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
 }
 
 static void test_fido_ctap1_register_nfc(void **state) {

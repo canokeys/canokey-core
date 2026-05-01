@@ -62,6 +62,7 @@ static volatile uint32_t buffer_owner;
 static RAPDU_CHAINING rapdu_chaining;
 static CAPDU_CHAINING fido_capdu_chaining;
 static uint8_t fido_capdu_uses_pke;
+static uint8_t fido_capdu_pke_owner;
 static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
 static uint16_t response_tail_offset;
 static uint16_t response_tail_len;
@@ -118,6 +119,7 @@ void init_apdu_buffer(void) {
   if (!fido_capdu_chaining.in_chaining) {
     memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
     fido_capdu_uses_pke = 0;
+    fido_capdu_pke_owner = 0;
   }
   current_applet = APPLET_NULL;
 #if ENABLE_IFACE_CCID
@@ -208,13 +210,14 @@ restart:
 }
 
 static void fido_capdu_reset(void) {
-  if (fido_capdu_uses_pke && !ctap_nfc_pending_active()) {
+  if (fido_capdu_uses_pke && fido_capdu_pke_owner) {
     pke_buffer_clear();
     pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
   }
   memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
   fido_capdu_chaining.capdu.data = shared_io_buffer;
   fido_capdu_uses_pke = 0;
+  fido_capdu_pke_owner = 0;
 }
 
 static int fido_apdu_input(const CAPDU *sh) {
@@ -243,9 +246,11 @@ restart:
   if (!fido_capdu_uses_pke &&
       ((sh->cla & 0x10) != 0 || fido_capdu_chaining.in_chaining || new_len > APDU_INCOMING_DATA_SIZE)) {
     if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return APDU_CHAINING_ERROR;
+    fido_capdu_pke_owner = 1;
     if (fido_capdu_chaining.capdu.lc != 0 &&
         pke_buffer_write(0, fido_capdu_chaining.capdu.data, fido_capdu_chaining.capdu.lc) < 0) {
       pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+      fido_capdu_pke_owner = 0;
       return APDU_CHAINING_ERROR;
     }
     fido_capdu_uses_pke = 1;

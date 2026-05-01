@@ -70,6 +70,7 @@ static int ctap_large_response_read_at(void *ctx, uint32_t offset, uint8_t *buf,
 
 #define CTAP_NFC_KEEPALIVE_PENDING 0xFE
 #define CTAP_NFC_GET_RESPONSE 0x11
+#define CTAP_NFC_PENDING_FILE "ctap_np"
 
 static const uint8_t aaguid[] = {0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                                  0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4};
@@ -146,7 +147,7 @@ typedef struct {
   uint32_t wait_start;
   uint16_t request_len;
   uint8_t request[APDU_INCOMING_DATA_SIZE];
-  uint8_t request_in_pke;
+  uint8_t request_in_file;
 } CTAP_nfc_pending_state;
 
 static CTAP_make_credential_stream_state mc_stream_state;
@@ -159,14 +160,56 @@ static uint8_t credential_list[MAX_DC_NUM], number_of_credentials, credential_co
 static bool uv, up, user_details;
 static uint32_t timer;
 #define mldsa_stream_state applet_session_scratch.ctap_mldsa
-#define ctap_request_workspace applet_session_scratch.openpgp_crypto
 static uint8_t *stream_resp_base;
 static uint8_t *stream_work_buffer;
 static size_t stream_work_buffer_len;
 static bool stream_make_credential_response;
-static bool current_apdu_request_from_pke;
 static bool cert_write_active;
 static uint16_t cert_write_len;
+static ctap_req_src_t current_req_src;
+
+static int ctap_mem_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
+  const uint8_t *src = (const uint8_t *)ctx;
+  memcpy(buf, src + offset, len);
+  return 0;
+}
+
+static int ctap_pke_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len);
+}
+
+static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len) {
+  if (!current_req_src.read) return -1;
+  if (offset > current_req_src.len || len > current_req_src.len - offset) return -1;
+  return current_req_src.read(current_req_src.ctx, current_req_src.base_offset + offset, buf, len);
+}
+
+static void ctap_req_src_clear(void) {
+  current_req_src.read = NULL;
+  current_req_src.ctx = NULL;
+  current_req_src.base_offset = 0;
+  current_req_src.len = 0;
+}
+
+static int ctap_req_read_param_bytes(size_t offset, uint8_t *buf, size_t len) {
+  return ctap_req_read_payload_bytes(offset + 1, buf, len);
+}
+
+static ctap_req_src_t ctap_param_req_src(void) {
+  ctap_req_src_t src = current_req_src;
+  if (src.len > 0) --src.len;
+  src.base_offset += 1;
+  return src;
+}
+
+static int ctap_nfc_pending_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
+  const CTAP_nfc_pending_state *pending = (const CTAP_nfc_pending_state *)ctx;
+  if (!pending) return -1;
+  if (pending->request_in_file) return read_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)offset, (lfs_size_t)len) < 0 ? -1 : 0;
+  memcpy(buf, pending->request + offset, len);
+  return 0;
+}
 
 static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAP_mem_stream_state *state = (CTAP_mem_stream_state *)ctx;
@@ -442,17 +485,6 @@ static int ctap_make_credential_stream_read_at(void *ctx, uint32_t offset, uint8
   return (int)written;
 }
 
-static int ctap_request_load_from_pke(uint8_t *dst, size_t req_len, uint8_t acquire_owner) {
-  if (!dst || req_len == 0 || req_len > sizeof(ctap_request_workspace) || req_len > pke_buffer_size()) return -1;
-  int acquired = 0;
-  if (acquire_owner) {
-    acquired = (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0);
-  }
-  int ret = pke_buffer_read(0, dst, req_len);
-  if (acquired) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
-  return ret;
-}
-
 static void ctap_credential_management_reset_state(void) { memset(&cred_mgmt_state, 0, sizeof(cred_mgmt_state)); }
 
 static void ctap_get_assertion_reset_state(void) {
@@ -477,34 +509,36 @@ void ctap_test_seed_get_next_assertion_state(void) {
 #endif
 
 static void ctap_nfc_pending_reset(void) {
-  if (nfc_pending_state.request_in_pke) {
-    if (current_apdu_request_from_pke) {
-      pke_buffer_clear();
-    } else if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) == 0) {
-      pke_buffer_clear();
-      pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
-    } else {
-      // Buffer already owned by CTAP from fido_apdu_input chaining
-      pke_buffer_clear();
-      pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
-    }
-  }
+  if (nfc_pending_state.request_in_file) write_file(CTAP_NFC_PENDING_FILE, NULL, 0, 0, 1);
   memset(&nfc_pending_state, 0, sizeof(nfc_pending_state));
 }
 
 static int ctap_nfc_pending_store(const uint8_t *req, size_t req_len, uint8_t allow_poll) {
-  if (!req || req_len == 0 || req_len > CTAP_MAX_REQUEST_SIZE || req_len > pke_buffer_size()) return -1;
+  if (!req || req_len == 0 || req_len > CTAP_MAX_REQUEST_SIZE) return -1;
   ctap_nfc_pending_reset();
   nfc_pending_state.request_len = (uint16_t)req_len;
   if (req_len <= sizeof(nfc_pending_state.request)) {
-    memcpy(nfc_pending_state.request, req, req_len);
-    nfc_pending_state.request_in_pke = 0;
+    if (current_req_src.read) {
+      if (ctap_req_read_payload_bytes(0, nfc_pending_state.request, req_len) < 0) return -1;
+    } else {
+      memcpy(nfc_pending_state.request, req, req_len);
+    }
+    nfc_pending_state.request_in_file = 0;
   } else {
-    if (!current_apdu_request_from_pke && pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
-    const int ret = pke_buffer_write(0, req, req_len);
-    if (!current_apdu_request_from_pke) pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
-    if (ret < 0) return -1;
-    nfc_pending_state.request_in_pke = 1;
+    size_t written = 0;
+    uint8_t buf[APDU_INCOMING_DATA_SIZE];
+    while (written < req_len) {
+      size_t chunk = MIN(sizeof(buf), req_len - written);
+      if (current_req_src.read) {
+        if (ctap_req_read_payload_bytes(written, buf, chunk) < 0) return -1;
+      } else {
+        memcpy(buf, req + written, chunk);
+      }
+      if (write_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)written, (lfs_size_t)chunk, written == 0) < 0)
+        return -1;
+      written += chunk;
+    }
+    nfc_pending_state.request_in_file = 1;
   }
   nfc_pending_state.allow_poll = allow_poll;
   nfc_pending_state.active = 1;
@@ -553,7 +587,6 @@ void ctap_deselect(void) {
 
 void ctap_poweroff(void) {
   current_cmd_src = CTAP_SRC_NONE;
-  current_apdu_request_from_pke = false;
   cert_write_active = false;
   cert_write_len = 0;
   ctap_credential_management_reset_state();
@@ -1058,7 +1091,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   // For non-MLDSA streaming, write att_stmt / suffix to scratch to avoid
   // overflowing stream_resp_base (shared_io_buffer, only APDU_BUFFER_SIZE bytes).
   uint8_t *suffix =
-      mldsa ? state->suffix : (stream_make_credential_response ? applet_session_scratch.openpgp_crypto : p);
+      mldsa ? state->suffix : (stream_make_credential_response ? applet_session_scratch.buffer : p);
   uint8_t *q = suffix;
   if (mldsa && extension_size != 0) {
     memcpy(q, extension, extension_size);
@@ -1125,11 +1158,12 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
 
 static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_t len) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-makeCred-authnr-alg
-  uint8_t data_buf[sizeof(CTAP_auth_data)];
   CborParser parser;
   CTAP_make_credential mc;
 
-  int ret = parse_make_credential(&parser, &mc, params, len);
+  ctap_req_src_t param_src = ctap_param_req_src();
+  int ret =
+      current_req_src.read ? parse_make_credential_src(&parser, &mc, &param_src, len) : parse_make_credential(&parser, &mc, params, len);
   CHECK_PARSER_RET(ret);
 
   ret = ctap_consistency_check();
@@ -1240,8 +1274,7 @@ step12:
   if (mc.exclude_list_size > 0) {
     for (size_t i = 0; i < mc.exclude_list_size; ++i) {
       ecc_key_t key;
-      parse_credential_descriptor(&mc.exclude_list, data_buf); // save credential id in data_buf
-      credential_id *kh = (credential_id *)data_buf;
+      credential_id *kh = &mc.exclude_list[i];
       // compare rp_id first
       if (memcmp_s(kh->rp_id_hash, mc.rp_id_hash, sizeof(kh->rp_id_hash)) != 0) goto next_exclude_list;
       // then verify key handle and get private key in rp_id_hash
@@ -1278,8 +1311,7 @@ step12:
         }
       }
     next_exclude_list:
-      ret = cbor_value_advance(&mc.exclude_list);
-      CHECK_CBOR_RET(ret);
+      continue;
     }
   }
 
@@ -1386,7 +1418,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     // 8. Increment credentialCounter.
     // > Process at the end of this function.
   }
-  ret = parse_get_assertion(&parser, &ga, params, len);
+  ctap_req_src_t param_src = ctap_param_req_src();
+  ret = current_req_src.read ? parse_get_assertion_src(&parser, &ga, &param_src, len)
+                             : parse_get_assertion(&parser, &ga, params, len);
   CHECK_PARSER_RET(ret);
   KEEPALIVE();
 
@@ -1491,7 +1525,7 @@ step7:
   if (ga.allow_list_size > 0) { // Step 11
     size_t i;
     for (i = 0; i < ga.allow_list_size; ++i) {
-      parse_credential_descriptor(&ga.allow_list, (uint8_t *)&dc.credential_id);
+      memcpy(&dc.credential_id, &ga.allow_list[i], sizeof(dc.credential_id));
       // compare the rp_id first
       if (memcmp_s(dc.credential_id.rp_id_hash, ga.rp_id_hash, sizeof(dc.credential_id.rp_id_hash)) != 0) goto next;
       // then verify the key handle and get private key
@@ -1530,8 +1564,7 @@ step7:
         }
       }
     next:
-      ret = cbor_value_advance(&ga.allow_list);
-      CHECK_CBOR_RET(ret);
+      continue;
     }
     // 7-f
     if (i == ga.allow_list_size) {
@@ -1865,7 +1898,9 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
 static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
   CborParser parser;
   CTAP_client_pin cp;
-  int ret = parse_client_pin(&parser, &cp, params, len);
+  ctap_req_src_t param_src = ctap_param_req_src();
+  int ret = current_req_src.read ? parse_client_pin_src(&parser, &cp, &param_src, len)
+                                 : parse_client_pin(&parser, &cp, params, len);
   CHECK_PARSER_RET(ret);
 
   CborEncoder map, key_map;
@@ -2151,7 +2186,9 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
   CborParser parser;
   CTAP_credential_management cm;
   CTAP_credential_management_state *state = &cred_mgmt_state;
-  int ret = parse_credential_management(&parser, &cm, params, len);
+  ctap_req_src_t param_src = ctap_param_req_src();
+  int ret = current_req_src.read ? parse_credential_management_src(&parser, &cm, &param_src, len)
+                                 : parse_credential_management(&parser, &cm, params, len);
   CHECK_PARSER_RET(ret);
   ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
@@ -2175,7 +2212,8 @@ static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *p
 
     buf[0] = cm.sub_command;
     if (cm.param_len + 1 > sizeof(dc)) return CTAP1_ERR_INVALID_LENGTH;
-    if (cm.param_len > 0) memcpy(&buf[1], cm.sub_command_params_ptr, cm.param_len);
+    if (cm.param_len > 0 && ctap_req_read_param_bytes(cm.sub_command_params_offset, &buf[1], cm.param_len) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
     if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
     if (!cp_verify_pin_token(buf, cm.param_len + 1, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
       DBG_MSG("PIN token verification failed (msg_len=%zu, protocol=%d)\n", cm.param_len + 1, cm.pin_uv_auth_protocol);
@@ -2509,7 +2547,9 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
   CborEncoder map;
   CTAP_large_blobs lb;
   uint8_t buf[256]; // for pin auth
-  int ret = parse_large_blobs(&parser, &lb, params, len);
+  ctap_req_src_t param_src = ctap_param_req_src();
+  int ret = current_req_src.read ? parse_large_blobs_src(&parser, &lb, &param_src, len)
+                                 : parse_large_blobs(&parser, &lb, params, len);
   CHECK_PARSER_RET(ret);
 
   // 1. If offset is not present in the input map, return CTAP1_ERR_INVALID_PARAMETER.
@@ -2607,7 +2647,16 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
       buf[35] = lb.offset >> 8;
       buf[36] = 0x00;
       buf[37] = 0x00;
-      sha256_raw(lb.set, lb.set_len, buf + 38);
+      sha256_ctx_t set_sha256;
+      sha256_init(&set_sha256);
+      size_t hashed = 0;
+      while (hashed < lb.set_len) {
+        size_t chunk = MIN(sizeof(buf), lb.set_len - hashed);
+        if (ctap_req_read_param_bytes(lb.set_offset + hashed, buf, chunk) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        sha256_update(&set_sha256, buf, chunk);
+        hashed += chunk;
+      }
+      sha256_final(&set_sha256, buf + 38);
       if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
       if (!cp_verify_pin_token(buf, 70, lb.pin_uv_auth_param, lb.pin_uv_auth_protocol)) {
         DBG_MSG("Fail to verify pin token\n");
@@ -2628,7 +2677,16 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
     //    g) If the value of offset is zero, prepare a buffer to receive a new serialized large-blob array.
     //    h) Append the value of set to the buffer containing the pending serialized large-blob array.
     KEEPALIVE();
-    if (write_file(LB_FILE_TMP, lb.set, lb.offset, lb.set_len, lb.offset == 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    {
+      size_t written = 0;
+      while (written < lb.set_len) {
+        size_t chunk = MIN(sizeof(buf), lb.set_len - written);
+        if (ctap_req_read_param_bytes(lb.set_offset + written, buf, chunk) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        if (write_file(LB_FILE_TMP, buf, lb.offset + written, chunk, lb.offset == 0 && written == 0) < 0)
+          return CTAP2_ERR_UNHANDLED_REQUEST;
+        written += chunk;
+      }
+    }
     //    i) Update expectedNextOffset to be the new length of the pending serialized large-blob array.
     expectedNextOffset += lb.set_len;
     //    j) If the length of the pending serialized large-blob array is equal to expectedLength:
@@ -2662,22 +2720,28 @@ static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, siz
 }
 
 static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len) {
-  if (req_len-- == 0) return -1;
+  if (req_len == 0) return -1;
 
   cp_pin_uv_auth_token_usage_timer_observer();
 
-  // Use applet_session_scratch.openpgp_crypto as the encoder buffer so that
+  // Use the shared session buffer as the encoder buffer so that
   // large responses (e.g. getAssertion with hmac-secret, ~320 bytes) do not
   // overflow the APDU response buffer (shared_io_buffer, 256 bytes).  When the
   // response fits the APDU buffer it is copied back; otherwise it is streamed
   // via apdu_response_source_set.
-  uint8_t *encode_buf = applet_session_scratch.openpgp_crypto;
-  const size_t encode_buf_size = sizeof(applet_session_scratch.openpgp_crypto);
+  uint8_t *encode_buf = applet_session_scratch.buffer;
+  const size_t encode_buf_size = sizeof(applet_session_scratch.buffer);
 
   CborEncoder encoder;
   cbor_encoder_init(&encoder, encode_buf, encode_buf_size, 0);
 
-  uint8_t cmd = *req++;
+  uint8_t cmd;
+  if (current_req_src.read) {
+    if (ctap_req_read_payload_bytes(0, &cmd, sizeof(cmd)) < 0) return -1;
+  } else {
+    cmd = *req++;
+  }
+  req_len--;
   uint8_t status = CTAP2_ERR_UNHANDLED_REQUEST;
   switch (cmd) {
   case CTAP_MAKE_CREDENTIAL:
@@ -2756,19 +2820,37 @@ finish:
   return 0;
 }
 
+static int ctap_req_source_begin(const ctap_req_src_t *src) {
+  if (!src || !src->read) return -1;
+  if (current_req_src.read != NULL) return -1;
+  current_req_src = *src;
+  return 0;
+}
+
 int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len, ctap_src_t src) {
 
   if (current_cmd_src != CTAP_SRC_NONE) return -1;
   // Must set current_cmd_src to CTAP_SRC_NONE before return
   current_cmd_src = src;
+  ctap_req_src_t req_src = {
+      .read = ctap_mem_req_read,
+      .ctx = req,
+      .base_offset = 0,
+      .len = req_len,
+  };
+  if (ctap_req_source_begin(&req_src) < 0) {
+    current_cmd_src = CTAP_SRC_NONE;
+    return -1;
+  }
   int ret = ctap_process_cbor(req, req_len, resp, resp_len);
+  ctap_req_src_clear();
   current_cmd_src = CTAP_SRC_NONE;
   return ret;
 }
 
-int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scratch, size_t scratch_len,
-                                      CTAPHID_TxSource *source, ctap_src_t src) {
-  if (req_len == 0 || !scratch || scratch_len == 0 || !source) return -1;
+int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint8_t *scratch, size_t scratch_len,
+                                             CTAPHID_TxSource *source, ctap_src_t src) {
+  if (!req_src || !req_src->read || req_src->len == 0 || !scratch || scratch_len == 0 || !source) return -1;
   if (current_cmd_src != CTAP_SRC_NONE) return -1;
 
   memset(source, 0, sizeof(*source));
@@ -2777,31 +2859,45 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   ctap_const_stream_reset(&const_stream_state);
   memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
 
-  if (*req == CTAP_GET_INFO) {
+  if (ctap_req_source_begin(req_src) < 0) return -1;
+
+  uint8_t cmd;
+  if (ctap_req_read_payload_bytes(0, &cmd, sizeof(cmd)) < 0) {
+    ctap_req_src_clear();
+    return -1;
+  }
+
+  if (cmd == CTAP_GET_INFO) {
     cp_pin_uv_auth_token_usage_timer_observer();
     if (ctap_prepare_get_info_stream(source) == 0) {
       last_cmd = CTAP_GET_INFO;
       stream_work_buffer = NULL;
       stream_work_buffer_len = 0;
+      ctap_req_src_clear();
       return 1;
     }
+    ctap_req_src_clear();
     return -1;
   }
 
   uint8_t *resp = NULL;
   size_t resp_len = 0;
-  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) return -1;
+  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) {
+    ctap_req_src_clear();
+    return -1;
+  }
   stream_work_buffer = resp;
   stream_work_buffer_len = resp_len;
 
-  if (*req != CTAP_MAKE_CREDENTIAL) {
+  if (cmd != CTAP_MAKE_CREDENTIAL) {
     current_cmd_src = src;
-    int ret = ctap_process_cbor(req, req_len, resp, &resp_len);
+    int ret = ctap_process_cbor(scratch, req_src->len, resp, &resp_len);
     current_cmd_src = CTAP_SRC_NONE;
     if (ret < 0) {
       stream_work_buffer = NULL;
       stream_work_buffer_len = 0;
       CTAPHID_ReleaseSharedBuffer();
+      ctap_req_src_clear();
       return -1;
     }
     if (mldsa_stream_state.pending && resp[0] == 0) {
@@ -2811,6 +2907,7 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
       source->ctx = &mldsa_stream_state;
       stream_work_buffer = NULL;
       stream_work_buffer_len = 0;
+      ctap_req_src_clear();
       return 1;
     }
 
@@ -2823,6 +2920,7 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
     source->ctx = &mem_stream_state;
     stream_work_buffer = NULL;
     stream_work_buffer_len = 0;
+    ctap_req_src_clear();
     return 1;
   }
 
@@ -2833,7 +2931,7 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   cbor_encoder_init(&encoder, resp + 1, resp_len - 1, 0);
 
   current_cmd_src = src;
-  uint8_t status = ctap_make_credential(&encoder, req + 1, req_len - 1);
+  uint8_t status = ctap_make_credential(&encoder, scratch + 1, req_src->len - 1);
   current_cmd_src = CTAP_SRC_NONE;
   stream_make_credential_response = false;
   stream_resp_base = NULL;
@@ -2849,6 +2947,7 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
     source->ctx = &mc_stream_state;
     stream_work_buffer = NULL;
     stream_work_buffer_len = 0;
+    ctap_req_src_clear();
     return 1;
   }
 
@@ -2861,7 +2960,19 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   source->ctx = &mem_stream_state;
   stream_work_buffer = NULL;
   stream_work_buffer_len = 0;
+  ctap_req_src_clear();
   return 1;
+}
+
+int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scratch, size_t scratch_len,
+                                      CTAPHID_TxSource *source, ctap_src_t src) {
+  ctap_req_src_t req_src = {
+      .read = ctap_mem_req_read,
+      .ctx = req,
+      .base_offset = 0,
+      .len = req_len,
+  };
+  return ctap_process_cbor_stream_source_with_src(&req_src, scratch, scratch_len, source, src);
 }
 
 static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_len, RAPDU *rapdu) {
@@ -2911,7 +3022,13 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
     return 0;
   }
 
-  if (*req == CTAP_GET_INFO) {
+  uint8_t cmd = *req;
+  if (current_req_src.read && ctap_req_read_payload_bytes(0, &cmd, sizeof(cmd)) < 0) {
+    rapdu->sw = SW_UNABLE_TO_PROCESS;
+    return 0;
+  }
+
+  if (cmd == CTAP_GET_INFO) {
     cp_pin_uv_auth_token_usage_timer_observer();
     CTAPHID_TxSource source;
     memset(&source, 0, sizeof(source));
@@ -2926,7 +3043,7 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
     return 0;
   }
 
-  if (*req == CTAP_MAKE_CREDENTIAL) return ctap_prepare_make_credential_apdu_response(req, req_len, rapdu);
+  if (cmd == CTAP_MAKE_CREDENTIAL) return ctap_prepare_make_credential_apdu_response(req, req_len, rapdu);
 
   size_t len = APDU_BUFFER_SIZE;
   int ret = ctap_process_cbor(req, req_len, rapdu->data, &len);
@@ -2938,17 +3055,24 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
   return ret;
 }
 
-int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
+int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu,
+                                      ctap_src_t src) {
   int ret = 0;
   LL = 0;
+  if (!capdu || !req_src || !req_src->read || req_src->len != LC) EXCEPT(SW_WRONG_LENGTH);
   if (current_cmd_src != CTAP_SRC_NONE) EXCEPT(SW_UNABLE_TO_PROCESS);
   // Must set current_cmd_src to CTAP_SRC_NONE before return
   current_cmd_src = src;
+  if (ctap_req_source_begin(req_src) < 0) {
+    current_cmd_src = CTAP_SRC_NONE;
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
     if (INS == CTAP_INS_MSG) {
       if (is_nfc() && (P1 & 0x80) != 0 && ctap_nfc_pending_store(DATA, LC, 1) < 0) {
         current_cmd_src = CTAP_SRC_NONE;
+        ctap_req_src_clear();
         EXCEPT(SW_WRONG_LENGTH);
       }
 
@@ -2958,6 +3082,7 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
       if (is_nfc() && INS == CTAP_NFC_GET_RESPONSE) {
         if (!nfc_pending_state.active || !nfc_pending_state.allow_poll) {
           current_cmd_src = CTAP_SRC_NONE;
+          ctap_req_src_clear();
           EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
         }
 
@@ -2966,28 +3091,36 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
           LL = 1;
           ctap_nfc_pending_reset();
           current_cmd_src = CTAP_SRC_NONE;
+          ctap_req_src_clear();
           return 0;
         }
 
+        current_req_src.read = ctap_nfc_pending_req_read;
+        current_req_src.ctx = &nfc_pending_state;
+        current_req_src.base_offset = 0;
+        current_req_src.len = nfc_pending_state.request_len;
         uint8_t *pending_req = nfc_pending_state.request;
-        if (nfc_pending_state.request_in_pke) {
-          if (ctap_request_load_from_pke(ctap_request_workspace, nfc_pending_state.request_len, 1) < 0) {
+        if (nfc_pending_state.request_in_file) {
+          uint8_t pending_req_head[1];
+          if (ctap_req_read_payload_bytes(0, pending_req_head, sizeof(pending_req_head)) < 0) {
             ctap_nfc_pending_reset();
             current_cmd_src = CTAP_SRC_NONE;
+            ctap_req_src_clear();
             EXCEPT(SW_UNABLE_TO_PROCESS);
           }
-          pending_req = ctap_request_workspace;
+          pending_req = pending_req_head;
         }
-
         ret = ctap_process_apdu_cbor_message(pending_req, nfc_pending_state.request_len, rapdu);
         if (ret != 1) ctap_nfc_pending_reset();
         current_cmd_src = CTAP_SRC_NONE;
+        ctap_req_src_clear();
         if (ret < 0)
           EXCEPT(SW_UNABLE_TO_PROCESS);
         else
           return 0;
       }
       current_cmd_src = CTAP_SRC_NONE;
+      ctap_req_src_clear();
       EXCEPT(SW_INS_NOT_SUPPORTED);
     }
   } else if (CLA == 0x00) {
@@ -3005,21 +3138,50 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
       ret = u2f_select(capdu, rapdu);
       break;
     case CTAP_INS_MSG:
+      LL = 0;
+      SW = SW_NO_ERROR;
       break;
     default:
       current_cmd_src = CTAP_SRC_NONE;
+      ctap_req_src_clear();
       EXCEPT(SW_INS_NOT_SUPPORTED);
     }
   } else {
     current_cmd_src = CTAP_SRC_NONE;
+    ctap_req_src_clear();
     EXCEPT(SW_CLA_NOT_SUPPORTED);
   }
 
+  if (is_nfc() && ret == 1) {
+    current_cmd_src = CTAP_SRC_NONE;
+    ctap_req_src_clear();
+    return 0;
+  }
+
   current_cmd_src = CTAP_SRC_NONE;
+  ctap_req_src_clear();
   if (ret < 0)
     EXCEPT(SW_UNABLE_TO_PROCESS);
   else
     return 0;
+}
+
+int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
+  if (!capdu) {
+    if (rapdu) {
+      rapdu->len = 0;
+      rapdu->sw = SW_WRONG_LENGTH;
+    }
+    return 0;
+  }
+
+  ctap_req_src_t req_src = {
+      .read = ctap_mem_req_read,
+      .ctx = (void *)capdu->data,
+      .base_offset = 0,
+      .len = LC,
+  };
+  return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);
 }
 
 int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
@@ -3029,18 +3191,13 @@ int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t 
     return 0;
   }
 
-  if (capdu->lc > sizeof(ctap_request_workspace) || ctap_request_load_from_pke(ctap_request_workspace, capdu->lc, 0) < 0) {
-    rapdu->len = 0;
-    rapdu->sw = SW_UNABLE_TO_PROCESS;
-    return 0;
-  }
-
-  CAPDU request = *capdu;
-  request.data = ctap_request_workspace;
-  current_apdu_request_from_pke = true;
-  const int ret = ctap_process_apdu_with_src(&request, rapdu, src);
-  current_apdu_request_from_pke = false;
-  return ret;
+  ctap_req_src_t req_src = {
+      .read = ctap_pke_req_read,
+      .ctx = NULL,
+      .base_offset = 0,
+      .len = capdu->lc,
+  };
+  return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);
 }
 
 int ctap_nfc_pending_active(void) { return nfc_pending_state.active != 0; }

@@ -7,11 +7,11 @@
 #include <pke.h>
 #include <rsa.h>
 
-#define OPENPGP_SESSION_CRYPTO_BASE_LENGTH 513
-#define OPENPGP_SESSION_CRYPTO_BUFFER_LENGTH                                                                     \
-  ((OPENPGP_SESSION_CRYPTO_BASE_LENGTH > PKE_BUFFER_SIZE) ? OPENPGP_SESSION_CRYPTO_BASE_LENGTH : PKE_BUFFER_SIZE)
-#define PIV_SESSION_CRYPTO_BUFFER_LENGTH (RSA_N_BIT_MAX / 8)
-#define PIV_SESSION_RESPONSE_BUFFER_LENGTH (PIV_SESSION_CRYPTO_BUFFER_LENGTH + 8)
+// Single global scratch buffer shared by CTAP/OpenPGP/PIV session work.
+// Keep this sized for the largest non-streamable artifact: an RSA-4096 result
+// plus small ASN.1/TLV wrapper overhead. Large transport payloads must be
+// streamed from their transport staging area or persistent temporary files.
+#define APPLET_SHARED_BUFFER_LENGTH ((RSA_N_BIT_MAX / 8) + 32)
 
 typedef enum {
   CTAP_MLDSA_STREAM_NONE,
@@ -41,15 +41,9 @@ typedef struct {
   bool pending;
 } CTAP_mldsa_stream_state;
 
-typedef struct {
-  uint8_t crypto[PIV_SESSION_CRYPTO_BUFFER_LENGTH];
-  uint8_t response[PIV_SESSION_RESPONSE_BUFFER_LENGTH];
-} applet_piv_session_scratch_t;
-
 typedef union {
   CTAP_mldsa_stream_state ctap_mldsa;
-  uint8_t openpgp_crypto[OPENPGP_SESSION_CRYPTO_BUFFER_LENGTH];
-  applet_piv_session_scratch_t piv;
+  uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
 
 extern applet_session_scratch_t applet_session_scratch;

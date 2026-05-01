@@ -168,7 +168,7 @@ void nfc_loop(void) {
       return;
     }
     const uint16_t payload_len = rx_frame_size - 3;
-    if (apdu_buffer_rx_size + payload_len > APDU_BUFFER_SIZE) {
+    if (apdu_buffer_rx_size + payload_len > APDU_COMMAND_BUFFER_SIZE) {
       nfc_error_handler(-3);
       return;
     }

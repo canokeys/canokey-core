@@ -117,7 +117,7 @@ static ck_openpgp_stream_t import_stream;
 static uint16_t decipher_received;
 static uint8_t openpgp_crypto_owned;
 static uint8_t openpgp_pke_owned;
-#define openpgp_crypto_buffer_storage applet_session_scratch.openpgp_crypto
+#define openpgp_crypto_buffer_storage applet_session_scratch.buffer
 
 static int openpgp_crypto_acquire(void) {
   openpgp_crypto_owned = 1;

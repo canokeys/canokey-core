@@ -192,6 +192,9 @@ Transport sends response
 `device_applet_session_acquire(owner)` / `_release()` serialize multi-step cryptographic transactions (e.g. key generation) across loop iterations.  
 Sessions expire after `APPLET_SESSION_TIMEOUT_MS` (2 s) of inactivity.
 
+- Treat the applet session as the exclusivity boundary for large transient state. `CTAPHID`, CTAP over APDU (`CCID` / `WebUSB`), `OpenPGP`, and `PIV` are not required to make forward progress concurrently, so they should share one global session scratch area instead of reserving separate worst-case buffers per applet.
+- Transport choice does not create a separate scratch domain: `CTAPHID`, `CCID`, and `WebUSB` all compete for the same session-level transient resources.
+
 ### Touch / user-presence
 
 `wait_for_user_presence(entry)` blocks inside the main loop, sending CTAPHID keep-alive frames, until a touch event is detected or a 30 s timeout fires.  
@@ -226,8 +229,20 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 
 ### RAM / stack
 
-- `shared_io_buffer` is the **only** large heap-like buffer. There is no dynamic allocation (`malloc` is not used in firmware). All large temporaries must either reuse `shared_io_buffer` (with proper acquire/release) or use the platform PKE register file.
+- There is no dynamic allocation (`malloc` is not used in firmware). Large temporaries must come from one of three places only: `shared_io_buffer`, one global applet-session scratch buffer, or the platform PKE register file.
 - **Stack budget for any single call path: ≤ 5 KB total.** Crypto call paths are the primary consumers; see `canokey-ciu/AGENTS.md` for platform-specific spill rules.
+
+### Streaming / scratch-space policy
+
+- The current `applet_session_scratch_t` pattern must be treated as a single global scratch reservation, not as permission to grow per-applet dedicated buffers. Do not design new long-lived scratch members around applet ownership.
+- `CTAPHID`, CTAP over `CCID` / `WebUSB`, `OpenPGP`, and `PIV` should share the same session scratch because only one of them is expected to own the applet session at a time.
+- Size that global scratch for the largest **non-streamable** artifact only. The design target is an RSA-4096 result (`4096 / 8 = 512` bytes) plus small ASN.1 / TLV wrapper overhead, not an entire request or response payload.
+- Everything else should be streamed: large APDU request bodies, large APDU responses, CTAP CBOR payloads, key-import TLVs, certificates, and public-key encodings should be parsed, encoded, and emitted incrementally whenever the protocol allows it.
+- `shared_io_buffer` remains the short-APDU working buffer. Do not increase `APDU_BUFFER_SIZE` or add parallel heap-like buffers to avoid implementing streaming.
+- PKE RAM may be used as **transient staging** for streaming input/output, but it is not stable storage. Any crypto operation, key-generation step, or helper that reuses the PKE engine may overwrite it.
+- Therefore, any bytes or parser state that must survive across a crypto call, `device_loop()` iteration, keepalive, user-presence wait, or applet-session yield must not live only in PKE RAM. Move it into the global session scratch, `shared_io_buffer`, persistent storage, or recompute it.
+- Before invoking crypto that may touch PKE, either fully consume the staged bytes already in PKE RAM or copy the surviving portion elsewhere first.
+- When adding a new flow, document explicitly which parts are streamed, which exact bytes are forced to materialize, and why they cannot be streamed further.
 
 ### APDU transport: chaining, not extended length
 
@@ -279,6 +294,8 @@ Test-mode extras (enabled by `TEST` define):
 
 - **Do not** call `CCID_Loop` / `CTAPHID_Loop` / etc. directly from interrupt context; they must run from the main loop thread only.
 - **Do not** hold `shared_io_buffer` across a `device_loop()` call; another interface may attempt to acquire it.
+- **Do not** assume PKE RAM survives a crypto operation. If data staged there is still needed after the next crypto step, copy it out first.
+- **Do not** add separate worst-case scratch buffers for `CTAP`, `OpenPGP`, and `PIV`; if the data is not simultaneously live, it belongs in the shared session scratch.
 - When adding a new applet, register it in `src/applets.c` and guard any new interface class source files in `CMakeLists.txt` with the appropriate `ENABLE_*` filter.
 - `APDU_BUFFER_SIZE` (default 256) can be overridden by the platform via a compile-time define; ensure any new static buffers that alias `shared_io_buffer` respect `APDU_COMMAND_BUFFER_SIZE`, not the raw 256 value.
 - LittleFS path strings are short (≤ 31 chars including the null terminator by default). Keep FS paths concise.

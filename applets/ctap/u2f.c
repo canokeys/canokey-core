@@ -28,7 +28,7 @@ typedef struct {
 
 static U2F_register_stream_state u2f_register_stream_state;
 
-#define u2f_register_stream_buffer applet_session_scratch.openpgp_crypto
+#define u2f_register_stream_buffer applet_session_scratch.buffer
 
 static int u2f_register_stream_read_at(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
   U2F_register_stream_state *state = (U2F_register_stream_state *)ctx;
