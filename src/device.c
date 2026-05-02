@@ -116,7 +116,8 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     // Keep blinking, in case other applet stops it
     start_blinking(0);
 #if ENABLE_IFACE_CTAPHID
-    if (owner == DEVICE_APPLET_SESSION_CTAPHID && CTAPHID_Loop(1) == LOOP_CANCEL) {
+    uint8_t ctaphid_ret = CTAPHID_Loop(1);
+    if (owner == DEVICE_APPLET_SESSION_CTAPHID && ctaphid_ret == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
       stop_blinking();
       wait_status = WAIT_NONE;

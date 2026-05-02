@@ -142,8 +142,13 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
   }
 
   const device_applet_session_owner_t owner = device_applet_session_owner();
-  if (owner != DEVICE_APPLET_SESSION_NONE)
-    device_applet_session_release(owner);
+  if (owner != DEVICE_APPLET_SESSION_NONE && owner != DEVICE_APPLET_SESSION_CCID) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
+    return SLOTERROR_CMD_SLOT_BUSY;
+  }
+
+  if (owner == DEVICE_APPLET_SESSION_CCID)
+    device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
   else
     applets_poweroff();
   _Static_assert(sizeof(bulkin_short.abData) >= sizeof(atr_ccid), "bulkin_short.abData is not large enough");
@@ -162,6 +167,12 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
 static uint8_t PC_to_RDR_IccPowerOff(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH);
   if (error != 0) return error;
+
+  const device_applet_session_owner_t owner = device_applet_session_owner();
+  if (owner != DEVICE_APPLET_SESSION_NONE && owner != DEVICE_APPLET_SESSION_CCID) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
+    return SLOTERROR_CMD_SLOT_BUSY;
+  }
 
   applets_poweroff();
   device_applet_session_release(DEVICE_APPLET_SESSION_CCID);

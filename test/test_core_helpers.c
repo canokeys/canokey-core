@@ -380,6 +380,19 @@ static void test_wait_for_user_presence_ok(void **state) {
   assert_false(device_is_blinking());
 }
 
+static void test_wait_for_user_presence_services_ctaphid_while_ccid_waits(void **state) {
+  (void)state;
+
+  reset_test_state();
+  device_init();
+  auto_touch_mode = AUTO_TOUCH_WHEN_BLINKING;
+
+  assert_int_equal(wait_for_user_presence(WAIT_ENTRY_CCID), USER_PRESENCE_OK);
+  assert_true(ctaphid_loop_wait_calls > 0);
+  assert_int_equal(get_touch_result(), TOUCH_NO);
+  assert_false(device_is_blinking());
+}
+
 static void test_wait_for_user_presence_cancel_and_timeout(void **state) {
   (void)state;
 
@@ -526,6 +539,7 @@ int main(void) {
       cmocka_unit_test(test_device_allow_kbd_touch_rules),
       cmocka_unit_test(test_device_sessions_and_keepalive),
       cmocka_unit_test(test_wait_for_user_presence_ok),
+      cmocka_unit_test(test_wait_for_user_presence_services_ctaphid_while_ccid_waits),
       cmocka_unit_test(test_wait_for_user_presence_cancel_and_timeout),
       cmocka_unit_test(test_strong_user_presence_test_success_and_failure),
       cmocka_unit_test(test_device_loop_and_nfc_state),
