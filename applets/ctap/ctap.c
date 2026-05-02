@@ -186,6 +186,7 @@ static int ctap_pke_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len)
 
 static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len) {
   if (current_req_src.read) {
+    if (current_req_src.cancelled && current_req_src.cancelled(current_req_src.ctx)) return -1;
     if (offset > current_req_src.len || len > current_req_src.len - offset) return -1;
     return current_req_src.read(current_req_src.ctx, current_req_src.base_offset + offset, buf, len);
   }
@@ -197,6 +198,7 @@ static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len) 
 
 static void ctap_req_src_clear(void) {
   current_req_src.read = NULL;
+  current_req_src.cancelled = NULL;
   current_req_src.ctx = NULL;
   current_req_src.base_offset = 0;
   current_req_src.len = 0;

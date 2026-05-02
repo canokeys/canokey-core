@@ -25,9 +25,26 @@ typedef struct {
   uint8_t scratch[MAX_CTAP_EXTERNAL_STRING_CHUNK];
 } ctap_cbor_reader_t;
 
+static bool ctap_cbor_source_cancelled(const ctap_req_src_t *src) {
+  return src && src->cancelled && src->cancelled(src->ctx);
+}
+
+static uint8_t ctap_cbor_value_cancel_status(const CborValue *val) {
+  if (!val || !val->parser || (val->parser->flags & CborParserFlag_ExternalSource) == 0) return 0;
+  const ctap_cbor_reader_t *reader = (const ctap_cbor_reader_t *)val->source.token;
+  return reader && ctap_cbor_source_cancelled(reader->src) ? CTAP2_ERR_KEEPALIVE_CANCEL : 0;
+}
+
+#define CHECK_CANCELLED_VALUE(val)                                                                                     \
+  do {                                                                                                                 \
+    uint8_t _cancel_status = ctap_cbor_value_cancel_status((val));                                                     \
+    if (_cancel_status != 0) return _cancel_status;                                                                     \
+  } while (0)
+
 static bool ctap_cbor_can_read_bytes(void *token, size_t len) {
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
   if (!reader->src) return false;
+  (void)ctap_cbor_source_cancelled(reader->src);
   if (reader->offset > reader->src->len) return false;
   return len <= reader->src->len - reader->offset;
 }
@@ -36,6 +53,7 @@ static void *ctap_cbor_read_bytes(void *token, void *dst, size_t offset, size_t 
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
   uint8_t *buf = dst != NULL ? (uint8_t *)dst : reader->scratch;
   if (!reader->src || !reader->src->read || !buf) return NULL;
+  (void)ctap_cbor_source_cancelled(reader->src);
   if (reader->offset > reader->src->len) return NULL;
   if (len > sizeof(reader->scratch) && dst == NULL) return NULL;
   if (offset > reader->src->len - reader->offset || len > reader->src->len - reader->offset - offset) return NULL;
@@ -53,6 +71,7 @@ static void ctap_cbor_advance_bytes(void *token, size_t len) {
 static CborError ctap_cbor_transfer_string(void *token, const void **userptr, size_t offset, size_t len) {
   ctap_cbor_reader_t *reader = (ctap_cbor_reader_t *)token;
   if (!reader->src || !reader->src->read) return CborErrorIO;
+  (void)ctap_cbor_source_cancelled(reader->src);
   if (reader->offset > reader->src->len) return CborErrorUnexpectedEOF;
   if (offset > reader->src->len - reader->offset || len > reader->src->len - reader->offset - offset)
     return CborErrorUnexpectedEOF;
@@ -141,6 +160,7 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);
     ret = ctap_cbor_copy_text(&map, key, &len);
@@ -179,6 +199,7 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);
     ret = ctap_cbor_copy_text(&map, key, &len);
@@ -236,6 +257,7 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);
     ret = ctap_cbor_copy_text(&map, key, &len);
@@ -288,6 +310,7 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
   size_t chosen = arr_length;
   // all elements in array must be examined
   for (size_t i = 0; i < arr_length; ++i) {
+    CHECK_CANCELLED_VALUE(&arr);
     ret = parse_pub_key_cred_param(&arr, &cur_alg_type);
     CHECK_PARSER_RET(ret);
     if (ret == 0 &&
@@ -323,6 +346,7 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);
     ret = ctap_cbor_copy_text(&map, key, &len);
@@ -370,6 +394,7 @@ uint8_t parse_public_key_credential_list(CborValue *lst, credential_id *ids, siz
   ret = cbor_value_enter_container(lst, &arr);
   CHECK_CBOR_RET(ret);
   for (size_t i = 0; i < size; ++i) {
+    CHECK_CANCELLED_VALUE(&arr);
     ret = parse_credential_descriptor(&arr, ids ? (uint8_t *)&ids[i] : NULL);
     CHECK_PARSER_RET(ret);
   }
@@ -391,6 +416,7 @@ uint8_t parse_options(CTAP_options *options, CborValue *val) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     size_t sz;
     char key[3] = {0};
@@ -440,6 +466,7 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
   int key;
   uint8_t parsed_keys = 0;
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -524,6 +551,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);
     ret = ctap_cbor_copy_text(&map, key, &len);
@@ -604,6 +632,7 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     len = sizeof(key);
     ret = ctap_cbor_copy_text(&map, key, &len);
@@ -630,6 +659,7 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
         GA_HS_MAP_ENTRY_ALL_REQUIRED = 0b111,
       } map_has_entry = GA_HS_MAP_ENTRY_NONE;
       for (size_t j = 0; j < hmac_map_length; ++j) {
+        CHECK_CANCELLED_VALUE(&hmac_map);
         if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
         int hmac_key;
         ret = cbor_value_get_int_checked(&hmac_map, &hmac_key);
@@ -741,6 +771,7 @@ uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val, size_t *
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -810,6 +841,7 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -977,6 +1009,7 @@ static uint8_t parse_get_assertion_impl(CborParser *parser, CTAP_get_assertion *
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -1103,6 +1136,7 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -1291,6 +1325,7 @@ static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credent
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);
@@ -1407,6 +1442,7 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
   CHECK_CBOR_RET(ret);
 
   for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
     if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
     ret = cbor_value_get_int_checked(&map, &key);
     CHECK_CBOR_RET(ret);

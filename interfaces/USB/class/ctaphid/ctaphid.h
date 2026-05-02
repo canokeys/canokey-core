@@ -107,8 +107,9 @@ typedef struct {
   uint32_t expire;
   uint8_t state;
   uint8_t ready;
-  uint8_t executing;
-  uint8_t cancel_pending;
+  volatile uint8_t executing;
+  volatile uint8_t cancel_pending;
+  volatile uint8_t cancel_response_sent;
   uint8_t cmd;
   uint8_t seq;
   uint8_t use_pke_buffer;
