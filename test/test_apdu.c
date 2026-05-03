@@ -15,6 +15,9 @@
 #include <pke.h>
 #include <string.h>
 
+#define CTAP_LARGE_BLOBS 0x0C
+#define LB_FILE "ctap_lb"
+
 static void test_input_chaining(void **state) {
   (void)state;
 
@@ -417,6 +420,51 @@ static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **
   if (source.close) source.close(source.ctx);
 }
 
+static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
+  (void)state;
+
+  static uint8_t req[] = {
+      CTAP_LARGE_BLOBS,
+      0xA2,
+      0x01,
+      0x19,
+      0x01,
+      0x2C,
+      0x03,
+      0x00,
+  };
+  uint8_t blob[300];
+  uint8_t scratch[64] = {0};
+  uint8_t chunk[16] = {0};
+  CTAPHID_TxSource source = {0};
+  size_t written = 0;
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  for (size_t i = 0; i < sizeof(blob); ++i) {
+    blob[i] = (uint8_t)i;
+  }
+  assert_int_equal(write_file(LB_FILE, blob, 0, sizeof(blob), 1), 0);
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
+                   1);
+  assert_int_equal(source.total_len, 1 + 1 + 1 + 3 + sizeof(blob));
+  assert_non_null(source.read);
+  assert_int_equal(source.read(source.ctx, chunk, sizeof(chunk), &written), 0);
+  assert_int_equal(written, sizeof(chunk));
+  assert_int_equal(chunk[0], 0x00);
+  assert_int_equal(chunk[1], 0xA1);
+  assert_int_equal(chunk[2], 0x01);
+  assert_int_equal(chunk[3], 0x59);
+  assert_int_equal(chunk[4], 0x01);
+  assert_int_equal(chunk[5], 0x2C);
+  assert_int_equal(chunk[6], 0x00);
+  assert_int_equal(chunk[7], 0x01);
+  if (source.close) source.close(source.ctx);
+}
+
 static void test_get_response_after_reset_without_pending_response(void **state) {
   (void)state;
 
@@ -501,6 +549,7 @@ int main() {
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
+      cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
   };

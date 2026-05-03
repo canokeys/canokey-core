@@ -164,6 +164,7 @@ static uint8_t *stream_resp_base;
 static uint8_t *stream_work_buffer;
 static size_t stream_work_buffer_len;
 static bool stream_make_credential_response;
+static bool hid_cbor_stream_response_active;
 static bool cert_write_active;
 static uint16_t cert_write_len;
 // Current request bytes may be either a stable memory buffer or a transport
@@ -212,6 +213,10 @@ static void ctap_req_lifetime_end(void) {
   current_req_mem_len = 0;
 }
 
+static void ctap_begin_hid_cbor_stream_response(void) { hid_cbor_stream_response_active = true; }
+
+static void ctap_end_hid_cbor_stream_response(void) { hid_cbor_stream_response_active = false; }
+
 static int ctap_req_read_param_bytes(size_t offset, uint8_t *buf, size_t len) {
   return ctap_req_read_payload_bytes(offset + 1, buf, len);
 }
@@ -241,6 +246,19 @@ static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t 
   state->emitted += copied;
   *written = copied;
   return 0;
+}
+
+static int ctap_prepare_hid_cbor_stream_source(uint8_t status, size_t resp_len, CTAPHID_TxSource *source) {
+  if (!source || status != 0 || resp_len <= APDU_BUFFER_SIZE) return 0;
+
+  mem_stream_state.buf = applet_session_scratch.buffer;
+  mem_stream_state.len = resp_len;
+  mem_stream_state.emitted = 0;
+  source->total_len = mem_stream_state.len;
+  source->read = ctap_mem_stream_read;
+  source->close = CTAPHID_CloseSharedBufferSource;
+  source->ctx = &mem_stream_state;
+  return 1;
 }
 
 static void ctap_const_stream_reset(CTAP_const_stream_state *state) { memset(state, 0, sizeof(*state)); }
@@ -2840,13 +2858,15 @@ set_resp:
   *resp = status;
   SET_RESP();
   if (*resp_len > APDU_BUFFER_SIZE && status == 0) {
-    // Response is too large for the APDU buffer; stream it from encode_buf.
     // Prepend the status byte by shifting the CBOR data right.
     size_t cbor_len = *resp_len - 1;
     memmove(encode_buf + 1, encode_buf, cbor_len);
     encode_buf[0] = *resp;
-    apdu_response_source_set((uint32_t)*resp_len, SW_NO_ERROR, ctap_large_response_read_at, NULL, encode_buf);
-    *resp_len = 1; // initial payload: status byte only
+    if (!hid_cbor_stream_response_active) {
+      // Response is too large for the APDU buffer; stream it via GET RESPONSE.
+      apdu_response_source_set((uint32_t)*resp_len, SW_NO_ERROR, ctap_large_response_read_at, NULL, encode_buf);
+      *resp_len = 1; // initial APDU payload: status byte only
+    }
   } else if (*resp_len > 1 && status == 0) {
     memmove(resp + 1, encode_buf, *resp_len - 1);
   }
@@ -2926,7 +2946,9 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
 
   if (cmd != CTAP_MAKE_CREDENTIAL) {
     current_cmd_src = src;
+    if (src == CTAP_SRC_HID) ctap_begin_hid_cbor_stream_response();
     int ret = ctap_process_cbor(scratch, req_src->len, resp, &resp_len);
+    ctap_end_hid_cbor_stream_response();
     current_cmd_src = CTAP_SRC_NONE;
     if (ret < 0) {
       stream_work_buffer = NULL;
@@ -2940,6 +2962,13 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
       source->read = ctap_mldsa_stream_read;
       source->close = CTAPHID_CloseSharedBufferSource;
       source->ctx = &mldsa_stream_state;
+      stream_work_buffer = NULL;
+      stream_work_buffer_len = 0;
+      ctap_req_lifetime_end();
+      return 1;
+    }
+
+    if (ctap_prepare_hid_cbor_stream_source(resp[0], resp_len, source)) {
       stream_work_buffer = NULL;
       stream_work_buffer_len = 0;
       ctap_req_lifetime_end();
@@ -3030,7 +3059,9 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
     current_cmd_src = src;
     current_req_mem = req;
     current_req_mem_len = req_len;
+    if (src == CTAP_SRC_HID) ctap_begin_hid_cbor_stream_response();
     int ret = ctap_process_cbor(req, req_len, resp, &resp_len);
+    ctap_end_hid_cbor_stream_response();
     ctap_req_lifetime_end();
     current_cmd_src = CTAP_SRC_NONE;
     if (ret < 0) {
@@ -3044,6 +3075,12 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
       source->read = ctap_mldsa_stream_read;
       source->close = CTAPHID_CloseSharedBufferSource;
       source->ctx = &mldsa_stream_state;
+      stream_work_buffer = NULL;
+      stream_work_buffer_len = 0;
+      return 1;
+    }
+
+    if (ctap_prepare_hid_cbor_stream_source(resp[0], resp_len, source)) {
       stream_work_buffer = NULL;
       stream_work_buffer_len = 0;
       return 1;
