@@ -96,7 +96,6 @@ uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) 
 
 uint8_t USBD_CTAPHID_DataIn() {
   hid_handle.state = CTAPHID_IDLE;
-  CTAPHID_TxContinue();
   return USBD_OK;
 }
 
@@ -128,6 +127,8 @@ uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint1
   }
   return USBD_OK;
 }
+
+uint8_t USBD_CTAPHID_IsIdle(void) { return hid_handle.state == CTAPHID_IDLE ? USBD_OK : USBD_BUSY; }
 
 uint8_t USBD_CTAPHID_WaitIdle(void) { return wait_ep_idle(100); }
 

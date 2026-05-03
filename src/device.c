@@ -107,7 +107,6 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
   uint32_t start = device_get_tick();
   uint32_t last = start;
-  DBG_MSG("start %u\n", start);
   while (get_touch_result() == TOUCH_NO) {
 #ifdef BYPASS_USER_PRESENCE
     break;
@@ -161,7 +160,6 @@ int send_keepalive_during_processing(uint8_t entry) {
   default:
     break;
   }
-  DBG_MSG("KEEPALIVE\n");
   return 0;
 }
 

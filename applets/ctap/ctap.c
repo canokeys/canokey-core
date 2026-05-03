@@ -1285,7 +1285,6 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
                                              CP_PERMISSION_MC, mc.rp_id_hash);
       if (err) return err;
       uv = true;
-      DBG_MSG("PIN verified\n");
     }
     //   11.2 [N/A] If the "uv" option is present and set to true
   }
@@ -1304,7 +1303,6 @@ step12:
       memzero(&key, sizeof(key));
       if (ret < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
       if (ret == 0) {
-        DBG_MSG("Exclude ID found\n");
         // a) If the credential's credProtect value is not userVerificationRequired
         if (kh->nonce[CREDENTIAL_NONCE_CP_POS] != CRED_PROTECT_VERIFICATION_REQUIRED ||
             // b) Else (implying the credential's credProtect value is userVerificationRequired)
@@ -1914,7 +1912,7 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
 
   source->total_len = const_stream_state.total_len;
   source->read = ctap_const_stream_read;
-  source->close = CTAPHID_CloseSharedBufferSource;
+  source->close = NULL;
   source->ctx = &const_stream_state;
   return 0;
 }
