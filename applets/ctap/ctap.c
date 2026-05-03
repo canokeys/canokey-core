@@ -1917,7 +1917,7 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
   return 0;
 }
 
-static uint8_t ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
+static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, const uint8_t *params, size_t len) {
   CborParser parser;
   CTAP_client_pin cp;
   ctap_req_src_t param_src = ctap_param_req_src();
@@ -2206,7 +2206,8 @@ static uint8_t cm_find_credential(const credential_id *target, CTAP_discoverable
   return CTAP2_ERR_NO_CREDENTIALS;
 }
 
-static uint8_t ctap_credential_management(CborEncoder *encoder, const uint8_t *params, size_t len) {
+static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder *encoder, const uint8_t *params,
+                                                                    size_t len) {
   CborParser parser;
   CTAP_credential_management cm;
   CTAP_credential_management_state *state = &cred_mgmt_state;
@@ -2577,7 +2578,7 @@ static uint8_t ctap_reset_data(void) {
   return ctap_install(1);
 }
 
-static uint8_t ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {
+static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, const uint8_t *params, size_t len) {
   static uint16_t expectedNextOffset, expectedLength;
 
   CborParser parser;
