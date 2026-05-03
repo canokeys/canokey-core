@@ -130,6 +130,7 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
 
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
 
   assert_int_equal(CCID_OutEvent((uint8_t *)power_on, sizeof(power_on)), 0);
   CCID_Loop();
@@ -140,7 +141,28 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
   CCID_Loop();
 
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
   device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+}
+
+static void test_ccid_power_on_preempts_idle_webusb_session(void **state) {
+  (void)state;
+
+  static const uint8_t power_on[] = {
+      PC_TO_RDR_ICCPOWERON, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+  };
+
+  init_apdu_buffer();
+  device_init();
+  CCID_Init();
+
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_WEBUSB);
+
+  assert_int_equal(CCID_OutEvent((uint8_t *)power_on, sizeof(power_on)), 0);
+  CCID_Loop();
+
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
 }
 
 static uint32_t observed_streaming_le;
@@ -540,6 +562,7 @@ int main() {
       cmocka_unit_test(test_output_chaining),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
+      cmocka_unit_test(test_ccid_power_on_preempts_idle_webusb_session),
       cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),

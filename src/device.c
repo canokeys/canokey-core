@@ -46,6 +46,11 @@ static void device_applet_session_poll(void) {
   }
 }
 
+static int device_applet_session_can_preempt(void) {
+  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID) return 0;
+  return apdu_session_can_preempt();
+}
+
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
@@ -253,7 +258,10 @@ void device_init(void) {
 
 int device_applet_session_acquire(device_applet_session_owner_t owner) {
   device_applet_session_poll();
-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) return -1;
+  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) {
+    if (!device_applet_session_can_preempt()) return -1;
+    device_applet_session_expire();
+  }
   session_owner = owner;
   session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
   return 0;
@@ -267,6 +275,19 @@ void device_applet_session_touch(device_applet_session_owner_t owner) {
 void device_applet_session_release(device_applet_session_owner_t owner) {
   if (session_owner != owner) return;
   device_applet_session_expire();
+}
+
+int device_applet_session_reset(device_applet_session_owner_t owner) {
+  device_applet_session_poll();
+  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_can_preempt())
+    return -1;
+  if (session_owner == DEVICE_APPLET_SESSION_NONE) {
+    applets_poweroff();
+    apdu_response_source_clear();
+    return 0;
+  }
+  device_applet_session_expire();
+  return 0;
 }
 
 device_applet_session_owner_t device_applet_session_owner(void) {

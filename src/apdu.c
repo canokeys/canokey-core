@@ -396,6 +396,14 @@ void apdu_response_source_clear(void) {
 
 int apdu_response_source_active(void) { return response_source.active != 0; }
 
+int apdu_session_can_preempt(void) {
+  if (buffer_owner != BUFFER_OWNER_NONE) return 0;
+  if (response_source.active) return 0;
+  if (rapdu_chaining.sent < rapdu_chaining.rapdu.len) return 0;
+  if (fido_capdu_chaining.in_chaining || fido_capdu_uses_pke) return 0;
+  return 1;
+}
+
 int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
   if (device_applet_session_acquire((device_applet_session_owner_t)session_owner) != 0) return -1;
   if (acquire_apdu_buffer(buffer_owner) != 0) {

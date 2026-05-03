@@ -86,7 +86,9 @@ uint8_t USBD_WEBUSB_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
 }
 
 void WebUSB_Loop(void) {
-  if (device_get_tick() - last_keepalive > 2000 && state == STATE_HOLD_SESSION) {
+  if (state == STATE_HOLD_SESSION && device_applet_session_owner() != DEVICE_APPLET_SESSION_WEBUSB) {
+    state = STATE_IDLE;
+  } else if (device_get_tick() - last_keepalive > 2000 && state == STATE_HOLD_SESSION) {
     DBG_MSG("Release session after time-out\n");
     device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
     // CCID_insert();

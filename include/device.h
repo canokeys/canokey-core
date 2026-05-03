@@ -108,6 +108,7 @@ void device_loop(void);
 int device_applet_session_acquire(device_applet_session_owner_t owner);
 void device_applet_session_touch(device_applet_session_owner_t owner);
 void device_applet_session_release(device_applet_session_owner_t owner);
+int device_applet_session_reset(device_applet_session_owner_t owner);
 device_applet_session_owner_t device_applet_session_owner(void);
 #if ENABLE_NFC
 uint8_t is_nfc(void);

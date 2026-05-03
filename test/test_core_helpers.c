@@ -27,6 +27,7 @@ static int webusb_loop_calls;
 static int kbdhid_loop_calls;
 static int keepalive_processing_calls;
 static int keepalive_upneeded_calls;
+static bool apdu_session_preemptable;
 static uint8_t ctaphid_wait_result;
 static bool led_normally_on;
 static bool inject_write_error;
@@ -53,6 +54,7 @@ static void reset_test_state(void) {
   kbdhid_loop_calls = 0;
   keepalive_processing_calls = 0;
   keepalive_upneeded_calls = 0;
+  apdu_session_preemptable = false;
   ctaphid_wait_result = LOOP_SUCCESS;
   led_normally_on = false;
   inject_write_error = false;
@@ -141,6 +143,8 @@ bool testmode_err_triggered(const char *filename, bool file_wr) {
 void applets_poweroff(void) { applets_poweroff_calls++; }
 
 void apdu_response_source_clear(void) { apdu_response_source_clear_calls++; }
+
+int apdu_session_can_preempt(void) { return apdu_session_preemptable; }
 
 void CCID_Loop(void) { ccid_loop_calls++; }
 
@@ -342,6 +346,9 @@ static void test_device_sessions_and_keepalive(void **state) {
   fake_tick = 2099;
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
 
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), -1);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+
   fake_tick = 2101;
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
   assert_int_equal(applets_poweroff_calls, 1);
@@ -359,6 +366,12 @@ static void test_device_sessions_and_keepalive(void **state) {
 
   fake_tick = 2401;
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+
+  fake_tick = 2500;
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  apdu_session_preemptable = true;
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_WEBUSB);
 
   fake_tick = 500;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
