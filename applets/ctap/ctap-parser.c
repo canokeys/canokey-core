@@ -114,6 +114,115 @@ static CborError ctap_cbor_copy_bytes(CborValue *val, uint8_t *buf, size_t *len)
   return cbor_value_copy_byte_string(val, buf, len, val);
 }
 
+typedef enum {
+  CTAP_TEXT_KEY_UNKNOWN = 0,
+  CTAP_TEXT_KEY_ALG,
+  CTAP_TEXT_KEY_CRED_BLOB,
+  CTAP_TEXT_KEY_CRED_PROTECT,
+  CTAP_TEXT_KEY_DISPLAY_NAME,
+  CTAP_TEXT_KEY_HMAC_SECRET,
+  CTAP_TEXT_KEY_ICON,
+  CTAP_TEXT_KEY_ID,
+  CTAP_TEXT_KEY_LARGE_BLOB_KEY,
+  CTAP_TEXT_KEY_NAME,
+  CTAP_TEXT_KEY_RK,
+  CTAP_TEXT_KEY_TYPE,
+  CTAP_TEXT_KEY_UP,
+  CTAP_TEXT_KEY_UV,
+} ctap_text_key_t;
+
+static int ctap_text_key_error(CborError ret) {
+  return -(int)(ret == CborErrorOutOfMemory ? CTAP2_ERR_LIMIT_EXCEEDED : CTAP2_ERR_INVALID_CBOR);
+}
+
+static int ctap_text_key_id(CborValue *val) {
+  if (cbor_value_get_type(val) != CborTextStringType) return -(int)CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+
+  size_t len;
+  CborError ret = cbor_value_get_string_length(val, &len);
+  if (ret != CborNoError) return ctap_text_key_error(ret);
+
+  if (len > sizeof("largeBlobKey") - 1) {
+    ret = cbor_value_advance(val);
+    if (ret != CborNoError) return ctap_text_key_error(ret);
+    return CTAP_TEXT_KEY_UNKNOWN;
+  }
+
+  char key_buf[sizeof("largeBlobKey")];
+  size_t key_len = sizeof(key_buf);
+  ret = ctap_cbor_copy_text(val, key_buf, &key_len);
+  if (ret != CborNoError) return ctap_text_key_error(ret);
+
+  int key = CTAP_TEXT_KEY_UNKNOWN;
+  switch (len) {
+  case 2:
+    if (memcmp(key_buf, "id", 2) == 0)
+      key = CTAP_TEXT_KEY_ID;
+    else if (memcmp(key_buf, "rk", 2) == 0)
+      key = CTAP_TEXT_KEY_RK;
+    else if (memcmp(key_buf, "up", 2) == 0)
+      key = CTAP_TEXT_KEY_UP;
+    else if (memcmp(key_buf, "uv", 2) == 0)
+      key = CTAP_TEXT_KEY_UV;
+    break;
+  case 3:
+    if (memcmp(key_buf, "alg", 3) == 0) key = CTAP_TEXT_KEY_ALG;
+    break;
+  case 4:
+    if (memcmp(key_buf, "icon", 4) == 0)
+      key = CTAP_TEXT_KEY_ICON;
+    else if (memcmp(key_buf, "name", 4) == 0)
+      key = CTAP_TEXT_KEY_NAME;
+    else if (memcmp(key_buf, "type", 4) == 0)
+      key = CTAP_TEXT_KEY_TYPE;
+    break;
+  case 8:
+    if (memcmp(key_buf, "credBlob", 8) == 0) key = CTAP_TEXT_KEY_CRED_BLOB;
+    break;
+  case 11:
+    if (memcmp(key_buf, "credProtect", 11) == 0)
+      key = CTAP_TEXT_KEY_CRED_PROTECT;
+    else if (memcmp(key_buf, "displayName", 11) == 0)
+      key = CTAP_TEXT_KEY_DISPLAY_NAME;
+    else if (memcmp(key_buf, "hmac-secret", 11) == 0)
+      key = CTAP_TEXT_KEY_HMAC_SECRET;
+    break;
+  case 12:
+    if (memcmp(key_buf, "largeBlobKey", 12) == 0) key = CTAP_TEXT_KEY_LARGE_BLOB_KEY;
+    break;
+  default:
+    break;
+  }
+  return key;
+}
+
+static uint8_t ctap_parse_pin_uv_auth_protocol(CborValue *val, uint8_t *out) {
+  if (cbor_value_get_type(val) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  int tmp;
+  int ret = cbor_value_get_int_checked(val, &tmp);
+  CHECK_CBOR_RET(ret);
+  if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
+  *out = (uint8_t)tmp;
+  ret = cbor_value_advance(val);
+  CHECK_CBOR_RET(ret);
+  return 0;
+}
+
+static uint8_t ctap_parse_pin_uv_auth_param(CborValue *val, uint8_t *dst, size_t *len, bool allow_empty) {
+  if (cbor_value_get_type(val) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  int ret = cbor_value_get_string_length(val, len);
+  CHECK_CBOR_RET(ret);
+  if ((!allow_empty && *len == 0) || *len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
+  if (*len > 0) {
+    ret = ctap_cbor_copy_bytes(val, dst, len);
+    CHECK_CBOR_RET(ret);
+  } else {
+    ret = cbor_value_advance(val);
+    CHECK_CBOR_RET(ret);
+  }
+  return 0;
+}
+
 static void maybe_truncate_rpid(uint8_t stored_rpid[MAX_STORED_RPID_LENGTH], size_t *stored_len, const uint8_t *rpid,
                                 size_t rpid_len) {
   if (rpid_len <= MAX_STORED_RPID_LENGTH) {
@@ -151,7 +260,7 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[4], domain[DOMAIN_NAME_MAX_SIZE + 1];
+  char domain[DOMAIN_NAME_MAX_SIZE + 1];
   size_t map_length, len;
 
   int ret = cbor_value_get_map_length(val, &map_length);
@@ -161,14 +270,11 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    len = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &len);
-    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
-    CHECK_CBOR_RET(ret);
+    int key = ctap_text_key_id(&map);
+    if (key < 0) return (uint8_t)-key;
 
     if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    if (strcmp(key, "id") == 0) {
+    if (key == CTAP_TEXT_KEY_ID) {
       len = DOMAIN_NAME_MAX_SIZE;
       ret = ctap_cbor_copy_text(&map, domain, &len);
       CHECK_CBOR_RET(ret);
@@ -190,7 +296,6 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[12];
   size_t map_length, len;
 
   int ret = cbor_value_get_map_length(val, &map_length);
@@ -200,13 +305,10 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    len = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &len);
-    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
-    CHECK_CBOR_RET(ret);
+    int key = ctap_text_key_id(&map);
+    if (key < 0) return (uint8_t)-key;
 
-    if (strcmp(key, "id") == 0) {
+    if (key == CTAP_TEXT_KEY_ID) {
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = USER_ID_MAX_SIZE;
       ret = ctap_cbor_copy_bytes(&map, user->id, &len);
@@ -215,21 +317,21 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
       user->id_size = len;
       DBG_MSG("id: ");
       PRINT_HEX(user->id, len);
-    } else if (strcmp(key, "displayName") == 0) {
+    } else if (key == CTAP_TEXT_KEY_DISPLAY_NAME) {
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = DISPLAY_NAME_LIMIT - 1;
       ret = ctap_cbor_copy_text(&map, (char *)user->display_name, &len);
       CHECK_CBOR_RET(ret);
       user->display_name[len] = 0;
       DBG_MSG("displayName: %s\n", user->display_name);
-    } else if (strcmp(key, "name") == 0) {
+    } else if (key == CTAP_TEXT_KEY_NAME) {
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       len = USER_NAME_LIMIT - 1;
       ret = ctap_cbor_copy_text(&map, (char *)user->name, &len);
       CHECK_CBOR_RET(ret);
       user->name[len] = 0;
       DBG_MSG("name: %s\n", user->name);
-    } else if (strcmp(key, "icon") == 0) {
+    } else if (key == CTAP_TEXT_KEY_ICON) {
       // We do not store it
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_advance(&map);
@@ -248,7 +350,7 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[5], cred[11];
+  char cred[11];
   size_t map_length, len;
   bool found_type = false, found_alg = false, is_public_key = false;
   int ret = cbor_value_get_map_length(val, &map_length);
@@ -258,13 +360,10 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    len = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &len);
-    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
-    CHECK_CBOR_RET(ret);
+    int key = ctap_text_key_id(&map);
+    if (key < 0) return (uint8_t)-key;
 
-    if (strcmp(key, "type") == 0) {
+    if (key == CTAP_TEXT_KEY_TYPE) {
       found_type = true;
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
       len = sizeof(cred);
@@ -273,7 +372,7 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
         is_public_key = strcmp(cred, "public-key") == 0;
       else if (ret != CborErrorOutOfMemory)
         CHECK_CBOR_RET(ret);
-    } else if (strcmp(key, "alg") == 0) {
+    } else if (key == CTAP_TEXT_KEY_ALG) {
       found_alg = true;
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_MISSING_PARAMETER;
       ret = cbor_value_get_int_checked(&map, (int *)alg_type);
@@ -337,7 +436,6 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
   if (cbor_value_get_type(arr) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[5];
   size_t map_length, len;
   bool found_id = false, found_type = false;
   int ret = cbor_value_get_map_length(arr, &map_length);
@@ -347,13 +445,10 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    len = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &len);
-    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
-    CHECK_CBOR_RET(ret);
+    int key = ctap_text_key_id(&map);
+    if (key < 0) return (uint8_t)-key;
 
-    if (strcmp(key, "id") == 0) {
+    if (key == CTAP_TEXT_KEY_ID) {
       found_id = true;
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_MISSING_PARAMETER;
       if (id) {
@@ -364,7 +459,7 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
         ret = cbor_value_advance(&map);
         CHECK_CBOR_RET(ret);
       }
-    } else if (strcmp(key, "type") == 0) {
+    } else if (key == CTAP_TEXT_KEY_TYPE) {
       found_type = true;
       if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
       ret = cbor_value_advance(&map);
@@ -417,32 +512,25 @@ uint8_t parse_options(CTAP_options *options, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    size_t sz;
-    char key[3] = {0};
+    int key = ctap_text_key_id(&map);
     bool b;
-    sz = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &sz);
-    if (ret == CborErrorOutOfMemory) {
-      key[0] = key[1] = 0;
-    } else
-      CHECK_CBOR_RET(ret);
+    if (key < 0) return (uint8_t)-key;
     if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
-    if (memcmp(key, "rk", 2) == 0) {
+    if (key == CTAP_TEXT_KEY_RK) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       options->rk = b;
-    } else if (memcmp(key, "uv", 2) == 0) {
+    } else if (key == CTAP_TEXT_KEY_UV) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       options->uv = b;
-    } else if (memcmp(key, "up", 2) == 0) {
+    } else if (key == CTAP_TEXT_KEY_UP) {
       ret = cbor_value_get_boolean(&map, &b);
       CHECK_CBOR_RET(ret);
       options->up = b;
     } else {
-      DBG_MSG("ignoring option specified %c%c\n", key[0], key[1]);
+      DBG_MSG("ignoring unknown option\n");
     }
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
@@ -541,7 +629,6 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[13];
   size_t map_length, len;
   int tmp;
 
@@ -552,13 +639,10 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    len = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &len);
-    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
-    CHECK_CBOR_RET(ret);
+    int key = ctap_text_key_id(&map);
+    if (key < 0) return (uint8_t)-key;
 
-    if (strcmp(key, "credProtect") == 0) {
+    if (key == CTAP_TEXT_KEY_CRED_PROTECT) {
       if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_int_checked(&map, &tmp);
       CHECK_CBOR_RET(ret);
@@ -567,7 +651,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       DBG_MSG("credProtect: %d\n", tmp);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
-    } else if (strcmp(key, "credBlob") == 0) {
+    } else if (key == CTAP_TEXT_KEY_CRED_BLOB) {
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       mc->ext_has_cred_blob = 1;
       ret = cbor_value_get_string_length(&map, &len);
@@ -593,7 +677,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
         DBG_MSG("credBlob: ");
         PRINT_HEX(mc->ext_cred_blob, len);
       }
-    } else if (strcmp(key, "largeBlobKey") == 0) {
+    } else if (key == CTAP_TEXT_KEY_LARGE_BLOB_KEY) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &mc->ext_large_blob_key);
       CHECK_CBOR_RET(ret);
@@ -601,7 +685,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       if (!mc->ext_large_blob_key) return CTAP2_ERR_INVALID_OPTION;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
-    } else if (strcmp(key, "hmac-secret") == 0) {
+    } else if (key == CTAP_TEXT_KEY_HMAC_SECRET) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &mc->ext_hmac_secret);
       CHECK_CBOR_RET(ret);
@@ -622,7 +706,6 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  char key[13];
   size_t map_length, len;
   int tmp;
 
@@ -633,13 +716,10 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
 
   for (size_t i = 0; i < map_length; ++i) {
     CHECK_CANCELLED_VALUE(&map);
-    if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-    len = sizeof(key);
-    ret = ctap_cbor_copy_text(&map, key, &len);
-    if (ret == CborErrorOutOfMemory) return CTAP2_ERR_LIMIT_EXCEEDED;
-    CHECK_CBOR_RET(ret);
+    int key = ctap_text_key_id(&map);
+    if (key < 0) return (uint8_t)-key;
 
-    if (strcmp(key, "hmac-secret") == 0) {
+    if (key == CTAP_TEXT_KEY_HMAC_SECRET) {
       DBG_MSG("hmac-secret found\n");
       ga->ext_hmac_secret_pin_protocol =
           1; // pinUvAuthProtocol(0x04): (optional) as selected when getting the shared secret. CTAP2.1 platforms MUST
@@ -734,14 +814,14 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
         return CTAP1_ERR_INVALID_LENGTH;
       }
       ga->parsed_params |= PARAM_HMAC_SECRET;
-    } else if (strcmp(key, "credBlob") == 0) {
+    } else if (key == CTAP_TEXT_KEY_CRED_BLOB) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &ga->ext_cred_blob);
       CHECK_CBOR_RET(ret);
       DBG_MSG("credBlob: %d\n", ga->ext_cred_blob);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
-    } else if (strcmp(key, "largeBlobKey") == 0) {
+    } else if (key == CTAP_TEXT_KEY_LARGE_BLOB_KEY) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &ga->ext_large_blob_key);
       CHECK_CBOR_RET(ret);
@@ -824,7 +904,7 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
   CborValue it, map;
   ctap_cbor_reader_t reader;
   size_t map_length;
-  int key, pin_uv_auth_protocol;
+  int key;
   memset(mc, 0, sizeof(CTAP_make_credential));
 
   // options are absent by default
@@ -918,39 +998,24 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
 
     case MC_REQ_PIN_UV_AUTH_PARAM:
       DBG_MSG("pin_uv_auth_param found\n");
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &mc->pin_uv_auth_param_len);
-      CHECK_CBOR_RET(ret);
-      if (mc->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH) {
-        DBG_MSG("pin_uv_auth_param is too long\n");
-        return CTAP2_ERR_PIN_AUTH_INVALID;
-      }
+      ret = ctap_parse_pin_uv_auth_param(&map, mc->pin_uv_auth_param, &mc->pin_uv_auth_param_len, true);
+      CHECK_PARSER_RET(ret);
       if (mc->pin_uv_auth_param_len > 0) {
-        ret = ctap_cbor_copy_bytes(&map, mc->pin_uv_auth_param, &mc->pin_uv_auth_param_len);
-        CHECK_CBOR_RET(ret);
         DBG_MSG("pin_uv_auth_param: ");
         PRINT_HEX(mc->pin_uv_auth_param, mc->pin_uv_auth_param_len);
-      } else {
-        ret = cbor_value_advance(&map);
-        CHECK_CBOR_RET(ret);
       }
       mc->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
 
     case MC_REQ_PIN_PROTOCOL:
       DBG_MSG("pin_uv_auth_protocol found\n");
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &pin_uv_auth_protocol);
-      CHECK_CBOR_RET(ret);
-      DBG_MSG("pin_uv_auth_protocol: %d\n", pin_uv_auth_protocol);
-      if (pin_uv_auth_protocol != 1 && pin_uv_auth_protocol != 2) {
+      ret = ctap_parse_pin_uv_auth_protocol(&map, &mc->pin_uv_auth_protocol);
+      if (ret == CTAP1_ERR_INVALID_PARAMETER) {
         DBG_MSG("Unknown pin_uv_auth_protocol\n");
-        return CTAP1_ERR_INVALID_PARAMETER;
       }
-      mc->pin_uv_auth_protocol = pin_uv_auth_protocol;
+      CHECK_PARSER_RET(ret);
+      DBG_MSG("pin_uv_auth_protocol: %d\n", mc->pin_uv_auth_protocol);
       mc->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
       break;
 
     case MC_REQ_ENTERPRISE_ATTESTATION:
@@ -991,7 +1056,7 @@ static uint8_t parse_get_assertion_impl(CborParser *parser, CTAP_get_assertion *
   CborValue it, map;
   ctap_cbor_reader_t reader;
   size_t map_length;
-  int key, pin_uv_auth_protocol;
+  int key;
   char domain[DOMAIN_NAME_MAX_SIZE];
   memset(ga, 0, sizeof(CTAP_get_assertion));
 
@@ -1064,36 +1129,24 @@ static uint8_t parse_get_assertion_impl(CborParser *parser, CTAP_get_assertion *
 
     case GA_REQ_PIN_UV_AUTH_PARAM:
       DBG_MSG("pin_uv_auth_param found\n");
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &ga->pin_uv_auth_param_len);
-      CHECK_CBOR_RET(ret);
-      if (ga->pin_uv_auth_param_len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
+      ret = ctap_parse_pin_uv_auth_param(&map, ga->pin_uv_auth_param, &ga->pin_uv_auth_param_len, true);
+      CHECK_PARSER_RET(ret);
       if (ga->pin_uv_auth_param_len > 0) {
-        ret = ctap_cbor_copy_bytes(&map, ga->pin_uv_auth_param, &ga->pin_uv_auth_param_len);
-        CHECK_CBOR_RET(ret);
         DBG_MSG("pin_uv_auth_param: ");
         PRINT_HEX(ga->pin_uv_auth_param, ga->pin_uv_auth_param_len);
-      } else {
-        ret = cbor_value_advance(&map);
-        CHECK_CBOR_RET(ret);
       }
       ga->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
 
     case GA_REQ_PIN_UV_AUTH_PROTOCOL:
       DBG_MSG("pin_uv_auth_protocol found\n");
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &pin_uv_auth_protocol);
-      CHECK_CBOR_RET(ret);
-      DBG_MSG("pin_uv_auth_protocol: %d\n", pin_uv_auth_protocol);
-      if (pin_uv_auth_protocol != 1 && pin_uv_auth_protocol != 2) {
+      ret = ctap_parse_pin_uv_auth_protocol(&map, &ga->pin_uv_auth_protocol);
+      if (ret == CTAP1_ERR_INVALID_PARAMETER) {
         DBG_MSG("Unknown pin_uv_auth_protocol\n");
-        return CTAP1_ERR_INVALID_PARAMETER;
       }
-      ga->pin_uv_auth_protocol = pin_uv_auth_protocol;
+      CHECK_PARSER_RET(ret);
+      DBG_MSG("pin_uv_auth_protocol: %d\n", ga->pin_uv_auth_protocol);
       ga->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
       break;
 
     default:
@@ -1146,18 +1199,13 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
     switch (key) {
     case CP_REQ_PIN_UV_AUTH_PROTOCOL:
       DBG_MSG("pinProtocol found\n");
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &key);
-      CHECK_CBOR_RET(ret);
-      DBG_MSG("pinProtocol: %d\n", key);
-      if (key != 1 && key != 2) {
+      ret = ctap_parse_pin_uv_auth_protocol(&map, &cp->pin_uv_auth_protocol);
+      if (ret == CTAP1_ERR_INVALID_PARAMETER) {
         ERR_MSG("Invalid pinProtocol\n");
-        return CTAP1_ERR_INVALID_PARAMETER;
       }
-      cp->pin_uv_auth_protocol = key;
+      CHECK_PARSER_RET(ret);
+      DBG_MSG("pinProtocol: %d\n", cp->pin_uv_auth_protocol);
       cp->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
       break;
 
     case CP_REQ_SUB_COMMAND:
@@ -1183,12 +1231,8 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
 
     case CP_REQ_PIN_UV_AUTH_PARAM:
       DBG_MSG("pin_uv_auth_param found\n");
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &len);
-      CHECK_CBOR_RET(ret);
-      if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
-      ret = ctap_cbor_copy_bytes(&map, cp->pin_uv_auth_param, &len);
-      CHECK_CBOR_RET(ret);
+      ret = ctap_parse_pin_uv_auth_param(&map, cp->pin_uv_auth_param, &len, false);
+      CHECK_PARSER_RET(ret);
       DBG_MSG("pin_uv_auth_param: ");
       PRINT_HEX(cp->pin_uv_auth_param, len);
       cp->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
@@ -1359,25 +1403,16 @@ static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credent
 
     case CM_REQ_PIN_UV_AUTH_PROTOCOL:
       DBG_MSG("pin_uv_auth_protocol found\n");
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &tmp);
-      CHECK_CBOR_RET(ret);
-      DBG_MSG("pin_uv_auth_protocol: %d\n", tmp);
-      if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
-      cm->pin_uv_auth_protocol = tmp;
+      ret = ctap_parse_pin_uv_auth_protocol(&map, &cm->pin_uv_auth_protocol);
+      CHECK_PARSER_RET(ret);
+      DBG_MSG("pin_uv_auth_protocol: %d\n", cm->pin_uv_auth_protocol);
       cm->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
       break;
 
     case CM_REQ_PIN_UV_AUTH_PARAM:
       DBG_MSG("pin_uv_auth_param found\n");
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &len);
-      CHECK_CBOR_RET(ret);
-      if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
-      ret = ctap_cbor_copy_bytes(&map, cm->pin_uv_auth_param, &len);
-      CHECK_CBOR_RET(ret);
+      ret = ctap_parse_pin_uv_auth_param(&map, cm->pin_uv_auth_param, &len, false);
+      CHECK_PARSER_RET(ret);
       PRINT_HEX(cm->pin_uv_auth_param, len);
       cm->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
@@ -1509,25 +1544,16 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
 
     case LB_REQ_PIN_UV_AUTH_PROTOCOL:
       DBG_MSG("pin_uv_auth_protocol found\n");
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_int_checked(&map, &tmp);
-      CHECK_CBOR_RET(ret);
-      DBG_MSG("pin_uv_auth_protocol: %d\n", tmp);
-      if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
-      lb->pin_uv_auth_protocol = tmp;
+      ret = ctap_parse_pin_uv_auth_protocol(&map, &lb->pin_uv_auth_protocol);
+      CHECK_PARSER_RET(ret);
+      DBG_MSG("pin_uv_auth_protocol: %d\n", lb->pin_uv_auth_protocol);
       lb->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
       break;
 
     case LB_REQ_PIN_UV_AUTH_PARAM:
       DBG_MSG("pin_uv_auth_param found\n");
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_string_length(&map, &len);
-      CHECK_CBOR_RET(ret);
-      if (len == 0 || len > SHA256_DIGEST_LENGTH) return CTAP2_ERR_PIN_AUTH_INVALID;
-      ret = ctap_cbor_copy_bytes(&map, lb->pin_uv_auth_param, &len);
-      CHECK_CBOR_RET(ret);
+      ret = ctap_parse_pin_uv_auth_param(&map, lb->pin_uv_auth_param, &len, false);
+      CHECK_PARSER_RET(ret);
       lb->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
 
