@@ -2995,7 +2995,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   cbor_encoder_init(&encoder, resp + 1, resp_len - 1, 0);
 
   current_cmd_src = src;
-  uint8_t status = ctap_make_credential(&encoder, scratch + 1, req_src->len - 1);
+  uint8_t status = ctap_make_credential(&encoder, scratch, req_src->len - 1);
   current_cmd_src = CTAP_SRC_NONE;
   ctap_req_lifetime_end();
   stream_make_credential_response = false;
@@ -3029,114 +3029,14 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
 
 int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scratch, size_t scratch_len,
                                       CTAPHID_TxSource *source, ctap_src_t src) {
-  if (req_len == 0 || !scratch || scratch_len == 0 || !source) return -1;
-  if (current_cmd_src != CTAP_SRC_NONE) return -1;
-
-  memset(source, 0, sizeof(*source));
-  memset(&mc_stream_state, 0, sizeof(mc_stream_state));
-  memset(&mem_stream_state, 0, sizeof(mem_stream_state));
-  ctap_const_stream_reset(&const_stream_state);
-  memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
-
-  if (*req == CTAP_GET_INFO) {
-    cp_pin_uv_auth_token_usage_timer_observer();
-    if (ctap_prepare_get_info_stream(source) == 0) {
-      last_cmd = CTAP_GET_INFO;
-      stream_work_buffer = NULL;
-      stream_work_buffer_len = 0;
-      return 1;
-    }
-    return -1;
-  }
-
-  uint8_t *resp = NULL;
-  size_t resp_len = 0;
-  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) return -1;
-  stream_work_buffer = resp;
-  stream_work_buffer_len = resp_len;
-
-  if (*req != CTAP_MAKE_CREDENTIAL) {
-    current_cmd_src = src;
-    current_req_mem = req;
-    current_req_mem_len = req_len;
-    if (src == CTAP_SRC_HID) ctap_begin_hid_cbor_stream_response();
-    int ret = ctap_process_cbor(req, req_len, resp, &resp_len);
-    ctap_end_hid_cbor_stream_response();
-    ctap_req_lifetime_end();
-    current_cmd_src = CTAP_SRC_NONE;
-    if (ret < 0) {
-      stream_work_buffer = NULL;
-      stream_work_buffer_len = 0;
-      CTAPHID_ReleaseSharedBuffer();
-      return -1;
-    }
-    if (mldsa_stream_state.pending && resp[0] == 0) {
-      source->total_len = mldsa_stream_state.total_len;
-      source->read = ctap_mldsa_stream_read;
-      source->close = CTAPHID_CloseSharedBufferSource;
-      source->ctx = &mldsa_stream_state;
-      stream_work_buffer = NULL;
-      stream_work_buffer_len = 0;
-      return 1;
-    }
-
-    if (ctap_prepare_hid_cbor_stream_source(resp[0], resp_len, source)) {
-      stream_work_buffer = NULL;
-      stream_work_buffer_len = 0;
-      return 1;
-    }
-
-    mem_stream_state.buf = resp;
-    mem_stream_state.len = resp_len;
-    mem_stream_state.emitted = 0;
-    source->total_len = mem_stream_state.len;
-    source->read = ctap_mem_stream_read;
-    source->close = CTAPHID_CloseSharedBufferSource;
-    source->ctx = &mem_stream_state;
-    stream_work_buffer = NULL;
-    stream_work_buffer_len = 0;
-    return 1;
-  }
-
-  stream_resp_base = resp;
-  stream_make_credential_response = true;
-
-  CborEncoder encoder;
-  cbor_encoder_init(&encoder, resp + 1, resp_len - 1, 0);
-
-  current_cmd_src = src;
-  current_req_mem = req;
-  current_req_mem_len = req_len;
-  uint8_t status = ctap_make_credential(&encoder, req + 1, req_len - 1);
-  ctap_req_lifetime_end();
-  current_cmd_src = CTAP_SRC_NONE;
-  stream_make_credential_response = false;
-  stream_resp_base = NULL;
-
-  resp[0] = status;
-  last_cmd = CTAP_MAKE_CREDENTIAL;
-  if (status != 0) last_cmd = CTAP_INVALID_CMD;
-
-  if (status == 0 && mc_stream_state.prepared) {
-    source->total_len = mc_stream_state.total_len;
-    source->read = ctap_make_credential_stream_read;
-    source->close = CTAPHID_CloseSharedBufferSource;
-    source->ctx = &mc_stream_state;
-    stream_work_buffer = NULL;
-    stream_work_buffer_len = 0;
-    return 1;
-  }
-
-  mem_stream_state.buf = resp;
-  mem_stream_state.len = status == 0 ? 1 + cbor_encoder_get_buffer_size(&encoder, resp + 1) : 1;
-  mem_stream_state.emitted = 0;
-  source->total_len = mem_stream_state.len;
-  source->read = ctap_mem_stream_read;
-  source->close = CTAPHID_CloseSharedBufferSource;
-  source->ctx = &mem_stream_state;
-  stream_work_buffer = NULL;
-  stream_work_buffer_len = 0;
-  return 1;
+  if (!req) return -1;
+  ctap_req_src_t req_src = {
+      .read = ctap_mem_req_read,
+      .ctx = req,
+      .base_offset = 0,
+      .len = req_len,
+  };
+  return ctap_process_cbor_stream_source_with_src(&req_src, scratch, scratch_len, source, src);
 }
 
 static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_len, RAPDU *rapdu) {
