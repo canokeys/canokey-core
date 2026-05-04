@@ -244,6 +244,46 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 - Before invoking crypto that may touch PKE, either fully consume the staged bytes already in PKE RAM or copy the surviving portion elsewhere first.
 - When adding a new flow, document explicitly which parts are streamed, which exact bytes are forced to materialize, and why they cannot be streamed further.
 
+### CTAP request lifetime
+
+CTAP handlers must treat transport-backed request bytes as short-lived input, not as command state. A safe source-backed command lifecycle is:
+
+1. Build a `ctap_req_src_t` from the transport source.
+2. Parse every required request field from that source.
+3. Copy only semantic fields into command state.
+4. Clear the request source.
+5. Continue with keepalive, user-presence waits, crypto, storage, and response generation.
+
+If a command needs raw request bytes after parsing, handle the exact bytes before the first unsafe boundary:
+
+- Materialize only the required range into stable RAM if it is bounded and non-streamable.
+- Or consume the range immediately while the source is valid, such as hashing it or building a PIN/UV-token verification message.
+- Or redesign the parser/handler contract so later phases never re-read transport storage.
+- Do not use LittleFS as generic transport RX scratch just to cross an internal lifetime boundary. Flash writes are acceptable only when the CTAP protocol is writing persistent state, or for a narrowly documented protocol state machine with explicit size limit, trigger, erase point, and flash-wear rationale.
+
+Unsafe boundaries include `KEEPALIVE()`, `WAIT()`, user-presence waits, `device_loop()`, applet-session yield/release, PIN/UV-token verification, credential key generation, assertion signing, ML-DSA streaming, and any helper that may call crypto or use PKE.
+
+### PKE RAM usage contract
+
+`pke_buffer_*()` is a staging API, not a persistence API:
+
+- On platforms without hardware PKE buffer support, core provides a RAM fallback sized by `PKE_BUFFER_SIZE`.
+- On CIU, the logical PKE buffer maps to the hardware PKE register file. The public capacity is still `pke_buffer_size()` / `PKE_BUFFER_SIZE`.
+- `pke_buffer_acquire(owner)` only prevents intentional concurrent staging through the explicit API. It does not guarantee that bytes survive direct PKE-engine use.
+- ECC, RSA, ML-DSA, PIN-token verification helpers, key generation, signature generation, keepalive side effects, file/key helpers, or response generation may indirectly clobber PKE RAM.
+
+Allowed PKE staging uses:
+
+- Stage a large input fragment while the next consumer immediately parses it through `ctap_req_src_t`.
+- Stream bytes out of PKE only until the first operation that can touch crypto, send keepalive, call `WAIT()`, call `device_loop()`, or yield/release the applet session.
+- Use PKE as a handoff buffer between transport framing and parser consumption, then clear the request source before later CTAP processing.
+
+Forbidden PKE staging uses:
+
+- Treat PKE as stable request storage after parser completion.
+- Keep offsets into PKE for later verification, hashing, file writes, or response streaming.
+- Read PKE-backed request bytes after keepalive, `WAIT()`, PIN/UV-token verification, credential key generation, assertion signing, ML-DSA streaming, or any operation that may call crypto.
+
 ### APDU transport: chaining, not extended length
 
 **Rule: use ISO 7816-4 command/response chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`), not extended-length APDUs, for all multi-block data.**
@@ -253,6 +293,48 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 - Large request data (e.g. RSA key import, FIDO2 CBOR) must be sent by the host as chained `CLA=0x10` commands; `apdu_input` reassembles them transparently.
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
+
+### CTAP transport entrypoints
+
+`CTAPHID_Execute_Cbor()` receives a full HID CBOR message:
+
+- Requests up to `CTAPHID_INLINE_BUFSIZE` live in `channel.data`.
+- Larger requests may live in PKE-backed RX staging.
+- HID RX staging may back a `ctap_req_src_t` only while the command is still parsing bytes and before any operation that may reuse PKE.
+- `authenticatorGetInfo` should emit from const segments. Large `makeCredential`, `getAssertion`, and credential-management responses may stream from prepared memory, files, or generated segments.
+
+`CTAPHID_Execute_Msg()` wraps CTAP APDU over HID:
+
+- The APDU header is small and can be copied to stack.
+- The APDU data field may be source-backed.
+- U2F APDUs are direct-memory users and require stable contiguous input.
+- Do not point `CAPDU.data` at stack header storage for source-backed requests. Source-backed APDU paths must not dereference `DATA` for the payload except for deliberately materialized bytes.
+
+CTAP over `CCID` / `WebUSB` / NFC APDU:
+
+- Short request bodies live in `shared_io_buffer` only for the current APDU processing call. They are not long-lived across transport re-entry, `device_loop()`, session yield, or response streaming.
+- CCID `XfrBlock`, WebUSB control requests, and NFC I-block aggregation are bounded by `APDU_COMMAND_BUFFER_SIZE`.
+- FIDO APDU chaining is separate from transport frame aggregation. Once the FIDO APDU body spans multiple APDUs or exceeds the short incoming data limit, `fido_apdu_input()` stages the accumulated payload in PKE and dispatches through `ctap_process_pke_apdu_with_src()`.
+- Chained FIDO APDU input in PKE follows the same lifetime rule as CTAPHID PKE-backed RX: it is valid only for immediate parser consumption.
+- `process_apdu()` may clear the PKE-backed FIDO request after the first `apdu_output()` call. APDU response sources must never depend on request PKE.
+- NFC pending storage must not become a general escape hatch for large request snapshots. Prefer parsed or bounded RAM pending state; treat whole-request file snapshots as implementation debt unless strictly justified.
+
+### CTAP command lifecycle
+
+| CTAP command | Request bytes after parse? | Boundary after parse? | Response streaming | Rule |
+|---|---:|---:|---:|---|
+| `makeCredential` | No, for normal fields | Yes | Yes | Parser copies semantic fields into `CTAP_make_credential`; P-9/P-10 sized HID requests should parse from source and stop using original bytes before keepalive, PIN verification, UP wait, or key generation. |
+| `getAssertion` | No, for normal fields | Yes | Yes | Parser copies request fields into global assertion state; `getNextAssertion` reuses parsed state, not original CBOR. |
+| `getNextAssertion` | No request body | No new parse | Yes | Uses stored assertion state and credential counter. |
+| `getInfo` | No request body beyond command byte | No | Yes | Emit const/static response segments with small dynamic patches. |
+| `clientPIN` | No | Crypto only | Usually no | Parser copies encrypted inputs, key agreement, permissions, RP hash, and auth parameters before crypto. |
+| `credentialManagement` | Sometimes | Sometimes | Yes | `subCommandParams` may be needed for PIN-token verification; materialize exactly those bytes or compute/verify while the source is valid. Do not keep a PKE-backed reread source across keepalive or crypto. |
+| `largeBlobs` | Yes for `set` | Yes | Limited | `set` bytes are needed for SHA-256/PIN-token verification and later `LB_FILE_TMP` writes. Do not pre-write unauthenticated `set` bytes to LittleFS and do not keep PKE offsets across verification unless every supported platform proves that path cannot clobber PKE. |
+| `selection` | No request body beyond command byte | UP wait | No | Only performs user-presence wait. |
+| `reset` | No request body beyond command byte | No | No | Time-gated reset only. |
+| `config` | No | No | No | Currently unhandled. |
+
+For `largeBlobs.set`, choose and document one command-specific contract before enabling source-backed PKE input: prove PIN-token verification cannot clobber PKE, materialize exactly the `set` fragment within the shared scratch budget, or redesign the handler so authorization happens before any second payload use.
 
 ### Endianness
 
