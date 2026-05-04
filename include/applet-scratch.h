@@ -43,6 +43,7 @@ typedef struct {
 
 typedef union {
   CTAP_mldsa_stream_state ctap_mldsa;
+  CTAP_get_assertion ctap_ga;
   uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
 
