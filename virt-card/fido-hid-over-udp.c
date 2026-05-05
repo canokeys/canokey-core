@@ -153,7 +153,21 @@ static void emulate_reboot(void) {
   applets_install();
 }
 
+// Run on SIGTERM/SIGINT. SIGTERM's default action is "terminate" — atexit
+// handlers do NOT run, so the gcov runtime never flushes the in-memory
+// .gcda counters and the coverage report misses everything this process
+// did. Calling exit(0) from a handler hands control to the C runtime,
+// which runs atexit hooks (including __gcov_dump) and writes the .gcda
+// files.
+static void on_term(int sig) {
+  (void)sig;
+  exit(0);
+}
+
 int main() {
+  signal(SIGTERM, on_term);
+  signal(SIGINT, on_term);
+
   const int nfc_mode = get_env_flag("CANOKEY_VIRT_NFC", 0);
   const char *lfs_root = get_lfs_root_path();
   const char *test_nfc_mode = nfc_mode ? "1" : "0";
