@@ -323,11 +323,6 @@ static int CTAPHID_MemSourceRead(void *ctx, uint8_t *out, size_t max_len, size_t
   return 0;
 }
 
-static void CTAPHID_GlobalBufferSourceClose(void *ctx) {
-  (void)ctx;
-  CTAPHID_ReleaseSharedBuffer();
-}
-
 int CTAPHID_AcquireSharedBuffer(uint8_t **buf, size_t *len) {
   if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) return -1;
   if (buf) *buf = shared_io_buffer;
@@ -525,7 +520,7 @@ static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_
   CTAPHID_TxSource source = {
       .total_len = len,
       .read = CTAPHID_MemSourceRead,
-      .close = CTAPHID_GlobalBufferSourceClose,
+      .close = CTAPHID_CloseSharedBufferSource,
       .ctx = &tx_mem_source,
   };
   if (CTAPHID_SendStreamSource(cid, cmd, &source) != 0) {
