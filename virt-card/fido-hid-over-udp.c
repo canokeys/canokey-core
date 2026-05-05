@@ -156,12 +156,12 @@ static void emulate_reboot(void) {
 // Run on SIGTERM/SIGINT. SIGTERM's default action is "terminate" — atexit
 // handlers do NOT run, so the gcov runtime never flushes the in-memory
 // .gcda counters and the coverage report misses everything this process
-// did. Calling exit(0) from a handler hands control to the C runtime,
-// which runs atexit hooks (including __gcov_dump) and writes the .gcda
-// files.
+// did. Calling exit() from the handler hands control to the C runtime,
+// which runs atexit hooks (including __gcov_dump) before tearing down.
+// Use the conventional 128+signo exit code so callers can still see the
+// process was signal-terminated.
 static void on_term(int sig) {
-  (void)sig;
-  exit(0);
+  exit(128 + sig);
 }
 
 int main() {
