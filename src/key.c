@@ -183,7 +183,11 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     }
     memcpy(key->ecc.pri, p, PRIVATE_KEY_LENGTH[key->meta.type]);
     if (key->meta.type == X25519) {
-      swap_big_number_endian(key->ecc.pri); // Private key of x25519 is encoded in little endian
+      // Wire format is LE; storage is BE. Also enforce the RFC 7748 §5 scalar
+      // clamp so mbedtls_ecp_check_privkey does not reject unclamped imports.
+      swap_big_number_endian(key->ecc.pri);
+      key->ecc.pri[0] = (key->ecc.pri[0] & 0x7F) | 0x40;
+      key->ecc.pri[31] &= 0xF8;
     }
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
@@ -303,6 +307,17 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     const int n_leading_zeros = PRIVATE_KEY_LENGTH[key->meta.type] - data_pri_key_len;
     if ((size_t)(p + data_pri_key_len - buf) > buf_len) return KEY_ERR_LENGTH;
     memcpy(key->ecc.pri + n_leading_zeros, p, data_pri_key_len);
+
+    if (key->meta.type == X25519) {
+      // OpenPGP ships X25519 private keys little-endian on the wire; the card
+      // stores them big-endian and the underlying scalarmult (mbedtls
+      // mbedtls_ecp_check_privkey) rejects unclamped scalars, so apply the
+      // RFC 7748 §5 clamp after the swap. BE byte 0 == LE byte 31 (top byte:
+      // clear bit 7, set bit 6); BE byte 31 == LE byte 0 (clear bottom 3 bits).
+      swap_big_number_endian(key->ecc.pri);
+      key->ecc.pri[0] = (key->ecc.pri[0] & 0x7F) | 0x40;
+      key->ecc.pri[31] &= 0xF8;
+    }
 
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
@@ -607,6 +622,13 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
       return KEY_ERR_DATA;
     }
   } else {
+    if (key->meta.type == X25519) {
+      // Mirror the non-streaming OpenPGP path: swap LE-on-wire to BE storage
+      // and apply the RFC 7748 §5 clamp so mbedtls_ecp_mul accepts the scalar.
+      swap_big_number_endian(key->ecc.pri);
+      key->ecc.pri[0] = (key->ecc.pri[0] & 0x7F) | 0x40;
+      key->ecc.pri[31] &= 0xF8;
+    }
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
@@ -650,7 +672,13 @@ static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
       return KEY_ERR_DATA;
     }
   } else {
-    if (key->meta.type == X25519) swap_big_number_endian(key->ecc.pri);
+    if (key->meta.type == X25519) {
+      // Wire format is LE; storage is BE. Apply the RFC 7748 §5 clamp so the
+      // scalar passes mbedtls_ecp_check_privkey when ecc_complete_key runs.
+      swap_big_number_endian(key->ecc.pri);
+      key->ecc.pri[0] = (key->ecc.pri[0] & 0x7F) | 0x40;
+      key->ecc.pri[31] &= 0xF8;
+    }
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
