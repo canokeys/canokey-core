@@ -220,6 +220,8 @@ static void fido_capdu_reset(void) {
   fido_capdu_pke_owner = 0;
 }
 
+void apdu_fido_chain_reset(void) { fido_capdu_reset(); }
+
 static int fido_apdu_input(const CAPDU *sh) {
 restart:
   if (!fido_capdu_chaining.in_chaining) {

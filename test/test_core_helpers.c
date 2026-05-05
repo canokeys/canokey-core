@@ -146,6 +146,8 @@ void apdu_response_source_clear(void) { apdu_response_source_clear_calls++; }
 
 int apdu_session_can_preempt(void) { return apdu_session_preemptable; }
 
+void apdu_fido_chain_reset(void) {}
+
 void CCID_Loop(void) { ccid_loop_calls++; }
 
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {

@@ -35,6 +35,11 @@ static void device_applet_session_expire(void) {
   if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
   applets_poweroff();
   apdu_response_source_clear();
+  // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO
+  // chained-APDU reassembly state in apdu.c (in_chaining, uses_pke, pke_owner)
+  // would remain set without this call. The next chained FIDO APDU would then
+  // skip pke_buffer_acquire and write to an unowned PKE region.
+  apdu_fido_chain_reset();
   session_owner = DEVICE_APPLET_SESSION_NONE;
   session_deadline = 0;
 }

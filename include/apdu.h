@@ -110,6 +110,10 @@ void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOU
 void apdu_response_source_clear(void);
 int apdu_response_source_active(void);
 int apdu_session_can_preempt(void);
+// Releases any in-flight FIDO chained-APDU reassembly state (PKE staging,
+// chaining flags, accumulator). Call from any path that drops the CTAP
+// session out from under an in-progress chain (e.g. session expiry).
+void apdu_fido_chain_reset(void);
 int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
