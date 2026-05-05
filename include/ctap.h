@@ -46,7 +46,7 @@ int ctap_nfc_pending_active(void);
 #ifdef TEST
 void ctap_test_seed_get_next_assertion_state(void);
 #endif
-static int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+static inline int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   return ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_CCID);
 }
 int ctap_wink(void);
