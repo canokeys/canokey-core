@@ -214,7 +214,7 @@ The platform must supply an `lfs_config` struct and pass it to `fs_mount()` at b
 
 Keys are stored as `ck_key_t` blobs on LittleFS.  
 `ck_key_t` contains `key_meta_t` (type, origin, usage, PIN/touch policy) plus a union of `rsa_key_t` / `ecc_key_t`.  
-Import parsers exist for both OpenPGP (`ck_parse_openpgp*`) and PIV (`ck_parse_piv*`) TLV wire formats, with streaming variants for large RSA keys.
+Import parsers consume both OpenPGP and PIV TLV wire formats incrementally via `ck_parse_openpgp_stream_*` / `ck_parse_piv_stream_*` so chained APDUs carrying RSA4096 templates do not need to be reassembled in RAM.
 
 ### Crypto
 

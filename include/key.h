@@ -98,20 +98,17 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length);
 int ck_encoded_public_key_length(key_type_t type, bool include_length);
 
 /**
- * Parse the key imported to PIV
+ * Parse the key imported to PIV in chained chunks.
  *
- * @param key     parsed key. origin will be set to KEY_ORIGIN_IMPORTED.
- * @param buf     data buffer that contains the key
- * @param buf_len data buffer length
- * @return 0 for success. Negative values for errors.
+ * Initialize @c st with @ref ck_parse_piv_stream_init, then feed each
+ * APDU chunk via @ref ck_parse_piv_stream_update.  origin is set to
+ * KEY_ORIGIN_IMPORTED on success.
  */
-int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len);
 void ck_parse_piv_stream_init(ck_piv_stream_t *st, ck_key_t *key);
 int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t *buf, size_t buf_len, bool final);
 
 int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len);
 
-int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len);
 void ck_parse_openpgp_stream_init(ck_openpgp_stream_t *st, ck_key_t *key, size_t total_len);
 int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const uint8_t *buf, size_t buf_len,
                                    bool final);

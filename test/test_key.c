@@ -168,26 +168,6 @@ static void test_encode_eddsa(void **state) {
   assert_memory_equal(buf, expected, 35);
 }
 
-static void test_parse_openpgp_x25519(void **state) {
-  (void)state;
-
-  uint8_t buf[1024];
-  uint8_t imported[] = {0x7F, 0x48, 0x02, 0x92, 0x20, 0x5F, 0x48, 0x20, 0x4F, 0x58, 0x3E, 0xB8, 0x7B, 0xDE,
-                        0x05, 0x5D, 0x94, 0xEA, 0x5C, 0xC2, 0x08, 0xB8, 0x97, 0xD7, 0xA0, 0x7E, 0x59, 0xB8,
-                        0xBA, 0x90, 0xF1, 0x03, 0xEE, 0x26, 0x9F, 0xF1, 0x4F, 0xE1, 0x7B, 0x70};
-
-  ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = ENCRYPT};
-  assert_int_equal(ck_parse_openpgp(&key, imported, sizeof(imported)), 0);
-
-  int size = ck_encode_public_key(&key, buf, true);
-  assert_int_equal(size, 35);
-  assert_int_not_equal(memcmp(buf + 3,
-                              "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
-                              "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
-                              32),
-                       0);
-}
-
 // RFC 7748 §6.1 Alice X25519 test vector, clamped per RFC 7748 §5.
 //
 // OpenPGP keytocard sends the X25519 private scalar as a big-endian MPI (this
@@ -242,16 +222,6 @@ static void assert_x25519_alice_round_trip(const ck_key_t *key) {
   assert_memory_equal(buf + 2, rfc7748_alice_pub_le, 32);
 }
 
-static void test_parse_openpgp_x25519_rfc7748(void **state) {
-  (void)state;
-  uint8_t imported[40];
-  build_openpgp_x25519_tlv(imported, rfc7748_alice_pri_be_clamped);
-
-  ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = ENCRYPT};
-  assert_int_equal(ck_parse_openpgp(&key, imported, sizeof(imported)), 0);
-  assert_x25519_alice_round_trip(&key);
-}
-
 static void test_parse_openpgp_x25519_streaming_rfc7748(void **state) {
   (void)state;
   uint8_t imported[40];
@@ -275,16 +245,28 @@ static void test_parse_openpgp_x25519_streaming_rfc7748(void **state) {
   assert_x25519_alice_round_trip(&key);
 }
 
-static void test_parse_piv_x25519_rfc7748(void **state) {
+static void test_parse_piv_x25519_streaming_rfc7748(void **state) {
   (void)state;
   // PIV X25519 import APDU body: 0x08 (priv tag) + 0x20 (len) + 32 bytes LE.
-  // The card swaps LE→BE on import, so the stored bytes match the OpenPGP
-  // path's BE form and the derived public is the canonical Alice pub.
+  // The streaming parser swaps LE→BE during ingest so the stored bytes
+  // match the OpenPGP path's BE form and the derived public is the
+  // canonical Alice pub.
   uint8_t imported[34] = {0x08, 0x20};
   memcpy(imported + 2, rfc7748_alice_pri_le_clamped, 32);
 
   ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = KEY_AGREEMENT};
-  assert_int_equal(ck_parse_piv(&key, imported, sizeof(imported)), 0);
+  ck_piv_stream_t st;
+  ck_parse_piv_stream_init(&st, &key);
+
+  size_t off = 0;
+  while (off < sizeof(imported)) {
+    size_t chunk = sizeof(imported) - off;
+    if (chunk > 5) chunk = 5;
+    bool final = (off + chunk == sizeof(imported));
+    int rc = ck_parse_piv_stream_update(&st, &key, imported + off, chunk, final);
+    assert_int_equal(rc, final ? 1 : 0);
+    off += chunk;
+  }
   assert_x25519_alice_round_trip(&key);
 }
 
@@ -315,10 +297,8 @@ int main() {
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_eddsa),
-      cmocka_unit_test(test_parse_openpgp_x25519),
-      cmocka_unit_test(test_parse_openpgp_x25519_rfc7748),
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
-      cmocka_unit_test(test_parse_piv_x25519_rfc7748),
+      cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
