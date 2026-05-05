@@ -763,6 +763,8 @@ static void CTAPHID_Execute_Cbor(void) {
     if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     return;
   }
+  // ctap_process_cbor_stream_(source_)with_src returns 1 on success or -1 on
+  // failure; there is no zero return path.
   if (stream_ret > 0) {
     if (CTAPHID_SendSourceResponseAuto(channel.cid, CTAPHID_CBOR, &source) != 0) {
       device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
@@ -770,11 +772,6 @@ static void CTAPHID_Execute_Cbor(void) {
       return;
     }
     if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
-    return;
-  }
-  if (stream_ret < 0) {
-    device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
     return;
   }
   device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);

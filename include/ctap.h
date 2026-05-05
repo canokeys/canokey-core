@@ -35,8 +35,10 @@ int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_process_cbor_with_src(uint8_t *req, size_t req_len, uint8_t *resp, size_t *resp_len, ctap_src_t src);
+// Returns 1 on success with `*source` populated, or -1 on failure.
 int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint8_t *scratch, size_t scratch_len,
                                              CTAPHID_TxSource *source, ctap_src_t src);
+// Returns 1 on success with `*source` populated, or -1 on failure.
 int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scratch, size_t scratch_len,
                                       CTAPHID_TxSource *source, ctap_src_t src);
 int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu, ctap_src_t src);
