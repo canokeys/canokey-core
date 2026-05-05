@@ -188,15 +188,30 @@ static void test_parse_openpgp_x25519(void **state) {
                        0);
 }
 
-// RFC 7748 §6.1 Alice X25519 test vector. Both values are little-endian on the
-// wire (which is the OpenPGP format). The card stores private/public big-endian
-// internally, so importing the LE wire bytes must end up storing the byte-
-// reversed value, and re-encoding the derived public must round-trip back to
-// the LE wire form.
-static const uint8_t rfc7748_alice_pri_le[32] = {
-    0x77, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d, 0x3c, 0x16, 0xc1,
+// RFC 7748 §6.1 Alice X25519 test vector, clamped per RFC 7748 §5.
+//
+// OpenPGP keytocard sends the X25519 private scalar as a big-endian MPI (this
+// is the gpg / RFC 4880 convention, not the RFC 7748 §5 little-endian wire
+// format used by PIV / NIST SP 800-78-5). gpg / libgcrypt clamps the scalar
+// host-side before transmission, so the bytes the card receives are already
+// canonical; mbedtls_ecp_check_privkey expects the same shape and would
+// reject an unclamped scalar with all-zero output. The card stores it BE
+// internally and derives the public key directly. Encoding the public for
+// readback swaps back to little-endian, which is the standard X25519 public
+// wire form.
+//
+// Alice raw private (RFC 7748 §6.1, LE): 77076d0a...1db92c2a
+// After RFC 7748 §5 clamp:               70076d0a...1db92c6a
+// Big-endian wire form (byte-reversed):  6a2cb91d...0a6d0770
+static const uint8_t rfc7748_alice_pri_be_clamped[32] = {
+    0x6a, 0x2c, 0xb9, 0x1d, 0xa5, 0xfb, 0x77, 0xb1, 0x2a, 0x99, 0xc0,
+    0xeb, 0x87, 0x2f, 0x4c, 0xdf, 0x45, 0x66, 0xb2, 0x51, 0x72, 0xc1,
+    0x16, 0x3c, 0x7d, 0xa5, 0x18, 0x73, 0x0a, 0x6d, 0x07, 0x70,
+};
+static const uint8_t rfc7748_alice_pri_le_clamped[32] = {
+    0x70, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d, 0x3c, 0x16, 0xc1,
     0x72, 0x51, 0xb2, 0x66, 0x45, 0xdf, 0x4c, 0x2f, 0x87, 0xeb, 0xc0,
-    0x99, 0x2a, 0xb1, 0x77, 0xfb, 0xa5, 0x1d, 0xb9, 0x2c, 0x2a,
+    0x99, 0x2a, 0xb1, 0x77, 0xfb, 0xa5, 0x1d, 0xb9, 0x2c, 0x6a,
 };
 static const uint8_t rfc7748_alice_pub_le[32] = {
     0x85, 0x20, 0xf0, 0x09, 0x89, 0x30, 0xa7, 0x54, 0x74, 0x8b, 0x7d,
@@ -204,7 +219,7 @@ static const uint8_t rfc7748_alice_pub_le[32] = {
     0x1a, 0xf4, 0xeb, 0xa4, 0xa9, 0x8e, 0xaa, 0x9b, 0x4e, 0x6a,
 };
 
-static void build_openpgp_x25519_tlv(uint8_t out[40], const uint8_t pri_le[32]) {
+static void build_openpgp_x25519_tlv(uint8_t out[40], const uint8_t pri_be[32]) {
   out[0] = 0x7F;
   out[1] = 0x48;
   out[2] = 0x02;
@@ -213,13 +228,12 @@ static void build_openpgp_x25519_tlv(uint8_t out[40], const uint8_t pri_le[32]) 
   out[5] = 0x5F;
   out[6] = 0x48;
   out[7] = 0x20;
-  memcpy(out + 8, pri_le, 32);
+  memcpy(out + 8, pri_be, 32);
 }
 
-static void assert_x25519_round_trip(const ck_key_t *key) {
-  // X25519 import swaps LE wire to BE storage AND applies the RFC 7748 §5
-  // clamp, so we cannot assert ecc.pri verbatim. The end-to-end check is the
-  // derived public key matching the canonical X25519(raw_private, 9) value.
+static void assert_x25519_alice_round_trip(const ck_key_t *key) {
+  // ecc.pri stays in BE storage exactly as the wire delivered it.
+  assert_memory_equal(key->ecc.pri, rfc7748_alice_pri_be_clamped, 32);
   uint8_t buf[64];
   int size = ck_encode_public_key((ck_key_t *)key, buf, false);
   assert_int_equal(size, 34);
@@ -231,17 +245,17 @@ static void assert_x25519_round_trip(const ck_key_t *key) {
 static void test_parse_openpgp_x25519_rfc7748(void **state) {
   (void)state;
   uint8_t imported[40];
-  build_openpgp_x25519_tlv(imported, rfc7748_alice_pri_le);
+  build_openpgp_x25519_tlv(imported, rfc7748_alice_pri_be_clamped);
 
   ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = ENCRYPT};
   assert_int_equal(ck_parse_openpgp(&key, imported, sizeof(imported)), 0);
-  assert_x25519_round_trip(&key);
+  assert_x25519_alice_round_trip(&key);
 }
 
 static void test_parse_openpgp_x25519_streaming_rfc7748(void **state) {
   (void)state;
   uint8_t imported[40];
-  build_openpgp_x25519_tlv(imported, rfc7748_alice_pri_le);
+  build_openpgp_x25519_tlv(imported, rfc7748_alice_pri_be_clamped);
 
   ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = ENCRYPT};
   ck_openpgp_stream_t st;
@@ -258,7 +272,20 @@ static void test_parse_openpgp_x25519_streaming_rfc7748(void **state) {
     assert_int_equal(rc, final ? 1 : 0);
     off += chunk;
   }
-  assert_x25519_round_trip(&key);
+  assert_x25519_alice_round_trip(&key);
+}
+
+static void test_parse_piv_x25519_rfc7748(void **state) {
+  (void)state;
+  // PIV X25519 import APDU body: 0x08 (priv tag) + 0x20 (len) + 32 bytes LE.
+  // The card swaps LE→BE on import, so the stored bytes match the OpenPGP
+  // path's BE form and the derived public is the canonical Alice pub.
+  uint8_t imported[34] = {0x08, 0x20};
+  memcpy(imported + 2, rfc7748_alice_pri_le_clamped, 32);
+
+  ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = KEY_AGREEMENT};
+  assert_int_equal(ck_parse_piv(&key, imported, sizeof(imported)), 0);
+  assert_x25519_alice_round_trip(&key);
 }
 
 int main() {
@@ -291,6 +318,7 @@ int main() {
       cmocka_unit_test(test_parse_openpgp_x25519),
       cmocka_unit_test(test_parse_openpgp_x25519_rfc7748),
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
+      cmocka_unit_test(test_parse_piv_x25519_rfc7748),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
