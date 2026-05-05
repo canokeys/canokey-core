@@ -813,11 +813,9 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     channel.cid = rx_frame.cid;
 
     if (FRAME_TYPE(rx_frame) == TYPE_INIT) {
-      if (rx_frame.init.cmd == CTAPHID_CANCEL && channel.executing && rx_frame.cid == channel.cid &&
-          MSG_LEN(rx_frame) == 0) {
-        CTAPHID_MarkCancelPending(rx_frame.cid);
-        goto consume_frame;
-      }
+      // The same CANCEL check at the top of this loop already handles a
+      // matching cid; if it fell through, the cid-mismatch + state==BUSY
+      // path above already produced ERR_CHANNEL_BUSY and consumed the frame.
       // DBG_MSG("CTAP init frame, cmd=0x%x\n", (int)frame.init.cmd);
       if (!wait_for_user && channel.state == CTAPHID_BUSY && rx_frame.init.cmd != CTAPHID_INIT) { // self abort is ok
         DBG_MSG("wait_for_user=%d, cmd=0x%x\n", (int)wait_for_user, (int)rx_frame.init.cmd);
