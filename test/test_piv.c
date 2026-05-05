@@ -180,6 +180,116 @@ static void test_ed25519_general_authenticate_long_message(void **state) {
   assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
 }
 
+// piv_process_apdu_message uses RAPDU_CHAINING + apdu_output to stream
+// large responses in 256-byte chunks. Stage a >256-byte certificate via
+// chained PUT DATA APDUs (PIV applet handles cross-APDU chaining itself),
+// then walk the GET DATA + GET RESPONSE chain and verify byte content +
+// SW chain. This covers the PIV chaining dispatcher's GET DATA / GET
+// RESPONSE state transitions and the apdu_output non-source chaining
+// branch.
+static void test_piv_cert_chained_read(void **state) {
+  (void)state;
+  set_admin_status(1);
+
+  // 600-byte payload large enough to span three 256-byte chunks.
+  enum { CERT_LEN = 600 };
+  uint8_t cert[CERT_LEN];
+  for (size_t i = 0; i < CERT_LEN; ++i) cert[i] = (uint8_t)(0xC0 + (i & 0x3F));
+
+  uint8_t r_buf[1024];
+  RAPDU rapdu = {.data = r_buf};
+  RAPDU_CHAINING rc = {.rapdu.data = r_buf};
+
+  // First PUT DATA chunk: 5C-tag selects PIV Authentication slot, then 53
+  // BER-TLV with the cert length, then the first 200 bytes of cert. CLA
+  // 0x10 = "more chunks follow"; PIV applet handles the chain itself.
+  enum { HDR_LEN = 5 + 4, FIRST_CHUNK = 200 };
+  uint8_t first_data[HDR_LEN + FIRST_CHUNK];
+  first_data[0] = 0x5C;
+  first_data[1] = 0x03;
+  first_data[2] = 0x5F;
+  first_data[3] = 0xC1;
+  first_data[4] = 0x05;
+  first_data[5] = 0x53;
+  first_data[6] = 0x82;
+  first_data[7] = (uint8_t)(CERT_LEN >> 8);
+  first_data[8] = (uint8_t)(CERT_LEN & 0xFF);
+  memcpy(first_data + HDR_LEN, cert, FIRST_CHUNK);
+  CAPDU put_first = {
+      .data = first_data, .cla = 0x10, .ins = PIV_INS_PUT_DATA, .p1 = 0x3F, .p2 = 0xFF,
+      .lc = sizeof(first_data), .le = 0,
+  };
+  rc.rapdu.len = 0;
+  rc.sent = 0;
+  rapdu.len = 0;
+  rapdu.sw = 0;
+  piv_process_apdu_message(&rc, &put_first, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Subsequent chunks: 200 bytes each, last one without the chain bit.
+  uint8_t chunk[200];
+  for (int round = 0; round < 2; ++round) {
+    size_t off = FIRST_CHUNK + (size_t)round * 200;
+    memcpy(chunk, cert + off, 200);
+    CAPDU put_more = {
+        .data = chunk,
+        .cla = (round == 1) ? 0x00 : 0x10,
+        .ins = PIV_INS_PUT_DATA,
+        .p1 = 0x3F,
+        .p2 = 0xFF,
+        .lc = 200,
+        .le = 0,
+    };
+    rc.rapdu.len = 0;
+    rc.sent = 0;
+    rapdu.len = 0;
+    rapdu.sw = 0;
+    piv_process_apdu_message(&rc, &put_more, &rapdu);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  }
+  assert_int_equal(get_file_size("piv-pauc"), CERT_LEN + 4); // 53 82 LL HH header + cert
+
+  // Now read it back via GET DATA + GET RESPONSE chain.
+  uint8_t get_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05};
+  CAPDU get_apdu = {
+      .data = get_cert, .cla = 0x00, .ins = PIV_INS_GET_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(get_cert), .le = 0x100,
+  };
+  rc.rapdu.len = 0;
+  rc.sent = 0;
+  rapdu.len = 0;
+  rapdu.sw = 0;
+  piv_process_apdu_message(&rc, &get_apdu, &rapdu);
+  // First chunk: 256 bytes, SW indicates more remaining.
+  assert_int_equal(rapdu.len, 256);
+  assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
+
+  uint8_t reassembled[1024];
+  size_t total = rapdu.len;
+  memcpy(reassembled, rapdu.data, rapdu.len);
+
+  // Drain via GET RESPONSE until SW_NO_ERROR.
+  CAPDU gr_apdu = {.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0x100};
+  while ((rapdu.sw & 0xFF00) == 0x6100) {
+    rapdu.len = 0;
+    rapdu.sw = 0;
+    piv_process_apdu_message(&rc, &gr_apdu, &rapdu);
+    assert_true(rapdu.len > 0);
+    assert_true(total + rapdu.len <= sizeof(reassembled));
+    memcpy(reassembled + total, rapdu.data, rapdu.len);
+    total += rapdu.len;
+  }
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // The retrieved object is a 53/82 BER-TLV wrapper around the original
+  // cert: 53 82 LL HH || cert bytes.
+  assert_true(total >= 4 + CERT_LEN);
+  assert_int_equal(reassembled[0], 0x53);
+  assert_int_equal(reassembled[1], 0x82);
+  assert_int_equal(reassembled[2], (CERT_LEN >> 8) & 0xFF);
+  assert_int_equal(reassembled[3], CERT_LEN & 0xFF);
+  assert_memory_equal(reassembled + 4, cert, CERT_LEN);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -208,6 +318,7 @@ int main() {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_delete_certificate_object),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
+      cmocka_unit_test(test_piv_cert_chained_read),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

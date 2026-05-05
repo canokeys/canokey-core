@@ -509,6 +509,303 @@ static void test_get_response_after_reset_without_pending_response(void **state)
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
 }
 
+// ---------------------------------------------------------------------------
+// Streaming response source coverage
+//
+// `apdu_response_source_set` + `apdu_output` are the streaming primitive
+// used by PIV / OpenPGP / NFC FIDO to emit responses larger than the APDU
+// buffer. The tests below exercise:
+//   - the multi-chunk read loop driven by GET RESPONSE
+//   - the tail-restore branch that protects bytes the caller will overwrite
+//     with the SW trailer when the source is aliased on shared_io_buffer
+//   - the read-failure error path (sets sh->sw to SW_UNABLE_TO_PROCESS)
+//   - the close callback bookkeeping
+//
+// Each callback uses static state because the response source API stores raw
+// pointers (no per-source allocation) and we want to verify ordering.
+
+typedef struct {
+  const uint8_t *data;
+  size_t total;
+  size_t reads;
+  size_t closes;
+  int read_should_fail;
+} streaming_source_ctx;
+
+static streaming_source_ctx stream_ctx;
+
+static int streaming_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  streaming_source_ctx *s = (streaming_source_ctx *)ctx;
+  s->reads++;
+  if (s->read_should_fail) return -1;
+  if (offset > s->total || len > s->total - offset) return -1;
+  memcpy(buf, s->data + offset, len);
+  return len;
+}
+
+static void streaming_source_close(void *ctx) {
+  streaming_source_ctx *s = (streaming_source_ctx *)ctx;
+  s->closes++;
+}
+
+static void test_response_source_multi_chunk_get_response(void **state) {
+  (void)state;
+  init_apdu_buffer();
+
+  // 600 bytes is enough to require three GET RESPONSE rounds at the 250-byte
+  // streaming chunk size (250 + 250 + 100).
+  static uint8_t payload[600];
+  for (size_t i = 0; i < sizeof(payload); ++i) payload[i] = (uint8_t)(i * 7 + 1);
+
+  stream_ctx = (streaming_source_ctx){.data = payload, .total = sizeof(payload)};
+  apdu_response_source_set((uint32_t)sizeof(payload), SW_NO_ERROR, streaming_source_read, streaming_source_close,
+                           &stream_ctx);
+  assert_int_equal(apdu_response_source_active(), 1);
+
+  uint8_t c_buf[64], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+  static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+
+  // Round 1: 250 bytes, 0x61FF (more than 0xFF remaining).
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 250);
+  assert_int_equal(rapdu.sw, 0x61FF);
+  assert_memory_equal(rapdu.data, payload, 250);
+
+  // Round 2: another 250 bytes, still 0x61FF (100 remaining).
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 250);
+  assert_int_equal(rapdu.sw, 0x6164);
+  assert_memory_equal(rapdu.data, payload + 250, 250);
+
+  // Round 3: final 100 bytes + 0x9000.
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 100);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_memory_equal(rapdu.data, payload + 500, 100);
+
+  // Stream is finalized; close callback must have fired exactly once.
+  assert_int_equal(apdu_response_source_active(), 0);
+  assert_int_equal(stream_ctx.closes, 1);
+  assert_int_equal(stream_ctx.reads, 3);
+
+  // A trailing GET RESPONSE without a pending stream is rejected.
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
+// Source that reads directly from shared_io_buffer, exercising the case where
+// the source data IS the response buffer (e.g. PIV / OpenPGP staging the
+// payload in shared_io_buffer before calling apdu_response_source_set with
+// ctx == shared_io_buffer-relative pointer). The interesting bug this guards
+// against: after the first chunk, the transport stamps the SW trailer at
+// sh->data + sh->len, which lands inside the source's still-pending data;
+// apdu_output must save and restore those bytes around the SW stamp so the
+// next chunk's read gets the original payload.
+static int shared_buffer_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  (void)ctx;
+  // The source data lives in shared_io_buffer at the "source view" offset
+  // we set up before kicking the stream. memmove handles the buffer overlap
+  // when buf == shared_io_buffer + 0 and the source data starts at the same
+  // address (first chunk is a no-op copy; later chunks read from forward
+  // offsets and write back near the start).
+  memmove(buf, shared_io_buffer + offset, len);
+  return len;
+}
+
+static void test_response_source_tail_restore_on_shared_buffer(void **state) {
+  (void)state;
+  init_apdu_buffer();
+
+  // Stage 260 bytes of payload directly into shared_io_buffer. The source
+  // reads from shared_io_buffer and writes back to it.
+  for (size_t i = 0; i < 260; ++i) shared_io_buffer[i] = (uint8_t)(0x40 + (i & 0x3F));
+  const uint8_t expected_byte250 = shared_io_buffer[250];
+  const uint8_t expected_byte251 = shared_io_buffer[251];
+  assert_int_not_equal(expected_byte250, 0x61);
+  assert_int_not_equal(expected_byte251, 0x0A);
+
+  stream_ctx = (streaming_source_ctx){.data = NULL, .total = 260};
+  apdu_response_source_set(260, SW_NO_ERROR, shared_buffer_source_read, streaming_source_close, &stream_ctx);
+
+  CAPDU capdu = {.data = shared_io_buffer};
+  RAPDU rapdu = {.data = shared_io_buffer};
+  static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 250);
+  assert_int_equal(rapdu.sw, 0x610A);
+  // First chunk content: payload[0..249] which still equals the original
+  // staging bytes since memmove covers same-source/dest.
+  for (size_t i = 0; i < 250; ++i) assert_int_equal(rapdu.data[i], (uint8_t)(0x40 + (i & 0x3F)));
+
+  // Simulate the transport stamping the 2-byte SW trailer right after the
+  // chunk data. This corrupts shared_io_buffer[250..251], which is what the
+  // source would otherwise return on the next read.
+  shared_io_buffer[250] = 0x61;
+  shared_io_buffer[251] = 0x0A;
+
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 10);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  // The tail-restore branch must have written the saved bytes back to
+  // shared_io_buffer[250..251] before the source read; otherwise the first
+  // two output bytes would be 0x61 0x0A.
+  assert_int_equal(rapdu.data[0], expected_byte250);
+  assert_int_equal(rapdu.data[1], expected_byte251);
+  assert_int_equal(stream_ctx.closes, 1);
+}
+
+static void test_response_source_read_failure_clears_state(void **state) {
+  (void)state;
+  init_apdu_buffer();
+
+  static uint8_t payload[300];
+  memset(payload, 0xAA, sizeof(payload));
+  stream_ctx = (streaming_source_ctx){.data = payload, .total = sizeof(payload), .read_should_fail = 1};
+  apdu_response_source_set((uint32_t)sizeof(payload), SW_NO_ERROR, streaming_source_read, streaming_source_close,
+                           &stream_ctx);
+
+  uint8_t c_buf[64], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+  static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_UNABLE_TO_PROCESS);
+  assert_int_equal(apdu_response_source_active(), 0);
+  // close should still fire so applets release their backing storage.
+  assert_int_equal(stream_ctx.closes, 1);
+}
+
+// apdu_output non-source path: when ex->rapdu.data aliases sh->data (the
+// transport stages and emits from the same shared_io_buffer), the SW trailer
+// the caller stamps after each chunk corrupts bytes that later chunks still
+// need. The tail-save branch captures those bytes on the first call and
+// replays them on subsequent calls.
+//
+// shared_io_buffer is APDU_COMMAND_BUFFER_SIZE bytes (288 by default), so
+// a 280-byte response chunked at 256 bytes lets us exercise the path
+// without overflowing the staging buffer.
+static void test_apdu_output_chaining_aliased_buffer(void **state) {
+  (void)state;
+  init_apdu_buffer();
+
+  enum { RESP_LEN = 280 };
+  uint8_t expected[RESP_LEN];
+  for (size_t i = 0; i < RESP_LEN; ++i) expected[i] = (uint8_t)(0x80 + (i & 0x3F));
+
+  memcpy(shared_io_buffer, expected, RESP_LEN);
+  RAPDU_CHAINING rc = {
+      .rapdu.data = shared_io_buffer,
+      .rapdu.len = RESP_LEN,
+      .rapdu.sw = SW_NO_ERROR,
+      .sent = 0,
+  };
+  RAPDU sh = {.data = shared_io_buffer, .len = APDU_BUFFER_SIZE};
+
+  // First chunk: 256 bytes, 0x6118 because 24 bytes still pending.
+  assert_int_equal(apdu_output(&rc, &sh), 0);
+  assert_int_equal(sh.len, 256);
+  assert_int_equal(sh.sw, 0x6118);
+  assert_memory_equal(sh.data, expected, 256);
+
+  // Simulate the transport stamping the SW trailer right after the chunk
+  // data; this corrupts shared_io_buffer[256..257], which originally held
+  // expected[256..257]. Tail-save must have copied those bytes out before
+  // we did this corruption.
+  shared_io_buffer[256] = 0x61;
+  shared_io_buffer[257] = 0x18;
+
+  // Second chunk: remaining 24 bytes + 0x9000. Without tail-save the first
+  // two output bytes would be 0x61 0x18 (the SW), not the original payload.
+  sh.len = APDU_BUFFER_SIZE;
+  assert_int_equal(apdu_output(&rc, &sh), 0);
+  assert_int_equal(sh.len, 24);
+  assert_int_equal(sh.sw, SW_NO_ERROR);
+  assert_memory_equal(sh.data, expected + 256, 24);
+}
+
+// fido_apdu_input rejects chains whose accumulated length would exceed the
+// PKE staging buffer. Send maximum-sized chained APDUs until APDU_CHAINING_OVERFLOW
+// fires, which process_apdu maps to SW_WRONG_LENGTH and which must also reset
+// the chain so subsequent commands can run.
+static void test_fido_apdu_chain_overflow_returns_wrong_length(void **state) {
+  (void)state;
+
+  static const uint8_t select_fido[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+  };
+
+  uint8_t c_buf[512], r_buf[64];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+  set_nfc_state(0);
+
+  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Build a maximally-sized chained APDU (CLA=0x90, INS=0x10, Lc=0xFF=255).
+  uint8_t big[5 + 255];
+  big[0] = 0x90;
+  big[1] = 0x10;
+  big[2] = 0x00;
+  big[3] = 0x00;
+  big[4] = 0xFF;
+  memset(big + 5, 0xAB, 255);
+
+  size_t total = 0;
+  for (int i = 0; i < 32; ++i) {
+    assert_int_equal(build_capdu(&capdu, big, sizeof(big)), 0);
+    process_apdu(&capdu, &rapdu);
+    if (rapdu.sw == SW_WRONG_LENGTH) {
+      // Overflow correctly signaled. fido_capdu_reset was called on this
+      // path, releasing PKE; we should now be able to acquire it elsewhere.
+      assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+      assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+      return;
+    }
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    total += 255;
+  }
+  fail_msg("Expected SW_WRONG_LENGTH after %zu accumulated bytes", total);
+}
+
+static void test_response_source_clear_calls_close(void **state) {
+  (void)state;
+  init_apdu_buffer();
+
+  static const uint8_t payload[16] = {0};
+  stream_ctx = (streaming_source_ctx){.data = payload, .total = sizeof(payload)};
+  apdu_response_source_set((uint32_t)sizeof(payload), SW_NO_ERROR, streaming_source_read, streaming_source_close,
+                           &stream_ctx);
+  assert_int_equal(apdu_response_source_active(), 1);
+  assert_int_equal(stream_ctx.closes, 0);
+
+  apdu_response_source_clear();
+  assert_int_equal(apdu_response_source_active(), 0);
+  assert_int_equal(stream_ctx.closes, 1);
+
+  // Clearing again is a no-op; close must not fire twice.
+  apdu_response_source_clear();
+  assert_int_equal(stream_ctx.closes, 1);
+}
+
 static void test_fido_magic_reboot_after_reset_without_select(void **state) {
   (void)state;
 
@@ -574,6 +871,12 @@ int main() {
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
+      cmocka_unit_test(test_response_source_multi_chunk_get_response),
+      cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),
+      cmocka_unit_test(test_response_source_read_failure_clears_state),
+      cmocka_unit_test(test_apdu_output_chaining_aliased_buffer),
+      cmocka_unit_test(test_fido_apdu_chain_overflow_returns_wrong_length),
+      cmocka_unit_test(test_response_source_clear_calls_close),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
   };
 

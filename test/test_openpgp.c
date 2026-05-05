@@ -300,6 +300,85 @@ static void test_special(void **state) {
   print_hex(RDATA, LL);
 }
 
+// openpgp_process_apdu_message uses RAPDU_CHAINING + apdu_output to stream
+// large GET DATA responses. Cert reads also exercise the source-streaming
+// path through openpgp_send_cert + openpgp_cert_source_read (file-backed
+// source). This test stages a >256-byte cert via chained PUT DATA
+// (handled by the OpenPGP applet's own cross-APDU chain state), then
+// drains it via GET DATA + GET RESPONSE, verifying the output stream.
+static void test_openpgp_cert_chained_read(void **state) {
+  (void)state;
+  openpgp_install(1);
+
+  // Authenticate as PW3 admin so PUT DATA is allowed.
+  uint8_t pin[16];
+  uint8_t r_buf[1024];
+  CAPDU capdu = {.data = pin};
+  RAPDU rapdu = {.data = r_buf};
+  capdu.cla = 0x00;
+  capdu.ins = OPENPGP_INS_VERIFY;
+  capdu.p1 = 0x00;
+  capdu.p2 = 0x83;
+  capdu.lc = 8;
+  memcpy(pin, "12345678", 8);
+  openpgp_process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // 600-byte synthetic cert; spans three 256-byte chunks on read-back.
+  enum { CERT_LEN = 600 };
+  uint8_t cert[CERT_LEN];
+  for (size_t i = 0; i < CERT_LEN; ++i) cert[i] = (uint8_t)(0x90 + (i & 0x3F));
+
+  // Chained PUT DATA at TAG_CARDHOLDER_CERTIFICATE (P1P2=7F21). OpenPGP
+  // applet handles the cross-APDU chain itself via cert_write_remaining.
+  enum { CHUNK = 200 };
+  uint8_t chunk[CHUNK];
+  for (size_t off = 0; off < CERT_LEN; off += CHUNK) {
+    size_t n = (off + CHUNK <= CERT_LEN) ? CHUNK : (CERT_LEN - off);
+    bool last = (off + n == CERT_LEN);
+    memcpy(chunk, cert + off, n);
+    capdu.cla = last ? 0x00 : 0x10;
+    capdu.ins = OPENPGP_INS_PUT_DATA;
+    capdu.p1 = 0x7F;
+    capdu.p2 = 0x21;
+    capdu.lc = (uint16_t)n;
+    capdu.data = chunk;
+    rapdu.len = 0;
+    rapdu.sw = 0;
+    openpgp_process_apdu(&capdu, &rapdu);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  }
+  // Cert is stored under SIG_KEY_IDX cert path "pgp-sigc".
+  assert_int_equal(get_file_size("pgp-sigc"), CERT_LEN);
+
+  // GET DATA + GET RESPONSE chain via openpgp_process_apdu_message.
+  RAPDU_CHAINING rc = {.rapdu.data = r_buf};
+  CAPDU get_apdu = {.data = NULL, .cla = 0x00, .ins = OPENPGP_INS_GET_DATA, .p1 = 0x7F, .p2 = 0x21, .lc = 0, .le = 0x100};
+  rapdu.len = 0;
+  rapdu.sw = 0;
+  openpgp_process_apdu_message(&rc, &get_apdu, &rapdu);
+  assert_int_equal(rapdu.len, 256);
+  assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
+
+  uint8_t reassembled[1024];
+  size_t total = rapdu.len;
+  memcpy(reassembled, rapdu.data, rapdu.len);
+
+  CAPDU gr_apdu = {.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0x100};
+  while ((rapdu.sw & 0xFF00) == 0x6100) {
+    rapdu.len = 0;
+    rapdu.sw = 0;
+    openpgp_process_apdu_message(&rc, &gr_apdu, &rapdu);
+    assert_true(rapdu.len > 0);
+    assert_true(total + rapdu.len <= sizeof(reassembled));
+    memcpy(reassembled + total, rapdu.data, rapdu.len);
+    total += rapdu.len;
+  }
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(total, CERT_LEN);
+  assert_memory_equal(reassembled, cert, CERT_LEN);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -333,6 +412,7 @@ int main() {
       cmocka_unit_test(test_generate_key),
       cmocka_unit_test(test_decipher_chaining),
       cmocka_unit_test(test_x25519_public_key_encoding),
+      cmocka_unit_test(test_openpgp_cert_chained_read),
       cmocka_unit_test(test_special),
   };
 
