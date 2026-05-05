@@ -259,6 +259,8 @@ CTAP handlers must treat transport-backed request bytes as short-lived input, no
 4. Clear the request source.
 5. Continue with keepalive, user-presence waits, crypto, storage, and response generation.
 
+`ctap_req_src_t` carries `read(ctx, offset, buf, len)` for pulling bytes plus an optional `cancelled(ctx)` callback, invoked on every read so cooperative cancellation (host-side CTAPHID CANCEL) terminates parsing immediately. Sources that cannot be cancelled may leave `cancelled` NULL.
+
 If a command needs raw request bytes after parsing, handle the exact bytes before the first unsafe boundary:
 
 - Materialize only the required range into stable RAM if it is bounded and non-streamable.
@@ -294,10 +296,22 @@ Forbidden PKE staging uses:
 **Rule: use ISO 7816-4 command/response chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`), not extended-length APDUs, for all multi-block data.**
 
 - `APDU_BUFFER_SIZE` is 256 bytes (one short APDU payload). `APDU_COMMAND_BUFFER_SIZE = APDU_BUFFER_SIZE + 32 = 288 bytes`.
+- `APDU_INCOMING_DATA_SIZE` is an alias for `APDU_COMMAND_BUFFER_SIZE` (288). Chained reassembly in `apdu_input` accumulates up to that limit, so applet bounds checks should compare against `APDU_INCOMING_DATA_SIZE`, not the raw 256-byte payload size.
 - Extended-length APDUs (Lc/Le up to 65535) are **not supported** in the standard transport path.
 - Large request data (e.g. RSA key import, FIDO2 CBOR) must be sent by the host as chained `CLA=0x10` commands; `apdu_input` reassembles them transparently.
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
+
+### Streaming response sources
+
+`apdu_response_source_set(total_len, sw, read, close, ctx)` registers a pull-based response stream with `apdu.c`:
+
+- `read(ctx, offset, buf, len)` produces response bytes on demand; the framework calls it once per `GET RESPONSE` chunk.
+- `close(ctx)` releases any backing resource (PKE buffer, shared scratch, file handle) when the stream finishes or is preempted.
+- `apdu_response_source_clear()` is invoked automatically before the next non-`GET RESPONSE` command and on session expiry; applets may also call it directly to abort a stream.
+- `apdu_response_source_active()` reports whether a stream is in flight (used by transports to decide between inline and chunked responses).
+
+Use this helper for any response that does not fit `APDU_BUFFER_SIZE` instead of materializing the full payload into a buffer. PIV `7C` wrappers, OpenPGP large public-key encodings, FIDO2 large credential lists, and OpenPGP cert reads all go through this path.
 
 ### CTAP transport entrypoints
 
@@ -343,7 +357,8 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 
 ### Endianness
 
-- Always use `htobe32` / `be32toh` / `htole32` / `letoh32` from `common.h` instead of system headers or manual shifts.
+- Always use `htobe32` / `be32toh` / `htole32` / `letoh32` / `htobe16` from `common.h` instead of system headers or manual shifts.
+- `common.h` does not provide 16-bit little-endian helpers; either derive them via `LO()`/`HI()` or write the two bytes directly.
 - USB wire data is little-endian; APDU/smartcard data is big-endian. Convert at the interface boundary.
 
 ---
@@ -374,6 +389,8 @@ Test-mode extras (enabled by `TEST` define):
 - `testmode_emulate_user_presence()` — auto-confirms touch
 - `testmode_get_is_nfc_mode()` — reads NFC emulation config from file
 - `testmode_inject_error()` — injects storage errors for fault testing
+- `testmode_set_initial_ticks(uint32_t)` — pin the device tick counter to a known value (used by the virt-card and the MAGIC REBOOT path)
+- `testmode_err_triggered(path, file_wr)` — query whether the most recent injected error fired for a given file/operation
 
 ---
 
