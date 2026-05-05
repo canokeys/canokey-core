@@ -18,8 +18,8 @@ const static UCHAR ATR[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65
                             0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 static int applet_init = 0;
 
-extern ccid_bulkin_data_t bulkin_data[2];
-extern ccid_bulkout_data_t bulkout_data[2];
+extern ccid_bulkin_data_t bulkin_data;
+extern ccid_bulkout_data_t bulkout_data;
 
 static uint8_t send_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) { return 0; }
 
@@ -44,14 +44,16 @@ static uint8_t is_fido_pcsc_apdu(const uint8_t *buf, DWORD len) {
 }
 
 static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len) {
-  uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : shared_io_buffer;
+  // Core CCID maintains a single global bulk endpoint state; the virt-card is
+  // single-slot, so we ignore Lun beyond stamping it into bSlot.
+  uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data.abDataShort : shared_io_buffer;
   memcpy(abData, tx, tx_len);
-  bulkout_data[Lun].dwLength = tx_len;
-  bulkout_data[Lun].bSlot = (uint8_t)Lun;
-  bulkout_data[Lun].bSeq = 0;
-  bulkout_data[Lun].bSpecific_0 = 0;
-  bulkout_data[Lun].bSpecific_1 = 0;
-  bulkout_data[Lun].bSpecific_2 = 0;
+  bulkout_data.dwLength = tx_len;
+  bulkout_data.bSlot = (uint8_t)Lun;
+  bulkout_data.bSeq = 0;
+  bulkout_data.bSpecific_0 = 0;
+  bulkout_data.bSpecific_1 = 0;
+  bulkout_data.bSpecific_2 = 0;
   return PC_to_RDR_XfrBlock();
 }
 
@@ -157,23 +159,24 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
   } else {
     DWORD total_len = 0;
     for (;;) {
-      if (bulkin_data[Lun].dwLength < 2) {
+      (void)Lun;
+      if (bulkin_data.dwLength < 2) {
         *RxLength = 0;
         return IFD_COMMUNICATION_ERROR;
       }
 
-      const uint16_t sw = (uint16_t)(bulkin_data[Lun].abData[bulkin_data[Lun].dwLength - 2] << 8) |
-                          bulkin_data[Lun].abData[bulkin_data[Lun].dwLength - 1];
-      const DWORD data_len = bulkin_data[Lun].dwLength - 2;
+      const uint16_t sw = (uint16_t)(bulkin_data.abData[bulkin_data.dwLength - 2] << 8) |
+                          bulkin_data.abData[bulkin_data.dwLength - 1];
+      const DWORD data_len = bulkin_data.dwLength - 2;
       const uint8_t has_more = aggregate_get_response && (sw & 0xFF00) == 0x6100;
-      const DWORD copy_len = has_more ? data_len : bulkin_data[Lun].dwLength;
+      const DWORD copy_len = has_more ? data_len : bulkin_data.dwLength;
 
       if (total_len + copy_len > *RxLength) {
         printf("response too large: total=%lu next=%lu cap=%lu\n", total_len, copy_len, *RxLength);
         *RxLength = 0;
         return IFD_ERROR_INSUFFICIENT_BUFFER;
       }
-      memcpy(RxBuffer + total_len, bulkin_data[Lun].abData, copy_len);
+      memcpy(RxBuffer + total_len, bulkin_data.abData, copy_len);
       total_len += copy_len;
 
       if (!has_more) {
