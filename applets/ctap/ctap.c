@@ -1471,11 +1471,16 @@ step12:
   return ctap_prepare_make_credential_response(encoder, &mc, uv, extension_buffer, extension_size);
 }
 
+static void ecc_key_cleanup(ecc_key_t *k) { memzero(k, sizeof(*k)); }
+
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
   CTAP_discoverable_credential dc = {0}; // We use dc to store the selected credential
   uint8_t data_buf[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
-  ecc_key_t key; // TODO: cleanup
+  // Auto-zero on every scope exit so partial private-key material from
+  // verify_key_handle / ck_read_key never lingers on the stack across the many
+  // CHECK_*/EXCEPT/early-return paths in this function.
+  ecc_key_t key __attribute__((cleanup(ecc_key_cleanup))) = {0};
   CborParser parser;
   int ret;
 
@@ -1895,7 +1900,6 @@ step7:
     state->pending = true;
     ++credential_counter;
     timer = device_get_tick();
-    memzero(&key, sizeof(key));
     return 0;
   }
   memcpy(data_buf + len, ga_state.client_data_hash, CLIENT_DATA_HASH_SIZE);
