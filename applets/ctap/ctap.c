@@ -3124,11 +3124,15 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
     return 0;
   }
 
-  uint8_t cmd = *req;
-  if (current_req_src.read && ctap_req_read_payload_bytes(0, &cmd, sizeof(cmd)) < 0) {
-    rapdu->sw = SW_UNABLE_TO_PROCESS;
-    ctap_req_lifetime_end();
-    return 0;
+  uint8_t cmd;
+  if (current_req_src.read) {
+    if (ctap_req_read_payload_bytes(0, &cmd, sizeof(cmd)) < 0) {
+      rapdu->sw = SW_UNABLE_TO_PROCESS;
+      ctap_req_lifetime_end();
+      return 0;
+    }
+  } else {
+    cmd = *req;
   }
 
   if (cmd == CTAP_GET_INFO) {
