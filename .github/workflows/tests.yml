@@ -173,11 +173,8 @@ jobs:
     - name: Tests - Smoking tests
       run: |
         cd build
-        ./test/test_apdu
-        ./test/test_openpgp
-        ./test/test_oath
-        ./test/test_piv
-        
+        ctest --output-on-failure
+
     - name: Prepare - Start pcscd
       run: |
         echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
