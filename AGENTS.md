@@ -49,10 +49,11 @@ canokey-core/
 ├── tinycbor/           # Submodule: CBOR encoder/decoder
 ├── virt-card/          # Virtual card for host-side unit/integration tests
 ├── test/               # CMocka unit tests
-├── fido2-tests/        # FIDO2 conformance test helpers
 ├── fuzzer/             # honggfuzz fuzzing harness
 └── scripts/            # Code-generation scripts (gen_ctap_get_info.py)
 ```
+
+`fido2-tests/` is referenced by CI (`.github/workflows/tests.yml`) and `test-via-pcsc/build_fido_tests.sh`. It is **not** committed to this repo (see `.gitignore`); CI checks it out into a sibling directory at runtime.
 
 ---
 
@@ -143,8 +144,10 @@ fm_status_t i2c_write_byte(uint8_t data); uint8_t i2c_read_byte(void);
 
 ```c
 uint32_t random32(void);
-// optional: void random_buffer(uint8_t *buf, size_t len);
+void     random_buffer(uint8_t *buf, size_t len);
 ```
+
+Both are required: applet install paths (`ctap_install`, `piv_install`, virt-card fabrication) call `random_buffer` directly, not via `random32`.
 
 ### Platform hardware key engine (optional)
 
@@ -194,6 +197,7 @@ Sessions expire after `APPLET_SESSION_TIMEOUT_MS` (2 s) of inactivity.
 
 - Treat the applet session as the exclusivity boundary for large transient state. `CTAPHID`, CTAP over APDU (`CCID` / `WebUSB`), `OpenPGP`, and `PIV` are not required to make forward progress concurrently, so they should share one global session scratch area instead of reserving separate worst-case buffers per applet.
 - Transport choice does not create a separate scratch domain: `CTAPHID`, `CCID`, and `WebUSB` all compete for the same session-level transient resources.
+- The cross-applet exclusivity is enforced by `device_applet_session_acquire` in `src/device.c`. Per-applet helpers like `openpgp_crypto_acquire`, `openpgp_pke_acquire`, and `piv_pke_acquire` are bookkeeping flags inside the applet, **not** synchronization primitives — never call them as a substitute for an applet-session acquire.
 
 ### Touch / user-presence
 
@@ -237,6 +241,7 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 - The current `applet_session_scratch_t` pattern must be treated as a single global scratch reservation, not as permission to grow per-applet dedicated buffers. Do not design new long-lived scratch members around applet ownership.
 - `CTAPHID`, CTAP over `CCID` / `WebUSB`, `OpenPGP`, and `PIV` should share the same session scratch because only one of them is expected to own the applet session at a time.
 - Size that global scratch for the largest **non-streamable** artifact only. The design target is an RSA-4096 result (`4096 / 8 = 512` bytes) plus small ASN.1 / TLV wrapper overhead, not an entire request or response payload.
+- `applet_session_scratch_t` is a `union` of `ctap_ga` / `ctap_mldsa` / `buffer[APPLET_SHARED_BUFFER_LENGTH]`; the larger members alias the encoder buffer. Any field of `ctap_ga` that must survive an encoder write **must** sit past `APPLET_SHARED_BUFFER_LENGTH` bytes from the start of the union; static asserts in `include/applet-scratch.h` pin the current set. Re-arranging fields without checking this will silently let response generation corrupt parsed input.
 - Everything else should be streamed: large APDU request bodies, large APDU responses, CTAP CBOR payloads, key-import TLVs, certificates, and public-key encodings should be parsed, encoded, and emitted incrementally whenever the protocol allows it.
 - `shared_io_buffer` remains the short-APDU working buffer. Do not increase `APDU_BUFFER_SIZE` or add parallel heap-like buffers to avoid implementing streaming.
 - PKE RAM may be used as **transient staging** for streaming input/output, but it is not stable storage. Any crypto operation, key-generation step, or helper that reuses the PKE engine may overwrite it.
