@@ -123,6 +123,53 @@ static void test_get_data(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
+// GET DATA P2=0xFA returns the algorithm-information DO, which is the
+// only callsite that builds the SIG/DEC/AUT supported-algorithm tables
+// via add_all_algorithm_info. Walk the response and verify each entry
+// is well-formed (tag byte + length + algo-id-prefixed OID) so the
+// table builder is properly exercised.
+static void test_algorithm_information(void **state) {
+  (void)state;
+
+  uint8_t c_buf[16], r_buf[1024];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  C.cla = 0x00;
+  C.ins = OPENPGP_INS_GET_DATA;
+  C.p1 = 0x00;
+  C.p2 = TAG_ALGORITHM_INFORMATION;
+  C.lc = 0;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(R.len > 3);
+  assert_int_equal(R.data[0], TAG_ALGORITHM_INFORMATION);
+  assert_int_equal(R.data[1], 0x81);
+  assert_int_equal(R.data[2] + 3, R.len);
+
+  // Walk SIG (0xC1) / DEC (0xC2) / AUT (0xC3) entries: each is
+  //   tag(1) || attr_len(1) || algo_id(1) || OID bytes...
+  // and the response covers all three slots. Count entries per tag.
+  int n_sig = 0, n_dec = 0, n_aut = 0;
+  uint16_t off = 3;
+  while (off < R.len) {
+    uint8_t tag = R.data[off++];
+    assert_true(off < R.len);
+    uint8_t attr_len = R.data[off++];
+    assert_true(off + attr_len <= R.len);
+    assert_true(attr_len >= 1);
+    if (tag == 0xC1) ++n_sig;
+    else if (tag == 0xC2) ++n_dec;
+    else if (tag == 0xC3) ++n_aut;
+    else fail_msg("unexpected algo-info tag 0x%02X", tag);
+    off += attr_len;
+  }
+  assert_int_equal(off, R.len);
+  // Static table has SIG=9, DEC=9, AUT=9 entries.
+  assert_int_equal(n_sig, 9);
+  assert_int_equal(n_dec, 9);
+  assert_int_equal(n_aut, 9);
+}
+
 static void test_import_key(void **state) {
   (void)state;
 
@@ -408,6 +455,7 @@ int main() {
       cmocka_unit_test(test_change_reference_data),
       cmocka_unit_test(test_reset_retry_counter),
       cmocka_unit_test(test_get_data),
+      cmocka_unit_test(test_algorithm_information),
       cmocka_unit_test(test_import_key),
       cmocka_unit_test(test_generate_key),
       cmocka_unit_test(test_decipher_chaining),

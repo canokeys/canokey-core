@@ -145,6 +145,61 @@ static void test_delete_certificate_object(void **state) {
   assert_int_equal(get_file_size("piv-pauc"), 0);
 }
 
+// piv_get_metadata's key_type_to_algo_id switch maps each supported
+// PIV key type to the runtime-configurable algorithm-extension byte.
+// Integration tests only exercise the RSA2048 / SECP256R1 / SECP384R1
+// arms; the extended types (ED25519, X25519, SECP256K1, SM2) live
+// behind alg_ext_cfg.* defaults that piv_install pre-populates. Drop a
+// well-formed asymmetric key in the AUTH slot for each type and read
+// metadata back; the second algorithm byte should match the default
+// table.
+static void test_piv_get_metadata_extended_algo_ids(void **state) {
+  (void)state;
+
+  // alg_ext_cfg defaults from piv_install.
+  static const struct {
+    key_type_t type;
+    uint8_t expected_algo_id;
+  } cases[] = {
+      {ED25519, 0xE0},
+      {X25519, 0xE1},
+      {SECP256K1, 0x53},
+      {SM2, 0x54},
+  };
+
+  set_admin_status(1);
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    ck_key_t key = {.meta = {.type = cases[i].type,
+                             .origin = KEY_ORIGIN_GENERATED,
+                             .usage = SIGN,
+                             .pin_policy = PIN_POLICY_NEVER,
+                             .touch_policy = TOUCH_POLICY_NEVER}};
+    assert_int_equal(ck_generate_key(&key), 0);
+    assert_int_equal(ck_write_key("piv-pauk", &key), 0);
+
+    uint8_t r_buf[256];
+    CAPDU C = {.data = NULL, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9A, .lc = 0};
+    RAPDU R = {.data = r_buf};
+    piv_process_apdu(&C, &R);
+
+    assert_int_equal(R.sw, SW_NO_ERROR);
+    // Layout: 01 01 <algo> 02 02 <pin> <touch> 03 01 <origin> 04 ...
+    assert_true(R.len >= 11);
+    assert_int_equal(R.data[0], 0x01);
+    assert_int_equal(R.data[1], 0x01);
+    assert_int_equal(R.data[2], cases[i].expected_algo_id);
+    assert_int_equal(R.data[3], 0x02);
+    assert_int_equal(R.data[4], 0x02);
+    assert_int_equal(R.data[5], PIN_POLICY_NEVER);
+    assert_int_equal(R.data[6], TOUCH_POLICY_NEVER);
+    assert_int_equal(R.data[7], 0x03);
+    assert_int_equal(R.data[8], 0x01);
+    assert_int_equal(R.data[9], KEY_ORIGIN_GENERATED);
+    assert_int_equal(R.data[10], 0x04);
+  }
+}
+
 static void test_ed25519_general_authenticate_long_message(void **state) {
   (void)state;
 
@@ -317,6 +372,7 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_delete_certificate_object),
+      cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
       cmocka_unit_test(test_piv_cert_chained_read),
   };
