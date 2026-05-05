@@ -305,6 +305,10 @@ static int CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, const uint8_t *data, 
 
 uint8_t CTAPHID_TxBusy(void) { return tx_stream.active; }
 
+// Ownership boundary: while a TX stream is active the applet session belongs
+// to the stream and is released here when the stream is torn down. Inline
+// (non-streaming) responses never set tx_stream.active and must release the
+// session at their own call site.
 void CTAPHID_TxReset(void) {
   const uint8_t had_stream = tx_stream.active;
   if (tx_stream.active && tx_stream.source.close) tx_stream.source.close(tx_stream.source.ctx);
@@ -712,6 +716,9 @@ static void CTAPHID_Execute_Msg(void) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
     return;
   }
+  // SendStreamSource finishes synchronously and TxReset already released the
+  // session in that path; the guard catches the inline-response path where no
+  // stream was ever activated.
   if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
 }
 
