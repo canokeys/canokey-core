@@ -92,7 +92,7 @@ typedef struct {
 
 // pin & command states
 static uint8_t consecutive_pin_counter, last_cmd;
-static bool runtime_reset_pending;
+static bool runtime_reset_pending = true;
 // source of APDU in process
 static ctap_src_t current_cmd_src;
 // SM2 attr
