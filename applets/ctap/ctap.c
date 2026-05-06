@@ -591,6 +591,21 @@ void ctap_test_seed_get_next_assertion_state(void) {
   credential_counter = 1;
   timer = device_get_tick();
 }
+
+void ctap_test_seed_credential_management_state(void) {
+  ctap_credential_management_reset_state();
+  last_cmd = CTAP_CREDENTIAL_MANAGEMENT;
+  cred_mgmt_state.last_subcommand = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
+  cred_mgmt_state.idx = 7;
+  cred_mgmt_state.n_rp = 3;
+  cred_mgmt_state.slots = 0x10;
+}
+
+int ctap_test_credential_management_state_active(void) {
+  return last_cmd == CTAP_CREDENTIAL_MANAGEMENT &&
+         cred_mgmt_state.last_subcommand == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN && cred_mgmt_state.idx == 7 &&
+         cred_mgmt_state.n_rp == 3 && cred_mgmt_state.slots == 0x10;
+}
 #endif
 
 #if ENABLE_NFC
@@ -671,13 +686,14 @@ void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
 void ctap_deselect(void) {
   last_cmd = CTAP_INVALID_CMD;
   ctap_get_assertion_reset_state();
+  ctap_credential_management_reset_state();
 }
 
 void ctap_poweroff(void) {
   current_cmd_src = CTAP_SRC_NONE;
   cert_write_active = false;
   cert_write_len = 0;
-  ctap_credential_management_reset_state();
+  // HID response teardown calls ctap_poweroff between stateful CM commands.
   ctap_nfc_pending_reset();
   if (pke_buffer_release(PKE_BUFFER_OWNER_CTAP) == 0) {
     pke_buffer_clear();

@@ -380,6 +380,32 @@ static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
   assert_int_equal(resp[0], 0x30);
 }
 
+static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
+  (void)state;
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  ctap_test_seed_credential_management_state();
+  ctap_poweroff();
+
+  assert_true(ctap_test_credential_management_state_active());
+}
+
+static void test_ctap_deselect_clears_credential_management_state(void **state) {
+  (void)state;
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  ctap_test_seed_credential_management_state();
+  ctap_deselect();
+
+  assert_false(ctap_test_credential_management_state_active());
+}
+
 static void test_ctap_hid_get_info_stream_source(void **state) {
   (void)state;
 
@@ -867,6 +893,8 @@ int main() {
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
+      cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
+      cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
