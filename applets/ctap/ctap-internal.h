@@ -380,7 +380,6 @@ typedef struct {
 } CTAP_large_blobs;
 
 typedef struct {
-  uint8_t enabled;
   int32_t curve_id;
   int32_t algo_id;
 } __packed CTAP_sm2_attr;

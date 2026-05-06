@@ -213,7 +213,7 @@ key_type_t cose_alg_to_key_type(int alg) {
   case COSE_ALG_EDDSA:
     return ED25519;
   default:
-    if (ctap_sm2_attr.enabled && alg == ctap_sm2_attr.algo_id) return SM2;
+    if (alg == ctap_sm2_attr.algo_id) return SM2;
     return KEY_TYPE_PKC_END;
   }
 }
