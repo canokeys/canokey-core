@@ -2,13 +2,71 @@
 # OpenPGP applet integration tests
 # Called from tests.yml with `script -e -c` for TTY support
 set -e
+set -o pipefail
 set -o xtrace
+
+dump_gpg_diagnostics() {
+  local rc=$?
+  trap - ERR
+  set +e
+  set +x
+  echo "=== OpenPGP CI diagnostics (exit=${rc}) ==="
+  echo "--- gpgconf --list-dirs ---"
+  gpgconf --list-dirs || true
+  echo "--- gpg --version ---"
+  gpg --version || true
+  echo "--- gpg-connect-agent: serialno ---"
+  gpg-connect-agent 'SCD GETATTR SERIALNO' /bye || true
+  echo "--- gpg-connect-agent: learn ---"
+  gpg-connect-agent 'SCD LEARN --force' /bye || true
+  echo "--- gpg --card-status ---"
+  gpg --card-status || true
+  echo "--- gpg -K --with-colons ---"
+  gpg -K --with-colons || true
+  echo "--- gpg -K --with-keygrip ---"
+  gpg -K --with-keygrip || true
+  echo "--- ~/.gnupg/gpg-agent.conf ---"
+  cat ~/.gnupg/gpg-agent.conf || true
+  echo "--- ~/.gnupg/scdaemon.conf ---"
+  cat ~/.gnupg/scdaemon.conf || true
+  echo "--- /tmp/canokey-test-gpg-agent.log ---"
+  tail -n 200 /tmp/canokey-test-gpg-agent.log || true
+  echo "--- /tmp/canokey-test-scd.log ---"
+  tail -n 200 /tmp/canokey-test-scd.log || true
+  echo "--- /tmp/pcscd.log ---"
+  tail -n 200 /tmp/pcscd.log || true
+  exit "${rc}"
+}
+
+trap 'dump_gpg_diagnostics' ERR
+
+CardRefresh() {
+  gpg-connect-agent 'SCD LEARN --force' /bye >/dev/null || true
+  gpg --card-status >/dev/null || true
+}
 
 echo "=== Phase: Go unit tests ==="
 go test -v test-via-pcsc/openpgp_test.go
 
 echo "=== Phase: Setup GPG environment ==="
 pkill gpg-agent || true
+pkill scdaemon || true
+mkdir -p ~/.gnupg
+chmod 700 ~/.gnupg
+cat >~/.gnupg/gpg-agent.conf <<'EOF'
+enable-ssh-support
+debug 1031
+debug-level 8
+log-file /tmp/canokey-test-gpg-agent.log
+EOF
+cat >~/.gnupg/scdaemon.conf <<'EOF'
+pcsc-driver /usr/lib/x86_64-linux-gnu/libpcsclite.so.1
+disable-ccid
+debug 6145
+log-file /tmp/canokey-test-scd.log
+EOF
+gpgconf --kill gpg-agent || true
+gpgconf --kill scdaemon || true
 export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
 mkdir -p ~/.ssh /tmp/mock
 python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1152)]),end='')" > /tmp/random.txt
@@ -24,27 +82,46 @@ KEYID=$(gpg -K --with-colons | grep -P '^sec' | grep -oP '\w{16}')
 # Helper functions
 gpg_alias () { gpg --yes --expert --command-fd 0 --status-fd 1 "$@"; }
 Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg_alias --edit-key $KEYID; }
-Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg_alias --edit-key $KEYID; gpg --card-status; }
+LatestSubkey() {
+  local cap=$1
+  gpg -K --with-colons | awk -F: -v cap="$cap" '$1=="ssb" && $12 ~ cap {id=$5} END {if (id != "") print id}'
+}
+LatestAddedSubkey() {
+  gpg -K --with-colons | awk -F: '$1=="ssb" {id=$5} END {if (id != "") print id}'
+}
+LatestSubkeyGrip() {
+  local cap=$1
+  gpg -K --with-colons | awk -F: -v cap="$cap" '$1=="ssb" && $12 ~ cap {want=NR+2} NR==want {grip=$10} END {if (grip != "") print grip}'
+}
+Key2card() {
+  local subkey=$1
+  local slot=$2
+  [ -n "$subkey" ]
+  echo -e "key $subkey\nkeytocard\n$slot\nsave" | gpg_alias --edit-key $KEYID
+  CardRefresh
+}
+Key2cardLatest() { Key2card "$(LatestSubkey "$1")" "$2"; }
 Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg_alias --edit-key $KEYID; }
 ChangeUsage() {
-  SUBKEY=$(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/a/ {print $5}' | tail -n 1)
+  SUBKEY=$(LatestSubkey 'a')
   echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg_alias --edit-key $KEYID
 }
-GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}' | tail -n 1)! -s | gpg; }
-GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}' | tail -n 1) --encrypt | gpg; }
+GPGSign() { CardRefresh; date -Iseconds | gpg --armor --default-key "$(LatestSubkey 's')"! -s | gpg; }
+GPGEnc()  { CardRefresh; date -Iseconds | gpg --yes --armor --recipient "$(LatestSubkey 'e')" --encrypt | gpg; }
 GPGAuth() {
-  gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
+  CardRefresh
+  LatestSubkeyGrip 'a' >~/.gnupg/sshcontrol
   ssh-add -L >~/.ssh/authorized_keys
 }
 SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg_alias --edit-card; }
 UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
-GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg_alias --edit-card; }
+GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg_alias --edit-card; CardRefresh; }
 
 echo "=== Phase: Initial card setup (PIN change, ECC P-256 key import) ==="
 echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc
 gpg --card-status | grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
 echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg_alias --edit-card
-Key2card 1 1
+Key2cardLatest 's' 1
 echo 0 >/tmp/canokey-test-up
 GPGSign
 UserChecked 0
@@ -55,9 +132,9 @@ gpg --card-status | grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
 GPGSign
 UserChecked 1
 Addkey 12 3
+Key2card "$(LatestAddedSubkey)" 2
 Addkey 10 3
-Key2card 2 2
-Key2card 3 3
+Key2card "$(LatestAddedSubkey)" 3
 echo 0 >/tmp/canokey-test-up
 GPGAuth
 UserChecked 0
@@ -97,37 +174,37 @@ echo "=== Phase: RSA-2048 key import ==="
 GPGReset
 gpg --card-status | grep -E 'Signature key.+none'
 Addkey 4 2048
-Key2card 4 3
+Key2card "$(LatestAddedSubkey)" 3
 Addkey 6 2048
-Key2card 5 2
+Key2card "$(LatestAddedSubkey)" 2
 GPGAuth
 GPGEnc
 Addkey 10 3
-Key2card 6 1
+Key2card "$(LatestAddedSubkey)" 1
 GPGSign
 
 echo "=== Phase: ED25519/CV25519 key import ==="
 GPGReset
 Addkey 12 1
+Key2card "$(LatestAddedSubkey)" 2
 Addkey 10 1
-Key2card 7 2
-Key2card 8 3
+Key2card "$(LatestAddedSubkey)" 3
 GPGAuth
 GPGEnc
 Addkey 10 1
-Key2card 9 1
+Key2card "$(LatestAddedSubkey)" 1
 GPGSign
 
 echo "=== Phase: RSA-4096 key import ==="
 GPGReset
 Addkey 4 4096
-Key2card 10 3
+Key2card "$(LatestAddedSubkey)" 3
 Addkey 6 4096
-Key2card 11 2
+Key2card "$(LatestAddedSubkey)" 2
 GPGAuth
 GPGEnc
 Addkey 4 4096
-Key2card 12 1
+Key2card "$(LatestAddedSubkey)" 1
 GPGSign
 
 echo "=== Phase: RSA-2048 on-card generation ==="

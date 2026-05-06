@@ -22,7 +22,7 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum);
 static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum);
 
 const USBD_ClassTypeDef USBD_CANOKEY = {
-    USBD_CANOKEY_Init, USBD_CANOKEY_DeInit, USBD_CANOKEY_Setup, USBD_CANOKEY_EP0_TxSent,
+    USBD_CANOKEY_Init,        USBD_CANOKEY_DeInit, USBD_CANOKEY_Setup,   USBD_CANOKEY_EP0_TxSent,
     USBD_CANOKEY_EP0_RxReady, USBD_CANOKEY_DataIn, USBD_CANOKEY_DataOut,
 };
 

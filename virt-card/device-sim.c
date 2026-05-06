@@ -3,6 +3,7 @@
 #include "device.h"
 #include "admin.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -118,6 +119,12 @@ int testmode_emulate_user_presence(void) {
 
 int testmode_get_is_nfc_mode(void) {
 #ifndef FUZZ // speed up fuzzing
+  const char *env_nfc_mode = getenv("CANOKEY_TEST_NFC");
+  if (env_nfc_mode != NULL && *env_nfc_mode != 0) {
+    set_nfc_state((uint8_t)(atoi(env_nfc_mode) != 0));
+    return 0;
+  }
+
   uint32_t nfc_mode = 0;
   FILE *f_cfg = fopen("/tmp/canokey-test-nfc", "r");
   if (f_cfg == NULL) return -1;

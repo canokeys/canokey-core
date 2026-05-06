@@ -4,7 +4,7 @@
 
 #include <common.h>
 
-#define ABDATA_SIZE (APDU_BUFFER_SIZE + 2)
+#define ABDATA_SIZE APDU_COMMAND_BUFFER_SIZE
 #define SHORT_ABDATA_SIZE 8 /* Enough for most CCID messages except XfrBlock/Secure */
 #define CCID_CMD_HEADER_SIZE 10
 #define CCID_NUMBER_OF_SLOTS 1

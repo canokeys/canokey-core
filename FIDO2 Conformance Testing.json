@@ -87,7 +87,7 @@
             "pinUvAuthToken": true,
             "makeCredUvNotRqd": true
         },
-        "maxMsgSize": 1300,
+        "maxMsgSize": 1500,
         "pinUvAuthProtocols": [
             1,
             2
@@ -105,6 +105,10 @@
             },
             {
                 "alg": -8,
+                "type": "public-key"
+            },
+            {
+                "alg": -49,
                 "type": "public-key"
             }
         ],

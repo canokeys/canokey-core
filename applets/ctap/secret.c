@@ -22,6 +22,7 @@ static bool in_use;
 static bool user_verified;
 static bool user_present;
 static uint32_t timeout_value;
+static bool cp_initialized;
 
 // utility functions
 
@@ -90,9 +91,11 @@ static void cp2_kdf(uint8_t *z, size_t z_len, uint8_t *out) {
   hkdf(salt, sizeof(salt), z, z_len, out);
 }
 
-void cp_initialize(void) {
+void cp_initialize(bool force_reset) {
+  if (!force_reset && cp_initialized) return;
   cp_regenerate();
   cp_reset_pin_uv_auth_token();
+  cp_initialized = true;
 }
 
 void cp_regenerate(void) {
@@ -179,7 +182,10 @@ bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t ms
 }
 
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
-  if (!in_use) return false;
+  if (!in_use) {
+    DBG_MSG("cp_verify_pin_token: not in use\n");
+    return false;
+  }
   timeout_value = device_get_tick() + 30000;
   return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
@@ -211,6 +217,8 @@ key_type_t cose_alg_to_key_type(int alg) {
     return KEY_TYPE_PKC_END;
   }
 }
+
+bool cose_alg_is_mldsa65(int32_t alg) { return alg == COSE_ALG_ML_DSA_65; }
 
 static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
@@ -271,13 +279,13 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
   return true;
 }
 
-int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, uint8_t dc, uint8_t cp) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp) {
   ecc_key_t key;
   uint8_t kh_key[KH_KEY_SIZE];
 
   kh->alg_type = alg_type;
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  if (key_type == KEY_TYPE_PKC_END) {
+  if (key_type == KEY_TYPE_PKC_END && !cose_alg_is_mldsa65(alg_type)) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
   }
@@ -287,14 +295,18 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, ui
 
   const int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
-  do {
+  do
     generate_credential_id_nonce_tag(kh, kh_key, &key);
-  } while (ecc_complete_key(key_type, &key) < 0);
+  while (!cose_alg_is_mldsa65(alg_type) && ecc_complete_key(key_type, &key) < 0);
   memzero(kh_key, KH_KEY_SIZE);
 
-  memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
-  DBG_MSG("Public: ");
-  PRINT_HEX(pubkey, PUBLIC_KEY_LENGTH[key_type]);
+  if (cose_alg_is_mldsa65(alg_type)) {
+    memcpy(pubkey_or_seed, key.pri, PRI_KEY_SIZE);
+  } else {
+    memcpy(pubkey_or_seed, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+    DBG_MSG("Public: ");
+    PRINT_HEX(pubkey_or_seed, PUBLIC_KEY_LENGTH[key_type]);
+  }
   memzero(&key, sizeof(key));
 
   return 0;
@@ -319,6 +331,15 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
     memzero(key, sizeof(ecc_key_t));
     return 1;
   }
+  return 0;
+}
+
+int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]) {
+  ecc_key_t key;
+  int ret = verify_key_handle(kh, &key);
+  if (ret != 0) return ret;
+  memcpy(seed, key.pri, PRI_KEY_SIZE);
+  memzero(&key, sizeof(key));
   return 0;
 }
 

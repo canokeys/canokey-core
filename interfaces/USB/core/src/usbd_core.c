@@ -16,6 +16,7 @@
  ******************************************************************************
  */
 #include <usbd_core.h>
+#include <apdu.h>
 
 /**
  * @brief  USBD_Init
@@ -269,6 +270,7 @@ USBD_StatusTypeDef USBD_LL_DataInStage(USBD_HandleTypeDef *pdev, uint8_t epnum, 
           if ((pdev->pClass->EP0_TxSent != NULL) && (pdev->dev_state == USBD_STATE_CONFIGURED)) {
             pdev->pClass->EP0_TxSent(pdev);
           }
+          release_apdu_buffer(BUFFER_OWNER_USBD);
           USBD_CtlReceiveStatus(pdev);
         }
       }
@@ -303,6 +305,7 @@ USBD_StatusTypeDef USBD_LL_Reset(USBD_HandleTypeDef *pdev) {
   pdev->dev_remote_wakeup = 0;
   pdev->ep0_state = USBD_EP0_IDLE;
   pdev->ep0_data_len = 0;
+  release_apdu_buffer(BUFFER_OWNER_USBD);
 
   return USBD_OK;
 }

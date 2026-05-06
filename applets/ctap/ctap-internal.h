@@ -10,6 +10,7 @@
 #include <sha.h>
 
 #define FIRMWARE_VERSION 201
+#define CTAP_MAX_MSG_SIZE 1308
 
 // Filesystem Meta
 // clang-format off
@@ -30,8 +31,6 @@
 
 // Commands
 // clang-format off
-#define CTAP_INS_MSG               0x10
-
 #define CTAP_MAKE_CREDENTIAL       0x01
 #define CTAP_GET_ASSERTION         0x02
 #define CTAP_GET_INFO              0x04
@@ -236,11 +235,12 @@
 #define MAX_DC_NUM                    64
 #define MAX_STORED_RPID_LENGTH        32
 #define MAX_EXTENSION_SIZE_IN_AUTH    140
-#define MAX_CREDENTIAL_COUNT_IN_LIST  8
+#define MAX_CREDENTIAL_COUNT_IN_LIST  16
 #define MAX_CRED_BLOB_LENGTH          32
 #define LARGE_BLOB_KEY_SIZE           32
 #define LARGE_BLOB_SIZE_LIMIT         4096
 #define MAX_FRAGMENT_LENGTH           (MAX_CTAP_BUFSIZE - 64)
+#define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_FRAGMENT_LENGTH
 // clang-format on
 
 typedef struct {
@@ -310,7 +310,7 @@ typedef struct {
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   user_entity user;
   int32_t alg_type;
-  CborValue exclude_list;
+  credential_id exclude_list[MAX_CREDENTIAL_COUNT_IN_LIST];
   size_t exclude_list_size;
   CTAP_options options;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
@@ -328,7 +328,7 @@ typedef struct {
   uint32_t parsed_params;
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   uint8_t client_data_hash[CLIENT_DATA_HASH_SIZE];
-  CborValue allow_list;
+  credential_id allow_list[MAX_CREDENTIAL_COUNT_IN_LIST];
   size_t allow_list_size;
   CTAP_options options;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
@@ -359,7 +359,7 @@ typedef struct {
 typedef struct {
   uint32_t parsed_params;
   uint8_t sub_command;
-  uint8_t *sub_command_params_ptr;
+  uint32_t sub_command_params_offset;
   size_t param_len;
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   credential_id credential_id;
@@ -371,7 +371,7 @@ typedef struct {
 typedef struct {
   uint32_t parsed_params;
   uint16_t get;
-  uint8_t *set;
+  uint32_t set_offset;
   size_t set_len;
   uint16_t offset;
   uint16_t length;

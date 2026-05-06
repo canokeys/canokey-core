@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
+#include <applet-scratch.h>
 #include <common.h>
 #include <crypto-util.h>
 #include <des.h>
@@ -9,6 +10,7 @@
 #include <memzero.h>
 #include <pin.h>
 #include <piv.h>
+#include <pke.h>
 #include <rand.h>
 #include <rsa.h>
 
@@ -56,6 +58,13 @@
 #define ALG_SM2_DEFAULT       0x54
 
 #define TDEA_BLOCK_SIZE      8
+
+enum PIV_STATE {
+  PIV_STATE_GET_DATA,
+  PIV_STATE_GET_DATA_RESPONSE,
+  PIV_STATE_OTHER,
+};
+static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 // clang-format on
 
 // tags for general auth
@@ -95,6 +104,9 @@ static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len
 }
 #define IDX_EXP       (TAG_EXP       - 0x80)
 // clang-format on
+
+#define PIV_MAX_PUBKEY_RESPONSE_LENGTH 527
+#define PIV_MAX_7C_RESPONSE_LENGTH (RSA_N_BIT_MAX / 8 + 8)
 
 // offsets for auth
 // clang-format off
@@ -137,8 +149,26 @@ static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
+static const char *piv_import_key_path;
+static key_type_t piv_import_key_type;
+static uint16_t piv_import_len;
+static ck_piv_stream_t piv_import_stream;
+static uint8_t piv_auth_active;
+static uint8_t piv_auth_p1;
+static uint8_t piv_auth_p2;
+static uint16_t piv_auth_len;
 static uint32_t last_touch = UINT32_MAX;
 static piv_algorithm_extension_config_t alg_ext_cfg;
+static uint8_t piv_pke_owned;
+static uint8_t piv_pke_use;
+#define piv_crypto_buffer applet_session_scratch.buffer
+
+enum {
+  PIV_PKE_USE_NONE,
+  PIV_PKE_USE_IMPORT,
+  PIV_PKE_USE_AUTH,
+  PIV_PKE_USE_RESPONSE,
+};
 
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
@@ -211,6 +241,229 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
   }
 }
 
+static int piv_pke_acquire(uint8_t use) {
+  if (piv_pke_owned) return piv_pke_use == use ? 0 : -1;
+  if (pke_buffer_acquire(PKE_BUFFER_OWNER_PIV) < 0) return -1;
+  piv_pke_owned = 1;
+  piv_pke_use = use;
+  return 0;
+}
+
+static void piv_pke_release_all(void) {
+  if (!piv_pke_owned) return;
+  pke_buffer_clear();
+  pke_buffer_release(PKE_BUFFER_OWNER_PIV);
+  piv_pke_owned = 0;
+  piv_pke_use = PIV_PKE_USE_NONE;
+}
+
+static void piv_pke_release(uint8_t use) {
+  if (piv_pke_use == use) piv_pke_release_all();
+}
+
+static int piv_pke_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
+}
+
+static void piv_pke_source_close(void *ctx) {
+  UNUSED(ctx);
+  piv_pke_release(PIV_PKE_USE_RESPONSE);
+}
+
+static int piv_buffer_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  const uint8_t *data = (const uint8_t *)ctx;
+  memcpy(buf, data + offset, len);
+  return len;
+}
+
+static void piv_buffer_source_close(void *ctx) {
+  uint8_t *data = (uint8_t *)ctx;
+  if (data != NULL) memzero(data, PIV_MAX_7C_RESPONSE_LENGTH);
+}
+
+typedef int (*piv_data_read_t)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+
+typedef struct {
+  uint8_t header[8];
+  uint8_t header_len;
+  piv_data_read_t payload_read;
+  void *payload_ctx;
+  APDU_RESPONSE_SOURCE_CLOSE payload_close;
+} piv_7c_stream_source_t;
+
+static piv_7c_stream_source_t piv_7c_stream_source;
+
+static int piv_7c_stream_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  piv_7c_stream_source_t *source = (piv_7c_stream_source_t *)ctx;
+  size_t copied = 0;
+
+  if (offset < source->header_len) {
+    size_t n = MIN((size_t)len, (size_t)source->header_len - offset);
+    memcpy(buf, source->header + offset, n);
+    copied += n;
+    offset += (uint32_t)n;
+  }
+
+  if (copied < len) {
+    int ret = source->payload_read(source->payload_ctx, offset - source->header_len, buf + copied, len - copied);
+    if (ret < 0) return ret;
+    copied += (size_t)ret;
+  }
+
+  return (int)copied;
+}
+
+static void piv_7c_stream_source_close(void *ctx) {
+  piv_7c_stream_source_t *source = (piv_7c_stream_source_t *)ctx;
+  if (source->payload_close) source->payload_close(source->payload_ctx);
+  memzero(source, sizeof(*source));
+}
+
+static int piv_capdu_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  const CAPDU *capdu = (const CAPDU *)ctx;
+
+  if (offset > capdu->lc || len > capdu->lc - offset) return -1;
+  memcpy(buf, capdu->data + offset, len);
+  return len;
+}
+
+static int piv_pke_buffer_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
+}
+
+static int piv_read_u8(piv_data_read_t read, void *ctx, size_t off, uint8_t *out) { return read(ctx, off, out, 1); }
+
+static int piv_read_tlv_len(piv_data_read_t read, void *ctx, size_t *off, uint16_t total_len, uint16_t *out) {
+  uint8_t b;
+  if (*off >= total_len || piv_read_u8(read, ctx, (*off)++, &b) < 0) return -1;
+  if ((b & 0x80) == 0) {
+    *out = b;
+    return 0;
+  }
+
+  const uint8_t len_size = b & 0x7F;
+  if (len_size == 0 || len_size > 2 || *off + len_size > total_len) return -1;
+  uint16_t len = 0;
+  for (uint8_t i = 0; i < len_size; ++i) {
+    if (piv_read_u8(read, ctx, (*off)++, &b) < 0) return -1;
+    len = (len << 8u) | b;
+  }
+  *out = len;
+  return 0;
+}
+
+static uint16_t piv_parse_general_authenticate(uint16_t auth_len, piv_data_read_t read, void *ctx, uint16_t pos[6],
+                                               uint16_t len[6]) {
+  uint8_t b;
+  if (auth_len < 2 || piv_read_u8(read, ctx, 0, &b) < 0) return SW_WRONG_LENGTH;
+  if (b != 0x7C) return SW_WRONG_DATA;
+
+  size_t off = 1;
+  uint16_t value_len;
+  if (piv_read_tlv_len(read, ctx, &off, auth_len, &value_len) < 0 || off + value_len != auth_len)
+    return SW_WRONG_LENGTH;
+
+  const size_t value_end = off + value_len;
+  while (off < value_end) {
+    uint8_t tag;
+    if (piv_read_u8(read, ctx, off++, &tag) < 0 || (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85))
+      return SW_WRONG_DATA;
+
+    uint16_t data_len;
+    if (piv_read_tlv_len(read, ctx, &off, auth_len, &data_len) < 0 || off + data_len > value_end)
+      return SW_WRONG_LENGTH;
+    len[tag - 0x80] = data_len;
+    pos[tag - 0x80] = off;
+    off += data_len;
+    DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
+  }
+
+  return off == value_end ? SW_NO_ERROR : SW_WRONG_LENGTH;
+}
+
+static int piv_set_7c_response(uint8_t inner_tag, const uint8_t *data, uint16_t data_len, uint8_t *rdata,
+                               uint16_t *out_len) {
+  const uint16_t header_len = data_len < 128 ? 4 : 8;
+  const uint16_t total_len = data_len + header_len;
+
+  if (total_len > APDU_COMMAND_BUFFER_SIZE) {
+    piv_7c_stream_source.header_len = (uint8_t)header_len;
+    if (data_len < 128) {
+      piv_7c_stream_source.header[0] = 0x7C;
+      piv_7c_stream_source.header[1] = data_len + 2;
+      piv_7c_stream_source.header[2] = inner_tag;
+      piv_7c_stream_source.header[3] = data_len;
+    } else {
+      piv_7c_stream_source.header[0] = 0x7C;
+      piv_7c_stream_source.header[1] = 0x82;
+      piv_7c_stream_source.header[2] = HI(data_len + 4);
+      piv_7c_stream_source.header[3] = LO(data_len + 4);
+      piv_7c_stream_source.header[4] = inner_tag;
+      piv_7c_stream_source.header[5] = 0x82;
+      piv_7c_stream_source.header[6] = HI(data_len);
+      piv_7c_stream_source.header[7] = LO(data_len);
+    }
+    piv_7c_stream_source.payload_read = piv_buffer_source_read;
+    piv_7c_stream_source.payload_ctx = (void *)data;
+    piv_7c_stream_source.payload_close = piv_buffer_source_close;
+    apdu_response_source_set(total_len, SW_NO_ERROR, piv_7c_stream_source_read, piv_7c_stream_source_close,
+                             &piv_7c_stream_source);
+    *out_len = 0;
+    return 0;
+  }
+
+  if (data_len < 128) {
+    rdata[0] = 0x7C;
+    rdata[1] = data_len + 2;
+    rdata[2] = inner_tag;
+    rdata[3] = data_len;
+    memmove(rdata + 4, data, data_len);
+  } else {
+    rdata[0] = 0x7C;
+    rdata[1] = 0x82;
+    rdata[2] = HI(data_len + 4);
+    rdata[3] = LO(data_len + 4);
+    rdata[4] = inner_tag;
+    rdata[5] = 0x82;
+    rdata[6] = HI(data_len);
+    rdata[7] = LO(data_len);
+    memmove(rdata + 8, data, data_len);
+  }
+  *out_len = total_len;
+  return 0;
+}
+
+static int piv_set_public_key_response(ck_key_t *key, const uint8_t *prefix, uint8_t prefix_len, uint8_t *rdata,
+                                       uint16_t *out_len) {
+  const int encoded_len = ck_encoded_public_key_length(key->meta.type, true);
+  if (encoded_len < 0) return -1;
+  const uint32_t total_len = prefix_len + (uint32_t)encoded_len;
+
+  if (total_len > APDU_COMMAND_BUFFER_SIZE) {
+    uint8_t *response = piv_crypto_buffer;
+
+    if (total_len > PIV_MAX_PUBKEY_RESPONSE_LENGTH) return -1;
+    memcpy(response, prefix, prefix_len);
+    if (ck_encode_public_key(key, response + prefix_len, true) != encoded_len) return -1;
+    apdu_response_source_clear();
+    if (piv_pke_acquire(PIV_PKE_USE_RESPONSE) < 0) return -1;
+    if (pke_buffer_write(0, response, total_len) < 0) {
+      piv_pke_release(PIV_PKE_USE_RESPONSE);
+      return -1;
+    }
+    apdu_response_source_set(total_len, SW_NO_ERROR, piv_pke_source_read, piv_pke_source_close, NULL);
+    *out_len = 0;
+    return 0;
+  }
+
+  memcpy(rdata, prefix, prefix_len);
+  if (ck_encode_public_key(key, rdata + prefix_len, true) != encoded_len) return -1;
+  *out_len = (uint16_t)total_len;
+  return 0;
+}
+
 int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta_t *meta) {
   switch (meta->pin_policy) {
   case PIN_POLICY_NEVER:
@@ -227,7 +480,24 @@ int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta
   return 0;
 }
 
+static void piv_import_reset(void) {
+  piv_pke_release(PIV_PKE_USE_IMPORT);
+  piv_import_key_path = NULL;
+  piv_import_key_type = KEY_TYPE_PKC_END;
+  piv_import_len = 0;
+  memzero(&piv_import_stream, sizeof(piv_import_stream));
+}
+
+static void piv_auth_reset(void) {
+  piv_pke_release(PIV_PKE_USE_AUTH);
+  piv_auth_active = 0;
+  piv_auth_p1 = 0;
+  piv_auth_p2 = 0;
+  piv_auth_len = 0;
+}
+
 void piv_poweroff(void) {
+  piv_state = PIV_STATE_OTHER;
   in_admin_status = 0;
   pin_is_consumed = 0;
   pin.is_validated = 0;
@@ -235,6 +505,8 @@ void piv_poweroff(void) {
   piv_do_write = -1;
   piv_do_read = -1;
   piv_do_path[0] = '\0';
+  piv_import_reset();
+  piv_auth_reset();
 }
 
 int piv_install(const uint8_t reset) {
@@ -370,6 +642,20 @@ static uint16_t get_capacity_by_tag(const uint8_t tag) {
   case 0x03: // Fingerprints
   case 0x08: // Facial Images
     return 512;
+  default:
+    return 0;
+  }
+}
+
+static int is_certificate_object_tag(const uint8_t tag) {
+  switch (tag) {
+  case 0x05:
+  case 0x0A:
+  case 0x0B:
+  case 0x01:
+  case 0x0D:
+  case 0x0E:
+    return 1;
   default:
     return 0;
   }
@@ -582,15 +868,18 @@ static const char *get_key_path(const uint8_t id) {
   }
 }
 
-static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC == 0) EXCEPT(SW_WRONG_LENGTH);
-  if (*DATA != 0x7C) EXCEPT(SW_WRONG_DATA);
-
+static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
+                                             void *ctx) {
+  if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
   const char *key_path = get_key_path(P2);
   if (key_path == NULL) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
+
+  uint16_t pos[6] = {0}, len[6] = {0};
+  const uint16_t parse_sw = piv_parse_general_authenticate(auth_len, read, ctx, pos, len);
+  if (parse_sw != SW_NO_ERROR) EXCEPT(parse_sw);
 
   ck_key_t key;
   if (P2 == 0x9B) { // Card admin
@@ -607,23 +896,6 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   if (algo_id_to_key_type(P1) != key.meta.type) {
     DBG_MSG("The value of P1 mismatches the key specified by P2\n");
     EXCEPT(SW_WRONG_P1P2);
-  }
-
-  uint16_t pos[6] = {0}, len[6] = {0};
-  int fail = 0;
-  size_t length_size = 0;
-  tlv_get_length_safe(DATA + 1, LC - 1, &fail, &length_size);
-  if (fail) EXCEPT(SW_WRONG_LENGTH);
-  uint16_t dat_pos = 1 + length_size;
-  while (dat_pos < LC) {
-    const uint8_t tag = DATA[dat_pos++];
-    if (tag != 0x80 && tag != 0x81 && tag != 0x82 && tag != 0x85) EXCEPT(SW_WRONG_DATA);
-    len[tag - 0x80] = tlv_get_length_safe(DATA + dat_pos, LC - dat_pos, &fail, &length_size);
-    if (fail) EXCEPT(SW_WRONG_LENGTH);
-    dat_pos += length_size;
-    pos[tag - 0x80] = dat_pos;
-    dat_pos += len[tag - 0x80];
-    DBG_MSG("Tag %02X, pos: %d, len: %d\n", tag, pos[tag - 0x80], len[tag - 0x80]);
   }
 
   // User presence test
@@ -656,12 +928,17 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       DBG_MSG("Incorrect challenge data length\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
+    if (len[IDX_CHALLENGE] > sizeof(piv_crypto_buffer) ||
+        read(ctx, pos[IDX_CHALLENGE], piv_crypto_buffer, len[IDX_CHALLENGE]) != len[IDX_CHALLENGE])
+      return -1;
+
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     start_quick_blinking(0);
 
     if (IS_RSA(key.meta.type)) {
+      const uint16_t sig_len = SIGNATURE_LENGTH[key.meta.type];
       // The input has been padded
       DBG_MSG("e: ");
       PRINT_HEX(key.rsa.e, E_LENGTH);
@@ -669,26 +946,36 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       PRINT_HEX(key.rsa.p, PRIVATE_KEY_LENGTH[key.meta.type]);
       DBG_MSG("q: ");
       PRINT_HEX(key.rsa.q, PRIVATE_KEY_LENGTH[key.meta.type]);
-      if (rsa_private(&key.rsa, DATA + pos[IDX_CHALLENGE], RDATA + 8) < 0) {
+      if (rsa_private(&key.rsa, piv_crypto_buffer, piv_crypto_buffer) < 0) {
         ERR_MSG("Sign failed\n");
         memzero(&key, sizeof(key));
         return -1;
       }
-      LL = piv_7c_wrap(RDATA, TAG_RESPONSE, SIGNATURE_LENGTH[key.meta.type]);
+      uint16_t response_len;
+      if (piv_set_7c_response(TAG_RESPONSE, piv_crypto_buffer, sig_len, RDATA, &response_len) < 0) {
+        memzero(&key, sizeof(key));
+        memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
+        return -1;
+      }
+      LL = response_len;
 
       memzero(&key, sizeof(key));
+      if (response_len != 0) memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
     } else if (IS_ECC(key.meta.type)) {
-      size_t input_len = len[IDX_CHALLENGE];
+      size_t input_len;
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-        // prepend zeros
-        memmove(DATA + pos[IDX_CHALLENGE] + (PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]),
-                DATA + pos[IDX_CHALLENGE], len[IDX_CHALLENGE]);
-        memzero(DATA + pos[IDX_CHALLENGE], PRIVATE_KEY_LENGTH[key.meta.type] - len[IDX_CHALLENGE]);
         input_len = PRIVATE_KEY_LENGTH[key.meta.type];
-      }
-      int sig_len = ck_sign(&key, DATA + pos[IDX_CHALLENGE], input_len, RDATA + 4);
+        memmove(piv_crypto_buffer + (input_len - len[IDX_CHALLENGE]), piv_crypto_buffer, len[IDX_CHALLENGE]);
+        memzero(piv_crypto_buffer, input_len - len[IDX_CHALLENGE]);
+      } else if (key.meta.type == ED25519) {
+        input_len = len[IDX_CHALLENGE];
+      } else
+        EXCEPT(SW_WRONG_DATA);
+      int sig_len = ck_sign(&key, piv_crypto_buffer, input_len, RDATA + 4);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
+        memzero(&key, sizeof(key));
+        memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
         return -1;
       }
 
@@ -699,6 +986,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sig_len);
 
       memzero(&key, sizeof(key));
+      memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
     } else
       return -1;
   }
@@ -737,9 +1025,14 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
+    uint8_t response[TDEA_BLOCK_SIZE];
+
     DBG_MSG("Case 3\n");
+    if (len[IDX_RESPONSE] != TDEA_BLOCK_SIZE ||
+        read(ctx, pos[IDX_RESPONSE], response, sizeof(response)) != (int)sizeof(response))
+      return -1;
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
-        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_RESPONSE], TDEA_BLOCK_SIZE) != 0) {
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, response, TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -782,16 +1075,18 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   // > Client application returns the decrypted witness referencing the original
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
+    uint8_t witness[TDEA_BLOCK_SIZE];
+    uint8_t challenge[TDEA_BLOCK_SIZE];
+
     DBG_MSG("Case 5\n");
+    if (len[IDX_WITNESS] != TDEA_BLOCK_SIZE || len[IDX_CHALLENGE] != TDEA_BLOCK_SIZE ||
+        read(ctx, pos[IDX_WITNESS], witness, sizeof(witness)) != (int)sizeof(witness) ||
+        read(ctx, pos[IDX_CHALLENGE], challenge, sizeof(challenge)) != (int)sizeof(challenge))
+      return -1;
     if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
-        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, DATA + pos[IDX_WITNESS], TDEA_BLOCK_SIZE) != 0) {
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, witness, TDEA_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    }
-
-    if (TDEA_BLOCK_SIZE != len[IDX_CHALLENGE]) {
-      authenticate_reset();
-      EXCEPT(SW_WRONG_LENGTH);
     }
 
     LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
@@ -799,7 +1094,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(DATA + pos[IDX_CHALLENGE], RDATA + 4, key.data) < 0) {
+    if (tdes_enc(challenge, RDATA + 4, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -825,21 +1120,26 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
       DBG_MSG("Incorrect data length\n");
       EXCEPT(SW_WRONG_DATA);
     }
+    if (len[IDX_EXP] > sizeof(piv_crypto_buffer) ||
+        read(ctx, pos[IDX_EXP], piv_crypto_buffer, len[IDX_EXP]) != len[IDX_EXP])
+      return -1;
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
     start_quick_blinking(0);
 
-    if (ecdh(key.meta.type, key.ecc.pri, DATA + pos[IDX_EXP] + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0),
-             RDATA + 4) < 0) {
+    if (ecdh(key.meta.type, key.ecc.pri, piv_crypto_buffer + (IS_SHORT_WEIERSTRASS(key.meta.type) ? 1 : 0), RDATA + 4) <
+        0) {
       ERR_MSG("ECDH failed\n");
       memzero(&key, sizeof(key));
+      memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
       return -1;
     }
 
     LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PRIVATE_KEY_LENGTH[key.meta.type]);
 
     memzero(&key, sizeof(key));
+    memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
   }
 
   //
@@ -851,6 +1151,37 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   return 0;
+}
+
+static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  if ((CLA & 0x10) == 0 && !piv_auth_active)
+    return piv_general_authenticate_dispatch(capdu, rapdu, LC, piv_capdu_read, (void *)capdu);
+
+  if (!piv_auth_active) {
+    piv_auth_active = 1;
+    piv_auth_p1 = P1;
+    piv_auth_p2 = P2;
+    piv_auth_len = 0;
+  } else if (piv_auth_p1 != P1 || piv_auth_p2 != P2) {
+    piv_auth_reset();
+    EXCEPT(SW_WRONG_DATA);
+  }
+
+  if ((uint32_t)piv_auth_len + LC > pke_buffer_size()) {
+    piv_auth_reset();
+    EXCEPT(SW_WRONG_LENGTH);
+  }
+  if (piv_pke_acquire(PIV_PKE_USE_AUTH) < 0 || pke_buffer_write(piv_auth_len, DATA, LC) < 0) {
+    piv_auth_reset();
+    return -1;
+  }
+  piv_auth_len += LC;
+
+  if ((CLA & 0x10) != 0) return 0;
+
+  const int ret = piv_general_authenticate_dispatch(capdu, rapdu, piv_auth_len, piv_pke_buffer_read, NULL);
+  piv_auth_reset();
+  return ret;
 }
 
 static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
@@ -870,6 +1201,12 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     const int max_len = get_capacity_by_tag(DATA[4]);
     if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
     if (size > max_len) EXCEPT(SW_WRONG_LENGTH);
+    if ((CLA & 0x10) == 0 && is_certificate_object_tag(DATA[4]) && size == 2 && DATA[5] == 0x53 && DATA[6] == 0x00) {
+      DBG_MSG("delete certificate file %s\n", path);
+      const int rc = write_file(path, NULL, 0, 0, 1);
+      if (rc < 0) return -1;
+      return 0;
+    }
     DBG_MSG("write file %s, first chunk length %d\n", path, size);
     const int rc = write_file(path, DATA + 5, 0, size, 1);
     if (rc < 0) return -1;
@@ -936,12 +1273,15 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   DBG_MSG("Generate key %s successful\n", key_path);
   DBG_KEY_META(&key.meta);
 
-  RDATA[0] = 0x7F;
-  RDATA[1] = 0x49;
-  const int len = ck_encode_public_key(&key, &RDATA[2], true);
+  const uint8_t prefix[] = {0x7F, 0x49};
+  const int len = ck_encoded_public_key_length(key.meta.type, true);
+  uint16_t response_len = 0;
+  if (len < 0 || piv_set_public_key_response(&key, prefix, sizeof(prefix), RDATA, &response_len) < 0) {
+    memzero(&key, sizeof(key));
+    return -1;
+  }
   memzero(&key, sizeof(key));
-  if (len < 0) return -1;
-  LL = len + 2;
+  LL = apdu_response_source_active() ? 0 : response_len;
 
   return 0;
 }
@@ -976,32 +1316,82 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
+
+  const key_type_t key_type = algo_id_to_key_type(P1);
+  if (key_type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
+
   ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) return -1;
+  uint16_t error_sw = SW_NO_ERROR;
+  int write_err;
 
-  key.meta.type = algo_id_to_key_type(P1);
-  if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
+  if (piv_import_key_path == NULL) {
+    if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
+    key.meta.type = key_type;
+    ck_parse_piv_stream_init(&piv_import_stream, &key);
+    piv_import_key_path = key_path;
+    piv_import_key_type = key_type;
+    piv_import_len = 0;
+  } else if (piv_import_key_path != key_path || piv_import_key_type != key_type) {
+    error_sw = SW_WRONG_DATA;
+    goto fail;
+  } else {
+    if (pke_buffer_read(0, &key, sizeof(key)) < 0) {
+      piv_import_reset();
+      return -1;
+    }
+  }
 
-  const int err = ck_parse_piv(&key, DATA, LC);
+  if ((uint32_t)piv_import_len + LC > CK_KEY_IMPORT_MAX_LENGTH) {
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
+  }
+  const bool final = (CLA & 0x10) == 0;
+  if (final) piv_pke_release(PIV_PKE_USE_IMPORT);
+  const int err = ck_parse_piv_stream_update(&piv_import_stream, &key, DATA, LC, final);
   if (err == KEY_ERR_LENGTH) {
     DBG_MSG("Wrong length when importing\n");
-    EXCEPT(SW_WRONG_LENGTH);
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
   }
   if (err == KEY_ERR_DATA) {
     DBG_MSG("Wrong data when importing\n");
-    EXCEPT(SW_WRONG_DATA);
+    error_sw = SW_WRONG_DATA;
+    goto fail;
   }
   if (err < 0) {
     DBG_MSG("Error when importing\n");
-    EXCEPT(SW_UNABLE_TO_PROCESS);
+    error_sw = SW_UNABLE_TO_PROCESS;
+    goto fail;
   }
-  if (ck_write_key(key_path, &key) < 0) {
+  piv_import_len += LC;
+  if ((CLA & 0x10) != 0) {
+    if (piv_pke_acquire(PIV_PKE_USE_IMPORT) < 0 || pke_buffer_write(0, &key, sizeof(key)) < 0) {
+      goto fail_proc;
+    }
     memzero(&key, sizeof(key));
-    return -1;
+    return 0;
   }
+
+  if (err != 1) {
+    error_sw = SW_WRONG_LENGTH;
+    goto fail;
+  }
+  write_err = ck_write_key(key_path, &key);
   memzero(&key, sizeof(key));
+  piv_import_reset();
+  if (write_err < 0) return -1;
 
   return 0;
+
+fail:
+  memzero(&key, sizeof(key));
+  piv_import_reset();
+  EXCEPT(error_sw);
+
+fail_proc:
+  memzero(&key, sizeof(key));
+  piv_import_reset();
+  return -1;
 }
 
 static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1067,7 +1457,23 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[pos++] = 0x03; // Origin
     RDATA[pos++] = 0x01;
     RDATA[pos++] = key.meta.origin;
-    RDATA[pos++] = 0x04; // Public
+    uint8_t prefix[16];
+    memcpy(prefix, RDATA, pos);
+    prefix[pos] = 0x04; // Public
+    const int encoded_len = ck_encoded_public_key_length(key.meta.type, true);
+    if (encoded_len < 0 || pos + 1 > (int)sizeof(prefix)) {
+      memzero(&key, sizeof(key));
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+    if (pos + 1 + encoded_len > APDU_COMMAND_BUFFER_SIZE) {
+      uint16_t response_len = 0;
+      const int ret = piv_set_public_key_response(&key, prefix, pos + 1, RDATA, &response_len);
+      memzero(&key, sizeof(key));
+      if (ret < 0) return -1;
+      LL = apdu_response_source_active() ? 0 : response_len;
+      return 0;
+    }
+    RDATA[pos++] = 0x04;
     const int len = ck_encode_public_key(&key, &RDATA[pos], true);
     if (len < 0) {
       memzero(&key, sizeof(key));
@@ -1130,10 +1536,14 @@ static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (!(CLA == 0x00 || (CLA == 0x10 && INS == PIV_INS_PUT_DATA))) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (!(CLA == 0x00 || (CLA == 0x10 && (INS == PIV_INS_PUT_DATA || INS == PIV_INS_IMPORT_ASYMMETRIC_KEY ||
+                                        INS == PIV_INS_GENERAL_AUTHENTICATE))))
+    EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;
   if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
+  if (INS != PIV_INS_IMPORT_ASYMMETRIC_KEY) piv_import_reset();
+  if (INS != PIV_INS_GENERAL_AUTHENTICATE) piv_auth_reset();
 
   int ret;
   switch (INS) {
@@ -1193,6 +1603,30 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 
   if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
   return 0;
+}
+
+int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu) {
+  uint8_t applet_get_response = 0;
+
+  if (capdu->extended) {
+    LL = 0;
+    SW = SW_WRONG_LENGTH;
+    return 0;
+  }
+
+  if (INS == PIV_INS_GET_DATA) {
+    piv_state = PIV_STATE_GET_DATA;
+    applet_get_response = 1;
+  } else if ((piv_state == PIV_STATE_GET_DATA || piv_state == PIV_STATE_GET_DATA_RESPONSE) && INS == 0xC0) {
+    piv_state = PIV_STATE_GET_DATA_RESPONSE;
+    applet_get_response = 1;
+  } else {
+    piv_state = PIV_STATE_OTHER;
+  }
+
+  return apdu_process_streaming_message(rapdu_chaining, capdu, rapdu,
+                                        apdu_is_get_response(capdu) && !applet_get_response, APDU_BUFFER_SIZE,
+                                        piv_process_apdu);
 }
 
 // for testing without authentication

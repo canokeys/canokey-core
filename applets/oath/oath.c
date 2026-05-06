@@ -41,6 +41,11 @@ static uint8_t auth_challenge[MAX_CHALLENGE_LEN], record_idx, is_validated;
 void oath_poweroff(void) {
   oath_remaining_type = REMAINING_NONE;
   is_validated = false;
+  // Reset the iteration cursor; otherwise a calculate_all interrupted by
+  // applet preemption resumes mid-list on the next fresh request, since
+  // the `record_idx == 0` check that parses the host challenge would skip
+  // and the loop starts past the first records.
+  record_idx = 0;
 }
 
 int oath_install(const uint8_t reset) {
