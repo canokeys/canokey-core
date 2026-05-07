@@ -104,7 +104,7 @@ static void ctap_sm2_attr_set_default(void) {
 }
 
 static bool ctap_sm2_algo_id_valid(int32_t algo_id) {
-  return algo_id >= -256 && algo_id <= -25 && algo_id != COSE_ALG_ML_DSA_65;
+  return algo_id != COSE_ALG_ES256 && algo_id != COSE_ALG_EDDSA && algo_id != COSE_ALG_ML_DSA_65;
 }
 
 static void ctap_sm2_attr_normalize(void) {
@@ -817,9 +817,10 @@ int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   CTAP_sm2_attr attr;
   memcpy(&attr, DATA, sizeof(attr));
   if (!ctap_sm2_algo_id_valid(attr.algo_id)) EXCEPT(SW_WRONG_DATA);
-  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, DATA, sizeof(ctap_sm2_attr));
+  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, &attr, sizeof(attr));
+  if (ret < 0) return ret;
   ctap_sm2_attr = attr;
-  return ret;
+  return 0;
 }
 
 static int build_cose_key(uint8_t *data, int kty, int algo, int curve, bool has_y) {
