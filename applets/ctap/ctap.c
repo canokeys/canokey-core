@@ -98,6 +98,30 @@ static ctap_src_t current_cmd_src;
 // SM2 attr
 CTAP_sm2_attr ctap_sm2_attr;
 
+static void ctap_sm2_attr_set_default(void) {
+  ctap_sm2_attr.curve_id = 9;  // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
+  ctap_sm2_attr.algo_id = -54; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms
+}
+
+static bool ctap_sm2_algo_id_valid(int32_t algo_id) {
+  return algo_id != COSE_ALG_ES256 && algo_id != COSE_ALG_EDDSA && algo_id != COSE_ALG_ML_DSA_65;
+}
+
+static void ctap_sm2_attr_normalize(void) {
+  if (!ctap_sm2_algo_id_valid(ctap_sm2_attr.algo_id)) ctap_sm2_attr_set_default();
+}
+
+static int ctap_sm2_attr_load(void) {
+  int ret = read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr));
+  if (ret == (int)sizeof(ctap_sm2_attr)) {
+    ctap_sm2_attr_normalize();
+    return 0;
+  }
+
+  ctap_sm2_attr_set_default();
+  return write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr));
+}
+
 typedef struct {
   uint8_t *buf;
   size_t len;
@@ -719,8 +743,7 @@ uint8_t ctap_install(uint8_t reset) {
   cp_initialize(runtime_reset);
   runtime_reset_pending = false;
   if (!reset && has_persistent_state) {
-    if (read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
-      return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (ctap_sm2_attr_load() < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     DBG_MSG("CTAP initialized\n");
     return 0;
   }
@@ -736,6 +759,9 @@ uint8_t ctap_install(uint8_t reset) {
   if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   random_buffer(kh_key, sizeof(kh_key));
   if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  ctap_sm2_attr_set_default();
+  if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
+    return CTAP2_ERR_UNHANDLED_REQUEST;
   memcpy(
       kh_key,
       (uint8_t[]){0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d, 0x3c},
@@ -749,9 +775,7 @@ uint8_t ctap_install(uint8_t reset) {
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
   // initialize SM2 config
-  ctap_sm2_attr.enabled = 0;
-  ctap_sm2_attr.curve_id = 9;  // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
-  ctap_sm2_attr.algo_id = -48; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms
+  ctap_sm2_attr_set_default();
   if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
     return CTAP2_ERR_UNHANDLED_REQUEST;
   return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
@@ -790,9 +814,13 @@ int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
 
 int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != sizeof(ctap_sm2_attr)) EXCEPT(SW_WRONG_LENGTH);
-  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, DATA, sizeof(ctap_sm2_attr));
-  memcpy(&ctap_sm2_attr, DATA, sizeof(ctap_sm2_attr));
-  return ret;
+  CTAP_sm2_attr attr;
+  memcpy(&attr, DATA, sizeof(attr));
+  if (!ctap_sm2_algo_id_valid(attr.algo_id)) EXCEPT(SW_WRONG_DATA);
+  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, &attr, sizeof(attr));
+  if (ret < 0) return ret;
+  ctap_sm2_attr = attr;
+  return 0;
 }
 
 static int build_cose_key(uint8_t *data, int kty, int algo, int curve, bool has_y) {
@@ -1973,7 +2001,6 @@ static uint8_t ctap_get_next_assertion(CborEncoder *encoder) { return ctap_get_a
 
 static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
   const int sm2_algo = ctap_sm2_attr.algo_id;
-  const bool sm2_in_alg_list = ctap_sm2_attr.enabled && (sm2_algo >= -256 && sm2_algo <= -25);
   const size_t client_pin_off = CTAP_GI_CLIENT_PIN_OFFSET;
   const size_t client_pin_tail_len = sizeof(cbor_gi_prefix) - client_pin_off - 1;
 
@@ -1982,18 +2009,14 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
       ctap_const_stream_add_mem(&const_stream_state, cbor_gi_prefix, client_pin_off) != 0 ||
       ctap_const_stream_add_byte(&const_stream_state, 1, has_pin() ? 0xF5 : 0xF4) != 0 ||
       ctap_const_stream_add_mem(&const_stream_state, cbor_gi_prefix + client_pin_off + 1, client_pin_tail_len) != 0 ||
-      ctap_const_stream_add_byte(&const_stream_state, 2, sm2_in_alg_list ? 0x84 : 0x83) != 0 ||
-      ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_base, sizeof(cbor_gi_alg_base)) != 0) {
-    return -1;
-  }
-
-  if (sm2_in_alg_list &&
-      (ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_sm2, CTAP_GI_SM2_ALGO_OFFSET) != 0 ||
-       ctap_const_stream_add_byte(&const_stream_state, 3, 0x38) != 0 ||
-       ctap_const_stream_add_byte(&const_stream_state, 4, (uint8_t)(-1 - sm2_algo)) != 0 ||
-       ctap_const_stream_add_mem(&const_stream_state,
-                                 cbor_gi_alg_sm2 + CTAP_GI_SM2_ALGO_OFFSET + CTAP_GI_SM2_ALGO_ENC_LEN,
-                                 sizeof(cbor_gi_alg_sm2) - CTAP_GI_SM2_ALGO_OFFSET - CTAP_GI_SM2_ALGO_ENC_LEN) != 0)) {
+      ctap_const_stream_add_byte(&const_stream_state, 2, 0x84) != 0 ||
+      ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_base, sizeof(cbor_gi_alg_base)) != 0 ||
+      ctap_const_stream_add_mem(&const_stream_state, cbor_gi_alg_sm2, CTAP_GI_SM2_ALGO_OFFSET) != 0 ||
+      ctap_const_stream_add_byte(&const_stream_state, 3, 0x38) != 0 ||
+      ctap_const_stream_add_byte(&const_stream_state, 4, (uint8_t)(-1 - sm2_algo)) != 0 ||
+      ctap_const_stream_add_mem(&const_stream_state,
+                                cbor_gi_alg_sm2 + CTAP_GI_SM2_ALGO_OFFSET + CTAP_GI_SM2_ALGO_ENC_LEN,
+                                sizeof(cbor_gi_alg_sm2) - CTAP_GI_SM2_ALGO_OFFSET - CTAP_GI_SM2_ALGO_ENC_LEN) != 0) {
     return -1;
   }
 

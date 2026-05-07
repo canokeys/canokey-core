@@ -16,7 +16,9 @@
     ],
     "authenticationAlgorithms": [
         "secp256r1_ecdsa_sha256_raw",
-        "ed25519_eddsa_sha512_raw"
+        "ed25519_eddsa_sha512_raw",
+        "ml_dsa_65_raw",
+        "sm2_sm3_raw"
     ],
     "publicKeyAlgAndEncodings": [
         "cose"
@@ -87,12 +89,12 @@
             "pinUvAuthToken": true,
             "makeCredUvNotRqd": true
         },
-        "maxMsgSize": 1500,
+        "maxMsgSize": 1308,
         "pinUvAuthProtocols": [
             1,
             2
         ],
-        "maxCredentialCountInList": 8,
+        "maxCredentialCountInList": 16,
         "maxCredentialIdLength": 70,
         "transports": [
             "nfc",
@@ -109,6 +111,10 @@
             },
             {
                 "alg": -49,
+                "type": "public-key"
+            },
+            {
+                "alg": -54,
                 "type": "public-key"
             }
         ],
