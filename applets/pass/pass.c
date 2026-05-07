@@ -44,7 +44,7 @@ int pass_install(const uint8_t reset) {
 // For each slot, the first byte is the type.
 // For PASS_SLOT_OFF, there is no more data
 // For PASS_SLOT_STATIC, the second byte is with_enter
-// For PASS_SLOT_HMACSHA1, there is no more data
+// For PASS_SLOT_HMACSHA1, there is no more data; the stored key is never dumped back
 // For PASS_SLOT_OATH, the next byte is the length of the name, followed by the name, and the next byte is with_enter
 static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
   int length = 0;
@@ -63,6 +63,8 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
     break;
 
   case PASS_SLOT_HMACSHA1:
+    // The slot type is enough for configuration discovery; returning the key
+    // would leak the challenge-response secret over the admin channel.
     break;
 
   case PASS_SLOT_OATH:
@@ -182,6 +184,8 @@ int pass_hmacsha1(uint8_t slot_index, const uint8_t challenge[PASS_HMAC_CHALLENG
   pass_slot_t *slot = &slots[slot_index];
   if (slot->type != PASS_SLOT_HMACSHA1) return -2;
 
+  // The KBDHID compatibility layer passes in the complete fixed-size
+  // challenge, including any zero padding from the host frame.
   hmac_sha1(slot->hmac_key, PASS_HMAC_KEY_LENGTH, challenge, PASS_HMAC_CHALLENGE_LENGTH, response);
   return PASS_HMAC_RESPONSE_LENGTH;
 }
@@ -208,6 +212,8 @@ int pass_handle_touch(uint8_t touch_type, char *output) {
     length = slot->password_len;
     break;
   case PASS_SLOT_HMACSHA1:
+    // HMAC slots answer host feature-report challenges; they should not type
+    // anything when the touch shortcut path is polled.
     return 0;
   default:
     return -1;

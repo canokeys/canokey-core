@@ -132,6 +132,8 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				case 0:
 					ret = []byte{ptype}
 				case 3:
+					// HMAC-SHA1 slots store a 20-byte key and do not have the
+					// withEnter byte used by keyboard-output slots.
 					data := []byte(fmt.Sprintf("%020d", randSeed))
 					ret = []byte{ptype, uint8(len(data))}
 					ret = append(ret, data...)

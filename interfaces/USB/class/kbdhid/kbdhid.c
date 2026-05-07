@@ -12,6 +12,10 @@
 #define EJECT_KEY 0x03
 #define KBDHID_FEATURE_REPORT_SIZE 8
 
+// Compatibility subset of the YubiKey OTP HID challenge-response protocol.
+// A host writes ten 8-byte feature reports: seven frame bytes plus a sequence
+// byte. The assembled frame is 64 bytes of challenge, one command byte, a
+// little-endian CRC over the challenge, and three unused bytes.
 #define YK_SLOT_DATA_SIZE 64
 
 #define YK_SLOT_CHAL_HMAC1 0x30
@@ -91,6 +95,9 @@ static void KBDHID_BuildHmacResponse(uint8_t slot_index) {
   payload[sizeof(hmac)] = LO(crc);
   payload[sizeof(hmac) + 1] = HI(crc);
 
+  // The response is read as five 8-byte reports. The first four reports carry
+  // seven payload bytes plus a pending/sequence marker; the last report only
+  // clears the pending state after the host has consumed the payload.
   for (uint8_t i = 0; i < 4; i++) {
     memcpy(feature_response + i * KBDHID_FEATURE_REPORT_SIZE, payload + i * (KBDHID_FEATURE_REPORT_SIZE - 1),
            KBDHID_FEATURE_REPORT_SIZE - 1);
@@ -106,6 +113,8 @@ static void KBDHID_ProcessFeatureFrame(void) {
   uint8_t slot_index;
   const uint16_t expected_crc = crc16_ibm_sdlc(feature_frame.payload, YK_SLOT_DATA_SIZE);
   const uint16_t frame_crc = (uint16_t)feature_frame.crc[0] | ((uint16_t)feature_frame.crc[1] << 8);
+  // Invalid CRCs and unsupported YK commands are reported as idle status with
+  // no response bytes, matching the legacy challenge-response flow.
   if (frame_crc != expected_crc || !pass_slot_from_yk_cmd(feature_frame.slot, &slot_index)) {
     KBDHID_ClearFeatureResponse();
     KBDHID_SetStatus(0);
@@ -306,6 +315,8 @@ uint8_t KBDHID_SetFeatureReport(const uint8_t *in_report, uint16_t len) {
   const uint8_t frame_seq = seq & ~YK_SLOT_WRITE_FLAG;
   if (frame_seq >= 10) return 0;
 
+  // Each SET_REPORT contributes seven bytes; processing starts only after the
+  // tenth fragment completes the 70-byte compatibility frame.
   memcpy(((uint8_t *)&feature_frame) + frame_seq * 7, in_report, KBDHID_FEATURE_REPORT_SIZE - 1);
   KBDHID_SetStatus(0);
   if (frame_seq == 9) KBDHID_ProcessFeatureFrame();
@@ -323,6 +334,8 @@ uint8_t KBDHID_GetFeatureReport(uint8_t *out_report, uint16_t len) {
     memcpy(out_report, feature_response + feature_response_offset, out_len);
     feature_response_offset += KBDHID_FEATURE_REPORT_SIZE;
     if (feature_response_offset >= feature_response_len) {
+      // Keep status pending until the final chunk is served, then forget the
+      // challenge so a repeated GET_REPORT cannot replay the previous HMAC.
       KBDHID_ResetFeatureFrame();
       KBDHID_SetStatus(0);
     }

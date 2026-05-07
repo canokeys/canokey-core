@@ -64,6 +64,8 @@ static uint8_t USBD_CANOKEY_EP0_TxSent(USBD_HandleTypeDef *pdev) {
 
 static uint8_t USBD_CANOKEY_EP0_RxReady(USBD_HandleTypeDef *pdev) {
 #if ENABLE_IFACE_KBDHID
+  // KBDHID SET_REPORT has an EP0 OUT data stage; dispatch it before falling
+  // through to WebUSB, which otherwise owns most control OUT completions.
   if (USBD_KBDHID_Ep0RxActive()) return USBD_KBDHID_RxReady(pdev);
 #endif
 #if ENABLE_IFACE_WEBUSB

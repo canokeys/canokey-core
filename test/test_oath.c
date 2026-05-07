@@ -297,6 +297,8 @@ static void test_pass_hmacsha1_config(void **state) {
   memset(challenge, 0, sizeof(challenge));
   memcpy(challenge, "Hi There", 8);
 
+  // The expected digest covers the full fixed-size YK challenge buffer, so the
+  // short test string is followed by zero padding.
   P1 = 1;
   c_buf[0] = PASS_SLOT_HMACSHA1;
   c_buf[1] = PASS_HMAC_KEY_LENGTH;
@@ -339,11 +341,14 @@ static void test_kbdhid_hmacsha1_feature_report(void **state) {
   KBDHID_Init();
   memset(frame, 0, sizeof(frame));
   memcpy(frame, "Hi There", 8);
+  // YK challenge-response frame: 64-byte challenge, command byte, and
+  // little-endian CRC over the challenge. The three trailing bytes remain zero.
   frame[64] = 0x30;
   const uint16_t crc = crc16_ibm_sdlc(frame, 64);
   frame[65] = LO(crc);
   frame[66] = HI(crc);
 
+  // SET_REPORT splits the 70-byte frame into ten seven-byte fragments.
   for (uint8_t seq = 0; seq < 10; seq++) {
     memcpy(report, frame + seq * 7, 7);
     report[7] = 0x80 | seq;
@@ -354,6 +359,8 @@ static void test_kbdhid_hmacsha1_feature_report(void **state) {
     assert_int_equal(KBDHID_GetFeatureReport(response + i * 8, sizeof(report)), 1);
   }
 
+  // GET_REPORT returns four payload fragments plus a final pending-clear
+  // marker; rebuild the 28-byte payload before checking HMAC and CRC residue.
   for (uint8_t i = 0; i < 4; i++) {
     memcpy(payload + i * 7, response + i * 8, 7);
   }

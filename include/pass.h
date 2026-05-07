@@ -5,6 +5,9 @@
 #include <apdu.h>
 
 #define PASS_MAX_PASSWORD_LENGTH 32
+
+// YubiKey challenge-response uses a fixed 64-byte challenge and returns
+// the raw 20-byte HMAC-SHA1 digest.
 #define PASS_HMAC_KEY_LENGTH 20
 #define PASS_HMAC_CHALLENGE_LENGTH 64
 #define PASS_HMAC_RESPONSE_LENGTH 20

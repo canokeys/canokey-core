@@ -41,6 +41,7 @@ static const uint8_t report_desc[KBDHID_REPORT_DESC_SIZE] = {
     0x19, 0x00,        //   Usage Minimum (0x00)
     0x29, 0x65,        //   Usage Maximum (0x65)
     0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    // Feature report used by YubiKey-compatible challenge-response tools.
     0x09, 0x76,        //   Usage (0x76)
     0x95, 0x08,        //   Report Count (8)
     0x75, 0x08,        //   Report Size (8)
@@ -98,6 +99,8 @@ uint8_t USBD_KBDHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
         USBD_CtlError(pdev, req);
         return USBD_FAIL;
       }
+      // Some hosts include the report ID byte on EP0 feature reports while
+      // others request only the eight-byte payload; accept both forms.
       const uint8_t with_report_id = req->wLength > USBD_KBDHID_REPORT_BUF_SIZE;
       uint8_t *report = with_report_id ? ctrl_report + 1 : ctrl_report;
       if (with_report_id) ctrl_report[0] = 1;
@@ -115,6 +118,8 @@ uint8_t USBD_KBDHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
         USBD_CtlError(pdev, req);
         return USBD_FAIL;
       }
+      // The OUT data stage arrives later through EP0_RxReady, so keep enough
+      // state to route that callback back to KBDHID instead of WebUSB.
       ctrl_report_len = req->wLength;
       USBD_CtlPrepareRx(pdev, ctrl_report, ctrl_report_len);
       ctrl_report_pending = 1;
@@ -170,6 +175,8 @@ uint8_t USBD_KBDHID_RxReady(USBD_HandleTypeDef *pdev) {
   if (!ctrl_report_pending) return USBD_FAIL;
   ctrl_report_pending = 0;
   if (ctrl_report_len == USBD_KBDHID_REPORT_BUF_SIZE + 1) {
+    // When the host sends a report ID, only report ID 1 belongs to the
+    // keyboard collection that declares the feature report.
     if (ctrl_report[0] != 1) return USBD_FAIL;
     return KBDHID_SetFeatureReport(ctrl_report + 1, USBD_KBDHID_REPORT_BUF_SIZE) ? USBD_OK : USBD_FAIL;
   }
