@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <common.h>
 #include <device.h>
+#include <hmac.h>
 #include <memzero.h>
 #include <oath.h>
 #include <pass.h>
@@ -16,6 +17,7 @@ typedef struct {
       uint8_t password_len;
       uint8_t password[PASS_MAX_PASSWORD_LENGTH];
     } __packed;
+    uint8_t hmac_key[PASS_HMAC_KEY_LENGTH];
     struct {
       uint32_t oath_offset;
       uint8_t name_len;
@@ -42,6 +44,7 @@ int pass_install(const uint8_t reset) {
 // For each slot, the first byte is the type.
 // For PASS_SLOT_OFF, there is no more data
 // For PASS_SLOT_STATIC, the second byte is with_enter
+// For PASS_SLOT_HMACSHA1, there is no more data
 // For PASS_SLOT_OATH, the next byte is the length of the name, followed by the name, and the next byte is with_enter
 static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
   int length = 0;
@@ -57,6 +60,9 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
   case PASS_SLOT_STATIC:
     // For STATIC, the second byte is with_enter
     buffer[length++] = slot->with_enter;
+    break;
+
+  case PASS_SLOT_HMACSHA1:
     break;
 
   case PASS_SLOT_OATH:
@@ -92,6 +98,7 @@ int pass_read_config(const CAPDU *capdu, RAPDU *rapdu) {
 // The first byte is the slot type
 // For OFF, there is no more data
 // For STATIC, the second byte is the length of the password, followed by the password, and the next byte is with_enter
+// For HMACSHA1, the second byte is the key length, followed by a 20-byte HMAC-SHA1 key
 // OATH is not allowed to be written here
 int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 1 && P1 != 2) EXCEPT(SW_WRONG_P1P2);
@@ -111,6 +118,12 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
     slot->password_len = DATA[1];
     memcpy(slot->password, DATA + 2, slot->password_len);
     slot->with_enter = DATA[2 + slot->password_len];
+    break;
+
+  case PASS_SLOT_HMACSHA1:
+    if (LC != 2 + PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[1] != PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    memcpy(slot->hmac_key, DATA + 2, PASS_HMAC_KEY_LENGTH);
     break;
 
   default:
@@ -162,6 +175,17 @@ static int oath_process_offset(uint32_t file_offset, char *output) {
   return len;
 }
 
+int pass_hmacsha1(uint8_t slot_index, const uint8_t challenge[PASS_HMAC_CHALLENGE_LENGTH],
+                  uint8_t response[PASS_HMAC_RESPONSE_LENGTH]) {
+  if (slot_index >= 2) return -1;
+
+  pass_slot_t *slot = &slots[slot_index];
+  if (slot->type != PASS_SLOT_HMACSHA1) return -2;
+
+  hmac_sha1(slot->hmac_key, PASS_HMAC_KEY_LENGTH, challenge, PASS_HMAC_CHALLENGE_LENGTH, response);
+  return PASS_HMAC_RESPONSE_LENGTH;
+}
+
 int pass_handle_touch(uint8_t touch_type, char *output) {
   pass_slot_t *slot;
   if (touch_type == TOUCH_SHORT)
@@ -183,6 +207,8 @@ int pass_handle_touch(uint8_t touch_type, char *output) {
     memcpy(output, slot->password, slot->password_len);
     length = slot->password_len;
     break;
+  case PASS_SLOT_HMACSHA1:
+    return 0;
   default:
     return -1;
   }

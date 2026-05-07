@@ -1,13 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
 #include <common.h>
+#include <crc.h>
 #include <device.h>
 #include <kbdhid.h>
+#include <memzero.h>
 #include <pass.h>
 #include <usb_device.h>
 #include <usbd_kbdhid.h>
 
 #define EJECT_KEY 0x03
+#define KBDHID_FEATURE_REPORT_SIZE 8
+
+#define YK_SLOT_DATA_SIZE 64
+
+#define YK_SLOT_CHAL_HMAC1 0x30
+#define YK_SLOT_CHAL_HMAC2 0x38
+
+#define YK_RESP_PENDING_FLAG 0x40
+#define YK_SLOT_WRITE_FLAG 0x80
+#define YK_DUMMY_REPORT_WRITE 0x8f
 
 static enum {
   KBDHID_Idle,
@@ -18,6 +30,96 @@ static enum {
 static char key_sequence[PASS_MAX_PASSWORD_LENGTH + 2]; // one for enter and one for '\0'
 static uint8_t key_seq_position;
 static keyboard_report_t report;
+
+typedef struct {
+  uint8_t payload[YK_SLOT_DATA_SIZE];
+  uint8_t slot;
+  uint8_t crc[2];
+  uint8_t filler[3];
+} __packed yk_frame_t;
+
+static yk_frame_t feature_frame;
+static uint8_t feature_status[KBDHID_FEATURE_REPORT_SIZE];
+static uint8_t feature_response[5 * KBDHID_FEATURE_REPORT_SIZE];
+static uint8_t feature_response_len;
+static uint8_t feature_response_offset;
+
+static void KBDHID_ResetFeatureFrame(void) { memzero(&feature_frame, sizeof(feature_frame)); }
+
+static uint8_t pass_slot_from_yk_cmd(uint8_t cmd, uint8_t *slot) {
+  switch (cmd) {
+  case YK_SLOT_CHAL_HMAC1:
+    *slot = 0;
+    return 1;
+  case YK_SLOT_CHAL_HMAC2:
+    *slot = 1;
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+static void KBDHID_SetStatus(uint8_t flags) {
+  memset(feature_status, 0, sizeof(feature_status));
+  feature_status[1] = 0x02;
+  feature_status[2] = 0x02;
+  feature_status[3] = 0x03;
+  feature_status[4] = 0x03;
+  feature_status[5] = 0x03;
+  feature_status[6] = flags;
+}
+
+static void KBDHID_ClearFeatureResponse(void) {
+  memzero(feature_response, sizeof(feature_response));
+  feature_response_len = 0;
+  feature_response_offset = 0;
+}
+
+static void KBDHID_BuildHmacResponse(uint8_t slot_index) {
+  uint8_t hmac[PASS_HMAC_RESPONSE_LENGTH];
+  uint8_t payload[28];
+  memzero(feature_response, sizeof(feature_response));
+  if (pass_hmacsha1(slot_index, feature_frame.payload, hmac) != PASS_HMAC_RESPONSE_LENGTH) {
+    KBDHID_ClearFeatureResponse();
+    KBDHID_SetStatus(0);
+    return;
+  }
+
+  memzero(payload, sizeof(payload));
+  memcpy(payload, hmac, sizeof(hmac));
+  const uint16_t crc = crc16_ibm_sdlc(hmac, sizeof(hmac));
+  payload[sizeof(hmac)] = LO(crc);
+  payload[sizeof(hmac) + 1] = HI(crc);
+
+  for (uint8_t i = 0; i < 4; i++) {
+    memcpy(feature_response + i * KBDHID_FEATURE_REPORT_SIZE, payload + i * (KBDHID_FEATURE_REPORT_SIZE - 1),
+           KBDHID_FEATURE_REPORT_SIZE - 1);
+    feature_response[i * KBDHID_FEATURE_REPORT_SIZE + KBDHID_FEATURE_REPORT_SIZE - 1] = YK_RESP_PENDING_FLAG | (i + 1);
+  }
+  feature_response[4 * KBDHID_FEATURE_REPORT_SIZE + KBDHID_FEATURE_REPORT_SIZE - 1] = YK_RESP_PENDING_FLAG;
+  feature_response_len = sizeof(feature_response);
+  feature_response_offset = 0;
+  KBDHID_SetStatus(YK_RESP_PENDING_FLAG | 1);
+}
+
+static void KBDHID_ProcessFeatureFrame(void) {
+  uint8_t slot_index;
+  const uint16_t expected_crc = crc16_ibm_sdlc(feature_frame.payload, YK_SLOT_DATA_SIZE);
+  const uint16_t frame_crc = (uint16_t)feature_frame.crc[0] | ((uint16_t)feature_frame.crc[1] << 8);
+  if (frame_crc != expected_crc || !pass_slot_from_yk_cmd(feature_frame.slot, &slot_index)) {
+    KBDHID_ClearFeatureResponse();
+    KBDHID_SetStatus(0);
+    return;
+  }
+
+  KBDHID_BuildHmacResponse(slot_index);
+}
+
+static void KBDHID_FeatureInit(void) {
+  KBDHID_ResetFeatureFrame();
+  KBDHID_ClearFeatureResponse();
+  KBDHID_SetStatus(0);
+}
 
 static uint8_t ascii2keycode(char ch) {
   const uint8_t shift = 0x80; // Shift key flag
@@ -166,6 +268,7 @@ void KBDHID_Eject() {
 uint8_t KBDHID_Init() {
   memset(&report, 0, sizeof(report));
   state = KBDHID_Idle;
+  KBDHID_FeatureInit();
   return 0;
 }
 
@@ -188,4 +291,44 @@ uint8_t KBDHID_Loop(void) {
     KBDHID_TypeKeySeq();
   }
   return 0;
+}
+
+uint8_t KBDHID_SetFeatureReport(const uint8_t *in_report, uint16_t len) {
+  if (len != KBDHID_FEATURE_REPORT_SIZE) return 0;
+
+  const uint8_t seq = in_report[KBDHID_FEATURE_REPORT_SIZE - 1];
+  if (seq == YK_DUMMY_REPORT_WRITE) {
+    KBDHID_FeatureInit();
+    return 1;
+  }
+  if ((seq & YK_SLOT_WRITE_FLAG) == 0) return 0;
+
+  const uint8_t frame_seq = seq & ~YK_SLOT_WRITE_FLAG;
+  if (frame_seq >= 10) return 0;
+
+  memcpy(((uint8_t *)&feature_frame) + frame_seq * 7, in_report, KBDHID_FEATURE_REPORT_SIZE - 1);
+  KBDHID_SetStatus(0);
+  if (frame_seq == 9) KBDHID_ProcessFeatureFrame();
+
+  return 1;
+}
+
+uint8_t KBDHID_GetFeatureReport(uint8_t *out_report, uint16_t len) {
+  if (len == 0) return 0;
+
+  const uint16_t out_len = MIN(len, KBDHID_FEATURE_REPORT_SIZE);
+  memset(out_report, 0, len);
+
+  if (feature_response_offset < feature_response_len) {
+    memcpy(out_report, feature_response + feature_response_offset, out_len);
+    feature_response_offset += KBDHID_FEATURE_REPORT_SIZE;
+    if (feature_response_offset >= feature_response_len) {
+      KBDHID_ResetFeatureFrame();
+      KBDHID_SetStatus(0);
+    }
+  } else {
+    memcpy(out_report, feature_status, out_len);
+  }
+
+  return 1;
 }

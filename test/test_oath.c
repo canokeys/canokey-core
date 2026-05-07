@@ -5,10 +5,12 @@
 #include <cmocka.h>
 
 #include <apdu.h>
+#include <crc.h>
 #include <crypto-util.h>
 #include <bd/lfs_filebd.h>
 #include <device.h>
 #include <fs.h>
+#include <kbdhid.h>
 #include <lfs.h>
 #include <oath.h>
 #include <pass.h>
@@ -57,15 +59,25 @@ static void check_pass_config(bool present, uint8_t slot, uint8_t *data) {
   print_hex(R.data, R.len);
   printf(" R\n");
   for (i = 0, s = 1; i < R.len; s++) {
-    uint8_t ptype, name_len, with_enter;
-    uint8_t *name;
+    uint8_t ptype, name_len = 0, with_enter = 0;
+    uint8_t *name = NULL;
     ptype = R.data[i++];
-    if (ptype == PASS_SLOT_OATH) {
+    switch (ptype) {
+    case PASS_SLOT_OATH:
       name_len = R.data[i++];
       name = &R.data[i];
       i += name_len;
+      with_enter = R.data[i++];
+      break;
+    case PASS_SLOT_STATIC:
+      with_enter = R.data[i++];
+      break;
+    case PASS_SLOT_HMACSHA1:
+    case PASS_SLOT_OFF:
+      break;
+    default:
+      assert_true(0);
     }
-    if (ptype > PASS_SLOT_OFF) with_enter = R.data[i++];
     if (s == slot) {
       if (present) {
         assert_int_equal(ptype, PASS_SLOT_OATH);
@@ -263,6 +275,96 @@ static void test_static_pass(void **state) {
   assert_int_equal(ret, len + 1);
   assert_memory_equal(readback, static_pass, len);
   assert_int_equal(readback[len], '\r');
+}
+
+static void test_pass_hmacsha1_config(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128], response[PASS_HMAC_RESPONSE_LENGTH], challenge[PASS_HMAC_CHALLENGE_LENGTH];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+  };
+  const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
+      0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
+      0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+
+  memset(challenge, 0, sizeof(challenge));
+  memcpy(challenge, "Hi There", 8);
+
+  P1 = 1;
+  c_buf[0] = PASS_SLOT_HMACSHA1;
+  c_buf[1] = PASS_HMAC_KEY_LENGTH;
+  memcpy(c_buf + 2, key, sizeof(key));
+  LC = 2 + sizeof(key);
+  assert_int_equal(pass_write_config(&C, &R), 0);
+
+  assert_int_equal(pass_hmacsha1(0, challenge, response), PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(response, expected, sizeof(expected));
+  assert_int_equal(pass_hmacsha1(1, challenge, response), -2);
+  assert_int_equal(pass_handle_touch(TOUCH_SHORT, (char *)r_buf), 0);
+
+  assert_int_equal(pass_read_config(&C, &R), 0);
+  assert_int_equal(RDATA[0], PASS_SLOT_HMACSHA1);
+}
+
+static void test_kbdhid_hmacsha1_feature_report(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128], frame[70], report[8], response[40], payload[28];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+  };
+  const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
+      0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
+      0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+
+  P1 = 1;
+  c_buf[0] = PASS_SLOT_HMACSHA1;
+  c_buf[1] = PASS_HMAC_KEY_LENGTH;
+  memcpy(c_buf + 2, key, sizeof(key));
+  LC = 2 + sizeof(key);
+  assert_int_equal(pass_write_config(&C, &R), 0);
+
+  KBDHID_Init();
+  memset(frame, 0, sizeof(frame));
+  memcpy(frame, "Hi There", 8);
+  frame[64] = 0x30;
+  const uint16_t crc = crc16_ibm_sdlc(frame, 64);
+  frame[65] = LO(crc);
+  frame[66] = HI(crc);
+
+  for (uint8_t seq = 0; seq < 10; seq++) {
+    memcpy(report, frame + seq * 7, 7);
+    report[7] = 0x80 | seq;
+    assert_int_equal(KBDHID_SetFeatureReport(report, sizeof(report)), 1);
+  }
+
+  for (uint8_t i = 0; i < 5; i++) {
+    assert_int_equal(KBDHID_GetFeatureReport(response + i * 8, sizeof(report)), 1);
+  }
+
+  for (uint8_t i = 0; i < 4; i++) {
+    memcpy(payload + i * 7, response + i * 8, 7);
+  }
+  assert_memory_equal(payload, expected, sizeof(expected));
+  assert_int_equal(response[7], 0x41);
+  assert_int_equal(response[15], 0x42);
+  assert_int_equal(response[23], 0x43);
+  assert_int_equal(response[31], 0x44);
+  assert_int_equal(response[39], 0x40);
+  assert_int_equal(crc16_ibm_sdlc((const uint8_t *)"123456789", 9), 0x906e);
+  assert_int_equal(crc16_ibm_sdlc_raw(payload, sizeof(expected) + 2), CRC16_IBM_SDLC_RESIDUE);
 }
 
 // should be called after test_put
@@ -481,12 +583,10 @@ static void test_space_full(void **state) {
   capdu->lc = sizeof(data);
 
   // make it full
-  int record_added = 0;
   for (int i = 0; i != 100; ++i) {
     data[2] = ' ' + i;
     oath_process_apdu(capdu, rapdu);
     if (rapdu->sw != SW_NO_ERROR) break;
-    record_added++;
   }
   assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
 
@@ -543,6 +643,8 @@ int main() {
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),
       cmocka_unit_test(test_static_pass),
+      cmocka_unit_test(test_pass_hmacsha1_config),
+      cmocka_unit_test(test_kbdhid_hmacsha1_feature_report),
       cmocka_unit_test(test_space_full),
       cmocka_unit_test(test_regression_fuzz),
   };
