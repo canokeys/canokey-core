@@ -38,7 +38,7 @@ static uint8_t ctap_cbor_value_cancel_status(const CborValue *val) {
 #define CHECK_CANCELLED_VALUE(val)                                                                                     \
   do {                                                                                                                 \
     uint8_t _cancel_status = ctap_cbor_value_cancel_status((val));                                                     \
-    if (_cancel_status != 0) return _cancel_status;                                                                     \
+    if (_cancel_status != 0) return _cancel_status;                                                                    \
   } while (0)
 
 static bool ctap_cbor_can_read_bytes(void *token, size_t len) {
@@ -124,6 +124,7 @@ typedef enum {
   CTAP_TEXT_KEY_ICON,
   CTAP_TEXT_KEY_ID,
   CTAP_TEXT_KEY_LARGE_BLOB_KEY,
+  CTAP_TEXT_KEY_MIN_PIN_LENGTH,
   CTAP_TEXT_KEY_NAME,
   CTAP_TEXT_KEY_RK,
   CTAP_TEXT_KEY_TYPE,
@@ -142,13 +143,13 @@ static int ctap_text_key_id(CborValue *val) {
   CborError ret = cbor_value_get_string_length(val, &len);
   if (ret != CborNoError) return ctap_text_key_error(ret);
 
-  if (len > sizeof("largeBlobKey") - 1) {
+  if (len > sizeof("minPinLength") - 1) {
     ret = cbor_value_advance(val);
     if (ret != CborNoError) return ctap_text_key_error(ret);
     return CTAP_TEXT_KEY_UNKNOWN;
   }
 
-  char key_buf[sizeof("largeBlobKey")];
+  char key_buf[sizeof("minPinLength")];
   size_t key_len = sizeof(key_buf);
   ret = ctap_cbor_copy_text(val, key_buf, &key_len);
   if (ret != CborNoError) return ctap_text_key_error(ret);
@@ -189,6 +190,7 @@ static int ctap_text_key_id(CborValue *val) {
     break;
   case 12:
     if (memcmp(key_buf, "largeBlobKey", 12) == 0) key = CTAP_TEXT_KEY_LARGE_BLOB_KEY;
+    if (memcmp(key_buf, "minPinLength", 12) == 0) key = CTAP_TEXT_KEY_MIN_PIN_LENGTH;
     break;
   default:
     break;
@@ -280,6 +282,8 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {
       CHECK_CBOR_RET(ret);
       domain[len] = 0;
       DBG_MSG("rp_id: %s\n", domain);
+      memcpy(mc->rp_id_full, domain, len);
+      mc->rp_id_full_len = len;
       maybe_truncate_rpid(mc->rp_id, &mc->rp_id_len, (const uint8_t *)domain, len);
       sha256_raw((uint8_t *)domain, len, mc->rp_id_hash);
     } else {
@@ -683,6 +687,13 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       CHECK_CBOR_RET(ret);
       DBG_MSG("largeBlobKey: %d\n", mc->ext_large_blob_key);
       if (!mc->ext_large_blob_key) return CTAP2_ERR_INVALID_OPTION;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+    } else if (key == CTAP_TEXT_KEY_MIN_PIN_LENGTH) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_boolean(&map, &mc->ext_min_pin_length);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("minPinLength: %d\n", mc->ext_min_pin_length);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
     } else if (key == CTAP_TEXT_KEY_HMAC_SECRET) {
@@ -1281,7 +1292,7 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
         ERR_MSG("Invalid permissions\n");
         return CTAP1_ERR_INVALID_PARAMETER;
       }
-      if (cp->permissions & (CP_PERMISSION_BE | CP_PERMISSION_ACFG)) {
+      if (cp->permissions & CP_PERMISSION_BE) {
         DBG_MSG("Unsupported permissions\n");
         return CTAP2_ERR_UNAUTHORIZED_PERMISSION;
       }
@@ -1458,6 +1469,174 @@ uint8_t parse_credential_management(CborParser *parser, CTAP_credential_manageme
 uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_management *cm, const ctap_req_src_t *src,
                                         size_t len) {
   return parse_credential_management_impl(parser, cm, NULL, len, src);
+}
+
+static uint8_t parse_config_params(CTAP_config *cfg, CborValue *val, size_t *total_length) {
+  if (total_length) *total_length = 0;
+  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+
+  size_t map_length, len;
+  CborValue map, arr;
+  int key, tmp;
+  int ret = cbor_value_get_map_length(val, &map_length);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_enter_container(val, &map);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
+    if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    ret = cbor_value_get_int_checked(&map, &key);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+
+    switch (key) {
+    case CONFIG_PARAM_NEW_MIN_PIN_LENGTH:
+      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_int_checked(&map, &tmp);
+      CHECK_CBOR_RET(ret);
+      if (tmp < 0 || tmp > CTAP_MAX_PIN_LENGTH) return CTAP1_ERR_INVALID_PARAMETER;
+      cfg->new_min_pin_length = (uint8_t)tmp;
+      cfg->parsed_params |= PARAM_NEW_MIN_PIN_LENGTH;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+
+    case CONFIG_PARAM_MIN_PIN_LENGTH_RPIDS:
+      if (cbor_value_get_type(&map) != CborArrayType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_array_length(&map, &len);
+      CHECK_CBOR_RET(ret);
+      if (len > CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH) return CTAP2_ERR_KEY_STORE_FULL;
+      cfg->min_pin_rpid_count = (uint8_t)len;
+      ret = cbor_value_enter_container(&map, &arr);
+      CHECK_CBOR_RET(ret);
+      for (size_t j = 0; j < len; ++j) {
+        CHECK_CANCELLED_VALUE(&arr);
+        if (cbor_value_get_type(&arr) != CborTextStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+        size_t rpid_len = DOMAIN_NAME_MAX_SIZE;
+        ret = ctap_cbor_copy_text(&arr, cfg->min_pin_rpids[j].id, &rpid_len);
+        CHECK_CBOR_RET(ret);
+        cfg->min_pin_rpids[j].len = (uint8_t)rpid_len;
+      }
+      ret = cbor_value_leave_container(&map, &arr);
+      CHECK_CBOR_RET(ret);
+      cfg->parsed_params |= PARAM_MIN_PIN_LENGTH_RPIDS;
+      break;
+
+    case CONFIG_PARAM_FORCE_CHANGE_PIN:
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_boolean(&map, &cfg->force_change_pin);
+      CHECK_CBOR_RET(ret);
+      cfg->parsed_params |= PARAM_FORCE_CHANGE_PIN;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+
+    case CONFIG_PARAM_PIN_COMPLEXITY_POLICY:
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_boolean(&map, &cfg->pin_complexity_policy);
+      CHECK_CBOR_RET(ret);
+      cfg->parsed_params |= PARAM_PIN_COMPLEXITY_POLICY;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+
+    default:
+      DBG_MSG("Unknown config param: %d\n", key);
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+    }
+  }
+
+  if ((val->parser->flags & CborParserFlag_ExternalSource) == 0 && total_length != NULL)
+    *total_length = map.source.ptr - val->source.ptr;
+  ret = cbor_value_leave_container(val, &map);
+  CHECK_CBOR_RET(ret);
+  return 0;
+}
+
+static uint8_t parse_config_impl(CborParser *parser, CTAP_config *cfg, const uint8_t *buf, size_t len,
+                                 const ctap_req_src_t *src) {
+  CborValue it, map;
+  ctap_cbor_reader_t reader;
+  size_t map_length;
+  int key, tmp;
+  memset(cfg, 0, sizeof(CTAP_config));
+
+  uint8_t init_ret = src ? ctap_parser_init_src(parser, &it, &reader, src) : ctap_parser_init(parser, &it, buf, len);
+  if (init_ret != 0) return init_ret;
+  if (cbor_value_get_type(&it) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+  int ret = cbor_value_get_map_length(&it, &map_length);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_enter_container(&it, &map);
+  CHECK_CBOR_RET(ret);
+
+  for (size_t i = 0; i < map_length; ++i) {
+    CHECK_CANCELLED_VALUE(&map);
+    if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    ret = cbor_value_get_int_checked(&map, &key);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&map);
+    CHECK_CBOR_RET(ret);
+    const size_t value_offset = src ? reader.offset : (size_t)(map.source.ptr - buf);
+
+    switch (key) {
+    case CONFIG_REQ_SUB_COMMAND:
+      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_int_checked(&map, &tmp);
+      CHECK_CBOR_RET(ret);
+      if (tmp < 0 || tmp > UINT8_MAX) return CTAP1_ERR_INVALID_PARAMETER;
+      cfg->sub_command = (uint8_t)tmp;
+      cfg->parsed_params |= PARAM_SUB_COMMAND;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+
+    case CONFIG_REQ_SUB_COMMAND_PARAMS:
+      cfg->sub_command_params_offset = (uint32_t)value_offset;
+      {
+        const size_t start_offset = src ? reader.offset : value_offset;
+        ret = parse_config_params(cfg, &map, src ? NULL : &cfg->param_len);
+        CHECK_PARSER_RET(ret);
+        if (src) cfg->param_len = reader.offset - start_offset;
+      }
+      cfg->parsed_params |= PARAM_SUB_COMMAND_PARAMS;
+      break;
+
+    case CONFIG_REQ_PIN_UV_AUTH_PROTOCOL:
+      ret = ctap_parse_pin_uv_auth_protocol(&map, &cfg->pin_uv_auth_protocol);
+      CHECK_PARSER_RET(ret);
+      cfg->parsed_params |= PARAM_PIN_UV_AUTH_PROTOCOL;
+      break;
+
+    case CONFIG_REQ_PIN_UV_AUTH_PARAM:
+      ret = ctap_parse_pin_uv_auth_param(&map, cfg->pin_uv_auth_param, &len, false);
+      CHECK_PARSER_RET(ret);
+      cfg->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
+      break;
+
+    default:
+      DBG_MSG("Unknown config key: %d\n", key);
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+    }
+  }
+
+  ret = cbor_value_leave_container(&it, &map);
+  CHECK_CBOR_RET(ret);
+  if ((cfg->parsed_params & CONFIG_REQUIRED_MASK) != CONFIG_REQUIRED_MASK) return CTAP2_ERR_MISSING_PARAMETER;
+  return 0;
+}
+
+uint8_t parse_config(CborParser *parser, CTAP_config *cfg, const uint8_t *buf, size_t len) {
+  return parse_config_impl(parser, cfg, buf, len, NULL);
+}
+
+uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_src_t *src, size_t len) {
+  return parse_config_impl(parser, cfg, NULL, len, src);
 }
 
 static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, const uint8_t *buf, size_t len,

@@ -80,29 +80,6 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-export.h
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-version.h
     "#define TINYCBOR_VERSION_MAJOR 7\n#define TINYCBOR_VERSION_MINOR 0\n#define TINYCBOR_VERSION_PATCH 0\n")
 
-# Generate pre-encoded CBOR segments for ctap_get_info.
-# Constants are parsed directly from headers — no duplication.
-find_program(PYTHON_EXE NAMES python3 python REQUIRED)
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
-    COMMAND ${PYTHON_EXE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
-        --headers
-            ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
-            ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
-        --credential-id-size 70
-        --output ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
-    DEPENDS
-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
-        ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
-        ${CMAKE_CURRENT_SOURCE_DIR}/interfaces/USB/class/ctaphid/ctaphid.h
-    COMMENT "Generating ctap_get_info_cbor.inc"
-)
-add_custom_target(
-    generate_ctap_get_info_cbor
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
-)
-
 file(
     GLOB_RECURSE SRC
     src/*.c
@@ -139,7 +116,6 @@ if(NOT ENABLE_IFACE_KBDHID)
 endif()
 
 add_library(canokey-core ${SRC})
-add_dependencies(canokey-core generate_ctap_get_info_cbor)
 
 set(canokey_core_public_defs
     ENABLE_NFC=$<BOOL:${ENABLE_NFC}>
