@@ -5,12 +5,10 @@
 #include <cmocka.h>
 
 #include <apdu.h>
-#include <crc.h>
 #include <crypto-util.h>
 #include <bd/lfs_filebd.h>
 #include <device.h>
 #include <fs.h>
-#include <kbdhid.h>
 #include <lfs.h>
 #include <oath.h>
 #include <pass.h>
@@ -315,13 +313,14 @@ static void test_pass_hmacsha1_config(void **state) {
   assert_int_equal(RDATA[0], PASS_SLOT_HMACSHA1);
 }
 
-static void test_kbdhid_hmacsha1_feature_report(void **state) {
+static void test_oath_yk_hmacsha1_api(void **state) {
   (void)state;
 
-  uint8_t c_buf[128], r_buf[128], frame[70], report[8], response[40], payload[28];
+  uint8_t c_buf[128], r_buf[128], challenge[PASS_HMAC_CHALLENGE_LENGTH];
   CAPDU C = {.data = c_buf};
   RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
   const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
       0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
@@ -338,40 +337,32 @@ static void test_kbdhid_hmacsha1_feature_report(void **state) {
   LC = 2 + sizeof(key);
   assert_int_equal(pass_write_config(&C, &R), 0);
 
-  KBDHID_Init();
-  memset(frame, 0, sizeof(frame));
-  memcpy(frame, "Hi There", 8);
-  // YK challenge-response frame: 64-byte challenge, command byte, and
-  // little-endian CRC over the challenge. The three trailing bytes remain zero.
-  frame[64] = 0x30;
-  const uint16_t crc = crc16_ibm_sdlc(frame, 64);
-  frame[65] = LO(crc);
-  frame[66] = HI(crc);
+  memset(challenge, 0, sizeof(challenge));
+  memcpy(challenge, "Hi There", 8);
 
-  // SET_REPORT splits the 70-byte frame into ten seven-byte fragments.
-  for (uint8_t seq = 0; seq < 10; seq++) {
-    memcpy(report, frame + seq * 7, 7);
-    report[7] = 0x80 | seq;
-    assert_int_equal(KBDHID_SetFeatureReport(report, sizeof(report)), 1);
-  }
+  // KeePassXC selects the OATH AID, then sends the YubiKey OTP API HMAC
+  // command through PC/SC as INS=0x01, P1=0x30/0x38, Lc=64.
+  INS = OATH_INS_PUT;
+  P1 = 0x30;
+  P2 = 0x00;
+  DATA = challenge;
+  LC = sizeof(challenge);
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(RDATA, expected, sizeof(expected));
 
-  for (uint8_t i = 0; i < 5; i++) {
-    assert_int_equal(KBDHID_GetFeatureReport(response + i * 8, sizeof(report)), 1);
-  }
+  P1 = 0x38;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_FILE_NOT_FOUND);
 
-  // GET_REPORT returns four payload fragments plus a final pending-clear
-  // marker; rebuild the 28-byte payload before checking HMAC and CRC residue.
-  for (uint8_t i = 0; i < 4; i++) {
-    memcpy(payload + i * 7, response + i * 8, 7);
-  }
-  assert_memory_equal(payload, expected, sizeof(expected));
-  assert_int_equal(response[7], 0x41);
-  assert_int_equal(response[15], 0x42);
-  assert_int_equal(response[23], 0x43);
-  assert_int_equal(response[31], 0x44);
-  assert_int_equal(response[39], 0x40);
-  assert_int_equal(crc16_ibm_sdlc((const uint8_t *)"123456789", 9), 0x906e);
-  assert_int_equal(crc16_ibm_sdlc_raw(payload, sizeof(expected) + 2), CRC16_IBM_SDLC_RESIDUE);
+  INS = OATH_INS_PUT;
+  P1 = 0x10;
+  DATA = c_buf;
+  LC = 0;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, 4);
 }
 
 // should be called after test_put
@@ -651,7 +642,7 @@ int main() {
       cmocka_unit_test(test_hotp_touch),
       cmocka_unit_test(test_static_pass),
       cmocka_unit_test(test_pass_hmacsha1_config),
-      cmocka_unit_test(test_kbdhid_hmacsha1_feature_report),
+      cmocka_unit_test(test_oath_yk_hmacsha1_api),
       cmocka_unit_test(test_space_full),
       cmocka_unit_test(test_regression_fuzz),
   };

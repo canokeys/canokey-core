@@ -6,11 +6,9 @@
 
 #define KBDHID_DESCRIPTOR_TYPE 0x21
 #define KBDHID_REPORT_DESC 0x22
-#define KBDHID_REQ_GET_REPORT 0x01
-#define KBDHID_REQ_SET_REPORT 0x09
 #define KBDHID_REQ_SET_IDLE 0x0A
 #define USBD_KBDHID_REPORT_BUF_SIZE 8
-#define KBDHID_REPORT_DESC_SIZE 95
+#define KBDHID_REPORT_DESC_SIZE 87
 
 typedef enum { KBDHID_IDLE = 0, KBDHID_BUSY } KBDHID_StateTypeDef;
 
@@ -31,8 +29,6 @@ uint8_t USBD_KBDHID_Init(USBD_HandleTypeDef *pdev);
 uint8_t USBD_KBDHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req);
 uint8_t USBD_KBDHID_DataIn(void);
 uint8_t USBD_KBDHID_DataOut(USBD_HandleTypeDef *pdev);
-uint8_t USBD_KBDHID_RxReady(USBD_HandleTypeDef *pdev);
-uint8_t USBD_KBDHID_Ep0RxActive(void);
 uint8_t USBD_KBDHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len);
 uint8_t USBD_KBDHID_IsIdle(void);
 
