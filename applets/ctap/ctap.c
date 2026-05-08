@@ -2210,14 +2210,10 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
 
   ret = cbor_encode_int(&map, GI_RESP_OPTIONS);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_map(&map, &sub, 10);
+  ret = cbor_encoder_create_map(&map, &sub, 9);
   CHECK_CBOR_RET(ret);
   // Keep text keys in canonical CBOR order; python-fido2 rejects non-canonical getInfo responses.
   ret = cbor_encode_text_stringz(&sub, "rk");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&sub, true);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub, "up");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);
@@ -3466,8 +3462,8 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     goto set_resp;
   case CTAP_RESET:
     DBG_MSG("----------------RESET-----------------\n");
-    *resp = ctap_reset_data();
-    goto finish_status_only;
+    status = ctap_reset_data();
+    goto set_resp;
   case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2
     cmd = CTAP_CREDENTIAL_MANAGEMENT;
   case CTAP_CREDENTIAL_MANAGEMENT:

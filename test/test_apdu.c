@@ -329,6 +329,40 @@ static void test_fido_ctap1_register_nfc(void **state) {
   assert_true(total >= rapdu.len);
 }
 
+static void test_fido_reset_nfc_returns_keepalive_pending(void **state) {
+  (void)state;
+
+  static const uint8_t select_fido[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+  };
+  static const uint8_t reset_apdu[] = {
+      0x80, 0x10, 0x80, 0x00, 0x01, 0x07, 0x00,
+  };
+
+  uint8_t c_buf[64], r_buf[64];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+  testmode_set_initial_ticks(0);
+  testmode_set_initial_ticks(device_get_tick());
+  set_nfc_state(1);
+
+  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, reset_apdu, sizeof(reset_apdu)), 0);
+  process_apdu(&capdu, &rapdu);
+
+  assert_int_equal(rapdu.sw, 0x9100);
+  assert_int_equal(rapdu.len, 1);
+  assert_int_equal(rapdu.data[0], KEEPALIVE_STATUS_UPNEEDED);
+  assert_true(ctap_nfc_pending_active());
+}
+
 static void test_fido_cbor_after_reset_without_select(void **state) {
   (void)state;
 
@@ -430,12 +464,16 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   CTAPHID_TxSource source = {0};
   size_t written = 0;
   const uint8_t canonical_options[] = {
-      0x04, 0xAA, 0x62, 'r',  'k',  0xF5, 0x62, 'u', 'p', 0xF5, 0x68, 'a',  'l',  'w', 'a',  'y', 's',  'U',  'v', 0xF4,
-      0x68, 'c',  'r',  'e',  'd',  'M',  'g',  'm', 't', 0xF5, 0x69, 'a',  'u',  't', 'h',  'n', 'r',  'C',  'f', 'g',
-      0xF5, 0x69, 'c',  'l',  'i',  'e',  'n',  't', 'P', 'i',  'n',  0xF4, 0x6A, 'l', 'a',  'r', 'g',  'e',  'B', 'l',
-      'o',  'b',  's',  0xF5, 0x6E, 'p',  'i',  'n', 'U', 'v',  'A',  'u',  't',  'h', 'T',  'o', 'k',  'e',  'n', 0xF5,
-      0x6F, 's',  'e',  't',  'M',  'i',  'n',  'P', 'I', 'N',  'L',  'e',  'n',  'g', 't',  'h', 0xF5, 0x70, 'm', 'a',
-      'k',  'e',  'C',  'r',  'e',  'd',  'U',  'v', 'N', 'o',  't',  'R',  'q',  'd', 0xF5,
+      0x04, 0xA9,
+      0x62, 'r', 'k', 0xF5,
+      0x68, 'a', 'l', 'w', 'a', 'y', 's', 'U', 'v', 0xF4,
+      0x68, 'c', 'r', 'e', 'd', 'M', 'g', 'm', 't', 0xF5,
+      0x69, 'a', 'u', 't', 'h', 'n', 'r', 'C', 'f', 'g', 0xF5,
+      0x69, 'c', 'l', 'i', 'e', 'n', 't', 'P', 'i', 'n', 0xF4,
+      0x6A, 'l', 'a', 'r', 'g', 'e', 'B', 'l', 'o', 'b', 's', 0xF5,
+      0x6E, 'p', 'i', 'n', 'U', 'v', 'A', 'u', 't', 'h', 'T', 'o', 'k', 'e', 'n', 0xF5,
+      0x6F, 's', 'e', 't', 'M', 'i', 'n', 'P', 'I', 'N', 'L', 'e', 'n', 'g', 't', 'h', 0xF5,
+      0x70, 'm', 'a', 'k', 'e', 'C', 'r', 'e', 'd', 'U', 'v', 'N', 'o', 't', 'R', 'q', 'd', 0xF5,
   };
 
   init_apdu_buffer();
@@ -1004,6 +1042,7 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
+      cmocka_unit_test(test_fido_reset_nfc_returns_keepalive_pending),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
