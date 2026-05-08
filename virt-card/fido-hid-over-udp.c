@@ -114,6 +114,12 @@ static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, ui
   return 0;
 }
 
+void USBD_CTAPHID_ServiceReceive(void) {
+  uint8_t buf[HID_RPT_SIZE];
+  int length = udp_recv(current_fd, buf, sizeof(buf));
+  if (length == (int)sizeof(buf)) CTAPHID_OutEvent(buf);
+}
+
 static int get_env_flag(const char *name, int default_value) {
   const char *value = getenv(name);
   if (value == NULL || *value == '\0') return default_value;

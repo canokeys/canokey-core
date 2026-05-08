@@ -102,6 +102,7 @@ int testmode_emulate_user_presence(void) {
   } else {
     ERR_MSG("Failed to open canokey-test-up for reading\n");
   }
+  if (counter < 0) return 0;
   counter++;
   DBG_MSG("counter=%d\n", counter);
   f_cnt = fopen("/tmp/canokey-test-up", "w");

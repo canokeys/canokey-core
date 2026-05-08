@@ -53,6 +53,7 @@ static void CTAPHID_MarkCancelPending(uint32_t cid) {
 
 static int CTAPHID_PKESourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);
 static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code);
+static uint8_t CTAPHID_SendCancelResponseIfNeeded(void);
 static void CTAPHID_Execute_Init(void);
 static void CTAPHID_Execute_Msg(void);
 static void CTAPHID_Execute_Cbor(void);
@@ -109,11 +110,7 @@ static int CTAPHID_AppendContinuation(const CTAPHID_FRAME *frame) {
 
 static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
   if (wait_for_user && channel.cancel_pending) {
-    if (USBD_CTAPHID_WaitIdle() == USBD_OK) {
-      channel.cancel_pending = 0;
-      return LOOP_CANCEL;
-    }
-    return LOOP_SUCCESS;
+    return LOOP_CANCEL;
   }
   if (channel.executing) return LOOP_SUCCESS;
   if (!channel.ready || channel.state != CTAPHID_BUSY || channel.bcnt_current != channel.bcnt_total)
@@ -508,6 +505,15 @@ static uint8_t CTAPHID_SendCancelResponseIfNeeded(void) {
   return 0;
 }
 
+static uint8_t CTAPHID_SendCancelResponseWithRetries(void) {
+  uint32_t start = device_get_tick();
+  do {
+    if (CTAPHID_SendCancelResponseIfNeeded()) return 1;
+    device_delay(1);
+  } while ((uint32_t)(device_get_tick() - start) < 500);
+  return CTAPHID_SendCancelResponseIfNeeded();
+}
+
 static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_t len) {
   if (len > UINT16_MAX) {
     CTAPHID_ReleaseSharedBuffer();
@@ -752,14 +758,8 @@ static void CTAPHID_Execute_Cbor(void) {
   }
   CTAPHID_ClosePreparedRequest(source_backed);
   if (channel.cancel_pending || channel.cancel_response_sent) {
-    uint8_t code = CTAP2_ERR_KEEPALIVE_CANCEL;
     if (stream_ret > 0 && source.close) source.close(source.ctx);
-    if (!channel.cancel_response_sent) {
-      USBD_CTAPHID_WaitIdle();
-      CTAPHID_SendResponseAuto(channel.cid, CTAPHID_CBOR, &code, sizeof(code));
-      channel.cancel_response_sent = 1;
-    }
-    channel.cancel_pending = 0;
+    if (channel.cancel_response_sent || CTAPHID_SendCancelResponseWithRetries()) channel.cancel_pending = 0;
     if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     return;
   }
