@@ -18,6 +18,7 @@
 
 #define CTAP_LARGE_BLOBS 0x0C
 #define CTAP_CONFIG 0x0D
+#define CTAP2_ERR_PIN_POLICY_VIOLATION 0x37
 #define LB_FILE "ctap_lb"
 
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
@@ -478,6 +479,63 @@ static void test_ctap_config_toggle_always_uv_without_pin(void **state) {
   assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
   assert_int_equal(resp_len, 1);
   assert_int_equal(resp[0], 0x00);
+}
+
+static void test_ctap_config_pin_complexity_policy_persists_and_enforces(void **state) {
+  (void)state;
+
+  uint8_t config_req_true[] = {CTAP_CONFIG, 0xA2, 0x01, 0x03, 0x02, 0xA1, 0x04, 0xF5};
+  uint8_t config_req_false[] = {CTAP_CONFIG, 0xA2, 0x01, 0x03, 0x02, 0xA1, 0x04, 0xF4};
+  uint8_t get_info_req[] = {0x04};
+  uint8_t resp[64] = {0};
+  size_t resp_len = sizeof(resp);
+  uint8_t scratch[64] = {0};
+  uint8_t chunk[APPLET_SHARED_BUFFER_LENGTH] = {0};
+  CTAPHID_TxSource source = {0};
+  size_t written = 0;
+  uint8_t code_points = 0;
+  const uint8_t pin_complexity_false[] = {0x18, 0x1B, 0xF4};
+  const uint8_t pin_complexity_true[] = {0x18, 0x1B, 0xF5};
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(ctap_test_validate_new_pin((const uint8_t *)"1234", 4, &code_points), 0);
+  assert_int_equal(code_points, 4);
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(get_info_req, sizeof(get_info_req), scratch, sizeof(scratch),
+                                                     &source, CTAP_SRC_HID),
+                   1);
+  assert_int_equal(source.read(source.ctx, chunk, source.total_len, &written), 0);
+  assert_int_equal(chunk[0], 0x00);
+  assert_non_null(find_bytes(chunk + 1, written - 1, pin_complexity_false, sizeof(pin_complexity_false)));
+
+  assert_int_equal(ctap_process_cbor_with_src(config_req_true, sizeof(config_req_true), resp, &resp_len, CTAP_SRC_HID),
+                   0);
+  assert_int_equal(resp_len, 1);
+  assert_int_equal(resp[0], 0x00);
+
+  memset(&source, 0, sizeof(source));
+  written = 0;
+  assert_int_equal(ctap_process_cbor_stream_with_src(get_info_req, sizeof(get_info_req), scratch, sizeof(scratch),
+                                                     &source, CTAP_SRC_HID),
+                   1);
+  assert_int_equal(source.read(source.ctx, chunk, source.total_len, &written), 0);
+  assert_int_equal(chunk[0], 0x00);
+  assert_non_null(find_bytes(chunk + 1, written - 1, pin_complexity_true, sizeof(pin_complexity_true)));
+
+  assert_int_equal(ctap_test_validate_new_pin((const uint8_t *)"1234", 4, &code_points),
+                   CTAP2_ERR_PIN_POLICY_VIOLATION);
+  assert_int_equal(ctap_test_validate_new_pin((const uint8_t *)"123a", 4, &code_points), 0);
+
+  resp_len = sizeof(resp);
+  assert_int_equal(ctap_process_cbor_with_src(config_req_false, sizeof(config_req_false), resp, &resp_len, CTAP_SRC_HID),
+                   0);
+  assert_int_equal(resp_len, 1);
+  assert_int_equal(resp[0], 0x00);
+  assert_int_equal(ctap_test_validate_new_pin((const uint8_t *)"1234", 4, &code_points),
+                   CTAP2_ERR_PIN_POLICY_VIOLATION);
 }
 
 static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **state) {
@@ -944,6 +1002,7 @@ int main() {
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_config_toggle_always_uv_without_pin),
+      cmocka_unit_test(test_ctap_config_pin_complexity_policy_persists_and_enforces),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),

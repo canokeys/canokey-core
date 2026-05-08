@@ -272,6 +272,16 @@ typedef struct {
   uint8_t always_uv;
   uint8_t long_touch_for_reset;
   uint8_t pin_code_point_length;
+} __packed CTAP_persistent_config_v1;
+
+typedef struct {
+  uint8_t min_pin_length;
+  uint8_t max_pin_length;
+  uint8_t force_pin_change;
+  uint8_t always_uv;
+  uint8_t long_touch_for_reset;
+  uint8_t pin_code_point_length;
+  uint8_t pin_complexity_policy;
 } __packed CTAP_persistent_config;
 
 static void ctap_config_default(CTAP_persistent_config *cfg) {
@@ -284,14 +294,92 @@ static int ctap_config_store(const CTAP_persistent_config *cfg) {
   return write_attr(CTAP_CERT_FILE, CONFIG_ATTR, cfg, sizeof(*cfg));
 }
 
+static bool ctap_config_valid(const CTAP_persistent_config *cfg) {
+  return cfg->min_pin_length >= CTAP_DEFAULT_MIN_PIN_LENGTH && cfg->max_pin_length >= 8 &&
+         cfg->max_pin_length <= CTAP_MAX_PIN_LENGTH && cfg->min_pin_length <= cfg->max_pin_length &&
+         cfg->force_pin_change <= 1 && cfg->always_uv <= 1 && cfg->long_touch_for_reset <= 1 &&
+         cfg->pin_complexity_policy <= 1;
+}
+
 static int ctap_config_load(CTAP_persistent_config *cfg) {
+  memset(cfg, 0, sizeof(*cfg));
   int ret = read_attr(CTAP_CERT_FILE, CONFIG_ATTR, cfg, sizeof(*cfg));
-  if (ret == (int)sizeof(*cfg) && cfg->min_pin_length >= CTAP_DEFAULT_MIN_PIN_LENGTH && cfg->max_pin_length >= 8 &&
-      cfg->max_pin_length <= CTAP_MAX_PIN_LENGTH && cfg->min_pin_length <= cfg->max_pin_length)
-    return 0;
+  if (ret == (int)sizeof(*cfg) && ctap_config_valid(cfg)) return 0;
+  if (ret == (int)sizeof(CTAP_persistent_config_v1) && ctap_config_valid(cfg))
+    return ctap_config_store(cfg);
 
   ctap_config_default(cfg);
   return ctap_config_store(cfg);
+}
+
+static uint8_t ctap_pin_code_point_class(uint32_t codepoint) {
+  if (codepoint >= '0' && codepoint <= '9') return 0x01;
+  if (codepoint >= 'A' && codepoint <= 'Z') return 0x02;
+  if (codepoint >= 'a' && codepoint <= 'z') return 0x04;
+  return 0x08;
+}
+
+static uint8_t ctap_pin_class_count(uint8_t classes) {
+  uint8_t count = 0;
+  while (classes) {
+    count += classes & 1;
+    classes >>= 1;
+  }
+  return count;
+}
+
+static bool ctap_parse_pin_code_points(const uint8_t *pin, size_t len, uint8_t *out, uint8_t *classes) {
+  size_t i = 0;
+  uint16_t count = 0;
+  uint8_t class_mask = 0;
+
+  while (i < len) {
+    uint8_t c = pin[i];
+    size_t seq_len;
+    uint32_t codepoint;
+
+    if (c < 0x80) {
+      seq_len = 1;
+      codepoint = c;
+    } else if ((c & 0xE0) == 0xC0) {
+      seq_len = 2;
+      codepoint = c & 0x1F;
+      if (codepoint == 0) return false;
+    } else if ((c & 0xF0) == 0xE0) {
+      seq_len = 3;
+      codepoint = c & 0x0F;
+    } else if ((c & 0xF8) == 0xF0) {
+      seq_len = 4;
+      codepoint = c & 0x07;
+    } else {
+      return false;
+    }
+
+    if (seq_len > len - i) return false;
+    for (size_t j = 1; j < seq_len; ++j) {
+      uint8_t cc = pin[i + j];
+      if ((cc & 0xC0) != 0x80) return false;
+      codepoint = (codepoint << 6) | (cc & 0x3F);
+    }
+
+    if ((seq_len == 2 && codepoint < 0x80) || (seq_len == 3 && codepoint < 0x800) ||
+        (seq_len == 4 && codepoint < 0x10000) || (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF)
+      return false;
+
+    class_mask |= ctap_pin_code_point_class(codepoint);
+    ++count;
+    if (count > UINT8_MAX) return false;
+    i += seq_len;
+  }
+
+  *out = (uint8_t)count;
+  if (classes) *classes = class_mask;
+  return true;
+}
+
+static bool ctap_pin_complexity_policy_satisfied(uint8_t classes) {
+  // Local CTAP PIN complexity policy: require at least two coarse character classes.
+  return ctap_pin_class_count(classes) >= 2;
 }
 
 static uint8_t ctap_config_get_min_pin_length(void) {
@@ -343,60 +431,23 @@ static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len)
   return false;
 }
 
-static bool ctap_count_utf8_code_points(const uint8_t *pin, size_t len, uint8_t *out) {
-  size_t i = 0;
-  uint16_t count = 0;
-
-  while (i < len) {
-    uint8_t c = pin[i];
-    size_t seq_len;
-    uint32_t codepoint;
-
-    if (c < 0x80) {
-      seq_len = 1;
-      codepoint = c;
-    } else if ((c & 0xE0) == 0xC0) {
-      seq_len = 2;
-      codepoint = c & 0x1F;
-      if (codepoint == 0) return false;
-    } else if ((c & 0xF0) == 0xE0) {
-      seq_len = 3;
-      codepoint = c & 0x0F;
-    } else if ((c & 0xF8) == 0xF0) {
-      seq_len = 4;
-      codepoint = c & 0x07;
-    } else {
-      return false;
-    }
-
-    if (seq_len > len - i) return false;
-    for (size_t j = 1; j < seq_len; ++j) {
-      uint8_t cc = pin[i + j];
-      if ((cc & 0xC0) != 0x80) return false;
-      codepoint = (codepoint << 6) | (cc & 0x3F);
-    }
-
-    if ((seq_len == 2 && codepoint < 0x80) || (seq_len == 3 && codepoint < 0x800) ||
-        (seq_len == 4 && codepoint < 0x10000) || (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF)
-      return false;
-
-    ++count;
-    if (count > UINT8_MAX) return false;
-    i += seq_len;
-  }
-
-  *out = (uint8_t)count;
-  return true;
-}
-
 static uint8_t ctap_validate_new_pin(const uint8_t *pin, size_t len, uint8_t *code_points) {
   CTAP_persistent_config cfg;
+  uint8_t classes = 0;
   if (len == 0 || len > CTAP_MAX_PIN_LENGTH) return CTAP2_ERR_PIN_POLICY_VIOLATION;
   if (ctap_config_load(&cfg) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (!ctap_count_utf8_code_points(pin, len, code_points)) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+  if (!ctap_parse_pin_code_points(pin, len, code_points, &classes)) return CTAP2_ERR_PIN_POLICY_VIOLATION;
   if (*code_points < cfg.min_pin_length || *code_points > cfg.max_pin_length) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+  if (cfg.pin_complexity_policy && !ctap_pin_complexity_policy_satisfied(classes))
+    return CTAP2_ERR_PIN_POLICY_VIOLATION;
   return 0;
 }
+
+#ifdef TEST
+uint8_t ctap_test_validate_new_pin(const uint8_t *pin, size_t len, uint8_t *code_points) {
+  return ctap_validate_new_pin(pin, len, code_points);
+}
+#endif
 
 static int ctap_note_pin_changed(uint8_t code_points) {
   CTAP_persistent_config cfg;
@@ -2110,7 +2161,7 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   if (ctap_config_load(&cfg) < 0) return -1;
   const int pin_state = has_pin();
   if (pin_state < 0) return -1;
-  const uint8_t top_level_items = 21 + (cfg.force_pin_change ? 1 : 0);
+  const uint8_t top_level_items = 22 + (cfg.force_pin_change ? 1 : 0);
   const bool u2f_enabled = cfg.always_uv == 0;
 
   buf[0] = CTAP1_ERR_SUCCESS;
@@ -2317,6 +2368,11 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   ret = cbor_encode_text_stringz(&sub, "usb");
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &sub);
+  CHECK_CBOR_RET(ret);
+
+  ret = cbor_encode_int(&map, GI_RESP_PIN_COMPLEXITY_POLICY);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&map, cfg.pin_complexity_policy != 0);
   CHECK_CBOR_RET(ret);
 
   ret = cbor_encode_int(&map, GI_RESP_MAX_PIN_LENGTH);
@@ -3043,6 +3099,11 @@ static uint8_t ctap_config_set_min_pin_length(const CTAP_config *cmd) {
 
   if (cmd->parsed_params & PARAM_FORCE_CHANGE_PIN) {
     if (cmd->force_change_pin) cfg.force_pin_change = 1;
+  }
+
+  if ((cmd->parsed_params & PARAM_PIN_COMPLEXITY_POLICY) && cmd->pin_complexity_policy) {
+    if (!cfg.pin_complexity_policy && pin_set) cfg.force_pin_change = 1;
+    cfg.pin_complexity_policy = 1;
   }
 
   if (pin_set && new_min > cfg.min_pin_length &&

@@ -156,6 +156,7 @@
 #define GI_RESP_ATTESTATION_FORMATS             0x16
 #define GI_RESP_LONG_TOUCH_FOR_RESET            0x18
 #define GI_RESP_TRANSPORTS_FOR_RESET            0x1A
+#define GI_RESP_PIN_COMPLEXITY_POLICY           0x1B
 #define GI_RESP_MAX_PIN_LENGTH                  0x1D
 #define GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS   0x1F
 
