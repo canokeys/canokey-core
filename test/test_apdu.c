@@ -429,6 +429,14 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   uint8_t chunk[APPLET_SHARED_BUFFER_LENGTH] = {0};
   CTAPHID_TxSource source = {0};
   size_t written = 0;
+  const uint8_t canonical_options[] = {
+      0x04, 0xAA, 0x62, 'r',  'k',  0xF5, 0x62, 'u', 'p', 0xF5, 0x68, 'a',  'l',  'w', 'a',  'y', 's',  'U',  'v', 0xF4,
+      0x68, 'c',  'r',  'e',  'd',  'M',  'g',  'm', 't', 0xF5, 0x69, 'a',  'u',  't', 'h',  'n', 'r',  'C',  'f', 'g',
+      0xF5, 0x69, 'c',  'l',  'i',  'e',  'n',  't', 'P', 'i',  'n',  0xF4, 0x6A, 'l', 'a',  'r', 'g',  'e',  'B', 'l',
+      'o',  'b',  's',  0xF5, 0x6E, 'p',  'i',  'n', 'U', 'v',  'A',  'u',  't',  'h', 'T',  'o', 'k',  'e',  'n', 0xF5,
+      0x6F, 's',  'e',  't',  'M',  'i',  'n',  'P', 'I', 'N',  'L',  'e',  'n',  'g', 't',  'h', 0xF5, 0x70, 'm', 'a',
+      'k',  'e',  'C',  'r',  'e',  'd',  'U',  'v', 'N', 'o',  't',  'R',  'q',  'd', 0xF5,
+  };
 
   init_apdu_buffer();
   device_init();
@@ -445,6 +453,7 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   assert_non_null(find_bytes(chunk, written, "FIDO_2_3", sizeof("FIDO_2_3") - 1));
   assert_non_null(find_bytes(chunk, written, "authnrCfg", sizeof("authnrCfg") - 1));
   assert_non_null(find_bytes(chunk, written, "minPinLength", sizeof("minPinLength") - 1));
+  assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
 }
 
 static void test_ctap_config_toggle_always_uv_without_pin(void **state) {
@@ -530,8 +539,8 @@ static void test_ctap_config_pin_complexity_policy_persists_and_enforces(void **
   assert_int_equal(ctap_test_validate_new_pin((const uint8_t *)"123a", 4, &code_points), 0);
 
   resp_len = sizeof(resp);
-  assert_int_equal(ctap_process_cbor_with_src(config_req_false, sizeof(config_req_false), resp, &resp_len, CTAP_SRC_HID),
-                   0);
+  assert_int_equal(
+      ctap_process_cbor_with_src(config_req_false, sizeof(config_req_false), resp, &resp_len, CTAP_SRC_HID), 0);
   assert_int_equal(resp_len, 1);
   assert_int_equal(resp[0], 0x00);
   assert_int_equal(ctap_test_validate_new_pin((const uint8_t *)"1234", 4, &code_points),

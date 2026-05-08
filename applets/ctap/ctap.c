@@ -305,8 +305,7 @@ static int ctap_config_load(CTAP_persistent_config *cfg) {
   memset(cfg, 0, sizeof(*cfg));
   int ret = read_attr(CTAP_CERT_FILE, CONFIG_ATTR, cfg, sizeof(*cfg));
   if (ret == (int)sizeof(*cfg) && ctap_config_valid(cfg)) return 0;
-  if (ret == (int)sizeof(CTAP_persistent_config_v1) && ctap_config_valid(cfg))
-    return ctap_config_store(cfg);
+  if (ret == (int)sizeof(CTAP_persistent_config_v1) && ctap_config_valid(cfg)) return ctap_config_store(cfg);
 
   ctap_config_default(cfg);
   return ctap_config_store(cfg);
@@ -2213,6 +2212,7 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_create_map(&map, &sub, 10);
   CHECK_CBOR_RET(ret);
+  // Keep text keys in canonical CBOR order; python-fido2 rejects non-canonical getInfo responses.
   ret = cbor_encode_text_stringz(&sub, "rk");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
@@ -2221,7 +2221,15 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub, "alwaysUv");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&sub, cfg.always_uv != 0);
+  CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub, "credMgmt");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&sub, true);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub, "authnrCfg");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);
@@ -2237,21 +2245,13 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub, "makeCredUvNotRqd");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&sub, cfg.always_uv == 0);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub, "authnrCfg");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&sub, true);
-  CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub, "setMinPINLength");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub, "alwaysUv");
+  ret = cbor_encode_text_stringz(&sub, "makeCredUvNotRqd");
   CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&sub, cfg.always_uv != 0);
+  ret = cbor_encode_boolean(&sub, cfg.always_uv == 0);
   CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &sub);
   CHECK_CBOR_RET(ret);
