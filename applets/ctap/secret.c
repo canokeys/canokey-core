@@ -271,14 +271,28 @@ static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t kh_key[K
   memcpy(kh->tag, key->pub, sizeof(kh->tag));
 }
 
+enum {
+  CREDENTIAL_FLAG_CRED_PROTECT_MASK = 0x03,
+  CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT = 0x80,
+};
+
+uint8_t credential_cred_protect(const credential_id *kh) {
+  return kh->nonce[CREDENTIAL_NONCE_CP_POS] & CREDENTIAL_FLAG_CRED_PROTECT_MASK;
+}
+
+bool credential_third_party_payment(const credential_id *kh) {
+  return (kh->nonce[CREDENTIAL_NONCE_THIRD_PARTY_PAYMENT_POS] & CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT) != 0;
+}
+
 bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv) {
-  DBG_MSG("credProtect: %hhu\n", kh->nonce[CREDENTIAL_NONCE_CP_POS]);
-  if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
+  uint8_t cred_protect = credential_cred_protect(kh);
+  DBG_MSG("credProtect: %hhu\n", cred_protect);
+  if (cred_protect == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
     if (!uv && !with_cred_list) {
       DBG_MSG("credentialProtectionPolicy (0x02) failed\n");
       return false;
     }
-  } else if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED) {
+  } else if (cred_protect == CRED_PROTECT_VERIFICATION_REQUIRED) {
     if (!uv) {
       DBG_MSG("credentialProtectionPolicy (0x03) failed\n");
       return false;
@@ -287,7 +301,8 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
   return true;
 }
 
-int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp,
+                        bool third_party_payment) {
   ecc_key_t key;
   uint8_t kh_key[KH_KEY_SIZE];
 
@@ -299,7 +314,8 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_
   }
 
   kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
-  kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
+  kh->nonce[CREDENTIAL_NONCE_CP_POS] =
+      (cp & CREDENTIAL_FLAG_CRED_PROTECT_MASK) | (third_party_payment ? CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT : 0);
 
   const int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
@@ -450,7 +466,7 @@ int get_pin_retries(void) {
 
 int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1); }
 
-int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
+int make_hmac_secret_output(const uint8_t *nonce, const uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
   uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
   // use hmac-sha256(HE_KEY, credential_id::nonce) as CredRandom
   int err = read_he_key(hmac_buf);

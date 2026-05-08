@@ -121,6 +121,7 @@ typedef enum {
   CTAP_TEXT_KEY_CRED_PROTECT,
   CTAP_TEXT_KEY_DISPLAY_NAME,
   CTAP_TEXT_KEY_HMAC_SECRET,
+  CTAP_TEXT_KEY_HMAC_SECRET_MC,
   CTAP_TEXT_KEY_ICON,
   CTAP_TEXT_KEY_ID,
   CTAP_TEXT_KEY_LARGE_BLOB_KEY,
@@ -128,6 +129,7 @@ typedef enum {
   CTAP_TEXT_KEY_NAME,
   CTAP_TEXT_KEY_PIN_COMPLEXITY_POLICY,
   CTAP_TEXT_KEY_RK,
+  CTAP_TEXT_KEY_THIRD_PARTY_PAYMENT,
   CTAP_TEXT_KEY_TYPE,
   CTAP_TEXT_KEY_UP,
   CTAP_TEXT_KEY_UV,
@@ -188,6 +190,12 @@ static int ctap_text_key_id(CborValue *val) {
       key = CTAP_TEXT_KEY_DISPLAY_NAME;
     else if (memcmp(key_buf, "hmac-secret", 11) == 0)
       key = CTAP_TEXT_KEY_HMAC_SECRET;
+    break;
+  case 14:
+    if (memcmp(key_buf, "hmac-secret-mc", 14) == 0) key = CTAP_TEXT_KEY_HMAC_SECRET_MC;
+    break;
+  case 17:
+    if (memcmp(key_buf, "thirdPartyPayment", 17) == 0) key = CTAP_TEXT_KEY_THIRD_PARTY_PAYMENT;
     break;
   case 12:
     if (memcmp(key_buf, "largeBlobKey", 12) == 0) key = CTAP_TEXT_KEY_LARGE_BLOB_KEY;
@@ -420,9 +428,8 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
     CHECK_CANCELLED_VALUE(&arr);
     ret = parse_pub_key_cred_param(&arr, &cur_alg_type);
     CHECK_PARSER_RET(ret);
-    if (ret == 0 &&
-        (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA || cur_alg_type == COSE_ALG_ML_DSA_65 ||
-         cur_alg_type == ctap_sm2_attr.algo_id)) {
+    if (ret == 0 && (cur_alg_type == COSE_ALG_ES256 || cur_alg_type == COSE_ALG_EDDSA ||
+                     cur_alg_type == COSE_ALG_ML_DSA_65 || cur_alg_type == ctap_sm2_attr.algo_id)) {
       // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-errata-20220621.html#authenticatorMakeCredential
       //
       // > This sequence is ordered from most preferred (by the RP) to least preferred.
@@ -633,12 +640,108 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
   return 0;
 }
 
+static uint8_t parse_hmac_secret_params(CborValue *val, CTAP_hmac_secret_ext *ext) {
+  if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+
+  ext->pin_protocol =
+      1; // pinUvAuthProtocol(0x04) is optional only when the selected protocol value is the CTAP2.0 default.
+  size_t hmac_map_length, len;
+  CborValue hmac_map;
+  int tmp;
+  int ret = cbor_value_get_map_length(val, &hmac_map_length);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_value_enter_container(val, &hmac_map);
+  CHECK_CBOR_RET(ret);
+  enum {
+    HS_MAP_ENTRY_NONE = 0,
+    HS_MAP_ENTRY_KEY_AGREEMENT = 0b001,
+    HS_MAP_ENTRY_SALT_ENC = 0b010,
+    HS_MAP_ENTRY_SALT_AUTH = 0b100,
+    HS_MAP_ENTRY_ALL_REQUIRED = 0b111,
+  } map_has_entry = HS_MAP_ENTRY_NONE;
+  for (size_t j = 0; j < hmac_map_length; ++j) {
+    CHECK_CANCELLED_VALUE(&hmac_map);
+    if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+    int hmac_key;
+    ret = cbor_value_get_int_checked(&hmac_map, &hmac_key);
+    CHECK_CBOR_RET(ret);
+    ret = cbor_value_advance(&hmac_map);
+    CHECK_CBOR_RET(ret);
+    switch (hmac_key) {
+    case GA_REQ_HMAC_SECRET_KEY_AGREEMENT:
+      ret = parse_cose_key(&hmac_map, ext->key_agreement);
+      CHECK_PARSER_RET(ret);
+      map_has_entry |= HS_MAP_ENTRY_KEY_AGREEMENT;
+      DBG_MSG("key_agreement: ");
+      PRINT_HEX(ext->key_agreement, PUB_KEY_SIZE);
+      break;
+    case GA_REQ_HMAC_SECRET_SALT_ENC:
+      if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      len = sizeof(ext->salt_enc);
+      ret = ctap_cbor_copy_bytes(&hmac_map, ext->salt_enc, &len);
+      if (ret == CborErrorOutOfMemory) {
+        ERR_MSG("ext_hmac_secret_salt_enc is too long\n");
+        return CTAP1_ERR_INVALID_LENGTH;
+      }
+      CHECK_CBOR_RET(ret);
+      ext->salt_enc_len = len;
+      map_has_entry |= HS_MAP_ENTRY_SALT_ENC;
+      DBG_MSG("salt_enc: ");
+      PRINT_HEX(ext->salt_enc, ext->salt_enc_len);
+      break;
+    case GA_REQ_HMAC_SECRET_SALT_AUTH:
+      if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      len = sizeof(ext->salt_auth);
+      ret = ctap_cbor_copy_bytes(&hmac_map, ext->salt_auth, &len);
+      CHECK_CBOR_RET(ret);
+      ext->salt_auth_len = len;
+      map_has_entry |= HS_MAP_ENTRY_SALT_AUTH;
+      DBG_MSG("salt_auth: ");
+      PRINT_HEX(ext->salt_auth, ext->salt_auth_len);
+      break;
+    case GA_REQ_HMAC_SECRET_PIN_PROTOCOL:
+      if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_int_checked(&hmac_map, &tmp);
+      CHECK_CBOR_RET(ret);
+      if (tmp != 1 && tmp != 2) return CTAP1_ERR_INVALID_PARAMETER;
+      ext->pin_protocol = (uint8_t)tmp;
+      DBG_MSG("pin_protocol: %d\n", tmp);
+      ret = cbor_value_advance(&hmac_map);
+      CHECK_CBOR_RET(ret);
+      break;
+    default:
+      DBG_MSG("Ignoring unsupported entry %0x\n", hmac_key);
+      ret = cbor_value_advance(&hmac_map);
+      CHECK_CBOR_RET(ret);
+      break;
+    }
+  }
+  ret = cbor_value_leave_container(val, &hmac_map);
+  CHECK_CBOR_RET(ret);
+  if ((map_has_entry & HS_MAP_ENTRY_ALL_REQUIRED) != HS_MAP_ENTRY_ALL_REQUIRED) return CTAP2_ERR_MISSING_PARAMETER;
+  if ((ext->pin_protocol == 1 && ext->salt_enc_len != HMAC_SECRET_SALT_SIZE &&
+       ext->salt_enc_len != HMAC_SECRET_SALT_SIZE / 2) ||
+      (ext->pin_protocol == 2 && ext->salt_enc_len != HMAC_SECRET_SALT_SIZE + HMAC_SECRET_SALT_IV_SIZE &&
+       ext->salt_enc_len != HMAC_SECRET_SALT_SIZE / 2 + HMAC_SECRET_SALT_IV_SIZE)) {
+    ERR_MSG("Invalid hmac_secret_salt_enc_len %hhu\n", ext->salt_enc_len);
+    return CTAP1_ERR_INVALID_LENGTH;
+  }
+  if ((ext->pin_protocol == 1 && ext->salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P1) ||
+      (ext->pin_protocol == 2 && ext->salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P2)) {
+    ERR_MSG("Invalid hmac_secret_salt_auth_len %hhu\n", ext->salt_auth_len);
+    return CTAP1_ERR_INVALID_LENGTH;
+  }
+  return 0;
+}
+
 uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
   size_t map_length, len;
   int tmp;
+  bool saw_hmac_secret_mc = false;
+  bool saw_hmac_secret = false;
 
   int ret = cbor_value_get_map_length(val, &map_length);
   CHECK_CBOR_RET(ret);
@@ -707,13 +810,28 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       DBG_MSG("pinComplexityPolicy: %d\n", mc->ext_pin_complexity_policy);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
+    } else if (key == CTAP_TEXT_KEY_THIRD_PARTY_PAYMENT) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_boolean(&map, &mc->ext_third_party_payment);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("thirdPartyPayment: %d\n", mc->ext_third_party_payment);
+      if (!mc->ext_third_party_payment) return CTAP2_ERR_INVALID_OPTION;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
     } else if (key == CTAP_TEXT_KEY_HMAC_SECRET) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_boolean(&map, &mc->ext_hmac_secret);
       CHECK_CBOR_RET(ret);
+      saw_hmac_secret = true;
       DBG_MSG("hmac-secret: %d\n", mc->ext_hmac_secret);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
+    } else if (key == CTAP_TEXT_KEY_HMAC_SECRET_MC) {
+      DBG_MSG("hmac-secret-mc found\n");
+      ret = parse_hmac_secret_params(&map, &mc->ext_hmac_secret_data);
+      CHECK_PARSER_RET(ret);
+      mc->ext_hmac_secret_mc = true;
+      saw_hmac_secret_mc = true;
     } else {
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
@@ -721,6 +839,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
   }
   ret = cbor_value_leave_container(val, &map);
   CHECK_CBOR_RET(ret);
+  if (saw_hmac_secret_mc && (!saw_hmac_secret || !mc->ext_hmac_secret)) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
 
@@ -728,8 +847,7 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
   if (cbor_value_get_type(val) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
 
   CborValue map;
-  size_t map_length, len;
-  int tmp;
+  size_t map_length;
 
   int ret = cbor_value_get_map_length(val, &map_length);
   CHECK_CBOR_RET(ret);
@@ -743,98 +861,8 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
 
     if (key == CTAP_TEXT_KEY_HMAC_SECRET) {
       DBG_MSG("hmac-secret found\n");
-      ga->ext_hmac_secret_pin_protocol =
-          1; // pinUvAuthProtocol(0x04): (optional) as selected when getting the shared secret. CTAP2.1 platforms MUST
-             // include this parameter if the value of pinUvAuthProtocol is not 1.
-      if (cbor_value_get_type(&map) != CborMapType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      size_t hmac_map_length;
-      CborValue hmac_map;
-      ret = cbor_value_get_map_length(&map, &hmac_map_length);
-      CHECK_CBOR_RET(ret);
-      ret = cbor_value_enter_container(&map, &hmac_map);
-      CHECK_CBOR_RET(ret);
-      enum {
-        GA_HS_MAP_ENTRY_NONE = 0,
-        GA_HS_MAP_ENTRY_KEY_AGREEMENT = 0b001,
-        GA_HS_MAP_ENTRY_SALT_ENC = 0b010,
-        GA_HS_MAP_ENTRY_SALT_AUTH = 0b100,
-        GA_HS_MAP_ENTRY_ALL_REQUIRED = 0b111,
-      } map_has_entry = GA_HS_MAP_ENTRY_NONE;
-      for (size_t j = 0; j < hmac_map_length; ++j) {
-        CHECK_CANCELLED_VALUE(&hmac_map);
-        if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-        int hmac_key;
-        ret = cbor_value_get_int_checked(&hmac_map, &hmac_key);
-        CHECK_CBOR_RET(ret);
-        ret = cbor_value_advance(&hmac_map);
-        CHECK_CBOR_RET(ret);
-        switch (hmac_key) {
-        case GA_REQ_HMAC_SECRET_KEY_AGREEMENT:
-          ret = parse_cose_key(&hmac_map, ga->ext_hmac_secret_key_agreement);
-          CHECK_CBOR_RET(ret);
-          map_has_entry |= GA_HS_MAP_ENTRY_KEY_AGREEMENT;
-          DBG_MSG("key_agreement: ");
-          PRINT_HEX(ga->ext_hmac_secret_key_agreement, 64);
-          break;
-        case GA_REQ_HMAC_SECRET_SALT_ENC:
-          if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-          len = sizeof(ga->ext_hmac_secret_salt_enc);
-          ret = ctap_cbor_copy_bytes(&hmac_map, ga->ext_hmac_secret_salt_enc, &len);
-          if (ret == CborErrorOutOfMemory) {
-            ERR_MSG("ext_hmac_secret_salt_enc is too long\n");
-            return CTAP1_ERR_INVALID_LENGTH;
-          }
-          CHECK_CBOR_RET(ret);
-          ga->ext_hmac_secret_salt_enc_len = len;
-          map_has_entry |= GA_HS_MAP_ENTRY_SALT_ENC;
-          DBG_MSG("salt_enc: ");
-          PRINT_HEX(ga->ext_hmac_secret_salt_enc, ga->ext_hmac_secret_salt_enc_len);
-          break;
-        case GA_REQ_HMAC_SECRET_SALT_AUTH:
-          if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-          len = sizeof(ga->ext_hmac_secret_salt_auth);
-          ret = ctap_cbor_copy_bytes(&hmac_map, ga->ext_hmac_secret_salt_auth, &len);
-          CHECK_CBOR_RET(ret);
-          ga->ext_hmac_secret_salt_auth_len = len;
-          map_has_entry |= GA_HS_MAP_ENTRY_SALT_AUTH;
-          DBG_MSG("salt_auth: ");
-          PRINT_HEX(ga->ext_hmac_secret_salt_auth, ga->ext_hmac_secret_salt_auth_len);
-          break;
-        case GA_REQ_HMAC_SECRET_PIN_PROTOCOL:
-          if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-          ret = cbor_value_get_int_checked(&hmac_map, &tmp);
-          CHECK_CBOR_RET(ret);
-          ga->ext_hmac_secret_pin_protocol = tmp;
-          DBG_MSG("pin_protocol: %d\n", tmp);
-          ret = cbor_value_advance(&hmac_map);
-          CHECK_CBOR_RET(ret);
-          break;
-        default:
-          DBG_MSG("Ignoring unsupported entry %0x\n", hmac_key);
-          ret = cbor_value_advance(&hmac_map);
-          CHECK_CBOR_RET(ret);
-          break;
-        }
-      }
-      ret = cbor_value_leave_container(&map, &hmac_map);
-      CHECK_CBOR_RET(ret);
-      if ((map_has_entry & GA_HS_MAP_ENTRY_ALL_REQUIRED) != GA_HS_MAP_ENTRY_ALL_REQUIRED)
-        return CTAP2_ERR_MISSING_PARAMETER;
-      if ((ga->ext_hmac_secret_pin_protocol == 1 && ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE &&
-           ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE / 2) ||
-          (ga->ext_hmac_secret_pin_protocol == 2 &&
-           ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE + HMAC_SECRET_SALT_IV_SIZE &&
-           ga->ext_hmac_secret_salt_enc_len != HMAC_SECRET_SALT_SIZE / 2 + HMAC_SECRET_SALT_IV_SIZE)) {
-        ERR_MSG("Invalid hmac_secret_salt_enc_len %hhu\n", ga->ext_hmac_secret_salt_enc_len);
-        return CTAP1_ERR_INVALID_LENGTH;
-      }
-      if ((ga->ext_hmac_secret_pin_protocol == 1 &&
-           ga->ext_hmac_secret_salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P1) ||
-          (ga->ext_hmac_secret_pin_protocol == 2 &&
-           ga->ext_hmac_secret_salt_auth_len != HMAC_SECRET_SALT_AUTH_SIZE_P2)) {
-        ERR_MSG("Invalid hmac_secret_salt_auth_len %hhu\n", ga->ext_hmac_secret_salt_auth_len);
-        return CTAP1_ERR_INVALID_LENGTH;
-      }
+      ret = parse_hmac_secret_params(&map, &ga->ext_hmac_secret_data);
+      CHECK_PARSER_RET(ret);
       ga->parsed_params |= PARAM_HMAC_SECRET;
     } else if (key == CTAP_TEXT_KEY_CRED_BLOB) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -849,6 +877,14 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
       CHECK_CBOR_RET(ret);
       DBG_MSG("largeBlobKey: %d\n", ga->ext_large_blob_key);
       if (!ga->ext_large_blob_key) return CTAP2_ERR_INVALID_OPTION;
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+    } else if (key == CTAP_TEXT_KEY_THIRD_PARTY_PAYMENT) {
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_boolean(&map, &ga->ext_third_party_payment);
+      CHECK_CBOR_RET(ret);
+      DBG_MSG("thirdPartyPayment: %d\n", ga->ext_third_party_payment);
+      if (!ga->ext_third_party_payment) return CTAP2_ERR_INVALID_OPTION;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
     } else {

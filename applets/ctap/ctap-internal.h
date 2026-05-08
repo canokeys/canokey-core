@@ -209,6 +209,7 @@
 #define CM_RESP_TOTAL_CREDENTIALS                                 0x09
 #define CM_RESP_CRED_PROTECT                                      0x0A
 #define CM_RESP_LARGE_BLOB_KEY                                    0x0B
+#define CM_RESP_THIRD_PARTY_PAYMENT                               0x0C
 // clang-format on
 
 #define LB_REQ_GET 0x01
@@ -257,16 +258,24 @@
 #define HMAC_SECRET_SALT_AUTH_SIZE_P2 32
 #define CREDENTIAL_TAG_SIZE           16
 #define CLIENT_DATA_HASH_SIZE         32
-#define CREDENTIAL_NONCE_SIZE         16
-#define CREDENTIAL_NONCE_DC_POS       16
-#define CREDENTIAL_NONCE_CP_POS       17
+#define CREDENTIAL_NONCE_SIZE                    16
+#define CREDENTIAL_NONCE_DC_POS                  16
+#define CREDENTIAL_NONCE_CP_POS                  17
+#define CREDENTIAL_NONCE_THIRD_PARTY_PAYMENT_POS CREDENTIAL_NONCE_CP_POS
 #define DOMAIN_NAME_MAX_SIZE          254
 #define USER_ID_MAX_SIZE              64
 #define DISPLAY_NAME_LIMIT            65
 #define USER_NAME_LIMIT               65
 #define MAX_DC_NUM                    64
 #define MAX_STORED_RPID_LENGTH        32
-#define MAX_EXTENSION_SIZE_IN_AUTH    140
+#define MAX_HMAC_SECRET_OUTPUT_IN_AUTH (HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE)
+// Map header plus all MakeCredential authData extension outputs supported here.
+// `sizeof("key")` is the exact encoded size for these short CBOR text keys:
+// one initial byte plus the key bytes, excluding the C string terminator.
+#define MAX_EXTENSION_SIZE_IN_AUTH                                                                                     \
+  (1 + sizeof("credBlob") + 1 + sizeof("credProtect") + 1 + sizeof("hmac-secret") + 1 +                            \
+   sizeof("hmac-secret-mc") + 2 + MAX_HMAC_SECRET_OUTPUT_IN_AUTH + sizeof("minPinLength") + 2 +                     \
+   sizeof("pinComplexityPolicy") + 1 + sizeof("thirdPartyPayment") + 1)
 #define MAX_CREDENTIAL_COUNT_IN_LIST  16
 #define MAX_CRED_BLOB_LENGTH          32
 #define LARGE_BLOB_KEY_SIZE           32
@@ -292,7 +301,7 @@ typedef struct {
 
 typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
-  uint8_t nonce[CREDENTIAL_NONCE_SIZE + 2]; // 16-byte random nonce + 1-byte dc + 1-byte cp
+  uint8_t nonce[CREDENTIAL_NONCE_SIZE + 2]; // 16-byte random nonce + 1-byte dc + 1-byte flags
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   int32_t alg_type;
 } __packed credential_id;
@@ -343,6 +352,15 @@ typedef struct {
 } CTAP_options;
 
 typedef struct {
+  uint8_t key_agreement[PUB_KEY_SIZE];
+  uint8_t salt_enc[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
+  uint8_t salt_enc_len;
+  uint8_t salt_auth[HMAC_SECRET_SALT_AUTH_SIZE_P2];
+  uint8_t salt_auth_len;
+  uint8_t pin_protocol;
+} CTAP_hmac_secret_ext;
+
+typedef struct {
   uint32_t parsed_params;
   uint8_t client_data_hash[CLIENT_DATA_HASH_SIZE];
   uint8_t rp_id[MAX_STORED_RPID_LENGTH];
@@ -359,7 +377,10 @@ typedef struct {
   size_t pin_uv_auth_param_len;
   uint8_t pin_uv_auth_protocol;
   bool ext_hmac_secret;
+  bool ext_hmac_secret_mc;
+  CTAP_hmac_secret_ext ext_hmac_secret_data;
   bool ext_large_blob_key;
+  bool ext_third_party_payment;
   bool ext_min_pin_length;
   bool ext_pin_complexity_policy;
   uint8_t ext_cred_protect;
@@ -378,14 +399,10 @@ typedef struct {
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
   size_t pin_uv_auth_param_len;
   uint8_t pin_uv_auth_protocol;
-  uint8_t ext_hmac_secret_key_agreement[PUB_KEY_SIZE];
-  uint8_t ext_hmac_secret_salt_enc[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
-  uint8_t ext_hmac_secret_salt_enc_len;
-  uint8_t ext_hmac_secret_salt_auth[HMAC_SECRET_SALT_AUTH_SIZE_P2];
-  uint8_t ext_hmac_secret_salt_auth_len;
-  uint8_t ext_hmac_secret_pin_protocol;
+  CTAP_hmac_secret_ext ext_hmac_secret_data;
   bool ext_large_blob_key;
   bool ext_cred_blob;
+  bool ext_third_party_payment;
 } CTAP_get_assertion;
 
 typedef struct {

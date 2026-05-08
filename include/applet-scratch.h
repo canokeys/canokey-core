@@ -66,7 +66,7 @@ _Static_assert(offsetof(CTAP_get_assertion, pin_uv_auth_param) >= APPLET_SHARED_
                "ga.pin_uv_auth_param overlaps the CBOR encoder window");
 _Static_assert(offsetof(CTAP_get_assertion, pin_uv_auth_protocol) >= APPLET_SHARED_BUFFER_LENGTH,
                "ga.pin_uv_auth_protocol overlaps the CBOR encoder window");
-_Static_assert(offsetof(CTAP_get_assertion, ext_hmac_secret_salt_auth) >= APPLET_SHARED_BUFFER_LENGTH,
-               "ga.ext_hmac_secret_salt_auth overlaps the CBOR encoder window");
+_Static_assert(offsetof(CTAP_get_assertion, ext_hmac_secret_data.salt_auth) >= APPLET_SHARED_BUFFER_LENGTH,
+               "ga.ext_hmac_secret_data.salt_auth overlaps the CBOR encoder window");
 
 #endif // CANOKEY_CORE_INCLUDE_APPLET_SCRATCH_H
