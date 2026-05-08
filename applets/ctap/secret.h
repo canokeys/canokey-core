@@ -27,6 +27,9 @@ int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
 bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig,
                int pin_protocol);
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
+#ifdef TEST
+void cp_test_authenticate_pin_token(const uint8_t *msg, size_t msg_len, uint8_t *sig, int pin_protocol);
+#endif
 
 void cp_set_permission(int new_permissions);
 bool cp_has_permission(int permission);

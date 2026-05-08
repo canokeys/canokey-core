@@ -67,7 +67,7 @@ void cp_clear_user_verified_flag(void) {
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-clearpinuvauthtokenpermissionsexceptlbw
 void cp_clear_pin_uv_auth_token_permissions_except_lbw(void) {
-  if (in_use) permissions &= ~CP_PERMISSION_LBW;
+  if (in_use) permissions &= CP_PERMISSION_LBW;
 }
 
 void cp_stop_using_pin_uv_auth_token(void) {
@@ -189,6 +189,14 @@ bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig,
   timeout_value = device_get_tick() + 30000;
   return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
+
+#ifdef TEST
+void cp_test_authenticate_pin_token(const uint8_t *msg, size_t msg_len, uint8_t *sig, int pin_protocol) {
+  uint8_t mac[SHA256_DIGEST_LENGTH];
+  hmac_sha256(pin_token, PIN_TOKEN_SIZE, msg, msg_len, mac);
+  memcpy(sig, mac, pin_protocol == 1 ? PIN_AUTH_SIZE_P1 : SHA256_DIGEST_LENGTH);
+}
+#endif
 
 void cp_set_permission(int new_permissions) { permissions |= new_permissions; }
 

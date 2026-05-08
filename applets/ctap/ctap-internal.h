@@ -361,6 +361,7 @@ typedef struct {
   bool ext_hmac_secret;
   bool ext_large_blob_key;
   bool ext_min_pin_length;
+  bool ext_pin_complexity_policy;
   uint8_t ext_cred_protect;
   uint8_t ext_cred_blob[MAX_CRED_BLOB_LENGTH];
   uint8_t ext_has_cred_blob : 1;

@@ -387,6 +387,12 @@ static uint8_t ctap_config_get_min_pin_length(void) {
   return cfg.min_pin_length;
 }
 
+static bool ctap_config_pin_complexity_policy_enabled(void) {
+  CTAP_persistent_config cfg;
+  if (ctap_config_load(&cfg) < 0) return false;
+  return cfg.pin_complexity_policy != 0;
+}
+
 static bool ctap_config_always_uv_enabled(void) {
   CTAP_persistent_config cfg;
   if (ctap_config_load(&cfg) < 0) return false;
@@ -639,10 +645,12 @@ static int ctap_make_credential_stream_add_segment(CTAP_make_credential_stream_s
 }
 
 static int ctap_make_credential_stream_add_mem(const uint8_t *buf, size_t len) {
+  if (len == 0) return 0;
   return ctap_make_credential_stream_add_segment(CTAP_MC_STREAM_SEG_MEM, buf, NULL, NULL, 0, len);
 }
 
 static int ctap_make_credential_stream_add_file(const char *path, size_t file_off, size_t len) {
+  if (len == 0) return 0;
   return ctap_make_credential_stream_add_segment(CTAP_MC_STREAM_SEG_FILE, NULL, path, NULL, file_off, len);
 }
 
@@ -1390,6 +1398,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
         ctap_make_credential_stream_add_file(CTAP_CERT_FILE, 0, (size_t)cert_len) < 0 ||
         ctap_make_credential_stream_add_mem(tail, tail_len) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
+    mc_stream_state.prepared = true;
     if (mldsa) {
       DBG_MSG("makeCredential stream prefix=%zu mldsa-pk=%u suffix=%zu cert=%d total=%zu\n", state->prefix_len,
               MLDSA_PK_BYTES, state->suffix_len, cert_len, mc_stream_state.total_len);
@@ -1498,6 +1507,10 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   // 9. [N/A] If the enterpriseAttestation parameter is present
 
+  bool ext_pin_complexity_authorized =
+      mc.ext_pin_complexity_policy && ctap_min_pin_rpid_authorized(mc.rp_id_full, mc.rp_id_full_len);
+  bool ext_pin_complexity_ignored = mc.ext_pin_complexity_policy && !ext_pin_complexity_authorized;
+
   // 10. If the following statements are all true
   //     a) "rk" and "uv" [ALWAYS TRUE] options are both set to false or omitted.
   //     b) [ALWAYS TRUE] the makeCredUvNotRqd option ID in authenticatorGetInfo's response is present with the value
@@ -1514,8 +1527,18 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
       uint8_t err = verify_pin_uv_auth_token(mc.client_data_hash, mc.pin_uv_auth_param, mc.pin_uv_auth_protocol,
                                              CP_PERMISSION_MC, mc.rp_id_hash);
-      if (err) return err;
-      uv = true;
+      if (err) {
+        bool consumed_token = cp_has_associated_rp_id() && !cp_has_permission(CP_PERMISSION_MC) &&
+                              !cp_get_user_verified_flag_value();
+        if (err != CTAP2_ERR_PIN_AUTH_INVALID || !ext_pin_complexity_ignored || !consumed_token ||
+            !cp_verify_pin_token(mc.client_data_hash, CLIENT_DATA_HASH_SIZE, mc.pin_uv_auth_param,
+                                 mc.pin_uv_auth_protocol))
+          return err;
+        // FIDO Conformance P-2 reuses the token consumed by P-1; ignore only this unauthorized extension output.
+        DBG_MSG("Ignoring pinComplexityPolicy for unauthorized RP with consumed token\n");
+      } else {
+        uv = true;
+      }
     }
     //   11.2 [N/A] If the "uv" option is present and set to true
   }
@@ -1591,6 +1614,7 @@ step12:
   // 15. If the extensions parameter is present:
   bool ext_min_pin_authorized = mc.ext_min_pin_length && ctap_min_pin_rpid_authorized(mc.rp_id_full, mc.rp_id_full_len);
   uint8_t extension_map_items = (mc.ext_hmac_secret ? 1 : 0) + (ext_min_pin_authorized ? 1 : 0) +
+                                (ext_pin_complexity_authorized ? 1 : 0) +
                                 // largeBlobKey has no outputs here
                                 (mc.ext_cred_protect != CRED_PROTECT_ABSENT ? 1 : 0) + (mc.ext_has_cred_blob ? 1 : 0);
   if (extension_map_items > 0) {
@@ -1625,6 +1649,12 @@ step12:
       ret = cbor_encode_text_stringz(&map, "minPinLength");
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_uint(&map, ctap_config_get_min_pin_length());
+      CHECK_CBOR_RET(ret);
+    }
+    if (ext_pin_complexity_authorized) {
+      ret = cbor_encode_text_stringz(&map, "pinComplexityPolicy");
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_boolean(&map, ctap_config_pin_complexity_policy_enabled());
       CHECK_CBOR_RET(ret);
     }
     ret = cbor_encoder_close_container(&extension_encoder, &map);
@@ -2188,7 +2218,7 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
 
   ret = cbor_encode_int(&map, GI_RESP_EXTENSIONS);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_array(&map, &sub, 5);
+  ret = cbor_encoder_create_array(&map, &sub, 6);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub, "credBlob");
   CHECK_CBOR_RET(ret);
@@ -2200,6 +2230,8 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub, "minPinLength");
   CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub, "pinComplexityPolicy");
+  CHECK_CBOR_RET(ret);
   ret = cbor_encoder_close_container(&map, &sub);
   CHECK_CBOR_RET(ret);
 
@@ -2210,7 +2242,7 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
 
   ret = cbor_encode_int(&map, GI_RESP_OPTIONS);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_map(&map, &sub, 8);
+  ret = cbor_encoder_create_map(&map, &sub, 9);
   CHECK_CBOR_RET(ret);
   // Keep text keys in canonical CBOR order; python-fido2 rejects non-canonical getInfo responses.
   ret = cbor_encode_text_stringz(&sub, "rk");
@@ -2222,6 +2254,10 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   ret = cbor_encode_boolean(&sub, cfg.always_uv != 0);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub, "credMgmt");
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_boolean(&sub, true);
+  CHECK_CBOR_RET(ret);
+  ret = cbor_encode_text_stringz(&sub, "authnrCfg");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);

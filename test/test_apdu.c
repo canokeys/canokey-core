@@ -14,6 +14,8 @@
 #include <fs.h>
 #include <lfs.h>
 #include <pke.h>
+#include "../applets/ctap/secret.h"
+#include <sha.h>
 #include <string.h>
 
 #define CTAP_LARGE_BLOBS 0x0C
@@ -21,6 +23,9 @@
 #define CTAP2_ERR_PIN_POLICY_VIOLATION 0x37
 #define CTAP2_ERR_UNHANDLED_REQUEST 0xF1
 #define LB_FILE "ctap_lb"
+#define TEST_CP_PERMISSION_MC  0x01
+#define TEST_CP_PERMISSION_GA  0x02
+#define TEST_CP_PERMISSION_LBW 0x10
 
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
   const uint8_t *h = haystack;
@@ -32,6 +37,86 @@ static const void *find_bytes(const void *haystack, size_t haystack_len, const v
     if (memcmp(h + i, n, needle_len) == 0) return h + i;
   }
   return NULL;
+}
+
+static void put_cbor_text(uint8_t **p, const char *text) {
+  size_t len = strlen(text);
+
+  assert_true(len < 24);
+  *(*p)++ = 0x60 | (uint8_t)len;
+  memcpy(*p, text, len);
+  *p += len;
+}
+
+static void put_cbor_bytes(uint8_t **p, const uint8_t *buf, size_t len) {
+  assert_true(len < 24 || len == CLIENT_DATA_HASH_SIZE);
+  if (len < 24) {
+    *(*p)++ = 0x40 | (uint8_t)len;
+  } else {
+    *(*p)++ = 0x58;
+    *(*p)++ = (uint8_t)len;
+  }
+  memcpy(*p, buf, len);
+  *p += len;
+}
+
+static size_t build_pin_complexity_make_credential(uint8_t *req, const char *rp_id, const uint8_t cdh[32],
+                                                   const uint8_t pin_auth[16]) {
+  uint8_t *p = req;
+  const uint8_t user_id[] = {1};
+
+  *p++ = 0x01;
+  *p++ = 0xA8;
+  *p++ = 0x01;
+  put_cbor_bytes(&p, cdh, 32);
+  *p++ = 0x02;
+  *p++ = 0xA2;
+  put_cbor_text(&p, "id");
+  put_cbor_text(&p, rp_id);
+  put_cbor_text(&p, "name");
+  put_cbor_text(&p, "Unauthorized");
+  *p++ = 0x03;
+  *p++ = 0xA3;
+  put_cbor_text(&p, "id");
+  put_cbor_bytes(&p, user_id, sizeof(user_id));
+  put_cbor_text(&p, "name");
+  put_cbor_text(&p, "u");
+  put_cbor_text(&p, "displayName");
+  put_cbor_text(&p, "u");
+  *p++ = 0x04;
+  *p++ = 0x81;
+  *p++ = 0xA2;
+  put_cbor_text(&p, "alg");
+  *p++ = 0x26;
+  put_cbor_text(&p, "type");
+  put_cbor_text(&p, "public-key");
+  *p++ = 0x06;
+  *p++ = 0xA1;
+  put_cbor_text(&p, "pinComplexityPolicy");
+  *p++ = 0xF5;
+  *p++ = 0x07;
+  *p++ = 0xA0;
+  *p++ = 0x08;
+  put_cbor_bytes(&p, pin_auth, 16);
+  *p++ = 0x09;
+  *p++ = 0x01;
+
+  return (size_t)(p - req);
+}
+
+static int read_tx_source_all(CTAPHID_TxSource *source, uint8_t *out, size_t out_len, size_t *written) {
+  size_t total = 0;
+
+  while (total < source->total_len) {
+    size_t chunk_written = 0;
+    size_t chunk = MIN(out_len - total, source->total_len - total);
+    if (chunk == 0) return -1;
+    if (source->read(source->ctx, out + total, chunk, &chunk_written) != 0) return -1;
+    if (chunk_written == 0) return -1;
+    total += chunk_written;
+  }
+  *written = total;
+  return 0;
 }
 
 static void test_input_chaining(void **state) {
@@ -465,10 +550,11 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   CTAPHID_TxSource source = {0};
   size_t written = 0;
   const uint8_t canonical_options[] = {
-      0x04, 0xA8,
+      0x04, 0xA9,
       0x62, 'r', 'k', 0xF5,
       0x68, 'a', 'l', 'w', 'a', 'y', 's', 'U', 'v', 0xF4,
       0x68, 'c', 'r', 'e', 'd', 'M', 'g', 'm', 't', 0xF5,
+      0x69, 'a', 'u', 't', 'h', 'n', 'r', 'C', 'f', 'g', 0xF5,
       0x69, 'c', 'l', 'i', 'e', 'n', 't', 'P', 'i', 'n', 0xF4,
       0x6A, 'l', 'a', 'r', 'g', 'e', 'B', 'l', 'o', 'b', 's', 0xF5,
       0x6E, 'p', 'i', 'n', 'U', 'v', 'A', 'u', 't', 'h', 'T', 'o', 'k', 'e', 'n', 0xF5,
@@ -571,6 +657,8 @@ static void test_ctap_config_pin_complexity_policy_persists_and_enforces(void **
                    1);
   assert_int_equal(source.read(source.ctx, chunk, source.total_len, &written), 0);
   assert_int_equal(chunk[0], 0x00);
+  assert_non_null(find_bytes(chunk + 1, written - 1, "authnrCfg", sizeof("authnrCfg") - 1));
+  assert_non_null(find_bytes(chunk + 1, written - 1, "pinComplexityPolicy", sizeof("pinComplexityPolicy") - 1));
   assert_non_null(find_bytes(chunk + 1, written - 1, pin_complexity_false, sizeof(pin_complexity_false)));
 
   assert_int_equal(ctap_process_cbor_with_src(config_req_true, sizeof(config_req_true), resp, &resp_len, CTAP_SRC_HID),
@@ -636,6 +724,130 @@ static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **
   assert_true(written > 0);
   assert_int_not_equal(resp[0], 0x11);
   if (source.close) source.close(source.ctx);
+}
+
+static void test_ctap_hid_make_credential_returns_pin_complexity_policy(void **state) {
+  (void)state;
+
+  static uint8_t config_req[] = {
+      CTAP_CONFIG, 0xA2, 0x01, 0x03, 0x02, 0xA2, 0x02, 0x81, 0x6F, 0x68, 0x61, 0x70, 0x6C,
+      0x65,        0x73, 0x73, 0x67, 0x75, 0x69, 0x64, 0x65, 0x2E, 0x72, 0x65, 0x04, 0xF5,
+  };
+  uint8_t req[256] = {0};
+  uint8_t cdh[32] = {
+      0xA5, 0x14, 0x7D, 0x80, 0x4F, 0xFC, 0x8B, 0x7E, 0xAD, 0x9F, 0x64,
+      0x7A, 0x9C, 0x8B, 0x30, 0x29, 0xCB, 0x37, 0xAE, 0x35, 0xB7, 0x2A,
+      0xB1, 0xD5, 0xEA, 0x58, 0x1A, 0xB7, 0x75, 0x47, 0xD6, 0x1F,
+  };
+  uint8_t pin_auth[16] = {0};
+  uint8_t scratch[64] = {0};
+  uint8_t resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
+  uint8_t config_resp[8] = {0};
+  size_t config_resp_len = sizeof(config_resp);
+  uint8_t fido_private_key[32] = {1};
+  uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
+  CTAPHID_TxSource source = {0};
+  size_t written = 0;
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
+  assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
+
+  assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), config_resp, &config_resp_len,
+                                              CTAP_SRC_HID),
+                   0);
+  assert_int_equal(config_resp_len, 1);
+  assert_int_equal(config_resp[0], 0x00);
+
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_set_permission(TEST_CP_PERMISSION_MC);
+  cp_test_authenticate_pin_token(cdh, sizeof(cdh), pin_auth, 1);
+  size_t req_len = build_pin_complexity_make_credential(req, "haplessguide.re", cdh, pin_auth);
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID),
+                   1);
+  assert_true(source.total_len > 0);
+  assert_non_null(source.read);
+  assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+  assert_true(written > 0);
+  assert_int_equal(resp[0], 0x00);
+  assert_non_null(find_bytes(resp, written, "pinComplexityPolicy", sizeof("pinComplexityPolicy") - 1));
+  if (source.close) source.close(source.ctx);
+}
+
+static void test_ctap_hid_make_credential_ignores_unauthorized_pin_complexity_policy(void **state) {
+  (void)state;
+
+  uint8_t req[256] = {0};
+  uint8_t cdh[32] = {
+      0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
+      0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
+      0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20,
+  };
+  uint8_t rp_id_hash[SHA256_DIGEST_LENGTH] = {0};
+  uint8_t pin_auth[16] = {0};
+  uint8_t scratch[64] = {0};
+  uint8_t resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
+  uint8_t pin[32] = {'1', '2', '3', '4', 'a', 'b'};
+  uint8_t fido_private_key[32] = {1};
+  uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
+  CTAPHID_TxSource source = {0};
+  size_t written = 0;
+  const uint8_t ext_output[] = {
+      0x73, 0x70, 0x69, 0x6E, 0x43, 0x6F, 0x6D, 0x70, 0x6C, 0x65,
+      0x78, 0x69, 0x74, 0x79, 0x50, 0x6F, 0x6C, 0x69, 0x63, 0x79,
+  };
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
+  assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
+  assert_int_equal(set_pin(pin, sizeof(pin)), 0);
+
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_set_permission(TEST_CP_PERMISSION_MC);
+  sha256_raw((const uint8_t *)"authorized.example", sizeof("authorized.example") - 1, rp_id_hash);
+  cp_associate_rp_id(rp_id_hash);
+  cp_clear_user_verified_flag();
+  cp_clear_pin_uv_auth_token_permissions_except_lbw();
+
+  assert_true(cp_has_associated_rp_id());
+  assert_false(cp_has_permission(TEST_CP_PERMISSION_MC));
+  assert_false(cp_get_user_verified_flag_value());
+
+  cp_test_authenticate_pin_token(cdh, sizeof(cdh), pin_auth, 1);
+  size_t req_len = build_pin_complexity_make_credential(req, "unauthorized.example", cdh, pin_auth);
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID),
+                   1);
+  assert_true(source.total_len > 0);
+  assert_non_null(source.read);
+  assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+  assert_true(written > 0);
+  assert_int_equal(resp[0], 0x00);
+  assert_null(find_bytes(resp, written, ext_output, sizeof(ext_output)));
+  if (source.close) source.close(source.ctx);
+}
+
+static void test_pin_uv_auth_clear_permissions_except_lbw(void **state) {
+  (void)state;
+
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_set_permission(TEST_CP_PERMISSION_MC | TEST_CP_PERMISSION_GA | TEST_CP_PERMISSION_LBW);
+
+  cp_clear_pin_uv_auth_token_permissions_except_lbw();
+
+  assert_false(cp_has_permission(TEST_CP_PERMISSION_MC));
+  assert_false(cp_has_permission(TEST_CP_PERMISSION_GA));
+  assert_true(cp_has_permission(TEST_CP_PERMISSION_LBW));
 }
 
 static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
@@ -1068,6 +1280,9 @@ int main() {
       cmocka_unit_test(test_ctap_config_toggle_always_uv_without_pin),
       cmocka_unit_test(test_ctap_config_pin_complexity_policy_persists_and_enforces),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
+      cmocka_unit_test(test_ctap_hid_make_credential_returns_pin_complexity_policy),
+      cmocka_unit_test(test_ctap_hid_make_credential_ignores_unauthorized_pin_complexity_policy),
+      cmocka_unit_test(test_pin_uv_auth_clear_permissions_except_lbw),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_response_source_multi_chunk_get_response),
