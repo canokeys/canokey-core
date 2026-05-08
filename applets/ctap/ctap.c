@@ -2210,7 +2210,7 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
 
   ret = cbor_encode_int(&map, GI_RESP_OPTIONS);
   CHECK_CBOR_RET(ret);
-  ret = cbor_encoder_create_map(&map, &sub, 9);
+  ret = cbor_encoder_create_map(&map, &sub, 8);
   CHECK_CBOR_RET(ret);
   // Keep text keys in canonical CBOR order; python-fido2 rejects non-canonical getInfo responses.
   ret = cbor_encode_text_stringz(&sub, "rk");
@@ -2222,10 +2222,6 @@ static int ctap_build_get_info_response(uint8_t *buf, size_t buf_len, size_t *ou
   ret = cbor_encode_boolean(&sub, cfg.always_uv != 0);
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_text_stringz(&sub, "credMgmt");
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_boolean(&sub, true);
-  CHECK_CBOR_RET(ret);
-  ret = cbor_encode_text_stringz(&sub, "authnrCfg");
   CHECK_CBOR_RET(ret);
   ret = cbor_encode_boolean(&sub, true);
   CHECK_CBOR_RET(ret);
@@ -3123,6 +3119,8 @@ static uint8_t ctap_config_enable_long_touch_for_reset(void) {
 
 static uint8_t __attribute__((noinline)) ctap_config(CborEncoder *encoder, const uint8_t *params, size_t len) {
   UNUSED(encoder);
+  if (len == 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+
   CborParser parser;
   CTAP_config cfg;
   ctap_req_src_t param_src = ctap_param_req_src();

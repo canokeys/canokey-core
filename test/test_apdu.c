@@ -19,6 +19,7 @@
 #define CTAP_LARGE_BLOBS 0x0C
 #define CTAP_CONFIG 0x0D
 #define CTAP2_ERR_PIN_POLICY_VIOLATION 0x37
+#define CTAP2_ERR_UNHANDLED_REQUEST 0xF1
 #define LB_FILE "ctap_lb"
 
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
@@ -464,11 +465,10 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   CTAPHID_TxSource source = {0};
   size_t written = 0;
   const uint8_t canonical_options[] = {
-      0x04, 0xA9,
+      0x04, 0xA8,
       0x62, 'r', 'k', 0xF5,
       0x68, 'a', 'l', 'w', 'a', 'y', 's', 'U', 'v', 0xF4,
       0x68, 'c', 'r', 'e', 'd', 'M', 'g', 'm', 't', 0xF5,
-      0x69, 'a', 'u', 't', 'h', 'n', 'r', 'C', 'f', 'g', 0xF5,
       0x69, 'c', 'l', 'i', 'e', 'n', 't', 'P', 'i', 'n', 0xF4,
       0x6A, 'l', 'a', 'r', 'g', 'e', 'B', 'l', 'o', 'b', 's', 0xF5,
       0x6E, 'p', 'i', 'n', 'U', 'v', 'A', 'u', 't', 'h', 'T', 'o', 'k', 'e', 'n', 0xF5,
@@ -489,9 +489,24 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   assert_int_equal(written, source.total_len);
   assert_int_equal(chunk[0], 0x00);
   assert_non_null(find_bytes(chunk, written, "FIDO_2_3", sizeof("FIDO_2_3") - 1));
-  assert_non_null(find_bytes(chunk, written, "authnrCfg", sizeof("authnrCfg") - 1));
   assert_non_null(find_bytes(chunk, written, "minPinLength", sizeof("minPinLength") - 1));
   assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
+}
+
+static void test_ctap_config_empty_request_is_legacy_unhandled(void **state) {
+  (void)state;
+
+  uint8_t config_req[] = {CTAP_CONFIG};
+  uint8_t resp[64] = {0};
+  size_t resp_len = sizeof(resp);
+
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+
+  assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
+  assert_int_equal(resp_len, 1);
+  assert_int_equal(resp[0], CTAP2_ERR_UNHANDLED_REQUEST);
 }
 
 static void test_ctap_config_toggle_always_uv_without_pin(void **state) {
@@ -1049,6 +1064,7 @@ int main() {
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
+      cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),
       cmocka_unit_test(test_ctap_config_toggle_always_uv_without_pin),
       cmocka_unit_test(test_ctap_config_pin_complexity_policy_persists_and_enforces),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
