@@ -29,6 +29,8 @@ typedef struct {
 
 static pass_slot_t slots[2];
 
+static void pass_clear_slot(pass_slot_t *slot) { memzero(slot, sizeof(*slot)); }
+
 int pass_install(const uint8_t reset) {
   if (reset || get_file_size(PASS_FILE) != sizeof(slots)) {
     memzero(slots, sizeof(slots));
@@ -107,8 +109,9 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC < 1) EXCEPT(SW_WRONG_LENGTH);
 
   pass_slot_t *slot = &slots[P1 - 1];
+  const slot_type_t type = (slot_type_t)DATA[0];
 
-  switch (DATA[0]) {
+  switch (type) {
   case PASS_SLOT_OFF:
     if (LC != 1) EXCEPT(SW_WRONG_LENGTH);
     break;
@@ -117,21 +120,36 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC < 3) EXCEPT(SW_WRONG_LENGTH);
     if (DATA[1] > PASS_MAX_PASSWORD_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     if (LC != 3 + DATA[1]) EXCEPT(SW_WRONG_LENGTH);
+    break;
+
+  case PASS_SLOT_HMACSHA1:
+    if (LC != 2 + PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[1] != PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    break;
+
+  default:
+    EXCEPT(SW_WRONG_DATA);
+  }
+
+  pass_clear_slot(slot);
+  slot->type = type;
+
+  switch (type) {
+  case PASS_SLOT_STATIC:
     slot->password_len = DATA[1];
     memcpy(slot->password, DATA + 2, slot->password_len);
     slot->with_enter = DATA[2 + slot->password_len];
     break;
 
   case PASS_SLOT_HMACSHA1:
-    if (LC != 2 + PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (DATA[1] != PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     memcpy(slot->hmac_key, DATA + 2, PASS_HMAC_KEY_LENGTH);
     break;
 
+  case PASS_SLOT_OFF:
   default:
-    EXCEPT(SW_WRONG_DATA);
+    break;
   }
-  slot->type = (slot_type_t)DATA[0];
+
   DBG_MSG("Set type %p %d\n", slot, slot->type);
 
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
@@ -140,6 +158,7 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
 int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len, const uint8_t *name,
                      uint8_t with_enter) {
   pass_slot_t *slot = &slots[slot_index];
+  pass_clear_slot(slot);
   slot->type = PASS_SLOT_OATH;
   slot->oath_offset = file_offset;
   slot->name_len = name_len;
@@ -151,11 +170,11 @@ int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len,
 
 int pass_delete_oath(uint32_t file_offset) {
   if (slots[0].type == PASS_SLOT_OATH && slots[0].oath_offset == file_offset) {
-    slots[0].type = PASS_SLOT_OFF;
+    pass_clear_slot(&slots[0]);
     return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
   }
   if (slots[1].type == PASS_SLOT_OATH && slots[1].oath_offset == file_offset) {
-    slots[1].type = PASS_SLOT_OFF;
+    pass_clear_slot(&slots[1]);
     return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
   }
   return 0;

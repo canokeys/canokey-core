@@ -311,6 +311,16 @@ static void test_pass_hmacsha1_config(void **state) {
 
   assert_int_equal(pass_read_config(&C, &R), 0);
   assert_int_equal(RDATA[0], PASS_SLOT_HMACSHA1);
+
+  c_buf[0] = PASS_SLOT_OFF;
+  LC = 1;
+  assert_int_equal(pass_write_config(&C, &R), 0);
+  assert_int_equal(pass_hmacsha1(0, challenge, response), -2);
+
+  pass_install(0);
+  assert_int_equal(pass_hmacsha1(0, challenge, response), -2);
+  assert_int_equal(pass_read_config(&C, &R), 0);
+  assert_int_equal(RDATA[0], PASS_SLOT_OFF);
 }
 
 static void test_oath_yk_hmacsha1_api(void **state) {
