@@ -1171,9 +1171,10 @@ static void test_ctap_hid_make_credential_hmac_secret_mc_output_key_is_separate(
   assert_true(req_len <= sizeof(req));
 
   assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
-  assert_true(source.total_len > 0);
+  assert_true(source.total_len > APDU_BUFFER_SIZE);
   assert_non_null(source.read);
   assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+  assert_int_equal(written, source.total_len);
   assert_make_credential_auth_data_has_hmac_secret_mc(resp, written, auth_data_buf, sizeof(auth_data_buf));
 
   if (source.close) source.close(source.ctx);
