@@ -17,26 +17,12 @@
 #include <pke.h>
 #include "../applets/ctap/secret.h"
 #include "../applets/ctap/cose-key.h"
+#include "../applets/ctap/ctap-errors.h"
 #include "../applets/ctap/ctap-internal.h"
 #include <ecc.h>
 #include <hmac.h>
 #include <sha.h>
 #include <string.h>
-
-#define CTAP_MAKE_CREDENTIAL 0x01
-#define CTAP_GET_ASSERTION 0x02
-#define CTAP_LARGE_BLOBS 0x0C
-#define CTAP_CONFIG 0x0D
-#define CTAP2_ERR_MISSING_PARAMETER 0x14
-#define CTAP2_ERR_PIN_POLICY_VIOLATION 0x37
-#define CTAP2_ERR_UNHANDLED_REQUEST 0xF1
-#define LB_FILE "ctap_lb"
-#define TEST_CP_PERMISSION_MC 0x01
-#define TEST_CP_PERMISSION_GA 0x02
-#define TEST_CP_PERMISSION_CM 0x04
-#define TEST_CP_PERMISSION_LBW 0x10
-#define TEST_MC_RESP_AUTH_DATA 0x02
-#define TEST_GA_RESP_AUTH_DATA 0x02
 
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
   const uint8_t *h = haystack;
@@ -495,7 +481,7 @@ static void assert_make_credential_auth_data_has_hmac_secret_mc(const uint8_t *r
   size_t hmac_secret_mc_len;
   bool hmac_secret;
 
-  assert_int_equal(test_cbor_get_auth_data_extensions(resp, written, TEST_MC_RESP_AUTH_DATA, auth_data_buf,
+  assert_int_equal(test_cbor_get_auth_data_extensions(resp, written, MC_RESP_AUTH_DATA, auth_data_buf,
                                                       auth_data_buf_len, &extension_map),
                    0);
   assert_true((auth_data_buf[32] & 0x40) != 0);
@@ -1266,8 +1252,8 @@ static void test_ctap_hid_third_party_payment_round_trip(void **state) {
   assert_non_null(source.read);
   assert_int_equal(read_tx_source_all(&source, mc_resp, sizeof(mc_resp), &mc_written), 0);
   assert_int_equal(mc_resp[0], 0x00);
-  assert_int_equal(test_cbor_get_auth_data(mc_resp, mc_written, TEST_MC_RESP_AUTH_DATA, auth_data_buf,
-                                           sizeof(auth_data_buf), &auth_data_len),
+  assert_int_equal(test_cbor_get_auth_data(mc_resp, mc_written, MC_RESP_AUTH_DATA, auth_data_buf, sizeof(auth_data_buf),
+                                           &auth_data_len),
                    0);
   assert_true((auth_data_buf[32] & 0x80) == 0);
   assert_true((auth_data_buf[32] & 0x40) != 0);
@@ -1282,7 +1268,7 @@ static void test_ctap_hid_third_party_payment_round_trip(void **state) {
       ctap_process_cbor_stream_with_src(ga_req, ga_req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
   assert_non_null(source.read);
   assert_int_equal(read_tx_source_all(&source, ga_resp, sizeof(ga_resp), &ga_written), 0);
-  assert_int_equal(test_cbor_get_auth_data_extensions(ga_resp, ga_written, TEST_GA_RESP_AUTH_DATA, auth_data_buf,
+  assert_int_equal(test_cbor_get_auth_data_extensions(ga_resp, ga_written, GA_RESP_AUTH_DATA, auth_data_buf,
                                                       sizeof(auth_data_buf), &extension_map),
                    0);
   assert_int_equal(test_cbor_map_lookup_text_key(extension_map, "thirdPartyPayment", &third_party_payment_value), 0);
@@ -1331,7 +1317,7 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
   sha256_raw((const uint8_t *)"pay.example", sizeof("pay.example") - 1, rp_id_hash);
   cp_reset_pin_uv_auth_token();
   cp_begin_using_uv_auth_token(false);
-  cp_set_permission(TEST_CP_PERMISSION_CM);
+  cp_set_permission(CP_PERMISSION_CM);
   cm_pin_msg[0] = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
   cm_pin_msg[1] = 0xA1;
   cm_pin_msg[2] = CM_PARAM_RP_ID_HASH;
@@ -1392,7 +1378,7 @@ static void test_ctap_hid_make_credential_returns_pin_complexity_policy(void **s
 
   cp_reset_pin_uv_auth_token();
   cp_begin_using_uv_auth_token(false);
-  cp_set_permission(TEST_CP_PERMISSION_MC);
+  cp_set_permission(CP_PERMISSION_MC);
   cp_test_authenticate_pin_token(cdh, sizeof(cdh), pin_auth, 1);
   size_t req_len = build_pin_complexity_make_credential(req, "haplessguide.re", cdh, pin_auth);
 
@@ -1438,14 +1424,14 @@ static void test_ctap_hid_make_credential_ignores_unauthorized_pin_complexity_po
 
   cp_reset_pin_uv_auth_token();
   cp_begin_using_uv_auth_token(false);
-  cp_set_permission(TEST_CP_PERMISSION_MC);
+  cp_set_permission(CP_PERMISSION_MC);
   sha256_raw((const uint8_t *)"authorized.example", sizeof("authorized.example") - 1, rp_id_hash);
   cp_associate_rp_id(rp_id_hash);
   cp_clear_user_verified_flag();
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   assert_true(cp_has_associated_rp_id());
-  assert_false(cp_has_permission(TEST_CP_PERMISSION_MC));
+  assert_false(cp_has_permission(CP_PERMISSION_MC));
   assert_false(cp_get_user_verified_flag_value());
 
   cp_test_authenticate_pin_token(cdh, sizeof(cdh), pin_auth, 1);
@@ -1466,13 +1452,13 @@ static void test_pin_uv_auth_clear_permissions_except_lbw(void **state) {
 
   cp_reset_pin_uv_auth_token();
   cp_begin_using_uv_auth_token(false);
-  cp_set_permission(TEST_CP_PERMISSION_MC | TEST_CP_PERMISSION_GA | TEST_CP_PERMISSION_LBW);
+  cp_set_permission(CP_PERMISSION_MC | CP_PERMISSION_GA | CP_PERMISSION_LBW);
 
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
-  assert_false(cp_has_permission(TEST_CP_PERMISSION_MC));
-  assert_false(cp_has_permission(TEST_CP_PERMISSION_GA));
-  assert_true(cp_has_permission(TEST_CP_PERMISSION_LBW));
+  assert_false(cp_has_permission(CP_PERMISSION_MC));
+  assert_false(cp_has_permission(CP_PERMISSION_GA));
+  assert_true(cp_has_permission(CP_PERMISSION_LBW));
 }
 
 static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
