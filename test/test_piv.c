@@ -198,6 +198,23 @@ static void test_piv_pin_protected_admin_from_pin(void **state) {
   assert_int_equal(get_file_size("piv-pauc"), 3);
 }
 
+static void test_piv_pin_logout_revokes_pin_protected_admin(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  configure_pin_protected_default_key();
+  piv_poweroff();
+
+  test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+
+  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
+  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+
+  test_helper(NULL, 0, PIV_INS_VERIFY, 0xFF, 0x80, SW_NO_ERROR);
+
+  uint8_t put_sig_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x0A, 0x53, 0x01, 0xBB};
+  test_helper(put_sig_cert, sizeof(put_sig_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
+}
+
 static void test_piv_retired_cert_lazy_storage(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -497,6 +514,7 @@ int main() {
       cmocka_unit_test(test_delete_certificate_object),
       cmocka_unit_test(test_piv_pin_protected_data_objects),
       cmocka_unit_test(test_piv_pin_protected_admin_from_pin),
+      cmocka_unit_test(test_piv_pin_logout_revokes_pin_protected_admin),
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),

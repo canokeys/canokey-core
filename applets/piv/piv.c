@@ -103,7 +103,7 @@ static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 #define PIV_DO_INLINE_ADMIN_DATA_MAX 128
 
 _Static_assert(sizeof(key_meta_t) + 1u + PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLINE_ADMIN_DATA_MAX <= 256,
-               "piv-admk attrs must leave room in a 512-byte metadata block");
+               "piv-admk attrs must fit in the reserved half of a 512-byte metadata block");
 
 #define PIV_DO_F_GET_PIN 0x01
 #define PIV_DO_F_PUT_ADMIN 0x02
@@ -204,6 +204,7 @@ static const uint8_t pix[] = {0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 static const uint8_t pin_policy[] = {0x40, 0x10};
 static uint8_t auth_ctx[LENGTH_AUTH_STATE];
 static uint8_t in_admin_status;
+static uint8_t in_pin_protected_admin_status;
 static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
@@ -516,15 +517,21 @@ static int piv_write_pin_protected_management_key(const uint8_t *key, uint16_t k
 static int piv_admin_status_satisfied(void) {
   /*
    * Standard admin authentication sets in_admin_status through GENERAL
-   * AUTHENTICATE. In PIN-protected mode, a verified PIN can also satisfy admin
-   * status if ADMIN DATA says bit1 is set and PRINTED contains a management key
-   * equal to the current 9B key.
+   * AUTHENTICATE. In PIN-protected mode, a currently verified PIN can also
+   * satisfy admin status if ADMIN DATA says bit1 is set and PRINTED contains a
+   * management key equal to the current 9B key. Keep that PIN-derived status in
+   * a separate latch so VERIFY logout can revoke it without clearing a real
+   * management-key authentication.
    *
    * Read only the key metadata and the first 24 key bytes here. ck_key_t is
    * RSA-sized, so reading it just to compare a TDEA key would waste more than
    * 1 KB of stack and flash I/O on a hot authorization path.
    */
   if (in_admin_status) return 1;
+  if (in_pin_protected_admin_status) {
+    if (pin.is_validated) return 1;
+    in_pin_protected_admin_status = 0;
+  }
   if (!pin.is_validated || !piv_pin_protected_configured()) return 0;
 
   uint8_t printed[PIV_DO_INLINE_PRINTED_MAX];
@@ -554,7 +561,7 @@ static int piv_admin_status_satisfied(void) {
   memzero(protected_key, sizeof(protected_key));
   if (!ok) return 0;
 
-  in_admin_status = 1;
+  in_pin_protected_admin_status = 1;
   return 1;
 }
 
@@ -869,6 +876,7 @@ static void piv_auth_reset(void) {
 void piv_poweroff(void) {
   piv_state = PIV_STATE_OTHER;
   in_admin_status = 0;
+  in_pin_protected_admin_status = 0;
   pin_is_consumed = 0;
   piv_pin_protected_cache_clear();
   pin.is_validated = 0;
@@ -958,6 +966,7 @@ static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
 
   // reset internal states
   in_admin_status = 0;
+  in_pin_protected_admin_status = 0;
   pin_is_consumed = 0;
   piv_pin_protected_cache_clear();
   pin.is_validated = 0;
@@ -1060,8 +1069,6 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (size == LFS_ERR_NOENT || size == 0) EXCEPT(SW_FILE_NOT_FOUND);
   if (size < 0) return -1;
   return piv_get_large_data(capdu, rapdu, path, size);
-
-  return 0;
 }
 
 static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1096,6 +1103,7 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     pin.is_validated = 0;
     pin_is_consumed = 0;
+    in_pin_protected_admin_status = 0;
     return 0;
   }
   if (LC == 0) {
@@ -1307,6 +1315,7 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     DBG_MSG("Case 2\n");
     authenticate_reset();
     in_admin_status = 0;
+    in_pin_protected_admin_status = 0;
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
@@ -1356,6 +1365,7 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     DBG_MSG("Case 4\n");
     authenticate_reset();
     in_admin_status = 0;
+    in_pin_protected_admin_status = 0;
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
