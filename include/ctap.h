@@ -49,7 +49,6 @@ int ctap_nfc_pending_active(void);
 void ctap_test_seed_get_next_assertion_state(void);
 void ctap_test_seed_credential_management_state(void);
 int ctap_test_credential_management_state_active(void);
-uint8_t ctap_test_validate_new_pin(const uint8_t *pin, size_t len, uint8_t *code_points);
 #endif
 static inline int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   return ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_CCID);

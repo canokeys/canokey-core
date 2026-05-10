@@ -135,16 +135,16 @@ def build_segments(c):
     versions_no_u2f = (encode_array_header(3) +
                        encode_text("FIDO_2_0") + encode_text("FIDO_2_1") + encode_text("FIDO_2_3"))
 
-    segments["cbor_gi_prefix_before_versions"] = encode_map_header(22) + encode_uint(c['GI_RESP_VERSIONS'])
-    segments["cbor_gi_prefix_before_versions_force"] = encode_map_header(23) + encode_uint(c['GI_RESP_VERSIONS'])
+    segments["cbor_gi_prefix_before_versions"] = encode_map_header(21) + encode_uint(c['GI_RESP_VERSIONS'])
+    segments["cbor_gi_prefix_before_versions_force"] = encode_map_header(22) + encode_uint(c['GI_RESP_VERSIONS'])
     segments["cbor_gi_versions_with_u2f"] = versions_u2f
     segments["cbor_gi_versions_without_u2f"] = versions_no_u2f
 
     after_versions = bytearray()
     after_versions += encode_uint(c['GI_RESP_EXTENSIONS'])
-    after_versions += encode_array_header(8)
+    after_versions += encode_array_header(7)
     for ext in ["credBlob", "credProtect", "hmac-secret", "hmac-secret-mc",
-                "largeBlobKey", "minPinLength", "pinComplexityPolicy", "thirdPartyPayment"]:
+                "largeBlobKey", "minPinLength", "thirdPartyPayment"]:
         after_versions += encode_text(ext)
 
     after_versions += encode_uint(c['GI_RESP_AAGUID'])
@@ -232,9 +232,6 @@ def build_segments(c):
     suffix += long_touch_marker
     suffix += encode_uint(c['GI_RESP_TRANSPORTS_FOR_RESET'])
     suffix += encode_array_header(2) + encode_text("nfc") + encode_text("usb")
-    suffix += encode_uint(c['GI_RESP_PIN_COMPLEXITY_POLICY'])
-    pin_complexity_marker = b'\xF0PINCOMPLEX'
-    suffix += pin_complexity_marker
     suffix += encode_uint(c['GI_RESP_MAX_PIN_LENGTH'])
     max_pin_marker = b'\xF0MAXPIN'
     suffix += max_pin_marker
@@ -249,7 +246,6 @@ def build_segments(c):
         (min_pin_marker, "min_pin_length"),
         (remaining_marker, "remaining_discoverable_credentials"),
         (long_touch_marker, "long_touch_for_reset"),
-        (pin_complexity_marker, "pin_complexity_policy"),
         (max_pin_marker, "max_pin_length"),
     ]:
         next_chunks = []
@@ -314,7 +310,6 @@ def main():
         'GI_RESP_ATTESTATION_FORMATS': None,
         'GI_RESP_LONG_TOUCH_FOR_RESET': None,
         'GI_RESP_TRANSPORTS_FOR_RESET': None,
-        'GI_RESP_PIN_COMPLEXITY_POLICY': None,
         'GI_RESP_MAX_PIN_LENGTH': None,
         'GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS': None,
         'CTAP_MAX_MSG_SIZE': None,

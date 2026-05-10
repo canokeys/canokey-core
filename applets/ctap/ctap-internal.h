@@ -73,7 +73,6 @@
 #define PARAM_NEW_MIN_PIN_LENGTH     (1 << 21)
 #define PARAM_MIN_PIN_LENGTH_RPIDS   (1 << 22)
 #define PARAM_FORCE_CHANGE_PIN       (1 << 23)
-#define PARAM_PIN_COMPLEXITY_POLICY  (1 << 24)
 // clang-format on
 
 #define MC_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP | PARAM_USER | PARAM_PUB_KEY_CRED_PARAMS)
@@ -156,7 +155,6 @@
 #define GI_RESP_ATTESTATION_FORMATS             0x16
 #define GI_RESP_LONG_TOUCH_FOR_RESET            0x18
 #define GI_RESP_TRANSPORTS_FOR_RESET            0x1A
-#define GI_RESP_PIN_COMPLEXITY_POLICY           0x1B
 #define GI_RESP_MAX_PIN_LENGTH                  0x1D
 #define GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS   0x1F
 
@@ -232,7 +230,6 @@
 #define CONFIG_PARAM_NEW_MIN_PIN_LENGTH 0x01
 #define CONFIG_PARAM_MIN_PIN_LENGTH_RPIDS 0x02
 #define CONFIG_PARAM_FORCE_CHANGE_PIN 0x03
-#define CONFIG_PARAM_PIN_COMPLEXITY_POLICY 0x04
 
 // Size limits
 // clang-format off
@@ -275,7 +272,7 @@
 #define MAX_EXTENSION_SIZE_IN_AUTH                                                                                     \
   (1 + sizeof("credBlob") + 1 + sizeof("credProtect") + 1 + sizeof("hmac-secret") + 1 +                            \
    sizeof("hmac-secret-mc") + 2 + MAX_HMAC_SECRET_OUTPUT_IN_AUTH + sizeof("minPinLength") + 2 +                     \
-   sizeof("pinComplexityPolicy") + 1 + sizeof("thirdPartyPayment") + 1)
+   sizeof("thirdPartyPayment") + 1)
 #define MAX_CREDENTIAL_COUNT_IN_LIST  16
 #define MAX_CRED_BLOB_LENGTH          32
 #define LARGE_BLOB_KEY_SIZE           32
@@ -382,7 +379,6 @@ typedef struct {
   bool ext_large_blob_key;
   bool ext_third_party_payment;
   bool ext_min_pin_length;
-  bool ext_pin_complexity_policy;
   uint8_t ext_cred_protect;
   uint8_t ext_cred_blob[MAX_CRED_BLOB_LENGTH];
   uint8_t ext_has_cred_blob : 1;
@@ -438,7 +434,6 @@ typedef struct {
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
   uint8_t new_min_pin_length;
   bool force_change_pin;
-  bool pin_complexity_policy;
   uint8_t min_pin_rpid_count;
   CTAP_min_pin_rp_id min_pin_rpids[CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH];
 } CTAP_config;

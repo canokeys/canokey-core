@@ -291,16 +291,6 @@ typedef struct {
   uint8_t always_uv;
   uint8_t long_touch_for_reset;
   uint8_t pin_code_point_length;
-} __packed CTAP_persistent_config_v1;
-
-typedef struct {
-  uint8_t min_pin_length;
-  uint8_t max_pin_length;
-  uint8_t force_pin_change;
-  uint8_t always_uv;
-  uint8_t long_touch_for_reset;
-  uint8_t pin_code_point_length;
-  uint8_t pin_complexity_policy;
 } __packed CTAP_persistent_config;
 
 static void ctap_config_default(CTAP_persistent_config *cfg) {
@@ -316,40 +306,21 @@ static int ctap_config_store(const CTAP_persistent_config *cfg) {
 static bool ctap_config_valid(const CTAP_persistent_config *cfg) {
   return cfg->min_pin_length >= CTAP_DEFAULT_MIN_PIN_LENGTH && cfg->max_pin_length >= 8 &&
          cfg->max_pin_length <= CTAP_MAX_PIN_LENGTH && cfg->min_pin_length <= cfg->max_pin_length &&
-         cfg->force_pin_change <= 1 && cfg->always_uv <= 1 && cfg->long_touch_for_reset <= 1 &&
-         cfg->pin_complexity_policy <= 1;
+         cfg->force_pin_change <= 1 && cfg->always_uv <= 1 && cfg->long_touch_for_reset <= 1;
 }
 
 static int ctap_config_load(CTAP_persistent_config *cfg) {
   memset(cfg, 0, sizeof(*cfg));
   int ret = read_attr(CTAP_CERT_FILE, CONFIG_ATTR, cfg, sizeof(*cfg));
   if (ret == (int)sizeof(*cfg) && ctap_config_valid(cfg)) return 0;
-  if (ret == (int)sizeof(CTAP_persistent_config_v1) && ctap_config_valid(cfg)) return 0;
 
   ctap_config_default(cfg);
   return 0;
 }
 
-static uint8_t ctap_pin_code_point_class(uint32_t codepoint) {
-  if (codepoint >= '0' && codepoint <= '9') return 0x01;
-  if (codepoint >= 'A' && codepoint <= 'Z') return 0x02;
-  if (codepoint >= 'a' && codepoint <= 'z') return 0x04;
-  return 0x08;
-}
-
-static uint8_t ctap_pin_class_count(uint8_t classes) {
-  uint8_t count = 0;
-  while (classes) {
-    count += classes & 1;
-    classes >>= 1;
-  }
-  return count;
-}
-
-static bool ctap_parse_pin_code_points(const uint8_t *pin, size_t len, uint8_t *out, uint8_t *classes) {
+static bool ctap_parse_pin_code_points(const uint8_t *pin, size_t len, uint8_t *out) {
   size_t i = 0;
   uint16_t count = 0;
-  uint8_t class_mask = 0;
 
   while (i < len) {
     uint8_t c = pin[i];
@@ -384,32 +355,19 @@ static bool ctap_parse_pin_code_points(const uint8_t *pin, size_t len, uint8_t *
         (seq_len == 4 && codepoint < 0x10000) || (codepoint >= 0xD800 && codepoint <= 0xDFFF) || codepoint > 0x10FFFF)
       return false;
 
-    class_mask |= ctap_pin_code_point_class(codepoint);
     ++count;
     if (count > UINT8_MAX) return false;
     i += seq_len;
   }
 
   *out = (uint8_t)count;
-  if (classes) *classes = class_mask;
   return true;
-}
-
-static bool ctap_pin_complexity_policy_satisfied(uint8_t classes) {
-  // Local CTAP PIN complexity policy: require at least two coarse character classes.
-  return ctap_pin_class_count(classes) >= 2;
 }
 
 static uint8_t ctap_config_get_min_pin_length(void) {
   CTAP_persistent_config cfg;
   if (ctap_config_load(&cfg) < 0) return CTAP_DEFAULT_MIN_PIN_LENGTH;
   return cfg.min_pin_length;
-}
-
-static bool ctap_config_pin_complexity_policy_enabled(void) {
-  CTAP_persistent_config cfg;
-  if (ctap_config_load(&cfg) < 0) return false;
-  return cfg.pin_complexity_policy != 0;
 }
 
 static bool ctap_config_always_uv_enabled(void) {
@@ -457,21 +415,12 @@ static bool ctap_min_pin_rpid_authorized(const uint8_t *rp_id, size_t rp_id_len)
 
 static uint8_t ctap_validate_new_pin(const uint8_t *pin, size_t len, uint8_t *code_points) {
   CTAP_persistent_config cfg;
-  uint8_t classes = 0;
   if (len == 0 || len > CTAP_MAX_PIN_LENGTH) return CTAP2_ERR_PIN_POLICY_VIOLATION;
   if (ctap_config_load(&cfg) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (!ctap_parse_pin_code_points(pin, len, code_points, &classes)) return CTAP2_ERR_PIN_POLICY_VIOLATION;
+  if (!ctap_parse_pin_code_points(pin, len, code_points)) return CTAP2_ERR_PIN_POLICY_VIOLATION;
   if (*code_points < cfg.min_pin_length || *code_points > cfg.max_pin_length) return CTAP2_ERR_PIN_POLICY_VIOLATION;
-  if (cfg.pin_complexity_policy && !ctap_pin_complexity_policy_satisfied(classes))
-    return CTAP2_ERR_PIN_POLICY_VIOLATION;
   return 0;
 }
-
-#ifdef TEST
-uint8_t ctap_test_validate_new_pin(const uint8_t *pin, size_t len, uint8_t *code_points) {
-  return ctap_validate_new_pin(pin, len, code_points);
-}
-#endif
 
 static int ctap_note_pin_changed(uint8_t code_points) {
   CTAP_persistent_config cfg;
@@ -1454,12 +1403,12 @@ static uint8_t ctap_get_assertion_prepare_hmac_secret(void) {
 }
 
 static uint8_t ctap_make_credential_build_extensions(const CTAP_make_credential *mc, const credential_id *cid, bool uv,
-                                                     bool ext_min_pin_authorized, bool ext_pin_complexity_authorized,
+                                                     bool ext_min_pin_authorized,
                                                      uint8_t *extension_buffer, size_t extension_buffer_size,
                                                      size_t *extension_size) {
   *extension_size = 0;
   uint8_t extension_map_items = (mc->ext_hmac_secret ? 1 : 0) + (mc->ext_hmac_secret_mc ? 1 : 0) +
-                                (ext_min_pin_authorized ? 1 : 0) + (ext_pin_complexity_authorized ? 1 : 0) +
+                                (ext_min_pin_authorized ? 1 : 0) +
                                 // largeBlobKey has no outputs here
                                 (mc->ext_cred_protect != CRED_PROTECT_ABSENT ? 1 : 0) + (mc->ext_has_cred_blob ? 1 : 0);
   if (extension_map_items == 0) return 0;
@@ -1518,12 +1467,6 @@ static uint8_t ctap_make_credential_build_extensions(const CTAP_make_credential 
     memzero(hmac_secret_output, sizeof(hmac_secret_output));
     CHECK_CBOR_RET(ret);
   }
-  if (ext_pin_complexity_authorized) {
-    ret = cbor_encode_text_stringz(&map, "pinComplexityPolicy");
-    CHECK_CBOR_RET(ret);
-    ret = cbor_encode_boolean(&map, ctap_config_pin_complexity_policy_enabled());
-    CHECK_CBOR_RET(ret);
-  }
   ret = cbor_encoder_close_container(&extension_encoder, &map);
   CHECK_CBOR_RET(ret);
   *extension_size = cbor_encoder_get_buffer_size(&extension_encoder, extension_buffer);
@@ -1532,7 +1475,7 @@ static uint8_t ctap_make_credential_build_extensions(const CTAP_make_credential 
 }
 
 static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_make_credential *mc, bool uv,
-                                                     bool ext_min_pin_authorized, bool ext_pin_complexity_authorized) {
+                                                     bool ext_min_pin_authorized) {
   CTAP_mldsa_stream_state *state = &mldsa_stream_state;
   credential_id cid;
   CTAP_discoverable_credential dc = {0};
@@ -1564,9 +1507,8 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
                           cred_protect, mc->ext_third_party_payment) < 0)
     return CTAP2_ERR_UNHANDLED_REQUEST;
 
-  uint8_t err =
-      ctap_make_credential_build_extensions(mc, &cid, uv, ext_min_pin_authorized, ext_pin_complexity_authorized,
-                                            extension_buffer, sizeof(extension_buffer), &extension_size);
+  uint8_t err = ctap_make_credential_build_extensions(mc, &cid, uv, ext_min_pin_authorized, extension_buffer,
+                                                      sizeof(extension_buffer), &extension_size);
   if (err != 0) return err;
   const uint8_t flags = FLAGS_AT | (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | FLAGS_UP;
 
@@ -1805,10 +1747,6 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   // 9. [N/A] If the enterpriseAttestation parameter is present
 
-  bool ext_pin_complexity_authorized =
-      mc.ext_pin_complexity_policy && ctap_min_pin_rpid_authorized(mc.rp_id_full, mc.rp_id_full_len);
-  bool ext_pin_complexity_ignored = mc.ext_pin_complexity_policy && !ext_pin_complexity_authorized;
-
   // 10. If the following statements are all true
   //     a) "rk" and "uv" [ALWAYS TRUE] options are both set to false or omitted.
   //     b) [ALWAYS TRUE] the makeCredUvNotRqd option ID in authenticatorGetInfo's response is present with the value
@@ -1826,14 +1764,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
       uint8_t err = verify_pin_uv_auth_token(mc.client_data_hash, mc.pin_uv_auth_param, mc.pin_uv_auth_protocol,
                                              CP_PERMISSION_MC, mc.rp_id_hash);
       if (err) {
-        bool consumed_token =
-            cp_has_associated_rp_id() && !cp_has_permission(CP_PERMISSION_MC) && !cp_get_user_verified_flag_value();
-        if (err != CTAP2_ERR_PIN_AUTH_INVALID || !ext_pin_complexity_ignored || !consumed_token ||
-            !cp_verify_pin_token(mc.client_data_hash, CLIENT_DATA_HASH_SIZE, mc.pin_uv_auth_param,
-                                 mc.pin_uv_auth_protocol))
-          return err;
-        // FIDO Conformance P-2 reuses the token consumed by P-1; ignore only this unauthorized extension output.
-        DBG_MSG("Ignoring pinComplexityPolicy for unauthorized RP with consumed token\n");
+        return err;
       } else {
         uv = true;
       }
@@ -1916,7 +1847,7 @@ step12:
     // Generate key in Step 17
   }
 
-  return ctap_prepare_make_credential_response(encoder, &mc, uv, ext_min_pin_authorized, ext_pin_complexity_authorized);
+  return ctap_prepare_make_credential_response(encoder, &mc, uv, ext_min_pin_authorized);
 }
 
 static void ecc_key_cleanup(ecc_key_t *k) { memzero(k, sizeof(*k)); }
@@ -2430,12 +2361,8 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
           state, cbor_gi_suffix_after_remaining_discoverable_credentials_before_long_touch_for_reset,
           sizeof(cbor_gi_suffix_after_remaining_discoverable_credentials_before_long_touch_for_reset)) != 0 ||
       cbor_put_bool_inline(state, cfg.long_touch_for_reset != 0) != 0 ||
-      ctap_const_stream_add_mem(state,
-                                cbor_gi_suffix_after_long_touch_for_reset_before_pin_complexity_policy,
-                                sizeof(cbor_gi_suffix_after_long_touch_for_reset_before_pin_complexity_policy)) != 0 ||
-      cbor_put_bool_inline(state, cfg.pin_complexity_policy != 0) != 0 ||
-      ctap_const_stream_add_mem(state, cbor_gi_suffix_after_pin_complexity_policy_before_max_pin_length,
-                                sizeof(cbor_gi_suffix_after_pin_complexity_policy_before_max_pin_length)) != 0 ||
+      ctap_const_stream_add_mem(state, cbor_gi_suffix_after_long_touch_for_reset_before_max_pin_length,
+                                sizeof(cbor_gi_suffix_after_long_touch_for_reset_before_max_pin_length)) != 0 ||
       cbor_put_uint_inline(state, cfg.max_pin_length) != 0 ||
       ctap_const_stream_add_mem(state, cbor_gi_suffix_after_max_pin_length,
                                 sizeof(cbor_gi_suffix_after_max_pin_length)) != 0)
@@ -3140,11 +3067,6 @@ static uint8_t ctap_config_set_min_pin_length(const CTAP_config *cmd) {
 
   if (cmd->parsed_params & PARAM_FORCE_CHANGE_PIN) {
     if (cmd->force_change_pin) cfg.force_pin_change = 1;
-  }
-
-  if ((cmd->parsed_params & PARAM_PIN_COMPLEXITY_POLICY) && cmd->pin_complexity_policy) {
-    if (!cfg.pin_complexity_policy && pin_set) cfg.force_pin_change = 1;
-    cfg.pin_complexity_policy = 1;
   }
 
   if (pin_set && new_min > cfg.min_pin_length &&

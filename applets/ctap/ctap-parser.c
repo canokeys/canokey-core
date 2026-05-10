@@ -127,7 +127,6 @@ typedef enum {
   CTAP_TEXT_KEY_LARGE_BLOB_KEY,
   CTAP_TEXT_KEY_MIN_PIN_LENGTH,
   CTAP_TEXT_KEY_NAME,
-  CTAP_TEXT_KEY_PIN_COMPLEXITY_POLICY,
   CTAP_TEXT_KEY_RK,
   CTAP_TEXT_KEY_THIRD_PARTY_PAYMENT,
   CTAP_TEXT_KEY_TYPE,
@@ -146,13 +145,13 @@ static int ctap_text_key_id(CborValue *val) {
   CborError ret = cbor_value_get_string_length(val, &len);
   if (ret != CborNoError) return ctap_text_key_error(ret);
 
-  if (len > sizeof("pinComplexityPolicy") - 1) {
+  if (len > sizeof("thirdPartyPayment") - 1) {
     ret = cbor_value_advance(val);
     if (ret != CborNoError) return ctap_text_key_error(ret);
     return CTAP_TEXT_KEY_UNKNOWN;
   }
 
-  char key_buf[sizeof("pinComplexityPolicy")];
+  char key_buf[sizeof("thirdPartyPayment")];
   size_t key_len = sizeof(key_buf);
   ret = ctap_cbor_copy_text(val, key_buf, &key_len);
   if (ret != CborNoError) return ctap_text_key_error(ret);
@@ -200,9 +199,6 @@ static int ctap_text_key_id(CborValue *val) {
   case 12:
     if (memcmp(key_buf, "largeBlobKey", 12) == 0) key = CTAP_TEXT_KEY_LARGE_BLOB_KEY;
     if (memcmp(key_buf, "minPinLength", 12) == 0) key = CTAP_TEXT_KEY_MIN_PIN_LENGTH;
-    break;
-  case 19:
-    if (memcmp(key_buf, "pinComplexityPolicy", 19) == 0) key = CTAP_TEXT_KEY_PIN_COMPLEXITY_POLICY;
     break;
   default:
     break;
@@ -801,13 +797,6 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       ret = cbor_value_get_boolean(&map, &mc->ext_min_pin_length);
       CHECK_CBOR_RET(ret);
       DBG_MSG("minPinLength: %d\n", mc->ext_min_pin_length);
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
-    } else if (key == CTAP_TEXT_KEY_PIN_COMPLEXITY_POLICY) {
-      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_boolean(&map, &mc->ext_pin_complexity_policy);
-      CHECK_CBOR_RET(ret);
-      DBG_MSG("pinComplexityPolicy: %d\n", mc->ext_pin_complexity_policy);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
     } else if (key == CTAP_TEXT_KEY_THIRD_PARTY_PAYMENT) {
@@ -1576,15 +1565,6 @@ static uint8_t parse_config_params(CTAP_config *cfg, CborValue *val, size_t *tot
       ret = cbor_value_get_boolean(&map, &cfg->force_change_pin);
       CHECK_CBOR_RET(ret);
       cfg->parsed_params |= PARAM_FORCE_CHANGE_PIN;
-      ret = cbor_value_advance(&map);
-      CHECK_CBOR_RET(ret);
-      break;
-
-    case CONFIG_PARAM_PIN_COMPLEXITY_POLICY:
-      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
-      ret = cbor_value_get_boolean(&map, &cfg->pin_complexity_policy);
-      CHECK_CBOR_RET(ret);
-      cfg->parsed_params |= PARAM_PIN_COMPLEXITY_POLICY;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
       break;
