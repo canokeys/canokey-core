@@ -16,6 +16,7 @@ int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len);
 int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len);
 int get_file_size(const char *path);
 int fs_rename(const char *old, const char *new);
+int remove_file(const char *path);
 
 /**
  * Get the total size (in KiB) of the file system.

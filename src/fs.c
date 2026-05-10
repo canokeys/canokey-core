@@ -125,3 +125,5 @@ int get_fs_usage(void) {
 }
 
 int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }
+
+int remove_file(const char *path) { return lfs_remove(&lfs, path); }
