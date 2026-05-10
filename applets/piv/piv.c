@@ -70,8 +70,29 @@ enum PIV_STATE {
 static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 // clang-format on
 
-// PIV data object registry. Keep the APDU-facing object metadata in ROM and
-// create LittleFS files only when an object is actually written.
+/*
+ * PIV data object storage model
+ *
+ * Keep APDU-facing DO metadata in this ROM table, not as pre-created LittleFS
+ * files. Optional objects are created lazily on PUT DATA, so unsupported or
+ * empty cert/biometric/retired-cert objects do not burn a 512-byte LittleFS
+ * metadata block each.
+ *
+ * LittleFS metadata blocks are 512 bytes on the target. Do not aggregate
+ * several large DO attrs on a single file: attr payloads plus LittleFS metadata
+ * tags must fit in that one block. Only the PIN-only objects that are small in
+ * normal PIN-only-compatible use live on CARD_ADMIN_KEY_PATH attrs:
+ *
+ *   - ADMIN DATA, max 128 bytes.
+ *   - PRINTED, only while it is <= 64 bytes. The PIN-protected encoding is
+ *     30 bytes: 53 1c 88 1a 89 18 <24-byte management key>.
+ *
+ * The static assert below intentionally caps those attr payloads to half a
+ * metadata block, leaving room for key metadata, the default-key attr, LittleFS
+ * tag overhead, and future small attrs. Larger PRINTED payloads fall back to
+ * PI_PATH. SECURITY and KEY HISTORY are file-backed so they cannot crowd the
+ * admin-key metadata block.
+ */
 #define PIV_DO_TAG_DISCOVERY 0x0000007Eu
 #define PIV_DO_TAG_BITGT 0x00007F61u
 #define PIV_DO_TAG_C1(x) (0x005FC100u | (uint32_t)(x))
@@ -93,15 +114,16 @@ _Static_assert(sizeof(key_meta_t) + 1u + PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLI
 
 #define PIV_DO_ATTR_PRINTED 0x90
 #define PIV_DO_ATTR_ADMIN_DATA 0x91
+// Kept only so reset can delete stale attrs written by older layouts.
 #define PIV_DO_ATTR_SECURITY 0x92
 #define PIV_DO_ATTR_KEY_HISTORY 0x93
 
 typedef struct {
-  uint32_t tag;
-  const char *path;
-  uint16_t capacity;
-  uint8_t flags;
-  uint8_t attr;
+  uint32_t tag;      // APDU DO tag as parsed from 5C.
+  const char *path;  // NULL for synthesized or attr-only objects.
+  uint16_t capacity; // Maximum stored payload size, not including the 5C tag-list header.
+  uint8_t flags;     // Access/storage flags.
+  uint8_t attr;      // LittleFS attr id when PIV_DO_F_INLINE is set.
 } piv_do_desc_t;
 
 // tags for general auth
@@ -198,6 +220,8 @@ static uint32_t last_touch = UINT32_MAX;
 static piv_algorithm_extension_config_t alg_ext_cfg;
 static uint8_t piv_pke_owned;
 static uint8_t piv_pke_use;
+// Session-local ADMIN DATA bit1 cache. Cleared on SELECT/poweroff and whenever
+// ADMIN DATA or PRINTED changes, because those objects define PIN-only state.
 static uint8_t piv_pin_protected_cache;
 #define piv_crypto_buffer applet_session_scratch.buffer
 
@@ -256,6 +280,9 @@ static const piv_do_desc_t piv_do_table[] = {
 
 static const piv_do_desc_t piv_do_retired_cert_desc = {0, NULL, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0};
 
+// Retired key-management certs follow the contiguous NIST tag range
+// 5FC10D..5FC120. The first two keep their historical paths; the rest use a
+// generated short path piv-rXX to avoid 18 extra table entries.
 static int piv_is_retired_cert_tag(uint32_t tag) { return tag >= PIV_DO_TAG_C1(0x0F) && tag <= PIV_DO_TAG_C1(0x20); }
 
 static char piv_hex_nibble(uint8_t x) { return x < 10 ? (char)('0' + x) : (char)('a' + x - 10); }
@@ -292,6 +319,8 @@ static int piv_do_get_path(const piv_do_desc_t *desc, uint32_t tag, char path[MA
   return 0;
 }
 
+// Returns the attr storage ceiling for DOs that are allowed to inline. A zero
+// return means the object is file-backed even if it has a historical stale attr.
 static uint16_t piv_do_inline_capacity(const piv_do_desc_t *desc) {
   switch (desc->attr) {
   case PIV_DO_ATTR_PRINTED:
@@ -393,6 +422,13 @@ static int piv_clear_inline_do_storage(void) {
 }
 
 static int piv_admin_data_is_pin_protected(const uint8_t *data, uint16_t data_len) {
+  /*
+   * PIN-only ADMIN DATA uses:
+   *   53 len 80 len ... 81 01 <bits> ...
+   * bit0 means PUK blocked; bit1 means the management key is PIN-protected.
+   * Older callers may pass the inner 80 template directly, so the outer 53 is
+   * accepted but not required.
+   */
   if (data_len == 0) return 0;
 
   uint16_t off = 0;
@@ -431,6 +467,13 @@ static int piv_pin_protected_configured(void) {
 }
 
 static int piv_pin_protected_management_key(const uint8_t *data, uint16_t data_len, uint8_t *key, uint16_t *key_len) {
+  /*
+   * PRINTED PIN-protected data is:
+   *   53 len 88 len 89 len <management key>
+   * This implementation only authenticates the current 24-byte TDEA management
+   * key, but the parser accepts 16/24/32-byte key blobs so unsupported AES
+   * PRINTED data is recognized as well-formed and then rejected by policy.
+   */
   *key_len = 0;
   if (data_len == 0) return 0;
 
@@ -471,6 +514,16 @@ static int piv_write_pin_protected_management_key(const uint8_t *key, uint16_t k
 }
 
 static int piv_admin_status_satisfied(void) {
+  /*
+   * Standard admin authentication sets in_admin_status through GENERAL
+   * AUTHENTICATE. In PIN-protected mode, a verified PIN can also satisfy admin
+   * status if ADMIN DATA says bit1 is set and PRINTED contains a management key
+   * equal to the current 9B key.
+   *
+   * Read only the key metadata and the first 24 key bytes here. ck_key_t is
+   * RSA-sized, so reading it just to compare a TDEA key would waste more than
+   * 1 KB of stack and flash I/O on a hot authorization path.
+   */
   if (in_admin_status) return 1;
   if (!pin.is_validated || !piv_pin_protected_configured()) return 0;
 
@@ -1458,6 +1511,12 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (size > desc->capacity) EXCEPT(SW_WRONG_LENGTH);
     const uint8_t *payload = DATA + header_len;
 
+    /*
+     * Inline-capable DOs use attr storage only below their metadata-safe
+     * ceiling. PRINTED can legally be up to 245 bytes, but only the 30-byte
+     * PIN-protected form should live beside the admin key metadata; larger
+     * PRINTED data is stored as a file after deleting any stale attr copy.
+     */
     if ((desc->flags & PIV_DO_F_INLINE) != 0 && size <= piv_do_inline_capacity(desc)) {
       if ((CLA & 0x10) != 0) EXCEPT(SW_WRONG_LENGTH);
       if (piv_do_write_inline(desc, payload, size) < 0) return -1;
