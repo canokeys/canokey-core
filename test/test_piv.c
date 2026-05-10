@@ -148,7 +148,7 @@ static void test_delete_certificate_object(void **state) {
 static const uint8_t default_piv_pin[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
 static const uint8_t default_mgmt_key[24] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
 
-static void configure_pin_protected_default_key(void) {
+static void configure_host_managed_admin_data(void) {
   set_admin_status(1);
 
   uint8_t printed[5 + 30] = {0x5C, 0x03, 0x5F, 0xC1, 0x09, 0x53, 0x1C, 0x88, 0x1A, 0x89, 0x18};
@@ -161,10 +161,12 @@ static void configure_pin_protected_default_key(void) {
   set_admin_status(0);
 }
 
-static void test_piv_pin_protected_data_objects(void **state) {
+static void test_piv_host_managed_admin_data_objects(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
-  configure_pin_protected_default_key();
+  const int admin_key_size = get_file_size("piv-admk");
+  configure_host_managed_admin_data();
+  assert_int_equal(get_file_size("piv-admk"), admin_key_size);
   piv_poweroff();
 
   uint8_t get_printed[] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
@@ -184,35 +186,18 @@ static void test_piv_pin_protected_data_objects(void **state) {
                    sizeof(expected_admin));
 }
 
-static void test_piv_pin_protected_admin_from_pin(void **state) {
+static void test_piv_pin_does_not_satisfy_admin(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
-  configure_pin_protected_default_key();
+  configure_host_managed_admin_data();
   piv_poweroff();
 
   uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
   test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
 
   test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
-  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-pauc"), 3);
-}
-
-static void test_piv_pin_logout_revokes_pin_protected_admin(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  configure_pin_protected_default_key();
-  piv_poweroff();
-
-  test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
-
-  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
-  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-
-  test_helper(NULL, 0, PIV_INS_VERIFY, 0xFF, 0x80, SW_NO_ERROR);
-
-  uint8_t put_sig_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x0A, 0x53, 0x01, 0xBB};
-  test_helper(put_sig_cert, sizeof(put_sig_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
+  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
+  assert_true(get_file_size("piv-pauc") < 0);
 }
 
 static void test_piv_retired_cert_lazy_storage(void **state) {
@@ -269,7 +254,7 @@ static void test_piv_metadata_bounded_do_storage(void **state) {
   test_helper(key_history, sizeof(key_history), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
   assert_int_equal(get_file_size("piv-kh"), 3);
 
-  configure_pin_protected_default_key();
+  configure_host_managed_admin_data();
   assert_true(get_file_size("piv-pi") < 0);
 }
 
@@ -512,9 +497,8 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_delete_certificate_object),
-      cmocka_unit_test(test_piv_pin_protected_data_objects),
-      cmocka_unit_test(test_piv_pin_protected_admin_from_pin),
-      cmocka_unit_test(test_piv_pin_logout_revokes_pin_protected_admin),
+      cmocka_unit_test(test_piv_host_managed_admin_data_objects),
+      cmocka_unit_test(test_piv_pin_does_not_satisfy_admin),
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),

@@ -31,6 +31,7 @@
 #define SECURITY_PATH               "piv-sec"  // security object
 #define KEY_HISTORY_PATH            "piv-kh"   // key history object
 #define IRIS_PATH                   "piv-iris" // card holder iris images
+#define PIV_DO_META_PATH            "piv-do"   // small data object attrs
 // clang-format on
 
 // key tags and path
@@ -80,18 +81,23 @@ static enum PIV_STATE piv_state = PIV_STATE_OTHER;
  *
  * LittleFS metadata blocks are 512 bytes on the target. Do not aggregate
  * several large DO attrs on a single file: attr payloads plus LittleFS metadata
- * tags must fit in that one block. Only the PIN-only objects that are small in
- * normal PIN-only-compatible use live on CARD_ADMIN_KEY_PATH attrs:
+ * tags must fit in that one block. Only the host-managed data objects that are
+ * normally small live on PIV_DO_META_PATH attrs:
  *
  *   - ADMIN DATA, max 128 bytes.
- *   - PRINTED, only while it is <= 64 bytes. The PIN-protected encoding is
- *     30 bytes: 53 1c 88 1a 89 18 <24-byte management key>.
+ *   - PRINTED, only while it is <= 64 bytes. This covers the common 30-byte
+ *     host-managed management-key reference:
+ *     53 1c 88 1a 89 18 <24-byte management key>.
  *
  * The static assert below intentionally caps those attr payloads to half a
- * metadata block, leaving room for key metadata, the default-key attr, LittleFS
- * tag overhead, and future small attrs. Larger PRINTED payloads fall back to
- * PI_PATH. SECURITY and KEY HISTORY are file-backed so they cannot crowd the
- * admin-key metadata block.
+ * metadata block, leaving room for LittleFS tag overhead and future small
+ * attrs. Larger PRINTED payloads fall back to PI_PATH. SECURITY and KEY
+ * HISTORY are file-backed so they cannot crowd the small-DO metadata block.
+ *
+ * The card stores these DOs and enforces their read/write access rules only.
+ * PIN-only mode and PUK blocking are host decisions. Management-key bytes and
+ * PUK retry counters are changed only by their normal PIV commands; the
+ * firmware does not infer either from ADMIN DATA/PRINTED contents.
  */
 #define PIV_DO_TAG_DISCOVERY 0x0000007Eu
 #define PIV_DO_TAG_BITGT 0x00007F61u
@@ -102,8 +108,8 @@ static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 #define PIV_DO_INLINE_PRINTED_MAX 64
 #define PIV_DO_INLINE_ADMIN_DATA_MAX 128
 
-_Static_assert(sizeof(key_meta_t) + 1u + PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLINE_ADMIN_DATA_MAX <= 256,
-               "piv-admk attrs must fit in the reserved half of a 512-byte metadata block");
+_Static_assert(PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLINE_ADMIN_DATA_MAX <= 256,
+               "piv-do attrs must fit in the reserved half of a 512-byte metadata block");
 
 #define PIV_DO_F_GET_PIN 0x01
 #define PIV_DO_F_PUT_ADMIN 0x02
@@ -204,7 +210,6 @@ static const uint8_t pix[] = {0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
 static const uint8_t pin_policy[] = {0x40, 0x10};
 static uint8_t auth_ctx[LENGTH_AUTH_STATE];
 static uint8_t in_admin_status;
-static uint8_t in_pin_protected_admin_status;
 static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
@@ -221,9 +226,6 @@ static uint32_t last_touch = UINT32_MAX;
 static piv_algorithm_extension_config_t alg_ext_cfg;
 static uint8_t piv_pke_owned;
 static uint8_t piv_pke_use;
-// Session-local ADMIN DATA bit1 cache. Cleared on SELECT/poweroff and whenever
-// ADMIN DATA or PRINTED changes, because those objects define PIN-only state.
-static uint8_t piv_pin_protected_cache;
 #define piv_crypto_buffer applet_session_scratch.buffer
 
 enum {
@@ -231,12 +233,6 @@ enum {
   PIV_PKE_USE_IMPORT,
   PIV_PKE_USE_AUTH,
   PIV_PKE_USE_RESPONSE,
-};
-
-enum {
-  PIV_PIN_PROTECTED_CACHE_UNKNOWN,
-  PIV_PIN_PROTECTED_CACHE_NO,
-  PIV_PIN_PROTECTED_CACHE_YES,
 };
 
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
@@ -333,8 +329,6 @@ static uint16_t piv_do_inline_capacity(const piv_do_desc_t *desc) {
   }
 }
 
-static void piv_pin_protected_cache_clear(void) { piv_pin_protected_cache = PIV_PIN_PROTECTED_CACHE_UNKNOWN; }
-
 static int piv_parse_data_object_tag(const CAPDU *capdu, uint32_t *tag, uint16_t *header_len) {
   if (LC < 2) return SW_WRONG_LENGTH;
   if (DATA[0] != 0x5C) return SW_WRONG_DATA;
@@ -350,40 +344,17 @@ static int piv_parse_data_object_tag(const CAPDU *capdu, uint32_t *tag, uint16_t
   return SW_NO_ERROR;
 }
 
-static int piv_tlv_len_buf(const uint8_t *buf, uint16_t total_len, uint16_t *off, uint16_t *out) {
-  if (*off >= total_len) return -1;
-  uint8_t b = buf[(*off)++];
-  if ((b & 0x80u) == 0) {
-    *out = b;
-    return 0;
-  }
-
-  const uint8_t len_size = b & 0x7Fu;
-  if (len_size == 0 || len_size > 2 || (uint16_t)(*off + len_size) > total_len) return -1;
-  uint16_t len = 0;
-  for (uint8_t i = 0; i < len_size; ++i) {
-    len = (uint16_t)((len << 8u) | buf[(*off)++]);
-  }
-  *out = len;
-  return 0;
-}
-
-static int piv_do_read_bytes(uint32_t tag, uint8_t *buf, uint16_t cap) {
-  const piv_do_desc_t *desc = piv_find_do(tag);
-  if (desc == NULL || (desc->flags & PIV_DO_F_SYNTH) != 0) return LFS_ERR_NOENT;
-
-  if ((desc->flags & PIV_DO_F_INLINE) != 0) {
-    const int attr_len = read_attr(CARD_ADMIN_KEY_PATH, desc->attr, buf, cap);
-    if (attr_len >= 0) return attr_len;
-  }
-
-  char path[MAX_DO_PATH_LEN];
-  if (!piv_do_get_path(desc, tag, path)) return LFS_ERR_NOENT;
-  return read_file(path, buf, 0, cap);
-}
+static int piv_clear_attr_if_present(const char *path, uint8_t attr);
+static int piv_remove_do_meta_if_empty(void);
 
 static int piv_do_write_inline(const piv_do_desc_t *desc, const uint8_t *data, uint16_t len) {
-  if (write_attr(CARD_ADMIN_KEY_PATH, desc->attr, data, len) < 0) return -1;
+  if (len == 0) {
+    if (piv_clear_attr_if_present(PIV_DO_META_PATH, desc->attr) < 0) return -1;
+    if (piv_remove_do_meta_if_empty() < 0) return -1;
+  } else {
+    if (write_file(PIV_DO_META_PATH, NULL, 0, 0, 0) < 0) return -1;
+    if (write_attr(PIV_DO_META_PATH, desc->attr, data, len) < 0) return -1;
+  }
   if (desc->path != NULL) {
     const int remove_rc = remove_file(desc->path);
     if (remove_rc < 0 && remove_rc != LFS_ERR_NOENT) return -1;
@@ -394,6 +365,27 @@ static int piv_do_write_inline(const piv_do_desc_t *desc, const uint8_t *data, u
 static int piv_remove_file_if_present(const char *path) {
   const int rc = remove_file(path);
   return (rc == 0 || rc == LFS_ERR_NOENT) ? 0 : -1;
+}
+
+static int piv_clear_attr_if_present(const char *path, uint8_t attr) {
+  const int rc = remove_attr(path, attr);
+  return (rc == 0 || rc == LFS_ERR_NOENT || rc == LFS_ERR_NOATTR) ? 0 : -1;
+}
+
+static int piv_attr_present(const char *path, uint8_t attr) {
+  uint8_t probe;
+  const int rc = read_attr(path, attr, &probe, 0);
+  if (rc >= 0) return 1;
+  if (rc == LFS_ERR_NOENT || rc == LFS_ERR_NOATTR) return 0;
+  return -1;
+}
+
+static int piv_remove_do_meta_if_empty(void) {
+  const int printed = piv_attr_present(PIV_DO_META_PATH, PIV_DO_ATTR_PRINTED);
+  if (printed != 0) return printed < 0 ? -1 : 0;
+  const int admin_data = piv_attr_present(PIV_DO_META_PATH, PIV_DO_ATTR_ADMIN_DATA);
+  if (admin_data != 0) return admin_data < 0 ? -1 : 0;
+  return piv_remove_file_if_present(PIV_DO_META_PATH);
 }
 
 static int piv_clear_file_do_storage(void) {
@@ -417,152 +409,10 @@ static int piv_clear_inline_do_storage(void) {
       PIV_DO_ATTR_KEY_HISTORY,
   };
   for (size_t i = 0; i < sizeof(attrs) / sizeof(attrs[0]); ++i) {
-    if (write_attr(CARD_ADMIN_KEY_PATH, attrs[i], NULL, 0) < 0) return -1;
+    if (piv_clear_attr_if_present(PIV_DO_META_PATH, attrs[i]) < 0) return -1;
+    if (piv_clear_attr_if_present(CARD_ADMIN_KEY_PATH, attrs[i]) < 0) return -1;
   }
-  return 0;
-}
-
-static int piv_admin_data_is_pin_protected(const uint8_t *data, uint16_t data_len) {
-  /*
-   * PIN-only ADMIN DATA uses:
-   *   53 len 80 len ... 81 01 <bits> ...
-   * bit0 means PUK blocked; bit1 means the management key is PIN-protected.
-   * Older callers may pass the inner 80 template directly, so the outer 53 is
-   * accepted but not required.
-   */
-  if (data_len == 0) return 0;
-
-  uint16_t off = 0;
-  uint16_t end = data_len;
-  if (data[off] == 0x53) {
-    ++off;
-    uint16_t wrapped_len;
-    if (piv_tlv_len_buf(data, data_len, &off, &wrapped_len) < 0 || (uint16_t)(off + wrapped_len) != data_len) return 0;
-    end = off + wrapped_len;
-  }
-
-  if (off >= end || data[off++] != 0x80) return 0;
-  uint16_t admin_len;
-  if (piv_tlv_len_buf(data, end, &off, &admin_len) < 0 || (uint16_t)(off + admin_len) != end) return 0;
-
-  while (off < end) {
-    const uint8_t tag = data[off++];
-    uint16_t len;
-    if (piv_tlv_len_buf(data, end, &off, &len) < 0 || (uint16_t)(off + len) > end) return 0;
-    if (tag == 0x81) return len == 1 && (data[off] & 0x02u) != 0;
-    off += len;
-  }
-
-  return 0;
-}
-
-static int piv_pin_protected_configured(void) {
-  if (piv_pin_protected_cache == PIV_PIN_PROTECTED_CACHE_YES) return 1;
-  if (piv_pin_protected_cache == PIV_PIN_PROTECTED_CACHE_NO) return 0;
-
-  uint8_t admin_data[PIV_DO_INLINE_ADMIN_DATA_MAX];
-  const int len = piv_do_read_bytes(PIV_DO_TAG_FF(0x00), admin_data, sizeof(admin_data));
-  const int configured = len > 0 && piv_admin_data_is_pin_protected(admin_data, (uint16_t)len);
-  piv_pin_protected_cache = configured ? PIV_PIN_PROTECTED_CACHE_YES : PIV_PIN_PROTECTED_CACHE_NO;
-  return configured;
-}
-
-static int piv_pin_protected_management_key(const uint8_t *data, uint16_t data_len, uint8_t *key, uint16_t *key_len) {
-  /*
-   * PRINTED PIN-protected data is:
-   *   53 len 88 len 89 len <management key>
-   * This implementation only authenticates the current 24-byte TDEA management
-   * key, but the parser accepts 16/24/32-byte key blobs so unsupported AES
-   * PRINTED data is recognized as well-formed and then rejected by policy.
-   */
-  *key_len = 0;
-  if (data_len == 0) return 0;
-
-  uint16_t off = 0;
-  if (data[off++] != 0x53) return -1;
-  uint16_t outer_len;
-  if (piv_tlv_len_buf(data, data_len, &off, &outer_len) < 0 || (uint16_t)(off + outer_len) != data_len) return -1;
-  if (outer_len == 0) return 0;
-  if (off >= data_len || data[off++] != 0x88) return -1;
-  uint16_t protected_len;
-  if (piv_tlv_len_buf(data, data_len, &off, &protected_len) < 0 || (uint16_t)(off + protected_len) != data_len)
-    return -1;
-  if (protected_len == 0) return 0;
-  if (off >= data_len || data[off++] != 0x89) return -1;
-  uint16_t parsed_key_len;
-  if (piv_tlv_len_buf(data, data_len, &off, &parsed_key_len) < 0 || (uint16_t)(off + parsed_key_len) != data_len)
-    return -1;
-  if (parsed_key_len != 16 && parsed_key_len != 24 && parsed_key_len != 32) return -1;
-  memcpy(key, data + off, parsed_key_len);
-  *key_len = parsed_key_len;
-  return 0;
-}
-
-static int piv_write_pin_protected_management_key(const uint8_t *key, uint16_t key_len) {
-  if (key_len != 24) return -1;
-  uint8_t encoded[30];
-  encoded[0] = 0x53;
-  encoded[1] = 0x1C;
-  encoded[2] = 0x88;
-  encoded[3] = 0x1A;
-  encoded[4] = 0x89;
-  encoded[5] = 0x18;
-  memcpy(encoded + 6, key, key_len);
-
-  const piv_do_desc_t *printed = piv_find_do(PIV_DO_TAG_C1(0x09));
-  if (printed == NULL) return -1;
-  return piv_do_write_inline(printed, encoded, sizeof(encoded));
-}
-
-static int piv_admin_status_satisfied(void) {
-  /*
-   * Standard admin authentication sets in_admin_status through GENERAL
-   * AUTHENTICATE. In PIN-protected mode, a currently verified PIN can also
-   * satisfy admin status if ADMIN DATA says bit1 is set and PRINTED contains a
-   * management key equal to the current 9B key. Keep that PIN-derived status in
-   * a separate latch so VERIFY logout can revoke it without clearing a real
-   * management-key authentication.
-   *
-   * Read only the key metadata and the first 24 key bytes here. ck_key_t is
-   * RSA-sized, so reading it just to compare a TDEA key would waste more than
-   * 1 KB of stack and flash I/O on a hot authorization path.
-   */
-  if (in_admin_status) return 1;
-  if (in_pin_protected_admin_status) {
-    if (pin.is_validated) return 1;
-    in_pin_protected_admin_status = 0;
-  }
-  if (!pin.is_validated || !piv_pin_protected_configured()) return 0;
-
-  uint8_t printed[PIV_DO_INLINE_PRINTED_MAX];
-  const int printed_len = piv_do_read_bytes(PIV_DO_TAG_C1(0x09), printed, sizeof(printed));
-  if (printed_len <= 0) return 0;
-
-  uint8_t protected_key[32];
-  uint16_t protected_key_len = 0;
-  const int parsed_key =
-      piv_pin_protected_management_key(printed, (uint16_t)printed_len, protected_key, &protected_key_len);
-  memzero(printed, sizeof(printed));
-  if (parsed_key < 0 || protected_key_len != 24) {
-    memzero(protected_key, sizeof(protected_key));
-    return 0;
-  }
-
-  key_meta_t key_meta;
-  uint8_t admin_key[24];
-  if (ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &key_meta) < 0 ||
-      read_file(CARD_ADMIN_KEY_PATH, admin_key, 0, sizeof(admin_key)) != (int)sizeof(admin_key)) {
-    memzero(admin_key, sizeof(admin_key));
-    memzero(protected_key, sizeof(protected_key));
-    return 0;
-  }
-  const int ok = key_meta.type == TDEA && memcmp_s(admin_key, protected_key, protected_key_len) == 0;
-  memzero(admin_key, sizeof(admin_key));
-  memzero(protected_key, sizeof(protected_key));
-  if (!ok) return 0;
-
-  in_pin_protected_admin_status = 1;
-  return 1;
+  return piv_remove_file_if_present(PIV_DO_META_PATH);
 }
 
 static key_type_t algo_id_to_key_type(const uint8_t id) {
@@ -876,9 +726,7 @@ static void piv_auth_reset(void) {
 void piv_poweroff(void) {
   piv_state = PIV_STATE_OTHER;
   in_admin_status = 0;
-  in_pin_protected_admin_status = 0;
   pin_is_consumed = 0;
-  piv_pin_protected_cache_clear();
   pin.is_validated = 0;
   puk.is_validated = 0;
   piv_do_write = -1;
@@ -966,9 +814,7 @@ static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
 
   // reset internal states
   in_admin_status = 0;
-  in_pin_protected_admin_status = 0;
   pin_is_consumed = 0;
-  piv_pin_protected_cache_clear();
   pin.is_validated = 0;
   puk.is_validated = 0;
   piv_do_write = -1;
@@ -1055,7 +901,7 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if ((desc->flags & PIV_DO_F_INLINE) != 0) {
-    const int attr_len = read_attr(CARD_ADMIN_KEY_PATH, desc->attr, RDATA, desc->capacity);
+    const int attr_len = read_attr(PIV_DO_META_PATH, desc->attr, RDATA, desc->capacity);
     if (attr_len > 0) {
       LL = attr_len;
       return 0;
@@ -1103,7 +949,6 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     pin.is_validated = 0;
     pin_is_consumed = 0;
-    in_pin_protected_admin_status = 0;
     return 0;
   }
   if (LC == 0) {
@@ -1315,7 +1160,6 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     DBG_MSG("Case 2\n");
     authenticate_reset();
     in_admin_status = 0;
-    in_pin_protected_admin_status = 0;
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
@@ -1365,7 +1209,6 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     DBG_MSG("Case 4\n");
     authenticate_reset();
     in_admin_status = 0;
-    in_pin_protected_admin_status = 0;
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
@@ -1502,7 +1345,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
-  if (!piv_admin_status_satisfied()) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
@@ -1523,14 +1366,13 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     /*
      * Inline-capable DOs use attr storage only below their metadata-safe
-     * ceiling. PRINTED can legally be up to 245 bytes, but only the 30-byte
-     * PIN-protected form should live beside the admin key metadata; larger
-     * PRINTED data is stored as a file after deleting any stale attr copy.
+     * ceiling. PRINTED can legally be up to 245 bytes, but host-managed
+     * management-key references are normally small; larger PRINTED data is
+     * stored as a file after deleting any stale attr copy.
      */
     if ((desc->flags & PIV_DO_F_INLINE) != 0 && size <= piv_do_inline_capacity(desc)) {
       if ((CLA & 0x10) != 0) EXCEPT(SW_WRONG_LENGTH);
       if (piv_do_write_inline(desc, payload, size) < 0) return -1;
-      if (tag == PIV_DO_TAG_FF(0x00) || tag == PIV_DO_TAG_C1(0x09)) piv_pin_protected_cache_clear();
       return 0;
     }
 
@@ -1538,13 +1380,10 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
       EXCEPT(SW_WRONG_LENGTH);
     }
 
-    if ((desc->flags & PIV_DO_F_INLINE) != 0 && write_attr(CARD_ADMIN_KEY_PATH, desc->attr, NULL, 0) < 0) {
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && piv_clear_attr_if_present(PIV_DO_META_PATH, desc->attr) < 0) {
       return -1;
     }
-
-    if (tag == PIV_DO_TAG_FF(0x00) || tag == PIV_DO_TAG_C1(0x09)) {
-      piv_pin_protected_cache_clear();
-    }
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && piv_remove_do_meta_if_empty() < 0) return -1;
 
     char path[MAX_DO_PATH_LEN];
     if (!piv_do_get_path(desc, tag, path)) EXCEPT(SW_FILE_NOT_FOUND);
@@ -1587,7 +1426,7 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
-  if (!piv_admin_status_satisfied()) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (LC < 5) {
     DBG_MSG("Wrong length\n");
@@ -1638,12 +1477,11 @@ static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != 0x03 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
 #ifndef FUZZ
-  if (!piv_admin_status_satisfied()) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   if (write_file(CARD_ADMIN_KEY_PATH, DATA + 3, 0, 24, 1) < 0) return -1;
   const uint8_t is_default = !memcmp(DATA + 3, DEFAULT_MGMT_KEY, 24);
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
-  if (piv_pin_protected_configured() && piv_write_pin_protected_management_key(DATA + 3, 24) < 0) return -1;
   return 0;
 }
 
@@ -1657,7 +1495,7 @@ static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
-  if (!piv_admin_status_satisfied()) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   const char *key_path = get_key_path(P2);
   if (key_path == NULL || P2 == 0x9B) {
@@ -1860,7 +1698,7 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
-  if (!piv_admin_status_satisfied()) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
   if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);

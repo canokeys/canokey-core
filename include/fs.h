@@ -14,6 +14,7 @@ int append_file(const char *path, const void *buf, lfs_size_t len);
 int truncate_file(const char *path, lfs_size_t len);
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len);
 int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len);
+int remove_attr(const char *path, uint8_t attr);
 int get_file_size(const char *path);
 int fs_rename(const char *old, const char *new);
 int remove_file(const char *path);
