@@ -28,6 +28,10 @@
 #define PI_PATH                     "piv-pi"   // printed information
 #define FINGER_PATH                 "piv-fig"  // card holder fingerprints
 #define FACE_PATH                   "piv-face" // card holder facial image
+#define SECURITY_PATH               "piv-sec"  // security object
+#define KEY_HISTORY_PATH            "piv-kh"   // key history object
+#define IRIS_PATH                   "piv-iris" // card holder iris images
+#define PIV_DO_META_PATH            "piv-do"   // small data object attrs
 // clang-format on
 
 // key tags and path
@@ -66,6 +70,67 @@ enum PIV_STATE {
 };
 static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 // clang-format on
+
+/*
+ * PIV data object storage model
+ *
+ * Keep APDU-facing DO metadata in this ROM table, not as pre-created LittleFS
+ * files. Optional objects are created lazily on PUT DATA, so unsupported or
+ * empty cert/biometric/retired-cert objects do not burn a 512-byte LittleFS
+ * metadata block each.
+ *
+ * LittleFS metadata blocks are 512 bytes on the target. Do not aggregate
+ * several large DO attrs on a single file: attr payloads plus LittleFS metadata
+ * tags must fit in that one block. Only the host-managed data objects that are
+ * normally small live on PIV_DO_META_PATH attrs:
+ *
+ *   - ADMIN DATA, max 128 bytes.
+ *   - PRINTED, only while it is <= 64 bytes. This covers the common 30-byte
+ *     host-managed management-key reference:
+ *     53 1c 88 1a 89 18 <24-byte management key>.
+ *
+ * The static assert below intentionally caps those attr payloads to half a
+ * metadata block, leaving room for LittleFS tag overhead and future small
+ * attrs. Larger PRINTED payloads fall back to PI_PATH. SECURITY and KEY
+ * HISTORY are file-backed so they cannot crowd the small-DO metadata block.
+ *
+ * The card stores these DOs and enforces their read/write access rules only.
+ * PIN-only mode and PUK blocking are host decisions. Management-key bytes and
+ * PUK retry counters are changed only by their normal PIV commands; the
+ * firmware does not infer either from ADMIN DATA/PRINTED contents.
+ */
+#define PIV_DO_TAG_DISCOVERY 0x0000007Eu
+#define PIV_DO_TAG_BITGT 0x00007F61u
+#define PIV_DO_TAG_C1(x) (0x005FC100u | (uint32_t)(x))
+#define PIV_DO_TAG_FF(x) (0x005FFF00u | (uint32_t)(x))
+
+#define PIV_DO_PRINTED_CAPACITY 245
+#define PIV_DO_INLINE_PRINTED_MAX 64
+#define PIV_DO_INLINE_ADMIN_DATA_MAX 128
+
+_Static_assert(PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLINE_ADMIN_DATA_MAX <= 256,
+               "piv-do attrs must fit in the reserved half of a 512-byte metadata block");
+
+#define PIV_DO_F_GET_PIN 0x01
+#define PIV_DO_F_PUT_ADMIN 0x02
+#define PIV_DO_F_CERT 0x04
+#define PIV_DO_F_READ_ONLY 0x08
+#define PIV_DO_F_SYNTH 0x10
+#define PIV_DO_F_INLINE 0x20
+
+#define PIV_DO_ATTR_PRINTED 0x90
+#define PIV_DO_ATTR_ADMIN_DATA 0x91
+// Kept only so reset can delete stale attrs written by older layouts.
+#define PIV_DO_ATTR_SECURITY 0x92
+#define PIV_DO_ATTR_KEY_HISTORY 0x93
+
+typedef struct {
+  uint32_t tag;      // APDU DO tag as parsed from 5C.
+  const char *path;  // NULL for synthesized or attr-only objects.
+  uint16_t capacity; // Maximum stored payload size, not including the 5C tag-list header.
+  uint8_t flags;     // Access/storage flags.
+  uint8_t attr;      // LittleFS attr id when PIV_DO_F_INLINE is set.
+} piv_do_desc_t;
 
 // tags for general auth
 // clang-format off
@@ -186,6 +251,168 @@ static int create_key(const char *path, const key_usage_t usage, const pin_polic
                                  .touch_policy = TOUCH_POLICY_NEVER}};
   if (ck_write_key(path, &key) < 0) return -1;
   return 0;
+}
+
+static const piv_do_desc_t piv_do_table[] = {
+    {PIV_DO_TAG_DISCOVERY, NULL, 0, PIV_DO_F_SYNTH | PIV_DO_F_READ_ONLY, 0},
+    {PIV_DO_TAG_BITGT, NULL, 0, PIV_DO_F_READ_ONLY, 0},
+    {PIV_DO_TAG_C1(0x01), CARD_AUTH_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
+    {PIV_DO_TAG_C1(0x02), CHUID_PATH, 2916, PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_C1(0x03), FINGER_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_C1(0x05), PIV_AUTH_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
+    {PIV_DO_TAG_C1(0x06), SECURITY_PATH, 245, PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_C1(0x07), CCC_PATH, 287, PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_C1(0x08), FACE_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_C1(0x09), PI_PATH, PIV_DO_PRINTED_CAPACITY, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
+     PIV_DO_ATTR_PRINTED},
+    {PIV_DO_TAG_C1(0x0A), SIG_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
+    {PIV_DO_TAG_C1(0x0B), KEY_MANAGEMENT_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
+    {PIV_DO_TAG_C1(0x0C), KEY_HISTORY_PATH, 32, PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_C1(0x0D), KEY_MANAGEMENT_82_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
+    {PIV_DO_TAG_C1(0x0E), KEY_MANAGEMENT_83_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
+    {PIV_DO_TAG_C1(0x21), IRIS_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {PIV_DO_TAG_FF(0x00), NULL, PIV_DO_INLINE_ADMIN_DATA_MAX, PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
+     PIV_DO_ATTR_ADMIN_DATA},
+};
+
+static const piv_do_desc_t piv_do_retired_cert_desc = {0, NULL, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0};
+
+// Retired key-management certs follow the contiguous NIST tag range
+// 5FC10D..5FC120. The first two keep their historical paths; the rest use a
+// generated short path piv-rXX to avoid 18 extra table entries.
+static int piv_is_retired_cert_tag(uint32_t tag) { return tag >= PIV_DO_TAG_C1(0x0F) && tag <= PIV_DO_TAG_C1(0x20); }
+
+static char piv_hex_nibble(uint8_t x) { return x < 10 ? (char)('0' + x) : (char)('a' + x - 10); }
+
+static void piv_retired_cert_path(uint32_t tag, char path[MAX_DO_PATH_LEN]) {
+  const uint8_t id = (uint8_t)(tag & 0xFFu);
+  path[0] = 'p';
+  path[1] = 'i';
+  path[2] = 'v';
+  path[3] = '-';
+  path[4] = 'r';
+  path[5] = piv_hex_nibble(id >> 4u);
+  path[6] = piv_hex_nibble(id & 0x0Fu);
+  path[7] = '\0';
+}
+
+static const piv_do_desc_t *piv_find_do(uint32_t tag) {
+  for (size_t i = 0; i < sizeof(piv_do_table) / sizeof(piv_do_table[0]); ++i) {
+    if (piv_do_table[i].tag == tag) return &piv_do_table[i];
+  }
+  return piv_is_retired_cert_tag(tag) ? &piv_do_retired_cert_desc : NULL;
+}
+
+static int piv_do_get_path(const piv_do_desc_t *desc, uint32_t tag, char path[MAX_DO_PATH_LEN]) {
+  if (desc->path != NULL) {
+    strcpy(path, desc->path);
+    return 1;
+  }
+  if (desc == &piv_do_retired_cert_desc) {
+    piv_retired_cert_path(tag, path);
+    return 1;
+  }
+  path[0] = '\0';
+  return 0;
+}
+
+// Returns the attr storage ceiling for DOs that are allowed to inline. A zero
+// return means the object is file-backed even if it has a historical stale attr.
+static uint16_t piv_do_inline_capacity(const piv_do_desc_t *desc) {
+  switch (desc->attr) {
+  case PIV_DO_ATTR_PRINTED:
+    return PIV_DO_INLINE_PRINTED_MAX;
+  case PIV_DO_ATTR_ADMIN_DATA:
+    return PIV_DO_INLINE_ADMIN_DATA_MAX;
+  default:
+    return 0;
+  }
+}
+
+static int piv_parse_data_object_tag(const CAPDU *capdu, uint32_t *tag, uint16_t *header_len) {
+  if (LC < 2) return SW_WRONG_LENGTH;
+  if (DATA[0] != 0x5C) return SW_WRONG_DATA;
+  const uint8_t tag_len = DATA[1];
+  if (tag_len == 0 || tag_len > 3 || (uint16_t)(2 + tag_len) > LC) return SW_WRONG_LENGTH;
+
+  uint32_t parsed = 0;
+  for (uint8_t i = 0; i < tag_len; ++i) {
+    parsed = (parsed << 8u) | DATA[2 + i];
+  }
+  *tag = parsed;
+  *header_len = 2 + tag_len;
+  return SW_NO_ERROR;
+}
+
+static int piv_clear_attr_if_present(const char *path, uint8_t attr);
+static int piv_remove_do_meta_if_empty(void);
+
+static int piv_do_write_inline(const piv_do_desc_t *desc, const uint8_t *data, uint16_t len) {
+  if (len == 0) {
+    if (piv_clear_attr_if_present(PIV_DO_META_PATH, desc->attr) < 0) return -1;
+    if (piv_remove_do_meta_if_empty() < 0) return -1;
+  } else {
+    if (write_file(PIV_DO_META_PATH, NULL, 0, 0, 0) < 0) return -1;
+    if (write_attr(PIV_DO_META_PATH, desc->attr, data, len) < 0) return -1;
+  }
+  if (desc->path != NULL) {
+    const int remove_rc = remove_file(desc->path);
+    if (remove_rc < 0 && remove_rc != LFS_ERR_NOENT) return -1;
+  }
+  return 0;
+}
+
+static int piv_remove_file_if_present(const char *path) {
+  const int rc = remove_file(path);
+  return (rc == 0 || rc == LFS_ERR_NOENT) ? 0 : -1;
+}
+
+static int piv_clear_attr_if_present(const char *path, uint8_t attr) {
+  const int rc = remove_attr(path, attr);
+  return (rc == 0 || rc == LFS_ERR_NOENT || rc == LFS_ERR_NOATTR) ? 0 : -1;
+}
+
+static int piv_attr_present(const char *path, uint8_t attr) {
+  uint8_t probe;
+  const int rc = read_attr(path, attr, &probe, 0);
+  if (rc >= 0) return 1;
+  if (rc == LFS_ERR_NOENT || rc == LFS_ERR_NOATTR) return 0;
+  return -1;
+}
+
+static int piv_remove_do_meta_if_empty(void) {
+  const int printed = piv_attr_present(PIV_DO_META_PATH, PIV_DO_ATTR_PRINTED);
+  if (printed != 0) return printed < 0 ? -1 : 0;
+  const int admin_data = piv_attr_present(PIV_DO_META_PATH, PIV_DO_ATTR_ADMIN_DATA);
+  if (admin_data != 0) return admin_data < 0 ? -1 : 0;
+  return piv_remove_file_if_present(PIV_DO_META_PATH);
+}
+
+static int piv_clear_file_do_storage(void) {
+  for (size_t i = 0; i < sizeof(piv_do_table) / sizeof(piv_do_table[0]); ++i) {
+    if (piv_do_table[i].path != NULL && piv_remove_file_if_present(piv_do_table[i].path) < 0) return -1;
+  }
+
+  char path[MAX_DO_PATH_LEN];
+  for (uint32_t tag = PIV_DO_TAG_C1(0x0F); tag <= PIV_DO_TAG_C1(0x20); ++tag) {
+    piv_retired_cert_path(tag, path);
+    if (piv_remove_file_if_present(path) < 0) return -1;
+  }
+  return 0;
+}
+
+static int piv_clear_inline_do_storage(void) {
+  static const uint8_t attrs[] = {
+      PIV_DO_ATTR_PRINTED,
+      PIV_DO_ATTR_ADMIN_DATA,
+      PIV_DO_ATTR_SECURITY,
+      PIV_DO_ATTR_KEY_HISTORY,
+  };
+  for (size_t i = 0; i < sizeof(attrs) / sizeof(attrs[0]); ++i) {
+    if (piv_clear_attr_if_present(PIV_DO_META_PATH, attrs[i]) < 0) return -1;
+    if (piv_clear_attr_if_present(CARD_ADMIN_KEY_PATH, attrs[i]) < 0) return -1;
+  }
+  return piv_remove_file_if_present(PIV_DO_META_PATH);
 }
 
 static key_type_t algo_id_to_key_type(const uint8_t id) {
@@ -515,18 +742,8 @@ int piv_install(const uint8_t reset) {
     if (read_file(ALGORITHM_EXT_CONFIG_PATH, &alg_ext_cfg, 0, sizeof(alg_ext_cfg)) < 0) return -1;
     return 0;
   }
+  if (reset && piv_clear_file_do_storage() < 0) return -1;
 
-  static const char *const object_paths[] = {
-      PIV_AUTH_CERT_PATH,
-      SIG_CERT_PATH,
-      KEY_MANAGEMENT_CERT_PATH,
-      CARD_AUTH_CERT_PATH,
-      KEY_MANAGEMENT_82_CERT_PATH,
-      KEY_MANAGEMENT_83_CERT_PATH,
-      PI_PATH,
-      FINGER_PATH,
-      FACE_PATH,
-  };
   static const struct {
     const char *path;
     key_usage_t usage;
@@ -540,10 +757,8 @@ int piv_install(const uint8_t reset) {
       {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
   };
 
-  // objects
-  for (size_t i = 0; i < sizeof(object_paths) / sizeof(object_paths[0]); ++i) {
-    if (write_file(object_paths[i], NULL, 0, 0, 1) < 0) return -1;
-  }
+  // Default objects. Optional DO files are created lazily on PUT DATA so empty
+  // retired cert and biometric objects do not consume LittleFS metadata blocks.
   uint8_t ccc_tpl[] = {0x53, 0x33, 0xf0, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf1, 0x01, 0x21,
                        0xf2, 0x01, 0x21, 0xf3, 0x00, 0xf4, 0x01, 0x00, 0xf5, 0x01, 0x10, 0xf6, 0x00, 0xf7,
@@ -570,6 +785,7 @@ int piv_install(const uint8_t reset) {
                                  .touch_policy = TOUCH_POLICY_NEVER}};
   memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
   if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) return -1;
+  if (reset && piv_clear_inline_do_storage() < 0) return -1;
   const uint8_t tmp = 0x01;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
@@ -591,74 +807,6 @@ int piv_install(const uint8_t reset) {
   if (write_file(ALGORITHM_EXT_CONFIG_PATH, &alg_ext_cfg, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
 
   return 0;
-}
-
-static const char *get_object_path_by_tag(const uint8_t tag) {
-  // Part 1 Table 3 0x5FC1XX
-  switch (tag) {
-  case 0x05: // X.509 Certificate for PIV Authentication
-    return PIV_AUTH_CERT_PATH;
-  case 0x0A: // X.509 Certificate for Digital Signature
-    return SIG_CERT_PATH;
-  case 0x0B: // X.509 Certificate for Key Management
-    return KEY_MANAGEMENT_CERT_PATH;
-  case 0x01: // X.509 Certificate for Card Authentication
-    return CARD_AUTH_CERT_PATH;
-  case 0x0D: // Retired X.509 Certificate for Key Management 1
-    return KEY_MANAGEMENT_82_CERT_PATH;
-  case 0x0E: // Retired X.509 Certificate for Key Management 2
-    return KEY_MANAGEMENT_83_CERT_PATH;
-  case 0x02: // Card Holder Unique Identifier
-    return CHUID_PATH;
-  case 0x07: // Card Capability Container
-    return CCC_PATH;
-  case 0x09: // Printed Information
-    return PI_PATH;
-  case 0x03: // Fingerprints
-    return FINGER_PATH;
-  case 0x08: // Facial Images
-    return FACE_PATH;
-  default:
-    return NULL;
-  }
-}
-
-static uint16_t get_capacity_by_tag(const uint8_t tag) {
-  // Part 1 Table 7 Container Minimum Capacity, 5FC1XX
-  switch (tag) {
-  case 0x05: // X.509 Certificate for PIV Authentication (9A)
-  case 0x0A: // X.509 Certificate for Digital Signature (9C)
-  case 0x0B: // X.509 Certificate for Key Management (9D)
-  case 0x01: // X.509 Certificate for Card Authentication (9E)
-  case 0x0D: // Retired X.509 Certificate for Key Management 1 (82)
-  case 0x0E: // Retired X.509 Certificate for Key Management 2 (83)
-    return 3000;
-  case 0x02: // Card Holder Unique Identifier
-    return 2916;
-  case 0x07: // Card Capability Container
-    return 287;
-  case 0x09: // Printed Information
-    return 245;
-  case 0x03: // Fingerprints
-  case 0x08: // Facial Images
-    return 512;
-  default:
-    return 0;
-  }
-}
-
-static int is_certificate_object_tag(const uint8_t tag) {
-  switch (tag) {
-  case 0x05:
-  case 0x0A:
-  case 0x0B:
-  case 0x01:
-  case 0x0D:
-  case 0x0E:
-    return 1;
-  default:
-    return 0;
-  }
 }
 
 static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
@@ -723,11 +871,18 @@ static int piv_get_large_data(const CAPDU *capdu, RAPDU *rapdu, const char *path
  */
 static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
-  if (LC < 2) EXCEPT(SW_WRONG_LENGTH);
-  if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
-  if (DATA[1] + 2 != LC) EXCEPT(SW_WRONG_LENGTH);
-  if (DATA[1] == 1) {
-    if (DATA[2] != 0x7E) EXCEPT(SW_FILE_NOT_FOUND);
+  uint32_t tag;
+  uint16_t header_len;
+  const int tag_sw = piv_parse_data_object_tag(capdu, &tag, &header_len);
+  if (tag_sw != SW_NO_ERROR) EXCEPT(tag_sw);
+  if (header_len != LC) EXCEPT(SW_WRONG_LENGTH);
+
+  const piv_do_desc_t *desc = piv_find_do(tag);
+  if (desc == NULL) EXCEPT(SW_FILE_NOT_FOUND);
+
+  if ((desc->flags & PIV_DO_F_GET_PIN) != 0 && !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  if (tag == PIV_DO_TAG_DISCOVERY) {
     // For the Discovery Object, the 0x7E template nests two data elements:
     // 1) tag 0x4F contains the AID of the PIV Card Application and
     // 2) tag 0x5F2F lists the PIN Usage Policy.
@@ -742,20 +897,24 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[6 + sizeof(rid) + sizeof(pix)] = sizeof(pin_policy);
     memcpy(RDATA + 7 + sizeof(rid) + sizeof(pix), pin_policy, sizeof(pin_policy));
     LL = 7 + sizeof(rid) + sizeof(pix) + sizeof(pin_policy);
-  } else if (DATA[1] == 3) {
-    if (LC != 5 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
-    // Reading Printed Information, Fingerprints, and Facial Images requires PIN verification
-    if ((DATA[4] == 0x09 || DATA[4] == 0x03 || DATA[4] == 0x08) && !pin.is_validated)
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    const char *path = get_object_path_by_tag(DATA[4]);
-    if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-    const int size = get_file_size(path);
-    if (size < 0) return -1;
-    if (size == 0) EXCEPT(SW_FILE_NOT_FOUND);
-    return piv_get_large_data(capdu, rapdu, path, size);
-  } else
-    EXCEPT(SW_FILE_NOT_FOUND);
-  return 0;
+    return 0;
+  }
+
+  if ((desc->flags & PIV_DO_F_INLINE) != 0) {
+    const int attr_len = read_attr(PIV_DO_META_PATH, desc->attr, RDATA, desc->capacity);
+    if (attr_len > 0) {
+      LL = attr_len;
+      return 0;
+    }
+    if (attr_len < 0 && desc->path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
+  }
+
+  char path[MAX_DO_PATH_LEN];
+  if (!piv_do_get_path(desc, tag, path)) EXCEPT(SW_FILE_NOT_FOUND);
+  const int size = get_file_size(path);
+  if (size == LFS_ERR_NOENT || size == 0) EXCEPT(SW_FILE_NOT_FOUND);
+  if (size < 0) return -1;
+  return piv_get_large_data(capdu, rapdu, path, size);
 }
 
 static int piv_get_data_response(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1192,27 +1351,54 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x3F || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
 
   if (piv_do_write == -1) { // not in chaining write
-    if (LC < 5) EXCEPT(SW_WRONG_LENGTH);
-    const int size = LC - 5;
-    if (DATA[0] != 0x5C) EXCEPT(SW_WRONG_DATA);
-    // Part 1 Table 3 0x5FC1XX
-    if (DATA[1] != 3 || DATA[2] != 0x5F || DATA[3] != 0xC1) EXCEPT(SW_FILE_NOT_FOUND);
-    const char *path = get_object_path_by_tag(DATA[4]);
-    const int max_len = get_capacity_by_tag(DATA[4]);
-    if (path == NULL) EXCEPT(SW_FILE_NOT_FOUND);
-    if (size > max_len) EXCEPT(SW_WRONG_LENGTH);
-    if ((CLA & 0x10) == 0 && is_certificate_object_tag(DATA[4]) && size == 2 && DATA[5] == 0x53 && DATA[6] == 0x00) {
+    uint32_t tag;
+    uint16_t header_len;
+    const int tag_sw = piv_parse_data_object_tag(capdu, &tag, &header_len);
+    if (tag_sw != SW_NO_ERROR) EXCEPT(tag_sw);
+
+    const piv_do_desc_t *desc = piv_find_do(tag);
+    if (desc == NULL || (desc->flags & (PIV_DO_F_READ_ONLY | PIV_DO_F_PUT_ADMIN)) != PIV_DO_F_PUT_ADMIN)
+      EXCEPT(SW_FILE_NOT_FOUND);
+
+    const uint16_t size = LC - header_len;
+    if (size > desc->capacity) EXCEPT(SW_WRONG_LENGTH);
+    const uint8_t *payload = DATA + header_len;
+
+    /*
+     * Inline-capable DOs use attr storage only below their metadata-safe
+     * ceiling. PRINTED can legally be up to 245 bytes, but host-managed
+     * management-key references are normally small; larger PRINTED data is
+     * stored as a file after deleting any stale attr copy.
+     */
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && size <= piv_do_inline_capacity(desc)) {
+      if ((CLA & 0x10) != 0) EXCEPT(SW_WRONG_LENGTH);
+      if (piv_do_write_inline(desc, payload, size) < 0) return -1;
+      return 0;
+    }
+
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && desc->path == NULL) {
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && piv_clear_attr_if_present(PIV_DO_META_PATH, desc->attr) < 0) {
+      return -1;
+    }
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && piv_remove_do_meta_if_empty() < 0) return -1;
+
+    char path[MAX_DO_PATH_LEN];
+    if (!piv_do_get_path(desc, tag, path)) EXCEPT(SW_FILE_NOT_FOUND);
+    if ((CLA & 0x10) == 0 && (desc->flags & PIV_DO_F_CERT) != 0 && size == 2 && payload[0] == 0x53 &&
+        payload[1] == 0x00) {
       DBG_MSG("delete certificate file %s\n", path);
-      const int rc = write_file(path, NULL, 0, 0, 1);
-      if (rc < 0) return -1;
+      if (piv_remove_file_if_present(path) < 0) return -1;
       return 0;
     }
     DBG_MSG("write file %s, first chunk length %d\n", path, size);
-    const int rc = write_file(path, DATA + 5, 0, size, 1);
+    const int rc = write_file(path, payload, 0, size, 1);
     if (rc < 0) return -1;
-    if ((CLA & 0x10) != 0 && size < max_len) {
+    if ((CLA & 0x10) != 0 && size < desc->capacity) {
       // enter chaining write mode
-      piv_do_write = max_len - size;
+      piv_do_write = desc->capacity - size;
       strcpy(piv_do_path, path);
     }
   } else {

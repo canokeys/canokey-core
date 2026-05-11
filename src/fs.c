@@ -99,6 +99,10 @@ int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len) 
   return lfs_setattr(&lfs, path, attr, buf, len);
 }
 
+int remove_attr(const char *path, uint8_t attr) {
+  return lfs_removeattr(&lfs, path, attr);
+}
+
 int get_file_size(const char *path) {
   lfs_file_t f;
   int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
@@ -125,3 +129,5 @@ int get_fs_usage(void) {
 }
 
 int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }
+
+int remove_file(const char *path) { return lfs_remove(&lfs, path); }

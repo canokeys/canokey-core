@@ -142,7 +142,120 @@ static void test_delete_certificate_object(void **state) {
 
   uint8_t delete_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x00};
   test_helper(delete_cert, sizeof(delete_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-pauc"), 0);
+  assert_true(get_file_size("piv-pauc") < 0);
+}
+
+static const uint8_t default_piv_pin[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+static const uint8_t default_mgmt_key[24] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
+
+static void configure_host_managed_admin_data(void) {
+  set_admin_status(1);
+
+  uint8_t printed[5 + 30] = {0x5C, 0x03, 0x5F, 0xC1, 0x09, 0x53, 0x1C, 0x88, 0x1A, 0x89, 0x18};
+  memcpy(printed + 11, default_mgmt_key, sizeof(default_mgmt_key));
+  test_helper(printed, sizeof(printed), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+
+  uint8_t admin_data[] = {0x5C, 0x03, 0x5F, 0xFF, 0x00, 0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03};
+  test_helper(admin_data, sizeof(admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+
+  set_admin_status(0);
+}
+
+static void test_piv_host_managed_admin_data_objects(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  const int admin_key_size = get_file_size("piv-admk");
+  configure_host_managed_admin_data();
+  assert_int_equal(get_file_size("piv-admk"), admin_key_size);
+  piv_poweroff();
+
+  uint8_t get_printed[] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
+  test_helper(get_printed, sizeof(get_printed), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+
+  uint8_t expected_printed[30] = {0x53, 0x1C, 0x88, 0x1A, 0x89, 0x18};
+  memcpy(expected_printed + 6, default_mgmt_key, sizeof(default_mgmt_key));
+  test_helper_resp(get_printed, sizeof(get_printed), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_NO_ERROR, expected_printed,
+                   sizeof(expected_printed));
+
+  piv_poweroff();
+  uint8_t get_admin[] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
+  uint8_t expected_admin[] = {0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03};
+  test_helper_resp(get_admin, sizeof(get_admin), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_NO_ERROR, expected_admin,
+                   sizeof(expected_admin));
+}
+
+static void test_piv_pin_does_not_satisfy_admin(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  configure_host_managed_admin_data();
+  piv_poweroff();
+
+  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
+  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
+  assert_true(get_file_size("piv-pauc") < 0);
+}
+
+static void test_piv_retired_cert_lazy_storage(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  assert_true(get_file_size("piv-r20") < 0);
+
+  set_admin_status(1);
+  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x20, 0x53, 0x01, 0x55};
+  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_int_equal(get_file_size("piv-r20"), 3);
+
+  uint8_t get_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x20};
+  uint8_t expected[] = {0x53, 0x01, 0x55};
+  uint8_t r_buf[256];
+  CAPDU C = {.data = get_cert, .ins = PIV_INS_GET_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(get_cert), .le = 256};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, sizeof(expected));
+  assert_memory_equal(R.data, expected, sizeof(expected));
+}
+
+static void test_piv_metadata_bounded_do_storage(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+
+  uint8_t inline_printed[5 + 64] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
+  for (size_t i = 5; i < sizeof(inline_printed); ++i) {
+    inline_printed[i] = (uint8_t)i;
+  }
+  test_helper(inline_printed, sizeof(inline_printed), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_true(get_file_size("piv-pi") < 0);
+
+  uint8_t max_admin_data[5 + 128] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
+  for (size_t i = 5; i < sizeof(max_admin_data); ++i) {
+    max_admin_data[i] = (uint8_t)(0x80 + i);
+  }
+  test_helper(max_admin_data, sizeof(max_admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+
+  uint8_t large_printed[5 + 80] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
+  for (size_t i = 5; i < sizeof(large_printed); ++i) {
+    large_printed[i] = (uint8_t)i;
+  }
+  test_helper(large_printed, sizeof(large_printed), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_int_equal(get_file_size("piv-pi"), 80);
+
+  uint8_t security[] = {0x5C, 0x03, 0x5F, 0xC1, 0x06, 0x53, 0x02, 0x11, 0x22};
+  test_helper(security, sizeof(security), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_int_equal(get_file_size("piv-sec"), 4);
+
+  uint8_t key_history[] = {0x5C, 0x03, 0x5F, 0xC1, 0x0C, 0x53, 0x01, 0x33};
+  test_helper(key_history, sizeof(key_history), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  assert_int_equal(get_file_size("piv-kh"), 3);
+
+  configure_host_managed_admin_data();
+  assert_true(get_file_size("piv-pi") < 0);
 }
 
 // piv_get_metadata's key_type_to_algo_id switch maps each supported
@@ -249,7 +362,8 @@ static void test_piv_cert_chained_read(void **state) {
   // 600-byte payload large enough to span three 256-byte chunks.
   enum { CERT_LEN = 600 };
   uint8_t cert[CERT_LEN];
-  for (size_t i = 0; i < CERT_LEN; ++i) cert[i] = (uint8_t)(0xC0 + (i & 0x3F));
+  for (size_t i = 0; i < CERT_LEN; ++i)
+    cert[i] = (uint8_t)(0xC0 + (i & 0x3F));
 
   uint8_t r_buf[1024];
   RAPDU rapdu = {.data = r_buf};
@@ -271,8 +385,13 @@ static void test_piv_cert_chained_read(void **state) {
   first_data[8] = (uint8_t)(CERT_LEN & 0xFF);
   memcpy(first_data + HDR_LEN, cert, FIRST_CHUNK);
   CAPDU put_first = {
-      .data = first_data, .cla = 0x10, .ins = PIV_INS_PUT_DATA, .p1 = 0x3F, .p2 = 0xFF,
-      .lc = sizeof(first_data), .le = 0,
+      .data = first_data,
+      .cla = 0x10,
+      .ins = PIV_INS_PUT_DATA,
+      .p1 = 0x3F,
+      .p2 = 0xFF,
+      .lc = sizeof(first_data),
+      .le = 0,
   };
   rc.rapdu.len = 0;
   rc.sent = 0;
@@ -307,7 +426,13 @@ static void test_piv_cert_chained_read(void **state) {
   // Now read it back via GET DATA + GET RESPONSE chain.
   uint8_t get_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05};
   CAPDU get_apdu = {
-      .data = get_cert, .cla = 0x00, .ins = PIV_INS_GET_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(get_cert), .le = 0x100,
+      .data = get_cert,
+      .cla = 0x00,
+      .ins = PIV_INS_GET_DATA,
+      .p1 = 0x3F,
+      .p2 = 0xFF,
+      .lc = sizeof(get_cert),
+      .le = 0x100,
   };
   rc.rapdu.len = 0;
   rc.sent = 0;
@@ -372,6 +497,10 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_delete_certificate_object),
+      cmocka_unit_test(test_piv_host_managed_admin_data_objects),
+      cmocka_unit_test(test_piv_pin_does_not_satisfy_admin),
+      cmocka_unit_test(test_piv_retired_cert_lazy_storage),
+      cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
       cmocka_unit_test(test_piv_cert_chained_read),
