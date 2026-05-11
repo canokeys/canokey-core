@@ -7,12 +7,18 @@
 #include <bd/lfs_filebd.h>
 #include <cmocka.h>
 #include <crypto-util.h>
+#include <device.h>
 #include <fs.h>
 #include <key.h>
 #include <lfs.h>
 #include <piv.h>
+#include <string.h>
 
 extern void set_admin_status(int status);
+
+static void inject_write_error(const char *path) {
+  testmode_inject_error(0, 0, (uint16_t)strlen(path), (const uint8_t *)path);
+}
 
 static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint8_t p1, uint8_t p2,
                              uint16_t expected_error, uint8_t *expected_resp, size_t resp_len) {
@@ -235,6 +241,97 @@ static void test_ed25519_general_authenticate_long_message(void **state) {
   assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
 }
 
+static void test_set_pin_retries(void **state) {
+  (void)state;
+
+  uint8_t r_buf[128];
+  RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
+
+  set_admin_status(1);
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+  C = (CAPDU){.data = pin_data, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(pin_data)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 0, .p2 = 5, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 16, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  C = (CAPDU){.data = pin_data, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 1};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_LENGTH);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x80, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.data[5], 1);
+  assert_int_equal(R.data[8], 4);
+  assert_int_equal(R.data[9], 4);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x81, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.data[5], 1);
+  assert_int_equal(R.data[8], 5);
+  assert_int_equal(R.data[9], 5);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, 0x63C4);
+
+  uint8_t old_pin[8] = {'0', '0', '0', '0', '0', '0', 0xFF, 0xFF};
+  C = (CAPDU){.data = old_pin, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(old_pin)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, 0x63C3);
+
+  C = (CAPDU){.data = pin_data, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(pin_data)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  set_admin_status(1);
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 15, .p2 = 15, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+}
+
+static void test_set_pin_retries_failure_invalidates_auth(void **state) {
+  (void)state;
+
+  uint8_t r_buf[128];
+  RAPDU R = {.data = r_buf};
+  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+  CAPDU C = {.data = pin_data, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(pin_data)};
+
+  set_admin_status(1);
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  inject_write_error("piv-puk");
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_UNABLE_TO_PROCESS);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  set_admin_status(1);
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+}
+
 // piv_process_apdu_message uses RAPDU_CHAINING + apdu_output to stream
 // large responses in 256-byte chunks. Stage a >256-byte certificate via
 // chained PUT DATA APDUs (PIV applet handles cross-APDU chaining itself),
@@ -374,6 +471,8 @@ int main() {
       cmocka_unit_test(test_delete_certificate_object),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
+      cmocka_unit_test(test_set_pin_retries),
+      cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_cert_chained_read),
   };
 

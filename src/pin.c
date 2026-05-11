@@ -9,6 +9,7 @@
 #define DEFAULT_RETRY_ATTR 1
 
 int pin_create(const pin_t *pin, const void *buf, uint8_t len, uint8_t max_retries) {
+  if (max_retries == 0 || max_retries > PIN_MAX_RETRIES) return PIN_LENGTH_INVALID;
   int err = write_file(pin->path, buf, 0, len, 1);
   if (err < 0) return PIN_IO_FAIL;
   err = write_attr(pin->path, RETRY_ATTR, &max_retries, sizeof(max_retries));
@@ -86,6 +87,20 @@ int pin_get_default_retries(const pin_t *pin) {
   int err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
   if (err < 0) return PIN_IO_FAIL;
   return ctr;
+}
+
+int pin_set_retries(const pin_t *pin, uint8_t max_retries) {
+  if (max_retries == 0 || max_retries > PIN_MAX_RETRIES) return PIN_LENGTH_INVALID;
+  int err = write_attr(pin->path, RETRY_ATTR, &max_retries, sizeof(max_retries));
+  if (err < 0) return PIN_IO_FAIL;
+  err = write_attr(pin->path, DEFAULT_RETRY_ATTR, &max_retries, sizeof(max_retries));
+  if (err < 0) return PIN_IO_FAIL;
+  return 0;
+}
+
+uint16_t pin_get_retry_sw(uint8_t retries) {
+  if (retries > PIN_MAX_RETRIES) retries = PIN_MAX_RETRIES;
+  return (uint16_t)(0x63C0 + retries);
 }
 
 int pin_clear(const pin_t *pin) {

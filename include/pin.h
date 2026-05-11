@@ -15,6 +15,7 @@ typedef struct {
 #define PIN_AUTH_FAIL -2
 #define PIN_LENGTH_INVALID -3
 #define PIN_MAX_LENGTH 64
+#define PIN_MAX_RETRIES 15
 
 int pin_create(const pin_t *pin, const void *buf, uint8_t len, uint8_t max_retries);
 int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries);
@@ -22,6 +23,8 @@ int pin_update(pin_t *pin, const void *buf, uint8_t len);
 int pin_get_size(const pin_t *pin);
 int pin_get_retries(const pin_t *pin);
 int pin_get_default_retries(const pin_t *pin);
+int pin_set_retries(const pin_t *pin, uint8_t max_retries);
+uint16_t pin_get_retry_sw(uint8_t retries);
 int pin_clear(const pin_t *pin);
 
 #endif // CANOKEY_CORE_SRC_PIN_H

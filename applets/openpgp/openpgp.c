@@ -714,7 +714,7 @@ static int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
     if (pw->is_validated) return 0;
     int retries = pin_get_retries(pw);
     if (retries < 0) return -1;
-    EXCEPT(SW_PIN_RETRIES + retries);
+    EXCEPT(pin_get_retry_sw((uint8_t)retries));
   }
 
   uint8_t ctr;
@@ -782,6 +782,29 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   err = pin_update(&pw1, DATA + offset, LC - offset);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
+
+  return 0;
+}
+
+static int openpgp_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 3) EXCEPT(SW_WRONG_LENGTH);
+  if (DATA[0] == 0 || DATA[0] > PIN_MAX_RETRIES || DATA[1] == 0 || DATA[1] > PIN_MAX_RETRIES || DATA[2] == 0 ||
+      DATA[2] > PIN_MAX_RETRIES)
+    EXCEPT(SW_WRONG_DATA);
+
+#ifndef FUZZ
+  ASSERT_ADMIN();
+#endif
+
+  pw1_mode = 0;
+  pw1.is_validated = 0;
+  pw3.is_validated = 0;
+  rc.is_validated = 0;
+
+  if (pin_create(&pw1, "123456", 6, DATA[0]) < 0) return -1;
+  if (pin_set_retries(&rc, DATA[1]) < 0) return -1;
+  if (pin_create(&pw3, "12345678", 8, DATA[2]) < 0) return -1;
 
   return 0;
 }
@@ -1741,6 +1764,9 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case OPENPGP_INS_GET_CHALLENGE:
     ret = openpgp_get_challenge(capdu, rapdu);
+    break;
+  case OPENPGP_INS_SET_PIN_RETRIES:
+    ret = openpgp_set_pin_retries(capdu, rapdu);
     break;
   case OPENPGP_INS_TERMINATE:
     ret = openpgp_terminate(capdu, rapdu);
