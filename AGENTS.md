@@ -372,6 +372,7 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 - `htobe32` / `htole32` / `be32toh` are endianness helpers defined in `common.h`; do not use system headers that may be absent on bare-metal targets.
 - `EXCEPT(sw_code)` macro sets `rapdu->sw` and returns from an applet handler early.
 - Feature guards: always wrap interface-specific includes and calls in `#if ENABLE_IFACE_xxx`.
+- Protocol-visible behavior changes must update the nearby public/developer documentation and include short comments for non-obvious security or interoperability constraints. For APDU extensions, document the command shape, authentication preconditions, persistent side effects, retry/range limits, and expected tests in the same change.
 
 ---
 

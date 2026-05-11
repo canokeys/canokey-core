@@ -16,6 +16,9 @@
 #define PIV_INS_PUT_DATA                     0xDB
 #define PIV_INS_GET_METADATA                 0xF7
 #define PIV_INS_GET_SERIAL                   0xF8
+// Vendor extension: 00 FA <pinRetries> <pukRetries>, no data.
+// Requires management-key and PIN authentication, then resets PIN/PUK to
+// their defaults with the requested retry limits.
 #define PIV_INS_SET_PIN_RETRIES              0xFA
 #define PIV_INS_RESET                        0xFB
 #define PIV_INS_GET_VERSION                  0xFD

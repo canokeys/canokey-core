@@ -797,6 +797,8 @@ static int openpgp_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
   ASSERT_ADMIN();
 #endif
 
+  // A retry reset rewrites PW1/PW3. Clear volatile authorization first so an
+  // interrupted persistent write cannot leave the old session authorized.
   pw1_mode = 0;
   pw1.is_validated = 0;
   pw3.is_validated = 0;

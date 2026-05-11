@@ -852,6 +852,8 @@ static int piv_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 == 0 || P1 > PIN_MAX_RETRIES || P2 == 0 || P2 > PIN_MAX_RETRIES) EXCEPT(SW_WRONG_P1P2);
   if (!in_admin_status || !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
+  // A retry reset rewrites credentials. Clear volatile authorization first so
+  // an interrupted persistent write cannot leave the old session authorized.
   in_admin_status = 0;
   pin.is_validated = 0;
   puk.is_validated = 0;
