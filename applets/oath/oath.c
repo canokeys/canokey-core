@@ -638,9 +638,9 @@ static int oath_yk_api_req(const CAPDU *capdu, RAPDU *rapdu) {
 
   case YK_CMD_CHAL_HMAC1:
   case YK_CMD_CHAL_HMAC2: {
-    if (LC != PASS_HMAC_CHALLENGE_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (LC > PASS_HMAC_CHALLENGE_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     const uint8_t slot_index = P1 == YK_CMD_CHAL_HMAC1 ? 0 : 1;
-    const int len = pass_hmacsha1(slot_index, DATA, RDATA);
+    const int len = pass_hmacsha1(slot_index, DATA, LC, RDATA);
     if (len == -2) EXCEPT(SW_FILE_NOT_FOUND);
     if (len < 0) return -1;
     LL = (uint16_t)len;

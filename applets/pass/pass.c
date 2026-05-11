@@ -196,16 +196,19 @@ static int oath_process_offset(uint32_t file_offset, char *output) {
   return len;
 }
 
-int pass_hmacsha1(uint8_t slot_index, const uint8_t challenge[PASS_HMAC_CHALLENGE_LENGTH],
+int pass_hmacsha1(uint8_t slot_index, const uint8_t *challenge, uint16_t challenge_len,
                   uint8_t response[PASS_HMAC_RESPONSE_LENGTH]) {
+  static const uint8_t empty_challenge[1] = {0};
+
   if (slot_index >= 2) return -1;
+  if (challenge_len > PASS_HMAC_CHALLENGE_LENGTH) return -1;
+  if (challenge == NULL && challenge_len != 0) return -1;
 
   pass_slot_t *slot = &slots[slot_index];
   if (slot->type != PASS_SLOT_HMACSHA1) return -2;
 
-  // The KBDHID compatibility layer passes in the complete fixed-size
-  // challenge, including any zero padding from the host frame.
-  hmac_sha1(slot->hmac_key, PASS_HMAC_KEY_LENGTH, challenge, PASS_HMAC_CHALLENGE_LENGTH, response);
+  if (challenge_len == 0) challenge = empty_challenge;
+  hmac_sha1(slot->hmac_key, PASS_HMAC_KEY_LENGTH, challenge, challenge_len, response);
   return PASS_HMAC_RESPONSE_LENGTH;
 }
 

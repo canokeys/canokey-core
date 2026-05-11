@@ -6,7 +6,7 @@
 
 #define PASS_MAX_PASSWORD_LENGTH 32
 
-// YubiKey challenge-response uses a fixed 64-byte challenge and returns
+// YubiKey challenge-response accepts up to a 64-byte challenge and returns
 // the raw 20-byte HMAC-SHA1 digest.
 #define PASS_HMAC_KEY_LENGTH 20
 #define PASS_HMAC_CHALLENGE_LENGTH 64
@@ -23,7 +23,7 @@ int pass_install(uint8_t reset);
 int pass_read_config(const CAPDU *capdu, RAPDU *rapdu);
 int pass_write_config(const CAPDU *capdu, RAPDU *rapdu);
 int pass_handle_touch(uint8_t touch_type, char *output);
-int pass_hmacsha1(uint8_t slot_index, const uint8_t challenge[PASS_HMAC_CHALLENGE_LENGTH],
+int pass_hmacsha1(uint8_t slot_index, const uint8_t *challenge, uint16_t challenge_len,
                   uint8_t response[PASS_HMAC_RESPONSE_LENGTH]);
 int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len, const uint8_t *name,
                      uint8_t with_enter);

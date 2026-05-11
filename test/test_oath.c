@@ -304,9 +304,9 @@ static void test_pass_hmacsha1_config(void **state) {
   LC = 2 + sizeof(key);
   assert_int_equal(pass_write_config(&C, &R), 0);
 
-  assert_int_equal(pass_hmacsha1(0, challenge, response), PASS_HMAC_RESPONSE_LENGTH);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), PASS_HMAC_RESPONSE_LENGTH);
   assert_memory_equal(response, expected, sizeof(expected));
-  assert_int_equal(pass_hmacsha1(1, challenge, response), -2);
+  assert_int_equal(pass_hmacsha1(1, challenge, sizeof(challenge), response), -2);
   assert_int_equal(pass_handle_touch(TOUCH_SHORT, (char *)r_buf), 0);
 
   assert_int_equal(pass_read_config(&C, &R), 0);
@@ -315,10 +315,10 @@ static void test_pass_hmacsha1_config(void **state) {
   c_buf[0] = PASS_SLOT_OFF;
   LC = 1;
   assert_int_equal(pass_write_config(&C, &R), 0);
-  assert_int_equal(pass_hmacsha1(0, challenge, response), -2);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), -2);
 
   pass_install(0);
-  assert_int_equal(pass_hmacsha1(0, challenge, response), -2);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), -2);
   assert_int_equal(pass_read_config(&C, &R), 0);
   assert_int_equal(RDATA[0], PASS_SLOT_OFF);
 }
@@ -338,6 +338,10 @@ static void test_oath_yk_hmacsha1_api(void **state) {
   const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
       0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
       0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+  const uint8_t expected_short[PASS_HMAC_RESPONSE_LENGTH] = {
+      0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b,
+      0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
   };
 
   P1 = 1;
@@ -362,7 +366,14 @@ static void test_oath_yk_hmacsha1_api(void **state) {
   assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
   assert_memory_equal(RDATA, expected, sizeof(expected));
 
+  LC = 8;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(RDATA, expected_short, sizeof(expected_short));
+
   P1 = 0x38;
+  LC = sizeof(challenge);
   oath_process_apdu(&C, &R);
   assert_int_equal(SW, SW_FILE_NOT_FOUND);
 
