@@ -222,6 +222,8 @@ static void test_set_pin_retries_failure_invalidates_auth(void **state) {
 
   openpgp_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  openpgp_install(1);
 }
 
 static void test_get_data(void **state) {

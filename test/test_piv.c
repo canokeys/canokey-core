@@ -304,6 +304,8 @@ static void test_set_pin_retries(void **state) {
   C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 15, .p2 = 15, .lc = 0};
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_NO_ERROR);
+
+  piv_install(1);
 }
 
 static void test_set_pin_retries_failure_invalidates_auth(void **state) {
@@ -330,6 +332,8 @@ static void test_set_pin_retries_failure_invalidates_auth(void **state) {
   set_admin_status(1);
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  piv_install(1);
 }
 
 // piv_process_apdu_message uses RAPDU_CHAINING + apdu_output to stream
