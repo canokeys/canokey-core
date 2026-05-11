@@ -22,11 +22,13 @@
 #define KH_KEY_ATTR     0x04
 #define HE_KEY_ATTR     0x05
 #define SM2_ATTR        0x06
+#define CONFIG_ATTR     0x07
 #define DC_FILE         "ctap_dc"
 #define DC_GENERAL_ATTR 0x00
 #define DC_META_FILE    "ctap_dm"
 #define LB_FILE         "ctap_lb"
 #define LB_FILE_TMP     "ctap_lbt"
+#define MIN_PIN_RPIDS_FILE "ctap_mpr"
 // clang-format on
 
 // Commands
@@ -67,12 +69,17 @@
 #define PARAM_SET                    (1 << 17)
 #define PARAM_OFFSET                 (1 << 18)
 #define PARAM_LENGTH                 (1 << 19)
+#define PARAM_SUB_COMMAND_PARAMS     (1 << 20)
+#define PARAM_NEW_MIN_PIN_LENGTH     (1 << 21)
+#define PARAM_MIN_PIN_LENGTH_RPIDS   (1 << 22)
+#define PARAM_FORCE_CHANGE_PIN       (1 << 23)
 // clang-format on
 
 #define MC_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP | PARAM_USER | PARAM_PUB_KEY_CRED_PARAMS)
 #define GA_REQUIRED_MASK (PARAM_CLIENT_DATA_HASH | PARAM_RP)
 #define CP_REQUIRED_MASK (PARAM_SUB_COMMAND)
 #define CM_REQUIRED_MASK (PARAM_SUB_COMMAND)
+#define CONFIG_REQUIRED_MASK (PARAM_SUB_COMMAND)
 
 // clang-format off
 #define OPTION_FALSE  0x0
@@ -139,8 +146,17 @@
 #define GI_RESP_TRANSPORTS                      0x09
 #define GI_RESP_ALGORITHMS                      0x0A
 #define GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY 0x0B
+#define GI_RESP_FORCE_PIN_CHANGE                0x0C
+#define GI_RESP_MIN_PIN_LENGTH                  0x0D
 #define GI_RESP_FIRMWARE_VERSION                0x0E
 #define GI_RESP_MAX_CRED_BLOB_LENGTH            0x0F
+#define GI_RESP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH 0x10
+#define GI_RESP_REMAINING_DISCOVERABLE_CREDENTIALS 0x14
+#define GI_RESP_ATTESTATION_FORMATS             0x16
+#define GI_RESP_LONG_TOUCH_FOR_RESET            0x18
+#define GI_RESP_TRANSPORTS_FOR_RESET            0x1A
+#define GI_RESP_MAX_PIN_LENGTH                  0x1D
+#define GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS   0x1F
 
 #define CP_REQ_PIN_UV_AUTH_PROTOCOL                             0x01
 #define CP_REQ_SUB_COMMAND                                      0x02
@@ -191,6 +207,7 @@
 #define CM_RESP_TOTAL_CREDENTIALS                                 0x09
 #define CM_RESP_CRED_PROTECT                                      0x0A
 #define CM_RESP_LARGE_BLOB_KEY                                    0x0B
+#define CM_RESP_THIRD_PARTY_PAYMENT                               0x0C
 // clang-format on
 
 #define LB_REQ_GET 0x01
@@ -200,6 +217,19 @@
 #define LB_REQ_PIN_UV_AUTH_PARAM 0x05
 #define LB_REQ_PIN_UV_AUTH_PROTOCOL 0x06
 #define LB_RESP_CONFIG 0x01
+
+#define CONFIG_REQ_SUB_COMMAND 0x01
+#define CONFIG_REQ_SUB_COMMAND_PARAMS 0x02
+#define CONFIG_REQ_PIN_UV_AUTH_PROTOCOL 0x03
+#define CONFIG_REQ_PIN_UV_AUTH_PARAM 0x04
+#define CONFIG_CMD_ENABLE_ENTERPRISE_ATTESTATION 0x01
+#define CONFIG_CMD_TOGGLE_ALWAYS_UV 0x02
+#define CONFIG_CMD_SET_MIN_PIN_LENGTH 0x03
+#define CONFIG_CMD_ENABLE_LONG_TOUCH_FOR_RESET 0x04
+#define CONFIG_CMD_VENDOR_PROTOTYPE 0xFF
+#define CONFIG_PARAM_NEW_MIN_PIN_LENGTH 0x01
+#define CONFIG_PARAM_MIN_PIN_LENGTH_RPIDS 0x02
+#define CONFIG_PARAM_FORCE_CHANGE_PIN 0x03
 
 // Size limits
 // clang-format off
@@ -225,23 +255,39 @@
 #define HMAC_SECRET_SALT_AUTH_SIZE_P2 32
 #define CREDENTIAL_TAG_SIZE           16
 #define CLIENT_DATA_HASH_SIZE         32
-#define CREDENTIAL_NONCE_SIZE         16
-#define CREDENTIAL_NONCE_DC_POS       16
-#define CREDENTIAL_NONCE_CP_POS       17
+#define CREDENTIAL_NONCE_SIZE                    16
+#define CREDENTIAL_NONCE_DC_POS                  16
+#define CREDENTIAL_NONCE_CP_POS                  17
+#define CREDENTIAL_NONCE_THIRD_PARTY_PAYMENT_POS CREDENTIAL_NONCE_CP_POS
 #define DOMAIN_NAME_MAX_SIZE          254
 #define USER_ID_MAX_SIZE              64
 #define DISPLAY_NAME_LIMIT            65
 #define USER_NAME_LIMIT               65
 #define MAX_DC_NUM                    64
 #define MAX_STORED_RPID_LENGTH        32
-#define MAX_EXTENSION_SIZE_IN_AUTH    140
+#define MAX_HMAC_SECRET_OUTPUT_IN_AUTH (HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE)
+// Map header plus all MakeCredential authData extension outputs supported here.
+// `sizeof("key")` is the exact encoded size for these short CBOR text keys:
+// one initial byte plus the key bytes, excluding the C string terminator.
+#define MAX_EXTENSION_SIZE_IN_AUTH                                                                                     \
+  (1 + sizeof("credBlob") + 1 + sizeof("credProtect") + 1 + sizeof("hmac-secret") + 1 +                            \
+   sizeof("hmac-secret-mc") + 2 + MAX_HMAC_SECRET_OUTPUT_IN_AUTH + sizeof("minPinLength") + 2 +                     \
+   sizeof("thirdPartyPayment") + 1)
 #define MAX_CREDENTIAL_COUNT_IN_LIST  16
 #define MAX_CRED_BLOB_LENGTH          32
 #define LARGE_BLOB_KEY_SIZE           32
 #define LARGE_BLOB_SIZE_LIMIT         4096
+#define CTAP_DEFAULT_MIN_PIN_LENGTH        4
+#define CTAP_MAX_PIN_LENGTH                63
+#define CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH 4
 #define MAX_FRAGMENT_LENGTH           (MAX_CTAP_BUFSIZE - 64)
 #define MAX_CTAP_EXTERNAL_STRING_CHUNK MAX_FRAGMENT_LENGTH
 // clang-format on
+
+typedef struct {
+  uint8_t len;
+  char id[DOMAIN_NAME_MAX_SIZE];
+} __packed CTAP_min_pin_rp_id;
 
 typedef struct {
   uint8_t id[USER_ID_MAX_SIZE];
@@ -252,7 +298,7 @@ typedef struct {
 
 typedef struct {
   uint8_t tag[CREDENTIAL_TAG_SIZE];
-  uint8_t nonce[CREDENTIAL_NONCE_SIZE + 2]; // 16-byte random nonce + 1-byte dc + 1-byte cp
+  uint8_t nonce[CREDENTIAL_NONCE_SIZE + 2]; // 16-byte random nonce + 1-byte dc + 1-byte flags
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   int32_t alg_type;
 } __packed credential_id;
@@ -303,10 +349,21 @@ typedef struct {
 } CTAP_options;
 
 typedef struct {
+  uint8_t key_agreement[PUB_KEY_SIZE];
+  uint8_t salt_enc[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
+  uint8_t salt_enc_len;
+  uint8_t salt_auth[HMAC_SECRET_SALT_AUTH_SIZE_P2];
+  uint8_t salt_auth_len;
+  uint8_t pin_protocol;
+} CTAP_hmac_secret_ext;
+
+typedef struct {
   uint32_t parsed_params;
   uint8_t client_data_hash[CLIENT_DATA_HASH_SIZE];
   uint8_t rp_id[MAX_STORED_RPID_LENGTH];
   size_t rp_id_len;
+  uint8_t rp_id_full[DOMAIN_NAME_MAX_SIZE];
+  size_t rp_id_full_len;
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   user_entity user;
   int32_t alg_type;
@@ -317,7 +374,11 @@ typedef struct {
   size_t pin_uv_auth_param_len;
   uint8_t pin_uv_auth_protocol;
   bool ext_hmac_secret;
+  bool ext_hmac_secret_mc;
+  CTAP_hmac_secret_ext ext_hmac_secret_data;
   bool ext_large_blob_key;
+  bool ext_third_party_payment;
+  bool ext_min_pin_length;
   uint8_t ext_cred_protect;
   uint8_t ext_cred_blob[MAX_CRED_BLOB_LENGTH];
   uint8_t ext_has_cred_blob : 1;
@@ -334,14 +395,10 @@ typedef struct {
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
   size_t pin_uv_auth_param_len;
   uint8_t pin_uv_auth_protocol;
-  uint8_t ext_hmac_secret_key_agreement[PUB_KEY_SIZE];
-  uint8_t ext_hmac_secret_salt_enc[HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE];
-  uint8_t ext_hmac_secret_salt_enc_len;
-  uint8_t ext_hmac_secret_salt_auth[HMAC_SECRET_SALT_AUTH_SIZE_P2];
-  uint8_t ext_hmac_secret_salt_auth_len;
-  uint8_t ext_hmac_secret_pin_protocol;
+  CTAP_hmac_secret_ext ext_hmac_secret_data;
   bool ext_large_blob_key;
   bool ext_cred_blob;
+  bool ext_third_party_payment;
 } CTAP_get_assertion;
 
 typedef struct {
@@ -367,6 +424,19 @@ typedef struct {
   uint8_t pin_uv_auth_protocol;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
 } CTAP_credential_management;
+
+typedef struct {
+  uint32_t parsed_params;
+  uint8_t sub_command;
+  uint32_t sub_command_params_offset;
+  size_t param_len;
+  uint8_t pin_uv_auth_protocol;
+  uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
+  uint8_t new_min_pin_length;
+  bool force_change_pin;
+  uint8_t min_pin_rpid_count;
+  CTAP_min_pin_rp_id min_pin_rpids[CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH];
+} CTAP_config;
 
 typedef struct {
   uint32_t parsed_params;

@@ -132,4 +132,4 @@ uint8_t USBD_CTAPHID_IsIdle(void) { return hid_handle.state == CTAPHID_IDLE ? US
 
 uint8_t USBD_CTAPHID_WaitIdle(void) { return wait_ep_idle(100); }
 
-void USBD_CTAPHID_ServiceReceive(void) {}
+__weak void USBD_CTAPHID_ServiceReceive(void) {}
