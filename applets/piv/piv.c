@@ -955,14 +955,14 @@ static int piv_verify(const CAPDU *capdu, RAPDU *rapdu) {
     if (pin.is_validated) return 0;
     const int retries = pin_get_retries(&pin);
     if (retries < 0) return -1;
-    EXCEPT(SW_PIN_RETRIES + retries);
+    EXCEPT(pin_get_retry_sw((uint8_t)retries));
   }
   if (LC != 8) EXCEPT(SW_WRONG_LENGTH);
   uint8_t ctr;
   const int err = pin_verify(&pin, DATA, 8, &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
+  if (err == PIN_AUTH_FAIL) EXCEPT(pin_get_retry_sw(ctr));
   pin_is_consumed = 0;
   return 0;
 }
@@ -982,7 +982,7 @@ static int piv_change_reference_data(const CAPDU *capdu, RAPDU *rapdu) {
   int err = pin_verify(p, DATA, 8, &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
+  if (err == PIN_AUTH_FAIL) EXCEPT(pin_get_retry_sw(ctr));
   err = pin_update(p, DATA + 8, 8);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
@@ -999,10 +999,32 @@ static int piv_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   int err = pin_verify(&puk, DATA, 8, &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL) EXCEPT(0x63C0 + ctr);
+  if (err == PIN_AUTH_FAIL) EXCEPT(pin_get_retry_sw(ctr));
   err = pin_update(&pin, DATA + 8, 8);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
+  return 0;
+}
+
+static int piv_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+  if (P1 == 0 || P1 > PIN_MAX_RETRIES || P2 == 0 || P2 > PIN_MAX_RETRIES) EXCEPT(SW_WRONG_P1P2);
+  if (!in_admin_status || !pin.is_validated) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  // A retry reset rewrites credentials. Clear volatile authorization first so
+  // an interrupted persistent write cannot leave the old session authorized.
+  in_admin_status = 0;
+  pin.is_validated = 0;
+  puk.is_validated = 0;
+  pin_is_consumed = 0;
+
+  if (pin_create(&pin, DEFAULT_PIN, 8, P1) < 0) return -1;
+  if (pin_create(&puk, DEFAULT_PUK, 8, P2) < 0) return -1;
+
+  const uint8_t is_default = 1;
+  if (write_attr(pin.path, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
+  if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
+
   return 0;
 }
 
@@ -1764,6 +1786,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_SET_MANAGEMENT_KEY:
     ret = piv_set_management_key(capdu, rapdu);
+    break;
+  case PIV_INS_SET_PIN_RETRIES:
+    ret = piv_set_pin_retries(capdu, rapdu);
     break;
   case PIV_INS_RESET:
     ret = piv_reset(capdu, rapdu);

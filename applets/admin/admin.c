@@ -82,14 +82,14 @@ static int admin_verify(const CAPDU *capdu, RAPDU *rapdu) {
     if (pin.is_validated) return 0;
     const int retries = pin_get_retries(&pin);
     if (retries < 0) return -1;
-    EXCEPT(SW_PIN_RETRIES + retries);
+    EXCEPT(pin_get_retry_sw((uint8_t)retries));
   }
   uint8_t ctr;
   const int err = pin_verify(&pin, DATA, LC, &ctr);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
   if (ctr == 0) EXCEPT(SW_AUTHENTICATION_BLOCKED);
-  if (err == PIN_AUTH_FAIL) EXCEPT(SW_PIN_RETRIES + ctr);
+  if (err == PIN_AUTH_FAIL) EXCEPT(pin_get_retry_sw(ctr));
   return 0;
 }
 

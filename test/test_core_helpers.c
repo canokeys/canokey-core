@@ -487,6 +487,12 @@ static void test_pin_lifecycle(void **state) {
   assert_int_equal(pin_verify(&pin, "5678", 4, NULL), 0);
   assert_int_equal(pin.is_validated, 1);
 
+  assert_int_equal(pin_set_retries(&pin, 15), 0);
+  assert_int_equal(pin_get_retries(&pin), 15);
+  assert_int_equal(pin_get_default_retries(&pin), 15);
+  assert_int_equal(pin_get_retry_sw(15), 0x63CF);
+  assert_int_equal(pin_get_retry_sw(16), 0x63CF);
+
   assert_int_equal(pin_clear(&pin), 0);
   assert_int_equal(pin_get_size(&pin), 0);
   assert_int_equal(pin_get_retries(&pin), 0);
@@ -509,6 +515,10 @@ static void test_pin_error_paths(void **state) {
   assert_int_equal(pin_clear(&missing_pin), PIN_IO_FAIL);
 
   assert_int_equal(pin_create(&pin, "1234", 4, 3), 0);
+  assert_int_equal(pin_create(&pin, "1234", 4, 0), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_create(&pin, "1234", 4, 16), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_set_retries(&pin, 0), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_set_retries(&pin, 16), PIN_LENGTH_INVALID);
   assert_int_equal(pin_verify(&pin, "12", 2, &retries), PIN_LENGTH_INVALID);
   assert_int_equal(pin_update(&pin, "12", 2), PIN_LENGTH_INVALID);
 
