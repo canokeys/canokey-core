@@ -57,15 +57,25 @@ static void check_pass_config(bool present, uint8_t slot, uint8_t *data) {
   print_hex(R.data, R.len);
   printf(" R\n");
   for (i = 0, s = 1; i < R.len; s++) {
-    uint8_t ptype, name_len, with_enter;
-    uint8_t *name;
+    uint8_t ptype, name_len = 0, with_enter = 0;
+    uint8_t *name = NULL;
     ptype = R.data[i++];
-    if (ptype == PASS_SLOT_OATH) {
+    switch (ptype) {
+    case PASS_SLOT_OATH:
       name_len = R.data[i++];
       name = &R.data[i];
       i += name_len;
+      with_enter = R.data[i++];
+      break;
+    case PASS_SLOT_STATIC:
+      with_enter = R.data[i++];
+      break;
+    case PASS_SLOT_HMACSHA1:
+    case PASS_SLOT_OFF:
+      break;
+    default:
+      assert_true(0);
     }
-    if (ptype > PASS_SLOT_OFF) with_enter = R.data[i++];
     if (s == slot) {
       if (present) {
         assert_int_equal(ptype, PASS_SLOT_OATH);
@@ -263,6 +273,117 @@ static void test_static_pass(void **state) {
   assert_int_equal(ret, len + 1);
   assert_memory_equal(readback, static_pass, len);
   assert_int_equal(readback[len], '\r');
+}
+
+static void test_pass_hmacsha1_config(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128], response[PASS_HMAC_RESPONSE_LENGTH], challenge[PASS_HMAC_CHALLENGE_LENGTH];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+  };
+  const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
+      0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
+      0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+
+  memset(challenge, 0, sizeof(challenge));
+  memcpy(challenge, "Hi There", 8);
+
+  // The expected digest covers the full fixed-size YK challenge buffer, so the
+  // short test string is followed by zero padding.
+  P1 = 1;
+  c_buf[0] = PASS_SLOT_HMACSHA1;
+  c_buf[1] = PASS_HMAC_KEY_LENGTH;
+  memcpy(c_buf + 2, key, sizeof(key));
+  LC = 2 + sizeof(key);
+  assert_int_equal(pass_write_config(&C, &R), 0);
+
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(response, expected, sizeof(expected));
+  assert_int_equal(pass_hmacsha1(1, challenge, sizeof(challenge), response), -2);
+  assert_int_equal(pass_handle_touch(TOUCH_SHORT, (char *)r_buf), 0);
+
+  assert_int_equal(pass_read_config(&C, &R), 0);
+  assert_int_equal(RDATA[0], PASS_SLOT_HMACSHA1);
+
+  c_buf[0] = PASS_SLOT_OFF;
+  LC = 1;
+  assert_int_equal(pass_write_config(&C, &R), 0);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), -2);
+
+  pass_install(0);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), -2);
+  assert_int_equal(pass_read_config(&C, &R), 0);
+  assert_int_equal(RDATA[0], PASS_SLOT_OFF);
+}
+
+static void test_oath_yk_hmacsha1_api(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128], challenge[PASS_HMAC_CHALLENGE_LENGTH];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+  };
+  const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
+      0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
+      0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+  const uint8_t expected_short[PASS_HMAC_RESPONSE_LENGTH] = {
+      0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b,
+      0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
+  };
+
+  P1 = 1;
+  c_buf[0] = PASS_SLOT_HMACSHA1;
+  c_buf[1] = PASS_HMAC_KEY_LENGTH;
+  memcpy(c_buf + 2, key, sizeof(key));
+  LC = 2 + sizeof(key);
+  assert_int_equal(pass_write_config(&C, &R), 0);
+
+  memset(challenge, 0, sizeof(challenge));
+  memcpy(challenge, "Hi There", 8);
+
+  // KeePassXC selects the OATH AID, then sends the YubiKey OTP API HMAC
+  // command through PC/SC as INS=0x01, P1=0x30/0x38, Lc=64.
+  INS = OATH_INS_PUT;
+  P1 = 0x30;
+  P2 = 0x00;
+  DATA = challenge;
+  LC = sizeof(challenge);
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(RDATA, expected, sizeof(expected));
+
+  LC = 8;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(RDATA, expected_short, sizeof(expected_short));
+
+  P1 = 0x38;
+  LC = sizeof(challenge);
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_FILE_NOT_FOUND);
+
+  INS = OATH_INS_PUT;
+  P1 = 0x10;
+  DATA = c_buf;
+  LC = 0;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, 4);
 }
 
 // should be called after test_put
@@ -481,12 +602,10 @@ static void test_space_full(void **state) {
   capdu->lc = sizeof(data);
 
   // make it full
-  int record_added = 0;
   for (int i = 0; i != 100; ++i) {
     data[2] = ' ' + i;
     oath_process_apdu(capdu, rapdu);
     if (rapdu->sw != SW_NO_ERROR) break;
-    record_added++;
   }
   assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
 
@@ -543,6 +662,8 @@ int main() {
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),
       cmocka_unit_test(test_static_pass),
+      cmocka_unit_test(test_pass_hmacsha1_config),
+      cmocka_unit_test(test_oath_yk_hmacsha1_api),
       cmocka_unit_test(test_space_full),
       cmocka_unit_test(test_regression_fuzz),
   };

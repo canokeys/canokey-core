@@ -13,6 +13,10 @@
 #define OATH_FILE "oath"
 #define MAX_RECORDS 100
 
+#define YK_CMD_GET_SERIAL 0x10
+#define YK_CMD_CHAL_HMAC1 0x30
+#define YK_CMD_CHAL_HMAC2 0x38
+
 /**
  * Find a record by name. On success, populates *record and *file_offset, returns slot index.
  * Returns -1 if not found, -2 on I/O error.
@@ -622,10 +626,47 @@ static int oath_send_remaining(const CAPDU *capdu, RAPDU *rapdu) {
   EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
 }
 
+static int oath_yk_api_req(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  switch (P1) {
+  case YK_CMD_GET_SERIAL:
+    if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+    fill_sn(RDATA);
+    LL = 4;
+    return 0;
+
+  case YK_CMD_CHAL_HMAC1:
+  case YK_CMD_CHAL_HMAC2: {
+    if (LC > PASS_HMAC_CHALLENGE_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    const uint8_t slot_index = P1 == YK_CMD_CHAL_HMAC1 ? 0 : 1;
+    const int len = pass_hmacsha1(slot_index, DATA, LC, RDATA);
+    if (len == -2) EXCEPT(SW_FILE_NOT_FOUND);
+    if (len < 0) return -1;
+    LL = (uint16_t)len;
+    return 0;
+  }
+
+  default:
+    EXCEPT(SW_INS_NOT_SUPPORTED);
+  }
+}
+
 // ReSharper disable once CppDFAConstantFunctionResult
 int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
+
+  // KeePassXC talks to NFC/PCSC challenge-response tokens by selecting the
+  // OATH AID and then sending YubiKey OTP API commands under INS=0x01.  That
+  // INS collides with OATH PUT, so dispatch the non-OATH P1 values before the
+  // OATH authentication gate.
+  if (INS == OATH_INS_PUT &&
+      (P1 == YK_CMD_GET_SERIAL || P1 == YK_CMD_CHAL_HMAC1 || P1 == YK_CMD_CHAL_HMAC2)) {
+    const int ret = oath_yk_api_req(capdu, rapdu);
+    if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+    return 0;
+  }
 
   if (!is_validated && INS != OATH_INS_SELECT && INS != OATH_INS_VALIDATE) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 

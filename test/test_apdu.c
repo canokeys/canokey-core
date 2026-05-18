@@ -704,6 +704,39 @@ static void test_fido_chained_make_credential_nfc(void **state) {
   assert_int_equal(rapdu.data[0], 0x02);
   assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
   assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+  assert_int_equal(ctap_nfc_pending_active(), 1);
+
+  // Simulate a PC/SC PowerICC reconnect between the NFC 0x9100 keepalive and
+  // the required NFCCTAP_GETRESPONSE poll. The pending command must survive
+  // this non-runtime ctap_install(0), and 80 11 must route back to FIDO even
+  // though init_apdu_buffer() cleared the selected applet.
+  init_apdu_buffer();
+  device_init();
+  applets_install();
+  assert_int_equal(ctap_nfc_pending_active(), 1);
+
+  static const uint8_t nfc_get_response[] = {
+      0x80, 0x11, 0x00, 0x00, 0x00,
+  };
+  assert_int_equal(build_capdu(&capdu, nfc_get_response, sizeof(nfc_get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+
+  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(rapdu.sw, 0x9100);
+  assert_int_equal(rapdu.len, 1);
+  assert_int_equal(rapdu.data[0], 0x02);
+  assert_int_equal(ctap_nfc_pending_active(), 1);
+
+  assert_int_equal(build_capdu(&capdu, nfc_get_response, sizeof(nfc_get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+
+  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(rapdu.len > 0);
+  assert_int_equal(ctap_nfc_pending_active(), 0);
+
+  ctap_poweroff();
+  set_nfc_state(0);
 }
 
 static void test_fido_ctap1_register_nfc(void **state) {

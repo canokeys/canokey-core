@@ -128,20 +128,27 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				return
 			}
 			buildCfg := func(ptype uint8, randSeed int) (ret []byte) {
-				if ptype == 0 {
-					ret = []byte {ptype}
-				} else {
+				switch ptype {
+				case 0:
+					ret = []byte{ptype}
+				case 3:
+					// HMAC-SHA1 slots store a 20-byte key and do not have the
+					// withEnter byte used by keyboard-output slots.
+					data := []byte(fmt.Sprintf("%020d", randSeed))
+					ret = []byte{ptype, uint8(len(data))}
+					ret = append(ret, data...)
+				default:
 					data := []byte(fmt.Sprintf("%032d", randSeed))
 					withEnter := uint8(randSeed & 1)
-					ret = []byte {ptype, uint8(len(data))}
+					ret = []byte{ptype, uint8(len(data))}
 					ret = append(ret, data...)
 					ret = append(ret, withEnter)
 				}
 				return
 			}
 			for slot := uint8(0); slot < 4; slot++ {
-				for ptype := uint8(0); ptype < 4; ptype++ {
-					randSeed := int(slot) * 10000 + int(ptype)
+				for ptype := uint8(0); ptype < 5; ptype++ {
+					randSeed := int(slot)*10000 + int(ptype)
 					cfg := buildCfg(ptype, randSeed)
 					lc := uint8(len(cfg))
 					_, code, err := app.Send(append([]byte{0x00, 0x44, slot, 0x00, lc}, cfg...))
@@ -149,11 +156,11 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 					if slot > 2 || slot < 1 {
 						So(code, ShouldEqual, 0x6A86)
 						break
-					} else if ptype == 1 || ptype > 2 {
+					} else if ptype == 1 || ptype > 3 {
 						So(code, ShouldEqual, 0x6A80)
 						continue
-					// } else if code!=0x9000{
-					// 	fmt.Printf("%d %d\n", slot, ptype)
+						// } else if code!=0x9000{
+						// 	fmt.Printf("%d %d\n", slot, ptype)
 					} else {
 						// fmt.Printf("write %d %d %v\n",slot,ptype,cfg)
 						So(code, ShouldEqual, 0x9000)

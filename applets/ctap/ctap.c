@@ -872,6 +872,16 @@ static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
     return -1;
   }
 
+  if (!device_is_blinking()) {
+    // A PC/SC reconnect can reinitialize the device while preserving this NFC
+    // pending request. Restart the user-presence indication so later polls can
+    // still complete instead of spinning forever in 0x9100 keepalive state.
+    start_blinking_interval(0, 200);
+#ifdef TEST
+    testmode_emulate_user_presence();
+#endif
+  }
+
   if (device_get_tick() - nfc_pending_state.wait_start >= 30000) {
     stop_blinking();
     return timeout_response;
@@ -918,7 +928,12 @@ uint8_t ctap_install(uint8_t reset) {
     ctap_credential_management_reset_state();
   }
   current_cmd_src = CTAP_SRC_NONE;
-  ctap_nfc_pending_reset();
+  if (runtime_reset) {
+    // PowerICC reconnects call ctap_install(0) while the NFC host may still be
+    // polling a 0x9100 keepalive response. Keep that pending request unless this
+    // is a real authenticator reset.
+    ctap_nfc_pending_reset();
+  }
   cp_initialize(runtime_reset);
   runtime_reset_pending = false;
   if (!reset && has_persistent_state) {
