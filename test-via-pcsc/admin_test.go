@@ -200,7 +200,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x00}
 			P1toIdx := map[int]int{
 				1: 0, // ADMIN_P1_CFG_LED_ON
-				2: 2, // ndef_get_read_only
+				2: 2, // NDEF read-only CC flag
 				// 3: 1, // ADMIN_P1_CFG_KBDIFACE (obsolete)
 				4: 3, // ADMIN_P1_CFG_NDEF
 				5: 4, // ADMIN_P1_CFG_WEBUSB_LANDING

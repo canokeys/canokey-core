@@ -174,7 +174,7 @@ uint8_t KBDHID_Loop(void) {
   return 0;
 }
 
-uint8_t cfg_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
+uint8_t device_config_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
 
 static void test_tlv_get_length_safe_variants(void **state) {
   (void)state;

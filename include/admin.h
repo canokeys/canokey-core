@@ -3,6 +3,8 @@
 #define CANOKEY_CORE_ADMIN_ADMIN_H_
 
 #include <apdu.h>
+#include <stdbool.h>
+#include <stdint.h>
 
 #define ADMIN_INS_WRITE_FIDO_PRIVATE_KEY 0x01
 #define ADMIN_INS_WRITE_FIDO_CERT 0x02
@@ -26,9 +28,42 @@
 #define ADMIN_INS_READ_CONFIG 0x42
 #define ADMIN_INS_READ_PASS_CONFIG 0x43
 #define ADMIN_INS_WRITE_PASS_CONFIG 0x44
+
+/**
+ * @brief KBD keymap admin APDUs.
+ *
+ * The keymap is a fixed 128-entry ASCII table. Entry N maps ASCII code N to
+ * two bytes: {HID modifier, HID usage}. A stored table is authoritative for
+ * KBDHID output; usage 0 means "skip this character" instead of falling back
+ * to the built-in QWERTY map.
+ *
+ * ADMIN_INS_WRITE_KBD_KEYMAP:
+ *   P1 = 0x00
+ *   P2 = host-defined layout id
+ *   Lc = ADMIN_KBD_KEYMAP_LENGTH
+ *   Data = 128 consecutive {modifier, usage} entries
+ *
+ * ADMIN_INS_READ_KBD_KEYMAP:
+ *   P1 = 0x00
+ *   P2 = ADMIN_P2_KBD_READ_LAYOUT_ID: Le >= 1, returns one layout-id byte
+ *   P2 = ADMIN_P2_KBD_READ_KEYMAP: Le >= ADMIN_KBD_KEYMAP_LENGTH, returns the
+ *        128-entry {modifier, usage} table without the layout id
+ *
+ * ADMIN_INS_CLEAR_KBD_KEYMAP:
+ *   P1 = 0x00, P2 = 0x00, Lc = 0
+ */
+#define ADMIN_INS_WRITE_KBD_KEYMAP 0x45
+#define ADMIN_INS_READ_KBD_KEYMAP 0x46
+#define ADMIN_INS_CLEAR_KBD_KEYMAP 0x47
 #define ADMIN_INS_FACTORY_RESET 0x50
 #define ADMIN_INS_SELECT 0xA4
 #define ADMIN_INS_VENDOR_SPECIFIC 0xFF
+
+#define ADMIN_KBD_ASCII_COUNT 128
+#define ADMIN_KBD_KEYMAP_ENTRY_SIZE 2
+#define ADMIN_KBD_KEYMAP_LENGTH (ADMIN_KBD_ASCII_COUNT * ADMIN_KBD_KEYMAP_ENTRY_SIZE)
+#define ADMIN_P2_KBD_READ_LAYOUT_ID 0x00
+#define ADMIN_P2_KBD_READ_KEYMAP 0x01
 
 #define ADMIN_P1_CFG_LED_ON 0x01
 #define ADMIN_P1_CFG_NDEF 0x04
@@ -49,8 +84,22 @@ int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu, bool pin_validated);
 
-uint8_t cfg_is_led_normally_on(void);
-uint8_t cfg_is_ndef_enable(void);
-uint8_t cfg_is_webusb_landing_enable(void);
+/*
+ * Platform persistence hooks.
+ *
+ * Core owns the config semantics, while the platform owns the physical storage layout.
+ */
+int admin_platform_device_config_read(admin_device_config_t *cfg);
+int admin_platform_device_config_write(const admin_device_config_t *cfg);
+int admin_platform_serial_read(uint8_t *buf);
+int admin_platform_serial_write_once(const uint8_t *buf);
+/*
+ * KBD keymap admin commands use a 128-entry ASCII table. Each entry is
+ * {modifier, HID usage}; a valid platform table is authoritative, and usage 0
+ * means the character is intentionally skipped.
+ */
+int admin_platform_kbd_keymap_write(uint8_t layout_id, const uint8_t *keymap, uint16_t len);
+int admin_platform_kbd_keymap_read(uint8_t *layout_id, uint8_t *keymap, uint16_t len);
+int admin_platform_kbd_keymap_clear(void);
 
 #endif // CANOKEY_CORE_ADMIN_ADMIN_H_

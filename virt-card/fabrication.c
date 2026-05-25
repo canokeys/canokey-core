@@ -134,7 +134,7 @@ int card_fabrication_procedure(const char *lfs_root) {
   if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
   device_init();
-  applets_install();
+  if (applets_install() < 0) return 1;
 
   // reset state of applets
   uint8_t c_buf[1024] = "RESET", r_buf[1024];
@@ -157,6 +157,6 @@ int card_fabrication_procedure(const char *lfs_root) {
 int card_read(const char *lfs_root) {
   if (card_fs_init(lfs_root)) return 1;
   init_apdu_buffer();
-  applets_install();
+  if (applets_install() < 0) return 1;
   return 0;
 }

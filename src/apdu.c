@@ -4,6 +4,7 @@
 #include <applets.h>
 #include <common.h>
 #include <ctap.h>
+#include <device-config.h>
 #include <device.h>
 #include <pke.h>
 #if ENABLE_APPLET_NDEF
@@ -466,7 +467,7 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     for (i = APPLET_NULL + 1; i != end; ++i) {
       if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
 #if ENABLE_APPLET_NDEF
-        if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
+        if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {
           LL = 0;
           SW = SW_FILE_NOT_FOUND;
           DBG_MSG("NDEF is disable\n");

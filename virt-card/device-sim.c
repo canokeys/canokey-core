@@ -2,6 +2,9 @@
 // implement software-simulated device funtions (LED, Touch, Timer, etc.)
 #include "device.h"
 #include "admin.h"
+#include "ctap.h"
+#include "ndef.h"
+#include "piv.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -16,6 +19,17 @@
 
 static uint32_t initial_ticks = 0;
 static char err_trigger_filename[64];
+static admin_device_config_t simulated_admin_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
+static uint8_t simulated_sn[4];
+static bool simulated_sn_valid;
+static uint8_t simulated_sm2_cfg[16];
+static size_t simulated_sm2_cfg_len;
+static bool simulated_sm2_cfg_valid;
+static uint8_t simulated_ctap_cfg[16];
+static size_t simulated_ctap_cfg_len;
+static bool simulated_ctap_cfg_valid;
+static piv_algorithm_extension_config_t simulated_piv_alg_cfg;
+static bool simulated_piv_alg_cfg_valid;
 
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
@@ -45,6 +59,69 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 1;
   if (LL > LE) LL = LE;
 
+  return 0;
+}
+
+int admin_platform_device_config_read(admin_device_config_t *cfg) {
+  *cfg = simulated_admin_cfg;
+  return 0;
+}
+
+int admin_platform_device_config_write(const admin_device_config_t *cfg) {
+  simulated_admin_cfg = *cfg;
+  return 0;
+}
+
+int admin_platform_serial_read(uint8_t *buf) {
+  if (!simulated_sn_valid) return -1;
+  memcpy(buf, simulated_sn, sizeof(simulated_sn));
+  return 0;
+}
+
+int admin_platform_serial_write_once(const uint8_t *buf) {
+  if (simulated_sn_valid) return -1;
+  memcpy(simulated_sn, buf, sizeof(simulated_sn));
+  simulated_sn_valid = true;
+  return 0;
+}
+
+int ctap_platform_sm2_config_read(void *cfg, size_t len) {
+  if (!simulated_sm2_cfg_valid || len != simulated_sm2_cfg_len) return -1;
+  memcpy(cfg, simulated_sm2_cfg, len);
+  return 0;
+}
+
+int ctap_platform_sm2_config_write(const void *cfg, size_t len) {
+  if (len > sizeof(simulated_sm2_cfg)) return -1;
+  memcpy(simulated_sm2_cfg, cfg, len);
+  simulated_sm2_cfg_len = len;
+  simulated_sm2_cfg_valid = true;
+  return 0;
+}
+
+int ctap_platform_persistent_config_read(void *cfg, size_t len) {
+  if (!simulated_ctap_cfg_valid || len != simulated_ctap_cfg_len) return -1;
+  memcpy(cfg, simulated_ctap_cfg, len);
+  return 0;
+}
+
+int ctap_platform_persistent_config_write(const void *cfg, size_t len) {
+  if (len > sizeof(simulated_ctap_cfg)) return -1;
+  memcpy(simulated_ctap_cfg, cfg, len);
+  simulated_ctap_cfg_len = len;
+  simulated_ctap_cfg_valid = true;
+  return 0;
+}
+
+int piv_platform_algorithm_extension_config_read(piv_algorithm_extension_config_t *cfg) {
+  if (!simulated_piv_alg_cfg_valid) return -1;
+  *cfg = simulated_piv_alg_cfg;
+  return 0;
+}
+
+int piv_platform_algorithm_extension_config_write(const piv_algorithm_extension_config_t *cfg) {
+  simulated_piv_alg_cfg = *cfg;
+  simulated_piv_alg_cfg_valid = true;
   return 0;
 }
 

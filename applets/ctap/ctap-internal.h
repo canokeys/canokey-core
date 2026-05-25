@@ -21,8 +21,6 @@
 #define PIN_CTR_ATTR    0x03
 #define KH_KEY_ATTR     0x04
 #define HE_KEY_ATTR     0x05
-#define SM2_ATTR        0x06
-#define CONFIG_ATTR     0x07
 #define DC_FILE         "ctap_dc"
 #define DC_GENERAL_ATTR 0x00
 #define DC_META_FILE    "ctap_dm"

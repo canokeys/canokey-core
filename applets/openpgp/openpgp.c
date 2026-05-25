@@ -3,6 +3,7 @@
 #include "key.h"
 #include <applet-scratch.h>
 #include <common.h>
+#include <device-config.h>
 #include <device.h>
 #include <ecc.h>
 #include <key.h>
@@ -494,7 +495,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   switch (tag) {
   case TAG_AID:
     memcpy(RDATA, aid, sizeof(aid));
-    fill_sn(RDATA + 10);
+    device_config_fill_serial(RDATA + 10);
     LL = sizeof(aid);
     break;
 
@@ -549,7 +550,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
-    fill_sn(RDATA + off + 10);
+    device_config_fill_serial(RDATA + off + 10);
     off += sizeof(aid);
 
     RDATA[off++] = HI(TAG_HISTORICAL_BYTES);

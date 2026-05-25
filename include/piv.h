@@ -43,4 +43,11 @@ void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
 
+/*
+ * Platform storage for configurable PIV algorithm IDs. Core uses a valid
+ * platform record as the PIV install completion marker.
+ */
+int piv_platform_algorithm_extension_config_read(piv_algorithm_extension_config_t *cfg);
+int piv_platform_algorithm_extension_config_write(const piv_algorithm_extension_config_t *cfg);
+
 #endif // CANOKEY_CORE_INCLUDE_PIV_H_

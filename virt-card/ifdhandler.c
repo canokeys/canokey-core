@@ -129,7 +129,7 @@ RESPONSECODE IFDHPowerICC(DWORD Lun, DWORD Action, PUCHAR Atr, PDWORD AtrLength)
   if (Action == IFD_POWER_UP || Action == IFD_RESET) {
     init_apdu_buffer();
     device_init();
-    applets_install();
+    if (applets_install() < 0) return IFD_COMMUNICATION_ERROR;
     *AtrLength = sizeof(ATR);
     memcpy(Atr, ATR, *AtrLength);
   } else if (Action == IFD_POWER_DOWN) {

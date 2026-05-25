@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <apdu.h>
 #include <crypto-util.h>
+#include <device-config.h>
 #include <device.h>
 #include <fs.h>
 #include <hmac.h>
@@ -632,7 +633,7 @@ static int oath_yk_api_req(const CAPDU *capdu, RAPDU *rapdu) {
   switch (P1) {
   case YK_CMD_GET_SERIAL:
     if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
-    fill_sn(RDATA);
+    device_config_fill_serial(RDATA);
     LL = 4;
     return 0;
 

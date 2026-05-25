@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <admin.h>
 #include <common.h>
 #include <device.h>
 #include <kbdhid.h>
@@ -19,90 +18,158 @@ static char key_sequence[PASS_MAX_PASSWORD_LENGTH + 2]; // one for enter and one
 static uint8_t key_seq_position;
 static keyboard_report_t report;
 
-static uint8_t ascii2keycode(char ch) {
+__weak bool kbdhid_platform_translate_ascii(uint8_t ch, uint8_t *modifier, uint8_t *usage) {
+  UNUSED(ch);
+  UNUSED(modifier);
+  UNUSED(usage);
+  return false;
+}
+
+static bool ascii2key_report(char ch, uint8_t *modifier, uint8_t *usage) {
+  // Platforms can provide a layout-specific map. If they do, the returned HID
+  // report is authoritative; the built-in table is only the QWERTY fallback.
+  if (kbdhid_platform_translate_ascii((uint8_t)ch, modifier, usage)) return true;
+
   const uint8_t shift = 0x80; // Shift key flag
+  uint8_t keycode;
 
   // digits and lowercase letters
-  if ('1' <= ch && ch <= '9') return 30 + ch - '1';
-  if ('0' == ch) return 39;
-  if ('a' <= ch && ch <= 'z') return 4 + ch - 'a';
+  if ('1' <= ch && ch <= '9') {
+    keycode = 30 + ch - '1';
+    goto done;
+  }
+  if ('0' == ch) {
+    keycode = 39;
+    goto done;
+  }
+  if ('a' <= ch && ch <= 'z') {
+    keycode = 4 + ch - 'a';
+    goto done;
+  }
 
   // uppercase letters
-  if ('A' <= ch && ch <= 'Z') return (4 + ch - 'A') | shift;
+  if ('A' <= ch && ch <= 'Z') {
+    keycode = (4 + ch - 'A') | shift;
+    goto done;
+  }
 
   // symbols and special characters
   switch (ch) {
   case 13:
-    return 0x28; // \r
+    keycode = 0x28; // \r
+    break;
   case 32:
-    return 0x2C; // space
+    keycode = 0x2C; // space
+    break;
   case 33:
-    return 0x1E | shift; // !
+    keycode = 0x1E | shift; // !
+    break;
   case 34:
-    return 0x34 | shift; // "
+    keycode = 0x34 | shift; // "
+    break;
   case 35:
-    return 0x20 | shift; // #
+    keycode = 0x20 | shift; // #
+    break;
   case 36:
-    return 0x21 | shift; // $
+    keycode = 0x21 | shift; // $
+    break;
   case 37:
-    return 0x22 | shift; // %
+    keycode = 0x22 | shift; // %
+    break;
   case 38:
-    return 0x24 | shift; // &
+    keycode = 0x24 | shift; // &
+    break;
   case 39:
-    return 0x34; // '
+    keycode = 0x34; // '
+    break;
   case 40:
-    return 0x26 | shift; // (
+    keycode = 0x26 | shift; // (
+    break;
   case 41:
-    return 0x27 | shift; // )
+    keycode = 0x27 | shift; // )
+    break;
   case 42:
-    return 0x25 | shift; // *
+    keycode = 0x25 | shift; // *
+    break;
   case 43:
-    return 0x2E | shift; // +
+    keycode = 0x2E | shift; // +
+    break;
   case 44:
-    return 0x36; // ,
+    keycode = 0x36; // ,
+    break;
   case 45:
-    return 0x2D; // -
+    keycode = 0x2D; // -
+    break;
   case 46:
-    return 0x37; // .
+    keycode = 0x37; // .
+    break;
   case 47:
-    return 0x38; // /
+    keycode = 0x38; // /
+    break;
   case 58:
-    return 0x33 | shift; // :
+    keycode = 0x33 | shift; // :
+    break;
   case 59:
-    return 0x33; // ;
+    keycode = 0x33; // ;
+    break;
   case 60:
-    return 0x36 | shift; // <
+    keycode = 0x36 | shift; // <
+    break;
   case 61:
-    return 0x2E; // =
+    keycode = 0x2E; // =
+    break;
   case 62:
-    return 0x37 | shift; // >
+    keycode = 0x37 | shift; // >
+    break;
   case 63:
-    return 0x38 | shift; // ?
+    keycode = 0x38 | shift; // ?
+    break;
   case 64:
-    return 0x1F | shift; // @
+    keycode = 0x1F | shift; // @
+    break;
   case 91:
-    return 0x2F; // [
+    keycode = 0x2F; // [
+    break;
   case 92:
-    return 0x31; // "\"
+    keycode = 0x31; // "\"
+    break;
   case 93:
-    return 0x30; // ]
+    keycode = 0x30; // ]
+    break;
   case 94:
-    return 0x23 | shift; // ^
+    keycode = 0x23 | shift; // ^
+    break;
   case 95:
-    return 0x2D | shift; // _
+    keycode = 0x2D | shift; // _
+    break;
   case 96:
-    return 0x35; // `
+    keycode = 0x35; // `
+    break;
   case 123:
-    return 0x2F | shift; // {
+    keycode = 0x2F | shift; // {
+    break;
   case 124:
-    return 0x31 | shift; // |
+    keycode = 0x31 | shift; // |
+    break;
   case 125:
-    return 0x30 | shift; // }
+    keycode = 0x30 | shift; // }
+    break;
   case 126:
-    return 0x35 | shift; // ~
+    keycode = 0x35 | shift; // ~
+    break;
   default:
-    return 0; // undefined
+    return false; // undefined
   }
+
+done:
+  if (keycode & shift) {
+    *modifier = 0x02; // Shift key
+    keycode &= ~shift;
+  } else {
+    *modifier = 0;
+  }
+  *usage = keycode;
+  return true;
 }
 
 static void KBDHID_TypeKeySeq(void) {
@@ -121,14 +188,16 @@ static void KBDHID_TypeKeySeq(void) {
         // Emulate the key press
         USBD_KBDHID_SendReport(&usb_device, (uint8_t *)&report, 2);
       } else {
-        uint8_t keycode = ascii2keycode(key_sequence[key_seq_position]);
-        if (keycode & 0x80) {     // Check for shift flag
-          report.modifier = 0x02; // Shift key
-          keycode &= 0x7F;        // Clear shift flag
-        } else {
-          report.modifier = 0; // No modifier key
+        if (!ascii2key_report(key_sequence[key_seq_position], &report.modifier, &report.keycode[0])) {
+          key_seq_position++;
+          state = KBDHID_KeyUp;
+          break;
         }
-        report.keycode[0] = keycode;
+        if (report.keycode[0] == 0) {
+          key_seq_position++;
+          state = KBDHID_KeyUp;
+          break;
+        }
         report.id = 1;
         // Emulate the key press
         USBD_KBDHID_SendReport(&usb_device, (uint8_t *)&report, sizeof(report));

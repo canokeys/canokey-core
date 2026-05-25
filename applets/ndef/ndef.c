@@ -55,7 +55,7 @@ void ndef_poweroff(void) {
   ndef_write_reset();
 }
 
-int ndef_get_read_only(void) { return CC_W == 0xFF ? 1 : 0; }
+int ndef_is_read_only(void) { return CC_W == 0xFF ? 1 : 0; }
 
 int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
   switch (P1) {

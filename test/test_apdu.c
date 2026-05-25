@@ -712,7 +712,7 @@ static void test_fido_chained_make_credential_nfc(void **state) {
   // though init_apdu_buffer() cleared the selected applet.
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
   assert_int_equal(ctap_nfc_pending_active(), 1);
 
   static const uint8_t nfc_get_response[] = {
@@ -794,7 +794,7 @@ static void test_fido_reset_nfc_returns_keepalive_pending(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
   testmode_set_initial_ticks(0);
   testmode_set_initial_ticks(device_get_tick());
   set_nfc_state(1);
@@ -825,7 +825,7 @@ static void test_fido_cbor_after_reset_without_select(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
   process_apdu(&capdu, &rapdu);
@@ -849,7 +849,7 @@ static void test_fido_chained_cbor_after_reset_without_select(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
   process_apdu(&capdu, &rapdu);
@@ -868,7 +868,7 @@ static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   ctap_test_seed_get_next_assertion_state();
   ctap_deselect();
@@ -883,7 +883,7 @@ static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   ctap_test_seed_credential_management_state();
   ctap_poweroff();
@@ -896,7 +896,7 @@ static void test_ctap_deselect_clears_credential_management_state(void **state) 
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   ctap_test_seed_credential_management_state();
   ctap_deselect();
@@ -923,7 +923,7 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
                    1);
@@ -948,7 +948,7 @@ static void test_ctap_config_empty_request_is_legacy_unhandled(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
   assert_int_equal(resp_len, 1);
@@ -969,7 +969,7 @@ static void test_ctap_config_toggle_always_uv_without_pin(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
   assert_int_equal(resp_len, 1);
@@ -1015,7 +1015,7 @@ static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
                    1);
@@ -1038,7 +1038,7 @@ static void test_ctap_hid_make_credential_hmac_secret_mc_requires_hmac_secret(vo
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(ctap_process_cbor_with_src(req, req_len, resp, &resp_len, CTAP_SRC_HID), 0);
   assert_int_equal(resp_len, 1);
@@ -1067,7 +1067,7 @@ static void test_ctap_hid_make_credential_hmac_secret_mc_output_key_is_separate(
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
   assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
@@ -1117,7 +1117,7 @@ static void test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_sep
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
   memset(resp, 0, sizeof(resp));
   memset(auth_data_buf, 0, sizeof(auth_data_buf));
 
@@ -1170,7 +1170,7 @@ static void test_ctap_hid_third_party_payment_round_trip(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
   assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
@@ -1230,7 +1230,7 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
   assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
@@ -1299,7 +1299,7 @@ static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   for (size_t i = 0; i < sizeof(blob); ++i) {
     blob[i] = (uint8_t)i;
@@ -1336,7 +1336,7 @@ static void test_get_response_after_reset_without_pending_response(void **state)
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
   process_apdu(&capdu, &rapdu);
@@ -1593,7 +1593,7 @@ static void test_fido_apdu_chain_overflow_returns_wrong_length(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
   set_nfc_state(0);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
@@ -1659,7 +1659,7 @@ static void test_fido_magic_reboot_after_reset_without_select(void **state) {
 
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   assert_int_equal(build_capdu(&capdu, magic_reboot_apdu, sizeof(magic_reboot_apdu)), 0);
   process_apdu(&capdu, &rapdu);
@@ -1692,7 +1692,7 @@ int main() {
   fs_mount(&cfg);
   init_apdu_buffer();
   device_init();
-  applets_install();
+  assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_input_chaining),
