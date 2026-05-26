@@ -456,8 +456,8 @@ static bool piv_littlefs_state_present(void) {
   return ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &meta) >= 0 &&
          read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) ==
              sizeof(default_value) &&
-         get_file_size(CHUID_PATH) >= 0 && get_file_size(CCC_PATH) >= 0 &&
-         pin_get_size(&pin) == 8 && pin_get_retries(&pin) >= 0 && pin_get_default_retries(&pin) >= 0 &&
+         get_file_size(CHUID_PATH) >= 0 && get_file_size(CCC_PATH) >= 0 && pin_get_size(&pin) == 8 &&
+         pin_get_retries(&pin) >= 0 && pin_get_default_retries(&pin) >= 0 &&
          read_attr(pin.path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) == sizeof(default_value) &&
          pin_get_size(&puk) == 8 && pin_get_retries(&puk) >= 0 && pin_get_default_retries(&puk) >= 0 &&
          read_attr(puk.path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) == sizeof(default_value);
@@ -796,9 +796,12 @@ void piv_poweroff(void) {
 
 int piv_install(const uint8_t reset) {
   piv_poweroff();
+  piv_algorithm_extension_config_t preserved_alg_ext_cfg;
+  const bool has_alg_ext_cfg = piv_algorithm_extension_config_load(&preserved_alg_ext_cfg) == 0;
   // Platform alg-ext config is the install completion marker. If it is missing
   // or invalid, rebuild PIV state.
-  if (!reset && piv_algorithm_extension_config_load(&alg_ext_cfg) == 0 && piv_littlefs_state_present()) {
+  if (!reset && has_alg_ext_cfg && piv_littlefs_state_present()) {
+    alg_ext_cfg = preserved_alg_ext_cfg;
     return 0;
   }
   if (piv_clear_file_do_storage() < 0) return -1;
@@ -841,9 +844,15 @@ int piv_install(const uint8_t reset) {
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
-  // Algorithm extensions. This must remain the last persistent write in the
-  // install path because successful readback is used as the initialized marker.
-  piv_algorithm_extension_config_set_default();
+  // Algorithm extensions must remain the last persistent write because
+  // successful readback is used as the initialized marker. Preserve valid
+  // platform config across a PIV reset so admin-selected algorithm IDs survive
+  // provisioning tools that reset the applet before use.
+  if (has_alg_ext_cfg) {
+    alg_ext_cfg = preserved_alg_ext_cfg;
+  } else {
+    piv_algorithm_extension_config_set_default();
+  }
   if (piv_platform_algorithm_extension_config_write(&alg_ext_cfg) < 0) return -1;
 
   return 0;
