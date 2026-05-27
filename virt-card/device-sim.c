@@ -30,6 +30,9 @@ static size_t simulated_ctap_cfg_len;
 static bool simulated_ctap_cfg_valid;
 static piv_algorithm_extension_config_t simulated_piv_alg_cfg;
 static bool simulated_piv_alg_cfg_valid;
+static uint8_t simulated_kbd_layout_id;
+static uint8_t simulated_kbd_keymap[ADMIN_KBD_KEYMAP_LENGTH];
+static bool simulated_kbd_keymap_valid;
 
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
@@ -82,6 +85,31 @@ int admin_platform_serial_write_once(const uint8_t *buf) {
   if (simulated_sn_valid) return -1;
   memcpy(simulated_sn, buf, sizeof(simulated_sn));
   simulated_sn_valid = true;
+  return 0;
+}
+
+int admin_platform_kbd_keymap_write(uint8_t layout_id, const uint8_t *keymap, uint16_t len) {
+  if (len != ADMIN_KBD_KEYMAP_LENGTH) return -1;
+  simulated_kbd_layout_id = layout_id;
+  memcpy(simulated_kbd_keymap, keymap, sizeof(simulated_kbd_keymap));
+  simulated_kbd_keymap_valid = true;
+  return 0;
+}
+
+int admin_platform_kbd_keymap_read(uint8_t *layout_id, uint8_t *keymap, uint16_t len) {
+  if (!simulated_kbd_keymap_valid) return -1;
+  if (layout_id) *layout_id = simulated_kbd_layout_id;
+  if (keymap) {
+    if (len != ADMIN_KBD_KEYMAP_LENGTH) return -1;
+    memcpy(keymap, simulated_kbd_keymap, sizeof(simulated_kbd_keymap));
+  }
+  return 0;
+}
+
+int admin_platform_kbd_keymap_clear(void) {
+  memset(simulated_kbd_keymap, 0, sizeof(simulated_kbd_keymap));
+  simulated_kbd_layout_id = 0;
+  simulated_kbd_keymap_valid = false;
   return 0;
 }
 
