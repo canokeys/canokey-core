@@ -251,16 +251,6 @@ static const struct {
     {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
 };
 
-__weak int piv_platform_algorithm_extension_config_read(piv_algorithm_extension_config_t *cfg) {
-  UNUSED(cfg);
-  return -1;
-}
-
-__weak int piv_platform_algorithm_extension_config_write(const piv_algorithm_extension_config_t *cfg) {
-  UNUSED(cfg);
-  return -1;
-}
-
 static bool piv_algorithm_extension_config_valid(const piv_algorithm_extension_config_t *cfg) {
   return cfg->enabled <= 1;
 }

@@ -54,42 +54,6 @@ __attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rap
   return 0;
 }
 
-__weak int admin_platform_device_config_read(admin_device_config_t *cfg) {
-  UNUSED(cfg);
-  return -1;
-}
-
-__weak int admin_platform_device_config_write(const admin_device_config_t *cfg) {
-  UNUSED(cfg);
-  return -1;
-}
-
-__weak int admin_platform_serial_read(uint8_t *buf) {
-  UNUSED(buf);
-  return -1;
-}
-
-__weak int admin_platform_serial_write_once(const uint8_t *buf) {
-  UNUSED(buf);
-  return -1;
-}
-
-__weak int admin_platform_kbd_keymap_write(uint8_t layout_id, const uint8_t *keymap, uint16_t len) {
-  UNUSED(layout_id);
-  UNUSED(keymap);
-  UNUSED(len);
-  return -1;
-}
-
-__weak int admin_platform_kbd_keymap_read(uint8_t *layout_id, uint8_t *keymap, uint16_t len) {
-  UNUSED(layout_id);
-  UNUSED(keymap);
-  UNUSED(len);
-  return -1;
-}
-
-__weak int admin_platform_kbd_keymap_clear(void) { return -1; }
-
 // Query the platform hook on every read so a platform-backed config is not
 // shadowed by core RAM after a vendor/admin APDU updates flash directly.
 uint8_t device_config_is_led_normally_on(void) { return admin_get_current_config().led_normally_on; }

@@ -11,6 +11,10 @@
 uint8_t device_config_is_led_normally_on(void);
 uint8_t device_config_is_ndef_enabled(void);
 uint8_t device_config_is_webusb_landing_enabled(void);
+uint8_t device_config_is_initialized(void);
+int device_config_mark_initialized(void);
+uint8_t device_config_is_nfc_enabled(void);
+int device_config_set_nfc_enabled(uint8_t enabled);
 
 /*
  * Fill the 4-byte user-visible serial number. Missing platform serial storage

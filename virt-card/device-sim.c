@@ -5,6 +5,7 @@
 #include "ctap.h"
 #include "ndef.h"
 #include "piv.h"
+#include <platform-config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -19,20 +20,14 @@
 
 static uint32_t initial_ticks = 0;
 static char err_trigger_filename[64];
-static admin_device_config_t simulated_admin_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
-static uint8_t simulated_sn[4];
-static bool simulated_sn_valid;
-static uint8_t simulated_sm2_cfg[16];
-static size_t simulated_sm2_cfg_len;
-static bool simulated_sm2_cfg_valid;
-static uint8_t simulated_ctap_cfg[16];
-static size_t simulated_ctap_cfg_len;
-static bool simulated_ctap_cfg_valid;
-static piv_algorithm_extension_config_t simulated_piv_alg_cfg;
-static bool simulated_piv_alg_cfg_valid;
-static uint8_t simulated_kbd_layout_id;
-static uint8_t simulated_kbd_keymap[ADMIN_KBD_KEYMAP_LENGTH];
-static bool simulated_kbd_keymap_valid;
+static uint8_t simulated_config_page[PLATFORM_CONFIG_PAGE_SIZE];
+static bool simulated_config_page_loaded;
+
+static void simulated_config_page_init(void) {
+  if (simulated_config_page_loaded) return;
+  memset(simulated_config_page, 0xFF, sizeof(simulated_config_page));
+  simulated_config_page_loaded = true;
+}
 
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
@@ -65,91 +60,17 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int admin_platform_device_config_read(admin_device_config_t *cfg) {
-  *cfg = simulated_admin_cfg;
+int platform_config_page_read(size_t off, void *buf, size_t len) {
+  if (buf == NULL || off > sizeof(simulated_config_page) || len > sizeof(simulated_config_page) - off) return -1;
+  simulated_config_page_init();
+  memcpy(buf, simulated_config_page + off, len);
   return 0;
 }
 
-int admin_platform_device_config_write(const admin_device_config_t *cfg) {
-  simulated_admin_cfg = *cfg;
-  return 0;
-}
-
-int admin_platform_serial_read(uint8_t *buf) {
-  if (!simulated_sn_valid) return -1;
-  memcpy(buf, simulated_sn, sizeof(simulated_sn));
-  return 0;
-}
-
-int admin_platform_serial_write_once(const uint8_t *buf) {
-  if (simulated_sn_valid) return -1;
-  memcpy(simulated_sn, buf, sizeof(simulated_sn));
-  simulated_sn_valid = true;
-  return 0;
-}
-
-int admin_platform_kbd_keymap_write(uint8_t layout_id, const uint8_t *keymap, uint16_t len) {
-  if (len != ADMIN_KBD_KEYMAP_LENGTH) return -1;
-  simulated_kbd_layout_id = layout_id;
-  memcpy(simulated_kbd_keymap, keymap, sizeof(simulated_kbd_keymap));
-  simulated_kbd_keymap_valid = true;
-  return 0;
-}
-
-int admin_platform_kbd_keymap_read(uint8_t *layout_id, uint8_t *keymap, uint16_t len) {
-  if (!simulated_kbd_keymap_valid) return -1;
-  if (layout_id) *layout_id = simulated_kbd_layout_id;
-  if (keymap) {
-    if (len != ADMIN_KBD_KEYMAP_LENGTH) return -1;
-    memcpy(keymap, simulated_kbd_keymap, sizeof(simulated_kbd_keymap));
-  }
-  return 0;
-}
-
-int admin_platform_kbd_keymap_clear(void) {
-  memset(simulated_kbd_keymap, 0, sizeof(simulated_kbd_keymap));
-  simulated_kbd_layout_id = 0;
-  simulated_kbd_keymap_valid = false;
-  return 0;
-}
-
-int ctap_platform_sm2_config_read(void *cfg, size_t len) {
-  if (!simulated_sm2_cfg_valid || len != simulated_sm2_cfg_len) return -1;
-  memcpy(cfg, simulated_sm2_cfg, len);
-  return 0;
-}
-
-int ctap_platform_sm2_config_write(const void *cfg, size_t len) {
-  if (len > sizeof(simulated_sm2_cfg)) return -1;
-  memcpy(simulated_sm2_cfg, cfg, len);
-  simulated_sm2_cfg_len = len;
-  simulated_sm2_cfg_valid = true;
-  return 0;
-}
-
-int ctap_platform_persistent_config_read(void *cfg, size_t len) {
-  if (!simulated_ctap_cfg_valid || len != simulated_ctap_cfg_len) return -1;
-  memcpy(cfg, simulated_ctap_cfg, len);
-  return 0;
-}
-
-int ctap_platform_persistent_config_write(const void *cfg, size_t len) {
-  if (len > sizeof(simulated_ctap_cfg)) return -1;
-  memcpy(simulated_ctap_cfg, cfg, len);
-  simulated_ctap_cfg_len = len;
-  simulated_ctap_cfg_valid = true;
-  return 0;
-}
-
-int piv_platform_algorithm_extension_config_read(piv_algorithm_extension_config_t *cfg) {
-  if (!simulated_piv_alg_cfg_valid) return -1;
-  *cfg = simulated_piv_alg_cfg;
-  return 0;
-}
-
-int piv_platform_algorithm_extension_config_write(const piv_algorithm_extension_config_t *cfg) {
-  simulated_piv_alg_cfg = *cfg;
-  simulated_piv_alg_cfg_valid = true;
+int platform_config_page_write(const void *page, size_t len) {
+  if (page == NULL || len != sizeof(simulated_config_page)) return -1;
+  simulated_config_page_init();
+  memcpy(simulated_config_page, page, sizeof(simulated_config_page));
   return 0;
 }
 

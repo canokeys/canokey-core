@@ -98,30 +98,6 @@ static ctap_src_t current_cmd_src;
 // SM2 attr
 CTAP_sm2_attr ctap_sm2_attr;
 
-__weak int ctap_platform_sm2_config_read(void *cfg, size_t len) {
-  UNUSED(cfg);
-  UNUSED(len);
-  return -1;
-}
-
-__weak int ctap_platform_sm2_config_write(const void *cfg, size_t len) {
-  UNUSED(cfg);
-  UNUSED(len);
-  return -1;
-}
-
-__weak int ctap_platform_persistent_config_read(void *cfg, size_t len) {
-  UNUSED(cfg);
-  UNUSED(len);
-  return -1;
-}
-
-__weak int ctap_platform_persistent_config_write(const void *cfg, size_t len) {
-  UNUSED(cfg);
-  UNUSED(len);
-  return -1;
-}
-
 static void ctap_sm2_config_set_default(void) {
   ctap_sm2_attr.curve_id = 9;  // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
   ctap_sm2_attr.algo_id = -54; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms

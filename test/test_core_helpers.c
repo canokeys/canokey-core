@@ -10,6 +10,7 @@
 #include <device.h>
 #include <fs.h>
 #include <lfs.h>
+#include <platform-config.h>
 #include <pin.h>
 #include <stdbool.h>
 #include <string.h>
@@ -32,6 +33,7 @@ static uint8_t ctaphid_wait_result;
 static bool led_normally_on;
 static bool inject_write_error;
 static char inject_write_error_path[64];
+static uint8_t test_config_page[PLATFORM_CONFIG_PAGE_SIZE];
 
 typedef enum {
   AUTO_TOUCH_NONE = 0,
@@ -59,6 +61,7 @@ static void reset_test_state(void) {
   led_normally_on = false;
   inject_write_error = false;
   inject_write_error_path[0] = 0;
+  memset(test_config_page, 0xFF, sizeof(test_config_page));
   auto_touch_mode = AUTO_TOUCH_NONE;
 }
 
@@ -171,6 +174,18 @@ void WebUSB_Loop(void) { webusb_loop_calls++; }
 
 uint8_t KBDHID_Loop(void) {
   kbdhid_loop_calls++;
+  return 0;
+}
+
+int platform_config_page_read(size_t off, void *buf, size_t len) {
+  if (buf == NULL || off > sizeof(test_config_page) || len > sizeof(test_config_page) - off) return -1;
+  memcpy(buf, test_config_page + off, len);
+  return 0;
+}
+
+int platform_config_page_write(const void *page, size_t len) {
+  if (page == NULL || len != sizeof(test_config_page)) return -1;
+  memcpy(test_config_page, page, sizeof(test_config_page));
   return 0;
 }
 

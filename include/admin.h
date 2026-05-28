@@ -85,9 +85,7 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu);
 int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rapdu, bool pin_validated);
 
 /*
- * Platform persistence hooks.
- *
- * Core owns the config semantics, while the platform owns the physical storage layout.
+ * Core config accessors backed by the platform config page.
  */
 int admin_platform_device_config_read(admin_device_config_t *cfg);
 int admin_platform_device_config_write(const admin_device_config_t *cfg);

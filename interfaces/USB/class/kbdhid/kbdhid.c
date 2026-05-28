@@ -18,13 +18,6 @@ static char key_sequence[PASS_MAX_PASSWORD_LENGTH + 2]; // one for enter and one
 static uint8_t key_seq_position;
 static keyboard_report_t report;
 
-__weak bool kbdhid_platform_translate_ascii(uint8_t ch, uint8_t *modifier, uint8_t *usage) {
-  UNUSED(ch);
-  UNUSED(modifier);
-  UNUSED(usage);
-  return false;
-}
-
 static bool ascii2key_report(char ch, uint8_t *modifier, uint8_t *usage) {
   // Platforms can provide a layout-specific map. If they do, the returned HID
   // report is authoritative; the built-in table is only the QWERTY fallback.
