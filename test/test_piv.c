@@ -319,6 +319,53 @@ static void test_piv_get_metadata_extended_algo_ids(void **state) {
   }
 }
 
+static void test_piv_reset_preserves_platform_algorithm_extension(void **state) {
+  (void)state;
+
+  const piv_algorithm_extension_config_t custom = {
+      .enabled = 1,
+      .ed25519 = 0x22,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x51,
+      .x25519 = 0x52,
+      .secp256k1 = 0x53,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&custom), 0);
+
+  // A PIV reset rebuilds LittleFS-backed applet state, but the algorithm
+  // extension record belongs to platform configuration and must survive it.
+  assert_int_equal(piv_install(1), 0);
+
+  piv_algorithm_extension_config_t actual;
+  assert_int_equal(piv_platform_algorithm_extension_config_read(&actual), 0);
+  assert_memory_equal(&actual, &custom, sizeof(custom));
+
+  set_admin_status(1);
+  uint8_t generate_ed25519[] = {0xAC, 0x03, 0x80, 0x01, custom.ed25519};
+  uint8_t r_buf[128];
+  CAPDU C = {.data = generate_ed25519,
+             .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+             .p1 = 0x00,
+             .p2 = 0x9A,
+             .lc = sizeof(generate_ed25519)};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  const piv_algorithm_extension_config_t defaults = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
+  assert_int_equal(piv_install(1), 0);
+}
+
 static void test_ed25519_general_authenticate_long_message(void **state) {
   (void)state;
 
@@ -603,6 +650,7 @@ int main() {
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
+      cmocka_unit_test(test_piv_reset_preserves_platform_algorithm_extension),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
       cmocka_unit_test(test_set_pin_retries),
       cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),

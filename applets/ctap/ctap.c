@@ -98,7 +98,7 @@ static ctap_src_t current_cmd_src;
 // SM2 attr
 CTAP_sm2_attr ctap_sm2_attr;
 
-static void ctap_sm2_attr_set_default(void) {
+static void ctap_sm2_config_set_default(void) {
   ctap_sm2_attr.curve_id = 9;  // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#elliptic-curves
   ctap_sm2_attr.algo_id = -54; // An unused one. See https://www.iana.org/assignments/cose/cose.xhtml#algorithms
 }
@@ -107,19 +107,24 @@ static bool ctap_sm2_algo_id_valid(int32_t algo_id) {
   return algo_id != COSE_ALG_ES256 && algo_id != COSE_ALG_EDDSA && algo_id != COSE_ALG_ML_DSA_65;
 }
 
-static void ctap_sm2_attr_normalize(void) {
-  if (!ctap_sm2_algo_id_valid(ctap_sm2_attr.algo_id)) ctap_sm2_attr_set_default();
+static int ctap_sm2_config_read_platform(CTAP_sm2_attr *attr) {
+  if (ctap_platform_sm2_config_read(attr, sizeof(*attr)) < 0) return -1;
+  return ctap_sm2_algo_id_valid(attr->algo_id) ? 0 : -1;
 }
 
-static int ctap_sm2_attr_load(void) {
-  int ret = read_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr));
-  if (ret == (int)sizeof(ctap_sm2_attr)) {
-    ctap_sm2_attr_normalize();
-    return 0;
-  }
+static bool ctap_littlefs_state_present(void) {
+  uint8_t buf[KH_KEY_SIZE];
+  uint8_t pin_ctr;
+  CTAP_dc_general_attr attr;
+  const int pin_attr_len = read_attr(CTAP_CERT_FILE, PIN_ATTR, buf, sizeof(buf));
+  if (pin_attr_len != 0 && pin_attr_len != PIN_HASH_SIZE_P1) return false;
 
-  ctap_sm2_attr_set_default();
-  return write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr));
+  return get_file_size(DC_FILE) >= 0 && get_file_size(DC_META_FILE) >= 0 && get_file_size(CTAP_CERT_FILE) >= 0 &&
+         get_file_size(LB_FILE) >= 0 && read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) == sizeof(attr) &&
+         read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, buf, 4) == 4 &&
+         (pin_attr_len == 0 || read_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &pin_ctr, sizeof(pin_ctr)) == sizeof(pin_ctr)) &&
+         read_attr(CTAP_CERT_FILE, KH_KEY_ATTR, buf, KH_KEY_SIZE) == KH_KEY_SIZE &&
+         read_attr(CTAP_CERT_FILE, HE_KEY_ATTR, buf, HE_KEY_SIZE) == HE_KEY_SIZE;
 }
 
 typedef struct {
@@ -300,7 +305,7 @@ static void ctap_config_default(CTAP_persistent_config *cfg) {
 }
 
 static int ctap_config_store(const CTAP_persistent_config *cfg) {
-  return write_attr(CTAP_CERT_FILE, CONFIG_ATTR, cfg, sizeof(*cfg));
+  return ctap_platform_persistent_config_write(cfg, sizeof(*cfg));
 }
 
 static bool ctap_config_valid(const CTAP_persistent_config *cfg) {
@@ -309,10 +314,14 @@ static bool ctap_config_valid(const CTAP_persistent_config *cfg) {
          cfg->force_pin_change <= 1 && cfg->always_uv <= 1 && cfg->long_touch_for_reset <= 1;
 }
 
+static int ctap_config_read_platform(CTAP_persistent_config *cfg) {
+  if (ctap_platform_persistent_config_read(cfg, sizeof(*cfg)) < 0) return -1;
+  return ctap_config_valid(cfg) ? 0 : -1;
+}
+
 static int ctap_config_load(CTAP_persistent_config *cfg) {
   memset(cfg, 0, sizeof(*cfg));
-  int ret = read_attr(CTAP_CERT_FILE, CONFIG_ATTR, cfg, sizeof(*cfg));
-  if (ret == (int)sizeof(*cfg) && ctap_config_valid(cfg)) return 0;
+  if (ctap_config_read_platform(cfg) == 0) return 0;
 
   ctap_config_default(cfg);
   return 0;
@@ -914,8 +923,11 @@ void ctap_poweroff(void) {
 }
 
 uint8_t ctap_install(uint8_t reset) {
-  const bool has_persistent_state = get_file_size(LB_FILE) >= 0;
-  const bool runtime_reset = reset || runtime_reset_pending || !has_persistent_state;
+  CTAP_persistent_config persistent_cfg;
+  const bool has_littlefs_state = ctap_littlefs_state_present();
+  const bool has_complete_state = has_littlefs_state && ctap_sm2_config_read_platform(&ctap_sm2_attr) == 0 &&
+                                  ctap_config_read_platform(&persistent_cfg) == 0;
+  const bool runtime_reset = reset || runtime_reset_pending || !has_complete_state;
   // Reader reconnects may re-run ctap_install(0) without a real device reset.
   // Preserve in-flight CTAP command state in that case so CM/GA "next" commands
   // can continue across implicit PowerICC cycles.
@@ -929,15 +941,15 @@ uint8_t ctap_install(uint8_t reset) {
   }
   current_cmd_src = CTAP_SRC_NONE;
   if (runtime_reset) {
-    // PowerICC reconnects call ctap_install(0) while the NFC host may still be
-    // polling a 0x9100 keepalive response. Keep that pending request unless this
-    // is a real authenticator reset.
+    // PowerICC reconnects can call ctap_install(0) while an NFC host is still
+    // polling a keepalive response; keep that pending state on plain reconnect.
     ctap_nfc_pending_reset();
   }
   cp_initialize(runtime_reset);
   runtime_reset_pending = false;
-  if (!reset && has_persistent_state) {
-    if (ctap_sm2_attr_load() < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  // Platform-backed CTAP config is part of the install completion marker. If
+  // either platform config is absent or invalid, rebuild CTAP state.
+  if (!reset && has_complete_state) {
     DBG_MSG("CTAP initialized\n");
     return 0;
   }
@@ -957,14 +969,14 @@ uint8_t ctap_install(uint8_t reset) {
   if (write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   random_buffer(kh_key, sizeof(kh_key));
   if (write_attr(CTAP_CERT_FILE, HE_KEY_ATTR, kh_key, sizeof(kh_key)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  ctap_sm2_attr_set_default();
-  if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
   memcpy(
       kh_key,
       (uint8_t[]){0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d, 0x3c},
       17);
   if (write_file(LB_FILE, kh_key, 0, 17, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  ctap_sm2_config_set_default();
+  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
+    return CTAP2_ERR_UNHANDLED_REQUEST;
   memzero(kh_key, sizeof(kh_key));
   DBG_MSG("CTAP reset and initialized\n");
   return 0;
@@ -973,8 +985,8 @@ uint8_t ctap_install(uint8_t reset) {
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
   // initialize SM2 config
-  ctap_sm2_attr_set_default();
-  if (write_attr(CTAP_CERT_FILE, SM2_ATTR, &ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
+  ctap_sm2_config_set_default();
+  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
     return CTAP2_ERR_UNHANDLED_REQUEST;
   return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
 }
@@ -1004,9 +1016,11 @@ int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu) {
 
 int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
-  const int ret = read_attr(CTAP_CERT_FILE, SM2_ATTR, RDATA, sizeof(ctap_sm2_attr));
+  CTAP_sm2_attr attr;
+  const int ret = ctap_sm2_config_read_platform(&attr);
   if (ret < 0) return ret;
-  LL = ret;
+  memcpy(RDATA, &attr, sizeof(attr));
+  LL = sizeof(attr);
   return 0;
 }
 
@@ -1015,7 +1029,7 @@ int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   CTAP_sm2_attr attr;
   memcpy(&attr, DATA, sizeof(attr));
   if (!ctap_sm2_algo_id_valid(attr.algo_id)) EXCEPT(SW_WRONG_DATA);
-  const int ret = write_attr(CTAP_CERT_FILE, SM2_ATTR, &attr, sizeof(attr));
+  const int ret = ctap_platform_sm2_config_write(&attr, sizeof(attr));
   if (ret < 0) return ret;
   ctap_sm2_attr = attr;
   return 0;

@@ -4,6 +4,7 @@
 #include <common.h>
 #include <crypto-util.h>
 #include <des.h>
+#include <device-config.h>
 #include <device.h>
 #include <ecc.h>
 #include <key.h>
@@ -48,7 +49,6 @@
 
 // alg
 // clang-format off
-#define ALGORITHM_EXT_CONFIG_PATH  "piv-alg"
 #define ALG_DEFAULT   0x00
 #define ALG_TDEA_3KEY 0x03
 #define ALG_RSA_2048  0x07
@@ -238,6 +238,28 @@ enum {
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
 
+static const struct {
+  const char *path;
+  key_usage_t usage;
+  pin_policy_t pin_policy;
+} key_specs[] = {
+    {AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE},
+    {SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE},
+    {KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+    {CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER},
+    {KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+    {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+};
+
+static bool piv_algorithm_extension_config_valid(const piv_algorithm_extension_config_t *cfg) {
+  return cfg->enabled <= 1;
+}
+
+static int piv_algorithm_extension_config_load(piv_algorithm_extension_config_t *cfg) {
+  if (piv_platform_algorithm_extension_config_read(cfg) < 0) return -1;
+  return piv_algorithm_extension_config_valid(cfg) ? 0 : -1;
+}
+
 static void authenticate_reset(void) {
   auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_NONE;
   memset(auth_ctx + OFFSET_AUTH_CHALLENGE, 0, LENGTH_CHALLENGE);
@@ -413,6 +435,22 @@ static int piv_clear_inline_do_storage(void) {
     if (piv_clear_attr_if_present(CARD_ADMIN_KEY_PATH, attrs[i]) < 0) return -1;
   }
   return piv_remove_file_if_present(PIV_DO_META_PATH);
+}
+
+static bool piv_littlefs_state_present(void) {
+  key_meta_t meta;
+  uint8_t default_value;
+  for (size_t i = 0; i < sizeof(key_specs) / sizeof(key_specs[0]); ++i) {
+    if (ck_read_key_metadata(key_specs[i].path, &meta) < 0) return false;
+  }
+  return ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &meta) >= 0 &&
+         read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) ==
+             sizeof(default_value) &&
+         get_file_size(CHUID_PATH) >= 0 && get_file_size(CCC_PATH) >= 0 && pin_get_size(&pin) == 8 &&
+         pin_get_retries(&pin) >= 0 && pin_get_default_retries(&pin) >= 0 &&
+         read_attr(pin.path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) == sizeof(default_value) &&
+         pin_get_size(&puk) == 8 && pin_get_retries(&puk) >= 0 && pin_get_default_retries(&puk) >= 0 &&
+         read_attr(puk.path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) == sizeof(default_value);
 }
 
 static key_type_t algo_id_to_key_type(const uint8_t id) {
@@ -723,6 +761,16 @@ static void piv_auth_reset(void) {
   piv_auth_len = 0;
 }
 
+static void piv_algorithm_extension_config_set_default(void) {
+  alg_ext_cfg.enabled = 1;
+  alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
+  alg_ext_cfg.rsa3072 = ALG_RSA_3072_DEFAULT;
+  alg_ext_cfg.rsa4096 = ALG_RSA_4096_DEFAULT;
+  alg_ext_cfg.x25519 = ALG_X25519_DEFAULT;
+  alg_ext_cfg.secp256k1 = ALG_SECP256K1_DEFAULT;
+  alg_ext_cfg.sm2 = ALG_SM2_DEFAULT;
+}
+
 void piv_poweroff(void) {
   piv_state = PIV_STATE_OTHER;
   in_admin_status = 0;
@@ -738,24 +786,15 @@ void piv_poweroff(void) {
 
 int piv_install(const uint8_t reset) {
   piv_poweroff();
-  if (!reset && get_file_size(ALGORITHM_EXT_CONFIG_PATH) >= 0) {
-    if (read_file(ALGORITHM_EXT_CONFIG_PATH, &alg_ext_cfg, 0, sizeof(alg_ext_cfg)) < 0) return -1;
+  piv_algorithm_extension_config_t preserved_alg_ext_cfg;
+  const bool has_alg_ext_cfg = piv_algorithm_extension_config_load(&preserved_alg_ext_cfg) == 0;
+  // Platform alg-ext config is the install completion marker. If it is missing
+  // or invalid, rebuild PIV state.
+  if (!reset && has_alg_ext_cfg && piv_littlefs_state_present()) {
+    alg_ext_cfg = preserved_alg_ext_cfg;
     return 0;
   }
-  if (reset && piv_clear_file_do_storage() < 0) return -1;
-
-  static const struct {
-    const char *path;
-    key_usage_t usage;
-    pin_policy_t pin_policy;
-  } key_specs[] = {
-      {AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE},
-      {SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE},
-      {KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
-      {CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER},
-      {KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
-      {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
-  };
+  if (piv_clear_file_do_storage() < 0) return -1;
 
   // Default objects. Optional DO files are created lazily on PUT DATA so empty
   // retired cert and biometric objects do not consume LittleFS metadata blocks.
@@ -785,7 +824,7 @@ int piv_install(const uint8_t reset) {
                                  .touch_policy = TOUCH_POLICY_NEVER}};
   memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
   if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) return -1;
-  if (reset && piv_clear_inline_do_storage() < 0) return -1;
+  if (piv_clear_inline_do_storage() < 0) return -1;
   const uint8_t tmp = 0x01;
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
@@ -795,16 +834,16 @@ int piv_install(const uint8_t reset) {
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
-  if (get_file_size(ALGORITHM_EXT_CONFIG_PATH) == sizeof(alg_ext_cfg)) return 0;
-  // Algorithm extensions
-  alg_ext_cfg.enabled = 1;
-  alg_ext_cfg.ed25519 = ALG_ED25519_DEFAULT;
-  alg_ext_cfg.rsa3072 = ALG_RSA_3072_DEFAULT;
-  alg_ext_cfg.rsa4096 = ALG_RSA_4096_DEFAULT;
-  alg_ext_cfg.x25519 = ALG_X25519_DEFAULT;
-  alg_ext_cfg.secp256k1 = ALG_SECP256K1_DEFAULT;
-  alg_ext_cfg.sm2 = ALG_SM2_DEFAULT;
-  if (write_file(ALGORITHM_EXT_CONFIG_PATH, &alg_ext_cfg, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
+  // Algorithm extensions must remain the last persistent write because
+  // successful readback is used as the initialized marker. Preserve valid
+  // platform config across a PIV reset so admin-selected algorithm IDs survive
+  // provisioning tools that reset the applet before use.
+  if (has_alg_ext_cfg) {
+    alg_ext_cfg = preserved_alg_ext_cfg;
+  } else {
+    piv_algorithm_extension_config_set_default();
+  }
+  if (piv_platform_algorithm_extension_config_write(&alg_ext_cfg) < 0) return -1;
 
   return 0;
 }
@@ -1511,8 +1550,7 @@ static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   if (pin_get_retries(&pin) > 0 || pin_get_retries(&puk) > 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-  piv_install(1);
-  return 0;
+  return piv_install(1);
 }
 
 static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1713,7 +1751,7 @@ static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
 static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
-  fill_sn(RDATA);
+  device_config_fill_serial(RDATA);
   LL = 4;
   return 0;
 }
@@ -1727,15 +1765,20 @@ static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   if (P1 == 0x01) {
-    if (read_file(ALGORITHM_EXT_CONFIG_PATH, RDATA, 0, sizeof(alg_ext_cfg)) < 0) return -1;
-    LL = sizeof(alg_ext_cfg);
+    piv_algorithm_extension_config_t cfg;
+    if (piv_algorithm_extension_config_load(&cfg) < 0) return -1;
+    memcpy(RDATA, &cfg, sizeof(cfg));
+    LL = sizeof(cfg);
   } else {
     if (LC != sizeof(alg_ext_cfg)) EXCEPT(SW_WRONG_LENGTH);
-    if (DATA[0] != 0 && DATA[0] != 1) EXCEPT(SW_WRONG_DATA);
-    // We trust the rest data because no dangerous result will be caused even if the IDs are not unique.
-    if (write_file(ALGORITHM_EXT_CONFIG_PATH, DATA, 0, sizeof(alg_ext_cfg), 1) < 0) return -1;
+    piv_algorithm_extension_config_t cfg;
+    memcpy(&cfg, DATA, sizeof(cfg));
+    // Algorithm IDs may intentionally overlap; only the enable flag has a
+    // constrained domain.
+    if (!piv_algorithm_extension_config_valid(&cfg)) EXCEPT(SW_WRONG_DATA);
+    if (piv_platform_algorithm_extension_config_write(&cfg) < 0) return -1;
     // Effective immediately
-    memcpy(&alg_ext_cfg, DATA, sizeof(alg_ext_cfg));
+    alg_ext_cfg = cfg;
   }
 
   return 0;

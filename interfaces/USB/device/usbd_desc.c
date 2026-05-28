@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <admin.h>
+#include <device-config.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
 #include <usbd_core.h>
@@ -467,7 +467,7 @@ const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed __attribute__((u
     *length = 0;
     return NULL;
   }
-  fill_sn(sn);
+  device_config_fill_serial(sn);
   bytes_to_hex(sn, sizeof(sn), sn_str);
   USBD_GetString((uint8_t *)sn_str, shared_io_buffer, length);
   return shared_io_buffer;
@@ -484,7 +484,7 @@ const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)
   }
   *length = sizeof(USBD_FS_BOSDesc);
   memcpy(shared_io_buffer, USBD_FS_BOSDesc, sizeof(USBD_FS_BOSDesc)); // use shared_io_buffer to store this descriptor
-  shared_io_buffer[28] = cfg_is_webusb_landing_enable();
+  shared_io_buffer[28] = device_config_is_webusb_landing_enabled();
   return shared_io_buffer;
 #endif
 }

@@ -2,6 +2,7 @@
 #include <admin.h>
 #include <crypto-util.h>
 #include <ctap.h>
+#include <device-config.h>
 #include <device.h>
 #include <fs.h>
 #if ENABLE_APPLET_NDEF
@@ -14,14 +15,13 @@
 #include <piv.h>
 
 #define PIN_RETRY_COUNTER 3
-#define SN_FILE "sn"
-#define CFG_FILE "admin_cfg"
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = "admin-pin"};
 
 static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
 
 static admin_device_config_t current_config;
+static admin_device_config_t admin_get_current_config(void);
 
 __attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
@@ -54,21 +54,29 @@ __attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rap
   return 0;
 }
 
-uint8_t cfg_is_led_normally_on(void) { return current_config.led_normally_on; }
+// Query the platform hook on every read so a platform-backed config is not
+// shadowed by core RAM after a vendor/admin APDU updates flash directly.
+uint8_t device_config_is_led_normally_on(void) { return admin_get_current_config().led_normally_on; }
 
-uint8_t cfg_is_ndef_enable(void) { return current_config.ndef_en; }
+uint8_t device_config_is_ndef_enabled(void) { return admin_get_current_config().ndef_en; }
 
-uint8_t cfg_is_webusb_landing_enable(void) { return current_config.webusb_landing_en; }
+uint8_t device_config_is_webusb_landing_enabled(void) { return admin_get_current_config().webusb_landing_en; }
+
+static admin_device_config_t admin_get_current_config(void) {
+  admin_device_config_t cfg = default_cfg;
+  if (admin_platform_device_config_read(&cfg) == 0) return cfg;
+  return default_cfg;
+}
 
 void admin_poweroff(void) { pin.is_validated = 0; }
 
 int admin_install(const uint8_t reset) {
   admin_poweroff();
-  if (reset || get_file_size(CFG_FILE) != sizeof(admin_device_config_t)) {
+  // Device config is platform-backed. Core keeps no LittleFS fallback, which
+  // avoids two independent sources of truth for LED/NDEF/WebUSB flags.
+  if (reset || admin_platform_device_config_read(&current_config) < 0) {
     current_config = default_cfg;
-    if (write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1) < 0) return -1;
-  } else {
-    if (read_file(CFG_FILE, &current_config, 0, sizeof(current_config)) < 0) return -1;
+    if (admin_platform_device_config_write(&current_config) < 0) return -1;
   }
   if (reset || get_file_size(pin.path) < 0) {
     if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
@@ -104,21 +112,22 @@ static int admin_change_pin(const CAPDU *capdu, RAPDU *rapdu) {
 static int admin_write_sn(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x04) EXCEPT(SW_WRONG_LENGTH);
-  if (get_file_size(SN_FILE) >= 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  return write_file(SN_FILE, DATA, 0, LC, 1);
+  if (admin_platform_serial_write_once(DATA) < 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  return 0;
 }
 
 static int admin_read_sn(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LE < 4) EXCEPT(SW_WRONG_LENGTH);
 
-  fill_sn(RDATA);
+  device_config_fill_serial(RDATA);
   LL = 4;
 
   return 0;
 }
 
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
+  current_config = admin_get_current_config();
   switch (P1) {
   case ADMIN_P1_CFG_LED_ON:
     current_config.led_normally_on = P2 & 1;
@@ -132,24 +141,26 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  const int ret = write_file(CFG_FILE, &current_config, 0, sizeof(current_config), 1);
+  const int ret = admin_platform_device_config_write(&current_config);
   stop_blinking();
   return ret;
 }
 
 static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  if (LE < 5) EXCEPT(SW_WRONG_LENGTH);
+  if (LE < 6) EXCEPT(SW_WRONG_LENGTH);
 
-  RDATA[0] = current_config.led_normally_on;
+  const admin_device_config_t cfg = admin_get_current_config();
+
+  RDATA[0] = cfg.led_normally_on;
   RDATA[1] = 0; // reserved
 #if ENABLE_APPLET_NDEF
-  RDATA[2] = ndef_get_read_only();
+  RDATA[2] = ndef_is_read_only();
 #else
   RDATA[2] = 0;
 #endif
-  RDATA[3] = current_config.ndef_en;
-  RDATA[4] = current_config.webusb_landing_en;
+  RDATA[3] = cfg.ndef_en;
+  RDATA[4] = cfg.webusb_landing_en;
   RDATA[5] = 0; // reserved
   LL = 6;
 
@@ -165,6 +176,44 @@ static int admin_flash_usage(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 2;
 
   return 0;
+}
+
+static int admin_write_kbd_keymap(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(rapdu);
+  // Payload is 128 ASCII entries, each {modifier, HID usage}. P2 carries a
+  // host-defined layout id so tooling can identify what was installed.
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != ADMIN_KBD_KEYMAP_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+  return admin_platform_kbd_keymap_write(P2, DATA, LC);
+}
+
+static int admin_read_kbd_keymap(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+  switch (P2) {
+  case ADMIN_P2_KBD_READ_LAYOUT_ID:
+    if (LE < 1) EXCEPT(SW_WRONG_LENGTH);
+    if (admin_platform_kbd_keymap_read(RDATA, NULL, 0) < 0) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    LL = 1;
+    return 0;
+  case ADMIN_P2_KBD_READ_KEYMAP: {
+    uint8_t layout_id;
+    if (LE < ADMIN_KBD_KEYMAP_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (admin_platform_kbd_keymap_read(&layout_id, RDATA, ADMIN_KBD_KEYMAP_LENGTH) < 0)
+      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    LL = ADMIN_KBD_KEYMAP_LENGTH;
+    return 0;
+  }
+  default:
+    EXCEPT(SW_WRONG_P1P2);
+  }
+}
+
+static int admin_clear_kbd_keymap(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(rapdu);
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+  return admin_platform_kbd_keymap_clear();
 }
 
 static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
@@ -201,9 +250,8 @@ static int admin_factory_reset(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-void fill_sn(uint8_t *buf) {
-  const int err = read_file(SN_FILE, buf, 0, 4);
-  if (err != 4) memset(buf, 0, 4);
+void device_config_fill_serial(uint8_t *buf) {
+  if (admin_platform_serial_read(buf) < 0) memset(buf, 0, 4);
 }
 
 int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
@@ -326,6 +374,15 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
 #else
     EXCEPT(SW_INS_NOT_SUPPORTED);
 #endif
+    break;
+  case ADMIN_INS_WRITE_KBD_KEYMAP:
+    ret = admin_write_kbd_keymap(capdu, rapdu);
+    break;
+  case ADMIN_INS_READ_KBD_KEYMAP:
+    ret = admin_read_kbd_keymap(capdu, rapdu);
+    break;
+  case ADMIN_INS_CLEAR_KBD_KEYMAP:
+    ret = admin_clear_kbd_keymap(capdu, rapdu);
     break;
   case ADMIN_INS_VENDOR_SPECIFIC:
     ret = admin_vendor_specific(capdu, rapdu);

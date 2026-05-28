@@ -2,6 +2,10 @@
 // implement software-simulated device funtions (LED, Touch, Timer, etc.)
 #include "device.h"
 #include "admin.h"
+#include "ctap.h"
+#include "ndef.h"
+#include "piv.h"
+#include <platform-config.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -16,6 +20,14 @@
 
 static uint32_t initial_ticks = 0;
 static char err_trigger_filename[64];
+static uint8_t simulated_config_page[PLATFORM_CONFIG_PAGE_SIZE];
+static bool simulated_config_page_loaded;
+
+static void simulated_config_page_init(void) {
+  if (simulated_config_page_loaded) return;
+  memset(simulated_config_page, 0xFF, sizeof(simulated_config_page));
+  simulated_config_page_loaded = true;
+}
 
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
   LL = strlen(GIT_REV);
@@ -45,6 +57,20 @@ int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 1;
   if (LL > LE) LL = LE;
 
+  return 0;
+}
+
+int platform_config_page_read(size_t off, void *buf, size_t len) {
+  if (buf == NULL || off > sizeof(simulated_config_page) || len > sizeof(simulated_config_page) - off) return -1;
+  simulated_config_page_init();
+  memcpy(buf, simulated_config_page + off, len);
+  return 0;
+}
+
+int platform_config_page_write(const void *page, size_t len) {
+  if (page == NULL || len != sizeof(simulated_config_page)) return -1;
+  simulated_config_page_init();
+  memcpy(simulated_config_page, page, sizeof(simulated_config_page));
   return 0;
 }
 

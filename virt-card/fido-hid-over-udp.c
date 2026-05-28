@@ -152,7 +152,7 @@ static void emulate_reboot(void) {
   testmode_set_initial_ticks(0);
   testmode_set_initial_ticks(device_get_tick());
   ctap_schedule_runtime_reset();
-  applets_install();
+  if (applets_install() < 0) exit(1);
 }
 
 static int handle_udp_control_packet(const uint8_t *buf, int length) {
