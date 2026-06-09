@@ -261,7 +261,6 @@
 #define USER_ID_MAX_SIZE              64
 #define DISPLAY_NAME_LIMIT            65
 #define USER_NAME_LIMIT               65
-#define MAX_DC_NUM                    64
 #define MAX_STORED_RPID_LENGTH        32
 #define MAX_HMAC_SECRET_OUTPUT_IN_AUTH (HMAC_SECRET_SALT_IV_SIZE + HMAC_SECRET_SALT_SIZE)
 // Map header plus all MakeCredential authData extension outputs supported here.
@@ -311,17 +310,21 @@ typedef struct {
 } __packed CTAP_discoverable_credential;
 
 typedef struct {
-  uint8_t numbers;
-  uint8_t index; // enough when MAX_DC_NUM == 64
-  uint8_t pending_add : 1;
-  uint8_t pending_delete : 1;
+  uint32_t numbers;
+  uint32_t pending_index;
+  uint8_t pending_op;
 } __packed CTAP_dc_general_attr;
+
+#define CTAP_DC_PENDING_NONE   0
+#define CTAP_DC_PENDING_ADD    1
+#define CTAP_DC_PENDING_DELETE 2
 
 typedef struct {
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   uint8_t rp_id[MAX_STORED_RPID_LENGTH];
-  size_t rp_id_len;
-  uint64_t slots;
+  uint8_t rp_id_len;
+  uint32_t live_count;
+  bool deleted;
 } __packed CTAP_rp_meta;
 
 typedef struct {
