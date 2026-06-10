@@ -1291,9 +1291,9 @@ static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
   (void)state;
 
   static uint8_t req[] = {
-      CTAP_LARGE_BLOBS, 0xA2, 0x01, 0x19, 0x01, 0x2C, 0x03, 0x00,
+      CTAP_LARGE_BLOBS, 0xA2, 0x01, 0x19, HI(MAX_FRAGMENT_LENGTH), LO(MAX_FRAGMENT_LENGTH), 0x03, 0x00,
   };
-  uint8_t blob[300];
+  uint8_t blob[MAX_FRAGMENT_LENGTH];
   uint8_t scratch[64] = {0};
   uint8_t chunk[16] = {0};
   CTAPHID_TxSource source = {0};
@@ -1318,10 +1318,32 @@ static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
   assert_int_equal(chunk[1], 0xA1);
   assert_int_equal(chunk[2], 0x01);
   assert_int_equal(chunk[3], 0x59);
-  assert_int_equal(chunk[4], 0x01);
-  assert_int_equal(chunk[5], 0x2C);
+  assert_int_equal(chunk[4], HI(MAX_FRAGMENT_LENGTH));
+  assert_int_equal(chunk[5], LO(MAX_FRAGMENT_LENGTH));
   assert_int_equal(chunk[6], 0x00);
   assert_int_equal(chunk[7], 0x01);
+  if (source.close) source.close(source.ctx);
+}
+
+static void test_ctap_get_info_reports_transport_msg_size(void **state) {
+  (void)state;
+
+  static uint8_t req[] = {CTAP_GET_INFO};
+  uint8_t scratch[64] = {0};
+  uint8_t resp[512] = {0};
+  CTAPHID_TxSource source = {0};
+  size_t written = 0;
+  const uint8_t expected[] = {GI_RESP_MAX_MSG_SIZE, 0x19, HI(CTAP_MAX_MSG_SIZE), LO(CTAP_MAX_MSG_SIZE)};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
+                   1);
+  assert_non_null(source.read);
+  assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+  assert_non_null(find_bytes(resp, written, expected, sizeof(expected)));
   if (source.close) source.close(source.ctx);
 }
 
@@ -1882,6 +1904,7 @@ int main() {
       cmocka_unit_test(test_ctap_hid_credential_management_returns_third_party_payment),
       cmocka_unit_test(test_pin_uv_auth_clear_permissions_except_lbw),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
+      cmocka_unit_test(test_ctap_get_info_reports_transport_msg_size),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_response_source_multi_chunk_get_response),
       cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),

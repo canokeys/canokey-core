@@ -2483,8 +2483,11 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
       ctap_const_stream_add_mem(state, cbor_gi_after_client_pin_before_make_cred_uv_not_rqd,
                                 sizeof(cbor_gi_after_client_pin_before_make_cred_uv_not_rqd)) != 0 ||
       cbor_put_bool_inline(state, !always_uv) != 0 ||
-      ctap_const_stream_add_mem(state, cbor_gi_after_make_cred_uv_not_rqd_before_sm2_alg,
-                                sizeof(cbor_gi_after_make_cred_uv_not_rqd_before_sm2_alg)) != 0 ||
+      ctap_const_stream_add_mem(state, cbor_gi_after_make_cred_uv_not_rqd_before_max_msg_size,
+                                sizeof(cbor_gi_after_make_cred_uv_not_rqd_before_max_msg_size)) != 0 ||
+      cbor_put_uint_inline(state, CTAP_MAX_MSG_SIZE) != 0 ||
+      ctap_const_stream_add_mem(state, cbor_gi_after_max_msg_size_before_sm2_alg,
+                                sizeof(cbor_gi_after_max_msg_size_before_sm2_alg)) != 0 ||
       cbor_put_int_inline(state, ctap_sm2_attr.algo_id) != 0 ||
       ctap_const_stream_add_mem(state, cbor_gi_after_sm2_alg, sizeof(cbor_gi_after_sm2_alg)) != 0 ||
       (cfg.force_pin_change &&
