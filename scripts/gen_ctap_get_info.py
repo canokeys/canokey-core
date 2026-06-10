@@ -169,6 +169,9 @@ def build_segments(c):
     after_versions += make_cred_uv_not_rqd_marker
 
     after_versions += encode_uint(c['GI_RESP_MAX_MSG_SIZE'])
+    # CTAP_MAX_MSG_SIZE may depend on platform ABI/compiler flags via
+    # MAX_CTAP_BUFSIZE, so runtime C code patches it instead of baking the
+    # generator host's value into this static segment.
     max_msg_size_marker = b'\xF0MAXMSG'
     after_versions += max_msg_size_marker
     after_versions += encode_uint(c['GI_RESP_PIN_UV_AUTH_PROTOCOLS'])

@@ -38,7 +38,8 @@ int get_fs_usage(void);
  *
  * LittleFS allocates storage in blocks and may need additional metadata blocks
  * for a write. Treat this as an estimate for admission control, not as a
- * guarantee that a later write cannot fail.
+ * guarantee that a later write cannot fail. Callers still need to handle
+ * LFS_ERR_NOSPC from the actual write path.
  *
  * @return Estimated free bytes, or a negative LittleFS error.
  */
@@ -47,6 +48,9 @@ int get_fs_free_bytes(void);
 /**
  * Return whether the file system has enough estimated space for a write while
  * keeping reserve_bytes free.
+ *
+ * This helper uses subtraction rather than adding write_bytes and reserve_bytes
+ * so oversized requests cannot wrap around and appear admissible.
  *
  * @return 1 if enough estimated space is available, 0 if not, or a negative
  * LittleFS error.

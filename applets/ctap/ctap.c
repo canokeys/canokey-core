@@ -237,6 +237,9 @@ static ctap_req_src_t current_req_src;
 static const uint8_t *current_req_mem;
 static size_t current_req_mem_len;
 
+// Leave slack for LittleFS metadata and copy-on-write block allocation. This is
+// an admission-control guard only; actual writes still map LFS_ERR_NOSPC to the
+// CTAP storage-full status.
 #define CTAP_FS_RESERVE_BYTES (128 * LFS_CACHE_SIZE)
 
 static uint8_t ctap_dc_record_count(uint32_t *count) {
@@ -297,10 +300,15 @@ static uint32_t ctap_count_deleted_credentials(void) {
 }
 
 static size_t ctap_dc_write_cost(void) {
+  // Worst-case cost for admitting one brand-new resident credential: one DC
+  // record, one RP metadata record, and the general attribute update.
   return sizeof(CTAP_discoverable_credential) + sizeof(CTAP_rp_meta) + sizeof(CTAP_dc_general_attr);
 }
 
 static uint32_t ctap_capacity_remaining_new_credentials(void) {
+  // Report reusable tombstones plus a conservative estimate for new records
+  // that can fit in the remaining flash. This mirrors admission control but is
+  // not a promise that every later write will succeed.
   uint32_t reusable = ctap_count_deleted_credentials();
   int free_bytes = get_fs_free_bytes();
   if (free_bytes <= CTAP_FS_RESERVE_BYTES) return reusable;
@@ -310,6 +318,8 @@ static uint32_t ctap_capacity_remaining_new_credentials(void) {
 }
 
 static uint8_t ctap_rebuild_rp_meta_counts(void) {
+  // Rebuild denormalized RP live counts from DC_FILE after an interrupted
+  // add/delete. The DC tombstone flag is the source of truth.
   uint32_t n_meta;
   uint8_t err = ctap_meta_record_count(&n_meta);
   if (err) return err;
@@ -1217,7 +1227,8 @@ int ctap_consistency_check(void) {
                     sizeof(CTAP_discoverable_credential)) < 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
       if (!dc.deleted) {
-        // delete the credential that had been written
+        // Roll back an interrupted add by tombstoning the just-written
+        // credential. For interrupted delete this is already true.
         DBG_MSG("Delete cred at %lu\n", (unsigned long)attr.pending_index);
         dc.deleted = true;
         if (write_file(DC_FILE, &dc, (lfs_soff_t)(attr.pending_index * sizeof(CTAP_discoverable_credential)),
@@ -1225,6 +1236,8 @@ int ctap_consistency_check(void) {
           return CTAP2_ERR_UNHANDLED_REQUEST;
       }
     }
+    // Metadata is denormalized for fast RP enumeration, so recompute it after
+    // the credential file has been restored to a consistent state.
     uint8_t rebuild_err = ctap_rebuild_rp_meta_counts();
     if (rebuild_err) return rebuild_err;
     if (attr.pending_op == CTAP_DC_PENDING_DELETE && attr.numbers > 0) attr.numbers--;
@@ -1476,6 +1489,8 @@ static uint8_t ctap_store_discoverable_credential(const CTAP_make_credential *mc
   }
   bool append_meta = !has_meta && first_deleted_meta == UINT32_MAX;
 
+  // Only appends need new file capacity. Replacing an active credential or
+  // reusing tombstoned DC/RP-meta records overwrites existing bytes.
   size_t required = sizeof(CTAP_dc_general_attr) + (append_dc ? sizeof(CTAP_discoverable_credential) : 0) +
                     (append_meta ? sizeof(CTAP_rp_meta) : 0);
   int has_space = fs_has_free_space((lfs_size_t)required, CTAP_FS_RESERVE_BYTES);

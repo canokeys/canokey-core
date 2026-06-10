@@ -12,6 +12,9 @@
 #include <string.h>
 
 #define OATH_FILE "oath"
+// Admission-control reserve for LittleFS metadata/copy-on-write overhead.
+// Tombstone reuse does not consume new blocks, so the reserve is checked only
+// when appending a new record past the current file end.
 #define OATH_FS_RESERVE_BYTES (64 * LFS_CACHE_SIZE)
 
 #define YK_CMD_GET_SERIAL 0x10
@@ -160,6 +163,7 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   }
   DBG_MSG("unoccupied=%zu n_records=%zu\n", unoccupied, n_records);
   if (unoccupied == n_records) {
+    // No tombstone was available, so this write extends the file.
     int has_space = fs_has_free_space(sizeof(OATH_RECORD), OATH_FS_RESERVE_BYTES);
     if (has_space < 0) return -1;
     if (has_space == 0) EXCEPT(SW_NOT_ENOUGH_SPACE);
