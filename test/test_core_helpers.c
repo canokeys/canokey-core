@@ -274,6 +274,11 @@ static void test_fs_roundtrip_and_metadata(void **state) {
 
   assert_true(get_fs_size() > 0);
   assert_true(get_fs_usage() >= 0);
+  int free_bytes = get_fs_free_bytes();
+  assert_true(free_bytes > 0);
+  assert_int_equal(fs_has_free_space(1, 0), 1);
+  assert_int_equal(fs_has_free_space(1, (lfs_size_t)free_bytes), 0);
+  assert_int_equal(fs_has_free_space((lfs_size_t)-1, 0), 0);
 }
 
 static void test_fs_error_paths(void **state) {

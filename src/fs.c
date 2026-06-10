@@ -138,7 +138,8 @@ int get_fs_free_bytes(void) {
 int fs_has_free_space(lfs_size_t write_bytes, lfs_size_t reserve_bytes) {
   int free_bytes = get_fs_free_bytes();
   if (free_bytes < 0) return free_bytes;
-  return (lfs_size_t)free_bytes >= write_bytes + reserve_bytes;
+  if ((lfs_size_t)free_bytes < reserve_bytes) return 0;
+  return (lfs_size_t)free_bytes - reserve_bytes >= write_bytes;
 }
 
 int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }

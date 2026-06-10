@@ -47,6 +47,9 @@ int get_fs_free_bytes(void);
 /**
  * Return whether the file system has enough estimated space for a write while
  * keeping reserve_bytes free.
+ *
+ * @return 1 if enough estimated space is available, 0 if not, or a negative
+ * LittleFS error.
  */
 int fs_has_free_space(lfs_size_t write_bytes, lfs_size_t reserve_bytes);
 

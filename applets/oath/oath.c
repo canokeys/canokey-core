@@ -161,7 +161,8 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   DBG_MSG("unoccupied=%zu n_records=%zu\n", unoccupied, n_records);
   if (unoccupied == n_records) {
     int has_space = fs_has_free_space(sizeof(OATH_RECORD), OATH_FS_RESERVE_BYTES);
-    if (has_space <= 0) EXCEPT(SW_NOT_ENOUGH_SPACE);
+    if (has_space < 0) return -1;
+    if (has_space == 0) EXCEPT(SW_NOT_ENOUGH_SPACE);
   }
 
   record.name_len = name_len;

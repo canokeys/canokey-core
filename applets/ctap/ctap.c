@@ -1476,10 +1476,11 @@ static uint8_t ctap_store_discoverable_credential(const CTAP_make_credential *mc
   }
   bool append_meta = !has_meta && first_deleted_meta == UINT32_MAX;
 
-  size_t required = ctap_dc_write_cost() + (append_dc ? sizeof(CTAP_discoverable_credential) : 0) +
+  size_t required = sizeof(CTAP_dc_general_attr) + (append_dc ? sizeof(CTAP_discoverable_credential) : 0) +
                     (append_meta ? sizeof(CTAP_rp_meta) : 0);
   int has_space = fs_has_free_space((lfs_size_t)required, CTAP_FS_RESERVE_BYTES);
-  if (has_space <= 0) return CTAP2_ERR_KEY_STORE_FULL;
+  if (has_space < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (has_space == 0) return CTAP2_ERR_KEY_STORE_FULL;
 
   memcpy(&dc->credential_id, cid, sizeof(*cid));
   memcpy(&dc->user, &mc->user, sizeof(user_entity));
