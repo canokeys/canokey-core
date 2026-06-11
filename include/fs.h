@@ -16,6 +16,14 @@ int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len);
 int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len);
 int remove_attr(const char *path, uint8_t attr);
 int get_file_size(const char *path);
+
+/**
+ * Return the payload length of a LittleFS user attribute without reading it.
+ *
+ * Returns LFS_ERR_NOENT when the file is absent and LFS_ERR_NOATTR when the
+ * file exists but the requested attribute is absent.
+ */
+int get_attr_size(const char *path, uint8_t attr);
 int fs_rename(const char *old, const char *new);
 int remove_file(const char *path);
 

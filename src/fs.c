@@ -120,6 +120,10 @@ err_close:
   return err;
 }
 
+int get_attr_size(const char *path, uint8_t attr) {
+  return lfs_getattr(&lfs, path, attr, NULL, 0);
+}
+
 int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
 
 int get_fs_usage(void) {

@@ -16,6 +16,7 @@
 #include <device.h>
 #include <fs.h>
 #include <lfs.h>
+#include <oath.h>
 #include <pke.h>
 #include "../applets/ctap/secret.h"
 #include "../applets/ctap/cose-key.h"
@@ -1713,6 +1714,17 @@ static void admin_verify_default_pin(CAPDU *capdu, RAPDU *rapdu) {
   assert_int_equal(rapdu->len, 0);
 }
 
+static uint32_t admin_usage_record_bytes(const uint8_t *data, uint8_t id, uint8_t *flags) {
+  for (size_t off = 0; off < ADMIN_APPLET_USAGE_RESPONSE_LENGTH; off += ADMIN_APPLET_USAGE_RECORD_LENGTH) {
+    if (data[off] != id) continue;
+    if (flags) *flags = data[off + 1];
+    return ((uint32_t)data[off + 2] << 24) | ((uint32_t)data[off + 3] << 16) | ((uint32_t)data[off + 4] << 8) |
+           data[off + 5];
+  }
+  fail_msg("admin applet usage id %u not found", id);
+  return 0;
+}
+
 static void test_admin_platform_config_and_serial_apdus(void **state) {
   (void)state;
 
@@ -1783,6 +1795,52 @@ static void test_admin_platform_config_and_serial_apdus(void **state) {
 
   admin_send(&capdu, &rapdu, ADMIN_INS_READ_SN, 0x00, 0x00, NULL, 0, sizeof(expected_serial) - 1);
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+}
+
+static void test_admin_flash_usage_apdus(void **state) {
+  (void)state;
+
+  uint8_t c_buf[64], r_buf[ADMIN_APPLET_USAGE_RESPONSE_LENGTH];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 2);
+  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  admin_verify_default_pin(&capdu, &rapdu);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x01, NULL, 0, 2);
+  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 1);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 2);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 2);
+
+  assert_int_equal(write_file("oath", "abcd", 0, 4, 1), 0);
+  assert_int_equal(write_attr("oath", ATTR_KEY, "xy", 2), 0);
+  assert_int_equal(write_file("ctap_lb", "12345", 0, 5, 1), 0);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
+             ADMIN_APPLET_USAGE_RESPONSE_LENGTH - 1);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
+             ADMIN_APPLET_USAGE_RESPONSE_LENGTH);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, ADMIN_APPLET_USAGE_RESPONSE_LENGTH);
+
+  uint8_t flags = 0;
+  assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_OATH, &flags) >= 6);
+  assert_int_equal(flags & ADMIN_APPLET_USAGE_FLAG_MISSING, 0);
+  assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_CTAP, &flags) >= 5);
+  (void)admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_OPENPGP, &flags);
 }
 
 static void test_admin_kbd_keymap_apdus(void **state) {
@@ -1914,6 +1972,7 @@ int main() {
       cmocka_unit_test(test_response_source_clear_calls_close),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
       cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
+      cmocka_unit_test(test_admin_flash_usage_apdus),
       cmocka_unit_test(test_admin_kbd_keymap_apdus),
   };
 
