@@ -2841,7 +2841,6 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
   ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
 
-  int size;
   int counter;
   CborEncoder map, sub_map;
   uint32_t numbers = 0;
@@ -3121,22 +3120,9 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
                                    sizeof(CTAP_discoverable_credential), 0);
     if (del_write_err < 0) return ctap_storage_write_result(del_write_err);
     DBG_MSG("Slot %lu deleted\n", (unsigned long)credential_idx);
-    // delete the meta then
-    uint32_t n_meta;
-    uint8_t count_err = ctap_meta_record_count(&n_meta);
-    if (count_err) return count_err;
     KEEPALIVE();
-    for (uint32_t i = 0; i < n_meta; ++i) {
-      size = read_file(DC_META_FILE, &meta, (lfs_soff_t)(i * sizeof(CTAP_rp_meta)), sizeof(CTAP_rp_meta));
-      if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (!meta.deleted && memcmp_s(meta.rp_id_hash, cm.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) {
-        if (meta.live_count > 0) --meta.live_count;
-        if (meta.live_count == 0) meta.deleted = true;
-        size = write_file(DC_META_FILE, &meta, (lfs_soff_t)(i * sizeof(CTAP_rp_meta)), sizeof(CTAP_rp_meta), 0);
-        if (size < 0) return ctap_storage_write_result(size);
-        break;
-      }
-    }
+    uint8_t rebuild_err = ctap_rebuild_rp_meta_counts();
+    if (rebuild_err) return rebuild_err;
     if (attr.numbers > 0) --attr.numbers;
     attr.pending_op = CTAP_DC_PENDING_NONE;
     if (write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
