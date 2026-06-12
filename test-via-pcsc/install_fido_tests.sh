@@ -6,7 +6,6 @@ PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 pushd fido2-tests
 patch -p1 -u --forward <../test-via-pcsc/fido2_retry_ctap2_init.patch || true
-python3 ../test-via-pcsc/patch_fido2_credmgmt_overwrite.py tests/standard/fido2v1/test_credmgmt.py
 VENV_DIR="${PWD}/.venv"
 if [ ! -x "${VENV_DIR}/bin/python" ]; then
   "${PYTHON_BIN}" -m venv "${VENV_DIR}"
