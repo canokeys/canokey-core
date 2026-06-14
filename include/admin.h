@@ -39,7 +39,7 @@
  *        {applet_id, flags, logical_bytes_be32}. logical_bytes is the sum of
  *        known LittleFS file payloads and user-attribute payloads owned by the
  *        applet. It excludes LittleFS metadata/copy-on-write block overhead,
- *        which remains visible only in ADMIN_FLASH_USAGE_TOTAL.
+ *        which is reported in ADMIN_APPLET_USAGE_ID_SYSTEM.
  *
  * flags bit 0 means one or more known paths/attrs were absent. Missing entries
  * are counted as zero because disabled or freshly-reset applets may not have all
@@ -48,10 +48,11 @@
 #define ADMIN_FLASH_USAGE_TOTAL 0x00
 #define ADMIN_FLASH_USAGE_APPLETS 0x01
 #define ADMIN_APPLET_USAGE_RECORD_LENGTH 6
-#define ADMIN_APPLET_USAGE_COUNT 7
+#define ADMIN_APPLET_USAGE_COUNT 8
 #define ADMIN_APPLET_USAGE_RESPONSE_LENGTH (ADMIN_APPLET_USAGE_COUNT * ADMIN_APPLET_USAGE_RECORD_LENGTH)
 #define ADMIN_APPLET_USAGE_FLAG_MISSING 0x01
 
+#define ADMIN_APPLET_USAGE_ID_SYSTEM 0x00
 #define ADMIN_APPLET_USAGE_ID_ADMIN 0x01
 #define ADMIN_APPLET_USAGE_ID_OPENPGP 0x02
 #define ADMIN_APPLET_USAGE_ID_PIV 0x03

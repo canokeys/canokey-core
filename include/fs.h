@@ -42,6 +42,14 @@ int get_fs_size(void);
 int get_fs_usage(void);
 
 /**
+ * Get the used size (in bytes) of the file system.
+ *
+ * This is LittleFS physical block usage, including metadata and copy-on-write
+ * overhead. It is not the sum of file payload lengths.
+ */
+int get_fs_usage_bytes(void);
+
+/**
  * Estimate currently available file system space in bytes.
  *
  * LittleFS allocates storage in blocks and may need additional metadata blocks

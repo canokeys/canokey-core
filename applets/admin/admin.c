@@ -33,8 +33,8 @@ typedef struct {
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = ADMIN_PIN_FILE};
 
 // Logical usage manifests for ADMIN_FLASH_USAGE_APPLETS. Keep these in sync
-// with applet-owned LittleFS paths and user attributes; the totals intentionally
-// exclude LittleFS metadata and platform config-page storage.
+// with applet-owned LittleFS paths and user attributes. The SYSTEM record
+// reports LittleFS physical usage that cannot be attributed to these payloads.
 static const uint8_t admin_pin_attrs[] = {0x00, 0x01};
 static const admin_fs_usage_source_t admin_usage_sources[] = {
     {ADMIN_PIN_FILE, admin_pin_attrs, sizeof(admin_pin_attrs)},
@@ -291,11 +291,17 @@ static int admin_flash_usage_applets(const CAPDU *capdu, RAPDU *rapdu) {
   if (LE < ADMIN_APPLET_USAGE_RESPONSE_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
   size_t off = 0;
+  uint32_t attributed_bytes = 0;
   for (size_t i = 0; i < sizeof(applet_usage_defs) / sizeof(applet_usage_defs[0]); ++i) {
     uint32_t bytes = 0;
     uint8_t flags = 0;
     for (uint8_t j = 0; j < applet_usage_defs[i].source_count; ++j) {
       if (admin_sum_fs_usage(&applet_usage_defs[i].sources[j], &bytes, &flags) < 0) return -1;
+    }
+    if (UINT32_MAX - attributed_bytes < bytes) {
+      attributed_bytes = UINT32_MAX;
+    } else {
+      attributed_bytes += bytes;
     }
 
     RDATA[off++] = applet_usage_defs[i].id;
@@ -303,6 +309,16 @@ static int admin_flash_usage_applets(const CAPDU *capdu, RAPDU *rapdu) {
     admin_put_u32_be(RDATA + off, bytes);
     off += 4;
   }
+
+  int fs_usage_bytes = get_fs_usage_bytes();
+  if (fs_usage_bytes < 0) return -1;
+  const uint32_t unattributed_bytes =
+      (uint32_t)fs_usage_bytes > attributed_bytes ? (uint32_t)fs_usage_bytes - attributed_bytes : 0;
+  RDATA[off++] = ADMIN_APPLET_USAGE_ID_SYSTEM;
+  RDATA[off++] = 0;
+  admin_put_u32_be(RDATA + off, unattributed_bytes);
+  off += 4;
+
   LL = off;
   return 0;
 }

@@ -1840,6 +1840,8 @@ static void test_admin_flash_usage_apdus(void **state) {
   assert_int_equal(flags & ADMIN_APPLET_USAGE_FLAG_MISSING, 0);
   assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_CTAP, &flags) >= 5);
   (void)admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_OPENPGP, &flags);
+  assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_SYSTEM, &flags) > 0);
+  assert_int_equal(flags, 0);
 }
 
 static void test_admin_kbd_keymap_apdus(void **state) {

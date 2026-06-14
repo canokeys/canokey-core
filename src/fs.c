@@ -132,6 +132,12 @@ int get_fs_usage(void) {
   return (int)(lfs.cfg->block_size * blocks) / 1024;
 }
 
+int get_fs_usage_bytes(void) {
+  int blocks = lfs_fs_size(&lfs);
+  if (blocks < 0) return blocks;
+  return (int)(lfs.cfg->block_size * (lfs_size_t)blocks);
+}
+
 int get_fs_free_bytes(void) {
   int blocks = lfs_fs_size(&lfs);
   if (blocks < 0) return blocks;
