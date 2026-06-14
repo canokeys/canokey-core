@@ -288,8 +288,7 @@ static int admin_sum_fs_usage(const admin_fs_usage_source_t *source, uint32_t *b
 
 static int admin_flash_usage_applets(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
-  if (LE < ADMIN_APPLET_USAGE_BASE_RESPONSE_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-  const bool include_system = LE >= ADMIN_APPLET_USAGE_RESPONSE_LENGTH;
+  if (LE < ADMIN_APPLET_USAGE_RESPONSE_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
   size_t off = 0;
   uint32_t attributed_bytes = 0;
@@ -311,16 +310,14 @@ static int admin_flash_usage_applets(const CAPDU *capdu, RAPDU *rapdu) {
     off += 4;
   }
 
-  if (include_system) {
-    int fs_usage_bytes = get_fs_usage_bytes();
-    if (fs_usage_bytes < 0) return -1;
-    const uint32_t unattributed_bytes =
-        (uint32_t)fs_usage_bytes > attributed_bytes ? (uint32_t)fs_usage_bytes - attributed_bytes : 0;
-    RDATA[off++] = ADMIN_APPLET_USAGE_ID_SYSTEM;
-    RDATA[off++] = 0;
-    admin_put_u32_be(RDATA + off, unattributed_bytes);
-    off += 4;
-  }
+  int fs_usage_bytes = get_fs_usage_bytes();
+  if (fs_usage_bytes < 0) return -1;
+  const uint32_t unattributed_bytes =
+      (uint32_t)fs_usage_bytes > attributed_bytes ? (uint32_t)fs_usage_bytes - attributed_bytes : 0;
+  RDATA[off++] = ADMIN_APPLET_USAGE_ID_SYSTEM;
+  RDATA[off++] = 0;
+  admin_put_u32_be(RDATA + off, unattributed_bytes);
+  off += 4;
 
   LL = off;
   return 0;

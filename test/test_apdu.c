@@ -1827,13 +1827,8 @@ static void test_admin_flash_usage_apdus(void **state) {
   assert_int_equal(write_file("ctap_lb", "12345", 0, 5, 1), 0);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
-             ADMIN_APPLET_USAGE_BASE_RESPONSE_LENGTH - 1);
+             ADMIN_APPLET_USAGE_RESPONSE_LENGTH - 1);
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
-             ADMIN_APPLET_USAGE_BASE_RESPONSE_LENGTH);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, ADMIN_APPLET_USAGE_BASE_RESPONSE_LENGTH);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
              ADMIN_APPLET_USAGE_RESPONSE_LENGTH);
