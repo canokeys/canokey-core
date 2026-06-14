@@ -422,6 +422,10 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
       ret = admin_vendor_hw_sn(capdu, rapdu);
     goto done;
 
+  case ADMIN_INS_FLASH_USAGE:
+    ret = admin_flash_usage(capdu, rapdu);
+    goto done;
+
   case ADMIN_INS_NFC_ENABLE:
     ret = admin_vendor_nfc_enable(capdu, rapdu, pin.is_validated);
     goto done;
@@ -496,9 +500,6 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case ADMIN_INS_CONFIG:
     ret = admin_config(capdu, rapdu);
-    break;
-  case ADMIN_INS_FLASH_USAGE:
-    ret = admin_flash_usage(capdu, rapdu);
     break;
   case ADMIN_INS_READ_CONFIG:
     ret = admin_read_config(capdu, rapdu);

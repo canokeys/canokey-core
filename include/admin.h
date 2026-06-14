@@ -31,6 +31,7 @@
 
 /**
  * ADMIN_INS_FLASH_USAGE:
+ *   Read-only and intentionally available before admin PIN verification.
  *   P1 = ADMIN_FLASH_USAGE_TOTAL, P2 = 0, Le >= 2:
  *        returns {used_kib, total_kib}.
  *   P1 = ADMIN_FLASH_USAGE_APPLETS, P2 = 0, Le >= ADMIN_APPLET_USAGE_RESPONSE_LENGTH:

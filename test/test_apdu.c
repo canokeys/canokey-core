@@ -1809,9 +1809,8 @@ static void test_admin_flash_usage_apdus(void **state) {
   assert_int_equal(applets_install(), 0);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 2);
-  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  admin_verify_default_pin(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 2);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x01, NULL, 0, 2);
   assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
