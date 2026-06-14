@@ -34,8 +34,10 @@
  *   Read-only and intentionally available before admin PIN verification.
  *   P1 = ADMIN_FLASH_USAGE_TOTAL, P2 = 0, Le >= 2:
  *        returns {used_kib, total_kib}.
- *   P1 = ADMIN_FLASH_USAGE_APPLETS, P2 = 0, Le >= ADMIN_APPLET_USAGE_RESPONSE_LENGTH:
- *        returns ADMIN_APPLET_USAGE_COUNT records:
+ *   P1 = ADMIN_FLASH_USAGE_APPLETS, P2 = 0:
+ *        Le >= ADMIN_APPLET_USAGE_BASE_RESPONSE_LENGTH returns the applet
+ *        records. Le >= ADMIN_APPLET_USAGE_RESPONSE_LENGTH additionally
+ *        appends ADMIN_APPLET_USAGE_ID_SYSTEM.
  *        {applet_id, flags, logical_bytes_be32}. logical_bytes is the sum of
  *        known LittleFS file payloads and user-attribute payloads owned by the
  *        applet. It excludes LittleFS metadata/copy-on-write block overhead,
@@ -48,7 +50,9 @@
 #define ADMIN_FLASH_USAGE_TOTAL 0x00
 #define ADMIN_FLASH_USAGE_APPLETS 0x01
 #define ADMIN_APPLET_USAGE_RECORD_LENGTH 6
+#define ADMIN_APPLET_USAGE_BASE_COUNT 7
 #define ADMIN_APPLET_USAGE_COUNT 8
+#define ADMIN_APPLET_USAGE_BASE_RESPONSE_LENGTH (ADMIN_APPLET_USAGE_BASE_COUNT * ADMIN_APPLET_USAGE_RECORD_LENGTH)
 #define ADMIN_APPLET_USAGE_RESPONSE_LENGTH (ADMIN_APPLET_USAGE_COUNT * ADMIN_APPLET_USAGE_RECORD_LENGTH)
 #define ADMIN_APPLET_USAGE_FLAG_MISSING 0x01
 
