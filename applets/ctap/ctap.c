@@ -323,27 +323,31 @@ static uint8_t ctap_rebuild_rp_meta_counts(void) {
   uint32_t n_meta;
   uint8_t err = ctap_meta_record_count(&n_meta);
   if (err) return err;
+  uint32_t n_dc;
+  err = ctap_dc_record_count(&n_dc);
+  if (err) return err;
+
   CTAP_rp_meta meta;
   CTAP_discoverable_credential dc;
+  uint32_t keepalive_counter = 0;
   for (uint32_t i = 0; i < n_meta; ++i) {
     int size = read_file(DC_META_FILE, &meta, (lfs_soff_t)(i * sizeof(CTAP_rp_meta)), sizeof(CTAP_rp_meta));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (meta.deleted && meta.live_count == 0) continue;
-    uint32_t n_dc;
-    err = ctap_dc_record_count(&n_dc);
-    if (err) return err;
     uint32_t live_count = 0;
     for (uint32_t j = 0; j < n_dc; ++j) {
       size = read_file(DC_FILE, &dc, (lfs_soff_t)(j * sizeof(CTAP_discoverable_credential)),
                        sizeof(CTAP_discoverable_credential));
       if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if ((++keepalive_counter & 0x0f) == 0) KEEPALIVE();
       if (dc.deleted) continue;
       if (memcmp_s(dc.credential_id.rp_id_hash, meta.rp_id_hash, SHA256_DIGEST_LENGTH) == 0) ++live_count;
     }
     meta.live_count = live_count;
     meta.deleted = live_count == 0;
     size = write_file(DC_META_FILE, &meta, (lfs_soff_t)(i * sizeof(CTAP_rp_meta)), sizeof(CTAP_rp_meta), 0);
-    if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (size < 0) return ctap_storage_write_result(size);
+    if ((++keepalive_counter & 0x0f) == 0) KEEPALIVE();
   }
   return 0;
 }
