@@ -169,7 +169,11 @@ def build_segments(c):
     after_versions += make_cred_uv_not_rqd_marker
 
     after_versions += encode_uint(c['GI_RESP_MAX_MSG_SIZE'])
-    after_versions += encode_uint(c['CTAP_MAX_MSG_SIZE'])
+    # CTAP_MAX_MSG_SIZE may depend on platform ABI/compiler flags via
+    # MAX_CTAP_BUFSIZE, so runtime C code patches it instead of baking the
+    # generator host's value into this static segment.
+    max_msg_size_marker = b'\xF0MAXMSG'
+    after_versions += max_msg_size_marker
     after_versions += encode_uint(c['GI_RESP_PIN_UV_AUTH_PROTOCOLS'])
     after_versions += encode_array_header(2) + encode_uint(1) + encode_uint(2)
     after_versions += encode_uint(c['GI_RESP_MAX_CREDENTIAL_COUNT_IN_LIST'])
@@ -192,6 +196,7 @@ def build_segments(c):
         (always_uv_marker, "always_uv"),
         (client_pin_marker, "client_pin"),
         (make_cred_uv_not_rqd_marker, "make_cred_uv_not_rqd"),
+        (max_msg_size_marker, "max_msg_size"),
         (sm2_marker, "sm2_alg"),
     ]
     for marker, name in markers:
@@ -312,7 +317,6 @@ def main():
         'GI_RESP_TRANSPORTS_FOR_RESET': None,
         'GI_RESP_MAX_PIN_LENGTH': None,
         'GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS': None,
-        'CTAP_MAX_MSG_SIZE': None,
         'MAX_CREDENTIAL_COUNT_IN_LIST': None,
         'LARGE_BLOB_SIZE_LIMIT': None,
         'MAX_CRED_BLOB_LENGTH': None,

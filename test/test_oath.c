@@ -586,6 +586,45 @@ static void test_put_unsupported_counter(void **state) {
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_DATA);
 }
 
+static void test_tombstone_reuse(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128];
+  uint8_t data[] = {0x71, 0x03, 'R', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, OATH_PROP_TOUCH};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  capdu->ins = OATH_INS_PUT;
+  capdu->data = data;
+  capdu->lc = sizeof(data);
+
+  for (int i = 0; i != 4; ++i) {
+    data[4] = (uint8_t)('0' + i);
+    oath_process_apdu(capdu, rapdu);
+    assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  }
+  int size_before_reuse = get_file_size("oath");
+  assert_true(size_before_reuse > 0);
+
+  memcpy(c_buf, data, sizeof(data));
+  c_buf[4] = '1';
+  test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
+
+  data[4] = '4';
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  assert_int_equal(get_file_size("oath"), size_before_reuse);
+
+  for (int i = 0; i != 5; ++i) {
+    if (i == 1) continue;
+    c_buf[4] = (uint8_t)('0' + i);
+    test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
+  }
+}
+
 static void test_space_full(void **state) {
   (void)state;
 
@@ -601,27 +640,31 @@ static void test_space_full(void **state) {
   capdu->data = data;
   capdu->lc = sizeof(data);
 
-  // make it full
-  for (int i = 0; i != 100; ++i) {
-    data[2] = ' ' + i;
+#define SET_OATH_SPACE_FULL_NAME(i)                                                                                    \
+  do {                                                                                                                 \
+    data[2] = (uint8_t)((i) >> 16);                                                                                    \
+    data[3] = (uint8_t)((i) >> 8);                                                                                     \
+    data[4] = (uint8_t)(i);                                                                                            \
+  } while (0)
+
+  // The old fixed 100-record limit is gone; the 101st write should still work
+  // while flash has room.
+  for (int i = 0; i != 101; ++i) {
+    SET_OATH_SPACE_FULL_NAME(i);
+    oath_process_apdu(capdu, rapdu);
+    if (rapdu->sw != SW_NO_ERROR) break;
+  }
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  // Keep appending until the filesystem reserve check rejects the write.
+  for (int i = 101; i != 2048; ++i) {
+    SET_OATH_SPACE_FULL_NAME(i);
     oath_process_apdu(capdu, rapdu);
     if (rapdu->sw != SW_NO_ERROR) break;
   }
   assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
 
-  memcpy(c_buf, data, sizeof(data));
-  c_buf[2] = ' '; // delete the first one we put
-  test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
-
-  // then try again
-  oath_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
-
-  // leave some space for further tests
-  for (int i = 1; i != 20; ++i) {
-    c_buf[2] = ' ' + i;
-    test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
-  }
+#undef SET_OATH_SPACE_FULL_NAME
 }
 
 int main() {
@@ -664,8 +707,9 @@ int main() {
       cmocka_unit_test(test_static_pass),
       cmocka_unit_test(test_pass_hmacsha1_config),
       cmocka_unit_test(test_oath_yk_hmacsha1_api),
-      cmocka_unit_test(test_space_full),
+      cmocka_unit_test(test_tombstone_reuse),
       cmocka_unit_test(test_regression_fuzz),
+      cmocka_unit_test(test_space_full),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

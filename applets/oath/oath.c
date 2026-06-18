@@ -12,7 +12,10 @@
 #include <string.h>
 
 #define OATH_FILE "oath"
-#define MAX_RECORDS 100
+// Admission-control reserve for LittleFS metadata/copy-on-write overhead.
+// Tombstone reuse does not consume new blocks, so the reserve is checked only
+// when appending a new record past the current file end.
+#define OATH_FS_RESERVE_BYTES (64 * LFS_CACHE_SIZE)
 
 #define YK_CMD_GET_SERIAL 0x10
 #define YK_CMD_CHAL_HMAC1 0x30
@@ -41,7 +44,8 @@ static enum {
   REMAINING_LIST,
 } oath_remaining_type;
 
-static uint8_t auth_challenge[MAX_CHALLENGE_LEN], record_idx, is_validated;
+static uint8_t auth_challenge[MAX_CHALLENGE_LEN], is_validated;
+static size_t record_idx;
 
 void oath_poweroff(void) {
   oath_remaining_type = REMAINING_NONE;
@@ -158,9 +162,12 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
     if (record.name_len == 0 && unoccupied == n_records) unoccupied = i;
   }
   DBG_MSG("unoccupied=%zu n_records=%zu\n", unoccupied, n_records);
-  if (unoccupied == n_records && // empty slot not found
-      unoccupied >= MAX_RECORDS) // number of records exceeded the limit
-    EXCEPT(SW_NOT_ENOUGH_SPACE);
+  if (unoccupied == n_records) {
+    // No tombstone was available, so this write extends the file.
+    int has_space = fs_has_free_space(sizeof(OATH_RECORD), OATH_FS_RESERVE_BYTES);
+    if (has_space < 0) return -1;
+    if (has_space == 0) EXCEPT(SW_NOT_ENOUGH_SPACE);
+  }
 
   record.name_len = name_len;
   memcpy(record.name, name_ptr, name_len);
@@ -168,7 +175,9 @@ static int oath_put(const CAPDU *capdu, RAPDU *rapdu) {
   memcpy(record.key, key_ptr, key_len);
   record.prop = prop;
   memcpy(record.challenge, chal, MAX_CHALLENGE_LEN);
-  return write_file(OATH_FILE, &record, unoccupied * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
+  int err = write_file(OATH_FILE, &record, unoccupied * sizeof(OATH_RECORD), sizeof(OATH_RECORD), 0);
+  if (err == LFS_ERR_NOSPC) EXCEPT(SW_NOT_ENOUGH_SPACE);
+  return err;
 }
 
 static int oath_delete(const CAPDU *capdu, RAPDU *rapdu) {

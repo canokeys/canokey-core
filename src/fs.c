@@ -120,12 +120,36 @@ err_close:
   return err;
 }
 
+int get_attr_size(const char *path, uint8_t attr) {
+  return lfs_getattr(&lfs, path, attr, NULL, 0);
+}
+
 int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
 
 int get_fs_usage(void) {
   int blocks = lfs_fs_size(&lfs);
   if (blocks < 0) return blocks;
   return (int)(lfs.cfg->block_size * blocks) / 1024;
+}
+
+int get_fs_usage_bytes(void) {
+  int blocks = lfs_fs_size(&lfs);
+  if (blocks < 0) return blocks;
+  return (int)(lfs.cfg->block_size * (lfs_size_t)blocks);
+}
+
+int get_fs_free_bytes(void) {
+  int blocks = lfs_fs_size(&lfs);
+  if (blocks < 0) return blocks;
+  if (blocks >= (int)lfs.cfg->block_count) return 0;
+  return (int)(lfs.cfg->block_size * (lfs.cfg->block_count - (lfs_size_t)blocks));
+}
+
+int fs_has_free_space(lfs_size_t write_bytes, lfs_size_t reserve_bytes) {
+  int free_bytes = get_fs_free_bytes();
+  if (free_bytes < 0) return free_bytes;
+  if ((lfs_size_t)free_bytes < reserve_bytes) return 0;
+  return (lfs_size_t)free_bytes - reserve_bytes >= write_bytes;
 }
 
 int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }
