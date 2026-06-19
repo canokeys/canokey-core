@@ -272,13 +272,25 @@ static int piv_remove_file_if_present(const char *path);
 
 static char piv_hex_nibble(uint8_t x) { return x < 10 ? (char)('0' + x) : (char)('a' + x - 10); }
 
+static void piv_default_key_meta(key_meta_t *meta, const key_usage_t usage, const pin_policy_t pin_policy) {
+  memset(meta, 0, sizeof(*meta));
+  meta->type = KEY_TYPE_PKC_END;
+  meta->origin = KEY_ORIGIN_NOT_PRESENT;
+  meta->usage = usage;
+  meta->pin_policy = pin_policy;
+  meta->touch_policy = TOUCH_POLICY_NEVER;
+}
+
 static void piv_default_key(ck_key_t *key, const key_usage_t usage, const pin_policy_t pin_policy) {
   memset(key, 0, sizeof(*key));
-  key->meta.type = KEY_TYPE_PKC_END;
-  key->meta.origin = KEY_ORIGIN_NOT_PRESENT;
-  key->meta.usage = usage;
-  key->meta.pin_policy = pin_policy;
-  key->meta.touch_policy = TOUCH_POLICY_NEVER;
+  piv_default_key_meta(&key->meta, usage, pin_policy);
+}
+
+static int piv_copy_key_path(char dst[MAX_KEY_PATH_LEN], const char *src) {
+  const size_t len = strlen(src);
+  if (len >= MAX_KEY_PATH_LEN) return -1;
+  memcpy(dst, src, len + 1);
+  return 0;
 }
 
 static int create_key(const char *path, const key_usage_t usage, const pin_policy_t pin_policy) {
@@ -304,7 +316,7 @@ static int piv_key_spec(uint8_t id, piv_key_spec_t *spec, char path[MAX_KEY_PATH
   for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
     if (static_key_specs[i].id == id) {
       *spec = static_key_specs[i];
-      strcpy(path, static_key_specs[i].path);
+      if (piv_copy_key_path(path, static_key_specs[i].path) < 0) return -1;
       spec->path = path;
       return 0;
     }
@@ -336,9 +348,7 @@ static int piv_read_key_metadata_or_default(uint8_t id, key_meta_t *meta, char p
   const int rc = ck_read_key_metadata(spec->path, meta);
   if (rc >= 0) return SW_NO_ERROR;
   if (spec->dynamic && rc == LFS_ERR_NOENT) {
-    ck_key_t key;
-    piv_default_key(&key, spec->usage, spec->pin_policy);
-    *meta = key.meta;
+    piv_default_key_meta(meta, spec->usage, spec->pin_policy);
     return SW_NO_ERROR;
   }
   return -1;
