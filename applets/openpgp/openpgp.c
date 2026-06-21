@@ -65,6 +65,7 @@ static const uint8_t algo_attr[][12] = {
     [RSA3072] = {6, ALGO_ID_RSA, 0x0C, 0x00, 0x00, 0x20, 0x02},
     [RSA4096] = {6, ALGO_ID_RSA, 0x10, 0x00, 0x00, 0x20, 0x02},
 };
+#define OPENPGP_ALGO_ATTR_COUNT (sizeof(algo_attr) / sizeof(algo_attr[0]))
 
 // clang-format off
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
@@ -1300,10 +1301,10 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC == 1) EXCEPT(SW_WRONG_DATA);
 
     key_type_t type;
-    for (type = SECP256R1 /* i.e., 0 */; type < KEY_TYPE_PKC_END; ++type) {
+    for (type = SECP256R1 /* i.e., 0 */; type < OPENPGP_ALGO_ATTR_COUNT; ++type) {
       const uint8_t *attr = algo_attr[type];
-      if (LC == attr[0]) {
-        if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
+      if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
+        if (LC == attr[0]) {
           if (DATA[2] != 0) {
             DBG_MSG("Invalid attr type\n");
             EXCEPT(SW_WRONG_DATA);
@@ -1321,12 +1322,17 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
             DBG_MSG("Invalid attr type\n");
             EXCEPT(SW_WRONG_DATA);
           }
-        } else if (memcmp(&attr[2], &DATA[1], LC - 1) == 0) { // OID
-          break;
         }
+      } else if (LC == attr[0] && memcmp(&attr[2], &DATA[1], LC - 1) == 0) { // OID
+        if (IS_SHORT_WEIERSTRASS(type)) {
+          if (DATA[0] != (key_info[key_index].key_usage == SIGN ? ALGO_ID_ECDSA : ALGO_ID_ECDH)) continue;
+        } else if (DATA[0] != attr[1]) {
+          continue;
+        }
+        break;
       }
     }
-    if (type == KEY_TYPE_PKC_END) {
+    if (type == OPENPGP_ALGO_ATTR_COUNT) {
       DBG_MSG("Invalid attr type\n");
       EXCEPT(SW_WRONG_DATA);
     }

@@ -314,6 +314,10 @@ static void test_import_key(void **state) {
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_WRONG_DATA);
 
+  build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x06\x13\x2A\x86\x48\xCE\x3D", 11);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
+
   // import an ecc key
   build_capdu(
       capdu,
