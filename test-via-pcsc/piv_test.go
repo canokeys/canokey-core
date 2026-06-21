@@ -77,7 +77,7 @@ func (o *PIVApplet) Send(apdu []byte) ([]byte, uint16, error) {
 	return res[0 : len(res)-2], uint16(res[len(res)-2])<<8 | uint16(res[len(res)-1]), nil
 }
 func (app *PIVApplet) ConfigPIVAlgoExt(enable uint8) {
-	_, code, err := app.Send([]byte{0x00, 0xEE, 0x02, 0x00, 0x08, enable, 0x22, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55})
+	_, code, err := app.Send([]byte{0x00, 0xEE, 0x02, 0x00, 0x08, enable, 0x22, 0x50, 0x51, 0x52, 0x53, 0x15, 0x54})
 	So(err, ShouldBeNil)
 	So(code, ShouldEqual, 0x9000)
 }
