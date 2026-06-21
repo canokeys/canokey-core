@@ -1297,6 +1297,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   handle_algo_attr:
     if (LC < 1 || LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (LC == 1) EXCEPT(SW_WRONG_DATA);
 
     key_type_t type;
     for (type = SECP256R1 /* i.e., 0 */; type < KEY_TYPE_PKC_END; ++type) {
