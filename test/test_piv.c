@@ -280,11 +280,7 @@ static void test_piv_get_metadata_extended_algo_ids(void **state) {
     key_type_t type;
     uint8_t expected_algo_id;
   } cases[] = {
-      {ED25519, 0xE0},
-      {X25519, 0xE1},
-      {SECP256K1, 0x53},
-      {SECP521R1, 0x15},
-      {SM2, 0x54},
+      {ED25519, 0xE0}, {X25519, 0xE1}, {SECP256K1, 0x53}, {SECP521R1, 0x15}, {SM2, 0x54},
   };
 
   set_admin_status(1);
@@ -499,11 +495,8 @@ static void test_piv_algorithm_extension_read_without_admin(void **state) {
   assert_int_equal(R.len, sizeof(expected));
   assert_memory_equal(R.data, &expected, sizeof(expected));
 
-  C = (CAPDU){.data = (uint8_t *)&expected,
-              .ins = PIV_INS_ALGORITHM_EXTENSION,
-              .p1 = 0x02,
-              .p2 = 0x00,
-              .lc = sizeof(expected)};
+  C = (CAPDU){
+      .data = (uint8_t *)&expected, .ins = PIV_INS_ALGORITHM_EXTENSION, .p1 = 0x02, .p2 = 0x00, .lc = sizeof(expected)};
   R.len = 0;
   R.sw = 0;
   piv_process_apdu(&C, &R);
@@ -526,11 +519,8 @@ static void test_piv_algorithm_extension_read_after_write(void **state) {
 
   set_admin_status(1);
   uint8_t r_buf[128];
-  CAPDU C = {.data = (uint8_t *)&expected,
-             .ins = PIV_INS_ALGORITHM_EXTENSION,
-             .p1 = 0x02,
-             .p2 = 0x00,
-             .lc = sizeof(expected)};
+  CAPDU C = {
+      .data = (uint8_t *)&expected, .ins = PIV_INS_ALGORITHM_EXTENSION, .p1 = 0x02, .p2 = 0x00, .lc = sizeof(expected)};
   RAPDU R = {.data = r_buf};
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_NO_ERROR);
@@ -599,11 +589,8 @@ static void test_secp521r1_generate_and_authenticate(void **state) {
 
   uint8_t r_buf[512];
   uint8_t generate[] = {0xAC, 0x03, 0x80, 0x01, 0x15};
-  CAPDU C = {.data = generate,
-             .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
-             .p1 = 0x00,
-             .p2 = 0x9A,
-             .lc = sizeof(generate)};
+  CAPDU C = {
+      .data = generate, .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, .p1 = 0x00, .p2 = 0x9A, .lc = sizeof(generate)};
   RAPDU R = {.data = r_buf};
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_NO_ERROR);
@@ -648,7 +635,8 @@ static void test_secp521r1_generate_and_authenticate(void **state) {
   for (uint8_t i = 0; i < 66; ++i)
     data[6 + i] = i;
 
-  C = (CAPDU){.data = data, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x15, .p2 = 0x9A, .lc = sizeof(data)};
+  C = (CAPDU){
+      .data = data, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x15, .p2 = 0x9A, .lc = sizeof(data)};
   R.len = 0;
   R.sw = 0;
   piv_process_apdu(&C, &R);
