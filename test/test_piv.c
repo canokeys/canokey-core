@@ -267,7 +267,7 @@ static void test_piv_metadata_bounded_do_storage(void **state) {
 // piv_get_metadata's key_type_to_algo_id switch maps each supported
 // PIV key type to the runtime-configurable algorithm-extension byte.
 // Integration tests only exercise the RSA2048 / SECP256R1 / SECP384R1
-// arms; the extended types (ED25519, X25519, SECP256K1, SM2) live
+// arms; the extended types (ED25519, X25519, SECP256K1, SECP521R1, SM2) live
 // behind alg_ext_cfg.* defaults that piv_install pre-populates. Drop a
 // well-formed asymmetric key in the AUTH slot for each type and read
 // metadata back; the second algorithm byte should match the default
@@ -283,6 +283,7 @@ static void test_piv_get_metadata_extended_algo_ids(void **state) {
       {ED25519, 0xE0},
       {X25519, 0xE1},
       {SECP256K1, 0x53},
+      {SECP521R1, 0x15},
       {SM2, 0x54},
   };
 
@@ -434,6 +435,7 @@ static void test_piv_reset_preserves_platform_algorithm_extension(void **state) 
       .rsa4096 = 0x51,
       .x25519 = 0x52,
       .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
       .sm2 = 0x54,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&custom), 0);
@@ -465,10 +467,82 @@ static void test_piv_reset_preserves_platform_algorithm_extension(void **state) 
       .rsa4096 = 0x16,
       .x25519 = 0xE1,
       .secp256k1 = 0x53,
+      .secp521r1 = 0x55,
       .sm2 = 0x54,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
   assert_int_equal(piv_install(1), 0);
+}
+
+static void test_piv_algorithm_extension_read_without_admin(void **state) {
+  (void)state;
+
+  const piv_algorithm_extension_config_t expected = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&expected), 0);
+  assert_int_equal(piv_install(1), 0);
+
+  set_admin_status(0);
+  uint8_t r_buf[128];
+  CAPDU C = {.data = NULL, .ins = PIV_INS_ALGORITHM_EXTENSION, .p1 = 0x01, .p2 = 0x00, .lc = 0};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, sizeof(expected));
+  assert_memory_equal(R.data, &expected, sizeof(expected));
+
+  C = (CAPDU){.data = (uint8_t *)&expected,
+              .ins = PIV_INS_ALGORITHM_EXTENSION,
+              .p1 = 0x02,
+              .p2 = 0x00,
+              .lc = sizeof(expected)};
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+}
+
+static void test_piv_algorithm_extension_read_after_write(void **state) {
+  (void)state;
+
+  piv_algorithm_extension_config_t expected = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
+      .sm2 = 0x54,
+  };
+
+  set_admin_status(1);
+  uint8_t r_buf[128];
+  CAPDU C = {.data = (uint8_t *)&expected,
+             .ins = PIV_INS_ALGORITHM_EXTENSION,
+             .p1 = 0x02,
+             .p2 = 0x00,
+             .lc = sizeof(expected)};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  set_admin_status(0);
+  C = (CAPDU){.data = NULL, .ins = PIV_INS_ALGORITHM_EXTENSION, .p1 = 0x01, .p2 = 0x00, .lc = 0};
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, sizeof(expected));
+  assert_memory_equal(R.data, &expected, sizeof(expected));
 }
 
 static void test_ed25519_general_authenticate_long_message(void **state) {
@@ -504,6 +578,143 @@ static void test_ed25519_general_authenticate_long_message(void **state) {
   assert_int_equal(R.sw, SW_NO_ERROR);
   assert_int_equal(R.len, 68);
   assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
+}
+
+static void test_secp521r1_generate_and_authenticate(void **state) {
+  (void)state;
+
+  const piv_algorithm_extension_config_t defaults = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+
+  uint8_t r_buf[512];
+  uint8_t generate[] = {0xAC, 0x03, 0x80, 0x01, 0x15};
+  CAPDU C = {.data = generate,
+             .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+             .p1 = 0x00,
+             .p2 = 0x9A,
+             .lc = sizeof(generate)};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 140);
+  assert_memory_equal(R.data, ((uint8_t[]){0x7F, 0x49, 0x81, 0x88, 0x86, 0x81, 0x85, 0x04}), 8);
+
+  uint8_t generate_with_policy[] = {0xAC, 0x06, 0x80, 0x01, 0x15, 0xAA, 0x01, 0x02, 0xAB, 0x01, 0x01};
+  C = (CAPDU){.data = generate_with_policy,
+              .cla = 0x00,
+              .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+              .p1 = 0x00,
+              .p2 = 0x9A,
+              .lc = sizeof(generate_with_policy)};
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C = (CAPDU){.data = NULL, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9A, .lc = 0};
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(R.len > 11);
+  assert_int_equal(R.data[2], 0x15);
+
+  ck_key_t key = {.meta = {.type = SECP521R1,
+                           .origin = KEY_ORIGIN_GENERATED,
+                           .usage = SIGN,
+                           .pin_policy = PIN_POLICY_NEVER,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  assert_int_equal(ck_generate_key(&key), 0);
+  assert_int_equal(ck_write_key("piv-pauk", &key), 0);
+
+  uint8_t data[6 + 66] = {0};
+  data[0] = 0x7C;
+  data[1] = 0x46;
+  data[2] = 0x82;
+  data[3] = 0x00;
+  data[4] = 0x81;
+  data[5] = 0x42;
+  for (uint8_t i = 0; i < 66; ++i)
+    data[6 + i] = i;
+
+  C = (CAPDU){.data = data, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x15, .p2 = 0x9A, .lc = sizeof(data)};
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(R.len > 8);
+  assert_int_equal(R.data[0], 0x7C);
+  assert_int_equal(R.data[1], 0x82);
+  assert_int_equal(R.data[4], 0x82);
+  assert_int_equal(R.data[5], 0x82);
+  assert_int_equal(R.data[6], 0x00);
+  assert_true(R.data[7] >= 0x89);
+  assert_int_equal(R.data[8], 0x30);
+  assert_int_equal(R.data[9], 0x81);
+  assert_int_equal(R.data[10] + 3, R.data[7]);
+}
+
+static void test_secp521r1_custom_algorithm_id(void **state) {
+  (void)state;
+
+  const piv_algorithm_extension_config_t custom = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x55,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&custom), 0);
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+
+  uint8_t r_buf[512];
+  uint8_t generate_with_policy[] = {0xAC, 0x06, 0x80, 0x01, 0x55, 0xAA, 0x01, 0x02, 0xAB, 0x01, 0x01};
+  CAPDU C = {.data = generate_with_policy,
+             .cla = 0x00,
+             .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+             .p1 = 0x00,
+             .p2 = 0x9A,
+             .lc = sizeof(generate_with_policy)};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 140);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9A, .lc = 0};
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.data[2], 0x55);
+
+  const piv_algorithm_extension_config_t defaults = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
+  assert_int_equal(piv_install(1), 0);
 }
 
 static void test_set_pin_retries(void **state) {
@@ -758,7 +969,11 @@ int main() {
       cmocka_unit_test(test_piv_delete_key_extension),
       cmocka_unit_test(test_piv_dynamic_retired_key_slots),
       cmocka_unit_test(test_piv_reset_preserves_platform_algorithm_extension),
+      cmocka_unit_test(test_piv_algorithm_extension_read_without_admin),
+      cmocka_unit_test(test_piv_algorithm_extension_read_after_write),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
+      cmocka_unit_test(test_secp521r1_generate_and_authenticate),
+      cmocka_unit_test(test_secp521r1_custom_algorithm_id),
       cmocka_unit_test(test_set_pin_retries),
       cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_cert_chained_read),

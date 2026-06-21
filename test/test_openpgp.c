@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <setjmp.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <cmocka.h>
 
@@ -270,6 +271,8 @@ static void test_algorithm_information(void **state) {
   //   tag(1) || attr_len(1) || algo_id(1) || OID bytes...
   // and the response covers all three slots. Count entries per tag.
   int n_sig = 0, n_dec = 0, n_aut = 0;
+  int n_p521_sig = 0, n_p521_dec = 0, n_p521_aut = 0;
+  static const uint8_t secp521r1_oid[] = {0x2B, 0x81, 0x04, 0x00, 0x23};
   uint16_t off = 3;
   while (off < R.len) {
     uint8_t tag = R.data[off++];
@@ -277,9 +280,27 @@ static void test_algorithm_information(void **state) {
     uint8_t attr_len = R.data[off++];
     assert_true(off + attr_len <= R.len);
     assert_true(attr_len >= 1);
-    if (tag == 0xC1) ++n_sig;
-    else if (tag == 0xC2) ++n_dec;
-    else if (tag == 0xC3) ++n_aut;
+    const bool is_p521 = attr_len == sizeof(secp521r1_oid) + 1 &&
+                         memcmp(R.data + off + 1, secp521r1_oid, sizeof(secp521r1_oid)) == 0;
+    if (tag == 0xC1) {
+      ++n_sig;
+      if (is_p521) {
+        assert_int_equal(R.data[off], 0x13);
+        ++n_p521_sig;
+      }
+    } else if (tag == 0xC2) {
+      ++n_dec;
+      if (is_p521) {
+        assert_int_equal(R.data[off], 0x12);
+        ++n_p521_dec;
+      }
+    } else if (tag == 0xC3) {
+      ++n_aut;
+      if (is_p521) {
+        assert_int_equal(R.data[off], 0x13);
+        ++n_p521_aut;
+      }
+    }
     else fail_msg("unexpected algo-info tag 0x%02X", tag);
     off += attr_len;
   }
@@ -288,6 +309,9 @@ static void test_algorithm_information(void **state) {
   assert_int_equal(n_sig, 9);
   assert_int_equal(n_dec, 9);
   assert_int_equal(n_aut, 9);
+  assert_int_equal(n_p521_sig, 1);
+  assert_int_equal(n_p521_dec, 1);
+  assert_int_equal(n_p521_aut, 1);
 }
 
 static void test_import_key(void **state) {

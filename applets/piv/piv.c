@@ -58,6 +58,7 @@
 #define ALG_RSA_4096_DEFAULT  0x16
 #define ALG_X25519_DEFAULT    0xE1
 #define ALG_SECP256K1_DEFAULT 0x53
+#define ALG_SECP521R1_DEFAULT 0x15
 #define ALG_SM2_DEFAULT       0x54
 
 #define TDEA_BLOCK_SIZE      8
@@ -565,6 +566,7 @@ static key_type_t algo_id_to_key_type(const uint8_t id) {
   if (id == alg_ext_cfg.rsa4096) return RSA4096;
   if (id == alg_ext_cfg.x25519) return X25519;
   if (id == alg_ext_cfg.secp256k1) return SECP256K1;
+  if (id == alg_ext_cfg.secp521r1) return SECP521R1;
   if (id == alg_ext_cfg.sm2) return SM2;
   return KEY_TYPE_PKC_END;
 }
@@ -583,6 +585,8 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
     return alg_ext_cfg.x25519;
   case SECP256K1:
     return alg_ext_cfg.secp256k1;
+  case SECP521R1:
+    return alg_ext_cfg.secp521r1;
   case SM2:
     return alg_ext_cfg.sm2;
   case RSA3072:
@@ -859,6 +863,7 @@ static void piv_algorithm_extension_config_set_default(void) {
   alg_ext_cfg.rsa4096 = ALG_RSA_4096_DEFAULT;
   alg_ext_cfg.x25519 = ALG_X25519_DEFAULT;
   alg_ext_cfg.secp256k1 = ALG_SECP256K1_DEFAULT;
+  alg_ext_cfg.secp521r1 = ALG_SECP521R1_DEFAULT;
   alg_ext_cfg.sm2 = ALG_SM2_DEFAULT;
 }
 
@@ -1266,7 +1271,7 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
         input_len = len[IDX_CHALLENGE];
       } else
         EXCEPT(SW_WRONG_DATA);
-      int sig_len = ck_sign(&key, piv_crypto_buffer, input_len, RDATA + 4);
+      int sig_len = ck_sign(&key, piv_crypto_buffer, input_len, piv_crypto_buffer);
       if (sig_len < 0) {
         ERR_MSG("Sign failed\n");
         memzero(&key, sizeof(key));
@@ -1275,13 +1280,19 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
       }
 
       if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-        sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], RDATA + 4, RDATA + 4);
+        sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], piv_crypto_buffer, piv_crypto_buffer);
       }
 
-      LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sig_len);
+      uint16_t response_len;
+      if (piv_set_7c_response(TAG_RESPONSE, piv_crypto_buffer, sig_len, RDATA, &response_len) < 0) {
+        memzero(&key, sizeof(key));
+        memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
+        return -1;
+      }
+      LL = response_len;
 
       memzero(&key, sizeof(key));
-      memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
+      if (response_len != 0) memzero(piv_crypto_buffer, sizeof(piv_crypto_buffer));
     } else
       return -1;
   }
@@ -1857,19 +1868,16 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
-#ifndef FUZZ
-  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-#endif
-
   if (P1 != 0x01 && P1 != 0x02) EXCEPT(SW_WRONG_P1P2);
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   if (P1 == 0x01) {
-    piv_algorithm_extension_config_t cfg;
-    if (piv_algorithm_extension_config_load(&cfg) < 0) return -1;
-    memcpy(RDATA, &cfg, sizeof(cfg));
-    LL = sizeof(cfg);
+    memcpy(RDATA, &alg_ext_cfg, sizeof(alg_ext_cfg));
+    LL = sizeof(alg_ext_cfg);
   } else {
+#ifndef FUZZ
+    if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
     if (LC != sizeof(alg_ext_cfg)) EXCEPT(SW_WRONG_LENGTH);
     piv_algorithm_extension_config_t cfg;
     memcpy(&cfg, DATA, sizeof(cfg));
