@@ -19,6 +19,7 @@ pkcs15-tool --reader "$RDID" -D
 echo "=== Phase: Algorithm extension (ED25519) ==="
 piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 22 05 51 52 53 54' | grep 'SW1=0x90, SW2=0x00'
 piv-tool --admin M:9B:03 -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 54'
+perl -0pi -e 's/\{slot: 0x90, alg: AlgorithmEC256\}/\{slot: 0x96, alg: AlgorithmEC256\}/ or die "piv-go invalid slot test not found\n"' piv-go/piv/key_test.go
 cd piv-go; go test -v ./piv --wipe-yubikey; cd -
 piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 E0 05 16 E1 53 54' | grep 'SW1=0x90, SW2=0x00'
 
@@ -62,7 +63,7 @@ yubico-piv-tool -r "$RDID" -a status
 for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
 
 echo "=== Phase: Error handling tests ==="
-yubico-piv-tool -r "$RDID" -a generate -A RSA2048 -s 84 2>&1 | grep "Key generation failed"
+piv-tool --admin M:9B:03 -s '00 47 00 96 05 AC 03 80 01 11' | grep 'SW1=0x6A, SW2=0x86'
 yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9e
 yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
 yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"

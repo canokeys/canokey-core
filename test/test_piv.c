@@ -319,6 +319,111 @@ static void test_piv_get_metadata_extended_algo_ids(void **state) {
   }
 }
 
+static void test_piv_delete_key_extension(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  ck_key_t key = {.meta = {.type = SECP256R1,
+                           .origin = KEY_ORIGIN_GENERATED,
+                           .usage = SIGN,
+                           .pin_policy = PIN_POLICY_NEVER,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  assert_int_equal(ck_generate_key(&key), 0);
+  assert_int_equal(ck_write_key("piv-pauk", &key), 0);
+
+  uint8_t cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xA5};
+  set_admin_status(1);
+  test_helper(cert, sizeof(cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+  set_admin_status(0);
+
+  uint8_t r_buf[256];
+  RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0xFF, .p2 = 0x9A, .lc = 0};
+
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  set_admin_status(1);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0x9C, .p2 = 0x9A, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  C = (CAPDU){.data = r_buf, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0xFF, .p2 = 0x9A, .lc = 1};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_LENGTH);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0xFF, .p2 = 0x9B, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0xFF, .p2 = 0x9A, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9A, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_REFERENCE_DATA_NOT_FOUND);
+
+  uint8_t get_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05};
+  uint8_t expected_cert[] = {0x53, 0x01, 0xA5};
+  C = (CAPDU){.data = get_cert,
+              .cla = 0x00,
+              .ins = PIV_INS_GET_DATA,
+              .p1 = 0x3F,
+              .p2 = 0xFF,
+              .lc = sizeof(get_cert),
+              .le = 256};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, sizeof(expected_cert));
+  assert_memory_equal(R.data, expected_cert, sizeof(expected_cert));
+
+  piv_install(1);
+}
+
+static void test_piv_dynamic_retired_key_slots(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  uint8_t r_buf[256];
+  RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x95, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_REFERENCE_DATA_NOT_FOUND);
+  assert_true(get_file_size("piv-95") < 0);
+
+  set_admin_status(1);
+  uint8_t generate_p256[] = {0xAC, 0x03, 0x80, 0x01, 0x11};
+  C = (CAPDU){.data = generate_p256,
+              .cla = 0x00,
+              .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+              .p1 = 0x00,
+              .p2 = 0x95,
+              .lc = sizeof(generate_p256)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(get_file_size("piv-95") >= 0);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x95, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(R.len >= 11);
+  assert_int_equal(R.data[2], 0x11);
+  assert_int_equal(R.data[5], PIN_POLICY_ONCE);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0xFF, .p2 = 0x95, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(get_file_size("piv-95") < 0);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x95, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_REFERENCE_DATA_NOT_FOUND);
+
+  piv_install(1);
+}
+
 static void test_piv_reset_preserves_platform_algorithm_extension(void **state) {
   (void)state;
 
@@ -650,6 +755,8 @@ int main() {
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
+      cmocka_unit_test(test_piv_delete_key_extension),
+      cmocka_unit_test(test_piv_dynamic_retired_key_slots),
       cmocka_unit_test(test_piv_reset_preserves_platform_algorithm_extension),
       cmocka_unit_test(test_ed25519_general_authenticate_long_message),
       cmocka_unit_test(test_set_pin_retries),

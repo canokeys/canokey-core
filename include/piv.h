@@ -16,6 +16,11 @@
 #define PIV_INS_PUT_DATA                     0xDB
 #define PIV_INS_GET_METADATA                 0xF7
 #define PIV_INS_GET_SERIAL                   0xF8
+// Yubico vendor extension: 00 F6 <toSlot> <fromSlot>, no data.
+// Core implements the delete form only: toSlot=FF. It requires management-key
+// authentication and deletes only the asymmetric key; any certificate object in
+// the same slot is left intact.
+#define PIV_INS_MOVE_DELETE_KEY              0xF6
 // Vendor extension: 00 FA <pinRetries> <pukRetries>, no data.
 // Requires management-key and PIN authentication, then resets PIN/PUK to
 // their defaults with the requested retry limits.

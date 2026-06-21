@@ -18,6 +18,7 @@
 // data object path
 // clang-format off
 #define MAX_DO_PATH_LEN             9
+#define MAX_KEY_PATH_LEN            9
 #define PIV_AUTH_CERT_PATH          "piv-pauc" // 9A
 #define SIG_CERT_PATH               "piv-sigc" // 9C
 #define CARD_AUTH_CERT_PATH         "piv-cauc" // 9E
@@ -42,8 +43,6 @@
 #define SIG_KEY_PATH               "piv-sigk" // 9C
 #define CARD_AUTH_KEY_PATH         "piv-cauk" // 9E
 #define KEY_MANAGEMENT_KEY_PATH    "piv-mntk" // 9D
-#define KEY_MANAGEMENT_82_KEY_PATH "piv-82"   // 82
-#define KEY_MANAGEMENT_83_KEY_PATH "piv-83"   // 83
 #define CARD_ADMIN_KEY_PATH        "piv-admk" // 9B
 // clang-format on
 
@@ -214,7 +213,7 @@ static uint8_t pin_is_consumed;
 static char piv_do_path[MAX_DO_PATH_LEN]; // data object file path during chaining read/write
 static int piv_do_write;                  // -1: not in chaining write, otherwise: count of remaining bytes
 static int piv_do_read;                   // -1: not in chaining read mode, otherwise: data object offset
-static const char *piv_import_key_path;
+static uint8_t piv_import_key_id;
 static key_type_t piv_import_key_type;
 static uint16_t piv_import_len;
 static ck_piv_stream_t piv_import_stream;
@@ -238,17 +237,21 @@ enum {
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
 
-static const struct {
+typedef struct {
+  uint8_t id;
   const char *path;
   key_usage_t usage;
   pin_policy_t pin_policy;
-} key_specs[] = {
-    {AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE},
-    {SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE},
-    {KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
-    {CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER},
-    {KEY_MANAGEMENT_82_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
-    {KEY_MANAGEMENT_83_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE},
+  uint8_t dynamic;
+  uint8_t admin;
+} piv_key_spec_t;
+
+static const piv_key_spec_t static_key_specs[] = {
+    {0x9A, AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE, 0, 0},
+    {0x9C, SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE, 0, 0},
+    {0x9D, KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE, 0, 0},
+    {0x9E, CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER, 0, 0},
+    {0x9B, CARD_ADMIN_KEY_PATH, ENCRYPT, PIN_POLICY_NEVER, 0, 1},
 };
 
 static bool piv_algorithm_extension_config_valid(const piv_algorithm_extension_config_t *cfg) {
@@ -265,14 +268,97 @@ static void authenticate_reset(void) {
   memset(auth_ctx + OFFSET_AUTH_CHALLENGE, 0, LENGTH_CHALLENGE);
 }
 
+static int piv_remove_file_if_present(const char *path);
+
+static char piv_hex_nibble(uint8_t x) { return x < 10 ? (char)('0' + x) : (char)('a' + x - 10); }
+
+static void piv_default_key_meta(key_meta_t *meta, const key_usage_t usage, const pin_policy_t pin_policy) {
+  memset(meta, 0, sizeof(*meta));
+  meta->type = KEY_TYPE_PKC_END;
+  meta->origin = KEY_ORIGIN_NOT_PRESENT;
+  meta->usage = usage;
+  meta->pin_policy = pin_policy;
+  meta->touch_policy = TOUCH_POLICY_NEVER;
+}
+
+static void piv_default_key(ck_key_t *key, const key_usage_t usage, const pin_policy_t pin_policy) {
+  memset(key, 0, sizeof(*key));
+  piv_default_key_meta(&key->meta, usage, pin_policy);
+}
+
+static int piv_copy_key_path(char dst[MAX_KEY_PATH_LEN], const char *src) {
+  const size_t len = strlen(src);
+  if (len >= MAX_KEY_PATH_LEN) return -1;
+  memcpy(dst, src, len + 1);
+  return 0;
+}
+
 static int create_key(const char *path, const key_usage_t usage, const pin_policy_t pin_policy) {
-  const ck_key_t key = {.meta = {.type = KEY_TYPE_PKC_END,
-                                 .origin = KEY_ORIGIN_NOT_PRESENT,
-                                 .usage = usage,
-                                 .pin_policy = pin_policy,
-                                 .touch_policy = TOUCH_POLICY_NEVER}};
+  ck_key_t key;
+  piv_default_key(&key, usage, pin_policy);
   if (ck_write_key(path, &key) < 0) return -1;
   return 0;
+}
+
+static int piv_is_retired_key_id(uint8_t id) { return id >= 0x82 && id <= 0x95; }
+
+static void piv_retired_key_path(uint8_t id, char path[MAX_KEY_PATH_LEN]) {
+  path[0] = 'p';
+  path[1] = 'i';
+  path[2] = 'v';
+  path[3] = '-';
+  path[4] = piv_hex_nibble(id >> 4u);
+  path[5] = piv_hex_nibble(id & 0x0Fu);
+  path[6] = '\0';
+}
+
+static int piv_key_spec(uint8_t id, piv_key_spec_t *spec, char path[MAX_KEY_PATH_LEN]) {
+  for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
+    if (static_key_specs[i].id == id) {
+      *spec = static_key_specs[i];
+      if (piv_copy_key_path(path, static_key_specs[i].path) < 0) return -1;
+      spec->path = path;
+      return 0;
+    }
+  }
+
+  if (piv_is_retired_key_id(id)) {
+    piv_retired_key_path(id, path);
+    *spec = (piv_key_spec_t){id, path, KEY_AGREEMENT, PIN_POLICY_ONCE, 1, 0};
+    return 0;
+  }
+
+  return -1;
+}
+
+static int piv_read_key_or_default(uint8_t id, ck_key_t *key, char path[MAX_KEY_PATH_LEN], piv_key_spec_t *spec) {
+  if (piv_key_spec(id, spec, path) < 0) return SW_WRONG_P1P2;
+  const int rc = ck_read_key(spec->path, key);
+  if (rc >= 0) return SW_NO_ERROR;
+  if (spec->dynamic && rc == LFS_ERR_NOENT) {
+    piv_default_key(key, spec->usage, spec->pin_policy);
+    return SW_NO_ERROR;
+  }
+  return -1;
+}
+
+static int piv_read_key_metadata_or_default(uint8_t id, key_meta_t *meta, char path[MAX_KEY_PATH_LEN],
+                                            piv_key_spec_t *spec) {
+  if (piv_key_spec(id, spec, path) < 0) return SW_WRONG_P1P2;
+  const int rc = ck_read_key_metadata(spec->path, meta);
+  if (rc >= 0) return SW_NO_ERROR;
+  if (spec->dynamic && rc == LFS_ERR_NOENT) {
+    piv_default_key_meta(meta, spec->usage, spec->pin_policy);
+    return SW_NO_ERROR;
+  }
+  return -1;
+}
+
+static int piv_write_key_slot(const piv_key_spec_t *spec, const ck_key_t *key) { return ck_write_key(spec->path, key); }
+
+static int piv_reset_key_slot(const piv_key_spec_t *spec) {
+  if (spec->dynamic) return piv_remove_file_if_present(spec->path);
+  return create_key(spec->path, spec->usage, spec->pin_policy);
 }
 
 static const piv_do_desc_t piv_do_table[] = {
@@ -303,8 +389,6 @@ static const piv_do_desc_t piv_do_retired_cert_desc = {0, NULL, 3000, PIV_DO_F_P
 // 5FC10D..5FC120. The first two keep their historical paths; the rest use a
 // generated short path piv-rXX to avoid 18 extra table entries.
 static int piv_is_retired_cert_tag(uint32_t tag) { return tag >= PIV_DO_TAG_C1(0x0F) && tag <= PIV_DO_TAG_C1(0x20); }
-
-static char piv_hex_nibble(uint8_t x) { return x < 10 ? (char)('0' + x) : (char)('a' + x - 10); }
 
 static void piv_retired_cert_path(uint32_t tag, char path[MAX_DO_PATH_LEN]) {
   const uint8_t id = (uint8_t)(tag & 0xFFu);
@@ -420,6 +504,12 @@ static int piv_clear_file_do_storage(void) {
     piv_retired_cert_path(tag, path);
     if (piv_remove_file_if_present(path) < 0) return -1;
   }
+
+  char key_path[MAX_KEY_PATH_LEN];
+  for (uint8_t id = 0x82; id <= 0x95; ++id) {
+    piv_retired_key_path(id, key_path);
+    if (piv_remove_file_if_present(key_path) < 0) return -1;
+  }
   return 0;
 }
 
@@ -440,8 +530,9 @@ static int piv_clear_inline_do_storage(void) {
 static bool piv_littlefs_state_present(void) {
   key_meta_t meta;
   uint8_t default_value;
-  for (size_t i = 0; i < sizeof(key_specs) / sizeof(key_specs[0]); ++i) {
-    if (ck_read_key_metadata(key_specs[i].path, &meta) < 0) return false;
+  for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
+    if (static_key_specs[i].admin) continue;
+    if (ck_read_key_metadata(static_key_specs[i].path, &meta) < 0) return false;
   }
   return ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &meta) >= 0 &&
          read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) ==
@@ -747,7 +838,7 @@ int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta
 
 static void piv_import_reset(void) {
   piv_pke_release(PIV_PKE_USE_IMPORT);
-  piv_import_key_path = NULL;
+  piv_import_key_id = 0;
   piv_import_key_type = KEY_TYPE_PKC_END;
   piv_import_len = 0;
   memzero(&piv_import_stream, sizeof(piv_import_stream));
@@ -811,9 +902,11 @@ int piv_install(const uint8_t reset) {
   random_buffer(chuid_tpl + 31, 16);
   if (write_file(CHUID_PATH, chuid_tpl, 0, sizeof(chuid_tpl), 1) < 0) return -1;
 
-  // keys
-  for (size_t i = 0; i < sizeof(key_specs) / sizeof(key_specs[0]); ++i) {
-    if (create_key(key_specs[i].path, key_specs[i].usage, key_specs[i].pin_policy) < 0) return -1;
+  // Static keys. Retired key-management slots are created lazily on first use
+  // so empty slots 82..95 do not consume separate LittleFS metadata blocks.
+  for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
+    if (static_key_specs[i].admin) continue;
+    if (create_key(static_key_specs[i].path, static_key_specs[i].usage, static_key_specs[i].pin_policy) < 0) return -1;
   }
 
   // TDEA admin key
@@ -1067,32 +1160,12 @@ static int piv_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static const char *get_key_path(const uint8_t id) {
-  switch (id) {
-  case 0x9A:
-    return AUTH_KEY_PATH;
-  case 0x9B:
-    return CARD_ADMIN_KEY_PATH;
-  case 0x9C:
-    return SIG_KEY_PATH;
-  case 0x9D:
-    return KEY_MANAGEMENT_KEY_PATH;
-  case 0x9E:
-    return CARD_AUTH_KEY_PATH;
-  case 0x82:
-    return KEY_MANAGEMENT_82_KEY_PATH;
-  case 0x83:
-    return KEY_MANAGEMENT_83_KEY_PATH;
-  default:
-    return NULL;
-  }
-}
-
 static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
                                              void *ctx) {
   if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
-  const char *key_path = get_key_path(P2);
-  if (key_path == NULL) {
+  char key_path[MAX_KEY_PATH_LEN];
+  piv_key_spec_t spec;
+  if (piv_key_spec(P2, &spec, key_path) < 0) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -1108,7 +1181,9 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
       EXCEPT(SW_WRONG_P1P2);
     }
   }
-  if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
+  const int meta_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path, &spec);
+  if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
+  if (meta_sw < 0) return -1;
   DBG_KEY_META(&key.meta);
 
   // empty slot after reset
@@ -1498,13 +1573,16 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_WRONG_DATA);
   }
 
-  const char *key_path = get_key_path(P2);
-  if (key_path == NULL || P2 == 0x9B) {
+  char key_path[MAX_KEY_PATH_LEN];
+  piv_key_spec_t spec;
+  if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
   ck_key_t key;
-  if (ck_read_key(key_path, &key) < 0) return -1;
+  const int read_sw = piv_read_key_or_default(P2, &key, key_path, &spec);
+  if (read_sw == SW_WRONG_P1P2) EXCEPT(read_sw);
+  if (read_sw < 0) return -1;
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
   if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
@@ -1516,7 +1594,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_DATA);
   }
-  if (ck_write_key(key_path, &key) < 0) return -1;
+  if (piv_write_key_slot(&spec, &key) < 0) return -1;
   DBG_MSG("Generate key %s successful\n", key_path);
   DBG_KEY_META(&key.meta);
 
@@ -1557,8 +1635,9 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-  const char *key_path = get_key_path(P2);
-  if (key_path == NULL || P2 == 0x9B) {
+  char key_path[MAX_KEY_PATH_LEN];
+  piv_key_spec_t spec;
+  if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -1570,14 +1649,16 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
   uint16_t error_sw = SW_NO_ERROR;
   int write_err;
 
-  if (piv_import_key_path == NULL) {
-    if (ck_read_key_metadata(key_path, &key.meta) < 0) return -1;
+  if (piv_import_key_id == 0) {
+    const int meta_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path, &spec);
+    if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
+    if (meta_sw < 0) return -1;
     key.meta.type = key_type;
     ck_parse_piv_stream_init(&piv_import_stream, &key);
-    piv_import_key_path = key_path;
+    piv_import_key_id = P2;
     piv_import_key_type = key_type;
     piv_import_len = 0;
-  } else if (piv_import_key_path != key_path || piv_import_key_type != key_type) {
+  } else if (piv_import_key_id != P2 || piv_import_key_type != key_type) {
     error_sw = SW_WRONG_DATA;
     goto fail;
   } else {
@@ -1622,7 +1703,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     error_sw = SW_WRONG_LENGTH;
     goto fail;
   }
-  write_err = ck_write_key(key_path, &key);
+  write_err = piv_write_key_slot(&spec, &key);
   memzero(&key, sizeof(key));
   piv_import_reset();
   if (write_err < 0) return -1;
@@ -1638,6 +1719,26 @@ fail_proc:
   memzero(&key, sizeof(key));
   piv_import_reset();
   return -1;
+}
+
+static int piv_move_delete_key(const CAPDU *capdu, RAPDU *rapdu) {
+#ifndef FUZZ
+  if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+
+  /*
+   * Yubico's PIV extension uses INS F6 for both moving and deleting keys.
+   * P1=FF selects delete; key move is deliberately not implemented here.
+   */
+  if (P1 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+
+  char key_path[MAX_KEY_PATH_LEN];
+  piv_key_spec_t spec;
+  if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) EXCEPT(SW_WRONG_P1P2);
+
+  if (piv_reset_key_slot(&spec) < 0) return -1;
+  return 0;
 }
 
 static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1682,14 +1783,15 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
   case 0x9C: // Signing
   case 0x9D: // Key Management
   case 0x9E: // Card Authentication
-  case 0x82: // Retired Key Management 1
-  case 0x83: // Retired Key Management 2
-  {
-    const char *key_path = get_key_path(P2);
-    if (key_path == NULL) EXCEPT(SW_WRONG_P1P2);
+  default: {
+    char key_path[MAX_KEY_PATH_LEN];
+    piv_key_spec_t spec;
+    if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
     ck_key_t key;
-    if (ck_read_key(key_path, &key) < 0) return -1;
+    const int read_sw = piv_read_key_or_default(P2, &key, key_path, &spec);
+    if (read_sw == SW_WRONG_P1P2) EXCEPT(read_sw);
+    if (read_sw < 0) return -1;
     DBG_KEY_META(&key.meta);
     if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
@@ -1729,8 +1831,6 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     memzero(&key, sizeof(key));
     break;
   }
-  default:
-    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
   }
 
   LL = pos;
@@ -1838,6 +1938,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_IMPORT_ASYMMETRIC_KEY:
     ret = piv_import_asymmetric_key(capdu, rapdu);
+    break;
+  case PIV_INS_MOVE_DELETE_KEY:
+    ret = piv_move_delete_key(capdu, rapdu);
     break;
   case PIV_INS_GET_VERSION:
     ret = piv_get_version(capdu, rapdu);
