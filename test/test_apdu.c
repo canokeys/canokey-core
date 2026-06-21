@@ -10,6 +10,7 @@
 #include <applet-scratch.h>
 #include <apdu.h>
 #include <bd/lfs_filebd.h>
+#include <canokey-core-git-rev.h>
 #include <ccid.h>
 #include <ctap.h>
 #include <device-config.h>
@@ -1797,6 +1798,29 @@ static void test_admin_platform_config_and_serial_apdus(void **state) {
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 }
 
+static void test_admin_read_core_commit_apdu(void **state) {
+  (void)state;
+
+  uint8_t c_buf[64], r_buf[APDU_BUFFER_SIZE];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT, 0x00, NULL, 0, sizeof(r_buf));
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, sizeof(CANOKEY_CORE_GIT_REV) - 1);
+  assert_memory_equal(rapdu.data, CANOKEY_CORE_GIT_REV, sizeof(CANOKEY_CORE_GIT_REV) - 1);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT, 0x01, NULL, 0, sizeof(r_buf));
+  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
+
+  admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT + 1, 0x00, NULL, 0, sizeof(r_buf));
+  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
+}
+
 static void test_admin_flash_usage_apdus(void **state) {
   (void)state;
 
@@ -1973,6 +1997,7 @@ int main() {
       cmocka_unit_test(test_response_source_clear_calls_close),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
       cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
+      cmocka_unit_test(test_admin_read_core_commit_apdu),
       cmocka_unit_test(test_admin_flash_usage_apdus),
       cmocka_unit_test(test_admin_kbd_keymap_apdus),
   };

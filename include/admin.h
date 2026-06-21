@@ -29,6 +29,14 @@
 #define ADMIN_INS_READ_PASS_CONFIG 0x43
 #define ADMIN_INS_WRITE_PASS_CONFIG 0x44
 
+/*
+ * ADMIN_INS_READ_VERSION:
+ *   P1 = 0x00: platform/vendor firmware version
+ *   P1 = 0x01: platform/vendor hardware variant
+ *   P1 = ADMIN_P1_READ_CORE_COMMIT: canokey-core git commit description
+ */
+#define ADMIN_P1_READ_CORE_COMMIT 0x02
+
 /**
  * ADMIN_INS_FLASH_USAGE:
  *   Read-only and intentionally available before admin PIN verification.
