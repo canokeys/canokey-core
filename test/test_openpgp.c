@@ -277,10 +277,14 @@ static void test_algorithm_information(void **state) {
     uint8_t attr_len = R.data[off++];
     assert_true(off + attr_len <= R.len);
     assert_true(attr_len >= 1);
-    if (tag == 0xC1) ++n_sig;
-    else if (tag == 0xC2) ++n_dec;
-    else if (tag == 0xC3) ++n_aut;
-    else fail_msg("unexpected algo-info tag 0x%02X", tag);
+    if (tag == 0xC1)
+      ++n_sig;
+    else if (tag == 0xC2)
+      ++n_dec;
+    else if (tag == 0xC3)
+      ++n_aut;
+    else
+      fail_msg("unexpected algo-info tag 0x%02X", tag);
     off += attr_len;
   }
   assert_int_equal(off, R.len);
@@ -305,6 +309,14 @@ static void test_import_key(void **state) {
   build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x0A\x16\x2B\x06\x01\x04\x01\xDA\x47\x0F\x01", 15);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x01\x01", 6);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
+
+  build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x06\x13\x2A\x86\x48\xCE\x3D", 11);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
 
   // import an ecc key
   build_capdu(
@@ -494,7 +506,8 @@ static void test_openpgp_cert_chained_read(void **state) {
   // 600-byte synthetic cert; spans three 256-byte chunks on read-back.
   enum { CERT_LEN = 600 };
   uint8_t cert[CERT_LEN];
-  for (size_t i = 0; i < CERT_LEN; ++i) cert[i] = (uint8_t)(0x90 + (i & 0x3F));
+  for (size_t i = 0; i < CERT_LEN; ++i)
+    cert[i] = (uint8_t)(0x90 + (i & 0x3F));
 
   // Chained PUT DATA at TAG_CARDHOLDER_CERTIFICATE (P1P2=7F21). OpenPGP
   // applet handles the cross-APDU chain itself via cert_write_remaining.
@@ -520,7 +533,8 @@ static void test_openpgp_cert_chained_read(void **state) {
 
   // GET DATA + GET RESPONSE chain via openpgp_process_apdu_message.
   RAPDU_CHAINING rc = {.rapdu.data = r_buf};
-  CAPDU get_apdu = {.data = NULL, .cla = 0x00, .ins = OPENPGP_INS_GET_DATA, .p1 = 0x7F, .p2 = 0x21, .lc = 0, .le = 0x100};
+  CAPDU get_apdu = {
+      .data = NULL, .cla = 0x00, .ins = OPENPGP_INS_GET_DATA, .p1 = 0x7F, .p2 = 0x21, .lc = 0, .le = 0x100};
   rapdu.len = 0;
   rapdu.sw = 0;
   openpgp_process_apdu_message(&rc, &get_apdu, &rapdu);
