@@ -156,7 +156,7 @@ static const admin_device_config_t default_cfg = {
 };
 
 static admin_device_config_t current_config;
-static admin_device_config_t admin_get_current_config(void);
+static uint8_t current_config_valid;
 
 __attribute__((weak)) int admin_vendor_specific(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
@@ -189,8 +189,11 @@ __attribute__((weak)) int admin_vendor_nfc_enable(const CAPDU *capdu, RAPDU *rap
   return 0;
 }
 
-// Query the platform hook on every read so a platform-backed config is not
-// shadowed by core RAM after a vendor/admin APDU updates flash directly.
+static admin_device_config_t admin_get_current_config(void) {
+  if (current_config_valid) return current_config;
+  return default_cfg;
+}
+
 uint8_t device_config_is_led_normally_on(void) { return admin_get_current_config().led_normally_on; }
 
 uint8_t device_config_is_ndef_enabled(void) { return admin_get_current_config().ndef_en; }
@@ -209,22 +212,15 @@ uint8_t device_config_is_piv_nfc_enabled(void) { return admin_get_current_config
 
 uint8_t device_config_is_webauthn_enabled(void) { return admin_get_current_config().webauthn_en; }
 
-static admin_device_config_t admin_get_current_config(void) {
-  admin_device_config_t cfg = default_cfg;
-  if (admin_platform_device_config_read(&cfg) == 0) return cfg;
-  return default_cfg;
-}
-
 void admin_poweroff(void) { pin.is_validated = 0; }
 
 int admin_install(const uint8_t reset) {
   admin_poweroff();
-  // Device config is platform-backed. Core keeps no LittleFS fallback, which
-  // avoids two independent sources of truth for LED/NDEF/WebUSB flags.
   if (reset || admin_platform_device_config_read(&current_config) < 0) {
     current_config = default_cfg;
     if (admin_platform_device_config_write(&current_config) < 0) return -1;
   }
+  current_config_valid = 1;
   if (reset || get_file_size(pin.path) < 0) {
     if (pin_create(&pin, "123456", 6, PIN_RETRY_COUNTER) < 0) return -1;
   }
@@ -284,31 +280,35 @@ static int admin_read_core_commit(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
-  current_config = admin_get_current_config();
+  admin_device_config_t next_config = admin_get_current_config();
   switch (P1) {
   case ADMIN_P1_CFG_LED_ON:
-    current_config.led_normally_on = P2 & 1;
+    next_config.led_normally_on = P2 & 1;
     break;
   case ADMIN_P1_CFG_NDEF:
-    current_config.ndef_en = P2 & 1;
+    next_config.ndef_en = P2 & 1;
     break;
   case ADMIN_P1_CFG_WEBUSB_LANDING:
-    current_config.webusb_landing_en = P2 & 1;
+    next_config.webusb_landing_en = P2 & 1;
     break;
   case ADMIN_P1_CFG_FEATURE:
     if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     if ((P2 & ~ADMIN_FEATURE_MASK) != 0) EXCEPT(SW_WRONG_P1P2);
-    current_config.pass_en = (P2 & ADMIN_FEATURE_PASS) != 0;
-    current_config.openpgp_ccid_en = (P2 & ADMIN_FEATURE_OPENPGP_CCID) != 0;
-    current_config.openpgp_nfc_en = (P2 & ADMIN_FEATURE_OPENPGP_NFC) != 0;
-    current_config.piv_ccid_en = (P2 & ADMIN_FEATURE_PIV_CCID) != 0;
-    current_config.piv_nfc_en = (P2 & ADMIN_FEATURE_PIV_NFC) != 0;
-    current_config.webauthn_en = (P2 & ADMIN_FEATURE_WEBAUTHN) != 0;
+    next_config.pass_en = (P2 & ADMIN_FEATURE_PASS) != 0;
+    next_config.openpgp_ccid_en = (P2 & ADMIN_FEATURE_OPENPGP_CCID) != 0;
+    next_config.openpgp_nfc_en = (P2 & ADMIN_FEATURE_OPENPGP_NFC) != 0;
+    next_config.piv_ccid_en = (P2 & ADMIN_FEATURE_PIV_CCID) != 0;
+    next_config.piv_nfc_en = (P2 & ADMIN_FEATURE_PIV_NFC) != 0;
+    next_config.webauthn_en = (P2 & ADMIN_FEATURE_WEBAUTHN) != 0;
     break;
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
-  const int ret = admin_platform_device_config_write(&current_config);
+  const int ret = admin_platform_device_config_write(&next_config);
+  if (ret == 0) {
+    current_config = next_config;
+    current_config_valid = 1;
+  }
   stop_blinking();
   return ret;
 }
