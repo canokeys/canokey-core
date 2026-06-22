@@ -108,11 +108,35 @@
 #define ADMIN_P1_CFG_LED_ON 0x01
 #define ADMIN_P1_CFG_NDEF 0x04
 #define ADMIN_P1_CFG_WEBUSB_LANDING 0x05
+#define ADMIN_P1_CFG_FEATURE 0x06
+
+#define ADMIN_FEATURE_PASS_BIT 0x00
+#define ADMIN_FEATURE_OPENPGP_CCID_BIT 0x01
+#define ADMIN_FEATURE_OPENPGP_NFC_BIT 0x02
+#define ADMIN_FEATURE_PIV_CCID_BIT 0x03
+#define ADMIN_FEATURE_PIV_NFC_BIT 0x04
+#define ADMIN_FEATURE_WEBAUTHN_BIT 0x05
+#define ADMIN_FEATURE_COUNT 0x06
+#define ADMIN_FEATURE_PASS (1u << ADMIN_FEATURE_PASS_BIT)
+#define ADMIN_FEATURE_OPENPGP_CCID (1u << ADMIN_FEATURE_OPENPGP_CCID_BIT)
+#define ADMIN_FEATURE_OPENPGP_NFC (1u << ADMIN_FEATURE_OPENPGP_NFC_BIT)
+#define ADMIN_FEATURE_PIV_CCID (1u << ADMIN_FEATURE_PIV_CCID_BIT)
+#define ADMIN_FEATURE_PIV_NFC (1u << ADMIN_FEATURE_PIV_NFC_BIT)
+#define ADMIN_FEATURE_WEBAUTHN (1u << ADMIN_FEATURE_WEBAUTHN_BIT)
+#define ADMIN_FEATURE_MASK                                                                                           \
+  (ADMIN_FEATURE_PASS | ADMIN_FEATURE_OPENPGP_CCID | ADMIN_FEATURE_OPENPGP_NFC | ADMIN_FEATURE_PIV_CCID |            \
+   ADMIN_FEATURE_PIV_NFC | ADMIN_FEATURE_WEBAUTHN)
 
 typedef struct {
   uint32_t led_normally_on : 1;
   uint32_t ndef_en : 1;
   uint32_t webusb_landing_en : 1;
+  uint32_t pass_en : 1;
+  uint32_t openpgp_ccid_en : 1;
+  uint32_t openpgp_nfc_en : 1;
+  uint32_t piv_ccid_en : 1;
+  uint32_t piv_nfc_en : 1;
+  uint32_t webauthn_en : 1;
 } __packed admin_device_config_t;
 
 void admin_poweroff(void);

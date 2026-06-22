@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <usbd_canokey.h>
+#include <device-config.h>
 #if ENABLE_IFACE_CCID
 #include <usbd_ccid.h>
 #endif
@@ -33,7 +34,7 @@ static uint8_t USBD_CANOKEY_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx) {
   USBD_CTAPHID_Init(pdev);
 #endif
 #if ENABLE_IFACE_KBDHID
-  USBD_KBDHID_Init(pdev);
+  if (device_config_is_pass_enabled()) USBD_KBDHID_Init(pdev);
 #endif
 #if ENABLE_IFACE_CCID
   USBD_CCID_Init(pdev);
@@ -84,8 +85,9 @@ static uint8_t USBD_CANOKEY_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef
     return USBD_CTAPHID_Setup(pdev, req);
 #endif
 #if ENABLE_IFACE_KBDHID
-  if (((recipient == USB_REQ_RECIPIENT_INTERFACE || is_hid_get_descriptor) && req->wIndex == USBD_CANOKEY_KBDHID_IF) ||
-      (recipient == USB_REQ_RECIPIENT_ENDPOINT && (req->wIndex == EP_IN(kbd_hid) || req->wIndex == EP_OUT(kbd_hid))))
+  if (device_config_is_pass_enabled() &&
+      (((recipient == USB_REQ_RECIPIENT_INTERFACE || is_hid_get_descriptor) && req->wIndex == USBD_CANOKEY_KBDHID_IF) ||
+       (recipient == USB_REQ_RECIPIENT_ENDPOINT && (req->wIndex == EP_IN(kbd_hid) || req->wIndex == EP_OUT(kbd_hid)))))
     return USBD_KBDHID_Setup(pdev, req);
 #endif
 #if ENABLE_IFACE_WEBUSB
@@ -106,7 +108,7 @@ static uint8_t USBD_CANOKEY_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == (0x7F & EP_IN(ctap_hid))) return USBD_CTAPHID_DataIn();
 #endif
 #if ENABLE_IFACE_KBDHID
-  if (epnum == (0x7F & EP_IN(kbd_hid))) return USBD_KBDHID_DataIn();
+  if (device_config_is_pass_enabled() && epnum == (0x7F & EP_IN(kbd_hid))) return USBD_KBDHID_DataIn();
 #endif
 #if ENABLE_IFACE_CCID
   if (epnum == (0x7F & EP_IN(ccid))) return USBD_CCID_DataIn(pdev);
@@ -123,7 +125,7 @@ static uint8_t USBD_CANOKEY_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum) {
   if (epnum == EP_OUT(ctap_hid)) return USBD_CTAPHID_DataOut(pdev);
 #endif
 #if ENABLE_IFACE_KBDHID
-  if (epnum == EP_OUT(kbd_hid)) return USBD_KBDHID_DataOut(pdev);
+  if (device_config_is_pass_enabled() && epnum == EP_OUT(kbd_hid)) return USBD_KBDHID_DataOut(pdev);
 #endif
 #if ENABLE_IFACE_CCID
   if (epnum == EP_OUT(ccid)) return USBD_CCID_DataOut(pdev);

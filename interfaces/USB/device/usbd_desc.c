@@ -406,7 +406,7 @@ void USBD_DescriptorInit(void) {
   nIface++;
 #endif
 
-  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF)) {
+  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF) && device_config_is_pass_enabled()) {
 #if ENABLE_IFACE_KBDHID
     nIface++;
     memcpy(desc, USBD_FS_IfDesc_KBDHID, sizeof(USBD_FS_IfDesc_KBDHID));
