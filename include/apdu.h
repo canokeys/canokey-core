@@ -116,6 +116,14 @@ int apdu_session_can_preempt(void);
 void apdu_fido_chain_reset(void);
 int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
+typedef enum {
+  APDU_TRANSPORT_CCID,
+  APDU_TRANSPORT_WEBUSB,
+  APDU_TRANSPORT_NFC,
+  APDU_TRANSPORT_HID,
+} apdu_transport_t;
+
+void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE__APDU_H

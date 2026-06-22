@@ -214,7 +214,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
               LC > 0 ? DATA[0] : 0, LC > 1 ? DATA[1] : 0, LC > 2 ? DATA[2] : 0, LC > 3 ? DATA[3] : 0);
     }
     device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
-    process_apdu(capdu, rapdu);
+    process_apdu_from(capdu, rapdu, APDU_TRANSPORT_CCID);
     device_set_timeout(NULL, 0);
   }
 

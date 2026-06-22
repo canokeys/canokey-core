@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <ctap.h>
 #include <ctaphid.h>
+#include <device-config.h>
 #include <device.h>
 #include <rand.h>
 #include <usb_device.h>
@@ -121,6 +122,10 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
   channel.expire = UINT32_MAX;
   switch (channel.cmd) {
   case CTAPHID_MSG:
+    if (!device_config_is_webauthn_enabled()) {
+      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
+      break;
+    }
     if (wait_for_user)
       CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     else if (channel.bcnt_total < 4)
@@ -129,6 +134,10 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
       CTAPHID_Execute_Msg();
     break;
   case CTAPHID_CBOR:
+    if (!device_config_is_webauthn_enabled()) {
+      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
+      break;
+    }
     if (wait_for_user)
       CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     else if (channel.bcnt_total == 0)

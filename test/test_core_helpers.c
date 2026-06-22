@@ -191,6 +191,18 @@ int platform_config_page_write(const void *page, size_t len) {
 
 uint8_t device_config_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
 
+uint8_t device_config_is_pass_enabled(void) { return 1; }
+
+uint8_t device_config_is_openpgp_ccid_enabled(void) { return 1; }
+
+uint8_t device_config_is_openpgp_nfc_enabled(void) { return 1; }
+
+uint8_t device_config_is_piv_ccid_enabled(void) { return 1; }
+
+uint8_t device_config_is_piv_nfc_enabled(void) { return 1; }
+
+uint8_t device_config_is_webauthn_enabled(void) { return 1; }
+
 static void test_tlv_get_length_safe_variants(void **state) {
   (void)state;
 

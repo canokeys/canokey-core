@@ -143,7 +143,17 @@ static const admin_applet_usage_def_t applet_usage_defs[] = {
     {ADMIN_APPLET_USAGE_ID_PASS, pass_usage_sources, sizeof(pass_usage_sources) / sizeof(pass_usage_sources[0])},
 };
 
-static const admin_device_config_t default_cfg = {.led_normally_on = 1, .ndef_en = 1, .webusb_landing_en = 1};
+static const admin_device_config_t default_cfg = {
+    .led_normally_on = 1,
+    .ndef_en = 1,
+    .webusb_landing_en = 1,
+    .pass_en = 1,
+    .openpgp_ccid_en = 1,
+    .openpgp_nfc_en = 1,
+    .piv_ccid_en = 1,
+    .piv_nfc_en = 1,
+    .webauthn_en = 1,
+};
 
 static admin_device_config_t current_config;
 static admin_device_config_t admin_get_current_config(void);
@@ -186,6 +196,18 @@ uint8_t device_config_is_led_normally_on(void) { return admin_get_current_config
 uint8_t device_config_is_ndef_enabled(void) { return admin_get_current_config().ndef_en; }
 
 uint8_t device_config_is_webusb_landing_enabled(void) { return admin_get_current_config().webusb_landing_en; }
+
+uint8_t device_config_is_pass_enabled(void) { return admin_get_current_config().pass_en; }
+
+uint8_t device_config_is_openpgp_ccid_enabled(void) { return admin_get_current_config().openpgp_ccid_en; }
+
+uint8_t device_config_is_openpgp_nfc_enabled(void) { return admin_get_current_config().openpgp_nfc_en; }
+
+uint8_t device_config_is_piv_ccid_enabled(void) { return admin_get_current_config().piv_ccid_en; }
+
+uint8_t device_config_is_piv_nfc_enabled(void) { return admin_get_current_config().piv_nfc_en; }
+
+uint8_t device_config_is_webauthn_enabled(void) { return admin_get_current_config().webauthn_en; }
 
 static admin_device_config_t admin_get_current_config(void) {
   admin_device_config_t cfg = default_cfg;
@@ -273,6 +295,16 @@ static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   case ADMIN_P1_CFG_WEBUSB_LANDING:
     current_config.webusb_landing_en = P2 & 1;
     break;
+  case ADMIN_P1_CFG_FEATURE:
+    if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+    if ((P2 & ~ADMIN_FEATURE_MASK) != 0) EXCEPT(SW_WRONG_P1P2);
+    current_config.pass_en = (P2 & ADMIN_FEATURE_PASS) != 0;
+    current_config.openpgp_ccid_en = (P2 & ADMIN_FEATURE_OPENPGP_CCID) != 0;
+    current_config.openpgp_nfc_en = (P2 & ADMIN_FEATURE_OPENPGP_NFC) != 0;
+    current_config.piv_ccid_en = (P2 & ADMIN_FEATURE_PIV_CCID) != 0;
+    current_config.piv_nfc_en = (P2 & ADMIN_FEATURE_PIV_NFC) != 0;
+    current_config.webauthn_en = (P2 & ADMIN_FEATURE_WEBAUTHN) != 0;
+    break;
   default:
     EXCEPT(SW_WRONG_P1P2);
   }
@@ -296,7 +328,9 @@ static int admin_read_config(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
   RDATA[3] = cfg.ndef_en;
   RDATA[4] = cfg.webusb_landing_en;
-  RDATA[5] = 0; // reserved
+  RDATA[5] = (cfg.pass_en ? ADMIN_FEATURE_PASS : 0) | (cfg.openpgp_ccid_en ? ADMIN_FEATURE_OPENPGP_CCID : 0) |
+             (cfg.openpgp_nfc_en ? ADMIN_FEATURE_OPENPGP_NFC : 0) | (cfg.piv_ccid_en ? ADMIN_FEATURE_PIV_CCID : 0) |
+             (cfg.piv_nfc_en ? ADMIN_FEATURE_PIV_NFC : 0) | (cfg.webauthn_en ? ADMIN_FEATURE_WEBAUTHN : 0);
   LL = 6;
 
   return 0;

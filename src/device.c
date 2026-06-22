@@ -70,7 +70,7 @@ void device_loop(void) {
   WebUSB_Loop();
 #endif
 #if ENABLE_IFACE_KBDHID
-  KBDHID_Loop();
+  if (device_config_is_pass_enabled()) KBDHID_Loop();
 #endif
 }
 

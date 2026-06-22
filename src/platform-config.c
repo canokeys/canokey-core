@@ -29,6 +29,15 @@
 #define CONFIG_FLAG_WEBUSB_LANDING_ENABLED (1u << 4)
 #define CONFIG_FLAG_SN_VALID (1u << 5)
 #define CONFIG_FLAG_KBD_KEYMAP_VALID (1u << 6)
+#define CONFIG_FLAG_PASS_ENABLED (1u << 7)
+#define CONFIG_FLAG_OPENPGP_CCID_ENABLED (1u << 8)
+#define CONFIG_FLAG_OPENPGP_NFC_ENABLED (1u << 9)
+#define CONFIG_FLAG_PIV_CCID_ENABLED (1u << 10)
+#define CONFIG_FLAG_PIV_NFC_ENABLED (1u << 11)
+#define CONFIG_FLAG_WEBAUTHN_ENABLED (1u << 12)
+#define CONFIG_FLAGS_FEATURES                                                                                         \
+  (CONFIG_FLAG_PASS_ENABLED | CONFIG_FLAG_OPENPGP_CCID_ENABLED | CONFIG_FLAG_OPENPGP_NFC_ENABLED |                    \
+   CONFIG_FLAG_PIV_CCID_ENABLED | CONFIG_FLAG_PIV_NFC_ENABLED | CONFIG_FLAG_WEBAUTHN_ENABLED)
 
 // The first word is platform-owned loader handoff state and is excluded from
 // the core config CRC. The rest of the page is owned by this module.
@@ -106,7 +115,7 @@ static void config_set_defaults(config_page_t *page, uint32_t platform_word) {
   page->header_len = CONFIG_HEADER_LEN;
   page->page_len = PLATFORM_CONFIG_PAGE_SIZE;
   page->flags = CONFIG_FLAG_NFC_ENABLED | CONFIG_FLAG_LED_NORMALLY_ON | CONFIG_FLAG_NDEF_ENABLED |
-                CONFIG_FLAG_WEBUSB_LANDING_ENABLED;
+                CONFIG_FLAG_WEBUSB_LANDING_ENABLED | CONFIG_FLAGS_FEATURES;
   memset(page->serial, 0, sizeof(page->serial));
   page->kbd_layout_id = 0;
   page->kbd_entry_size = CONFIG_KBD_ENTRY_SIZE;
@@ -196,6 +205,30 @@ static int set_admin_cfg_update(config_page_t *page, void *ctx) {
     page->flags |= CONFIG_FLAG_WEBUSB_LANDING_ENABLED;
   else
     page->flags &= ~CONFIG_FLAG_WEBUSB_LANDING_ENABLED;
+  if (cfg->pass_en)
+    page->flags |= CONFIG_FLAG_PASS_ENABLED;
+  else
+    page->flags &= ~CONFIG_FLAG_PASS_ENABLED;
+  if (cfg->openpgp_ccid_en)
+    page->flags |= CONFIG_FLAG_OPENPGP_CCID_ENABLED;
+  else
+    page->flags &= ~CONFIG_FLAG_OPENPGP_CCID_ENABLED;
+  if (cfg->openpgp_nfc_en)
+    page->flags |= CONFIG_FLAG_OPENPGP_NFC_ENABLED;
+  else
+    page->flags &= ~CONFIG_FLAG_OPENPGP_NFC_ENABLED;
+  if (cfg->piv_ccid_en)
+    page->flags |= CONFIG_FLAG_PIV_CCID_ENABLED;
+  else
+    page->flags &= ~CONFIG_FLAG_PIV_CCID_ENABLED;
+  if (cfg->piv_nfc_en)
+    page->flags |= CONFIG_FLAG_PIV_NFC_ENABLED;
+  else
+    page->flags &= ~CONFIG_FLAG_PIV_NFC_ENABLED;
+  if (cfg->webauthn_en)
+    page->flags |= CONFIG_FLAG_WEBAUTHN_ENABLED;
+  else
+    page->flags &= ~CONFIG_FLAG_WEBAUTHN_ENABLED;
   return 0;
 }
 
@@ -288,6 +321,12 @@ int admin_platform_device_config_read(admin_device_config_t *cfg) {
   cfg->led_normally_on = (page.flags & CONFIG_FLAG_LED_NORMALLY_ON) != 0;
   cfg->ndef_en = (page.flags & CONFIG_FLAG_NDEF_ENABLED) != 0;
   cfg->webusb_landing_en = (page.flags & CONFIG_FLAG_WEBUSB_LANDING_ENABLED) != 0;
+  cfg->pass_en = (page.flags & CONFIG_FLAG_PASS_ENABLED) != 0;
+  cfg->openpgp_ccid_en = (page.flags & CONFIG_FLAG_OPENPGP_CCID_ENABLED) != 0;
+  cfg->openpgp_nfc_en = (page.flags & CONFIG_FLAG_OPENPGP_NFC_ENABLED) != 0;
+  cfg->piv_ccid_en = (page.flags & CONFIG_FLAG_PIV_CCID_ENABLED) != 0;
+  cfg->piv_nfc_en = (page.flags & CONFIG_FLAG_PIV_NFC_ENABLED) != 0;
+  cfg->webauthn_en = (page.flags & CONFIG_FLAG_WEBAUTHN_ENABLED) != 0;
   return 0;
 }
 

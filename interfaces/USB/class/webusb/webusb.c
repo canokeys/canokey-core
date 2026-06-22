@@ -111,7 +111,7 @@ void WebUSB_Loop(void) {
     SW = SW_CONDITIONS_NOT_SATISFIED;
   } else {
     device_applet_session_touch(DEVICE_APPLET_SESSION_WEBUSB);
-    process_apdu(capdu, rapdu);
+    process_apdu_from(capdu, rapdu, APDU_TRANSPORT_WEBUSB);
   }
 
   apdu_buffer_size = LL + 2;
