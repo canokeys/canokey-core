@@ -253,10 +253,11 @@ static int admin_read_sn(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int admin_read_core_commit(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(capdu);
-  const size_t len = sizeof(CANOKEY_CORE_GIT_REV) - 1;
+  size_t len = sizeof(CANOKEY_CORE_GIT_REV) - 1;
+  if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
+  if (len > LE) len = LE;
   memcpy(RDATA, CANOKEY_CORE_GIT_REV, len);
   LL = len;
-  if (LL > LE) LL = LE;
   return 0;
 }
 

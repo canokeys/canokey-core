@@ -103,14 +103,18 @@ add_custom_target(
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
 )
 
-add_custom_target(
-    generate_canokey_core_git_rev
-    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
     COMMAND ${CMAKE_COMMAND}
         -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
         -DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
         -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_git_rev_header.cmake
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_git_rev_header.cmake
     COMMENT "Generating canokey-core-git-rev.h"
+)
+add_custom_target(
+    generate_canokey_core_git_rev
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
 )
 
 file(

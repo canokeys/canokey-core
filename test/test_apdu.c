@@ -1811,8 +1811,10 @@ static void test_admin_read_core_commit_apdu(void **state) {
 
   admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT, 0x00, NULL, 0, sizeof(r_buf));
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, sizeof(CANOKEY_CORE_GIT_REV) - 1);
-  assert_memory_equal(rapdu.data, CANOKEY_CORE_GIT_REV, sizeof(CANOKEY_CORE_GIT_REV) - 1);
+  size_t expected_len = sizeof(CANOKEY_CORE_GIT_REV) - 1;
+  if (expected_len > APDU_BUFFER_SIZE) expected_len = APDU_BUFFER_SIZE;
+  assert_int_equal(rapdu.len, expected_len);
+  assert_memory_equal(rapdu.data, CANOKEY_CORE_GIT_REV, expected_len);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT, 0x01, NULL, 0, sizeof(r_buf));
   assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
