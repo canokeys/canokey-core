@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
+#include <canokey-core-git-rev.h>
 #include <crypto-util.h>
 #include <ctap.h>
 #include <device-config.h>
@@ -250,6 +251,16 @@ static int admin_read_sn(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+static int admin_read_core_commit(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+  size_t len = sizeof(CANOKEY_CORE_GIT_REV) - 1;
+  if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
+  if (len > LE) len = LE;
+  memcpy(RDATA, CANOKEY_CORE_GIT_REV, len);
+  LL = len;
+  return 0;
+}
+
 static int admin_config(const CAPDU *capdu, RAPDU *rapdu) {
   current_config = admin_get_current_config();
   switch (P1) {
@@ -458,11 +469,13 @@ int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     return 0;
 
   case ADMIN_INS_READ_VERSION:
-    if (P1 > 1 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    if (P1 > ADMIN_P1_READ_CORE_COMMIT || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
     if (P1 == 0)
       ret = admin_vendor_version(capdu, rapdu);
     else if (P1 == 1)
       ret = admin_vendor_hw_variant(capdu, rapdu);
+    else if (P1 == ADMIN_P1_READ_CORE_COMMIT)
+      ret = admin_read_core_commit(capdu, rapdu);
     goto done;
 
   case ADMIN_INS_READ_SN:
