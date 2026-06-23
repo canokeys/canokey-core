@@ -238,12 +238,8 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 					apdu = []byte{0x00, 0x42, 0x00, 0x00, 0x00}
 					cfg, code, err := app.Send(apdu)
 					So(err, ShouldBeNil)
-					if verified {
-						So(code, ShouldEqual, 0x9000)
-						So(cfg, ShouldResemble, shadowCfg)
-					} else {
-						So(code, ShouldEqual, 0x6982)
-					}
+					So(code, ShouldEqual, 0x9000)
+					So(cfg, ShouldResemble, shadowCfg)
 				}
 			}
 		})
