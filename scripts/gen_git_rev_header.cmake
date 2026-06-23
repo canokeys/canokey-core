@@ -1,5 +1,5 @@
 execute_process(
-    COMMAND git describe --always --tags --long --abbrev=8 --dirty
+    COMMAND git rev-parse --short=8 HEAD
     WORKING_DIRECTORY "${SOURCE_DIR}"
     OUTPUT_VARIABLE GIT_REV
     OUTPUT_STRIP_TRAILING_WHITESPACE

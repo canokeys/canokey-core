@@ -1745,9 +1745,12 @@ static void test_admin_platform_config_and_serial_apdus(void **state) {
   assert_int_equal(admin_install(1), 0);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x00, 0x00, NULL, 0, 6);
-  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  admin_verify_default_pin(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 6);
+  assert_int_equal(rapdu.data[0], 1);
+  assert_int_equal(rapdu.data[3], 1);
+  assert_int_equal(rapdu.data[4], 1);
+  assert_int_equal(rapdu.data[5], ADMIN_FEATURE_MASK);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x01, 0x00, NULL, 0, 6);
   assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
@@ -1755,13 +1758,10 @@ static void test_admin_platform_config_and_serial_apdus(void **state) {
   admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x00, 0x00, NULL, 0, 5);
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x00, 0x00, NULL, 0, 6);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 6);
-  assert_int_equal(rapdu.data[0], 1);
-  assert_int_equal(rapdu.data[3], 1);
-  assert_int_equal(rapdu.data[4], 1);
-  assert_int_equal(rapdu.data[5], ADMIN_FEATURE_MASK);
+  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_LED_ON, 0x00, NULL, 0, 0);
+  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  admin_verify_default_pin(&capdu, &rapdu);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_LED_ON, 0x00, NULL, 0, 0);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);

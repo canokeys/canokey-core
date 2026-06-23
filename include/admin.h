@@ -33,7 +33,7 @@
  * ADMIN_INS_READ_VERSION:
  *   P1 = 0x00: platform/vendor firmware version
  *   P1 = 0x01: platform/vendor hardware variant
- *   P1 = ADMIN_P1_READ_CORE_COMMIT: canokey-core git commit description
+ *   P1 = ADMIN_P1_READ_CORE_COMMIT: canokey-core git commit id
  */
 #define ADMIN_P1_READ_CORE_COMMIT 0x02
 
