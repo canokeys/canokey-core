@@ -67,6 +67,7 @@ static uint8_t fido_capdu_pke_owner;
 static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
 static uint16_t response_tail_offset;
 static uint16_t response_tail_len;
+uint8_t *shared_io_buffer;
 #if !ENABLE_IFACE_CCID
 static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
 #endif
@@ -120,10 +121,15 @@ static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t 
   }
 }
 
+static void rapdu_chaining_reset(void) {
+  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
+  rapdu_chaining.rapdu.data = shared_io_buffer;
+}
+
 static void disabled_applet_response(RAPDU *rapdu) {
   current_applet = APPLET_NULL;
   apdu_response_source_clear();
-  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
+  rapdu_chaining_reset();
   fido_capdu_reset();
   LL = 0;
   SW = SW_FILE_NOT_FOUND;
@@ -132,8 +138,6 @@ static void disabled_applet_response(RAPDU *rapdu) {
 static APDU_RESPONSE_SOURCE response_source;
 
 #define APDU_RESPONSE_CHUNK_SIZE 250
-
-uint8_t *shared_io_buffer;
 
 #if ENABLE_IFACE_CCID
 extern void ccid_init_apdu_buffer(void);
@@ -144,7 +148,6 @@ void init_apdu_buffer(void) {
   shared_io_buffer = apdu_fallback_buffer;
 #endif
   apdu_response_source_clear();
-  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
   if (!fido_capdu_chaining.in_chaining) {
     memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
     fido_capdu_uses_pke = 0;
@@ -154,7 +157,7 @@ void init_apdu_buffer(void) {
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
 #endif
-  rapdu_chaining.rapdu.data = shared_io_buffer;
+  rapdu_chaining_reset();
   if (!fido_capdu_uses_pke) fido_capdu_chaining.capdu.data = shared_io_buffer;
 }
 
