@@ -1971,6 +1971,9 @@ static void test_runtime_feature_apdu_routing(void **state) {
   static const uint8_t fido_version[] = {
       0x00, 0x03, 0x00, 0x00, 0x00,
   };
+  static const uint8_t openpgp_get_aid[] = {
+      0x00, 0xCA, 0x00, 0x4F, 0x00,
+  };
 
   uint8_t c_buf[64], r_buf[64];
   CAPDU capdu = {.data = c_buf};
@@ -1991,6 +1994,13 @@ static void test_runtime_feature_apdu_routing(void **state) {
   assert_int_equal(build_capdu(&capdu, select_openpgp, sizeof(select_openpgp)), 0);
   process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, openpgp_get_aid, sizeof(openpgp_get_aid)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(rapdu.len > 0);
+  assert_int_equal(rapdu.data[0], 0xD2);
+
   init_apdu_buffer();
   admin_verify_default_pin(&capdu, &rapdu);
 
