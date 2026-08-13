@@ -53,9 +53,13 @@ typedef struct {
 
 typedef union {
   CTAP_mldsa_stream_state ctap_mldsa;
+  CTAP_make_credential ctap_mc;
   CTAP_get_assertion ctap_ga;
   uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
+
+_Static_assert(sizeof(CTAP_make_credential) <= sizeof(CTAP_mldsa_stream_state),
+               "MakeCredential parsing should not enlarge the shared scratch union");
 
 extern applet_session_scratch_t applet_session_scratch;
 

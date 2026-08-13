@@ -259,7 +259,7 @@ CTAP handlers must treat transport-backed request bytes as short-lived input, no
 4. Clear the request source.
 5. Continue with keepalive, user-presence waits, crypto, storage, and response generation.
 
-`ctap_req_src_t` carries `read(ctx, offset, buf, len)` for pulling bytes plus an optional `cancelled(ctx)` callback, invoked on every read so cooperative cancellation (host-side CTAPHID CANCEL) terminates parsing immediately. Sources that cannot be cancelled may leave `cancelled` NULL.
+`ctap_req_src_t` carries `read(ctx, offset, buf, len)` for pulling bytes, an optional `cancelled(ctx)` callback for cooperative cancellation, and an optional idempotent `close(ctx)` callback that releases transport-owned staging when parsing ends. Sources that need neither callback may leave them NULL.
 
 If a command needs raw request bytes after parsing, handle the exact bytes before the first unsafe boundary:
 
@@ -336,7 +336,7 @@ CTAP over `CCID` / `WebUSB` / NFC APDU:
 - FIDO APDU chaining is separate from transport frame aggregation. Once the FIDO APDU body spans multiple APDUs or exceeds the short incoming data limit, `fido_apdu_input()` stages the accumulated payload in PKE and dispatches through `ctap_process_pke_apdu_with_src()`.
 - Chained FIDO APDU input in PKE follows the same lifetime rule as CTAPHID PKE-backed RX: it is valid only for immediate parser consumption.
 - `process_apdu()` may clear the PKE-backed FIDO request after the first `apdu_output()` call. APDU response sources must never depend on request PKE.
-- NFC pending storage must not become a general escape hatch for large request snapshots. Prefer parsed or bounded RAM pending state; treat whole-request file snapshots as implementation debt unless strictly justified.
+- NFC mode bypasses user-presence polling because the platform does not initialize LED or touch scanning there. Long NFC operations rely on transport-level WTX and must not persist request snapshots for touch polling.
 
 ### CTAP command lifecycle
 

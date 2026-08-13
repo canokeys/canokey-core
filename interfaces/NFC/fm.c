@@ -144,6 +144,8 @@ void fm11_init(void) {
 #define I2C_ADDR 0x57
 
 fm_status_t fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len) {
+  if (len == 0) return FM_STATUS_OK;
+
   uint8_t slave_id = (I2C_ADDR << 1) | 0;
   i2c_start();
   I2C_WRITE_WITH_CHECK(slave_id);

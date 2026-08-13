@@ -87,10 +87,6 @@ typedef struct {
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
   // Allow implicit routing for both standalone and chained CTAP2 CBOR APDUs.
   if ((capdu->cla & 0xEF) == 0x80 && capdu->ins == 0x10) return 1;
-  // NFC CTAP GET_RESPONSE may arrive after a reader reconnect clears the
-  // selected applet; keep routing the poll back to FIDO so pending work can
-  // finish instead of falling through to SW_FILE_NOT_FOUND.
-  if (is_nfc() && capdu->cla == 0x80 && capdu->ins == 0x11) return 1;
 #ifdef TEST
   if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
 #endif
@@ -248,6 +244,15 @@ static void fido_capdu_reset(void) {
   }
   memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
   fido_capdu_chaining.capdu.data = shared_io_buffer;
+  fido_capdu_uses_pke = 0;
+  fido_capdu_pke_owner = 0;
+}
+
+static void fido_capdu_release_request(void *ctx) {
+  UNUSED(ctx);
+  if (!fido_capdu_uses_pke || !fido_capdu_pke_owner) return;
+  pke_buffer_clear();
+  pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
   fido_capdu_uses_pke = 0;
   fido_capdu_pke_owner = 0;
 }
@@ -600,7 +605,7 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       capdu = &fido_capdu_chaining.capdu;
     }
     if (fido_capdu_uses_pke)
-      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID, fido_capdu_release_request, NULL);
     else
       ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);

@@ -663,6 +663,8 @@ static void test_pke_buffer_fallback_for_ctap(void **state) {
 static void test_fido_chained_make_credential_nfc(void **state) {
   (void)state;
 
+  static const uint8_t fido_private_key[PRI_KEY_SIZE] = {1};
+  static const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
   static const uint8_t select_fido[] = {
       0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
   };
@@ -690,54 +692,38 @@ static void test_fido_chained_make_credential_nfc(void **state) {
   CAPDU capdu = {.data = c_buf};
   RAPDU rapdu = {.data = r_buf};
 
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, fido_private_key, sizeof(fido_private_key)), 0);
+  assert_int_equal(write_file(CTAP_CERT_FILE, cert, 0, sizeof(cert), 1), 0);
   set_nfc_state(1);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   assert_int_equal(build_capdu(&capdu, mc_part1, sizeof(mc_part1)), 0);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
   assert_int_equal(rapdu.len, 0);
 
   assert_int_equal(build_capdu(&capdu, mc_part2, sizeof(mc_part2)), 0);
-  process_apdu(&capdu, &rapdu);
-  assert_int_equal(rapdu.sw, 0x9100);
-  assert_int_equal(rapdu.len, 1);
-  assert_int_equal(rapdu.data[0], 0x02);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  // Match 7644370f: CTAP2 exposes ISO 7816 response chaining to the NFC
+  // reader. The reader must issue 00 C0 GET RESPONSE to fetch later chunks.
+  assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
+  assert_true(rapdu.len > 0);
+  assert_int_equal(rapdu.data[0], 0x00);
   assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
   assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
-  assert_int_equal(ctap_nfc_pending_active(), 1);
 
-  // Simulate a PC/SC PowerICC reconnect between the NFC 0x9100 keepalive and
-  // the required NFCCTAP_GETRESPONSE poll. The pending command must survive
-  // this non-runtime ctap_install(0), and 80 11 must route back to FIDO even
-  // though init_apdu_buffer() cleared the selected applet.
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  assert_int_equal(ctap_nfc_pending_active(), 1);
-
-  static const uint8_t nfc_get_response[] = {
-      0x80, 0x11, 0x00, 0x00, 0x00,
-  };
-  assert_int_equal(build_capdu(&capdu, nfc_get_response, sizeof(nfc_get_response)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
-  assert_int_equal(rapdu.sw, 0x9100);
-  assert_int_equal(rapdu.len, 1);
-  assert_int_equal(rapdu.data[0], 0x02);
-  assert_int_equal(ctap_nfc_pending_active(), 1);
-
-  assert_int_equal(build_capdu(&capdu, nfc_get_response, sizeof(nfc_get_response)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_true(rapdu.len > 0);
-  assert_int_equal(ctap_nfc_pending_active(), 0);
+  uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+  size_t total = rapdu.len;
+  while (rapdu.sw != SW_NO_ERROR) {
+    assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+    process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+    assert_true(rapdu.sw == SW_NO_ERROR || (rapdu.sw & 0xFF00) == 0x6100);
+    total += rapdu.len;
+  }
+  assert_true(total > 1);
 
   ctap_poweroff();
   set_nfc_state(0);
@@ -782,7 +768,7 @@ static void test_fido_ctap1_register_nfc(void **state) {
   assert_true(total >= rapdu.len);
 }
 
-static void test_fido_reset_nfc_returns_keepalive_pending(void **state) {
+static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
   (void)state;
 
   static const uint8_t select_fido[] = {
@@ -810,10 +796,12 @@ static void test_fido_reset_nfc_returns_keepalive_pending(void **state) {
   assert_int_equal(build_capdu(&capdu, reset_apdu, sizeof(reset_apdu)), 0);
   process_apdu(&capdu, &rapdu);
 
-  assert_int_equal(rapdu.sw, 0x9100);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
   assert_int_equal(rapdu.len, 1);
-  assert_int_equal(rapdu.data[0], KEEPALIVE_STATUS_UPNEEDED);
-  assert_true(ctap_nfc_pending_active());
+  assert_int_equal(rapdu.data[0], 0x00);
+
+  ctap_poweroff();
+  set_nfc_state(0);
 }
 
 static void test_fido_cbor_after_reset_without_select(void **state) {
@@ -2062,7 +2050,7 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
-      cmocka_unit_test(test_fido_reset_nfc_returns_keepalive_pending),
+      cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),

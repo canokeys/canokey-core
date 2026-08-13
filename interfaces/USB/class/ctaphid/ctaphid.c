@@ -77,6 +77,11 @@ static void CTAPHID_ReleasePKERequestStorage(void) {
   channel.use_pke_buffer = 0;
 }
 
+static void CTAPHID_ClosePKERequestStorage(void *ctx) {
+  UNUSED(ctx);
+  CTAPHID_ReleasePKERequestStorage();
+}
+
 static void CTAPHID_PKERequestSourceClose(void *ctx) {
   (void)ctx;
   CTAPHID_ResetRxStorage();
@@ -580,6 +585,7 @@ static int CTAPHID_GetRequestBuffer(size_t len, uint8_t **req, ctap_req_src_t *r
   if (!req_src || !source_backed) return -1;
   req_src->read = CTAPHID_RequestRead;
   req_src->cancelled = CTAPHID_RequestCancelled;
+  req_src->close = CTAPHID_ClosePKERequestStorage;
   req_src->ctx = NULL;
   req_src->base_offset = 0;
   req_src->len = len;

@@ -120,7 +120,6 @@ static const admin_fs_usage_source_t ctap_usage_sources[] = {
     {"ctap_lb", NULL, 0},
     {"ctap_lbt", NULL, 0},
     {"ctap_mpr", NULL, 0},
-    {"ctap_np", NULL, 0},
 };
 
 static const admin_fs_usage_source_t ndef_usage_sources[] = {

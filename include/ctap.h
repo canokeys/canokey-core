@@ -17,10 +17,12 @@ typedef enum {
 
 typedef int (*ctap_req_read_t)(void *ctx, size_t offset, uint8_t *buf, size_t len);
 typedef int (*ctap_req_cancelled_t)(void *ctx);
+typedef void (*ctap_req_close_t)(void *ctx);
 
 typedef struct {
   ctap_req_read_t read;
   ctap_req_cancelled_t cancelled;
+  ctap_req_close_t close;
   void *ctx;
   size_t base_offset;
   size_t len;
@@ -51,8 +53,8 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
                                       CTAPHID_TxSource *source, ctap_src_t src);
 int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *req_src, RAPDU *rapdu, ctap_src_t src);
 int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
-int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src);
-int ctap_nfc_pending_active(void);
+int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src, ctap_req_close_t close,
+                                   void *close_ctx);
 #ifdef TEST
 void ctap_test_seed_get_next_assertion_state(void);
 void ctap_test_seed_credential_management_state(void);

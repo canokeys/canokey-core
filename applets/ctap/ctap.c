@@ -51,11 +51,7 @@ static int ctap_large_response_read_at(void *ctx, uint32_t offset, uint8_t *buf,
 #if ENABLE_NFC
 #define WAIT(timeout_response)                                                                                         \
   do {                                                                                                                 \
-    if (is_nfc()) {                                                                                                    \
-      int __nfc_wait = ctap_nfc_wait_for_user_presence(timeout_response);                                              \
-      if (__nfc_wait < 0) break;                                                                                       \
-      return (uint8_t)__nfc_wait;                                                                                      \
-    }                                                                                                                  \
+    if (is_nfc()) break;                                                                                               \
     switch (wait_for_user_presence(current_cmd_src == CTAP_SRC_HID ? WAIT_ENTRY_CTAPHID : WAIT_ENTRY_CCID)) {          \
     case USER_PRESENCE_CANCEL:                                                                                         \
       return CTAP2_ERR_KEEPALIVE_CANCEL;                                                                               \
@@ -175,7 +171,21 @@ typedef struct {
 } CTAP_make_credential_stream_segment;
 
 typedef struct {
-  CTAP_make_credential_stream_segment segments[CTAP_MC_STREAM_MAX_SEGMENTS];
+  union {
+    struct {
+      CborParser parser;
+      ctap_req_src_t param_src;
+    } parse;
+    struct {
+      uint8_t client_data_hash[CLIENT_DATA_HASH_SIZE];
+      uint8_t extension_buffer[MAX_EXTENSION_SIZE_IN_AUTH];
+      union {
+        uint8_t public_key[MAX_COSE_KEY_SIZE];
+        sha256_ctx_t sha256;
+      } crypto;
+    } build;
+    CTAP_make_credential_stream_segment segments[CTAP_MC_STREAM_MAX_SEGMENTS];
+  } storage;
   size_t segment_count;
   size_t current_segment;
   size_t total_len;
@@ -183,22 +193,7 @@ typedef struct {
   bool prepared;
 } CTAP_make_credential_stream_state;
 
-#if ENABLE_NFC
-#define CTAP_NFC_KEEPALIVE_PENDING 0xFE
-#define CTAP_NFC_GET_RESPONSE 0x11
-#define CTAP_NFC_PENDING_FILE "ctap_np"
-
-typedef struct {
-  uint8_t active;
-  uint8_t allow_poll;
-  uint8_t touch_granted;
-  uint8_t keepalive_status;
-  uint32_t wait_start;
-  uint16_t request_len;
-  uint8_t request[APDU_INCOMING_DATA_SIZE];
-  uint8_t request_in_file;
-} CTAP_nfc_pending_state;
-#endif
+#define mc_stream_segments mc_stream_state.storage.segments
 
 typedef struct {
   uint32_t parsed_params;
@@ -216,9 +211,6 @@ typedef struct {
 
 static CTAP_make_credential_stream_state mc_stream_state;
 static CTAP_mem_stream_state mem_stream_state;
-#if ENABLE_NFC
-static CTAP_nfc_pending_state nfc_pending_state;
-#endif
 static CTAP_credential_management_state cred_mgmt_state;
 static CTAP_get_assertion_state ga_state;
 static bool uv, up, user_details;
@@ -262,8 +254,8 @@ static uint8_t ctap_storage_write_result(int err) {
   return CTAP2_ERR_UNHANDLED_REQUEST;
 }
 
-static uint8_t ctap_find_rp_meta(const uint8_t rp_id_hash[SHA256_DIGEST_LENGTH], CTAP_rp_meta *meta,
-                                 uint32_t *out_idx, uint32_t *first_deleted, uint32_t *count) {
+static uint8_t ctap_find_rp_meta(const uint8_t rp_id_hash[SHA256_DIGEST_LENGTH], CTAP_rp_meta *meta, uint32_t *out_idx,
+                                 uint32_t *first_deleted, uint32_t *count) {
   uint32_t n_meta;
   uint8_t err = ctap_meta_record_count(&n_meta);
   if (err) return err;
@@ -407,6 +399,7 @@ static int ctap_req_read_payload_bytes(size_t offset, uint8_t *buf, size_t len) 
 static void ctap_req_src_clear(void) {
   current_req_src.read = NULL;
   current_req_src.cancelled = NULL;
+  current_req_src.close = NULL;
   current_req_src.ctx = NULL;
   current_req_src.base_offset = 0;
   current_req_src.len = 0;
@@ -415,9 +408,12 @@ static void ctap_req_src_clear(void) {
 static void ctap_req_lifetime_end(void) {
   // Cross the request lifetime boundary before keepalive, WAIT(), crypto, or
   // response streaming can reuse PKE or re-enter transport handling.
+  ctap_req_close_t close = current_req_src.close;
+  void *close_ctx = current_req_src.ctx;
   ctap_req_src_clear();
   current_req_mem = NULL;
   current_req_mem_len = 0;
+  if (close) close(close_ctx);
 }
 
 static void ctap_begin_hid_cbor_stream_response(void) { hid_cbor_stream_response_active = true; }
@@ -586,17 +582,6 @@ static int ctap_note_pin_changed(uint8_t code_points) {
   cfg.force_pin_change = 0;
   return ctap_config_store(&cfg);
 }
-
-#if ENABLE_NFC
-static int ctap_nfc_pending_req_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
-  const CTAP_nfc_pending_state *pending = (const CTAP_nfc_pending_state *)ctx;
-  if (!pending) return -1;
-  if (pending->request_in_file)
-    return read_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)offset, (lfs_size_t)len) < 0 ? -1 : 0;
-  memcpy(buf, pending->request + offset, len);
-  return 0;
-}
-#endif
 
 static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAP_mem_stream_state *state = (CTAP_mem_stream_state *)ctx;
@@ -849,7 +834,7 @@ static int ctap_make_credential_stream_add_segment(CTAP_make_credential_stream_s
                                                    const char *path, CTAP_mldsa_stream_state *mldsa, size_t file_off,
                                                    size_t len) {
   if (mc_stream_state.segment_count >= CTAP_MC_STREAM_MAX_SEGMENTS) return -1;
-  CTAP_make_credential_stream_segment *segment = &mc_stream_state.segments[mc_stream_state.segment_count++];
+  CTAP_make_credential_stream_segment *segment = &mc_stream_segments[mc_stream_state.segment_count++];
   segment->kind = kind;
   segment->buf = buf;
   segment->path = path;
@@ -881,7 +866,7 @@ static int ctap_make_credential_stream_read(void *ctx, uint8_t *out, size_t max_
   size_t copied = 0;
 
   while (copied < max_len && state->current_segment < state->segment_count) {
-    CTAP_make_credential_stream_segment *segment = &state->segments[state->current_segment];
+    CTAP_make_credential_stream_segment *segment = &state->storage.segments[state->current_segment];
     if (segment->off == segment->len) {
       ++state->current_segment;
       continue;
@@ -966,89 +951,6 @@ int ctap_test_credential_management_state_active(void) {
 }
 #endif
 
-#if ENABLE_NFC
-static void ctap_nfc_pending_reset(void) {
-  if (nfc_pending_state.request_in_file) write_file(CTAP_NFC_PENDING_FILE, NULL, 0, 0, 1);
-  memset(&nfc_pending_state, 0, sizeof(nfc_pending_state));
-}
-
-static int ctap_nfc_pending_store(const uint8_t *req, size_t req_len, uint8_t allow_poll) {
-  if (!req || req_len == 0 || req_len > CTAP_MAX_REQUEST_SIZE) return -1;
-  ctap_nfc_pending_reset();
-  nfc_pending_state.request_len = (uint16_t)req_len;
-  if (req_len <= sizeof(nfc_pending_state.request)) {
-    if (current_req_src.read) {
-      if (ctap_req_read_payload_bytes(0, nfc_pending_state.request, req_len) < 0) return -1;
-    } else {
-      memcpy(nfc_pending_state.request, req, req_len);
-    }
-    nfc_pending_state.request_in_file = 0;
-  } else {
-    size_t written = 0;
-    uint8_t buf[APDU_INCOMING_DATA_SIZE];
-    while (written < req_len) {
-      size_t chunk = MIN(sizeof(buf), req_len - written);
-      if (current_req_src.read) {
-        if (ctap_req_read_payload_bytes(written, buf, chunk) < 0) return -1;
-      } else {
-        memcpy(buf, req + written, chunk);
-      }
-      if (write_file(CTAP_NFC_PENDING_FILE, buf, (lfs_soff_t)written, (lfs_size_t)chunk, written == 0) < 0) return -1;
-      written += chunk;
-    }
-    nfc_pending_state.request_in_file = 1;
-  }
-  nfc_pending_state.allow_poll = allow_poll;
-  nfc_pending_state.active = 1;
-  nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
-  return 0;
-}
-
-static int ctap_nfc_wait_for_user_presence(uint8_t timeout_response) {
-  if (!is_nfc() || !nfc_pending_state.active || !nfc_pending_state.allow_poll) return -1;
-  if (nfc_pending_state.touch_granted) return -1;
-
-  if (nfc_pending_state.wait_start == 0) {
-    nfc_pending_state.wait_start = device_get_tick();
-    // Testmode only auto-generates a touch while blinking. Start blinking once
-    // and return a keepalive so the next NFC poll can complete the command.
-    start_blinking_interval(0, 200);
-#ifdef TEST
-    testmode_emulate_user_presence();
-#endif
-    nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
-    return CTAP_NFC_KEEPALIVE_PENDING;
-  }
-
-  if (get_touch_result() != TOUCH_NO) {
-    set_touch_result(TOUCH_NO);
-    stop_blinking();
-    nfc_pending_state.touch_granted = 1;
-    return -1;
-  }
-
-  if (!device_is_blinking()) {
-    // A PC/SC reconnect can reinitialize the device while preserving this NFC
-    // pending request. Restart the user-presence indication so later polls can
-    // still complete instead of spinning forever in 0x9100 keepalive state.
-    start_blinking_interval(0, 200);
-#ifdef TEST
-    testmode_emulate_user_presence();
-#endif
-  }
-
-  if (device_get_tick() - nfc_pending_state.wait_start >= 30000) {
-    stop_blinking();
-    return timeout_response;
-  }
-
-  nfc_pending_state.keepalive_status = KEEPALIVE_STATUS_UPNEEDED;
-  return CTAP_NFC_KEEPALIVE_PENDING;
-}
-#else
-static void ctap_nfc_pending_reset(void) {}
-#endif
-
 void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
 
 void ctap_deselect(void) {
@@ -1061,8 +963,6 @@ void ctap_poweroff(void) {
   current_cmd_src = CTAP_SRC_NONE;
   cert_write_active = false;
   cert_write_len = 0;
-  // HID response teardown calls ctap_poweroff between stateful CM commands.
-  ctap_nfc_pending_reset();
   if (pke_buffer_release(PKE_BUFFER_OWNER_CTAP) == 0) {
     pke_buffer_clear();
   }
@@ -1086,11 +986,6 @@ uint8_t ctap_install(uint8_t reset) {
     ctap_credential_management_reset_state();
   }
   current_cmd_src = CTAP_SRC_NONE;
-  if (runtime_reset) {
-    // PowerICC reconnects can call ctap_install(0) while an NFC host is still
-    // polling a keepalive response; keep that pending state on plain reconnect.
-    ctap_nfc_pending_reset();
-  }
   cp_initialize(runtime_reset);
   runtime_reset_pending = false;
   // Platform-backed CTAP config is part of the install completion marker. If
@@ -1101,8 +996,7 @@ uint8_t ctap_install(uint8_t reset) {
   }
   CTAP_dc_general_attr dc_attr = {0};
   if (write_file(DC_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  if (write_attr(DC_FILE, DC_GENERAL_ATTR, &dc_attr, sizeof(dc_attr)) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (write_attr(DC_FILE, DC_GENERAL_ATTR, &dc_attr, sizeof(dc_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(DC_META_FILE, NULL, 0, 0, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   if (write_file(CTAP_CERT_FILE, NULL, 0, 0, 0) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   uint8_t kh_key[KH_KEY_SIZE] = {0};
@@ -1122,8 +1016,7 @@ uint8_t ctap_install(uint8_t reset) {
       17);
   if (write_file(LB_FILE, kh_key, 0, 17, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   ctap_sm2_config_set_default();
-  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   memzero(kh_key, sizeof(kh_key));
   DBG_MSG("CTAP reset and initialized\n");
   return 0;
@@ -1133,8 +1026,7 @@ int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != PRI_KEY_SIZE) EXCEPT(SW_WRONG_LENGTH);
   // initialize SM2 config
   ctap_sm2_config_set_default();
-  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
   return write_attr(CTAP_CERT_FILE, KEY_ATTR, DATA, LC);
 }
 
@@ -1580,9 +1472,8 @@ static uint8_t ctap_get_assertion_prepare_hmac_secret(void) {
 }
 
 static uint8_t ctap_make_credential_build_extensions(const CTAP_make_credential *mc, const credential_id *cid, bool uv,
-                                                     bool ext_min_pin_authorized,
-                                                     uint8_t *extension_buffer, size_t extension_buffer_size,
-                                                     size_t *extension_size) {
+                                                     bool ext_min_pin_authorized, uint8_t *extension_buffer,
+                                                     size_t extension_buffer_size, size_t *extension_size) {
   *extension_size = 0;
   uint8_t extension_map_items = (mc->ext_hmac_secret ? 1 : 0) + (mc->ext_hmac_secret_mc ? 1 : 0) +
                                 (ext_min_pin_authorized ? 1 : 0) +
@@ -1654,19 +1545,19 @@ static uint8_t ctap_make_credential_build_extensions(const CTAP_make_credential 
 static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_make_credential *mc, bool uv,
                                                      bool ext_min_pin_authorized) {
   CTAP_mldsa_stream_state *state = &mldsa_stream_state;
-  credential_id cid;
-  CTAP_discoverable_credential dc = {0};
   uint8_t cred_protect =
       mc->ext_cred_protect == CRED_PROTECT_ABSENT ? CRED_PROTECT_VERIFICATION_OPTIONAL : mc->ext_cred_protect;
-  uint8_t extension_buffer[MAX_EXTENSION_SIZE_IN_AUTH];
+  uint8_t *extension_buffer = mc_stream_state.storage.build.extension_buffer;
   size_t extension_size = 0;
   uint8_t data_buf[sizeof(CTAP_auth_data)];
+  uint8_t credential_nonce[CREDENTIAL_NONCE_SIZE + 2];
   bool mldsa = mc->alg_type == COSE_ALG_ML_DSA_65;
-  uint8_t public_key[MAX_COSE_KEY_SIZE];
-  uint8_t *prefix =
-      mldsa ? state->prefix : (stream_make_credential_response ? applet_session_scratch.buffer : encoder->data.ptr);
-  uint8_t *p = prefix;
-  sha256_ctx_t sha256;
+  bool large_blob_key = mc->ext_large_blob_key;
+  int32_t alg_type = mc->alg_type;
+  uint8_t *public_key = mc_stream_state.storage.build.crypto.public_key;
+  uint8_t *prefix;
+  uint8_t *p;
+  sha256_ctx_t *sha256 = &mc_stream_state.storage.build.crypto.sha256;
   size_t cert_prefix_len;
   size_t sig_len;
   int cert_len;
@@ -1674,93 +1565,110 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   uint32_t ctr;
 
   if (mldsa && !stream_make_credential_response) return CTAP2_ERR_LIMIT_EXCEEDED;
-  if (mldsa) {
-    memset(state, 0, sizeof(*state));
-    state->stage = state->stage_buf;
-  }
-
-  memcpy(cid.rp_id_hash, mc->rp_id_hash, sizeof(cid.rp_id_hash));
-  if (generate_key_handle(&cid, mldsa ? state->seed : public_key, mc->alg_type, mc->options.rk == OPTION_TRUE,
-                          cred_protect, mc->ext_third_party_payment) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
-
-  uint8_t err = ctap_make_credential_build_extensions(mc, &cid, uv, ext_min_pin_authorized, extension_buffer,
-                                                      sizeof(extension_buffer), &extension_size);
-  if (err != 0) return err;
-  const uint8_t flags = FLAGS_AT | (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | FLAGS_UP;
-
-  if (increase_counter(&ctr) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  err = ctap_store_discoverable_credential(mc, &cid, &dc);
-  if (err) return err;
-
-  if (mldsa) {
-    int cose_key_prefix_size = ctap_mldsa65_cose_prefix_size();
-    if (cose_key_prefix_size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    cose_key_size = (size_t)cose_key_prefix_size + MLDSA_PK_BYTES;
-  } else {
-    int cose_key_size_ret = ctap_build_cose_key_for_alg(mc->alg_type, public_key);
-    if (cose_key_size_ret < 0) {
-      DBG_MSG("Unknown algorithm type\n");
+  {
+    credential_id cid;
+    memcpy(cid.rp_id_hash, mc->rp_id_hash, sizeof(cid.rp_id_hash));
+    if (generate_key_handle(&cid, public_key, alg_type, mc->options.rk == OPTION_TRUE, cred_protect,
+                            mc->ext_third_party_payment) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
-    }
-    cose_key_size = (size_t)cose_key_size_ret;
-  }
 
-  if (stream_make_credential_response) *p++ = 0;
-  if (cbor_put_uint(&p, 3 + (mc->ext_large_blob_key ? 1 : 0), 0xA0) < 0 || cbor_put_int(&p, MC_RESP_FMT) < 0 ||
-      cbor_put_text(&p, "packed") < 0 || cbor_put_int(&p, MC_RESP_AUTH_DATA) < 0)
-    return CTAP2_ERR_UNHANDLED_REQUEST;
-
-  sha256_init(&sha256);
-  if (mldsa) {
-    const size_t auth_len = ctap_auth_data_len(cose_key_size, extension_size);
-    uint8_t *auth_data_start;
-    if (cbor_put_bytes_header(&p, auth_len) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    auth_data_start = p;
-    p = ctap_write_auth_data_header(p, mc->rp_id_hash, flags, ctr);
-    p = ctap_write_attested_credential_prefix(p, &cid);
-    if (cbor_put_mldsa65_cose_prefix(&p) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    state->prefix_len = (size_t)(p - state->prefix);
-    if (state->prefix_len > sizeof(state->prefix)) return CTAP2_ERR_LIMIT_EXCEEDED;
-    sha256_update(&sha256, auth_data_start, p - auth_data_start);
-
-    memset(&state->keygen, 0, sizeof(state->keygen));
-    memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
-    do {
-      KEEPALIVE();
-      int pk_len = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage_buf), &state->keygen, NULL);
-      if (pk_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if (pk_len != 0) sha256_update(&sha256, state->stage, (size_t)pk_len);
-    } while (state->keygen.phase != 0);
-    if (extension_size != 0) sha256_update(&sha256, extension_buffer, extension_size);
-  } else {
-    const size_t auth_data_len = ctap_auth_data_len(cose_key_size, extension_size);
-    size_t len = sizeof(data_buf);
-    if (stream_make_credential_response) {
-      const size_t max_prefix_overhead = 32;
-      const size_t max_suffix_without_cert = 160;
-      const size_t max_tail = mc->ext_large_blob_key ? 35 : 0;
-      if (auth_data_len + max_prefix_overhead + max_suffix_without_cert + max_tail > sizeof(applet_session_scratch.buffer))
-        return CTAP2_ERR_LIMIT_EXCEEDED;
-    }
-    if (auth_data_len > sizeof(data_buf)) return CTAP2_ERR_LIMIT_EXCEEDED;
-    err = ctap_make_auth_data_from_material(mc->rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
-                                            &cid, public_key, cose_key_size, ctr);
+    uint8_t err = ctap_make_credential_build_extensions(mc, &cid, uv, ext_min_pin_authorized, extension_buffer,
+                                                        MAX_EXTENSION_SIZE_IN_AUTH, &extension_size);
     if (err != 0) return err;
-    if (len != auth_data_len) return CTAP2_ERR_UNHANDLED_REQUEST;
-    if (cbor_put_bytes_header(&p, auth_data_len) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    memcpy(p, data_buf, auth_data_len);
-    p += auth_data_len;
-    sha256_update(&sha256, data_buf, auth_data_len);
+    const uint8_t flags = FLAGS_AT | (extension_size > 0 ? FLAGS_ED : 0) | (uv ? FLAGS_UV : 0) | FLAGS_UP;
+
+    if (increase_counter(&ctr) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    {
+      CTAP_discoverable_credential dc = {0};
+      err = ctap_store_discoverable_credential(mc, &cid, &dc);
+      if (err) return err;
+    }
+
+    if (mldsa) {
+      int cose_key_prefix_size = ctap_mldsa65_cose_prefix_size();
+      if (cose_key_prefix_size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      cose_key_size = (size_t)cose_key_prefix_size + MLDSA_PK_BYTES;
+    } else {
+      int cose_key_size_ret = ctap_build_cose_key_for_alg(alg_type, public_key);
+      if (cose_key_size_ret < 0) {
+        DBG_MSG("Unknown algorithm type\n");
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      }
+      cose_key_size = (size_t)cose_key_size_ret;
+    }
+
+    // The parsed request aliases applet_session_scratch. Preserve the last
+    // request field needed below before reusing that storage for the response.
+    memcpy(mc_stream_state.storage.build.client_data_hash, mc->client_data_hash, CLIENT_DATA_HASH_SIZE);
+    if (mldsa) {
+      memset(state, 0, sizeof(*state));
+      memcpy(state->seed, public_key, PRI_KEY_SIZE);
+      state->stage = state->stage_buf;
+      prefix = state->prefix;
+    } else {
+      prefix = stream_make_credential_response ? applet_session_scratch.buffer : encoder->data.ptr;
+    }
+    p = prefix;
+
+    if (stream_make_credential_response) *p++ = 0;
+    if (cbor_put_uint(&p, 3 + (large_blob_key ? 1 : 0), 0xA0) < 0 || cbor_put_int(&p, MC_RESP_FMT) < 0 ||
+        cbor_put_text(&p, "packed") < 0 || cbor_put_int(&p, MC_RESP_AUTH_DATA) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
+
+    if (mldsa) {
+      const size_t auth_len = ctap_auth_data_len(cose_key_size, extension_size);
+      uint8_t *auth_data_start;
+      if (cbor_put_bytes_header(&p, auth_len) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      auth_data_start = p;
+      p = ctap_write_auth_data_header(p, cid.rp_id_hash, flags, ctr);
+      p = ctap_write_attested_credential_prefix(p, &cid);
+      if (cbor_put_mldsa65_cose_prefix(&p) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      state->prefix_len = (size_t)(p - state->prefix);
+      if (state->prefix_len > sizeof(state->prefix)) return CTAP2_ERR_LIMIT_EXCEEDED;
+      sha256_init(sha256);
+      sha256_update(sha256, auth_data_start, p - auth_data_start);
+
+      memset(&state->keygen, 0, sizeof(state->keygen));
+      memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
+      do {
+        KEEPALIVE();
+        int pk_len = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage_buf), &state->keygen, NULL);
+        if (pk_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+        if (pk_len != 0) sha256_update(sha256, state->stage, (size_t)pk_len);
+      } while (state->keygen.phase != 0);
+      if (extension_size != 0) sha256_update(sha256, extension_buffer, extension_size);
+    } else {
+      const size_t auth_data_len = ctap_auth_data_len(cose_key_size, extension_size);
+      size_t len = sizeof(data_buf);
+      if (stream_make_credential_response) {
+        const size_t max_prefix_overhead = 32;
+        const size_t max_suffix_without_cert = 160;
+        const size_t max_tail = large_blob_key ? 35 : 0;
+        if (auth_data_len + max_prefix_overhead + max_suffix_without_cert + max_tail >
+            sizeof(applet_session_scratch.buffer))
+          return CTAP2_ERR_LIMIT_EXCEEDED;
+      }
+      if (auth_data_len > sizeof(data_buf)) return CTAP2_ERR_LIMIT_EXCEEDED;
+      err = ctap_make_auth_data_from_material(cid.rp_id_hash, data_buf, flags, extension_buffer, extension_size, &len,
+                                              &cid, public_key, cose_key_size, ctr);
+      if (err != 0) return err;
+      if (len != auth_data_len) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (cbor_put_bytes_header(&p, auth_data_len) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      memcpy(p, data_buf, auth_data_len);
+      p += auth_data_len;
+      sha256_init(sha256);
+      sha256_update(sha256, data_buf, auth_data_len);
+    }
+    memcpy(credential_nonce, cid.nonce, sizeof(cid.nonce));
   }
-  sha256_update(&sha256, mc->client_data_hash, sizeof(mc->client_data_hash));
-  sha256_final(&sha256, data_buf);
+  sha256_update(sha256, mc_stream_state.storage.build.client_data_hash, CLIENT_DATA_HASH_SIZE);
+  sha256_final(sha256, data_buf);
   sig_len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
   if (!sig_len) return CTAP2_ERR_UNHANDLED_REQUEST;
 
   uint8_t *suffix = mldsa ? state->suffix : p;
   uint8_t *q = suffix;
-  if (mldsa && extension_size + 160 + (mc->ext_large_blob_key ? 35 : 0) > sizeof(state->suffix))
+  if (mldsa && extension_size + 160 + (large_blob_key ? 35 : 0) > sizeof(state->suffix))
     return CTAP2_ERR_LIMIT_EXCEEDED;
   if (mldsa && extension_size != 0) {
     memcpy(q, extension_buffer, extension_size);
@@ -1783,9 +1691,9 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   }
 
   uint8_t *tail = q;
-  if (mc->ext_large_blob_key) {
+  if (large_blob_key) {
     uint8_t large_blob_key[LARGE_BLOB_KEY_SIZE];
-    if (make_large_blob_key(cid.nonce, large_blob_key) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    if (make_large_blob_key(credential_nonce, large_blob_key) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (cbor_put_int(&q, MC_RESP_LARGE_BLOB_KEY) < 0 || cbor_put_bytes_header(&q, LARGE_BLOB_KEY_SIZE) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     memcpy(q, large_blob_key, LARGE_BLOB_KEY_SIZE);
@@ -1832,12 +1740,12 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
 
 static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_t len) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-makeCred-authnr-alg
-  CborParser parser;
-  CTAP_make_credential mc;
+  CborParser *parser = &mc_stream_state.storage.parse.parser;
+  CTAP_make_credential *mc = &applet_session_scratch.ctap_mc;
 
-  ctap_req_src_t param_src = ctap_param_req_src();
-  int ret = current_req_src.read ? parse_make_credential_src(&parser, &mc, &param_src, len)
-                                 : parse_make_credential(&parser, &mc, params, len);
+  mc_stream_state.storage.parse.param_src = ctap_param_req_src();
+  int ret = current_req_src.read ? parse_make_credential_src(parser, mc, &mc_stream_state.storage.parse.param_src, len)
+                                 : parse_make_credential(parser, mc, params, len);
   CHECK_PARSER_RET(ret);
   ctap_req_lifetime_end();
 
@@ -1846,7 +1754,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   KEEPALIVE();
 
   // 1. If authenticator supports clientPin features and the platform sends a zero length pin_uv_auth_param
-  if ((mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && mc.pin_uv_auth_param_len == 0) {
+  if ((mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) && mc->pin_uv_auth_param_len == 0) {
     // a. Request evidence of user interaction in an authenticator-specific way (e.g., flash the LED light).
     // b. If the user declines permission, or the operation times out, then end the operation by returning
     //    CTAP2_ERR_OPERATION_DENIED.
@@ -1863,7 +1771,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //   a. If the pinUvAuthProtocol parameter's value is not supported, return CTAP1_ERR_INVALID_PARAMETER error.
   //     > This has been processed when parsing.
   //   b. If the pinUvAuthProtocol parameter is absent, return CTAP2_ERR_MISSING_PARAMETER error.
-  if ((mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) && !(mc.parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
+  if ((mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) && !(mc->parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL)) {
     DBG_MSG("Missing required pin_uv_auth_protocol\n");
     return CTAP2_ERR_MISSING_PARAMETER;
   }
@@ -1876,11 +1784,11 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   // 5. If the options parameter is present, process all option keys and values present in the parameter.
   //    a. If the "uv" option is absent, let the "uv" option be treated as being present with the value false.
-  if (mc.options.uv == OPTION_ABSENT) mc.options.uv = OPTION_FALSE;
+  if (mc->options.uv == OPTION_ABSENT) mc->options.uv = OPTION_FALSE;
   //    b. If the pin_uv_auth_param is present, let the "uv" option be treated as being present with the value false.
-  if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) mc.options.uv = OPTION_FALSE;
+  if (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) mc->options.uv = OPTION_FALSE;
   //    c. If the "uv" option is true then
-  if (mc.options.uv == OPTION_TRUE) {
+  if (mc->options.uv == OPTION_TRUE) {
     //     1) If the authenticator does not support a built-in user verification method end the operation
     //        by returning CTAP2_ERR_INVALID_OPTION.
     DBG_MSG("Rule 5-c-1 not satisfied.\n");
@@ -1890,19 +1798,19 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
   //    d. If the "rk" option is present then: DO NOTHING
   //    e. Else: (the "rk" option is absent): Let the "rk" option be treated as being present with the value false.
-  if (mc.options.rk == OPTION_ABSENT) mc.options.rk = OPTION_FALSE;
+  if (mc->options.rk == OPTION_ABSENT) mc->options.rk = OPTION_FALSE;
   //    f. If the "up" option is present then:
   //       If the "up" option is false, end the operation by returning CTAP2_ERR_INVALID_OPTION.
-  if (mc.options.up == OPTION_FALSE) {
+  if (mc->options.up == OPTION_FALSE) {
     DBG_MSG("Rule 5-f not satisfied\n");
     return CTAP2_ERR_INVALID_OPTION;
   }
   //    g. If the "up" option is absent, let the "up" option be treated as being present with the value true
-  mc.options.up = OPTION_TRUE;
+  mc->options.up = OPTION_TRUE;
 
   // 6. If the alwaysUv option ID is present and true
   if (ctap_config_always_uv_enabled()) {
-    if (!(mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) return CTAP2_ERR_PUAT_REQUIRED;
+    if (!(mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM)) return CTAP2_ERR_PUAT_REQUIRED;
   }
 
   // 7. If the makeCredUvNotRqd option ID is present and set to true in the authenticatorGetInfo response
@@ -1911,8 +1819,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //    b) [ALWAYS TRUE] The "uv" option is set to false.
   //    c) The pin_uv_auth_param parameter is not present.
   //    d) The "rk" option is present and set to true.
-  if (has_pin() /* a) */ && (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0 /* c) */ &&
-      mc.options.rk == OPTION_TRUE) {
+  if (has_pin() /* a) */ && (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0 /* c) */ &&
+      mc->options.rk == OPTION_TRUE) {
     // If ClientPin option ID is true and the noMcGaPermissionsWithClientPin option ID is absent or false,
     // end the operation by returning CTAP2_ERR_PUAT_REQUIRED.
     DBG_MSG("Rule 7 not satisfied\n");
@@ -1928,8 +1836,8 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //     a) "rk" and "uv" [ALWAYS TRUE] options are both set to false or omitted.
   //     b) [ALWAYS TRUE] the makeCredUvNotRqd option ID in authenticatorGetInfo's response is present with the value
   //     true. c) the pin_uv_auth_param parameter is not present. Then go to Step 12.
-  if (!ctap_config_always_uv_enabled() && mc.options.rk == OPTION_FALSE &&
-      (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0) {
+  if (!ctap_config_always_uv_enabled() && mc->options.rk == OPTION_FALSE &&
+      (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0) {
     DBG_MSG("Rule 10 satisfied, go to Step 12\n");
     goto step12;
   }
@@ -1937,9 +1845,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   // 11. If the authenticator is protected by some form of user verification, then:
   if (has_pin()) {
     //   11.1 If pin_uv_auth_param parameter is present (implying the "uv" option is false (see Step 5)):
-    if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
-      uint8_t err = verify_pin_uv_auth_token(mc.client_data_hash, mc.pin_uv_auth_param, mc.pin_uv_auth_protocol,
-                                             CP_PERMISSION_MC, mc.rp_id_hash);
+    if (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
+      uint8_t err = verify_pin_uv_auth_token(mc->client_data_hash, mc->pin_uv_auth_param, mc->pin_uv_auth_protocol,
+                                             CP_PERMISSION_MC, mc->rp_id_hash);
       if (err) {
         return err;
       } else {
@@ -1952,12 +1860,12 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 step12:
   // 12. If the exclude_list parameter is present and contains a credential ID created by this authenticator,
   //     that is bound to the specified rp.id:
-  if (mc.exclude_list_size > 0) {
-    for (size_t i = 0; i < mc.exclude_list_size; ++i) {
+  if (mc->exclude_list_size > 0) {
+    for (size_t i = 0; i < mc->exclude_list_size; ++i) {
       ecc_key_t key;
-      credential_id *kh = &mc.exclude_list[i];
+      credential_id *kh = &mc->exclude_list[i];
       // compare rp_id first
-      if (memcmp_s(kh->rp_id_hash, mc.rp_id_hash, sizeof(kh->rp_id_hash)) != 0) goto next_exclude_list;
+      if (memcmp_s(kh->rp_id_hash, mc->rp_id_hash, sizeof(kh->rp_id_hash)) != 0) goto next_exclude_list;
       // then verify key handle and get private key in rp_id_hash
       ret = verify_key_handle(kh, &key);
       memzero(&key, sizeof(key));
@@ -1973,7 +1881,7 @@ step12:
           bool userPresentFlagValue = false;
           //    ii. If the pinUvAuthParam parameter is present then let userPresentFlagValue be the result of calling
           //        getUserPresentFlagValue().
-          if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) userPresentFlagValue = cp_get_user_present_flag_value();
+          if (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) userPresentFlagValue = cp_get_user_present_flag_value();
           //    iii. [N/A] Else, if evidence of user interaction was provided as part of Step 11 let
           //    userPresentFlagValue be true. iv. If userPresentFlagValue is false, then:
           //        (1) Wait for user presence.
@@ -1999,7 +1907,7 @@ step12:
 
   // 14. [ALWAYS TRUE] If the "up" option is set to true
   //     a) If the pin_uv_auth_param parameter is present then:
-  if (mc.parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
+  if (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
     if (!cp_get_user_present_flag_value()) {
       WAIT(CTAP2_ERR_OPERATION_DENIED);
     }
@@ -2015,16 +1923,17 @@ step12:
   cp_clear_pin_uv_auth_token_permissions_except_lbw();
 
   // 15. If the extensions parameter is present:
-  bool ext_min_pin_authorized = mc.ext_min_pin_length && ctap_min_pin_rpid_authorized(mc.rp_id_full, mc.rp_id_full_len);
-  if (mc.ext_large_blob_key) {
-    if (mc.options.rk != OPTION_TRUE) {
+  bool ext_min_pin_authorized =
+      mc->ext_min_pin_length && ctap_min_pin_rpid_authorized(mc->rp_id_full, mc->rp_id_full_len);
+  if (mc->ext_large_blob_key) {
+    if (mc->options.rk != OPTION_TRUE) {
       DBG_MSG("largeBlobKey requires rk\n");
       return CTAP2_ERR_INVALID_OPTION;
     }
     // Generate key in Step 17
   }
 
-  return ctap_prepare_make_credential_response(encoder, &mc, uv, ext_min_pin_authorized);
+  return ctap_prepare_make_credential_response(encoder, mc, uv, ext_min_pin_authorized);
 }
 
 static void ecc_key_cleanup(ecc_key_t *k) { memzero(k, sizeof(*k)); }
@@ -2313,7 +2222,8 @@ step7:
       ret = ctap_build_hmac_secret_output(&ga_state.ext_hmac_secret_data, &dc.credential_id, uv, hmac_secret_output,
                                           &hmac_secret_output_len);
       CHECK_PARSER_RET(ret);
-      if (ga_state.credential_counter + 1 == ga_state.number_of_credentials) { // encryption key will not be used any more
+      if (ga_state.credential_counter + 1 ==
+          ga_state.number_of_credentials) { // encryption key will not be used any more
         memzero(ga_state.ext_hmac_secret_data.key_agreement, sizeof(ga_state.ext_hmac_secret_data.key_agreement));
       }
 
@@ -2468,9 +2378,7 @@ step7:
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#authenticatorGetNextAssertion
 static uint8_t ctap_get_next_assertion(CborEncoder *encoder) { return ctap_get_assertion(encoder, NULL, 0, true); }
 
-static int ctap_get_remaining_discoverable_credentials(void) {
-  return (int)ctap_capacity_remaining_new_credentials();
-}
+static int ctap_get_remaining_discoverable_credentials(void) { return (int)ctap_capacity_remaining_new_credentials(); }
 
 #include "ctap_get_info_cbor.inc"
 
@@ -2486,12 +2394,10 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
 
   ctap_const_stream_reset(state);
   if (ctap_const_stream_add_byte(state, CTAP1_ERR_SUCCESS) != 0 ||
-      ctap_const_stream_add_mem(state,
-                                cfg.force_pin_change ? cbor_gi_prefix_before_versions_force
-                                                     : cbor_gi_prefix_before_versions,
-                                sizeof(cbor_gi_prefix_before_versions)) != 0 ||
-      ctap_const_stream_add_mem(state,
-                                always_uv ? cbor_gi_versions_without_u2f : cbor_gi_versions_with_u2f,
+      ctap_const_stream_add_mem(
+          state, cfg.force_pin_change ? cbor_gi_prefix_before_versions_force : cbor_gi_prefix_before_versions,
+          sizeof(cbor_gi_prefix_before_versions)) != 0 ||
+      ctap_const_stream_add_mem(state, always_uv ? cbor_gi_versions_without_u2f : cbor_gi_versions_with_u2f,
                                 always_uv ? sizeof(cbor_gi_versions_without_u2f) : sizeof(cbor_gi_versions_with_u2f)) !=
           0 ||
       ctap_const_stream_add_mem(state, cbor_gi_after_versions_before_always_uv,
@@ -2511,15 +2417,13 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
       cbor_put_int_inline(state, ctap_sm2_attr.algo_id) != 0 ||
       ctap_const_stream_add_mem(state, cbor_gi_after_sm2_alg, sizeof(cbor_gi_after_sm2_alg)) != 0 ||
       (cfg.force_pin_change &&
-       ctap_const_stream_add_mem(state, cbor_gi_force_pin_change_entry,
-                                 sizeof(cbor_gi_force_pin_change_entry)) != 0) ||
+       ctap_const_stream_add_mem(state, cbor_gi_force_pin_change_entry, sizeof(cbor_gi_force_pin_change_entry)) != 0) ||
       ctap_const_stream_add_mem(state, cbor_gi_suffix_before_min_pin_length,
                                 sizeof(cbor_gi_suffix_before_min_pin_length)) != 0 ||
       cbor_put_uint_inline(state, cfg.min_pin_length) != 0 ||
-      ctap_const_stream_add_mem(state,
-                                cbor_gi_suffix_after_min_pin_length_before_remaining_discoverable_credentials,
-                                sizeof(cbor_gi_suffix_after_min_pin_length_before_remaining_discoverable_credentials)) !=
-          0 ||
+      ctap_const_stream_add_mem(
+          state, cbor_gi_suffix_after_min_pin_length_before_remaining_discoverable_credentials,
+          sizeof(cbor_gi_suffix_after_min_pin_length_before_remaining_discoverable_credentials)) != 0 ||
       cbor_put_uint_inline(state, (uint64_t)ctap_get_remaining_discoverable_credentials()) != 0 ||
       ctap_const_stream_add_mem(
           state, cbor_gi_suffix_after_remaining_discoverable_credentials_before_long_touch_for_reset,
@@ -2802,8 +2706,8 @@ static uint8_t cm_find_next_credential(uint32_t start_idx, const uint8_t rp_id_h
   bool found = false;
   CTAP_discoverable_credential candidate;
   for (uint32_t i = start_idx; i < n; ++i) {
-    int size = read_file(DC_FILE, &candidate, (lfs_soff_t)(i * sizeof(CTAP_discoverable_credential)),
-                         sizeof(candidate));
+    int size =
+        read_file(DC_FILE, &candidate, (lfs_soff_t)(i * sizeof(CTAP_discoverable_credential)), sizeof(candidate));
     if (size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (candidate.deleted) continue;
     if (memcmp_s(candidate.credential_id.rp_id_hash, rp_id_hash, SHA256_DIGEST_LENGTH) != 0) continue;
@@ -3102,8 +3006,7 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
     include_numbers = false;
     goto generate_credential_response;
 
-  case CM_CMD_DELETE_CREDENTIAL:
-  {
+  case CM_CMD_DELETE_CREDENTIAL: {
     if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
     uint32_t credential_idx;
@@ -3133,8 +3036,7 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
     break;
   }
 
-  case CM_CMD_UPDATE_USER_INFORMATION:
-  {
+  case CM_CMD_UPDATE_USER_INFORMATION: {
     if (!cp_verify_rp_id(cm.credential_id.rp_id_hash)) {
       DBG_MSG("RP ID verification failed in update_user_info\n");
       return CTAP2_ERR_PIN_AUTH_INVALID;
@@ -3582,17 +3484,7 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     goto finish_status_only;
   }
 
-#if ENABLE_NFC
 set_resp:
-  if (status == CTAP_NFC_KEEPALIVE_PENDING) {
-    *resp = nfc_pending_state.keepalive_status;
-    *resp_len = 1;
-    last_cmd = cmd;
-    return 1;
-  }
-#else
-set_resp:
-#endif
   *resp = status;
   SET_RESP();
   if (*resp_len > APDU_BUFFER_SIZE && status == 0) {
@@ -3781,15 +3673,6 @@ static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_l
   last_cmd = CTAP_MAKE_CREDENTIAL;
   if (status != 0) last_cmd = CTAP_INVALID_CMD;
 
-#if ENABLE_NFC
-  if (status == CTAP_NFC_KEEPALIVE_PENDING) {
-    rapdu->data[0] = nfc_pending_state.keepalive_status;
-    rapdu->len = 1;
-    rapdu->sw = 0x9100;
-    return 1;
-  }
-#endif
-
   if (status == 0 && mc_stream_state.prepared) {
     apdu_response_source_set((uint32_t)mc_stream_state.total_len, SW_NO_ERROR, ctap_make_credential_stream_read_at,
                              NULL, &mc_stream_state);
@@ -3822,8 +3705,7 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
     CTAPHID_TxSource source;
     memset(&source, 0, sizeof(source));
     if (ctap_prepare_get_info_stream(&source) == 0) {
-      apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at, NULL,
-                               source.ctx);
+      apdu_response_source_set((uint32_t)source.total_len, SW_NO_ERROR, ctap_const_stream_read_at, NULL, source.ctx);
       last_cmd = CTAP_GET_INFO;
       ctap_req_lifetime_end();
       return 0;
@@ -3840,10 +3722,6 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
   int ret = ctap_process_cbor(req, req_len, rapdu->data, &len);
   ctap_req_lifetime_end();
   rapdu->len = (uint16_t)len;
-  if (ret == 1) {
-    rapdu->sw = 0x9100;
-    return 1;
-  }
   return ret;
 }
 
@@ -3861,59 +3739,8 @@ int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *
   SW = SW_NO_ERROR;
   if (CLA == 0x80) {
     if (INS == CTAP_INS_MSG) {
-#if ENABLE_NFC
-      if (is_nfc() && (P1 & 0x80) != 0 && ctap_nfc_pending_store(DATA, LC, 1) < 0) {
-        current_cmd_src = CTAP_SRC_NONE;
-        ctap_req_lifetime_end();
-        EXCEPT(SW_WRONG_LENGTH);
-      }
-#endif
-
       ret = ctap_process_apdu_cbor_message(DATA, LC, rapdu);
-      if (ret != 1) ctap_nfc_pending_reset();
     } else {
-#if ENABLE_NFC
-      if (is_nfc() && INS == CTAP_NFC_GET_RESPONSE) {
-        if (!nfc_pending_state.active || !nfc_pending_state.allow_poll) {
-          current_cmd_src = CTAP_SRC_NONE;
-          ctap_req_lifetime_end();
-          EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-        }
-
-        if (P1 == CTAP_NFC_GET_RESPONSE) {
-          RDATA[0] = CTAP2_ERR_KEEPALIVE_CANCEL;
-          LL = 1;
-          ctap_nfc_pending_reset();
-          current_cmd_src = CTAP_SRC_NONE;
-          ctap_req_lifetime_end();
-          return 0;
-        }
-
-        current_req_src.read = ctap_nfc_pending_req_read;
-        current_req_src.ctx = &nfc_pending_state;
-        current_req_src.base_offset = 0;
-        current_req_src.len = nfc_pending_state.request_len;
-        uint8_t pending_req_head[1];
-        uint8_t *pending_req = nfc_pending_state.request;
-        if (nfc_pending_state.request_in_file) {
-          if (ctap_req_read_payload_bytes(0, pending_req_head, sizeof(pending_req_head)) < 0) {
-            ctap_nfc_pending_reset();
-            current_cmd_src = CTAP_SRC_NONE;
-            ctap_req_lifetime_end();
-            EXCEPT(SW_UNABLE_TO_PROCESS);
-          }
-          pending_req = pending_req_head;
-        }
-        ret = ctap_process_apdu_cbor_message(pending_req, nfc_pending_state.request_len, rapdu);
-        if (ret != 1) ctap_nfc_pending_reset();
-        current_cmd_src = CTAP_SRC_NONE;
-        ctap_req_lifetime_end();
-        if (ret < 0)
-          EXCEPT(SW_UNABLE_TO_PROCESS);
-        else
-          return 0;
-      }
-#endif
       current_cmd_src = CTAP_SRC_NONE;
       ctap_req_lifetime_end();
       EXCEPT(SW_INS_NOT_SUPPORTED);
@@ -3949,12 +3776,6 @@ int ctap_process_apdu_source_with_src(const CAPDU *capdu, const ctap_req_src_t *
     EXCEPT(SW_CLA_NOT_SUPPORTED);
   }
 
-  if (is_nfc() && ret == 1) {
-    current_cmd_src = CTAP_SRC_NONE;
-    ctap_req_lifetime_end();
-    return 0;
-  }
-
   current_cmd_src = CTAP_SRC_NONE;
   ctap_req_lifetime_end();
   if (ret < 0)
@@ -3981,7 +3802,8 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
   return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);
 }
 
-int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src) {
+int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src, ctap_req_close_t close,
+                                   void *close_ctx) {
   if (!capdu || capdu->lc == 0 || capdu->lc > pke_buffer_size()) {
     rapdu->len = 0;
     rapdu->sw = SW_WRONG_LENGTH;
@@ -3990,19 +3812,12 @@ int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t 
 
   ctap_req_src_t req_src = {
       .read = ctap_pke_req_read,
-      .ctx = NULL,
+      .close = close,
+      .ctx = close_ctx,
       .base_offset = 0,
       .len = capdu->lc,
   };
   return ctap_process_apdu_source_with_src(capdu, &req_src, rapdu, src);
-}
-
-int ctap_nfc_pending_active(void) {
-#if ENABLE_NFC
-  return nfc_pending_state.active != 0;
-#else
-  return 0;
-#endif
 }
 
 int ctap_wink(void) {
