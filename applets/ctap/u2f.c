@@ -109,7 +109,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_final(&sha256, digest);
   size_t signature_len =
       sign_with_device_key(digest, PRIVATE_KEY_LENGTH[SECP256R1], u2f_register_stream_buffer + sizeof(*resp));
-  if (signature_len > U2F_MAX_EC_SIG_SIZE) return -1;
+  if (signature_len == 0 || signature_len > U2F_MAX_EC_SIG_SIZE) return -1;
 
   u2f_register_stream_state.cert_len = (uint16_t)cert_len;
   u2f_register_stream_state.sig_len = (uint8_t)signature_len;
@@ -152,7 +152,10 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_update(&sha256, req->chal, U2F_CHAL_SIZE);
   sha256_final(&sha256, req->appId);
   memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.sign_count));
-  ecc_sign(SECP256R1, &key, req->appId, PRIVATE_KEY_LENGTH[SECP256R1], resp->sig);
+  if (ecc_sign(SECP256R1, &key, req->appId, PRIVATE_KEY_LENGTH[SECP256R1], resp->sig) < 0) {
+    memzero(&key, sizeof(key));
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
   memzero(&key, sizeof(key));
   size_t signature_len = ecdsa_sig2ansi(U2F_EC_KEY_SIZE, resp->sig, resp->sig);
   LL = signature_len + 5;

@@ -114,11 +114,14 @@ static bool ctap_littlefs_state_present(void) {
   uint8_t buf[KH_KEY_SIZE];
   uint8_t pin_ctr;
   CTAP_dc_general_attr attr;
+  const int cert_size = get_file_size(CTAP_CERT_FILE);
   const int pin_attr_len = read_attr(CTAP_CERT_FILE, PIN_ATTR, buf, sizeof(buf));
   if (pin_attr_len != 0 && pin_attr_len != PIN_HASH_SIZE_P1) return false;
 
-  return get_file_size(DC_FILE) >= 0 && get_file_size(DC_META_FILE) >= 0 && get_file_size(CTAP_CERT_FILE) >= 0 &&
-         get_file_size(LB_FILE) >= 0 && read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) == sizeof(attr) &&
+  return get_file_size(DC_FILE) >= 0 && get_file_size(DC_META_FILE) >= 0 && cert_size > 0 &&
+         cert_size <= MAX_CERT_SIZE && get_file_size(LB_FILE) >= 0 &&
+         read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) == sizeof(attr) &&
+         read_attr(CTAP_CERT_FILE, KEY_ATTR, buf, PRI_KEY_SIZE) == PRI_KEY_SIZE &&
          read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, buf, 4) == 4 &&
          (pin_attr_len == 0 || read_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &pin_ctr, sizeof(pin_ctr)) == sizeof(pin_ctr)) &&
          read_attr(CTAP_CERT_FILE, KH_KEY_ATTR, buf, KH_KEY_SIZE) == KH_KEY_SIZE &&
@@ -592,6 +595,20 @@ static int ctap_mem_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t 
   return 0;
 }
 
+static int ctap_acquire_shared_buffer(uint8_t **buf, size_t *len) {
+  if (acquire_apdu_buffer(BUFFER_OWNER_CTAPHID) != 0) return -1;
+  if (buf) *buf = shared_io_buffer;
+  if (len) *len = APDU_BUFFER_SIZE;
+  return 0;
+}
+
+static void ctap_release_shared_buffer(void) { release_apdu_buffer(BUFFER_OWNER_CTAPHID); }
+
+static void ctap_close_shared_buffer_source(void *ctx) {
+  UNUSED(ctx);
+  ctap_release_shared_buffer();
+}
+
 static int ctap_prepare_hid_cbor_stream_source(uint8_t status, size_t resp_len, CTAPHID_TxSource *source) {
   if (!source || status != 0 || resp_len <= APDU_BUFFER_SIZE) return 0;
 
@@ -600,7 +617,7 @@ static int ctap_prepare_hid_cbor_stream_source(uint8_t status, size_t resp_len, 
   mem_stream_state.emitted = 0;
   source->total_len = mem_stream_state.len;
   source->read = ctap_mem_stream_read;
-  source->close = CTAPHID_CloseSharedBufferSource;
+  source->close = ctap_close_shared_buffer_source;
   source->ctx = &mem_stream_state;
   return 1;
 }
@@ -1433,8 +1450,6 @@ static size_t ctap_hmac_secret_salt_len(const CTAP_hmac_secret_ext *hmac) {
 
 static uint8_t ctap_prepare_hmac_secret_input(CTAP_hmac_secret_ext *hmac) {
   if (cp_decapsulate(hmac->key_agreement, hmac->pin_protocol) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  DBG_MSG("Shared secret: ");
-  PRINT_HEX(hmac->key_agreement, hmac->pin_protocol == 2 ? SHARED_SECRET_SIZE_P2 : SHARED_SECRET_SIZE_P1);
   if (!cp_verify(hmac->key_agreement, SHARED_SECRET_SIZE_HMAC, hmac->salt_enc, hmac->salt_enc_len, hmac->salt_auth,
                  hmac->pin_protocol)) {
     ERR_MSG("Hmac verification failed\n");
@@ -1450,17 +1465,11 @@ static uint8_t ctap_prepare_hmac_secret_input(CTAP_hmac_secret_ext *hmac) {
 static uint8_t ctap_build_hmac_secret_output(const CTAP_hmac_secret_ext *hmac, const credential_id *cid, bool uv,
                                              uint8_t *output, size_t *output_len) {
   const size_t salt_len = ctap_hmac_secret_salt_len(hmac);
-  DBG_MSG("hmac-secret-salt: ");
-  PRINT_HEX(hmac->salt_enc, salt_len);
   if (make_hmac_secret_output(cid->nonce, hmac->salt_enc, (uint8_t)salt_len, output, uv) < 0)
     return CTAP2_ERR_UNHANDLED_REQUEST;
-  DBG_MSG("hmac-secret %s UV (plain): ", uv ? "with" : "without");
-  PRINT_HEX(output, salt_len);
   if (cp_encrypt(hmac->key_agreement, output, salt_len, output, hmac->pin_protocol) < 0)
     return CTAP2_ERR_UNHANDLED_REQUEST;
   *output_len = hmac->salt_enc_len;
-  DBG_MSG("hmac-secret output: ");
-  PRINT_HEX(output, *output_len);
   return 0;
 }
 
@@ -2496,8 +2505,6 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
     if (err > 0) return CTAP2_ERR_PIN_AUTH_INVALID;
     ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
     CHECK_PARSER_RET(ret);
-    DBG_MSG("Shared Secret: ");
-    PRINT_HEX(cp.key_agreement, cp.pin_uv_auth_protocol == 2 ? SHARED_SECRET_SIZE_P2 : SHARED_SECRET_SIZE_P1);
     if (!cp_verify(cp.key_agreement, SHARED_SECRET_SIZE_HMAC, cp.new_pin_enc,
                    cp.pin_uv_auth_protocol == 1 ? PIN_ENC_SIZE_P1 : PIN_ENC_SIZE_P2, cp.pin_uv_auth_param,
                    cp.pin_uv_auth_protocol)) {
@@ -2509,8 +2516,6 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
       ERR_MSG("CP decryption failed\n");
       return CTAP2_ERR_UNHANDLED_REQUEST;
     }
-    DBG_MSG("Decrypted key: ");
-    PRINT_HEX(cp.new_pin_enc, 64);
     i = 63;
     while (i > 0 && cp.new_pin_enc[i] == 0)
       --i;
@@ -2769,8 +2774,6 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
     if (!consecutive_pin_counter) return CTAP2_ERR_PIN_AUTH_BLOCKED;
     if (!cp_verify_pin_token(cm_pin_msg, cm_pin_msg_len, cm.pin_uv_auth_param, cm.pin_uv_auth_protocol)) {
       DBG_MSG("PIN token verification failed (msg_len=%zu, protocol=%d)\n", cm_pin_msg_len, cm.pin_uv_auth_protocol);
-      PRINT_HEX(cm_pin_msg, cm_pin_msg_len);
-      PRINT_HEX(cm.pin_uv_auth_param, 16);
       return CTAP2_ERR_PIN_AUTH_INVALID;
     }
     if (!cp_has_permission(CP_PERMISSION_CM)) {
@@ -3564,7 +3567,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
 
   uint8_t *resp = NULL;
   size_t resp_len = 0;
-  if (CTAPHID_AcquireSharedBuffer(&resp, &resp_len) != 0) {
+  if (ctap_acquire_shared_buffer(&resp, &resp_len) != 0) {
     ctap_req_lifetime_end();
     return -1;
   }
@@ -3576,14 +3579,14 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
     ctap_end_hid_cbor_stream_response();
     current_cmd_src = CTAP_SRC_NONE;
     if (ret < 0) {
-      CTAPHID_ReleaseSharedBuffer();
+      ctap_release_shared_buffer();
       ctap_req_lifetime_end();
       return -1;
     }
     if (mldsa_stream_state.pending && resp[0] == 0) {
       source->total_len = mldsa_stream_state.total_len;
       source->read = ctap_mldsa_stream_read;
-      source->close = CTAPHID_CloseSharedBufferSource;
+      source->close = ctap_close_shared_buffer_source;
       source->ctx = &mldsa_stream_state;
       ctap_req_lifetime_end();
       return 1;
@@ -3599,7 +3602,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
     mem_stream_state.emitted = 0;
     source->total_len = mem_stream_state.len;
     source->read = ctap_mem_stream_read;
-    source->close = CTAPHID_CloseSharedBufferSource;
+    source->close = ctap_close_shared_buffer_source;
     source->ctx = &mem_stream_state;
     ctap_req_lifetime_end();
     return 1;
@@ -3625,7 +3628,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   if (status == 0 && mc_stream_state.prepared) {
     source->total_len = mc_stream_state.total_len;
     source->read = ctap_make_credential_stream_read;
-    source->close = CTAPHID_CloseSharedBufferSource;
+    source->close = ctap_close_shared_buffer_source;
     source->ctx = &mc_stream_state;
     return 1;
   }
@@ -3635,7 +3638,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   mem_stream_state.emitted = 0;
   source->total_len = mem_stream_state.len;
   source->read = ctap_mem_stream_read;
-  source->close = CTAPHID_CloseSharedBufferSource;
+  source->close = ctap_close_shared_buffer_source;
   source->ctx = &mem_stream_state;
   return 1;
 }

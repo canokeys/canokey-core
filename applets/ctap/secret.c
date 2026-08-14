@@ -100,9 +100,7 @@ void cp_initialize(bool force_reset) {
 
 void cp_regenerate(void) {
   ecc_generate(SECP256R1, &ka_key);
-  DBG_MSG("Regenerate:\nPri: ");
-  PRINT_HEX(ka_key.pri, PRIVATE_KEY_LENGTH[SECP256R1]);
-  DBG_MSG("Pub: ");
+  DBG_MSG("Regenerate key agreement:\nPub: ");
   PRINT_HEX(ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
 }
 
@@ -115,8 +113,6 @@ void cp_get_public_key(uint8_t *buf) { memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
-  DBG_MSG("ECDH: ");
-  PRINT_HEX(buf, PUBLIC_KEY_LENGTH[SECP256R1]);
   if (ret < 0) return 1;
   if (pin_protocol == 1)
     sha256_raw(buf, PRI_KEY_SIZE, buf);
@@ -230,8 +226,7 @@ bool cose_alg_is_mldsa65(int32_t alg) { return alg == COSE_ALG_ML_DSA_65; }
 
 static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
-  if (ret < 0) return ret;
-  return 0;
+  return ret == PRI_KEY_SIZE ? 0 : -1;
 }
 
 static int read_kh_key(uint8_t *kh_key) {
@@ -260,15 +255,10 @@ static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t kh_key[K
   random_buffer(kh->nonce, CREDENTIAL_NONCE_SIZE);
   // private key = hmac-sha256(device private key, nonce)
   hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
-  DBG_MSG("Device key: ");
-  PRINT_HEX(kh_key, KH_KEY_SIZE);
-  DBG_MSG("Nonce: ");
-  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
-  DBG_MSG("Private key: ");
-  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in kh.tag via key.pub
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
   memcpy(kh->tag, key->pub, sizeof(kh->tag));
+  DBG_MSG("Credential tag generated\n");
 }
 
 enum {
@@ -342,12 +332,6 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
 
   // get private key
   hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
-  DBG_MSG("Device key: ");
-  PRINT_HEX(key->pub, KH_KEY_SIZE);
-  DBG_MSG("Nonce: ");
-  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
-  DBG_MSG("Private key: ");
-  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
   if (memcmp_s(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
@@ -368,18 +352,25 @@ int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE
 }
 
 size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
-  ecc_key_t key;
+  ecc_key_t key = {0};
   int ret = read_device_pri_key(key.pri);
-  if (ret < 0) return 0;
-  ecc_sign(SECP256R1, &key, input, input_len, sig);
+  if (ret < 0) {
+    ERR_MSG("Failed to read device private key\n");
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  if (ecc_sign(SECP256R1, &key, input, input_len, sig) < 0) {
+    ERR_MSG("Failed to sign with device private key\n");
+    memzero(&key, sizeof(key));
+    return 0;
+  }
   memzero(&key, sizeof(key));
   return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
 }
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  DBG_MSG("Sign key type: %d, private key: ", key_type);
-  PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
+  DBG_MSG("Sign key type: %d\n", key_type);
   if (key_type == KEY_TYPE_PKC_END) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;

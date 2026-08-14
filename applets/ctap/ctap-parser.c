@@ -682,8 +682,7 @@ static uint8_t parse_hmac_secret_params(CborValue *val, CTAP_hmac_secret_ext *ex
       CHECK_CBOR_RET(ret);
       ext->salt_enc_len = len;
       map_has_entry |= HS_MAP_ENTRY_SALT_ENC;
-      DBG_MSG("salt_enc: ");
-      PRINT_HEX(ext->salt_enc, ext->salt_enc_len);
+      DBG_MSG("salt_enc length: %hhu\n", ext->salt_enc_len);
       break;
     case GA_REQ_HMAC_SECRET_SALT_AUTH:
       if (cbor_value_get_type(&hmac_map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -692,8 +691,7 @@ static uint8_t parse_hmac_secret_params(CborValue *val, CTAP_hmac_secret_ext *ex
       CHECK_CBOR_RET(ret);
       ext->salt_auth_len = len;
       map_has_entry |= HS_MAP_ENTRY_SALT_AUTH;
-      DBG_MSG("salt_auth: ");
-      PRINT_HEX(ext->salt_auth, ext->salt_auth_len);
+      DBG_MSG("salt_auth length: %hhu\n", ext->salt_auth_len);
       break;
     case GA_REQ_HMAC_SECRET_PIN_PROTOCOL:
       if (cbor_value_get_type(&hmac_map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -781,8 +779,7 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       } else {
         CHECK_CBOR_RET(ret);
         mc->ext_cred_blob_len = len;
-        DBG_MSG("credBlob: ");
-        PRINT_HEX(mc->ext_cred_blob, len);
+        DBG_MSG("credBlob length: %zu\n", len);
       }
     } else if (key == CTAP_TEXT_KEY_LARGE_BLOB_KEY) {
       if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
@@ -1048,8 +1045,7 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
       ret = ctap_parse_pin_uv_auth_param(&map, mc->pin_uv_auth_param, &mc->pin_uv_auth_param_len, true);
       CHECK_PARSER_RET(ret);
       if (mc->pin_uv_auth_param_len > 0) {
-        DBG_MSG("pin_uv_auth_param: ");
-        PRINT_HEX(mc->pin_uv_auth_param, mc->pin_uv_auth_param_len);
+        DBG_MSG("pin_uv_auth_param length: %zu\n", mc->pin_uv_auth_param_len);
       }
       mc->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
@@ -1179,8 +1175,7 @@ static uint8_t parse_get_assertion_impl(CborParser *parser, CTAP_get_assertion *
       ret = ctap_parse_pin_uv_auth_param(&map, ga->pin_uv_auth_param, &ga->pin_uv_auth_param_len, true);
       CHECK_PARSER_RET(ret);
       if (ga->pin_uv_auth_param_len > 0) {
-        DBG_MSG("pin_uv_auth_param: ");
-        PRINT_HEX(ga->pin_uv_auth_param, ga->pin_uv_auth_param_len);
+        DBG_MSG("pin_uv_auth_param length: %zu\n", ga->pin_uv_auth_param_len);
       }
       ga->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
@@ -1280,8 +1275,7 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
       DBG_MSG("pin_uv_auth_param found\n");
       ret = ctap_parse_pin_uv_auth_param(&map, cp->pin_uv_auth_param, &len, false);
       CHECK_PARSER_RET(ret);
-      DBG_MSG("pin_uv_auth_param: ");
-      PRINT_HEX(cp->pin_uv_auth_param, len);
+      DBG_MSG("pin_uv_auth_param length: %zu\n", len);
       cp->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
 
@@ -1297,8 +1291,7 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
       }
       ret = ctap_cbor_copy_bytes(&map, cp->new_pin_enc, &len);
       CHECK_CBOR_RET(ret);
-      DBG_MSG("new_pin_enc: ");
-      PRINT_HEX(cp->new_pin_enc, len);
+      DBG_MSG("new_pin_enc length: %zu\n", len);
       cp->parsed_params |= PARAM_NEW_PIN_ENC;
       break;
 
@@ -1460,7 +1453,7 @@ static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credent
       DBG_MSG("pin_uv_auth_param found\n");
       ret = ctap_parse_pin_uv_auth_param(&map, cm->pin_uv_auth_param, &len, false);
       CHECK_PARSER_RET(ret);
-      PRINT_HEX(cm->pin_uv_auth_param, len);
+      DBG_MSG("pin_uv_auth_param length: %zu\n", len);
       cm->parsed_params |= PARAM_PIN_UV_AUTH_PARAM;
       break;
 

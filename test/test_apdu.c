@@ -768,6 +768,41 @@ static void test_fido_ctap1_register_nfc(void **state) {
   assert_true(total >= rapdu.len);
 }
 
+static void test_fido_ctap1_register_rejects_missing_attestation_key(void **state) {
+  (void)state;
+
+  static const uint8_t private_key[PRI_KEY_SIZE] = {1};
+  static const uint8_t select_fido[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+  };
+  static const uint8_t register_apdu[] = {
+      0x00, 0x01, 0x00, 0x00, 0x40, 0xE0, 0x78, 0xA7, 0xB2, 0xCA, 0xC4, 0x1D, 0xDC, 0x13, 0x14, 0x72, 0x90, 0x76,
+      0xB6, 0xDF, 0xC1, 0xCD, 0x53, 0x45, 0x50, 0xFE, 0x0A, 0x78, 0xB8, 0x28, 0x5D, 0x8F, 0x06, 0xEC, 0x37, 0xC9,
+      0xBD, 0xBF, 0xAB, 0xC3, 0x74, 0x32, 0x95, 0x8B, 0x06, 0x33, 0x60, 0xD3, 0xAD, 0x64, 0x61, 0xC9, 0xC4, 0x73,
+      0x5A, 0xE7, 0xF8, 0xED, 0xD4, 0x65, 0x92, 0xA5, 0xE0, 0xF0, 0x14, 0x52, 0xB2, 0xE4, 0xB5, 0x00,
+  };
+
+  uint8_t c_buf[512], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  set_nfc_state(1);
+  assert_int_equal(remove_attr(CTAP_CERT_FILE, KEY_ATTR), 0);
+
+  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, register_apdu, sizeof(register_apdu)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
+  assert_int_equal(rapdu.sw, SW_UNABLE_TO_PROCESS);
+  assert_int_equal(rapdu.len, 0);
+  assert_false(apdu_response_source_active());
+
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, private_key, sizeof(private_key)), 0);
+  set_nfc_state(0);
+}
+
 static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
   (void)state;
 
@@ -894,6 +929,68 @@ static void test_ctap_deselect_clears_credential_management_state(void **state) 
   ctap_deselect();
 
   assert_false(ctap_test_credential_management_state_active());
+}
+
+static void provision_test_attestation(void) {
+  static const uint8_t private_key[PRI_KEY_SIZE] = {1};
+  static const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
+
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, private_key, sizeof(private_key)), 0);
+  assert_int_equal(write_file(CTAP_CERT_FILE, cert, 0, sizeof(cert), 1), 0);
+}
+
+static void assert_ctap_install_resets_counter(void) {
+  uint32_t counter = UINT32_MAX;
+
+  assert_int_equal(ctap_install(0), 0);
+  assert_int_equal(read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &counter, sizeof(counter)), sizeof(counter));
+  assert_int_equal(counter, 0);
+  provision_test_attestation();
+  assert_int_equal(ctap_install(0), 0);
+}
+
+static void test_ctap_install_preserves_complete_attestation_state(void **state) {
+  (void)state;
+  const uint32_t expected_counter = 0x12345678;
+  uint32_t actual_counter = 0;
+
+  provision_test_attestation();
+  assert_int_equal(write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &expected_counter, sizeof(expected_counter)), 0);
+  assert_int_equal(ctap_install(0), 0);
+  assert_int_equal(read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &actual_counter, sizeof(actual_counter)),
+                   sizeof(actual_counter));
+  assert_int_equal(actual_counter, expected_counter);
+}
+
+static void test_ctap_install_rebuilds_state_without_attestation_key(void **state) {
+  (void)state;
+  const uint32_t counter = 0x12345678;
+
+  provision_test_attestation();
+  assert_int_equal(remove_attr(CTAP_CERT_FILE, KEY_ATTR), 0);
+  assert_int_equal(write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &counter, sizeof(counter)), 0);
+  assert_ctap_install_resets_counter();
+}
+
+static void test_ctap_install_rebuilds_state_with_short_attestation_key(void **state) {
+  (void)state;
+  const uint8_t short_key[PRI_KEY_SIZE - 1] = {1};
+  const uint32_t counter = 0x12345678;
+
+  provision_test_attestation();
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KEY_ATTR, short_key, sizeof(short_key)), 0);
+  assert_int_equal(write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &counter, sizeof(counter)), 0);
+  assert_ctap_install_resets_counter();
+}
+
+static void test_ctap_install_rebuilds_state_with_empty_attestation_cert(void **state) {
+  (void)state;
+  const uint32_t counter = 0x12345678;
+
+  provision_test_attestation();
+  assert_int_equal(write_file(CTAP_CERT_FILE, NULL, 0, 0, 1), 0);
+  assert_int_equal(write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &counter, sizeof(counter)), 0);
+  assert_ctap_install_resets_counter();
 }
 
 static void test_ctap_hid_get_info_stream_source(void **state) {
@@ -2050,12 +2147,17 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
+      cmocka_unit_test(test_fido_ctap1_register_rejects_missing_attestation_key),
       cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
+      cmocka_unit_test(test_ctap_install_preserves_complete_attestation_state),
+      cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
+      cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
+      cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),
       cmocka_unit_test(test_ctap_config_toggle_always_uv_without_pin),
