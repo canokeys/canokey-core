@@ -28,6 +28,9 @@ static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 static volatile uint8_t apdu_processing;
 static volatile uint8_t apdu_transport_failed;
+#if NFC_CHIP == NFC_CHIP_FM11NT
+static volatile uint8_t fast_recovery_pending;
+#endif
 
 static void send_wtx(void);
 
@@ -105,6 +108,16 @@ void nfc_init(void) {
 #if NFC_CHIP != NFC_CHIP_FM11NT
   // FM11NT may already hold the reader's first frame by the time platform initialization finishes.
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1); // writing anything to this reg will flush FIFO buffer
+#else
+  fast_recovery_pending = 0;
+  uint8_t irq_mask;
+  if (fm_read_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) == FM_STATUS_OK) {
+    irq_mask |= MAIN_IRQ_RX_START;
+    if (fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) != FM_STATUS_OK)
+      ERR_MSG("Failed to mask FM11NT RX_START IRQ\n");
+  } else {
+    ERR_MSG("Failed to read FM11NT IRQ mask\n");
+  }
 #endif
 }
 
@@ -114,10 +127,19 @@ static void nfc_error_handler(int code __attribute__((unused))) {
   stop_apdu_wtx();
   reset_nfc_state();
 #if NFC_CHIP == NFC_CHIP_FM11NT
-  uint8_t data = 0x77; // return the RF state machine to IDLE
-  fm_write_regs(FM_REG_RF_TXEN, &data, 1);
-  data = 0x55; // soft-reset FM11NT after the current RF response completes
+  if (!fast_recovery_pending) {
+    uint8_t data = 0x77; // return the RF state machine to IDLE
+    int recovery_failed = fm_write_regs(FM_REG_RF_TXEN, &data, 1) != FM_STATUS_OK;
+    if (fm_write_regs(FM_REG_FIFO_FLUSH, &data, 1) != FM_STATUS_OK) recovery_failed = 1;
+    if (!recovery_failed) {
+      fast_recovery_pending = 1;
+      return;
+    }
+  }
+
+  uint8_t data = 0x55; // repeated failure: fall back to an FM11NT soft reset
   fm_write_regs(FM_REG_RESET_SILENCE, &data, 1);
+  fast_recovery_pending = 1;
 #else
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1);
 #endif
@@ -272,6 +294,9 @@ void nfc_loop(void) {
 
 void nfc_handler(void) {
   uint8_t irq[3];
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  uint8_t received_frame = 0;
+#endif
   if (fm_read_regs(FM_REG_MAIN_IRQ, irq, sizeof(irq)) != FM_STATUS_OK) {
     nfc_error_handler(-8);
     return;
@@ -299,11 +324,18 @@ void nfc_handler(void) {
       PRINT_HEX(rx_frame_buf, rx_frame_size);
       if (next_state == TO_SEND) DBG_MSG("Wrong State!\n");
       next_state = TO_SEND;
+#if NFC_CHIP == NFC_CHIP_FM11NT
+      received_frame = 1;
+#endif
     }
   }
   if (irq[2] & AUX_IRQ_ERROR_MASK) {
     DBG_MSG("AUX: %02X\n", irq[2]);
     nfc_error_handler(-1);
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  } else if (received_frame) {
+    fast_recovery_pending = 0;
+#endif
   }
 }
 
