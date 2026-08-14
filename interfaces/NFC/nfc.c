@@ -51,6 +51,15 @@ static void stop_apdu_wtx(void) {
   device_set_timeout(NULL, 0);
 }
 
+#if NFC_CHIP == NFC_CHIP_FM11NT
+static void reset_nfc_session(void) {
+  if (apdu_processing) apdu_transport_failed = 1;
+  stop_apdu_wtx();
+  reset_nfc_state();
+  fast_recovery_pending = 0;
+}
+#endif
+
 static int process_nfc_apdu(CAPDU *capdu, RAPDU *rapdu) {
   apdu_transport_failed = 0;
   apdu_processing = 1;
@@ -113,9 +122,9 @@ void nfc_init(void) {
   fast_recovery_pending = 0;
   uint8_t irq_mask;
   if (fm_read_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) == FM_STATUS_OK) {
-    irq_mask |= MAIN_IRQ_RX_START;
+    irq_mask |= MAIN_IRQ_RX_START | MAIN_IRQ_TX_DONE;
     if (fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) != FM_STATUS_OK)
-      ERR_MSG("Failed to mask FM11NT RX_START IRQ\n");
+      ERR_MSG("Failed to update FM11NT IRQ mask\n");
   } else {
     ERR_MSG("Failed to read FM11NT IRQ mask\n");
   }
@@ -308,13 +317,31 @@ void nfc_handler(void) {
     return;
   }
 
+  if (irq[2] & AUX_IRQ_ERROR_MASK) {
+    DBG_MSG("AUX: %02X\n", irq[2]);
+    nfc_error_handler(-1);
+    return;
+  }
+  if (irq[1] & FIFO_IRQ_OVERFLOW) {
+    nfc_error_handler(-20);
+    return;
+  }
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  if (irq[2] & AUX_IRQ_HALT) {
+    reset_nfc_session();
+    return;
+  }
+  if (irq[0] & MAIN_IRQ_ACTIVE) reset_nfc_session();
+#endif
+
   if (irq[0] & MAIN_IRQ_RX_DONE) {
     if (fm_read_regs(FM_REG_FIFO_WORDCNT, &rx_frame_size, 1) != FM_STATUS_OK) {
       nfc_error_handler(-9);
       return;
     }
     if (rx_frame_size == 0) {
-      DBG_MSG("Empty NFC RX FIFO\n");
+      nfc_error_handler(-21);
+      return;
     } else if (rx_frame_size > sizeof(rx_frame_buf)) {
       nfc_error_handler(-5);
       return;
@@ -331,14 +358,9 @@ void nfc_handler(void) {
 #endif
     }
   }
-  if (irq[2] & AUX_IRQ_ERROR_MASK) {
-    DBG_MSG("AUX: %02X\n", irq[2]);
-    nfc_error_handler(-1);
 #if NFC_CHIP == NFC_CHIP_FM11NT
-  } else if (received_frame) {
-    fast_recovery_pending = 0;
+  if (received_frame) fast_recovery_pending = 0;
 #endif
-  }
 }
 
 #endif // NFC_CHIP != NFC_CHIP_NA
