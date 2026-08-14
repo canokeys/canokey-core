@@ -121,9 +121,9 @@ void fm11_init(void) {
   } while (memcmp(ats, buf, sizeof(ats)) != 0);
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   uint8_t crc_buffer[13];
-  const uint8_t user_cfg[] = {0x91, 0x82, 0x21, 0xCD};
+  const uint8_t user_cfg[] = {0x91, 0x80, 0x21, 0xCF};
   const uint8_t atqa_sak[] = {0x44, 0x00, 0x04, 0x20};
-  const uint8_t ats[] = {0x05, 0x72, 0x80, 0x57, 0x00, 0x99, 0x00};
+  const uint8_t ats[] = {0x05, 0x72, 0xA0, 0x57, 0x00, 0x99, 0x00};
   fm_csn_low();
   device_delay_us(500);
   fm_write_eeprom(FM_EEPROM_USER_CFG0, user_cfg, sizeof(user_cfg));
