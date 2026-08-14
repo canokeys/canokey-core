@@ -16,6 +16,7 @@ void nfc_handler(void) {}
 #else
 
 #define WTX_PERIOD 150
+#define WTX_LOCK_RETRY_PERIOD 1
 
 static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
@@ -198,7 +199,10 @@ static void send_wtx(void) {
   if (!apdu_processing || apdu_transport_failed) return;
 
   int send_failed = 0;
-  if (device_spinlock_lock(&state_spinlock, false) != 0) return;
+  if (device_spinlock_lock(&state_spinlock, false) != 0) {
+    if (apdu_processing && !apdu_transport_failed) device_set_timeout(send_wtx, WTX_LOCK_RETRY_PERIOD);
+    return;
+  }
   if (next_state == TO_SEND) {
     uint8_t wtxm = 1;
     if (do_nfc_send_frame(S_WTX, &wtxm, 1) == 0)
@@ -209,9 +213,7 @@ static void send_wtx(void) {
   device_spinlock_unlock(&state_spinlock);
 
   if (send_failed) {
-    apdu_transport_failed = 1;
-    apdu_processing = 0;
-    reset_nfc_state();
+    nfc_error_handler(-19);
     return;
   }
   if (apdu_processing) device_set_timeout(send_wtx, WTX_PERIOD);
@@ -246,7 +248,7 @@ void nfc_loop(void) {
         LL = 0;
         SW = SW_WRONG_LENGTH;
       } else if (process_nfc_apdu(capdu, rapdu) < 0) {
-        nfc_error_handler(-18);
+        // The IRQ/WTX path already recovered the transport failure.
         return;
       }
 
