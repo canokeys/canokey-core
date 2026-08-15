@@ -18,6 +18,8 @@ void nfc_handler(void) {}
 #define WTX_PERIOD 150
 #define WTX_LOCK_RETRY_PERIOD 1
 
+enum { NFC_SEND_FAILED = -1, NFC_SEND_ABORTED = -2 };
+
 static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
@@ -29,8 +31,10 @@ static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 static volatile uint8_t apdu_processing;
 static volatile uint8_t apdu_transport_failed;
+static volatile uint8_t session_generation;
 #if NFC_CHIP == NFC_CHIP_FM11NT
 static volatile uint8_t fast_recovery_pending;
+static volatile uint8_t irq_config_pending;
 #endif
 
 static void send_wtx(void);
@@ -53,11 +57,13 @@ static void stop_apdu_wtx(void) {
 
 #if NFC_CHIP == NFC_CHIP_FM11NT
 static void reset_nfc_session(void) {
+  ++session_generation;
   if (apdu_processing) apdu_transport_failed = 1;
   stop_apdu_wtx();
   reset_nfc_state();
   fast_recovery_pending = 0;
 }
+
 #endif
 
 static int process_nfc_apdu(CAPDU *capdu, RAPDU *rapdu) {
@@ -93,7 +99,7 @@ static int load_next_aggregated_chunk(void) {
       .data = shared_io_buffer, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .le = 0x100, .lc = 0, .extended = 0};
   RAPDU rapdu = {.data = shared_io_buffer};
 
-  if (process_nfc_apdu(&capdu, &rapdu) < 0) return -1;
+  if (process_nfc_apdu(&capdu, &rapdu) < 0) return NFC_SEND_ABORTED;
 
   apdu_buffer_sent = 0;
   if (HI(rapdu.sw) == 0x61) {
@@ -107,11 +113,8 @@ static int load_next_aggregated_chunk(void) {
   return 0;
 }
 
-void nfc_init(void) {
+__attribute__((minsize)) void nfc_init(void) {
   reset_nfc_state();
-  state_spinlock = 0;
-  apdu_processing = 0;
-  apdu_transport_failed = 0;
   // NFC interface uses shared_io_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = shared_io_buffer;
   apdu_resp.data = shared_io_buffer;
@@ -119,37 +122,32 @@ void nfc_init(void) {
   // FM11NT may already hold the reader's first frame by the time platform initialization finishes.
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1); // writing anything to this reg will flush FIFO buffer
 #else
-  fast_recovery_pending = 0;
-  uint8_t irq_mask;
-  if (fm_read_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) == FM_STATUS_OK) {
-    irq_mask |= MAIN_IRQ_RX_START | MAIN_IRQ_TX_DONE;
-    if (fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) != FM_STATUS_OK)
-      ERR_MSG("Failed to update FM11NT IRQ mask\n");
-  } else {
-    ERR_MSG("Failed to read FM11NT IRQ mask\n");
-  }
+  const uint8_t irq_mask = MAIN_IRQ_FIFO | MAIN_IRQ_RX_START;
+  irq_config_pending = fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) != FM_STATUS_OK;
+  if (irq_config_pending) ERR_MSG("Failed to update FM11NT IRQ mask\n");
 #endif
 }
 
-static void nfc_error_handler(int code __attribute__((unused))) {
+__attribute__((minsize)) static void nfc_error_handler(int code __attribute__((unused))) {
   DBG_MSG("NFC Error %d\n", code);
+  ++session_generation;
   if (apdu_processing) apdu_transport_failed = 1;
   stop_apdu_wtx();
   reset_nfc_state();
 #if NFC_CHIP == NFC_CHIP_FM11NT
   if (!fast_recovery_pending) {
-    uint8_t data = 0x77; // return the RF state machine to IDLE
-    int recovery_failed = fm_write_regs(FM_REG_RF_TXEN, &data, 1) != FM_STATUS_OK;
-    if (fm_write_regs(FM_REG_FIFO_FLUSH, &data, 1) != FM_STATUS_OK) recovery_failed = 1;
-    if (!recovery_failed) {
+    uint8_t data = 0x77;
+    if (fm_write_regs(FM_REG_FIFO_FLUSH, &data, 1) == FM_STATUS_OK &&
+        fm_write_regs(FM_REG_RF_TXEN, &data, 1) == FM_STATUS_OK) {
       fast_recovery_pending = 1;
       return;
     }
   }
 
-  uint8_t data = 0x55; // repeated failure: fall back to an FM11NT soft reset
+  uint8_t data = 0x55;
   fm_write_regs(FM_REG_RESET_SILENCE, &data, 1);
   fast_recovery_pending = 1;
+  irq_config_pending = 1;
 #else
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1);
 #endif
@@ -170,11 +168,13 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   return 0;
 }
 
-static int nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
+__attribute__((minsize)) static int nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
+  const uint8_t generation = session_generation;
   for (;;) {
+    if (generation != session_generation) return NFC_SEND_ABORTED;
     if (device_spinlock_lock(&state_spinlock, true) != 0) return -1;
     if (next_state == TO_SEND) {
-      const int ret = do_nfc_send_frame(prologue, data, len);
+      const int ret = generation == session_generation ? do_nfc_send_frame(prologue, data, len) : NFC_SEND_ABORTED;
       if (ret == 0) next_state = TO_RECEIVE;
       device_spinlock_unlock(&state_spinlock);
       return ret;
@@ -188,9 +188,7 @@ static int send_apdu_buffer(uint8_t resend) {
     apdu_buffer_sent -= last_sent;
   else if (aggregate_get_response && apdu_buffer_sent == apdu_buffer_tx_size) {
     const int more = load_next_aggregated_chunk();
-    if (more < 0) {
-      return -1;
-    }
+    if (more < 0) return more;
     aggregate_get_response = (uint8_t)more;
   }
   last_sent = apdu_buffer_tx_size - apdu_buffer_sent;
@@ -198,7 +196,8 @@ static int send_apdu_buffer(uint8_t resend) {
   if (last_sent > 29) last_sent = 29;
   uint8_t prologue = block_number | 0x02;
   if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent || aggregate_get_response) prologue |= PCB_I_CHAINING;
-  if (nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, last_sent) < 0) return -1;
+  const int ret = nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, last_sent);
+  if (ret < 0) return ret;
   apdu_buffer_sent += last_sent;
   if (apdu_buffer_tx_size == apdu_buffer_sent && !aggregate_get_response) inf_sending = 0;
   return 0;
@@ -228,7 +227,14 @@ static void send_wtx(void) {
   if (apdu_processing) device_set_timeout(send_wtx, WTX_PERIOD);
 }
 
-void nfc_loop(void) {
+__attribute__((minsize)) void nfc_loop(void) {
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  if (irq_config_pending) {
+    const uint8_t irq_mask = MAIN_IRQ_FIFO | MAIN_IRQ_RX_START;
+    if (fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) == FM_STATUS_OK) irq_config_pending = 0;
+    if (irq_config_pending) return;
+  }
+#endif
   if (next_state == TO_RECEIVE) return;
 
   if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {
@@ -247,7 +253,7 @@ void nfc_loop(void) {
     apdu_buffer_rx_size += payload_len;
 
     if (rx_frame_buf[0] & PCB_I_CHAINING) {
-      if (nfc_send_frame(R_ACK | block_number, NULL, 0) < 0) nfc_error_handler(-11);
+      if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-11);
     } else {
 
       CAPDU *capdu = &apdu_cmd;
@@ -276,26 +282,26 @@ void nfc_loop(void) {
       apdu_buffer_rx_size = 0;
       apdu_buffer_sent = 0;
       inf_sending = 1;
-      if (send_apdu_buffer(0) < 0) nfc_error_handler(-12);
+      if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-12);
     }
   } else if ((rx_frame_buf[0] & PCB_MASK) == PCB_R_BLOCK) {
     if ((rx_frame_buf[0] & R_BLOCK_MASK) == R_ACK) {
       if ((rx_frame_buf[0] & 1) != block_number) { // continue chaining
         block_number ^= 1;
-        if (send_apdu_buffer(0) < 0) nfc_error_handler(-13);
+        if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-13);
       } else { // re-send
-        if (send_apdu_buffer(1) < 0) nfc_error_handler(-14);
+        if (send_apdu_buffer(1) == NFC_SEND_FAILED) nfc_error_handler(-14);
       }
     } else {
       if ((rx_frame_buf[0] & 1) != block_number) {
         if (inf_sending) { // continue chaining
           block_number ^= 1;
-          if (send_apdu_buffer(0) < 0) nfc_error_handler(-15);
+          if (send_apdu_buffer(0) == NFC_SEND_FAILED) nfc_error_handler(-15);
         } else { // card presence check reply
-          if (nfc_send_frame(R_ACK | block_number, NULL, 0) < 0) nfc_error_handler(-16);
+          if (nfc_send_frame(R_ACK | block_number, NULL, 0) == NFC_SEND_FAILED) nfc_error_handler(-16);
         }
       } else { // re-send
-        if (send_apdu_buffer(1) < 0) nfc_error_handler(-17);
+        if (send_apdu_buffer(1) == NFC_SEND_FAILED) nfc_error_handler(-17);
       }
     }
   } else {
@@ -303,7 +309,7 @@ void nfc_loop(void) {
   }
 }
 
-void nfc_handler(void) {
+__attribute__((minsize)) void nfc_handler(void) {
   uint8_t irq[3];
 #if NFC_CHIP == NFC_CHIP_FM11NT
   uint8_t received_frame = 0;
@@ -332,6 +338,7 @@ void nfc_handler(void) {
     return;
   }
   if (irq[0] & MAIN_IRQ_ACTIVE) reset_nfc_session();
+  if (irq[0] & MAIN_IRQ_TX_DONE) DBG_MSG("NFC TX done\n");
 #endif
 
   if (irq[0] & MAIN_IRQ_RX_DONE) {
