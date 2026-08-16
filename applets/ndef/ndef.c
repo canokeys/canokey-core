@@ -30,24 +30,15 @@ static const uint8_t default_cc[CC_LENGTH] = {
 #define CC_W (current_cc[14])
 
 static enum { NONE, CC, NDEF } selected;
-static int16_t ndef_write_remaining = -1;
-static uint16_t ndef_write_offset;
+static uint16_t ndef_write_offset = UINT16_MAX;
 
-typedef struct {
-  const char *path;
-  uint16_t offset;
-} ndef_response_source_t;
+static uint16_t ndef_response_offset;
 
-static ndef_response_source_t ndef_response_source;
-
-static void ndef_write_reset(void) {
-  ndef_write_remaining = -1;
-  ndef_write_offset = 0;
-}
+static void ndef_write_reset(void) { ndef_write_offset = UINT16_MAX; }
 
 static int ndef_response_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
-  const ndef_response_source_t *source = (const ndef_response_source_t *)ctx;
-  return read_file(source->path, buf, source->offset + (uint16_t)offset, len);
+  UNUSED(ctx);
+  return read_file(NDEF_FILE, buf, ndef_response_offset + (uint16_t)offset, len);
 }
 
 void ndef_poweroff(void) {
@@ -58,21 +49,13 @@ void ndef_poweroff(void) {
 int ndef_is_read_only(void) { return CC_W == 0xFF ? 1 : 0; }
 
 int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
-  switch (P1) {
-  case 0x00: // read and write
-    CC_W = 0x00;
-    break;
-  case 0x01: // read only
-    CC_W = 0xFF;
-    break;
-  default:
-    EXCEPT(SW_WRONG_P1P2);
-  }
+  if (P1 > 1) EXCEPT(SW_WRONG_P1P2);
+  CC_W = P1 == 0 ? 0x00 : 0xFF;
   if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
   return 0;
 }
 
-int ndef_create_init_ndef() {
+static int ndef_create_init_ndef(void) {
   const char *init_data = "\x00\x11\xD1\x01\x0D\x55\x04"
                           "canokeys.org";
   if (write_file(NDEF_FILE, init_data, 0, 19, 1) < 0) return -1;
@@ -82,18 +65,15 @@ int ndef_create_init_ndef() {
 
 int ndef_install(const uint8_t reset) {
   ndef_poweroff();
-  if (reset || get_file_size(CC_FILE) != sizeof(current_cc) || get_file_size(NDEF_FILE) <= 0) {
-    memcpy(current_cc, default_cc, sizeof(current_cc));
-    if (ndef_create_init_ndef() < 0) return -1;
-    if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
-  } else {
-    if (read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0) return -1;
-    // should check sanity, by standard
-  }
-  return 0;
+  if (!reset && get_file_size(CC_FILE) == sizeof(current_cc) && get_file_size(NDEF_FILE) > 0)
+    return read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0 ? -1 : 0;
+
+  memcpy(current_cc, default_cc, sizeof(current_cc));
+  if (ndef_create_init_ndef() < 0) return -1;
+  return write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0 ? -1 : 0;
 }
 
-int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
+static int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
   ndef_write_reset();
   if (P1 == 0x04 && P2 == 0x00) return 0;
   if (P1 != 0x00 || P2 != 0x0C) EXCEPT(SW_WRONG_P1P2);
@@ -107,37 +87,40 @@ int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
+static int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
   const uint16_t offset = (uint16_t)(P1 << 8) | P2;
-  if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-  if (LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+  const char *path;
+  uint16_t file_len;
+
+  if (offset > NDEF_FILE_MAX_LENGTH || LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 
   switch (selected) {
   case CC:
-    if (offset + LE > CC_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (read_file(CC_FILE, RDATA, offset, LE) < 0) return -1;
-    LL = LE;
+    path = CC_FILE;
+    file_len = CC_LENGTH;
     break;
   case NDEF:
     if (CC_R != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (offset + LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-    if (LE > APDU_COMMAND_BUFFER_SIZE) {
-      ndef_response_source.path = NDEF_FILE;
-      ndef_response_source.offset = offset;
-      apdu_response_source_set(LE, SW_NO_ERROR, ndef_response_source_read, NULL, &ndef_response_source);
-      LL = 0;
-    } else {
-      if (read_file(NDEF_FILE, RDATA, offset, LE) < 0) return -1;
-      LL = LE;
-    }
+    path = NDEF_FILE;
+    file_len = NDEF_FILE_MAX_LENGTH;
     break;
   case NONE:
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   }
+
+  if (offset > file_len || LE > file_len - offset) EXCEPT(SW_WRONG_LENGTH);
+  if (selected == NDEF && LE > APDU_COMMAND_BUFFER_SIZE) {
+    ndef_response_offset = offset;
+    apdu_response_source_set(LE, SW_NO_ERROR, ndef_response_source_read, NULL, NULL);
+    LL = 0;
+    return 0;
+  }
+  if (read_file(path, RDATA, offset, LE) < 0) return -1;
+  LL = LE;
   return 0;
 }
 
-int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
+static int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
   const uint16_t offset = (uint16_t)(P1 << 8) | P2;
   if (offset > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
   if (LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
@@ -149,23 +132,13 @@ int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   case NDEF:
     if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    if (ndef_write_remaining < 0) {
-      if (offset + LC > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
-      if (write_file(NDEF_FILE, DATA, offset, LC, 0) < 0) return -1;
-      if ((CLA & 0x10) != 0) {
-        ndef_write_offset = offset + LC;
-        ndef_write_remaining = NDEF_FILE_MAX_LENGTH - ndef_write_offset;
-      }
-    } else {
-      if (LC > ndef_write_remaining) {
-        ndef_write_reset();
-        EXCEPT(SW_WRONG_LENGTH);
-      }
-      if (write_file(NDEF_FILE, DATA, ndef_write_offset, LC, 0) < 0) return -1;
-      ndef_write_offset += LC;
-      ndef_write_remaining -= LC;
-      if ((CLA & 0x10) == 0) ndef_write_reset();
+    const uint16_t write_offset = ndef_write_offset == UINT16_MAX ? offset : ndef_write_offset;
+    if (LC > NDEF_FILE_MAX_LENGTH - write_offset) {
+      ndef_write_reset();
+      EXCEPT(SW_WRONG_LENGTH);
     }
+    if (write_file(NDEF_FILE, DATA, write_offset, LC, 0) < 0) return -1;
+    ndef_write_offset = (CLA & 0x10) != 0 ? write_offset + LC : UINT16_MAX;
     break;
   case NONE:
     ndef_write_reset();

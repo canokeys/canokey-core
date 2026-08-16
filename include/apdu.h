@@ -85,6 +85,14 @@ typedef int (*APDU_MESSAGE_HANDLER)(const CAPDU *capdu, RAPDU *rapdu);
 typedef int (*APDU_RESPONSE_SOURCE_READ)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 typedef void (*APDU_RESPONSE_SOURCE_CLOSE)(void *ctx);
 
+typedef struct {
+  uint32_t total_len;
+  uint32_t offset;
+  uint16_t sw;
+  APDU_RESPONSE_SOURCE_READ read;
+  void *ctx;
+} APDU_RESPONSE_SOURCE_VIEW;
+
 extern uint8_t *shared_io_buffer;
 
 enum {
@@ -109,6 +117,8 @@ void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOU
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx);
 void apdu_response_source_clear(void);
 int apdu_response_source_active(void);
+const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void);
+int apdu_response_source_output(RAPDU *rapdu, uint32_t le);
 int apdu_session_can_preempt(void);
 // Releases any in-flight FIDO chained-APDU reassembly state (PKE staging,
 // chaining flags, accumulator). Call from any path that drops the CTAP

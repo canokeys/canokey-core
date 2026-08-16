@@ -4,7 +4,6 @@
 #if ENABLE_NFC
 
 #include "apdu.h"
-#include "ctap.h"
 #include "device.h"
 
 #if NFC_CHIP == NFC_CHIP_NA
@@ -18,13 +17,13 @@ void nfc_handler(void) {}
 #define WTX_PERIOD 150
 #define WTX_LOCK_RETRY_PERIOD 1
 
-enum { NFC_SEND_FAILED = -1, NFC_SEND_ABORTED = -2 };
+enum { NFC_SEND_FAILED = -1, NFC_SEND_ABORTED = -2, NFC_MAX_RETRANSMITS = 2 };
 
 static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
-static uint8_t inf_sending;
-static uint8_t aggregate_get_response;
+static uint8_t inf_sending, retransmit_count;
+static uint8_t aggregate_get_response, aggregate_fido_responses;
 static uint16_t apdu_buffer_rx_size, apdu_buffer_tx_size;
 static uint16_t apdu_buffer_sent, last_sent;
 static CAPDU apdu_cmd;
@@ -46,6 +45,7 @@ static void reset_nfc_state(void) {
   apdu_buffer_sent = 0;
   last_sent = 0;
   inf_sending = 0;
+  retransmit_count = 0;
   aggregate_get_response = 0;
   next_state = TO_RECEIVE;
 }
@@ -61,6 +61,7 @@ static void reset_nfc_session(void) {
   if (apdu_processing) apdu_transport_failed = 1;
   stop_apdu_wtx();
   reset_nfc_state();
+  aggregate_fido_responses = 0;
   fast_recovery_pending = 0;
 }
 
@@ -75,23 +76,14 @@ static int process_nfc_apdu(CAPDU *capdu, RAPDU *rapdu) {
   return apdu_transport_failed ? -1 : 0;
 }
 
-static uint8_t is_native_u2f_apdu(const CAPDU *capdu) {
-  if (capdu->cla != 0x00) return 0;
+static void update_fido_response_mode(const uint8_t *cmd, uint16_t len) {
+  static const uint8_t fido_aid[] = {0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01};
 
-  switch (capdu->ins) {
-  case 0x01: // U2F_REGISTER
-  case 0x02: // U2F_AUTHENTICATE
-  case 0x03: // U2F_VERSION
-    return 1;
-  case 0xA4: // U2F_SELECT, distinct from ISO SELECT by P1/P2
-    return !(capdu->p1 == 0x04 && capdu->p2 == 0x00);
-  default:
-    return 0;
-  }
-}
+  if (len < 5 || cmd[0] != 0x00 || cmd[1] != 0xA4 || cmd[2] != 0x04 || cmd[3] != 0x00) return;
 
-static uint8_t is_fido_nfc_apdu(const CAPDU *capdu) {
-  return ((capdu->cla & 0xEF) == 0x80 && capdu->ins == CTAP_INS_MSG) || is_native_u2f_apdu(capdu);
+  const uint16_t aid_end = 5 + cmd[4];
+  aggregate_fido_responses = cmd[4] == sizeof(fido_aid) && len >= aid_end &&
+                             memcmp(cmd + 5, fido_aid, sizeof(fido_aid)) == 0 && len == aid_end;
 }
 
 static int load_next_aggregated_chunk(void) {
@@ -115,6 +107,7 @@ static int load_next_aggregated_chunk(void) {
 
 __attribute__((minsize)) void nfc_init(void) {
   reset_nfc_state();
+  aggregate_fido_responses = 0;
   // NFC interface uses shared_io_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
   apdu_cmd.data = shared_io_buffer;
   apdu_resp.data = shared_io_buffer;
@@ -184,13 +177,18 @@ __attribute__((minsize)) static int nfc_send_frame(uint8_t prologue, uint8_t *da
 }
 
 static int send_apdu_buffer(uint8_t resend) {
-  if (resend)
-    apdu_buffer_sent -= last_sent;
-  else if (aggregate_get_response && apdu_buffer_sent == apdu_buffer_tx_size) {
+  if (resend) {
+    if (last_sent == 0 || retransmit_count >= NFC_MAX_RETRANSMITS) return NFC_SEND_FAILED;
+    ++retransmit_count;
+    return nfc_send_frame(tx_frame_buf[0], NULL, last_sent);
+  }
+
+  if (aggregate_get_response && apdu_buffer_sent == apdu_buffer_tx_size) {
     const int more = load_next_aggregated_chunk();
     if (more < 0) return more;
     aggregate_get_response = (uint8_t)more;
   }
+
   last_sent = apdu_buffer_tx_size - apdu_buffer_sent;
   if (last_sent == 0) return -1;
   if (last_sent > 29) last_sent = 29;
@@ -199,6 +197,7 @@ static int send_apdu_buffer(uint8_t resend) {
   const int ret = nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, last_sent);
   if (ret < 0) return ret;
   apdu_buffer_sent += last_sent;
+  retransmit_count = 0;
   if (apdu_buffer_tx_size == apdu_buffer_sent && !aggregate_get_response) inf_sending = 0;
   return 0;
 }
@@ -238,6 +237,10 @@ __attribute__((minsize)) void nfc_loop(void) {
   if (next_state == TO_RECEIVE) return;
 
   if ((rx_frame_buf[0] & PCB_MASK) == PCB_I_BLOCK) {
+    if (inf_sending) {
+      nfc_error_handler(-22);
+      return;
+    }
     block_number ^= 1;
 
     if (rx_frame_size < 3) {
@@ -259,6 +262,9 @@ __attribute__((minsize)) void nfc_loop(void) {
       CAPDU *capdu = &apdu_cmd;
       RAPDU *rapdu = &apdu_resp;
 
+      // Case-3 FIDO SELECT readers do not necessarily follow 61xx with GET
+      // RESPONSE. Keep continuous T=CL responses for that APDU profile only.
+      update_fido_response_mode(shared_io_buffer, apdu_buffer_rx_size);
       if (build_capdu(&apdu_cmd, shared_io_buffer, apdu_buffer_rx_size) < 0) {
         LL = 0;
         SW = SW_WRONG_LENGTH;
@@ -267,10 +273,7 @@ __attribute__((minsize)) void nfc_loop(void) {
         return;
       }
 
-      // The 7644370f implementation's 1340-byte APDU buffer hid response
-      // paging from extended FIDO clients. Keep that behavior by consuming
-      // 61xx internally while emitting one chained T=CL response.
-      aggregate_get_response = capdu->extended && is_fido_nfc_apdu(capdu) && HI(SW) == 0x61;
+      aggregate_get_response = aggregate_fido_responses && capdu->extended && HI(SW) == 0x61;
       if (aggregate_get_response) {
         apdu_buffer_tx_size = LL;
       } else {

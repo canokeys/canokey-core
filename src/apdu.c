@@ -75,13 +75,8 @@ static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
 static void fido_capdu_reset(void);
 
 typedef struct {
-  uint8_t active;
-  uint32_t total_len;
-  uint32_t sent;
-  uint16_t sw;
-  APDU_RESPONSE_SOURCE_READ read;
+  APDU_RESPONSE_SOURCE_VIEW view;
   APDU_RESPONSE_SOURCE_CLOSE close;
-  void *ctx;
 } APDU_RESPONSE_SOURCE;
 
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
@@ -107,7 +102,8 @@ static uint8_t is_fido_apdu(const CAPDU *capdu) {
 static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t transport) {
   switch (applet) {
   case APPLET_OPENPGP:
-    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled() : device_config_is_openpgp_ccid_enabled();
+    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled()
+                                           : device_config_is_openpgp_ccid_enabled();
   case APPLET_PIV:
     return transport == APDU_TRANSPORT_NFC ? device_config_is_piv_nfc_enabled() : device_config_is_piv_ccid_enabled();
   case APPLET_FIDO:
@@ -311,27 +307,27 @@ restart:
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
-  if (ex->sent == 0 && !response_source.active) {
+  if (ex->sent == 0 && !response_source.view.read) {
     response_tail_offset = 0;
     response_tail_len = 0;
   }
 
-  if (response_source.active) {
-    uint32_t remaining = response_source.total_len - response_source.sent;
+  if (response_source.view.read) {
+    uint32_t remaining = response_source.view.total_len - response_source.view.offset;
     uint16_t to_send = (uint16_t)MIN(remaining, sh->len);
 
     // The caller writes SW to sh->data + sh->len after we return, which
     // overwrites bytes that the response source may still need (e.g. the
     // tail of the auth_data in the first chunk of an MC streaming response).
     // Restore any bytes saved on the previous call.
-    if (response_tail_len != 0 && response_source.sent == response_tail_offset) {
+    if (response_tail_len != 0 && response_source.view.offset == response_tail_offset) {
       memcpy(sh->data + response_tail_offset, response_tail, response_tail_len);
       response_tail_len = 0;
     }
 
-    int read = response_source.read(response_source.ctx, response_source.sent, sh->data, to_send);
+    int read = response_source.view.read(response_source.view.ctx, response_source.view.offset, sh->data, to_send);
     if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {
-      ERR_MSG("source read failed sent=%lu read=%d\n", (unsigned long)response_source.sent, read);
+      ERR_MSG("source read failed sent=%lu read=%d\n", (unsigned long)response_source.view.offset, read);
       apdu_response_source_clear();
       sh->len = 0;
       sh->sw = SW_UNABLE_TO_PROCESS;
@@ -348,12 +344,12 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
     }
 
     sh->len = (uint16_t)read;
-    response_source.sent += (uint16_t)read;
-    remaining = response_source.total_len - response_source.sent;
+    response_source.view.offset += (uint16_t)read;
+    remaining = response_source.view.total_len - response_source.view.offset;
     if (remaining != 0) {
       sh->sw = remaining > 0xFF ? 0x61FF : 0x6100 + remaining;
     } else {
-      sh->sw = response_source.sw;
+      sh->sw = response_source.view.sw;
       apdu_response_source_clear();
     }
     return 0;
@@ -370,7 +366,7 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
     }
   }
   if (response_tail_len != 0 && ex->sent >= response_tail_offset) {
-    memcpy(sh->data, response_tail + ex->sent - response_tail_offset, to_send);
+    memcpy(sh->data, response_tail + (ex->sent - response_tail_offset), to_send);
   } else {
     memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
   }
@@ -415,25 +411,35 @@ int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu,
 void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx) {
   apdu_response_source_clear();
-  response_source.active = 1;
-  response_source.total_len = total_len;
-  response_source.sent = 0;
-  response_source.sw = sw;
-  response_source.read = read;
+  response_source.view.total_len = total_len;
+  response_source.view.offset = 0;
+  response_source.view.sw = sw;
+  response_source.view.read = read;
   response_source.close = close;
-  response_source.ctx = ctx;
+  response_source.view.ctx = ctx;
 }
 
 void apdu_response_source_clear(void) {
-  if (response_source.active && response_source.close) response_source.close(response_source.ctx);
+  if (response_source.view.read && response_source.close) response_source.close(response_source.view.ctx);
   memset(&response_source, 0, sizeof(response_source));
 }
 
-int apdu_response_source_active(void) { return response_source.active != 0; }
+int apdu_response_source_active(void) { return response_source.view.read != NULL; }
+
+const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void) {
+  return response_source.view.read ? &response_source.view : NULL;
+}
+
+int apdu_response_source_output(RAPDU *rapdu, uint32_t le) {
+  rapdu->len = (uint16_t)MIN(le, APDU_RESPONSE_CHUNK_SIZE);
+  return apdu_output(&rapdu_chaining, rapdu);
+}
 
 int apdu_session_can_preempt(void) {
   if (buffer_owner != BUFFER_OWNER_NONE) return 0;
-  if (response_source.active) return 0;
+  // Source-backed responses may be explicitly abandoned by another transport;
+  // device_applet_session_expire() closes their backing storage. Ordinary
+  // RAPDU continuation state has no equivalent reset and must stay owned.
   if (rapdu_chaining.sent < rapdu_chaining.rapdu.len) return 0;
   if (fido_capdu_chaining.in_chaining || fido_capdu_uses_pke) return 0;
   return 1;

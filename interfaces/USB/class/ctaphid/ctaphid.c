@@ -53,6 +53,7 @@ static void CTAPHID_MarkCancelPending(uint32_t cid) {
 }
 
 static int CTAPHID_PKESourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);
+static int CTAPHID_APDUResponseRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);
 static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code);
 static uint8_t CTAPHID_SendCancelResponseIfNeeded(void);
 static void CTAPHID_Execute_Init(void);
@@ -329,6 +330,21 @@ void CTAPHID_TxReset(void) {
   if (had_stream) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
 }
 
+static int CTAPHID_APDUResponseRead(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  const APDU_RESPONSE_SOURCE_VIEW *source = (const APDU_RESPONSE_SOURCE_VIEW *)ctx;
+  const size_t stream_offset = tx_stream.offset;
+  const size_t remaining = source->total_len - source->offset;
+  size_t copied = stream_offset < remaining ? MIN(remaining - stream_offset, max_len) : 0;
+  if (copied != 0) {
+    const int ret = source->read(source->ctx, source->offset + (uint32_t)stream_offset, out, (uint16_t)copied);
+    if (ret < 0 || (size_t)ret != copied) return -1;
+  }
+  if (stream_offset + copied == remaining && copied < max_len) out[copied++] = HI(source->sw);
+  if (copied < max_len) out[copied++] = LO(source->sw);
+  *written = copied;
+  return copied == max_len ? 0 : -1;
+}
+
 static int CTAPHID_MemSourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAPHID_MemSource *source = (CTAPHID_MemSource *)ctx;
   size_t copied = MIN(tx_stream.len - tx_stream.offset, max_len);
@@ -528,32 +544,6 @@ static uint8_t CTAPHID_SendCancelResponseWithRetries(void) {
   return CTAPHID_SendCancelResponseIfNeeded();
 }
 
-static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_t len) {
-  if (len > UINT16_MAX) {
-    CTAPHID_ReleaseSharedBuffer();
-    return -1;
-  }
-  if (len <= CTAPHID_STREAM_THRESHOLD) {
-    int ret = CTAPHID_SendResponse(cid, cmd, shared_io_buffer, (uint16_t)len);
-    CTAPHID_ReleaseSharedBuffer();
-    return ret;
-  }
-
-  tx_mem_source.data = shared_io_buffer;
-  tx_mem_source.offset = 0;
-  CTAPHID_TxSource source = {
-      .total_len = len,
-      .read = CTAPHID_MemSourceRead,
-      .close = CTAPHID_CloseSharedBufferSource,
-      .ctx = &tx_mem_source,
-  };
-  if (CTAPHID_SendStreamSource(cid, cmd, &source) != 0) {
-    CTAPHID_ReleaseSharedBuffer();
-    return -1;
-  }
-  return 0;
-}
-
 static int CTAPHID_RequestRead(void *ctx, size_t offset, uint8_t *buf, size_t len) {
   UNUSED(ctx);
   if (channel.cancel_pending) CTAPHID_SendCancelResponseIfNeeded();
@@ -610,7 +600,8 @@ static void CTAPHID_ClosePreparedRequest(uint8_t source_backed) {
   if (source_backed) CTAPHID_ReleasePKERequestStorage();
 }
 
-static int CTAPHID_PayloadSource(const ctap_req_src_t *req_src, size_t offset, size_t len, ctap_req_src_t *payload_src) {
+static int CTAPHID_PayloadSource(const ctap_req_src_t *req_src, size_t offset, size_t len,
+                                 ctap_req_src_t *payload_src) {
   if (!req_src || !req_src->read || !payload_src) return -1;
   if (offset > req_src->len || len > req_src->len - offset) return -1;
   // CTAPHID MSG wraps an APDU header around CTAP payload bytes. Keep the source
@@ -671,19 +662,15 @@ static void CTAPHID_Execute_Msg(void) {
   uint8_t *req = NULL;
   ctap_req_src_t req_src;
   uint8_t source_backed = 0;
+  uint8_t error_code = ERR_OTHER;
   if (CTAPHID_GetRequestBuffer(channel.bcnt_total, &req, &req_src, &source_backed) < 0) {
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-    return;
+    goto request_error;
   }
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
   uint8_t req_head[7];
   if (CTAPHID_ReadPreparedRequest(req, &req_src, 0, req_head, sizeof(req_head)) < 0) {
-    CTAPHID_ClosePreparedRequest(source_backed);
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-    return;
+    goto request_error;
   }
   CLA = req_head[0];
   INS = req_head[1];
@@ -691,30 +678,24 @@ static void CTAPHID_Execute_Msg(void) {
   P2 = req_head[3];
   LC = ((uint16_t)req_head[5] << 8) | req_head[6];
   if (LC > channel.bcnt_total - 7) {
-    CTAPHID_ClosePreparedRequest(source_backed);
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
-    return;
+    error_code = ERR_INVALID_LEN;
+    goto request_error;
   }
-  size_t le_len = channel.bcnt_total - 7 - LC;
+  const size_t le_len = channel.bcnt_total - 7 - LC;
   if (le_len == 2) {
     uint8_t le[2];
     if (CTAPHID_ReadPreparedRequest(req, &req_src, 7 + LC, le, sizeof(le)) < 0) {
-      CTAPHID_ClosePreparedRequest(source_backed);
-      release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-      CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-      return;
+      goto request_error;
     }
     LE = ((uint16_t)le[0] << 8) | le[1];
     if (LE == 0) LE = 0x10000;
   } else if (le_len == 0) {
     LE = 0x10000;
   } else {
-    CTAPHID_ClosePreparedRequest(source_backed);
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
-    return;
+    error_code = ERR_INVALID_LEN;
+    goto request_error;
   }
+  capdu->extended = 1;
   DATA = req ? req + 7 : req_head;
   RDATA = shared_io_buffer;
   if (req) {
@@ -722,25 +703,51 @@ static void CTAPHID_Execute_Msg(void) {
   } else {
     ctap_req_src_t payload_src;
     if (CTAPHID_PayloadSource(&req_src, 7, LC, &payload_src) < 0) {
-      CTAPHID_ClosePreparedRequest(source_backed);
-      release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-      CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-      return;
+      goto request_error;
     }
     ctap_process_apdu_source_with_src(capdu, &payload_src, rapdu, CTAP_SRC_HID);
   }
   CTAPHID_ClosePreparedRequest(source_backed);
+  const APDU_RESPONSE_SOURCE_VIEW *apdu_source = apdu_response_source_view();
+  if (apdu_source && apdu_source->total_len - apdu_source->offset <= capdu->le) {
+    CTAPHID_TxSource source = {
+        .total_len = apdu_source->total_len - apdu_source->offset + 2,
+        .read = CTAPHID_APDUResponseRead,
+        .close = CTAPHID_CloseSharedBufferSource,
+        .ctx = (void *)apdu_source,
+    };
+    const int send_ret = CTAPHID_SendStreamSource(channel.cid, channel.cmd, &source);
+    if (send_ret != 0) CTAPHID_ReleaseSharedBuffer();
+    apdu_response_source_clear();
+    if (send_ret != 0) {
+      device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+      CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+      return;
+    }
+    return;
+  }
+  if (apdu_source && apdu_response_source_output(rapdu, capdu->le) != 0) {
+    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
+    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+    return;
+  }
+  const uint8_t response_pending = apdu_response_source_active();
   shared_io_buffer[LL] = HI(SW);
   shared_io_buffer[LL + 1] = LO(SW);
-  if (CTAPHID_SendGlobalBufferResponseAuto(channel.cid, channel.cmd, LL + 2) != 0) {
+  const int send_ret = CTAPHID_SendResponse(channel.cid, channel.cmd, shared_io_buffer, LL + 2);
+  CTAPHID_ReleaseSharedBuffer();
+  if (send_ret != 0) {
     device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
     return;
   }
-  // SendStreamSource finishes synchronously and TxReset already released the
-  // session in that path; the guard catches the inline-response path where no
-  // stream was ever activated.
-  if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  if (!response_pending) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  return;
+
+request_error:
+  CTAPHID_ClosePreparedRequest(source_backed);
+  release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
+  CTAPHID_SendErrorResponse(channel.cid, error_code);
 }
 
 static void CTAPHID_Execute_Cbor(void) {
@@ -765,8 +772,8 @@ static void CTAPHID_Execute_Cbor(void) {
   CTAPHID_TxSource source;
   int stream_ret;
   if (req) {
-    stream_ret =
-        ctap_process_cbor_stream_with_src(req, channel.bcnt_total, channel.data, sizeof(channel.data), &source, CTAP_SRC_HID);
+    stream_ret = ctap_process_cbor_stream_with_src(req, channel.bcnt_total, channel.data, sizeof(channel.data), &source,
+                                                   CTAP_SRC_HID);
   } else {
     stream_ret =
         ctap_process_cbor_stream_source_with_src(&req_src, channel.data, sizeof(channel.data), &source, CTAP_SRC_HID);
