@@ -170,7 +170,6 @@ static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len
 #define IDX_EXP       (TAG_EXP       - 0x80)
 // clang-format on
 
-#define PIV_MAX_PUBKEY_RESPONSE_LENGTH 527
 #define PIV_MAX_7C_RESPONSE_LENGTH (RSA_N_BIT_MAX / 8 + 8)
 
 // offsets for auth
@@ -804,7 +803,7 @@ static int piv_set_public_key_response(ck_key_t *key, const uint8_t *prefix, uin
   if (total_len > APDU_COMMAND_BUFFER_SIZE) {
     uint8_t *response = piv_crypto_buffer;
 
-    if (total_len > PIV_MAX_PUBKEY_RESPONSE_LENGTH) return -1;
+    if (total_len > sizeof(piv_crypto_buffer) || total_len > pke_buffer_size()) return -1;
     memcpy(response, prefix, prefix_len);
     if (ck_encode_public_key(key, response + prefix_len, true) != encoded_len) return -1;
     apdu_response_source_clear();

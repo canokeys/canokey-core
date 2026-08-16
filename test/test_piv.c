@@ -316,6 +316,71 @@ static void test_piv_get_metadata_extended_algo_ids(void **state) {
   }
 }
 
+static void test_piv_rsa4096_metadata_chained_read(void **state) {
+  (void)state;
+
+  const piv_algorithm_extension_config_t config = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
+      .sm2 = 0x54,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&config), 0);
+  assert_int_equal(piv_install(1), 0);
+
+  ck_key_t key = {.meta = {.type = RSA4096,
+                           .origin = KEY_ORIGIN_IMPORTED,
+                           .usage = SIGN,
+                           .pin_policy = PIN_POLICY_ONCE,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  key.rsa.nbits = 4096;
+  memcpy(key.rsa.e, "\x00\x01\x00\x01", E_LENGTH);
+  assert_int_equal(ck_write_key("piv-pauk", &key), 0);
+  memset(&key, 0, sizeof(key));
+
+  uint8_t chunk[APDU_BUFFER_SIZE];
+  uint8_t response[536];
+  RAPDU rapdu = {.data = chunk};
+  RAPDU_CHAINING chaining = {.rapdu.data = chunk};
+  CAPDU command = {
+      .data = NULL,
+      .cla = 0x00,
+      .ins = PIV_INS_GET_METADATA,
+      .p1 = 0x00,
+      .p2 = 0x9A,
+      .lc = 0,
+      .le = APDU_BUFFER_SIZE,
+  };
+
+  piv_process_apdu_message(&chaining, &command, &rapdu);
+  assert_int_equal(rapdu.len, APDU_BUFFER_SIZE);
+  assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
+
+  size_t total = rapdu.len;
+  memcpy(response, rapdu.data, rapdu.len);
+  command = (CAPDU){.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = APDU_BUFFER_SIZE};
+  while ((rapdu.sw & 0xFF00) == 0x6100) {
+    rapdu.len = 0;
+    rapdu.sw = 0;
+    piv_process_apdu_message(&chaining, &command, &rapdu);
+    assert_true(total + rapdu.len <= sizeof(response));
+    memcpy(response + total, rapdu.data, rapdu.len);
+    total += rapdu.len;
+  }
+
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(total, sizeof(response));
+  assert_memory_equal(response,
+                      ((uint8_t[]){0x01, 0x01, 0x16, 0x02, 0x02, PIN_POLICY_ONCE, TOUCH_POLICY_NEVER, 0x03, 0x01,
+                                   KEY_ORIGIN_IMPORTED, 0x04, 0x82, 0x02, 0x0A, 0x81, 0x82, 0x02, 0x00}),
+                      18);
+  assert_memory_equal(response + sizeof(response) - 6, ((uint8_t[]){0x82, 0x04, 0x00, 0x01, 0x00, 0x01}), 6);
+}
+
 static void test_piv_delete_key_extension(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -954,6 +1019,7 @@ int main() {
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
+      cmocka_unit_test(test_piv_rsa4096_metadata_chained_read),
       cmocka_unit_test(test_piv_delete_key_extension),
       cmocka_unit_test(test_piv_dynamic_retired_key_slots),
       cmocka_unit_test(test_piv_reset_preserves_platform_algorithm_extension),

@@ -216,6 +216,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
     device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
     process_apdu_from(capdu, rapdu, APDU_TRANSPORT_CCID);
     device_set_timeout(NULL, 0);
+    device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
   }
 
   bulkin_data.dwLength = LL + 2;
@@ -440,6 +441,8 @@ void CCID_InFinished(uint8_t is_time_extension_request) {
 }
 
 void CCID_TimeExtensionLoop(void) {
+  device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
+
   if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
     bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
     bulkin_time_extension.dwLength = 0;

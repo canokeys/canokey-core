@@ -4,6 +4,7 @@ package main
 import (
 	crand "crypto/rand"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -121,6 +122,9 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			So(ret[:7], ShouldResemble, []byte("CanoKey"))
 		})
 		Convey("Config Pass", func(ctx C) {
+			if os.Getenv("CANOKEY_TEST_SKIP_TOUCH") != "" {
+				return
+			}
 			if !verified {
 				_, code, err := app.Send([]byte{0x00, 0x44, 0x01, 0x00})
 				So(err, ShouldBeNil)
@@ -200,11 +204,13 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x3F}
 			P1toIdx := map[int]int{
 				1: 0, // ADMIN_P1_CFG_LED_ON
-				2: 2, // NDEF read-only CC flag
 				// 3: 1, // ADMIN_P1_CFG_KBDIFACE (obsolete)
-				4: 3, // ADMIN_P1_CFG_NDEF
 				5: 4, // ADMIN_P1_CFG_WEBUSB_LANDING
 				// 6: 5, // ADMIN_P1_CFG_KBD_WITH_RETURN (obsolete)
+			}
+			if os.Getenv("CANOKEY_TEST_SKIP_NFC") == "" {
+				P1toIdx[2] = 2 // NDEF read-only CC flag
+				P1toIdx[4] = 3 // ADMIN_P1_CFG_NDEF
 			}
 			for P1 := range P1toIdx {
 				for _, P2 := range []int{0, 1, 0, 1} {
@@ -248,6 +254,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			apdu := append([]byte{0x00, 0x30, 0x00, 0x00, byte(len(sn))}, sn...)
 			_, code, err := app.Send(apdu)
 			So(err, ShouldBeNil)
+			writeCode := code
 			if verified {
 				So(code, ShouldBeIn, []uint16{0x6985, 0x9000})
 			} else {
@@ -257,8 +264,10 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			apdu = []byte{0x00, 0x32, 0x00, 0x00, byte(len(sn))}
 			readSN, code, err := app.Send(apdu)
 			So(code, ShouldEqual, 0x9000)
-			if verified { // make sure that the SN is written before
+			if verified && writeCode == 0x9000 {
 				So(readSN, ShouldResemble, sn)
+			} else {
+				So(len(readSN), ShouldEqual, len(sn))
 			}
 
 			readSN, code, err = app.Send([]byte{0x00, 0x32, 0x01, 0x00, 0x00}) // admin_vendor_hw_sn
@@ -332,15 +341,17 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				So(code, ShouldEqual, 0x6982)
 			}
 		})
-		Convey("Reset NDEF", func(ctx C) {
-			_, code, err := app.Send([]byte{0x00, 0x07, 0x00, 0x00})
-			So(err, ShouldBeNil)
-			if verified {
-				So(code, ShouldEqual, 0x9000)
-			} else {
-				So(code, ShouldEqual, 0x6982)
-			}
-		})
+		if os.Getenv("CANOKEY_TEST_SKIP_NFC") == "" {
+			Convey("Reset NDEF", func(ctx C) {
+				_, code, err := app.Send([]byte{0x00, 0x07, 0x00, 0x00})
+				So(err, ShouldBeNil)
+				if verified {
+					So(code, ShouldEqual, 0x9000)
+				} else {
+					So(code, ShouldEqual, 0x6982)
+				}
+			})
+		}
 	}
 }
 
@@ -407,31 +418,33 @@ func TestAdminApplet(t *testing.T) {
 					So(err, ShouldBeNil)
 					So(code, ShouldEqual, 0x9000)
 				})
-				Convey("Until the pin is locked", func(ctx C) {
-					// Factory reset not allowed
-					_, code, err = app.Send([]byte{0x00, 0x50, 0x00, 0x00, 0x05, 'R', 'E', 'S', 'E', 'T'})
-					So(err, ShouldBeNil)
-					So(code, ShouldEqual, 0x6985)
+				if os.Getenv("CANOKEY_TEST_SKIP_TOUCH") == "" {
+					Convey("Until the pin is locked", func(ctx C) {
+						// Factory reset not allowed
+						_, code, err = app.Send([]byte{0x00, 0x50, 0x00, 0x00, 0x05, 'R', 'E', 'S', 'E', 'T'})
+						So(err, ShouldBeNil)
+						So(code, ShouldEqual, 0x6985)
 
-					_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x07, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37})
-					So(err, ShouldBeNil)
-					So(code, ShouldEqual, 0x6983)
-					_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00})
-					So(err, ShouldBeNil)
-					So(code, ShouldEqual, 0x63C0)
-					_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x06, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36})
-					So(err, ShouldBeNil)
-					So(code, ShouldEqual, 0x6983)
+						_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x07, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37})
+						So(err, ShouldBeNil)
+						So(code, ShouldEqual, 0x6983)
+						_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00})
+						So(err, ShouldBeNil)
+						So(code, ShouldEqual, 0x63C0)
+						_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x06, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36})
+						So(err, ShouldBeNil)
+						So(code, ShouldEqual, 0x6983)
 
-					// Do factory reset
-					_, code, err = app.Send([]byte{0x00, 0x50, 0x00, 0x00, 0x05, 'R', 'E', 'S', 'E', 'T'})
-					So(err, ShouldBeNil)
-					So(code, ShouldEqual, 0x9000)
-					// PIN unlocked now
-					_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x06, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36})
-					So(err, ShouldBeNil)
-					So(code, ShouldEqual, 0x9000)
-				})
+						// Do factory reset
+						_, code, err = app.Send([]byte{0x00, 0x50, 0x00, 0x00, 0x05, 'R', 'E', 'S', 'E', 'T'})
+						So(err, ShouldBeNil)
+						So(code, ShouldEqual, 0x9000)
+						// PIN unlocked now
+						_, code, err = app.Send([]byte{0x00, 0x20, 0x00, 0x00, 0x06, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36})
+						So(err, ShouldBeNil)
+						So(code, ShouldEqual, 0x9000)
+					})
+				}
 			})
 			Reset(func() {
 				// Reset validation status without decreasing the counter

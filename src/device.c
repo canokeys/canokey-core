@@ -29,7 +29,7 @@ typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED,
 volatile static wait_status_t wait_status;
 applet_session_scratch_t applet_session_scratch;
 static device_applet_session_owner_t session_owner;
-static uint32_t session_deadline;
+static volatile uint32_t session_deadline;
 
 static void device_applet_session_expire(void) {
   if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
