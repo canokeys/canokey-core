@@ -182,6 +182,9 @@ static void test_piv_aes192_management_key(void **state) {
   key_meta_t meta;
   assert_true(ck_read_key_metadata("piv-admk", &meta) >= 0);
   assert_int_equal(meta.type, AES192);
+  assert_int_equal(meta.touch_policy, TOUCH_POLICY_NEVER);
+  assert_true(ck_read_key_metadata("piv-sigk", &meta) >= 0);
+  assert_int_equal(meta.pin_policy, PIN_POLICY_ALWAYS);
 
   uint8_t r_buf[64];
   RAPDU R = {.data = r_buf};
@@ -189,6 +192,8 @@ static void test_piv_aes192_management_key(void **state) {
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_NO_ERROR);
   assert_int_equal(R.data[2], 0x0A);
+  assert_int_equal(R.data[5], 0x00);
+  assert_int_equal(R.data[6], TOUCH_POLICY_NEVER);
 
   authenticate_management_key(default_mgmt_key);
 
@@ -197,9 +202,29 @@ static void test_piv_aes192_management_key(void **state) {
   uint8_t set_key[27] = {0x0A, 0x9B, 0x18};
   memcpy(set_key + 3, new_key, sizeof(new_key));
   C = (CAPDU){
+      .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFE, .lc = sizeof(set_key)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(ck_read_key_metadata("piv-admk", &meta) >= 0);
+  assert_int_equal(meta.touch_policy, TOUCH_POLICY_ALWAYS);
+
+  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9B, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.data[5], 0x00);
+  assert_int_equal(R.data[6], TOUCH_POLICY_ALWAYS);
+
+  C = (CAPDU){
+      .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFD, .lc = sizeof(set_key)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  C = (CAPDU){
       .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFF, .lc = sizeof(set_key)};
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_true(ck_read_key_metadata("piv-admk", &meta) >= 0);
+  assert_int_equal(meta.touch_policy, TOUCH_POLICY_NEVER);
 
   piv_poweroff();
   authenticate_management_key(new_key);

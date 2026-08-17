@@ -246,7 +246,7 @@ typedef struct {
 
 static const piv_key_spec_t static_key_specs[] = {
     {0x9A, AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE, 0, 0},
-    {0x9C, SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE, 0, 0},
+    {0x9C, SIG_KEY_PATH, SIGN, PIN_POLICY_ALWAYS, 0, 0},
     {0x9D, KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE, 0, 0},
     {0x9E, CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER, 0, 0},
     {0x9B, CARD_ADMIN_KEY_PATH, ENCRYPT, PIN_POLICY_NEVER, 0, 1},
@@ -1620,13 +1620,17 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0xFF || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0xFF || (P2 != 0xFF && P2 != 0xFE)) EXCEPT(SW_WRONG_P1P2);
   if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
   if (DATA[0] != ALG_AES_192 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
+  key_meta_t meta;
+  if (ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &meta) < 0) return -1;
+  meta.touch_policy = P2 == 0xFE ? TOUCH_POLICY_ALWAYS : TOUCH_POLICY_NEVER;
   if (write_file(CARD_ADMIN_KEY_PATH, DATA + 3, 0, 24, 1) < 0) return -1;
+  if (ck_write_key_metadata(CARD_ADMIN_KEY_PATH, &meta) < 0) return -1;
   const uint8_t is_default = !memcmp(DATA + 3, DEFAULT_MGMT_KEY, 24);
   if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
   return 0;
@@ -1780,10 +1784,15 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
   case 0x9B: // Management
   {
     uint8_t default_value;
+    key_meta_t meta;
     if (read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
-    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, ALG_AES_192, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
+    if (ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &meta) < 0) return -1;
+    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, ALG_AES_192, 0x02, 0x02, 0x00};
     memcpy(RDATA + pos, mgmt_meta_prefix, sizeof(mgmt_meta_prefix));
     pos += sizeof(mgmt_meta_prefix);
+    RDATA[pos++] = meta.touch_policy;
+    RDATA[pos++] = 0x05;
+    RDATA[pos++] = 0x01;
     RDATA[pos++] = default_value;
     break;
   }
