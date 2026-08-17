@@ -977,6 +977,124 @@ static void test_ctap_deselect_clears_credential_management_state(void **state) 
   assert_false(ctap_test_credential_management_state_active());
 }
 
+static void write_ctap_dc_fixture(const CTAP_discoverable_credential *credentials, size_t credential_count,
+                                  const CTAP_rp_meta *metadata, size_t metadata_count,
+                                  const CTAP_dc_general_attr *attr) {
+  assert_int_equal(write_file(DC_FILE, credentials, 0, (lfs_size_t)(credential_count * sizeof(*credentials)), 1), 0);
+  assert_int_equal(write_file(DC_META_FILE, metadata, 0, (lfs_size_t)(metadata_count * sizeof(*metadata)), 1), 0);
+  assert_int_equal(write_attr(DC_FILE, DC_GENERAL_ATTR, attr, sizeof(*attr)), 0);
+}
+
+static void init_dc_record(CTAP_discoverable_credential *dc, uint8_t rp_hash_byte, uint8_t nonce_byte) {
+  memset(dc, 0, sizeof(*dc));
+  memset(dc->credential_id.rp_id_hash, rp_hash_byte, SHA256_DIGEST_LENGTH);
+  dc->credential_id.nonce[0] = nonce_byte;
+  dc->credential_id.nonce[CREDENTIAL_NONCE_DC_POS] = 1;
+  dc->credential_id.alg_type = COSE_ALG_ES256;
+}
+
+static void init_rp_meta(CTAP_rp_meta *meta, uint8_t rp_hash_byte, uint32_t live_count) {
+  memset(meta, 0, sizeof(*meta));
+  memset(meta->rp_id_hash, rp_hash_byte, SHA256_DIGEST_LENGTH);
+  meta->live_count = live_count;
+  meta->deleted = live_count == 0;
+}
+
+static void test_ctap_capacity_uses_credential_metadata(void **state) {
+  (void)state;
+  CTAP_discoverable_credential credentials[3];
+  CTAP_rp_meta metadata[2];
+  CTAP_dc_general_attr attr = {.numbers = 2, .pending_op = CTAP_DC_PENDING_NONE};
+  init_dc_record(&credentials[0], 0x11, 1);
+  init_dc_record(&credentials[1], 0x22, 2);
+  init_dc_record(&credentials[2], 0x33, 3);
+  credentials[1].deleted = true;
+  init_rp_meta(&metadata[0], 0x11, 1);
+  init_rp_meta(&metadata[1], 0x33, 1);
+  write_ctap_dc_fixture(credentials, 3, metadata, 2, &attr);
+
+  uint32_t with_tombstone = ctap_test_capacity_remaining_new_credentials();
+
+  attr.numbers = 3;
+  assert_int_equal(write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), 0);
+  uint32_t without_tombstone = ctap_test_capacity_remaining_new_credentials();
+  assert_int_equal(with_tombstone, without_tombstone + 1);
+}
+
+static void test_ctap_pending_recovery_rebuilds_metadata(void **state) {
+  (void)state;
+  for (uint8_t pending_op = CTAP_DC_PENDING_ADD; pending_op <= CTAP_DC_PENDING_DELETE; ++pending_op) {
+    CTAP_discoverable_credential credentials[2];
+    CTAP_rp_meta metadata[2];
+    CTAP_dc_general_attr attr = {
+        .numbers = pending_op == CTAP_DC_PENDING_ADD ? 1 : 2,
+        .pending_index = 0,
+        .pending_op = pending_op,
+    };
+    init_dc_record(&credentials[0], 0x41, 1);
+    init_dc_record(&credentials[1], 0x42, 2);
+    init_rp_meta(&metadata[0], 0x41, 1);
+    init_rp_meta(&metadata[1], 0x42, 9);
+    write_ctap_dc_fixture(credentials, 2, metadata, 2, &attr);
+
+    assert_int_equal(ctap_consistency_check(), 0);
+    assert_int_equal(read_file(DC_FILE, &credentials[0], 0, sizeof(credentials[0])), sizeof(credentials[0]));
+    assert_true(credentials[0].deleted);
+    assert_int_equal(read_file(DC_META_FILE, metadata, 0, sizeof(metadata)), sizeof(metadata));
+    assert_true(metadata[0].deleted);
+    assert_int_equal(metadata[0].live_count, 0);
+    assert_false(metadata[1].deleted);
+    assert_int_equal(metadata[1].live_count, 1);
+    assert_int_equal(read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), sizeof(attr));
+    assert_int_equal(attr.pending_op, CTAP_DC_PENDING_NONE);
+    assert_int_equal(attr.numbers, 1);
+  }
+}
+
+static void test_ctap_delete_updates_only_target_rp(void **state) {
+  (void)state;
+  CTAP_discoverable_credential credentials[2];
+  CTAP_rp_meta metadata[2], unchanged;
+  CTAP_dc_general_attr attr = {.numbers = 2, .pending_op = CTAP_DC_PENDING_NONE};
+  init_dc_record(&credentials[0], 0x51, 1);
+  init_dc_record(&credentials[1], 0x52, 2);
+  init_rp_meta(&metadata[0], 0x51, 1);
+  init_rp_meta(&metadata[1], 0x52, 9);
+  unchanged = metadata[1];
+  write_ctap_dc_fixture(credentials, 2, metadata, 2, &attr);
+
+  assert_int_equal(ctap_test_delete_discoverable_credential(&credentials[0].credential_id), 0);
+  assert_int_equal(read_file(DC_FILE, credentials, 0, sizeof(credentials)), sizeof(credentials));
+  assert_true(credentials[0].deleted);
+  assert_false(credentials[1].deleted);
+  assert_int_equal(read_file(DC_META_FILE, metadata, 0, sizeof(metadata)), sizeof(metadata));
+  assert_true(metadata[0].deleted);
+  assert_int_equal(metadata[0].live_count, 0);
+  assert_memory_equal(&metadata[1], &unchanged, sizeof(unchanged));
+  assert_int_equal(read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), sizeof(attr));
+  assert_int_equal(attr.numbers, 1);
+  assert_int_equal(attr.pending_op, CTAP_DC_PENDING_NONE);
+}
+
+static void test_ctap_allow_list_matches_multiple_dc_ids_in_one_scan(void **state) {
+  (void)state;
+  CTAP_discoverable_credential credentials[2], selected;
+  CTAP_rp_meta metadata;
+  CTAP_dc_general_attr attr = {.numbers = 2, .pending_op = CTAP_DC_PENDING_NONE};
+  credential_id allow_list[2];
+  init_dc_record(&credentials[0], 0x61, 1);
+  init_dc_record(&credentials[1], 0x61, 2);
+  init_rp_meta(&metadata, 0x61, 2);
+  write_ctap_dc_fixture(credentials, 2, &metadata, 1, &attr);
+  allow_list[0] = credentials[0].credential_id;
+  allow_list[0].nonce[0] = 0x7f;
+  allow_list[1] = credentials[1].credential_id;
+
+  assert_int_equal(
+      ctap_test_find_allow_list_dc(allow_list, 2, credentials[0].credential_id.rp_id_hash, false, &selected), 0);
+  assert_memory_equal(&selected.credential_id, &credentials[1].credential_id, sizeof(credential_id));
+}
+
 static void provision_test_attestation(void) {
   static const uint8_t private_key[PRI_KEY_SIZE] = {1};
   static const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
@@ -2358,6 +2476,10 @@ int main() {
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
+      cmocka_unit_test(test_ctap_capacity_uses_credential_metadata),
+      cmocka_unit_test(test_ctap_pending_recovery_rebuilds_metadata),
+      cmocka_unit_test(test_ctap_delete_updates_only_target_rp),
+      cmocka_unit_test(test_ctap_allow_list_matches_multiple_dc_ids_in_one_scan),
       cmocka_unit_test(test_ctap_install_preserves_complete_attestation_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),

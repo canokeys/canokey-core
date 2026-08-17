@@ -335,6 +335,15 @@ typedef struct {
   bool deleted;
 } __packed CTAP_rp_meta;
 
+#ifdef TEST
+int ctap_consistency_check(void);
+uint32_t ctap_test_capacity_remaining_new_credentials(void);
+uint8_t ctap_test_delete_discoverable_credential(const credential_id *target);
+uint8_t ctap_test_find_allow_list_dc(const credential_id *allow_list, size_t allow_list_size,
+                                     const uint8_t rp_id_hash[SHA256_DIGEST_LENGTH], bool uv,
+                                     CTAP_discoverable_credential *out);
+#endif
+
 typedef struct {
   uint8_t aaguid[AAGUID_SIZE];
   uint16_t credential_id_length;
