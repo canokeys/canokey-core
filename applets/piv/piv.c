@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
+#include <aes.h>
 #include <applet-scratch.h>
 #include <common.h>
 #include <crypto-util.h>
-#include <des.h>
 #include <device-config.h>
 #include <device.h>
 #include <ecc.h>
@@ -49,7 +49,7 @@
 // alg
 // clang-format off
 #define ALG_DEFAULT   0x00
-#define ALG_TDEA_3KEY 0x03
+#define ALG_AES_192   0x0A
 #define ALG_RSA_2048  0x07
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
@@ -60,8 +60,6 @@
 #define ALG_SECP256K1_DEFAULT 0x53
 #define ALG_SECP521R1_DEFAULT 0x15
 #define ALG_SM2_DEFAULT       0x54
-
-#define TDEA_BLOCK_SIZE      8
 
 enum PIV_STATE {
   PIV_STATE_GET_DATA,
@@ -553,8 +551,8 @@ static key_type_t algo_id_to_key_type(const uint8_t id) {
   case ALG_RSA_2048:
     return RSA2048;
   case ALG_DEFAULT:
-  case ALG_TDEA_3KEY:
-    return TDEA;
+  case ALG_AES_192:
+    return AES192;
   default:
     break;
   }
@@ -592,8 +590,8 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
     return alg_ext_cfg.rsa3072;
   case RSA4096:
     return alg_ext_cfg.rsa4096;
-  case TDEA:
-    return ALG_TDEA_3KEY;
+  case AES192:
+    return ALG_AES_192;
   case KEY_TYPE_PKC_END:
   default:
     return ALG_DEFAULT;
@@ -913,8 +911,8 @@ int piv_install(const uint8_t reset) {
     if (create_key(static_key_specs[i].path, static_key_specs[i].usage, static_key_specs[i].pin_policy) < 0) return -1;
   }
 
-  // TDEA admin key
-  ck_key_t admin_key = {.meta = {.type = TDEA,
+  // AES-192 admin key
+  ck_key_t admin_key = {.meta = {.type = AES192,
                                  .origin = KEY_ORIGIN_GENERATED,
                                  .usage = ENCRYPT,
                                  .pin_policy = PIN_POLICY_NEVER,
@@ -1180,7 +1178,7 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
   ck_key_t key;
   if (P2 == 0x9B) { // Card admin
-    if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
+    if (P1 != ALG_DEFAULT && P1 != ALG_AES_192) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
       EXCEPT(SW_WRONG_P1P2);
     }
@@ -1309,15 +1307,15 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
-    LL = piv_7c_wrap(RDATA, TAG_CHALLENGE, TDEA_BLOCK_SIZE);
-    random_buffer(RDATA + 4, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_CHALLENGE, AES_BLOCK_SIZE);
+    random_buffer(RDATA + 4, AES_BLOCK_SIZE);
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
+    if (aes192_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -1330,14 +1328,14 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
-    uint8_t response[TDEA_BLOCK_SIZE];
+    uint8_t response[AES_BLOCK_SIZE];
 
     DBG_MSG("Case 3\n");
-    if (len[IDX_RESPONSE] != TDEA_BLOCK_SIZE ||
+    if (len[IDX_RESPONSE] != AES_BLOCK_SIZE ||
         read(ctx, pos[IDX_RESPONSE], response, sizeof(response)) != (int)sizeof(response))
       return -1;
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
-        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, response, TDEA_BLOCK_SIZE) != 0) {
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || AES_BLOCK_SIZE != len[IDX_RESPONSE] ||
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, response, AES_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -1359,14 +1357,14 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
-    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, TDEA_BLOCK_SIZE);
+    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, AES_BLOCK_SIZE);
 
-    LL = piv_7c_wrap(RDATA, TAG_WITNESS, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_WITNESS, AES_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
+    if (aes192_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -1380,26 +1378,26 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   // > Client application returns the decrypted witness referencing the original
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
-    uint8_t witness[TDEA_BLOCK_SIZE];
-    uint8_t challenge[TDEA_BLOCK_SIZE];
+    uint8_t witness[AES_BLOCK_SIZE];
+    uint8_t challenge[AES_BLOCK_SIZE];
 
     DBG_MSG("Case 5\n");
-    if (len[IDX_WITNESS] != TDEA_BLOCK_SIZE || len[IDX_CHALLENGE] != TDEA_BLOCK_SIZE ||
+    if (len[IDX_WITNESS] != AES_BLOCK_SIZE || len[IDX_CHALLENGE] != AES_BLOCK_SIZE ||
         read(ctx, pos[IDX_WITNESS], witness, sizeof(witness)) != (int)sizeof(witness) ||
         read(ctx, pos[IDX_CHALLENGE], challenge, sizeof(challenge)) != (int)sizeof(challenge))
       return -1;
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
-        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, witness, TDEA_BLOCK_SIZE) != 0) {
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || P2 != 0x9B || AES_BLOCK_SIZE != len[IDX_WITNESS] ||
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, witness, AES_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
 
-    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, AES_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(challenge, RDATA + 4, key.data) < 0) {
+    if (aes192_enc(challenge, RDATA + 4, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -1624,7 +1622,7 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0xFF || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
   if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
-  if (DATA[0] != 0x03 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
+  if (DATA[0] != ALG_AES_192 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
@@ -1783,7 +1781,7 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
   {
     uint8_t default_value;
     if (read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
-    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, 0x03, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
+    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, ALG_AES_192, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
     memcpy(RDATA + pos, mgmt_meta_prefix, sizeof(mgmt_meta_prefix));
     pos += sizeof(mgmt_meta_prefix);
     RDATA[pos++] = default_value;

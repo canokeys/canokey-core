@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include <apdu.h>
+#include <aes.h>
 #include <bd/lfs_filebd.h>
 #include <cmocka.h>
 #include <crypto-util.h>
@@ -153,6 +154,98 @@ static void test_delete_certificate_object(void **state) {
 
 static const uint8_t default_piv_pin[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
 static const uint8_t default_mgmt_key[24] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
+
+static void authenticate_management_key(const uint8_t key[24]) {
+  uint8_t init[] = {0x7C, 0x02, 0x81, 0x00};
+  uint8_t r_buf[64];
+  RAPDU R = {.data = r_buf};
+  CAPDU C = {
+      .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x0A, .p2 = 0x9B, .lc = sizeof(init)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 20);
+  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x12, 0x81, 0x10}), 4);
+
+  uint8_t complete[20] = {0x7C, 0x12, 0x82, 0x10};
+  assert_int_equal(aes192_enc(R.data + 4, complete + 4, key), 0);
+  C.data = complete;
+  C.lc = sizeof(complete);
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 0);
+}
+
+static void test_piv_aes192_management_key(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  key_meta_t meta;
+  assert_true(ck_read_key_metadata("piv-admk", &meta) >= 0);
+  assert_int_equal(meta.type, AES192);
+
+  uint8_t r_buf[64];
+  RAPDU R = {.data = r_buf};
+  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9B, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.data[2], 0x0A);
+
+  authenticate_management_key(default_mgmt_key);
+
+  static const uint8_t new_key[24] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x20, 0x21, 0x22, 0x23,
+                                      0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37};
+  uint8_t set_key[27] = {0x0A, 0x9B, 0x18};
+  memcpy(set_key + 3, new_key, sizeof(new_key));
+  C = (CAPDU){
+      .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFF, .lc = sizeof(set_key)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  piv_poweroff();
+  authenticate_management_key(new_key);
+
+  uint8_t init[] = {0x7C, 0x02, 0x81, 0x00};
+  C = (CAPDU){
+      .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x03, .p2 = 0x9B, .lc = sizeof(init)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  assert_int_equal(piv_install(1), 0);
+}
+
+static void test_piv_aes192_mutual_authentication(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  uint8_t init[] = {0x7C, 0x02, 0x80, 0x00};
+  uint8_t r_buf[64];
+  RAPDU R = {.data = r_buf};
+  CAPDU C = {
+      .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x0A, .p2 = 0x9B, .lc = sizeof(init)};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 20);
+  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x12, 0x80, 0x10}), 4);
+
+  uint8_t complete[40] = {0x7C, 0x26, 0x80, 0x10};
+  assert_int_equal(aes192_dec(R.data + 4, complete + 4, default_mgmt_key), 0);
+  complete[20] = 0x81;
+  complete[21] = 0x10;
+  for (uint8_t i = 0; i < AES_BLOCK_SIZE; ++i)
+    complete[22 + i] = i;
+  complete[38] = 0x82;
+  complete[39] = 0x00;
+  C.data = complete;
+  C.lc = sizeof(complete);
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 20);
+  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x12, 0x82, 0x10}), 4);
+
+  uint8_t expected[AES_BLOCK_SIZE];
+  assert_int_equal(aes192_enc(complete + 22, expected, default_mgmt_key), 0);
+  assert_memory_equal(R.data + 4, expected, sizeof(expected));
+}
 
 static void configure_host_managed_admin_data(void) {
   set_admin_status(1);
@@ -1013,6 +1106,8 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
+      cmocka_unit_test(test_piv_aes192_management_key),
+      cmocka_unit_test(test_piv_aes192_mutual_authentication),
       cmocka_unit_test(test_delete_certificate_object),
       cmocka_unit_test(test_piv_host_managed_admin_data_objects),
       cmocka_unit_test(test_piv_pin_does_not_satisfy_admin),

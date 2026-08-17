@@ -32,6 +32,8 @@ Please refer to the [documentation](https://docs.canokeys.org/development/protoc
 
 This core implements vendor APDUs for configuring PIV and OpenPGP retry limits. Retry counts must be in the range `1..15`; `15` is the maximum because failed-verification warnings are returned as `63Cx`.
 
+The PIV management key in slot 9B uses AES-192 (`0x0A`) exclusively. Its factory value remains `010203040506070801020304050607080102030405060708`, matching YubiKey 5.7 and later.
+
 - PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
 - OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
 
