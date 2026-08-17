@@ -1,10 +1,14 @@
 {
     "description": "CanoKey Authenticator",
     "aaguid": "244eb29e-e090-4e49-81fe-1f20f8d3b8f4",
-    "authenticatorVersion": 201,
+    "authenticatorVersion": 311,
     "protocolFamily": "fido2",
     "schema": 3,
     "upv": [
+        {
+            "major": 1,
+            "minor": 3
+        },
         {
             "major": 1,
             "minor": 1
@@ -16,7 +20,9 @@
     ],
     "authenticationAlgorithms": [
         "secp256r1_ecdsa_sha256_raw",
-        "ed25519_eddsa_sha512_raw"
+        "ed25519_eddsa_sha512_raw",
+        "ml_dsa_65_raw",
+        "sm2_sm3_raw"
     ],
     "publicKeyAlgAndEncodings": [
         "cose"
@@ -124,7 +130,8 @@
             }
         ],
         "maxSerializedLargeBlobArray": 4096,
-        "firmwareVersion": 201,
+        "minPINLength": 4,
+        "firmwareVersion": 311,
         "maxCredBlobLength": 32
     }
 }

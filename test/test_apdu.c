@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <cmocka.h>
+#include <cbor.h>
 
 #include <admin.h>
 #include <applets.h>
@@ -1190,6 +1191,33 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   assert_non_null(find_bytes(chunk, written, "minPinLength", sizeof("minPinLength") - 1));
   assert_non_null(find_bytes(chunk, written, "thirdPartyPayment", sizeof("thirdPartyPayment") - 1));
   assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
+}
+
+static void test_ctap_hid_get_info_with_force_pin_change_is_canonical(void **state) {
+  (void)state;
+
+  uint8_t req[] = {CTAP_GET_INFO};
+  uint8_t scratch[64] = {0};
+  uint8_t resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
+  CTAPHID_TxSource source = {0};
+  CborParser parser;
+  CborValue value;
+  size_t written = 0;
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  assert_int_equal(ctap_test_set_force_pin_change(true), 0);
+
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
+                   1);
+  assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+  assert_true(written > 1);
+  assert_int_equal(resp[0], CTAP1_ERR_SUCCESS);
+  assert_int_equal(cbor_parser_init(resp + 1, written - 1, 0, &parser, &value), CborNoError);
+  assert_int_equal(cbor_value_validate(&value, CborValidateCanonicalFormat | CborValidateCompleteData), CborNoError);
+  assert_int_equal(ctap_test_set_force_pin_change(false), 0);
+  if (source.close) source.close(source.ctx);
 }
 
 static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state) {
@@ -2485,6 +2513,7 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
+      cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
       cmocka_unit_test(test_ndef_chained_update_and_streaming_read),
       cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),

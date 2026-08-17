@@ -539,6 +539,15 @@ static bool ctap_config_force_pin_change_required(void) {
   return cfg.force_pin_change != 0;
 }
 
+#ifdef TEST
+int ctap_test_set_force_pin_change(bool required) {
+  CTAP_persistent_config cfg;
+  if (ctap_config_load(&cfg) < 0) return -1;
+  cfg.force_pin_change = required ? 1 : 0;
+  return ctap_config_store(&cfg);
+}
+#endif
+
 static int ctap_min_pin_rpids_store(const CTAP_config *cfg) {
   if (cfg->min_pin_rpid_count == 0) return write_file(MIN_PIN_RPIDS_FILE, NULL, 0, 0, 1);
 
@@ -2603,7 +2612,6 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
     err = has_pin();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
-    if (ctap_config_force_pin_change_required()) return CTAP2_ERR_PIN_POLICY_VIOLATION;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
 #ifndef FUZZ
@@ -2634,6 +2642,10 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
     consecutive_pin_counter = 3;
     err = set_pin_retries(8);
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    // CTAP keeps the legacy getPinToken error distinct from the permissions-based command.
+    if (ctap_config_force_pin_change_required()) {
+      return cp.sub_command == CP_CMD_GET_PIN_TOKEN ? CTAP2_ERR_PIN_INVALID : CTAP2_ERR_PIN_POLICY_VIOLATION;
+    }
     cp_reset_pin_uv_auth_token();
     cp_begin_using_uv_auth_token(false);
     if (cp.sub_command == CP_CMD_GET_PIN_TOKEN) {

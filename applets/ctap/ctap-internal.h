@@ -9,7 +9,7 @@
 #include <ecc.h>
 #include <sha.h>
 
-#define FIRMWARE_VERSION 201
+#define FIRMWARE_VERSION 311
 #define CTAP_MAX_MSG_SIZE MAX_CTAP_BUFSIZE
 
 // Filesystem Meta
@@ -337,6 +337,7 @@ typedef struct {
 
 #ifdef TEST
 int ctap_consistency_check(void);
+int ctap_test_set_force_pin_change(bool required);
 uint32_t ctap_test_capacity_remaining_new_credentials(void);
 uint8_t ctap_test_delete_discoverable_credential(const credential_id *target);
 uint8_t ctap_test_find_allow_list_dc(const credential_id *allow_list, size_t allow_list_size,
