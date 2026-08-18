@@ -355,13 +355,18 @@ size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig
     memzero(&key, sizeof(key));
     return 0;
   }
-  if (ecc_sign(SECP256R1, &key, input, input_len, sig) < 0) {
+  if (input_len != PRIVATE_KEY_LENGTH[SECP256R1]) {
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  const size_t sig_len = ecdsa_p256_sign_der(&key, input, sig);
+  if (sig_len == 0) {
     ERR_MSG("Failed to sign with device private key\n");
     memzero(&key, sizeof(key));
     return 0;
   }
   memzero(&key, sizeof(key));
-  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
+  return sig_len;
 }
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {

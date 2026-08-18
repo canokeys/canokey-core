@@ -430,6 +430,16 @@ const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void) {
   return response_source.view.read ? &response_source.view : NULL;
 }
 
+int apdu_response_source_read_memory(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  memcpy(buf, (const uint8_t *)ctx + offset, len);
+  return len;
+}
+
+int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
+}
+
 int apdu_response_source_output(RAPDU *rapdu, uint32_t le) {
   rapdu->len = (uint16_t)MIN(le, APDU_RESPONSE_CHUNK_SIZE);
   return apdu_output(&rapdu_chaining, rapdu);

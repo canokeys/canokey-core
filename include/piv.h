@@ -16,10 +16,15 @@
 #define PIV_INS_PUT_DATA                     0xDB
 #define PIV_INS_GET_METADATA                 0xF7
 #define PIV_INS_GET_SERIAL                   0xF8
+// Yubico PIV attestation extension: 00 F9 <slot> 00, no data. The response is
+// a DER X.509 certificate signed by the P-256 key in F9. Only keys generated on
+// the device can be attested; no PIN or management-key authentication is
+// required. F9 key/certificate storage survives PIV reset.
+#define PIV_INS_ATTEST                       0xF9
 // Yubico vendor extension: 00 F6 <toSlot> <fromSlot>, no data.
-// Core implements the delete form only: toSlot=FF. It requires management-key
-// authentication and deletes only the asymmetric key; any certificate object in
-// the same slot is left intact.
+// toSlot=FF deletes the key. Moving and deleting require management-key
+// authentication and affect only the asymmetric key; certificate objects stay
+// in their original slots.
 #define PIV_INS_MOVE_DELETE_KEY              0xF6
 // Vendor extension: 00 FA <pinRetries> <pukRetries>, no data.
 // Requires management-key and PIN authentication, then resets PIN/PUK to

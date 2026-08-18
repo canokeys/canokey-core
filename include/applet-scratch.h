@@ -3,9 +3,11 @@
 #define CANOKEY_CORE_INCLUDE_APPLET_SCRATCH_H
 
 #include "../applets/ctap/ctap-internal.h"
+#include <ecc.h>
 #include <ml-dsa-65.h>
 #include <pke.h>
 #include <rsa.h>
+#include <sha.h>
 #include <stddef.h>
 
 // Single global scratch buffer shared by CTAP/OpenPGP/PIV session work.
@@ -22,6 +24,7 @@
 // can reach. The static_asserts below pin those offsets so a future field
 // reorder breaks the build instead of silently corrupting parser state.
 #define APPLET_SHARED_BUFFER_LENGTH ((RSA_N_BIT_MAX / 8) + 32)
+#define PIV_ATTESTATION_PLAN_SIZE 384
 
 typedef enum {
   CTAP_MLDSA_STREAM_NONE,
@@ -51,15 +54,29 @@ typedef struct {
   bool pending;
 } CTAP_mldsa_stream_state;
 
+typedef struct {
+  uint8_t public_material[APPLET_SHARED_BUFFER_LENGTH];
+  uint8_t digest[32];
+  union {
+    rsa_key_t rsa;
+    ecc_key_t ecc;
+    sha256_ctx_t sha256;
+    uint8_t attestation_plan[PIV_ATTESTATION_PLAN_SIZE];
+  } work;
+} piv_attestation_scratch_t;
+
 typedef union {
   CTAP_mldsa_stream_state ctap_mldsa;
   CTAP_make_credential ctap_mc;
   CTAP_get_assertion ctap_ga;
+  piv_attestation_scratch_t piv_attestation;
   uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
 
 _Static_assert(sizeof(CTAP_make_credential) <= sizeof(CTAP_mldsa_stream_state),
                "MakeCredential parsing should not enlarge the shared scratch union");
+_Static_assert(sizeof(piv_attestation_scratch_t) <= sizeof(CTAP_mldsa_stream_state),
+               "PIV attestation should not enlarge the shared scratch union");
 
 extern applet_session_scratch_t applet_session_scratch;
 

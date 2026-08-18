@@ -119,6 +119,8 @@ void apdu_response_source_clear(void);
 int apdu_response_source_active(void);
 const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void);
 int apdu_response_source_output(RAPDU *rapdu, uint32_t le);
+int apdu_response_source_read_memory(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 int apdu_session_can_preempt(void);
 // Releases any in-flight FIDO chained-APDU reassembly state (PKE staging,
 // chaining flags, accumulator). Call from any path that drops the CTAP

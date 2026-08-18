@@ -42,12 +42,6 @@
       *resp_len = 1;                                                                                                   \
   } while (0)
 
-static int ctap_large_response_read_at(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
-  const uint8_t *src = (const uint8_t *)ctx;
-  memcpy(buf, src + offset, len);
-  return (int)len;
-}
-
 #if ENABLE_NFC
 #define WAIT(timeout_response)                                                                                         \
   do {                                                                                                                 \
@@ -3532,7 +3526,7 @@ set_resp:
     encode_buf[0] = *resp;
     if (!hid_cbor_stream_response_active) {
       // Response is too large for the APDU buffer; stream it via GET RESPONSE.
-      apdu_response_source_set((uint32_t)*resp_len, SW_NO_ERROR, ctap_large_response_read_at, NULL, encode_buf);
+      apdu_response_source_set((uint32_t)*resp_len, SW_NO_ERROR, apdu_response_source_read_memory, NULL, encode_buf);
       *resp_len = 1; // initial APDU payload: status byte only
     }
   } else if (*resp_len > 1 && status == 0) {

@@ -20,126 +20,100 @@
 #define ADMIN_PIN_FILE "admin-pin"
 
 typedef struct {
-  const char *path;
-  const uint8_t *attrs;
-  uint8_t attr_count;
-} admin_fs_usage_source_t;
-
-typedef struct {
-  uint8_t id;
-  const admin_fs_usage_source_t *sources;
+  uint8_t first_source;
   uint8_t source_count;
+  uint8_t id;
 } admin_applet_usage_def_t;
+
+enum {
+  ADMIN_ATTR_NONE,
+  ADMIN_ATTR_KEY,
+  ADMIN_ATTR_OPENPGP_DATA,
+  ADMIN_ATTR_PIV_PIN,
+  ADMIN_ATTR_PIV_ADMIN_KEY,
+  ADMIN_ATTR_PIV_DO_META,
+  ADMIN_ATTR_OATH,
+  ADMIN_ATTR_CTAP_CERT,
+  ADMIN_ATTR_CTAP_DC,
+};
 
 static pin_t pin = {.min_length = 6, .max_length = PIN_MAX_LENGTH, .is_validated = 0, .path = ADMIN_PIN_FILE};
 
 // Logical usage manifests for ADMIN_FLASH_USAGE_APPLETS. Keep these in sync
 // with applet-owned LittleFS paths and user attributes. The SYSTEM record
 // reports LittleFS physical usage that cannot be attributed to these payloads.
-static const uint8_t admin_pin_attrs[] = {0x00, 0x01};
-static const admin_fs_usage_source_t admin_usage_sources[] = {
-    {ADMIN_PIN_FILE, admin_pin_attrs, sizeof(admin_pin_attrs)},
-};
-
+static const uint8_t key_attrs[] = {0x00, 0x01};
 static const uint8_t openpgp_data_attrs[] = {0x5E, 0x5B, 0x2D, 0x35, 0xC4, 0x93, 0xD6, 0xD7, 0xD8, 0xC1, 0xC2,
                                              0xC3, 0xFF, 0xFE, 0xFD, 0xFC, 0xFB};
-static const uint8_t openpgp_key_attrs[] = {0x00, 0x01};
-static const uint8_t openpgp_pin_attrs[] = {0x00, 0x01};
-static const admin_fs_usage_source_t openpgp_usage_sources[] = {
-    {"pgp-data", openpgp_data_attrs, sizeof(openpgp_data_attrs)},
-    {"pgp-sigk", openpgp_key_attrs, sizeof(openpgp_key_attrs)},
-    {"pgp-deck", openpgp_key_attrs, sizeof(openpgp_key_attrs)},
-    {"pgp-autk", openpgp_key_attrs, sizeof(openpgp_key_attrs)},
-    {"pgp-sigc", NULL, 0},
-    {"pgp-decc", NULL, 0},
-    {"pgp-autc", NULL, 0},
-    {"pgp-pw1", openpgp_pin_attrs, sizeof(openpgp_pin_attrs)},
-    {"pgp-pw3", openpgp_pin_attrs, sizeof(openpgp_pin_attrs)},
-    {"pgp-rc", openpgp_pin_attrs, sizeof(openpgp_pin_attrs)},
-};
 
 static const uint8_t piv_pin_attrs[] = {0x00, 0x01, 0x81};
 static const uint8_t piv_admin_key_attrs[] = {0x81};
 static const uint8_t piv_do_meta_attrs[] = {0x90, 0x91, 0x92, 0x93};
-static const admin_fs_usage_source_t piv_usage_sources[] = {
-    {"piv-pauc", NULL, 0},
-    {"piv-sigc", NULL, 0},
-    {"piv-cauc", NULL, 0},
-    {"piv-mntc", NULL, 0},
-    {"piv-82c", NULL, 0},
-    {"piv-83c", NULL, 0},
-    {"piv-chu", NULL, 0},
-    {"piv-ccc", NULL, 0},
-    {"piv-pi", NULL, 0},
-    {"piv-fig", NULL, 0},
-    {"piv-face", NULL, 0},
-    {"piv-sec", NULL, 0},
-    {"piv-kh", NULL, 0},
-    {"piv-iris", NULL, 0},
-    {"piv-do", piv_do_meta_attrs, sizeof(piv_do_meta_attrs)},
-    {"piv-pauk", NULL, 0},
-    {"piv-sigk", NULL, 0},
-    {"piv-cauk", NULL, 0},
-    {"piv-mntk", NULL, 0},
-    {"piv-82", NULL, 0},
-    {"piv-83", NULL, 0},
-    {"piv-84", NULL, 0},
-    {"piv-85", NULL, 0},
-    {"piv-86", NULL, 0},
-    {"piv-87", NULL, 0},
-    {"piv-88", NULL, 0},
-    {"piv-89", NULL, 0},
-    {"piv-8a", NULL, 0},
-    {"piv-8b", NULL, 0},
-    {"piv-8c", NULL, 0},
-    {"piv-8d", NULL, 0},
-    {"piv-8e", NULL, 0},
-    {"piv-8f", NULL, 0},
-    {"piv-90", NULL, 0},
-    {"piv-91", NULL, 0},
-    {"piv-92", NULL, 0},
-    {"piv-93", NULL, 0},
-    {"piv-94", NULL, 0},
-    {"piv-95", NULL, 0},
-    {"piv-admk", piv_admin_key_attrs, sizeof(piv_admin_key_attrs)},
-    {"piv-pin", piv_pin_attrs, sizeof(piv_pin_attrs)},
-    {"piv-puk", piv_pin_attrs, sizeof(piv_pin_attrs)},
-};
 
 static const uint8_t oath_attrs[] = {0x02, 0x03};
-static const admin_fs_usage_source_t oath_usage_sources[] = {
-    {"oath", oath_attrs, sizeof(oath_attrs)},
-};
 
 static const uint8_t ctap_cert_attrs[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05};
 static const uint8_t ctap_dc_attrs[] = {0x00};
-static const admin_fs_usage_source_t ctap_usage_sources[] = {
-    {"ctap_cert", ctap_cert_attrs, sizeof(ctap_cert_attrs)},
-    {"ctap_dc", ctap_dc_attrs, sizeof(ctap_dc_attrs)},
-    {"ctap_dm", NULL, 0},
-    {"ctap_lb", NULL, 0},
-    {"ctap_lbt", NULL, 0},
-    {"ctap_mpr", NULL, 0},
+
+static const char *const usage_sources[] = {
+    ADMIN_PIN_FILE,
+    "pgp-data", "pgp-sigk", "pgp-deck", "pgp-autk", "pgp-sigc", "pgp-decc", "pgp-autc", "pgp-pw1",
+    "pgp-pw3", "pgp-rc",
+    "piv-pauc", "piv-sigc", "piv-cauc", "piv-mntc", "piv-82c", "piv-83c", "piv-chu", "piv-ccc", "piv-pi",
+    "piv-fig", "piv-face", "piv-sec", "piv-kh", "piv-iris", "piv-do", "piv-pauk", "piv-sigk", "piv-cauk",
+    "piv-mntk", "piv-82", "piv-83", "piv-84", "piv-85", "piv-86", "piv-87", "piv-88", "piv-89", "piv-8a",
+    "piv-8b", "piv-8c", "piv-8d", "piv-8e", "piv-8f", "piv-90", "piv-91", "piv-92", "piv-93", "piv-94",
+    "piv-95", "piv-admk", "piv-pin", "piv-puk", "piv-atc", "piv-atk",
+    "oath",
+    "ctap_cert", "ctap_dc", "ctap_dm", "ctap_lb", "ctap_lbt", "ctap_mpr",
+    "E103", "NDEF",
+    "pass",
 };
 
-static const admin_fs_usage_source_t ndef_usage_sources[] = {
-    {"E103", NULL, 0},
-    {"NDEF", NULL, 0},
+#define ADMIN_ATTR_PAIR(low, high) ((low) | ((high) << 4u))
+static const uint8_t usage_attr_kinds[] = {
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_KEY, ADMIN_ATTR_OPENPGP_DATA),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_KEY, ADMIN_ATTR_KEY),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_KEY, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_KEY, ADMIN_ATTR_KEY),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_KEY, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_PIV_DO_META),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_PIV_ADMIN_KEY, ADMIN_ATTR_PIV_PIN),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_PIV_PIN, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_OATH),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_CTAP_CERT, ADMIN_ATTR_CTAP_DC),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
+    ADMIN_ATTR_PAIR(ADMIN_ATTR_NONE, ADMIN_ATTR_NONE),
 };
-
-static const admin_fs_usage_source_t pass_usage_sources[] = {
-    {"pass", NULL, 0},
-};
+_Static_assert(sizeof(usage_attr_kinds) * 2u >= sizeof(usage_sources) / sizeof(usage_sources[0]),
+               "Every flash-usage source needs an attribute kind");
 
 static const admin_applet_usage_def_t applet_usage_defs[] = {
-    {ADMIN_APPLET_USAGE_ID_ADMIN, admin_usage_sources, sizeof(admin_usage_sources) / sizeof(admin_usage_sources[0])},
-    {ADMIN_APPLET_USAGE_ID_OPENPGP, openpgp_usage_sources,
-     sizeof(openpgp_usage_sources) / sizeof(openpgp_usage_sources[0])},
-    {ADMIN_APPLET_USAGE_ID_PIV, piv_usage_sources, sizeof(piv_usage_sources) / sizeof(piv_usage_sources[0])},
-    {ADMIN_APPLET_USAGE_ID_OATH, oath_usage_sources, sizeof(oath_usage_sources) / sizeof(oath_usage_sources[0])},
-    {ADMIN_APPLET_USAGE_ID_CTAP, ctap_usage_sources, sizeof(ctap_usage_sources) / sizeof(ctap_usage_sources[0])},
-    {ADMIN_APPLET_USAGE_ID_NDEF, ndef_usage_sources, sizeof(ndef_usage_sources) / sizeof(ndef_usage_sources[0])},
-    {ADMIN_APPLET_USAGE_ID_PASS, pass_usage_sources, sizeof(pass_usage_sources) / sizeof(pass_usage_sources[0])},
+    {0, 1, ADMIN_APPLET_USAGE_ID_ADMIN},       {1, 10, ADMIN_APPLET_USAGE_ID_OPENPGP},
+    {11, 44, ADMIN_APPLET_USAGE_ID_PIV},       {55, 1, ADMIN_APPLET_USAGE_ID_OATH},
+    {56, 6, ADMIN_APPLET_USAGE_ID_CTAP},       {62, 2, ADMIN_APPLET_USAGE_ID_NDEF},
+    {64, 1, ADMIN_APPLET_USAGE_ID_PASS},
 };
 
 static const admin_device_config_t default_cfg = {
@@ -342,8 +316,45 @@ static void admin_put_u32_be(uint8_t *buf, uint32_t value) {
   buf[3] = (uint8_t)value;
 }
 
-static int admin_sum_fs_usage(const admin_fs_usage_source_t *source, uint32_t *bytes, uint8_t *flags) {
-  int size = get_file_size(source->path);
+static const uint8_t *admin_fs_usage_attrs(uint8_t kind, uint8_t *count) {
+  switch (kind) {
+  case ADMIN_ATTR_KEY:
+    *count = sizeof(key_attrs);
+    return key_attrs;
+  case ADMIN_ATTR_OPENPGP_DATA:
+    *count = sizeof(openpgp_data_attrs);
+    return openpgp_data_attrs;
+  case ADMIN_ATTR_PIV_PIN:
+    *count = sizeof(piv_pin_attrs);
+    return piv_pin_attrs;
+  case ADMIN_ATTR_PIV_ADMIN_KEY:
+    *count = sizeof(piv_admin_key_attrs);
+    return piv_admin_key_attrs;
+  case ADMIN_ATTR_PIV_DO_META:
+    *count = sizeof(piv_do_meta_attrs);
+    return piv_do_meta_attrs;
+  case ADMIN_ATTR_OATH:
+    *count = sizeof(oath_attrs);
+    return oath_attrs;
+  case ADMIN_ATTR_CTAP_CERT:
+    *count = sizeof(ctap_cert_attrs);
+    return ctap_cert_attrs;
+  case ADMIN_ATTR_CTAP_DC:
+    *count = sizeof(ctap_dc_attrs);
+    return ctap_dc_attrs;
+  default:
+    *count = 0;
+    return NULL;
+  }
+}
+
+static uint8_t admin_fs_usage_attr_kind(uint8_t source_index) {
+  const uint8_t packed = usage_attr_kinds[source_index >> 1u];
+  return (source_index & 1u) != 0 ? packed >> 4u : packed & 0x0Fu;
+}
+
+static int admin_sum_fs_usage(const char *path, uint8_t attr_kind, uint32_t *bytes, uint8_t *flags) {
+  int size = get_file_size(path);
   if (size == LFS_ERR_NOENT) {
     *flags |= ADMIN_APPLET_USAGE_FLAG_MISSING;
   } else if (size < 0) {
@@ -352,8 +363,10 @@ static int admin_sum_fs_usage(const admin_fs_usage_source_t *source, uint32_t *b
     *bytes += (uint32_t)size;
   }
 
-  for (uint8_t i = 0; i < source->attr_count; ++i) {
-    size = get_attr_size(source->path, source->attrs[i]);
+  uint8_t attr_count;
+  const uint8_t *attrs = admin_fs_usage_attrs(attr_kind, &attr_count);
+  for (uint8_t i = 0; i < attr_count; ++i) {
+    size = get_attr_size(path, attrs[i]);
     if (size == LFS_ERR_NOENT || size == LFS_ERR_NOATTR) {
       *flags |= ADMIN_APPLET_USAGE_FLAG_MISSING;
       continue;
@@ -375,7 +388,9 @@ static int admin_flash_usage_applets(const CAPDU *capdu, RAPDU *rapdu) {
     uint32_t bytes = 0;
     uint8_t flags = 0;
     for (uint8_t j = 0; j < applet_usage_defs[i].source_count; ++j) {
-      if (admin_sum_fs_usage(&applet_usage_defs[i].sources[j], &bytes, &flags) < 0) return -1;
+      const uint8_t source_index = applet_usage_defs[i].first_source + j;
+      const uint8_t attr_kind = admin_fs_usage_attr_kind(source_index);
+      if (admin_sum_fs_usage(usage_sources[source_index], attr_kind, &bytes, &flags) < 0) return -1;
     }
     if (UINT32_MAX - attributed_bytes < bytes) {
       attributed_bytes = UINT32_MAX;

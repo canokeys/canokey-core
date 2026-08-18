@@ -30,8 +30,12 @@ add_mocked_test(piv
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto/test/bignum.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto/test/ecdsa-generic.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto/test/nist256p1.c
         LINK_LIBRARIES canokey-core
 )
+target_include_directories(test_piv PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto/test)
 
 add_mocked_test(key
         SOURCES

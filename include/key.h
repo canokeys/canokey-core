@@ -86,6 +86,12 @@ typedef struct {
   };
 } ck_key_t;
 
+#define CK_OPENPGP_ALGO_ATTR_COUNT (SECP521R1 + 1)
+#define CK_OPENPGP_ALGO_ATTR_SIZE 12
+extern const uint8_t CK_OPENPGP_ALGO_ATTR[CK_OPENPGP_ALGO_ATTR_COUNT][CK_OPENPGP_ALGO_ATTR_SIZE];
+
+int ck_curve_oid(key_type_t type, const uint8_t **oid, uint8_t *oid_len);
+
 /**
  * Encode public key
  *
