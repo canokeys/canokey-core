@@ -826,8 +826,21 @@ static int ctap_mldsa_stream_read(void *ctx, uint8_t *out, size_t max_len, size_
     break;
   }
 
+  state->emitted += copied;
   *written = copied;
   return 0;
+}
+
+static int ctap_mldsa_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, uint16_t len) {
+  CTAP_mldsa_stream_state *state = (CTAP_mldsa_stream_state *)ctx;
+  size_t written = 0;
+  if (offset != state->emitted || ctap_mldsa_stream_read(state, out, len, &written) < 0 || written != len) return -1;
+  return (int)written;
+}
+
+static void ctap_mldsa_apdu_stream_close(void *ctx) {
+  CTAP_mldsa_stream_state *state = (CTAP_mldsa_stream_state *)ctx;
+  memzero(state, sizeof(*state));
 }
 
 static int ctap_mldsa65_tr_from_seed(const uint8_t seed[PRI_KEY_SIZE], uint8_t tr[MLDSA_TRBYTES], uint8_t *scratch,
@@ -3750,9 +3763,18 @@ static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *r
 
   if (cmd == CTAP_MAKE_CREDENTIAL) return ctap_prepare_make_credential_apdu_response(req, req_len, rapdu);
 
+  // ML-DSA CM/GA responses defer their large public key or signature to a
+  // stream. Clear stale state, then expose the newly prepared stream to APDU.
+  memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
   size_t len = APDU_BUFFER_SIZE;
   int ret = ctap_process_cbor(req, req_len, rapdu->data, &len);
   ctap_req_lifetime_end();
+  if (ret == 0 && mldsa_stream_state.pending && rapdu->data[0] == CTAP1_ERR_SUCCESS) {
+    mldsa_stream_state.pending = false;
+    apdu_response_source_set((uint32_t)mldsa_stream_state.total_len, SW_NO_ERROR, ctap_mldsa_stream_read_at,
+                             ctap_mldsa_apdu_stream_close, &mldsa_stream_state);
+    len = 0;
+  }
   rapdu->len = (uint16_t)len;
   return ret;
 }

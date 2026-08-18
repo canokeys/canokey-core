@@ -1670,6 +1670,100 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
   if (source.close) source.close(source.ctx);
 }
 
+static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void **state) {
+  (void)state;
+
+  static const uint8_t select_fido[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
+  };
+  static uint8_t response[4096];
+  uint8_t cm_req[128] = {0};
+  uint8_t cm_apdu[5 + sizeof(cm_req)] = {0};
+  uint8_t cm_pin_msg[1 + 4 + SHA256_DIGEST_LENGTH] = {0};
+  uint8_t pin_auth[PIN_AUTH_SIZE_P1] = {0};
+  uint8_t seed[PRI_KEY_SIZE] = {0};
+  uint8_t c_buf[APDU_COMMAND_BUFFER_SIZE] = {0};
+  uint8_t r_buf[APDU_COMMAND_BUFFER_SIZE] = {0};
+  CTAP_discoverable_credential dc = {0};
+  CTAP_rp_meta meta = {0};
+  CTAP_dc_general_attr attr = {.numbers = 1, .pending_op = CTAP_DC_PENDING_NONE};
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+  test_cbor_view public_key, total_value;
+  uint64_t total_credentials;
+  size_t cm_req_len;
+  size_t response_len = 0;
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(ctap_install(1), 0);
+
+  sha256_raw((const uint8_t *)"demo.yubico.com", sizeof("demo.yubico.com") - 1, dc.credential_id.rp_id_hash);
+  assert_int_equal(generate_key_handle(&dc.credential_id, seed, COSE_ALG_ML_DSA_65, 1,
+                                       CRED_PROTECT_VERIFICATION_OPTIONAL, false),
+                   0);
+  dc.user.id[0] = 1;
+  dc.user.id_size = 1;
+  memcpy(meta.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH);
+  memcpy(meta.rp_id, "demo.yubico.com", sizeof("demo.yubico.com") - 1);
+  meta.rp_id_len = sizeof("demo.yubico.com") - 1;
+  meta.live_count = 1;
+  write_ctap_dc_fixture(&dc, 1, &meta, 1, &attr);
+
+  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_set_permission(CP_PERMISSION_CM);
+  cm_pin_msg[0] = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
+  cm_pin_msg[1] = 0xA1;
+  cm_pin_msg[2] = CM_PARAM_RP_ID_HASH;
+  cm_pin_msg[3] = 0x58;
+  cm_pin_msg[4] = SHA256_DIGEST_LENGTH;
+  memcpy(cm_pin_msg + 5, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH);
+  cp_test_authenticate_pin_token(cm_pin_msg, sizeof(cm_pin_msg), pin_auth, 1);
+  cm_req_len = build_third_party_payment_credential_management(cm_req, dc.credential_id.rp_id_hash, pin_auth);
+  assert_true(cm_req_len <= UINT8_MAX);
+  cm_apdu[0] = 0x80;
+  cm_apdu[1] = CTAP_INS_MSG;
+  cm_apdu[4] = (uint8_t)cm_req_len;
+  memcpy(cm_apdu + 5, cm_req, cm_req_len);
+
+  assert_int_equal(build_capdu(&capdu, cm_apdu, 5 + cm_req_len), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_true((rapdu.sw & 0xFF00) == 0x6100);
+  assert_true(rapdu.len > 1);
+  assert_int_equal(rapdu.data[0], CTAP1_ERR_SUCCESS);
+  memcpy(response, rapdu.data, rapdu.len);
+  response_len = rapdu.len;
+
+  const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+  while (rapdu.sw != SW_NO_ERROR) {
+    assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+    process_apdu(&capdu, &rapdu);
+    assert_true(rapdu.sw == SW_NO_ERROR || (rapdu.sw & 0xFF00) == 0x6100);
+    assert_true(response_len + rapdu.len <= sizeof(response));
+    memcpy(response + response_len, rapdu.data, rapdu.len);
+    response_len += rapdu.len;
+  }
+
+  assert_true(response_len > MLDSA_PK_BYTES);
+  assert_int_equal(test_cbor_map_lookup_int_key(response + 1, response_len - 1, CM_RESP_PUBLIC_KEY, &public_key), 0);
+  const uint8_t public_key_header[] = {0x59, (uint8_t)(MLDSA_PK_BYTES >> 8), (uint8_t)MLDSA_PK_BYTES};
+  assert_non_null(find_bytes(public_key.ptr, public_key.len, public_key_header, sizeof(public_key_header)));
+  assert_int_equal(
+      test_cbor_map_lookup_int_key(response + 1, response_len - 1, CM_RESP_TOTAL_CREDENTIALS, &total_value), 0);
+  assert_int_equal(test_cbor_get_uint(total_value, &total_credentials), 0);
+  assert_int_equal(total_credentials, 1);
+
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+  assert_int_equal(rapdu.len, 0);
+}
+
 static void test_pin_uv_auth_clear_permissions_except_lbw(void **state) {
   (void)state;
 
@@ -2535,6 +2629,7 @@ int main() {
       cmocka_unit_test(test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_separate),
       cmocka_unit_test(test_ctap_hid_third_party_payment_round_trip),
       cmocka_unit_test(test_ctap_hid_credential_management_returns_third_party_payment),
+      cmocka_unit_test(test_ctap_apdu_credential_management_streams_mldsa_public_key),
       cmocka_unit_test(test_pin_uv_auth_clear_permissions_except_lbw),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
       cmocka_unit_test(test_ctap_get_info_reports_transport_msg_size),

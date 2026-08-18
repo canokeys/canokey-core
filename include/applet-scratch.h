@@ -51,6 +51,7 @@ typedef struct {
   mldsa_keygen_state_t keygen;
   mldsa_sign_state_t sign;
   size_t total_len;
+  size_t emitted;
   bool pending;
 } CTAP_mldsa_stream_state;
 
