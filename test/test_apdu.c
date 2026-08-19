@@ -216,8 +216,23 @@ static size_t build_third_party_payment_get_assertion(uint8_t *req, const creden
   return (size_t)(p - req);
 }
 
+static size_t build_enumerate_credentials_pin_message(uint8_t *msg, const uint8_t *rp_id_hash, bool metadata_only) {
+  uint8_t *p = msg;
+
+  *p++ = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
+  *p++ = metadata_only ? 0xA2 : 0xA1;
+  *p++ = CM_PARAM_RP_ID_HASH;
+  put_cbor_bytes(&p, rp_id_hash, SHA256_DIGEST_LENGTH);
+  if (metadata_only) {
+    put_cbor_int(&p, CM_PARAM_VENDOR_METADATA_ONLY);
+    *p++ = 0xF5;
+  }
+
+  return (size_t)(p - msg);
+}
+
 static size_t build_third_party_payment_credential_management(uint8_t *req, const uint8_t *rp_id_hash,
-                                                              const uint8_t *pin_auth) {
+                                                              const uint8_t *pin_auth, bool metadata_only) {
   uint8_t *p = req;
 
   *p++ = CTAP_CREDENTIAL_MANAGEMENT;
@@ -225,14 +240,28 @@ static size_t build_third_party_payment_credential_management(uint8_t *req, cons
   *p++ = CM_REQ_SUB_COMMAND;
   *p++ = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
   *p++ = CM_REQ_SUB_COMMAND_PARAMS;
-  *p++ = 0xA1;
+  *p++ = metadata_only ? 0xA2 : 0xA1;
   *p++ = CM_PARAM_RP_ID_HASH;
   put_cbor_bytes(&p, rp_id_hash, SHA256_DIGEST_LENGTH);
+  if (metadata_only) {
+    put_cbor_int(&p, CM_PARAM_VENDOR_METADATA_ONLY);
+    *p++ = 0xF5;
+  }
   *p++ = CM_REQ_PIN_UV_AUTH_PROTOCOL;
   *p++ = 0x01;
   *p++ = CM_REQ_PIN_UV_AUTH_PARAM;
   put_cbor_bytes(&p, pin_auth, PIN_AUTH_SIZE_P1);
 
+  return (size_t)(p - req);
+}
+
+static size_t build_credential_management_get_next(uint8_t *req) {
+  uint8_t *p = req;
+
+  *p++ = CTAP_CREDENTIAL_MANAGEMENT;
+  *p++ = 0xA1;
+  *p++ = CM_REQ_SUB_COMMAND;
+  *p++ = CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL;
   return (size_t)(p - req);
 }
 
@@ -440,6 +469,28 @@ static int test_cbor_get_uint(test_cbor_view value, uint64_t *out) {
   if (test_cbor_read_len(&p, end, *p++ & 0x1F, &value_len) < 0 || p != end) return -1;
   *out = value_len;
   return 0;
+}
+
+static int test_cbor_get_int(test_cbor_view value, int64_t *out) {
+  const uint8_t *p = value.ptr;
+  const uint8_t *end = value.ptr + value.len;
+  uint8_t major;
+  size_t encoded;
+
+  if (p >= end) return -1;
+  major = *p & 0xE0;
+  if (major != 0x00 && major != 0x20) return -1;
+  if (test_cbor_read_len(&p, end, *p++ & 0x1F, &encoded) < 0 || p != end || encoded > INT64_MAX) return -1;
+  *out = major == 0x00 ? (int64_t)encoded : -1 - (int64_t)encoded;
+  return 0;
+}
+
+static int test_cbor_is_canonical(const uint8_t *buf, size_t len) {
+  CborParser parser;
+  CborValue value;
+
+  if (cbor_parser_init(buf, len, 0, &parser, &value) != CborNoError) return -1;
+  return cbor_value_validate(&value, CborValidateCanonicalFormat | CborValidateCompleteData) == CborNoError ? 0 : -1;
 }
 
 static int test_cbor_get_auth_data(const uint8_t *resp, size_t written, int auth_data_key, uint8_t *auth_data_buf,
@@ -1667,7 +1718,7 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
   uint8_t scratch[64] = {0};
   uint8_t mc_resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
   uint8_t cm_resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  uint8_t cm_pin_msg[1 + 4 + SHA256_DIGEST_LENGTH] = {0};
+  uint8_t cm_pin_msg[64] = {0};
   uint8_t pin_auth[PIN_AUTH_SIZE_P1] = {0};
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH] = {0};
   uint8_t fido_private_key[32] = {1};
@@ -1676,9 +1727,11 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
   size_t cm_written = 0;
   size_t mc_req_len;
   size_t cm_req_len;
+  size_t cm_pin_msg_len;
   CTAPHID_TxSource source = {0};
   test_cbor_view value;
   bool third_party_payment;
+  int64_t algorithm;
   uint64_t total_credentials;
 
   init_apdu_buffer();
@@ -1700,14 +1753,9 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
   cp_reset_pin_uv_auth_token();
   cp_begin_using_uv_auth_token(false);
   cp_set_permission(CP_PERMISSION_CM);
-  cm_pin_msg[0] = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
-  cm_pin_msg[1] = 0xA1;
-  cm_pin_msg[2] = CM_PARAM_RP_ID_HASH;
-  cm_pin_msg[3] = 0x58;
-  cm_pin_msg[4] = SHA256_DIGEST_LENGTH;
-  memcpy(cm_pin_msg + 5, rp_id_hash, SHA256_DIGEST_LENGTH);
-  cp_test_authenticate_pin_token(cm_pin_msg, sizeof(cm_pin_msg), pin_auth, 1);
-  cm_req_len = build_third_party_payment_credential_management(cm_req, rp_id_hash, pin_auth);
+  cm_pin_msg_len = build_enumerate_credentials_pin_message(cm_pin_msg, rp_id_hash, true);
+  cp_test_authenticate_pin_token(cm_pin_msg, cm_pin_msg_len, pin_auth, 1);
+  cm_req_len = build_third_party_payment_credential_management(cm_req, rp_id_hash, pin_auth, true);
 
   memset(&source, 0, sizeof(source));
   assert_int_equal(
@@ -1715,9 +1763,14 @@ static void test_ctap_hid_credential_management_returns_third_party_payment(void
   assert_non_null(source.read);
   assert_int_equal(read_tx_source_all(&source, cm_resp, sizeof(cm_resp), &cm_written), 0);
   assert_int_equal(cm_resp[0], 0x00);
+  assert_int_equal(test_cbor_is_canonical(cm_resp + 1, cm_written - 1), 0);
   assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_TOTAL_CREDENTIALS, &value), 0);
   assert_int_equal(test_cbor_get_uint(value, &total_credentials), 0);
   assert_int_equal(total_credentials, 1);
+  assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_PUBLIC_KEY, &value), -1);
+  assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_VENDOR_ALGORITHM, &value), 0);
+  assert_int_equal(test_cbor_get_int(value, &algorithm), 0);
+  assert_int_equal(algorithm, COSE_ALG_ES256);
   assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_THIRD_PARTY_PAYMENT, &value), 0);
   assert_int_equal(test_cbor_get_bool(value, &third_party_payment), 0);
   assert_true(third_party_payment);
@@ -1733,18 +1786,21 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
   static uint8_t response[4096];
   uint8_t cm_req[128] = {0};
   uint8_t cm_apdu[5 + sizeof(cm_req)] = {0};
-  uint8_t cm_pin_msg[1 + 4 + SHA256_DIGEST_LENGTH] = {0};
+  uint8_t cm_pin_msg[64] = {0};
   uint8_t pin_auth[PIN_AUTH_SIZE_P1] = {0};
   uint8_t seed[PRI_KEY_SIZE] = {0};
   uint8_t c_buf[APDU_COMMAND_BUFFER_SIZE] = {0};
   uint8_t r_buf[APDU_COMMAND_BUFFER_SIZE] = {0};
   CTAP_discoverable_credential dc = {0};
+  CTAP_discoverable_credential credentials[2] = {0};
   CTAP_rp_meta meta = {0};
-  CTAP_dc_general_attr attr = {.numbers = 1, .pending_op = CTAP_DC_PENDING_NONE};
+  CTAP_dc_general_attr attr = {.numbers = 2, .pending_op = CTAP_DC_PENDING_NONE};
   CAPDU capdu = {.data = c_buf};
   RAPDU rapdu = {.data = r_buf};
-  test_cbor_view public_key, total_value;
+  test_cbor_view algorithm_value, public_key, total_value;
+  int64_t algorithm;
   uint64_t total_credentials;
+  size_t cm_pin_msg_len;
   size_t cm_req_len;
   size_t response_len = 0;
 
@@ -1758,11 +1814,17 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
                    0);
   dc.user.id[0] = 1;
   dc.user.id_size = 1;
+  memcpy(&credentials[0], &dc, sizeof(dc));
+  memcpy(&credentials[1], &dc, sizeof(dc));
+  assert_int_equal(generate_key_handle(&credentials[1].credential_id, seed, COSE_ALG_ML_DSA_65, 1,
+                                       CRED_PROTECT_VERIFICATION_OPTIONAL, false),
+                   0);
+  credentials[1].user.id[0] = 2;
   memcpy(meta.rp_id_hash, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH);
   memcpy(meta.rp_id, "demo.yubico.com", sizeof("demo.yubico.com") - 1);
   meta.rp_id_len = sizeof("demo.yubico.com") - 1;
-  meta.live_count = 1;
-  write_ctap_dc_fixture(&dc, 1, &meta, 1, &attr);
+  meta.live_count = 2;
+  write_ctap_dc_fixture(credentials, 2, &meta, 1, &attr);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
   process_apdu(&capdu, &rapdu);
@@ -1771,20 +1833,53 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
   cp_reset_pin_uv_auth_token();
   cp_begin_using_uv_auth_token(false);
   cp_set_permission(CP_PERMISSION_CM);
-  cm_pin_msg[0] = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
-  cm_pin_msg[1] = 0xA1;
-  cm_pin_msg[2] = CM_PARAM_RP_ID_HASH;
-  cm_pin_msg[3] = 0x58;
-  cm_pin_msg[4] = SHA256_DIGEST_LENGTH;
-  memcpy(cm_pin_msg + 5, dc.credential_id.rp_id_hash, SHA256_DIGEST_LENGTH);
-  cp_test_authenticate_pin_token(cm_pin_msg, sizeof(cm_pin_msg), pin_auth, 1);
-  cm_req_len = build_third_party_payment_credential_management(cm_req, dc.credential_id.rp_id_hash, pin_auth);
+  cm_pin_msg_len = build_enumerate_credentials_pin_message(cm_pin_msg, dc.credential_id.rp_id_hash, true);
+  cp_test_authenticate_pin_token(cm_pin_msg, cm_pin_msg_len, pin_auth, 1);
+  cm_req_len = build_third_party_payment_credential_management(cm_req, dc.credential_id.rp_id_hash, pin_auth, true);
   assert_true(cm_req_len <= UINT8_MAX);
   cm_apdu[0] = 0x80;
   cm_apdu[1] = CTAP_INS_MSG;
   cm_apdu[4] = (uint8_t)cm_req_len;
   memcpy(cm_apdu + 5, cm_req, cm_req_len);
 
+  assert_int_equal(build_capdu(&capdu, cm_apdu, 5 + cm_req_len), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(rapdu.len > 1);
+  assert_int_equal(rapdu.data[0], CTAP1_ERR_SUCCESS);
+  assert_int_equal(test_cbor_is_canonical(rapdu.data + 1, rapdu.len - 1), 0);
+  assert_int_equal(test_cbor_map_lookup_int_key(rapdu.data + 1, rapdu.len - 1, CM_RESP_PUBLIC_KEY, &public_key), -1);
+  assert_int_equal(
+      test_cbor_map_lookup_int_key(rapdu.data + 1, rapdu.len - 1, CM_RESP_VENDOR_ALGORITHM, &algorithm_value), 0);
+  assert_int_equal(test_cbor_get_int(algorithm_value, &algorithm), 0);
+  assert_int_equal(algorithm, COSE_ALG_ML_DSA_65);
+  assert_int_equal(test_cbor_map_lookup_int_key(rapdu.data + 1, rapdu.len - 1, CM_RESP_TOTAL_CREDENTIALS, &total_value),
+                   0);
+  assert_int_equal(test_cbor_get_uint(total_value, &total_credentials), 0);
+  assert_int_equal(total_credentials, 2);
+
+  cm_req_len = build_credential_management_get_next(cm_req);
+  cm_apdu[4] = (uint8_t)cm_req_len;
+  memcpy(cm_apdu + 5, cm_req, cm_req_len);
+  assert_int_equal(build_capdu(&capdu, cm_apdu, 5 + cm_req_len), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(rapdu.len > 1);
+  assert_int_equal(rapdu.data[0], CTAP1_ERR_SUCCESS);
+  assert_int_equal(test_cbor_is_canonical(rapdu.data + 1, rapdu.len - 1), 0);
+  assert_int_equal(test_cbor_map_lookup_int_key(rapdu.data + 1, rapdu.len - 1, CM_RESP_PUBLIC_KEY, &public_key), -1);
+  assert_int_equal(
+      test_cbor_map_lookup_int_key(rapdu.data + 1, rapdu.len - 1, CM_RESP_VENDOR_ALGORITHM, &algorithm_value), 0);
+  assert_int_equal(test_cbor_get_int(algorithm_value, &algorithm), 0);
+  assert_int_equal(algorithm, COSE_ALG_ML_DSA_65);
+  assert_int_equal(test_cbor_map_lookup_int_key(rapdu.data + 1, rapdu.len - 1, CM_RESP_TOTAL_CREDENTIALS, &total_value),
+                   -1);
+
+  cm_pin_msg_len = build_enumerate_credentials_pin_message(cm_pin_msg, dc.credential_id.rp_id_hash, false);
+  cp_test_authenticate_pin_token(cm_pin_msg, cm_pin_msg_len, pin_auth, 1);
+  cm_req_len = build_third_party_payment_credential_management(cm_req, dc.credential_id.rp_id_hash, pin_auth, false);
+  cm_apdu[4] = (uint8_t)cm_req_len;
+  memcpy(cm_apdu + 5, cm_req, cm_req_len);
   assert_int_equal(build_capdu(&capdu, cm_apdu, 5 + cm_req_len), 0);
   process_apdu(&capdu, &rapdu);
   assert_true((rapdu.sw & 0xFF00) == 0x6100);
@@ -1810,7 +1905,7 @@ static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void *
   assert_int_equal(
       test_cbor_map_lookup_int_key(response + 1, response_len - 1, CM_RESP_TOTAL_CREDENTIALS, &total_value), 0);
   assert_int_equal(test_cbor_get_uint(total_value, &total_credentials), 0);
-  assert_int_equal(total_credentials, 1);
+  assert_int_equal(total_credentials, 2);
 
   assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
   process_apdu(&capdu, &rapdu);

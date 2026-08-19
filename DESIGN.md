@@ -187,6 +187,28 @@ capacity from the mounted filesystem. Do not add independent per-applet
 capacity constants unless the protocol object itself has a fixed maximum size
 or the applet needs an explicit reserve for filesystem health.
 
+## Credential metadata enumeration extension
+
+CanoKey management clients may request credential metadata without asking the
+authenticator to reconstruct each credential public key. The client sends the
+standard `authenticatorCredentialManagement` command with
+`enumerateCredentialsBegin` and adds integer key `0x80` with boolean value
+`true` to `subCommandParams`. Because the extension is inside
+`subCommandParams`, it is covered by the standard `pinUvAuthParam` calculation.
+The command retains all normal CM permission, PIN/UV, and RP-ID checks.
+
+The begin response replaces `publicKey` (`0x08`) with vendor field `algorithm`
+(`0x80`), whose value is the credential's COSE algorithm identifier. The
+metadata-only mode is stored in the existing credential-management enumeration
+state, so subsequent `enumerateCredentialsGetNextCredential` requests use the
+same response shape without carrying another extension parameter. State reset,
+deselect, errors, and a new begin request clear the mode normally.
+
+Requests without the extension retain the standard response, including the
+full public key. Older firmware ignores the unknown request parameter and also
+returns the standard response, allowing clients to detect support from the
+presence of response key `0x80`. The extension has no persistent side effects.
+
 ## Request lifetimes
 
 Request bytes are input, not command state.

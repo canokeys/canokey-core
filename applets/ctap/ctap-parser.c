@@ -928,6 +928,14 @@ uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val, size_t *
       cm->parsed_params |= PARAM_USER;
       break;
 
+    case CM_PARAM_VENDOR_METADATA_ONLY:
+      if (cbor_value_get_type(&map) != CborBooleanType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      ret = cbor_value_get_boolean(&map, &cm->metadata_only);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_value_advance(&map);
+      CHECK_CBOR_RET(ret);
+      break;
+
     default:
       DBG_MSG("Unknown key: %d\n", key);
       ret = cbor_value_advance(&map);
@@ -1481,6 +1489,7 @@ static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credent
     return CTAP2_ERR_MISSING_PARAMETER; // See Section 6.8.2, 6.8.3, 6.8.4, 6.8.5, 6.8.6
   if (cm->sub_command == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN && (cm->parsed_params & PARAM_RP) == 0)
     return CTAP2_ERR_MISSING_PARAMETER;
+  if (cm->metadata_only && cm->sub_command != CM_CMD_ENUMERATE_CREDENTIALS_BEGIN) return CTAP2_ERR_INVALID_SUBCOMMAND;
   if (cm->sub_command == CM_CMD_DELETE_CREDENTIAL && (cm->parsed_params & PARAM_CREDENTIAL_ID) == 0)
     return CTAP2_ERR_MISSING_PARAMETER;
   if (cm->sub_command == CM_CMD_UPDATE_USER_INFORMATION &&

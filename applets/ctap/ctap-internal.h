@@ -194,6 +194,7 @@
 #define CM_PARAM_RP_ID_HASH                                       0x01
 #define CM_PARAM_CREDENTIAL_ID                                    0x02
 #define CM_PARAM_USER                                             0x03
+#define CM_PARAM_VENDOR_METADATA_ONLY                             0x80
 #define CM_RESP_EXISTING_RESIDENT_CREDENTIALS_COUNT               0x01
 #define CM_RESP_MAX_POSSIBLE_REMAINING_RESIDENT_CREDENTIALS_COUNT 0x02
 #define CM_RESP_RP                                                0x03
@@ -206,6 +207,7 @@
 #define CM_RESP_CRED_PROTECT                                      0x0A
 #define CM_RESP_LARGE_BLOB_KEY                                    0x0B
 #define CM_RESP_THIRD_PARTY_PAYMENT                               0x0C
+#define CM_RESP_VENDOR_ALGORITHM                                  0x80
 // clang-format on
 
 #define LB_REQ_GET 0x01
@@ -442,6 +444,7 @@ typedef struct {
   user_entity user;
   uint8_t pin_uv_auth_protocol;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
+  bool metadata_only;
 } CTAP_credential_management;
 
 typedef struct {

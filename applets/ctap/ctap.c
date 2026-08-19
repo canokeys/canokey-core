@@ -80,6 +80,7 @@ typedef struct {
   uint32_t total;
   uint8_t rp_id_hash[SHA256_DIGEST_LENGTH];
   bool has_rp_filter;
+  bool metadata_only;
 } CTAP_credential_management_state;
 
 // pin & command states
@@ -2930,6 +2931,7 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
   case CM_CMD_ENUMERATE_CREDENTIALS_BEGIN:
     if (!cp_verify_rp_id(cm.rp_id_hash)) return CTAP2_ERR_PIN_AUTH_INVALID;
     if (numbers == 0) return CTAP2_ERR_NO_CREDENTIALS;
+    state->metadata_only = cm.metadata_only;
     include_numbers = true;
     {
       uint32_t idx = 0, total_credentials = 0;
@@ -2964,9 +2966,11 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_credential_id(&map, &dc.credential_id);
     CHECK_CBOR_RET(ret);
-    ret = cbor_encode_int(&map, CM_RESP_PUBLIC_KEY);
-    CHECK_CBOR_RET(ret);
-    if (dc.credential_id.alg_type == COSE_ALG_ML_DSA_65) {
+    if (!state->metadata_only) {
+      ret = cbor_encode_int(&map, CM_RESP_PUBLIC_KEY);
+      CHECK_CBOR_RET(ret);
+    }
+    if (!state->metadata_only && dc.credential_id.alg_type == COSE_ALG_ML_DSA_65) {
       CTAP_mldsa_stream_state *state = &mldsa_stream_state;
       uint8_t prefix_snapshot[sizeof(state->prefix)];
       size_t prefix_snapshot_len = (size_t)(map.data.ptr - stream_resp_start);
@@ -3014,28 +3018,30 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
       state->pending = true;
       break;
     }
-    // to save RAM, generate an empty key first, then fill it manually
-    ret = cbor_encoder_create_map(&map, &sub_map, 0);
-    CHECK_CBOR_RET(ret);
-    ecc_key_t key;
-    ret = verify_key_handle(&dc.credential_id, &key);
-    if (ret != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-    key_type_t key_type = cose_alg_to_key_type(dc.credential_id.alg_type);
-    if (ecc_complete_key(key_type, &key) < 0) {
-      ERR_MSG("Failed to complete key\n");
-      return -1;
+    if (!state->metadata_only) {
+      // to save RAM, generate an empty key first, then fill it manually
+      ret = cbor_encoder_create_map(&map, &sub_map, 0);
+      CHECK_CBOR_RET(ret);
+      ecc_key_t key;
+      ret = verify_key_handle(&dc.credential_id, &key);
+      if (ret != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      key_type_t key_type = cose_alg_to_key_type(dc.credential_id.alg_type);
+      if (ecc_complete_key(key_type, &key) < 0) {
+        ERR_MSG("Failed to complete key\n");
+        return -1;
+      }
+      uint8_t *ptr = sub_map.data.ptr - 1;
+      memcpy(ptr, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+      if (dc.credential_id.alg_type == COSE_ALG_ES256) {
+        int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_EC2, COSE_ALG_ES256, COSE_KEY_CRV_P256, true);
+        sub_map.data.ptr = ptr + cose_key_size;
+      } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
+        int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_OKP, COSE_ALG_EDDSA, COSE_KEY_CRV_ED25519, false);
+        sub_map.data.ptr = ptr + cose_key_size;
+      }
+      ret = cbor_encoder_close_container(&map, &sub_map);
+      CHECK_CBOR_RET(ret);
     }
-    uint8_t *ptr = sub_map.data.ptr - 1;
-    memcpy(ptr, key.pub, PUBLIC_KEY_LENGTH[key_type]);
-    if (dc.credential_id.alg_type == COSE_ALG_ES256) {
-      int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_EC2, COSE_ALG_ES256, COSE_KEY_CRV_P256, true);
-      sub_map.data.ptr = ptr + cose_key_size;
-    } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
-      int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_OKP, COSE_ALG_EDDSA, COSE_KEY_CRV_ED25519, false);
-      sub_map.data.ptr = ptr + cose_key_size;
-    }
-    ret = cbor_encoder_close_container(&map, &sub_map);
-    CHECK_CBOR_RET(ret);
     if (include_numbers) {
       ret = cbor_encode_int(&map, CM_RESP_TOTAL_CREDENTIALS);
       CHECK_CBOR_RET(ret);
@@ -3060,6 +3066,12 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
     CHECK_CBOR_RET(ret);
     ret = cbor_encode_boolean(&map, credential_third_party_payment(&dc.credential_id));
     CHECK_CBOR_RET(ret);
+    if (state->metadata_only) {
+      ret = cbor_encode_int(&map, CM_RESP_VENDOR_ALGORITHM);
+      CHECK_CBOR_RET(ret);
+      ret = cbor_encode_int(&map, dc.credential_id.alg_type);
+      CHECK_CBOR_RET(ret);
+    }
     ret = cbor_encoder_close_container(encoder, &map);
     CHECK_CBOR_RET(ret);
     break;
