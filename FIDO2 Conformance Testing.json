@@ -20,9 +20,7 @@
     ],
     "authenticationAlgorithms": [
         "secp256r1_ecdsa_sha256_raw",
-        "ed25519_eddsa_sha512_raw",
-        "ml_dsa_65_raw",
-        "sm2_sm3_raw"
+        "ed25519_eddsa_sha512_raw"
     ],
     "publicKeyAlgAndEncodings": [
         "cose"
@@ -118,14 +116,6 @@
             },
             {
                 "alg": -8,
-                "type": "public-key"
-            },
-            {
-                "alg": -49,
-                "type": "public-key"
-            },
-            {
-                "alg": -54,
                 "type": "public-key"
             }
         ],

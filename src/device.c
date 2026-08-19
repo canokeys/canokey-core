@@ -33,6 +33,9 @@ static volatile uint32_t session_deadline;
 
 static void device_applet_session_expire(void) {
   if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
+#if ENABLE_IFACE_CCID
+  CCID_AbortPendingCommand();
+#endif
   applets_poweroff();
   apdu_response_source_clear();
   // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO

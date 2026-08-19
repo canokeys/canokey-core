@@ -30,6 +30,8 @@
 #include <sha.h>
 #include <string.h>
 
+extern ccid_bulkin_data_t bulkin_data;
+
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
   const uint8_t *h = haystack;
   const uint8_t *n = needle;
@@ -705,6 +707,58 @@ static void test_pke_buffer_fallback_for_ctap(void **state) {
   assert_int_equal(pke_buffer_read(0, out, sizeof(out)), 0);
   assert_memory_equal(out, zero, sizeof(out));
   assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_CTAP), 0);
+}
+
+static void test_ccid_extended_fido_request_uses_pke(void **state) {
+  (void)state;
+
+  enum { PAYLOAD_LEN = 300, APDU_LEN = 7 + PAYLOAD_LEN + 2, REQUEST_LEN = CCID_CMD_HEADER_SIZE + APDU_LEN };
+  uint8_t request[REQUEST_LEN];
+  memset(request, 0, sizeof(request));
+
+  request[0] = PC_TO_RDR_XFRBLOCK;
+  request[1] = APDU_LEN & 0xFF;
+  request[2] = (APDU_LEN >> 8) & 0xFF;
+  request[6] = 1;
+
+  uint8_t *apdu = request + CCID_CMD_HEADER_SIZE;
+  apdu[0] = 0x80;
+  apdu[1] = CTAP_INS_MSG;
+  apdu[2] = 0x80;
+  apdu[4] = 0;
+  apdu[5] = PAYLOAD_LEN >> 8;
+  apdu[6] = PAYLOAD_LEN & 0xFF;
+  apdu[7] = CTAP_GET_INFO;
+  // The remaining payload bytes are ignored by GET INFO. Case 4E Le=0000
+  // requests the maximum response and occupies the final two APDU bytes.
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  CCID_Init();
+
+  for (size_t offset = 0; offset < sizeof(request);) {
+    const uint8_t chunk = (uint8_t)MIN(sizeof(request) - offset, 64);
+    assert_int_equal(CCID_OutEvent(request + offset, chunk), 0);
+    offset += chunk;
+  }
+  CCID_Loop();
+
+  assert_true(bulkin_data.dwLength > 2);
+  assert_int_equal(bulkin_data.abData[0], CTAP1_ERR_SUCCESS);
+  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+
+  CCID_InFinished(0);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+
+  CCID_Init();
+  assert_int_equal(CCID_OutEvent(request, 64), 0);
+  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), -1);
+  CCID_AbortPendingCommand();
+  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
 }
 
 static void test_fido_chained_make_credential_nfc(void **state) {
@@ -2600,6 +2654,7 @@ int main() {
       cmocka_unit_test(test_ccid_power_on_preempts_idle_webusb_session),
       cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
+      cmocka_unit_test(test_ccid_extended_fido_request_uses_pke),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_fido_ctap1_register_rejects_missing_attestation_key),

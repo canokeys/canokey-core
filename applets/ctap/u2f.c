@@ -65,7 +65,7 @@ static int u2f_register_stream_read_at(void *ctx, uint32_t offset, uint8_t *buf,
   return (int)copied;
 }
 
-int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
 
   if (!is_nfc()) {
@@ -120,7 +120,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_AUTHENTICATE_REQ *req = (U2F_AUTHENTICATE_REQ *)DATA;
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
   CTAP_auth_data auth_data;

@@ -291,13 +291,15 @@ Forbidden PKE staging uses:
 - Keep offsets into PKE for later verification, hashing, file writes, or response streaming.
 - Read PKE-backed request bytes after keepalive, `WAIT()`, PIN/UV-token verification, credential key generation, assertion signing, ML-DSA streaming, or any operation that may call crypto.
 
-### APDU transport: chaining, not extended length
+### APDU transport: chaining, with one bounded extended-length exception
 
 **Rule: use ISO 7816-4 command/response chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`), not extended-length APDUs, for all multi-block data.**
 
 - `APDU_BUFFER_SIZE` is 256 bytes (one short APDU payload). `APDU_COMMAND_BUFFER_SIZE = APDU_BUFFER_SIZE + 32 = 288 bytes`.
 - `APDU_INCOMING_DATA_SIZE` is an alias for `APDU_COMMAND_BUFFER_SIZE` (288). Chained reassembly in `apdu_input` accumulates up to that limit, so applet bounds checks should compare against `APDU_INCOMING_DATA_SIZE`, not the raw 256-byte payload size.
-- Extended-length APDUs (Lc/Le up to 65535) are **not supported** in the standard transport path.
+- Extended-length APDUs are not supported in the standard transport path. The only exception is a standalone FIDO
+  `80 10` command received over CCID: its payload may be staged directly in PKE RAM up to `PKE_BUFFER_SIZE`, without
+  increasing `APDU_BUFFER_SIZE`. Other applets and transports must not rely on this exception.
 - Large request data (e.g. RSA key import, FIDO2 CBOR) must be sent by the host as chained `CLA=0x10` commands; `apdu_input` reassembles them transparently.
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
@@ -333,6 +335,9 @@ CTAP over `CCID` / `WebUSB` / NFC APDU:
 
 - Short request bodies live in `shared_io_buffer` only for the current APDU processing call. They are not long-lived across transport re-entry, `device_loop()`, session yield, or response streaming.
 - CCID `XfrBlock`, WebUSB control requests, and NFC I-block aggregation are bounded by `APDU_COMMAND_BUFFER_SIZE`.
+- A standalone FIDO `80 10` Extended APDU over CCID may exceed `APDU_COMMAND_BUFFER_SIZE`: CCID strips the 7/9-byte
+  APDU envelope while receiving USB packets and writes only the CBOR payload to PKE RAM. The CTAP parser must consume
+  that source immediately and release it before user-presence waits or crypto.
 - FIDO APDU chaining is separate from transport frame aggregation. Once the FIDO APDU body spans multiple APDUs or exceeds the short incoming data limit, `fido_apdu_input()` stages the accumulated payload in PKE and dispatches through `ctap_process_pke_apdu_with_src()`.
 - Chained FIDO APDU input in PKE follows the same lifetime rule as CTAPHID PKE-backed RX: it is valid only for immediate parser consumption.
 - `process_apdu()` may clear the PKE-backed FIDO request after the first `apdu_output()` call. APDU response sources must never depend on request PKE.

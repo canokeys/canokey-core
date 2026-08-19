@@ -3,6 +3,7 @@
 #include <applets.h>
 #include <ccid.h>
 #include <common.h>
+#include <ctap.h>
 #include <device.h>
 #include <key.h>
 #include <openpgp.h>
@@ -42,9 +43,81 @@ static volatile uint8_t has_cmd;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
+static uint8_t pke_fido_request;
+static uint16_t pke_fido_payload_len;
+static uint8_t pke_fido_has_le;
+static uint8_t pke_fido_le[2];
 void ccid_init_apdu_buffer(void) { shared_io_buffer = bulkin_data.abData; }
 
+void ccid_release_pke_request(void *ctx) {
+  UNUSED(ctx);
+  if (pke_fido_request) {
+    pke_buffer_clear();
+    pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+  }
+  pke_fido_request = 0;
+  pke_fido_payload_len = 0;
+  pke_fido_has_le = 0;
+  memset(pke_fido_le, 0, sizeof(pke_fido_le));
+  apdu_cmd.pke_backed = 0;
+}
+
+void CCID_AbortPendingCommand(void) {
+  ccid_release_pke_request(NULL);
+  bulkout_state = CCID_STATE_IDLE;
+  ab_data_length = 0;
+  has_cmd = 0;
+  release_apdu_buffer(BUFFER_OWNER_CCID);
+}
+
+static int CCID_AppendPkeRequest(uint32_t offset, const uint8_t *data, uint16_t len) {
+  const uint32_t end = offset + len;
+  const uint32_t payload_start = 7;
+  const uint32_t payload_end = payload_start + pke_fido_payload_len;
+
+  if (end > payload_start && offset < payload_end) {
+    const uint32_t copy_start = MAX(offset, payload_start);
+    const uint32_t copy_end = MIN(end, payload_end);
+    if (pke_buffer_write(copy_start - payload_start, data + copy_start - offset, copy_end - copy_start) < 0) return -1;
+  }
+
+  if (pke_fido_has_le) {
+    for (uint32_t pos = payload_end; pos < payload_end + sizeof(pke_fido_le); ++pos) {
+      if (pos >= offset && pos < end) pke_fido_le[pos - payload_end] = data[pos - offset];
+    }
+  }
+  return 0;
+}
+
+static int CCID_BeginPkeRequest(const uint8_t *cmd, uint16_t len) {
+  if (len < 7 || cmd[0] != 0x80 || cmd[1] != CTAP_INS_MSG || cmd[4] != 0) return -1;
+
+  const uint16_t lc = (uint16_t)((cmd[5] << 8) | cmd[6]);
+  if (lc == 0 || lc > pke_buffer_size()) return -1;
+  if (bulkout_data.dwLength != (uint32_t)7 + lc && bulkout_data.dwLength != (uint32_t)9 + lc) return -1;
+  if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return -1;
+  if (pke_buffer_clear() < 0) {
+    pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+    return -1;
+  }
+
+  pke_fido_request = 1;
+  pke_fido_payload_len = lc;
+  pke_fido_has_le = bulkout_data.dwLength == (uint32_t)9 + lc;
+  apdu_cmd.data = shared_io_buffer;
+  apdu_cmd.cla = cmd[0];
+  apdu_cmd.ins = cmd[1];
+  apdu_cmd.p1 = cmd[2];
+  apdu_cmd.p2 = cmd[3];
+  apdu_cmd.lc = lc;
+  apdu_cmd.le = pke_fido_has_le ? 0 : 0x10000;
+  apdu_cmd.extended = 1;
+  apdu_cmd.pke_backed = 1;
+  return CCID_AppendPkeRequest(0, cmd, len);
+}
+
 uint8_t CCID_Init(void) {
+  CCID_AbortPendingCommand();
   send_data_spinlock = 0;
   bulkout_state = CCID_STATE_IDLE;
   has_cmd = 0;
@@ -56,6 +129,7 @@ uint8_t CCID_Init(void) {
 
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
   uint8_t *abData = NULL;
+  uint8_t pkeData = 0;
   switch (bulkout_state) {
   case CCID_STATE_IDLE:
     if (len == 0)
@@ -76,8 +150,14 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
         if (acquire_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID) != 0) {
           DBG_MSG("Discard data because of applet session conflict\n");
         } else if (bulkout_data.dwLength > ABDATA_SIZE) {
-          DBG_MSG("Discard oversized XfrBlock: %u\n", bulkout_data.dwLength);
-          release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
+          if (bulkout_data.dwLength <= CCID_MAX_XFR_BLOCK_SIZE &&
+              CCID_BeginPkeRequest(data + CCID_CMD_HEADER_SIZE, ab_data_length) == 0) {
+            pkeData = 1;
+          } else {
+            DBG_MSG("Discard oversized XfrBlock: %u\n", bulkout_data.dwLength);
+            ccid_release_pke_request(NULL);
+            release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
+          }
         } else {
           abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
         }
@@ -90,15 +170,36 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
       }
       if (abData) memcpy(abData, data + CCID_CMD_HEADER_SIZE, ab_data_length);
       if (ab_data_length >= bulkout_data.dwLength)
-        has_cmd = abData ? 1 : 2;
+        has_cmd = (abData || pkeData) ? 1 : 2;
       else { // ab_data_length < bulkout_data.dwLength
-        bulkout_state = abData ? CCID_STATE_RECEIVE_DATA : CCID_STATE_DISCARD_DATA;
+        bulkout_state = (abData || pkeData) ? CCID_STATE_RECEIVE_DATA : CCID_STATE_DISCARD_DATA;
       }
     }
     break;
 
   case CCID_STATE_RECEIVE_DATA:
     device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
+    if (pke_fido_request) {
+      if (ab_data_length + len > bulkout_data.dwLength) len = bulkout_data.dwLength - ab_data_length;
+      if (CCID_AppendPkeRequest(ab_data_length, data, len) < 0) {
+        ccid_release_pke_request(NULL);
+        release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
+        ab_data_length += len;
+        if (ab_data_length >= bulkout_data.dwLength) {
+          bulkout_state = CCID_STATE_IDLE;
+          has_cmd = HAS_CMD_DISCARDED;
+        } else {
+          bulkout_state = CCID_STATE_DISCARD_DATA;
+        }
+      } else {
+        ab_data_length += len;
+        if (ab_data_length >= bulkout_data.dwLength) {
+          bulkout_state = CCID_STATE_IDLE;
+          has_cmd = 1;
+        }
+      }
+      break;
+    }
     abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
     if (ab_data_length + len < bulkout_data.dwLength) {
       memcpy(abData + ab_data_length, data, len);
@@ -197,14 +298,21 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT);
   if (error != 0) return error;
 
-  DBG_MSG("O: ");
-  PRINT_HEX(abData, bulkout_data.dwLength);
+  if (!pke_fido_request) {
+    DBG_MSG("O: ");
+    PRINT_HEX(abData, bulkout_data.dwLength);
+  }
 
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
   device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
-  if (build_capdu(&apdu_cmd, abData, bulkout_data.dwLength) < 0) {
+  const uint8_t request_uses_pke = pke_fido_request;
+  if (request_uses_pke && pke_fido_has_le) {
+    apdu_cmd.le = (uint32_t)((pke_fido_le[0] << 8) | pke_fido_le[1]);
+    if (apdu_cmd.le == 0) apdu_cmd.le = 0x10000;
+  }
+  if (!request_uses_pke && build_capdu(&apdu_cmd, abData, bulkout_data.dwLength) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
@@ -218,6 +326,7 @@ uint8_t PC_to_RDR_XfrBlock(void) {
     device_set_timeout(NULL, 0);
     device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
   }
+  if (request_uses_pke) ccid_release_pke_request(NULL);
 
   bulkin_data.dwLength = LL + 2;
   bulkin_data.abData[LL] = HI(SW);
@@ -359,7 +468,7 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
   return 0;
 }
 
-void CCID_Loop(void) {
+void __attribute__((noinline)) CCID_Loop(void) {
   if (!has_cmd) return;
 
   uint8_t errorCode;

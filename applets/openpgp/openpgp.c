@@ -451,7 +451,7 @@ static int fill_pw_status(uint8_t *buf) {
   return PW_STATUS_LENGTH;
 }
 
-static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
@@ -782,7 +782,7 @@ static int openpgp_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(rapdu);
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x02 && LC != 0x05) EXCEPT(SW_WRONG_LENGTH);
@@ -1042,7 +1042,7 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
   return 0;
 }
 
-static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   const bool final = (CLA & 0x10) == 0;
   const uint8_t *input = DATA;
   uint16_t input_len = LC;
@@ -1190,7 +1190,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   ASSERT_ADMIN();
 #endif
@@ -1416,7 +1416,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   ASSERT_ADMIN();
 #endif

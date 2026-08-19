@@ -3,10 +3,13 @@
 #define _CCID_H_
 
 #include <common.h>
+#include <pke.h>
 
 #define ABDATA_SIZE APDU_COMMAND_BUFFER_SIZE
 #define SHORT_ABDATA_SIZE 8 /* Enough for most CCID messages except XfrBlock/Secure */
 #define CCID_CMD_HEADER_SIZE 10
+#define CCID_MAX_XFR_BLOCK_SIZE (PKE_BUFFER_SIZE + 9u)
+#define CCID_MAX_MESSAGE_SIZE (CCID_CMD_HEADER_SIZE + CCID_MAX_XFR_BLOCK_SIZE)
 #define CCID_NUMBER_OF_SLOTS 1
 #define TIME_EXTENSION_PERIOD 1500
 
@@ -141,6 +144,8 @@ typedef enum {
 #define RDR_TO_PC_DATARATEANDCLOCKFREQUENCY 0x84
 
 uint8_t CCID_Init(void);
+void ccid_release_pke_request(void *ctx);
+void CCID_AbortPendingCommand(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
 void CCID_InFinished(uint8_t is_time_extension_request);
 void CCID_Loop(void);

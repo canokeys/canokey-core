@@ -3697,7 +3697,8 @@ int ctap_process_cbor_stream_with_src(uint8_t *req, size_t req_len, uint8_t *scr
   return ctap_process_cbor_stream_source_with_src(&req_src, scratch, scratch_len, source, src);
 }
 
-static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_len, RAPDU *rapdu) {
+static int __attribute__((noinline)) ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_len,
+                                                                                RAPDU *rapdu) {
   uint8_t *resp = rapdu->data;
   size_t resp_len = APDU_BUFFER_SIZE;
 
@@ -3728,7 +3729,7 @@ static int ctap_prepare_make_credential_apdu_response(uint8_t *req, size_t req_l
   return 0;
 }
 
-static int ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *rapdu) {
+static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req, size_t req_len, RAPDU *rapdu) {
   if (req_len == 0) {
     rapdu->sw = SW_WRONG_LENGTH;
     return 0;

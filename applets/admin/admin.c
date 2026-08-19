@@ -506,7 +506,7 @@ void device_config_fill_serial(uint8_t *buf) {
   if (admin_platform_serial_read(buf) < 0) memset(buf, 0, 4);
 }
 
-int admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
 

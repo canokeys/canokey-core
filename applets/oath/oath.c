@@ -663,7 +663,7 @@ static int oath_yk_api_req(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 // ReSharper disable once CppDFAConstantFunctionResult
-int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
 

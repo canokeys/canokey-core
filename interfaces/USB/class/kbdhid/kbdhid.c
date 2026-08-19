@@ -231,7 +231,7 @@ uint8_t KBDHID_Init() {
   return 0;
 }
 
-uint8_t KBDHID_Loop(void) {
+uint8_t __attribute__((noinline)) KBDHID_Loop(void) {
   if (state == KBDHID_Idle && device_allow_kbd_touch()) {
     const uint8_t touch = get_touch_result();
     if (touch != TOUCH_NO) {

@@ -133,6 +133,7 @@ static APDU_RESPONSE_SOURCE response_source;
 
 #if ENABLE_IFACE_CCID
 extern void ccid_init_apdu_buffer(void);
+extern void ccid_release_pke_request(void *ctx);
 #endif
 
 void init_apdu_buffer(void) {
@@ -154,6 +155,7 @@ void init_apdu_buffer(void) {
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
+  capdu->pke_backed = 0;
   if (len < 4) return -1;
   CLA = cmd[0];
   INS = cmd[1];
@@ -214,6 +216,7 @@ restart:
     ex->capdu.p2 = sh->p2;
     ex->capdu.lc = 0;
     ex->capdu.extended = sh->extended;
+    ex->capdu.pke_backed = 0;
   } else if (ex->capdu.cla != (sh->cla & 0xEF) || ex->capdu.ins != sh->ins || ex->capdu.p1 != sh->p1 ||
              ex->capdu.p2 != sh->p2) {
     ex->in_chaining = 0;
@@ -264,6 +267,7 @@ restart:
     fido_capdu_chaining.capdu.p2 = sh->p2;
     fido_capdu_chaining.capdu.lc = 0;
     fido_capdu_chaining.capdu.extended = sh->extended;
+    fido_capdu_chaining.capdu.pke_backed = 0;
     fido_capdu_chaining.capdu.data = shared_io_buffer;
   } else if (fido_capdu_chaining.capdu.cla != (sh->cla & 0xEF) || fido_capdu_chaining.capdu.ins != sh->ins ||
              fido_capdu_chaining.capdu.p1 != sh->p1 || fido_capdu_chaining.capdu.p2 != sh->p2) {
@@ -620,10 +624,18 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       }
       capdu = &fido_capdu_chaining.capdu;
     }
-    if (fido_capdu_uses_pke)
+    if (capdu->pke_backed) {
+#if ENABLE_IFACE_CCID
+      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID, ccid_release_pke_request, NULL);
+#else
+      rapdu_chaining.rapdu.len = 0;
+      rapdu_chaining.rapdu.sw = SW_UNABLE_TO_PROCESS;
+#endif
+    } else if (fido_capdu_uses_pke) {
       ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID, fido_capdu_release_request, NULL);
-    else
+    } else {
       ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    }
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
     apdu_output(&rapdu_chaining, rapdu);
     fido_capdu_reset();
