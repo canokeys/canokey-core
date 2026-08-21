@@ -39,6 +39,8 @@
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
 // clang-format on
 
+#define PIV_CERT_OBJECT_MAX_SIZE 6144
+
 /*
  * Post-quantum PIV extensions use the configurable algorithm IDs below
  * (defaults: ML-DSA-65 = E2, ML-KEM-768 = E3). ML-DSA GENERAL AUTHENTICATE

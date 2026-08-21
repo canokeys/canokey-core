@@ -380,7 +380,7 @@ _Static_assert(sizeof(piv_do_codes) == sizeof(piv_do_table) / sizeof(piv_do_tabl
                "Every PIV data object needs a tag code");
 
 static const piv_do_desc_t piv_do_cert_desc = {
-    NULL, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT | PIV_DO_F_SLOT_CERT, 0};
+    NULL, PIV_CERT_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT | PIV_DO_F_SLOT_CERT, 0};
 
 // Retired key-management certs follow the contiguous NIST tag range
 // 5FC10D..5FC120 and map to slots 82..95.
@@ -2319,19 +2319,9 @@ static int piv_attest(const CAPDU *capdu, RAPDU *rapdu) {
   if (!piv_is_asymmetric_key_id(P1)) EXCEPT(SW_WRONG_P1P2);
   piv_key_path(P1, target_path);
 
-  key_meta_t meta;
-  const int meta_rc = ck_read_key_metadata(target_path, &meta);
-  // Post-quantum attestation needs a separately specified certificate profile
-  // and a streaming SPKI encoder; it is intentionally not part of this change.
-  if (meta_rc >= 0 && (IS_MLDSA(meta.type) || IS_MLKEM(meta.type))) EXCEPT(SW_WRONG_DATA);
-  if (meta_rc < 0 && meta_rc != LFS_ERR_NOENT) return -1;
-
   char attestation_key_path[MAX_KEY_PATH_LEN];
-  char attestation_cert_path[MAX_DO_PATH_LEN];
   piv_key_path(0xF9, attestation_key_path);
-  piv_cert_path(0xF9, attestation_cert_path);
-  const int sw =
-      piv_attestation_generate(P1, target_path, attestation_key_path, attestation_cert_path);
+  const int sw = piv_attestation_generate(P1, target_path, attestation_key_path);
   if (sw < 0) return -1;
   if (sw != SW_NO_ERROR) EXCEPT(sw);
   LL = 0;

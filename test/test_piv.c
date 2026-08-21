@@ -359,7 +359,7 @@ static void test_piv_mldsa65_import_seed_only(void **state) {
   CAPDU attest = {.data = NULL, .cla = 0x00, .ins = PIV_INS_ATTEST, .p1 = 0x9A, .p2 = 0x00, .lc = 0};
   RAPDU rapdu = {.data = r_buf};
   piv_process_apdu(&attest, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_DATA);
+  assert_int_equal(rapdu.sw, SW_REFERENCE_DATA_NOT_FOUND);
 
   CAPDU move = {.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0x95, .p2 = 0x9A, .lc = 0};
   piv_process_apdu(&move, &rapdu);
@@ -926,6 +926,15 @@ static void piv_test_assert_attestation_spki(const test_der_tlv_t *spki, ck_key_
     assert_int_equal(public_key.value_len, 2 + PUBLIC_KEY_LENGTH[target->meta.type]);
     assert_int_equal(public_key.value[1], 0x04);
     assert_memory_equal(public_key.value + 2, target->ecc.pub, PUBLIC_KEY_LENGTH[target->meta.type]);
+  } else if (IS_MLDSA(target->meta.type)) {
+    static uint8_t expected_public[MLDSA_PK_BYTES];
+    assert_int_equal(algorithm_oid.total_len, expected_oid_len);
+    assert_memory_equal(algorithm.value, expected_oid, expected_oid_len);
+    assert_int_equal(algorithm_remaining, 0);
+    assert_int_equal(public_key.value_len, 1 + MLDSA_PK_BYTES);
+    assert_int_equal(ml_dsa_65_keygen(expected_public, NULL, NULL, target->mldsa.seed), 0);
+    assert_memory_equal(public_key.value + 1, expected_public, sizeof(expected_public));
+    memzero(expected_public, sizeof(expected_public));
   } else {
     assert_int_equal(algorithm_oid.total_len, expected_oid_len);
     assert_memory_equal(algorithm.value, expected_oid, expected_oid_len);
@@ -1748,6 +1757,7 @@ static void test_piv_attestation_all_target_algorithms(void **state) {
   static const uint8_t oid_sm2[] = {0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82, 0x2D};
   static const uint8_t oid_ed25519[] = {0x06, 0x03, 0x2B, 0x65, 0x70};
   static const uint8_t oid_x25519[] = {0x06, 0x03, 0x2B, 0x65, 0x6E};
+  static const uint8_t oid_mldsa65[] = {0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x12};
   static const struct {
     key_type_t type;
     const uint8_t *oid;
@@ -1758,9 +1768,10 @@ static void test_piv_attestation_all_target_algorithms(void **state) {
       {SECP384R1, oid_p384, sizeof(oid_p384)},  {ED25519, oid_ed25519, sizeof(oid_ed25519)},
       {X25519, oid_x25519, sizeof(oid_x25519)}, {SECP256K1, oid_k256, sizeof(oid_k256)},
       {SECP521R1, oid_p521, sizeof(oid_p521)},  {SM2, oid_sm2, sizeof(oid_sm2)},
+      {MLDSA65, oid_mldsa65, sizeof(oid_mldsa65)},
   };
 
-  uint8_t certificate[1536];
+  static uint8_t certificate[3072];
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     ck_key_t target = {.meta = {.type = cases[i].type,
                                 .origin = KEY_ORIGIN_GENERATED,
@@ -2461,13 +2472,14 @@ static void test_piv_cert_chained_read(void **state) {
   (void)state;
   set_admin_status(1);
 
-  // 600-byte payload large enough to span three 256-byte chunks.
-  enum { CERT_LEN = 600 };
-  uint8_t cert[CERT_LEN];
+  // Fill the complete 6144-byte stored-object allowance. The four-byte 53
+  // wrapper is part of that limit, leaving 6140 bytes for certificate data.
+  enum { CERT_LEN = PIV_CERT_OBJECT_MAX_SIZE - 4 };
+  static uint8_t cert[CERT_LEN];
   for (size_t i = 0; i < CERT_LEN; ++i)
     cert[i] = (uint8_t)(0xC0 + (i & 0x3F));
 
-  uint8_t r_buf[1024];
+  uint8_t r_buf[APDU_BUFFER_SIZE];
   RAPDU rapdu = {.data = r_buf};
   RAPDU_CHAINING rc = {.rapdu.data = r_buf};
 
@@ -2504,16 +2516,16 @@ static void test_piv_cert_chained_read(void **state) {
 
   // Subsequent chunks: 200 bytes each, last one without the chain bit.
   uint8_t chunk[200];
-  for (int round = 0; round < 2; ++round) {
-    size_t off = FIRST_CHUNK + (size_t)round * 200;
-    memcpy(chunk, cert + off, 200);
+  for (size_t off = FIRST_CHUNK; off < CERT_LEN;) {
+    const uint16_t chunk_len = (uint16_t)MIN(sizeof(chunk), CERT_LEN - off);
+    memcpy(chunk, cert + off, chunk_len);
     CAPDU put_more = {
         .data = chunk,
-        .cla = (round == 1) ? 0x00 : 0x10,
+        .cla = off + chunk_len == CERT_LEN ? 0x00 : 0x10,
         .ins = PIV_INS_PUT_DATA,
         .p1 = 0x3F,
         .p2 = 0xFF,
-        .lc = 200,
+        .lc = chunk_len,
         .le = 0,
     };
     rc.rapdu.len = 0;
@@ -2522,8 +2534,9 @@ static void test_piv_cert_chained_read(void **state) {
     rapdu.sw = 0;
     piv_process_apdu_message(&rc, &put_more, &rapdu);
     assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    off += chunk_len;
   }
-  assert_int_equal(get_file_size("piv-c9a"), CERT_LEN + 4); // 53 82 LL HH header + cert
+  assert_int_equal(get_file_size("piv-c9a"), PIV_CERT_OBJECT_MAX_SIZE);
 
   // Now read it back via GET DATA + GET RESPONSE chain.
   uint8_t get_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05};
@@ -2545,7 +2558,7 @@ static void test_piv_cert_chained_read(void **state) {
   assert_int_equal(rapdu.len, 256);
   assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
 
-  uint8_t reassembled[1024];
+  static uint8_t reassembled[PIV_CERT_OBJECT_MAX_SIZE];
   size_t total = rapdu.len;
   memcpy(reassembled, rapdu.data, rapdu.len);
 
@@ -2564,7 +2577,7 @@ static void test_piv_cert_chained_read(void **state) {
 
   // The retrieved object is a 53/82 BER-TLV wrapper around the original
   // cert: 53 82 LL HH || cert bytes.
-  assert_true(total >= 4 + CERT_LEN);
+  assert_int_equal(total, PIV_CERT_OBJECT_MAX_SIZE);
   assert_int_equal(reassembled[0], 0x53);
   assert_int_equal(reassembled[1], 0x82);
   assert_int_equal(reassembled[2], (CERT_LEN >> 8) & 0xFF);

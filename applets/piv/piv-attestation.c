@@ -45,13 +45,13 @@ typedef struct {
   uint8_t device_serial[PIV_ATTESTATION_DEVICE_SERIAL_LENGTH];
   uint8_t signature[PIV_ATTESTATION_SIGNATURE_MAX];
   uint8_t signature_len;
-  const char *cert_path;
 } piv_attestation_state_t;
 
 enum {
   PIV_ATTESTATION_SEGMENT_ENCODED,
   PIV_ATTESTATION_SEGMENT_FILE,
   PIV_ATTESTATION_SEGMENT_PUBLIC,
+  PIV_ATTESTATION_SEGMENT_MLDSA_PUBLIC,
 };
 
 typedef struct {
@@ -78,10 +78,12 @@ _Static_assert(sizeof(piv_attestation_plan_t) <= PIV_ATTESTATION_PLAN_SIZE,
                "PIV attestation plan exceeds its shared scratch reservation");
 
 static piv_attestation_state_t piv_attestation_state;
+static const char piv_attestation_cert_path[] = "piv-cf9";
 
 static const uint8_t oid_ec_public_key[] = {0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
 static const uint8_t oid_ed25519[] = {0x2B, 0x65, 0x70};
 static const uint8_t oid_x25519[] = {0x2B, 0x65, 0x6E};
+static const uint8_t oid_mldsa65[] = {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x12};
 static const uint8_t der_ecdsa_with_sha256[] = "\x30\x0a\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02";
 static const uint8_t der_subject_prefix[] =
     "\x30\x25\x31\x23\x30\x21\x06\x03\x55\x04\x03\x0c\x1a"
@@ -208,6 +210,37 @@ static int piv_attestation_parse_cert(const char *path, piv_attestation_state_t 
 }
 
 static void piv_attestation_plan_reset(piv_attestation_plan_t *plan) { memzero(plan, sizeof(*plan)); }
+
+static void piv_attestation_mldsa_public_reset(piv_attestation_scratch_t *scratch) {
+  piv_attestation_mldsa_scratch_t *mldsa = &scratch->source.mldsa;
+  mldsa->keygen.phase = 0;
+  mldsa->stage_len = 0;
+  mldsa->stage_off = 0;
+  mldsa->emitted = 0;
+}
+
+static int piv_attestation_mldsa_public_read(piv_attestation_scratch_t *scratch, uint16_t offset, uint8_t *buf,
+                                             uint16_t len) {
+  piv_attestation_mldsa_scratch_t *mldsa = &scratch->source.mldsa;
+  size_t copied = 0;
+  if (offset > MLDSA_PK_BYTES || offset != mldsa->emitted || len > MLDSA_PK_BYTES - offset) return -1;
+
+  while (copied < len) {
+    if (mldsa->stage_off == mldsa->stage_len) {
+      if (mldsa->keygen.phase == 0 && mldsa->stage_len != 0) return -1;
+      const int ret = ml_dsa_65_keygen_streaming(mldsa->stage, sizeof(mldsa->stage), &mldsa->keygen, NULL);
+      if (ret <= 0) return -1;
+      mldsa->stage_len = (size_t)ret;
+      mldsa->stage_off = 0;
+    }
+    const size_t count = MIN(mldsa->stage_len - mldsa->stage_off, (size_t)len - copied);
+    memcpy(buf + copied, mldsa->stage + mldsa->stage_off, count);
+    mldsa->stage_off += count;
+    copied += count;
+  }
+  mldsa->emitted += copied;
+  return (int)copied;
+}
 
 static void piv_attestation_plan_add_segment(piv_attestation_plan_t *plan, uint8_t source, uint16_t offset,
                                              uint16_t length) {
@@ -336,6 +369,18 @@ static int piv_attestation_plan_add_spki(piv_attestation_plan_t *plan, const piv
     piv_attestation_plan_start_memory(plan, (const uint8_t[]){0x00}, 1);
     piv_attestation_plan_add_segment(plan, PIV_ATTESTATION_SEGMENT_PUBLIC, 0, state->public_material_len);
     piv_attestation_plan_insert_header(plan, bit_string_index, 0x03, plan->total_len - bit_string_start);
+  } else if (IS_MLDSA(state->target_type)) {
+    const uint8_t algorithm_index = plan->count;
+    const uint16_t algorithm_start = plan->total_len;
+    piv_attestation_plan_start_oid(plan, oid_mldsa65, sizeof(oid_mldsa65));
+    piv_attestation_plan_insert_header(plan, algorithm_index, 0x30, plan->total_len - algorithm_start);
+
+    const uint8_t bit_string_index = plan->count;
+    const uint16_t bit_string_start = plan->total_len;
+    piv_attestation_plan_start_memory(plan, (const uint8_t[]){0x00}, 1);
+    piv_attestation_plan_add_segment(plan, PIV_ATTESTATION_SEGMENT_MLDSA_PUBLIC, 0,
+                                     state->public_material_len);
+    piv_attestation_plan_insert_header(plan, bit_string_index, 0x03, plan->total_len - bit_string_start);
   } else {
     return -1;
   }
@@ -392,10 +437,14 @@ static int piv_attestation_plan_read(const piv_attestation_plan_t *plan, uint16_
       const uint16_t source_off = segment->offset + copy_start - stream_off;
       const uint16_t copy_len = copy_end - copy_start;
       if (segment->source == PIV_ATTESTATION_SEGMENT_FILE) {
-        if (piv_file_read_exact(piv_attestation_state.cert_path, source_off, buf + copied, copy_len) < 0) return -1;
+        if (piv_file_read_exact(piv_attestation_cert_path, source_off, buf + copied, copy_len) < 0) return -1;
+      } else if (segment->source == PIV_ATTESTATION_SEGMENT_MLDSA_PUBLIC) {
+        if (piv_attestation_mldsa_public_read(&applet_session_scratch.piv_attestation, source_off, buf + copied,
+                                              copy_len) < 0)
+          return -1;
       } else {
         const uint8_t *source = segment->source == PIV_ATTESTATION_SEGMENT_PUBLIC
-                                    ? applet_session_scratch.piv_attestation.public_material
+                                    ? applet_session_scratch.piv_attestation.source.public_material
                                     : plan->encoded;
         memcpy(buf + copied, source + source_off, copy_len);
       }
@@ -408,7 +457,8 @@ static int piv_attestation_plan_read(const piv_attestation_plan_t *plan, uint16_
 
 static int piv_attestation_response_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
   UNUSED(ctx);
-  piv_attestation_plan_t *plan = (piv_attestation_plan_t *)applet_session_scratch.piv_attestation.work.attestation_plan;
+  piv_attestation_plan_t *plan =
+      (piv_attestation_plan_t *)applet_session_scratch.piv_attestation.plan_work.attestation_plan;
   if (offset > UINT16_MAX) return -1;
   return piv_attestation_plan_read(plan, (uint16_t)offset, buf, len);
 }
@@ -430,52 +480,63 @@ static int piv_attestation_build_public(const char *path, piv_attestation_state_
   state->touch_policy = meta.touch_policy;
   if (IS_RSA(meta.type)) {
     const uint16_t modulus_len = (uint16_t)PUBLIC_KEY_LENGTH[meta.type];
-    if ((uint32_t)modulus_len + E_LENGTH > sizeof(scratch->public_material) ||
-        read_file(path, &scratch->work.rsa, 0, sizeof(scratch->work.rsa)) != sizeof(scratch->work.rsa) ||
-        rsa_get_public_key(&scratch->work.rsa, scratch->public_material) < 0) {
-      memzero(&scratch->work, sizeof(scratch->work));
+    if ((uint32_t)modulus_len + E_LENGTH > sizeof(scratch->source.public_material) ||
+        read_file(path, &scratch->plan_work.rsa, 0, sizeof(scratch->plan_work.rsa)) !=
+            sizeof(scratch->plan_work.rsa) ||
+        rsa_get_public_key(&scratch->plan_work.rsa, scratch->source.public_material) < 0) {
+      memzero(&scratch->plan_work, sizeof(scratch->plan_work));
       return -1;
     }
-    memcpy(scratch->public_material + modulus_len, scratch->work.rsa.e, E_LENGTH);
+    memcpy(scratch->source.public_material + modulus_len, scratch->plan_work.rsa.e, E_LENGTH);
     state->public_material_len = modulus_len + E_LENGTH;
     state->rsa_modulus_off = 0;
-    while (state->rsa_modulus_off + 1 < modulus_len && scratch->public_material[state->rsa_modulus_off] == 0)
+    while (state->rsa_modulus_off + 1 < modulus_len && scratch->source.public_material[state->rsa_modulus_off] == 0)
       ++state->rsa_modulus_off;
     state->rsa_modulus_len = modulus_len - state->rsa_modulus_off;
-    state->rsa_modulus_pad = (scratch->public_material[state->rsa_modulus_off] & 0x80u) != 0;
+    state->rsa_modulus_pad = (scratch->source.public_material[state->rsa_modulus_off] & 0x80u) != 0;
     state->rsa_exponent_off = modulus_len;
     while (state->rsa_exponent_off + 1 < modulus_len + E_LENGTH &&
-           scratch->public_material[state->rsa_exponent_off] == 0)
+           scratch->source.public_material[state->rsa_exponent_off] == 0)
       ++state->rsa_exponent_off;
     state->rsa_exponent_len = (uint8_t)(modulus_len + E_LENGTH - state->rsa_exponent_off);
-    state->rsa_exponent_pad = (scratch->public_material[state->rsa_exponent_off] & 0x80u) != 0;
+    state->rsa_exponent_pad = (scratch->source.public_material[state->rsa_exponent_off] & 0x80u) != 0;
   } else if (IS_ECC(meta.type)) {
     const uint16_t public_len = (uint16_t)PUBLIC_KEY_LENGTH[meta.type];
-    if (public_len > sizeof(scratch->public_material) ||
-        read_file(path, &scratch->work.ecc, 0, sizeof(scratch->work.ecc)) != sizeof(scratch->work.ecc)) {
-      memzero(&scratch->work, sizeof(scratch->work));
+    if (public_len > sizeof(scratch->source.public_material) ||
+        read_file(path, &scratch->plan_work.ecc, 0, sizeof(scratch->plan_work.ecc)) != sizeof(scratch->plan_work.ecc)) {
+      memzero(&scratch->plan_work, sizeof(scratch->plan_work));
       return -1;
     }
-    memcpy(scratch->public_material, scratch->work.ecc.pub, public_len);
-    if (meta.type == X25519) swap_big_number_endian(scratch->public_material);
+    memcpy(scratch->source.public_material, scratch->plan_work.ecc.pub, public_len);
+    if (meta.type == X25519) swap_big_number_endian(scratch->source.public_material);
     state->public_material_len = public_len;
+  } else if (IS_MLDSA(meta.type)) {
+    mldsa65_private_key_t key;
+    if (read_file(path, &key, 0, sizeof(key)) != sizeof(key)) {
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+    memcpy(scratch->source.mldsa.keygen.seed, key.seed, sizeof(scratch->source.mldsa.keygen.seed));
+    state->public_material_len = MLDSA_PK_BYTES;
+    memzero(&key, sizeof(key));
   } else {
-    memzero(&scratch->work, sizeof(scratch->work));
+    memzero(&scratch->plan_work, sizeof(scratch->plan_work));
     return SW_WRONG_DATA;
   }
-  memzero(&scratch->work, sizeof(scratch->work));
+  if (!IS_MLDSA(meta.type)) memzero(&scratch->plan_work, sizeof(scratch->plan_work));
   return SW_NO_ERROR;
 }
 
 static int piv_attestation_sign(const char *path, piv_attestation_scratch_t *scratch, uint8_t signature[72]) {
+  ecc_key_t *key = &scratch->plan_work.ecc;
   key_meta_t meta;
   if (ck_read_key_metadata(path, &meta) < 0 || meta.type != SECP256R1 ||
-      read_file(path, &scratch->work.ecc, 0, sizeof(scratch->work.ecc)) != sizeof(scratch->work.ecc)) {
-    memzero(&scratch->work, sizeof(scratch->work));
+      read_file(path, key, 0, sizeof(*key)) != sizeof(*key)) {
+    memzero(key, sizeof(*key));
     return SW_REFERENCE_DATA_NOT_FOUND;
   }
-  const size_t signature_len = ecdsa_p256_sign_der(&scratch->work.ecc, scratch->digest, signature);
-  memzero(&scratch->work, sizeof(scratch->work));
+  const size_t signature_len = ecdsa_p256_sign_der(key, scratch->digest, signature);
+  memzero(key, sizeof(*key));
   return signature_len == 0 ? -1 : (int)signature_len;
 }
 
@@ -498,17 +559,16 @@ __attribute__((noinline)) static int piv_attestation_hash_tbs(piv_attestation_sc
   return 0;
 }
 
-int piv_attestation_generate(uint8_t slot, const char *target_key_path, const char *attestation_key_path,
-                             const char *attestation_cert_path) {
+int piv_attestation_generate(uint8_t slot, const char *target_key_path, const char *attestation_key_path) {
   apdu_response_source_clear();
   memzero(&piv_attestation_state, sizeof(piv_attestation_state));
-  piv_attestation_state.cert_path = attestation_cert_path;
   piv_attestation_state.slot = slot;
 
-  int ret = piv_attestation_parse_cert(attestation_cert_path, &piv_attestation_state);
+  int ret = piv_attestation_parse_cert(piv_attestation_cert_path, &piv_attestation_state);
   if (ret != SW_NO_ERROR) return ret;
 
   piv_attestation_scratch_t *scratch = &applet_session_scratch.piv_attestation;
+  memzero(scratch, sizeof(*scratch));
   ret = piv_attestation_build_public(target_key_path, &piv_attestation_state, scratch);
   if (ret != SW_NO_ERROR) return ret;
 
@@ -519,8 +579,9 @@ int piv_attestation_generate(uint8_t slot, const char *target_key_path, const ch
   if (serial_nonzero == 0) piv_attestation_state.serial[sizeof(piv_attestation_state.serial) - 1] = 1;
   device_config_fill_serial(piv_attestation_state.device_serial);
 
-  piv_attestation_plan_t *plan = (piv_attestation_plan_t *)scratch->work.attestation_plan;
+  piv_attestation_plan_t *plan = (piv_attestation_plan_t *)scratch->plan_work.attestation_plan;
   if (piv_attestation_plan_build_tbs(plan, &piv_attestation_state) < 0) return SW_WRONG_DATA;
+  if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
   if (piv_attestation_hash_tbs(scratch, plan) < 0) return -1;
 
   ret = piv_attestation_sign(attestation_key_path, scratch, piv_attestation_state.signature);
@@ -530,6 +591,7 @@ int piv_attestation_generate(uint8_t slot, const char *target_key_path, const ch
   piv_attestation_state.signature_len = (uint8_t)ret;
 
   if (piv_attestation_plan_build_certificate(plan, &piv_attestation_state) < 0) return -1;
+  if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
   apdu_response_source_set(plan->total_len, SW_NO_ERROR, piv_attestation_response_read, piv_attestation_response_close,
                            &piv_attestation_state);
   return SW_NO_ERROR;

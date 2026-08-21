@@ -115,15 +115,27 @@ typedef union {
   } public_key;
 } piv_mlkem_scratch_t;
 
+typedef union {
+  rsa_key_t rsa;
+  ecc_key_t ecc;
+  uint8_t attestation_plan[PIV_ATTESTATION_PLAN_SIZE];
+} piv_attestation_plan_work_t;
+
 typedef struct {
-  uint8_t public_material[APPLET_SHARED_BUFFER_LENGTH];
+  uint8_t stage[MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES];
+  mldsa_keygen_state_t keygen;
+  size_t stage_len;
+  size_t stage_off;
+  size_t emitted;
+} piv_attestation_mldsa_scratch_t;
+
+typedef struct {
   uint8_t digest[32];
+  piv_attestation_plan_work_t plan_work;
   union {
-    rsa_key_t rsa;
-    ecc_key_t ecc;
-    sha256_ctx_t sha256;
-    uint8_t attestation_plan[PIV_ATTESTATION_PLAN_SIZE];
-  } work;
+    piv_attestation_mldsa_scratch_t mldsa;
+    uint8_t public_material[APPLET_SHARED_BUFFER_LENGTH];
+  } source;
 } piv_attestation_scratch_t;
 
 typedef union {
