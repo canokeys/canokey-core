@@ -270,6 +270,40 @@ static void test_parse_piv_x25519_streaming_rfc7748(void **state) {
   assert_x25519_alice_round_trip(&key);
 }
 
+static void test_read_key_rejects_short_material(void **state) {
+  (void)state;
+  const key_meta_t meta = {.type = MLKEM768, .origin = KEY_ORIGIN_IMPORTED, .usage = KEY_AGREEMENT};
+  uint8_t short_seed[MLKEM768_KEYGEN_SEED_BYTES - 1];
+  memset(short_seed, 0x5A, sizeof(short_seed));
+  assert_int_equal(write_file(PATH, short_seed, 0, sizeof(short_seed), 1), 0);
+  assert_int_equal(ck_write_key_metadata(PATH, &meta), 0);
+
+  ck_key_t key;
+  memset(&key, 0xA5, sizeof(key));
+  assert_int_equal(ck_read_key(PATH, &key), LFS_ERR_CORRUPT);
+  const uint8_t zero[sizeof(rsa_key_t)] = {0};
+  assert_memory_equal(key.data, zero, sizeof(zero));
+}
+
+static void test_parse_piv_policies_rejects_truncated_fields(void **state) {
+  (void)state;
+  static const uint8_t truncated[][2] = {
+      {0xAA, 0x00},
+      {0xAA, 0x01},
+      {0xAB, 0x00},
+      {0xAB, 0x01},
+  };
+
+  for (size_t i = 0; i < sizeof(truncated) / sizeof(truncated[0]); ++i) {
+    ck_key_t key;
+    ck_key_init_empty(&key, SECP256R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_NEVER);
+    const size_t len = i % 2 == 0 ? 1 : 2;
+    assert_int_equal(ck_parse_piv_policies(&key, truncated[i], len), KEY_ERR_LENGTH);
+    assert_int_equal(key.meta.pin_policy, PIN_POLICY_ONCE);
+    assert_int_equal(key.meta.touch_policy, TOUCH_POLICY_NEVER);
+  }
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -299,6 +333,8 @@ int main() {
       cmocka_unit_test(test_encode_eddsa),
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
+      cmocka_unit_test(test_read_key_rejects_short_material),
+      cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

@@ -2571,10 +2571,10 @@ static void test_admin_flash_usage_apdus(void **state) {
   assert_int_equal(flags, 0);
 
   const uint32_t piv_before = admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_PIV, NULL);
-  if (get_file_size("piv-atc") >= 0) assert_int_equal(remove_file("piv-atc"), 0);
-  if (get_file_size("piv-atk") >= 0) assert_int_equal(remove_file("piv-atk"), 0);
-  assert_int_equal(write_file("piv-atc", "cert", 0, 4, 1), 0);
-  assert_int_equal(write_file("piv-atk", "key", 0, 3, 1), 0);
+  if (get_file_size("piv-cf9") >= 0) assert_int_equal(remove_file("piv-cf9"), 0);
+  if (get_file_size("piv-kf9") >= 0) assert_int_equal(remove_file("piv-kf9"), 0);
+  assert_int_equal(write_file("piv-cf9", "cert", 0, 4, 1), 0);
+  assert_int_equal(write_file("piv-kf9", "key", 0, 3, 1), 0);
 
   admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
              ADMIN_APPLET_USAGE_RESPONSE_LENGTH);

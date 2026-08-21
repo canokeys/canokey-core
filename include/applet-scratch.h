@@ -4,10 +4,13 @@
 
 #include "../applets/ctap/ctap-internal.h"
 #include <ecc.h>
+#include <key.h>
 #include <ml-dsa-65.h>
+#include <ml-kem-768.h>
 #include <pke.h>
 #include <rsa.h>
 #include <sha.h>
+#include <sha3.h>
 #include <stddef.h>
 
 // Single global scratch buffer shared by CTAP/OpenPGP/PIV session work.
@@ -55,6 +58,63 @@ typedef struct {
   bool pending;
 } CTAP_mldsa_stream_state;
 
+typedef enum {
+  PIV_MLDSA_STREAM_NONE,
+  PIV_MLDSA_STREAM_PK,
+  PIV_MLDSA_STREAM_SIG,
+} piv_mldsa_stream_kind_t;
+
+typedef struct {
+  piv_mldsa_stream_kind_t kind;
+  uint8_t prefix[32];
+  size_t prefix_len;
+  size_t prefix_off;
+  uint8_t stage[MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES];
+  size_t stage_len;
+  size_t stage_off;
+  uint8_t seed[MLDSA_SEEDBYTES];
+  uint8_t tr[MLDSA_TRBYTES];
+  uint8_t mu[MLDSA_CRHBYTES];
+  SHA3_CTX_T public_hash;
+  key_meta_t pending_meta;
+  uint8_t pending_key_id;
+  bool install_pending;
+  union {
+    mldsa_keygen_state_t keygen;
+    mldsa_sign_state_t sign;
+  } crypto;
+  size_t total_len;
+  size_t emitted;
+} piv_mldsa_stream_state_t;
+
+typedef struct {
+  uint16_t outer_remaining;
+  uint16_t message_len;
+  uint16_t message_received;
+  uint16_t length_value;
+  uint8_t phase;
+  uint8_t length_count;
+  uint8_t length_seen;
+  union {
+    SHA3_CTX_T mldsa;
+    ed25519_randomized_sign_state_t ed25519;
+  } crypto;
+} piv_ga_stream_state_t;
+
+typedef union {
+  struct {
+    uint8_t ciphertext[MLKEM768_CIPHERTEXT_BYTES];
+    uint8_t public_key[MLKEM768_PUBLIC_KEY_BYTES];
+    uint8_t seed[MLKEM768_KEYGEN_SEED_BYTES];
+  } decaps;
+  struct {
+    uint8_t prefix[24];
+    uint8_t public_key[MLKEM768_PUBLIC_KEY_BYTES];
+    size_t prefix_len;
+    size_t total_len;
+  } public_key;
+} piv_mlkem_scratch_t;
+
 typedef struct {
   uint8_t public_material[APPLET_SHARED_BUFFER_LENGTH];
   uint8_t digest[32];
@@ -70,6 +130,9 @@ typedef union {
   CTAP_mldsa_stream_state ctap_mldsa;
   CTAP_make_credential ctap_mc;
   CTAP_get_assertion ctap_ga;
+  piv_mldsa_stream_state_t piv_mldsa;
+  piv_ga_stream_state_t piv_ga_stream;
+  piv_mlkem_scratch_t piv_mlkem;
   piv_attestation_scratch_t piv_attestation;
   uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
@@ -78,6 +141,12 @@ _Static_assert(sizeof(CTAP_make_credential) <= sizeof(CTAP_mldsa_stream_state),
                "MakeCredential parsing should not enlarge the shared scratch union");
 _Static_assert(sizeof(piv_attestation_scratch_t) <= sizeof(CTAP_mldsa_stream_state),
                "PIV attestation should not enlarge the shared scratch union");
+_Static_assert(sizeof(piv_mldsa_stream_state_t) <= sizeof(CTAP_mldsa_stream_state),
+               "PIV ML-DSA streaming should not enlarge the shared scratch union");
+_Static_assert(sizeof(piv_mlkem_scratch_t) <= sizeof(CTAP_mldsa_stream_state),
+               "PIV ML-KEM scratch should not enlarge the shared scratch union");
+_Static_assert(sizeof(piv_ga_stream_state_t) <= sizeof(CTAP_mldsa_stream_state),
+               "PIV GENERAL AUTHENTICATE input should not enlarge the shared scratch union");
 
 extern applet_session_scratch_t applet_session_scratch;
 

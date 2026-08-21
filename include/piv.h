@@ -23,8 +23,9 @@
 #define PIV_INS_ATTEST                       0xF9
 // Yubico vendor extension: 00 F6 <toSlot> <fromSlot>, no data.
 // toSlot=FF deletes the key. Moving and deleting require management-key
-// authentication and affect only the asymmetric key; certificate objects stay
-// in their original slots.
+// authentication, accept only ordinary asymmetric slots (9A/9C/9D/9E and
+// 82..95), and affect only the asymmetric key; certificate objects stay in
+// their original slots. The F9 attestation key is not movable or deletable.
 #define PIV_INS_MOVE_DELETE_KEY              0xF6
 // Vendor extension: 00 FA <pinRetries> <pukRetries>, no data.
 // Requires management-key and PIN authentication, then resets PIN/PUK to
@@ -38,6 +39,27 @@
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
 // clang-format on
 
+/*
+ * Post-quantum PIV extensions use the configurable algorithm IDs below
+ * (defaults: ML-DSA-65 = E2, ML-KEM-768 = E3). ML-DSA GENERAL AUTHENTICATE
+ * accepts 7C { 82 00, 81 <message> } through Short APDU command chaining and
+ * hashes the message incrementally; Extended APDUs are rejected. ML-KEM key
+ * generation uses the standard 00 47 command. Import accepts exactly one 0A 40 <64-byte d || z>
+ * component followed by the common AA/AB policy tags. Only d || z is persisted;
+ * the 1184-byte public key is derived for GENERATE/GET METADATA responses and
+ * the 2400-byte expanded decapsulation key is never stored. GENERAL
+ * AUTHENTICATE takes a 1088-byte ciphertext in tag 81 and returns the 32-byte
+ * shared secret in tag 82.
+ *
+ * GENERAL AUTHENTICATE with P1=FF is a vendor randomized Ed25519 signing mode.
+ * It uses the same chained 7C { 82 00, 81 <message> } request and returns a
+ * standard 64-byte Ed25519 signature in tag 82. The device generates and mixes
+ * the nonce randomness; the host does not provide r. Repeated signatures may
+ * differ. Normal Ed25519 uses its configured algorithm ID, remains RFC 8032
+ * deterministic, and accepts at most APPLET_SHARED_BUFFER_LENGTH (currently
+ * 544) message bytes. P1=FF is available only while algorithm extensions are
+ * enabled.
+ */
 typedef struct {
   uint8_t enabled;
   uint8_t ed25519;
@@ -47,7 +69,15 @@ typedef struct {
   uint8_t secp256k1;
   uint8_t secp521r1;
   uint8_t sm2;
+  uint8_t mldsa65;
+  uint8_t mlkem768;
 } __packed piv_algorithm_extension_config_t;
+
+/*
+ * Ordinary asymmetric slots (9A/9C/9D/9E and 82..95) do not restrict key
+ * usage. The key type and GENERAL AUTHENTICATE template determine which
+ * operation is possible. F9 remains signing-only and 9B remains AES-only.
+ */
 
 int piv_install(uint8_t reset);
 void piv_poweroff(void);

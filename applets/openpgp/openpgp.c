@@ -394,7 +394,8 @@ int openpgp_install(uint8_t reset) {
   // Key data, default to RSA2048
   uint8_t buf[20];
   memzero(buf, sizeof(buf));
-  ck_key_t key = {.meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.type = RSA2048};
+  ck_key_t key;
+  ck_key_init_empty(&key, RSA2048, SIGN, PIN_POLICY_DEFAULT, TOUCH_POLICY_DEFAULT);
 
   for (size_t i = 0; i < NUM_KEYS; ++i) {
     key.meta.usage = key_info[i].key_usage;

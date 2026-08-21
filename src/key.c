@@ -3,6 +3,8 @@
 #include "memzero.h"
 #include <common.h>
 #include <key.h>
+#include <ml-dsa-65.h>
+#include <rand.h>
 
 #define KEY_META_ATTR 0xFF
 #define CEIL_DIV_SQRT2 0xB504F334
@@ -20,6 +22,16 @@ const uint8_t CK_OPENPGP_ALGO_ATTR[CK_OPENPGP_ALGO_ATTR_COUNT][CK_OPENPGP_ALGO_A
     [RSA4096] = {6, 0x01, 0x10, 0x00, 0x00, 0x20, 0x02},
     [SECP521R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x23},
 };
+
+void ck_key_init_empty(ck_key_t *key, key_type_t type, key_usage_t usage, pin_policy_t pin_policy,
+                       touch_policy_t touch_policy) {
+  memzero(key, sizeof(*key));
+  key->meta.type = type;
+  key->meta.origin = KEY_ORIGIN_NOT_PRESENT;
+  key->meta.usage = usage;
+  key->meta.pin_policy = pin_policy;
+  key->meta.touch_policy = touch_policy;
+}
 
 int ck_curve_oid(key_type_t type, const uint8_t **oid, uint8_t *oid_len) {
   if (!IS_SHORT_WEIERSTRASS(type)) return -1;
@@ -53,6 +65,12 @@ int ck_encoded_public_key_length(key_type_t type, bool include_length) {
   case RSA3072:
   case RSA4096:
     return (include_length ? 3 : 0) + 6 + key_len + E_LENGTH;
+
+  case MLDSA65:
+    return (include_length ? 3 : 0) + 4 + key_len;
+
+  case MLKEM768:
+    return (include_length ? 3 : 0) + 4 + key_len;
 
   default:
     return -1;
@@ -129,6 +147,20 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
     off += E_LENGTH;
     break;
 
+  case MLDSA65:
+    if (include_length) {
+      buf[off++] = 0x82;
+      buf[off++] = HI(4 + MLDSA_PK_BYTES);
+      buf[off++] = LO(4 + MLDSA_PK_BYTES);
+    }
+    buf[off++] = 0x86;
+    buf[off++] = 0x82;
+    buf[off++] = HI(MLDSA_PK_BYTES);
+    buf[off++] = LO(MLDSA_PK_BYTES);
+    if (ml_dsa_65_keygen(&buf[off], NULL, NULL, key->mldsa.seed) < 0) return -1;
+    off += MLDSA_PK_BYTES;
+    break;
+
   default:
     return -1;
   }
@@ -143,11 +175,13 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     switch (*buf++) {
     case 0xAA:
       DBG_MSG("May have pin policy\n");
-      if (buf < end && *buf++ != 0x01) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf++ != 0x01) {
         DBG_MSG("Wrong length for pin policy\n");
         return KEY_ERR_LENGTH;
       }
-      if (buf < end && (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER)) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER) {
         DBG_MSG("Wrong data for pin policy\n");
         return KEY_ERR_DATA;
       }
@@ -156,11 +190,13 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
 
     case 0xAB:
       DBG_MSG("May have touch policy\n");
-      if (buf < end && *buf++ != 0x01) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf++ != 0x01) {
         DBG_MSG("Wrong length for touch policy\n");
         return KEY_ERR_LENGTH;
       }
-      if (buf < end && (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER)) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER) {
         DBG_MSG("Wrong data for touch policy\n");
         return KEY_ERR_DATA;
       }
@@ -462,6 +498,8 @@ void ck_parse_piv_stream_init(ck_piv_stream_t *st, ck_key_t *key) {
   memzero(key->data, sizeof(rsa_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
   st->rsa = IS_RSA(key->meta.type);
+  st->mldsa = IS_MLDSA(key->meta.type);
+  st->mlkem = IS_MLKEM(key->meta.type);
   if (st->rsa) {
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
     *(uint32_t *)key->rsa.e = htobe32(65537);
@@ -477,6 +515,13 @@ static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
+  } else if (st->mldsa) {
+    if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_PROC;
+    }
+  } else if (st->mlkem) {
+    // Every 64-byte d || z value is a valid deterministic ML-KEM seed.
   } else {
     if (key->meta.type == X25519) swap_big_number_endian(key->ecc.pri);
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
@@ -492,7 +537,9 @@ static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
 }
 
 int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t *buf, size_t buf_len, bool final) {
-  if (!IS_RSA(key->meta.type) && !IS_ECC(key->meta.type)) return -1;
+  if (!IS_RSA(key->meta.type) && !IS_ECC(key->meta.type) && !IS_MLDSA(key->meta.type) &&
+      !IS_MLKEM(key->meta.type))
+    return -1;
 
   for (size_t i = 0; i < buf_len; ++i) {
     if (++st->processed > CK_KEY_IMPORT_MAX_LENGTH) return KEY_ERR_LENGTH;
@@ -502,7 +549,10 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
     case CK_PIV_STREAM_TAG:
       if (st->rsa) {
         if (st->comp_idx >= 5 || b != st->comp_idx + 1) return KEY_ERR_DATA;
-      } else if (b != 0x06 && !(key->meta.type == ED25519 && b == 0x07) && !(key->meta.type == X25519 && b == 0x08)) {
+      } else if (st->mldsa ? b != 0x09
+                           : st->mlkem ? b != 0x0A
+                                       : (b != 0x06 && !(key->meta.type == ED25519 && b == 0x07) &&
+                                          !(key->meta.type == X25519 && b == 0x08))) {
         return KEY_ERR_DATA;
       }
       st->phase = CK_PIV_STREAM_LEN;
@@ -515,7 +565,9 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
       if (ret > 0) {
         if (st->rsa) {
           if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-        } else if (len != PRIVATE_KEY_LENGTH[key->meta.type]) {
+        } else if (st->mldsa ? len != MLDSA_SEEDBYTES
+                             : st->mlkem ? len != MLKEM768_KEYGEN_SEED_BYTES
+                                         : len != PRIVATE_KEY_LENGTH[key->meta.type]) {
           return KEY_ERR_LENGTH;
         }
         st->comp_len = len;
@@ -530,6 +582,10 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
         const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
         uint8_t *dests[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
         dests[st->comp_idx][pri_len - st->comp_len + st->comp_off] = b;
+      } else if (st->mldsa) {
+        key->mldsa.seed[st->comp_off] = b;
+      } else if (st->mlkem) {
+        key->mlkem.seed[st->comp_off] = b;
       } else {
         key->ecc.pri[st->comp_off] = b;
       }
@@ -547,6 +603,7 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
         st->policy_tag = b;
         st->phase = CK_PIV_STREAM_POLICY_LEN;
       } else {
+        if (st->mlkem) return KEY_ERR_DATA;
         st->phase = CK_PIV_STREAM_IGNORE_REST;
       }
       break;
@@ -582,6 +639,15 @@ int ck_read_key_metadata(const char *path, key_meta_t *meta) {
   return read_attr(path, KEY_META_ATTR, meta, sizeof(key_meta_t));
 }
 
+static size_t ck_key_material_size(key_type_t type) {
+  if (IS_MLDSA(type)) return sizeof(mldsa65_private_key_t);
+  if (IS_MLKEM(type)) return sizeof(mlkem768_private_key_t);
+  if (type == TDEA || type == AES192) return 24;
+  if (type == AES128) return 16;
+  if (type == AES256) return 32;
+  return sizeof(rsa_key_t);
+}
+
 int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
   return write_attr(path, KEY_META_ATTR, meta, sizeof(key_meta_t));
 }
@@ -589,11 +655,19 @@ int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
 int ck_read_key(const char *path, ck_key_t *key) {
   const int err = ck_read_key_metadata(path, &key->meta);
   if (err < 0) return err;
-  return read_file(path, key->data, 0, sizeof(rsa_key_t));
+  const size_t material_size = ck_key_material_size(key->meta.type);
+  memzero(key->data, sizeof(rsa_key_t));
+  const int read_len = read_file(path, key->data, 0, material_size);
+  if (read_len < 0) return read_len;
+  if ((size_t)read_len != material_size) {
+    memzero(key->data, sizeof(rsa_key_t));
+    return LFS_ERR_CORRUPT;
+  }
+  return read_len;
 }
 
 int ck_write_key(const char *path, const ck_key_t *key) {
-  const int err = write_file(path, key->data, 0, sizeof(rsa_key_t), 1);
+  const int err = write_file(path, key->data, 0, ck_key_material_size(key->meta.type), 1);
   if (err < 0) return err;
   return ck_write_key_metadata(path, &key->meta);
 }
@@ -612,6 +686,16 @@ int ck_generate_key(ck_key_t *key) {
       memzero(key, sizeof(ck_key_t));
       return -1;
     }
+    return 0;
+  } else if (IS_MLDSA(key->meta.type)) {
+    random_buffer(key->mldsa.seed, sizeof(key->mldsa.seed));
+    if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return -1;
+    }
+    return 0;
+  } else if (IS_MLKEM(key->meta.type)) {
+    random_buffer(key->mlkem.seed, sizeof(key->mlkem.seed));
     return 0;
   } else {
     return -1;
