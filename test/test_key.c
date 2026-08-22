@@ -270,6 +270,27 @@ static void test_parse_piv_x25519_streaming_rfc7748(void **state) {
   assert_x25519_alice_round_trip(&key);
 }
 
+static void test_parse_piv_rsa_rejects_invalid_component_bounds(void **state) {
+  (void)state;
+  ck_key_t key = {.meta.type = RSA4096, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = SIGN};
+  ck_piv_stream_t st;
+  ck_parse_piv_stream_init(&st, &key);
+
+  const uint8_t empty_component[] = {0x01, 0x00, 0xA5};
+  assert_int_equal(ck_parse_piv_stream_update(&st, &key, empty_component, sizeof(empty_component), false),
+                   KEY_ERR_DATA);
+  assert_int_equal(key.rsa.q[0], 0);
+
+  ck_parse_piv_stream_init(&st, &key);
+  const uint8_t one_byte_component_header[] = {0x01, 0x01};
+  assert_int_equal(
+      ck_parse_piv_stream_update(&st, &key, one_byte_component_header, sizeof(one_byte_component_header), false), 0);
+  st.comp_off = st.comp_len;
+  const uint8_t component_data = 0xA5;
+  assert_int_equal(ck_parse_piv_stream_update(&st, &key, &component_data, sizeof(component_data), false), KEY_ERR_DATA);
+  assert_int_equal(key.rsa.q[0], 0);
+}
+
 static void test_read_key_rejects_short_material(void **state) {
   (void)state;
   const key_meta_t meta = {.type = MLKEM768, .origin = KEY_ORIGIN_IMPORTED, .usage = KEY_AGREEMENT};
@@ -333,6 +354,7 @@ int main() {
       cmocka_unit_test(test_encode_eddsa),
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
+      cmocka_unit_test(test_parse_piv_rsa_rejects_invalid_component_bounds),
       cmocka_unit_test(test_read_key_rejects_short_material),
       cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
   };

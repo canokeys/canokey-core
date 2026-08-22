@@ -564,7 +564,7 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
       if (ret < 0) return ret;
       if (ret > 0) {
         if (st->rsa) {
-          if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
+          if (len == 0 || len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
         } else if (st->mldsa ? len != MLDSA_SEEDBYTES
                              : st->mlkem ? len != MLKEM768_KEYGEN_SEED_BYTES
                                          : len != PRIVATE_KEY_LENGTH[key->meta.type]) {
@@ -581,6 +581,8 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
       if (st->rsa) {
         const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
         uint8_t *dests[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
+        if (st->comp_idx >= 5 || st->comp_len == 0 || st->comp_len > pri_len || st->comp_off >= st->comp_len)
+          return KEY_ERR_DATA;
         dests[st->comp_idx][pri_len - st->comp_len + st->comp_off] = b;
       } else if (st->mldsa) {
         key->mldsa.seed[st->comp_off] = b;
