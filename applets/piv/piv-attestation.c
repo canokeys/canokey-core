@@ -88,10 +88,15 @@ static const uint8_t der_ecdsa_with_sha256[] = "\x30\x0a\x06\x08\x2a\x86\x48\xce
 static const uint8_t der_subject_prefix[] =
     "\x30\x25\x31\x23\x30\x21\x06\x03\x55\x04\x03\x0c\x1a"
     "CanoKey PIV Attestation ";
+
+// Private enterprise OID allocation under PEN 66602:
+//   1.3.6.1.4.1.66602.1     PIV attestation
+//   1.3.6.1.4.1.66602.1.1   Device serial number
+//   1.3.6.1.4.1.66602.1.2   PIN and touch policies
 static const uint8_t der_extensions_serial_prefix[] =
-    "\xa3\x28\x30\x26\x30\x12\x06\x0a\x2b\x06\x01\x04\x01\x82\xc4\x0a\x03\x07\x04\x04";
+    "\xa3\x28\x30\x26\x30\x12\x06\x0a\x2b\x06\x01\x04\x01\x84\x88\x2a\x01\x01\x04\x04";
 static const uint8_t der_extensions_policy_prefix[] =
-    "\x30\x10\x06\x0a\x2b\x06\x01\x04\x01\x82\xc4\x0a\x03\x08\x04\x02";
+    "\x30\x10\x06\x0a\x2b\x06\x01\x04\x01\x84\x88\x2a\x01\x02\x04\x02";
 
 static uint8_t piv_hex_nibble(uint8_t value) {
   return value < 10 ? (uint8_t)('0' + value) : (uint8_t)('a' + value - 10);

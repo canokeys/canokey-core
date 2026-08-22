@@ -1314,6 +1314,79 @@ static void test_piv_metadata_bounded_do_storage(void **state) {
   assert_true(get_file_size("piv-pi") < 0);
 }
 
+static void test_piv_get_metadata_directory(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  ck_key_t key;
+  ck_key_init_empty(&key, SECP256R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_NEVER);
+  key.meta.origin = KEY_ORIGIN_GENERATED;
+  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
+
+  const uint8_t cert = 0x53;
+  assert_int_equal(write_file("piv-c9c", &cert, 0, sizeof(cert), 1), 0);
+  assert_int_equal(write_file("piv-c9d", NULL, 0, 0, 1), 0); // Empty certificate files do not count.
+
+  ck_key_init_empty(&key, SECP384R1, KEY_USAGE_ANY, PIN_POLICY_ALWAYS, TOUCH_POLICY_CACHED);
+  key.meta.origin = KEY_ORIGIN_IMPORTED;
+  assert_int_equal(ck_write_key("piv-k82", &key), 0);
+  assert_int_equal(write_file("piv-c82", &cert, 0, sizeof(cert), 1), 0);
+  memzero(&key, sizeof(key));
+
+  uint8_t response[APDU_BUFFER_SIZE];
+  RAPDU R = {.data = response};
+  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x01, .p2 = 0x00, .lc = 0};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  static const uint8_t expected[] = {
+      0x01, 0x01, 0x01, 0x02, 18,
+      0x9A, 0x01, 0x11, KEY_ORIGIN_GENERATED, PIN_POLICY_ONCE, TOUCH_POLICY_NEVER,
+      0x9C, 0x02, 0x00, 0x00, 0x00, 0x00,
+      0x82, 0x03, 0x14, KEY_ORIGIN_IMPORTED, PIN_POLICY_ALWAYS, TOUCH_POLICY_CACHED,
+  };
+  assert_int_equal(R.len, sizeof(expected));
+  assert_memory_equal(R.data, expected, sizeof(expected));
+
+  // The maximum 24-entry directory still uses a single-byte length and fits in one response.
+  assert_int_equal(piv_install(1), 0);
+  static const uint8_t slots[] = {0x9A, 0x9C, 0x9D, 0x9E, 0x82, 0x83, 0x84, 0x85,
+                                  0x86, 0x87, 0x88, 0x89, 0x8A, 0x8B, 0x8C, 0x8D,
+                                  0x8E, 0x8F, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95};
+  static const char hex[] = "0123456789abcdef";
+  char cert_path[] = "piv-c00";
+  for (size_t i = 0; i < sizeof(slots); ++i) {
+    cert_path[5] = hex[slots[i] >> 4u];
+    cert_path[6] = hex[slots[i] & 0x0Fu];
+    assert_int_equal(write_file(cert_path, &cert, 0, sizeof(cert), 1), 0);
+  }
+
+  R.len = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 5 + sizeof(slots) * 6);
+  assert_memory_equal(R.data, ((const uint8_t[]){0x01, 0x01, 0x01, 0x02, 0x90}), 5);
+  for (size_t i = 0; i < sizeof(slots); ++i) {
+    const uint8_t expected_entry[] = {slots[i], 0x02, 0x00, 0x00, 0x00, 0x00};
+    assert_memory_equal(R.data + 5 + i * sizeof(expected_entry), expected_entry, sizeof(expected_entry));
+  }
+
+  C.p2 = 0x01;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+  C.p2 = 0x00;
+  C.data = (uint8_t *)&cert;
+  C.lc = 1;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_LENGTH);
+  C.data = NULL;
+  C.lc = 0;
+  C.p1 = 0x02;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_P1P2);
+
+  assert_int_equal(piv_install(1), 0);
+}
+
 // piv_get_metadata's key_type_to_algo_id switch maps each supported
 // PIV key type to the runtime-configurable algorithm-extension byte.
 // Integration tests only exercise the RSA2048 / SECP256R1 / SECP384R1
@@ -1618,10 +1691,11 @@ static void test_piv_attestation_certificate(void **state) {
   cursor += field.total_len;
   remaining -= field.total_len;
 
-  // Only the agreed Yubico-compatible serial and policy extensions are emitted.
+  // Only the registered CanoKey PIV serial and policy extensions are emitted.
   assert_int_equal(test_der_read(cursor, remaining, &field), 0);
   assert_int_equal(field.tag, 0xA3);
-  static const uint8_t serial_oid[] = {0x06, 0x0A, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xC4, 0x0A, 0x03, 0x07};
+  static const uint8_t serial_oid[] = {
+      0x06, 0x0A, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x84, 0x88, 0x2A, 0x01, 0x01};
   static const uint8_t policy_extension[] = {0x06,
                                              0x0A,
                                              0x2B,
@@ -1629,11 +1703,11 @@ static void test_piv_attestation_certificate(void **state) {
                                              0x01,
                                              0x04,
                                              0x01,
-                                             0x82,
-                                             0xC4,
-                                             0x0A,
-                                             0x03,
-                                             0x08,
+                                             0x84,
+                                             0x88,
+                                             0x2A,
+                                             0x01,
+                                             0x02,
                                              0x04,
                                              0x02,
                                              PIN_POLICY_ALWAYS,
@@ -2618,6 +2692,7 @@ int main() {
       cmocka_unit_test(test_piv_pin_does_not_satisfy_admin),
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
+      cmocka_unit_test(test_piv_get_metadata_directory),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
       cmocka_unit_test(test_piv_rsa4096_metadata_chained_read),
       cmocka_unit_test(test_piv_move_delete_key_extension),

@@ -56,6 +56,15 @@
 #define ALG_SECP521R1_DEFAULT 0x15
 #define ALG_SM2_DEFAULT       0x54
 
+#define PIV_METADATA_DIRECTORY_VERSION       0x01
+#define PIV_METADATA_DIRECTORY_ENTRY_SIZE    6
+#define PIV_METADATA_DIRECTORY_MAX_ENTRIES   24
+#define PIV_METADATA_DIRECTORY_HEADER_SIZE   5
+#define PIV_METADATA_DIRECTORY_MAX_SIZE      \
+  (PIV_METADATA_DIRECTORY_HEADER_SIZE + PIV_METADATA_DIRECTORY_MAX_ENTRIES * PIV_METADATA_DIRECTORY_ENTRY_SIZE)
+#define PIV_METADATA_DIRECTORY_FLAG_KEY      0x01
+#define PIV_METADATA_DIRECTORY_FLAG_CERT     0x02
+
 enum PIV_STATE {
   PIV_STATE_GET_DATA,
   PIV_STATE_GET_DATA_RESPONSE,
@@ -2328,7 +2337,71 @@ static int piv_attest(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
+_Static_assert(PIV_METADATA_DIRECTORY_MAX_SIZE <= APDU_BUFFER_SIZE,
+               "PIV metadata directory must fit in one APDU response");
+
+static int piv_metadata_directory_add_slot(uint8_t slot, uint8_t *data, uint16_t *pos) {
+  uint8_t flags = 0;
+  key_meta_t meta;
+  char key_path[MAX_KEY_PATH_LEN];
+  piv_key_path(slot, key_path);
+  const int key_rc = ck_read_key_metadata(key_path, &meta);
+  if (key_rc >= 0 && meta.type != KEY_TYPE_PKC_END) {
+    flags |= PIV_METADATA_DIRECTORY_FLAG_KEY;
+  } else if (key_rc < 0 && key_rc != LFS_ERR_NOENT) {
+    return -1;
+  }
+
+  char cert_path[MAX_DO_PATH_LEN];
+  piv_cert_path(slot, cert_path);
+  const int cert_size = get_file_size(cert_path);
+  if (cert_size > 0) {
+    flags |= PIV_METADATA_DIRECTORY_FLAG_CERT;
+  } else if (cert_size < 0 && cert_size != LFS_ERR_NOENT) {
+    return -1;
+  }
+
+  if (flags == 0) return 0;
+  data[(*pos)++] = slot;
+  data[(*pos)++] = flags;
+  if ((flags & PIV_METADATA_DIRECTORY_FLAG_KEY) != 0) {
+    data[(*pos)++] = key_type_to_algo_id(meta.type);
+    data[(*pos)++] = meta.origin;
+    data[(*pos)++] = meta.pin_policy;
+    data[(*pos)++] = meta.touch_policy;
+  } else {
+    memset(data + *pos, 0, PIV_METADATA_DIRECTORY_ENTRY_SIZE - 2);
+    *pos += PIV_METADATA_DIRECTORY_ENTRY_SIZE - 2;
+  }
+  return 0;
+}
+
+static int piv_get_metadata_directory(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+
+  RDATA[0] = 0x01;
+  RDATA[1] = 0x01;
+  RDATA[2] = PIV_METADATA_DIRECTORY_VERSION;
+  RDATA[3] = 0x02;
+  RDATA[4] = 0; // Single-byte length of the entry payload, up to 24 * 6 bytes.
+  uint16_t pos = PIV_METADATA_DIRECTORY_HEADER_SIZE;
+
+  static const uint8_t primary_slots[] = {0x9A, 0x9C, 0x9D, 0x9E};
+  for (size_t i = 0; i < sizeof(primary_slots); ++i) {
+    if (piv_metadata_directory_add_slot(primary_slots[i], RDATA, &pos) < 0) return -1;
+  }
+  for (uint8_t slot = 0x82; slot <= 0x95; ++slot) {
+    if (piv_metadata_directory_add_slot(slot, RDATA, &pos) < 0) return -1;
+  }
+
+  RDATA[4] = (uint8_t)(pos - PIV_METADATA_DIRECTORY_HEADER_SIZE);
+  LL = pos;
+  return 0;
+}
+
 __attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 == 0x01) return piv_get_metadata_directory(capdu, rapdu);
   if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
