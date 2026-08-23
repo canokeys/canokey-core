@@ -1949,7 +1949,6 @@ static int piv_general_authenticate_stream(const CAPDU *capdu, RAPDU *rapdu, uin
     LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sizeof(signature));
     memcpy(RDATA + 4, signature, sizeof(signature));
     memzero(signature, sizeof(signature));
-    piv_auth_mode = PIV_AUTH_MODE_CLASSIC;
     piv_auth_reset();
     return 0;
   }
