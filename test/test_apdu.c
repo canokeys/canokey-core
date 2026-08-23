@@ -2231,21 +2231,13 @@ static void test_response_source_read_failure_clears_state(void **state) {
   assert_int_equal(stream_ctx.closes, 1);
 }
 
-// apdu_output non-source path: when ex->rapdu.data aliases sh->data (the
-// transport stages and emits from the same shared_io_buffer), the SW trailer
-// the caller stamps after each chunk corrupts bytes that later chunks still
-// need. The tail-save branch captures those bytes on the first call and
-// replays them on subsequent calls.
-//
-// shared_io_buffer is APDU_COMMAND_BUFFER_SIZE bytes (288 by default), so
-// a 280-byte response chunked at 256 bytes lets us exercise the path
-// without overflowing the staging buffer.
-static void test_apdu_output_chaining_aliased_buffer(void **state) {
-  (void)state;
+static void check_apdu_output_chaining_aliased_buffer(uint16_t first_le, uint16_t continuation_le) {
   init_apdu_buffer();
 
   enum { RESP_LEN = 280 };
   uint8_t expected[RESP_LEN];
+  uint16_t expected_offset = 0;
+  static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
   for (size_t i = 0; i < RESP_LEN; ++i)
     expected[i] = (uint8_t)(0x80 + (i & 0x3F));
 
@@ -2256,28 +2248,34 @@ static void test_apdu_output_chaining_aliased_buffer(void **state) {
       .rapdu.sw = SW_NO_ERROR,
       .sent = 0,
   };
-  RAPDU sh = {.data = shared_io_buffer, .len = APDU_BUFFER_SIZE};
+  RAPDU sh = {.data = shared_io_buffer};
 
-  // First chunk: 256 bytes, 0x6118 because 24 bytes still pending.
-  assert_int_equal(apdu_output(&rc, &sh), 0);
-  assert_int_equal(sh.len, 256);
-  assert_int_equal(sh.sw, 0x6118);
-  assert_memory_equal(sh.data, expected, 256);
+  while (expected_offset < RESP_LEN) {
+    sh.len = expected_offset == 0 ? first_le : continuation_le;
+    const uint16_t expected_len = MIN(sh.len, RESP_LEN - expected_offset);
+    assert_int_equal(apdu_output(&rc, &sh), 0);
+    assert_int_equal(sh.len, expected_len);
+    assert_memory_equal(sh.data, expected + expected_offset, expected_len);
+    expected_offset += expected_len;
 
-  // Simulate the transport stamping the SW trailer right after the chunk
-  // data; this corrupts shared_io_buffer[256..257], which originally held
-  // expected[256..257]. Tail-save must have copied those bytes out before
-  // we did this corruption.
-  shared_io_buffer[256] = 0x61;
-  shared_io_buffer[257] = 0x18;
+    if (expected_offset < RESP_LEN) {
+      assert_true(HI(sh.sw) == 0x61);
+      shared_io_buffer[sh.len] = HI(sh.sw);
+      shared_io_buffer[sh.len + 1] = LO(sh.sw);
+      memcpy(shared_io_buffer, get_response, sizeof(get_response));
+    } else {
+      assert_int_equal(sh.sw, SW_NO_ERROR);
+    }
+  }
+}
 
-  // Second chunk: remaining 24 bytes + 0x9000. Without tail-save the first
-  // two output bytes would be 0x61 0x18 (the SW), not the original payload.
-  sh.len = APDU_BUFFER_SIZE;
-  assert_int_equal(apdu_output(&rc, &sh), 0);
-  assert_int_equal(sh.len, 24);
-  assert_int_equal(sh.sw, SW_NO_ERROR);
-  assert_memory_equal(sh.data, expected + 256, 24);
+// Exercise the 32-byte protected boundary, the formerly unprotected 33-byte
+// tail, and a small first Le that requires an overlapping in-buffer move.
+static void test_apdu_output_chaining_aliased_buffer(void **state) {
+  (void)state;
+  check_apdu_output_chaining_aliased_buffer(248, APDU_BUFFER_SIZE);
+  check_apdu_output_chaining_aliased_buffer(247, APDU_BUFFER_SIZE);
+  check_apdu_output_chaining_aliased_buffer(1, 200);
 }
 
 // fido_apdu_input rejects chains whose accumulated length would exceed the

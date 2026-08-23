@@ -361,22 +361,21 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 
   uint16_t to_send = ex->rapdu.len - ex->sent;
   if (to_send > sh->len) to_send = sh->len;
-  if (ex->sent == 0 && ex->rapdu.data == sh->data && ex->rapdu.len > to_send) {
-    const uint16_t tail_len = ex->rapdu.len - to_send;
-    if (tail_len <= sizeof(response_tail)) {
-      memcpy(response_tail, ex->rapdu.data + to_send, tail_len);
-      response_tail_offset = to_send;
-      response_tail_len = tail_len;
-    }
+  if (response_tail_len != 0 && ex->sent == response_tail_offset) {
+    // Restore the pending prefix before moving an aliased response chunk.
+    // The previous SW trailer or incoming GET RESPONSE may have overwritten it.
+    memcpy(ex->rapdu.data + response_tail_offset, response_tail, response_tail_len);
+    response_tail_len = 0;
   }
-  if (response_tail_len != 0 && ex->sent >= response_tail_offset) {
-    memcpy(sh->data, response_tail + (ex->sent - response_tail_offset), to_send);
-  } else {
-    memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
-  }
+  memmove(sh->data, ex->rapdu.data + ex->sent, to_send);
   sh->len = to_send;
   ex->sent += to_send;
   if (ex->sent < ex->rapdu.len) {
+    if (ex->rapdu.data == sh->data) {
+      response_tail_len = MIN(ex->rapdu.len - ex->sent, sizeof(response_tail));
+      memcpy(response_tail, ex->rapdu.data + ex->sent, response_tail_len);
+      response_tail_offset = ex->sent;
+    }
     if (ex->rapdu.len - ex->sent > 0xFF)
       sh->sw = 0x61FF;
     else
