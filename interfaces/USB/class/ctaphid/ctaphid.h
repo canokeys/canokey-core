@@ -127,6 +127,7 @@ typedef struct {
 
 uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len));
 uint8_t CTAPHID_OutEvent(uint8_t *data);
+uint8_t CTAPHID_RxCanAccept(void);
 void CTAPHID_SendKeepAlive(uint8_t status);
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 int CTAPHID_SendResponseAuto(uint32_t cid, uint8_t cmd, const uint8_t *data, size_t len);

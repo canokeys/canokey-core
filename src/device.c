@@ -159,8 +159,11 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
 int send_keepalive_during_processing(uint8_t entry) {
 #if ENABLE_IFACE_CTAPHID
-  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID)
+  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID) {
+    int loop_ret = CTAPHID_Loop(1);
+    if (loop_ret == LOOP_CANCEL) return loop_ret;
     CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+  }
 #else
   UNUSED(entry);
 #endif

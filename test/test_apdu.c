@@ -14,6 +14,7 @@
 #include <canokey-core-git-rev.h>
 #include <ccid.h>
 #include <ctap.h>
+#include <ctaphid.h>
 #include <device-config.h>
 #include <device.h>
 #include <fs.h>
@@ -29,6 +30,10 @@
 #include <hmac.h>
 #include <sha.h>
 #include <string.h>
+#include <usb_device.h>
+#include <usbd_ctaphid.h>
+
+#include "../virt-card/usb-dummy.h"
 
 extern ccid_bulkin_data_t bulkin_data;
 
@@ -280,15 +285,195 @@ static int read_tx_source_all(CTAPHID_TxSource *source, uint8_t *out, size_t out
   return 0;
 }
 
-enum { HID_CAPTURE_MAX_FRAMES = 16 };
+enum { HID_CAPTURE_MAX_FRAMES = 64 };
 static CTAPHID_FRAME hid_capture[HID_CAPTURE_MAX_FRAMES];
 static size_t hid_capture_count;
+static uint8_t inject_cancel_on_send;
+static uint8_t cancel_enqueue_result;
+static uint8_t cancel_loop_result;
 
 static uint8_t capture_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
   (void)pdev;
   if (len != sizeof(CTAPHID_FRAME) || hid_capture_count >= sizeof(hid_capture) / sizeof(hid_capture[0])) return 1;
   memcpy(&hid_capture[hid_capture_count++], report, sizeof(CTAPHID_FRAME));
   return 0;
+}
+
+static uint8_t capture_hid_report_and_cancel(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+  uint8_t ret = capture_hid_report(pdev, report, len);
+  if (ret != 0 || !inject_cancel_on_send) return ret;
+
+  inject_cancel_on_send = 0;
+  CTAPHID_FRAME cancel = {0};
+  cancel.cid = ((CTAPHID_FRAME *)report)->cid;
+  cancel.init.cmd = CTAPHID_CANCEL;
+  cancel_enqueue_result = CTAPHID_OutEvent((uint8_t *)&cancel);
+  cancel_loop_result = CTAPHID_Loop(1);
+  return 0;
+}
+
+static void reset_hid_capture(void) {
+  hid_capture_count = 0;
+  memset(hid_capture, 0, sizeof(hid_capture));
+}
+
+static void set_test_tick(uint32_t tick) {
+  testmode_set_initial_ticks(0);
+  const uint32_t absolute_tick = device_get_tick();
+  testmode_set_initial_ticks(absolute_tick - tick);
+}
+
+static CTAPHID_FRAME make_hid_init(uint32_t cid, uint8_t cmd, uint16_t len) {
+  CTAPHID_FRAME frame = {0};
+  frame.cid = cid;
+  frame.init.cmd = cmd;
+  frame.init.bcnth = (uint8_t)(len >> 8);
+  frame.init.bcntl = (uint8_t)len;
+  return frame;
+}
+
+static void test_ctaphid_out_event_only_enqueues(void **state) {
+  (void)state;
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+  assert_int_equal(hid_capture_count, 0);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 1);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_PING);
+}
+
+static void test_ctaphid_rx_high_water_pauses_and_resumes(void **state) {
+  (void)state;
+  reset_hid_capture();
+  USBD_CTAPHID_Init(&usb_device);
+  CTAPHID_Init(capture_hid_report);
+  EPType *out = dummy_get_ep_by_addr(EP_OUT(ctap_hid));
+  CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+
+  for (size_t i = 0; i < 8; ++i) {
+    memcpy(out->xfer_buff, &ping, sizeof(ping));
+    const uint8_t status = USBD_CTAPHID_DataOut(&usb_device);
+    assert_int_equal(status, i == 7 ? USBD_BUSY : USBD_OK);
+  }
+  assert_false(CTAPHID_RxCanAccept());
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_true(CTAPHID_RxCanAccept());
+  assert_int_equal(hid_capture_count, 8);
+
+  memcpy(out->xfer_buff, &ping, sizeof(ping));
+  assert_int_equal(USBD_CTAPHID_DataOut(&usb_device), USBD_OK);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 9);
+}
+
+static void test_ctaphid_uses_receive_tick_for_timeout(void **state) {
+  (void)state;
+  const uint32_t cid = 0x12345678;
+  CTAPHID_FRAME init = make_hid_init(cid, CTAPHID_PING, 58);
+  CTAPHID_FRAME cont = {.cid = cid};
+  memset(init.init.data, 0x5a, sizeof(init.init.data));
+  cont.cont.seq = 0;
+  cont.cont.data[0] = 0xa5;
+
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  set_test_tick(100);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&init), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 0);
+  set_test_tick(700);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&cont), 1);
+  set_test_tick(1100);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 2);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_PING);
+  assert_int_equal(MSG_LEN(hid_capture[0]), 58);
+  assert_int_equal(hid_capture[1].cont.data[0], 0xa5);
+
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  set_test_tick(100);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&init), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  set_test_tick(1000);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&cont), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 1);
+  assert_int_equal(hid_capture[0].init.cmd, CTAPHID_ERROR);
+  assert_int_equal(hid_capture[0].init.data[0], ERR_MSG_TIMEOUT);
+  set_test_tick(0);
+}
+
+static void test_ctaphid_cancel_is_consumed_from_queue(void **state) {
+  (void)state;
+  reset_hid_capture();
+  inject_cancel_on_send = 1;
+  cancel_enqueue_result = 0;
+  cancel_loop_result = LOOP_SUCCESS;
+  CTAPHID_Init(capture_hid_report_and_cancel);
+  CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(cancel_enqueue_result, 1);
+  assert_int_equal(cancel_loop_result, LOOP_CANCEL);
+}
+
+static void test_ctaphid_sustains_fifty_reports(void **state) {
+  (void)state;
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  CTAPHID_FRAME ping = make_hid_init(0x12345678, CTAPHID_PING, 0);
+
+  for (size_t i = 0; i < 50; ++i) {
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 1);
+    if ((i & 3) == 3) assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  }
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  assert_int_equal(hid_capture_count, 50);
+}
+
+static void test_ctaphid_large_ping_is_consumed_incrementally(void **state) {
+  (void)state;
+  static uint8_t payload[PKE_BUFFER_SIZE];
+  static uint8_t response[PKE_BUFFER_SIZE];
+  const uint32_t cid = 0x12345678;
+  CTAPHID_FRAME frame = make_hid_init(cid, CTAPHID_PING, sizeof(payload));
+  size_t offset = sizeof(frame.init.data);
+  size_t reports = 1;
+
+  for (size_t i = 0; i < sizeof(payload); ++i)
+    payload[i] = (uint8_t)i;
+  memcpy(frame.init.data, payload, sizeof(frame.init.data));
+  reset_hid_capture();
+  CTAPHID_Init(capture_hid_report);
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+
+  for (uint8_t seq = 0; offset < sizeof(payload); ++seq, ++reports) {
+    memset(&frame, 0, sizeof(frame));
+    frame.cid = cid;
+    frame.cont.seq = seq;
+    const size_t copied = MIN(sizeof(frame.cont.data), sizeof(payload) - offset);
+    memcpy(frame.cont.data, payload + offset, copied);
+    offset += copied;
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+    if ((reports & 3) == 3) assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+  }
+  assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+
+  assert_int_equal(MSG_LEN(hid_capture[0]), sizeof(payload));
+  size_t response_offset = MIN(sizeof(payload), sizeof(hid_capture[0].init.data));
+  memcpy(response, hid_capture[0].init.data, response_offset);
+  for (size_t i = 1; response_offset < sizeof(payload); ++i) {
+    const size_t copied = MIN(sizeof(hid_capture[i].cont.data), sizeof(payload) - response_offset);
+    assert_int_equal(hid_capture[i].cont.seq, i - 1);
+    memcpy(response + response_offset, hid_capture[i].cont.data, copied);
+    response_offset += copied;
+  }
+  assert_memory_equal(response, payload, sizeof(payload));
 }
 
 static int capture_ctaphid_msg(const uint8_t *apdu, size_t apdu_len, uint8_t *response, size_t response_size,
@@ -2810,6 +2995,12 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),
+      cmocka_unit_test(test_ctaphid_out_event_only_enqueues),
+      cmocka_unit_test(test_ctaphid_rx_high_water_pauses_and_resumes),
+      cmocka_unit_test(test_ctaphid_uses_receive_tick_for_timeout),
+      cmocka_unit_test(test_ctaphid_cancel_is_consumed_from_queue),
+      cmocka_unit_test(test_ctaphid_sustains_fifty_reports),
+      cmocka_unit_test(test_ctaphid_large_ping_is_consumed_incrementally),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
       cmocka_unit_test(test_ndef_chained_update_and_streaming_read),
       cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),
