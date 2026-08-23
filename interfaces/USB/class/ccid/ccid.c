@@ -40,6 +40,13 @@ ccid_bulkout_data_t bulkout_data;
 static uint16_t ab_data_length;
 static volatile uint8_t bulkout_state;
 static volatile uint8_t has_cmd;
+typedef enum {
+  CCID_TRANSACTION_IDLE,
+  CCID_TRANSACTION_RECEIVING,
+  CCID_TRANSACTION_PROCESSING,
+  CCID_TRANSACTION_RESPONDING,
+} ccid_transaction_state_t;
+static volatile ccid_transaction_state_t transaction_state;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
@@ -62,12 +69,20 @@ void ccid_release_pke_request(void *ctx) {
   apdu_cmd.pke_backed = 0;
 }
 
-void CCID_AbortPendingCommand(void) {
+static void CCID_ResetPendingCommand(void) {
   ccid_release_pke_request(NULL);
   bulkout_state = CCID_STATE_IDLE;
   ab_data_length = 0;
   has_cmd = 0;
   release_apdu_buffer(BUFFER_OWNER_CCID);
+  transaction_state = CCID_TRANSACTION_IDLE;
+}
+
+void CCID_AbortPendingCommand(void) {
+  // A command being processed cannot be cancelled synchronously, and a queued
+  // response still owns its backing buffer until the final Bulk-IN completes.
+  if (transaction_state >= CCID_TRANSACTION_PROCESSING) return;
+  CCID_ResetPendingCommand();
 }
 
 static int CCID_AppendPkeRequest(uint32_t offset, const uint8_t *data, uint16_t len) {
@@ -117,7 +132,7 @@ static int CCID_BeginPkeRequest(const uint8_t *cmd, uint16_t len) {
 }
 
 uint8_t CCID_Init(void) {
-  CCID_AbortPendingCommand();
+  CCID_ResetPendingCommand();
   send_data_spinlock = 0;
   bulkout_state = CCID_STATE_IDLE;
   has_cmd = 0;
@@ -135,6 +150,10 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
     if (len == 0)
       bulkout_state = CCID_STATE_IDLE;
     else if (len >= CCID_CMD_HEADER_SIZE) {
+      // The descriptor advertises one busy slot. Keep the command and response
+      // storage immutable until the preceding response has left Bulk-IN.
+      if (transaction_state != CCID_TRANSACTION_IDLE) break;
+      transaction_state = CCID_TRANSACTION_RECEIVING;
       memcpy(&bulkout_data, data, CCID_CMD_HEADER_SIZE);
       bulkout_data.dwLength = letoh32(bulkout_data.dwLength);
       bulkin_data.bSlot = bulkout_data.bSlot;
@@ -470,6 +489,7 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
 
 void __attribute__((noinline)) CCID_Loop(void) {
   if (!has_cmd) return;
+  transaction_state = CCID_TRANSACTION_PROCESSING;
 
   uint8_t errorCode;
   ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
@@ -529,14 +549,15 @@ void __attribute__((noinline)) CCID_Loop(void) {
 
   uint16_t len = pBulkin->dwLength;
   pBulkin->dwLength = htole32(pBulkin->dwLength);
+  has_cmd = 0;
+  transaction_state = CCID_TRANSACTION_RESPONDING;
   device_spinlock_lock(&send_data_spinlock, true);
   const uint8_t send_status = CCID_Response_SendData(&usb_device, (uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
   device_spinlock_unlock(&send_data_spinlock);
   if (send_status != USBD_OK) {
     ERR_MSG("CCID send timeout: msg=%u len=%u status=%u\n", pBulkin->bMessageType, len, send_status);
-    release_apdu_buffer(BUFFER_OWNER_CCID);
+    CCID_ResetPendingCommand();
   }
-  has_cmd = 0;
 }
 
 void CCID_InFinished(uint8_t is_time_extension_request) {
@@ -547,6 +568,7 @@ void CCID_InFinished(uint8_t is_time_extension_request) {
   // Release the buffer after bulkin_data is transmitted
   // If the buffer has not been acquired by CCID, ownership is unchanged
   release_apdu_buffer(BUFFER_OWNER_CCID);
+  transaction_state = CCID_TRANSACTION_IDLE;
 }
 
 void CCID_TimeExtensionLoop(void) {
