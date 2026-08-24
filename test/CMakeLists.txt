@@ -55,5 +55,16 @@ add_mocked_test(core_helpers
         CTAPHID_SendKeepAlive
         WebUSB_Loop
         KBDHID_Loop
+        applets_poweroff
+        apdu_response_source_clear
+        apdu_session_can_preempt
+        apdu_fido_chain_reset
+        device_config_is_led_normally_on
+        device_config_is_pass_enabled
+        device_config_is_openpgp_ccid_enabled
+        device_config_is_openpgp_nfc_enabled
+        device_config_is_piv_ccid_enabled
+        device_config_is_piv_nfc_enabled
+        device_config_is_webauthn_enabled
         LINK_LIBRARIES canokey-core
 )

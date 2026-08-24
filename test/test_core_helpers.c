@@ -143,13 +143,13 @@ bool testmode_err_triggered(const char *filename, bool file_wr) {
   return true;
 }
 
-void applets_poweroff(void) { applets_poweroff_calls++; }
+void __wrap_applets_poweroff(void) { applets_poweroff_calls++; }
 
-void apdu_response_source_clear(void) { apdu_response_source_clear_calls++; }
+void __wrap_apdu_response_source_clear(void) { apdu_response_source_clear_calls++; }
 
-int apdu_session_can_preempt(void) { return apdu_session_preemptable; }
+int __wrap_apdu_session_can_preempt(void) { return apdu_session_preemptable; }
 
-void apdu_fido_chain_reset(void) {}
+void __wrap_apdu_fido_chain_reset(void) {}
 
 void __wrap_CCID_Loop(void) { ccid_loop_calls++; }
 
@@ -189,19 +189,19 @@ int platform_config_page_write(const void *page, size_t len) {
   return 0;
 }
 
-uint8_t device_config_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
+uint8_t __wrap_device_config_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
 
-uint8_t device_config_is_pass_enabled(void) { return 1; }
+uint8_t __wrap_device_config_is_pass_enabled(void) { return 1; }
 
-uint8_t device_config_is_openpgp_ccid_enabled(void) { return 1; }
+uint8_t __wrap_device_config_is_openpgp_ccid_enabled(void) { return 1; }
 
-uint8_t device_config_is_openpgp_nfc_enabled(void) { return 1; }
+uint8_t __wrap_device_config_is_openpgp_nfc_enabled(void) { return 1; }
 
-uint8_t device_config_is_piv_ccid_enabled(void) { return 1; }
+uint8_t __wrap_device_config_is_piv_ccid_enabled(void) { return 1; }
 
-uint8_t device_config_is_piv_nfc_enabled(void) { return 1; }
+uint8_t __wrap_device_config_is_piv_nfc_enabled(void) { return 1; }
 
-uint8_t device_config_is_webauthn_enabled(void) { return 1; }
+uint8_t __wrap_device_config_is_webauthn_enabled(void) { return 1; }
 
 static void test_tlv_get_length_safe_variants(void **state) {
   (void)state;
