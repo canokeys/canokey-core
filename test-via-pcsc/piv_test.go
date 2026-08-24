@@ -147,13 +147,13 @@ func (app *PIVApplet) Authenticate() {
 func TestPIVExtensions(t *testing.T) {
 	leaveAlgoExtEnabled := os.Getenv("CANOKEY_TEST_LEAVE_PIV_ALGO_EXT") != ""
 	configOnly := os.Getenv("CANOKEY_TEST_PIV_CONFIG_ONLY") != ""
-	algorithmIDs := []byte{0x22, 0x50, 0x51, 0x52, 0x53, 0x15, 0x54}
+	algorithmIDs := []byte{0x22, 0x50, 0x51, 0x52, 0x53, 0x15, 0x54, 0xE2, 0xE3}
 	if os.Getenv("CANOKEY_TEST_PIV_ALGO_EXT_STANDARD") != "" {
-		algorithmIDs = []byte{0xE0, 0x05, 0x16, 0xE1, 0x53, 0x15, 0x54}
+		algorithmIDs = []byte{0xE0, 0x05, 0x16, 0xE1, 0x53, 0x15, 0x54, 0xE2, 0xE3}
 	}
 	// Complete 7F49 response lengths: Ed25519, RSA3072, RSA4096,
-	// X25519, secp256k1, secp521r1, and SM2.
-	publicKeyResponseLengths := []int{37, 399, 527, 37, 70, 140, 70}
+	// X25519, secp256k1, secp521r1, SM2, ML-DSA-65, and ML-KEM-768.
+	publicKeyResponseLengths := []int{37, 399, 527, 37, 70, 140, 70, 1961, 1193}
 	enabledConfig := append([]byte{1}, algorithmIDs...)
 	if os.Getenv("CANOKEY_TEST_PIV_ALGO_EXT_DISABLE") != "" {
 		enabledConfig[0] = 0

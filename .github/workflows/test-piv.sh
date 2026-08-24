@@ -17,11 +17,11 @@ opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GE
 pkcs15-tool --reader "$RDID" -D
 
 echo "=== Phase: Algorithm extension (ED25519) ==="
-piv-tool --admin M:9B:0A -s '00 EE 02 00 08 01 22 05 51 52 53 15 54' | grep 'SW1=0x90, SW2=0x00'
-piv-tool --admin M:9B:0A -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 15 54'
+piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 22 05 51 52 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
+piv-tool --admin M:9B:0A -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 15 54 E2 E3'
 perl -0pi -e 's/\{slot: 0x90, alg: AlgorithmEC256\}/\{slot: 0x96, alg: AlgorithmEC256\}/ or die "piv-go invalid slot test not found\n"' piv-go/piv/key_test.go
 cd piv-go; go test -v ./piv --wipe-yubikey; cd -
-piv-tool --admin M:9B:0A -s '00 EE 02 00 08 01 E0 05 16 E1 53 15 54' | grep 'SW1=0x90, SW2=0x00'
+piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 E0 05 16 E1 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
 
 echo "=== Phase: PIN management ==="
 yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
