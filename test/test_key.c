@@ -306,6 +306,24 @@ static void test_read_key_rejects_short_material(void **state) {
   assert_memory_equal(key.data, zero, sizeof(zero));
 }
 
+static void test_ecc_key_persists_only_ecc_material(void **state) {
+  (void)state;
+  ck_key_t expected;
+  ck_key_init_empty(&expected, SECP521R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_CACHED);
+  expected.meta.origin = KEY_ORIGIN_GENERATED;
+  memset(expected.ecc.pri, 0x5A, sizeof(expected.ecc.pri));
+  memset(expected.ecc.pub, 0xA5, sizeof(expected.ecc.pub));
+
+  assert_int_equal(ck_write_key(PATH, &expected), 0);
+  assert_int_equal(get_file_size(PATH), sizeof(ecc_key_t));
+
+  ck_key_t actual;
+  memset(&actual, 0xCC, sizeof(actual));
+  assert_int_equal(ck_read_key(PATH, &actual), sizeof(ecc_key_t));
+  assert_memory_equal(&actual.meta, &expected.meta, sizeof(expected.meta));
+  assert_memory_equal(&actual.ecc, &expected.ecc, sizeof(expected.ecc));
+}
+
 static void test_parse_piv_policies_rejects_truncated_fields(void **state) {
   (void)state;
   static const uint8_t truncated[][2] = {
@@ -356,6 +374,7 @@ int main() {
       cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_rsa_rejects_invalid_component_bounds),
       cmocka_unit_test(test_read_key_rejects_short_material),
+      cmocka_unit_test(test_ecc_key_persists_only_ecc_material),
       cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
   };
 

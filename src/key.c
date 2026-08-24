@@ -642,6 +642,7 @@ int ck_read_key_metadata(const char *path, key_meta_t *meta) {
 }
 
 static size_t ck_key_material_size(key_type_t type) {
+  if (IS_ECC(type)) return sizeof(ecc_key_t);
   if (IS_MLDSA(type)) return sizeof(mldsa65_private_key_t);
   if (IS_MLKEM(type)) return sizeof(mlkem768_private_key_t);
   if (type == TDEA || type == AES192) return 24;
