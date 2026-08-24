@@ -1010,7 +1010,7 @@ static void test_regression_fuzz(void **state) {
   if (1) {
     // malformed authenticate payload
     uint8_t data[] = {0x00, 0x00};
-    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0xFF, 0x9B, SW_WRONG_P1P2);
+    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0x0A, 0x9B, SW_WRONG_DATA);
   }
 
   if (1) {

@@ -70,7 +70,7 @@ yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
 yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"
 yubico-piv-tool -r "$RDID" -a test-decipher -s 84 -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"
 opensc-tool -r "$RDID" -s '00 24 00 01 02 00 00' | grep 'SW1=0x6A, SW2=0x88'
-opensc-tool -r "$RDID" -s '00 87 FF 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80'
+opensc-tool -r "$RDID" -s '00 87 0A 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80'
 opensc-tool -r "$RDID" -s '00 87 FF 9B 02 7C 00' | grep 'SW1=0x6A, SW2=0x86'
 
 echo "=== Phase: RSA-3072 tests ==="
