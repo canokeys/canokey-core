@@ -15,7 +15,7 @@
 // Admission-control reserve for LittleFS metadata/copy-on-write overhead.
 // Tombstone reuse does not consume new blocks, so the reserve is checked only
 // when appending a new record past the current file end.
-#define OATH_FS_RESERVE_BYTES (64 * LFS_CACHE_SIZE)
+#define OATH_FS_RESERVE_BYTES (128 * LFS_CACHE_SIZE)
 
 #define YK_CMD_GET_SERIAL 0x10
 #define YK_CMD_CHAL_HMAC1 0x30
