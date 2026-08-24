@@ -359,6 +359,7 @@ static void test_ctaphid_rx_high_water_pauses_and_resumes(void **state) {
     assert_int_equal(status, i == 7 ? USBD_BUSY : USBD_OK);
   }
   assert_false(CTAPHID_RxCanAccept());
+  assert_int_equal(CTAPHID_OutEvent((uint8_t *)&ping), 0);
   assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
   assert_true(CTAPHID_RxCanAccept());
   assert_int_equal(hid_capture_count, 8);
@@ -436,27 +437,27 @@ static void test_ctaphid_sustains_fifty_reports(void **state) {
   assert_int_equal(hid_capture_count, 50);
 }
 
-static void test_ctaphid_large_ping_is_consumed_incrementally(void **state) {
-  (void)state;
+static void assert_ctaphid_ping_round_trip(size_t payload_len) {
   static uint8_t payload[PKE_BUFFER_SIZE];
   static uint8_t response[PKE_BUFFER_SIZE];
   const uint32_t cid = 0x12345678;
-  CTAPHID_FRAME frame = make_hid_init(cid, CTAPHID_PING, sizeof(payload));
+  assert_true(payload_len <= sizeof(payload));
+  CTAPHID_FRAME frame = make_hid_init(cid, CTAPHID_PING, (uint16_t)payload_len);
   size_t offset = sizeof(frame.init.data);
   size_t reports = 1;
 
-  for (size_t i = 0; i < sizeof(payload); ++i)
+  for (size_t i = 0; i < payload_len; ++i)
     payload[i] = (uint8_t)i;
   memcpy(frame.init.data, payload, sizeof(frame.init.data));
   reset_hid_capture();
   CTAPHID_Init(capture_hid_report);
   assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
 
-  for (uint8_t seq = 0; offset < sizeof(payload); ++seq, ++reports) {
+  for (uint8_t seq = 0; offset < payload_len; ++seq, ++reports) {
     memset(&frame, 0, sizeof(frame));
     frame.cid = cid;
     frame.cont.seq = seq;
-    const size_t copied = MIN(sizeof(frame.cont.data), sizeof(payload) - offset);
+    const size_t copied = MIN(sizeof(frame.cont.data), payload_len - offset);
     memcpy(frame.cont.data, payload + offset, copied);
     offset += copied;
     assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
@@ -464,16 +465,23 @@ static void test_ctaphid_large_ping_is_consumed_incrementally(void **state) {
   }
   assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
 
-  assert_int_equal(MSG_LEN(hid_capture[0]), sizeof(payload));
-  size_t response_offset = MIN(sizeof(payload), sizeof(hid_capture[0].init.data));
+  assert_int_equal(MSG_LEN(hid_capture[0]), payload_len);
+  size_t response_offset = MIN(payload_len, sizeof(hid_capture[0].init.data));
   memcpy(response, hid_capture[0].init.data, response_offset);
-  for (size_t i = 1; response_offset < sizeof(payload); ++i) {
-    const size_t copied = MIN(sizeof(hid_capture[i].cont.data), sizeof(payload) - response_offset);
+  for (size_t i = 1; response_offset < payload_len; ++i) {
+    const size_t copied = MIN(sizeof(hid_capture[i].cont.data), payload_len - response_offset);
     assert_int_equal(hid_capture[i].cont.seq, i - 1);
     memcpy(response + response_offset, hid_capture[i].cont.data, copied);
     response_offset += copied;
   }
-  assert_memory_equal(response, payload, sizeof(payload));
+  assert_memory_equal(response, payload, payload_len);
+}
+
+static void test_ctaphid_large_ping_is_consumed_incrementally(void **state) {
+  (void)state;
+  assert_ctaphid_ping_round_trip(CTAPHID_STREAM_THRESHOLD);
+  assert_ctaphid_ping_round_trip(CTAPHID_STREAM_THRESHOLD + 1);
+  assert_ctaphid_ping_round_trip(PKE_BUFFER_SIZE);
 }
 
 static int capture_ctaphid_msg(const uint8_t *apdu, size_t apdu_len, uint8_t *response, size_t response_size,

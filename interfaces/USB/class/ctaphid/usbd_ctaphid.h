@@ -17,7 +17,6 @@ typedef struct {
   uint32_t idle_state;
   CTAPHID_StateTypeDef state;
   volatile uint8_t rx_paused;
-  volatile uint8_t rx_pending;
 } USBD_CTAPHID_HandleTypeDef;
 
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev);
