@@ -48,5 +48,12 @@ add_mocked_test(key
 add_mocked_test(core_helpers
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
+        MOCKS
+        CCID_Loop
+        CTAPHID_Loop
+        CTAPHID_SendKeepAlive
+        WebUSB_Loop
+        KBDHID_Loop
         LINK_LIBRARIES canokey-core
 )

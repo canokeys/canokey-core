@@ -151,9 +151,9 @@ int apdu_session_can_preempt(void) { return apdu_session_preemptable; }
 
 void apdu_fido_chain_reset(void) {}
 
-void CCID_Loop(void) { ccid_loop_calls++; }
+void __wrap_CCID_Loop(void) { ccid_loop_calls++; }
 
-uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
+uint8_t __wrap_CTAPHID_Loop(uint8_t wait_for_user) {
   ctaphid_loop_calls++;
   if (wait_for_user) {
     ctaphid_loop_wait_calls++;
@@ -162,7 +162,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   return LOOP_SUCCESS;
 }
 
-void CTAPHID_SendKeepAlive(uint8_t status) {
+void __wrap_CTAPHID_SendKeepAlive(uint8_t status) {
   if (status == KEEPALIVE_STATUS_PROCESSING) {
     keepalive_processing_calls++;
   } else if (status == KEEPALIVE_STATUS_UPNEEDED) {
@@ -170,9 +170,9 @@ void CTAPHID_SendKeepAlive(uint8_t status) {
   }
 }
 
-void WebUSB_Loop(void) { webusb_loop_calls++; }
+void __wrap_WebUSB_Loop(void) { webusb_loop_calls++; }
 
-uint8_t KBDHID_Loop(void) {
+uint8_t __wrap_KBDHID_Loop(void) {
   kbdhid_loop_calls++;
   return 0;
 }
