@@ -16,6 +16,9 @@ void nfc_handler(void) {}
 
 #define WTX_PERIOD 150
 #define WTX_LOCK_RETRY_PERIOD 1
+#if NFC_CHIP == NFC_CHIP_FM11NT
+#define NFC_IDLE_RESET_PERIOD 200
+#endif
 
 enum { NFC_SEND_FAILED = -1, NFC_SEND_ABORTED = -2, NFC_MAX_RETRANSMITS = 2 };
 
@@ -33,10 +36,14 @@ static volatile uint8_t apdu_transport_failed;
 static volatile uint8_t session_generation;
 #if NFC_CHIP == NFC_CHIP_FM11NT
 static volatile uint8_t fast_recovery_pending;
+static volatile uint8_t idle_reset_pending;
 static volatile uint8_t irq_config_pending;
 #endif
 
 static void send_wtx(void);
+#if NFC_CHIP == NFC_CHIP_FM11NT
+static void reset_idle_nfc(void);
+#endif
 
 static void reset_nfc_state(void) {
   block_number = 1;
@@ -52,7 +59,11 @@ static void reset_nfc_state(void) {
 
 static void stop_apdu_wtx(void) {
   apdu_processing = 0;
+#if NFC_CHIP == NFC_CHIP_FM11NT
+  device_set_timeout(reset_idle_nfc, NFC_IDLE_RESET_PERIOD);
+#else
   device_set_timeout(NULL, 0);
+#endif
 }
 
 #if NFC_CHIP == NFC_CHIP_FM11NT
@@ -115,9 +126,11 @@ __attribute__((minsize)) void nfc_init(void) {
   // FM11NT may already hold the reader's first frame by the time platform initialization finishes.
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1); // writing anything to this reg will flush FIFO buffer
 #else
+  idle_reset_pending = 0;
   const uint8_t irq_mask = MAIN_IRQ_FIFO | MAIN_IRQ_RX_START;
   irq_config_pending = fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) != FM_STATUS_OK;
   if (irq_config_pending) ERR_MSG("Failed to update FM11NT IRQ mask\n");
+  device_set_timeout(reset_idle_nfc, NFC_IDLE_RESET_PERIOD);
 #endif
 }
 
@@ -128,6 +141,7 @@ __attribute__((minsize)) static void nfc_error_handler(int code __attribute__((u
   stop_apdu_wtx();
   reset_nfc_state();
 #if NFC_CHIP == NFC_CHIP_FM11NT
+  idle_reset_pending = 0;
   if (!fast_recovery_pending) {
     uint8_t data = 0x77;
     if (fm_write_regs(FM_REG_FIFO_FLUSH, &data, 1) == FM_STATUS_OK &&
@@ -137,6 +151,7 @@ __attribute__((minsize)) static void nfc_error_handler(int code __attribute__((u
     }
   }
 
+  aggregate_fido_responses = 0;
   uint8_t data = 0x55;
   fm_write_regs(FM_REG_RESET_SILENCE, &data, 1);
   fast_recovery_pending = 1;
@@ -145,6 +160,12 @@ __attribute__((minsize)) static void nfc_error_handler(int code __attribute__((u
   fm_write_regs(FM_REG_FIFO_FLUSH, &block_number, 1);
 #endif
 }
+
+#if NFC_CHIP == NFC_CHIP_FM11NT
+static void reset_idle_nfc(void) {
+  idle_reset_pending = 1;
+}
+#endif
 
 static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   if (len > 29) return -1;
@@ -228,6 +249,12 @@ static void send_wtx(void) {
 
 __attribute__((minsize)) void nfc_loop(void) {
 #if NFC_CHIP == NFC_CHIP_FM11NT
+  if (idle_reset_pending) {
+    idle_reset_pending = 0;
+    fast_recovery_pending = 1;
+    nfc_error_handler(-23);
+    return;
+  }
   if (irq_config_pending) {
     const uint8_t irq_mask = MAIN_IRQ_FIFO | MAIN_IRQ_RX_START;
     if (fm_write_regs(FM_REG_MAIN_IRQ_MASK, &irq_mask, 1) == FM_STATUS_OK) irq_config_pending = 0;
@@ -337,10 +364,17 @@ __attribute__((minsize)) void nfc_handler(void) {
   }
 #if NFC_CHIP == NFC_CHIP_FM11NT
   if (irq[2] & AUX_IRQ_HALT) {
+    idle_reset_pending = 0;
     reset_nfc_session();
     return;
   }
-  if (irq[0] & MAIN_IRQ_ACTIVE) reset_nfc_session();
+  if (irq[0] & MAIN_IRQ_ACTIVE) {
+    idle_reset_pending = 0;
+    reset_nfc_session();
+  } else if ((irq[0] & 0x3F) && !apdu_processing) {
+    idle_reset_pending = 0;
+    device_set_timeout(reset_idle_nfc, NFC_IDLE_RESET_PERIOD);
+  }
   if (irq[0] & MAIN_IRQ_TX_DONE) DBG_MSG("NFC TX done\n");
 #endif
 
