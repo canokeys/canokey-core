@@ -245,32 +245,6 @@ enum {
   CK_PGP_STREAM_DONE,
 };
 
-static int ck_stream_tlv_len_feed(ck_tlv_len_stream_t *st, uint8_t b, uint16_t *out) {
-  if (st->state == 0) {
-    if ((b & 0x80) == 0) {
-      *out = b;
-      return 1;
-    }
-    st->count = b & 0x7F;
-    if (st->count == 0 || st->count > sizeof(st->buf)) return KEY_ERR_LENGTH;
-    st->seen = 0;
-    st->state = 1;
-    return 0;
-  }
-
-  st->buf[st->seen++] = b;
-  if (st->seen < st->count) return 0;
-
-  uint16_t len = 0;
-  for (uint8_t i = 0; i < st->count; ++i)
-    len = (len << 8u) | st->buf[i];
-  st->state = 0;
-  st->count = 0;
-  st->seen = 0;
-  *out = len;
-  return 1;
-}
-
 static int ck_openpgp_stream_template_len(ck_openpgp_stream_t *st, ck_key_t *key, uint16_t len) {
   if ((uint32_t)st->processed + len > st->total_len) return KEY_ERR_LENGTH;
 
@@ -408,7 +382,7 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
     case CK_PGP_STREAM_TEMPLATE_LEN:
     case CK_PGP_STREAM_TEMPLATE_VALUE_LEN: {
       uint16_t len;
-      int ret = ck_stream_tlv_len_feed(&st->tlv_len, b, &len);
+      int ret = tlv_len_stream_feed(&st->tlv_len, b, &len);
       if (ret < 0) return ret;
       if (ret > 0) {
         ret = ck_openpgp_stream_template_len(st, key, len);
@@ -440,7 +414,7 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
       break;
     case CK_PGP_STREAM_DATA_LEN: {
       uint16_t len;
-      int ret = ck_stream_tlv_len_feed(&st->tlv_len, b, &len);
+      int ret = tlv_len_stream_feed(&st->tlv_len, b, &len);
       if (ret < 0) return ret;
       if (ret > 0) {
         if (len != st->data_len) return KEY_ERR_DATA;
@@ -560,7 +534,7 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
 
     case CK_PIV_STREAM_LEN: {
       uint16_t len;
-      int ret = ck_stream_tlv_len_feed(&st->tlv_len, b, &len);
+      int ret = tlv_len_stream_feed(&st->tlv_len, b, &len);
       if (ret < 0) return ret;
       if (ret > 0) {
         if (st->rsa) {

@@ -89,6 +89,16 @@
 #define __weak __attribute__((weak))
 #define __packed __attribute__((packed))
 
+typedef struct {
+  uint16_t value;
+  uint8_t count;
+  uint8_t seen;
+} tlv_len_stream_t;
+
+// Feed one BER-TLV length byte. Returns 1 when complete, 0 when more bytes are
+// required, and -1 for unsupported or indefinite length encodings.
+int tlv_len_stream_feed(tlv_len_stream_t *state, uint8_t byte, uint16_t *length);
+
 // get length of tlv with bounds checking
 uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, size_t *length_size);
 

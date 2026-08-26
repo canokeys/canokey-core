@@ -291,6 +291,26 @@ static void test_parse_piv_rsa_rejects_invalid_component_bounds(void **state) {
   assert_int_equal(key.rsa.q[0], 0);
 }
 
+static void test_tlv_len_stream_feed(void **state) {
+  (void)state;
+  tlv_len_stream_t stream = {0};
+  uint16_t length = 0;
+
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x7F, &length), 1);
+  assert_int_equal(length, 0x7F);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x82, &length), 0);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x01, &length), 0);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x02, &length), 1);
+  assert_int_equal(length, 0x0102);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x20, &length), 1);
+  assert_int_equal(length, 0x20);
+
+  memset(&stream, 0, sizeof(stream));
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x80, &length), -1);
+  memset(&stream, 0, sizeof(stream));
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x83, &length), -1);
+}
+
 static void test_read_key_rejects_short_material(void **state) {
   (void)state;
   const key_meta_t meta = {.type = MLKEM768, .origin = KEY_ORIGIN_IMPORTED, .usage = KEY_AGREEMENT};
@@ -373,6 +393,7 @@ int main() {
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_rsa_rejects_invalid_component_bounds),
+      cmocka_unit_test(test_tlv_len_stream_feed),
       cmocka_unit_test(test_read_key_rejects_short_material),
       cmocka_unit_test(test_ecc_key_persists_only_ecc_material),
       cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),

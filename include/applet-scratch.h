@@ -91,10 +91,8 @@ typedef struct {
   uint16_t outer_remaining;
   uint16_t message_len;
   uint16_t message_received;
-  uint16_t length_value;
+  tlv_len_stream_t tlv_len;
   uint8_t phase;
-  uint8_t length_count;
-  uint8_t length_seen;
   union {
     SHA3_CTX_T mldsa;
     ed25519_randomized_sign_state_t ed25519;

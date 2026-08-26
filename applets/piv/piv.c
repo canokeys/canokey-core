@@ -985,28 +985,6 @@ enum {
   PIV_GA_STREAM_DONE,
 };
 
-static int piv_ga_stream_length_feed(piv_ga_stream_state_t *state, uint8_t byte, uint16_t *length) {
-  if (state->length_count == 0) {
-    if ((byte & 0x80u) == 0) {
-      *length = byte;
-      return 1;
-    }
-    state->length_count = byte & 0x7Fu;
-    if (state->length_count == 0 || state->length_count > 2) return -1;
-    state->length_seen = 0;
-    state->length_value = 0;
-    return 0;
-  }
-
-  state->length_value = (uint16_t)((state->length_value << 8u) | byte);
-  if (++state->length_seen != state->length_count) return 0;
-  *length = state->length_value;
-  state->length_count = 0;
-  state->length_seen = 0;
-  state->length_value = 0;
-  return 1;
-}
-
 static int piv_ga_stream_take_inner_byte(piv_ga_stream_state_t *state) {
   if (state->outer_remaining == 0) return -1;
   state->outer_remaining--;
@@ -1026,7 +1004,7 @@ static uint16_t piv_ga_stream_update(piv_ga_stream_state_t *state, uint8_t mode,
       state->phase = PIV_GA_STREAM_OUTER_LEN;
       break;
     case PIV_GA_STREAM_OUTER_LEN:
-      ret = piv_ga_stream_length_feed(state, data[offset++], &length);
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
       if (ret < 0) return SW_WRONG_LENGTH;
       if (ret > 0) {
         state->outer_remaining = length;
@@ -1040,7 +1018,7 @@ static uint16_t piv_ga_stream_update(piv_ga_stream_state_t *state, uint8_t mode,
       break;
     case PIV_GA_STREAM_RESPONSE_LEN:
       if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
-      ret = piv_ga_stream_length_feed(state, data[offset++], &length);
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
       if (ret < 0) return SW_WRONG_LENGTH;
       if (ret > 0) {
         if (length != 0) return SW_WRONG_DATA;
@@ -1054,7 +1032,7 @@ static uint16_t piv_ga_stream_update(piv_ga_stream_state_t *state, uint8_t mode,
       break;
     case PIV_GA_STREAM_CHALLENGE_LEN:
       if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
-      ret = piv_ga_stream_length_feed(state, data[offset++], &length);
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
       if (ret < 0) return SW_WRONG_LENGTH;
       if (ret > 0) {
         state->message_len = length;

@@ -2,6 +2,7 @@
 #define CANOKEY_CORE_KEY_H
 
 #include <algo.h>
+#include <common.h>
 #include <ecc.h>
 #include <ml-dsa-65.h>
 #include <ml-kem-768.h>
@@ -15,13 +16,6 @@
 #define CK_KEY_IMPORT_MAX_LENGTH 2048
 
 typedef struct {
-  uint8_t state;
-  uint8_t count;
-  uint8_t seen;
-  uint8_t buf[2];
-} ck_tlv_len_stream_t;
-
-typedef struct {
   uint16_t total_len;
   uint16_t processed;
   uint16_t template_end;
@@ -31,7 +25,7 @@ typedef struct {
   uint8_t phase;
   uint8_t comp_idx;
   uint8_t rsa;
-  ck_tlv_len_stream_t tlv_len;
+  tlv_len_stream_t tlv_len;
 } ck_openpgp_stream_t;
 
 typedef struct {
@@ -44,7 +38,7 @@ typedef struct {
   uint8_t rsa;
   uint8_t mldsa;
   uint8_t mlkem;
-  ck_tlv_len_stream_t tlv_len;
+  tlv_len_stream_t tlv_len;
 } ck_piv_stream_t;
 
 // Usage values are flags and may be combined for protocol-defined unrestricted keys.
