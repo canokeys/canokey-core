@@ -3,7 +3,7 @@ include(FindPkgConfig)
 project(canokey-core C)
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
-option(ENABLE_FUZZING "Build for fuzzing" OFF)
+option(ENABLE_FUZZING "Build the libFuzzer harness (requires clang with -fsanitize=fuzzer)" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
 option(ENABLE_BYPASS_USER_PRESENCE "Skip all user-presence tests (USE AT YOUR OWN RISK)" OFF)
 option(VIRTCARD "Virt Card" OFF)
@@ -64,6 +64,12 @@ if(ENABLE_TESTS OR ENABLE_FUZZING)
     if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
         add_compile_options(-fstack-usage)
     endif()
+endif()
+
+if(ENABLE_FUZZING)
+    # Coverage instrumentation for the library; the fuzzer executable links
+    # the libFuzzer runtime with -fsanitize=fuzzer (see the bottom of this file).
+    add_compile_options(-fsanitize=fuzzer-no-link)
 endif()
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
@@ -187,7 +193,6 @@ if(ENABLE_FUZZING)
     if(ENABLE_TESTS)
         message(WARNING "ENABLE_FUZZING will cause some tests to FAIL")
     endif(ENABLE_TESTS)
-    # set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize-coverage=bb -finstrument-functions")
 endif(ENABLE_FUZZING)
 
 target_compile_definitions(
@@ -229,6 +234,7 @@ if(VIRTCARD OR ENABLE_TESTS OR ENABLE_FUZZING)
         COMMAND
             git describe --always --tags --long --abbrev=8 --dirty >>
             ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 endif()
 
@@ -282,36 +288,31 @@ if(ENABLE_TESTS)
 endif(ENABLE_TESTS)
 
 if(ENABLE_FUZZING)
+    include(CheckCCompilerFlag)
+    # check_c_compiler_flag only passes the flag to the compile step; without
+    # the link option the SanitizerCoverage symbols are missing and the check
+    # reports a false negative.
+    set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=fuzzer")
+    check_c_compiler_flag("-fsanitize=fuzzer" HAVE_LIBFUZZER)
+    unset(CMAKE_REQUIRED_LINK_OPTIONS)
+    if(NOT HAVE_LIBFUZZER)
+        message(FATAL_ERROR "ENABLE_FUZZING requires a clang with the libFuzzer runtime (e.g. Homebrew llvm on macOS; Apple clang does not ship it)")
+    endif()
     add_executable(
-        honggfuzz-fuzzer
-        fuzzer/honggfuzz-fuzzer.c
+        libfuzzer-fuzzer
+        fuzzer/libfuzzer-fuzzer.c
         virt-card/usb-dummy.c
         virt-card/device-sim.c
         virt-card/fabrication.c
         littlefs/bd/lfs_filebd.c
     )
     target_include_directories(
-        honggfuzz-fuzzer
+        libfuzzer-fuzzer
         SYSTEM
         PRIVATE virt-card littlefs
     )
-    target_link_libraries(honggfuzz-fuzzer canokey-core)
-    add_dependencies(honggfuzz-fuzzer gitrev)
-
-    add_executable(
-        honggfuzz-debug
-        fuzzer/honggfuzz-debug.c
-        fuzzer/honggfuzz-fuzzer.c
-        virt-card/usb-dummy.c
-        virt-card/device-sim.c
-        virt-card/fabrication.c
-        littlefs/bd/lfs_filebd.c
-    )
-    target_include_directories(
-        honggfuzz-debug
-        SYSTEM
-        PRIVATE virt-card littlefs
-    )
-    target_link_libraries(honggfuzz-debug canokey-core)
-    add_dependencies(honggfuzz-debug gitrev)
+    target_compile_options(libfuzzer-fuzzer PRIVATE -fsanitize=fuzzer)
+    target_link_options(libfuzzer-fuzzer PRIVATE -fsanitize=fuzzer)
+    target_link_libraries(libfuzzer-fuzzer canokey-core)
+    add_dependencies(libfuzzer-fuzzer gitrev)
 endif(ENABLE_FUZZING)

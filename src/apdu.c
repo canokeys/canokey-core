@@ -30,7 +30,9 @@ enum APPLET {
   APPLET_ENUM_END,
 } current_applet;
 
-static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
+static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
+#define PIV_AID_RIGHT_TRUNCATED_SIZE 9
+#define PIV_AID_COMPAT_RID_SIZE      5
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
@@ -58,6 +60,16 @@ static const uint8_t AID_Size[] = {
     [APPLET_NDEF] = sizeof(NDEF_AID),
 #endif
 };
+
+static uint8_t aid_matches(uint8_t applet, const uint8_t *candidate, uint16_t len) {
+  if (applet == APPLET_PIV) {
+    // Keep the widely deployed RID-only selector in addition to the two forms in SP 800-73.
+    if (len != PIV_AID_COMPAT_RID_SIZE && len != PIV_AID_RIGHT_TRUNCATED_SIZE && len != sizeof(PIV_AID)) return 0;
+  } else if (len != AID_Size[applet]) {
+    return 0;
+  }
+  return memcmp(candidate, AID[applet], len) == 0;
+}
 
 static volatile uint32_t buffer_owner;
 static RAPDU_CHAINING rapdu_chaining;
@@ -483,7 +495,10 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     return;
   }
 #endif
-  if (!(CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00)) {
+  // Route every interindustry SELECT-by-DF-name command here so unsupported
+  // P2 values cannot fall through to whichever applet was previously active.
+  const uint8_t is_select_by_aid = CLA == 0x00 && INS == 0xA4 && P1 == 0x04;
+  if (!is_select_by_aid) {
     if (current_applet == APPLET_PIV) {
       if (!applet_enabled_on_transport(APPLET_PIV, transport)) {
         disabled_applet_response(rapdu);
@@ -521,10 +536,15 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     return;
   }
   rapdu_chaining.sent = 0;
-  if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
+  if (is_select_by_aid) {
+    if (P2 != 0x00) {
+      LL = 0;
+      SW = SW_WRONG_P1P2;
+      return;
+    }
     uint8_t i, end = APPLET_ENUM_END;
     for (i = APPLET_NULL + 1; i != end; ++i) {
-      if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+      if (aid_matches(i, DATA, LC)) {
         if (!applet_enabled_on_transport((enum APPLET)i, transport)) {
           disabled_applet_response(rapdu);
           DBG_MSG("applet disabled: %d\n", i);

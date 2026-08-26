@@ -10,10 +10,12 @@
     if (i2c_write_byte(data) == FM_STATUS_NACK) return FM_STATUS_NACK;                                                 \
   } while (0)
 
+#if NFC_CHIP != NFC_CHIP_NA
 static void device_delay_us(int us) {
   for (int i = 0; i < us * 10; ++i)
     asm volatile("nop");
 }
+#endif
 
 fm_status_t fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len) {
 #if NFC_CHIP == NFC_CHIP_FM11NC
@@ -26,6 +28,8 @@ fm_status_t fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len) {
   return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_read(reg, buf, len);
+#else
+  return FM_STATUS_NACK;
 #endif
 }
 
@@ -39,6 +43,8 @@ fm_status_t fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len) {
   return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_write(reg, buf, len);
+#else
+  return FM_STATUS_NACK;
 #endif
 }
 
@@ -53,6 +59,8 @@ fm_status_t fm_read_eeprom(uint16_t addr, uint8_t *buf, uint8_t len) {
   return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_read(addr, buf, len);
+#else
+  return FM_STATUS_NACK;
 #endif
 }
 
@@ -77,6 +85,8 @@ fm_status_t fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) {
   const bool ret = fm11nt_write(addr, buf, len);
   device_delay(10);
   return ret;
+#else
+  return FM_STATUS_NACK;
 #endif
 }
 
@@ -90,6 +100,8 @@ fm_status_t fm_read_fifo(uint8_t *buf, uint8_t len) {
   return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_read(FM_REG_FIFO_ACCESS, buf, len);
+#else
+  return FM_STATUS_NACK;
 #endif
 }
 
@@ -103,6 +115,8 @@ fm_status_t fm_write_fifo(uint8_t *buf, uint8_t len) {
   return FM_STATUS_OK;
 #elif NFC_CHIP == NFC_CHIP_FM11NT
   return fm11nt_write(FM_REG_FIFO_ACCESS, buf, len);
+#else
+  return FM_STATUS_NACK;
 #endif
 }
 

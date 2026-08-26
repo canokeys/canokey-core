@@ -6,11 +6,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-#include <libhfuzz/libhfuzz.h>
 
 #include "admin.h"
 #include "ccid.h"
@@ -31,7 +30,6 @@ applet_process_t *applets[] = {piv_process_apdu,   ctap_process_apdu,    oath_pr
                                admin_process_apdu, openpgp_process_apdu, ndef_process_apdu};
 
 extern ccid_bulkin_data_t bulkin_data;
-extern ccid_bulkout_data_t bulkout_data;
 static applet_process_t *process_func;
 static uint8_t setup_buffer[16];
 
@@ -46,26 +44,37 @@ static int EmulateUSBEnumeration() {
   return 0;
 }
 
+// Target selection via environment (libFuzzer treats positional arguments as
+// corpus directories, so the target cannot be passed on the command line):
+//   CANOKEY_FUZZ_APPLET=0..5  fuzz one applet (PIV, CTAP, OATH, Admin,
+//                             OpenPGP, NDEF); empty/unset fuzzes the CCID
+//                             transport layer
+//   CANOKEY_FUZZ_KEEP=1       keep the LittleFS state instead of
+//                             re-fabricating the card
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
+  (void)argc;
+  (void)argv;
   static char lfs_root[64];
   process_func = NULL;
   setbuf(stdout, 0);
-  if (*argc > 1) {
-    int idx = atoi((*argv)[1]);
-    if (idx >= 0 && idx < sizeof(applets) / sizeof(applets[0])) {
+  const char *idx_str = getenv("CANOKEY_FUZZ_APPLET");
+  if (idx_str != NULL && *idx_str != '\0') {
+    int idx = atoi(idx_str);
+    if (idx >= 0 && idx < (int)(sizeof(applets) / sizeof(applets[0]))) {
       process_func = applets[idx];
       printf("Applet %d Fuzzing Test\n", idx);
-      sprintf(lfs_root, "/tmp/fuzz_applet%d", idx);
+      snprintf(lfs_root, sizeof(lfs_root), "/tmp/fuzz_applet%d", idx);
     }
   }
   if (!process_func) {
     printf("CCID Fuzzing Test\n");
-    sprintf(lfs_root, "/tmp/fuzz_ccid");
+    snprintf(lfs_root, sizeof(lfs_root), "/tmp/fuzz_ccid");
   }
   usb_device_init();
   EmulateUSBEnumeration(); // required before any CCID transation
   set_nfc_state(1);
-  if (*argc > 2 && strcmp((*argv)[2], "--keep") == 0) { // keep data in littlefs
+  const char *keep = getenv("CANOKEY_FUZZ_KEEP");
+  if (keep != NULL && strcmp(keep, "1") == 0) { // keep data in littlefs
     card_read(lfs_root);
   } else {
     unlink(lfs_root);
@@ -101,13 +110,17 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
 
     if (is_setup && ep->num == 0) {
       ep->xfer_buff = setup_buffer;
+      if (len > sizeof(setup_buffer)) len = sizeof(setup_buffer);
       ep->xfer_count = len;
+      ep->xfer_cap = 0; // any later data stage must go through PrepareReceive
       DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       memcpy(setup_buffer, buf, ep->xfer_count);
-      ep->xfer_buff = +ep->xfer_count;
+      ep->xfer_buff += ep->xfer_count;
       USBD_LL_SetupStage(&usb_device, setup_buffer);
     } else {
-      if (len > ep->xfer_len) {
+      // xfer_cap tracks the writable window of the buffer the stack prepared;
+      // without it, repeated writes would run past the end of that buffer.
+      if (len > ep->xfer_len || len > ep->xfer_cap) {
         USBD_LL_StallEP(NULL, ep->addr);
         return;
       }
@@ -115,6 +128,7 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
       ep->xfer_count = len;
       memcpy(ep->xfer_buff, buf, ep->xfer_count);
       ep->xfer_buff += ep->xfer_count;
+      ep->xfer_cap -= ep->xfer_count;
       if (ep->num == 0) {
         USBD_LL_DataOutStage(&usb_device, ep->num, ep->xfer_buff);
       } else {
@@ -129,10 +143,6 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
 
 int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
   if (!process_func) { // CCID Fuzzing Test
-    // if (len > APDU_BUFFER_SIZE) len = APDU_BUFFER_SIZE;
-    // memcpy(bulkout_data.abData, buf, len);
-    // bulkout_data.dwLength = len;
-    // PC_to_RDR_XfrBlock();
     EmulateUSBTrans(buf, len);
   } else { // Applet Fuzzing Test
     uint16_t apdu_len = len & 0xffff;
@@ -140,8 +150,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
 
     CAPDU capdu;
     RAPDU rapdu;
-    capdu.data = bulkout_data.abData;
-    rapdu.data = bulkout_data.abData;
+    capdu.data = bulkin_data.abData;
+    rapdu.data = bulkin_data.abData;
     rapdu.len = APDU_BUFFER_SIZE;
     if (build_capdu(&capdu, buf, apdu_len) < 0) {
       return 0;

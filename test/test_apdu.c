@@ -2967,6 +2967,101 @@ static void test_runtime_feature_apdu_routing(void **state) {
   assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
 }
 
+static void test_select_and_read_command_validation(void **state) {
+  (void)state;
+
+  static const uint8_t select_admin[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00,
+  };
+  static const uint8_t select_admin_suffix[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x06, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+  static const uint8_t select_unknown_p2[] = {
+      0x00, 0xA4, 0x04, 0x0C, 0x01, 0xFF,
+  };
+  static const uint8_t admin_wrong_cla[] = {0x80, 0x31, 0x00, 0x00, 0x00};
+  static const uint8_t admin_version_data[] = {0x00, 0x31, 0x00, 0x00, 0x01, 0xFF};
+  static const uint8_t select_oath[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x07, 0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01,
+  };
+  static const uint8_t select_piv_truncated[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x09, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00,
+  };
+  static const uint8_t select_piv_full[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x0B, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
+  };
+  static const uint8_t select_piv_rid_only[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x05, 0xA0, 0x00, 0x00, 0x03, 0x08,
+  };
+  static const uint8_t select_piv_invalid_truncation[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x0A, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01,
+  };
+  static const uint8_t select_piv_wrong_version[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x0B, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x01,
+  };
+  static const uint8_t oath_list_wrong_cla[] = {0xFE, 0xA1, 0x00, 0x00, 0x00};
+
+  uint8_t c_buf[64], r_buf[64];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  assert_int_equal(build_capdu(&capdu, select_admin, sizeof(select_admin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, select_admin_suffix, sizeof(select_admin_suffix)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  assert_int_equal(build_capdu(&capdu, select_piv_truncated, sizeof(select_piv_truncated)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, select_piv_full, sizeof(select_piv_full)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, select_piv_rid_only, sizeof(select_piv_rid_only)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, select_piv_invalid_truncation, sizeof(select_piv_invalid_truncation)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  assert_int_equal(build_capdu(&capdu, select_piv_wrong_version, sizeof(select_piv_wrong_version)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+
+  assert_int_equal(build_capdu(&capdu, select_admin, sizeof(select_admin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, admin_wrong_cla, sizeof(admin_wrong_cla)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_CLA_NOT_SUPPORTED);
+
+  assert_int_equal(build_capdu(&capdu, admin_version_data, sizeof(admin_version_data)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  assert_int_equal(build_capdu(&capdu, select_unknown_p2, sizeof(select_unknown_p2)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
+
+  assert_int_equal(build_capdu(&capdu, select_oath, sizeof(select_oath)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, oath_list_wrong_cla, sizeof(oath_list_wrong_cla)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_CLA_NOT_SUPPORTED);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -3058,6 +3153,7 @@ int main() {
       cmocka_unit_test(test_admin_flash_usage_apdus),
       cmocka_unit_test(test_admin_kbd_keymap_apdus),
       cmocka_unit_test(test_runtime_feature_apdu_routing),
+      cmocka_unit_test(test_select_and_read_command_validation),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

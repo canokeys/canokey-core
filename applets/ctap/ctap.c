@@ -2554,10 +2554,11 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
     if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    retries = err;
 #ifndef FUZZ
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
     if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
-    retries = err - 1;
+    --retries;
 #endif
     ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
     CHECK_PARSER_RET(ret);
@@ -2622,10 +2623,11 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
     if (err == 0) return CTAP2_ERR_PIN_NOT_SET;
     err = get_pin_retries();
     if (err < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    retries = err;
 #ifndef FUZZ
     if (err == 0) return CTAP2_ERR_PIN_BLOCKED;
     if (consecutive_pin_counter == 0) return CTAP2_ERR_PIN_AUTH_BLOCKED;
-    retries = err - 1;
+    --retries;
 #endif
     ret = cp_decapsulate(cp.key_agreement, cp.pin_uv_auth_protocol);
     CHECK_PARSER_RET(ret);

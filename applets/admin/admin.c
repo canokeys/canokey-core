@@ -525,6 +525,7 @@ void device_config_fill_serial(uint8_t *buf) {
 int __attribute__((noinline)) admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
+  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   int ret = 0;
   switch (INS) {
@@ -534,6 +535,7 @@ int __attribute__((noinline)) admin_process_apdu(const CAPDU *capdu, RAPDU *rapd
 
   case ADMIN_INS_READ_VERSION:
     if (P1 > ADMIN_P1_READ_CORE_COMMIT || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     if (P1 == 0)
       ret = admin_vendor_version(capdu, rapdu);
     else if (P1 == 1)
@@ -544,6 +546,7 @@ int __attribute__((noinline)) admin_process_apdu(const CAPDU *capdu, RAPDU *rapd
 
   case ADMIN_INS_READ_SN:
     if (P1 > 1 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+    if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
     if (P1 == 0)
       ret = admin_read_sn(capdu, rapdu);
     else if (P1 == 1)

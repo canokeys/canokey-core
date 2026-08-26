@@ -49,7 +49,7 @@ canokey-core/
 ├── tinycbor/           # Submodule: CBOR encoder/decoder
 ├── virt-card/          # Virtual card for host-side unit/integration tests
 ├── test/               # CMocka unit tests
-├── fuzzer/             # honggfuzz fuzzing harness
+├── fuzzer/             # libFuzzer fuzzing harness
 └── scripts/            # Code-generation scripts (gen_ctap_get_info.py)
 ```
 
@@ -91,7 +91,7 @@ CMake 3.16+, C11. The library target is `canokey-core`.
 | `ENABLE_DEBUG_OUTPUT` | ON | `DBG_MSG`/`ERR_MSG` via `printf` |
 | `ENABLE_BYPASS_USER_PRESENCE` | OFF | Skip all touch checks (testing only) |
 | `ENABLE_TESTS` | OFF | Build CMocka unit tests + virt-card |
-| `ENABLE_FUZZING` | OFF | Build honggfuzz harness |
+| `ENABLE_FUZZING` | OFF | Build libFuzzer harness |
 | `VIRTCARD` | OFF | Build only the virtual-card targets |
 
 ### Running unit tests
@@ -389,7 +389,7 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 | FIDO2 conformance | `virt-card/fido-hid-over-udp` + `fido2-tests/` |
 | PC/SC integration | `u2f-virt-card` shared library + `test-via-pcsc/` |
 | Real-hardware tests | `test-real/` (requires a physical device) |
-| Fuzzing | `fuzzer/run-fuzzer.sh honggfuzz <id>` with `-DENABLE_FUZZING=ON` |
+| Fuzzing | `-DENABLE_FUZZING=ON` + `CANOKEY_FUZZ_APPLET=<id> ./libfuzzer-fuzzer <corpus>`; requires clang with libFuzzer runtime (not Apple clang) |
 
 Test-mode extras (enabled by `TEST` define):
 - `testmode_emulate_user_presence()` — auto-confirms touch
