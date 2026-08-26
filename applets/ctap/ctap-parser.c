@@ -310,8 +310,8 @@ static uint8_t parse_rp(CTAP_make_credential *mc, CborValue *val) {
       CHECK_CBOR_RET(ret);
     }
   }
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   return 0;
 }
 
@@ -364,8 +364,8 @@ uint8_t parse_user(user_entity *user, CborValue *val) {
       CHECK_CBOR_RET(ret);
     }
   }
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   return 0;
 }
 
@@ -408,8 +408,8 @@ static uint8_t parse_pub_key_cred_param(CborValue *val, int32_t *alg_type) {
     }
   }
 
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
 
   if (!found_type || !found_alg) return CTAP2_ERR_MISSING_PARAMETER;
 
@@ -447,8 +447,8 @@ uint8_t parse_verify_pub_key_cred_params(CborValue *val, int32_t *alg_type) {
       }
     }
   }
-  ret = cbor_value_leave_container(val, &arr);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &arr, 0);
+  CHECK_PARSER_RET(ret);
   if (chosen == arr_length) return CTAP2_ERR_UNSUPPORTED_ALGORITHM;
 
   return 0;
@@ -517,8 +517,8 @@ uint8_t parse_public_key_credential_list(CborValue *lst, credential_id *ids, siz
     ret = parse_credential_descriptor(&arr, ids ? (uint8_t *)&ids[i] : NULL);
     CHECK_PARSER_RET(ret);
   }
-  ret = cbor_value_leave_container(lst, &arr);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(lst, &arr, 0);
+  CHECK_PARSER_RET(ret);
   if (count) *count = size;
   return 0;
 }
@@ -559,8 +559,8 @@ uint8_t parse_options(CTAP_options *options, CborValue *val) {
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
   }
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   DBG_MSG("up: %hhu, uv: %hhu, rk: %hhu\n", options->up, options->uv, options->rk);
   return 0;
 }
@@ -729,8 +729,8 @@ static uint8_t parse_hmac_secret_params(CborValue *val, CTAP_hmac_secret_ext *ex
       break;
     }
   }
-  ret = cbor_value_leave_container(val, &hmac_map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &hmac_map, 0);
+  CHECK_PARSER_RET(ret);
   if ((map_has_entry & HS_MAP_ENTRY_ALL_REQUIRED) != HS_MAP_ENTRY_ALL_REQUIRED) return CTAP2_ERR_MISSING_PARAMETER;
   if ((ext->pin_protocol == 1 && ext->salt_enc_len != HMAC_SECRET_SALT_SIZE &&
        ext->salt_enc_len != HMAC_SECRET_SALT_SIZE / 2) ||
@@ -842,8 +842,8 @@ uint8_t parse_mc_extensions(CTAP_make_credential *mc, CborValue *val) {
       CHECK_CBOR_RET(ret);
     }
   }
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   if (saw_hmac_secret_mc && (!saw_hmac_secret || !mc->ext_hmac_secret)) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
@@ -897,8 +897,8 @@ uint8_t parse_ga_extensions(CTAP_get_assertion *ga, CborValue *val) {
       CHECK_CBOR_RET(ret);
     }
   }
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   return 0;
 }
 
@@ -963,10 +963,10 @@ uint8_t parse_cm_params(CTAP_credential_management *cm, CborValue *val, size_t *
     }
   }
 
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((val->parser->flags & CborParserFlag_ExternalSource) == 0 && total_length != NULL)
     *total_length = map.source.ptr - val->source.ptr;
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
   return 0;
 }
 
@@ -1104,8 +1104,8 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
     }
   }
 
-  ret = cbor_value_leave_container(&it, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(&it, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((mc->parsed_params & MC_REQUIRED_MASK) != MC_REQUIRED_MASK) {
     DBG_MSG("Missing required params\n");
     return CTAP2_ERR_MISSING_PARAMETER;
@@ -1226,8 +1226,8 @@ static uint8_t parse_get_assertion_impl(CborParser *parser, CTAP_get_assertion *
     }
   }
 
-  ret = cbor_value_leave_container(&it, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(&it, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((ga->parsed_params & GA_REQUIRED_MASK) != GA_REQUIRED_MASK) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
@@ -1377,8 +1377,8 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
     }
   }
 
-  ret = cbor_value_leave_container(&it, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(&it, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((cp->parsed_params & CP_REQUIRED_MASK) != CP_REQUIRED_MASK) return CTAP2_ERR_MISSING_PARAMETER;
 
   if (cp->sub_command == CP_CMD_GET_KEY_AGREEMENT && (cp->parsed_params & PARAM_PIN_UV_AUTH_PROTOCOL) == 0)
@@ -1492,8 +1492,8 @@ static uint8_t parse_credential_management_impl(CborParser *parser, CTAP_credent
     }
   }
 
-  ret = cbor_value_leave_container(&it, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(&it, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((cm->parsed_params & CM_REQUIRED_MASK) != CM_REQUIRED_MASK) return CTAP2_ERR_MISSING_PARAMETER;
 
   if ((cm->sub_command == CM_CMD_GET_CREDS_METADATA || cm->sub_command == CM_CMD_ENUMERATE_RPS_BEGIN ||
@@ -1576,8 +1576,8 @@ static uint8_t parse_config_params(CTAP_config *cfg, CborValue *val, size_t *tot
         CHECK_CBOR_RET(ret);
         cfg->min_pin_rpids[j].len = (uint8_t)rpid_len;
       }
-      ret = cbor_value_leave_container(&map, &arr);
-      CHECK_CBOR_RET(ret);
+      ret = ctap_cbor_skip_and_leave_container(&map, &arr, 0);
+      CHECK_PARSER_RET(ret);
       cfg->parsed_params |= PARAM_MIN_PIN_LENGTH_RPIDS;
       break;
 
@@ -1598,10 +1598,10 @@ static uint8_t parse_config_params(CTAP_config *cfg, CborValue *val, size_t *tot
     }
   }
 
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((val->parser->flags & CborParserFlag_ExternalSource) == 0 && total_length != NULL)
     *total_length = map.source.ptr - val->source.ptr;
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
   return 0;
 }
 
@@ -1673,8 +1673,8 @@ static uint8_t parse_config_impl(CborParser *parser, CTAP_config *cfg, const uin
     }
   }
 
-  ret = cbor_value_leave_container(&it, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(&it, &map, 0);
+  CHECK_PARSER_RET(ret);
   if ((cfg->parsed_params & CONFIG_REQUIRED_MASK) != CONFIG_REQUIRED_MASK) return CTAP2_ERR_MISSING_PARAMETER;
   return 0;
 }
@@ -1792,8 +1792,8 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
     }
   }
 
-  ret = cbor_value_leave_container(&it, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(&it, &map, 0);
+  CHECK_PARSER_RET(ret);
   if (!(lb->parsed_params & PARAM_OFFSET)) return CTAP1_ERR_INVALID_PARAMETER;
   if (!((lb->parsed_params & PARAM_GET) ^ (lb->parsed_params & PARAM_SET))) return CTAP1_ERR_INVALID_PARAMETER;
   if (lb->parsed_params & PARAM_GET) {
