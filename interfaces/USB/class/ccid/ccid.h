@@ -15,7 +15,7 @@
 
 typedef struct {
   uint8_t bMessageType;                   /* Offset = 0*/
-  uint32_t dwLength;                      /* Offset = 1, The length field (dwLength) is the length
+  uint8_t dwLength[4];                    /* Offset = 1, The length field (dwLength) is the length
                                              of the message not including the 10-byte header.*/
   uint8_t bSlot;                          /* Offset = 5*/
   uint8_t bSeq;                           /* Offset = 6*/
@@ -27,7 +27,7 @@ typedef struct {
 
 typedef struct {
   uint8_t bMessageType;        /* Offset = 0*/
-  uint32_t dwLength;           /* Offset = 1*/
+  uint8_t dwLength[4];         /* Offset = 1*/
   uint8_t bSlot;               /* Offset = 5, Same as Bulk-OUT message */
   uint8_t bSeq;                /* Offset = 6, Same as Bulk-OUT message */
   uint8_t bStatus;             /* Offset = 7, Slot status as defined in § 6.2.6*/
@@ -38,7 +38,7 @@ typedef struct {
 
 typedef struct {
   uint8_t bMessageType; /* Offset = 0*/
-  uint32_t dwLength;    /* Offset = 1*/
+  uint8_t dwLength[4];  /* Offset = 1*/
   uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
   uint8_t bSeq;         /* Offset = 6, Same as Bulk-OUT message */
   uint8_t bStatus;      /* Offset = 7, Slot status as defined in § 6.2.6*/
@@ -49,7 +49,7 @@ typedef struct {
 
 typedef struct {
   uint8_t bMessageType; /* Offset = 0*/
-  uint32_t dwLength;    /* Offset = 1*/
+  uint8_t dwLength[4];  /* Offset = 1*/
   uint8_t bSlot;        /* Offset = 5, Same as Bulk-OUT message */
   uint8_t bSeq;         /* Offset = 6, Same as Bulk-OUT message */
   uint8_t bStatus;      /* Offset = 7, Slot status as defined in § 6.2.6*/
@@ -144,6 +144,9 @@ typedef enum {
 #define RDR_TO_PC_DATARATEANDCLOCKFREQUENCY 0x84
 
 uint8_t CCID_Init(void);
+uint32_t ccid_get_le32(const uint8_t value[4]);
+void ccid_put_le32(uint8_t out[4], uint32_t value);
+void ccid_set_bulkout_length(uint32_t length);
 void ccid_release_pke_request(void *ctx);
 void CCID_AbortPendingCommand(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);

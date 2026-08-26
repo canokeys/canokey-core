@@ -842,6 +842,25 @@ static void test_acquire_apdu_interface_releases_session_on_buffer_conflict(void
   assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CCID), 0);
 }
 
+static void test_ccid_le32_wire_encoding(void **state) {
+  (void)state;
+
+  uint8_t encoded[4];
+  static const uint8_t expected[] = {0x12, 0x34, 0x56, 0x78};
+  ccid_put_le32(encoded, 0x78563412u);
+  assert_memory_equal(encoded, expected, sizeof(expected));
+  assert_int_equal(ccid_get_le32(encoded), 0x78563412u);
+
+  assert_int_equal(offsetof(ccid_bulkout_data_t, dwLength), 1);
+  assert_int_equal(offsetof(ccid_bulkout_data_t, abDataShort), CCID_CMD_HEADER_SIZE);
+  assert_int_equal(offsetof(ccid_bulkin_data_t, dwLength), 1);
+  assert_int_equal(offsetof(ccid_bulkin_data_t, abData), CCID_CMD_HEADER_SIZE);
+  assert_int_equal(offsetof(ccid_bulkin_short_t, dwLength), 1);
+  assert_int_equal(offsetof(ccid_bulkin_short_t, abData), CCID_CMD_HEADER_SIZE);
+  assert_int_equal(offsetof(empty_ccid_bulkin_data_t, dwLength), 1);
+  assert_int_equal(sizeof(empty_ccid_bulkin_data_t), CCID_CMD_HEADER_SIZE);
+}
+
 static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
   (void)state;
 
@@ -1030,7 +1049,7 @@ static void test_ccid_extended_fido_request_uses_pke(void **state) {
   }
   CCID_Loop();
 
-  assert_true(bulkin_data.dwLength > 2);
+  assert_true(ccid_get_le32(bulkin_data.dwLength) > 2);
   assert_int_equal(bulkin_data.abData[0], CTAP1_ERR_SUCCESS);
   assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
   assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
@@ -2978,6 +2997,7 @@ int main() {
       cmocka_unit_test(test_input_chaining),
       cmocka_unit_test(test_output_chaining),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
+      cmocka_unit_test(test_ccid_le32_wire_encoding),
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
       cmocka_unit_test(test_ccid_power_on_preempts_idle_webusb_session),
       cmocka_unit_test(test_ccid_rejects_reentrant_command_until_response_finishes),
