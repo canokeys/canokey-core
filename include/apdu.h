@@ -14,13 +14,13 @@ typedef struct {
   uint16_t lc;
   uint8_t extended;
   uint8_t pke_backed;
-} __packed CAPDU;
+} CAPDU;
 
 typedef struct {
   uint8_t *data;
   uint16_t len;
   uint16_t sw;
-} __packed RAPDU;
+} RAPDU;
 
 // Command status responses
 
