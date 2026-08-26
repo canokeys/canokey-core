@@ -33,6 +33,7 @@
 #define MAX_DECIPHER_INPUT_LENGTH 513
 #define MAX_PUBKEY_RESPONSE_LENGTH 527
 #define MAX_CRYPTO_RESULT_LENGTH 512
+#define MAX_SHORT_WEIERSTRASS_DIGEST_LENGTH 66
 #define OPENPGP_CRYPTO_BUFFER_LENGTH MAX(MAX_DECIPHER_INPUT_LENGTH, MAX_CRYPTO_RESULT_LENGTH)
 #define DIGITAL_SIG_COUNTER_LENGTH 3
 #define PW_STATUS_LENGTH 7
@@ -899,21 +900,24 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   start_quick_blinking(0);
 
+  const uint8_t *input = DATA;
   size_t input_size = LC;
+  uint8_t padded_digest[MAX_SHORT_WEIERSTRASS_DIGEST_LENGTH];
   if (IS_RSA(key.meta.type)) {
     if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
       DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
   } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-    if (LC > PRIVATE_KEY_LENGTH[key.meta.type]) {
+    const size_t digest_size = PRIVATE_KEY_LENGTH[key.meta.type];
+    if (LC > digest_size || digest_size > sizeof(padded_digest)) {
       DBG_MSG("digest should has the same length as the private key\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-    // prepend zeros
-    memmove(DATA + (PRIVATE_KEY_LENGTH[key.meta.type] - LC), DATA, LC);
-    memzero(DATA, PRIVATE_KEY_LENGTH[key.meta.type] - LC);
-    input_size = PRIVATE_KEY_LENGTH[key.meta.type];
+    memzero(padded_digest, digest_size - LC);
+    if (LC > 0) memcpy(padded_digest + digest_size - LC, DATA, LC);
+    input = padded_digest;
+    input_size = digest_size;
   }
 
   if (ck_read_key(key_path, &key) < 0) {
@@ -931,7 +935,7 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
     }
     result = openpgp_crypto_buffer();
   }
-  const int sig_len = ck_sign(&key, DATA, input_size, result);
+  const int sig_len = ck_sign(&key, input, input_size, result);
   if (sig_len < 0) {
     ERR_MSG("Sign failed\n");
     openpgp_crypto_release();

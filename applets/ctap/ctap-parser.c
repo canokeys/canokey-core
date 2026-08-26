@@ -114,6 +114,17 @@ static CborError ctap_cbor_copy_bytes(CborValue *val, uint8_t *buf, size_t *len)
   return cbor_value_copy_byte_string(val, buf, len, val);
 }
 
+static uint8_t ctap_cbor_skip_and_leave_container(CborValue *val, CborValue *recursed, uint8_t status) {
+  while (!cbor_value_at_end(recursed)) {
+    const int ret = cbor_value_advance(recursed);
+    CHECK_CBOR_RET(ret);
+  }
+
+  const int ret = cbor_value_leave_container(val, recursed);
+  CHECK_CBOR_RET(ret);
+  return status;
+}
+
 typedef enum {
   CTAP_TEXT_KEY_UNKNOWN = 0,
   CTAP_TEXT_KEY_ALG,
@@ -461,7 +472,8 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
 
     if (key == CTAP_TEXT_KEY_ID) {
       found_id = true;
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_MISSING_PARAMETER;
+      if (cbor_value_get_type(&map) != CborByteStringType)
+        return ctap_cbor_skip_and_leave_container(arr, &map, CTAP2_ERR_MISSING_PARAMETER);
       if (id) {
         len = sizeof(credential_id);
         ret = ctap_cbor_copy_bytes(&map, id, &len);
@@ -472,7 +484,8 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
       }
     } else if (key == CTAP_TEXT_KEY_TYPE) {
       found_type = true;
-      if (cbor_value_get_type(&map) != CborTextStringType) return CTAP2_ERR_MISSING_PARAMETER;
+      if (cbor_value_get_type(&map) != CborTextStringType)
+        return ctap_cbor_skip_and_leave_container(arr, &map, CTAP2_ERR_MISSING_PARAMETER);
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
     } else {
@@ -481,8 +494,8 @@ uint8_t parse_credential_descriptor(CborValue *arr, uint8_t *id) {
     }
   }
 
-  ret = cbor_value_leave_container(arr, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(arr, &map, 0);
+  CHECK_PARSER_RET(ret);
   if (!found_id || !found_type) return CTAP2_ERR_MISSING_PARAMETER;
 
   return 0;
@@ -574,50 +587,56 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
 
     switch (key) {
     case COSE_KEY_LABEL_ALG:
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborIntegerType)
+        return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
       ret = cbor_value_get_int_checked(&map, &key);
       CHECK_CBOR_RET(ret);
-      if (key != COSE_ALG_ECDH_ES_HKDF_256) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (key != COSE_ALG_ECDH_ES_HKDF_256)
+        return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_UNHANDLED_REQUEST);
       ++parsed_keys;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
       break;
 
     case COSE_KEY_LABEL_KTY:
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborIntegerType)
+        return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
       ret = cbor_value_get_int_checked(&map, &key);
       CHECK_CBOR_RET(ret);
-      if (key != COSE_KEY_KTY_EC2) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (key != COSE_KEY_KTY_EC2) return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_UNHANDLED_REQUEST);
       ++parsed_keys;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
       break;
 
     case COSE_KEY_LABEL_CRV:
-      if (cbor_value_get_type(&map) != CborIntegerType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborIntegerType)
+        return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
       ret = cbor_value_get_int_checked(&map, &key);
       CHECK_CBOR_RET(ret);
-      if (key != COSE_KEY_CRV_P256) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (key != COSE_KEY_CRV_P256) return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_UNHANDLED_REQUEST);
       ++parsed_keys;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
       break;
 
     case COSE_KEY_LABEL_X:
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborByteStringType)
+        return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
       len = PRI_KEY_SIZE;
       ret = ctap_cbor_copy_bytes(&map, public_key, &len);
       CHECK_CBOR_RET(ret);
-      if (len != PRI_KEY_SIZE) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (len != PRI_KEY_SIZE) return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_UNHANDLED_REQUEST);
       ++parsed_keys;
       break;
 
     case COSE_KEY_LABEL_Y:
-      if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
+      if (cbor_value_get_type(&map) != CborByteStringType)
+        return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_CBOR_UNEXPECTED_TYPE);
       len = PRI_KEY_SIZE;
       ret = ctap_cbor_copy_bytes(&map, public_key + PRI_KEY_SIZE, &len);
       CHECK_CBOR_RET(ret);
-      if (len != PRI_KEY_SIZE) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if (len != PRI_KEY_SIZE) return ctap_cbor_skip_and_leave_container(val, &map, CTAP2_ERR_UNHANDLED_REQUEST);
       ++parsed_keys;
       break;
 
@@ -628,8 +647,8 @@ uint8_t parse_cose_key(CborValue *val, uint8_t *public_key) {
     }
   }
 
-  ret = cbor_value_leave_container(val, &map);
-  CHECK_CBOR_RET(ret);
+  ret = ctap_cbor_skip_and_leave_container(val, &map, 0);
+  CHECK_PARSER_RET(ret);
   DBG_MSG("parsed_keys=%x\n", parsed_keys);
   if (parsed_keys < 4) return CTAP2_ERR_MISSING_PARAMETER;
 
