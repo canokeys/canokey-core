@@ -2637,6 +2637,50 @@ static void admin_send(CAPDU *capdu, RAPDU *rapdu, uint8_t ins, uint8_t p1, uint
   admin_process_apdu(capdu, rapdu);
 }
 
+static void test_admin_chained_fido_cert_write(void **state) {
+  (void)state;
+
+  static const uint8_t first[] = {0x30, 0x03, 0x01};
+  static const uint8_t second[] = {0x01, 0x00};
+  static const uint8_t expected[] = {0x30, 0x03, 0x01, 0x01, 0x00};
+  static const uint8_t default_pin[] = {'1', '2', '3', '4', '5', '6'};
+  uint8_t c_buf[sizeof(default_pin)];
+  uint8_t r_buf[sizeof(expected)];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  admin_send(&capdu, &rapdu, ADMIN_INS_VERIFY, 0x00, 0x00, default_pin, sizeof(default_pin), 0);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  capdu.cla = 0x10;
+  capdu.ins = ADMIN_INS_WRITE_FIDO_CERT;
+  capdu.p1 = 0x00;
+  capdu.p2 = 0x00;
+  capdu.lc = sizeof(first);
+  capdu.le = 0;
+  memcpy(capdu.data, first, sizeof(first));
+  admin_process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  capdu.cla = 0x00;
+  capdu.lc = sizeof(second);
+  memcpy(capdu.data, second, sizeof(second));
+  admin_process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(read_file(CTAP_CERT_FILE, r_buf, 0, sizeof(r_buf)), sizeof(expected));
+  assert_memory_equal(r_buf, expected, sizeof(expected));
+
+  capdu.cla = 0x10;
+  capdu.ins = ADMIN_INS_READ_VERSION;
+  capdu.lc = 0;
+  admin_process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_CLA_NOT_SUPPORTED);
+}
+
 static void admin_verify_default_pin(CAPDU *capdu, RAPDU *rapdu) {
   static const uint8_t default_pin[] = {'1', '2', '3', '4', '5', '6'};
 
@@ -3149,6 +3193,7 @@ int main() {
       cmocka_unit_test(test_response_source_clear_calls_close),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
       cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
+      cmocka_unit_test(test_admin_chained_fido_cert_write),
       cmocka_unit_test(test_admin_read_core_commit_apdu),
       cmocka_unit_test(test_admin_flash_usage_apdus),
       cmocka_unit_test(test_admin_kbd_keymap_apdus),

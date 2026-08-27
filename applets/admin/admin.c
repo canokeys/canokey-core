@@ -525,7 +525,7 @@ void device_config_fill_serial(uint8_t *buf) {
 int __attribute__((noinline)) admin_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
-  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
+  if (!(CLA == 0x00 || (CLA == 0x10 && INS == ADMIN_INS_WRITE_FIDO_CERT))) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   int ret = 0;
   switch (INS) {
