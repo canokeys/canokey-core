@@ -109,18 +109,15 @@ add_custom_target(
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
 )
 
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
+add_custom_target(
+    generate_canokey_core_git_rev
     COMMAND ${CMAKE_COMMAND}
         -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
         -DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
         -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_git_rev_header.cmake
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_git_rev_header.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
     COMMENT "Generating canokey-core-git-rev.h"
-)
-add_custom_target(
-    generate_canokey_core_git_rev
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
+    VERBATIM
 )
 
 file(
@@ -223,19 +220,22 @@ add_dependencies(canokey-core generate_ctap_get_info_cbor generate_canokey_core_
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
 if(VIRTCARD OR ENABLE_TESTS OR ENABLE_FUZZING)
-    set(gitrev_in virt-card/git-rev.h.in)
-    set(gitrev virt-card/git-rev.h)
+    set(VIRT_CARD_GIT_REV_HEADER ${CMAKE_CURRENT_BINARY_DIR}/virt-card-git-rev.h)
     add_custom_target(
-        gitrev
-        ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-        COMMAND
-            ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in}
-            ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-        COMMAND
-            git describe --always --tags --long --abbrev=8 --dirty --match '[0-9]*' >>
-            ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        generate_virt_card_git_rev
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_FILE=${VIRT_CARD_GIT_REV_HEADER}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_virt_card_git_rev_header.cmake
+        BYPRODUCTS ${VIRT_CARD_GIT_REV_HEADER}
+        COMMENT "Generating virt-card git revision"
+        VERBATIM
     )
+
+    function(add_virt_card_git_revision target)
+        add_dependencies(${target} generate_virt_card_git_rev)
+        target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    endfunction()
 endif()
 
 if(ENABLE_TESTS)
@@ -264,7 +264,7 @@ if(ENABLE_TESTS)
         canokey-core
         "-fsanitize=address"
     )
-    add_dependencies(fido-hid-over-udp gitrev)
+    add_virt_card_git_revision(fido-hid-over-udp)
 
     pkg_search_module(PCSCLITE libpcsclite)
     if(PCSCLITE_FOUND)
@@ -283,7 +283,7 @@ if(ENABLE_TESTS)
             PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs
         )
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
-        add_dependencies(u2f-virt-card gitrev)
+        add_virt_card_git_revision(u2f-virt-card)
     endif()
 endif(ENABLE_TESTS)
 
@@ -314,5 +314,5 @@ if(ENABLE_FUZZING)
     target_compile_options(libfuzzer-fuzzer PRIVATE -fsanitize=fuzzer)
     target_link_options(libfuzzer-fuzzer PRIVATE -fsanitize=fuzzer)
     target_link_libraries(libfuzzer-fuzzer canokey-core)
-    add_dependencies(libfuzzer-fuzzer gitrev)
+    add_virt_card_git_revision(libfuzzer-fuzzer)
 endif(ENABLE_FUZZING)
