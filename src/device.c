@@ -18,7 +18,7 @@
 #include <webusb.h>
 #endif
 
-volatile static uint8_t touch_result;
+static volatile uint8_t touch_result;
 #if ENABLE_NFC
 static uint8_t has_rf;
 #endif
@@ -26,7 +26,7 @@ static uint8_t has_rf;
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
-volatile static wait_status_t wait_status;
+static volatile wait_status_t wait_status;
 applet_session_scratch_t applet_session_scratch;
 static device_applet_session_owner_t session_owner;
 static volatile uint32_t session_deadline;

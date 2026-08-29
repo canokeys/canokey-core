@@ -73,7 +73,7 @@
     y = SWAP;                                                                                                          \
   } while (0)
 
-// C23/C2x [[fallthrough]] is not supported by all compilers (e.g. armclang).
+// Prefer the standard fallthrough attribute where the compiler exposes it.
 #if defined(__has_c_attribute)
 #if __has_c_attribute(fallthrough)
 #define CNK_FALLTHROUGH [[fallthrough]]

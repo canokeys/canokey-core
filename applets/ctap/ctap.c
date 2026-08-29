@@ -2362,8 +2362,10 @@ step7:
   memcpy(data_buf + len, ga_state.client_data_hash, CLIENT_DATA_HASH_SIZE);
   DBG_MSG("Message: ");
   PRINT_HEX(data_buf, len + CLIENT_DATA_HASH_SIZE);
-  len = sign_with_private_key(dc.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
-  if (len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  const int signature_len =
+      sign_with_private_key(dc.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  if (signature_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  len = (size_t)signature_len;
   DBG_MSG("Signature: ");
   PRINT_HEX(data_buf, len);
   ret = cbor_encode_byte_string(&map, data_buf, len);
@@ -3522,6 +3524,7 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     goto set_resp;
   case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2
     cmd = CTAP_CREDENTIAL_MANAGEMENT;
+    CNK_FALLTHROUGH;
   case CTAP_CREDENTIAL_MANAGEMENT:
     DBG_MSG("----------------CM--------------------\n");
     status = ctap_credential_management(&encoder, req, req_len);
