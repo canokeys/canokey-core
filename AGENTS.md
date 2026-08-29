@@ -49,7 +49,7 @@ canokey-core/
 ├── tinycbor/           # Submodule: CBOR encoder/decoder
 ├── virt-card/          # Virtual card for host-side unit/integration tests
 ├── test/               # CMocka unit tests
-├── fuzzer/             # libFuzzer fuzzing harness
+├── fuzzer/             # AFL++ fuzzing harness
 └── scripts/            # Code-generation scripts (gen_ctap_get_info.py)
 ```
 
@@ -389,7 +389,7 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 | FIDO2 conformance | `virt-card/fido-hid-over-udp` + `fido2-tests/` |
 | PC/SC integration | `u2f-virt-card` shared library + `test-via-pcsc/` |
 | Real-hardware tests | `test-real/` (requires a physical device) |
-| Fuzzing | `-DENABLE_FUZZING=ON` + `CANOKEY_FUZZ_APPLET=<id> ./libfuzzer-fuzzer <corpus>`; requires clang with libFuzzer runtime (not Apple clang) |
+| Fuzzing | `-DENABLE_FUZZING=ON` builds `afl-fuzzer`; run with AFL++ (`afl-fuzz`), GNU GCC required (directly or via afl-gcc-fast) |
 
 Test-mode extras (enabled by `TEST` define):
 - `testmode_emulate_user_presence()` — auto-confirms touch
