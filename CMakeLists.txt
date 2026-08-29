@@ -232,7 +232,7 @@ if(VIRTCARD OR ENABLE_TESTS OR ENABLE_FUZZING)
             ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in}
             ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
         COMMAND
-            git describe --always --tags --long --abbrev=8 --dirty >>
+            git describe --always --tags --long --abbrev=8 --dirty --match '[0-9]*' >>
             ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
