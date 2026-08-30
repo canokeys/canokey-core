@@ -121,7 +121,10 @@ err_close:
 }
 
 int get_attr_size(const char *path, uint8_t attr) {
-  return lfs_getattr(&lfs, path, attr, NULL, 0);
+  // lfs_getattr's read path does memset(buffer + n, 0, len - n) unconditionally;
+  // a NULL probe buffer trips UBSan's nonnull check even when len is 0.
+  static uint8_t attr_probe;
+  return lfs_getattr(&lfs, path, attr, &attr_probe, 0);
 }
 
 int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
