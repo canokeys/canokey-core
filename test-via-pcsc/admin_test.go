@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/pkg/errors"
 	. "github.com/smartystreets/goconvey/convey"
 )
+
+var firmwareVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
 
 const (
 	errFailedToConnect            = "failed to connect to reader"
@@ -114,7 +117,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			ret, code, err := app.Send([]byte{0x00, 0x31, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(len(ret), ShouldBeGreaterThanOrEqualTo, 8) // Git short commit hash
+			So(firmwareVersionPattern.Match(ret), ShouldBeTrue)
 
 			ret, code, err = app.Send([]byte{0x00, 0x31, 0x01, 0x00, 0x00})
 			So(err, ShouldBeNil)

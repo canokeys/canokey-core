@@ -118,7 +118,7 @@ add_custom_target(
 )
 
 add_custom_target(
-    generate_canokey_core_git_rev
+    generate_canokey_core_git_rev ALL
     COMMAND ${CMAKE_COMMAND}
         -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
         -DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
