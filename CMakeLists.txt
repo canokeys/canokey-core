@@ -70,8 +70,14 @@ if(ENABLE_FUZZING)
     if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
         message(FATAL_ERROR "ENABLE_FUZZING requires GNU GCC (directly or through afl-gcc-fast)")
     endif()
-    add_compile_options(-fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
-    add_link_options(-fsanitize=address -fsanitize=undefined)
+    # Sanitizers are on by default. AFL++ Frida mode (macOS binary-only
+    # fuzzing) cannot lift the ASan runtime; use -DCANOKEY_FUZZ_SANITIZERS=OFF
+    # there and rely on Frida coverage plus real crashes.
+    set(CANOKEY_FUZZ_SANITIZERS ON CACHE BOOL "Enable ASan/UBSan in fuzz builds")
+    if(CANOKEY_FUZZ_SANITIZERS)
+        add_compile_options(-fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
+        add_link_options(-fsanitize=address -fsanitize=undefined)
+    endif()
 endif()
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
