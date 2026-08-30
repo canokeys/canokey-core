@@ -632,8 +632,10 @@ int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
 int ck_read_key(const char *path, ck_key_t *key) {
   const int err = ck_read_key_metadata(path, &key->meta);
   if (err < 0) return err;
-  const size_t material_size = ck_key_material_size(key->meta.type);
   memzero(key->data, sizeof(rsa_key_t));
+  if (key->meta.origin == KEY_ORIGIN_NOT_PRESENT) return 0;
+
+  const size_t material_size = ck_key_material_size(key->meta.type);
   const int read_len = read_file(path, key->data, 0, material_size);
   if (read_len < 0) return read_len;
   if ((size_t)read_len != material_size) {
