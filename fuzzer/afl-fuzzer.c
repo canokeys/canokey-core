@@ -117,8 +117,12 @@ static void emulate_usb_transaction(const uint8_t *buf, size_t len) {
       }
       DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       ep->xfer_count = len;
-      memcpy(ep->xfer_buff, buf, ep->xfer_count);
-      ep->xfer_buff += ep->xfer_count;
+      if (ep->xfer_count > 0) {
+        // A zero-length OUT packet can arrive before any receive buffer was
+        // prepared (xfer_buff is still NULL); never do memcpy(NULL, buf, 0).
+        memcpy(ep->xfer_buff, buf, ep->xfer_count);
+        ep->xfer_buff += ep->xfer_count;
+      }
       ep->xfer_cap -= ep->xfer_count;
       if (ep->num == 0) {
         USBD_LL_DataOutStage(&usb_device, ep->num, ep->xfer_buff);
