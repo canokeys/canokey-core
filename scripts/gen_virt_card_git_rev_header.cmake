@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 if(NOT DEFINED SOURCE_DIR OR NOT DEFINED OUTPUT_FILE)
     message(FATAL_ERROR "SOURCE_DIR and OUTPUT_FILE are required")
 endif()
