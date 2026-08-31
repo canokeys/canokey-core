@@ -212,6 +212,9 @@ Import parsers consume both OpenPGP and PIV TLV wire formats incrementally via `
 Crypto primitives live in the `canokey-crypto` submodule (`include/` exposed under `canokey-crypto/include/`).  
 Platforms may override weak symbols to redirect to hardware accelerators (SE, PKE engine, etc.).
 
+- `rsa_private` implementations must honor the stored CRT components (`p`, `q`, `dp`, `dq`, `qinv`) exactly as imported and must reject an inconsistent result. The CIU override verifies both CRT congruences before exposing the result; the mbedTLS fallback (`canokey-crypto/src/rsa.c`) imports DP/DQ/QP verbatim and lets `mbedtls_rsa_check_privkey` reject inconsistent keys (D alone is re-derived from `P`, `Q`, `E`, which is a pure function of them). Do **not** "repair" CRT components on host builds — the virt-card must reject exactly the keys the device rejects, otherwise differential fuzzing diverges.
+- `K__short_weierstrass_ecdh` (and any other `ecdh` path taking an external peer point) must validate the peer point before the scalar multiply: coordinates must be field elements (`X,Y < p`) and the point must satisfy the curve equation (`mbedtls_ecp_check_pubkey` on host; `public_key_valid` on CIU). Skipping it is an invalid-curve attack surface and diverges from the device (host 9000 vs device 6900). X25519 instead follows RFC 7748 and rejects only the all-zero (low-order) result, on both sides.
+
 ---
 
 ## Resource Constraints & Design Decisions
