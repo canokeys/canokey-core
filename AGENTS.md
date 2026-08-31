@@ -295,6 +295,7 @@ Forbidden PKE staging uses:
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
 - The RAPDU chain store (`rapdu_chaining.rapdu.data`) aliases the transport I/O buffer (`shared_io_buffer`, which is the CCID Bulk-IN buffer or the NFC I-block buffer). Transports stamp the SW trailer at `buffer[LL..LL+1]` after each command, which lands on the first pending response bytes whenever the just-sent chunk is short — an empty first chunk (Le absent) is the worst case, leaving `sent == 0`. `apdu_output` saves the pending prefix into the static `response_tail` after each partial chunk and restores it before the next chunk; the saved tail is invalidated only when a new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message`) or the chain completes, never on `sent == 0` alone.
 - A `GET RESPONSE` with no pending chain and no active response source is rejected with `SW_COMMAND_NOT_ALLOWED` on both the generic path (`process_apdu_from`) and the applet streaming path (`apdu_process_streaming_message`).
+- A pending RAPDU chain is abandoned as soon as any new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message` clear both `rapdu.len` and `sent`; chaining handlers re-establish `rapdu.len` for the new response). This matters because handlers like OATH/ADMIN write only the transport RAPDU: if a stale `rapdu.len` survived with a reset `sent`, a later `GET RESPONSE` would serve leftover shared-buffer bytes with the old SW=9000. Chain state is also dropped on applet-session expiry and on CCID slot power on/off (`device_applet_session_expire` / `device_applet_session_reset` call `apdu_rapdu_chain_reset()`; `apdu_fido_chain_reset()` does the same for the FIDO CAPDU reassembly state). Cross-transport preemption mid-chain remains blocked by `apdu_session_can_preempt()`, so this only fires when the owning transport itself resets or its session expires.
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
 
 ### Streaming response sources
@@ -391,6 +392,8 @@ Test-mode extras (enabled by `TEST` define):
 - `testmode_inject_error()` — injects storage errors for fault testing
 - `testmode_set_initial_ticks(uint32_t)` — pin the device tick counter to a known value (used by the virt-card and the MAGIC REBOOT path)
 - `testmode_err_triggered(path, file_wr)` — query whether the most recent injected error fired for a given file/operation
+
+The APDU-level hooks that expose testmode functions over the wire (INS `0xEE` MAGIC REBOOT and INS `0xEF` error injection in the FIDO dispatch, plus their `is_fido_apdu` routing) are gated behind `TESTMODE_INS_HOOKS`, defined by `ENABLE_TESTS`/`ENABLE_FUZZING` but deliberately NOT by `ENABLE_APDU_REPLAY` — real firmware has no such INS, so the differential harness must not have them either.
 
 ---
 

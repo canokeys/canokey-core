@@ -2536,6 +2536,110 @@ static void test_apdu_output_chaining_aliased_buffer(void **state) {
   check_apdu_output_chaining_aliased_buffer(0, APDU_BUFFER_SIZE);
 }
 
+// A pending RAPDU chain must be abandoned when a new non-GET-RESPONSE command
+// is dispatched (ISO 7816-4). Regression test for the stale-chain revival
+// observed on hardware: PIV VERSION with Le absent leaves a 3-byte pending
+// chain (sent=0, len=3); the subsequent SELECT + READ_VERSION go through
+// handlers that never touch rapdu_chaining.rapdu, so a stale len survived
+// with a reset sent=0, and a GET RESPONSE was then served leftover bytes
+// from the shared I/O buffer with SW=9000.
+static void test_new_command_abandons_pending_rapdu_chain(void **state) {
+  (void)state;
+
+  static const uint8_t select_piv[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x09, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00,
+  };
+  static const uint8_t piv_version_no_le[] = {0x00, 0xFD, 0x00, 0x00};
+  static const uint8_t select_admin[] = {0x00, 0xA4, 0x04, 0x00, 0x05, 0xF0, 0x00, 0x00, 0x00, 0x00};
+  static const uint8_t admin_read_version[] = {0x00, 0x31, 0x00, 0x00, 0x00};
+  static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+
+  uint8_t c_buf[64], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+
+  assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Chain pending: 3-byte response, nothing sent yet (Le absent).
+  assert_int_equal(build_capdu(&capdu, piv_version_no_le, sizeof(piv_version_no_le)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, 0x6103);
+  assert_int_equal(rapdu.len, 0);
+
+  // New commands abandon the chain, even though these handlers write only the
+  // transport RAPDU and never touch rapdu_chaining.
+  assert_int_equal(build_capdu(&capdu, select_admin, sizeof(select_admin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, admin_read_version, sizeof(admin_read_version)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_true(rapdu.len > 0);
+
+  // Nothing may be pending now: GET RESPONSE is an error, not a replay of
+  // stale buffer bytes with SW=9000.
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
+// A pending chain must also die with the card-side APDU context: CCID slot
+// power off/on calls device_applet_session_reset(), after which a stray
+// GET RESPONSE must not be served stale buffer contents.
+static void test_session_reset_drops_pending_rapdu_chain(void **state) {
+  (void)state;
+
+  static const uint8_t select_piv[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x09, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00,
+  };
+  static const uint8_t piv_version_no_le[] = {0x00, 0xFD, 0x00, 0x00};
+  static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+
+  uint8_t c_buf[64], r_buf[1024];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  testmode_set_initial_ticks(0);
+  testmode_set_initial_ticks(device_get_tick());
+
+  assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Variant 1: no session owned (e.g. chain created over NFC, which does not
+  // take a session) — slot reset must still drop the chain.
+  assert_int_equal(build_capdu(&capdu, piv_version_no_le, sizeof(piv_version_no_le)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, 0x6103);
+
+  assert_int_equal(device_applet_session_reset(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+
+  // Variant 2: session owned — reset goes through session expiry.
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(build_capdu(&capdu, piv_version_no_le, sizeof(piv_version_no_le)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, 0x6103);
+
+  assert_int_equal(device_applet_session_reset(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
 // fido_apdu_input rejects chains whose accumulated length would exceed the
 // PKE staging buffer. Send maximum-sized chained APDUs until APDU_CHAINING_OVERFLOW
 // fires, which process_apdu maps to SW_WRONG_LENGTH and which must also reset
@@ -3193,6 +3297,8 @@ int main() {
       cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),
       cmocka_unit_test(test_response_source_read_failure_clears_state),
       cmocka_unit_test(test_apdu_output_chaining_aliased_buffer),
+      cmocka_unit_test(test_new_command_abandons_pending_rapdu_chain),
+      cmocka_unit_test(test_session_reset_drops_pending_rapdu_chain),
       cmocka_unit_test(test_fido_apdu_chain_overflow_returns_wrong_length),
       cmocka_unit_test(test_response_source_clear_calls_close),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),

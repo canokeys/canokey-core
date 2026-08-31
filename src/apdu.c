@@ -104,7 +104,7 @@ typedef struct {
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
   // Allow implicit routing for both standalone and chained CTAP2 CBOR APDUs.
   if ((capdu->cla & 0xEF) == 0x80 && capdu->ins == 0x10) return 1;
-#ifdef TEST
+#ifdef TESTMODE_INS_HOOKS
   if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
 #endif
   if (capdu->cla != 0x00) return 0;
@@ -281,6 +281,8 @@ static void fido_capdu_release_request(void *ctx) {
 
 void apdu_fido_chain_reset(void) { fido_capdu_reset(); }
 
+void apdu_rapdu_chain_reset(void) { rapdu_chaining_reset(); }
+
 static int fido_apdu_input(const CAPDU *sh) {
 restart:
   if (!fido_capdu_chaining.in_chaining) {
@@ -432,7 +434,10 @@ int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu,
     return 0;
   }
 
+  // Same abandonment rule as in process_apdu_from: a new command drops any
+  // pending chain. The handler re-establishes rapdu.len for the new response.
   rapdu_chaining->sent = 0;
+  rapdu_chaining->rapdu.len = 0;
   handler(capdu, &rapdu_chaining->rapdu);
   rapdu->len = response_le;
   apdu_output(rapdu_chaining, rapdu);
@@ -554,7 +559,13 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     apdu_output(&rapdu_chaining, rapdu);
     return;
   }
+  // A new command abandons any pending response chain (ISO 7816-4): clear the
+  // stale length as well as the offset, otherwise a later GET RESPONSE would
+  // serve leftover buffer contents from an unfinished previous response
+  // (handlers like OATH/ADMIN write only the transport RAPDU and never touch
+  // rapdu_chaining.rapdu.len). Chaining handlers re-establish rapdu.len below.
   rapdu_chaining.sent = 0;
+  rapdu_chaining.rapdu.len = 0;
   if (is_select_by_aid) {
     if (P2 != 0x00) {
       LL = 0;
@@ -623,7 +634,7 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       disabled_applet_response(rapdu);
       break;
     }
-#ifdef TEST
+#ifdef TESTMODE_INS_HOOKS
     if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
       DBG_MSG("MAGIC REBOOT command received!\r\n");
       testmode_set_initial_ticks(0);

@@ -192,17 +192,19 @@ if(DEFINED PRODUCT_NAME)
 endif()
 
 if(ENABLE_TESTS)
-    list(APPEND canokey_core_public_defs TEST)
+    list(APPEND canokey_core_public_defs TEST TESTMODE_INS_HOOKS)
 endif(ENABLE_TESTS)
 if(ENABLE_FUZZING)
-    list(APPEND canokey_core_public_defs TEST FUZZ)
+    list(APPEND canokey_core_public_defs TEST FUZZ TESTMODE_INS_HOOKS)
     if(ENABLE_TESTS)
         message(WARNING "ENABLE_FUZZING will cause some tests to FAIL")
     endif(ENABLE_TESTS)
 endif(ENABLE_FUZZING)
 # The replay tool must reproduce on-device semantics, so it gets the TEST
 # hooks (device-sim, LittleFS file backend) but NOT the FUZZ gates, which
-# skip PIN/touch verification paths that real fuzz firmware keeps active.
+# skip PIN/touch verification paths that real fuzz firmware keeps active, and
+# NOT TESTMODE_INS_HOOKS (the INS 0xEE/0xEF test hooks do not exist on real
+# firmware and would desynchronize the differential comparison).
 if(ENABLE_APDU_REPLAY)
     list(APPEND canokey_core_public_defs TEST)
 endif(ENABLE_APDU_REPLAY)
