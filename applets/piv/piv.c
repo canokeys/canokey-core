@@ -106,7 +106,6 @@ static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 #define PIV_DO_TAG_C1(x) (0x005FC100u | (uint32_t)(x))
 #define PIV_DO_TAG_FF(x) (0x005FFF00u | (uint32_t)(x))
 
-#define PIV_DO_PRINTED_CAPACITY 245
 #define PIV_DO_INLINE_PRINTED_MAX 64
 #define PIV_DO_INLINE_ADMIN_DATA_MAX 128
 
@@ -374,15 +373,15 @@ static const uint8_t piv_do_codes[] = {
 static const piv_do_desc_t piv_do_table[] = {
     {NULL, 0, PIV_DO_F_SYNTH | PIV_DO_F_READ_ONLY, 0},
     {NULL, 0, PIV_DO_F_READ_ONLY, 0},
-    {CHUID_PATH, 2916, PIV_DO_F_PUT_ADMIN, 0},
-    {FINGER_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {SECURITY_PATH, 245, PIV_DO_F_PUT_ADMIN, 0},
-    {CCC_PATH, 287, PIV_DO_F_PUT_ADMIN, 0},
-    {FACE_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {PI_PATH, PIV_DO_PRINTED_CAPACITY, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
+    {CHUID_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {FINGER_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {SECURITY_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {CCC_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {FACE_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {PI_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
      PIV_DO_ATTR_PRINTED},
-    {KEY_HISTORY_PATH, 32, PIV_DO_F_PUT_ADMIN, 0},
-    {IRIS_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {KEY_HISTORY_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {IRIS_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
     {NULL, PIV_DO_INLINE_ADMIN_DATA_MAX, PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE, PIV_DO_ATTR_ADMIN_DATA},
 };
 _Static_assert(sizeof(piv_do_codes) == sizeof(piv_do_table) / sizeof(piv_do_table[0]),
@@ -2027,12 +2026,11 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     /*
      * Inline-capable DOs use attr storage only below their metadata-safe
-     * ceiling. PRINTED can legally be up to 245 bytes, but host-managed
-     * management-key references are normally small; larger PRINTED data is
-     * stored as a file after deleting any stale attr copy.
+     * ceiling. PRINTED can legally be up to PIV_DATA_OBJECT_MAX_SIZE bytes,
+     * but host-managed management-key references are normally small; larger
+     * PRINTED data is stored as a file after deleting any stale attr copy.
      */
-    if ((desc->flags & PIV_DO_F_INLINE) != 0 && size <= piv_do_inline_capacity(desc)) {
-      if ((CLA & 0x10) != 0) EXCEPT(SW_WRONG_LENGTH);
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && (CLA & 0x10) == 0 && size <= piv_do_inline_capacity(desc)) {
       if (piv_do_write_inline(desc, payload, size) < 0) return -1;
       return 0;
     }

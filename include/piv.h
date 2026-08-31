@@ -39,7 +39,13 @@
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
 // clang-format on
 
-#define PIV_CERT_OBJECT_MAX_SIZE 6144
+// Stored payload limits include the outer 53 BER-TLV but exclude the 5C
+// tag-list header carried by GET DATA / PUT DATA. These values fill exactly 6
+// and 13 512-byte LittleFS CTZ data blocks respectively after accounting for
+// the skip-list pointers stored inside those blocks. Certificates retain the
+// larger allowance for post-quantum public keys and signatures.
+#define PIV_DATA_OBJECT_MAX_SIZE 3040
+#define PIV_CERT_OBJECT_MAX_SIZE 6568
 
 /*
  * Post-quantum PIV extensions use the configurable algorithm IDs below

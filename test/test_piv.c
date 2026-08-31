@@ -1277,6 +1277,65 @@ static void test_piv_retired_cert_lazy_storage(void **state) {
   assert_memory_equal(R.data, expected, sizeof(expected));
 }
 
+static uint16_t piv_test_ctz_capacity(uint8_t blocks) {
+  uint16_t capacity = 512;
+  for (uint8_t index = 1; index < blocks; ++index)
+    capacity += (uint16_t)(512 - 4 * (__builtin_ctz(index) + 1));
+  return capacity;
+}
+
+static void test_piv_file_data_object_capacity(void **state) {
+  (void)state;
+  assert_int_equal(piv_test_ctz_capacity(6), PIV_DATA_OBJECT_MAX_SIZE);
+  assert_int_equal(piv_test_ctz_capacity(13), PIV_CERT_OBJECT_MAX_SIZE);
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+
+  static const struct {
+    uint8_t tag[3];
+    const char *path;
+  } objects[] = {
+      {{0x5F, 0xC1, 0x02}, "piv-chu"},  {{0x5F, 0xC1, 0x03}, "piv-fig"},
+      {{0x5F, 0xC1, 0x06}, "piv-sec"},  {{0x5F, 0xC1, 0x07}, "piv-ccc"},
+      {{0x5F, 0xC1, 0x08}, "piv-face"}, {{0x5F, 0xC1, 0x09}, "piv-pi"},
+      {{0x5F, 0xC1, 0x0C}, "piv-kh"},   {{0x5F, 0xC1, 0x21}, "piv-iris"},
+  };
+  static uint8_t put[5 + PIV_DATA_OBJECT_MAX_SIZE + 1];
+  put[0] = 0x5C;
+  put[1] = 0x03;
+  put[5] = 0x53;
+  put[6] = 0x82;
+  put[7] = (uint8_t)((PIV_DATA_OBJECT_MAX_SIZE - 4) >> 8);
+  put[8] = (uint8_t)(PIV_DATA_OBJECT_MAX_SIZE - 4);
+
+  for (size_t i = 0; i < sizeof(objects) / sizeof(objects[0]); ++i) {
+    memcpy(put + 2, objects[i].tag, sizeof(objects[i].tag));
+    test_helper(put, 5 + PIV_DATA_OBJECT_MAX_SIZE, PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+    assert_int_equal(get_file_size(objects[i].path), PIV_DATA_OBJECT_MAX_SIZE);
+    assert_int_equal(remove_file(objects[i].path), 0);
+  }
+
+  memcpy(put + 2, objects[2].tag, sizeof(objects[2].tag));
+  test_helper(put, sizeof(put), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
+
+  // A small first fragment must still select file storage when more fragments follow.
+  uint8_t response[16];
+  RAPDU R = {.data = response};
+  for (size_t i = 5; i < sizeof(objects) / sizeof(objects[0]); i += 3) {
+    uint8_t first[] = {0x5C, 0x03, objects[i].tag[0], objects[i].tag[1], objects[i].tag[2], 0x53, 0x03, 0xAA};
+    CAPDU C = {.data = first, .cla = 0x10, .ins = PIV_INS_PUT_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(first)};
+    piv_process_apdu(&C, &R);
+    assert_int_equal(R.sw, SW_NO_ERROR);
+    uint8_t last[] = {0xBB, 0xCC};
+    C = (CAPDU){.data = last, .ins = PIV_INS_PUT_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(last)};
+    piv_process_apdu(&C, &R);
+    assert_int_equal(R.sw, SW_NO_ERROR);
+    assert_int_equal(get_file_size(objects[i].path), 5);
+    assert_int_equal(remove_file(objects[i].path), 0);
+  }
+  assert_int_equal(piv_install(1), 0);
+}
+
 static void test_piv_metadata_bounded_do_storage(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -1294,6 +1353,10 @@ static void test_piv_metadata_bounded_do_storage(void **state) {
     max_admin_data[i] = (uint8_t)(0x80 + i);
   }
   test_helper(max_admin_data, sizeof(max_admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
+
+  uint8_t oversized_admin_data[5 + 129] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
+  test_helper(oversized_admin_data, sizeof(oversized_admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF,
+              SW_WRONG_LENGTH);
 
   uint8_t large_printed[5 + 80] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
   for (size_t i = 5; i < sizeof(large_printed); ++i) {
@@ -2546,8 +2609,8 @@ static void test_piv_cert_chained_read(void **state) {
   (void)state;
   set_admin_status(1);
 
-  // Fill the complete 6144-byte stored-object allowance. The four-byte 53
-  // wrapper is part of that limit, leaving 6140 bytes for certificate data.
+  // Fill the complete stored-object allowance. The four-byte 53 wrapper is
+  // part of that limit.
   enum { CERT_LEN = PIV_CERT_OBJECT_MAX_SIZE - 4 };
   static uint8_t cert[CERT_LEN];
   for (size_t i = 0; i < CERT_LEN; ++i)
@@ -2691,6 +2754,7 @@ int main() {
       cmocka_unit_test(test_piv_host_managed_admin_data_objects),
       cmocka_unit_test(test_piv_pin_does_not_satisfy_admin),
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
+      cmocka_unit_test(test_piv_file_data_object_capacity),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_directory),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
