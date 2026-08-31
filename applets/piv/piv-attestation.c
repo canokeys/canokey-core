@@ -218,7 +218,11 @@ static void piv_attestation_plan_reset(piv_attestation_plan_t *plan) { memzero(p
 
 static void piv_attestation_mldsa_public_reset(piv_attestation_scratch_t *scratch) {
   piv_attestation_mldsa_scratch_t *mldsa = &scratch->source.mldsa;
-  mldsa->keygen.phase = 0;
+  uint8_t seed[MLDSA_SEEDBYTES];
+  memcpy(seed, mldsa->keygen.seed, sizeof(seed));
+  ml_dsa_65_keygen_streaming_abort(&mldsa->keygen);
+  memcpy(mldsa->keygen.seed, seed, sizeof(seed));
+  memzero(seed, sizeof(seed));
   mldsa->stage_len = 0;
   mldsa->stage_off = 0;
   mldsa->emitted = 0;
@@ -469,6 +473,8 @@ static int piv_attestation_response_read(void *ctx, uint32_t offset, uint8_t *bu
 }
 
 static void piv_attestation_response_close(void *ctx) {
+  if (IS_MLDSA(piv_attestation_state.target_type))
+    piv_attestation_mldsa_public_reset(&applet_session_scratch.piv_attestation);
   memzero(&applet_session_scratch.piv_attestation, sizeof(applet_session_scratch.piv_attestation));
   memzero(ctx, sizeof(piv_attestation_state));
 }
@@ -587,7 +593,10 @@ int piv_attestation_generate(uint8_t slot, const char *target_key_path, const ch
   piv_attestation_plan_t *plan = (piv_attestation_plan_t *)scratch->plan_work.attestation_plan;
   if (piv_attestation_plan_build_tbs(plan, &piv_attestation_state) < 0) return SW_WRONG_DATA;
   if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
-  if (piv_attestation_hash_tbs(scratch, plan) < 0) return -1;
+  if (piv_attestation_hash_tbs(scratch, plan) < 0) {
+    if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
+    return -1;
+  }
 
   ret = piv_attestation_sign(attestation_key_path, scratch, piv_attestation_state.signature);
   memzero(scratch->digest, sizeof(scratch->digest));

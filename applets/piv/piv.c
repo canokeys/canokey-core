@@ -861,6 +861,10 @@ static int piv_mldsa_stream_read(void *ctx, uint32_t offset, uint8_t *out, uint1
 
 static void piv_mldsa_stream_close(void *ctx) {
   piv_mldsa_stream_state_t *state = (piv_mldsa_stream_state_t *)ctx;
+  if (state->kind == PIV_MLDSA_STREAM_PK)
+    ml_dsa_65_keygen_streaming_abort(&state->crypto.keygen);
+  else if (state->kind == PIV_MLDSA_STREAM_SIG)
+    ml_dsa_65_sign_streaming_abort(&state->crypto.sign);
   memzero(state, sizeof(*state));
 }
 
