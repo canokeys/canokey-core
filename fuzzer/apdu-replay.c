@@ -15,6 +15,15 @@
 //                      SW_WRONG_LENGTH).
 //   ERROR <message>    the line is not valid hex or is too long
 //
+// Control lines start with '!' (they mirror device events that are not
+// APDUs):
+//
+//   !POWEROFF   simulates a CCID slot power-off: expires the applet session
+//               exactly like PC_to_RDR_IccPowerOff -> device_applet_session
+//               reset does on hardware (clears PIN validation, pending chains
+//               and response sources). The runner sends one per connection
+//               close; answers "OK".
+//
 // Input lines carry one hex-encoded raw APDU (case-insensitive, no spaces);
 // empty lines are ignored. While the status word is 61xx, GET RESPONSE
 // (00 C0 00 00 00) is issued automatically and the chunks are concatenated.
@@ -31,6 +40,7 @@
 #include <unistd.h>
 
 #include "apdu.h"
+#include "applets.h"
 #include "common.h"
 #include "fabrication.h"
 
@@ -133,6 +143,22 @@ int main(void) {
     }
     if (len > 0 && in_line[len - 1] == '\n') in_line[--len] = '\0';
     if (len == 0) continue; // empty lines are ignored
+
+    if (in_line[0] == '!') { // control line: a device event, not an APDU
+      if (strcmp(in_line, "!POWEROFF") == 0) {
+        // Mirror device_applet_session_expire() as triggered by CCID slot
+        // power-off on hardware: clear PIN validation and abandon any
+        // pending response/chain state.
+        applets_poweroff();
+        apdu_response_source_clear();
+        apdu_fido_chain_reset();
+        apdu_rapdu_chain_reset();
+        proto_write("OK\n", 3);
+      } else {
+        proto_error("unknown-control");
+      }
+      continue;
+    }
 
     if (len % 2 != 0) {
       proto_error("invalid-hex");
