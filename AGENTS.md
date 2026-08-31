@@ -383,6 +383,7 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 | PC/SC integration | `u2f-virt-card` shared library + `test-via-pcsc/` |
 | Real-hardware tests | `test-real/` (requires a physical device) |
 | Fuzzing | `-DENABLE_FUZZING=ON` builds `afl-fuzzer`; run with AFL++ (`afl-fuzz`), GNU GCC required (directly or via afl-gcc-fast) |
+| APDU replay | `-DENABLE_APDU_REPLAY=ON` builds `apdu-replay` (`fuzzer/apdu-replay.c`): line-based stdin/stdout APDU replayer over the virt-card, host half of the hardware differential fuzzer. Unlike the fuzzer build it defines `TEST` but not `FUZZ`, so PIN/touch gates behave like real firmware |
 
 Test-mode extras (enabled by `TEST` define):
 - `testmode_emulate_user_presence()` — auto-confirms touch

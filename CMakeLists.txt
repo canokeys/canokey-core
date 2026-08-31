@@ -4,6 +4,7 @@ project(canokey-core C)
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
 option(ENABLE_FUZZING "Build the AFL++ harness with GNU GCC" OFF)
+option(ENABLE_APDU_REPLAY "Build the differential-fuzz APDU replay tool (card semantics, without the FUZZ gates)" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
 option(ENABLE_BYPASS_USER_PRESENCE "Skip all user-presence tests (USE AT YOUR OWN RISK)" OFF)
 option(VIRTCARD "Virt Card" OFF)
@@ -199,6 +200,12 @@ if(ENABLE_FUZZING)
         message(WARNING "ENABLE_FUZZING will cause some tests to FAIL")
     endif(ENABLE_TESTS)
 endif(ENABLE_FUZZING)
+# The replay tool must reproduce on-device semantics, so it gets the TEST
+# hooks (device-sim, LittleFS file backend) but NOT the FUZZ gates, which
+# skip PIN/touch verification paths that real fuzz firmware keeps active.
+if(ENABLE_APDU_REPLAY)
+    list(APPEND canokey_core_public_defs TEST)
+endif(ENABLE_APDU_REPLAY)
 
 target_compile_definitions(
     canokey-core
@@ -227,7 +234,7 @@ add_dependencies(canokey-core generate_ctap_get_info_cbor generate_canokey_core_
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
-if(VIRTCARD OR ENABLE_TESTS OR ENABLE_FUZZING)
+if(VIRTCARD OR ENABLE_TESTS OR ENABLE_FUZZING OR ENABLE_APDU_REPLAY)
     set(VIRT_CARD_GIT_REV_HEADER ${CMAKE_CURRENT_BINARY_DIR}/virt-card-git-rev.h)
     add_custom_target(
         generate_virt_card_git_rev
@@ -312,3 +319,29 @@ if(ENABLE_FUZZING)
     target_link_libraries(afl-fuzzer canokey-core)
     add_virt_card_git_revision(afl-fuzzer)
 endif(ENABLE_FUZZING)
+
+if(ENABLE_APDU_REPLAY)
+    set(CANOKEY_FUZZ_SANITIZERS ON CACHE BOOL "Enable ASan/UBSan in fuzz builds")
+    if(CANOKEY_FUZZ_SANITIZERS)
+        add_compile_options(-fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
+        add_link_options(-fsanitize=address -fsanitize=undefined)
+    endif()
+    # Host half of the differential APDU fuzzer: replays a line-based hex
+    # APDU stream from stdin through the virtual card and prints RESP/ERROR
+    # lines on stdout (see fuzzer/apdu-replay.c).
+    add_executable(
+        apdu-replay
+        fuzzer/apdu-replay.c
+        virt-card/usb-dummy.c
+        virt-card/device-sim.c
+        virt-card/fabrication.c
+        littlefs/bd/lfs_filebd.c
+    )
+    target_include_directories(
+        apdu-replay
+        SYSTEM
+        PRIVATE virt-card littlefs
+    )
+    target_link_libraries(apdu-replay canokey-core)
+    add_virt_card_git_revision(apdu-replay)
+endif(ENABLE_APDU_REPLAY)
