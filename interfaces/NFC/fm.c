@@ -174,7 +174,7 @@ fm_status_t fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len) {
   I2C_WRITE_WITH_CHECK(slave_id);
 
   // master transmit
-  for (size_t k = 0; k < len; k++) {
+  for (uint8_t k = 0; k < len; k++) {
     buf[k] = i2c_read_byte();
     if (k == len - 1) {
       // master sends NACK to slave
@@ -214,7 +214,7 @@ fm_status_t fm11nt_write(const uint16_t addr, const uint8_t *buf, const uint8_t 
 
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length) {
   int crc8 = 0xff;
-  for (int i = 0; i < data_length; i++) {
+  for (uint8_t i = 0; i < data_length; i++) {
     crc8 ^= data[i];
     for (int j = 0; j < 8; j++) {
       if ((crc8 & 0x01) == 0x01)

@@ -90,7 +90,7 @@ static int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
 static int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
   const uint16_t offset = (uint16_t)(P1 << 8) | P2;
   const char *path;
-  uint16_t file_len;
+  uint32_t file_len;
 
   if (offset > NDEF_FILE_MAX_LENGTH || LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
 

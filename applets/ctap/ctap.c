@@ -753,33 +753,58 @@ static int ctap_mldsa65_cose_prefix_size(void) {
   return (int)(p - buf);
 }
 
+static uint8_t *ctap_mldsa_stream_prefix(CTAP_mldsa_stream_state *state) {
+  return state->storage_kind == CTAP_MLDSA_STREAM_SIG ? state->storage.sig.workspace.input.prefix
+                                                       : state->storage.pk.prefix;
+}
+
+static uint8_t *ctap_mldsa_stream_suffix(CTAP_mldsa_stream_state *state) {
+  return state->storage_kind == CTAP_MLDSA_STREAM_SIG ? state->storage.sig.suffix : state->storage.pk.suffix;
+}
+
+static uint8_t *ctap_mldsa_stream_stage(CTAP_mldsa_stream_state *state) {
+  return state->storage_kind == CTAP_MLDSA_STREAM_SIG ? state->storage.sig.workspace.stage : state->storage.pk.stage;
+}
+
+static size_t ctap_mldsa_stream_stage_capacity(const CTAP_mldsa_stream_state *state) {
+  return state->storage_kind == CTAP_MLDSA_STREAM_SIG ? sizeof(state->storage.sig.workspace.stage)
+                                                       : sizeof(state->storage.pk.stage);
+}
+
 static int ctap_mldsa_stream_fill_stage(CTAP_mldsa_stream_state *state) {
   int ret;
+  uint8_t *stage = ctap_mldsa_stream_stage(state);
+  const size_t stage_capacity = ctap_mldsa_stream_stage_capacity(state);
   state->stage_len = 0;
   state->stage_off = 0;
   if (state->kind == CTAP_MLDSA_STREAM_PK) {
-    if (state->keygen.phase == 0) memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
-    ret = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage_buf), &state->keygen, NULL);
+    if (state->storage.pk.keygen.phase == 0)
+      memcpy(state->storage.pk.keygen.seed, state->storage.pk.seed, PRI_KEY_SIZE);
+    ret = ml_dsa_65_keygen_streaming(stage, stage_capacity, &state->storage.pk.keygen, NULL);
   } else if (state->kind == CTAP_MLDSA_STREAM_SIG) {
-    if (state->sign.phase == 0) memcpy(state->sign.seed, state->seed, PRI_KEY_SIZE);
-    ret = ml_dsa_65_sign_seed_streaming(state->stage, sizeof(state->stage_buf), &state->sign, state->msg,
-                                        state->msg_len, NULL, 0, state->tr);
+    if (state->storage.sig.sign.phase == 0)
+      memcpy(state->storage.sig.sign.seed, state->storage.sig.workspace.input.seed, PRI_KEY_SIZE);
+    ret = ml_dsa_65_sign_seed_streaming(stage, stage_capacity, &state->storage.sig.sign,
+                                        state->storage.sig.workspace.input.msg,
+                                        state->storage.sig.workspace.input.msg_len, NULL, 0,
+                                        state->storage.sig.workspace.input.tr);
   } else {
     return -1;
   }
   if (ret < 0) return -1;
-  state->stage_len = (size_t)ret;
+  state->stage_len = (uint16_t)ret;
   return 0;
 }
 
 static int ctap_mldsa_stream_read_generated(CTAP_mldsa_stream_state *state, uint8_t *out, size_t max_len,
                                             size_t *written) {
   size_t copied = 0;
+  uint8_t *stage = ctap_mldsa_stream_stage(state);
 
   while (copied < max_len && state->kind != CTAP_MLDSA_STREAM_NONE) {
     if (state->stage_off == state->stage_len) {
-      if ((state->kind == CTAP_MLDSA_STREAM_PK && state->keygen.phase == 0 && state->stage_len != 0) ||
-          (state->kind == CTAP_MLDSA_STREAM_SIG && state->sign.phase == 0 && state->stage_len != 0)) {
+      if ((state->kind == CTAP_MLDSA_STREAM_PK && state->storage.pk.keygen.phase == 0 && state->stage_len != 0) ||
+          (state->kind == CTAP_MLDSA_STREAM_SIG && state->storage.sig.sign.phase == 0 && state->stage_len != 0)) {
         state->kind = CTAP_MLDSA_STREAM_NONE;
         break;
       }
@@ -788,7 +813,7 @@ static int ctap_mldsa_stream_read_generated(CTAP_mldsa_stream_state *state, uint
     }
 
     size_t n = MIN(state->stage_len - state->stage_off, max_len - copied);
-    memcpy(out + copied, state->stage + state->stage_off, n);
+    memcpy(out + copied, stage + state->stage_off, n);
     state->stage_off += n;
     copied += n;
   }
@@ -799,12 +824,14 @@ static int ctap_mldsa_stream_read_generated(CTAP_mldsa_stream_state *state, uint
 
 static int ctap_mldsa_stream_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAP_mldsa_stream_state *state = (CTAP_mldsa_stream_state *)ctx;
+  uint8_t *prefix = ctap_mldsa_stream_prefix(state);
+  uint8_t *suffix = ctap_mldsa_stream_suffix(state);
   size_t copied = 0;
 
   while (copied < max_len) {
     if (state->prefix_off < state->prefix_len) {
       size_t n = MIN(state->prefix_len - state->prefix_off, max_len - copied);
-      memcpy(out + copied, state->prefix + state->prefix_off, n);
+      memcpy(out + copied, prefix + state->prefix_off, n);
       state->prefix_off += n;
       copied += n;
       continue;
@@ -819,7 +846,7 @@ static int ctap_mldsa_stream_read(void *ctx, uint8_t *out, size_t max_len, size_
 
     if (state->suffix_off < state->suffix_len) {
       size_t n = MIN(state->suffix_len - state->suffix_off, max_len - copied);
-      memcpy(out + copied, state->suffix + state->suffix_off, n);
+      memcpy(out + copied, suffix + state->suffix_off, n);
       state->suffix_off += n;
       copied += n;
       continue;
@@ -1623,9 +1650,9 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
     memcpy(mc_stream_state.storage.build.client_data_hash, mc->client_data_hash, CLIENT_DATA_HASH_SIZE);
     if (mldsa) {
       memset(state, 0, sizeof(*state));
-      memcpy(state->seed, public_key, PRI_KEY_SIZE);
-      state->stage = state->stage_buf;
-      prefix = state->prefix;
+      state->storage_kind = CTAP_MLDSA_STREAM_PK;
+      memcpy(state->storage.pk.seed, public_key, PRI_KEY_SIZE);
+      prefix = state->storage.pk.prefix;
     } else {
       prefix = stream_make_credential_response ? applet_session_scratch.buffer : encoder->data.ptr;
     }
@@ -1644,19 +1671,21 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
       p = ctap_write_auth_data_header(p, cid.rp_id_hash, flags, ctr);
       p = ctap_write_attested_credential_prefix(p, &cid);
       if (cbor_put_mldsa65_cose_prefix(&p) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      state->prefix_len = (size_t)(p - state->prefix);
-      if (state->prefix_len > sizeof(state->prefix)) return CTAP2_ERR_LIMIT_EXCEEDED;
+      if ((size_t)(p - state->storage.pk.prefix) > sizeof(state->storage.pk.prefix))
+        return CTAP2_ERR_LIMIT_EXCEEDED;
+      state->prefix_len = (uint16_t)(p - state->storage.pk.prefix);
       sha256_init(sha256);
       sha256_update(sha256, auth_data_start, p - auth_data_start);
 
-      memset(&state->keygen, 0, sizeof(state->keygen));
-      memcpy(state->keygen.seed, state->seed, PRI_KEY_SIZE);
+      memset(&state->storage.pk.keygen, 0, sizeof(state->storage.pk.keygen));
+      memcpy(state->storage.pk.keygen.seed, state->storage.pk.seed, PRI_KEY_SIZE);
       do {
         KEEPALIVE();
-        int pk_len = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage_buf), &state->keygen, NULL);
+        int pk_len = ml_dsa_65_keygen_streaming(state->storage.pk.stage, sizeof(state->storage.pk.stage),
+                                                &state->storage.pk.keygen, NULL);
         if (pk_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-        if (pk_len != 0) sha256_update(sha256, state->stage, (size_t)pk_len);
-      } while (state->keygen.phase != 0);
+        if (pk_len != 0) sha256_update(sha256, state->storage.pk.stage, (size_t)pk_len);
+      } while (state->storage.pk.keygen.phase != 0);
       if (extension_size != 0) sha256_update(sha256, extension_buffer, extension_size);
     } else {
       const size_t auth_data_len = ctap_auth_data_len(cose_key_size, extension_size);
@@ -1687,9 +1716,9 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   sig_len = sign_with_device_key(data_buf, PRIVATE_KEY_LENGTH[SECP256R1], data_buf);
   if (!sig_len) return CTAP2_ERR_UNHANDLED_REQUEST;
 
-  uint8_t *suffix = mldsa ? state->suffix : p;
+  uint8_t *suffix = mldsa ? state->storage.pk.suffix : p;
   uint8_t *q = suffix;
-  if (mldsa && extension_size + 160 + (large_blob_key ? 35 : 0) > sizeof(state->suffix))
+  if (mldsa && extension_size + 160 + (large_blob_key ? 35 : 0) > sizeof(state->storage.pk.suffix))
     return CTAP2_ERR_LIMIT_EXCEEDED;
   if (mldsa && extension_size != 0) {
     memcpy(q, extension_buffer, extension_size);
@@ -1723,9 +1752,10 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
   }
 
   if (mldsa) {
-    state->suffix_len = (size_t)(q - state->suffix);
+    state->suffix_len = (uint16_t)(q - state->storage.pk.suffix);
     state->kind = CTAP_MLDSA_STREAM_PK;
-    memset(&state->keygen, 0, sizeof(state->keygen));
+    state->storage_kind = CTAP_MLDSA_STREAM_PK;
+    memset(&state->storage.pk.keygen, 0, sizeof(state->storage.pk.keygen));
     state->stage_len = 0;
     state->stage_off = 0;
     state->total_len = state->prefix_len + MLDSA_PK_BYTES + state->suffix_len + (size_t)cert_len;
@@ -1740,14 +1770,15 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
       return CTAP2_ERR_LIMIT_EXCEEDED;
     if (ctap_make_credential_stream_add_mem(prefix, prefix_len) < 0 ||
         (mldsa && ctap_make_credential_stream_add_mldsa(state, MLDSA_PK_BYTES) < 0) ||
-        ctap_make_credential_stream_add_mem(mldsa ? state->suffix : suffix, cert_prefix_len) < 0 ||
+        ctap_make_credential_stream_add_mem(mldsa ? state->storage.pk.suffix : suffix, cert_prefix_len) < 0 ||
         ctap_make_credential_stream_add_file(CTAP_CERT_FILE, 0, (size_t)cert_len) < 0 ||
         ctap_make_credential_stream_add_mem(tail, tail_len) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     mc_stream_state.prepared = true;
     if (mldsa) {
-      DBG_MSG("makeCredential stream prefix=%zu mldsa-pk=%u suffix=%zu cert=%d total=%zu\n", state->prefix_len,
-              MLDSA_PK_BYTES, state->suffix_len, cert_len, mc_stream_state.total_len);
+      DBG_MSG("makeCredential stream prefix=%zu mldsa-pk=%u suffix=%zu cert=%d total=%zu\n",
+              (size_t)state->prefix_len, MLDSA_PK_BYTES, (size_t)state->suffix_len, cert_len,
+              mc_stream_state.total_len);
     } else {
       DBG_MSG("makeCredential stream prefix=%zu cert=%d suffix=%zu total=%zu\n", prefix_len, cert_len, tail_len,
               mc_stream_state.total_len);
@@ -2308,28 +2339,35 @@ step7:
   CHECK_CBOR_RET(ret);
   if (dc.credential_id.alg_type == COSE_ALG_ML_DSA_65) {
     CTAP_mldsa_stream_state *state = &mldsa_stream_state;
-    uint8_t prefix_snapshot[sizeof(state->prefix)];
+    uint8_t prefix_snapshot[CTAP_MLDSA_PREFIX_BYTES];
     size_t prefix_snapshot_len = (size_t)(map.data.ptr - stream_resp_start);
     uint8_t *p;
     if (prefix_snapshot_len > sizeof(prefix_snapshot)) return CTAP2_ERR_UNHANDLED_REQUEST;
     memcpy(prefix_snapshot, stream_resp_start, prefix_snapshot_len);
     memset(state, 0, sizeof(*state));
-    state->stage = state->stage_buf;
-    memcpy(state->seed, key.pri, PRI_KEY_SIZE);
-    p = state->prefix;
+    state->storage_kind = CTAP_MLDSA_STREAM_SIG;
+    if (ctap_mldsa65_tr_from_seed(key.pri, state->storage.sig.sign.rho_prime_sign,
+                                  state->storage.sig.workspace.stage,
+                                  sizeof(state->storage.sig.workspace.stage)) < 0)
+      return CTAP2_ERR_UNHANDLED_REQUEST;
+    memcpy(state->storage.sig.workspace.input.tr, state->storage.sig.sign.rho_prime_sign, MLDSA_TRBYTES);
+    memzero(&state->storage.sig.sign, sizeof(state->storage.sig.sign));
+    memcpy(state->storage.sig.workspace.input.seed, key.pri, PRI_KEY_SIZE);
+    p = state->storage.sig.workspace.input.prefix;
     *p++ = 0;
     memcpy(p, prefix_snapshot, prefix_snapshot_len);
     p += prefix_snapshot_len;
     cbor_put_bytes_header(&p, MLDSA_SIG_BYTES);
-    state->prefix_len = (size_t)(p - state->prefix);
-    if (ctap_mldsa65_tr_from_seed(state->seed, state->tr, state->stage, sizeof(state->stage_buf)) < 0)
+    if ((size_t)(p - state->storage.sig.workspace.input.prefix) >
+        sizeof(state->storage.sig.workspace.input.prefix))
       return CTAP2_ERR_UNHANDLED_REQUEST;
+    state->prefix_len = (uint16_t)(p - state->storage.sig.workspace.input.prefix);
     memcpy(data_buf + len, ga_state.client_data_hash, CLIENT_DATA_HASH_SIZE);
-    memcpy(state->msg, data_buf, len + CLIENT_DATA_HASH_SIZE);
-    state->msg_len = len + CLIENT_DATA_HASH_SIZE;
+    memcpy(state->storage.sig.workspace.input.msg, data_buf, len + CLIENT_DATA_HASH_SIZE);
+    state->storage.sig.workspace.input.msg_len = (uint16_t)(len + CLIENT_DATA_HASH_SIZE);
 
     CborEncoder suffix_encoder;
-    cbor_encoder_init(&suffix_encoder, state->suffix, sizeof(state->suffix), 0);
+    cbor_encoder_init(&suffix_encoder, state->storage.sig.suffix, sizeof(state->storage.sig.suffix), 0);
     if (has_user) {
       ret = cbor_encode_int(&suffix_encoder, GA_RESP_PUBLIC_KEY_CREDENTIAL_USER_ENTITY);
       CHECK_CBOR_RET(ret);
@@ -2351,8 +2389,9 @@ step7:
       ret = cbor_encode_byte_string(&suffix_encoder, large_blob_key, LARGE_BLOB_KEY_SIZE);
       CHECK_CBOR_RET(ret);
     }
-    state->suffix_len = cbor_encoder_get_buffer_size(&suffix_encoder, state->suffix);
+    state->suffix_len = (uint16_t)cbor_encoder_get_buffer_size(&suffix_encoder, state->storage.sig.suffix);
     state->kind = CTAP_MLDSA_STREAM_SIG;
+    state->storage_kind = CTAP_MLDSA_STREAM_SIG;
     state->total_len = state->prefix_len + MLDSA_SIG_BYTES + state->suffix_len;
     state->pending = true;
     ++ga_state.credential_counter;
@@ -2362,8 +2401,10 @@ step7:
   memcpy(data_buf + len, ga_state.client_data_hash, CLIENT_DATA_HASH_SIZE);
   DBG_MSG("Message: ");
   PRINT_HEX(data_buf, len + CLIENT_DATA_HASH_SIZE);
-  len = sign_with_private_key(dc.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
-  if (len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  const int signature_len =
+      sign_with_private_key(dc.credential_id.alg_type, &key, data_buf, len + CLIENT_DATA_HASH_SIZE, data_buf);
+  if (signature_len < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  len = (size_t)signature_len;
   DBG_MSG("Signature: ");
   PRINT_HEX(data_buf, len);
   ret = cbor_encode_byte_string(&map, data_buf, len);
@@ -2974,23 +3015,26 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
     }
     if (!state->metadata_only && dc.credential_id.alg_type == COSE_ALG_ML_DSA_65) {
       CTAP_mldsa_stream_state *state = &mldsa_stream_state;
-      uint8_t prefix_snapshot[sizeof(state->prefix)];
+      uint8_t prefix_snapshot[CTAP_MLDSA_PREFIX_BYTES];
       size_t prefix_snapshot_len = (size_t)(map.data.ptr - stream_resp_start);
       uint8_t *p;
       if (prefix_snapshot_len > sizeof(prefix_snapshot)) return CTAP2_ERR_UNHANDLED_REQUEST;
       memcpy(prefix_snapshot, stream_resp_start, prefix_snapshot_len);
       memset(state, 0, sizeof(*state));
-      state->stage = state->stage_buf;
-      if (verify_mldsa65_key_handle(&dc.credential_id, state->seed) != 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      p = state->prefix;
+      state->storage_kind = CTAP_MLDSA_STREAM_PK;
+      if (verify_mldsa65_key_handle(&dc.credential_id, state->storage.pk.seed) != 0)
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      p = state->storage.pk.prefix;
       *p++ = 0;
       memcpy(p, prefix_snapshot, prefix_snapshot_len);
       p += prefix_snapshot_len;
       if (cbor_put_mldsa65_cose_prefix(&p) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      state->prefix_len = (size_t)(p - state->prefix);
+      if ((size_t)(p - state->storage.pk.prefix) > sizeof(state->storage.pk.prefix))
+        return CTAP2_ERR_UNHANDLED_REQUEST;
+      state->prefix_len = (uint16_t)(p - state->storage.pk.prefix);
 
       CborEncoder suffix_encoder;
-      cbor_encoder_init(&suffix_encoder, state->suffix, sizeof(state->suffix), 0);
+      cbor_encoder_init(&suffix_encoder, state->storage.pk.suffix, sizeof(state->storage.pk.suffix), 0);
       if (include_numbers) {
         ret = cbor_encode_int(&suffix_encoder, CM_RESP_TOTAL_CREDENTIALS);
         CHECK_CBOR_RET(ret);
@@ -3014,8 +3058,9 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
       CHECK_CBOR_RET(ret);
       ret = cbor_encode_boolean(&suffix_encoder, credential_third_party_payment(&dc.credential_id));
       CHECK_CBOR_RET(ret);
-      state->suffix_len = cbor_encoder_get_buffer_size(&suffix_encoder, state->suffix);
+      state->suffix_len = (uint16_t)cbor_encoder_get_buffer_size(&suffix_encoder, state->storage.pk.suffix);
       state->kind = CTAP_MLDSA_STREAM_PK;
+      state->storage_kind = CTAP_MLDSA_STREAM_PK;
       state->total_len = state->prefix_len + MLDSA_PK_BYTES + state->suffix_len;
       state->pending = true;
       break;
@@ -3522,6 +3567,7 @@ static int ctap_process_cbor(uint8_t *req, size_t req_len, uint8_t *resp, size_t
     goto set_resp;
   case CTAP_CRED_MANAGE_LEGACY: // compatible with old libfido2
     cmd = CTAP_CREDENTIAL_MANAGEMENT;
+    CNK_FALLTHROUGH;
   case CTAP_CREDENTIAL_MANAGEMENT:
     DBG_MSG("----------------CM--------------------\n");
     status = ctap_credential_management(&encoder, req, req_len);

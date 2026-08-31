@@ -5,12 +5,19 @@ import (
 	crand "crypto/rand"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ebfe/scard"
 	"github.com/pkg/errors"
 	. "github.com/smartystreets/goconvey/convey"
+)
+
+var firmwareVersionPattern = regexp.MustCompile(
+	`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)` +
+		`(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?` +
+		`(\+([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$`,
 )
 
 const (
@@ -114,7 +121,7 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			ret, code, err := app.Send([]byte{0x00, 0x31, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(len(ret), ShouldBeGreaterThanOrEqualTo, 8) // Git short commit hash
+			So(firmwareVersionPattern.Match(ret), ShouldBeTrue)
 
 			ret, code, err = app.Send([]byte{0x00, 0x31, 0x01, 0x00, 0x00})
 			So(err, ShouldBeNil)
@@ -352,6 +359,26 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				}
 			})
 		}
+	}
+}
+
+func TestFirmwareVersionPattern(t *testing.T) {
+	tests := map[string]bool{
+		"0.0.0":                 true,
+		"3.1.0+102.g96ce5b4c":   true,
+		"1.0.0-alpha.1+build.5": true,
+		"01.2.3":                false,
+		"1.2.3-01":              false,
+		"1.2.3-a..b":            false,
+		"1.2.3+build..5":        false,
+	}
+
+	for version, valid := range tests {
+		t.Run(version, func(t *testing.T) {
+			if got := firmwareVersionPattern.MatchString(version); got != valid {
+				t.Fatalf("firmwareVersionPattern.MatchString(%q) = %v, want %v", version, got, valid)
+			}
+		})
 	}
 }
 

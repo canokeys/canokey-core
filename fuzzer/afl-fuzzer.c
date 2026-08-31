@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#include <assert.h>
-#include <fcntl.h>
-#include <setjmp.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "admin.h"
@@ -26,14 +22,14 @@
 
 typedef int applet_process_t(const CAPDU *capdu, RAPDU *rapdu);
 
-applet_process_t *applets[] = {piv_process_apdu,   ctap_process_apdu,    oath_process_apdu,
-                               admin_process_apdu, openpgp_process_apdu, ndef_process_apdu};
+static applet_process_t *const applets[] = {piv_process_apdu,   ctap_process_apdu,    oath_process_apdu,
+                                            admin_process_apdu, openpgp_process_apdu, ndef_process_apdu};
 
 extern ccid_bulkin_data_t bulkin_data;
 static applet_process_t *process_func;
 static uint8_t setup_buffer[16];
 
-static int EmulateUSBEnumeration() {
+static void emulate_usb_enumeration(void) {
   uint8_t set_address[] = {0x00, 0x05, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00};
   // USBD_LL_SetupStage->USBD_StdDevReq->USBD_SetAddress
   USBD_LL_SetupStage(&usb_device, set_address);
@@ -41,19 +37,15 @@ static int EmulateUSBEnumeration() {
   uint8_t set_config[] = {0x00, 0x09, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00};
   // USBD_LL_SetupStage->USBD_StdDevReq->USBD_SetConfig
   USBD_LL_SetupStage(&usb_device, set_config);
-  return 0;
 }
 
-// Target selection via environment (libFuzzer treats positional arguments as
-// corpus directories, so the target cannot be passed on the command line):
+// Target selection via environment keeps the AFL++ command line engine-only:
 //   CANOKEY_FUZZ_APPLET=0..5  fuzz one applet (PIV, CTAP, OATH, Admin,
 //                             OpenPGP, NDEF); empty/unset fuzzes the CCID
 //                             transport layer
 //   CANOKEY_FUZZ_KEEP=1       keep the LittleFS state instead of
 //                             re-fabricating the card
-int LLVMFuzzerInitialize(int *argc, char ***argv) {
-  (void)argc;
-  (void)argv;
+static void fuzz_initialize(void) {
   static char lfs_root[64];
   process_func = NULL;
   setbuf(stdout, 0);
@@ -71,7 +63,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     snprintf(lfs_root, sizeof(lfs_root), "/tmp/fuzz_ccid");
   }
   usb_device_init();
-  EmulateUSBEnumeration(); // required before any CCID transation
+  emulate_usb_enumeration(); // required before any CCID transaction
   set_nfc_state(1);
   const char *keep = getenv("CANOKEY_FUZZ_KEEP");
   if (keep != NULL && strcmp(keep, "1") == 0) { // keep data in littlefs
@@ -81,10 +73,9 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
     card_fabrication_procedure(lfs_root);
   }
   printf("Finished initialization\n");
-  return 0;
 }
 
-void EmulateUSBTrans(const uint8_t *buf, size_t len) {
+static void emulate_usb_transaction(const uint8_t *buf, size_t len) {
   if (len < 1) return;
   uint8_t ep_num = buf[0] & 0x83;
   uint8_t is_setup = buf[0] & 0x40; // just some random bits
@@ -126,8 +117,12 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
       }
       DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_count=%d len=%d\n", ep_num, ep->xfer_buff, ep->xfer_count, len);
       ep->xfer_count = len;
-      memcpy(ep->xfer_buff, buf, ep->xfer_count);
-      ep->xfer_buff += ep->xfer_count;
+      if (ep->xfer_count > 0) {
+        // A zero-length OUT packet can arrive before any receive buffer was
+        // prepared (xfer_buff is still NULL); never do memcpy(NULL, buf, 0).
+        memcpy(ep->xfer_buff, buf, ep->xfer_count);
+        ep->xfer_buff += ep->xfer_count;
+      }
       ep->xfer_cap -= ep->xfer_count;
       if (ep->num == 0) {
         USBD_LL_DataOutStage(&usb_device, ep->num, ep->xfer_buff);
@@ -141,9 +136,9 @@ void EmulateUSBTrans(const uint8_t *buf, size_t len) {
   }
 }
 
-int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
+static void fuzz_one_input(const uint8_t *buf, size_t len) {
   if (!process_func) { // CCID Fuzzing Test
-    EmulateUSBTrans(buf, len);
+    emulate_usb_transaction(buf, len);
   } else { // Applet Fuzzing Test
     uint16_t apdu_len = len & 0xffff;
     if (apdu_len > APDU_BUFFER_SIZE) apdu_len = APDU_BUFFER_SIZE;
@@ -154,7 +149,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
     rapdu.data = bulkin_data.abData;
     rapdu.len = APDU_BUFFER_SIZE;
     if (build_capdu(&capdu, buf, apdu_len) < 0) {
-      return 0;
+      return;
     }
     // realloc data to let the sanitizer find out buffer overflow
     if (capdu.lc > 0) {
@@ -173,5 +168,37 @@ int LLVMFuzzerTestOneInput(const uint8_t *buf, size_t len) {
       free(capdu.data);
     }
   }
+}
+
+#define FUZZ_INPUT_CAPACITY (1U << 20)
+
+static size_t read_fuzz_input(uint8_t *buf, size_t capacity) {
+  size_t len = 0;
+  while (len < capacity) {
+    ssize_t count = read(STDIN_FILENO, buf + len, capacity - len);
+    if (count > 0) {
+      len += (size_t)count;
+      continue;
+    }
+    if (count == 0) break;
+    if (errno == EINTR) continue;
+    perror("read fuzz input");
+    exit(EXIT_FAILURE);
+  }
+  return len;
+}
+
+int main(void) {
+  static uint8_t input[FUZZ_INPUT_CAPACITY];
+
+  fuzz_initialize();
+
+  // The virtual card is stateful. Start AFL's forkserver after initialization
+  // so every input sees the same card state in an isolated child process.
+#ifdef __AFL_HAVE_MANUAL_CONTROL
+  __AFL_INIT();
+#endif
+
+  fuzz_one_input(input, read_fuzz_input(input, sizeof(input)));
   return 0;
 }

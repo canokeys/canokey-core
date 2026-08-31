@@ -122,7 +122,7 @@ static int load_next_aggregated_chunk(void) {
   return 0;
 }
 
-__attribute__((minsize)) void nfc_init(void) {
+void nfc_init(void) {
   reset_nfc_state();
   aggregate_fido_responses = 0;
   // NFC interface uses shared_io_buffer w/o calling acquire_apdu_buffer(), because NFC mode is exclusive with USB mode
@@ -139,7 +139,7 @@ __attribute__((minsize)) void nfc_init(void) {
 #endif
 }
 
-__attribute__((minsize)) static void nfc_error_handler(int code __attribute__((unused))) {
+static void nfc_error_handler(int code __attribute__((unused))) {
   DBG_MSG("NFC Error %d\n", code);
 #if NFC_CHIP == NFC_CHIP_FM11NT
   reset_nfc_session();
@@ -174,7 +174,7 @@ static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   return 0;
 }
 
-__attribute__((minsize)) static int nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
+static int nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   const uint8_t generation = session_generation;
   for (;;) {
     if (generation != session_generation) return NFC_SEND_ABORTED;
@@ -239,7 +239,7 @@ static void send_wtx(void) {
   if (apdu_processing) device_set_timeout(send_wtx, WTX_PERIOD);
 }
 
-__attribute__((minsize)) void nfc_loop(void) {
+void nfc_loop(void) {
 #if NFC_CHIP == NFC_CHIP_FM11NT
   if (idle_recovery_state != NFC_RECOVERY_NONE) {
     uint8_t data;
@@ -344,7 +344,7 @@ __attribute__((minsize)) void nfc_loop(void) {
   }
 }
 
-__attribute__((minsize)) void nfc_handler(void) {
+void nfc_handler(void) {
   uint8_t irq[3];
 #if NFC_CHIP == NFC_CHIP_FM11NT
   if (idle_recovery_state == NFC_RECOVERY_SILENCED) return;

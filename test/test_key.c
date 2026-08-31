@@ -326,6 +326,29 @@ static void test_read_key_rejects_short_material(void **state) {
   assert_memory_equal(key.data, zero, sizeof(zero));
 }
 
+static void test_read_empty_key_ignores_stale_material(void **state) {
+  (void)state;
+  uint8_t stale_ecc_material[sizeof(ecc_key_t)];
+  memset(stale_ecc_material, 0x5A, sizeof(stale_ecc_material));
+  assert_int_equal(write_file(PATH, stale_ecc_material, 0, sizeof(stale_ecc_material), 1), 0);
+
+  const key_meta_t meta = {
+      .type = RSA2048,
+      .origin = KEY_ORIGIN_NOT_PRESENT,
+      .usage = SIGN,
+      .pin_policy = PIN_POLICY_ONCE,
+      .touch_policy = TOUCH_POLICY_CACHED,
+  };
+  assert_int_equal(ck_write_key_metadata(PATH, &meta), 0);
+
+  ck_key_t key;
+  memset(&key, 0xA5, sizeof(key));
+  assert_int_equal(ck_read_key(PATH, &key), 0);
+  assert_memory_equal(&key.meta, &meta, sizeof(meta));
+  const uint8_t zero[sizeof(rsa_key_t)] = {0};
+  assert_memory_equal(key.data, zero, sizeof(zero));
+}
+
 static void test_ecc_key_persists_only_ecc_material(void **state) {
   (void)state;
   ck_key_t expected;
@@ -395,6 +418,7 @@ int main() {
       cmocka_unit_test(test_parse_piv_rsa_rejects_invalid_component_bounds),
       cmocka_unit_test(test_tlv_len_stream_feed),
       cmocka_unit_test(test_read_key_rejects_short_material),
+      cmocka_unit_test(test_read_empty_key_ignores_stale_material),
       cmocka_unit_test(test_ecc_key_persists_only_ecc_material),
       cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
   };

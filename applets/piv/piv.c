@@ -767,6 +767,10 @@ static int __attribute__((noinline)) piv_mldsa_install_pending_key(piv_mldsa_str
   return 0;
 }
 
+static SHA3_CTX_T *piv_mldsa_public_hash(piv_mldsa_stream_state_t *state) {
+  return (SHA3_CTX_T *)(void *)(state->stage + sizeof(state->stage) - sizeof(SHA3_CTX_T));
+}
+
 static int piv_mldsa_fill_public_stage(piv_mldsa_stream_state_t *state) {
   const bool first_stage = state->crypto.keygen.phase == 0;
   state->stage_len = 0;
@@ -778,11 +782,12 @@ static int piv_mldsa_fill_public_stage(piv_mldsa_stream_state_t *state) {
   state->stage_len = (size_t)ret;
 
   if (state->install_pending) {
-    if (first_stage) shake256_init(&state->public_hash);
-    shake_update(&state->public_hash, state->stage, state->stage_len);
+    SHA3_CTX_T *public_hash = piv_mldsa_public_hash(state);
+    if (first_stage) shake256_init(public_hash);
+    shake_update(public_hash, state->stage, state->stage_len);
     if (state->crypto.keygen.phase == 0) {
-      shake_finalize(&state->public_hash);
-      shake_squeeze(&state->public_hash, state->tr, sizeof(state->tr));
+      shake_finalize(public_hash);
+      shake_squeeze(public_hash, state->tr, sizeof(state->tr));
     }
   }
   return 0;
@@ -2387,7 +2392,7 @@ __attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU 
     uint8_t default_value;
     if (read_attr(p->path, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
     const int default_retries = pin_get_default_retries(p);
-    if (default_value < 0) return -1;
+    if (default_retries < 0) return -1;
     const int retries = pin_get_retries(p);
     if (retries < 0) return -1;
 

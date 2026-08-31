@@ -3,7 +3,7 @@ include(FindPkgConfig)
 project(canokey-core C)
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
-option(ENABLE_FUZZING "Build the libFuzzer harness (requires clang with -fsanitize=fuzzer)" OFF)
+option(ENABLE_FUZZING "Build the AFL++ harness with GNU GCC" OFF)
 option(ENABLE_DEBUG_OUTPUT "Print debug messages" ON)
 option(ENABLE_BYPASS_USER_PRESENCE "Skip all user-presence tests (USE AT YOUR OWN RISK)" OFF)
 option(VIRTCARD "Virt Card" OFF)
@@ -57,7 +57,7 @@ if(ENABLE_DUMB_DONGLE)
     set(ENABLE_BYPASS_USER_PRESENCE ON)
 endif()
 
-if(ENABLE_TESTS OR ENABLE_FUZZING)
+if(ENABLE_TESTS)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     add_compile_options(--coverage -fsanitize=address -fsanitize=undefined)
     add_link_options(--coverage -fsanitize=address -fsanitize=undefined)
@@ -67,9 +67,17 @@ if(ENABLE_TESTS OR ENABLE_FUZZING)
 endif()
 
 if(ENABLE_FUZZING)
-    # Coverage instrumentation for the library; the fuzzer executable links
-    # the libFuzzer runtime with -fsanitize=fuzzer (see the bottom of this file).
-    add_compile_options(-fsanitize=fuzzer-no-link)
+    if(NOT CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        message(FATAL_ERROR "ENABLE_FUZZING requires GNU GCC (directly or through afl-gcc-fast)")
+    endif()
+    # Sanitizers are on by default. AFL++ Frida mode (macOS binary-only
+    # fuzzing) cannot lift the ASan runtime; use -DCANOKEY_FUZZ_SANITIZERS=OFF
+    # there and rely on Frida coverage plus real crashes.
+    set(CANOKEY_FUZZ_SANITIZERS ON CACHE BOOL "Enable ASan/UBSan in fuzz builds")
+    if(CANOKEY_FUZZ_SANITIZERS)
+        add_compile_options(-fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
+        add_link_options(-fsanitize=address -fsanitize=undefined)
+    endif()
 endif()
 
 add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
@@ -109,18 +117,15 @@ add_custom_target(
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
 )
 
-add_custom_command(
-    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
+add_custom_target(
+    generate_canokey_core_git_rev ALL
     COMMAND ${CMAKE_COMMAND}
         -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
         -DOUTPUT_FILE=${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
         -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_git_rev_header.cmake
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_git_rev_header.cmake
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
     COMMENT "Generating canokey-core-git-rev.h"
-)
-add_custom_target(
-    generate_canokey_core_git_rev
-    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/canokey-core-git-rev.h
+    VERBATIM
 )
 
 file(
@@ -223,19 +228,22 @@ add_dependencies(canokey-core generate_ctap_get_info_cbor generate_canokey_core_
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
 
 if(VIRTCARD OR ENABLE_TESTS OR ENABLE_FUZZING)
-    set(gitrev_in virt-card/git-rev.h.in)
-    set(gitrev virt-card/git-rev.h)
+    set(VIRT_CARD_GIT_REV_HEADER ${CMAKE_CURRENT_BINARY_DIR}/virt-card-git-rev.h)
     add_custom_target(
-        gitrev
-        ${CMAKE_COMMAND} -E remove -f ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-        COMMAND
-            ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev_in}
-            ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-        COMMAND
-            git describe --always --tags --long --abbrev=8 --dirty >>
-            ${CMAKE_CURRENT_SOURCE_DIR}/${gitrev}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        generate_virt_card_git_rev
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DOUTPUT_FILE=${VIRT_CARD_GIT_REV_HEADER}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_virt_card_git_rev_header.cmake
+        BYPRODUCTS ${VIRT_CARD_GIT_REV_HEADER}
+        COMMENT "Generating virt-card git revision"
+        VERBATIM
     )
+
+    function(add_virt_card_git_revision target)
+        add_dependencies(${target} generate_virt_card_git_rev)
+        target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+    endfunction()
 endif()
 
 if(ENABLE_TESTS)
@@ -264,7 +272,7 @@ if(ENABLE_TESTS)
         canokey-core
         "-fsanitize=address"
     )
-    add_dependencies(fido-hid-over-udp gitrev)
+    add_virt_card_git_revision(fido-hid-over-udp)
 
     pkg_search_module(PCSCLITE libpcsclite)
     if(PCSCLITE_FOUND)
@@ -283,36 +291,24 @@ if(ENABLE_TESTS)
             PRIVATE virt-card ${PCSCLITE_INCLUDE_DIRS} littlefs
         )
         target_link_libraries(u2f-virt-card ${PCSCLITE_LIBRARIES} canokey-core)
-        add_dependencies(u2f-virt-card gitrev)
+        add_virt_card_git_revision(u2f-virt-card)
     endif()
 endif(ENABLE_TESTS)
 
 if(ENABLE_FUZZING)
-    include(CheckCCompilerFlag)
-    # check_c_compiler_flag only passes the flag to the compile step; without
-    # the link option the SanitizerCoverage symbols are missing and the check
-    # reports a false negative.
-    set(CMAKE_REQUIRED_LINK_OPTIONS "-fsanitize=fuzzer")
-    check_c_compiler_flag("-fsanitize=fuzzer" HAVE_LIBFUZZER)
-    unset(CMAKE_REQUIRED_LINK_OPTIONS)
-    if(NOT HAVE_LIBFUZZER)
-        message(FATAL_ERROR "ENABLE_FUZZING requires a clang with the libFuzzer runtime (e.g. Homebrew llvm on macOS; Apple clang does not ship it)")
-    endif()
     add_executable(
-        libfuzzer-fuzzer
-        fuzzer/libfuzzer-fuzzer.c
+        afl-fuzzer
+        fuzzer/afl-fuzzer.c
         virt-card/usb-dummy.c
         virt-card/device-sim.c
         virt-card/fabrication.c
         littlefs/bd/lfs_filebd.c
     )
     target_include_directories(
-        libfuzzer-fuzzer
+        afl-fuzzer
         SYSTEM
         PRIVATE virt-card littlefs
     )
-    target_compile_options(libfuzzer-fuzzer PRIVATE -fsanitize=fuzzer)
-    target_link_options(libfuzzer-fuzzer PRIVATE -fsanitize=fuzzer)
-    target_link_libraries(libfuzzer-fuzzer canokey-core)
-    add_dependencies(libfuzzer-fuzzer gitrev)
+    target_link_libraries(afl-fuzzer canokey-core)
+    add_virt_card_git_revision(afl-fuzzer)
 endif(ENABLE_FUZZING)

@@ -28,6 +28,11 @@
 // reorder breaks the build instead of silently corrupting parser state.
 #define APPLET_SHARED_BUFFER_LENGTH ((RSA_N_BIT_MAX / 8) + 32)
 #define PIV_ATTESTATION_PLAN_SIZE 384
+#define MLDSA_STREAM_STAGE_BYTES (MLDSA_K * MLDSA_POLYT0_PACKEDBYTES)
+#define CTAP_MLDSA_PREFIX_BYTES 384
+#define CTAP_MLDSA_PK_STAGE_BYTES (MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES)
+#define CTAP_MLDSA_PK_SUFFIX_BYTES 512
+#define CTAP_MLDSA_SIG_SUFFIX_BYTES 260
 
 typedef enum {
   CTAP_MLDSA_STREAM_NONE,
@@ -36,26 +41,43 @@ typedef enum {
 } CTAP_mldsa_stream_kind;
 
 typedef struct {
+  union {
+    struct {
+      uint8_t prefix[CTAP_MLDSA_PREFIX_BYTES];
+      uint8_t stage[CTAP_MLDSA_PK_STAGE_BYTES];
+      uint8_t suffix[CTAP_MLDSA_PK_SUFFIX_BYTES];
+      uint8_t seed[PRI_KEY_SIZE];
+      mldsa_keygen_state_t keygen;
+    } pk;
+    struct {
+      union {
+        _Alignas(uint32_t) uint8_t stage[MLDSA_STREAM_STAGE_BYTES];
+        struct {
+          uint8_t prefix[CTAP_MLDSA_PREFIX_BYTES];
+          uint8_t seed[PRI_KEY_SIZE];
+          uint8_t tr[MLDSA_TRBYTES];
+          uint8_t msg[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
+          uint16_t msg_len;
+        } input;
+      } workspace;
+      uint8_t suffix[CTAP_MLDSA_SIG_SUFFIX_BYTES];
+      mldsa_sign_state_t sign;
+    } sig;
+  } storage;
+  // A normal CBOR response is encoded into the first
+  // APPLET_SHARED_BUFFER_LENGTH bytes of this union. Keep stream metadata
+  // after that window so non-ML-DSA responses leave the cleared state intact.
   CTAP_mldsa_stream_kind kind;
-  uint8_t prefix[384];
-  size_t prefix_len;
-  size_t prefix_off;
-  uint8_t suffix[512];
-  size_t suffix_len;
-  size_t suffix_off;
-  uint8_t stage_buf[MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES];
-  uint8_t *stage;
-  size_t stage_len;
-  size_t stage_off;
-  uint8_t seed[PRI_KEY_SIZE];
-  uint8_t tr[MLDSA_TRBYTES];
-  uint8_t msg[sizeof(CTAP_auth_data) + CLIENT_DATA_HASH_SIZE];
-  size_t msg_len;
-  mldsa_keygen_state_t keygen;
-  mldsa_sign_state_t sign;
-  size_t total_len;
-  size_t emitted;
+  CTAP_mldsa_stream_kind storage_kind;
   bool pending;
+  uint16_t prefix_len;
+  uint16_t prefix_off;
+  uint16_t suffix_len;
+  uint16_t suffix_off;
+  uint16_t stage_len;
+  uint16_t stage_off;
+  uint32_t total_len;
+  uint32_t emitted;
 } CTAP_mldsa_stream_state;
 
 typedef enum {
@@ -69,13 +91,12 @@ typedef struct {
   uint8_t prefix[32];
   size_t prefix_len;
   size_t prefix_off;
-  uint8_t stage[MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES];
+  _Alignas(uint64_t) uint8_t stage[MLDSA_STREAM_STAGE_BYTES];
   size_t stage_len;
   size_t stage_off;
   uint8_t seed[MLDSA_SEEDBYTES];
   uint8_t tr[MLDSA_TRBYTES];
   uint8_t mu[MLDSA_CRHBYTES];
-  SHA3_CTX_T public_hash;
   key_meta_t pending_meta;
   uint8_t pending_key_id;
   bool install_pending;
@@ -153,6 +174,9 @@ _Static_assert(sizeof(piv_attestation_scratch_t) <= sizeof(CTAP_mldsa_stream_sta
                "PIV attestation should not enlarge the shared scratch union");
 _Static_assert(sizeof(piv_mldsa_stream_state_t) <= sizeof(CTAP_mldsa_stream_state),
                "PIV ML-DSA streaming should not enlarge the shared scratch union");
+_Static_assert(sizeof(CTAP_mldsa_stream_state) <= 3160, "CTAP ML-DSA stream state exceeds shared scratch budget");
+_Static_assert(offsetof(CTAP_mldsa_stream_state, kind) >= APPLET_SHARED_BUFFER_LENGTH,
+               "CTAP ML-DSA stream metadata overlaps the CBOR encoder window");
 _Static_assert(sizeof(piv_mlkem_scratch_t) <= sizeof(CTAP_mldsa_stream_state),
                "PIV ML-KEM scratch should not enlarge the shared scratch union");
 _Static_assert(sizeof(piv_ga_stream_state_t) <= sizeof(CTAP_mldsa_stream_state),
