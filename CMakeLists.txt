@@ -15,7 +15,7 @@ add_compile_options(-Wall)
 add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
 
 if(NOT DEFINED ENABLE_NFC)
-    if(DEFINED HW_VARIANT AND (HW_VARIANT STREQUAL "HW_NFCA_LEGACY" OR HW_VARIANT STREQUAL "HW_NFCA" OR HW_VARIANT STREQUAL "HW_NFCC"))
+    if(DEFINED HW_VARIANT AND HW_VARIANT STREQUAL "HW_NFCC")
         set(ENABLE_NFC 1)
     elseif(DEFINED HW_VARIANT)
         set(ENABLE_NFC 0)

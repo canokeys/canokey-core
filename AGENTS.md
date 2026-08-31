@@ -43,7 +43,7 @@ canokey-core/
 │   │       ├── ccid/       # CCID smart-card class driver
 │   │       ├── kbdhid/     # Keyboard HID class driver
 │   │       └── webusb/     # WebUSB vendor interface
-│   └── NFC/            # NFC interface (FM11NC / FM11NT)
+│   └── NFC/            # NFC interface (FM11NT)
 ├── canokey-crypto/     # Submodule: crypto primitives (ECC, RSA, AES, SHA, …)
 ├── littlefs/           # Submodule: embedded filesystem
 ├── tinycbor/           # Submodule: CBOR encoder/decoder
@@ -122,20 +122,11 @@ void     led_off(void);
 void     device_set_timeout(void (*callback)(void), uint16_t timeout); // hardware timer with IRQ
 ```
 
-### Mandatory for NFC (FM11NC SPI)
-
-```c
-void fm_csn_low(void);
-void fm_csn_high(void);
-void spi_transmit(const uint8_t *buf, uint8_t len);
-void spi_receive(uint8_t *buf, uint8_t len);
-```
-
 ### Mandatory for NFC (FM11NT I²C)
 
 ```c
 void fm_csn_low(void); void fm_csn_high(void);
-void i2c_start(void); void i2c_stop(void); void scl_delay(void);
+void i2c_start(void); void i2c_stop(void); void i2c_bus_recover(void); void scl_delay(void);
 fm_status_t i2c_read_ack(void); void i2c_send_ack(void); void i2c_send_nack(void);
 fm_status_t i2c_write_byte(uint8_t data); uint8_t i2c_read_byte(void);
 ```
