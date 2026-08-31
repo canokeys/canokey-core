@@ -2781,11 +2781,11 @@ static void test_piv_get_version_chained_le_absent(void **state) {
 
 // Regression test for the host/device divergence caught by differential
 // fuzzing (hil-reports/fuzz-hil-crypto.jsonl seq 7): an imported RSA key with
-// an inconsistent CRT component (corrupted dp) must fail at sign time. The
-// CIU hardware RSA path verifies both CRT congruences and rejects; the
-// mbedTLS-backed host rsa_private used to recompute DP/DQ/QP from (P, Q, E),
-// silently "repairing" the corrupt key and emitting a valid signature the
-// device would never produce (host 9000 vs device 6900).
+// an inconsistent CRT component must be rejected at import time with
+// SW_WRONG_DATA (both platforms validate via rsa_check_crt). The use-time net
+// (CIU verifies both CRT congruences; the host rejects via
+// mbedtls_rsa_check_privkey) is kept covered by writing a corrupt key
+// directly, bypassing import validation.
 static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -2830,14 +2830,31 @@ static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
   assert_int_equal(response_len, 8 + 256);
   assert_int_equal(response[0], 0x7C);
 
-  // Corrupt dp: import still succeeds (no import-time validation), but the
-  // signature must be rejected, exactly like the CIU CRT congruence check.
+  // Corrupt dp: rejected at import now.
   import[2 * (3 + (int)pq_len) + 3 + 100] ^= 0x55; // one byte inside the dp value
-  test_helper(import, sizeof(import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_NO_ERROR);
-  test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+  test_helper(import, sizeof(import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
+
+  // p == q: also rejected at import (a private-op probe cannot detect this).
+  memcpy(import + (3 + (int)pq_len) + 3, rsa.p, pq_len); // q value := p
+  import[2 * (3 + (int)pq_len) + 3 + 100] ^= 0x55;        // restore dp
+  test_helper(import, sizeof(import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
+
+  // Use-time net still holds for keys that bypass import validation (e.g.
+  // written by older firmware): sign with the corrupt-dp key fails.
+  ck_key_t bad_key;
+  memset(&bad_key, 0, sizeof(bad_key));
+  bad_key.meta.type = RSA2048;
+  bad_key.meta.origin = KEY_ORIGIN_IMPORTED;
+  bad_key.meta.usage = SIGN;
+  bad_key.meta.pin_policy = PIN_POLICY_NEVER;
+  bad_key.meta.touch_policy = TOUCH_POLICY_NEVER;
+  memcpy(&bad_key.rsa, &rsa, sizeof(rsa));
+  bad_key.rsa.dp[100] ^= 0x55;
+  assert_int_equal(ck_write_key("piv-k9a", &bad_key), 0);
   assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x07, 0x9A, request, sizeof(request), response,
                                          &response_len),
                    SW_UNABLE_TO_PROCESS);
+  memzero(&bad_key, sizeof(bad_key));
 
   memzero(&rsa, sizeof(rsa));
   memzero(import, sizeof(import));
