@@ -1425,8 +1425,11 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if ((desc->flags & PIV_DO_F_INLINE) != 0) {
-    const int attr_len = read_attr(PIV_DO_META_PATH, desc->attr, RDATA, desc->capacity);
+    const int attr_len = get_attr_size(PIV_DO_META_PATH, desc->attr);
     if (attr_len > 0) {
+      const uint16_t inline_capacity = piv_do_inline_capacity(desc);
+      if (inline_capacity == 0 || attr_len > inline_capacity || attr_len > APDU_BUFFER_SIZE) return -1;
+      if (read_attr(PIV_DO_META_PATH, desc->attr, RDATA, (lfs_size_t)attr_len) != attr_len) return -1;
       LL = attr_len;
       return 0;
     }

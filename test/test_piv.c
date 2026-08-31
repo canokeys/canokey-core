@@ -1228,6 +1228,24 @@ static void test_piv_host_managed_admin_data_objects(void **state) {
   test_helper_resp(get_printed, sizeof(get_printed), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_NO_ERROR, expected_printed,
                    sizeof(expected_printed));
 
+  // Inline DO reads must use the stored attribute length, not the overall
+  // PRINTED object capacity. The target response buffer is only 256 bytes.
+  uint8_t *bounded_response = malloc(APDU_BUFFER_SIZE);
+  assert_non_null(bounded_response);
+  CAPDU get_printed_command = {.data = get_printed,
+                               .cla = 0x00,
+                               .ins = PIV_INS_GET_DATA,
+                               .p1 = 0x3F,
+                               .p2 = 0xFF,
+                               .lc = sizeof(get_printed),
+                               .le = APDU_BUFFER_SIZE};
+  RAPDU get_printed_response = {.data = bounded_response};
+  piv_process_apdu(&get_printed_command, &get_printed_response);
+  assert_int_equal(get_printed_response.sw, SW_NO_ERROR);
+  assert_int_equal(get_printed_response.len, sizeof(expected_printed));
+  assert_memory_equal(bounded_response, expected_printed, sizeof(expected_printed));
+  free(bounded_response);
+
   piv_poweroff();
   uint8_t get_admin[] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
   uint8_t expected_admin[] = {0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03};
