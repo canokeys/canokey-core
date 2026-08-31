@@ -293,6 +293,8 @@ Forbidden PKE staging uses:
   increasing `APDU_BUFFER_SIZE`. Other applets and transports must not rely on this exception.
 - Large request data (e.g. RSA key import, FIDO2 CBOR) must be sent by the host as chained `CLA=0x10` commands; `apdu_input` reassembles them transparently.
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
+- The RAPDU chain store (`rapdu_chaining.rapdu.data`) aliases the transport I/O buffer (`shared_io_buffer`, which is the CCID Bulk-IN buffer or the NFC I-block buffer). Transports stamp the SW trailer at `buffer[LL..LL+1]` after each command, which lands on the first pending response bytes whenever the just-sent chunk is short — an empty first chunk (Le absent) is the worst case, leaving `sent == 0`. `apdu_output` saves the pending prefix into the static `response_tail` after each partial chunk and restores it before the next chunk; the saved tail is invalidated only when a new non-`GET RESPONSE` command is dispatched (`process_apdu_from` / `apdu_process_streaming_message`) or the chain completes, never on `sent == 0` alone.
+- A `GET RESPONSE` with no pending chain and no active response source is rejected with `SW_COMMAND_NOT_ALLOWED` on both the generic path (`process_apdu_from`) and the applet streaming path (`apdu_process_streaming_message`).
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
 
 ### Streaming response sources

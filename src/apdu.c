@@ -86,6 +86,16 @@ static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
 
 static void fido_capdu_reset(void);
 
+// The saved response tail is only valid across GET RESPONSE continuations of
+// the response that produced it. Invalidate it when a new command starts; do
+// NOT invalidate it based on `sent == 0` in apdu_output, because a command
+// with Le absent sends a zero-length first chunk and leaves `sent` at 0 for
+// the following GET RESPONSE.
+static void response_tail_reset(void) {
+  response_tail_offset = 0;
+  response_tail_len = 0;
+}
+
 typedef struct {
   APDU_RESPONSE_SOURCE_VIEW view;
   APDU_RESPONSE_SOURCE_CLOSE close;
@@ -153,6 +163,7 @@ void init_apdu_buffer(void) {
   shared_io_buffer = apdu_fallback_buffer;
 #endif
   apdu_response_source_clear();
+  response_tail_reset();
   if (!fido_capdu_chaining.in_chaining) {
     memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
     fido_capdu_uses_pke = 0;
@@ -323,11 +334,6 @@ restart:
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
-  if (ex->sent == 0 && !response_source.view.read) {
-    response_tail_offset = 0;
-    response_tail_len = 0;
-  }
-
   if (response_source.view.read) {
     uint32_t remaining = response_source.view.total_len - response_source.view.offset;
     uint16_t to_send = (uint16_t)MIN(remaining, sh->len);
@@ -394,8 +400,7 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
       sh->sw = 0x6100 + (ex->rapdu.len - ex->sent);
   } else {
     sh->sw = ex->rapdu.sw;
-    response_tail_offset = 0;
-    response_tail_len = 0;
+    response_tail_reset();
   }
   return 0;
 }
@@ -409,8 +414,19 @@ int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu,
   const uint16_t response_le = (uint16_t)MIN(capdu->le, le_limit);
   if (!handler) return -1;
 
-  if (!is_get_response) apdu_response_source_clear();
+  if (!is_get_response) {
+    apdu_response_source_clear();
+    response_tail_reset();
+  }
   if (is_get_response) {
+    // Mirror the generic GET RESPONSE path in process_apdu_from: with no
+    // pending chain and no active response source this is an error, not a
+    // replay of the previous (stale) RAPDU status word.
+    if (!apdu_response_source_active() && rapdu_chaining->sent >= rapdu_chaining->rapdu.len) {
+      rapdu->len = 0;
+      rapdu->sw = SW_COMMAND_NOT_ALLOWED;
+      return 0;
+    }
     rapdu->len = response_le;
     apdu_output(rapdu_chaining, rapdu);
     return 0;
@@ -523,7 +539,10 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
 #endif
   }
   const uint8_t is_get_response = (CLA == 0x00 || CLA == 0x80) && INS == 0xC0;
-  if (!is_get_response) apdu_response_source_clear();
+  if (!is_get_response) {
+    apdu_response_source_clear();
+    response_tail_reset();
+  }
   LE = MIN(LE, APDU_BUFFER_SIZE);
   if (is_get_response) { // GET RESPONSE
     if (!apdu_response_source_active() && rapdu_chaining.sent >= rapdu_chaining.rapdu.len) {

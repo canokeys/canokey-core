@@ -2722,6 +2722,45 @@ static void test_piv_cert_chained_read(void **state) {
   assert_memory_equal(reassembled + 4, cert, CERT_LEN);
 }
 
+// Regression test for the shared-buffer aliasing bug observed over USB CCID:
+// rapdu_chaining.rapdu.data aliases the transport I/O buffer and the
+// transport stamps the SW trailer at buffer[LL..LL+1] after each command.
+// With Le absent the first chunk is empty (LL=0), so the 61xx trailer lands
+// on the first two pending response bytes; the saved response tail must
+// restore them on the GET RESPONSE continuation instead of returning the
+// clobbered bytes.
+static void test_piv_get_version_chained_le_absent(void **state) {
+  (void)state;
+  init_apdu_buffer();
+
+  RAPDU_CHAINING rc = {.rapdu.data = shared_io_buffer, .rapdu.len = 0, .rapdu.sw = 0, .sent = 0};
+  RAPDU rapdu = {.data = shared_io_buffer};
+
+  // PIV VERSION with Le absent: empty first chunk, SW=6103.
+  CAPDU version = {.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_VERSION, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0};
+  piv_process_apdu_message(&rc, &version, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, 0x6103);
+
+  // The transport stamps the SW trailer into the shared buffer, clobbering
+  // the first two pending response bytes.
+  shared_io_buffer[rapdu.len] = HI(rapdu.sw);
+  shared_io_buffer[rapdu.len + 1] = LO(rapdu.sw);
+
+  static const uint8_t expected_version[] = {0x05, 0x07, 0x00};
+  CAPDU gr = {.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0x100};
+  piv_process_apdu_message(&rc, &gr, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, sizeof(expected_version));
+  assert_memory_equal(rapdu.data, expected_version, sizeof(expected_version));
+
+  // A spurious GET RESPONSE with nothing pending is rejected, mirroring the
+  // generic GET RESPONSE path in process_apdu_from.
+  piv_process_apdu_message(&rc, &gr, &rapdu);
+  assert_int_equal(rapdu.len, 0);
+  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -2784,6 +2823,7 @@ int main() {
       cmocka_unit_test(test_set_pin_retries),
       cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_cert_chained_read),
+      cmocka_unit_test(test_piv_get_version_chained_le_absent),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

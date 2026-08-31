@@ -2504,8 +2504,8 @@ static void check_apdu_output_chaining_aliased_buffer(uint16_t first_le, uint16_
   };
   RAPDU sh = {.data = shared_io_buffer};
 
-  while (expected_offset < RESP_LEN) {
-    sh.len = expected_offset == 0 ? first_le : continuation_le;
+  for (uint8_t first = 1; expected_offset < RESP_LEN; first = 0) {
+    sh.len = first ? first_le : continuation_le;
     const uint16_t expected_len = MIN(sh.len, RESP_LEN - expected_offset);
     assert_int_equal(apdu_output(&rc, &sh), 0);
     assert_int_equal(sh.len, expected_len);
@@ -2524,12 +2524,16 @@ static void check_apdu_output_chaining_aliased_buffer(uint16_t first_le, uint16_
 }
 
 // Exercise the 32-byte protected boundary, the formerly unprotected 33-byte
-// tail, and a small first Le that requires an overlapping in-buffer move.
+// tail, a small first Le that requires an overlapping in-buffer move, and a
+// zero first Le (Le absent): the latter sends no bytes on the first command,
+// so `sent` stays 0 and the GET RESPONSE continuation must still restore the
+// tail clobbered by the SW trailer / incoming GET RESPONSE bytes.
 static void test_apdu_output_chaining_aliased_buffer(void **state) {
   (void)state;
   check_apdu_output_chaining_aliased_buffer(248, APDU_BUFFER_SIZE);
   check_apdu_output_chaining_aliased_buffer(247, APDU_BUFFER_SIZE);
   check_apdu_output_chaining_aliased_buffer(1, 200);
+  check_apdu_output_chaining_aliased_buffer(0, APDU_BUFFER_SIZE);
 }
 
 // fido_apdu_input rejects chains whose accumulated length would exceed the
