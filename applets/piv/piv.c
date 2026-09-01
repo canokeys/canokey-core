@@ -2464,8 +2464,8 @@ __attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU 
 static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
-  RDATA[0] = 0x05;
-  RDATA[1] = 0x07;
+  RDATA[0] = 0x06;
+  RDATA[1] = 0x00;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;
@@ -2476,6 +2476,14 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   device_config_fill_serial(RDATA);
   LL = 4;
+  return 0;
+}
+
+static int piv_get_random(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0 || LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  random_buffer(RDATA, LE);
+  LL = LE;
   return 0;
 }
 
@@ -2567,6 +2575,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GET_SERIAL:
     ret = piv_get_serial(capdu, rapdu);
+    break;
+  case PIV_INS_GET_RANDOM:
+    ret = piv_get_random(capdu, rapdu);
     break;
   case PIV_INS_ATTEST:
     ret = piv_attest(capdu, rapdu);

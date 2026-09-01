@@ -2765,7 +2765,7 @@ static void test_piv_get_version_chained_le_absent(void **state) {
   shared_io_buffer[rapdu.len] = HI(rapdu.sw);
   shared_io_buffer[rapdu.len + 1] = LO(rapdu.sw);
 
-  static const uint8_t expected_version[] = {0x05, 0x07, 0x00};
+  static const uint8_t expected_version[] = {0x06, 0x00, 0x00};
   CAPDU gr = {.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0x100};
   piv_process_apdu_message(&rc, &gr, &rapdu);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
@@ -2777,6 +2777,40 @@ static void test_piv_get_version_chained_le_absent(void **state) {
   piv_process_apdu_message(&rc, &gr, &rapdu);
   assert_int_equal(rapdu.len, 0);
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
+static void test_piv_get_random_without_authentication(void **state) {
+  (void)state;
+
+  uint8_t response[APDU_BUFFER_SIZE];
+  RAPDU rapdu = {.data = response};
+  CAPDU command = {.data = response};
+  static const uint8_t get_random[] = {0x00, 0x84, 0x00, 0x00, 0x00};
+  assert_int_equal(build_capdu(&command, get_random, sizeof(get_random)), 0);
+
+  piv_poweroff();
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, APDU_BUFFER_SIZE);
+
+  command.le = 32;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 32);
+
+  command.p1 = 0x01;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
+
+  command.p1 = 0x00;
+  command.lc = 1;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  command.lc = 0;
+  command.le = APDU_BUFFER_SIZE + 1;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 }
 
 // Regression test for the host/device divergence caught by differential
@@ -2991,6 +3025,7 @@ int main() {
       cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_cert_chained_read),
       cmocka_unit_test(test_piv_get_version_chained_le_absent),
+      cmocka_unit_test(test_piv_get_random_without_authentication),
       cmocka_unit_test(test_piv_rsa_sign_rejects_inconsistent_crt_key),
       cmocka_unit_test(test_piv_ecdh_rejects_invalid_peer_point),
   };
