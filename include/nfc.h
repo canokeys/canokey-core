@@ -12,6 +12,7 @@
 
 #if NFC_CHIP == NFC_CHIP_FM11NC
 
+// clang-format off
 #define FM_REG_FIFO_FLUSH    0x1
 #define FM_REG_FIFO_WORDCNT  0x2
 #define FM_REG_RF_STATUS     0x3
@@ -29,11 +30,13 @@
 
 #define FM_EEPROM_ATQA       0x03A0
 #define FM_EEPROM_ATS        0x03B0
+// clang-format on
 
 #define RF_STATE_MASK 0xE0
 
 #elif NFC_CHIP == NFC_CHIP_FM11NT
 
+// clang-format off
 #define FM_REG_USER_CFG0     0xFFE0
 #define FM_REG_USER_CFG1     0xFFE1
 #define FM_REG_USER_CFG2     0xFFE2
@@ -62,6 +65,7 @@
 #define FM_EEPROM_ATS        0x03B0
 #define FM_EEPROM_ATQA       0x03BC
 #define FM_EEPROM_CRC8       0x03BB
+// clang-format on
 
 #endif
 
@@ -94,8 +98,18 @@
 #define NFC_STATE_IDLE 0x00
 #define NFC_STATE_BUSY 0x01
 
+#ifndef ENABLE_NFC
+#define ENABLE_NFC 1
+#endif
+
+#if ENABLE_NFC
 void nfc_init(void);
 void nfc_handler(void);
 void nfc_loop(void);
+#else
+static inline void nfc_init(void) {}
+static inline void nfc_handler(void) {}
+static inline void nfc_loop(void) {}
+#endif
 
 #endif // _NFC_H_

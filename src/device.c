@@ -1,36 +1,85 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "common.h"
 #include <admin.h>
+#include <apdu.h>
+#include <applet-scratch.h>
+#include <applets.h>
+#if ENABLE_IFACE_CCID
 #include <ccid.h>
+#endif
+#if ENABLE_IFACE_CTAPHID
 #include <ctaphid.h>
+#endif
 #include <device.h>
+#if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
+#endif
+#if ENABLE_IFACE_WEBUSB
 #include <webusb.h>
+#endif
 
 volatile static uint8_t touch_result;
+#if ENABLE_NFC
 static uint8_t has_rf;
+#endif
+#define APPLET_SESSION_TIMEOUT_MS 2000u
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
-typedef enum { WAIT_NONE = 1, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
-volatile static wait_status_t wait_status = WAIT_NONE; // WAIT_NONE is not 0, hence inited
+typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
+volatile static wait_status_t wait_status;
+applet_session_scratch_t applet_session_scratch;
+static device_applet_session_owner_t session_owner;
+static uint32_t session_deadline;
+
+static void device_applet_session_expire(void) {
+  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
+  applets_poweroff();
+  apdu_response_source_clear();
+  // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO
+  // chained-APDU reassembly state in apdu.c (in_chaining, uses_pke, pke_owner)
+  // would remain set without this call. The next chained FIDO APDU would then
+  // skip pke_buffer_acquire and write to an unowned PKE region.
+  apdu_fido_chain_reset();
+  session_owner = DEVICE_APPLET_SESSION_NONE;
+  session_deadline = 0;
+}
+
+static void device_applet_session_poll(void) {
+  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
+  if (device_get_tick() > session_deadline) {
+    device_applet_session_expire();
+  }
+}
+
+static int device_applet_session_can_preempt(void) {
+  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID) return 0;
+  return apdu_session_can_preempt();
+}
 
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
+  device_applet_session_poll();
+#if ENABLE_IFACE_CCID
   CCID_Loop();
+#endif
+#if ENABLE_IFACE_CTAPHID
   CTAPHID_Loop(0);
+#endif
+#if ENABLE_IFACE_WEBUSB
   WebUSB_Loop();
+#endif
+#if ENABLE_IFACE_KBDHID
   KBDHID_Loop();
+#endif
 }
 
 bool device_allow_kbd_touch(void) {
   uint32_t now = device_get_tick();
-  if (!device_is_blinking() &&      // applets are not waiting for touch
-      now > TOUCH_AFTER_PWRON &&    // ignore touch for some time after power-on
-      now - TOUCH_EXPIRE_TIME > last_blink &&
-      get_touch_result() != TOUCH_NO
-  ) {
-    DBG_MSG("now=%lu last_blink=%lu\n", now, last_blink);
+  if (!device_is_blinking() &&   // applets are not waiting for touch
+      now > TOUCH_AFTER_PWRON && // ignore touch for some time after power-on
+      now - TOUCH_EXPIRE_TIME > last_blink && get_touch_result() != TOUCH_NO) {
+    DBG_MSG("now=%u last_blink=%u\n", now, last_blink);
     return true;
   }
   return false;
@@ -46,6 +95,10 @@ uint8_t get_touch_result(void) {
 void set_touch_result(uint8_t result) { touch_result = result; }
 
 uint8_t wait_for_user_presence(uint8_t entry) {
+  device_applet_session_owner_t owner = device_applet_session_owner();
+  if (owner == DEVICE_APPLET_SESSION_NONE) {
+    owner = entry == WAIT_ENTRY_CTAPHID ? DEVICE_APPLET_SESSION_CTAPHID : DEVICE_APPLET_SESSION_CCID;
+  }
 
   if (wait_status == WAIT_NONE) {
     switch (entry) {
@@ -61,24 +114,25 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     DBG_MSG("Denied\n");
     return USER_PRESENCE_TIMEOUT;
   }
-  
+
   uint32_t start = device_get_tick();
   uint32_t last = start;
-  DBG_MSG("start %u\n", start);
   while (get_touch_result() == TOUCH_NO) {
-#ifdef DUMB_DONGLE
+#ifdef BYPASS_USER_PRESENCE
     break;
 #endif
-    // Keep blinking, in case other applet stops it 
+    device_applet_session_touch(owner);
+    // Keep blinking, in case other applet stops it
     start_blinking(0);
-    // Nested CCID processing is not allowed
-    if (entry != WAIT_ENTRY_CCID) CCID_Loop();
-    if (CTAPHID_Loop(entry == WAIT_ENTRY_CTAPHID) == LOOP_CANCEL) {
+#if ENABLE_IFACE_CTAPHID
+    uint8_t ctaphid_ret = CTAPHID_Loop(1);
+    if (owner == DEVICE_APPLET_SESSION_CTAPHID && ctaphid_ret == LOOP_CANCEL) {
       DBG_MSG("Cancelled by host\n");
       stop_blinking();
       wait_status = WAIT_NONE;
       return USER_PRESENCE_CANCEL;
     }
+#endif
     uint32_t now = device_get_tick();
     if (now - start >= 30000) {
       DBG_MSG("timeout at %u\n", now);
@@ -88,7 +142,9 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     }
     if (now - last >= 100) {
       last = now;
-      if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+#if ENABLE_IFACE_CTAPHID
+      if (owner == DEVICE_APPLET_SESSION_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_UPNEEDED);
+#endif
     }
   }
   // Consume this touch event
@@ -99,13 +155,26 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 }
 
 int send_keepalive_during_processing(uint8_t entry) {
-  if (entry == WAIT_ENTRY_CTAPHID) CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
-  DBG_MSG("KEEPALIVE\n");
+#if ENABLE_IFACE_CTAPHID
+  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID)
+    CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+#else
+  UNUSED(entry);
+#endif
+  switch (session_owner) {
+  case DEVICE_APPLET_SESSION_CCID:
+  case DEVICE_APPLET_SESSION_CTAPHID:
+  case DEVICE_APPLET_SESSION_WEBUSB:
+    device_applet_session_touch(session_owner);
+    break;
+  default:
+    break;
+  }
   return 0;
 }
 
 __attribute__((weak)) int strong_user_presence_test(void) {
-#ifdef DUMB_DONGLE
+#ifdef BYPASS_USER_PRESENCE
   return 0;
 #endif
   for (int i = 0; i < 5; i++) {
@@ -130,6 +199,7 @@ __attribute__((weak)) int strong_user_presence_test(void) {
   return 0;
 }
 
+#if ENABLE_NFC
 void set_nfc_state(uint8_t val) { has_rf = val; }
 
 uint8_t is_nfc(void) {
@@ -138,6 +208,7 @@ uint8_t is_nfc(void) {
 #endif
   return has_rf;
 }
+#endif
 
 static void toggle_led(void) {
   if (led_status == ON) {
@@ -186,4 +257,45 @@ void device_init(void) {
   last_blink = 0;
   stop_blinking();
   set_touch_result(TOUCH_NO);
+  session_owner = DEVICE_APPLET_SESSION_NONE;
+  session_deadline = 0;
+}
+
+int device_applet_session_acquire(device_applet_session_owner_t owner) {
+  device_applet_session_poll();
+  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) {
+    if (!device_applet_session_can_preempt()) return -1;
+    device_applet_session_expire();
+  }
+  session_owner = owner;
+  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
+  return 0;
+}
+
+void device_applet_session_touch(device_applet_session_owner_t owner) {
+  if (owner == DEVICE_APPLET_SESSION_NONE || session_owner != owner) return;
+  session_deadline = device_get_tick() + APPLET_SESSION_TIMEOUT_MS;
+}
+
+void device_applet_session_release(device_applet_session_owner_t owner) {
+  if (session_owner != owner) return;
+  device_applet_session_expire();
+}
+
+int device_applet_session_reset(device_applet_session_owner_t owner) {
+  device_applet_session_poll();
+  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_can_preempt())
+    return -1;
+  if (session_owner == DEVICE_APPLET_SESSION_NONE) {
+    applets_poweroff();
+    apdu_response_source_clear();
+    return 0;
+  }
+  device_applet_session_expire();
+  return 0;
+}
+
+device_applet_session_owner_t device_applet_session_owner(void) {
+  device_applet_session_poll();
+  return session_owner;
 }

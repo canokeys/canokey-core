@@ -16,5 +16,3 @@ typedef struct EPType {
 } EPType;
 
 EPType *dummy_get_ep_by_addr(uint8_t addr);
-
-

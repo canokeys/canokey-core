@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       env:
         cache-name: tools-deb
       with:
@@ -43,7 +43,7 @@ jobs:
         DEB_SUFFIX="$(dpkg-parsechangelog | sed -n 's/^Version: //p')_${DEB_HOST_ARCH}"
         sudo apt-get install -q -y ../yubico-piv-tool_${DEB_SUFFIX}.deb ../libykpiv1_${DEB_SUFFIX}.deb # test installation
     - name: Upload package files
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: tools-deb
         path: "*.deb"
@@ -54,7 +54,7 @@ jobs:
     needs: build_tools
     steps:
     - name: Prepare - Download packages
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         name: tools-deb
 
@@ -66,33 +66,40 @@ jobs:
         pip3 install --upgrade pip
 
     - name: Prepare - Setup Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: "^1.24"
       id: go
 
     - name: Prepare - Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
 
+    - name: Check - Code formatting
+      continue-on-error: true
+      run: |
+        find . -path ./canokey-crypto -prune -o -path ./littlefs -prune -o -path ./tinycbor -prune -o \
+          \( -name '*.c' -o -name '*.h' \) -print \
+          | xargs clang-format --dry-run --Werror
+
     - name: Prepare - Checkout piv-go
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: canokeys/piv-go
         path: piv-go
 
     - name: Prepare - Checkout ckman
-      # Disabled: the pinned ckman fork is incompatible with the current Python/pyscard toolchain.
+      # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.
       if: false
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         repository: canokeys/yubikey-manager
-        ref: 088ab31778d94a5447b4ffa98529d4dafde618f1
+        ref: canokey-next
         path: yubikey-manager
 
     - name: Cache - GO Modules
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       env:
         cache-name: go_mod
       with:
@@ -100,7 +107,8 @@ jobs:
         key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
 
     - name: Cache - Patched GnuPG
-      uses: actions/cache@v4
+      id: cache-gpg
+      uses: actions/cache@v5
       env:
         cache-name: cache_gpg_binary
       with:
@@ -108,24 +116,43 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
 
     - name: Cache - FIDO tools
-      uses: actions/cache@v4
+      id: cache-fido
+      uses: actions/cache@v5
       env:
         cache-name: cache_fido_tools
       with:
         path: |
           u2f-ref-code
           libfido2
+          fido2-tests
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
 
     - name: Build - Patched GnuPG
+      if: steps.cache-gpg.outputs.cache-hit != 'true'
+      run: ./test-via-pcsc/build_gpg.sh
+
+    - name: Install - Patched GnuPG
       run: |
-        ./test-via-pcsc/build_gpg.sh
+        ./test-via-pcsc/install_gpg.sh
         gpg --version
 
     - name: Build - FIDO tests
+      if: steps.cache-fido.outputs.cache-hit != 'true'
+      run: ./test-via-pcsc/build_fido_tests.sh
+
+    - name: Install - FIDO tests
       run: |
-        ./test-via-pcsc/build_fido_tests.sh
-        sudo ldconfig
+        ./test-via-pcsc/install_fido_tests.sh
+        fido2-tests/.venv/bin/python - <<'PY'
+        import importlib.metadata
+        import pathlib
+        import sys
+        import fido2
+
+        print("python:", sys.executable)
+        print("fido2_version:", importlib.metadata.version("fido2"))
+        print("fido2_path:", pathlib.Path(fido2.__file__).resolve())
+        PY
         which fido2-token
         ldd $(which fido2-token)
 
@@ -148,11 +175,8 @@ jobs:
     - name: Tests - Smoking tests
       run: |
         cd build
-        ./test/test_apdu
-        ./test/test_openpgp
-        ./test/test_oath
-        ./test/test_piv
-        
+        ctest --output-on-failure
+
     - name: Prepare - Start pcscd
       run: |
         echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
@@ -175,402 +199,109 @@ jobs:
 
     - name: Tests - FIDO2 applet
       run: |
-        #echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode
+        echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode for PCSC/NFC tests
+        cat /tmp/canokey-test-nfc
         #pushd test-real && ./test-libfido2.sh && popd
         cd fido2-tests
         #../build/fido-hid-over-udp &
-        ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/standard/
-        ~/.local/bin/pytest --color=yes --vendor canokeys --nfc tests/vendor/canokeys/
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/standard/
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc \
+          --ignore=tests/vendor/canokeys/test_mldsa65.py tests/vendor/canokeys/
         #kill %1
+
+    - name: Tests - CTAPHID applet
+      run: |
+        rm -f /tmp/canokey-fido-hid-over-udp-lfs-root
+        CANOKEY_VIRT_NFC=0 CANOKEY_VIRT_RESET_STORAGE=1 build/fido-hid-over-udp >/tmp/fido-hid-over-udp.log 2>&1 &
+        echo $! >/tmp/fido-hid-over-udp.pid
+        trap 'kill "$(cat /tmp/fido-hid-over-udp.pid)" 2>/dev/null || true; tail -n 200 /tmp/fido-hid-over-udp.log || true' EXIT
+        cd fido2-tests
+        .venv/bin/python - <<'PY'
+        import sys
+        import time
+
+        sys.path.insert(0, ".")
+        from tests.vendor.solo.udp_backend import force_udp_backend
+
+        force_udp_backend()
+
+        from fido2.hid import CtapHidDevice, CTAPHID
+
+        deadline = time.time() + 30
+        last_error = None
+        while time.time() < deadline:
+            try:
+                dev = next(CtapHidDevice.list_devices())
+                nonce = b"12345678"
+                if dev.call(CTAPHID.INIT, nonce)[:8] != nonce:
+                    raise RuntimeError("CTAPHID INIT nonce mismatch")
+                if dev.call(CTAPHID.PING, b"ping") != b"ping":
+                    raise RuntimeError("CTAPHID PING mismatch")
+                print("CTAPHID simulator is ready")
+                break
+            except Exception as exc:
+                last_error = exc
+                time.sleep(1)
+        else:
+            raise last_error
+        PY
+        .venv/bin/python - <<'PY'
+        import sys
+
+        sys.path.insert(0, ".")
+        from tests.vendor.solo.udp_backend import force_udp_backend
+
+        force_udp_backend()
+
+        from fido2.ctap2 import Ctap2
+        from fido2.hid import CtapHidDevice, CTAPHID
+
+        dev = next(CtapHidDevice.list_devices())
+        nonce = b"abcdefgh"
+        assert dev.call(CTAPHID.INIT, nonce)[:8] == nonce
+        assert dev.call(CTAPHID.PING, b"ping") == b"ping"
+        assert dev.call(CTAPHID.WINK, b"") == b""
+        info = Ctap2(dev).get_info()
+        assert "FIDO_2_0" in info.versions
+        print("CTAPHID smoke checks passed")
+        PY
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/connect_test.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/fido2/test_getinfo.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/vendor/canokeys/test_mldsa65.py -s
+        kill "$(cat /tmp/fido-hid-over-udp.pid)" || true
+        trap - EXIT
 
     - name: Tests - U2F applet
       run: |
+        echo 1 >/tmp/canokey-test-nfc
         echo 0 | ./u2f-ref-code/u2f-tests/NFC/u2f_nfc_test -v | tee /tmp/u2f_nfc_test.log
         test $(grep -c 'PASS(signCheckSignature(regReq, regRsp, authReq, authRsp, rapduLen))' /tmp/u2f_nfc_test.log) -eq 6
 
     - name: Tests - OATH applet
-      run: go test -v test-via-pcsc/oath_test.go
+      run: |
+        echo 0 >/tmp/canokey-test-nfc
+        go test -v test-via-pcsc/oath_test.go
 
     - name: Tests - OpenPGP applet
       # GPG requires a tty to work
-      shell: |
-        script -e -c "bash --noprofile --norc -eo pipefail {0}"
-      run: |
-        set -o xtrace
-        go test -v test-via-pcsc/openpgp_test.go
-        pkill gpg-agent || true
-        #echo 'enable-ssh-support' > ~/.gnupg/gpg-agent.conf
-        export SSH_AUTH_SOCK=`gpgconf --list-dirs agent-ssh-socket`
-        mkdir -p ~/.ssh /tmp/mock
-        python3 -c "import string;import random;print(''.join([random.choice(string.ascii_letters + string.digits) for n in range(1152)]),end='')" > /tmp/random.txt
-        echo 9876543210 >"/tmp/mock/Reset Code"
-        echo 12345678 >"/tmp/mock/Passphrase:"
-        echo 12345678 >"/tmp/mock/Admin PIN"
-        echo 123456 >"/tmp/mock/PIN"
-        echo -e 'Key-Type: 1\nKey-Length: 2048\nSubkey-Type: 1\nSubkey-Length: 2048\nName-Real: Someone\nName-Email: foo@example.com\nPassphrase: 12345678\n%commit\n%echo done' | gpg --batch --gen-key
-        KEYID=$(gpg -K --with-colons |grep -P '^sec'|grep -oP '\w{16}')
-        gpg_alias () { gpg --yes --expert --command-fd 0 --status-fd 1 "$@"; }
-        Addkey() { echo -e "addkey\n$1\n$2\n0\nsave" | gpg_alias --edit-key $KEYID; }
-        Key2card() { echo -e "key $1\nkeytocard\n$2\nsave" | gpg_alias --edit-key $KEYID; gpg --card-status; }
-        Addcardkey() { echo -e "addcardkey\n$1\n0\nsave\n" | gpg_alias --edit-key $KEYID; }
-        ChangeUsage() {
-          SUBKEY=$(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/a/ {print $5}'|tail -n 1)
-          echo -e "key $SUBKEY\nchange-usage\nS\nQ\ncross-certify\nsave" | gpg_alias --edit-key $KEYID
-        }
-        GPGSign() { date -Iseconds | gpg --armor --default-key $(gpg -K --with-colons|awk -F: '$1~/ssb/ && $12~/s|a/ {print $5}'|tail -n 1)! -s|gpg; }
-        GPGEnc()  { date -Iseconds | gpg --yes --armor --recipient $(gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/e/ {print $5}'|tail -n 1) --encrypt|gpg; }
-        GPGAuth() {
-          gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
-          ssh-add -L >~/.ssh/authorized_keys
-          ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
-        }
-        SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg_alias --edit-card; }
-        UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
-        GPGReset() { echo -e 'admin\nfactory-reset\ny\nyes' | gpg_alias --edit-card; } # clear all keys, no pin verification at all
-        echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
-        echo -e 'admin\npasswd\n1\n3\n4\nq\nforcesig\nq' | gpg_alias --edit-card # change PIN,Admin PIN,Reset Code
-        Key2card 1 1 # key[1] to Signature key
-        echo 0 >/tmp/canokey-test-up
-        GPGSign
-        UserChecked 0
-        SetUIF 1 on
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
-        GPGSign
-        UserChecked 1
-        Addkey 12 3 # [2] ECDH P-256 encrypt key
-        Addkey 10 3 # [3] ECDSA P-256 sign key
-        Key2card 2 2 # key[2] to Encryption key
-        Key2card 3 3 # key[3] to Authentication key
-        echo 0 >/tmp/canokey-test-up
-        GPGAuth
-        UserChecked 0
-        GPGEnc
-        UserChecked 0
-        SetUIF 2 on
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
-        GPGEnc
-        UserChecked 1
-        SetUIF 3 on
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
-        GPGAuth
-        UserChecked 1
-        SetUIF 1 off
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=on Auth=on'
-        SetUIF 2 off
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=on'
-        SetUIF 3 off
-        gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=off Auth=off'
-        echo 0 >/tmp/canokey-test-up
-        GPGEnc
-        UserChecked 0
-        SetUIF 1 permanent
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=off Auth=off'
-        SetUIF 2 permanent
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=off'
-        SetUIF 3 permanent
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
-        SetUIF 3 off || true # can not revert a permanent setting
-        SetUIF 2 off || true # can not revert a permanent setting
-        SetUIF 1 off || true # can not revert a permanent setting
-        gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
-        GPGEnc
-        UserChecked 1
-        echo 1 >/tmp/canokey-test-nfc
-
-        GPGReset
-        gpg --card-status |grep -E 'Signature key.+none'
-        Addkey 4 2048 # [4] gen RSA2048 key
-        Key2card 4 3 # key[4] to Authentication key
-        Addkey 6 2048 # [5] gen RSA2048 key
-        Key2card 5 2 # key[5] to Encryption key
-        GPGAuth
-        GPGEnc
-        Addkey 10 3 # [6] gen ECDSA P-256 key
-        Key2card 6 1 # key[6] to Signature key
-        GPGSign
-        GPGReset
-        ## 25519 key import
-        Addkey 12 1 # [7] cv25519 encrypt key
-        Addkey 10 1 # [8] ed25519 sign key
-        Key2card 7 2 # key[7] to Encryption key
-        Key2card 8 3 # key[8] to Authentication key
-        GPGAuth
-        GPGEnc
-        Addkey 10 1 # [9] ed25519 sign key
-        Key2card 9 1 # key[9] to Signature key
-        GPGSign
-        GPGReset
-        ## RSA4096 key import
-        Addkey 4 4096 # [10] gen RSA4096 key
-        Key2card 10 3 # key[10] to Authentication key
-        Addkey 6 4096 # [11] gen RSA4096 key
-        Key2card 11 2 # key[11] to Encryption key
-        GPGAuth
-        GPGEnc
-        Addkey 4 4096 # [12] gen RSA4096 key
-        Key2card 12 1 # key[12] to Signature key
-        GPGSign
-        GPGReset
-        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg_alias --edit-card
-        ## RSA2048 generation on card
-        echo -e 'admin\nkey-attr\n1\n2048\n1\n2048\n1\n2048\n' | gpg_alias --edit-card # key-attr set to RSA2048
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        GPGReset
-        ## 25519 generation on card
-        echo -e 'admin\nkey-attr\n2\n1\n2\n1\n2\n1\n' | gpg_alias --edit-card # key-attr set to 25519
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        GPGReset
-        ## NIST P-256 generation on card
-        echo -e 'admin\nkey-attr\n2\n3\n2\n3\n2\n3\n' | gpg_alias --edit-card # key-attr set to ECC P-256
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        ## NIST P-384 generation on card
-        echo -e 'admin\nkey-attr\n2\n4\n2\n4\n2\n4\n' | gpg_alias --edit-card # key-attr set to ECC P-384
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        ## NIST P-521 generation on card
-        echo -e 'admin\nkey-attr\n2\n5\n2\n5\n2\n5\n' | gpg_alias --edit-card # key-attr set to ECC P-521
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        GPGAuth
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        ## secp256k1 generation on card
-        echo -e 'admin\nkey-attr\n2\n9\n2\n9\n2\n9\n' | gpg_alias --edit-card # key-attr set to ECC secp256k1
-        Addcardkey 1 # generate Signature key on card
-        Addcardkey 2 # generate Encryption key on card
-        GPGEnc
-        GPGSign
-        Addcardkey 3 # generate Authentication key on card
-        ChangeUsage
-        # GPGAuth # ssh does not support secp256k1
-        echo -e 'admin\nwritecert 3 </tmp/random.txt\nquit' | gpg_alias --edit-card
-        gpgconf --kill gpg-agent # restart agent to clear cached info
-        echo -e 'readcert 3 >/tmp/random-read.txt\nquit' | gpg_alias --edit-card
-        diff /tmp/random-read.txt /tmp/random.txt
-        GPGReset
-        # Fill this applet as much as possible
-        echo -e 'admin\nname\nTheFirstNameQQQQQQ\nTheLastNamePPPPPPPP\nlang\nlanguage\nsex\nm\nquit' | gpg_alias --edit-card
-        echo -e 'admin\nurl\nexample.com/111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\nquit' | gpg_alias --edit-card
-        echo -e 'admin\nlogin\naaaaaaaaaaaa000000000000000000000001111111111111111122222222222\nquit' | gpg_alias --edit-card
-        echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncafpr 1\nEC17 49B4 C512 6CD3 080C  85CA 0088 068F 1016 5897\ncafpr 3\nAC4D DD51 6C35 D8E2 7153  BB3B 4BD8 4023 BC79 46F0\nquit' | gpg_alias --edit-card
-        # Private DO 1/2 is not implemented
-        gpgconf --kill gpg-agent
-        go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
-
+      shell: script -e -c "bash {0}"
+      run: bash .github/workflows/test-openpgp.sh
     - name: Tests - Interoperate with ckman openpgp
-      # Disabled: the pinned ckman fork is incompatible with the current Python/pyscard toolchain.
+      # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.
       if: false
       run: |
         cd yubikey-manager
-        python3 -m venv .venv
-        .venv/bin/pip install pyscard==2.3.1 pytest==7.4.4 makefun==1.15.6
-        .venv/bin/pip install --editable .
-        .venv/bin/pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
-        .venv/bin/pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
+        pipx install poetry
+        poetry install
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
+        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
 
     - name: Tests - PIV applet
-      run: |
-        set -o xtrace
-        go test -v test-via-pcsc/piv_test.go
-        RDID="Canokey [OpenPGP PIV OATH] 00 00"
-        export PIV_EXT_AUTH_KEY=$PWD/test-via-pcsc/PIV_EXT_AUTH_KEY.txt 
-        yubico-piv-tool -r "$RDID" -a status -a set-ccc -a set-chuid -a status
-        opensc-tool -r "$RDID" -s '00 F8 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_SERIAL, Yubico
-        opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GET_VERSION, Yubico
-        pkcs15-tool --reader "$RDID" -D
-
-        # change the algorithm identifier of ED25519
-        piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 22 05 51 52 53 54' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_ALGORITHM_EXTENSION, Yubico
-        piv-tool --admin M:9B:03 -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 54'
-        cd piv-go; go test -v ./piv --wipe-yubikey; cd -
-        piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 E0 05 16 E1 53 54' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_ALGORITHM_EXTENSION, Yubico
-
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
-        yubico-piv-tool -r "$RDID" -a change-pin -P 123456 -N 654321
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
-        yubico-piv-tool -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
-        yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
-        # opensc 0.22.0~0.23.0 has a bug on External Auth. See opensc commit: a0aef25c7f2ce0ec2c7e1014f959f0fe86ff0479
-        piv-tool --reader "$RDID" --admin A:9B:03  # External Auth
-        piv-tool --reader "$RDID" --admin M:9B:03  # Mutual Auth
-        ## Key generation
-        PIVGenKeyCert() {
-          key=$1
-          subject="$2"
-          algo="$3"
-          yubico-piv-tool -r "$RDID" -a generate -A $algo -s $key >/tmp/pubkey-$key.pem # generate key at $key
-          if [[ "$algo" == "X25519" ]]; then return; fi
-          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a selfsign-certificate -s $key -S "$subject" < /tmp/pubkey-$key.pem >/tmp/cert-$key.pem
-          yubico-piv-tool -r "$RDID" -a import-certificate -s $key < /tmp/cert-$key.pem
-        }
-        PIVSignDec() {
-          key=$1
-          pinArgs=
-          op=$3
-          algoArgs=
-          inp_file=/tmp/cert-$key.pem
-          if [[ -n "$2" ]]; then pinArgs="-P 654321 -a verify-pin"; fi
-          if [[ -n "$4" ]]; then algoArgs="-A $4"; fi
-          if [[ "$4" == X25519 ]]; then inp_file=/tmp/pubkey-$key.pem; fi
-          if [[ -z "$op" || s = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-signature -s $key < /tmp/cert-$key.pem; fi
-          if [[ -z "$op" || d = "$op" ]]; then yubico-piv-tool -r "$RDID" $pinArgs -a test-decipher -s $key $algoArgs < $inp_file; fi
-        }
-        ## ED25519 tests
-        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ED25519; done
-        yubico-piv-tool -r "$RDID" -a status
-        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 s; done
-        ## X25519 tests
-        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" X25519; done
-        yubico-piv-tool -r "$RDID" -a status
-        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
-        ## Error tests
-        yubico-piv-tool -r "$RDID" -a generate -A RSA2048 -s 84 2>&1 | grep "Key generation failed"; # Unsupported slot
-        yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9e
-        yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
-        yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Wrong slot
-        yubico-piv-tool -r "$RDID" -a test-decipher -s 84 -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"; # Unsupported slot
-        opensc-tool -r "$RDID" -s '00 24 00 01 02 00 00' | grep 'SW1=0x6A, SW2=0x88' # change ref data, not found
-        opensc-tool -r "$RDID" -s '00 87 FF 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80' # general auth, wrong data
-        opensc-tool -r "$RDID" -s '00 87 FF 9B 02 7C 00' | grep 'SW1=0x6A, SW2=0x86' # general auth, invalid P1
-        ## RSA tests
-        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA3072; done
-        yubico-piv-tool -r "$RDID" -a status
-        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
-        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096; done
-        yubico-piv-tool -r "$RDID" -a status
-        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1; done
-        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA2048; done
-        yubico-piv-tool -r "$RDID" -a status
-        PIVSignDec 9e # PIN not required for key 9e
-        for s in 9a 9c 9d 82 83; do PIVSignDec $s 1; done
-        pkcs15-tool --reader "$RDID" --read-certificate 04 | openssl x509 -text | grep 'CN = CertAtSlot9e'
-        echo -n hello >/tmp/hello.txt
-        pkcs11-tool --slot "$RDID" -d 04 -s -m SHA256-RSA-PKCS -i /tmp/hello.txt -o /tmp/hello-signed --pin 654321
-        openssl dgst -sha256 -verify /tmp/pubkey-9e.pem -signature /tmp/hello-signed /tmp/hello.txt
-        ## ECC256 tests
-        for s in 9a 9c 9d 9e 82 83; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ECCP256; done
-        yubico-piv-tool -r "$RDID" -a status
-        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 s;PIVSignDec $s 1 d; done
-        ## ECC384 tests
-        for s in 9a 9c 9d 9e; do PIVGenKeyCert $s "/CN=CertAtSlot$s/" ECCP384; done
-        yubico-piv-tool -r "$RDID" -a status
-        for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 s;PIVSignDec $s 1 d; done
-        ## PIN unblock
-        yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9a < /tmp/cert-9a.pem
-        yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s 9c < /tmp/cert-9c.pem
-        yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-decipher -s 9d < /tmp/cert-9d.pem
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 2>&1 | grep 'Pin code blocked'
-        yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 999999 2>&1 | grep 'Successfully unblocked the pin code'
-        yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 87654321 2>&1 | grep 'Successfully changed the puk code'
-        yubico-piv-tool -r "$RDID" -a unblock-pin -P 87654321 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
-        ## Key import
-        openssl ecparam -name prime256v1 -out p256.pem
-        openssl req -x509 -newkey ec:p256.pem -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-        for s in 9a 9d 82 83; do
-            yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
-            yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
-            yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
-        done
-        openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-        for s in 9c 9d 82 83; do
-            yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
-            yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
-            yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
-        done
-        openssl genpkey -algorithm ED25519 -out key.pem
-        openssl req -x509 -key key.pem -out cert.pem -days 365 -nodes -subj "/CN=www.example.com"
-        for s in 9a 9e; do
-          yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
-          yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i cert.pem
-          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-signature -s $s <cert.pem
-        done
-        openssl genpkey -algorithm X25519 -out key.pem
-        openssl pkey -in key.pem -pubout -out pubkey.pem
-        for s in 9d 83; do
-          yubico-piv-tool -r "$RDID" -a import-key -s $s -i key.pem
-          yubico-piv-tool -r "$RDID" -P 654321 -a verify-pin -a test-decipher -A X25519 -s $s <pubkey.pem
-        done
-        ## Factory reset
-        yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 2 tries left before blocked'
-        yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'Failed verifying puk code, now 1 tries left before blocked'
-        yubico-piv-tool -r "$RDID" -a change-puk -P 12345678 -N 11111111 2>&1 | grep 'The puk code is blocked'
-        yubico-piv-tool -r "$RDID" -a change-puk -P 87654321 -N 11111111 2>&1 | grep 'The puk code is blocked'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '2 tries left before pin is blocked.'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep '1 tries left before pin is blocked.'
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 222222 2>&1 | grep 'Pin code blocked'
-        yubico-piv-tool -r "$RDID" -a reset
-        yubico-piv-tool -r "$RDID" -a unblock-pin -P 12345678 -N 654321 2>&1 | grep 'Successfully unblocked the pin code'
-        ## Test long data object
-        yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
-        for s in 9a 9c 9d 9e 82 83; do
-          PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096
-          yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
-        done
-        openssl rand -base64 -out /tmp/rand-pi 242
-        openssl rand -base64 -out /tmp/rand-fig 508
-        openssl rand -base64 -out /tmp/rand-face 508
-        yubico-piv-tool -r "$RDID" -a write-object --id 0x5fc109 -i /tmp/rand-pi -f base64
-        yubico-piv-tool -r "$RDID" -a read-object --id 0x5fc109 -o /tmp/read-pi 2>&1 | grep 'Failed fetching'
-        yubico-piv-tool -r "$RDID" -a write-object --id 0x5fc108 -i /tmp/rand-face -f base64
-        yubico-piv-tool -r "$RDID" -a write-object --id 0x5fc103 -i /tmp/rand-fig -f base64
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc103 -o /tmp/read-fig -f base64
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc109 -o /tmp/read-pi -f base64
-        yubico-piv-tool -r "$RDID" -a verify-pin -P 654321 -a read-object --id 0x5fc108 -o /tmp/read-face -f base64
-        diff -s /tmp/rand-pi   /tmp/read-pi
-        diff -s /tmp/rand-face /tmp/read-face
-        diff -s /tmp/rand-fig  /tmp/read-fig
-        yubico-piv-tool -r "$RDID" -a change-pin -N 123456 -P 654321
-
+      run: bash .github/workflows/test-piv.sh
     - name: Wrap-up - Prepare test coverage report
       run: |
         go test test-via-pcsc/admin_test.go -v -run TestFSUsage
+        kill "$(cat /tmp/fido-hid-over-udp.pid)" 2>/dev/null || true
         sudo killall pcscd || true # To flush cov files
         ls /tmp
         sleep 2
@@ -579,20 +310,20 @@ jobs:
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Wrap-up - Coveralls
-      uses: coverallsapp/github-action@master
+      uses: coverallsapp/github-action@v2
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
     
     - name: Wrap-up - Upload log files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: logs
         path: /tmp/*.log
     
     - name: Wrap-up - Upload data files
       if: ${{ always() }}
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: data
         path: /tmp/[lc][fe]*
