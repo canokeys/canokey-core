@@ -119,6 +119,11 @@ static uint8_t openpgp_crypto_owned;
 static uint8_t openpgp_pke_owned;
 #define openpgp_crypto_buffer_storage applet_session_scratch.buffer
 
+_Static_assert(OPENPGP_CRYPTO_BUFFER_LENGTH <= sizeof(openpgp_crypto_buffer_storage),
+               "OpenPGP crypto buffer exceeds applet scratch storage");
+_Static_assert(MAX_PUBKEY_RESPONSE_LENGTH <= sizeof(openpgp_crypto_buffer_storage),
+               "OpenPGP public-key response exceeds applet scratch storage");
+
 static int openpgp_crypto_acquire(void) {
   openpgp_crypto_owned = 1;
   return 0;
@@ -834,12 +839,17 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
   }
 
   if (encoded_len + 2 > APDU_COMMAND_BUFFER_SIZE) {
-    if (openpgp_pke_acquire() < 0) {
-      DBG_MSG("Generate pubkey acquire PKE failed\n");
+    if (openpgp_crypto_acquire() < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
-    uint8_t response[MAX_PUBKEY_RESPONSE_LENGTH];
+    if (openpgp_pke_acquire() < 0) {
+      DBG_MSG("Generate pubkey acquire PKE failed\n");
+      memzero(&key, sizeof(key));
+      openpgp_crypto_release();
+      return -1;
+    }
+    uint8_t *response = openpgp_crypto_buffer();
     response[0] = 0x7F;
     response[1] = 0x49;
     int len = ck_encode_public_key(&key, &response[2], true);
@@ -847,14 +857,17 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
     memzero(&key, sizeof(key));
     if (len < 0) {
       DBG_MSG("Generate pubkey encode failed\n");
+      openpgp_crypto_release();
       openpgp_pke_release();
       return -1;
     }
     if (pke_buffer_write(0, response, (size_t)(len + 2)) < 0) {
       DBG_MSG("Generate pubkey buffer write failed: len=%d\n", len + 2);
+      openpgp_crypto_release();
       openpgp_pke_release();
       return -1;
     }
+    openpgp_crypto_release();
     DBG_MSG("Generate pubkey response streaming: total=%d\n", len + 2);
     apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, openpgp_pke_source_read, openpgp_pke_source_close, NULL);
     LL = 0;

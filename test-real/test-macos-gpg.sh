@@ -10,7 +10,8 @@ GPGCONF_BIN="${GPGCONF_BIN:-$(find_cmd gpgconf)}"
 [[ -n "$GPGCONF_BIN" ]] || die "missing required command: gpgconf"
 require_file "$TEST_REAL_DIR/pinentry-mock"
 
-export GNUPGHOME="${GNUPGHOME:-$TEST_REAL_DIR/temp_macos_gnupg}"
+GNUPGHOME="$(mktemp -d "${TMPDIR:-/tmp}/canokey-macos-gpg.XXXXXX")"
+export GNUPGHOME
 
 GPGCmd() {
     "$GPG_BIN" --homedir "$GNUPGHOME" --command-fd 0 --yes --expert "$@"

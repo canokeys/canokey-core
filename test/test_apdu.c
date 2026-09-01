@@ -15,6 +15,8 @@
 #include <pke.h>
 #include <string.h>
 
+#include <ctap-parser.h>
+
 #define CTAP_LARGE_BLOBS 0x0C
 #define LB_FILE "ctap_lb"
 
@@ -305,13 +307,51 @@ static void test_fido_ctap1_register_nfc(void **state) {
 
   uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
   size_t total = rapdu.len;
+  unsigned int rounds = 0;
   while (rapdu.sw != SW_NO_ERROR) {
+    assert_int_equal(rapdu.sw & 0xFF00, 0x6100);
+    assert_true(++rounds < 64);
     assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
     process_apdu(&capdu, &rapdu);
     total += rapdu.len;
   }
 
-  assert_true(total >= rapdu.len);
+  assert_true(total > 67);
+}
+
+static void test_large_blob_noncanonical_string_offset(void **state) {
+  (void)state;
+
+  // Map {2: h'000102...10', 3: 0, 4: 17}; the byte string uses a non-canonical
+  // uint16 length header, so its payload starts at offset 5 rather than 3.
+  static const uint8_t request[] = {0xA3, 0x02, 0x59, 0x00, 0x11, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
+                                    0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+                                    0x03, 0x00, 0x04, 0x11};
+  CborParser parser;
+  CTAP_large_blobs large_blobs;
+
+  assert_int_equal(parse_large_blobs(&parser, &large_blobs, request, sizeof(request)), 0);
+  assert_int_equal(large_blobs.set_len, 17);
+  assert_int_equal(large_blobs.set_offset, 5);
+  for (size_t i = 0; i < large_blobs.set_len; ++i) {
+    assert_int_equal(request[large_blobs.set_offset + i], i);
+  }
+}
+
+static void test_applet_session_deadline_wraparound(void **state) {
+  (void)state;
+
+  testmode_set_initial_ticks(0);
+  const uint32_t raw_ticks = device_get_tick();
+  testmode_set_initial_ticks(raw_ticks - (UINT32_MAX - 1000u));
+  device_init();
+
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+
+  testmode_set_initial_ticks(0);
+  testmode_set_initial_ticks(device_get_tick());
 }
 
 static void test_fido_cbor_after_reset_without_select(void **state) {
@@ -511,6 +551,60 @@ static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
   assert_int_equal(chunk[6], 0x00);
   assert_int_equal(chunk[7], 0x01);
   if (source.close) source.close(source.ctx);
+}
+
+typedef struct {
+  size_t closes;
+  int read_should_fail;
+} ctaphid_source_ctx;
+
+static int ctaphid_test_source_read(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  ctaphid_source_ctx *source = (ctaphid_source_ctx *)ctx;
+  if (source->read_should_fail) return -1;
+  if (max_len != 0) out[0] = 0;
+  *written = MIN(max_len, 1);
+  return 0;
+}
+
+static void ctaphid_test_source_close(void *ctx) { ((ctaphid_source_ctx *)ctx)->closes++; }
+
+static uint8_t ctaphid_test_send_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+  (void)pdev;
+  (void)report;
+  (void)len;
+  return 0;
+}
+
+static void test_ctaphid_rejected_source_closes_once(void **state) {
+  (void)state;
+  ctaphid_source_ctx ctx = {0};
+  CTAPHID_TxSource source = {
+      .total_len = UINT16_MAX + (size_t)1,
+      .read = ctaphid_test_source_read,
+      .close = ctaphid_test_source_close,
+      .ctx = &ctx,
+  };
+
+  CTAPHID_Init(ctaphid_test_send_report);
+  assert_int_equal(CTAPHID_SendStreamSource(1, CTAPHID_CBOR, &source), -1);
+  assert_int_equal(ctx.closes, 1);
+  assert_false(CTAPHID_TxBusy());
+}
+
+static void test_ctaphid_active_source_failure_closes_once(void **state) {
+  (void)state;
+  ctaphid_source_ctx ctx = {.read_should_fail = 1};
+  CTAPHID_TxSource source = {
+      .total_len = 1,
+      .read = ctaphid_test_source_read,
+      .close = ctaphid_test_source_close,
+      .ctx = &ctx,
+  };
+
+  CTAPHID_Init(ctaphid_test_send_report);
+  assert_int_equal(CTAPHID_SendStreamSource(1, CTAPHID_CBOR, &source), -1);
+  assert_int_equal(ctx.closes, 1);
+  assert_false(CTAPHID_TxBusy());
 }
 
 static void test_get_response_after_reset_without_pending_response(void **state) {
@@ -872,7 +966,7 @@ int main() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 32;
-  lfs_filebd_create(&cfg, "lfs-root", &bdcfg);
+  lfs_filebd_create(&cfg, "lfs-root-apdu", &bdcfg);
 
   fs_format(&cfg);
   fs_mount(&cfg);
@@ -890,6 +984,8 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
+      cmocka_unit_test(test_large_blob_noncanonical_string_offset),
+      cmocka_unit_test(test_applet_session_deadline_wraparound),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
@@ -898,6 +994,8 @@ int main() {
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
+      cmocka_unit_test(test_ctaphid_rejected_source_closes_once),
+      cmocka_unit_test(test_ctaphid_active_source_failure_closes_once),
       cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_response_source_multi_chunk_get_response),
       cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),

@@ -46,7 +46,7 @@ static void device_applet_session_expire(void) {
 
 static void device_applet_session_poll(void) {
   if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
-  if (device_get_tick() > session_deadline) {
+  if ((int32_t)(device_get_tick() - session_deadline) > 0) {
     device_applet_session_expire();
   }
 }

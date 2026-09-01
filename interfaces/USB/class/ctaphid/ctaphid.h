@@ -99,6 +99,8 @@ typedef struct {
 #endif
 #define MAX_CTAP_BUFSIZE PKE_BUFFER_SIZE
 #define CTAPHID_INLINE_BUFSIZE CTAPHID_STREAM_THRESHOLD
+_Static_assert(CTAPHID_INLINE_BUFSIZE >= CTAPHID_STREAM_THRESHOLD,
+               "inline response buffer must hold every non-streamed response");
 
 typedef struct {
   uint32_t cid;
@@ -131,6 +133,7 @@ void CTAPHID_SendKeepAlive(uint8_t status);
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 int CTAPHID_SendResponseAuto(uint32_t cid, uint8_t cmd, const uint8_t *data, size_t len);
 int CTAPHID_SendStreamResponse(uint32_t cid, uint8_t cmd, const uint8_t *data, size_t len);
+// Takes ownership of source and invokes its close callback exactly once, including on failure.
 int CTAPHID_SendStreamSource(uint32_t cid, uint8_t cmd, const CTAPHID_TxSource *source);
 int CTAPHID_AcquireSharedBuffer(uint8_t **buf, size_t *len);
 void CTAPHID_ReleaseSharedBuffer(void);

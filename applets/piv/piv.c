@@ -279,7 +279,7 @@ static int piv_buffer_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint
 
 static void piv_buffer_source_close(void *ctx) {
   uint8_t *data = (uint8_t *)ctx;
-  if (data != NULL) memzero(data, PIV_MAX_7C_RESPONSE_LENGTH);
+  if (data != NULL) memzero(data, sizeof(piv_crypto_buffer));
 }
 
 typedef int (*piv_data_read_t)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);

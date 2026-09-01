@@ -15,7 +15,8 @@ PKCS11_TOOL="${PKCS11_TOOL:-$(find_cmd pkcs11-tool)}"
 [[ -n "$PKCS15_TOOL" ]] || die "missing required command: pkcs15-tool"
 [[ -n "$PKCS11_TOOL" ]] || die "missing required command: pkcs11-tool"
 
-export TEST_TMP_DIR="${TEST_TMP_DIR:-/tmp/canokey-macos-piv}"
+TEST_TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/canokey-macos-piv.XXXXXX")"
+export TEST_TMP_DIR
 
 OPENSC_PKCS11_MODULE_RESOLVED="$(macos_find_opensc_pkcs11_module)"
 PKCS11_ARGS=()
@@ -113,12 +114,10 @@ PIVSignDec() {
 }
 
 oneTimeSetUp() {
-    rm -rf "$TEST_TMP_DIR"
-    mkdir -p "$TEST_TMP_DIR"
     chmod 700 "$TEST_TMP_DIR"
 
     export RDID="${RDID:-$(macos_find_piv_reader)}"
-    [[ -n "$RDID" ]] || die "no PIV reader found"
+    [[ -n "$RDID" ]] || die "no CanoKey reader found; set RDID to select another reader explicitly"
     echo "RDID=$RDID"
     if [[ -n "$OPENSC_PKCS11_MODULE_RESOLVED" ]]; then
         echo "OpenSC PKCS#11 module: $OPENSC_PKCS11_MODULE_RESOLVED"

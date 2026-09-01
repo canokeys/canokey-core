@@ -444,7 +444,7 @@ int main() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 32;
-  lfs_filebd_create(&cfg, "lfs-root", &bdcfg);
+  lfs_filebd_create(&cfg, "lfs-root-openpgp", &bdcfg);
 
   fs_format(&cfg);
   fs_mount(&cfg);

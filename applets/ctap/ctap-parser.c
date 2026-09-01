@@ -1483,8 +1483,6 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
     CHECK_CBOR_RET(ret);
     ret = cbor_value_advance(&map);
     CHECK_CBOR_RET(ret);
-    const size_t value_offset = src ? reader.offset : (size_t)(map.source.ptr - buf);
-
     switch (key) {
     case LB_REQ_GET:
       DBG_MSG("get found\n");
@@ -1506,12 +1504,12 @@ static uint8_t parse_large_blobs_impl(CborParser *parser, CTAP_large_blobs *lb, 
       ret = cbor_value_get_string_length(&map, &lb->set_len);
       CHECK_CBOR_RET(ret);
       if (lb->set_len > MAX_FRAGMENT_LENGTH) return CTAP1_ERR_INVALID_LENGTH;
-      lb->set_offset = (uint32_t)(value_offset + 1);
-      if (lb->set_len >= 24) ++lb->set_offset;
-      if (lb->set_len >= 256) ++lb->set_offset;
-      lb->parsed_params |= PARAM_SET;
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
+      const size_t value_end = src ? reader.offset : (size_t)(map.source.ptr - buf);
+      if (value_end < lb->set_len) return CTAP2_ERR_INVALID_CBOR;
+      lb->set_offset = (uint32_t)(value_end - lb->set_len);
+      lb->parsed_params |= PARAM_SET;
       break;
 
     case LB_REQ_OFFSET:

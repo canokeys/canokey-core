@@ -4,6 +4,7 @@
 set -e
 set -o pipefail
 set -o xtrace
+set -o errtrace
 
 dump_gpg_diagnostics() {
   local rc=$?

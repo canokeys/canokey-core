@@ -78,6 +78,7 @@ static int udp_recv(int fd, uint8_t *buf, int size) {
   timeout.tv_usec = 100;
   int n = select(fd + 1, &input, NULL, NULL, &timeout);
   if (n == -1) {
+    if (errno == EINTR) return 0;
     perror("select\n");
     exit(1);
   } else if (n == 0)
@@ -153,16 +154,11 @@ static void emulate_reboot(void) {
   applets_install();
 }
 
-// Run on SIGTERM/SIGINT. SIGTERM's default action is "terminate" — atexit
-// handlers do NOT run, so the gcov runtime never flushes the in-memory
-// .gcda counters and the coverage report misses everything this process
-// did. Calling exit() from the handler hands control to the C runtime,
-// which runs atexit hooks (including __gcov_dump) before tearing down.
-// Use the conventional 128+signo exit code so callers can still see the
-// process was signal-terminated.
-static void on_term(int sig) {
-  exit(128 + sig);
-}
+// Leave through main so atexit handlers (including __gcov_dump) run without
+// calling non-async-signal-safe libc functions from the signal handler.
+static volatile sig_atomic_t term_signal;
+
+static void on_term(int sig) { term_signal = sig; }
 
 int main() {
   signal(SIGTERM, on_term);
@@ -188,6 +184,7 @@ int main() {
   CTAPHID_Init(udp_send_current_fd);
   emulate_reboot();
   for (;;) {
+    if (term_signal) return 128 + term_signal;
     uint8_t buf[HID_RPT_SIZE];
     int length = udp_recv(current_fd, buf, sizeof(buf));
     if (length > 0) {

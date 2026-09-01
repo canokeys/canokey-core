@@ -67,18 +67,9 @@ macos_find_piv_reader() {
         {
             line = $0
             lower = tolower(line)
-            if (lower ~ /canokey/ || lower ~ /piv/ || lower ~ /yubikey/) {
+            if (lower ~ /canokey/) {
                 print line
-                found = 1
                 exit
-            }
-            if (first == "") {
-                first = line
-            }
-        }
-        END {
-            if (!found && first != "") {
-                print first
             }
         }'
 }

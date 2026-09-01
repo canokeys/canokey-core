@@ -21,6 +21,7 @@ add_mocked_test(apdu
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
         LINK_LIBRARIES canokey-core
 )
+target_include_directories(test_apdu BEFORE PRIVATE ${CMAKE_SOURCE_DIR}/tinycbor/src ${CMAKE_SOURCE_DIR}/applets/ctap)
 
 add_mocked_test(piv
         SOURCES

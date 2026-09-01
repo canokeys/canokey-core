@@ -15,7 +15,16 @@ fi
 
 if [ ! -d fido2-tests ]; then
   git clone https://github.com/canokeys/fido2-tests.git
-  git -C fido2-tests checkout "${FIDO2_TESTS_REF}"
+fi
+
+if [ ! -d fido2-tests/.git ]; then
+  echo "fido2-tests exists but is not a Git checkout" >&2
+  exit 1
+fi
+
+if [ "$(git -C fido2-tests rev-parse HEAD)" != "${FIDO2_TESTS_REF}" ]; then
+  git -C fido2-tests fetch --depth 1 origin "${FIDO2_TESTS_REF}"
+  git -C fido2-tests checkout --detach FETCH_HEAD
 fi
 
 if [ ! -d libfido2 ]; then

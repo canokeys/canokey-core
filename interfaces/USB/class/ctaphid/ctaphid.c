@@ -318,6 +318,11 @@ void CTAPHID_TxReset(void) {
   if (had_stream) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
 }
 
+static int CTAPHID_CloseRejectedSource(const CTAPHID_TxSource *source) {
+  if (source && source->close) source->close(source->ctx);
+  return -1;
+}
+
 static int CTAPHID_MemSourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAPHID_MemSource *source = (CTAPHID_MemSource *)ctx;
   size_t copied = MIN(tx_stream.len - tx_stream.offset, max_len);
@@ -400,24 +405,24 @@ int CTAPHID_SendStreamSource(uint32_t cid, uint8_t cmd, const CTAPHID_TxSource *
   if (tx_stream.active) {
     DBG_MSG("CTAPHID source stream busy active=%u finishing=%u offset=%zu len=%zu\n", tx_stream.active,
             tx_stream.finishing, tx_stream.offset, tx_stream.len);
-    if (!tx_stream.finishing) return -1;
+    if (!tx_stream.finishing) return CTAPHID_CloseRejectedSource(source);
     CTAPHID_TxReset();
   }
   if (source->total_len > UINT16_MAX) {
     DBG_MSG("CTAPHID source stream len exceeds u16: %zu\n", source->total_len);
-    return -1;
+    return CTAPHID_CloseRejectedSource(source);
   }
   if (source->total_len > (size_t)ISIZE + 128u * (size_t)CSIZE) {
     DBG_MSG("CTAPHID source stream len exceeds HID seq window: %zu\n", source->total_len);
-    return -1;
+    return CTAPHID_CloseRejectedSource(source);
   }
   if (source->total_len != 0 && source->read == NULL) {
     DBG_MSG("CTAPHID source stream missing reader len=%zu\n", source->total_len);
-    return -1;
+    return CTAPHID_CloseRejectedSource(source);
   }
   if (USBD_CTAPHID_WaitIdle() != USBD_OK) {
     DBG_MSG("CTAPHID source stream wait idle timeout len=%zu\n", source->total_len);
-    return -1;
+    return CTAPHID_CloseRejectedSource(source);
   }
 
   tx_stream.active = 1;
@@ -473,10 +478,7 @@ static int CTAPHID_SendSourceResponseAuto(uint32_t cid, uint8_t cmd, CTAPHID_TxS
     if (source->close) source->close(source->ctx);
     return ret;
   }
-  if (CTAPHID_SendStreamSource(cid, cmd, source) != 0) {
-    if (source->close) source->close(source->ctx);
-    return -1;
-  }
+  if (CTAPHID_SendStreamSource(cid, cmd, source) != 0) return -1;
   return 0;
 }
 
@@ -527,10 +529,7 @@ static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_
       .close = CTAPHID_CloseSharedBufferSource,
       .ctx = &tx_mem_source,
   };
-  if (CTAPHID_SendStreamSource(cid, cmd, &source) != 0) {
-    CTAPHID_ReleaseSharedBuffer();
-    return -1;
-  }
+  if (CTAPHID_SendStreamSource(cid, cmd, &source) != 0) return -1;
   return 0;
 }
 
