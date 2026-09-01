@@ -86,7 +86,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: canokeys/yubikey-manager
-        ref: canokey-next
+        ref: 088ab31778d94a5447b4ffa98529d4dafde618f1
         path: yubikey-manager
 
     - name: Cache - GO Modules
@@ -220,7 +220,7 @@ jobs:
         GPGAuth() {
           gpg -K --with-colons | awk -F: '$1~/ssb/ && $12~/s/{lg=NR+2} NR==lg{grip=$10} END{print grip}' >~/.gnupg/sshcontrol
           ssh-add -L >~/.ssh/authorized_keys
-          #ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
+          ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
         }
         SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg_alias --edit-card; }
         UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
@@ -252,7 +252,7 @@ jobs:
         SetUIF 3 on
         gpg --card-status |grep -E 'UIF setting.+Sign=on Decrypt=on Auth=on'
         GPGAuth
-        #UserChecked 1
+        UserChecked 1
         SetUIF 1 off
         gpg --card-status |grep -E 'UIF setting.+Sign=off Decrypt=on Auth=on'
         SetUIF 2 off
@@ -397,11 +397,9 @@ jobs:
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
     - name: Tests - Interoperate with ckman openpgp
-      # Disabled because of build failure
-      if: false
       run: |
         cd yubikey-manager
-        pipx install poetry
+        pipx install poetry==1.8.5
         poetry install
         poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
         poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
