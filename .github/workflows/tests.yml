@@ -83,6 +83,8 @@ jobs:
         path: piv-go
 
     - name: Prepare - Checkout ckman
+      # Disabled: the pinned ckman fork is incompatible with the current Python/pyscard toolchain.
+      if: false
       uses: actions/checkout@v4
       with:
         repository: canokeys/yubikey-manager
@@ -397,6 +399,8 @@ jobs:
         go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
 
     - name: Tests - Interoperate with ckman openpgp
+      # Disabled: the pinned ckman fork is incompatible with the current Python/pyscard toolchain.
+      if: false
       run: |
         cd yubikey-manager
         python3 -m venv .venv
