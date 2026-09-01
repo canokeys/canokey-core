@@ -1,0 +1,35 @@
+execute_process(
+    COMMAND git rev-parse --short=8 HEAD
+    WORKING_DIRECTORY "${SOURCE_DIR}"
+    OUTPUT_VARIABLE GIT_REV
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE GIT_RESULT
+)
+
+if(NOT GIT_RESULT EQUAL 0 OR GIT_REV STREQUAL "")
+    set(GIT_REV "unknown")
+endif()
+
+string(REPLACE "\\" "\\\\" GIT_REV "${GIT_REV}")
+string(REPLACE "\"" "\\\"" GIT_REV "${GIT_REV}")
+
+set(HEADER_CONTENT
+"/* SPDX-License-Identifier: Apache-2.0 */
+#ifndef CANOKEY_CORE_GIT_REV_H_
+#define CANOKEY_CORE_GIT_REV_H_
+
+#define CANOKEY_CORE_GIT_REV \"${GIT_REV}\"
+
+#endif // CANOKEY_CORE_GIT_REV_H_
+")
+
+if(EXISTS "${OUTPUT_FILE}")
+    file(READ "${OUTPUT_FILE}" EXISTING_CONTENT)
+else()
+    set(EXISTING_CONTENT "")
+endif()
+
+if(NOT EXISTING_CONTENT STREQUAL HEADER_CONTENT)
+    file(WRITE "${OUTPUT_FILE}" "${HEADER_CONTENT}")
+endif()

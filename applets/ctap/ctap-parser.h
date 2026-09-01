@@ -21,6 +21,8 @@ uint8_t parse_client_pin_src(CborParser *parser, CTAP_client_pin *cp, const ctap
 uint8_t parse_credential_management(CborParser *parser, CTAP_credential_management *cm, const uint8_t *buf, size_t len);
 uint8_t parse_credential_management_src(CborParser *parser, CTAP_credential_management *cm, const ctap_req_src_t *src,
                                         size_t len);
+uint8_t parse_config(CborParser *parser, CTAP_config *cfg, const uint8_t *buf, size_t len);
+uint8_t parse_config_src(CborParser *parser, CTAP_config *cfg, const ctap_req_src_t *src, size_t len);
 uint8_t parse_large_blobs(CborParser *parser, CTAP_large_blobs *lb, const uint8_t *buf, size_t len);
 uint8_t parse_large_blobs_src(CborParser *parser, CTAP_large_blobs *lb, const ctap_req_src_t *src, size_t len);
 

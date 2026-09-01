@@ -70,29 +70,36 @@
         "versions": [
             "U2F_V2",
             "FIDO_2_0",
-            "FIDO_2_1"
+            "FIDO_2_1",
+            "FIDO_2_3"
         ],
         "extensions": [
             "credBlob",
             "credProtect",
             "hmac-secret",
-            "largeBlobKey"
+            "hmac-secret-mc",
+            "largeBlobKey",
+            "minPinLength",
+            "thirdPartyPayment"
         ],
         "aaguid": "244eb29ee0904e4981fe1f20f8d3b8f4",
         "options": {
             "rk": true,
+            "alwaysUv": false,
             "credMgmt": true,
-            "clientPin": false,
+            "authnrCfg": true,
+            "clientPin": true,
             "largeBlobs": true,
             "pinUvAuthToken": true,
+            "setMinPINLength": true,
             "makeCredUvNotRqd": true
         },
-        "maxMsgSize": 1500,
+        "maxMsgSize": 1296,
         "pinUvAuthProtocols": [
             1,
             2
         ],
-        "maxCredentialCountInList": 8,
+        "maxCredentialCountInList": 16,
         "maxCredentialIdLength": 70,
         "transports": [
             "nfc",
@@ -109,6 +116,10 @@
             },
             {
                 "alg": -49,
+                "type": "public-key"
+            },
+            {
+                "alg": -54,
                 "type": "public-key"
             }
         ],

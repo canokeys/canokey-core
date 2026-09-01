@@ -47,7 +47,7 @@ static int load_next_aggregated_chunk(void) {
   RAPDU rapdu = {.data = shared_io_buffer};
 
   device_set_timeout(send_wtx, WTX_PERIOD);
-  process_apdu(&capdu, &rapdu);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_NFC);
   device_set_timeout(NULL, 0);
 
   apdu_buffer_sent = 0;
@@ -189,7 +189,7 @@ void nfc_loop(void) {
         SW = SW_WRONG_LENGTH;
       } else {
         device_set_timeout(send_wtx, WTX_PERIOD);
-        process_apdu(capdu, rapdu);
+        process_apdu_from(capdu, rapdu, APDU_TRANSPORT_NFC);
         device_set_timeout(NULL, 0);
       }
 

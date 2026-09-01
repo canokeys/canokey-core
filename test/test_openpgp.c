@@ -6,10 +6,16 @@
 
 #include "openpgp.h"
 #include <apdu.h>
-#include <crypto-util.h>
 #include <bd/lfs_filebd.h>
+#include <crypto-util.h>
+#include <device.h>
 #include <fs.h>
 #include <lfs.h>
+#include <string.h>
+
+static void inject_write_error(const char *path) {
+  testmode_inject_error(0, 0, (uint16_t)strlen(path), (const uint8_t *)path);
+}
 
 static void test_verify(void **state) {
   (void)state;
@@ -106,6 +112,120 @@ static void test_reset_retry_counter(void **state) {
   openpgp_install(1);
 }
 
+static void test_set_pin_retries(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+
+  C.cla = 0x00;
+  C.ins = OPENPGP_INS_SET_PIN_RETRIES;
+  C.p1 = 0x00;
+  C.p2 = 0x00;
+  C.lc = 3;
+  C.data[0] = 4;
+  C.data[1] = 5;
+  C.data[2] = 6;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  C.ins = OPENPGP_INS_VERIFY;
+  C.p2 = 0x83;
+  C.lc = 8;
+  memcpy(C.data, "12345678", 8);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C.ins = OPENPGP_INS_SET_PIN_RETRIES;
+  C.p2 = 0x00;
+  C.lc = 2;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_LENGTH);
+
+  C.lc = 3;
+  C.data[0] = 4;
+  C.data[1] = 0;
+  C.data[2] = 6;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_DATA);
+
+  C.data[1] = 16;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_DATA);
+
+  C.data[1] = 5;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C.ins = OPENPGP_INS_GET_DATA;
+  C.p1 = 0x00;
+  C.p2 = TAG_PW_STATUS;
+  C.lc = 0;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 7);
+  assert_int_equal(R.data[4], 4);
+  assert_int_equal(R.data[5], 0);
+  assert_int_equal(R.data[6], 6);
+
+  C.ins = OPENPGP_INS_VERIFY;
+  C.p1 = 0x00;
+  C.p2 = 0x81;
+  C.lc = 0;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, 0x63C4);
+
+  C.lc = 6;
+  memcpy(C.data, "123456", 6);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C.p2 = 0x83;
+  C.lc = 8;
+  memcpy(C.data, "12345678", 8);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C.ins = OPENPGP_INS_SET_PIN_RETRIES;
+  C.p2 = 0x00;
+  C.lc = 3;
+  C.data[0] = 15;
+  C.data[1] = 15;
+  C.data[2] = 15;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  openpgp_install(1);
+}
+
+static void test_set_pin_retries_failure_invalidates_auth(void **state) {
+  (void)state;
+
+  uint8_t c_buf[1024], r_buf[1024];
+  CAPDU C = {.data = c_buf, .cla = 0x00, .ins = OPENPGP_INS_VERIFY, .p1 = 0x00, .p2 = 0x83, .lc = 8};
+  RAPDU R = {.data = r_buf};
+
+  memcpy(C.data, "12345678", 8);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C.ins = OPENPGP_INS_SET_PIN_RETRIES;
+  C.p2 = 0x00;
+  C.lc = 3;
+  C.data[0] = 4;
+  C.data[1] = 5;
+  C.data[2] = 6;
+  inject_write_error("pgp-pw3");
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_UNABLE_TO_PROCESS);
+
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  openpgp_install(1);
+}
+
 static void test_get_data(void **state) {
   (void)state;
 
@@ -157,10 +277,14 @@ static void test_algorithm_information(void **state) {
     uint8_t attr_len = R.data[off++];
     assert_true(off + attr_len <= R.len);
     assert_true(attr_len >= 1);
-    if (tag == 0xC1) ++n_sig;
-    else if (tag == 0xC2) ++n_dec;
-    else if (tag == 0xC3) ++n_aut;
-    else fail_msg("unexpected algo-info tag 0x%02X", tag);
+    if (tag == 0xC1)
+      ++n_sig;
+    else if (tag == 0xC2)
+      ++n_dec;
+    else if (tag == 0xC3)
+      ++n_aut;
+    else
+      fail_msg("unexpected algo-info tag 0x%02X", tag);
     off += attr_len;
   }
   assert_int_equal(off, R.len);
@@ -185,6 +309,14 @@ static void test_import_key(void **state) {
   build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x0A\x16\x2B\x06\x01\x04\x01\xDA\x47\x0F\x01", 15);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x01\x01", 6);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
+
+  build_capdu(capdu, (uint8_t *)"\x00\xDA\x00\xC1\x06\x13\x2A\x86\x48\xCE\x3D", 11);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_WRONG_DATA);
 
   // import an ecc key
   build_capdu(
@@ -374,7 +506,8 @@ static void test_openpgp_cert_chained_read(void **state) {
   // 600-byte synthetic cert; spans three 256-byte chunks on read-back.
   enum { CERT_LEN = 600 };
   uint8_t cert[CERT_LEN];
-  for (size_t i = 0; i < CERT_LEN; ++i) cert[i] = (uint8_t)(0x90 + (i & 0x3F));
+  for (size_t i = 0; i < CERT_LEN; ++i)
+    cert[i] = (uint8_t)(0x90 + (i & 0x3F));
 
   // Chained PUT DATA at TAG_CARDHOLDER_CERTIFICATE (P1P2=7F21). OpenPGP
   // applet handles the cross-APDU chain itself via cert_write_remaining.
@@ -400,7 +533,8 @@ static void test_openpgp_cert_chained_read(void **state) {
 
   // GET DATA + GET RESPONSE chain via openpgp_process_apdu_message.
   RAPDU_CHAINING rc = {.rapdu.data = r_buf};
-  CAPDU get_apdu = {.data = NULL, .cla = 0x00, .ins = OPENPGP_INS_GET_DATA, .p1 = 0x7F, .p2 = 0x21, .lc = 0, .le = 0x100};
+  CAPDU get_apdu = {
+      .data = NULL, .cla = 0x00, .ins = OPENPGP_INS_GET_DATA, .p1 = 0x7F, .p2 = 0x21, .lc = 0, .le = 0x100};
   rapdu.len = 0;
   rapdu.sw = 0;
   openpgp_process_apdu_message(&rc, &get_apdu, &rapdu);
@@ -454,6 +588,8 @@ int main() {
       cmocka_unit_test(test_verify),
       cmocka_unit_test(test_change_reference_data),
       cmocka_unit_test(test_reset_retry_counter),
+      cmocka_unit_test(test_set_pin_retries),
+      cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_get_data),
       cmocka_unit_test(test_algorithm_information),
       cmocka_unit_test(test_import_key),

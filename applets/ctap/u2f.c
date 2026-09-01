@@ -83,7 +83,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_ctx_t sha256;
 
   memcpy(kh.rp_id_hash, req->appId, U2F_APPID_SIZE);
-  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256, 0, CRED_PROTECT_VERIFICATION_OPTIONAL);
+  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256, 0, CRED_PROTECT_VERIFICATION_OPTIONAL, false);
   if (err < 0) return err;
 
   // there are overlaps between req and resp

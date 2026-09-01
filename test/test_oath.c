@@ -57,15 +57,25 @@ static void check_pass_config(bool present, uint8_t slot, uint8_t *data) {
   print_hex(R.data, R.len);
   printf(" R\n");
   for (i = 0, s = 1; i < R.len; s++) {
-    uint8_t ptype, name_len, with_enter;
-    uint8_t *name;
+    uint8_t ptype, name_len = 0, with_enter = 0;
+    uint8_t *name = NULL;
     ptype = R.data[i++];
-    if (ptype == PASS_SLOT_OATH) {
+    switch (ptype) {
+    case PASS_SLOT_OATH:
       name_len = R.data[i++];
       name = &R.data[i];
       i += name_len;
+      with_enter = R.data[i++];
+      break;
+    case PASS_SLOT_STATIC:
+      with_enter = R.data[i++];
+      break;
+    case PASS_SLOT_HMACSHA1:
+    case PASS_SLOT_OFF:
+      break;
+    default:
+      assert_true(0);
     }
-    if (ptype > PASS_SLOT_OFF) with_enter = R.data[i++];
     if (s == slot) {
       if (present) {
         assert_int_equal(ptype, PASS_SLOT_OATH);
@@ -263,6 +273,117 @@ static void test_static_pass(void **state) {
   assert_int_equal(ret, len + 1);
   assert_memory_equal(readback, static_pass, len);
   assert_int_equal(readback[len], '\r');
+}
+
+static void test_pass_hmacsha1_config(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128], response[PASS_HMAC_RESPONSE_LENGTH], challenge[PASS_HMAC_CHALLENGE_LENGTH];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+  };
+  const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
+      0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
+      0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+
+  memset(challenge, 0, sizeof(challenge));
+  memcpy(challenge, "Hi There", 8);
+
+  // The expected digest covers the full fixed-size YK challenge buffer, so the
+  // short test string is followed by zero padding.
+  P1 = 1;
+  c_buf[0] = PASS_SLOT_HMACSHA1;
+  c_buf[1] = PASS_HMAC_KEY_LENGTH;
+  memcpy(c_buf + 2, key, sizeof(key));
+  LC = 2 + sizeof(key);
+  assert_int_equal(pass_write_config(&C, &R), 0);
+
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(response, expected, sizeof(expected));
+  assert_int_equal(pass_hmacsha1(1, challenge, sizeof(challenge), response), -2);
+  assert_int_equal(pass_handle_touch(TOUCH_SHORT, (char *)r_buf), 0);
+
+  assert_int_equal(pass_read_config(&C, &R), 0);
+  assert_int_equal(RDATA[0], PASS_SLOT_HMACSHA1);
+
+  c_buf[0] = PASS_SLOT_OFF;
+  LC = 1;
+  assert_int_equal(pass_write_config(&C, &R), 0);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), -2);
+
+  pass_install(0);
+  assert_int_equal(pass_hmacsha1(0, challenge, sizeof(challenge), response), -2);
+  assert_int_equal(pass_read_config(&C, &R), 0);
+  assert_int_equal(RDATA[0], PASS_SLOT_OFF);
+}
+
+static void test_oath_yk_hmacsha1_api(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128], challenge[PASS_HMAC_CHALLENGE_LENGTH];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+  const uint8_t key[PASS_HMAC_KEY_LENGTH] = {
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+      0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b, 0x0b,
+  };
+  const uint8_t expected[PASS_HMAC_RESPONSE_LENGTH] = {
+      0x60, 0x3e, 0x00, 0x78, 0x17, 0x17, 0x35, 0x26, 0x42, 0xd5,
+      0xd6, 0xae, 0xe7, 0x23, 0x2d, 0x60, 0xdb, 0x87, 0xaf, 0x9d,
+  };
+  const uint8_t expected_short[PASS_HMAC_RESPONSE_LENGTH] = {
+      0xb6, 0x17, 0x31, 0x86, 0x55, 0x05, 0x72, 0x64, 0xe2, 0x8b,
+      0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00,
+  };
+
+  P1 = 1;
+  c_buf[0] = PASS_SLOT_HMACSHA1;
+  c_buf[1] = PASS_HMAC_KEY_LENGTH;
+  memcpy(c_buf + 2, key, sizeof(key));
+  LC = 2 + sizeof(key);
+  assert_int_equal(pass_write_config(&C, &R), 0);
+
+  memset(challenge, 0, sizeof(challenge));
+  memcpy(challenge, "Hi There", 8);
+
+  // KeePassXC selects the OATH AID, then sends the YubiKey OTP API HMAC
+  // command through PC/SC as INS=0x01, P1=0x30/0x38, Lc=64.
+  INS = OATH_INS_PUT;
+  P1 = 0x30;
+  P2 = 0x00;
+  DATA = challenge;
+  LC = sizeof(challenge);
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(RDATA, expected, sizeof(expected));
+
+  LC = 8;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, PASS_HMAC_RESPONSE_LENGTH);
+  assert_memory_equal(RDATA, expected_short, sizeof(expected_short));
+
+  P1 = 0x38;
+  LC = sizeof(challenge);
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_FILE_NOT_FOUND);
+
+  INS = OATH_INS_PUT;
+  P1 = 0x10;
+  DATA = c_buf;
+  LC = 0;
+  oath_process_apdu(&C, &R);
+  assert_int_equal(SW, SW_NO_ERROR);
+  assert_int_equal(LL, 4);
 }
 
 // should be called after test_put
@@ -465,6 +586,45 @@ static void test_put_unsupported_counter(void **state) {
   test_helper(data, sizeof(data), OATH_INS_PUT, SW_WRONG_DATA);
 }
 
+static void test_tombstone_reuse(void **state) {
+  (void)state;
+
+  uint8_t c_buf[128], r_buf[128];
+  uint8_t data[] = {0x71, 0x03, 'R', '-', '0', 0x73, 0x05, 0x21, 0x06, 0x00, 0x01, 0x02, 0x78, OATH_PROP_TOUCH};
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+  CAPDU *capdu = &C;
+  RAPDU *rapdu = &R;
+
+  capdu->ins = OATH_INS_PUT;
+  capdu->data = data;
+  capdu->lc = sizeof(data);
+
+  for (int i = 0; i != 4; ++i) {
+    data[4] = (uint8_t)('0' + i);
+    oath_process_apdu(capdu, rapdu);
+    assert_int_equal(rapdu->sw, SW_NO_ERROR);
+  }
+  int size_before_reuse = get_file_size("oath");
+  assert_true(size_before_reuse > 0);
+
+  memcpy(c_buf, data, sizeof(data));
+  c_buf[4] = '1';
+  test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
+
+  data[4] = '4';
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  assert_int_equal(get_file_size("oath"), size_before_reuse);
+
+  for (int i = 0; i != 5; ++i) {
+    if (i == 1) continue;
+    c_buf[4] = (uint8_t)('0' + i);
+    test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
+  }
+}
+
 static void test_space_full(void **state) {
   (void)state;
 
@@ -480,29 +640,31 @@ static void test_space_full(void **state) {
   capdu->data = data;
   capdu->lc = sizeof(data);
 
-  // make it full
-  int record_added = 0;
-  for (int i = 0; i != 100; ++i) {
-    data[2] = ' ' + i;
+#define SET_OATH_SPACE_FULL_NAME(i)                                                                                    \
+  do {                                                                                                                 \
+    data[2] = (uint8_t)((i) >> 16);                                                                                    \
+    data[3] = (uint8_t)((i) >> 8);                                                                                     \
+    data[4] = (uint8_t)(i);                                                                                            \
+  } while (0)
+
+  // The old fixed 100-record limit is gone; the 101st write should still work
+  // while flash has room.
+  for (int i = 0; i != 101; ++i) {
+    SET_OATH_SPACE_FULL_NAME(i);
     oath_process_apdu(capdu, rapdu);
     if (rapdu->sw != SW_NO_ERROR) break;
-    record_added++;
+  }
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  // Keep appending until the filesystem reserve check rejects the write.
+  for (int i = 101; i != 2048; ++i) {
+    SET_OATH_SPACE_FULL_NAME(i);
+    oath_process_apdu(capdu, rapdu);
+    if (rapdu->sw != SW_NO_ERROR) break;
   }
   assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
 
-  memcpy(c_buf, data, sizeof(data));
-  c_buf[2] = ' '; // delete the first one we put
-  test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
-
-  // then try again
-  oath_process_apdu(capdu, rapdu);
-  assert_int_equal(rapdu->sw, SW_NO_ERROR);
-
-  // leave some space for further tests
-  for (int i = 1; i != 20; ++i) {
-    c_buf[2] = ' ' + i;
-    test_helper(c_buf, sizeof(data), OATH_INS_DELETE, SW_NO_ERROR);
-  }
+#undef SET_OATH_SPACE_FULL_NAME
 }
 
 int main() {
@@ -543,8 +705,11 @@ int main() {
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),
       cmocka_unit_test(test_static_pass),
-      cmocka_unit_test(test_space_full),
+      cmocka_unit_test(test_pass_hmacsha1_config),
+      cmocka_unit_test(test_oath_yk_hmacsha1_api),
+      cmocka_unit_test(test_tombstone_reuse),
       cmocka_unit_test(test_regression_fuzz),
+      cmocka_unit_test(test_space_full),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

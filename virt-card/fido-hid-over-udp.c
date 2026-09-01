@@ -106,6 +106,8 @@ static void udp_send(int fd, uint8_t *buf, int size) {
 }
 
 static int current_fd;
+static void emulate_reboot(void);
+
 static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
   UNUSED(pdev);
   // printf("udp_send_current_fd %hu\n", len);
@@ -150,7 +152,46 @@ static void emulate_reboot(void) {
   testmode_set_initial_ticks(0);
   testmode_set_initial_ticks(device_get_tick());
   ctap_schedule_runtime_reset();
-  applets_install();
+  if (applets_install() < 0) exit(1);
+}
+
+static int handle_udp_control_packet(const uint8_t *buf, int length) {
+  static const uint8_t magic_cmd[HID_RPT_SIZE] = {
+      0xac, 0x10, 0x52, 0xca, 0x95, 0xe5, 0x69, 0xde, 0x69, 0xe0, 0x2e, 0xbf, 0xf3, 0x33, 0x48, 0x5f,
+      0x13, 0xf9, 0xb2, 0xda, 0x34, 0xc5, 0xa8, 0xa3, 0x40, 0x52, 0x66, 0x97, 0xa9, 0xab, 0x2e, 0x0b,
+      0x39, 0x4d, 0x8d, 0x04, 0x97, 0x3c, 0x13, 0x40, 0x05, 0xbe, 0x1a, 0x01, 0x40, 0xbf, 0xf6, 0x04,
+      0x5b, 0xb2, 0x6e, 0xb7, 0x7a, 0x73, 0xea, 0xa4, 0x78, 0x13, 0xf6, 0xb4, 0x9a, 0x72, 0x50, 0xdc,
+  };
+  static const uint8_t inject_error_prefix[] = {
+      0x99, 0x10, 0x52, 0xca, 0x95, 0xe5, 0x69, 0xde, 0x69, 0xe0, 0x2e, 0xbf,
+  };
+
+  if (length == HID_RPT_SIZE && memcmp(magic_cmd, buf, sizeof(magic_cmd)) == 0) {
+    printf("MAGIC REBOOT command received!\r\n");
+    emulate_reboot();
+    return 1;
+  }
+
+  if (length > (int)sizeof(inject_error_prefix) + 2 &&
+      memcmp(buf, inject_error_prefix, sizeof(inject_error_prefix)) == 0) {
+    const uint8_t *data = buf + sizeof(inject_error_prefix);
+    testmode_inject_error(data[0], data[1], (uint16_t)(length - (int)sizeof(inject_error_prefix) - 2), data + 2);
+    return 1;
+  }
+
+  return 0;
+}
+
+static void handle_udp_packet(uint8_t *buf, int length) {
+  if (length <= 0) return;
+  if (handle_udp_control_packet(buf, length)) return;
+  if (length == HID_RPT_SIZE) CTAPHID_OutEvent(buf);
+}
+
+void USBD_CTAPHID_ServiceReceive(void) {
+  uint8_t buf[HID_RPT_SIZE];
+  int length = udp_recv(current_fd, buf, sizeof(buf));
+  handle_udp_packet(buf, length);
 }
 
 // Run on SIGTERM/SIGINT. SIGTERM's default action is "terminate" — atexit
@@ -160,9 +201,7 @@ static void emulate_reboot(void) {
 // which runs atexit hooks (including __gcov_dump) before tearing down.
 // Use the conventional 128+signo exit code so callers can still see the
 // process was signal-terminated.
-static void on_term(int sig) {
-  exit(128 + sig);
-}
+static void on_term(int sig) { exit(128 + sig); }
 
 int main() {
   signal(SIGTERM, on_term);
@@ -188,33 +227,6 @@ int main() {
   CTAPHID_Init(udp_send_current_fd);
   emulate_reboot();
   for (;;) {
-    uint8_t buf[HID_RPT_SIZE];
-    int length = udp_recv(current_fd, buf, sizeof(buf));
-    if (length > 0) {
-      // printf("udp_recv %d\n", length);
-      uint8_t magic_cmd[] = "\xac\x10\x52\xca\x95\xe5\x69\xde\x69\xe0\x2e\xbf"
-                            "\xf3\x33\x48\x5f\x13\xf9\xb2\xda\x34\xc5\xa8\xa3"
-                            "\x40\x52\x66\x97\xa9\xab\x2e\x0b\x39\x4d\x8d\x04"
-                            "\x97\x3c\x13\x40\x05\xbe\x1a\x01\x40\xbf\xf6\x04"
-                            "\x5b\xb2\x6e\xb7\x7a\x73\xea\xa4\x78\x13\xf6\xb4"
-                            "\x9a\x72\x50\xdc";
-      if (memcmp(magic_cmd, buf, 64) == 0) {
-        printf("MAGIC REBOOT command received!\r\n");
-        // exit(0);
-        emulate_reboot();
-        continue;
-        // close(current_fd);
-        // char *const argv[] = {"fido-hid-over-udp", NULL};
-        // int ret = execv("/proc/self/exe", argv);
-        // printf("ERROR exec %d", ret);
-        // return 0;
-      } else if (length > 14 && memcmp(buf, "\x99\x10\x52\xca\x95\xe5\x69\xde\x69\xe0\x2e\xbf", 12) == 0) {
-        uint8_t *data = buf + 12;
-        testmode_inject_error(data[0], data[1], length - 14, data + 2);
-        continue;
-      }
-      CTAPHID_OutEvent(buf);
-    }
     CTAPHID_Loop(0);
   }
   return 0;

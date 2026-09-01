@@ -16,6 +16,15 @@
 #define PIV_INS_PUT_DATA                     0xDB
 #define PIV_INS_GET_METADATA                 0xF7
 #define PIV_INS_GET_SERIAL                   0xF8
+// Yubico vendor extension: 00 F6 <toSlot> <fromSlot>, no data.
+// Core implements the delete form only: toSlot=FF. It requires management-key
+// authentication and deletes only the asymmetric key; any certificate object in
+// the same slot is left intact.
+#define PIV_INS_MOVE_DELETE_KEY              0xF6
+// Vendor extension: 00 FA <pinRetries> <pukRetries>, no data.
+// Requires management-key and PIN authentication, then resets PIN/PUK to
+// their defaults with the requested retry limits.
+#define PIV_INS_SET_PIN_RETRIES              0xFA
 #define PIV_INS_RESET                        0xFB
 #define PIV_INS_GET_VERSION                  0xFD
 #define PIV_INS_IMPORT_ASYMMETRIC_KEY        0xFE
@@ -31,6 +40,7 @@ typedef struct {
   uint8_t rsa4096;
   uint8_t x25519;
   uint8_t secp256k1;
+  uint8_t secp521r1;
   uint8_t sm2;
 } __packed piv_algorithm_extension_config_t;
 
@@ -38,5 +48,12 @@ int piv_install(uint8_t reset);
 void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
 int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
+
+/*
+ * Platform storage for configurable PIV algorithm IDs. Core uses a valid
+ * platform record as the PIV install completion marker.
+ */
+int piv_platform_algorithm_extension_config_read(piv_algorithm_extension_config_t *cfg);
+int piv_platform_algorithm_extension_config_write(const piv_algorithm_extension_config_t *cfg);
 
 #endif // CANOKEY_CORE_INCLUDE_PIV_H_

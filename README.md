@@ -28,6 +28,13 @@ The WebUSB interface is used to configure the key via a web-based interface.
 
 Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).
 
+### PIN Retry Configuration Extensions
+
+This core implements vendor APDUs for configuring PIV and OpenPGP retry limits. Retry counts must be in the range `1..15`; `15` is the maximum because failed-verification warnings are returned as `63Cx`.
+
+- PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
+- OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
+
 ## Porting
 
 Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.

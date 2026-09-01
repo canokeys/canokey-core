@@ -3,6 +3,7 @@
 #include "key.h"
 #include <applet-scratch.h>
 #include <common.h>
+#include <device-config.h>
 #include <device.h>
 #include <ecc.h>
 #include <key.h>
@@ -64,6 +65,7 @@ static const uint8_t algo_attr[][12] = {
     [RSA3072] = {6, ALGO_ID_RSA, 0x0C, 0x00, 0x00, 0x20, 0x02},
     [RSA4096] = {6, ALGO_ID_RSA, 0x10, 0x00, 0x00, 0x20, 0x02},
 };
+#define OPENPGP_ALGO_ATTR_COUNT (sizeof(algo_attr) / sizeof(algo_attr[0]))
 
 // clang-format off
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
@@ -494,7 +496,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   switch (tag) {
   case TAG_AID:
     memcpy(RDATA, aid, sizeof(aid));
-    fill_sn(RDATA + 10);
+    device_config_fill_serial(RDATA + 10);
     LL = sizeof(aid);
     break;
 
@@ -549,7 +551,7 @@ static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
     RDATA[off++] = TAG_AID;
     RDATA[off++] = sizeof(aid);
     memcpy(RDATA + off, aid, sizeof(aid));
-    fill_sn(RDATA + off + 10);
+    device_config_fill_serial(RDATA + off + 10);
     off += sizeof(aid);
 
     RDATA[off++] = HI(TAG_HISTORICAL_BYTES);
@@ -714,7 +716,7 @@ static int openpgp_verify(const CAPDU *capdu, RAPDU *rapdu) {
     if (pw->is_validated) return 0;
     int retries = pin_get_retries(pw);
     if (retries < 0) return -1;
-    EXCEPT(SW_PIN_RETRIES + retries);
+    EXCEPT(pin_get_retry_sw((uint8_t)retries));
   }
 
   uint8_t ctr;
@@ -782,6 +784,31 @@ static int openpgp_reset_retry_counter(const CAPDU *capdu, RAPDU *rapdu) {
   err = pin_update(&pw1, DATA + offset, LC - offset);
   if (err == PIN_IO_FAIL) return -1;
   if (err == PIN_LENGTH_INVALID) EXCEPT(SW_WRONG_LENGTH);
+
+  return 0;
+}
+
+static int openpgp_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 3) EXCEPT(SW_WRONG_LENGTH);
+  if (DATA[0] == 0 || DATA[0] > PIN_MAX_RETRIES || DATA[1] == 0 || DATA[1] > PIN_MAX_RETRIES || DATA[2] == 0 ||
+      DATA[2] > PIN_MAX_RETRIES)
+    EXCEPT(SW_WRONG_DATA);
+
+#ifndef FUZZ
+  ASSERT_ADMIN();
+#endif
+
+  // A retry reset rewrites PW1/PW3. Clear volatile authorization first so an
+  // interrupted persistent write cannot leave the old session authorized.
+  pw1_mode = 0;
+  pw1.is_validated = 0;
+  pw3.is_validated = 0;
+  rc.is_validated = 0;
+
+  if (pin_create(&pw1, "123456", 6, DATA[0]) < 0) return -1;
+  if (pin_set_retries(&rc, DATA[1]) < 0) return -1;
+  if (pin_create(&pw3, "12345678", 8, DATA[2]) < 0) return -1;
 
   return 0;
 }
@@ -1271,12 +1298,13 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
   handle_algo_attr:
     if (LC < 1 || LC > MAX_ATTR_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (LC == 1) EXCEPT(SW_WRONG_DATA);
 
     key_type_t type;
-    for (type = SECP256R1 /* i.e., 0 */; type < KEY_TYPE_PKC_END; ++type) {
+    for (type = SECP256R1 /* i.e., 0 */; type < OPENPGP_ALGO_ATTR_COUNT; ++type) {
       const uint8_t *attr = algo_attr[type];
-      if (LC == attr[0]) {
-        if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
+      if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
+        if (LC == attr[0]) {
           if (DATA[2] != 0) {
             DBG_MSG("Invalid attr type\n");
             EXCEPT(SW_WRONG_DATA);
@@ -1294,12 +1322,17 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
             DBG_MSG("Invalid attr type\n");
             EXCEPT(SW_WRONG_DATA);
           }
-        } else if (memcmp(&attr[2], &DATA[1], LC - 1) == 0) { // OID
-          break;
         }
+      } else if (LC == attr[0] && memcmp(&attr[2], &DATA[1], LC - 1) == 0) { // OID
+        if (IS_SHORT_WEIERSTRASS(type)) {
+          if (DATA[0] != (key_info[key_index].key_usage == SIGN ? ALGO_ID_ECDSA : ALGO_ID_ECDH)) continue;
+        } else if (DATA[0] != attr[1]) {
+          continue;
+        }
+        break;
       }
     }
-    if (type == KEY_TYPE_PKC_END) {
+    if (type == OPENPGP_ALGO_ATTR_COUNT) {
       DBG_MSG("Invalid attr type\n");
       EXCEPT(SW_WRONG_DATA);
     }
@@ -1741,6 +1774,9 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case OPENPGP_INS_GET_CHALLENGE:
     ret = openpgp_get_challenge(capdu, rapdu);
+    break;
+  case OPENPGP_INS_SET_PIN_RETRIES:
+    ret = openpgp_set_pin_retries(capdu, rapdu);
     break;
   case OPENPGP_INS_TERMINATE:
     ret = openpgp_terminate(capdu, rapdu);

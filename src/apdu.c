@@ -4,6 +4,7 @@
 #include <applets.h>
 #include <common.h>
 #include <ctap.h>
+#include <device-config.h>
 #include <device.h>
 #include <pke.h>
 #if ENABLE_APPLET_NDEF
@@ -66,9 +67,12 @@ static uint8_t fido_capdu_pke_owner;
 static uint8_t response_tail[APDU_COMMAND_OVERHEAD];
 static uint16_t response_tail_offset;
 static uint16_t response_tail_len;
+uint8_t *shared_io_buffer;
 #if !ENABLE_IFACE_CCID
 static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
 #endif
+
+static void fido_capdu_reset(void);
 
 typedef struct {
   uint8_t active;
@@ -83,6 +87,10 @@ typedef struct {
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
   // Allow implicit routing for both standalone and chained CTAP2 CBOR APDUs.
   if ((capdu->cla & 0xEF) == 0x80 && capdu->ins == 0x10) return 1;
+  // NFC CTAP GET_RESPONSE may arrive after a reader reconnect clears the
+  // selected applet; keep routing the poll back to FIDO so pending work can
+  // finish instead of falling through to SW_FILE_NOT_FOUND.
+  if (is_nfc() && capdu->cla == 0x80 && capdu->ins == 0x11) return 1;
 #ifdef TEST
   if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
 #endif
@@ -100,11 +108,36 @@ static uint8_t is_fido_apdu(const CAPDU *capdu) {
   }
 }
 
+static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t transport) {
+  switch (applet) {
+  case APPLET_OPENPGP:
+    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled() : device_config_is_openpgp_ccid_enabled();
+  case APPLET_PIV:
+    return transport == APDU_TRANSPORT_NFC ? device_config_is_piv_nfc_enabled() : device_config_is_piv_ccid_enabled();
+  case APPLET_FIDO:
+    return device_config_is_webauthn_enabled();
+  default:
+    return 1;
+  }
+}
+
+static void rapdu_chaining_reset(void) {
+  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
+  rapdu_chaining.rapdu.data = shared_io_buffer;
+}
+
+static void disabled_applet_response(RAPDU *rapdu) {
+  current_applet = APPLET_NULL;
+  apdu_response_source_clear();
+  rapdu_chaining_reset();
+  fido_capdu_reset();
+  LL = 0;
+  SW = SW_FILE_NOT_FOUND;
+}
+
 static APDU_RESPONSE_SOURCE response_source;
 
 #define APDU_RESPONSE_CHUNK_SIZE 250
-
-uint8_t *shared_io_buffer;
 
 #if ENABLE_IFACE_CCID
 extern void ccid_init_apdu_buffer(void);
@@ -115,7 +148,6 @@ void init_apdu_buffer(void) {
   shared_io_buffer = apdu_fallback_buffer;
 #endif
   apdu_response_source_clear();
-  memset(&rapdu_chaining, 0, sizeof(rapdu_chaining));
   if (!fido_capdu_chaining.in_chaining) {
     memset(&fido_capdu_chaining, 0, sizeof(fido_capdu_chaining));
     fido_capdu_uses_pke = 0;
@@ -125,7 +157,7 @@ void init_apdu_buffer(void) {
 #if ENABLE_IFACE_CCID
   ccid_init_apdu_buffer();
 #endif
-  rapdu_chaining.rapdu.data = shared_io_buffer;
+  rapdu_chaining_reset();
   if (!fido_capdu_uses_pke) fido_capdu_chaining.capdu.data = shared_io_buffer;
 }
 
@@ -417,9 +449,9 @@ void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner) {
   device_applet_session_release((device_applet_session_owner_t)session_owner);
 }
 
-void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
+void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
 #if ENABLE_IFACE_KBDHID
-  if (CLA == 0xFF && INS == 0xEE && P1 == 0xFF && P2 == 0xEE) {
+  if (device_config_is_pass_enabled() && CLA == 0xFF && INS == 0xEE && P1 == 0xFF && P2 == 0xEE) {
     // A special APDU to trigger Eject
     KBDHID_Eject();
     LL = 0;
@@ -429,10 +461,18 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
 #endif
   if (!(CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00)) {
     if (current_applet == APPLET_PIV) {
+      if (!applet_enabled_on_transport(APPLET_PIV, transport)) {
+        disabled_applet_response(rapdu);
+        return;
+      }
       piv_process_apdu_message(&rapdu_chaining, capdu, rapdu);
       return;
     }
     if (current_applet == APPLET_OPENPGP) {
+      if (!applet_enabled_on_transport(APPLET_OPENPGP, transport)) {
+        disabled_applet_response(rapdu);
+        return;
+      }
       openpgp_process_apdu_message(&rapdu_chaining, capdu, rapdu);
       return;
     }
@@ -461,8 +501,13 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     uint8_t i, end = APPLET_ENUM_END;
     for (i = APPLET_NULL + 1; i != end; ++i) {
       if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+        if (!applet_enabled_on_transport((enum APPLET)i, transport)) {
+          disabled_applet_response(rapdu);
+          DBG_MSG("applet disabled: %d\n", i);
+          return;
+        }
 #if ENABLE_APPLET_NDEF
-        if (i == APPLET_NDEF && !cfg_is_ndef_enable()) {
+        if (i == APPLET_NDEF && !device_config_is_ndef_enabled()) {
           LL = 0;
           SW = SW_FILE_NOT_FOUND;
           DBG_MSG("NDEF is disable\n");
@@ -492,6 +537,10 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     // Some PC/SC stacks reconnect or reset the card between CTAP INIT and the
     // next CBOR/U2F exchange. Accepting unmistakably FIDO APDUs here keeps the
     // FIDO CCID path usable across those implicit resets.
+    if (!applet_enabled_on_transport(APPLET_FIDO, transport)) {
+      disabled_applet_response(rapdu);
+      return;
+    }
     current_applet = APPLET_FIDO;
     DBG_MSG("implicit applet switched to: %d\n", current_applet);
   }
@@ -507,6 +556,10 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     apdu_output(&rapdu_chaining, rapdu);
     break;
   case APPLET_FIDO:
+    if (!applet_enabled_on_transport(APPLET_FIDO, transport)) {
+      disabled_applet_response(rapdu);
+      break;
+    }
 #ifdef TEST
     if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
       printf("MAGIC REBOOT command received!\r\n");
@@ -570,6 +623,8 @@ void process_apdu(CAPDU *capdu, RAPDU *rapdu) {
     SW = SW_FILE_NOT_FOUND;
   }
 }
+
+void process_apdu(CAPDU *capdu, RAPDU *rapdu) { process_apdu_from(capdu, rapdu, APDU_TRANSPORT_CCID); }
 
 int acquire_apdu_buffer(uint8_t owner) {
   device_atomic_compare_and_swap(&buffer_owner, BUFFER_OWNER_NONE, owner);

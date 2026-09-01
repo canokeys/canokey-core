@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "common.h"
-#include <admin.h>
 #include <apdu.h>
 #include <applet-scratch.h>
 #include <applets.h>
@@ -10,6 +9,7 @@
 #if ENABLE_IFACE_CTAPHID
 #include <ctaphid.h>
 #endif
+#include <device-config.h>
 #include <device.h>
 #if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
@@ -70,7 +70,7 @@ void device_loop(void) {
   WebUSB_Loop();
 #endif
 #if ENABLE_IFACE_KBDHID
-  KBDHID_Loop();
+  if (device_config_is_pass_enabled()) KBDHID_Loop();
 #endif
 }
 
@@ -244,7 +244,7 @@ void start_blinking_interval(uint8_t sec, uint32_t interval) {
 
 void stop_blinking(void) {
   blink_timeout = 0;
-  if (cfg_is_led_normally_on()) {
+  if (device_config_is_led_normally_on()) {
     led_on();
     led_status = ON;
   } else {

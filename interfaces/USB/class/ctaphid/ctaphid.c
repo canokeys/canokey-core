@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <ctap.h>
 #include <ctaphid.h>
+#include <device-config.h>
 #include <device.h>
 #include <rand.h>
 #include <usb_device.h>
@@ -53,6 +54,7 @@ static void CTAPHID_MarkCancelPending(uint32_t cid) {
 
 static int CTAPHID_PKESourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);
 static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code);
+static uint8_t CTAPHID_SendCancelResponseIfNeeded(void);
 static void CTAPHID_Execute_Init(void);
 static void CTAPHID_Execute_Msg(void);
 static void CTAPHID_Execute_Cbor(void);
@@ -108,7 +110,9 @@ static int CTAPHID_AppendContinuation(const CTAPHID_FRAME *frame) {
 }
 
 static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
-  if (wait_for_user && channel.cancel_pending) return LOOP_CANCEL;
+  if (wait_for_user && channel.cancel_pending) {
+    return LOOP_CANCEL;
+  }
   if (channel.executing) return LOOP_SUCCESS;
   if (!channel.ready || channel.state != CTAPHID_BUSY || channel.bcnt_current != channel.bcnt_total)
     return LOOP_SUCCESS;
@@ -118,6 +122,10 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
   channel.expire = UINT32_MAX;
   switch (channel.cmd) {
   case CTAPHID_MSG:
+    if (!device_config_is_webauthn_enabled()) {
+      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
+      break;
+    }
     if (wait_for_user)
       CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     else if (channel.bcnt_total < 4)
@@ -126,6 +134,10 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
       CTAPHID_Execute_Msg();
     break;
   case CTAPHID_CBOR:
+    if (!device_config_is_webauthn_enabled()) {
+      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
+      break;
+    }
     if (wait_for_user)
       CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     else if (channel.bcnt_total == 0)

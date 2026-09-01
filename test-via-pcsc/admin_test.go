@@ -128,20 +128,27 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 				return
 			}
 			buildCfg := func(ptype uint8, randSeed int) (ret []byte) {
-				if ptype == 0 {
-					ret = []byte {ptype}
-				} else {
+				switch ptype {
+				case 0:
+					ret = []byte{ptype}
+				case 3:
+					// HMAC-SHA1 slots store a 20-byte key and do not have the
+					// withEnter byte used by keyboard-output slots.
+					data := []byte(fmt.Sprintf("%020d", randSeed))
+					ret = []byte{ptype, uint8(len(data))}
+					ret = append(ret, data...)
+				default:
 					data := []byte(fmt.Sprintf("%032d", randSeed))
 					withEnter := uint8(randSeed & 1)
-					ret = []byte {ptype, uint8(len(data))}
+					ret = []byte{ptype, uint8(len(data))}
 					ret = append(ret, data...)
 					ret = append(ret, withEnter)
 				}
 				return
 			}
 			for slot := uint8(0); slot < 4; slot++ {
-				for ptype := uint8(0); ptype < 4; ptype++ {
-					randSeed := int(slot) * 10000 + int(ptype)
+				for ptype := uint8(0); ptype < 5; ptype++ {
+					randSeed := int(slot)*10000 + int(ptype)
 					cfg := buildCfg(ptype, randSeed)
 					lc := uint8(len(cfg))
 					_, code, err := app.Send(append([]byte{0x00, 0x44, slot, 0x00, lc}, cfg...))
@@ -149,11 +156,11 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 					if slot > 2 || slot < 1 {
 						So(code, ShouldEqual, 0x6A86)
 						break
-					} else if ptype == 1 || ptype > 2 {
+					} else if ptype == 1 || ptype > 3 {
 						So(code, ShouldEqual, 0x6A80)
 						continue
-					// } else if code!=0x9000{
-					// 	fmt.Printf("%d %d\n", slot, ptype)
+						// } else if code!=0x9000{
+						// 	fmt.Printf("%d %d\n", slot, ptype)
 					} else {
 						// fmt.Printf("write %d %d %v\n",slot,ptype,cfg)
 						So(code, ShouldEqual, 0x9000)
@@ -190,10 +197,10 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 			}
 		})
 		Convey("Configuration", func(ctx C) {
-			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x00}
+			shadowCfg := []byte{0x01, 0x00, 0x00, 0x01, 0x01, 0x3F}
 			P1toIdx := map[int]int{
 				1: 0, // ADMIN_P1_CFG_LED_ON
-				2: 2, // ndef_get_read_only
+				2: 2, // NDEF read-only CC flag
 				// 3: 1, // ADMIN_P1_CFG_KBDIFACE (obsolete)
 				4: 3, // ADMIN_P1_CFG_NDEF
 				5: 4, // ADMIN_P1_CFG_WEBUSB_LANDING
@@ -231,12 +238,8 @@ func commandTests(verified bool, app *AdminApplet) func(C) {
 					apdu = []byte{0x00, 0x42, 0x00, 0x00, 0x00}
 					cfg, code, err := app.Send(apdu)
 					So(err, ShouldBeNil)
-					if verified {
-						So(code, ShouldEqual, 0x9000)
-						So(cfg, ShouldResemble, shadowCfg)
-					} else {
-						So(code, ShouldEqual, 0x6982)
-					}
+					So(code, ShouldEqual, 0x9000)
+					So(cfg, ShouldResemble, shadowCfg)
 				}
 			}
 		})
@@ -353,12 +356,9 @@ func TestFSUsage(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(code, ShouldEqual, 0x9000)
 
-		pin := []byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36}
-		_, code, err = app.Send(append([]byte{0x00, 0x20, 0x00, 0x00, byte(len(pin))}, pin...))
-		So(err, ShouldBeNil)
-
 		data, code, err := app.Send([]byte{0x00, 0x41, 0x00, 0x00, 0x02})
 		So(err, ShouldBeNil)
+		So(code, ShouldEqual, 0x9000)
 		So(len(data), ShouldEqual, 2)
 		fmt.Printf("\n\nFile system usage: %d KB\n", int(data[0]))
 	})

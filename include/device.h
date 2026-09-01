@@ -2,6 +2,8 @@
 #ifndef _DEVICE_H_
 #define _DEVICE_H_
 
+#include <stdbool.h>
+
 #include "common.h"
 #include "nfc.h"
 

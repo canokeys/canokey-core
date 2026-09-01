@@ -92,10 +92,4 @@
 // get length of tlv with bounds checking
 uint16_t tlv_get_length_safe(const uint8_t *data, const size_t len, int *fail, size_t *length_size);
 
-/**
- * Fill a 4-byte serial number
- * @param buf buffer to be filled
- */
-void fill_sn(uint8_t *buf);
-
 #endif // CANOKEY_CORE_INCLUDE_COMMON_H

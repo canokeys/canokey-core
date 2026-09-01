@@ -10,6 +10,7 @@
 #include <device.h>
 #include <fs.h>
 #include <lfs.h>
+#include <platform-config.h>
 #include <pin.h>
 #include <stdbool.h>
 #include <string.h>
@@ -32,6 +33,7 @@ static uint8_t ctaphid_wait_result;
 static bool led_normally_on;
 static bool inject_write_error;
 static char inject_write_error_path[64];
+static uint8_t test_config_page[PLATFORM_CONFIG_PAGE_SIZE];
 
 typedef enum {
   AUTO_TOUCH_NONE = 0,
@@ -59,6 +61,7 @@ static void reset_test_state(void) {
   led_normally_on = false;
   inject_write_error = false;
   inject_write_error_path[0] = 0;
+  memset(test_config_page, 0xFF, sizeof(test_config_page));
   auto_touch_mode = AUTO_TOUCH_NONE;
 }
 
@@ -174,7 +177,31 @@ uint8_t KBDHID_Loop(void) {
   return 0;
 }
 
-uint8_t cfg_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
+int platform_config_page_read(size_t off, void *buf, size_t len) {
+  if (buf == NULL || off > sizeof(test_config_page) || len > sizeof(test_config_page) - off) return -1;
+  memcpy(buf, test_config_page + off, len);
+  return 0;
+}
+
+int platform_config_page_write(const void *page, size_t len) {
+  if (page == NULL || len != sizeof(test_config_page)) return -1;
+  memcpy(test_config_page, page, sizeof(test_config_page));
+  return 0;
+}
+
+uint8_t device_config_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
+
+uint8_t device_config_is_pass_enabled(void) { return 1; }
+
+uint8_t device_config_is_openpgp_ccid_enabled(void) { return 1; }
+
+uint8_t device_config_is_openpgp_nfc_enabled(void) { return 1; }
+
+uint8_t device_config_is_piv_ccid_enabled(void) { return 1; }
+
+uint8_t device_config_is_piv_nfc_enabled(void) { return 1; }
+
+uint8_t device_config_is_webauthn_enabled(void) { return 1; }
 
 static void test_tlv_get_length_safe_variants(void **state) {
   (void)state;
@@ -259,6 +286,11 @@ static void test_fs_roundtrip_and_metadata(void **state) {
 
   assert_true(get_fs_size() > 0);
   assert_true(get_fs_usage() >= 0);
+  int free_bytes = get_fs_free_bytes();
+  assert_true(free_bytes > 0);
+  assert_int_equal(fs_has_free_space(1, 0), 1);
+  assert_int_equal(fs_has_free_space(1, (lfs_size_t)free_bytes), 0);
+  assert_int_equal(fs_has_free_space((lfs_size_t)-1, 0), 0);
 }
 
 static void test_fs_error_paths(void **state) {
@@ -487,6 +519,12 @@ static void test_pin_lifecycle(void **state) {
   assert_int_equal(pin_verify(&pin, "5678", 4, NULL), 0);
   assert_int_equal(pin.is_validated, 1);
 
+  assert_int_equal(pin_set_retries(&pin, 15), 0);
+  assert_int_equal(pin_get_retries(&pin), 15);
+  assert_int_equal(pin_get_default_retries(&pin), 15);
+  assert_int_equal(pin_get_retry_sw(15), 0x63CF);
+  assert_int_equal(pin_get_retry_sw(16), 0x63CF);
+
   assert_int_equal(pin_clear(&pin), 0);
   assert_int_equal(pin_get_size(&pin), 0);
   assert_int_equal(pin_get_retries(&pin), 0);
@@ -509,6 +547,10 @@ static void test_pin_error_paths(void **state) {
   assert_int_equal(pin_clear(&missing_pin), PIN_IO_FAIL);
 
   assert_int_equal(pin_create(&pin, "1234", 4, 3), 0);
+  assert_int_equal(pin_create(&pin, "1234", 4, 0), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_create(&pin, "1234", 4, 16), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_set_retries(&pin, 0), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_set_retries(&pin, 16), PIN_LENGTH_INVALID);
   assert_int_equal(pin_verify(&pin, "12", 2, &retries), PIN_LENGTH_INVALID);
   assert_int_equal(pin_update(&pin, "12", 2), PIN_LENGTH_INVALID);
 

@@ -21,6 +21,7 @@ add_mocked_test(apdu
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
         LINK_LIBRARIES canokey-core
 )
+add_dependencies(test_apdu generate_canokey_core_git_rev)
 
 add_mocked_test(piv
         SOURCES
