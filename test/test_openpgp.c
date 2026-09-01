@@ -11,6 +11,8 @@
 #include <device.h>
 #include <fs.h>
 #include <lfs.h>
+#include <memzero.h>
+#include <rsa.h>
 #include <string.h>
 
 static void inject_write_error(const char *path) {
@@ -338,6 +340,83 @@ static void test_import_key(void **state) {
   assert_int_equal(rapdu->sw, SW_NO_ERROR);
 }
 
+// RSA CRT consistency is validated at import (rsa_check_crt, shared with the
+// PIV path): an imported key with a corrupted dp or with p == q must be
+// rejected with SW_WRONG_DATA instead of reaching storage and failing later at
+// use time.
+static void test_import_rsa_rejects_inconsistent_crt(void **state) {
+  (void)state;
+
+  uint8_t c_buf[16], r_buf[256];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+
+  build_capdu(&C, (uint8_t *)"\x00\x20\x00\x83\x08\x31\x32\x33\x34\x35\x36\x37\x38", 13);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  // SIG key algorithm attributes: RSA-2048.
+  build_capdu(&C, (uint8_t *)"\x00\xDA\x00\xC1\x06\x01\x08\x00\x00\x20\x00", 11);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  rsa_key_t rsa;
+  assert_int_equal(rsa_generate_key(&rsa, 2048), 0);
+
+  // 4D 82 029F || B6 00 || 7F48 11 <component headers> || 5F48 82 0284 || e || p || q || qinv || dp || dq
+  static uint8_t blob[4 + 671];
+  uint8_t *wp = blob;
+  *wp++ = 0x4D;
+  *wp++ = 0x82;
+  *wp++ = 0x02;
+  *wp++ = 0x9F;
+  *wp++ = 0xB6;
+  *wp++ = 0x00;
+  *wp++ = 0x7F;
+  *wp++ = 0x48;
+  *wp++ = 0x11;
+  *wp++ = 0x91;
+  *wp++ = 0x04;
+  for (uint8_t t = 0x92; t <= 0x96; ++t) {
+    *wp++ = t;
+    *wp++ = 0x81;
+    *wp++ = 0x80;
+  }
+  *wp++ = 0x5F;
+  *wp++ = 0x48;
+  *wp++ = 0x82;
+  *wp++ = 0x02;
+  *wp++ = 0x84;
+  const uint8_t *comps[] = {rsa.e, rsa.p, rsa.q, rsa.qinv, rsa.dp, rsa.dq};
+  const size_t comp_lens[] = {E_LENGTH, 128, 128, 128, 128, 128};
+  for (size_t i = 0; i < 6; ++i) {
+    memcpy(wp, comps[i], comp_lens[i]);
+    wp += comp_lens[i];
+  }
+  assert_int_equal(wp - blob, (long)sizeof(blob));
+
+  CAPDU I = {.data = blob, .cla = 0x00, .ins = 0xDB, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(blob)};
+  openpgp_process_apdu(&I, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  // Offsets within blob: 5F48 data starts at 31; components e|p|q|qinv|dp|dq.
+  const size_t p_off = 31 + 4, q_off = p_off + 128, dp_off = p_off + 3 * 128;
+
+  // Corrupted dp: rejected at import.
+  blob[dp_off + 50] ^= 0x55;
+  openpgp_process_apdu(&I, &R);
+  assert_int_equal(R.sw, SW_WRONG_DATA);
+  blob[dp_off + 50] ^= 0x55; // restore
+
+  // p == q: rejected at import as well.
+  memcpy(blob + q_off, blob + p_off, 128);
+  openpgp_process_apdu(&I, &R);
+  assert_int_equal(R.sw, SW_WRONG_DATA);
+
+  memzero(&rsa, sizeof(rsa));
+  memzero(blob, sizeof(blob));
+}
+
 static void test_generate_key(void **state) {
   (void)state;
 
@@ -593,6 +672,7 @@ int main() {
       cmocka_unit_test(test_get_data),
       cmocka_unit_test(test_algorithm_information),
       cmocka_unit_test(test_import_key),
+      cmocka_unit_test(test_import_rsa_rejects_inconsistent_crt),
       cmocka_unit_test(test_generate_key),
       cmocka_unit_test(test_decipher_chaining),
       cmocka_unit_test(test_x25519_public_key_encoding),

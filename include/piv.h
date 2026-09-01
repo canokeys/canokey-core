@@ -9,6 +9,7 @@
 #define PIV_INS_CHANGE_REFERENCE_DATA        0x24
 #define PIV_INS_RESET_RETRY_COUNTER          0x2C
 #define PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR 0x47
+#define PIV_INS_GET_RANDOM                   0x84
 #define PIV_INS_GENERAL_AUTHENTICATE         0x87
 #define PIV_INS_SELECT                       0xA4
 #define PIV_INS_GET_DATA_RESPONSE            0xC0

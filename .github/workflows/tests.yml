@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Cache deb files
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       env:
         cache-name: tools-deb
       with:
@@ -66,13 +66,13 @@ jobs:
         pip3 install --upgrade pip
 
     - name: Prepare - Setup Go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version: "^1.24"
       id: go
 
     - name: Prepare - Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         submodules: recursive
 
@@ -84,7 +84,7 @@ jobs:
           | xargs -0 clang-format --dry-run --Werror
 
     - name: Prepare - Checkout piv-go
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: canokeys/piv-go
         ref: 130e11e87b5f5ec788a12037735c86a0d2c7c547
@@ -93,14 +93,14 @@ jobs:
     - name: Prepare - Checkout ckman
       # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.
       if: false
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: canokeys/yubikey-manager
         ref: canokey-next
         path: yubikey-manager
 
     - name: Cache - GO Modules
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       env:
         cache-name: go_mod
       with:
@@ -109,7 +109,7 @@ jobs:
 
     - name: Cache - Patched GnuPG
       id: cache-gpg
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       env:
         cache-name: cache_gpg_binary
       with:
@@ -118,7 +118,7 @@ jobs:
 
     - name: Cache - FIDO tools
       id: cache-fido
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       env:
         cache-name: cache_fido_tools
       with:
