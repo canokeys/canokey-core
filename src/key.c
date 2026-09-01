@@ -11,6 +11,11 @@
 // TODO: include_length is always TRUE
 int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   int off = 0;
+
+  if ((unsigned)key->meta.type >= KEY_TYPE_PKC_END) {
+    return -1;
+  }
+
   const size_t key_len = PUBLIC_KEY_LENGTH[key->meta.type];
 
   switch (key->meta.type) {

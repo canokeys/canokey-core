@@ -168,6 +168,17 @@ static void test_encode_eddsa(void **state) {
   assert_memory_equal(buf, expected, 35);
 }
 
+static void test_encode_invalid_type(void **state) {
+  (void)state;
+
+  uint8_t buf[1] = {0};
+  ck_key_t key = {.meta.type = KEY_TYPE_PKC_END};
+
+  assert_int_equal(ck_encode_public_key(&key, buf, false), -1);
+  key.meta.type = AES128;
+  assert_int_equal(ck_encode_public_key(&key, buf, true), -1);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -195,6 +206,7 @@ int main() {
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_eddsa),
+      cmocka_unit_test(test_encode_invalid_type),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
