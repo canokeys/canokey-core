@@ -16,6 +16,7 @@
 #include <memzero.h>
 #include <ml-kem-768.h>
 #include <piv.h>
+#include <platform-config.h>
 #include <rsa.h>
 #include <sha.h>
 #include <string.h>
@@ -1190,6 +1191,33 @@ static void test_piv_migrates_legacy_management_key_types(void **state) {
     assert_int_equal(meta.type, cases[i].current_type);
   }
 
+  assert_int_equal(piv_install(1), 0);
+}
+
+static void test_piv_startup_preserves_state_when_platform_config_is_invalid(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  static const uint8_t key_sentinel[] = {0x4B, 0x45, 0x59};
+  static const uint8_t cert_sentinel[] = {0x43, 0x45, 0x52, 0x54};
+  assert_int_equal(write_file("piv-k9a", key_sentinel, 0, sizeof(key_sentinel), 1), 0);
+  assert_int_equal(write_file("piv-c9a", cert_sentinel, 0, sizeof(cert_sentinel), 1), 0);
+
+  uint8_t valid_config[PLATFORM_CONFIG_PAGE_SIZE];
+  uint8_t invalid_config[PLATFORM_CONFIG_PAGE_SIZE];
+  assert_int_equal(platform_config_page_read(0, valid_config, sizeof(valid_config)), 0);
+  memcpy(invalid_config, valid_config, sizeof(invalid_config));
+  invalid_config[sizeof(invalid_config) - 1] ^= 0x01;
+  assert_int_equal(platform_config_page_write(invalid_config, sizeof(invalid_config)), 0);
+
+  assert_int_equal(piv_install(0), -1);
+  uint8_t actual[sizeof(cert_sentinel)];
+  assert_int_equal(read_file("piv-k9a", actual, 0, sizeof(key_sentinel)), sizeof(key_sentinel));
+  assert_memory_equal(actual, key_sentinel, sizeof(key_sentinel));
+  assert_int_equal(read_file("piv-c9a", actual, 0, sizeof(cert_sentinel)), sizeof(cert_sentinel));
+  assert_memory_equal(actual, cert_sentinel, sizeof(cert_sentinel));
+
+  assert_int_equal(platform_config_page_write(valid_config, sizeof(valid_config)), 0);
   assert_int_equal(piv_install(1), 0);
 }
 
@@ -2847,6 +2875,7 @@ int main() {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_piv_aes192_management_key),
       cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
+      cmocka_unit_test(test_piv_startup_preserves_state_when_platform_config_is_invalid),
       cmocka_unit_test(test_piv_aes192_mutual_authentication),
       cmocka_unit_test(test_delete_certificate_object),
       cmocka_unit_test(test_piv_host_managed_admin_data_objects),

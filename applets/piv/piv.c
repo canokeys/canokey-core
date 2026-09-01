@@ -1300,9 +1300,10 @@ int piv_install(const uint8_t reset) {
   piv_poweroff();
   piv_algorithm_extension_config_t preserved_alg_ext_cfg;
   const bool has_alg_ext_cfg = piv_algorithm_extension_config_load(&preserved_alg_ext_cfg) == 0;
-  // Platform alg-ext config is the install completion marker. If it is missing
-  // or invalid, rebuild PIV state.
-  if (!reset && has_alg_ext_cfg && piv_littlefs_state_present()) {
+  // A damaged platform config must not turn normal startup into an implicit
+  // reset that deletes existing keys and certificates.
+  if (!reset && piv_littlefs_state_present()) {
+    if (!has_alg_ext_cfg) return -1;
     if (piv_migrate_legacy_management_key_type() < 0) return -1;
     alg_ext_cfg = preserved_alg_ext_cfg;
     return 0;
@@ -1342,10 +1343,10 @@ int piv_install(const uint8_t reset) {
   if (pin_create(&puk, DEFAULT_PUK, 8, 3) < 0) return -1;
   if (write_attr(puk.path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
-  // Algorithm extensions must remain the last persistent write because
-  // successful readback is used as the initialized marker. Preserve valid
-  // platform config across a PIV reset so admin-selected algorithm IDs survive
-  // provisioning tools that reset the applet before use.
+  // Keep the algorithm-extension config as the last persistent write. Normal
+  // startup fails closed if this write was incomplete; an explicit reset can
+  // reconstruct it. Preserve valid config across a PIV reset so admin-selected
+  // algorithm IDs survive provisioning tools that reset the applet before use.
   if (has_alg_ext_cfg) {
     alg_ext_cfg = preserved_alg_ext_cfg;
   } else {
