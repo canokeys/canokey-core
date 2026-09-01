@@ -153,19 +153,18 @@ int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
 int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
+  cfg.out = out;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
     cfg.key = key;
     cfg.in_size = in_size;
     cfg.in = in;
-    cfg.out = out;
   } else {
     if (in_size < sizeof(iv)) return -1;
     memcpy(iv, in, sizeof(iv));
     cfg.key = key + SHARED_SECRET_SIZE_HMAC;
     cfg.in_size = in_size - sizeof(iv);
     cfg.in = in + sizeof(iv);
-    cfg.out = out;
   }
   return block_cipher_dec(&cfg);
 }

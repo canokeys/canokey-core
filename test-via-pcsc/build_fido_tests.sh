@@ -1,5 +1,8 @@
 #!/bin/bash
 set -e
+
+readonly FIDO2_TESTS_REF=dd55b6ba1ba2af4160af9aee3f0be8a1bc463e14
+
 if [ ! -d u2f-ref-code ];then
 git clone --depth 1 https://github.com/google/u2f-ref-code.git
 pushd u2f-ref-code/u2f-tests/HID
@@ -9,7 +12,10 @@ cd ../HID; make
 popd
 fi
 
-git clone --depth 1 -b dev-fido2v1 https://github.com/canokeys/fido2-tests.git
+git init fido2-tests
+git -C fido2-tests remote add origin https://github.com/canokeys/fido2-tests.git
+git -C fido2-tests fetch --depth 1 origin "$FIDO2_TESTS_REF"
+git -C fido2-tests checkout --detach FETCH_HEAD
 pushd fido2-tests
 pip3 install --user -r requirements.txt
 echo "Fixing a bug in python-fido2 0.9.3"
