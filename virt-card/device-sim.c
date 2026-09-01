@@ -5,6 +5,8 @@
 #include "ctap.h"
 #include "ndef.h"
 #include "piv.h"
+#include <errno.h>
+#include <limits.h>
 #include <platform-config.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,11 +24,31 @@ static uint32_t initial_ticks = 0;
 static char err_trigger_filename[64];
 static uint8_t simulated_config_page[PLATFORM_CONFIG_PAGE_SIZE];
 static bool simulated_config_page_loaded;
+static char simulated_config_page_path[PATH_MAX];
 
 static void simulated_config_page_init(void) {
   if (simulated_config_page_loaded) return;
   memset(simulated_config_page, 0xFF, sizeof(simulated_config_page));
+  if (simulated_config_page_path[0] != '\0') {
+    FILE *fp = fopen(simulated_config_page_path, "rb");
+    if (fp != NULL) {
+      const size_t read_len = fread(simulated_config_page, 1, sizeof(simulated_config_page), fp);
+      if (read_len != sizeof(simulated_config_page) || fgetc(fp) != EOF)
+        memset(simulated_config_page, 0xFF, sizeof(simulated_config_page));
+      fclose(fp);
+    }
+  }
   simulated_config_page_loaded = true;
+}
+
+int virt_card_config_page_open(const char *lfs_root, bool reset) {
+  if (snprintf(simulated_config_page_path, sizeof(simulated_config_page_path), "%s.config", lfs_root) >=
+      (int)sizeof(simulated_config_page_path))
+    return -1;
+  if (reset && unlink(simulated_config_page_path) != 0 && errno != ENOENT) return -1;
+  simulated_config_page_loaded = false;
+  simulated_config_page_init();
+  return 0;
 }
 
 int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
@@ -70,6 +92,18 @@ int platform_config_page_read(size_t off, void *buf, size_t len) {
 int platform_config_page_write(const void *page, size_t len) {
   if (page == NULL || len != sizeof(simulated_config_page)) return -1;
   simulated_config_page_init();
+  if (simulated_config_page_path[0] != '\0') {
+    char tmp_path[PATH_MAX];
+    if (snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", simulated_config_page_path) >= (int)sizeof(tmp_path)) return -1;
+    FILE *fp = fopen(tmp_path, "wb");
+    if (fp == NULL) return -1;
+    const bool written = fwrite(page, 1, len, fp) == len && fflush(fp) == 0;
+    const bool closed = fclose(fp) == 0;
+    if (!written || !closed || rename(tmp_path, simulated_config_page_path) != 0) {
+      unlink(tmp_path);
+      return -1;
+    }
+  }
   memcpy(simulated_config_page, page, sizeof(simulated_config_page));
   return 0;
 }

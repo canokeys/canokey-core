@@ -81,25 +81,23 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 ## Fuzz testing
 
-Fuzzing uses libFuzzer (coverage-guided, with ASan/UBSan). It requires a clang
-that ships the libFuzzer runtime (e.g. Homebrew `llvm` on macOS; Apple clang
-does not):
+Fuzzing uses AFL++ with ASan/UBSan. Instrumented builds require GNU GCC,
+normally through `afl-gcc-fast`:
 
 ```bash
-cd build
-cmake .. -DENABLE_FUZZING=ON -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug
-make -j$(nproc) libfuzzer-fuzzer
+cmake -S . -B build -DENABLE_FUZZING=ON -DCMAKE_C_COMPILER=afl-gcc-fast -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target afl-fuzzer --parallel
 ```
 
 Then, run fuzzing tests (`${id}`: empty = CCID transport, 0..5 = PIV, CTAP,
 OATH, Admin, OpenPGP, NDEF):
 
 ```bash
-CANOKEY_FUZZ_APPLET=${id} ./libfuzzer-fuzzer ../fuzzing/applet${id}/data -max_total_time=300
+CANOKEY_FUZZ_APPLET=${id} afl-fuzz -i fuzzing/applet${id}/data -o fuzzing/applet${id}/findings -- ./build/afl-fuzzer
 ```
 
 Crash artifacts are replayed directly with the same binary:
-`CANOKEY_FUZZ_APPLET=${id} ./libfuzzer-fuzzer <crash-file>`.
+`CANOKEY_FUZZ_APPLET=${id} ./build/afl-fuzzer < crash-file`.
 
 
 ## License

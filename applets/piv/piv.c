@@ -570,6 +570,28 @@ static bool piv_littlefs_state_present(void) {
          read_attr(puk.path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) == sizeof(default_value);
 }
 
+static int piv_migrate_legacy_management_key_type(void) {
+  // Persisted values before ML-KEM and ML-DSA shifted the symmetric types.
+  enum { LEGACY_TDEA = 11, LEGACY_AES128 = 12, LEGACY_AES256 = 13 };
+  char path[MAX_KEY_PATH_LEN];
+  piv_key_path(0x9B, path);
+
+  key_meta_t meta;
+  if (ck_read_key_metadata(path, &meta) < 0) return -1;
+  const int key_len = get_file_size(path);
+  key_type_t migrated = meta.type;
+  if ((unsigned)meta.type == LEGACY_TDEA && key_len == 24)
+    migrated = TDEA;
+  else if ((unsigned)meta.type == LEGACY_AES128 && key_len == 16)
+    migrated = AES128;
+  else if ((unsigned)meta.type == LEGACY_AES256 && key_len == 32)
+    migrated = AES256;
+
+  if (migrated == meta.type) return 0;
+  meta.type = migrated;
+  return ck_write_key_metadata(path, &meta) < 0 ? -1 : 0;
+}
+
 static key_type_t algo_id_to_key_type(const uint8_t id) {
   switch (id) {
   case ALG_ECC_256:
@@ -1281,6 +1303,7 @@ int piv_install(const uint8_t reset) {
   // Platform alg-ext config is the install completion marker. If it is missing
   // or invalid, rebuild PIV state.
   if (!reset && has_alg_ext_cfg && piv_littlefs_state_present()) {
+    if (piv_migrate_legacy_management_key_type() < 0) return -1;
     alg_ext_cfg = preserved_alg_ext_cfg;
     return 0;
   }

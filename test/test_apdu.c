@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <cmocka.h>
 #include <cbor.h>
 
@@ -21,6 +22,7 @@
 #include <lfs.h>
 #include <ndef.h>
 #include <oath.h>
+#include <platform-config.h>
 #include <pke.h>
 #include "../applets/ctap/secret.h"
 #include "../applets/ctap/cose-key.h"
@@ -41,6 +43,7 @@
 #include "../virt-card/usb-dummy.h"
 
 extern ccid_bulkin_data_t bulkin_data;
+int virt_card_config_page_open(const char *lfs_root, bool reset);
 
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
   const uint8_t *h = haystack;
@@ -1738,6 +1741,26 @@ static void test_ndef_chained_update_and_streaming_read(void **state) {
   assert_int_equal(rapdu.len, 50);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
   assert_false(apdu_response_source_active());
+
+  // Recover the fixed-size backing file before serving reads from a persisted
+  // image that was truncated by an interrupted write or an older build.
+  assert_int_equal(truncate_file("NDEF", 32), 0);
+  assert_int_equal(ndef_install(0), 0);
+  assert_int_equal(get_file_size("NDEF"), 1024);
+  capdu.ins = NDEF_INS_SELECT;
+  capdu.p1 = 0x00;
+  capdu.p2 = 0x0C;
+  capdu.data = (uint8_t *)select_ndef;
+  capdu.lc = sizeof(select_ndef);
+  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
+  capdu.ins = NDEF_INS_READ_BINARY;
+  capdu.p1 = 0x00;
+  capdu.p2 = 31;
+  capdu.le = 2;
+  memset(response, 0xA5, 2);
+  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
+  assert_int_equal(rapdu.len, 2);
+  assert_memory_equal(response, ((const uint8_t[]){0, 0}), 2);
 }
 
 static void test_ctap_config_empty_request_is_legacy_unhandled(void **state) {
@@ -2896,6 +2919,26 @@ static void test_admin_platform_config_and_serial_apdus(void **state) {
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 }
 
+static void test_virt_card_config_page_persistence(void **state) {
+  (void)state;
+  static const char root[] = "lfs-root-config-page-test";
+  static const char sidecar[] = "lfs-root-config-page-test.config";
+  uint8_t page[PLATFORM_CONFIG_PAGE_SIZE];
+  uint8_t restored[PLATFORM_CONFIG_PAGE_SIZE];
+  memset(page, 0x5A, sizeof(page));
+
+  assert_int_equal(virt_card_config_page_open(root, true), 0);
+  assert_int_equal(platform_config_page_write(page, sizeof(page)), 0);
+  assert_int_equal(virt_card_config_page_open(root, false), 0);
+  assert_int_equal(platform_config_page_read(0, restored, sizeof(restored)), 0);
+  assert_memory_equal(restored, page, sizeof(page));
+
+  assert_int_equal(virt_card_config_page_open(root, true), 0);
+  assert_int_equal(platform_config_page_read(0, restored, sizeof(restored)), 0);
+  for (size_t i = 0; i < sizeof(restored); ++i) assert_int_equal(restored[i], 0xFF);
+  assert_int_equal(remove(sidecar), -1);
+}
+
 static void test_admin_read_core_commit_apdu(void **state) {
   (void)state;
 
@@ -3304,6 +3347,7 @@ int main() {
       cmocka_unit_test(test_admin_kbd_keymap_apdus),
       cmocka_unit_test(test_runtime_feature_apdu_routing),
       cmocka_unit_test(test_select_and_read_command_validation),
+      cmocka_unit_test(test_virt_card_config_page_persistence),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

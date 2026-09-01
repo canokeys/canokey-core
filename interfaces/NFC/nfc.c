@@ -25,9 +25,10 @@ static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
 static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
 static uint8_t inf_sending, retransmit_count;
+static uint8_t retransmit_prologue, retransmit_len, retransmit_data[29];
 static uint8_t aggregate_get_response, aggregate_fido_responses;
 static uint16_t apdu_buffer_rx_size, apdu_buffer_tx_size;
-static uint16_t apdu_buffer_sent, last_sent;
+static uint16_t apdu_buffer_sent;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 static volatile uint8_t apdu_processing;
@@ -51,7 +52,7 @@ static void reset_nfc_state(void) {
   apdu_buffer_rx_size = 0;
   apdu_buffer_tx_size = 0;
   apdu_buffer_sent = 0;
-  last_sent = 0;
+  retransmit_len = 0;
   inf_sending = 0;
   retransmit_count = 0;
   aggregate_get_response = 0;
@@ -173,9 +174,9 @@ static int nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
 
 static int send_apdu_buffer(uint8_t resend) {
   if (resend) {
-    if (last_sent == 0 || retransmit_count >= NFC_MAX_RETRANSMITS) return NFC_SEND_FAILED;
+    if (retransmit_len == 0 || retransmit_count >= NFC_MAX_RETRANSMITS) return NFC_SEND_FAILED;
     ++retransmit_count;
-    return nfc_send_frame(tx_frame_buf[0], NULL, last_sent);
+    return nfc_send_frame(retransmit_prologue, retransmit_data, retransmit_len);
   }
 
   if (aggregate_get_response && apdu_buffer_sent == apdu_buffer_tx_size) {
@@ -184,14 +185,16 @@ static int send_apdu_buffer(uint8_t resend) {
     aggregate_get_response = (uint8_t)more;
   }
 
-  last_sent = apdu_buffer_tx_size - apdu_buffer_sent;
-  if (last_sent == 0) return -1;
-  if (last_sent > 29) last_sent = 29;
+  uint8_t send_len = (uint8_t)MIN(apdu_buffer_tx_size - apdu_buffer_sent, 29);
+  if (send_len == 0) return -1;
   uint8_t prologue = block_number | 0x02;
-  if (apdu_buffer_tx_size - apdu_buffer_sent > last_sent || aggregate_get_response) prologue |= PCB_I_CHAINING;
-  const int ret = nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, last_sent);
+  if (apdu_buffer_tx_size - apdu_buffer_sent > send_len || aggregate_get_response) prologue |= PCB_I_CHAINING;
+  const int ret = nfc_send_frame(prologue, shared_io_buffer + apdu_buffer_sent, send_len);
   if (ret < 0) return ret;
-  apdu_buffer_sent += last_sent;
+  retransmit_prologue = prologue;
+  retransmit_len = send_len;
+  memcpy(retransmit_data, shared_io_buffer + apdu_buffer_sent, send_len);
+  apdu_buffer_sent += send_len;
   retransmit_count = 0;
   if (apdu_buffer_tx_size == apdu_buffer_sent && !aggregate_get_response) inf_sending = 0;
   return 0;

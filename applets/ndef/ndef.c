@@ -38,7 +38,8 @@ static void ndef_write_reset(void) { ndef_write_offset = UINT16_MAX; }
 
 static int ndef_response_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
   UNUSED(ctx);
-  return read_file(NDEF_FILE, buf, ndef_response_offset + (uint16_t)offset, len);
+  const int ret = read_file(NDEF_FILE, buf, ndef_response_offset + (uint16_t)offset, len);
+  return ret == len ? ret : -1;
 }
 
 void ndef_poweroff(void) {
@@ -65,8 +66,11 @@ static int ndef_create_init_ndef(void) {
 
 int ndef_install(const uint8_t reset) {
   ndef_poweroff();
-  if (!reset && get_file_size(CC_FILE) == sizeof(current_cc) && get_file_size(NDEF_FILE) > 0)
+  const int ndef_size = get_file_size(NDEF_FILE);
+  if (!reset && get_file_size(CC_FILE) == sizeof(current_cc) && ndef_size > 0) {
+    if (ndef_size != NDEF_FILE_MAX_LENGTH && truncate_file(NDEF_FILE, NDEF_FILE_MAX_LENGTH) < 0) return -1;
     return read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0 ? -1 : 0;
+  }
 
   memcpy(current_cc, default_cc, sizeof(current_cc));
   if (ndef_create_init_ndef() < 0) return -1;
@@ -115,8 +119,9 @@ static int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
     LL = 0;
     return 0;
   }
-  if (read_file(path, RDATA, offset, LE) < 0) return -1;
-  LL = LE;
+  const int ret = read_file(path, RDATA, offset, LE);
+  if (ret < 0) return -1;
+  LL = (uint16_t)ret;
   return 0;
 }
 

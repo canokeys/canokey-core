@@ -228,6 +228,13 @@ static void piv_attestation_mldsa_public_reset(piv_attestation_scratch_t *scratc
   mldsa->emitted = 0;
 }
 
+static int piv_attestation_fail(piv_attestation_scratch_t *scratch, int ret) {
+  if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
+  memzero(scratch, sizeof(*scratch));
+  memzero(&piv_attestation_state, sizeof(piv_attestation_state));
+  return ret;
+}
+
 static int piv_attestation_mldsa_public_read(piv_attestation_scratch_t *scratch, uint16_t offset, uint8_t *buf,
                                              uint16_t len) {
   piv_attestation_mldsa_scratch_t *mldsa = &scratch->source.mldsa;
@@ -591,21 +598,20 @@ int piv_attestation_generate(uint8_t slot, const char *target_key_path, const ch
   device_config_fill_serial(piv_attestation_state.device_serial);
 
   piv_attestation_plan_t *plan = (piv_attestation_plan_t *)scratch->plan_work.attestation_plan;
-  if (piv_attestation_plan_build_tbs(plan, &piv_attestation_state) < 0) return SW_WRONG_DATA;
+  if (piv_attestation_plan_build_tbs(plan, &piv_attestation_state) < 0)
+    return piv_attestation_fail(scratch, SW_WRONG_DATA);
   if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
-  if (piv_attestation_hash_tbs(scratch, plan) < 0) {
-    if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
-    return -1;
-  }
+  if (piv_attestation_hash_tbs(scratch, plan) < 0) return piv_attestation_fail(scratch, -1);
+  if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
 
   ret = piv_attestation_sign(attestation_key_path, scratch, piv_attestation_state.signature);
   memzero(scratch->digest, sizeof(scratch->digest));
-  if (ret < 0) return ret;
-  if (ret > PIV_ATTESTATION_SIGNATURE_MAX) return -1;
+  if (ret == SW_REFERENCE_DATA_NOT_FOUND) return piv_attestation_fail(scratch, ret);
+  if (ret < 0 || ret > PIV_ATTESTATION_SIGNATURE_MAX) return piv_attestation_fail(scratch, ret < 0 ? ret : -1);
   piv_attestation_state.signature_len = (uint8_t)ret;
 
-  if (piv_attestation_plan_build_certificate(plan, &piv_attestation_state) < 0) return -1;
-  if (IS_MLDSA(piv_attestation_state.target_type)) piv_attestation_mldsa_public_reset(scratch);
+  if (piv_attestation_plan_build_certificate(plan, &piv_attestation_state) < 0)
+    return piv_attestation_fail(scratch, -1);
   apdu_response_source_set(plan->total_len, SW_NO_ERROR, piv_attestation_response_read, piv_attestation_response_close,
                            &piv_attestation_state);
   return SW_NO_ERROR;

@@ -66,11 +66,16 @@ static void fuzz_initialize(void) {
   emulate_usb_enumeration(); // required before any CCID transaction
   set_nfc_state(1);
   const char *keep = getenv("CANOKEY_FUZZ_KEEP");
+  int ret;
   if (keep != NULL && strcmp(keep, "1") == 0) { // keep data in littlefs
-    card_read(lfs_root);
+    ret = card_read(lfs_root);
   } else {
     unlink(lfs_root);
-    card_fabrication_procedure(lfs_root);
+    ret = card_fabrication_procedure(lfs_root);
+  }
+  if (ret != 0) {
+    fprintf(stderr, "Failed to initialize fuzzing storage\n");
+    exit(1);
   }
   printf("Finished initialization\n");
 }

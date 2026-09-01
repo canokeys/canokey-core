@@ -107,6 +107,8 @@ static void udp_send(int fd, uint8_t *buf, int size) {
 }
 
 static int current_fd;
+static uint8_t pending_report[HID_RPT_SIZE];
+static uint8_t pending_report_valid;
 static void emulate_reboot(void);
 
 static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
@@ -186,10 +188,17 @@ static int handle_udp_control_packet(const uint8_t *buf, int length) {
 static void handle_udp_packet(uint8_t *buf, int length) {
   if (length <= 0) return;
   if (handle_udp_control_packet(buf, length)) return;
-  if (length == HID_RPT_SIZE) CTAPHID_OutEvent(buf);
+  if (length == HID_RPT_SIZE && !CTAPHID_OutEvent(buf)) {
+    memcpy(pending_report, buf, sizeof(pending_report));
+    pending_report_valid = 1;
+  }
 }
 
 void USBD_CTAPHID_ServiceReceive(void) {
+  if (pending_report_valid) {
+    if (!CTAPHID_OutEvent(pending_report)) return;
+    pending_report_valid = 0;
+  }
   uint8_t buf[HID_RPT_SIZE];
   int length = udp_recv(current_fd, buf, sizeof(buf));
   handle_udp_packet(buf, length);

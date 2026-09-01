@@ -1163,6 +1163,36 @@ static void test_piv_aes192_management_key(void **state) {
   assert_int_equal(piv_install(1), 0);
 }
 
+static void test_piv_migrates_legacy_management_key_types(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  enum { LEGACY_TDEA = 11, LEGACY_AES128 = 12, LEGACY_AES256 = 13 };
+  static const struct {
+    unsigned legacy_type;
+    key_type_t current_type;
+    size_t key_len;
+  } cases[] = {
+      {LEGACY_TDEA, TDEA, 24},
+      {LEGACY_AES128, AES128, 16},
+      {LEGACY_AES256, AES256, 32},
+  };
+  uint8_t key_material[32] = {0};
+  key_meta_t meta;
+  assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    meta.type = (key_type_t)cases[i].legacy_type;
+    assert_int_equal(write_file("piv-k9b", key_material, 0, cases[i].key_len, 1), 0);
+    assert_true(ck_write_key_metadata("piv-k9b", &meta) >= 0);
+    assert_int_equal(piv_install(0), 0);
+    assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
+    assert_int_equal(meta.type, cases[i].current_type);
+  }
+
+  assert_int_equal(piv_install(1), 0);
+}
+
 static void test_piv_aes192_mutual_authentication(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -1722,6 +1752,10 @@ static void test_piv_attestation_certificate(void **state) {
   assert_int_equal(sw, SW_REFERENCE_DATA_NOT_FOUND);
 
   piv_test_provision_attestation_cert();
+  assert_int_equal(remove_file("piv-kf9"), 0);
+  assert_int_equal(piv_test_collect_attestation(0x9A, certificate, sizeof(certificate), &sw), 0);
+  assert_int_equal(sw, SW_REFERENCE_DATA_NOT_FOUND);
+  piv_test_provision_attestation_key();
   const size_t certificate_len = piv_test_collect_attestation(0x9A, certificate, sizeof(certificate), &sw);
   assert_int_equal(sw, SW_NO_ERROR);
   assert_true(certificate_len > 256);
@@ -1936,6 +1970,12 @@ static void test_piv_attestation_all_target_algorithms(void **state) {
     assert_int_equal(ck_generate_key(&target), 0);
     assert_int_equal(ck_write_key("piv-k9a", &target), 0);
     uint16_t sw;
+    if (cases[i].type == MLDSA65) {
+      assert_int_equal(remove_file("piv-kf9"), 0);
+      assert_int_equal(piv_test_collect_attestation(0x9A, certificate, sizeof(certificate), &sw), 0);
+      assert_int_equal(sw, SW_REFERENCE_DATA_NOT_FOUND);
+      piv_test_provision_attestation_key();
+    }
     const size_t certificate_len = piv_test_collect_attestation(0x9A, certificate, sizeof(certificate), &sw);
     assert_int_equal(sw, SW_NO_ERROR);
     piv_test_assert_attestation_certificate(certificate, certificate_len, &target, cases[i].oid, cases[i].oid_len);
@@ -2806,6 +2846,7 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_piv_aes192_management_key),
+      cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
       cmocka_unit_test(test_piv_aes192_mutual_authentication),
       cmocka_unit_test(test_delete_certificate_object),
       cmocka_unit_test(test_piv_host_managed_admin_data_objects),

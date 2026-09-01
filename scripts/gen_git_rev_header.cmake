@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 execute_process(
     COMMAND git rev-parse --short=8 HEAD
     WORKING_DIRECTORY "${SOURCE_DIR}"

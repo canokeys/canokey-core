@@ -12,12 +12,16 @@
 #include <assert.h>
 #include <bd/lfs_filebd.h>
 #include <ctap.h>
+#include <errno.h>
 #include <fs.h>
 #include <lfs.h>
+#include <unistd.h>
 
 static struct lfs_config cfg;
 static lfs_filebd_t bd;
 static struct lfs_filebd_config bdcfg = {.read_size = 1, .prog_size = 512, .erase_size = 512, .erase_count = 256};
+
+int virt_card_config_page_open(const char *lfs_root, bool reset);
 
 uint8_t private_key[] = {0x46, 0x5b, 0x44, 0x5d, 0x8e, 0x78, 0x34, 0x53, 0xf7, 0x4b, 0x90,
                          0x00, 0xd2, 0x20, 0x32, 0x51, 0x99, 0x5e, 0x12, 0xdc, 0xd1, 0x21,
@@ -106,6 +110,12 @@ static void oath_init() {
 }
 
 int card_fs_init(const char *lfs_root) {
+  bool reset_config = false;
+  if (access(lfs_root, F_OK) != 0) {
+    if (errno != ENOENT) return 1;
+    reset_config = true;
+  }
+  if (virt_card_config_page_open(lfs_root, reset_config) < 0) return 1;
   bd.cfg = &bdcfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
