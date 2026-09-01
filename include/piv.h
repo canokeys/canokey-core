@@ -37,5 +37,6 @@ typedef struct {
 int piv_install(uint8_t reset);
 void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_INCLUDE_PIV_H_

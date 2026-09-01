@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "apdu.h"
+#include "applets.h"
 #include "ccid.h"
 #include "ctaphid.h"
+#include "device.h"
 #include "fabrication.h"
 #include <ifdhandler.h>
 #include <reader.h>
@@ -16,7 +18,44 @@ const static UCHAR ATR[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65
                             0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 static int applet_init = 0;
 
+extern ccid_bulkin_data_t bulkin_data;
+extern ccid_bulkout_data_t bulkout_data;
+
 static uint8_t send_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) { return 0; }
+
+static uint8_t is_native_u2f_extended_apdu(const uint8_t *buf, DWORD len) {
+  if (len < 7 || buf[0] != 0x00 || buf[4] != 0x00) return 0;
+
+  switch (buf[1]) {
+  case 0x01: // U2F_REGISTER
+  case 0x02: // U2F_AUTHENTICATE
+  case 0x03: // U2F_VERSION
+    return 1;
+  case 0xA4: // U2F_SELECT, distinct from ISO SELECT by P1/P2
+    return !(buf[2] == 0x04 && buf[3] == 0x00);
+  default:
+    return 0;
+  }
+}
+
+static uint8_t is_fido_pcsc_apdu(const uint8_t *buf, DWORD len) {
+  if (len >= 4 && buf[0] == 0x80) return 1; // CTAP2 CBOR / NFC GET RESPONSE
+  return is_native_u2f_extended_apdu(buf, len);
+}
+
+static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len) {
+  // Core CCID maintains a single global bulk endpoint state; the virt-card is
+  // single-slot, so we ignore Lun beyond stamping it into bSlot.
+  uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data.abDataShort : shared_io_buffer;
+  memcpy(abData, tx, tx_len);
+  bulkout_data.dwLength = tx_len;
+  bulkout_data.bSlot = (uint8_t)Lun;
+  bulkout_data.bSeq = 0;
+  bulkout_data.bSpecific_0 = 0;
+  bulkout_data.bSpecific_1 = 0;
+  bulkout_data.bSpecific_2 = 0;
+  return PC_to_RDR_XfrBlock();
+}
 
 RESPONSECODE IFDHCreateChannel(DWORD Lun, DWORD Channel) {
   printf("IFDHCreateChannel %ld %ld\n", Lun, Channel);
@@ -88,6 +127,9 @@ RESPONSECODE IFDHSetProtocolParameters(DWORD Lun, DWORD Protocol, UCHAR Flags, U
 RESPONSECODE IFDHPowerICC(DWORD Lun, DWORD Action, PUCHAR Atr, PDWORD AtrLength) {
   printf("IFDHPowerICC %ld Action=%#lx\n", Lun, Action);
   if (Action == IFD_POWER_UP || Action == IFD_RESET) {
+    init_apdu_buffer();
+    device_init();
+    applets_install();
     *AtrLength = sizeof(ATR);
     memcpy(Atr, ATR, *AtrLength);
   } else if (Action == IFD_POWER_DOWN) {
@@ -96,9 +138,6 @@ RESPONSECODE IFDHPowerICC(DWORD Lun, DWORD Action, PUCHAR Atr, PDWORD AtrLength)
   }
   return IFD_SUCCESS;
 }
-
-extern ccid_bulkin_data_t bulkin_data[2];
-extern ccid_bulkout_data_t bulkout_data[2];
 
 RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuffer, DWORD TxLength, PUCHAR RxBuffer,
                                PDWORD RxLength, PSCARD_IO_HEADER RecvPci) {
@@ -112,22 +151,47 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     *RxLength = 0;
     return IFD_ERROR_INSUFFICIENT_BUFFER;
   }
-  uint8_t *abData = TxLength <= SHORT_ABDATA_SIZE ? bulkout_data[Lun].abDataShort : global_buffer;
-  memcpy(abData, TxBuffer, TxLength);
-  bulkout_data[Lun].dwLength = TxLength;
-
-  uint8_t ret = PC_to_RDR_XfrBlock();
+  const uint8_t aggregate_get_response = is_nfc() && is_fido_pcsc_apdu(TxBuffer, TxLength);
+  uint8_t ret = transmit_xfrblock(Lun, TxBuffer, TxLength);
   if (ret != SLOT_NO_ERROR) {
     *RxLength = 0;
     printf("warning: PC_to_RDR_XfrBlock returns %#x\n", ret);
   } else {
-    if (bulkin_data[Lun].dwLength > *RxLength) {
-      printf("bulkin_data[Lun].dwLength(%u) > *RxLength(%lu)\n", bulkin_data[Lun].dwLength, *RxLength);
-      *RxLength = 0;
-      return IFD_ERROR_INSUFFICIENT_BUFFER;
+    DWORD total_len = 0;
+    for (;;) {
+      (void)Lun;
+      if (bulkin_data.dwLength < 2) {
+        *RxLength = 0;
+        return IFD_COMMUNICATION_ERROR;
+      }
+
+      const uint16_t sw = (uint16_t)(bulkin_data.abData[bulkin_data.dwLength - 2] << 8) |
+                          bulkin_data.abData[bulkin_data.dwLength - 1];
+      const DWORD data_len = bulkin_data.dwLength - 2;
+      const uint8_t has_more = aggregate_get_response && (sw & 0xFF00) == 0x6100;
+      const DWORD copy_len = has_more ? data_len : bulkin_data.dwLength;
+
+      if (total_len + copy_len > *RxLength) {
+        printf("response too large: total=%lu next=%lu cap=%lu\n", total_len, copy_len, *RxLength);
+        *RxLength = 0;
+        return IFD_ERROR_INSUFFICIENT_BUFFER;
+      }
+      memcpy(RxBuffer + total_len, bulkin_data.abData, copy_len);
+      total_len += copy_len;
+
+      if (!has_more) {
+        *RxLength = total_len;
+        break;
+      }
+
+      static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
+      ret = transmit_xfrblock(Lun, get_response, sizeof(get_response));
+      if (ret != SLOT_NO_ERROR) {
+        *RxLength = 0;
+        printf("warning: PC_to_RDR_XfrBlock(GET RESPONSE) returns %#x\n", ret);
+        break;
+      }
     }
-    memcpy(RxBuffer, bulkin_data[Lun].abData, bulkin_data[Lun].dwLength);
-    *RxLength = bulkin_data[Lun].dwLength;
   }
 
   return ret == SLOT_NO_ERROR ? IFD_SUCCESS : IFD_COMMUNICATION_ERROR;

@@ -40,16 +40,32 @@ def parse_defines(header_paths, needed):
     
     Returns dict {name: int_value}. Raises if any needed key is missing.
     """
-    # Match: #define NAME value  (decimal, hex, or negative)
-    pattern = re.compile(r'^\s*#define\s+(\w+)\s+(-?(?:0[xX][0-9a-fA-F]+|\d+))\b')
-    found = {}
+    # Match: #define NAME value  (decimal, hex, negative, or simple alias)
+    pattern = re.compile(r'^\s*#define\s+(\w+)\s+(-?(?:0[xX][0-9a-fA-F]+|\d+)|\w+)\b')
+    raw = {}
     for path in header_paths:
         with open(path) as f:
             for line in f:
                 m = pattern.match(line)
-                if m and m.group(1) in needed:
-                    val_str = m.group(2)
-                    found[m.group(1)] = int(val_str, 0)
+                if m:
+                    raw[m.group(1)] = m.group(2)
+
+    def resolve(name, seen=None):
+        if seen is None:
+            seen = set()
+        if name in seen or name not in raw:
+            return None
+        seen.add(name)
+        val_str = raw[name]
+        if re.match(r'-?(?:0[xX][0-9a-fA-F]+|\d+)$', val_str):
+            return int(val_str, 0)
+        return resolve(val_str, seen)
+
+    found = {}
+    for name in needed:
+        value = resolve(name)
+        if value is not None:
+            found[name] = value
 
     missing = [k for k in needed if k not in found]
     if missing:
@@ -139,6 +155,7 @@ GI_MAX_CRED_BLOB_LENGTH = 0x0F
 
 COSE_ALG_ES256 = -7
 COSE_ALG_EDDSA = -8
+COSE_ALG_ML_DSA_65 = -49
 
 AAGUID = bytes([0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
                 0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4])
@@ -229,10 +246,11 @@ def build_segments(consts, sm2_algo_id, enable_nfc):
     # 10. algorithms key only (array header emitted at runtime)
     prefix += encode_uint(GI_ALGORITHMS)
 
-    # --- Segment 2: base algorithm entries (ES256 + EdDSA) ---
+    # --- Segment 2: base algorithm entries (ES256 + EdDSA + ML-DSA-65) ---
     alg_base = bytearray()
     alg_base += build_algorithm_entry(COSE_ALG_ES256)
     alg_base += build_algorithm_entry(COSE_ALG_EDDSA)
+    alg_base += build_algorithm_entry(COSE_ALG_ML_DSA_65)
 
     # --- Segment 3: SM2 algorithm entry ---
     alg_sm2 = bytearray()
@@ -286,12 +304,13 @@ def main():
     # Constants we need from headers
     needed = {
         'FIRMWARE_VERSION': None,
-        'MAX_CTAP_BUFSIZE': None,
+        'CTAP_MAX_MSG_SIZE': None,
         'MAX_CREDENTIAL_COUNT_IN_LIST': None,
         'LARGE_BLOB_SIZE_LIMIT': None,
         'MAX_CRED_BLOB_LENGTH': None,
     }
     consts = parse_defines(args.headers, needed)
+    consts['MAX_CTAP_BUFSIZE'] = consts['CTAP_MAX_MSG_SIZE']
     consts['CREDENTIAL_ID_SIZE'] = args.credential_id_size
 
     prefix, alg_base, alg_sm2, suffix, pin_off, sm2_algo_off = \
@@ -333,7 +352,7 @@ def main():
         f.write(format_c_array(prefix))
         f.write(f"\n}};\n\n")
 
-        f.write(f"// Segment 2: ES256 + EdDSA algorithm entries ({len(alg_base)} bytes)\n")
+        f.write(f"// Segment 2: ES256 + EdDSA + ML-DSA-65 algorithm entries ({len(alg_base)} bytes)\n")
         f.write(f"static const uint8_t cbor_gi_alg_base[{len(alg_base)}] = {{\n")
         f.write(format_c_array(alg_base))
         f.write(f"\n}};\n\n")

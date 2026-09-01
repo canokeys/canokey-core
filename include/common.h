@@ -8,7 +8,19 @@
 #include <stdint.h>
 #include <string.h>
 
-#define APDU_BUFFER_SIZE 1340
+#ifndef APDU_BUFFER_SIZE
+#define APDU_BUFFER_SIZE 256
+#endif
+// Raw transport storage also has to hold APDU headers/trailers and the final SW bytes.
+#define APDU_COMMAND_OVERHEAD 32
+#define APDU_COMMAND_BUFFER_SIZE (APDU_BUFFER_SIZE + APDU_COMMAND_OVERHEAD)
+// Parsed incoming APDU data can reuse the whole command buffer after the
+// transport header is stripped, so the input limit may exceed APDU_BUFFER_SIZE.
+#define APDU_INCOMING_DATA_SIZE APDU_COMMAND_BUFFER_SIZE
+// FIDO CBOR requests over NFC/PCSC can legitimately exceed the generic APDU
+// payload limit, so chained FIDO commands use a dedicated larger reassembly
+// buffer (pke_buffer).  The effective limit is pke_buffer_size().
+#define CTAP_MAX_REQUEST_SIZE pke_buffer_size()
 #define TOUCH_EXPIRE_TIME 1000
 #define TOUCH_AFTER_PWRON 1500
 

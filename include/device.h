@@ -17,6 +17,13 @@
 #define WAIT_ENTRY_CTAPHID 1
 
 typedef enum {
+  DEVICE_APPLET_SESSION_NONE = 0,
+  DEVICE_APPLET_SESSION_CCID = 1,
+  DEVICE_APPLET_SESSION_CTAPHID = 2,
+  DEVICE_APPLET_SESSION_WEBUSB = 3,
+} device_applet_session_owner_t;
+
+typedef enum {
   FM_STATUS_OK = 0,
   FM_STATUS_NACK = 1,
 } fm_status_t;
@@ -98,6 +105,11 @@ uint8_t wait_for_user_presence(uint8_t entry);
 int strong_user_presence_test(void);
 int send_keepalive_during_processing(uint8_t entry);
 void device_loop(void);
+int device_applet_session_acquire(device_applet_session_owner_t owner);
+void device_applet_session_touch(device_applet_session_owner_t owner);
+void device_applet_session_release(device_applet_session_owner_t owner);
+int device_applet_session_reset(device_applet_session_owner_t owner);
+device_applet_session_owner_t device_applet_session_owner(void);
 #if ENABLE_NFC
 uint8_t is_nfc(void);
 void set_nfc_state(uint8_t state);

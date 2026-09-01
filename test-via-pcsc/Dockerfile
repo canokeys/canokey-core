@@ -13,7 +13,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
     sudo software-properties-common git gcc g++ cmake swig psmisc procps \
     pcscd pcsc-tools yubico-piv-tool libhidapi-dev libassuan-dev \
     libgcrypt20-dev libksba-dev libnpth0-dev opensc openssl openssh-server \
-    libpcsclite-dev libudev-dev libusb-1.0-0-dev libcmocka-dev libcbor-dev \
+    libssl-dev libpcsclite-dev libudev-dev libusb-1.0-0-dev libcmocka-dev libcbor-dev \
     python3-pip python3-setuptools python3-wheel lcov wget golang-go \
     yubikey-manager
 

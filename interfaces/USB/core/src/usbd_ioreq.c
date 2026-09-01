@@ -29,9 +29,9 @@
 USBD_StatusTypeDef USBD_CtlSendData(USBD_HandleTypeDef *pdev, const uint8_t *pbuf, uint16_t len, uint8_t sender) {
   /* Set EP0 State */
   pdev->ep0_state = USBD_EP0_DATA_IN;
-  pdev->ep_in[0].total_length = len;
-  pdev->ep_in[0].rem_length = len;
-  pdev->ep0_sender = sender;
+  pdev->ep0_in.total_length = len;
+  pdev->ep0_in.rem_length = len;
+  UNUSED(sender);
   /* Start the transfer */
   USBD_LL_Transmit(pdev, 0x00, pbuf, len);
 
@@ -64,8 +64,8 @@ USBD_StatusTypeDef USBD_CtlContinueSendData(USBD_HandleTypeDef *pdev, const uint
 USBD_StatusTypeDef USBD_CtlPrepareRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, uint16_t len) {
   /* Set EP0 State */
   pdev->ep0_state = USBD_EP0_DATA_OUT;
-  pdev->ep_out[0].total_length = len;
-  pdev->ep_out[0].rem_length = len;
+  pdev->ep0_out.total_length = len;
+  pdev->ep0_out.rem_length = len;
   /* Start the transfer */
   USBD_LL_PrepareReceive(pdev, 0, pbuf, len);
 
