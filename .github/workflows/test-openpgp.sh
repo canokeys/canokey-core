@@ -115,7 +115,7 @@ GPGAuth() {
   ssh-add -L | awk '$NF ~ /^cardno:/ {print; exit}' >~/.ssh/canokey-auth.pub
   [ -s ~/.ssh/canokey-auth.pub ]
   cp ~/.ssh/canokey-auth.pub ~/.ssh/authorized_keys
-  timeout 30s ssh -v -p 2200 \
+  timeout --kill-after=5s 30s ssh -nT -v -p 2200 \
     -o BatchMode=yes \
     -o IdentitiesOnly=yes \
     -o PasswordAuthentication=no \
