@@ -87,6 +87,7 @@ jobs:
       uses: actions/checkout@v6
       with:
         repository: canokeys/piv-go
+        ref: 130e11e87b5f5ec788a12037735c86a0d2c7c547
         path: piv-go
 
     - name: Cache - GO Modules
@@ -258,6 +259,7 @@ jobs:
         PY
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/connect_test.py
         .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/standard/fido2/test_getinfo.py
+        .venv/bin/python -m pytest --color=yes --vendor canokeys --sim tests/vendor/canokeys/test_mldsa65.py -s
         kill "$(cat /tmp/fido-hid-over-udp.pid)" || true
         trap - EXIT
 

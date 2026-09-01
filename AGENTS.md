@@ -49,7 +49,7 @@ canokey-core/
 ├── tinycbor/           # Submodule: CBOR encoder/decoder
 ├── virt-card/          # Virtual card for host-side unit/integration tests
 ├── test/               # CMocka unit tests
-├── fuzzer/             # honggfuzz fuzzing harness
+├── fuzzer/             # AFL++ fuzzing harness
 └── scripts/            # Code-generation scripts (gen_ctap_get_info.py)
 ```
 
@@ -91,7 +91,7 @@ CMake 3.16+, C11. The library target is `canokey-core`.
 | `ENABLE_DEBUG_OUTPUT` | ON | `DBG_MSG`/`ERR_MSG` via `printf` |
 | `ENABLE_BYPASS_USER_PRESENCE` | OFF | Skip all touch checks (testing only) |
 | `ENABLE_TESTS` | OFF | Build CMocka unit tests + virt-card |
-| `ENABLE_FUZZING` | OFF | Build honggfuzz harness |
+| `ENABLE_FUZZING` | OFF | Build AFL++ harness |
 | `VIRTCARD` | OFF | Build only the virtual-card targets |
 
 ### Running unit tests
@@ -259,7 +259,7 @@ CTAP handlers must treat transport-backed request bytes as short-lived input, no
 4. Clear the request source.
 5. Continue with keepalive, user-presence waits, crypto, storage, and response generation.
 
-`ctap_req_src_t` carries `read(ctx, offset, buf, len)` for pulling bytes plus an optional `cancelled(ctx)` callback, invoked on every read so cooperative cancellation (host-side CTAPHID CANCEL) terminates parsing immediately. Sources that cannot be cancelled may leave `cancelled` NULL.
+`ctap_req_src_t` carries `read(ctx, offset, buf, len)` for pulling bytes, an optional `cancelled(ctx)` callback for cooperative cancellation, and an optional idempotent `close(ctx)` callback that releases transport-owned staging when parsing ends. Sources that need neither callback may leave them NULL.
 
 If a command needs raw request bytes after parsing, handle the exact bytes before the first unsafe boundary:
 
@@ -291,13 +291,15 @@ Forbidden PKE staging uses:
 - Keep offsets into PKE for later verification, hashing, file writes, or response streaming.
 - Read PKE-backed request bytes after keepalive, `WAIT()`, PIN/UV-token verification, credential key generation, assertion signing, ML-DSA streaming, or any operation that may call crypto.
 
-### APDU transport: chaining, not extended length
+### APDU transport: chaining, with one bounded extended-length exception
 
 **Rule: use ISO 7816-4 command/response chaining (`CAPDU_CHAINING` / `RAPDU_CHAINING`), not extended-length APDUs, for all multi-block data.**
 
 - `APDU_BUFFER_SIZE` is 256 bytes (one short APDU payload). `APDU_COMMAND_BUFFER_SIZE = APDU_BUFFER_SIZE + 32 = 288 bytes`.
 - `APDU_INCOMING_DATA_SIZE` is an alias for `APDU_COMMAND_BUFFER_SIZE` (288). Chained reassembly in `apdu_input` accumulates up to that limit, so applet bounds checks should compare against `APDU_INCOMING_DATA_SIZE`, not the raw 256-byte payload size.
-- Extended-length APDUs (Lc/Le up to 65535) are **not supported** in the standard transport path.
+- Extended-length APDUs are not supported in the standard transport path. The only exception is a standalone FIDO
+  `80 10` command received over CCID: its payload may be staged directly in PKE RAM up to `PKE_BUFFER_SIZE`, without
+  increasing `APDU_BUFFER_SIZE`. Other applets and transports must not rely on this exception.
 - Large request data (e.g. RSA key import, FIDO2 CBOR) must be sent by the host as chained `CLA=0x10` commands; `apdu_input` reassembles them transparently.
 - Large response data is returned via `GET RESPONSE` chaining; `apdu_output` handles segmentation transparently.
 - Do **not** increase `APDU_BUFFER_SIZE` to work around a design that should use chaining.
@@ -333,10 +335,13 @@ CTAP over `CCID` / `WebUSB` / NFC APDU:
 
 - Short request bodies live in `shared_io_buffer` only for the current APDU processing call. They are not long-lived across transport re-entry, `device_loop()`, session yield, or response streaming.
 - CCID `XfrBlock`, WebUSB control requests, and NFC I-block aggregation are bounded by `APDU_COMMAND_BUFFER_SIZE`.
+- A standalone FIDO `80 10` Extended APDU over CCID may exceed `APDU_COMMAND_BUFFER_SIZE`: CCID strips the 7/9-byte
+  APDU envelope while receiving USB packets and writes only the CBOR payload to PKE RAM. The CTAP parser must consume
+  that source immediately and release it before user-presence waits or crypto.
 - FIDO APDU chaining is separate from transport frame aggregation. Once the FIDO APDU body spans multiple APDUs or exceeds the short incoming data limit, `fido_apdu_input()` stages the accumulated payload in PKE and dispatches through `ctap_process_pke_apdu_with_src()`.
 - Chained FIDO APDU input in PKE follows the same lifetime rule as CTAPHID PKE-backed RX: it is valid only for immediate parser consumption.
 - `process_apdu()` may clear the PKE-backed FIDO request after the first `apdu_output()` call. APDU response sources must never depend on request PKE.
-- NFC pending storage must not become a general escape hatch for large request snapshots. Prefer parsed or bounded RAM pending state; treat whole-request file snapshots as implementation debt unless strictly justified.
+- NFC mode bypasses user-presence polling because the platform does not initialize LED or touch scanning there. Long NFC operations rely on transport-level WTX and must not persist request snapshots for touch polling.
 
 ### CTAP command lifecycle
 
@@ -384,7 +389,7 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 | FIDO2 conformance | `virt-card/fido-hid-over-udp` + `fido2-tests/` |
 | PC/SC integration | `u2f-virt-card` shared library + `test-via-pcsc/` |
 | Real-hardware tests | `test-real/` (requires a physical device) |
-| Fuzzing | `fuzzer/run-fuzzer.sh honggfuzz <id>` with `-DENABLE_FUZZING=ON` |
+| Fuzzing | `-DENABLE_FUZZING=ON` builds `afl-fuzzer`; run with AFL++ (`afl-fuzz`), GNU GCC required (directly or via afl-gcc-fast) |
 
 Test-mode extras (enabled by `TEST` define):
 - `testmode_emulate_user_presence()` — auto-confirms touch

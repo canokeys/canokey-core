@@ -9,7 +9,7 @@
 #include <ecc.h>
 #include <sha.h>
 
-#define FIRMWARE_VERSION 201
+#define FIRMWARE_VERSION 311
 #define CTAP_MAX_MSG_SIZE MAX_CTAP_BUFSIZE
 
 // Filesystem Meta
@@ -194,6 +194,7 @@
 #define CM_PARAM_RP_ID_HASH                                       0x01
 #define CM_PARAM_CREDENTIAL_ID                                    0x02
 #define CM_PARAM_USER                                             0x03
+#define CM_PARAM_VENDOR_METADATA_ONLY                             0x80
 #define CM_RESP_EXISTING_RESIDENT_CREDENTIALS_COUNT               0x01
 #define CM_RESP_MAX_POSSIBLE_REMAINING_RESIDENT_CREDENTIALS_COUNT 0x02
 #define CM_RESP_RP                                                0x03
@@ -206,6 +207,7 @@
 #define CM_RESP_CRED_PROTECT                                      0x0A
 #define CM_RESP_LARGE_BLOB_KEY                                    0x0B
 #define CM_RESP_THIRD_PARTY_PAYMENT                               0x0C
+#define CM_RESP_VENDOR_ALGORITHM                                  0x80
 // clang-format on
 
 #define LB_REQ_GET 0x01
@@ -335,6 +337,16 @@ typedef struct {
   bool deleted;
 } __packed CTAP_rp_meta;
 
+#ifdef TEST
+int ctap_consistency_check(void);
+int ctap_test_set_force_pin_change(bool required);
+uint32_t ctap_test_capacity_remaining_new_credentials(void);
+uint8_t ctap_test_delete_discoverable_credential(const credential_id *target);
+uint8_t ctap_test_find_allow_list_dc(const credential_id *allow_list, size_t allow_list_size,
+                                     const uint8_t rp_id_hash[SHA256_DIGEST_LENGTH], bool uv,
+                                     CTAP_discoverable_credential *out);
+#endif
+
 typedef struct {
   uint8_t aaguid[AAGUID_SIZE];
   uint16_t credential_id_length;
@@ -432,6 +444,7 @@ typedef struct {
   user_entity user;
   uint8_t pin_uv_auth_protocol;
   uint8_t pin_uv_auth_param[SHA256_DIGEST_LENGTH];
+  bool metadata_only;
 } CTAP_credential_management;
 
 typedef struct {

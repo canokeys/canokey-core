@@ -392,6 +392,7 @@ func TestFullOath(t *testing.T) {
 		// enable OATH for this session
 		_, err = oath.Select()
 		So(err, ShouldBeNil)
+		defer clearRecords(oath, -1)
 
 		clearRecords(oath, -1)
 

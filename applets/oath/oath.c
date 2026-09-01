@@ -15,7 +15,7 @@
 // Admission-control reserve for LittleFS metadata/copy-on-write overhead.
 // Tombstone reuse does not consume new blocks, so the reserve is checked only
 // when appending a new record past the current file end.
-#define OATH_FS_RESERVE_BYTES (64 * LFS_CACHE_SIZE)
+#define OATH_FS_RESERVE_BYTES (128 * LFS_CACHE_SIZE)
 
 #define YK_CMD_GET_SERIAL 0x10
 #define YK_CMD_CHAL_HMAC1 0x30
@@ -663,9 +663,10 @@ static int oath_yk_api_req(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 // ReSharper disable once CppDFAConstantFunctionResult
-int oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) oath_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
+  if (CLA != 0x00) EXCEPT(SW_CLA_NOT_SUPPORTED);
 
   // KeePassXC talks to NFC/PCSC challenge-response tokens by selecting the
   // OATH AID and then sending YubiKey OTP API commands under INS=0x01.  That

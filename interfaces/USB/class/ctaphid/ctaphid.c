@@ -7,12 +7,30 @@
 #include <usb_device.h>
 #include <usbd_ctaphid.h>
 
-#define CTAPHID_RX_QUEUE_SIZE 6
+#define CTAPHID_RX_QUEUE_SIZE 8
+#define CTAPHID_RX_QUEUE_HIGH_WATER 8
 #define CTAP_CMD_MAKE_CREDENTIAL 0x01
 #define CTAP2_ERR_KEEPALIVE_CANCEL 0x2d
 
-static CTAPHID_FRAME rx_frame;
-static CTAPHID_FRAME rx_queue[CTAPHID_RX_QUEUE_SIZE];
+#ifndef __DMB
+#if defined(__arm__) || defined(__thumb__)
+#define __DMB() __asm volatile("dmb 0xF" ::: "memory")
+#else
+#define __DMB() __atomic_thread_fence(__ATOMIC_SEQ_CST)
+#endif
+#endif
+
+typedef struct {
+  CTAPHID_FRAME frame;
+  uint32_t received_tick;
+} CTAPHID_RxEntry;
+
+_Static_assert(CTAPHID_RX_QUEUE_HIGH_WATER <= CTAPHID_RX_QUEUE_SIZE, "CTAPHID RX high-water exceeds queue size");
+
+// Eight queued reports plus one main-loop work item absorb USB bursts without
+// moving report storage onto the call stack.
+static CTAPHID_RxEntry rx_queue[CTAPHID_RX_QUEUE_SIZE];
+static CTAPHID_RxEntry rx_entry;
 static CTAPHID_FRAME tx_frame;
 static CTAPHID_Channel channel;
 static volatile uint8_t rx_head;
@@ -53,28 +71,26 @@ static void CTAPHID_MarkCancelPending(uint32_t cid) {
 }
 
 static int CTAPHID_PKESourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);
+static int CTAPHID_APDUResponseRead(void *ctx, uint8_t *out, size_t max_len, size_t *written);
 static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code);
 static uint8_t CTAPHID_SendCancelResponseIfNeeded(void);
 static void CTAPHID_Execute_Init(void);
 static void CTAPHID_Execute_Msg(void);
 static void CTAPHID_Execute_Cbor(void);
 
-static void CTAPHID_ResetRxStorage(void) {
-  if (channel.use_pke_buffer) {
-    pke_buffer_clear();
-    pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
-    channel.use_pke_buffer = 0;
-  }
-  channel.ready = 0;
-  channel.cancel_pending = 0;
-  channel.cancel_response_sent = 0;
-}
-
-static void CTAPHID_ReleasePKERequestStorage(void) {
+static void CTAPHID_ReleasePKERequestStorage(void *ctx) {
+  UNUSED(ctx);
   if (!channel.use_pke_buffer) return;
   pke_buffer_clear();
   pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
   channel.use_pke_buffer = 0;
+}
+
+static void CTAPHID_ResetRxStorage(void) {
+  CTAPHID_ReleasePKERequestStorage(NULL);
+  channel.ready = 0;
+  channel.cancel_pending = 0;
+  channel.cancel_response_sent = 0;
 }
 
 static void CTAPHID_PKERequestSourceClose(void *ctx) {
@@ -82,31 +98,52 @@ static void CTAPHID_PKERequestSourceClose(void *ctx) {
   CTAPHID_ResetRxStorage();
 }
 
-static uint8_t CTAPHID_QueueRxFrame(const CTAPHID_FRAME *frame) {
-  uint8_t next_head = (uint8_t)((rx_head + 1) % CTAPHID_RX_QUEUE_SIZE);
-  if (next_head == rx_tail) {
+static uint8_t CTAPHID_RxCount(void) {
+  const uint8_t head = rx_head;
+  __DMB();
+  return (uint8_t)(head - rx_tail);
+}
+
+uint8_t CTAPHID_RxCanAccept(void) { return CTAPHID_RxCount() < CTAPHID_RX_QUEUE_HIGH_WATER; }
+
+static uint8_t CTAPHID_QueueRxFrame(const CTAPHID_FRAME *frame, uint32_t received_tick) {
+  const uint8_t head = rx_head;
+  if ((uint8_t)(head - rx_tail) >= CTAPHID_RX_QUEUE_SIZE) {
     ERR_MSG("overrun\n");
     return 0;
   }
-  memcpy(&rx_queue[rx_head], frame, sizeof(rx_queue[rx_head]));
-  rx_head = next_head;
+  CTAPHID_RxEntry *entry = &rx_queue[head % CTAPHID_RX_QUEUE_SIZE];
+  memcpy(&entry->frame, frame, sizeof(entry->frame));
+  entry->received_tick = received_tick;
+  __DMB();
+  rx_head = (uint8_t)(head + 1);
   return 1;
 }
 
-static int CTAPHID_AppendContinuation(const CTAPHID_FRAME *frame) {
-  if (!frame || channel.state != CTAPHID_BUSY || FRAME_TYPE(*frame) != TYPE_CONT || frame->cid != channel.cid) return 0;
-  if (FRAME_SEQ(*frame) != channel.seq) return 0;
-
-  uint16_t copied = MIN(channel.bcnt_total - channel.bcnt_current, CSIZE);
-  channel.seq++;
-  if (channel.use_pke_buffer) {
-    if (copied != 0 && pke_buffer_write(channel.bcnt_current, frame->cont.data, copied) < 0) return -1;
-  } else if (copied != 0) {
-    memcpy(channel.data + channel.bcnt_current, frame->cont.data, copied);
-  }
-  channel.bcnt_current += copied;
-  channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
+static uint8_t CTAPHID_PeekRxEntry(CTAPHID_RxEntry *entry) {
+  const uint8_t tail = rx_tail;
+  if (tail == rx_head) return 0;
+  __DMB();
+  memcpy(entry, &rx_queue[tail % CTAPHID_RX_QUEUE_SIZE], sizeof(*entry));
   return 1;
+}
+
+static void CTAPHID_PopRxEntry(void) {
+  const uint8_t tail = rx_tail;
+  __DMB();
+  rx_tail = (uint8_t)(tail + 1);
+}
+
+static uint8_t CTAPHID_TickAfter(uint32_t tick, uint32_t deadline) {
+  return (int32_t)(tick - deadline) > 0;
+}
+
+static void CTAPHID_TimeoutCurrentTransaction(void) {
+  const uint32_t cid = channel.cid;
+  DBG_MSG("CTAP Timeout\n");
+  CTAPHID_ResetRxStorage();
+  channel.state = CTAPHID_IDLE;
+  CTAPHID_SendErrorResponse(cid, ERR_MSG_TIMEOUT);
 }
 
 static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
@@ -114,47 +151,39 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
     return LOOP_CANCEL;
   }
   if (channel.executing) return LOOP_SUCCESS;
-  if (!channel.ready || channel.state != CTAPHID_BUSY || channel.bcnt_current != channel.bcnt_total)
-    return LOOP_SUCCESS;
+  if (!channel.ready || channel.state != CTAPHID_BUSY) return LOOP_SUCCESS;
 
   uint8_t ret = LOOP_SUCCESS;
   channel.executing = 1;
   channel.expire = UINT32_MAX;
-  switch (channel.cmd) {
+  const uint8_t cmd = channel.cmd;
+  if ((cmd == CTAPHID_MSG || cmd == CTAPHID_CBOR) && !device_config_is_webauthn_enabled()) {
+    CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
+    goto dispatch_done;
+  }
+  if (wait_for_user && (cmd == CTAPHID_MSG || cmd == CTAPHID_CBOR || cmd == CTAPHID_INIT || cmd == CTAPHID_PING)) {
+    CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
+    goto dispatch_done;
+  }
+
+  switch (cmd) {
   case CTAPHID_MSG:
-    if (!device_config_is_webauthn_enabled()) {
-      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
-      break;
-    }
-    if (wait_for_user)
-      CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
-    else if (channel.bcnt_total < 4)
+    if (channel.bcnt_total < 4)
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
     else
       CTAPHID_Execute_Msg();
     break;
   case CTAPHID_CBOR:
-    if (!device_config_is_webauthn_enabled()) {
-      CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
-      break;
-    }
-    if (wait_for_user)
-      CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
-    else if (channel.bcnt_total == 0)
+    if (channel.bcnt_total == 0)
       CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
     else
       CTAPHID_Execute_Cbor();
     break;
   case CTAPHID_INIT:
-    if (wait_for_user)
-      CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
-    else
-      CTAPHID_Execute_Init();
+    CTAPHID_Execute_Init();
     break;
   case CTAPHID_PING:
-    if (wait_for_user)
-      CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
-    else if (channel.use_pke_buffer) {
+    if (channel.use_pke_buffer) {
       tx_pke_source_offset = 0;
       CTAPHID_TxSource source = {
           .total_len = channel.bcnt_total,
@@ -182,8 +211,10 @@ static uint8_t CTAPHID_DispatchComplete(uint8_t wait_for_user) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_CMD);
     break;
   }
+
+dispatch_done:
   channel.executing = 0;
-  if (!(channel.cmd == CTAPHID_PING && CTAPHID_TxBusy())) CTAPHID_ResetRxStorage();
+  if (!(cmd == CTAPHID_PING && CTAPHID_TxBusy())) CTAPHID_ResetRxStorage();
   channel.state = CTAPHID_IDLE;
   return ret;
 }
@@ -204,78 +235,27 @@ uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *r
 uint8_t CTAPHID_OutEvent(uint8_t *data) {
   CTAPHID_FRAME frame;
   memcpy(&frame, data, sizeof(frame));
-
-  if (FRAME_TYPE(frame) == TYPE_INIT && frame.init.cmd == CTAPHID_CANCEL) {
-    if (channel.executing && frame.cid == channel.cid && MSG_LEN(frame) == 0) {
-      CTAPHID_MarkCancelPending(frame.cid);
-      return 1;
-    }
-  }
-  if (CTAPHID_TxBusy() || channel.ready) return CTAPHID_QueueRxFrame(&frame);
-
-  if (frame.cid == 0 || (frame.cid == CID_BROADCAST && frame.init.cmd != CTAPHID_INIT)) {
-    CTAPHID_SendErrorResponse(frame.cid, ERR_INVALID_CID);
-    return 1;
-  }
-
-  if (FRAME_TYPE(frame) == TYPE_INIT) {
-    if (channel.state == CTAPHID_BUSY && frame.cid != channel.cid) return 0;
-
-    if (!channel.executing && channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) {
-      CTAPHID_ResetRxStorage();
-      channel.state = CTAPHID_IDLE;
-      return 0;
-    }
-
-    channel.cid = frame.cid;
-    channel.bcnt_total = (uint16_t)MSG_LEN(frame);
-    if (channel.bcnt_total > MAX_CTAP_BUFSIZE) return 0;
-
-    uint16_t copied = MIN(channel.bcnt_total, ISIZE);
-    CTAPHID_ResetRxStorage();
-    channel.use_pke_buffer = 0;
-    if (channel.bcnt_total > sizeof(channel.data)) {
-      if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) return 0;
-      channel.use_pke_buffer = 1;
-      if (pke_buffer_clear() < 0) {
-        CTAPHID_ResetRxStorage();
-        return 0;
-      }
-      if (copied != 0 && pke_buffer_write(0, frame.init.data, copied) < 0) {
-        CTAPHID_ResetRxStorage();
-        return 0;
-      }
-    } else if (copied != 0) {
-      memcpy(channel.data, frame.init.data, copied);
-    }
-    channel.bcnt_current = copied;
-    channel.state = CTAPHID_BUSY;
-    channel.cmd = frame.init.cmd;
-    channel.seq = 0;
-    channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
-    channel.ready = (channel.bcnt_current == channel.bcnt_total);
-    return 1;
-  }
-
-  if (channel.state == CTAPHID_BUSY && frame.cid == channel.cid) {
-    int fast = CTAPHID_AppendContinuation(&frame);
-    if (fast > 0) {
-      channel.ready = (channel.bcnt_current == channel.bcnt_total);
-      return 1;
-    }
-    if (fast < 0) {
-      CTAPHID_ResetRxStorage();
-      channel.state = CTAPHID_IDLE;
-      return 0;
-    }
-  }
-
-  return CTAPHID_QueueRxFrame(&frame);
+  return CTAPHID_QueueRxFrame(&frame, device_get_tick());
 }
 
 static uint8_t CTAPHID_SendFrame(void) {
   if (!callback_send_report) return 1;
   return callback_send_report(&usb_device, (uint8_t *)&tx_frame, sizeof(CTAPHID_FRAME));
+}
+
+static __attribute__((noinline)) void CTAPHID_InitFrame(uint32_t cid, uint8_t cmd, uint16_t len) {
+  memset(&tx_frame, 0, sizeof(tx_frame));
+  tx_frame.cid = cid;
+  tx_frame.type = TYPE_INIT;
+  tx_frame.init.cmd = cmd;
+  tx_frame.init.bcnth = (uint8_t)(len >> 8);
+  tx_frame.init.bcntl = (uint8_t)len;
+}
+
+static uint8_t CTAPHID_SendByteFrame(uint32_t cid, uint8_t cmd, uint8_t value) {
+  CTAPHID_InitFrame(cid, cmd, 1);
+  tx_frame.init.data[0] = value;
+  return CTAPHID_SendFrame();
 }
 
 static int CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, const uint8_t *data, uint16_t len) {
@@ -286,12 +266,7 @@ static int CTAPHID_SendResponse(uint32_t cid, uint8_t cmd, const uint8_t *data, 
   if (len != 0 && !data) return -1;
   if (USBD_CTAPHID_WaitIdle() != USBD_OK) return -1;
 
-  memset(&tx_frame, 0, sizeof(tx_frame));
-  tx_frame.cid = cid;
-  tx_frame.type = TYPE_INIT;
-  tx_frame.init.cmd |= cmd;
-  tx_frame.init.bcnth = (uint8_t)((len >> 8) & 0xFF);
-  tx_frame.init.bcntl = (uint8_t)(len & 0xFF);
+  CTAPHID_InitFrame(cid, cmd, len);
 
   copied = MIN(len, ISIZE);
   if (copied != 0) memcpy(tx_frame.init.data, data, copied);
@@ -324,6 +299,21 @@ void CTAPHID_TxReset(void) {
   if (had_stream) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
 }
 
+static int CTAPHID_APDUResponseRead(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
+  const APDU_RESPONSE_SOURCE_VIEW *source = (const APDU_RESPONSE_SOURCE_VIEW *)ctx;
+  const size_t stream_offset = tx_stream.offset;
+  const size_t remaining = source->total_len - source->offset;
+  size_t copied = stream_offset < remaining ? MIN(remaining - stream_offset, max_len) : 0;
+  if (copied != 0) {
+    const int ret = source->read(source->ctx, source->offset + (uint32_t)stream_offset, out, (uint16_t)copied);
+    if (ret < 0 || (size_t)ret != copied) return -1;
+  }
+  if (stream_offset + copied == remaining && copied < max_len) out[copied++] = HI(source->sw);
+  if (copied < max_len) out[copied++] = LO(source->sw);
+  *written = copied;
+  return copied == max_len ? 0 : -1;
+}
+
 static int CTAPHID_MemSourceRead(void *ctx, uint8_t *out, size_t max_len, size_t *written) {
   CTAPHID_MemSource *source = (CTAPHID_MemSource *)ctx;
   size_t copied = MIN(tx_stream.len - tx_stream.offset, max_len);
@@ -353,18 +343,14 @@ static int CTAPHID_TxFillFrame(void) {
   uint8_t *payload;
   size_t payload_size;
 
-  memset(&tx_frame, 0, sizeof(tx_frame));
-  tx_frame.cid = tx_stream.cid;
-
   if (tx_stream.first) {
-    tx_frame.type = TYPE_INIT;
-    tx_frame.init.cmd |= tx_stream.cmd;
-    tx_frame.init.bcnth = (uint8_t)((tx_stream.len >> 8) & 0xFF);
-    tx_frame.init.bcntl = (uint8_t)(tx_stream.len & 0xFF);
+    CTAPHID_InitFrame(tx_stream.cid, tx_stream.cmd, (uint16_t)tx_stream.len);
     payload = tx_frame.init.data;
     payload_size = ISIZE;
     tx_stream.first = 0;
   } else {
+    memset(&tx_frame, 0, sizeof(tx_frame));
+    tx_frame.cid = tx_stream.cid;
     tx_frame.cont.seq = tx_stream.seq++;
     payload = tx_frame.cont.data;
     payload_size = CSIZE;
@@ -500,14 +486,7 @@ static uint8_t CTAPHID_SendCancelResponseIfNeeded(void) {
   if (channel.cancel_response_sent) return 1;
   if (USBD_CTAPHID_WaitIdle() != USBD_OK) return 0;
 
-  memset(&tx_frame, 0, sizeof(tx_frame));
-  tx_frame.cid = channel.cid;
-  tx_frame.type = TYPE_INIT;
-  tx_frame.init.cmd = CTAPHID_CBOR;
-  tx_frame.init.bcnth = 0;
-  tx_frame.init.bcntl = 1;
-  tx_frame.init.data[0] = CTAP2_ERR_KEEPALIVE_CANCEL;
-  if (CTAPHID_SendFrame() == 0) {
+  if (CTAPHID_SendByteFrame(channel.cid, CTAPHID_CBOR, CTAP2_ERR_KEEPALIVE_CANCEL) == 0) {
     channel.cancel_response_sent = 1;
     return 1;
   }
@@ -521,32 +500,6 @@ static uint8_t CTAPHID_SendCancelResponseWithRetries(void) {
     device_delay(1);
   } while ((uint32_t)(device_get_tick() - start) < 500);
   return CTAPHID_SendCancelResponseIfNeeded();
-}
-
-static int CTAPHID_SendGlobalBufferResponseAuto(uint32_t cid, uint8_t cmd, size_t len) {
-  if (len > UINT16_MAX) {
-    CTAPHID_ReleaseSharedBuffer();
-    return -1;
-  }
-  if (len <= CTAPHID_STREAM_THRESHOLD) {
-    int ret = CTAPHID_SendResponse(cid, cmd, shared_io_buffer, (uint16_t)len);
-    CTAPHID_ReleaseSharedBuffer();
-    return ret;
-  }
-
-  tx_mem_source.data = shared_io_buffer;
-  tx_mem_source.offset = 0;
-  CTAPHID_TxSource source = {
-      .total_len = len,
-      .read = CTAPHID_MemSourceRead,
-      .close = CTAPHID_CloseSharedBufferSource,
-      .ctx = &tx_mem_source,
-  };
-  if (CTAPHID_SendStreamSource(cid, cmd, &source) != 0) {
-    CTAPHID_ReleaseSharedBuffer();
-    return -1;
-  }
-  return 0;
 }
 
 static int CTAPHID_RequestRead(void *ctx, size_t offset, uint8_t *buf, size_t len) {
@@ -567,24 +520,18 @@ static int CTAPHID_RequestCancelled(void *ctx) {
   return channel.cancel_pending != 0;
 }
 
-static int CTAPHID_GetRequestBuffer(size_t len, uint8_t **req, ctap_req_src_t *req_src, uint8_t *source_backed) {
-  if (req) *req = NULL;
-  if (req_src) memset(req_src, 0, sizeof(*req_src));
-  if (source_backed) *source_backed = 0;
+static uint8_t *CTAPHID_GetRequestBuffer(ctap_req_src_t *req_src) {
+  if (!channel.use_pke_buffer) return channel.data;
 
-  if (!channel.use_pke_buffer) {
-    if (req) *req = channel.data;
-    return 0;
-  }
-
-  if (!req_src || !source_backed) return -1;
-  req_src->read = CTAPHID_RequestRead;
-  req_src->cancelled = CTAPHID_RequestCancelled;
-  req_src->ctx = NULL;
-  req_src->base_offset = 0;
-  req_src->len = len;
-  *source_backed = 1;
-  return 0;
+  *req_src = (ctap_req_src_t){
+      .read = CTAPHID_RequestRead,
+      .cancelled = CTAPHID_RequestCancelled,
+      .close = CTAPHID_ReleasePKERequestStorage,
+      .ctx = NULL,
+      .base_offset = 0,
+      .len = channel.bcnt_total,
+  };
+  return NULL;
 }
 
 static int CTAPHID_ReadPreparedRequest(const uint8_t *req, const ctap_req_src_t *req_src, size_t offset, uint8_t *buf,
@@ -593,26 +540,22 @@ static int CTAPHID_ReadPreparedRequest(const uint8_t *req, const ctap_req_src_t 
     memcpy(buf, req + offset, len);
     return 0;
   }
-  if (!req_src || !req_src->read) return -1;
-  if (offset > req_src->len || len > req_src->len - offset) return -1;
   return req_src->read(req_src->ctx, req_src->base_offset + offset, buf, len);
 }
 
-static void CTAPHID_ClosePreparedRequest(uint8_t source_backed) {
+static void CTAPHID_ClosePreparedRequest(void) {
   // Source-backed requests own HID RX PKE staging; inline channel.data requests
   // are released by the normal RX reset path after command execution.
-  if (source_backed) CTAPHID_ReleasePKERequestStorage();
+  if (channel.use_pke_buffer) CTAPHID_ReleasePKERequestStorage(NULL);
 }
 
-static int CTAPHID_PayloadSource(const ctap_req_src_t *req_src, size_t offset, size_t len, ctap_req_src_t *payload_src) {
-  if (!req_src || !req_src->read || !payload_src) return -1;
-  if (offset > req_src->len || len > req_src->len - offset) return -1;
+static void CTAPHID_PayloadSource(const ctap_req_src_t *req_src, size_t offset, size_t len,
+                                  ctap_req_src_t *payload_src) {
   // CTAPHID MSG wraps an APDU header around CTAP payload bytes. Keep the source
   // window scoped to LC so APDU handlers cannot read the stack header copy.
   *payload_src = *req_src;
   payload_src->base_offset += offset;
   payload_src->len = len;
-  return 0;
 }
 
 void CTAPHID_TxContinue(void) {
@@ -627,13 +570,7 @@ void CTAPHID_TxContinue(void) {
 
 static void CTAPHID_SendErrorResponse(uint32_t cid, uint8_t code) {
   DBG_MSG("error code 0x%x\n", (int)code);
-  memset(&tx_frame, 0, sizeof(tx_frame));
-  tx_frame.cid = cid;
-  tx_frame.init.cmd = CTAPHID_ERROR;
-  tx_frame.init.bcnth = 0;
-  tx_frame.init.bcntl = 1;
-  tx_frame.init.data[0] = code;
-  CTAPHID_SendFrame();
+  CTAPHID_SendByteFrame(cid, CTAPHID_ERROR, code);
 }
 
 static void CTAPHID_Execute_Init(void) {
@@ -662,22 +599,14 @@ static void CTAPHID_Execute_Msg(void) {
     CTAPHID_SendErrorResponse(channel.cid, ERR_CHANNEL_BUSY);
     return;
   }
-  uint8_t *req = NULL;
   ctap_req_src_t req_src;
-  uint8_t source_backed = 0;
-  if (CTAPHID_GetRequestBuffer(channel.bcnt_total, &req, &req_src, &source_backed) < 0) {
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-    return;
-  }
+  uint8_t *req = CTAPHID_GetRequestBuffer(&req_src);
+  uint8_t error_code = ERR_OTHER;
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
   uint8_t req_head[7];
   if (CTAPHID_ReadPreparedRequest(req, &req_src, 0, req_head, sizeof(req_head)) < 0) {
-    CTAPHID_ClosePreparedRequest(source_backed);
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-    return;
+    goto request_error;
   }
   CLA = req_head[0];
   INS = req_head[1];
@@ -685,56 +614,74 @@ static void CTAPHID_Execute_Msg(void) {
   P2 = req_head[3];
   LC = ((uint16_t)req_head[5] << 8) | req_head[6];
   if (LC > channel.bcnt_total - 7) {
-    CTAPHID_ClosePreparedRequest(source_backed);
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
-    return;
+    error_code = ERR_INVALID_LEN;
+    goto request_error;
   }
-  size_t le_len = channel.bcnt_total - 7 - LC;
+  const size_t le_len = channel.bcnt_total - 7 - LC;
   if (le_len == 2) {
     uint8_t le[2];
     if (CTAPHID_ReadPreparedRequest(req, &req_src, 7 + LC, le, sizeof(le)) < 0) {
-      CTAPHID_ClosePreparedRequest(source_backed);
-      release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-      CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-      return;
+      goto request_error;
     }
     LE = ((uint16_t)le[0] << 8) | le[1];
     if (LE == 0) LE = 0x10000;
   } else if (le_len == 0) {
     LE = 0x10000;
   } else {
-    CTAPHID_ClosePreparedRequest(source_backed);
-    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_LEN);
-    return;
+    error_code = ERR_INVALID_LEN;
+    goto request_error;
   }
+  capdu->extended = 1;
   DATA = req ? req + 7 : req_head;
   RDATA = shared_io_buffer;
   if (req) {
     ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_HID);
   } else {
     ctap_req_src_t payload_src;
-    if (CTAPHID_PayloadSource(&req_src, 7, LC, &payload_src) < 0) {
-      CTAPHID_ClosePreparedRequest(source_backed);
-      release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
+    CTAPHID_PayloadSource(&req_src, 7, LC, &payload_src);
+    ctap_process_apdu_source_with_src(capdu, &payload_src, rapdu, CTAP_SRC_HID);
+  }
+  CTAPHID_ClosePreparedRequest();
+  const APDU_RESPONSE_SOURCE_VIEW *apdu_source = apdu_response_source_view();
+  if (apdu_source && apdu_source->total_len - apdu_source->offset <= capdu->le) {
+    CTAPHID_TxSource source = {
+        .total_len = apdu_source->total_len - apdu_source->offset + 2,
+        .read = CTAPHID_APDUResponseRead,
+        .close = CTAPHID_CloseSharedBufferSource,
+        .ctx = (void *)apdu_source,
+    };
+    const int send_ret = CTAPHID_SendStreamSource(channel.cid, channel.cmd, &source);
+    if (send_ret != 0) CTAPHID_ReleaseSharedBuffer();
+    apdu_response_source_clear();
+    if (send_ret != 0) {
+      device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
       CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
       return;
     }
-    ctap_process_apdu_source_with_src(capdu, &payload_src, rapdu, CTAP_SRC_HID);
+    return;
   }
-  CTAPHID_ClosePreparedRequest(source_backed);
+  if (apdu_source && apdu_response_source_output(rapdu, capdu->le) != 0) {
+    release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
+    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
+    return;
+  }
+  const uint8_t response_pending = apdu_response_source_active();
   shared_io_buffer[LL] = HI(SW);
   shared_io_buffer[LL + 1] = LO(SW);
-  if (CTAPHID_SendGlobalBufferResponseAuto(channel.cid, channel.cmd, LL + 2) != 0) {
+  const int send_ret = CTAPHID_SendResponse(channel.cid, channel.cmd, shared_io_buffer, LL + 2);
+  CTAPHID_ReleaseSharedBuffer();
+  if (send_ret != 0) {
     device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
     CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
     return;
   }
-  // SendStreamSource finishes synchronously and TxReset already released the
-  // session in that path; the guard catches the inline-response path where no
-  // stream was ever activated.
-  if (!CTAPHID_TxBusy()) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  if (!response_pending) device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  return;
+
+request_error:
+  CTAPHID_ClosePreparedRequest();
+  release_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID);
+  CTAPHID_SendErrorResponse(channel.cid, error_code);
 }
 
 static void CTAPHID_Execute_Cbor(void) {
@@ -743,14 +690,8 @@ static void CTAPHID_Execute_Cbor(void) {
     return;
   }
   device_applet_session_touch(DEVICE_APPLET_SESSION_CTAPHID);
-  uint8_t *req = NULL;
   ctap_req_src_t req_src;
-  uint8_t source_backed = 0;
-  if (CTAPHID_GetRequestBuffer(channel.bcnt_total, &req, &req_src, &source_backed) < 0) {
-    device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
-    CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
-    return;
-  }
+  uint8_t *req = CTAPHID_GetRequestBuffer(&req_src);
   uint8_t ctap_cmd = 0;
   if (CTAPHID_ReadPreparedRequest(req, &req_src, 0, &ctap_cmd, sizeof(ctap_cmd)) == 0 &&
       ctap_cmd == CTAP_CMD_MAKE_CREDENTIAL) {
@@ -759,13 +700,13 @@ static void CTAPHID_Execute_Cbor(void) {
   CTAPHID_TxSource source;
   int stream_ret;
   if (req) {
-    stream_ret =
-        ctap_process_cbor_stream_with_src(req, channel.bcnt_total, channel.data, sizeof(channel.data), &source, CTAP_SRC_HID);
+    stream_ret = ctap_process_cbor_stream_with_src(req, channel.bcnt_total, channel.data, sizeof(channel.data), &source,
+                                                   CTAP_SRC_HID);
   } else {
     stream_ret =
         ctap_process_cbor_stream_source_with_src(&req_src, channel.data, sizeof(channel.data), &source, CTAP_SRC_HID);
   }
-  CTAPHID_ClosePreparedRequest(source_backed);
+  CTAPHID_ClosePreparedRequest();
   if (channel.cancel_pending || channel.cancel_response_sent) {
     if (stream_ret > 0 && source.close) source.close(source.ctx);
     if (channel.cancel_response_sent || CTAPHID_SendCancelResponseWithRetries()) channel.cancel_pending = 0;
@@ -790,53 +731,59 @@ static void CTAPHID_Execute_Cbor(void) {
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   uint8_t ret = LOOP_SUCCESS;
   USBD_CTAPHID_ServiceReceive();
-  if (channel.state == CTAPHID_BUSY && device_get_tick() > channel.expire) {
-    DBG_MSG("CTAP Timeout\n");
-    CTAPHID_ResetRxStorage();
-    channel.state = CTAPHID_IDLE;
-    CTAPHID_SendErrorResponse(channel.cid, ERR_MSG_TIMEOUT);
-  }
 
   ret = CTAPHID_DispatchComplete(wait_for_user);
   if (ret != LOOP_SUCCESS) return ret;
 
-  while (!CTAPHID_TxBusy() && !channel.ready && rx_head != rx_tail) {
-    memcpy(&rx_frame, &rx_queue[rx_tail], sizeof(rx_frame));
-    rx_tail = (uint8_t)((rx_tail + 1) % CTAPHID_RX_QUEUE_SIZE);
+  while (CTAPHID_PeekRxEntry(&rx_entry)) {
+    CTAPHID_FRAME *rx_frame = &rx_entry.frame;
+    const uint8_t is_cancel = FRAME_TYPE(*rx_frame) == TYPE_INIT && rx_frame->init.cmd == CTAPHID_CANCEL &&
+                              channel.executing && rx_frame->cid == channel.cid && MSG_LEN(*rx_frame) == 0;
 
-    if (FRAME_TYPE(rx_frame) == TYPE_INIT && rx_frame.init.cmd == CTAPHID_CANCEL && channel.executing &&
-        rx_frame.cid == channel.cid && MSG_LEN(rx_frame) == 0) {
-      CTAPHID_MarkCancelPending(rx_frame.cid);
+    // During command execution only a matching CANCEL may alter channel state.
+    // Other reports remain queued until the command has returned.
+    if (channel.executing && !is_cancel) break;
+    if (!is_cancel && (CTAPHID_TxBusy() || channel.ready)) break;
+
+    if (!channel.executing && channel.state == CTAPHID_BUSY &&
+        CTAPHID_TickAfter(rx_entry.received_tick, channel.expire)) {
+      CTAPHID_TimeoutCurrentTransaction();
+    }
+    CTAPHID_PopRxEntry();
+
+    if (is_cancel) {
+      CTAPHID_MarkCancelPending(rx_frame->cid);
+      ret = CTAPHID_DispatchComplete(wait_for_user);
       goto consume_frame;
     }
 
-    if (rx_frame.cid == 0 || (rx_frame.cid == CID_BROADCAST && rx_frame.init.cmd != CTAPHID_INIT)) {
-      CTAPHID_SendErrorResponse(rx_frame.cid, ERR_INVALID_CID);
+    if (rx_frame->cid == 0 || (rx_frame->cid == CID_BROADCAST && rx_frame->init.cmd != CTAPHID_INIT)) {
+      CTAPHID_SendErrorResponse(rx_frame->cid, ERR_INVALID_CID);
       goto consume_frame;
     }
-    if (channel.state == CTAPHID_BUSY && rx_frame.cid != channel.cid) {
-      CTAPHID_SendErrorResponse(rx_frame.cid, ERR_CHANNEL_BUSY);
+    if (channel.state == CTAPHID_BUSY && rx_frame->cid != channel.cid) {
+      CTAPHID_SendErrorResponse(rx_frame->cid, ERR_CHANNEL_BUSY);
       goto consume_frame;
     }
 
-    channel.cid = rx_frame.cid;
+    channel.cid = rx_frame->cid;
 
-    if (FRAME_TYPE(rx_frame) == TYPE_INIT) {
+    if (FRAME_TYPE(*rx_frame) == TYPE_INIT) {
       // The same CANCEL check at the top of this loop already handles a
       // matching cid; if it fell through, the cid-mismatch + state==BUSY
       // path above already produced ERR_CHANNEL_BUSY and consumed the frame.
       // DBG_MSG("CTAP init frame, cmd=0x%x\n", (int)frame.init.cmd);
-      if (!wait_for_user && channel.state == CTAPHID_BUSY && rx_frame.init.cmd != CTAPHID_INIT) { // self abort is ok
-        DBG_MSG("wait_for_user=%d, cmd=0x%x\n", (int)wait_for_user, (int)rx_frame.init.cmd);
+      if (!wait_for_user && channel.state == CTAPHID_BUSY && rx_frame->init.cmd != CTAPHID_INIT) { // self abort is ok
+        DBG_MSG("wait_for_user=%d, cmd=0x%x\n", (int)wait_for_user, (int)rx_frame->init.cmd);
         CTAPHID_ResetRxStorage();
         channel.state = CTAPHID_IDLE;
         CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
         goto consume_frame;
       }
-      channel.bcnt_total = (uint16_t)MSG_LEN(rx_frame);
+      channel.bcnt_total = (uint16_t)MSG_LEN(*rx_frame);
       if (channel.bcnt_total > MAX_CTAP_BUFSIZE) {
         DBG_MSG("bcnt_total=%hu exceeds MAX_CTAP_BUFSIZE\n", channel.bcnt_total);
-        CTAPHID_SendErrorResponse(rx_frame.cid, ERR_INVALID_LEN);
+        CTAPHID_SendErrorResponse(rx_frame->cid, ERR_INVALID_LEN);
         goto consume_frame;
       }
       uint16_t copied;
@@ -845,34 +792,34 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       channel.use_pke_buffer = 0;
       if (channel.bcnt_total > sizeof(channel.data)) {
         if (pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP) < 0) {
-          CTAPHID_SendErrorResponse(rx_frame.cid, ERR_CHANNEL_BUSY);
+          CTAPHID_SendErrorResponse(rx_frame->cid, ERR_CHANNEL_BUSY);
           goto consume_frame;
         }
         channel.use_pke_buffer = 1;
         if (pke_buffer_clear() < 0) {
           CTAPHID_ResetRxStorage();
-          CTAPHID_SendErrorResponse(rx_frame.cid, ERR_OTHER);
+          CTAPHID_SendErrorResponse(rx_frame->cid, ERR_OTHER);
           goto consume_frame;
         }
-        if (copied != 0 && pke_buffer_write(0, rx_frame.init.data, copied) < 0) {
+        if (copied != 0 && pke_buffer_write(0, rx_frame->init.data, copied) < 0) {
           CTAPHID_ResetRxStorage();
-          CTAPHID_SendErrorResponse(rx_frame.cid, ERR_OTHER);
+          CTAPHID_SendErrorResponse(rx_frame->cid, ERR_OTHER);
           goto consume_frame;
         }
       } else if (copied != 0) {
-        memcpy(channel.data, rx_frame.init.data, copied);
+        memcpy(channel.data, rx_frame->init.data, copied);
       }
       channel.state = CTAPHID_BUSY;
-      channel.cmd = rx_frame.init.cmd;
+      channel.cmd = rx_frame->init.cmd;
       channel.seq = 0;
-      channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
+      channel.expire = rx_entry.received_tick + CTAPHID_TRANS_TIMEOUT;
       channel.ready = (channel.bcnt_current == channel.bcnt_total);
     } else {
       // DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd,
       // (int)FRAME_SEQ(frame));
       if (channel.state == CTAPHID_IDLE) goto consume_frame; // ignore spurious continuation packet
-      if (FRAME_SEQ(rx_frame) != channel.seq++) {
-        DBG_MSG("seq=%d\n", (int)FRAME_SEQ(rx_frame));
+      if (FRAME_SEQ(*rx_frame) != channel.seq++) {
+        DBG_MSG("seq=%d\n", (int)FRAME_SEQ(*rx_frame));
         CTAPHID_ResetRxStorage();
         channel.state = CTAPHID_IDLE;
         CTAPHID_SendErrorResponse(channel.cid, ERR_INVALID_SEQ);
@@ -881,16 +828,17 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       uint16_t copied;
       copied = MIN(channel.bcnt_total - channel.bcnt_current, CSIZE);
       if (channel.use_pke_buffer) {
-        if (copied != 0 && pke_buffer_write(channel.bcnt_current, rx_frame.cont.data, copied) < 0) {
+        if (copied != 0 && pke_buffer_write(channel.bcnt_current, rx_frame->cont.data, copied) < 0) {
           CTAPHID_ResetRxStorage();
           channel.state = CTAPHID_IDLE;
           CTAPHID_SendErrorResponse(channel.cid, ERR_OTHER);
           goto consume_frame;
         }
       } else if (copied != 0) {
-        memcpy(channel.data + channel.bcnt_current, rx_frame.cont.data, copied);
+        memcpy(channel.data + channel.bcnt_current, rx_frame->cont.data, copied);
       }
       channel.bcnt_current += copied;
+      channel.expire = rx_entry.received_tick + CTAPHID_TRANS_TIMEOUT;
       channel.ready = (channel.bcnt_current == channel.bcnt_total);
     }
     ret = CTAPHID_DispatchComplete(wait_for_user);
@@ -899,18 +847,18 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     USBD_CTAPHID_ServiceReceive();
     if (ret != LOOP_SUCCESS) break;
   }
+  if (ret == LOOP_SUCCESS && !channel.executing && channel.state == CTAPHID_BUSY &&
+      CTAPHID_TickAfter(device_get_tick(), channel.expire)) {
+    const uint8_t has_on_time_continuation =
+        CTAPHID_PeekRxEntry(&rx_entry) && FRAME_TYPE(rx_entry.frame) == TYPE_CONT &&
+        rx_entry.frame.cid == channel.cid && !CTAPHID_TickAfter(rx_entry.received_tick, channel.expire);
+    if (!has_on_time_continuation) CTAPHID_TimeoutCurrentTransaction();
+  }
   return ret;
 }
 
 void CTAPHID_SendKeepAlive(uint8_t status) {
   if (CTAPHID_TxBusy()) return;
   if (USBD_CTAPHID_IsIdle() != USBD_OK) return;
-  memset(&tx_frame, 0, sizeof(tx_frame));
-  tx_frame.cid = channel.cid;
-  tx_frame.type = TYPE_INIT;
-  tx_frame.init.cmd |= CTAPHID_KEEPALIVE;
-  tx_frame.init.bcnth = 0;
-  tx_frame.init.bcntl = 1;
-  tx_frame.init.data[0] = status;
-  CTAPHID_SendFrame();
+  CTAPHID_SendByteFrame(channel.cid, CTAPHID_KEEPALIVE, status);
 }

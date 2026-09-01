@@ -33,6 +33,7 @@
 #define MAX_DECIPHER_INPUT_LENGTH 513
 #define MAX_PUBKEY_RESPONSE_LENGTH 527
 #define MAX_CRYPTO_RESULT_LENGTH 512
+#define MAX_SHORT_WEIERSTRASS_DIGEST_LENGTH 66
 #define OPENPGP_CRYPTO_BUFFER_LENGTH MAX(MAX_DECIPHER_INPUT_LENGTH, MAX_CRYPTO_RESULT_LENGTH)
 #define DIGITAL_SIG_COUNTER_LENGTH 3
 #define PW_STATUS_LENGTH 7
@@ -53,19 +54,7 @@
 #define ALGO_ID_ECDSA 0x13
 #define ALGO_ID_ED25519 0x16 // https://datatracker.ietf.org/doc/html/draft-ietf-openpgp-rfc4880bis-08#section-9.1
 
-static const uint8_t algo_attr[][12] = {
-    [SECP256R1] = {9, 0x00, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
-    [SECP256K1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x0A},
-    [SECP384R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x22},
-    [SECP521R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x23},
-    [SM2] = {11, 0x00, 0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82, 0x2D},
-    [ED25519] = {10, ALGO_ID_ED25519, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01},
-    [X25519] = {11, ALGO_ID_ECDH, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01},
-    [RSA2048] = {6, ALGO_ID_RSA, 0x08, 0x00, 0x00, 0x20, 0x02},
-    [RSA3072] = {6, ALGO_ID_RSA, 0x0C, 0x00, 0x00, 0x20, 0x02},
-    [RSA4096] = {6, ALGO_ID_RSA, 0x10, 0x00, 0x00, 0x20, 0x02},
-};
-#define OPENPGP_ALGO_ATTR_COUNT (sizeof(algo_attr) / sizeof(algo_attr[0]))
+#define OPENPGP_ALGO_ATTR_COUNT CK_OPENPGP_ALGO_ATTR_COUNT
 
 // clang-format off
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
@@ -151,17 +140,6 @@ static void openpgp_pke_release(void) {
   openpgp_pke_owned = 0;
 }
 
-static int openpgp_buffer_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
-  const uint8_t *data = (const uint8_t *)ctx;
-  memcpy(buf, data + offset, len);
-  return len;
-}
-
-static int openpgp_pke_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
-  UNUSED(ctx);
-  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
-}
-
 static void openpgp_pke_source_close(void *ctx) {
   (void)ctx;
   openpgp_pke_release();
@@ -224,7 +202,7 @@ static int reset_sig_counter(void) {
 }
 
 static inline int fill_attr(const key_meta_t *meta, uint8_t *buf) {
-  const uint8_t *attr = algo_attr[meta->type];
+  const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[meta->type];
   memcpy(buf, attr, attr[0] + 1);
   if (IS_SHORT_WEIERSTRASS(meta->type)) {
     if (meta->usage == SIGN)
@@ -264,7 +242,7 @@ static int openpgp_set_result(const uint8_t *data, uint16_t len, uint8_t *inline
     if (openpgp_crypto_acquire() < 0) return -1;
     uint8_t *result = openpgp_crypto_buffer();
     if (data != result) memcpy(result, data, len);
-    apdu_response_source_set(len, SW_NO_ERROR, openpgp_buffer_source_read, openpgp_crypto_source_close, result);
+    apdu_response_source_set(len, SW_NO_ERROR, apdu_response_source_read_memory, openpgp_crypto_source_close, result);
     return 1;
   }
   if (data != inline_dest) memcpy(inline_dest, data, len);
@@ -330,17 +308,16 @@ static const openpgp_key_info_t key_info[NUM_KEYS] = {
                      TAG_KEY_AUT_FINGERPRINT, TAG_KEY_CA3_FINGERPRINT, TAG_KEY_AUT_GENERATION_DATES},
 };
 
-// Algorithm information structure to reduce code size
 typedef struct {
   uint8_t tag;
-  int algo_index; // Algorithm index in algo_attr array
+  uint8_t algo_index;
   uint8_t id;
 } algo_info_t;
 
 // Add a single algorithm information to the buffer
-static uint16_t add_algo_info(uint8_t *buffer, uint16_t offset, uint8_t tag, int algo_index, uint8_t id) {
+static uint16_t add_algo_info(uint8_t *buffer, uint16_t offset, uint8_t tag, uint8_t algo_index, uint8_t id) {
   buffer[offset++] = tag;
-  const uint8_t *attr = algo_attr[algo_index];
+  const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[algo_index];
   memcpy(buffer + offset, attr, attr[0] + 1);
   buffer[offset + 1] = id;
   return offset + attr[0] + 1;
@@ -349,10 +326,7 @@ static uint16_t add_algo_info(uint8_t *buffer, uint16_t offset, uint8_t tag, int
 // Add all supported algorithm information to the buffer
 static uint16_t add_all_algorithm_info(uint8_t *buffer) {
   uint16_t offset = 0;
-
-  // Define a static array of all algorithm information to avoid duplicate code
   static const algo_info_t all_algo_infos[] = {
-      // SIG algorithms
       {TAG_ALGORITHM_ATTRIBUTES_SIG, RSA2048, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_SIG, RSA3072, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_SIG, RSA4096, ALGO_ID_RSA},
@@ -362,7 +336,6 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
       {TAG_ALGORITHM_ATTRIBUTES_SIG, SECP521R1, ALGO_ID_ECDSA},
       {TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519, ALGO_ID_ED25519},
       {TAG_ALGORITHM_ATTRIBUTES_SIG, SM2, ALGO_ID_ECDSA},
-      // DEC algorithms
       {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA2048, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA3072, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA4096, ALGO_ID_RSA},
@@ -372,7 +345,6 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
       {TAG_ALGORITHM_ATTRIBUTES_DEC, SECP521R1, ALGO_ID_ECDH},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, X25519, ALGO_ID_ECDH},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, SM2, ALGO_ID_ECDH},
-      // AUT algorithms
       {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA2048, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA3072, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA4096, ALGO_ID_RSA},
@@ -383,9 +355,7 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
       {TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519, ALGO_ID_ED25519},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, SM2, ALGO_ID_ECDSA},
   };
-
-  // Use a loop to iterate through all algorithm information instead of repeated code blocks
-  for (size_t i = 0; i < sizeof(all_algo_infos) / sizeof(algo_info_t); i++) {
+  for (size_t i = 0; i < sizeof(all_algo_infos) / sizeof(all_algo_infos[0]); ++i) {
     offset = add_algo_info(buffer, offset, all_algo_infos[i].tag, all_algo_infos[i].algo_index, all_algo_infos[i].id);
   }
 
@@ -425,7 +395,8 @@ int openpgp_install(uint8_t reset) {
   // Key data, default to RSA2048
   uint8_t buf[20];
   memzero(buf, sizeof(buf));
-  ck_key_t key = {.meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.type = RSA2048};
+  ck_key_t key;
+  ck_key_init_empty(&key, RSA2048, SIGN, PIN_POLICY_DEFAULT, TOUCH_POLICY_DEFAULT);
 
   for (size_t i = 0; i < NUM_KEYS; ++i) {
     key.meta.usage = key_info[i].key_usage;
@@ -482,7 +453,7 @@ static int fill_pw_status(uint8_t *buf) {
   return PW_STATUS_LENGTH;
 }
 
-static int openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
   uint16_t tag = (uint16_t)(P1 << 8u) | P2;
@@ -813,7 +784,7 @@ static int openpgp_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   UNUSED(rapdu);
   if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0x02 && LC != 0x05) EXCEPT(SW_WRONG_LENGTH);
@@ -883,7 +854,8 @@ static int openpgp_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu
       return -1;
     }
     DBG_MSG("Generate pubkey response streaming: total=%d\n", len + 2);
-    apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, openpgp_pke_source_read, openpgp_pke_source_close, NULL);
+    apdu_response_source_set((uint32_t)(len + 2), SW_NO_ERROR, apdu_response_source_read_pke,
+                             openpgp_pke_source_close, NULL);
     LL = 0;
   } else {
     uint8_t *response = RDATA;
@@ -928,21 +900,24 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   if ((key.meta.usage & SIGN) == 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   start_quick_blinking(0);
 
+  const uint8_t *input = DATA;
   size_t input_size = LC;
+  uint8_t padded_digest[MAX_SHORT_WEIERSTRASS_DIGEST_LENGTH];
   if (IS_RSA(key.meta.type)) {
     if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
       DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
   } else if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
-    if (LC > PRIVATE_KEY_LENGTH[key.meta.type]) {
+    const size_t digest_size = PRIVATE_KEY_LENGTH[key.meta.type];
+    if (LC > digest_size || digest_size > sizeof(padded_digest)) {
       DBG_MSG("digest should has the same length as the private key\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-    // prepend zeros
-    memmove(DATA + (PRIVATE_KEY_LENGTH[key.meta.type] - LC), DATA, LC);
-    memzero(DATA, PRIVATE_KEY_LENGTH[key.meta.type] - LC);
-    input_size = PRIVATE_KEY_LENGTH[key.meta.type];
+    memzero(padded_digest, digest_size - LC);
+    if (LC > 0) memcpy(padded_digest + digest_size - LC, DATA, LC);
+    input = padded_digest;
+    input_size = digest_size;
   }
 
   if (ck_read_key(key_path, &key) < 0) {
@@ -960,7 +935,7 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
     }
     result = openpgp_crypto_buffer();
   }
-  const int sig_len = ck_sign(&key, DATA, input_size, result);
+  const int sig_len = ck_sign(&key, input, input_size, result);
   if (sig_len < 0) {
     ERR_MSG("Sign failed\n");
     openpgp_crypto_release();
@@ -1072,7 +1047,7 @@ static int parse_ecc_key_tlv(const uint8_t *data, size_t data_len, key_type_t ke
   return 0;
 }
 
-static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   const bool final = (CLA & 0x10) == 0;
   const uint8_t *input = DATA;
   uint16_t input_len = LC;
@@ -1220,7 +1195,7 @@ static int openpgp_decipher(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   ASSERT_ADMIN();
 #endif
@@ -1302,7 +1277,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     key_type_t type;
     for (type = SECP256R1 /* i.e., 0 */; type < OPENPGP_ALGO_ATTR_COUNT; ++type) {
-      const uint8_t *attr = algo_attr[type];
+      const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[type];
       if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
         if (LC == attr[0]) {
           if (DATA[2] != 0) {
@@ -1446,7 +1421,7 @@ static int openpgp_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
+static int __attribute__((noinline)) openpgp_import_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   ASSERT_ADMIN();
 #endif

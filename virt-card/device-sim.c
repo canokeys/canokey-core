@@ -12,7 +12,7 @@
 #include <unistd.h>
 
 // constants for vendor
-#include "git-rev.h"
+#include "virt-card-git-rev.h"
 
 #ifndef HW_VARIANT_NAME
 #define HW_VARIANT_NAME "CanoKey Virt-Card"

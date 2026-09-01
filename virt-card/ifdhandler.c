@@ -48,7 +48,7 @@ static uint8_t transmit_xfrblock(DWORD Lun, const uint8_t *tx, DWORD tx_len) {
   // single-slot, so we ignore Lun beyond stamping it into bSlot.
   uint8_t *abData = tx_len <= SHORT_ABDATA_SIZE ? bulkout_data.abDataShort : shared_io_buffer;
   memcpy(abData, tx, tx_len);
-  bulkout_data.dwLength = tx_len;
+  ccid_set_bulkout_length(tx_len);
   bulkout_data.bSlot = (uint8_t)Lun;
   bulkout_data.bSeq = 0;
   bulkout_data.bSpecific_0 = 0;
@@ -160,16 +160,17 @@ RESPONSECODE IFDHTransmitToICC(DWORD Lun, SCARD_IO_HEADER SendPci, PUCHAR TxBuff
     DWORD total_len = 0;
     for (;;) {
       (void)Lun;
-      if (bulkin_data.dwLength < 2) {
+      const uint32_t response_len = ccid_get_le32(bulkin_data.dwLength);
+      if (response_len < 2) {
         *RxLength = 0;
         return IFD_COMMUNICATION_ERROR;
       }
 
-      const uint16_t sw = (uint16_t)(bulkin_data.abData[bulkin_data.dwLength - 2] << 8) |
-                          bulkin_data.abData[bulkin_data.dwLength - 1];
-      const DWORD data_len = bulkin_data.dwLength - 2;
+      const uint16_t sw =
+          (uint16_t)(bulkin_data.abData[response_len - 2] << 8) | bulkin_data.abData[response_len - 1];
+      const DWORD data_len = response_len - 2;
       const uint8_t has_more = aggregate_get_response && (sw & 0xFF00) == 0x6100;
-      const DWORD copy_len = has_more ? data_len : bulkin_data.dwLength;
+      const DWORD copy_len = has_more ? data_len : response_len;
 
       if (total_len + copy_len > *RxLength) {
         printf("response too large: total=%lu next=%lu cap=%lu\n", total_len, copy_len, *RxLength);

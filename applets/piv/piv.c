@@ -1,30 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <admin.h>
+#include <aes.h>
 #include <applet-scratch.h>
 #include <common.h>
 #include <crypto-util.h>
-#include <des.h>
 #include <device-config.h>
 #include <device.h>
 #include <ecc.h>
 #include <key.h>
 #include <memzero.h>
+#include <ml-kem-768.h>
 #include <pin.h>
 #include <piv.h>
 #include <pke.h>
 #include <rand.h>
 #include <rsa.h>
 
+#include "piv-attestation.h"
+
 // data object path
 // clang-format off
 #define MAX_DO_PATH_LEN             9
 #define MAX_KEY_PATH_LEN            9
-#define PIV_AUTH_CERT_PATH          "piv-pauc" // 9A
-#define SIG_CERT_PATH               "piv-sigc" // 9C
-#define CARD_AUTH_CERT_PATH         "piv-cauc" // 9E
-#define KEY_MANAGEMENT_CERT_PATH    "piv-mntc" // 9D
-#define KEY_MANAGEMENT_82_CERT_PATH "piv-82c"  // 82
-#define KEY_MANAGEMENT_83_CERT_PATH "piv-83c"  // 83
 #define CHUID_PATH                  "piv-chu"  // card holder uid
 #define CCC_PATH                    "piv-ccc"  // card capability container
 #define PI_PATH                     "piv-pi"   // printed information
@@ -36,20 +33,15 @@
 #define PIV_DO_META_PATH            "piv-do"   // small data object attrs
 // clang-format on
 
-// key tags and path
+// key tags
 // clang-format off
 #define TAG_PIN_KEY_DEFAULT        0x81       // DO if pin or admin key is default
-#define AUTH_KEY_PATH              "piv-pauk" // 9A
-#define SIG_KEY_PATH               "piv-sigk" // 9C
-#define CARD_AUTH_KEY_PATH         "piv-cauk" // 9E
-#define KEY_MANAGEMENT_KEY_PATH    "piv-mntk" // 9D
-#define CARD_ADMIN_KEY_PATH        "piv-admk" // 9B
 // clang-format on
 
 // alg
 // clang-format off
 #define ALG_DEFAULT   0x00
-#define ALG_TDEA_3KEY 0x03
+#define ALG_AES_192   0x0A
 #define ALG_RSA_2048  0x07
 #define ALG_ECC_256   0x11
 #define ALG_ECC_384   0x14
@@ -57,11 +49,21 @@
 #define ALG_RSA_3072_DEFAULT  0x05 // defined in NIST SP 800-78-5 (Initial Public Draft)
 #define ALG_RSA_4096_DEFAULT  0x16
 #define ALG_X25519_DEFAULT    0xE1
+#define ALG_MLDSA65_DEFAULT   0xE2
+#define ALG_MLKEM768_DEFAULT  0xE3
+#define ALG_ED25519_RANDOMIZED 0xFF
 #define ALG_SECP256K1_DEFAULT 0x53
 #define ALG_SECP521R1_DEFAULT 0x15
 #define ALG_SM2_DEFAULT       0x54
 
-#define TDEA_BLOCK_SIZE      8
+#define PIV_METADATA_DIRECTORY_VERSION       0x01
+#define PIV_METADATA_DIRECTORY_ENTRY_SIZE    6
+#define PIV_METADATA_DIRECTORY_MAX_ENTRIES   24
+#define PIV_METADATA_DIRECTORY_HEADER_SIZE   5
+#define PIV_METADATA_DIRECTORY_MAX_SIZE      \
+  (PIV_METADATA_DIRECTORY_HEADER_SIZE + PIV_METADATA_DIRECTORY_MAX_ENTRIES * PIV_METADATA_DIRECTORY_ENTRY_SIZE)
+#define PIV_METADATA_DIRECTORY_FLAG_KEY      0x01
+#define PIV_METADATA_DIRECTORY_FLAG_CERT     0x02
 
 enum PIV_STATE {
   PIV_STATE_GET_DATA,
@@ -117,6 +119,8 @@ _Static_assert(PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLINE_ADMIN_DATA_MAX <= 256,
 #define PIV_DO_F_READ_ONLY 0x08
 #define PIV_DO_F_SYNTH 0x10
 #define PIV_DO_F_INLINE 0x20
+#define PIV_DO_F_PRESERVE_RESET 0x40
+#define PIV_DO_F_SLOT_CERT 0x80
 
 #define PIV_DO_ATTR_PRINTED 0x90
 #define PIV_DO_ATTR_ADMIN_DATA 0x91
@@ -125,7 +129,6 @@ _Static_assert(PIV_DO_INLINE_PRINTED_MAX + PIV_DO_INLINE_ADMIN_DATA_MAX <= 256,
 #define PIV_DO_ATTR_KEY_HISTORY 0x93
 
 typedef struct {
-  uint32_t tag;      // APDU DO tag as parsed from 5C.
   const char *path;  // NULL for synthesized or attr-only objects.
   uint16_t capacity; // Maximum stored payload size, not including the 5C tag-list header.
   uint8_t flags;     // Access/storage flags.
@@ -170,7 +173,6 @@ static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len
 #define IDX_EXP       (TAG_EXP       - 0x80)
 // clang-format on
 
-#define PIV_MAX_PUBKEY_RESPONSE_LENGTH 527
 #define PIV_MAX_7C_RESPONSE_LENGTH (RSA_N_BIT_MAX / 8 + 8)
 
 // offsets for auth
@@ -190,15 +192,8 @@ static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len
 
 #define PIV_TOUCH(cached)                                                                                              \
   do {                                                                                                                 \
-    if (is_nfc()) break;                                                                                               \
-    uint32_t current_tick = device_get_tick();                                                                         \
-    if ((cached) && current_tick > last_touch && current_tick - last_touch < 15000) break;                             \
-    switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {                                                                 \
-    case USER_PRESENCE_CANCEL:                                                                                         \
-    case USER_PRESENCE_TIMEOUT:                                                                                        \
-      EXCEPT(SW_ERROR_WHILE_RECEIVING);                                                                                \
-    }                                                                                                                  \
-    last_touch = device_get_tick();                                                                                    \
+    const uint16_t touch_sw = piv_touch((cached));                                                                      \
+    if (touch_sw != SW_NO_ERROR) EXCEPT(touch_sw);                                                                      \
   } while (0)
 
 static const uint8_t DEFAULT_MGMT_KEY[] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
@@ -222,11 +217,21 @@ static uint8_t piv_auth_active;
 static uint8_t piv_auth_p1;
 static uint8_t piv_auth_p2;
 static uint16_t piv_auth_len;
+static uint8_t piv_auth_mode;
 static uint32_t last_touch = UINT32_MAX;
 static piv_algorithm_extension_config_t alg_ext_cfg;
 static uint8_t piv_pke_owned;
 static uint8_t piv_pke_use;
 #define piv_crypto_buffer applet_session_scratch.buffer
+#define piv_mldsa_stream_state applet_session_scratch.piv_mldsa
+#define piv_mlkem_scratch applet_session_scratch.piv_mlkem
+#define piv_ga_stream_state applet_session_scratch.piv_ga_stream
+
+enum {
+  PIV_AUTH_MODE_CLASSIC,
+  PIV_AUTH_MODE_MLDSA,
+  PIV_AUTH_MODE_ED25519_RANDOMIZED,
+};
 
 enum {
   PIV_PKE_USE_NONE,
@@ -238,25 +243,42 @@ enum {
 static pin_t pin = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-pin"};
 static pin_t puk = {.min_length = 8, .max_length = 8, .is_validated = 0, .path = "piv-puk"};
 
-typedef struct {
-  uint8_t id;
-  const char *path;
-  key_usage_t usage;
-  pin_policy_t pin_policy;
-  uint8_t dynamic;
-  uint8_t admin;
-} piv_key_spec_t;
-
-static const piv_key_spec_t static_key_specs[] = {
-    {0x9A, AUTH_KEY_PATH, SIGN, PIN_POLICY_ONCE, 0, 0},
-    {0x9C, SIG_KEY_PATH, SIGN, PIN_POLICY_ONCE, 0, 0},
-    {0x9D, KEY_MANAGEMENT_KEY_PATH, KEY_AGREEMENT, PIN_POLICY_ONCE, 0, 0},
-    {0x9E, CARD_AUTH_KEY_PATH, SIGN, PIN_POLICY_NEVER, 0, 0},
-    {0x9B, CARD_ADMIN_KEY_PATH, ENCRYPT, PIN_POLICY_NEVER, 0, 1},
-};
+static uint16_t piv_touch(bool cached) {
+  if (is_nfc()) return SW_NO_ERROR;
+  const uint32_t current_tick = device_get_tick();
+  if (cached && current_tick > last_touch && current_tick - last_touch < 15000) return SW_NO_ERROR;
+  switch (wait_for_user_presence(WAIT_ENTRY_CCID)) {
+  case USER_PRESENCE_CANCEL:
+  case USER_PRESENCE_TIMEOUT:
+    return SW_ERROR_WHILE_RECEIVING;
+  default:
+    last_touch = device_get_tick();
+    return SW_NO_ERROR;
+  }
+}
 
 static bool piv_algorithm_extension_config_valid(const piv_algorithm_extension_config_t *cfg) {
-  return cfg->enabled <= 1;
+  if (cfg->enabled > 1) return false;
+  if (cfg->enabled == 0) return true;
+
+  const uint8_t ids[] = {cfg->ed25519,   cfg->rsa3072,   cfg->rsa4096, cfg->x25519, cfg->secp256k1,
+                         cfg->secp521r1, cfg->sm2,       cfg->mldsa65, cfg->mlkem768};
+  for (size_t i = 0; i < sizeof(ids); ++i) {
+    switch (ids[i]) {
+    case ALG_DEFAULT:
+    case ALG_AES_192:
+    case ALG_RSA_2048:
+    case ALG_ECC_256:
+    case ALG_ECC_384:
+    case ALG_ED25519_RANDOMIZED:
+      return false;
+    default:
+      break;
+    }
+    for (size_t j = 0; j < i; ++j)
+      if (ids[i] == ids[j]) return false;
+  }
+  return true;
 }
 
 static int piv_algorithm_extension_config_load(piv_algorithm_extension_config_t *cfg) {
@@ -273,141 +295,144 @@ static int piv_remove_file_if_present(const char *path);
 
 static char piv_hex_nibble(uint8_t x) { return x < 10 ? (char)('0' + x) : (char)('a' + x - 10); }
 
-static void piv_default_key_meta(key_meta_t *meta, const key_usage_t usage, const pin_policy_t pin_policy) {
-  memset(meta, 0, sizeof(*meta));
-  meta->type = KEY_TYPE_PKC_END;
-  meta->origin = KEY_ORIGIN_NOT_PRESENT;
-  meta->usage = usage;
-  meta->pin_policy = pin_policy;
-  meta->touch_policy = TOUCH_POLICY_NEVER;
+static int piv_is_regular_key_id(uint8_t id) {
+  return id == 0x9A || id == 0x9C || id == 0x9D || id == 0x9E || (id >= 0x82 && id <= 0x95);
 }
 
-static void piv_default_key(ck_key_t *key, const key_usage_t usage, const pin_policy_t pin_policy) {
-  memset(key, 0, sizeof(*key));
-  piv_default_key_meta(&key->meta, usage, pin_policy);
+static int piv_is_asymmetric_key_id(uint8_t id) { return piv_is_regular_key_id(id) || id == 0xF9; }
+
+static int piv_is_key_id(uint8_t id) { return piv_is_asymmetric_key_id(id) || id == 0x9B; }
+
+static pin_policy_t piv_default_pin_policy(uint8_t id) {
+  if (id == 0x9C) return PIN_POLICY_ALWAYS;
+  if (id == 0x9E || id == 0x9B || id == 0xF9) return PIN_POLICY_NEVER;
+  return PIN_POLICY_ONCE;
 }
 
-static int piv_copy_key_path(char dst[MAX_KEY_PATH_LEN], const char *src) {
-  const size_t len = strlen(src);
-  if (len >= MAX_KEY_PATH_LEN) return -1;
-  memcpy(dst, src, len + 1);
-  return 0;
+static key_usage_t piv_default_key_usage(uint8_t id) {
+  if (id == 0xF9) return SIGN;
+  if (id == 0x9B) return ENCRYPT;
+  return KEY_USAGE_ANY;
 }
 
-static int create_key(const char *path, const key_usage_t usage, const pin_policy_t pin_policy) {
-  ck_key_t key;
-  piv_default_key(&key, usage, pin_policy);
-  if (ck_write_key(path, &key) < 0) return -1;
-  return 0;
-}
-
-static int piv_is_retired_key_id(uint8_t id) { return id >= 0x82 && id <= 0x95; }
-
-static void piv_retired_key_path(uint8_t id, char path[MAX_KEY_PATH_LEN]) {
+static void piv_slot_path(char kind, uint8_t id, char path[MAX_KEY_PATH_LEN]) {
   path[0] = 'p';
   path[1] = 'i';
   path[2] = 'v';
   path[3] = '-';
-  path[4] = piv_hex_nibble(id >> 4u);
-  path[5] = piv_hex_nibble(id & 0x0Fu);
-  path[6] = '\0';
-}
-
-static int piv_key_spec(uint8_t id, piv_key_spec_t *spec, char path[MAX_KEY_PATH_LEN]) {
-  for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
-    if (static_key_specs[i].id == id) {
-      *spec = static_key_specs[i];
-      if (piv_copy_key_path(path, static_key_specs[i].path) < 0) return -1;
-      spec->path = path;
-      return 0;
-    }
-  }
-
-  if (piv_is_retired_key_id(id)) {
-    piv_retired_key_path(id, path);
-    *spec = (piv_key_spec_t){id, path, KEY_AGREEMENT, PIN_POLICY_ONCE, 1, 0};
-    return 0;
-  }
-
-  return -1;
-}
-
-static int piv_read_key_or_default(uint8_t id, ck_key_t *key, char path[MAX_KEY_PATH_LEN], piv_key_spec_t *spec) {
-  if (piv_key_spec(id, spec, path) < 0) return SW_WRONG_P1P2;
-  const int rc = ck_read_key(spec->path, key);
-  if (rc >= 0) return SW_NO_ERROR;
-  if (spec->dynamic && rc == LFS_ERR_NOENT) {
-    piv_default_key(key, spec->usage, spec->pin_policy);
-    return SW_NO_ERROR;
-  }
-  return -1;
-}
-
-static int piv_read_key_metadata_or_default(uint8_t id, key_meta_t *meta, char path[MAX_KEY_PATH_LEN],
-                                            piv_key_spec_t *spec) {
-  if (piv_key_spec(id, spec, path) < 0) return SW_WRONG_P1P2;
-  const int rc = ck_read_key_metadata(spec->path, meta);
-  if (rc >= 0) return SW_NO_ERROR;
-  if (spec->dynamic && rc == LFS_ERR_NOENT) {
-    piv_default_key_meta(meta, spec->usage, spec->pin_policy);
-    return SW_NO_ERROR;
-  }
-  return -1;
-}
-
-static int piv_write_key_slot(const piv_key_spec_t *spec, const ck_key_t *key) { return ck_write_key(spec->path, key); }
-
-static int piv_reset_key_slot(const piv_key_spec_t *spec) {
-  if (spec->dynamic) return piv_remove_file_if_present(spec->path);
-  return create_key(spec->path, spec->usage, spec->pin_policy);
-}
-
-static const piv_do_desc_t piv_do_table[] = {
-    {PIV_DO_TAG_DISCOVERY, NULL, 0, PIV_DO_F_SYNTH | PIV_DO_F_READ_ONLY, 0},
-    {PIV_DO_TAG_BITGT, NULL, 0, PIV_DO_F_READ_ONLY, 0},
-    {PIV_DO_TAG_C1(0x01), CARD_AUTH_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
-    {PIV_DO_TAG_C1(0x02), CHUID_PATH, 2916, PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_C1(0x03), FINGER_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_C1(0x05), PIV_AUTH_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
-    {PIV_DO_TAG_C1(0x06), SECURITY_PATH, 245, PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_C1(0x07), CCC_PATH, 287, PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_C1(0x08), FACE_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_C1(0x09), PI_PATH, PIV_DO_PRINTED_CAPACITY, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
-     PIV_DO_ATTR_PRINTED},
-    {PIV_DO_TAG_C1(0x0A), SIG_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
-    {PIV_DO_TAG_C1(0x0B), KEY_MANAGEMENT_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
-    {PIV_DO_TAG_C1(0x0C), KEY_HISTORY_PATH, 32, PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_C1(0x0D), KEY_MANAGEMENT_82_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
-    {PIV_DO_TAG_C1(0x0E), KEY_MANAGEMENT_83_CERT_PATH, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0},
-    {PIV_DO_TAG_C1(0x21), IRIS_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {PIV_DO_TAG_FF(0x00), NULL, PIV_DO_INLINE_ADMIN_DATA_MAX, PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
-     PIV_DO_ATTR_ADMIN_DATA},
-};
-
-static const piv_do_desc_t piv_do_retired_cert_desc = {0, NULL, 3000, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT, 0};
-
-// Retired key-management certs follow the contiguous NIST tag range
-// 5FC10D..5FC120. The first two keep their historical paths; the rest use a
-// generated short path piv-rXX to avoid 18 extra table entries.
-static int piv_is_retired_cert_tag(uint32_t tag) { return tag >= PIV_DO_TAG_C1(0x0F) && tag <= PIV_DO_TAG_C1(0x20); }
-
-static void piv_retired_cert_path(uint32_t tag, char path[MAX_DO_PATH_LEN]) {
-  const uint8_t id = (uint8_t)(tag & 0xFFu);
-  path[0] = 'p';
-  path[1] = 'i';
-  path[2] = 'v';
-  path[3] = '-';
-  path[4] = 'r';
+  path[4] = kind;
   path[5] = piv_hex_nibble(id >> 4u);
   path[6] = piv_hex_nibble(id & 0x0Fu);
   path[7] = '\0';
 }
 
-static const piv_do_desc_t *piv_find_do(uint32_t tag) {
-  for (size_t i = 0; i < sizeof(piv_do_table) / sizeof(piv_do_table[0]); ++i) {
-    if (piv_do_table[i].tag == tag) return &piv_do_table[i];
+static void piv_key_path(uint8_t id, char path[MAX_KEY_PATH_LEN]) { piv_slot_path('k', id, path); }
+
+static void piv_cert_path(uint8_t id, char path[MAX_DO_PATH_LEN]) { piv_slot_path('c', id, path); }
+
+static void piv_default_key(uint8_t id, ck_key_t *key) {
+  ck_key_init_empty(key, KEY_TYPE_PKC_END, piv_default_key_usage(id), piv_default_pin_policy(id), TOUCH_POLICY_NEVER);
+}
+
+static int piv_read_key_or_default(uint8_t id, ck_key_t *key, char path[MAX_KEY_PATH_LEN]) {
+  if (!piv_is_key_id(id)) return SW_WRONG_P1P2;
+  piv_key_path(id, path);
+  const int rc = ck_read_key(path, key);
+  if (rc >= 0) return SW_NO_ERROR;
+  if (id != 0x9B && rc == LFS_ERR_NOENT) {
+    piv_default_key(id, key);
+    return SW_NO_ERROR;
   }
-  return piv_is_retired_cert_tag(tag) ? &piv_do_retired_cert_desc : NULL;
+  return -1;
+}
+
+static int piv_read_key_metadata_or_default(uint8_t id, key_meta_t *meta, char path[MAX_KEY_PATH_LEN]) {
+  if (!piv_is_key_id(id)) return SW_WRONG_P1P2;
+  piv_key_path(id, path);
+  const int rc = ck_read_key_metadata(path, meta);
+  if (rc >= 0) return SW_NO_ERROR;
+  if (id != 0x9B && rc == LFS_ERR_NOENT) {
+    ck_key_t key;
+    piv_default_key(id, &key);
+    *meta = key.meta;
+    return SW_NO_ERROR;
+  }
+  return -1;
+}
+
+enum {
+  PIV_DO_CODE_DISCOVERY = 0x80,
+  PIV_DO_CODE_BITGT,
+  PIV_DO_CODE_ADMIN_DATA,
+};
+
+static const uint8_t piv_do_codes[] = {
+    PIV_DO_CODE_DISCOVERY, PIV_DO_CODE_BITGT, 0x02, 0x03, 0x06, 0x07, 0x08, 0x09, 0x0C, 0x21,
+    PIV_DO_CODE_ADMIN_DATA,
+};
+
+static const piv_do_desc_t piv_do_table[] = {
+    {NULL, 0, PIV_DO_F_SYNTH | PIV_DO_F_READ_ONLY, 0},
+    {NULL, 0, PIV_DO_F_READ_ONLY, 0},
+    {CHUID_PATH, 2916, PIV_DO_F_PUT_ADMIN, 0},
+    {FINGER_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {SECURITY_PATH, 245, PIV_DO_F_PUT_ADMIN, 0},
+    {CCC_PATH, 287, PIV_DO_F_PUT_ADMIN, 0},
+    {FACE_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {PI_PATH, PIV_DO_PRINTED_CAPACITY, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
+     PIV_DO_ATTR_PRINTED},
+    {KEY_HISTORY_PATH, 32, PIV_DO_F_PUT_ADMIN, 0},
+    {IRIS_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {NULL, PIV_DO_INLINE_ADMIN_DATA_MAX, PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE, PIV_DO_ATTR_ADMIN_DATA},
+};
+_Static_assert(sizeof(piv_do_codes) == sizeof(piv_do_table) / sizeof(piv_do_table[0]),
+               "Every PIV data object needs a tag code");
+
+static const piv_do_desc_t piv_do_cert_desc = {
+    NULL, PIV_CERT_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN | PIV_DO_F_CERT | PIV_DO_F_SLOT_CERT, 0};
+
+// Retired key-management certs follow the contiguous NIST tag range
+// 5FC10D..5FC120 and map to slots 82..95.
+static int piv_is_retired_cert_tag(uint32_t tag) { return tag >= PIV_DO_TAG_C1(0x0D) && tag <= PIV_DO_TAG_C1(0x20); }
+
+static int piv_cert_tag_to_slot(uint32_t tag, uint8_t *slot) {
+  switch (tag) {
+  case PIV_DO_TAG_C1(0x01):
+    *slot = 0x9E;
+    return 0;
+  case PIV_DO_TAG_C1(0x05):
+    *slot = 0x9A;
+    return 0;
+  case PIV_DO_TAG_C1(0x0A):
+    *slot = 0x9C;
+    return 0;
+  case PIV_DO_TAG_C1(0x0B):
+    *slot = 0x9D;
+    return 0;
+  case PIV_DO_TAG_FF(0x01):
+    *slot = 0xF9;
+    return 0;
+  default:
+    if (!piv_is_retired_cert_tag(tag)) return -1;
+    *slot = (uint8_t)(0x82u + tag - PIV_DO_TAG_C1(0x0D));
+    return 0;
+  }
+}
+
+static int piv_do_code_matches(uint8_t code, uint32_t tag) {
+  if (code == PIV_DO_CODE_DISCOVERY) return tag == PIV_DO_TAG_DISCOVERY;
+  if (code == PIV_DO_CODE_BITGT) return tag == PIV_DO_TAG_BITGT;
+  if (code == PIV_DO_CODE_ADMIN_DATA) return tag == PIV_DO_TAG_FF(0x00);
+  return tag == PIV_DO_TAG_C1(code);
+}
+
+static const piv_do_desc_t *piv_find_do(uint32_t tag) {
+  uint8_t slot;
+  if (piv_cert_tag_to_slot(tag, &slot) == 0) return &piv_do_cert_desc;
+  for (size_t i = 0; i < sizeof(piv_do_table) / sizeof(piv_do_table[0]); ++i) {
+    if (piv_do_code_matches(piv_do_codes[i], tag)) return &piv_do_table[i];
+  }
+  return NULL;
 }
 
 static int piv_do_get_path(const piv_do_desc_t *desc, uint32_t tag, char path[MAX_DO_PATH_LEN]) {
@@ -415,8 +440,10 @@ static int piv_do_get_path(const piv_do_desc_t *desc, uint32_t tag, char path[MA
     strcpy(path, desc->path);
     return 1;
   }
-  if (desc == &piv_do_retired_cert_desc) {
-    piv_retired_cert_path(tag, path);
+  if ((desc->flags & PIV_DO_F_SLOT_CERT) != 0) {
+    uint8_t slot;
+    if (piv_cert_tag_to_slot(tag, &slot) < 0) return 0;
+    piv_cert_path(slot, path);
     return 1;
   }
   path[0] = '\0';
@@ -497,18 +524,17 @@ static int piv_remove_do_meta_if_empty(void) {
 
 static int piv_clear_file_do_storage(void) {
   for (size_t i = 0; i < sizeof(piv_do_table) / sizeof(piv_do_table[0]); ++i) {
+    if ((piv_do_table[i].flags & PIV_DO_F_PRESERVE_RESET) != 0) continue;
     if (piv_do_table[i].path != NULL && piv_remove_file_if_present(piv_do_table[i].path) < 0) return -1;
   }
 
-  char path[MAX_DO_PATH_LEN];
-  for (uint32_t tag = PIV_DO_TAG_C1(0x0F); tag <= PIV_DO_TAG_C1(0x20); ++tag) {
-    piv_retired_cert_path(tag, path);
-    if (piv_remove_file_if_present(path) < 0) return -1;
-  }
-
+  char cert_path[MAX_DO_PATH_LEN];
   char key_path[MAX_KEY_PATH_LEN];
-  for (uint8_t id = 0x82; id <= 0x95; ++id) {
-    piv_retired_key_path(id, key_path);
+  for (uint16_t id = 0; id <= UINT8_MAX; ++id) {
+    if (!piv_is_regular_key_id((uint8_t)id)) continue;
+    piv_cert_path((uint8_t)id, cert_path);
+    if (piv_remove_file_if_present(cert_path) < 0) return -1;
+    piv_key_path((uint8_t)id, key_path);
     if (piv_remove_file_if_present(key_path) < 0) return -1;
   }
   return 0;
@@ -521,9 +547,11 @@ static int piv_clear_inline_do_storage(void) {
       PIV_DO_ATTR_SECURITY,
       PIV_DO_ATTR_KEY_HISTORY,
   };
+  char admin_key_path[MAX_KEY_PATH_LEN];
+  piv_key_path(0x9B, admin_key_path);
   for (size_t i = 0; i < sizeof(attrs) / sizeof(attrs[0]); ++i) {
     if (piv_clear_attr_if_present(PIV_DO_META_PATH, attrs[i]) < 0) return -1;
-    if (piv_clear_attr_if_present(CARD_ADMIN_KEY_PATH, attrs[i]) < 0) return -1;
+    if (piv_clear_attr_if_present(admin_key_path, attrs[i]) < 0) return -1;
   }
   return piv_remove_file_if_present(PIV_DO_META_PATH);
 }
@@ -531,12 +559,10 @@ static int piv_clear_inline_do_storage(void) {
 static bool piv_littlefs_state_present(void) {
   key_meta_t meta;
   uint8_t default_value;
-  for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
-    if (static_key_specs[i].admin) continue;
-    if (ck_read_key_metadata(static_key_specs[i].path, &meta) < 0) return false;
-  }
-  return ck_read_key_metadata(CARD_ADMIN_KEY_PATH, &meta) >= 0 &&
-         read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) ==
+  char admin_key_path[MAX_KEY_PATH_LEN];
+  piv_key_path(0x9B, admin_key_path);
+  return ck_read_key_metadata(admin_key_path, &meta) >= 0 &&
+         read_attr(admin_key_path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) ==
              sizeof(default_value) &&
          get_file_size(CHUID_PATH) >= 0 && get_file_size(CCC_PATH) >= 0 && pin_get_size(&pin) == 8 &&
          pin_get_retries(&pin) >= 0 && pin_get_default_retries(&pin) >= 0 &&
@@ -554,8 +580,8 @@ static key_type_t algo_id_to_key_type(const uint8_t id) {
   case ALG_RSA_2048:
     return RSA2048;
   case ALG_DEFAULT:
-  case ALG_TDEA_3KEY:
-    return TDEA;
+  case ALG_AES_192:
+    return AES192;
   default:
     break;
   }
@@ -568,6 +594,8 @@ static key_type_t algo_id_to_key_type(const uint8_t id) {
   if (id == alg_ext_cfg.secp256k1) return SECP256K1;
   if (id == alg_ext_cfg.secp521r1) return SECP521R1;
   if (id == alg_ext_cfg.sm2) return SM2;
+  if (id == alg_ext_cfg.mldsa65) return MLDSA65;
+  if (id == alg_ext_cfg.mlkem768) return MLKEM768;
   return KEY_TYPE_PKC_END;
 }
 
@@ -583,6 +611,10 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
     return alg_ext_cfg.ed25519;
   case X25519:
     return alg_ext_cfg.x25519;
+  case MLDSA65:
+    return alg_ext_cfg.mldsa65;
+  case MLKEM768:
+    return alg_ext_cfg.mlkem768;
   case SECP256K1:
     return alg_ext_cfg.secp256k1;
   case SECP521R1:
@@ -593,12 +625,57 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
     return alg_ext_cfg.rsa3072;
   case RSA4096:
     return alg_ext_cfg.rsa4096;
-  case TDEA:
-    return ALG_TDEA_3KEY;
+  case AES192:
+    return ALG_AES_192;
   case KEY_TYPE_PKC_END:
   default:
     return ALG_DEFAULT;
   }
+}
+
+static int piv_mlkem_public_read(void *ctx, uint32_t offset, uint8_t *out, uint16_t len) {
+  piv_mlkem_scratch_t *scratch = (piv_mlkem_scratch_t *)ctx;
+  const size_t prefix_len = scratch->public_key.prefix_len;
+  size_t copied = 0;
+
+  if (offset < prefix_len) {
+    const size_t n = MIN((size_t)len, prefix_len - offset);
+    memcpy(out, scratch->public_key.prefix + offset, n);
+    copied += n;
+    offset += (uint32_t)n;
+  }
+  if (copied < len) {
+    const uint32_t public_offset = offset - (uint32_t)prefix_len;
+    if (public_offset > MLKEM768_PUBLIC_KEY_BYTES || len - copied > MLKEM768_PUBLIC_KEY_BYTES - public_offset)
+      return -1;
+    memcpy(out + copied, scratch->public_key.public_key + public_offset, len - copied);
+    copied = len;
+  }
+  return (int)copied;
+}
+
+static void piv_mlkem_public_close(void *ctx) { memzero(ctx, sizeof(piv_mlkem_scratch_t)); }
+
+static int piv_mlkem_prepare_public(const uint8_t seed[MLKEM768_KEYGEN_SEED_BYTES], const uint8_t *prefix,
+                                    size_t prefix_len) {
+  static const uint8_t encoded_header[] = {0x82, 0x04, 0xA4, 0x86, 0x82, 0x04, 0xA0};
+  piv_mlkem_scratch_t *scratch = &piv_mlkem_scratch;
+  if (prefix_len + sizeof(encoded_header) > sizeof(scratch->public_key.prefix))
+    return -1;
+
+  apdu_response_source_clear();
+  memzero(scratch, sizeof(*scratch));
+  memcpy(scratch->public_key.prefix, prefix, prefix_len);
+  memcpy(scratch->public_key.prefix + prefix_len, encoded_header, sizeof(encoded_header));
+  scratch->public_key.prefix_len = prefix_len + sizeof(encoded_header);
+  if (ml_kem_768_seed_to_public(scratch->public_key.public_key, seed) < 0) {
+    memzero(scratch, sizeof(*scratch));
+    return -1;
+  }
+  scratch->public_key.total_len = scratch->public_key.prefix_len + MLKEM768_PUBLIC_KEY_BYTES;
+  apdu_response_source_set((uint32_t)scratch->public_key.total_len, SW_NO_ERROR, piv_mlkem_public_read,
+                           piv_mlkem_public_close, scratch);
+  return 0;
 }
 
 static int piv_pke_acquire(uint8_t use) {
@@ -621,20 +698,9 @@ static void piv_pke_release(uint8_t use) {
   if (piv_pke_use == use) piv_pke_release_all();
 }
 
-static int piv_pke_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
-  UNUSED(ctx);
-  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
-}
-
 static void piv_pke_source_close(void *ctx) {
   UNUSED(ctx);
   piv_pke_release(PIV_PKE_USE_RESPONSE);
-}
-
-static int piv_buffer_source_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
-  const uint8_t *data = (const uint8_t *)ctx;
-  memcpy(buf, data + offset, len);
-  return len;
 }
 
 static void piv_buffer_source_close(void *ctx) {
@@ -678,6 +744,176 @@ static void piv_7c_stream_source_close(void *ctx) {
   piv_7c_stream_source_t *source = (piv_7c_stream_source_t *)ctx;
   if (source->payload_close) source->payload_close(source->payload_ctx);
   memzero(source, sizeof(*source));
+}
+
+static void piv_mldsa_stream_begin(void) {
+  apdu_response_source_clear();
+  memzero(&piv_mldsa_stream_state, sizeof(piv_mldsa_stream_state));
+}
+
+static int __attribute__((noinline)) piv_mldsa_install_pending_key(piv_mldsa_stream_state_t *state) {
+  ck_key_t key;
+  char key_path[MAX_KEY_PATH_LEN];
+
+  memzero(&key, sizeof(key));
+  key.meta = state->pending_meta;
+  memcpy(key.mldsa.seed, state->seed, sizeof(key.mldsa.seed));
+  memcpy(key.mldsa.tr, state->tr, sizeof(key.mldsa.tr));
+  piv_key_path(state->pending_key_id, key_path);
+  const int ret = ck_write_key(key_path, &key);
+  memzero(&key, sizeof(key));
+  if (ret < 0) return -1;
+  state->install_pending = false;
+  return 0;
+}
+
+static SHA3_CTX_T *piv_mldsa_public_hash(piv_mldsa_stream_state_t *state) {
+  return (SHA3_CTX_T *)(void *)(state->stage + sizeof(state->stage) - sizeof(SHA3_CTX_T));
+}
+
+static int piv_mldsa_fill_public_stage(piv_mldsa_stream_state_t *state) {
+  const bool first_stage = state->crypto.keygen.phase == 0;
+  state->stage_len = 0;
+  state->stage_off = 0;
+  if (first_stage)
+    memcpy(state->crypto.keygen.seed, state->seed, sizeof(state->crypto.keygen.seed));
+  const int ret = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage), &state->crypto.keygen, NULL);
+  if (ret <= 0) return -1;
+  state->stage_len = (size_t)ret;
+
+  if (state->install_pending) {
+    SHA3_CTX_T *public_hash = piv_mldsa_public_hash(state);
+    if (first_stage) shake256_init(public_hash);
+    shake_update(public_hash, state->stage, state->stage_len);
+    if (state->crypto.keygen.phase == 0) {
+      shake_finalize(public_hash);
+      shake_squeeze(public_hash, state->tr, sizeof(state->tr));
+    }
+  }
+  return 0;
+}
+
+static int piv_mldsa_fill_signature_stage(piv_mldsa_stream_state_t *state) {
+  state->stage_len = 0;
+  state->stage_off = 0;
+  if (state->crypto.sign.phase == 0)
+    memcpy(state->crypto.sign.seed, state->seed, sizeof(state->crypto.sign.seed));
+  const int ret = ml_dsa_65_sign_seed_mu_streaming(state->stage, sizeof(state->stage), &state->crypto.sign, state->mu);
+  if (ret <= 0) return -1;
+  state->stage_len = (size_t)ret;
+  return 0;
+}
+
+static int piv_mldsa_stream_read_generated(piv_mldsa_stream_state_t *state, uint8_t *out, size_t max_len,
+                                           size_t *written) {
+  size_t copied = 0;
+
+  while (copied < max_len && state->kind != PIV_MLDSA_STREAM_NONE) {
+    if (state->stage_off == state->stage_len) {
+      if ((state->kind == PIV_MLDSA_STREAM_PK && state->crypto.keygen.phase == 0 && state->stage_len != 0) ||
+          (state->kind == PIV_MLDSA_STREAM_SIG && state->crypto.sign.phase == 0 && state->stage_len != 0)) {
+        state->kind = PIV_MLDSA_STREAM_NONE;
+        break;
+      }
+      const int ret = state->kind == PIV_MLDSA_STREAM_PK ? piv_mldsa_fill_public_stage(state)
+                                                         : piv_mldsa_fill_signature_stage(state);
+      if (ret < 0) return -1;
+    }
+
+    const size_t n = MIN(state->stage_len - state->stage_off, max_len - copied);
+    memcpy(out + copied, state->stage + state->stage_off, n);
+    state->stage_off += n;
+    copied += n;
+  }
+
+  *written = copied;
+  return 0;
+}
+
+static int piv_mldsa_stream_read(void *ctx, uint32_t offset, uint8_t *out, uint16_t len) {
+  piv_mldsa_stream_state_t *state = (piv_mldsa_stream_state_t *)ctx;
+  size_t copied = 0;
+
+  if (offset != state->emitted) return -1;
+  while (copied < len) {
+    if (state->prefix_off < state->prefix_len) {
+      const size_t n = MIN(state->prefix_len - state->prefix_off, (size_t)len - copied);
+      memcpy(out + copied, state->prefix + state->prefix_off, n);
+      state->prefix_off += n;
+      copied += n;
+      continue;
+    }
+
+    if (state->kind != PIV_MLDSA_STREAM_NONE) {
+      size_t n = 0;
+      if (piv_mldsa_stream_read_generated(state, out + copied, (size_t)len - copied, &n) < 0) return -1;
+      copied += n;
+      if (n != 0) continue;
+    }
+    break;
+  }
+
+  if (copied != len) return -1;
+  state->emitted += copied;
+  if (state->install_pending && state->emitted == state->total_len && piv_mldsa_install_pending_key(state) < 0)
+    return -1;
+  return (int)copied;
+}
+
+static void piv_mldsa_stream_close(void *ctx) {
+  piv_mldsa_stream_state_t *state = (piv_mldsa_stream_state_t *)ctx;
+  memzero(state, sizeof(*state));
+}
+
+static void piv_mldsa_stream_activate(void) {
+  apdu_response_source_set((uint32_t)piv_mldsa_stream_state.total_len, SW_NO_ERROR, piv_mldsa_stream_read,
+                           piv_mldsa_stream_close, &piv_mldsa_stream_state);
+}
+
+static int piv_mldsa_prepare_public(const ck_key_t *key, const uint8_t *prefix, size_t prefix_len,
+                                    uint8_t pending_key_id) {
+  piv_mldsa_stream_state_t *state = &piv_mldsa_stream_state;
+  if (prefix_len + 7 > sizeof(state->prefix)) return -1;
+
+  piv_mldsa_stream_begin();
+  memcpy(state->prefix, prefix, prefix_len);
+  state->prefix[prefix_len++] = 0x82;
+  state->prefix[prefix_len++] = HI(4 + MLDSA_PK_BYTES);
+  state->prefix[prefix_len++] = LO(4 + MLDSA_PK_BYTES);
+  state->prefix[prefix_len++] = 0x86;
+  state->prefix[prefix_len++] = 0x82;
+  state->prefix[prefix_len++] = HI(MLDSA_PK_BYTES);
+  state->prefix[prefix_len++] = LO(MLDSA_PK_BYTES);
+  state->prefix_len = prefix_len;
+  state->kind = PIV_MLDSA_STREAM_PK;
+  memcpy(state->seed, key->mldsa.seed, sizeof(state->seed));
+  state->total_len = state->prefix_len + MLDSA_PK_BYTES;
+
+  if (pending_key_id != 0) {
+    state->pending_meta = key->meta;
+    state->pending_key_id = pending_key_id;
+    state->install_pending = true;
+  }
+  if (state->install_pending && piv_mldsa_fill_public_stage(state) < 0) {
+    piv_mldsa_stream_close(state);
+    return -1;
+  }
+  return 0;
+}
+
+static int piv_mldsa_prepare_signature(const ck_key_t *key, const uint8_t mu[MLDSA_CRHBYTES]) {
+  piv_mldsa_stream_state_t *state = &piv_mldsa_stream_state;
+  static const uint8_t signature_prefix[] = {0x7C, 0x82, 0x0C, 0xF1, 0x82, 0x82, 0x0C, 0xED};
+
+  memcpy(state->prefix, signature_prefix, sizeof(signature_prefix));
+  state->prefix_len = sizeof(signature_prefix);
+  state->kind = PIV_MLDSA_STREAM_SIG;
+  memcpy(state->seed, key->mldsa.seed, sizeof(state->seed));
+  memcpy(state->tr, key->mldsa.tr, sizeof(state->tr));
+  memcpy(state->mu, mu, sizeof(state->mu));
+  state->total_len = state->prefix_len + MLDSA_SIG_BYTES;
+
+  return 0;
 }
 
 static int piv_capdu_read(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
@@ -743,6 +979,97 @@ static uint16_t piv_parse_general_authenticate(uint16_t auth_len, piv_data_read_
   return off == value_end ? SW_NO_ERROR : SW_WRONG_LENGTH;
 }
 
+enum {
+  PIV_GA_STREAM_OUTER_TAG,
+  PIV_GA_STREAM_OUTER_LEN,
+  PIV_GA_STREAM_RESPONSE_TAG,
+  PIV_GA_STREAM_RESPONSE_LEN,
+  PIV_GA_STREAM_CHALLENGE_TAG,
+  PIV_GA_STREAM_CHALLENGE_LEN,
+  PIV_GA_STREAM_MESSAGE,
+  PIV_GA_STREAM_DONE,
+};
+
+static int piv_ga_stream_take_inner_byte(piv_ga_stream_state_t *state) {
+  if (state->outer_remaining == 0) return -1;
+  state->outer_remaining--;
+  return 0;
+}
+
+static uint16_t piv_ga_stream_update(piv_ga_stream_state_t *state, uint8_t mode, const uint8_t *data,
+                                     size_t data_len, bool final) {
+  size_t offset = 0;
+
+  while (offset < data_len) {
+    uint16_t length;
+    int ret;
+    switch (state->phase) {
+    case PIV_GA_STREAM_OUTER_TAG:
+      if (data[offset++] != 0x7C) return SW_WRONG_DATA;
+      state->phase = PIV_GA_STREAM_OUTER_LEN;
+      break;
+    case PIV_GA_STREAM_OUTER_LEN:
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
+      if (ret < 0) return SW_WRONG_LENGTH;
+      if (ret > 0) {
+        state->outer_remaining = length;
+        state->phase = PIV_GA_STREAM_RESPONSE_TAG;
+      }
+      break;
+    case PIV_GA_STREAM_RESPONSE_TAG:
+      if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
+      if (data[offset++] != TAG_RESPONSE) return SW_WRONG_DATA;
+      state->phase = PIV_GA_STREAM_RESPONSE_LEN;
+      break;
+    case PIV_GA_STREAM_RESPONSE_LEN:
+      if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
+      if (ret < 0) return SW_WRONG_LENGTH;
+      if (ret > 0) {
+        if (length != 0) return SW_WRONG_DATA;
+        state->phase = PIV_GA_STREAM_CHALLENGE_TAG;
+      }
+      break;
+    case PIV_GA_STREAM_CHALLENGE_TAG:
+      if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
+      if (data[offset++] != TAG_CHALLENGE) return SW_WRONG_DATA;
+      state->phase = PIV_GA_STREAM_CHALLENGE_LEN;
+      break;
+    case PIV_GA_STREAM_CHALLENGE_LEN:
+      if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
+      if (ret < 0) return SW_WRONG_LENGTH;
+      if (ret > 0) {
+        state->message_len = length;
+        if (state->outer_remaining != length) return SW_WRONG_LENGTH;
+        state->phase = length == 0 ? PIV_GA_STREAM_DONE : PIV_GA_STREAM_MESSAGE;
+      }
+      break;
+    case PIV_GA_STREAM_MESSAGE: {
+      const size_t count = MIN(data_len - offset, (size_t)state->outer_remaining);
+      if (count == 0) return SW_WRONG_LENGTH;
+      if (mode == PIV_AUTH_MODE_MLDSA)
+        shake_update(&state->crypto.mldsa, data + offset, count);
+      else if (ed25519_randomized_sign_update(&state->crypto.ed25519, data + offset, count) < 0)
+        return SW_UNABLE_TO_PROCESS;
+      offset += count;
+      state->outer_remaining -= (uint16_t)count;
+      state->message_received += (uint16_t)count;
+      if (state->outer_remaining == 0) state->phase = PIV_GA_STREAM_DONE;
+      break;
+    }
+    case PIV_GA_STREAM_DONE:
+    default:
+      return SW_WRONG_DATA;
+    }
+  }
+
+  if (final)
+    return state->phase == PIV_GA_STREAM_DONE && state->message_received == state->message_len ? SW_NO_ERROR
+                                                                                              : SW_WRONG_LENGTH;
+  return state->phase == PIV_GA_STREAM_DONE ? SW_WRONG_LENGTH : SW_NO_ERROR;
+}
+
 static int piv_set_7c_response(uint8_t inner_tag, const uint8_t *data, uint16_t data_len, uint8_t *rdata,
                                uint16_t *out_len) {
   const uint16_t header_len = data_len < 128 ? 4 : 8;
@@ -765,7 +1092,7 @@ static int piv_set_7c_response(uint8_t inner_tag, const uint8_t *data, uint16_t 
       piv_7c_stream_source.header[6] = HI(data_len);
       piv_7c_stream_source.header[7] = LO(data_len);
     }
-    piv_7c_stream_source.payload_read = piv_buffer_source_read;
+    piv_7c_stream_source.payload_read = apdu_response_source_read_memory;
     piv_7c_stream_source.payload_ctx = (void *)data;
     piv_7c_stream_source.payload_close = piv_buffer_source_close;
     apdu_response_source_set(total_len, SW_NO_ERROR, piv_7c_stream_source_read, piv_7c_stream_source_close,
@@ -801,10 +1128,23 @@ static int piv_set_public_key_response(ck_key_t *key, const uint8_t *prefix, uin
   if (encoded_len < 0) return -1;
   const uint32_t total_len = prefix_len + (uint32_t)encoded_len;
 
+  if (IS_MLDSA(key->meta.type)) {
+    if (piv_mldsa_prepare_public(key, prefix, prefix_len, 0) < 0) return -1;
+    piv_mldsa_stream_activate();
+    *out_len = 0;
+    return 0;
+  }
+
+  if (IS_MLKEM(key->meta.type)) {
+    if (piv_mlkem_prepare_public(key->mlkem.seed, prefix, prefix_len) < 0) return -1;
+    *out_len = 0;
+    return 0;
+  }
+
   if (total_len > APDU_COMMAND_BUFFER_SIZE) {
     uint8_t *response = piv_crypto_buffer;
 
-    if (total_len > PIV_MAX_PUBKEY_RESPONSE_LENGTH) return -1;
+    if (total_len > sizeof(piv_crypto_buffer) || total_len > pke_buffer_size()) return -1;
     memcpy(response, prefix, prefix_len);
     if (ck_encode_public_key(key, response + prefix_len, true) != encoded_len) return -1;
     apdu_response_source_clear();
@@ -813,7 +1153,7 @@ static int piv_set_public_key_response(ck_key_t *key, const uint8_t *prefix, uin
       piv_pke_release(PIV_PKE_USE_RESPONSE);
       return -1;
     }
-    apdu_response_source_set(total_len, SW_NO_ERROR, piv_pke_source_read, piv_pke_source_close, NULL);
+    apdu_response_source_set(total_len, SW_NO_ERROR, apdu_response_source_read_pke, piv_pke_source_close, NULL);
     *out_len = 0;
     return 0;
   }
@@ -840,6 +1180,41 @@ int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta
   return 0;
 }
 
+static int piv_ga_stream_begin(uint8_t p2, uint8_t mode) {
+  char key_path[MAX_KEY_PATH_LEN];
+  ck_key_t key;
+  const int meta_sw = piv_read_key_metadata_or_default(p2, &key.meta, key_path);
+  if (meta_sw != SW_NO_ERROR) return meta_sw;
+  if (key.meta.type == KEY_TYPE_PKC_END) return SW_CONDITIONS_NOT_SATISFIED;
+  if ((mode == PIV_AUTH_MODE_MLDSA && !IS_MLDSA(key.meta.type)) ||
+      (mode == PIV_AUTH_MODE_ED25519_RANDOMIZED && key.meta.type != ED25519))
+    return SW_WRONG_P1P2;
+
+  authenticate_reset();
+#ifndef FUZZ
+  if (piv_security_status_check(p2, &key.meta) != 0) return SW_SECURITY_STATUS_NOT_SATISFIED;
+#endif
+  if (key.meta.touch_policy == TOUCH_POLICY_CACHED || key.meta.touch_policy == TOUCH_POLICY_ALWAYS) {
+    const uint16_t touch_sw = piv_touch(key.meta.touch_policy == TOUCH_POLICY_CACHED);
+    if (touch_sw != SW_NO_ERROR) return touch_sw;
+  }
+
+  if (ck_read_key(key_path, &key) < 0) return -1;
+  memzero(&piv_ga_stream_state, sizeof(piv_ga_stream_state));
+  if (mode == PIV_AUTH_MODE_MLDSA) {
+    static const uint8_t empty_context_header[] = {0x00, 0x00};
+    shake256_init(&piv_ga_stream_state.crypto.mldsa);
+    shake_update(&piv_ga_stream_state.crypto.mldsa, key.mldsa.tr, sizeof(key.mldsa.tr));
+    shake_update(&piv_ga_stream_state.crypto.mldsa, empty_context_header, sizeof(empty_context_header));
+  } else if (ed25519_randomized_sign_init(&piv_ga_stream_state.crypto.ed25519, &key.ecc) < 0) {
+    memzero(&key, sizeof(key));
+    return -1;
+  }
+  memzero(&key, sizeof(key));
+  piv_auth_mode = mode;
+  return SW_NO_ERROR;
+}
+
 static void piv_import_reset(void) {
   piv_pke_release(PIV_PKE_USE_IMPORT);
   piv_import_key_id = 0;
@@ -850,10 +1225,24 @@ static void piv_import_reset(void) {
 
 static void piv_auth_reset(void) {
   piv_pke_release(PIV_PKE_USE_AUTH);
+  if (piv_auth_mode == PIV_AUTH_MODE_ED25519_RANDOMIZED)
+    ed25519_randomized_sign_clear(&piv_ga_stream_state.crypto.ed25519);
+  else if (piv_auth_mode == PIV_AUTH_MODE_MLDSA)
+    memzero(&piv_ga_stream_state, sizeof(piv_ga_stream_state));
   piv_auth_active = 0;
   piv_auth_p1 = 0;
   piv_auth_p2 = 0;
   piv_auth_len = 0;
+  piv_auth_mode = PIV_AUTH_MODE_CLASSIC;
+}
+
+static void piv_abort_chained_state(void) {
+  piv_do_write = -1;
+  piv_do_read = -1;
+  piv_import_reset();
+  piv_auth_reset();
+  apdu_response_source_clear();
+  piv_state = PIV_STATE_OTHER;
 }
 
 static void piv_algorithm_extension_config_set_default(void) {
@@ -865,6 +1254,8 @@ static void piv_algorithm_extension_config_set_default(void) {
   alg_ext_cfg.secp256k1 = ALG_SECP256K1_DEFAULT;
   alg_ext_cfg.secp521r1 = ALG_SECP521R1_DEFAULT;
   alg_ext_cfg.sm2 = ALG_SM2_DEFAULT;
+  alg_ext_cfg.mldsa65 = ALG_MLDSA65_DEFAULT;
+  alg_ext_cfg.mlkem768 = ALG_MLKEM768_DEFAULT;
 }
 
 void piv_poweroff(void) {
@@ -907,24 +1298,17 @@ int piv_install(const uint8_t reset) {
   random_buffer(chuid_tpl + 31, 16);
   if (write_file(CHUID_PATH, chuid_tpl, 0, sizeof(chuid_tpl), 1) < 0) return -1;
 
-  // Static keys. Retired key-management slots are created lazily on first use
-  // so empty slots 82..95 do not consume separate LittleFS metadata blocks.
-  for (size_t i = 0; i < sizeof(static_key_specs) / sizeof(static_key_specs[0]); ++i) {
-    if (static_key_specs[i].admin) continue;
-    if (create_key(static_key_specs[i].path, static_key_specs[i].usage, static_key_specs[i].pin_policy) < 0) return -1;
-  }
-
-  // TDEA admin key
-  ck_key_t admin_key = {.meta = {.type = TDEA,
-                                 .origin = KEY_ORIGIN_GENERATED,
-                                 .usage = ENCRYPT,
-                                 .pin_policy = PIN_POLICY_NEVER,
-                                 .touch_policy = TOUCH_POLICY_NEVER}};
+  // AES-192 admin key
+  ck_key_t admin_key;
+  ck_key_init_empty(&admin_key, AES192, ENCRYPT, PIN_POLICY_NEVER, TOUCH_POLICY_NEVER);
+  admin_key.meta.origin = KEY_ORIGIN_GENERATED;
   memcpy(admin_key.data, DEFAULT_MGMT_KEY, 24);
-  if (ck_write_key(CARD_ADMIN_KEY_PATH, &admin_key) < 0) return -1;
+  char admin_key_path[MAX_KEY_PATH_LEN];
+  piv_key_path(0x9B, admin_key_path);
+  if (ck_write_key(admin_key_path, &admin_key) < 0) return -1;
   if (piv_clear_inline_do_storage() < 0) return -1;
   const uint8_t tmp = 0x01;
-  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
+  if (write_attr(admin_key_path, TAG_PIN_KEY_DEFAULT, &tmp, sizeof(tmp)) < 0) return -1;
 
   // PIN data
   if (pin_create(&pin, DEFAULT_PIN, 8, 3) < 0) return -1;
@@ -1165,15 +1549,52 @@ static int piv_set_pin_retries(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
-                                             void *ctx) {
+__attribute__((noinline)) static int piv_general_authenticate_mlkem_dispatch(
+    const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read, void *ctx, const char *key_path,
+    const key_meta_t *meta) {
+  uint16_t pos[6] = {0}, len[6] = {0};
+  const uint16_t parse_sw = piv_parse_general_authenticate(auth_len, read, ctx, pos, len);
+  if (parse_sw != SW_NO_ERROR) EXCEPT(parse_sw);
+  if (algo_id_to_key_type(P1) != MLKEM768) EXCEPT(SW_WRONG_P1P2);
+  if (pos[IDX_WITNESS] != 0 || pos[IDX_CHALLENGE] == 0 || len[IDX_CHALLENGE] != MLKEM768_CIPHERTEXT_BYTES ||
+      pos[IDX_RESPONSE] == 0 || len[IDX_RESPONSE] != 0)
+    EXCEPT(SW_WRONG_DATA);
+  authenticate_reset();
+#ifndef FUZZ
+  if (piv_security_status_check(P2, meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+  if (meta->touch_policy == TOUCH_POLICY_CACHED || meta->touch_policy == TOUCH_POLICY_ALWAYS)
+    PIV_TOUCH(meta->touch_policy == TOUCH_POLICY_CACHED);
+
+  uint8_t *ciphertext = piv_mlkem_scratch.decaps.ciphertext;
+  if (read(ctx, pos[IDX_CHALLENGE], ciphertext, MLKEM768_CIPHERTEXT_BYTES) != MLKEM768_CIPHERTEXT_BYTES) {
+    memzero(&piv_mlkem_scratch, sizeof(piv_mlkem_scratch));
+    return -1;
+  }
+  if (read_file(key_path, piv_mlkem_scratch.decaps.seed, 0, MLKEM768_KEYGEN_SEED_BYTES) !=
+      MLKEM768_KEYGEN_SEED_BYTES) {
+    memzero(&piv_mlkem_scratch, sizeof(piv_mlkem_scratch));
+    return -1;
+  }
+  piv_pke_release(PIV_PKE_USE_AUTH);
+  start_quick_blinking(0);
+  const int decaps_ret = ml_kem_768_decaps_seed(RDATA + 4, ciphertext, piv_mlkem_scratch.decaps.seed,
+                                                piv_mlkem_scratch.decaps.public_key);
+  memzero(&piv_mlkem_scratch, sizeof(piv_mlkem_scratch));
+  if (decaps_ret < 0) return -1;
+  LL = piv_7c_wrap(RDATA, TAG_RESPONSE, MLKEM768_SHARED_KEY_BYTES);
+  return 0;
+}
+
+__attribute__((noinline)) static int piv_general_authenticate_dispatch_classic(
+    const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read, void *ctx) {
   if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
   char key_path[MAX_KEY_PATH_LEN];
-  piv_key_spec_t spec;
-  if (piv_key_spec(P2, &spec, key_path) < 0) {
+  if (!piv_is_key_id(P2)) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
+  piv_key_path(P2, key_path);
 
   uint16_t pos[6] = {0}, len[6] = {0};
   const uint16_t parse_sw = piv_parse_general_authenticate(auth_len, read, ctx, pos, len);
@@ -1181,12 +1602,12 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
   ck_key_t key;
   if (P2 == 0x9B) { // Card admin
-    if (P1 != ALG_DEFAULT && P1 != ALG_TDEA_3KEY) {
+    if (P1 != ALG_DEFAULT && P1 != ALG_AES_192) {
       DBG_MSG("Invalid P1/P2 for card admin key\n");
       EXCEPT(SW_WRONG_P1P2);
     }
   }
-  const int meta_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path, &spec);
+  const int meta_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path);
   if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
   if (meta_sw < 0) return -1;
   DBG_KEY_META(&key.meta);
@@ -1228,9 +1649,9 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
       DBG_MSG("Incorrect challenge data length\n");
       EXCEPT(SW_WRONG_LENGTH);
     }
-    if (len[IDX_CHALLENGE] > sizeof(piv_crypto_buffer) ||
-        read(ctx, pos[IDX_CHALLENGE], piv_crypto_buffer, len[IDX_CHALLENGE]) != len[IDX_CHALLENGE])
-      return -1;
+
+    if (len[IDX_CHALLENGE] > sizeof(piv_crypto_buffer)) EXCEPT(SW_WRONG_LENGTH);
+    if (read(ctx, pos[IDX_CHALLENGE], piv_crypto_buffer, len[IDX_CHALLENGE]) != len[IDX_CHALLENGE]) return -1;
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
@@ -1310,15 +1731,15 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
-    LL = piv_7c_wrap(RDATA, TAG_CHALLENGE, TDEA_BLOCK_SIZE);
-    random_buffer(RDATA + 4, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_CHALLENGE, AES_BLOCK_SIZE);
+    random_buffer(RDATA + 4, AES_BLOCK_SIZE);
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_EXTERNAL;
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
+    if (aes192_enc(RDATA + 4, auth_ctx + OFFSET_AUTH_CHALLENGE, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -1331,14 +1752,14 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
 
   // > Client application requests a challenge from the PIV Card Application.
   else if (pos[IDX_RESPONSE] > 0 && len[IDX_RESPONSE] > 0) {
-    uint8_t response[TDEA_BLOCK_SIZE];
+    uint8_t response[AES_BLOCK_SIZE];
 
     DBG_MSG("Case 3\n");
-    if (len[IDX_RESPONSE] != TDEA_BLOCK_SIZE ||
+    if (len[IDX_RESPONSE] != AES_BLOCK_SIZE ||
         read(ctx, pos[IDX_RESPONSE], response, sizeof(response)) != (int)sizeof(response))
       return -1;
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_RESPONSE] ||
-        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, response, TDEA_BLOCK_SIZE) != 0) {
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_EXTERNAL || P2 != 0x9B || AES_BLOCK_SIZE != len[IDX_RESPONSE] ||
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, response, AES_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
@@ -1360,14 +1781,14 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
     if (P2 != 0x9B) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 
     auth_ctx[OFFSET_AUTH_STATE] = AUTH_STATE_MUTUAL;
-    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, TDEA_BLOCK_SIZE);
+    random_buffer(auth_ctx + OFFSET_AUTH_CHALLENGE, AES_BLOCK_SIZE);
 
-    LL = piv_7c_wrap(RDATA, TAG_WITNESS, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_WITNESS, AES_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
+    if (aes192_enc(auth_ctx + OFFSET_AUTH_CHALLENGE, RDATA + 4, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -1381,26 +1802,26 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   // > Client application returns the decrypted witness referencing the original
   // algorithm key reference
   else if (pos[IDX_WITNESS] > 0 && len[IDX_WITNESS] > 0 && pos[IDX_CHALLENGE] > 0 && len[IDX_CHALLENGE] > 0) {
-    uint8_t witness[TDEA_BLOCK_SIZE];
-    uint8_t challenge[TDEA_BLOCK_SIZE];
+    uint8_t witness[AES_BLOCK_SIZE];
+    uint8_t challenge[AES_BLOCK_SIZE];
 
     DBG_MSG("Case 5\n");
-    if (len[IDX_WITNESS] != TDEA_BLOCK_SIZE || len[IDX_CHALLENGE] != TDEA_BLOCK_SIZE ||
+    if (len[IDX_WITNESS] != AES_BLOCK_SIZE || len[IDX_CHALLENGE] != AES_BLOCK_SIZE ||
         read(ctx, pos[IDX_WITNESS], witness, sizeof(witness)) != (int)sizeof(witness) ||
         read(ctx, pos[IDX_CHALLENGE], challenge, sizeof(challenge)) != (int)sizeof(challenge))
       return -1;
-    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || P2 != 0x9B || TDEA_BLOCK_SIZE != len[IDX_WITNESS] ||
-        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, witness, TDEA_BLOCK_SIZE) != 0) {
+    if (auth_ctx[OFFSET_AUTH_STATE] != AUTH_STATE_MUTUAL || P2 != 0x9B || AES_BLOCK_SIZE != len[IDX_WITNESS] ||
+        memcmp_s(auth_ctx + OFFSET_AUTH_CHALLENGE, witness, AES_BLOCK_SIZE) != 0) {
       authenticate_reset();
       EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     }
 
-    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, TDEA_BLOCK_SIZE);
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, AES_BLOCK_SIZE);
 
     if (ck_read_key(key_path, &key) < 0) return -1;
     DBG_KEY_META(&key.meta);
 
-    if (tdes_enc(challenge, RDATA + 4, key.data) < 0) {
+    if (aes192_enc(challenge, RDATA + 4, key.data) < 0) {
       memzero(&key, sizeof(key));
       return -1;
     }
@@ -1459,7 +1880,100 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   return 0;
 }
 
+static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
+                                             void *ctx) {
+  if (algo_id_to_key_type(P1) != MLKEM768)
+    return piv_general_authenticate_dispatch_classic(capdu, rapdu, auth_len, read, ctx);
+  if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
+
+  char key_path[MAX_KEY_PATH_LEN];
+  key_meta_t meta;
+  const int meta_sw = piv_read_key_metadata_or_default(P2, &meta, key_path);
+  if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
+  if (meta_sw < 0) return -1;
+  if (meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  if (!IS_MLKEM(meta.type)) EXCEPT(SW_WRONG_P1P2);
+  return piv_general_authenticate_mlkem_dispatch(capdu, rapdu, auth_len, read, ctx, key_path, &meta);
+}
+
+static int piv_general_authenticate_stream(const CAPDU *capdu, RAPDU *rapdu, uint8_t requested_mode) {
+  const bool final = (CLA & 0x10) == 0;
+
+  if (!piv_auth_active) {
+    if (requested_mode == PIV_AUTH_MODE_ED25519_RANDOMIZED && alg_ext_cfg.enabled == 0) EXCEPT(SW_WRONG_P1P2);
+    piv_auth_active = 1;
+    piv_auth_p1 = P1;
+    piv_auth_p2 = P2;
+    const int begin_sw = piv_ga_stream_begin(P2, requested_mode);
+    if (begin_sw != SW_NO_ERROR) {
+      piv_auth_reset();
+      if (begin_sw < 0) return -1;
+      EXCEPT((uint16_t)begin_sw);
+    }
+  } else if (piv_auth_p1 != P1 || piv_auth_p2 != P2 || piv_auth_mode != requested_mode) {
+    piv_auth_reset();
+    EXCEPT(SW_WRONG_DATA);
+  }
+
+  const uint16_t parse_sw = piv_ga_stream_update(&piv_ga_stream_state, piv_auth_mode, DATA, LC, final);
+  if (parse_sw != SW_NO_ERROR) {
+    piv_auth_reset();
+    EXCEPT(parse_sw);
+  }
+  if (!final) return 0;
+
+  if (piv_auth_mode == PIV_AUTH_MODE_ED25519_RANDOMIZED) {
+    uint8_t signature[SIGNATURE_LENGTH[ED25519]];
+    start_quick_blinking(0);
+    if (ed25519_randomized_sign_final(&piv_ga_stream_state.crypto.ed25519, signature) < 0) {
+      piv_auth_reset();
+      return -1;
+    }
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sizeof(signature));
+    memcpy(RDATA + 4, signature, sizeof(signature));
+    memzero(signature, sizeof(signature));
+    piv_auth_reset();
+    return 0;
+  }
+
+  uint8_t mu[MLDSA_CRHBYTES];
+  shake_finalize(&piv_ga_stream_state.crypto.mldsa);
+  shake_squeeze(&piv_ga_stream_state.crypto.mldsa, mu, sizeof(mu));
+  char key_path[MAX_KEY_PATH_LEN];
+  ck_key_t key;
+  piv_key_path(P2, key_path);
+  if (ck_read_key(key_path, &key) < 0) {
+    memzero(mu, sizeof(mu));
+    piv_auth_reset();
+    return -1;
+  }
+  start_quick_blinking(0);
+  piv_mldsa_stream_begin();
+  const int sign_ret = piv_mldsa_prepare_signature(&key, mu);
+  memzero(&key, sizeof(key));
+  memzero(mu, sizeof(mu));
+  if (sign_ret < 0) {
+    piv_auth_mode = PIV_AUTH_MODE_CLASSIC;
+    piv_mldsa_stream_close(&piv_mldsa_stream_state);
+    piv_auth_reset();
+    return -1;
+  }
+  piv_mldsa_stream_activate();
+  piv_auth_mode = PIV_AUTH_MODE_CLASSIC;
+  piv_auth_reset();
+  LL = 0;
+  return 0;
+}
+
 static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+  uint8_t stream_mode = PIV_AUTH_MODE_CLASSIC;
+  if (P1 == ALG_ED25519_RANDOMIZED)
+    stream_mode = PIV_AUTH_MODE_ED25519_RANDOMIZED;
+  else if (algo_id_to_key_type(P1) == MLDSA65)
+    stream_mode = PIV_AUTH_MODE_MLDSA;
+  if (stream_mode != PIV_AUTH_MODE_CLASSIC || (piv_auth_active && piv_auth_mode != PIV_AUTH_MODE_CLASSIC))
+    return piv_general_authenticate_stream(capdu, rapdu, stream_mode);
+
   if ((CLA & 0x10) == 0 && !piv_auth_active)
     return piv_general_authenticate_dispatch(capdu, rapdu, LC, piv_capdu_read, (void *)capdu);
 
@@ -1571,7 +2085,8 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
+// Keep ck_key_t-sized locals out of the central APDU dispatcher's stack frame.
+__attribute__((noinline)) static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
@@ -1585,31 +2100,46 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   char key_path[MAX_KEY_PATH_LEN];
-  piv_key_spec_t spec;
-  if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) {
+  if (!piv_is_asymmetric_key_id(P2)) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
+  piv_key_path(P2, key_path);
   ck_key_t key;
-  const int read_sw = piv_read_key_or_default(P2, &key, key_path, &spec);
+  const int read_sw = piv_read_key_or_default(P2, &key, key_path);
   if (read_sw == SW_WRONG_P1P2) EXCEPT(read_sw);
   if (read_sw < 0) return -1;
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
   if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
-  start_quick_blinking(0);
-  if (ck_generate_key(&key) < 0) return -1;
+  if (P2 == 0xF9 && key.meta.type != SECP256R1) EXCEPT(SW_WRONG_DATA);
   const int err = ck_parse_piv_policies(&key, &DATA[5], LC - 5);
   if (err != 0) {
     DBG_MSG("Wrong metadata\n");
     memzero(&key, sizeof(key));
     EXCEPT(SW_WRONG_DATA);
   }
-  if (piv_write_key_slot(&spec, &key) < 0) return -1;
+  start_quick_blinking(0);
+
+  const uint8_t prefix[] = {0x7F, 0x49};
+  if (IS_MLDSA(key.meta.type)) {
+    key.meta.origin = KEY_ORIGIN_GENERATED;
+    random_buffer(key.mldsa.seed, sizeof(key.mldsa.seed));
+    if (piv_mldsa_prepare_public(&key, prefix, sizeof(prefix), P2) < 0) {
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+    piv_mldsa_stream_activate();
+    memzero(&key, sizeof(key));
+    LL = 0;
+    return 0;
+  }
+
+  if (ck_generate_key(&key) < 0) return -1;
+  if (ck_write_key(key_path, &key) < 0) return -1;
   DBG_MSG("Generate key %s successful\n", key_path);
   DBG_KEY_META(&key.meta);
 
-  const uint8_t prefix[] = {0x7F, 0x49};
   const int len = ck_encoded_public_key_length(key.meta.type, true);
   uint16_t response_len = 0;
   if (len < 0 || piv_set_public_key_response(&key, prefix, sizeof(prefix), RDATA, &response_len) < 0) {
@@ -1623,15 +2153,21 @@ static int piv_generate_asymmetric_key_pair(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int piv_set_management_key(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0xFF || P2 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  if (P1 != 0xFF || (P2 != 0xFF && P2 != 0xFE)) EXCEPT(SW_WRONG_P1P2);
   if (LC != 27) EXCEPT(SW_WRONG_LENGTH);
-  if (DATA[0] != 0x03 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
+  if (DATA[0] != ALG_AES_192 || DATA[1] != 0x9B || DATA[2] != 24) EXCEPT(SW_WRONG_DATA);
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
-  if (write_file(CARD_ADMIN_KEY_PATH, DATA + 3, 0, 24, 1) < 0) return -1;
+  char admin_key_path[MAX_KEY_PATH_LEN];
+  piv_key_path(0x9B, admin_key_path);
+  key_meta_t meta;
+  if (ck_read_key_metadata(admin_key_path, &meta) < 0) return -1;
+  meta.touch_policy = P2 == 0xFE ? TOUCH_POLICY_ALWAYS : TOUCH_POLICY_NEVER;
+  if (write_file(admin_key_path, DATA + 3, 0, 24, 1) < 0) return -1;
+  if (ck_write_key_metadata(admin_key_path, &meta) < 0) return -1;
   const uint8_t is_default = !memcmp(DATA + 3, DEFAULT_MGMT_KEY, 24);
-  if (write_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
+  if (write_attr(admin_key_path, TAG_PIN_KEY_DEFAULT, &is_default, sizeof(is_default)) < 0) return -1;
   return 0;
 }
 
@@ -1642,26 +2178,27 @@ static int piv_reset(const CAPDU *capdu, RAPDU *rapdu) {
   return piv_install(1);
 }
 
-static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
+__attribute__((noinline)) static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
 #ifndef FUZZ
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   char key_path[MAX_KEY_PATH_LEN];
-  piv_key_spec_t spec;
-  if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) {
+  if (!piv_is_asymmetric_key_id(P2)) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
+  piv_key_path(P2, key_path);
 
   const key_type_t key_type = algo_id_to_key_type(P1);
   if (key_type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
+  if (P2 == 0xF9 && key_type != SECP256R1) EXCEPT(SW_WRONG_P1P2);
 
   ck_key_t key;
   uint16_t error_sw = SW_NO_ERROR;
   int write_err;
 
   if (piv_import_key_id == 0) {
-    const int meta_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path, &spec);
+    const int meta_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path);
     if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
     if (meta_sw < 0) return -1;
     key.meta.type = key_type;
@@ -1714,7 +2251,7 @@ static int piv_import_asymmetric_key(const CAPDU *capdu, RAPDU *rapdu) {
     error_sw = SW_WRONG_LENGTH;
     goto fail;
   }
-  write_err = piv_write_key_slot(&spec, &key);
+  write_err = ck_write_key(key_path, &key);
   memzero(&key, sizeof(key));
   piv_import_reset();
   if (write_err < 0) return -1;
@@ -1738,23 +2275,113 @@ static int piv_move_delete_key(const CAPDU *capdu, RAPDU *rapdu) {
 #endif
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
-  /*
-   * Yubico's PIV extension uses INS F6 for both moving and deleting keys.
-   * P1=FF selects delete; key move is deliberately not implemented here.
-   */
-  if (P1 != 0xFF) EXCEPT(SW_WRONG_P1P2);
+  char source_path[MAX_KEY_PATH_LEN];
+  if (!piv_is_regular_key_id(P2)) EXCEPT(SW_WRONG_P1P2);
+  piv_key_path(P2, source_path);
 
-  char key_path[MAX_KEY_PATH_LEN];
-  piv_key_spec_t spec;
-  if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) EXCEPT(SW_WRONG_P1P2);
+  if (P1 == 0xFF) {
+    if (piv_remove_file_if_present(source_path) < 0) return -1;
+    return 0;
+  }
 
-  if (piv_reset_key_slot(&spec) < 0) return -1;
+  char target_path[MAX_KEY_PATH_LEN];
+  if (!piv_is_regular_key_id(P1)) EXCEPT(SW_WRONG_P1P2);
+  piv_key_path(P1, target_path);
+
+  key_meta_t meta;
+  const int source_rc = ck_read_key_metadata(source_path, &meta);
+  if (source_rc == LFS_ERR_NOENT || (source_rc >= 0 && meta.type == KEY_TYPE_PKC_END))
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (source_rc < 0) return -1;
+
+  const int target_rc = ck_read_key_metadata(target_path, &meta);
+  if (target_rc >= 0 && meta.type != KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_DATA);
+  if (target_rc < 0 && target_rc != LFS_ERR_NOENT) return -1;
+
+  if (fs_rename(source_path, target_path) < 0) return -1;
   return 0;
 }
 
-static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
-  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
+static int piv_attest(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+
+  char target_path[MAX_KEY_PATH_LEN];
+  if (!piv_is_asymmetric_key_id(P1)) EXCEPT(SW_WRONG_P1P2);
+  piv_key_path(P1, target_path);
+
+  char attestation_key_path[MAX_KEY_PATH_LEN];
+  piv_key_path(0xF9, attestation_key_path);
+  const int sw = piv_attestation_generate(P1, target_path, attestation_key_path);
+  if (sw < 0) return -1;
+  if (sw != SW_NO_ERROR) EXCEPT(sw);
+  LL = 0;
+  return 0;
+}
+
+_Static_assert(PIV_METADATA_DIRECTORY_MAX_SIZE <= APDU_BUFFER_SIZE,
+               "PIV metadata directory must fit in one APDU response");
+
+static int piv_metadata_directory_add_slot(uint8_t slot, uint8_t *entry) {
+  uint8_t flags = 0;
+  key_meta_t meta;
+  char path[MAX_KEY_PATH_LEN];
+  piv_key_path(slot, path);
+  const int key_rc = ck_read_key_metadata(path, &meta);
+  if (key_rc >= 0 && meta.type != KEY_TYPE_PKC_END) {
+    flags |= PIV_METADATA_DIRECTORY_FLAG_KEY;
+  } else if (key_rc < 0 && key_rc != LFS_ERR_NOENT) {
+    return -1;
+  }
+
+  path[4] = 'c';
+  const int cert_size = get_file_size(path);
+  if (cert_size > 0) {
+    flags |= PIV_METADATA_DIRECTORY_FLAG_CERT;
+  } else if (cert_size < 0 && cert_size != LFS_ERR_NOENT) {
+    return -1;
+  }
+
+  if (flags == 0) return 0;
+  entry[0] = slot;
+  entry[1] = flags;
+  memset(entry + 2, 0, PIV_METADATA_DIRECTORY_ENTRY_SIZE - 2);
+  if ((flags & PIV_METADATA_DIRECTORY_FLAG_KEY) != 0) {
+    entry[2] = key_type_to_algo_id(meta.type);
+    entry[3] = meta.origin;
+    entry[4] = meta.pin_policy;
+    entry[5] = meta.touch_policy;
+  }
+  return 1;
+}
+
+static int piv_get_metadata_directory(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+
+  RDATA[0] = 0x01;
+  RDATA[1] = 0x01;
+  RDATA[2] = PIV_METADATA_DIRECTORY_VERSION;
+  RDATA[3] = 0x02;
+  RDATA[4] = 0; // Single-byte length of the entry payload, up to 24 * 6 bytes.
+  uint8_t *entry = RDATA + PIV_METADATA_DIRECTORY_HEADER_SIZE;
+
+  static const uint8_t primary_slots[] = {0x9A, 0x9C, 0x9D, 0x9E};
+  for (uint8_t i = 0; i < PIV_METADATA_DIRECTORY_MAX_ENTRIES; ++i) {
+    const uint8_t slot = i < sizeof(primary_slots) ? primary_slots[i] : (uint8_t)(0x82 + i - sizeof(primary_slots));
+    const int rc = piv_metadata_directory_add_slot(slot, entry);
+    if (rc < 0) return -1;
+    entry += rc * PIV_METADATA_DIRECTORY_ENTRY_SIZE;
+  }
+
+  RDATA[4] = (uint8_t)(entry - RDATA - PIV_METADATA_DIRECTORY_HEADER_SIZE);
+  LL = (uint16_t)(entry - RDATA);
+  return 0;
+}
+
+__attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
+  if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
+  if (P1 == 0x01) return piv_get_metadata_directory(capdu, rapdu);
+  if (P1 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
   int pos = 0;
   switch (P2) {
@@ -1765,7 +2392,7 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
     uint8_t default_value;
     if (read_attr(p->path, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
     const int default_retries = pin_get_default_retries(p);
-    if (default_value < 0) return -1;
+    if (default_retries < 0) return -1;
     const int retries = pin_get_retries(p);
     if (retries < 0) return -1;
 
@@ -1783,10 +2410,17 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
   case 0x9B: // Management
   {
     uint8_t default_value;
-    if (read_attr(CARD_ADMIN_KEY_PATH, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
-    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, 0x03, 0x02, 0x02, 0x00, 0x01, 0x05, 0x01};
+    key_meta_t meta;
+    char admin_key_path[MAX_KEY_PATH_LEN];
+    piv_key_path(0x9B, admin_key_path);
+    if (read_attr(admin_key_path, TAG_PIN_KEY_DEFAULT, &default_value, 1) < 0) return -1;
+    if (ck_read_key_metadata(admin_key_path, &meta) < 0) return -1;
+    static const uint8_t mgmt_meta_prefix[] = {0x01, 0x01, ALG_AES_192, 0x02, 0x02, 0x00};
     memcpy(RDATA + pos, mgmt_meta_prefix, sizeof(mgmt_meta_prefix));
     pos += sizeof(mgmt_meta_prefix);
+    RDATA[pos++] = meta.touch_policy;
+    RDATA[pos++] = 0x05;
+    RDATA[pos++] = 0x01;
     RDATA[pos++] = default_value;
     break;
   }
@@ -1796,51 +2430,24 @@ static int piv_get_metadata(const CAPDU *capdu, RAPDU *rapdu) {
   case 0x9E: // Card Authentication
   default: {
     char key_path[MAX_KEY_PATH_LEN];
-    piv_key_spec_t spec;
-    if (piv_key_spec(P2, &spec, key_path) < 0 || spec.admin) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    if (!piv_is_asymmetric_key_id(P2)) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    piv_key_path(P2, key_path);
 
     ck_key_t key;
-    const int read_sw = piv_read_key_or_default(P2, &key, key_path, &spec);
+    const int read_sw = piv_read_key_or_default(P2, &key, key_path);
     if (read_sw == SW_WRONG_P1P2) EXCEPT(read_sw);
     if (read_sw < 0) return -1;
     DBG_KEY_META(&key.meta);
     if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
-    RDATA[pos++] = 0x01; // Algorithm
-    RDATA[pos++] = 0x01;
-    RDATA[pos++] = key_type_to_algo_id(key.meta.type);
-    RDATA[pos++] = 0x02; // Policy
-    RDATA[pos++] = 0x02;
-    RDATA[pos++] = key.meta.pin_policy;
-    RDATA[pos++] = key.meta.touch_policy;
-    RDATA[pos++] = 0x03; // Origin
-    RDATA[pos++] = 0x01;
-    RDATA[pos++] = key.meta.origin;
-    uint8_t prefix[16];
-    memcpy(prefix, RDATA, pos);
-    prefix[pos] = 0x04; // Public
-    const int encoded_len = ck_encoded_public_key_length(key.meta.type, true);
-    if (encoded_len < 0 || pos + 1 > (int)sizeof(prefix)) {
-      memzero(&key, sizeof(key));
-      EXCEPT(SW_WRONG_LENGTH);
-    }
-    if (pos + 1 + encoded_len > APDU_COMMAND_BUFFER_SIZE) {
-      uint16_t response_len = 0;
-      const int ret = piv_set_public_key_response(&key, prefix, pos + 1, RDATA, &response_len);
-      memzero(&key, sizeof(key));
-      if (ret < 0) return -1;
-      LL = apdu_response_source_active() ? 0 : response_len;
-      return 0;
-    }
-    RDATA[pos++] = 0x04;
-    const int len = ck_encode_public_key(&key, &RDATA[pos], true);
-    if (len < 0) {
-      memzero(&key, sizeof(key));
-      return -1;
-    }
-    pos += len;
+    const uint8_t prefix[] = {0x01, 0x01, key_type_to_algo_id(key.meta.type), 0x02, 0x02, key.meta.pin_policy,
+                              key.meta.touch_policy, 0x03, 0x01, key.meta.origin, 0x04};
+    uint16_t response_len = 0;
+    const int ret = piv_set_public_key_response(&key, prefix, sizeof(prefix), RDATA, &response_len);
     memzero(&key, sizeof(key));
-    break;
+    if (ret < 0) return -1;
+    LL = apdu_response_source_active() ? 0 : response_len;
+    return 0;
   }
   }
 
@@ -1881,8 +2488,6 @@ static int piv_algorithm_extension(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC != sizeof(alg_ext_cfg)) EXCEPT(SW_WRONG_LENGTH);
     piv_algorithm_extension_config_t cfg;
     memcpy(&cfg, DATA, sizeof(cfg));
-    // Algorithm IDs may intentionally overlap; only the enable flag has a
-    // constrained domain.
     if (!piv_algorithm_extension_config_valid(&cfg)) EXCEPT(SW_WRONG_DATA);
     if (piv_platform_algorithm_extension_config_write(&cfg) < 0) return -1;
     // Effective immediately
@@ -1896,8 +2501,10 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   LL = 0;
   SW = SW_NO_ERROR;
   if (!(CLA == 0x00 || (CLA == 0x10 && (INS == PIV_INS_PUT_DATA || INS == PIV_INS_IMPORT_ASYMMETRIC_KEY ||
-                                        INS == PIV_INS_GENERAL_AUTHENTICATE))))
+                                        INS == PIV_INS_GENERAL_AUTHENTICATE)))) {
+    piv_abort_chained_state();
     EXCEPT(SW_CLA_NOT_SUPPORTED);
+  }
 
   if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;
   if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
@@ -1956,6 +2563,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   case PIV_INS_GET_SERIAL:
     ret = piv_get_serial(capdu, rapdu);
     break;
+  case PIV_INS_ATTEST:
+    ret = piv_attest(capdu, rapdu);
+    break;
   case PIV_INS_GET_METADATA:
     ret = piv_get_metadata(capdu, rapdu);
     break;
@@ -1963,10 +2573,15 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     ret = piv_algorithm_extension(capdu, rapdu);
     break;
   default:
+    piv_abort_chained_state();
     EXCEPT(SW_INS_NOT_SUPPORTED);
   }
 
-  if (ret < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (ret < 0) {
+    piv_abort_chained_state();
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
+  if (SW != SW_NO_ERROR && (SW & 0xFF00u) != 0x6100u) piv_abort_chained_state();
   return 0;
 }
 
@@ -1974,6 +2589,7 @@ int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU
   uint8_t applet_get_response = 0;
 
   if (capdu->extended) {
+    piv_abort_chained_state();
     LL = 0;
     SW = SW_WRONG_LENGTH;
     return 0;

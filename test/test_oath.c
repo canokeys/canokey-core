@@ -664,6 +664,19 @@ static void test_space_full(void **state) {
   }
   assert_int_equal(rapdu->sw, SW_NOT_ENOUGH_SPACE);
 
+  // A rejected append must leave enough working space for record deletion,
+  // and the resulting tombstone must remain reusable without extending the file.
+  SET_OATH_SPACE_FULL_NAME(0);
+  capdu->ins = OATH_INS_DELETE;
+  capdu->lc = 5;
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
+  capdu->ins = OATH_INS_PUT;
+  capdu->lc = sizeof(data);
+  oath_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
 #undef SET_OATH_SPACE_FULL_NAME
 }
 

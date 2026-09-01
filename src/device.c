@@ -18,7 +18,7 @@
 #include <webusb.h>
 #endif
 
-volatile static uint8_t touch_result;
+static volatile uint8_t touch_result;
 #if ENABLE_NFC
 static uint8_t has_rf;
 #endif
@@ -26,13 +26,16 @@ static uint8_t has_rf;
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
-volatile static wait_status_t wait_status;
+static volatile wait_status_t wait_status;
 applet_session_scratch_t applet_session_scratch;
 static device_applet_session_owner_t session_owner;
-static uint32_t session_deadline;
+static volatile uint32_t session_deadline;
 
 static void device_applet_session_expire(void) {
   if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
+#if ENABLE_IFACE_CCID
+  CCID_AbortPendingCommand();
+#endif
   applets_poweroff();
   apdu_response_source_clear();
   // applets_poweroff -> ctap_poweroff releases the PKE buffer, but the FIDO
@@ -156,8 +159,11 @@ uint8_t wait_for_user_presence(uint8_t entry) {
 
 int send_keepalive_during_processing(uint8_t entry) {
 #if ENABLE_IFACE_CTAPHID
-  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID)
+  if (session_owner == DEVICE_APPLET_SESSION_CTAPHID || entry == WAIT_ENTRY_CTAPHID) {
+    int loop_ret = CTAPHID_Loop(1);
+    if (loop_ret == LOOP_CANCEL) return loop_ret;
     CTAPHID_SendKeepAlive(KEEPALIVE_STATUS_PROCESSING);
+  }
 #else
   UNUSED(entry);
 #endif

@@ -233,7 +233,7 @@ USBD_StatusTypeDef USBD_LL_DataOutStage(USBD_HandleTypeDef *pdev, uint8_t epnum,
       }
     }
   } else if ((pdev->pClass->DataOut != NULL) && (pdev->dev_state == USBD_STATE_CONFIGURED)) {
-    pdev->pClass->DataOut(pdev, epnum);
+    return (USBD_StatusTypeDef)pdev->pClass->DataOut(pdev, epnum);
   }
   return USBD_OK;
 }

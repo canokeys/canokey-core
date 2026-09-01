@@ -24,6 +24,7 @@ USBD_StatusTypeDef USBD_LL_Init(USBD_HandleTypeDef *pdev) {
     _EP[i].maxpacket = (uint32_t)((i < 4) ? 16 : 64);
     _EP[i].xfer_buff = 0;
     _EP[i].xfer_len = 0;
+    _EP[i].xfer_cap = 0;
   }
   return USBD_OK;
 }
@@ -59,6 +60,7 @@ USBD_StatusTypeDef USBD_LL_PrepareReceive(USBD_HandleTypeDef *pdev, uint8_t ep_a
   EPType *ep = dummy_get_ep_by_addr(ep_addr);
   ep->xfer_buff = pbuf;
   ep->xfer_len = size;
+  ep->xfer_cap = size;
   DBG_MSG("%#x ep->xfer_buff=%p ep->xfer_len=%d\n", ep_addr, ep->xfer_buff, ep->xfer_len);
   uint32_t len = ep->xfer_len;
   if (ep->xfer_len > ep->maxpacket) {
@@ -71,6 +73,7 @@ USBD_StatusTypeDef USBD_LL_Transmit(USBD_HandleTypeDef *pdev, uint8_t ep_num, co
   EPType *ep = dummy_get_ep_by_addr((uint8_t)(ep_num | 0x80u));
   ep->xfer_buff = (uint8_t *)pbuf; // use xfer_buff as bidirectional buffer
   ep->xfer_len = size;
+  ep->xfer_cap = 0; // IN direction: nothing may be written into this buffer
   uint32_t len = ep->xfer_len;
   if (ep->xfer_len > ep->maxpacket) len = ep->maxpacket;
   ep->xfer_len -= len;

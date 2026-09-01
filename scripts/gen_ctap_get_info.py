@@ -206,6 +206,9 @@ def build_segments(c, enable_nfc):
     sm2_marker = b'\xF0SM2ALG'
     sm2_entry = encode_map_header(2) + encode_text("alg") + sm2_marker + encode_text("type") + encode_text("public-key")
     after_versions += sm2_entry
+    # Keep key 0x0B before the optional forcePINChange key 0x0C that runtime inserts.
+    after_versions += encode_uint(c['GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY'])
+    after_versions += encode_uint(c['LARGE_BLOB_SIZE_LIMIT'])
 
     chunks = [("cbor_gi_after_versions", bytes(after_versions))]
     markers = [
@@ -232,8 +235,6 @@ def build_segments(c, enable_nfc):
     segments["cbor_gi_force_pin_change_entry"] = encode_uint(c['GI_RESP_FORCE_PIN_CHANGE']) + encode_bool(True)
 
     suffix = bytearray()
-    suffix += encode_uint(c['GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY'])
-    suffix += encode_uint(c['LARGE_BLOB_SIZE_LIMIT'])
     suffix += encode_uint(c['GI_RESP_MIN_PIN_LENGTH'])
     min_pin_marker = b'\xF0MINPIN'
     suffix += min_pin_marker

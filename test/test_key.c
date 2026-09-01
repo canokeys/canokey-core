@@ -270,6 +270,122 @@ static void test_parse_piv_x25519_streaming_rfc7748(void **state) {
   assert_x25519_alice_round_trip(&key);
 }
 
+static void test_parse_piv_rsa_rejects_invalid_component_bounds(void **state) {
+  (void)state;
+  ck_key_t key = {.meta.type = RSA4096, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = SIGN};
+  ck_piv_stream_t st;
+  ck_parse_piv_stream_init(&st, &key);
+
+  const uint8_t empty_component[] = {0x01, 0x00, 0xA5};
+  assert_int_equal(ck_parse_piv_stream_update(&st, &key, empty_component, sizeof(empty_component), false),
+                   KEY_ERR_DATA);
+  assert_int_equal(key.rsa.q[0], 0);
+
+  ck_parse_piv_stream_init(&st, &key);
+  const uint8_t one_byte_component_header[] = {0x01, 0x01};
+  assert_int_equal(
+      ck_parse_piv_stream_update(&st, &key, one_byte_component_header, sizeof(one_byte_component_header), false), 0);
+  st.comp_off = st.comp_len;
+  const uint8_t component_data = 0xA5;
+  assert_int_equal(ck_parse_piv_stream_update(&st, &key, &component_data, sizeof(component_data), false), KEY_ERR_DATA);
+  assert_int_equal(key.rsa.q[0], 0);
+}
+
+static void test_tlv_len_stream_feed(void **state) {
+  (void)state;
+  tlv_len_stream_t stream = {0};
+  uint16_t length = 0;
+
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x7F, &length), 1);
+  assert_int_equal(length, 0x7F);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x82, &length), 0);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x01, &length), 0);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x02, &length), 1);
+  assert_int_equal(length, 0x0102);
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x20, &length), 1);
+  assert_int_equal(length, 0x20);
+
+  memset(&stream, 0, sizeof(stream));
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x80, &length), -1);
+  memset(&stream, 0, sizeof(stream));
+  assert_int_equal(tlv_len_stream_feed(&stream, 0x83, &length), -1);
+}
+
+static void test_read_key_rejects_short_material(void **state) {
+  (void)state;
+  const key_meta_t meta = {.type = MLKEM768, .origin = KEY_ORIGIN_IMPORTED, .usage = KEY_AGREEMENT};
+  uint8_t short_seed[MLKEM768_KEYGEN_SEED_BYTES - 1];
+  memset(short_seed, 0x5A, sizeof(short_seed));
+  assert_int_equal(write_file(PATH, short_seed, 0, sizeof(short_seed), 1), 0);
+  assert_int_equal(ck_write_key_metadata(PATH, &meta), 0);
+
+  ck_key_t key;
+  memset(&key, 0xA5, sizeof(key));
+  assert_int_equal(ck_read_key(PATH, &key), LFS_ERR_CORRUPT);
+  const uint8_t zero[sizeof(rsa_key_t)] = {0};
+  assert_memory_equal(key.data, zero, sizeof(zero));
+}
+
+static void test_read_empty_key_ignores_stale_material(void **state) {
+  (void)state;
+  uint8_t stale_ecc_material[sizeof(ecc_key_t)];
+  memset(stale_ecc_material, 0x5A, sizeof(stale_ecc_material));
+  assert_int_equal(write_file(PATH, stale_ecc_material, 0, sizeof(stale_ecc_material), 1), 0);
+
+  const key_meta_t meta = {
+      .type = RSA2048,
+      .origin = KEY_ORIGIN_NOT_PRESENT,
+      .usage = SIGN,
+      .pin_policy = PIN_POLICY_ONCE,
+      .touch_policy = TOUCH_POLICY_CACHED,
+  };
+  assert_int_equal(ck_write_key_metadata(PATH, &meta), 0);
+
+  ck_key_t key;
+  memset(&key, 0xA5, sizeof(key));
+  assert_int_equal(ck_read_key(PATH, &key), 0);
+  assert_memory_equal(&key.meta, &meta, sizeof(meta));
+  const uint8_t zero[sizeof(rsa_key_t)] = {0};
+  assert_memory_equal(key.data, zero, sizeof(zero));
+}
+
+static void test_ecc_key_persists_only_ecc_material(void **state) {
+  (void)state;
+  ck_key_t expected;
+  ck_key_init_empty(&expected, SECP521R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_CACHED);
+  expected.meta.origin = KEY_ORIGIN_GENERATED;
+  memset(expected.ecc.pri, 0x5A, sizeof(expected.ecc.pri));
+  memset(expected.ecc.pub, 0xA5, sizeof(expected.ecc.pub));
+
+  assert_int_equal(ck_write_key(PATH, &expected), 0);
+  assert_int_equal(get_file_size(PATH), sizeof(ecc_key_t));
+
+  ck_key_t actual;
+  memset(&actual, 0xCC, sizeof(actual));
+  assert_int_equal(ck_read_key(PATH, &actual), sizeof(ecc_key_t));
+  assert_memory_equal(&actual.meta, &expected.meta, sizeof(expected.meta));
+  assert_memory_equal(&actual.ecc, &expected.ecc, sizeof(expected.ecc));
+}
+
+static void test_parse_piv_policies_rejects_truncated_fields(void **state) {
+  (void)state;
+  static const uint8_t truncated[][2] = {
+      {0xAA, 0x00},
+      {0xAA, 0x01},
+      {0xAB, 0x00},
+      {0xAB, 0x01},
+  };
+
+  for (size_t i = 0; i < sizeof(truncated) / sizeof(truncated[0]); ++i) {
+    ck_key_t key;
+    ck_key_init_empty(&key, SECP256R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_NEVER);
+    const size_t len = i % 2 == 0 ? 1 : 2;
+    assert_int_equal(ck_parse_piv_policies(&key, truncated[i], len), KEY_ERR_LENGTH);
+    assert_int_equal(key.meta.pin_policy, PIN_POLICY_ONCE);
+    assert_int_equal(key.meta.touch_policy, TOUCH_POLICY_NEVER);
+  }
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -299,6 +415,12 @@ int main() {
       cmocka_unit_test(test_encode_eddsa),
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
+      cmocka_unit_test(test_parse_piv_rsa_rejects_invalid_component_bounds),
+      cmocka_unit_test(test_tlv_len_stream_feed),
+      cmocka_unit_test(test_read_key_rejects_short_material),
+      cmocka_unit_test(test_read_empty_key_ignores_stale_material),
+      cmocka_unit_test(test_ecc_key_persists_only_ecc_material),
+      cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

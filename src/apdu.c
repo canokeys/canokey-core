@@ -30,7 +30,9 @@ enum APPLET {
   APPLET_ENUM_END,
 } current_applet;
 
-static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08};
+static const uint8_t PIV_AID[] = {0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00};
+#define PIV_AID_RIGHT_TRUNCATED_SIZE 9
+#define PIV_AID_COMPAT_RID_SIZE      5
 static const uint8_t OATH_AID[] = {0xA0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01};
 static const uint8_t ADMIN_AID[] = {0xF0, 0x00, 0x00, 0x00, 0x00};
 static const uint8_t OPENPGP_AID[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01};
@@ -59,6 +61,16 @@ static const uint8_t AID_Size[] = {
 #endif
 };
 
+static uint8_t aid_matches(uint8_t applet, const uint8_t *candidate, uint16_t len) {
+  if (applet == APPLET_PIV) {
+    // Keep the widely deployed RID-only selector in addition to the two forms in SP 800-73.
+    if (len != PIV_AID_COMPAT_RID_SIZE && len != PIV_AID_RIGHT_TRUNCATED_SIZE && len != sizeof(PIV_AID)) return 0;
+  } else if (len != AID_Size[applet]) {
+    return 0;
+  }
+  return memcmp(candidate, AID[applet], len) == 0;
+}
+
 static volatile uint32_t buffer_owner;
 static RAPDU_CHAINING rapdu_chaining;
 static CAPDU_CHAINING fido_capdu_chaining;
@@ -75,22 +87,13 @@ static uint8_t apdu_fallback_buffer[APDU_COMMAND_BUFFER_SIZE];
 static void fido_capdu_reset(void);
 
 typedef struct {
-  uint8_t active;
-  uint32_t total_len;
-  uint32_t sent;
-  uint16_t sw;
-  APDU_RESPONSE_SOURCE_READ read;
+  APDU_RESPONSE_SOURCE_VIEW view;
   APDU_RESPONSE_SOURCE_CLOSE close;
-  void *ctx;
 } APDU_RESPONSE_SOURCE;
 
 static uint8_t is_fido_apdu(const CAPDU *capdu) {
   // Allow implicit routing for both standalone and chained CTAP2 CBOR APDUs.
   if ((capdu->cla & 0xEF) == 0x80 && capdu->ins == 0x10) return 1;
-  // NFC CTAP GET_RESPONSE may arrive after a reader reconnect clears the
-  // selected applet; keep routing the poll back to FIDO so pending work can
-  // finish instead of falling through to SW_FILE_NOT_FOUND.
-  if (is_nfc() && capdu->cla == 0x80 && capdu->ins == 0x11) return 1;
 #ifdef TEST
   if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
 #endif
@@ -111,7 +114,8 @@ static uint8_t is_fido_apdu(const CAPDU *capdu) {
 static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t transport) {
   switch (applet) {
   case APPLET_OPENPGP:
-    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled() : device_config_is_openpgp_ccid_enabled();
+    return transport == APDU_TRANSPORT_NFC ? device_config_is_openpgp_nfc_enabled()
+                                           : device_config_is_openpgp_ccid_enabled();
   case APPLET_PIV:
     return transport == APDU_TRANSPORT_NFC ? device_config_is_piv_nfc_enabled() : device_config_is_piv_ccid_enabled();
   case APPLET_FIDO:
@@ -141,6 +145,7 @@ static APDU_RESPONSE_SOURCE response_source;
 
 #if ENABLE_IFACE_CCID
 extern void ccid_init_apdu_buffer(void);
+extern void ccid_release_pke_request(void *ctx);
 #endif
 
 void init_apdu_buffer(void) {
@@ -162,6 +167,7 @@ void init_apdu_buffer(void) {
 }
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len) {
+  capdu->pke_backed = 0;
   if (len < 4) return -1;
   CLA = cmd[0];
   INS = cmd[1];
@@ -222,6 +228,7 @@ restart:
     ex->capdu.p2 = sh->p2;
     ex->capdu.lc = 0;
     ex->capdu.extended = sh->extended;
+    ex->capdu.pke_backed = 0;
   } else if (ex->capdu.cla != (sh->cla & 0xEF) || ex->capdu.ins != sh->ins || ex->capdu.p1 != sh->p1 ||
              ex->capdu.p2 != sh->p2) {
     ex->in_chaining = 0;
@@ -252,6 +259,15 @@ static void fido_capdu_reset(void) {
   fido_capdu_pke_owner = 0;
 }
 
+static void fido_capdu_release_request(void *ctx) {
+  UNUSED(ctx);
+  if (!fido_capdu_uses_pke || !fido_capdu_pke_owner) return;
+  pke_buffer_clear();
+  pke_buffer_release(PKE_BUFFER_OWNER_CTAP);
+  fido_capdu_uses_pke = 0;
+  fido_capdu_pke_owner = 0;
+}
+
 void apdu_fido_chain_reset(void) { fido_capdu_reset(); }
 
 static int fido_apdu_input(const CAPDU *sh) {
@@ -263,6 +279,7 @@ restart:
     fido_capdu_chaining.capdu.p2 = sh->p2;
     fido_capdu_chaining.capdu.lc = 0;
     fido_capdu_chaining.capdu.extended = sh->extended;
+    fido_capdu_chaining.capdu.pke_backed = 0;
     fido_capdu_chaining.capdu.data = shared_io_buffer;
   } else if (fido_capdu_chaining.capdu.cla != (sh->cla & 0xEF) || fido_capdu_chaining.capdu.ins != sh->ins ||
              fido_capdu_chaining.capdu.p1 != sh->p1 || fido_capdu_chaining.capdu.p2 != sh->p2) {
@@ -306,27 +323,27 @@ restart:
 }
 
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
-  if (ex->sent == 0 && !response_source.active) {
+  if (ex->sent == 0 && !response_source.view.read) {
     response_tail_offset = 0;
     response_tail_len = 0;
   }
 
-  if (response_source.active) {
-    uint32_t remaining = response_source.total_len - response_source.sent;
+  if (response_source.view.read) {
+    uint32_t remaining = response_source.view.total_len - response_source.view.offset;
     uint16_t to_send = (uint16_t)MIN(remaining, sh->len);
 
     // The caller writes SW to sh->data + sh->len after we return, which
     // overwrites bytes that the response source may still need (e.g. the
     // tail of the auth_data in the first chunk of an MC streaming response).
     // Restore any bytes saved on the previous call.
-    if (response_tail_len != 0 && response_source.sent == response_tail_offset) {
+    if (response_tail_len != 0 && response_source.view.offset == response_tail_offset) {
       memcpy(sh->data + response_tail_offset, response_tail, response_tail_len);
       response_tail_len = 0;
     }
 
-    int read = response_source.read(response_source.ctx, response_source.sent, sh->data, to_send);
+    int read = response_source.view.read(response_source.view.ctx, response_source.view.offset, sh->data, to_send);
     if (read < 0 || read > to_send || (read == 0 && remaining != 0)) {
-      ERR_MSG("source read failed sent=%lu read=%d\n", (unsigned long)response_source.sent, read);
+      ERR_MSG("source read failed sent=%lu read=%d\n", (unsigned long)response_source.view.offset, read);
       apdu_response_source_clear();
       sh->len = 0;
       sh->sw = SW_UNABLE_TO_PROCESS;
@@ -343,12 +360,12 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
     }
 
     sh->len = (uint16_t)read;
-    response_source.sent += (uint16_t)read;
-    remaining = response_source.total_len - response_source.sent;
+    response_source.view.offset += (uint16_t)read;
+    remaining = response_source.view.total_len - response_source.view.offset;
     if (remaining != 0) {
       sh->sw = remaining > 0xFF ? 0x61FF : 0x6100 + remaining;
     } else {
-      sh->sw = response_source.sw;
+      sh->sw = response_source.view.sw;
       apdu_response_source_clear();
     }
     return 0;
@@ -356,22 +373,21 @@ int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh) {
 
   uint16_t to_send = ex->rapdu.len - ex->sent;
   if (to_send > sh->len) to_send = sh->len;
-  if (ex->sent == 0 && ex->rapdu.data == sh->data && ex->rapdu.len > to_send) {
-    const uint16_t tail_len = ex->rapdu.len - to_send;
-    if (tail_len <= sizeof(response_tail)) {
-      memcpy(response_tail, ex->rapdu.data + to_send, tail_len);
-      response_tail_offset = to_send;
-      response_tail_len = tail_len;
-    }
+  if (response_tail_len != 0 && ex->sent == response_tail_offset) {
+    // Restore the pending prefix before moving an aliased response chunk.
+    // The previous SW trailer or incoming GET RESPONSE may have overwritten it.
+    memcpy(ex->rapdu.data + response_tail_offset, response_tail, response_tail_len);
+    response_tail_len = 0;
   }
-  if (response_tail_len != 0 && ex->sent >= response_tail_offset) {
-    memcpy(sh->data, response_tail + ex->sent - response_tail_offset, to_send);
-  } else {
-    memcpy(sh->data, ex->rapdu.data + ex->sent, to_send);
-  }
+  memmove(sh->data, ex->rapdu.data + ex->sent, to_send);
   sh->len = to_send;
   ex->sent += to_send;
   if (ex->sent < ex->rapdu.len) {
+    if (ex->rapdu.data == sh->data) {
+      response_tail_len = MIN(ex->rapdu.len - ex->sent, sizeof(response_tail));
+      memcpy(response_tail, ex->rapdu.data + ex->sent, response_tail_len);
+      response_tail_offset = ex->sent;
+    }
     if (ex->rapdu.len - ex->sent > 0xFF)
       sh->sw = 0x61FF;
     else
@@ -410,25 +426,45 @@ int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu,
 void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx) {
   apdu_response_source_clear();
-  response_source.active = 1;
-  response_source.total_len = total_len;
-  response_source.sent = 0;
-  response_source.sw = sw;
-  response_source.read = read;
+  response_source.view.total_len = total_len;
+  response_source.view.offset = 0;
+  response_source.view.sw = sw;
+  response_source.view.read = read;
   response_source.close = close;
-  response_source.ctx = ctx;
+  response_source.view.ctx = ctx;
 }
 
 void apdu_response_source_clear(void) {
-  if (response_source.active && response_source.close) response_source.close(response_source.ctx);
+  if (response_source.view.read && response_source.close) response_source.close(response_source.view.ctx);
   memset(&response_source, 0, sizeof(response_source));
 }
 
-int apdu_response_source_active(void) { return response_source.active != 0; }
+int apdu_response_source_active(void) { return response_source.view.read != NULL; }
+
+const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void) {
+  return response_source.view.read ? &response_source.view : NULL;
+}
+
+int apdu_response_source_read_memory(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  memcpy(buf, (const uint8_t *)ctx + offset, len);
+  return len;
+}
+
+int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len) {
+  UNUSED(ctx);
+  return pke_buffer_read(offset, buf, len) < 0 ? -1 : len;
+}
+
+int apdu_response_source_output(RAPDU *rapdu, uint32_t le) {
+  rapdu->len = (uint16_t)MIN(le, APDU_RESPONSE_CHUNK_SIZE);
+  return apdu_output(&rapdu_chaining, rapdu);
+}
 
 int apdu_session_can_preempt(void) {
   if (buffer_owner != BUFFER_OWNER_NONE) return 0;
-  if (response_source.active) return 0;
+  // Source-backed responses may be explicitly abandoned by another transport;
+  // device_applet_session_expire() closes their backing storage. Ordinary
+  // RAPDU continuation state has no equivalent reset and must stay owned.
   if (rapdu_chaining.sent < rapdu_chaining.rapdu.len) return 0;
   if (fido_capdu_chaining.in_chaining || fido_capdu_uses_pke) return 0;
   return 1;
@@ -459,7 +495,10 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     return;
   }
 #endif
-  if (!(CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00)) {
+  // Route every interindustry SELECT-by-DF-name command here so unsupported
+  // P2 values cannot fall through to whichever applet was previously active.
+  const uint8_t is_select_by_aid = CLA == 0x00 && INS == 0xA4 && P1 == 0x04;
+  if (!is_select_by_aid) {
     if (current_applet == APPLET_PIV) {
       if (!applet_enabled_on_transport(APPLET_PIV, transport)) {
         disabled_applet_response(rapdu);
@@ -497,10 +536,15 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     return;
   }
   rapdu_chaining.sent = 0;
-  if (CLA == 0x00 && INS == 0xA4 && P1 == 0x04 && P2 == 0x00) {
+  if (is_select_by_aid) {
+    if (P2 != 0x00) {
+      LL = 0;
+      SW = SW_WRONG_P1P2;
+      return;
+    }
     uint8_t i, end = APPLET_ENUM_END;
     for (i = APPLET_NULL + 1; i != end; ++i) {
-      if (LC >= AID_Size[i] && memcmp(DATA, AID[i], AID_Size[i]) == 0) {
+      if (aid_matches(i, DATA, LC)) {
         if (!applet_enabled_on_transport((enum APPLET)i, transport)) {
           disabled_applet_response(rapdu);
           DBG_MSG("applet disabled: %d\n", i);
@@ -562,7 +606,7 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
     }
 #ifdef TEST
     if (CLA == 0x00 && INS == 0xEE && LC == 0x04 && memcmp(DATA, "\x12\x56\xAB\xF0", 4) == 0) {
-      printf("MAGIC REBOOT command received!\r\n");
+      DBG_MSG("MAGIC REBOOT command received!\r\n");
       testmode_set_initial_ticks(0);
       testmode_set_initial_ticks(device_get_tick());
       ctap_schedule_runtime_reset();
@@ -599,10 +643,18 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       }
       capdu = &fido_capdu_chaining.capdu;
     }
-    if (fido_capdu_uses_pke)
-      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
-    else
+    if (capdu->pke_backed) {
+#if ENABLE_IFACE_CCID
+      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID, ccid_release_pke_request, NULL);
+#else
+      rapdu_chaining.rapdu.len = 0;
+      rapdu_chaining.rapdu.sw = SW_UNABLE_TO_PROCESS;
+#endif
+    } else if (fido_capdu_uses_pke) {
+      ctap_process_pke_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID, fido_capdu_release_request, NULL);
+    } else {
       ctap_process_apdu_with_src(capdu, &rapdu_chaining.rapdu, CTAP_SRC_CCID);
+    }
     rapdu->len = MIN(LE, apdu_response_source_active() ? APDU_RESPONSE_CHUNK_SIZE : APDU_BUFFER_SIZE);
     apdu_output(&rapdu_chaining, rapdu);
     fido_capdu_reset();
