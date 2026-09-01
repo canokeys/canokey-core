@@ -10,6 +10,7 @@
 #include <device.h>
 #include <fs.h>
 #include <lfs.h>
+#include <platform-config.h>
 #include <pin.h>
 #include <stdbool.h>
 #include <string.h>
@@ -32,6 +33,7 @@ static uint8_t ctaphid_wait_result;
 static bool led_normally_on;
 static bool inject_write_error;
 static char inject_write_error_path[64];
+static uint8_t test_config_page[PLATFORM_CONFIG_PAGE_SIZE];
 
 typedef enum {
   AUTO_TOUCH_NONE = 0,
@@ -59,6 +61,7 @@ static void reset_test_state(void) {
   led_normally_on = false;
   inject_write_error = false;
   inject_write_error_path[0] = 0;
+  memset(test_config_page, 0xFF, sizeof(test_config_page));
   auto_touch_mode = AUTO_TOUCH_NONE;
 }
 
@@ -104,15 +107,6 @@ void fm_csn_low(void) {}
 
 void fm_csn_high(void) {}
 
-void spi_transmit(const uint8_t *buf, uint8_t len) {
-  UNUSED(buf);
-  UNUSED(len);
-}
-
-void spi_receive(uint8_t *buf, uint8_t len) {
-  if (len > 0) memset(buf, 0, len);
-}
-
 int testmode_emulate_user_presence(void) {
   if (auto_touch_mode == AUTO_TOUCH_WHEN_BLINKING && device_is_blinking()) {
     set_touch_result(TOUCH_SHORT);
@@ -140,17 +134,17 @@ bool testmode_err_triggered(const char *filename, bool file_wr) {
   return true;
 }
 
-void applets_poweroff(void) { applets_poweroff_calls++; }
+void __wrap_applets_poweroff(void) { applets_poweroff_calls++; }
 
-void apdu_response_source_clear(void) { apdu_response_source_clear_calls++; }
+void __wrap_apdu_response_source_clear(void) { apdu_response_source_clear_calls++; }
 
-int apdu_session_can_preempt(void) { return apdu_session_preemptable; }
+int __wrap_apdu_session_can_preempt(void) { return apdu_session_preemptable; }
 
-void apdu_fido_chain_reset(void) {}
+void __wrap_apdu_fido_chain_reset(void) {}
 
-void CCID_Loop(void) { ccid_loop_calls++; }
+void __wrap_CCID_Loop(void) { ccid_loop_calls++; }
 
-uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
+uint8_t __wrap_CTAPHID_Loop(uint8_t wait_for_user) {
   ctaphid_loop_calls++;
   if (wait_for_user) {
     ctaphid_loop_wait_calls++;
@@ -159,7 +153,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   return LOOP_SUCCESS;
 }
 
-void CTAPHID_SendKeepAlive(uint8_t status) {
+void __wrap_CTAPHID_SendKeepAlive(uint8_t status) {
   if (status == KEEPALIVE_STATUS_PROCESSING) {
     keepalive_processing_calls++;
   } else if (status == KEEPALIVE_STATUS_UPNEEDED) {
@@ -167,14 +161,38 @@ void CTAPHID_SendKeepAlive(uint8_t status) {
   }
 }
 
-void WebUSB_Loop(void) { webusb_loop_calls++; }
+void __wrap_WebUSB_Loop(void) { webusb_loop_calls++; }
 
-uint8_t KBDHID_Loop(void) {
+uint8_t __wrap_KBDHID_Loop(void) {
   kbdhid_loop_calls++;
   return 0;
 }
 
-uint8_t cfg_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
+int platform_config_page_read(size_t off, void *buf, size_t len) {
+  if (buf == NULL || off > sizeof(test_config_page) || len > sizeof(test_config_page) - off) return -1;
+  memcpy(buf, test_config_page + off, len);
+  return 0;
+}
+
+int platform_config_page_write(const void *page, size_t len) {
+  if (page == NULL || len != sizeof(test_config_page)) return -1;
+  memcpy(test_config_page, page, sizeof(test_config_page));
+  return 0;
+}
+
+uint8_t __wrap_device_config_is_led_normally_on(void) { return led_normally_on ? 1 : 0; }
+
+uint8_t __wrap_device_config_is_pass_enabled(void) { return 1; }
+
+uint8_t __wrap_device_config_is_openpgp_ccid_enabled(void) { return 1; }
+
+uint8_t __wrap_device_config_is_openpgp_nfc_enabled(void) { return 1; }
+
+uint8_t __wrap_device_config_is_piv_ccid_enabled(void) { return 1; }
+
+uint8_t __wrap_device_config_is_piv_nfc_enabled(void) { return 1; }
+
+uint8_t __wrap_device_config_is_webauthn_enabled(void) { return 1; }
 
 static void test_tlv_get_length_safe_variants(void **state) {
   (void)state;
@@ -259,6 +277,11 @@ static void test_fs_roundtrip_and_metadata(void **state) {
 
   assert_true(get_fs_size() > 0);
   assert_true(get_fs_usage() >= 0);
+  int free_bytes = get_fs_free_bytes();
+  assert_true(free_bytes > 0);
+  assert_int_equal(fs_has_free_space(1, 0), 1);
+  assert_int_equal(fs_has_free_space(1, (lfs_size_t)free_bytes), 0);
+  assert_int_equal(fs_has_free_space((lfs_size_t)-1, 0), 0);
 }
 
 static void test_fs_error_paths(void **state) {
@@ -487,6 +510,12 @@ static void test_pin_lifecycle(void **state) {
   assert_int_equal(pin_verify(&pin, "5678", 4, NULL), 0);
   assert_int_equal(pin.is_validated, 1);
 
+  assert_int_equal(pin_set_retries(&pin, 15), 0);
+  assert_int_equal(pin_get_retries(&pin), 15);
+  assert_int_equal(pin_get_default_retries(&pin), 15);
+  assert_int_equal(pin_get_retry_sw(15), 0x63CF);
+  assert_int_equal(pin_get_retry_sw(16), 0x63CF);
+
   assert_int_equal(pin_clear(&pin), 0);
   assert_int_equal(pin_get_size(&pin), 0);
   assert_int_equal(pin_get_retries(&pin), 0);
@@ -509,6 +538,10 @@ static void test_pin_error_paths(void **state) {
   assert_int_equal(pin_clear(&missing_pin), PIN_IO_FAIL);
 
   assert_int_equal(pin_create(&pin, "1234", 4, 3), 0);
+  assert_int_equal(pin_create(&pin, "1234", 4, 0), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_create(&pin, "1234", 4, 16), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_set_retries(&pin, 0), PIN_LENGTH_INVALID);
+  assert_int_equal(pin_set_retries(&pin, 16), PIN_LENGTH_INVALID);
   assert_int_equal(pin_verify(&pin, "12", 2, &retries), PIN_LENGTH_INVALID);
   assert_int_equal(pin_update(&pin, "12", 2), PIN_LENGTH_INVALID);
 

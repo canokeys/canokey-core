@@ -1,25 +1,9 @@
 #!/usr/bin/env python3
-"""Generate pre-encoded CBOR segments for ctap_get_info response.
+"""Generate pre-encoded CBOR segments for authenticatorGetInfo.
 
-Usage:
-  python3 gen_ctap_get_info.py \
-    --headers ctap-internal.h ctaphid.h \
-    --credential-id-size 70 \
-    --output ctap_get_info_cbor.inc
-
-The script parses #define constants directly from header files.
-Missing constants cause a hard error (no defaults).
-
-Output segments (concatenated at runtime in C):
-  1. cbor_gi_prefix[]     — map header through algorithms key (0x0A)
-  2. cbor_gi_alg_base[]   — ES256 + EdDSA algorithm entries
-  3. cbor_gi_alg_sm2[]    — SM2 algorithm entry (conditional)
-  4. cbor_gi_suffix[]     — remaining fields after algorithms
-
-Dynamic patches at runtime:
-  - clientPin boolean (1 byte in prefix)
-  - SM2 algo_id (1–2 bytes in SM2 entry)
-  - algorithms array header (1 byte, 0x82 or 0x83)
+The generated file intentionally contains only static CTAP GetInfo bytes.
+Runtime code adds status and dynamic fields such as clientPin, alwaysUv,
+minPinLength, remainingDiscoverableCredentials, and SM2 algorithm id.
 """
 
 import argparse
@@ -28,18 +12,7 @@ import struct
 import sys
 
 
-# --- Parse #define from C headers ---
-
 def parse_defines(header_paths, needed):
-    """Parse integer #define values from C headers.
-    
-    Args:
-        header_paths: list of header file paths to scan
-        needed: dict of {name: None} — filled in with parsed values
-    
-    Returns dict {name: int_value}. Raises if any needed key is missing.
-    """
-    # Match: #define NAME value  (decimal, hex, negative, or simple alias)
     pattern = re.compile(r'^\s*#define\s+(\w+)\s+(-?(?:0[xX][0-9a-fA-F]+|\d+)|\w+)\b')
     raw = {}
     for path in header_paths:
@@ -75,53 +48,50 @@ def parse_defines(header_paths, needed):
     return found
 
 
-# --- Minimal CBOR encoder (no dependencies) ---
-
 def encode_uint(n):
+    if n < 0:
+        raise ValueError(f"negative uint: {n}")
     if n <= 23:
         return bytes([n])
-    elif n <= 0xFF:
+    if n <= 0xFF:
         return bytes([0x18, n])
-    elif n <= 0xFFFF:
+    if n <= 0xFFFF:
         return bytes([0x19, (n >> 8) & 0xFF, n & 0xFF])
-    elif n <= 0xFFFFFFFF:
+    if n <= 0xFFFFFFFF:
         return struct.pack('>BI', 0x1A, n)
-    else:
-        return struct.pack('>BQ', 0x1B, n)
+    return struct.pack('>BQ', 0x1B, n)
 
 
 def encode_int(n):
     if n >= 0:
         return encode_uint(n)
-    # Negative: major type 1, value = -1 - n
     v = -1 - n
     if v <= 23:
         return bytes([0x20 | v])
-    elif v <= 0xFF:
+    if v <= 0xFF:
         return bytes([0x38, v])
-    elif v <= 0xFFFF:
+    if v <= 0xFFFF:
         return bytes([0x39, (v >> 8) & 0xFF, v & 0xFF])
-    else:
-        raise ValueError(f"Negative int too large: {n}")
+    if v <= 0xFFFFFFFF:
+        return struct.pack('>BI', 0x3A, v)
+    return struct.pack('>BQ', 0x3B, v)
 
 
 def encode_text(s):
     b = s.encode('utf-8')
     if len(b) <= 23:
         return bytes([0x60 | len(b)]) + b
-    elif len(b) <= 0xFF:
+    if len(b) <= 0xFF:
         return bytes([0x78, len(b)]) + b
-    else:
-        return bytes([0x79, (len(b) >> 8) & 0xFF, len(b) & 0xFF]) + b
+    return bytes([0x79, (len(b) >> 8) & 0xFF, len(b) & 0xFF]) + b
 
 
 def encode_bytes(b):
     if len(b) <= 23:
         return bytes([0x40 | len(b)]) + b
-    elif len(b) <= 0xFF:
+    if len(b) <= 0xFF:
         return bytes([0x58, len(b)]) + b
-    else:
-        return bytes([0x59, (len(b) >> 8) & 0xFF, len(b) & 0xFF]) + b
+    return bytes([0x59, (len(b) >> 8) & 0xFF, len(b) & 0xFF]) + b
 
 
 def encode_bool(v):
@@ -129,238 +99,254 @@ def encode_bool(v):
 
 
 def encode_array_header(n):
-    return bytes([0x80 | n]) if n <= 23 else bytes([0x98, n])
+    if n <= 23:
+        return bytes([0x80 | n])
+    return bytes([0x98, n])
 
 
 def encode_map_header(n):
-    return bytes([0xA0 | n]) if n <= 23 else bytes([0xB8, n])
+    if n <= 23:
+        return bytes([0xA0 | n])
+    return bytes([0xB8, n])
 
 
-# --- Constants ---
-
-GI_VERSIONS = 0x01
-GI_EXTENSIONS = 0x02
-GI_AAGUID = 0x03
-GI_OPTIONS = 0x04
-GI_MAX_MSG_SIZE = 0x05
-GI_PIN_UV_AUTH_PROTOCOLS = 0x06
-GI_MAX_CREDENTIAL_COUNT = 0x07
-GI_MAX_CREDENTIAL_ID_LENGTH = 0x08
-GI_TRANSPORTS = 0x09
-GI_ALGORITHMS = 0x0A
-GI_MAX_SERIALIZED_LARGE_BLOB = 0x0B
-GI_FIRMWARE_VERSION = 0x0E
-GI_MAX_CRED_BLOB_LENGTH = 0x0F
-
-COSE_ALG_ES256 = -7
-COSE_ALG_EDDSA = -8
-COSE_ALG_ML_DSA_65 = -49
-
-AAGUID = bytes([0x24, 0x4e, 0xb2, 0x9e, 0xe0, 0x90, 0x4e, 0x49,
-                0x81, 0xfe, 0x1f, 0x20, 0xf8, 0xd3, 0xb8, 0xf4])
+AAGUID = bytes([0x24, 0x4E, 0xB2, 0x9E, 0xE0, 0x90, 0x4E, 0x49,
+                0x81, 0xFE, 0x1F, 0x20, 0xF8, 0xD3, 0xB8, 0xF4])
 
 
-def build_algorithm_entry(alg_id):
+def algorithm_entry(alg_id):
     return (encode_map_header(2) +
             encode_text("alg") + encode_int(alg_id) +
             encode_text("type") + encode_text("public-key"))
 
 
-def build_segments(consts, sm2_algo_id):
-    """Build the four CBOR segments.
-    
-    Returns (prefix, alg_base, alg_sm2, suffix, client_pin_offset, sm2_algo_offset).
-    """
-    # --- Segment 1: prefix (map header through algorithms key) ---
-    prefix = bytearray()
+def split_at_placeholder(data, placeholder):
+    pos = data.index(placeholder)
+    before = data[:pos]
+    after = data[pos + len(placeholder):]
+    return before, after
 
-    # Top-level map: 13 entries
-    prefix += encode_map_header(13)
 
-    # 1. versions
-    prefix += encode_uint(GI_VERSIONS)
-    prefix += encode_array_header(3)
-    prefix += encode_text("U2F_V2")
-    prefix += encode_text("FIDO_2_0")
-    prefix += encode_text("FIDO_2_1")
+def build_segments(c):
+    segments = {}
 
-    # 2. extensions
-    prefix += encode_uint(GI_EXTENSIONS)
-    prefix += encode_array_header(4)
-    prefix += encode_text("credBlob")
-    prefix += encode_text("credProtect")
-    prefix += encode_text("hmac-secret")
-    prefix += encode_text("largeBlobKey")
+    versions_u2f = (encode_array_header(4) + encode_text("U2F_V2") +
+                    encode_text("FIDO_2_0") + encode_text("FIDO_2_1") + encode_text("FIDO_2_3"))
+    versions_no_u2f = (encode_array_header(3) +
+                       encode_text("FIDO_2_0") + encode_text("FIDO_2_1") + encode_text("FIDO_2_3"))
 
-    # 3. aaguid
-    prefix += encode_uint(GI_AAGUID)
-    prefix += encode_bytes(AAGUID)
+    segments["cbor_gi_prefix_before_versions"] = encode_map_header(21) + encode_uint(c['GI_RESP_VERSIONS'])
+    segments["cbor_gi_prefix_before_versions_force"] = encode_map_header(22) + encode_uint(c['GI_RESP_VERSIONS'])
+    segments["cbor_gi_versions_with_u2f"] = versions_u2f
+    segments["cbor_gi_versions_without_u2f"] = versions_no_u2f
 
-    # 4. options
-    prefix += encode_uint(GI_OPTIONS)
-    prefix += encode_map_header(6)
-    prefix += encode_text("rk") + encode_bool(True)
-    prefix += encode_text("credMgmt") + encode_bool(True)
-    prefix += encode_text("clientPin")
-    client_pin_offset = len(prefix)
-    prefix += encode_bool(False)  # patched at runtime
-    prefix += encode_text("largeBlobs") + encode_bool(True)
-    prefix += encode_text("pinUvAuthToken") + encode_bool(True)
-    prefix += encode_text("makeCredUvNotRqd") + encode_bool(True)
+    after_versions = bytearray()
+    after_versions += encode_uint(c['GI_RESP_EXTENSIONS'])
+    after_versions += encode_array_header(7)
+    for ext in ["credBlob", "credProtect", "hmac-secret", "hmac-secret-mc",
+                "largeBlobKey", "minPinLength", "thirdPartyPayment"]:
+        after_versions += encode_text(ext)
 
-    # 5. maxMsgSize
-    prefix += encode_uint(GI_MAX_MSG_SIZE)
-    prefix += encode_uint(consts['MAX_CTAP_BUFSIZE'])
+    after_versions += encode_uint(c['GI_RESP_AAGUID'])
+    after_versions += encode_bytes(AAGUID)
 
-    # 6. pinUvAuthProtocols
-    prefix += encode_uint(GI_PIN_UV_AUTH_PROTOCOLS)
-    prefix += encode_array_header(2)
-    prefix += encode_uint(1)
-    prefix += encode_uint(2)
+    after_versions += encode_uint(c['GI_RESP_OPTIONS'])
+    after_versions += encode_map_header(9)
+    after_versions += encode_text("rk") + encode_bool(True)
+    after_versions += encode_text("alwaysUv")
+    always_uv_marker = b'\xF0ALWAYSUV'
+    after_versions += always_uv_marker
+    after_versions += encode_text("credMgmt") + encode_bool(True)
+    after_versions += encode_text("authnrCfg") + encode_bool(True)
+    after_versions += encode_text("clientPin")
+    client_pin_marker = b'\xF0CLIENTPIN'
+    after_versions += client_pin_marker
+    after_versions += encode_text("largeBlobs") + encode_bool(True)
+    after_versions += encode_text("pinUvAuthToken") + encode_bool(True)
+    after_versions += encode_text("setMinPINLength") + encode_bool(True)
+    after_versions += encode_text("makeCredUvNotRqd")
+    make_cred_uv_not_rqd_marker = b'\xF0MAKECRED'
+    after_versions += make_cred_uv_not_rqd_marker
 
-    # 7. maxCredentialCountInList
-    prefix += encode_uint(GI_MAX_CREDENTIAL_COUNT)
-    prefix += encode_uint(consts['MAX_CREDENTIAL_COUNT_IN_LIST'])
+    after_versions += encode_uint(c['GI_RESP_MAX_MSG_SIZE'])
+    # CTAP_MAX_MSG_SIZE may depend on platform ABI/compiler flags via
+    # MAX_CTAP_BUFSIZE, so runtime C code patches it instead of baking the
+    # generator host's value into this static segment.
+    max_msg_size_marker = b'\xF0MAXMSG'
+    after_versions += max_msg_size_marker
+    after_versions += encode_uint(c['GI_RESP_PIN_UV_AUTH_PROTOCOLS'])
+    after_versions += encode_array_header(2) + encode_uint(1) + encode_uint(2)
+    after_versions += encode_uint(c['GI_RESP_MAX_CREDENTIAL_COUNT_IN_LIST'])
+    after_versions += encode_uint(c['MAX_CREDENTIAL_COUNT_IN_LIST'])
+    after_versions += encode_uint(c['GI_RESP_MAX_CREDENTIAL_ID_LENGTH'])
+    after_versions += encode_uint(c['CREDENTIAL_ID_SIZE'])
+    after_versions += encode_uint(c['GI_RESP_TRANSPORTS'])
+    after_versions += encode_array_header(2) + encode_text("nfc") + encode_text("usb")
+    after_versions += encode_uint(c['GI_RESP_ALGORITHMS'])
+    after_versions += encode_array_header(4)
+    after_versions += algorithm_entry(c['COSE_ALG_ES256'])
+    after_versions += algorithm_entry(c['COSE_ALG_EDDSA'])
+    after_versions += algorithm_entry(c['COSE_ALG_ML_DSA_65'])
+    sm2_marker = b'\xF0SM2ALG'
+    sm2_entry = encode_map_header(2) + encode_text("alg") + sm2_marker + encode_text("type") + encode_text("public-key")
+    after_versions += sm2_entry
+    # Keep key 0x0B before the optional forcePINChange key 0x0C that runtime inserts.
+    after_versions += encode_uint(c['GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY'])
+    after_versions += encode_uint(c['LARGE_BLOB_SIZE_LIMIT'])
 
-    # 8. maxCredentialIdLength
-    prefix += encode_uint(GI_MAX_CREDENTIAL_ID_LENGTH)
-    prefix += encode_uint(consts['CREDENTIAL_ID_SIZE'])
+    chunks = [("cbor_gi_after_versions", bytes(after_versions))]
+    markers = [
+        (always_uv_marker, "always_uv"),
+        (client_pin_marker, "client_pin"),
+        (make_cred_uv_not_rqd_marker, "make_cred_uv_not_rqd"),
+        (max_msg_size_marker, "max_msg_size"),
+        (sm2_marker, "sm2_alg"),
+    ]
+    for marker, name in markers:
+        next_chunks = []
+        for chunk_name, chunk_data in chunks:
+            if marker in chunk_data:
+                before, after = split_at_placeholder(chunk_data, marker)
+                next_chunks.append((chunk_name + "_before_" + name, before))
+                segments[name + "_placeholder"] = b""
+                next_chunks.append(("cbor_gi_after_" + name, after))
+            else:
+                next_chunks.append((chunk_name, chunk_data))
+        chunks = next_chunks
+    for name, data in chunks:
+        segments[name] = data
 
-    # 9. transports
-    prefix += encode_uint(GI_TRANSPORTS)
-    prefix += encode_array_header(2)
-    prefix += encode_text("nfc")
-    prefix += encode_text("usb")
+    segments["cbor_gi_force_pin_change_entry"] = encode_uint(c['GI_RESP_FORCE_PIN_CHANGE']) + encode_bool(True)
 
-    # 10. algorithms key only (array header emitted at runtime)
-    prefix += encode_uint(GI_ALGORITHMS)
-
-    # --- Segment 2: base algorithm entries (ES256 + EdDSA + ML-DSA-65) ---
-    alg_base = bytearray()
-    alg_base += build_algorithm_entry(COSE_ALG_ES256)
-    alg_base += build_algorithm_entry(COSE_ALG_EDDSA)
-    alg_base += build_algorithm_entry(COSE_ALG_ML_DSA_65)
-
-    # --- Segment 3: SM2 algorithm entry ---
-    alg_sm2 = bytearray()
-    alg_sm2_entry = build_algorithm_entry(sm2_algo_id)
-    # Find the algo_id byte offset within this entry
-    # Entry: map(2){text("alg"), int(algo_id), text("type"), text("public-key")}
-    # map_header(1) + text("alg")(4) = 5 bytes, then the int encoding
-    sm2_algo_offset = 1 + len(encode_text("alg"))
-    alg_sm2 += alg_sm2_entry
-
-    # --- Segment 4: suffix (remaining fields) ---
     suffix = bytearray()
+    suffix += encode_uint(c['GI_RESP_MIN_PIN_LENGTH'])
+    min_pin_marker = b'\xF0MINPIN'
+    suffix += min_pin_marker
+    suffix += encode_uint(c['GI_RESP_FIRMWARE_VERSION'])
+    suffix += encode_uint(c['FIRMWARE_VERSION'])
+    suffix += encode_uint(c['GI_RESP_MAX_CRED_BLOB_LENGTH'])
+    suffix += encode_uint(c['MAX_CRED_BLOB_LENGTH'])
+    suffix += encode_uint(c['GI_RESP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH'])
+    suffix += encode_uint(c['CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH'])
+    suffix += encode_uint(c['GI_RESP_REMAINING_DISCOVERABLE_CREDENTIALS'])
+    remaining_marker = b'\xF0REMAINING'
+    suffix += remaining_marker
+    suffix += encode_uint(c['GI_RESP_ATTESTATION_FORMATS'])
+    suffix += encode_array_header(1) + encode_text("packed")
+    suffix += encode_uint(c['GI_RESP_LONG_TOUCH_FOR_RESET'])
+    long_touch_marker = b'\xF0LONGTOUCH'
+    suffix += long_touch_marker
+    suffix += encode_uint(c['GI_RESP_TRANSPORTS_FOR_RESET'])
+    suffix += encode_array_header(2) + encode_text("nfc") + encode_text("usb")
+    suffix += encode_uint(c['GI_RESP_MAX_PIN_LENGTH'])
+    max_pin_marker = b'\xF0MAXPIN'
+    suffix += max_pin_marker
+    suffix += encode_uint(c['GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS'])
+    suffix += encode_array_header(3)
+    suffix += encode_uint(c['CONFIG_CMD_TOGGLE_ALWAYS_UV'])
+    suffix += encode_uint(c['CONFIG_CMD_SET_MIN_PIN_LENGTH'])
+    suffix += encode_uint(c['CONFIG_CMD_ENABLE_LONG_TOUCH_FOR_RESET'])
 
-    # 11. maxSerializedLargeBlobArray
-    suffix += encode_uint(GI_MAX_SERIALIZED_LARGE_BLOB)
-    suffix += encode_uint(consts['LARGE_BLOB_SIZE_LIMIT'])
+    chunks = [("cbor_gi_suffix", bytes(suffix))]
+    for marker, name in [
+        (min_pin_marker, "min_pin_length"),
+        (remaining_marker, "remaining_discoverable_credentials"),
+        (long_touch_marker, "long_touch_for_reset"),
+        (max_pin_marker, "max_pin_length"),
+    ]:
+        next_chunks = []
+        for chunk_name, chunk_data in chunks:
+            if marker in chunk_data:
+                before, after = split_at_placeholder(chunk_data, marker)
+                next_chunks.append((chunk_name + "_before_" + name, before))
+                segments[name + "_placeholder"] = b""
+                next_chunks.append(("cbor_gi_suffix_after_" + name, after))
+            else:
+                next_chunks.append((chunk_name, chunk_data))
+        chunks = next_chunks
+    for name, data in chunks:
+        segments[name] = data
 
-    # 12. firmwareVersion
-    suffix += encode_uint(GI_FIRMWARE_VERSION)
-    suffix += encode_uint(consts['FIRMWARE_VERSION'])
-
-    # 13. maxCredBlobLength
-    suffix += encode_uint(GI_MAX_CRED_BLOB_LENGTH)
-    suffix += encode_uint(consts['MAX_CRED_BLOB_LENGTH'])
-
-    return (bytes(prefix), bytes(alg_base), bytes(alg_sm2), bytes(suffix),
-            client_pin_offset, sm2_algo_offset)
+    return segments
 
 
 def format_c_array(data):
+    if not data:
+        return ""
     lines = []
     for i in range(0, len(data), 16):
-        chunk = data[i:i+16]
-        hex_str = ", ".join(f"0x{b:02X}" for b in chunk)
-        lines.append(f"  {hex_str},")
+        chunk = data[i:i + 16]
+        lines.append("  " + ", ".join(f"0x{b:02x}" for b in chunk) + ",")
     return "\n".join(lines)
 
 
+def write_array(f, name, data):
+    f.write(f"static const uint8_t {name}[{len(data)}] = {{\n")
+    body = format_c_array(data)
+    if body:
+        f.write(body + "\n")
+    f.write("};\n\n")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Generate CBOR segments for ctap_get_info")
-    parser.add_argument("--headers", nargs="+", required=True,
-                        help="C header files to parse for #define constants")
-    parser.add_argument("--credential-id-size", type=int, required=True,
-                        help="sizeof(credential_id) — not a #define, passed from CMake")
-    parser.add_argument("--sm2-algo-id", type=int, default=-48)
-    parser.add_argument("--output", type=str, required=True)
+    parser = argparse.ArgumentParser(description="Generate const CBOR segments for CTAP GetInfo")
+    parser.add_argument("--headers", nargs="+", required=True)
+    parser.add_argument("--credential-id-size", type=int, required=True)
+    parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
-    # Constants we need from headers
     needed = {
-        'FIRMWARE_VERSION': None,
-        'CTAP_MAX_MSG_SIZE': None,
+        'GI_RESP_VERSIONS': None,
+        'GI_RESP_EXTENSIONS': None,
+        'GI_RESP_AAGUID': None,
+        'GI_RESP_OPTIONS': None,
+        'GI_RESP_MAX_MSG_SIZE': None,
+        'GI_RESP_PIN_UV_AUTH_PROTOCOLS': None,
+        'GI_RESP_MAX_CREDENTIAL_COUNT_IN_LIST': None,
+        'GI_RESP_MAX_CREDENTIAL_ID_LENGTH': None,
+        'GI_RESP_TRANSPORTS': None,
+        'GI_RESP_ALGORITHMS': None,
+        'GI_RESP_MAX_SERIALIZED_LARGE_BLOB_ARRAY': None,
+        'GI_RESP_FORCE_PIN_CHANGE': None,
+        'GI_RESP_MIN_PIN_LENGTH': None,
+        'GI_RESP_FIRMWARE_VERSION': None,
+        'GI_RESP_MAX_CRED_BLOB_LENGTH': None,
+        'GI_RESP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH': None,
+        'GI_RESP_REMAINING_DISCOVERABLE_CREDENTIALS': None,
+        'GI_RESP_ATTESTATION_FORMATS': None,
+        'GI_RESP_LONG_TOUCH_FOR_RESET': None,
+        'GI_RESP_TRANSPORTS_FOR_RESET': None,
+        'GI_RESP_MAX_PIN_LENGTH': None,
+        'GI_RESP_AUTHENTICATOR_CONFIG_COMMANDS': None,
         'MAX_CREDENTIAL_COUNT_IN_LIST': None,
         'LARGE_BLOB_SIZE_LIMIT': None,
         'MAX_CRED_BLOB_LENGTH': None,
+        'CTAP_MAX_RPIDS_FOR_SET_MIN_PIN_LENGTH': None,
+        'FIRMWARE_VERSION': None,
+        'COSE_ALG_ES256': None,
+        'COSE_ALG_EDDSA': None,
+        'COSE_ALG_ML_DSA_65': None,
+        'CONFIG_CMD_TOGGLE_ALWAYS_UV': None,
+        'CONFIG_CMD_SET_MIN_PIN_LENGTH': None,
+        'CONFIG_CMD_ENABLE_LONG_TOUCH_FOR_RESET': None,
     }
     consts = parse_defines(args.headers, needed)
-    consts['MAX_CTAP_BUFSIZE'] = consts['CTAP_MAX_MSG_SIZE']
     consts['CREDENTIAL_ID_SIZE'] = args.credential_id_size
 
-    prefix, alg_base, alg_sm2, suffix, pin_off, sm2_algo_off = \
-        build_segments(consts, args.sm2_algo_id)
-
-    total_no_sm2 = len(prefix) + 1 + len(alg_base) + len(suffix)
-    total_sm2 = len(prefix) + 1 + len(alg_base) + len(alg_sm2) + len(suffix)
-
+    segments = build_segments(consts)
     with open(args.output, 'w') as f:
-        f.write("// Auto-generated by scripts/gen_ctap_get_info.py — DO NOT EDIT\n")
-        f.write("// Re-generate: cmake reconfigure (constants parsed from headers)\n")
-        f.write("//\n")
-        f.write(f"// Parsed constants:\n")
-        for k, v in sorted(consts.items()):
-            f.write(f"//   {k} = {v}\n")
-        f.write(f"//   sm2_algo_id = {args.sm2_algo_id} (default, patched at runtime)\n")
-        f.write(f"//\n")
-        f.write(f"// Total response size: {total_no_sm2} bytes (no SM2), "
-                f"{total_sm2} bytes (with SM2)\n\n")
+        f.write("// Auto-generated by scripts/gen_ctap_get_info.py. DO NOT EDIT.\n")
+        f.write("// Static CTAP GetInfo CBOR segments; dynamic fields are inserted at runtime.\n\n")
+        for key in sorted(consts):
+            f.write(f"// {key} = {consts[key]}\n")
+        f.write("\n")
+        for name, data in segments.items():
+            if name.endswith("_placeholder"):
+                continue
+            write_array(f, name, data)
 
-        f.write(f"// Byte offset of clientPin boolean within cbor_gi_prefix\n")
-        f.write(f"#define CTAP_GI_CLIENT_PIN_OFFSET {pin_off}\n")
-        f.write(f"// Byte offset of SM2 algo_id within cbor_gi_alg_sm2\n")
-        f.write(f"#define CTAP_GI_SM2_ALGO_OFFSET {sm2_algo_off}\n")
-        f.write(f"// SM2 algo_id encoding length in default template\n")
-        # Record the encoding length of the default algo_id by locating where the
-        # \"type\" text key starts after the integer encoding.
-        from_offset = sm2_algo_off
-        # Find where "type" text starts after the int
-        type_text = encode_text("type")
-        type_pos = alg_sm2.index(bytes(type_text), from_offset)
-        default_algo_enc_len = type_pos - from_offset
-        f.write(f"#define CTAP_GI_SM2_ALGO_ENC_LEN {default_algo_enc_len}\n\n")
-
-        f.write(f"// Segment 1: map header through algorithms key ({len(prefix)} bytes)\n")
-        f.write(f"// clientPin boolean is at offset {pin_off}\n")
-        f.write(f"static const uint8_t cbor_gi_prefix[{len(prefix)}] = {{\n")
-        f.write(format_c_array(prefix))
-        f.write(f"\n}};\n\n")
-
-        f.write(f"// Segment 2: ES256 + EdDSA + ML-DSA-65 algorithm entries ({len(alg_base)} bytes)\n")
-        f.write(f"static const uint8_t cbor_gi_alg_base[{len(alg_base)}] = {{\n")
-        f.write(format_c_array(alg_base))
-        f.write(f"\n}};\n\n")
-
-        f.write(f"// Segment 3: SM2 algorithm entry ({len(alg_sm2)} bytes)\n")
-        f.write(f"// algo_id at offset {sm2_algo_off}, {default_algo_enc_len} byte(s)\n")
-        f.write(f"static const uint8_t cbor_gi_alg_sm2[{len(alg_sm2)}] = {{\n")
-        f.write(format_c_array(alg_sm2))
-        f.write(f"\n}};\n\n")
-
-        f.write(f"// Segment 4: remaining fields after algorithms ({len(suffix)} bytes)\n")
-        f.write(f"static const uint8_t cbor_gi_suffix[{len(suffix)}] = {{\n")
-        f.write(format_c_array(suffix))
-        f.write(f"\n}};\n")
-
-    print(f"Generated {args.output}:")
-    print(f"  prefix:   {len(prefix)} bytes (clientPin at offset {pin_off})")
-    print(f"  alg_base: {len(alg_base)} bytes")
-    print(f"  alg_sm2:  {len(alg_sm2)} bytes (algo_id at offset {sm2_algo_off})")
-    print(f"  suffix:   {len(suffix)} bytes")
-    print(f"  Total:    {total_no_sm2} / {total_sm2} bytes (no SM2 / SM2)")
-    print(f"  Constants parsed from: {', '.join(args.headers)}")
+    total_static = sum(len(v) for k, v in segments.items() if not k.endswith("_placeholder"))
+    print(f"Generated {args.output}: {total_static} static bytes in {len([k for k in segments if not k.endswith('_placeholder')])} segments")
 
 
 if __name__ == "__main__":

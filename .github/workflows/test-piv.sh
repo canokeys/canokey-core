@@ -17,10 +17,12 @@ opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GE
 pkcs15-tool --reader "$RDID" -D
 
 echo "=== Phase: Algorithm extension (ED25519) ==="
-piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 22 05 51 52 53 54' | grep 'SW1=0x90, SW2=0x00'
-piv-tool --admin M:9B:03 -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 54'
+piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 22 05 51 52 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
+piv-tool --admin M:9B:0A -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 15 54 E2 E3'
+git -C piv-go apply --unidiff-zero --check "$PWD/test-via-pcsc/piv-go-aes192.patch"
+git -C piv-go apply --unidiff-zero "$PWD/test-via-pcsc/piv-go-aes192.patch"
 cd piv-go; go test -v ./piv --wipe-yubikey; cd -
-piv-tool --admin M:9B:03 -s '00 EE 02 00 07 01 E0 05 16 E1 53 54' | grep 'SW1=0x90, SW2=0x00'
+piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 E0 05 16 E1 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
 
 echo "=== Phase: PIN management ==="
 yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
@@ -29,10 +31,10 @@ yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
 yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '2 tries left before pin is blocked.'
 yubico-piv-tool -r "$RDID" -a verify-pin -P 123456 2>&1 | grep '1 tries left before pin is blocked.'
 yubico-piv-tool -r "$RDID" -a verify-pin -P 654321
-yubico-piv-tool -r "$RDID" -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
-yubico-piv-tool -r "$RDID" -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
-piv-tool --reader "$RDID" --admin A:9B:03
-piv-tool --reader "$RDID" --admin M:9B:03
+yubico-piv-tool -r "$RDID" -a set-mgm-key --new-key-algo=AES192 -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
+yubico-piv-tool -r "$RDID" -a set-mgm-key --new-key-algo=AES192 --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
+piv-tool --reader "$RDID" --admin A:9B:0A
+piv-tool --reader "$RDID" --admin M:9B:0A
 
 # Helper functions
 PIVGenKeyCert() {
@@ -62,13 +64,13 @@ yubico-piv-tool -r "$RDID" -a status
 for s in 9a 9c 9d 9e 82 83; do PIVSignDec $s 1 d X25519; done
 
 echo "=== Phase: Error handling tests ==="
-yubico-piv-tool -r "$RDID" -a generate -A RSA2048 -s 84 2>&1 | grep "Key generation failed"
+piv-tool --admin M:9B:0A -s '00 47 00 96 05 AC 03 80 01 11' | grep 'SW1=0x6A, SW2=0x86'
 yubico-piv-tool -r "$RDID" -a generate -A ECCP256 -s 9e
 yubico-piv-tool -r "$RDID" -a generate -A X25519 -s 82 > /tmp/pubkey-9e.pem
 yubico-piv-tool -r "$RDID" -a test-decipher -s 9e -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"
 yubico-piv-tool -r "$RDID" -a test-decipher -s 84 -A X25519 </tmp/pubkey-9e.pem 2>&1 | grep "Failed ECDH exchange"
 opensc-tool -r "$RDID" -s '00 24 00 01 02 00 00' | grep 'SW1=0x6A, SW2=0x88'
-opensc-tool -r "$RDID" -s '00 87 FF 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80'
+opensc-tool -r "$RDID" -s '00 87 0A 9B 02 00 00' | grep 'SW1=0x6A, SW2=0x80'
 opensc-tool -r "$RDID" -s '00 87 FF 9B 02 7C 00' | grep 'SW1=0x6A, SW2=0x86'
 
 echo "=== Phase: RSA-3072 tests ==="

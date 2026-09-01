@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#include <admin.h>
+#include <device-config.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
 #include <usbd_core.h>
@@ -209,14 +209,14 @@ static const uint8_t USBD_FS_IfDesc_CCID[] = {
     0x00, 0xB0, 0x04, 0x00,   /* dwDataRate: Default ICC I/O data rate */
     0x00, 0xB0, 0x04, 0x00,   /* dwMaxDataRate: Maximum supported ICC I/O data */
     0x00,                     /* bNumDataRatesSupported : no setting from PC */
-    LO(ABDATA_SIZE),          /* dwMaxIFSD, B3 */
-    HI(ABDATA_SIZE),          /* dwMaxIFSD, B2 */
+    LO(CCID_MAX_XFR_BLOCK_SIZE), /* dwMaxIFSD, B3 */
+    HI(CCID_MAX_XFR_BLOCK_SIZE), /* dwMaxIFSD, B2 */
     0x00, 0x00,               /* dwMaxIFSD, B1B0 */
     0x00, 0x00, 0x00, 0x00,   /* dwSynchProtocols  */
     0x00, 0x00, 0x00, 0x00,   /* dwMechanical: no special characteristics */
     0xFE, 0x00, 0x04, 0x00,   /* dwFeatures */
-    LO(ABDATA_SIZE + CCID_CMD_HEADER_SIZE), /* dwMaxCCIDMessageLength, B3 */
-    HI(ABDATA_SIZE + CCID_CMD_HEADER_SIZE), /* dwMaxCCIDMessageLength, B2 */
+    LO(CCID_MAX_MESSAGE_SIZE), /* dwMaxCCIDMessageLength, B3 */
+    HI(CCID_MAX_MESSAGE_SIZE), /* dwMaxCCIDMessageLength, B2 */
     0x00, 0x00,               /* dwMaxCCIDMessageLength, B1B0 */
     0xFF,                     /* bClassGetResponse*/
     0xFF,                     /* bClassEnvelope */
@@ -406,7 +406,7 @@ void USBD_DescriptorInit(void) {
   nIface++;
 #endif
 
-  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF)) {
+  if (IS_ENABLED_IFACE(USBD_CANOKEY_KBDHID_IF) && device_config_is_pass_enabled()) {
 #if ENABLE_IFACE_KBDHID
     nIface++;
     memcpy(desc, USBD_FS_IfDesc_KBDHID, sizeof(USBD_FS_IfDesc_KBDHID));
@@ -467,7 +467,7 @@ const uint8_t *USBD_SerialStrDescriptor(USBD_SpeedTypeDef speed __attribute__((u
     *length = 0;
     return NULL;
   }
-  fill_sn(sn);
+  device_config_fill_serial(sn);
   bytes_to_hex(sn, sizeof(sn), sn_str);
   USBD_GetString((uint8_t *)sn_str, shared_io_buffer, length);
   return shared_io_buffer;
@@ -484,7 +484,7 @@ const uint8_t *USBD_BOSDescriptor(USBD_SpeedTypeDef speed __attribute__((unused)
   }
   *length = sizeof(USBD_FS_BOSDesc);
   memcpy(shared_io_buffer, USBD_FS_BOSDesc, sizeof(USBD_FS_BOSDesc)); // use shared_io_buffer to store this descriptor
-  shared_io_buffer[28] = cfg_is_webusb_landing_enable();
+  shared_io_buffer[28] = device_config_is_webusb_landing_enabled();
   return shared_io_buffer;
 #endif
 }

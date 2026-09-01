@@ -13,13 +13,14 @@ typedef struct {
   uint32_t le; // Le can be 65536 bytes long as per ISO7816-3
   uint16_t lc;
   uint8_t extended;
-} __packed CAPDU;
+  uint8_t pke_backed;
+} CAPDU;
 
 typedef struct {
   uint8_t *data;
   uint16_t len;
   uint16_t sw;
-} __packed RAPDU;
+} RAPDU;
 
 // Command status responses
 
@@ -85,6 +86,14 @@ typedef int (*APDU_MESSAGE_HANDLER)(const CAPDU *capdu, RAPDU *rapdu);
 typedef int (*APDU_RESPONSE_SOURCE_READ)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 typedef void (*APDU_RESPONSE_SOURCE_CLOSE)(void *ctx);
 
+typedef struct {
+  uint32_t total_len;
+  uint32_t offset;
+  uint16_t sw;
+  APDU_RESPONSE_SOURCE_READ read;
+  void *ctx;
+} APDU_RESPONSE_SOURCE_VIEW;
+
 extern uint8_t *shared_io_buffer;
 
 enum {
@@ -109,6 +118,10 @@ void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOU
                               APDU_RESPONSE_SOURCE_CLOSE close, void *ctx);
 void apdu_response_source_clear(void);
 int apdu_response_source_active(void);
+const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void);
+int apdu_response_source_output(RAPDU *rapdu, uint32_t le);
+int apdu_response_source_read_memory(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
 int apdu_session_can_preempt(void);
 // Releases any in-flight FIDO chained-APDU reassembly state (PKE staging,
 // chaining flags, accumulator). Call from any path that drops the CTAP
@@ -116,6 +129,14 @@ int apdu_session_can_preempt(void);
 void apdu_fido_chain_reset(void);
 int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
+typedef enum {
+  APDU_TRANSPORT_CCID,
+  APDU_TRANSPORT_WEBUSB,
+  APDU_TRANSPORT_NFC,
+  APDU_TRANSPORT_HID,
+} apdu_transport_t;
+
+void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE__APDU_H

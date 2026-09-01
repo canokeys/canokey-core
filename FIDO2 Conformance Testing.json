@@ -1,10 +1,14 @@
 {
     "description": "CanoKey Authenticator",
     "aaguid": "244eb29e-e090-4e49-81fe-1f20f8d3b8f4",
-    "authenticatorVersion": 201,
+    "authenticatorVersion": 311,
     "protocolFamily": "fido2",
     "schema": 3,
     "upv": [
+        {
+            "major": 1,
+            "minor": 3
+        },
         {
             "major": 1,
             "minor": 1
@@ -70,29 +74,36 @@
         "versions": [
             "U2F_V2",
             "FIDO_2_0",
-            "FIDO_2_1"
+            "FIDO_2_1",
+            "FIDO_2_3"
         ],
         "extensions": [
             "credBlob",
             "credProtect",
             "hmac-secret",
-            "largeBlobKey"
+            "hmac-secret-mc",
+            "largeBlobKey",
+            "minPinLength",
+            "thirdPartyPayment"
         ],
         "aaguid": "244eb29ee0904e4981fe1f20f8d3b8f4",
         "options": {
             "rk": true,
+            "alwaysUv": false,
             "credMgmt": true,
-            "clientPin": false,
+            "authnrCfg": true,
+            "clientPin": true,
             "largeBlobs": true,
             "pinUvAuthToken": true,
+            "setMinPINLength": true,
             "makeCredUvNotRqd": true
         },
-        "maxMsgSize": 1500,
+        "maxMsgSize": 1296,
         "pinUvAuthProtocols": [
             1,
             2
         ],
-        "maxCredentialCountInList": 8,
+        "maxCredentialCountInList": 16,
         "maxCredentialIdLength": 70,
         "transports": [
             "nfc",
@@ -106,14 +117,11 @@
             {
                 "alg": -8,
                 "type": "public-key"
-            },
-            {
-                "alg": -49,
-                "type": "public-key"
             }
         ],
         "maxSerializedLargeBlobArray": 4096,
-        "firmwareVersion": 201,
+        "minPINLength": 4,
+        "firmwareVersion": 311,
         "maxCredBlobLength": 32
     }
 }

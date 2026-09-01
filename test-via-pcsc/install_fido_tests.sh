@@ -4,8 +4,25 @@ set -e
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
+apply_patch_if_missing() {
+  local marker="$1"
+  local target_file="$2"
+  local strip_level="$3"
+  local directory="$4"
+  local patch_file="$5"
+
+  if grep -Fq -- "${marker}" "${target_file}"; then
+    return 0
+  fi
+  if ! patch -p"${strip_level}" -s -N -V never --dry-run -d "${directory}" <"${patch_file}"; then
+    echo "Patch does not apply cleanly: ${patch_file}" >&2
+    return 1
+  fi
+  patch -p"${strip_level}" -s -N -V never -d "${directory}" <"${patch_file}"
+}
+
 pushd fido2-tests
-patch -p1 -u --forward <../test-via-pcsc/fido2_retry_ctap2_init.patch || true
+apply_patch_if_missing 'def _bind_client' tests/conftest.py 1 . ../test-via-pcsc/fido2_retry_ctap2_init.patch
 VENV_DIR="${PWD}/.venv"
 if [ ! -x "${VENV_DIR}/bin/python" ]; then
   "${PYTHON_BIN}" -m venv "${VENV_DIR}"
@@ -50,7 +67,8 @@ if ! grep -q 'length=(size if offset == 0 else None)' "${FIDO2_PACKAGE_DIR}/ctap
                  pin_uv_param=pin_uv_param,
              )
 EOF
-  patch -p0 -u --forward -d "${FIDO2_SITE_PACKAGES_DIR}" -i "${blob_patch}"
+  apply_patch_if_missing 'length=(size if offset == 0 else None)' "${FIDO2_PACKAGE_DIR}/ctap2/blob.py" \
+    0 "${FIDO2_SITE_PACKAGES_DIR}" "${blob_patch}"
   rm -f "${blob_patch}"
 fi
 if ! grep -q 'NFC CTAP failure SW=%02X%02X resp=%s' "${FIDO2_PACKAGE_DIR}/pcsc.py"; then
@@ -71,10 +89,12 @@ if ! grep -q 'NFC CTAP failure SW=%02X%02X resp=%s' "${FIDO2_PACKAGE_DIR}/pcsc.p
  
          raise CtapError(CtapError.ERR.KEEPALIVE_CANCEL)
 EOF
-  patch -p0 -u --forward -d "${FIDO2_SITE_PACKAGES_DIR}" -i "${pcsc_patch}"
+  apply_patch_if_missing 'NFC CTAP failure SW=%02X%02X resp=%s' "${FIDO2_PACKAGE_DIR}/pcsc.py" \
+    0 "${FIDO2_SITE_PACKAGES_DIR}" "${pcsc_patch}"
   rm -f "${pcsc_patch}"
 fi
-patch -p1 -u --forward -d "${FIDO2_PACKAGE_DIR}" <../test-via-pcsc/fido2_SM2_COSE_key.patch || true
+apply_patch_if_missing 'class SM2(CoseKey)' "${FIDO2_PACKAGE_DIR}/cose.py" \
+  1 "${FIDO2_PACKAGE_DIR}" ../test-via-pcsc/fido2_SM2_COSE_key.patch
 popd
 
 pushd libfido2/build

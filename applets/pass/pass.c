@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <common.h>
 #include <device.h>
+#include <hmac.h>
 #include <memzero.h>
 #include <oath.h>
 #include <pass.h>
@@ -16,6 +17,7 @@ typedef struct {
       uint8_t password_len;
       uint8_t password[PASS_MAX_PASSWORD_LENGTH];
     } __packed;
+    uint8_t hmac_key[PASS_HMAC_KEY_LENGTH];
     struct {
       uint32_t oath_offset;
       uint8_t name_len;
@@ -26,6 +28,8 @@ typedef struct {
 } __packed pass_slot_t;
 
 static pass_slot_t slots[2];
+
+static void pass_clear_slot(pass_slot_t *slot) { memzero(slot, sizeof(*slot)); }
 
 int pass_install(const uint8_t reset) {
   if (reset || get_file_size(PASS_FILE) != sizeof(slots)) {
@@ -42,6 +46,7 @@ int pass_install(const uint8_t reset) {
 // For each slot, the first byte is the type.
 // For PASS_SLOT_OFF, there is no more data
 // For PASS_SLOT_STATIC, the second byte is with_enter
+// For PASS_SLOT_HMACSHA1, there is no more data; the stored key is never dumped back
 // For PASS_SLOT_OATH, the next byte is the length of the name, followed by the name, and the next byte is with_enter
 static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
   int length = 0;
@@ -57,6 +62,11 @@ static int dump_slot(const pass_slot_t *slot, uint8_t *buffer) {
   case PASS_SLOT_STATIC:
     // For STATIC, the second byte is with_enter
     buffer[length++] = slot->with_enter;
+    break;
+
+  case PASS_SLOT_HMACSHA1:
+    // The slot type is enough for configuration discovery; returning the key
+    // would leak the challenge-response secret over the admin channel.
     break;
 
   case PASS_SLOT_OATH:
@@ -92,14 +102,16 @@ int pass_read_config(const CAPDU *capdu, RAPDU *rapdu) {
 // The first byte is the slot type
 // For OFF, there is no more data
 // For STATIC, the second byte is the length of the password, followed by the password, and the next byte is with_enter
+// For HMACSHA1, the second byte is the key length, followed by a 20-byte HMAC-SHA1 key
 // OATH is not allowed to be written here
 int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 1 && P1 != 2) EXCEPT(SW_WRONG_P1P2);
   if (LC < 1) EXCEPT(SW_WRONG_LENGTH);
 
   pass_slot_t *slot = &slots[P1 - 1];
+  const slot_type_t type = (slot_type_t)DATA[0];
 
-  switch (DATA[0]) {
+  switch (type) {
   case PASS_SLOT_OFF:
     if (LC != 1) EXCEPT(SW_WRONG_LENGTH);
     break;
@@ -108,15 +120,36 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
     if (LC < 3) EXCEPT(SW_WRONG_LENGTH);
     if (DATA[1] > PASS_MAX_PASSWORD_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     if (LC != 3 + DATA[1]) EXCEPT(SW_WRONG_LENGTH);
-    slot->password_len = DATA[1];
-    memcpy(slot->password, DATA + 2, slot->password_len);
-    slot->with_enter = DATA[2 + slot->password_len];
+    break;
+
+  case PASS_SLOT_HMACSHA1:
+    if (LC != 2 + PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+    if (DATA[1] != PASS_HMAC_KEY_LENGTH) EXCEPT(SW_WRONG_LENGTH);
     break;
 
   default:
     EXCEPT(SW_WRONG_DATA);
   }
-  slot->type = (slot_type_t)DATA[0];
+
+  pass_clear_slot(slot);
+  slot->type = type;
+
+  switch (type) {
+  case PASS_SLOT_STATIC:
+    slot->password_len = DATA[1];
+    memcpy(slot->password, DATA + 2, slot->password_len);
+    slot->with_enter = DATA[2 + slot->password_len];
+    break;
+
+  case PASS_SLOT_HMACSHA1:
+    memcpy(slot->hmac_key, DATA + 2, PASS_HMAC_KEY_LENGTH);
+    break;
+
+  case PASS_SLOT_OFF:
+  default:
+    break;
+  }
+
   DBG_MSG("Set type %p %d\n", slot, slot->type);
 
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
@@ -125,6 +158,7 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
 int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len, const uint8_t *name,
                      uint8_t with_enter) {
   pass_slot_t *slot = &slots[slot_index];
+  pass_clear_slot(slot);
   slot->type = PASS_SLOT_OATH;
   slot->oath_offset = file_offset;
   slot->name_len = name_len;
@@ -136,11 +170,11 @@ int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len,
 
 int pass_delete_oath(uint32_t file_offset) {
   if (slots[0].type == PASS_SLOT_OATH && slots[0].oath_offset == file_offset) {
-    slots[0].type = PASS_SLOT_OFF;
+    pass_clear_slot(&slots[0]);
     return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
   }
   if (slots[1].type == PASS_SLOT_OATH && slots[1].oath_offset == file_offset) {
-    slots[1].type = PASS_SLOT_OFF;
+    pass_clear_slot(&slots[1]);
     return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
   }
   return 0;
@@ -160,6 +194,22 @@ static int oath_process_offset(uint32_t file_offset, char *output) {
   output[len] = '\0';
 
   return len;
+}
+
+int pass_hmacsha1(uint8_t slot_index, const uint8_t *challenge, uint16_t challenge_len,
+                  uint8_t response[PASS_HMAC_RESPONSE_LENGTH]) {
+  static const uint8_t empty_challenge[1] = {0};
+
+  if (slot_index >= 2) return -1;
+  if (challenge_len > PASS_HMAC_CHALLENGE_LENGTH) return -1;
+  if (challenge == NULL && challenge_len != 0) return -1;
+
+  pass_slot_t *slot = &slots[slot_index];
+  if (slot->type != PASS_SLOT_HMACSHA1) return -2;
+
+  if (challenge_len == 0) challenge = empty_challenge;
+  hmac_sha1(slot->hmac_key, PASS_HMAC_KEY_LENGTH, challenge, challenge_len, response);
+  return PASS_HMAC_RESPONSE_LENGTH;
 }
 
 int pass_handle_touch(uint8_t touch_type, char *output) {
@@ -183,6 +233,10 @@ int pass_handle_touch(uint8_t touch_type, char *output) {
     memcpy(output, slot->password, slot->password_len);
     length = slot->password_len;
     break;
+  case PASS_SLOT_HMACSHA1:
+    // HMAC slots answer host feature-report challenges; they should not type
+    // anything when the touch shortcut path is polled.
+    return 0;
   default:
     return -1;
   }
