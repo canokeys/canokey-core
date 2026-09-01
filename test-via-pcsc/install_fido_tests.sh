@@ -13,7 +13,12 @@ fi
 VENV_PYTHON="${VENV_DIR}/bin/python"
 "${VENV_PYTHON}" -m pip install --upgrade pip setuptools wheel
 tmp_requirements="$(mktemp)"
-grep -v '^pyscard\b' requirements.txt >"${tmp_requirements}"
+# This fido2-tests revision expects pqcrypto.verify() to return a boolean.
+awk '
+  /^pyscard([[:space:]]|$)/ { next }
+  /^pqcrypto([[:space:]]|$)/ { print "pqcrypto==0.4.0"; next }
+  { print }
+' requirements.txt >"${tmp_requirements}"
 "${VENV_PYTHON}" -m pip install -r "${tmp_requirements}"
 rm -f "${tmp_requirements}"
 # fido2==0.9.3 still imports smartcard.pcsc.PCSCContext, removed by newer pyscard.
