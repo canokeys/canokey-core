@@ -4,11 +4,15 @@
 #include <ccid.h>
 #include <ctaphid.h>
 #include <device.h>
+#if ENABLE_IFACE_KBDHID
 #include <kbdhid.h>
+#endif
 #include <webusb.h>
 
 volatile static uint8_t touch_result;
+#if ENABLE_NFC
 static uint8_t has_rf;
+#endif
 static uint32_t last_blink, blink_timeout, blink_interval;
 static enum { ON, OFF } led_status;
 typedef enum { WAIT_NONE = 1, WAIT_CCID, WAIT_CTAPHID, WAIT_DEEP, WAIT_DEEP_TOUCHED, WAIT_DEEP_CANCEL } wait_status_t;
@@ -20,16 +24,16 @@ void device_loop(void) {
   CCID_Loop();
   CTAPHID_Loop(0);
   WebUSB_Loop();
+#if ENABLE_IFACE_KBDHID
   KBDHID_Loop();
+#endif
 }
 
 bool device_allow_kbd_touch(void) {
   uint32_t now = device_get_tick();
-  if (!device_is_blinking() &&      // applets are not waiting for touch
-      now > TOUCH_AFTER_PWRON &&    // ignore touch for some time after power-on
-      now - TOUCH_EXPIRE_TIME > last_blink &&
-      get_touch_result() != TOUCH_NO
-  ) {
+  if (!device_is_blinking() &&   // applets are not waiting for touch
+      now > TOUCH_AFTER_PWRON && // ignore touch for some time after power-on
+      now - TOUCH_EXPIRE_TIME > last_blink && get_touch_result() != TOUCH_NO) {
     DBG_MSG("now=%lu last_blink=%lu\n", now, last_blink);
     return true;
   }
@@ -61,15 +65,15 @@ uint8_t wait_for_user_presence(uint8_t entry) {
     DBG_MSG("Denied\n");
     return USER_PRESENCE_TIMEOUT;
   }
-  
+
   uint32_t start = device_get_tick();
   uint32_t last = start;
   DBG_MSG("start %u\n", start);
   while (get_touch_result() == TOUCH_NO) {
-#ifdef DUMB_DONGLE
+#ifdef BYPASS_USER_PRESENCE
     break;
 #endif
-    // Keep blinking, in case other applet stops it 
+    // Keep blinking, in case other applet stops it
     start_blinking(0);
     // Nested CCID processing is not allowed
     if (entry != WAIT_ENTRY_CCID) CCID_Loop();
@@ -105,7 +109,7 @@ int send_keepalive_during_processing(uint8_t entry) {
 }
 
 __attribute__((weak)) int strong_user_presence_test(void) {
-#ifdef DUMB_DONGLE
+#ifdef BYPASS_USER_PRESENCE
   return 0;
 #endif
   for (int i = 0; i < 5; i++) {
@@ -130,6 +134,7 @@ __attribute__((weak)) int strong_user_presence_test(void) {
   return 0;
 }
 
+#if ENABLE_NFC
 void set_nfc_state(uint8_t val) { has_rf = val; }
 
 uint8_t is_nfc(void) {
@@ -138,6 +143,7 @@ uint8_t is_nfc(void) {
 #endif
   return has_rf;
 }
+#endif
 
 static void toggle_led(void) {
   if (led_status == ON) {

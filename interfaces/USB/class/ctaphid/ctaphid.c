@@ -12,14 +12,39 @@ static volatile uint8_t has_frame;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
 static uint8_t (*callback_send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len);
+static uint8_t executing_cmd;
+// A KEEPALIVE may still own the IN endpoint when CANCEL unwinds the CTAP handler.
+static uint8_t cancel_response_pending;
+static uint8_t cancel_response_code;
+static uint32_t cancel_response_cid;
+static CTAPHID_FRAME cancel_response_frame;
 
 const uint16_t ISIZE = sizeof(frame.init.data);
 const uint16_t CSIZE = sizeof(frame.cont.data);
+
+static uint8_t CTAPHID_SendCancelResponseIfNeeded(void) {
+  if (!cancel_response_pending) return USBD_OK;
+  if (USBD_CTAPHID_WaitIdle() != USBD_OK) return USBD_BUSY;
+
+  memset(&cancel_response_frame, 0, sizeof(cancel_response_frame));
+  cancel_response_frame.cid = cancel_response_cid;
+  cancel_response_frame.type = TYPE_INIT;
+  cancel_response_frame.init.cmd = CTAPHID_CBOR;
+  cancel_response_frame.init.bcntl = 1;
+  cancel_response_frame.init.data[0] = cancel_response_code;
+  if (callback_send_report(&usb_device, (uint8_t *)&cancel_response_frame, sizeof(cancel_response_frame)) != USBD_OK)
+    return USBD_BUSY;
+
+  cancel_response_pending = 0;
+  return USBD_OK;
+}
 
 uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len)) {
   callback_send_report = send_report;
   channel.state = CTAPHID_IDLE;
   has_frame = 0;
+  executing_cmd = 0;
+  cancel_response_pending = 0;
   return 0;
 }
 
@@ -115,14 +140,22 @@ static void CTAPHID_Execute_Cbor(void) {
   DBG_MSG("C: ");
   PRINT_HEX(channel.data, channel.bcnt_total);
   size_t len = sizeof(channel.data);
+  executing_cmd = CTAPHID_CBOR;
   ctap_process_cbor_with_src(channel.data, channel.bcnt_total, channel.data, &len, CTAP_SRC_HID);
+  executing_cmd = 0;
   DBG_MSG("R: ");
   PRINT_HEX(channel.data, len);
+  if (cancel_response_pending) {
+    cancel_response_code = channel.data[0];
+    CTAPHID_SendCancelResponseIfNeeded();
+    return;
+  }
   CTAPHID_SendResponse(channel.cid, CTAPHID_CBOR, channel.data, len);
 }
 
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   uint8_t ret = LOOP_SUCCESS;
+  if (cancel_response_pending && CTAPHID_SendCancelResponseIfNeeded() != USBD_OK) return LOOP_SUCCESS;
   if (channel.state == CTAPHID_BUSY && device_get_tick() > channel.expire) {
     DBG_MSG("CTAP Timeout\n");
     channel.state = CTAPHID_IDLE;
@@ -141,7 +174,7 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   }
 
   channel.cid = frame.cid;
-  
+
   if (FRAME_TYPE(frame) == TYPE_INIT) {
     // DBG_MSG("CTAP init frame, cmd=0x%x\n", (int)frame.init.cmd);
     if (!wait_for_user && channel.state == CTAPHID_BUSY && frame.init.cmd != CTAPHID_INIT) { // self abort is ok
@@ -164,7 +197,8 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
     memcpy(channel.data, frame.init.data, copied);
     channel.expire = device_get_tick() + CTAPHID_TRANS_TIMEOUT;
   } else {
-    // DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd, (int)FRAME_SEQ(frame));
+    // DBG_MSG("CTAP cont frame, state=%d cmd=0x%x seq=%d\n", (int)channel.state, (int)channel.cmd,
+    // (int)FRAME_SEQ(frame));
     if (channel.state == CTAPHID_IDLE) goto consume_frame; // ignore spurious continuation packet
     if (FRAME_SEQ(frame) != channel.seq++) {
       DBG_MSG("seq=%d\n", (int)FRAME_SEQ(frame));
@@ -214,13 +248,17 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
       else
         CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, channel.bcnt_total);
       break;
-     case CTAPHID_WINK:
+    case CTAPHID_WINK:
       DBG_MSG("WINK\n");
       if (!wait_for_user) ctap_wink();
       CTAPHID_SendResponse(channel.cid, channel.cmd, channel.data, 0);
       break;
     case CTAPHID_CANCEL:
       DBG_MSG("CANCEL when wait_for_user=%d\n", (int)wait_for_user);
+      if (wait_for_user && executing_cmd == CTAPHID_CBOR) {
+        cancel_response_cid = channel.cid;
+        cancel_response_pending = 1;
+      }
       ret = LOOP_CANCEL;
       break;
     default:

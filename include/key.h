@@ -29,10 +29,10 @@ typedef enum {
 } pin_policy_t;
 
 typedef enum {
-  TOUCH_POLICY_DEFAULT = 0x00, // disabled in both OpenPGP and PIV
-  TOUCH_POLICY_NEVER = 0x01, // not used in OpenPGP; the same as default in PIV
-  TOUCH_POLICY_ALWAYS = 0x02, // not used in OpenPGP; enabled in PIV without cache
-  TOUCH_POLICY_CACHED = 0x03, // enabled in OpenPGP; enabled in PIV with cache
+  TOUCH_POLICY_DEFAULT = 0x00,   // disabled in both OpenPGP and PIV
+  TOUCH_POLICY_NEVER = 0x01,     // not used in OpenPGP; the same as default in PIV
+  TOUCH_POLICY_ALWAYS = 0x02,    // not used in OpenPGP; enabled in PIV without cache
+  TOUCH_POLICY_CACHED = 0x03,    // enabled in OpenPGP; enabled in PIV with cache
   TOUCH_POLICY_PERMANENT = 0x04, // permanently enabled in OpenPGP; not used in PIV
 } touch_policy_t;
 
@@ -52,7 +52,6 @@ typedef struct {
     uint8_t data[0];
   };
 } ck_key_t;
-
 
 /**
  * Encode public key

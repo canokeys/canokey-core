@@ -81,8 +81,8 @@ void cp_stop_using_pin_uv_auth_token(void) {
 
 static void hkdf(uint8_t *salt, size_t salt_len, uint8_t *ikm, size_t ikm_len, uint8_t *out) {
   hmac_sha256(salt, salt_len, ikm, ikm_len, salt);
-  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *) "CTAP2 HMAC key\x01", 15, out);
-  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *) "CTAP2 AES key\x01", 14, out + SHA256_DIGEST_LENGTH);
+  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *)"CTAP2 HMAC key\x01", 15, out);
+  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *)"CTAP2 AES key\x01", 14, out + SHA256_DIGEST_LENGTH);
 }
 
 static void cp2_kdf(uint8_t *z, size_t z_len, uint8_t *out) {
@@ -108,9 +108,7 @@ void cp_reset_pin_uv_auth_token(void) {
   cp_stop_using_pin_uv_auth_token();
 }
 
-void cp_get_public_key(uint8_t *buf) {
-  memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
-}
+void cp_get_public_key(uint8_t *buf) { memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]); }
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
@@ -139,7 +137,7 @@ int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *o
   }
   int ret = block_cipher_enc(&cfg);
   if (pin_protocol == 2) {
-    // "in" and "out" arguments can be the same pointer 
+    // "in" and "out" arguments can be the same pointer
     memmove(out + sizeof(iv), out, in_size);
     memcpy(out, iv, sizeof(iv));
   }
@@ -153,19 +151,18 @@ int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
 int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
   block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
+  cfg.out = out;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
     cfg.key = key;
     cfg.in_size = in_size;
     cfg.in = in;
-    cfg.out = out;
   } else {
     if (in_size < sizeof(iv)) return -1;
     memcpy(iv, in, sizeof(iv));
     cfg.key = key + SHARED_SECRET_SIZE_HMAC;
     cfg.in_size = in_size - sizeof(iv);
     cfg.in = in + sizeof(iv);
-    cfg.out = out;
   }
   return block_cipher_dec(&cfg);
 }
@@ -187,17 +184,11 @@ bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig,
   return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
 
-void cp_set_permission(int new_permissions) {
-  permissions |= new_permissions;
-}
+void cp_set_permission(int new_permissions) { permissions |= new_permissions; }
 
-bool cp_has_permission(int permission) {
-  return permissions & permission;
-}
+bool cp_has_permission(int permission) { return permissions & permission; }
 
-bool cp_has_associated_rp_id(void) {
-  return permissions_rp_id[0] == 1;
-}
+bool cp_has_associated_rp_id(void) { return permissions_rp_id[0] == 1; }
 
 bool cp_verify_rp_id(const uint8_t *rp_id_hash) {
   if (permissions_rp_id[0] == 0) return true;
@@ -361,20 +352,22 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
     return SIGNATURE_LENGTH[key_type];
   }
   if (key_type == SM2) {
-    if (ecc_complete_key(key_type, key) < 0) {  // Compute Z requiring the public key
+    if (ecc_complete_key(key_type, key) < 0) { // Compute Z requiring the public key
       ERR_MSG("Failed to complete key\n");
       return -1;
     }
     uint8_t z[SM3_DIGEST_LENGTH];
+    sm3_ctx_t sm3;
     sm2_z(SM2_ID_DEFAULT, key, z);
-    sm3_init();
-    sm3_update(z, SM3_DIGEST_LENGTH);
-    sm3_update(input, len);
-    sm3_final(sig);
+    sm3_init(&sm3);
+    sm3_update(&sm3, z, SM3_DIGEST_LENGTH);
+    sm3_update(&sm3, input, len);
+    sm3_final(&sm3, sig);
   } else {
-    sha256_init();
-    sha256_update(input, len);
-    sha256_final(sig);
+    sha256_ctx_t sha256;
+    sha256_init(&sha256);
+    sha256_update(&sha256, input, len);
+    sha256_final(&sha256, sig);
   }
   DBG_MSG("Digest: ");
   PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
@@ -454,8 +447,8 @@ int make_large_blob_key(uint8_t *nonce, uint8_t *output) {
   // make it different from hmac extension key
   output[0] ^= output[1];
   output[1] ^= output[2];
-  output[HE_KEY_SIZE-2] ^= output[0];
-  output[HE_KEY_SIZE-1] ^= output[3];
+  output[HE_KEY_SIZE - 2] ^= output[0];
+  output[HE_KEY_SIZE - 1] ^= output[3];
 
   hmac_sha256(output, HE_KEY_SIZE, nonce, CREDENTIAL_NONCE_SIZE, output);
   return 0;

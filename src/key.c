@@ -11,6 +11,7 @@
 // TODO: include_length is always TRUE
 int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   int off = 0;
+  const size_t key_len = PUBLIC_KEY_LENGTH[key->meta.type];
 
   switch (key->meta.type) {
   case SECP256R1:
@@ -18,40 +19,40 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   case SECP384R1:
   case SM2:
     if (include_length) {
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 3; // tag, length, and 0x04
+      buf[off++] = key_len + 3; // tag, length, and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
+    buf[off++] = key_len + 1; // 0x04
     buf[off++] = 0x04;
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    memcpy(&buf[off], key->ecc.pub, key_len);
+    off += key_len;
     break;
 
   case SECP521R1:
     if (include_length) {
-      buf[off++] = 0x81; // Two-byte length
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 4; // tag, length (two bytes), and 0x04
+      buf[off++] = 0x81;        // Two-byte length
+      buf[off++] = key_len + 4; // tag, length (two bytes), and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = 0x81; // Two-byte length
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
+    buf[off++] = 0x81;        // Two-byte length
+    buf[off++] = key_len + 1; // 0x04
     buf[off++] = 0x04;
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    memcpy(&buf[off], key->ecc.pub, key_len);
+    off += key_len;
     break;
 
   case ED25519:
   case X25519:
     if (include_length) {
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 2; // tag, length
+      buf[off++] = key_len + 2; // tag, length
     }
     buf[off++] = 0x86;
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type];
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
+    buf[off++] = key_len;
+    memcpy(&buf[off], key->ecc.pub, key_len);
     if (key->meta.type == X25519) {
       swap_big_number_endian(&buf[off]); // Public key of x25519 is encoded in little endian
     }
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    off += key_len;
     break;
 
   case RSA2048:
@@ -60,15 +61,15 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
     if (include_length) { // 3-byte length
       buf[off++] = 0x82;
       // 6 = modulus: tag (1), length (3); exponent: tag (1), length (1)
-      buf[off++] = HI(6 + PUBLIC_KEY_LENGTH[key->meta.type] + E_LENGTH);
-      buf[off++] = LO(6 + PUBLIC_KEY_LENGTH[key->meta.type] + E_LENGTH);
+      buf[off++] = HI(6 + key_len + E_LENGTH);
+      buf[off++] = LO(6 + key_len + E_LENGTH);
     }
     buf[off++] = 0x81; // modulus
     buf[off++] = 0x82;
-    buf[off++] = HI(PUBLIC_KEY_LENGTH[key->meta.type]);
-    buf[off++] = LO(PUBLIC_KEY_LENGTH[key->meta.type]);
+    buf[off++] = HI(key_len);
+    buf[off++] = LO(key_len);
     rsa_get_public_key(&key->rsa, &buf[off]);
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    off += key_len;
     buf[off++] = 0x82; // exponent
     buf[off++] = E_LENGTH;
     memcpy(&buf[off], key->rsa.e, E_LENGTH);
@@ -112,7 +113,7 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       }
       key->meta.touch_policy = *buf++;
       break;
-    
+
     default:
       buf = end;
       break;
@@ -287,75 +288,42 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   case RSA2048:
   case RSA3072:
   case RSA4096: {
-    // 0x91: e
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x91) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != E_LENGTH) return KEY_ERR_DATA;
-    p += length_size;
+    // Parse 6 RSA CRT component tags: 0x91(e), 0x92(p), 0x93(q), 0x94(qinv), 0x95(dp), 0x96(dq)
+    static const uint8_t rsa_tags[] = {0x91, 0x92, 0x93, 0x94, 0x95, 0x96};
+    const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+    // expected lengths: e=E_LENGTH, p=pri_len, q=pri_len, qinv/dp/dq <= pri_len
+    const size_t expected_exact[] = {E_LENGTH, pri_len, pri_len, 0, 0, 0};
+    size_t comp_len[6];
+    for (int i = 0; i < 6; ++i) {
+      if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
+      if (*p++ != rsa_tags[i]) return KEY_ERR_DATA;
+      comp_len[i] = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
+      if (fail) return KEY_ERR_LENGTH;
+      if (expected_exact[i] > 0 ? comp_len[i] != expected_exact[i] : comp_len[i] > pri_len) return KEY_ERR_DATA;
+      p += length_size;
+    }
 
-    // 0x92: p
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x92) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x93: q
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x93) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x94: qinv, may be less than p/q's length
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x94) return KEY_ERR_DATA;
-    const size_t qinv_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (qinv_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x94: dp, may be less than p/q's length
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x95) return KEY_ERR_DATA;
-    const size_t dp_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (dp_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x94: dq, may be less than p/q's length
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x96) return KEY_ERR_DATA;
-    const size_t dq_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (dq_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-
-    // Concatenation of key data
+    // Concatenation of key data (tag 5F48)
     p = data_tag;
     if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
     if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
+    size_t total_data = 0;
+    for (int i = 0; i < 6; ++i)
+      total_data += comp_len[i];
     len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
     if (fail) return KEY_ERR_LENGTH;
-    if (len != PRIVATE_KEY_LENGTH[key->meta.type] * 2 + qinv_len + dp_len + dq_len + E_LENGTH) return KEY_ERR_DATA;
+    if (len != total_data) return KEY_ERR_DATA;
     p += length_size;
 
     if ((size_t)(p + len - buf) > buf_len) return KEY_ERR_LENGTH;
-    key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
-    memcpy(key->rsa.e, p, E_LENGTH);
-    p += E_LENGTH;
-    memcpy(key->rsa.p, p, PRIVATE_KEY_LENGTH[key->meta.type]);
-    p += PRIVATE_KEY_LENGTH[key->meta.type];
-    memcpy(key->rsa.q, p, PRIVATE_KEY_LENGTH[key->meta.type]);
-    p += PRIVATE_KEY_LENGTH[key->meta.type];
-    memcpy(key->rsa.qinv + PRIVATE_KEY_LENGTH[key->meta.type] - qinv_len, p, qinv_len);
-    p += qinv_len;
-    memcpy(key->rsa.dp + PRIVATE_KEY_LENGTH[key->meta.type] - dp_len, p, dp_len);
-    p += dp_len;
-    memcpy(key->rsa.dq + PRIVATE_KEY_LENGTH[key->meta.type] - dq_len, p, dq_len);
+    key->rsa.nbits = pri_len * 16;
+    // Copy components: e, p, q are exact-length; qinv, dp, dq are right-aligned
+    uint8_t *dests[] = {key->rsa.e, key->rsa.p, key->rsa.q, key->rsa.qinv, key->rsa.dp, key->rsa.dq};
+    for (int i = 0; i < 6; ++i) {
+      size_t offset = (i >= 3) ? pri_len - comp_len[i] : 0;
+      memcpy(dests[i] + offset, p, comp_len[i]);
+      p += comp_len[i];
+    }
     if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;

@@ -24,7 +24,8 @@ int cp_decapsulate(uint8_t *buf, int pin_protocol);
 int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol);
 int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol);
 int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol);
-bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
+bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig,
+               int pin_protocol);
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol);
 
 void cp_set_permission(int new_permissions);

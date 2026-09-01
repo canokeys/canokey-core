@@ -89,7 +89,7 @@ int testmode_emulate_user_presence(void);
 int testmode_get_is_nfc_mode(void);
 void testmode_set_initial_ticks(uint32_t ticks);
 void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data);
-bool testmode_err_triggered(const char* filename, bool file_wr);
+bool testmode_err_triggered(const char *filename, bool file_wr);
 
 // -----------------------------------------------------------------------------------
 
@@ -98,8 +98,13 @@ uint8_t wait_for_user_presence(uint8_t entry);
 int strong_user_presence_test(void);
 int send_keepalive_during_processing(uint8_t entry);
 void device_loop(void);
+#if ENABLE_NFC
 uint8_t is_nfc(void);
 void set_nfc_state(uint8_t state);
+#else
+static inline uint8_t is_nfc(void) { return 0; }
+static inline void set_nfc_state(uint8_t state) { (void)state; }
+#endif
 uint8_t get_touch_result(void);
 void set_touch_result(uint8_t result);
 void device_update_led(void);
@@ -119,6 +124,7 @@ void device_init(void);
 void stop_blinking(void);
 uint8_t device_is_blinking(void);
 bool device_allow_kbd_touch(void);
+#if ENABLE_NFC
 void fm11_init(void);
 fm_status_t fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
 fm_status_t fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
@@ -130,6 +136,9 @@ fm_status_t fm_write_fifo(uint8_t *buf, uint8_t len);
 fm_status_t fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
 fm_status_t fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
+#endif
+#else
+static inline void fm11_init(void) {}
 #endif
 
 #endif // _DEVICE_H_
