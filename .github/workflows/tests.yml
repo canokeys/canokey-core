@@ -399,10 +399,11 @@ jobs:
     - name: Tests - Interoperate with ckman openpgp
       run: |
         cd yubikey-manager
-        pipx install poetry==1.8.5
-        poetry install
-        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
-        poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
+        python3 -m venv .venv
+        .venv/bin/pip install pyscard==2.3.1 pytest==7.4.4 makefun==1.15.6
+        .venv/bin/pip install --editable .
+        .venv/bin/pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_openpgp.py -v
+        .venv/bin/pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
 
     - name: Tests - PIV applet
       run: |
