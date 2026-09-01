@@ -10,7 +10,9 @@
 
 - **FIDO2 / U2F** (CTAP2/CTAP1, Ed25519, HMAC-secret, ML-DSA-65)
 - **OpenPGP Card V3.4** (RSA 2048/3072/4096, ECDSA, Ed25519, X25519)
-- **PIV** (NIST SP 800-73-4, with RSA 3072/4096, Ed25519, X25519)
+- **PIV** (NIST SP 800-73-4 plus CanoKey extensions: RSA-2048/3072/4096,
+  P-256/P-384/P-521, secp256k1, SM2, Ed25519, X25519, ML-DSA-65, and
+  ML-KEM-768)
 - **HOTP / TOTP** (OATH)
 - **NDEF** (NFC tag emulation, requires NFC hardware)
 - **WebUSB web interface** (browser-based configuration)

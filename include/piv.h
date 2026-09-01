@@ -49,8 +49,10 @@
 #define PIV_CERT_OBJECT_MAX_SIZE 6568
 
 /*
- * Post-quantum PIV extensions use the configurable algorithm IDs below
- * (defaults: ML-DSA-65 = E2, ML-KEM-768 = E3). ML-DSA GENERAL AUTHENTICATE
+ * CanoKey PIV algorithm extensions use the configurable algorithm IDs below
+ * (defaults include Ed25519 = E0, X25519 = E1, ML-DSA-65 = E2,
+ * ML-KEM-768 = E3, secp256k1 = 53, P-521 = 15, and SM2 = 54).
+ * RSA-3072 and RSA-4096 default to 05 and 16. ML-DSA GENERAL AUTHENTICATE
  * accepts 7C { 82 00, 81 <message> } through Short APDU command chaining and
  * hashes the message incrementally; Extended APDUs are rejected. ML-KEM key
  * generation uses the standard 00 47 command. Import accepts exactly one 0A 40 <64-byte d || z>
