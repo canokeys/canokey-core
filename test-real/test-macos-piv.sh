@@ -62,15 +62,21 @@ PIVGenKeyCert() {
     local algo="$3"
     echo "========================== PIV generate/selfsign slot=$key algo=$algo =========================="
     YPT -a delete-certificate -s "$key" >/dev/null 2>&1 || true
-    YPT -a generate -A "$algo" -s "$key" >"$TEST_TMP_DIR/pubkey-$key.pem"
-    assertEquals 'yubico-piv-tool generate' 0 $?
+    if ! YPT -a generate -A "$algo" -s "$key" >"$TEST_TMP_DIR/pubkey-$key.pem"; then
+        fail "yubico-piv-tool generate failed for slot $key ($algo)"
+        return 1
+    fi
     if [[ "$algo" == "X25519" ]]; then
         return
     fi
-    YPT -P 654321 -A "$algo" -a verify-pin -a selfsign-certificate -s "$key" -S "$subject" <"$TEST_TMP_DIR/pubkey-$key.pem" >"$TEST_TMP_DIR/cert-$key.pem"
-    assertEquals 'yubico-piv-tool selfsign-certificate' 0 $?
-    YPT -a import-certificate -s "$key" <"$TEST_TMP_DIR/cert-$key.pem"
-    assertEquals 'yubico-piv-tool import-certificate' 0 $?
+    if ! YPT -P 654321 -A "$algo" -a verify-pin -a selfsign-certificate -s "$key" -S "$subject" <"$TEST_TMP_DIR/pubkey-$key.pem" >"$TEST_TMP_DIR/cert-$key.pem"; then
+        fail "yubico-piv-tool selfsign-certificate failed for slot $key ($algo)"
+        return 1
+    fi
+    if ! YPT -a import-certificate -s "$key" <"$TEST_TMP_DIR/cert-$key.pem"; then
+        fail "yubico-piv-tool import-certificate failed for slot $key ($algo)"
+        return 1
+    fi
 }
 
 PIVImportKeyCert() {
@@ -78,12 +84,22 @@ PIVImportKeyCert() {
     local priv_pem="$2"
     local cert_pem="$3"
     echo "========================== PIV import slot=$key key=$priv_pem cert=$cert_pem =========================="
-    YPT -a import-key -s "$key" -i "$priv_pem"
-    assertEquals 'import-key' 0 $?
+    if ! YPT -a import-key -s "$key" -i "$priv_pem"; then
+        fail "import-key failed for slot $key"
+        return 1
+    fi
     if [[ -f "$cert_pem" ]]; then
-        YPT -a import-certificate -s "$key" -i "$cert_pem"
-        assertEquals 'import-certificate' 0 $?
+        if ! YPT -a import-certificate -s "$key" -i "$cert_pem"; then
+            fail "import-certificate failed for slot $key"
+            return 1
+        fi
         cp "$cert_pem" "$TEST_TMP_DIR/cert-$key.pem"
+    else
+        YPT -a delete-certificate -s "$key" >/dev/null 2>&1 || true
+    fi
+    if ! YPT -a read-public-key -s "$key" >"$TEST_TMP_DIR/read-public-$key.pem"; then
+        fail "import-key returned success but slot $key has no readable public key"
+        return 1
     fi
 }
 
@@ -104,13 +120,25 @@ PIVSignDec() {
         algoArgs=(-A "$4")
     fi
     if [[ -z "$op" || "$op" == s ]]; then
-        YPT "${pinArgs[@]}" -a test-signature -s "$key" <"$inp_file"
-        assertEquals 'yubico-piv-tool test-signature' 0 $?
+        if ! YPT "${pinArgs[@]}" -a test-signature -s "$key" <"$inp_file"; then
+            fail "yubico-piv-tool test-signature failed for slot $key"
+            return 1
+        fi
     fi
     if [[ -z "$op" || "$op" == d ]]; then
-        YPT "${pinArgs[@]}" -a test-decipher -s "$key" "${algoArgs[@]}" <"$inp_file"
-        assertEquals 'yubico-piv-tool test-decipher' 0 $?
+        if ! YPT "${pinArgs[@]}" -a test-decipher -s "$key" "${algoArgs[@]}" <"$inp_file"; then
+            fail "yubico-piv-tool test-decipher failed for slot $key"
+            return 1
+        fi
     fi
+}
+
+AssertCertificateSubject() {
+    local id="$1"
+    local common_name="$2"
+    local out
+    out=$(PKCS15 --read-certificate "$id" | "$OPENSSL_BIN" x509 -noout -subject | sed -E 's/[[:space:]]*=[[:space:]]*/=/g')
+    assertContains 'CERT' "$out" "CN=$common_name"
 }
 
 oneTimeSetUp() {
@@ -151,26 +179,25 @@ test_ChangePin() {
     assertContains 'verify-pin' "$out" '1 tries left before pin is blocked.'
     YPT -a verify-pin -P 654321
     assertEquals 'verify-pin' 0 $?
-    YPT -a set-mgm-key -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
+    YPT -a set-mgm-key --new-key-algo=AES192 -n F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8
     assertEquals 'set-mgm-key' 0 $?
-    YPT -a set-mgm-key --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
+    YPT -a set-mgm-key --new-key-algo=AES192 --key=F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8F1F2F3F4F5F6F7F8 -n 010203040506070801020304050607080102030405060708
     assertEquals 'set-mgm-key' 0 $?
 }
 
 rsa_tests() {
     local algo="$1"
-    local s out slot
+    local s slot
     for s in 9a 9c 9d 9e; do
-        PIVGenKeyCert "$s" "/CN=CertAtSlot$s/" "$algo"
+        PIVGenKeyCert "$s" "/CN=CertAtSlot$s/" "$algo" || return 1
     done
     YPT -a status
-    PIVSignDec 9e
+    PIVSignDec 9e || return 1
     for s in 9a 9c 9d; do
-        PIVSignDec "$s" 1
+        PIVSignDec "$s" 1 || return 1
     done
 
-    out=$(PKCS15 --read-certificate 04 | "$OPENSSL_BIN" x509 -text)
-    assertContains 'CERT' "$out" 'CN = CertAtSlot9e'
+    AssertCertificateSubject 04 CertAtSlot9e
     echo -n hello >"$TEST_TMP_DIR/hello.txt"
     slot="${PKCS11_SLOT:-$(PKCS11Slot)}"
     [[ -n "$slot" ]] || die "no PKCS#11 slot found"
@@ -194,24 +221,24 @@ test_RSA4096() {
 
 ec_tests() {
     local algo="$1"
-    local s out
+    local s
     for s in 9a 9c 9d 9e; do
-        PIVGenKeyCert "$s" "/CN=CertAtSlot$s/" "$algo"
+        PIVGenKeyCert "$s" "/CN=CertAtSlot$s/" "$algo" || return 1
     done
     YPT -a status
     for s in 9a 9c 9d 9e; do
         if [[ "$algo" != "X25519" ]]; then
-            PIVSignDec "$s" 1 s "$algo"
+            PIVSignDec "$s" 1 s "$algo" || return 1
         fi
-        if [[ "$algo" != "ED25519" ]]; then
-            PIVSignDec "$s" 1 d "$algo"
+        # yubico-piv-tool test-decipher requires an X.509 certificate,
+        # which cannot carry an X25519 signing key.
+        if [[ "$algo" != "ED25519" && "$algo" != "X25519" ]]; then
+            PIVSignDec "$s" 1 d "$algo" || return 1
         fi
     done
     if [[ "$algo" != *25519 ]]; then
-        out=$(PKCS15 --read-certificate 01 | "$OPENSSL_BIN" x509 -text)
-        assertContains 'CERT' "$out" 'CN = CertAtSlot9a'
-        out=$(PKCS15 --read-certificate 02 | "$OPENSSL_BIN" x509 -text)
-        assertContains 'CERT' "$out" 'CN = CertAtSlot9c'
+        AssertCertificateSubject 01 CertAtSlot9a
+        AssertCertificateSubject 02 CertAtSlot9c
     fi
 }
 
@@ -224,7 +251,7 @@ test_ECC384() {
 }
 
 test_25519() {
-    ec_tests ED25519
+    ec_tests ED25519 || return 1
     ec_tests X25519
 }
 
@@ -268,16 +295,18 @@ test_ECKeyImport() {
             "$OPENSSL_BIN" genpkey $opt -out "$TEST_TMP_DIR/key-$s.pem"
             assertEquals 'openssl genpkey' 0 $?
             "$OPENSSL_BIN" req -x509 -key "$TEST_TMP_DIR/key-$s.pem" -out "$TEST_TMP_DIR/cert-$algo-$s.pem" -days 365 -nodes -subj "/CN=www.example.com" >/dev/null 2>&1 || true
-            PIVImportKeyCert "$s" "$TEST_TMP_DIR/key-$s.pem" "$TEST_TMP_DIR/cert-$algo-$s.pem"
+            PIVImportKeyCert "$s" "$TEST_TMP_DIR/key-$s.pem" "$TEST_TMP_DIR/cert-$algo-$s.pem" || return 1
             "$OPENSSL_BIN" pkey -in "$TEST_TMP_DIR/key-$s.pem" -pubout -out "$TEST_TMP_DIR/pubkey-$s.pem"
         done
         YPT -a status
         for s in 9a 9c 9d 9e; do
             if [[ "$algo" != X25519 ]]; then
-                PIVSignDec "$s" 1 s "$algo"
+                PIVSignDec "$s" 1 s "$algo" || return 1
             fi
-            if [[ "$algo" != ED25519 ]]; then
-                PIVSignDec "$s" 1 d "$algo"
+            # yubico-piv-tool test-decipher requires an X.509 certificate,
+            # which cannot carry an X25519 signing key.
+            if [[ "$algo" != ED25519 && "$algo" != X25519 ]]; then
+                PIVSignDec "$s" 1 d "$algo" || return 1
             fi
         done
     done
@@ -289,13 +318,24 @@ test_RSAKeyImport() {
     assertEquals 'openssl gen key' 0 $?
 
     for s in 9a 9c 9d 9e; do
-        PIVImportKeyCert "$s" "$TEST_TMP_DIR/key.pem" "$TEST_TMP_DIR/cert.pem"
+        PIVImportKeyCert "$s" "$TEST_TMP_DIR/key.pem" "$TEST_TMP_DIR/cert.pem" || return 1
     done
     YPT -a status
-    PIVSignDec 9e
+    PIVSignDec 9e || return 1
     for s in 9a 9c 9d; do
-        PIVSignDec "$s" 1
+        PIVSignDec "$s" 1 || return 1
     done
+}
+
+test_RSA4096KeyImportMetadata() {
+    local out
+    "$OPENSSL_BIN" req -x509 -newkey rsa:4096 -keyout "$TEST_TMP_DIR/key-rsa4096.pem" \
+        -out "$TEST_TMP_DIR/cert-rsa4096.pem" -days 365 -nodes -subj "/CN=RSA4096Import/"
+    assertEquals 'openssl gen RSA4096 key' 0 $?
+
+    PIVImportKeyCert 9a "$TEST_TMP_DIR/key-rsa4096.pem" "$TEST_TMP_DIR/cert-rsa4096.pem" || return 1
+    out=$("$OPENSSL_BIN" pkey -pubin -in "$TEST_TMP_DIR/read-public-9a.pem" -text -noout 2>&1)
+    assertContains 'RSA4096 imported public-key metadata' "$out" 'Public-Key: (4096 bit)'
 }
 
 test_FactoryReset() {
@@ -329,8 +369,7 @@ test_FillData() {
     YPT -a write-object --id 0x5fc108 -i "$TEST_TMP_DIR/rand-pi" -f base64
     YPT -a write-object --id 0x5fc103 -i "$TEST_TMP_DIR/rand-pi" -f base64
     for s in 9a 9c 9d 9e 82 83; do
-        PIVImportKeyCert "$s" "$TEST_TMP_DIR/key.pem" "$TEST_TMP_DIR/cert.pem"
-        assertEquals 'import-key' 0 $?
+        PIVImportKeyCert "$s" "$TEST_TMP_DIR/key.pem" "$TEST_TMP_DIR/cert.pem" || return 1
     done
     YPT -a status
 }

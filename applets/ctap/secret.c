@@ -2,7 +2,6 @@
 #include "cose-key.h"
 #include "secret.h"
 #include <aes.h>
-#include <block-cipher.h>
 #include <crypto-util.h>
 #include <ecc.h>
 #include <fs.h>
@@ -67,7 +66,7 @@ void cp_clear_user_verified_flag(void) {
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-clearpinuvauthtokenpermissionsexceptlbw
 void cp_clear_pin_uv_auth_token_permissions_except_lbw(void) {
-  if (in_use) permissions &= ~CP_PERMISSION_LBW;
+  if (in_use) permissions &= CP_PERMISSION_LBW;
 }
 
 void cp_stop_using_pin_uv_auth_token(void) {
@@ -100,9 +99,7 @@ void cp_initialize(bool force_reset) {
 
 void cp_regenerate(void) {
   ecc_generate(SECP256R1, &ka_key);
-  DBG_MSG("Regenerate:\nPri: ");
-  PRINT_HEX(ka_key.pri, PRIVATE_KEY_LENGTH[SECP256R1]);
-  DBG_MSG("Pub: ");
+  DBG_MSG("Regenerate key agreement:\nPub: ");
   PRINT_HEX(ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
 }
 
@@ -115,8 +112,6 @@ void cp_get_public_key(uint8_t *buf) { memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
-  DBG_MSG("ECDH: ");
-  PRINT_HEX(buf, PUBLIC_KEY_LENGTH[SECP256R1]);
   if (ret < 0) return 1;
   if (pin_protocol == 1)
     sha256_raw(buf, PRI_KEY_SIZE, buf);
@@ -127,19 +122,16 @@ int cp_decapsulate(uint8_t *buf, int pin_protocol) {
 
 int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
-  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  cfg.in_size = in_size;
-  cfg.in = in;
-  cfg.out = out;
+  const uint8_t *aes_key;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
-    cfg.key = key;
+    aes_key = key;
   } else {
     random_buffer(iv, sizeof(iv));
-    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
+    aes_key = key + SHARED_SECRET_SIZE_HMAC;
   }
-  int ret = block_cipher_enc(&cfg);
-  if (pin_protocol == 2) {
+  int ret = aes_crypt(AES_MODE_CBC, AES_OP_ENCRYPT, AES_KEY_256, aes_key, iv, in, out, in_size);
+  if (ret == 0 && pin_protocol == 2) {
     // "in" and "out" arguments can be the same pointer
     memmove(out + sizeof(iv), out, in_size);
     memcpy(out, iv, sizeof(iv));
@@ -153,21 +145,21 @@ int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
 
 int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
-  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  cfg.out = out;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
-    cfg.key = key;
-    cfg.in_size = in_size;
-    cfg.in = in;
-  } else {
-    if (in_size < sizeof(iv)) return -1;
-    memcpy(iv, in, sizeof(iv));
-    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
-    cfg.in_size = in_size - sizeof(iv);
-    cfg.in = in + sizeof(iv);
+    return aes_crypt(AES_MODE_CBC, AES_OP_DECRYPT, AES_KEY_256, key, iv, in, out, in_size);
   }
-  return block_cipher_dec(&cfg);
+
+  if (in_size < sizeof(iv)) return -1;
+  memcpy(iv, in, sizeof(iv));
+  in_size -= sizeof(iv);
+  in += sizeof(iv);
+  if (out == in - sizeof(iv)) {
+    // HED_AESBlock uses memcpy for distinct input/output pointers.
+    memmove(out, in, in_size);
+    in = out;
+  }
+  return aes_crypt(AES_MODE_CBC, AES_OP_DECRYPT, AES_KEY_256, key + SHARED_SECRET_SIZE_HMAC, iv, in, out, in_size);
 }
 
 bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig,
@@ -189,6 +181,14 @@ bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig,
   timeout_value = device_get_tick() + 30000;
   return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
 }
+
+#ifdef TEST
+void cp_test_authenticate_pin_token(const uint8_t *msg, size_t msg_len, uint8_t *sig, int pin_protocol) {
+  uint8_t mac[SHA256_DIGEST_LENGTH];
+  hmac_sha256(pin_token, PIN_TOKEN_SIZE, msg, msg_len, mac);
+  memcpy(sig, mac, pin_protocol == 1 ? PIN_AUTH_SIZE_P1 : SHA256_DIGEST_LENGTH);
+}
+#endif
 
 void cp_set_permission(int new_permissions) { permissions |= new_permissions; }
 
@@ -213,7 +213,7 @@ key_type_t cose_alg_to_key_type(int alg) {
   case COSE_ALG_EDDSA:
     return ED25519;
   default:
-    if (ctap_sm2_attr.enabled && alg == ctap_sm2_attr.algo_id) return SM2;
+    if (alg == ctap_sm2_attr.algo_id) return SM2;
     return KEY_TYPE_PKC_END;
   }
 }
@@ -222,8 +222,7 @@ bool cose_alg_is_mldsa65(int32_t alg) { return alg == COSE_ALG_ML_DSA_65; }
 
 static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
-  if (ret < 0) return ret;
-  return 0;
+  return ret == PRI_KEY_SIZE ? 0 : -1;
 }
 
 static int read_kh_key(uint8_t *kh_key) {
@@ -252,25 +251,34 @@ static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t kh_key[K
   random_buffer(kh->nonce, CREDENTIAL_NONCE_SIZE);
   // private key = hmac-sha256(device private key, nonce)
   hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
-  DBG_MSG("Device key: ");
-  PRINT_HEX(kh_key, KH_KEY_SIZE);
-  DBG_MSG("Nonce: ");
-  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
-  DBG_MSG("Private key: ");
-  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in kh.tag via key.pub
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
   memcpy(kh->tag, key->pub, sizeof(kh->tag));
+  DBG_MSG("Credential tag generated\n");
+}
+
+enum {
+  CREDENTIAL_FLAG_CRED_PROTECT_MASK = 0x03,
+  CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT = 0x80,
+};
+
+uint8_t credential_cred_protect(const credential_id *kh) {
+  return kh->nonce[CREDENTIAL_NONCE_CP_POS] & CREDENTIAL_FLAG_CRED_PROTECT_MASK;
+}
+
+bool credential_third_party_payment(const credential_id *kh) {
+  return (kh->nonce[CREDENTIAL_NONCE_THIRD_PARTY_PAYMENT_POS] & CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT) != 0;
 }
 
 bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv) {
-  DBG_MSG("credProtect: %hhu\n", kh->nonce[CREDENTIAL_NONCE_CP_POS]);
-  if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
+  uint8_t cred_protect = credential_cred_protect(kh);
+  DBG_MSG("credProtect: %hhu\n", cred_protect);
+  if (cred_protect == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
     if (!uv && !with_cred_list) {
       DBG_MSG("credentialProtectionPolicy (0x02) failed\n");
       return false;
     }
-  } else if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED) {
+  } else if (cred_protect == CRED_PROTECT_VERIFICATION_REQUIRED) {
     if (!uv) {
       DBG_MSG("credentialProtectionPolicy (0x03) failed\n");
       return false;
@@ -279,7 +287,8 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
   return true;
 }
 
-int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp,
+                        bool third_party_payment) {
   ecc_key_t key;
   uint8_t kh_key[KH_KEY_SIZE];
 
@@ -291,7 +300,8 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_
   }
 
   kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
-  kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
+  kh->nonce[CREDENTIAL_NONCE_CP_POS] =
+      (cp & CREDENTIAL_FLAG_CRED_PROTECT_MASK) | (third_party_payment ? CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT : 0);
 
   const int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
@@ -318,12 +328,6 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
 
   // get private key
   hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
-  DBG_MSG("Device key: ");
-  PRINT_HEX(key->pub, KH_KEY_SIZE);
-  DBG_MSG("Nonce: ");
-  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
-  DBG_MSG("Private key: ");
-  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
   if (memcmp_s(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
@@ -344,18 +348,30 @@ int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE
 }
 
 size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
-  ecc_key_t key;
+  ecc_key_t key = {0};
   int ret = read_device_pri_key(key.pri);
-  if (ret < 0) return 0;
-  ecc_sign(SECP256R1, &key, input, input_len, sig);
+  if (ret < 0) {
+    ERR_MSG("Failed to read device private key\n");
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  if (input_len != PRIVATE_KEY_LENGTH[SECP256R1]) {
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  const size_t sig_len = ecdsa_p256_sign_der(&key, input, sig);
+  if (sig_len == 0) {
+    ERR_MSG("Failed to sign with device private key\n");
+    memzero(&key, sizeof(key));
+    return 0;
+  }
   memzero(&key, sizeof(key));
-  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
+  return sig_len;
 }
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  DBG_MSG("Sign key type: %d, private key: ", key_type);
-  PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
+  DBG_MSG("Sign key type: %d\n", key_type);
   if (key_type == KEY_TYPE_PKC_END) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
@@ -442,7 +458,7 @@ int get_pin_retries(void) {
 
 int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1); }
 
-int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
+int make_hmac_secret_output(const uint8_t *nonce, const uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
   uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
   // use hmac-sha256(HE_KEY, credential_id::nonce) as CredRandom
   int err = read_he_key(hmac_buf);

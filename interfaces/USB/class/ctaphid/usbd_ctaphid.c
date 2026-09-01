@@ -45,6 +45,7 @@ void USBD_CTAPHID_PrepareReceive(void) {
 
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = CTAPHID_IDLE;
+  hid_handle.rx_paused = 0;
   CTAPHID_TxReset();
   USBD_LL_OpenEP(pdev, EP_IN(ctap_hid), USBD_EP_TYPE_INTR, EP_SIZE(ctap_hid));
   USBD_LL_OpenEP(pdev, EP_OUT(ctap_hid), USBD_EP_TYPE_INTR, EP_SIZE(ctap_hid));
@@ -101,7 +102,16 @@ uint8_t USBD_CTAPHID_DataIn() {
 
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
   (void)pdev;
-  CTAPHID_OutEvent(hid_handle.report_buf);
+  if (!CTAPHID_OutEvent(hid_handle.report_buf)) {
+    hid_handle.rx_paused = 1;
+    return USBD_BUSY;
+  }
+  if (!CTAPHID_RxCanAccept()) {
+    // The report is already queued. BUSY asks the DCD to retain the current
+    // OUT buffer (NAK further reports) until ServiceReceive rearms it.
+    hid_handle.rx_paused = 1;
+    return USBD_BUSY;
+  }
   USBD_CTAPHID_PrepareReceive();
   return USBD_OK;
 }
@@ -132,4 +142,8 @@ uint8_t USBD_CTAPHID_IsIdle(void) { return hid_handle.state == CTAPHID_IDLE ? US
 
 uint8_t USBD_CTAPHID_WaitIdle(void) { return wait_ep_idle(100); }
 
-void USBD_CTAPHID_ServiceReceive(void) {}
+__weak void USBD_CTAPHID_ServiceReceive(void) {
+  if (!hid_handle.rx_paused || !CTAPHID_RxCanAccept()) return;
+  hid_handle.rx_paused = 0;
+  USBD_CTAPHID_PrepareReceive();
+}

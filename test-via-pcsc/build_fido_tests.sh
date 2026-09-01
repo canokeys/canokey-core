@@ -2,7 +2,7 @@
 # Build FIDO test tools (only runs on cache miss)
 set -e
 
-readonly FIDO2_TESTS_REF=4cd674500f82a0f050c29ef334d8e35a83233932
+readonly FIDO2_TESTS_REF=f92e8d9a7692b4a540f05f9e63b269661d667876
 
 if [ ! -d u2f-ref-code ]; then
   git clone --depth 1 https://github.com/google/u2f-ref-code.git

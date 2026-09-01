@@ -1,7 +1,6 @@
 cmake-build-*
 build*/
 lfs-root
-virt-card/git-rev.h
 fido2-tests/
 libfido2/
 u2f-ref-code/

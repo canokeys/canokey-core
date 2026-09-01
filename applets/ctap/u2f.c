@@ -65,7 +65,7 @@ static int u2f_register_stream_read_at(void *ctx, uint32_t offset, uint8_t *buf,
   return (int)copied;
 }
 
-int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 64) EXCEPT(SW_WRONG_LENGTH);
 
   if (!is_nfc()) {
@@ -83,7 +83,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_ctx_t sha256;
 
   memcpy(kh.rp_id_hash, req->appId, U2F_APPID_SIZE);
-  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256, 0, CRED_PROTECT_VERIFICATION_OPTIONAL);
+  int err = generate_key_handle(&kh, pubkey, COSE_ALG_ES256, 0, CRED_PROTECT_VERIFICATION_OPTIONAL, false);
   if (err < 0) return err;
 
   // there are overlaps between req and resp
@@ -109,7 +109,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_final(&sha256, digest);
   size_t signature_len =
       sign_with_device_key(digest, PRIVATE_KEY_LENGTH[SECP256R1], u2f_register_stream_buffer + sizeof(*resp));
-  if (signature_len > U2F_MAX_EC_SIG_SIZE) return -1;
+  if (signature_len == 0 || signature_len > U2F_MAX_EC_SIG_SIZE) return -1;
 
   u2f_register_stream_state.cert_len = (uint16_t)cert_len;
   u2f_register_stream_state.sig_len = (uint8_t)signature_len;
@@ -120,7 +120,7 @@ int u2f_register(const CAPDU *capdu, RAPDU *rapdu) {
   return 0;
 }
 
-int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
+int __attribute__((noinline)) u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   U2F_AUTHENTICATE_REQ *req = (U2F_AUTHENTICATE_REQ *)DATA;
   U2F_AUTHENTICATE_RESP *resp = (U2F_AUTHENTICATE_RESP *)RDATA;
   CTAP_auth_data auth_data;
@@ -152,7 +152,10 @@ int u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   sha256_update(&sha256, req->chal, U2F_CHAL_SIZE);
   sha256_final(&sha256, req->appId);
   memcpy(resp, &auth_data.flags, 1 + sizeof(auth_data.sign_count));
-  ecc_sign(SECP256R1, &key, req->appId, PRIVATE_KEY_LENGTH[SECP256R1], resp->sig);
+  if (ecc_sign(SECP256R1, &key, req->appId, PRIVATE_KEY_LENGTH[SECP256R1], resp->sig) < 0) {
+    memzero(&key, sizeof(key));
+    EXCEPT(SW_UNABLE_TO_PROCESS);
+  }
   memzero(&key, sizeof(key));
   size_t signature_len = ecdsa_sig2ansi(U2F_EC_KEY_SIZE, resp->sig, resp->sig);
   LL = signature_len + 5;

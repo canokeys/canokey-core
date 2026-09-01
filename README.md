@@ -28,6 +28,15 @@ The WebUSB interface is used to configure the key via a web-based interface.
 
 Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).
 
+### PIN Retry Configuration Extensions
+
+This core implements vendor APDUs for configuring PIV and OpenPGP retry limits. Retry counts must be in the range `1..15`; `15` is the maximum because failed-verification warnings are returned as `63Cx`.
+
+The PIV management key in slot 9B uses AES-192 (`0x0A`) exclusively. Its factory value remains `010203040506070801020304050607080102030405060708`, matching YubiKey 5.7 and later.
+
+- PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
+- OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
+
 ## Porting
 
 Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
@@ -44,24 +53,18 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
       * A hardware timer with IRQ is required
 
-  If you need NFC, you also need to implement the following functions for FM11NC08:
-  
-  * `void fm_csn_low(void);`
-  * `void fm_csn_high(void);`
-  * `void spi_transmit(uint8_t *buf, uint8_t len);`
-  * `void spi_receive(uint8_t *buf, uint8_t len);`
-
-  or the following functions if you use FM11NT08:
+  If you need NFC, you also need to implement the following functions for FM11NT08:
 
   * `void fm_csn_low(void);`
   * `void fm_csn_high(void);`
   * `void i2c_start(void);`
   * `void i2c_stop(void);`
+  * `void i2c_bus_recover(void);`
   * `void scl_delay(void);`
-  * `uint8_t i2c_read_ack(void);`
+  * `fm_status_t i2c_read_ack(void);`
   * `void i2c_send_ack(void);`
   * `void i2c_send_nack(void);`
-  * `bool i2c_write_byte(uint8_t data);`
+  * `fm_status_t i2c_write_byte(uint8_t data);`
   * `uint8_t i2c_read_byte(void);`
 
 2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
@@ -78,18 +81,25 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 ## Fuzz testing
 
-Install honggfuzz from source first, then enable fuzz tests:
+Fuzzing uses libFuzzer (coverage-guided, with ASan/UBSan). It requires a clang
+that ships the libFuzzer runtime (e.g. Homebrew `llvm` on macOS; Apple clang
+does not):
 
 ```bash
 cd build
-cmake .. -DENABLE_FUZZING=ON -DENABLE_TESTS=ON -DCMAKE_C_COMPILER=hfuzz-clang -DCMAKE_BUILD_TYPE=Debug
+cmake .. -DENABLE_FUZZING=ON -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug
+make -j$(nproc) libfuzzer-fuzzer
 ```
 
-Then, run fuzzing tests:
+Then, run fuzzing tests (`${id}`: empty = CCID transport, 0..5 = PIV, CTAP,
+OATH, Admin, OpenPGP, NDEF):
 
 ```bash
-./fuzzer/run-fuzzer.sh honggfuzz ${id}
+CANOKEY_FUZZ_APPLET=${id} ./libfuzzer-fuzzer ../fuzzing/applet${id}/data -max_total_time=300
 ```
+
+Crash artifacts are replayed directly with the same binary:
+`CANOKEY_FUZZ_APPLET=${id} ./libfuzzer-fuzzer <crash-file>`.
 
 
 ## License

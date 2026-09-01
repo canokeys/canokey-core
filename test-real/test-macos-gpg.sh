@@ -14,7 +14,7 @@ GNUPGHOME="$(mktemp -d "${TMPDIR:-/tmp}/canokey-macos-gpg.XXXXXX")"
 export GNUPGHOME
 
 GPGCmd() {
-    "$GPG_BIN" --homedir "$GNUPGHOME" --command-fd 0 --yes --expert "$@"
+    "$GPG_BIN" --homedir "$GNUPGHOME" --no-tty --command-fd 0 --yes --expert "$@"
 }
 
 Addkey() {
@@ -29,8 +29,11 @@ KeyUsageS2A() {
 }
 
 Addcardkey() {
+    local status
     printf "addcardkey\n%s\n0\nsave\n" "$1" | GPGCmd --edit-key "$KEYID"
-    assertEquals 'Addcardkey failed' 0 $?
+    status=$?
+    assertEquals "Addcardkey failed for slot $1" 0 "$status"
+    return "$status"
 }
 
 Delkey() {
@@ -39,6 +42,15 @@ Delkey() {
         keys="${keys}key ${k}${nl}"
     done
     printf "%sdelkey\ny\nsave\n" "$keys" | GPGCmd --edit-key "$KEYID"
+}
+
+DelAllSubkeys() {
+    local count i keys=()
+    count=$("$GPG_BIN" --homedir "$GNUPGHOME" -K --with-colons | awk -F: '$1 == "ssb" { count++ } END { print count + 0 }')
+    for ((i = 1; i <= count; i++)); do
+        keys+=("$i")
+    done
+    ((count == 0)) || Delkey "${keys[@]}"
 }
 
 Key2card() {
@@ -71,14 +83,19 @@ GPGEnc() {
 }
 
 GenerateKeyOnCard() {
+    local status
     printf "admin\nkey-attr\n%s\n%s\n%s\n%s\n%s\n%s\n" "$1" "$2" "$1" "$2" "$1" "$2" | GPGCmd --edit-card
-    Addcardkey 1
-    Addcardkey 2
-    Addcardkey 3
+    status=$?
+    assertEquals 'Setting card key attributes failed' 0 "$status"
+    [[ "$status" -eq 0 ]] || return "$status"
+    Addcardkey 1 || return 1
+    Addcardkey 2 || return 1
+    Addcardkey 3 || return 1
 }
 
 oneTimeSetUp() {
     macos_mk_private_dir "$GNUPGHOME"
+    macos_stop_user_processes pivtoken
 
     cp "$TEST_REAL_DIR/pinentry-mock" "$GNUPGHOME/"
     chmod 755 "$GNUPGHOME/pinentry-mock"
@@ -168,7 +185,14 @@ test_GeneratedKeys() {
     for ((i = 0; i < ${#ALGO_PAIRS[@]}; i++)); do
         pair="${ALGO_PAIRS[$i]}"
         echo "------------------- <$pair> -------------------"
-        GenerateKeyOnCard $pair
+        if ! GenerateKeyOnCard $pair; then
+            # A failed addcardkey may still have generated a card key before a
+            # later metadata write failed.  Restore both local and card state
+            # before trying the next algorithm so failures do not cascade.
+            DelAllSubkeys
+            GPGReset
+            continue
+        fi
         GPGSign
         GPGEnc
         Delkey 1 2 3

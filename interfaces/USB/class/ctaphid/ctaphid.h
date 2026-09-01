@@ -95,7 +95,7 @@ typedef struct {
 #define LOOP_CANCEL 0x01
 
 #ifndef CTAPHID_STREAM_THRESHOLD
-#define CTAPHID_STREAM_THRESHOLD 256
+#define CTAPHID_STREAM_THRESHOLD 192
 #endif
 #define MAX_CTAP_BUFSIZE PKE_BUFFER_SIZE
 #define CTAPHID_INLINE_BUFSIZE CTAPHID_STREAM_THRESHOLD
@@ -129,6 +129,7 @@ typedef struct {
 
 uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len));
 uint8_t CTAPHID_OutEvent(uint8_t *data);
+uint8_t CTAPHID_RxCanAccept(void);
 void CTAPHID_SendKeepAlive(uint8_t status);
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 int CTAPHID_SendResponseAuto(uint32_t cid, uint8_t cmd, const uint8_t *data, size_t len);
