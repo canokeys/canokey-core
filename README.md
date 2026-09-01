@@ -38,6 +38,18 @@ The PIV management key in slot 9B uses AES-192 (`0x0A`) exclusively. Its factory
 - PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
 - OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
 
+### PIV Algorithm Extensions
+
+The PIV applet supports RSA-2048, NIST P-256/P-384, and the following
+algorithm-extension key types: RSA-3072, RSA-4096, P-521, secp256k1, SM2,
+Ed25519, X25519, ML-DSA-65, and ML-KEM-768. Extension algorithm identifiers
+are stored in a card configuration record and may be changed through the
+authenticated algorithm-extension APDU (`00 EE`). Clients must read that
+record rather than assuming the documented default bytes. ML-DSA signs and
+ML-KEM decapsulates on card; ML-DSA verification and ML-KEM encapsulation are
+host-side responsibilities. The PIV random command (`00 84`) is available on
+firmware version 6.0 and newer.
+
 ## Porting
 
 Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
