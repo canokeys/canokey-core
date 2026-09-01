@@ -137,7 +137,7 @@ jobs:
       run: |
         cat >/tmp/sshd_config <<EOF
         StrictModes no
-        UsePAM no
+        UsePAM yes
         Port 2200
         EOF
         sudo mkdir -p /run/sshd
