@@ -6,6 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 #include <fcntl.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -20,6 +21,7 @@
 #include <unistd.h>
 
 #include "device.h"
+#include "ctap.h"
 #include "ctaphid.h"
 #include "fabrication.h"
 #include "applets.h"
@@ -76,6 +78,7 @@ static int udp_recv(int fd, uint8_t *buf, int size) {
   timeout.tv_usec = 100;
   int n = select(fd + 1, &input, NULL, NULL, &timeout);
   if (n == -1) {
+    if (errno == EINTR) return 0;
     perror("select\n");
     exit(1);
   } else if (n == 0)
@@ -105,25 +108,83 @@ static void udp_send(int fd, uint8_t *buf, int size) {
 
 static int current_fd;
 static uint8_t udp_send_current_fd(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
+  UNUSED(pdev);
   // printf("udp_send_current_fd %hu\n", len);
   udp_send(current_fd, report, len);
+  CTAPHID_TxContinue();
   return 0;
+}
+
+static int get_env_flag(const char *name, int default_value) {
+  const char *value = getenv(name);
+  if (value == NULL || *value == '\0') return default_value;
+  return atoi(value) != 0;
+}
+
+static const char *get_lfs_root_path(void) {
+  const char *value = getenv("CANOKEY_VIRT_LFS_ROOT");
+  if (value == NULL || *value == '\0') return "/tmp/canokey-fido-hid-over-udp-lfs-root";
+  return value;
+}
+
+static void write_testmode_file(const char *path, int value) {
+  FILE *fp = fopen(path, "w");
+  if (fp == NULL) {
+    perror(path);
+    exit(1);
+  }
+  fprintf(fp, "%d", value);
+  fclose(fp);
+}
+
+static void configure_testmode_files(void) { write_testmode_file("/tmp/canokey-test-up", 0); }
+
+static void reset_storage_if_requested(const char *lfs_root) {
+  if (!get_env_flag("CANOKEY_VIRT_RESET_STORAGE", 1)) return;
+  if (unlink(lfs_root) != 0 && errno != ENOENT) {
+    perror(lfs_root);
+    exit(1);
+  }
 }
 
 static void emulate_reboot(void) {
   testmode_set_initial_ticks(0);
   testmode_set_initial_ticks(device_get_tick());
+  ctap_schedule_runtime_reset();
   applets_install();
 }
 
+// Leave through main so atexit handlers (including __gcov_dump) run without
+// calling non-async-signal-safe libc functions from the signal handler.
+static volatile sig_atomic_t term_signal;
+
+static void on_term(int sig) { term_signal = sig; }
+
 int main() {
+  signal(SIGTERM, on_term);
+  signal(SIGINT, on_term);
+
+  const int nfc_mode = get_env_flag("CANOKEY_VIRT_NFC", 0);
+  const char *lfs_root = get_lfs_root_path();
+  const char *test_nfc_mode = nfc_mode ? "1" : "0";
+
   current_fd = udp_server();
-  card_fabrication_procedure("lfs-root");
-  // emulate the NFC mode, where user-presence tests are skipped
-  set_nfc_state(1);
+  if (setenv("CANOKEY_TEST_NFC", "0", 1) != 0) {
+    perror("setenv");
+    exit(1);
+  }
+  configure_testmode_files();
+  reset_storage_if_requested(lfs_root);
+  card_fabrication_procedure(lfs_root);
+  if (setenv("CANOKEY_TEST_NFC", test_nfc_mode, 1) != 0) {
+    perror("setenv");
+    exit(1);
+  }
+  set_nfc_state((uint8_t)nfc_mode);
   CTAPHID_Init(udp_send_current_fd);
   emulate_reboot();
   for (;;) {
+    if (term_signal) return 128 + term_signal;
     uint8_t buf[HID_RPT_SIZE];
     int length = udp_recv(current_fd, buf, sizeof(buf));
     if (length > 0) {
@@ -146,7 +207,7 @@ int main() {
         // return 0;
       } else if (length > 14 && memcmp(buf, "\x99\x10\x52\xca\x95\xe5\x69\xde\x69\xe0\x2e\xbf", 12) == 0) {
         uint8_t *data = buf + 12;
-        testmode_inject_error(data[0], data[1], length-14, data+2);
+        testmode_inject_error(data[0], data[1], length - 14, data + 2);
         continue;
       }
       CTAPHID_OutEvent(buf);

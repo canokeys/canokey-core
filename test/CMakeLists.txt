@@ -3,32 +3,44 @@ add_mocked_test(openpgp
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core)
+        LINK_LIBRARIES canokey-core
+)
 
 add_mocked_test(oath
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core)
+        LINK_LIBRARIES canokey-core
+)
 
 add_mocked_test(apdu
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core)
+        LINK_LIBRARIES canokey-core
+)
+target_include_directories(test_apdu BEFORE PRIVATE ${CMAKE_SOURCE_DIR}/tinycbor/src ${CMAKE_SOURCE_DIR}/applets/ctap)
 
 add_mocked_test(piv
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core)
+        LINK_LIBRARIES canokey-core
+)
 
 add_mocked_test(key
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
         ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core)
+        LINK_LIBRARIES canokey-core
+)
+
+add_mocked_test(core_helpers
+        SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
+        LINK_LIBRARIES canokey-core
+)

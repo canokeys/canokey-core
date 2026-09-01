@@ -179,6 +179,108 @@ static void test_encode_invalid_type(void **state) {
   assert_int_equal(ck_encode_public_key(&key, buf, true), -1);
 }
 
+// RFC 7748 §6.1 Alice X25519 test vector, clamped per RFC 7748 §5.
+//
+// OpenPGP keytocard sends the X25519 private scalar as a big-endian MPI (this
+// is the gpg / RFC 4880 convention, not the RFC 7748 §5 little-endian wire
+// format used by PIV / NIST SP 800-78-5). gpg / libgcrypt clamps the scalar
+// host-side before transmission, so the bytes the card receives are already
+// canonical; mbedtls_ecp_check_privkey expects the same shape and would
+// reject an unclamped scalar with all-zero output. The card stores it BE
+// internally and derives the public key directly. Encoding the public for
+// readback swaps back to little-endian, which is the standard X25519 public
+// wire form.
+//
+// Alice raw private (RFC 7748 §6.1, LE): 77076d0a...1db92c2a
+// After RFC 7748 §5 clamp:               70076d0a...1db92c6a
+// Big-endian wire form (byte-reversed):  6a2cb91d...0a6d0770
+static const uint8_t rfc7748_alice_pri_be_clamped[32] = {
+    0x6a, 0x2c, 0xb9, 0x1d, 0xa5, 0xfb, 0x77, 0xb1, 0x2a, 0x99, 0xc0,
+    0xeb, 0x87, 0x2f, 0x4c, 0xdf, 0x45, 0x66, 0xb2, 0x51, 0x72, 0xc1,
+    0x16, 0x3c, 0x7d, 0xa5, 0x18, 0x73, 0x0a, 0x6d, 0x07, 0x70,
+};
+static const uint8_t rfc7748_alice_pri_le_clamped[32] = {
+    0x70, 0x07, 0x6d, 0x0a, 0x73, 0x18, 0xa5, 0x7d, 0x3c, 0x16, 0xc1,
+    0x72, 0x51, 0xb2, 0x66, 0x45, 0xdf, 0x4c, 0x2f, 0x87, 0xeb, 0xc0,
+    0x99, 0x2a, 0xb1, 0x77, 0xfb, 0xa5, 0x1d, 0xb9, 0x2c, 0x6a,
+};
+static const uint8_t rfc7748_alice_pub_le[32] = {
+    0x85, 0x20, 0xf0, 0x09, 0x89, 0x30, 0xa7, 0x54, 0x74, 0x8b, 0x7d,
+    0xdc, 0xb4, 0x3e, 0xf7, 0x5a, 0x0d, 0xbf, 0x3a, 0x0d, 0x26, 0x38,
+    0x1a, 0xf4, 0xeb, 0xa4, 0xa9, 0x8e, 0xaa, 0x9b, 0x4e, 0x6a,
+};
+
+static void build_openpgp_x25519_tlv(uint8_t out[40], const uint8_t pri_be[32]) {
+  out[0] = 0x7F;
+  out[1] = 0x48;
+  out[2] = 0x02;
+  out[3] = 0x92;
+  out[4] = 0x20;
+  out[5] = 0x5F;
+  out[6] = 0x48;
+  out[7] = 0x20;
+  memcpy(out + 8, pri_be, 32);
+}
+
+static void assert_x25519_alice_round_trip(const ck_key_t *key) {
+  // ecc.pri stays in BE storage exactly as the wire delivered it.
+  assert_memory_equal(key->ecc.pri, rfc7748_alice_pri_be_clamped, 32);
+  uint8_t buf[64];
+  int size = ck_encode_public_key((ck_key_t *)key, buf, false);
+  assert_int_equal(size, 34);
+  assert_int_equal(buf[0], 0x86);
+  assert_int_equal(buf[1], 32);
+  assert_memory_equal(buf + 2, rfc7748_alice_pub_le, 32);
+}
+
+static void test_parse_openpgp_x25519_streaming_rfc7748(void **state) {
+  (void)state;
+  uint8_t imported[40];
+  build_openpgp_x25519_tlv(imported, rfc7748_alice_pri_be_clamped);
+
+  ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = ENCRYPT};
+  ck_openpgp_stream_t st;
+  ck_parse_openpgp_stream_init(&st, &key, sizeof(imported));
+
+  // Feed in 7-byte chunks to exercise the streaming state machine across
+  // arbitrary boundaries (template, component-len, payload).
+  size_t off = 0;
+  while (off < sizeof(imported)) {
+    size_t chunk = sizeof(imported) - off;
+    if (chunk > 7) chunk = 7;
+    bool final = (off + chunk == sizeof(imported));
+    int rc = ck_parse_openpgp_stream_update(&st, &key, imported + off, chunk, final);
+    assert_int_equal(rc, final ? 1 : 0);
+    off += chunk;
+  }
+  assert_x25519_alice_round_trip(&key);
+}
+
+static void test_parse_piv_x25519_streaming_rfc7748(void **state) {
+  (void)state;
+  // PIV X25519 import APDU body: 0x08 (priv tag) + 0x20 (len) + 32 bytes LE.
+  // The streaming parser swaps LE→BE during ingest so the stored bytes
+  // match the OpenPGP path's BE form and the derived public is the
+  // canonical Alice pub.
+  uint8_t imported[34] = {0x08, 0x20};
+  memcpy(imported + 2, rfc7748_alice_pri_le_clamped, 32);
+
+  ck_key_t key = {.meta.type = X25519, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = KEY_AGREEMENT};
+  ck_piv_stream_t st;
+  ck_parse_piv_stream_init(&st, &key);
+
+  size_t off = 0;
+  while (off < sizeof(imported)) {
+    size_t chunk = sizeof(imported) - off;
+    if (chunk > 5) chunk = 5;
+    bool final = (off + chunk == sizeof(imported));
+    int rc = ck_parse_piv_stream_update(&st, &key, imported + off, chunk, final);
+    assert_int_equal(rc, final ? 1 : 0);
+    off += chunk;
+  }
+  assert_x25519_alice_round_trip(&key);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -197,7 +299,7 @@ int main() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 32;
-  lfs_filebd_create(&cfg, "lfs-root", &bdcfg);
+  lfs_filebd_create(&cfg, "lfs-root-key", &bdcfg);
 
   fs_format(&cfg);
   fs_mount(&cfg);
@@ -207,6 +309,8 @@ int main() {
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_eddsa),
       cmocka_unit_test(test_encode_invalid_type),
+      cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
+      cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

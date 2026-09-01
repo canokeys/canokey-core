@@ -7,7 +7,7 @@
 
 #define PASS_FILE "pass"
 #define SLOT_SHORT 0
-#define SLOT_LONG  1
+#define SLOT_LONG 1
 
 typedef struct {
   slot_type_t type;
@@ -122,7 +122,8 @@ int pass_write_config(const CAPDU *capdu, RAPDU *rapdu) {
   return write_file(PASS_FILE, slots, 0, sizeof(slots), 1);
 }
 
-int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len, const uint8_t *name, uint8_t with_enter) {
+int pass_update_oath(uint8_t slot_index, uint32_t file_offset, uint8_t name_len, const uint8_t *name,
+                     uint8_t with_enter) {
   pass_slot_t *slot = &slots[slot_index];
   slot->type = PASS_SLOT_OATH;
   slot->oath_offset = file_offset;

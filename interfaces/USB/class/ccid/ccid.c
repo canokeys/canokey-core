@@ -4,22 +4,36 @@
 #include <ccid.h>
 #include <common.h>
 #include <device.h>
+#include <key.h>
+#include <openpgp.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
-#define CCID_UpdateCommandStatus(cmd_status, icc_status) bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
+#define HAS_CMD_DISCARDED 2
+
+#define CCID_UpdateCommandStatus(cmd_status, icc_status)                                                               \
+  bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
 #define CCID_CardStatus() (bulkin_short.bStatus & BM_ICC_STATUS_MASK)
 #define CCID_IsShortCommand() (bulkout_data.dwLength <= SHORT_ABDATA_SIZE)
 
 static uint8_t CCID_CheckCommandParams(uint32_t param_type);
+
+typedef union {
+  empty_ccid_bulkin_data_t time_extension;
+  ccid_bulkin_short_t short_resp;
+} ccid_bulkin_ephemeral_t;
+
+#define bulkin_time_extension (bulkin_ephemeral.time_extension)
+#define bulkin_short (bulkin_ephemeral.short_resp)
 
 // Fi=372, Di=1, 372 cycles/ETU 10752 bits/s at 4.00 MHz
 // BWT = 5.7s
 static const uint8_t atr_ccid[] = {0x3B, 0xF7, 0x11, 0x00, 0x00, 0x81, 0x31, 0xFE, 0x65,
                                    0x43, 0x61, 0x6E, 0x6F, 0x6B, 0x65, 0x79, 0x99};
 
-static empty_ccid_bulkin_data_t bulkin_time_extension;
-static ccid_bulkin_short_t bulkin_short;
+// Time-extension and short responses are both single-packet replies and never
+// need to coexist, so they can share the same storage.
+static ccid_bulkin_ephemeral_t bulkin_ephemeral;
 ccid_bulkin_data_t bulkin_data;
 ccid_bulkout_data_t bulkout_data;
 static uint16_t ab_data_length;
@@ -28,11 +42,7 @@ static volatile uint8_t has_cmd;
 static volatile uint32_t send_data_spinlock;
 static CAPDU apdu_cmd;
 static RAPDU apdu_resp;
-uint8_t *global_buffer;
-
-void init_apdu_buffer(void) {
-  global_buffer = bulkin_data.abData;
-}
+void ccid_init_apdu_buffer(void) { shared_io_buffer = bulkin_data.abData; }
 
 uint8_t CCID_Init(void) {
   send_data_spinlock = 0;
@@ -63,12 +73,13 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
 
       if (bulkout_data.bMessageType == PC_TO_RDR_XFRBLOCK) {
         // always acquire the APDU buffer for XFRBLOCK, because the buffer is used during APDU process and response
-        if (acquire_apdu_buffer(BUFFER_OWNER_CCID) != 0) {
-          // global_buffer is not available, discarding abData
-          // only PC_to_RDR_XfrBlock and PC_to_RDR_Secure should get here
-          DBG_MSG("Discard data because of buffer conflict\n");
+        if (acquire_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID) != 0) {
+          DBG_MSG("Discard data because of applet session conflict\n");
+        } else if (bulkout_data.dwLength > ABDATA_SIZE) {
+          DBG_MSG("Discard oversized XfrBlock: %u\n", bulkout_data.dwLength);
+          release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
         } else {
-          abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+          abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
         }
       } else if (CCID_IsShortCommand()) {
         // abDataShort is large enough for most commands
@@ -87,7 +98,8 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t len) {
     break;
 
   case CCID_STATE_RECEIVE_DATA:
-    abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+    device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
+    abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
     if (ab_data_length + len < bulkout_data.dwLength) {
       memcpy(abData + ab_data_length, data, len);
       ab_data_length += len;
@@ -129,7 +141,11 @@ static uint8_t PC_to_RDR_IccPowerOn(void) {
     return SLOTERROR_BAD_POWERSELECT;
   }
 
-  applets_poweroff();
+  if (device_applet_session_reset(DEVICE_APPLET_SESSION_CCID) != 0) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
+    return SLOTERROR_CMD_SLOT_BUSY;
+  }
+
   _Static_assert(sizeof(bulkin_short.abData) >= sizeof(atr_ccid), "bulkin_short.abData is not large enough");
   memcpy(bulkin_short.abData, atr_ccid, sizeof(atr_ccid));
   bulkin_short.dwLength = sizeof(atr_ccid);
@@ -147,7 +163,11 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_abRFU3 | CHK_PARAM_DWLENGTH);
   if (error != 0) return error;
 
-  applets_poweroff();
+  if (device_applet_session_reset(DEVICE_APPLET_SESSION_CCID) != 0) {
+    CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
+    return SLOTERROR_CMD_SLOT_BUSY;
+  }
+
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, BM_ICC_PRESENT_INACTIVE);
   return SLOT_NO_ERROR;
 }
@@ -173,7 +193,7 @@ static uint8_t PC_to_RDR_GetSlotStatus(void) {
  * @retval uint8_t status of the command execution
  */
 uint8_t PC_to_RDR_XfrBlock(void) {
-  uint8_t *abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : global_buffer;
+  uint8_t *abData = CCID_IsShortCommand() ? bulkout_data.abDataShort : shared_io_buffer;
   uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT);
   if (error != 0) return error;
 
@@ -183,11 +203,16 @@ uint8_t PC_to_RDR_XfrBlock(void) {
   CAPDU *capdu = &apdu_cmd;
   RAPDU *rapdu = &apdu_resp;
 
+  device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
   if (build_capdu(&apdu_cmd, abData, bulkout_data.dwLength) < 0) {
     // abandon malformed apdu
     LL = 0;
     SW = SW_WRONG_LENGTH;
   } else {
+    if (INS == OPENPGP_INS_IMPORT_KEY) {
+      DBG_MSG("Import parsed: cla=%02X p1=%02X p2=%02X lc=%u data=%02X%02X%02X%02X\n", CLA, P1, P2, LC,
+              LC > 0 ? DATA[0] : 0, LC > 1 ? DATA[1] : 0, LC > 2 ? DATA[2] : 0, LC > 3 ? DATA[3] : 0);
+    }
     device_set_timeout(CCID_TimeExtensionLoop, TIME_EXTENSION_PERIOD);
     process_apdu(capdu, rapdu);
     device_set_timeout(NULL, 0);
@@ -227,7 +252,7 @@ static uint8_t PC_to_RDR_GetParameters(void) {
  */
 static void RDR_to_PC_DataBlock(uint8_t errorCode, uint8_t isShort) {
   ccid_bulkin_data_t *pBulkin = &bulkin_data;
-  if (isShort) pBulkin = (ccid_bulkin_data_t*)&bulkin_short;
+  if (isShort) pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
   pBulkin->bMessageType = RDR_TO_PC_DATABLOCK;
   pBulkin->bError = errorCode;
   pBulkin->bSpecific = 0;
@@ -337,7 +362,7 @@ void CCID_Loop(void) {
   if (!has_cmd) return;
 
   uint8_t errorCode;
-  ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t*)&bulkin_short;
+  ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
   switch (bulkout_data.bMessageType) {
   case PC_TO_RDR_ICCPOWERON:
     DBG_MSG("Slot power on\n");
@@ -355,7 +380,7 @@ void CCID_Loop(void) {
     RDR_to_PC_SlotStatus(errorCode);
     break;
   case PC_TO_RDR_XFRBLOCK:
-    if (has_cmd == 2) {
+    if (has_cmd == HAS_CMD_DISCARDED) {
       DBG_MSG("Respond to a data-discarded message\n");
       pBulkin->dwLength = 2;
       pBulkin->abData[0] = HI(SW_ERR_NOT_PERSIST);
@@ -395,15 +420,17 @@ void CCID_Loop(void) {
   uint16_t len = pBulkin->dwLength;
   pBulkin->dwLength = htole32(pBulkin->dwLength);
   device_spinlock_lock(&send_data_spinlock, true);
-  CCID_Response_SendData(&usb_device, (uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
+  const uint8_t send_status = CCID_Response_SendData(&usb_device, (uint8_t *)pBulkin, len + CCID_CMD_HEADER_SIZE, 0);
   device_spinlock_unlock(&send_data_spinlock);
+  if (send_status != USBD_OK) {
+    ERR_MSG("CCID send timeout: msg=%u len=%u status=%u\n", pBulkin->bMessageType, len, send_status);
+    release_apdu_buffer(BUFFER_OWNER_CCID);
+  }
   has_cmd = 0;
 }
 
-void CCID_InFinished(uint8_t is_time_extension_request)
-{
+void CCID_InFinished(uint8_t is_time_extension_request) {
   if (is_time_extension_request) {
-    DBG_MSG("Time-ext sent\n");
     return;
   }
 
@@ -414,7 +441,6 @@ void CCID_InFinished(uint8_t is_time_extension_request)
 
 void CCID_TimeExtensionLoop(void) {
   if (device_spinlock_lock(&send_data_spinlock, false) == 0) { // try lock
-    DBG_MSG("send t-ext\r\n");
     bulkin_time_extension.bMessageType = RDR_TO_PC_DATABLOCK;
     bulkin_time_extension.dwLength = 0;
     bulkin_time_extension.bSlot = bulkout_data.bSlot;

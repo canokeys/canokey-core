@@ -4,6 +4,7 @@
 
 #include <apdu.h>
 
+// clang-format off
 #define PIV_INS_VERIFY                       0x20
 #define PIV_INS_CHANGE_REFERENCE_DATA        0x24
 #define PIV_INS_RESET_RETRY_COUNTER          0x2C
@@ -21,6 +22,7 @@
 #define PIV_INS_SET_MANAGEMENT_KEY           0xFF
 
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
+// clang-format on
 
 typedef struct {
   uint8_t enabled;
@@ -35,5 +37,6 @@ typedef struct {
 int piv_install(uint8_t reset);
 void piv_poweroff(void);
 int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int piv_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_INCLUDE_PIV_H_

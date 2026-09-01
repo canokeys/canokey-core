@@ -94,7 +94,7 @@ static void fake_fido_personalization() {
   sm2_attr.enabled = 1;
 
   capdu.ins = ADMIN_INS_WRITE_CTAP_SM2_CONFIG;
-  capdu.data = (uint8_t *) &sm2_attr;
+  capdu.data = (uint8_t *)&sm2_attr;
   capdu.lc = sizeof(sm2_attr);
   admin_process_apdu(&capdu, &rapdu);
   assert(rapdu.sw == 0x9000);
@@ -174,4 +174,3 @@ int card_read(const char *lfs_root) {
   applets_install();
   return 0;
 }
-
