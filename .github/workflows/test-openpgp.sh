@@ -112,8 +112,17 @@ GPGEnc()  { CardRefresh; date -Iseconds | gpg --yes --armor --recipient "$(Lates
 GPGAuth() {
   CardRefresh
   LatestSubkeyGrip 'a' >~/.gnupg/sshcontrol
-  ssh-add -L >~/.ssh/authorized_keys
-  ssh -v -p 2200 -o StrictHostKeyChecking=no -o PasswordAuthentication=no localhost id
+  ssh-add -L | awk '$NF ~ /^cardno:/ {print; exit}' >~/.ssh/canokey-auth.pub
+  [ -s ~/.ssh/canokey-auth.pub ]
+  cp ~/.ssh/canokey-auth.pub ~/.ssh/authorized_keys
+  timeout 30s ssh -v -p 2200 \
+    -o BatchMode=yes \
+    -o IdentitiesOnly=yes \
+    -o PasswordAuthentication=no \
+    -o PubkeyAuthentication=unbound \
+    -o StrictHostKeyChecking=no \
+    -i ~/.ssh/canokey-auth.pub \
+    localhost id
 }
 SetUIF() { echo -e "admin\nuif $1 $2\nq" | gpg_alias --edit-card; }
 UserChecked() { cnt=$((`cat /tmp/canokey-test-up`)); echo 0 >/tmp/canokey-test-up; [ $1 == $cnt ]; }
