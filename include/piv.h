@@ -9,6 +9,7 @@
 #define PIV_INS_CHANGE_REFERENCE_DATA        0x24
 #define PIV_INS_RESET_RETRY_COUNTER          0x2C
 #define PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR 0x47
+#define PIV_INS_GET_RANDOM                   0x84
 #define PIV_INS_GENERAL_AUTHENTICATE         0x87
 #define PIV_INS_SELECT                       0xA4
 #define PIV_INS_GET_DATA_RESPONSE            0xC0
@@ -39,7 +40,13 @@
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
 // clang-format on
 
-#define PIV_CERT_OBJECT_MAX_SIZE 6144
+// Stored payload limits include the outer 53 BER-TLV but exclude the 5C
+// tag-list header carried by GET DATA / PUT DATA. These values fill exactly 6
+// and 13 512-byte LittleFS CTZ data blocks respectively after accounting for
+// the skip-list pointers stored inside those blocks. Certificates retain the
+// larger allowance for post-quantum public keys and signatures.
+#define PIV_DATA_OBJECT_MAX_SIZE 3040
+#define PIV_CERT_OBJECT_MAX_SIZE 6568
 
 /*
  * Post-quantum PIV extensions use the configurable algorithm IDs below

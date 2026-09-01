@@ -444,6 +444,12 @@ int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
+    // Reject inconsistent CRT components at import so invalid keys never
+    // reach storage (hardware rejects them at use time otherwise).
+    if (rsa_check_crt(&key->rsa) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_DATA;
+    }
   } else {
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
@@ -489,13 +495,21 @@ static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
+    // Same import-time CRT consistency validation as the OpenPGP path.
+    if (rsa_check_crt(&key->rsa) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_DATA;
+    }
   } else if (st->mldsa) {
+    // Seed-based import: every 32-byte value is a valid ML-DSA seed (the key
+    // is deterministically expanded from it), so no consistency check applies.
     if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_PROC;
     }
   } else if (st->mlkem) {
-    // Every 64-byte d || z value is a valid deterministic ML-KEM seed.
+    // Every 64-byte d || z value is a valid deterministic ML-KEM seed; no
+    // consistency check applies, same as for ML-DSA.
   } else {
     if (key->meta.type == X25519) swap_big_number_endian(key->ecc.pri);
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {

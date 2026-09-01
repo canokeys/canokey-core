@@ -107,15 +107,6 @@ void fm_csn_low(void) {}
 
 void fm_csn_high(void) {}
 
-void spi_transmit(const uint8_t *buf, uint8_t len) {
-  UNUSED(buf);
-  UNUSED(len);
-}
-
-void spi_receive(uint8_t *buf, uint8_t len) {
-  if (len > 0) memset(buf, 0, len);
-}
-
 int testmode_emulate_user_presence(void) {
   if (auto_touch_mode == AUTO_TOUCH_WHEN_BLINKING && device_is_blinking()) {
     set_touch_result(TOUCH_SHORT);

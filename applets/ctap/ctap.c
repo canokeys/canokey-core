@@ -220,6 +220,7 @@ static bool stream_make_credential_response;
 static bool hid_cbor_stream_response_active;
 static bool cert_write_active;
 static uint16_t cert_write_len;
+static void ctap_mldsa_stream_abort(CTAP_mldsa_stream_state *state);
 // Current request bytes may be either a stable memory buffer or a transport
 // source such as HID/APDU PKE staging. Source-backed bytes are valid only until
 // parsing and any required raw-byte consumption completes.
@@ -605,6 +606,7 @@ static void ctap_release_shared_buffer(void) { release_apdu_buffer(BUFFER_OWNER_
 
 static void ctap_close_shared_buffer_source(void *ctx) {
   UNUSED(ctx);
+  ctap_mldsa_stream_abort(&mldsa_stream_state);
   ctap_release_shared_buffer();
 }
 
@@ -771,6 +773,13 @@ static size_t ctap_mldsa_stream_stage_capacity(const CTAP_mldsa_stream_state *st
                                                        : sizeof(state->storage.pk.stage);
 }
 
+static void ctap_mldsa_stream_abort(CTAP_mldsa_stream_state *state) {
+  if (state->storage_kind == CTAP_MLDSA_STREAM_PK)
+    ml_dsa_65_keygen_streaming_abort(&state->storage.pk.keygen);
+  else if (state->storage_kind == CTAP_MLDSA_STREAM_SIG)
+    ml_dsa_65_sign_streaming_abort(&state->storage.sig.sign);
+}
+
 static int ctap_mldsa_stream_fill_stage(CTAP_mldsa_stream_state *state) {
   int ret;
   uint8_t *stage = ctap_mldsa_stream_stage(state);
@@ -868,6 +877,7 @@ static int ctap_mldsa_stream_read_at(void *ctx, uint32_t offset, uint8_t *out, u
 
 static void ctap_mldsa_apdu_stream_close(void *ctx) {
   CTAP_mldsa_stream_state *state = (CTAP_mldsa_stream_state *)ctx;
+  ctap_mldsa_stream_abort(state);
   memzero(state, sizeof(*state));
 }
 
@@ -1677,7 +1687,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
       sha256_init(sha256);
       sha256_update(sha256, auth_data_start, p - auth_data_start);
 
-      memset(&state->storage.pk.keygen, 0, sizeof(state->storage.pk.keygen));
+      ml_dsa_65_keygen_streaming_abort(&state->storage.pk.keygen);
       memcpy(state->storage.pk.keygen.seed, state->storage.pk.seed, PRI_KEY_SIZE);
       do {
         KEEPALIVE();
@@ -1755,7 +1765,7 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
     state->suffix_len = (uint16_t)(q - state->storage.pk.suffix);
     state->kind = CTAP_MLDSA_STREAM_PK;
     state->storage_kind = CTAP_MLDSA_STREAM_PK;
-    memset(&state->storage.pk.keygen, 0, sizeof(state->storage.pk.keygen));
+    ml_dsa_65_keygen_streaming_abort(&state->storage.pk.keygen);
     state->stage_len = 0;
     state->stage_off = 0;
     state->total_len = state->prefix_len + MLDSA_PK_BYTES + state->suffix_len + (size_t)cert_len;
@@ -2344,14 +2354,14 @@ step7:
     uint8_t *p;
     if (prefix_snapshot_len > sizeof(prefix_snapshot)) return CTAP2_ERR_UNHANDLED_REQUEST;
     memcpy(prefix_snapshot, stream_resp_start, prefix_snapshot_len);
-    memset(state, 0, sizeof(*state));
+    ctap_mldsa_apdu_stream_close(state);
     state->storage_kind = CTAP_MLDSA_STREAM_SIG;
     if (ctap_mldsa65_tr_from_seed(key.pri, state->storage.sig.sign.rho_prime_sign,
                                   state->storage.sig.workspace.stage,
                                   sizeof(state->storage.sig.workspace.stage)) < 0)
       return CTAP2_ERR_UNHANDLED_REQUEST;
     memcpy(state->storage.sig.workspace.input.tr, state->storage.sig.sign.rho_prime_sign, MLDSA_TRBYTES);
-    memzero(&state->storage.sig.sign, sizeof(state->storage.sig.sign));
+    ml_dsa_65_sign_streaming_abort(&state->storage.sig.sign);
     memcpy(state->storage.sig.workspace.input.seed, key.pri, PRI_KEY_SIZE);
     p = state->storage.sig.workspace.input.prefix;
     *p++ = 0;
@@ -3020,7 +3030,7 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
       uint8_t *p;
       if (prefix_snapshot_len > sizeof(prefix_snapshot)) return CTAP2_ERR_UNHANDLED_REQUEST;
       memcpy(prefix_snapshot, stream_resp_start, prefix_snapshot_len);
-      memset(state, 0, sizeof(*state));
+      ctap_mldsa_apdu_stream_close(state);
       state->storage_kind = CTAP_MLDSA_STREAM_PK;
       if (verify_mldsa65_key_handle(&dc.credential_id, state->storage.pk.seed) != 0)
         return CTAP2_ERR_UNHANDLED_REQUEST;
@@ -3646,7 +3656,7 @@ int ctap_process_cbor_stream_source_with_src(const ctap_req_src_t *req_src, uint
   memset(source, 0, sizeof(*source));
   memset(&mc_stream_state, 0, sizeof(mc_stream_state));
   memset(&mem_stream_state, 0, sizeof(mem_stream_state));
-  memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
+  ctap_mldsa_apdu_stream_close(&mldsa_stream_state);
 
   if (ctap_req_source_begin(req_src) < 0) return -1;
 
@@ -3826,7 +3836,7 @@ static int __attribute__((noinline)) ctap_process_apdu_cbor_message(uint8_t *req
 
   // ML-DSA CM/GA responses defer their large public key or signature to a
   // stream. Clear stale state, then expose the newly prepared stream to APDU.
-  memset(&mldsa_stream_state, 0, sizeof(mldsa_stream_state));
+  ctap_mldsa_apdu_stream_close(&mldsa_stream_state);
   size_t len = APDU_BUFFER_SIZE;
   int ret = ctap_process_cbor(req, req_len, rapdu->data, &len);
   ctap_req_lifetime_end();

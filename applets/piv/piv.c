@@ -106,7 +106,6 @@ static enum PIV_STATE piv_state = PIV_STATE_OTHER;
 #define PIV_DO_TAG_C1(x) (0x005FC100u | (uint32_t)(x))
 #define PIV_DO_TAG_FF(x) (0x005FFF00u | (uint32_t)(x))
 
-#define PIV_DO_PRINTED_CAPACITY 245
 #define PIV_DO_INLINE_PRINTED_MAX 64
 #define PIV_DO_INLINE_ADMIN_DATA_MAX 128
 
@@ -374,15 +373,15 @@ static const uint8_t piv_do_codes[] = {
 static const piv_do_desc_t piv_do_table[] = {
     {NULL, 0, PIV_DO_F_SYNTH | PIV_DO_F_READ_ONLY, 0},
     {NULL, 0, PIV_DO_F_READ_ONLY, 0},
-    {CHUID_PATH, 2916, PIV_DO_F_PUT_ADMIN, 0},
-    {FINGER_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {SECURITY_PATH, 245, PIV_DO_F_PUT_ADMIN, 0},
-    {CCC_PATH, 287, PIV_DO_F_PUT_ADMIN, 0},
-    {FACE_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
-    {PI_PATH, PIV_DO_PRINTED_CAPACITY, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
+    {CHUID_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {FINGER_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {SECURITY_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {CCC_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {FACE_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {PI_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE,
      PIV_DO_ATTR_PRINTED},
-    {KEY_HISTORY_PATH, 32, PIV_DO_F_PUT_ADMIN, 0},
-    {IRIS_PATH, 512, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
+    {KEY_HISTORY_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_PUT_ADMIN, 0},
+    {IRIS_PATH, PIV_DATA_OBJECT_MAX_SIZE, PIV_DO_F_GET_PIN | PIV_DO_F_PUT_ADMIN, 0},
     {NULL, PIV_DO_INLINE_ADMIN_DATA_MAX, PIV_DO_F_PUT_ADMIN | PIV_DO_F_INLINE, PIV_DO_ATTR_ADMIN_DATA},
 };
 _Static_assert(sizeof(piv_do_codes) == sizeof(piv_do_table) / sizeof(piv_do_table[0]),
@@ -862,6 +861,10 @@ static int piv_mldsa_stream_read(void *ctx, uint32_t offset, uint8_t *out, uint1
 
 static void piv_mldsa_stream_close(void *ctx) {
   piv_mldsa_stream_state_t *state = (piv_mldsa_stream_state_t *)ctx;
+  if (state->kind == PIV_MLDSA_STREAM_PK)
+    ml_dsa_65_keygen_streaming_abort(&state->crypto.keygen);
+  else if (state->kind == PIV_MLDSA_STREAM_SIG)
+    ml_dsa_65_sign_streaming_abort(&state->crypto.sign);
   memzero(state, sizeof(*state));
 }
 
@@ -1422,8 +1425,11 @@ static int piv_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if ((desc->flags & PIV_DO_F_INLINE) != 0) {
-    const int attr_len = read_attr(PIV_DO_META_PATH, desc->attr, RDATA, desc->capacity);
+    const int attr_len = get_attr_size(PIV_DO_META_PATH, desc->attr);
     if (attr_len > 0) {
+      const uint16_t inline_capacity = piv_do_inline_capacity(desc);
+      if (inline_capacity == 0 || attr_len > inline_capacity || attr_len > APDU_BUFFER_SIZE) return -1;
+      if (read_attr(PIV_DO_META_PATH, desc->attr, RDATA, (lfs_size_t)attr_len) != attr_len) return -1;
       LL = attr_len;
       return 0;
     }
@@ -2027,12 +2033,11 @@ static int piv_put_data(const CAPDU *capdu, RAPDU *rapdu) {
 
     /*
      * Inline-capable DOs use attr storage only below their metadata-safe
-     * ceiling. PRINTED can legally be up to 245 bytes, but host-managed
-     * management-key references are normally small; larger PRINTED data is
-     * stored as a file after deleting any stale attr copy.
+     * ceiling. PRINTED can legally be up to PIV_DATA_OBJECT_MAX_SIZE bytes,
+     * but host-managed management-key references are normally small; larger
+     * PRINTED data is stored as a file after deleting any stale attr copy.
      */
-    if ((desc->flags & PIV_DO_F_INLINE) != 0 && size <= piv_do_inline_capacity(desc)) {
-      if ((CLA & 0x10) != 0) EXCEPT(SW_WRONG_LENGTH);
+    if ((desc->flags & PIV_DO_F_INLINE) != 0 && (CLA & 0x10) == 0 && size <= piv_do_inline_capacity(desc)) {
       if (piv_do_write_inline(desc, payload, size) < 0) return -1;
       return 0;
     }
@@ -2459,8 +2464,8 @@ __attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU 
 static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
-  RDATA[0] = 0x05;
-  RDATA[1] = 0x07;
+  RDATA[0] = 0x06;
+  RDATA[1] = 0x00;
   RDATA[2] = 0x00;
   LL = 3;
   return 0;
@@ -2471,6 +2476,14 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
   device_config_fill_serial(RDATA);
   LL = 4;
+  return 0;
+}
+
+static int piv_get_random(const CAPDU *capdu, RAPDU *rapdu) {
+  if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
+  if (LC != 0 || LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  random_buffer(RDATA, LE);
+  LL = LE;
   return 0;
 }
 
@@ -2562,6 +2575,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_GET_SERIAL:
     ret = piv_get_serial(capdu, rapdu);
+    break;
+  case PIV_INS_GET_RANDOM:
+    ret = piv_get_random(capdu, rapdu);
     break;
   case PIV_INS_ATTEST:
     ret = piv_attest(capdu, rapdu);

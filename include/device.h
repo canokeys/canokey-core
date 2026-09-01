@@ -79,12 +79,10 @@ void fm_csn_low(void);
  * Disable FM chip by pull up CSN
  */
 void fm_csn_high(void);
-#if NFC_CHIP == NFC_CHIP_FM11NC
-void spi_transmit(const uint8_t *buf, uint8_t len);
-void spi_receive(uint8_t *buf, uint8_t len);
-#elif NFC_CHIP == NFC_CHIP_FM11NT
+#if NFC_CHIP == NFC_CHIP_FM11NT
 void i2c_start(void);
 void i2c_stop(void);
+void i2c_bus_recover(void);
 void scl_delay(void);
 fm_status_t i2c_read_ack(void);
 void i2c_send_ack(void);
