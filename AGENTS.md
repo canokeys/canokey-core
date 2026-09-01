@@ -368,6 +368,11 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 
 ## Coding Conventions
 
+- English is the project language. Write source comments, documentation,
+  diagnostic text, commit messages, and pull-request content in English.
+  Other languages are allowed only in explicitly identified localization
+  resources.
+
 - C11, `-Wall`, Apache-2.0 license header on all new files.
 - `DBG_MSG` / `ERR_MSG` macros for debug output; no bare `printf` in library code.
 - `UNUSED(x)` macro to suppress unused-parameter warnings.
