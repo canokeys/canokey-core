@@ -2833,7 +2833,7 @@ static void test_piv_get_version_chained_le_absent(void **state) {
   shared_io_buffer[rapdu.len] = HI(rapdu.sw);
   shared_io_buffer[rapdu.len + 1] = LO(rapdu.sw);
 
-  static const uint8_t expected_version[] = {0x05, 0x07, 0x00};
+  static const uint8_t expected_version[] = {0x06, 0x00, 0x00};
   CAPDU gr = {.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0x100};
   piv_process_apdu_message(&rc, &gr, &rapdu);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
@@ -2845,6 +2845,194 @@ static void test_piv_get_version_chained_le_absent(void **state) {
   piv_process_apdu_message(&rc, &gr, &rapdu);
   assert_int_equal(rapdu.len, 0);
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
+}
+
+static void test_piv_get_random_without_authentication(void **state) {
+  (void)state;
+
+  uint8_t response[APDU_BUFFER_SIZE];
+  RAPDU rapdu = {.data = response};
+  CAPDU command = {.data = response};
+  static const uint8_t get_random[] = {0x00, 0x84, 0x00, 0x00, 0x00};
+  assert_int_equal(build_capdu(&command, get_random, sizeof(get_random)), 0);
+
+  piv_poweroff();
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 0x100);
+
+  command.le = 32;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 32);
+
+  command.p1 = 0x01;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
+
+  command.p1 = 0x00;
+  command.lc = 1;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  command.lc = 0;
+  command.le = APDU_BUFFER_SIZE + 1;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  command.le = 0;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+}
+
+// Regression test for the host/device divergence caught by differential
+// fuzzing (hil-reports/fuzz-hil-crypto.jsonl seq 7): an imported RSA key with
+// an inconsistent CRT component must be rejected at import time with
+// SW_WRONG_DATA (both platforms validate via rsa_check_crt). The use-time net
+// (CIU verifies both CRT congruences; the host rejects via
+// mbedtls_rsa_check_privkey) is kept covered by writing a corrupt key
+// directly, bypassing import validation.
+static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+
+  rsa_key_t rsa;
+  assert_int_equal(rsa_generate_key(&rsa, 2048), 0);
+  const size_t pq_len = PRIVATE_KEY_LENGTH[RSA2048];
+
+  // PIV RSA import wire format: 01 p, 02 q, 03 dp, 04 dq, 05 qinv.
+  static uint8_t import[5 * (3 + PQ_LENGTH_MAX)];
+  const uint8_t *comps[] = {rsa.p, rsa.q, rsa.dp, rsa.dq, rsa.qinv};
+  uint8_t *w = import;
+  for (size_t i = 0; i < 5; ++i) {
+    *w++ = (uint8_t)(i + 1);
+    *w++ = 0x81;
+    *w++ = (uint8_t)pq_len;
+    memcpy(w, comps[i], pq_len);
+    w += pq_len;
+  }
+  const size_t import_len = (size_t)(w - import);
+
+  // GA request: 7C template with empty 82 and a 256-byte challenge in 81.
+  uint8_t request[10 + 256] = {0x7C, 0x82, 0x01, 0x06, 0x82, 0x00, 0x81, 0x82, 0x01, 0x00};
+  uint8_t *block = request + 10;
+  block[0] = 0x00;
+  block[1] = 0x01;
+  memset(block + 2, 0xFF, 202); // PKCS#1 v1.5-shaped; content is irrelevant to raw RSA
+  block[204] = 0x00;
+  for (size_t i = 205; i < 256; ++i)
+    block[i] = (uint8_t)i;
+
+  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+  uint8_t response[8 + 256];
+  uint16_t response_len = 0;
+
+  // Consistent key: imports and signs.
+  test_helper(import, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_NO_ERROR);
+  test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+  assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x07, 0x9A, request, sizeof(request), response,
+                                         &response_len),
+                   SW_NO_ERROR);
+  assert_int_equal(response_len, 8 + 256);
+  assert_int_equal(response[0], 0x7C);
+
+  // Corrupt dp: rejected at import now.
+  import[2 * (3 + (int)pq_len) + 3 + 100] ^= 0x55; // one byte inside the dp value
+  test_helper(import, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
+
+  // p == q: also rejected at import (a private-op probe cannot detect this).
+  memcpy(import + (3 + (int)pq_len) + 3, rsa.p, pq_len); // q value := p
+  import[2 * (3 + (int)pq_len) + 3 + 100] ^= 0x55;        // restore dp
+  test_helper(import, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
+
+  // Use-time net still holds for keys that bypass import validation (e.g.
+  // written by older firmware): sign with the corrupt-dp key fails.
+  ck_key_t bad_key;
+  memset(&bad_key, 0, sizeof(bad_key));
+  bad_key.meta.type = RSA2048;
+  bad_key.meta.origin = KEY_ORIGIN_IMPORTED;
+  bad_key.meta.usage = SIGN;
+  bad_key.meta.pin_policy = PIN_POLICY_NEVER;
+  bad_key.meta.touch_policy = TOUCH_POLICY_NEVER;
+  memcpy(&bad_key.rsa, &rsa, sizeof(rsa));
+  bad_key.rsa.dp[100] ^= 0x55;
+  assert_int_equal(ck_write_key("piv-k9a", &bad_key), 0);
+  assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x07, 0x9A, request, sizeof(request), response,
+                                         &response_len),
+                   SW_UNABLE_TO_PROCESS);
+  memzero(&bad_key, sizeof(bad_key));
+
+  memzero(&rsa, sizeof(rsa));
+  memzero(import, sizeof(import));
+  memzero(request, sizeof(request));
+}
+
+// Regression test for the host/device divergence caught by differential
+// fuzzing: PIV GA ECDH (case 6) with an invalid peer point must be rejected.
+// The CIU hardware ECC path (weierstrass_ecdh -> public_key_valid) checks that
+// X,Y are field elements (< p) and that the point satisfies the curve
+// equation; the mbedTLS-backed host K__short_weierstrass_ecdh used to skip any
+// validation and return a "shared secret" for off-curve input (invalid-curve
+// attack surface, and host 9000 vs device 6900 divergence).
+static void test_piv_ecdh_rejects_invalid_peer_point(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+
+  // Import the P-256 fixture key into slot 9A (tag 06 = private key).
+  uint8_t imported[2 + sizeof(piv_test_f9_private_key)] = {0x06, sizeof(piv_test_f9_private_key)};
+  memcpy(imported + 2, piv_test_f9_private_key, sizeof(piv_test_f9_private_key));
+  test_helper(imported, sizeof(imported), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x11, 0x9A, SW_NO_ERROR);
+
+  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+  test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+
+  // GA body: 7C 45 || 82 00 || 85 41 || 04 || X || Y (uncompressed point).
+  uint8_t request[6 + 65];
+  request[0] = 0x7C;
+  request[1] = 0x45;
+  request[2] = 0x82;
+  request[3] = 0x00;
+  request[4] = 0x85;
+  request[5] = 0x41;
+  request[6] = 0x04;
+
+  // The host ECDH writes X || Y of the product point at RDATA + 4.
+  uint8_t response[4 + 2 * PRIVATE_KEY_LENGTH[SECP256R1]];
+  uint16_t response_len = 0;
+
+  // Valid peer point (the fixture public key): ECDH succeeds.
+  memcpy(request + 7, piv_test_f9_public_key, sizeof(piv_test_f9_public_key));
+  assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x11, 0x9A, request, sizeof(request), response,
+                                         &response_len),
+                   SW_NO_ERROR);
+  assert_int_equal(response_len, 4 + PRIVATE_KEY_LENGTH[SECP256R1]);
+  assert_int_equal(response[0], 0x7C);
+
+  // In-field but off-curve point: base point X with Y ^ 1.
+  static const uint8_t off_curve_point[64] = {
+      0x6B, 0x17, 0xD1, 0xF2, 0xE1, 0x2C, 0x42, 0x47, 0xF8, 0xBC, 0xE6, 0xE5, 0x63, 0xA4, 0x40, 0xF2,
+      0x77, 0x03, 0x7D, 0x81, 0x2D, 0xEB, 0x33, 0xA0, 0xF4, 0xA1, 0x39, 0x45, 0xD8, 0x98, 0xC2, 0x96,
+      0x4F, 0xE3, 0x42, 0xE2, 0xFE, 0x1A, 0x7F, 0x9B, 0x8E, 0xE7, 0xEB, 0x4A, 0x7C, 0x0F, 0x9E, 0x16,
+      0x2B, 0xCE, 0x33, 0x57, 0x6B, 0x31, 0x5E, 0xCE, 0xCB, 0xB6, 0x40, 0x68, 0x37, 0xBF, 0x51, 0xF4,
+  };
+  memcpy(request + 7, off_curve_point, sizeof(off_curve_point));
+  assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x11, 0x9A, request, sizeof(request), response,
+                                         &response_len),
+                   SW_UNABLE_TO_PROCESS);
+
+  // Out-of-field point from the fuzz case (X >= p, also off-curve).
+  static const uint8_t out_of_field_point[64] = {
+      0x97, 0x5D, 0x15, 0x28, 0xEC, 0x0A, 0xE3, 0x75, 0x72, 0xAC, 0x96, 0x58, 0x48, 0xAC, 0x23, 0x78,
+      0x47, 0xC6, 0x2C, 0xDC, 0xA3, 0xFF, 0x9C, 0x79, 0x37, 0xB8, 0xBF, 0xAF, 0xF1, 0x0C, 0x4F, 0x51,
+      0xB1, 0x97, 0x99, 0x45, 0xF8, 0xB6, 0xDD, 0x5E, 0x92, 0x96, 0x4F, 0xCF, 0xFA, 0xF4, 0xA8, 0x4F,
+      0xD4, 0x9D, 0x3A, 0x62, 0x81, 0xFB, 0xD1, 0x8C, 0x1A, 0xC5, 0x66, 0x56, 0x54, 0xC2, 0x6C, 0x8A,
+  };
+  memcpy(request + 7, out_of_field_point, sizeof(out_of_field_point));
+  assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x11, 0x9A, request, sizeof(request), response,
+                                         &response_len),
+                   SW_UNABLE_TO_PROCESS);
 }
 
 int main() {
@@ -2912,6 +3100,9 @@ int main() {
       cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_cert_chained_read),
       cmocka_unit_test(test_piv_get_version_chained_le_absent),
+      cmocka_unit_test(test_piv_get_random_without_authentication),
+      cmocka_unit_test(test_piv_rsa_sign_rejects_inconsistent_crt_key),
+      cmocka_unit_test(test_piv_ecdh_rejects_invalid_peer_point),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

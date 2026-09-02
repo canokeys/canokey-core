@@ -43,6 +43,10 @@ static void device_applet_session_expire(void) {
   // would remain set without this call. The next chained FIDO APDU would then
   // skip pke_buffer_acquire and write to an unowned PKE region.
   apdu_fido_chain_reset();
+  // A pending RAPDU chain must not outlive its session: otherwise the next
+  // GET RESPONSE (possibly on a new connection) would be served stale bytes
+  // from whatever happens to sit in the shared I/O buffer.
+  apdu_rapdu_chain_reset();
   session_owner = DEVICE_APPLET_SESSION_NONE;
   session_deadline = 0;
 }
@@ -295,6 +299,11 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {
   if (session_owner == DEVICE_APPLET_SESSION_NONE) {
     applets_poweroff();
     apdu_response_source_clear();
+    // No session is owned, but chain state may still exist (e.g. built over
+    // NFC, which does not take a session). A slot reset is a cold reset for
+    // the APDU context: drop any pending chain.
+    apdu_fido_chain_reset();
+    apdu_rapdu_chain_reset();
     return 0;
   }
   device_applet_session_expire();
