@@ -2505,7 +2505,7 @@ static int piv_get_serial(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int piv_get_random(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
-  if (LC != 0 || LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  if (LC != 0 || LE == 0 || LE > APDU_BUFFER_SIZE) EXCEPT(SW_WRONG_LENGTH);
   random_buffer(RDATA, LE);
   LL = LE;
   return 0;

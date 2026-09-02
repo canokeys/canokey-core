@@ -75,6 +75,7 @@ jobs:
       uses: actions/checkout@v7
       with:
         submodules: recursive
+        persist-credentials: false
 
     - name: Check - Code formatting
       continue-on-error: true
@@ -89,6 +90,7 @@ jobs:
         repository: canokeys/piv-go
         ref: 130e11e87b5f5ec788a12037735c86a0d2c7c547
         path: piv-go
+        persist-credentials: false
 
     - name: Prepare - Checkout ckman
       # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.

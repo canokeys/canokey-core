@@ -94,12 +94,15 @@ static void process_apdu_line(const uint8_t *apdu, size_t len) {
   size_t total = 0;
   for (unsigned chain = 0;;) {
     process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
-    // Truncation past resp_buf would desynchronize the diff; real card
-    // responses are orders of magnitude smaller than the 64 KiB buffer.
+    // Truncation past resp_buf would desynchronize the diff. Fail explicitly
+    // instead of emitting a successful response with incomplete data.
     size_t room = sizeof(resp_buf) - total;
-    size_t take = rapdu.len < room ? rapdu.len : room;
-    memcpy(resp_buf + total, rapdu.data, take);
-    total += take;
+    if (rapdu.len > room) {
+      proto_error("response-too-long");
+      return;
+    }
+    memcpy(resp_buf + total, rapdu.data, rapdu.len);
+    total += rapdu.len;
     if ((rapdu.sw & 0xFF00) != 0x6100 || ++chain >= REPLAY_MAX_GET_RESPONSE) break;
     build_capdu(&capdu, get_response, sizeof(get_response));
     rapdu.len = 0;

@@ -324,10 +324,6 @@ endif(ENABLE_FUZZING)
 
 if(ENABLE_APDU_REPLAY)
     set(CANOKEY_FUZZ_SANITIZERS ON CACHE BOOL "Enable ASan/UBSan in fuzz builds")
-    if(CANOKEY_FUZZ_SANITIZERS)
-        add_compile_options(-fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
-        add_link_options(-fsanitize=address -fsanitize=undefined)
-    endif()
     # Host half of the differential APDU fuzzer: replays a line-based hex
     # APDU stream from stdin through the virtual card and prints RESP/ERROR
     # lines on stdout (see fuzzer/apdu-replay.c).
@@ -345,5 +341,10 @@ if(ENABLE_APDU_REPLAY)
         PRIVATE virt-card littlefs
     )
     target_link_libraries(apdu-replay canokey-core)
+    if(CANOKEY_FUZZ_SANITIZERS)
+        target_compile_options(canokey-core PRIVATE -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
+        target_compile_options(apdu-replay PRIVATE -fno-omit-frame-pointer -fsanitize=address -fsanitize=undefined)
+        target_link_options(apdu-replay PRIVATE -fsanitize=address -fsanitize=undefined)
+    endif()
     add_virt_card_git_revision(apdu-replay)
 endif(ENABLE_APDU_REPLAY)

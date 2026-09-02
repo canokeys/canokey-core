@@ -2859,7 +2859,7 @@ static void test_piv_get_random_without_authentication(void **state) {
   piv_poweroff();
   piv_process_apdu(&command, &rapdu);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, APDU_BUFFER_SIZE);
+  assert_int_equal(rapdu.len, 0x100);
 
   command.le = 32;
   piv_process_apdu(&command, &rapdu);
@@ -2877,6 +2877,10 @@ static void test_piv_get_random_without_authentication(void **state) {
 
   command.lc = 0;
   command.le = APDU_BUFFER_SIZE + 1;
+  piv_process_apdu(&command, &rapdu);
+  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+
+  command.le = 0;
   piv_process_apdu(&command, &rapdu);
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 }
@@ -2908,6 +2912,7 @@ static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
     memcpy(w, comps[i], pq_len);
     w += pq_len;
   }
+  const size_t import_len = (size_t)(w - import);
 
   // GA request: 7C template with empty 82 and a 256-byte challenge in 81.
   uint8_t request[10 + 256] = {0x7C, 0x82, 0x01, 0x06, 0x82, 0x00, 0x81, 0x82, 0x01, 0x00};
@@ -2924,7 +2929,7 @@ static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
   uint16_t response_len = 0;
 
   // Consistent key: imports and signs.
-  test_helper(import, sizeof(import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_NO_ERROR);
+  test_helper(import, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_NO_ERROR);
   test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
   assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x07, 0x9A, request, sizeof(request), response,
                                          &response_len),
@@ -2934,12 +2939,12 @@ static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
 
   // Corrupt dp: rejected at import now.
   import[2 * (3 + (int)pq_len) + 3 + 100] ^= 0x55; // one byte inside the dp value
-  test_helper(import, sizeof(import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
+  test_helper(import, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
 
   // p == q: also rejected at import (a private-op probe cannot detect this).
   memcpy(import + (3 + (int)pq_len) + 3, rsa.p, pq_len); // q value := p
   import[2 * (3 + (int)pq_len) + 3 + 100] ^= 0x55;        // restore dp
-  test_helper(import, sizeof(import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
+  test_helper(import, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9A, SW_WRONG_DATA);
 
   // Use-time net still holds for keys that bypass import validation (e.g.
   // written by older firmware): sign with the corrupt-dp key fails.
