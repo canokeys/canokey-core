@@ -441,6 +441,46 @@ static void test_increasing_only(void **state) {
   test_helper(data, sizeof(data), OATH_INS_CALCULATE, SW_SECURITY_STATUS_NOT_SATISFIED);
 }
 
+static void inject_oath_write_error(void) {
+  static const uint8_t path[] = "oath";
+  testmode_inject_error(0, 0, sizeof(path) - 1, path);
+}
+
+static void test_counter_write_failures_do_not_return_otp(void **state) {
+  (void)state;
+
+  uint8_t hotp[] = {OATH_TAG_NAME, 0x02, 'F',  'H', OATH_TAG_KEY, 0x05,
+                    0x11,          0x06, 0x01, 0x02, 0x03};
+  uint8_t hotp_name[] = {OATH_TAG_NAME, 0x02, 'F', 'H'};
+  test_helper(hotp, sizeof(hotp), OATH_INS_PUT, SW_NO_ERROR);
+
+  inject_oath_write_error();
+  test_helper(hotp_name, sizeof(hotp_name), OATH_INS_CALCULATE, SW_UNABLE_TO_PROCESS);
+  test_helper(hotp_name, sizeof(hotp_name), OATH_INS_CALCULATE, SW_NO_ERROR);
+
+  uint8_t increasing[] = {OATH_TAG_NAME, 0x02, 'F',  'I', OATH_TAG_KEY, 0x05,
+                          0x21,          0x06, 0x01, 0x02, 0x03, OATH_TAG_PROPERTY, OATH_PROP_INC};
+  uint8_t increasing_challenge[] = {OATH_TAG_NAME,      0x02, 'F',  'I',  OATH_TAG_CHALLENGE,
+                                    0x08,               0x00, 0x00, 0x00, 0x00,
+                                    0x00,               0x00, 0x00, 0x02};
+  test_helper(increasing, sizeof(increasing), OATH_INS_PUT, SW_NO_ERROR);
+
+  inject_oath_write_error();
+  test_helper(increasing_challenge, sizeof(increasing_challenge), OATH_INS_CALCULATE, SW_UNABLE_TO_PROCESS);
+  test_helper(increasing_challenge, sizeof(increasing_challenge), OATH_INS_CALCULATE, SW_NO_ERROR);
+
+  uint8_t pass_hotp[] = {OATH_TAG_NAME, 0x02, 'F',  'P', OATH_TAG_KEY, 0x05,
+                         0x11,          0x06, 0x04, 0x05, 0x06};
+  uint8_t pass_name[] = {OATH_TAG_NAME, 0x02, 'F', 'P'};
+  char output[10];
+  test_helper(pass_hotp, sizeof(pass_hotp), OATH_INS_PUT, SW_NO_ERROR);
+  test_helper(pass_name, sizeof(pass_name), OATH_INS_SET_DEFAULT, SW_NO_ERROR);
+
+  inject_oath_write_error();
+  assert_int_equal(pass_handle_touch(TOUCH_SHORT, output), -1);
+  assert_true(pass_handle_touch(TOUCH_SHORT, output) > 0);
+}
+
 static void test_list(void **state) {
   (void)state;
 
@@ -714,6 +754,7 @@ int main() {
       cmocka_unit_test(test_put_unsupported_counter),
       cmocka_unit_test(test_calc),
       cmocka_unit_test(test_increasing_only),
+      cmocka_unit_test(test_counter_write_failures_do_not_return_otp),
       cmocka_unit_test(test_list),
       cmocka_unit_test(test_calc_all),
       cmocka_unit_test(test_hotp_touch),

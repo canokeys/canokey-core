@@ -364,17 +364,22 @@ static int oath_update_challenge_field(const OATH_RECORD *record, const size_t f
                     sizeof(record->challenge), 0);
 }
 
+enum oath_increasing_result {
+  OATH_INCREASING_IO_ERROR = -1,
+  OATH_INCREASING_OK = 0,
+  OATH_INCREASING_REJECTED = 1,
+};
+
 static int oath_enforce_increasing(OATH_RECORD *record, const size_t file_offset, const uint8_t challenge_len,
                                    uint8_t challenge[MAX_CHALLENGE_LEN]) {
   if (record->prop & OATH_PROP_INC) {
-    if (challenge_len != sizeof(record->challenge)) return -1;
+    if (challenge_len != sizeof(record->challenge)) return OATH_INCREASING_REJECTED;
     DBG_MSG("challenge_len=%u %hhu %hhu\n", challenge_len, record->challenge[7], challenge[7]);
-    if (memcmp(record->challenge, challenge, sizeof(record->challenge)) > 0) return -2;
+    if (memcmp(record->challenge, challenge, sizeof(record->challenge)) > 0) return OATH_INCREASING_REJECTED;
     memcpy(record->challenge, challenge, sizeof(record->challenge));
-    oath_update_challenge_field(record, file_offset);
-    return 0;
+    return oath_update_challenge_field(record, file_offset) < 0 ? OATH_INCREASING_IO_ERROR : OATH_INCREASING_OK;
   }
-  return 0;
+  return OATH_INCREASING_OK;
 }
 
 static int oath_increase_counter(OATH_RECORD *record) {
@@ -427,7 +432,7 @@ int oath_calculate_by_offset(size_t file_offset, uint8_t result[4]) {
   }
   if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
     if (oath_increase_counter(&record) < 0) return -1;
-    oath_update_challenge_field(&record, file_offset);
+    if (oath_update_challenge_field(&record, file_offset) < 0) return -1;
 
     challenge_len = sizeof(record.challenge);
     memcpy(challenge, record.challenge, challenge_len);
@@ -514,11 +519,12 @@ static int oath_calculate(const CAPDU *capdu, RAPDU *rapdu) {
     offset += challenge_len;
     if (offset > LC) EXCEPT(SW_WRONG_LENGTH);
 
-    if (oath_enforce_increasing(&record, file_offset, challenge_len, challenge) < 0)
-      EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    int err = oath_enforce_increasing(&record, file_offset, challenge_len, challenge);
+    if (err == OATH_INCREASING_REJECTED) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+    if (err == OATH_INCREASING_IO_ERROR) return -1;
   } else if ((record.key[0] & OATH_TYPE_MASK) == OATH_TYPE_HOTP) {
     if (oath_increase_counter(&record) < 0) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-    oath_update_challenge_field(&record, file_offset);
+    if (oath_update_challenge_field(&record, file_offset) < 0) return -1;
 
     challenge_len = sizeof(record.challenge);
     memcpy(challenge, record.challenge, challenge_len);
