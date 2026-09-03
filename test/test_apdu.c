@@ -1913,6 +1913,39 @@ static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **
   if (source.close) source.close(source.ctx);
 }
 
+static void test_ctap_make_credential_rejects_enterprise_attestation(void **state) {
+  (void)state;
+
+  static const struct {
+    uint8_t value;
+    uint8_t status;
+  } cases[] = {
+      {0x01, CTAP1_ERR_INVALID_PARAMETER},
+      {0x02, CTAP1_ERR_INVALID_PARAMETER},
+      {0x03, CTAP1_ERR_INVALID_PARAMETER},
+      {0x20, CTAP2_ERR_CBOR_UNEXPECTED_TYPE},
+      {0xF5, CTAP2_ERR_CBOR_UNEXPECTED_TYPE},
+  };
+  uint8_t req[256];
+  uint8_t resp[8];
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    size_t req_len = build_third_party_payment_make_credential(req, false, true);
+    req[1] = 0xA7;
+    req[req_len++] = MC_REQ_ENTERPRISE_ATTESTATION;
+    req[req_len++] = cases[i].value;
+    size_t resp_len = sizeof(resp);
+
+    assert_int_equal(ctap_process_cbor_with_src(req, req_len, resp, &resp_len, CTAP_SRC_HID), 0);
+    assert_int_equal(resp_len, 1);
+    assert_int_equal(resp[0], cases[i].status);
+  }
+}
+
 static void test_ctap_hid_make_credential_hmac_secret_mc_requires_hmac_secret(void **state) {
   (void)state;
 
@@ -3488,6 +3521,7 @@ int main() {
       cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),
       cmocka_unit_test(test_ctap_config_toggle_always_uv_without_pin),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
+      cmocka_unit_test(test_ctap_make_credential_rejects_enterprise_attestation),
       cmocka_unit_test(test_ctap_hid_make_credential_hmac_secret_mc_requires_hmac_secret),
       cmocka_unit_test(test_ctap_hid_make_credential_hmac_secret_mc_output_key_is_separate),
       cmocka_unit_test(test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_separate),

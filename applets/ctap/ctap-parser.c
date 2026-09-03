@@ -1090,8 +1090,8 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
 
     case MC_REQ_ENTERPRISE_ATTESTATION:
       DBG_MSG("enterpriseAttestation found\n");
+      if (!cbor_value_is_unsigned_integer(&map)) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       mc->parsed_params |= PARAM_ENTERPRISE_ATTESTATION;
-      // TODO: parse enterpriseAttestation
       ret = cbor_value_advance(&map);
       CHECK_CBOR_RET(ret);
       break;

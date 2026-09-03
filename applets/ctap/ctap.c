@@ -1895,7 +1895,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   // 8. [N/A] Else (the makeCredUvNotRqd option ID is present with the value false or is absent)
 
-  // 9. [N/A] If the enterpriseAttestation parameter is present
+  // 9. If enterpriseAttestation is present, reject it because this authenticator
+  //    does not advertise the enterprise-attestation capability ("ep").
+  if (mc->parsed_params & PARAM_ENTERPRISE_ATTESTATION) return CTAP1_ERR_INVALID_PARAMETER;
 
   // 10. If the following statements are all true
   //     a) "rk" and "uv" [ALWAYS TRUE] options are both set to false or omitted.
