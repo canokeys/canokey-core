@@ -50,6 +50,41 @@ static void test_verify(void **state) {
   openpgp_install(1);
 }
 
+static void test_reselect_preserves_pin_authorization(void **state) {
+  (void)state;
+
+  openpgp_install(1);
+  uint8_t c_buf[16], r_buf[16];
+  CAPDU C = {.data = c_buf};
+  RAPDU R = {.data = r_buf};
+
+  build_capdu(&C, (uint8_t *)"\x00\xA4\x04\x00\x06\xD2\x76\x00\x01\x24\x01", 11);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  build_capdu(&C, (uint8_t *)"\x00\x20\x00\x81\x06\x31\x32\x33\x34\x35\x36", 11);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  build_capdu(&C, (uint8_t *)"\x00\x20\x00\x83\x08\x31\x32\x33\x34\x35\x36\x37\x38", 13);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  build_capdu(&C, (uint8_t *)"\x00\xA4\x04\x00\x06\xD2\x76\x00\x01\x24\x01", 11);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  build_capdu(&C, (uint8_t *)"\x00\x20\x00\x81", 4);
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  C.p2 = 0x83;
+  openpgp_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+
+  openpgp_install(1);
+}
+
 static void test_change_reference_data(void **state) {
   (void)state;
 
@@ -420,11 +455,26 @@ static void test_import_rsa_rejects_inconsistent_crt(void **state) {
 static void test_generate_key(void **state) {
   (void)state;
 
+  openpgp_install(1);
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU C = {.data = c_buf};
   RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
+  capdu->cla = 0x00;
+  capdu->ins = OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
+  capdu->p1 = 0x80;
+  capdu->p2 = 0x00;
+  capdu->lc = 0x02;
+  capdu->data[0] = 0xB8;
+  capdu->data[1] = 0x00;
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x83\x08\x31\x32\x33\x34\x35\x36\x37\x38", 13);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
+
   capdu->cla = 0x00;
   capdu->ins = OPENPGP_INS_GENERATE_ASYMMETRIC_KEY_PAIR;
   capdu->p1 = 0x80;
@@ -447,16 +497,23 @@ static void test_generate_key(void **state) {
   openpgp_process_apdu(capdu, rapdu);
   print_hex(rapdu->data, rapdu->len);
   assert_int_equal(rapdu->sw, SW_WRONG_LENGTH);
+
+  openpgp_install(1);
 }
 
 static void test_decipher_chaining(void **state) {
   (void)state;
 
+  openpgp_install(1);
   uint8_t c_buf[1024], r_buf[1024];
   CAPDU C = {.data = c_buf};
   RAPDU R = {.data = r_buf};
   CAPDU *capdu = &C;
   RAPDU *rapdu = &R;
+
+  build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x83\x08\x31\x32\x33\x34\x35\x36\x37\x38", 13);
+  openpgp_process_apdu(capdu, rapdu);
+  assert_int_equal(rapdu->sw, SW_NO_ERROR);
 
   build_capdu(capdu, (uint8_t *)"\x00\x20\x00\x82\x06\x31\x32\x33\x34\x35\x36", 11);
   openpgp_process_apdu(capdu, rapdu);
@@ -486,6 +543,8 @@ static void test_decipher_chaining(void **state) {
   memset(capdu->data, 0, capdu->lc);
   openpgp_process_apdu(capdu, rapdu);
   assert_int_equal(rapdu->sw, SW_WRONG_DATA);
+
+  openpgp_install(1);
 }
 
 static void test_x25519_public_key_encoding(void **state) {
@@ -665,6 +724,7 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_verify),
+      cmocka_unit_test(test_reselect_preserves_pin_authorization),
       cmocka_unit_test(test_change_reference_data),
       cmocka_unit_test(test_reset_retry_counter),
       cmocka_unit_test(test_set_pin_retries),

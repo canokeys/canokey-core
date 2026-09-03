@@ -125,11 +125,11 @@ int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint
 int apdu_session_can_preempt(void);
 // Releases any in-flight FIDO chained-APDU reassembly state (PKE staging,
 // chaining flags, accumulator). Call from any path that drops the CTAP
-// session out from under an in-progress chain (e.g. session expiry).
+// session out from under an in-progress chain (e.g. cross-transport cleanup).
 void apdu_fido_chain_reset(void);
 // Drops any pending RAPDU (GET RESPONSE) chain. Call from paths that reset
 // the card-side APDU context out from under an in-progress chain (session
-// expiry, CCID slot power on/off).
+// release/preemption, CCID slot power on/off).
 void apdu_rapdu_chain_reset(void);
 int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
 void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);

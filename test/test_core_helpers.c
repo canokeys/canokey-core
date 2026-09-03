@@ -375,30 +375,41 @@ static void test_device_sessions_and_keepalive(void **state) {
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
 
   fake_tick = 2101;
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+  // Idle time alone does not reset the card security environment.
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+  assert_int_equal(applets_poweroff_calls, 0);
+  assert_int_equal(apdu_response_source_clear_calls, 0);
+
+  // Once the lease has timed out, another transport may force cleanup and
+  // take ownership even when an active session was not otherwise preemptable.
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
   assert_int_equal(applets_poweroff_calls, 1);
   assert_int_equal(apdu_response_source_clear_calls, 1);
 
-  fake_tick = 300;
+  fake_tick = 2200;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
   assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
   assert_int_equal(keepalive_processing_calls, 1);
 
-  fake_tick = 1000;
+  fake_tick = 3000;
   device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
-  fake_tick = 2299;
+  fake_tick = 4199;
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
 
-  fake_tick = 2401;
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+  fake_tick = 4201;
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+  assert_int_equal(applets_poweroff_calls, 1);
 
-  fake_tick = 2500;
+  fake_tick = 6302;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(applets_poweroff_calls, 2);
   apdu_session_preemptable = true;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_WEBUSB);
 
-  fake_tick = 500;
+  fake_tick = 6400;
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
   assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
   assert_int_equal(keepalive_processing_calls, 1);

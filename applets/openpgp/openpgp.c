@@ -806,6 +806,9 @@ static int __attribute__((noinline)) openpgp_generate_asymmetric_key_pair(const 
           key.meta.origin, key.rsa.nbits);
 
   if (P1 == 0x80) {
+#ifndef FUZZ
+    ASSERT_ADMIN();
+#endif
     start_quick_blinking(0);
     if (ck_generate_key(&key) < 0) {
       ERR_MSG("Generate key %s failed\n", key_path);

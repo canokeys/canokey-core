@@ -51,11 +51,8 @@ static void device_applet_session_expire(void) {
   session_deadline = 0;
 }
 
-static void device_applet_session_poll(void) {
-  if (session_owner == DEVICE_APPLET_SESSION_NONE) return;
-  if ((int32_t)(device_get_tick() - session_deadline) > 0) {
-    device_applet_session_expire();
-  }
+static int device_applet_session_timed_out(void) {
+  return session_owner != DEVICE_APPLET_SESSION_NONE && (int32_t)(device_get_tick() - session_deadline) > 0;
 }
 
 static int device_applet_session_can_preempt(void) {
@@ -66,7 +63,6 @@ static int device_applet_session_can_preempt(void) {
 uint8_t device_is_blinking(void) { return blink_timeout != 0; }
 
 void device_loop(void) {
-  device_applet_session_poll();
 #if ENABLE_IFACE_CCID
   CCID_Loop();
 #endif
@@ -272,9 +268,10 @@ void device_init(void) {
 }
 
 int device_applet_session_acquire(device_applet_session_owner_t owner) {
-  device_applet_session_poll();
   if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner) {
-    if (!device_applet_session_can_preempt()) return -1;
+    // The timeout is a cross-transport preemption deadline, not a card reset.
+    // Reacquiring from the same transport must preserve PIN authorization.
+    if (!device_applet_session_timed_out() && !device_applet_session_can_preempt()) return -1;
     device_applet_session_expire();
   }
   session_owner = owner;
@@ -293,8 +290,8 @@ void device_applet_session_release(device_applet_session_owner_t owner) {
 }
 
 int device_applet_session_reset(device_applet_session_owner_t owner) {
-  device_applet_session_poll();
-  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_can_preempt())
+  if (session_owner != DEVICE_APPLET_SESSION_NONE && session_owner != owner && !device_applet_session_timed_out() &&
+      !device_applet_session_can_preempt())
     return -1;
   if (session_owner == DEVICE_APPLET_SESSION_NONE) {
     applets_poweroff();
@@ -310,7 +307,4 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {
   return 0;
 }
 
-device_applet_session_owner_t device_applet_session_owner(void) {
-  device_applet_session_poll();
-  return session_owner;
-}
+device_applet_session_owner_t device_applet_session_owner(void) { return session_owner; }

@@ -22,6 +22,7 @@
 #include <lfs.h>
 #include <ndef.h>
 #include <oath.h>
+#include <openpgp.h>
 #include <platform-config.h>
 #include <pke.h>
 #include "../applets/ctap/secret.h"
@@ -2584,6 +2585,62 @@ static void test_active_ccid_transfer_cannot_be_preempted(void **state) {
   assert_int_equal(stream_ctx.closes, 1);
 }
 
+static void test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect(void **state) {
+  (void)state;
+
+  static const uint8_t select_openpgp[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x06, 0xD2, 0x76, 0x00, 0x01, 0x24, 0x01,
+  };
+  static const uint8_t verify_pw1[] = {
+      0x00, 0x20, 0x00, 0x81, 0x06, '1', '2', '3', '4', '5', '6',
+  };
+  static const uint8_t query_pw1[] = {0x00, 0x20, 0x00, 0x81};
+  uint8_t c_buf[16], r_buf[16];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(openpgp_install(1), 0);
+  set_test_tick(100);
+
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(build_capdu(&capdu, select_openpgp, sizeof(select_openpgp)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, verify_pw1, sizeof(verify_pw1)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Passing the lease deadline does not represent a card reset. The same
+  // transport can resume and SELECT the current applet without losing PW1.
+  set_test_tick(2101);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+  assert_int_equal(build_capdu(&capdu, select_openpgp, sizeof(select_openpgp)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, query_pw1, sizeof(query_pw1)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Once that refreshed lease expires, a different transport may take over;
+  // takeover performs the power-off cleanup that invalidates PW1.
+  set_test_tick(4102);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+
+  assert_int_equal(build_capdu(&capdu, query_pw1, sizeof(query_pw1)), 0);
+  process_apdu_from(&capdu, &rapdu, APDU_TRANSPORT_CCID);
+  assert_int_equal(rapdu.sw, SW_PIN_RETRIES | 3);
+
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+  set_test_tick(0);
+}
+
 static void test_response_source_multi_chunk_get_response(void **state) {
   (void)state;
   init_apdu_buffer();
@@ -3565,6 +3622,7 @@ int main() {
       cmocka_unit_test(test_response_source_multi_chunk_get_response),
       cmocka_unit_test(test_pending_ccid_response_can_be_abandoned_by_ctaphid),
       cmocka_unit_test(test_active_ccid_transfer_cannot_be_preempted),
+      cmocka_unit_test(test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect),
       cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),
       cmocka_unit_test(test_response_source_read_failure_clears_state),
       cmocka_unit_test(test_apdu_output_chaining_aliased_buffer),
