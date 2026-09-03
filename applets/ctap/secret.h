@@ -50,7 +50,7 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
 uint8_t credential_cred_protect(const credential_id *kh);
 bool credential_third_party_payment(const credential_id *kh);
 int get_cert(uint8_t *buf);
-bool has_pin(void);
+int has_pin(void);
 int set_pin(uint8_t *buf, uint8_t length);
 int verify_pin_hash(uint8_t *buf);
 int get_pin_retries(void);

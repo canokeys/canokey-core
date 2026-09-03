@@ -92,6 +92,9 @@ err_close:
 }
 
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
+#ifdef TEST
+  if (testmode_err_triggered(path, false)) return LFS_ERR_IO;
+#endif
   return lfs_getattr(&lfs, path, attr, buf, len);
 }
 

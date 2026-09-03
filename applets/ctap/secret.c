@@ -435,9 +435,11 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
 
-bool has_pin(void) {
+int has_pin(void) {
   uint8_t tmp;
-  return read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1) != 0;
+  int ret = read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1);
+  if (ret < 0) return ret;
+  return ret > 0;
 }
 
 int set_pin(uint8_t *buf, uint8_t length) {

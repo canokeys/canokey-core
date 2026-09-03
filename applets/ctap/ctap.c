@@ -1816,6 +1816,9 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
 
   ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
+  const int pin_state = has_pin();
+  if (pin_state < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  const bool pin_set = pin_state > 0;
   KEEPALIVE();
 
   // 1. If authenticator supports clientPin features and the platform sends a zero length pin_uv_auth_param
@@ -1826,7 +1829,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
     WAIT(CTAP2_ERR_OPERATION_DENIED);
     // c. If evidence of user interaction is provided in this step then return either CTAP2_ERR_PIN_NOT_SET
     //    if PIN is not set or CTAP2_ERR_PIN_INVALID if PIN has been set.
-    if (has_pin())
+    if (pin_set)
       return CTAP2_ERR_PIN_INVALID;
     else
       return CTAP2_ERR_PIN_NOT_SET;
@@ -1884,7 +1887,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   //    b) [ALWAYS TRUE] The "uv" option is set to false.
   //    c) The pin_uv_auth_param parameter is not present.
   //    d) The "rk" option is present and set to true.
-  if (has_pin() /* a) */ && (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0 /* c) */ &&
+  if (pin_set /* a) */ && (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) == 0 /* c) */ &&
       mc->options.rk == OPTION_TRUE) {
     // If ClientPin option ID is true and the noMcGaPermissionsWithClientPin option ID is absent or false,
     // end the operation by returning CTAP2_ERR_PUAT_REQUIRED.
@@ -1910,7 +1913,7 @@ static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_
   }
 
   // 11. If the authenticator is protected by some form of user verification, then:
-  if (has_pin()) {
+  if (pin_set) {
     //   11.1 If pin_uv_auth_param parameter is present (implying the "uv" option is false (see Step 5)):
     if (mc->parsed_params & PARAM_PIN_UV_AUTH_PARAM) {
       uint8_t err = verify_pin_uv_auth_token(mc->client_data_hash, mc->pin_uv_auth_param, mc->pin_uv_auth_protocol,
@@ -2078,6 +2081,9 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   ctap_req_lifetime_end();
   ret = ctap_consistency_check();
   CHECK_PARSER_RET(ret);
+  const int pin_state = has_pin();
+  if (pin_state < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  const bool pin_set = pin_state > 0;
   KEEPALIVE();
 
   // 1. If authenticator supports clientPin features and the platform sends a zero length pin_uv_auth_param
@@ -2088,7 +2094,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
     WAIT(CTAP2_ERR_OPERATION_DENIED);
     // c. If evidence of user interaction is provided in this step then return either CTAP2_ERR_PIN_NOT_SET
     //    if PIN is not set or CTAP2_ERR_PIN_INVALID if PIN has been set.
-    if (has_pin())
+    if (pin_set)
       return CTAP2_ERR_PIN_INVALID;
     else
       return CTAP2_ERR_PIN_NOT_SET;
@@ -2138,7 +2144,7 @@ static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t 
   // 6. If authenticator is protected by some form of user verification, then:
   //    6.2 [N/A] If the "uv" option is present and set to true
   //    6.1 If pin_uv_auth_param parameter is present
-  if (has_pin() && (ga_state.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {
+  if (pin_set && (ga_state.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {
     uint8_t err = verify_pin_uv_auth_token(ga_state.client_data_hash, ga.pin_uv_auth_param, ga.pin_uv_auth_protocol,
                                            CP_PERMISSION_GA, ga_state.rp_id_hash);
     if (err) return err;
@@ -3425,6 +3431,10 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, 
     ret = cbor_encoder_close_container(encoder, &map);
     CHECK_CBOR_RET(ret);
   } else {
+    const int pin_state = has_pin();
+    if (pin_state < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+    const bool pin_set = pin_state > 0;
+
     // 5. Else (implying that set is present in the input map):
     //    a) If the length of the value of set is greater than maxFragmentLength, return CTAP1_ERR_INVALID_LENGTH.
     //       > Checked when paring.
@@ -3452,7 +3462,7 @@ static uint8_t __attribute__((noinline)) ctap_large_blobs(CborEncoder *encoder, 
     }
     //    e) If the authenticator is protected by some form of user verification
     //       or the alwaysUv option ID is present and true:
-    if (has_pin()) {
+    if (pin_set) {
       //     i. If pinUvAuthParam is absent from the input map, then end the operation by
       //        returning CTAP2_ERR_PUAT_REQUIRED.
       if (!(lb.parsed_params & PARAM_PIN_UV_AUTH_PARAM)) {

@@ -1660,6 +1660,27 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
 }
 
+static void test_ctap_pin_state_read_errors_are_propagated(void **state) {
+  (void)state;
+
+  static const uint8_t path[] = CTAP_CERT_FILE;
+  uint8_t req[] = {CTAP_GET_INFO};
+  uint8_t scratch[64] = {0};
+  CTAPHID_TxSource source = {0};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  testmode_inject_error(0, 0, sizeof(path) - 1, path);
+  assert_int_equal(has_pin(), LFS_ERR_IO);
+
+  testmode_inject_error(0, 0, sizeof(path) - 1, path);
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
+                   -1);
+  assert_null(source.read);
+}
+
 static void test_ctap_hid_get_info_with_force_pin_change_is_canonical(void **state) {
   (void)state;
 
@@ -3509,6 +3530,7 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
+      cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),
       cmocka_unit_test(test_ctaphid_out_event_only_enqueues),
       cmocka_unit_test(test_ctaphid_rx_high_water_pauses_and_resumes),
