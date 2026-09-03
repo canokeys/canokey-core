@@ -21,23 +21,31 @@ static bool in_use;
 static bool user_verified;
 static bool user_present;
 static uint32_t timeout_value;
+static uint32_t max_timeout_value;
 static bool cp_initialized;
+
+#define PIN_UV_AUTH_TOKEN_TIMEOUT_MS UINT32_C(30000)
+#define PIN_UV_AUTH_TOKEN_MAX_LIFETIME_MS UINT32_C(600000)
+
+static bool tick_reached(uint32_t now, uint32_t deadline) { return (int32_t)(now - deadline) >= 0; }
 
 // utility functions
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-beginusingpinuvauthtoken
 void cp_begin_using_uv_auth_token(bool user_is_present) {
+  const uint32_t now = device_get_tick();
   user_present = user_is_present;
   user_verified = true;
-  timeout_value = device_get_tick() + 30000;
+  timeout_value = now + PIN_UV_AUTH_TOKEN_TIMEOUT_MS;
+  max_timeout_value = now + PIN_UV_AUTH_TOKEN_MAX_LIFETIME_MS;
   in_use = true;
 }
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-pinuvauthtokenusagetimerobserver
 void cp_pin_uv_auth_token_usage_timer_observer(void) {
   if (!in_use) return;
-  if (device_get_tick() > timeout_value) {
-    cp_clear_user_present_flag();
+  const uint32_t now = device_get_tick();
+  if (tick_reached(now, timeout_value) || tick_reached(now, max_timeout_value)) {
     cp_stop_using_pin_uv_auth_token();
   }
 }
@@ -72,6 +80,8 @@ void cp_clear_pin_uv_auth_token_permissions_except_lbw(void) {
 void cp_stop_using_pin_uv_auth_token(void) {
   permissions_rp_id[0] = 0;
   permissions = 0;
+  timeout_value = 0;
+  max_timeout_value = 0;
   in_use = false;
   user_verified = false;
   user_present = false;
@@ -174,12 +184,14 @@ bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t ms
 }
 
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
+  cp_pin_uv_auth_token_usage_timer_observer();
   if (!in_use) {
     DBG_MSG("cp_verify_pin_token: not in use\n");
     return false;
   }
-  timeout_value = device_get_tick() + 30000;
-  return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
+  if (!cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol)) return false;
+  timeout_value = device_get_tick() + PIN_UV_AUTH_TOKEN_TIMEOUT_MS;
+  return true;
 }
 
 #ifdef TEST

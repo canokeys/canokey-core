@@ -1802,6 +1802,9 @@ static uint8_t ctap_prepare_make_credential_response(CborEncoder *encoder, CTAP_
 
 static uint8_t ctap_make_credential(CborEncoder *encoder, uint8_t *params, size_t len) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-makeCred-authnr-alg
+  // Streaming transports can dispatch makeCredential without passing through
+  // ctap_process_cbor(), so observe token expiry at the command handler too.
+  cp_pin_uv_auth_token_usage_timer_observer();
   CborParser *parser = &mc_stream_state.storage.parse.parser;
   CTAP_make_credential *mc = &applet_session_scratch.ctap_mc;
 

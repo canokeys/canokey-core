@@ -1220,6 +1220,68 @@ static void test_applet_session_deadline_wraparound(void **state) {
   testmode_set_initial_ticks(device_get_tick());
 }
 
+static void test_pin_uv_auth_token_timer_wraparound(void **state) {
+  (void)state;
+
+  static const uint8_t msg[] = {0x01, 0x02, 0x03};
+  uint8_t sig[PIN_AUTH_SIZE_P1];
+
+  set_test_tick(UINT32_MAX - 10000u);
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_test_authenticate_pin_token(msg, sizeof(msg), sig, 1);
+
+  set_test_tick(UINT32_MAX - 5000u);
+  assert_true(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
+  set_test_tick(10000u);
+  assert_true(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
+  set_test_tick(40001u);
+  assert_false(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
+
+  set_test_tick(0);
+}
+
+static void test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer(void **state) {
+  (void)state;
+
+  static const uint8_t msg[] = {0x04, 0x05, 0x06};
+  uint8_t sig[PIN_AUTH_SIZE_P1];
+  uint8_t invalid_sig[PIN_AUTH_SIZE_P1] = {0};
+
+  set_test_tick(100000u);
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_test_authenticate_pin_token(msg, sizeof(msg), sig, 1);
+
+  set_test_tick(120000u);
+  assert_false(cp_verify_pin_token(msg, sizeof(msg), invalid_sig, 1));
+  set_test_tick(130001u);
+  assert_false(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
+
+  set_test_tick(0);
+}
+
+static void test_pin_uv_auth_token_max_lifetime(void **state) {
+  (void)state;
+
+  static const uint8_t msg[] = {0x07, 0x08, 0x09};
+  uint8_t sig[PIN_AUTH_SIZE_P1];
+
+  set_test_tick(0);
+  cp_reset_pin_uv_auth_token();
+  cp_begin_using_uv_auth_token(false);
+  cp_test_authenticate_pin_token(msg, sizeof(msg), sig, 1);
+
+  for (uint32_t tick = 29000u; tick < 600000u; tick += 29000u) {
+    set_test_tick(tick);
+    assert_true(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
+  }
+  set_test_tick(600000u);
+  assert_false(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
+
+  set_test_tick(0);
+}
+
 static void test_fido_ctap1_register_rejects_missing_attestation_key(void **state) {
   (void)state;
 
@@ -3395,6 +3457,9 @@ int main() {
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
       cmocka_unit_test(test_applet_session_deadline_wraparound),
+      cmocka_unit_test(test_pin_uv_auth_token_timer_wraparound),
+      cmocka_unit_test(test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer),
+      cmocka_unit_test(test_pin_uv_auth_token_max_lifetime),
       cmocka_unit_test(test_fido_ctap1_register_rejects_missing_attestation_key),
       cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
