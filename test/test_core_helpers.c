@@ -126,7 +126,7 @@ void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *
 }
 
 bool testmode_err_triggered(const char *filename, bool file_wr) {
-  UNUSED(file_wr);
+  if (!file_wr) return false;
   if (!inject_write_error) return false;
   if (strcmp(filename, inject_write_error_path) != 0) return false;
   inject_write_error = false;

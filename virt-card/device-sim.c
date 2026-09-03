@@ -22,6 +22,7 @@
 
 static uint32_t initial_ticks = 0;
 static char err_trigger_filename[64];
+static bool err_trigger_file_wr;
 static uint8_t simulated_config_page[PLATFORM_CONFIG_PAGE_SIZE];
 static bool simulated_config_page_loaded;
 static char simulated_config_page_path[PATH_MAX];
@@ -201,16 +202,17 @@ void testmode_set_initial_ticks(uint32_t ticks) { initial_ticks = ticks; }
 void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data) {
   DBG_MSG("%hhu %hhu ", p1, p2);
   PRINT_HEX(data, len);
-  if (!p1 && !p2) {
+  if ((p1 == TESTMODE_ERR_WRITE || p1 == TESTMODE_ERR_READ) && !p2) {
     if (len < sizeof(err_trigger_filename)) {
       memcpy(err_trigger_filename, data, len);
       err_trigger_filename[len] = 0;
+      err_trigger_file_wr = p1 == TESTMODE_ERR_WRITE;
     }
   }
 }
 
 bool testmode_err_triggered(const char *filename, bool file_wr) {
-  bool ret = (strcmp(filename, err_trigger_filename) == 0);
+  bool ret = file_wr == err_trigger_file_wr && strcmp(filename, err_trigger_filename) == 0;
   if (ret) err_trigger_filename[0] = 0;
   return ret;
 }

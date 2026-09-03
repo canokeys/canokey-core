@@ -92,6 +92,9 @@ uint8_t i2c_read_byte(void);
 #endif
 
 // only for test
+#define TESTMODE_ERR_WRITE 0
+#define TESTMODE_ERR_READ 1
+
 int testmode_emulate_user_presence(void);
 int testmode_get_is_nfc_mode(void);
 void testmode_set_initial_ticks(uint32_t ticks);

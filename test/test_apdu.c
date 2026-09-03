@@ -1663,19 +1663,25 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
 static void test_ctap_pin_state_read_errors_are_propagated(void **state) {
   (void)state;
 
-  static const uint8_t path[] = CTAP_CERT_FILE;
+  static const uint8_t cert_path[] = CTAP_CERT_FILE;
+  static const uint8_t dc_path[] = DC_FILE;
   uint8_t req[] = {CTAP_GET_INFO};
   uint8_t scratch[64] = {0};
   CTAPHID_TxSource source = {0};
+  CTAP_dc_general_attr attr;
 
   init_apdu_buffer();
   device_init();
   assert_int_equal(applets_install(), 0);
 
-  testmode_inject_error(0, 0, sizeof(path) - 1, path);
+  testmode_inject_error(TESTMODE_ERR_WRITE, 0, sizeof(dc_path) - 1, dc_path);
+  assert_int_equal(read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), sizeof(attr));
+  assert_int_equal(write_file(DC_FILE, NULL, 0, 0, 0), LFS_ERR_IO);
+
+  testmode_inject_error(TESTMODE_ERR_READ, 0, sizeof(cert_path) - 1, cert_path);
   assert_int_equal(has_pin(), LFS_ERR_IO);
 
-  testmode_inject_error(0, 0, sizeof(path) - 1, path);
+  testmode_inject_error(TESTMODE_ERR_READ, 0, sizeof(cert_path) - 1, cert_path);
   assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
                    -1);
   assert_null(source.read);
