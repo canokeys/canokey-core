@@ -23,7 +23,7 @@ enum { NFC_SEND_FAILED = -1, NFC_SEND_ABORTED = -2, NFC_MAX_RETRANSMITS = 2 };
 
 static volatile uint32_t state_spinlock;
 static volatile enum { TO_RECEIVE, TO_SEND } next_state;
-static uint8_t block_number, rx_frame_size, rx_frame_buf[32], tx_frame_buf[32];
+static uint8_t block_number, rx_frame_size, rx_frame_buf[32];
 static uint8_t inf_sending, retransmit_count;
 static uint8_t retransmit_prologue, retransmit_len, retransmit_data[29];
 static uint8_t aggregate_get_response, aggregate_fido_responses;
@@ -145,6 +145,7 @@ static void request_unsilence(void) {
 static int do_nfc_send_frame(uint8_t prologue, uint8_t *data, uint8_t len) {
   if (len > 29) return -1;
 
+  uint8_t tx_frame_buf[30];
   tx_frame_buf[0] = prologue;
   if (data != NULL) memcpy(tx_frame_buf + 1, data, len);
 
