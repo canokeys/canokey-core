@@ -7,7 +7,7 @@
 
 ## Introduction
 
-Core implementations of an open-source secure key, with supports of:
+Core implementations of an open-source security key, supporting:
 
 * U2F / FIDO2 with ed25519 and HMAC-secret
 * OpenPGP Card V3.4, [Supported Algorithm List](https://docs.canokeys.org/userguide/openpgp/#supported-algorithm)
@@ -80,7 +80,7 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
   * `fm_status_t i2c_write_byte(uint8_t data);`
   * `uint8_t i2c_read_byte(void);`
 
-2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
+2. You must provide both `random32` and `random_buffer` in `rand.h`.
 
 3. You need to configure the littlefs properly.
 
