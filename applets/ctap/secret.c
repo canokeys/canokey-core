@@ -2,7 +2,6 @@
 #include "cose-key.h"
 #include "secret.h"
 #include <aes.h>
-#include <block-cipher.h>
 #include <crypto-util.h>
 #include <ecc.h>
 #include <fs.h>
@@ -22,22 +21,31 @@ static bool in_use;
 static bool user_verified;
 static bool user_present;
 static uint32_t timeout_value;
+static uint32_t max_timeout_value;
+static bool cp_initialized;
+
+#define PIN_UV_AUTH_TOKEN_TIMEOUT_MS UINT32_C(30000)
+#define PIN_UV_AUTH_TOKEN_MAX_LIFETIME_MS UINT32_C(600000)
+
+static bool tick_reached(uint32_t now, uint32_t deadline) { return (int32_t)(now - deadline) >= 0; }
 
 // utility functions
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-beginusingpinuvauthtoken
 void cp_begin_using_uv_auth_token(bool user_is_present) {
+  const uint32_t now = device_get_tick();
   user_present = user_is_present;
   user_verified = true;
-  timeout_value = device_get_tick() + 30000;
+  timeout_value = now + PIN_UV_AUTH_TOKEN_TIMEOUT_MS;
+  max_timeout_value = now + PIN_UV_AUTH_TOKEN_MAX_LIFETIME_MS;
   in_use = true;
 }
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-pinuvauthtokenusagetimerobserver
 void cp_pin_uv_auth_token_usage_timer_observer(void) {
   if (!in_use) return;
-  if (device_get_tick() > timeout_value) {
-    cp_clear_user_present_flag();
+  const uint32_t now = device_get_tick();
+  if (tick_reached(now, timeout_value) || tick_reached(now, max_timeout_value)) {
     cp_stop_using_pin_uv_auth_token();
   }
 }
@@ -66,12 +74,14 @@ void cp_clear_user_verified_flag(void) {
 
 // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#pinuvauthprotocol-clearpinuvauthtokenpermissionsexceptlbw
 void cp_clear_pin_uv_auth_token_permissions_except_lbw(void) {
-  if (in_use) permissions &= ~CP_PERMISSION_LBW;
+  if (in_use) permissions &= CP_PERMISSION_LBW;
 }
 
 void cp_stop_using_pin_uv_auth_token(void) {
   permissions_rp_id[0] = 0;
   permissions = 0;
+  timeout_value = 0;
+  max_timeout_value = 0;
   in_use = false;
   user_verified = false;
   user_present = false;
@@ -81,8 +91,8 @@ void cp_stop_using_pin_uv_auth_token(void) {
 
 static void hkdf(uint8_t *salt, size_t salt_len, uint8_t *ikm, size_t ikm_len, uint8_t *out) {
   hmac_sha256(salt, salt_len, ikm, ikm_len, salt);
-  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *) "CTAP2 HMAC key\x01", 15, out);
-  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *) "CTAP2 AES key\x01", 14, out + SHA256_DIGEST_LENGTH);
+  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *)"CTAP2 HMAC key\x01", 15, out);
+  hmac_sha256(salt, SHA256_DIGEST_LENGTH, (const uint8_t *)"CTAP2 AES key\x01", 14, out + SHA256_DIGEST_LENGTH);
 }
 
 static void cp2_kdf(uint8_t *z, size_t z_len, uint8_t *out) {
@@ -90,16 +100,16 @@ static void cp2_kdf(uint8_t *z, size_t z_len, uint8_t *out) {
   hkdf(salt, sizeof(salt), z, z_len, out);
 }
 
-void cp_initialize(void) {
+void cp_initialize(bool force_reset) {
+  if (!force_reset && cp_initialized) return;
   cp_regenerate();
   cp_reset_pin_uv_auth_token();
+  cp_initialized = true;
 }
 
 void cp_regenerate(void) {
   ecc_generate(SECP256R1, &ka_key);
-  DBG_MSG("Regenerate:\nPri: ");
-  PRINT_HEX(ka_key.pri, PRIVATE_KEY_LENGTH[SECP256R1]);
-  DBG_MSG("Pub: ");
+  DBG_MSG("Regenerate key agreement:\nPub: ");
   PRINT_HEX(ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
 }
 
@@ -108,14 +118,10 @@ void cp_reset_pin_uv_auth_token(void) {
   cp_stop_using_pin_uv_auth_token();
 }
 
-void cp_get_public_key(uint8_t *buf) {
-  memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]);
-}
+void cp_get_public_key(uint8_t *buf) { memcpy(buf, ka_key.pub, PUBLIC_KEY_LENGTH[SECP256R1]); }
 
 int cp_decapsulate(uint8_t *buf, int pin_protocol) {
   int ret = ecdh(SECP256R1, ka_key.pri, buf, buf);
-  DBG_MSG("ECDH: ");
-  PRINT_HEX(buf, PUBLIC_KEY_LENGTH[SECP256R1]);
   if (ret < 0) return 1;
   if (pin_protocol == 1)
     sha256_raw(buf, PRI_KEY_SIZE, buf);
@@ -126,20 +132,17 @@ int cp_decapsulate(uint8_t *buf, int pin_protocol) {
 
 int cp_encrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
-  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
-  cfg.in_size = in_size;
-  cfg.in = in;
-  cfg.out = out;
+  const uint8_t *aes_key;
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
-    cfg.key = key;
+    aes_key = key;
   } else {
     random_buffer(iv, sizeof(iv));
-    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
+    aes_key = key + SHARED_SECRET_SIZE_HMAC;
   }
-  int ret = block_cipher_enc(&cfg);
-  if (pin_protocol == 2) {
-    // "in" and "out" arguments can be the same pointer 
+  int ret = aes_crypt(AES_MODE_CBC, AES_OP_ENCRYPT, AES_KEY_256, aes_key, iv, in, out, in_size);
+  if (ret == 0 && pin_protocol == 2) {
+    // "in" and "out" arguments can be the same pointer
     memmove(out + sizeof(iv), out, in_size);
     memcpy(out, iv, sizeof(iv));
   }
@@ -152,22 +155,21 @@ int cp_encrypt_pin_token(const uint8_t *key, uint8_t *out, int pin_protocol) {
 
 int cp_decrypt(const uint8_t *key, const uint8_t *in, size_t in_size, uint8_t *out, int pin_protocol) {
   uint8_t iv[16];
-  block_cipher_config cfg = {.block_size = 16, .mode = CBC, .iv = iv, .encrypt = aes256_enc, .decrypt = aes256_dec};
   if (pin_protocol == 1) {
     memzero(iv, sizeof(iv));
-    cfg.key = key;
-    cfg.in_size = in_size;
-    cfg.in = in;
-    cfg.out = out;
-  } else {
-    if (in_size < sizeof(iv)) return -1;
-    memcpy(iv, in, sizeof(iv));
-    cfg.key = key + SHARED_SECRET_SIZE_HMAC;
-    cfg.in_size = in_size - sizeof(iv);
-    cfg.in = in + sizeof(iv);
-    cfg.out = out;
+    return aes_crypt(AES_MODE_CBC, AES_OP_DECRYPT, AES_KEY_256, key, iv, in, out, in_size);
   }
-  return block_cipher_dec(&cfg);
+
+  if (in_size < sizeof(iv)) return -1;
+  memcpy(iv, in, sizeof(iv));
+  in_size -= sizeof(iv);
+  in += sizeof(iv);
+  if (out == in - sizeof(iv)) {
+    // HED_AESBlock uses memcpy for distinct input/output pointers.
+    memmove(out, in, in_size);
+    in = out;
+  }
+  return aes_crypt(AES_MODE_CBC, AES_OP_DECRYPT, AES_KEY_256, key + SHARED_SECRET_SIZE_HMAC, iv, in, out, in_size);
 }
 
 bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t msg_len, const uint8_t *sig,
@@ -182,22 +184,29 @@ bool cp_verify(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t ms
 }
 
 bool cp_verify_pin_token(const uint8_t *msg, size_t msg_len, const uint8_t *sig, int pin_protocol) {
-  if (!in_use) return false;
-  timeout_value = device_get_tick() + 30000;
-  return cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol);
+  cp_pin_uv_auth_token_usage_timer_observer();
+  if (!in_use) {
+    DBG_MSG("cp_verify_pin_token: not in use\n");
+    return false;
+  }
+  if (!cp_verify(pin_token, PIN_TOKEN_SIZE, msg, msg_len, sig, pin_protocol)) return false;
+  timeout_value = device_get_tick() + PIN_UV_AUTH_TOKEN_TIMEOUT_MS;
+  return true;
 }
 
-void cp_set_permission(int new_permissions) {
-  permissions |= new_permissions;
+#ifdef TEST
+void cp_test_authenticate_pin_token(const uint8_t *msg, size_t msg_len, uint8_t *sig, int pin_protocol) {
+  uint8_t mac[SHA256_DIGEST_LENGTH];
+  hmac_sha256(pin_token, PIN_TOKEN_SIZE, msg, msg_len, mac);
+  memcpy(sig, mac, pin_protocol == 1 ? PIN_AUTH_SIZE_P1 : SHA256_DIGEST_LENGTH);
 }
+#endif
 
-bool cp_has_permission(int permission) {
-  return permissions & permission;
-}
+void cp_set_permission(int new_permissions) { permissions |= new_permissions; }
 
-bool cp_has_associated_rp_id(void) {
-  return permissions_rp_id[0] == 1;
-}
+bool cp_has_permission(int permission) { return permissions & permission; }
+
+bool cp_has_associated_rp_id(void) { return permissions_rp_id[0] == 1; }
 
 bool cp_verify_rp_id(const uint8_t *rp_id_hash) {
   if (permissions_rp_id[0] == 0) return true;
@@ -216,15 +225,16 @@ key_type_t cose_alg_to_key_type(int alg) {
   case COSE_ALG_EDDSA:
     return ED25519;
   default:
-    if (ctap_sm2_attr.enabled && alg == ctap_sm2_attr.algo_id) return SM2;
+    if (alg == ctap_sm2_attr.algo_id) return SM2;
     return KEY_TYPE_PKC_END;
   }
 }
 
+bool cose_alg_is_mldsa65(int32_t alg) { return alg == COSE_ALG_ML_DSA_65; }
+
 static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
-  if (ret < 0) return ret;
-  return 0;
+  return ret == PRI_KEY_SIZE ? 0 : -1;
 }
 
 static int read_kh_key(uint8_t *kh_key) {
@@ -253,25 +263,34 @@ static void generate_credential_id_nonce_tag(credential_id *kh, uint8_t kh_key[K
   random_buffer(kh->nonce, CREDENTIAL_NONCE_SIZE);
   // private key = hmac-sha256(device private key, nonce)
   hmac_sha256(kh_key, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
-  DBG_MSG("Device key: ");
-  PRINT_HEX(kh_key, KH_KEY_SIZE);
-  DBG_MSG("Nonce: ");
-  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
-  DBG_MSG("Private key: ");
-  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // tag = left(hmac-sha256(private key, rpIdHash or appid), 16), stored in kh.tag via key.pub
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
   memcpy(kh->tag, key->pub, sizeof(kh->tag));
+  DBG_MSG("Credential tag generated\n");
+}
+
+enum {
+  CREDENTIAL_FLAG_CRED_PROTECT_MASK = 0x03,
+  CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT = 0x80,
+};
+
+uint8_t credential_cred_protect(const credential_id *kh) {
+  return kh->nonce[CREDENTIAL_NONCE_CP_POS] & CREDENTIAL_FLAG_CRED_PROTECT_MASK;
+}
+
+bool credential_third_party_payment(const credential_id *kh) {
+  return (kh->nonce[CREDENTIAL_NONCE_THIRD_PARTY_PAYMENT_POS] & CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT) != 0;
 }
 
 bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv) {
-  DBG_MSG("credProtect: %hhu\n", kh->nonce[CREDENTIAL_NONCE_CP_POS]);
-  if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
+  uint8_t cred_protect = credential_cred_protect(kh);
+  DBG_MSG("credProtect: %hhu\n", cred_protect);
+  if (cred_protect == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
     if (!uv && !with_cred_list) {
       DBG_MSG("credentialProtectionPolicy (0x02) failed\n");
       return false;
     }
-  } else if (kh->nonce[CREDENTIAL_NONCE_CP_POS] == CRED_PROTECT_VERIFICATION_REQUIRED) {
+  } else if (cred_protect == CRED_PROTECT_VERIFICATION_REQUIRED) {
     if (!uv) {
       DBG_MSG("credentialProtectionPolicy (0x03) failed\n");
       return false;
@@ -280,30 +299,36 @@ bool check_credential_protect_requirements(credential_id *kh, bool with_cred_lis
   return true;
 }
 
-int generate_key_handle(credential_id *kh, uint8_t *pubkey, int32_t alg_type, uint8_t dc, uint8_t cp) {
+int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp,
+                        bool third_party_payment) {
   ecc_key_t key;
   uint8_t kh_key[KH_KEY_SIZE];
 
   kh->alg_type = alg_type;
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  if (key_type == KEY_TYPE_PKC_END) {
+  if (key_type == KEY_TYPE_PKC_END && !cose_alg_is_mldsa65(alg_type)) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
   }
 
   kh->nonce[CREDENTIAL_NONCE_DC_POS] = dc;
-  kh->nonce[CREDENTIAL_NONCE_CP_POS] = cp;
+  kh->nonce[CREDENTIAL_NONCE_CP_POS] =
+      (cp & CREDENTIAL_FLAG_CRED_PROTECT_MASK) | (third_party_payment ? CREDENTIAL_FLAG_THIRD_PARTY_PAYMENT : 0);
 
   const int ret = read_kh_key(kh_key);
   if (ret < 0) return ret;
-  do {
+  do
     generate_credential_id_nonce_tag(kh, kh_key, &key);
-  } while (ecc_complete_key(key_type, &key) < 0);
+  while (!cose_alg_is_mldsa65(alg_type) && ecc_complete_key(key_type, &key) < 0);
   memzero(kh_key, KH_KEY_SIZE);
 
-  memcpy(pubkey, key.pub, PUBLIC_KEY_LENGTH[key_type]);
-  DBG_MSG("Public: ");
-  PRINT_HEX(pubkey, PUBLIC_KEY_LENGTH[key_type]);
+  if (cose_alg_is_mldsa65(alg_type)) {
+    memcpy(pubkey_or_seed, key.pri, PRI_KEY_SIZE);
+  } else {
+    memcpy(pubkey_or_seed, key.pub, PUBLIC_KEY_LENGTH[key_type]);
+    DBG_MSG("Public: ");
+    PRINT_HEX(pubkey_or_seed, PUBLIC_KEY_LENGTH[key_type]);
+  }
   memzero(&key, sizeof(key));
 
   return 0;
@@ -315,12 +340,6 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
 
   // get private key
   hmac_sha256(key->pub, KH_KEY_SIZE, kh->nonce, sizeof(kh->nonce), key->pri);
-  DBG_MSG("Device key: ");
-  PRINT_HEX(key->pub, KH_KEY_SIZE);
-  DBG_MSG("Nonce: ");
-  PRINT_HEX(kh->nonce, sizeof(kh->nonce));
-  DBG_MSG("Private key: ");
-  PRINT_HEX(key->pri, KH_KEY_SIZE);
   // get tag, store in key->pub, which should be verified first outside this function
   hmac_sha256(key->pri, KH_KEY_SIZE, kh->rp_id_hash, sizeof(kh->rp_id_hash), key->pub);
   if (memcmp_s(key->pub, kh->tag, sizeof(kh->tag)) != 0) {
@@ -331,19 +350,40 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
   return 0;
 }
 
-size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
+int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]) {
   ecc_key_t key;
-  int ret = read_device_pri_key(key.pri);
-  if (ret < 0) return 0;
-  ecc_sign(SECP256R1, &key, input, input_len, sig);
+  int ret = verify_key_handle(kh, &key);
+  if (ret != 0) return ret;
+  memcpy(seed, key.pri, PRI_KEY_SIZE);
   memzero(&key, sizeof(key));
-  return ecdsa_sig2ansi(PRI_KEY_SIZE, sig, sig);
+  return 0;
+}
+
+size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig) {
+  ecc_key_t key = {0};
+  int ret = read_device_pri_key(key.pri);
+  if (ret < 0) {
+    ERR_MSG("Failed to read device private key\n");
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  if (input_len != PRIVATE_KEY_LENGTH[SECP256R1]) {
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  const size_t sig_len = ecdsa_p256_sign_der(&key, input, sig);
+  if (sig_len == 0) {
+    ERR_MSG("Failed to sign with device private key\n");
+    memzero(&key, sizeof(key));
+    return 0;
+  }
+  memzero(&key, sizeof(key));
+  return sig_len;
 }
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  DBG_MSG("Sign key type: %d, private key: ", key_type);
-  PRINT_HEX(key->pri, PRIVATE_KEY_LENGTH[key_type]);
+  DBG_MSG("Sign key type: %d\n", key_type);
   if (key_type == KEY_TYPE_PKC_END) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
@@ -361,20 +401,22 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
     return SIGNATURE_LENGTH[key_type];
   }
   if (key_type == SM2) {
-    if (ecc_complete_key(key_type, key) < 0) {  // Compute Z requiring the public key
+    if (ecc_complete_key(key_type, key) < 0) { // Compute Z requiring the public key
       ERR_MSG("Failed to complete key\n");
       return -1;
     }
     uint8_t z[SM3_DIGEST_LENGTH];
+    sm3_ctx_t sm3;
     sm2_z(SM2_ID_DEFAULT, key, z);
-    sm3_init();
-    sm3_update(z, SM3_DIGEST_LENGTH);
-    sm3_update(input, len);
-    sm3_final(sig);
+    sm3_init(&sm3);
+    sm3_update(&sm3, z, SM3_DIGEST_LENGTH);
+    sm3_update(&sm3, input, len);
+    sm3_final(&sm3, sig);
   } else {
-    sha256_init();
-    sha256_update(input, len);
-    sha256_final(sig);
+    sha256_ctx_t sha256;
+    sha256_init(&sha256);
+    sha256_update(&sha256, input, len);
+    sha256_final(&sha256, sig);
   }
   DBG_MSG("Digest: ");
   PRINT_HEX(sig, PRIVATE_KEY_LENGTH[key_type]);
@@ -393,9 +435,11 @@ int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input
 
 int get_cert(uint8_t *buf) { return read_file(CTAP_CERT_FILE, buf, 0, MAX_CERT_SIZE); }
 
-bool has_pin(void) {
+int has_pin(void) {
   uint8_t tmp;
-  return read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1) != 0;
+  int ret = read_attr(CTAP_CERT_FILE, PIN_ATTR, &tmp, 1);
+  if (ret < 0) return ret;
+  return ret > 0;
 }
 
 int set_pin(uint8_t *buf, uint8_t length) {
@@ -428,7 +472,7 @@ int get_pin_retries(void) {
 
 int set_pin_retries(uint8_t ctr) { return write_attr(CTAP_CERT_FILE, PIN_CTR_ATTR, &ctr, 1); }
 
-int make_hmac_secret_output(uint8_t *nonce, uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
+int make_hmac_secret_output(const uint8_t *nonce, const uint8_t *salt, uint8_t len, uint8_t *output, bool uv) {
   uint8_t hmac_buf[SHA256_DIGEST_LENGTH];
   // use hmac-sha256(HE_KEY, credential_id::nonce) as CredRandom
   int err = read_he_key(hmac_buf);
@@ -454,8 +498,8 @@ int make_large_blob_key(uint8_t *nonce, uint8_t *output) {
   // make it different from hmac extension key
   output[0] ^= output[1];
   output[1] ^= output[2];
-  output[HE_KEY_SIZE-2] ^= output[0];
-  output[HE_KEY_SIZE-1] ^= output[3];
+  output[HE_KEY_SIZE - 2] ^= output[0];
+  output[HE_KEY_SIZE - 1] ^= output[3];
 
   hmac_sha256(output, HE_KEY_SIZE, nonce, CREDENTIAL_NONCE_SIZE, output);
   return 0;

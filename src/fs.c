@@ -6,9 +6,7 @@ static lfs_t lfs;
 
 static alignas(4) uint8_t file_buffer[LFS_CACHE_SIZE];
 
-static struct lfs_file_config file_config = {
-    .buffer = file_buffer
-};
+static struct lfs_file_config file_config = {.buffer = file_buffer};
 
 int fs_format(const struct lfs_config *cfg) { return lfs_format(&lfs, cfg); }
 
@@ -55,7 +53,7 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
-  err_close:
+err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
@@ -73,7 +71,7 @@ int append_file(const char *path, const void *buf, lfs_size_t len) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
-  err_close:
+err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
@@ -88,17 +86,24 @@ int truncate_file(const char *path, lfs_size_t len) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return 0;
-  err_close:
+err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
 
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
+#ifdef TEST
+  if (testmode_err_triggered(path, false)) return LFS_ERR_IO;
+#endif
   return lfs_getattr(&lfs, path, attr, buf, len);
 }
 
 int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len) {
   return lfs_setattr(&lfs, path, attr, buf, len);
+}
+
+int remove_attr(const char *path, uint8_t attr) {
+  return lfs_removeattr(&lfs, path, attr);
 }
 
 int get_file_size(const char *path) {
@@ -113,17 +118,46 @@ int get_file_size(const char *path) {
   err = lfs_file_close(&lfs, &f);
   if (err < 0) return err;
   return size;
-  err_close:
+err_close:
   lfs_file_close(&lfs, &f);
   return err;
 }
 
-int get_fs_size(void) { return (int) (lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
+int get_attr_size(const char *path, uint8_t attr) {
+  // lfs_getattr's read path does memset(buffer + n, 0, len - n) unconditionally;
+  // a NULL probe buffer trips UBSan's nonnull check even when len is 0.
+  static uint8_t attr_probe;
+  return lfs_getattr(&lfs, path, attr, &attr_probe, 0);
+}
+
+int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
 
 int get_fs_usage(void) {
   int blocks = lfs_fs_size(&lfs);
   if (blocks < 0) return blocks;
-  return (int) (lfs.cfg->block_size * blocks) / 1024;
+  return (int)(lfs.cfg->block_size * blocks) / 1024;
+}
+
+int get_fs_usage_bytes(void) {
+  int blocks = lfs_fs_size(&lfs);
+  if (blocks < 0) return blocks;
+  return (int)(lfs.cfg->block_size * (lfs_size_t)blocks);
+}
+
+int get_fs_free_bytes(void) {
+  int blocks = lfs_fs_size(&lfs);
+  if (blocks < 0) return blocks;
+  if (blocks >= (int)lfs.cfg->block_count) return 0;
+  return (int)(lfs.cfg->block_size * (lfs.cfg->block_count - (lfs_size_t)blocks));
+}
+
+int fs_has_free_space(lfs_size_t write_bytes, lfs_size_t reserve_bytes) {
+  int free_bytes = get_fs_free_bytes();
+  if (free_bytes < 0) return free_bytes;
+  if ((lfs_size_t)free_bytes < reserve_bytes) return 0;
+  return (lfs_size_t)free_bytes - reserve_bytes >= write_bytes;
 }
 
 int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }
+
+int remove_file(const char *path) { return lfs_remove(&lfs, path); }

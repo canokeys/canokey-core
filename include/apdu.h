@@ -12,13 +12,15 @@ typedef struct {
   uint8_t p2;
   uint32_t le; // Le can be 65536 bytes long as per ISO7816-3
   uint16_t lc;
-} __packed CAPDU;
+  uint8_t extended;
+  uint8_t pke_backed;
+} CAPDU;
 
 typedef struct {
   uint8_t *data;
   uint16_t len;
   uint16_t sw;
-} __packed RAPDU;
+} RAPDU;
 
 // Command status responses
 
@@ -68,6 +70,7 @@ typedef struct {
 #define APDU_CHAINING_NOT_LAST_BLOCK 0x01
 #define APDU_CHAINING_LAST_BLOCK 0x02
 #define APDU_CHAINING_OVERFLOW 0x03
+#define APDU_CHAINING_ERROR 0x04
 
 typedef struct {
   CAPDU capdu;
@@ -79,22 +82,65 @@ typedef struct {
   uint16_t sent;
 } RAPDU_CHAINING;
 
-extern uint8_t *global_buffer;
+typedef int (*APDU_MESSAGE_HANDLER)(const CAPDU *capdu, RAPDU *rapdu);
+typedef int (*APDU_RESPONSE_SOURCE_READ)(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+typedef void (*APDU_RESPONSE_SOURCE_CLOSE)(void *ctx);
+
+typedef struct {
+  uint32_t total_len;
+  uint32_t offset;
+  uint16_t sw;
+  APDU_RESPONSE_SOURCE_READ read;
+  void *ctx;
+} APDU_RESPONSE_SOURCE_VIEW;
+
+extern uint8_t *shared_io_buffer;
 
 enum {
-  BUFFER_OWNER_NONE = 1,
+  BUFFER_OWNER_NONE,
   BUFFER_OWNER_CCID,
   BUFFER_OWNER_WEBUSB,
-  BUFFER_OWNER_USBD, // store the configuration descriptor during a control transfer
+  BUFFER_OWNER_USBD, // store USB descriptors during a control transfer
+  BUFFER_OWNER_CTAPHID,
 };
 
-void init_apdu_buffer(void); // implement in ccid.c for reusing the ccid buffer
+void init_apdu_buffer(void);
 int acquire_apdu_buffer(uint8_t owner);
 int release_apdu_buffer(uint8_t owner);
 
 int build_capdu(CAPDU *capdu, const uint8_t *cmd, uint16_t len);
 int apdu_input(CAPDU_CHAINING *ex, const CAPDU *sh);
 int apdu_output(RAPDU_CHAINING *ex, RAPDU *sh);
+uint8_t apdu_is_get_response(const CAPDU *capdu);
+int apdu_process_streaming_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu, uint8_t is_get_response,
+                                   uint16_t le_limit, APDU_MESSAGE_HANDLER handler);
+void apdu_response_source_set(uint32_t total_len, uint16_t sw, APDU_RESPONSE_SOURCE_READ read,
+                              APDU_RESPONSE_SOURCE_CLOSE close, void *ctx);
+void apdu_response_source_clear(void);
+int apdu_response_source_active(void);
+const APDU_RESPONSE_SOURCE_VIEW *apdu_response_source_view(void);
+int apdu_response_source_output(RAPDU *rapdu, uint32_t le);
+int apdu_response_source_read_memory(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+int apdu_response_source_read_pke(void *ctx, uint32_t offset, uint8_t *buf, uint16_t len);
+int apdu_session_can_preempt(void);
+// Releases any in-flight FIDO chained-APDU reassembly state (PKE staging,
+// chaining flags, accumulator). Call from any path that drops the CTAP
+// session out from under an in-progress chain (e.g. cross-transport cleanup).
+void apdu_fido_chain_reset(void);
+// Drops any pending RAPDU (GET RESPONSE) chain. Call from paths that reset
+// the card-side APDU context out from under an in-progress chain (session
+// release/preemption, CCID slot power on/off).
+void apdu_rapdu_chain_reset(void);
+int acquire_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
+void release_apdu_interface(uint8_t session_owner, uint8_t buffer_owner);
+typedef enum {
+  APDU_TRANSPORT_CCID,
+  APDU_TRANSPORT_WEBUSB,
+  APDU_TRANSPORT_NFC,
+  APDU_TRANSPORT_HID,
+} apdu_transport_t;
+
+void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport);
 void process_apdu(CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE__APDU_H

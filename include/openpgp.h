@@ -19,6 +19,10 @@
 #define OPENPGP_INS_TERMINATE 0xE6
 #define OPENPGP_INS_ACTIVATE 0x44
 #define OPENPGP_INS_GET_CHALLENGE 0x84
+// Vendor extension: 00 F2 00 00 03 <PW1 retries> <RC retries> <PW3 retries>.
+// Requires PW3 authentication; resets PW1/PW3 to defaults and updates the
+// reset-code retry limit.
+#define OPENPGP_INS_SET_PIN_RETRIES 0xF2
 
 #define TAG_AID 0x4F
 #define TAG_LOGIN 0x5E
@@ -63,5 +67,6 @@
 void openpgp_poweroff(void);
 int openpgp_install(uint8_t reset);
 int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu);
+int openpgp_process_apdu_message(RAPDU_CHAINING *rapdu_chaining, CAPDU *capdu, RAPDU *rapdu);
 
 #endif // CANOKEY_CORE_OPENPGP_OPENPGP_H

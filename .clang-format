@@ -1,2 +1,3 @@
 ColumnLimit: 120
 AllowShortIfStatementsOnASingleLine: WithoutElse
+SortIncludes: Never

@@ -7,11 +7,12 @@
 
 ## Introduction
 
-Core implementations of an open-source secure key, with supports of:
+Core implementations of an open-source security key, supporting:
 
 * U2F / FIDO2 with ed25519 and HMAC-secret
 * OpenPGP Card V3.4, [Supported Algorithm List](https://docs.canokeys.org/userguide/openpgp/#supported-algorithm)
-* PIV (NIST SP 800-73-4)
+* PIV (NIST SP 800-73-4 plus CanoKey RSA, EC, Ed/X25519, SM2, and PQC
+  algorithm extensions)
 * HOTP / TOTP
 * NDEF
 
@@ -27,6 +28,27 @@ The WebUSB interface is used to configure the key via a web-based interface.
 ## Protocol
 
 Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).
+
+### PIN Retry Configuration Extensions
+
+This core implements vendor APDUs for configuring PIV and OpenPGP retry limits. Retry counts must be in the range `1..15`; `15` is the maximum because failed-verification warnings are returned as `63Cx`.
+
+The PIV management key in slot 9B uses AES-192 (`0x0A`) exclusively. Its factory value remains `010203040506070801020304050607080102030405060708`, matching YubiKey 5.7 and later.
+
+- PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
+- OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
+
+### PIV Algorithm Extensions
+
+The PIV applet supports RSA-2048, NIST P-256/P-384, and the following
+algorithm-extension key types: RSA-3072, RSA-4096, P-521, secp256k1, SM2,
+Ed25519, X25519, ML-DSA-65, and ML-KEM-768. Extension algorithm identifiers
+are stored in a card configuration record and may be changed through the
+authenticated algorithm-extension APDU (`00 EE`). Clients must read that
+record rather than assuming the documented default bytes. ML-DSA signs and
+ML-KEM decapsulates on card; ML-DSA verification and ML-KEM encapsulation are
+host-side responsibilities. The PIV random command (`00 84`) is available on
+firmware version 6.0 and newer.
 
 ## Porting
 
@@ -44,27 +66,21 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
       * A hardware timer with IRQ is required
 
-  If you need NFC, you also need to implement the following functions for FM11NC08:
-  
-  * `void fm_csn_low(void);`
-  * `void fm_csn_high(void);`
-  * `void spi_transmit(uint8_t *buf, uint8_t len);`
-  * `void spi_receive(uint8_t *buf, uint8_t len);`
-
-  or the following functions if you use FM11NT08:
+  If you need NFC, you also need to implement the following functions for FM11NT08:
 
   * `void fm_csn_low(void);`
   * `void fm_csn_high(void);`
   * `void i2c_start(void);`
   * `void i2c_stop(void);`
+  * `void i2c_bus_recover(void);`
   * `void scl_delay(void);`
-  * `uint8_t i2c_read_ack(void);`
+  * `fm_status_t i2c_read_ack(void);`
   * `void i2c_send_ack(void);`
   * `void i2c_send_nack(void);`
-  * `bool i2c_write_byte(uint8_t data);`
+  * `fm_status_t i2c_write_byte(uint8_t data);`
   * `uint8_t i2c_read_byte(void);`
 
-2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
+2. You must provide both `random32` and `random_buffer` in `rand.h`.
 
 3. You need to configure the littlefs properly.
 
@@ -78,18 +94,23 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 ## Fuzz testing
 
-Install honggfuzz from source first, then enable fuzz tests:
+Fuzzing uses AFL++ with ASan/UBSan. Instrumented builds require GNU GCC,
+normally through `afl-gcc-fast`:
 
 ```bash
-cd build
-cmake .. -DENABLE_FUZZING=ON -DENABLE_TESTS=ON -DCMAKE_C_COMPILER=hfuzz-clang -DCMAKE_BUILD_TYPE=Debug
+cmake -S . -B build -DENABLE_FUZZING=ON -DCMAKE_C_COMPILER=afl-gcc-fast -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target afl-fuzzer --parallel
 ```
 
-Then, run fuzzing tests:
+Then, run fuzzing tests (`${id}`: empty = CCID transport, 0..5 = PIV, CTAP,
+OATH, Admin, OpenPGP, NDEF):
 
 ```bash
-./fuzzer/run-fuzzer.sh honggfuzz ${id}
+CANOKEY_FUZZ_APPLET=${id} afl-fuzz -i fuzzing/applet${id}/data -o fuzzing/applet${id}/findings -- ./build/afl-fuzzer
 ```
+
+Crash artifacts are replayed directly with the same binary:
+`CANOKEY_FUZZ_APPLET=${id} ./build/afl-fuzzer < crash-file`.
 
 
 ## License

@@ -2,6 +2,8 @@
 #ifndef _DEVICE_H_
 #define _DEVICE_H_
 
+#include <stdbool.h>
+
 #include "common.h"
 #include "nfc.h"
 
@@ -15,6 +17,13 @@
 
 #define WAIT_ENTRY_CCID 0
 #define WAIT_ENTRY_CTAPHID 1
+
+typedef enum {
+  DEVICE_APPLET_SESSION_NONE = 0,
+  DEVICE_APPLET_SESSION_CCID = 1,
+  DEVICE_APPLET_SESSION_CTAPHID = 2,
+  DEVICE_APPLET_SESSION_WEBUSB = 3,
+} device_applet_session_owner_t;
 
 typedef enum {
   FM_STATUS_OK = 0,
@@ -70,12 +79,10 @@ void fm_csn_low(void);
  * Disable FM chip by pull up CSN
  */
 void fm_csn_high(void);
-#if NFC_CHIP == NFC_CHIP_FM11NC
-void spi_transmit(const uint8_t *buf, uint8_t len);
-void spi_receive(uint8_t *buf, uint8_t len);
-#elif NFC_CHIP == NFC_CHIP_FM11NT
+#if NFC_CHIP == NFC_CHIP_FM11NT
 void i2c_start(void);
 void i2c_stop(void);
+void i2c_bus_recover(void);
 void scl_delay(void);
 fm_status_t i2c_read_ack(void);
 void i2c_send_ack(void);
@@ -85,11 +92,14 @@ uint8_t i2c_read_byte(void);
 #endif
 
 // only for test
+#define TESTMODE_ERR_WRITE 0
+#define TESTMODE_ERR_READ 1
+
 int testmode_emulate_user_presence(void);
 int testmode_get_is_nfc_mode(void);
 void testmode_set_initial_ticks(uint32_t ticks);
 void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data);
-bool testmode_err_triggered(const char* filename, bool file_wr);
+bool testmode_err_triggered(const char *filename, bool file_wr);
 
 // -----------------------------------------------------------------------------------
 
@@ -98,8 +108,18 @@ uint8_t wait_for_user_presence(uint8_t entry);
 int strong_user_presence_test(void);
 int send_keepalive_during_processing(uint8_t entry);
 void device_loop(void);
+int device_applet_session_acquire(device_applet_session_owner_t owner);
+void device_applet_session_touch(device_applet_session_owner_t owner);
+void device_applet_session_release(device_applet_session_owner_t owner);
+int device_applet_session_reset(device_applet_session_owner_t owner);
+device_applet_session_owner_t device_applet_session_owner(void);
+#if ENABLE_NFC
 uint8_t is_nfc(void);
 void set_nfc_state(uint8_t state);
+#else
+static inline uint8_t is_nfc(void) { return 0; }
+static inline void set_nfc_state(uint8_t state) { (void)state; }
+#endif
 uint8_t get_touch_result(void);
 void set_touch_result(uint8_t result);
 void device_update_led(void);
@@ -119,6 +139,7 @@ void device_init(void);
 void stop_blinking(void);
 uint8_t device_is_blinking(void);
 bool device_allow_kbd_touch(void);
+#if ENABLE_NFC
 void fm11_init(void);
 fm_status_t fm_read_regs(uint16_t reg, uint8_t *buf, uint8_t len);
 fm_status_t fm_write_regs(uint16_t reg, const uint8_t *buf, uint8_t len);
@@ -130,6 +151,9 @@ fm_status_t fm_write_fifo(uint8_t *buf, uint8_t len);
 fm_status_t fm11nt_read(uint16_t addr, uint8_t *buf, uint8_t len);
 fm_status_t fm11nt_write(uint16_t addr, const uint8_t *buf, uint8_t len);
 uint8_t fm_crc8(const uint8_t *data, const uint8_t data_length);
+#endif
+#else
+static inline void fm11_init(void) {}
 #endif
 
 #endif // _DEVICE_H_

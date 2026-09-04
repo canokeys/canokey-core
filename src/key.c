@@ -3,14 +3,88 @@
 #include "memzero.h"
 #include <common.h>
 #include <key.h>
+#include <ml-dsa-65.h>
+#include <rand.h>
 
 #define KEY_META_ATTR 0xFF
 #define CEIL_DIV_SQRT2 0xB504F334
 #define MAX_KEY_TEMPLATE_LENGTH 0x16
 
+const uint8_t CK_OPENPGP_ALGO_ATTR[CK_OPENPGP_ALGO_ATTR_COUNT][CK_OPENPGP_ALGO_ATTR_SIZE] = {
+    [SECP256R1] = {9, 0x00, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07},
+    [SECP256K1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x0A},
+    [SECP384R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x22},
+    [SM2] = {11, 0x00, 0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82, 0x2D},
+    [ED25519] = {10, 0x16, 0x2B, 0x06, 0x01, 0x04, 0x01, 0xDA, 0x47, 0x0F, 0x01},
+    [X25519] = {11, 0x12, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01},
+    [RSA2048] = {6, 0x01, 0x08, 0x00, 0x00, 0x20, 0x02},
+    [RSA3072] = {6, 0x01, 0x0C, 0x00, 0x00, 0x20, 0x02},
+    [RSA4096] = {6, 0x01, 0x10, 0x00, 0x00, 0x20, 0x02},
+    [SECP521R1] = {6, 0x00, 0x2B, 0x81, 0x04, 0x00, 0x23},
+};
+
+void ck_key_init_empty(ck_key_t *key, key_type_t type, key_usage_t usage, pin_policy_t pin_policy,
+                       touch_policy_t touch_policy) {
+  memzero(key, sizeof(*key));
+  key->meta.type = type;
+  key->meta.origin = KEY_ORIGIN_NOT_PRESENT;
+  key->meta.usage = usage;
+  key->meta.pin_policy = pin_policy;
+  key->meta.touch_policy = touch_policy;
+}
+
+int ck_curve_oid(key_type_t type, const uint8_t **oid, uint8_t *oid_len) {
+  if (!IS_SHORT_WEIERSTRASS(type)) return -1;
+  const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[type];
+  const uint8_t offset = type == SM2 ? 4 : 2;
+  *oid_len = type == SM2 ? attr[3] : attr[0] - 1u;
+  *oid = attr + offset;
+  return 0;
+}
+
 // TODO: include_length is always TRUE
+int ck_encoded_public_key_length(key_type_t type, bool include_length) {
+  if (type >= KEY_TYPE_PKC_END) return -1;
+  const size_t key_len = PUBLIC_KEY_LENGTH[type];
+
+  switch (type) {
+  case SECP256R1:
+  case SECP256K1:
+  case SECP384R1:
+  case SM2:
+    return (include_length ? 1 : 0) + 3 + key_len;
+
+  case SECP521R1:
+    return (include_length ? 2 : 0) + 4 + key_len;
+
+  case ED25519:
+  case X25519:
+    return (include_length ? 1 : 0) + 2 + key_len;
+
+  case RSA2048:
+  case RSA3072:
+  case RSA4096:
+    return (include_length ? 3 : 0) + 6 + key_len + E_LENGTH;
+
+  case MLDSA65:
+    return (include_length ? 3 : 0) + 4 + key_len;
+
+  case MLKEM768:
+    return (include_length ? 3 : 0) + 4 + key_len;
+
+  default:
+    return -1;
+  }
+}
+
 int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   int off = 0;
+
+  if ((unsigned)key->meta.type >= KEY_TYPE_PKC_END) {
+    return -1;
+  }
+
+  const size_t key_len = PUBLIC_KEY_LENGTH[key->meta.type];
 
   switch (key->meta.type) {
   case SECP256R1:
@@ -18,40 +92,40 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   case SECP384R1:
   case SM2:
     if (include_length) {
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 3; // tag, length, and 0x04
+      buf[off++] = key_len + 3; // tag, length, and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
+    buf[off++] = key_len + 1; // 0x04
     buf[off++] = 0x04;
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    memcpy(&buf[off], key->ecc.pub, key_len);
+    off += key_len;
     break;
 
   case SECP521R1:
     if (include_length) {
-      buf[off++] = 0x81; // Two-byte length
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 4; // tag, length (two bytes), and 0x04
+      buf[off++] = 0x81;        // Two-byte length
+      buf[off++] = key_len + 4; // tag, length (two bytes), and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = 0x81; // Two-byte length
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 1; // 0x04
+    buf[off++] = 0x81;        // Two-byte length
+    buf[off++] = key_len + 1; // 0x04
     buf[off++] = 0x04;
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    memcpy(&buf[off], key->ecc.pub, key_len);
+    off += key_len;
     break;
 
   case ED25519:
   case X25519:
     if (include_length) {
-      buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type] + 2; // tag, length
+      buf[off++] = key_len + 2; // tag, length
     }
     buf[off++] = 0x86;
-    buf[off++] = PUBLIC_KEY_LENGTH[key->meta.type];
-    memcpy(&buf[off], key->ecc.pub, PUBLIC_KEY_LENGTH[key->meta.type]);
+    buf[off++] = key_len;
+    memcpy(&buf[off], key->ecc.pub, key_len);
     if (key->meta.type == X25519) {
       swap_big_number_endian(&buf[off]); // Public key of x25519 is encoded in little endian
     }
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    off += key_len;
     break;
 
   case RSA2048:
@@ -60,19 +134,36 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
     if (include_length) { // 3-byte length
       buf[off++] = 0x82;
       // 6 = modulus: tag (1), length (3); exponent: tag (1), length (1)
-      buf[off++] = HI(6 + PUBLIC_KEY_LENGTH[key->meta.type] + E_LENGTH);
-      buf[off++] = LO(6 + PUBLIC_KEY_LENGTH[key->meta.type] + E_LENGTH);
+      buf[off++] = HI(6 + key_len + E_LENGTH);
+      buf[off++] = LO(6 + key_len + E_LENGTH);
     }
     buf[off++] = 0x81; // modulus
     buf[off++] = 0x82;
-    buf[off++] = HI(PUBLIC_KEY_LENGTH[key->meta.type]);
-    buf[off++] = LO(PUBLIC_KEY_LENGTH[key->meta.type]);
-    rsa_get_public_key(&key->rsa, &buf[off]);
-    off += PUBLIC_KEY_LENGTH[key->meta.type];
+    buf[off++] = HI(key_len);
+    buf[off++] = LO(key_len);
+    if (rsa_get_public_key(&key->rsa, &buf[off]) < 0) {
+      DBG_MSG("RSA public key derive failed: type=%u nbits=%u\n", key->meta.type, key->rsa.nbits);
+      return -1;
+    }
+    off += key_len;
     buf[off++] = 0x82; // exponent
     buf[off++] = E_LENGTH;
     memcpy(&buf[off], key->rsa.e, E_LENGTH);
     off += E_LENGTH;
+    break;
+
+  case MLDSA65:
+    if (include_length) {
+      buf[off++] = 0x82;
+      buf[off++] = HI(4 + MLDSA_PK_BYTES);
+      buf[off++] = LO(4 + MLDSA_PK_BYTES);
+    }
+    buf[off++] = 0x86;
+    buf[off++] = 0x82;
+    buf[off++] = HI(MLDSA_PK_BYTES);
+    buf[off++] = LO(MLDSA_PK_BYTES);
+    if (ml_dsa_65_keygen(&buf[off], NULL, NULL, key->mldsa.seed) < 0) return -1;
+    off += MLDSA_PK_BYTES;
     break;
 
   default:
@@ -89,11 +180,13 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
     switch (*buf++) {
     case 0xAA:
       DBG_MSG("May have pin policy\n");
-      if (buf < end && *buf++ != 0x01) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf++ != 0x01) {
         DBG_MSG("Wrong length for pin policy\n");
         return KEY_ERR_LENGTH;
       }
-      if (buf < end && (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER)) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER) {
         DBG_MSG("Wrong data for pin policy\n");
         return KEY_ERR_DATA;
       }
@@ -102,17 +195,19 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
 
     case 0xAB:
       DBG_MSG("May have touch policy\n");
-      if (buf < end && *buf++ != 0x01) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf++ != 0x01) {
         DBG_MSG("Wrong length for touch policy\n");
         return KEY_ERR_LENGTH;
       }
-      if (buf < end && (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER)) {
+      if (buf == end) return KEY_ERR_LENGTH;
+      if (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER) {
         DBG_MSG("Wrong data for touch policy\n");
         return KEY_ERR_DATA;
       }
       key->meta.touch_policy = *buf++;
       break;
-    
+
     default:
       buf = end;
       break;
@@ -122,87 +217,10 @@ int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
   return 0;
 }
 
-int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
-  memzero(key->data, sizeof(rsa_key_t));
-  key->meta.origin = KEY_ORIGIN_IMPORTED;
-
-  const uint8_t *p = buf;
-
-  switch (key->meta.type) {
-  case SECP256R1:
-  case SECP256K1:
-  case SECP384R1:
-  case SM2:
-  case ED25519:
-  case X25519: {
-
-    if (buf_len < PRIVATE_KEY_LENGTH[key->meta.type] + 2) {
-      DBG_MSG("too short\n");
-      return KEY_ERR_LENGTH;
-    }
-    if (*p != 0x06 && !(key->meta.type == ED25519 && *p == 0x07) && !(key->meta.type == X25519 && *p == 0x08)) {
-      DBG_MSG("invalid tag\n");
-      return KEY_ERR_DATA;
-    }
-    p++;
-    if (*p++ != PRIVATE_KEY_LENGTH[key->meta.type]) {
-      DBG_MSG("invalid private key length\n");
-      return KEY_ERR_LENGTH;
-    }
-    memcpy(key->ecc.pri, p, PRIVATE_KEY_LENGTH[key->meta.type]);
-    if (key->meta.type == X25519) {
-      swap_big_number_endian(key->ecc.pri); // Private key of x25519 is encoded in little endian
-    }
-    if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_DATA;
-    }
-    if (ecc_complete_key(key->meta.type, &key->ecc) < 0) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_PROC;
-    }
-    p += PRIVATE_KEY_LENGTH[key->meta.type];
-    break;
-  }
-
-  case RSA2048:
-  case RSA3072:
-  case RSA4096: {
-    int fail;
-    size_t length_size;
-
-    key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
-    *(uint32_t *)key->rsa.e = htobe32(65537);
-
-    uint8_t *data_ptr[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
-
-    for (int i = 1; i <= 5; ++i) {
-      if ((size_t)(p - buf) >= buf_len) return KEY_ERR_LENGTH;
-      if (*p++ != i) return KEY_ERR_DATA;
-      const size_t len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-      if (fail) return KEY_ERR_LENGTH;
-      if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-      p += length_size;
-      memcpy(data_ptr[i - 1] + (PRIVATE_KEY_LENGTH[key->meta.type] - len), p, len);
-      p += len;
-    }
-
-    if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
-      memzero(key, sizeof(ck_key_t));
-      return KEY_ERR_DATA;
-    }
-
-    break;
-  }
-
-  default:
-    return -1;
-  }
-
-  return ck_parse_piv_policies(key, p, buf + buf_len - p);
-}
-
 /*
+ * OpenPGP key import wire layout consumed by the streaming parser
+ * (ck_parse_openpgp_stream_*) below.
+ *
  * RSA:
  * 7F48 xx Cardholder private key template
  *         91 xx e
@@ -219,59 +237,225 @@ int ck_parse_piv(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
  *         99 xx public key (optional)
  * 5F48 xx Concatenation of key data as defined in DO 7F48
  */
-int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
+enum {
+  CK_PGP_STREAM_TAG_7F,
+  CK_PGP_STREAM_TAG_48,
+  CK_PGP_STREAM_TEMPLATE_LEN,
+  CK_PGP_STREAM_TEMPLATE_TAG,
+  CK_PGP_STREAM_TEMPLATE_VALUE_LEN,
+  CK_PGP_STREAM_TAG_5F,
+  CK_PGP_STREAM_TAG_48_2,
+  CK_PGP_STREAM_DATA_LEN,
+  CK_PGP_STREAM_DATA,
+  CK_PGP_STREAM_DONE,
+};
+
+static int ck_openpgp_stream_template_len(ck_openpgp_stream_t *st, ck_key_t *key, uint16_t len) {
+  if ((uint32_t)st->processed + len > st->total_len) return KEY_ERR_LENGTH;
+
+  if (st->phase == CK_PGP_STREAM_TEMPLATE_LEN) {
+    if (len > MAX_KEY_TEMPLATE_LENGTH) return KEY_ERR_DATA;
+    st->template_end = st->processed + len;
+    st->comp_idx = 0;
+    st->data_len = 0;
+    st->phase = CK_PGP_STREAM_TEMPLATE_TAG;
+    return 0;
+  }
+
+  if (st->phase != CK_PGP_STREAM_TEMPLATE_VALUE_LEN) return KEY_ERR_DATA;
+
+  if (st->rsa) {
+    const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+    const size_t expected_exact[] = {E_LENGTH, pri_len, pri_len, 0, 0, 0};
+    if (st->comp_idx >= 6) return KEY_ERR_DATA;
+    if (expected_exact[st->comp_idx] > 0 ? len != expected_exact[st->comp_idx] : len > pri_len) return KEY_ERR_DATA;
+  } else {
+    if (st->comp_idx == 0) {
+      if (len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
+    } else if (st->comp_idx == 1) {
+      if (len > PUBLIC_KEY_LENGTH[key->meta.type] + 1) return KEY_ERR_DATA;
+    } else {
+      return KEY_ERR_DATA;
+    }
+  }
+
+  st->comp_len[st->comp_idx++] = len;
+  st->data_len += len;
+  if (st->processed == st->template_end) {
+    if (st->rsa ? st->comp_idx != 6 : st->comp_idx == 0) return KEY_ERR_DATA;
+    st->comp_idx = 0;
+    st->phase = CK_PGP_STREAM_TAG_5F;
+  } else if (st->processed < st->template_end) {
+    st->phase = CK_PGP_STREAM_TEMPLATE_TAG;
+  } else {
+    return KEY_ERR_DATA;
+  }
+  return 0;
+}
+
+static void ck_openpgp_stream_skip_empty_components(ck_openpgp_stream_t *st) {
+  while (st->phase == CK_PGP_STREAM_DATA) {
+    const uint8_t limit = st->rsa ? 6 : (st->comp_len[1] == 0 ? 1 : 2);
+    if (st->comp_idx >= limit) {
+      st->phase = CK_PGP_STREAM_DONE;
+      return;
+    }
+    if (st->comp_len[st->comp_idx] != 0) return;
+    DBG_MSG("OpenPGP stream skip empty component idx=%u\n", st->comp_idx);
+    st->comp_idx++;
+  }
+}
+
+static int ck_openpgp_stream_copy_data(ck_openpgp_stream_t *st, ck_key_t *key, uint8_t b) {
+  ck_openpgp_stream_skip_empty_components(st);
+  if (st->phase != CK_PGP_STREAM_DATA) return KEY_ERR_DATA;
+
+  if (st->rsa) {
+    const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+    uint8_t *dests[] = {key->rsa.e, key->rsa.p, key->rsa.q, key->rsa.qinv, key->rsa.dp, key->rsa.dq};
+    if (st->comp_idx >= 6) return KEY_ERR_DATA;
+    const uint16_t off = st->comp_idx >= 3 ? pri_len - st->comp_len[st->comp_idx] + st->comp_off : st->comp_off;
+    const uint16_t limit = st->comp_idx == 0 ? E_LENGTH : pri_len;
+    if (off >= limit) {
+      DBG_MSG("OpenPGP stream OOB: type=%u idx=%u off=%u limit=%u comp_len=%u comp_off=%u processed=%u\n",
+              key->meta.type, st->comp_idx, off, limit, st->comp_len[st->comp_idx], st->comp_off, st->processed);
+      return KEY_ERR_DATA;
+    }
+    if ((st->comp_off & 0x3F) == 0) {
+      DBG_MSG("OpenPGP stream copy: type=%u idx=%u off=%u/%u processed=%u\n", key->meta.type, st->comp_idx,
+              st->comp_off, st->comp_len[st->comp_idx], st->processed);
+    }
+    dests[st->comp_idx][off] = b;
+  } else {
+    if (st->comp_idx == 0) {
+      const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+      const uint16_t off = pri_len - st->comp_len[0] + st->comp_off;
+      if (off >= pri_len) {
+        DBG_MSG("OpenPGP stream OOB: type=%u idx=%u off=%u limit=%u comp_len=%u comp_off=%u processed=%u\n",
+                key->meta.type, st->comp_idx, off, (unsigned)pri_len, st->comp_len[st->comp_idx], st->comp_off,
+                st->processed);
+        return KEY_ERR_DATA;
+      }
+      key->ecc.pri[off] = b;
+    } else if (st->comp_idx != 1 || st->comp_len[1] == 0) {
+      return KEY_ERR_DATA;
+    }
+  }
+
+  if (++st->comp_off == st->comp_len[st->comp_idx]) {
+    st->comp_off = 0;
+    st->comp_idx++;
+    DBG_MSG("OpenPGP stream component done: type=%u next_idx=%u processed=%u\n", key->meta.type, st->comp_idx,
+            st->processed);
+    if (st->rsa ? st->comp_idx == 6 : st->comp_idx == (st->comp_len[1] == 0 ? 1 : 2)) {
+      st->phase = CK_PGP_STREAM_DONE;
+    } else {
+      ck_openpgp_stream_skip_empty_components(st);
+    }
+  }
+  return 0;
+}
+
+void ck_parse_openpgp_stream_init(ck_openpgp_stream_t *st, ck_key_t *key, size_t total_len) {
+  memzero(st, sizeof(*st));
   memzero(key->data, sizeof(rsa_key_t));
   key->meta.origin = KEY_ORIGIN_IMPORTED;
+  st->total_len = total_len > UINT16_MAX ? UINT16_MAX : (uint16_t)total_len;
+  st->rsa = IS_RSA(key->meta.type);
+  if (st->rsa) key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
+}
 
-  const uint8_t *p = buf;
-  int fail;
-  size_t length_size;
+int ck_parse_openpgp_stream_update(ck_openpgp_stream_t *st, ck_key_t *key, const uint8_t *buf, size_t buf_len,
+                                   bool final) {
+  if (st->total_len > CK_KEY_IMPORT_MAX_LENGTH) return KEY_ERR_LENGTH;
+  if (!IS_RSA(key->meta.type) && !IS_ECC(key->meta.type)) return -1;
 
-  // Cardholder private key template
-  if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
-  if (*p++ != 0x7F || *p++ != 0x48) return KEY_ERR_DATA;
-  size_t len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-  if (fail) return KEY_ERR_LENGTH;
-  if (len > MAX_KEY_TEMPLATE_LENGTH) return KEY_ERR_DATA;
-  p += length_size;
-  const uint8_t *data_tag = p + len; // saved for tag 5F48
+  for (size_t i = 0; i < buf_len; ++i) {
+    if (st->processed >= st->total_len || st->phase == CK_PGP_STREAM_DONE) return KEY_ERR_DATA;
+    const uint8_t b = buf[i];
+    st->processed++;
 
-  switch (key->meta.type) {
-  case SECP256R1:
-  case SECP256K1:
-  case SECP384R1:
-  case SECP521R1:
-  case SM2:
-  case ED25519:
-  case X25519: {
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x92) return KEY_ERR_DATA;
-    const size_t data_pri_key_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (data_pri_key_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    size_t data_pub_key_len = 0; // this is optional
-    if (p < data_tag) {
-      if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-      if (*p++ == 0x99) {
-        data_pub_key_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-        if (fail) return KEY_ERR_LENGTH;
-        if (data_pub_key_len > PUBLIC_KEY_LENGTH[key->meta.type] + 1) return KEY_ERR_DATA;
+    switch (st->phase) {
+    case CK_PGP_STREAM_TAG_7F:
+      if (b != 0x7F) return KEY_ERR_DATA;
+      st->phase = CK_PGP_STREAM_TAG_48;
+      break;
+    case CK_PGP_STREAM_TAG_48:
+      if (b != 0x48) return KEY_ERR_DATA;
+      st->phase = CK_PGP_STREAM_TEMPLATE_LEN;
+      break;
+    case CK_PGP_STREAM_TEMPLATE_LEN:
+    case CK_PGP_STREAM_TEMPLATE_VALUE_LEN: {
+      uint16_t len;
+      int ret = tlv_len_stream_feed(&st->tlv_len, b, &len);
+      if (ret < 0) return ret;
+      if (ret > 0) {
+        ret = ck_openpgp_stream_template_len(st, key, len);
+        if (ret < 0) return ret;
+        if (ret == 0 && st->phase == CK_PGP_STREAM_TAG_5F) {
+          DBG_MSG("OpenPGP stream template done: type=%u lens=%u,%u,%u,%u,%u,%u data_len=%u processed=%u\n",
+                  key->meta.type, st->comp_len[0], st->comp_len[1], st->comp_len[2], st->comp_len[3], st->comp_len[4],
+                  st->comp_len[5], st->data_len, st->processed);
+        }
       }
+      break;
     }
+    case CK_PGP_STREAM_TEMPLATE_TAG:
+      if (st->rsa) {
+        static const uint8_t rsa_tags[] = {0x91, 0x92, 0x93, 0x94, 0x95, 0x96};
+        if (st->comp_idx >= sizeof(rsa_tags) || b != rsa_tags[st->comp_idx]) return KEY_ERR_DATA;
+      } else if ((st->comp_idx == 0 && b != 0x92) || (st->comp_idx == 1 && b != 0x99)) {
+        return KEY_ERR_DATA;
+      }
+      st->phase = CK_PGP_STREAM_TEMPLATE_VALUE_LEN;
+      break;
+    case CK_PGP_STREAM_TAG_5F:
+      if (b != 0x5F) return KEY_ERR_DATA;
+      st->phase = CK_PGP_STREAM_TAG_48_2;
+      break;
+    case CK_PGP_STREAM_TAG_48_2:
+      if (b != 0x48) return KEY_ERR_DATA;
+      st->phase = CK_PGP_STREAM_DATA_LEN;
+      break;
+    case CK_PGP_STREAM_DATA_LEN: {
+      uint16_t len;
+      int ret = tlv_len_stream_feed(&st->tlv_len, b, &len);
+      if (ret < 0) return ret;
+      if (ret > 0) {
+        if (len != st->data_len) return KEY_ERR_DATA;
+        st->comp_idx = 0;
+        st->comp_off = 0;
+        st->phase = CK_PGP_STREAM_DATA;
+        DBG_MSG("OpenPGP stream data start: type=%u len=%u processed=%u\n", key->meta.type, len, st->processed);
+        ck_openpgp_stream_skip_empty_components(st);
+      }
+      break;
+    }
+    case CK_PGP_STREAM_DATA: {
+      int ret = ck_openpgp_stream_copy_data(st, key, b);
+      if (ret < 0) return ret;
+      break;
+    }
+    default:
+      return KEY_ERR_DATA;
+    }
+  }
 
-    // Concatenation of key data
-    p = data_tag;
-    if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail || len != data_pri_key_len + data_pub_key_len) return KEY_ERR_DATA;
-    p += length_size;
-    const int n_leading_zeros = PRIVATE_KEY_LENGTH[key->meta.type] - data_pri_key_len;
-    if ((size_t)(p + data_pri_key_len - buf) > buf_len) return KEY_ERR_LENGTH;
-    memcpy(key->ecc.pri + n_leading_zeros, p, data_pri_key_len);
+  if (!final) return 0;
+  if (st->processed != st->total_len || st->phase != CK_PGP_STREAM_DONE) return KEY_ERR_LENGTH;
 
+  if (st->rsa) {
+    if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_DATA;
+    }
+    // Reject inconsistent CRT components at import so invalid keys never
+    // reach storage (hardware rejects them at use time otherwise).
+    if (rsa_check_crt(&key->rsa) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_DATA;
+    }
+  } else {
     if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
@@ -280,97 +464,184 @@ int ck_parse_openpgp(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_PROC;
     }
-
-    return 0;
   }
+  return 1;
+}
 
-  case RSA2048:
-  case RSA3072:
-  case RSA4096: {
-    // 0x91: e
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x91) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != E_LENGTH) return KEY_ERR_DATA;
-    p += length_size;
+enum {
+  CK_PIV_STREAM_TAG,
+  CK_PIV_STREAM_LEN,
+  CK_PIV_STREAM_DATA,
+  CK_PIV_STREAM_POLICY_TAG,
+  CK_PIV_STREAM_POLICY_LEN,
+  CK_PIV_STREAM_POLICY_VALUE,
+  CK_PIV_STREAM_IGNORE_REST,
+};
 
-    // 0x92: p
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x92) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x93: q
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x93) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x94: qinv, may be less than p/q's length
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x94) return KEY_ERR_DATA;
-    const size_t qinv_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (qinv_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x94: dp, may be less than p/q's length
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x95) return KEY_ERR_DATA;
-    const size_t dp_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (dp_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-    p += length_size;
-
-    // 0x94: dq, may be less than p/q's length
-    if ((size_t)(p + 1 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x96) return KEY_ERR_DATA;
-    const size_t dq_len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (dq_len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
-
-    // Concatenation of key data
-    p = data_tag;
-    if ((size_t)(p + 2 - buf) >= buf_len) return KEY_ERR_LENGTH;
-    if (*p++ != 0x5F || *p++ != 0x48) return KEY_ERR_DATA;
-    len = tlv_get_length_safe(p, buf_len - (p - buf), &fail, &length_size);
-    if (fail) return KEY_ERR_LENGTH;
-    if (len != PRIVATE_KEY_LENGTH[key->meta.type] * 2 + qinv_len + dp_len + dq_len + E_LENGTH) return KEY_ERR_DATA;
-    p += length_size;
-
-    if ((size_t)(p + len - buf) > buf_len) return KEY_ERR_LENGTH;
+void ck_parse_piv_stream_init(ck_piv_stream_t *st, ck_key_t *key) {
+  memzero(st, sizeof(*st));
+  memzero(key->data, sizeof(rsa_key_t));
+  key->meta.origin = KEY_ORIGIN_IMPORTED;
+  st->rsa = IS_RSA(key->meta.type);
+  st->mldsa = IS_MLDSA(key->meta.type);
+  st->mlkem = IS_MLKEM(key->meta.type);
+  if (st->rsa) {
     key->rsa.nbits = PRIVATE_KEY_LENGTH[key->meta.type] * 16;
-    memcpy(key->rsa.e, p, E_LENGTH);
-    p += E_LENGTH;
-    memcpy(key->rsa.p, p, PRIVATE_KEY_LENGTH[key->meta.type]);
-    p += PRIVATE_KEY_LENGTH[key->meta.type];
-    memcpy(key->rsa.q, p, PRIVATE_KEY_LENGTH[key->meta.type]);
-    p += PRIVATE_KEY_LENGTH[key->meta.type];
-    memcpy(key->rsa.qinv + PRIVATE_KEY_LENGTH[key->meta.type] - qinv_len, p, qinv_len);
-    p += qinv_len;
-    memcpy(key->rsa.dp + PRIVATE_KEY_LENGTH[key->meta.type] - dp_len, p, dp_len);
-    p += dp_len;
-    memcpy(key->rsa.dq + PRIVATE_KEY_LENGTH[key->meta.type] - dq_len, p, dq_len);
+    *(uint32_t *)key->rsa.e = htobe32(65537);
+  }
+}
+
+static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
+  if (st->phase != CK_PIV_STREAM_POLICY_TAG && st->phase != CK_PIV_STREAM_IGNORE_REST) return KEY_ERR_LENGTH;
+
+  if (st->rsa) {
+    if (st->comp_idx != 5) return KEY_ERR_LENGTH;
     if (be32toh(*(uint32_t *)key->rsa.p) < CEIL_DIV_SQRT2 || be32toh(*(uint32_t *)key->rsa.q) < CEIL_DIV_SQRT2) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_DATA;
     }
-
-    return 0;
+    // Same import-time CRT consistency validation as the OpenPGP path.
+    if (rsa_check_crt(&key->rsa) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_DATA;
+    }
+  } else if (st->mldsa) {
+    // Seed-based import: every 32-byte value is a valid ML-DSA seed (the key
+    // is deterministically expanded from it), so no consistency check applies.
+    if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_PROC;
+    }
+  } else if (st->mlkem) {
+    // Every 64-byte d || z value is a valid deterministic ML-KEM seed; no
+    // consistency check applies, same as for ML-DSA.
+  } else {
+    if (key->meta.type == X25519) swap_big_number_endian(key->ecc.pri);
+    if (!ecc_verify_private_key(key->meta.type, &key->ecc)) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_DATA;
+    }
+    if (ecc_complete_key(key->meta.type, &key->ecc) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return KEY_ERR_PROC;
+    }
   }
+  return 1;
+}
 
-  default:
+int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t *buf, size_t buf_len, bool final) {
+  if (!IS_RSA(key->meta.type) && !IS_ECC(key->meta.type) && !IS_MLDSA(key->meta.type) &&
+      !IS_MLKEM(key->meta.type))
     return -1;
+
+  for (size_t i = 0; i < buf_len; ++i) {
+    if (++st->processed > CK_KEY_IMPORT_MAX_LENGTH) return KEY_ERR_LENGTH;
+    const uint8_t b = buf[i];
+
+    switch (st->phase) {
+    case CK_PIV_STREAM_TAG:
+      if (st->rsa) {
+        if (st->comp_idx >= 5 || b != st->comp_idx + 1) return KEY_ERR_DATA;
+      } else if (st->mldsa ? b != 0x09
+                           : st->mlkem ? b != 0x0A
+                                       : (b != 0x06 && !(key->meta.type == ED25519 && b == 0x07) &&
+                                          !(key->meta.type == X25519 && b == 0x08))) {
+        return KEY_ERR_DATA;
+      }
+      st->phase = CK_PIV_STREAM_LEN;
+      break;
+
+    case CK_PIV_STREAM_LEN: {
+      uint16_t len;
+      int ret = tlv_len_stream_feed(&st->tlv_len, b, &len);
+      if (ret < 0) return ret;
+      if (ret > 0) {
+        if (st->rsa) {
+          if (len == 0 || len > PRIVATE_KEY_LENGTH[key->meta.type]) return KEY_ERR_DATA;
+        } else if (st->mldsa ? len != MLDSA_SEEDBYTES
+                             : st->mlkem ? len != MLKEM768_KEYGEN_SEED_BYTES
+                                         : len != PRIVATE_KEY_LENGTH[key->meta.type]) {
+          return KEY_ERR_LENGTH;
+        }
+        st->comp_len = len;
+        st->comp_off = 0;
+        st->phase = CK_PIV_STREAM_DATA;
+      }
+      break;
+    }
+
+    case CK_PIV_STREAM_DATA:
+      if (st->rsa) {
+        const size_t pri_len = PRIVATE_KEY_LENGTH[key->meta.type];
+        uint8_t *dests[] = {key->rsa.p, key->rsa.q, key->rsa.dp, key->rsa.dq, key->rsa.qinv};
+        if (st->comp_idx >= 5 || st->comp_len == 0 || st->comp_len > pri_len || st->comp_off >= st->comp_len)
+          return KEY_ERR_DATA;
+        dests[st->comp_idx][pri_len - st->comp_len + st->comp_off] = b;
+      } else if (st->mldsa) {
+        key->mldsa.seed[st->comp_off] = b;
+      } else if (st->mlkem) {
+        key->mlkem.seed[st->comp_off] = b;
+      } else {
+        key->ecc.pri[st->comp_off] = b;
+      }
+      if (++st->comp_off == st->comp_len) {
+        st->comp_off = 0;
+        if (st->rsa && ++st->comp_idx < 5)
+          st->phase = CK_PIV_STREAM_TAG;
+        else
+          st->phase = CK_PIV_STREAM_POLICY_TAG;
+      }
+      break;
+
+    case CK_PIV_STREAM_POLICY_TAG:
+      if (b == 0xAA || b == 0xAB) {
+        st->policy_tag = b;
+        st->phase = CK_PIV_STREAM_POLICY_LEN;
+      } else {
+        if (st->mlkem) return KEY_ERR_DATA;
+        st->phase = CK_PIV_STREAM_IGNORE_REST;
+      }
+      break;
+
+    case CK_PIV_STREAM_POLICY_LEN:
+      if (b != 1) return KEY_ERR_LENGTH;
+      st->phase = CK_PIV_STREAM_POLICY_VALUE;
+      break;
+
+    case CK_PIV_STREAM_POLICY_VALUE:
+      if (st->policy_tag == 0xAA) {
+        if (b > PIN_POLICY_ALWAYS || b < PIN_POLICY_NEVER) return KEY_ERR_DATA;
+        key->meta.pin_policy = b;
+      } else {
+        if (b > TOUCH_POLICY_CACHED || b < TOUCH_POLICY_NEVER) return KEY_ERR_DATA;
+        key->meta.touch_policy = b;
+      }
+      st->phase = CK_PIV_STREAM_POLICY_TAG;
+      break;
+
+    case CK_PIV_STREAM_IGNORE_REST:
+      break;
+
+    default:
+      return KEY_ERR_DATA;
+    }
   }
+
+  return final ? ck_piv_stream_finish(st, key) : 0;
 }
 
 int ck_read_key_metadata(const char *path, key_meta_t *meta) {
   return read_attr(path, KEY_META_ATTR, meta, sizeof(key_meta_t));
+}
+
+static size_t ck_key_material_size(key_type_t type) {
+  if (IS_ECC(type)) return sizeof(ecc_key_t);
+  if (IS_MLDSA(type)) return sizeof(mldsa65_private_key_t);
+  if (IS_MLKEM(type)) return sizeof(mlkem768_private_key_t);
+  if (type == TDEA || type == AES192) return 24;
+  if (type == AES128) return 16;
+  if (type == AES256) return 32;
+  return sizeof(rsa_key_t);
 }
 
 int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
@@ -380,11 +651,21 @@ int ck_write_key_metadata(const char *path, const key_meta_t *meta) {
 int ck_read_key(const char *path, ck_key_t *key) {
   const int err = ck_read_key_metadata(path, &key->meta);
   if (err < 0) return err;
-  return read_file(path, key->data, 0, sizeof(rsa_key_t));
+  memzero(key->data, sizeof(rsa_key_t));
+  if (key->meta.origin == KEY_ORIGIN_NOT_PRESENT) return 0;
+
+  const size_t material_size = ck_key_material_size(key->meta.type);
+  const int read_len = read_file(path, key->data, 0, material_size);
+  if (read_len < 0) return read_len;
+  if ((size_t)read_len != material_size) {
+    memzero(key->data, sizeof(rsa_key_t));
+    return LFS_ERR_CORRUPT;
+  }
+  return read_len;
 }
 
 int ck_write_key(const char *path, const ck_key_t *key) {
-  const int err = write_file(path, key->data, 0, sizeof(rsa_key_t), 1);
+  const int err = write_file(path, key->data, 0, ck_key_material_size(key->meta.type), 1);
   if (err < 0) return err;
   return ck_write_key_metadata(path, &key->meta);
 }
@@ -403,6 +684,16 @@ int ck_generate_key(ck_key_t *key) {
       memzero(key, sizeof(ck_key_t));
       return -1;
     }
+    return 0;
+  } else if (IS_MLDSA(key->meta.type)) {
+    random_buffer(key->mldsa.seed, sizeof(key->mldsa.seed));
+    if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
+      memzero(key, sizeof(ck_key_t));
+      return -1;
+    }
+    return 0;
+  } else if (IS_MLKEM(key->meta.type)) {
+    random_buffer(key->mlkem.seed, sizeof(key->mlkem.seed));
     return 0;
   } else {
     return -1;

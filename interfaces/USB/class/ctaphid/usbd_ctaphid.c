@@ -39,12 +39,18 @@ static const uint8_t USBD_CTAPHID_Desc[] = {
 };
 // clang-format on
 
+void USBD_CTAPHID_PrepareReceive(void) {
+  USBD_LL_PrepareReceive(&usb_device, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+}
+
 uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
   hid_handle.state = CTAPHID_IDLE;
+  hid_handle.rx_paused = 0;
+  CTAPHID_TxReset();
   USBD_LL_OpenEP(pdev, EP_IN(ctap_hid), USBD_EP_TYPE_INTR, EP_SIZE(ctap_hid));
   USBD_LL_OpenEP(pdev, EP_OUT(ctap_hid), USBD_EP_TYPE_INTR, EP_SIZE(ctap_hid));
   CTAPHID_Init(USBD_CTAPHID_SendReport);
-  USBD_LL_PrepareReceive(pdev, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  USBD_CTAPHID_PrepareReceive();
   return USBD_OK;
 }
 
@@ -95,22 +101,49 @@ uint8_t USBD_CTAPHID_DataIn() {
 }
 
 uint8_t USBD_CTAPHID_DataOut(USBD_HandleTypeDef *pdev) {
-  CTAPHID_OutEvent(hid_handle.report_buf);
-  USBD_LL_PrepareReceive(pdev, EP_OUT(ctap_hid), hid_handle.report_buf, USBD_CTAPHID_REPORT_BUF_SIZE);
+  (void)pdev;
+  if (!CTAPHID_OutEvent(hid_handle.report_buf)) {
+    hid_handle.rx_paused = 1;
+    return USBD_BUSY;
+  }
+  if (!CTAPHID_RxCanAccept()) {
+    // The report is already queued. BUSY asks the DCD to retain the current
+    // OUT buffer (NAK further reports) until ServiceReceive rearms it.
+    hid_handle.rx_paused = 1;
+    return USBD_BUSY;
+  }
+  USBD_CTAPHID_PrepareReceive();
   return USBD_OK;
+}
+
+/**
+ * Busy-wait until the USB IN endpoint finishes transmitting, up to max_ms.
+ * Returns USBD_OK if idle, USBD_BUSY on timeout.
+ */
+static uint8_t wait_ep_idle(int max_ms) {
+  volatile CTAPHID_StateTypeDef *state = &hid_handle.state;
+  for (int i = 0; i < max_ms; ++i) {
+    if (*state == CTAPHID_IDLE) return USBD_OK;
+    device_delay(1);
+  }
+  return (*state == CTAPHID_IDLE) ? USBD_OK : USBD_BUSY;
 }
 
 uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
   if (pdev->dev_state == USBD_STATE_CONFIGURED) {
-    volatile CTAPHID_StateTypeDef *state = &hid_handle.state;
-    int retry = 0;
-    while (*state != CTAPHID_IDLE) {
-      // if reports are not being processed on host, we may get stuck here
-      if (++retry > 50) return USBD_BUSY;
-      device_delay(1);
-    }
+    if (wait_ep_idle(50) != USBD_OK) return USBD_BUSY;
     hid_handle.state = CTAPHID_BUSY;
     USBD_LL_Transmit(pdev, EP_IN(ctap_hid), report, len);
   }
   return USBD_OK;
+}
+
+uint8_t USBD_CTAPHID_IsIdle(void) { return hid_handle.state == CTAPHID_IDLE ? USBD_OK : USBD_BUSY; }
+
+uint8_t USBD_CTAPHID_WaitIdle(void) { return wait_ep_idle(100); }
+
+__weak void USBD_CTAPHID_ServiceReceive(void) {
+  if (!hid_handle.rx_paused || !CTAPHID_RxCanAccept()) return;
+  hid_handle.rx_paused = 0;
+  USBD_CTAPHID_PrepareReceive();
 }
