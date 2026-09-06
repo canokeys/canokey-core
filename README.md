@@ -38,6 +38,26 @@ The PIV management key in slot 9B uses AES-192 (`0x0A`) exclusively. Its factory
 - PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
 - OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
 
+### OpenPGP Algorithms
+
+OpenPGP supports RSA-2048/3072/4096, P-256/P-384/P-521, secp256k1,
+Ed25519 (SIG/AUT), and X25519 (DEC). Algorithm information (`00 CA 00 FA`)
+lists eight algorithms per slot; SM2 is no longer supported by this applet.
+Setting SM2 algorithm attributes with `00 DA 00 C1/C2/C3`, after PW3
+verification, returns `6A80` without changing the slot.
+
+Existing OpenPGP SM2 keys are retained on upgrade, but their algorithm
+attributes in application data (`00 CA 00 6E`) are empty. Generating or reading
+their public keys (`00 47`), importing private keys (`00 DB 3F FF`), signing,
+internal authentication, and ECDH return `6985` once the command's PIN
+requirements are satisfied. To reuse a slot, verify PW3 and set a supported
+algorithm attribute, then generate or import a new key. An OpenPGP factory
+reset also clears the old keys. PIV and CTAP SM2 support is unaffected;
+shared ASN.1 curve OIDs are independent of OpenPGP algorithm attributes.
+
+Host OpenPGP tests cover the supported algorithm list.
+PIV attestation tests verify the retained curve OIDs, including SM2.
+
 ### PIV Algorithm Extensions
 
 The PIV applet supports RSA-2048, NIST P-256/P-384, and the following
@@ -87,6 +107,19 @@ Host APDU tests cover SM2 identifier validation, reset and storage recovery,
 full-width COSE encoding, and mixed SM2/ES256/EdDSA/ML-DSA enumeration over
 APDU and HID streams. ML-DSA public bytes are compared with seed-derived keys;
 the metadata-only Begin/GetNext path is tested separately.
+
+### CTAP SM2 Assertion Signatures
+
+SM2 assertions follow GM/T 0003 rather than the FIDO ECDSA convention. The
+authenticator computes `ZA = SM3(ENTL ‖ ID ‖ a ‖ b ‖ xG ‖ yG ‖ xA ‖ yA)` on
+card with the default user ID `1234567812345678` (GM/T 0009), then signs
+`e = SM3(ZA ‖ authData ‖ clientDataHash)`. The signature is returned as the
+raw 64-byte `r ‖ s` byte string (matching the FIDO MDS `sm2_sm3_raw` signature
+encoding), not DER. Relying parties must verify with the same
+`SM3(ZA ‖ M)` construction and the same default ID; a standard ECDSA/SHA-256
+verifier cannot validate SM2 assertions. Attestation statements are unaffected:
+they are always signed by the device attestation key with ES256 over
+SHA-256, regardless of the credential algorithm.
 
 ## Porting
 

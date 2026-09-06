@@ -103,6 +103,7 @@ static bool ctap_sm2_algo_id_valid(int32_t algo_id) {
 static bool ctap_sm2_config_valid(const CTAP_sm2_attr *attr) {
   // COSE curves assigned to other algorithms as of 2026-09. Keep unassigned
   // IDs compatible and allow the private-use range below -65536 (RFC 9053).
+  // Revisit this filter whenever IANA assigns more curve IDs.
   const int32_t curve = attr->curve_id;
   return ctap_sm2_algo_id_valid(attr->algo_id) && curve != 0 && !(curve >= 1 && curve <= 8) &&
          !(curve >= 256 && curve <= 259);
@@ -3109,13 +3110,13 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
       key_type_t key_type = cose_alg_to_key_type(dc.credential_id.alg_type);
       if (ecc_complete_key(key_type, &key) < 0) {
         ERR_MSG("Failed to complete key\n");
-        return -1;
+        return CTAP2_ERR_UNHANDLED_REQUEST;
       }
       uint8_t *ptr = sub_map.data.ptr - 1;
       _Static_assert(MAX_COSE_KEY_SIZE <= sizeof(key.pub), "COSE key must fit the reused public-key buffer");
       int cose_key_size = ctap_build_cose_key_for_alg(dc.credential_id.alg_type, key.pub);
       if (cose_key_size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-      if ((size_t)(sub_map.end - ptr) < (size_t)cose_key_size) return CTAP2_ERR_INVALID_CBOR;
+      if ((size_t)(sub_map.end - ptr) < (size_t)cose_key_size) return CTAP2_ERR_UNHANDLED_REQUEST;
       memcpy(ptr, key.pub, cose_key_size);
       sub_map.data.ptr = ptr + cose_key_size;
       ret = cbor_encoder_close_container(&map, &sub_map);
