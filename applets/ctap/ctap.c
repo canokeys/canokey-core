@@ -100,9 +100,17 @@ static bool ctap_sm2_algo_id_valid(int32_t algo_id) {
   return algo_id != COSE_ALG_ES256 && algo_id != COSE_ALG_EDDSA && algo_id != COSE_ALG_ML_DSA_65;
 }
 
+static bool ctap_sm2_config_valid(const CTAP_sm2_attr *attr) {
+  // COSE curves assigned to other algorithms as of 2026-09. Keep unassigned
+  // IDs compatible and allow the private-use range below -65536 (RFC 9053).
+  const int32_t curve = attr->curve_id;
+  return ctap_sm2_algo_id_valid(attr->algo_id) && curve != 0 && !(curve >= 1 && curve <= 8) &&
+         !(curve >= 256 && curve <= 259);
+}
+
 static int ctap_sm2_config_read_platform(CTAP_sm2_attr *attr) {
   if (ctap_platform_sm2_config_read(attr, sizeof(*attr)) < 0) return -1;
-  return ctap_sm2_algo_id_valid(attr->algo_id) ? 0 : -1;
+  return ctap_sm2_config_valid(attr) ? 0 : -1;
 }
 
 static bool ctap_littlefs_state_present(void) {
@@ -1036,9 +1044,11 @@ void ctap_poweroff(void) {
 
 uint8_t ctap_install(uint8_t reset) {
   CTAP_persistent_config persistent_cfg;
+  // SM2 identifiers are provisioned independently of credentials and LittleFS.
+  const bool has_sm2_config = ctap_sm2_config_read_platform(&ctap_sm2_attr) == 0;
   const bool has_littlefs_state = ctap_littlefs_state_present();
-  const bool has_complete_state = has_littlefs_state && ctap_sm2_config_read_platform(&ctap_sm2_attr) == 0 &&
-                                  ctap_config_read_platform(&persistent_cfg) == 0;
+  const bool has_complete_state =
+      has_littlefs_state && has_sm2_config && ctap_config_read_platform(&persistent_cfg) == 0;
   const bool runtime_reset = reset || runtime_reset_pending || !has_complete_state;
   // Reader reconnects may re-run ctap_install(0) without a real device reset.
   // Preserve in-flight CTAP command state in that case so CM/GA "next" commands
@@ -1081,8 +1091,10 @@ uint8_t ctap_install(uint8_t reset) {
       (uint8_t[]){0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d, 0x3c},
       17);
   if (write_file(LB_FILE, kh_key, 0, 17, 1) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  ctap_sm2_config_set_default();
-  if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  if (!has_sm2_config) {
+    ctap_sm2_config_set_default();
+    if (ctap_platform_sm2_config_write(&ctap_sm2_attr, sizeof(ctap_sm2_attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+  }
   memzero(kh_key, sizeof(kh_key));
   DBG_MSG("CTAP reset and initialized\n");
   return 0;
@@ -1133,7 +1145,7 @@ int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != sizeof(ctap_sm2_attr)) EXCEPT(SW_WRONG_LENGTH);
   CTAP_sm2_attr attr;
   memcpy(&attr, DATA, sizeof(attr));
-  if (!ctap_sm2_algo_id_valid(attr.algo_id)) EXCEPT(SW_WRONG_DATA);
+  if (!ctap_sm2_config_valid(&attr)) EXCEPT(SW_WRONG_DATA);
   const int ret = ctap_platform_sm2_config_write(&attr, sizeof(attr));
   if (ret < 0) return ret;
   ctap_sm2_attr = attr;
@@ -1141,36 +1153,36 @@ int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
 }
 
 static int build_cose_key(uint8_t *data, int kty, int algo, int curve, bool has_y) {
-  uint8_t buf[80];
+  uint8_t buf[MAX_COSE_KEY_SIZE];
   CborEncoder encoder, map_encoder;
 
   cbor_encoder_init(&encoder, buf, sizeof(buf), 0);
   CborError ret = cbor_encoder_create_map(&encoder, &map_encoder, has_y ? 5 : 4);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_KTY);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, kty);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_ALG);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, algo);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_CRV);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, curve);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_X);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   ret = cbor_encode_byte_string(&map_encoder, data, 32);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
   if (has_y) {
     ret = cbor_encode_int(&map_encoder, COSE_KEY_LABEL_Y);
-    CHECK_CBOR_RET(ret);
+    if (ret != CborNoError) return -1;
     ret = cbor_encode_byte_string(&map_encoder, data + 32, 32);
-    CHECK_CBOR_RET(ret);
+    if (ret != CborNoError) return -1;
   }
   ret = cbor_encoder_close_container(&encoder, &map_encoder);
-  CHECK_CBOR_RET(ret);
+  if (ret != CborNoError) return -1;
 
   const int len = cbor_encoder_get_buffer_size(&encoder, buf);
   memcpy(data, buf, len);
@@ -2573,6 +2585,7 @@ static uint8_t __attribute__((noinline)) ctap_client_pin(CborEncoder *encoder, c
     ptr = key_map.data.ptr - 1;
     cp_get_public_key(ptr);
     cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_EC2, COSE_ALG_ECDH_ES_HKDF_256, COSE_KEY_CRV_P256, true);
+    if (cose_key_size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
     key_map.data.ptr = ptr + cose_key_size;
     ret = cbor_encoder_close_container(&map, &key_map);
     CHECK_CBOR_RET(ret);
@@ -3099,14 +3112,12 @@ static uint8_t __attribute__((noinline)) ctap_credential_management(CborEncoder 
         return -1;
       }
       uint8_t *ptr = sub_map.data.ptr - 1;
-      memcpy(ptr, key.pub, PUBLIC_KEY_LENGTH[key_type]);
-      if (dc.credential_id.alg_type == COSE_ALG_ES256) {
-        int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_EC2, COSE_ALG_ES256, COSE_KEY_CRV_P256, true);
-        sub_map.data.ptr = ptr + cose_key_size;
-      } else if (dc.credential_id.alg_type == COSE_ALG_EDDSA) {
-        int cose_key_size = build_cose_key(ptr, COSE_KEY_KTY_OKP, COSE_ALG_EDDSA, COSE_KEY_CRV_ED25519, false);
-        sub_map.data.ptr = ptr + cose_key_size;
-      }
+      _Static_assert(MAX_COSE_KEY_SIZE <= sizeof(key.pub), "COSE key must fit the reused public-key buffer");
+      int cose_key_size = ctap_build_cose_key_for_alg(dc.credential_id.alg_type, key.pub);
+      if (cose_key_size < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
+      if ((size_t)(sub_map.end - ptr) < (size_t)cose_key_size) return CTAP2_ERR_INVALID_CBOR;
+      memcpy(ptr, key.pub, cose_key_size);
+      sub_map.data.ptr = ptr + cose_key_size;
       ret = cbor_encoder_close_container(&map, &sub_map);
       CHECK_CBOR_RET(ret);
     }

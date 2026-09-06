@@ -240,7 +240,8 @@
 #define SHARED_SECRET_SIZE_P1         32
 #define SHARED_SECRET_SIZE_P2         64
 #define SHARED_SECRET_SIZE_HMAC       32
-#define MAX_COSE_KEY_SIZE             78
+// EC2 coordinates plus full int32 algorithm and curve identifiers.
+#define MAX_COSE_KEY_SIZE             85
 #define PIN_ENC_SIZE_P1               64
 #define PIN_ENC_SIZE_P2               80
 #define PIN_HASH_SIZE_P1              16

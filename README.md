@@ -50,6 +50,44 @@ ML-KEM decapsulates on card; ML-DSA verification and ML-KEM encapsulation are
 host-side responsibilities. The PIV random command (`00 84`) is available on
 firmware version 6.0 and newer.
 
+### CTAP SM2 Configuration and Credential Enumeration
+
+ADMIN SM2 configuration uses `00 11 00 00 08` to read and
+`00 12 00 00 08 <curve_id> <algo_id>` to write. Both require ADMIN PIN
+verification. The payload retains the packed pair of signed 32-bit integers
+in device-native byte order (big-endian on CIU). A successful write persists
+the configuration and updates the active identifiers. Wrong payload lengths
+return `6700`; invalid identifiers return `6A80` without changing the configuration.
+
+Curve ID 0 is reserved. IDs 1 through 8 and 256 through 259 identify other
+curves in the IANA COSE registry (2026-09) and are rejected for SM2. Unassigned
+IDs remain accepted for compatibility, including the default 9; values below
+-65536 are reserved for private use by RFC 9053. Clients must agree on the
+SM2 mapping and monitor future registry assignments for conflicts. Algorithm
+IDs must not collide with ES256 (-7), EdDSA (-8), or ML-DSA-65 (-49). Both
+identifiers support the full signed 32-bit encoding.
+
+CTAP reset (including ADMIN CTAP reset) and reconstruction of incomplete
+CTAP storage preserve valid SM2 configuration. Missing or invalid configuration
+is replaced by the defaults `(curve_id=9, algo_id=-54)`. Attestation private-key
+provisioning still initializes the defaults. Reset continues to erase credentials,
+clear the PIN and rotate credential secrets; preserving SM2 identifiers does not
+preserve credentials. Changing identifiers while credentials exist can invalidate
+their algorithm mapping.
+
+Credential-management enumeration returns SM2 as an EC2 COSE key with the
+configured identifiers and both coordinates. ML-DSA-65 returns an AKP key
+`{1: 7, 3: -49, -1: publicKey}` with a 1952-byte public key, generated from
+the credential seed and streamed over HID or APDU `GET RESPONSE` chaining.
+The vendor `subCommandParams[0x80]=true` option on EnumerateCredentialsBegin
+omits public keys and returns `response[0x80]=algorithm`; this mode persists
+through GetNext. Standard enumeration does not omit the public key.
+
+Host APDU tests cover SM2 identifier validation, reset and storage recovery,
+full-width COSE encoding, and mixed SM2/ES256/EdDSA/ML-DSA enumeration over
+APDU and HID streams. ML-DSA public bytes are compared with seed-derived keys;
+the metadata-only Begin/GetNext path is tested separately.
+
 ## Porting
 
 Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
