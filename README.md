@@ -46,14 +46,11 @@ lists eight algorithms per slot; SM2 is no longer supported by this applet.
 Setting SM2 algorithm attributes with `00 DA 00 C1/C2/C3`, after PW3
 verification, returns `6A80` without changing the slot.
 
-Existing OpenPGP SM2 keys are retained on upgrade, but their algorithm
-attributes in application data (`00 CA 00 6E`) are empty. Generating or reading
-their public keys (`00 47`), importing private keys (`00 DB 3F FF`), signing,
-internal authentication, and ECDH return `6985` once the command's PIN
-requirements are satisfied. To reuse a slot, verify PW3 and set a supported
-algorithm attribute, then generate or import a new key. An OpenPGP factory
-reset also clears the old keys. PIV and CTAP SM2 support is unaffected;
-shared ASN.1 curve OIDs are independent of OpenPGP algorithm attributes.
+SM2 follows the OpenPGP algorithms in `key_type_t`, so OpenPGP excludes it
+using the enumeration bound. This reorders persisted key type numbers:
+reset OpenPGP and PIV storage when upgrading from the previous enum layout.
+PIV and CTAP still support SM2. PIV reuses curve OIDs from the shared
+attribute table to avoid duplicate ROM data.
 
 Host OpenPGP tests cover the supported algorithm list.
 PIV attestation tests verify the retained curve OIDs, including SM2.

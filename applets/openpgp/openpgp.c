@@ -54,7 +54,7 @@
 #define ALGO_ID_ECDSA 0x13
 #define ALGO_ID_ED25519 0x16 // https://datatracker.ietf.org/doc/html/draft-ietf-openpgp-rfc4880bis-08#section-9.1
 
-#define OPENPGP_ALGO_ATTR_COUNT CK_OPENPGP_ALGO_ATTR_COUNT
+#define OPENPGP_ALGO_ATTR_COUNT SM2
 
 // clang-format off
 static const uint8_t aid[] = {0xD2, 0x76, 0x00, 0x01, 0x24, 0x01, // aid
@@ -207,7 +207,7 @@ static int reset_sig_counter(void) {
 }
 
 static inline int fill_attr(const key_meta_t *meta, uint8_t *buf) {
-  const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[meta->type];
+  const uint8_t *attr = CK_ALGO_ATTR[meta->type];
   memcpy(buf, attr, attr[0] + 1);
   if (IS_SHORT_WEIERSTRASS(meta->type)) {
     if (meta->usage == SIGN)
@@ -322,7 +322,7 @@ typedef struct {
 // Add a single algorithm information to the buffer
 static uint16_t add_algo_info(uint8_t *buffer, uint16_t offset, uint8_t tag, uint8_t algo_index, uint8_t id) {
   buffer[offset++] = tag;
-  const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[algo_index];
+  const uint8_t *attr = CK_ALGO_ATTR[algo_index];
   memcpy(buffer + offset, attr, attr[0] + 1);
   buffer[offset + 1] = id;
   return offset + attr[0] + 1;
@@ -340,7 +340,6 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
       {TAG_ALGORITHM_ATTRIBUTES_SIG, SECP384R1, ALGO_ID_ECDSA},
       {TAG_ALGORITHM_ATTRIBUTES_SIG, SECP521R1, ALGO_ID_ECDSA},
       {TAG_ALGORITHM_ATTRIBUTES_SIG, ED25519, ALGO_ID_ED25519},
-      {TAG_ALGORITHM_ATTRIBUTES_SIG, SM2, ALGO_ID_ECDSA},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA2048, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA3072, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, RSA4096, ALGO_ID_RSA},
@@ -349,7 +348,6 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
       {TAG_ALGORITHM_ATTRIBUTES_DEC, SECP384R1, ALGO_ID_ECDH},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, SECP521R1, ALGO_ID_ECDH},
       {TAG_ALGORITHM_ATTRIBUTES_DEC, X25519, ALGO_ID_ECDH},
-      {TAG_ALGORITHM_ATTRIBUTES_DEC, SM2, ALGO_ID_ECDH},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA2048, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA3072, ALGO_ID_RSA},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, RSA4096, ALGO_ID_RSA},
@@ -358,7 +356,6 @@ static uint16_t add_all_algorithm_info(uint8_t *buffer) {
       {TAG_ALGORITHM_ATTRIBUTES_AUT, SECP384R1, ALGO_ID_ECDSA},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, SECP521R1, ALGO_ID_ECDSA},
       {TAG_ALGORITHM_ATTRIBUTES_AUT, ED25519, ALGO_ID_ED25519},
-      {TAG_ALGORITHM_ATTRIBUTES_AUT, SM2, ALGO_ID_ECDSA},
   };
   for (size_t i = 0; i < sizeof(all_algo_infos) / sizeof(all_algo_infos[0]); ++i) {
     offset = add_algo_info(buffer, offset, all_algo_infos[i].tag, all_algo_infos[i].algo_index, all_algo_infos[i].id);
@@ -1293,7 +1290,7 @@ static int __attribute__((noinline)) openpgp_put_data(const CAPDU *capdu, RAPDU 
 
     key_type_t type;
     for (type = SECP256R1 /* i.e., 0 */; type < OPENPGP_ALGO_ATTR_COUNT; ++type) {
-      const uint8_t *attr = CK_OPENPGP_ALGO_ATTR[type];
+      const uint8_t *attr = CK_ALGO_ATTR[type];
       if (DATA[0] == ALGO_ID_RSA) { // For RSA, we only care the nbits
         if (LC == attr[0]) {
           if (DATA[2] != 0) {

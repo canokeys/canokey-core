@@ -325,10 +325,9 @@ static void test_algorithm_information(void **state) {
     off += attr_len;
   }
   assert_int_equal(off, R.len);
-  // Static table has SIG=9, DEC=9, AUT=9 entries.
-  assert_int_equal(n_sig, 9);
-  assert_int_equal(n_dec, 9);
-  assert_int_equal(n_aut, 9);
+  assert_int_equal(n_sig, 8);
+  assert_int_equal(n_dec, 8);
+  assert_int_equal(n_aut, 8);
 }
 
 static void test_import_key(void **state) {
