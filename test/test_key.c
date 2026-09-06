@@ -9,6 +9,7 @@
 #include <fs.h>
 #include <key.h>
 #include <lfs.h>
+#include <ml-dsa-65.h>
 
 #define PATH "key"
 
@@ -166,6 +167,37 @@ static void test_encode_eddsa(void **state) {
   size = ck_encode_public_key(&key, buf, true);
   assert_int_equal(size, 35);
   assert_memory_equal(buf, expected, 35);
+}
+
+static void test_encode_mldsa(void **state) {
+  (void)state;
+  static const uint8_t prefix[] = {0x82, 0x07, 0xA4, 0x86, 0x82, 0x07, 0xA0};
+  uint8_t expected[MLDSA_PK_BYTES];
+  uint8_t guarded[MLDSA_PK_BYTES + sizeof(prefix) + 2];
+  ck_key_t key = {.meta.type = MLDSA65};
+
+  for (unsigned seed_case = 0; seed_case < 4; ++seed_case) {
+    uint8_t seed[MLDSA_SEEDBYTES];
+    for (size_t i = 0; i < sizeof(seed); ++i)
+      seed[i] = seed_case == 0 ? 0 : seed_case == 1 ? 0xFF : (uint8_t)(i * seed_case + 1);
+    memcpy(key.mldsa.seed, seed, sizeof(seed));
+    assert_int_equal(ml_dsa_65_keygen(expected, NULL, NULL, seed), 0);
+
+    for (unsigned include_length = 0; include_length <= 1; ++include_length) {
+      const size_t prefix_offset = include_length ? 0 : 3;
+      const size_t prefix_len = sizeof(prefix) - prefix_offset;
+      const size_t expected_len = prefix_len + sizeof(expected);
+      memset(guarded, 0xA5, sizeof(guarded));
+      assert_int_equal(ck_encoded_public_key_length(MLDSA65, include_length), expected_len);
+      assert_int_equal(ck_encode_public_key(&key, guarded + 1, include_length), expected_len);
+      assert_memory_equal(guarded + 1, prefix + prefix_offset, prefix_len);
+      assert_memory_equal(guarded + 1 + prefix_len, expected, sizeof(expected));
+      assert_int_equal(guarded[0], 0xA5);
+      for (size_t i = 1 + expected_len; i < sizeof(guarded); ++i)
+        assert_int_equal(guarded[i], 0xA5);
+      assert_memory_equal(key.mldsa.seed, seed, sizeof(seed));
+    }
+  }
 }
 
 static void test_encode_invalid_type(void **state) {
@@ -424,6 +456,7 @@ int main() {
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_eddsa),
+      cmocka_unit_test(test_encode_mldsa),
       cmocka_unit_test(test_encode_invalid_type),
       cmocka_unit_test(test_parse_openpgp_x25519_streaming_rfc7748),
       cmocka_unit_test(test_parse_piv_x25519_streaming_rfc7748),

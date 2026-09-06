@@ -162,7 +162,23 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
     buf[off++] = 0x82;
     buf[off++] = HI(MLDSA_PK_BYTES);
     buf[off++] = LO(MLDSA_PK_BYTES);
-    if (ml_dsa_65_keygen(&buf[off], NULL, NULL, key->mldsa.seed) < 0) return -1;
+    {
+      /* Reuse the streaming backend so complete encoding needs no second keygen implementation. */
+      mldsa_keygen_state_t state = {0};
+      memcpy(state.seed, key->mldsa.seed, sizeof(state.seed));
+      size_t written = 0;
+      do {
+        int ret = ml_dsa_65_keygen_streaming(buf + off + written, MLDSA_PK_BYTES - written, &state, NULL);
+        if (ret <= 0 || (size_t)ret > MLDSA_PK_BYTES - written) {
+          ml_dsa_65_keygen_streaming_abort(&state);
+          return -1;
+        }
+        written += (size_t)ret;
+      } while (state.phase != 0 && written < MLDSA_PK_BYTES);
+      const bool complete = state.phase == 0 && written == MLDSA_PK_BYTES;
+      ml_dsa_65_keygen_streaming_abort(&state);
+      if (!complete) return -1;
+    }
     off += MLDSA_PK_BYTES;
     break;
 
