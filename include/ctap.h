@@ -34,10 +34,12 @@ void ctap_deselect(void);
 void ctap_schedule_runtime_reset(void);
 int ctap_install_private_key(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_install_cert(const CAPDU *capdu, RAPDU *rapdu);
+// Admin wire format: curve_id || algo_id, signed 32-bit two's complement, big-endian.
+#define CTAP_SM2_CONFIG_WIRE_SIZE 8u
 int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu);
 int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu);
 
-// Platform storage for the vendor SM2 COSE identifiers.
+// Platform storage uses the native CTAP_sm2_attr representation, not the APDU wire format.
 int ctap_platform_sm2_config_read(void *cfg, size_t len);
 int ctap_platform_sm2_config_write(const void *cfg, size_t len);
 // Platform storage for CTAP 2.3 persistent options such as min PIN length and alwaysUV.

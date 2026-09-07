@@ -377,6 +377,10 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 - Always use `htobe32` / `be32toh` / `htole32` / `letoh32` / `htobe16` from `common.h` instead of system headers or manual shifts.
 - `common.h` does not provide 16-bit little-endian helpers; either derive them via `LO()`/`HI()` or write the two bytes directly.
 - USB wire data is little-endian; APDU/smartcard data is big-endian. Convert at the interface boundary.
+- ADMIN CTAP SM2 configuration (`0x11` read / `0x12` write) is exactly eight
+  bytes: big-endian signed 32-bit `curve_id` then `algo_id` (two's complement).
+  Keep native `CTAP_sm2_attr` storage separate from wire encoding; tests must
+  include literal byte vectors rather than only native-struct round trips.
 
 ---
 

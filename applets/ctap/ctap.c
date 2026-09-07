@@ -1137,15 +1137,22 @@ int ctap_read_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
   CTAP_sm2_attr attr;
   const int ret = ctap_sm2_config_read_platform(&attr);
   if (ret < 0) return ret;
-  memcpy(RDATA, &attr, sizeof(attr));
-  LL = sizeof(attr);
+  const uint32_t wire[2] = {htobe32((uint32_t)attr.curve_id), htobe32((uint32_t)attr.algo_id)};
+  memcpy(RDATA, wire, CTAP_SM2_CONFIG_WIRE_SIZE);
+  LL = CTAP_SM2_CONFIG_WIRE_SIZE;
   return 0;
 }
 
 int ctap_write_sm2_config(const CAPDU *capdu, RAPDU *rapdu) {
-  if (LC != sizeof(ctap_sm2_attr)) EXCEPT(SW_WRONG_LENGTH);
+  if (LC != CTAP_SM2_CONFIG_WIRE_SIZE) EXCEPT(SW_WRONG_LENGTH);
+  // APDU buffers need not be word-aligned. Convert before validating or persisting.
+  uint32_t wire[2];
+  memcpy(wire, DATA, sizeof(wire));
+  wire[0] = be32toh(wire[0]);
+  wire[1] = be32toh(wire[1]);
   CTAP_sm2_attr attr;
-  memcpy(&attr, DATA, sizeof(attr));
+  memcpy(&attr.curve_id, &wire[0], sizeof(wire[0]));
+  memcpy(&attr.algo_id, &wire[1], sizeof(wire[1]));
   if (!ctap_sm2_config_valid(&attr)) EXCEPT(SW_WRONG_DATA);
   const int ret = ctap_platform_sm2_config_write(&attr, sizeof(attr));
   if (ret < 0) return ret;

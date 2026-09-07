@@ -46,6 +46,11 @@
 extern ccid_bulkin_data_t bulkin_data;
 int virt_card_config_page_open(const char *lfs_root, bool reset);
 
+static void encode_sm2_config(uint8_t wire[CTAP_SM2_CONFIG_WIRE_SIZE], const CTAP_sm2_attr *attr) {
+  const uint32_t words[2] = {htobe32((uint32_t)attr->curve_id), htobe32((uint32_t)attr->algo_id)};
+  memcpy(wire, words, CTAP_SM2_CONFIG_WIRE_SIZE);
+}
+
 static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
   const uint8_t *h = haystack;
   const uint8_t *n = needle;
@@ -1336,7 +1341,9 @@ static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
   CTAP_sm2_attr saved_sm2, actual_sm2;
   const CTAP_sm2_attr custom_sm2 = {.curve_id = -65537, .algo_id = -65538};
   assert_int_equal(ctap_platform_sm2_config_read(&saved_sm2, sizeof(saved_sm2)), 0);
-  CAPDU config_capdu = {.data = (uint8_t *)&custom_sm2, .lc = sizeof(custom_sm2)};
+  uint8_t config_wire[CTAP_SM2_CONFIG_WIRE_SIZE];
+  encode_sm2_config(config_wire, &custom_sm2);
+  CAPDU config_capdu = {.data = config_wire, .lc = sizeof(config_wire)};
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
 
   assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
@@ -1352,7 +1359,7 @@ static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
 
   assert_int_equal(ctap_platform_sm2_config_read(&actual_sm2, sizeof(actual_sm2)), 0);
   assert_memory_equal(&actual_sm2, &custom_sm2, sizeof(actual_sm2));
-  config_capdu.data = (uint8_t *)&saved_sm2;
+  encode_sm2_config(config_wire, &saved_sm2);
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
   ctap_poweroff();
   set_nfc_state(0);
@@ -3555,19 +3562,22 @@ static void test_admin_sm2_config_validation(void **state) {
   CAPDU capdu = {.data = c_buf};
   RAPDU rapdu = {.data = r_buf};
   CTAP_sm2_attr saved, actual, attr = {.curve_id = 9, .algo_id = -54};
+  uint8_t wire[CTAP_SM2_CONFIG_WIRE_SIZE];
+  encode_sm2_config(wire, &attr);
 
   init_apdu_buffer();
   device_init();
   assert_int_equal(ctap_install(1), 0);
   assert_int_equal(ctap_platform_sm2_config_read(&saved, sizeof(saved)), 0);
   assert_int_equal(admin_install(1), 0);
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, (const uint8_t *)&attr, sizeof(attr), 0);
+  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
   assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
   admin_verify_default_pin(&capdu, &rapdu);
 
   for (size_t i = 0; i < sizeof(invalid_curves) / sizeof(invalid_curves[0]); ++i) {
     attr.curve_id = invalid_curves[i];
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, (const uint8_t *)&attr, sizeof(attr), 0);
+    encode_sm2_config(wire, &attr);
+    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
     assert_int_equal(rapdu.sw, SW_WRONG_DATA);
     assert_int_equal(ctap_platform_sm2_config_read(&actual, sizeof(actual)), 0);
     assert_memory_equal(&actual, &saved, sizeof(actual));
@@ -3575,20 +3585,77 @@ static void test_admin_sm2_config_validation(void **state) {
   attr.curve_id = 9;
   for (size_t i = 0; i < sizeof(invalid_algorithms) / sizeof(invalid_algorithms[0]); ++i) {
     attr.algo_id = invalid_algorithms[i];
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, (const uint8_t *)&attr, sizeof(attr), 0);
+    encode_sm2_config(wire, &attr);
+    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
     assert_int_equal(rapdu.sw, SW_WRONG_DATA);
   }
   attr.algo_id = -54;
   for (size_t i = 0; i < sizeof(valid_curves) / sizeof(valid_curves[0]); ++i) {
     attr.curve_id = valid_curves[i];
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, (const uint8_t *)&attr, sizeof(attr), 0);
+    encode_sm2_config(wire, &attr);
+    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
     assert_int_equal(rapdu.sw, SW_NO_ERROR);
     admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, sizeof(attr));
     assert_int_equal(rapdu.sw, SW_NO_ERROR);
     assert_int_equal(rapdu.len, sizeof(attr));
-    assert_memory_equal(rapdu.data, &attr, sizeof(attr));
+    assert_memory_equal(rapdu.data, wire, sizeof(wire));
+    assert_int_equal(ctap_platform_sm2_config_read(&actual, sizeof(actual)), 0);
+    assert_memory_equal(&actual, &attr, sizeof(actual));
   }
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, (const uint8_t *)&saved, sizeof(saved), 0);
+  encode_sm2_config(wire, &saved);
+  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+}
+
+static void test_admin_sm2_config_wire_format(void **state) {
+  (void)state;
+  static const struct {
+    uint8_t wire[8];
+    int32_t curve, algo;
+  } cases[] = {
+      {{0x00, 0x00, 0x00, 0x09, 0xff, 0xff, 0xff, 0xca}, 9, -54},
+      {{0x01, 0x23, 0x45, 0x67, 0xfe, 0xdc, 0xba, 0x98}, 0x01234567, -19088744},
+      {{0x80, 0x00, 0x00, 0x00, 0x7f, 0xff, 0xff, 0xff}, INT32_MIN, INT32_MAX},
+      {{0x7f, 0xff, 0xff, 0xff, 0x80, 0x00, 0x00, 0x00}, INT32_MAX, INT32_MIN},
+  };
+  uint8_t c_buf[64], r_buf[64], saved_wire[8];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+  CTAP_sm2_attr actual;
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(ctap_install(1), 0);
+  assert_int_equal(admin_install(1), 0);
+  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
+  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
+  admin_verify_default_pin(&capdu, &rapdu);
+  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 8);
+  memcpy(saved_wire, rapdu.data, sizeof(saved_wire));
+
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, cases[i].wire, 8, 0);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    assert_int_equal(ctap_platform_sm2_config_read(&actual, sizeof(actual)), 0);
+    assert_int_equal(actual.curve_id, cases[i].curve);
+    assert_int_equal(actual.algo_id, cases[i].algo);
+    // Reload persisted configuration before checking the fixed response bytes.
+    assert_int_equal(ctap_install(0), 0);
+    admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    assert_int_equal(rapdu.len, 8);
+    assert_memory_equal(rapdu.data, cases[i].wire, 8);
+  }
+  for (size_t len = 7; len <= 9; len += 2) {
+    const uint8_t invalid[9] = {0};
+    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, invalid, len, 0);
+    assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
+    admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
+    assert_int_equal(rapdu.sw, SW_NO_ERROR);
+    assert_memory_equal(rapdu.data, cases[3].wire, 8);
+  }
+  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, saved_wire, 8, 0);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
 }
 
@@ -3670,7 +3737,9 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
   assert_int_equal(ctap_platform_sm2_config_read(&saved, sizeof(saved)), 0);
   provision_test_attestation();
   for (size_t config = 0; config < sizeof(sm2_configs) / sizeof(sm2_configs[0]); ++config) {
-    CAPDU config_capdu = {.data = (uint8_t *)&sm2_configs[config], .lc = sizeof(CTAP_sm2_attr)};
+    uint8_t config_wire[CTAP_SM2_CONFIG_WIRE_SIZE];
+    encode_sm2_config(config_wire, &sm2_configs[config]);
+    CAPDU config_capdu = {.data = config_wire, .lc = sizeof(config_wire)};
     assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
     const int32_t algorithms[] = {sm2_configs[config].algo_id, COSE_ALG_ML_DSA_65, COSE_ALG_ES256,
                                   COSE_ALG_ML_DSA_65,          COSE_ALG_EDDSA,     sm2_configs[config].algo_id};
@@ -3745,7 +3814,9 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
       assert_int_equal(response[0], CTAP2_ERR_NOT_ALLOWED);
     }
   }
-  CAPDU config_capdu = {.data = (uint8_t *)&saved, .lc = sizeof(saved)};
+  uint8_t config_wire[CTAP_SM2_CONFIG_WIRE_SIZE];
+  encode_sm2_config(config_wire, &saved);
+  CAPDU config_capdu = {.data = config_wire, .lc = sizeof(config_wire)};
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
 }
 
@@ -3777,6 +3848,7 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_admin_sm2_config_validation),
+      cmocka_unit_test(test_admin_sm2_config_wire_format),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_input_chaining),

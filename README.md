@@ -141,8 +141,15 @@ with any policy).
 
 ADMIN SM2 configuration uses `00 11 00 00 08` to read and
 `00 12 00 00 08 <curve_id> <algo_id>` to write. Both require ADMIN PIN
-verification. The payload retains the packed pair of signed 32-bit integers
-in device-native byte order. A successful write persists
+verification. The payload is exactly eight bytes: `curve_id` followed by
+`algo_id`, each a signed 32-bit two's-complement integer in **big-endian** byte
+order, on every platform and transport. For example, `(9, -54)` is
+`00 00 00 09 FF FF FF CA`; the full write APDU is
+`00 12 00 00 08 00 00 00 09 FF FF FF CA`.
+Native struct serialization is not a wire format. Clients using the previous
+little-endian device-native encoding must switch to big-endian; there is no
+byte-order autodetection. Existing platform-local stored configuration is
+unchanged and needs no migration. A successful write persists
 the configuration and updates the active identifiers. Wrong payload lengths
 return `6700`; invalid identifiers return `6A80` without changing the configuration.
 
@@ -153,6 +160,10 @@ IDs remain accepted for compatibility, including the default 9; values below
 SM2 mapping and monitor future registry assignments for conflicts. Algorithm
 IDs must not collide with ES256 (-7), EdDSA (-8), or ML-DSA-65 (-49). Both
 identifiers support the full signed 32-bit encoding.
+
+`test_admin_sm2_config_wire_format` pins request/response bytes for the defaults,
+asymmetric positive/negative values, and both signed limits; it also checks
+authenticated access, reload from storage, and rejection of non-eight-byte writes.
 
 CTAP reset (including ADMIN CTAP reset) and reconstruction of incomplete
 CTAP storage preserve valid SM2 configuration. Missing or invalid configuration
