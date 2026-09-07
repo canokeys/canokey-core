@@ -19,6 +19,8 @@
 #include <platform-config.h>
 #include <rsa.h>
 #include <sha.h>
+#include <sm2_ke.h>
+#include <sm3.h>
 #include <string.h>
 
 #include "ecdsa-generic.h"
@@ -2885,13 +2887,9 @@ static void test_piv_get_random_without_authentication(void **state) {
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 }
 
-// Regression test for the host/device divergence caught by differential
-// fuzzing (hil-reports/fuzz-hil-crypto.jsonl seq 7): an imported RSA key with
-// an inconsistent CRT component must be rejected at import time with
-// SW_WRONG_DATA (both platforms validate via rsa_check_crt). The use-time net
-// (CIU verifies both CRT congruences; the host rejects via
-// mbedtls_rsa_check_privkey) is kept covered by writing a corrupt key
-// directly, bypassing import validation.
+// An imported RSA key with an inconsistent CRT component must be rejected
+// at import time with SW_WRONG_DATA via rsa_check_crt. Writing a corrupt key
+// directly, bypassing import validation, also checks rejection at use time.
 static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -2968,13 +2966,9 @@ static void test_piv_rsa_sign_rejects_inconsistent_crt_key(void **state) {
   memzero(request, sizeof(request));
 }
 
-// Regression test for the host/device divergence caught by differential
-// fuzzing: PIV GA ECDH (case 6) with an invalid peer point must be rejected.
-// The CIU hardware ECC path (weierstrass_ecdh -> public_key_valid) checks that
-// X,Y are field elements (< p) and that the point satisfies the curve
-// equation; the mbedTLS-backed host K__short_weierstrass_ecdh used to skip any
-// validation and return a "shared secret" for off-curve input (invalid-curve
-// attack surface, and host 9000 vs device 6900 divergence).
+// PIV GA ECDH (case 6) must reject invalid peer points: X,Y must be field
+// elements (< p), and the point must satisfy the curve equation. Returning
+// a "shared secret" for off-curve input exposes an invalid-curve attack.
 static void test_piv_ecdh_rejects_invalid_peer_point(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -3033,6 +3027,932 @@ static void test_piv_ecdh_rejects_invalid_peer_point(void **state) {
   assert_int_equal(piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x11, 0x9A, request, sizeof(request), response,
                                          &response_len),
                    SW_UNABLE_TO_PROCESS);
+}
+
+// ---- SM2 full-message signing (GA stream mode) ----
+
+// sm2p256v1 parameters, built at runtime with the test bignum helpers so the
+// 30-bit limb encoding is not hand-computed.
+static const ecdsa_curve *piv_test_sm2_curve(void) {
+  static ecdsa_curve curve;
+  static int initialized;
+  if (!initialized) {
+    bn_read_be((const uint8_t[]){0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                                 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF,
+                                 0xFF, 0xFF, 0xFF, 0xFF},
+               &curve.prime);
+    bn_read_be((const uint8_t[]){0x32, 0xC4, 0xAE, 0x2C, 0x1F, 0x19, 0x81, 0x19, 0x5F, 0x99, 0x04, 0x46, 0x6A, 0x39,
+                                 0xC9, 0x94, 0x8F, 0xE3, 0x0B, 0xBF, 0xF2, 0x66, 0x0B, 0xE1, 0x71, 0x5A, 0x45, 0x89,
+                                 0x33, 0x4C, 0x74, 0xC7},
+               &curve.G.x);
+    bn_read_be((const uint8_t[]){0xBC, 0x37, 0x36, 0xA2, 0xF4, 0xF6, 0x77, 0x9C, 0x59, 0xBD, 0xCE, 0xE3, 0x6B, 0x69,
+                                 0x21, 0x53, 0xD0, 0xA9, 0x87, 0x7C, 0xC6, 0x2A, 0x47, 0x40, 0x02, 0xDF, 0x32, 0xE5,
+                                 0x21, 0x39, 0xF0, 0xA0},
+               &curve.G.y);
+    bn_read_be((const uint8_t[]){0xFF, 0xFF, 0xFF, 0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+                                 0xFF, 0xFF, 0x72, 0x03, 0xDF, 0x6B, 0x21, 0xC6, 0x05, 0x2B, 0x53, 0xBB, 0xF4, 0x09,
+                                 0x39, 0xD5, 0x41, 0x23},
+               &curve.order);
+    bn_copy(&curve.order, &curve.order_half);
+    bn_rshift(&curve.order_half);
+    curve.a = -3;
+    bn_read_be((const uint8_t[]){0x28, 0xE9, 0xFA, 0x9E, 0x9D, 0x9F, 0x5E, 0x34, 0x4D, 0x5A, 0x9E, 0x4B, 0xCF, 0x65,
+                                 0x09, 0xA7, 0xF3, 0x97, 0x89, 0xF5, 0x15, 0xAB, 0x8F, 0x92, 0xDD, 0xBC, 0xBD, 0x41,
+                                 0x4D, 0x94, 0x0E, 0x93},
+               &curve.b);
+    initialized = 1;
+  }
+  return &curve;
+}
+
+// SM2 signature verification (test only): sig = r||s, both 32-byte big-endian;
+// digest = e. Returns 0 on success.
+static int piv_test_sm2_verify(const uint8_t pub[64], const uint8_t sig[64], const uint8_t digest[32]) {
+  const ecdsa_curve *curve = piv_test_sm2_curve();
+  bignum256 r, s, e, t;
+  curve_point sg, tpa, pa;
+
+  bn_read_be(sig, &r);
+  bn_read_be(sig + 32, &s);
+  bn_read_be(digest, &e);
+  if (bn_is_zero(&r) || !bn_is_less(&r, &curve->order)) return -1;
+  if (bn_is_zero(&s) || !bn_is_less(&s, &curve->order)) return -1;
+
+  // t = (r + s) mod n
+  bn_copy(&r, &t);
+  bn_addmod(&t, &s, &curve->order);
+  if (bn_is_zero(&t)) return -1;
+
+  // (x1, y1) = [s]G + [t]PA; ecdsa_read_pubkey returns 1 when the point validates
+  if (ecdsa_read_pubkey(curve, pub, &pa) != 1) return -1;
+  point_multiply(curve, &s, &curve->G, &sg);
+  point_multiply(curve, &t, &pa, &tpa);
+  point_add(curve, &sg, &tpa);
+  if (point_is_infinity(&tpa)) return -1;
+
+  // R = (e + x1) mod n; 2^256 < 2n so one conditional subtract reduces e and x1
+  bn_mod(&e, &curve->order);
+  bn_mod(&tpa.x, &curve->order);
+  bn_addmod(&e, &tpa.x, &curve->order);
+  return bn_is_equal(&e, &r) ? 0 : -1;
+}
+
+// Host-side e = SM3(Z||M) with the library's own sm2_z/sm3. id == NULL selects
+// SM2_ID_DEFAULT.
+static void piv_test_sm2_digest(const uint8_t *id, uint8_t id_len, const uint8_t pub[64], const uint8_t *message,
+                                size_t message_len, uint8_t e[SM3_DIGEST_LENGTH]) {
+  uint8_t id_buf[1 + 32];
+  ecc_key_t pub_only;
+  uint8_t z[SM3_DIGEST_LENGTH];
+  sm3_ctx_t sm3;
+
+  if (id == NULL) {
+    memcpy(id_buf, SM2_ID_DEFAULT, SM2_ID_DEFAULT[0] + 1);
+  } else {
+    id_buf[0] = id_len;
+    memcpy(id_buf + 1, id, id_len);
+  }
+  memzero(&pub_only, sizeof(pub_only));
+  memcpy(pub_only.pub, pub, PUBLIC_KEY_LENGTH[SM2]);
+  assert_int_equal(sm2_z(id_buf, &pub_only, z), 0);
+  sm3_init(&sm3);
+  sm3_update(&sm3, z, sizeof(z));
+  sm3_update(&sm3, message, message_len);
+  sm3_final(&sm3, e);
+  memzero(&pub_only, sizeof(pub_only));
+  memzero(z, sizeof(z));
+}
+
+// Build 7C { [80 <id_len> <id>] 82 00 81 <len> <message> } using long-form
+// lengths throughout.
+static size_t piv_test_build_sm2_auth(uint8_t *request, const uint8_t *id, uint8_t id_len, const uint8_t *message,
+                                      uint16_t message_len) {
+  const uint16_t id_tlv_len = id == NULL ? 0 : (uint16_t)(2 + id_len);
+  const uint16_t outer_len = id_tlv_len + 2 + 4 + message_len;
+  size_t off = 0;
+  request[off++] = 0x7C;
+  request[off++] = 0x82;
+  request[off++] = (uint8_t)(outer_len >> 8);
+  request[off++] = (uint8_t)outer_len;
+  if (id != NULL) {
+    request[off++] = 0x80;
+    request[off++] = id_len;
+    memcpy(request + off, id, id_len);
+    off += id_len;
+  }
+  request[off++] = 0x82;
+  request[off++] = 0x00;
+  request[off++] = 0x81;
+  request[off++] = 0x82;
+  request[off++] = (uint8_t)(message_len >> 8);
+  request[off++] = (uint8_t)message_len;
+  if (message_len > 0) memcpy(request + off, message, message_len);
+  return off + message_len;
+}
+
+static void piv_test_write_sm2_key(void) {
+  ck_key_t key = {.meta = {.type = SM2,
+                           .origin = KEY_ORIGIN_GENERATED,
+                           .usage = SIGN,
+                           .pin_policy = PIN_POLICY_NEVER,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  assert_int_equal(ck_generate_key(&key), 0);
+  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
+  memzero(key.ecc.pri, sizeof(key.ecc.pri));
+}
+
+static void test_piv_sm2_stream_sign(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key();
+
+  ck_key_t key;
+  assert_int_equal(ck_read_key("piv-k9a", &key), (int)sizeof(ecc_key_t));
+
+  static uint8_t message[1000];
+  static uint8_t request[sizeof(message) + 16];
+  uint8_t response[80];
+  uint8_t e[SM3_DIGEST_LENGTH];
+  uint16_t sw;
+  for (size_t i = 0; i < sizeof(message); ++i)
+    message[i] = (uint8_t)(i * 7u + 3u);
+
+  // Long message (forces command chaining), two different chunk sizes.
+  const size_t request_len = piv_test_build_sm2_auth(request, NULL, 0, message, sizeof(message));
+  piv_test_sm2_digest(NULL, 0, key.ecc.pub, message, sizeof(message), e);
+  for (size_t chunk = 0; chunk < 2; ++chunk) {
+    const size_t response_len = piv_test_send_chained_message(0x54, 0x9A, request, request_len, chunk == 0 ? 240 : 1,
+                                                              response, sizeof(response), &sw);
+    assert_int_equal(sw, SW_NO_ERROR);
+    assert_int_equal(response_len, 4 + SIGNATURE_LENGTH[SM2]);
+    assert_memory_equal(response, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
+    assert_int_equal(piv_test_sm2_verify(key.ecc.pub, response + 4, e), 0);
+  }
+
+  // Short message. The chaining bit on the first APDU still selects stream
+  // mode, so a small chunk size is used.
+  const size_t short_len = piv_test_build_sm2_auth(request, NULL, 0, message, 20);
+  piv_test_sm2_digest(NULL, 0, key.ecc.pub, message, 20, e);
+  size_t response_len =
+      piv_test_send_chained_message(0x54, 0x9A, request, short_len, 7, response, sizeof(response), &sw);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_int_equal(response_len, 68);
+  assert_int_equal(piv_test_sm2_verify(key.ecc.pub, response + 4, e), 0);
+
+  // Empty message: e = SM3(Z) must still sign.
+  const size_t empty_len = piv_test_build_sm2_auth(request, NULL, 0, message, 0);
+  piv_test_sm2_digest(NULL, 0, key.ecc.pub, message, 0, e);
+  response_len = piv_test_send_chained_message(0x54, 0x9A, request, empty_len, 3, response, sizeof(response), &sw);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_int_equal(response_len, 68);
+  assert_int_equal(piv_test_sm2_verify(key.ecc.pub, response + 4, e), 0);
+
+  memzero(&key, sizeof(key));
+  memzero(e, sizeof(e));
+}
+
+static void test_piv_sm2_stream_sign_custom_id(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key();
+
+  ck_key_t key;
+  assert_int_equal(ck_read_key("piv-k9a", &key), (int)sizeof(ecc_key_t));
+
+  static const uint8_t custom_id[] = "canokey@sm2"; // 11 bytes, no NUL
+  static uint8_t max_id[32];
+  memset(max_id, 0xA5, sizeof(max_id));
+  static uint8_t message[300];
+  static uint8_t request[sizeof(message) + 48];
+  uint8_t response[80];
+  uint8_t e[SM3_DIGEST_LENGTH];
+  uint16_t sw;
+  for (size_t i = 0; i < sizeof(message); ++i)
+    message[i] = (uint8_t)(i * 5u + 1u);
+
+  const struct {
+    const uint8_t *id;
+    uint8_t id_len;
+  } ids[] = {{custom_id, sizeof(custom_id) - 1}, {max_id, sizeof(max_id)}};
+  for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+    const size_t request_len = piv_test_build_sm2_auth(request, ids[i].id, ids[i].id_len, message, sizeof(message));
+    piv_test_sm2_digest(ids[i].id, ids[i].id_len, key.ecc.pub, message, sizeof(message), e);
+    const size_t response_len =
+        piv_test_send_chained_message(0x54, 0x9A, request, request_len, 240, response, sizeof(response), &sw);
+    assert_int_equal(sw, SW_NO_ERROR);
+    assert_int_equal(response_len, 68);
+    assert_memory_equal(response, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
+    assert_int_equal(piv_test_sm2_verify(key.ecc.pub, response + 4, e), 0);
+
+    // The same signature must not verify against the default-ID digest.
+    uint8_t default_e[SM3_DIGEST_LENGTH];
+    piv_test_sm2_digest(NULL, 0, key.ecc.pub, message, sizeof(message), default_e);
+    assert_int_equal(piv_test_sm2_verify(key.ecc.pub, response + 4, default_e), -1);
+    memzero(default_e, sizeof(default_e));
+  }
+
+  memzero(&key, sizeof(key));
+  memzero(e, sizeof(e));
+}
+
+static void test_piv_sm2_digest_mode(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key();
+
+  ck_key_t key;
+  assert_int_equal(ck_read_key("piv-k9a", &key), (int)sizeof(ecc_key_t));
+
+  // A non-chained GA keeps the classic digest mode: the 32-byte challenge is
+  // the precomputed e, and the response is raw r||s (no DER wrapper).
+  uint8_t e[SM3_DIGEST_LENGTH];
+  for (size_t i = 0; i < sizeof(e); ++i)
+    e[i] = (uint8_t)(i * 11u + 7u);
+  uint8_t request[6 + SM3_DIGEST_LENGTH] = {0x7C, 0x24, 0x82, 0x00, 0x81, 0x20};
+  memcpy(request + 6, e, sizeof(e));
+  uint8_t r_buf[128];
+  CAPDU C = {.data = request,
+             .cla = 0x00,
+             .ins = PIV_INS_GENERAL_AUTHENTICATE,
+             .p1 = 0x54,
+             .p2 = 0x9A,
+             .lc = sizeof(request),
+             .le = APDU_BUFFER_SIZE};
+  RAPDU R = {.data = r_buf};
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_NO_ERROR);
+  assert_int_equal(R.len, 4 + SIGNATURE_LENGTH[SM2]);
+  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
+  assert_int_equal(piv_test_sm2_verify(key.ecc.pub, R.data + 4, e), 0);
+
+  // A 31-byte challenge is rejected instead of left-padded.
+  request[1] = 0x23;
+  request[5] = 0x1F;
+  C.lc = sizeof(request) - 1;
+  R.len = 0;
+  R.sw = 0;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_LENGTH);
+
+  memzero(&key, sizeof(key));
+  memzero(e, sizeof(e));
+}
+
+// Send a full request in two chained GA APDUs and return the final SW. Used
+// for malformed-request cases where the error may fire before the last chunk.
+static uint16_t piv_test_sm2_send_two_chunks(const uint8_t *request, size_t request_len, size_t first_chunk) {
+  uint8_t response[80];
+  RAPDU rapdu = {.data = response};
+  RAPDU_CHAINING chaining = {.rapdu.data = response};
+  CAPDU command = {.data = (uint8_t *)request,
+                   .cla = 0x10,
+                   .ins = PIV_INS_GENERAL_AUTHENTICATE,
+                   .p1 = 0x54,
+                   .p2 = 0x9A,
+                   .lc = first_chunk,
+                   .le = APDU_BUFFER_SIZE};
+  piv_process_apdu_message(&chaining, &command, &rapdu);
+  if (rapdu.sw != SW_NO_ERROR) return rapdu.sw;
+  command = (CAPDU){.data = (uint8_t *)request + first_chunk,
+                    .cla = 0x00,
+                    .ins = PIV_INS_GENERAL_AUTHENTICATE,
+                    .p1 = 0x54,
+                    .p2 = 0x9A,
+                    .lc = request_len - first_chunk,
+                    .le = APDU_BUFFER_SIZE};
+  piv_process_apdu_message(&chaining, &command, &rapdu);
+  return rapdu.sw;
+}
+
+static void test_piv_sm2_stream_tlv_errors(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key();
+
+  // Tag 0x80 after the response tag 0x82.
+  static const uint8_t id_after_response[] = {0x7C, 0x09, 0x82, 0x00, 0x80, 0x02, 0xAA, 0xBB, 0x81, 0x00};
+  assert_int_equal(piv_test_sm2_send_two_chunks(id_after_response, sizeof(id_after_response), 2), SW_WRONG_DATA);
+
+  // Oversized custom ID (33 bytes).
+  uint8_t big_id[33];
+  memset(big_id, 0x5A, sizeof(big_id));
+  uint8_t oversized[48];
+  size_t oversized_len = piv_test_build_sm2_auth(oversized, big_id, sizeof(big_id), NULL, 0);
+  assert_int_equal(piv_test_sm2_send_two_chunks(oversized, oversized_len, 3), SW_WRONG_DATA);
+
+  // Zero-length custom ID.
+  static const uint8_t empty_id[] = {0x7C, 0x08, 0x80, 0x00, 0x82, 0x00, 0x81, 0x82, 0x00, 0x00};
+  assert_int_equal(piv_test_sm2_send_two_chunks(empty_id, sizeof(empty_id), 4), SW_WRONG_DATA);
+
+  // Duplicate tag 0x80.
+  static const uint8_t duplicate_id[] = {0x7C, 0x0C, 0x80, 0x01, 0xAA, 0x80, 0x01,
+                                         0xBB, 0x82, 0x00, 0x81, 0x82, 0x00, 0x00};
+  assert_int_equal(piv_test_sm2_send_two_chunks(duplicate_id, sizeof(duplicate_id), 6), SW_WRONG_DATA);
+
+  // The TLV shape errors must leave the stream state reset: a well-formed
+  // request still works afterwards.
+  ck_key_t key;
+  assert_int_equal(ck_read_key("piv-k9a", &key), (int)sizeof(ecc_key_t));
+  static const uint8_t message[] = {0x01, 0x02, 0x03};
+  uint8_t request[32];
+  const size_t request_len = piv_test_build_sm2_auth(request, NULL, 0, message, sizeof(message));
+  uint8_t response[80];
+  uint16_t sw;
+  const size_t response_len =
+      piv_test_send_chained_message(0x54, 0x9A, request, request_len, 5, response, sizeof(response), &sw);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_int_equal(response_len, 68);
+  uint8_t e[SM3_DIGEST_LENGTH];
+  piv_test_sm2_digest(NULL, 0, key.ecc.pub, message, sizeof(message), e);
+  assert_int_equal(piv_test_sm2_verify(key.ecc.pub, response + 4, e), 0);
+  memzero(&key, sizeof(key));
+  memzero(e, sizeof(e));
+}
+
+static void test_piv_sm2_stream_key_mismatch_and_disabled_extension(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+
+  // Stream mode requested with the SM2 algorithm id while the slot holds a
+  // P-256 key.
+  ck_key_t key = {.meta = {.type = SECP256R1,
+                           .origin = KEY_ORIGIN_GENERATED,
+                           .usage = SIGN,
+                           .pin_policy = PIN_POLICY_NEVER,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  assert_int_equal(ck_generate_key(&key), 0);
+  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
+  memzero(&key, sizeof(key));
+  static const uint8_t empty_request[] = {0x7C, 0x04, 0x82, 0x00, 0x81, 0x00};
+  assert_int_equal(piv_test_sm2_send_two_chunks(empty_request, sizeof(empty_request), 2), SW_WRONG_P1P2);
+
+  // With the algorithm extension disabled, a chained SM2 GA never enters
+  // stream mode and fails against the slot metadata in the classic path.
+  const piv_algorithm_extension_config_t disabled = {.enabled = 0};
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&disabled), 0);
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key();
+  assert_int_equal(piv_test_sm2_send_two_chunks(empty_request, sizeof(empty_request), 2), SW_WRONG_P1P2);
+
+  const piv_algorithm_extension_config_t defaults = {
+      .enabled = 1,
+      .ed25519 = 0xE0,
+      .rsa3072 = 0x05,
+      .rsa4096 = 0x16,
+      .x25519 = 0xE1,
+      .secp256k1 = 0x53,
+      .secp521r1 = 0x15,
+      .sm2 = 0x54,
+      .mldsa65 = 0xE2,
+      .mlkem768 = 0xE3,
+  };
+  assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
+  assert_int_equal(piv_install(1), 0);
+}
+
+// ---- SM2 key agreement (GM/T 0003.2) ----
+
+// Static and ephemeral key material from the official GM/T 0003.5-2012 Annex A
+// example (same constants as canokey-crypto/test/test_sm2_ke.c). The PIV GA
+// always generates the card-side ephemeral itself, so the fixed session key of
+// the Annex A example cannot be reproduced through this interface; instead the
+// tests below verify the card against the host-side sm2_key_exchange()
+// reference using these fixed keys for the host-played roles.
+static const uint8_t piv_sm2ka_da[32] = "\x81\xEB\x26\xE9\x41\xBB\x5A\xF1\x6D\xF1\x16\x49\x5F\x90\x69\x52"
+                                       "\x72\xAE\x2C\xD6\x3D\x6C\x4A\xE1\x67\x84\x18\xBE\x48\x23\x00\x29";
+static const uint8_t piv_sm2ka_pa[64] = "\x16\x0E\x12\x89\x7D\xF4\xED\xB6\x1D\xD8\x12\xFE\xB9\x67\x48\xFB"
+                                       "\xD3\xCC\xF4\xFF\xE2\x6A\xA6\xF6\xDB\x95\x40\xAF\x49\xC9\x42\x32"
+                                       "\x4A\x7D\xAD\x08\xBB\x9A\x45\x95\x31\x69\x4B\xEB\x20\xAA\x48\x9D"
+                                       "\x66\x49\x97\x5E\x1B\xFC\xF8\xC4\x74\x1B\x78\xB4\xB2\x23\x00\x7F";
+static const uint8_t piv_sm2ka_db[32] = "\x78\x51\x29\x91\x7D\x45\xA9\xEA\x54\x37\xA5\x93\x56\xB8\x23\x38"
+                                       "\xEA\xAD\xDA\x6C\xEB\x19\x90\x88\xF1\x4A\xE1\x0D\xEF\xA2\x29\xB5";
+static const uint8_t piv_sm2ka_pb[64] = "\x6A\xE8\x48\xC5\x7C\x53\xC7\xB1\xB5\xFA\x99\xEB\x22\x86\xAF\x07"
+                                       "\x8B\xA6\x4C\x64\x59\x1B\x8B\x56\x6F\x73\x57\xD5\x76\xF1\x6D\xFB"
+                                       "\xEE\x48\x9D\x77\x16\x21\xA2\x7B\x36\xC5\xC7\x99\x20\x62\xE9\xCD"
+                                       "\x09\xA9\x26\x43\x86\xF3\xFB\xEA\x54\xDF\xF6\x93\x05\x62\x1C\x4D";
+static const uint8_t piv_sm2ka_ra[32] = "\xD4\xDE\x15\x47\x4D\xB7\x4D\x06\x49\x1C\x44\x0D\x30\x5E\x01\x24"
+                                       "\x00\x99\x0F\x3E\x39\x0C\x7E\x87\x15\x3C\x12\xDB\x2E\xA6\x0B\xB3";
+static const uint8_t piv_sm2ka_eph_a[64] = "\x64\xCE\xD1\xBD\xBC\x99\xD5\x90\x04\x9B\x43\x4D\x0F\xD7\x34\x28"
+                                           "\xCF\x60\x8A\x5D\xB8\xFE\x5C\xE0\x7F\x15\x02\x69\x40\xBA\xE4\x0E"
+                                           "\x37\x66\x29\xC7\xAB\x21\xE7\xDB\x26\x09\x22\x49\x9D\xDB\x11\x8F"
+                                           "\x07\xCE\x8E\xAA\xE3\xE7\x72\x0A\xFE\xF6\xA5\xCC\x06\x20\x70\xC0";
+static const uint8_t piv_sm2ka_rb[32] = "\x7E\x07\x12\x48\x14\xB3\x09\x48\x91\x25\xEA\xED\x10\x11\x13\x16"
+                                       "\x4E\xBF\x0F\x34\x58\xC5\xBD\x88\x33\x5C\x1F\x9D\x59\x62\x43\xD6";
+static const uint8_t piv_sm2ka_eph_b[64] = "\xAC\xC2\x76\x88\xA6\xF7\xB7\x06\x09\x8B\xC9\x1F\xF3\xAD\x1B\xFF"
+                                           "\x7D\xC2\x80\x2C\xDB\x14\xCC\xCC\xDB\x0A\x90\x47\x1F\x9B\xD7\x07"
+                                           "\x2F\xED\xAC\x04\x94\xB2\xFF\xC4\xD6\x85\x38\x76\xC7\x9B\x8F\x30"
+                                           "\x1C\x65\x73\xAD\x0A\xA5\x0F\x39\xFC\x87\x18\x1E\x1A\x1B\x46\xFE";
+
+static void piv_test_make_sm2_key(ecc_key_t *key, const uint8_t pri[32], const uint8_t pub[64]) {
+  memset(key, 0, sizeof(*key));
+  memcpy(key->pri, pri, 32);
+  memcpy(key->pub, pub, 64);
+}
+
+static void piv_test_write_sm2_key_full(const char *path, const uint8_t pri[32], pin_policy_t pin_policy) {
+  ck_key_t key = {.meta = {.type = SM2,
+                           .origin = KEY_ORIGIN_GENERATED,
+                           .usage = KEY_USAGE_ANY,
+                           .pin_policy = pin_policy,
+                           .touch_policy = TOUCH_POLICY_NEVER}};
+  memcpy(key.ecc.pri, pri, 32);
+  assert_int_equal(ecc_complete_key(SM2, &key.ecc), 0);
+  assert_int_equal(ck_write_key(path, &key), 0);
+  memzero(&key, sizeof(key));
+}
+
+// Build 7C { [80 <id_len> <id>] 82 00 [85 <inner...>] }.
+static size_t piv_test_build_sm2_ka_request(uint8_t *request, const uint8_t *id, uint8_t id_len,
+                                            const uint8_t *inner, uint16_t inner_len) {
+  const uint16_t inner_tlv_len = inner == NULL ? 0 : (uint16_t)((inner_len < 128 ? 2 : 3) + inner_len);
+  const uint16_t outer = (uint16_t)((id == NULL ? 0 : 2 + id_len) + 2 + inner_tlv_len);
+  size_t off = 0;
+  request[off++] = 0x7C;
+  if (outer < 128) {
+    request[off++] = (uint8_t)outer;
+  } else {
+    request[off++] = 0x81;
+    request[off++] = (uint8_t)outer;
+  }
+  if (id != NULL) {
+    request[off++] = 0x80;
+    request[off++] = id_len;
+    memcpy(request + off, id, id_len);
+    off += id_len;
+  }
+  request[off++] = 0x82;
+  request[off++] = 0x00;
+  if (inner != NULL) {
+    request[off++] = 0x85;
+    if (inner_len < 128) {
+      request[off++] = (uint8_t)inner_len;
+    } else {
+      request[off++] = 0x81;
+      request[off++] = (uint8_t)inner_len;
+    }
+    memcpy(request + off, inner, inner_len);
+    off += inner_len;
+  }
+  return off;
+}
+
+// Build the 0x85 inner TLVs: 86/87 peer public keys (raw X || Y, the 0x04
+// prefix is added here), optional 88 peer ID, optional 89 klen (-1 = absent).
+static size_t piv_test_build_sm2_ka_inner(uint8_t *inner, const uint8_t peer_static[64], const uint8_t peer_eph[64],
+                                          const uint8_t *peer_id, uint8_t peer_id_len, int klen) {
+  size_t off = 0;
+  inner[off++] = 0x86;
+  inner[off++] = 0x41;
+  inner[off++] = 0x04;
+  memcpy(inner + off, peer_static, 64);
+  off += 64;
+  inner[off++] = 0x87;
+  inner[off++] = 0x41;
+  inner[off++] = 0x04;
+  memcpy(inner + off, peer_eph, 64);
+  off += 64;
+  if (peer_id != NULL) {
+    inner[off++] = 0x88;
+    inner[off++] = peer_id_len;
+    memcpy(inner + off, peer_id, peer_id_len);
+    off += peer_id_len;
+  }
+  if (klen >= 0) {
+    inner[off++] = 0x89;
+    inner[off++] = 0x02;
+    inner[off++] = (uint8_t)(klen >> 8);
+    inner[off++] = (uint8_t)klen;
+  }
+  return off;
+}
+
+// Locate a top-level inner tag inside a 7C response.
+// Returns the value length, 0 when absent.
+static size_t piv_test_7c_find(const uint8_t *resp, size_t resp_len, uint8_t want_tag, const uint8_t **value) {
+  assert_true(resp_len >= 4);
+  assert_int_equal(resp[0], 0x7C);
+  size_t off;
+  if (resp[1] == 0x81) {
+    assert_int_equal((size_t)resp[2] + 3, resp_len);
+    off = 3;
+  } else if (resp[1] == 0x82) {
+    assert_true(resp_len >= 4);
+    assert_int_equal(((size_t)resp[2] << 8) + resp[3] + 4, resp_len);
+    off = 4;
+  } else {
+    assert_true(resp[1] < 0x80);
+    assert_int_equal((size_t)resp[1] + 2, resp_len);
+    off = 2;
+  }
+  while (off + 2 <= resp_len) {
+    const uint8_t tag = resp[off];
+    size_t l = resp[off + 1];
+    size_t hdr = 2;
+    if (l == 0x81) { // one-byte long form (inner value >= 128 bytes)
+      assert_true(off + 3 <= resp_len);
+      l = resp[off + 2];
+      hdr = 3;
+    } else if (l == 0x82) {
+      assert_true(off + 4 <= resp_len);
+      l = ((size_t)resp[off + 2] << 8) | resp[off + 3];
+      hdr = 4;
+    } else {
+      assert_true(l < 0x80);
+    }
+    assert_true(off + hdr + l <= resp_len);
+    if (tag == want_tag) {
+      *value = resp + off + hdr;
+      return l;
+    }
+    off += hdr + l;
+  }
+  *value = NULL;
+  return 0;
+}
+
+static uint16_t piv_test_sm2_ka(uint8_t slot, const uint8_t *request, size_t request_len, uint8_t *response,
+                                uint16_t *response_len) {
+  return piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, 0x54, slot, request, request_len, response,
+                               response_len);
+}
+
+// On-card roundtrip: slot 9A acts as initiator, slot 9C as responder, both
+// with default IDs and the default key length (16). The responder call on 9C
+// must not disturb the in-flight initiator state on 9A.
+static void test_piv_sm2_key_agreement_roundtrip(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
+  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
+
+  uint8_t request[192];
+  uint8_t inner[172];
+  uint8_t response[160];
+  uint16_t response_len;
+  const uint8_t *value;
+  uint8_t eph_a_pub[64], eph_b_pub[64], k_a[16], k_b[16];
+
+  // Initiator step 1 on 9A.
+  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+  assert_int_equal(value[0], 0x04);
+  memcpy(eph_a_pub, value + 1, 64);
+
+  // Stateless responder call on 9C while 9A has an agreement in flight.
+  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pa, eph_a_pub, NULL, 0, -1);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+  assert_int_equal(value[0], 0x04);
+  memcpy(eph_b_pub, value + 1, 64);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x85, &value), sizeof(k_b));
+  memcpy(k_b, value, sizeof(k_b));
+
+  // Initiator step 2 on 9A.
+  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, eph_b_pub, NULL, 0, -1);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), sizeof(k_a));
+  memcpy(k_a, value, sizeof(k_a));
+
+  assert_memory_equal(k_a, k_b, sizeof(k_a));
+
+  // The agreement is complete: another step 2 attempt on 9A is now a fresh
+  // (valid) responder call, and step 1 may start over.
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+
+  memzero(k_a, sizeof(k_a));
+  memzero(k_b, sizeof(k_b));
+}
+
+// Card initiator vs host-side sm2_key_exchange() responder reference, with
+// custom IDs on both sides (tag 80 own ID, inner tag 88 peer ID) and klen=32
+// (inner tag 89).
+static void test_piv_sm2_key_agreement_initiator_reference(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
+
+  static const uint8_t id_a[] = {'c', 'a', 'r', 'd', '-', 'a'};
+  static const uint8_t id_b[] = {'h', 'o', 's', 't', '-', 'b', '-', 'r', 'e', 's', 'p'};
+  const uint8_t id_a_buf[1 + sizeof(id_a)] = {sizeof(id_a), 'c', 'a', 'r', 'd', '-', 'a'};
+  const uint8_t id_b_buf[1 + sizeof(id_b)] = {sizeof(id_b), 'h', 'o', 's', 't', '-', 'b', '-', 'r', 'e', 's', 'p'};
+
+  uint8_t request[192];
+  uint8_t inner[172];
+  uint8_t response[160];
+  uint16_t response_len;
+  const uint8_t *value;
+  uint8_t eph_a_pub[64];
+
+  size_t request_len = piv_test_build_sm2_ka_request(request, id_a, sizeof(id_a), NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+  memcpy(eph_a_pub, value + 1, 64);
+
+  // Host reference: B is the responder with the fixed vector keys.
+  ecc_key_t key_b, eph_b;
+  piv_test_make_sm2_key(&key_b, piv_sm2ka_db, piv_sm2ka_pb);
+  piv_test_make_sm2_key(&eph_b, piv_sm2ka_rb, piv_sm2ka_eph_b);
+  uint8_t k_ref[32];
+  assert_int_equal(sm2_key_exchange(SM2_KE_RESPONDER, id_b_buf, id_a_buf, &key_b, &eph_b, piv_sm2ka_pa, eph_a_pub,
+                                    k_ref, sizeof(k_ref)),
+                   0);
+
+  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, id_b, sizeof(id_b), 32);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), sizeof(k_ref));
+  assert_memory_equal(value, k_ref, sizeof(k_ref));
+
+  // A reference computed with the default IDs must NOT match: the custom IDs
+  // on tags 80/88 are effective.
+  uint8_t k_wrong_id[32];
+  assert_int_equal(sm2_key_exchange(SM2_KE_RESPONDER, SM2_ID_DEFAULT, SM2_ID_DEFAULT, &key_b, &eph_b, piv_sm2ka_pa,
+                                    eph_a_pub, k_wrong_id, sizeof(k_wrong_id)),
+                   0);
+  assert_memory_not_equal(value, k_wrong_id, sizeof(k_wrong_id));
+
+  memzero(&key_b, sizeof(key_b));
+  memzero(&eph_b, sizeof(eph_b));
+  memzero(k_ref, sizeof(k_ref));
+  memzero(k_wrong_id, sizeof(k_wrong_id));
+}
+
+// Outer and inner TLV lengths cross the short-form limit independently.
+static void test_piv_sm2_key_agreement_length_boundaries(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
+  ecc_key_t key_b, eph_b;
+  piv_test_make_sm2_key(&key_b, piv_sm2ka_db, piv_sm2ka_pb);
+  piv_test_make_sm2_key(&eph_b, piv_sm2ka_rb, piv_sm2ka_eph_b);
+
+  for (uint16_t klen = 125; klen <= 128; ++klen) {
+    uint8_t request[192], inner[172], response[160], eph_a_pub[64], expected[128];
+    uint16_t response_len;
+    const uint8_t *value;
+    size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+    assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+    assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+    memcpy(eph_a_pub, value + 1, sizeof(eph_a_pub));
+    assert_int_equal(sm2_key_exchange(SM2_KE_RESPONDER, SM2_ID_DEFAULT, SM2_ID_DEFAULT, &key_b, &eph_b,
+                                      piv_sm2ka_pa, eph_a_pub, expected, klen), 0);
+
+    const size_t inner_len =
+        piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, klen);
+    request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+    assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+    assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), klen);
+    assert_memory_equal(value, expected, klen);
+    memzero(expected, sizeof(expected));
+  }
+  memzero(&key_b, sizeof(key_b));
+  memzero(&eph_b, sizeof(eph_b));
+}
+
+// Card responder vs host-side sm2_key_exchange() initiator reference, default
+// IDs, klen=128 (the maximum; exercises the long-form 7C response and the
+// long-form inner 85 tag).
+static void test_piv_sm2_key_agreement_responder_reference(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
+
+  uint8_t request[192];
+  uint8_t inner[172];
+  uint8_t response[224];
+  uint16_t response_len;
+  const uint8_t *value;
+
+  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pa, piv_sm2ka_eph_a, NULL, 0, 128);
+  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+  assert_int_equal(value[0], 0x04);
+  uint8_t eph_b_pub[64];
+  memcpy(eph_b_pub, value + 1, 64);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x85, &value), 128);
+
+  // Host reference: A is the initiator with the fixed vector keys.
+  ecc_key_t key_a, eph_a;
+  piv_test_make_sm2_key(&key_a, piv_sm2ka_da, piv_sm2ka_pa);
+  piv_test_make_sm2_key(&eph_a, piv_sm2ka_ra, piv_sm2ka_eph_a);
+  uint8_t k_ref[128];
+  assert_int_equal(sm2_key_exchange(SM2_KE_INITIATOR, SM2_ID_DEFAULT, SM2_ID_DEFAULT, &key_a, &eph_a, piv_sm2ka_pb,
+                                    eph_b_pub, k_ref, sizeof(k_ref)),
+                   0);
+  assert_memory_equal(value, k_ref, sizeof(k_ref));
+
+  memzero(&key_a, sizeof(key_a));
+  memzero(&eph_a, sizeof(eph_a));
+  memzero(k_ref, sizeof(k_ref));
+}
+
+static void test_piv_sm2_key_agreement_shape_errors(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
+  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
+
+  uint8_t request[200];
+  uint8_t inner[180];
+  uint8_t response[160];
+  uint16_t response_len;
+
+  // Legacy plain-ECDH Case 6 shape (0x85 value starting with 0x04) is
+  // rejected for SM2 keys.
+  uint8_t *req = request;
+  *req++ = 0x7C;
+  *req++ = 0x45;
+  *req++ = 0x82;
+  *req++ = 0x00;
+  *req++ = 0x85;
+  *req++ = 0x41;
+  *req++ = 0x04;
+  memcpy(req, piv_sm2ka_pa, 64);
+  req += 64;
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, req - request, response, &response_len), SW_WRONG_DATA);
+
+  // Session-key length out of range: 0 and 129 (max is 128).
+  for (size_t i = 0; i < 2; ++i) {
+    const int klen = i == 0 ? 0 : 129;
+    const size_t inner_len =
+        piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, klen);
+    const size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+    assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
+  }
+
+  // Off-curve peer points (flip one byte of Y), static and ephemeral.
+  for (size_t i = 0; i < 2; ++i) {
+    uint8_t bad_static[64], bad_eph[64];
+    memcpy(bad_static, piv_sm2ka_pb, 64);
+    memcpy(bad_eph, piv_sm2ka_eph_b, 64);
+    (i == 0 ? bad_static : bad_eph)[63] ^= 0x01;
+    const size_t inner_len = piv_test_build_sm2_ka_inner(inner, bad_static, bad_eph, NULL, 0, -1);
+    const size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+    assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
+  }
+
+  // Duplicate inner tag 86 (second 86 appears where 87 is mandatory).
+  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
+  inner[67] = 0x86;
+  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
+
+  // Unknown inner tag 0x8A after the mandatory tags.
+  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
+  inner[inner_len++] = 0x8A;
+  inner[inner_len++] = 0x00;
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
+
+  // Trailing garbage byte.
+  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
+  inner[inner_len++] = 0x00;
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
+
+  // Missing the mandatory empty response request tag 0x82.
+  request[0] = 0x7C;
+  request[1] = 0x02;
+  request[2] = 0x80;
+  request[3] = 0x00;
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, 4, response, &response_len), SW_WRONG_DATA);
+
+  // Own ID out of range at step 1: zero length and oversized (33).
+  uint8_t big_id[33];
+  memset(big_id, 0x5A, sizeof(big_id));
+  request_len = piv_test_build_sm2_ka_request(request, big_id, sizeof(big_id), NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_WRONG_DATA);
+  static const uint8_t id_empty_request[] = {0x7C, 0x04, 0x80, 0x00, 0x82, 0x00};
+  assert_int_equal(piv_test_sm2_ka(0x9A, id_empty_request, sizeof(id_empty_request), response, &response_len),
+                   SW_WRONG_DATA);
+
+  // P1/key-type mismatch: the SM2 algorithm id against a P-256 slot, and an
+  // empty slot.
+  ck_key_t p256_key = {.meta = {.type = SECP256R1,
+                                .origin = KEY_ORIGIN_GENERATED,
+                                .usage = KEY_USAGE_ANY,
+                                .pin_policy = PIN_POLICY_NEVER,
+                                .touch_policy = TOUCH_POLICY_NEVER}};
+  assert_int_equal(ck_generate_key(&p256_key), 0);
+  assert_int_equal(ck_write_key("piv-k9d", &p256_key), 0);
+  memzero(&p256_key, sizeof(p256_key));
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9D, request, request_len, response, &response_len), SW_WRONG_P1P2);
+  assert_int_equal(piv_test_sm2_ka(0x9E, request, request_len, response, &response_len), SW_CONDITIONS_NOT_SATISFIED);
+}
+
+static void test_piv_sm2_key_agreement_state_machine(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
+  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
+
+  uint8_t request[192];
+  uint8_t inner[172];
+  uint8_t response[160];
+  uint16_t response_len;
+
+  // A new step 1 while an agreement is active is rejected and aborts the old
+  // one; a following 0x85 shape on the same slot is then a responder call.
+  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len),
+                   SW_CONDITIONS_NOT_SATISFIED);
+  const size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  const uint8_t *value;
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x85, &value), 16);
+
+  // Tag 80 is forbidden at step 2 (the own ID was fixed at step 1); the error
+  // also wipes the in-flight agreement.
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  static const uint8_t some_id[] = {'x'};
+  request_len = piv_test_build_sm2_ka_request(request, some_id, sizeof(some_id), inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_WRONG_DATA);
+  // State was wiped: the same 0x85 shape without tag 80 is a responder call.
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+
+  // An interleaved non-agreement GA (a digest sign, which memzeroes the
+  // scratch union via piv_crypto_buffer) destroys the stored state. This is
+  // detected through the empty key_path: a new step 1 recovers cleanly, and a
+  // step-2-shaped command is just a stateless responder call.
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+  uint8_t sign_request[6 + 32] = {0x7C, 0x24, 0x82, 0x00, 0x81, 0x20};
+  for (size_t i = 6; i < sizeof(sign_request); ++i)
+    sign_request[i] = (uint8_t)i;
+  assert_int_equal(piv_test_sm2_ka(0x9C, sign_request, sizeof(sign_request), response, &response_len), SW_NO_ERROR);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+
+  // A non-GA command aborts the in-flight agreement (still active from the
+  // recovery step 1 above).
+  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+  test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+  // The stored ephemeral is gone; the 0x85 shape is a responder call again.
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
+}
+
+static void test_piv_sm2_key_agreement_pin_policy(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_ALWAYS);
+  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_da, PIN_POLICY_ONCE);
+  piv_test_write_sm2_key_full("piv-k9d", piv_sm2ka_db, PIN_POLICY_ONCE);
+
+  uint8_t request[192];
+  uint8_t inner[172];
+  uint8_t response[160];
+  uint16_t response_len;
+
+  // Unauthenticated PIN_POLICY_ALWAYS slot: both step 1 and the one-shot
+  // responder require the PIN.
+  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len),
+                   SW_SECURITY_STATUS_NOT_SATISFIED);
+  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pa, piv_sm2ka_eph_a, NULL, 0, -1);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len),
+                   SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  // PIN_POLICY_ONCE slots: one VERIFY covers step 1, the interleaved
+  // responder call and step 2 (initiator on 9C, responder on 9D).
+  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
+  test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
+
+  const uint8_t *value;
+  uint8_t eph_c_pub[64], eph_d_pub[64], k_c[16], k_d[16];
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+  memcpy(eph_c_pub, value + 1, 64);
+
+  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pa, eph_c_pub, NULL, 0, -1);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9D, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
+  memcpy(eph_d_pub, value + 1, 64);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x85, &value), sizeof(k_d));
+  memcpy(k_d, value, sizeof(k_d));
+
+  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, eph_d_pub, NULL, 0, -1);
+  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
+  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_NO_ERROR);
+  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), sizeof(k_c));
+  memcpy(k_c, value, sizeof(k_c));
+  assert_memory_equal(k_c, k_d, sizeof(k_c));
+
+  memzero(k_c, sizeof(k_c));
+  memzero(k_d, sizeof(k_d));
 }
 
 int main() {
@@ -3103,6 +4023,18 @@ int main() {
       cmocka_unit_test(test_piv_get_random_without_authentication),
       cmocka_unit_test(test_piv_rsa_sign_rejects_inconsistent_crt_key),
       cmocka_unit_test(test_piv_ecdh_rejects_invalid_peer_point),
+      cmocka_unit_test(test_piv_sm2_stream_sign),
+      cmocka_unit_test(test_piv_sm2_stream_sign_custom_id),
+      cmocka_unit_test(test_piv_sm2_digest_mode),
+      cmocka_unit_test(test_piv_sm2_stream_tlv_errors),
+      cmocka_unit_test(test_piv_sm2_stream_key_mismatch_and_disabled_extension),
+      cmocka_unit_test(test_piv_sm2_key_agreement_roundtrip),
+      cmocka_unit_test(test_piv_sm2_key_agreement_initiator_reference),
+      cmocka_unit_test(test_piv_sm2_key_agreement_responder_reference),
+      cmocka_unit_test(test_piv_sm2_key_agreement_length_boundaries),
+      cmocka_unit_test(test_piv_sm2_key_agreement_shape_errors),
+      cmocka_unit_test(test_piv_sm2_key_agreement_state_machine),
+      cmocka_unit_test(test_piv_sm2_key_agreement_pin_policy),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

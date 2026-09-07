@@ -67,12 +67,82 @@ ML-KEM decapsulates on card; ML-DSA verification and ML-KEM encapsulation are
 host-side responsibilities. The PIV random command (`00 84`) is available on
 firmware version 6.0 and newer.
 
+### PIV SM2 Signatures
+
+SM2 slots support two GENERAL AUTHENTICATE (`00 87`) modes, both gated by the
+key's PIN/touch policy like other signature operations:
+
+- Digest mode (single, non-chained APDU): the tag 0x81 challenge must be
+  exactly the 32-byte `e = SM3(Z ‖ M)` value; shorter challenges are rejected
+  with `6700` instead of being left-padded (breaking change for SM2; other
+  curves are unchanged). The response is raw 64-byte `r ‖ s` in a 0x7C/0x82
+  wrapper, never DER-encoded (also a breaking change for SM2 only).
+- Full-message stream mode: a first APDU with the CLA chaining bit set and P1
+  equal to the SM2 algorithm identifier selects streaming. The template is
+  `7C { [80 <len> <ID>]  82 00  81 <len> <message...> }`, sent with ISO
+  command chaining; the optional tag 0x80 (the PIV witness slot, unused by
+  SM2) carries a 1- to 32-byte custom user ID and may appear at most once,
+  before the mandatory empty 0x82 tag. The card computes
+  `Z = SM3(ENTL ‖ ID ‖ a ‖ b ‖ xG ‖ yG ‖ xA ‖ yA)` (default ID
+  `1234567812345678` when 0x80 is absent), hashes `e = SM3(Z ‖ M)`
+  incrementally, and signs on the final APDU, returning raw `r ‖ s`. A
+  zero-length message signs `e = SM3(Z)`. Oversized, empty, misplaced, or
+  duplicate ID TLVs return `6A80`; truncated streams return `6700`; a key
+  type mismatch returns `6A86`. Stream state is session scratch only and is
+  cleared on completion, error, applet reset, or an interleaved command.
+
+Host tests in `test/test_piv.c` cover long/short/empty messages with two
+chaining sizes, custom IDs (including the 32-byte maximum), digest-mode
+accept/reject, the TLV error cases, key type mismatch, and the
+algorithm-extension-disabled path.
+
+### PIV SM2 Key Agreement
+
+SM2 slots also implement the GM/T 0003.2 key agreement (the SKF
+`GenerateAgreementDataWithECC` / `GenerateAgreementDataAndKeyWithECC` /
+`ECCExportSessionKey` flow) through three single, non-chained GENERAL
+AUTHENTICATE APDUs. Any slot holding an SM2 key may participate; the key's
+PIN/touch policy applies as usual. The outer 7C template uses tag 0x80 for an
+optional own ID (1–32 bytes, default `1234567812345678`) and tag 0x85 for an
+inner TLV sequence with fixed order: `86 41 <04‖peer static pub>` and
+`87 41 <04‖peer ephemeral pub>` (mandatory), optional `88 <len> <peer ID>`
+(default `1234567812345678`) and `89 02 <klen uint16 BE>` (session key length,
+default 16, range 1–128).
+
+- Initiator step 1: `7C{[80 <own ID>] 82 00}` → `7C{82 <04‖eph_pub 65B>}`.
+  The card keeps the ephemeral private key in session scratch.
+- Responder one-shot: `7C{[80 <own ID>] 82 00 85 <TLVs>}` →
+  `7C{82 <04‖eph_pub 65B> 85 <K>}`.
+- Initiator step 2: `7C{82 00 85 <TLVs>}` (tag 0x80 forbidden; the own ID from
+  step 1 applies) → `7C{82 <K>}`.
+
+An 0x85-carrying request is treated as step 2 only when an agreement is in
+flight **on the same slot**; on any other slot it is a stateless responder
+call, so one card can run both roles of a roundtrip. Only one agreement may be
+in flight at a time: a new step 1 while active returns `6985` and aborts the
+old one. The agreement state is wiped on completion, on any error, on any
+non-GA command, and on applet reset or cross-transport preemption; interleaved
+GA operations on other slots leave it intact, but anything that reuses the
+shared session scratch (e.g. a signature) destroys it — a clobbered slot then
+fails step 2 with `6985` and a fresh step 1 starts over.
+
+The session key K is returned to the host in the response (like ML-KEM
+decapsulation); its confidentiality beyond the card boundary is the host's
+responsibility, and authenticating the peer's static public key is the host
+application's job — the card only validates that peer points are on the curve.
+Two deliberate restrictions: a legacy plain-ECDH request (0x85 starting with
+`04`) on an SM2 key is rejected with `6A80` (an SM2 static key must not be
+exposed to both plain ECDH and SM2 key agreement), and a slot with
+`PIN_POLICY_ALWAYS` cannot complete the initiator role because the per-GA PIN
+consumption fails step 2 (use NEVER/ONCE for initiator slots; responder works
+with any policy).
+
 ### CTAP SM2 Configuration and Credential Enumeration
 
 ADMIN SM2 configuration uses `00 11 00 00 08` to read and
 `00 12 00 00 08 <curve_id> <algo_id>` to write. Both require ADMIN PIN
 verification. The payload retains the packed pair of signed 32-bit integers
-in device-native byte order (big-endian on CIU). A successful write persists
+in device-native byte order. A successful write persists
 the configuration and updates the active identifiers. Wrong payload lengths
 return `6700`; invalid identifiers return `6A80` without changing the configuration.
 

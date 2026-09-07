@@ -15,6 +15,8 @@
 #include <pke.h>
 #include <rand.h>
 #include <rsa.h>
+#include <sm2_ke.h>
+#include <sm3.h>
 
 #include "piv-attestation.h"
 
@@ -146,17 +148,25 @@ typedef struct {
 
 /**
  * Build a 0x7C TLV wrapper in rdata.
- * For short lengths (< 128): header at rdata[0..3], data starts at rdata+4.
+ * For lengths < 126: data starts at rdata+4. At 126/127 the outer
+ * length needs long form while the inner length stays short (rdata+5).
  * For extended lengths (>= 128): header at rdata[0..7], data starts at rdata+8.
  * Returns the total response length (header + data_len).
  */
 static uint16_t piv_7c_wrap(uint8_t *rdata, uint8_t inner_tag, uint16_t data_len) {
-  if (data_len < 128) {
+  if (data_len < 126) {
     rdata[0] = 0x7C;
     rdata[1] = (uint8_t)(data_len + 2);
     rdata[2] = inner_tag;
     rdata[3] = (uint8_t)data_len;
     return data_len + 4;
+  } else if (data_len < 128) {
+    rdata[0] = 0x7C;
+    rdata[1] = 0x81;
+    rdata[2] = (uint8_t)(data_len + 2);
+    rdata[3] = inner_tag;
+    rdata[4] = (uint8_t)data_len;
+    return data_len + 5;
   } else {
     rdata[0] = 0x7C;
     rdata[1] = 0x82;
@@ -225,12 +235,42 @@ static uint8_t piv_pke_use;
 #define piv_mldsa_stream_state applet_session_scratch.piv_mldsa
 #define piv_mlkem_scratch applet_session_scratch.piv_mlkem
 #define piv_ga_stream_state applet_session_scratch.piv_ga_stream
+#define piv_sm2_agreement applet_session_scratch.piv_sm2_agreement
+// Guards `piv_sm2_agreement`: the scratch union aliases other flows, so the
+// in-flight marker must live outside it. Only meaningful when nonzero.
+static uint8_t piv_sm2_agreement_active;
 
 enum {
   PIV_AUTH_MODE_CLASSIC,
   PIV_AUTH_MODE_MLDSA,
   PIV_AUTH_MODE_ED25519_RANDOMIZED,
+  PIV_AUTH_MODE_SM2,
 };
+
+// SM2 full-message stream mode: the GA 7C template carries an optional tag
+// 0x80 (the witness slot, unused by SM2 proper) with a 1..32-byte custom ID
+// before the mandatory empty 0x82 response tag and the 0x81 message:
+//   7C { [80 <len> <ID>]  82 00  81 <len> <message...> }
+// The card computes e = SM3(Z||M) itself and returns raw r||s (64 bytes).
+#define PIV_SM2_ID_MAX_LENGTH 32
+
+// SM2 key agreement (GM/T 0003.2-2012, no key confirmation) on GENERAL
+// AUTHENTICATE; see piv_general_authenticate_sm2_dispatch. Inner TLV tags
+// inside the 0x85 value; peer public keys are uncompressed points (0x04 ||
+// X || Y, 65 bytes).
+// clang-format off
+#define PIV_SM2_KE_TAG_PEER_STATIC 0x86
+#define PIV_SM2_KE_TAG_PEER_EPH    0x87
+#define PIV_SM2_KE_TAG_PEER_ID     0x88
+#define PIV_SM2_KE_TAG_KLEN        0x89
+#define PIV_SM2_KE_POINT_LEN       65
+#define PIV_SM2_KE_DEFAULT_KLEN    16
+#define PIV_SM2_KE_MAX_KLEN        128
+// 86 41 <65>  87 41 <65>  88 20 <32>  89 02 <2>
+#define PIV_SM2_KE_MAX_EXP_LEN     (2 * (2 + PIV_SM2_KE_POINT_LEN) + 2 + PIV_SM2_ID_MAX_LENGTH + 4)
+// clang-format on
+_Static_assert(sizeof(piv_sm2_agreement.key_path) == MAX_KEY_PATH_LEN,
+               "piv_sm2_agreement.key_path must match MAX_KEY_PATH_LEN");
 
 enum {
   PIV_PKE_USE_NONE,
@@ -1007,6 +1047,9 @@ static uint16_t piv_parse_general_authenticate(uint16_t auth_len, piv_data_read_
 enum {
   PIV_GA_STREAM_OUTER_TAG,
   PIV_GA_STREAM_OUTER_LEN,
+  PIV_GA_STREAM_ID_OR_RESPONSE_TAG,
+  PIV_GA_STREAM_ID_LEN,
+  PIV_GA_STREAM_ID_VALUE,
   PIV_GA_STREAM_RESPONSE_TAG,
   PIV_GA_STREAM_RESPONSE_LEN,
   PIV_GA_STREAM_CHALLENGE_TAG,
@@ -1014,6 +1057,34 @@ enum {
   PIV_GA_STREAM_MESSAGE,
   PIV_GA_STREAM_DONE,
 };
+
+// Feed Z = SM3(ENTL||ID||a||b||xG||yG||pub) into the SM2 stream hash. Called
+// exactly once, when the optional custom-ID TLV (tag 0x80) has been parsed or
+// the response tag 0x82 shows there is none. sm2_z only reads the public part
+// of the key, so a temporary ecc_key_t carrying just `pub` is sufficient.
+static int piv_ga_stream_sm2_feed_z(piv_ga_stream_state_t *state, bool custom_id) {
+  uint8_t id_buf[1 + PIV_SM2_ID_MAX_LENGTH];
+  ecc_key_t pub_only;
+  uint8_t z[SM3_DIGEST_LENGTH];
+
+  if (custom_id) {
+    id_buf[0] = state->crypto.sm2.id_len;
+    memcpy(id_buf + 1, state->crypto.sm2.id, state->crypto.sm2.id_len);
+  } else {
+    memcpy(id_buf, SM2_ID_DEFAULT, SM2_ID_DEFAULT[0] + 1);
+  }
+  memzero(&pub_only, sizeof(pub_only));
+  memcpy(pub_only.pub, state->crypto.sm2.pub, sizeof(state->crypto.sm2.pub));
+  const int ret = sm2_z(id_buf, &pub_only, z);
+  memzero(&pub_only, sizeof(pub_only));
+  if (ret < 0) {
+    memzero(z, sizeof(z));
+    return -1;
+  }
+  sm3_update(&state->crypto.sm2.hash, z, sizeof(z));
+  memzero(z, sizeof(z));
+  return 0;
+}
 
 static int piv_ga_stream_take_inner_byte(piv_ga_stream_state_t *state) {
   if (state->outer_remaining == 0) return -1;
@@ -1038,9 +1109,48 @@ static uint16_t piv_ga_stream_update(piv_ga_stream_state_t *state, uint8_t mode,
       if (ret < 0) return SW_WRONG_LENGTH;
       if (ret > 0) {
         state->outer_remaining = length;
+        state->phase = PIV_GA_STREAM_ID_OR_RESPONSE_TAG;
+      }
+      break;
+    case PIV_GA_STREAM_ID_OR_RESPONSE_TAG:
+      // Optional SM2 custom-ID TLV (tag 0x80) before the mandatory empty
+      // response tag 0x82. Other modes only accept 0x82 here.
+      if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
+      if (data[offset] == TAG_RESPONSE) {
+        offset++;
+        if (mode == PIV_AUTH_MODE_SM2 && piv_ga_stream_sm2_feed_z(state, false) < 0) return SW_UNABLE_TO_PROCESS;
+        state->phase = PIV_GA_STREAM_RESPONSE_LEN;
+      } else if (data[offset] == TAG_WITNESS && mode == PIV_AUTH_MODE_SM2) {
+        offset++;
+        state->phase = PIV_GA_STREAM_ID_LEN;
+      } else {
+        return SW_WRONG_DATA;
+      }
+      break;
+    case PIV_GA_STREAM_ID_LEN:
+      if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
+      ret = tlv_len_stream_feed(&state->tlv_len, data[offset++], &length);
+      if (ret < 0) return SW_WRONG_LENGTH;
+      if (ret > 0) {
+        if (length == 0 || length > PIV_SM2_ID_MAX_LENGTH) return SW_WRONG_DATA;
+        state->crypto.sm2.id_len = (uint8_t)length;
+        state->phase = PIV_GA_STREAM_ID_VALUE;
+      }
+      break;
+    case PIV_GA_STREAM_ID_VALUE: {
+      const size_t count =
+          MIN(data_len - offset, (size_t)(state->crypto.sm2.id_len - state->crypto.sm2.id_received));
+      if (count == 0 || (size_t)state->outer_remaining < count) return SW_WRONG_LENGTH;
+      memcpy(state->crypto.sm2.id + state->crypto.sm2.id_received, data + offset, count);
+      offset += count;
+      state->outer_remaining -= (uint16_t)count;
+      state->crypto.sm2.id_received += (uint8_t)count;
+      if (state->crypto.sm2.id_received == state->crypto.sm2.id_len) {
+        if (piv_ga_stream_sm2_feed_z(state, true) < 0) return SW_UNABLE_TO_PROCESS;
         state->phase = PIV_GA_STREAM_RESPONSE_TAG;
       }
       break;
+    }
     case PIV_GA_STREAM_RESPONSE_TAG:
       if (piv_ga_stream_take_inner_byte(state) < 0) return SW_WRONG_LENGTH;
       if (data[offset++] != TAG_RESPONSE) return SW_WRONG_DATA;
@@ -1075,6 +1185,8 @@ static uint16_t piv_ga_stream_update(piv_ga_stream_state_t *state, uint8_t mode,
       if (count == 0) return SW_WRONG_LENGTH;
       if (mode == PIV_AUTH_MODE_MLDSA)
         shake_update(&state->crypto.mldsa, data + offset, count);
+      else if (mode == PIV_AUTH_MODE_SM2)
+        sm3_update(&state->crypto.sm2.hash, data + offset, count);
       else if (ed25519_randomized_sign_update(&state->crypto.ed25519, data + offset, count) < 0)
         return SW_UNABLE_TO_PROCESS;
       offset += count;
@@ -1212,7 +1324,8 @@ static int piv_ga_stream_begin(uint8_t p2, uint8_t mode) {
   if (meta_sw != SW_NO_ERROR) return meta_sw;
   if (key.meta.type == KEY_TYPE_PKC_END) return SW_CONDITIONS_NOT_SATISFIED;
   if ((mode == PIV_AUTH_MODE_MLDSA && !IS_MLDSA(key.meta.type)) ||
-      (mode == PIV_AUTH_MODE_ED25519_RANDOMIZED && key.meta.type != ED25519))
+      (mode == PIV_AUTH_MODE_ED25519_RANDOMIZED && key.meta.type != ED25519) ||
+      (mode == PIV_AUTH_MODE_SM2 && key.meta.type != SM2))
     return SW_WRONG_P1P2;
 
   authenticate_reset();
@@ -1231,6 +1344,15 @@ static int piv_ga_stream_begin(uint8_t p2, uint8_t mode) {
     shake256_init(&piv_ga_stream_state.crypto.mldsa);
     shake_update(&piv_ga_stream_state.crypto.mldsa, key.mldsa.tr, sizeof(key.mldsa.tr));
     shake_update(&piv_ga_stream_state.crypto.mldsa, empty_context_header, sizeof(empty_context_header));
+  } else if (mode == PIV_AUTH_MODE_SM2) {
+    // Z needs the public key; imported keys may not carry it. Z itself is
+    // computed later, once the optional custom-ID TLV has been parsed.
+    if (ecc_complete_key(SM2, &key.ecc) < 0) {
+      memzero(&key, sizeof(key));
+      return -1;
+    }
+    memcpy(piv_ga_stream_state.crypto.sm2.pub, key.ecc.pub, sizeof(piv_ga_stream_state.crypto.sm2.pub));
+    sm3_init(&piv_ga_stream_state.crypto.sm2.hash);
   } else if (ed25519_randomized_sign_init(&piv_ga_stream_state.crypto.ed25519, &key.ecc) < 0) {
     memzero(&key, sizeof(key));
     return -1;
@@ -1248,12 +1370,21 @@ static void piv_import_reset(void) {
   memzero(&piv_import_stream, sizeof(piv_import_stream));
 }
 
+static void piv_sm2_agreement_reset(void) {
+  piv_sm2_agreement_active = 0;
+  memzero(&piv_sm2_agreement, sizeof(piv_sm2_agreement));
+}
+
 static void piv_auth_reset(void) {
   piv_pke_release(PIV_PKE_USE_AUTH);
   if (piv_auth_mode == PIV_AUTH_MODE_ED25519_RANDOMIZED)
     ed25519_randomized_sign_clear(&piv_ga_stream_state.crypto.ed25519);
-  else if (piv_auth_mode == PIV_AUTH_MODE_MLDSA)
+  else if (piv_auth_mode == PIV_AUTH_MODE_MLDSA || piv_auth_mode == PIV_AUTH_MODE_SM2)
     memzero(&piv_ga_stream_state, sizeof(piv_ga_stream_state));
+  // Note: the SM2 key-agreement scratch is NOT wiped here; it aliases the
+  // ML-DSA response stream state, which is activated before the final
+  // piv_auth_reset of a stream sign. It is wiped by piv_abort_chained_state,
+  // piv_poweroff, and the non-GA INS check in piv_process_apdu instead.
   piv_auth_active = 0;
   piv_auth_p1 = 0;
   piv_auth_p2 = 0;
@@ -1266,6 +1397,7 @@ static void piv_abort_chained_state(void) {
   piv_do_read = -1;
   piv_import_reset();
   piv_auth_reset();
+  piv_sm2_agreement_reset();
   apdu_response_source_clear();
   piv_state = PIV_STATE_OTHER;
 }
@@ -1294,6 +1426,7 @@ void piv_poweroff(void) {
   piv_do_path[0] = '\0';
   piv_import_reset();
   piv_auth_reset();
+  piv_sm2_agreement_reset();
 }
 
 int piv_install(const uint8_t reset) {
@@ -1616,6 +1749,259 @@ __attribute__((noinline)) static int piv_general_authenticate_mlkem_dispatch(
   return 0;
 }
 
+// Parse the 0x85 value of an SM2 key-agreement GA: fixed-order inner TLVs
+//   86 41 <04 || peer static pub>  87 41 <04 || peer ephemeral pub>
+//   [88 <len> <peer ID, 1..32>]  [89 02 <session-key length, uint16 BE>]
+// The returned point pointers skip the 0x04 prefix (raw 64-byte X || Y).
+// Fixed order rejects duplicate and unknown tags as well as trailing bytes.
+static uint16_t piv_sm2_ke_parse_exp(const uint8_t *buf, uint16_t buf_len, const uint8_t **peer_static,
+                                     const uint8_t **peer_eph, const uint8_t **peer_id, uint8_t *peer_id_len,
+                                     uint16_t *klen) {
+  if (buf_len < 2 * (2 + PIV_SM2_KE_POINT_LEN)) return SW_WRONG_DATA;
+  uint16_t off = 0;
+  if (buf[off] != PIV_SM2_KE_TAG_PEER_STATIC || buf[off + 1] != PIV_SM2_KE_POINT_LEN || buf[off + 2] != 0x04)
+    return SW_WRONG_DATA;
+  *peer_static = buf + off + 3;
+  off += 2 + PIV_SM2_KE_POINT_LEN;
+  if (buf[off] != PIV_SM2_KE_TAG_PEER_EPH || buf[off + 1] != PIV_SM2_KE_POINT_LEN || buf[off + 2] != 0x04)
+    return SW_WRONG_DATA;
+  *peer_eph = buf + off + 3;
+  off += 2 + PIV_SM2_KE_POINT_LEN;
+  *peer_id = NULL;
+  *peer_id_len = 0;
+  *klen = PIV_SM2_KE_DEFAULT_KLEN;
+  if (off < buf_len && buf[off] == PIV_SM2_KE_TAG_PEER_ID) {
+    if (off + 2 > buf_len) return SW_WRONG_DATA;
+    const uint8_t id_len = buf[off + 1];
+    if (id_len == 0 || id_len > PIV_SM2_ID_MAX_LENGTH || off + 2u + id_len > buf_len) return SW_WRONG_DATA;
+    *peer_id = buf + off + 2;
+    *peer_id_len = id_len;
+    off += 2 + id_len;
+  }
+  if (off < buf_len && buf[off] == PIV_SM2_KE_TAG_KLEN) {
+    if (off + 4 > buf_len || buf[off + 1] != 2) return SW_WRONG_DATA;
+    *klen = ((uint16_t)buf[off + 2] << 8) | buf[off + 3];
+    if (*klen == 0 || *klen > PIV_SM2_KE_MAX_KLEN) return SW_WRONG_DATA;
+    off += 4;
+  }
+  return off == buf_len ? SW_NO_ERROR : SW_WRONG_DATA;
+}
+
+// SM2 key agreement (GM/T 0003.2-2012, no key confirmation) mapped onto
+// GENERAL AUTHENTICATE 7C templates. All shapes are single non-chained APDUs:
+// a chained SM2 GA selects the full-message stream signing mode instead.
+//
+//   Initiator step 1:   7C { [80 <own ID>]  82 00 }
+//                       -> 7C { 82 <04 || own ephemeral pub> }
+//   Responder one-shot: 7C { [80 <own ID>]  82 00  85 <TLVs> }
+//                       -> 7C { 82 <04 || own ephemeral pub>  85 <K> }
+//   Initiator step 2:   7C { 82 00  85 <TLVs> }   (tag 80 forbidden here)
+//                       -> 7C { 82 <K> }
+//
+// The optional tag 0x80 (the PIV witness slot, unused by SM2 proper) carries
+// the own ID (1..32 bytes; absent = SM2_ID_DEFAULT). Step 2 is recognized by
+// slot: an in-flight agreement belongs to the slot that started it, so the
+// same 0x85 shape on any other slot is a stateless responder call that leaves
+// the initiator state untouched. A new step 1 while an agreement is active is
+// rejected with SW_CONDITIONS_NOT_SATISFIED and aborts the old one.
+__attribute__((noinline)) static int piv_general_authenticate_sm2_dispatch(
+    const CAPDU *capdu, RAPDU *rapdu, piv_data_read_t read, void *ctx, const char *key_path, const key_meta_t *meta,
+    const uint16_t pos[6], const uint16_t len[6]) {
+  // Every key-agreement shape carries the mandatory empty response request.
+  if (pos[IDX_RESPONSE] == 0 || len[IDX_RESPONSE] != 0) EXCEPT(SW_WRONG_DATA);
+  if (pos[IDX_WITNESS] != 0 && (len[IDX_WITNESS] == 0 || len[IDX_WITNESS] > PIV_SM2_ID_MAX_LENGTH))
+    EXCEPT(SW_WRONG_DATA);
+
+  if (pos[IDX_EXP] == 0) {
+    // ---- Initiator step 1 ----
+    DBG_MSG("SM2 key agreement, initiator step 1\n");
+    // At most one agreement may be in flight. A scratch user from an
+    // interleaved flow (this union member aliases e.g. piv_crypto_buffer,
+    // which the classic sign/ECDH paths memzero) leaves an empty key_path
+    // behind; such a lost state is discarded instead of blocking step 1.
+    if (piv_sm2_agreement_active && piv_sm2_agreement.key_path[0] != '\0') EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    piv_sm2_agreement_reset();
+    authenticate_reset();
+#ifndef FUZZ
+    if (piv_security_status_check(P2, meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+    if (meta->touch_policy == TOUCH_POLICY_CACHED || meta->touch_policy == TOUCH_POLICY_ALWAYS)
+      PIV_TOUCH(meta->touch_policy == TOUCH_POLICY_CACHED);
+
+    piv_sm2_agreement_state_t *st = &piv_sm2_agreement;
+    memset(st, 0, sizeof(*st));
+    if (pos[IDX_WITNESS] != 0) {
+      st->id_len = (uint8_t)len[IDX_WITNESS];
+      if (read(ctx, pos[IDX_WITNESS], st->id, st->id_len) != st->id_len) {
+        memzero(st, sizeof(*st));
+        return -1;
+      }
+    }
+    strcpy(st->key_path, key_path);
+
+    ck_key_t key;
+    ecc_key_t eph;
+    if (ck_read_key(key_path, &key) < 0) {
+      memzero(st, sizeof(*st));
+      return -1;
+    }
+    // Imported keys may lack the public half; Z_self needs it at step 2.
+    if (ecc_complete_key(SM2, &key.ecc) < 0 || ecc_generate(SM2, &eph) < 0) {
+      memzero(&key, sizeof(key));
+      memzero(st, sizeof(*st));
+      return -1;
+    }
+    memcpy(st->eph_pri, eph.pri, PRIVATE_KEY_LENGTH[SM2]);
+    memcpy(st->eph_pub, eph.pub, PUBLIC_KEY_LENGTH[SM2]);
+    memcpy(st->self_pub, key.ecc.pub, PUBLIC_KEY_LENGTH[SM2]);
+    memzero(&key, sizeof(key));
+    start_quick_blinking(0);
+
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, PIV_SM2_KE_POINT_LEN);
+    RDATA[4] = 0x04;
+    memcpy(RDATA + 5, eph.pub, PUBLIC_KEY_LENGTH[SM2]);
+    memzero(&eph, sizeof(eph));
+    piv_sm2_agreement_active = 1;
+    return 0;
+  }
+
+  // ---- 0x85 present: responder one-shot or initiator step 2 ----
+  if (len[IDX_EXP] > PIV_SM2_KE_MAX_EXP_LEN) EXCEPT(SW_WRONG_DATA);
+  uint8_t exp[PIV_SM2_KE_MAX_EXP_LEN];
+  if (read(ctx, pos[IDX_EXP], exp, len[IDX_EXP]) != len[IDX_EXP]) return -1;
+  // Deliberate breaking change: for SM2 keys the legacy plain-ECDH Case 6
+  // shape (0x85 value starting with 0x04) is rejected so that an SM2 static
+  // key cannot be exposed to both plain ECDH and SM2 key agreement.
+  if (exp[0] == 0x04) EXCEPT(SW_WRONG_DATA);
+  const uint8_t *peer_static, *peer_eph, *peer_id;
+  uint8_t peer_id_len;
+  uint16_t klen;
+  const uint16_t tlv_sw =
+      piv_sm2_ke_parse_exp(exp, len[IDX_EXP], &peer_static, &peer_eph, &peer_id, &peer_id_len, &klen);
+  if (tlv_sw != SW_NO_ERROR) EXCEPT(tlv_sw);
+
+  const bool step2 = piv_sm2_agreement_active != 0 && piv_sm2_agreement.key_path[0] != '\0' &&
+                     strcmp(piv_sm2_agreement.key_path, key_path) == 0;
+  if (step2 && pos[IDX_WITNESS] != 0) {
+    DBG_MSG("Own ID was fixed at step 1\n");
+    EXCEPT(SW_WRONG_DATA);
+  }
+  if (step2)
+    DBG_MSG("SM2 key agreement, initiator step 2\n");
+  else
+    DBG_MSG("SM2 key agreement, responder\n");
+
+  authenticate_reset();
+#ifndef FUZZ
+  if (piv_security_status_check(P2, meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+#endif
+  if (meta->touch_policy == TOUCH_POLICY_CACHED || meta->touch_policy == TOUCH_POLICY_ALWAYS)
+    PIV_TOUCH(meta->touch_policy == TOUCH_POLICY_CACHED);
+
+  uint8_t own_id[1 + PIV_SM2_ID_MAX_LENGTH];
+  uint8_t peer_id_buf[1 + PIV_SM2_ID_MAX_LENGTH];
+  if (peer_id_len > 0) {
+    peer_id_buf[0] = peer_id_len;
+    memcpy(peer_id_buf + 1, peer_id, peer_id_len);
+  } else {
+    memcpy(peer_id_buf, SM2_ID_DEFAULT, SM2_ID_DEFAULT[0] + 1);
+  }
+
+  ck_key_t key;
+  ecc_key_t eph;
+  if (step2) {
+    const piv_sm2_agreement_state_t *st = &piv_sm2_agreement;
+    if (st->id_len > 0) {
+      own_id[0] = st->id_len;
+      memcpy(own_id + 1, st->id, st->id_len);
+    } else {
+      memcpy(own_id, SM2_ID_DEFAULT, SM2_ID_DEFAULT[0] + 1);
+    }
+    memset(&eph, 0, sizeof(eph));
+    memcpy(eph.pri, st->eph_pri, PRIVATE_KEY_LENGTH[SM2]);
+    // The scratch union aliases other flows; re-deriving the ephemeral public
+    // key turns silent scratch clobbering into a clean rejection.
+    if (ecc_complete_key(SM2, &eph) < 0 || memcmp_s(eph.pub, st->eph_pub, PUBLIC_KEY_LENGTH[SM2]) != 0) {
+      memzero(&eph, sizeof(eph));
+      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    }
+    if (ck_read_key(key_path, &key) < 0) {
+      memzero(&eph, sizeof(eph));
+      return -1;
+    }
+    // The slot key must still be the one the agreement was started with.
+    if (key.meta.type != SM2 || ecc_complete_key(SM2, &key.ecc) < 0 ||
+        memcmp_s(key.ecc.pub, st->self_pub, PUBLIC_KEY_LENGTH[SM2]) != 0) {
+      memzero(&key, sizeof(key));
+      memzero(&eph, sizeof(eph));
+      EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+    }
+    // The state is fully loaded into locals; wipe it before the crypto call.
+    piv_sm2_agreement_reset();
+  } else {
+    if (pos[IDX_WITNESS] != 0) {
+      own_id[0] = (uint8_t)len[IDX_WITNESS];
+      if (read(ctx, pos[IDX_WITNESS], own_id + 1, own_id[0]) != own_id[0]) return -1;
+    } else {
+      memcpy(own_id, SM2_ID_DEFAULT, SM2_ID_DEFAULT[0] + 1);
+    }
+    if (ck_read_key(key_path, &key) < 0) return -1;
+    if (ecc_complete_key(SM2, &key.ecc) < 0 || ecc_generate(SM2, &eph) < 0) {
+      memzero(&key, sizeof(key));
+      memzero(&eph, sizeof(eph));
+      return -1;
+    }
+  }
+
+  uint8_t k[PIV_SM2_KE_MAX_KLEN];
+  start_quick_blinking(0);
+  const int ke_ret = sm2_key_exchange(step2 ? SM2_KE_INITIATOR : SM2_KE_RESPONDER, own_id, peer_id_buf, &key.ecc,
+                                      &eph, peer_static, peer_eph, k, klen);
+  if (ke_ret < 0) {
+    ERR_MSG("SM2 key exchange failed\n");
+    memzero(k, sizeof(k));
+    memzero(&key, sizeof(key));
+    memzero(&eph, sizeof(eph));
+    EXCEPT(SW_WRONG_DATA);
+  }
+
+  if (step2) {
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, klen);
+    memcpy(RDATA + LL - klen, k, klen);
+  } else {
+    // Two inner TLVs: 82 <04 || ephemeral pub>, then 85 <K>. Both the 7C
+    // wrapper and the 85 tag switch to the one-byte long form at 128.
+    const uint16_t inner_len = 2 + PIV_SM2_KE_POINT_LEN + (klen < 128 ? 2 : 3) + klen;
+    uint16_t off = 0;
+    if (inner_len < 128) {
+      RDATA[off++] = 0x7C;
+      RDATA[off++] = (uint8_t)inner_len;
+    } else {
+      RDATA[off++] = 0x7C;
+      RDATA[off++] = 0x81;
+      RDATA[off++] = (uint8_t)inner_len;
+    }
+    RDATA[off++] = TAG_RESPONSE;
+    RDATA[off++] = PIV_SM2_KE_POINT_LEN;
+    RDATA[off++] = 0x04;
+    memcpy(RDATA + off, eph.pub, PUBLIC_KEY_LENGTH[SM2]);
+    off += PUBLIC_KEY_LENGTH[SM2];
+    RDATA[off++] = TAG_EXP;
+    if (klen < 128) {
+      RDATA[off++] = (uint8_t)klen;
+    } else {
+      RDATA[off++] = 0x81;
+      RDATA[off++] = (uint8_t)klen;
+    }
+    memcpy(RDATA + off, k, klen);
+    LL = off + klen;
+  }
+  memzero(k, sizeof(k));
+  memzero(&key, sizeof(key));
+  memzero(&eph, sizeof(eph));
+  return 0;
+}
+
 __attribute__((noinline)) static int piv_general_authenticate_dispatch_classic(
     const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read, void *ctx) {
   if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
@@ -1674,6 +2060,14 @@ __attribute__((noinline)) static int piv_general_authenticate_dispatch_classic(
     if (piv_security_status_check(P2, &key.meta) != 0) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
 
+    // SM2 signs e = SM3(Z||M), which is always a 32-byte SM3 output. Unlike
+    // the generic short-Weierstrass path below, a shorter challenge is
+    // rejected instead of left-padded (breaking change for SM2 only).
+    if (key.meta.type == SM2 && len[IDX_CHALLENGE] != PRIVATE_KEY_LENGTH[SM2]) {
+      DBG_MSG("SM2 challenge must be exactly 32 bytes\n");
+      EXCEPT(SW_WRONG_LENGTH);
+    }
+
     if ((IS_SHORT_WEIERSTRASS(key.meta.type) && len[IDX_CHALLENGE] > PRIVATE_KEY_LENGTH[key.meta.type]) ||
         (IS_RSA(key.meta.type) && len[IDX_CHALLENGE] != PUBLIC_KEY_LENGTH[key.meta.type])) {
       DBG_MSG("Incorrect challenge data length\n");
@@ -1730,9 +2124,11 @@ __attribute__((noinline)) static int piv_general_authenticate_dispatch_classic(
         return -1;
       }
 
-      if (IS_SHORT_WEIERSTRASS(key.meta.type)) {
+      if (IS_SHORT_WEIERSTRASS(key.meta.type) && key.meta.type != SM2) {
         sig_len = (int)ecdsa_sig2ansi(PRIVATE_KEY_LENGTH[key.meta.type], piv_crypto_buffer, piv_crypto_buffer);
       }
+      // SM2 deliberately skips the DER re-encoding above: both digest mode
+      // and stream mode return raw r||s (breaking change for SM2 only).
 
       uint16_t response_len;
       if (piv_set_7c_response(TAG_RESPONSE, piv_crypto_buffer, sig_len, RDATA, &response_len) < 0) {
@@ -1912,7 +2308,8 @@ __attribute__((noinline)) static int piv_general_authenticate_dispatch_classic(
 
 static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
                                              void *ctx) {
-  if (algo_id_to_key_type(P1) != MLKEM768)
+  const key_type_t p1_key_type = algo_id_to_key_type(P1);
+  if (p1_key_type != MLKEM768 && p1_key_type != SM2)
     return piv_general_authenticate_dispatch_classic(capdu, rapdu, auth_len, read, ctx);
   if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
 
@@ -1922,15 +2319,30 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
   if (meta_sw < 0) return -1;
   if (meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  if (!IS_MLKEM(meta.type)) EXCEPT(SW_WRONG_P1P2);
-  return piv_general_authenticate_mlkem_dispatch(capdu, rapdu, auth_len, read, ctx, key_path, &meta);
+  if (p1_key_type == MLKEM768) {
+    if (!IS_MLKEM(meta.type)) EXCEPT(SW_WRONG_P1P2);
+    return piv_general_authenticate_mlkem_dispatch(capdu, rapdu, auth_len, read, ctx, key_path, &meta);
+  }
+  if (meta.type != SM2) EXCEPT(SW_WRONG_P1P2);
+
+  uint16_t pos[6] = {0}, len[6] = {0};
+  const uint16_t parse_sw = piv_parse_general_authenticate(auth_len, read, ctx, pos, len);
+  if (parse_sw != SW_NO_ERROR) EXCEPT(parse_sw);
+  // A tag 0x81 challenge selects the classic digest-sign path (Case 1, which
+  // re-parses the template); every other SM2 shape is GM/T 0003.2 key
+  // agreement.
+  if (pos[IDX_CHALLENGE] > 0)
+    return piv_general_authenticate_dispatch_classic(capdu, rapdu, auth_len, read, ctx);
+  return piv_general_authenticate_sm2_dispatch(capdu, rapdu, read, ctx, key_path, &meta, pos, len);
 }
 
 static int piv_general_authenticate_stream(const CAPDU *capdu, RAPDU *rapdu, uint8_t requested_mode) {
   const bool final = (CLA & 0x10) == 0;
 
   if (!piv_auth_active) {
-    if (requested_mode == PIV_AUTH_MODE_ED25519_RANDOMIZED && alg_ext_cfg.enabled == 0) EXCEPT(SW_WRONG_P1P2);
+    if ((requested_mode == PIV_AUTH_MODE_ED25519_RANDOMIZED || requested_mode == PIV_AUTH_MODE_SM2) &&
+        alg_ext_cfg.enabled == 0)
+      EXCEPT(SW_WRONG_P1P2);
     piv_auth_active = 1;
     piv_auth_p1 = P1;
     piv_auth_p2 = P2;
@@ -1959,6 +2371,35 @@ static int piv_general_authenticate_stream(const CAPDU *capdu, RAPDU *rapdu, uin
       piv_auth_reset();
       return -1;
     }
+    LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sizeof(signature));
+    memcpy(RDATA + 4, signature, sizeof(signature));
+    memzero(signature, sizeof(signature));
+    piv_auth_reset();
+    return 0;
+  }
+
+  if (piv_auth_mode == PIV_AUTH_MODE_SM2) {
+    uint8_t e[SM3_DIGEST_LENGTH];
+    uint8_t signature[SIGNATURE_LENGTH[SM2]];
+    sm3_final(&piv_ga_stream_state.crypto.sm2.hash, e);
+    char key_path[MAX_KEY_PATH_LEN];
+    ck_key_t key;
+    piv_key_path(P2, key_path);
+    if (ck_read_key(key_path, &key) < 0) {
+      memzero(e, sizeof(e));
+      piv_auth_reset();
+      return -1;
+    }
+    start_quick_blinking(0);
+    const int sign_ret = ck_sign(&key, e, sizeof(e), signature);
+    memzero(&key, sizeof(key));
+    memzero(e, sizeof(e));
+    if (sign_ret < 0) {
+      memzero(signature, sizeof(signature));
+      piv_auth_reset();
+      return -1;
+    }
+    // SM2 signatures are returned as raw r||s (64 bytes), never DER-encoded.
     LL = piv_7c_wrap(RDATA, TAG_RESPONSE, sizeof(signature));
     memcpy(RDATA + 4, signature, sizeof(signature));
     memzero(signature, sizeof(signature));
@@ -2001,6 +2442,13 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
     stream_mode = PIV_AUTH_MODE_ED25519_RANDOMIZED;
   else if (algo_id_to_key_type(P1) == MLDSA65)
     stream_mode = PIV_AUTH_MODE_MLDSA;
+  else if (algo_id_to_key_type(P1) == SM2 &&
+           ((CLA & 0x10) != 0 || (piv_auth_active && piv_auth_mode == PIV_AUTH_MODE_SM2)))
+    // SM2 keeps the classic single-APDU digest mode; only a chained first
+    // APDU selects the full-message stream mode. Continuation and final APDUs
+    // of an active SM2 stream are recognized through piv_auth_mode so they
+    // never enter the classic chained PKE-buffer accumulation path below.
+    stream_mode = PIV_AUTH_MODE_SM2;
   if (stream_mode != PIV_AUTH_MODE_CLASSIC || (piv_auth_active && piv_auth_mode != PIV_AUTH_MODE_CLASSIC))
     return piv_general_authenticate_stream(capdu, rapdu, stream_mode);
 
@@ -2546,7 +2994,10 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   if (INS != PIV_INS_PUT_DATA) piv_do_write = -1;
   if (INS != PIV_INS_GET_DATA_RESPONSE) piv_do_read = -1;
   if (INS != PIV_INS_IMPORT_ASYMMETRIC_KEY) piv_import_reset();
-  if (INS != PIV_INS_GENERAL_AUTHENTICATE) piv_auth_reset();
+  if (INS != PIV_INS_GENERAL_AUTHENTICATE) {
+    piv_auth_reset();
+    piv_sm2_agreement_reset();
+  }
 
   int ret;
   switch (INS) {

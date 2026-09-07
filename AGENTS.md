@@ -18,7 +18,7 @@
 - **WebUSB web interface** (browser-based configuration)
 - **KBDHID / PASS** (keyboard output of OTP codes, requires touch sensor)
 
-The library is meant to be linked by a platform port (e.g. `canokey-ciu`, `canokey-stm32`). It does **not** contain any hardware-specific code by itself.
+The library is meant to be linked by a platform port. It does **not** contain any hardware-specific code by itself.
 
 ---
 
@@ -216,9 +216,10 @@ Import parsers consume both OpenPGP and PIV TLV wire formats incrementally via `
 Crypto primitives live in the `canokey-crypto` submodule (`include/` exposed under `canokey-crypto/include/`).  
 Platforms may override weak symbols to redirect to hardware accelerators (SE, PKE engine, etc.).
 
-- `rsa_private` implementations must honor the stored CRT components (`p`, `q`, `dp`, `dq`, `qinv`) exactly as imported and must reject an inconsistent result. The CIU override verifies both CRT congruences before exposing the result; the mbedTLS fallback (`canokey-crypto/src/rsa.c`) imports DP/DQ/QP verbatim and lets `mbedtls_rsa_check_privkey` reject inconsistent keys (D alone is re-derived from `P`, `Q`, `E`, which is a pure function of them). Do **not** "repair" CRT components on host builds — the virt-card must reject exactly the keys the device rejects, otherwise differential fuzzing diverges.
+- `rsa_private` implementations must honor the stored CRT components (`p`, `q`, `dp`, `dq`, `qinv`) exactly as imported and must reject an inconsistent result. The mbedTLS fallback (`canokey-crypto/src/rsa.c`) imports DP/DQ/QP verbatim and lets `mbedtls_rsa_check_privkey` reject inconsistent keys (D alone is re-derived from `P`, `Q`, `E`, which is a pure function of them). Do **not** "repair" CRT components on host builds — all implementations must reject inconsistent keys at import and use time.
 - RSA key import (PIV and OpenPGP, both in `src/key.c` finish paths) rejects inconsistent CRT keys with `SW_WRONG_DATA` via `rsa_check_crt()` (`canokey-crypto/src/rsa.c`, deliberately outside the `USE_MBEDCRYPTO` guard so firmware links it against the platform's strong `rsa_private`). It checks `p != q` and oddness structurally, then runs one private op on a fixed probe input — the exact mod-(p−1) congruence arithmetic is avoided on purpose (p−1 is even; the hardware Montgomery path needs odd moduli), relying instead on the use-time CRT result verification that every `rsa_private` must implement. A crafted key whose corruption is invisible to the probe input alone is still rejected at use time. ML-DSA/ML-KEM imports are seed-based: every seed value is valid by construction, so no analogous check exists there.
-- `K__short_weierstrass_ecdh` (and any other `ecdh` path taking an external peer point) must validate the peer point before the scalar multiply: coordinates must be field elements (`X,Y < p`) and the point must satisfy the curve equation (`mbedtls_ecp_check_pubkey` on host; `public_key_valid` on CIU). Skipping it is an invalid-curve attack surface and diverges from the device (host 9000 vs device 6900). X25519 instead follows RFC 7748 and rejects only the all-zero (low-order) result, on both sides.
+- `K__short_weierstrass_ecdh` (and any other `ecdh` path taking an external peer point) must validate the peer point before the scalar multiply: coordinates must be field elements (`X,Y < p`) and the point must satisfy the curve equation (`mbedtls_ecp_check_pubkey` in the mbedTLS implementation). Skipping this validation exposes ECDH to invalid-curve attacks. X25519 instead follows RFC 7748 and rejects only the all-zero (low-order) result.
+- `sm2_key_exchange` (canokey-crypto `sm2_ke.c`, weak) implements the GM/T 0003.2 key agreement for PIV GENERAL AUTHENTICATE. The same peer-point validation contract applies to **both** peer points (static and ephemeral), on host and device, and the shared point must be rejected if it is the point at infinity. The KDF is SM3-based with initiator-Z-first ordering regardless of caller role; no key confirmation is performed (spec-optional). The PIV applet deliberately rejects plain ECDH on SM2 keys — an SM2 static key must not be usable in both protocols.
 
 ---
 
@@ -233,7 +234,7 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 ### RAM / stack
 
 - There is no dynamic allocation (`malloc` is not used in firmware). Large temporaries must come from one of three places only: `shared_io_buffer`, one global applet-session scratch buffer, or the platform PKE register file.
-- **Stack budget for any single call path: ≤ 5 KB total.** Crypto call paths are the primary consumers; see `canokey-ciu/AGENTS.md` for platform-specific spill rules.
+- **Stack budget for any single call path: ≤ 5 KB total.** Crypto call paths are the primary consumers; consult the target platform's documentation for additional constraints.
 
 ### Streaming / scratch-space policy
 
@@ -241,6 +242,7 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 - `CTAPHID`, CTAP over `CCID` / `WebUSB`, `OpenPGP`, and `PIV` should share the same session scratch because only one of them is expected to own the applet session at a time.
 - Size that global scratch for the largest **non-streamable** artifact only. The design target is an RSA-4096 result (`4096 / 8 = 512` bytes) plus small ASN.1 / TLV wrapper overhead, not an entire request or response payload.
 - `applet_session_scratch_t` is a `union` of `ctap_ga` / `ctap_mldsa` / `buffer[APPLET_SHARED_BUFFER_LENGTH]`; the larger members alias the encoder buffer. Any field of `ctap_ga` that must survive an encoder write **must** sit past `APPLET_SHARED_BUFFER_LENGTH` bytes from the start of the union; static asserts in `include/applet-scratch.h` pin the current set. Re-arranging fields without checking this will silently let response generation corrupt parsed input.
+- The PIV SM2 key-agreement state (`piv_sm2_agreement` in the same union, guarded by a piv.c static active flag) is deliberately fragile: it is wiped on completion, any error SW, any non-GA command, applet reset, or cross-transport preemption, and any flow that reuses the scratch (signing, ML-DSA/ML-KEM) clobbers it — step 2 detects the clobber (ephemeral pub re-derivation mismatch) and fails with `SW_CONDITIONS_NOT_SATISFIED` rather than deriving a wrong key. Do not "harden" this into persistent storage; an SM2 key agreement that cannot complete within one uninterrupted session must restart.
 - Everything else should be streamed: large APDU request bodies, large APDU responses, CTAP CBOR payloads, key-import TLVs, certificates, and public-key encodings should be parsed, encoded, and emitted incrementally whenever the protocol allows it.
 - `shared_io_buffer` remains the short-APDU working buffer. Do not increase `APDU_BUFFER_SIZE` or add parallel heap-like buffers to avoid implementing streaming.
 - PKE RAM may be used as **transient staging** for streaming input/output, but it is not stable storage. Any crypto operation, key-generation step, or helper that reuses the PKE engine may overwrite it.
@@ -274,7 +276,7 @@ Unsafe boundaries include `KEEPALIVE()`, `WAIT()`, user-presence waits, `device_
 `pke_buffer_*()` is a staging API, not a persistence API:
 
 - On platforms without hardware PKE buffer support, core provides a RAM fallback sized by `PKE_BUFFER_SIZE`.
-- On CIU, the logical PKE buffer maps to the hardware PKE register file. The public capacity is still `pke_buffer_size()` / `PKE_BUFFER_SIZE`.
+- Hardware-backed implementations may map the logical PKE buffer to accelerator scratch memory. Obtain the public capacity through `pke_buffer_size()` / `PKE_BUFFER_SIZE`.
 - `pke_buffer_acquire(owner)` only prevents intentional concurrent staging through the explicit API. It does not guarantee that bytes survive direct PKE-engine use.
 - ECC, RSA, ML-DSA, PIN-token verification helpers, key generation, signature generation, keepalive side effects, file/key helpers, or response generation may indirectly clobber PKE RAM.
 

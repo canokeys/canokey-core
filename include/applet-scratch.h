@@ -11,6 +11,7 @@
 #include <rsa.h>
 #include <sha.h>
 #include <sha3.h>
+#include <sm3.h>
 #include <stddef.h>
 
 // Single global scratch buffer shared by CTAP/OpenPGP/PIV session work.
@@ -117,8 +118,32 @@ typedef struct {
   union {
     SHA3_CTX_T mldsa;
     ed25519_randomized_sign_state_t ed25519;
+    struct {
+      sm3_ctx_t hash;
+      // Public key and optional custom SM2 ID (raw value, without the length
+      // prefix sm2_z expects). Z = SM3(ENTL||ID||a||b||xG||yG||pub) is hashed
+      // into `hash` as soon as the optional ID TLV has been parsed.
+      uint8_t pub[64];
+      uint8_t id[32];
+      uint8_t id_len;
+      uint8_t id_received;
+    } sm2;
   } crypto;
 } piv_ga_stream_state_t;
+
+// SM2 key agreement (GM/T 0003.2) initiator state, kept between the two
+// GENERAL AUTHENTICATE APDUs of the initiator role. Everything here aliases
+// the rest of the scratch union, so the PIV applet keeps a separate static
+// guard flag and re-derives the ephemeral public key from eph_pri before use
+// to detect clobbering by an interleaved scratch user.
+typedef struct {
+  uint8_t eph_pri[32];  // own ephemeral private key
+  uint8_t eph_pub[64];  // own ephemeral public key (integrity reference)
+  uint8_t self_pub[64]; // own static public key (for Z_self)
+  char key_path[9];     // slot key path; matches MAX_KEY_PATH_LEN in piv.c
+  uint8_t id_len;       // own ID length; 0 = SM2_ID_DEFAULT
+  uint8_t id[32];       // own ID, raw bytes (matches PIV_SM2_ID_MAX_LENGTH)
+} piv_sm2_agreement_state_t;
 
 typedef union {
   struct {
@@ -164,6 +189,7 @@ typedef union {
   piv_mldsa_stream_state_t piv_mldsa;
   piv_ga_stream_state_t piv_ga_stream;
   piv_mlkem_scratch_t piv_mlkem;
+  piv_sm2_agreement_state_t piv_sm2_agreement;
   piv_attestation_scratch_t piv_attestation;
   uint8_t buffer[APPLET_SHARED_BUFFER_LENGTH];
 } applet_session_scratch_t;
@@ -181,6 +207,8 @@ _Static_assert(sizeof(piv_mlkem_scratch_t) <= sizeof(CTAP_mldsa_stream_state),
                "PIV ML-KEM scratch should not enlarge the shared scratch union");
 _Static_assert(sizeof(piv_ga_stream_state_t) <= sizeof(CTAP_mldsa_stream_state),
                "PIV GENERAL AUTHENTICATE input should not enlarge the shared scratch union");
+_Static_assert(sizeof(piv_sm2_agreement_state_t) <= sizeof(CTAP_mldsa_stream_state),
+               "PIV SM2 key agreement state should not enlarge the shared scratch union");
 
 extern applet_session_scratch_t applet_session_scratch;
 
