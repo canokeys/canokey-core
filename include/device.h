@@ -60,8 +60,8 @@ void device_spinlock_unlock(volatile uint32_t *lock);
  * Update the value of a variable atomically.
  *
  * @param var    The address of variable to update.
- * @param expect The current value of variable.
- * @param var    The new value of variable.
+ * @param expect The value required for the update to succeed.
+ * @param update The new value of the variable.
  */
 int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update);
 

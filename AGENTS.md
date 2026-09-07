@@ -94,22 +94,30 @@ CMake 3.16+, C11. The library target is `canokey-core`.
 | `ENABLE_BYPASS_USER_PRESENCE` | OFF | Skip all touch checks (testing only) |
 | `ENABLE_TESTS` | OFF | Build CMocka unit tests + virt-card |
 | `ENABLE_FUZZING` | OFF | Build AFL++ harness |
+| `ENABLE_APDU_REPLAY` | OFF | Build the host differential APDU replay tool |
 | `VIRTCARD` | OFF | Build only the virtual-card targets |
 
 ### Running unit tests
 
 ```bash
-mkdir build && cd build
-cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
-make -j$(nproc)
-ctest --output-on-failure
+cmake -S . -B build -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel 8
+ctest --test-dir build --output-on-failure
 ```
+
+Run these commands from the core repository root with initialized submodules
+and CMocka installed. `ENABLE_TESTS` enables ASan/UBSan and coverage.
+`test_core_helpers` requires GNU ld's `--wrap`; the CIU macOS quality-gate
+wrapper excludes that target. AFL++ builds require GNU GCC; Frida mode also
+requires `-DCANOKEY_FUZZ_SANITIZERS=OFF`.
 
 ---
 
 ## Platform Porting Contract
 
-A platform port **must** implement every symbol declared in `include/device.h`:
+A platform port must supply the hardware hooks below from `include/device.h`.
+The same header also declares platform-independent functions implemented by
+the core, plus test-only hooks; those are not all platform overrides.
 
 ### Mandatory
 
@@ -234,7 +242,7 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 ### RAM / stack
 
 - There is no dynamic allocation (`malloc` is not used in firmware). Large temporaries must come from one of three places only: `shared_io_buffer`, one global applet-session scratch buffer, or the platform PKE register file.
-- **Stack budget for any single call path: ≤ 5 KB total.** Crypto call paths are the primary consumers; consult the target platform's documentation for additional constraints.
+- **Stack budget for any single call path: ≤ 5 KiB (5120 B) total.** Crypto call paths are the primary consumers; consult the target platform's documentation for measured exceptions and additional constraints.
 
 ### Streaming / scratch-space policy
 

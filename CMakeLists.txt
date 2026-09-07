@@ -85,9 +85,8 @@ add_subdirectory(canokey-crypto EXCLUDE_FROM_ALL)
 
 # tinycbor: build sources directly instead of add_subdirectory.
 # tinycbor 7.0's CMakeLists.txt declares project(... LANGUAGES C CXX), which
-# triggers CXX compiler detection. On ARM cross-compilation the CXX test
-# program fails to link against the scatter file (L6236E: no RESET section).
-# Avoid this by not using tinycbor's own CMake build system.
+# triggers unnecessary CXX compiler detection for C-only platform toolchains.
+# Building its C sources here avoids requiring a C++ compiler and runtime.
 set(TINYCBOR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tinycbor)
 # Generate the two headers that tinycbor 7.0's cbor.h expects
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/tinycbor/tinycbor-export.h
