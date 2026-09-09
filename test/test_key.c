@@ -10,6 +10,7 @@
 #include <key.h>
 #include <lfs.h>
 #include <ml-dsa-65.h>
+#include <pin.h>
 
 #define PATH "key"
 
@@ -484,10 +485,11 @@ static int fault_prog_budget = -1;  // >= 0: fail the (budget+1)-th call
 static int fault_erase_budget = -1;
 static int fault_sync_budget = -1;
 static bool fault_after;            // run the underlying op before failing
-static unsigned bd_erase_count;
+static unsigned bd_prog_count, bd_erase_count;
 
 static int counted_bd_prog(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, const void *buffer,
                            lfs_size_t size) {
+  ++bd_prog_count;
   if (fault_prog_budget >= 0 && fault_prog_budget-- == 0) {
     if (fault_after) lfs_filebd_prog(cfg, block, off, buffer, size);
     return LFS_ERR_IO;
@@ -810,6 +812,90 @@ static void test_write_file_attrs_fault_recovery(void **state) {
   }
 }
 
+static void test_pin_batched_retry_updates(void **state) {
+  (void)state;
+  static pin_t pin = {.min_length = 4, .max_length = 8, .is_validated = 0, .path = "pin-batch"};
+  uint8_t retries = 0xFF;
+
+  // pin_create commits the secret and both retry counters together.
+  assert_int_equal(pin_create(&pin, "1234", 4, 3), 0);
+  assert_int_equal(pin_get_size(&pin), 4);
+  assert_int_equal(pin_get_retries(&pin), 3);
+  assert_int_equal(pin_get_default_retries(&pin), 3);
+
+  // A successful verify at default retries performs no prog or erase.
+  const unsigned prog_before = bd_prog_count, erase_before = bd_erase_count;
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+  assert_int_equal(bd_prog_count, prog_before);
+  assert_int_equal(bd_erase_count, erase_before);
+
+  // A failed verify decrements (commits); the next successful verify restores
+  // the default and that restore commits as well.
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(retries, 2);
+  assert_int_equal(pin.is_validated, 0);
+  assert_true(bd_prog_count > prog_before);
+  const unsigned prog_after_fail = bd_prog_count;
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+  assert_true(bd_prog_count > prog_after_fail);
+  assert_int_equal(pin_get_retries(&pin), 3);
+
+  // Blocked PIN: ctr == 0 rejects even the correct secret.
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(retries, 0);
+  assert_int_equal(pin_verify(&pin, "1234", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(retries, 0);
+  assert_int_equal(pin.is_validated, 0);
+
+  // A write failure during the retry restore must not leave is_validated set.
+  assert_int_equal(pin_set_retries(&pin, 3), 0);
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(pin_get_retries(&pin), 2);
+  fault_prog_budget = 0;
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), PIN_IO_FAIL);
+  assert_int_equal(pin.is_validated, 0);
+  faults_disarm();
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+  assert_int_equal(pin_get_retries(&pin), 3);
+
+  // Missing DEFAULT_RETRY_ATTR on the success path fails without validating.
+  static pin_t partial = {.min_length = 4, .max_length = 8, .is_validated = 0, .path = "pin-partial"};
+  const uint8_t three = 3;
+  assert_int_equal(write_file("pin-partial", "1234", 0, 4, 1), 0);
+  assert_int_equal(write_attr("pin-partial", 0 /* RETRY_ATTR */, &three, 1), 0);
+  assert_int_equal(pin_verify(&partial, "1234", 4, NULL), PIN_IO_FAIL);
+  assert_int_equal(partial.is_validated, 0);
+
+  // Missing files fail without being created.
+  static pin_t absent = {.min_length = 4, .max_length = 8, .is_validated = 0, .path = "pin-absent"};
+  assert_int_equal(pin_set_retries(&absent, 5), PIN_IO_FAIL);
+  assert_int_equal(get_file_size("pin-absent"), LFS_ERR_NOENT);
+  assert_int_equal(pin_update(&absent, "1234", 4), PIN_IO_FAIL);
+  assert_int_equal(get_file_size("pin-absent"), LFS_ERR_NOENT);
+  assert_int_equal(pin_clear(&absent), PIN_IO_FAIL);
+  assert_int_equal(get_file_size("pin-absent"), LFS_ERR_NOENT);
+
+  // pin_update merges the data update and the retry reset into one commit.
+  assert_int_equal(pin_update(&pin, "5678", 4), 0);
+  assert_int_equal(pin.is_validated, 0);
+  assert_int_equal(pin_get_retries(&pin), 3);
+  assert_int_equal(pin_verify(&pin, "5678", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+
+  // pin_clear truncates the secret and resets the retry counter.
+  assert_int_equal(pin_clear(&pin), 0);
+  assert_int_equal(pin_get_size(&pin), 0);
+  assert_int_equal(pin_get_retries(&pin), 0);
+
+  assert_int_equal(remove_file("pin-batch"), 0);
+  assert_int_equal(remove_file("pin-partial"), 0);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -841,6 +927,7 @@ int main() {
       cmocka_unit_test(test_set_attrs_commit),
       cmocka_unit_test(test_write_file_attrs_error_reporting),
       cmocka_unit_test(test_write_file_attrs_fault_recovery),
+      cmocka_unit_test(test_pin_batched_retry_updates),
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_p521_length),
