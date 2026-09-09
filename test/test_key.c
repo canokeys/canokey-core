@@ -6,6 +6,7 @@
 
 #include <bd/lfs_filebd.h>
 #include <crypto-util.h>
+#include <device.h>
 #include <fs.h>
 #include <key.h>
 #include <lfs.h>
@@ -896,6 +897,115 @@ static void test_pin_batched_retry_updates(void **state) {
   assert_int_equal(remove_file("pin-partial"), 0);
 }
 
+static void test_fs_reader_lifecycle(void **state) {
+  (void)state;
+  const char *path = "reader";
+  uint8_t buf[16];
+
+  fs_reader_t reader = {0};
+  // Close on a zero-initialized reader is a safe no-op; size/read_at are not.
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(fs_reader_size(&reader), LFS_ERR_INVAL);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 1), LFS_ERR_INVAL);
+
+  assert_int_equal(write_file(path, "0123456789", 0, 10, 1), 0);
+  assert_int_equal(fs_reader_open(&reader, path), 0);
+  // Opening an already-open reader is rejected and keeps ownership.
+  assert_int_equal(fs_reader_open(&reader, path), LFS_ERR_INVAL);
+  assert_int_equal(fs_reader_size(&reader), 10);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 4), 4);
+  assert_memory_equal(buf, "0123", 4);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 6, 4), 4);
+  assert_memory_equal(buf, "6789", 4);
+  // Short reads at EOF return the actual byte count.
+  assert_int_equal(fs_reader_read_at(&reader, buf, 8, 4), 2);
+  assert_memory_equal(buf, "89", 2);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 10, 4), 0);
+  assert_int_equal(fs_reader_read_at(&reader, buf, -1, 1), LFS_ERR_INVAL);
+
+  // While the reader owns the shared cache, other cache users are rejected.
+  fs_reader_t other = {0};
+  const struct lfs_attr attr = {.type = 0x40, .buffer = (void *)"a", .size = 1};
+  assert_int_equal(read_file(path, buf, 0, 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(write_file(path, "x", 0, 1, 0), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(append_file(path, "x", 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(truncate_file(path, 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(get_file_size(path), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(write_file_attrs(path, &attr, 1, "x", 1, 0), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(set_attrs_commit(path, &attr, 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(fs_format(test_fs_cfg), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(fs_mount(test_fs_cfg), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  // A second reader cannot open while the first owns the cache.
+  assert_int_equal(fs_reader_open(&other, path), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  // Attribute-only helpers do not use the shared cache and keep working.
+  assert_int_equal(write_attr(path, 0x41, "m", 1), 0);
+  assert_int_equal(read_attr(path, 0x41, buf, sizeof(buf)), 1);
+
+  // The reader is undisturbed by the rejected attempts.
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 10), 10);
+  assert_memory_equal(buf, "0123456789", 10);
+
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(fs_reader_close(&reader), 0); // double close is safe
+
+  // Ownership is released: wrappers and a new reader work again.
+  assert_int_equal(read_file(path, buf, 0, 10), 10);
+  assert_int_equal(fs_reader_open(&other, path), 0);
+  assert_int_equal(fs_reader_close(&other), 0);
+  assert_int_equal(remove_file(path), 0);
+}
+
+static void test_fs_reader_open_failure_releases_cache(void **state) {
+  (void)state;
+  fs_reader_t reader = {0};
+  assert_int_equal(fs_reader_open(&reader, "reader-missing"), LFS_ERR_NOENT);
+  assert_false(reader.opened);
+  // The failed open released the cache: a new reader can open right away.
+  assert_int_equal(write_file("reader-ok", "a", 0, 1, 1), 0);
+  assert_int_equal(fs_reader_open(&reader, "reader-ok"), 0);
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(remove_file("reader-ok"), 0);
+}
+
+static void test_fs_wrapper_error_paths_release_cache(void **state) {
+  (void)state;
+  fs_reader_t reader = {0};
+  assert_int_equal(write_file("reader-io", "a", 0, 1, 1), 0);
+
+  // An injected write error returns before any disk touch; the cache stays free.
+  testmode_inject_error(TESTMODE_ERR_WRITE, 0, 9, (const uint8_t *)"reader-io");
+  assert_int_equal(write_file("reader-io", "b", 0, 1, 1), LFS_ERR_IO);
+  assert_int_equal(fs_reader_open(&reader, "reader-io"), 0);
+  assert_int_equal(fs_reader_close(&reader), 0);
+
+  // A seek error after the borrow also releases the cache.
+  assert_int_equal(write_file("reader-io", "b", -1, 1, 0), LFS_ERR_INVAL);
+  assert_int_equal(fs_reader_open(&reader, "reader-io"), 0);
+  assert_int_equal(fs_reader_close(&reader), 0);
+
+  assert_int_equal(remove_file("reader-io"), 0);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -928,6 +1038,9 @@ int main() {
       cmocka_unit_test(test_write_file_attrs_error_reporting),
       cmocka_unit_test(test_write_file_attrs_fault_recovery),
       cmocka_unit_test(test_pin_batched_retry_updates),
+      cmocka_unit_test(test_fs_reader_lifecycle),
+      cmocka_unit_test(test_fs_reader_open_failure_releases_cache),
+      cmocka_unit_test(test_fs_wrapper_error_paths_release_cache),
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_p521_length),

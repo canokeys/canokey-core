@@ -8,9 +8,66 @@ static alignas(4) uint8_t file_buffer[LFS_CACHE_SIZE];
 
 static struct lfs_file_config file_config = {.buffer = file_buffer};
 
-int fs_format(const struct lfs_config *cfg) { return lfs_format(&lfs, cfg); }
+// Ownership of the shared file cache (file_buffer): the wrappers below borrow
+// it for a single call, while an fs_reader_t holds it from open to close. A
+// nested borrower would corrupt the reader's cache, so TEST builds reject it
+// with LFS_ERR_INVAL and set a queryable conflict flag. Without TEST the
+// checks compile out and behavior is unchanged.
+#ifdef TEST
+static const void *cache_owner;
+static bool cache_conflict;
 
-int fs_mount(const struct lfs_config *cfg) { return lfs_mount(&lfs, cfg); }
+bool fs_cache_conflict(void) { return cache_conflict; }
+
+void fs_cache_conflict_reset(void) { cache_conflict = false; }
+
+static int cache_acquire(const void *owner) {
+  if (cache_owner != NULL) {
+    cache_conflict = true;
+    return LFS_ERR_INVAL;
+  }
+  cache_owner = owner;
+  return 0;
+}
+
+static int cache_verify(const void *owner) {
+  if (cache_owner != owner) {
+    cache_conflict = true;
+    return LFS_ERR_INVAL;
+  }
+  return 0;
+}
+
+static void cache_release(const void *owner) {
+  if (cache_owner == owner) cache_owner = NULL;
+}
+#else
+static int cache_acquire(const void *owner) {
+  (void)owner;
+  return 0;
+}
+static int cache_verify(const void *owner) {
+  (void)owner;
+  return 0;
+}
+static void cache_release(const void *owner) { (void)owner; }
+#endif
+
+int fs_format(const struct lfs_config *cfg) {
+  const int err = cache_acquire(fs_format);
+  if (err < 0) return err;
+  const int ret = lfs_format(&lfs, cfg);
+  cache_release(fs_format);
+  return ret;
+}
+
+int fs_mount(const struct lfs_config *cfg) {
+  const int err = cache_acquire(fs_mount);
+  if (err < 0) return err;
+  const int ret = lfs_mount(&lfs, cfg);
+  cache_release(fs_mount);
+  return ret;
+}
 
 // Always close an opened file, preserving the operation's original error.
 static int close_file_result(lfs_file_t *file, int result) {
@@ -20,21 +77,31 @@ static int close_file_result(lfs_file_t *file, int result) {
 }
 
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
-  lfs_file_t f;
-  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
+  int err = cache_acquire(read_file);
   if (err < 0) return err;
-  err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
-  if (err >= 0) err = lfs_file_read(&lfs, &f, buf, len);
-  return close_file_result(&f, err);
+  lfs_file_t f;
+  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
+  if (err >= 0) {
+    err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
+    if (err >= 0) err = lfs_file_read(&lfs, &f, buf, len);
+    err = close_file_result(&f, err);
+  }
+  cache_release(read_file);
+  return err;
 }
 
 static int write_file_at(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, int flags) {
-  lfs_file_t f;
-  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | flags, &file_config);
+  int err = cache_acquire(write_file_at);
   if (err < 0) return err;
-  err = lfs_file_seek(&lfs, &f, off, flags & LFS_O_APPEND ? LFS_SEEK_END : LFS_SEEK_SET);
-  if (err >= 0 && len > 0) err = lfs_file_write(&lfs, &f, buf, len);
-  return close_file_result(&f, err < 0 ? err : 0);
+  lfs_file_t f;
+  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | flags, &file_config);
+  if (err >= 0) {
+    err = lfs_file_seek(&lfs, &f, off, flags & LFS_O_APPEND ? LFS_SEEK_END : LFS_SEEK_SET);
+    if (err >= 0 && len > 0) err = lfs_file_write(&lfs, &f, buf, len);
+    err = close_file_result(&f, err < 0 ? err : 0);
+  }
+  cache_release(write_file_at);
+  return err;
 }
 
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
@@ -49,10 +116,13 @@ int append_file(const char *path, const void *buf, lfs_size_t len) {
 }
 
 int truncate_file(const char *path, lfs_size_t len) {
-  lfs_file_t f;
-  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT, &file_config);
+  int err = cache_acquire(truncate_file);
   if (err < 0) return err;
-  return close_file_result(&f, lfs_file_truncate(&lfs, &f, len));
+  lfs_file_t f;
+  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT, &file_config);
+  if (err >= 0) err = close_file_result(&f, lfs_file_truncate(&lfs, &f, len));
+  cache_release(truncate_file);
+  return err;
 }
 
 // Pre-open validation for the attr-batched helpers; a failure here must not
@@ -72,16 +142,21 @@ static int validate_attrs_write(const struct lfs_attr *attrs, int attr_count, co
 // always close; littlefs keeps the config pointer, so it must outlive close.
 static int opencfg_attrs_close(const char *path, int flags, const struct lfs_attr *attrs, int attr_count,
                                const void *buf, lfs_size_t len) {
+  int err = cache_acquire(opencfg_attrs_close);
+  if (err < 0) return err;
   struct lfs_file_config cfg = {
       .buffer = file_buffer,
       .attrs = (struct lfs_attr *)attrs,
       .attr_count = (lfs_size_t)attr_count,
   };
   lfs_file_t f;
-  int err = lfs_file_opencfg(&lfs, &f, path, flags, &cfg);
-  if (err < 0) return err;
-  if (len > 0) err = lfs_file_write(&lfs, &f, buf, len);
-  return close_file_result(&f, err < 0 ? err : 0);
+  err = lfs_file_opencfg(&lfs, &f, path, flags, &cfg);
+  if (err >= 0) {
+    if (len > 0) err = lfs_file_write(&lfs, &f, buf, len);
+    err = close_file_result(&f, err < 0 ? err : 0);
+  }
+  cache_release(opencfg_attrs_close);
+  return err;
 }
 
 int write_file_attrs(const char *path, const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len,
@@ -116,10 +191,50 @@ int remove_attr(const char *path, uint8_t attr) {
 }
 
 int get_file_size(const char *path) {
-  lfs_file_t f;
-  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
+  int err = cache_acquire(get_file_size);
   if (err < 0) return err;
-  return close_file_result(&f, lfs_file_size(&lfs, &f));
+  lfs_file_t f;
+  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
+  if (err >= 0) err = close_file_result(&f, lfs_file_size(&lfs, &f));
+  cache_release(get_file_size);
+  return err;
+}
+
+int fs_reader_open(fs_reader_t *reader, const char *path) {
+  if (reader->opened) return LFS_ERR_INVAL;
+  int err = cache_acquire(reader);
+  if (err < 0) return err;
+  err = lfs_file_opencfg(&lfs, &reader->file, path, LFS_O_RDONLY, &file_config);
+  if (err < 0) {
+    cache_release(reader);
+    return err;
+  }
+  reader->opened = true;
+  return 0;
+}
+
+lfs_soff_t fs_reader_size(fs_reader_t *reader) {
+  if (!reader->opened) return LFS_ERR_INVAL;
+  const int err = cache_verify(reader);
+  if (err < 0) return err;
+  return lfs_file_size(&lfs, &reader->file);
+}
+
+int fs_reader_read_at(fs_reader_t *reader, void *buf, lfs_soff_t off, lfs_size_t len) {
+  if (!reader->opened) return LFS_ERR_INVAL;
+  int err = cache_verify(reader);
+  if (err < 0) return err;
+  err = lfs_file_seek(&lfs, &reader->file, off, LFS_SEEK_SET);
+  if (err < 0) return err;
+  return lfs_file_read(&lfs, &reader->file, buf, len);
+}
+
+int fs_reader_close(fs_reader_t *reader) {
+  if (!reader->opened) return 0;
+  reader->opened = false;
+  const int err = lfs_file_close(&lfs, &reader->file);
+  cache_release(reader);
+  return err;
 }
 
 int get_attr_size(const char *path, uint8_t attr) {

@@ -211,6 +211,8 @@ slot reset/power-off, an applet switch, an explicit logout, or cross-transport p
 
 LittleFS is used for all persistent storage.  
 `src/fs.c` wraps it with simple `read_file` / `write_file` / `read_attr` / `write_attr` helpers.  
+`write_file_attrs` / `set_attrs_commit` commit data and/or several attributes in one atomic commit; see `include/fs.h` for the error contract.  
+`fs_reader_t` is a scoped read-only reader that owns the shared file cache (`file_buffer`) from open to close: while one is open, no other cache-using fs helper (or mount/format) may run; TEST builds reject violations with `LFS_ERR_INVAL` plus a conflict flag (`fs_cache_conflict()`).  
 The platform must supply an `lfs_config` struct and pass it to `fs_mount()` at boot.
 
 ### Key storage (`src/key.c`)
