@@ -12,6 +12,7 @@
 #define CC_LENGTH 15
 
 static uint8_t current_cc[CC_LENGTH];
+static bool cc_valid;
 static const uint8_t default_cc[CC_LENGTH] = {
     0x00, 0x0F,                                         // len
     0x20,                                               // version, 2.0
@@ -28,6 +29,19 @@ static const uint8_t default_cc[CC_LENGTH] = {
 
 #define CC_R (current_cc[13])
 #define CC_W (current_cc[14])
+
+// Unified CC load entry. Only a complete CC_LENGTH read makes the cache
+// valid; a failed load keeps it invalid, so stale permission bits are never
+// served. Every consumer of current_cc must go through this.
+static int ndef_cc_ensure(void) {
+  if (cc_valid) return 0;
+  if (read_file(CC_FILE, current_cc, 0, CC_LENGTH) != CC_LENGTH) {
+    cc_valid = false;
+    return -1;
+  }
+  cc_valid = true;
+  return 0;
+}
 
 static enum { NONE, CC, NDEF } selected;
 static uint16_t ndef_write_offset = UINT16_MAX;
@@ -47,12 +61,27 @@ void ndef_poweroff(void) {
   ndef_write_reset();
 }
 
-int ndef_is_read_only(void) { return CC_W == 0xFF ? 1 : 0; }
+int ndef_is_read_only(void) {
+  // Conservatively report read-only when the CC cannot be loaded.
+  if (ndef_cc_ensure() < 0) return 1;
+  return CC_W == 0xFF ? 1 : 0;
+}
 
 int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 > 1) EXCEPT(SW_WRONG_P1P2);
-  CC_W = P1 == 0 ? 0x00 : 0xFF;
-  if (write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
+  if (ndef_cc_ensure() < 0) return -1;
+  // On storage error the commit outcome is uncertain: only a successful write
+  // updates the cache, and a failure invalidates it rather than assuming the
+  // disk still holds the old state.
+  uint8_t candidate[CC_LENGTH];
+  memcpy(candidate, current_cc, sizeof(candidate));
+  candidate[14] = P1 == 0 ? 0x00 : 0xFF;
+  if (write_file(CC_FILE, candidate, 0, sizeof(candidate), 1) < 0) {
+    cc_valid = false;
+    return -1;
+  }
+  memcpy(current_cc, candidate, sizeof(candidate));
+  cc_valid = true;
   return 0;
 }
 
@@ -66,15 +95,19 @@ static int ndef_create_init_ndef(void) {
 
 int ndef_install(const uint8_t reset) {
   ndef_poweroff();
+  cc_valid = false;
   const int ndef_size = get_file_size(NDEF_FILE);
   if (!reset && get_file_size(CC_FILE) == sizeof(current_cc) && ndef_size > 0) {
     if (ndef_size != NDEF_FILE_MAX_LENGTH && truncate_file(NDEF_FILE, NDEF_FILE_MAX_LENGTH) < 0) return -1;
-    return read_file(CC_FILE, &current_cc, 0, sizeof(current_cc)) < 0 ? -1 : 0;
+    return ndef_cc_ensure();
   }
 
   memcpy(current_cc, default_cc, sizeof(current_cc));
   if (ndef_create_init_ndef() < 0) return -1;
-  return write_file(CC_FILE, &current_cc, 0, sizeof(current_cc), 1) < 0 ? -1 : 0;
+  if (write_file(CC_FILE, current_cc, 0, sizeof(current_cc), 1) < 0) return -1;
+  // The CC on disk now matches current_cc.
+  cc_valid = true;
+  return 0;
 }
 
 static int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
@@ -100,10 +133,12 @@ static int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
 
   switch (selected) {
   case CC:
+    if (ndef_cc_ensure() < 0) return -1;
     path = CC_FILE;
     file_len = CC_LENGTH;
     break;
   case NDEF:
+    if (ndef_cc_ensure() < 0) return -1;
     if (CC_R != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     path = NDEF_FILE;
     file_len = NDEF_FILE_MAX_LENGTH;
@@ -136,6 +171,7 @@ static int ndef_update(const CAPDU *capdu, RAPDU *rapdu) {
     ndef_write_reset();
     EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
   case NDEF:
+    if (ndef_cc_ensure() < 0) return -1;
     if (CC_W != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
     const uint16_t write_offset = ndef_write_offset == UINT16_MAX ? offset : ndef_write_offset;
     if (LC > NDEF_FILE_MAX_LENGTH - write_offset) {
