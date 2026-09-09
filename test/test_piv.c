@@ -3955,6 +3955,196 @@ static void test_piv_sm2_key_agreement_pin_policy(void **state) {
   memzero(k_d, sizeof(k_d));
 }
 
+// Observe/fail physical writes without changing production filesystem helpers.
+static unsigned container_name_prog_count;
+static bool container_name_fail_prog;
+static const struct lfs_config *container_name_fs_cfg;
+static int container_name_prog(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, const void *buffer,
+                               lfs_size_t size) {
+  ++container_name_prog_count;
+  if (container_name_fail_prog) return LFS_ERR_IO;
+  return lfs_filebd_prog(cfg, block, off, buffer, size);
+}
+
+static void test_piv_container_names(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  uint8_t name[] = {'A', 0, 0x2D, 0x4E, 0x3D, 0xD8, 0, 0xDE};
+  uint8_t response[256];
+  ck_key_t key;
+  ck_key_init_empty(&key, SECP256R1, KEY_USAGE_ANY, PIN_POLICY_NEVER, TOUCH_POLICY_NEVER);
+  assert_int_equal(ck_generate_key(&key), 0);
+  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
+  assert_int_equal(ck_write_key("piv-k95", &key), 0);
+  assert_int_equal(ck_write_key("piv-kf9", &key), 0);
+  CAPDU c = {.ins = PIV_INS_CONTAINER_NAME, .p2 = 0x9A, .le = 256};
+  RAPDU r = {.data = response};
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  assert_int_equal(r.len, 0);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_SECURITY_STATUS_NOT_SATISFIED);
+  set_admin_status(1);
+  const uint8_t excluded[] = {0, 0x80, 0x81, 0x96, 0x9B, 0xFF};
+  for (size_t i = 0; i < sizeof(excluded); ++i) {
+    test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 0, excluded[i], SW_WRONG_P1P2);
+    test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, excluded[i], SW_WRONG_P1P2);
+  }
+  test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 2, 0x9A, SW_WRONG_P1P2);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_WRONG_LENGTH);
+  test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x82, SW_REFERENCE_DATA_NOT_FOUND);
+  test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 1, 0x82, SW_REFERENCE_DATA_NOT_FOUND);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x82, SW_REFERENCE_DATA_NOT_FOUND);
+  c.cla = 0x10;
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_CLA_NOT_SUPPORTED);
+  c.cla = 0;
+
+  uint8_t invalid[][4] = {{0, 0}, {0, 0xD8}, {0, 0xDC}, {0, 0xD8, 'A', 0}};
+  for (size_t i = 0; i < 4; ++i)
+    test_helper(invalid[i], i == 3 ? 4 : 2, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_WRONG_DATA);
+  test_helper(name, 1, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_WRONG_DATA);
+  uint8_t max_name[80];
+  for (size_t i = 0; i < sizeof(max_name); i += 2) {
+    max_name[i] = 'X';
+    max_name[i + 1] = 0;
+  }
+  test_helper(max_name, 80, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_WRONG_DATA);
+  test_helper(max_name, 78, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, max_name, 78);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  unsigned writes = container_name_prog_count;
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  assert_int_equal(container_name_prog_count, writes);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x95, SW_WRONG_DATA);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0xF9, SW_WRONG_DATA);
+  // A separate mount observes committed on-disk attributes, not applet state.
+  lfs_t mounted;
+  uint8_t persisted[PIV_CONTAINER_NAME_MAX_BYTES];
+  assert_int_equal(lfs_mount(&mounted, container_name_fs_cfg), 0);
+  assert_int_equal(lfs_getattr(&mounted, "piv-k9a", PIV_CONTAINER_NAME_ATTR, persisted, sizeof(persisted)),
+                   sizeof(name));
+  assert_memory_equal(persisted, name, sizeof(name));
+  assert_int_equal(lfs_unmount(&mounted), 0);
+  assert_int_equal(piv_install(0), 0); // Restart applet, retaining LittleFS state.
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
+  set_admin_status(1);
+  // CAPDU and RAPDU alias on real transports.
+  memcpy(response, name, sizeof(name));
+  response[0] = 'B';
+  c.p1 = 1;
+  c.data = response;
+  c.lc = sizeof(name);
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  name[0] = 'B';
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
+  container_name_fail_prog = true;
+  test_helper(max_name, 78, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_UNABLE_TO_PROCESS);
+  test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_UNABLE_TO_PROCESS);
+  container_name_fail_prog = false;
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
+  test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+  writes = container_name_prog_count;
+  test_helper(NULL, 0, PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  assert_int_equal(container_name_prog_count, writes);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0xF9, SW_NO_ERROR);
+  assert_int_equal(piv_install(1), 0);
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0xF9, SW_NO_ERROR, name, sizeof(name));
+  assert_int_equal(remove_file("piv-kf9"), 0);
+}
+
+static void test_piv_container_name_replacement(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+  uint8_t gen[] = {0xAC, 3, 0x80, 1, 0x11};
+  uint8_t name[] = {'K', 0};
+  test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x9A, SW_NO_ERROR);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  ck_key_t old, after;
+  assert_true(ck_read_key("piv-k9a", &old) >= 0);
+  container_name_fail_prog = true;
+  test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x9A, SW_UNABLE_TO_PROCESS);
+  container_name_fail_prog = false;
+  assert_true(ck_read_key("piv-k9a", &after) >= 0);
+  assert_memory_equal(&old, &after, sizeof(old));
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
+  inject_write_error("piv-k9a"); // Name removal succeeds, key write fails.
+  test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x9A, SW_UNABLE_TO_PROCESS);
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x9A, SW_NO_ERROR);
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+
+  uint8_t import[34] = {6, 32};
+  import[33] = 1;
+  uint8_t response[256], stored[78];
+  RAPDU r = {.data = response};
+  CAPDU c = {.cla = 0x10, .ins = PIV_INS_IMPORT_ASYMMETRIC_KEY, .p1 = 0x11, .p2 = 0x9A, .data = import, .lc = 17};
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  assert_int_equal(read_attr("piv-k9a", PIV_CONTAINER_NAME_ATTR, stored, sizeof(stored)), sizeof(name));
+  assert_memory_equal(stored, name, sizeof(name));
+  c.cla = 0;
+  c.data = import + 17;
+  c.lc = 16; // Truncated final fragment.
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_WRONG_LENGTH);
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
+  c.cla = 0x10;
+  c.data = import;
+  c.lc = 17;
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  c.cla = 0;
+  c.data = import + 17;
+  piv_process_apdu(&c, &r);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  assert_int_equal(piv_install(1), 0);
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOENT);
+}
+
+static void test_piv_container_name_mldsa_replacement(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+  uint8_t gen[] = {0xAC, 3, 0x80, 1, 0x11};
+  uint8_t name[] = {'M', 0}, stored[78];
+  test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x95, SW_NO_ERROR);
+  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x95, SW_NO_ERROR);
+  ck_key_t old, after;
+  assert_true(ck_read_key("piv-k95", &old) >= 0);
+  gen[4] = 0xE2;
+  uint8_t response[MLDSA_PK_BYTES + 16];
+  CAPDU c = {.ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, .p2 = 0x95, .data = gen, .lc = sizeof(gen), .le = 256};
+  RAPDU r = {.data = response};
+  RAPDU_CHAINING chaining = {.rapdu.data = response};
+  piv_process_apdu_message(&chaining, &c, &r);
+  assert_int_equal(r.sw & 0xFF00u, 0x6100u);
+  assert_int_equal(read_attr("piv-k95", PIV_CONTAINER_NAME_ATTR, stored, sizeof(stored)), sizeof(name));
+  assert_memory_equal(stored, name, sizeof(name));
+  piv_poweroff(); // Abort pending generation: old key and name must survive.
+  assert_true(ck_read_key("piv-k95", &after) >= 0);
+  assert_memory_equal(&old, &after, sizeof(old));
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x95, SW_NO_ERROR, name, sizeof(name));
+  set_admin_status(1);
+  uint16_t sw;
+  container_name_fail_prog = true;
+  piv_test_collect_response(c, response, sizeof(response), &sw);
+  container_name_fail_prog = false;
+  assert_int_not_equal(sw, SW_NO_ERROR);
+  assert_true(ck_read_key("piv-k95", &after) >= 0);
+  assert_memory_equal(&old, &after, sizeof(old));
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x95, SW_NO_ERROR, name, sizeof(name));
+  assert_int_equal(piv_test_collect_response(c, response, sizeof(response), &sw), MLDSA_PK_BYTES + 9);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_int_equal(get_attr_size("piv-k95", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -3963,7 +4153,8 @@ int main() {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
-  cfg.prog = &lfs_filebd_prog;
+  cfg.prog = &container_name_prog;
+  container_name_fs_cfg = &cfg;
   cfg.erase = &lfs_filebd_erase;
   cfg.sync = &lfs_filebd_sync;
   cfg.read_size = 1;
@@ -3980,6 +4171,9 @@ int main() {
   piv_install(1);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_piv_container_names),
+      cmocka_unit_test(test_piv_container_name_replacement),
+      cmocka_unit_test(test_piv_container_name_mldsa_replacement),
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_piv_aes192_management_key),
       cmocka_unit_test(test_piv_migrates_legacy_management_key_types),

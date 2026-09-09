@@ -90,29 +90,21 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   case SECP256R1:
   case SECP256K1:
   case SECP384R1:
-  case SM2:
-    if (include_length) {
-      buf[off++] = key_len + 3; // tag, length, and 0x04
-    }
-    buf[off++] = 0x86;
-    buf[off++] = key_len + 1; // 0x04
-    buf[off++] = 0x04;
-    memcpy(&buf[off], key->ecc.pub, key_len);
-    off += key_len;
-    break;
-
   case SECP521R1:
+  case SM2: {
+    const bool long_length = key_len + 1 >= 0x80;
     if (include_length) {
-      buf[off++] = 0x81;        // Two-byte length
-      buf[off++] = key_len + 4; // tag, length (two bytes), and 0x04
+      if (long_length) buf[off++] = 0x81;
+      buf[off++] = key_len + 3 + long_length; // tag, length, and 0x04
     }
     buf[off++] = 0x86;
-    buf[off++] = 0x81;        // Two-byte length
-    buf[off++] = key_len + 1; // 0x04
+    if (long_length) buf[off++] = 0x81;
+    buf[off++] = key_len + 1;
     buf[off++] = 0x04;
     memcpy(&buf[off], key->ecc.pub, key_len);
     off += key_len;
     break;
+  }
 
   case ED25519:
   case X25519:
@@ -189,47 +181,28 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
   return off;
 }
 
-int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
-  const uint8_t *end = buf + buf_len;
-
-  while (buf < end) {
-    switch (*buf++) {
-    case 0xAA:
-      DBG_MSG("May have pin policy\n");
-      if (buf == end) return KEY_ERR_LENGTH;
-      if (*buf++ != 0x01) {
-        DBG_MSG("Wrong length for pin policy\n");
-        return KEY_ERR_LENGTH;
-      }
-      if (buf == end) return KEY_ERR_LENGTH;
-      if (*buf > PIN_POLICY_ALWAYS || *buf < PIN_POLICY_NEVER) {
-        DBG_MSG("Wrong data for pin policy\n");
-        return KEY_ERR_DATA;
-      }
-      key->meta.pin_policy = *buf++;
-      break;
-
-    case 0xAB:
-      DBG_MSG("May have touch policy\n");
-      if (buf == end) return KEY_ERR_LENGTH;
-      if (*buf++ != 0x01) {
-        DBG_MSG("Wrong length for touch policy\n");
-        return KEY_ERR_LENGTH;
-      }
-      if (buf == end) return KEY_ERR_LENGTH;
-      if (*buf > TOUCH_POLICY_CACHED || *buf < TOUCH_POLICY_NEVER) {
-        DBG_MSG("Wrong data for touch policy\n");
-        return KEY_ERR_DATA;
-      }
-      key->meta.touch_policy = *buf++;
-      break;
-
-    default:
-      buf = end;
-      break;
-    }
+static int ck_set_piv_policy(key_meta_t *meta, uint8_t tag, uint8_t value) {
+  if (tag == 0xAA) {
+    if (value < PIN_POLICY_NEVER || value > PIN_POLICY_ALWAYS) return KEY_ERR_DATA;
+    meta->pin_policy = value;
+  } else {
+    if (value < TOUCH_POLICY_NEVER || value > TOUCH_POLICY_CACHED) return KEY_ERR_DATA;
+    meta->touch_policy = value;
   }
+  return 0;
+}
 
+int ck_parse_piv_policies(ck_key_t *key, const uint8_t *buf, size_t buf_len) {
+  while (buf_len > 0) {
+    const uint8_t tag = *buf++;
+    --buf_len;
+    if (tag != 0xAA && tag != 0xAB) return 0;
+    if (buf_len < 2 || buf[0] != 0x01) return KEY_ERR_LENGTH;
+    const int ret = ck_set_piv_policy(&key->meta, tag, buf[1]);
+    if (ret < 0) return ret;
+    buf += 2;
+    buf_len -= 2;
+  }
   return 0;
 }
 
@@ -625,13 +598,7 @@ int ck_parse_piv_stream_update(ck_piv_stream_t *st, ck_key_t *key, const uint8_t
       break;
 
     case CK_PIV_STREAM_POLICY_VALUE:
-      if (st->policy_tag == 0xAA) {
-        if (b > PIN_POLICY_ALWAYS || b < PIN_POLICY_NEVER) return KEY_ERR_DATA;
-        key->meta.pin_policy = b;
-      } else {
-        if (b > TOUCH_POLICY_CACHED || b < TOUCH_POLICY_NEVER) return KEY_ERR_DATA;
-        key->meta.touch_policy = b;
-      }
+      if (ck_set_piv_policy(&key->meta, st->policy_tag, b) < 0) return KEY_ERR_DATA;
       st->phase = CK_PIV_STREAM_POLICY_TAG;
       break;
 

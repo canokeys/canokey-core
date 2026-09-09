@@ -121,6 +121,20 @@ static void test_encode_ecdsa(void **state) {
   assert_memory_equal(buf, expected, 68);
 }
 
+static void test_encode_p521_length(void **state) {
+  (void)state;
+  ck_key_t key = {.meta.type = SECP521R1};
+  uint8_t buf[138];
+  for (size_t i = 0; i < 132; ++i) key.ecc.pub[i] = (uint8_t)i;
+  const uint8_t header[] = {0x81, 0x88, 0x86, 0x81, 0x85, 0x04};
+  assert_int_equal(ck_encode_public_key(&key, buf, true), sizeof(buf));
+  assert_memory_equal(buf, header, sizeof(header));
+  assert_memory_equal(buf + sizeof(header), key.ecc.pub, 132);
+  assert_int_equal(ck_encode_public_key(&key, buf, false), 136);
+  assert_memory_equal(buf, header + 2, sizeof(header) - 2);
+  assert_memory_equal(buf + sizeof(header) - 2, key.ecc.pub, 132);
+}
+
 static void test_encode_eddsa(void **state) {
   (void)state;
 
@@ -429,6 +443,40 @@ static void test_parse_piv_policies_rejects_truncated_fields(void **state) {
   }
 }
 
+static void test_fs_file_operations(void **state) {
+  (void)state;
+  const char *path = "fs-io";
+  uint8_t buf[16];
+  assert_int_equal(get_file_size(path), LFS_ERR_NOENT);
+  assert_int_equal(read_file(path, buf, 0, sizeof(buf)), LFS_ERR_NOENT);
+  assert_int_equal(append_file(path, NULL, 0), 0);
+  assert_int_equal(get_file_size(path), 0);
+  assert_int_equal(write_file(path, "abcd", 0, 4, 0), 0);
+  assert_int_equal(write_file(path, "XY", 1, 2, 0), 0);
+  assert_int_equal(append_file(path, "ef", 2), 0);
+  assert_int_equal(read_file(path, buf, 0, sizeof(buf)), 6);
+  assert_memory_equal(buf, "aXYdef", 6);
+  assert_int_equal(read_file(path, buf, 2, 3), 3);
+  assert_memory_equal(buf, "Yde", 3);
+  assert_int_equal(read_file(path, buf, -1, 1), LFS_ERR_INVAL);
+  // A failed operation must close the shared file before the next operation.
+  assert_int_equal(write_file(path, "!", -1, 1, 0), LFS_ERR_INVAL);
+  assert_int_equal(append_file(path, NULL, 0), 0);
+  assert_int_equal(get_file_size(path), 6);
+  assert_int_equal(truncate_file(path, 3), 0);
+  assert_int_equal(read_file(path, buf, 0, sizeof(buf)), 3);
+  assert_memory_equal(buf, "aXY", 3);
+  assert_int_equal(truncate_file(path, 5), 0);
+  assert_int_equal(read_file(path, buf, 0, sizeof(buf)), 5);
+  assert_memory_equal(buf, "aXY\0\0", 5);
+  assert_int_equal(write_attr(path, 0x94, "name", 4), 0);
+  assert_int_equal(write_file(path, NULL, 0, 0, 1), 0);
+  assert_int_equal(get_file_size(path), 0);
+  assert_int_equal(read_attr(path, 0x94, buf, sizeof(buf)), 4);
+  assert_memory_equal(buf, "name", 4);
+  assert_int_equal(remove_file(path), 0);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -453,8 +501,10 @@ int main() {
   fs_mount(&cfg);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_fs_file_operations),
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
+      cmocka_unit_test(test_encode_p521_length),
       cmocka_unit_test(test_encode_eddsa),
       cmocka_unit_test(test_encode_mldsa),
       cmocka_unit_test(test_encode_invalid_type),

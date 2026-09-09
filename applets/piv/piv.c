@@ -367,23 +367,13 @@ static void piv_slot_path(char kind, uint8_t id, char path[MAX_KEY_PATH_LEN]) {
 
 static void piv_key_path(uint8_t id, char path[MAX_KEY_PATH_LEN]) { piv_slot_path('k', id, path); }
 
-static void piv_cert_path(uint8_t id, char path[MAX_DO_PATH_LEN]) { piv_slot_path('c', id, path); }
-
-static void piv_default_key(uint8_t id, ck_key_t *key) {
-  ck_key_init_empty(key, KEY_TYPE_PKC_END, piv_default_key_usage(id), piv_default_pin_policy(id), TOUCH_POLICY_NEVER);
-}
-
-static int piv_read_key_or_default(uint8_t id, ck_key_t *key, char path[MAX_KEY_PATH_LEN]) {
-  if (!piv_is_key_id(id)) return SW_WRONG_P1P2;
+static int piv_asymmetric_key_path(uint8_t id, char path[MAX_KEY_PATH_LEN]) {
+  if (!piv_is_asymmetric_key_id(id)) return 0;
   piv_key_path(id, path);
-  const int rc = ck_read_key(path, key);
-  if (rc >= 0) return SW_NO_ERROR;
-  if (id != 0x9B && rc == LFS_ERR_NOENT) {
-    piv_default_key(id, key);
-    return SW_NO_ERROR;
-  }
-  return -1;
+  return 1;
 }
+
+static void piv_cert_path(uint8_t id, char path[MAX_DO_PATH_LEN]) { piv_slot_path('c', id, path); }
 
 static int piv_read_key_metadata_or_default(uint8_t id, key_meta_t *meta, char path[MAX_KEY_PATH_LEN]) {
   if (!piv_is_key_id(id)) return SW_WRONG_P1P2;
@@ -391,9 +381,11 @@ static int piv_read_key_metadata_or_default(uint8_t id, key_meta_t *meta, char p
   const int rc = ck_read_key_metadata(path, meta);
   if (rc >= 0) return SW_NO_ERROR;
   if (id != 0x9B && rc == LFS_ERR_NOENT) {
-    ck_key_t key;
-    piv_default_key(id, &key);
-    *meta = key.meta;
+    *meta = (key_meta_t){.type = KEY_TYPE_PKC_END,
+                         .origin = KEY_ORIGIN_NOT_PRESENT,
+                         .usage = piv_default_key_usage(id),
+                         .pin_policy = piv_default_pin_policy(id),
+                         .touch_policy = TOUCH_POLICY_NEVER};
     return SW_NO_ERROR;
   }
   return -1;
@@ -545,6 +537,15 @@ static int piv_clear_attr_if_present(const char *path, uint8_t attr) {
   return (rc == 0 || rc == LFS_ERR_NOENT || rc == LFS_ERR_NOATTR) ? 0 : -1;
 }
 
+// NULL resets a lazy slot: deleting the file also deletes all its attributes.
+// For replacement, clear first so a failed write can lose a name, but a newly
+// installed key can never inherit the old name.
+static int piv_replace_asymmetric_key(const char *path, const ck_key_t *key) {
+  if (key == NULL) return piv_remove_file_if_present(path);
+  if (piv_clear_attr_if_present(path, PIV_CONTAINER_NAME_ATTR) < 0) return -1;
+  return ck_write_key(path, key);
+}
+
 static int piv_attr_present(const char *path, uint8_t attr) {
   uint8_t probe;
   const int rc = read_attr(path, attr, &probe, 0);
@@ -574,7 +575,7 @@ static int piv_clear_file_do_storage(void) {
     piv_cert_path((uint8_t)id, cert_path);
     if (piv_remove_file_if_present(cert_path) < 0) return -1;
     piv_key_path((uint8_t)id, key_path);
-    if (piv_remove_file_if_present(key_path) < 0) return -1;
+    if (piv_replace_asymmetric_key(key_path, NULL) < 0) return -1;
   }
   return 0;
 }
@@ -821,7 +822,7 @@ static int __attribute__((noinline)) piv_mldsa_install_pending_key(piv_mldsa_str
   memcpy(key.mldsa.seed, state->seed, sizeof(key.mldsa.seed));
   memcpy(key.mldsa.tr, state->tr, sizeof(key.mldsa.tr));
   piv_key_path(state->pending_key_id, key_path);
-  const int ret = ck_write_key(key_path, &key);
+  const int ret = piv_replace_asymmetric_key(key_path, &key);
   memzero(&key, sizeof(key));
   if (ret < 0) return -1;
   state->install_pending = false;
@@ -2577,14 +2578,13 @@ __attribute__((noinline)) static int piv_generate_asymmetric_key_pair(const CAPD
   }
 
   char key_path[MAX_KEY_PATH_LEN];
-  if (!piv_is_asymmetric_key_id(P2)) {
+  if (!piv_asymmetric_key_path(P2, key_path)) {
     DBG_MSG("Invalid key ref\n");
     EXCEPT(SW_WRONG_P1P2);
   }
-  piv_key_path(P2, key_path);
   ck_key_t key;
-  const int read_sw = piv_read_key_or_default(P2, &key, key_path);
-  if (read_sw == SW_WRONG_P1P2) EXCEPT(read_sw);
+  memzero(&key, sizeof(key));
+  const int read_sw = piv_read_key_metadata_or_default(P2, &key.meta, key_path);
   if (read_sw < 0) return -1;
 
   key.meta.type = algo_id_to_key_type(DATA[4]);
@@ -2613,7 +2613,7 @@ __attribute__((noinline)) static int piv_generate_asymmetric_key_pair(const CAPD
   }
 
   if (ck_generate_key(&key) < 0) return -1;
-  if (ck_write_key(key_path, &key) < 0) return -1;
+  if (piv_replace_asymmetric_key(key_path, &key) < 0) return -1;
   DBG_MSG("Generate key %s successful\n", key_path);
   DBG_KEY_META(&key.meta);
 
@@ -2660,12 +2660,10 @@ __attribute__((noinline)) static int piv_import_asymmetric_key(const CAPDU *capd
   if (!in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
 #endif
   char key_path[MAX_KEY_PATH_LEN];
-  if (!piv_is_asymmetric_key_id(P2)) {
+  if (!piv_asymmetric_key_path(P2, key_path)) {
     DBG_MSG("Unknown key file\n");
     EXCEPT(SW_WRONG_P1P2);
   }
-  piv_key_path(P2, key_path);
-
   const key_type_t key_type = algo_id_to_key_type(P1);
   if (key_type == KEY_TYPE_PKC_END) EXCEPT(SW_WRONG_P1P2);
   if (P2 == 0xF9 && key_type != SECP256R1) EXCEPT(SW_WRONG_P1P2);
@@ -2728,7 +2726,7 @@ __attribute__((noinline)) static int piv_import_asymmetric_key(const CAPDU *capd
     error_sw = SW_WRONG_LENGTH;
     goto fail;
   }
-  write_err = ck_write_key(key_path, &key);
+  write_err = piv_replace_asymmetric_key(key_path, &key);
   memzero(&key, sizeof(key));
   piv_import_reset();
   if (write_err < 0) return -1;
@@ -2744,6 +2742,65 @@ fail_proc:
   memzero(&key, sizeof(key));
   piv_import_reset();
   return -1;
+}
+
+static bool piv_container_name_valid(const uint8_t *name, size_t len) {
+  if (len > PIV_CONTAINER_NAME_MAX_BYTES || (len & 1u)) return false;
+  bool high_surrogate = false;
+  for (size_t i = 0; i < len; i += 2) {
+    const uint16_t ch = name[i] | ((uint16_t)name[i + 1] << 8u);
+    if (ch == 0) return false;
+    if (high_surrogate) {
+      if (ch < 0xDC00 || ch > 0xDFFF) return false;
+      high_surrogate = false;
+    } else {
+      if (ch >= 0xDC00 && ch <= 0xDFFF) return false;
+      high_surrogate = ch >= 0xD800 && ch <= 0xDBFF;
+    }
+  }
+  return !high_surrogate;
+}
+
+static int piv_read_container_name(const char *path, uint8_t *name) {
+  const int len = read_attr(path, PIV_CONTAINER_NAME_ATTR, name, PIV_CONTAINER_NAME_MAX_BYTES);
+  if (len == LFS_ERR_NOENT || len == LFS_ERR_NOATTR) return 0;
+  if (len < 0 || len > PIV_CONTAINER_NAME_MAX_BYTES) return -1;
+  return len;
+}
+
+__attribute__((noinline)) static int piv_container_name(const CAPDU *capdu, RAPDU *rapdu) {
+  char path[MAX_KEY_PATH_LEN];
+  if (P1 > 1 || !piv_asymmetric_key_path(P2, path)) EXCEPT(SW_WRONG_P1P2);
+  if (P1 == 0 && LC != 0) EXCEPT(SW_WRONG_LENGTH);
+  if (P1 == 1 && !in_admin_status) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+
+  key_meta_t meta;
+  const int rc = ck_read_key_metadata(path, &meta);
+  if (rc == LFS_ERR_NOENT ||
+      (rc == (int)sizeof(meta) && (meta.type == KEY_TYPE_PKC_END || meta.origin == KEY_ORIGIN_NOT_PRESENT)))
+    EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+  if (rc != (int)sizeof(meta)) return -1;
+  if (P1 == 1 && !piv_container_name_valid(DATA, LC)) EXCEPT(SW_WRONG_DATA);
+
+  // Read once for either operation. Keep DATA intact when CAPDU/RAPDU alias.
+  uint8_t name[PIV_CONTAINER_NAME_MAX_BYTES];
+  const int len = piv_read_container_name(path, P1 == 0 ? RDATA : name);
+  if (len < 0) return -1;
+  if (P1 == 0) {
+    LL = len;
+    return 0;
+  }
+  if (len == LC && (LC == 0 || memcmp(name, DATA, LC) == 0)) return 0;
+  if (LC == 0) return piv_clear_attr_if_present(path, PIV_CONTAINER_NAME_ATTR);
+
+  char other_path[MAX_KEY_PATH_LEN];
+  for (uint16_t id = 0; id <= UINT8_MAX; ++id) {
+    if (id == P2 || !piv_asymmetric_key_path((uint8_t)id, other_path)) continue;
+    const int other_len = piv_read_container_name(other_path, name);
+    if (other_len < 0) return -1;
+    if (other_len == LC && memcmp(name, DATA, LC) == 0) EXCEPT(SW_WRONG_DATA);
+  }
+  return write_attr(path, PIV_CONTAINER_NAME_ATTR, DATA, LC);
 }
 
 static int piv_move_delete_key(const CAPDU *capdu, RAPDU *rapdu) {
@@ -2784,8 +2841,7 @@ static int piv_attest(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
   char target_path[MAX_KEY_PATH_LEN];
-  if (!piv_is_asymmetric_key_id(P1)) EXCEPT(SW_WRONG_P1P2);
-  piv_key_path(P1, target_path);
+  if (!piv_asymmetric_key_path(P1, target_path)) EXCEPT(SW_WRONG_P1P2);
 
   char attestation_key_path[MAX_KEY_PATH_LEN];
   piv_key_path(0xF9, attestation_key_path);
@@ -2907,15 +2963,14 @@ __attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU 
   case 0x9E: // Card Authentication
   default: {
     char key_path[MAX_KEY_PATH_LEN];
-    if (!piv_is_asymmetric_key_id(P2)) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
-    piv_key_path(P2, key_path);
+    if (!piv_asymmetric_key_path(P2, key_path)) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
     ck_key_t key;
-    const int read_sw = piv_read_key_or_default(P2, &key, key_path);
-    if (read_sw == SW_WRONG_P1P2) EXCEPT(read_sw);
-    if (read_sw < 0) return -1;
+    const int read_rc = ck_read_key(key_path, &key);
+    if (read_rc == LFS_ERR_NOENT || (read_rc >= 0 && key.meta.type == KEY_TYPE_PKC_END))
+      EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
+    if (read_rc < 0) return -1;
     DBG_KEY_META(&key.meta);
-    if (key.meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_REFERENCE_DATA_NOT_FOUND);
 
     const uint8_t prefix[] = {0x01, 0x01, key_type_to_algo_id(key.meta.type), 0x02, 0x02, key.meta.pin_policy,
                               key.meta.touch_policy, 0x03, 0x01, key.meta.origin, 0x04};
@@ -3041,6 +3096,9 @@ int piv_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
     break;
   case PIV_INS_IMPORT_ASYMMETRIC_KEY:
     ret = piv_import_asymmetric_key(capdu, rapdu);
+    break;
+  case PIV_INS_CONTAINER_NAME:
+    ret = piv_container_name(capdu, rapdu);
     break;
   case PIV_INS_MOVE_DELETE_KEY:
     ret = piv_move_delete_key(capdu, rapdu);

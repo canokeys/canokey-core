@@ -15,6 +15,18 @@
 #define PIV_INS_GET_DATA_RESPONSE            0xC0
 #define PIV_INS_GET_DATA                     0xCB
 #define PIV_INS_PUT_DATA                     0xDB
+// Vendor extension: 00 F5 <00 read | 01 set> <asymmetric slot>.
+// Short APDU only, no command chaining. Read requires Lc=0 and no authentication;
+// set requires management authentication. Slots: 9A/9C/9D/9E, 82..95 and F9.
+// Names are raw UTF-16LE, at most 78 bytes, without NUL or unpaired surrogates.
+// Empty set clears the attribute. Empty slots cannot be named. Identical bytes
+// in another slot are rejected; setting the current name performs no write.
+// SW: bad P1/P2=6A86, bad read Lc=6700, unauthenticated=6982,
+// absent key=6A88, invalid/duplicate name=6A80, storage failure=6900.
+// Replacement clears the name before writing the new key, without retrying.
+// Reset deletes ordinary keys and names; F9 survives. Move carries the name.
+// test_piv covers validation, persistence, uniqueness and replacement failures.
+#define PIV_INS_CONTAINER_NAME              0xF5
 #define PIV_INS_GET_METADATA                 0xF7
 #define PIV_INS_GET_SERIAL                   0xF8
 // Yubico PIV attestation extension: 00 F9 <slot> 00, no data. The response is
@@ -39,6 +51,10 @@
 
 #define PIV_INS_ALGORITHM_EXTENSION          0xEE
 // clang-format on
+
+// Per-asymmetric-key LittleFS attribute; distinct from KEY_META_ATTR (0xFF).
+#define PIV_CONTAINER_NAME_ATTR 0x94
+#define PIV_CONTAINER_NAME_MAX_BYTES 78
 
 // Stored payload limits include the outer 53 BER-TLV but exclude the 5C
 // tag-list header carried by GET DATA / PUT DATA. These values fill exactly 6

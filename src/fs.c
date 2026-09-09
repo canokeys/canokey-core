@@ -12,83 +12,47 @@ int fs_format(const struct lfs_config *cfg) { return lfs_format(&lfs, cfg); }
 
 int fs_mount(const struct lfs_config *cfg) { return lfs_mount(&lfs, cfg); }
 
+// Always close an opened file, preserving the operation's original error.
+static int close_file_result(lfs_file_t *file, int result) {
+  const int close_result = lfs_file_close(&lfs, file);
+  if (result < 0) return result;
+  return close_result < 0 ? close_result : result;
+}
+
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   lfs_file_t f;
-  lfs_ssize_t read_length;
   int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
   if (err < 0) return err;
   err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
-  if (err < 0) goto err_close;
-  read_length = lfs_file_read(&lfs, &f, buf, len);
-  if (read_length < 0) {
-    err = read_length;
-    goto err_close;
-  }
-  err = lfs_file_close(&lfs, &f);
-  if (err < 0) return err;
-  return read_length;
+  if (err >= 0) err = lfs_file_read(&lfs, &f, buf, len);
+  return close_file_result(&f, err);
+}
 
-err_close:
-  lfs_file_close(&lfs, &f);
-  return err;
+static int write_file_at(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, int flags) {
+  lfs_file_t f;
+  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | flags, &file_config);
+  if (err < 0) return err;
+  err = lfs_file_seek(&lfs, &f, off, flags & LFS_O_APPEND ? LFS_SEEK_END : LFS_SEEK_SET);
+  if (err >= 0 && len > 0) err = lfs_file_write(&lfs, &f, buf, len);
+  return close_file_result(&f, err < 0 ? err : 0);
 }
 
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
-  lfs_file_t f;
 #ifdef TEST
-  if (testmode_err_triggered(path, true)) {
-    return LFS_ERR_IO;
-  }
+  if (testmode_err_triggered(path, true)) return LFS_ERR_IO;
 #endif
-  int flags = LFS_O_WRONLY | LFS_O_CREAT;
-  if (trunc) flags |= LFS_O_TRUNC;
-  int err = lfs_file_opencfg(&lfs, &f, path, flags, &file_config);
-  if (err < 0) return err;
-  err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
-  if (err < 0) goto err_close;
-  if (len > 0) {
-    err = lfs_file_write(&lfs, &f, buf, len);
-    if (err < 0) goto err_close;
-  }
-  err = lfs_file_close(&lfs, &f);
-  if (err < 0) return err;
-  return 0;
-err_close:
-  lfs_file_close(&lfs, &f);
-  return err;
+  return write_file_at(path, buf, off, len, trunc ? LFS_O_TRUNC : 0);
 }
 
 int append_file(const char *path, const void *buf, lfs_size_t len) {
-  lfs_file_t f;
-  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT, &file_config);
-  if (err < 0) return err;
-  err = lfs_file_seek(&lfs, &f, 0, LFS_SEEK_END);
-  if (err < 0) goto err_close;
-  if (len > 0) {
-    err = lfs_file_write(&lfs, &f, buf, len);
-    if (err < 0) goto err_close;
-  }
-  err = lfs_file_close(&lfs, &f);
-  if (err < 0) return err;
-  return 0;
-err_close:
-  lfs_file_close(&lfs, &f);
-  return err;
+  return write_file_at(path, buf, 0, len, LFS_O_APPEND);
 }
 
 int truncate_file(const char *path, lfs_size_t len) {
   lfs_file_t f;
-  int flags = LFS_O_WRONLY | LFS_O_CREAT;
-  int err = lfs_file_opencfg(&lfs, &f, path, flags, &file_config);
+  int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT, &file_config);
   if (err < 0) return err;
-  err = lfs_file_truncate(&lfs, &f, len);
-  if (err < 0) goto err_close;
-  err = lfs_file_close(&lfs, &f);
-  if (err < 0) return err;
-  return 0;
-err_close:
-  lfs_file_close(&lfs, &f);
-  return err;
+  return close_file_result(&f, lfs_file_truncate(&lfs, &f, len));
 }
 
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
@@ -110,17 +74,7 @@ int get_file_size(const char *path) {
   lfs_file_t f;
   int err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
   if (err < 0) return err;
-  int size = lfs_file_size(&lfs, &f);
-  if (size < 0) {
-    err = size;
-    goto err_close;
-  }
-  err = lfs_file_close(&lfs, &f);
-  if (err < 0) return err;
-  return size;
-err_close:
-  lfs_file_close(&lfs, &f);
-  return err;
+  return close_file_result(&f, lfs_file_size(&lfs, &f));
 }
 
 int get_attr_size(const char *path, uint8_t attr) {
@@ -133,9 +87,8 @@ int get_attr_size(const char *path, uint8_t attr) {
 int get_fs_size(void) { return (int)(lfs.cfg->block_size * lfs.cfg->block_count) / 1024; }
 
 int get_fs_usage(void) {
-  int blocks = lfs_fs_size(&lfs);
-  if (blocks < 0) return blocks;
-  return (int)(lfs.cfg->block_size * blocks) / 1024;
+  const int bytes = get_fs_usage_bytes();
+  return bytes < 0 ? bytes : bytes / 1024;
 }
 
 int get_fs_usage_bytes(void) {

@@ -3222,6 +3222,39 @@ static void test_admin_platform_config_and_serial_apdus(void **state) {
   assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
 }
 
+static void test_platform_config_flags_preserve_other_state(void **state) {
+  (void)state;
+  admin_device_config_t saved, actual;
+  uint8_t serial[4], after_serial[4];
+  assert_int_equal(admin_platform_device_config_read(&saved), 0);
+  assert_int_equal(admin_platform_serial_read(serial), 0);
+  assert_int_equal(device_config_mark_initialized(), 0);
+  const uint8_t nfc_enabled = device_config_is_nfc_enabled();
+  assert_int_equal(device_config_set_nfc_enabled(0), 0);
+
+  const admin_device_config_t input = {.led_normally_on = 1, .ndef_en = 0, .webusb_landing_en = 1,
+                                       .pass_en = 0, .openpgp_ccid_en = 1, .openpgp_nfc_en = 0,
+                                       .piv_ccid_en = 1, .piv_nfc_en = 0, .webauthn_en = 1};
+  assert_int_equal(admin_platform_device_config_write(&input), 0);
+  assert_int_equal(admin_platform_device_config_read(&actual), 0);
+  assert_int_equal(actual.led_normally_on, 1);
+  assert_int_equal(actual.ndef_en, 0);
+  assert_int_equal(actual.webusb_landing_en, 1);
+  assert_int_equal(actual.pass_en, 0);
+  assert_int_equal(actual.openpgp_ccid_en, 1);
+  assert_int_equal(actual.openpgp_nfc_en, 0);
+  assert_int_equal(actual.piv_ccid_en, 1);
+  assert_int_equal(actual.piv_nfc_en, 0);
+  assert_int_equal(actual.webauthn_en, 1);
+  assert_int_equal(device_config_is_initialized(), 1);
+  assert_int_equal(device_config_is_nfc_enabled(), 0);
+  assert_int_equal(admin_platform_serial_read(after_serial), 0);
+  assert_memory_equal(after_serial, serial, sizeof(serial));
+
+  assert_int_equal(admin_platform_device_config_write(&saved), 0);
+  assert_int_equal(device_config_set_nfc_enabled(nfc_enabled), 0);
+}
+
 static void test_virt_card_config_page_persistence(void **state) {
   (void)state;
   static const char root[] = "lfs-root-config-page-test";
@@ -3923,6 +3956,7 @@ int main() {
       cmocka_unit_test(test_response_source_clear_calls_close),
       cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
       cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
+      cmocka_unit_test(test_platform_config_flags_preserve_other_state),
       cmocka_unit_test(test_admin_chained_fido_cert_write),
       cmocka_unit_test(test_admin_read_core_commit_apdu),
       cmocka_unit_test(test_admin_flash_usage_apdus),

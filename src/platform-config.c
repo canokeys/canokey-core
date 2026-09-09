@@ -102,6 +102,11 @@ static bool config_page_valid(const config_page_t *page) {
          page->page_len == PLATFORM_CONFIG_PAGE_SIZE && page->crc == config_crc_value(page);
 }
 
+static int config_read_valid_page(config_page_t *page) {
+  if (config_read_page(page) < 0 || !config_page_valid(page)) return -1;
+  return 0;
+}
+
 static bool config_valid(void) {
   alignas(4) config_page_t page;
   return config_read_page(&page) == 0 && config_page_valid(&page);
@@ -193,42 +198,18 @@ static int set_nfc_update(config_page_t *page, void *ctx) {
 
 static int set_admin_cfg_update(config_page_t *page, void *ctx) {
   const admin_device_config_t *cfg = (const admin_device_config_t *)ctx;
-  if (cfg->led_normally_on)
-    page->flags |= CONFIG_FLAG_LED_NORMALLY_ON;
-  else
-    page->flags &= ~CONFIG_FLAG_LED_NORMALLY_ON;
-  if (cfg->ndef_en)
-    page->flags |= CONFIG_FLAG_NDEF_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_NDEF_ENABLED;
-  if (cfg->webusb_landing_en)
-    page->flags |= CONFIG_FLAG_WEBUSB_LANDING_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_WEBUSB_LANDING_ENABLED;
-  if (cfg->pass_en)
-    page->flags |= CONFIG_FLAG_PASS_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_PASS_ENABLED;
-  if (cfg->openpgp_ccid_en)
-    page->flags |= CONFIG_FLAG_OPENPGP_CCID_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_OPENPGP_CCID_ENABLED;
-  if (cfg->openpgp_nfc_en)
-    page->flags |= CONFIG_FLAG_OPENPGP_NFC_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_OPENPGP_NFC_ENABLED;
-  if (cfg->piv_ccid_en)
-    page->flags |= CONFIG_FLAG_PIV_CCID_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_PIV_CCID_ENABLED;
-  if (cfg->piv_nfc_en)
-    page->flags |= CONFIG_FLAG_PIV_NFC_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_PIV_NFC_ENABLED;
-  if (cfg->webauthn_en)
-    page->flags |= CONFIG_FLAG_WEBAUTHN_ENABLED;
-  else
-    page->flags &= ~CONFIG_FLAG_WEBAUTHN_ENABLED;
+  const uint32_t mask = CONFIG_FLAG_LED_NORMALLY_ON | CONFIG_FLAG_NDEF_ENABLED |
+                        CONFIG_FLAG_WEBUSB_LANDING_ENABLED | CONFIG_FLAGS_FEATURES;
+  const uint32_t flags = (cfg->led_normally_on ? CONFIG_FLAG_LED_NORMALLY_ON : 0) |
+                         (cfg->ndef_en ? CONFIG_FLAG_NDEF_ENABLED : 0) |
+                         (cfg->webusb_landing_en ? CONFIG_FLAG_WEBUSB_LANDING_ENABLED : 0) |
+                         (cfg->pass_en ? CONFIG_FLAG_PASS_ENABLED : 0) |
+                         (cfg->openpgp_ccid_en ? CONFIG_FLAG_OPENPGP_CCID_ENABLED : 0) |
+                         (cfg->openpgp_nfc_en ? CONFIG_FLAG_OPENPGP_NFC_ENABLED : 0) |
+                         (cfg->piv_ccid_en ? CONFIG_FLAG_PIV_CCID_ENABLED : 0) |
+                         (cfg->piv_nfc_en ? CONFIG_FLAG_PIV_NFC_ENABLED : 0) |
+                         (cfg->webauthn_en ? CONFIG_FLAG_WEBAUTHN_ENABLED : 0);
+  page->flags = (page->flags & ~mask) | flags;
   return 0;
 }
 
@@ -303,7 +284,7 @@ static int config_tlv_read(uint8_t type, uint8_t *value, uint8_t len) {
   const uint8_t *stored;
   uint8_t stored_len;
 
-  if (config_read_page(&page) < 0 || !config_page_valid(&page) || !config_tlv_find(&page, type, &stored, &stored_len) ||
+  if (config_read_valid_page(&page) < 0 || !config_tlv_find(&page, type, &stored, &stored_len) ||
       stored_len != len)
     return -1;
   memcpy(value, stored, len);
@@ -317,7 +298,7 @@ static int config_tlv_write(uint8_t type, const uint8_t *value, uint8_t len) {
 
 int admin_platform_device_config_read(admin_device_config_t *cfg) {
   alignas(4) config_page_t page;
-  if (config_read_page(&page) < 0 || !config_page_valid(&page)) return -1;
+  if (config_read_valid_page(&page) < 0) return -1;
   cfg->led_normally_on = (page.flags & CONFIG_FLAG_LED_NORMALLY_ON) != 0;
   cfg->ndef_en = (page.flags & CONFIG_FLAG_NDEF_ENABLED) != 0;
   cfg->webusb_landing_en = (page.flags & CONFIG_FLAG_WEBUSB_LANDING_ENABLED) != 0;
@@ -336,7 +317,7 @@ int admin_platform_device_config_write(const admin_device_config_t *cfg) {
 
 int admin_platform_serial_read(uint8_t *buf) {
   alignas(4) config_page_t page;
-  if (config_read_page(&page) < 0 || !config_page_valid(&page) || (page.flags & CONFIG_FLAG_SN_VALID) == 0) return -1;
+  if (config_read_valid_page(&page) < 0 || (page.flags & CONFIG_FLAG_SN_VALID) == 0) return -1;
   memcpy(buf, page.serial, sizeof(page.serial));
   return 0;
 }
@@ -356,14 +337,19 @@ int admin_platform_kbd_keymap_write(uint8_t layout_id, const uint8_t *keymap, ui
   return config_update(set_keymap_update, &update);
 }
 
+static int config_read_keymap_page(config_page_t *page) {
+  if (config_read_valid_page(page) < 0 || (page->flags & CONFIG_FLAG_KBD_KEYMAP_VALID) == 0 ||
+      page->kbd_entry_size != CONFIG_KBD_ENTRY_SIZE || page->kbd_first != 0 ||
+      page->kbd_count != CONFIG_KBD_ASCII_COUNT)
+    return -1;
+  return 0;
+}
+
 int admin_platform_kbd_keymap_read(uint8_t *layout_id, uint8_t *keymap, uint16_t len) {
   alignas(4) config_page_t page;
   if (layout_id == NULL) return -1;
   if ((keymap == NULL && len != 0) || (keymap != NULL && len != sizeof(page.keymap))) return -1;
-  if (config_read_page(&page) < 0 || !config_page_valid(&page) || (page.flags & CONFIG_FLAG_KBD_KEYMAP_VALID) == 0)
-    return -1;
-  if (page.kbd_entry_size != CONFIG_KBD_ENTRY_SIZE || page.kbd_first != 0 || page.kbd_count != CONFIG_KBD_ASCII_COUNT)
-    return -1;
+  if (config_read_keymap_page(&page) < 0) return -1;
   *layout_id = page.kbd_layout_id;
   if (keymap != NULL) memcpy(keymap, page.keymap, sizeof(page.keymap));
   return 0;
@@ -403,11 +389,7 @@ int piv_platform_algorithm_extension_config_write(const piv_algorithm_extension_
 
 bool kbdhid_platform_translate_ascii(uint8_t ch, uint8_t *modifier, uint8_t *usage) {
   alignas(4) config_page_t page;
-  if (config_read_page(&page) < 0 || !config_page_valid(&page) || (page.flags & CONFIG_FLAG_KBD_KEYMAP_VALID) == 0)
-    return false;
-  if (page.kbd_entry_size != CONFIG_KBD_ENTRY_SIZE || page.kbd_first != 0 || page.kbd_count != CONFIG_KBD_ASCII_COUNT ||
-      ch >= CONFIG_KBD_ASCII_COUNT)
-    return false;
+  if (config_read_keymap_page(&page) < 0 || ch >= CONFIG_KBD_ASCII_COUNT) return false;
 
   // A valid platform keymap is authoritative. usage == 0 means "skip this
   // character", not "fall back to the built-in QWERTY map".
@@ -419,7 +401,7 @@ bool kbdhid_platform_translate_ascii(uint8_t ch, uint8_t *modifier, uint8_t *usa
 
 uint8_t device_config_is_initialized(void) {
   alignas(4) config_page_t page;
-  if (config_read_page(&page) < 0 || !config_page_valid(&page)) return 0;
+  if (config_read_valid_page(&page) < 0) return 0;
   return (page.flags & CONFIG_FLAG_INITIALIZED) != 0;
 }
 
@@ -430,7 +412,7 @@ int device_config_mark_initialized(void) {
 
 uint8_t device_config_is_nfc_enabled(void) {
   alignas(4) config_page_t page;
-  if (config_read_page(&page) < 0 || !config_page_valid(&page)) return 1;
+  if (config_read_valid_page(&page) < 0) return 1;
   return (page.flags & CONFIG_FLAG_NFC_ENABLED) != 0;
 }
 
