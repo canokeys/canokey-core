@@ -70,18 +70,13 @@ int ndef_is_read_only(void) {
 int ndef_toggle_read_only(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 > 1) EXCEPT(SW_WRONG_P1P2);
   if (ndef_cc_ensure() < 0) return -1;
-  // On storage error the commit outcome is uncertain: only a successful write
-  // updates the cache, and a failure invalidates it rather than assuming the
-  // disk still holds the old state.
-  uint8_t candidate[CC_LENGTH];
-  memcpy(candidate, current_cc, sizeof(candidate));
-  candidate[14] = P1 == 0 ? 0x00 : 0xFF;
-  if (write_file(CC_FILE, candidate, 0, sizeof(candidate), 1) < 0) {
+  // On storage error the commit outcome is uncertain: a failed write
+  // invalidates the cache rather than assuming the disk kept the old state.
+  current_cc[14] = P1 == 0 ? 0x00 : 0xFF;
+  if (write_file(CC_FILE, current_cc, 0, sizeof(current_cc), 1) < 0) {
     cc_valid = false;
     return -1;
   }
-  memcpy(current_cc, candidate, sizeof(candidate));
-  cc_valid = true;
   return 0;
 }
 
@@ -126,41 +121,26 @@ static int ndef_select(const CAPDU *capdu, RAPDU *rapdu) {
 
 static int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
   const uint16_t offset = (uint16_t)(P1 << 8) | P2;
-  const char *path;
-  uint32_t file_len;
-
   if (offset > NDEF_FILE_MAX_LENGTH || LE > NDEF_FILE_MAX_LENGTH) EXCEPT(SW_WRONG_LENGTH);
+  if (selected == NONE) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
+  if (ndef_cc_ensure() < 0) return -1;
 
-  switch (selected) {
-  case CC:
-    if (ndef_cc_ensure() < 0) return -1;
-    path = CC_FILE;
-    file_len = CC_LENGTH;
-    break;
-  case NDEF:
-    if (ndef_cc_ensure() < 0) return -1;
-    if (CC_R != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
-    path = NDEF_FILE;
-    file_len = NDEF_FILE_MAX_LENGTH;
-    break;
-  case NONE:
-    EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  }
-
-  if (offset > file_len || LE > file_len - offset) EXCEPT(SW_WRONG_LENGTH);
   if (selected == CC) {
     // Serve from the validated cache: zero flash access on a cache hit.
+    if (offset > CC_LENGTH || LE > CC_LENGTH - offset) EXCEPT(SW_WRONG_LENGTH);
     memcpy(RDATA, current_cc + offset, LE);
     LL = LE;
     return 0;
   }
-  if (selected == NDEF && LE > APDU_COMMAND_BUFFER_SIZE) {
+  if (CC_R != 0x00) EXCEPT(SW_SECURITY_STATUS_NOT_SATISFIED);
+  if (LE > NDEF_FILE_MAX_LENGTH - offset) EXCEPT(SW_WRONG_LENGTH);
+  if (LE > APDU_COMMAND_BUFFER_SIZE) {
     ndef_response_offset = offset;
     apdu_response_source_set(LE, SW_NO_ERROR, ndef_response_source_read, NULL, NULL);
     LL = 0;
     return 0;
   }
-  const int ret = read_file(path, RDATA, offset, LE);
+  const int ret = read_file(NDEF_FILE, RDATA, offset, LE);
   if (ret < 0) return -1;
   LL = (uint16_t)ret;
   return 0;

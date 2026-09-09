@@ -211,6 +211,43 @@ static void test_ndef_cc_read_served_from_cache(void **state) {
   assert_true(bd_read_count > reads);
 }
 
+static void test_ndef_read_bounds(void **state) {
+  (void)state;
+  assert_int_equal(ndef_install(1), 0);
+  uint8_t resp[300];
+  RAPDU r = {.data = resp};
+  CAPDU c = {.ins = NDEF_INS_READ_BINARY, .lc = 0};
+
+  select_file(0x00, 0x01); // NDEF data file
+  // in-range read still works
+  c.p1 = 0x02;
+  c.p2 = 0x00; // offset 512
+  c.le = 256;
+  assert_int_equal(ndef_process_apdu(&c, &r), 0);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  assert_int_equal(r.len, 256);
+  // offset + LE past the end is rejected, not truncated
+  c.p1 = 0x03;
+  c.p2 = 0x00; // offset 768
+  c.le = 300;  // 768 + 300 > 1024
+  assert_int_equal(ndef_process_apdu(&c, &r), 0);
+  assert_int_equal(r.sw, SW_WRONG_LENGTH);
+  // ...including when LE would take the streaming path
+  c.p1 = 0x03;
+  c.p2 = 0xFF; // offset 1023
+  c.le = 289;  // > APDU_COMMAND_BUFFER_SIZE and past the end
+  assert_int_equal(ndef_process_apdu(&c, &r), 0);
+  assert_int_equal(r.sw, SW_WRONG_LENGTH);
+
+  // the CC file keeps its bounds check
+  select_file(0xE1, 0x03);
+  c.p1 = 0x00;
+  c.p2 = 10; // offset 10
+  c.le = 6;  // 10 + 6 > 15
+  assert_int_equal(ndef_process_apdu(&c, &r), 0);
+  assert_int_equal(r.sw, SW_WRONG_LENGTH);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -239,6 +276,7 @@ int main() {
       cmocka_unit_test(test_ndef_cc_write_error_invalidates_cache),
       cmocka_unit_test(test_ndef_cc_reload_failure_rejects),
       cmocka_unit_test(test_ndef_cc_read_served_from_cache),
+      cmocka_unit_test(test_ndef_read_bounds),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

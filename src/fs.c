@@ -85,45 +85,62 @@ static int close_file_result(lfs_file_t *file, int result) {
   return close_result < 0 ? close_result : result;
 }
 
+static int seek_and_read(lfs_file_t *f, lfs_soff_t off, void *buf, lfs_size_t len) {
+  const int err = lfs_file_seek(&lfs, f, off, LFS_SEEK_SET);
+  return err < 0 ? err : lfs_file_read(&lfs, f, buf, len);
+}
+
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len) {
   int err = cache_acquire(read_file);
   if (err < 0) return err;
   lfs_file_t f;
   err = lfs_file_opencfg(&lfs, &f, path, LFS_O_RDONLY, &file_config);
   if (err >= 0) {
-    err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
-    if (err >= 0) err = lfs_file_read(&lfs, &f, buf, len);
+    err = seek_and_read(&f, off, buf, len);
     err = close_file_result(&f, err);
   }
   cache_release(read_file);
   return err;
 }
 
-static int write_file_at(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, int flags) {
-  int err = cache_acquire(write_file_at);
-  if (err < 0) return err;
-  lfs_file_t f;
-  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | LFS_O_CREAT | flags, &file_config);
-  if (err >= 0) {
-    err = lfs_file_seek(&lfs, &f, off, flags & LFS_O_APPEND ? LFS_SEEK_END : LFS_SEEK_SET);
-    if (err >= 0 && len > 0) err = lfs_file_write(&lfs, &f, buf, len);
-    err = close_file_result(&f, err < 0 ? err : 0);
-  }
-  cache_release(write_file_at);
-  return err;
-}
-
-int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
+// Shared write path: opens with the given flags and optional attrs (littlefs
+// keeps the config pointer, so it must outlive close), seeks for appends or
+// non-zero offsets, writes, and always closes.
+static int write_attrs_at(const char *path, int flags, const struct lfs_attr *attrs, int attr_count, const void *buf,
+                          lfs_soff_t off, lfs_size_t len) {
   ++generation;
 #ifdef TEST
   if (testmode_err_triggered(path, true)) return LFS_ERR_IO;
 #endif
-  return write_file_at(path, buf, off, len, trunc ? LFS_O_TRUNC : 0);
+  int err = cache_acquire(write_attrs_at);
+  if (err < 0) return err;
+  struct lfs_file_config cfg = {
+      .buffer = file_buffer,
+      .attrs = (struct lfs_attr *)attrs,
+      .attr_count = (lfs_size_t)attr_count,
+  };
+  lfs_file_t f;
+  err = lfs_file_opencfg(&lfs, &f, path, LFS_O_WRONLY | flags, &cfg);
+  if (err >= 0) {
+    if (flags & LFS_O_APPEND)
+      err = lfs_file_seek(&lfs, &f, 0, LFS_SEEK_END);
+    else if (off != 0)
+      err = lfs_file_seek(&lfs, &f, off, LFS_SEEK_SET);
+    if (err >= 0 && len > 0) err = lfs_file_write(&lfs, &f, buf, len);
+    err = close_file_result(&f, err < 0 ? err : 0);
+  }
+  cache_release(write_attrs_at);
+  return err;
 }
 
+int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
+  const int flags = trunc ? LFS_O_CREAT | LFS_O_TRUNC : LFS_O_CREAT;
+  return write_attrs_at(path, flags, NULL, 0, buf, off, len);
+}
+
+
 int append_file(const char *path, const void *buf, lfs_size_t len) {
-  ++generation;
-  return write_file_at(path, buf, 0, len, LFS_O_APPEND);
+  return write_attrs_at(path, LFS_O_CREAT | LFS_O_APPEND, NULL, 0, buf, 0, len);
 }
 
 int truncate_file(const char *path, lfs_size_t len) {
@@ -140,53 +157,25 @@ int truncate_file(const char *path, lfs_size_t len) {
 // Pre-open validation for the attr-batched helpers; a failure here must not
 // modify the storage.
 static int validate_attrs_write(const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len) {
-  if (len > lfs.file_max) return LFS_ERR_INVAL;
-  if (len > 0 && buf == NULL) return LFS_ERR_INVAL;
-  if (attr_count < 0 || (attr_count > 0 && attrs == NULL)) return LFS_ERR_INVAL;
-  for (int i = 0; i < attr_count; ++i) {
-    if (attrs[i].size > lfs.attr_max) return LFS_ERR_INVAL;
-    if (attrs[i].size > 0 && attrs[i].buffer == NULL) return LFS_ERR_INVAL;
-  }
+  if (len > lfs.file_max || (len > 0 && buf == NULL) || attr_count < 0 || (attr_count > 0 && attrs == NULL))
+    return LFS_ERR_INVAL;
+  for (int i = 0; i < attr_count; ++i)
+    if (attrs[i].size > lfs.attr_max || (attrs[i].size > 0 && attrs[i].buffer == NULL)) return LFS_ERR_INVAL;
   return 0;
-}
-
-// Open with the caller-supplied attrs, optionally write from offset 0, and
-// always close; littlefs keeps the config pointer, so it must outlive close.
-static int opencfg_attrs_close(const char *path, int flags, const struct lfs_attr *attrs, int attr_count,
-                               const void *buf, lfs_size_t len) {
-  int err = cache_acquire(opencfg_attrs_close);
-  if (err < 0) return err;
-  struct lfs_file_config cfg = {
-      .buffer = file_buffer,
-      .attrs = (struct lfs_attr *)attrs,
-      .attr_count = (lfs_size_t)attr_count,
-  };
-  lfs_file_t f;
-  err = lfs_file_opencfg(&lfs, &f, path, flags, &cfg);
-  if (err >= 0) {
-    if (len > 0) err = lfs_file_write(&lfs, &f, buf, len);
-    err = close_file_result(&f, err < 0 ? err : 0);
-  }
-  cache_release(opencfg_attrs_close);
-  return err;
 }
 
 int write_file_attrs(const char *path, const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len,
                      uint8_t trunc) {
-  ++generation;
-#ifdef TEST
-  if (testmode_err_triggered(path, true)) return LFS_ERR_IO;
-#endif
-  int err = validate_attrs_write(attrs, attr_count, buf, len);
+  const int err = validate_attrs_write(attrs, attr_count, buf, len);
   if (err < 0) return err;
-  return opencfg_attrs_close(path, LFS_O_WRONLY | LFS_O_CREAT | (trunc ? LFS_O_TRUNC : 0), attrs, attr_count, buf, len);
+  const int flags = trunc ? LFS_O_CREAT | LFS_O_TRUNC : LFS_O_CREAT;
+  return write_attrs_at(path, flags, attrs, attr_count, buf, 0, len);
 }
 
 int set_attrs_commit(const char *path, const struct lfs_attr *attrs, int attr_count) {
-  ++generation;
-  int err = validate_attrs_write(attrs, attr_count, NULL, 0);
+  const int err = validate_attrs_write(attrs, attr_count, NULL, 0);
   if (err < 0) return err;
-  return opencfg_attrs_close(path, LFS_O_WRONLY, attrs, attr_count, NULL, 0);
+  return write_attrs_at(path, 0, attrs, attr_count, NULL, 0, 0);
 }
 
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
@@ -238,11 +227,9 @@ lfs_soff_t fs_reader_size(fs_reader_t *reader) {
 
 int fs_reader_read_at(fs_reader_t *reader, void *buf, lfs_soff_t off, lfs_size_t len) {
   if (!reader->opened) return LFS_ERR_INVAL;
-  int err = cache_verify(reader);
+  const int err = cache_verify(reader);
   if (err < 0) return err;
-  err = lfs_file_seek(&lfs, &reader->file, off, LFS_SEEK_SET);
-  if (err < 0) return err;
-  return lfs_file_read(&lfs, &reader->file, buf, len);
+  return seek_and_read(&reader->file, off, buf, len);
 }
 
 int fs_reader_close(fs_reader_t *reader) {

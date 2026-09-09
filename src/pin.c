@@ -59,33 +59,33 @@ int pin_verify(pin_t *pin, const void *buf, uint8_t len, uint8_t *retries) {
   return 0;
 }
 
-int pin_update(pin_t *pin, const void *buf, uint8_t len) {
-  if (len < pin->min_length || len > pin->max_length) return PIN_LENGTH_INVALID;
-  pin->is_validated = 0;
+// Commit the PIN data together with a retry counter reset to the persisted
+// default. A read failure leaves the file untouched and returns PIN_IO_FAIL.
+static int pin_write_data_reset_retry(const pin_t *pin, const void *buf, uint8_t len) {
   uint8_t ctr;
-  int err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
-  if (err < 0) return PIN_IO_FAIL;
+  if (read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr)) < 0) return PIN_IO_FAIL;
   const struct lfs_attr retry = {.type = RETRY_ATTR, .buffer = &ctr, .size = sizeof(ctr)};
   return write_file_attrs(pin->path, &retry, 1, buf, len, 1) < 0 ? PIN_IO_FAIL : 0;
 }
 
+int pin_update(pin_t *pin, const void *buf, uint8_t len) {
+  if (len < pin->min_length || len > pin->max_length) return PIN_LENGTH_INVALID;
+  pin->is_validated = 0;
+  return pin_write_data_reset_retry(pin, buf, len);
+}
+
 int pin_get_size(const pin_t *pin) { return get_file_size(pin->path); }
 
-int pin_get_retries(const pin_t *pin) {
+static int pin_get_counter(const pin_t *pin, uint8_t attr) {
   if (pin_get_size(pin) == 0) return 0;
   uint8_t ctr;
-  int err = read_attr(pin->path, RETRY_ATTR, &ctr, sizeof(ctr));
-  if (err < 0) return PIN_IO_FAIL;
+  if (read_attr(pin->path, attr, &ctr, sizeof(ctr)) < 0) return PIN_IO_FAIL;
   return ctr;
 }
 
-int pin_get_default_retries(const pin_t *pin) {
-  if (pin_get_size(pin) == 0) return 0;
-  uint8_t ctr;
-  int err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
-  if (err < 0) return PIN_IO_FAIL;
-  return ctr;
-}
+int pin_get_retries(const pin_t *pin) { return pin_get_counter(pin, RETRY_ATTR); }
+
+int pin_get_default_retries(const pin_t *pin) { return pin_get_counter(pin, DEFAULT_RETRY_ATTR); }
 
 int pin_set_retries(const pin_t *pin, uint8_t max_retries) {
   if (max_retries == 0 || max_retries > PIN_MAX_RETRIES) return PIN_LENGTH_INVALID;
@@ -102,10 +102,4 @@ uint16_t pin_get_retry_sw(uint8_t retries) {
   return (uint16_t)(0x63C0 + retries);
 }
 
-int pin_clear(const pin_t *pin) {
-  uint8_t ctr;
-  int err = read_attr(pin->path, DEFAULT_RETRY_ATTR, &ctr, sizeof(ctr));
-  if (err < 0) return PIN_IO_FAIL;
-  const struct lfs_attr retry = {.type = RETRY_ATTR, .buffer = &ctr, .size = sizeof(ctr)};
-  return write_file_attrs(pin->path, &retry, 1, NULL, 0, 1) < 0 ? PIN_IO_FAIL : 0;
-}
+int pin_clear(const pin_t *pin) { return pin_write_data_reset_retry(pin, NULL, 0); }
