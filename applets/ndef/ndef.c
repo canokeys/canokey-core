@@ -148,6 +148,12 @@ static int ndef_read_binary(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   if (offset > file_len || LE > file_len - offset) EXCEPT(SW_WRONG_LENGTH);
+  if (selected == CC) {
+    // Serve from the validated cache: zero flash access on a cache hit.
+    memcpy(RDATA, current_cc + offset, LE);
+    LL = LE;
+    return 0;
+  }
   if (selected == NDEF && LE > APDU_COMMAND_BUFFER_SIZE) {
     ndef_response_offset = offset;
     apdu_response_source_set(LE, SW_NO_ERROR, ndef_response_source_read, NULL, NULL);

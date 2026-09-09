@@ -175,6 +175,42 @@ static void test_ndef_cc_reload_failure_rejects(void **state) {
   assert_int_equal(update_ndef((const uint8_t *)"x", 1), SW_NO_ERROR);
 }
 
+static void test_ndef_cc_read_served_from_cache(void **state) {
+  (void)state;
+  uint8_t cc[CC_LEN];
+  assert_int_equal(ndef_install(1), 0); // establishes a valid cache
+
+  // A CC read with a valid cache performs no block-device reads.
+  unsigned reads = bd_read_count;
+  assert_int_equal(read_cc(cc), SW_NO_ERROR);
+  assert_int_equal(cc[13], 0x00);
+  assert_int_equal(bd_read_count, reads);
+
+  // With an invalidated cache the next read falls through to flash once...
+  prog_fail_budget = 0;
+  assert_int_equal(toggle(1, NULL), -1);
+  faults_disarm();
+  reads = bd_read_count;
+  assert_int_equal(read_cc(cc), SW_NO_ERROR);
+  assert_true(bd_read_count > reads);
+  assert_int_equal(cc[14], 0x00); // the failed toggle did not apply
+
+  // ...and is served from the re-populated cache afterwards.
+  reads = bd_read_count;
+  assert_int_equal(read_cc(cc), SW_NO_ERROR);
+  assert_int_equal(bd_read_count, reads);
+
+  // The NDEF data file is still read from flash.
+  reads = bd_read_count;
+  select_file(0x00, 0x01);
+  CAPDU c = {.ins = NDEF_INS_READ_BINARY, .p1 = 0, .p2 = 0, .le = 4};
+  RAPDU r = {.data = resp};
+  assert_int_equal(ndef_process_apdu(&c, &r), 0);
+  assert_int_equal(r.sw, SW_NO_ERROR);
+  assert_int_equal(r.len, 4);
+  assert_true(bd_read_count > reads);
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -202,6 +238,7 @@ int main() {
       cmocka_unit_test(test_ndef_cc_toggle_and_readback),
       cmocka_unit_test(test_ndef_cc_write_error_invalidates_cache),
       cmocka_unit_test(test_ndef_cc_reload_failure_rejects),
+      cmocka_unit_test(test_ndef_cc_read_served_from_cache),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
