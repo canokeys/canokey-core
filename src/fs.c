@@ -55,6 +55,51 @@ int truncate_file(const char *path, lfs_size_t len) {
   return close_file_result(&f, lfs_file_truncate(&lfs, &f, len));
 }
 
+// Pre-open validation for the attr-batched helpers; a failure here must not
+// modify the storage.
+static int validate_attrs_write(const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len) {
+  if (len > lfs.file_max) return LFS_ERR_INVAL;
+  if (len > 0 && buf == NULL) return LFS_ERR_INVAL;
+  if (attr_count < 0 || (attr_count > 0 && attrs == NULL)) return LFS_ERR_INVAL;
+  for (int i = 0; i < attr_count; ++i) {
+    if (attrs[i].size > lfs.attr_max) return LFS_ERR_INVAL;
+    if (attrs[i].size > 0 && attrs[i].buffer == NULL) return LFS_ERR_INVAL;
+  }
+  return 0;
+}
+
+// Open with the caller-supplied attrs, optionally write from offset 0, and
+// always close; littlefs keeps the config pointer, so it must outlive close.
+static int opencfg_attrs_close(const char *path, int flags, const struct lfs_attr *attrs, int attr_count,
+                               const void *buf, lfs_size_t len) {
+  struct lfs_file_config cfg = {
+      .buffer = file_buffer,
+      .attrs = (struct lfs_attr *)attrs,
+      .attr_count = (lfs_size_t)attr_count,
+  };
+  lfs_file_t f;
+  int err = lfs_file_opencfg(&lfs, &f, path, flags, &cfg);
+  if (err < 0) return err;
+  if (len > 0) err = lfs_file_write(&lfs, &f, buf, len);
+  return close_file_result(&f, err < 0 ? err : 0);
+}
+
+int write_file_attrs(const char *path, const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len,
+                     uint8_t trunc) {
+#ifdef TEST
+  if (testmode_err_triggered(path, true)) return LFS_ERR_IO;
+#endif
+  int err = validate_attrs_write(attrs, attr_count, buf, len);
+  if (err < 0) return err;
+  return opencfg_attrs_close(path, LFS_O_WRONLY | LFS_O_CREAT | (trunc ? LFS_O_TRUNC : 0), attrs, attr_count, buf, len);
+}
+
+int set_attrs_commit(const char *path, const struct lfs_attr *attrs, int attr_count) {
+  int err = validate_attrs_write(attrs, attr_count, NULL, 0);
+  if (err < 0) return err;
+  return opencfg_attrs_close(path, LFS_O_WRONLY, attrs, attr_count, NULL, 0);
+}
+
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
 #ifdef TEST
   if (testmode_err_triggered(path, false)) return LFS_ERR_IO;
