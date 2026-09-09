@@ -291,25 +291,49 @@ static size_t ctap_dc_write_cost(void) {
   return LFS_CACHE_SIZE;
 }
 
+// Capacity estimate cached by filesystem generation: consecutive read-only
+// GetInfo calls reuse the value, and any mutation attempt (even a failed one,
+// which may still have compacted) invalidates it. A failed computation leaves
+// the cache invalid so the next call retries.
+static struct {
+  uint32_t value;
+  uint32_t generation;
+  bool valid;
+} capacity_cache;
+#ifdef TEST
+static uint32_t capacity_compute_count;
+#endif
+
 static uint32_t ctap_capacity_remaining_new_credentials(void) {
   // Report reusable tombstones plus a conservative estimate for new records
   // that can fit in the remaining flash. This mirrors admission control but is
   // not a promise that every later write will succeed.
+  if (capacity_cache.valid && capacity_cache.generation == fs_generation()) return capacity_cache.value;
+  const uint32_t generation = fs_generation();
   uint32_t reusable = 0;
   uint32_t n_dc;
   CTAP_dc_general_attr attr;
-  if (ctap_dc_record_count(&n_dc) == 0 && read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) == sizeof(attr) &&
-      attr.numbers <= n_dc) {
-    reusable = n_dc - attr.numbers;
-  }
-  int free_bytes = get_fs_free_bytes();
-  if (free_bytes <= CTAP_FS_RESERVE_BYTES) return reusable;
-  size_t writable_records = ((size_t)free_bytes - CTAP_FS_RESERVE_BYTES) / ctap_dc_write_cost();
-  return reusable + (uint32_t)writable_records;
+  const bool dc_ok = ctap_dc_record_count(&n_dc) == 0 &&
+                     read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) == sizeof(attr) && attr.numbers <= n_dc;
+  if (dc_ok) reusable = n_dc - attr.numbers;
+#ifdef TEST
+  ++capacity_compute_count;
+#endif
+  const int free_bytes = get_fs_free_bytes();
+  if (!dc_ok || free_bytes < 0) return reusable; // Do not cache a failed computation.
+  uint32_t capacity = reusable;
+  if (free_bytes > CTAP_FS_RESERVE_BYTES)
+    capacity += (uint32_t)(((size_t)free_bytes - CTAP_FS_RESERVE_BYTES) / ctap_dc_write_cost());
+  capacity_cache.value = capacity;
+  capacity_cache.generation = generation;
+  capacity_cache.valid = true;
+  return capacity;
 }
 
 #ifdef TEST
 uint32_t ctap_test_capacity_remaining_new_credentials(void) { return ctap_capacity_remaining_new_credentials(); }
+
+uint32_t ctap_test_capacity_compute_count(void) { return capacity_compute_count; }
 #endif
 
 static uint8_t ctap_rebuild_rp_meta_counts(void) {

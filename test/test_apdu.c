@@ -46,6 +46,20 @@
 extern ccid_bulkin_data_t bulkin_data;
 int virt_card_config_page_open(const char *lfs_root, bool reset);
 
+// One-shot read failure injection for the CTAP capacity-cache tests.
+static bool bd_read_fails;
+static int bd_read_fail_count;
+static const struct lfs_config *test_apdu_fs_cfg;
+
+static int test_bd_read(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, void *buffer,
+                        lfs_size_t size) {
+  if (bd_read_fails || bd_read_fail_count > 0) {
+    if (bd_read_fail_count > 0) --bd_read_fail_count;
+    return LFS_ERR_IO;
+  }
+  return lfs_filebd_read(cfg, block, off, buffer, size);
+}
+
 static void encode_sm2_config(uint8_t wire[CTAP_SM2_CONFIG_WIRE_SIZE], const CTAP_sm2_attr *attr) {
   const uint32_t words[2] = {htobe32((uint32_t)attr->curve_id), htobe32((uint32_t)attr->algo_id)};
   memcpy(wire, words, CTAP_SM2_CONFIG_WIRE_SIZE);
@@ -1499,6 +1513,87 @@ static void test_ctap_capacity_uses_credential_metadata(void **state) {
   assert_int_equal(write_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), 0);
   uint32_t without_tombstone = ctap_test_capacity_remaining_new_credentials();
   assert_int_equal(with_tombstone, without_tombstone + 1);
+}
+
+static void test_ctap_capacity_cached_by_fs_generation(void **state) {
+  (void)state;
+  CTAP_discoverable_credential credentials[1];
+  CTAP_rp_meta metadata[1];
+  CTAP_dc_general_attr attr = {.numbers = 1, .pending_op = CTAP_DC_PENDING_NONE};
+  init_dc_record(&credentials[0], 0x44, 1);
+  init_rp_meta(&metadata[0], 0x44, 1);
+  write_ctap_dc_fixture(credentials, 1, metadata, 1, &attr);
+
+  const uint32_t first = ctap_test_capacity_remaining_new_credentials();
+  const uint32_t computes0 = ctap_test_capacity_compute_count();
+
+  // Consecutive read-only queries reuse the cache.
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0);
+
+  // A write through any fs helper invalidates the cache.
+  assert_int_equal(write_file("cap-probe", "x", 0, 1, 1), 0);
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 1);
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 1);
+
+  // A failed write also invalidates: it may still have compacted.
+  testmode_inject_error(TESTMODE_ERR_WRITE, 0, 9, (const uint8_t *)"cap-probe");
+  assert_int_equal(write_file("cap-probe", "y", 0, 1, 1), LFS_ERR_IO);
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 2);
+
+  // A remount advances the generation and invalidates the cache.
+  assert_int_equal(fs_mount(test_apdu_fs_cfg), 0);
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 3);
+
+  // A failed computation is not cached; the next query retries even without
+  // an intervening write. Invalidate first so the failed call is a cache miss.
+  assert_int_equal(write_file("cap-probe", "z", 0, 1, 0), 0);
+  bd_read_fails = true;
+  ctap_test_capacity_remaining_new_credentials();
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 4);
+  bd_read_fails = false;
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 5);
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), first);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes0 + 5);
+
+  assert_int_equal(remove_file("cap-probe"), 0);
+}
+
+static void test_ctap_capacity_dc_read_failure_not_cached(void **state) {
+  (void)state;
+  CTAP_discoverable_credential credentials[2];
+  CTAP_rp_meta metadata[1];
+  CTAP_dc_general_attr attr = {.numbers = 1, .pending_op = CTAP_DC_PENDING_NONE};
+  init_dc_record(&credentials[0], 0x55, 1);
+  init_dc_record(&credentials[1], 0x55, 2);
+  credentials[1].deleted = true; // one tombstone: reusable = 1
+  init_rp_meta(&metadata[0], 0x55, 1);
+  write_ctap_dc_fixture(credentials, 2, metadata, 1, &attr);
+
+  const uint32_t full = ctap_test_capacity_remaining_new_credentials();
+
+  // Remount to drop littlefs caches and invalidate the capacity cache.
+  assert_int_equal(fs_mount(test_apdu_fs_cfg), 0);
+  // Fail only the first block-device read: the DC record count fails, but
+  // the free-space scan afterwards still succeeds.
+  bd_read_fail_count = 1;
+  // The DC reads fail, so the result is the bare (zero) reusable count
+  // without the free-space estimate, and it must not be cached.
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), 0);
+  const uint32_t computes = ctap_test_capacity_compute_count();
+  // The failed computation must not be cached: the next query recomputes
+  // even without any intervening write.
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), full);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes + 1);
+  // And the query after that hits the cache again.
+  assert_int_equal(ctap_test_capacity_remaining_new_credentials(), full);
+  assert_int_equal(ctap_test_capacity_compute_count(), computes + 1);
 }
 
 static void test_ctap_pending_recovery_rebuilds_metadata(void **state) {
@@ -3860,7 +3955,7 @@ int main() {
   bd.cfg = &bdcfg;
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
-  cfg.read = &lfs_filebd_read;
+  cfg.read = &test_bd_read;
   cfg.prog = &lfs_filebd_prog;
   cfg.erase = &lfs_filebd_erase;
   cfg.sync = &lfs_filebd_sync;
@@ -3871,6 +3966,13 @@ int main() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 32;
+  // Static littlefs work buffers: the capacity-cache test remounts mid-suite,
+  // and malloc'd buffers would leak on every re-init.
+  static uint8_t read_buffer[512], prog_buffer[512], lookahead_buffer[32];
+  cfg.read_buffer = read_buffer;
+  cfg.prog_buffer = prog_buffer;
+  cfg.lookahead_buffer = lookahead_buffer;
+  test_apdu_fs_cfg = &cfg;
   lfs_filebd_create(&cfg, "lfs-root-apdu", &bdcfg);
 
   fs_format(&cfg);
@@ -3909,6 +4011,8 @@ int main() {
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
       cmocka_unit_test(test_ctap_capacity_uses_credential_metadata),
+      cmocka_unit_test(test_ctap_capacity_cached_by_fs_generation),
+      cmocka_unit_test(test_ctap_capacity_dc_read_failure_not_cached),
       cmocka_unit_test(test_ctap_pending_recovery_rebuilds_metadata),
       cmocka_unit_test(test_ctap_delete_updates_only_target_rp),
       cmocka_unit_test(test_ctap_allow_list_matches_multiple_dc_ids_in_one_scan),

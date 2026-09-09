@@ -8,6 +8,13 @@ static alignas(4) uint8_t file_buffer[LFS_CACHE_SIZE];
 
 static struct lfs_file_config file_config = {.buffer = file_buffer};
 
+// Advanced at the entry of every public operation that may modify the file
+// system, success or failure (a failed write may still have compacted).
+// Compared for equality only; wraparound is fine.
+static uint32_t generation;
+
+uint32_t fs_generation(void) { return generation; }
+
 // Ownership of the shared file cache (file_buffer): the wrappers below borrow
 // it for a single call, while an fs_reader_t holds it from open to close. A
 // nested borrower would corrupt the reader's cache, so TEST builds reject it
@@ -54,6 +61,7 @@ static void cache_release(const void *owner) { (void)owner; }
 #endif
 
 int fs_format(const struct lfs_config *cfg) {
+  ++generation;
   const int err = cache_acquire(fs_format);
   if (err < 0) return err;
   const int ret = lfs_format(&lfs, cfg);
@@ -62,6 +70,7 @@ int fs_format(const struct lfs_config *cfg) {
 }
 
 int fs_mount(const struct lfs_config *cfg) {
+  ++generation;
   const int err = cache_acquire(fs_mount);
   if (err < 0) return err;
   const int ret = lfs_mount(&lfs, cfg);
@@ -105,6 +114,7 @@ static int write_file_at(const char *path, const void *buf, lfs_soff_t off, lfs_
 }
 
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc) {
+  ++generation;
 #ifdef TEST
   if (testmode_err_triggered(path, true)) return LFS_ERR_IO;
 #endif
@@ -112,10 +122,12 @@ int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len
 }
 
 int append_file(const char *path, const void *buf, lfs_size_t len) {
+  ++generation;
   return write_file_at(path, buf, 0, len, LFS_O_APPEND);
 }
 
 int truncate_file(const char *path, lfs_size_t len) {
+  ++generation;
   int err = cache_acquire(truncate_file);
   if (err < 0) return err;
   lfs_file_t f;
@@ -161,6 +173,7 @@ static int opencfg_attrs_close(const char *path, int flags, const struct lfs_att
 
 int write_file_attrs(const char *path, const struct lfs_attr *attrs, int attr_count, const void *buf, lfs_size_t len,
                      uint8_t trunc) {
+  ++generation;
 #ifdef TEST
   if (testmode_err_triggered(path, true)) return LFS_ERR_IO;
 #endif
@@ -170,6 +183,7 @@ int write_file_attrs(const char *path, const struct lfs_attr *attrs, int attr_co
 }
 
 int set_attrs_commit(const char *path, const struct lfs_attr *attrs, int attr_count) {
+  ++generation;
   int err = validate_attrs_write(attrs, attr_count, NULL, 0);
   if (err < 0) return err;
   return opencfg_attrs_close(path, LFS_O_WRONLY, attrs, attr_count, NULL, 0);
@@ -183,10 +197,12 @@ int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len) {
 }
 
 int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len) {
+  ++generation;
   return lfs_setattr(&lfs, path, attr, buf, len);
 }
 
 int remove_attr(const char *path, uint8_t attr) {
+  ++generation;
   return lfs_removeattr(&lfs, path, attr);
 }
 
@@ -271,6 +287,12 @@ int fs_has_free_space(lfs_size_t write_bytes, lfs_size_t reserve_bytes) {
   return (lfs_size_t)free_bytes - reserve_bytes >= write_bytes;
 }
 
-int fs_rename(const char *old, const char *new) { return lfs_rename(&lfs, old, new); }
+int fs_rename(const char *old, const char *new) {
+  ++generation;
+  return lfs_rename(&lfs, old, new);
+}
 
-int remove_file(const char *path) { return lfs_remove(&lfs, path); }
+int remove_file(const char *path) {
+  ++generation;
+  return lfs_remove(&lfs, path);
+}

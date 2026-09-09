@@ -8,6 +8,18 @@
 
 int fs_format(const struct lfs_config *cfg);
 int fs_mount(const struct lfs_config *cfg);
+
+/**
+ * Filesystem mutation generation.
+ *
+ * Advanced at the entry of every public operation that may modify the file
+ * system (data writes, attribute writes/removals, file removal, rename,
+ * format, mount), whether the operation succeeds or fails — a failed write
+ * may still have compacted metadata. Read-only operations do not advance it.
+ * Compare for equality only: an unchanged generation means no mutation was
+ * attempted since the value was observed. Wraparound is harmless.
+ */
+uint32_t fs_generation(void);
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len);
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc);
 int append_file(const char *path, const void *buf, lfs_size_t len);
