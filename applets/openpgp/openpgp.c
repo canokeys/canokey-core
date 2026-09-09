@@ -455,6 +455,13 @@ static int fill_pw_status(uint8_t *buf) {
   return PW_STATUS_LENGTH;
 }
 
+static int openpgp_load_key_metas(key_meta_t metas[NUM_KEYS]) {
+  for (size_t i = 0; i < NUM_KEYS; ++i) {
+    if (ck_read_key_metadata(key_info[i].key_path, &metas[i]) < 0) return -1;
+  }
+  return 0;
+}
+
 static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
@@ -462,9 +469,6 @@ static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU 
   uint16_t off = 0;
   int len;
   key_meta_t metas[NUM_KEYS];
-  for (size_t i = 0; i < NUM_KEYS; ++i) {
-    if (ck_read_key_metadata(key_info[i].key_path, &metas[i]) < 0) return -1;
-  }
 
   switch (tag) {
   case TAG_AID:
@@ -517,6 +521,7 @@ static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU 
     break;
 
   case TAG_APPLICATION_RELATED_DATA:
+    if (openpgp_load_key_metas(metas) < 0) return -1;
     RDATA[off++] = TAG_APPLICATION_RELATED_DATA;
     RDATA[off++] = 0x82; // extended length
     RDATA[off++] = 0;    // to be filled later
@@ -638,6 +643,7 @@ static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU 
     break;
 
   case TAG_KEY_INFO:
+    if (openpgp_load_key_metas(metas) < 0) return -1;
     for (size_t i = 0; i < NUM_KEYS; ++i) {
       RDATA[i * 2] = key_info[i].key_ref;
       RDATA[i * 2 + 1] = metas[i].origin;
