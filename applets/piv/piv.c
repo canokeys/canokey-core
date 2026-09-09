@@ -538,12 +538,14 @@ static int piv_clear_attr_if_present(const char *path, uint8_t attr) {
 }
 
 // NULL resets a lazy slot: deleting the file also deletes all its attributes.
-// For replacement, clear first so a failed write can lose a name, but a newly
-// installed key can never inherit the old name.
+// For replacement, the new key and the cleared name commit together, so a
+// newly installed key can never inherit the old name. The name attr is
+// written on every replacement and then exists permanently with length 0;
+// the slightly larger directory entry is an intentional trade-off.
 static int piv_replace_asymmetric_key(const char *path, const ck_key_t *key) {
   if (key == NULL) return piv_remove_file_if_present(path);
-  if (piv_clear_attr_if_present(path, PIV_CONTAINER_NAME_ATTR) < 0) return -1;
-  return ck_write_key(path, key);
+  const struct lfs_attr cleared_name = {.type = PIV_CONTAINER_NAME_ATTR, .buffer = NULL, .size = 0};
+  return ck_write_key_attrs(path, key, &cleared_name, 1);
 }
 
 static int piv_attr_present(const char *path, uint8_t attr) {

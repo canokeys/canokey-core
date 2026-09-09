@@ -23,7 +23,10 @@
 // in another slot are rejected; setting the current name performs no write.
 // SW: bad P1/P2=6A86, bad read Lc=6700, unauthenticated=6982,
 // absent key=6A88, invalid/duplicate name=6A80, storage failure=6900.
-// Replacement clears the name before writing the new key, without retrying.
+// Replacement commits key data, metadata, and the cleared (zero-length) name
+// in one atomic commit. On storage error the outcome is uncertain: after a
+// remount the slot holds either the old key with its old name or the complete
+// new key with no name, never a mix.
 // Reset deletes ordinary keys and names; F9 survives. Move carries the name.
 // test_piv covers validation, persistence, uniqueness and replacement failures.
 #define PIV_INS_CONTAINER_NAME              0xF5

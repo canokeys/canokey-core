@@ -647,11 +647,15 @@ int ck_read_key(const char *path, ck_key_t *key) {
   return read_len;
 }
 
-int ck_write_key(const char *path, const ck_key_t *key) {
-  const int err = write_file(path, key->data, 0, ck_key_material_size(key->meta.type), 1);
-  if (err < 0) return err;
-  return ck_write_key_metadata(path, &key->meta);
+int ck_write_key_attrs(const char *path, const ck_key_t *key, const struct lfs_attr *extra_attrs, int extra_count) {
+  if (extra_count < 0 || extra_count > 1 || (extra_count > 0 && extra_attrs == NULL)) return LFS_ERR_INVAL;
+  struct lfs_attr attrs[2];
+  attrs[0] = (struct lfs_attr){.type = KEY_META_ATTR, .buffer = (void *)&key->meta, .size = sizeof(key->meta)};
+  for (int i = 0; i < extra_count; ++i) attrs[1 + i] = extra_attrs[i];
+  return write_file_attrs(path, attrs, 1 + extra_count, key->data, ck_key_material_size(key->meta.type), 1);
 }
+
+int ck_write_key(const char *path, const ck_key_t *key) { return ck_write_key_attrs(path, key, NULL, 0); }
 
 int ck_generate_key(ck_key_t *key) {
   key->meta.origin = KEY_ORIGIN_GENERATED;
