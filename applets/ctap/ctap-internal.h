@@ -342,6 +342,7 @@ typedef struct {
 int ctap_consistency_check(void);
 int ctap_test_set_force_pin_change(bool required);
 uint32_t ctap_test_capacity_remaining_new_credentials(void);
+uint32_t ctap_test_capacity_compute_count(void);
 uint8_t ctap_test_delete_discoverable_credential(const credential_id *target);
 uint8_t ctap_test_find_allow_list_dc(const credential_id *allow_list, size_t allow_list_size,
                                      const uint8_t rp_id_hash[SHA256_DIGEST_LENGTH], bool uv,

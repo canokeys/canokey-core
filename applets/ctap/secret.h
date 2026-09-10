@@ -39,6 +39,9 @@ void cp_associate_rp_id(const uint8_t *rp_id_hash);
 key_type_t cose_alg_to_key_type(int alg);
 bool cose_alg_is_mldsa65(int32_t alg);
 
+// Invalidate before installation or any raw mutation of KH_KEY_ATTR.
+void ctap_kh_cache_reset(void);
+
 int increase_counter(uint32_t *counter);
 int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_type, uint8_t dc, uint8_t cp,
                         bool third_party_payment);

@@ -6,10 +6,12 @@
 
 #include <bd/lfs_filebd.h>
 #include <crypto-util.h>
+#include <device.h>
 #include <fs.h>
 #include <key.h>
 #include <lfs.h>
 #include <ml-dsa-65.h>
+#include <pin.h>
 
 #define PATH "key"
 
@@ -484,10 +486,11 @@ static int fault_prog_budget = -1;  // >= 0: fail the (budget+1)-th call
 static int fault_erase_budget = -1;
 static int fault_sync_budget = -1;
 static bool fault_after;            // run the underlying op before failing
-static unsigned bd_erase_count;
+static unsigned bd_prog_count, bd_erase_count;
 
 static int counted_bd_prog(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, const void *buffer,
                            lfs_size_t size) {
+  ++bd_prog_count;
   if (fault_prog_budget >= 0 && fault_prog_budget-- == 0) {
     if (fault_after) lfs_filebd_prog(cfg, block, off, buffer, size);
     return LFS_ERR_IO;
@@ -810,6 +813,262 @@ static void test_write_file_attrs_fault_recovery(void **state) {
   }
 }
 
+static void test_pin_batched_retry_updates(void **state) {
+  (void)state;
+  static pin_t pin = {.min_length = 4, .max_length = 8, .is_validated = 0, .path = "pin-batch"};
+  uint8_t retries = 0xFF;
+
+  // pin_create commits the secret and both retry counters together.
+  assert_int_equal(pin_create(&pin, "1234", 4, 3), 0);
+  assert_int_equal(pin_get_size(&pin), 4);
+  assert_int_equal(pin_get_retries(&pin), 3);
+  assert_int_equal(pin_get_default_retries(&pin), 3);
+
+  // A successful verify at default retries performs no prog or erase.
+  const unsigned prog_before = bd_prog_count, erase_before = bd_erase_count;
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+  assert_int_equal(bd_prog_count, prog_before);
+  assert_int_equal(bd_erase_count, erase_before);
+
+  // A failed verify decrements (commits); the next successful verify restores
+  // the default and that restore commits as well.
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(retries, 2);
+  assert_int_equal(pin.is_validated, 0);
+  assert_true(bd_prog_count > prog_before);
+  const unsigned prog_after_fail = bd_prog_count;
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+  assert_true(bd_prog_count > prog_after_fail);
+  assert_int_equal(pin_get_retries(&pin), 3);
+
+  // Blocked PIN: ctr == 0 rejects even the correct secret.
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(retries, 0);
+  assert_int_equal(pin_verify(&pin, "1234", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(retries, 0);
+  assert_int_equal(pin.is_validated, 0);
+
+  // A write failure during the retry restore must not leave is_validated set.
+  assert_int_equal(pin_set_retries(&pin, 3), 0);
+  assert_int_equal(pin_verify(&pin, "0000", 4, &retries), PIN_AUTH_FAIL);
+  assert_int_equal(pin_get_retries(&pin), 2);
+  fault_prog_budget = 0;
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), PIN_IO_FAIL);
+  assert_int_equal(pin.is_validated, 0);
+  faults_disarm();
+  assert_int_equal(pin_verify(&pin, "1234", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+  assert_int_equal(pin_get_retries(&pin), 3);
+
+  // Missing DEFAULT_RETRY_ATTR on the success path fails without validating.
+  static pin_t partial = {.min_length = 4, .max_length = 8, .is_validated = 0, .path = "pin-partial"};
+  const uint8_t three = 3;
+  assert_int_equal(write_file("pin-partial", "1234", 0, 4, 1), 0);
+  assert_int_equal(write_attr("pin-partial", 0 /* RETRY_ATTR */, &three, 1), 0);
+  assert_int_equal(pin_verify(&partial, "1234", 4, NULL), PIN_IO_FAIL);
+  assert_int_equal(partial.is_validated, 0);
+
+  // Missing files fail without being created.
+  static pin_t absent = {.min_length = 4, .max_length = 8, .is_validated = 0, .path = "pin-absent"};
+  assert_int_equal(pin_set_retries(&absent, 5), PIN_IO_FAIL);
+  assert_int_equal(get_file_size("pin-absent"), LFS_ERR_NOENT);
+  assert_int_equal(pin_update(&absent, "1234", 4), PIN_IO_FAIL);
+  assert_int_equal(get_file_size("pin-absent"), LFS_ERR_NOENT);
+  assert_int_equal(pin_clear(&absent), PIN_IO_FAIL);
+  assert_int_equal(get_file_size("pin-absent"), LFS_ERR_NOENT);
+
+  // pin_update merges the data update and the retry reset into one commit.
+  assert_int_equal(pin_update(&pin, "5678", 4), 0);
+  assert_int_equal(pin.is_validated, 0);
+  assert_int_equal(pin_get_retries(&pin), 3);
+  assert_int_equal(pin_verify(&pin, "5678", 4, NULL), 0);
+  assert_int_equal(pin.is_validated, 1);
+
+  // pin_clear truncates the secret and resets the retry counter.
+  assert_int_equal(pin_clear(&pin), 0);
+  assert_int_equal(pin_get_size(&pin), 0);
+  assert_int_equal(pin_get_retries(&pin), 0);
+
+  assert_int_equal(remove_file("pin-batch"), 0);
+  assert_int_equal(remove_file("pin-partial"), 0);
+}
+
+static void test_fs_reader_lifecycle(void **state) {
+  (void)state;
+  const char *path = "reader";
+  uint8_t buf[16];
+
+  fs_reader_t reader = {0};
+  // Close on a zero-initialized reader is a safe no-op; size/read_at are not.
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(fs_reader_size(&reader), LFS_ERR_INVAL);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 1), LFS_ERR_INVAL);
+
+  assert_int_equal(write_file(path, "0123456789", 0, 10, 1), 0);
+  assert_int_equal(fs_reader_open(&reader, path), 0);
+  // Opening an already-open reader is rejected and keeps ownership.
+  assert_int_equal(fs_reader_open(&reader, path), LFS_ERR_INVAL);
+  assert_int_equal(fs_reader_size(&reader), 10);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 4), 4);
+  assert_memory_equal(buf, "0123", 4);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 6, 4), 4);
+  assert_memory_equal(buf, "6789", 4);
+  // Short reads at EOF return the actual byte count.
+  assert_int_equal(fs_reader_read_at(&reader, buf, 8, 4), 2);
+  assert_memory_equal(buf, "89", 2);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 10, 4), 0);
+  assert_int_equal(fs_reader_read_at(&reader, buf, -1, 1), LFS_ERR_INVAL);
+
+  // While the reader owns the shared cache, other cache users are rejected.
+  fs_reader_t other = {0};
+  const struct lfs_attr attr = {.type = 0x40, .buffer = (void *)"a", .size = 1};
+  assert_int_equal(read_file(path, buf, 0, 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(write_file(path, "x", 0, 1, 0), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(append_file(path, "x", 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(truncate_file(path, 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(get_file_size(path), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(write_file_attrs(path, &attr, 1, "x", 1, 0), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(set_attrs_commit(path, &attr, 1), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(fs_format(test_fs_cfg), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  assert_int_equal(fs_mount(test_fs_cfg), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  // A second reader cannot open while the first owns the cache.
+  assert_int_equal(fs_reader_open(&other, path), LFS_ERR_INVAL);
+  assert_true(fs_cache_conflict());
+  fs_cache_conflict_reset();
+  // Attribute-only helpers do not use the shared cache and keep working.
+  assert_int_equal(write_attr(path, 0x41, "m", 1), 0);
+  assert_int_equal(read_attr(path, 0x41, buf, sizeof(buf)), 1);
+
+  // The reader is undisturbed by the rejected attempts.
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 10), 10);
+  assert_memory_equal(buf, "0123456789", 10);
+
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(fs_reader_close(&reader), 0); // double close is safe
+
+  // Ownership is released: wrappers and a new reader work again.
+  assert_int_equal(read_file(path, buf, 0, 10), 10);
+  assert_int_equal(fs_reader_open(&other, path), 0);
+  assert_int_equal(fs_reader_close(&other), 0);
+  assert_int_equal(remove_file(path), 0);
+}
+
+static void test_fs_reader_open_failure_releases_cache(void **state) {
+  (void)state;
+  fs_reader_t reader = {0};
+  assert_int_equal(fs_reader_open(&reader, "reader-missing"), LFS_ERR_NOENT);
+  assert_false(reader.opened);
+  // The failed open released the cache: a new reader can open right away.
+  assert_int_equal(write_file("reader-ok", "a", 0, 1, 1), 0);
+  assert_int_equal(fs_reader_open(&reader, "reader-ok"), 0);
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(remove_file("reader-ok"), 0);
+}
+
+static void test_fs_wrapper_error_paths_release_cache(void **state) {
+  (void)state;
+  fs_reader_t reader = {0};
+  assert_int_equal(write_file("reader-io", "a", 0, 1, 1), 0);
+
+  // An injected write error returns before any disk touch; the cache stays free.
+  testmode_inject_error(TESTMODE_ERR_WRITE, 0, 9, (const uint8_t *)"reader-io");
+  assert_int_equal(write_file("reader-io", "b", 0, 1, 1), LFS_ERR_IO);
+  assert_int_equal(fs_reader_open(&reader, "reader-io"), 0);
+  assert_int_equal(fs_reader_close(&reader), 0);
+
+  // A seek error after the borrow also releases the cache.
+  assert_int_equal(write_file("reader-io", "b", -1, 1, 0), LFS_ERR_INVAL);
+  assert_int_equal(fs_reader_open(&reader, "reader-io"), 0);
+  assert_int_equal(fs_reader_close(&reader), 0);
+
+  assert_int_equal(remove_file("reader-io"), 0);
+}
+
+static void test_fs_generation(void **state) {
+  (void)state;
+  uint8_t buf[4];
+  const struct lfs_attr attr = {.type = 0x50, .buffer = (void *)"a", .size = 1};
+
+  assert_int_equal(write_file("gen", "a", 0, 1, 1), 0);
+  const uint32_t g0 = fs_generation();
+
+  // Read-only operations do not advance the generation.
+  assert_int_equal(read_file("gen", buf, 0, 1), 1);
+  assert_int_equal(get_file_size("gen"), 1);
+  assert_int_equal(read_attr("gen", 0x50, buf, sizeof(buf)), LFS_ERR_NOATTR);
+  assert_int_equal(get_attr_size("gen", 0x50), LFS_ERR_NOATTR);
+  assert_true(get_fs_free_bytes() > 0);
+  fs_reader_t reader = {0};
+  assert_int_equal(fs_reader_open(&reader, "gen"), 0);
+  assert_int_equal(fs_reader_size(&reader), 1);
+  assert_int_equal(fs_reader_read_at(&reader, buf, 0, 1), 1);
+  assert_int_equal(fs_reader_close(&reader), 0);
+  assert_int_equal(fs_generation(), g0);
+
+  // Every mutating entry advances the generation exactly once.
+  uint32_t g = g0;
+  assert_int_equal(write_file("gen", "b", 0, 1, 0), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(append_file("gen", "c", 1), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(truncate_file("gen", 1), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(write_attr("gen", 0x50, "a", 1), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(remove_attr("gen", 0x50), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(write_file_attrs("gen", &attr, 1, "d", 1, 0), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(set_attrs_commit("gen", &attr, 1), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(fs_rename("gen", "gen2"), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(remove_file("gen2"), 0);
+  assert_int_equal(fs_generation(), ++g);
+
+  // Failed mutation attempts also advance it (a failed write may still have
+  // compacted): first via the TEST injection hook, then a mid-commit prog
+  // failure.
+  testmode_inject_error(TESTMODE_ERR_WRITE, 0, 3, (const uint8_t *)"gen");
+  assert_int_equal(write_file("gen", "x", 0, 1, 1), LFS_ERR_IO);
+  assert_int_equal(fs_generation(), ++g);
+  fault_prog_budget = 0;
+  assert_int_equal(write_file_attrs("gen", &attr, 1, "x", 1, 1), LFS_ERR_IO);
+  assert_int_equal(fs_generation(), ++g);
+  faults_disarm();
+
+  // Format and mount advance it too, and the fs keeps working afterwards.
+  assert_int_equal(fs_format(test_fs_cfg), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(fs_mount(test_fs_cfg), 0);
+  assert_int_equal(fs_generation(), ++g);
+  assert_int_equal(write_file("gen", "z", 0, 1, 1), 0);
+  assert_int_equal(read_file("gen", buf, 0, 1), 1);
+  assert_int_equal(buf[0], 'z');
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -829,6 +1088,12 @@ int main() {
   cfg.block_cycles = 50000;
   cfg.cache_size = 512;
   cfg.lookahead_size = 32;
+  // Static littlefs work buffers: the generation test formats and remounts
+  // mid-suite, and malloc'd buffers would leak on every re-init.
+  static uint8_t read_buffer[512], prog_buffer[512], lookahead_buffer[32];
+  cfg.read_buffer = read_buffer;
+  cfg.prog_buffer = prog_buffer;
+  cfg.lookahead_buffer = lookahead_buffer;
   lfs_filebd_create(&cfg, "lfs-root-key", &bdcfg);
 
   fs_format(&cfg);
@@ -841,6 +1106,10 @@ int main() {
       cmocka_unit_test(test_set_attrs_commit),
       cmocka_unit_test(test_write_file_attrs_error_reporting),
       cmocka_unit_test(test_write_file_attrs_fault_recovery),
+      cmocka_unit_test(test_pin_batched_retry_updates),
+      cmocka_unit_test(test_fs_reader_lifecycle),
+      cmocka_unit_test(test_fs_reader_open_failure_releases_cache),
+      cmocka_unit_test(test_fs_wrapper_error_paths_release_cache),
       cmocka_unit_test(test_encode_rsa),
       cmocka_unit_test(test_encode_ecdsa),
       cmocka_unit_test(test_encode_p521_length),
@@ -855,6 +1124,8 @@ int main() {
       cmocka_unit_test(test_read_empty_key_ignores_stale_material),
       cmocka_unit_test(test_ecc_key_persists_only_ecc_material),
       cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
+      // Formats the fs; keep last.
+      cmocka_unit_test(test_fs_generation),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

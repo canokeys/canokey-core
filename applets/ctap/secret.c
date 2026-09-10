@@ -237,9 +237,29 @@ static int read_device_pri_key(uint8_t *pri_key) {
   return ret == PRI_KEY_SIZE ? 0 : -1;
 }
 
+// Only KH_KEY is cached: allow/exclude lists otherwise reread the same key per
+// credential. Installation is its sole production writer and wipes this cache
+// before any storage checks or mutations, including reconnects and resets.
+// The first subsequent use loads the committed key; unrelated FS writes and
+// applet deselection retain it. Raw test writes or FS replacement must invalidate
+// explicitly. Keep PIN, counters, HE_KEY and attestation state on their FS paths.
+static struct {
+  uint8_t key[KH_KEY_SIZE];
+  bool valid;
+} kh_cache;
+
+void ctap_kh_cache_reset(void) { memzero(&kh_cache, sizeof(kh_cache)); }
+
 static int read_kh_key(uint8_t *kh_key) {
-  int ret = read_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_key, KH_KEY_SIZE);
-  if (ret < 0) return ret;
+  if (!kh_cache.valid) {
+    int ret = read_attr(CTAP_CERT_FILE, KH_KEY_ATTR, kh_cache.key, KH_KEY_SIZE);
+    if (ret != KH_KEY_SIZE) {
+      ctap_kh_cache_reset();
+      return ret < 0 ? ret : LFS_ERR_CORRUPT;
+    }
+    kh_cache.valid = true;
+  }
+  memcpy(kh_key, kh_cache.key, KH_KEY_SIZE);
   return 0;
 }
 

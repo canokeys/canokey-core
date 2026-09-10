@@ -91,6 +91,11 @@ static pin_t pw1 = {.min_length = 6, .max_length = MAX_PIN_LENGTH, .is_validated
 static pin_t pw3 = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-pw3"};
 static pin_t rc = {.min_length = 8, .max_length = MAX_PIN_LENGTH, .is_validated = 0, .path = "pgp-rc"};
 static uint8_t touch_cache_time;
+// RAM cache of ATTR_TERMINATED: loaded on first use and written through by the
+// only writers (install/terminate). A failed write invalidates the cache
+// because the commit outcome is uncertain.
+static uint8_t terminated_cache;
+static bool terminated_cache_valid;
 static uint32_t last_touch = UINT32_MAX;
 
 typedef struct {
@@ -377,14 +382,32 @@ void openpgp_poweroff(void) {
   openpgp_pke_release();
 }
 
+static int openpgp_read_terminated(uint8_t *terminated) {
+  if (!terminated_cache_valid) {
+    if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated_cache, 1) < 0) return -1;
+    terminated_cache_valid = true;
+  }
+  *terminated = terminated_cache;
+  return 0;
+}
+
+static int openpgp_write_terminated(uint8_t terminated) {
+  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) {
+    terminated_cache_valid = false;
+    return -1;
+  }
+  terminated_cache = terminated;
+  terminated_cache_valid = true;
+  return 0;
+}
+
 int openpgp_install(uint8_t reset) {
   openpgp_poweroff();
   if (!reset && get_file_size(DATA_PATH) >= 0) return 0;
 
   // Cardholder Data
   if (write_file(DATA_PATH, NULL, 0, 0, 1) < 0) return -1;
-  uint8_t terminated = 0x01; // Terminated: yes
-  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
+  if (openpgp_write_terminated(1) < 0) return -1; // Terminated: yes
   if (write_attr(DATA_PATH, TAG_LOGIN, NULL, 0) < 0) return -1;
   if (write_attr(DATA_PATH, TAG_NAME, NULL, 0)) return -1;
   // default lang = NULL
@@ -421,8 +444,7 @@ int openpgp_install(uint8_t reset) {
   if (pin_create(&pw3, "12345678", 8, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
   if (pin_create(&rc, NULL, 0, PW_RETRY_COUNTER_DEFAULT) < 0) return -1;
 
-  terminated = 0x00; // Terminated: no
-  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
+  if (openpgp_write_terminated(0) < 0) return -1; // Terminated: no
 
   return 0;
 }
@@ -455,6 +477,13 @@ static int fill_pw_status(uint8_t *buf) {
   return PW_STATUS_LENGTH;
 }
 
+static int openpgp_load_key_metas(key_meta_t metas[NUM_KEYS]) {
+  for (size_t i = 0; i < NUM_KEYS; ++i) {
+    if (ck_read_key_metadata(key_info[i].key_path, &metas[i]) < 0) return -1;
+  }
+  return 0;
+}
+
 static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU *rapdu) {
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
 
@@ -462,9 +491,6 @@ static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU 
   uint16_t off = 0;
   int len;
   key_meta_t metas[NUM_KEYS];
-  for (size_t i = 0; i < NUM_KEYS; ++i) {
-    if (ck_read_key_metadata(key_info[i].key_path, &metas[i]) < 0) return -1;
-  }
 
   switch (tag) {
   case TAG_AID:
@@ -517,6 +543,7 @@ static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU 
     break;
 
   case TAG_APPLICATION_RELATED_DATA:
+    if (openpgp_load_key_metas(metas) < 0) return -1;
     RDATA[off++] = TAG_APPLICATION_RELATED_DATA;
     RDATA[off++] = 0x82; // extended length
     RDATA[off++] = 0;    // to be filled later
@@ -638,6 +665,7 @@ static int __attribute__((noinline)) openpgp_get_data(const CAPDU *capdu, RAPDU 
     break;
 
   case TAG_KEY_INFO:
+    if (openpgp_load_key_metas(metas) < 0) return -1;
     for (size_t i = 0; i < NUM_KEYS; ++i) {
       RDATA[i * 2] = key_info[i].key_ref;
       RDATA[i * 2 + 1] = metas[i].origin;
@@ -1644,9 +1672,7 @@ static int openpgp_terminate(const CAPDU *capdu, RAPDU *rapdu) {
   int retries = pin_get_retries(&pw3);
   if (retries < 0) return -1;
   if (retries > 0) ASSERT_ADMIN();
-  uint8_t terminated = 1;
-  if (write_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) return -1;
-  return 0;
+  return openpgp_write_terminated(1);
 }
 
 static int openpgp_activate(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1702,7 +1728,7 @@ int openpgp_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   }
 
   uint8_t terminated;
-  if (read_attr(DATA_PATH, ATTR_TERMINATED, &terminated, 1) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
+  if (openpgp_read_terminated(&terminated) < 0) EXCEPT(SW_UNABLE_TO_PROCESS);
 #ifndef FUZZ
   if (terminated == 1 && INS != OPENPGP_INS_ACTIVATE && INS != OPENPGP_INS_SELECT) EXCEPT(SW_TERMINATED);
 #endif

@@ -8,6 +8,21 @@
 
 int fs_format(const struct lfs_config *cfg);
 int fs_mount(const struct lfs_config *cfg);
+
+/**
+ * Filesystem mutation generation.
+ *
+ * Advanced at the entry of every public operation that may modify the file
+ * system (data writes, attribute writes/removals, file removal, rename,
+ * format, mount), whether the operation succeeds or fails — a failed write
+ * may still have compacted metadata. Argument-validation failures that happen
+ * before any storage access (see write_file_attrs) are the exception: they
+ * provably cannot modify the filesystem and do not advance it. Read-only
+ * operations do not advance it.
+ * Compare for equality only: an unchanged generation means no mutation was
+ * attempted since the value was observed. Wraparound is harmless.
+ */
+uint32_t fs_generation(void);
 int read_file(const char *path, void *buf, lfs_soff_t off, lfs_size_t len);
 int write_file(const char *path, const void *buf, lfs_soff_t off, lfs_size_t len, uint8_t trunc);
 int append_file(const char *path, const void *buf, lfs_size_t len);
@@ -53,6 +68,50 @@ int write_file_attrs(const char *path,
  */
 int set_attrs_commit(const char *path,
                      const struct lfs_attr *attrs, int attr_count);
+
+/**
+ * Scoped read-only file reader.
+ *
+ * A reader must be zero-initialized (fs_reader_t r = {0}) before use, and an
+ * opened reader must not be copied. It is read-only: no attribute access, no
+ * writes, and it must not be held across APDU processing.
+ *
+ * Between a successful fs_reader_open and fs_reader_close the reader owns the
+ * shared file cache; during that window read_file, write_file, append_file,
+ * truncate_file, get_file_size, write_file_attrs, set_attrs_commit,
+ * fs_format, and fs_mount must not be called, and only one reader may be
+ * open at a time. Attribute-only helpers (read_attr, write_attr, ...) do not
+ * use the shared cache and stay usable. TEST builds enforce the rule: a
+ * nested cache user fails with LFS_ERR_INVAL and sets a conflict flag
+ * queryable through fs_cache_conflict().
+ */
+typedef struct {
+  lfs_file_t file;
+  bool opened;
+} fs_reader_t;
+
+int fs_reader_open(fs_reader_t *reader, const char *path);
+lfs_soff_t fs_reader_size(fs_reader_t *reader);
+
+/**
+ * Seek to off and read; returns the number of bytes actually read, which may
+ * be short at EOF. Callers must check the length of complete records
+ * themselves.
+ */
+int fs_reader_read_at(fs_reader_t *reader, void *buf, lfs_soff_t off, lfs_size_t len);
+
+/**
+ * Close the reader and release the shared file cache. Idempotent: safe on an
+ * opened or zero-initialized reader, and resets the reader to the zero state.
+ */
+int fs_reader_close(fs_reader_t *reader);
+
+#ifdef TEST
+// Shared file-cache conflict flag: set when a nested cache user is rejected
+// while a reader or a wrapper owns the cache.
+bool fs_cache_conflict(void);
+void fs_cache_conflict_reset(void);
+#endif
 int read_attr(const char *path, uint8_t attr, void *buf, lfs_size_t len);
 int write_attr(const char *path, uint8_t attr, const void *buf, lfs_size_t len);
 int remove_attr(const char *path, uint8_t attr);

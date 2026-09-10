@@ -62,10 +62,15 @@ typedef struct {
   config_kbd_entry_t keymap[CONFIG_KBD_ASCII_COUNT];
   uint8_t tlv[CONFIG_TLV_SIZE];
   uint32_t crc;
-} __packed config_page_t;
+} config_page_t;
 
+// Fields already follow their natural alignment. Keep the page word-aligned
+// so Thumb-1 helpers can use word accesses instead of unpacking each byte;
+// these assertions pin the existing on-flash layout.
 _Static_assert(sizeof(config_page_t) == PLATFORM_CONFIG_PAGE_SIZE,
                "platform config page must be exactly one flash page");
+_Static_assert(offsetof(config_page_t, flags) == 0x0Cu && offsetof(config_page_t, serial) == 0x10u,
+               "platform config flags and serial offsets must not change");
 _Static_assert(offsetof(config_page_t, keymap) == CONFIG_HEADER_LEN,
                "platform config keymap must start after the fixed header");
 _Static_assert(offsetof(config_page_t, crc) == PLATFORM_CONFIG_PAGE_SIZE - sizeof(uint32_t),
@@ -105,11 +110,6 @@ static bool config_page_valid(const config_page_t *page) {
 static int config_read_valid_page(config_page_t *page) {
   if (config_read_page(page) < 0 || !config_page_valid(page)) return -1;
   return 0;
-}
-
-static bool config_valid(void) {
-  alignas(4) config_page_t page;
-  return config_read_page(&page) == 0 && config_page_valid(&page);
 }
 
 static void config_set_defaults(config_page_t *page, uint32_t platform_word) {
@@ -214,6 +214,9 @@ static int set_admin_cfg_update(config_page_t *page, void *ctx) {
 }
 
 static int set_sn_update(config_page_t *page, void *ctx) {
+  // config_update has already validated the page (or restored defaults).
+  // Check write-once against that same snapshot instead of rereading flash.
+  if (page->flags & CONFIG_FLAG_SN_VALID) return -1;
   const uint8_t *sn = (const uint8_t *)ctx;
   memcpy(page->serial, sn, sizeof(page->serial));
   page->flags |= CONFIG_FLAG_SN_VALID;
@@ -323,11 +326,6 @@ int admin_platform_serial_read(uint8_t *buf) {
 }
 
 int admin_platform_serial_write_once(const uint8_t *buf) {
-  if (config_valid()) {
-    alignas(4) config_page_t page;
-    if (config_read_page(&page) == 0 && config_page_valid(&page) && (page.flags & CONFIG_FLAG_SN_VALID) != 0)
-      return -1;
-  }
   return config_update(set_sn_update, (void *)buf);
 }
 
@@ -399,11 +397,13 @@ bool kbdhid_platform_translate_ascii(uint8_t ch, uint8_t *modifier, uint8_t *usa
   return true;
 }
 
-uint8_t device_config_is_initialized(void) {
+static uint8_t config_read_flag(uint32_t flag, uint8_t fallback) {
   alignas(4) config_page_t page;
-  if (config_read_valid_page(&page) < 0) return 0;
-  return (page.flags & CONFIG_FLAG_INITIALIZED) != 0;
+  if (config_read_valid_page(&page) < 0) return fallback;
+  return (page.flags & flag) != 0;
 }
+
+uint8_t device_config_is_initialized(void) { return config_read_flag(CONFIG_FLAG_INITIALIZED, 0); }
 
 int device_config_mark_initialized(void) {
   if (device_config_is_initialized()) return 0;
@@ -411,9 +411,7 @@ int device_config_mark_initialized(void) {
 }
 
 uint8_t device_config_is_nfc_enabled(void) {
-  alignas(4) config_page_t page;
-  if (config_read_valid_page(&page) < 0) return 1;
-  return (page.flags & CONFIG_FLAG_NFC_ENABLED) != 0;
+  return config_read_flag(CONFIG_FLAG_NFC_ENABLED, 1);
 }
 
 int device_config_set_nfc_enabled(uint8_t enabled) { return config_update(set_nfc_update, &enabled); }

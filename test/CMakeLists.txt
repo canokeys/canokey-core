@@ -64,6 +64,15 @@ add_mocked_test(key_stream
 )
 add_dependencies(test_key_stream generate_virt_card_git_rev)
 
+add_mocked_test(ndef
+        SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
+        LINK_LIBRARIES canokey-core
+)
+add_dependencies(test_ndef generate_virt_card_git_rev)
+
 add_mocked_test(core_helpers
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c

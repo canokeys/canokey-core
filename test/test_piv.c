@@ -4070,12 +4070,15 @@ static void test_piv_container_name_replacement(void **state) {
   assert_true(ck_read_key("piv-k9a", &after) >= 0);
   assert_memory_equal(&old, &after, sizeof(old));
   test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
-  inject_write_error("piv-k9a"); // Name removal succeeds, key write fails.
+  inject_write_error("piv-k9a"); // The single-commit replacement fails before any disk touch.
   test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x9A, SW_UNABLE_TO_PROCESS);
-  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
-  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
+  // An aborted replacement keeps the old key with its old name.
+  assert_true(ck_read_key("piv-k9a", &after) >= 0);
+  assert_memory_equal(&old, &after, sizeof(old));
+  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x9A, SW_NO_ERROR, name, sizeof(name));
+  // A retry succeeds and leaves a permanent zero-length name attr.
   test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x9A, SW_NO_ERROR);
-  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), 0);
 
   uint8_t import[34] = {6, 32};
   import[33] = 1;
@@ -4102,7 +4105,8 @@ static void test_piv_container_name_replacement(void **state) {
   c.data = import + 17;
   piv_process_apdu(&c, &r);
   assert_int_equal(r.sw, SW_NO_ERROR);
-  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+  // A successful import replacement leaves a permanent zero-length name attr.
+  assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), 0);
   test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x9A, SW_NO_ERROR);
   assert_int_equal(piv_install(1), 0);
   assert_int_equal(get_attr_size("piv-k9a", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOENT);
@@ -4142,7 +4146,8 @@ static void test_piv_container_name_mldsa_replacement(void **state) {
   test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x95, SW_NO_ERROR, name, sizeof(name));
   assert_int_equal(piv_test_collect_response(c, response, sizeof(response), &sw), MLDSA_PK_BYTES + 9);
   assert_int_equal(sw, SW_NO_ERROR);
-  assert_int_equal(get_attr_size("piv-k95", PIV_CONTAINER_NAME_ATTR), LFS_ERR_NOATTR);
+  // A successful replacement leaves a permanent zero-length name attr.
+  assert_int_equal(get_attr_size("piv-k95", PIV_CONTAINER_NAME_ATTR), 0);
 }
 
 int main() {
