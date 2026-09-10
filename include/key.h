@@ -149,9 +149,11 @@ int ck_write_key(const char *path, const ck_key_t *key);
 /**
  * Write key material, metadata, and optional extra attributes in a single
  * atomic commit. At most one extra attribute is accepted; extra_count > 1
- * fails with LFS_ERR_INVAL. On storage error the outcome is uncertain: after
- * a remount the file is either the old version or the complete new version,
- * never a mix. See write_file_attrs() for the full contract.
+ * fails with LFS_ERR_INVAL. The extra attribute must not use KEY_META_ATTR —
+ * the metadata is always written by this function itself. On storage error
+ * the outcome is uncertain: after a remount the file is either the old
+ * version or the complete new version, never a mix. See write_file_attrs()
+ * for the full contract.
  */
 int ck_write_key_attrs(const char *path, const ck_key_t *key, const struct lfs_attr *extra_attrs, int extra_count);
 

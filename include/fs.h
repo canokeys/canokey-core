@@ -15,7 +15,10 @@ int fs_mount(const struct lfs_config *cfg);
  * Advanced at the entry of every public operation that may modify the file
  * system (data writes, attribute writes/removals, file removal, rename,
  * format, mount), whether the operation succeeds or fails — a failed write
- * may still have compacted metadata. Read-only operations do not advance it.
+ * may still have compacted metadata. Argument-validation failures that happen
+ * before any storage access (see write_file_attrs) are the exception: they
+ * provably cannot modify the filesystem and do not advance it. Read-only
+ * operations do not advance it.
  * Compare for equality only: an unchanged generation means no mutation was
  * attempted since the value was observed. Wraparound is harmless.
  */
