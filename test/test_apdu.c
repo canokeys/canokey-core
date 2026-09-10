@@ -1767,6 +1767,52 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
 }
 
+static void test_ctap_kh_cache_lifecycle(void **state) {
+  (void)state;
+  static const uint8_t path[] = CTAP_CERT_FILE;
+  credential_id first = {0}, second = {0};
+  ecc_key_t key;
+  uint8_t pub[64], stored_kh[KH_KEY_SIZE];
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  provision_test_attestation();
+  assert_int_equal(ctap_install(0), 0);
+  assert_int_equal(generate_key_handle(&first, pub, COSE_ALG_ES256, 0, 0, false), 0);
+
+  // A warm allow/exclude-list verification and new credential generation do
+  // not read KH_KEY again, even across unrelated commits or applet switches.
+  testmode_inject_error(TESTMODE_ERR_READ, 0, sizeof(path) - 1, path);
+  assert_int_equal(write_file("kh-probe", NULL, 0, 0, 1), 0);
+  ctap_deselect();
+  assert_int_equal(verify_key_handle(&first, &key), 0);
+  assert_int_equal(generate_key_handle(&second, pub, COSE_ALG_ES256, 0, 0, false), 0);
+  assert_int_equal(verify_key_handle(&second, &key), 0);
+  assert_true(testmode_err_triggered(CTAP_CERT_FILE, false));
+  assert_int_equal(remove_file("kh-probe"), 0);
+
+  // Reconnect/install invalidates RAM, but preserves existing credentials.
+  assert_int_equal(ctap_install(0), 0);
+  testmode_inject_error(TESTMODE_ERR_READ, 0, sizeof(path) - 1, path);
+  assert_int_equal(verify_key_handle(&first, &key), LFS_ERR_IO);
+  assert_int_equal(verify_key_handle(&first, &key), 0); // Retry after read failure.
+
+  assert_int_equal(read_attr(CTAP_CERT_FILE, KH_KEY_ATTR, stored_kh, sizeof(stored_kh)), sizeof(stored_kh));
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, stored_kh, 1), 0);
+  ctap_kh_cache_reset(); // Fault injection bypasses the sole production writer.
+  assert_int_equal(verify_key_handle(&first, &key), LFS_ERR_CORRUPT);
+  assert_int_equal(verify_key_handle(&first, &key), LFS_ERR_CORRUPT);
+  assert_int_equal(write_attr(CTAP_CERT_FILE, KH_KEY_ATTR, stored_kh, sizeof(stored_kh)), 0);
+  assert_int_equal(verify_key_handle(&first, &key), 0);
+
+  // Factory reset rotates KH_KEY; neither old credential may use a stale cache.
+  assert_int_equal(ctap_install(1), 0);
+  assert_int_equal(verify_key_handle(&first, &key), 1);
+  assert_int_equal(verify_key_handle(&second, &key), 1);
+  assert_int_equal(generate_key_handle(&second, pub, COSE_ALG_ES256, 0, 0, false), 0);
+  assert_int_equal(verify_key_handle(&second, &key), 0);
+}
+
 static void test_ctap_pin_state_read_errors_are_propagated(void **state) {
   (void)state;
 
@@ -4021,6 +4067,7 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
+      cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),
       cmocka_unit_test(test_ctaphid_out_event_only_enqueues),

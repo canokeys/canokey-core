@@ -1068,6 +1068,7 @@ void ctap_poweroff(void) {
 }
 
 uint8_t ctap_install(uint8_t reset) {
+  ctap_kh_cache_reset();
   CTAP_persistent_config persistent_cfg;
   // SM2 identifiers are provisioned independently of credentials and LittleFS.
   const bool has_sm2_config = ctap_sm2_config_read_platform(&ctap_sm2_attr) == 0;
