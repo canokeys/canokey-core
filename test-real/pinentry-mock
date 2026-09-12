@@ -1,21 +1,23 @@
 #!/bin/bash
 echo "OK Pleased to meet you"
-password="12345678"
-prompt=PIN
+context=""
 while read -r line; do
-  # echo "$line" >> /tmp/mock-pin.log
-  if [[ "$line" =~ SETPROMPT ]]; then
-    prompt="$line"
+  if [[ -n "${PINENTRY_MOCK_LOG:-}" ]]; then
+    printf '%s\n' "$line" >>"$PINENTRY_MOCK_LOG"
+  fi
+  if [[ "$line" =~ ^(SETDESC|SETPROMPT|SETTITLE) ]]; then
+    context="$context $line"
   fi
   if [[ $line =~ GETPIN ]]; then
-      echo -n "D "
-      if [[ "$prompt" =~ Admin ]]; then
-        echo "12345678"
-      elif [[ "$prompt" =~ PIN ]]; then
-        echo "123456"
-      else
-        echo "12345678"
-      fi
+    echo -n "D "
+    if [[ "$context" =~ [Aa]dmin ]]; then
+      echo "12345678"
+    elif [[ "$context" =~ PIN ]]; then
+      echo "123456"
+    else
+      echo "12345678"
+    fi
+    context=""
   fi
-  echo "OK";
+  echo "OK"
 done

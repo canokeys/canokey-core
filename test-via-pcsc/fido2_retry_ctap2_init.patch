@@ -1,0 +1,84 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 21ff639..ddd7d2f 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -228,34 +228,56 @@ class TestDevice:
+         self.client = tester.client
+         self.nfc_interface_only = tester.nfc_interface_only
+ 
+-    def find_device(self, nfcInterfaceOnly=False):
+-        dev = None
+-        self.nfc_interface_only = nfcInterfaceOnly
+-        if not nfcInterfaceOnly:
+-            print("--- HID ---")
+-            print(list(CtapHidDevice.list_devices()))
+-            dev = next(CtapHidDevice.list_devices(), None)
+-
+-        else:
+-            from fido2.pcsc import CtapPcscDevice
+-
+-            print("--- NFC ---")
+-            dev = next(MoreRobustPcscDevice.list_devices(), None)
+-
+-            if dev:
+-                self.is_nfc = True
+-                # For ACR1252 readers, with drivers installed
+-                # https://www.acs.com.hk/en/products/342/acr1252u-usb-nfc-reader-iii-nfc-forum-certified-reader
+-                # disable auto pps, always use 106kbps
+-                # dev.control_exchange(SCARD_CTL_CODE(0x3500), b"\xE0\x00\x00\x24\x02\x00\x00")
+-
+-        if not dev:
+-            raise RuntimeError("No FIDO device found")
++    def _bind_client(self, dev):
+         self.dev = dev
+         self.client = Fido2Client(dev, self.origin)
++        if not hasattr(self.client, "ctap2"):
++            raise RuntimeError("Fido2Client fell back to CTAP1 during CTAP2 initialization")
+         self.ctap2 = self.client.ctap2
+         self.ctap1 = CTAP1(dev)
+ 
++    def find_device(self, nfcInterfaceOnly=False):
++        self.nfc_interface_only = nfcInterfaceOnly
++        attempts = 10 if nfcInterfaceOnly else 1
++        last_error = None
++
++        for attempt in range(attempts):
++            dev = None
++            try:
++                if not nfcInterfaceOnly:
++                    print("--- HID ---")
++                    print(list(CtapHidDevice.list_devices()))
++                    dev = next(CtapHidDevice.list_devices(), None)
++
++                else:
++                    from fido2.pcsc import CtapPcscDevice
++
++                    print("--- NFC ---")
++                    dev = next(MoreRobustPcscDevice.list_devices(), None)
++
++                    if dev:
++                        self.is_nfc = True
++                        # For ACR1252 readers, with drivers installed
++                        # https://www.acs.com.hk/en/products/342/acr1252u-usb-nfc-reader-iii-nfc-forum-certified-reader
++                        # disable auto pps, always use 106kbps
++                        # dev.control_exchange(SCARD_CTL_CODE(0x3500), b"\xE0\x00\x00\x24\x02\x00\x00")
++
++                if not dev:
++                    raise RuntimeError("No FIDO device found")
++
++                # python-fido2 0.9.3 silently falls back to CTAP1 if its GET_INFO
++                # probe loses the NFC field during reconnect.
++                self._bind_client(dev)
++                return
++            except RuntimeError as e:
++                last_error = e
++
++            if attempt == attempts - 1:
++                raise last_error
++
++            print("Retrying NFC CTAP2 initialization...", attempt + 1, "of", attempts)
++            time.sleep(0.2 * (attempt + 1))
++
+     def set_user_count(self, count):
+         self.user_count = count
+ 

@@ -7,11 +7,12 @@
 
 ## Introduction
 
-Core implementations of an open-source secure key, with supports of:
+Core implementations of an open-source security key, supporting:
 
 * U2F / FIDO2 with ed25519 and HMAC-secret
 * OpenPGP Card V3.4, [Supported Algorithm List](https://docs.canokeys.org/userguide/openpgp/#supported-algorithm)
-* PIV (NIST SP 800-73-4)
+* PIV (NIST SP 800-73-4 plus CanoKey RSA, EC, Ed/X25519, SM2, and PQC
+  algorithm extensions)
 * HOTP / TOTP
 * NDEF
 
@@ -27,6 +28,176 @@ The WebUSB interface is used to configure the key via a web-based interface.
 ## Protocol
 
 Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).
+
+### PIN Retry Configuration Extensions
+
+This core implements vendor APDUs for configuring PIV and OpenPGP retry limits. Retry counts must be in the range `1..15`; `15` is the maximum because failed-verification warnings are returned as `63Cx`.
+
+The PIV management key in slot 9B uses AES-192 (`0x0A`) exclusively. Its factory value remains `010203040506070801020304050607080102030405060708`, matching YubiKey 5.7 and later.
+
+- PIV: `00 FA <pinRetries> <pukRetries>` with no data. The command requires management-key authentication and PIN verification, resets PIN to `123456\xFF\xFF`, resets PUK to `12345678`, and installs the requested retry limits.
+- OpenPGP: `00 F2 00 00 03 <pw1Retries> <resetCodeRetries> <pw3Retries>`. The command requires PW3 verification, resets PW1 to `123456`, resets PW3 to `12345678`, and updates the reset-code retry limit.
+
+### OpenPGP Algorithms
+
+OpenPGP supports RSA-2048/3072/4096, P-256/P-384/P-521, secp256k1,
+Ed25519 (SIG/AUT), and X25519 (DEC). Algorithm information (`00 CA 00 FA`)
+lists eight algorithms per slot; SM2 is no longer supported by this applet.
+Setting SM2 algorithm attributes with `00 DA 00 C1/C2/C3`, after PW3
+verification, returns `6A80` without changing the slot.
+
+SM2 follows the OpenPGP algorithms in `key_type_t`, so OpenPGP excludes it
+using the enumeration bound. This reorders persisted key type numbers:
+reset OpenPGP and PIV storage when upgrading from the previous enum layout.
+PIV and CTAP still support SM2. PIV reuses curve OIDs from the shared
+attribute table to avoid duplicate ROM data.
+
+Host OpenPGP tests cover the supported algorithm list.
+PIV attestation tests verify the retained curve OIDs, including SM2.
+
+### PIV Algorithm Extensions
+
+The PIV applet supports RSA-2048, NIST P-256/P-384, and the following
+algorithm-extension key types: RSA-3072, RSA-4096, P-521, secp256k1, SM2,
+Ed25519, X25519, ML-DSA-65, and ML-KEM-768. Extension algorithm identifiers
+are stored in a card configuration record and may be changed through the
+authenticated algorithm-extension APDU (`00 EE`). Clients must read that
+record rather than assuming the documented default bytes. ML-DSA signs and
+ML-KEM decapsulates on card; ML-DSA verification and ML-KEM encapsulation are
+host-side responsibilities. The PIV random command (`00 84`) is available on
+firmware version 6.0 and newer.
+
+### PIV SM2 Signatures
+
+SM2 slots support two GENERAL AUTHENTICATE (`00 87`) modes, both gated by the
+key's PIN/touch policy like other signature operations:
+
+- Digest mode (single, non-chained APDU): the tag 0x81 challenge must be
+  exactly the 32-byte `e = SM3(Z ‖ M)` value; shorter challenges are rejected
+  with `6700` instead of being left-padded (breaking change for SM2; other
+  curves are unchanged). The response is raw 64-byte `r ‖ s` in a 0x7C/0x82
+  wrapper, never DER-encoded (also a breaking change for SM2 only).
+- Full-message stream mode: a first APDU with the CLA chaining bit set and P1
+  equal to the SM2 algorithm identifier selects streaming. The template is
+  `7C { [80 <len> <ID>]  82 00  81 <len> <message...> }`, sent with ISO
+  command chaining; the optional tag 0x80 (the PIV witness slot, unused by
+  SM2) carries a 1- to 32-byte custom user ID and may appear at most once,
+  before the mandatory empty 0x82 tag. The card computes
+  `Z = SM3(ENTL ‖ ID ‖ a ‖ b ‖ xG ‖ yG ‖ xA ‖ yA)` (default ID
+  `1234567812345678` when 0x80 is absent), hashes `e = SM3(Z ‖ M)`
+  incrementally, and signs on the final APDU, returning raw `r ‖ s`. A
+  zero-length message signs `e = SM3(Z)`. Oversized, empty, misplaced, or
+  duplicate ID TLVs return `6A80`; truncated streams return `6700`; a key
+  type mismatch returns `6A86`. Stream state is session scratch only and is
+  cleared on completion, error, applet reset, or an interleaved command.
+
+Host tests in `test/test_piv.c` cover long/short/empty messages with two
+chaining sizes, custom IDs (including the 32-byte maximum), digest-mode
+accept/reject, the TLV error cases, key type mismatch, and the
+algorithm-extension-disabled path.
+
+### PIV SM2 Key Agreement
+
+SM2 slots also implement the GM/T 0003.2 key agreement (the SKF
+`GenerateAgreementDataWithECC` / `GenerateAgreementDataAndKeyWithECC` /
+`ECCExportSessionKey` flow) through three single, non-chained GENERAL
+AUTHENTICATE APDUs. Any slot holding an SM2 key may participate; the key's
+PIN/touch policy applies as usual. The outer 7C template uses tag 0x80 for an
+optional own ID (1–32 bytes, default `1234567812345678`) and tag 0x85 for an
+inner TLV sequence with fixed order: `86 41 <04‖peer static pub>` and
+`87 41 <04‖peer ephemeral pub>` (mandatory), optional `88 <len> <peer ID>`
+(default `1234567812345678`) and `89 02 <klen uint16 BE>` (session key length,
+default 16, range 1–128).
+
+- Initiator step 1: `7C{[80 <own ID>] 82 00}` → `7C{82 <04‖eph_pub 65B>}`.
+  The card keeps the ephemeral private key in session scratch.
+- Responder one-shot: `7C{[80 <own ID>] 82 00 85 <TLVs>}` →
+  `7C{82 <04‖eph_pub 65B> 85 <K>}`.
+- Initiator step 2: `7C{82 00 85 <TLVs>}` (tag 0x80 forbidden; the own ID from
+  step 1 applies) → `7C{82 <K>}`.
+
+An 0x85-carrying request is treated as step 2 only when an agreement is in
+flight **on the same slot**; on any other slot it is a stateless responder
+call, so one card can run both roles of a roundtrip. Only one agreement may be
+in flight at a time: a new step 1 while active returns `6985` and aborts the
+old one. The agreement state is wiped on completion, on any error, on any
+non-GA command, and on applet reset or cross-transport preemption; interleaved
+GA operations on other slots leave it intact, but anything that reuses the
+shared session scratch (e.g. a signature) destroys it — a clobbered slot then
+fails step 2 with `6985` and a fresh step 1 starts over.
+
+The session key K is returned to the host in the response (like ML-KEM
+decapsulation); its confidentiality beyond the card boundary is the host's
+responsibility, and authenticating the peer's static public key is the host
+application's job — the card only validates that peer points are on the curve.
+Two deliberate restrictions: a legacy plain-ECDH request (0x85 starting with
+`04`) on an SM2 key is rejected with `6A80` (an SM2 static key must not be
+exposed to both plain ECDH and SM2 key agreement), and a slot with
+`PIN_POLICY_ALWAYS` cannot complete the initiator role because the per-GA PIN
+consumption fails step 2 (use NEVER/ONCE for initiator slots; responder works
+with any policy).
+
+### CTAP SM2 Configuration and Credential Enumeration
+
+ADMIN SM2 configuration uses `00 11 00 00 08` to read and
+`00 12 00 00 08 <curve_id> <algo_id>` to write. Both require ADMIN PIN
+verification. The payload is exactly eight bytes: `curve_id` followed by
+`algo_id`, each a signed 32-bit two's-complement integer in **big-endian** byte
+order, on every platform and transport. For example, `(9, -54)` is
+`00 00 00 09 FF FF FF CA`; the full write APDU is
+`00 12 00 00 08 00 00 00 09 FF FF FF CA`.
+Native struct serialization is not a wire format. Clients using the previous
+little-endian device-native encoding must switch to big-endian; there is no
+byte-order autodetection. Existing platform-local stored configuration is
+unchanged and needs no migration. A successful write persists
+the configuration and updates the active identifiers. Wrong payload lengths
+return `6700`; invalid identifiers return `6A80` without changing the configuration.
+
+Curve ID 0 is reserved. IDs 1 through 8 and 256 through 259 identify other
+curves in the IANA COSE registry (2026-09) and are rejected for SM2. Unassigned
+IDs remain accepted for compatibility, including the default 9; values below
+-65536 are reserved for private use by RFC 9053. Clients must agree on the
+SM2 mapping and monitor future registry assignments for conflicts. Algorithm
+IDs must not collide with ES256 (-7), EdDSA (-8), or ML-DSA-65 (-49). Both
+identifiers support the full signed 32-bit encoding.
+
+`test_admin_sm2_config_wire_format` pins request/response bytes for the defaults,
+asymmetric positive/negative values, and both signed limits; it also checks
+authenticated access, reload from storage, and rejection of non-eight-byte writes.
+
+CTAP reset (including ADMIN CTAP reset) and reconstruction of incomplete
+CTAP storage preserve valid SM2 configuration. Missing or invalid configuration
+is replaced by the defaults `(curve_id=9, algo_id=-54)`. Attestation private-key
+provisioning still initializes the defaults. Reset continues to erase credentials,
+clear the PIN and rotate credential secrets; preserving SM2 identifiers does not
+preserve credentials. Changing identifiers while credentials exist can invalidate
+their algorithm mapping.
+
+Credential-management enumeration returns SM2 as an EC2 COSE key with the
+configured identifiers and both coordinates. ML-DSA-65 returns an AKP key
+`{1: 7, 3: -49, -1: publicKey}` with a 1952-byte public key, generated from
+the credential seed and streamed over HID or APDU `GET RESPONSE` chaining.
+The vendor `subCommandParams[0x80]=true` option on EnumerateCredentialsBegin
+omits public keys and returns `response[0x80]=algorithm`; this mode persists
+through GetNext. Standard enumeration does not omit the public key.
+
+Host APDU tests cover SM2 identifier validation, reset and storage recovery,
+full-width COSE encoding, and mixed SM2/ES256/EdDSA/ML-DSA enumeration over
+APDU and HID streams. ML-DSA public bytes are compared with seed-derived keys;
+the metadata-only Begin/GetNext path is tested separately.
+
+### CTAP SM2 Assertion Signatures
+
+SM2 assertions follow GM/T 0003 rather than the FIDO ECDSA convention. The
+authenticator computes `ZA = SM3(ENTL ‖ ID ‖ a ‖ b ‖ xG ‖ yG ‖ xA ‖ yA)` on
+card with the default user ID `1234567812345678` (GM/T 0009), then signs
+`e = SM3(ZA ‖ authData ‖ clientDataHash)`. The signature is returned as the
+raw 64-byte `r ‖ s` byte string (matching the FIDO MDS `sm2_sm3_raw` signature
+encoding), not DER. Relying parties must verify with the same
+`SM3(ZA ‖ M)` construction and the same default ID; a standard ECDSA/SHA-256
+verifier cannot validate SM2 assertions. Attestation statements are unaffected:
+they are always signed by the device attestation key with ES256 over
+SHA-256, regardless of the credential algorithm.
 
 ## Porting
 
@@ -44,27 +215,21 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
    * `void device_set_timeout(void (*callback)(void), uint16_t timeout);`
       * A hardware timer with IRQ is required
 
-  If you need NFC, you also need to implement the following functions for FM11NC08:
-  
-  * `void fm_csn_low(void);`
-  * `void fm_csn_high(void);`
-  * `void spi_transmit(uint8_t *buf, uint8_t len);`
-  * `void spi_receive(uint8_t *buf, uint8_t len);`
-
-  or the following functions if you use FM11NT08:
+  If you need NFC, you also need to implement the following functions for FM11NT08:
 
   * `void fm_csn_low(void);`
   * `void fm_csn_high(void);`
   * `void i2c_start(void);`
   * `void i2c_stop(void);`
+  * `void i2c_bus_recover(void);`
   * `void scl_delay(void);`
-  * `uint8_t i2c_read_ack(void);`
+  * `fm_status_t i2c_read_ack(void);`
   * `void i2c_send_ack(void);`
   * `void i2c_send_nack(void);`
-  * `bool i2c_write_byte(uint8_t data);`
+  * `fm_status_t i2c_write_byte(uint8_t data);`
   * `uint8_t i2c_read_byte(void);`
 
-2. You should also provide a `random32` and a optional `random_buffer` function in `rand.h`.
+2. You must provide both `random32` and `random_buffer` in `rand.h`.
 
 3. You need to configure the littlefs properly.
 
@@ -78,19 +243,36 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 ## Fuzz testing
 
-Install honggfuzz from source first, then enable fuzz tests:
+Fuzzing uses AFL++ with ASan/UBSan. Instrumented builds require GNU GCC,
+normally through `afl-gcc-fast`:
 
 ```bash
-cd build
-cmake .. -DENABLE_FUZZING=ON -DENABLE_TESTS=ON -DCMAKE_C_COMPILER=hfuzz-clang -DCMAKE_BUILD_TYPE=Debug
+cmake -S . -B build -DENABLE_FUZZING=ON -DCMAKE_C_COMPILER=afl-gcc-fast -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --target afl-fuzzer --parallel
 ```
 
-Then, run fuzzing tests:
+Then, run fuzzing tests (`${id}`: empty = CCID transport, 0..5 = PIV, CTAP,
+OATH, Admin, OpenPGP, NDEF):
 
 ```bash
-./fuzzer/run-fuzzer.sh honggfuzz ${id}
+CANOKEY_FUZZ_APPLET=${id} afl-fuzz -i fuzzing/applet${id}/data -o fuzzing/applet${id}/findings -- ./build/afl-fuzzer
 ```
+
+Crash artifacts are replayed directly with the same binary:
+`CANOKEY_FUZZ_APPLET=${id} ./build/afl-fuzzer < crash-file`.
 
 
 ## License
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_large)
+
+### Platform release version configuration
+
+A platform may set `CANOKEY_VERSIONS_FILE` to an absolute CMake configuration path
+before adding this directory. It must define `CANOKEY_FIDO_FIRMWARE_VERSION` (decimal
+uint32), `CANOKEY_USB_BCD_DEVICE` (four BCD digits, e.g. `0x0100`), and
+`CANOKEY_CTAPHID_DEVICE_VERSION`, `CANOKEY_PIV_VERSION`, `CANOKEY_OATH_VERSION`
+(three decimal bytes each). These independent fields generate `firmware-version.h`
+and the CTAP GetInfo constants; protocol versions remain in their implementations.
+Missing configuration uses zero versions for development and fails when
+`CANOKEY_RELEASE=ON`. Platform Admin strings and release eligibility checks remain
+the platform's responsibility. Core commit reporting remains independent.

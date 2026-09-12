@@ -1,20 +1,20 @@
 /**
-  * <h2><center>&copy; COPYRIGHT 2015 STMicroelectronics</center></h2>
-  *
-  * Licensed under MCD-ST Liberty SW License Agreement V2, (the "License");
-  * You may not use this file except in compliance with the License.
-  * You may obtain a copy of the License at:
-  *
-  *        http://www.st.com/software_license_agreement_liberty_v2
-  *
-  * Unless required by applicable law or agreed to in writing, software
-  * distributed under the License is distributed on an "AS IS" BASIS,
-  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  * See the License for the specific language governing permissions and
-  * limitations under the License.
-  *
-  ******************************************************************************
-  */
+ * <h2><center>&copy; COPYRIGHT 2015 STMicroelectronics</center></h2>
+ *
+ * Licensed under MCD-ST Liberty SW License Agreement V2, (the "License");
+ * You may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ *        http://www.st.com/software_license_agreement_liberty_v2
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ ******************************************************************************
+ */
 #include <usbd_ioreq.h>
 
 /**
@@ -29,9 +29,9 @@
 USBD_StatusTypeDef USBD_CtlSendData(USBD_HandleTypeDef *pdev, const uint8_t *pbuf, uint16_t len, uint8_t sender) {
   /* Set EP0 State */
   pdev->ep0_state = USBD_EP0_DATA_IN;
-  pdev->ep_in[0].total_length = len;
-  pdev->ep_in[0].rem_length = len;
-  pdev->ep0_sender = sender;
+  pdev->ep0_in.total_length = len;
+  pdev->ep0_in.rem_length = len;
+  UNUSED(sender);
   /* Start the transfer */
   USBD_LL_Transmit(pdev, 0x00, pbuf, len);
 
@@ -64,8 +64,8 @@ USBD_StatusTypeDef USBD_CtlContinueSendData(USBD_HandleTypeDef *pdev, const uint
 USBD_StatusTypeDef USBD_CtlPrepareRx(USBD_HandleTypeDef *pdev, uint8_t *pbuf, uint16_t len) {
   /* Set EP0 State */
   pdev->ep0_state = USBD_EP0_DATA_OUT;
-  pdev->ep_out[0].total_length = len;
-  pdev->ep_out[0].rem_length = len;
+  pdev->ep0_out.total_length = len;
+  pdev->ep0_out.rem_length = len;
   /* Start the transfer */
   USBD_LL_PrepareReceive(pdev, 0, pbuf, len);
 
