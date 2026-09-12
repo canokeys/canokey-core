@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <firmware-version.h>
 #include <device-config.h>
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
@@ -85,8 +86,8 @@ static const uint8_t USBD_FS_DeviceDesc[] = {
     HI(USBD_VID),        /*idVendor*/
     LO(USBD_PID),        /*idProduct*/
     HI(USBD_PID),        /*idProduct*/
-    0x00,                /*bcdDevice rel. 1.00*/
-    0x01,
+    LO(CANOKEY_USB_BCD_DEVICE), /*bcdDevice*/
+    HI(CANOKEY_USB_BCD_DEVICE),
     USBD_IDX_MFC_STR,          /*Index of manufacturer string*/
     USBD_IDX_PRODUCT_STR,      /*Index of product string*/
     USBD_IDX_SERIAL_STR,       /*Index of serial number string*/

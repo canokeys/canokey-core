@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <firmware-version.h>
 #include <admin.h>
 #include <aes.h>
 #include <applet-scratch.h>
@@ -2993,9 +2994,9 @@ __attribute__((noinline)) static int piv_get_metadata(const CAPDU *capdu, RAPDU 
 static int piv_get_version(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x00 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
   if (LC != 0) EXCEPT(SW_WRONG_LENGTH);
-  RDATA[0] = 0x06;
-  RDATA[1] = 0x00;
-  RDATA[2] = 0x00;
+  RDATA[0] = CANOKEY_PIV_VERSION_0;
+  RDATA[1] = CANOKEY_PIV_VERSION_1;
+  RDATA[2] = CANOKEY_PIV_VERSION_2;
   LL = 3;
   return 0;
 }

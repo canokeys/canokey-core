@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#include <firmware-version.h>
 #include <ctap.h>
 #include <ctaphid.h>
 #include <device-config.h>
@@ -584,9 +585,9 @@ static void CTAPHID_Execute_Init(void) {
     resp_cid = channel.cid;
   resp->cid = resp_cid;
   resp->versionInterface = CTAPHID_IF_VERSION; // Interface version
-  resp->versionMajor = 1;                      // Major version number
-  resp->versionMinor = 0;                      // Minor version number
-  resp->versionBuild = 0;                      // Build version number
+  resp->versionMajor = CANOKEY_CTAPHID_DEVICE_VERSION_0;                      // Major version number
+  resp->versionMinor = CANOKEY_CTAPHID_DEVICE_VERSION_1;                      // Minor version number
+  resp->versionBuild = CANOKEY_CTAPHID_DEVICE_VERSION_2;                      // Build version number
   resp->capFlags = CAPABILITY_CBOR;            // Capabilities flags
   CTAPHID_SendResponseAuto(channel.cid, channel.cmd, (uint8_t *)resp, sizeof(CTAPHID_INIT_RESP));
 }

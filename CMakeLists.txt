@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 include(FindPkgConfig)
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/ReleaseVersions.cmake)
 project(canokey-core C)
 
 option(ENABLE_TESTS "Perform unit tests after build" OFF)
@@ -104,12 +105,14 @@ add_custom_command(
         --headers
             ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
             ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/cose-key.h
+            ${CANOKEY_RELEASE_VERSION_HEADER}
         --credential-id-size 70
         --output ${CMAKE_CURRENT_BINARY_DIR}/ctap_get_info_cbor.inc
     DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_ctap_get_info.py
         ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/ctap-internal.h
         ${CMAKE_CURRENT_SOURCE_DIR}/applets/ctap/cose-key.h
+        ${CANOKEY_RELEASE_VERSION_HEADER}
     COMMENT "Generating ctap_get_info_cbor.inc"
 )
 add_custom_target(

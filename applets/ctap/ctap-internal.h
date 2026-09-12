@@ -9,7 +9,7 @@
 #include <ecc.h>
 #include <sha.h>
 
-#define FIRMWARE_VERSION 311
+#include <firmware-version.h>
 #define CTAP_MAX_MSG_SIZE MAX_CTAP_BUFSIZE
 
 // Filesystem Meta

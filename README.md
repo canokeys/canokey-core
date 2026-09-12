@@ -264,3 +264,15 @@ Crash artifacts are replayed directly with the same binary:
 
 ## License
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_large)
+
+### Platform release version configuration
+
+A platform may set `CANOKEY_VERSIONS_FILE` to an absolute CMake configuration path
+before adding this directory. It must define `CANOKEY_FIDO_FIRMWARE_VERSION` (decimal
+uint32), `CANOKEY_USB_BCD_DEVICE` (four BCD digits, e.g. `0x0100`), and
+`CANOKEY_CTAPHID_DEVICE_VERSION`, `CANOKEY_PIV_VERSION`, `CANOKEY_OATH_VERSION`
+(three decimal bytes each). These independent fields generate `firmware-version.h`
+and the CTAP GetInfo constants; protocol versions remain in their implementations.
+Missing configuration uses zero versions for development and fails when
+`CANOKEY_RELEASE=ON`. Platform Admin strings and release eligibility checks remain
+the platform's responsibility. Core commit reporting remains independent.
