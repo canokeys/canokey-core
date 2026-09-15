@@ -2802,6 +2802,74 @@ static void test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect(void **stat
   set_test_tick(0);
 }
 
+// SP 800-73-4 Part 2 §3.1.1: re-selecting the PIV Card Application (full or
+// right-truncated AID) must leave all security status indicators unchanged;
+// they are reset only when the selected application changes (piv_poweroff).
+static void test_piv_reselect_preserves_security_status(void **state) {
+  (void)state;
+
+  static const uint8_t select_piv[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x0B, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
+  };
+  static const uint8_t select_piv_rid_only[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x05, 0xA0, 0x00, 0x00, 0x03, 0x08,
+  };
+  static const uint8_t select_openpgp[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x06, 0xD2, 0x76, 0x00, 0x01, 0x24, 0x01,
+  };
+  static const uint8_t verify_pin[] = {
+      0x00, 0x20, 0x00, 0x80, 0x08, '1', '2', '3', '4', '5', '6', 0xFF, 0xFF,
+  };
+  static const uint8_t query_pin[] = {0x00, 0x20, 0x00, 0x80};
+
+  uint8_t c_buf[16], r_buf[64];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+
+  assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, verify_pin, sizeof(verify_pin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Re-selecting PIV (full AID) must keep PIN verified.
+  assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, query_pin, sizeof(query_pin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Re-selecting via the right-truncated RID-only AID must also keep PIN verified.
+  assert_int_equal(build_capdu(&capdu, select_piv_rid_only, sizeof(select_piv_rid_only)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, query_pin, sizeof(query_pin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  // Selecting a different application drops the PIV security status.
+  assert_int_equal(build_capdu(&capdu, select_openpgp, sizeof(select_openpgp)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+  assert_int_equal(build_capdu(&capdu, query_pin, sizeof(query_pin)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_PIN_RETRIES | 3);
+}
+
 static void test_response_source_multi_chunk_get_response(void **state) {
   (void)state;
   init_apdu_buffer();
@@ -4098,6 +4166,7 @@ int main() {
       cmocka_unit_test(test_pending_ccid_response_can_be_abandoned_by_ctaphid),
       cmocka_unit_test(test_active_ccid_transfer_cannot_be_preempted),
       cmocka_unit_test(test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect),
+      cmocka_unit_test(test_piv_reselect_preserves_security_status),
       cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),
       cmocka_unit_test(test_response_source_read_failure_clears_state),
       cmocka_unit_test(test_apdu_output_chaining_aliased_buffer),

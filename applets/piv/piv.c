@@ -1428,6 +1428,7 @@ void piv_poweroff(void) {
   piv_do_write = -1;
   piv_do_read = -1;
   piv_do_path[0] = '\0';
+  authenticate_reset();
   piv_import_reset();
   piv_auth_reset();
   piv_sm2_agreement_reset();
@@ -1497,14 +1498,12 @@ int piv_install(const uint8_t reset) {
 static int piv_select(const CAPDU *capdu, RAPDU *rapdu) {
   if (P1 != 0x04 || P2 != 0x00) EXCEPT(SW_WRONG_P1P2);
 
-  // reset internal states
-  in_admin_status = 0;
-  pin_is_consumed = 0;
-  pin.is_validated = 0;
-  puk.is_validated = 0;
-  piv_do_write = -1;
-  piv_do_read = -1;
-  authenticate_reset();
+  // SP 800-73-4 Part 2 §3.1.1: re-selecting the PIV Card Application (full or
+  // right-truncated AID) must not change any security status indicator, so PIN,
+  // PUK and management-key authentication survive a repeated SELECT. They are
+  // cleared by piv_poweroff() when the selected applet changes. Streaming and
+  // GA stream state are already reset by the INS checks in piv_process_apdu,
+  // and the management-key mutual-auth challenge by piv_poweroff().
 
   RDATA[0] = 0x61;
   RDATA[1] = 6 + sizeof(pix) + sizeof(rid);
