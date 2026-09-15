@@ -10,6 +10,7 @@
 #include <crypto-util.h>
 #include <device.h>
 #include <device-config.h>
+#include <firmware-version.h>
 #include <fs.h>
 #include <key.h>
 #include <lfs.h>
@@ -2835,7 +2836,9 @@ static void test_piv_get_version_chained_le_absent(void **state) {
   shared_io_buffer[rapdu.len] = HI(rapdu.sw);
   shared_io_buffer[rapdu.len + 1] = LO(rapdu.sw);
 
-  static const uint8_t expected_version[] = {0x06, 0x00, 0x00};
+  static const uint8_t expected_version[] = {
+      CANOKEY_PIV_VERSION_0, CANOKEY_PIV_VERSION_1, CANOKEY_PIV_VERSION_2,
+  };
   CAPDU gr = {.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0, .le = 0x100};
   piv_process_apdu_message(&rc, &gr, &rapdu);
   assert_int_equal(rapdu.sw, SW_NO_ERROR);
