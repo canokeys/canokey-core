@@ -4,44 +4,47 @@
 
 #include <usbd_def.h>
 
-// 0xFF indicates corresponding interface disabled
-typedef struct {
-  uint8_t ctap_hid;
-  uint8_t webusb;
-  uint8_t ccid;
-  uint8_t kbd_hid;
-} IFACE_TABLE_t;
+#if ENABLE_IFACE_CTAPHID
+#define IFACE_CTAPHID 0
+#define EP_NUM_ctap_hid 2
+#define EP_SIZE_ctap_hid 64
+#else
+#define IFACE_CTAPHID 0xFF
+#endif
 
-// 0xFF indicates corresponding interface disabled
-typedef struct {
-  uint8_t ccid;
-  uint8_t ctap_hid;
-  uint8_t kbd_hid;
-} EP_TABLE_t;
+#if ENABLE_IFACE_WEBUSB
+#define IFACE_WEBUSB (ENABLE_IFACE_CTAPHID)
+#else
+#define IFACE_WEBUSB 0xFF
+#endif
 
-// 0xFF indicates corresponding interface disabled
-typedef struct {
-  uint8_t ccid;
-  uint8_t ctap_hid;
-  uint8_t kbd_hid;
-} EP_SIZE_TABLE_t;
+#if ENABLE_IFACE_CCID
+#define IFACE_CCID (ENABLE_IFACE_CTAPHID + ENABLE_IFACE_WEBUSB)
+#define EP_NUM_ccid 3
+#define EP_SIZE_ccid 64
+#else
+#define IFACE_CCID 0xFF
+#endif
 
-#define EP_OUT(x) (EP_TABLE.x)
-#define EP_IN(x) (0x80 | EP_TABLE.x)
-#define EP_SIZE(x) (EP_SIZE_TABLE.x)
+#if ENABLE_IFACE_KBDHID
+#define IFACE_KBDHID (ENABLE_IFACE_CTAPHID + ENABLE_IFACE_WEBUSB + ENABLE_IFACE_CCID)
+#define EP_NUM_kbd_hid 1
+#define EP_SIZE_kbd_hid 8
+#else
+#define IFACE_KBDHID 0xFF
+#define EP_NUM_kbd_hid 0xFF
+#define EP_SIZE_kbd_hid 0
+#endif
+
+#define EP_OUT(x) (EP_NUM_##x)
+#define EP_IN(x) (0x80 | EP_NUM_##x)
+#define EP_SIZE(x) (EP_SIZE_##x)
 #define IS_ENABLED_IFACE(i) (i != 0xFF)
 
 /** USB device core handle. */
 extern USBD_HandleTypeDef usb_device;
-/** USB interface number allocation table. */
-extern IFACE_TABLE_t IFACE_TABLE;
-/** USB endpoint number allocation table. */
-extern EP_TABLE_t EP_TABLE;
-/** USB endpoint size allocation table. */
-extern EP_SIZE_TABLE_t EP_SIZE_TABLE;
 
 void usb_device_init(void);
 void usb_device_deinit(void);
-void usb_resources_alloc(void);
 
 #endif /* __USB_DEVICE__H__ */
