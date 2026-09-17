@@ -285,3 +285,11 @@ and the CTAP GetInfo constants; protocol versions remain in their implementation
 Missing configuration uses zero versions for development and fails when
 `CANOKEY_RELEASE=ON`. Platform Admin strings and release eligibility checks remain
 the platform's responsibility. Core commit reporting remains independent.
+
+The PC/SC integration-test simulator is also a platform: CI supplies
+`test-via-pcsc/versions.cmake` explicitly. Its PIV/OATH compatibility versions
+remain `6.0.0`; using the development default `0.0.0` makes external clients
+such as piv-go select legacy YubiKey commands and skip supported feature tests.
+For a local integration-test build, pass
+`-DCANOKEY_VERSIONS_FILE="$(pwd)/test-via-pcsc/versions.cmake"` when configuring
+from the core repository root. This fixture does not set product release versions.

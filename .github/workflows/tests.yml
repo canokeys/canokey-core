@@ -162,7 +162,8 @@ jobs:
     - name: Build - CanoKey tests
       run: |
         mkdir build && pushd build
-        cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
+        cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug \
+          -DCANOKEY_VERSIONS_FILE="$GITHUB_WORKSPACE/test-via-pcsc/versions.cmake"
         make -j2
       
     - name: Prepare - Start SSH server
