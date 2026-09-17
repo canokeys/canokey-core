@@ -25,6 +25,15 @@ The USB mode contains 3 different interfaces:
 
 The WebUSB interface is used to configure the key via a web-based interface.
 
+CCID presence polling remains live during CTAPHID user-presence waits and
+processing keepalives. Only `GetSlotStatus` is serviced from those paths;
+APDU execution and power/reset commands stay in the main loop. Releasing an
+applet session must preserve queued CCID slot-management requests. Dropping
+or starving these polls makes macOS interpret a timeout as card removal,
+rediscover the PIV token, and potentially open SmartCard pairing during FIDO
+authentication. The APDU tests cover both poll preservation at CTAPHID session
+release and status-only servicing during a CTAPHID wait.
+
 ## Protocol
 
 Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).

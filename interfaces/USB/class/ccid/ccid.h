@@ -152,6 +152,7 @@ void CCID_AbortPendingCommand(void);
 uint8_t CCID_OutEvent(uint8_t *data, uint8_t len);
 void CCID_InFinished(uint8_t is_time_extension_request);
 void CCID_Loop(void);
+void CCID_ServicePresencePoll(void);
 void CCID_TimeExtensionLoop(void);
 uint8_t PC_to_RDR_XfrBlock(void); // Exported for test purposes
 // void CCID_eject(void);

@@ -102,6 +102,10 @@ void CCID_AbortPendingCommand(void) {
   // A command being processed cannot be cancelled synchronously, and a queued
   // response still owns its backing buffer until the final Bulk-IN completes.
   if (transaction_state >= CCID_TRANSACTION_PROCESSING) return;
+  // Slot-management requests do not own applet state. In particular, losing a
+  // queued GetSlotStatus when CTAPHID releases its session makes macOS treat
+  // the reader timeout as card removal and restart PIV discovery/pairing.
+  if (transaction_state == CCID_TRANSACTION_RECEIVING && bulkout_data.bMessageType != PC_TO_RDR_XFRBLOCK) return;
   CCID_ResetPendingCommand();
 }
 
@@ -506,6 +510,12 @@ static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
 
   CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
   return 0;
+}
+
+// Safe during CTAP execution: status polls use only the short response buffer,
+// never the shared APDU buffer, applet scratch, or session reset paths.
+void CCID_ServicePresencePoll(void) {
+  if (has_cmd && bulkout_data.bMessageType == PC_TO_RDR_GETSLOTSTATUS) CCID_Loop();
 }
 
 void __attribute__((noinline)) CCID_Loop(void) {

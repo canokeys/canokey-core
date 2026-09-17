@@ -7,6 +7,9 @@
 #include <rand.h>
 #include <usb_device.h>
 #include <usbd_ctaphid.h>
+#if ENABLE_IFACE_CCID
+#include <ccid.h>
+#endif
 
 #define CTAPHID_RX_QUEUE_SIZE 8
 #define CTAPHID_RX_QUEUE_HIGH_WATER 8
@@ -732,6 +735,9 @@ static void CTAPHID_Execute_Cbor(void) {
 
 uint8_t CTAPHID_Loop(uint8_t wait_for_user) {
   uint8_t ret = LOOP_SUCCESS;
+#if ENABLE_IFACE_CCID
+  if (wait_for_user) CCID_ServicePresencePoll();
+#endif
   USBD_CTAPHID_ServiceReceive();
 
   ret = CTAPHID_DispatchComplete(wait_for_user);
