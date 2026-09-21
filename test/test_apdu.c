@@ -4285,6 +4285,43 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
 }
 
+static int client_pin_length_source_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
+  memcpy(buf, (const uint8_t *)ctx + offset, len);
+  return 0;
+}
+
+static void test_client_pin_encrypted_length_policy(void **state) {
+  UNUSED(state);
+  for (uint8_t protocol = 1; protocol <= 2; ++protocol) {
+    size_t expected_len = protocol == 1 ? PIN_ENC_SIZE_P1 : PIN_ENC_SIZE_P2;
+    const size_t lengths[] = {0, expected_len - 1, expected_len, expected_len + 1, expected_len + 16, 240};
+    for (uint8_t command = CP_CMD_SET_PIN; command <= CP_CMD_CHANGE_PIN; ++command) {
+      for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
+        uint8_t request[256], encrypted[240] = {0};
+        CborEncoder encoder, map;
+        cbor_encoder_init(&encoder, request, sizeof(request), 0);
+        assert_int_equal(cbor_encoder_create_map(&encoder, &map, 3), CborNoError);
+        assert_int_equal(cbor_encode_int(&map, CP_REQ_PIN_UV_AUTH_PROTOCOL), CborNoError);
+        assert_int_equal(cbor_encode_int(&map, protocol), CborNoError);
+        assert_int_equal(cbor_encode_int(&map, CP_REQ_SUB_COMMAND), CborNoError);
+        assert_int_equal(cbor_encode_int(&map, command), CborNoError);
+        assert_int_equal(cbor_encode_int(&map, CP_REQ_NEW_PIN_ENC), CborNoError);
+        assert_int_equal(cbor_encode_byte_string(&map, encrypted, lengths[i]), CborNoError);
+        assert_int_equal(cbor_encoder_close_container(&encoder, &map), CborNoError);
+        size_t request_len = cbor_encoder_get_buffer_size(&encoder, request);
+        // An exact-size field passes parsing and reaches the missing-key check.
+        uint8_t expected = lengths[i] > expected_len ? CTAP2_ERR_PIN_POLICY_VIOLATION :
+                           lengths[i] < expected_len ? CTAP2_ERR_INVALID_CBOR : CTAP2_ERR_MISSING_PARAMETER;
+        CborParser parser;
+        CTAP_client_pin cp;
+        assert_int_equal(parse_client_pin(&parser, &cp, request, request_len), expected);
+        ctap_req_src_t source = {.read = client_pin_length_source_read, .ctx = request, .len = request_len};
+        assert_int_equal(parse_client_pin_src(&parser, &cp, &source, request_len), expected);
+      }
+    }
+  }
+}
+
 int main() {
   struct lfs_config cfg;
   lfs_filebd_t bd;
@@ -4319,6 +4356,7 @@ int main() {
   assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_client_pin_encrypted_length_policy),
       cmocka_unit_test(test_ccid_response_headers),
       cmocka_unit_test(test_hid_setup_descriptors_and_errors),
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),

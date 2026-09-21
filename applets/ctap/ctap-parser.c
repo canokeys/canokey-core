@@ -1311,6 +1311,11 @@ static uint8_t parse_client_pin_impl(CborParser *parser, CTAP_client_pin *cp, co
       if (cbor_value_get_type(&map) != CborByteStringType) return CTAP2_ERR_CBOR_UNEXPECTED_TYPE;
       ret = cbor_value_get_string_length(&map, &len);
       CHECK_CBOR_RET(ret);
+      // Oversized encrypted PINs violate PIN policy, not CBOR syntax. Reject
+      // them before copying into the fixed-size buffer (protocol 2 adds an IV).
+      if ((cp->pin_uv_auth_protocol == 1 && len > PIN_ENC_SIZE_P1) ||
+          (cp->pin_uv_auth_protocol == 2 && len > PIN_ENC_SIZE_P2))
+        return CTAP2_ERR_PIN_POLICY_VIOLATION;
       if ((cp->pin_uv_auth_protocol == 1 && len != PIN_ENC_SIZE_P1) ||
           (cp->pin_uv_auth_protocol == 2 && len != PIN_ENC_SIZE_P2)) {
         ERR_MSG("Invalid new_pin_enc length\n");

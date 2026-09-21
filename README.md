@@ -38,6 +38,12 @@ release and status-only servicing during a CTAPHID wait.
 
 Please refer to the [documentation](https://docs.canokeys.org/development/protocols/).
 
+ClientPIN `setPIN` and `changePIN` reject oversized `newPinEnc` byte strings with
+`CTAP2_ERR_PIN_POLICY_VIOLATION` (0x37). The expected encrypted size is 64 bytes
+for PIN protocol 1 and 80 bytes for protocol 2, including its IV. Undersized
+fields remain `CTAP2_ERR_INVALID_CBOR`; decrypted PINs are limited to 63 bytes.
+The APDU tests cover both protocols through memory and source-backed parsers.
+
 ### PIN Retry Configuration Extensions
 
 This core implements vendor APDUs for configuring PIV and OpenPGP retry limits. Retry counts must be in the range `1..15`; `15` is the maximum because failed-verification warnings are returned as `63Cx`.
