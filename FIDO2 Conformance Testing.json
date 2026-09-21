@@ -1,7 +1,7 @@
 {
     "description": "CanoKey Authenticator",
     "aaguid": "244eb29e-e090-4e49-81fe-1f20f8d3b8f4",
-    "authenticatorVersion": 311,
+    "authenticatorVersion": 310,
     "protocolFamily": "fido2",
     "schema": 3,
     "upv": [
@@ -121,7 +121,14 @@
         ],
         "maxSerializedLargeBlobArray": 4096,
         "minPINLength": 4,
-        "firmwareVersion": 311,
-        "maxCredBlobLength": 32
+        "firmwareVersion": 310,
+        "maxCredBlobLength": 32,
+        "maxRPIDsForSetMinPINLength": 4,
+        "attestationFormats": ["packed"],
+        "longTouchForReset": false,
+        "transportsForReset": ["nfc", "usb"],
+        "maxPINLength": 63,
+        "authenticatorConfigCommands": [2, 3, 4],
+        "remainingDiscoverableCredentials": 87
     }
 }
