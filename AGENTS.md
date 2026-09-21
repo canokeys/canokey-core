@@ -95,6 +95,7 @@ CMake 3.16+, C11. The library target is `canokey-core`.
 | `ENABLE_TESTS` | OFF | Build CMocka unit tests + virt-card |
 | `ENABLE_FUZZING` | OFF | Build AFL++ harness |
 | `ENABLE_APDU_REPLAY` | OFF | Build the host differential APDU replay tool |
+| `CTAP_RESTRICT_ALGORITHMS` | OFF | FIDO GetInfo/registration/assertion allow only ES256 and Ed25519; existing other credentials remain manageable but cannot authenticate |
 | `VIRTCARD` | OFF | Build only the virtual-card targets |
 
 ### Running unit tests

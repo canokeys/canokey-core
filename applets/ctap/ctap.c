@@ -2550,7 +2550,9 @@ static int ctap_prepare_get_info_stream(CTAPHID_TxSource *source) {
       cbor_put_uint_inline(state, CTAP_MAX_MSG_SIZE) != 0 ||
       ctap_const_stream_add_mem(state, cbor_gi_after_max_msg_size_before_sm2_alg,
                                 sizeof(cbor_gi_after_max_msg_size_before_sm2_alg)) != 0 ||
+#if !CTAP_RESTRICT_ALGORITHMS
       cbor_put_int_inline(state, ctap_sm2_attr.algo_id) != 0 ||
+#endif
       ctap_const_stream_add_mem(state, cbor_gi_after_sm2_alg, sizeof(cbor_gi_after_sm2_alg)) != 0 ||
       (cfg.force_pin_change &&
        ctap_const_stream_add_mem(state, cbor_gi_force_pin_change_entry, sizeof(cbor_gi_force_pin_change_entry)) != 0) ||

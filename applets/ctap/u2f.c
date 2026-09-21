@@ -131,6 +131,9 @@ int __attribute__((noinline)) u2f_authenticate(const CAPDU *capdu, RAPDU *rapdu)
   if (LC != sizeof(U2F_AUTHENTICATE_REQ)) EXCEPT(SW_WRONG_DATA); // required by FIDO Conformance Tool
   if (req->keyHandleLen != sizeof(credential_id)) EXCEPT(SW_WRONG_LENGTH);
   if (memcmp_s(req->appId, ((credential_id *)req->keyHandle)->rp_id_hash, U2F_APPID_SIZE) != 0) EXCEPT(SW_WRONG_DATA);
+#if CTAP_RESTRICT_ALGORITHMS
+  if (!ctap_credential_algorithm_supported(((credential_id *)req->keyHandle)->alg_type)) EXCEPT(SW_WRONG_DATA);
+#endif
   uint8_t err = verify_key_handle((credential_id *)req->keyHandle, &key);
   if (err) EXCEPT(SW_WRONG_DATA);
 

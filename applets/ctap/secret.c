@@ -218,6 +218,15 @@ void cp_associate_rp_id(const uint8_t *rp_id_hash) {
   memcpy(&permissions_rp_id[1], rp_id_hash, SHA256_DIGEST_LENGTH);
 }
 
+bool ctap_credential_algorithm_supported(int32_t alg) {
+  if (alg == COSE_ALG_ES256 || alg == COSE_ALG_EDDSA) return true;
+#if CTAP_RESTRICT_ALGORITHMS
+  return false;
+#else
+  return alg == COSE_ALG_ML_DSA_65 || alg == ctap_sm2_attr.algo_id;
+#endif
+}
+
 key_type_t cose_alg_to_key_type(int alg) {
   switch (alg) {
   case COSE_ALG_ES256:
@@ -303,6 +312,10 @@ bool credential_third_party_payment(const credential_id *kh) {
 }
 
 bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv) {
+#if CTAP_RESTRICT_ALGORITHMS
+  // Apply the build policy to existing credentials as well as new registrations.
+  if (!ctap_credential_algorithm_supported(kh->alg_type)) return false;
+#endif
   uint8_t cred_protect = credential_cred_protect(kh);
   DBG_MSG("credProtect: %hhu\n", cred_protect);
   if (cred_protect == CRED_PROTECT_VERIFICATION_OPTIONAL_WITH_CREDENTIAL_ID_LIST) {
@@ -402,6 +415,9 @@ size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig
 }
 
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig) {
+#if CTAP_RESTRICT_ALGORITHMS
+  if (!ctap_credential_algorithm_supported(alg_type)) return -1;
+#endif
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
   DBG_MSG("Sign key type: %d\n", key_type);
   if (key_type == KEY_TYPE_PKC_END) {

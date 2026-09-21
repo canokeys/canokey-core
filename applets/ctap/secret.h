@@ -36,6 +36,7 @@ bool cp_has_permission(int permission);
 bool cp_has_associated_rp_id(void);
 bool cp_verify_rp_id(const uint8_t *rp_id_hash);
 void cp_associate_rp_id(const uint8_t *rp_id_hash);
+bool ctap_credential_algorithm_supported(int32_t alg);
 key_type_t cose_alg_to_key_type(int alg);
 bool cose_alg_is_mldsa65(int32_t alg);
 

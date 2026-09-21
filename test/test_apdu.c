@@ -28,6 +28,7 @@
 #include "../applets/ctap/secret.h"
 #include "../applets/ctap/cose-key.h"
 #include "../applets/ctap/ctap-errors.h"
+#include "../applets/ctap/ctap-parser.h"
 #include "../applets/ctap/ctap-internal.h"
 #include <ecc.h>
 #include <hmac.h>
@@ -1988,6 +1989,102 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   assert_non_null(find_bytes(chunk, written, "minPinLength", sizeof("minPinLength") - 1));
   assert_non_null(find_bytes(chunk, written, "thirdPartyPayment", sizeof("thirdPartyPayment") - 1));
   assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
+  test_cbor_view algorithms;
+  assert_int_equal(test_cbor_map_lookup_int_key(chunk + 1, written - 1, GI_RESP_ALGORITHMS, &algorithms), 0);
+  CborParser parser;
+  CborValue array, entry, alg;
+  size_t count;
+  CTAP_sm2_attr sm2;
+  assert_int_equal(ctap_platform_sm2_config_read(&sm2, sizeof(sm2)), 0);
+  const int32_t expected[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id};
+  assert_int_equal(cbor_parser_init(algorithms.ptr, algorithms.len, 0, &parser, &array), CborNoError);
+  assert_int_equal(cbor_value_get_array_length(&array, &count), CborNoError);
+  assert_int_equal(count, CTAP_RESTRICT_ALGORITHMS ? 2 : 4);
+  assert_int_equal(cbor_value_enter_container(&array, &entry), CborNoError);
+  for (size_t i = 0; i < count; ++i) {
+    int algorithm;
+    assert_int_equal(cbor_value_map_find_value(&entry, "alg", &alg), CborNoError);
+    assert_int_equal(cbor_value_get_int(&alg, &algorithm), CborNoError);
+    assert_int_equal(algorithm, expected[i]);
+    assert_int_equal(cbor_value_advance(&entry), CborNoError);
+  }
+  assert_true(cbor_value_at_end(&entry));
+}
+
+static void test_ctap_algorithm_policy(void **state) {
+  (void)state;
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  CTAP_sm2_attr sm2;
+  assert_int_equal(ctap_platform_sm2_config_read(&sm2, sizeof(sm2)), 0);
+  const int32_t algorithms[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id};
+  for (size_t i = 0; i < 4; ++i) {
+    // Exercise unsupported-only lists and fallback to the RP's next choice.
+    for (size_t fallback = 0; fallback < 2; ++fallback) {
+      uint8_t req[256], zero32[32] = {0}, *p = req;
+      *p++ = 0xA4;
+      *p++ = 1;
+      put_cbor_bytes(&p, zero32, sizeof(zero32));
+      *p++ = 2;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "id");
+      put_cbor_text(&p, "pay.example");
+      *p++ = 3;
+      *p++ = 0xA1;
+      put_cbor_text(&p, "id");
+      put_cbor_bytes(&p, zero32, 1);
+      *p++ = 4;
+      *p++ = 0x81 + fallback;
+      for (size_t j = 0; j <= fallback; ++j) {
+        *p++ = 0xA2;
+        put_cbor_text(&p, "alg");
+        put_cbor_int(&p, j ? COSE_ALG_EDDSA : algorithms[i]);
+        put_cbor_text(&p, "type");
+        put_cbor_text(&p, "public-key");
+      }
+      CborParser parser;
+      CTAP_make_credential mc = {0};
+      bool restricted = CTAP_RESTRICT_ALGORITHMS && i >= 2;
+      assert_int_equal(parse_make_credential(&parser, &mc, req, p - req),
+                       restricted && !fallback ? CTAP2_ERR_UNSUPPORTED_ALGORITHM : 0);
+      if (!restricted || fallback) assert_int_equal(mc.alg_type, restricted ? COSE_ALG_EDDSA : algorithms[i]);
+    }
+
+    // Construct genuine pre-existing credentials independent of registration policy.
+    for (int mode = 0; mode < 3; ++mode) {
+      bool resident = mode != 0;
+      CTAP_discoverable_credential dc = {0};
+      uint8_t pub[64], req[256], scratch[64], resp[8192];
+      size_t written = 0;
+      CTAPHID_TxSource source = {0};
+      sha256_raw((const uint8_t *)"pay.example", 11, dc.credential_id.rp_id_hash);
+      assert_int_equal(generate_key_handle(&dc.credential_id, pub, algorithms[i], resident,
+                                           CRED_PROTECT_VERIFICATION_OPTIONAL, false), 0);
+      assert_int_equal(write_file(DC_FILE, resident ? &dc : NULL, 0, resident ? sizeof(dc) : 0, 1), 0);
+      size_t len = build_third_party_payment_get_assertion(req, &dc.credential_id);
+      if (mode == 2) {
+        // Discoverable assertion without an allowList must enforce the same policy.
+        uint8_t zero32[32] = {0}, *p = req;
+        *p++ = CTAP_GET_ASSERTION;
+        *p++ = 0xA3;
+        *p++ = 1;
+        put_cbor_text(&p, "pay.example");
+        *p++ = 2;
+        put_cbor_bytes(&p, zero32, sizeof(zero32));
+        *p++ = 5;
+        *p++ = 0xA1;
+        put_cbor_text(&p, "up");
+        *p++ = 0xF4;
+        len = p - req;
+      }
+      assert_int_equal(ctap_process_cbor_stream_with_src(req, len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
+      assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+      assert_int_equal(resp[0], CTAP_RESTRICT_ALGORITHMS && i >= 2 ? CTAP2_ERR_NO_CREDENTIALS : 0);
+      if (source.close) source.close(source.ctx);
+    }
+  }
+  assert_int_equal(write_file(DC_FILE, NULL, 0, 0, 1), 0);
 }
 
 static void test_ctap_kh_cache_lifecycle(void **state) {
@@ -2464,7 +2561,12 @@ static void test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_sep
   assert_true(source.total_len <= sizeof(resp));
   assert_non_null(source.read);
   assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
+#if CTAP_RESTRICT_ALGORITHMS
+  assert_int_equal(written, 1);
+  assert_int_equal(resp[0], CTAP2_ERR_UNSUPPORTED_ALGORITHM);
+#else
   assert_make_credential_auth_data_has_hmac_secret_mc(resp, written, auth_data_buf, sizeof(auth_data_buf));
+#endif
 
   if (source.close) source.close(source.ctx);
 }
@@ -4402,6 +4504,7 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
+      cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),
