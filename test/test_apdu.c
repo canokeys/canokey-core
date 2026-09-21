@@ -36,6 +36,8 @@
 #include <usb_device.h>
 #include <usbd_ctaphid.h>
 #include <usbd_ccid.h>
+#include <usbd_kbdhid.h>
+#include <usbd_ctlreq.h>
 
 #include <ctap-parser.h>
 
@@ -504,6 +506,7 @@ static void assert_ctaphid_ping_round_trip(size_t payload_len) {
     response_offset += copied;
   }
   assert_memory_equal(response, payload, payload_len);
+  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
 }
 
 static void test_ctaphid_large_ping_is_consumed_incrementally(void **state) {
@@ -511,6 +514,81 @@ static void test_ctaphid_large_ping_is_consumed_incrementally(void **state) {
   assert_ctaphid_ping_round_trip(CTAPHID_STREAM_THRESHOLD);
   assert_ctaphid_ping_round_trip(CTAPHID_STREAM_THRESHOLD + 1);
   assert_ctaphid_ping_round_trip(PKE_BUFFER_SIZE);
+}
+
+static void test_ctaphid_large_rx_session_cleanup(void **state) {
+  (void)state;
+  const uint32_t cid = 0x12345678;
+  for (int mode = 0; mode < 4; ++mode) {
+    init_apdu_buffer();
+    device_init();
+    CTAPHID_Init(capture_hid_report);
+    reset_hid_capture();
+    set_test_tick(100);
+    CTAPHID_FRAME frame = make_hid_init(cid, CTAPHID_PING, CTAPHID_INLINE_BUFSIZE + 1);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
+    // A CCID interrupt must not acquire the session between HID fragments.
+    assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
+    if (mode == 0) {
+      set_test_tick(1000); // RX timeout
+    } else if (mode == 1) {
+      frame = (CTAPHID_FRAME){.cid = cid};
+      frame.cont.seq = 1; // Invalid first continuation
+      assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+    } else if (mode == 2) {
+      frame = make_hid_init(cid, CTAPHID_INIT, 8); // Resynchronize
+      assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+    } else {
+      CTAPHID_Init(capture_hid_report); // Transport reset
+    }
+    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+    assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+    assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+  }
+  set_test_tick(0);
+}
+
+static void test_ccid_large_hid_request_survives_session_switch(void **state) {
+  (void)state;
+  for (int prior_ccid = 0; prior_ccid < 2; ++prior_ccid) {
+    init_apdu_buffer();
+    device_init();
+    CCID_Init();
+    CTAPHID_Init(capture_hid_report);
+    reset_hid_capture();
+    if (prior_ccid) {
+      uint8_t select[] = {PC_TO_RDR_XFRBLOCK, 9, 0, 0, 0, 0, 1, 0, 0, 0,
+                         0, 0xA4, 4, 0, 4, 0xDE, 0xAD, 0xBE, 0xEF};
+      assert_int_equal(CCID_OutEvent(select, sizeof(select)), 0);
+      CCID_Loop();
+      CCID_InFinished(0);
+      assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
+    }
+    // Padding forces GetInfo through PKE without creating credentials.
+    uint8_t payload[CTAPHID_INLINE_BUFSIZE + 1] = {0x04};
+    CTAPHID_FRAME frame = make_hid_init(0x12345678, CTAPHID_CBOR, sizeof(payload));
+    size_t offset = sizeof(frame.init.data);
+    memcpy(frame.init.data, payload, offset);
+    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+    for (uint8_t seq = 0; offset < sizeof(payload); ++seq) {
+      memset(&frame, 0, sizeof(frame));
+      frame.cid = 0x12345678;
+      frame.cont.seq = seq;
+      size_t n = MIN(sizeof(frame.cont.data), sizeof(payload) - offset);
+      memcpy(frame.cont.data, payload + offset, n);
+      offset += n;
+      assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
+      assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
+    }
+    assert_true(hid_capture_count > 0);
+    assert_int_equal(hid_capture[0].init.cmd, CTAPHID_CBOR);
+    assert_int_equal(hid_capture[0].init.data[0], CTAP1_ERR_SUCCESS);
+    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
+  }
 }
 
 static int capture_ctaphid_msg(const uint8_t *apdu, size_t apdu_len, uint8_t *response, size_t response_size,
@@ -882,6 +960,84 @@ static void test_ccid_le32_wire_encoding(void **state) {
   assert_int_equal(offsetof(ccid_bulkin_short_t, abData), CCID_CMD_HEADER_SIZE);
   assert_int_equal(offsetof(empty_ccid_bulkin_data_t, dwLength), 1);
   assert_int_equal(sizeof(empty_ccid_bulkin_data_t), CCID_CMD_HEADER_SIZE);
+}
+
+// Literal wire headers pin existing behavior, including unsupported commands.
+static void test_ccid_response_headers(void **state) {
+  (void)state;
+  static const uint8_t cases[][7] = {
+      // request, slot, response, payload length, status, error, specific
+      {0x62, 0, 0x80, 17, 0x00, 0x81, 0},
+      {0x63, 0, 0x81, 0, 0x01, 0x81, 0},
+      {0x65, 0, 0x81, 0, 0x01, 0x81, 0},
+      {0x6C, 0, 0x82, 7, 0x01, 0x81, 1},
+      {0x6D, 0, 0x82, 0, 0x01, 0x00, 1},
+      {0x61, 0, 0x82, 0, 0x01, 0x00, 1},
+      {0x6B, 0, 0x83, 0, 0x01, 0x00, 0},
+      {0x69, 0, 0x80, 0, 0x01, 0x00, 0},
+      {0x72, 0, 0x81, 0, 0x01, 0x00, 0},
+      {0x65, 1, 0x81, 0, 0x41, 0x05, 0},
+      {0x6C, 1, 0x82, 0, 0x41, 0x05, 1},
+      {0x62, 1, 0x80, 0, 0x41, 0x05, 0},
+  };
+  const uint8_t previous_state = usb_device.dev_state;
+  init_apdu_buffer();
+  device_init();
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    const uint8_t *c = cases[i];
+    USBD_CCID_Init(&usb_device);
+    usb_device.dev_state = USBD_STATE_CONFIGURED;
+    EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
+    in->maxpacket = 64;
+    uint8_t request[] = {c[0], 0, 0, 0, 0, c[1], 0x37, 0, 0, 0};
+    uint8_t expected[] = {c[2], c[3], 0, 0, 0, c[1], 0x37, c[4], c[5], c[6]};
+    assert_int_equal(CCID_OutEvent(request, sizeof(request)), 0);
+    CCID_Loop();
+    assert_non_null(in->xfer_buff);
+    const uint8_t *response = in->xfer_buff - (10 + c[3]);
+    assert_memory_equal(response, expected, sizeof(expected));
+    if (c[0] == 0x6C && c[1] == 0) {
+      const uint8_t params[] = {0x11, 0x10, 0, 0x15, 0, 0xFE, 0};
+      assert_memory_equal(response + 10, params, sizeof(params));
+    }
+    USBD_CCID_DataIn(&usb_device);
+  }
+  usb_device.dev_state = previous_state;
+}
+
+static void test_hid_setup_descriptors_and_errors(void **state) {
+  (void)state;
+  uint8_t (*const setup[])(USBD_HandleTypeDef *, USBD_SetupReqTypedef *) = {
+      USBD_CTAPHID_Setup, USBD_KBDHID_Setup,
+  };
+  const uint8_t report_lengths[] = {34, 87};
+  for (size_t i = 0; i < 2; ++i) {
+    EPType *in = dummy_get_ep_by_addr(0x80);
+    in->maxpacket = 128;
+    USBD_SetupReqTypedef req = {.bmRequest = 0x81, .bRequest = 6, .wValue = 0x2100, .wLength = 255};
+    const uint8_t expected[] = {9, 0x21, 0x11, 1, 0, 1, 0x22, report_lengths[i], 0};
+    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
+    assert_int_equal(usb_device.ep0_in.total_length, sizeof(expected));
+    assert_memory_equal(in->xfer_buff - sizeof(expected), expected, sizeof(expected));
+    req.wValue = 0x2200;
+    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
+    assert_int_equal(usb_device.ep0_in.total_length, report_lengths[i]);
+    uint8_t prefix[4];
+    memcpy(prefix, in->xfer_buff - report_lengths[i], sizeof(prefix));
+    req.wLength = sizeof(prefix);
+    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
+    assert_int_equal(usb_device.ep0_in.total_length, sizeof(prefix));
+    assert_memory_equal(in->xfer_buff - sizeof(prefix), prefix, sizeof(prefix));
+    req.bmRequest = 0x21;
+    req.bRequest = 0x0A;
+    req.wValue = 0x1200;
+    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
+    req.bRequest = 0xFF;
+    assert_int_equal(setup[i](&usb_device, &req), USBD_FAIL);
+    assert_true(USBD_LL_IsStallEP(&usb_device, 0x80));
+    USBD_LL_ClearStallEP(&usb_device, 0x80);
+    USBD_LL_ClearStallEP(&usb_device, 0);
+  }
 }
 
 static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
@@ -4163,6 +4319,10 @@ int main() {
   assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
+      cmocka_unit_test(test_ccid_response_headers),
+      cmocka_unit_test(test_hid_setup_descriptors_and_errors),
+      cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
+      cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),
       cmocka_unit_test(test_admin_sm2_config_validation),
       cmocka_unit_test(test_admin_sm2_config_wire_format),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),

@@ -263,6 +263,11 @@ Platforms may override weak symbols to redirect to hardware accelerators (SE, PK
 
 ### CTAP request lifetime
 
+CTAPHID must acquire the applet session before staging a large incoming request
+in PKE: cross-transport session cleanup clears that storage. Retain ownership
+across fragments and release it on timeout, malformed sequencing, INIT/reset,
+or PING completion; MSG/CBOR handlers inherit it through response completion.
+
 CTAP handlers must treat transport-backed request bytes as short-lived input, not as command state. A safe source-backed command lifecycle is:
 
 1. Build a `ctap_req_src_t` from the transport source.

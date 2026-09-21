@@ -55,44 +55,7 @@ uint8_t USBD_CTAPHID_Init(USBD_HandleTypeDef *pdev) {
 }
 
 uint8_t USBD_CTAPHID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req) {
-  uint16_t len = 0;
-  const uint8_t *pbuf = NULL;
-
-  switch (req->bmRequest & USB_REQ_TYPE_MASK) {
-  case USB_REQ_TYPE_CLASS:
-    switch (req->bRequest) {
-    case CTAPHID_REQ_SET_IDLE:
-      hid_handle.idle_state = (uint8_t)(req->wValue >> 8);
-      break;
-
-    default:
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
-    }
-    break;
-
-  case USB_REQ_TYPE_STANDARD:
-    switch (req->bRequest) {
-    case USB_REQ_GET_DESCRIPTOR:
-      if (req->wValue >> 8 == CTAPHID_REPORT_DESC) {
-        len = (uint16_t)MIN(sizeof(report_desc), req->wLength);
-        pbuf = report_desc;
-      } else if (req->wValue >> 8 == CTAPHID_DESCRIPTOR_TYPE) {
-        pbuf = USBD_CTAPHID_Desc;
-        len = (uint16_t)MIN(sizeof(USBD_CTAPHID_Desc), req->wLength);
-      } else {
-        USBD_CtlError(pdev, req);
-        break;
-      }
-      USBD_CtlSendData(pdev, pbuf, len, 0);
-      break;
-
-    default:
-      USBD_CtlError(pdev, req);
-      return USBD_FAIL;
-    }
-  }
-  return USBD_OK;
+  return USBD_HID_Setup(pdev, req, report_desc, USBD_CTAPHID_Desc, &hid_handle.idle_state);
 }
 
 uint8_t USBD_CTAPHID_DataIn() {

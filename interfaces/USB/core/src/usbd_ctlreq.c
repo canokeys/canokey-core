@@ -607,3 +607,46 @@ static uint8_t USBD_GetLen(uint8_t *buf) {
 
   return len;
 }
+
+// HID descriptors carry their own length and report-descriptor length.
+uint8_t USBD_HID_Setup(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req,
+                       const uint8_t *report_desc, const uint8_t *hid_desc, uint32_t *idle_state) {
+  uint16_t len = 0;
+  const uint8_t *pbuf = NULL;
+
+  switch (req->bmRequest & USB_REQ_TYPE_MASK) {
+  case USB_REQ_TYPE_CLASS:
+    switch (req->bRequest) {
+    case 0x0A /* SET_IDLE */:
+      *idle_state = (uint8_t)(req->wValue >> 8);
+      break;
+
+    default:
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
+    }
+    break;
+
+  case USB_REQ_TYPE_STANDARD:
+    switch (req->bRequest) {
+    case USB_REQ_GET_DESCRIPTOR:
+      if (req->wValue >> 8 == 0x22 /* Report descriptor */) {
+        len = (uint16_t)MIN((uint16_t)(hid_desc[7] | ((uint16_t)hid_desc[8] << 8)), req->wLength);
+        pbuf = report_desc;
+      } else if (req->wValue >> 8 == 0x21 /* HID descriptor */) {
+        pbuf = hid_desc;
+        len = (uint16_t)MIN(hid_desc[0], req->wLength);
+      } else {
+        USBD_CtlError(pdev, req);
+        break;
+      }
+      USBD_CtlSendData(pdev, pbuf, len, 0);
+      break;
+
+    default:
+      USBD_CtlError(pdev, req);
+      return USBD_FAIL;
+    }
+  }
+  return USBD_OK;
+}

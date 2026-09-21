@@ -13,7 +13,7 @@
 #define HAS_CMD_DISCARDED 2
 
 #define CCID_UpdateCommandStatus(cmd_status, icc_status)                                                               \
-  bulkin_short.bStatus = bulkin_data.bStatus = (cmd_status | icc_status)
+  bulkin_short.bStatus = bulkin_data.bStatus = ((cmd_status) | (icc_status))
 #define CCID_CardStatus() (bulkin_short.bStatus & BM_ICC_STATUS_MASK)
 #define CCID_IsShortCommand() (bulkout_length <= SHORT_ABDATA_SIZE)
 
@@ -323,10 +323,8 @@ static uint8_t PC_to_RDR_IccPowerOff(void) {
  * @retval uint8_t status of the command execution
  */
 static uint8_t PC_to_RDR_GetSlotStatus(void) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
-  if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
-  return SLOT_NO_ERROR;
+  const uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
+  return error ? error : SLOT_NO_ERROR;
 }
 
 /**
@@ -391,81 +389,8 @@ uint8_t PC_to_RDR_XfrBlock(void) {
  * @retval uint8_t status of the command execution
  */
 static uint8_t PC_to_RDR_GetParameters(void) {
-  uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
-  if (error != 0) return error;
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
-  return SLOT_NO_ERROR;
-}
-
-/**
- * @brief  RDR_to_PC_DataBlock
- *         Provide the data block response to the host
- *         Response for PC_to_RDR_IccPowerOn, PC_to_RDR_XfrBlock
- * @param  uint8_t errorCode: code to be returned to the host
- * @retval None
- */
-static void RDR_to_PC_DataBlock(uint8_t errorCode, uint8_t isShort) {
-  ccid_bulkin_data_t *pBulkin = &bulkin_data;
-  if (isShort) pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
-  pBulkin->bMessageType = RDR_TO_PC_DATABLOCK;
-  pBulkin->bError = errorCode;
-  pBulkin->bSpecific = 0;
-}
-
-/**
- * @brief  RDR_to_PC_SlotStatus
- *         Provide the Slot status response to the host
- *          Response for PC_to_RDR_IccPowerOff
- *                PC_to_RDR_GetSlotStatus
- * @param  uint8_t errorCode: code to be returned to the host
- * @retval None
- */
-static void RDR_to_PC_SlotStatus(uint8_t errorCode) {
-  bulkin_short.bMessageType = RDR_TO_PC_SLOTSTATUS;
-  ccid_put_le32(bulkin_short.dwLength, 0);
-  bulkin_short.bError = errorCode;
-  bulkin_short.bSpecific = 0;
-}
-
-/**
- * @brief  RDR_to_PC_Parameters
- *         Provide the data block response to the host
- *         Response for PC_to_RDR_GetParameters
- * @param  uint8_t errorCode: code to be returned to the host
- * @retval None
- */
-static void RDR_to_PC_Parameters(uint8_t errorCode) {
-  bulkin_short.bMessageType = RDR_TO_PC_PARAMETERS;
-  bulkin_short.bError = errorCode;
-
-  if (errorCode == SLOT_NO_ERROR)
-    ccid_put_le32(bulkin_short.dwLength, 7);
-  else
-    ccid_put_le32(bulkin_short.dwLength, 0);
-
-  bulkin_short.abData[0] = 0x11; // Fi=372, Di=1
-  bulkin_short.abData[1] = 0x10; // Checksum: LRC, Convention: direct, ignored by CCID
-  bulkin_short.abData[2] = 0x00; // No extra guard time
-  bulkin_short.abData[3] = 0x15; // BWI = 1, CWI = 5
-  bulkin_short.abData[4] = 0x00; // Stopping the Clock is not allowed
-  bulkin_short.abData[5] = 0xFE; // IFSC = 0xFE
-  bulkin_short.abData[6] = 0x00; // NAD
-
-  bulkin_short.bSpecific = 0x01;
-}
-
-/**
- * @brief  RDR_to_PC_Escape
- *         Provide the Escape response to the host
- *          Response for PC_to_RDR_Escape
- * @param  uint8_t errorCode: code to be returned to the host
- * @retval None
- */
-static void RDR_to_PC_Escape(uint8_t errorCode) {
-  bulkin_short.bMessageType = RDR_TO_PC_ESCAPE;
-  ccid_put_le32(bulkin_short.dwLength, 0);
-  bulkin_short.bError = errorCode;
-  bulkin_short.bSpecific = 0;
+  const uint8_t error = CCID_CheckCommandParams(CHK_PARAM_SLOT | CHK_PARAM_DWLENGTH | CHK_PARAM_abRFU3);
+  return error ? error : SLOT_NO_ERROR;
 }
 
 /**
@@ -478,38 +403,19 @@ static void RDR_to_PC_Escape(uint8_t errorCode) {
  * @retval uint8_t status
  */
 static uint8_t CCID_CheckCommandParams(uint32_t param_type) {
-  uint32_t parameter = param_type;
-
-  if (parameter & CHK_PARAM_SLOT) {
-    if (bulkout_data.bSlot >= CCID_NUMBER_OF_SLOTS) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
-      return SLOTERROR_BAD_SLOT;
-    }
+  uint8_t error = 0;
+  if ((param_type & CHK_PARAM_SLOT) && bulkout_data.bSlot >= CCID_NUMBER_OF_SLOTS) {
+    error = SLOTERROR_BAD_SLOT;
+  } else if ((param_type & CHK_PARAM_DWLENGTH) && bulkout_length != 0) {
+    error = SLOTERROR_BAD_LENTGH;
+  } else if ((param_type & CHK_PARAM_abRFU2) && (bulkout_data.bSpecific_1 || bulkout_data.bSpecific_2)) {
+    error = SLOTERROR_BAD_ABRFU_2B;
+  } else if ((param_type & CHK_PARAM_abRFU3) &&
+             (bulkout_data.bSpecific_0 || bulkout_data.bSpecific_1 || bulkout_data.bSpecific_2)) {
+    error = SLOTERROR_BAD_ABRFU_3B;
   }
-
-  if (parameter & CHK_PARAM_DWLENGTH) {
-    if (bulkout_length != 0) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
-      return SLOTERROR_BAD_LENTGH;
-    }
-  }
-
-  if (parameter & CHK_PARAM_abRFU2) {
-    if ((bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
-      return SLOTERROR_BAD_ABRFU_2B;
-    }
-  }
-
-  if (parameter & CHK_PARAM_abRFU3) {
-    if ((bulkout_data.bSpecific_0 != 0) || (bulkout_data.bSpecific_1 != 0) || (bulkout_data.bSpecific_2 != 0)) {
-      CCID_UpdateCommandStatus(BM_COMMAND_STATUS_FAILED, CCID_CardStatus());
-      return SLOTERROR_BAD_ABRFU_3B;
-    }
-  }
-
-  CCID_UpdateCommandStatus(BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
-  return 0;
+  CCID_UpdateCommandStatus(error ? BM_COMMAND_STATUS_FAILED : BM_COMMAND_STATUS_NO_ERROR, CCID_CardStatus());
+  return error;
 }
 
 // Safe during CTAP execution: status polls use only the short response buffer,
@@ -522,62 +428,72 @@ void __attribute__((noinline)) CCID_Loop(void) {
   if (!has_cmd) return;
   transaction_state = CCID_TRANSACTION_PROCESSING;
 
-  uint8_t errorCode;
+  uint8_t errorCode = SLOTERROR_CMD_NOT_SUPPORTED;
+  uint8_t response_type = RDR_TO_PC_SLOTSTATUS;
+  uint8_t specific = 0;
+  ccid_put_le32(bulkin_short.dwLength, 0);
   ccid_bulkin_data_t *pBulkin = (ccid_bulkin_data_t *)&bulkin_short;
   switch (bulkout_data.bMessageType) {
   case PC_TO_RDR_ICCPOWERON:
     DBG_MSG("Slot power on\n");
     errorCode = PC_to_RDR_IccPowerOn();
-    RDR_to_PC_DataBlock(errorCode, 1);
+    response_type = RDR_TO_PC_DATABLOCK;
     break;
   case PC_TO_RDR_ICCPOWEROFF:
     DBG_MSG("Slot power off\n");
     errorCode = PC_to_RDR_IccPowerOff();
-    RDR_to_PC_SlotStatus(errorCode);
     break;
   case PC_TO_RDR_GETSLOTSTATUS:
     // DBG_MSG("Slot get status\n");
     errorCode = PC_to_RDR_GetSlotStatus();
-    RDR_to_PC_SlotStatus(errorCode);
     break;
   case PC_TO_RDR_XFRBLOCK:
+    response_type = RDR_TO_PC_DATABLOCK;
     if (has_cmd == HAS_CMD_DISCARDED) {
       DBG_MSG("Respond to a data-discarded message\n");
+      errorCode = SLOT_NO_ERROR;
       ccid_put_le32(pBulkin->dwLength, 2);
       pBulkin->abData[0] = HI(SW_ERR_NOT_PERSIST);
       pBulkin->abData[1] = LO(SW_ERR_NOT_PERSIST);
-      RDR_to_PC_DataBlock(SLOT_NO_ERROR, 1);
     } else {
       errorCode = PC_to_RDR_XfrBlock();
-      RDR_to_PC_DataBlock(errorCode, 0);
       pBulkin = &bulkin_data;
     }
     break;
   case PC_TO_RDR_GETPARAMETERS:
     DBG_MSG("Slot get param\n");
     errorCode = PC_to_RDR_GetParameters();
-    RDR_to_PC_Parameters(errorCode);
-    break;
+    goto parameters;
   case PC_TO_RDR_RESETPARAMETERS:
   case PC_TO_RDR_SETPARAMETERS:
-    RDR_to_PC_Parameters(SLOTERROR_CMD_NOT_SUPPORTED);
+  parameters: {
+    // T=1: Fi/Di, LRC/direct convention, guard time, BWI/CWI, clock stop, IFSC, NAD.
+    static const uint8_t parameters[] = {0x11, 0x10, 0x00, 0x15, 0x00, 0xFE, 0x00};
+    response_type = RDR_TO_PC_PARAMETERS;
+    specific = 1;
+    if (errorCode == SLOT_NO_ERROR) ccid_put_le32(bulkin_short.dwLength, sizeof(parameters));
+    memcpy(bulkin_short.abData, parameters, sizeof(parameters));
     break;
+  }
   case PC_TO_RDR_ESCAPE:
-    RDR_to_PC_Escape(SLOTERROR_CMD_NOT_SUPPORTED);
+    response_type = RDR_TO_PC_ESCAPE;
     break;
   case PC_TO_RDR_SECURE:
-    ccid_put_le32(pBulkin->dwLength, 0);
-    RDR_to_PC_DataBlock(SLOTERROR_CMD_NOT_SUPPORTED, 1);
+    response_type = RDR_TO_PC_DATABLOCK;
     break;
   case PC_TO_RDR_ICCCLOCK:
   case PC_TO_RDR_T0APDU:
   case PC_TO_RDR_MECHANICAL:
   case PC_TO_RDR_ABORT:
   default:
-    RDR_to_PC_SlotStatus(SLOTERROR_CMD_NOT_SUPPORTED);
     break;
   }
 
+  // All response types share the same header layout. Fill it once after
+  // choosing the short or APDU backing buffer and command-specific payload.
+  pBulkin->bMessageType = response_type;
+  pBulkin->bError = errorCode;
+  pBulkin->bSpecific = specific;
   const uint16_t len = (uint16_t)ccid_get_le32(pBulkin->dwLength);
   has_cmd = 0;
   transaction_state = CCID_TRANSACTION_RESPONDING;
