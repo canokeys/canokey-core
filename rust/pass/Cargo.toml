@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "canokey-pass"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+[lib]
+crate-type = ["rlib"]
+
+[workspace]
+
+[dependencies]
+canokey-protocol = { path = "../protocol" }

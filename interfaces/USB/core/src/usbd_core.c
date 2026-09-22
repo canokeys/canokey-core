@@ -16,7 +16,9 @@
  ******************************************************************************
  */
 #include <usbd_core.h>
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
 #include <apdu.h>
+#endif
 
 /**
  * @brief  USBD_Init
@@ -270,7 +272,9 @@ USBD_StatusTypeDef USBD_LL_DataInStage(USBD_HandleTypeDef *pdev, uint8_t epnum, 
           if ((pdev->pClass->EP0_TxSent != NULL) && (pdev->dev_state == USBD_STATE_CONFIGURED)) {
             pdev->pClass->EP0_TxSent(pdev);
           }
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
           release_apdu_buffer(BUFFER_OWNER_USBD);
+#endif
           USBD_CtlReceiveStatus(pdev);
         }
       }
@@ -305,7 +309,9 @@ USBD_StatusTypeDef USBD_LL_Reset(USBD_HandleTypeDef *pdev) {
   pdev->dev_remote_wakeup = 0;
   pdev->ep0_state = USBD_EP0_IDLE;
   pdev->ep0_data_len = 0;
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
   release_apdu_buffer(BUFFER_OWNER_USBD);
+#endif
 
   return USBD_OK;
 }

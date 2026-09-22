@@ -17,7 +17,9 @@
  */
 #include <usbd_ctlreq.h>
 #include <usbd_ioreq.h>
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
 #include <apdu.h>
+#endif
 
 static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req);
 
@@ -283,7 +285,9 @@ static void USBD_GetDescriptor(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *r
     len = MIN(len, req->wLength);
     USBD_CtlSendData(pdev, pbuf, len, 0);
   } else {
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
     release_apdu_buffer(BUFFER_OWNER_USBD);
+#endif
   }
 }
 
@@ -315,7 +319,9 @@ USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqType
         len = MIN(len, req->wLength);
         USBD_CtlSendData(pdev, pbuf, len, 0);
       } else {
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
         release_apdu_buffer(BUFFER_OWNER_USBD);
+#endif
       }
     } else {
       USBD_CtlError(pdev, req);
@@ -333,7 +339,9 @@ USBD_StatusTypeDef USBD_VendorClsReq(USBD_HandleTypeDef *pdev, USBD_SetupReqType
         len = MIN(len, req->wLength);
         USBD_CtlSendData(pdev, pbuf, len, 0);
       } else {
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
         release_apdu_buffer(BUFFER_OWNER_USBD);
+#endif
       }
     } else {
       USBD_CtlError(pdev, req);
@@ -564,7 +572,9 @@ void USBD_ParseSetupRequest(USBD_SetupReqTypedef *req, uint8_t *pdata) {
  * @retval None
  */
 void USBD_CtlError(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef *req __attribute__((unused))) {
+#ifndef USBD_SEPARATE_CONTROL_BUFFER
   release_apdu_buffer(BUFFER_OWNER_USBD);
+#endif
   USBD_LL_StallEP(pdev, 0x80);
   USBD_LL_StallEP(pdev, 0);
 }
