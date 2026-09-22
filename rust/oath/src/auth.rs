@@ -162,7 +162,7 @@ impl Session {
         let mut metadata = repository.load()?.ok_or(Error::Storage)?;
         let mut digest = [0; 64];
         let result = (|| {
-            let key = metadata.key.as_ref().ok_or(Error::Invalid)?;
+            let key = metadata.key.as_ref().ok_or(Error::AccessCodeMissing)?;
             crypto.hmac(Algorithm::Sha1, key, &self.challenge, &mut digest)?;
             if !equal(&digest[..20], response) {
                 return Err(Error::Unauthorized);

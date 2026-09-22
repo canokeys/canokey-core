@@ -33,16 +33,18 @@ access code requires successful OATH authentication; ADMIN PIN is separate.
 Name/key lengths are 1–64 bytes, digits 4–8, TOTP challenge length 1–8.
 Properties use raw tag 78 plus flags, not a BER length. HOTP initial counter
 zero calculates counter one first, committing the increment before HMAC.
-Increasing single-CALCULATE requires eight-byte, nondecreasing challenges and
-accepts equality. The original C CALCULATE ALL inconsistency is preserved
-explicitly: a decreasing or non-eight-byte challenge still calculates, without
-lowering the stored challenge. Migration does not silently fix that behavior.
+Increasing credentials require eight-byte, nondecreasing challenges and accept
+equality in both CALCULATE and CALCULATE ALL. Rejected challenges return 6982;
+the former C CALCULATE ALL bypass is intentionally removed. Enumeration is not
+a multi-record transaction: earlier accepted updates can already be durable
+when a later record rejects the request. An error aborts the continuation.
 
 The adapter owns at most 288 command bytes and a 256-byte response page.
 GET RESPONSE consumes prepared bytes; A5 advances the applet cursor. No full
-credential table is allocated. The current composition reports version 6.0.0,
-matching this migration baseline; future version reporting should share the
-management identity service rather than grow per-applet version constants.
+credential table is allocated. CMake passes CANOKEY_OATH_VERSION from the same
+release configuration used by C; core/build.rs validates it and generates the
+three SELECT bytes. Standalone builds without a release configuration use
+development version 0.0.0, matching the common version policy.
 
 ## Storage and presence
 
@@ -71,7 +73,7 @@ From the parent CIU repository:
 
 ```sh
 cargo +nightly-2026-09-04 test --manifest-path canokey-core/rust/oath/Cargo.toml
-cmake -S canokey-core/rust -B build/rust-core-oath -G Ninja -DCANOKEY_APPLET_OATH=ON
+cmake -S canokey-core/rust -B build/rust-core-oath -G Ninja -DCANOKEY_APPLET_OATH=ON -DCANOKEY_VERSIONS_FILE="$PWD/versions.cmake"
 cmake --build build/rust-core-oath
 ctest --test-dir build/rust-core-oath --output-on-failure
 .venv-hil/bin/python tools/hil/rust_oath_smoke.py --host build/rust-core-oath/oath-host
@@ -100,3 +102,53 @@ clearing the session grant. Local reports: `hil-reports/rust-oath-20260922/`.
 Host fixtures exercise actual HOTP keyboard bytes. Physical OATH touch passed;
 physical keyboard typing into a capture target has not been tested. New OATH
 firmware remains installed. NFCC and legacy C credential migration are deferred.
+
+
+## OATH protocol review (2026-09-23)
+
+The current A1/A2/A5 protocol and access-code commands are authoritative; the
+historical CanoKey web page's 03/04/06 instruction numbers are not a target.
+C source is reference material, not authority for undocumented permissiveness.
+
+- SELECT starts a new OATH challenge/validation exchange. With an access code,
+  even same-AID reselection requires VALIDATE again. This is intentionally
+  distinct from ADMIN's same-AID PIN grant preservation. The host must not
+  treat fetching a fresh challenge as authorization to calculate.
+- VALIDATE without an installed access code is typed AccessCodeMissing and
+  maps to 6984. An incorrect proof remains 6A80; unrelated Invalid errors are
+  not globally remapped.
+- RENAME resolves the old name before testing the new name. When both are
+  invalid, old-name absence wins (6984). No C error-priority compatibility is
+  promised where the protocol does not specify it.
+- A5 requires P1=P2=0 and an empty body. LIST/CALCULATE ALL page generation is
+  bounded by Le. After a complete page ending in 61FF, GET RESPONSE returns
+  6986, while A5 advances the applet cursor. GET RESPONSE remains available
+  for ISO-fragmented prepared replies such as SELECT. These are separate
+  continuation mechanisms, not interchangeable aliases.
+- Executing a new non-A5 OATH command cancels the old applet page cursor; an
+  execution error also abandons it. Parsing an incomplete transport command
+  is not itself a successful applet operation.
+- CALCULATE parses the challenge before asking for touch. presence_attempted
+  marks input consumed by a wait, including failed waits, so the same gesture
+  cannot later cause PASS typing. It does not mean presence was authorized.
+  NFC presence semantics will be defined with the future NFC profile.
+
+CTest now registers oath-normal: a Python standard-library driver owns actual
+APDU assertions and runs oath-host as its card backend. Registering oath-host
+alone would only start a stdin interpreter and could falsely pass on empty
+input. The suite resides in core/tests/oath_normal.py and requires no CIU
+checkout or USB modules in host mode; the CIU script is a thin USB entrypoint.
+The documented root versions.cmake path is supplied explicitly by the caller,
+not discovered by reaching outside the standalone core repository.
+
+HIL cleanup is success-only. On failure the dedicated test device may retain
+throwaway credentials or bindings; a rerun begins by resetting OATH/PASS and
+requires the default ADMIN PIN. Factory reset's five physical touches and
+keyboard typing remain outside this normal OATH APDU suite.
+
+
+The 2026-09-23 follow-up passed 80 host APDU checks, 76
+USB checks, 29 reset/power-cycle checks and 19
+ADMIN USB checks. Both release-version and development-version OATH CTest
+profiles run two tests and pass. Local evidence is in
+`hil-reports/rust-oath-review-20260923/`; no new physical-touch run was performed.

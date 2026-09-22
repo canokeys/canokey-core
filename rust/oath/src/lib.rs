@@ -19,6 +19,7 @@ pub enum Error {
     IncreasingChallenge,
     PresenceRequired,
     Unauthorized,
+    AccessCodeMissing,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

@@ -15,12 +15,13 @@ use canokey_oath::{
 use canokey_pass::domain::{Slot, SlotIndex};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw, tlv::ByteCursor};
 use core::cell::RefCell;
+include!(concat!(env!("OUT_DIR"), "/oath_version.rs"));
 pub const AID: &[u8] = &[0xa0, 0, 0, 5, 0x27, 0x21, 1];
 pub const CAPACITY: usize = 288;
 const DATA_INVALID: Sw = Sw(0x6984);
 pub fn status(error: Error) -> Sw {
     match error {
-        Error::Missing => DATA_INVALID,
+        Error::Missing | Error::AccessCodeMissing => DATA_INVALID,
         Error::Duplicate | Error::CounterExhausted => Sw::CONDITIONS_NOT_SATISFIED,
         Error::NoSpace => Sw(0x6a84),
         Error::Unauthorized | Error::PresenceRequired | Error::IncreasingChallenge => {
@@ -67,7 +68,8 @@ pub struct Oath {
     cursor: u32,
     challenge: [u8; 8],
     challenge_len: usize,
-    pub consumed_presence: bool,
+    // Even a failed wait consumes its input epoch; never replay it into PASS.
+    pub presence_attempted: bool,
 }
 impl Oath {
     pub const fn new() -> Self {
@@ -81,7 +83,7 @@ impl Oath {
             cursor: 0,
             challenge: [0; 8],
             challenge_len: 0,
-            consumed_presence: false,
+            presence_attempted: false,
         }
     }
     pub fn install(&mut self, p: &mut dyn Platform) -> Result<(), Sw> {
@@ -115,7 +117,9 @@ impl Oath {
             .session
             .select(&mut Store(&shared), &mut Mac(&shared))
             .map_err(status)?;
-        self.response[..7].copy_from_slice(&[0x79, 3, 6, 0, 0, 0x71, 8]);
+        self.response[..2].copy_from_slice(&[0x79, 3]);
+        self.response[2..5].copy_from_slice(&OATH_VERSION);
+        self.response[5..7].copy_from_slice(&[0x71, 8]);
         self.response[7..15].copy_from_slice(&selected.handle);
         self.length = 15;
         if let Some(challenge) = selected.challenge {
@@ -163,6 +167,12 @@ impl Oath {
         self.length = 0;
         let result = self.execute(h, le, &command[..n], pass, p);
         p.wipe(&mut command);
+        if result.is_err() {
+            self.page = Page::None;
+            self.cursor = 0;
+            p.wipe(&mut self.response);
+            self.length = 0;
+        }
         result.map(|sw| (self.length as u32, sw))
     }
     pub fn clear(&mut self, pass: &mut Pass, p: &mut dyn Platform) -> Result<(), Sw> {
@@ -222,10 +232,11 @@ impl Oath {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
         if h.ins == 0xa5 {
-            match self.page {
-                Page::List if h.p1 != 0 || h.p2 != 0 => return Err(Sw::WRONG_P1P2),
-                Page::Calculate(_) if h.p2 > 1 => return Err(Sw::WRONG_P1P2),
-                _ => (),
+            if h.p1 != 0 || h.p2 != 0 {
+                return Err(Sw::WRONG_P1P2);
+            }
+            if !data.is_empty() {
+                return Err(Sw::WRONG_LENGTH);
             }
             return self.page(le, p);
         }
@@ -394,7 +405,7 @@ impl Oath {
                     &[]
                 };
                 let presence = if touch {
-                    self.consumed_presence = true;
+                    self.presence_attempted = true;
                     if !crate::presence::wait(&mut **shared.borrow_mut()) {
                         return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
                     }
@@ -506,22 +517,15 @@ impl Oath {
                         self.response[at..at + 3].copy_from_slice(&[tag, 1, record.digits()]);
                         self.length += 3;
                     } else {
-                        // Preserve C CALCULATE ALL's historical handling of a
-                        // decreasing challenge: calculate without lowering the stored value.
+                        // CALCULATE ALL shares the single-credential policy.
                         let input = &self.challenge[..self.challenge_len];
-                        let result = if record.properties().increasing()
-                            && (input.len() != 8 || input < &record.moving_factor()[..])
-                        {
-                            service::calculate_untracked(&record, &mut mac, input)
-                        } else {
-                            service::calculate(
-                                &mut store,
-                                &mut mac,
-                                id,
-                                input,
-                                Presence::NotConfirmed,
-                            )
-                        };
+                        let result = service::calculate(
+                            &mut store,
+                            &mut mac,
+                            id,
+                            input,
+                            Presence::NotConfirmed,
+                        );
                         record.clear(&mut mac);
                         let mut result = result.map_err(status)?;
                         self.emit_digest(&result, truncated);

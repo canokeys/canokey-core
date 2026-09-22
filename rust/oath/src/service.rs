@@ -146,22 +146,3 @@ pub fn calculate(
     record.clear(crypto);
     result
 }
-
-/// Pure digest primitive used by the legacy CALCULATE ALL compatibility path.
-/// Does not reserve a counter; ordinary CALCULATE must call calculate instead.
-pub fn calculate_untracked(
-    record: &Credential,
-    crypto: &mut dyn Crypto,
-    challenge: &[u8],
-) -> Result<Digest, Error> {
-    let mut result = Digest {
-        digits: record.digits,
-        bytes: [0; 64],
-        length: record.algorithm.digest_length(),
-    };
-    if let Err(error) = crypto.hmac(record.algorithm, record.key(), challenge, &mut result.bytes) {
-        result.clear(crypto);
-        return Err(error);
-    }
-    Ok(result)
-}

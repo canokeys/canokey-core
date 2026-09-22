@@ -156,7 +156,7 @@ impl Registry {
     pub fn take_presence(&mut self) -> bool {
         #[cfg(feature = "oath")]
         {
-            core::mem::take(&mut self.oath.consumed_presence)
+            core::mem::take(&mut self.oath.presence_attempted)
         }
         #[cfg(not(feature = "oath"))]
         {

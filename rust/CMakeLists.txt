@@ -6,6 +6,7 @@ option(CANOKEY_APPLET_OATH "Add Rust OATH" OFF)
 if(CANOKEY_APPLET_OATH)
   set(CANOKEY_APPLET_PASS ON)
 endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/ReleaseVersions.cmake")
 find_program(CARGO cargo REQUIRED)
 set(FEATURES c-interface,host-runtime)
 if(CANOKEY_APPLET_PASS)
@@ -17,7 +18,8 @@ endif()
 set(ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/cargo/release/libcanokey_rust_core.a")
 # This standalone build never includes the legacy core CMake/source glob.
 add_custom_target(rust-core-build ALL
-  COMMAND ${CARGO} +nightly-2026-09-04 rustc
+  COMMAND "${CMAKE_COMMAND}" -E env "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}"
+    ${CARGO} +nightly-2026-09-04 rustc
     --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/core/Cargo.toml
     --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo
     --release --features ${FEATURES} --crate-type staticlib
@@ -43,6 +45,11 @@ if(BUILD_TESTING)
     target_compile_definitions(oath-host PRIVATE WITH_OATH)
     target_compile_options(oath-host PRIVATE -Wall -Wextra -UNDEBUG)
     target_link_libraries(oath-host PRIVATE canokey-rust-core OpenSSL::Crypto)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME oath-normal COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/oath_normal.py"
+      --host $<TARGET_FILE:oath-host> --expected-version "${CANOKEY_OATH_VERSION}")
+    set_tests_properties(oath-normal PROPERTIES TIMEOUT 60)
   endif()
   add_test(NAME core-normal COMMAND core-normal)
 endif()

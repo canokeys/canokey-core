@@ -364,10 +364,9 @@ delegates to it, retaining the existing OATH AID and commands. See
 - LIST/CALCULATE ALL/SEND REMAINING need a bounded cursor and existing A5/61FF
   continuation behavior. A response continuation must not repeat a counter
   update, MAC calculation or presence action.
-- C CALCULATE ALL has an inconsistent increasing-rejection check compared with
-  individual CALCULATE. The adapter preserves it explicitly: decreasing or
-  non-eight-byte challenges calculate without lowering the persisted value.
-  Individual CALCULATE still enforces the domain rule.
+- CALCULATE ALL and individual CALCULATE enforce the same increasing-challenge
+  domain rule. The C CALCULATE ALL bypass is not retained; rejected challenges
+  return 6982 and abort continuation.
 - OATH-selected YubiKey serial/HMAC commands run before the OATH access-code gate
   in C. Preserve that binding and delegate HMAC to PASS, without leaking keys.
 - SET DEFAULT and record deletion require registry-level PASS/OATH coordination.
@@ -790,7 +789,8 @@ wire contract. CLA 10 is not a generic ADMIN extension; unknown instructions
 return 6D00 and reserved fields are checked strictly. See admin-pass.md for
 same-AID selection, missing Le, factory reset, output leases and explicitly
 retained extensions. Do not restore C parser permissiveness merely to match
-malformed-command behavior. Protocol pages must be version-checked: the public
-OATH page currently lists historical instruction numbers that conflict with
-the existing A1/A2/A5 and access-code profile. Selection of its authoritative
-specification is tracked separately rather than silently changing wire numbers.
+malformed-command behavior. The confirmed current OATH A1/A2/A5 and access-code
+profile is authoritative; the historical public page is not a migration target.
+See oath.md for session reselection, page cancellation, strict A5 fields and
+shared increasing-challenge policy. SELECT version bytes are generated from
+the same explicit release configuration as the C build.

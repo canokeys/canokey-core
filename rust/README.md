@@ -74,3 +74,10 @@ no APDU dependency. `core/oath_protocol.rs` owns OATH wire fields/status mapping
 The `devkit-rust-oath` preset builds ADMIN + PASS + OATH explicitly. See
 [OATH implementation and normal validation](docs/oath.md) for commands, storage,
 host/USB tests, physical touch and reset/power-cycle results.
+
+
+The OATH host profile registers both core-normal and oath-normal in CTest.
+The latter executes the core-owned APDU assertion script against oath-host,
+without USB dependencies. Supply CANOKEY_VERSIONS_FILE explicitly to test a
+release version; otherwise development SELECT version 0.0.0 is used. CIU
+passes its root versions.cmake for both C and Rust release fields.
