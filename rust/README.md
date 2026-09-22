@@ -1,30 +1,29 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Independent Rust core rewrite
 
-The active target is `rust/CMakeLists.txt`, not the legacy root CMake target.
-It builds `core/` with **zero applets by default**. Enabling `CANOKEY_APPLET_PASS`
-adds only Rust PASS. It never compiles `src/apdu.c`, `src/device.c`, the C applet
-registry, or any source under `applets/`. Existing C product sources come unchanged from `dev`, outside this target.
-Previous Rust/C replacement experiments and their C adapters are removed.
+The standalone `rust/CMakeLists.txt` builds zero applets by default. The optional
+ADMIN + PASS profile composes a Rust ADMIN APDU adapter and a Rust PASS service.
+No C dispatcher, C session manager or legacy C applet is linked. The optional OATH profile adds Rust OATH; other applets remain absent. See [module boundaries](docs/module-boundaries.md) and the
+[current ADMIN/PASS profile](docs/admin-pass.md).
 
 ## Ownership
 
-- `protocol/`: safe APDU parsing, incremental frame decoding, command-chain
-  metadata, response planning/leases and common streaming TLV. No applet dependency.
-- `core/engine.rs`: Rust transport ownership, selection, command lifecycle,
-  routing and response continuation. There is no C dispatcher or saved tail.
-- `pass/`: safe slot rules, record codec and PASS-specific configuration encoding.
-- `core/pass.rs`: the first applet; consumes bounded semantic fields and emits
-  discovery from stable slot state, using the shared APDU foundation.
-- `core/auth.rs`: minimal Rust authentication for PASS management.
-- `core/interface.rs` and `interfaces/rust-core/core.h`: C ABI and raw platform
-  services only. The C caller delivers frames, sends responses and handles I/O.
-  Calls are serialized, non-reentrant and main-loop only; RX/TX may alias.
-
-No default feature enables an applet. PASS is safe Rust with no legacy C ABI:
-C ADMIN, C OATH and old PASS exports cannot enter this target.
-OATH support is not implemented; existing OATH slot references cannot generate
-codes. Future Rust OATH will provide that service explicitly.
+- `protocol/`: common safe APDU parsing, streaming frame/TLV primitives, command
+  chaining and response planning; no applet dependencies.
+- `core/engine.rs`: transport/session ownership, grants, selection and response
+  continuation. `registry.rs` explicitly composes enabled protocol adapters and
+  services; the engine does not know PASS record or command sizes.
+- `core/admin.rs`, `pass_protocol.rs`: ADMIN command validation, status mapping,
+  PIN operations and PASS management wire format.
+- `core/auth.rs`: typed durable PIN mechanism, without APDU/status words.
+- `core/pass.rs`, `pass/`: slot service, versioned codec, static output and HMAC.
+  No APDU/status words, authentication policy or OATH placeholder.
+- `core/output.rs`: physical gesture interpretation and bounded keyboard job.
+- `core/services.rs`: typed storage and cryptographic capabilities.
+- `core/interface.rs`: the app/platform unsafe Rust boundary (host-only panic/abort glue also uses unsafe); main-loop only,
+  serialized and non-reentrant. Input and output APDU buffers may alias.
+- `interfaces/rust-core/`: USB descriptors and CCID transport. C owns framing,
+  reports and endpoint transfers, never business dispatch.
 
 ## Normal host validation
 
@@ -39,60 +38,39 @@ cmake --build build/rust-core-pass
 ctest --test-dir build/rust-core-pass --output-on-failure
 ```
 
-The C fixture invokes the real Rust ABI with an in-place APDU buffer. PASS tests
-cover select, PIN verify, chained configuration, static keyboard output,
-GET RESPONSE discovery, RFC 2202 HMAC-SHA1 and reload/reset. OpenSSL supplies
-host crypto primitives only. No old applet is used as a fixture or backend.
-These are normal functional checks, not fuzz/exhaustive tests.
+`CANOKEY_APPLET_PASS` currently selects the ADMIN + PASS composition: one
+selectable AID (ADMIN), plus PASS as a service and physical-output entrypoint.
+The fixture exercises the actual C ABI with OpenSSL primitives and in-place
+APDU buffers. It covers default PIN initialization/query/verify/change,
+ordinary response chaining, static output, gesture/backpressure,
+RFC 2202 HMAC, persistence and session reset. These are normal functional tests.
 
-## Minimal protocol profile
+## USB firmware
 
-The engine accepts short APDUs and ISO command chaining. Transport frame
-aggregation happens before `ck_core_exchange`; incremental frame and TLV
-primitives are available in `protocol/` for later transport adapters/applets.
-Extended APDUs are not enabled in this first profile. Owner 0 is invalid; a
-transport reset/disconnect calls `ck_core_reset` before ownership is transferred.
+The parent CIU presets `devkit-rust-core` and `devkit-rust-admin-pass` build
+separate zero-applet and ADMIN/PASS firmware. Both reuse C USB core/endpoint
+mechanics with separate control buffers; no legacy `src/` or `applets/` files
+are linked. The ADMIN/PASS profile adds CCID plus keyboard HID, typed backend
+callbacks and an independent `/rust` namespace on the existing LittleFS volume.
+It never formats a failed mount or reads/replaces old C credential records.
 
-PASS uses management AID `F0 00 00 00 00`, but does not implement the old ADMIN
-applet. SELECT (`00 A4 04 00`) authorizes nothing. VERIFY (`00 20 00 00`, 6-64
-PIN bytes) authenticates the session. READ PASS (`00 43 00 00`) streams slot
-metadata, WRITE PASS (`00 44 <1|2> 00`) stores a static password/HMAC key/off
-configuration, and RESET PASS (`00 13 00 00`) clears both slots. The last three
-commands require authentication. All other ADMIN commands are absent.
+CCID accepts short APDUs and common ISO chaining. ADMIN currently accepts only
+CLA 00; command-chaining admission belongs to the selected protocol adapter. USB callbacks only
+queue events; Rust calls occur in the main loop. CCID power/reset clears grants,
+command state and pending output. The OATH profile connects the existing
+YubiKey serial/HMAC wire commands to platform identity and the PASS service.
 
-Platform file 0 contains two packed 71-byte slots. File 1 is a **prototype**
-34-byte credential record: SHA-256 PIN digest, retries remaining, maximum
-retries (1-15). It must be provisioned externally; there is no default PIN or
-unauthenticated provisioning command. Missing credentials fail closed. Each
-attempt is durably recorded before hashing; success restores retries, failure
-returns `63Cx`, exhausted retries return `6983`, storage failures return `6500`.
-Backend writes must be atomic and durable. This is not legacy ADMIN credential
-migration or a finished product provisioning design. No device backend is yet
-attached to these file IDs.
+The mandatory CIU boot gate compares vector address zero, all 48 slots,
+reserved entries and handler mappings, early ResumeLoader invocation and the
+recovery object code with the normal firmware. Addresses may relocate. NFCC is
+deferred. Do not call this stage a complete migration of C ADMIN: remaining
+commands and hardware validation limits are listed in the profile document.
 
-## USB firmware checkpoint
+## OATH integration
 
-The CIU port now builds this zero-applet core as `devkit-rust-core`. The C
-interface files `interfaces/rust-core/usb.c` and `ccid.c` reuse the existing
-USB core, endpoint driver and CCID bulk endpoint implementation. CCID assembles
-short frames; Rust handles APDU semantics. No source in `src/` or `applets/`
-is linked. The USB control descriptors own their storage, so this build defines
-`USBD_SEPARATE_CONTROL_BUFFER` to avoid the old shared-APDU-buffer hooks.
-
-All Rust entrypoints run in the main loop. USB callbacks only receive/send
-bytes and queue session resets; the USB reset generation prevents stale
-responses crossing connections. Power on/off resets authorization in Rust.
-The device advertises one CCID interface, short APDU exchange and a 271-byte
-maximum CCID message (10-byte header plus 261-byte command).
-
-The zero-applet DevKit image has been exercised over USB/PCSC: slot activation,
-ordinary APDUs, multi-packet command assembly, disconnect/reconnect, reset and
-power cycle. It does not mount or write the credential filesystem. PASS remains
-an explicitly enabled host profile; finish device storage/provisioning and
-keyboard integration before enabling it on the board. Add Rust OATH only after
-PASS; no other applet is implicitly enabled.
-
-CIU startup and ResumeLoader stay unchanged. The firmware gate checks vector
-address 0, all 48 slots/order/reserved entries/handler mappings and the early
-ResumeLoader call, including byte-for-byte recovery object comparison. Function
-addresses may relocate. NFCC is deferred.
+`oath/` owns typed credentials, HOTP/TOTP and access-code authentication with
+no APDU dependency. `core/oath_protocol.rs` owns OATH wire fields/status mapping;
+`core/oath_backend.rs` supplies bounded record storage and primitive adapters.
+The `devkit-rust-oath` preset builds ADMIN + PASS + OATH explicitly. See
+[OATH implementation and normal validation](docs/oath.md) for commands, storage,
+host/USB tests, physical touch and reset/power-cycle results.

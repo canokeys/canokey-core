@@ -2,27 +2,6 @@
 #include "core.h"
 #include <assert.h>
 #include <string.h>
-#ifdef WITH_PASS
-#include <openssl/sha.h>
-#include <openssl/hmac.h>
-static uint8_t files[2][142];
-static int sizes[2] = {-1, -1};
-int32_t ck_platform_size(uint8_t f) { return sizes[f]; }
-int32_t ck_platform_read(uint8_t f, uint8_t *out, size_t n) {
-  memcpy(out, files[f], n);
-  return (int32_t)n;
-}
-int32_t ck_platform_write(uint8_t f, const uint8_t *in, size_t n) {
-  memcpy(files[f], in, n);
-  sizes[f] = (int)n;
-  return (int32_t)n;
-}
-void ck_platform_sha256(const uint8_t *in, size_t n, uint8_t out[32]) { assert(SHA256(in, n, out)); }
-void ck_platform_hmac_sha1(const uint8_t key[20], const uint8_t *in, size_t n, uint8_t out[20]) {
-  unsigned len = 20;
-  assert(HMAC(EVP_sha1(), key, 20, in, n, out, &len));
-}
-#endif
 static uint8_t buffer[258];
 static int exchange(const uint8_t *in, size_t n, uint16_t sw) {
   memcpy(buffer, in, n);
@@ -38,21 +17,32 @@ static int exchange(const uint8_t *in, size_t n, uint16_t sw) {
     exchange(request, sizeof(request), sw);                                                                            \
   } while (0)
 int main(void) {
-#ifdef WITH_PASS
-  SHA256((const uint8_t *)"123456", 6, files[1]);
-  files[1][32] = files[1][33] = 3;
-  sizes[1] = 34;
-#endif
   assert(ck_core_install() == 0);
 #ifdef WITH_PASS
+#ifdef WITH_OATH
+  assert(ck_core_applet_count() == 2);
+#else
   assert(ck_core_applet_count() == 1);
+#endif
   SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
   SEND(0x9000, 0, 0x20, 0, 0, 6, '1', '2', '3', '4', '5', '6');
-  /* Configure one static password using an ordinary two-frame command chain. */
-  SEND(0x9000, 0x10, 0x44, 1, 0, 3, 2, 3, 'a');
-  SEND(0x9000, 0, 0x44, 1, 0, 3, 'b', 'c', 1);
+  SEND(0x9000, 0, 0x20, 0, 0); /* Query retains the current grant. */
+  /* ADMIN allows command chaining only for the (not yet enabled) FIDO certificate. */
+  SEND(0x9000, 0, 0x44, 1, 0, 6, 2, 3, 'a', 'b', 'c', 1);
+  SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
+  SEND(0x9000, 0, 0x20, 0, 0);
+  SEND(0x9000, 0, 0x43, 0, 0); /* Documented read needs no explicit Le. */
+  assert(buffer[0] == 2 && buffer[1] == 1 && buffer[2] == 0);
   assert(ck_core_touch(0, buffer, sizeof(buffer)) == 4);
   assert(memcmp(buffer, "abc\r", 4) == 0);
+  assert(ck_core_output_sample(0, 1501, 1) == -1);
+  assert(ck_core_output_sample(1, 2100, 1) == -1);
+  assert(ck_core_output_sample(0, 2200, 1) == 'a');
+  assert(ck_core_output_sample(0, 2201, 0) == -1);
+  assert(ck_core_output_sample(0, 2202, 1) == 'b');
+  assert(ck_core_output_sample(0, 2203, 1) == 'c');
+  assert(ck_core_output_sample(0, 2204, 1) == '\r');
+  assert(ck_core_output_sample(0, 2205, 1) == -1);
   SEND(0x6102, 0, 0x43, 0, 0, 1);
   assert(buffer[0] == 2);
   SEND(0x9000, 0, 0xc0, 0, 0, 2);
@@ -65,12 +55,26 @@ int main(void) {
                                        0xc0, 0xb6, 0xfb, 0x37, 0x8c, 0x8e, 0xf1, 0x46, 0xbe, 0x00};
   assert(ck_core_challenge(1, (const uint8_t *)"Hi There", 8, buffer) == 0);
   assert(memcmp(buffer, expected, 20) == 0);
+  SEND(0x9000, 0, 0x21, 0, 0, 6, '6', '5', '4', '3', '2', '1');
+  SEND(0x63c3, 0, 0x20, 0, 0);
+  SEND(0x9000, 0, 0x20, 0, 0, 6, '6', '5', '4', '3', '2', '1');
   ck_core_reset();
   assert(ck_core_install() == 0);
   assert(ck_core_touch(0, buffer, sizeof(buffer)) == 4);
   assert(memcmp(buffer, "abc\r", 4) == 0);
   SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
   SEND(0x6982, 0, 0x43, 0, 0); /* Reset revokes authentication. */
+  SEND(0x9000, 0, 0x20, 0, 0, 6, '6', '5', '4', '3', '2', '1');
+  SEND(0x9000, 0, 0x13, 0, 0);
+  assert(ck_core_touch(0, buffer, sizeof(buffer)) == 0);
+  /* Complete ordinary lock -> strong presence -> factory recovery workflow. */
+  SEND(0x9000, 0, 0x44, 1, 0, 6, 2, 3, 'x', 'y', 'z', 0);
+  SEND(0x63c2, 0, 0x20, 0, 0, 6, '0', '0', '0', '0', '0', '0');
+  SEND(0x63c1, 0, 0x20, 0, 0, 6, '0', '0', '0', '0', '0', '0');
+  SEND(0x6983, 0, 0x20, 0, 0, 6, '0', '0', '0', '0', '0', '0');
+  SEND(0x9000, 0, 0x50, 0, 0, 5, 'R', 'E', 'S', 'E', 'T');
+  SEND(0x9000, 0, 0x20, 0, 0, 6, '1', '2', '3', '4', '5', '6');
+  assert(ck_core_touch(0, buffer, sizeof(buffer)) == 0);
 #else
   assert(ck_core_applet_count() == 0);
   SEND(0x6a82, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);

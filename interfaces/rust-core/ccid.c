@@ -3,6 +3,7 @@
 // from CCID_Loop, never from USB interrupt callbacks.
 #include "core.h"
 #include <ccid.h>
+#include <device.h>
 #include <usb_device.h>
 #include <usbd_ccid.h>
 
@@ -60,6 +61,25 @@ uint8_t CCID_OutEvent(uint8_t *data, uint8_t length) {
 void CCID_InFinished(uint8_t extension) {
   if (!extension) phase = 0;
 }
+#ifdef RUST_CORE_SERVICES
+// Link timing only: never dispatch an APDU or reenter Rust from this callback.
+uint8_t ck_ccid_progress(void) {
+  static uint32_t last;
+  static uint8_t extension[10];
+  if (reset_pending || phase != 3) return 0;
+  uint32_t now = device_get_tick();
+  if (now - last >= 500) {
+    last = now;
+    extension[0] = RDR_TO_PC_DATABLOCK;
+    extension[5] = request[5];
+    extension[6] = request[6];
+    extension[7] = 0x80;
+    extension[8] = 1;
+    CCID_Response_SendData(&usb_device, extension, sizeof(extension), 1);
+  }
+  return 1;
+}
+#endif
 void CCID_Loop(void) {
   if (reset_pending) {
     phase = 3;

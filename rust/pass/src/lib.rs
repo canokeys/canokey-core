@@ -3,4 +3,3 @@
 #![forbid(unsafe_code)]
 pub mod codec;
 pub mod domain;
-pub mod protocol;

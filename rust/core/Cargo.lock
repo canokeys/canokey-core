@@ -3,11 +3,12 @@
 version = 4
 
 [[package]]
+name = "canokey-oath"
+version = "0.1.0"
+
+[[package]]
 name = "canokey-pass"
 version = "0.1.0"
-dependencies = [
- "canokey-protocol",
-]
 
 [[package]]
 name = "canokey-protocol"
@@ -20,6 +21,7 @@ dependencies = [
 name = "canokey-rust-core"
 version = "0.1.0"
 dependencies = [
+ "canokey-oath",
  "canokey-pass",
  "canokey-protocol",
 ]

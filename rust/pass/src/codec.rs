@@ -1,31 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Existing packed C record format. Enum width and native endianness belong
-//! here, not in the slot rules. CIU remains two 71-byte slots (142 bytes).
+//! Version 2 slot: version/kind/length/enter plus 68 bytes; v1 input remains readable.
+//! Independent of C enum width, host endianness and legacy PASS files.
 #![forbid(unsafe_code)]
-use crate::domain::{Error, KEY_LENGTH, NAME_LIMIT, PASSWORD_LIMIT, Slot, SlotIndex};
-
+use crate::domain::{Error, Slot, SlotIndex};
+pub const FILE_SIZE: usize = 144;
 #[derive(Clone, Copy)]
-pub struct Layout {
-    type_width: usize,
-}
+pub struct Layout;
 impl Layout {
-    pub fn new(type_width: u8) -> Result<Self, Error> {
-        match type_width {
-            1 | 4 => Ok(Self {
-                type_width: usize::from(type_width),
-            }),
-            _ => Err(Error::Record),
-        }
-    }
-    pub fn slot_size(self) -> usize {
-        self.type_width + 70
-    }
-    pub fn file_size(self) -> usize {
-        2 * self.slot_size()
-    }
     fn range(self, index: SlotIndex) -> core::ops::Range<usize> {
-        let start = index.get() * self.slot_size();
-        start..start + self.slot_size()
+        let start = index.get() * 72;
+        start..start + 72
     }
     pub fn record(self, bytes: &[u8], index: SlotIndex) -> Result<&[u8], Error> {
         bytes.get(self.range(index)).ok_or(Error::Record)
@@ -34,81 +18,60 @@ impl Layout {
         bytes.get_mut(self.range(index)).ok_or(Error::Record)
     }
     pub fn decode(self, record: &[u8]) -> Result<Slot<'_>, Error> {
-        if record.len() != self.slot_size() {
+        if !((record.len() == 36 && record[0] == 1) || (record.len() == 72 && record[0] == 2)) {
             return Err(Error::Record);
         }
-        let kind = if self.type_width == 1 {
-            u32::from(record[0])
-        } else {
-            u32::from_ne_bytes(record[..4].try_into().map_err(|_| Error::Record)?)
+        let n = usize::from(record[2]);
+        let slot = match record[1] {
+            1 if record.len() == 72 && n <= 64 => Slot::Oath {
+                id: u32::from_be_bytes(record[4..8].try_into().map_err(|_| Error::Record)?),
+                name: &record[8..8 + n],
+                enter: record[3],
+            },
+            0 if n == 0 && record[3] == 0 => Slot::Off,
+            2 if n <= 32 => Slot::Static {
+                password: &record[4..4 + n],
+                enter: record[3],
+            },
+            3 if n == 20 && record[3] == 0 => {
+                Slot::Hmac(record[4..24].try_into().map_err(|_| Error::Record)?)
+            }
+            _ => return Err(Error::Record),
         };
-        let body = &record[self.type_width..];
-        let enter = body[69];
-        Ok(match kind {
-            0 => Slot::Off,
-            1 => {
-                let n = usize::from(body[4]);
-                if n > NAME_LIMIT {
-                    return Err(Error::Record);
-                }
-                Slot::Oath {
-                    offset: u32::from_ne_bytes(body[..4].try_into().map_err(|_| Error::Record)?),
-                    name: &body[5..5 + n],
-                    enter,
-                }
-            }
-            2 => {
-                let n = usize::from(body[0]);
-                if n > PASSWORD_LIMIT {
-                    return Err(Error::Record);
-                }
-                Slot::Static {
-                    password: &body[1..1 + n],
-                    enter,
-                }
-            }
-            3 => Slot::Hmac(body[..KEY_LENGTH].try_into().map_err(|_| Error::Record)?),
-            value => Slot::Unknown(value),
-        })
+        slot.validate()?;
+        let used = if record[1] == 1 { 8 + n } else { 4 + n };
+        if record[used..].iter().any(|b| *b != 0) {
+            return Err(Error::Record);
+        }
+        Ok(slot)
     }
-    /// Caller securely wipes the record before encoding to clear inactive union
-    /// bytes and secrets. Do not serialize the memory representation of Slot.
     pub fn encode_cleared(self, record: &mut [u8], slot: Slot<'_>) -> Result<(), Error> {
         slot.validate()?;
-        if record.len() != self.slot_size() {
+        if record.len() != 72 {
             return Err(Error::Record);
         }
-        let kind: u32 = match slot {
-            Slot::Off => 0,
-            Slot::Oath { .. } => 1,
-            Slot::Static { .. } => 2,
-            Slot::Hmac(_) => 3,
-            Slot::Unknown(_) => return Err(Error::Kind),
-        };
-        if self.type_width == 1 {
-            record[0] = kind as u8;
-        } else {
-            record[..4].copy_from_slice(&kind.to_ne_bytes());
-        }
-        let body = &mut record[self.type_width..];
+        record.fill(0);
+        record[0] = 2;
         match slot {
+            Slot::Off => (),
+            Slot::Oath { id, name, enter } => {
+                record[1] = 1;
+                record[2] = name.len() as u8;
+                record[3] = enter;
+                record[4..8].copy_from_slice(&id.to_be_bytes());
+                record[8..8 + name.len()].copy_from_slice(name);
+            }
             Slot::Static { password, enter } => {
-                body[0] = password.len() as u8;
-                body[1..1 + password.len()].copy_from_slice(password);
-                body[69] = enter;
+                record[1] = 2;
+                record[2] = password.len() as u8;
+                record[3] = enter;
+                record[4..4 + password.len()].copy_from_slice(password);
             }
-            Slot::Oath {
-                offset,
-                name,
-                enter,
-            } => {
-                body[..4].copy_from_slice(&offset.to_ne_bytes());
-                body[4] = name.len() as u8;
-                body[5..5 + name.len()].copy_from_slice(name);
-                body[69] = enter;
+            Slot::Hmac(key) => {
+                record[1] = 3;
+                record[2] = 20;
+                record[4..24].copy_from_slice(key);
             }
-            Slot::Hmac(key) => body[..KEY_LENGTH].copy_from_slice(key),
-            _ => (),
         }
         Ok(())
     }

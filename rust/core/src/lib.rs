@@ -8,7 +8,15 @@ pub mod engine;
 mod interface;
 #[cfg(feature = "pass")]
 mod pass;
-pub use engine::{Core, Platform, Reply};
+pub mod services;
+pub use engine::{Core, Reply};
+pub use services::Platform;
+#[cfg(feature = "pass")]
+mod admin;
+#[cfg(feature = "pass")]
+mod pass_protocol;
+#[cfg(feature = "pass")]
+mod registry;
 
 #[cfg(all(feature = "host-runtime", target_os = "none"))]
 compile_error!("host-runtime must not be enabled in firmware");
@@ -26,3 +34,13 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 pub extern "C" fn rust_eh_personality() -> ! {
     unsafe { abort() }
 }
+
+#[cfg(feature = "pass")]
+mod output;
+
+#[cfg(feature = "oath")]
+mod oath_backend;
+#[cfg(feature = "oath")]
+mod oath_protocol;
+#[cfg(feature = "pass")]
+mod presence;

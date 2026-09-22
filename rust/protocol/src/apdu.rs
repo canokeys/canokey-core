@@ -279,6 +279,10 @@ impl CommandChain {
             total: 0,
         }
     }
+    pub fn active(&self) -> bool {
+        self.header.is_some()
+    }
+
     pub fn reset(&mut self) {
         *self = Self::default();
     }

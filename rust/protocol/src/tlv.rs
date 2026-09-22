@@ -159,3 +159,36 @@ pub fn write_length(length: u16, output: &mut [u8]) -> Result<usize, Error> {
     output[..n].copy_from_slice(&bytes[..n]);
     Ok(n)
 }
+
+/// Cursor for protocols with single-byte tag and length fields (not BER).
+/// Schema-specific exceptions can consume a raw byte explicitly.
+pub struct ByteCursor<'a> {
+    remaining: &'a [u8],
+}
+impl<'a> ByteCursor<'a> {
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self { remaining: bytes }
+    }
+    pub fn take(&mut self, n: usize) -> Result<&'a [u8], Error> {
+        if n > self.remaining.len() {
+            return Err(Error::Truncated);
+        }
+        let (value, tail) = self.remaining.split_at(n);
+        self.remaining = tail;
+        Ok(value)
+    }
+    pub fn byte(&mut self) -> Result<u8, Error> {
+        Ok(self.take(1)?[0])
+    }
+    pub fn field(&mut self) -> Result<(u8, &'a [u8]), Error> {
+        let tag = self.byte()?;
+        let len = usize::from(self.byte()?);
+        Ok((tag, self.take(len)?))
+    }
+    pub fn peek(&self) -> Option<u8> {
+        self.remaining.first().copied()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.remaining.is_empty()
+    }
+}

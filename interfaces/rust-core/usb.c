@@ -3,15 +3,23 @@
 #include <usbd_ccid.h>
 #include <usbd_ctlreq.h>
 #include <usbd_desc.h>
+#if ENABLE_IFACE_KBDHID
+#include <usbd_kbdhid.h>
+#define CONFIG_LENGTH 118
+#define INTERFACE_COUNT 2
+#else
+#define CONFIG_LENGTH 86
+#define INTERFACE_COUNT 1
+#endif
 static const uint8_t device[] = {18,           1, 0, 2, 0, 0, 0, 16, LO(USBD_VID), HI(USBD_VID), LO(USBD_PID),
                                  HI(USBD_PID), 0, 1, 1, 2, 0, 1};
 static const uint8_t language[] = {4, 3, 9, 4};
 static const uint8_t configuration[] = {
     9,
     2,
-    86,
+    CONFIG_LENGTH,
     0,
-    1,
+    INTERFACE_COUNT,
     1,
     0,
     0x80,
@@ -97,8 +105,47 @@ static const uint8_t configuration[] = {
     EP_SIZE(ccid),
     0x00, /* wMaxPacketSize: 64 Bytes max  */
     0x00, /* bInterval: Polling Interval */
+#if ENABLE_IFACE_KBDHID
+    9,
+    4,
+    1,
+    0,
+    2,
+    3,
+    0,
+    0,
+    0,
+    9,
+    0x21,
+    0x11,
+    1,
+    0,
+    1,
+    0x22,
+    87,
+    0,
+    7,
+    5,
+    EP_IN(kbd_hid),
+    3,
+    8,
+    0,
+    5,
+    7,
+    5,
+    EP_OUT(kbd_hid),
+    3,
+    8,
+    0,
+    5,
+#endif
 };
-_Static_assert(sizeof(configuration) == 86, "CCID configuration length");
+_Static_assert(sizeof(configuration) == CONFIG_LENGTH, "CCID configuration length");
+#if ENABLE_IFACE_KBDHID
+_Static_assert((EP_IN(kbd_hid) & 0x80) != 0 && (EP_OUT(kbd_hid) & 0x80) == 0, "HID endpoint directions");
+_Static_assert((EP_IN(kbd_hid) & 0x7f) != (EP_IN(ccid) & 0x7f), "HID and CCID IN endpoints must differ");
+_Static_assert(EP_SIZE(kbd_hid) == 8, "HID descriptor packet size");
+#endif
 static uint8_t strings[64];
 static const uint8_t *dev(USBD_SpeedTypeDef s, uint16_t *n) {
   UNUSED(s);
@@ -117,6 +164,10 @@ static const uint8_t *lang(USBD_SpeedTypeDef s, uint16_t *n) {
 }
 static const uint8_t *string(const char *text, uint16_t *n) {
   size_t len = strlen(text);
+  if (len > (sizeof(strings) - 2) / 2) {
+    *n = 0;
+    return NULL;
+  }
   strings[0] = (uint8_t)(2 + 2 * len);
   strings[1] = 3;
   for (size_t i = 0; i < len; i++) {
@@ -148,17 +199,27 @@ const USBD_DescriptorsTypeDef usbdDescriptors = {dev,   cfg,   lang,  manufactur
 static uint8_t init(USBD_HandleTypeDef *d, uint8_t c) {
   UNUSED(c);
   USBD_CCID_Init(d);
+#if ENABLE_IFACE_KBDHID
+  USBD_KBDHID_Init(d);
+#endif
   USBD_LL_Init_Done();
   return USBD_OK;
 }
 static uint8_t deinit(USBD_HandleTypeDef *d, uint8_t c) {
   UNUSED(c);
   CCID_Init();
+#if ENABLE_IFACE_KBDHID
+  USBD_LL_CloseEP(d, EP_IN(kbd_hid));
+  USBD_LL_CloseEP(d, EP_OUT(kbd_hid));
+#endif
   USBD_LL_CloseEP(d, EP_IN(ccid));
   USBD_LL_CloseEP(d, EP_OUT(ccid));
   return USBD_OK;
 }
 static uint8_t setup(USBD_HandleTypeDef *d, USBD_SetupReqTypedef *r) {
+#if ENABLE_IFACE_KBDHID
+  if (r->wIndex == 1) return USBD_KBDHID_Setup(d, r);
+#endif
   if (r->wIndex == 0 && (r->bmRequest & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_STANDARD) {
     if (r->bRequest == USB_REQ_GET_INTERFACE) {
       static const uint8_t alternate = 0;
@@ -173,6 +234,16 @@ static uint8_t ep0(USBD_HandleTypeDef *d) {
   UNUSED(d);
   return USBD_OK;
 }
-static uint8_t in(USBD_HandleTypeDef *d, uint8_t ep) { return ep == EP_OUT(ccid) ? USBD_CCID_DataIn(d) : USBD_FAIL; }
-static uint8_t out(USBD_HandleTypeDef *d, uint8_t ep) { return ep == EP_OUT(ccid) ? USBD_CCID_DataOut(d) : USBD_FAIL; }
+static uint8_t in(USBD_HandleTypeDef *d, uint8_t ep) {
+#if ENABLE_IFACE_KBDHID
+  if (ep == (EP_IN(kbd_hid) & 0x7F)) return USBD_KBDHID_DataIn();
+#endif
+  return ep == (EP_IN(ccid) & 0x7F) ? USBD_CCID_DataIn(d) : USBD_FAIL;
+}
+static uint8_t out(USBD_HandleTypeDef *d, uint8_t ep) {
+#if ENABLE_IFACE_KBDHID
+  if (ep == EP_OUT(kbd_hid)) return USBD_KBDHID_DataOut(d);
+#endif
+  return ep == EP_OUT(ccid) ? USBD_CCID_DataOut(d) : USBD_FAIL;
+}
 const USBD_ClassTypeDef USBD_CANOKEY = {init, deinit, setup, ep0, ep0, in, out};

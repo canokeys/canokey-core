@@ -12,9 +12,12 @@ publish = false
 canokey-protocol = { path = "../protocol" }
 canokey-pass = { path = "../pass", default-features = false, optional = true }
 
+canokey-oath = { path = "../oath", optional = true }
+
 [features]
 default = []
 pass = ["dep:canokey-pass"]
+oath = ["pass", "dep:canokey-oath"]
 c-interface = []
 host-runtime = []
 
