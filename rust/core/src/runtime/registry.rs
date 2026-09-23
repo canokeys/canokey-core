@@ -4,6 +4,8 @@ use super::engine::Router;
 use crate::Platform;
 #[cfg(feature = "admin")]
 use crate::applets::admin::protocol as admin;
+#[cfg(feature = "ctap")]
+use crate::applets::ctap;
 #[cfg(feature = "pass")]
 use crate::applets::pass::service::Pass;
 #[cfg(feature = "piv")]
@@ -14,6 +16,8 @@ enum Selected {
     None,
     #[cfg(feature = "admin")]
     Admin,
+    #[cfg(feature = "ctap")]
+    Ctap,
     #[cfg(feature = "oath")]
     Oath,
     #[cfg(feature = "openpgp")]
@@ -25,6 +29,8 @@ pub struct Registry {
     selected: Selected,
     #[cfg(feature = "admin")]
     admin: admin::Admin,
+    #[cfg(feature = "ctap")]
+    ctap: ctap::Ctap,
     #[cfg(feature = "admin")]
     grants: admin::Grants,
     #[cfg(feature = "pass")]
@@ -46,6 +52,8 @@ impl Registry {
             selected: Selected::None,
             #[cfg(feature = "admin")]
             admin: admin::Admin::new(),
+            #[cfg(feature = "ctap")]
+            ctap: ctap::Ctap::new(),
             #[cfg(feature = "admin")]
             grants: admin::Grants { admin: false },
             #[cfg(feature = "pass")]
@@ -166,6 +174,8 @@ impl Router for Registry {
     }
     fn select(&mut self, _aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
         let next = match _aid {
+            #[cfg(feature = "ctap")]
+            ctap::AID => Some(Selected::Ctap),
             #[cfg(feature = "admin")]
             admin::AID => Some(Selected::Admin),
             #[cfg(feature = "oath")]
@@ -197,6 +207,8 @@ impl Router for Registry {
         let (cla, limit) = match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => (h.cla, admin::COMMAND_CAPACITY as u32),
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => (h.unchained().cla, 256),
             #[cfg(feature = "oath")]
             Selected::Oath => (
                 h.unchained().cla,
@@ -231,6 +243,8 @@ impl Router for Registry {
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.admin.cancel_command(_p),
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => self.ctap.reset(),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.cancel_command(_p),
             #[cfg(feature = "openpgp")]
@@ -241,6 +255,10 @@ impl Router for Registry {
         }
     }
     fn begin_command(&mut self, _h: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
+        #[cfg(feature = "ctap")]
+        if self.selected == Selected::Ctap {
+            return self.ctap.begin(_h);
+        }
         #[cfg(feature = "openpgp")]
         if self.selected == Selected::OpenPgp {
             return self.pgp.begin(_h, self.workspace.classic(), _p);
@@ -255,6 +273,8 @@ impl Router for Registry {
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.admin.consume(_bytes),
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => self.ctap.consume(_bytes),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.consume(_bytes),
             #[cfg(feature = "openpgp")]
@@ -268,6 +288,8 @@ impl Router for Registry {
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.finish_admin(_h, _p),
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => self.ctap.finish().map(|n| (n, Sw::SUCCESS)),
             #[cfg(feature = "oath")]
             Selected::Oath => {
                 #[cfg(not(feature = "pass"))]
@@ -295,6 +317,8 @@ impl Router for Registry {
                 .admin
                 .read_response(_offset as usize, _out)
                 .map(|()| _out.len()),
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => self.ctap.read(_offset as usize, _out).map(|()| _out.len()),
             #[cfg(feature = "oath")]
             Selected::Oath => self
                 .oath
@@ -316,6 +340,8 @@ impl Router for Registry {
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.admin.close_response(_p),
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => self.ctap.close(),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.close_response(_p),
             #[cfg(feature = "openpgp")]

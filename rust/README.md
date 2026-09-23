@@ -115,3 +115,11 @@ deleted entries while retaining a four-byte next-ID watermark. Previous C and
 Rust data layouts are unsupported: provision fresh storage, without adding
 migration codecs or automatic formatting on mount failure. See each applet's
 record layout documentation for exact encodings.
+
+## CTAP migration boundary
+
+The `ctap` feature currently implements only the stateless CCID FIDO
+`authenticatorGetInfo` request. It uses a fixed RAM response and adds no Flash
+record. CTAPHID, PIN/UV, credentials and large CBOR streaming remain in the C
+implementation until their transport and scratch-buffer contracts are migrated
+together.

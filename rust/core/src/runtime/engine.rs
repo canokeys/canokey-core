@@ -396,6 +396,7 @@ impl Core {
             + cfg!(feature = "oath") as u8
             + cfg!(feature = "openpgp") as u8
             + cfg!(feature = "piv") as u8
+            + cfg!(feature = "ctap") as u8
     }
     #[cfg(feature = "pass")]
     pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {

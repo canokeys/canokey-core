@@ -9,6 +9,7 @@ publish = false
 canokey-rust-core = { path = "../core" }
 [features]
 admin = ["canokey-rust-core/admin"]
+ctap = ["canokey-rust-core/ctap"]
 openpgp = ["canokey-rust-core/openpgp"]
 piv = ["canokey-rust-core/piv"]
 

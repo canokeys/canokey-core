@@ -9,6 +9,7 @@ publish = false
 canokey-protocol = { path = "../protocol" }
 [features]
 admin = []
+ctap = []
 openpgp = []
 piv = []
 
