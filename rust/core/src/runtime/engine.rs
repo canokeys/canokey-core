@@ -127,7 +127,7 @@ impl<R: Router> Runtime<R> {
         self.owner = None;
     }
     /// Frame length is supplied by the transport; no body buffer is allocated.
-    #[cfg_attr(feature = "openpgp", inline(never))]
+    #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]
     pub fn begin_frame(&mut self, owner: u8, total: usize, p: &mut Platform<'_>) -> Result<(), Sw> {
         if owner == 0 || self.owner.is_some_and(|current| current != owner) {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
@@ -184,7 +184,7 @@ impl<R: Router> Runtime<R> {
             .map_err(|_| Sw::WRONG_LENGTH)?;
         if step.restarted {
             self.router.abort_command(p);
-            self.router.begin_command(h.unchained(), p)?;
+            self.router.begin_command(h, p)?;
         }
         self.route = FrameRoute::Command {
             header: h.unchained(),
@@ -212,7 +212,7 @@ impl<R: Router> Runtime<R> {
     /// frame nor the logical command is reassembled by this runtime.
     // Decoder temporaries are dead before finalization calls into crypto.
     // Keep this stack boundary on small targets instead of inlining both paths.
-    #[cfg_attr(feature = "openpgp", inline(never))]
+    #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]
     pub fn feed_frame(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
         let mut frame = self.frame.take().ok_or(Sw::WRONG_LENGTH)?;
         let mut status = Sw::WRONG_LENGTH;

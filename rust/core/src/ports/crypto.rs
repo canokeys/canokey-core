@@ -6,16 +6,102 @@ pub struct CryptoError;
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum KeyOperation {
-    Generate,
-    Validate,
-    Public,
-    RsaPkcs1Sign,
-    RsaPkcs1Decipher,
-    Agree,
-    EcSign,
+    Generate = 0,
+    Validate = 1,
+    Public = 2,
+    RsaPkcs1Sign = 3,
+    RsaPkcs1Decipher = 4,
+    Agree = 5,
+    EcSign = 6,
+    RsaRaw = 7,
+    Sm2Exchange = 8,
+}
+
+/// Stable primitive ABI; mirrored in interfaces/rust-core/crypto_ops.h.
+#[cfg(feature = "piv")]
+#[derive(Clone, Copy)]
+#[repr(u8)]
+pub enum StreamOperation {
+    PublicInit = 0,
+    Read = 1,
+    SignInit = 2,
+    SignUpdate = 3,
+    SignFinal = 4,
+    Abort = 5,
+    DecapsulateInit = 6,
+    DecapsulateUpdate = 7,
+    DecapsulateFinal = 8,
+    Sm2Identity = 9,
+}
+
+/// Stable primitive ABI; mirrored in interfaces/rust-core/crypto_ops.h.
+#[cfg(feature = "piv")]
+#[derive(Clone, Copy)]
+#[repr(u8)]
+pub enum DigestOperation {
+    Init = 0,
+    Update = 1,
+    Final = 2,
+    Abort = 3,
+}
+
+/// Opaque native primitive state in the sole session workspace; never persisted.
+#[cfg(feature = "piv")]
+#[repr(C, align(8))]
+pub struct CryptoScratch {
+    pub bytes: [u8; 2400],
+}
+#[cfg(feature = "piv")]
+impl CryptoScratch {
+    pub const fn new() -> Self {
+        Self { bytes: [0; 2400] }
+    }
+}
+#[cfg(feature = "piv")]
+#[repr(C, align(8))]
+pub struct HashState {
+    pub bytes: [u8; 256],
+}
+#[cfg(feature = "piv")]
+impl Default for CryptoScratch {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 pub trait Crypto {
-    #[cfg(feature = "openpgp")]
+    #[cfg(feature = "piv")]
+    fn digest(
+        &mut self,
+        _op: DigestOperation,
+        _state: &mut HashState,
+        _input: &[u8],
+        _out: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        Err(CryptoError)
+    }
+    #[cfg(feature = "piv")]
+    fn piv_stream(
+        &mut self,
+        _operation: StreamOperation,
+        _algorithm: u8,
+        _scratch: &mut CryptoScratch,
+        _input: &[u8],
+        _output: &mut [u8],
+    ) -> Result<usize, CryptoError> {
+        Err(CryptoError)
+    }
+
+    #[cfg(feature = "piv")]
+    fn aes192(
+        &mut self,
+        _key: &[u8; 24],
+        _input: &[u8; 16],
+        _out: &mut [u8; 16],
+    ) -> Result<(), CryptoError> {
+        Err(CryptoError)
+    }
+
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn key_operation(
         &mut self,
         _op: KeyOperation,

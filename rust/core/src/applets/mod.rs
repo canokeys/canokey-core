@@ -5,7 +5,7 @@ pub mod admin;
 pub mod oath;
 #[cfg(feature = "openpgp")]
 pub mod openpgp;
-#[cfg(feature = "piv")]
-pub mod piv;
 #[cfg(any(feature = "admin", feature = "pass", feature = "oath"))]
 pub mod pass;
+#[cfg(feature = "piv")]
+pub mod piv;

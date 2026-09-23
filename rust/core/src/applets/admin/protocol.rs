@@ -33,6 +33,8 @@ pub fn pass_error(error: domain::Error) -> Sw {
 pub enum Action {
     Response(u32),
     FactoryReset,
+    #[cfg(feature = "piv")]
+    ResetPiv,
     #[cfg(feature = "oath")]
     ResetOath,
     #[cfg(feature = "openpgp")]
@@ -104,6 +106,14 @@ impl Admin {
             }
             self.check_empty(h)?;
             return Ok(Action::ResetOpenPgp);
+        }
+        #[cfg(feature = "piv")]
+        if h.ins == 0x04 {
+            if !grants.admin {
+                return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+            }
+            self.check_empty(h)?;
+            return Ok(Action::ResetPiv);
         }
         #[cfg(feature = "oath")]
         if h.ins == 0x05 {
@@ -193,7 +203,7 @@ impl Admin {
         }
         Ok(self.response_len as u32)
     }
-    #[cfg(any(feature = "oath", feature = "openpgp"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     pub fn check_empty(&self, h: Header) -> Result<(), Sw> {
         if h.p1 != 0 || h.p2 != 0 {
             return Err(Sw::WRONG_P1P2);

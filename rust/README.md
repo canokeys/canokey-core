@@ -3,7 +3,8 @@
 
 One Cargo workspace contains `protocol`, safe `core`, and `ffi`. No C dispatcher,
 C session manager or legacy C applet is linked. Device profiles explicitly select
-zero applets, ADMIN + PASS, ADMIN + PASS + OATH, or those plus OpenPGP. See
+zero applets, ADMIN + PASS, ADMIN + PASS + OATH, those plus OpenPGP, or PIV
+alone/combined. See
 [module boundaries](docs/module-boundaries.md),
 [ADMIN + PASS implementation checkpoint](docs/admin-pass.md), and
 [OATH implementation and normal validation](docs/oath.md), and
@@ -38,12 +39,12 @@ zero applets, ADMIN + PASS, ADMIN + PASS + OATH, or those plus OpenPGP. See
   forbids unsafe code at the crate root.
 - `interfaces/rust-core/`: retained C USB/CCID/HID framing and endpoint mechanics.
 
-The `admin`, `pass`, `oath` and `openpgp` core/FFI features are independent.
+The `admin`, `pass`, `oath`, `openpgp` and `piv` core/FFI features are independent.
 Only enabled services own registry state and run installation. PASS has no AID;
 ADMIN is selected by `admin`, not by `pass`. OATH-to-PASS binding requires both
 services; without PASS its binding/HMAC-slot commands are unavailable. CIU and
 host device-equivalent profiles explicitly combine their required features.
-All 16 Cargo combinations are checked with warnings denied. Cargo's host-only SHA-256 test
+Feature-isolated and combined Cargo configurations are checked with warnings denied. Cargo's host-only SHA-256 test
 dependency is not included in the firmware dependency graph.
 
 ## Streaming contract
@@ -60,9 +61,9 @@ messages and objects use incremental consumers, not a larger APDU buffer.
 The runtime's response cursor supplies fresh source borrows per chunk, supports
 monotonic generators and closes sources on completion, replacement or reset.
 OATH A5 pagination remains distinct from ISO GET RESPONSE. Synchronous presence
-is retained for the current CCID profile; future multi-transport scheduling and
-PIV consumers remain fixtures only. OpenPGP now has real device consumers and
-independent host verification of all supported crypto algorithms.
+is retained for the current CCID profile. OpenPGP and [PIV](docs/piv.md) use
+production incremental consumers and independent host cryptographic validation;
+future multi-transport scheduling remains outside these device profiles.
 
 ## Normal validation
 
@@ -89,9 +90,17 @@ APDU input/output and existing PIN, PASS, HMAC and OATH behavior. Only normal
 functional tests are part of this checkpoint.
 
 Use `-DCANOKEY_APPLET_OPENPGP=ON` to add the OpenPGP host suite; its Python
-interpreter must have `cryptography` (CIU `.venv-hil/bin/python`).
+interpreter must have `cryptography`. OpenPGP/PIV host builds link the production
+C primitive adapters to canokey-crypto; its generated PSA driver wrappers also
+require `jinja2` and `jsonschema` in the CMake-selected Python interpreter. Use
+`-DPython3_EXECUTABLE=...` to select an environment with those dependencies.
 
 CIU presets are `devkit-rust-core`, `devkit-rust-admin-pass`,
-`devkit-rust-oath` and `devkit-rust-openpgp`. Each retains the mandatory 48-vector/ResumeLoader gate.
+`devkit-rust-oath`, `devkit-rust-openpgp` and `devkit-rust-piv`. Each retains the mandatory 48-vector/ResumeLoader gate.
 NFCC is deferred. The `/rust` filesystem namespace, no-autoformat rule and
 serialized main-loop C interface remain unchanged.
+
+The independent [Rust PIV profile](docs/piv.md) supports management authentication,
+classical/SM2/PQ operations, source-backed attestation and streamed object storage.
+Use `-DCANOKEY_APPLET_PIV=ON` alone or with OpenPGP for its host APDU suite
+(`cryptography >= 50` required).

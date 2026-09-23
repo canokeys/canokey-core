@@ -26,9 +26,16 @@ int main(void) {
 #else
   2
 #endif
+#ifdef WITH_PIV
+  + 1
+#endif
 );
 #else
-  assert(ck_core_applet_count() == 1);
+  assert(ck_core_applet_count() == 1
+#ifdef WITH_PIV
+  + 1
+#endif
+);
 #endif
   SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
   SEND(0x9000, 0, 0x20, 0, 0, 6, '1', '2', '3', '4', '5', '6');
@@ -82,7 +89,13 @@ int main(void) {
   SEND(0x9000, 0, 0x20, 0, 0, 6, '1', '2', '3', '4', '5', '6');
   assert(ck_core_touch(0, buffer, sizeof(buffer)) == 0);
 #else
-  assert(ck_core_applet_count() == 0);
+  assert(ck_core_applet_count() ==
+#ifdef WITH_PIV
+ 1
+#else
+ 0
+#endif
+);
   SEND(0x6a82, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
 #endif
   return 0;

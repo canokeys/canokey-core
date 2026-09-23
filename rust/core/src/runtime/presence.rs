@@ -2,7 +2,7 @@
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
 use crate::ports::Device;
-#[cfg(any(feature = "oath", feature = "openpgp"))]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
 fn wait(device: &mut dyn Device) -> bool {
     let start = device.now();
     // A contact predating this request must be released before a fresh gesture.
@@ -71,11 +71,11 @@ pub fn strong(device: &mut dyn Device) -> bool {
 }
 
 /// An attempted request owns its gesture even when it times out or is cancelled.
-#[cfg(any(feature = "oath", feature = "openpgp"))]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
 pub struct Request {
     attempted: bool,
 }
-#[cfg(any(feature = "oath", feature = "openpgp"))]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
 impl Request {
     pub const fn new() -> Self {
         Self { attempted: false }
@@ -90,7 +90,11 @@ impl Request {
     }
 }
 
-#[cfg(all(test, feature = "pass", any(feature = "oath", feature = "openpgp")))]
+#[cfg(all(
+    test,
+    feature = "pass",
+    any(feature = "oath", feature = "openpgp", feature = "piv")
+))]
 mod tests {
     use super::*;
     struct Held {

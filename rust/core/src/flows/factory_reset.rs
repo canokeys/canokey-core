@@ -13,7 +13,11 @@ pub fn oath(pass: Option<&mut Pass>, p: &mut Platform<'_>) -> Result<(), Error> 
     }
     crate::applets::oath::repository::reset(p.storage, p.crypto, p.memory).map_err(Error::Oath)
 }
-pub fn run(mut pass: Option<&mut Pass>, p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn run(
+    mut pass: Option<&mut Pass>,
+    #[cfg(feature = "piv")] piv: &mut crate::applets::piv::Piv,
+    p: &mut Platform<'_>,
+) -> Result<(), Error> {
     // PIN last: a partially completed reset remains locked and retryable.
     if let Some(pass) = &mut pass {
         pass.clear(p.storage, p.memory).map_err(Error::Pass)?;
@@ -22,5 +26,7 @@ pub fn run(mut pass: Option<&mut Pass>, p: &mut Platform<'_>) -> Result<(), Erro
     oath(pass, p)?;
     #[cfg(feature = "openpgp")]
     crate::applets::openpgp::repository::reset(p).map_err(Error::OpenPgp)?;
+    #[cfg(feature = "piv")]
+    piv.reset_persistent(p).map_err(|_| Error::Piv)?;
     pin::factory_reset(p).map_err(Error::Admin)
 }

@@ -79,7 +79,7 @@ static uint8_t send_time_extension(void) {
   }
   return 1;
 }
-#ifdef RUST_CORE_OPENPGP
+#if defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
 // Crypto may run for many seconds without returning to the main loop. The
 // timer handles only CCID link maintenance; no Rust or crypto state is touched.
 void CCID_TimeExtensionLoop(void) {
@@ -87,7 +87,7 @@ void CCID_TimeExtensionLoop(void) {
 }
 #endif
 uint8_t ck_ccid_progress(void) {
-#ifdef RUST_CORE_OPENPGP
+#if defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
   return !reset_pending && phase==3;
 #else
   return send_time_extension();
@@ -149,11 +149,11 @@ void CCID_Loop(void) {
         error = SLOTERROR_BAD_LEVELPARAMETER;
         break;
       }
-#ifdef RUST_CORE_OPENPGP
+#if defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
       device_set_timeout(CCID_TimeExtensionLoop,500);
 #endif
       int32_t n = ck_core_exchange(1, request + 10, expected - 10, response + 10, sizeof(response) - 10);
-#ifdef RUST_CORE_OPENPGP
+#if defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
       device_set_timeout(NULL,0);
 #endif
       if (n < 0) {

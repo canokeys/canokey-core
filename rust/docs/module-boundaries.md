@@ -10,8 +10,9 @@ algorithm families; see [OpenPGP implementation](openpgp.md).
 Design coverage for the remaining applets is not feature support.
 The 2026-09-23 C streaming review in section 14 constrains the next refactor;
 section 12 records implementation order and completed foundation work. Long
-consumer fixtures exercise the production runtime. PIV remains absent; the
-OpenPGP profile now supplies real key/object consumers on that foundation.
+consumer fixtures exercise the production runtime. Both [PIV](piv.md) and
+OpenPGP now provide real key/object consumers on that foundation. Section 16
+supersedes historical PIV-foundation status statements below.
 See [ADMIN/PASS checkpoint](admin-pass.md) for its supported commands and gaps.
 
 Scope: the complete current core, including ADMIN, PASS, OATH, CTAP2/U2F, PIV,
@@ -298,6 +299,9 @@ retries on a successful verification only when necessary. No PIN hashing, salt,
 KDF or new enrollment protocol is introduced by this migration. The record
 codec is explicit and versioned, with atomic PIN/counter replacement. Applet
 policy still owns minimum/maximum lengths and retry limits.
+
+The shared implementation and preserved per-applet charging policies are
+documented in [Shared PIN mechanism](pin-mechanism.md).
 
 ### Provisioning
 
@@ -1025,3 +1029,19 @@ crypto workspace. Do not add a dynamic applet registry, heap allocation, per-app
 large buffers or generic whole-message staging to simplify these boundaries.
 Resource and device-validation results for this correction are recorded in CIU
 `hil-reports/rust-design-review-20260923/README.md`.
+
+
+## 16. PIV implementation checkpoint (2026-09-23)
+
+The independent PIV profile now implements the C command/algorithm surface,
+including AES management authentication, all asymmetric slots, streamed objects,
+classical/SM2/PQ operations, administrative extensions and source-backed X.509
+attestation. See [PIV design and validation](piv.md) for command policy, storage,
+intentional differences and validation limits. No legacy C applet is linked.
+
+ADMIN/OpenPGP/PIV use a shared PIN mechanism with explicit retry-charging
+policies and applet-owned authorization. Registry's single session workspace has
+mutually exclusive classic, native-stream and attestation views; native resource
+cleanup precedes view changes. APDU framing/chaining and the response cursor
+remain in the common runtime. Standalone and combined host suites pass; CIU
+DevKit and boot/recovery validation are separate from hardware HIL acceptance.

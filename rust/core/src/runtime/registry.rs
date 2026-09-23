@@ -2,12 +2,12 @@
 //! Static composition root. Disabled services have no state or install side effects.
 use super::engine::Router;
 use crate::Platform;
-#[cfg(feature = "piv")]
-use crate::applets::piv::Piv;
 #[cfg(feature = "admin")]
 use crate::applets::admin::protocol as admin;
 #[cfg(feature = "pass")]
 use crate::applets::pass::service::Pass;
+#[cfg(feature = "piv")]
+use crate::applets::piv::Piv;
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selected {
@@ -36,7 +36,7 @@ pub struct Registry {
     #[cfg(feature = "openpgp")]
     pgp: crate::applets::openpgp::protocol::OpenPgp,
     #[cfg(any(feature = "openpgp", feature = "piv"))]
-    workspace: super::workspace::Workspace,
+    workspace: super::workspace::SessionWorkspace,
     #[cfg(feature = "piv")]
     piv: Piv,
 }
@@ -57,7 +57,7 @@ impl Registry {
             #[cfg(feature = "openpgp")]
             pgp: crate::applets::openpgp::protocol::OpenPgp::new(),
             #[cfg(any(feature = "openpgp", feature = "piv"))]
-            workspace: super::workspace::Workspace::new(),
+            workspace: super::workspace::SessionWorkspace::new(),
             #[cfg(feature = "piv")]
             piv: Piv::new(),
         }
@@ -70,10 +70,10 @@ impl Registry {
         }
         #[cfg(feature = "oath")]
         self.oath.reset(_p);
-        #[cfg(feature = "openpgp")]
-        self.pgp.reset(&mut self.workspace, _p);
         #[cfg(feature = "piv")]
-        self.piv.reset(_p);
+        self.piv.reset(&mut self.workspace, _p);
+        #[cfg(feature = "openpgp")]
+        self.pgp.reset(self.workspace.classic(), _p);
     }
     #[cfg(feature = "pass")]
     pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
@@ -101,7 +101,7 @@ impl Registry {
         match self.admin.finish(h, &mut self.grants, pass, p)? {
             admin::Action::Response(n) => return Ok((n, Sw::SUCCESS)),
             #[cfg(feature = "openpgp")]
-            admin::Action::ResetOpenPgp => self.pgp.clear(&mut self.workspace, p)?,
+            admin::Action::ResetOpenPgp => self.pgp.clear(self.workspace.classic(), p)?,
             #[cfg(feature = "oath")]
             admin::Action::ResetOath => {
                 self.oath.reset(p);
@@ -110,6 +110,11 @@ impl Registry {
                 #[cfg(feature = "pass")]
                 let pass = Some(&mut self.pass);
                 crate::flows::factory_reset::oath(pass, p).map_err(flow_status)?;
+            }
+            #[cfg(feature = "piv")]
+            admin::Action::ResetPiv => {
+                self.piv.reset(&mut self.workspace, p);
+                self.piv.reset_persistent(p)?;
             }
             admin::Action::FactoryReset => {
                 #[cfg(feature = "pass")]
@@ -122,7 +127,13 @@ impl Registry {
                 let pass = None;
                 #[cfg(feature = "pass")]
                 let pass = Some(&mut self.pass);
-                crate::flows::factory_reset::run(pass, p).map_err(flow_status)?;
+                crate::flows::factory_reset::run(
+                    pass,
+                    #[cfg(feature = "piv")]
+                    &mut self.piv,
+                    p,
+                )
+                .map_err(flow_status)?;
             }
         }
         Ok((0, Sw::SUCCESS))
@@ -162,7 +173,9 @@ impl Router for Registry {
             #[cfg(feature = "openpgp")]
             crate::applets::openpgp::protocol::AID => Some(Selected::OpenPgp),
             #[cfg(feature = "piv")]
-            crate::applets::piv::AID => Some(Selected::Piv),
+            aid if aid.len() >= 5 && crate::applets::piv::AID.starts_with(aid) => {
+                Some(Selected::Piv)
+            }
             _ => None,
         }
         .ok_or(Sw::FILE_NOT_FOUND)?;
@@ -176,7 +189,7 @@ impl Router for Registry {
             #[cfg(feature = "openpgp")]
             Selected::OpenPgp => self.pgp.select(p),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.select(p),
+            Selected::Piv => self.piv.select(&mut self.workspace, p),
             _ => Ok(0),
         }
     }
@@ -195,7 +208,14 @@ impl Router for Registry {
                 crate::applets::openpgp::protocol::OpenPgp::limit(h),
             ),
             #[cfg(feature = "piv")]
-            Selected::Piv => (h.unchained().cla, crate::applets::piv::CAPACITY as u32),
+            Selected::Piv => (
+                if h.chained() && !matches!(h.ins, 0x87 | 0xdb | 0xfe) {
+                    h.cla
+                } else {
+                    h.unchained().cla
+                },
+                Piv::limit(h),
+            ),
             Selected::None => (h.cla, 0),
         };
         if !self.selected() {
@@ -214,20 +234,20 @@ impl Router for Registry {
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.cancel_command(_p),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.abort(&mut self.workspace, _p),
+            Selected::OpenPgp => self.pgp.abort(self.workspace.classic(), _p),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.cancel(_p),
+            Selected::Piv => self.piv.cancel(&mut self.workspace, _p),
             Selected::None => (),
         }
     }
     fn begin_command(&mut self, _h: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
         #[cfg(feature = "openpgp")]
         if self.selected == Selected::OpenPgp {
-            return self.pgp.begin(_h, &mut self.workspace, _p);
+            return self.pgp.begin(_h, self.workspace.classic(), _p);
         }
         #[cfg(feature = "piv")]
         if self.selected == Selected::Piv {
-            return self.piv.begin(_h, _p);
+            return self.piv.begin(_h, &mut self.workspace, _p);
         }
         Ok(())
     }
@@ -238,9 +258,9 @@ impl Router for Registry {
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.consume(_bytes),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.consume(_bytes, &mut self.workspace, _p),
+            Selected::OpenPgp => self.pgp.consume(_bytes, self.workspace.classic(), _p),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.consume(_bytes, _p),
+            Selected::Piv => self.piv.consume(_bytes, &mut self.workspace, _p),
             Selected::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
@@ -257,7 +277,7 @@ impl Router for Registry {
                 self.oath.finish(_h, _le, pass, _p)
             }
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.finish(_h, _le, &mut self.workspace, _p),
+            Selected::OpenPgp => self.pgp.finish(_h, _le, self.workspace.classic(), _p),
             #[cfg(feature = "piv")]
             Selected::Piv => self.piv.finish(_h, _le, &mut self.workspace, _p),
             Selected::None => Err(Sw::FILE_NOT_FOUND),
@@ -281,9 +301,14 @@ impl Router for Registry {
                 .read_response(_offset as usize, _out)
                 .map(|()| _out.len()),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.read(_offset as usize, _out, &self.workspace, _p),
+            Selected::OpenPgp => {
+                self.pgp
+                    .read(_offset as usize, _out, self.workspace.classic(), _p)
+            }
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.read(_offset as usize, _out),
+            Selected::Piv => self
+                .piv
+                .read(_offset as usize, _out, &mut self.workspace, _p),
             Selected::None => Err(Sw::COMMAND_NOT_ALLOWED),
         }
     }
@@ -294,9 +319,9 @@ impl Router for Registry {
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.close_response(_p),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.close(&mut self.workspace, _p),
+            Selected::OpenPgp => self.pgp.close(self.workspace.classic(), _p),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.close(_p),
+            Selected::Piv => self.piv.close(&mut self.workspace, _p),
             Selected::None => (),
         }
     }
@@ -318,6 +343,8 @@ impl Router for Registry {
         let presence = self.oath.take_presence() | presence;
         #[cfg(feature = "openpgp")]
         let presence = self.pgp.take_presence() | presence;
+        #[cfg(feature = "piv")]
+        let presence = self.piv.presence.take() | presence;
         if presence || inhibit {
             self.output.inhibit(pressed, p.memory);
             return None;
@@ -337,6 +364,8 @@ impl Default for Registry {
 fn flow_status(error: crate::flows::Error) -> Sw {
     use crate::flows::Error;
     match error {
+        #[cfg(all(feature = "admin", feature = "piv"))]
+        Error::Piv => Sw::UNABLE_TO_PROCESS,
         Error::Pass(e) => pass_error(e),
         #[cfg(feature = "oath")]
         Error::Oath(e) => crate::applets::oath::protocol::status(e),

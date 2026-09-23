@@ -19,8 +19,8 @@ pub(crate) fn with_platform<T>(run: impl FnOnce(&mut Platform<'_>) -> T) -> T {
     feature = "admin",
     feature = "pass",
     feature = "oath",
-    feature = "openpgp"
-    , feature = "piv"
+    feature = "openpgp",
+    feature = "piv"
 ))]
 unsafe extern "C" {
     fn ck_platform_now() -> u32;
@@ -49,7 +49,24 @@ unsafe extern "C" {
     fn ck_platform_serial(out: *mut u8);
 }
 impl Storage for StorageBackend {
-    #[cfg(feature = "openpgp")]
+    #[cfg(feature = "piv")]
+    fn remove(&mut self, id: Record) -> Result<(), StorageError> {
+        if unsafe { ck_platform_stage(4, id as u8, core::ptr::null(), 0) } == 0 {
+            Ok(())
+        } else {
+            Err(StorageError::Uncertain)
+        }
+    }
+    #[cfg(feature = "piv")]
+    fn move_record(&mut self, from: Record, to: Record) -> Result<(), StorageError> {
+        if unsafe { ck_platform_stage(5, from as u8, &(to as u8), 1) } == 0 {
+            Ok(())
+        } else {
+            Err(StorageError::Uncertain)
+        }
+    }
+
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(0, 0, core::ptr::null(), 0) } == 0 {
             Ok(())
@@ -57,7 +74,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "openpgp")]
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_append(&mut self, b: &[u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(1, 0, b.as_ptr(), b.len()) } == 0 {
             Ok(())
@@ -65,7 +82,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "openpgp")]
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_commit(&mut self, id: Record) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(2, id as u8, core::ptr::null(), 0) } == 0 {
             Ok(())
@@ -73,7 +90,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "openpgp")]
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_abort(&mut self) {
         unsafe {
             ck_platform_stage(3, 0, core::ptr::null(), 0);
@@ -88,7 +105,7 @@ impl Storage for StorageBackend {
             _ => Err(StorageError::Unavailable),
         }
     }
-    #[cfg(any(feature = "oath", feature = "openpgp"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn read_at(&mut self, file: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_read_at(file as u8, offset, out.as_mut_ptr(), out.len()) }
             == out.len() as i32
@@ -98,7 +115,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Unavailable)
         }
     }
-    #[cfg(any(feature = "oath", feature = "openpgp"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_write_at(file as u8, offset, input.as_ptr(), input.len()) }
             == input.len() as i32
@@ -108,7 +125,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(any(feature = "oath", feature = "openpgp"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn has_space(&mut self, bytes: u32, reserve: u32) -> Result<bool, StorageError> {
         match unsafe { ck_platform_has_space(bytes, reserve) } {
             0 => Ok(false),
@@ -174,8 +191,94 @@ impl Storage for StorageBackend {
         }
     }
 }
+#[cfg(feature = "piv")]
+unsafe extern "C" {
+    fn ck_platform_digest(
+        op: u8,
+        state: *mut canokey_rust_core::ports::HashState,
+        input: *const u8,
+        n: usize,
+        out: *mut u8,
+        capacity: usize,
+    ) -> i32;
+    fn ck_platform_piv_stream(
+        op: u8,
+        alg: u8,
+        scratch: *mut canokey_rust_core::ports::CryptoScratch,
+        input: *const u8,
+        n: usize,
+        out: *mut u8,
+        capacity: usize,
+    ) -> i32;
+    fn ck_platform_aes192(key: *const u8, input: *const u8, out: *mut u8) -> i32;
+}
 impl Crypto for CryptoBackend {
-    #[cfg(feature = "openpgp")]
+    #[cfg(feature = "piv")]
+    fn digest(
+        &mut self,
+        op: canokey_rust_core::ports::DigestOperation,
+        state: &mut canokey_rust_core::ports::HashState,
+        input: &[u8],
+        out: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        if unsafe {
+            ck_platform_digest(
+                op as u8,
+                state,
+                input.as_ptr(),
+                input.len(),
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        } == 0
+        {
+            Ok(())
+        } else {
+            Err(CryptoError)
+        }
+    }
+    #[cfg(feature = "piv")]
+    fn piv_stream(
+        &mut self,
+        op: canokey_rust_core::ports::StreamOperation,
+        alg: u8,
+        scratch: &mut canokey_rust_core::ports::CryptoScratch,
+        input: &[u8],
+        out: &mut [u8],
+    ) -> Result<usize, CryptoError> {
+        let n = unsafe {
+            ck_platform_piv_stream(
+                op as u8,
+                alg,
+                scratch,
+                input.as_ptr(),
+                input.len(),
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        };
+        if n < 0 {
+            Err(CryptoError)
+        } else {
+            Ok(n as usize)
+        }
+    }
+
+    #[cfg(feature = "piv")]
+    fn aes192(
+        &mut self,
+        key: &[u8; 24],
+        input: &[u8; 16],
+        out: &mut [u8; 16],
+    ) -> Result<(), CryptoError> {
+        if unsafe { ck_platform_aes192(key.as_ptr(), input.as_ptr(), out.as_mut_ptr()) } == 0 {
+            Ok(())
+        } else {
+            Err(CryptoError)
+        }
+    }
+
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn key_operation(
         &mut self,
         op: canokey_rust_core::ports::KeyOperation,
@@ -384,7 +487,7 @@ impl Memory for MemoryBackend {
     }
 }
 
-#[cfg(feature = "openpgp")]
+#[cfg(any(feature = "openpgp", feature = "piv"))]
 unsafe extern "C" {
     fn ck_platform_stage(operation: u8, file: u8, input: *const u8, len: usize) -> i32;
     fn ck_platform_key(

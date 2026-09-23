@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod engine;
-#[cfg(any(feature = "admin", feature = "oath", feature = "openpgp"))]
+#[cfg(any(
+    feature = "admin",
+    feature = "oath",
+    feature = "openpgp",
+    feature = "piv"
+))]
 pub(crate) mod presence;
 pub mod registry;
 

@@ -10,9 +10,8 @@ service and request-bound presence using the host input fixture.
 import argparse
 import hmac
 import json
-import subprocess
 import time
-from contextlib import contextmanager
+from card_test import connection
 
 AID = bytes.fromhex('a0000005272101')
 ADMIN = bytes.fromhex('f000000000')
@@ -31,39 +30,6 @@ def fields(data):
         data = data[n+2:]
     return out
 
-
-class Host:
-    def __init__(self, path):
-        self.process = subprocess.Popen([path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-
-    def command(self, text):
-        self.process.stdin.write(text+'\n')
-        self.process.stdin.flush()
-        line = self.process.stdout.readline()
-        assert line, f'host card exited: {self.process.poll()}'
-        return bytes.fromhex(line.strip())
-
-    def transmit(self, data):
-        response = self.command(data.hex())
-        return response[:-2], response[-2], response[-1]
-
-    def close(self):
-        self.process.stdin.close()
-        assert self.process.wait(timeout=5) == 0
-
-
-@contextmanager
-def connection(path):
-    if path:
-        card = Host(path)
-        try:
-            yield card
-        finally:
-            card.close()
-    else:
-        from devkit_ctl import CCIDConnection
-        with CCIDConnection.open(mode='normal') as card:
-            yield card
 
 
 def run(card, host, touch, expected_version=None):

@@ -20,6 +20,68 @@ pub enum Record {
     PgpCertAut = 13,
     PivState = 14,
     PivDiscovery = 15,
+    PivManagement = 16,
+    PivConfig = 17,
+    PivKey0 = 18,
+    PivKey1 = 19,
+    PivKey2 = 20,
+    PivKey3 = 21,
+    PivKey4 = 22,
+    PivKey5 = 23,
+    PivKey6 = 24,
+    PivKey7 = 25,
+    PivKey8 = 26,
+    PivKey9 = 27,
+    PivKey10 = 28,
+    PivKey11 = 29,
+    PivKey12 = 30,
+    PivKey13 = 31,
+    PivKey14 = 32,
+    PivKey15 = 33,
+    PivKey16 = 34,
+    PivKey17 = 35,
+    PivKey18 = 36,
+    PivKey19 = 37,
+    PivKey20 = 38,
+    PivKey21 = 39,
+    PivKey22 = 40,
+    PivKey23 = 41,
+    PivKey24 = 42,
+    PivObject0 = 43,
+    PivObject1 = 44,
+    PivObject2 = 45,
+    PivObject3 = 46,
+    PivObject4 = 47,
+    PivObject5 = 48,
+    PivObject6 = 49,
+    PivObject7 = 50,
+    PivObject8 = 51,
+    PivObject9 = 52,
+    PivObject10 = 53,
+    PivObject11 = 54,
+    PivObject12 = 55,
+    PivObject13 = 56,
+    PivObject14 = 57,
+    PivObject15 = 58,
+    PivObject16 = 59,
+    PivObject17 = 60,
+    PivObject18 = 61,
+    PivObject19 = 62,
+    PivObject20 = 63,
+    PivObject21 = 64,
+    PivObject22 = 65,
+    PivObject23 = 66,
+    PivObject24 = 67,
+    PivObject25 = 68,
+    PivObject26 = 69,
+    PivObject27 = 70,
+    PivObject28 = 71,
+    PivObject29 = 72,
+    PivObject30 = 73,
+    PivObject31 = 74,
+    PivObject32 = 75,
+    PivObject33 = 76,
+    PivProvision = 77,
 }
 #[derive(Clone, Copy, Debug)]
 pub enum StorageError {
@@ -34,16 +96,24 @@ pub trait Storage {
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(feature = "openpgp")]
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_append(&mut self, _bytes: &[u8]) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(feature = "openpgp")]
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_commit(&mut self, _record: Record) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(feature = "openpgp")]
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_abort(&mut self) {}
+    #[cfg(feature = "piv")]
+    fn remove(&mut self, id: Record) -> Result<(), StorageError> {
+        self.replace(id, &[])
+    }
+    #[cfg(feature = "piv")]
+    fn move_record(&mut self, _from: Record, _to: Record) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
+    }
     fn size(&mut self, _record: Record) -> Result<u32, StorageError> {
         Err(StorageError::Unavailable)
     }

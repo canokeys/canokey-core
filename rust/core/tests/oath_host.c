@@ -19,7 +19,11 @@ int main(void) {
       continue;
     }
     if (strncmp(line, "TOUCH ", 6) == 0) {
+#if defined(WITH_PIV) && !defined(WITH_OATH)
+      n = 0;
+#else
       n = ck_core_touch((uint8_t)atoi(line + 6), buffer, sizeof(buffer));
+#endif
     } else {
       size_t len = strcspn(line, "\r\n");
       assert(len % 2 == 0 && len / 2 <= sizeof(buffer));
