@@ -308,13 +308,19 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
         [0x90, 0x00]
     );
     let mut response = if body.is_empty() {
-        frame(&mut runtime, &[0, ins, 0, 0], &mut p)
+        frame(&mut runtime, &[0x00, ins, 0x00, 0x00], &mut p)
     } else {
         let mut response = Vec::new();
         let parts: Vec<_> = body.chunks(chunk).collect();
         for (i, part) in parts.iter().enumerate() {
             let last = i + 1 == parts.len();
-            let mut command = vec![if last { 0 } else { 0x10 }, ins, 0, 0, part.len() as u8];
+            let mut command = vec![
+                if last { 0x00 } else { 0x10 },
+                ins,
+                0x00,
+                0x00,
+                part.len() as u8,
+            ];
             command.extend_from_slice(part);
             response = frame(&mut runtime, &command, &mut p);
             if !last {

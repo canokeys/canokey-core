@@ -150,16 +150,18 @@ impl Piv {
         Ok(SELECT.len() as u32)
     }
     fn metadata_header(&mut self, algorithm: u8, m: &[u8; repo::META]) -> usize {
+        // TLVs preceding the public key: wire algorithm (1 byte), PIN/touch
+        // policy pair (2 bytes), and generated/imported origin (1 byte).
         let prefix = [
             metadata_tag::ALGORITHM,
-            1,
+            0x01,
             repo::algorithm_id(algorithm, &self.config),
             metadata_tag::POLICY,
-            2,
+            0x02,
             m[repo::PIN_POLICY],
             m[repo::TOUCH_POLICY],
             metadata_tag::ORIGIN,
-            1,
+            0x01,
             m[repo::ORIGIN],
         ];
         self.header[..prefix.len()].copy_from_slice(&prefix);

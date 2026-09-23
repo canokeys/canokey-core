@@ -41,6 +41,8 @@ impl Piv {
             at = self.metadata_header(a, &m);
         }
         if repo::rsa(a) {
+            // RSA body: modulus TLV (4-byte header for 2048..4096 bits),
+            // then exponent TLV (2-byte header plus the 4-byte exponent).
             let inner = n + 4 + 6;
             at += codec::header(
                 &mut self.header[at..],
@@ -52,7 +54,7 @@ impl Piv {
                 inner,
             )?;
             at += codec::header(&mut self.header[at..], &[key_tag::MODULUS], n)?;
-            self.suffix[..2].copy_from_slice(&[key_tag::EXPONENT, 4]);
+            self.suffix[..2].copy_from_slice(&[key_tag::EXPONENT, 0x04]);
             self.suffix[2..].copy_from_slice(&w.key.bytes[..4]);
             self.suffix_len = 6;
         } else {
@@ -429,6 +431,8 @@ impl Piv {
             let mut h = [0; 4];
             let hl = codec::header(&mut h, &[ga_tag::EXPONENTIATION], n)?;
             w.output.copy_within(0..n, 67 + hl);
+            // Responder reply carries a 65-byte SEC1 ephemeral point in 82,
+            // followed by the derived key in 85; 7C wraps both fields.
             w.output[..2].copy_from_slice(&[ga_tag::RESPONSE, 0x41]);
             w.output[2..67].copy_from_slice(&ephemeral);
             w.output[67..67 + hl].copy_from_slice(&h[..hl]);

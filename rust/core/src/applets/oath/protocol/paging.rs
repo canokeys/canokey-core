@@ -56,7 +56,8 @@ impl State {
                     };
                     if let Some(tag) = marker {
                         let at = self.length;
-                        self.response[at..at + 3].copy_from_slice(&[tag, 1, record.digits()]);
+                        // Marker value is only the decimal digit count; no OTP follows.
+                        self.response[at..at + 3].copy_from_slice(&[tag, 0x01, record.digits()]);
                         self.length += 3;
                     } else {
                         // CALCULATE ALL shares the single-credential policy.

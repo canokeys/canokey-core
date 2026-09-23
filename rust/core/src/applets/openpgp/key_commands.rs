@@ -56,7 +56,8 @@ impl OpenPgp {
         w.output[..start].copy_from_slice(&prefix[..start]);
         let mut end = start + n;
         if a.rsa() {
-            w.output[end..end + 2].copy_from_slice(&[key_tag::EXPONENT, 4]);
+            // RSA public output ends with 82 04 and the four-byte exponent.
+            w.output[end..end + 2].copy_from_slice(&[key_tag::EXPONENT, 0x04]);
             w.output[end + 2..end + 6].copy_from_slice(&w.key.bytes[..4]);
             end += 6;
         }

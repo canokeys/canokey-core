@@ -147,8 +147,10 @@ impl Decoder {
 /// Write a canonical definite length. Failure leaves output unchanged.
 pub fn write_length(length: u16, output: &mut [u8]) -> Result<usize, Error> {
     let [hi, lo] = length.to_be_bytes();
+    // Short form carries the length itself. 81/82 prefix one/two length
+    // octets; unused scratch bytes are not emitted.
     let (bytes, n) = if length < 128 {
-        ([lo, 0, 0], 1)
+        ([lo, 0x00, 0x00], 1)
     } else if length < 256 {
         ([0x81, lo, 0x00], 2)
     } else {

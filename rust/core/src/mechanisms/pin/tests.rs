@@ -11,7 +11,7 @@ fn retry_policies_preserve_exact_write_sequences() {
             (&b"1234567"[..], false),
         ] {
             for remaining in 1..=3 {
-                let mut bytes = [remaining, 1, 2, 3, 4, 5, 6];
+                let mut bytes = [remaining, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
                 bytes[1..].copy_from_slice(b"123456");
                 let mut writes = [0; 2];
                 let mut count = 0;
@@ -34,7 +34,7 @@ fn retry_policies_preserve_exact_write_sequences() {
                 };
                 assert_eq!(result, expected);
                 let sequence: &[u8] = if correct && prepaid {
-                    &[remaining - 1, 3]
+                    &[remaining - 1, 0x03]
                 } else if correct && remaining != 3 {
                     &[3]
                 } else if correct {
@@ -54,7 +54,7 @@ fn no_success_after_any_failed_commit() {
     for charge in [Charge::OnMismatch, Charge::BeforeCompare] {
         for committed in [false, true] {
             for fail_at in 1..=2 {
-                let mut bytes = [2, b'a'];
+                let mut bytes = [0x02, b'a'];
                 let mut durable = bytes;
                 let mut calls = 0;
                 let result = Credential::new(&mut bytes, 1..2, 0, 3).unwrap().verify(
@@ -86,7 +86,7 @@ fn no_success_after_any_failed_commit() {
         }
     }
     // A failed attempt must also report a write failure, not a trusted counter.
-    let mut bytes = [2, b'a'];
+    let mut bytes = [0x02, b'a'];
     assert_eq!(
         Credential::new(&mut bytes, 1..2, 0, 3).unwrap().verify(
             b"b",
@@ -99,7 +99,7 @@ fn no_success_after_any_failed_commit() {
 
 #[test]
 fn blocked_and_invalid_records_cannot_commit() {
-    let mut bytes = [0, b'a'];
+    let mut bytes = [0x00, b'a'];
     assert_eq!(
         Credential::new(&mut bytes, 1..2, 0, 3).unwrap().verify(
             b"a",

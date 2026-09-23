@@ -37,7 +37,7 @@ fn tlv_value_spans_iso_command_chain_without_reassembly() {
         &[0x10, 0x01, 0x00, 0x00, 0x02, 0x71, 0x82],
         &[0x10, 0x01, 0x00, 0x00, 0x02, 0x00, 0x04],
         &[0x10, 0x01, 0x00, 0x00, 0x02, 0x01, 0x02],
-        &[0, 1, 0, 0, 2, 3, 4],
+        &[0x00, 0x01, 0x00, 0x00, 0x02, 0x03, 0x04],
     ];
     let mut chain = apdu::CommandChain::default();
     let mut decoder = tlv::Decoder::default();
@@ -62,5 +62,5 @@ fn tlv_value_spans_iso_command_chain_without_reassembly() {
             core::mem::take(&mut decoder).finish().unwrap();
         }
     }
-    assert_eq!(values, [1, 2, 3, 4]);
+    assert_eq!(values, [0x01, 0x02, 0x03, 0x04]);
 }

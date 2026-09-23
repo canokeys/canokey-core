@@ -3,14 +3,14 @@
 use super::*;
 
 // Inventory extension: version TLV followed by a packed slot-list TLV.
-const INVENTORY_VERSION_TAG: u8 = 1;
-const INVENTORY_SLOTS_TAG: u8 = 2;
-const INVENTORY_VERSION: u8 = 1;
+const INVENTORY_VERSION_TAG: u8 = 0x01;
+const INVENTORY_SLOTS_TAG: u8 = 0x02;
+const INVENTORY_VERSION: u8 = 0x01;
 const INVENTORY_HEADER_BYTES: usize = 5;
 const INVENTORY_LENGTH: usize = 4;
 const INVENTORY_SLOT_BYTES: usize = 6;
-const INVENTORY_HAS_KEY: u8 = 1;
-const INVENTORY_HAS_CERTIFICATE: u8 = 2;
+const INVENTORY_HAS_KEY: u8 = 0x01;
+const INVENTORY_HAS_CERTIFICATE: u8 = 0x02;
 
 impl Piv {
     pub(super) fn metadata(
@@ -28,12 +28,14 @@ impl Piv {
             if h.p2 != 0x00 {
                 return Err(Sw::WRONG_P1P2);
             }
+            // 01 01 01 declares inventory version 1. Tag 02 contains packed
+            // six-byte entries; its zero length is patched after enumeration.
             w.output[..INVENTORY_HEADER_BYTES].copy_from_slice(&[
                 INVENTORY_VERSION_TAG,
-                1,
+                0x01,
                 INVENTORY_VERSION,
                 INVENTORY_SLOTS_TAG,
-                0,
+                0x00,
             ]);
             let mut n = INVENTORY_HEADER_BYTES;
             for i in 0..repo::USER_KEY_COUNT {
@@ -45,6 +47,9 @@ impl Piv {
                 };
                 let flags = (u8::from(m[repo::ORIGIN] != 0) * INVENTORY_HAS_KEY)
                     | (u8::from(cert) * INVENTORY_HAS_CERTIFICATE);
+                // Entry: slot, presence flags (bit 0 key / bit 1 certificate),
+                // wire algorithm, origin, PIN policy, touch policy. Certificate-
+                // only slots emit zero for the absent key metadata.
                 if flags != 0 {
                     w.output[n..n + INVENTORY_SLOT_BYTES].copy_from_slice(&[
                         repo::SLOTS[i],
@@ -94,15 +99,17 @@ impl Piv {
                     s.puk_tries,
                 )
             };
+            // TLVs: algorithm FF (PIN/PUK), factory-default flag, then
+            // retry limit and remaining attempts (in that order).
             w.output[..10].copy_from_slice(&[
                 metadata_tag::ALGORITHM,
-                1,
+                0x01,
                 0xff, // PIN/PUK reference, not an asymmetric algorithm.
                 metadata_tag::DEFAULT,
-                1,
+                0x01,
                 u8::from(default),
                 metadata_tag::RETRIES,
-                2,
+                0x02,
                 limit,
                 remaining,
             ]);
@@ -111,16 +118,18 @@ impl Piv {
         }
         if h.p2 == reference::MANAGEMENT {
             let mut mgmt = repo::management(p)?;
+            // TLVs: AES-192 algorithm, policy (no PIN + configured touch),
+            // and whether the management key is still the factory default.
             w.output[..10].copy_from_slice(&[
                 metadata_tag::ALGORITHM,
-                1,
+                0x01,
                 wire_alg::AES192,
                 metadata_tag::POLICY,
-                2,
-                0,
+                0x02,
+                0x00,
                 mgmt[repo::MANAGEMENT_TOUCH],
                 metadata_tag::DEFAULT,
-                1,
+                0x01,
                 u8::from(mgmt[repo::MANAGEMENT_KEY..] == repo::DEFAULT_MGMT),
             ]);
             p.memory.wipe(&mut mgmt);
@@ -163,6 +172,8 @@ impl Piv {
         if value.len() > repo::NAME_MAX || !value.len().is_multiple_of(2) {
             return Err(Sw::WRONG_DATA);
         }
+        // UTF-16LE labels forbid NUL and unpaired surrogates: D800..DBFF
+        // starts a pair and must be followed by DC00..DFFF.
         let mut high = false;
         for pair in value.as_chunks::<2>().0 {
             let c = u16::from_le_bytes(*pair);

@@ -110,15 +110,18 @@ impl State {
                 &mut Mac::new(p.crypto, p.memory),
             )
             .map_err(status)?;
-        self.response[..2].copy_from_slice(&[tag::VERSION, 3]);
+        // SELECT returns version (3 bytes) and persistent applet handle (8 bytes).
+        // An access-protected applet also returns an 8-byte authentication
+        // challenge and algorithm TLV 7B 01 01 (one-byte value: HMAC-SHA1).
+        self.response[..2].copy_from_slice(&[tag::VERSION, 0x03]);
         self.response[2..5].copy_from_slice(&OATH_VERSION);
-        self.response[5..7].copy_from_slice(&[tag::NAME, 8]);
+        self.response[5..7].copy_from_slice(&[tag::NAME, 0x08]);
         self.response[7..15].copy_from_slice(&selected.handle);
         self.length = 15;
         if let Some(challenge) = selected.challenge {
-            self.response[15..17].copy_from_slice(&[tag::CHALLENGE, 8]);
+            self.response[15..17].copy_from_slice(&[tag::CHALLENGE, 0x08]);
             self.response[17..25].copy_from_slice(&challenge);
-            self.response[25..28].copy_from_slice(&[tag::ALGORITHM, 1, 1]);
+            self.response[25..28].copy_from_slice(&[tag::ALGORITHM, 0x01, 0x01]);
             self.length = 28;
         }
         Ok(self.length as u32)
@@ -333,7 +336,8 @@ impl State {
                             status(e)
                         }
                     })?;
-                self.response[..2].copy_from_slice(&[tag::RESPONSE, 20]);
+                // RESPONSE contains the full 20-byte HMAC-SHA1 proof.
+                self.response[..2].copy_from_slice(&[tag::RESPONSE, 0x14]);
                 self.response[2..22].copy_from_slice(&result);
                 mac.wipe(&mut result);
                 self.length = 22;

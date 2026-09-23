@@ -10,6 +10,8 @@ impl Piv {
         out: &mut [u8],
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
+        // P2 already selected the management key. P1=00 uses its default
+        // algorithm; P1=08 explicitly requests the supported AES-192 key.
         if !matches!(h.p1, wire_alg::DEFAULT | wire_alg::AES192) {
             return Err(Sw::WRONG_P1P2);
         }
@@ -32,15 +34,17 @@ impl Piv {
                 } else {
                     AuthMode::External
                 };
+                // 7C wraps an 18-byte inner TLV: one-byte tag, one-byte
+                // length and a 16-byte AES block (witness or challenge).
                 out[..4].copy_from_slice(&[
                     ga_tag::TEMPLATE,
-                    18,
+                    0x12,
                     if mutual {
                         ga_tag::WITNESS
                     } else {
                         ga_tag::CHALLENGE
                     },
-                    16,
+                    0x10,
                 ]);
                 if mutual {
                     p.crypto
@@ -77,7 +81,8 @@ impl Piv {
                 {
                     return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
                 }
-                out[..4].copy_from_slice(&[ga_tag::TEMPLATE, 18, ga_tag::RESPONSE, 16]);
+                // Mutual proof: 7C 12 wraps RESPONSE 82 10 and its AES block.
+                out[..4].copy_from_slice(&[ga_tag::TEMPLATE, 0x12, ga_tag::RESPONSE, 0x10]);
                 p.crypto
                     .aes192(
                         key,

@@ -83,9 +83,12 @@ impl OpenPgp {
                 v.bytes(AID)?;
                 v.bytes(CARD_VERSION_AND_MANUFACTURER)?;
                 v.bytes(&serial)?;
-                v.bytes(&[0, 0])
+                // Last two bytes of the 16-byte OpenPGP AID are reserved.
+                v.bytes(&[0x00, 0x00])
             }
             tag::HISTORICAL_BYTES => v.bytes(HISTORICAL_BYTES),
+            // General Feature Management: tag 81, one-byte feature bitmap;
+            // bit 0x20 advertises the button used for user-presence checks.
             tag::GENERAL_FEATURES => v.bytes(&[0x81, 0x01, 0x20]),
             tag::EXTENDED_CAPABILITIES => v.bytes(EXTENDED_CAPABILITIES),
             tag::CARDHOLDER | tag::APPLICATION | tag::DISCRETIONARY => {
@@ -130,7 +133,9 @@ impl OpenPgp {
                 let pw1 = pin::info(Record::PgpPw1, p)?.retries_remaining;
                 let rc = pin::info(Record::PgpRc, p)?.retries_remaining;
                 let pw3 = pin::info(Record::PgpPw3, p)?.retries_remaining;
-                v.bytes(&[s[state_layout::PW1_REUSE], 64, 64, 64, pw1, rc, pw3])
+                // PW status: signature-PW1 reuse flag, maximum PW1/RC/PW3
+                // lengths (64 bytes each), then their remaining retry counts.
+                v.bytes(&[s[state_layout::PW1_REUSE], 0x40, 0x40, 0x40, pw1, rc, pw3])
             }
             tag::FINGERPRINTS => {
                 for r in 0..key_role::COUNT {
