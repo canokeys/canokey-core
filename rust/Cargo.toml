@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+[workspace]
+members = ["protocol", "core", "ffi"]
+resolver = "3"
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = true

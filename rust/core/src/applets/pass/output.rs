@@ -1,0 +1,132 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Rust owns gesture interpretation and the lifetime of a password output job.
+#![forbid(unsafe_code)]
+use crate::ports::Memory;
+pub struct Output {
+    bytes: [u8; 33],
+    used: usize,
+    position: usize,
+    contact: bool,
+    since: u32,
+    boot_ready: bool,
+    suppressed: bool,
+    draining: bool,
+}
+impl Output {
+    pub const fn new() -> Self {
+        Self {
+            bytes: [0; 33],
+            used: 0,
+            position: 0,
+            contact: false,
+            since: 0,
+            boot_ready: false,
+            suppressed: false,
+            draining: false,
+        }
+    }
+    pub fn inhibit(&mut self, pressed: bool, memory: &dyn Memory) {
+        self.reset(memory);
+        self.suppressed = pressed;
+    }
+    pub fn busy(&self) -> bool {
+        self.used != 0 || self.draining
+    }
+    pub fn reset(&mut self, memory: &dyn Memory) {
+        memory.wipe(&mut self.bytes);
+        self.used = 0;
+        self.position = 0;
+        self.contact = false;
+        self.draining = false;
+    }
+    pub fn sample(
+        &mut self,
+        pressed: bool,
+        now: u32,
+        ready: bool,
+        memory: &dyn Memory,
+        mut resolve: impl FnMut(u8, &mut [u8]) -> usize,
+    ) -> Option<u8> {
+        if ready {
+            self.draining = false;
+        }
+        if self.suppressed {
+            self.suppressed = pressed;
+            if pressed {
+                return None;
+            }
+            self.contact = false;
+        }
+        if !self.boot_ready {
+            if now <= 1500 {
+                self.contact = false;
+                return None;
+            }
+            // Do not accept a contact that began in the startup ignore window.
+            if pressed {
+                return None;
+            }
+            self.boot_ready = true;
+        }
+        if pressed && !self.contact {
+            self.since = now;
+        }
+        if !pressed && self.contact && !self.busy() {
+            let elapsed = now.wrapping_sub(self.since);
+            if elapsed >= 30 {
+                self.used = resolve(u8::from(elapsed >= 500), &mut self.bytes);
+                self.position = 0;
+            }
+        }
+        self.contact = pressed;
+        if !ready || self.used == 0 {
+            return None;
+        }
+        self.draining = true;
+        let byte = self.bytes[self.position];
+        memory.wipe(&mut self.bytes[self.position..self.position + 1]);
+        self.position += 1;
+        if self.position == self.used {
+            self.used = 0;
+            self.position = 0;
+        }
+        Some(byte)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Erase;
+    impl Memory for Erase {
+        fn wipe(&self, b: &mut [u8]) {
+            b.fill(0);
+        }
+    }
+    #[test]
+    fn claimed_gesture_is_not_replayed_after_wait() {
+        let mut output = Output::new();
+        let mut calls = 0;
+        let mut resolve = |_: u8, b: &mut [u8]| {
+            calls += 1;
+            b[0] = b'x';
+            1
+        };
+        assert_eq!(output.sample(false, 1600, true, &Erase, &mut resolve), None);
+        assert_eq!(output.sample(true, 2000, true, &Erase, &mut resolve), None);
+        // A presence request timed out while the contact was still held.
+        output.inhibit(true, &Erase);
+        assert_eq!(output.sample(true, 32000, true, &Erase, &mut resolve), None);
+        assert_eq!(
+            output.sample(false, 32100, true, &Erase, &mut resolve),
+            None
+        );
+        // Only a subsequent independent gesture is eligible for PASS.
+        assert_eq!(output.sample(true, 33000, true, &Erase, &mut resolve), None);
+        assert_eq!(
+            output.sample(false, 33100, true, &Erase, &mut resolve),
+            Some(b'x')
+        );
+        assert_eq!(calls, 1);
+    }
+}

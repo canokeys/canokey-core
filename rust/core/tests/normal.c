@@ -20,7 +20,13 @@ int main(void) {
   assert(ck_core_install() == 0);
 #ifdef WITH_PASS
 #ifdef WITH_OATH
-  assert(ck_core_applet_count() == 2);
+  assert(ck_core_applet_count() ==
+#ifdef WITH_OPENPGP
+  3
+#else
+  2
+#endif
+);
 #else
   assert(ck_core_applet_count() == 1);
 #endif

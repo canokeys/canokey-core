@@ -63,7 +63,7 @@ void CCID_InFinished(uint8_t extension) {
 }
 #ifdef RUST_CORE_SERVICES
 // Link timing only: never dispatch an APDU or reenter Rust from this callback.
-uint8_t ck_ccid_progress(void) {
+static uint8_t send_time_extension(void) {
   static uint32_t last;
   static uint8_t extension[10];
   if (reset_pending || phase != 3) return 0;
@@ -78,6 +78,20 @@ uint8_t ck_ccid_progress(void) {
     CCID_Response_SendData(&usb_device, extension, sizeof(extension), 1);
   }
   return 1;
+}
+#ifdef RUST_CORE_OPENPGP
+// Crypto may run for many seconds without returning to the main loop. The
+// timer handles only CCID link maintenance; no Rust or crypto state is touched.
+void CCID_TimeExtensionLoop(void) {
+  if(send_time_extension())device_set_timeout(CCID_TimeExtensionLoop,500);
+}
+#endif
+uint8_t ck_ccid_progress(void) {
+#ifdef RUST_CORE_OPENPGP
+  return !reset_pending && phase==3;
+#else
+  return send_time_extension();
+#endif
 }
 #endif
 void CCID_Loop(void) {
@@ -135,7 +149,13 @@ void CCID_Loop(void) {
         error = SLOTERROR_BAD_LEVELPARAMETER;
         break;
       }
+#ifdef RUST_CORE_OPENPGP
+      device_set_timeout(CCID_TimeExtensionLoop,500);
+#endif
       int32_t n = ck_core_exchange(1, request + 10, expected - 10, response + 10, sizeof(response) - 10);
+#ifdef RUST_CORE_OPENPGP
+      device_set_timeout(NULL,0);
+#endif
       if (n < 0) {
         error = SLOTERROR_HW_ERROR;
         break;

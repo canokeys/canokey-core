@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::apdu::Header;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StatusWord(pub u16);
@@ -45,94 +44,71 @@ pub struct Chunk {
     pub sw: StatusWord,
 }
 
-/// Owns a source lease, not its storage. Drop, cancellation, completion and read
-/// errors close the lease exactly once. A session must own this object and drop
-/// it on reset/preemption; there is no global state or implicit hardware lock.
-pub struct Response<'a> {
-    source: Option<&'a mut dyn Source>,
+/// Owns continuation metadata. The runtime owns the source handle and supplies
+/// a fresh borrow per call, avoiding self-referential applet/source references.
+#[derive(Default)]
+pub struct Response {
+    pending: Option<Pending>,
+}
+#[derive(Clone, Copy)]
+struct Pending {
     total: u32,
     offset: u32,
-    final_sw: StatusWord,
+    sw: StatusWord,
 }
-
-impl<'a> Response<'a> {
-    pub fn new(source: &'a mut dyn Source, total: u32, final_sw: StatusWord) -> Self {
-        Self {
-            source: Some(source),
+impl Response {
+    pub const fn new() -> Self {
+        Self { pending: None }
+    }
+    pub fn active(&self) -> bool {
+        self.pending.is_some()
+    }
+    pub fn start(&mut self, total: u32, sw: StatusWord) {
+        debug_assert!(!self.active());
+        self.pending = Some(Pending {
             total,
             offset: 0,
-            final_sw,
-        }
+            sw,
+        });
     }
-
-    pub fn active(&self) -> bool {
-        self.source.is_some()
-    }
-    pub fn offset(&self) -> u32 {
-        self.offset
-    }
-
-    pub fn clear(&mut self) {
-        if let Some(source) = self.source.take() {
+    pub fn clear(&mut self, source: &mut dyn Source) {
+        if self.pending.take().is_some() {
             source.close();
         }
     }
-
-    /// Call before dispatch. A new command abandons this response even if it
-    /// subsequently fails. GET RESPONSE without an active lease is an error.
-    pub fn command(&mut self, header: Header) -> Result<(), StatusWord> {
-        if !header.is_get_response() {
-            self.clear();
-            return Ok(());
-        }
-        if self.active() {
-            Ok(())
+    /// Source reads are monotonic. Transport retries resend their owned chunk,
+    /// rather than rewinding a generator or repeating a credential operation.
+    pub fn next(
+        &mut self,
+        source: &mut dyn Source,
+        output: &mut [u8],
+        le: u32,
+    ) -> Result<Chunk, StatusWord> {
+        let p = self.pending.ok_or(StatusWord::COMMAND_NOT_ALLOWED)?;
+        let plan = ResponsePlan::new(p.total, p.offset, le.min(output.len() as u32), p.sw)?;
+        let n = plan.length as usize;
+        let len = if n == 0 {
+            0
         } else {
-            Err(StatusWord::COMMAND_NOT_ALLOWED)
-        }
-    }
-
-    /// output is payload-only; the caller owns trailer space and chunk policy.
-    /// Zero Le/capacity makes no progress and preserves the pending response.
-    pub fn next(&mut self, output: &mut [u8], le: u32) -> Result<Chunk, StatusWord> {
-        let Some(source) = self.source.as_mut() else {
-            return Err(StatusWord::COMMAND_NOT_ALLOWED);
-        };
-        let remaining = self.total - self.offset;
-        let n = output.len().min(remaining.min(le) as usize);
-        if remaining == 0 {
-            let sw = self.final_sw;
-            self.clear();
-            return Ok(Chunk { len: 0, sw });
-        }
-        if n == 0 {
-            return Ok(Chunk {
-                len: 0,
-                sw: StatusWord::remaining(remaining),
-            });
-        }
-        let read = source.read(self.offset, &mut output[..n]);
-        let len = match read {
-            Ok(len) if len > 0 && len <= n => len,
-            _ => {
-                // Do not expose a partially written response on callback failure.
-                output[..n].fill(0);
-                self.clear();
-                return Err(StatusWord::UNABLE_TO_PROCESS);
+            match source.read(p.offset, &mut output[..n]) {
+                Ok(nread) if nread > 0 && nread <= n => nread,
+                _ => {
+                    output[..n].fill(0);
+                    self.clear(source);
+                    return Err(StatusWord::UNABLE_TO_PROCESS);
+                }
             }
         };
-        let plan = ResponsePlan::new(self.total, self.offset, len as u32, self.final_sw)?;
-        self.offset = plan.next;
+        let plan = ResponsePlan::new(p.total, p.offset, len as u32, p.sw)?;
         if plan.complete {
-            self.clear();
+            self.clear(source);
+        } else {
+            self.pending = Some(Pending {
+                offset: plan.next,
+                ..p
+            });
         }
         Ok(Chunk { len, sw: plan.sw })
-    }
-}
-
-impl Drop for Response<'_> {
-    fn drop(&mut self) {
-        self.clear();
     }
 }
 

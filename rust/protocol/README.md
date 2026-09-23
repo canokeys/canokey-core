@@ -1,95 +1,64 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Common Rust protocol foundation
 
-`canokey-protocol` is allocation-free safe `no_std` Rust with no applet,
-platform callbacks or C ABI. `core/` owns session integration; `tlv/` supplies
-safe length decoding. The previous C-parser replacement experiment is removed.
+`canokey-protocol` is allocation-free safe `no_std` Rust without applet, platform
+or C ABI dependencies. It belongs to the shared `rust/` Cargo workspace.
 
-## APDU contract
+## APDU
 
-`apdu::parse()` returns a borrowed command view. `FrameDecoder` receives a known
-transport frame length and consumes arbitrary packet fragments. Both implement
-Cases 1, 2S/3S/4S and 2E/3E/4E. There is no implicit 256/288-byte transport limit
-inside the format parser. Length limits and allowed command/transport pairs must
-be checked by the integration layer before dispatch.
+`apdu/header.rs` defines wire metadata; `decode.rs` implements short and extended
+APDU layouts; `chain.rs` tracks logical-command identity and total length without
+a payload buffer. The current device profile admits short APDUs and approved
+ISO command chaining; syntax support does not enable extended device transport.
 
-`CommandInfo::le` records wire absence as `None`, short zero as `Some(256)` and
-extended zero as `Some(65536)`. `legacy_le()` reproduces C's implicit maximum Le
-for Case 3 and zero for Case 1. Changing that compatibility policy requires a
-separate protocol decision. Header recognition of GET RESPONSE matches C
-(CLA 00/80, INS C0); it does not itself validate P1/P2 or session authorization.
+`parse()` supplies a borrowed complete-frame view. Production runtime uses
+`FrameDecoder::feed_events`, emitting Start metadata before Data slices, then
+`finish()` supplies validated trailing Le. Both share the same layout decoder.
+The decoder retains seven header bytes and two Le bytes, not the body. Start
+metadata has no final Le; its absence must not determine response length yet.
+Missing Le, short zero and extended zero remain distinct wire representations.
 
-`FrameDecoder` retains seven envelope bytes and two trailing Le bytes, never the
-payload. Its callback receives only data bytes borrowed for that callback.
-Callbacks must be free of persistent side effects: frame truncation, cancellation
-or callback failure invalidates all provisional semantic state. `finish()` consumes
-the decoder. An error poisons it; reuse requires a new instance.
+Frame completion and logical command completion are separate. Chain metadata
+can be checked at Start; a failed/truncated frame must then abort the consumer.
+An intermediate APDU is acknowledged without finalizing its TLV, hash or object
+consumer. Callback slices expire at return. Incremental crypto is permitted;
+persistent effects require a command-specific authorization/publication/abort
+contract. Do not assume PKE input survives a crypto callback.
 
-Transport packet fragmentation is not ISO command chaining. `CommandChain`
-validates metadata of completed APDU fragments and reports new/restarted/final
-commands with a caller-supplied aggregate limit. Matching masks only CLA bit 0x10,
-like C. A header mismatch starts a new command, like C. On overflow the Rust
-helper explicitly resets, whereas C leaves cleanup to its caller. Consumers must
-abort/reset their provisional command state on either overflow or restart.
+## Responses
 
-For ordinary short chained APDUs, first parse the already bounded transport
-frame, call `CommandChain::accept`, then feed its borrowed payload to the common
-TLV/command consumer. Finish the semantic consumer only after the final chain
-fragment. Large standalone source-backed frames use `FrameDecoder` and are
-consumed immediately, before crypto, keepalive, storage or session yield can
-invalidate their source. This crate does not implement a transport source lease
-or allow retaining PKE offsets for later use.
+`Response` owns only continuation metadata. Runtime owns the source handle and
+provides a fresh mutable `Source` borrow to each `next`/`clear` call, avoiding
+self-referential structs. Reads are monotonic and may return positive short
+chunks. Sequential generators need not rewind; the C endpoint retains the chunk
+for transport retries. GET RESPONSE never repeats a credential operation.
 
-## Response contract
+Completion, failed reads and explicit runtime cancellation close the source
+once. Runtime clears pending responses before replacement, reset or handoff;
+there is no implicit backend access in Drop. Zero Le makes no progress and
+preserves an active response. Errors clear the attempted output range.
+The transport owns trailer space and appends SW after payload production.
 
-`Response` exclusively borrows a `Source` lease. `next` performs bounded pull
-reads, permits positive short reads, tracks progress and emits 61xx until the
-final application status. The output slice bounds the chunk size; the transport
-owns trailer space and its policy (including the existing 250-byte source chunk
-limit). `command` drops the pending stream on a non-GET RESPONSE command and
-rejects GET RESPONSE when no stream is active.
+Source backing must survive incoming APDUs and SW trailer writes. Safe core's
+prepared response storage is distinct from the C endpoint buffer. The retained
+C boundary ends the RX borrow before starting TX; no C saved-tail implementation
+is linked into the independent Rust target.
 
-Completion, failed reads, explicit clear, cancellation by dropping the response,
-or session cleanup must close exactly once. Error output is discarded and the
-attempted payload range is cleared. The session integration layer must own and
-drop the lease on reset/preemption; no implicit global lock is supplied here.
+## TLV
 
-Intentional primitive-level behavior: zero Le/output capacity returns an empty
-61xx response without invoking the reader or advancing; an empty source finishes
-without a zero-byte read. Existing C source output can reject a nonempty stream
-when its reader returns zero for Le=0. The C adapter deliberately preserves its existing zero-length callback/error
-semantics, tested with both backends. The safe Rust lease API keeps its documented
-no-progress behavior; it is not substituted for the C callback owner.
+`tlv::Decoder` emits Start/Value/End events and never collects a value. Tags up
+to three encoded bytes and definite lengths through 65535 can span arbitrary
+input fragments. The internal length state is a Rust enum, not a C-layout struct.
+Non-minimal definite lengths remain accepted; indefinite lengths are rejected.
+Constructed values are opaque to this primitive: applet schemas own nesting,
+container budgets, allowed tags, order and field semantics. OATH's byte-TLV
+cursor remains a separate wire format; its properties field is not BER.
 
-Safe source and output borrows are disjoint. The common C adapter retains the
-shared-buffer alias and saved-tail machinery, calling Rust only for parsing and
-pure continuation arithmetic. In-place moves happen after the Rust input borrow
-ends. No overlapping Rust references or long-lived transport pointers are made.
-The same production C translation unit is tested with both backends. Response storage must survive
-until close; transient request PKE is not a valid response source across crypto.
-
-## TLV contract
-
-`tlv::Decoder` emits Start/Value/End events and never materializes a value. It
-accepts up to three encoded tag bytes and definite lengths through 65535, reusing
-`canokey-tlv::LengthState`. Indefinite/oversized lengths and unterminated or
-oversized tag encodings are rejected. Non-minimal definite lengths remain
-accepted for C compatibility. Tags and constructed values are otherwise opaque;
-this is not a full BER schema or recursive ASN.1 validator. The applet schema
-must check permitted tags, nesting, duplicates, field lengths and values.
-
-Consumers may not retain Value slices. Request errors invalidate earlier events;
-`finish` detects truncation, and a failed decoder cannot resume. `write_length`
-emits a minimal definite length and leaves undersized output unchanged.
-
-## Normal checks
-
-The normal tests cover a SELECT frame delivered in two transport fragments,
-a two-chunk response and a TLV value spanning an ISO command chain. Run with:
+Run normal protocol tests from the core repository:
 
 ```sh
-cargo +nightly-2026-09-04 test --manifest-path rust/protocol/Cargo.toml
+cargo +nightly-2026-09-04 test --manifest-path rust/Cargo.toml -p canokey-protocol
 ```
 
-The previous exhaustive and C differential experiment suites are not carried
-into this rewrite checkpoint.
+The production runtime's long-command/response scenarios live in
+`core/tests/streaming.rs` and run through CTest's `rust-normal` entry.

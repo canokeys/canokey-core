@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "canokey-rust-ffi"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+[dependencies]
+canokey-rust-core = { path = "../core" }
+[features]
+admin = ["canokey-rust-core/admin"]
+openpgp = ["canokey-rust-core/openpgp"]
+piv = ["canokey-rust-core/piv"]
+
+default = []
+pass = ["canokey-rust-core/pass"]
+oath = ["canokey-rust-core/oath"]
+host-runtime = []

@@ -17,6 +17,7 @@ int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
 int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
 /* New /rust namespace: file 0 = versioned slots, file 1 = versioned PIN,
  * file 2 = OATH metadata, file 3 = OATH records.
+ * Files 4..13 are OpenPGP state, PW1/PW3/RC, SIG/DEC/AUT keys and certificates.
  * read returns -1 only for missing, other negative values for errors.
  * read/write return exact byte counts, negative on failure.
  * A successful write must be durable and atomic. Crypto must complete or halt;
@@ -37,6 +38,10 @@ int32_t ck_platform_mac(uint8_t algorithm, const uint8_t *key, size_t key_length
                         uint8_t output[64]);
 int32_t ck_platform_random(uint8_t *output, size_t length);
 void ck_platform_serial(uint8_t output[4]);
+/* One staged-object transaction, separate from atomic record-update staging.
+ * Operations: 0 begin, 1 append, 2 publish to file, 3 abort. Returns 0 on success.
+ * All calls are serialized and stage bytes must not be published before commit. */
+int32_t ck_platform_stage(uint8_t operation, uint8_t file, const uint8_t *input, size_t length);
 /* ADMIN/PASS input and link-maintenance capabilities. */
 void ck_platform_led(uint8_t on);
 uint32_t ck_platform_now(void);

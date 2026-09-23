@@ -1,11 +1,17 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Full Rust core migration: module boundaries and service contracts
 
-Status: migration architecture and implementation ledger, updated 2026-09-22.
+Status: migration architecture and implementation ledger, updated 2026-09-23.
 The independent zero-applet USB target and the first ADMIN + PASS checkpoint
 are implemented. OATH now has an APDU-free domain, a common-APDU adapter,
-concrete storage, USB integration and normal host/device validation.
+concrete storage, USB integration and normal host/device validation. OpenPGP
+now has a real optional profile, streaming import/certificates and all existing
+algorithm families; see [OpenPGP implementation](openpgp.md).
 Design coverage for the remaining applets is not feature support.
+The 2026-09-23 C streaming review in section 14 constrains the next refactor;
+section 12 records implementation order and completed foundation work. Long
+consumer fixtures exercise the production runtime. PIV remains absent; the
+OpenPGP profile now supplies real key/object consumers on that foundation.
 See [ADMIN/PASS checkpoint](admin-pass.md) for its supported commands and gaps.
 
 Scope: the complete current core, including ADMIN, PASS, OATH, CTAP2/U2F, PIV,
@@ -88,40 +94,39 @@ slot indices or algorithms. A zero-applet registry is a real empty build. The AD
 must not link OATH, and applet count describes compiled applets, not
 services such as PIN verification.
 
-Proposed organization (logical, not a request to create every file now):
+Organization after the 2026-09-23 foundation refactor (future applets are not created):
 
 ```text
 rust/
-  protocol/                  # common APDU/TLV; optional bounded CBOR primitives
+  Cargo.toml                 # one workspace; not a workspace per small component
+  protocol/src/
+    apdu/                    # envelope decoder, chain metadata, response planning
+    tlv/                     # incremental BER and byte-TLV structural primitives
   core/src/
-    runtime/                 # session, command/response lifecycle, event dispatch
-    registry.rs              # explicit feature-gated applet assembly
-    services/                # typed storage/crypto/auth/input/output contracts
-    interface/               # unsafe C ABI and platform backend adapters
-    admin.rs                 # ADMIN adapter; owns PASS management commands
-    pass_protocol.rs         # ADMIN PASS configuration schema
-    pass.rs                  # typed PASS persistence/output service
-    oath_protocol.rs         # OATH schema and SW mapping, common APDU types
-  pass/src/
-    domain.rs                # typed slots and calculations
-    codec.rs                 # versioned record bytes, no native layout
-  oath/src/                  # no APDU dependency
-    credential.rs            # types and credential validation
-    codec.rs                 # explicit internal record encoding
-    service.rs               # repository, naming, counters and OTP calculation
-    auth.rs                  # OATH access-code mechanism, not ADMIN PIN
-  fido/                      # CTAP2/U2F adapters, credentials, PIN/UV, extensions
-  piv/                       # PIV protocol, objects and key policy
-  openpgp/                   # OpenPGP protocol, data objects and key policy
-  ndef/                      # Type 4 Tag application/file semantics
-  management/                # explicit optional device-management applet
-interfaces/rust-core/        # C transport adapters and public ABI header
+    runtime/                 # session, exchange lifecycle and static routing
+    applets/
+      admin/                 # ADMIN wire adapter and management policy
+      pass/                  # slot domain, record codec, repository and output rules
+      oath/                  # wire adapter, domain, auth, codec and repository
+      piv/                   # future: PIV adapter, streaming consumers and policy
+      openpgp/               # future: OpenPGP adapter, consumers and policy
+      fido/                  # future: APDU/native adapters and CTAP/U2F policy
+      ndef/                  # future: Type 4 Tag application/file semantics
+    flows/                   # explicit cross-applet reset and HOTP-output workflows
+    ports/                   # narrow storage/crypto/presence/device contracts
+  ffi/src/                   # unsafe C ABI and platform backend implementations
+interfaces/rust-core/        # retained C transport adapters and public ABI header
 ```
 
-Applet adapters under `core/src/` may use shared `Header` and `StatusWord`;
-they must not duplicate APDU definitions. `pass/` and `oath/` contain typed
-records and services without a dependency on `protocol/`, core or USB. Their
-crate roots expose modules/types; they do not contain transport entrypoints.
+Applet-local `protocol`, `domain`, `codec` and `repository` modules remain
+separate responsibilities but live together. Domain modules do not depend on
+APDU/SW or USB. ADMIN owns the PASS configuration wire commands; OATH owns its
+binding wire commands; both call the same typed PASS service. PASS does not need
+an invented selectable AID. Common APDU definitions remain in `protocol`.
+Features are explicit; board profiles assemble dependencies rather than using
+an OATH feature to implicitly install unrelated applets. Registry only routes;
+factory reset and HOTP keyboard orchestration belong to typed cross-applet flows.
+No per-applet crate or generic dynamic plugin framework is required.
 
 ## 3. State and lifetime ownership
 
@@ -174,9 +179,11 @@ not force a self-referential struct or one permanent large buffer per applet:
 2. Runtime establishes owner/generation, applies the transport profile and uses
    the common APDU decoder. The current device profile remains short APDUs plus
    ISO command chaining; extended transport admission is a separate capability.
-3. SELECT-by-AID uses the registry. Deselect closes the previous response, aborts
-   its command and revokes selection-bound grants, including when selection
-   fails. Applet-local SELECT FILE (notably NDEF/OpenPGP) goes to that applet;
+3. SELECT-by-AID uses the registry. A new command closes the previous response
+   and aborts its unfinished input. Resolve AID before changing selection: an
+   unknown AID preserves the current selection/grants. Switching to a known
+   different applet revokes old selection-bound grants; initialization failure
+   leaves no selection. OATH same-AID selection renews its challenge/session. Applet-local SELECT FILE (notably NDEF/OpenPGP) goes to that applet;
    not every INS A4 changes the selected application. Same-AID reselection and
    logical-channel support are explicit protocol-profile choices.
 4. The selected adapter validates the command header and starts a typed command
@@ -344,7 +351,7 @@ The PASS crate itself does not depend on OATH.
 
 ### OATH compatibility contract
 
-The Rust OATH domain is the APDU-free `oath/` crate. `core/oath_protocol.rs`
+The Rust OATH domain is the APDU-free `oath/` crate. `core/src/applets/oath/protocol.rs`
 delegates to it, retaining the existing OATH AID and commands. See
 [OATH checkpoint and command inventory](oath.md) for exact implementation status.
 
@@ -651,14 +658,14 @@ These are design walkthroughs, not additional runtime tests in this checkpoint.
 
 | Current location | Required direction (implemented incrementally) |
 | --- | --- |
-| `core/engine.rs`, `registry.rs` | Implemented APDU ownership/chains/response routing; native CTAP and asynchronous operations remain future work |
-| `core/admin.rs`, `pass_protocol.rs` | ADMIN owns PIN and PASS management commands; remaining C ADMIN commands are tracked in the checkpoint |
-| `core/pass.rs`, `pass/` | Typed slot service and explicit codec; no APDU/SW or OATH stub |
-| `core/auth.rs` | Typed C-compatible PIN mechanism; no KDF; grants held by runtime |
-| `core/services.rs`, `interface.rs` | Typed storage/crypto contracts and separate unsafe C ABI; add capabilities only for real operations |
-| `core/output.rs`, C keyboard transport | Rust owns gesture/job/secret text; C maps and transmits one character; physical typing still needs an end-to-end normal check |
+| `core/src/runtime/engine.rs`, `registry.rs` | Implemented APDU ownership/chains/response routing; native CTAP and asynchronous operations remain future work |
+| `core/src/applets/admin/protocol.rs`, `pass_config.rs` | ADMIN owns PIN and PASS management commands; remaining C ADMIN commands are tracked in the checkpoint |
+| `core/src/applets/pass/` | Typed slot service and explicit codec; no APDU/SW or OATH stub |
+| `core/src/applets/admin/pin.rs` | Typed C-compatible PIN mechanism; no KDF; grants held by runtime |
+| `core/src/ports/`, `ffi/src/` | Typed storage/crypto contracts and separate unsafe C ABI; add capabilities only for real operations |
+| `core/src/applets/pass/output.rs`, C keyboard transport | Rust owns gesture/job/secret text; C maps and transmits one character; physical typing still needs an end-to-end normal check |
 | CIU storage backend | Mount without autoformat; /rust namespace; atomic replacement; word-aligned file cache |
-| `oath/` | Typed credentials/codec, repository contract, naming, HOTP/TOTP and access-code services implemented; five normal domain tests pass. Adapter, concrete storage, USB, presence and PASS binding are integrated; see oath.md for measured validation |
+| `core/src/applets/oath/` | Typed credentials/codec, repository contract, naming, HOTP/TOTP and access-code services implemented; five normal domain tests pass. Adapter, concrete storage, USB, presence and PASS binding are integrated; see oath.md for measured validation |
 | CTAP/PIV/OpenPGP/NFC/NDEF | Architecture specified; not enabled or implemented by this profile |
 
 The management AID and existing command numbers are compatibility requirements.
@@ -668,23 +675,26 @@ wire binding. SELECT/routing remains common runtime behavior.
 
 ### OATH implementation details
 
-`core/oath_backend.rs` binds typed OATH repositories/MAC to the narrow platform
+`core/src/applets/oath/repository.rs` binds typed OATH repositories/MAC to the narrow platform
 capabilities. It scans one 146-byte record at a time; no credential-count-sized
 RAM table exists. Stable IDs are distinct from file slots and tombstones.
-`core/oath_protocol.rs` owns only wire parsing, status mapping, bounded command
+`core/src/applets/oath/protocol.rs` owns only wire parsing, status mapping, bounded command
 bytes, a 256-byte reply page, authentication session and enumeration cursor.
 Common APDU/chaining and byte-TLV primitives remain in `protocol/`.
 
-`core/presence.rs` owns a request-bound 30-second press/release wait. Its C
+`core/src/runtime/presence.rs` owns a request-bound 30-second press/release wait. Its C
 progress callback only maintains CCID link timing and reports cancellation;
-it must not reenter Rust. A consumed OATH gesture clears the keyboard gesture
-state so it cannot also trigger PASS. This synchronous operation is sufficient
+it must not reenter Rust. A runtime presence request claims its gesture before
+waiting; success, timeout and cancellation all suppress PASS until release. This synchronous operation is sufficient
 for this CCID profile; it does not implement the future multi-transport
 cooperative-operation scheduler described elsewhere in this design.
 
-The current `oath` feature explicitly selects the ADMIN + PASS + OATH profile;
-zero and ADMIN + PASS remain independent builds. Separate OATH-only assembly
-is not provided yet. C remains raw storage, RNG/MAC and USB/HID mechanics.
+Core/FFI `admin`, `pass`, `oath` and `openpgp` features are independent.
+Device/host OATH profiles explicitly combine `admin`, `pass` and `oath`;
+OATH bindings are available only when PASS is also enabled. Zero and ADMIN +
+PASS remain independent builds. No OATH-only
+device profile is advertised. The OpenPGP profile adds raw asymmetric crypto and staged-object transactions;
+C otherwise remains storage and transport mechanics.
 
 ## 11. Design decisions and remaining specifications
 
@@ -719,31 +729,41 @@ full ADMIN/PASS compatibility and physical keyboard testing are still incomplete
 
 ## 12. Implementation order
 
-1. Keep the zero-applet firmware and explicit registry buildable (implemented).
-2. Keep ADMIN/PASS services and C storage/crypto/HID backends separate
-   (implemented first checkpoint). Close remaining ADMIN/PASS compatibility
-   entries without redesigning their behavior.
-3. OATH domain first: credential/name/type/digits rules, SHA-1/256/512 MAC
-   capability, full/truncated output, durable HOTP/increasing-challenge policy,
-   record lifecycle and the existing access-code challenge mechanism.
-4. OATH integration: its protocol adapter uses common APDU/TLV primitives,
-   a bounded record repository and response cursor; runtime holds its grants,
-   challenge and presence operation. Add explicit AID registration, C raw
-   backend capabilities and typed PASS HOTP binding. Verify the normal host
-   flow before enabling the new firmware profile and checking USB on device.
-   Implemented in `devkit-rust-oath`; normal USB, touch and restart checks pass.
-5. Extend the same architecture for PIV/OpenPGP and FIDO one applet/feature slice
-   at a time. Establish key/object services before the PIV/OpenPGP slice; establish
-   native CTAPHID routing, CBOR and progress/cancel before the FIDO slice. Choose
-   the order from these dependencies; do not enable all three at once. Preserve
-   required current algorithms/extensions through explicit compatibility entries.
-6. Add NFC as a transport and NDEF as a separate applet, plus explicit management
-   features. Their contracts are designed now; NFCC hardware execution remains
-   deferred until its resource/build checkpoint is scheduled.
-7. Validate the combined profile with normal cross-transport/app-selection,
-   authentication, presence, streaming and reset workflows. Publish capability
-   and compatibility status; incomplete profiles never masquerade as a full
-   replacement for the C product.
+The ADMIN + PASS + OATH checkpoint exists. Foundation steps 1-4 below are now
+implemented: workspace/ownership consolidation, production frame consumption,
+one response cursor, and normal long-command fixtures. Existing host/device
+regression results are recorded in the refactor checkpoint below. Actual
+PIV/OpenPGP consumers, future shared key scratch sizing and multi-transport
+presence scheduling remain subsequent applet milestones.
+
+1. Consolidate the workspace and applet-local modules from section 2. Separate
+   safe core from FFI, narrow platform ports and move cross-applet business out
+   of registry/engine. Preserve current wire behavior and persistent formats.
+2. Establish one selection owner, one exchange lifecycle and one response cursor.
+   Keep a real pull/close response-source contract, including generated output;
+   remove duplicate implementations only after their replacement is exercised.
+   Define scratch/staging leases, transfer completion and explicit abort cleanup.
+3. Connect the common input path to production ADMIN/OATH consumers. Separate
+   frame completion from logical command completion; retain bounded collectors
+   for small requests, incremental TLV sinks and source-backed input. The C
+   interface may still deliver a complete short frame as one chunk. Do not wait
+   for a whole chained command or enlarge its buffer before dispatching it.
+4. Before declaring this foundation ready, run normal host scenarios through the
+   actual runtime with test-only long-command consumers: a valid multi-APDU key
+   template, streamed message hashing, a large object write/read and generated
+   multi-chunk output. Verify exact results, retained memory and close/commit
+   counts. These fixtures do not enable a fake PIV applet in device firmware.
+   Repeat existing ADMIN/PASS/OATH normal host and USB workflows. No fuzz,
+   malformed-input sweep or fault-injection campaign is implied.
+5. Introduce PIV or OpenPGP as an explicit next feature slice with real key/object
+   services and algorithm-specific import/signing consumers. Carry forward the
+   section 14 streaming inventory; do not claim full support from small-command
+   tests alone. Close remaining ADMIN/PASS compatibility entries separately.
+6. Add FIDO with native CTAPHID routing, bounded CBOR/source readers and progress/
+   cancellation. Preserve the bounded standalone CCID FIDO extended-input path
+   when that profile is enabled; it is not general extended APDU support.
+7. Add NFC transport/NDEF and combined-profile validation in their scheduled
+   checkpoints. NFCC remains deferred; applets remain individually opt-in.
 
 At each stage record feature set, linked-source/symbol inventory, protocol
 compatibility, persistent format version, Flash/static RAM, retained scratch,
@@ -778,7 +798,7 @@ dependencies to copy into the Rust target:
   [management commands](../../include/admin.h): compatibility and role inventory.
 - [NDEF implementation](../../applets/ndef/ndef.c): selected-file and update
   semantics that must remain separate from the NFC link implementation.
-- [Current Rust prototype](../core/src/engine.rs): concrete refactoring starting
+- [Current Rust prototype](../core/src/runtime/engine.rs): concrete refactoring starting
   point, not the final full-core runtime contract.
 
 
@@ -794,3 +814,214 @@ profile is authoritative; the historical public page is not a migration target.
 See oath.md for session reselection, page cancellation, strict A5 fields and
 shared increasing-challenge policy. SELECT version bytes are generated from
 the same explicit release configuration as the C build.
+
+
+## 14. Streaming review and mandatory refactoring constraints (2026-09-23)
+
+This section refines sections 4, 8 and 12 after inspecting the C implementation.
+Simplification means fewer owners and duplicate mechanisms, not replacing
+streaming with full-message buffers. Before refactoring, Rust `FrameDecoder` and TLV `Decoder` were exercised only
+by protocol tests while firmware used full-frame `parse`. The refactor now uses
+`FrameDecoder` in production and runs long consumers through that same runtime.
+ADMIN/OATH deliberately remain bounded small-command collectors; PIV/OpenPGP
+wire consumers and real cryptographic imports are not implemented by this work.
+
+### Observed C paths to preserve as capabilities
+
+| Path and source | Actual behavior | Rust requirement |
+| --- | --- | --- |
+| `src/apdu.c::process_apdu_from`, `apdu_process_streaming_message` | Selected PIV/OpenPGP receive individual APDUs before generic whole-command reassembly | Dispatch body fragments to an active command consumer; a logical command need not fit the short-frame buffer |
+| `applets/piv/piv.c::piv_import_asymmetric_key`, `src/key.c::ck_parse_piv_stream_update` | TLV state survives APDUs; RSA components are filled directly in typed key material; final validation precedes key replacement | Incremental key-template parsing, bounded semantic key state, final validation/publication; no second full wire-template buffer |
+| `src/key.c::ck_parse_openpgp_stream_update`, `applets/openpgp/openpgp.c` import path | Template/component lengths and key bytes are processed incrementally across APDUs | Shared TLV primitives with a distinct OpenPGP schema/consumer, not one universal PIV/OpenPGP parser |
+| `piv.c::piv_ga_stream_update`, `piv_general_authenticate_stream` | Nested 7C lengths persist across chunks; ML-DSA, SM2 full-message and randomized Ed25519 modes update crypto state while consuming message bytes | Support incremental crypto during receive, followed by algorithm-specific finalization; do not buffer the message or silently substitute a different signing mode |
+| `piv.c::piv_put_data` | Authorized first chunk writes the object, later chunks append with capacity accounting | An authorized object sink with an explicit publication/abort policy; no whole-certificate buffer |
+| `piv.c::piv_get_large_data`, `piv_get_data_response` | File bytes are read per GET RESPONSE using an applet-local offset | Preserve bounded file reads, unify offset/lifecycle ownership in the runtime |
+| `piv.c::piv_7c_stream_source_read`, ML-DSA response code; OpenPGP response sources | Headers, file/memory ranges and generated crypto output are emitted on demand with close callbacks | Composable streaming sources and resource release, without allocating a complete signature/certificate/public-key encoding |
+| `src/apdu.c::fido_apdu_input` and CCID FIDO extended-input path | Large CBOR can be source-backed in PKE; this is staging, not the PIV TLV push path | Retain both push consumers and bounded pull input sources, with explicit PKE clobber lifetimes |
+
+C remains evidence for capability and lifetime requirements, not authority over
+new protocol rules. In particular, C PUT DATA writes incrementally to the target;
+it is not an atomic staged replacement. A Rust staged publish/abort policy must
+be specified as such, including disk space, interruption and durability behavior,
+not described as existing C behavior. Filesystem staging is appropriate for an
+authorized persistent object update, never a generic substitute for RX RAM.
+
+### Three independent input boundaries
+
+1. Transport fragments form one APDU envelope. A common decoder identifies the
+   header/body/Le; transport lengths and envelope errors remain frame-level.
+2. ISO CLA chaining joins APDU bodies into one logical command. Each APDU still
+   gets its own response/acknowledgement. An intermediate APDU end does not call
+   the command's final validation or publish a key. Match owner and command
+   identity, enforce the command-specific total limit and abort on replacement.
+3. TLV boundaries are independent of both. A tag, multi-byte length or value may
+   continue in the next input chunk/APDU. Structural state tracks bounded tag/
+   length progress and container budgets; the applet tracks legal tags/order,
+   component destinations and required fields. No DOM or recursive allocation.
+
+The conceptual consumer lifecycle is `begin -> feed* -> end_frame` for each
+frame, then `finish_command` on the final frame, or `abort` on termination.
+Concrete APIs may combine calls, but must preserve these distinct events.
+Small commands use bounded collectors; key import uses a component sink; streamed
+signing uses a crypto sink; object update uses an authorized storage sink.
+A pull input source feeds the same semantic consumers through a small window.
+One envelope implementation serves complete-frame and fragment entrypoints;
+this does not require every algorithm to have the same consumption strategy.
+
+`finish_command` is not necessarily the first crypto call: hash/signing-stream
+initialization and updates may run during `feed`. Final success/publication waits
+for complete syntax, declared lengths and domain validation. Authentication and
+irreversible effects follow the command's explicit policy, not a universal
+"buffer everything, then authenticate" rule. Final Le may arrive only at frame
+end; it must not prevent early body consumption or leak into applet domain types.
+
+### Resource lifetime and output contracts
+
+- Keep one session owner and shared transient workspace across applets. Typed key
+  material, hash state and irreducible results still consume real memory; list
+  their sizes and overlapping lifetimes. A 512-byte result target is not a claim
+  that every RSA import or crypto call fits in 512 bytes.
+- C PIV import stores partial key material in PKE between APDUs and restores it
+  into RAM before final validation. Preserve incremental import, but do not copy
+  this storage choice without proving its lifetime. A software lease cannot
+  prevent crypto/keepalive from overwriting hardware scratch. Prefer stable
+  shared semantic state; document any constrained PKE use and its clobber proof.
+- Incremental crypto sinks can themselves use PKE. A PKE-backed input window
+  therefore must be fully consumed or moved to justified stable state before
+  such a call. The input source and crypto workspace cannot be assumed disjoint.
+- One runtime response cursor governs Le, 61xx and GET RESPONSE. Sources may be
+  memory/object ranges, segment compositions or sequential generators. Do not
+  demand arbitrary replay from a stateful generator: request monotonic chunks
+  and keep the current transport chunk stable for retransmission. Never rerun
+  signing, randomness or counter commits for GET RESPONSE/retries.
+- Cleanup covers successful drain, replacement, reset, cancellation and failure;
+  close/abort release sources, staging, crypto state and secrets once. If backend
+  access is required, use explicit runtime cleanup; `Drop` alone is not a storage
+  transaction or asynchronous cleanup mechanism.
+- The unsent response must survive incoming GET RESPONSE and C's SW trailer
+  writes. Use stable non-overlapping backing or an explicitly verified bounded
+  overlap scheme; Rust slice types alone do not prove external C writes safe.
+- Do not remove response-source capability because the existing Rust `Response`
+  wrapper is unused. Replace duplicate wrappers with one exercised contract.
+  OATH A5 pagination remains separate from ISO response delivery.
+
+### Acceptance and scope
+
+The next refactor preserves the currently enabled zero/ADMIN+PASS/OATH profiles,
+protocol-authoritative behavior and stored record formats. Long-command normal
+fixtures must exceed the existing short-command buffer and pass through the real
+chain/consumer/response lifecycle; include a valid TLV length split across chunks
+as an ordinary fragmented transfer, not an exhaustive boundary campaign. Record
+RAM versus payload length, scratch/stack requirements and backend commit/close
+counts. Actual PIV/OpenPGP device support remains a later opt-in milestone with
+its own real key/crypto/object checks. No unimplemented capability is advertised.
+
+Do not enlarge the APDU buffer, remove an existing algorithm, introduce heap
+allocation or use flash as generic RX scratch to make the refactor shorter.
+C interfaces remain minimal; no CIU/startup changes are planned here. Future
+firmware changes retain the vector address, all 48 ordered/reserved mappings
+and startup ResumeLoader invocation, with the existing boot gate before flashing.
+
+
+### Foundation implementation checkpoint (2026-09-23)
+
+- One workspace with protocol/core/ffi; applet domain/protocol/repository files
+  are co-located. Core forbids unsafe code. FFI retains the same C ABI.
+- Runtime has no duplicate selected flag or ADMIN opcode dispatch. Registry owns
+  selection/grants and delegates typed reset/HOTP workflows. Response cursor owns
+  no borrowed reference into the runtime; sources close explicitly with backend
+  access. Push and pull input share the production frame/command lifecycle.
+- Storage/crypto/device/erasure ports are disjoint; OATH RefCell is removed.
+  OATH executes from its bounded request without a second full request copy.
+  A repository-local ID/slot cache avoids repeated prefix scans during ordinary
+  enumeration without adding a credential-count-sized RAM index.
+- Host fixtures cover a 1,300-byte component template (structural parsing, not
+  real RSA import), 8 KiB SHA-256, 16 KiB object publication/readback and 4 KiB
+  sequential output. Exactly one finalization/commit and source closure are
+  checked. Host mock storage is not firmware scratch; no persistent format,
+  PIN policy or applet algorithm changed.
+- Small ADMIN/OATH collectors remain intentional. Future PIV/OpenPGP command
+  schemas, algorithm-specific consumers, hardware scratch sizes and incremental
+  crypto clobber proofs still need their real implementation/measurements.
+  Presence remains synchronous for CCID. These are not advertised new features.
+
+Validation of this foundation checkpoint: all three host profiles and firmware
+boot gates passed; 3 protocol tests, 5 OATH domain tests and 4 runtime streaming
+scenarios passed. The device passed 76 OATH, 19 ADMIN/PASS and 29 restart/
+power-cycle checks. Physical touch and keyboard capture were not repeated.
+Current OATH image: 49300 B Flash, 4148 B static RAM, 7680 B reserved (not measured)
+stack, an increase of 1404/56 B over the preceding OATH review image. New firmware
+remains installed. Evidence: CIU `hil-reports/rust-core-refactor-20260923/README.md`.
+
+
+## 15. OpenPGP implementation checkpoint (2026-09-23)
+
+This checkpoint supersedes the earlier foundation-only statements about future
+OpenPGP support; they describe that earlier milestone, not the enabled profile.
+PIV/CTAP/NDEF/NFC remain scheduled separately. The complete OpenPGP command,
+algorithm, persistence and validation contract is [openpgp.md](openpgp.md).
+
+- OpenPGP domain/adapter/repository code is co-located under `applets/openpgp`.
+  `protocol.rs` handles lifecycle/PIN routing; `data.rs` owns DO schema;
+  `key_commands.rs` handles key-command wire formats, while `service.rs` owns
+  session authorization, PIN changes and key-operation policy without APDU/SW. Generic APDU/TLV and the
+  sole response cursor remain shared. No old C applet or `src/key.c` is linked.
+- Registry owns a single 2332-byte semantic workspace, not an OpenPGP static.
+  RSA ABI material and ECC signing scratch share it. This is the shared-resource
+  contract that later PIV/CTAP consumers must use, not a license to add one
+  worst-case workspace per applet. Only explicit byte components are persisted.
+- Certificates use authorized staged-object append/atomic publish and ranged
+  reads. Key descriptors stream directly into components. Existing small
+  ADMIN/OATH collectors remain intentional; the common APDU buffer is unchanged.
+- Key/counter atomicity, grant lifecycle, UIF policy, default PINs and all nine
+  existing OpenPGP algorithms are implemented. ADMIN 03 and the factory-reset
+  flow compose the OpenPGP reset operation.
+- Function boundaries separate APDU decode and unrelated applet temporaries
+  from native crypto frames. The optional primitive workspace variants reuse
+  caller-owned memory with the same arithmetic and old public entrypoints.
+  Measured normal OpenPGP stack high-water is 5072/5120 bytes; reservation remains
+  7680 bytes. Physical touch was deferred; NFC semantics remain unimplemented.
+- The C CCID timer maintains time extensions during blocking RSA generation,
+  without Rust reentry or PKE access. USB reset invalidates the transfer and
+  triggers main-loop session cleanup. Startup/vector/ResumeLoader gates remain
+  mandatory before producing the HEX file.
+
+Final device footprint and evidence are recorded in CIU
+`firmware/rust-core/README.md` and `hil-reports/rust-openpgp-20260923/README.md`.
+
+## 16. Design review corrections (2026-09-23)
+
+These contracts supersede the earlier feature coupling and cross-applet reset
+implementation details:
+
+- Dependency direction is registry -> flows -> applet services/repositories.
+  Applets never call flows. PASS output receives a registry resolver and only
+  owns gesture/output lifetime. Flows return domain errors, not status words;
+  registry/protocol adapters translate them at the response boundary.
+- Factory reset verifies strong presence and revokes sessions in registry, then
+  invokes persistent service operations with ADMIN PIN last. No flow accepts
+  an OATH/OpenPGP protocol adapter. OATH deletion still removes PASS bindings
+  before deleting a credential, preserving stable-ID safety.
+- PASS writes borrow storage and erasure only; presence waits borrow device
+  only. OATH repositories keep their backend fields private, with scoped borrows
+  instead of rebuilding Platform inside an applet. A5 paging lives under its
+  protocol adapter; generic APDU/GET RESPONSE state stays in runtime.
+- OpenPGP PIN/repository services return typed errors. Its session service owns
+  key-generation/use policy and grant transitions; adapters own APDU parameters,
+  TLV schema and status words. The session workspace is borrowed, never copied.
+- Crypto operation names explicitly select RSA PKCS#1 v1.5 signing/deciphering,
+  EC signing or key agreement. Future raw RSA users require an explicit operation;
+  they must not silently inherit OpenPGP padding. Native ABI key views remain
+  justified by stack limits and are never persisted as native structs.
+- One Registry/Router implementation covers all feature combinations, including
+  zero applets. Disabled applets have no state or installation side effects.
+  The four Cargo features are independent; device presets choose compositions.
+- Runtime presence Request marks an attempt before calling the device wait.
+  Keyboard output consumes that marker and suppresses a held contact through
+  release on every outcome. Reset/factory recovery also inhibit stale gestures.
+
+Keep bounded ADMIN/OATH collectors, streamed key/certificate input and one shared
+crypto workspace. Do not add a dynamic applet registry, heap allocation, per-applet
+large buffers or generic whole-message staging to simplify these boundaries.
+Resource and device-validation results for this correction are recorded in CIU
+`hil-reports/rust-design-review-20260923/README.md`.

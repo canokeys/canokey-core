@@ -5,25 +5,16 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 publish = false
-
-[workspace]
-
 [dependencies]
 canokey-protocol = { path = "../protocol" }
-canokey-pass = { path = "../pass", default-features = false, optional = true }
-
-canokey-oath = { path = "../oath", optional = true }
-
 [features]
-default = []
-pass = ["dep:canokey-pass"]
-oath = ["pass", "dep:canokey-oath"]
-c-interface = []
-host-runtime = []
+admin = []
+openpgp = []
+piv = []
 
-[profile.release]
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-overflow-checks = true
+default = []
+pass = []
+oath = []
+
+[dev-dependencies]
+sha2 = "0.10.9"

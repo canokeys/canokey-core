@@ -3,10 +3,11 @@
 
 The explicit ADMIN + PASS + OATH composition runs through the independent Rust
 core and USB CCID. No legacy C applet, dispatcher or session manager is linked.
-`oath/` is a safe, allocation-free `no_std` domain crate without APDU/status-word
-or FFI dependencies. `core/oath_protocol.rs` owns wire adaptation using common
-APDU and byte-TLV primitives; `core/oath_backend.rs` binds typed repositories
-and MAC to raw platform capabilities. CTAP/PIV/OpenPGP/NFC remain absent.
+`core/src/applets/oath/` groups the APDU-free domain/authentication modules,
+record codec, protocol adapter and repository. The adapter uses common APDU and
+byte-TLV primitives; repository and MAC borrow disjoint storage/crypto ports.
+The safe core is allocation-free `no_std`; FFI lives in a separate crate.
+CTAP/PIV/OpenPGP/NFC remain absent.
 
 ## Command coverage
 
@@ -72,7 +73,7 @@ main-loop operation, not the future full multi-transport scheduler.
 From the parent CIU repository:
 
 ```sh
-cargo +nightly-2026-09-04 test --manifest-path canokey-core/rust/oath/Cargo.toml
+cargo +nightly-2026-09-04 test --manifest-path canokey-core/rust/Cargo.toml -p canokey-rust-core --features oath
 cmake -S canokey-core/rust -B build/rust-core-oath -G Ninja -DCANOKEY_APPLET_OATH=ON -DCANOKEY_VERSIONS_FILE="$PWD/versions.cmake"
 cmake --build build/rust-core-oath
 ctest --test-dir build/rust-core-oath --output-on-failure

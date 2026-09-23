@@ -1,83 +1,97 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Independent Rust core rewrite
 
-The standalone `rust/CMakeLists.txt` builds zero applets by default. The optional
-ADMIN + PASS profile composes a Rust ADMIN APDU adapter and a Rust PASS service.
-No C dispatcher, C session manager or legacy C applet is linked. The optional OATH profile adds Rust OATH; other applets remain absent. See [module boundaries](docs/module-boundaries.md) and the
-[current ADMIN/PASS profile](docs/admin-pass.md).
+One Cargo workspace contains `protocol`, safe `core`, and `ffi`. No C dispatcher,
+C session manager or legacy C applet is linked. Device profiles explicitly select
+zero applets, ADMIN + PASS, ADMIN + PASS + OATH, or those plus OpenPGP. See
+[module boundaries](docs/module-boundaries.md),
+[ADMIN + PASS implementation checkpoint](docs/admin-pass.md), and
+[OATH implementation and normal validation](docs/oath.md), and
+[OpenPGP implementation and normal validation](docs/openpgp.md).
 
-## Ownership
+## Organization and ownership
 
-- `protocol/`: common safe APDU parsing, streaming frame/TLV primitives, command
-  chaining and response planning; no applet dependencies.
-- `core/engine.rs`: transport/session ownership, grants, selection and response
-  continuation. `registry.rs` explicitly composes enabled protocol adapters and
-  services; the engine does not know PASS record or command sizes.
-- `core/admin.rs`, `pass_protocol.rs`: ADMIN command validation, status mapping,
-  PIN operations and PASS management wire format.
-- `core/auth.rs`: typed durable PIN mechanism, without APDU/status words.
-- `core/pass.rs`, `pass/`: slot service, versioned codec, static output and HMAC.
-  No APDU/status words, authentication policy or OATH placeholder.
-- `core/output.rs`: physical gesture interpretation and bounded keyboard job.
-- `core/services.rs`: typed storage and cryptographic capabilities.
-- `core/interface.rs`: the app/platform unsafe Rust boundary (host-only panic/abort glue also uses unsafe); main-loop only,
-  serialized and non-reentrant. Input and output APDU buffers may alias.
-- `interfaces/rust-core/`: USB descriptors and CCID transport. C owns framing,
-  reports and endpoint transfers, never business dispatch.
+- `protocol/src/apdu/`: envelope/header decoding and chain metadata; `response.rs`
+  owns continuation arithmetic and a source-independent cursor. `tlv/length.rs`
+  and `tlv.rs` provide incremental structural parsing, without C layout coupling.
+- `core/src/runtime/`: a single selection owner in the static registry, transport
+  ownership, frame/command lifecycle, response delivery and presence handling.
+  `Runtime<R>` uses the same code for device routing and host streaming fixtures.
+- `core/src/applets/admin/`: ADMIN wire handling, PIN mechanism and PASS config
+  wire schema. `pass/` contains slot domain/codec/service and keyboard output.
+- `core/src/applets/oath/`: credential/authentication domain, record codec,
+  repository and protocol adapter together. Domain modules have no APDU/SW/FFI
+  dependency. Request collection and execution state have disjoint borrows.
+- `core/src/applets/openpgp/`: APDU/TLV adapters, domain session/key/PIN services,
+  incremental key import and key/certificate repository. Services and repositories
+  return domain errors; protocol adapters map them to status words. Registry owns the
+  shared key/input/output workspace; no complete certificate/import buffer.
+- `core/src/flows/`: typed persistent reset and HOTP keyboard orchestration,
+  called only by registry. Flows do not depend on protocol adapters or status
+  words. Registry revokes sessions and routes output requests; PASS output only
+  owns gesture and byte-draining state.
+- `core/src/ports/`: disjoint mutable storage/crypto/device capabilities and an
+  immutable erasure capability. OATH does not use RefCell or share a mutable
+  whole-platform handle. Stored bytes and record IDs are unchanged.
+- `ffi/src/entrypoints.rs`: serialized C ABI and alias-safe RX/TX borrows;
+  `ffi/src/platform.rs`: raw C backend calls and volatile erasure. Safe core
+  forbids unsafe code at the crate root.
+- `interfaces/rust-core/`: retained C USB/CCID/HID framing and endpoint mechanics.
 
-## Normal host validation
+The `admin`, `pass`, `oath` and `openpgp` core/FFI features are independent.
+Only enabled services own registry state and run installation. PASS has no AID;
+ADMIN is selected by `admin`, not by `pass`. OATH-to-PASS binding requires both
+services; without PASS its binding/HMAC-slot commands are unavailable. CIU and
+host device-equivalent profiles explicitly combine their required features.
+All 16 Cargo combinations are checked with warnings denied. Cargo's host-only SHA-256 test
+dependency is not included in the firmware dependency graph.
+
+## Streaming contract
+
+The production short-frame entrypoint feeds the common `FrameDecoder`; packet
+input uses `begin_frame/feed_frame/end_frame`. Each intermediate chained APDU
+is acknowledged without finalizing the logical command. A pull-backed frame
+can feed the same consumer through a 64-byte window. Unread source bytes must
+survive consumer callbacks; PKE-backed input requires a command-specific proof
+before incremental crypto can reuse the hardware.
+
+Small ADMIN/OATH requests remain bounded collectors. OpenPGP key templates,
+messages and objects use incremental consumers, not a larger APDU buffer.
+The runtime's response cursor supplies fresh source borrows per chunk, supports
+monotonic generators and closes sources on completion, replacement or reset.
+OATH A5 pagination remains distinct from ISO GET RESPONSE. Synchronous presence
+is retained for the current CCID profile; future multi-transport scheduling and
+PIV consumers remain fixtures only. OpenPGP now has real device consumers and
+independent host verification of all supported crypto algorithms.
+
+## Normal validation
 
 From the parent CIU repository:
 
 ```sh
-cmake -S canokey-core/rust -B build/rust-core-empty -G Ninja
-cmake --build build/rust-core-empty
-ctest --test-dir build/rust-core-empty --output-on-failure
-cmake -S canokey-core/rust -B build/rust-core-pass -G Ninja -DCANOKEY_APPLET_PASS=ON
-cmake --build build/rust-core-pass
-ctest --test-dir build/rust-core-pass --output-on-failure
+cargo +nightly-2026-09-04 test --manifest-path canokey-core/rust/Cargo.toml -p canokey-protocol -p canokey-rust-core --features admin,pass,oath
+cmake -S canokey-core/rust -B build/rust-core-oath -DCANOKEY_APPLET_OATH=ON -DCANOKEY_VERSIONS_FILE="$PWD/versions.cmake"
+cmake --build build/rust-core-oath
+ctest --test-dir build/rust-core-oath --output-on-failure
 ```
 
-`CANOKEY_APPLET_PASS` currently selects the ADMIN + PASS composition: one
-selectable AID (ADMIN), plus PASS as a service and physical-output entrypoint.
-The fixture exercises the actual C ABI with OpenSSL primitives and in-place
-APDU buffers. It covers default PIN initialization/query/verify/change,
-ordinary response chaining, static output, gesture/backpressure,
-RFC 2202 HMAC, persistence and session reset. These are normal functional tests.
+CTest registers `core-normal`, `oath-normal` and `rust-normal` in the OATH
+profile. The normal streaming fixtures drive the actual runtime with a 1,300-byte
+key-component template, 8 KiB incremental SHA-256, a 16 KiB object write/read,
+and a 4 KiB sequential generated response. They verify bytes, intermediate-frame
+acknowledgements, single finalization/commit and source closure. The fixture's
+fixed runtime state is below 2 KiB even for the 16 KiB object; host backend
+storage is excluded and is not a proposed firmware buffer.
 
-## USB firmware
+Configure without applet flags for zero applets, or with
+`-DCANOKEY_APPLET_PASS=ON` for ADMIN + PASS. The C ABI fixtures exercise in-place
+APDU input/output and existing PIN, PASS, HMAC and OATH behavior. Only normal
+functional tests are part of this checkpoint.
 
-The parent CIU presets `devkit-rust-core` and `devkit-rust-admin-pass` build
-separate zero-applet and ADMIN/PASS firmware. Both reuse C USB core/endpoint
-mechanics with separate control buffers; no legacy `src/` or `applets/` files
-are linked. The ADMIN/PASS profile adds CCID plus keyboard HID, typed backend
-callbacks and an independent `/rust` namespace on the existing LittleFS volume.
-It never formats a failed mount or reads/replaces old C credential records.
+Use `-DCANOKEY_APPLET_OPENPGP=ON` to add the OpenPGP host suite; its Python
+interpreter must have `cryptography` (CIU `.venv-hil/bin/python`).
 
-CCID accepts short APDUs and common ISO chaining. ADMIN currently accepts only
-CLA 00; command-chaining admission belongs to the selected protocol adapter. USB callbacks only
-queue events; Rust calls occur in the main loop. CCID power/reset clears grants,
-command state and pending output. The OATH profile connects the existing
-YubiKey serial/HMAC wire commands to platform identity and the PASS service.
-
-The mandatory CIU boot gate compares vector address zero, all 48 slots,
-reserved entries and handler mappings, early ResumeLoader invocation and the
-recovery object code with the normal firmware. Addresses may relocate. NFCC is
-deferred. Do not call this stage a complete migration of C ADMIN: remaining
-commands and hardware validation limits are listed in the profile document.
-
-## OATH integration
-
-`oath/` owns typed credentials, HOTP/TOTP and access-code authentication with
-no APDU dependency. `core/oath_protocol.rs` owns OATH wire fields/status mapping;
-`core/oath_backend.rs` supplies bounded record storage and primitive adapters.
-The `devkit-rust-oath` preset builds ADMIN + PASS + OATH explicitly. See
-[OATH implementation and normal validation](docs/oath.md) for commands, storage,
-host/USB tests, physical touch and reset/power-cycle results.
-
-
-The OATH host profile registers both core-normal and oath-normal in CTest.
-The latter executes the core-owned APDU assertion script against oath-host,
-without USB dependencies. Supply CANOKEY_VERSIONS_FILE explicitly to test a
-release version; otherwise development SELECT version 0.0.0 is used. CIU
-passes its root versions.cmake for both C and Rust release fields.
+CIU presets are `devkit-rust-core`, `devkit-rust-admin-pass`,
+`devkit-rust-oath` and `devkit-rust-openpgp`. Each retains the mandatory 48-vector/ResumeLoader gate.
+NFCC is deferred. The `/rust` filesystem namespace, no-autoformat rule and
+serialized main-loop C interface remain unchanged.

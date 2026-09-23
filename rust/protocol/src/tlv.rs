@@ -2,7 +2,8 @@
 //! Bounded BER tag/length/value streaming. Values are never accumulated here.
 //! Up to three encoded tag bytes and two length bytes; indefinite lengths are
 //! rejected. Non-minimal definite lengths remain accepted like the C helpers.
-use canokey_tlv::{Feed, LengthState};
+pub mod length;
+use length::{Feed, LengthState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
