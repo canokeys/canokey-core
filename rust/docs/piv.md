@@ -82,18 +82,21 @@ key is regenerated for the hashing and response passes.
 
 ADMIN, OpenPGP and PIV use the [shared PIN mechanism](pin-mechanism.md).
 Applet adapters retain retry-charging and authorization semantics. PIV's
-24-byte version-1 PIN/PUK record keeps legacy authorization bytes 3/4 reserved;
-bytes 5/6 hold retry limits (legacy zero means three). No grant survives reload.
+21-byte PIN/PUK record contains a version, two retry counters, two retry limits,
+and two eight-byte credentials. Authorization is never persisted.
 Failed credential writes invalidate the cache and revoke both grants; reset
 alone cannot make an uncertain cache authoritative.
 
-All PIV records live under `/rust/piv-*`, independent of legacy C records.
-Keys encode an 88-byte versioned metadata/name header plus only private material.
+PIV records use hexadecimal filenames `0e`..`4c`, with no directory prefix.
+Keys store six metadata bytes, private material and the actual name bytes.
+RSA material is exponent4 plus five active-width components (644/964/1284
+bytes); ECC and PQ records store only their scalar or seed. No padding or
+previous-format decoder is persisted. Provision fresh storage.
 Object capacities match C: certificates 6568 bytes, other large objects 3040,
 admin data 128. Empty `53 00` certificate writes delete the object. PUT and key
 replacement use staging plus atomic rename; interrupted writes keep the previous
 committed record. Provisioning uses a completion marker and can resume an
-interrupted explicit reset. Initial provisioning preserves an existing foundation
+interrupted explicit reset. Initial provisioning preserves the initialized
 PIN/PUK record; a missing marker with established key/object storage fails closed.
 F9 is excluded from reset deletion. In combined profiles, ADMIN factory recovery
 (`50 00 00`, body `RESET`, blocked ADMIN PIN and five confirmation gestures)

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::mechanisms::key_storage;
 use crate::{
     Platform,
     ports::{Record, StorageError},
@@ -71,7 +72,8 @@ pub const OBJECTS: [Record; 34] = [
     Record::PivObject32,
     Record::PivObject33,
 ];
-// Versioned key-record header. Keep offsets stable for existing cards.
+// RAM metadata view. Disk stores six header bytes, key material, then the used name.
+pub const HEADER: usize = 6;
 pub const META: usize = 88;
 pub const ALGORITHM: usize = 1;
 pub const ORIGIN: usize = 2;
@@ -99,7 +101,7 @@ pub fn rsa(a: u8) -> bool {
     (5..=7).contains(&a)
 }
 pub fn material(a: u8) -> usize {
-    if rsa(a) { 1284 } else { width(a) }
+    key_storage::length(rsa(a), width(a))
 }
 pub fn algorithm(id: u8, c: &[u8; 10]) -> Result<u8, Sw> {
     match id {
@@ -154,17 +156,27 @@ pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
         m[TOUCH_POLICY] = 1;
         return Ok(m);
     }
-    p.storage.read_at(KEYS[id], 0, &mut m).map_err(io)?;
+    p.storage
+        .read_at(KEYS[id], 0, &mut m[..HEADER])
+        .map_err(io)?;
     if m[0] != 1
         || m[ALGORITHM] > 11
         || !(1..=2).contains(&m[ORIGIN])
         || !(1..=3).contains(&m[PIN_POLICY])
         || m[TOUCH_POLICY] > 3
         || m[NAME_LENGTH] > 78
-        || n as usize != META + material(m[ALGORITHM])
+        || n as usize != HEADER + material(m[ALGORITHM]) + m[NAME_LENGTH] as usize
     {
         return Err(Sw::UNABLE_TO_PROCESS);
     }
+    let name_len = m[NAME_LENGTH] as usize;
+    p.storage
+        .read_at(
+            KEYS[id],
+            (HEADER + material(m[ALGORITHM])) as u32,
+            &mut m[NAME..NAME + name_len],
+        )
+        .map_err(io)?;
     Ok(m)
 }
 pub fn load(
@@ -176,16 +188,17 @@ pub fn load(
     if m[ORIGIN] == 0 {
         return Err(Sw(0x6a88));
     }
-    p.storage
-        .read_at(KEYS[id], META as u32, &mut key[..material(m[ALGORITHM])])
-        .map_err(io)
+    let a = m[ALGORITHM];
+    key_storage::load(p.storage, KEYS[id], HEADER as u32, rsa(a), width(a), key).map_err(io)
 }
 pub fn save(id: usize, m: &[u8; META], key: &[u8; 1284], p: &mut Platform<'_>) -> Result<(), Sw> {
     let r = (|| {
         p.storage.stage_begin().map_err(io)?;
-        p.storage.stage_append(m).map_err(io)?;
+        p.storage.stage_append(&m[..HEADER]).map_err(io)?;
+        let a = m[ALGORITHM];
+        key_storage::append(p.storage, rsa(a), width(a), key).map_err(io)?;
         p.storage
-            .stage_append(&key[..material(m[ALGORITHM])])
+            .stage_append(&m[NAME..NAME + m[NAME_LENGTH] as usize])
             .map_err(io)?;
         p.storage.stage_commit(KEYS[id]).map_err(io)
     })();
@@ -193,6 +206,28 @@ pub fn save(id: usize, m: &[u8; META], key: &[u8; 1284], p: &mut Platform<'_>) -
         p.storage.stage_abort()
     }
     r
+}
+pub fn save_name(id: usize, m: &[u8; META], p: &mut Platform<'_>) -> Result<(), Sw> {
+    let result = (|| {
+        p.storage.stage_begin().map_err(io)?;
+        p.storage.stage_append(&m[..HEADER]).map_err(io)?;
+        crate::ports::copy_to_stage(
+            p.storage,
+            p.memory,
+            KEYS[id],
+            HEADER as u32,
+            material(m[ALGORITHM]) as u32,
+        )
+        .map_err(io)?;
+        p.storage
+            .stage_append(&m[NAME..NAME + m[NAME_LENGTH] as usize])
+            .map_err(io)?;
+        p.storage.stage_commit(KEYS[id]).map_err(io)
+    })();
+    if result.is_err() {
+        p.storage.stage_abort();
+    }
+    result
 }
 pub fn policies(m: &mut [u8; META], mut b: &[u8]) -> Result<(), Sw> {
     while !b.is_empty() {

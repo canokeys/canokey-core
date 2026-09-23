@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Versioned bytes in the Rust namespace. No native-layout persistence.
+//! Compact records; fixed field offsets are an in-memory view only.
 use super::domain::Error;
 use super::{domain::Algorithm, pin};
+use crate::mechanisms::key_storage;
 use crate::{
     Platform,
     ports::{Record, StorageError},
 };
 pub const STATE_LEN: usize = 512;
-pub const META_LEN: usize = 32;
+pub const META_LEN: usize = 31;
 pub const KEYS: [Record; 3] = [Record::PgpSig, Record::PgpDec, Record::PgpAut];
 pub const CERTS: [Record; 3] = [Record::PgpCertSig, Record::PgpCertDec, Record::PgpCertAut];
 pub fn io(_: StorageError) -> Error {
@@ -25,25 +26,68 @@ pub fn field(tag: u16) -> Option<(usize, usize)> {
         _ => None,
     }
 }
+const FIELDS: [(usize, usize); 5] = [(68, 39), (108, 63), (172, 8), (181, 1), (183, 255)];
+const STATE_HEADER: usize = 64; // Four flags followed by three CA fingerprints.
 pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error> {
-    if p.storage.load(Record::PgpState, b).map_err(io)? != STATE_LEN || b[0] != 1 {
+    let n = p.storage.load(Record::PgpState, b).map_err(io)?;
+    if n < STATE_HEADER || b[0] != 1 {
         return Err(Error::Storage);
     }
-    for tag in [0x5b, 0x5e, 0x5f2d, 0x5f35, 0x5f50] {
-        let (off, max) = field(tag).unwrap();
-        if b[off] as usize > max {
+    let mut starts = [0; 5];
+    let mut at = STATE_HEADER;
+    for (i, (_, max)) in FIELDS.iter().enumerate() {
+        if at >= n || b[at] as usize > *max || at + 1 + b[at] as usize > n {
             return Err(Error::Storage);
         }
+        starts[i] = at;
+        at += 1 + b[at] as usize;
     }
+    if at != n {
+        return Err(Error::Storage);
+    }
+    for (i, (off, max)) in FIELDS.iter().enumerate().rev() {
+        let from = starts[i];
+        let len = 1 + b[from] as usize;
+        b.copy_within(from..from + len, *off);
+        b[off + len..off + 1 + max].fill(0);
+    }
+    b.copy_within(4..STATE_HEADER, 8);
+    b[4..8].fill(0);
+    b[439..].fill(0);
     Ok(())
 }
 pub fn save_state(p: &mut Platform<'_>, b: &[u8; STATE_LEN]) -> Result<(), Error> {
-    p.storage.replace(Record::PgpState, b).map_err(io)
+    let result = (|| {
+        p.storage.stage_begin().map_err(io)?;
+        p.storage.stage_append(&b[..4]).map_err(io)?;
+        p.storage.stage_append(&b[8..68]).map_err(io)?;
+        for (off, max) in FIELDS {
+            let n = b[off] as usize;
+            if n > max {
+                return Err(Error::Storage);
+            }
+            p.storage.stage_append(&b[off..off + 1 + n]).map_err(io)?;
+        }
+        p.storage.stage_commit(Record::PgpState).map_err(io)
+    })();
+    if result.is_err() {
+        p.storage.stage_abort();
+    }
+    result
 }
 pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> {
     let mut b = [0; META_LEN];
     p.storage.read_at(KEYS[role], 0, &mut b).map_err(io)?;
     if b[0] != 1 || b[1] > 8 || b[2] > 2 || b[3] > 2 {
+        return Err(Error::Storage);
+    }
+    let a = Algorithm(b[1]);
+    let material = if b[2] == 0 {
+        0
+    } else {
+        key_storage::length(a.rsa(), a.scalar())
+    };
+    if p.storage.size(KEYS[role]).map_err(io)? != (META_LEN + material) as u32 {
         return Err(Error::Storage);
     }
     Ok(b)
@@ -57,9 +101,15 @@ pub fn load_key(p: &mut Platform<'_>, role: usize, b: &mut [u8; 1284]) -> Result
         return Err(Error::Missing);
     }
     let a = Algorithm(m[1]);
-    p.storage
-        .read_at(KEYS[role], META_LEN as u32, &mut b[..a.material()])
-        .map_err(io)?;
+    key_storage::load(
+        p.storage,
+        KEYS[role],
+        META_LEN as u32,
+        a.rsa(),
+        a.scalar(),
+        b,
+    )
+    .map_err(io)?;
     Ok(a)
 }
 pub fn save_key(
@@ -77,9 +127,8 @@ pub fn save_key(
     let result = (|| {
         p.storage.stage_begin().map_err(io)?;
         p.storage.stage_append(&m).map_err(io)?;
-        p.storage
-            .stage_append(&b[..Algorithm(m[1]).material()])
-            .map_err(io)?;
+        let a = Algorithm(m[1]);
+        key_storage::append(p.storage, a.rsa(), a.scalar(), b).map_err(io)?;
         p.storage.stage_commit(KEYS[role]).map_err(io)
     })();
     if result.is_err() {

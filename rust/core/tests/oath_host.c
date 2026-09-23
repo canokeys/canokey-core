@@ -5,12 +5,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+extern int32_t ck_platform_size(uint8_t id);
 int main(void) {
   assert(ck_core_install() == 0);
   char line[1100];
   uint8_t buffer[512];
   while (fgets(line, sizeof(line), stdin)) {
     int32_t n;
+    if (strncmp(line, "SIZE ", 5) == 0) {
+      printf("%08x\n", (unsigned)ck_platform_size((uint8_t)atoi(line + 5)));
+      fflush(stdout);
+      continue;
+    }
     if (strncmp(line, "RESET", 5) == 0) {
       ck_core_reset();
       assert(ck_core_install() == 0);

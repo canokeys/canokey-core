@@ -4,7 +4,7 @@ use crate::{
     ports::{Record, StorageError},
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
-const STATE_LEN: usize = 24;
+const STATE_LEN: usize = 21;
 const RETRIES: u8 = 3;
 pub(super) const PIN: &[u8; 8] = b"123456\xff\xff";
 pub(super) const PUK: &[u8; 8] = b"12345678";
@@ -37,21 +37,19 @@ impl State {
         out[0] = 1;
         out[1] = self.pin_tries;
         out[2] = self.puk_tries;
-        out[5] = self.pin_limit;
-        out[6] = self.puk_limit; // Authorization is session-only; legacy flag bytes remain reserved.
-        out[8..16].copy_from_slice(&self.pin);
-        out[16..24].copy_from_slice(&self.puk);
+        out[3] = self.pin_limit;
+        out[4] = self.puk_limit;
+        out[5..13].copy_from_slice(&self.pin);
+        out[13..21].copy_from_slice(&self.puk);
     }
     fn decode(input: &[u8; STATE_LEN]) -> Option<Self> {
-        let pin_limit = if input[5] == 0 { 3 } else { input[5] };
-        let puk_limit = if input[6] == 0 { 3 } else { input[6] };
+        let pin_limit = input[3];
+        let puk_limit = input[4];
         if input[0] != 1
-            || pin_limit > 15
-            || puk_limit > 15
+            || !(1..=15).contains(&pin_limit)
+            || !(1..=15).contains(&puk_limit)
             || input[1] > pin_limit
             || input[2] > puk_limit
-            || input[3] > 1
-            || input[4] > 1
         {
             return None;
         }
@@ -62,8 +60,8 @@ impl State {
             puk_ok: false,
             pin_limit,
             puk_limit,
-            pin: input[8..16].try_into().ok()?,
-            puk: input[16..24].try_into().ok()?,
+            pin: input[5..13].try_into().ok()?,
+            puk: input[13..21].try_into().ok()?,
         })
     }
 }
@@ -158,7 +156,7 @@ impl Pins {
         // mechanism borrows this short encoding; it never owns session flags.
         let mut bytes = [0; STATE_LEN];
         self.state.encode(&mut bytes);
-        let (value, counter) = if puk { (16..24, 2) } else { (8..16, 1) };
+        let (value, counter) = if puk { (13..21, 2) } else { (5..13, 1) };
         let result = Credential::new(
             &mut bytes,
             value,

@@ -12,17 +12,24 @@ impl Metadata {
         crypto.random(&mut handle)?;
         Ok(Self { handle, key: None })
     }
-    pub fn encode(&self, out: &mut [u8; METADATA_LENGTH]) {
+    pub fn encode(&self, out: &mut [u8; METADATA_LENGTH]) -> usize {
         out.fill(0);
         out[0] = 1;
         out[1] = u8::from(self.key.is_some());
         out[2..10].copy_from_slice(&self.handle);
         if let Some(key) = &self.key {
             out[10..].copy_from_slice(key);
+            METADATA_LENGTH
+        } else {
+            10
         }
     }
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
-        if bytes.len() != METADATA_LENGTH || bytes[0] != 1 || bytes[1] > 1 {
+        if bytes.len() < 10
+            || bytes[0] != 1
+            || bytes[1] > 1
+            || bytes.len() != if bytes[1] == 1 { METADATA_LENGTH } else { 10 }
+        {
             return Err(Error::Invalid);
         }
         Ok(Self {

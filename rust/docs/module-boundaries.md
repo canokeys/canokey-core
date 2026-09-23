@@ -243,10 +243,9 @@ against the pinned LittleFS implementation. The interface contract is not proof
 that the backend already provides it. Backend buffers use fixed storage.
 
 New records use explicit byte order, version, length and bounded fields; no
-native enum width, host endianness or Rust/C struct images. The old 142-byte PASS
-layout belongs in a future explicit migration codec if compatibility is chosen.
-New storage occupies a separate namespace and cannot silently reinterpret or
-mutate legacy applet records. Namespace separation is not encryption.
+native enum width, host endianness or Rust/C struct images. Records use two-character hexadecimal filenames with no namespace prefix and
+persist only actual payload lengths. Previous C/Rust layouts are not supported;
+provision fresh storage. Fixed RAM workspaces do not dictate disk record sizes.
 
 In the CIU port, existing `platform/storage/lfs_config.c::littlefs_init` reformats on mount failure.
 It must not be called unchanged by this target. Mount failure is reported; only
@@ -306,7 +305,7 @@ documented in [Shared PIN mechanism](pin-mechanism.md).
 ### Provisioning
 
 The user confirmed that this rewrite preserves C ADMIN's default PIN behavior.
-On first installation, an absent `/rust/admin-pin` record is initialized to `123456`
+On first installation, an absent `01` record is initialized to `123456`
 with three retries. Existing valid records are loaded unchanged. Corrupt records,
 I/O failures and failed mounts fail closed; they must not trigger default-PIN
 creation or filesystem formatting. No new physical-enrollment protocol is added.
@@ -314,9 +313,8 @@ This deliberately preserves the original missing-record initialization policy;
 it does not detect deletion of a record by an attacker with raw storage access.
 
 Only ADMIN owns this initialization policy. PASS has no PIN or enrollment
-protocol. A new namespace does not migrate or replace legacy C credentials.
-Changing the default or introducing authenticated migration is a separate product
-change, not an incidental consequence of changing implementation language.
+protocol. Existing C/Rust data compatibility is not a migration requirement;
+changing the default PIN would be a separate product change.
 
 ### Touch, keyboard and OATH
 
@@ -381,7 +379,7 @@ delegates to it, retaining the existing OATH AID and commands. See
 - OATH-selected YubiKey serial/HMAC commands run before the OATH access-code gate
   in C. Preserve that binding and delegate HMAC to PASS, without leaking keys.
 - SET DEFAULT and record deletion require registry-level PASS/OATH coordination.
-  PASS references must not resolve to a new credential after tombstone reuse.
+  PASS references must not resolve to a new credential after deletion.
   The repository may reuse physical slots while keeping logical IDs distinct.
 
 The domain service does not allocate a credential list or store all records in
@@ -681,7 +679,7 @@ wire binding. SELECT/routing remains common runtime behavior.
 
 `core/src/applets/oath/repository.rs` binds typed OATH repositories/MAC to the narrow platform
 capabilities. It scans one 146-byte record at a time; no credential-count-sized
-RAM table exists. Stable IDs are distinct from file slots and tombstones.
+RAM table exists. Stable IDs are distinct from byte offsets; deleted entries are reclaimed.
 `core/src/applets/oath/protocol.rs` owns only wire parsing, status mapping, bounded command
 bytes, a 256-byte reply page, authentication session and enumeration cursor.
 Common APDU/chaining and byte-TLV primitives remain in `protocol/`.
@@ -717,7 +715,7 @@ corresponding device functionality is enabled:
 | PASS wire/API profile | Preserve C ADMIN configuration and OATH-selected YubiKey HMAC binding | Complete command coverage and host-client compatibility |
 | Credential/provisioning | Versioned PIN bytes/counters; C-compatible default PIN | Record bytes and C-compatible change/unblock/reset lifecycle |
 | Storage backend | Dedicated namespace on existing LittleFS without autoformat | Atomic-replace durability and uncertain-error handling, mount and provisioning paths |
-| Existing credential compatibility | No implicit migration | Choose fresh provisioning or an explicit authenticated migration path before touching legacy records |
+| Existing credential compatibility | No implicit migration | Provision fresh storage; do not add compatibility codecs |
 | Keyboard profile | Bounded output job and report transport | Initial layout/character set, gesture/slot policy, release/cancellation behavior |
 | Full compatibility inventory | Track every current command/extension and advertised capability | Existing behavior, intended Rust behavior, intentional differences and validation status per feature |
 | FIDO profile | Shared CTAP/U2F domain with native/APDU adapters | Supported version/commands/extensions/algorithms, CBOR limits, token scopes, UP/UV, continuation and cancellation rules |

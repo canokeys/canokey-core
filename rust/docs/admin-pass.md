@@ -36,19 +36,19 @@ release sequencing, and never retains the whole password or calls C PASS.
 
 All byte encodings are independent of C layout and CPU endianness:
 
-- `/rust/admin-pin`: 68 bytes: version 1, PIN length, retries, maximum 3,
-  then 64 zero-padded PIN bytes. No hashing, salt or KDF is added.
-- `/rust/pass1`: two 72-byte version-2 records, including off/static/HMAC and
-  stable-ID OATH bindings. The earlier two 36-byte version-1 records are
-  decoded and atomically upgraded during installation; this is not C migration.
-- `/rust/stage`: private atomic-replacement temporary file; close then rename.
-  The current record is never updated in place. A failed mutation invalidates
-  cached state; uncertain storage errors disable backend access until reboot.
+- `01`: version, PIN length, retries and limit, followed by the actual PIN
+  bytes (10 bytes for the default PIN). No hashing, salt or KDF is added.
+- `00`: two length-delimited version-2 PASS records, each containing its
+  four-byte header and actual payload. OATH bindings add a four-byte stable ID.
+  Two disabled slots occupy eight bytes. No previous-format decoder is retained.
+- `t`: atomic-replacement temporary file; close then rename. The current
+  record is never updated in place. Failed mutations invalidate cached state;
+  uncertain storage errors disable backend access until reboot.
 
 Only NotFound creates the default PIN. Invalid records and I/O errors fail
-closed. This matches the requested C first-install policy but does not detect
-malicious deletion with raw Flash access. Legacy records are left untouched;
-this checkpoint is a new development namespace, not credential migration.
+closed. This preserves C's missing-record initialization policy but does not
+detect malicious deletion with raw Flash access. Provision fresh storage;
+compatibility with previous C or Rust layouts is not supported.
 LittleFS mount failure never formats. The file cache is aligned to four bytes
 because CIU page programming reads words, including non-inline file payloads.
 

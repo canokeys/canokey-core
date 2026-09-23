@@ -59,7 +59,7 @@ impl Piv {
                 p.storage
                     .read_at(
                         repo::KEYS[id],
-                        repo::META as u32,
+                        repo::HEADER as u32,
                         &mut seed[..repo::material(a)],
                     )
                     .map_err(repo::io)?;
@@ -230,7 +230,7 @@ impl Piv {
             p.storage
                 .read_at(
                     repo::KEYS[id],
-                    repo::META as u32,
+                    repo::HEADER as u32,
                     &mut seed[..repo::material(a)],
                 )
                 .map_err(repo::io)?;

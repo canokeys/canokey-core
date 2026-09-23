@@ -174,9 +174,7 @@ impl Piv {
         m[repo::NAME_LENGTH] = value.len() as u8;
         m[repo::NAME..].fill(0);
         m[repo::NAME..repo::NAME + value.len()].copy_from_slice(value);
-        p.storage
-            .replace_at(repo::KEYS[id], 0, &m)
-            .map_err(repo::io)?;
+        repo::save_name(id, &m, p)?;
         Ok(0)
     }
     pub(super) fn move_key(&mut self, h: Header, p: &mut Platform<'_>) -> Result<u32, Sw> {

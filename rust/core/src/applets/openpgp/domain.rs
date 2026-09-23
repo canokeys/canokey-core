@@ -16,9 +16,6 @@ impl Algorithm {
             2 * self.scalar()
         }
     }
-    pub fn material(self) -> usize {
-        if self.rsa() { 1284 } else { self.scalar() }
-    }
     pub fn attrs(self, role: usize, out: &mut [u8; 12]) -> usize {
         let attr: &[u8] = match self.0 {
             0 => &[0x13, 0x2a, 0x86, 0x48, 0xce, 0x3d, 3, 1, 7],

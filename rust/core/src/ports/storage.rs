@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
-/// IDs belong exclusively to the new /rust namespace, never legacy C files.
+/// Record IDs map directly to two hexadecimal filename characters.
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Record {
@@ -19,69 +19,68 @@ pub enum Record {
     PgpCertDec = 12,
     PgpCertAut = 13,
     PivState = 14,
-    PivDiscovery = 15,
-    PivManagement = 16,
-    PivConfig = 17,
-    PivKey0 = 18,
-    PivKey1 = 19,
-    PivKey2 = 20,
-    PivKey3 = 21,
-    PivKey4 = 22,
-    PivKey5 = 23,
-    PivKey6 = 24,
-    PivKey7 = 25,
-    PivKey8 = 26,
-    PivKey9 = 27,
-    PivKey10 = 28,
-    PivKey11 = 29,
-    PivKey12 = 30,
-    PivKey13 = 31,
-    PivKey14 = 32,
-    PivKey15 = 33,
-    PivKey16 = 34,
-    PivKey17 = 35,
-    PivKey18 = 36,
-    PivKey19 = 37,
-    PivKey20 = 38,
-    PivKey21 = 39,
-    PivKey22 = 40,
-    PivKey23 = 41,
-    PivKey24 = 42,
-    PivObject0 = 43,
-    PivObject1 = 44,
-    PivObject2 = 45,
-    PivObject3 = 46,
-    PivObject4 = 47,
-    PivObject5 = 48,
-    PivObject6 = 49,
-    PivObject7 = 50,
-    PivObject8 = 51,
-    PivObject9 = 52,
-    PivObject10 = 53,
-    PivObject11 = 54,
-    PivObject12 = 55,
-    PivObject13 = 56,
-    PivObject14 = 57,
-    PivObject15 = 58,
-    PivObject16 = 59,
-    PivObject17 = 60,
-    PivObject18 = 61,
-    PivObject19 = 62,
-    PivObject20 = 63,
-    PivObject21 = 64,
-    PivObject22 = 65,
-    PivObject23 = 66,
-    PivObject24 = 67,
-    PivObject25 = 68,
-    PivObject26 = 69,
-    PivObject27 = 70,
-    PivObject28 = 71,
-    PivObject29 = 72,
-    PivObject30 = 73,
-    PivObject31 = 74,
-    PivObject32 = 75,
-    PivObject33 = 76,
-    PivProvision = 77,
+    PivManagement = 15,
+    PivConfig = 16,
+    PivKey0 = 17,
+    PivKey1 = 18,
+    PivKey2 = 19,
+    PivKey3 = 20,
+    PivKey4 = 21,
+    PivKey5 = 22,
+    PivKey6 = 23,
+    PivKey7 = 24,
+    PivKey8 = 25,
+    PivKey9 = 26,
+    PivKey10 = 27,
+    PivKey11 = 28,
+    PivKey12 = 29,
+    PivKey13 = 30,
+    PivKey14 = 31,
+    PivKey15 = 32,
+    PivKey16 = 33,
+    PivKey17 = 34,
+    PivKey18 = 35,
+    PivKey19 = 36,
+    PivKey20 = 37,
+    PivKey21 = 38,
+    PivKey22 = 39,
+    PivKey23 = 40,
+    PivKey24 = 41,
+    PivObject0 = 42,
+    PivObject1 = 43,
+    PivObject2 = 44,
+    PivObject3 = 45,
+    PivObject4 = 46,
+    PivObject5 = 47,
+    PivObject6 = 48,
+    PivObject7 = 49,
+    PivObject8 = 50,
+    PivObject9 = 51,
+    PivObject10 = 52,
+    PivObject11 = 53,
+    PivObject12 = 54,
+    PivObject13 = 55,
+    PivObject14 = 56,
+    PivObject15 = 57,
+    PivObject16 = 58,
+    PivObject17 = 59,
+    PivObject18 = 60,
+    PivObject19 = 61,
+    PivObject20 = 62,
+    PivObject21 = 63,
+    PivObject22 = 64,
+    PivObject23 = 65,
+    PivObject24 = 66,
+    PivObject25 = 67,
+    PivObject26 = 68,
+    PivObject27 = 69,
+    PivObject28 = 70,
+    PivObject29 = 71,
+    PivObject30 = 72,
+    PivObject31 = 73,
+    PivObject32 = 74,
+    PivObject33 = 75,
+    PivProvision = 76,
 }
 #[derive(Clone, Copy, Debug)]
 pub enum StorageError {
@@ -92,19 +91,19 @@ pub enum StorageError {
 pub trait Storage {
     /// A single session-scoped staged object, separate from record replacements.
     /// Publication is atomic; abort/disconnect must discard unpublished bytes.
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_append(&mut self, _bytes: &[u8]) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_commit(&mut self, _record: Record) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_abort(&mut self) {}
     #[cfg(feature = "piv")]
     fn remove(&mut self, id: Record) -> Result<(), StorageError> {
@@ -139,4 +138,28 @@ pub trait Storage {
     fn load(&mut self, record: Record, output: &mut [u8]) -> Result<usize, StorageError>;
     /// Atomic replacement. Any failed mutation invalidates cached state.
     fn replace(&mut self, record: Record, input: &[u8]) -> Result<(), StorageError>;
+}
+
+/// Copy a bounded window into an active staging transaction, wiping temporary data.
+#[cfg(any(feature = "oath", feature = "piv"))]
+pub(crate) fn copy_to_stage(
+    storage: &mut dyn Storage,
+    memory: &dyn super::Memory,
+    record: Record,
+    mut offset: u32,
+    mut length: u32,
+) -> Result<(), StorageError> {
+    let mut buffer = [0; 128];
+    let result = (|| {
+        while length != 0 {
+            let n = length.min(buffer.len() as u32) as usize;
+            storage.read_at(record, offset, &mut buffer[..n])?;
+            storage.stage_append(&buffer[..n])?;
+            offset += n as u32;
+            length -= n as u32;
+        }
+        Ok(())
+    })();
+    memory.wipe(&mut buffer);
+    result
 }

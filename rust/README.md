@@ -104,3 +104,14 @@ The independent [Rust PIV profile](docs/piv.md) supports management authenticati
 classical/SM2/PQ operations, source-backed attestation and streamed object storage.
 Use `-DCANOKEY_APPLET_PIV=ON` alone or with OpenPGP for its host APDU suite
 (`cryptography >= 50` required).
+
+## Compact persistence
+
+Record IDs map directly to two hexadecimal filename characters (`00`..`4c`);
+`t` and `s` are atomic-update and streaming temporaries. There is no directory
+prefix or filename table. Records store actual PIN, string and key-component
+lengths; fixed RAM buffers are not written as padded disk images. OATH removes
+deleted entries while retaining a four-byte next-ID watermark. Previous C and
+Rust data layouts are unsupported: provision fresh storage, without adding
+migration codecs or automatic formatting on mount failure. See each applet's
+record layout documentation for exact encodings.

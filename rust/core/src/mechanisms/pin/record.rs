@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Existing version-1, 68-byte credential format used by ADMIN and OpenPGP.
+//! Length-delimited credential record shared by ADMIN and OpenPGP.
 use super::{Charge, Credential, Error};
 #[cfg(feature = "admin")]
 use crate::ports::StorageError;
@@ -24,7 +24,8 @@ impl RecordPin {
         Ok(())
     }
     fn load(&self, b: &mut [u8; SIZE], p: &mut Platform<'_>) -> Result<(), Error> {
-        if p.storage.load(self.id, b).map_err(|_| Error::Persistence)? != SIZE {
+        let n = p.storage.load(self.id, b).map_err(|_| Error::Persistence)?;
+        if n < 4 || n != 4 + b[1] as usize {
             return Err(Error::Persistence);
         }
         self.valid(b)
@@ -61,7 +62,7 @@ impl RecordPin {
         b[4..4 + value.len()].copy_from_slice(value);
         let result = p
             .storage
-            .replace(self.id, &b)
+            .replace(self.id, &b[..4 + value.len()])
             .map_err(|_| Error::Persistence);
         p.memory.wipe(&mut b);
         result
@@ -76,7 +77,7 @@ impl RecordPin {
         let mut b = [0; SIZE];
         let result = match p.storage.load(self.id, &mut b) {
             Err(StorageError::Missing) => self.create(default, limit, p),
-            Ok(SIZE) => self.valid(&b),
+            Ok(n) if n >= 4 && n == 4 + b[1] as usize => self.valid(&b),
             _ => Err(Error::Persistence),
         };
         p.memory.wipe(&mut b);
@@ -104,7 +105,7 @@ impl RecordPin {
             let limit = b[3];
             Credential::new(b, 4..4 + length, 2, limit)?.verify(input, charge, &mut |bytes| {
                 p.storage
-                    .replace(self.id, bytes)
+                    .replace(self.id, &bytes[..4 + length])
                     .map_err(|_| Error::Persistence)
             })
         })
@@ -130,7 +131,7 @@ impl RecordPin {
             b[3] = limit;
             b[2] = if b[1] == 0 { 0 } else { limit };
             p.storage
-                .replace(self.id, b)
+                .replace(self.id, &b[..4 + b[1] as usize])
                 .map_err(|_| Error::Persistence)
         })
     }

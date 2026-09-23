@@ -110,7 +110,7 @@ fn verify_status_retries_logout_and_restart() {
         Sw::SUCCESS
     );
     assert_eq!(piv.state.pin_tries, 3);
-    assert_eq!(&store.bytes.unwrap()[3..5], &[0; 2]);
+    assert_eq!(&store.bytes.unwrap()[3..5], &[3; 2]);
     let writes = store.writes;
     assert_eq!(
         command(&mut piv, &mut store, 0x20, 0, 0x80, &[]),
@@ -125,9 +125,7 @@ fn verify_status_retries_logout_and_restart() {
         command(&mut piv, &mut store, 0x20, 0, 0x80, &[]),
         Sw(0x63c3)
     );
-    // Old foundation records may contain authorization bits; never restore them.
-    store.bytes.as_mut().unwrap()[3] = 1;
-    store.bytes.as_mut().unwrap()[4] = 1;
+    // Authorization is session-only and must not survive reinstallation.
     piv.install(&mut platform!(&mut store)).unwrap();
     assert!(!piv.state.pin_ok && !piv.state.puk_ok);
 }

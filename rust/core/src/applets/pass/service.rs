@@ -22,22 +22,10 @@ impl Pass {
         memory.wipe(&mut self.slots);
         match storage.load(Record::Pass, &mut self.slots) {
             Err(StorageError::Missing) => self.clear_slots()?,
-            Ok(72) => {
-                let mut old = [0; 72];
-                old.copy_from_slice(&self.slots[..72]);
-                for i in 0..2 {
-                    let slot = Layout.decode(&old[i * 36..i * 36 + 36])?;
-                    Layout.encode_cleared(
-                        Layout.record_mut(&mut self.slots, SlotIndex::new(i as u8)?)?,
-                        slot,
-                    )?;
-                }
-                memory.wipe(&mut old);
-                self.persist(storage, memory)?;
-            }
-            Ok(FILE_SIZE) => {
-                for i in 0..2 {
-                    Layout.decode(Layout.record(&self.slots, SlotIndex::new(i)?)?)?;
+            Ok(n) => {
+                if super::codec::unpack(&mut self.slots, n).is_err() {
+                    memory.wipe(&mut self.slots);
+                    return Err(Error::Persistence);
                 }
             }
             _ => {
@@ -58,7 +46,14 @@ impl Pass {
         Ok(())
     }
     fn persist(&mut self, storage: &mut dyn Storage, memory: &dyn Memory) -> Result<(), Error> {
-        if storage.replace(Record::Pass, &self.slots).is_err() {
+        let mut packed = [0; FILE_SIZE];
+        let result = super::codec::pack(&self.slots, &mut packed).and_then(|n| {
+            storage
+                .replace(Record::Pass, &packed[..n])
+                .map_err(|_| Error::Persistence)
+        });
+        memory.wipe(&mut packed);
+        if result.is_err() {
             self.available = false;
             memory.wipe(&mut self.slots);
             return Err(Error::Persistence);

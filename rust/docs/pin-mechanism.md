@@ -11,10 +11,10 @@ OATH challenge-response remains a separate authentication mechanism.
 | Layer | Responsibility |
 |---|---|
 | `mechanisms/pin.rs` | Checked borrowed credential view, comparison without secret-dependent early exit, explicit charging mode, blocked/remaining/persistence results |
-| `mechanisms/pin/record.rs` | ADMIN/OpenPGP version-1 68-byte record validation, creation, update, counter configuration, scoped loading and wiping |
+| `mechanisms/pin/record.rs` | ADMIN/OpenPGP four-byte header plus actual PIN bytes; record validation, creation, update, counter configuration, scoped loading and wiping |
 | `applets/admin/pin.rs` | ADMIN record/default, 6–64 byte policy, fixed three retries, length-first error precedence |
 | `applets/openpgp/pin.rs` | PW1/PW3/reset-code record selection, role lengths, configurable limits, domain-error mapping |
-| PIV credential adapter in `applets/piv/pin.rs` | Eight-byte PIN/PUK policy, 24-byte atomic pair record, cached-state invalidation and APDU error mapping |
+| PIV credential adapter in `applets/piv/pin.rs` | Eight-byte PIN/PUK policy, 21-byte atomic pair record, cached-state invalidation and APDU error mapping |
 | Applet service/session | Revoke old grants before verification; issue a scoped grant only after success; reset/change/unblock and operation-specific consumption |
 
 `Credential` borrows a mutable encoded record, a secret byte range, a counter
@@ -23,7 +23,7 @@ counter/secret bytes, zero limits and counters above the limit. A synchronous
 commit callback publishes the complete record atomically. No heap, global
 buffer or extra persistent file is introduced. Input and record bytes must be
 stable for the synchronous call; callbacks are storage-only and cannot re-enter
-the session. PIV materializes just its existing 24-byte credential record.
+the session. PIV materializes just its existing 21-byte credential record.
 
 ## Preserve the existing charging policies
 
@@ -45,15 +45,17 @@ stay in the adapters rather than becoming a configurable universal APDU policy.
 
 ## Storage and authorization
 
-ADMIN/OpenPGP records remain exactly 68 bytes: version, length, remaining retries,
-retry limit, and a 64-byte zero-padded credential area. ADMIN requires length
+ADMIN/OpenPGP records use a four-byte header (version, length, remaining retries,
+retry limit) followed by the actual credential bytes; the default records are
+10 or 12 bytes and disabled reset code is 4 bytes. Fixed RAM buffers are not
+persisted as padding. ADMIN requires length
 6–64 and limit 3. OpenPGP permits an empty disabled reset code, which creation
 encodes with zero remaining retries. An empty credential remains disabled after
 retry-limit changes. Credential replacement resets its retry count in the same
 atomic write. Low-level creation rejects oversized values and zero retry limits
 before writing, rather than risking a slice panic or an unreadable record.
 
-PIV retains the version-1 24-byte combined PIN/PUK record. The verification
+PIV uses a compact 21-byte combined PIN/PUK record. The verification
 adapter serializes it, borrows only the selected credential and counter, then
 wipes the encoding on every result. A failed commit invalidates its cache and
 revokes both grants; recovery requires reload. The shared record adapter keeps
@@ -62,7 +64,7 @@ loads, verification and mutations. Session authorization is never serialized.
 
 ## Validation
 
-Shared tests assert exact durable counter-write sequences for both policies,
+Shared tests assert durable counter-write sequences for both policies,
 correct and incorrect credentials, length mismatch, blocking and failure at
 each commit (both committed and uncommitted failure outcomes). Record tests cover
 layout, cleanup on errors, replacement, disabled reset codes, adjustable limits

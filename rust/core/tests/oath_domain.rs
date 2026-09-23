@@ -62,7 +62,7 @@ impl Crypto for Primitives {
 }
 #[derive(Default)]
 struct Store {
-    rows: Vec<Option<[u8; codec::LENGTH]>>,
+    rows: Vec<Option<Vec<u8>>>,
     writes: usize,
 }
 impl Repository for Store {
@@ -88,15 +88,15 @@ impl Repository for Store {
     }
     fn insert(&mut self, value: &Credential) -> Result<CredentialId, Error> {
         let mut bytes = [0; codec::LENGTH];
-        codec::encode(value, &mut bytes);
-        self.rows.push(Some(bytes));
+        let n = codec::encode(value, &mut bytes);
+        self.rows.push(Some(bytes[..n].to_vec()));
         self.writes += 1;
         Ok(CredentialId(self.rows.len() as u32))
     }
     fn replace(&mut self, id: CredentialId, value: &Credential) -> Result<(), Error> {
         let mut bytes = [0; codec::LENGTH];
-        codec::encode(value, &mut bytes);
-        self.rows[id.0 as usize - 1] = Some(bytes);
+        let n = codec::encode(value, &mut bytes);
+        self.rows[id.0 as usize - 1] = Some(bytes[..n].to_vec());
         self.writes += 1;
         Ok(())
     }
@@ -107,7 +107,7 @@ impl Repository for Store {
     }
 }
 #[derive(Default)]
-struct AuthStore(Option<[u8; auth::METADATA_LENGTH]>);
+struct AuthStore(Option<Vec<u8>>);
 impl auth::Repository for AuthStore {
     fn load(&mut self) -> Result<Option<auth::Metadata>, Error> {
         self.0
@@ -117,8 +117,8 @@ impl auth::Repository for AuthStore {
     }
     fn replace(&mut self, value: &auth::Metadata) -> Result<(), Error> {
         let mut bytes = [0; auth::METADATA_LENGTH];
-        value.encode(&mut bytes);
-        self.0 = Some(bytes);
+        let n = value.encode(&mut bytes);
+        self.0 = Some(bytes[..n].to_vec());
         Ok(())
     }
 }

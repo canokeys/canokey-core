@@ -104,6 +104,8 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/piv_normal.py" --host $<TARGET_FILE:piv-host>)
   endif()
   if(CANOKEY_APPLET_OPENPGP AND CANOKEY_APPLET_PIV)
+    add_test(NAME compact-storage COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/compact_storage.py" $<TARGET_FILE:oath-host>)
     add_test(NAME combined-reset COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/reset_normal.py" --host $<TARGET_FILE:oath-host>)
   endif()

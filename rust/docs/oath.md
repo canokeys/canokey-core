@@ -49,19 +49,20 @@ development version 0.0.0, matching the common version policy.
 
 ## Storage and presence
 
-- `/rust/oath-meta`: 26 bytes, version/key-present/handle8/access-key16.
-- `/rust/oath-records`: 146-byte entries: stable big-endian ID4 plus versioned
-  142-byte credential codec (name/key lengths, kind/algorithm, digits,
-  properties, name64, key64, moving factor8).
-- A tombstone keeps its ID and zeros its credential. New IDs exceed every
-  existing live/tombstone ID; reused file slots cannot alias PASS bindings.
-  Full OATH reset clears PASS bindings before resetting the ID namespace.
-- `/rust/pass1`: two version-2 72-byte slots. OATH slots store ID and display
-  name, never the key. Earlier Rust version-1 36-byte slots upgrade atomically.
-- Raw C storage copies prefix/replacement/suffix to a temporary file and then
-  renames it. File caches are word aligned. Appending retains the C 64 KiB
-  free-space reserve. Mount failure never formats, and old C records are not
-  imported or overwritten. Uncertain writes disable storage until remount.
+- `02`: version/key-present/handle8, followed by access-key16 only when set
+  (10 or 26 bytes).
+- `03`: next-ID watermark4, then live entries. Each entry stores ID4,
+  six header bytes, actual name/key bytes and moving-factor8, all explicitly
+  encoded. Deletion atomically removes the entry; there are no tombstones.
+- The watermark survives deletion, so a stale PASS binding cannot alias a new
+  credential. Full OATH reset clears PASS bindings before resetting IDs.
+- `00`: two compact PASS slots. OATH slots store ID and display name, never
+  the key. No previous-format upgrade path is included.
+- Updates stage the header, live prefix, replacement and suffix, then rename.
+  File caches are word aligned. Insertions retain C's 64 KiB free-space reserve
+  for other applets. Mount failure never formats. Provision fresh storage;
+  previous C/Rust data layouts are not imported. Uncertain writes disable
+  storage until remount.
 
 Rust owns the 30-second request-bound press/release wait. C only polls raw
 input/ticks and services CCID time extensions without reentering Rust. A
@@ -102,7 +103,7 @@ clearing the session grant. Local reports: `hil-reports/rust-oath-20260922/`.
 
 Host fixtures exercise actual HOTP keyboard bytes. Physical OATH touch passed;
 physical keyboard typing into a capture target has not been tested. New OATH
-firmware remains installed. NFCC and legacy C credential migration are deferred.
+firmware remains installed. NFCC is deferred; credential migration is not supported.
 
 
 ## OATH protocol review (2026-09-23)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Version 2 slot: version/kind/length/enter plus 68 bytes; v1 input remains readable.
-//! Independent of C enum width, host endianness and legacy PASS files.
+//! Fixed RAM slots; persistence stores only headers and actual payloads.
+//! No native-layout or previous-format decoding.
 #![forbid(unsafe_code)]
 use super::domain::{Error, Slot, SlotIndex};
 pub const FILE_SIZE: usize = 144;
@@ -18,12 +18,12 @@ impl Layout {
         bytes.get_mut(self.range(index)).ok_or(Error::Record)
     }
     pub fn decode(self, record: &[u8]) -> Result<Slot<'_>, Error> {
-        if !((record.len() == 36 && record[0] == 1) || (record.len() == 72 && record[0] == 2)) {
+        if record.len() != 72 || record[0] != 2 {
             return Err(Error::Record);
         }
         let n = usize::from(record[2]);
         let slot = match record[1] {
-            1 if record.len() == 72 && n <= 64 => Slot::Oath {
+            1 if n <= 64 => Slot::Oath {
                 id: u32::from_be_bytes(record[4..8].try_into().map_err(|_| Error::Record)?),
                 name: &record[8..8 + n],
                 enter: record[3],
@@ -75,4 +75,39 @@ impl Layout {
         }
         Ok(())
     }
+}
+
+/// Stored slot length, checked before slicing or expanding into RAM.
+fn stored_len(bytes: &[u8]) -> Result<usize, Error> {
+    if bytes.len() < 4 || bytes[0] != 2 {
+        return Err(Error::Record);
+    }
+    let n = 4 + usize::from(bytes[2]) + if bytes[1] == 1 { 4 } else { 0 };
+    if n > 72 || n > bytes.len() {
+        return Err(Error::Record);
+    }
+    Ok(n)
+}
+pub fn unpack(bytes: &mut [u8; FILE_SIZE], length: usize) -> Result<(), Error> {
+    let first = stored_len(&bytes[..length])?;
+    let second = stored_len(&bytes[first..length])?;
+    if first + second != length {
+        return Err(Error::Record);
+    }
+    bytes.copy_within(first..length, 72);
+    bytes[first..72].fill(0);
+    bytes[72 + second..].fill(0);
+    Layout.decode(&bytes[..72])?;
+    Layout.decode(&bytes[72..])?;
+    Ok(())
+}
+pub fn pack(bytes: &[u8; FILE_SIZE], out: &mut [u8; FILE_SIZE]) -> Result<usize, Error> {
+    let mut at = 0;
+    for record in bytes.chunks_exact(72) {
+        Layout.decode(record)?;
+        let n = stored_len(record)?;
+        out[at..at + n].copy_from_slice(&record[..n]);
+        at += n;
+    }
+    Ok(at)
 }

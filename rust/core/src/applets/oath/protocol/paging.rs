@@ -5,16 +5,11 @@ impl State {
     pub(super) fn page(&mut self, le: u32, p: &mut Platform<'_>) -> Result<Sw, Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
-        let total = store.count().map_err(status)?;
         let capacity = le.min(256) as usize;
         if matches!(self.page, Page::None) {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
-        while self.cursor < total {
-            let Some(id) = store.at(self.cursor).map_err(status)? else {
-                self.cursor += 1;
-                continue;
-            };
+        while let Some((id, next)) = store.at(self.cursor).map_err(status)? {
             let mut record = store.load(id).map_err(status)?;
             let estimate = match self.page {
                 Page::List => 3 + record.name().len(),
@@ -25,7 +20,7 @@ impl State {
                 record.clear(&mut mac);
                 return Ok(Sw(0x61ff));
             }
-            self.cursor += 1;
+            self.cursor = next;
             let at = self.length;
             match self.page {
                 Page::List => {

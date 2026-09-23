@@ -100,10 +100,14 @@ transfer and main-loop cleanup subsequently revokes the Rust session.
 
 ## Persistence and recovery
 
-Records 4..13 map to `/rust/pgp-*`, independently of legacy C files. State, three
-PIN records, three key records and three certificates have explicit byte layouts.
-The key record is a 32-byte version/algorithm/origin/UIF/fingerprint/date/counter
-header followed by explicit private components. A new signing key and its zero
+Records 4..13 map directly to hexadecimal filenames `04`..`0d`. State has
+four flags, 60 CA-fingerprint bytes and five length-prefixed variable fields
+(70 bytes at defaults). PIN records have four header bytes plus the actual PIN.
+Certificates store only their contents. No previous-format decoder is included.
+The key record is a 31-byte version/algorithm/origin/UIF/fingerprint/date/counter
+header followed by explicit private components. RSA stores exponent4 and five
+active-width components: 644/964/1284 material bytes for RSA-2048/3072/4096.
+ECC stores only its private scalar. A new signing key and its zero
 counter publish in one transaction. Successful signing persists its increment
 before exposing the response; delivery failure does not roll the counter back.
 The 24-bit counter saturates rather than wrapping to zero.
@@ -111,7 +115,7 @@ The 24-bit counter saturates rather than wrapping to zero.
 Multi-record reset first marks the applet terminated and clears that marker last;
 an interrupted reset remains recoverable with ACTIVATE. Storage failures are
 fail-closed (`6900`), never a trigger to format or reinterpret old C records.
-`/rust/object-stage` is separate from `/rust/stage` used for atomic record updates.
+`s` is separate from `t` used for atomic record updates.
 
 ## Validation scope
 

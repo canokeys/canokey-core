@@ -122,6 +122,7 @@ mod records {
     use core::cell::Cell;
     struct Store {
         value: [u8; 68],
+        length: usize,
         exists: bool,
         writes: usize,
         unavailable: bool,
@@ -131,6 +132,7 @@ mod records {
         fn default() -> Self {
             Self {
                 value: [0; 68],
+                length: 0,
                 exists: false,
                 writes: 0,
                 unavailable: false,
@@ -147,8 +149,8 @@ mod records {
                 return Err(StorageError::Missing);
             }
             assert_eq!(id as u8, self.id);
-            out.copy_from_slice(&self.value);
-            Ok(68)
+            out[..self.length].copy_from_slice(&self.value[..self.length]);
+            Ok(self.length)
         }
         fn replace(&mut self, id: Record, input: &[u8]) -> Result<(), StorageError> {
             self.writes += 1;
@@ -157,7 +159,9 @@ mod records {
             }
             self.id = id as u8;
             self.exists = true;
-            self.value.copy_from_slice(input);
+            self.value.fill(0);
+            self.length = input.len();
+            self.value[..self.length].copy_from_slice(input);
             Ok(())
         }
     }
@@ -218,6 +222,7 @@ mod records {
         let memory = Eraser::default();
         pin.create(b"123456", 5, &mut platform!(&mut store, &memory))
             .unwrap();
+        assert_eq!(store.length, 10);
         assert_eq!(&store.value[..10], b"\x01\x06\x05\x05123456");
         assert!(store.value[10..].iter().all(|b| *b == 0));
         assert_eq!(memory.0.get(), 1);

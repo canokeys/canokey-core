@@ -220,7 +220,7 @@ impl Attestation {
         let mut seed = [0; 32];
         let result = (|| {
             p.storage
-                .read_at(repo::KEYS[id], repo::META as u32, &mut seed)
+                .read_at(repo::KEYS[id], repo::HEADER as u32, &mut seed)
                 .map_err(repo::io)?;
             p.crypto
                 .piv_stream(

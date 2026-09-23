@@ -66,7 +66,7 @@ impl Storage for StorageBackend {
         }
     }
 
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(0, 0, core::ptr::null(), 0) } == 0 {
             Ok(())
@@ -74,7 +74,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_append(&mut self, b: &[u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(1, 0, b.as_ptr(), b.len()) } == 0 {
             Ok(())
@@ -82,7 +82,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_commit(&mut self, id: Record) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(2, id as u8, core::ptr::null(), 0) } == 0 {
             Ok(())
@@ -90,7 +90,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_abort(&mut self) {
         unsafe {
             ck_platform_stage(3, 0, core::ptr::null(), 0);
@@ -487,9 +487,10 @@ impl Memory for MemoryBackend {
     }
 }
 
-#[cfg(any(feature = "openpgp", feature = "piv"))]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
 unsafe extern "C" {
     fn ck_platform_stage(operation: u8, file: u8, input: *const u8, len: usize) -> i32;
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn ck_platform_key(
         operation: u8,
         algorithm: u8,
