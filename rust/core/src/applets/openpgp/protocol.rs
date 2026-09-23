@@ -2,7 +2,7 @@
 //! OpenPGP Card 3.4 adapter. The runtime owns chaining and response position.
 
 use super::domain::{grant, key_role};
-use super::wire::{ins::*, limits, reference, tag};
+use super::wire::{BufferRange, ins::*, limits, reference, tag};
 use super::{
     import::Import,
     pin,
@@ -162,11 +162,10 @@ impl OpenPgp {
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
         match self.response {
-            Response::Memory => out.copy_from_slice(
-                w.output
-                    .get(offset..offset + out.len())
-                    .ok_or(Sw::UNABLE_TO_PROCESS)?,
-            ),
+            Response::Memory => {
+                let range = BufferRange::new(offset, out.len()).ok_or(Sw::UNABLE_TO_PROCESS)?;
+                out.copy_from_slice(w.output.get(range.range()).ok_or(Sw::UNABLE_TO_PROCESS)?);
+            }
             Response::Certificate(i) => p
                 .storage
                 .read_at(CERTS[i], offset as u32, out)

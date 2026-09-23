@@ -59,6 +59,11 @@ impl Ctap {
     }
     pub fn install(&mut self, _p: &mut Platform<'_>) {}
 }
+impl Default for Ctap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {

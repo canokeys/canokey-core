@@ -25,6 +25,54 @@ enum Selected {
     #[cfg(feature = "piv")]
     Piv,
 }
+
+impl Selected {
+    fn from_aid(aid: &[u8]) -> Option<Self> {
+        match aid {
+            #[cfg(feature = "ctap")]
+            ctap::AID => Some(Self::Ctap),
+            #[cfg(feature = "admin")]
+            admin::AID => Some(Self::Admin),
+            #[cfg(feature = "oath")]
+            crate::applets::oath::protocol::AID => Some(Self::Oath),
+            #[cfg(feature = "openpgp")]
+            crate::applets::openpgp::protocol::AID => Some(Self::OpenPgp),
+            #[cfg(feature = "piv")]
+            aid if aid.len() >= 5 && crate::applets::piv::AID.starts_with(aid) => Some(Self::Piv),
+            _ => None,
+        }
+    }
+
+    fn command_limit(self, h: Header) -> (u8, u32) {
+        match self {
+            #[cfg(feature = "admin")]
+            Self::Admin => (h.cla, admin::COMMAND_CAPACITY as u32),
+            #[cfg(feature = "ctap")]
+            Self::Ctap => (h.unchained().cla, 256),
+            #[cfg(feature = "oath")]
+            Self::Oath => (
+                h.unchained().cla,
+                crate::applets::oath::protocol::CAPACITY as u32,
+            ),
+            #[cfg(feature = "openpgp")]
+            Self::OpenPgp => (
+                h.unchained().cla,
+                crate::applets::openpgp::protocol::OpenPgp::limit(h),
+            ),
+            #[cfg(feature = "piv")]
+            Self::Piv => (
+                if h.chained() && !crate::applets::piv::Piv::supports_chaining(h.ins) {
+                    h.cla
+                } else {
+                    h.unchained().cla
+                },
+                Piv::limit(h),
+            ),
+            Self::None => (h.cla, 0),
+        }
+    }
+}
+
 pub struct Registry {
     selected: Selected,
     #[cfg(feature = "admin")]
@@ -177,22 +225,7 @@ impl Router for Registry {
         self.selected != Selected::None
     }
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
-        let next = match aid {
-            #[cfg(feature = "ctap")]
-            ctap::AID => Some(Selected::Ctap),
-            #[cfg(feature = "admin")]
-            admin::AID => Some(Selected::Admin),
-            #[cfg(feature = "oath")]
-            crate::applets::oath::protocol::AID => Some(Selected::Oath),
-            #[cfg(feature = "openpgp")]
-            crate::applets::openpgp::protocol::AID => Some(Selected::OpenPgp),
-            #[cfg(feature = "piv")]
-            aid if aid.len() >= 5 && crate::applets::piv::AID.starts_with(aid) => {
-                Some(Selected::Piv)
-            }
-            _ => None,
-        }
-        .ok_or(Sw::FILE_NOT_FOUND)?;
+        let next = Selected::from_aid(aid).ok_or(Sw::FILE_NOT_FOUND)?;
         if self.selected != next {
             self.reset_sessions(p);
         }
@@ -211,32 +244,7 @@ impl Router for Registry {
         // All applets require base CLA=00. Strip the chain bit only where
         // chaining is supported; leaving it set deliberately makes the final
         // CLA check reject chained ADMIN or unsupported chained PIV commands.
-        let (cla, limit) = match self.selected {
-            #[cfg(feature = "admin")]
-            Selected::Admin => (h.cla, admin::COMMAND_CAPACITY as u32),
-            #[cfg(feature = "ctap")]
-            Selected::Ctap => (h.unchained().cla, 256),
-            #[cfg(feature = "oath")]
-            Selected::Oath => (
-                h.unchained().cla,
-                crate::applets::oath::protocol::CAPACITY as u32,
-            ),
-            #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => (
-                h.unchained().cla,
-                crate::applets::openpgp::protocol::OpenPgp::limit(h),
-            ),
-            #[cfg(feature = "piv")]
-            Selected::Piv => (
-                if h.chained() && !crate::applets::piv::Piv::supports_chaining(h.ins) {
-                    h.cla
-                } else {
-                    h.unchained().cla
-                },
-                Piv::limit(h),
-            ),
-            Selected::None => (h.cla, 0),
-        };
+        let (cla, limit) = self.selected.command_limit(h);
         if !self.selected() {
             return Err(Sw::FILE_NOT_FOUND);
         }

@@ -9,6 +9,17 @@ use canokey_protocol::{
 // None delivers the next borrowed value chunk. Consumers must not retain it.
 type Emit<'a> = dyn FnMut(u8, Option<usize>, &[u8]) -> Result<(), Sw> + 'a;
 #[derive(Clone, Copy, PartialEq, Eq)]
+struct Field {
+    offset: usize,
+    length: usize,
+}
+impl Field {
+    fn value(self, input: &[u8]) -> Option<&[u8]> {
+        let end = self.offset.checked_add(self.length)?;
+        input.get(self.offset..end)
+    }
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
     OuterTag,
     OuterLength,
@@ -25,9 +36,9 @@ pub struct Ga {
     n: usize,
     offset: usize,
     pub used: usize,
-    // (offset, length) in concatenated field VALUES, with TLV headers removed.
-    // Some((_, 0)) is an explicit empty field; None means the tag was absent.
-    pub fields: [Option<(usize, usize)>; ga_field::COUNT],
+    // Ranges in concatenated field VALUES, with TLV headers removed.
+    // A zero-length Field is an explicit empty field; None means the tag was absent.
+    fields: [Option<Field>; ga_field::COUNT],
 }
 impl Ga {
     pub const fn new() -> Self {
@@ -55,6 +66,16 @@ impl Ga {
             }
             Ok(())
         })
+    }
+    pub fn field<'a>(&self, index: usize, input: &'a [u8]) -> Option<&'a [u8]> {
+        self.fields.get(index).copied().flatten()?.value(input)
+    }
+    pub fn field_len(&self, index: usize) -> Option<usize> {
+        self.fields
+            .get(index)
+            .copied()
+            .flatten()
+            .map(|field| field.length)
     }
     pub fn events(&mut self, mut bytes: &[u8], emit: &mut Emit<'_>) -> Result<(), Sw> {
         while !bytes.is_empty() {
@@ -116,7 +137,10 @@ impl Ga {
                             return Err(Sw::WRONG_LENGTH);
                         }
                         emit(self.tag as u8 + ga_tag::WITNESS, Some(self.n), &[])?;
-                        self.fields[self.tag] = Some((self.used, self.n));
+                        self.fields[self.tag] = Some(Field {
+                            offset: self.used,
+                            length: self.n,
+                        });
                         self.offset = 0;
                         self.phase = if n == 0 { Phase::Tag } else { Phase::Value };
                     }

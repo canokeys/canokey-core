@@ -200,8 +200,8 @@ impl Piv {
         }
         if let Request::Stream(a) = self.request {
             self.ga.finish()?;
-            if self.ga.fields[ga_field::RESPONSE].is_none_or(|(_, n)| n != 0)
-                || self.ga.fields[ga_field::CHALLENGE].is_none()
+            if self.ga.field_len(ga_field::RESPONSE).is_none_or(|n| n != 0)
+                || self.ga.field_len(ga_field::CHALLENGE).is_none()
             {
                 return Err(Sw::WRONG_DATA);
             }

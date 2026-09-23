@@ -27,7 +27,10 @@ pub fn load(
     }
     storage.read_at(record, offset, &mut key[..layout::EXPONENT_BYTES])?;
     offset += layout::EXPONENT_BYTES as u32;
-    for component in key[layout::P..].chunks_exact_mut(layout::RSA_LIMB_BYTES) {
+    for component in key[layout::P..]
+        .as_chunks_mut::<{ layout::RSA_LIMB_BYTES }>()
+        .0
+    {
         storage.read_at(record, offset, &mut component[..width])?;
         offset += width as u32;
     }
@@ -43,7 +46,7 @@ pub fn append(
         return storage.stage_append(&key[..width]);
     }
     storage.stage_append(&key[..layout::EXPONENT_BYTES])?;
-    for component in key[layout::P..].chunks_exact(layout::RSA_LIMB_BYTES) {
+    for component in key[layout::P..].as_chunks::<{ layout::RSA_LIMB_BYTES }>().0 {
         storage.stage_append(&component[..width])?;
     }
     Ok(())

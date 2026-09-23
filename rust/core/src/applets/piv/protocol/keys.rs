@@ -38,7 +38,7 @@ impl Piv {
         self.memory(n);
         let mut at = 0;
         if metadata {
-            at = self.metadata_header(a, &m);
+            at = self.metadata_header(a, m);
         }
         if repo::rsa(a) {
             // RSA body: modulus TLV (4-byte header for 2048..4096 bits),
@@ -128,10 +128,8 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         let mut fields: [Option<&[u8]>; 6] = [None; 6];
-        for (i, entry) in self.ga.fields.iter().enumerate() {
-            if let Some((offset, n)) = entry {
-                fields[i] = Some(&w.input[*offset..*offset + *n]);
-            }
+        for (i, field) in fields.iter_mut().enumerate() {
+            *field = self.ga.field(i, &w.input);
         }
         if h.p2 == reference::MANAGEMENT {
             return self.management_auth(h, &fields, w.output.as_mut_slice(), p);
@@ -226,7 +224,7 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         let result = (|| {
-            let field = |i: usize| self.ga.fields[i].map(|(o, n)| &w.input[o..o + n]);
+            let field = |i: usize| self.ga.field(i, &w.input);
             if field(ga_field::RESPONSE) != Some(&[][..]) {
                 return Err(Sw::WRONG_DATA);
             }

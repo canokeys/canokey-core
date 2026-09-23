@@ -3,6 +3,27 @@
 //! INS is the APDU instruction byte; a tag identifies a BER-TLV data object (DO).
 //! SIG/DEC/AUT mean signature/decipher/authentication key roles. These values
 //! belong to the card protocol, not the native crypto algorithm-ID namespace.
+#[derive(Clone, Copy)]
+pub(super) struct BufferRange {
+    start: usize,
+    end: usize,
+}
+impl BufferRange {
+    pub(super) fn new(start: usize, length: usize) -> Option<Self> {
+        Some(Self {
+            start,
+            end: start.checked_add(length)?,
+        })
+    }
+    pub(super) fn tail(total: usize, length: usize) -> Option<Self> {
+        let start = total.checked_sub(length)?;
+        Self::new(start, length)
+    }
+    pub(super) fn range(self) -> core::ops::Range<usize> {
+        self.start..self.end
+    }
+}
+
 pub(super) mod ins {
     pub const INS_VERIFY: u8 = 0x20;
     pub const INS_CHANGE_REFERENCE_DATA: u8 = 0x24;

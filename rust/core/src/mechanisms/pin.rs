@@ -4,7 +4,7 @@ use core::ops::Range;
 
 #[cfg(any(feature = "admin", feature = "openpgp"))]
 mod record;
-#[cfg(feature = "openpgp")]
+#[cfg(any(feature = "openpgp", all(test, feature = "admin")))]
 pub(crate) use record::PinInfo;
 #[cfg(any(feature = "admin", feature = "openpgp"))]
 pub(crate) use record::RecordPin;

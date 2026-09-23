@@ -134,7 +134,8 @@ pub fn unpack(bytes: &mut [u8; FILE_SIZE], length: usize) -> Result<(), Error> {
 }
 pub fn pack(bytes: &[u8; FILE_SIZE], out: &mut [u8; FILE_SIZE]) -> Result<usize, Error> {
     let mut at = 0;
-    for record in bytes.chunks_exact(SLOT_SIZE) {
+    let (records, _) = bytes.as_chunks::<SLOT_SIZE>();
+    for record in records {
         Layout.decode(record)?;
         let n = stored_len(record)?;
         out[at..at + n].copy_from_slice(&record[..n]);

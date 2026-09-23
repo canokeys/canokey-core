@@ -16,7 +16,6 @@ const SIZE: usize = VALUE + PIN_CAPACITY;
 /// Public record metadata only; reading it never grants PIN authorization.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct PinInfo {
-    #[cfg(feature = "openpgp")]
     pub length_bytes: usize,
     pub retries_remaining: u8,
     pub retry_limit: u8,
@@ -104,7 +103,6 @@ impl RecordPin {
     pub(crate) fn info(&self, p: &mut Platform<'_>) -> Result<PinInfo, Error> {
         self.with_record(p, |b, _| {
             Ok(PinInfo {
-                #[cfg(feature = "openpgp")]
                 length_bytes: b[LENGTH] as usize,
                 retries_remaining: b[REMAINING],
                 retry_limit: b[RETRY_LIMIT],

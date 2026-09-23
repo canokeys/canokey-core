@@ -35,8 +35,8 @@ alone/combined. See
   immutable erasure capability. OATH does not use RefCell or share a mutable
   whole-platform handle. Stored bytes and record IDs are unchanged.
 - `ffi/src/entrypoints.rs`: serialized C ABI and alias-safe RX/TX borrows;
-  `ffi/src/platform.rs`: raw C backend calls and volatile erasure. Safe core
-  forbids unsafe code at the crate root.
+  `ffi/src/platform/`: storage, crypto and device adapters, with volatile
+  erasure in the device module. Safe core forbids unsafe code at the crate root.
 - `interfaces/rust-core/`: retained C USB/CCID/HID framing and endpoint mechanics.
 
 The `admin`, `pass`, `oath`, `openpgp` and `piv` core/FFI features are independent.

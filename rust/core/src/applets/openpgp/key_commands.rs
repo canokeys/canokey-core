@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Key command policy and crypto-port calls; semantic buffers belong to runtime.
 use super::domain::key_role;
-use super::wire::{ins::*, key_tag};
+use super::wire::{BufferRange, ins::*, key_tag};
 use super::{domain::role, encoding::Writer, import::object, protocol::OpenPgp};
 use crate::ports::EC_POINT_UNCOMPRESSED;
 use crate::ports::alg;
@@ -122,10 +122,9 @@ impl OpenPgp {
             b
         };
         // Each checked envelope contains exactly one trailing value.
-        let offset = self.used - input.len();
-        let length = input.len();
+        let input_range = BufferRange::tail(self.used, input.len()).ok_or(Sw::WRONG_LENGTH)?;
         self.session
-            .execute(r, a, offset..offset + length, w, p)
+            .execute(r, a, input_range.range(), w, p)
             .map(|n| n as u32)
             .map_err(Into::into)
     }
