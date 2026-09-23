@@ -73,7 +73,9 @@ rejected, matching C. Only GA, PUT and IMPORT accept command chaining.
 
 Attestation generates DER X.509 with the F9 certificate's subject as issuer and
 its validity period, random serial, CanoKey subject, device serial and policy
-extensions. It covers RSA, all supported EC/Ed/X curves and ML-DSA. Like C,
+extensions. Serial numbers use minimal positive DER INTEGER encoding, including
+leading-zero removal and sign padding; the unit suite covers these boundaries.
+It covers RSA, all supported EC/Ed/X curves and ML-DSA. Like C,
 ML-KEM attestation is rejected. The response is an 18-segment plan with at most
 256 encoded bytes; issuer/validity are read from storage, and the ML-DSA public
 key is regenerated for the hashing and response passes.

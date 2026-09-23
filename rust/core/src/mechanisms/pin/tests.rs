@@ -235,10 +235,24 @@ mod records {
             ),
             Err(Error::Retries(4))
         );
-        assert_eq!(pin.info(&mut platform!(&mut store, &memory)), Ok((6, 4, 5)));
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory)),
+            Ok(crate::mechanisms::pin::PinInfo {
+                length_bytes: 6,
+                retries_remaining: 4,
+                retry_limit: 5
+            })
+        );
         pin.change(b"abcdef", 6, &mut platform!(&mut store, &memory))
             .unwrap();
-        assert_eq!(pin.info(&mut platform!(&mut store, &memory)), Ok((6, 5, 5)));
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory)),
+            Ok(crate::mechanisms::pin::PinInfo {
+                length_bytes: 6,
+                retries_remaining: 5,
+                retry_limit: 5
+            })
+        );
         let previous = store.value;
         assert_eq!(
             pin.create(&[1; 65], 5, &mut platform!(&mut store, &memory)),
@@ -308,7 +322,14 @@ mod records {
         let memory = Eraser::default();
         pin.create(b"", 3, &mut platform!(&mut store, &memory))
             .unwrap();
-        assert_eq!(pin.info(&mut platform!(&mut store, &memory)), Ok((0, 0, 3)));
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory)),
+            Ok(crate::mechanisms::pin::PinInfo {
+                length_bytes: 0,
+                retries_remaining: 0,
+                retry_limit: 3
+            })
+        );
         assert_eq!(
             pin.verify(
                 b"bad",
@@ -320,7 +341,14 @@ mod records {
         );
         pin.retry_limit(5, &mut platform!(&mut store, &memory))
             .unwrap();
-        assert_eq!(pin.info(&mut platform!(&mut store, &memory)), Ok((0, 0, 5)));
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory)),
+            Ok(crate::mechanisms::pin::PinInfo {
+                length_bytes: 0,
+                retries_remaining: 0,
+                retry_limit: 5
+            })
+        );
         pin.change(b"12345678", 8, &mut platform!(&mut store, &memory))
             .unwrap();
         let writes = store.writes;
@@ -332,6 +360,13 @@ mod records {
         )
         .unwrap();
         assert_eq!(store.writes, writes + 2);
-        assert_eq!(pin.info(&mut platform!(&mut store, &memory)), Ok((8, 5, 5)));
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory)),
+            Ok(crate::mechanisms::pin::PinInfo {
+                length_bytes: 8,
+                retries_remaining: 5,
+                retry_limit: 5
+            })
+        );
     }
 }

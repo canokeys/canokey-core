@@ -16,14 +16,18 @@ impl Layout {
             le_width: 0,
             extended: false,
         };
+        // ISO case 1: just CLA/INS/P1/P2, with neither body nor expected length.
         if total == 4 {
             return Ok(result);
         }
+        // ISO case 2S: the fifth byte is Le, not Lc, because no body follows.
         if total == 5 {
             result.le_width = 1;
             return Ok(result);
         }
         let short_lc = usize::from(prefix[4]);
+        // Cases 3S/4S: nonzero fifth byte is short Lc. Exactly zero or one
+        // trailing byte is permitted (absent Le or short Le).
         if short_lc != 0 {
             result.start = 5;
             result.lc = short_lc as u16;
@@ -32,6 +36,8 @@ impl Layout {
                 return Err(Error::Length);
             }
         } else {
+            // Fifth byte 00 introduces extended form, needing two more bytes.
+            // Seven-byte frames are case 2E (Le only); longer frames carry Lc.
             if total < 7 {
                 return Err(Error::Length);
             }
@@ -54,6 +60,8 @@ impl Layout {
     }
 
     fn info(self, head: &[u8], tail: [u8; 2]) -> CommandInfo {
+        // Encoded Le=0 requests the format maximum, not a zero-byte reply:
+        // 256 for short APDUs, 65536 for extended APDUs. None means absent.
         let le = match self.le_width {
             1 => Some(if tail[0] == 0 {
                 256

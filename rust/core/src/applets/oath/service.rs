@@ -36,6 +36,9 @@ impl Digest {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes[..self.length]
     }
+    // RFC 4226 dynamic truncation: the last digest nibble selects four bytes;
+    // clear the sign bit to obtain a 31-bit integer. Decimal formatting and
+    // reduction to the configured digit count happen at the output boundary.
     pub fn truncated(&self) -> u32 {
         let offset = usize::from(self.bytes[self.length - 1] & 15);
         u32::from_be_bytes(self.bytes[offset..offset + 4].try_into().unwrap()) & 0x7fff_ffff

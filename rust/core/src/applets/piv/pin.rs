@@ -1,23 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::wire::reference;
 use crate::{
     Platform,
     ports::{Record, StorageError},
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
-const STATE_LEN: usize = 21;
+// One atomic disk record contains both secrets and their retry counters.
+// Authorization grants (pin_ok/puk_ok) are session-only and never serialized.
+// PIV values occupy eight bytes; a six-digit default PIN ends in FF FF padding.
+const FORMAT_VERSION: u8 = 1;
+const VERSION: usize = 0;
+const PIN_REMAINING: usize = 1;
+const PUK_REMAINING: usize = 2;
+const PIN_LIMIT: usize = 3;
+const PUK_LIMIT: usize = 4;
+const PIN_VALUE: usize = 5;
+pub(super) const VALUE_BYTES: usize = 8;
+const PUK_VALUE: usize = PIN_VALUE + VALUE_BYTES;
+const STATE_LEN: usize = PUK_VALUE + VALUE_BYTES;
+pub(super) const MAX_RETRIES: u8 = 0x0f;
 const RETRIES: u8 = 3;
-pub(super) const PIN: &[u8; 8] = b"123456\xff\xff";
-pub(super) const PUK: &[u8; 8] = b"12345678";
+pub(super) const PIN: &[u8; VALUE_BYTES] = b"123456\xff\xff";
+pub(super) const PUK: &[u8; VALUE_BYTES] = b"12345678";
 #[derive(Clone, Copy)]
 pub(super) struct State {
     pub pin_tries: u8,
     pub puk_tries: u8,
     pub pin_ok: bool,
     pub puk_ok: bool,
-    pub pin: [u8; 8],
+    pub pin: [u8; VALUE_BYTES],
     pub pin_limit: u8,
     pub puk_limit: u8,
-    pub puk: [u8; 8],
+    pub puk: [u8; VALUE_BYTES],
 }
 impl State {
     const fn fresh() -> Self {
@@ -34,34 +48,34 @@ impl State {
     }
     fn encode(self, out: &mut [u8; STATE_LEN]) {
         out.fill(0);
-        out[0] = 1;
-        out[1] = self.pin_tries;
-        out[2] = self.puk_tries;
-        out[3] = self.pin_limit;
-        out[4] = self.puk_limit;
-        out[5..13].copy_from_slice(&self.pin);
-        out[13..21].copy_from_slice(&self.puk);
+        out[VERSION] = FORMAT_VERSION;
+        out[PIN_REMAINING] = self.pin_tries;
+        out[PUK_REMAINING] = self.puk_tries;
+        out[PIN_LIMIT] = self.pin_limit;
+        out[PUK_LIMIT] = self.puk_limit;
+        out[PIN_VALUE..PUK_VALUE].copy_from_slice(&self.pin);
+        out[PUK_VALUE..STATE_LEN].copy_from_slice(&self.puk);
     }
     fn decode(input: &[u8; STATE_LEN]) -> Option<Self> {
-        let pin_limit = input[3];
-        let puk_limit = input[4];
-        if input[0] != 1
-            || !(1..=15).contains(&pin_limit)
-            || !(1..=15).contains(&puk_limit)
-            || input[1] > pin_limit
-            || input[2] > puk_limit
+        let pin_limit = input[PIN_LIMIT];
+        let puk_limit = input[PUK_LIMIT];
+        if input[VERSION] != FORMAT_VERSION
+            || !(1..=MAX_RETRIES).contains(&pin_limit)
+            || !(1..=MAX_RETRIES).contains(&puk_limit)
+            || input[PIN_REMAINING] > pin_limit
+            || input[PUK_REMAINING] > puk_limit
         {
             return None;
         }
         Some(Self {
-            pin_tries: input[1],
-            puk_tries: input[2],
+            pin_tries: input[PIN_REMAINING],
+            puk_tries: input[PUK_REMAINING],
             pin_ok: false,
             puk_ok: false,
             pin_limit,
             puk_limit,
-            pin: input[5..13].try_into().ok()?,
-            puk: input[13..21].try_into().ok()?,
+            pin: input[PIN_VALUE..PUK_VALUE].try_into().ok()?,
+            puk: input[PUK_VALUE..STATE_LEN].try_into().ok()?,
         })
     }
 }
@@ -139,9 +153,9 @@ impl Pins {
     }
     fn reference(h: Header, allow_puk: bool) -> Result<bool, Sw> {
         match h.p2 {
-            0x80 => Ok(false),
-            0x81 if allow_puk => Ok(true),
-            _ => Err(Sw(0x6a88)),
+            reference::PIN => Ok(false),
+            reference::PUK if allow_puk => Ok(true),
+            _ => Err(Sw::REFERENCE_NOT_FOUND),
         }
     }
     fn authenticate(&mut self, puk: bool, data: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
@@ -156,7 +170,11 @@ impl Pins {
         // mechanism borrows this short encoding; it never owns session flags.
         let mut bytes = [0; STATE_LEN];
         self.state.encode(&mut bytes);
-        let (value, counter) = if puk { (13..21, 2) } else { (5..13, 1) };
+        let (value, counter) = if puk {
+            (PUK_VALUE..STATE_LEN, PUK_REMAINING)
+        } else {
+            (PIN_VALUE..PUK_VALUE, PIN_REMAINING)
+        };
         let result = Credential::new(
             &mut bytes,
             value,
@@ -168,14 +186,14 @@ impl Pins {
             },
         )
         .and_then(|mut credential| {
-            credential.verify(&data[..8], Charge::OnMismatch, &mut |record| {
+            credential.verify(&data[..VALUE_BYTES], Charge::OnMismatch, &mut |record| {
                 p.storage
                     .replace(Record::PivState, record)
                     .map_err(|_| Error::Persistence)
             })
         });
-        self.state.pin_tries = bytes[1];
-        self.state.puk_tries = bytes[2];
+        self.state.pin_tries = bytes[PIN_REMAINING];
+        self.state.puk_tries = bytes[PUK_REMAINING];
         p.memory.wipe(&mut bytes);
         result.map_err(|error| match error {
             Error::Persistence => {
@@ -187,7 +205,7 @@ impl Pins {
             #[cfg(any(feature = "admin", feature = "openpgp"))]
             Error::Length => Sw::WRONG_LENGTH,
             Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
-            Error::Retries(n) => Sw(0x63c0 | u16::from(n)),
+            Error::Retries(n) => Sw::retries(n),
         })?;
         if puk {
             self.state.puk_ok = true;
@@ -202,7 +220,9 @@ impl Pins {
         data: &[u8],
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
-        if !matches!(h.p1, 0 | 0xff) {
+        // VERIFY: P1=00 verifies (or queries with empty data); P1=FF logs
+        // out and requires empty data. P2 must identify the PIN (80).
+        if !matches!(h.p1, 0x00 | 0xff) {
             return Err(Sw::WRONG_P1P2);
         }
         Self::reference(h, false)?;
@@ -218,10 +238,10 @@ impl Pins {
             return if self.state.pin_ok {
                 Ok(0)
             } else {
-                Err(Sw(0x63c0 | self.state.pin_tries as u16))
+                Err(Sw::retries(self.state.pin_tries))
             };
         }
-        if data.len() != 8 {
+        if data.len() != VALUE_BYTES {
             return Err(Sw::WRONG_LENGTH);
         }
         self.authenticate(false, data, p)?;
@@ -233,20 +253,26 @@ impl Pins {
         data: &[u8],
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
-        if h.p1 != 0 {
+        if h.p1 != 0x00 {
             return Err(Sw::WRONG_P1P2);
         }
+        // CHANGE REFERENCE DATA: P1=00, P2=80 PIN / 81 PUK. The body
+        // concatenates the old and new eight-byte values.
         let puk = Self::reference(h, true)?;
-        if data.len() != 16 {
+        if data.len() != 2 * VALUE_BYTES {
             return Err(Sw::WRONG_LENGTH);
         }
         self.authenticate(puk, data, p)?;
         if puk {
             self.state.puk_ok = false;
-            self.state.puk.copy_from_slice(&data[8..16]);
+            self.state
+                .puk
+                .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);
         } else {
             self.state.pin_ok = false;
-            self.state.pin.copy_from_slice(&data[8..16]);
+            self.state
+                .pin
+                .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);
         }
         self.save(p)?;
         Ok(0)
@@ -257,17 +283,21 @@ impl Pins {
         data: &[u8],
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
-        if h.p1 != 0 {
+        if h.p1 != 0x00 {
             return Err(Sw::WRONG_P1P2);
         }
         Self::reference(h, false)?;
-        if data.len() != 16 {
+        if data.len() != 2 * VALUE_BYTES {
             return Err(Sw::WRONG_LENGTH);
         }
+        // RESET RETRY COUNTER: P1=00, P2=80 selects the PIN being reset;
+        // authentication uses the PUK supplied before the replacement PIN.
         self.authenticate(true, data, p)?;
         self.state.pin_tries = self.state.pin_limit;
         self.state.pin_ok = false;
-        self.state.pin.copy_from_slice(&data[8..16]);
+        self.state
+            .pin
+            .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);
         self.save(p)?;
         Ok(0)
     }

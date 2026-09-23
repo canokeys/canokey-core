@@ -1,41 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Existing OATH access-code challenge protocol, independent of ADMIN PINs.
 use super::{Algorithm, Crypto, Error};
-pub const METADATA_LENGTH: usize = 26;
+pub const HANDLE_BYTES: usize = 8;
+pub const ACCESS_KEY_BYTES: usize = 16;
+const FORMAT_VERSION: u8 = 1;
+const VERSION: usize = 0;
+const KEY_PRESENT: usize = 1;
+const HANDLE: usize = 2;
+const KEY: usize = HANDLE + HANDLE_BYTES;
+pub const METADATA_LENGTH: usize = KEY + ACCESS_KEY_BYTES;
+// The handle is a public, persistent applet identity returned on SELECT.
+// It is not an authentication token. The optional key is the secret access code.
 pub struct Metadata {
-    handle: [u8; 8],
-    key: Option<[u8; 16]>,
+    handle: [u8; HANDLE_BYTES],
+    key: Option<[u8; ACCESS_KEY_BYTES]>,
 }
 impl Metadata {
     pub fn new(crypto: &mut dyn Crypto) -> Result<Self, Error> {
-        let mut handle = [0; 8];
+        let mut handle = [0; HANDLE_BYTES];
         crypto.random(&mut handle)?;
         Ok(Self { handle, key: None })
     }
     pub fn encode(&self, out: &mut [u8; METADATA_LENGTH]) -> usize {
         out.fill(0);
-        out[0] = 1;
-        out[1] = u8::from(self.key.is_some());
-        out[2..10].copy_from_slice(&self.handle);
+        out[VERSION] = FORMAT_VERSION;
+        out[KEY_PRESENT] = u8::from(self.key.is_some());
+        out[HANDLE..KEY].copy_from_slice(&self.handle);
         if let Some(key) = &self.key {
-            out[10..].copy_from_slice(key);
+            out[KEY..].copy_from_slice(key);
             METADATA_LENGTH
         } else {
-            10
+            KEY
         }
     }
     pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
-        if bytes.len() < 10
-            || bytes[0] != 1
-            || bytes[1] > 1
-            || bytes.len() != if bytes[1] == 1 { METADATA_LENGTH } else { 10 }
+        if bytes.len() < KEY
+            || bytes[VERSION] != FORMAT_VERSION
+            || bytes[KEY_PRESENT] > 1
+            || bytes.len()
+                != if bytes[KEY_PRESENT] == 1 {
+                    METADATA_LENGTH
+                } else {
+                    KEY
+                }
         {
             return Err(Error::Invalid);
         }
         Ok(Self {
-            handle: bytes[2..10].try_into().map_err(|_| Error::Invalid)?,
-            key: if bytes[1] == 1 {
-                Some(bytes[10..].try_into().map_err(|_| Error::Invalid)?)
+            handle: bytes[HANDLE..KEY].try_into().map_err(|_| Error::Invalid)?,
+            key: if bytes[KEY_PRESENT] == 1 {
+                Some(bytes[KEY..].try_into().map_err(|_| Error::Invalid)?)
             } else {
                 None
             },
@@ -62,20 +76,20 @@ pub fn install(repository: &mut dyn Repository, crypto: &mut dyn Crypto) -> Resu
     repository.replace(&value)
 }
 pub struct Selection {
-    pub handle: [u8; 8],
-    pub challenge: Option<[u8; 8]>,
+    pub handle: [u8; HANDLE_BYTES],
+    pub challenge: Option<[u8; HANDLE_BYTES]>,
 }
 /// Runtime-owned per-session mechanism state, reset on deselection/transport reset.
 #[derive(Default)]
 pub struct Session {
-    challenge: [u8; 8],
+    challenge: [u8; HANDLE_BYTES],
     selected: bool,
     authorized: bool,
 }
 impl Session {
     pub const fn new() -> Self {
         Self {
-            challenge: [0; 8],
+            challenge: [0; HANDLE_BYTES],
             selected: false,
             authorized: false,
         }
@@ -112,11 +126,13 @@ impl Session {
         metadata.clear(crypto);
         result
     }
+    // The supplied MAC proves knowledge of the NEW key before it is stored;
+    // authorization to replace the old key is checked separately below.
     pub fn set_code(
         &mut self,
         repository: &mut dyn Repository,
         crypto: &mut dyn Crypto,
-        key: &[u8; 16],
+        key: &[u8; ACCESS_KEY_BYTES],
         challenge: &[u8],
         response: &[u8; 20],
     ) -> Result<(), Error> {
@@ -154,6 +170,8 @@ impl Session {
         self.authorized = true;
         Ok(())
     }
+    // Verify the host MAC over our SELECT challenge, then return a MAC over
+    // the host challenge. This authenticates both sides using the access key.
     pub fn validate(
         &mut self,
         repository: &mut dyn Repository,

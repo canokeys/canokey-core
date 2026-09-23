@@ -4,6 +4,11 @@
 pub struct StatusWord(pub u16);
 
 impl StatusWord {
+    pub const REFERENCE_NOT_FOUND: Self = Self(0x6a88);
+    pub const SELECTED_FILE_TERMINATED: Self = Self(0x6285);
+    pub const EXECUTION_ERROR: Self = Self(0x6400);
+    pub const DATA_INVALID: Self = Self(0x6984);
+    pub const NOT_ENOUGH_MEMORY: Self = Self(0x6a84);
     pub const SUCCESS: Self = Self(0x9000);
     pub const FILE_NOT_FOUND: Self = Self(0x6a82);
     pub const INS_NOT_SUPPORTED: Self = Self(0x6d00);
@@ -11,13 +16,18 @@ impl StatusWord {
     pub const SECURITY_STATUS_NOT_SATISFIED: Self = Self(0x6982);
     pub const AUTHENTICATION_BLOCKED: Self = Self(0x6983);
     pub const CONDITIONS_NOT_SATISFIED: Self = Self(0x6985);
-    pub const PERSISTENCE_ERROR: Self = Self(0x6500);
     pub const WRONG_LENGTH: Self = Self(0x6700);
     pub const WRONG_DATA: Self = Self(0x6a80);
     pub const WRONG_P1P2: Self = Self(0x6a86);
     pub const UNABLE_TO_PROCESS: Self = Self(0x6900);
     pub const COMMAND_NOT_ALLOWED: Self = Self(0x6986);
 
+    /// ISO 7816 63Cx: x is the remaining retry count (caller guarantees 0..15).
+    pub fn retries(remaining: u8) -> Self {
+        Self(0x63c0 | u16::from(remaining))
+    }
+    /// 61xx asks for GET RESPONSE. This profile caps the advertised next chunk
+    /// at 255 bytes even when more data remains; it is not a total-length field.
     pub fn remaining(bytes: u32) -> Self {
         Self(0x6100 | bytes.min(255) as u16)
     }
@@ -99,6 +109,8 @@ impl Response {
                 }
             }
         };
+        // A generator may return fewer bytes than requested. Advance by the
+        // actual read, keeping the final status until every byte is delivered.
         let plan = ResponsePlan::new(p.total, p.offset, len as u32, p.sw)?;
         if plan.complete {
             self.clear(source);

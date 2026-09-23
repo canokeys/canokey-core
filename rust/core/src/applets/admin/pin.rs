@@ -6,28 +6,32 @@ use crate::{
     mechanisms::pin::{Charge, RecordPin},
     ports::Record,
 };
+pub const MIN_LENGTH: usize = 6;
+pub const MAX_LENGTH: usize = 64;
+const RETRIES: u8 = 3;
+const DEFAULT_PIN: &[u8] = b"123456";
 const PIN: RecordPin = RecordPin {
     id: Record::AdminPin,
-    stored_min: 6,
-    fixed_limit: Some(3),
+    stored_min: MIN_LENGTH as u8,
+    fixed_limit: Some(RETRIES),
 };
 pub fn change(pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
-    PIN.change(pin, 6, p)
+    PIN.change(pin, MIN_LENGTH, p)
 }
 pub fn install(p: &mut Platform<'_>) -> Result<(), Error> {
-    PIN.install(b"123456", 3, p)
+    PIN.install(DEFAULT_PIN, RETRIES, p)
 }
 pub fn retries(p: &mut Platform<'_>) -> Result<u8, Error> {
-    PIN.info(p).map(|(_, n, _)| n)
+    PIN.info(p).map(|info| info.retries_remaining)
 }
 pub fn verify(pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
     // Preserve ADMIN's length error even when storage is unavailable or blocked.
-    if !(6..=64).contains(&pin.len()) {
+    if !(MIN_LENGTH..=MAX_LENGTH).contains(&pin.len()) {
         return Err(Error::Length);
     }
-    PIN.verify(pin, 6, Charge::OnMismatch, p)
+    PIN.verify(pin, MIN_LENGTH, Charge::OnMismatch, p)
 }
 /// Registry calls only after locked-PIN and strong-presence checks, with PIN last.
 pub fn factory_reset(p: &mut Platform<'_>) -> Result<(), Error> {
-    PIN.create(b"123456", 3, p)
+    PIN.create(DEFAULT_PIN, RETRIES, p)
 }

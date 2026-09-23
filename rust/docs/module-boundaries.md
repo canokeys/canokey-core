@@ -11,7 +11,7 @@ Design coverage for the remaining applets is not feature support.
 The 2026-09-23 C streaming review in section 14 constrains the next refactor;
 section 12 records implementation order and completed foundation work. Long
 consumer fixtures exercise the production runtime. Both [PIV](piv.md) and
-OpenPGP now provide real key/object consumers on that foundation. Section 16
+OpenPGP now provide real key/object consumers on that foundation. Section 17
 supersedes historical PIV-foundation status statements below.
 See [ADMIN/PASS checkpoint](admin-pass.md) for its supported commands and gaps.
 
@@ -36,6 +36,10 @@ particular, Rust ADMIN is not complete merely because PASS management works.
 Other applets stay absent from the selected build until explicitly introduced.
 Normal functional tests and build/link/boot checks are the verification scope;
 no boundary, differential or fuzz campaign is added implicitly.
+
+Earlier implementation plans below are historical where superseded by sections
+15–17. OpenPGP and PIV are implemented; their current contracts live in
+[openpgp.md](openpgp.md) and [piv.md](piv.md).
 
 ## 1. Responsibility model
 
@@ -109,8 +113,8 @@ rust/
       admin/                 # ADMIN wire adapter and management policy
       pass/                  # slot domain, record codec, repository and output rules
       oath/                  # wire adapter, domain, auth, codec and repository
-      piv/                   # future: PIV adapter, streaming consumers and policy
-      openpgp/               # future: OpenPGP adapter, consumers and policy
+      piv/                   # implemented: PIV adapter, streaming consumers and policy
+      openpgp/               # implemented: OpenPGP adapter, consumers and policy
       fido/                  # future: APDU/native adapters and CTAP/U2F policy
       ndef/                  # future: Type 4 Tag application/file semantics
     flows/                   # explicit cross-applet reset and HOTP-output workflows
@@ -662,13 +666,15 @@ These are design walkthroughs, not additional runtime tests in this checkpoint.
 | --- | --- |
 | `core/src/runtime/engine.rs`, `registry.rs` | Implemented APDU ownership/chains/response routing; native CTAP and asynchronous operations remain future work |
 | `core/src/applets/admin/protocol.rs`, `pass_config.rs` | ADMIN owns PIN and PASS management commands; remaining C ADMIN commands are tracked in the checkpoint |
-| `core/src/applets/pass/` | Typed slot service and explicit codec; no APDU/SW or OATH stub |
+| `core/src/applets/pass/` | Typed slot service and explicit codec; shared APDU status mapping at the module boundary, not in domain/service code |
 | `core/src/applets/admin/pin.rs` | Typed C-compatible PIN mechanism; no KDF; grants held by runtime |
 | `core/src/ports/`, `ffi/src/` | Typed storage/crypto contracts and separate unsafe C ABI; add capabilities only for real operations |
 | `core/src/applets/pass/output.rs`, C keyboard transport | Rust owns gesture/job/secret text; C maps and transmits one character; physical typing still needs an end-to-end normal check |
-| CIU storage backend | Mount without autoformat; /rust namespace; atomic replacement; word-aligned file cache |
+| CIU storage backend | Mount without autoformat; root-level hexadecimal filenames; atomic replacement; word-aligned file cache |
 | `core/src/applets/oath/` | Typed credentials/codec, repository contract, naming, HOTP/TOTP and access-code services implemented; five normal domain tests pass. Adapter, concrete storage, USB, presence and PASS binding are integrated; see oath.md for measured validation |
-| CTAP/PIV/OpenPGP/NFC/NDEF | Architecture specified; not enabled or implemented by this profile |
+| `core/src/applets/openpgp/`, `piv/` | Implemented independent feature profiles with real key/object consumers; see sections 15 and 17 and the applet validation documents |
+| `core/src/applets/ctap.rs` | Implemented CCID SELECT/GetInfo slice only; native CTAPHID and stateful CTAP commands remain pending |
+| NFC/NDEF | Not implemented in the independent Rust profiles |
 
 The management AID and existing command numbers are compatibility requirements.
 ADMIN owns the PASS configuration schema. The existing OATH-selected YubiKey
@@ -691,7 +697,7 @@ waiting; success, timeout and cancellation all suppress PASS until release. This
 for this CCID profile; it does not implement the future multi-transport
 cooperative-operation scheduler described elsewhere in this design.
 
-Core/FFI `admin`, `pass`, `oath` and `openpgp` features are independent.
+Core/FFI `admin`, `pass`, `oath`, `ctap`, `openpgp` and `piv` features are independent.
 Device/host OATH profiles explicitly combine `admin`, `pass` and `oath`;
 OATH bindings are available only when PASS is also enabled. Zero and ADMIN +
 PASS remain independent builds. No OATH-only
@@ -714,7 +720,7 @@ corresponding device functionality is enabled:
 | --- | --- | --- |
 | PASS wire/API profile | Preserve C ADMIN configuration and OATH-selected YubiKey HMAC binding | Complete command coverage and host-client compatibility |
 | Credential/provisioning | Versioned PIN bytes/counters; C-compatible default PIN | Record bytes and C-compatible change/unblock/reset lifecycle |
-| Storage backend | Dedicated namespace on existing LittleFS without autoformat | Atomic-replace durability and uncertain-error handling, mount and provisioning paths |
+| Storage backend | Hexadecimal record filenames on existing LittleFS without autoformat | Atomic-replace durability and uncertain-error handling, mount and provisioning paths |
 | Existing credential compatibility | No implicit migration | Provision fresh storage; do not add compatibility codecs |
 | Keyboard profile | Bounded output job and report transport | Initial layout/character set, gesture/slot policy, release/cancellation behavior |
 | Full compatibility inventory | Track every current command/extension and advertised capability | Existing behavior, intended Rust behavior, intentional differences and validation status per feature |
@@ -734,9 +740,8 @@ full ADMIN/PASS compatibility and physical keyboard testing are still incomplete
 The ADMIN + PASS + OATH checkpoint exists. Foundation steps 1-4 below are now
 implemented: workspace/ownership consolidation, production frame consumption,
 one response cursor, and normal long-command fixtures. Existing host/device
-regression results are recorded in the refactor checkpoint below. Actual
-PIV/OpenPGP consumers, future shared key scratch sizing and multi-transport
-presence scheduling remain subsequent applet milestones.
+regression results are recorded in the refactor checkpoint below. PIV/OpenPGP consumers and their shared key workspace are also implemented
+(sections 15 and 17); multi-transport presence scheduling remains future work.
 
 1. Consolidate the workspace and applet-local modules from section 2. Separate
    safe core from FFI, narrow platform ports and move cross-applet business out
@@ -757,10 +762,10 @@ presence scheduling remain subsequent applet milestones.
    counts. These fixtures do not enable a fake PIV applet in device firmware.
    Repeat existing ADMIN/PASS/OATH normal host and USB workflows. No fuzz,
    malformed-input sweep or fault-injection campaign is implied.
-5. Introduce PIV or OpenPGP as an explicit next feature slice with real key/object
-   services and algorithm-specific import/signing consumers. Carry forward the
-   section 14 streaming inventory; do not claim full support from small-command
-   tests alone. Close remaining ADMIN/PASS compatibility entries separately.
+5. PIV and OpenPGP feature slices now implement real key/object services and
+   algorithm-specific import/signing consumers (sections 15 and 17). Preserve
+   their section 14 streaming contracts and real crypto validation. Close
+   remaining ADMIN/PASS compatibility entries separately.
 6. Add FIDO with native CTAPHID routing, bounded CBOR/source readers and progress/
    cancellation. Preserve the bounded standalone CCID FIDO extended-input path
    when that profile is enabled; it is not general extended APDU support.
@@ -825,8 +830,9 @@ Simplification means fewer owners and duplicate mechanisms, not replacing
 streaming with full-message buffers. Before refactoring, Rust `FrameDecoder` and TLV `Decoder` were exercised only
 by protocol tests while firmware used full-frame `parse`. The refactor now uses
 `FrameDecoder` in production and runs long consumers through that same runtime.
-ADMIN/OATH deliberately remain bounded small-command collectors; PIV/OpenPGP
-wire consumers and real cryptographic imports are not implemented by this work.
+ADMIN/OATH deliberately remain bounded small-command collectors. PIV/OpenPGP
+now have streaming wire consumers and real cryptographic imports; sections 15
+and 17 record their implemented profiles.
 
 ### Observed C paths to preserve as capabilities
 
@@ -915,8 +921,9 @@ fixtures must exceed the existing short-command buffer and pass through the real
 chain/consumer/response lifecycle; include a valid TLV length split across chunks
 as an ordinary fragmented transfer, not an exhaustive boundary campaign. Record
 RAM versus payload length, scratch/stack requirements and backend commit/close
-counts. Actual PIV/OpenPGP device support remains a later opt-in milestone with
-its own real key/crypto/object checks. No unimplemented capability is advertised.
+counts. PIV/OpenPGP device support is implemented in opt-in profiles with separate
+real key/crypto/object checks; these foundation fixtures alone do not establish
+that support.
 
 Do not enlarge the APDU buffer, remove an existing algorithm, introduce heap
 allocation or use flash as generic RX scratch to make the refactor shorter.
@@ -942,10 +949,10 @@ and startup ResumeLoader invocation, with the existing boot gate before flashing
   sequential output. Exactly one finalization/commit and source closure are
   checked. Host mock storage is not firmware scratch; no persistent format,
   PIN policy or applet algorithm changed.
-- Small ADMIN/OATH collectors remain intentional. Future PIV/OpenPGP command
-  schemas, algorithm-specific consumers, hardware scratch sizes and incremental
-  crypto clobber proofs still need their real implementation/measurements.
-  Presence remains synchronous for CCID. These are not advertised new features.
+- Small ADMIN/OATH collectors remain intentional. PIV/OpenPGP command schemas,
+  algorithm-specific consumers and shared scratch are implemented in the later
+  checkpoints below; their applet documents record validation and remaining
+  measurement limits. Presence remains synchronous for CCID.
 
 Validation of this foundation checkpoint: all three host profiles and firmware
 boot gates passed; 3 protocol tests, 5 OATH domain tests and 4 runtime streaming
@@ -960,7 +967,8 @@ remains installed. Evidence: CIU `hil-reports/rust-core-refactor-20260923/README
 
 This checkpoint supersedes the earlier foundation-only statements about future
 OpenPGP support; they describe that earlier milestone, not the enabled profile.
-PIV/CTAP/NDEF/NFC remain scheduled separately. The complete OpenPGP command,
+PIV is implemented (section 17); CTAP implements the CCID SELECT/GetInfo slice.
+Stateful CTAP, native CTAPHID, NDEF and NFC remain separate future work. The complete OpenPGP command,
 algorithm, persistence and validation contract is [openpgp.md](openpgp.md).
 
 - OpenPGP domain/adapter/repository code is co-located under `applets/openpgp`.
@@ -970,7 +978,7 @@ algorithm, persistence and validation contract is [openpgp.md](openpgp.md).
   sole response cursor remain shared. No old C applet or `src/key.c` is linked.
 - Registry owns a single 2332-byte semantic workspace, not an OpenPGP static.
   RSA ABI material and ECC signing scratch share it. This is the shared-resource
-  contract that later PIV/CTAP consumers must use, not a license to add one
+  contract used by PIV and required of future stateful CTAP consumers, not a license to add one
   worst-case workspace per applet. Only explicit byte components are persisted.
 - Certificates use authorized staged-object append/atomic publish and ranged
   reads. Key descriptors stream directly into components. Existing small
@@ -1012,12 +1020,12 @@ implementation details:
   key-generation/use policy and grant transitions; adapters own APDU parameters,
   TLV schema and status words. The session workspace is borrowed, never copied.
 - Crypto operation names explicitly select RSA PKCS#1 v1.5 signing/deciphering,
-  EC signing or key agreement. Future raw RSA users require an explicit operation;
-  they must not silently inherit OpenPGP padding. Native ABI key views remain
+  EC signing or key agreement. PIV raw RSA uses its explicit operation;
+  it does not inherit OpenPGP padding. Native ABI key views remain
   justified by stack limits and are never persisted as native structs.
 - One Registry/Router implementation covers all feature combinations, including
   zero applets. Disabled applets have no state or installation side effects.
-  The four Cargo features are independent; device presets choose compositions.
+  The six Cargo features are independent; device presets choose compositions.
 - Runtime presence Request marks an attempt before calling the device wait.
   Keyboard output consumes that marker and suppresses a held contact through
   release on every outcome. Reset/factory recovery also inhibit stale gestures.
@@ -1029,7 +1037,7 @@ Resource and device-validation results for this correction are recorded in CIU
 `hil-reports/rust-design-review-20260923/README.md`.
 
 
-## 16. PIV implementation checkpoint (2026-09-23)
+## 17. PIV implementation checkpoint (2026-09-23)
 
 The independent PIV profile now implements the C command/algorithm surface,
 including AES management authentication, all asymmetric slots, streamed objects,

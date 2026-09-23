@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persist only active RSA limbs; expand into the fixed native workspace on load.
+use crate::ports::key_layout as layout;
 use crate::ports::{Record, Storage, StorageError};
 
+// width is a byte count: one RSA prime/CRT component, an EC scalar, or a PQ
+// seed. RSA disk order is e,p,q,dp,dq,qinv; each native slot has 256-byte capacity
+// but only its active width is persisted. Public keys are derived, not stored.
 pub fn length(rsa: bool, width: usize) -> usize {
-    if rsa { 4 + 5 * width } else { width }
+    if rsa {
+        layout::EXPONENT_BYTES + layout::RSA_LIMBS * width
+    } else {
+        width
+    }
 }
 pub fn load(
     storage: &mut dyn Storage,
@@ -11,15 +19,15 @@ pub fn load(
     mut offset: u32,
     rsa: bool,
     width: usize,
-    key: &mut [u8; 1284],
+    key: &mut [u8; crate::ports::key_layout::SIZE],
 ) -> Result<(), StorageError> {
     key.fill(0);
     if !rsa {
         return storage.read_at(record, offset, &mut key[..width]);
     }
-    storage.read_at(record, offset, &mut key[..4])?;
-    offset += 4;
-    for component in key[4..].chunks_exact_mut(256) {
+    storage.read_at(record, offset, &mut key[..layout::EXPONENT_BYTES])?;
+    offset += layout::EXPONENT_BYTES as u32;
+    for component in key[layout::P..].chunks_exact_mut(layout::RSA_LIMB_BYTES) {
         storage.read_at(record, offset, &mut component[..width])?;
         offset += width as u32;
     }
@@ -29,13 +37,13 @@ pub fn append(
     storage: &mut dyn Storage,
     rsa: bool,
     width: usize,
-    key: &[u8; 1284],
+    key: &[u8; crate::ports::key_layout::SIZE],
 ) -> Result<(), StorageError> {
     if !rsa {
         return storage.stage_append(&key[..width]);
     }
-    storage.stage_append(&key[..4])?;
-    for component in key[4..].chunks_exact(256) {
+    storage.stage_append(&key[..layout::EXPONENT_BYTES])?;
+    for component in key[layout::P..].chunks_exact(layout::RSA_LIMB_BYTES) {
         storage.stage_append(&component[..width])?;
     }
     Ok(())

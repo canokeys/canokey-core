@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OpenPGP Card 3.4 adapter. The runtime owns chaining and response position.
+
+use super::domain::{grant, key_role};
+use super::wire::{ins::*, limits, reference, tag};
 use super::{
     import::Import,
     pin,
@@ -11,7 +14,7 @@ use crate::{
     runtime::workspace::Workspace,
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
-pub const AID: &[u8] = &[0xd2, 0x76, 0, 1, 0x24, 1];
+pub const AID: &[u8] = &[0xd2, 0x76, 0x00, 0x01, 0x24, 0x01];
 enum Request {
     None,
     Buffered,
@@ -65,16 +68,23 @@ impl OpenPgp {
         self.occurrence = 0;
         let terminated = repo::terminated(p)?;
         if terminated {
-            return Err(Sw(0x6285));
+            return Err(Sw::SELECTED_FILE_TERMINATED);
         }
         Ok(0)
     }
     pub fn limit(h: Header) -> u32 {
-        match (h.ins, h.p1, h.p2) {
-            (0xdb, _, _) => 1400,
-            (0xda, 0x7f, 0x21) => 1152,
-            _ => 513,
-        }
+        // P1/P2 together identify the data object for PUT DATA. Only key
+        // imports and certificates use streaming consumers with larger limits;
+        // ordinary commands must fit the bounded input workspace.
+        let object_tag = u16::from_be_bytes([h.p1, h.p2]);
+        u32::from(match (h.ins, object_tag) {
+            // Includes the RSA private components and their import envelope.
+            (INS_IMPORT_KEY, _) => limits::KEY_IMPORT_BYTES,
+            // DO 7F21 is the cardholder certificate, not a key-import template.
+            (INS_PUT_DATA, tag::CERTIFICATE) => limits::CERTIFICATE_BYTES,
+            // Covers a full RSA-4096 ciphertext plus its padding indicator.
+            _ => limits::ORDINARY_COMMAND_BYTES,
+        })
     }
     pub(super) fn admin(&self) -> Result<(), Sw> {
         self.session.admin().map_err(Into::into)
@@ -84,20 +94,22 @@ impl OpenPgp {
         w.clear(p.memory);
         self.response = Response::Memory;
         let terminated = repo::terminated(p)?;
-        if terminated && h.ins != 0x44 {
-            return Err(Sw(0x6285));
+        if terminated && h.ins != INS_ACTIVATE {
+            return Err(Sw::SELECTED_FILE_TERMINATED);
         }
         self.request = match h.ins {
-            0xda if h.p1 == 0x7f && h.p2 == 0x21 => {
+            INS_PUT_DATA if u16::from_be_bytes([h.p1, h.p2]) == tag::CERTIFICATE => {
                 self.admin()?;
-                if self.occurrence >= 3 {
-                    return Err(Sw(0x6a88));
+                if self.occurrence >= key_role::COUNT {
+                    return Err(Sw::REFERENCE_NOT_FOUND);
                 }
                 p.storage.stage_begin().map_err(io)?;
                 Request::Certificate
             }
-            0xdb => {
+            INS_IMPORT_KEY => {
                 self.admin()?;
+                // IMPORT uses the fixed PUT DATA selector 3FFF. The target
+                // key role is inside the 4D body, not in P1/P2.
                 if h.p1 != 0x3f || h.p2 != 0xff {
                     return Err(Sw::WRONG_P1P2);
                 }
@@ -214,14 +226,16 @@ impl OpenPgp {
         let b = &w.input[..self.used];
         let tag = u16::from_be_bytes([h.p1, h.p2]);
         match h.ins {
-            0x20 => {
+            INS_VERIFY => {
+                // P2 selects a password grant (81 signature PW1, 82 other
+                // PW1, 83 admin PW3). P1=00 verifies/queries; FF logs out.
                 let bit = match h.p2 {
-                    0x81 => 1,
-                    0x82 => 2,
-                    0x83 => 4,
+                    reference::PW1_SIGNATURE => grant::SIGNATURE,
+                    reference::PW1_OTHER => grant::OTHER,
+                    reference::PW3 => grant::ADMIN,
                     _ => return Err(Sw::WRONG_P1P2),
                 };
-                let id = if bit == 4 {
+                let id = if bit == grant::ADMIN {
                     Record::PgpPw3
                 } else {
                     Record::PgpPw1
@@ -230,24 +244,26 @@ impl OpenPgp {
                     self.session.grants &= !bit;
                     return Ok(0);
                 }
-                if h.p1 != 0 {
+                if h.p1 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if b.is_empty() {
                     return if self.session.grants & bit != 0 {
                         Ok(0)
                     } else {
-                        Err(Sw(0x63c0 | pin::info(id, p)?.1 as u16))
+                        Err(Sw::retries(pin::info(id, p)?.retries_remaining))
                     };
                 }
                 self.session.verify_pin(bit, b, p)?;
                 Ok(0)
             }
-            0x24 => {
-                if h.p1 != 0 || !matches!(h.p2, 0x81 | 0x83) {
+            INS_CHANGE_REFERENCE_DATA => {
+                // P1=00 changes the secret selected by P2 (81 PW1 / 83 PW3);
+                // data contains the old secret followed by the new one.
+                if h.p1 != 0x00 || !matches!(h.p2, reference::PW1_SIGNATURE | reference::PW3) {
                     return Err(Sw::WRONG_P1P2);
                 }
-                let id = if h.p2 == 0x81 {
+                let id = if h.p2 == reference::PW1_SIGNATURE {
                     Record::PgpPw1
                 } else {
                     Record::PgpPw3
@@ -255,36 +271,41 @@ impl OpenPgp {
                 self.session.change_pin(id, b, p)?;
                 Ok(0)
             }
-            0x2c => {
-                if h.p2 != 0x81 || !matches!(h.p1, 0 | 2) {
+            INS_RESET_RETRY_COUNTER => {
+                // P2=81 always targets PW1. P1=00 supplies reset-code + new
+                // PW1; P1=02 uses an existing PW3 grant and supplies only PW1.
+                if h.p2 != reference::PW1_SIGNATURE || !matches!(h.p1, 0x00 | 0x02) {
                     return Err(Sw::WRONG_P1P2);
                 }
-                self.session.reset_pw1(h.p1 == 2, b, p)?;
+                self.session.reset_pw1(h.p1 == 0x02, b, p)?;
                 Ok(0)
             }
-            0xa5 => {
-                if h.p1 > 2 || h.p2 != 4 {
+            INS_SELECT_DATA => {
+                // P1 selects certificate occurrence 0/1/2 (SIG/DEC/AUT).
+                // P2=04 selects by the tag list in the 60 template below;
+                // this profile permits only the certificate DO 7F21.
+                if h.p1 > 0x02 || h.p2 != 0x04 {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if b != [0x60, 4, 0x5c, 2, 0x7f, 0x21] {
+                if b != [0x60, 0x04, 0x5c, 0x02, 0x7f, 0x21] {
                     return Err(Sw::WRONG_DATA);
                 }
                 self.occurrence = h.p1 as usize;
                 Ok(0)
             }
-            0xca | 0xcc => {
+            INS_GET_DATA | INS_GET_NEXT_DATA => {
                 if !b.is_empty() {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if h.ins == 0xcc {
-                    if tag != 0x7f21 {
+                if h.ins == INS_GET_NEXT_DATA {
+                    if tag != tag::CERTIFICATE {
                         return Err(Sw::WRONG_P1P2);
                     }
                     self.occurrence += 1;
                 }
-                if tag == 0x7f21 {
-                    if self.occurrence >= 3 {
-                        return Err(Sw(0x6a88));
+                if tag == tag::CERTIFICATE {
+                    if self.occurrence >= key_role::COUNT {
+                        return Err(Sw::REFERENCE_NOT_FOUND);
                     }
                     let n = p.storage.size(CERTS[self.occurrence]).map_err(io)?;
                     self.response = Response::Certificate(self.occurrence);
@@ -292,15 +313,16 @@ impl OpenPgp {
                 }
                 self.get(tag, &mut w.output, p).map(|n| n as u32)
             }
-            0xda => {
+            INS_PUT_DATA => {
                 self.admin()?;
                 self.put(tag, b, p)?;
                 Ok(0)
             }
-            0x47 => self.generate_key(h, w, p),
-            0x88 | 0x2a => self.use_key(h, w, p),
-            0x84 => {
-                if tag != 0 {
+            INS_GENERATE_KEY => self.generate_key(h, w, p),
+            INS_INTERNAL_AUTHENTICATE | INS_PERFORM_SECURITY_OPERATION => self.use_key(h, w, p),
+            INS_GET_CHALLENGE => {
+                // P1/P2=0000 and empty body: Le alone requests 1..256 random bytes.
+                if tag != 0x0000 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if !b.is_empty() || le == 0 || le > 256 {
@@ -311,11 +333,14 @@ impl OpenPgp {
                     .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                 Ok(le)
             }
-            0xe6 => {
-                if tag != 0 || !b.is_empty() {
+            INS_TERMINATE => {
+                // E6 00 00 marks the application terminated without erasing it.
+                // Require PW3 authorization unless PW3 is already blocked,
+                // allowing recovery through a subsequent ACTIVATE command.
+                if tag != 0x0000 || !b.is_empty() {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if pin::info(Record::PgpPw3, p)?.1 != 0 {
+                if pin::info(Record::PgpPw3, p)?.retries_remaining != 0 {
                     self.admin()?;
                 }
                 p.storage
@@ -325,8 +350,10 @@ impl OpenPgp {
                 self.session.clear_touch();
                 Ok(0)
             }
-            0x44 => {
-                if tag != 0 || !b.is_empty() {
+            INS_ACTIVATE => {
+                // 44 00 00 reinitializes a terminated applet; on an active
+                // applet it succeeds without resetting credentials or keys.
+                if tag != 0x0000 || !b.is_empty() {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if repo::terminated(p)? {
@@ -334,9 +361,12 @@ impl OpenPgp {
                 }
                 Ok(0)
             }
-            0xf2 => {
+            INS_SET_RETRIES => {
+                // CanoKey F2 00 00: body contains PW1, reset-code and PW3 retry
+                // limits (1..15), in that order. PW1/PW3 return to default
+                // values; reset-code value is retained. Requires a PW3 grant.
                 self.admin()?;
-                if tag != 0 {
+                if tag != 0x0000 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if b.len() != 3 || b.iter().any(|v| *v == 0 || *v > 15) {
@@ -357,13 +387,12 @@ impl From<super::domain::Error> for Sw {
     fn from(error: super::domain::Error) -> Self {
         use super::domain::Error;
         match error {
-            Error::Storage => Sw::UNABLE_TO_PROCESS,
+            Error::Storage | Error::Crypto => Sw::UNABLE_TO_PROCESS,
             Error::Length => Sw::WRONG_LENGTH,
             Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
             Error::Unauthorized => Sw::SECURITY_STATUS_NOT_SATISFIED,
-            Error::Missing => Sw(0x6a88),
-            Error::Invalid => Sw::WRONG_DATA,
-            Error::Presence => Sw(0x6400),
+            Error::Missing => Sw::REFERENCE_NOT_FOUND,
+            Error::Presence => Sw::EXECUTION_ERROR,
         }
     }
 }

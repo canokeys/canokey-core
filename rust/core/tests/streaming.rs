@@ -141,14 +141,14 @@ impl Router for Fixture {
     }
     fn begin_command(&mut self, h: Header, _: &mut Platform<'_>) -> Result<(), Sw> {
         self.sink = match h.ins {
-            1 => Sink::Key {
+            0x01 => Sink::Key {
                 components: [[0; 256]; 5],
                 field: 0,
                 offset: 0,
             },
-            2 => Sink::Hash(Sha256::new()),
-            3 => Sink::Object(0),
-            4 => Sink::None,
+            0x02 => Sink::Hash(Sha256::new()),
+            0x03 => Sink::Object(0),
+            0x04 => Sink::None,
             _ => unreachable!(),
         };
         Ok(())
@@ -218,7 +218,7 @@ impl Router for Fixture {
                 offset
             }
             Sink::None => {
-                assert_eq!(h.ins, 4);
+                assert_eq!(h.ins, 0x04);
                 self.generated += 1;
                 4096
             }
@@ -304,8 +304,8 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
     };
     let mut runtime = Runtime::with_router(Fixture::new());
     assert_eq!(
-        frame(&mut runtime, &[0, 0xa4, 4, 0, 1, 1], &mut p),
-        [0x90, 0]
+        frame(&mut runtime, &[0x00, 0xa4, 0x04, 0x00, 0x01, 0x01], &mut p),
+        [0x90, 0x00]
     );
     let mut response = if body.is_empty() {
         frame(&mut runtime, &[0, ins, 0, 0], &mut p)
@@ -318,7 +318,7 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
             command.extend_from_slice(part);
             response = frame(&mut runtime, &command, &mut p);
             if !last {
-                assert_eq!(response, [0x90, 0]);
+                assert_eq!(response, [0x90, 0x00]);
                 assert_eq!(runtime.router().finishes, 0);
             }
         }
@@ -333,7 +333,7 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
             break;
         }
         assert_eq!(sw >> 8, 0x61);
-        response = frame(&mut runtime, &[0, 0xc0, 0, 0, 97], &mut p);
+        response = frame(&mut runtime, &[0x00, 0xc0, 0x00, 0x00, 0x61], &mut p);
     }
     assert_eq!(runtime.router().finishes, 1);
     // Move the host fixture out without granting mutable access to runtime state.
@@ -345,7 +345,7 @@ fn key_template_exceeds_frame_buffer() {
     let mut bytes = Vec::new();
     let mut expected = Sha256::new();
     for tag in 1..=5 {
-        bytes.extend_from_slice(&[tag, 0x82, 1, 0]);
+        bytes.extend_from_slice(&[tag, 0x82, 0x01, 0x00]);
         let component = [tag; 256];
         bytes.extend_from_slice(&component);
         expected.update(component);

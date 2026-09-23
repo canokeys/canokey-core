@@ -9,6 +9,7 @@ use canokey_protocol::{
 #[derive(Clone, Copy)]
 pub enum Reply {
     Status(Sw),
+    // Maximum bytes requested by Le, not the total response length.
     Data(u32),
 }
 
@@ -80,6 +81,7 @@ enum FrameRoute {
 }
 
 pub struct Runtime<R> {
+    // Nonzero transport identity holding the session until reset/release.
     owner: Option<u8>,
     chain: apdu::CommandChain,
     response: Response,
@@ -163,8 +165,10 @@ impl<R: Router> Runtime<R> {
         if self.router.output_busy() {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
+        // Any new command abandons an unread response. GET RESPONSE took
+        // the earlier branch so it can continue using the existing backing.
         self.close_response(p);
-        if h.cla == 0 && h.ins == 0xa4 && h.p1 == 4 {
+        if h.is_select_by_name() {
             self.chain.reset();
             self.router.abort_command(p);
             self.route = FrameRoute::Select {
@@ -243,6 +247,8 @@ impl<R: Router> Runtime<R> {
                 return Reply::Status(Sw::WRONG_LENGTH);
             }
         };
+        // This short-APDU profile treats omitted Le as a 256-byte response
+        // allowance; the decoder has already normalized encoded Le=00 to 256.
         let le = info.le.unwrap_or(256);
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
         let result = match route {
@@ -254,7 +260,7 @@ impl<R: Router> Runtime<R> {
                 };
             }
             FrameRoute::Select { aid, used, p2 } => {
-                if p2 != 0 {
+                if p2 != 0x00 {
                     Err(Sw::WRONG_P1P2)
                 } else {
                     self.router

@@ -26,12 +26,37 @@ and the only GET RESPONSE cursor. Registry lends one session workspace to the
 selected applet. FFI owns native pointers/volatile erasure; safe core forbids
 unsafe code. The C primitive adapter has no APDU, PIN or file policy.
 
+## Reading the protocol constants
+
+`wire.rs` names command bytes and data-object tags; `data.rs` contains the
+values advertised to host software. The values exclude their outer tag/length
+unless explicitly described as a complete TLV. A capability flag is a protocol
+promise: changing it requires checking the corresponding command implementation.
+
+| Term | Meaning in this implementation |
+| --- | --- |
+| Historical bytes (`5F52`) | ISO 7816 card discovery information: card services, selection/chaining capabilities and life-cycle/status bytes. This is not a history of operations. |
+| Extended capabilities (`C0`) | OpenPGP feature flags and limits: challenge/import/PIN-mode/algorithm support, byte limits, and unsupported secure-messaging/PIN-block/MSE features. The array in `data.rs` documents each field. |
+| AID / DF name | Application identifier used to select the OpenPGP application; DF means dedicated file in ISO 7816 terminology. |
+| DO / TLV | Data object / tag-length-value encoding. A tag names a protocol object, not a file offset. |
+| PW1 / PW3 / RC | User PIN / administrator PIN / reset code. PW1 has separate signature and other-operation authorization references. |
+| UIF | User Interaction Flag: the per-key touch policy and the card's supported input method. |
+| SIG / DEC / AUT | Signature / decipher / authentication key roles. |
+| CA fingerprint | Fingerprint of a certification-authority key, distinct from a fingerprint of one of the card's own keys. |
+| PSO / MSE / SM | PERFORM SECURITY OPERATION / MANAGE SECURITY ENVIRONMENT / secure messaging. This profile implements PSO but advertises neither MSE nor SM. |
+
+`repository.rs` layout constants are byte offsets. Its expanded RAM state has
+fixed-capacity fields, while disk encoding omits unused capacity; the two layouts
+must not be interchanged. `*_END` denotes an exclusive bound, and `*_MAX` is a
+value's byte capacity excluding its length prefix.
+
 ## Protocol profile
 
 Commands implemented: SELECT, SELECT DATA, GET DATA/NEXT DATA, VERIFY/logout,
 CHANGE REFERENCE DATA, RESET RETRY COUNTER, INTERNAL AUTHENTICATE, PSO signature/
 decipher, PUT DATA, IMPORT KEY, GENERATE/READ PUBLIC KEY, TERMINATE, ACTIVATE,
-GET CHALLENGE, and CanoKey retry-limit command F2. ADMIN 03 resets OpenPGP after
+GET CHALLENGE, and CanoKey retry-limit command F2 (a vendor extension, not
+part of OpenPGP Card 3.4). ADMIN 03 resets OpenPGP after
 ADMIN authentication; the ADMIN factory-reset workflow also resets OpenPGP.
 
 Supported algorithms remain RSA-2048/3072/4096, P-256, secp256k1, P-384, P-521,
@@ -61,6 +86,14 @@ dates, key provenance, signature counter, certificates, UIF and cache time.
 Constructed GET DATA objects retain their outer BER tag. P1/P2, lengths,
 algorithm attributes and UIF indicator bytes are validated against this profile;
 legacy permissive parsing is not a compatibility requirement.
+
+The vendor retry command is `00 F2 00 00 03 <PW1-limit> <RC-limit> <PW3-limit>`.
+It requires a verified PW3 grant, accepts limits 1..15, resets PW1/PW3 to their
+default values, preserves the reset-code value, and revokes session grants.
+Normal OpenPGP host regression exercises this command with a verified PW3 grant
+and verifies the default PW3 afterward.
+Crypto failures are reported internally as `Error::Crypto`, distinct from storage
+failures; both retain the existing APDU status `6900` (unable to process).
 
 ## Streaming and memory
 

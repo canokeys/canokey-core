@@ -25,6 +25,8 @@ pub fn touch(pass: &Pass, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Re
             return Err(Error::Output);
         }
         let mut value = result.truncated();
+        // Fill backwards to preserve leading zeroes; discarding the remaining
+        // quotient implements modulo 10^digits without a power table.
         for byte in out[..digits].iter_mut().rev() {
             *byte = b'0' + (value % 10) as u8;
             value /= 10;

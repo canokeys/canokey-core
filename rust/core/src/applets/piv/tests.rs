@@ -211,9 +211,9 @@ fn malformed_commands_do_not_consume_retries() {
     let writes = store.writes;
     for (ins, p1, p2, data, sw) in [
         (0x20, 0xff, 0x80, &PIN[..], Sw::WRONG_LENGTH),
-        (0x20, 0, 0x81, &[][..], Sw(0x6a88)),
+        (0x20, 0, 0x81, &[][..], Sw::REFERENCE_NOT_FOUND),
         (0x24, 1, 0x80, &[][..], Sw::WRONG_P1P2),
-        (0x24, 0, 0x82, &[][..], Sw(0x6a88)),
+        (0x24, 0, 0x82, &[][..], Sw::REFERENCE_NOT_FOUND),
         (0x2c, 0, 0x80, &PUK[..], Sw::WRONG_LENGTH),
     ] {
         assert_eq!(command(&mut piv, &mut store, ins, p1, p2, data), sw);

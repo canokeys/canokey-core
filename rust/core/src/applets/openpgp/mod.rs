@@ -8,3 +8,5 @@ mod pin;
 pub mod protocol;
 pub(crate) mod repository;
 mod service;
+
+mod wire;

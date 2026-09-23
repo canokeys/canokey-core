@@ -17,3 +17,6 @@ default = []
 pass = ["canokey-rust-core/pass"]
 oath = ["canokey-rust-core/oath"]
 host-runtime = []
+
+[lints]
+workspace = true

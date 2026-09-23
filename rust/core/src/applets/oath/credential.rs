@@ -8,11 +8,24 @@ pub enum Kind {
     Hotp = 0x10,
     Totp = 0x20,
 }
+impl Kind {
+    pub const MASK: u8 = 0xf0;
+    pub const ALGORITHM_MASK: u8 = 0x0f;
+    pub fn from_byte(value: u8) -> Result<Self, Error> {
+        match value & Self::MASK {
+            value if value == Self::Hotp as u8 => Ok(Self::Hotp),
+            value if value == Self::Totp as u8 => Ok(Self::Totp),
+            _ => Err(Error::Invalid),
+        }
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Properties(u8);
 impl Properties {
+    const INCREASING: u8 = 1;
+    const TOUCH: u8 = 2;
     pub fn new(value: u8) -> Result<Self, Error> {
-        if value & !3 == 0 {
+        if value & !(Self::INCREASING | Self::TOUCH) == 0 {
             Ok(Self(value))
         } else {
             Err(Error::Invalid)
@@ -22,10 +35,10 @@ impl Properties {
         self.0
     }
     pub const fn increasing(self) -> bool {
-        self.0 & 1 != 0
+        self.0 & Self::INCREASING != 0
     }
     pub const fn touch(self) -> bool {
-        self.0 & 2 != 0
+        self.0 & Self::TOUCH != 0
     }
 }
 /// Not Debug/Copy: keys are explicitly borrowed and cleared, never logged.
@@ -59,9 +72,9 @@ impl Credential {
             return Err(Error::Invalid);
         }
         let mut value = Self {
-            name: [0; 64],
+            name: [0; NAME_LIMIT],
             name_len: name.len() as u8,
-            key: [0; 64],
+            key: [0; KEY_LIMIT],
             key_len: key.len() as u8,
             kind,
             algorithm,

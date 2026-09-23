@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nested GENERAL AUTHENTICATE decoder. Long values are emitted immediately.
+use super::wire::{ga_field, ga_tag};
 use canokey_protocol::{
     response::StatusWord as Sw,
     tlv::length::{Feed, LengthState},
 };
+// Callback contract: Some(length) announces a field (including empty fields);
+// None delivers the next borrowed value chunk. Consumers must not retain it.
 type Emit<'a> = dyn FnMut(u8, Option<usize>, &[u8]) -> Result<(), Sw> + 'a;
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -16,12 +19,15 @@ enum Phase {
 pub struct Ga {
     phase: Phase,
     length: LengthState,
+    // Bytes left inside the outer 7C value, including nested TLV headers.
     remaining: usize,
     tag: usize,
     n: usize,
     offset: usize,
     pub used: usize,
-    pub fields: [Option<(usize, usize)>; 6],
+    // (offset, length) in concatenated field VALUES, with TLV headers removed.
+    // Some((_, 0)) is an explicit empty field; None means the tag was absent.
+    pub fields: [Option<(usize, usize)>; ga_field::COUNT],
 }
 impl Ga {
     pub const fn new() -> Self {
@@ -33,7 +39,7 @@ impl Ga {
             n: 0,
             offset: 0,
             used: 0,
-            fields: [None; 6],
+            fields: [None; ga_field::COUNT],
         }
     }
     pub fn feed(&mut self, bytes: &[u8], out: &mut [u8]) -> Result<(), Sw> {
@@ -57,7 +63,7 @@ impl Ga {
                 if n > self.remaining {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                emit(self.tag as u8 + 0x80, None, &bytes[..n])?;
+                emit(self.tag as u8 + ga_tag::WITNESS, None, &bytes[..n])?;
                 self.remaining -= n;
                 self.offset += n;
                 self.used += n;
@@ -77,7 +83,7 @@ impl Ga {
             }
             match self.phase {
                 Phase::OuterTag => {
-                    if b != 0x7c {
+                    if b != ga_tag::TEMPLATE {
                         return Err(Sw::WRONG_DATA);
                     }
                     self.phase = Phase::OuterLength;
@@ -91,10 +97,10 @@ impl Ga {
                     }
                 },
                 Phase::Tag => {
-                    if !(0x80..=0x85).contains(&b) {
+                    if !(ga_tag::WITNESS..=ga_tag::EXPONENTIATION).contains(&b) {
                         return Err(Sw::WRONG_DATA);
                     }
-                    self.tag = (b - 0x80) as usize;
+                    self.tag = (b - ga_tag::WITNESS) as usize;
                     if self.fields[self.tag].is_some() {
                         return Err(Sw::WRONG_DATA);
                     }
@@ -109,7 +115,7 @@ impl Ga {
                         if self.n > self.remaining {
                             return Err(Sw::WRONG_LENGTH);
                         }
-                        emit(self.tag as u8 + 0x80, Some(self.n), &[])?;
+                        emit(self.tag as u8 + ga_tag::WITNESS, Some(self.n), &[])?;
                         self.fields[self.tag] = Some((self.used, self.n));
                         self.offset = 0;
                         self.phase = if n == 0 { Phase::Tag } else { Phase::Value };

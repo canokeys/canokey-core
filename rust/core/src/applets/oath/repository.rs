@@ -30,7 +30,10 @@ impl<'a> Mac<'a> {
         Self { crypto, memory }
     }
 }
-const HEADER: u32 = 4; // Next credential ID, retained even when the last entry is deleted.
+const ID_BYTES: usize = 4;
+const ENTRY_HEADER_BYTES: usize = ID_BYTES + codec::HEADER_BYTES;
+const FREE_SPACE_RESERVE: u32 = 128 * 512;
+const HEADER: u32 = ID_BYTES as u32; // Next credential ID, retained even when the last entry is deleted.
 fn io(_: StorageError) -> Error {
     Error::Storage
 }
@@ -67,7 +70,7 @@ impl Store<'_> {
         }
     }
     fn next_id(&mut self) -> Result<u32, Error> {
-        let mut bytes = [0; 4];
+        let mut bytes = [0; ID_BYTES];
         self.storage
             .read_at(Record::OathRecords, 0, &mut bytes)
             .map_err(io)?;
@@ -84,15 +87,16 @@ impl Store<'_> {
         if offset == size {
             return Ok(None);
         }
-        if offset > size || size - offset < 10 {
+        if offset > size || size - offset < ENTRY_HEADER_BYTES as u32 {
             return Err(Error::Storage);
         }
-        let mut header = [0; 10];
+        let mut header = [0; ENTRY_HEADER_BYTES];
         self.storage
             .read_at(Record::OathRecords, offset, &mut header)
             .map_err(io)?;
-        let id = CredentialId(u32::from_be_bytes(header[..4].try_into().unwrap()));
-        let length = 4 + codec::length(&header[4..]).map_err(|_| Error::Storage)? as u32;
+        let id = CredentialId(u32::from_be_bytes(header[..ID_BYTES].try_into().unwrap()));
+        let length = ID_BYTES as u32
+            + codec::length(&header[ID_BYTES..]).map_err(|_| Error::Storage)? as u32;
         if id.0 == 0 || length > size - offset {
             return Err(Error::Storage);
         }
@@ -174,10 +178,14 @@ impl Repository for Store<'_> {
         let offset = self.locate(id)?;
         let (_, end) = self.at(offset)?.ok_or(Error::Missing)?;
         let mut bytes = [0; codec::LENGTH];
-        let n = (end - offset - 4) as usize;
+        let n = (end - offset - ID_BYTES as u32) as usize;
         let result = self
             .storage
-            .read_at(Record::OathRecords, offset + 4, &mut bytes[..n])
+            .read_at(
+                Record::OathRecords,
+                offset + ID_BYTES as u32,
+                &mut bytes[..n],
+            )
             .map_err(io)
             .and_then(|()| codec::decode(&bytes[..n]));
         self.memory.wipe(&mut bytes);
@@ -185,8 +193,13 @@ impl Repository for Store<'_> {
     }
     fn insert(&mut self, value: &Credential) -> Result<CredentialId, Error> {
         let size = self.storage.size(Record::OathRecords).map_err(io)?;
-        let needed = (18 + value.name().len() + value.key().len()) as u32;
-        if !self.storage.has_space(needed, 128 * 512).map_err(io)? {
+        let needed =
+            (ID_BYTES + codec::FIXED_BYTES + value.name().len() + value.key().len()) as u32;
+        if !self
+            .storage
+            .has_space(needed, FREE_SPACE_RESERVE)
+            .map_err(io)?
+        {
             return Err(Error::NoSpace);
         }
         let id = CredentialId(self.next_id()?);

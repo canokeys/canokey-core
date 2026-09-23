@@ -2,6 +2,8 @@
 //! Main-loop only, serialized, non-reentrant C boundary. RX/TX may alias.
 use crate::platform::with_platform;
 use canokey_rust_core::Core;
+// Safety contract: the C main loop serializes every entrypoint. USB/timer
+// interrupts may maintain transport state but must never borrow CORE.
 static mut CORE: Core = Core::new();
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_core_install() -> i32 {
@@ -39,6 +41,8 @@ pub unsafe extern "C" fn ck_core_exchange(
     }
     with_platform(|p| unsafe {
         let engine = &mut *core::ptr::addr_of_mut!(CORE);
+        // End the immutable RX borrow before creating mutable TX: C permits
+        // the input/output buffers to overlap, Rust references do not.
         let reply = engine.receive(owner, core::slice::from_raw_parts(input, len), p);
         engine
             .transmit(reply, core::slice::from_raw_parts_mut(out, capacity), p)

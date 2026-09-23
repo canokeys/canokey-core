@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The import envelope is bounded; component values stream directly into the
 //! session key. No encoded-key buffer and no flash writes before validation.
+use super::repository::key_meta;
+use super::wire::{key_tag, limits};
 use super::{
     domain::{Algorithm, role},
     repository,
 };
 use crate::Platform;
+use crate::ports::alg;
+use crate::ports::key_layout;
 use canokey_protocol::{
     response::StatusWord as Sw,
     tlv::length::{Feed, LengthState},
@@ -41,6 +45,8 @@ pub fn object(b: &[u8]) -> Result<(u16, &[u8]), Sw> {
     Ok((tag, &b[at..]))
 }
 pub struct Import {
+    // Only the 4D envelope, control reference and 7F48/5F48 descriptors
+    // are buffered. Private component bytes bypass this prefix buffer.
     prefix: [u8; 48],
     used: usize,
     total: usize,
@@ -63,13 +69,15 @@ impl Import {
             component: 0,
             offset: 0,
             role: 0,
-            algorithm: Algorithm(5),
+            algorithm: Algorithm(alg::RSA2048),
             ready: false,
         }
     }
+    // Reparse the bounded prefix after each byte: false means incomplete,
+    // not invalid. No private component has been consumed when this returns true.
     fn header(&mut self, p: &mut Platform<'_>) -> Result<bool, Sw> {
         let b = &self.prefix[..self.used];
-        if b[0] != 0x4d {
+        if b[0] != key_tag::IMPORT {
             return Err(Sw::WRONG_DATA);
         }
         let mut at = 1;
@@ -77,7 +85,7 @@ impl Import {
             return Ok(false);
         };
         self.total = at + n;
-        if self.total > 1400 {
+        if self.total > usize::from(limits::KEY_IMPORT_BYTES) {
             return Err(Sw::WRONG_LENGTH);
         }
         let Some(&r) = b.get(at) else {
@@ -85,24 +93,24 @@ impl Import {
         };
         self.role = role(r).ok_or(Sw::WRONG_DATA)?;
         at += 1;
-        let Some(&crt) = b.get(at) else {
+        let Some(&control_reference_len) = b.get(at) else {
             return Ok(false);
         };
         at += 1;
-        if !matches!(crt, 0 | 3) {
+        if !matches!(control_reference_len, 0 | 3) {
             return Err(Sw::WRONG_DATA);
         }
-        if b.len() < at + crt as usize {
+        if b.len() < at + control_reference_len as usize {
             return Ok(false);
         }
-        if crt == 3 && b[at..at + 3] != [0x84, 1, 1] {
+        if control_reference_len == 3 && b[at..at + 3] != key_tag::KEY_REFERENCE {
             return Err(Sw::WRONG_DATA);
         }
-        at += crt as usize;
+        at += control_reference_len as usize;
         if b.len() < at + 2 {
             return Ok(false);
         }
-        if b[at..at + 2] != [0x7f, 0x48] {
+        if b[at..at + 2] != key_tag::COMPONENT_LENGTHS {
             return Err(Sw::WRONG_DATA);
         }
         at += 2;
@@ -131,7 +139,7 @@ impl Import {
         if b.len() < at + 2 {
             return Ok(false);
         }
-        if b[at..at + 2] != [0x5f, 0x48] {
+        if b[at..at + 2] != key_tag::COMPONENT_VALUES {
             return Err(Sw::WRONG_DATA);
         }
         at += 2;
@@ -141,12 +149,12 @@ impl Import {
         if at + n != self.total || self.lengths.iter().sum::<usize>() != n {
             return Err(Sw::WRONG_LENGTH);
         }
-        self.algorithm = Algorithm(repository::meta(p, self.role)?[1]);
+        self.algorithm = Algorithm(repository::meta(p, self.role)?[key_meta::ALGORITHM]);
         let a = self.algorithm;
-        let width = a.scalar();
+        let width = a.private_component_bytes();
         if a.rsa() {
             if count != 6
-                || tags != [0x91, 0x92, 0x93, 0x94, 0x95, 0x96]
+                || tags != key_tag::RSA_COMPONENTS
                 || self.lengths[0] != 4
                 || self.lengths[1] != width
                 || self.lengths[2] != width
@@ -155,11 +163,11 @@ impl Import {
                 return Err(Sw::WRONG_DATA);
             }
         } else if !(count == 1 || count == 2)
-            || tags[0] != 0x92
-            || (count == 2 && tags[1] != 0x99)
+            || tags[0] != key_tag::PRIVATE
+            || (count == 2 && tags[1] != key_tag::PUBLIC)
             || self.lengths[0] == 0
             || self.lengths[0] > width
-            || self.lengths[1] > a.public() + 1
+            || self.lengths[1] > a.public_value_bytes() + 1
         {
             return Err(Sw::WRONG_DATA);
         }
@@ -168,7 +176,7 @@ impl Import {
     pub fn feed(
         &mut self,
         bytes: &[u8],
-        key: &mut [u8; 1284],
+        key: &mut [u8; crate::ports::key_layout::SIZE],
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         for &byte in bytes {
@@ -193,12 +201,25 @@ impl Import {
             let i = self.component;
             let target = if a.rsa() {
                 // Wire e,p,q,qinv,dp,dq -> explicit e,p,q,dp,dq,qinv.
-                let bases = [0, 4, 260, 1028, 516, 772];
-                let width = if i == 0 { 4 } else { a.scalar() };
+                let bases = [
+                    key_layout::EXPONENT,
+                    key_layout::P,
+                    key_layout::Q,
+                    key_layout::QINV,
+                    key_layout::DP,
+                    key_layout::DQ,
+                ];
+                let width = if i == 0 {
+                    key_layout::EXPONENT_BYTES
+                } else {
+                    a.private_component_bytes()
+                };
                 Some(bases[i] + width - self.lengths[i] + self.offset)
             } else if i == 0 {
-                Some(a.scalar() - self.lengths[0] + self.offset)
+                Some(a.private_component_bytes() - self.lengths[0] + self.offset)
             } else {
+                // An optional supplied EC public key is length-checked but not
+                // trusted: the crypto adapter derives it from the private key.
                 None
             };
             if let Some(at) = target {
@@ -208,11 +229,11 @@ impl Import {
         }
         Ok(())
     }
-    pub fn finish(&self, key: &mut [u8; 1284]) -> Result<(), Sw> {
+    pub fn finish(&self, key: &mut [u8; crate::ports::key_layout::SIZE]) -> Result<(), Sw> {
         if !self.ready || self.received != self.total {
             return Err(Sw::WRONG_LENGTH);
         }
-        if self.algorithm.0 == 4 {
+        if self.algorithm.0 == alg::X25519 {
             key[..32].reverse();
         }
         Ok(())

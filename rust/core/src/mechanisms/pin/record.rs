@@ -4,7 +4,23 @@ use super::{Charge, Credential, Error};
 #[cfg(feature = "admin")]
 use crate::ports::StorageError;
 use crate::{Platform, ports::Record};
-const SIZE: usize = 68;
+const PIN_CAPACITY: usize = 64;
+const FORMAT_VERSION: u8 = 1;
+const VERSION: usize = 0;
+const LENGTH: usize = 1;
+const REMAINING: usize = 2;
+const RETRY_LIMIT: usize = 3;
+const VALUE: usize = 4;
+const SIZE: usize = VALUE + PIN_CAPACITY;
+
+/// Public record metadata only; reading it never grants PIN authorization.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PinInfo {
+    #[cfg(feature = "openpgp")]
+    pub length_bytes: usize,
+    pub retries_remaining: u8,
+    pub retry_limit: u8,
+}
 
 pub(crate) struct RecordPin {
     pub id: Record,
@@ -13,11 +29,13 @@ pub(crate) struct RecordPin {
 }
 impl RecordPin {
     fn valid(&self, b: &[u8; SIZE]) -> Result<(), Error> {
-        if b[0] != 1
-            || !(self.stored_min..=64).contains(&b[1])
-            || b[3] == 0
-            || b[2] > b[3]
-            || self.fixed_limit.is_some_and(|limit| b[3] != limit)
+        if b[VERSION] != FORMAT_VERSION
+            || !(self.stored_min..=PIN_CAPACITY as u8).contains(&b[LENGTH])
+            || b[RETRY_LIMIT] == 0
+            || b[REMAINING] > b[RETRY_LIMIT]
+            || self
+                .fixed_limit
+                .is_some_and(|limit| b[RETRY_LIMIT] != limit)
         {
             return Err(Error::Persistence);
         }
@@ -25,7 +43,7 @@ impl RecordPin {
     }
     fn load(&self, b: &mut [u8; SIZE], p: &mut Platform<'_>) -> Result<(), Error> {
         let n = p.storage.load(self.id, b).map_err(|_| Error::Persistence)?;
-        if n < 4 || n != 4 + b[1] as usize {
+        if n < VALUE || n != VALUE + b[LENGTH] as usize {
             return Err(Error::Persistence);
         }
         self.valid(b)
@@ -46,23 +64,23 @@ impl RecordPin {
         limit: u8,
         p: &mut Platform<'_>,
     ) -> Result<(), Error> {
-        if !(self.stored_min as usize..=64).contains(&value.len()) {
+        if !(self.stored_min as usize..=PIN_CAPACITY).contains(&value.len()) {
             return Err(Error::Length);
         }
         if limit == 0 || self.fixed_limit.is_some_and(|n| n != limit) {
             return Err(Error::Persistence);
         }
         let mut b = [0; SIZE];
-        b[..4].copy_from_slice(&[
-            1,
+        b[..VALUE].copy_from_slice(&[
+            FORMAT_VERSION,
             value.len() as u8,
             if value.is_empty() { 0 } else { limit },
             limit,
         ]);
-        b[4..4 + value.len()].copy_from_slice(value);
+        b[VALUE..VALUE + value.len()].copy_from_slice(value);
         let result = p
             .storage
-            .replace(self.id, &b[..4 + value.len()])
+            .replace(self.id, &b[..VALUE + value.len()])
             .map_err(|_| Error::Persistence);
         p.memory.wipe(&mut b);
         result
@@ -77,14 +95,21 @@ impl RecordPin {
         let mut b = [0; SIZE];
         let result = match p.storage.load(self.id, &mut b) {
             Err(StorageError::Missing) => self.create(default, limit, p),
-            Ok(n) if n >= 4 && n == 4 + b[1] as usize => self.valid(&b),
+            Ok(n) if n >= VALUE && n == VALUE + b[LENGTH] as usize => self.valid(&b),
             _ => Err(Error::Persistence),
         };
         p.memory.wipe(&mut b);
         result
     }
-    pub(crate) fn info(&self, p: &mut Platform<'_>) -> Result<(usize, u8, u8), Error> {
-        self.with_record(p, |b, _| Ok((b[1] as usize, b[2], b[3])))
+    pub(crate) fn info(&self, p: &mut Platform<'_>) -> Result<PinInfo, Error> {
+        self.with_record(p, |b, _| {
+            Ok(PinInfo {
+                #[cfg(feature = "openpgp")]
+                length_bytes: b[LENGTH] as usize,
+                retries_remaining: b[REMAINING],
+                retry_limit: b[RETRY_LIMIT],
+            })
+        })
     }
     pub(crate) fn verify(
         &self,
@@ -95,19 +120,23 @@ impl RecordPin {
     ) -> Result<(), Error> {
         self.with_record(p, |b, p| {
             // OpenPGP checks blocking before input length; ADMIN prechecks length.
-            if b[2] == 0 {
+            if b[REMAINING] == 0 {
                 return Err(Error::Blocked);
             }
-            if !(min..=64).contains(&input.len()) {
+            if !(min..=PIN_CAPACITY).contains(&input.len()) {
                 return Err(Error::Length);
             }
-            let length = b[1] as usize;
-            let limit = b[3];
-            Credential::new(b, 4..4 + length, 2, limit)?.verify(input, charge, &mut |bytes| {
-                p.storage
-                    .replace(self.id, &bytes[..4 + length])
-                    .map_err(|_| Error::Persistence)
-            })
+            let length = b[LENGTH] as usize;
+            let limit = b[RETRY_LIMIT];
+            Credential::new(b, VALUE..VALUE + length, REMAINING, limit)?.verify(
+                input,
+                charge,
+                &mut |bytes| {
+                    p.storage
+                        .replace(self.id, &bytes[..VALUE + length])
+                        .map_err(|_| Error::Persistence)
+                },
+            )
         })
     }
     pub(crate) fn change(
@@ -116,10 +145,10 @@ impl RecordPin {
         min: usize,
         p: &mut Platform<'_>,
     ) -> Result<(), Error> {
-        if !(min..=64).contains(&value.len()) {
+        if !(min..=PIN_CAPACITY).contains(&value.len()) {
             return Err(Error::Length);
         }
-        let (_, _, limit) = self.info(p)?;
+        let limit = self.info(p)?.retry_limit;
         self.create(value, limit, p)
     }
     #[cfg(feature = "openpgp")]
@@ -128,10 +157,10 @@ impl RecordPin {
             return Err(Error::Persistence);
         }
         self.with_record(p, |b, p| {
-            b[3] = limit;
-            b[2] = if b[1] == 0 { 0 } else { limit };
+            b[RETRY_LIMIT] = limit;
+            b[REMAINING] = if b[LENGTH] == 0 { 0 } else { limit };
             p.storage
-                .replace(self.id, &b[..4 + b[1] as usize])
+                .replace(self.id, &b[..VALUE + b[LENGTH] as usize])
                 .map_err(|_| Error::Persistence)
         })
     }

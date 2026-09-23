@@ -5,7 +5,6 @@ pub struct ChainStep {
     /// Discard the previous command's provisional semantic state before use.
     pub restarted: bool,
     pub last: bool,
-    pub total: u32,
 }
 
 /// Metadata only: the caller owns one incremental consumer, never a chain-sized
@@ -32,6 +31,8 @@ impl CommandChain {
     }
 
     pub fn accept(&mut self, info: CommandInfo, limit: u32) -> Result<ChainStep, Error> {
+        // Fragments belong to one command only when CLA (without its chain
+        // bit), INS, P1 and P2 agree. A mismatch starts a new semantic consumer.
         let header = info.header.unchained();
         let restarted = self.header != Some(header);
         let total = if restarted { 0 } else { self.total };
@@ -49,10 +50,6 @@ impl CommandChain {
             self.header = Some(header);
             self.total = total;
         }
-        Ok(ChainStep {
-            restarted,
-            last,
-            total,
-        })
+        Ok(ChainStep { restarted, last })
     }
 }

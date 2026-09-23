@@ -1,15 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
+use super::wire::{key_tag, limits, object_tag, policy, slot, wire_alg};
 use crate::mechanisms::key_storage;
+use crate::ports::alg;
 use crate::{
     Platform,
     ports::{Record, StorageError},
 };
 use canokey_protocol::response::StatusWord as Sw;
-pub const SLOTS: [u8; 25] = [
-    0x9a, 0x9c, 0x9d, 0x9e, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d,
-    0x8e, 0x8f, 0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0xf9,
+pub const SLOTS: [u8; KEY_COUNT] = [
+    slot::AUTHENTICATION,
+    slot::SIGNATURE,
+    slot::KEY_MANAGEMENT,
+    slot::CARD_AUTHENTICATION,
+    0x82,
+    0x83,
+    0x84,
+    0x85,
+    0x86,
+    0x87,
+    0x88,
+    0x89,
+    0x8a,
+    0x8b,
+    0x8c,
+    0x8d,
+    0x8e,
+    0x8f,
+    0x90,
+    0x91,
+    0x92,
+    0x93,
+    0x94,
+    0x95,
+    slot::ATTESTATION,
 ];
-pub const KEYS: [Record; 25] = [
+pub const KEYS: [Record; KEY_COUNT] = [
     Record::PivKey0,
     Record::PivKey1,
     Record::PivKey2,
@@ -72,7 +97,16 @@ pub const OBJECTS: [Record; 34] = [
     Record::PivObject32,
     Record::PivObject33,
 ];
-// RAM metadata view. Disk stores six header bytes, key material, then the used name.
+// Byte offsets in the RAM metadata view (META is its byte capacity).
+// Disk stores six header bytes, key material, then only the used UTF-16LE name.
+// NAME_LENGTH counts bytes, not characters. ORIGIN is 0 absent / 1 generated /
+// 2 imported; PIN_POLICY and TOUCH_POLICY use wire::policy values.
+pub const VERSION: usize = 0;
+pub const FORMAT_VERSION: u8 = 1;
+pub const NAME_MAX: usize = 78;
+pub const USER_KEY_COUNT: usize = 24;
+pub const ATTESTATION_KEY: usize = USER_KEY_COUNT;
+pub const KEY_COUNT: usize = USER_KEY_COUNT + 1;
 pub const HEADER: usize = 6;
 pub const META: usize = 88;
 pub const ALGORITHM: usize = 1;
@@ -81,9 +115,12 @@ pub const PIN_POLICY: usize = 3;
 pub const TOUCH_POLICY: usize = 4;
 pub const NAME_LENGTH: usize = 5;
 pub const NAME: usize = 8;
-pub const DEFAULT_CONFIG: [u8; 10] = [1, 0xe0, 5, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3];
-pub const DEFAULT_MGMT: [u8; 24] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8,
+// Algorithm-mapping record: enable byte, then nine wire IDs in the order of
+// EXTENSION_ALGORITHMS below. These values are APDU IDs, not ports::alg IDs.
+pub const DEFAULT_CONFIG: [u8; 10] = [0x01, 0xe0, 0x05, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3];
+pub const DEFAULT_MGMT: [u8; MANAGEMENT_KEY_BYTES] = [
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 ];
 pub fn io(_: StorageError) -> Sw {
     Sw::UNABLE_TO_PROCESS
@@ -91,6 +128,8 @@ pub fn io(_: StorageError) -> Sw {
 pub fn slot(id: u8) -> Result<usize, Sw> {
     SLOTS.iter().position(|s| *s == id).ok_or(Sw::WRONG_P1P2)
 }
+// Private component size in bytes, indexed by ports::alg: EC scalar, one RSA
+// prime/CRT component (half the modulus width), or a persisted PQ seed.
 pub fn width(a: u8) -> usize {
     [32, 32, 48, 32, 32, 128, 192, 256, 66, 32, 64, 32]
         .get(a as usize)
@@ -98,20 +137,34 @@ pub fn width(a: u8) -> usize {
         .unwrap_or(0)
 }
 pub fn rsa(a: u8) -> bool {
-    (5..=7).contains(&a)
+    (alg::RSA2048..=alg::RSA4096).contains(&a)
 }
 pub fn material(a: u8) -> usize {
     key_storage::length(rsa(a), width(a))
 }
+// Configuration bytes 1..9 assign wire IDs in this stable order.
+const EXTENSION_ALGORITHMS: [u8; 9] = [
+    alg::ED25519,
+    alg::RSA3072,
+    alg::RSA4096,
+    alg::X25519,
+    alg::SECP256K1,
+    alg::P521,
+    alg::SM2,
+    alg::MLDSA65,
+    alg::MLKEM768,
+];
 pub fn algorithm(id: u8, c: &[u8; 10]) -> Result<u8, Sw> {
     match id {
-        0x11 => return Ok(0),
-        0x14 => return Ok(2),
-        7 => return Ok(5),
+        wire_alg::P256 => return Ok(alg::P256),
+        wire_alg::P384 => return Ok(alg::P384),
+        wire_alg::RSA2048 => return Ok(alg::RSA2048),
         _ => (),
     };
+    // Configuration byte 0 enables vendor algorithms. Standard PIV IDs above
+    // remain available even when extensions are disabled.
     if c[0] != 0 {
-        for (i, a) in [3, 6, 7, 4, 1, 8, 9, 11, 10].iter().enumerate() {
+        for (i, a) in EXTENSION_ALGORITHMS.iter().enumerate() {
             if c[i + 1] == id {
                 return Ok(*a);
             }
@@ -121,21 +174,32 @@ pub fn algorithm(id: u8, c: &[u8; 10]) -> Result<u8, Sw> {
 }
 pub fn algorithm_id(a: u8, c: &[u8; 10]) -> u8 {
     match a {
-        0 => 0x11,
-        2 => 0x14,
-        5 => 7,
-        _ => [3, 6, 7, 4, 1, 8, 9, 11, 10]
+        alg::P256 => wire_alg::P256,
+        alg::P384 => wire_alg::P384,
+        alg::RSA2048 => wire_alg::RSA2048,
+        _ => EXTENSION_ALGORITHMS
             .iter()
             .position(|v| *v == a)
             .map_or(0, |i| c[i + 1]),
     }
 }
+// Disabled mappings may retain inactive values. Enabled mappings must avoid
+// standard/reserved wire IDs and duplicate extension IDs; otherwise dispatch
+// could silently select a different algorithm from the one requested.
 pub fn config_valid(c: &[u8]) -> bool {
     c.len() == 10
         && c[0] <= 1
         && (c[0] == 0
             || c[1..].iter().enumerate().all(|(i, v)| {
-                !matches!(*v, 0 | 8 | 7 | 0x11 | 0x14 | 0xff) && !c[1..i + 1].contains(v)
+                !matches!(
+                    *v,
+                    wire_alg::DEFAULT
+                        | wire_alg::AES192
+                        | wire_alg::RSA2048
+                        | wire_alg::P256
+                        | wire_alg::P384
+                        | wire_alg::ED25519_STREAM
+                ) && !c[1..i + 1].contains(v)
             }))
 }
 pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
@@ -146,25 +210,25 @@ pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
         Err(e) => return Err(io(e)),
     };
     if n == 0 {
-        m[0] = 1;
+        m[VERSION] = FORMAT_VERSION;
         m[ALGORITHM] = 0xff;
         m[PIN_POLICY] = match SLOTS[id] {
-            0x9c => 3,
-            0x9e | 0xf9 => 1,
-            _ => 2,
+            slot::SIGNATURE => policy::PIN_ALWAYS,
+            slot::CARD_AUTHENTICATION | slot::ATTESTATION => policy::PIN_NEVER,
+            _ => policy::PIN_ONCE,
         };
-        m[TOUCH_POLICY] = 1;
+        m[TOUCH_POLICY] = policy::TOUCH_NEVER;
         return Ok(m);
     }
     p.storage
         .read_at(KEYS[id], 0, &mut m[..HEADER])
         .map_err(io)?;
-    if m[0] != 1
-        || m[ALGORITHM] > 11
+    if m[VERSION] != FORMAT_VERSION
+        || m[ALGORITHM] > alg::MLDSA65
         || !(1..=2).contains(&m[ORIGIN])
-        || !(1..=3).contains(&m[PIN_POLICY])
-        || m[TOUCH_POLICY] > 3
-        || m[NAME_LENGTH] > 78
+        || !(policy::PIN_NEVER..=policy::PIN_ALWAYS).contains(&m[PIN_POLICY])
+        || m[TOUCH_POLICY] > policy::TOUCH_CACHED
+        || m[NAME_LENGTH] > NAME_MAX as u8
         || n as usize != HEADER + material(m[ALGORITHM]) + m[NAME_LENGTH] as usize
     {
         return Err(Sw::UNABLE_TO_PROCESS);
@@ -182,16 +246,21 @@ pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
 pub fn load(
     id: usize,
     m: &[u8; META],
-    key: &mut [u8; 1284],
+    key: &mut [u8; crate::ports::key_layout::SIZE],
     p: &mut Platform<'_>,
 ) -> Result<(), Sw> {
     if m[ORIGIN] == 0 {
-        return Err(Sw(0x6a88));
+        return Err(Sw::REFERENCE_NOT_FOUND);
     }
     let a = m[ALGORITHM];
     key_storage::load(p.storage, KEYS[id], HEADER as u32, rsa(a), width(a), key).map_err(io)
 }
-pub fn save(id: usize, m: &[u8; META], key: &[u8; 1284], p: &mut Platform<'_>) -> Result<(), Sw> {
+pub fn save(
+    id: usize,
+    m: &[u8; META],
+    key: &[u8; crate::ports::key_layout::SIZE],
+    p: &mut Platform<'_>,
+) -> Result<(), Sw> {
     let r = (|| {
         p.storage.stage_begin().map_err(io)?;
         p.storage.stage_append(&m[..HEADER]).map_err(io)?;
@@ -240,47 +309,93 @@ pub fn policies(m: &mut [u8; META], mut b: &[u8]) -> Result<(), Sw> {
     Ok(())
 }
 pub fn policy(m: &mut [u8; META], t: u8, v: u8) -> Result<(), Sw> {
-    if !matches!(t, 0xaa | 0xab) || v > 3 {
+    if !matches!(t, key_tag::PIN_POLICY | key_tag::TOUCH_POLICY) || v > policy::TOUCH_CACHED {
         return Err(Sw::WRONG_DATA);
     }
-    if v != 0 {
-        m[if t == 0xaa { PIN_POLICY } else { TOUCH_POLICY }] = v;
+    if v != policy::DEFAULT {
+        m[if t == key_tag::PIN_POLICY {
+            PIN_POLICY
+        } else {
+            TOUCH_POLICY
+        }] = v;
     }
     Ok(())
 }
-/// Object index, capacity, PIN-read gate, certificate flag.
-pub fn object(tag: u32) -> Option<(usize, usize, bool, bool)> {
+/// Storage policy for a PIV data object. The tag is a wire identifier; index
+/// selects OBJECTS and is not itself a Record ID or a byte offset.
+pub struct ObjectDescriptor {
+    pub index: usize,
+    pub capacity_bytes: usize,
+    pub requires_pin: bool,
+}
+// Existing object quotas, including their stored TLV wrappers. These are flash
+// object limits, not sizes of the shared APDU buffer.
+const DATA_OBJECT_CAPACITY_BYTES: usize = 3040;
+const ADMIN_OBJECT_CAPACITY_BYTES: usize = 128;
+pub const CHUID_OBJECT_INDEX: usize = 25;
+pub const CAPABILITY_OBJECT_INDEX: usize = 28;
+const ADMIN_OBJECT_INDEX: usize = 33;
+
+pub fn object(tag: u32) -> Option<ObjectDescriptor> {
     let cert = match tag {
-        0x5fc105 => Some(0),
-        0x5fc10a => Some(1),
-        0x5fc10b => Some(2),
-        0x5fc101 => Some(3),
-        0x5fc10d..=0x5fc120 => Some(4 + (tag - 0x5fc10d) as usize),
-        0x5fff01 => Some(24),
+        object_tag::CERT_AUTHENTICATION => Some(0),
+        object_tag::CERT_SIGNATURE => Some(1),
+        object_tag::CERT_KEY_MANAGEMENT => Some(2),
+        object_tag::CERT_CARD_AUTHENTICATION => Some(3),
+        object_tag::CERT_RETIRED_FIRST..=object_tag::CERT_RETIRED_LAST => {
+            Some(4 + (tag - object_tag::CERT_RETIRED_FIRST) as usize)
+        }
+        object_tag::CERT_ATTESTATION => Some(ATTESTATION_KEY),
         _ => None,
     };
     if let Some(i) = cert {
-        return Some((i, 6568, false, true));
+        return Some(ObjectDescriptor {
+            index: i,
+            capacity_bytes: limits::CERTIFICATE_OBJECT_BYTES,
+            requires_pin: false,
+        });
     }
     let (i, pin) = match tag {
-        0x5fc102 => (25, false),
-        0x5fc103 => (26, true),
-        0x5fc106 => (27, false),
-        0x5fc107 => (28, false),
-        0x5fc108 => (29, true),
-        0x5fc109 => (30, true),
-        0x5fc10c => (31, false),
-        0x5fc121 => (32, true),
-        0x5fff00 => (33, false),
+        object_tag::CHUID => (CHUID_OBJECT_INDEX, false),
+        object_tag::FINGERPRINTS => (26, true),
+        object_tag::SECURITY => (27, false),
+        object_tag::CAPABILITY => (CAPABILITY_OBJECT_INDEX, false),
+        object_tag::FACIAL_IMAGE => (29, true),
+        object_tag::PRINTED_INFORMATION => (30, true),
+        object_tag::KEY_HISTORY => (31, false),
+        object_tag::IRIS_IMAGES => (32, true),
+        object_tag::ADMIN => (ADMIN_OBJECT_INDEX, false),
         _ => return None,
     };
-    Some((i, if i == 33 { 128 } else { 3040 }, pin, false))
+    Some(ObjectDescriptor {
+        index: i,
+        capacity_bytes: if i == ADMIN_OBJECT_INDEX {
+            ADMIN_OBJECT_CAPACITY_BYTES
+        } else {
+            DATA_OBJECT_CAPACITY_BYTES
+        },
+        requires_pin: pin,
+    })
 }
-pub fn management(p: &mut Platform<'_>) -> Result<[u8; 26], Sw> {
-    let mut b = [0; 26];
-    if p.storage.load(Record::PivManagement, &mut b).map_err(io)? != 26
-        || b[0] != 1
-        || !matches!(b[1], 1 | 2)
+pub const MANAGEMENT_KEY_BYTES: usize = 24;
+pub const MANAGEMENT_SIZE: usize = MANAGEMENT_KEY + MANAGEMENT_KEY_BYTES;
+pub const MANAGEMENT_TOUCH: usize = 1;
+pub const MANAGEMENT_KEY: usize = 2;
+pub fn management_record(touch: u8, key: &[u8]) -> [u8; MANAGEMENT_SIZE] {
+    let mut record = [0; MANAGEMENT_SIZE];
+    record[VERSION] = FORMAT_VERSION; // Format version.
+    record[MANAGEMENT_TOUCH] = touch;
+    record[MANAGEMENT_KEY..].copy_from_slice(key);
+    record
+}
+pub fn management(p: &mut Platform<'_>) -> Result<[u8; MANAGEMENT_SIZE], Sw> {
+    let mut b = [0; MANAGEMENT_SIZE];
+    if p.storage.load(Record::PivManagement, &mut b).map_err(io)? != MANAGEMENT_SIZE
+        || b[VERSION] != FORMAT_VERSION
+        || !matches!(
+            b[MANAGEMENT_TOUCH],
+            policy::TOUCH_NEVER | policy::TOUCH_ALWAYS
+        )
     {
         p.memory.wipe(&mut b);
         return Err(Sw::UNABLE_TO_PROCESS);

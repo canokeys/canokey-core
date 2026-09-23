@@ -1,7 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ADMIN protocol adapter. PASS remains a typed service without APDU knowledge.
 #![forbid(unsafe_code)]
-use crate::applets::pass::{codec::Layout, domain};
+// Applet instruction bytes; P1/P2 and TLV tags have separate meanings.
+const INS_FACTORY_RESET: u8 = 0x50;
+#[cfg(feature = "openpgp")]
+const INS_RESET_OPENPGP: u8 = 0x03;
+#[cfg(feature = "piv")]
+const INS_RESET_PIV: u8 = 0x04;
+#[cfg(feature = "oath")]
+const INS_RESET_OATH: u8 = 0x05;
+const INS_VERIFY: u8 = 0x20;
+const INS_CHANGE_PIN: u8 = 0x21;
+const INS_GET_PASS_CONFIG: u8 = 0x43;
+const INS_SET_PASS_CONFIG: u8 = 0x44;
+const INS_RESET_PASS: u8 = 0x13;
+
+use crate::applets::pass::codec::Layout;
 use crate::{
     Platform,
     applets::{
@@ -10,7 +24,7 @@ use crate::{
     },
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
-pub const AID: &[u8] = &[0xf0, 0, 0, 0, 0];
+pub const AID: &[u8] = &[0xf0, 0x00, 0x00, 0x00, 0x00];
 pub const COMMAND_CAPACITY: usize = 64;
 #[derive(Default)]
 pub struct Grants {
@@ -21,15 +35,10 @@ pub(crate) fn auth_error(error: auth::Error) -> Sw {
         auth::Error::Persistence => Sw::UNABLE_TO_PROCESS,
         auth::Error::Length => Sw::WRONG_LENGTH,
         auth::Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
-        auth::Error::Retries(n) => Sw(0x63c0 | u16::from(n)),
+        auth::Error::Retries(n) => Sw::retries(n),
     }
 }
-pub fn pass_error(error: domain::Error) -> Sw {
-    match error {
-        domain::Error::Persistence => Sw::UNABLE_TO_PROCESS,
-        _ => Sw::WRONG_DATA,
-    }
-}
+
 pub enum Action {
     Response(u32),
     FactoryReset,
@@ -80,7 +89,7 @@ impl Admin {
         p: &mut Platform<'_>,
     ) -> Result<Action, Sw> {
         self.response_len = 0;
-        let result = if h.ins == 0x50 {
+        let result = if h.ins == INS_FACTORY_RESET {
             self.check_factory_reset(h, p)
                 .map(|()| Action::FactoryReset)
         } else {
@@ -97,18 +106,18 @@ impl Admin {
         p: &mut Platform<'_>,
     ) -> Result<Action, Sw> {
         #[cfg(feature = "openpgp")]
-        if h.ins == 0x03 {
+        if h.ins == INS_RESET_OPENPGP {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
-            if h.p1 != 0 || h.p2 != 0 {
+            if h.p1 != 0x00 || h.p2 != 0x00 {
                 return Err(Sw::WRONG_P1P2);
             }
             self.check_empty(h)?;
             return Ok(Action::ResetOpenPgp);
         }
         #[cfg(feature = "piv")]
-        if h.ins == 0x04 {
+        if h.ins == INS_RESET_PIV {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
@@ -116,7 +125,7 @@ impl Admin {
             return Ok(Action::ResetPiv);
         }
         #[cfg(feature = "oath")]
-        if h.ins == 0x05 {
+        if h.ins == INS_RESET_OATH {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
@@ -133,21 +142,30 @@ impl Admin {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         // The published ADMIN protocol specifies 6D00 for unknown instructions.
-        if !matches!(h.ins, 0x20 | 0x21 | 0x43 | 0x44 | 0x13) {
+        if !matches!(
+            h.ins,
+            INS_VERIFY
+                | INS_CHANGE_PIN
+                | INS_GET_PASS_CONFIG
+                | INS_SET_PASS_CONFIG
+                | INS_RESET_PASS
+        ) {
             return Err(Sw::INS_NOT_SUPPORTED);
         }
-        if h.p2 != 0 {
+        // ADMIN credential/PASS commands reserve P2=00. P1 is also 00
+        // except SET PASS CONFIG, where 1/2 selects the keyboard slot.
+        if h.p2 != 0x00 {
             return Err(Sw::WRONG_P1P2);
         }
-        if h.ins == 0x20 {
-            if h.p1 != 0 {
+        if h.ins == INS_VERIFY {
+            if h.p1 != 0x00 {
                 return Err(Sw::WRONG_P1P2);
             }
             if self.used == 0 {
                 return if grants.admin {
                     Ok(0)
                 } else {
-                    Err(Sw(0x63c0 | u16::from(auth::retries(p).map_err(auth_error)?)))
+                    Err(Sw::retries(auth::retries(p).map_err(auth_error)?))
                 };
             }
             grants.admin = false;
@@ -159,44 +177,45 @@ impl Admin {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
         match h.ins {
-            0x21 => {
-                if h.p1 != 0 {
+            INS_CHANGE_PIN => {
+                if h.p1 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if !(6..=64).contains(&self.used) {
+                if !(auth::MIN_LENGTH..=auth::MAX_LENGTH).contains(&self.used) {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 grants.admin = false;
                 auth::change(&self.command[..self.used], p).map_err(auth_error)?;
             }
-            0x44 => {
+            INS_SET_PASS_CONFIG => {
                 let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
                 let (index, slot) = pass_protocol::decode_config(h.p1, &self.command[..self.used])?;
                 pass.configure(index, slot, p.storage, p.memory)
-                    .map_err(pass_error)?;
+                    .map_err(crate::applets::pass::status)?;
             }
-            0x43 | 0x13 => {
+            INS_GET_PASS_CONFIG | INS_RESET_PASS => {
                 let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
-                if h.p1 != 0 {
+                if h.p1 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if self.used != 0 {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if h.ins == 0x13 {
-                    pass.clear(p.storage, p.memory).map_err(pass_error)?;
+                if h.ins == INS_RESET_PASS {
+                    pass.clear(p.storage, p.memory)
+                        .map_err(crate::applets::pass::status)?;
                 } else {
-                    let records = pass.records().map_err(pass_error)?;
+                    let records = pass.records().map_err(crate::applets::pass::status)?;
                     self.response_len =
                         pass_protocol::read_config_part(records, Layout, 0, &mut [])
-                            .map_err(pass_error)?;
+                            .map_err(crate::applets::pass::status)?;
                     pass_protocol::read_config_part(
                         records,
                         Layout,
                         0,
                         &mut self.response[..self.response_len],
                     )
-                    .map_err(pass_error)?;
+                    .map_err(crate::applets::pass::status)?;
                 }
             }
             _ => return Err(Sw::INS_NOT_SUPPORTED),
@@ -204,8 +223,10 @@ impl Admin {
         Ok(self.response_len as u32)
     }
     #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
+    // Per-applet reset commands carry no options: P1/P2=00 and no data.
+    // The caller checks ADMIN authorization; this helper checks wire shape only.
     pub fn check_empty(&self, h: Header) -> Result<(), Sw> {
-        if h.p1 != 0 || h.p2 != 0 {
+        if h.p1 != 0x00 || h.p2 != 0x00 {
             return Err(Sw::WRONG_P1P2);
         }
         if self.used != 0 {
@@ -213,14 +234,17 @@ impl Admin {
         }
         Ok(())
     }
+    // Factory reset is the blocked-ADMIN recovery path: 50 00 00 plus literal
+    // RESET, with no retries left. The runtime separately requires five touches
+    // before executing the returned reset action; this check alone never erases.
     pub fn check_factory_reset(&self, h: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
-        if h.p1 != 0 || h.p2 != 0 {
+        if h.p1 != 0x00 || h.p2 != 0x00 {
             return Err(Sw::WRONG_P1P2);
         }
-        if self.used != 5 {
+        if self.used != b"RESET".len() {
             return Err(Sw::WRONG_LENGTH);
         }
-        if &self.command[..5] != b"RESET" {
+        if &self.command[..b"RESET".len()] != b"RESET" {
             return Err(Sw::WRONG_DATA);
         }
         if auth::retries(p).map_err(auth_error)? != 0 {

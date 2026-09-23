@@ -3,6 +3,14 @@
 pub const PASSWORD_LIMIT: usize = 32;
 pub const KEY_LENGTH: usize = 20;
 pub const CHALLENGE_LIMIT: usize = 64;
+/// Kind tags shared by ADMIN configuration and PASS persistence.
+pub mod kind {
+    pub const OFF: u8 = 0;
+    pub const OATH: u8 = 1;
+    pub const STATIC: u8 = 2;
+    pub const HMAC: u8 = 3;
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Slot,

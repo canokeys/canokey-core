@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent PIV adapter. APDU lifecycle and byte cursors belong to the runtime.
+
+use super::wire::{
+    ga_field, ga_tag, ins::*, key_tag, limits, metadata_tag, object_tlv, policy, reference,
+    wire_alg,
+};
 use super::{codec, ga::Ga, import::Import, pin::Pins, repository as repo};
+use crate::ports::alg;
 mod keys;
 mod management;
 mod metadata;
@@ -14,11 +20,17 @@ use crate::{
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 use objects::Put;
-pub const AID: &[u8] = &[0xa0, 0, 0, 3, 8, 0, 0, 0x10, 0, 1, 0];
+pub const AID: &[u8] = &[
+    0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
+];
+// Bounded ordinary request: RSA-4096 value plus one encoding byte.
 pub const CAPACITY: usize = 513;
 include!(concat!(env!("OUT_DIR"), "/piv_version.rs"));
+// SELECT response: application template 61 contains the application suffix
+// (4F) and an authority template 79 containing the five-byte PIV provider ID.
 const SELECT: &[u8] = &[
-    0x61, 0x11, 0x4f, 6, 0, 0, 0x10, 0, 1, 0, 0x79, 7, 0x4f, 5, 0xa0, 0, 0, 3, 8,
+    0x61, 0x11, 0x4f, 0x06, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00, 0x79, 0x07, 0x4f, 0x05, 0xa0, 0x00,
+    0x00, 0x03, 0x08,
 ];
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AuthMode {
@@ -27,6 +39,8 @@ enum AuthMode {
     Mutual,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
+// Streaming GA order: optional SM2 identity, empty response tag, then payload.
+// A field header advances this state before its value chunks are consumed.
 enum StreamPhase {
     Identity,
     ResponseTag,
@@ -41,21 +55,32 @@ enum Request {
     Put,
 }
 #[derive(Clone, Copy)]
+// Response backing only; runtime::engine owns the GET RESPONSE byte cursor.
 enum Response {
     Memory,
     Object(usize),
     Crypto(u8),
 }
+// Deferred public-key generation retains only routing metadata. Streaming
+// initialization occurs after the current classic workspace borrow ends.
+struct PendingPublicKey {
+    slot_index: usize,
+    include_metadata: bool,
+}
 pub struct Piv {
     pub(super) pins: Pins,
+    // Management-key authentication grant, unrelated to the ADMIN applet PIN.
     admin: bool,
-    consumed: bool,
+    // PIN_ALWAYS permits one private operation per successful PIN verification.
+    pin_grant_consumed: bool,
     auth_mode: AuthMode,
     challenge: [u8; 16],
     config: [u8; 10],
     request: Request,
     response: Response,
     used: usize,
+    // Large replies are header || generated/stored body || suffix. Only the
+    // small wrappers live here; read_response pulls the body incrementally.
     header: [u8; 32],
     header_len: usize,
     body_len: usize,
@@ -66,7 +91,7 @@ pub struct Piv {
     put: Put,
     last_touch: Option<u32>,
     pub presence: presence::Request,
-    pending_public: Option<(usize, bool)>,
+    pending_public: Option<PendingPublicKey>,
     agreement: Option<usize>,
     stream_phase: StreamPhase,
     sm2_id: [u8; 32],
@@ -77,7 +102,7 @@ impl Piv {
         Self {
             pins: Pins::new(),
             admin: false,
-            consumed: false,
+            pin_grant_consumed: false,
             auth_mode: AuthMode::None,
             challenge: [0; 16],
             config: repo::DEFAULT_CONFIG,
@@ -106,7 +131,7 @@ impl Piv {
         p.memory.wipe(&mut w.agreement);
         self.pins.reset();
         self.admin = false;
-        self.consumed = false;
+        self.pin_grant_consumed = false;
         self.last_touch = None;
         self.auth_clear(p);
         self.cancel_classic(w, p);
@@ -124,11 +149,33 @@ impl Piv {
         self.memory(SELECT.len());
         Ok(SELECT.len() as u32)
     }
+    fn metadata_header(&mut self, algorithm: u8, m: &[u8; repo::META]) -> usize {
+        let prefix = [
+            metadata_tag::ALGORITHM,
+            1,
+            repo::algorithm_id(algorithm, &self.config),
+            metadata_tag::POLICY,
+            2,
+            m[repo::PIN_POLICY],
+            m[repo::TOUCH_POLICY],
+            metadata_tag::ORIGIN,
+            1,
+            m[repo::ORIGIN],
+        ];
+        self.header[..prefix.len()].copy_from_slice(&prefix);
+        prefix.len()
+    }
+    pub fn supports_chaining(ins: u8) -> bool {
+        matches!(
+            ins,
+            INS_GENERAL_AUTHENTICATE | INS_PUT_DATA | INS_IMPORT_KEY
+        )
+    }
     pub fn limit(h: Header) -> u32 {
         match h.ins {
-            0xdb => 6573,
-            0xfe => 1400,
-            0x87 => 65535,
+            INS_PUT_DATA => limits::PUT_DATA_BYTES,
+            INS_IMPORT_KEY => limits::KEY_IMPORT_BYTES,
+            INS_GENERAL_AUTHENTICATE => limits::GENERAL_AUTHENTICATE_BYTES,
             _ => CAPACITY as u32,
         }
     }
@@ -153,7 +200,11 @@ impl Piv {
     ) -> Result<(), Sw> {
         self.used = 0;
         self.memory(0);
-        if h.ins == 0x87 && repo::algorithm(h.p1, &self.config) == Ok(9) && self.agreement.is_some()
+        // Only an SM2 GA continuation may retain the initiator exchange state.
+        // Any other command reuses/clears the workspace and abandons that state.
+        if h.ins == INS_GENERAL_AUTHENTICATE
+            && repo::algorithm(h.p1, &self.config) == Ok(alg::SM2)
+            && self.agreement.is_some()
         {
             p.memory.wipe(&mut w.key.bytes);
             p.memory.wipe(&mut w.input);
@@ -162,22 +213,24 @@ impl Piv {
             w.clear(p.memory);
             self.agreement = None;
         }
-        if h.ins == 0xf5 && h.chained() {
+        if h.ins == INS_NAME && h.chained() {
             return Err(Sw::WRONG_LENGTH);
         }
-        if h.ins != 0x87 {
+        if h.ins != INS_GENERAL_AUTHENTICATE {
             self.auth_clear(p)
         }
         self.request = match h.ins {
-            0x87 => {
+            INS_GENERAL_AUTHENTICATE => {
                 self.ga = Ga::new();
                 Request::Ga
             }
-            0xfe => {
+            INS_IMPORT_KEY => {
+                // IMPORT: P1 is the wire algorithm ID and P2 the destination
+                // slot. F9 is the attestation signer and only accepts P-256.
                 self.authorized()?;
                 let id = repo::slot(h.p2)?;
                 let a = repo::algorithm(h.p1, &self.config).map_err(|_| Sw::WRONG_P1P2)?;
-                if id == 24 && a != 0 {
+                if id == repo::ATTESTATION_KEY && a != alg::P256 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 self.import = Import::new();
@@ -188,9 +241,11 @@ impl Piv {
                 self.import.slot = id;
                 Request::Import
             }
-            0xdb => {
+            INS_PUT_DATA => {
+                // PUT DATA uses fixed P1/P2=3FFF; the 5C tag list in the body
+                // selects the object. Management authorization precedes staging.
                 self.authorized()?;
-                if h.p1 != 0x3f || h.p2 != 0xff {
+                if h.p1 != object_tlv::SELECT_P1 || h.p2 != object_tlv::SELECT_P2 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 self.put = Put::new();
@@ -245,7 +300,7 @@ impl Piv {
             Request::Buffered => self.command(h, le, w, p),
             Request::Import => (|| {
                 self.import.finish(&mut w.key.bytes)?;
-                if self.import.meta[repo::ALGORITHM] < 10 {
+                if self.import.meta[repo::ALGORITHM] < alg::MLKEM768 {
                     p.crypto
                         .key_operation(
                             KeyOperation::Validate,
@@ -292,22 +347,29 @@ impl Piv {
         }
     }
     fn authorize_private(&mut self, pin_policy: u8) -> Result<(), Sw> {
-        if pin_policy != 1 && (!self.pins.state.pin_ok || (pin_policy == 3 && self.consumed)) {
+        if pin_policy != policy::PIN_NEVER
+            && (!self.pins.state.pin_ok
+                || (pin_policy == policy::PIN_ALWAYS && self.pin_grant_consumed))
+        {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
-        self.consumed = true;
+        self.pin_grant_consumed = true;
         Ok(())
     }
     fn touch(&mut self, policy: u8, p: &mut Platform<'_>) -> Result<(), Sw> {
-        if policy < 2 {
+        if policy < policy::TOUCH_ALWAYS {
             return Ok(());
         }
         let now = p.device.now();
-        if policy == 3 && self.last_touch.is_some_and(|t| now.wrapping_sub(t) < 15000) {
+        if policy == policy::TOUCH_CACHED
+            && self
+                .last_touch
+                .is_some_and(|t| now.wrapping_sub(t) < policy::TOUCH_CACHE_MS)
+        {
             return Ok(());
         }
         if !self.presence.wait(p.device) {
-            return Err(Sw(0x6400));
+            return Err(Sw::EXECUTION_ERROR);
         }
         self.last_touch = Some(p.device.now());
         Ok(())
@@ -322,24 +384,26 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         match h.ins {
-            0x20 => {
+            INS_VERIFY => {
                 let r = self.pins.verify(h, &w.input[..self.used], p);
                 if r.is_ok() && (self.used == 8 || h.p1 == 0xff) {
-                    self.consumed = false;
+                    self.pin_grant_consumed = false;
                 }
                 r
             }
-            0x24 => self.pins.change(h, &w.input[..self.used], p),
-            0x2c => self.pins.reset_retry(h, &w.input[..self.used], p),
-            0x84 | 0xfd | 0xf8 => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_CHANGE_REFERENCE_DATA => self.pins.change(h, &w.input[..self.used], p),
+            INS_RESET_RETRY_COUNTER => self.pins.reset_retry(h, &w.input[..self.used], p),
+            INS_GET_CHALLENGE | INS_GET_VERSION | INS_GET_SERIAL => {
+                // These queries have no P1/P2 options; GET CHALLENGE takes its
+                // requested byte count from Le, not either parameter byte.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if self.used != 0 {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 let n = match h.ins {
-                    0x84 => {
+                    INS_GET_CHALLENGE => {
                         if le == 0 || le > 256 {
                             return Err(Sw::WRONG_LENGTH);
                         }
@@ -348,7 +412,7 @@ impl Piv {
                             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                         le as usize
                     }
-                    0xfd => {
+                    INS_GET_VERSION => {
                         w.output[..3].copy_from_slice(&PIV_VERSION);
                         3
                     }
@@ -360,27 +424,39 @@ impl Piv {
                 self.memory(n);
                 Ok(n as u32)
             }
-            0xcb => self.get(h, w, p),
-            0x87 => self.general_authenticate(h, w, p),
-            0x47 => self.generate(h, w, p),
-            0xf7 => self.metadata(h, w, p),
-            0xf5 => self.name(h, w, p),
-            0xf6 => self.move_key(h, p),
-            0xff => {
+            INS_GET_DATA => self.get(h, w, p),
+            INS_GENERAL_AUTHENTICATE => self.general_authenticate(h, w, p),
+            INS_GENERATE_KEY => self.generate(h, w, p),
+            INS_GET_METADATA => self.metadata(h, w, p),
+            INS_NAME => self.name(h, w, p),
+            INS_MOVE_KEY => self.move_key(h, p),
+            INS_SET_MANAGEMENT_KEY => {
+                // FF FF FE enables touch; FF FF FF disables touch. P1=FF is
+                // the fixed key-replacement selector, not a destination slot.
                 if h.p1 != 0xff || !matches!(h.p2, 0xfe | 0xff) {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if self.used != 27 {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if w.input[..3] != [8, 0x9b, 24] {
+                if w.input[..3]
+                    != [
+                        wire_alg::AES192,
+                        reference::MANAGEMENT,
+                        repo::MANAGEMENT_KEY_BYTES as u8,
+                    ]
+                {
                     return Err(Sw::WRONG_DATA);
                 }
                 self.authorized()?;
-                let mut m = [0; 26];
-                m[0] = 1;
-                m[1] = if h.p2 == 0xfe { 2 } else { 1 };
-                m[2..].copy_from_slice(&w.input[3..27]);
+                let mut m = repo::management_record(
+                    if h.p2 == 0xfe {
+                        policy::TOUCH_ALWAYS
+                    } else {
+                        policy::TOUCH_NEVER
+                    },
+                    &w.input[3..27],
+                );
                 let r = p
                     .storage
                     .replace(Record::PivManagement, &m)
@@ -391,11 +467,15 @@ impl Piv {
                 }
                 r.map(|_| 0)
             }
-            0xfa => {
+            INS_SET_RETRIES => {
+                // P1/P2 are the new PIN/PUK retry limits (1..15), not selectors.
+                // This command also resets both secrets and revokes grants.
                 if self.used != 0 {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if !(1..=15).contains(&h.p1) || !(1..=15).contains(&h.p2) {
+                if !(0x01..=super::pin::MAX_RETRIES).contains(&h.p1)
+                    || !(0x01..=super::pin::MAX_RETRIES).contains(&h.p2)
+                {
                     return Err(Sw::WRONG_P1P2);
                 }
                 self.authorized()?;
@@ -406,8 +486,10 @@ impl Piv {
                 self.pins.defaults(h.p1, h.p2, p)?;
                 Ok(0)
             }
-            0xfb => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_RESET => {
+                // FB 00 00 has no parameter modes; both credentials must be
+                // blocked before this unauthenticated reset is permitted.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if self.used != 0 {
@@ -423,11 +505,13 @@ impl Piv {
                 self.reset_persistent(p)?;
                 Ok(0)
             }
-            0xee => {
-                if h.p2 != 0 || !matches!(h.p1, 1 | 2) {
+            INS_CONFIG => {
+                // CanoKey EE: P1=01 reads the algorithm mapping, P1=02 writes
+                // it with management authorization. P2 is reserved (00).
+                if h.p2 != 0x00 || !matches!(h.p1, 0x01 | 0x02) {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if h.p1 == 1 {
+                if h.p1 == 0x01 {
                     w.output[..10].copy_from_slice(&self.config);
                     self.memory(10);
                     Ok(10)
@@ -457,8 +541,8 @@ impl Piv {
         } else {
             4
         };
-        let a = codec::header(&mut self.header, &[0x7c], n + inner)?;
-        self.header_len = a + codec::header(&mut self.header[a..], &[0x82], n)?;
+        let a = codec::header(&mut self.header, &[ga_tag::TEMPLATE], n + inner)?;
+        self.header_len = a + codec::header(&mut self.header[a..], &[ga_tag::RESPONSE], n)?;
         Ok((n + self.header_len) as u32)
     }
     fn read_classic(

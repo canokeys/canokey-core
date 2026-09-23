@@ -44,7 +44,8 @@ Only enabled services own registry state and run installation. PASS has no AID;
 ADMIN is selected by `admin`, not by `pass`. OATH-to-PASS binding requires both
 services; without PASS its binding/HMAC-slot commands are unavailable. CIU and
 host device-equivalent profiles explicitly combine their required features.
-Feature-isolated and combined Cargo configurations are checked with warnings denied. Cargo's host-only SHA-256 test
+Workspace crates deny warnings through inherited Cargo lints. Check both isolated
+features and the combined configuration. Cargo's host-only SHA-256 test
 dependency is not included in the firmware dependency graph.
 
 ## Streaming contract
@@ -97,7 +98,7 @@ require `jinja2` and `jsonschema` in the CMake-selected Python interpreter. Use
 
 CIU presets are `devkit-rust-core`, `devkit-rust-admin-pass`,
 `devkit-rust-oath`, `devkit-rust-openpgp` and `devkit-rust-piv`. Each retains the mandatory 48-vector/ResumeLoader gate.
-NFCC is deferred. The `/rust` filesystem namespace, no-autoformat rule and
+NFCC is deferred. Root-level hexadecimal record filenames, the no-autoformat rule and
 serialized main-loop C interface remain unchanged.
 
 The independent [Rust PIV profile](docs/piv.md) supports management authentication,

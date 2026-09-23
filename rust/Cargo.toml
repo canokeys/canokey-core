@@ -8,3 +8,6 @@ lto = true
 codegen-units = 1
 panic = "abort"
 overflow-checks = true
+
+[workspace.lints.rust]
+warnings = "deny"

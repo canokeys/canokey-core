@@ -6,13 +6,11 @@
 #include <kbdhid.h>
 #include <piv.h>
 #include <platform-config.h>
+#include <platform-config-layout.h>
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stdint.h>
 
-#define CONFIG_MAGIC 0x434B4346u // "CKCF"
-#define CONFIG_VERSION 1u
-#define CONFIG_HEADER_LEN 0x20u
 #define CONFIG_KBD_ENTRY_SIZE 2u
 #define CONFIG_KBD_ASCII_COUNT 128u
 #define CONFIG_TLV_SIZE 220u
@@ -27,7 +25,6 @@
 #define CONFIG_FLAG_LED_NORMALLY_ON (1u << 2)
 #define CONFIG_FLAG_NDEF_ENABLED (1u << 3)
 #define CONFIG_FLAG_WEBUSB_LANDING_ENABLED (1u << 4)
-#define CONFIG_FLAG_SN_VALID (1u << 5)
 #define CONFIG_FLAG_KBD_KEYMAP_VALID (1u << 6)
 #define CONFIG_FLAG_PASS_ENABLED (1u << 7)
 #define CONFIG_FLAG_OPENPGP_CCID_ENABLED (1u << 8)
@@ -35,8 +32,8 @@
 #define CONFIG_FLAG_PIV_CCID_ENABLED (1u << 10)
 #define CONFIG_FLAG_PIV_NFC_ENABLED (1u << 11)
 #define CONFIG_FLAG_WEBAUTHN_ENABLED (1u << 12)
-#define CONFIG_FLAGS_FEATURES                                                                                         \
-  (CONFIG_FLAG_PASS_ENABLED | CONFIG_FLAG_OPENPGP_CCID_ENABLED | CONFIG_FLAG_OPENPGP_NFC_ENABLED |                    \
+#define CONFIG_FLAGS_FEATURES                                                                                          \
+  (CONFIG_FLAG_PASS_ENABLED | CONFIG_FLAG_OPENPGP_CCID_ENABLED | CONFIG_FLAG_OPENPGP_NFC_ENABLED |                     \
    CONFIG_FLAG_PIV_CCID_ENABLED | CONFIG_FLAG_PIV_NFC_ENABLED | CONFIG_FLAG_WEBAUTHN_ENABLED)
 
 // The first word is platform-owned loader handoff state and is excluded from
@@ -64,17 +61,24 @@ typedef struct {
   uint32_t crc;
 } config_page_t;
 
+_Static_assert(PLATFORM_CONFIG_PAGE_SIZE == CONFIG_PAGE_BYTES, "config page ABI size");
+_Static_assert(offsetof(config_page_t, magic) == CONFIG_MAGIC_OFFSET, "config magic ABI offset");
+_Static_assert(offsetof(config_page_t, version) == CONFIG_VERSION_OFFSET, "config version ABI offset");
+_Static_assert(offsetof(config_page_t, header_len) == CONFIG_HEADER_LEN_OFFSET, "config header_len ABI offset");
+_Static_assert(offsetof(config_page_t, page_len) == CONFIG_PAGE_LEN_OFFSET, "config page_len ABI offset");
+_Static_assert(offsetof(config_page_t, flags) == CONFIG_FLAGS_OFFSET, "config flags ABI offset");
+_Static_assert(offsetof(config_page_t, serial) == CONFIG_SERIAL_OFFSET, "config serial ABI offset");
+_Static_assert(offsetof(config_page_t, crc) == CONFIG_CRC_OFFSET &&
+                   CONFIG_CRC_OFFSET == CONFIG_PAGE_BYTES - sizeof(uint32_t),
+               "config CRC ABI offset and final-word placement");
+
 // Fields already follow their natural alignment. Keep the page word-aligned
 // so Thumb-1 helpers can use word accesses instead of unpacking each byte;
 // these assertions pin the existing on-flash layout.
 _Static_assert(sizeof(config_page_t) == PLATFORM_CONFIG_PAGE_SIZE,
                "platform config page must be exactly one flash page");
-_Static_assert(offsetof(config_page_t, flags) == 0x0Cu && offsetof(config_page_t, serial) == 0x10u,
-               "platform config flags and serial offsets must not change");
 _Static_assert(offsetof(config_page_t, keymap) == CONFIG_HEADER_LEN,
                "platform config keymap must start after the fixed header");
-_Static_assert(offsetof(config_page_t, crc) == PLATFORM_CONFIG_PAGE_SIZE - sizeof(uint32_t),
-               "platform config CRC must be the last word");
 _Static_assert(sizeof(((config_page_t *)0)->keymap) == ADMIN_KBD_KEYMAP_LENGTH,
                "admin keymap APDU length must match platform config keymap storage");
 
@@ -91,15 +95,13 @@ __weak int platform_config_page_write(const void *page, size_t len) {
   return -1;
 }
 
-static int config_read_page(config_page_t *page) {
-  return platform_config_page_read(0, page, sizeof(*page));
-}
+static int config_read_page(config_page_t *page) { return platform_config_page_read(0, page, sizeof(*page)); }
 
 static uint32_t config_crc_value(const config_page_t *page) {
   // The platform word may be rewritten without touching config metadata, so
   // the CRC covers only bytes owned by core.
   const uint8_t *start = (const uint8_t *)page + offsetof(config_page_t, magic);
-  return crc32_update(CRC32_INIT, start, PLATFORM_CONFIG_PAGE_SIZE - offsetof(config_page_t, magic) - sizeof(page->crc));
+  return crc32_update(CRC32_INIT, start, CONFIG_CRC_BYTES);
 }
 
 static bool config_page_valid(const config_page_t *page) {
@@ -198,17 +200,15 @@ static int set_nfc_update(config_page_t *page, void *ctx) {
 
 static int set_admin_cfg_update(config_page_t *page, void *ctx) {
   const admin_device_config_t *cfg = (const admin_device_config_t *)ctx;
-  const uint32_t mask = CONFIG_FLAG_LED_NORMALLY_ON | CONFIG_FLAG_NDEF_ENABLED |
-                        CONFIG_FLAG_WEBUSB_LANDING_ENABLED | CONFIG_FLAGS_FEATURES;
-  const uint32_t flags = (cfg->led_normally_on ? CONFIG_FLAG_LED_NORMALLY_ON : 0) |
-                         (cfg->ndef_en ? CONFIG_FLAG_NDEF_ENABLED : 0) |
-                         (cfg->webusb_landing_en ? CONFIG_FLAG_WEBUSB_LANDING_ENABLED : 0) |
-                         (cfg->pass_en ? CONFIG_FLAG_PASS_ENABLED : 0) |
-                         (cfg->openpgp_ccid_en ? CONFIG_FLAG_OPENPGP_CCID_ENABLED : 0) |
-                         (cfg->openpgp_nfc_en ? CONFIG_FLAG_OPENPGP_NFC_ENABLED : 0) |
-                         (cfg->piv_ccid_en ? CONFIG_FLAG_PIV_CCID_ENABLED : 0) |
-                         (cfg->piv_nfc_en ? CONFIG_FLAG_PIV_NFC_ENABLED : 0) |
-                         (cfg->webauthn_en ? CONFIG_FLAG_WEBAUTHN_ENABLED : 0);
+  const uint32_t mask = CONFIG_FLAG_LED_NORMALLY_ON | CONFIG_FLAG_NDEF_ENABLED | CONFIG_FLAG_WEBUSB_LANDING_ENABLED |
+                        CONFIG_FLAGS_FEATURES;
+  const uint32_t flags =
+      (cfg->led_normally_on ? CONFIG_FLAG_LED_NORMALLY_ON : 0) | (cfg->ndef_en ? CONFIG_FLAG_NDEF_ENABLED : 0) |
+      (cfg->webusb_landing_en ? CONFIG_FLAG_WEBUSB_LANDING_ENABLED : 0) |
+      (cfg->pass_en ? CONFIG_FLAG_PASS_ENABLED : 0) | (cfg->openpgp_ccid_en ? CONFIG_FLAG_OPENPGP_CCID_ENABLED : 0) |
+      (cfg->openpgp_nfc_en ? CONFIG_FLAG_OPENPGP_NFC_ENABLED : 0) |
+      (cfg->piv_ccid_en ? CONFIG_FLAG_PIV_CCID_ENABLED : 0) | (cfg->piv_nfc_en ? CONFIG_FLAG_PIV_NFC_ENABLED : 0) |
+      (cfg->webauthn_en ? CONFIG_FLAG_WEBAUTHN_ENABLED : 0);
   page->flags = (page->flags & ~mask) | flags;
   return 0;
 }
@@ -287,8 +287,7 @@ static int config_tlv_read(uint8_t type, uint8_t *value, uint8_t len) {
   const uint8_t *stored;
   uint8_t stored_len;
 
-  if (config_read_valid_page(&page) < 0 || !config_tlv_find(&page, type, &stored, &stored_len) ||
-      stored_len != len)
+  if (config_read_valid_page(&page) < 0 || !config_tlv_find(&page, type, &stored, &stored_len) || stored_len != len)
     return -1;
   memcpy(value, stored, len);
   return 0;
@@ -325,9 +324,7 @@ int admin_platform_serial_read(uint8_t *buf) {
   return 0;
 }
 
-int admin_platform_serial_write_once(const uint8_t *buf) {
-  return config_update(set_sn_update, (void *)buf);
-}
+int admin_platform_serial_write_once(const uint8_t *buf) { return config_update(set_sn_update, (void *)buf); }
 
 int admin_platform_kbd_keymap_write(uint8_t layout_id, const uint8_t *keymap, uint16_t len) {
   if (keymap == NULL || len != sizeof(((config_page_t *)0)->keymap)) return -1;
@@ -410,8 +407,6 @@ int device_config_mark_initialized(void) {
   return config_update(set_initialized_update, NULL);
 }
 
-uint8_t device_config_is_nfc_enabled(void) {
-  return config_read_flag(CONFIG_FLAG_NFC_ENABLED, 1);
-}
+uint8_t device_config_is_nfc_enabled(void) { return config_read_flag(CONFIG_FLAG_NFC_ENABLED, 1); }
 
 int device_config_set_nfc_enabled(uint8_t enabled) { return config_update(set_nfc_update, &enabled); }

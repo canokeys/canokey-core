@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OATH wire schema. Domain/authentication modules have no APDU dependency.
 #![forbid(unsafe_code)]
+
+use super::wire::{ins::*, otp_selector, tag};
 use crate::applets::oath::{
     Algorithm, Crypto, Error, auth,
     credential::{Credential, Kind, Properties},
@@ -15,14 +17,13 @@ use crate::{
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw, tlv::ByteCursor};
 mod paging;
 include!(concat!(env!("OUT_DIR"), "/oath_version.rs"));
-pub const AID: &[u8] = &[0xa0, 0, 0, 5, 0x27, 0x21, 1];
+pub const AID: &[u8] = &[0xa0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01];
 pub const CAPACITY: usize = 288;
-const DATA_INVALID: Sw = Sw(0x6984);
 pub fn status(error: Error) -> Sw {
     match error {
-        Error::Missing | Error::AccessCodeMissing => DATA_INVALID,
+        Error::Missing | Error::AccessCodeMissing => Sw::DATA_INVALID,
         Error::Duplicate | Error::CounterExhausted => Sw::CONDITIONS_NOT_SATISFIED,
-        Error::NoSpace => Sw(0x6a84),
+        Error::NoSpace => Sw::NOT_ENOUGH_MEMORY,
         Error::Unauthorized | Error::PresenceRequired | Error::IncreasingChallenge => {
             Sw::SECURITY_STATUS_NOT_SATISFIED
         }
@@ -38,14 +39,14 @@ fn field<'a>(cursor: &mut ByteCursor<'a>, expected: u8) -> Result<&'a [u8], Sw> 
     Ok(value)
 }
 fn name<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
-    let name = field(cursor, 0x71)?;
+    let name = field(cursor, tag::NAME)?;
     if name.is_empty() || name.len() > 64 {
         return Err(Sw::WRONG_DATA);
     }
     Ok(name)
 }
 fn challenge<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
-    let bytes = field(cursor, 0x74)?;
+    let bytes = field(cursor, tag::CHALLENGE)?;
     if bytes.is_empty() || bytes.len() > 8 {
         return Err(Sw::WRONG_DATA);
     }
@@ -55,7 +56,7 @@ fn challenge<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
 enum Page {
     None,
     List,
-    Calculate(bool),
+    Calculate { truncated: bool },
 }
 struct State {
     session: auth::Session,
@@ -109,15 +110,15 @@ impl State {
                 &mut Mac::new(p.crypto, p.memory),
             )
             .map_err(status)?;
-        self.response[..2].copy_from_slice(&[0x79, 3]);
+        self.response[..2].copy_from_slice(&[tag::VERSION, 3]);
         self.response[2..5].copy_from_slice(&OATH_VERSION);
-        self.response[5..7].copy_from_slice(&[0x71, 8]);
+        self.response[5..7].copy_from_slice(&[tag::NAME, 8]);
         self.response[7..15].copy_from_slice(&selected.handle);
         self.length = 15;
         if let Some(challenge) = selected.challenge {
-            self.response[15..17].copy_from_slice(&[0x74, 8]);
+            self.response[15..17].copy_from_slice(&[tag::CHALLENGE, 8]);
             self.response[17..25].copy_from_slice(&challenge);
-            self.response[25..28].copy_from_slice(&[0x7b, 1, 1]);
+            self.response[25..28].copy_from_slice(&[tag::ALGORITHM, 1, 1]);
             self.length = 28;
         }
         Ok(self.length as u32)
@@ -143,16 +144,25 @@ impl State {
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
     ) -> Result<Sw, Sw> {
-        if h.ins != 0xa5 {
+        if h.ins != INS_SEND_REMAINING {
             self.page = Page::None;
             self.cursor = 0;
         }
         // Original YubiKey OTP API is deliberately outside the OATH auth gate.
-        if h.ins == 1 && matches!(h.p1, 0x10 | 0x30 | 0x38) {
-            if h.p2 != 0 {
+        if h.ins == INS_PUT
+            && matches!(
+                h.p1,
+                otp_selector::SERIAL
+                    | otp_selector::CHALLENGE_SLOT_1
+                    | otp_selector::CHALLENGE_SLOT_2
+            )
+        {
+            // Legacy OTP uses P1 for the operation/slot; P2 has no options
+            // and must be 00 even for HMAC challenge-response requests.
+            if h.p2 != 0x00 {
                 return Err(Sw::WRONG_P1P2);
             }
-            if h.p1 == 0x10 {
+            if h.p1 == otp_selector::SERIAL {
                 if !data.is_empty() {
                     return Err(Sw::WRONG_LENGTH);
                 }
@@ -164,25 +174,27 @@ impl State {
                 if data.len() > 64 {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                let index = u8::from(h.p1 == 0x38);
+                let index = u8::from(h.p1 == otp_selector::CHALLENGE_SLOT_2);
                 let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
                 if !matches!(pass.slot(index), Ok(Slot::Hmac(_))) {
                     return Err(Sw::FILE_NOT_FOUND);
                 }
                 let mut result = [0; 20];
                 pass.challenge(index, data, &mut result, p)
-                    .map_err(pass_error)?;
+                    .map_err(crate::applets::pass::status)?;
                 self.response[..20].copy_from_slice(&result);
                 p.memory.wipe(&mut result);
                 self.length = 20;
             }
             return Ok(Sw::SUCCESS);
         }
-        if !self.session.authorized() && h.ins != 0xa3 {
+        if !self.session.authorized() && h.ins != INS_VALIDATE {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
-        if h.ins == 0xa5 {
-            if h.p1 != 0 || h.p2 != 0 {
+        // SEND REMAINING has no parameter modes: P1/P2=00 continues the
+        // saved credential enumeration, rather than selecting a new page index.
+        if h.ins == INS_SEND_REMAINING {
+            if h.p1 != 0x00 || h.p2 != 0x00 {
                 return Err(Sw::WRONG_P1P2);
             }
             if !data.is_empty() {
@@ -194,30 +206,30 @@ impl State {
         let mut mac = Mac::new(p.crypto, p.memory);
         let mut c = ByteCursor::new(data);
         match h.ins {
-            1 => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_PUT => {
+                // Ordinary OATH PUT uses 00/00; kind/algorithm/name are in TLVs.
+                // Nonzero legacy OTP P1 selectors were handled before this match.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let name = name(&mut c)?;
-                let key = field(&mut c, 0x73)?;
+                let key = field(&mut c, tag::KEY)?;
                 if key.len() < 3 || key.len() > 66 {
                     return Err(Sw::WRONG_DATA);
                 }
-                let kind = match key[0] & 0xf0 {
-                    0x10 => Kind::Hotp,
-                    0x20 => Kind::Totp,
-                    _ => return Err(Sw::WRONG_DATA),
-                };
-                let alg = Algorithm::from_byte(key[0] & 15).map_err(status)?;
-                let prop = if c.peek() == Some(0x78) {
+                let kind = Kind::from_byte(key[0]).map_err(status)?;
+                let alg = Algorithm::from_byte(key[0] & Kind::ALGORITHM_MASK).map_err(status)?;
+                let prop = if c.peek() == Some(tag::PROPERTY) {
                     c.byte().map_err(|_| Sw::WRONG_LENGTH)?;
                     c.byte().map_err(|_| Sw::WRONG_LENGTH)?
                 } else {
                     0
                 };
                 let mut moving = [0; 8];
-                if c.peek() == Some(0x7a) {
-                    let counter = field(&mut c, 0x7a)?;
+                // The wire HOTP initial counter is four bytes; storage uses
+                // an eight-byte big-endian moving factor. TOTP cannot set it.
+                if c.peek() == Some(tag::INITIAL_COUNTER) {
+                    let counter = field(&mut c, tag::INITIAL_COUNTER)?;
                     if counter.len() != 4 || kind != Kind::Hotp {
                         return Err(Sw::WRONG_DATA);
                     }
@@ -240,31 +252,33 @@ impl State {
                 record.clear(&mut mac);
                 result?;
             }
-            2 | 5 => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_DELETE | INS_RENAME => {
+                // P1/P2 are reserved (00); NAME TLVs identify old/new names.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let old = name(&mut c)?;
-                if h.ins == 5 {
+                if h.ins == INS_RENAME {
                     let new = name(&mut c)?;
                     service::rename(&mut store, &mut mac, old, new).map_err(status)?;
                 } else {
                     let id = service::find(&mut store, &mut mac, old).map_err(status)?;
                     if let Some(pass) = pass {
                         pass.remove_oath(Some(id.0), p.storage, p.memory)
-                            .map_err(pass_error)?;
+                            .map_err(crate::applets::pass::status)?;
                     }
                     Store::new(p.storage, p.memory).delete(id).map_err(status)?;
                 }
             }
-            3 => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_SET_CODE => {
+                // P1/P2=00; the KEY field (or empty body) selects set vs clear.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let key = if data.is_empty() {
                     &[][..]
                 } else {
-                    field(&mut c, 0x73)?
+                    field(&mut c, tag::KEY)?
                 };
                 if key.is_empty() {
                     self.session
@@ -274,8 +288,8 @@ impl State {
                     if key.len() != 17 {
                         return Err(Sw::WRONG_DATA);
                     }
-                    let challenge = field(&mut c, 0x74)?;
-                    let response = field(&mut c, 0x75)?;
+                    let challenge = field(&mut c, tag::CHALLENGE)?;
+                    let response = field(&mut c, tag::RESPONSE)?;
                     if !c.is_empty() {
                         return Err(Sw::WRONG_LENGTH);
                     }
@@ -290,21 +304,22 @@ impl State {
                         )
                         .map_err(|e| {
                             if e == Error::Invalid {
-                                DATA_INVALID
+                                Sw::DATA_INVALID
                             } else {
                                 status(e)
                             }
                         })?;
                 }
             }
-            0xa3 => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_VALIDATE => {
+                // P1/P2=00; RESPONSE/CHALLENGE TLVs carry the mutual proof.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
-                let response = field(&mut c, 0x75)?
+                let response = field(&mut c, tag::RESPONSE)?
                     .try_into()
                     .map_err(|_| Sw::WRONG_DATA)?;
-                let challenge = field(&mut c, 0x74)?;
+                let challenge = field(&mut c, tag::CHALLENGE)?;
                 if !c.is_empty() {
                     return Err(Sw::WRONG_LENGTH);
                 }
@@ -318,30 +333,37 @@ impl State {
                             status(e)
                         }
                     })?;
-                self.response[..2].copy_from_slice(&[0x75, 20]);
+                self.response[..2].copy_from_slice(&[tag::RESPONSE, 20]);
                 self.response[2..22].copy_from_slice(&result);
                 mac.wipe(&mut result);
                 self.length = 22;
             }
-            0xa1 => {
-                if h.p1 != 0 || h.p2 != 0 {
+            INS_LIST => {
+                // P1/P2=00 starts enumeration; continuation uses SEND REMAINING.
+                if h.p1 != 0x00 || h.p2 != 0x00 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 self.page = Page::List;
                 return self.page(le, p);
             }
-            0xa4 => {
-                if h.p1 != 0 || h.p2 > 1 {
+            INS_CALCULATE_ALL => {
+                // P1=00; P2=00 returns full MACs, P2=01 dynamic truncation.
+                // The challenge is in the body and applies to the whole list.
+                if h.p1 != 0x00 || h.p2 > 0x01 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let challenge = challenge(&mut c)?;
                 self.challenge[..challenge.len()].copy_from_slice(challenge);
                 self.challenge_len = challenge.len();
-                self.page = Page::Calculate(h.p2 != 0);
+                self.page = Page::Calculate {
+                    truncated: h.p2 != 0x00,
+                };
                 return self.page(le, p);
             }
-            0xa2 => {
-                if h.p1 != 0 || h.p2 > 1 {
+            INS_CALCULATE => {
+                // P1=00; P2=00 returns the full MAC, P2=01 the 31-bit
+                // dynamically truncated value. NAME selects the credential.
+                if h.p1 != 0x00 || h.p2 > 0x01 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let name = name(&mut c)?;
@@ -365,12 +387,14 @@ impl State {
                 };
                 let mut result = service::calculate(&mut store, &mut mac, id, input, presence)
                     .map_err(status)?;
-                self.emit_digest(&result, h.p2 != 0);
+                self.emit_digest(&result, h.p2 != 0x00);
                 result.clear(&mut mac);
             }
-            0x55 => {
+            INS_SET_DEFAULT => {
+                // P1=1/2 selects a PASS slot (one-based); P2=0/1 controls
+                // the trailing Enter key. NAME binds an HOTP credential.
                 let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
-                if !(1..=2).contains(&h.p1) || h.p2 > 1 {
+                if !(0x01..=0x02).contains(&h.p1) || h.p2 > 0x01 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let name = name(&mut c)?;
@@ -389,7 +413,7 @@ impl State {
                         p.storage,
                         p.memory,
                     )
-                    .map_err(pass_error)
+                    .map_err(crate::applets::pass::status)
                 };
                 record.clear(&mut mac);
                 result?;
@@ -402,7 +426,11 @@ impl State {
         let at = self.length;
         let n = if truncated { 4 } else { digest.bytes().len() };
         self.response[at..at + 3].copy_from_slice(&[
-            if truncated { 0x76 } else { 0x75 },
+            if truncated {
+                tag::TRUNCATED_RESPONSE
+            } else {
+                tag::RESPONSE
+            },
             (n + 1) as u8,
             digest.digits(),
         ]);
@@ -486,12 +514,5 @@ impl Oath {
             self.state.close_response(p);
         }
         result.map(|sw| (self.state.length as u32, sw))
-    }
-}
-
-fn pass_error(error: crate::applets::pass::domain::Error) -> Sw {
-    match error {
-        crate::applets::pass::domain::Error::Persistence => Sw::UNABLE_TO_PROCESS,
-        _ => Sw::WRONG_DATA,
     }
 }

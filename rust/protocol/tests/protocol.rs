@@ -3,9 +3,9 @@ use canokey_protocol::{apdu, response::*, tlv};
 
 #[test]
 fn select_frame_in_two_transport_fragments() {
-    let bytes = [0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0];
+    let bytes = [0x00, 0xa4, 0x04, 0x00, 0x05, 0xf0, 0x00, 0x00, 0x00, 0x00];
     let command = apdu::parse(&bytes).unwrap();
-    assert_eq!(command.data, [0xf0, 0, 0, 0, 0]);
+    assert_eq!(command.data, [0xf0, 0x00, 0x00, 0x00, 0x00]);
     let mut decoder = apdu::FrameDecoder::new(bytes.len()).unwrap();
     let mut data = Vec::new();
     for part in [&bytes[..7], &bytes[7..]] {
@@ -34,9 +34,9 @@ fn response_in_two_chunks() {
 #[test]
 fn tlv_value_spans_iso_command_chain_without_reassembly() {
     let fragments: [&[u8]; 4] = [
-        &[0x10, 1, 0, 0, 2, 0x71, 0x82],
-        &[0x10, 1, 0, 0, 2, 0, 4],
-        &[0x10, 1, 0, 0, 2, 1, 2],
+        &[0x10, 0x01, 0x00, 0x00, 0x02, 0x71, 0x82],
+        &[0x10, 0x01, 0x00, 0x00, 0x02, 0x00, 0x04],
+        &[0x10, 0x01, 0x00, 0x00, 0x02, 0x01, 0x02],
         &[0, 1, 0, 0, 2, 3, 4],
     ];
     let mut chain = apdu::CommandChain::default();

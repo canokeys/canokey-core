@@ -3,7 +3,7 @@
 use super::domain::Error;
 use crate::{
     Platform,
-    mechanisms::pin::{self, Charge, RecordPin},
+    mechanisms::pin::{self, Charge, PinInfo, RecordPin},
     ports::Record,
 };
 fn credential(id: Record) -> RecordPin {
@@ -27,7 +27,7 @@ fn error(e: pin::Error) -> Error {
 pub fn create(id: Record, pin: &[u8], limit: u8, p: &mut Platform<'_>) -> Result<(), Error> {
     credential(id).create(pin, limit, p).map_err(error)
 }
-pub fn info(id: Record, p: &mut Platform<'_>) -> Result<(usize, u8, u8), Error> {
+pub fn info(id: Record, p: &mut Platform<'_>) -> Result<PinInfo, Error> {
     credential(id).info(p).map_err(error)
 }
 pub fn verify(id: Record, pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {

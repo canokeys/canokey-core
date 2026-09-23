@@ -2,14 +2,29 @@
 //! Fixed RAM slots; persistence stores only headers and actual payloads.
 //! No native-layout or previous-format decoding.
 #![forbid(unsafe_code)]
-use super::domain::{Error, Slot, SlotIndex};
-pub const FILE_SIZE: usize = 144;
+use super::domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex, kind};
+pub const SLOT_COUNT: usize = 2;
+pub const SLOT_SIZE: usize = 72;
+pub const FILE_SIZE: usize = SLOT_COUNT * SLOT_SIZE;
+// Offsets below are within one expanded RAM slot. LENGTH counts payload bytes
+// (the credential-name bytes for OATH); ENTER controls a trailing Enter key.
+// OATH payload is a big-endian 32-bit record ID followed by the credential name.
+// Persisted slots omit unused payload capacity; FILE_SIZE is the RAM view size.
+const FORMAT_VERSION: u8 = 2;
+const VERSION: usize = 0;
+const KIND: usize = 1;
+const LENGTH: usize = 2;
+const ENTER: usize = 3;
+const PAYLOAD: usize = 4;
+const OATH_ID_BYTES: usize = 4;
+const OATH_NAME: usize = PAYLOAD + OATH_ID_BYTES;
+const OATH_NAME_LIMIT: usize = 64;
 #[derive(Clone, Copy)]
 pub struct Layout;
 impl Layout {
     fn range(self, index: SlotIndex) -> core::ops::Range<usize> {
-        let start = index.get() * 72;
-        start..start + 72
+        let start = index.get() * SLOT_SIZE;
+        start..start + SLOT_SIZE
     }
     pub fn record(self, bytes: &[u8], index: SlotIndex) -> Result<&[u8], Error> {
         bytes.get(self.range(index)).ok_or(Error::Record)
@@ -18,28 +33,38 @@ impl Layout {
         bytes.get_mut(self.range(index)).ok_or(Error::Record)
     }
     pub fn decode(self, record: &[u8]) -> Result<Slot<'_>, Error> {
-        if record.len() != 72 || record[0] != 2 {
+        if record.len() != SLOT_SIZE || record[VERSION] != FORMAT_VERSION {
             return Err(Error::Record);
         }
-        let n = usize::from(record[2]);
-        let slot = match record[1] {
-            1 if n <= 64 => Slot::Oath {
-                id: u32::from_be_bytes(record[4..8].try_into().map_err(|_| Error::Record)?),
-                name: &record[8..8 + n],
-                enter: record[3],
+        let n = usize::from(record[LENGTH]);
+        let slot = match record[KIND] {
+            kind::OATH if n <= OATH_NAME_LIMIT => Slot::Oath {
+                id: u32::from_be_bytes(
+                    record[PAYLOAD..OATH_NAME]
+                        .try_into()
+                        .map_err(|_| Error::Record)?,
+                ),
+                name: &record[OATH_NAME..OATH_NAME + n],
+                enter: record[ENTER],
             },
-            0 if n == 0 && record[3] == 0 => Slot::Off,
-            2 if n <= 32 => Slot::Static {
-                password: &record[4..4 + n],
-                enter: record[3],
+            kind::OFF if n == 0 && record[ENTER] == 0 => Slot::Off,
+            kind::STATIC if n <= PASSWORD_LIMIT => Slot::Static {
+                password: &record[PAYLOAD..PAYLOAD + n],
+                enter: record[ENTER],
             },
-            3 if n == 20 && record[3] == 0 => {
-                Slot::Hmac(record[4..24].try_into().map_err(|_| Error::Record)?)
-            }
+            kind::HMAC if n == KEY_LENGTH && record[ENTER] == 0 => Slot::Hmac(
+                record[PAYLOAD..PAYLOAD + KEY_LENGTH]
+                    .try_into()
+                    .map_err(|_| Error::Record)?,
+            ),
             _ => return Err(Error::Record),
         };
         slot.validate()?;
-        let used = if record[1] == 1 { 8 + n } else { 4 + n };
+        let used = if record[KIND] == kind::OATH {
+            OATH_NAME + n
+        } else {
+            PAYLOAD + n
+        };
         if record[used..].iter().any(|b| *b != 0) {
             return Err(Error::Record);
         }
@@ -47,30 +72,30 @@ impl Layout {
     }
     pub fn encode_cleared(self, record: &mut [u8], slot: Slot<'_>) -> Result<(), Error> {
         slot.validate()?;
-        if record.len() != 72 {
+        if record.len() != SLOT_SIZE {
             return Err(Error::Record);
         }
         record.fill(0);
-        record[0] = 2;
+        record[VERSION] = FORMAT_VERSION;
         match slot {
             Slot::Off => (),
             Slot::Oath { id, name, enter } => {
-                record[1] = 1;
-                record[2] = name.len() as u8;
-                record[3] = enter;
-                record[4..8].copy_from_slice(&id.to_be_bytes());
-                record[8..8 + name.len()].copy_from_slice(name);
+                record[KIND] = kind::OATH;
+                record[LENGTH] = name.len() as u8;
+                record[ENTER] = enter;
+                record[PAYLOAD..OATH_NAME].copy_from_slice(&id.to_be_bytes());
+                record[OATH_NAME..OATH_NAME + name.len()].copy_from_slice(name);
             }
             Slot::Static { password, enter } => {
-                record[1] = 2;
-                record[2] = password.len() as u8;
-                record[3] = enter;
-                record[4..4 + password.len()].copy_from_slice(password);
+                record[KIND] = kind::STATIC;
+                record[LENGTH] = password.len() as u8;
+                record[ENTER] = enter;
+                record[PAYLOAD..PAYLOAD + password.len()].copy_from_slice(password);
             }
             Slot::Hmac(key) => {
-                record[1] = 3;
-                record[2] = 20;
-                record[4..24].copy_from_slice(key);
+                record[KIND] = kind::HMAC;
+                record[LENGTH] = KEY_LENGTH as u8;
+                record[PAYLOAD..PAYLOAD + KEY_LENGTH].copy_from_slice(key);
             }
         }
         Ok(())
@@ -79,11 +104,17 @@ impl Layout {
 
 /// Stored slot length, checked before slicing or expanding into RAM.
 fn stored_len(bytes: &[u8]) -> Result<usize, Error> {
-    if bytes.len() < 4 || bytes[0] != 2 {
+    if bytes.len() < PAYLOAD || bytes[VERSION] != FORMAT_VERSION {
         return Err(Error::Record);
     }
-    let n = 4 + usize::from(bytes[2]) + if bytes[1] == 1 { 4 } else { 0 };
-    if n > 72 || n > bytes.len() {
+    let n = PAYLOAD
+        + usize::from(bytes[LENGTH])
+        + if bytes[KIND] == kind::OATH {
+            OATH_ID_BYTES
+        } else {
+            0
+        };
+    if n > SLOT_SIZE || n > bytes.len() {
         return Err(Error::Record);
     }
     Ok(n)
@@ -94,16 +125,16 @@ pub fn unpack(bytes: &mut [u8; FILE_SIZE], length: usize) -> Result<(), Error> {
     if first + second != length {
         return Err(Error::Record);
     }
-    bytes.copy_within(first..length, 72);
-    bytes[first..72].fill(0);
-    bytes[72 + second..].fill(0);
-    Layout.decode(&bytes[..72])?;
-    Layout.decode(&bytes[72..])?;
+    bytes.copy_within(first..length, SLOT_SIZE);
+    bytes[first..SLOT_SIZE].fill(0);
+    bytes[SLOT_SIZE + second..].fill(0);
+    Layout.decode(&bytes[..SLOT_SIZE])?;
+    Layout.decode(&bytes[SLOT_SIZE..])?;
     Ok(())
 }
 pub fn pack(bytes: &[u8; FILE_SIZE], out: &mut [u8; FILE_SIZE]) -> Result<usize, Error> {
     let mut at = 0;
-    for record in bytes.chunks_exact(72) {
+    for record in bytes.chunks_exact(SLOT_SIZE) {
         Layout.decode(record)?;
         let n = stored_len(record)?;
         out[at..at + n].copy_from_slice(&record[..n]);

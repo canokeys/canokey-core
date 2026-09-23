@@ -48,10 +48,30 @@ unsafe extern "C" {
     fn ck_platform_random(out: *mut u8, len: usize) -> i32;
     fn ck_platform_serial(out: *mut u8);
 }
+// Stable byte ABI, mirrored in interfaces/rust-core/core.h.
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
+#[repr(u8)]
+enum StageOperation {
+    Begin = 0,
+    Append = 1,
+    Publish = 2,
+    Abort = 3,
+    #[cfg(feature = "piv")]
+    Remove = 4,
+    #[cfg(feature = "piv")]
+    Rename = 5,
+}
+// C reads return a byte count, -1 for missing, and other negatives for failure.
+// Writes/staging use different success conventions (count vs zero). Failed
+// mutations map to Uncertain: a backend error does not prove nothing was written,
+// so applets must invalidate cached state rather than retry from assumptions.
 impl Storage for StorageBackend {
     #[cfg(feature = "piv")]
     fn remove(&mut self, id: Record) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(4, id as u8, core::ptr::null(), 0) } == 0 {
+        if unsafe {
+            ck_platform_stage(StageOperation::Remove as u8, id as u8, core::ptr::null(), 0)
+        } == 0
+        {
             Ok(())
         } else {
             Err(StorageError::Uncertain)
@@ -59,7 +79,9 @@ impl Storage for StorageBackend {
     }
     #[cfg(feature = "piv")]
     fn move_record(&mut self, from: Record, to: Record) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(5, from as u8, &(to as u8), 1) } == 0 {
+        if unsafe { ck_platform_stage(StageOperation::Rename as u8, from as u8, &(to as u8), 1) }
+            == 0
+        {
             Ok(())
         } else {
             Err(StorageError::Uncertain)
@@ -68,7 +90,7 @@ impl Storage for StorageBackend {
 
     #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(0, 0, core::ptr::null(), 0) } == 0 {
+        if unsafe { ck_platform_stage(StageOperation::Begin as u8, 0, core::ptr::null(), 0) } == 0 {
             Ok(())
         } else {
             Err(StorageError::Uncertain)
@@ -76,7 +98,7 @@ impl Storage for StorageBackend {
     }
     #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_append(&mut self, b: &[u8]) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(1, 0, b.as_ptr(), b.len()) } == 0 {
+        if unsafe { ck_platform_stage(StageOperation::Append as u8, 0, b.as_ptr(), b.len()) } == 0 {
             Ok(())
         } else {
             Err(StorageError::Uncertain)
@@ -84,7 +106,15 @@ impl Storage for StorageBackend {
     }
     #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_commit(&mut self, id: Record) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(2, id as u8, core::ptr::null(), 0) } == 0 {
+        if unsafe {
+            ck_platform_stage(
+                StageOperation::Publish as u8,
+                id as u8,
+                core::ptr::null(),
+                0,
+            )
+        } == 0
+        {
             Ok(())
         } else {
             Err(StorageError::Uncertain)
@@ -93,7 +123,7 @@ impl Storage for StorageBackend {
     #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
     fn stage_abort(&mut self) {
         unsafe {
-            ck_platform_stage(3, 0, core::ptr::null(), 0);
+            ck_platform_stage(StageOperation::Abort as u8, 0, core::ptr::null(), 0);
         }
     }
 

@@ -7,13 +7,26 @@
 #include <memzero.h>
 #include <stddef.h>
 #include <string.h>
-_Static_assert(sizeof(ecc_key_t) == 198 && offsetof(ecc_key_t, pub) == 66, "ECC workspace ABI");
-_Static_assert(sizeof(rsa_key_t) == 1288 && offsetof(rsa_key_t, e) == 4 && offsetof(rsa_key_t, p) == 8 &&
-                   offsetof(rsa_key_t, q) == 264 && offsetof(rsa_key_t, dp) == 520 && offsetof(rsa_key_t, dq) == 776 &&
-                   offsetof(rsa_key_t, qinv) == 1032,
+enum {
+  RSA_MIN_BITS = 2048,
+  RSA_BITS_STEP = 1024,
+  PKCS1_V15_OVERHEAD = 11,
+  ECC_SCRATCH_OFFSET = (sizeof(ecc_key_t) + sizeof(uint32_t) - 1) & ~(sizeof(uint32_t) - 1),
+  ECC_SCRATCH_BYTES = CK_KEY_BYTES - ECC_SCRATCH_OFFSET,
+};
+_Static_assert(sizeof(ecc_key_t) == MAX_EC_PRIVATE_KEY + MAX_EC_PUBLIC_KEY &&
+                   offsetof(ecc_key_t, pub) == MAX_EC_PRIVATE_KEY,
+               "ECC workspace ABI");
+_Static_assert(sizeof(rsa_key_t) == CK_KEY_METADATA_BYTES + CK_KEY_BYTES &&
+                   offsetof(rsa_key_t, e) == CK_KEY_METADATA_BYTES &&
+                   offsetof(rsa_key_t, p) == CK_KEY_METADATA_BYTES + CK_RSA_EXPONENT_BYTES &&
+                   offsetof(rsa_key_t, q) == offsetof(rsa_key_t, p) + CK_RSA_LIMB_BYTES &&
+                   offsetof(rsa_key_t, dp) == offsetof(rsa_key_t, q) + CK_RSA_LIMB_BYTES &&
+                   offsetof(rsa_key_t, dq) == offsetof(rsa_key_t, dp) + CK_RSA_LIMB_BYTES &&
+                   offsetof(rsa_key_t, qinv) == offsetof(rsa_key_t, dq) + CK_RSA_LIMB_BYTES,
                "Rust KeyMaterial ABI");
 static int rsa_operation(uint8_t op, uint8_t alg, rsa_key_t *key, const uint8_t *in, size_t n, uint8_t *out) {
-  key->nbits = (uint16_t)(2048 + 1024 * (alg - 5));
+  key->nbits = (uint16_t)(RSA_MIN_BITS + RSA_BITS_STEP * (alg - RSA2048));
   int result = -1;
   size_t width = key->nbits / 8;
   switch (op) {
@@ -21,7 +34,7 @@ static int rsa_operation(uint8_t op, uint8_t alg, rsa_key_t *key, const uint8_t 
     result = rsa_generate_key(key, key->nbits);
     break;
   case CK_KEY_VALIDATE:
-    result = rsa_check_crt_with_scratch(key, out, 512);
+    result = rsa_check_crt_with_scratch(key, out, CK_RSA_OUTPUT_BYTES);
     break;
   case CK_KEY_PUBLIC:
     if (rsa_get_public_key(key, out) == 0) result = (int)width;
@@ -30,7 +43,7 @@ static int rsa_operation(uint8_t op, uint8_t alg, rsa_key_t *key, const uint8_t 
     if (n == width && rsa_private(key, in, out) == 0) result = (int)width;
     break;
   case CK_KEY_RSA_PKCS1_SIGN:
-    if (n <= width - 11 && rsa_sign_pkcs_v15(key, in, n, out) == 0) result = (int)width;
+    if (n <= width - PKCS1_V15_OVERHEAD && rsa_sign_pkcs_v15(key, in, n, out) == 0) result = (int)width;
     break;
   case CK_KEY_RSA_PKCS1_DECIPHER: {
     size_t len = 0;
@@ -67,17 +80,14 @@ static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_
   case CK_KEY_EC_SIGN:
     if (IS_SHORT_WEIERSTRASS(alg) && n == PRIVATE_KEY_LENGTH[alg]) {
       // ECC uses only bytes [0,198); borrow the unused RSA-capacity tail.
-      if (K__short_weierstrass_sign_with_scratch(alg, ec, in, n, out, key + 200, 1084) == 0)
+      if (K__short_weierstrass_sign_with_scratch(alg, ec, in, n, out, key + ECC_SCRATCH_OFFSET, ECC_SCRATCH_BYTES) == 0)
         result = (int)SIGNATURE_LENGTH[alg];
     } else if (alg == ED25519 && ecc_complete_key(alg, ec) == 0 && ecc_sign(alg, ec, in, n, out) == 0)
       result = (int)SIGNATURE_LENGTH[alg];
     break;
   case CK_KEY_SM2_EXCHANGE:
 #ifdef RUST_CORE_PIV
-    {
-      extern int32_t ck_sm2_exchange(ecc_key_t *, const uint8_t *, size_t, uint8_t *);
-      if (alg == SM2) result = ck_sm2_exchange(ec, in, n, out);
-    }
+    if (alg == SM2) result = ck_sm2_exchange(ec, in, n, out);
 #endif
     break;
   case CK_KEY_AGREE:
@@ -92,7 +102,7 @@ static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_
 
 int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *in, size_t n, uint8_t *out,
                         size_t capacity) {
-  if (alg > 9 || capacity < 512) return -1;
+  if (alg > SM2 || capacity < CK_RSA_OUTPUT_BYTES) return -1;
 #ifdef RUST_CORE_STACK_REPORT
   extern void ck_stack_context(uint8_t, uint8_t);
   ck_stack_context(op, alg);

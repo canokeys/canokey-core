@@ -93,45 +93,24 @@ def sm2_z(id_bytes: bytes, pub: bytes) -> bytes:
     return sm3(entl + id_bytes + i2b(A) + i2b(B) + i2b(GX) + i2b(GY) + pub)
 
 
-def bar(x_bytes: bytes, w: int, force_top: bool) -> int:
-    """GM/T 0003.2 6.1: 2^w + (x & (2^w - 1)); variants for ROM analysis."""
-    if w == 127:
-        low = b2i(x_bytes[16:]) & ((1 << 127) - 1)
-    elif w == 128:
-        low = b2i(x_bytes[16:])
-    else:
-        raise ValueError(w)
-    return (1 << w) | low if force_top else low
+def bar(x_bytes: bytes) -> int:
+    """GM/T 0003.2 6.1, w = 127 for the SM2 curve."""
+    return (1 << 127) | (b2i(x_bytes) & ((1 << 127) - 1))
 
 
-def kdf(xs: bytes, ys: bytes, za: bytes, zb: bytes, out_len: int, counter: str) -> bytes:
+def kdf(xs: bytes, ys: bytes, za: bytes, zb: bytes, out_len: int) -> bytes:
     out = b""
-    ct0 = 0 if counter.endswith("@0") else 1
-    mode = counter.split("@")[0]
-    ct = ct0
+    counter = 1
     while len(out) < out_len:
-        if mode == "be32":
-            data = xs + ys + za + zb + ct.to_bytes(4, "big")
-        elif mode == "le32":
-            data = xs + ys + za + zb + ct.to_bytes(4, "little")
-        elif mode == "none":  # single block, no counter
-            data = xs + ys + za + zb
-        elif mode == "xy-only":  # legacy SM2 KDF without Z
-            data = xs + ys + ct.to_bytes(4, "big")
-        else:
-            raise ValueError(counter)
-        out += sm3(data)
-        ct += 1
-        if mode == "none":
-            break
+        out += sm3(xs + ys + za + zb + counter.to_bytes(4, "big"))
+        counter += 1
     return out[:out_len]
 
 
 def key_exchange_full(role, id_self, id_peer, d_self, pub_self, r_self_bytes, eph_self_pub,
-                      peer_static_pub, peer_eph_pub, out_len,
-                      w=127, force_top=True, counter="be32", zswap=False):
-    xbar = bar(eph_self_pub[:32], w, force_top)
-    ybar = bar(peer_eph_pub[:32], w, force_top)
+                      peer_static_pub, peer_eph_pub, out_len):
+    xbar = bar(eph_self_pub[:32])
+    ybar = bar(peer_eph_pub[:32])
     t = (b2i(d_self) + xbar * b2i(r_self_bytes)) % N
     if t == 0:
         return None
@@ -146,6 +125,4 @@ def key_exchange_full(role, id_self, id_peer, d_self, pub_self, r_self_bytes, ep
     z_self = sm2_z(id_self, pub_self)
     z_peer = sm2_z(id_peer, peer_static_pub)
     za, zb = (z_self, z_peer) if role == 0 else (z_peer, z_self)
-    if zswap:
-        za, zb = zb, za
-    return kdf(xs, ys, za, zb, out_len, counter), xs, ys
+    return kdf(xs, ys, za, zb, out_len), xs, ys

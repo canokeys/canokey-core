@@ -70,18 +70,20 @@ impl Registry {
             piv: Piv::new(),
         }
     }
-    fn reset_sessions(&mut self, _p: &mut Platform<'_>) {
+    fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform,);
         #[cfg(feature = "admin")]
         {
             self.grants.admin = false;
-            self.admin.cancel_command(_p);
+            self.admin.cancel_command(platform);
         }
         #[cfg(feature = "oath")]
-        self.oath.reset(_p);
+        self.oath.reset(platform);
         #[cfg(feature = "piv")]
-        self.piv.reset(&mut self.workspace, _p);
+        self.piv.reset(&mut self.workspace, platform);
         #[cfg(feature = "openpgp")]
-        self.pgp.reset(self.workspace.classic(), _p);
+        self.pgp.reset(self.workspace.classic(), platform);
     }
     #[cfg(feature = "pass")]
     pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
@@ -97,7 +99,7 @@ impl Registry {
     ) -> Result<(), Sw> {
         self.pass
             .challenge(index, input, out, p)
-            .map_err(pass_error)
+            .map_err(crate::applets::pass::status)
     }
     #[cfg(feature = "admin")]
     #[cfg_attr(feature = "openpgp", inline(never))]
@@ -148,19 +150,21 @@ impl Registry {
     }
 }
 impl Router for Registry {
-    fn install(&mut self, _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform,);
         #[cfg(feature = "admin")]
-        self.admin.install(_p)?;
+        self.admin.install(platform)?;
         #[cfg(feature = "pass")]
         self.pass
-            .install(_p.storage, _p.memory)
-            .map_err(pass_error)?;
+            .install(platform.storage, platform.memory)
+            .map_err(crate::applets::pass::status)?;
         #[cfg(feature = "oath")]
-        self.oath.install(_p)?;
+        self.oath.install(platform)?;
         #[cfg(feature = "openpgp")]
-        self.pgp.install(_p)?;
+        self.pgp.install(platform)?;
         #[cfg(feature = "piv")]
-        self.piv.install(_p)?;
+        self.piv.install(platform)?;
         Ok(())
     }
     fn reset(&mut self, p: &mut Platform<'_>) {
@@ -172,8 +176,8 @@ impl Router for Registry {
     fn selected(&self) -> bool {
         self.selected != Selected::None
     }
-    fn select(&mut self, _aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
-        let next = match _aid {
+    fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
+        let next = match aid {
             #[cfg(feature = "ctap")]
             ctap::AID => Some(Selected::Ctap),
             #[cfg(feature = "admin")]
@@ -204,6 +208,9 @@ impl Router for Registry {
         }
     }
     fn command_limit(&self, h: Header) -> Result<u32, Sw> {
+        // All applets require base CLA=00. Strip the chain bit only where
+        // chaining is supported; leaving it set deliberately makes the final
+        // CLA check reject chained ADMIN or unsupported chained PIV commands.
         let (cla, limit) = match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => (h.cla, admin::COMMAND_CAPACITY as u32),
@@ -221,7 +228,7 @@ impl Router for Registry {
             ),
             #[cfg(feature = "piv")]
             Selected::Piv => (
-                if h.chained() && !matches!(h.ins, 0x87 | 0xdb | 0xfe) {
+                if h.chained() && !crate::applets::piv::Piv::supports_chaining(h.ins) {
                     h.cla
                 } else {
                     h.unchained().cla
@@ -239,55 +246,68 @@ impl Router for Registry {
             Ok(limit)
         }
     }
-    fn abort_command(&mut self, _p: &mut Platform<'_>) {
+    fn abort_command(&mut self, platform: &mut Platform<'_>) {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform,);
         match self.selected {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.cancel_command(_p),
+            Selected::Admin => self.admin.cancel_command(platform),
             #[cfg(feature = "ctap")]
             Selected::Ctap => self.ctap.reset(),
             #[cfg(feature = "oath")]
-            Selected::Oath => self.oath.cancel_command(_p),
+            Selected::Oath => self.oath.cancel_command(platform),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.abort(self.workspace.classic(), _p),
+            Selected::OpenPgp => self.pgp.abort(self.workspace.classic(), platform),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.cancel(&mut self.workspace, _p),
+            Selected::Piv => self.piv.cancel(&mut self.workspace, platform),
             Selected::None => (),
         }
     }
-    fn begin_command(&mut self, _h: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform, &header);
         #[cfg(feature = "ctap")]
         if self.selected == Selected::Ctap {
-            return self.ctap.begin(_h);
+            return self.ctap.begin(header);
         }
         #[cfg(feature = "openpgp")]
         if self.selected == Selected::OpenPgp {
-            return self.pgp.begin(_h, self.workspace.classic(), _p);
+            return self.pgp.begin(header, self.workspace.classic(), platform);
         }
         #[cfg(feature = "piv")]
         if self.selected == Selected::Piv {
-            return self.piv.begin(_h, &mut self.workspace, _p);
+            return self.piv.begin(header, &mut self.workspace, platform);
         }
         Ok(())
     }
-    fn consume(&mut self, _bytes: &[u8], _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform, &bytes);
         match self.selected {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.consume(_bytes),
+            Selected::Admin => self.admin.consume(bytes),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.consume(_bytes),
+            Selected::Ctap => self.ctap.consume(bytes),
             #[cfg(feature = "oath")]
-            Selected::Oath => self.oath.consume(_bytes),
+            Selected::Oath => self.oath.consume(bytes),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.consume(_bytes, self.workspace.classic(), _p),
+            Selected::OpenPgp => self.pgp.consume(bytes, self.workspace.classic(), platform),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.consume(_bytes, &mut self.workspace, _p),
+            Selected::Piv => self.piv.consume(bytes, &mut self.workspace, platform),
             Selected::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
-    fn finish(&mut self, _h: Header, _le: u32, _p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
+    fn finish(
+        &mut self,
+        header: Header,
+        le: u32,
+        platform: &mut Platform<'_>,
+    ) -> Result<(u32, Sw), Sw> {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform, &header, &le);
         match self.selected {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.finish_admin(_h, _p),
+            Selected::Admin => self.finish_admin(header, platform),
             #[cfg(feature = "ctap")]
             Selected::Ctap => self.ctap.finish().map(|n| (n, Sw::SUCCESS)),
             #[cfg(feature = "oath")]
@@ -296,58 +316,64 @@ impl Router for Registry {
                 let pass = None;
                 #[cfg(feature = "pass")]
                 let pass = Some(&mut self.pass);
-                self.oath.finish(_h, _le, pass, _p)
+                self.oath.finish(header, le, pass, platform)
             }
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.finish(_h, _le, self.workspace.classic(), _p),
+            Selected::OpenPgp => self
+                .pgp
+                .finish(header, le, self.workspace.classic(), platform),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.finish(_h, _le, &mut self.workspace, _p),
+            Selected::Piv => self.piv.finish(header, le, &mut self.workspace, platform),
             Selected::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
     fn read_response(
         &mut self,
-        _offset: u32,
-        _out: &mut [u8],
-        _p: &mut Platform<'_>,
+        offset: u32,
+        out: &mut [u8],
+        platform: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform, &offset, &out);
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self
                 .admin
-                .read_response(_offset as usize, _out)
-                .map(|()| _out.len()),
+                .read_response(offset as usize, out)
+                .map(|()| out.len()),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.read(_offset as usize, _out).map(|()| _out.len()),
+            Selected::Ctap => self.ctap.read(offset as usize, out).map(|()| out.len()),
             #[cfg(feature = "oath")]
             Selected::Oath => self
                 .oath
-                .read_response(_offset as usize, _out)
-                .map(|()| _out.len()),
+                .read_response(offset as usize, out)
+                .map(|()| out.len()),
             #[cfg(feature = "openpgp")]
             Selected::OpenPgp => {
                 self.pgp
-                    .read(_offset as usize, _out, self.workspace.classic(), _p)
+                    .read(offset as usize, out, self.workspace.classic(), platform)
             }
             #[cfg(feature = "piv")]
             Selected::Piv => self
                 .piv
-                .read(_offset as usize, _out, &mut self.workspace, _p),
+                .read(offset as usize, out, &mut self.workspace, platform),
             Selected::None => Err(Sw::COMMAND_NOT_ALLOWED),
         }
     }
-    fn close_response(&mut self, _p: &mut Platform<'_>) {
+    fn close_response(&mut self, platform: &mut Platform<'_>) {
+        // Parameters may be unused when their applet features are disabled.
+        let _ = (&platform,);
         match self.selected {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.close_response(_p),
+            Selected::Admin => self.admin.close_response(platform),
             #[cfg(feature = "ctap")]
             Selected::Ctap => self.ctap.close(),
             #[cfg(feature = "oath")]
-            Selected::Oath => self.oath.close_response(_p),
+            Selected::Oath => self.oath.close_response(platform),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.close(self.workspace.classic(), _p),
+            Selected::OpenPgp => self.pgp.close(self.workspace.classic(), platform),
             #[cfg(feature = "piv")]
-            Selected::Piv => self.piv.close(&mut self.workspace, _p),
+            Selected::Piv => self.piv.close(&mut self.workspace, platform),
             Selected::None => (),
         }
     }
@@ -392,7 +418,7 @@ fn flow_status(error: crate::flows::Error) -> Sw {
     match error {
         #[cfg(all(feature = "admin", feature = "piv"))]
         Error::Piv => Sw::UNABLE_TO_PROCESS,
-        Error::Pass(e) => pass_error(e),
+        Error::Pass(e) => crate::applets::pass::status(e),
         #[cfg(feature = "oath")]
         Error::Oath(e) => crate::applets::oath::protocol::status(e),
         #[cfg(all(feature = "admin", feature = "openpgp"))]
@@ -401,13 +427,5 @@ fn flow_status(error: crate::flows::Error) -> Sw {
         Error::Admin(e) => admin::auth_error(e),
         #[cfg(all(feature = "pass", feature = "oath"))]
         Error::Output => Sw::WRONG_LENGTH,
-    }
-}
-
-#[cfg(any(feature = "admin", feature = "pass"))]
-fn pass_error(error: crate::applets::pass::domain::Error) -> Sw {
-    match error {
-        crate::applets::pass::domain::Error::Persistence => Sw::UNABLE_TO_PROCESS,
-        _ => Sw::WRONG_DATA,
     }
 }

@@ -2,6 +2,7 @@
 //! Streaming crypto and shared-workspace transitions.
 use super::*;
 use crate::ports::StreamOperation;
+use crate::ports::alg;
 use crate::runtime::workspace::SessionWorkspace;
 impl Piv {
     pub fn select(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
@@ -33,13 +34,16 @@ impl Piv {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
-        if h.ins == 0x87 && h.p2 != 0x9b {
-            let a = if h.p1 == 0xff && self.config[0] != 0 {
-                3
+        if h.ins == INS_GENERAL_AUTHENTICATE && h.p2 != reference::MANAGEMENT {
+            let a = if h.p1 == wire_alg::ED25519_STREAM && self.config[0] != 0 {
+                alg::ED25519
             } else {
                 repo::algorithm(h.p1, &self.config).map_err(|_| Sw::WRONG_P1P2)?
             };
-            if a >= 10 || h.p1 == 0xff || (a == 9 && h.chained()) {
+            if a >= alg::MLKEM768
+                || h.p1 == wire_alg::ED25519_STREAM
+                || (a == alg::SM2 && h.chained())
+            {
                 self.agreement = None;
                 self.stream_phase = StreamPhase::Identity;
                 self.sm2_id_used = 0;
@@ -63,11 +67,13 @@ impl Piv {
                         &mut seed[..repo::material(a)],
                     )
                     .map_err(repo::io)?;
+                // Changing the workspace variant destroys classic key/input
+                // backing. Retain only the bounded seed across this transition.
                 let s = w.stream();
                 let r = p
                     .crypto
                     .piv_stream(
-                        if a == 10 {
+                        if a == alg::MLKEM768 {
                             StreamOperation::DecapsulateInit
                         } else {
                             StreamOperation::SignInit
@@ -104,20 +110,27 @@ impl Piv {
             let SessionWorkspace::Stream(s) = w else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
+            // Long message/ciphertext chunks go straight to the primitive;
+            // only the optional SM2 identity is retained in applet state.
             self.ga.events(b, &mut |tag, length, bytes| {
                 if let Some(n) = length {
                     match tag {
-                        0x80 if a == 9
-                            && self.stream_phase == StreamPhase::Identity
-                            && n > 0
-                            && n <= 32 => {}
-                        0x82 if self.stream_phase == StreamPhase::Identity && n == 0 => {
+                        ga_tag::WITNESS
+                            if a == alg::SM2
+                                && self.stream_phase == StreamPhase::Identity
+                                && n > 0
+                                && n <= 32 => {}
+                        ga_tag::RESPONSE
+                            if self.stream_phase == StreamPhase::Identity && n == 0 =>
+                        {
                             self.stream_phase = StreamPhase::ResponseTag;
                         }
-                        0x81 if self.stream_phase == StreamPhase::ResponseTag
-                            && (a != 10 || n == 1088) =>
+                        ga_tag::CHALLENGE
+                            if self.stream_phase == StreamPhase::ResponseTag
+                                && (a != alg::MLKEM768
+                                    || n == crate::ports::mlkem768::CIPHERTEXT_BYTES) =>
                         {
-                            if a == 9 {
+                            if a == alg::SM2 {
                                 p.crypto
                                     .piv_stream(
                                         StreamOperation::Sm2Identity,
@@ -132,17 +145,17 @@ impl Piv {
                         }
                         _ => return Err(Sw::WRONG_DATA),
                     }
-                } else if tag == 0x80 {
+                } else if tag == ga_tag::WITNESS {
                     let end = self.sm2_id_used + bytes.len();
                     if end > 32 {
                         return Err(Sw::WRONG_DATA);
                     }
                     self.sm2_id[self.sm2_id_used..end].copy_from_slice(bytes);
                     self.sm2_id_used = end;
-                } else if tag == 0x81 {
+                } else if tag == ga_tag::CHALLENGE {
                     p.crypto
                         .piv_stream(
-                            if a == 10 {
+                            if a == alg::MLKEM768 {
                                 StreamOperation::DecapsulateUpdate
                             } else {
                                 StreamOperation::SignUpdate
@@ -167,9 +180,11 @@ impl Piv {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
-        if h.ins == 0xf9 {
+        // ATTEST F9 uses P1 as the subject key slot, unlike GA which uses P2.
+        // P2 is reserved (00); the signer is always the attestation identity.
+        if h.ins == INS_ATTEST {
             self.request = Request::None;
-            if h.p2 != 0 {
+            if h.p2 != 0x00 {
                 return Err(Sw::WRONG_P1P2);
             }
             if self.used != 0 {
@@ -185,13 +200,15 @@ impl Piv {
         }
         if let Request::Stream(a) = self.request {
             self.ga.finish()?;
-            if self.ga.fields[2].is_none_or(|(_, n)| n != 0) || self.ga.fields[1].is_none() {
+            if self.ga.fields[ga_field::RESPONSE].is_none_or(|(_, n)| n != 0)
+                || self.ga.fields[ga_field::CHALLENGE].is_none()
+            {
                 return Err(Sw::WRONG_DATA);
             }
             let SessionWorkspace::Stream(s) = w else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
-            if a == 10 {
+            if a == alg::MLKEM768 {
                 let mut secret = [0; 32];
                 let r = p
                     .crypto
@@ -222,7 +239,10 @@ impl Piv {
         }
         let result = self.finish_classic(h, le, w.classic(), p);
         if result.is_ok()
-            && let Some((id, metadata)) = self.pending_public.take()
+            && let Some(PendingPublicKey {
+                slot_index: id,
+                include_metadata: metadata,
+            }) = self.pending_public.take()
         {
             let m = repo::meta(id, p)?;
             let a = m[repo::ALGORITHM];
@@ -251,26 +271,18 @@ impl Piv {
             self.response = Response::Crypto(a);
             let mut at = 0;
             if metadata {
-                self.header[..10].copy_from_slice(&[
-                    1,
-                    1,
-                    repo::algorithm_id(a, &self.config),
-                    2,
-                    2,
-                    m[repo::PIN_POLICY],
-                    m[repo::TOUCH_POLICY],
-                    3,
-                    1,
-                    m[repo::ORIGIN],
-                ]);
-                at = 10;
+                at = self.metadata_header(a, &m);
             }
             at += codec::header(
                 &mut self.header[at..],
-                if metadata { &[4] } else { &[0x7f, 0x49] },
+                if metadata {
+                    &[metadata_tag::PUBLIC_KEY]
+                } else {
+                    &key_tag::PUBLIC_TEMPLATE
+                },
                 n + 4,
             )?;
-            at += codec::header(&mut self.header[at..], &[0x86], n)?;
+            at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n)?;
             self.header_len = at;
             return Ok(((at + n) as u32, Sw::SUCCESS));
         }

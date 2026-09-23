@@ -3,13 +3,16 @@
 #![forbid(unsafe_code)]
 use crate::ports::Memory;
 pub struct Output {
+    // Up to 32 password bytes plus an optional Enter character.
     bytes: [u8; 33],
     used: usize,
     position: usize,
     contact: bool,
     since: u32,
     boot_ready: bool,
+    // Another operation claimed this contact; wait for release before rearming.
     suppressed: bool,
+    // Last byte has left this buffer but the keyboard transport is still busy.
     draining: bool,
 }
 impl Output {
@@ -73,6 +76,8 @@ impl Output {
         }
         if !pressed && self.contact && !self.busy() {
             let elapsed = now.wrapping_sub(self.since);
+            // Milliseconds: reject contact bounce below 30; a hold of at least
+            // 500 selects slot 1, otherwise the short-touch slot 0.
             if elapsed >= 30 {
                 self.used = resolve(u8::from(elapsed >= 500), &mut self.bytes);
                 self.position = 0;

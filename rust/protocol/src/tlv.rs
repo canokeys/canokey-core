@@ -150,7 +150,7 @@ pub fn write_length(length: u16, output: &mut [u8]) -> Result<usize, Error> {
     let (bytes, n) = if length < 128 {
         ([lo, 0, 0], 1)
     } else if length < 256 {
-        ([0x81, lo, 0], 2)
+        ([0x81, lo, 0x00], 2)
     } else {
         ([0x82, hi, lo], 3)
     };

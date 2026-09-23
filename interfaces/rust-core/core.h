@@ -15,7 +15,9 @@ int32_t ck_core_exchange(uint8_t owner, const uint8_t *input, size_t length, uin
 int32_t ck_core_output_sample(uint8_t pressed, uint32_t now, uint8_t ready);
 int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
 int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
-/* New /rust namespace: file 0 = versioned slots, file 1 = versioned PIN,
+/* Root-level two-digit hexadecimal filenames, IDs 0..76 (00..4c).
+ * Record assignments are defined in rust/core/src/ports/storage.rs.
+ * File 0 = versioned slots, file 1 = versioned PIN,
  * file 2 = OATH metadata, file 3 = OATH records.
  * Files 4..13 are OpenPGP state, PW1/PW3/RC, SIG/DEC/AUT keys and certificates.
  * read returns -1 only for missing, other negative values for errors.
@@ -38,8 +40,20 @@ int32_t ck_platform_mac(uint8_t algorithm, const uint8_t *key, size_t key_length
                         uint8_t output[64]);
 int32_t ck_platform_random(uint8_t *output, size_t length);
 void ck_platform_serial(uint8_t output[4]);
+/* Stable byte ABI, mirrored by StageOperation in rust/ffi/src/platform.rs. */
+enum ck_stage_operation {
+  CK_STAGE_BEGIN = 0,
+  CK_STAGE_APPEND = 1,
+  CK_STAGE_PUBLISH = 2,
+  CK_STAGE_ABORT = 3,
+  CK_STAGE_REMOVE = 4,
+  CK_STAGE_RENAME = 5,
+};
+enum ck_mac_algorithm { CK_MAC_SHA1 = 1, CK_MAC_SHA256 = 2, CK_MAC_SHA512 = 3 };
 /* One staged-object transaction, separate from atomic record-update staging.
- * Operations: 0 begin, 1 append, 2 publish to file, 3 abort. Returns 0 on success.
+ * Operations: 0 begin, 1 append, 2 publish to file, 3 abort, 4 remove file,
+ * 5 rename file to the one-byte destination ID in input (length = 1).
+ * Remove takes length = 0 and succeeds for missing files. Returns 0 on success.
  * All calls are serialized and stage bytes must not be published before commit. */
 int32_t ck_platform_stage(uint8_t operation, uint8_t file, const uint8_t *input, size_t length);
 /* ADMIN/PASS input and link-maintenance capabilities. */
@@ -47,4 +61,6 @@ void ck_platform_led(uint8_t on);
 uint32_t ck_platform_now(void);
 uint8_t ck_platform_touched(void);
 uint8_t ck_platform_progress(void);
+// Transport-only progress; must not reenter the Rust core from a callback.
+uint8_t ck_ccid_progress(void);
 #endif

@@ -74,8 +74,8 @@ main-loop operation, not the future full multi-transport scheduler.
 From the parent CIU repository:
 
 ```sh
-cargo +nightly-2026-09-04 test --manifest-path canokey-core/rust/Cargo.toml -p canokey-rust-core --features oath
-cmake -S canokey-core/rust -B build/rust-core-oath -G Ninja -DCANOKEY_APPLET_OATH=ON -DCANOKEY_VERSIONS_FILE="$PWD/versions.cmake"
+cargo +nightly-2026-09-04 test --manifest-path canokey-core/rust/Cargo.toml -p canokey-protocol -p canokey-rust-core --features admin,pass,oath
+cmake -S canokey-core/rust -B build/rust-core-oath -DCANOKEY_APPLET_OATH=ON -DCANOKEY_VERSIONS_FILE="$PWD/versions.cmake"
 cmake --build build/rust-core-oath
 ctest --test-dir build/rust-core-oath --output-on-failure
 .venv-hil/bin/python tools/hil/rust_oath_smoke.py --host build/rust-core-oath/oath-host

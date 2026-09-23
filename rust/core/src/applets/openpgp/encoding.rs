@@ -35,9 +35,11 @@ impl<'a> Writer<'a> {
             self.bytes(&[0x82, (n >> 8) as u8, n as u8])
         }
     }
+    // Reserve the longest supported BER length (82 hi lo). The returned
+    // token is the value start; close() shrinks this prefix after encoding.
     pub(super) fn open(&mut self, tag: u16) -> Result<usize, Sw> {
         self.tag(tag)?;
-        self.bytes(&[0x82, 0, 0])?;
+        self.bytes(&[0x82, 0x00, 0x00])?;
         Ok(self.len)
     }
     pub(super) fn close(&mut self, start: usize) -> Result<(), Sw> {

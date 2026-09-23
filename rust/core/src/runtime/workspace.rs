@@ -3,21 +3,40 @@
 //! Key material, crypto input and result are simultaneously live at the crypto
 //! boundary. Certificates and encoded import messages never occupy this area.
 use crate::ports::{KeyMaterial, Memory};
+/// Byte offsets in retained SM2 exchange state, separate from the primitive
+/// input packet: our ephemeral scalar, our ephemeral/static public X||Y,
+/// then our length-prefixed identity. No SEC1 04 point prefixes are stored.
+#[cfg(feature = "piv")]
+pub mod agreement_layout {
+    pub const SCALAR: usize = 0;
+    pub const SCALAR_BYTES: usize = 32;
+    pub const EPHEMERAL_PUBLIC: usize = SCALAR + SCALAR_BYTES;
+    pub const PUBLIC_BYTES: usize = 64;
+    pub const STATIC_PUBLIC: usize = EPHEMERAL_PUBLIC + PUBLIC_BYTES;
+    pub const ID_LENGTH: usize = STATIC_PUBLIC + PUBLIC_BYTES;
+    pub const ID: usize = ID_LENGTH + 1;
+    pub const ID_CAPACITY: usize = 32;
+    pub const SIZE: usize = ID + ID_CAPACITY;
+}
+// Bounded non-streaming request capacity in bytes (including Ed25519 messages).
+pub const INPUT_BYTES: usize = 544;
+// RSA-4096 output (512 bytes) plus room for protocol wrappers.
+pub const OUTPUT_BYTES: usize = 528;
 pub struct Workspace {
     pub key: KeyMaterial,
     #[cfg(feature = "piv")]
-    pub agreement: [u8; 193],
-    pub input: [u8; 544],
-    pub output: [u8; 528],
+    pub agreement: [u8; agreement_layout::SIZE],
+    pub input: [u8; INPUT_BYTES],
+    pub output: [u8; OUTPUT_BYTES],
 }
 impl Workspace {
     pub const fn new() -> Self {
         Self {
             key: KeyMaterial::new(),
             #[cfg(feature = "piv")]
-            agreement: [0; 193],
-            input: [0; 544],
-            output: [0; 528],
+            agreement: [0; agreement_layout::SIZE],
+            input: [0; INPUT_BYTES],
+            output: [0; OUTPUT_BYTES],
         }
     }
     pub fn clear(&mut self, memory: &dyn Memory) {

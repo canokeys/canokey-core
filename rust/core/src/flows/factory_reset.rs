@@ -7,6 +7,8 @@ use crate::{
 };
 #[cfg(feature = "oath")]
 pub fn oath(pass: Option<&mut Pass>, p: &mut Platform<'_>) -> Result<(), Error> {
+    // Remove keyboard references first, so a partial OATH reset cannot leave
+    // PASS pointing at an erased or subsequently reused credential record.
     if let Some(pass) = pass {
         pass.remove_oath(None, p.storage, p.memory)
             .map_err(Error::Pass)?;

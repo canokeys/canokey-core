@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! OpenPGP data-object schema; persistence remains in the repository.
+use super::domain::{key_role, touch_policy};
+use super::repository::{key_meta, state_layout};
+use super::wire::{limits, tag};
 use super::{
     domain::Algorithm,
     encoding::Writer,
@@ -7,17 +10,54 @@ use super::{
     protocol::{AID, OpenPgp},
     repository::{self as repo, KEYS, io},
 };
+use crate::ports::alg;
 use crate::{Platform, ports::Record};
 use canokey_protocol::response::StatusWord as Sw;
-const HISTORY: &[u8] = &[0, 0x31, 0xc5, 0x73, 0xc0, 1, 0x80, 5, 0x90, 0];
-const CAPS: &[u8] = &[0x74, 0, 1, 0, 4, 0x80, 0, 0xff, 0, 0];
+// Suffix of the OpenPGP application identifier (AID), before the device serial:
+// specification version 3.4, then CanoKey manufacturer ID 0xF1D0 (big-endian).
+const CARD_VERSION_AND_MANUFACTURER: &[u8] = &[0x03, 0x04, 0xf1, 0xd0];
+// OpenPGP Card 3.4, DO 5F52 (ISO 7816 historical bytes). This is card discovery
+// metadata, not an event log. Compact-TLV headers encode tag/length in nibbles.
+// Keep the advertised profile aligned with applets/openpgp/openpgp.c.
+const HISTORICAL_BYTES: &[u8] = &[
+    0x00, // Category indicator: final three bytes contain card status.
+    0x31, 0xc5, // Card-service data: compact tag 3, one-byte service flags.
+    0x73, // Card capabilities: compact tag 7, three-byte value follows.
+    0xc0, // Application selection by full or partial DF name (AID).
+    0x01, // Data-coding byte from the OpenPGP card profile.
+    0x80, // Command chaining supported; extended-length APDUs not advertised.
+    0x05, // Card life-cycle indicator: operational (activated).
+    0x90, 0x00, // Card-status word: normal processing.
+];
+// OpenPGP Card 3.4, DO C0: extended capabilities, returned as a value without
+// the C0 tag/length. All two-byte limits below are big-endian byte counts.
+const EXTENDED_CAPABILITIES: &[u8] = &[
+    0x74, // Flags: GET CHALLENGE (40), key import (20), PW1 mode (10), algorithms (04).
+    0x00, // No secure-messaging algorithm (SM).
+    0x01,
+    0x00, // Maximum GET CHALLENGE response: 256 bytes.
+    // Same big-endian certificate byte limit enforced by the command router.
+    limits::CERTIFICATE_BYTES.to_be_bytes()[0],
+    limits::CERTIFICATE_BYTES.to_be_bytes()[1],
+    0x00,
+    0xff, // Maximum special data-object content: 255 bytes.
+    0x00, // ISO 9564 PIN block format 2 is not supported.
+    0x00, // MANAGE SECURITY ENVIRONMENT (MSE) is not supported.
+];
 impl OpenPgp {
     #[inline(never)]
     pub(super) fn get(&self, tag: u16, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
         let mut s = [0; repo::STATE_LEN];
         repo::state(p, &mut s)?;
         let mut v = Writer::new(out);
-        if matches!(tag, 0x65 | 0x6e | 0x73 | 0x7a | 0xfa) {
+        if matches!(
+            tag,
+            tag::CARDHOLDER
+                | tag::APPLICATION
+                | tag::DISCRETIONARY
+                | tag::SECURITY_SUPPORT
+                | tag::ALGORITHM_INFORMATION
+        ) {
             let start = v.open(tag)?;
             self.emit(tag, &mut v, &s, p)?;
             v.close(start)?;
@@ -37,23 +77,39 @@ impl OpenPgp {
             return v.bytes(&s[off + 1..off + 1 + s[off] as usize]);
         }
         match tag {
-            0x4f => {
+            tag::AID => {
                 let mut serial = [0; 4];
                 p.device.serial(&mut serial);
                 v.bytes(AID)?;
-                v.bytes(&[3, 4, 0xf1, 0xd0])?;
+                v.bytes(CARD_VERSION_AND_MANUFACTURER)?;
                 v.bytes(&serial)?;
                 v.bytes(&[0, 0])
             }
-            0x5f52 => v.bytes(HISTORY),
-            0x7f74 => v.bytes(&[0x81, 1, 0x20]),
-            0xc0 => v.bytes(CAPS),
-            0x65 | 0x6e | 0x73 => {
+            tag::HISTORICAL_BYTES => v.bytes(HISTORICAL_BYTES),
+            tag::GENERAL_FEATURES => v.bytes(&[0x81, 0x01, 0x20]),
+            tag::EXTENDED_CAPABILITIES => v.bytes(EXTENDED_CAPABILITIES),
+            tag::CARDHOLDER | tag::APPLICATION | tag::DISCRETIONARY => {
                 let tags: &[u16] = match tag {
-                    0x65 => &[0x5b, 0x5f2d, 0x5f35],
-                    0x6e => &[0x4f, 0x5f52, 0x7f74, 0x73],
+                    tag::CARDHOLDER => &[tag::NAME, tag::LANGUAGE, tag::SEX],
+                    tag::APPLICATION => &[
+                        tag::AID,
+                        tag::HISTORICAL_BYTES,
+                        tag::GENERAL_FEATURES,
+                        tag::DISCRETIONARY,
+                    ],
                     _ => &[
-                        0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xcd, 0xde, 0xd6, 0xd7, 0xd8,
+                        tag::EXTENDED_CAPABILITIES,
+                        tag::ALGORITHM_SIG,
+                        tag::ALGORITHM_DEC,
+                        tag::ALGORITHM_AUT,
+                        tag::PW_STATUS,
+                        tag::FINGERPRINTS,
+                        tag::CA_FINGERPRINTS,
+                        tag::CREATION_TIMES,
+                        tag::KEY_INFORMATION,
+                        tag::UIF_SIG,
+                        tag::UIF_DEC,
+                        tag::UIF_AUT,
                     ],
                 };
                 for &t in tags {
@@ -63,109 +119,134 @@ impl OpenPgp {
                 }
                 Ok(())
             }
-            0xc1..=0xc3 => {
-                let r = (tag - 0xc1) as usize;
-                let a = Algorithm(repo::meta(p, r)?[1]);
+            tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT => {
+                let r = (tag - tag::ALGORITHM_SIG) as usize;
+                let a = Algorithm(repo::meta(p, r)?[key_meta::ALGORITHM]);
                 let mut b = [0; 12];
                 let n = a.attrs(r, &mut b);
                 v.bytes(&b[..n])
             }
-            0xc4 => {
-                let pw1 = pin::info(Record::PgpPw1, p)?.1;
-                let rc = pin::info(Record::PgpRc, p)?.1;
-                let pw3 = pin::info(Record::PgpPw3, p)?.1;
-                v.bytes(&[s[2], 64, 64, 64, pw1, rc, pw3])
+            tag::PW_STATUS => {
+                let pw1 = pin::info(Record::PgpPw1, p)?.retries_remaining;
+                let rc = pin::info(Record::PgpRc, p)?.retries_remaining;
+                let pw3 = pin::info(Record::PgpPw3, p)?.retries_remaining;
+                v.bytes(&[s[state_layout::PW1_REUSE], 64, 64, 64, pw1, rc, pw3])
             }
-            0xc5 => {
-                for r in 0..3 {
-                    v.bytes(&repo::meta(p, r)?[4..24])?;
+            tag::FINGERPRINTS => {
+                for r in 0..key_role::COUNT {
+                    v.bytes(&repo::meta(p, r)?[key_meta::FINGERPRINT..key_meta::FINGERPRINT_END])?;
                 }
                 Ok(())
             }
-            0xc6 => v.bytes(&s[8..68]),
-            0xc7..=0xc9 => v.bytes(&repo::meta(p, (tag - 0xc7) as usize)?[4..24]),
-            0xca..=0xcc => {
-                let at = 8 + (tag - 0xca) as usize * 20;
-                v.bytes(&s[at..at + 20])
+            tag::CA_FINGERPRINTS => {
+                v.bytes(&s[state_layout::CA_FINGERPRINTS..state_layout::CA_FINGERPRINTS_END])
             }
-            0xcd => {
-                for r in 0..3 {
-                    v.bytes(&repo::meta(p, r)?[24..28])?;
+            tag::FINGERPRINT_SIG..=tag::FINGERPRINT_AUT => v.bytes(
+                &repo::meta(p, (tag - tag::FINGERPRINT_SIG) as usize)?
+                    [key_meta::FINGERPRINT..key_meta::FINGERPRINT_END],
+            ),
+            tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3 => {
+                let at = state_layout::CA_FINGERPRINTS
+                    + (tag - tag::CA_FINGERPRINT_1) as usize * state_layout::FINGERPRINT_BYTES;
+                v.bytes(&s[at..at + state_layout::FINGERPRINT_BYTES])
+            }
+            tag::CREATION_TIMES => {
+                for r in 0..key_role::COUNT {
+                    v.bytes(&repo::meta(p, r)?[key_meta::CREATED..key_meta::CREATED_END])?;
                 }
                 Ok(())
             }
-            0xce..=0xd0 => v.bytes(&repo::meta(p, (tag - 0xce) as usize)?[24..28]),
-            0xd6..=0xd8 => v.bytes(&[repo::meta(p, (tag - 0xd6) as usize)?[3], 0x20]),
-            0xde => {
-                for r in 0..3 {
-                    v.bytes(&[r as u8 + 1, repo::meta(p, r)?[2]])?;
+            tag::CREATED_SIG..=tag::CREATED_AUT => v.bytes(
+                &repo::meta(p, (tag - tag::CREATED_SIG) as usize)?
+                    [key_meta::CREATED..key_meta::CREATED_END],
+            ),
+            tag::UIF_SIG..=tag::UIF_AUT => v.bytes(&[
+                repo::meta(p, (tag - tag::UIF_SIG) as usize)?[key_meta::TOUCH_POLICY],
+                0x20,
+            ]),
+            tag::KEY_INFORMATION => {
+                for r in 0..key_role::COUNT {
+                    v.bytes(&[r as u8 + 1, repo::meta(p, r)?[key_meta::ORIGIN]])?;
                 }
                 Ok(())
             }
-            0x7a => {
-                v.header(0x93, 3)?;
-                v.bytes(&repo::meta(p, 0)?[28..31])
+            tag::SECURITY_SUPPORT => {
+                v.header(tag::SIGNATURE_COUNTER, 3)?;
+                v.bytes(&repo::meta(p, 0)?[key_meta::SIGNATURE_COUNTER..key_meta::END])
             }
-            0x0102 => v.bytes(&s[3..4]),
-            0xfa => {
-                for r in 0..3 {
-                    for a in (0..9).map(Algorithm).filter(|a| a.allowed(r)) {
+            tag::TOUCH_CACHE => {
+                v.bytes(&s[state_layout::TOUCH_CACHE_SECONDS..state_layout::FLAGS_END])
+            }
+            tag::ALGORITHM_INFORMATION => {
+                for r in 0..key_role::COUNT {
+                    for a in (alg::P256..=alg::P521)
+                        .map(Algorithm)
+                        .filter(|a| a.allowed(r))
+                    {
                         let mut b = [0; 12];
                         let n = a.attrs(r, &mut b);
-                        v.header(0xc1 + r as u16, n)?;
+                        v.header(tag::ALGORITHM_SIG + r as u16, n)?;
                         v.bytes(&b[..n])?;
                     }
                 }
                 Ok(())
             }
-            _ => Err(Sw(0x6a88)),
+            _ => Err(Sw::REFERENCE_NOT_FOUND),
         }
     }
     #[inline(never)]
     pub(super) fn put(&mut self, tag: u16, b: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
-        if (0xc1..=0xc3).contains(&tag) {
-            let r = (tag - 0xc1) as usize;
+        if (tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT).contains(&tag) {
+            let r = (tag - tag::ALGORITHM_SIG) as usize;
             let a = Algorithm::parse(b, r).ok_or(Sw::WRONG_DATA)?;
             let mut m = repo::meta(p, r)?;
-            if m[1] != a.0 {
-                m[1] = a.0;
-                m[2] = 0;
+            if m[key_meta::ALGORITHM] != a.0 {
+                m[key_meta::ALGORITHM] = a.0;
+                m[key_meta::ORIGIN] = 0;
                 p.storage.replace(KEYS[r], &m).map_err(io)?;
             }
             return Ok(());
         }
-        if (0xc7..=0xc9).contains(&tag)
-            || (0xce..=0xd0).contains(&tag)
-            || (0xd6..=0xd8).contains(&tag)
+        if (tag::FINGERPRINT_SIG..=tag::FINGERPRINT_AUT).contains(&tag)
+            || (tag::CREATED_SIG..=tag::CREATED_AUT).contains(&tag)
+            || (tag::UIF_SIG..=tag::UIF_AUT).contains(&tag)
         {
-            let (r, off, n) = if tag <= 0xc9 {
-                ((tag - 0xc7) as usize, 4, 20)
-            } else if tag <= 0xd0 {
-                ((tag - 0xce) as usize, 24, 4)
+            let (r, off, n) = if tag <= tag::FINGERPRINT_AUT {
+                (
+                    (tag - tag::FINGERPRINT_SIG) as usize,
+                    key_meta::FINGERPRINT,
+                    state_layout::FINGERPRINT_BYTES,
+                )
+            } else if tag <= tag::CREATED_AUT {
+                (
+                    (tag - tag::CREATED_SIG) as usize,
+                    key_meta::CREATED,
+                    key_meta::CREATED_END - key_meta::CREATED,
+                )
             } else {
-                ((tag - 0xd6) as usize, 3, 2)
+                ((tag - tag::UIF_SIG) as usize, key_meta::TOUCH_POLICY, 2)
             };
             if b.len() != n {
                 return Err(Sw::WRONG_LENGTH);
             }
             let mut m = repo::meta(p, r)?;
-            if off == 3 {
-                if m[3] == 2 {
+            if off == key_meta::TOUCH_POLICY {
+                if m[key_meta::TOUCH_POLICY] == touch_policy::FIXED {
                     return Err(Sw::CONDITIONS_NOT_SATISFIED);
                 }
                 if b[0] > 2 || b[1] != 0x20 {
                     return Err(Sw::WRONG_DATA);
                 }
-                m[3] = b[0];
+                m[key_meta::TOUCH_POLICY] = b[0];
                 self.session.clear_touch();
             } else {
                 m[off..off + n].copy_from_slice(b);
             }
             return repo::put_meta(p, r, &m).map_err(Into::into);
         }
-        if tag == 0xd3 {
+        if tag == tag::RESET_CODE {
             if b.is_empty() {
-                let limit = pin::info(Record::PgpRc, p)?.2;
+                let limit = pin::info(Record::PgpRc, p)?.retry_limit;
                 return pin::create(Record::PgpRc, b, limit, p).map_err(Into::into);
             }
             return pin::change(Record::PgpRc, b, p).map_err(Into::into);
@@ -181,30 +262,31 @@ impl OpenPgp {
             s[off + 1..off + 1 + b.len()].copy_from_slice(b);
         } else {
             match tag {
-                0xc4 => {
+                tag::PW_STATUS => {
                     if b.len() != 1 {
                         return Err(Sw::WRONG_LENGTH);
                     }
                     if b[0] > 1 {
                         return Err(Sw::WRONG_DATA);
                     }
-                    s[2] = b[0];
+                    s[state_layout::PW1_REUSE] = b[0];
                 }
-                0x0102 => {
+                tag::TOUCH_CACHE => {
                     if b.len() != 1 {
                         return Err(Sw::WRONG_LENGTH);
                     }
-                    s[3] = b[0];
+                    s[state_layout::TOUCH_CACHE_SECONDS] = b[0];
                     self.session.clear_touch();
                 }
-                0xca..=0xcc => {
+                tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3 => {
                     if b.len() != 20 {
                         return Err(Sw::WRONG_LENGTH);
                     }
-                    let at = 8 + (tag - 0xca) as usize * 20;
-                    s[at..at + 20].copy_from_slice(b);
+                    let at = state_layout::CA_FINGERPRINTS
+                        + (tag - tag::CA_FINGERPRINT_1) as usize * state_layout::FINGERPRINT_BYTES;
+                    s[at..at + state_layout::FINGERPRINT_BYTES].copy_from_slice(b);
                 }
-                _ => return Err(Sw(0x6a88)),
+                _ => return Err(Sw::REFERENCE_NOT_FOUND),
             }
         }
         repo::save_state(p, &s).map_err(Into::into)

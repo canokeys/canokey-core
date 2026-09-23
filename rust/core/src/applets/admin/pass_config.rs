@@ -4,12 +4,16 @@
 #![forbid(unsafe_code)]
 use crate::applets::pass::{
     codec::Layout,
-    domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex},
+    domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex, kind},
 };
 use canokey_protocol::response::StatusWord;
 
+// Two slots; worst case per slot is kind + name length + 64-byte name + Enter.
 pub const MAX_DESCRIPTION_LENGTH: usize = 2 * (1 + 1 + 64 + 1);
 
+// ADMIN uses one-based P1 slots (1/2); the domain uses zero-based indexes.
+// Payloads: OFF=[kind], STATIC=[kind,len,password...,enter], HMAC=[kind,len,key...].
+// OATH bindings are established through the OATH applet, not this decoder.
 pub fn decode_config(p1: u8, data: &[u8]) -> Result<(SlotIndex, Slot<'_>), StatusWord> {
     let index = p1
         .checked_sub(1)
@@ -17,20 +21,21 @@ pub fn decode_config(p1: u8, data: &[u8]) -> Result<(SlotIndex, Slot<'_>), Statu
         .ok_or(StatusWord::WRONG_P1P2)?;
     let kind = *data.first().ok_or(StatusWord::WRONG_LENGTH)?;
     let slot = match kind {
-        0 if data.len() == 1 => Slot::Off,
-        2 if data.len() >= 3
-            && usize::from(data[1]) <= PASSWORD_LIMIT
-            && data.len() == 3 + usize::from(data[1]) =>
+        kind::OFF if data.len() == 1 => Slot::Off,
+        kind::STATIC
+            if data.len() >= 3
+                && usize::from(data[1]) <= PASSWORD_LIMIT
+                && data.len() == 3 + usize::from(data[1]) =>
         {
             Slot::Static {
                 password: &data[2..data.len() - 1],
                 enter: data[data.len() - 1],
             }
         }
-        3 if data.len() == 2 + KEY_LENGTH && usize::from(data[1]) == KEY_LENGTH => {
+        kind::HMAC if data.len() == 2 + KEY_LENGTH && usize::from(data[1]) == KEY_LENGTH => {
             Slot::Hmac(data[2..].try_into().map_err(|_| StatusWord::WRONG_LENGTH)?)
         }
-        0 | 2 | 3 => return Err(StatusWord::WRONG_LENGTH),
+        kind::OFF | kind::STATIC | kind::HMAC => return Err(StatusWord::WRONG_LENGTH),
         _ => return Err(StatusWord::WRONG_DATA),
     };
     Ok((index, slot))
@@ -54,9 +59,9 @@ pub fn read_config_part(
     };
     for index in 0..2 {
         match layout.decode(layout.record(bytes, SlotIndex::new(index)?)?)? {
-            Slot::Off => emit(0),
+            Slot::Off => emit(kind::OFF),
             Slot::Oath { name, enter, .. } => {
-                emit(1);
+                emit(kind::OATH);
                 emit(name.len() as u8);
                 for byte in name {
                     emit(*byte);
@@ -64,10 +69,10 @@ pub fn read_config_part(
                 emit(enter);
             }
             Slot::Static { enter, .. } => {
-                emit(2);
+                emit(kind::STATIC);
                 emit(enter);
             }
-            Slot::Hmac(_) => emit(3),
+            Slot::Hmac(_) => emit(kind::HMAC),
         }
     }
     if offset

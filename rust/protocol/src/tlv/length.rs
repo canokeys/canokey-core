@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental definite BER length, independent of any C state layout.
+//! Accepts short form and one/two-byte long forms, including non-minimal BER
+//! encodings. Indefinite lengths and lengths wider than u16 are rejected.
+//! Writers may produce canonical lengths without requiring DER-only input.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LengthState {
     #[default]

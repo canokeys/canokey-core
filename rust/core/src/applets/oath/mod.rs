@@ -58,3 +58,5 @@ pub trait Crypto {
 }
 pub(crate) mod protocol;
 pub(crate) mod repository;
+
+mod wire;
