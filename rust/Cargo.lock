@@ -14,6 +14,9 @@ dependencies = [
 [[package]]
 name = "canokey-protocol"
 version = "0.1.0"
+dependencies = [
+ "minicbor",
+]
 
 [[package]]
 name = "canokey-rust-core"
@@ -27,6 +30,7 @@ dependencies = [
 name = "canokey-rust-ffi"
 version = "0.1.0"
 dependencies = [
+ "canokey-protocol",
  "canokey-rust-core",
 ]
 
@@ -80,6 +84,12 @@ name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
+
+[[package]]
+name = "minicbor"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c12b4033ffaa92fbf9df03df38d19324f52bad130dd223f811734a8006dd2d69"
 
 [[package]]
 name = "sha2"

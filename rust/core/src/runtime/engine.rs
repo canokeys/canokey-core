@@ -30,6 +30,9 @@ pub trait Router {
     fn selected(&self) -> bool;
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw>;
     fn command_limit(&self, header: Header) -> Result<u32, Sw>;
+    fn allows_extended(&self, _header: Header) -> bool {
+        false
+    }
     fn abort_command(&mut self, p: &mut Platform<'_>);
     fn begin_command(&mut self, _header: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
         Ok(())
@@ -151,8 +154,51 @@ impl<R: Router> Runtime<R> {
             }
         }
     }
+    fn extended_allowed(&self, owner: u8, header: Header) -> bool {
+        owner == 1
+            && self.owner.is_none_or(|current| current == owner)
+            && !self.chain.active()
+            && !self.router.output_busy()
+            && self.router.allows_extended(header)
+    }
+    fn validate_extended(&self, owner: u8, prefix: &[u8; 7], total: usize) -> Result<u16, Sw> {
+        let header = Header {
+            cla: prefix[0],
+            ins: prefix[1],
+            p1: prefix[2],
+            p2: prefix[3],
+        };
+        let lc = u16::from_be_bytes([prefix[5], prefix[6]]);
+        if !self.extended_allowed(owner, header)
+            || prefix[4] != 0
+            || lc == 0
+            || ![usize::from(lc) + 7, usize::from(lc) + 9].contains(&total)
+            || u32::from(lc) > self.router.command_limit(header)?
+        {
+            return Err(Sw::WRONG_LENGTH);
+        }
+        Ok(lc)
+    }
+    /// End old response/input lifetimes BEFORE the caller borrows volatile
+    /// scratch. Failed admission may clean up this owner, never a foreign one.
+    pub fn prepare_extended(
+        &mut self,
+        owner: u8,
+        prefix: &[u8; 7],
+        total: usize,
+        p: &mut Platform<'_>,
+    ) -> Result<u16, Sw> {
+        let result = self.validate_extended(owner, prefix, total);
+        if result.is_ok() || self.owner == Some(owner) {
+            self.close_response(p);
+            self.abort_input(p);
+        }
+        let lc = result?;
+        self.owner = Some(owner);
+        Ok(lc)
+    }
     fn start(&mut self, info: CommandInfo, p: &mut Platform<'_>) -> Result<(), Sw> {
-        if info.extended {
+        if info.extended && !self.extended_allowed(self.owner.unwrap_or(0), info.header) {
             return Err(Sw::WRONG_LENGTH);
         }
         let h = info.header;
@@ -322,6 +368,10 @@ impl<R: Router> Runtime<R> {
                 let capacity = remaining.min(window.len());
                 let read = match source.read(&mut window[..capacity]) {
                     Ok(n) if n > 0 && n <= capacity => n,
+                    Err(sw) => {
+                        p.memory.wipe(&mut window);
+                        return Err(sw);
+                    }
                     _ => {
                         p.memory.wipe(&mut window);
                         return Err(Sw::WRONG_LENGTH);

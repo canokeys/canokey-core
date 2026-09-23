@@ -41,6 +41,18 @@ set_target_properties(canokey-rust-core PROPERTIES IMPORTED_LOCATION "${ARCHIVE}
 add_dependencies(canokey-rust-core rust-core-build)
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(hid-usb core/tests/hid_usb.c ../interfaces/rust-core/ctaphid.c)
+  add_executable(ccid-usb core/tests/ccid_usb.c ../interfaces/rust-core/ccid.c)
+  foreach(transport hid-usb ccid-usb)
+    target_include_directories(${transport} PRIVATE
+      ../interfaces/rust-core ../interfaces/USB/core/inc ../interfaces/USB/device
+      ../interfaces/USB/class/ccid ../interfaces/USB/class/ctaphid
+      ../interfaces/NFC ../include ../littlefs ../canokey-crypto/include)
+    target_compile_definitions(${transport} PRIVATE RUST_CORE_USB=1 ENABLE_IFACE_CTAPHID=1
+      ENABLE_IFACE_CCID=1 ENABLE_IFACE_WEBUSB=0 ENABLE_IFACE_KBDHID=0)
+    target_compile_options(${transport} PRIVATE -Wall -Wextra -UNDEBUG)
+    add_test(NAME ${transport} COMMAND ${transport})
+  endforeach()
   add_executable(core-normal core/tests/normal.c)
   target_compile_options(core-normal PRIVATE -Wall -Wextra -UNDEBUG)
   target_link_libraries(core-normal PRIVATE canokey-rust-core)
@@ -110,7 +122,8 @@ if(BUILD_TESTING)
       "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/reset_normal.py" --host $<TARGET_FILE:oath-host>)
   endif()
   add_test(NAME core-normal COMMAND core-normal)
-  set(RUST_TEST_FEATURES "")
+  # Pure transport tests also run in profiles without the CTAP firmware applet.
+  set(RUST_TEST_FEATURES canokey-rust-core/ctap)
   if(CANOKEY_APPLET_PASS)
     list(APPEND RUST_TEST_FEATURES canokey-rust-core/admin canokey-rust-core/pass)
   endif()

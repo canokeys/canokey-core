@@ -11,3 +11,6 @@ pub mod registry;
 
 #[cfg(any(feature = "openpgp", feature = "piv"))]
 pub(crate) mod workspace;
+
+#[cfg(feature = "ctap")]
+pub mod ctaphid;

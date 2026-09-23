@@ -14,6 +14,9 @@
 #define CCID_STATE_DISCARD_DATA 5
 #define CCID_STATE_DATA_IN_TIME_EXTENSION 6
 
+#ifdef RUST_CORE_USB
+void USBD_CCID_ServiceReceive(void);
+#endif
 uint8_t USBD_CCID_Init(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CCID_DataIn(USBD_HandleTypeDef *pdev);
 uint8_t USBD_CCID_DataOut(USBD_HandleTypeDef *pdev);

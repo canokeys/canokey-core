@@ -7,6 +7,22 @@
  * must never reenter the core. Buffers are borrowed only until return.
  * exchange supports identical input/output buffers; capacity includes SW.
  * Reset releases transport ownership and authorization, not stored slots. */
+/* HID calls are main-loop-only. poll requires distinct 64-byte buffers and
+ * completion of the previous IN report. See the Rust ABI for result bits. */
+#if ENABLE_IFACE_CTAPHID
+void ck_hid_reset(void);
+uint8_t ck_hid_poll(const uint8_t *input, uint32_t received, uint32_t now, uint8_t *output);
+uint8_t ck_hid_busy(void);
+uint8_t ck_ccid_idle(void);
+uint8_t ck_ccid_scratch_busy(void);
+/* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
+#define CK_CTAP_MAX_REQUEST 1024u
+int32_t ck_core_extended_begin(const uint8_t prefix[7], size_t total);
+int32_t ck_core_exchange_ccid_source(size_t total, uint8_t *output, size_t capacity);
+int32_t ck_ccid_source_read(size_t offset, uint8_t *output, size_t length);
+void ck_ccid_source_close(void);
+#endif
+uint8_t ck_ccid_rx_ready(void);
 int32_t ck_core_install(void);
 void ck_core_reset(void);
 uint8_t ck_core_applet_count(void);

@@ -4,5 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod apdu;
+pub mod cbor;
+pub mod ctaphid;
 pub mod response;
 pub mod tlv;

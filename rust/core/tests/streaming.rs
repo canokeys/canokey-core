@@ -389,3 +389,83 @@ fn generated_response_does_not_reexecute_operation() {
     assert!(r.reads > 1);
     assert!(core::mem::size_of::<Runtime<Fixture>>() < 2048);
 }
+
+#[cfg(feature = "ctap")]
+#[test]
+fn extended_fido_source_is_bounded_and_ccid_only() {
+    use canokey_rust_core::{Core, runtime::engine::InputSource};
+    let (mut storage, mut crypto, mut device, memory) = (
+        StorageBackend::default(),
+        CryptoBackend,
+        DeviceBackend,
+        MemoryBackend,
+    );
+    let mut p = Platform {
+        storage: &mut storage,
+        crypto: &mut crypto,
+        device: &mut device,
+        memory: &memory,
+    };
+    let mut core = Core::new();
+    let mut out = [0; 258];
+    let prefix = [0x80, 0x10, 0, 0, 0, 1, 0x23]; // Lc=291, BE
+    assert_eq!(
+        core.prepare_extended(1, &prefix, 300, &mut p),
+        Err(Sw::WRONG_LENGTH)
+    );
+    let select = [0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0];
+    let reply = core.receive(1, &select, &mut p);
+    assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 10);
+    for (owner, head, total) in [
+        (2, prefix, 300),
+        (1, [0x90, 0x10, 0, 0, 0, 1, 0x23], 300),
+        (1, [0, 0xda, 0, 0, 0, 1, 0x23], 300),
+        (1, prefix, 299),
+        (1, [0x80, 0x10, 0, 0, 0, 4, 1], 1034),
+    ] {
+        assert_eq!(
+            core.prepare_extended(owner, &head, total, &mut p),
+            Err(Sw::WRONG_LENGTH)
+        );
+    }
+    assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
+    let mut data = Vec::from(prefix);
+    data.extend_from_slice(&[0x06; 291]);
+    data.extend_from_slice(&[1, 0x23]); // Le=291, not a native-endian word
+    let mut source = FrameSource {
+        remaining: &data,
+        closes: 0,
+    };
+    let reply = core.receive_source(1, data.len(), &mut source, &mut p);
+    assert_eq!(source.closes, 1);
+    let n = core.transmit(reply, &mut out, &mut p).unwrap();
+    assert_eq!(&out[..n], &[1, 0x90, 0]); // unsupported CTAP command, accepted envelope
+
+    // An extended command cannot finish an existing ISO input chain.
+    let reply = core.receive(1, &[0x90, 0x10, 0, 0, 1, 4], &mut p);
+    assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 2);
+    assert_eq!(
+        core.prepare_extended(1, &prefix, 300, &mut p),
+        Err(Sw::WRONG_LENGTH)
+    );
+    core.reset(&mut p);
+    let reply = core.receive(1, &select, &mut p);
+    core.transmit(reply, &mut out, &mut p).unwrap();
+    assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
+    struct Failed {
+        closes: usize,
+    }
+    impl InputSource for Failed {
+        fn read(&mut self, _: &mut [u8]) -> Result<usize, Sw> {
+            Err(Sw::UNABLE_TO_PROCESS)
+        }
+        fn close(&mut self) {
+            self.closes += 1;
+        }
+    }
+    let mut failed = Failed { closes: 0 };
+    let reply = core.receive_source(1, 300, &mut failed, &mut p);
+    assert_eq!(failed.closes, 1);
+    let n = core.transmit(reply, &mut out, &mut p).unwrap();
+    assert_eq!(&out[..n], &[0x69, 0]);
+}

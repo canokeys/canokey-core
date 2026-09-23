@@ -30,7 +30,7 @@ impl Selected {
     fn from_aid(aid: &[u8]) -> Option<Self> {
         match aid {
             #[cfg(feature = "ctap")]
-            ctap::AID => Some(Self::Ctap),
+            ctap::apdu::AID => Some(Self::Ctap),
             #[cfg(feature = "admin")]
             admin::AID => Some(Self::Admin),
             #[cfg(feature = "oath")]
@@ -48,7 +48,7 @@ impl Selected {
             #[cfg(feature = "admin")]
             Self::Admin => (h.cla, admin::COMMAND_CAPACITY as u32),
             #[cfg(feature = "ctap")]
-            Self::Ctap => (h.unchained().cla, 256),
+            Self::Ctap => (h.unchained().cla ^ 0x80, ctap::MAX_REQUEST as u32),
             #[cfg(feature = "oath")]
             Self::Oath => (
                 h.unchained().cla,
@@ -78,7 +78,7 @@ pub struct Registry {
     #[cfg(feature = "admin")]
     admin: admin::Admin,
     #[cfg(feature = "ctap")]
-    ctap: ctap::Ctap,
+    ctap: ctap::apdu::Applet,
     #[cfg(feature = "admin")]
     grants: admin::Grants,
     #[cfg(feature = "pass")]
@@ -101,7 +101,7 @@ impl Registry {
             #[cfg(feature = "admin")]
             admin: admin::Admin::new(),
             #[cfg(feature = "ctap")]
-            ctap: ctap::Ctap::new(),
+            ctap: ctap::apdu::Applet::new(),
             #[cfg(feature = "admin")]
             grants: admin::Grants { admin: false },
             #[cfg(feature = "pass")]
@@ -126,6 +126,8 @@ impl Registry {
             self.grants.admin = false;
             self.admin.cancel_command(platform);
         }
+        #[cfg(feature = "ctap")]
+        self.ctap.reset();
         #[cfg(feature = "oath")]
         self.oath.reset(platform);
         #[cfg(feature = "piv")]
@@ -231,6 +233,8 @@ impl Router for Registry {
         }
         self.selected = next;
         match next {
+            #[cfg(feature = "ctap")]
+            Selected::Ctap => Ok(self.ctap.select()),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.select(p),
             #[cfg(feature = "openpgp")]
@@ -240,8 +244,16 @@ impl Router for Registry {
             _ => Ok(0),
         }
     }
+    fn allows_extended(&self, header: Header) -> bool {
+        let _ = header;
+        #[cfg(feature = "ctap")]
+        if self.selected == Selected::Ctap {
+            return ctap::apdu::allows_extended(header);
+        }
+        false
+    }
     fn command_limit(&self, h: Header) -> Result<u32, Sw> {
-        // All applets require base CLA=00. Strip the chain bit only where
+        // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
         // chaining is supported; leaving it set deliberately makes the final
         // CLA check reject chained ADMIN or unsupported chained PIV commands.
         let (cla, limit) = self.selected.command_limit(h);
@@ -261,7 +273,7 @@ impl Router for Registry {
             #[cfg(feature = "admin")]
             Selected::Admin => self.admin.cancel_command(platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.reset(),
+            Selected::Ctap => self.ctap.cancel_command(),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.cancel_command(platform),
             #[cfg(feature = "openpgp")]

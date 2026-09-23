@@ -45,7 +45,7 @@ Earlier implementation plans below are historical where superseded by sections
 
 | Module | Owns | Does not own |
 | --- | --- | --- |
-| C transport interfaces | USB enumeration, CCID/WebUSB/CTAPHID/NFC framing, endpoint buffers, link timers and transfer completion; keyboard HID encoding/report sequencing | APDU parsing, SELECT, authentication, slot selection, OTP calculation |
+| C transport interfaces | USB enumeration, endpoint buffers, ISR queues, link timers and transfer completion; CCID/WebUSB/NFC framing; keyboard HID encoding/report sequencing | APDU parsing, SELECT, authentication, slot selection, OTP calculation |
 | Rust FFI boundary | Pointer/length validation, serialized access to the root runtime, C error conversion, alias-safe borrows | INS dispatch, credential policy, persistent record interpretation |
 | Common protocol | APDU syntax/chains/response planning; bounded TLV and CBOR structural decoding/encoding | AIDs, CTAP command schemas, credential limits, storage, transport arbitration |
 | Rust runtime | Transport-independent operation ownership, APDU selection, progress/cancel/presence events, resource leases and cleanup | PASS slot rules, PIN comparison algorithm, filesystem record layouts |
@@ -399,9 +399,9 @@ reserve policy; the in-memory normal-test repository is not a device backend.
 | --- | --- | --- | --- |
 | USB CCID | Slot activation, CCID packets, sequence, Bulk IN/OUT, time extension | APDU adapter -> selected enabled applet | APDU SW/GET RESPONSE in Rust; CCID envelope in C |
 | WebUSB | Control transfer setup, framing and endpoint completion | APDU adapter -> selected enabled applet under its transport profile | APDU result in Rust; WebUSB transfer mechanics in C |
-| CTAPHID CBOR | HID packet sequencing and bounded message delivery | Native CTAP2 adapter -> FIDO domain | CTAP status and CBOR in Rust; HID packetization in C |
+| CTAPHID CBOR | HID packet sequencing and bounded message delivery | Native CTAP2 adapter -> FIDO domain | CTAP status, CBOR and HID packetization in Rust; endpoint reports in C |
 | CTAPHID MSG | HID message framing | U2F APDU adapter -> FIDO/U2F domain, not arbitrary PIV/OpenPGP routing | U2F APDU result wrapped in HID MSG |
-| CTAPHID control | INIT/PING packet mechanics and channel identifiers | Runtime validates channel ownership/resynchronization, CANCEL, WINK and any supported LOCK policy | C encodes transport replies/progress; no applet reentry |
+| CTAPHID control | INIT/PING packet mechanics and channel identifiers | Runtime validates channel ownership/resynchronization, CANCEL, WINK and any supported LOCK policy | Rust encodes transport replies; C submits retained reports without applet reentry |
 | NFC | RF activation/loss, ISO 14443-4 blocks, link chaining, retransmission and WTX | APDU adapter -> selected enabled applet, including NDEF | Rust APDU response; NFC link frames and WTX in C |
 | Keyboard HID | Report encoding/transmission/completion | Input event -> runtime -> PASS output job | Bounded output items, not an APDU response |
 
@@ -626,7 +626,7 @@ events, transport identity and crypto-key access are separate inputs to policy.
 
 These are design walkthroughs, not additional runtime tests in this checkpoint.
 
-1. **CTAPHID makeCredential:** C reassembles/delivers a bounded native message;
+1. **CTAPHID makeCredential:** the Rust transport delivers a bounded native source;
    Rust CBOR/schema parsing retains only semantic fields and closes volatile RX
    staging before PIN/UV processing. Runtime binds presence/progress to the CID
    and operation. FIDO invokes key generation, attestation and credential commit
@@ -664,7 +664,7 @@ These are design walkthroughs, not additional runtime tests in this checkpoint.
 
 | Current location | Required direction (implemented incrementally) |
 | --- | --- |
-| `core/src/runtime/engine.rs`, `registry.rs` | Implemented APDU ownership/chains/response routing; native CTAP and asynchronous operations remain future work |
+| `core/src/runtime/engine.rs`, `registry.rs` | Implemented APDU ownership/chains/response routing; native CTAP discovery uses runtime/ctaphid.rs; asynchronous commands remain future work |
 | `core/src/applets/admin/protocol.rs`, `pass_config.rs` | ADMIN owns PIN and PASS management commands; remaining C ADMIN commands are tracked in the checkpoint |
 | `core/src/applets/pass/` | Typed slot service and explicit codec; shared APDU status mapping at the module boundary, not in domain/service code |
 | `core/src/applets/admin/pin.rs` | Typed C-compatible PIN mechanism; no KDF; grants held by runtime |
@@ -673,7 +673,8 @@ These are design walkthroughs, not additional runtime tests in this checkpoint.
 | CIU storage backend | Mount without autoformat; root-level hexadecimal filenames; atomic replacement; word-aligned file cache |
 | `core/src/applets/oath/` | Typed credentials/codec, repository contract, naming, HOTP/TOTP and access-code services implemented; five normal domain tests pass. Adapter, concrete storage, USB, presence and PASS binding are integrated; see oath.md for measured validation |
 | `core/src/applets/openpgp/`, `piv/` | Implemented independent feature profiles with real key/object consumers; see sections 15 and 17 and the applet validation documents |
-| `core/src/applets/ctap.rs` | Implemented CCID SELECT/GetInfo slice only; native CTAPHID and stateful CTAP commands remain pending |
+| `core/src/applets/ctap/mod.rs`, `ctap/apdu.rs` | Shared native/APDU request parsing into owned commands; CCID SELECT and GetInfo implemented; stateful CTAP remains pending |
+| `protocol/src/cbor.rs` | Bounded incremental CBOR structure/UTF-8 decoding; command schemas and canonical map ordering remain applet responsibilities; see [CTAP contract and minicbor assessment](ctap.md) |
 | NFC/NDEF | Not implemented in the independent Rust profiles |
 
 The management AID and existing command numbers are compatibility requirements.
@@ -967,8 +968,9 @@ remains installed. Evidence: CIU `hil-reports/rust-core-refactor-20260923/README
 
 This checkpoint supersedes the earlier foundation-only statements about future
 OpenPGP support; they describe that earlier milestone, not the enabled profile.
-PIV is implemented (section 17); CTAP implements the CCID SELECT/GetInfo slice.
-Stateful CTAP, native CTAPHID, NDEF and NFC remain separate future work. The complete OpenPGP command,
+PIV is implemented (section 17); CTAP implements native CTAPHID INIT/PING/GetInfo
+and CCID SELECT/GetInfo ([contract](ctap.md)). Stateful CTAP, NDEF and NFC remain
+separate future work. The complete OpenPGP command,
 algorithm, persistence and validation contract is [openpgp.md](openpgp.md).
 
 - OpenPGP domain/adapter/repository code is co-located under `applets/openpgp`.

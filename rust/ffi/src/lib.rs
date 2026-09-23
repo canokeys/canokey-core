@@ -19,3 +19,6 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
 pub extern "C" fn rust_eh_personality() -> ! {
     unsafe { abort() }
 }
+
+#[cfg(feature = "ctap")]
+mod ctaphid;

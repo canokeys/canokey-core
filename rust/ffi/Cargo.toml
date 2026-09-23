@@ -6,6 +6,7 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 [dependencies]
+canokey-protocol = { path = "../protocol" }
 canokey-rust-core = { path = "../core" }
 [features]
 admin = ["canokey-rust-core/admin"]

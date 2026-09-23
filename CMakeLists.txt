@@ -144,6 +144,9 @@ file(
     tinycbor/src/cborparser.c
 )
 
+# Independent Rust profiles select their adapters in the platform build.
+list(FILTER SRC EXCLUDE REGEX ".*/interfaces/rust-core/.*\\.c$")
+
 if(NOT ENABLE_NFC)
     list(FILTER SRC EXCLUDE REGEX ".*/interfaces/NFC/.*\\.c$")
 endif()

@@ -119,8 +119,11 @@ record layout documentation for exact encodings.
 
 ## CTAP migration boundary
 
-The `ctap` feature currently implements only the stateless CCID FIDO
-`authenticatorGetInfo` request. It uses a fixed RAM response and adds no Flash
-record. CTAPHID, PIN/UV, credentials and large CBOR streaming remain in the C
-implementation until their transport and scratch-buffer contracts are migrated
-together.
+The `ctap` feature implements Rust CTAPHID INIT/PING and native/CCID GetInfo.
+USB endpoint handling stays in C; framing and transaction state live in Rust.
+HID requests above 192 bytes and standalone extended FIDO APDUs exceeding the
+short CCID buffer borrow PKE under the shared transport session, without Flash
+caching. Both accept up to 1024 CTAP bytes and close input before execution. See [the CTAP slice contract](docs/ctap.md) for supported commands,
+stream lifetimes, the shared command boundary, incremental CBOR/minicbor
+assessment, build/tests and the remaining migration steps. This development
+profile does not yet implement credential operations or PIN/UV.

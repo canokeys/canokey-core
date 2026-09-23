@@ -1,34 +1,49 @@
 // SPDX-License-Identifier: Apache-2.0
+#include "core.h"
 #include <usbd_canokey.h>
 #include <usbd_ccid.h>
 #include <usbd_ctlreq.h>
 #include <usbd_desc.h>
 #if ENABLE_IFACE_KBDHID
 #include <usbd_kbdhid.h>
-#define CONFIG_LENGTH 118
-#define INTERFACE_COUNT 2
-#else
-#define CONFIG_LENGTH 86
-#define INTERFACE_COUNT 1
 #endif
+#if ENABLE_IFACE_CTAPHID
+#include <ctaphid.h>
+#include <usbd_ctaphid.h>
+#endif
+#if ENABLE_IFACE_CTAPHID
+#define CCID_MESSAGE_CAPACITY (10 + 7 + CK_CTAP_MAX_REQUEST + 2)
+#define CCID_EXCHANGE_LEVEL 0x04 // Extended APDU transport; applets enforce their own limits.
+#else
+#define CCID_MESSAGE_CAPACITY 271
+#define CCID_EXCHANGE_LEVEL 0x02
+#endif
+#define CONFIG_LENGTH (86 + 32 * ENABLE_IFACE_KBDHID + 32 * ENABLE_IFACE_CTAPHID)
+#define INTERFACE_COUNT (1 + ENABLE_IFACE_KBDHID + ENABLE_IFACE_CTAPHID)
 static const uint8_t device[] = {18,           1, 0, 2, 0, 0, 0, 16, LO(USBD_VID), HI(USBD_VID), LO(USBD_PID),
                                  HI(USBD_PID), 0, 1, 1, 2, 0, 1};
 static const uint8_t language[] = {4, 3, 9, 4};
 static const uint8_t configuration[] = {
     9,
     2,
-    CONFIG_LENGTH,
-    0,
+    LO(CONFIG_LENGTH),
+    HI(CONFIG_LENGTH),
     INTERFACE_COUNT,
     1,
     0,
     0x80,
     50,
+#if ENABLE_IFACE_CTAPHID
+    9, USB_DESC_TYPE_INTERFACE, IFACE_CTAPHID, 0, 2, 3, 0, 0, 0,
+    9, 0x21, 0x11, 0x01, 0, 1, 0x22, CTAPHID_REPORT_DESC_SIZE, 0,
+    7, USB_DESC_TYPE_ENDPOINT, EP_IN(ctap_hid), USBD_EP_TYPE_INTR, 64, 0, 5,
+    7, USB_DESC_TYPE_ENDPOINT, EP_OUT(ctap_hid), USBD_EP_TYPE_INTR, 64, 0, 5,
+#endif
     /************** Descriptor of CCID interface ****************/
     /* Minimal Rust core: no implied applet support. */
     0x09,                    /* bLength: Interface Descriptor size */
     USB_DESC_TYPE_INTERFACE, /* bDescriptorType: Interface descriptor type */
-    0,                       /* bInterfaceNumber: Number of Interface */
+    IFACE_CCID,               /* bInterfaceNumber: Number of Interface */
     0x00,                    /* bAlternateSetting: Alternate setting */
     0x02,                    /* bNumEndpoints */
     0x0B,                    /* bInterfaceClass: Chip/SmartCard */
@@ -78,10 +93,10 @@ static const uint8_t configuration[] = {
     0x00, /* dwMechanical: no special characteristics */
     0xFE,
     0x00,
-    0x02,
+    CCID_EXCHANGE_LEVEL,
     0x00,    /* dwFeatures */
-    LO(271), /* dwMaxCCIDMessageLength, B3 */
-    HI(271), /* dwMaxCCIDMessageLength, B2 */
+    LO(CCID_MESSAGE_CAPACITY), /* dwMaxCCIDMessageLength, B3 */
+    HI(CCID_MESSAGE_CAPACITY), /* dwMaxCCIDMessageLength, B2 */
     0x00,
     0x00, /* dwMaxCCIDMessageLength, B1B0 */
     0xFF, /* bClassGetResponse*/
@@ -108,7 +123,7 @@ static const uint8_t configuration[] = {
 #if ENABLE_IFACE_KBDHID
     9,
     4,
-    1,
+    IFACE_KBDHID,
     0,
     2,
     3,
@@ -199,6 +214,9 @@ const USBD_DescriptorsTypeDef usbdDescriptors = {dev,   cfg,   lang,  manufactur
 static uint8_t init(USBD_HandleTypeDef *d, uint8_t c) {
   UNUSED(c);
   USBD_CCID_Init(d);
+#if ENABLE_IFACE_CTAPHID
+  USBD_CTAPHID_Init(d);
+#endif
 #if ENABLE_IFACE_KBDHID
   USBD_KBDHID_Init(d);
 #endif
@@ -208,6 +226,11 @@ static uint8_t init(USBD_HandleTypeDef *d, uint8_t c) {
 static uint8_t deinit(USBD_HandleTypeDef *d, uint8_t c) {
   UNUSED(c);
   CCID_Init();
+#if ENABLE_IFACE_CTAPHID
+  CTAPHID_TxReset();
+  USBD_LL_CloseEP(d, EP_IN(ctap_hid));
+  USBD_LL_CloseEP(d, EP_OUT(ctap_hid));
+#endif
 #if ENABLE_IFACE_KBDHID
   USBD_LL_CloseEP(d, EP_IN(kbd_hid));
   USBD_LL_CloseEP(d, EP_OUT(kbd_hid));
@@ -217,10 +240,18 @@ static uint8_t deinit(USBD_HandleTypeDef *d, uint8_t c) {
   return USBD_OK;
 }
 static uint8_t setup(USBD_HandleTypeDef *d, USBD_SetupReqTypedef *r) {
-#if ENABLE_IFACE_KBDHID
-  if (r->wIndex == 1) return USBD_KBDHID_Setup(d, r);
+  // USB core already decoded wValue/wIndex/wLength from little-endian bytes.
+  if ((r->bmRequest & USB_REQ_RECIPIENT_MASK) != USB_REQ_RECIPIENT_INTERFACE) {
+    USBD_CtlError(d, r);
+    return USBD_FAIL;
+  }
+#if ENABLE_IFACE_CTAPHID
+  if (r->wIndex == IFACE_CTAPHID) return USBD_CTAPHID_Setup(d, r);
 #endif
-  if (r->wIndex == 0 && (r->bmRequest & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_STANDARD) {
+#if ENABLE_IFACE_KBDHID
+  if (r->wIndex == IFACE_KBDHID) return USBD_KBDHID_Setup(d, r);
+#endif
+  if (r->wIndex == IFACE_CCID && (r->bmRequest & USB_REQ_TYPE_MASK) == USB_REQ_TYPE_STANDARD) {
     if (r->bRequest == USB_REQ_GET_INTERFACE) {
       static const uint8_t alternate = 0;
       return USBD_CtlSendData(d, &alternate, 1, 0);
@@ -235,12 +266,25 @@ static uint8_t ep0(USBD_HandleTypeDef *d) {
   return USBD_OK;
 }
 static uint8_t in(USBD_HandleTypeDef *d, uint8_t ep) {
+#if ENABLE_IFACE_CTAPHID
+  if (ep == (EP_IN(ctap_hid) & 0x7f)) return USBD_CTAPHID_DataIn();
+#endif
 #if ENABLE_IFACE_KBDHID
   if (ep == (EP_IN(kbd_hid) & 0x7F)) return USBD_KBDHID_DataIn();
 #endif
   return ep == (EP_IN(ccid) & 0x7F) ? USBD_CCID_DataIn(d) : USBD_FAIL;
 }
 static uint8_t out(USBD_HandleTypeDef *d, uint8_t ep) {
+#if ENABLE_IFACE_CTAPHID
+  if (ep == EP_OUT(ctap_hid)) {
+    // A short transfer must not parse the stale tail of the endpoint buffer.
+    if (USBD_LL_GetRxDataSize(d, ep) != HID_RPT_SIZE) {
+      USBD_CTAPHID_PrepareReceive();
+      return USBD_OK;
+    }
+    return USBD_CTAPHID_DataOut(d);
+  }
+#endif
 #if ENABLE_IFACE_KBDHID
   if (ep == EP_OUT(kbd_hid)) return USBD_KBDHID_DataOut(d);
 #endif
