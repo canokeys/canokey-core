@@ -11,6 +11,20 @@ use crate::applets::pass::service::Pass;
 #[cfg(feature = "piv")]
 use crate::applets::piv::Piv;
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
+
+#[cfg(any(feature = "admin", feature = "oath", feature = "openpgp"))]
+macro_rules! pass_arg {
+    ($this:expr) => {{
+        #[cfg(feature = "pass")]
+        {
+            Some(&mut $this.pass)
+        }
+        #[cfg(not(feature = "pass"))]
+        {
+            None
+        }
+    }};
+}
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selected {
     None,
@@ -46,9 +60,15 @@ impl Selected {
     fn command_limit(self, h: Header) -> (u8, u32) {
         match self {
             #[cfg(feature = "admin")]
-            Self::Admin => (h.cla, admin::COMMAND_CAPACITY as u32),
+            Self::Admin => {
+                #[cfg(feature = "ctap")]
+                if h.ins == crate::applets::admin::protocol::INS_PROVISION_ATTESTATION {
+                    return (h.unchained().cla, ctap::provision::CERT_LIMIT as u32);
+                }
+                (h.cla, admin::COMMAND_CAPACITY as u32)
+            }
             #[cfg(feature = "ctap")]
-            Self::Ctap => (h.unchained().cla ^ 0x80, ctap::MAX_REQUEST as u32),
+            Self::Ctap => (h.unchained().cla & !0x80, ctap::MAX_REQUEST as u32),
             #[cfg(feature = "oath")]
             Self::Oath => (
                 h.unchained().cla,
@@ -89,7 +109,7 @@ pub struct Registry {
     oath: crate::applets::oath::protocol::Oath,
     #[cfg(feature = "openpgp")]
     pgp: crate::applets::openpgp::protocol::OpenPgp,
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
     workspace: super::workspace::SessionWorkspace,
     #[cfg(feature = "piv")]
     piv: Piv,
@@ -112,31 +132,66 @@ impl Registry {
             oath: crate::applets::oath::protocol::Oath::new(),
             #[cfg(feature = "openpgp")]
             pgp: crate::applets::openpgp::protocol::OpenPgp::new(),
-            #[cfg(any(feature = "openpgp", feature = "piv"))]
+            #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
             workspace: super::workspace::SessionWorkspace::new(),
             #[cfg(feature = "piv")]
             piv: Piv::new(),
         }
     }
+    #[allow(unused_variables)]
     fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform,);
+        #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
+        self.workspace.wipe_active(platform.memory);
         #[cfg(feature = "admin")]
         {
             self.grants.admin = false;
             self.admin.cancel_command(platform);
         }
         #[cfg(feature = "ctap")]
-        self.ctap.reset();
+        self.ctap.reset(&mut self.workspace, platform);
         #[cfg(feature = "oath")]
         self.oath.reset(platform);
         #[cfg(feature = "piv")]
         self.piv.reset(&mut self.workspace, platform);
         #[cfg(feature = "openpgp")]
-        self.pgp.reset(self.workspace.classic(), platform);
+        self.pgp
+            .reset(self.workspace.classic_with(platform.memory), platform);
+    }
+    #[cfg(feature = "ctap")]
+    pub fn execute_ctap(
+        &mut self,
+        command: Result<ctap::Command, ctap::Status>,
+        p: &mut Platform<'_>,
+    ) -> usize {
+        let mut command = command;
+        self.ctap.execute(&mut command, &mut self.workspace, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn execute_ctap_message(
+        &mut self,
+        command: ctap::apdu::Message,
+        p: &mut Platform<'_>,
+    ) -> usize {
+        self.ctap.execute_message(command, &mut self.workspace, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn read_ctap(
+        &mut self,
+        offset: usize,
+        out: &mut [u8],
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
+        self.ctap.read(offset, out, &mut self.workspace, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn close_ctap(&mut self, p: &mut Platform<'_>) {
+        self.ctap.close(&mut self.workspace, p);
+        self.workspace.classic_with(p.memory).clear(p.memory);
     }
     #[cfg(feature = "pass")]
     pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
+        // HOTP touch is a flow operation and uses flow_status; challenge is
+        // a PASS service primitive and maps its domain status directly below.
         crate::flows::hotp_output::touch(&self.pass, index, out, p).map_err(flow_status)
     }
     #[cfg(feature = "pass")]
@@ -154,21 +209,23 @@ impl Registry {
     #[cfg(feature = "admin")]
     #[cfg_attr(feature = "openpgp", inline(never))]
     fn finish_admin(&mut self, h: Header, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
-        #[cfg(not(feature = "pass"))]
-        let pass = None;
-        #[cfg(feature = "pass")]
-        let pass = Some(&mut self.pass);
+        let pass = pass_arg!(self);
         match self.admin.finish(h, &mut self.grants, pass, p)? {
             admin::Action::Response(n) => return Ok((n, Sw::SUCCESS)),
+            #[cfg(feature = "ctap")]
+            admin::Action::InstallFidoKey(mut key) => {
+                ctap::provision::install_key(&mut key, self.workspace.classic_with(p.memory), p)?
+            }
+            #[cfg(feature = "ctap")]
+            admin::Action::ResetCtap => self.ctap.erase(&mut self.workspace, p)?,
             #[cfg(feature = "openpgp")]
-            admin::Action::ResetOpenPgp => self.pgp.clear(self.workspace.classic(), p)?,
+            admin::Action::ResetOpenPgp => {
+                self.pgp.clear(self.workspace.classic_with(p.memory), p)?
+            }
             #[cfg(feature = "oath")]
             admin::Action::ResetOath => {
                 self.oath.reset(p);
-                #[cfg(not(feature = "pass"))]
-                let pass = None;
-                #[cfg(feature = "pass")]
-                let pass = Some(&mut self.pass);
+                let pass = pass_arg!(self);
                 crate::flows::factory_reset::oath(pass, p).map_err(flow_status)?;
             }
             #[cfg(feature = "piv")]
@@ -183,10 +240,9 @@ impl Registry {
                     return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
                 }
                 self.reset_sessions(p);
-                #[cfg(not(feature = "pass"))]
-                let pass = None;
-                #[cfg(feature = "pass")]
-                let pass = Some(&mut self.pass);
+                #[cfg(feature = "ctap")]
+                self.ctap.erase(&mut self.workspace, p)?;
+                let pass = pass_arg!(self);
                 crate::flows::factory_reset::run(
                     pass,
                     #[cfg(feature = "piv")]
@@ -200,9 +256,8 @@ impl Registry {
     }
 }
 impl Router for Registry {
+    #[allow(unused_variables)]
     fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform,);
         #[cfg(feature = "admin")]
         self.admin.install(platform)?;
         #[cfg(feature = "pass")]
@@ -234,7 +289,7 @@ impl Router for Registry {
         self.selected = next;
         match next {
             #[cfg(feature = "ctap")]
-            Selected::Ctap => Ok(self.ctap.select()),
+            Selected::Ctap => Ok(self.ctap.select(&mut self.workspace, p)),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.select(p),
             #[cfg(feature = "openpgp")]
@@ -266,33 +321,40 @@ impl Router for Registry {
             Ok(limit)
         }
     }
+    #[allow(unused_variables)]
     fn abort_command(&mut self, platform: &mut Platform<'_>) {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform,);
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.admin.cancel_command(platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.cancel_command(),
+            Selected::Ctap => self.ctap.cancel_command(&mut self.workspace),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.cancel_command(platform),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.abort(self.workspace.classic(), platform),
+            Selected::OpenPgp => self
+                .pgp
+                .abort(self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "piv")]
             Selected::Piv => self.piv.cancel(&mut self.workspace, platform),
             Selected::None => (),
         }
     }
     fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform, &header);
+        #[cfg(feature = "admin")]
+        if self.selected == Selected::Admin {
+            return self.admin.begin(header, &self.grants, platform);
+        }
         #[cfg(feature = "ctap")]
         if self.selected == Selected::Ctap {
-            return self.ctap.begin(header);
+            return self.ctap.begin(header, &mut self.workspace, platform);
         }
         #[cfg(feature = "openpgp")]
         if self.selected == Selected::OpenPgp {
-            return self.pgp.begin(header, self.workspace.classic(), platform);
+            return self.pgp.begin(
+                header,
+                self.workspace.classic_with(platform.memory),
+                platform,
+            );
         }
         #[cfg(feature = "piv")]
         if self.selected == Selected::Piv {
@@ -300,48 +362,53 @@ impl Router for Registry {
         }
         Ok(())
     }
+    #[allow(unused_variables)]
     fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform, &bytes);
         match self.selected {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.consume(bytes),
+            Selected::Admin => self.admin.consume(bytes, platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.consume(bytes),
+            Selected::Ctap => self.ctap.consume(bytes, &mut self.workspace),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.consume(bytes),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.consume(bytes, self.workspace.classic(), platform),
+            Selected::OpenPgp => self.pgp.consume(
+                bytes,
+                self.workspace.classic_with(platform.memory),
+                platform,
+            ),
             #[cfg(feature = "piv")]
             Selected::Piv => self.piv.consume(bytes, &mut self.workspace, platform),
             Selected::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
+    #[allow(unused_variables)]
     fn finish(
         &mut self,
         header: Header,
         le: u32,
         platform: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform, &header, &le);
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.finish_admin(header, platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.finish().map(|n| (n, Sw::SUCCESS)),
+            Selected::Ctap => self
+                .ctap
+                .finish(&mut self.workspace, platform)
+                .map(|n| (n, Sw::SUCCESS)),
             #[cfg(feature = "oath")]
             Selected::Oath => {
-                #[cfg(not(feature = "pass"))]
-                let pass = None;
-                #[cfg(feature = "pass")]
-                let pass = Some(&mut self.pass);
+                let pass = pass_arg!(self);
                 self.oath.finish(header, le, pass, platform)
             }
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self
-                .pgp
-                .finish(header, le, self.workspace.classic(), platform),
+            Selected::OpenPgp => self.pgp.finish(
+                header,
+                le,
+                self.workspace.classic_with(platform.memory),
+                platform,
+            ),
             #[cfg(feature = "piv")]
             Selected::Piv => self.piv.finish(header, le, &mut self.workspace, platform),
             Selected::None => Err(Sw::FILE_NOT_FOUND),
@@ -353,8 +420,6 @@ impl Router for Registry {
         out: &mut [u8],
         platform: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform, &offset, &out);
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self
@@ -362,17 +427,22 @@ impl Router for Registry {
                 .read_response(offset as usize, out)
                 .map(|()| out.len()),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.read(offset as usize, out).map(|()| out.len()),
+            Selected::Ctap => self
+                .ctap
+                .read(offset as usize, out, &mut self.workspace, platform)
+                .map(|()| out.len()),
             #[cfg(feature = "oath")]
             Selected::Oath => self
                 .oath
                 .read_response(offset as usize, out)
                 .map(|()| out.len()),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => {
-                self.pgp
-                    .read(offset as usize, out, self.workspace.classic(), platform)
-            }
+            Selected::OpenPgp => self.pgp.read(
+                offset as usize,
+                out,
+                self.workspace.classic_with(platform.memory),
+                platform,
+            ),
             #[cfg(feature = "piv")]
             Selected::Piv => self
                 .piv
@@ -380,18 +450,19 @@ impl Router for Registry {
             Selected::None => Err(Sw::COMMAND_NOT_ALLOWED),
         }
     }
+    #[allow(unused_variables)]
     fn close_response(&mut self, platform: &mut Platform<'_>) {
-        // Parameters may be unused when their applet features are disabled.
-        let _ = (&platform,);
         match self.selected {
             #[cfg(feature = "admin")]
             Selected::Admin => self.admin.close_response(platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.close(),
+            Selected::Ctap => self.ctap.close(&mut self.workspace, platform),
             #[cfg(feature = "oath")]
             Selected::Oath => self.oath.close_response(platform),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.pgp.close(self.workspace.classic(), platform),
+            Selected::OpenPgp => self
+                .pgp
+                .close(self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "piv")]
             Selected::Piv => self.piv.close(&mut self.workspace, platform),
             Selected::None => (),
@@ -399,6 +470,8 @@ impl Router for Registry {
     }
     #[cfg(feature = "pass")]
     fn output_busy(&self) -> bool {
+        // PASS owns the shared output queue; the registry only arbitrates
+        // applet presence and forwards sampling at this composition boundary.
         self.output.busy()
     }
     #[cfg(feature = "pass")]
@@ -410,13 +483,23 @@ impl Router for Registry {
         inhibit: bool,
         p: &mut Platform<'_>,
     ) -> Option<u8> {
-        let presence = false;
+        let mut presence = false;
         #[cfg(feature = "oath")]
-        let presence = self.oath.take_presence() | presence;
+        {
+            presence |= self.oath.take_presence();
+        }
         #[cfg(feature = "openpgp")]
-        let presence = self.pgp.take_presence() | presence;
+        {
+            presence |= self.pgp.take_presence();
+        }
         #[cfg(feature = "piv")]
-        let presence = self.piv.presence.take() | presence;
+        {
+            presence |= self.piv.take_presence();
+        }
+        #[cfg(feature = "ctap")]
+        {
+            presence |= self.ctap.take_presence();
+        }
         if presence || inhibit {
             self.output.inhibit(pressed, p.memory);
             return None;

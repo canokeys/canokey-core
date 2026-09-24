@@ -1,0 +1,3 @@
+# Preserve the upstream submodule when cargo fmt --all follows path dependencies.
+unstable_features = true
+ignore = ["minicbor"]

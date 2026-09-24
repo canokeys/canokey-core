@@ -114,7 +114,7 @@ impl Piv {
             Err(e) => return Err(repo::io(e)),
             Ok(n) => n,
         };
-        self.response = Response::Object(i);
+        self.response = ResponseBacking::Object(i);
         self.body_len = n as usize;
         Ok(n)
     }

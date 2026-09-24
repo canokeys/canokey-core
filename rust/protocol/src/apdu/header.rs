@@ -20,6 +20,8 @@ impl Header {
     }
 
     pub fn is_get_response(self) -> bool {
+        // Accept proprietary CLA 0x80 as the compatibility form used by
+        // legacy readers; both forms carry the same GET RESPONSE semantics.
         matches!(self.cla, CLA_ISO | CLA_PROPRIETARY) && self.ins == INS_GET_RESPONSE
     }
 

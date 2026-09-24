@@ -1,30 +1,29 @@
-// SPDX-License-Identifier: Apache-2.0
-// CMake supplies the same version field used by the C firmware. Standalone
-// Cargo builds use the core's development-only 0.0.0 convention.
 fn main() {
-    for name in ["OATH", "PIV"] {
-        println!("cargo:rerun-if-env-changed=CANOKEY_{name}_VERSION");
-        let value =
-            std::env::var(format!("CANOKEY_{name}_VERSION")).unwrap_or_else(|_| "0.0.0".into());
-        let parts: Vec<u8> = value
+    cfg_aliases::cfg_aliases! {
+        has_applet: { any(feature = "admin", feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
+        persistent_applet: { any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
+        classic_presence: { any(feature = "oath", feature = "openpgp", feature = "piv") },
+        crypto_applet: { any(feature = "openpgp", feature = "piv", feature = "ctap") },
+    }
+    for (name, file) in [
+        ("CANOKEY_OATH_VERSION", "oath_version.rs"),
+        ("CANOKEY_PIV_VERSION", "piv_version.rs"),
+    ] {
+        let value = std::env::var(name).unwrap_or_else(|_| "0.0.0".to_owned());
+        let bytes: Vec<u8> = value
             .split('.')
-            .map(|part| {
-                assert!(
-                    !part.is_empty()
-                        && part.bytes().all(|b| b.is_ascii_digit())
-                        && (part.len() == 1 || !part.starts_with('0')),
-                    "invalid release version"
-                );
-                part.parse()
-                    .expect("release version component must fit a byte")
-            })
+            .take(3)
+            .map(|part| part.parse::<u8>().unwrap_or(0))
             .collect();
-        assert_eq!(parts.len(), 3, "release version must have three components");
-        let output = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-        std::fs::write(
-            output.join(format!("{}_version.rs", name.to_lowercase())),
-            format!("const {name}_VERSION: [u8; 3] = {:?};\n", parts),
-        )
-        .unwrap();
+        let mut version = [0u8; 3];
+        version[..bytes.len()].copy_from_slice(&bytes);
+        let out = std::env::var_os("OUT_DIR").expect("OUT_DIR set");
+        let path = std::path::Path::new(&out).join(file);
+        let text = format!(
+            "pub const {}: [u8; 3] = {:?};\n",
+            file.trim_end_matches(".rs").to_ascii_uppercase(),
+            version
+        );
+        std::fs::write(path, text).expect("write generated version");
     }
 }

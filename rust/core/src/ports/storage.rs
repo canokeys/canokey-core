@@ -1,86 +1,109 @@
 // SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
 /// Record IDs map directly to two hexadecimal filename characters.
-#[derive(Clone, Copy)]
-#[repr(u8)]
-pub enum Record {
-    Pass = 0,
-    AdminPin = 1,
-    OathMetadata = 2,
-    OathRecords = 3,
-    PgpState = 4,
-    PgpPw1 = 5,
-    PgpPw3 = 6,
-    PgpRc = 7,
-    PgpSig = 8,
-    PgpDec = 9,
-    PgpAut = 10,
-    PgpCertSig = 11,
-    PgpCertDec = 12,
-    PgpCertAut = 13,
-    PivState = 14,
-    PivManagement = 15,
-    PivConfig = 16,
-    PivKey0 = 17,
-    PivKey1 = 18,
-    PivKey2 = 19,
-    PivKey3 = 20,
-    PivKey4 = 21,
-    PivKey5 = 22,
-    PivKey6 = 23,
-    PivKey7 = 24,
-    PivKey8 = 25,
-    PivKey9 = 26,
-    PivKey10 = 27,
-    PivKey11 = 28,
-    PivKey12 = 29,
-    PivKey13 = 30,
-    PivKey14 = 31,
-    PivKey15 = 32,
-    PivKey16 = 33,
-    PivKey17 = 34,
-    PivKey18 = 35,
-    PivKey19 = 36,
-    PivKey20 = 37,
-    PivKey21 = 38,
-    PivKey22 = 39,
-    PivKey23 = 40,
-    PivKey24 = 41,
-    PivObject0 = 42,
-    PivObject1 = 43,
-    PivObject2 = 44,
-    PivObject3 = 45,
-    PivObject4 = 46,
-    PivObject5 = 47,
-    PivObject6 = 48,
-    PivObject7 = 49,
-    PivObject8 = 50,
-    PivObject9 = 51,
-    PivObject10 = 52,
-    PivObject11 = 53,
-    PivObject12 = 54,
-    PivObject13 = 55,
-    PivObject14 = 56,
-    PivObject15 = 57,
-    PivObject16 = 58,
-    PivObject17 = 59,
-    PivObject18 = 60,
-    PivObject19 = 61,
-    PivObject20 = 62,
-    PivObject21 = 63,
-    PivObject22 = 64,
-    PivObject23 = 65,
-    PivObject24 = 66,
-    PivObject25 = 67,
-    PivObject26 = 68,
-    PivObject27 = 69,
-    PivObject28 = 70,
-    PivObject29 = 71,
-    PivObject30 = 72,
-    PivObject31 = 73,
-    PivObject32 = 74,
-    PivObject33 = 75,
-    PivProvision = 76,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Record(u8);
+#[allow(non_upper_case_globals)]
+impl Record {
+    pub const Pass: Self = Self(0);
+    pub const AdminPin: Self = Self(1);
+    pub const OathMetadata: Self = Self(2);
+    pub const OathRecords: Self = Self(3);
+    pub const PgpState: Self = Self(4);
+    pub const PgpPw1: Self = Self(5);
+    pub const PgpPw3: Self = Self(6);
+    pub const PgpRc: Self = Self(7);
+    pub const PgpSig: Self = Self(8);
+    pub const PgpDec: Self = Self(9);
+    pub const PgpAut: Self = Self(10);
+    pub const PgpCertSig: Self = Self(11);
+    pub const PgpCertDec: Self = Self(12);
+    pub const PgpCertAut: Self = Self(13);
+    pub const PivState: Self = Self(14);
+    pub const PivManagement: Self = Self(15);
+    pub const PivConfig: Self = Self(16);
+    pub const PivKey0: Self = Self(17);
+    pub const PivKey1: Self = Self(18);
+    pub const PivKey2: Self = Self(19);
+    pub const PivKey3: Self = Self(20);
+    pub const PivKey4: Self = Self(21);
+    pub const PivKey5: Self = Self(22);
+    pub const PivKey6: Self = Self(23);
+    pub const PivKey7: Self = Self(24);
+    pub const PivKey8: Self = Self(25);
+    pub const PivKey9: Self = Self(26);
+    pub const PivKey10: Self = Self(27);
+    pub const PivKey11: Self = Self(28);
+    pub const PivKey12: Self = Self(29);
+    pub const PivKey13: Self = Self(30);
+    pub const PivKey14: Self = Self(31);
+    pub const PivKey15: Self = Self(32);
+    pub const PivKey16: Self = Self(33);
+    pub const PivKey17: Self = Self(34);
+    pub const PivKey18: Self = Self(35);
+    pub const PivKey19: Self = Self(36);
+    pub const PivKey20: Self = Self(37);
+    pub const PivKey21: Self = Self(38);
+    pub const PivKey22: Self = Self(39);
+    pub const PivKey23: Self = Self(40);
+    pub const PivKey24: Self = Self(41);
+    pub const PivObject0: Self = Self(42);
+    pub const PivObject1: Self = Self(43);
+    pub const PivObject2: Self = Self(44);
+    pub const PivObject3: Self = Self(45);
+    pub const PivObject4: Self = Self(46);
+    pub const PivObject5: Self = Self(47);
+    pub const PivObject6: Self = Self(48);
+    pub const PivObject7: Self = Self(49);
+    pub const PivObject8: Self = Self(50);
+    pub const PivObject9: Self = Self(51);
+    pub const PivObject10: Self = Self(52);
+    pub const PivObject11: Self = Self(53);
+    pub const PivObject12: Self = Self(54);
+    pub const PivObject13: Self = Self(55);
+    pub const PivObject14: Self = Self(56);
+    pub const PivObject15: Self = Self(57);
+    pub const PivObject16: Self = Self(58);
+    pub const PivObject17: Self = Self(59);
+    pub const PivObject18: Self = Self(60);
+    pub const PivObject19: Self = Self(61);
+    pub const PivObject20: Self = Self(62);
+    pub const PivObject21: Self = Self(63);
+    pub const PivObject22: Self = Self(64);
+    pub const PivObject23: Self = Self(65);
+    pub const PivObject24: Self = Self(66);
+    pub const PivObject25: Self = Self(67);
+    pub const PivObject26: Self = Self(68);
+    pub const PivObject27: Self = Self(69);
+    pub const PivObject28: Self = Self(70);
+    pub const PivObject29: Self = Self(71);
+    pub const PivObject30: Self = Self(72);
+    pub const PivObject31: Self = Self(73);
+    pub const PivObject32: Self = Self(74);
+    pub const PivObject33: Self = Self(75);
+    pub const PivProvision: Self = Self(76);
+    pub const CtapPin: Self = Self(77);
+    pub const CtapMaster: Self = Self(78);
+    pub const CtapCounter: Self = Self(79);
+    pub const CtapLargeBlob: Self = Self(180);
+    pub const CtapSm2: Self = Self(181);
+    pub const CtapAttestationKey: Self = Self(182);
+    pub const CtapCertificate: Self = Self(183);
+    pub const fn id(self) -> u8 {
+        self.0
+    }
+    pub const CTAP_CREDENTIALS: u8 = 100;
+    const CTAP_CREDENTIAL_BASE: u8 = 0x50;
+    pub const fn ctap_credential(index: u8) -> Option<Self> {
+        if index < Self::CTAP_CREDENTIALS {
+            // CTAP resident credentials occupy the contiguous 0x50..0xb3
+            // range; 0xb4..0xb7 remain reserved for future records.
+            Some(Self(Self::CTAP_CREDENTIAL_BASE + index))
+        } else {
+            None
+        }
+    }
 }
 #[derive(Clone, Copy, Debug)]
 pub enum StorageError {
@@ -91,23 +114,25 @@ pub enum StorageError {
 pub trait Storage {
     /// A single session-scoped staged object, separate from record replacements.
     /// Publication is atomic; abort/disconnect must discard unpublished bytes.
-    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
+    #[cfg(persistent_applet)]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
+    #[cfg(persistent_applet)]
     fn stage_append(&mut self, _bytes: &[u8]) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
+    #[cfg(persistent_applet)]
     fn stage_commit(&mut self, _record: Record) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv"))]
+    #[cfg(persistent_applet)]
     fn stage_abort(&mut self) {}
-    #[cfg(feature = "piv")]
-    fn remove(&mut self, id: Record) -> Result<(), StorageError> {
-        self.replace(id, &[])
+    /// Delete the record, treating an absent record as success. Empty data is
+    /// not equivalent to absence for applets that validate persistent records.
+    #[cfg(any(feature = "piv", feature = "ctap"))]
+    fn remove(&mut self, _id: Record) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
     }
     #[cfg(feature = "piv")]
     fn move_record(&mut self, _from: Record, _to: Record) -> Result<(), StorageError> {

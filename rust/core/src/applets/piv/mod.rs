@@ -6,6 +6,6 @@ mod import;
 mod pin;
 mod protocol;
 mod repository;
-pub use protocol::{AID, CAPACITY, Piv};
-
 mod wire;
+
+pub use protocol::{AID, CAPACITY, Piv};

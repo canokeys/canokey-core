@@ -673,8 +673,8 @@ These are design walkthroughs, not additional runtime tests in this checkpoint.
 | CIU storage backend | Mount without autoformat; root-level hexadecimal filenames; atomic replacement; word-aligned file cache |
 | `core/src/applets/oath/` | Typed credentials/codec, repository contract, naming, HOTP/TOTP and access-code services implemented; five normal domain tests pass. Adapter, concrete storage, USB, presence and PASS binding are integrated; see oath.md for measured validation |
 | `core/src/applets/openpgp/`, `piv/` | Implemented independent feature profiles with real key/object consumers; see sections 15 and 17 and the applet validation documents |
-| `core/src/applets/ctap/mod.rs`, `ctap/apdu.rs` | Shared native/APDU request parsing into owned commands; CCID SELECT and GetInfo implemented; stateful CTAP remains pending |
-| `protocol/src/cbor.rs` | Bounded incremental CBOR structure/UTF-8 decoding; command schemas and canonical map ordering remain applet responsibilities; see [CTAP contract and minicbor assessment](ctap.md) |
+| `core/src/applets/ctap/mod.rs`, `ctap/apdu.rs` | Shared native/APDU request parsing into owned commands; CCID SELECT, GetInfo and clientPIN protocols 1/2 implemented; credential and token authorization consumers remain pending |
+| `protocol/src/cbor.rs` | Bounded incremental minicbor adaptation and standard-library UTF-8 validation; command schemas and canonical map ordering remain applet responsibilities; see [CTAP contract and minicbor integration](ctap.md) |
 | NFC/NDEF | Not implemented in the independent Rust profiles |
 
 The management AID and existing command numbers are compatibility requirements.
@@ -1018,6 +1018,8 @@ implementation details:
   only. OATH repositories keep their backend fields private, with scoped borrows
   instead of rebuilding Platform inside an applet. A5 paging lives under its
   protocol adapter; generic APDU/GET RESPONSE state stays in runtime.
+  The registry retains the PASS output suppression/claim arbitration because
+  it coordinates keyboard output with transport ownership.
 - OpenPGP PIN/repository services return typed errors. Its session service owns
   key-generation/use policy and grant transitions; adapters own APDU parameters,
   TLV schema and status words. The session workspace is borrowed, never copied.
@@ -1053,3 +1055,17 @@ mutually exclusive classic, native-stream and attestation views; native resource
 cleanup precedes view changes. APDU framing/chaining and the response cursor
 remain in the common runtime. Standalone and combined host suites pass; CIU
 DevKit and boot/recovery validation are separate from hardware HIL acceptance.
+
+### Firmware state initialization
+
+The serialized FFI boundary reserves `CORE` and CTAPHID state as `MaybeUninit`
+in BSS. The first main-loop access writes the normal typed constructor before
+creating a reference; it never treats zero bytes as a valid Rust value. Ready
+flags survive session resets, so resets use the ordinary lease cleanup paths.
+The platform installs core before enabling USB, and IRQs never enter these
+accessors. Initialization is not thread-safe or reentrant, just like the FFI.
+
+Keep the one-time constructors out of line: their temporary stack storage must
+not become part of ordinary request frames. Verify generated firmware after
+changing these constructors; moving state into BSS is only useful if the compiler
+does not emit an equally large read-only initialization template.

@@ -123,7 +123,7 @@ class Card:
             answer = b""
             for i, chunk in enumerate(chunks):
                 last = i == len(chunks) - 1
-                apdu = self.frame(ins, p1, p2, chunk, cla if last else 0x10, le if last else None)
+                apdu = self.frame(ins, p1, p2, chunk, cla if last else cla | 0x10, le if last else None)
                 part, a, b = self.wire.transmit(apdu)
                 sw = a * 256 + b
                 if not last:

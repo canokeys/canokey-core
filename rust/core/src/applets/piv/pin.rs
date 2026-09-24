@@ -6,7 +6,7 @@ use crate::{
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 // One atomic disk record contains both secrets and their retry counters.
-// Authorization grants (pin_ok/puk_ok) are session-only and never serialized.
+// Authorization grants (pin_ok) are session-only and never serialized.
 // PIV values occupy eight bytes; a six-digit default PIN ends in FF FF padding.
 const FORMAT_VERSION: u8 = 1;
 const VERSION: usize = 0;
@@ -19,7 +19,7 @@ pub(super) const VALUE_BYTES: usize = 8;
 const PUK_VALUE: usize = PIN_VALUE + VALUE_BYTES;
 const STATE_LEN: usize = PUK_VALUE + VALUE_BYTES;
 pub(super) const MAX_RETRIES: u8 = 0x0f;
-const RETRIES: u8 = 3;
+pub(super) const RETRIES: u8 = 3;
 pub(super) const PIN: &[u8; VALUE_BYTES] = b"123456\xff\xff";
 pub(super) const PUK: &[u8; VALUE_BYTES] = b"12345678";
 #[derive(Clone, Copy)]
@@ -27,7 +27,6 @@ pub(super) struct State {
     pub pin_tries: u8,
     pub puk_tries: u8,
     pub pin_ok: bool,
-    pub puk_ok: bool,
     pub pin: [u8; VALUE_BYTES],
     pub pin_limit: u8,
     pub puk_limit: u8,
@@ -39,7 +38,6 @@ impl State {
             pin_tries: RETRIES,
             puk_tries: RETRIES,
             pin_ok: false,
-            puk_ok: false,
             pin: *PIN,
             pin_limit: RETRIES,
             puk_limit: RETRIES,
@@ -71,7 +69,6 @@ impl State {
             pin_tries: input[PIN_REMAINING],
             puk_tries: input[PUK_REMAINING],
             pin_ok: false,
-            puk_ok: false,
             pin_limit,
             puk_limit,
             pin: input[PIN_VALUE..PUK_VALUE].try_into().ok()?,
@@ -93,7 +90,6 @@ impl Pins {
     }
     pub fn reset(&mut self) {
         self.state.pin_ok = false;
-        self.state.puk_ok = false;
     }
     pub fn defaults(
         &mut self,
@@ -114,7 +110,6 @@ impl Pins {
     pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
         self.available = false;
         self.state.pin_ok = false;
-        self.state.puk_ok = false;
         let mut bytes = [0; STATE_LEN];
         let result = match p.storage.load(Record::PivState, &mut bytes) {
             Ok(STATE_LEN) => State::decode(&bytes).ok_or(Sw::UNABLE_TO_PROCESS),
@@ -139,7 +134,6 @@ impl Pins {
             // credential operation; never authorize from the speculative cache.
             self.available = false;
             self.state.pin_ok = false;
-            self.state.puk_ok = false;
             return Err(Sw::UNABLE_TO_PROCESS);
         }
         Ok(())
@@ -162,7 +156,6 @@ impl Pins {
         self.ready()?;
         use crate::mechanisms::pin::{Charge, Credential, Error};
         if puk {
-            self.state.puk_ok = false;
         } else {
             self.state.pin_ok = false;
         }
@@ -199,7 +192,6 @@ impl Pins {
             Error::Persistence => {
                 self.available = false;
                 self.state.pin_ok = false;
-                self.state.puk_ok = false;
                 Sw::UNABLE_TO_PROCESS
             }
             #[cfg(any(feature = "admin", feature = "openpgp"))]
@@ -208,7 +200,6 @@ impl Pins {
             Error::Retries(n) => Sw::retries(n),
         })?;
         if puk {
-            self.state.puk_ok = true;
         } else {
             self.state.pin_ok = true;
         }
@@ -264,7 +255,6 @@ impl Pins {
         }
         self.authenticate(puk, data, p)?;
         if puk {
-            self.state.puk_ok = false;
             self.state
                 .puk
                 .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);

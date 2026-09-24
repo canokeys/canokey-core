@@ -6,6 +6,13 @@ use canokey_protocol::{
     response::{ReadError, Response, Source, StatusWord as Sw},
 };
 
+const DEFAULT_APDU_LE: u32 = 256;
+const MAX_FRAME_CHUNK: usize = 256;
+pub(crate) const OWNER_APDU: u8 = 0;
+pub(crate) const OWNER_CCID: u8 = 1;
+#[cfg(feature = "ctap")]
+pub(crate) const OWNER_CTAP: u8 = 2;
+
 #[derive(Clone, Copy)]
 pub enum Reply {
     Status(Sw),
@@ -67,9 +74,9 @@ pub trait Router {
 struct RoutedSource<'a, 'p, R>(&'a mut R, &'a mut Platform<'p>);
 impl<R: Router> Source for RoutedSource<'_, '_, R> {
     fn read(&mut self, offset: u32, out: &mut [u8]) -> Result<usize, ReadError> {
-        self.0
-            .read_response(offset, out, self.1)
-            .map_err(|_| ReadError)
+        // ReadError carries the applet's exact status word; the response layer
+        // uses it to terminate the lease without collapsing the distinction.
+        self.0.read_response(offset, out, self.1).map_err(ReadError)
     }
     fn close(&mut self) {
         self.0.close_response(self.1);
@@ -134,7 +141,13 @@ impl<R: Router> Runtime<R> {
     /// Frame length is supplied by the transport; no body buffer is allocated.
     #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]
     pub fn begin_frame(&mut self, owner: u8, total: usize, p: &mut Platform<'_>) -> Result<(), Sw> {
-        if owner == 0 || self.owner.is_some_and(|current| current != owner) {
+        // Platform admission excludes HID while it owns an active USB transfer.
+        // A subsequent APDU abandons the idle native session before selecting.
+        #[cfg(feature = "ctap")]
+        if owner == OWNER_CCID && self.owner == Some(OWNER_CTAP) {
+            self.reset(p);
+        }
+        if owner == OWNER_APDU || self.owner.is_some_and(|current| current != owner) {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
         self.owner = Some(owner);
@@ -155,7 +168,7 @@ impl<R: Router> Runtime<R> {
         }
     }
     fn extended_allowed(&self, owner: u8, header: Header) -> bool {
-        owner == 1
+        owner == OWNER_CCID
             && self.owner.is_none_or(|current| current == owner)
             && !self.chain.active()
             && !self.router.output_busy()
@@ -198,7 +211,7 @@ impl<R: Router> Runtime<R> {
         Ok(lc)
     }
     fn start(&mut self, info: CommandInfo, p: &mut Platform<'_>) -> Result<(), Sw> {
-        if info.extended && !self.extended_allowed(self.owner.unwrap_or(0), info.header) {
+        if info.extended && !self.extended_allowed(self.owner.unwrap_or(OWNER_APDU), info.header) {
             return Err(Sw::WRONG_LENGTH);
         }
         let h = info.header;
@@ -295,7 +308,7 @@ impl<R: Router> Runtime<R> {
         };
         // This short-APDU profile treats omitted Le as a 256-byte response
         // allowance; the decoder has already normalized encoded Le=00 to 256.
-        let le = info.le.unwrap_or(256);
+        let le = info.le.unwrap_or(DEFAULT_APDU_LE);
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
         let result = match route {
             FrameRoute::GetResponse => {
@@ -332,8 +345,19 @@ impl<R: Router> Runtime<R> {
                 Reply::Status(sw)
             }
             Ok((total, sw)) => {
-                self.response.start(total, sw);
-                Reply::Data(le)
+                // A command cannot replace an undrained response lease. Close
+                // the previous source before publishing the new cursor.
+                if self.response.active() {
+                    self.close_response(p);
+                }
+                if self.response.start(total, sw) {
+                    Reply::Data(le)
+                } else {
+                    // Keep the source lease fail-closed even if a future
+                    // caller violates the close-before-start contract.
+                    self.close_response(p);
+                    Reply::Status(Sw::UNABLE_TO_PROCESS)
+                }
             }
             Err(sw) => {
                 self.abort_input(p);
@@ -411,7 +435,7 @@ impl<R: Router> Runtime<R> {
         let (len, sw) = match reply {
             Reply::Status(sw) => (0, sw),
             Reply::Data(le) => {
-                let capacity = (output.len() - 2).min(256);
+                let capacity = (output.len() - 2).min(MAX_FRAME_CHUNK);
                 match self.response.next(
                     &mut RoutedSource(&mut self.router, p),
                     &mut output[..capacity],
@@ -446,6 +470,45 @@ pub type Core = Runtime<super::registry::Registry>;
 impl Core {
     pub const fn new() -> Self {
         Self::with_router(super::registry::Registry::new())
+    }
+    #[cfg(feature = "ctap")]
+    pub fn begin_ctap(&mut self, p: &mut Platform<'_>) {
+        // Native HID holds owner 2 across commands; preserve its PIN agreement
+        // and authorization state. Preempting an idle APDU owner resets it.
+        if self.owner != Some(OWNER_CTAP) {
+            self.reset(p);
+            self.owner = Some(OWNER_CTAP);
+        }
+        self.router.close_ctap(p);
+    }
+    #[cfg(feature = "ctap")]
+    pub fn execute_ctap(
+        &mut self,
+        command: Result<crate::applets::ctap::Command, crate::applets::ctap::Status>,
+        p: &mut Platform<'_>,
+    ) -> usize {
+        self.router.execute_ctap(command, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn execute_ctap_message(
+        &mut self,
+        command: crate::applets::ctap::apdu::Message,
+        p: &mut Platform<'_>,
+    ) -> usize {
+        self.router.execute_ctap_message(command, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn read_ctap(
+        &mut self,
+        offset: usize,
+        out: &mut [u8],
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
+        self.router.read_ctap(offset, out, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn close_ctap(&mut self, p: &mut Platform<'_>) {
+        self.router.close_ctap(p);
     }
     pub const fn applet_count() -> u8 {
         cfg!(feature = "admin") as u8

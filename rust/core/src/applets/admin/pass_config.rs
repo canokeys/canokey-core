@@ -42,23 +42,16 @@ pub fn decode_config(p1: u8, data: &[u8]) -> Result<(SlotIndex, Slot<'_>), Statu
 }
 /// Generate discovery directly from stable slots; return the total length.
 /// No password/key bytes are exposed and no full response buffer is retained.
-pub fn read_config_part(
-    bytes: &[u8],
-    layout: Layout,
-    offset: usize,
-    output: &mut [u8],
-) -> Result<usize, Error> {
+pub fn read_config(bytes: &[u8], layout: Layout, output: &mut [u8]) -> Result<usize, Error> {
     let mut position = 0;
     let mut emit = |byte| {
-        if position >= offset
-            && let Some(target) = output.get_mut(position - offset)
-        {
+        if let Some(target) = output.get_mut(position) {
             *target = byte;
         }
         position += 1;
     };
-    for index in 0..2 {
-        match layout.decode(layout.record(bytes, SlotIndex::new(index)?)?)? {
+    for index in 0..crate::applets::pass::codec::SLOT_COUNT {
+        match layout.decode(layout.record(bytes, SlotIndex::new(index as u8)?)?)? {
             Slot::Off => emit(kind::OFF),
             Slot::Oath { name, enter, .. } => {
                 emit(kind::OATH);
@@ -75,10 +68,7 @@ pub fn read_config_part(
             Slot::Hmac(_) => emit(kind::HMAC),
         }
     }
-    if offset
-        .checked_add(output.len())
-        .is_none_or(|end| end > position)
-    {
+    if position > output.len() {
         return Err(Error::Output);
     }
     Ok(position)

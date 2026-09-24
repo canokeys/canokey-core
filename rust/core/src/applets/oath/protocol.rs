@@ -4,7 +4,7 @@
 
 use super::wire::{ins::*, otp_selector, tag};
 use crate::applets::oath::{
-    Algorithm, Crypto, Error, auth,
+    Algorithm, Crypto, Error, auth, credential,
     credential::{Credential, Kind, Properties},
     service::{self, Presence, Repository},
 };
@@ -19,6 +19,13 @@ mod paging;
 include!(concat!(env!("OUT_DIR"), "/oath_version.rs"));
 pub const AID: &[u8] = &[0xa0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01];
 pub const CAPACITY: usize = 288;
+const NAME_LIMIT: usize = credential::NAME_LIMIT;
+const CHALLENGE_LIMIT: usize = auth::CHALLENGE_BYTES;
+const KEY_HEADER_BYTES: usize = 2;
+const OATH_KEY_LIMIT: usize = credential::KEY_LIMIT;
+const SET_CODE_KEY_BYTES: usize = 1 + 16;
+const SET_CODE_ALGORITHM: u8 = 0x01;
+const OTP_INPUT_LIMIT: usize = 64;
 pub fn status(error: Error) -> Sw {
     match error {
         Error::Missing | Error::AccessCodeMissing => Sw::DATA_INVALID,
@@ -31,6 +38,14 @@ pub fn status(error: Error) -> Sw {
         _ => Sw::UNABLE_TO_PROCESS,
     }
 }
+fn proof_status(error: Error) -> Sw {
+    // Both malformed proofs and a wrong secret deliberately expose the same
+    // 6A80 wire result; callers must not distinguish which proof failed.
+    match error {
+        Error::Invalid | Error::Unauthorized => Sw::WRONG_DATA,
+        other => status(other),
+    }
+}
 fn field<'a>(cursor: &mut ByteCursor<'a>, expected: u8) -> Result<&'a [u8], Sw> {
     let (tag, value) = cursor.field().map_err(|_| Sw::WRONG_LENGTH)?;
     if tag != expected {
@@ -39,15 +54,19 @@ fn field<'a>(cursor: &mut ByteCursor<'a>, expected: u8) -> Result<&'a [u8], Sw> 
     Ok(value)
 }
 fn name<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
+    // Validate at the wire boundary before borrowing storage; Credential::new
+    // repeats the invariant for callers that construct domain values directly.
     let name = field(cursor, tag::NAME)?;
-    if name.is_empty() || name.len() > 64 {
+    if name.is_empty() || name.len() > NAME_LIMIT {
         return Err(Sw::WRONG_DATA);
     }
     Ok(name)
 }
 fn challenge<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
+    // Keep challenge validation at the protocol boundary; callers may then
+    // safely apply the session's challenge semantics without rechecking size.
     let bytes = field(cursor, tag::CHALLENGE)?;
-    if bytes.is_empty() || bytes.len() > 8 {
+    if bytes.is_empty() || bytes.len() > CHALLENGE_LIMIT {
         return Err(Sw::WRONG_DATA);
     }
     Ok(bytes)
@@ -64,7 +83,7 @@ struct State {
     length: usize,
     page: Page,
     cursor: u32,
-    challenge: [u8; 8],
+    challenge: [u8; CHALLENGE_LIMIT],
     challenge_len: usize,
     // Even a failed wait consumes its input epoch; never replay it into PASS.
     presence: crate::runtime::presence::Request,
@@ -77,7 +96,7 @@ impl State {
             length: 0,
             page: Page::None,
             cursor: 0,
-            challenge: [0; 8],
+            challenge: [0; CHALLENGE_LIMIT],
             challenge_len: 0,
             presence: crate::runtime::presence::Request::new(),
         }
@@ -110,35 +129,288 @@ impl State {
                 &mut Mac::new(p.crypto, p.memory),
             )
             .map_err(status)?;
-        // SELECT returns version (3 bytes) and persistent applet handle (8 bytes).
-        // An access-protected applet also returns an 8-byte authentication
-        // challenge and algorithm TLV 7B 01 01 (one-byte value: HMAC-SHA1).
-        self.response[..2].copy_from_slice(&[tag::VERSION, 0x03]);
-        self.response[2..5].copy_from_slice(&OATH_VERSION);
-        self.response[5..7].copy_from_slice(&[tag::NAME, 0x08]);
-        self.response[7..15].copy_from_slice(&selected.handle);
-        self.length = 15;
-        if let Some(challenge) = selected.challenge {
-            self.response[15..17].copy_from_slice(&[tag::CHALLENGE, 0x08]);
-            self.response[17..25].copy_from_slice(&challenge);
-            self.response[25..28].copy_from_slice(&[tag::ALGORITHM, 0x01, 0x01]);
-            self.length = 28;
-        }
+        self.encode_select(selected);
         Ok(self.length as u32)
     }
+    fn encode_select(&mut self, selected: auth::Selection) {
+        const VERSION_VALUE_BYTES: usize = 3;
+        const HANDLE_VALUE_BYTES: usize = auth::HANDLE_BYTES;
+        self.response[..2].copy_from_slice(&[tag::VERSION, VERSION_VALUE_BYTES as u8]);
+        self.response[2..2 + VERSION_VALUE_BYTES].copy_from_slice(&OATH_VERSION);
+        let name_at = 2 + VERSION_VALUE_BYTES;
+        self.response[name_at..name_at + 2].copy_from_slice(&[tag::NAME, HANDLE_VALUE_BYTES as u8]);
+        let handle_at = name_at + 2;
+        self.response[handle_at..handle_at + HANDLE_VALUE_BYTES].copy_from_slice(&selected.handle);
+        self.length = handle_at + HANDLE_VALUE_BYTES;
+        if let Some(challenge) = selected.challenge {
+            let challenge_at = self.length;
+            self.response[challenge_at..challenge_at + 2]
+                .copy_from_slice(&[tag::CHALLENGE, auth::CHALLENGE_BYTES as u8]);
+            let value_at = challenge_at + 2;
+            self.response[value_at..value_at + auth::CHALLENGE_BYTES].copy_from_slice(&challenge);
+            let algorithm_at = value_at + auth::CHALLENGE_BYTES;
+            self.response[algorithm_at..algorithm_at + 3].copy_from_slice(&[
+                tag::ALGORITHM,
+                0x01,
+                0x01,
+            ]);
+            self.length = algorithm_at + 3;
+        }
+    }
     pub fn close_response(&mut self, p: &mut Platform<'_>) {
-        p.memory.wipe(&mut self.response);
-        self.length = 0;
+        crate::applets::close_response(p.memory, &mut self.response, &mut self.length);
     }
     pub fn read_response(&self, offset: usize, out: &mut [u8]) -> Result<(), Sw> {
-        let end = offset.checked_add(out.len()).ok_or(Sw::WRONG_LENGTH)?;
-        out.copy_from_slice(
-            self.response[..self.length]
-                .get(offset..end)
-                .ok_or(Sw::WRONG_LENGTH)?,
-        );
+        crate::applets::read_response_chunk(&self.response, self.length, offset, out)
+    }
+    fn execute_put(
+        &mut self,
+        h: Header,
+        mut c: &mut ByteCursor<'_>,
+        store: &mut Store<'_>,
+        mac: &mut Mac<'_>,
+    ) -> Result<(), Sw> {
+        // Ordinary OATH PUT uses 00/00; kind/algorithm/name are in TLVs.
+        // Nonzero legacy OTP P1 selectors were handled before this match.
+        if h.p1 != 0x00 || h.p2 != 0x00 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        let name = name(&mut c)?;
+        let key = field(&mut c, tag::KEY)?;
+        if key.len() < KEY_HEADER_BYTES + 1 || key.len() > KEY_HEADER_BYTES + OATH_KEY_LIMIT {
+            return Err(Sw::WRONG_DATA);
+        }
+        // KEY starts with the OATH kind/algorithm byte; the remaining
+        // bytes are the secret material.
+        let kind = Kind::from_byte(key[0]).map_err(status)?;
+        let alg = Algorithm::from_byte(key[0] & Kind::ALGORITHM_MASK).map_err(status)?;
+        let prop = if c.peek() == Some(tag::PROPERTY) {
+            c.byte().map_err(|_| Sw::WRONG_LENGTH)?;
+            c.byte().map_err(|_| Sw::WRONG_LENGTH)?
+        } else {
+            0
+        };
+        let mut moving = [0; super::codec::COUNTER_BYTES];
+        // The wire HOTP initial counter is four bytes; storage uses
+        // an eight-byte big-endian moving factor. TOTP cannot set it.
+        if c.peek() == Some(tag::INITIAL_COUNTER) {
+            let counter = field(&mut c, tag::INITIAL_COUNTER)?;
+            if counter.len() != 4 || kind != Kind::Hotp {
+                return Err(Sw::WRONG_DATA);
+            }
+            moving[4..].copy_from_slice(counter);
+        }
+        if !c.is_empty() {
+            return Err(Sw::WRONG_LENGTH);
+        }
+        let mut record = Credential::new(
+            name,
+            &key[KEY_HEADER_BYTES..],
+            kind,
+            alg,
+            key[1],
+            Properties::new(prop).map_err(status)?,
+            moving,
+        )
+        .map_err(status)?;
+        let result = service::put(store, mac, &record).map_err(status);
+        record.clear(mac);
+        result?;
         Ok(())
     }
+
+    fn execute_delete_rename(
+        &mut self,
+        h: Header,
+        mut c: &mut ByteCursor<'_>,
+        pass: Option<&mut Pass>,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
+        let mut store = Store::new(p.storage, p.memory);
+        let mut mac = Mac::new(p.crypto, p.memory);
+        // P1/P2 are reserved (00); NAME TLVs identify old/new names.
+        if h.p1 != 0x00 || h.p2 != 0x00 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        let old = name(&mut c)?;
+        if h.ins == INS_RENAME {
+            let new = name(&mut c)?;
+            if !c.is_empty() {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            service::rename(&mut store, &mut mac, old, new).map_err(status)?;
+        } else {
+            if !c.is_empty() {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            let id = service::find(&mut store, &mut mac, old).map_err(status)?;
+            drop(store);
+            if let Some(pass) = pass {
+                pass.remove_oath(Some(id.0), p.storage, p.memory)
+                    .map_err(crate::applets::pass::status)?;
+            }
+            // PASS and OATH share the storage borrow; recreate the store only
+            // after PASS has released it so both records remain consistent.
+            Store::new(p.storage, p.memory).delete(id).map_err(status)?;
+        }
+        Ok(())
+    }
+
+    fn execute_set_code(
+        &mut self,
+        h: Header,
+        data: &[u8],
+        mut c: &mut ByteCursor<'_>,
+        store: &mut Store<'_>,
+        mac: &mut Mac<'_>,
+    ) -> Result<(), Sw> {
+        // P1/P2=00; the KEY field (or empty body) selects set vs clear.
+        if h.p1 != 0x00 || h.p2 != 0x00 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        let key = if data.is_empty() {
+            &[][..]
+        } else {
+            field(&mut c, tag::KEY)?
+        };
+        if key.is_empty() {
+            self.session.clear_code(store, mac).map_err(status)?;
+        } else {
+            if key.len() != SET_CODE_KEY_BYTES {
+                return Err(Sw::WRONG_DATA);
+            }
+            if key[0] != SET_CODE_ALGORITHM {
+                return Err(Sw::WRONG_DATA);
+            }
+            let challenge = challenge(&mut c)?;
+            let response = field(&mut c, tag::RESPONSE)?;
+            if !c.is_empty() {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            let response = response.try_into().map_err(|_| Sw::WRONG_DATA)?;
+            self.session
+                .set_code(
+                    store,
+                    mac,
+                    key[1..].try_into().unwrap(),
+                    challenge,
+                    response,
+                )
+                .map_err(proof_status)?;
+        }
+        Ok(())
+    }
+
+    fn execute_validate(
+        &mut self,
+        h: Header,
+        mut c: &mut ByteCursor<'_>,
+        store: &mut Store<'_>,
+        mac: &mut Mac<'_>,
+    ) -> Result<(), Sw> {
+        // P1/P2=00; RESPONSE/CHALLENGE TLVs carry the mutual proof.
+        if h.p1 != 0x00 || h.p2 != 0x00 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        let response = field(&mut c, tag::RESPONSE)?
+            .try_into()
+            .map_err(|_| Sw::WRONG_DATA)?;
+        let challenge = field(&mut c, tag::CHALLENGE)?;
+        if !c.is_empty() {
+            return Err(Sw::WRONG_LENGTH);
+        }
+        let mut result = [0; 20];
+        self.session
+            .validate(store, mac, response, challenge, &mut result)
+            .map_err(proof_status)?;
+        // RESPONSE contains the full 20-byte HMAC-SHA1 proof.
+        self.response[..2].copy_from_slice(&[tag::RESPONSE, 0x14]);
+        self.response[2..22].copy_from_slice(&result);
+        mac.wipe(&mut result);
+        self.length = 22;
+        Ok(())
+    }
+
+    fn execute_calculate(
+        &mut self,
+        h: Header,
+        mut c: &mut ByteCursor<'_>,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
+        let mut store = Store::new(p.storage, p.memory);
+        let mut mac = Mac::new(p.crypto, p.memory);
+        // P1=00; P2=00 returns the full MAC, P2=01 the 31-bit
+        // dynamically truncated value. NAME selects the credential.
+        if h.p1 != 0x00 || h.p2 > 0x01 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        let name = name(&mut c)?;
+        let id = service::find(&mut store, &mut mac, name).map_err(status)?;
+        let mut record = store.load(id).map_err(status)?;
+        let kind = record.kind();
+        let touch = record.properties().touch();
+        record.clear(&mut mac);
+        let input = if kind == Kind::Totp {
+            challenge(&mut c)?
+        } else {
+            &[]
+        };
+        if !c.is_empty() {
+            return Err(Sw::WRONG_LENGTH);
+        }
+        let presence = if touch {
+            if !self.presence.wait(p.device) {
+                return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+            }
+            Presence::Confirmed
+        } else {
+            Presence::NotConfirmed
+        };
+        let mut result =
+            service::calculate(&mut store, &mut mac, id, input, presence).map_err(status)?;
+        self.emit_digest(&result, h.p2 != 0x00);
+        result.clear(&mut mac);
+        Ok(())
+    }
+
+    fn execute_set_default(
+        &mut self,
+        h: Header,
+        mut c: &mut ByteCursor<'_>,
+        pass: Option<&mut Pass>,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
+        let mut store = Store::new(p.storage, p.memory);
+        let mut mac = Mac::new(p.crypto, p.memory);
+        // P1=1/2 selects a PASS slot (one-based); P2=0/1 controls
+        // the trailing Enter key. NAME binds an HOTP credential.
+        let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
+        if !(0x01..=0x02).contains(&h.p1) || h.p2 > 0x01 {
+            return Err(Sw::WRONG_P1P2);
+        }
+        let name = name(&mut c)?;
+        let id = service::find(&mut store, &mut mac, name).map_err(status)?;
+        let mut record = store.load(id).map_err(status)?;
+        let result = if record.kind() != Kind::Hotp {
+            Err(Sw::CONDITIONS_NOT_SATISFIED)
+        } else {
+            pass.configure(
+                SlotIndex::new(h.p1 - 1).unwrap(),
+                Slot::Oath {
+                    id: id.0,
+                    name: record.name(),
+                    enter: h.p2,
+                },
+                p.storage,
+                p.memory,
+            )
+            .map_err(crate::applets::pass::status)
+        };
+        record.clear(&mut mac);
+        result?;
+        Ok(())
+    }
+
     fn execute(
         &mut self,
         h: Header,
@@ -174,7 +446,7 @@ impl State {
                 self.response[..4].copy_from_slice(&serial);
                 self.length = 4;
             } else {
-                if data.len() > 64 {
+                if data.len() > OTP_INPUT_LIMIT {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 let index = u8::from(h.p1 == otp_selector::CHALLENGE_SLOT_2);
@@ -210,137 +482,20 @@ impl State {
         let mut c = ByteCursor::new(data);
         match h.ins {
             INS_PUT => {
-                // Ordinary OATH PUT uses 00/00; kind/algorithm/name are in TLVs.
-                // Nonzero legacy OTP P1 selectors were handled before this match.
-                if h.p1 != 0x00 || h.p2 != 0x00 {
-                    return Err(Sw::WRONG_P1P2);
-                }
-                let name = name(&mut c)?;
-                let key = field(&mut c, tag::KEY)?;
-                if key.len() < 3 || key.len() > 66 {
-                    return Err(Sw::WRONG_DATA);
-                }
-                let kind = Kind::from_byte(key[0]).map_err(status)?;
-                let alg = Algorithm::from_byte(key[0] & Kind::ALGORITHM_MASK).map_err(status)?;
-                let prop = if c.peek() == Some(tag::PROPERTY) {
-                    c.byte().map_err(|_| Sw::WRONG_LENGTH)?;
-                    c.byte().map_err(|_| Sw::WRONG_LENGTH)?
-                } else {
-                    0
-                };
-                let mut moving = [0; 8];
-                // The wire HOTP initial counter is four bytes; storage uses
-                // an eight-byte big-endian moving factor. TOTP cannot set it.
-                if c.peek() == Some(tag::INITIAL_COUNTER) {
-                    let counter = field(&mut c, tag::INITIAL_COUNTER)?;
-                    if counter.len() != 4 || kind != Kind::Hotp {
-                        return Err(Sw::WRONG_DATA);
-                    }
-                    moving[4..].copy_from_slice(counter);
-                }
-                if !c.is_empty() {
-                    return Err(Sw::WRONG_LENGTH);
-                }
-                let mut record = Credential::new(
-                    name,
-                    &key[2..],
-                    kind,
-                    alg,
-                    key[1],
-                    Properties::new(prop).map_err(status)?,
-                    moving,
-                )
-                .map_err(status)?;
-                let result = service::put(&mut store, &mut mac, &record).map_err(status);
-                record.clear(&mut mac);
-                result?;
+                self.execute_put(h, &mut c, &mut store, &mut mac)?;
             }
             INS_DELETE | INS_RENAME => {
-                // P1/P2 are reserved (00); NAME TLVs identify old/new names.
-                if h.p1 != 0x00 || h.p2 != 0x00 {
-                    return Err(Sw::WRONG_P1P2);
-                }
-                let old = name(&mut c)?;
-                if h.ins == INS_RENAME {
-                    let new = name(&mut c)?;
-                    service::rename(&mut store, &mut mac, old, new).map_err(status)?;
-                } else {
-                    let id = service::find(&mut store, &mut mac, old).map_err(status)?;
-                    if let Some(pass) = pass {
-                        pass.remove_oath(Some(id.0), p.storage, p.memory)
-                            .map_err(crate::applets::pass::status)?;
-                    }
-                    Store::new(p.storage, p.memory).delete(id).map_err(status)?;
-                }
+                // Store borrows the shared storage/memory handles; release it
+                // before the delete helper creates its transactional Store.
+                drop(store);
+                drop(mac);
+                self.execute_delete_rename(h, &mut c, pass, p)?;
             }
             INS_SET_CODE => {
-                // P1/P2=00; the KEY field (or empty body) selects set vs clear.
-                if h.p1 != 0x00 || h.p2 != 0x00 {
-                    return Err(Sw::WRONG_P1P2);
-                }
-                let key = if data.is_empty() {
-                    &[][..]
-                } else {
-                    field(&mut c, tag::KEY)?
-                };
-                if key.is_empty() {
-                    self.session
-                        .clear_code(&mut store, &mut mac)
-                        .map_err(status)?;
-                } else {
-                    if key.len() != 17 {
-                        return Err(Sw::WRONG_DATA);
-                    }
-                    let challenge = field(&mut c, tag::CHALLENGE)?;
-                    let response = field(&mut c, tag::RESPONSE)?;
-                    if !c.is_empty() {
-                        return Err(Sw::WRONG_LENGTH);
-                    }
-                    let response = response.try_into().map_err(|_| Sw::WRONG_DATA)?;
-                    self.session
-                        .set_code(
-                            &mut store,
-                            &mut mac,
-                            key[1..].try_into().unwrap(),
-                            challenge,
-                            response,
-                        )
-                        .map_err(|e| {
-                            if e == Error::Invalid {
-                                Sw::DATA_INVALID
-                            } else {
-                                status(e)
-                            }
-                        })?;
-                }
+                self.execute_set_code(h, data, &mut c, &mut store, &mut mac)?;
             }
             INS_VALIDATE => {
-                // P1/P2=00; RESPONSE/CHALLENGE TLVs carry the mutual proof.
-                if h.p1 != 0x00 || h.p2 != 0x00 {
-                    return Err(Sw::WRONG_P1P2);
-                }
-                let response = field(&mut c, tag::RESPONSE)?
-                    .try_into()
-                    .map_err(|_| Sw::WRONG_DATA)?;
-                let challenge = field(&mut c, tag::CHALLENGE)?;
-                if !c.is_empty() {
-                    return Err(Sw::WRONG_LENGTH);
-                }
-                let mut result = [0; 20];
-                self.session
-                    .validate(&mut store, &mut mac, response, challenge, &mut result)
-                    .map_err(|e| {
-                        if e == Error::Unauthorized {
-                            Sw::WRONG_DATA
-                        } else {
-                            status(e)
-                        }
-                    })?;
-                // RESPONSE contains the full 20-byte HMAC-SHA1 proof.
-                self.response[..2].copy_from_slice(&[tag::RESPONSE, 0x14]);
-                self.response[2..22].copy_from_slice(&result);
-                mac.wipe(&mut result);
-                self.length = 22;
+                self.execute_validate(h, &mut c, &mut store, &mut mac)?;
             }
             INS_LIST => {
                 // P1/P2=00 starts enumeration; continuation uses SEND REMAINING.
@@ -357,6 +512,9 @@ impl State {
                     return Err(Sw::WRONG_P1P2);
                 }
                 let challenge = challenge(&mut c)?;
+                if !c.is_empty() {
+                    return Err(Sw::WRONG_LENGTH);
+                }
                 self.challenge[..challenge.len()].copy_from_slice(challenge);
                 self.challenge_len = challenge.len();
                 self.page = Page::Calculate {
@@ -365,62 +523,14 @@ impl State {
                 return self.page(le, p);
             }
             INS_CALCULATE => {
-                // P1=00; P2=00 returns the full MAC, P2=01 the 31-bit
-                // dynamically truncated value. NAME selects the credential.
-                if h.p1 != 0x00 || h.p2 > 0x01 {
-                    return Err(Sw::WRONG_P1P2);
-                }
-                let name = name(&mut c)?;
-                let id = service::find(&mut store, &mut mac, name).map_err(status)?;
-                let mut record = store.load(id).map_err(status)?;
-                let kind = record.kind();
-                let touch = record.properties().touch();
-                record.clear(&mut mac);
-                let input = if kind == Kind::Totp {
-                    challenge(&mut c)?
-                } else {
-                    &[]
-                };
-                let presence = if touch {
-                    if !self.presence.wait(p.device) {
-                        return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
-                    }
-                    Presence::Confirmed
-                } else {
-                    Presence::NotConfirmed
-                };
-                let mut result = service::calculate(&mut store, &mut mac, id, input, presence)
-                    .map_err(status)?;
-                self.emit_digest(&result, h.p2 != 0x00);
-                result.clear(&mut mac);
+                drop(store);
+                drop(mac);
+                self.execute_calculate(h, &mut c, p)?;
             }
             INS_SET_DEFAULT => {
-                // P1=1/2 selects a PASS slot (one-based); P2=0/1 controls
-                // the trailing Enter key. NAME binds an HOTP credential.
-                let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
-                if !(0x01..=0x02).contains(&h.p1) || h.p2 > 0x01 {
-                    return Err(Sw::WRONG_P1P2);
-                }
-                let name = name(&mut c)?;
-                let id = service::find(&mut store, &mut mac, name).map_err(status)?;
-                let mut record = store.load(id).map_err(status)?;
-                let result = if record.kind() != Kind::Hotp {
-                    Err(Sw::CONDITIONS_NOT_SATISFIED)
-                } else {
-                    pass.configure(
-                        SlotIndex::new(h.p1 - 1).unwrap(),
-                        Slot::Oath {
-                            id: id.0,
-                            name: record.name(),
-                            enter: h.p2,
-                        },
-                        p.storage,
-                        p.memory,
-                    )
-                    .map_err(crate::applets::pass::status)
-                };
-                record.clear(&mut mac);
-                result?;
+                drop(store);
+                drop(mac);
+                self.execute_set_default(h, &mut c, pass, p)?;
             }
             _ => return Err(Sw::INS_NOT_SUPPORTED),
         }

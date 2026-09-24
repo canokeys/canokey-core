@@ -34,6 +34,8 @@ access code requires successful OATH authentication; ADMIN PIN is separate.
 Name/key lengths are 1–64 bytes, digits 4–8, TOTP challenge length 1–8.
 Properties use raw tag 78 plus flags, not a BER length. HOTP initial counter
 zero calculates counter one first, committing the increment before HMAC.
+VALIDATE consumes the SELECT challenge after a successful proof and rotates it,
+so a response cannot be replayed within the same selection.
 Increasing credentials require eight-byte, nondecreasing challenges and accept
 equality in both CALCULATE and CALCULATE ALL. Rejected challenges return 6982;
 the former C CALCULATE ALL bypass is intentionally removed. Enumeration is not

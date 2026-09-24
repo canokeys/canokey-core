@@ -32,8 +32,9 @@ impl<'a> Mac<'a> {
 }
 const ID_BYTES: usize = 4;
 const ENTRY_HEADER_BYTES: usize = ID_BYTES + codec::HEADER_BYTES;
-const FREE_SPACE_RESERVE: u32 = 128 * 512;
-const HEADER: u32 = ID_BYTES as u32; // Next credential ID, retained even when the last entry is deleted.
+const FREE_SPACE_RESERVE: u32 = 64 * 1024;
+// The first four bytes store the next credential ID, even when no entries remain.
+const NEXT_ID_BYTES: u32 = ID_BYTES as u32;
 fn io(_: StorageError) -> Error {
     Error::Storage
 }
@@ -64,7 +65,7 @@ impl Store<'_> {
     }
     pub fn install(&mut self) -> Result<(), Error> {
         match self.storage.size(Record::OathRecords) {
-            Ok(n) if n >= HEADER => self.next_id().map(|_| ()),
+            Ok(n) if n >= NEXT_ID_BYTES => self.next_id().map(|_| ()),
             Err(StorageError::Missing) => Err(Error::Missing),
             _ => Err(Error::Storage),
         }
@@ -82,7 +83,7 @@ impl Store<'_> {
     }
     /// Entry at a byte offset; zero starts an iteration after the file header.
     pub fn at(&mut self, offset: u32) -> Result<Option<(CredentialId, u32)>, Error> {
-        let offset = offset.max(HEADER);
+        let offset = offset.max(NEXT_ID_BYTES);
         let size = self.storage.size(Record::OathRecords).map_err(io)?;
         if offset == size {
             return Ok(None);
@@ -109,7 +110,7 @@ impl Store<'_> {
         {
             return Ok(offset);
         }
-        let mut offset = HEADER;
+        let mut offset = NEXT_ID_BYTES;
         while let Some((current, next)) = self.at(offset)? {
             if current == id {
                 return Ok(offset);
@@ -139,8 +140,8 @@ impl Store<'_> {
                 self.storage,
                 self.memory,
                 Record::OathRecords,
-                HEADER,
-                offset - HEADER,
+                NEXT_ID_BYTES,
+                offset - NEXT_ID_BYTES,
             )
             .map_err(io)?;
             if let Some(value) = value {

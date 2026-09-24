@@ -13,6 +13,13 @@
 void ck_hid_reset(void);
 uint8_t ck_hid_poll(const uint8_t *input, uint32_t received, uint32_t now, uint8_t *output);
 uint8_t ck_hid_busy(void);
+uint8_t ck_hid_active(void);
+/* Serialized transport callbacks; never reenter Rust or use PKE. */
+void ck_hid_execution_begin(uint32_t cid);
+void ck_hid_execution_end(void);
+uint8_t ck_hid_executing(void);
+uint8_t ck_hid_progress(void);
+void ck_hid_keepalive(uint8_t waiting);
 uint8_t ck_ccid_idle(void);
 uint8_t ck_ccid_scratch_busy(void);
 /* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
@@ -31,7 +38,7 @@ int32_t ck_core_exchange(uint8_t owner, const uint8_t *input, size_t length, uin
 int32_t ck_core_output_sample(uint8_t pressed, uint32_t now, uint8_t ready);
 int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
 int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
-/* Root-level two-digit hexadecimal filenames, IDs 0..76 (00..4c).
+/* Root-level two-digit hexadecimal filenames, IDs 0..183 (00..b7).
  * Record assignments are defined in rust/core/src/ports/storage.rs.
  * File 0 = versioned slots, file 1 = versioned PIN,
  * file 2 = OATH metadata, file 3 = OATH records.
@@ -56,7 +63,7 @@ int32_t ck_platform_mac(uint8_t algorithm, const uint8_t *key, size_t key_length
                         uint8_t output[64]);
 int32_t ck_platform_random(uint8_t *output, size_t length);
 void ck_platform_serial(uint8_t output[4]);
-/* Stable byte ABI, mirrored by StageOperation in rust/ffi/src/platform.rs. */
+/* Stable byte ABI, mirrored by StageOperation in rust/ffi/src/platform/storage.rs. */
 enum ck_stage_operation {
   CK_STAGE_BEGIN = 0,
   CK_STAGE_APPEND = 1,
@@ -79,4 +86,6 @@ uint8_t ck_platform_touched(void);
 uint8_t ck_platform_progress(void);
 // Transport-only progress; must not reenter the Rust core from a callback.
 uint8_t ck_ccid_progress(void);
+// Main-loop raw touch sampling for non-blocking CTAP1 presence.
+void ck_core_presence_sample(void);
 #endif

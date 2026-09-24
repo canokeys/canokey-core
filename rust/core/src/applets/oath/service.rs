@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    Crypto, Error,
+    Crypto, Error, auth,
     credential::{Credential, Kind},
 };
 /// Stable repository identity. Deleted identities must never alias new records.
@@ -121,11 +121,13 @@ pub fn calculate(
                 &counter[..]
             }
             Kind::Totp => {
-                if challenge.is_empty() || challenge.len() > 8 {
+                if challenge.is_empty() || challenge.len() > auth::CHALLENGE_BYTES {
                     return Err(Error::Invalid);
                 }
                 if record.properties.increasing() {
-                    if challenge.len() != 8 || challenge < &record.moving_factor[..] {
+                    if challenge.len() != auth::CHALLENGE_BYTES
+                        || challenge < &record.moving_factor[..]
+                    {
                         return Err(Error::IncreasingChallenge);
                     }
                     record.moving_factor.copy_from_slice(challenge);

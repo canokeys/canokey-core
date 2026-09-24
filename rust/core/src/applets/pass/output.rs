@@ -79,7 +79,8 @@ impl Output {
             // Milliseconds: reject contact bounce below 30; a hold of at least
             // 500 selects slot 1, otherwise the short-touch slot 0.
             if elapsed >= 30 {
-                self.used = resolve(u8::from(elapsed >= 500), &mut self.bytes);
+                self.used =
+                    resolve(u8::from(elapsed >= 500), &mut self.bytes).min(self.bytes.len());
                 self.position = 0;
             }
         }

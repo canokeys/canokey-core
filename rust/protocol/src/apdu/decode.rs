@@ -9,7 +9,7 @@ struct Layout {
 }
 
 impl Layout {
-    fn decode(prefix: &[u8], total: usize) -> Result<Self, Error> {
+    fn decode(frame: &[u8], total: usize) -> Result<Self, Error> {
         let mut result = Self {
             start: 4,
             lc: 0,
@@ -25,7 +25,7 @@ impl Layout {
             result.le_width = 1;
             return Ok(result);
         }
-        let short_lc = usize::from(prefix[4]);
+        let short_lc = usize::from(frame[4]);
         // Cases 3S/4S: nonzero fifth byte is short Lc. Exactly zero or one
         // trailing byte is permitted (absent Le or short Le).
         if short_lc != 0 {
@@ -47,7 +47,7 @@ impl Layout {
                 result.le_width = 2;
             } else {
                 result.start = 7;
-                result.lc = u16::from_be_bytes([prefix[5], prefix[6]]);
+                result.lc = u16::from_be_bytes([frame[5], frame[6]]);
                 result.le_width = total
                     .checked_sub(7 + usize::from(result.lc))
                     .ok_or(Error::Length)?;
@@ -88,7 +88,10 @@ impl Layout {
     }
 }
 
-/// Parse format only. Transport capacity and extended-APDU admission are caller policy.
+/// Parse format only. Transport capacity and extended-APDU admission are caller
+/// policy. This compatibility API is retained for host callers and integration
+/// tests; firmware transport uses `FrameDecoder::feed_events` to avoid reassembly.
+#[doc(hidden)]
 pub fn parse(bytes: &[u8]) -> Result<Command<'_>, Error> {
     if bytes.len() < 4 || bytes.len() > 65544 {
         return Err(Error::Length);

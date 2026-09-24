@@ -109,6 +109,13 @@ pub const ATTESTATION_KEY: usize = USER_KEY_COUNT;
 pub const KEY_COUNT: usize = USER_KEY_COUNT + 1;
 pub const HEADER: usize = 6;
 pub const META: usize = 88;
+const P256_BYTES: usize = 32;
+const P384_BYTES: usize = 48;
+const P521_BYTES: usize = 66;
+const RSA2048_COMPONENT_BYTES: usize = 128;
+const RSA3072_COMPONENT_BYTES: usize = 192;
+const RSA4096_COMPONENT_BYTES: usize = 256;
+const MLKEM_SEED_BYTES: usize = 64;
 pub const ALGORITHM: usize = 1;
 pub const ORIGIN: usize = 2;
 pub const PIN_POLICY: usize = 3;
@@ -131,10 +138,18 @@ pub fn slot(id: u8) -> Result<usize, Sw> {
 // Private component size in bytes, indexed by ports::alg: EC scalar, one RSA
 // prime/CRT component (half the modulus width), or a persisted PQ seed.
 pub fn width(a: u8) -> usize {
-    [32, 32, 48, 32, 32, 128, 192, 256, 66, 32, 64, 32]
-        .get(a as usize)
-        .copied()
-        .unwrap_or(0)
+    match a {
+        alg::P256 | alg::SECP256K1 | alg::ED25519 | alg::X25519 | alg::SM2 | alg::MLDSA65 => {
+            P256_BYTES
+        }
+        alg::P384 => P384_BYTES,
+        alg::RSA2048 => RSA2048_COMPONENT_BYTES,
+        alg::RSA3072 => RSA3072_COMPONENT_BYTES,
+        alg::RSA4096 => RSA4096_COMPONENT_BYTES,
+        alg::P521 => P521_BYTES,
+        alg::MLKEM768 => MLKEM_SEED_BYTES,
+        _ => 0,
+    }
 }
 pub fn rsa(a: u8) -> bool {
     (alg::RSA2048..=alg::RSA4096).contains(&a)

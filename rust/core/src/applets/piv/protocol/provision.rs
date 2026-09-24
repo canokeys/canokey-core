@@ -121,7 +121,8 @@ impl Piv {
             .replace(repo::OBJECTS[repo::CHUID_OBJECT_INDEX], &chuid)
             .map_err(repo::io)?;
         if reset_credentials {
-            self.pins.defaults(3, 3, p)?;
+            self.pins
+                .defaults(super::super::pin::RETRIES, super::super::pin::RETRIES, p)?;
         }
         p.storage
             .replace(Record::PivConfig, &self.config)

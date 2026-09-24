@@ -2,6 +2,7 @@
 //! Existing OATH access-code challenge protocol, independent of ADMIN PINs.
 use super::{Algorithm, Crypto, Error};
 pub const HANDLE_BYTES: usize = 8;
+pub const CHALLENGE_BYTES: usize = 8;
 pub const ACCESS_KEY_BYTES: usize = 16;
 const FORMAT_VERSION: u8 = 1;
 const VERSION: usize = 0;
@@ -77,19 +78,19 @@ pub fn install(repository: &mut dyn Repository, crypto: &mut dyn Crypto) -> Resu
 }
 pub struct Selection {
     pub handle: [u8; HANDLE_BYTES],
-    pub challenge: Option<[u8; HANDLE_BYTES]>,
+    pub challenge: Option<[u8; CHALLENGE_BYTES]>,
 }
 /// Runtime-owned per-session mechanism state, reset on deselection/transport reset.
 #[derive(Default)]
 pub struct Session {
-    challenge: [u8; HANDLE_BYTES],
+    challenge: [u8; CHALLENGE_BYTES],
     selected: bool,
     authorized: bool,
 }
 impl Session {
     pub const fn new() -> Self {
         Self {
-            challenge: [0; HANDLE_BYTES],
+            challenge: [0; CHALLENGE_BYTES],
             selected: false,
             authorized: false,
         }
@@ -194,6 +195,9 @@ impl Session {
             }
             crypto.hmac(Algorithm::Sha1, key, challenge, &mut digest)?;
             output.copy_from_slice(&digest[..20]);
+            // Consume the SELECT challenge after one successful validation so
+            // the same response cannot be replayed in this selection.
+            crypto.random(&mut self.challenge)?;
             self.authorized = true;
             Ok(())
         })();

@@ -14,9 +14,10 @@ static unsigned acquired, closed, executed, reply_length;
 static uint8_t held, hid_busy, write_failure;
 static int32_t begin_result = 291;
 uint32_t device_get_tick(void) { return now; }
+uint8_t ck_hid_active(void) { return hid_busy == 1; }
 uint8_t ck_hid_busy(void) { return hid_busy; }
 void USBD_CCID_ServiceReceive(void) {}
-void ck_core_reset(void) { assert(!held); }
+void ck_core_reset(void) { assert(!held && hid_busy != 2); }
 size_t pke_buffer_size(void) { return sizeof(pke); }
 int pke_buffer_acquire(uint8_t owner) {
   assert(owner == PKE_BUFFER_OWNER_CTAP && !held && !hid_busy);
@@ -160,4 +161,20 @@ int main(void) {
   now += 2000;
   feed(wire + 64, 64); // a late queued fragment must not revive the request
   assert(!held && closed == 6 && executed == 2 && reply[8] == SLOTERROR_BAD_DWLENGTH);
+  restart();
+  hid_busy = 2; // Native idle lease: discovery works, applet execution waits.
+  uint8_t control[] = {0x65, 0, 0, 0, 0, 0, 0x34, 0, 0, 0};
+  feed(control, sizeof(control));
+  assert(reply[0] == 0x81 && ck_ccid_rx_ready());
+  control[0] = 0x63;
+  feed(control, sizeof(control));
+  control[0] = 0x62;
+  feed(control, sizeof(control));
+  assert(reply[0] == 0x80 && reply_length > 10);
+  feed(short_apdu, sizeof(short_apdu));
+  assert(!ck_ccid_rx_ready() && ck_ccid_idle());
+  hid_busy = 0;
+  CCID_Loop();
+  assert(ck_ccid_rx_ready() && reply[10] == 0x69);
+
 }

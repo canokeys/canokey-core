@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 pub mod engine;
-#[cfg(any(
-    feature = "admin",
-    feature = "oath",
-    feature = "openpgp",
-    feature = "piv"
-))]
+#[cfg(has_applet)]
 pub(crate) mod presence;
 pub mod registry;
 
-#[cfg(any(feature = "openpgp", feature = "piv"))]
+#[cfg(crypto_applet)]
 pub(crate) mod workspace;
 
 #[cfg(feature = "ctap")]
 pub mod ctaphid;
+
+#[cfg(feature = "ctap")]
+pub use presence::Polling;

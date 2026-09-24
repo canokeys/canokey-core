@@ -1,6 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded BER response encoding for metadata and semantic crypto output.
 use canokey_protocol::response::StatusWord as Sw;
+
+pub(super) struct BufferRange {
+    start: usize,
+    end: usize,
+}
+impl BufferRange {
+    pub(super) fn new(start: usize, length: usize) -> Option<Self> {
+        Some(Self {
+            start,
+            end: start.checked_add(length)?,
+        })
+    }
+    pub(super) fn tail(total: usize, length: usize) -> Option<Self> {
+        let start = total.checked_sub(length)?;
+        Self::new(start, length)
+    }
+    pub(super) fn range(self) -> core::ops::Range<usize> {
+        self.start..self.end
+    }
+}
+
 pub(super) struct Writer<'a> {
     out: &'a mut [u8],
     pub(super) len: usize,

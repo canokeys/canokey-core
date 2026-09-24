@@ -32,6 +32,7 @@ impl RecordPin {
             || !(self.stored_min..=PIN_CAPACITY as u8).contains(&b[LENGTH])
             || b[RETRY_LIMIT] == 0
             || b[REMAINING] > b[RETRY_LIMIT]
+            || (b[LENGTH] == 0 && b[REMAINING] != 0)
             || self
                 .fixed_limit
                 .is_some_and(|limit| b[RETRY_LIMIT] != limit)

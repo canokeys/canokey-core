@@ -15,11 +15,22 @@ impl Piv {
         if !matches!(h.p1, wire_alg::DEFAULT | wire_alg::AES192) {
             return Err(Sw::WRONG_P1P2);
         }
+        if f[ga_field::EXPONENTIATION].is_some() {
+            return Err(Sw::WRONG_DATA);
+        }
         let mut mgmt = repo::management(p)?;
         let r = (|| {
             self.touch(mgmt[repo::MANAGEMENT_TOUCH], p)?;
             let key: &[u8; 24] = mgmt[repo::MANAGEMENT_KEY..].try_into().unwrap();
-            if f[ga_field::WITNESS] == Some(&[][..]) || f[ga_field::CHALLENGE] == Some(&[][..]) {
+            let initial =
+                f[ga_field::WITNESS] == Some(&[][..]) || f[ga_field::CHALLENGE] == Some(&[][..]);
+            if initial {
+                // Management authentication accepts only 80/81 fields in its
+                // initial phase; a response mixed into that template is not a
+                // proof and must not be silently ignored.
+                if f[ga_field::RESPONSE].is_some() {
+                    return Err(Sw::WRONG_DATA);
+                }
                 self.admin = false;
                 self.auth_clear(p);
                 p.crypto

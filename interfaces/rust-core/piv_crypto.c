@@ -90,7 +90,7 @@ static __attribute__((noinline)) int sm2_finish(stream_t *s) {
   s->length = EC_SIGNATURE_BYTES;
   return EC_SIGNATURE_BYTES;
 }
-int32_t ck_platform_piv_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t n, uint8_t *out,
+int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t n, uint8_t *out,
                                size_t capacity) {
   stream_t *s = scratch;
   if (op == CK_STREAM_ABORT) {
@@ -226,34 +226,6 @@ int32_t ck_platform_piv_stream(uint8_t op, uint8_t alg, void *scratch, const uin
     return (int32_t)written;
   }
   return -1;
-}
-
-#include <sha.h>
-_Static_assert(sizeof(sha256_ctx_t) <= CK_HASH_STATE_BYTES, "Rust digest state ABI");
-int32_t ck_platform_digest(uint8_t op, void *state, const uint8_t *input, size_t n, uint8_t *out, size_t capacity) {
-  sha256_ctx_t *ctx = state;
-  switch (op) {
-  case CK_DIGEST_INIT:
-    memzero(state, CK_HASH_STATE_BYTES);
-    sha256_init(ctx);
-    return 0;
-  case CK_DIGEST_UPDATE:
-    sha256_update(ctx, input, n);
-    return 0;
-  case CK_DIGEST_FINAL:
-    if (capacity < SHA256_DIGEST_LENGTH) return -1;
-    sha256_final(ctx, out);
-    memzero(state, CK_HASH_STATE_BYTES);
-    return 0;
-  case CK_DIGEST_ABORT:
-#ifdef USE_MBEDCRYPTO
-    psa_hash_abort(&ctx->op);
-#endif
-    memzero(state, CK_HASH_STATE_BYTES);
-    return 0;
-  default:
-    return -1;
-  }
 }
 
 // Fixed primitive packet: ephemeral scalar, two peer points, two length-prefixed

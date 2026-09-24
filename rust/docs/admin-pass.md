@@ -49,6 +49,9 @@ Only NotFound creates the default PIN. Invalid records and I/O errors fail
 closed. This preserves C's missing-record initialization policy but does not
 detect malicious deletion with raw Flash access. Provision fresh storage;
 compatibility with previous C or Rust layouts is not supported.
+The PASS service keeps a missing record in RAM until the first successful
+configuration write; merely opening the applet does not create a persistent
+record.
 LittleFS mount failure never formats. The file cache is aligned to four bytes
 because CIU page programming reads words, including non-inline file payloads.
 

@@ -127,7 +127,7 @@ fn verify_status_retries_logout_and_restart() {
     );
     // Authorization is session-only and must not survive reinstallation.
     piv.install(&mut platform!(&mut store)).unwrap();
-    assert!(!piv.state.pin_ok && !piv.state.puk_ok);
+    assert!(!piv.state.pin_ok);
 }
 #[test]
 fn failed_verify_revokes_session_and_block_survives_restart() {

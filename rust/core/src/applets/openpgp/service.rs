@@ -12,6 +12,17 @@ use crate::{
     ports::{KeyOperation, Record},
     runtime::workspace::Workspace,
 };
+fn pw1_policy(p: &mut Platform<'_>) -> Result<[u8; 2], Error> {
+    let mut policy = [0; 2];
+    p.storage
+        .read_at(
+            Record::PgpState,
+            repo::state_layout::PW1_REUSE as u32,
+            &mut policy,
+        )
+        .map_err(io)?;
+    Ok(policy)
+}
 pub struct Session {
     // Independent authorization bits: signature PW1, other PW1, and PW3.
     // A successful VERIFY adds one bit; failure revokes all uses of that PIN.
@@ -39,7 +50,8 @@ impl Session {
             Ok(())
         }
     }
-    // One wire caller: fuse this boundary without duplicating policy code.
+    // Protocol adapters call this once per public-key operation; keeping the
+    // policy and primitive sequence here avoids a second wire-level copy.
     #[inline(always)]
     pub fn public_key(
         &mut self,
@@ -80,14 +92,7 @@ impl Session {
             return Err(Error::Unauthorized);
         }
         let a = repo::load_key(p, r, key)?;
-        let mut policy = [0; 2];
-        p.storage
-            .read_at(
-                Record::PgpState,
-                repo::state_layout::PW1_REUSE as u32,
-                &mut policy,
-            )
-            .map_err(io)?;
+        let policy = pw1_policy(p)?;
         // Single-use PW1 authorization is consumed before touch/crypto, so a
         // later failure cannot accidentally leave a reusable signature grant.
         if r == key_role::SIGNATURE && policy[0] == 0 {
@@ -95,7 +100,8 @@ impl Session {
         }
         Ok(a)
     }
-    // One wire caller: fuse this boundary without duplicating policy code.
+    // The adapter has already validated the APDU shape; this boundary owns
+    // authorization consumption, touch policy and the native operation.
     #[inline(always)]
     pub fn execute(
         &mut self,
@@ -105,14 +111,12 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Error> {
-        let mut policy = [0; 2];
-        p.storage
-            .read_at(
-                Record::PgpState,
-                repo::state_layout::PW1_REUSE as u32,
-                &mut policy,
-            )
-            .map_err(io)?;
+        if input.end > w.input.len() {
+            return Err(Error::Length);
+        }
+        // Prepare and execute are separate protocol phases; re-read the
+        // durable policy here before applying touch and reuse decisions.
+        let policy = pw1_policy(p)?;
         let op = if r != key_role::DECIPHER {
             if a.rsa() {
                 KeyOperation::RsaPkcs1Sign
@@ -145,7 +149,10 @@ impl Session {
             && matches!(a.0, alg::P256 | alg::SECP256K1 | alg::P384 | alg::P521)
         {
             let width = a.private_component_bytes();
-            w.input.copy_within(..used, width - used);
+            if width == 0 || used > width {
+                return Err(Error::Length);
+            }
+            w.input.copy_within(input.clone(), width - used);
             w.input[..width - used].fill(0);
             &w.input[..width]
         } else {

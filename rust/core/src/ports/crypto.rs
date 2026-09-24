@@ -14,10 +14,12 @@ pub enum KeyOperation {
     EcSign = 6,
     RsaRaw = 7,
     Sm2Exchange = 8,
+    /// SM3(ZA || message), with the standard SM2 identity.
+    Sm2MessageDigest = 9,
 }
 
 /// Stable primitive ABI; mirrored in interfaces/rust-core/crypto_ops.h.
-#[cfg(feature = "piv")]
+#[cfg(any(feature = "piv", feature = "ctap"))]
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum StreamOperation {
@@ -34,7 +36,7 @@ pub enum StreamOperation {
 }
 
 /// Stable primitive ABI; mirrored in interfaces/rust-core/crypto_ops.h.
-#[cfg(feature = "piv")]
+#[cfg(any(feature = "piv", feature = "ctap"))]
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum DigestOperation {
@@ -45,12 +47,12 @@ pub enum DigestOperation {
 }
 
 /// Opaque native primitive state in the sole session workspace; never persisted.
-#[cfg(feature = "piv")]
+#[cfg(any(feature = "piv", feature = "ctap"))]
 #[repr(C, align(8))]
 pub struct CryptoScratch {
     pub bytes: [u8; CRYPTO_SCRATCH_BYTES],
 }
-#[cfg(feature = "piv")]
+#[cfg(any(feature = "piv", feature = "ctap"))]
 impl CryptoScratch {
     pub const fn new() -> Self {
         Self {
@@ -58,12 +60,12 @@ impl CryptoScratch {
         }
     }
 }
-#[cfg(feature = "piv")]
+#[cfg(any(feature = "piv", feature = "ctap"))]
 #[repr(C, align(8))]
 pub struct HashState {
     pub bytes: [u8; HASH_STATE_BYTES],
 }
-#[cfg(feature = "piv")]
+#[cfg(any(feature = "piv", feature = "ctap"))]
 impl Default for CryptoScratch {
     fn default() -> Self {
         Self::new()
@@ -72,7 +74,32 @@ impl Default for CryptoScratch {
 /// Primitive operations only: authorization, padding selection and APDU policy
 /// are decided by the caller. Persistence is explicitly encoded; the borrowed material has a checked native ABI.
 pub trait Crypto {
-    #[cfg(feature = "piv")]
+    #[cfg(feature = "ctap")]
+    fn p256_sign(
+        &mut self,
+        _scalar: &[u8; 32],
+        _digest: &[u8; 32],
+        _out: &mut [u8; 64],
+    ) -> Result<(), CryptoError> {
+        Err(CryptoError)
+    }
+
+    #[cfg(feature = "ctap")]
+    fn sha256(&mut self, _input: &[u8], _out: &mut [u8; 32]) -> Result<(), CryptoError> {
+        Err(CryptoError)
+    }
+    #[cfg(feature = "ctap")]
+    fn aes256_cbc(
+        &mut self,
+        _encrypt: bool,
+        _key: &[u8; 32],
+        _iv: &[u8; 16],
+        _data: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        Err(CryptoError)
+    }
+
+    #[cfg(any(feature = "piv", feature = "ctap"))]
     fn digest(
         &mut self,
         _op: DigestOperation,
@@ -82,8 +109,8 @@ pub trait Crypto {
     ) -> Result<(), CryptoError> {
         Err(CryptoError)
     }
-    #[cfg(feature = "piv")]
-    fn piv_stream(
+    #[cfg(any(feature = "piv", feature = "ctap"))]
+    fn stream(
         &mut self,
         _operation: StreamOperation,
         _algorithm: u8,
@@ -104,7 +131,7 @@ pub trait Crypto {
         Err(CryptoError)
     }
 
-    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn key_operation(
         &mut self,
         _op: KeyOperation,

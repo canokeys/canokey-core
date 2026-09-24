@@ -4,6 +4,8 @@ pub const REPORT_SIZE: usize = 64;
 pub const MAX_MESSAGE: usize = 57 + 128 * 59;
 pub const BROADCAST: u32 = u32::MAX;
 pub const PING: u8 = 0x81;
+pub const WINK: u8 = 0x88;
+pub const MSG: u8 = 0x83;
 pub const INIT: u8 = 0x86;
 pub const CBOR: u8 = 0x90;
 pub const CANCEL: u8 = 0x91;
@@ -48,6 +50,10 @@ pub fn header(out: &mut [u8; REPORT_SIZE], cid: u32, tag: u8, length: usize) -> 
         out[5..7].copy_from_slice(&(length as u16).to_be_bytes());
         &mut out[7..]
     } else {
+        assert_eq!(
+            length, 0,
+            "continuation frames do not carry a total message length"
+        );
         &mut out[5..]
     }
 }

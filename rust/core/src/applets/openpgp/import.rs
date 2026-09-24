@@ -13,8 +13,12 @@ use crate::ports::key_layout;
 use canokey_protocol::{
     response::StatusWord as Sw,
     tlv::length::{Feed, LengthState},
+    tlv::{Decoder, Error as TlvError, Event},
 };
 fn length(b: &[u8], at: &mut usize) -> Result<Option<usize>, Sw> {
+    // This parser is intentionally local: import headers arrive incrementally
+    // and must report "incomplete" separately from malformed BER. The shared
+    // protocol helpers parse complete TLVs and cannot provide that distinction.
     let mut state = LengthState::Initial;
     while *at < b.len() {
         let v = b[*at];
@@ -32,17 +36,49 @@ pub fn object(b: &[u8]) -> Result<(u16, &[u8]), Sw> {
     if b.is_empty() {
         return Err(Sw::WRONG_DATA);
     }
-    let mut at = 1;
-    let mut tag = b[0] as u16;
-    if tag & 31 == 31 {
-        tag = (tag << 8) | *b.get(at).ok_or(Sw::WRONG_DATA)? as u16;
-        at += 1;
-    }
-    let n = length(b, &mut at)?.ok_or(Sw::WRONG_LENGTH)?;
-    if at + n != b.len() {
+    let mut decoder = Decoder::default();
+    let mut tag = None;
+    let mut value_seen = false;
+    decoder
+        .feed(b, &mut |event| {
+            match event {
+                Event::Start {
+                    tag: encoded,
+                    length,
+                } => {
+                    if tag.is_some() || encoded.bytes().len() > 2 {
+                        return Err(TlvError::Invalid);
+                    }
+                    let bytes = encoded.bytes();
+                    let number = bytes
+                        .iter()
+                        .fold(0u16, |n, byte| (n << 8) | u16::from(*byte));
+                    tag = Some((number, usize::from(length)));
+                }
+                Event::Value(bytes) => {
+                    if value_seen || bytes.is_empty() {
+                        return Err(TlvError::Invalid);
+                    }
+                    value_seen = true;
+                }
+                Event::End => (),
+            }
+            Ok(())
+        })
+        .map_err(|error| match error {
+            TlvError::Truncated => Sw::WRONG_LENGTH,
+            _ => Sw::WRONG_DATA,
+        })?;
+    decoder.finish().map_err(|error| match error {
+        TlvError::Truncated => Sw::WRONG_LENGTH,
+        _ => Sw::WRONG_DATA,
+    })?;
+    let (tag, length) = tag.ok_or(Sw::WRONG_DATA)?;
+    if length > b.len() || (length != 0 && !value_seen) {
         return Err(Sw::WRONG_LENGTH);
     }
-    Ok((tag, &b[at..]))
+    let value = &b[b.len() - length..];
+    Ok((tag, value))
 }
 pub struct Import {
     // Only the 4D envelope, control reference and 7F48/5F48 descriptors

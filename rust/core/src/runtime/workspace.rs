@@ -55,6 +55,12 @@ impl Workspace {
 #[allow(clippy::large_enum_variant)]
 pub enum SessionWorkspace {
     Classic(Workspace),
+    #[cfg(feature = "ctap")]
+    CtapRequest(crate::applets::ctap::Request),
+    #[cfg(feature = "ctap")]
+    U2fRequest(crate::applets::ctap::u2f::Request),
+    #[cfg(feature = "ctap")]
+    CtapStream(crate::applets::ctap::pq::Stream),
     #[cfg(feature = "piv")]
     Stream(crate::ports::CryptoScratch),
     #[cfg(feature = "piv")]
@@ -64,21 +70,70 @@ impl SessionWorkspace {
     pub const fn new() -> Self {
         Self::Classic(Workspace::new())
     }
+    pub(crate) fn wipe_active(&mut self, memory: &dyn Memory) {
+        match self {
+            Self::Classic(w) => w.clear(memory),
+            #[cfg(feature = "ctap")]
+            Self::U2fRequest(r) => r.clear(memory),
+            #[cfg(feature = "ctap")]
+            Self::CtapStream(s) => s.clear(memory),
+            #[cfg(feature = "piv")]
+            Self::Stream(s) => memory.wipe(&mut s.bytes),
+            #[cfg(feature = "piv")]
+            Self::Attestation(a) => a.clear(memory),
+            #[cfg(feature = "ctap")]
+            Self::CtapRequest(request) => request.clear(memory),
+        }
+    }
     #[inline(never)]
-    pub fn classic(&mut self) -> &mut Workspace {
-        #[cfg(feature = "piv")]
+    pub fn classic_with(&mut self, memory: &dyn Memory) -> &mut Workspace {
+        #[cfg(not(any(feature = "piv", feature = "ctap")))]
+        let _ = memory;
+        #[cfg(any(feature = "piv", feature = "ctap"))]
         if !matches!(self, Self::Classic(_)) {
+            self.wipe_active(memory);
             *self = Self::Classic(Workspace::new());
         }
         match self {
             Self::Classic(w) => w,
-            #[cfg(feature = "piv")]
+            #[cfg(any(feature = "piv", feature = "ctap"))]
             _ => unreachable!(),
+        }
+    }
+    #[cfg(any(feature = "piv", feature = "ctap"))]
+    #[inline(never)]
+    pub fn classic(&mut self) -> &mut Workspace {
+        let memory = LocalMemory;
+        self.classic_with(&memory)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn ctap_request_with(&mut self, memory: &dyn Memory) -> &mut crate::applets::ctap::Request {
+        if !matches!(self, Self::CtapRequest(_)) {
+            self.wipe_active(memory);
+            *self = Self::CtapRequest(crate::applets::ctap::Request::new());
+        }
+        let Self::CtapRequest(request) = self else {
+            unreachable!()
+        };
+        request
+    }
+    #[cfg(feature = "ctap")]
+    pub fn ctap_request(&mut self) -> &mut crate::applets::ctap::Request {
+        let memory = LocalMemory;
+        self.ctap_request_with(&memory)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn cancel_ctap_request(&mut self) {
+        if let Self::CtapRequest(request) = self {
+            let memory = LocalMemory;
+            request.clear(&memory);
+            *request = crate::applets::ctap::Request::new();
         }
     }
     #[cfg(feature = "piv")]
     #[inline(never)]
-    pub fn stream(&mut self) -> &mut crate::ports::CryptoScratch {
+    pub fn stream_with(&mut self, memory: &dyn Memory) -> &mut crate::ports::CryptoScratch {
+        self.wipe_active(memory);
         *self = Self::Stream(crate::ports::CryptoScratch::new());
         let Self::Stream(s) = self else {
             unreachable!()
@@ -87,11 +142,37 @@ impl SessionWorkspace {
     }
     #[cfg(feature = "piv")]
     #[inline(never)]
-    pub fn attestation(&mut self) -> &mut crate::applets::piv::attestation::Attestation {
+    pub fn stream(&mut self) -> &mut crate::ports::CryptoScratch {
+        let memory = LocalMemory;
+        self.stream_with(&memory)
+    }
+    #[cfg(feature = "piv")]
+    #[inline(never)]
+    pub fn attestation_with(
+        &mut self,
+        memory: &dyn Memory,
+    ) -> &mut crate::applets::piv::attestation::Attestation {
+        self.wipe_active(memory);
         *self = Self::Attestation(crate::applets::piv::attestation::Attestation::new());
         let Self::Attestation(a) = self else {
             unreachable!()
         };
         a
+    }
+    #[cfg(feature = "piv")]
+    #[inline(never)]
+    pub fn attestation(&mut self) -> &mut crate::applets::piv::attestation::Attestation {
+        let memory = LocalMemory;
+        self.attestation_with(&memory)
+    }
+}
+
+#[cfg(any(feature = "ctap", feature = "piv"))]
+struct LocalMemory;
+#[cfg(any(feature = "ctap", feature = "piv"))]
+impl Memory for LocalMemory {
+    fn wipe(&self, bytes: &mut [u8]) {
+        bytes.fill(0);
+        core::hint::black_box(bytes);
     }
 }

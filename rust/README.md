@@ -119,11 +119,13 @@ record layout documentation for exact encodings.
 
 ## CTAP migration boundary
 
-The `ctap` feature implements Rust CTAPHID INIT/PING and native/CCID GetInfo.
+The `ctap` feature implements Rust CTAPHID INIT/PING, native/CCID GetInfo and
+clientPIN protocols 1/2 with compact durable PIN retries and expiring session tokens,
+plus selection and power-on-gated reset with cooperative keepalive/cancellation.
 USB endpoint handling stays in C; framing and transaction state live in Rust.
 HID requests above 192 bytes and standalone extended FIDO APDUs exceeding the
 short CCID buffer borrow PKE under the shared transport session, without Flash
 caching. Both accept up to 1024 CTAP bytes and close input before execution. See [the CTAP slice contract](docs/ctap.md) for supported commands,
 stream lifetimes, the shared command boundary, incremental CBOR/minicbor
-assessment, build/tests and the remaining migration steps. This development
-profile does not yet implement credential operations or PIN/UV.
+integration, build/tests and the remaining migration steps. This development
+profile does not yet implement credential operations or token authorization consumers.

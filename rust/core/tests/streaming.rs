@@ -15,7 +15,10 @@ struct StorageBackend {
     commits: usize,
 }
 impl Storage for StorageBackend {
-    fn load(&mut self, _: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+    fn load(&mut self, record: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+        if matches!(record, Record::CtapPin) {
+            return Err(StorageError::Missing);
+        }
         out[..self.object.len()].copy_from_slice(&self.object);
         Ok(self.object.len())
     }
@@ -430,7 +433,9 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     }
     assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
     let mut data = Vec::from(prefix);
-    data.extend_from_slice(&[0x06; 291]);
+    // getPinRetries plus a skipped extension forces PKE-backed CBOR parsing.
+    data.extend_from_slice(&[6, 0xa2, 2, 1, 0x18, 99, 0x59, 1, 0x1a]);
+    data.extend_from_slice(&[0x37; 282]);
     data.extend_from_slice(&[1, 0x23]); // Le=291, not a native-endian word
     let mut source = FrameSource {
         remaining: &data,
@@ -439,7 +444,7 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     let reply = core.receive_source(1, data.len(), &mut source, &mut p);
     assert_eq!(source.closes, 1);
     let n = core.transmit(reply, &mut out, &mut p).unwrap();
-    assert_eq!(&out[..n], &[1, 0x90, 0]); // unsupported CTAP command, accepted envelope
+    assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
 
     // An extended command cannot finish an existing ISO input chain.
     let reply = core.receive(1, &[0x90, 0x10, 0, 0, 1, 4], &mut p);

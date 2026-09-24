@@ -7,6 +7,9 @@ use crate::ports::{Record, Storage, StorageError};
 // seed. RSA disk order is e,p,q,dp,dq,qinv; each native slot has 256-byte capacity
 // but only its active width is persisted. Public keys are derived, not stored.
 pub fn length(rsa: bool, width: usize) -> usize {
+    if width > layout::RSA_LIMB_BYTES {
+        return 0;
+    }
     if rsa {
         layout::EXPONENT_BYTES + layout::RSA_LIMBS * width
     } else {
@@ -21,6 +24,9 @@ pub fn load(
     width: usize,
     key: &mut [u8; crate::ports::key_layout::SIZE],
 ) -> Result<(), StorageError> {
+    if width > layout::RSA_LIMB_BYTES {
+        return Err(StorageError::Unavailable);
+    }
     key.fill(0);
     if !rsa {
         return storage.read_at(record, offset, &mut key[..width]);
@@ -42,6 +48,9 @@ pub fn append(
     width: usize,
     key: &[u8; crate::ports::key_layout::SIZE],
 ) -> Result<(), StorageError> {
+    if width > layout::RSA_LIMB_BYTES {
+        return Err(StorageError::Unavailable);
+    }
     if !rsa {
         return storage.stage_append(&key[..width]);
     }

@@ -9,14 +9,22 @@ publish = false
 canokey-protocol = { path = "../protocol" }
 canokey-rust-core = { path = "../core" }
 [features]
-admin = ["canokey-rust-core/admin"]
-ctap = ["canokey-rust-core/ctap"]
-openpgp = ["canokey-rust-core/openpgp"]
-piv = ["canokey-rust-core/piv"]
+storage = []
+platform-device = []
+platform-serial = []
+platform-hmac = []
+platform-key = []
+platform-mac = []
+platform-stream = []
+platform-stage = []
+admin = ["canokey-rust-core/admin", "storage", "platform-device", "platform-hmac"]
+ctap = ["canokey-rust-core/ctap", "storage", "platform-device", "platform-serial", "platform-mac", "platform-stream", "platform-key", "platform-stage"]
+openpgp = ["canokey-rust-core/openpgp", "storage", "platform-device", "platform-serial", "platform-mac", "platform-hmac", "platform-key"]
+piv = ["canokey-rust-core/piv", "storage", "platform-device", "platform-serial", "platform-mac", "platform-hmac", "platform-stream", "platform-key", "platform-stage"]
 
 default = []
-pass = ["canokey-rust-core/pass"]
-oath = ["canokey-rust-core/oath"]
+pass = ["canokey-rust-core/pass", "storage", "platform-device", "platform-hmac"]
+oath = ["canokey-rust-core/oath", "storage", "platform-device", "platform-serial", "platform-mac", "platform-hmac"]
 host-runtime = []
 
 [lints]

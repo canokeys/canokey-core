@@ -4,6 +4,14 @@
 use crate::applets::ctap;
 use canokey_protocol::ctaphid::{self as wire, Error, REPORT_SIZE, Report};
 
+// Keep the common CTAPHID request inline; larger requests spill to the staged
+// source while preserving the 64-byte HID report framing budget.
+// Keep one HID request's common prefix inline; larger CTAP messages use the
+// staged source so this buffer does not increase the transport stack frame.
+// Keep the common prefix inline so short HID requests avoid a PKE round-trip;
+// the remaining bytes stay in the transport-owned backing buffer.
+// Keep short CTAP messages inline; this is the 3×64-byte HID packet window
+// documented in docs/ctap.md and avoids a separate PKE staging allocation.
 const INLINE: usize = 192;
 const TIMEOUT_MS: u32 = 800;
 
@@ -16,6 +24,11 @@ pub trait Scratch {
     fn write(&mut self, offset: usize, bytes: &[u8]) -> Result<(), Error>;
     fn read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), Error>;
     fn close(&mut self);
+    /// Source is closed before execution; response reads never reexecute crypto.
+    fn execute(&mut self, cid: u32, command: Result<ctap::Command, ctap::Status>) -> usize;
+    fn execute_message(&mut self, cid: u32, command: ctap::apdu::Message) -> usize;
+    fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error>;
+    fn close_response(&mut self);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,7 +57,7 @@ pub struct Transport {
     last_received: u32,
     storage: Storage,
     inline: [u8; INLINE],
-    constant: Option<&'static [u8]>,
+    response: bool,
 }
 impl Default for Transport {
     fn default() -> Self {
@@ -52,6 +65,24 @@ impl Default for Transport {
     }
 }
 impl Transport {
+    fn read_staged(
+        total: usize,
+        storage: Storage,
+        scratch: &mut impl Scratch,
+        inline: &mut [u8; INLINE],
+        mut consume: impl FnMut(&[u8]),
+    ) -> Result<(), Error> {
+        if storage == Storage::Pke {
+            for offset in (0..total).step_by(INLINE) {
+                let n = INLINE.min(total - offset);
+                scratch.read(offset, &mut inline[..n])?;
+                consume(&inline[..n]);
+            }
+        } else {
+            consume(&inline[..total]);
+        }
+        Ok(())
+    }
     pub const fn new() -> Self {
         Self {
             phase: Phase::Idle,
@@ -64,7 +95,7 @@ impl Transport {
             last_received: 0,
             storage: Storage::Released,
             inline: [0; INLINE],
-            constant: None,
+            response: false,
         }
     }
     pub fn active(&self) -> bool {
@@ -79,7 +110,10 @@ impl Transport {
     pub fn reset(&mut self, scratch: &mut impl Scratch) {
         self.close_request(scratch);
         self.phase = Phase::Idle;
-        self.constant = None;
+        if self.response {
+            scratch.close_response();
+            self.response = false;
+        }
         self.inline.fill(0);
     }
     fn error(out: &mut [u8; REPORT_SIZE], cid: u32, error: Error) -> bool {
@@ -121,8 +155,8 @@ impl Transport {
         if frame.tag == wire::INIT {
             return self.initialize(frame, out, scratch);
         }
-        // There are no asynchronous CTAP handlers yet. CANCEL is silent when
-        // no command is executing; it does not cancel fragment aggregation.
+        // Executing-command CANCEL is serviced by the transport-only callback.
+        // Outside execution it is silent and does not cancel aggregation.
         if frame.tag == wire::CANCEL && frame.length == Some(0) {
             return false;
         }
@@ -141,10 +175,14 @@ impl Transport {
             let Some(length) = frame.length else {
                 return false;
             };
-            if length > ctap::MAX_REQUEST || length > wire::MAX_MESSAGE {
+            if length > ctap::MAX_REQUEST + if frame.tag == wire::MSG { 9 } else { 0 } {
                 return Self::error(out, frame.cid, Error::Length);
             }
-            if frame.tag != wire::PING && frame.tag != wire::CBOR {
+            if frame.tag != wire::PING
+                && frame.tag != wire::CBOR
+                && frame.tag != wire::MSG
+                && frame.tag != wire::WINK
+            {
                 return Self::error(out, frame.cid, Error::Command);
             }
             let pke = length > INLINE;
@@ -201,31 +239,51 @@ impl Transport {
         data[..8].copy_from_slice(&frame.data[..8]);
         data[8..12].copy_from_slice(&assigned.to_be_bytes());
         data[12] = 2; // CTAPHID interface version
-        data[16] = 0x0c; // CBOR, no MSG (U2F not migrated)
+        data[16] = 0x05; // WINK, CBOR and MSG
         true
     }
     /// Finish parsing before releasing input; execute only after release.
     /// PING keeps its source until the last response report completes.
     fn finish_request(&mut self, scratch: &mut impl Scratch) -> Result<(), Error> {
+        if self.command == wire::WINK {
+            if self.total != 0 {
+                self.close_request(scratch);
+                return Err(Error::Length);
+            }
+            self.close_request(scratch);
+            self.inline.fill(0);
+            self.total = scratch.execute(self.cid, Ok(ctap::Command::Wink));
+            self.response = true;
+        }
         if self.command == wire::CBOR {
             let mut request = ctap::Request::new();
-            if self.storage == Storage::Pke {
-                // Large requests leave inline storage free. Reuse it as a
-                // read window instead of adding a second stack buffer.
-                for offset in (0..self.total).step_by(INLINE) {
-                    let n = INLINE.min(self.total - offset);
-                    scratch.read(offset, &mut self.inline[..n])?;
-                    request.consume(&self.inline[..n]);
-                }
-            } else {
-                request.consume(&self.inline[..self.total]);
-            }
+            Self::read_staged(
+                self.total,
+                self.storage,
+                scratch,
+                &mut self.inline,
+                |chunk| request.consume(chunk),
+            )?;
             let command = request.finish();
             self.close_request(scratch);
             self.inline.fill(0);
-            let response = ctap::execute(command);
-            self.constant = Some(response);
-            self.total = response.len();
+            self.total = scratch.execute(self.cid, command);
+            self.response = true;
+        }
+        if self.command == wire::MSG {
+            let mut parser = ctap::apdu::MessageParser::new(self.total);
+            Self::read_staged(
+                self.total,
+                self.storage,
+                scratch,
+                &mut self.inline,
+                |chunk| parser.consume(chunk),
+            )?;
+            let command = parser.finish();
+            self.close_request(scratch);
+            self.inline.fill(0);
+            self.total = scratch.execute_message(self.cid, command);
+            self.response = true;
         }
         self.offset = 0;
         self.sequence = 0;
@@ -258,8 +316,10 @@ impl Transport {
         let payload = wire::header(out, self.cid, tag, self.total);
         let n = payload.len().min(self.total - self.offset);
         let dest = &mut payload[..n];
-        if let Some(constant) = self.constant {
-            dest.copy_from_slice(&constant[self.offset..self.offset + n]);
+        if self.response {
+            if let Err(error) = scratch.read_response(self.offset, dest) {
+                return self.fail(out, error, scratch);
+            }
         } else if self.storage == Storage::Pke {
             if let Err(error) = scratch.read(self.offset, dest) {
                 return self.fail(out, error, scratch);

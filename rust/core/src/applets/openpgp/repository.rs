@@ -59,21 +59,20 @@ pub fn io(_: StorageError) -> Error {
 // State: version, terminated, PW1 reuse, cache seconds, reserved[4];
 // CA fingerprints[60]; length-prefixed name(39), login(63), lang(8), sex(1), URL(255).
 pub fn field(tag: u16) -> Option<(usize, usize)> {
-    match tag {
-        tag::NAME => Some((state_layout::NAME, state_layout::NAME_MAX)),
-        tag::LOGIN => Some((state_layout::LOGIN, state_layout::LOGIN_MAX)),
-        tag::LANGUAGE => Some((state_layout::LANGUAGE, state_layout::LANGUAGE_MAX)),
-        tag::SEX => Some((state_layout::SEX, 1)),
-        tag::URL => Some((state_layout::URL, state_layout::URL_MAX)),
-        _ => None,
-    }
+    FIELDS
+        .iter()
+        .find_map(|(candidate, off, max)| (*candidate == tag).then_some((*off, *max)))
 }
-const FIELDS: [(usize, usize); 5] = [
-    (state_layout::NAME, state_layout::NAME_MAX),
-    (state_layout::LOGIN, state_layout::LOGIN_MAX),
-    (state_layout::LANGUAGE, state_layout::LANGUAGE_MAX),
-    (state_layout::SEX, 1),
-    (state_layout::URL, state_layout::URL_MAX),
+const FIELDS: [(u16, usize, usize); 5] = [
+    (tag::NAME, state_layout::NAME, state_layout::NAME_MAX),
+    (tag::LOGIN, state_layout::LOGIN, state_layout::LOGIN_MAX),
+    (
+        tag::LANGUAGE,
+        state_layout::LANGUAGE,
+        state_layout::LANGUAGE_MAX,
+    ),
+    (tag::SEX, state_layout::SEX, 1),
+    (tag::URL, state_layout::URL, state_layout::URL_MAX),
 ];
 const STATE_HEADER: usize = state_layout::FLAGS_END + 3 * state_layout::FINGERPRINT_BYTES; // Four flags followed by three CA fingerprints.
 pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error> {
@@ -83,7 +82,7 @@ pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error>
     }
     let mut starts = [0; 5];
     let mut at = STATE_HEADER;
-    for (i, (_, max)) in FIELDS.iter().enumerate() {
+    for (i, (_, _, max)) in FIELDS.iter().enumerate() {
         if at >= n || b[at] as usize > *max || at + 1 + b[at] as usize > n {
             return Err(Error::Storage);
         }
@@ -93,7 +92,7 @@ pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error>
     if at != n {
         return Err(Error::Storage);
     }
-    for (i, (off, max)) in FIELDS.iter().enumerate().rev() {
+    for (i, (_, off, max)) in FIELDS.iter().enumerate().rev() {
         let from = starts[i];
         let len = 1 + b[from] as usize;
         b.copy_within(from..from + len, *off);
@@ -116,7 +115,7 @@ pub fn save_state(p: &mut Platform<'_>, b: &[u8; STATE_LEN]) -> Result<(), Error
         p.storage
             .stage_append(&b[state_layout::CA_FINGERPRINTS..state_layout::CA_FINGERPRINTS_END])
             .map_err(io)?;
-        for (off, max) in FIELDS {
+        for (_, off, max) in FIELDS {
             let n = b[off] as usize;
             if n > max {
                 return Err(Error::Storage);
@@ -131,22 +130,31 @@ pub fn save_state(p: &mut Platform<'_>, b: &[u8; STATE_LEN]) -> Result<(), Error
     result
 }
 pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> {
-    let mut b = [0; META_LEN];
-    p.storage.read_at(KEYS[role], 0, &mut b).map_err(io)?;
+    // A key record is bounded by key_layout::SIZE. Loading that bounded
+    // record once lets us validate both the metadata prefix and the exact
+    // material length without a second size query to storage.
+    let mut record = [0; crate::ports::key_layout::SIZE];
+    let n = p.storage.load(KEYS[role], &mut record).map_err(io)?;
+    if n < META_LEN {
+        return Err(Error::Storage);
+    }
+    let b: [u8; META_LEN] = record[..META_LEN].try_into().map_err(|_| Error::Storage)?;
     if b[key_meta::VERSION] != FORMAT_VERSION
-        || b[key_meta::ALGORITHM] > crate::ports::alg::P521
         || b[key_meta::ORIGIN] > 2
         || b[key_meta::TOUCH_POLICY] > 2
     {
         return Err(Error::Storage);
     }
     let a = Algorithm(b[key_meta::ALGORITHM]);
+    if a.private_component_bytes() == 0 {
+        return Err(Error::Storage);
+    }
     let material = if b[key_meta::ORIGIN] == 0 {
         0
     } else {
         key_storage::length(a.rsa(), a.private_component_bytes())
     };
-    if p.storage.size(KEYS[role]).map_err(io)? != (META_LEN + material) as u32 {
+    if n != META_LEN + material {
         return Err(Error::Storage);
     }
     Ok(b)

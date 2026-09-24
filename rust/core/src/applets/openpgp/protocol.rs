@@ -2,7 +2,10 @@
 //! OpenPGP Card 3.4 adapter. The runtime owns chaining and response position.
 
 use super::domain::{grant, key_role};
-use super::wire::{BufferRange, ins::*, limits, reference, tag};
+use super::{
+    encoding::BufferRange,
+    wire::{ins::*, limits, reference, tag},
+};
 use super::{
     import::Import,
     pin,
@@ -79,9 +82,9 @@ impl OpenPgp {
         let object_tag = u16::from_be_bytes([h.p1, h.p2]);
         u32::from(match (h.ins, object_tag) {
             // Includes the RSA private components and their import envelope.
-            (INS_IMPORT_KEY, _) => limits::KEY_IMPORT_BYTES,
+            (IMPORT_KEY, _) => limits::KEY_IMPORT_BYTES,
             // DO 7F21 is the cardholder certificate, not a key-import template.
-            (INS_PUT_DATA, tag::CERTIFICATE) => limits::CERTIFICATE_BYTES,
+            (PUT_DATA, tag::CERTIFICATE) => limits::CERTIFICATE_BYTES,
             // Covers a full RSA-4096 ciphertext plus its padding indicator.
             _ => limits::ORDINARY_COMMAND_BYTES,
         })
@@ -94,11 +97,11 @@ impl OpenPgp {
         w.clear(p.memory);
         self.response = Response::Memory;
         let terminated = repo::terminated(p)?;
-        if terminated && h.ins != INS_ACTIVATE {
+        if terminated && h.ins != ACTIVATE {
             return Err(Sw::SELECTED_FILE_TERMINATED);
         }
         self.request = match h.ins {
-            INS_PUT_DATA if u16::from_be_bytes([h.p1, h.p2]) == tag::CERTIFICATE => {
+            PUT_DATA if u16::from_be_bytes([h.p1, h.p2]) == tag::CERTIFICATE => {
                 self.admin()?;
                 if self.occurrence >= key_role::COUNT {
                     return Err(Sw::REFERENCE_NOT_FOUND);
@@ -106,7 +109,7 @@ impl OpenPgp {
                 p.storage.stage_begin().map_err(io)?;
                 Request::Certificate
             }
-            INS_IMPORT_KEY => {
+            IMPORT_KEY => {
                 self.admin()?;
                 // IMPORT uses the fixed PUT DATA selector 3FFF. The target
                 // key role is inside the 4D body, not in P1/P2.
@@ -213,6 +216,9 @@ impl OpenPgp {
         if result.is_err() {
             self.close(w, p)
         }
+        // The runtime finish adapter carries the response status alongside
+        // the byte count for all applets; OpenPGP commits are the successful
+        // case here, while failures leave through the Err status above.
         result.map(|n| (n, Sw::SUCCESS))
     }
     fn command(
@@ -225,7 +231,7 @@ impl OpenPgp {
         let b = &w.input[..self.used];
         let tag = u16::from_be_bytes([h.p1, h.p2]);
         match h.ins {
-            INS_VERIFY => {
+            VERIFY => {
                 // P2 selects a password grant (81 signature PW1, 82 other
                 // PW1, 83 admin PW3). P1=00 verifies/queries; FF logs out.
                 let bit = match h.p2 {
@@ -256,7 +262,7 @@ impl OpenPgp {
                 self.session.verify_pin(bit, b, p)?;
                 Ok(0)
             }
-            INS_CHANGE_REFERENCE_DATA => {
+            CHANGE_REFERENCE_DATA => {
                 // P1=00 changes the secret selected by P2 (81 PW1 / 83 PW3);
                 // data contains the old secret followed by the new one.
                 if h.p1 != 0x00 || !matches!(h.p2, reference::PW1_SIGNATURE | reference::PW3) {
@@ -270,7 +276,7 @@ impl OpenPgp {
                 self.session.change_pin(id, b, p)?;
                 Ok(0)
             }
-            INS_RESET_RETRY_COUNTER => {
+            RESET_RETRY_COUNTER => {
                 // P2=81 always targets PW1. P1=00 supplies reset-code + new
                 // PW1; P1=02 uses an existing PW3 grant and supplies only PW1.
                 if h.p2 != reference::PW1_SIGNATURE || !matches!(h.p1, 0x00 | 0x02) {
@@ -279,7 +285,7 @@ impl OpenPgp {
                 self.session.reset_pw1(h.p1 == 0x02, b, p)?;
                 Ok(0)
             }
-            INS_SELECT_DATA => {
+            SELECT_DATA => {
                 // P1 selects certificate occurrence 0/1/2 (SIG/DEC/AUT).
                 // P2=04 selects by the tag list in the 60 template below;
                 // this profile permits only the certificate DO 7F21.
@@ -292,11 +298,11 @@ impl OpenPgp {
                 self.occurrence = h.p1 as usize;
                 Ok(0)
             }
-            INS_GET_DATA | INS_GET_NEXT_DATA => {
+            GET_DATA | GET_NEXT_DATA => {
                 if !b.is_empty() {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if h.ins == INS_GET_NEXT_DATA {
+                if h.ins == GET_NEXT_DATA {
                     if tag != tag::CERTIFICATE {
                         return Err(Sw::WRONG_P1P2);
                     }
@@ -312,14 +318,14 @@ impl OpenPgp {
                 }
                 self.get(tag, &mut w.output, p).map(|n| n as u32)
             }
-            INS_PUT_DATA => {
+            PUT_DATA => {
                 self.admin()?;
                 self.put(tag, b, p)?;
                 Ok(0)
             }
-            INS_GENERATE_KEY => self.generate_key(h, w, p),
-            INS_INTERNAL_AUTHENTICATE | INS_PERFORM_SECURITY_OPERATION => self.use_key(h, w, p),
-            INS_GET_CHALLENGE => {
+            GENERATE_KEY => self.generate_key(h, w, p),
+            INTERNAL_AUTHENTICATE | PERFORM_SECURITY_OPERATION => self.use_key(h, w, p),
+            GET_CHALLENGE => {
                 // P1/P2=0000 and empty body: Le alone requests 1..256 random bytes.
                 if tag != 0x0000 {
                     return Err(Sw::WRONG_P1P2);
@@ -332,7 +338,7 @@ impl OpenPgp {
                     .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                 Ok(le)
             }
-            INS_TERMINATE => {
+            TERMINATE => {
                 // E6 00 00 marks the application terminated without erasing it.
                 // Require PW3 authorization unless PW3 is already blocked,
                 // allowing recovery through a subsequent ACTIVATE command.
@@ -349,7 +355,7 @@ impl OpenPgp {
                 self.session.clear_touch();
                 Ok(0)
             }
-            INS_ACTIVATE => {
+            ACTIVATE => {
                 // 44 00 00 reinitializes a terminated applet; on an active
                 // applet it succeeds without resetting credentials or keys.
                 if tag != 0x0000 || !b.is_empty() {
@@ -360,7 +366,7 @@ impl OpenPgp {
                 }
                 Ok(0)
             }
-            INS_SET_RETRIES => {
+            SET_RETRIES => {
                 // CanoKey F2 00 00: body contains PW1, reset-code and PW3 retry
                 // limits (1..15), in that order. PW1/PW3 return to default
                 // values; reset-code value is retained. Requires a PW3 grant.
@@ -391,6 +397,8 @@ impl From<super::domain::Error> for Sw {
             Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
             Error::Unauthorized => Sw::SECURITY_STATUS_NOT_SATISFIED,
             Error::Missing => Sw::REFERENCE_NOT_FOUND,
+            // Rust core reports a cancelled/expired gesture as execution
+            // error (0x6400); this is the documented Rust profile mapping.
             Error::Presence => Sw::EXECUTION_ERROR,
         }
     }

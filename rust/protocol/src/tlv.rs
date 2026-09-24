@@ -87,8 +87,6 @@ impl Decoder {
                     self.tag_len += 1;
                     if (i == 0 && byte & 0x1f != 0x1f) || (i != 0 && byte & 0x80 == 0) {
                         self.phase = Phase::Length;
-                    } else if self.tag_len == 3 {
-                        return Err(Error::Invalid);
                     }
                 }
                 Phase::Length => {
@@ -141,6 +139,44 @@ impl Decoder {
         } else {
             Err(Error::Truncated)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Decoder, Error, Event};
+
+    #[test]
+    fn decoder_handles_fragmented_tag_length_and_value() {
+        let mut decoder = Decoder::default();
+        let mut events = 0;
+        let mut emit = |event: Event<'_>| {
+            match event {
+                Event::Start { tag, length } => {
+                    assert_eq!(tag.bytes(), &[0x5f, 0x2d]);
+                    assert_eq!(length, 3);
+                }
+                Event::Value(value) => assert_eq!(value, b"abc"),
+                Event::End => (),
+            }
+            events += 1;
+            Ok(())
+        };
+        decoder.feed(&[0x5f], &mut emit).unwrap();
+        decoder.feed(&[0x2d, 0x81], &mut emit).unwrap();
+        decoder.feed(&[0x03, b'a', b'b', b'c'], &mut emit).unwrap();
+        assert_eq!(events, 3);
+    }
+
+    #[test]
+    fn decoder_rejects_invalid_tag_and_stays_failed() {
+        let mut decoder = Decoder::default();
+        let mut emit = |_: Event<'_>| Ok(());
+        assert_eq!(
+            decoder.feed(&[0x1f, 0x80, 0x80, 0x00], &mut emit),
+            Err(Error::Invalid)
+        );
+        assert_eq!(decoder.feed(&[0x00], &mut emit), Err(Error::Failed));
     }
 }
 

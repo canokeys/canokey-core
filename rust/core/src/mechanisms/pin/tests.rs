@@ -148,7 +148,7 @@ mod records {
             if !self.exists {
                 return Err(StorageError::Missing);
             }
-            assert_eq!(id as u8, self.id);
+            assert_eq!(id.id(), self.id);
             out[..self.length].copy_from_slice(&self.value[..self.length]);
             Ok(self.length)
         }
@@ -157,7 +157,7 @@ mod records {
             if self.unavailable {
                 return Err(StorageError::Uncertain);
             }
-            self.id = id as u8;
+            self.id = id.id();
             self.exists = true;
             self.value.fill(0);
             self.length = input.len();

@@ -16,6 +16,7 @@ use canokey_protocol::response::StatusWord as Sw;
 // Suffix of the OpenPGP application identifier (AID), before the device serial:
 // specification version 3.4, then CanoKey manufacturer ID 0xF1D0 (big-endian).
 const CARD_VERSION_AND_MANUFACTURER: &[u8] = &[0x03, 0x04, 0xf1, 0xd0];
+const MAX_PIN_LENGTH: u8 = 64;
 // OpenPGP Card 3.4, DO 5F52 (ISO 7816 historical bytes). This is card discovery
 // metadata, not an event log. Compact-TLV headers encode tag/length in nibbles.
 // Keep the advertised profile aligned with applets/openpgp/openpgp.c.
@@ -45,10 +46,27 @@ const EXTENDED_CAPABILITIES: &[u8] = &[
     0x00, // MANAGE SECURITY ENVIRONMENT (MSE) is not supported.
 ];
 impl OpenPgp {
+    fn needs_state(tag: u16) -> bool {
+        repo::field(tag).is_some()
+            || matches!(
+                tag,
+                tag::CARDHOLDER
+                    | tag::APPLICATION
+                    | tag::DISCRETIONARY
+                    | tag::PW_STATUS
+                    | tag::TOUCH_CACHE
+                    | tag::CA_FINGERPRINTS
+            )
+            || (tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3).contains(&tag)
+    }
     #[inline(never)]
     pub(super) fn get(&self, tag: u16, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
         let mut s = [0; repo::STATE_LEN];
-        repo::state(p, &mut s)?;
+        if Self::needs_state(tag) {
+            // State validation covers version, flags and all fingerprint
+            // slots; wrapped DOs share this one validated snapshot.
+            repo::state(p, &mut s)?;
+        }
         let mut v = Writer::new(out);
         if matches!(
             tag,
@@ -135,7 +153,15 @@ impl OpenPgp {
                 let pw3 = pin::info(Record::PgpPw3, p)?.retries_remaining;
                 // PW status: signature-PW1 reuse flag, maximum PW1/RC/PW3
                 // lengths (64 bytes each), then their remaining retry counts.
-                v.bytes(&[s[state_layout::PW1_REUSE], 0x40, 0x40, 0x40, pw1, rc, pw3])
+                v.bytes(&[
+                    s[state_layout::PW1_REUSE],
+                    MAX_PIN_LENGTH,
+                    MAX_PIN_LENGTH,
+                    MAX_PIN_LENGTH,
+                    pw1,
+                    rc,
+                    pw3,
+                ])
             }
             tag::FINGERPRINTS => {
                 for r in 0..key_role::COUNT {
@@ -252,6 +278,8 @@ impl OpenPgp {
         if tag == tag::RESET_CODE {
             if b.is_empty() {
                 let limit = pin::info(Record::PgpRc, p)?.retry_limit;
+                // An empty RESET CODE is represented by an empty PIN record;
+                // RecordPin::create deliberately stores zero remaining tries.
                 return pin::create(Record::PgpRc, b, limit, p).map_err(Into::into);
             }
             return pin::change(Record::PgpRc, b, p).map_err(Into::into);

@@ -3,44 +3,23 @@
 //! INS is the APDU instruction byte; a tag identifies a BER-TLV data object (DO).
 //! SIG/DEC/AUT mean signature/decipher/authentication key roles. These values
 //! belong to the card protocol, not the native crypto algorithm-ID namespace.
-#[derive(Clone, Copy)]
-pub(super) struct BufferRange {
-    start: usize,
-    end: usize,
-}
-impl BufferRange {
-    pub(super) fn new(start: usize, length: usize) -> Option<Self> {
-        Some(Self {
-            start,
-            end: start.checked_add(length)?,
-        })
-    }
-    pub(super) fn tail(total: usize, length: usize) -> Option<Self> {
-        let start = total.checked_sub(length)?;
-        Self::new(start, length)
-    }
-    pub(super) fn range(self) -> core::ops::Range<usize> {
-        self.start..self.end
-    }
-}
-
 pub(super) mod ins {
-    pub const INS_VERIFY: u8 = 0x20;
-    pub const INS_CHANGE_REFERENCE_DATA: u8 = 0x24;
-    pub const INS_RESET_RETRY_COUNTER: u8 = 0x2c;
-    pub const INS_SELECT_DATA: u8 = 0xa5;
-    pub const INS_GET_DATA: u8 = 0xca;
-    pub const INS_GET_NEXT_DATA: u8 = 0xcc;
-    pub const INS_PUT_DATA: u8 = 0xda;
-    pub const INS_IMPORT_KEY: u8 = 0xdb;
-    pub const INS_GENERATE_KEY: u8 = 0x47;
-    pub const INS_INTERNAL_AUTHENTICATE: u8 = 0x88;
-    pub const INS_PERFORM_SECURITY_OPERATION: u8 = 0x2a;
-    pub const INS_GET_CHALLENGE: u8 = 0x84;
-    pub const INS_TERMINATE: u8 = 0xe6;
-    pub const INS_ACTIVATE: u8 = 0x44;
+    pub const VERIFY: u8 = 0x20;
+    pub const CHANGE_REFERENCE_DATA: u8 = 0x24;
+    pub const RESET_RETRY_COUNTER: u8 = 0x2c;
+    pub const SELECT_DATA: u8 = 0xa5;
+    pub const GET_DATA: u8 = 0xca;
+    pub const GET_NEXT_DATA: u8 = 0xcc;
+    pub const PUT_DATA: u8 = 0xda;
+    pub const IMPORT_KEY: u8 = 0xdb;
+    pub const GENERATE_KEY: u8 = 0x47;
+    pub const INTERNAL_AUTHENTICATE: u8 = 0x88;
+    pub const PERFORM_SECURITY_OPERATION: u8 = 0x2a;
+    pub const GET_CHALLENGE: u8 = 0x84;
+    pub const TERMINATE: u8 = 0xe6;
+    pub const ACTIVATE: u8 = 0x44;
     // CanoKey extension (not OpenPGP Card 3.4): see docs/openpgp.md.
-    pub const INS_SET_RETRIES: u8 = 0xf2;
+    pub const SET_RETRIES: u8 = 0xf2;
 }
 pub(super) mod tag {
     pub const AID: u16 = 0x004f;

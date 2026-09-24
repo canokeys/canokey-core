@@ -5,7 +5,7 @@ use super::wire::object_tlv;
 use super::{codec, repository as repo};
 use crate::ports::{
     DigestOperation, EC_POINT_UNCOMPRESSED, HASH_STATE_BYTES, RSA_OUTPUT_BYTES, StreamOperation,
-    alg, key_layout, mldsa65,
+    alg, key_layout,
 };
 use crate::runtime::workspace::OUTPUT_BYTES;
 use crate::{
@@ -60,6 +60,15 @@ impl Attestation {
             public: CryptoScratch::new(),
             algorithm: 0,
         }
+    }
+    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+        memory.wipe(&mut self.encoded);
+        memory.wipe(&mut self.public.bytes);
+        self.segments.fill(0);
+        self.count = 0;
+        self.used = 0;
+        self.total = 0;
+        self.algorithm = 0;
     }
     fn segment(&mut self, source: usize, offset: usize, len: usize) -> Result<(), Sw> {
         if self.count == MAX_SEGMENTS {
@@ -257,13 +266,7 @@ impl Attestation {
             let n = signed?;
             // Complete the F9 primitive before starting the response source.
             if m[repo::ALGORITHM] == alg::MLDSA65 {
-                let _ = p.crypto.piv_stream(
-                    StreamOperation::Abort,
-                    alg::MLDSA65,
-                    &mut self.public,
-                    &[],
-                    &mut [],
-                );
+                self.abort_pq(p);
                 self.pq_public(id, p)?;
             }
             self.bytes(SIGNATURE_ALGORITHM)?;
@@ -275,23 +278,16 @@ impl Attestation {
     }
     #[inline(never)]
     fn pq_public(&mut self, id: usize, p: &mut Platform<'_>) -> Result<usize, Sw> {
-        let mut seed = [0; mldsa65::SEED_BYTES];
-        let result = (|| {
-            p.storage
-                .read_at(repo::KEYS[id], repo::HEADER as u32, &mut seed)
-                .map_err(repo::io)?;
-            p.crypto
-                .piv_stream(
-                    StreamOperation::PublicInit,
-                    alg::MLDSA65,
-                    &mut self.public,
-                    &seed,
-                    &mut [],
-                )
-                .map_err(|_| Sw::UNABLE_TO_PROCESS)
-        })();
-        p.memory.wipe(&mut seed);
-        result
+        super::protocol::init_public_stream(id, alg::MLDSA65, &mut self.public, p)
+    }
+    fn abort_pq(&mut self, p: &mut Platform<'_>) {
+        let _ = p.crypto.stream(
+            StreamOperation::Abort,
+            alg::MLDSA65,
+            &mut self.public,
+            &[],
+            &mut [],
+        );
     }
     #[inline(never)]
     fn classic_public(
@@ -386,7 +382,7 @@ impl Attestation {
                         if self.algorithm == alg::MLDSA65 as usize {
                             let n = p
                                 .crypto
-                                .piv_stream(
+                                .stream(
                                     StreamOperation::Read,
                                     alg::MLDSA65,
                                     &mut self.public,
@@ -409,13 +405,7 @@ impl Attestation {
     }
     pub fn close(&mut self, p: &mut Platform<'_>) {
         if self.algorithm == alg::MLDSA65 as usize {
-            let _ = p.crypto.piv_stream(
-                StreamOperation::Abort,
-                alg::MLDSA65,
-                &mut self.public,
-                &[],
-                &mut [],
-            );
+            self.abort_pq(p);
         }
         p.memory.wipe(&mut self.public.bytes);
         self.count = 0;

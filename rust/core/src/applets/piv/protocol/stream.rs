@@ -4,13 +4,19 @@ use super::*;
 use crate::ports::StreamOperation;
 use crate::ports::alg;
 use crate::runtime::workspace::SessionWorkspace;
+
+fn abort_stream(a: u8, s: &mut crate::ports::CryptoScratch, p: &mut Platform<'_>) {
+    let _ = p.crypto.stream(StreamOperation::Abort, a, s, &[], &mut []);
+    p.memory.wipe(&mut s.bytes);
+}
+
 impl Piv {
     pub fn select(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
-        self.select_classic(w.classic(), p)
+        self.select_classic(w.classic_with(p.memory), p)
     }
     pub fn reset(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         self.close(w, p);
-        self.reset_classic(w.classic(), p);
+        self.reset_classic(w.classic_with(p.memory), p);
     }
     pub fn cancel(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         if matches!(self.request, Request::None) {
@@ -18,15 +24,12 @@ impl Piv {
         }
         if let Request::Stream(a) = self.request {
             if let SessionWorkspace::Stream(s) = w {
-                let _ = p
-                    .crypto
-                    .piv_stream(StreamOperation::Abort, a, s, &[], &mut []);
-                p.memory.wipe(&mut s.bytes);
+                abort_stream(a, s, p);
             }
             self.request = Request::None;
             self.auth_clear(p);
         }
-        self.cancel_classic(w.classic(), p);
+        self.cancel_classic(w.classic_with(p.memory), p);
     }
     pub fn begin(
         &mut self,
@@ -56,40 +59,21 @@ impl Piv {
                 if m[repo::ALGORITHM] != a {
                     return Err(Sw::WRONG_P1P2);
                 }
-                self.authorize_private(m[repo::PIN_POLICY])?;
                 self.touch(m[repo::TOUCH_POLICY], p)?;
+                self.authorize_private(m[repo::PIN_POLICY])?;
                 self.auth_clear(p);
-                let mut seed = [0; 64];
-                p.storage
-                    .read_at(
-                        repo::KEYS[id],
-                        repo::HEADER as u32,
-                        &mut seed[..repo::material(a)],
-                    )
-                    .map_err(repo::io)?;
                 // Changing the workspace variant destroys classic key/input
-                // backing. Retain only the bounded seed across this transition.
-                let s = w.stream();
-                let r = p
-                    .crypto
-                    .piv_stream(
-                        if a == alg::MLKEM768 {
-                            StreamOperation::DecapsulateInit
-                        } else {
-                            StreamOperation::SignInit
-                        },
-                        a,
-                        s,
-                        &seed[..repo::material(a)],
-                        &mut [],
-                    )
-                    .map_err(|_| Sw::UNABLE_TO_PROCESS);
-                p.memory.wipe(&mut seed);
+                // backing; initialize the stream only after the transition.
+                w.wipe_active(p.memory);
+                let s = w.stream_with(p.memory);
+                let operation = if a == alg::MLKEM768 {
+                    StreamOperation::DecapsulateInit
+                } else {
+                    StreamOperation::SignInit
+                };
+                let r = super::init_stream(id, a, operation, s, p);
                 if r.is_err() {
-                    let _ = p
-                        .crypto
-                        .piv_stream(StreamOperation::Abort, a, s, &[], &mut []);
-                    p.memory.wipe(&mut s.bytes);
+                    abort_stream(a, s, p);
                 }
                 r?;
                 self.ga = Ga::new();
@@ -98,7 +82,7 @@ impl Piv {
                 return Ok(());
             }
         }
-        self.begin_classic(h, w.classic(), p)
+        self.begin_classic(h, w.classic_with(p.memory), p)
     }
     pub fn consume(
         &mut self,
@@ -132,7 +116,7 @@ impl Piv {
                         {
                             if a == alg::SM2 {
                                 p.crypto
-                                    .piv_stream(
+                                    .stream(
                                         StreamOperation::Sm2Identity,
                                         a,
                                         s,
@@ -154,7 +138,7 @@ impl Piv {
                     self.sm2_id_used = end;
                 } else if tag == ga_tag::CHALLENGE {
                     p.crypto
-                        .piv_stream(
+                        .stream(
                             if a == alg::MLKEM768 {
                                 StreamOperation::DecapsulateUpdate
                             } else {
@@ -170,7 +154,7 @@ impl Piv {
                 Ok(())
             })
         } else {
-            self.consume_classic(b, w.classic(), p)
+            self.consume_classic(b, w.classic_with(p.memory), p)
         }
     }
     pub fn finish(
@@ -191,7 +175,8 @@ impl Piv {
                 return Err(Sw::WRONG_LENGTH);
             }
             let id = repo::slot(h.p1)?;
-            let a = w.attestation();
+            w.wipe_active(p.memory);
+            let a = w.attestation_with(p.memory);
             if let Err(e) = a.prepare(id, p) {
                 a.close(p);
                 return Err(e);
@@ -212,32 +197,29 @@ impl Piv {
                 let mut secret = [0; 32];
                 let r = p
                     .crypto
-                    .piv_stream(StreamOperation::DecapsulateFinal, a, s, &[], &mut secret)
+                    .stream(StreamOperation::DecapsulateFinal, a, s, &[], &mut secret)
                     .map_err(|_| Sw::UNABLE_TO_PROCESS);
-                let _ = p
-                    .crypto
-                    .piv_stream(StreamOperation::Abort, a, s, &[], &mut []);
-                p.memory.wipe(&mut s.bytes);
+                abort_stream(a, s, p);
                 self.request = Request::None;
                 let n = r?;
                 if n != 32 {
                     p.memory.wipe(&mut secret);
                     return Err(Sw::UNABLE_TO_PROCESS);
                 }
-                w.classic().output[..n].copy_from_slice(&secret[..n]);
+                w.classic_with(p.memory).output[..n].copy_from_slice(&secret[..n]);
                 p.memory.wipe(&mut secret);
                 return self.wrapped(n).map(|n| (n, Sw::SUCCESS));
             }
             let n = p
                 .crypto
-                .piv_stream(StreamOperation::SignFinal, a, s, &[], &mut [])
+                .stream(StreamOperation::SignFinal, a, s, &[], &mut [])
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             self.request = Request::None;
             let total = self.wrapped(n)?;
-            self.response = Response::Crypto(a);
+            self.response = ResponseBacking::Crypto(a);
             return Ok((total, Sw::SUCCESS));
         }
-        let result = self.finish_classic(h, le, w.classic(), p);
+        let result = self.finish_classic(h, le, w.classic_with(p.memory), p);
         if result.is_ok()
             && let Some(PendingPublicKey {
                 slot_index: id,
@@ -246,33 +228,17 @@ impl Piv {
         {
             let m = repo::meta(id, p)?;
             let a = m[repo::ALGORITHM];
-            let mut seed = [0; 64];
-            p.storage
-                .read_at(
-                    repo::KEYS[id],
-                    repo::HEADER as u32,
-                    &mut seed[..repo::material(a)],
-                )
-                .map_err(repo::io)?;
-            let s = w.stream();
-            let r = p
-                .crypto
-                .piv_stream(
-                    StreamOperation::PublicInit,
-                    a,
-                    s,
-                    &seed[..repo::material(a)],
-                    &mut [],
-                )
-                .map_err(|_| Sw::UNABLE_TO_PROCESS);
-            p.memory.wipe(&mut seed);
-            let n = r?;
+            w.wipe_active(p.memory);
+            let s = w.stream_with(p.memory);
+            let n = super::init_public_stream(id, a, s, p)?;
             self.memory(n);
-            self.response = Response::Crypto(a);
+            self.response = ResponseBacking::Crypto(a);
             let mut at = 0;
             if metadata {
                 at = self.metadata_header(a, &m);
             }
+            let point = usize::from(a != alg::ED25519 && a != alg::X25519);
+            let inner = n + point + if n + point < 128 { 2 } else { 3 };
             at += codec::header(
                 &mut self.header[at..],
                 if metadata {
@@ -280,7 +246,7 @@ impl Piv {
                 } else {
                     &key_tag::PUBLIC_TEMPLATE
                 },
-                n + 4,
+                inner,
             )?;
             at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n)?;
             self.header_len = at;
@@ -298,7 +264,7 @@ impl Piv {
         if let SessionWorkspace::Attestation(a) = w {
             return a.read(offset, out, p);
         }
-        if let Response::Crypto(a) = self.response {
+        if let ResponseBacking::Crypto(a) = self.response {
             let SessionWorkspace::Stream(s) = w else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
@@ -315,7 +281,7 @@ impl Piv {
             if head < out.len() {
                 let n = p
                     .crypto
-                    .piv_stream(StreamOperation::Read, a, s, &[], &mut out[head..])
+                    .stream(StreamOperation::Read, a, s, &[], &mut out[head..])
                     .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                 if n != out.len() - head {
                     return Err(Sw::UNABLE_TO_PROCESS);
@@ -323,7 +289,7 @@ impl Piv {
             }
             Ok(out.len())
         } else {
-            self.read_classic(offset, out, w.classic(), p)
+            self.read_classic(offset, out, w.classic_with(p.memory), p)
         }
     }
     pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
@@ -334,16 +300,18 @@ impl Piv {
         }
         if let SessionWorkspace::Stream(s) = w {
             let a = match self.response {
-                Response::Crypto(a) => a,
-                _ => 0,
+                ResponseBacking::Crypto(a) => a,
+                _ => match self.request {
+                    Request::Stream(a) => a,
+                    // No primitive is live when close has no stream request;
+                    // P256 is the harmless ABI value accepted by Abort.
+                    _ => alg::P256,
+                },
             };
-            let _ = p
-                .crypto
-                .piv_stream(StreamOperation::Abort, a, s, &[], &mut []);
-            p.memory.wipe(&mut s.bytes);
+            abort_stream(a, s, p);
             self.memory(0);
         } else {
-            self.close_classic(w.classic(), p)
+            self.close_classic(w.classic_with(p.memory), p)
         }
     }
 }

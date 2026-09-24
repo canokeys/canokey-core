@@ -3,7 +3,7 @@
 use super::domain::Error;
 use crate::{
     Platform,
-    mechanisms::pin::{self, Charge, PinInfo, RecordPin},
+    mechanisms::pin::{self as pin_mechanism, Charge, PinInfo, RecordPin},
     ports::Record,
 };
 fn credential(id: Record) -> RecordPin {
@@ -16,12 +16,12 @@ fn credential(id: Record) -> RecordPin {
 fn min(id: Record) -> usize {
     if matches!(id, Record::PgpPw1) { 6 } else { 8 }
 }
-fn error(e: pin::Error) -> Error {
+fn error(e: pin_mechanism::Error) -> Error {
     match e {
-        pin::Error::Persistence => Error::Storage,
-        pin::Error::Length => Error::Length,
-        pin::Error::Blocked => Error::Blocked,
-        pin::Error::Retries(_) => Error::Unauthorized,
+        pin_mechanism::Error::Persistence => Error::Storage,
+        pin_mechanism::Error::Length => Error::Length,
+        pin_mechanism::Error::Blocked => Error::Blocked,
+        pin_mechanism::Error::Retries(_) => Error::Unauthorized,
     }
 }
 pub fn create(id: Record, pin: &[u8], limit: u8, p: &mut Platform<'_>) -> Result<(), Error> {

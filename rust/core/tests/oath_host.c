@@ -12,6 +12,18 @@ int main(void) {
   uint8_t buffer[512];
   while (fgets(line, sizeof(line), stdin)) {
     int32_t n;
+#ifdef WITH_CTAP
+    if (strncmp(line, "POLL ", 5) == 0) {
+      extern uint8_t ck_platform_progress(void);
+      for (int i = 0; i < atoi(line + 5); i++) {
+        ck_platform_progress();
+        ck_core_presence_sample();
+      }
+      puts("9000");
+      fflush(stdout);
+      continue;
+    }
+#endif
     if (strncmp(line, "SIZE ", 5) == 0) {
       printf("%08x\n", (unsigned)ck_platform_size((uint8_t)atoi(line + 5)));
       fflush(stdout);
@@ -25,7 +37,7 @@ int main(void) {
       continue;
     }
     if (strncmp(line, "TOUCH ", 6) == 0) {
-#if defined(WITH_PIV) && !defined(WITH_OATH)
+#if (defined(WITH_PIV) || defined(WITH_CTAP)) && !defined(WITH_OATH)
       n = 0;
 #else
       n = ck_core_touch((uint8_t)atoi(line + 6), buffer, sizeof(buffer));

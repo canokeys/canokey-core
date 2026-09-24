@@ -2,10 +2,13 @@
 #![cfg(feature = "ctap")]
 use canokey_protocol::ctaphid::{self as wire, Error};
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
+#[path = "support/ctap.rs"]
+mod support;
 
 #[derive(Default)]
 struct Memory {
     bytes: Vec<u8>,
+    response: Vec<u8>,
     closes: usize,
     reads: Vec<(usize, usize)>,
     leased: bool,
@@ -20,7 +23,7 @@ impl Scratch for Memory {
         }
         self.leased = true;
         if pke {
-            self.bytes.resize(1024, 0);
+            self.bytes.resize(1033, 0);
         }
         Ok(())
     }
@@ -40,6 +43,46 @@ impl Scratch for Memory {
         self.reads.push((offset, bytes.len()));
         bytes.copy_from_slice(&self.bytes[offset..offset + bytes.len()]);
         Ok(())
+    }
+    fn execute(
+        &mut self,
+        _cid: u32,
+        command: Result<
+            canokey_rust_core::applets::ctap::Command,
+            canokey_rust_core::applets::ctap::Status,
+        >,
+    ) -> usize {
+        assert!(
+            !self.leased,
+            "crypto must execute only after source release"
+        );
+        self.response = support::execute(&mut canokey_rust_core::Core::new(), command);
+        self.response.len()
+    }
+    fn execute_message(
+        &mut self,
+        _: u32,
+        command: canokey_rust_core::applets::ctap::apdu::Message,
+    ) -> usize {
+        assert!(
+            !self.leased,
+            "MSG crypto must execute only after source release"
+        );
+        self.response = support::with_platform(&mut support::Backend::default(), |p| {
+            let mut core = canokey_rust_core::Core::new();
+            let n = core.execute_ctap_message(command, p);
+            let mut out = vec![0; n];
+            core.read_ctap(0, &mut out, p).unwrap();
+            out
+        });
+        self.response.len()
+    }
+    fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
+        out.copy_from_slice(&self.response[offset..offset + out.len()]);
+        Ok(())
+    }
+    fn close_response(&mut self) {
+        self.response.clear();
     }
     fn close(&mut self) {
         assert!(self.leased, "source must close exactly once");
@@ -159,7 +202,7 @@ fn channel_contention_resync_sequence_and_wrapping_timeout() {
     assert_eq!(
         &out[7..24],
         &[
-            1, 2, 3, 4, 5, 6, 7, 8, 0x12, 0x34, 0x56, 0x78, 2, 0, 0, 0, 0x0c
+            1, 2, 3, 4, 5, 6, 7, 8, 0x12, 0x34, 0x56, 0x78, 2, 0, 0, 0, 0x05
         ]
     );
     assert_eq!(mem.closes, 3);
@@ -204,33 +247,118 @@ fn cbor_releases_input_before_response_and_cancel_is_silent() {
     assert_eq!(mem.closes, 1);
     assert!(hid.transmit(&mut out, &mut mem));
     assert_eq!(
-        &out[7..21],
+        &out[9..20],
         &[
-            0, 0xa5, 1, 0x81, 0x68, b'F', b'I', b'D', b'O', b'_', b'2', b'_', b'0', 3
+            1, 0x84, 0x66, b'U', b'2', b'F', b'_', b'V', b'2', 0x68, b'F'
         ]
     );
     hid.completed(&mut mem);
     assert_eq!(mem.closes, 1);
-    request(&mut hid, &mut mem, wire::CBOR, &[0x06; 193]);
+    while hid.transmit(&mut out, &mut mem) {
+        hid.completed(&mut mem);
+    }
+    request(&mut hid, &mut mem, wire::CBOR, &[0x7f; 193]);
     assert_eq!(mem.closes, 2);
     assert_eq!(mem.reads, [(0, 192), (192, 1)]);
     assert!(!mem.leased);
     assert!(hid.transmit(&mut out, &mut mem));
     assert_eq!(&out[4..8], &[0x90, 0, 1, 1]);
     hid.completed(&mut mem);
+    let mut query = vec![6, 0xa2, 2, 1, 0x18, 99, 0x58, 200];
+    query.extend_from_slice(&[0x37; 200]);
+    request(&mut hid, &mut mem, wire::CBOR, &query);
+    assert_eq!(mem.closes, 3);
+    assert!(!mem.leased);
+    assert!(hid.transmit(&mut out, &mut mem));
+    assert_eq!(&out[4..11], &[0x90, 0, 4, 0, 0xa1, 3, 8]);
+    hid.completed(&mut mem);
+    // A crypto command with a large ignored extension must also close PKE
+    // before execution. The mock executor asserts that boundary explicitly.
+    let mut agreement = vec![6, 0xa3, 1, 1, 2, 2, 0x18, 99, 0x59, 2, 0xbc];
+    agreement.extend_from_slice(&[0; 700]);
+    request(&mut hid, &mut mem, wire::CBOR, &agreement);
+    assert_eq!(mem.closes, 4);
+    assert!(hid.transmit(&mut out, &mut mem));
+    assert_eq!(&out[7..11], &[0, 0xa1, 1, 0xa5]);
+    hid.completed(&mut mem);
+    assert!(hid.transmit(&mut out, &mut mem));
+    hid.completed(&mut mem);
+    assert!(!hid.active());
 }
 
 #[test]
 fn apdu_input_abort_preserves_response_backing() {
-    let mut ctap = canokey_rust_core::applets::ctap::apdu::Applet::new();
-    ctap.consume(&[]).unwrap();
-    ctap.consume(&[0x04]).unwrap();
-    ctap.consume(&[]).unwrap();
-    assert_eq!(ctap.finish().unwrap(), 51);
-    ctap.cancel_command();
-    let mut prefix = [0; 8];
-    ctap.read(1, &mut prefix).unwrap();
-    assert_eq!(prefix, [0xa5, 1, 0x81, 0x68, b'F', b'I', b'D', b'O']);
-    ctap.close();
-    assert!(ctap.read(0, &mut prefix).is_err());
+    use canokey_protocol::apdu::Header;
+    use canokey_rust_core::runtime::{engine::Router, registry::Registry};
+    let mut ctap = Registry::new();
+    support::with_platform(&mut support::Backend::default(), |p| {
+        ctap.select(canokey_rust_core::applets::ctap::apdu::AID, p)
+            .unwrap();
+        ctap.consume(&[], p).unwrap();
+        ctap.consume(&[0x04], p).unwrap();
+        ctap.consume(&[], p).unwrap();
+        let h = Header {
+            cla: 0x80,
+            ins: 0x10,
+            p1: 0,
+            p2: 0,
+        };
+        assert!(ctap.finish(h, 0, p).unwrap().0 > 0);
+        ctap.abort_command(p);
+        let mut prefix = [0; 8];
+        ctap.read_response(2, &mut prefix, p).unwrap();
+        assert_eq!(prefix, [1, 0x84, 0x66, b'U', b'2', b'F', b'_', b'V']);
+        ctap.close_response(p);
+        assert!(ctap.read_response(0, &mut prefix, p).is_err());
+    });
+}
+
+#[test]
+fn msg_apdu_status_and_source_release() {
+    for (body, expected) in [
+        (vec![0, 3, 0, 0], b"U2F_V2\x90\x00".to_vec()),
+        (vec![0, 3, 0, 0, 0, 0, 0], b"U2F_V2\x90\x00".to_vec()),
+        (vec![0, 3, 0], vec![0x67, 0]),
+        (vec![0x81, 3, 0, 0], vec![0x6e, 0]),
+        // Extended input exceeds the inline area; parsing closes PKE before execution.
+        (
+            [vec![0, 3, 0, 0, 0, 1, 0], vec![0; 256]].concat(),
+            vec![0x67, 0],
+        ),
+        (vec![0x80, 0x10, 0, 0, 1, 0x7f], vec![1, 0x90, 0]),
+    ] {
+        let mut hid = Transport::new();
+        let mut memory = Memory::default();
+        request(&mut hid, &mut memory, wire::MSG, &body);
+        assert_eq!(memory.closes, 1);
+        let mut out = [0; 64];
+        assert!(hid.transmit(&mut out, &mut memory));
+        assert_eq!(&out[4..7], &[wire::MSG, 0, expected.len() as u8]);
+        assert_eq!(&out[7..7 + expected.len()], expected);
+        hid.completed(&mut memory);
+        assert_eq!(memory.closes, 1);
+    }
+}
+
+#[test]
+fn polling_presence_is_fresh_single_use_and_expires() {
+    use canokey_rust_core::runtime::Polling;
+    let mut touch = Polling::new();
+    touch.sample(true, 0); // A preexisting hold must first be released.
+    touch.sample(false, 10);
+    assert!(!touch.take(10));
+    touch.sample(true, 20);
+    touch.sample(false, 30);
+    assert!(touch.take(31));
+    assert!(!touch.take(32));
+    touch.sample(true, 40);
+    touch.sample(false, 50);
+    assert!(!touch.take(1050));
+    touch.sample(true, u32::MAX - 2);
+    touch.sample(false, u32::MAX);
+    assert!(touch.take(1));
+    touch.sample(true, 2);
+    touch.sample(false, 3);
+    touch.clear();
+    assert!(!touch.take(4));
 }

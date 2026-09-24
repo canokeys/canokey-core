@@ -66,39 +66,4 @@ pub fn tag_list(b: &[u8]) -> Result<(u32, usize), Sw> {
     ))
 }
 
-pub(super) fn der_signature(out: &mut [u8], n: usize) -> Result<usize, Sw> {
-    if !n.is_multiple_of(2) || n > 132 {
-        return Err(Sw::UNABLE_TO_PROCESS);
-    }
-    let width = n / 2;
-    let mut der = [0; 144];
-    let mut at = 3;
-    for value in out[..n].chunks_exact(width) {
-        let skip = value
-            .iter()
-            .position(|v| *v != 0)
-            .unwrap_or(value.len() - 1);
-        let v = &value[skip..];
-        let pad = usize::from(v[0] & 0x80 != 0);
-        der[at] = 2;
-        der[at + 1] = (v.len() + pad) as u8;
-        at += 2;
-        der[at..at + pad].fill(0);
-        at += pad;
-        der[at..at + v.len()].copy_from_slice(v);
-        at += v.len();
-    }
-    let body = at - 3;
-    let start = if body < 128 {
-        der[1] = 0x30;
-        der[2] = body as u8;
-        1
-    } else {
-        der[0] = 0x30;
-        der[1] = 0x81;
-        der[2] = body as u8;
-        0
-    };
-    out[..at - start].copy_from_slice(&der[start..at]);
-    Ok(at - start)
-}
+pub(super) use canokey_protocol::der::der_signature;

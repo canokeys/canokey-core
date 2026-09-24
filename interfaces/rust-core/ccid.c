@@ -249,6 +249,9 @@ uint8_t ck_ccid_progress(void) {
 #endif
 #if ENABLE_IFACE_CTAPHID
 uint8_t ck_ccid_idle(void) {
+  // A queued CCID packet cannot steal the native owner's unexpired lease.
+  // CCID_Loop has not consumed it or acquired any request scratch yet.
+  if (ck_hid_busy()) return 1;
   // Preserve CCID chains, response cursors and PIN grants during ordinary
   // multi-command use. Foreign HID may clean up an idle session after 2 s.
   return !reset_pending && !incoming_length && phase == CCID_IDLE &&
@@ -275,7 +278,9 @@ void CCID_Loop(void) {
     return;
   }
 #if ENABLE_IFACE_CTAPHID
-  if (ck_hid_busy()) return;
+  if (ck_hid_active()) return;
+  if (ck_hid_busy() && ((phase != CCID_IDLE && request[CCID_MESSAGE_TYPE] == PC_TO_RDR_XFRBLOCK) ||
+                        (phase == CCID_IDLE && incoming_length && incoming[0] == PC_TO_RDR_XFRBLOCK))) return;
 #endif
   if (phase < CCID_QUEUED && incoming_length) {
     uint8_t length = incoming_length;
@@ -311,10 +316,14 @@ void CCID_Loop(void) {
         error = SLOTERROR_BAD_POWERSELECT;
         break;
       }
-      ck_core_reset();
 #if ENABLE_IFACE_CTAPHID
-      session_owned = 1;
+      // Slot discovery must remain responsive, but cannot reset the native
+      // owner's authorization. Its first APDU will acquire core after the lease.
+      session_owned = !ck_hid_busy();
+      if (session_owned) ck_core_reset();
       session_last_used = device_get_tick();
+#else
+      ck_core_reset();
 #endif
       active = 1;
       memcpy(response + CCID_CMD_HEADER_SIZE, atr, sizeof(atr));
@@ -325,9 +334,11 @@ void CCID_Loop(void) {
         error = SLOTERROR_BAD_DWLENGTH;
         break;
       }
-      ck_core_reset();
 #if ENABLE_IFACE_CTAPHID
+      if (!ck_hid_busy()) ck_core_reset();
       session_owned = 0;
+#else
+      ck_core_reset();
 #endif
       active = 0;
       break;

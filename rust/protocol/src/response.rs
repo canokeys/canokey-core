@@ -37,7 +37,7 @@ impl StatusWord {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ReadError;
+pub struct ReadError(pub StatusWord);
 
 /// The source must remain valid until close, including across GET RESPONSE.
 /// This excludes transient request PKE storage that crypto may overwrite.
@@ -73,13 +73,22 @@ impl Response {
     pub fn active(&self) -> bool {
         self.pending.is_some()
     }
-    pub fn start(&mut self, total: u32, sw: StatusWord) {
-        debug_assert!(!self.active());
+    /// Start a response after the owning router has closed any previous source.
+    /// `Response` deliberately does not own the source, so callers must use
+    /// `clear`/their router close hook before replacing an active lease.
+    pub fn start(&mut self, total: u32, sw: StatusWord) -> bool {
+        // The engine closes the previous source before every start. Returning
+        // false here also protects release builds if another caller violates
+        // that contract.
+        if self.active() {
+            return false;
+        }
         self.pending = Some(Pending {
             total,
             offset: 0,
             sw,
         });
+        true
     }
     pub fn clear(&mut self, source: &mut dyn Source) {
         if self.pending.take().is_some() {
@@ -102,7 +111,12 @@ impl Response {
         } else {
             match source.read(p.offset, &mut output[..n]) {
                 Ok(nread) if nread > 0 && nread <= n => nread,
-                _ => {
+                Err(error) => {
+                    output[..n].fill(0);
+                    self.clear(source);
+                    return Err(error.0);
+                }
+                Ok(_) => {
                     output[..n].fill(0);
                     self.clear(source);
                     return Err(StatusWord::UNABLE_TO_PROCESS);
@@ -157,5 +171,18 @@ impl ResponsePlan {
                 StatusWord::remaining(total - next)
             },
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Response, StatusWord};
+
+    #[test]
+    fn start_does_not_replace_an_active_lease() {
+        let mut response = Response::new();
+        assert!(response.start(4, StatusWord::SUCCESS));
+        assert!(!response.start(8, StatusWord::WRONG_DATA));
+        assert!(response.active());
     }
 }

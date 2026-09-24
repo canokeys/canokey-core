@@ -28,6 +28,7 @@ enum ck_key_operation {
   CK_KEY_EC_SIGN = 6,
   CK_KEY_RSA_RAW = 7,
   CK_KEY_SM2_EXCHANGE = 8,
+  CK_KEY_SM2_MESSAGE_DIGEST = 9,
 };
 enum ck_stream_operation {
   CK_STREAM_PUBLIC_INIT = 0,
@@ -63,10 +64,12 @@ enum ck_sm2_packet {
 int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *input, size_t length,
                         uint8_t *output, size_t capacity);
 int32_t ck_platform_aes192(const uint8_t *key, const uint8_t *input, uint8_t *output);
-int32_t ck_platform_piv_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t length,
+int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t length,
                                uint8_t *output, size_t capacity);
 int32_t ck_platform_digest(uint8_t op, void *state, const uint8_t *input, size_t length, uint8_t *output,
                            size_t capacity);
 /* Internal primitive adapter shared by key_crypto.c and piv_crypto.c. */
 int32_t ck_sm2_exchange(ecc_key_t *key, const uint8_t *input, size_t length, uint8_t *output);
 #endif
+
+int32_t ck_platform_p256_sign(const uint8_t scalar[32], const uint8_t digest[32], uint8_t out[64]);

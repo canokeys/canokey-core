@@ -100,8 +100,9 @@ failures; both retain the existing APDU status `6900` (unable to process).
 CCID retains its 261-byte short-frame limit. Logical commands span ISO chained
 APDUs; general extended APDU support is not advertised. Request modes are:
 
-- Small commands and irreducible RSA ciphertext: at most 513 bytes in the shared
-  session input, rather than a separate worst-case buffer in each applet.
+- Small commands and irreducible RSA ciphertext: at most 544 bytes in the shared
+  session input (including protocol framing), rather than a separate worst-case
+  buffer in each applet.
 - Certificates: up to 1152 bytes, appended to a dedicated object transaction
   after PW3 authorization. Atomic rename publishes only the final complete
   object; abort/reset leaves the previous certificate authoritative. Reads use
@@ -112,8 +113,8 @@ APDUs; general extended APDU support is not advertised. Request modes are:
   buffer or unauthenticated generic flash RX scratch exists. Final validation
   and publication happen once, after the complete envelope is consumed.
 
-Workspace size is 2332 bytes including alignment: one 1288-byte `KeyMaterial`,
-513-byte crypto input and 528-byte semantic output plus small framing. RSA's
+Workspace size is 2360 bytes including alignment: one 1288-byte `KeyMaterial`,
+544-byte crypto input and 528-byte semantic output plus small framing. RSA's
 native ABI view is checked with C static assertions; storage serializes only its
 explicit byte components, never native headers/padding. ECC uses the first 198
 material bytes and lends the unused tail to the native signing primitive. The
@@ -149,6 +150,10 @@ Multi-record reset first marks the applet terminated and clears that marker last
 an interrupted reset remains recoverable with ACTIVATE. Storage failures are
 fail-closed (`6900`), never a trigger to format or reinterpret old C records.
 `s` is separate from `t` used for atomic record updates.
+
+When the terminated marker is set, SELECT returns `6285` until ACTIVATE
+completes recovery. Presence cancellation is reported as `6400`; this is the
+Rust profile's explicit mapping for the legacy touch-cancel path.
 
 ## Validation scope
 

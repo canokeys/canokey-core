@@ -118,7 +118,13 @@ impl Ga {
                     }
                 },
                 Phase::Tag => {
-                    if !(ga_tag::WITNESS..=ga_tag::EXPONENTIATION).contains(&b) {
+                    if !matches!(
+                        b,
+                        ga_tag::WITNESS
+                            | ga_tag::CHALLENGE
+                            | ga_tag::RESPONSE
+                            | ga_tag::EXPONENTIATION
+                    ) {
                         return Err(Sw::WRONG_DATA);
                     }
                     self.tag = (b - ga_tag::WITNESS) as usize;

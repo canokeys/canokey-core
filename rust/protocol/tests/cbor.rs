@@ -31,7 +31,7 @@ fn decode(parts: &[&[u8]], limit: u16) -> Result<Vec<String>, Error> {
 
 #[test]
 fn minicbor_vectors_across_every_split() {
-    // Independent encoder: large integers, nested collections, multibyte UTF-8,
+    // Library-generated vectors: large integers, nested collections, multibyte UTF-8,
     // strings crossing the short-buffer boundary, and empty containers/strings.
     let mut bytes = [0; 1024];
     let mut encoder = minicbor::Encoder::new(&mut bytes[..]);

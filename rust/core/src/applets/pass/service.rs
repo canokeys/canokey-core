@@ -21,7 +21,12 @@ impl Pass {
         self.available = false;
         memory.wipe(&mut self.slots);
         match storage.load(Record::Pass, &mut self.slots) {
-            Err(StorageError::Missing) => self.clear_slots()?,
+            Err(StorageError::Missing) => {
+                self.clear_slots()?;
+                // Materialize the empty layout so a first boot has the same
+                // durable PASS record contract as a configured card.
+                self.persist(storage, memory)?;
+            }
             Ok(n) => {
                 if super::codec::unpack(&mut self.slots, n).is_err() {
                     memory.wipe(&mut self.slots);
@@ -37,9 +42,9 @@ impl Pass {
         Ok(())
     }
     fn clear_slots(&mut self) -> Result<(), Error> {
-        for i in 0..2 {
+        for i in 0..super::codec::SLOT_COUNT {
             Layout.encode_cleared(
-                Layout.record_mut(&mut self.slots, SlotIndex::new(i)?)?,
+                Layout.record_mut(&mut self.slots, SlotIndex::new(i as u8)?)?,
                 Slot::Off,
             )?;
         }
@@ -102,11 +107,11 @@ impl Pass {
         memory: &dyn Memory,
     ) -> Result<(), Error> {
         let mut changed = false;
-        for index in 0..2 {
-            if let Slot::Oath { id: stored, .. } = self.slot(index)?
+        for index in 0..crate::applets::pass::codec::SLOT_COUNT {
+            if let Slot::Oath { id: stored, .. } = self.slot(index as u8)?
                 && id.is_none_or(|id| id == stored)
             {
-                let record = Layout.record_mut(&mut self.slots, SlotIndex::new(index)?)?;
+                let record = Layout.record_mut(&mut self.slots, SlotIndex::new(index as u8)?)?;
                 memory.wipe(record);
                 Layout.encode_cleared(record, Slot::Off)?;
                 changed = true;

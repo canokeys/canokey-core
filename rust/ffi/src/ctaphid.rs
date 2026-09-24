@@ -3,10 +3,21 @@
 use canokey_protocol::ctaphid::Error;
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
 
-static mut HID: Transport = Transport::new();
+crate::lazy_state!(
+    HID,
+    HID_READY,
+    Transport,
+    Transport::new(),
+    initialize_hid,
+    hid
+);
+// Must match PKE_BUFFER_OWNER_CTAP in interfaces/rust-core/include/pke.h;
+// this is an FFI ABI value, so keep the correspondence explicit.
 const PKE_OWNER_CTAP: u8 = 3;
 unsafe extern "C" {
     fn ck_ccid_idle() -> u8;
+    fn ck_hid_execution_begin(cid: u32);
+    fn ck_hid_execution_end();
     fn pke_buffer_size() -> usize;
     fn pke_buffer_acquire(owner: u8) -> i32;
     fn pke_buffer_release(owner: u8) -> i32;
@@ -24,9 +35,9 @@ impl Scratch for RequestScratch {
                 return Err(Error::Busy);
             }
             // End the previous idle CCID session before staging any HID bytes.
-            super::entrypoints::ck_core_reset();
+            super::entrypoints::with_core(|core, p| core.begin_ctap(p));
             if use_pke {
-                if pke_buffer_size() < canokey_rust_core::applets::ctap::MAX_REQUEST {
+                if pke_buffer_size() < canokey_rust_core::applets::ctap::MAX_REQUEST + 9 {
                     return Err(Error::Length);
                 }
                 if pke_buffer_acquire(PKE_OWNER_CTAP) != 0 {
@@ -51,10 +62,41 @@ impl Scratch for RequestScratch {
             Err(Error::Other)
         }
     }
+    fn execute(
+        &mut self,
+        cid: u32,
+        command: Result<
+            canokey_rust_core::applets::ctap::Command,
+            canokey_rust_core::applets::ctap::Status,
+        >,
+    ) -> usize {
+        unsafe { ck_hid_execution_begin(cid) };
+        let length = super::entrypoints::with_core(|core, p| core.execute_ctap(command, p));
+        unsafe { ck_hid_execution_end() };
+        length
+    }
+    fn execute_message(
+        &mut self,
+        cid: u32,
+        command: canokey_rust_core::applets::ctap::apdu::Message,
+    ) -> usize {
+        unsafe { ck_hid_execution_begin(cid) };
+        let length = super::entrypoints::with_core(|core, p| core.execute_ctap_message(command, p));
+        unsafe { ck_hid_execution_end() };
+        length
+    }
+    fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
+        super::entrypoints::with_core(|core, p| core.read_ctap(offset, out, p))
+            .map_err(|_| Error::Other)
+    }
+    fn close_response(&mut self) {
+        super::entrypoints::with_core(|core, p| core.close_ctap(p));
+    }
     fn close(&mut self) {
         unsafe {
             if PKE_LEASED {
-                // Hardware cleanup failures must not silently reuse stale scratch.
+                // Hardware cleanup failures deliberately halt here: reusing a
+                // uncleared PKE lease could expose another request's secrets.
                 assert_eq!(pke_buffer_clear(), 0);
                 assert_eq!(pke_buffer_release(PKE_OWNER_CTAP), 0);
                 PKE_LEASED = false;
@@ -65,7 +107,8 @@ impl Scratch for RequestScratch {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_reset() {
     unsafe {
-        (&mut *core::ptr::addr_of_mut!(HID)).reset(&mut RequestScratch);
+        hid().reset(&mut RequestScratch);
+        super::entrypoints::ck_core_reset();
     }
 }
 /// input is null or one full report; output is a distinct writable report.
@@ -79,7 +122,7 @@ pub unsafe extern "C" fn ck_hid_poll(
     output: *mut [u8; 64],
 ) -> u8 {
     unsafe {
-        let hid = &mut *core::ptr::addr_of_mut!(HID);
+        let hid = hid();
         let out = &mut *output;
         let mut scratch = RequestScratch;
         hid.completed(&mut scratch);

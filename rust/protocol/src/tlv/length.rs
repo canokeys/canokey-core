@@ -50,3 +50,27 @@ impl LengthState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{Feed, LengthState};
+
+    #[test]
+    fn accepts_short_and_long_lengths() {
+        let mut state = LengthState::default();
+        assert_eq!(state.feed(7), Feed::Complete(7));
+        assert_eq!(state.feed(0x81), Feed::More);
+        assert_eq!(state.feed(0x80), Feed::Complete(128));
+        assert_eq!(state.feed(0x82), Feed::More);
+        assert_eq!(state.feed(0x01), Feed::More);
+        assert_eq!(state.feed(0x00), Feed::Complete(256));
+    }
+
+    #[test]
+    fn rejects_indefinite_and_overlong_lengths() {
+        let mut state = LengthState::default();
+        assert_eq!(state.feed(0x80), Feed::Invalid);
+        let mut state = LengthState::default();
+        assert_eq!(state.feed(0x83), Feed::Invalid);
+    }
+}

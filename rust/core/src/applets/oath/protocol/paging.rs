@@ -7,16 +7,25 @@ impl State {
         let mut mac = Mac::new(p.crypto, p.memory);
         // OATH A5 continues the credential enumeration; ISO GET RESPONSE
         // drains already generated response bytes. These are separate cursors.
-        let capacity = le.min(256) as usize;
+        const RESPONSE_CAPACITY: u32 = 256;
+        const NAME_LIST_OVERHEAD: usize = 3;
+        const CALCULATE_OVERHEAD: usize = 5;
+        const FULL_DIGEST_BYTES: usize = 64;
+        let capacity = le.min(RESPONSE_CAPACITY) as usize;
         if matches!(self.page, Page::None) {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
         while let Some((id, next)) = store.at(self.cursor).map_err(status)? {
             let mut record = store.load(id).map_err(status)?;
+            // List entries are NAME_LIST + one-byte length + kind/algorithm;
+            // calculate entries are NAME + name plus either a 4-byte truncated
+            // result or a 64-byte full result, matching the encoders below.
             let estimate = match self.page {
-                Page::List => 3 + record.name().len(),
+                Page::List => NAME_LIST_OVERHEAD + record.name().len(),
                 Page::Calculate { truncated } => {
-                    5 + record.name().len() + if truncated { 4 } else { 64 }
+                    CALCULATE_OVERHEAD
+                        + record.name().len()
+                        + if truncated { 4 } else { FULL_DIGEST_BYTES }
                 }
                 Page::None => 0,
             };

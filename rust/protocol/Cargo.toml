@@ -9,5 +9,5 @@ publish = false
 [lints]
 workspace = true
 
-[dev-dependencies]
-minicbor = { version = "=2.3.0", default-features = false }
+[dependencies]
+minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", default-features = false }

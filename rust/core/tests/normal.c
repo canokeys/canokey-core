@@ -29,10 +29,16 @@ int main(void) {
 #ifdef WITH_PIV
   + 1
 #endif
+#ifdef WITH_CTAP
+  + 1
+#endif
 );
 #else
   assert(ck_core_applet_count() == 1
 #ifdef WITH_PIV
+  + 1
+#endif
+#ifdef WITH_CTAP
   + 1
 #endif
 );
@@ -90,13 +96,19 @@ int main(void) {
   assert(ck_core_touch(0, buffer, sizeof(buffer)) == 0);
 #else
   assert(ck_core_applet_count() ==
-#ifdef WITH_PIV
- 1
-#else
  0
+#ifdef WITH_PIV
+ + 1
+#endif
+#ifdef WITH_CTAP
+ + 2 /* Independent CTAP also includes ADMIN for provisioning. */
 #endif
 );
+#ifdef WITH_CTAP
+  SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
+#else
   SEND(0x6a82, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
+#endif
 #endif
   return 0;
 }

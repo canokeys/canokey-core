@@ -7,6 +7,7 @@ use super::wire::{
 };
 use super::{codec, ga::Ga, import::Import, pin::Pins, repository as repo};
 use crate::ports::alg;
+use crate::ports::{CryptoScratch, StreamOperation};
 mod keys;
 mod management;
 mod metadata;
@@ -26,6 +27,45 @@ pub const AID: &[u8] = &[
 // Bounded ordinary request: RSA-4096 value plus one encoding byte.
 pub const CAPACITY: usize = 513;
 include!(concat!(env!("OUT_DIR"), "/piv_version.rs"));
+
+pub(crate) fn init_stream(
+    id: usize,
+    algorithm: u8,
+    operation: StreamOperation,
+    scratch: &mut CryptoScratch,
+    p: &mut Platform<'_>,
+) -> Result<usize, Sw> {
+    let mut seed = [0; 64];
+    let result = (|| {
+        p.storage
+            .read_at(
+                repo::KEYS[id],
+                repo::HEADER as u32,
+                &mut seed[..repo::material(algorithm)],
+            )
+            .map_err(repo::io)?;
+        p.crypto
+            .stream(
+                operation,
+                algorithm,
+                scratch,
+                &seed[..repo::material(algorithm)],
+                &mut [],
+            )
+            .map_err(|_| Sw::UNABLE_TO_PROCESS)
+    })();
+    p.memory.wipe(&mut seed);
+    result
+}
+
+pub(crate) fn init_public_stream(
+    id: usize,
+    algorithm: u8,
+    scratch: &mut CryptoScratch,
+    p: &mut Platform<'_>,
+) -> Result<usize, Sw> {
+    init_stream(id, algorithm, StreamOperation::PublicInit, scratch, p)
+}
 // SELECT response: application template 61 contains the application suffix
 // (4F) and an authority template 79 containing the five-byte PIV provider ID.
 const SELECT: &[u8] = &[
@@ -56,7 +96,7 @@ enum Request {
 }
 #[derive(Clone, Copy)]
 // Response backing only; runtime::engine owns the GET RESPONSE byte cursor.
-enum Response {
+enum ResponseBacking {
     Memory,
     Object(usize),
     Crypto(u8),
@@ -77,7 +117,7 @@ pub struct Piv {
     challenge: [u8; 16],
     config: [u8; 10],
     request: Request,
-    response: Response,
+    response: ResponseBacking,
     used: usize,
     // Large replies are header || generated/stored body || suffix. Only the
     // small wrappers live here; read_response pulls the body incrementally.
@@ -98,6 +138,19 @@ pub struct Piv {
     sm2_id_used: usize,
 }
 impl Piv {
+    #[cfg(feature = "pass")]
+    pub fn take_presence(&mut self) -> bool {
+        self.presence.take()
+    }
+
+    pub(super) fn clear_agreement(
+        &mut self,
+        w: &mut crate::runtime::workspace::Workspace,
+        p: &mut Platform<'_>,
+    ) {
+        self.agreement = None;
+        p.memory.wipe(&mut w.agreement);
+    }
     pub const fn new() -> Self {
         Self {
             pins: Pins::new(),
@@ -107,7 +160,7 @@ impl Piv {
             challenge: [0; 16],
             config: repo::DEFAULT_CONFIG,
             request: Request::None,
-            response: Response::Memory,
+            response: ResponseBacking::Memory,
             used: 0,
             header: [0; 32],
             header_len: 0,
@@ -127,8 +180,7 @@ impl Piv {
         }
     }
     fn reset_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
-        self.agreement = None;
-        p.memory.wipe(&mut w.agreement);
+        self.clear_agreement(w, p);
         self.pins.reset();
         self.admin = false;
         self.pin_grant_consumed = false;
@@ -142,8 +194,7 @@ impl Piv {
         p.memory.wipe(&mut self.challenge);
     }
     fn select_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
-        self.agreement = None;
-        p.memory.wipe(&mut w.agreement);
+        self.clear_agreement(w, p);
         self.auth_clear(p);
         w.output[..SELECT.len()].copy_from_slice(SELECT);
         self.memory(SELECT.len());
@@ -185,8 +236,7 @@ impl Piv {
         if matches!(self.request, Request::Put) {
             p.storage.stage_abort()
         }
-        self.agreement = None;
-        p.memory.wipe(&mut w.agreement);
+        self.clear_agreement(w, p);
         self.pending_public = None;
         self.request = Request::None;
         self.import = Import::new();
@@ -213,10 +263,7 @@ impl Piv {
             p.memory.wipe(&mut w.output);
         } else {
             w.clear(p.memory);
-            self.agreement = None;
-        }
-        if h.ins == INS_NAME && h.chained() {
-            return Err(Sw::WRONG_LENGTH);
+            self.clear_agreement(w, p);
         }
         if h.ins != INS_GENERAL_AUTHENTICATE {
             self.auth_clear(p)
@@ -320,8 +367,7 @@ impl Piv {
             Request::None | Request::Stream(_) => Err(Sw::COMMAND_NOT_ALLOWED),
         };
         if r.is_err() {
-            self.agreement = None;
-            p.memory.wipe(&mut w.agreement);
+            self.clear_agreement(w, p);
             if matches!(self.request, Request::Put) {
                 p.storage.stage_abort()
             }
@@ -336,7 +382,7 @@ impl Piv {
         r.map(|n| (n, Sw::SUCCESS))
     }
     fn memory(&mut self, n: usize) {
-        self.response = Response::Memory;
+        self.response = ResponseBacking::Memory;
         self.header_len = 0;
         self.suffix_len = 0;
         self.body_len = n;
@@ -561,12 +607,12 @@ impl Piv {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
         match self.response {
-            Response::Crypto(_) => return Err(Sw::UNABLE_TO_PROCESS),
-            Response::Object(i) => p
+            ResponseBacking::Crypto(_) => return Err(Sw::UNABLE_TO_PROCESS),
+            ResponseBacking::Object(i) => p
                 .storage
                 .read_at(repo::OBJECTS[i], offset as u32, out)
                 .map_err(repo::io)?,
-            Response::Memory => {
+            ResponseBacking::Memory => {
                 for (i, b) in out.iter_mut().enumerate() {
                     let at = offset + i;
                     *b = if at < self.header_len {

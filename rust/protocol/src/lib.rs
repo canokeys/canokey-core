@@ -8,3 +8,5 @@ pub mod cbor;
 pub mod ctaphid;
 pub mod response;
 pub mod tlv;
+
+pub mod der;

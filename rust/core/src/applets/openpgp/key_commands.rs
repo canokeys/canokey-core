@@ -1,12 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Key command policy and crypto-port calls; semantic buffers belong to runtime.
 use super::domain::key_role;
-use super::wire::{BufferRange, ins::*, key_tag};
 use super::{domain::role, encoding::Writer, import::object, protocol::OpenPgp};
+use super::{
+    encoding::BufferRange,
+    wire::{ins::*, key_tag},
+};
 use crate::ports::EC_POINT_UNCOMPRESSED;
 use crate::ports::alg;
 use crate::{Platform, runtime::workspace::Workspace};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
+const RSA_MODULUS_TLV_BYTES: usize = 4;
+const RSA_EXPONENT_TLV_BYTES: usize = 6;
+const EC_POINT_SHORT_HEADER_BYTES: usize = 2;
+const EC_POINT_LONG_HEADER_BYTES: usize = 3;
 impl OpenPgp {
     #[inline(never)]
     pub(super) fn generate_key(
@@ -31,12 +38,16 @@ impl OpenPgp {
         // and exponent TLV (6 bytes). EC adds a point TLV header and, only for
         // Weierstrass curves, the SEC1 04 prefix; P-521 needs a long BER length.
         let inner = if a.rsa() {
-            n + 10
+            n + RSA_MODULUS_TLV_BYTES + RSA_EXPONENT_TLV_BYTES
         } else {
             n + if a.0 == alg::ED25519 || a.0 == alg::X25519 {
-                2
+                EC_POINT_SHORT_HEADER_BYTES
             } else {
-                if n + 1 < 128 { 3 } else { 4 }
+                if n + 1 < 128 {
+                    EC_POINT_SHORT_HEADER_BYTES + 1
+                } else {
+                    EC_POINT_LONG_HEADER_BYTES + 1
+                }
             }
         };
         v.header(key_tag::PUBLIC_TEMPLATE, inner)?;
@@ -74,9 +85,9 @@ impl OpenPgp {
         let tag = u16::from_be_bytes([h.p1, h.p2]);
 
         let r = match (h.ins, tag) {
-            (INS_INTERNAL_AUTHENTICATE, 0x0000) => key_role::AUTHENTICATION,
-            (INS_PERFORM_SECURITY_OPERATION, key_tag::PSO_SIGNATURE) => key_role::SIGNATURE,
-            (INS_PERFORM_SECURITY_OPERATION, key_tag::PSO_DECIPHER) => key_role::DECIPHER,
+            (INTERNAL_AUTHENTICATE, 0x0000) => key_role::AUTHENTICATION,
+            (PERFORM_SECURITY_OPERATION, key_tag::PSO_SIGNATURE) => key_role::SIGNATURE,
+            (PERFORM_SECURITY_OPERATION, key_tag::PSO_DECIPHER) => key_role::DECIPHER,
             _ => return Err(Sw::WRONG_P1P2),
         };
         let a = self.session.prepare(r, &mut w.key.bytes, p)?;
