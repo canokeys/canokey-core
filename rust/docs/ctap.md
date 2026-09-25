@@ -247,7 +247,7 @@ must not be used as permission to overwrite endpoint-owned bytes.
 - `runtime/ctaphid.rs`: HID channel/fragments and request/response lifetime.
   Initialization, packet receive, completed-request execution and transmit are
   separate operations. One storage state tracks released, inline or PKE input.
-- `interfaces/rust-core/ccid.c`: CCID framing and endpoint handoff; both queued
+- `runtime/ccid.rs` and `ffi/ccid.rs`: CCID framing and endpoint handoff; both queued
   late packets and clock expiry use the same receive cleanup.
 - `protocol/cbor.rs`: bounded incremental adaptation of minicbor.
 

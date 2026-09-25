@@ -9,6 +9,7 @@ publish = false
 canokey-protocol = { path = "../protocol" }
 canokey-rust-core = { path = "../core" }
 [features]
+usb-ccid = []
 storage = []
 platform-device = []
 platform-serial = []

@@ -10,6 +10,11 @@ alone/combined. See
 [OATH implementation and normal validation](docs/oath.md), and
 [OpenPGP implementation and normal validation](docs/openpgp.md).
 
+The next architectural milestone is the
+[Rust transport migration](docs/transport-migration.md): replace retained C
+protocol state, starting with CCID, while preserving a narrow platform driver,
+LittleFS and crypto boundary. CCID now runs in Rust with a platform packet adapter; C USB/HID remains linked.
+
 ## Organization and ownership
 
 - `protocol/src/apdu/`: envelope/header decoding and chain metadata; `response.rs`
@@ -37,7 +42,7 @@ alone/combined. See
 - `ffi/src/entrypoints.rs`: serialized C ABI and alias-safe RX/TX borrows;
   `ffi/src/platform/`: storage, crypto and device adapters, with volatile
   erasure in the device module. Safe core forbids unsafe code at the crate root.
-- `interfaces/rust-core/`: retained C USB/CCID/HID framing and endpoint mechanics.
+- `interfaces/rust-core/`: retained C USB/HID code and narrow native service headers.
 
 The `admin`, `pass`, `oath`, `openpgp` and `piv` core/FFI features are independent.
 Only enabled services own registry state and run installation. PASS has no AID;

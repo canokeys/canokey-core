@@ -120,8 +120,4 @@ int pke_buffer_read(size_t offset, uint8_t *out, size_t n) {
 int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
   (void)offset; (void)in; (void)n; assert(0); return -1;
 }
-int32_t ck_ccid_source_read(uint32_t offset, uint8_t *out, size_t n) {
-  (void)offset; (void)out; (void)n; assert(0); return -1;
-}
-void ck_ccid_source_close(void) { assert(0); }
 #endif

@@ -12,3 +12,5 @@ pub mod ctaphid;
 
 #[cfg(feature = "ctap")]
 pub use presence::Polling;
+
+pub mod ccid;

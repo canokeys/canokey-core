@@ -50,8 +50,7 @@ add_dependencies(canokey-rust-core rust-core-build)
 include(CTest)
 if(BUILD_TESTING)
   add_executable(hid-usb core/tests/hid_usb.c ../interfaces/rust-core/ctaphid.c)
-  add_executable(ccid-usb core/tests/ccid_usb.c ../interfaces/rust-core/ccid.c)
-  foreach(transport hid-usb ccid-usb)
+  foreach(transport hid-usb)
     target_include_directories(${transport} PRIVATE
       ../interfaces/rust-core ../interfaces/USB/core/inc ../interfaces/USB/device
       ../interfaces/USB/class/ccid ../interfaces/USB/class/ctaphid
@@ -151,6 +150,14 @@ if(BUILD_TESTING)
       add_test(NAME ctap-config COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/ctap_config.py" --host $<TARGET_FILE:ctap-host>)
     endif()
+  endif()
+  # Platform integration uses the real Rust CCID facade and CIU packet driver.
+  # This optional parent-port fixture is absent in a standalone core checkout.
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_ccid.py")
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME ccid-usb COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_ccid.py")
+    set_tests_properties(ccid-usb PROPERTIES TIMEOUT 120)
   endif()
   add_test(NAME core-normal COMMAND core-normal)
   # Pure transport tests also run in profiles without the CTAP firmware applet.

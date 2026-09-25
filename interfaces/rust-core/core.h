@@ -24,12 +24,7 @@ uint8_t ck_ccid_idle(void);
 uint8_t ck_ccid_scratch_busy(void);
 /* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
 #define CK_CTAP_MAX_REQUEST 1024u
-int32_t ck_core_extended_begin(const uint8_t prefix[7], size_t total);
-int32_t ck_core_exchange_ccid_source(size_t total, uint8_t *output, size_t capacity);
-int32_t ck_ccid_source_read(size_t offset, uint8_t *output, size_t length);
-void ck_ccid_source_close(void);
 #endif
-uint8_t ck_ccid_rx_ready(void);
 int32_t ck_core_install(void);
 void ck_core_reset(void);
 uint8_t ck_core_applet_count(void);

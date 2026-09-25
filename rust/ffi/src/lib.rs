@@ -53,3 +53,6 @@ pub extern "C" fn rust_eh_personality() -> ! {
 
 #[cfg(feature = "ctap")]
 mod ctaphid;
+
+#[cfg(feature = "usb-ccid")]
+mod ccid;
