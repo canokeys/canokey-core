@@ -1,8 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Cryptographic primitive adapter. Policy and protocol stay in safe Rust.
-use canokey_rust_core::ports::{Crypto, CryptoError};
+use crate::{Crypto, CryptoError};
 
-pub(super) struct CryptoBackend;
+/// Native platform capability, created only at the serialized FFI boundary.
+/// The marker prevents transferring a borrowed hardware session across threads.
+pub struct CryptoBackend(core::marker::PhantomData<*mut ()>);
+
+impl CryptoBackend {
+    /// # Safety
+    /// All native platform access, including callbacks and other backend values,
+    /// must remain serialized for this value's entire lifetime. Native global
+    /// storage, crypto scratch and presence state are not independently locked.
+    pub unsafe fn new() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
 
 #[cfg(feature = "platform-hmac")]
 unsafe extern "C" {
@@ -27,7 +39,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn ck_platform_digest(
         op: u8,
-        state: *mut canokey_rust_core::ports::HashState,
+        state: *mut crate::HashState,
         input: *const u8,
         n: usize,
         out: *mut u8,
@@ -39,7 +51,7 @@ unsafe extern "C" {
     fn ck_platform_stream(
         op: u8,
         alg: u8,
-        scratch: *mut canokey_rust_core::ports::CryptoScratch,
+        scratch: *mut crate::CryptoScratch,
         input: *const u8,
         n: usize,
         out: *mut u8,
@@ -65,14 +77,14 @@ unsafe extern "C" {
     fn ck_platform_key(
         operation: u8,
         algorithm: u8,
-        key: *mut canokey_rust_core::ports::KeyMaterial,
+        key: *mut crate::KeyMaterial,
         input: *const u8,
         input_len: usize,
         output: *mut u8,
         capacity: usize,
     ) -> i32;
 }
-impl Crypto for CryptoBackend {
+native_port! { impl Crypto for CryptoBackend {
     #[cfg(feature = "ctap")]
     fn p256_sign(
         &mut self,
@@ -122,8 +134,8 @@ impl Crypto for CryptoBackend {
     #[cfg(feature = "platform-stream")]
     fn digest(
         &mut self,
-        op: canokey_rust_core::ports::DigestOperation,
-        state: &mut canokey_rust_core::ports::HashState,
+        op: crate::DigestOperation,
+        state: &mut crate::HashState,
         input: &[u8],
         out: &mut [u8],
     ) -> Result<(), CryptoError> {
@@ -146,9 +158,9 @@ impl Crypto for CryptoBackend {
     #[cfg(feature = "platform-stream")]
     fn stream(
         &mut self,
-        op: canokey_rust_core::ports::StreamOperation,
+        op: crate::StreamOperation,
         alg: u8,
-        scratch: &mut canokey_rust_core::ports::CryptoScratch,
+        scratch: &mut crate::CryptoScratch,
         input: &[u8],
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
@@ -187,9 +199,9 @@ impl Crypto for CryptoBackend {
     #[cfg(feature = "platform-key")]
     fn key_operation(
         &mut self,
-        op: canokey_rust_core::ports::KeyOperation,
+        op: crate::KeyOperation,
         algorithm: u8,
-        key: &mut canokey_rust_core::ports::KeyMaterial,
+        key: &mut crate::KeyMaterial,
         input: &[u8],
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
@@ -267,4 +279,6 @@ impl Crypto for CryptoBackend {
             let _ = (key, input, out);
         }
     }
+}
+
 }

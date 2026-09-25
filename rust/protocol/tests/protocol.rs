@@ -24,7 +24,7 @@ fn select_frame_in_two_transport_fragments() {
 fn response_in_two_chunks() {
     let first = ResponsePlan::new(6, 0, 4, StatusWord::SUCCESS).unwrap();
     assert_eq!(first.length, 4);
-    assert_eq!(first.sw, StatusWord(0x6102));
+    assert_eq!(first.sw, StatusWord::new(0x6102).unwrap());
     let last = ResponsePlan::new(6, first.next, 4, StatusWord::SUCCESS).unwrap();
     assert_eq!(last.length, 2);
     assert_eq!(last.sw, StatusWord::SUCCESS);

@@ -114,19 +114,39 @@ pub enum StorageError {
 pub trait Storage {
     /// A single session-scoped staged object, separate from record replacements.
     /// Publication is atomic; abort/disconnect must discard unpublished bytes.
-    #[cfg(persistent_applet)]
+    #[cfg(any(
+        feature = "oath",
+        feature = "openpgp",
+        feature = "piv",
+        feature = "ctap"
+    ))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(persistent_applet)]
+    #[cfg(any(
+        feature = "oath",
+        feature = "openpgp",
+        feature = "piv",
+        feature = "ctap"
+    ))]
     fn stage_append(&mut self, _bytes: &[u8]) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(persistent_applet)]
+    #[cfg(any(
+        feature = "oath",
+        feature = "openpgp",
+        feature = "piv",
+        feature = "ctap"
+    ))]
     fn stage_commit(&mut self, _record: Record) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(persistent_applet)]
+    #[cfg(any(
+        feature = "oath",
+        feature = "openpgp",
+        feature = "piv",
+        feature = "ctap"
+    ))]
     fn stage_abort(&mut self) {}
     /// Delete the record, treating an absent record as success. Empty data is
     /// not equivalent to absence for applets that validate persistent records.
@@ -167,9 +187,9 @@ pub trait Storage {
 
 /// Copy a bounded window into an active staging transaction, wiping temporary data.
 #[cfg(any(feature = "oath", feature = "piv"))]
-pub(crate) fn copy_to_stage(
-    storage: &mut dyn Storage,
-    memory: &dyn super::Memory,
+pub fn copy_to_stage(
+    storage: &mut crate::StoragePort<'_>,
+    memory: &crate::MemoryPort<'_>,
     record: Record,
     mut offset: u32,
     mut length: u32,

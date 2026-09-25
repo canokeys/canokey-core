@@ -43,13 +43,13 @@ impl Digest {
         let offset = usize::from(self.bytes[self.length - 1] & 15);
         u32::from_be_bytes(self.bytes[offset..offset + 4].try_into().unwrap()) & 0x7fff_ffff
     }
-    pub fn clear(&mut self, crypto: &mut dyn Crypto) {
+    pub fn clear(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
         crypto.wipe(&mut self.bytes);
     }
 }
 pub fn find(
-    repository: &mut dyn Repository,
-    crypto: &mut dyn Crypto,
+    repository: &mut (impl Repository + ?Sized),
+    crypto: &mut (impl Crypto + ?Sized),
     name: &[u8],
 ) -> Result<CredentialId, Error> {
     let mut cursor = repository.first()?;
@@ -65,8 +65,8 @@ pub fn find(
     Err(Error::Missing)
 }
 pub fn put(
-    repository: &mut dyn Repository,
-    crypto: &mut dyn Crypto,
+    repository: &mut (impl Repository + ?Sized),
+    crypto: &mut (impl Crypto + ?Sized),
     record: &Credential,
 ) -> Result<CredentialId, Error> {
     match find(repository, crypto, record.name()) {
@@ -77,8 +77,8 @@ pub fn put(
     repository.insert(record)
 }
 pub fn rename(
-    repository: &mut dyn Repository,
-    crypto: &mut dyn Crypto,
+    repository: &mut (impl Repository + ?Sized),
+    crypto: &mut (impl Crypto + ?Sized),
     old: &[u8],
     new: &[u8],
 ) -> Result<(), Error> {
@@ -98,8 +98,8 @@ pub fn rename(
 /// Counter update precedes calculation, exactly as in C oath_calculate.
 /// Call only after the adapter has checked its session's OATH access grant.
 pub fn calculate(
-    repository: &mut dyn Repository,
-    crypto: &mut dyn Crypto,
+    repository: &mut (impl Repository + ?Sized),
+    crypto: &mut (impl Crypto + ?Sized),
     id: CredentialId,
     challenge: &[u8],
     presence: Presence,

@@ -28,7 +28,7 @@ impl Request {
         }
         self.length = self.length.saturating_add(bytes.len());
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.data);
         self.length = 0;
         self.header = Header {

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental clientPIN schema. Only owned fields survive request release.
 use super::{Command, Key, Status};
-use canokey_protocol::cbor::{self, Event};
+use canokey_protocol::cbor::Event;
 
 // Sentinel used when a required COSE integer is absent from an incremental map.
 // Outside the signed i8 COSE key labels; forces an absent/non-integer label
 // through the unknown-member path without colliding with a valid field.
 const COSE_KEY_MISSING: i8 = 127;
-const COSE_REQUIRED_MASK: u8 = 0x1f;
 
 pub struct Parameters {
     pub protocol: u8,
@@ -36,41 +35,24 @@ impl Parameters {
     }
 }
 pub struct Parser {
-    decoder: cbor::Decoder,
+    decoder: super::request_decoder::RequestDecoder,
     fields: Fields,
-    error: Option<Status>,
 }
 impl Parser {
     pub const fn new() -> Self {
         Self {
-            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16),
+            decoder: super::request_decoder::RequestDecoder::new(),
             fields: Fields::new(),
-            error: None,
         }
     }
     // Share this parser across HID and APDU callers on size-constrained targets.
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
-        if self.error.is_some() {
-            return;
-        }
         let fields = &mut self.fields;
-        let error = &mut self.error;
-        if self
-            .decoder
-            .feed(bytes, &mut |event| {
-                fields.event(event).map_err(|status| {
-                    *error = Some(status);
-                    cbor::Error::Consumer
-                })
-            })
-            .is_err()
-            && error.is_none()
-        {
-            *error = Some(Status::InvalidCbor);
-        }
+        self.decoder
+            .consume(bytes, &mut |event, _| fields.event(event));
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.fields.params.agreement);
         memory.wipe(&mut self.fields.params.auth);
         memory.wipe(&mut self.fields.params.new_pin);
@@ -79,10 +61,7 @@ impl Parser {
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
-        self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
+        self.decoder.finish()?;
         let f = &mut self.fields;
         if f.seen & (1 << 2) == 0 {
             return Err(Status::MissingParameter);
@@ -119,10 +98,9 @@ struct Fields {
     params: Parameters,
     started: bool,
     previous: Option<Key>,
-    cose_previous: Option<Key>,
+    agreement: super::agreement::Parser,
     key: Option<Option<i8>>,
     cose: bool,
-    cose_seen: u8,
     seen: u16,
     skip_depth: u8,
     body: Option<(i8, usize)>,
@@ -133,10 +111,9 @@ impl Fields {
             params: Parameters::new(),
             started: false,
             previous: None,
-            cose_previous: None,
+            agreement: super::agreement::Parser::new(),
             key: None,
             cose: false,
-            cose_seen: 0,
             seen: 0,
             skip_depth: 0,
             body: None,
@@ -150,13 +127,20 @@ impl Fields {
             self.started = true;
             return Ok(());
         }
+        if self.cose {
+            if self
+                .agreement
+                .event(event, &mut self.params.agreement, Status::InvalidCbor)?
+            {
+                self.cose = false;
+            }
+            return Ok(());
+        }
         if super::skip_cbor_event(&mut self.skip_depth, event) {
             return Ok(());
         }
         if let Some((key, _)) = self.body {
             let dest: &mut [u8] = match key {
-                -2 => &mut self.params.agreement[..32],
-                -3 => &mut self.params.agreement[32..],
                 4 => &mut self.params.auth,
                 5 => &mut self.params.new_pin,
                 6 => &mut self.params.pin_hash,
@@ -168,36 +152,13 @@ impl Fields {
         }
         let Some(key) = self.key.take() else {
             if matches!(event, Event::End) {
-                if self.cose {
-                    if self.cose_seen != COSE_REQUIRED_MASK {
-                        return Err(Status::MissingParameter);
-                    }
-                    self.cose = false;
-                }
                 return Ok(());
             }
-            let previous = if self.cose {
-                &mut self.cose_previous
-            } else {
-                &mut self.previous
-            };
-            let key = Key::ordered(event, previous)?;
+            let key = Key::ordered(event, &mut self.previous)?;
             self.key = Some(key);
             return Ok(());
         };
         let key = key.unwrap_or(COSE_KEY_MISSING);
-        if self.cose {
-            let bit = super::cose_key_field(key, event)?;
-            if bit == 0 {
-                self.skip(event);
-            } else {
-                if matches!(key, -2 | -3) {
-                    self.bytes(key, event, 32)?;
-                }
-                self.cose_seen |= bit;
-            }
-            return Ok(());
-        }
 
         if (1..=6).contains(&key) || key == 9 || key == 10 {
             self.seen |= 1 << key;

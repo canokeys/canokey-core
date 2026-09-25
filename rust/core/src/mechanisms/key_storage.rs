@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persist only active RSA limbs; expand into the fixed native workspace on load.
 use crate::ports::key_layout as layout;
-use crate::ports::{Record, Storage, StorageError};
+use crate::ports::{Record, StorageError};
 
 // width is a byte count: one RSA prime/CRT component, an EC scalar, or a PQ
 // seed. RSA disk order is e,p,q,dp,dq,qinv; each native slot has 256-byte capacity
@@ -17,7 +17,7 @@ pub fn length(rsa: bool, width: usize) -> usize {
     }
 }
 pub fn load(
-    storage: &mut dyn Storage,
+    storage: &mut crate::ports::StoragePort<'_>,
     record: Record,
     mut offset: u32,
     rsa: bool,
@@ -43,7 +43,7 @@ pub fn load(
     Ok(())
 }
 pub fn append(
-    storage: &mut dyn Storage,
+    storage: &mut crate::ports::StoragePort<'_>,
     rsa: bool,
     width: usize,
     key: &[u8; crate::ports::key_layout::SIZE],

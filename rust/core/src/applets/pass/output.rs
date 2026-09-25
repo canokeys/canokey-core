@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rust owns gesture interpretation and the lifetime of a password output job.
 #![forbid(unsafe_code)]
+#[cfg(test)]
 use crate::ports::Memory;
 pub struct Output {
     // Up to 32 password bytes plus an optional Enter character.
@@ -28,14 +29,14 @@ impl Output {
             draining: false,
         }
     }
-    pub fn inhibit(&mut self, pressed: bool, memory: &dyn Memory) {
+    pub fn inhibit(&mut self, pressed: bool, memory: &crate::ports::MemoryPort<'_>) {
         self.reset(memory);
         self.suppressed = pressed;
     }
     pub fn busy(&self) -> bool {
         self.used != 0 || self.draining
     }
-    pub fn reset(&mut self, memory: &dyn Memory) {
+    pub fn reset(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.bytes);
         self.used = 0;
         self.position = 0;
@@ -47,7 +48,7 @@ impl Output {
         pressed: bool,
         now: u32,
         ready: bool,
-        memory: &dyn Memory,
+        memory: &crate::ports::MemoryPort<'_>,
         mut resolve: impl FnMut(u8, &mut [u8]) -> usize,
     ) -> Option<u8> {
         if ready {

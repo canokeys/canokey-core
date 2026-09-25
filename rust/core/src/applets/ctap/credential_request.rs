@@ -4,7 +4,7 @@ use super::{
     Command, Key, Status,
     credential::{ID_BYTES, Id},
 };
-use canokey_protocol::cbor::{self, Event};
+use canokey_protocol::cbor::Event;
 pub const CRED_BLOB_BYTES: usize = 32;
 
 pub(super) const MAX_LIST: usize = 16;
@@ -219,15 +219,13 @@ struct Fields {
     in_hmac: bool,
 }
 pub struct Parser {
-    decoder: cbor::Decoder,
+    decoder: super::request_decoder::RequestDecoder,
     fields: Fields,
-    error: Option<Status>,
 }
 impl Parser {
     pub const fn new(make: bool) -> Self {
         Self {
-            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16),
-            error: None,
+            decoder: super::request_decoder::RequestDecoder::new(),
             fields: Fields {
                 params: Parameters::new(make),
                 maps: [
@@ -257,25 +255,11 @@ impl Parser {
     // Share this parser across HID and APDU callers on size-constrained targets.
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
-        if self.error.is_some() {
-            return;
-        }
         let fields = &mut self.fields;
-        let error = &mut self.error;
-        if self
-            .decoder
-            .feed(bytes, &mut |event| {
-                fields.event(event).map_err(|status| {
-                    *error = Some(status);
-                    cbor::Error::Consumer
-                })
-            })
-            .is_err()
-        {
-            error.get_or_insert(Status::InvalidCbor);
-        }
+        self.decoder
+            .consume(bytes, &mut |event, _| fields.event(event));
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         let p = &mut self.fields.params;
         memory.wipe(&mut p.client_hash);
         memory.wipe(&mut p.rp);
@@ -297,10 +281,7 @@ impl Parser {
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
-        self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
+        self.decoder.finish()?;
         let f = &mut self.fields;
         f.params.name_len = super::resident::text_prefix(&f.params.name[..f.params.name_len]).len();
         f.params.display_len =
@@ -797,56 +778,32 @@ mod tests {
             let mut bytes = [0; 1024];
             let mut e = Encoder::new(&mut bytes[..]);
             e.map(6)
-                .unwrap()
                 .u8(1)
-                .unwrap()
                 .bytes(&[1; 32])
-                .unwrap()
                 .u8(2)
-                .unwrap()
                 .map(1)
-                .unwrap()
                 .str("id")
-                .unwrap()
                 .str("example.com")
-                .unwrap()
                 .u8(3)
-                .unwrap()
                 .map(1)
-                .unwrap()
                 .str("id")
-                .unwrap()
                 .bytes(b"user")
-                .unwrap()
                 .u8(4)
-                .unwrap()
                 .array(1)
-                .unwrap()
                 .map(2)
-                .unwrap()
                 .str("alg")
-                .unwrap()
                 .i8(-7)
-                .unwrap()
                 .str("type")
-                .unwrap()
                 .str("public-key")
-                .unwrap()
                 .u8(6)
-                .unwrap()
                 .map(1)
-                .unwrap()
                 .str("credBlob")
-                .unwrap()
                 .bytes(&value[..length])
-                .unwrap()
                 .u8(7)
-                .unwrap()
                 .map(1)
-                .unwrap()
                 .str("rk")
-                .unwrap()
                 .bool(true)
+                .finish()
                 .unwrap();
             let n = 1024 - e.writer().len();
             for split in 0..=n {
@@ -875,57 +832,34 @@ mod tests {
             let mut bytes = [0; 384];
             let mut e = Encoder::new(&mut bytes[..]);
             e.map(3)
-                .unwrap()
                 .u8(1)
-                .unwrap()
                 .str("example.com")
-                .unwrap()
                 .u8(2)
-                .unwrap()
                 .bytes(&[1; 32])
-                .unwrap()
                 .u8(4)
-                .unwrap()
                 .map(1)
-                .unwrap()
                 .str("hmac-secret")
-                .unwrap()
                 .map(if protocol == 1 { 3 } else { 4 })
-                .unwrap()
                 .u8(1)
-                .unwrap()
                 .map(5)
-                .unwrap()
                 .u8(1)
-                .unwrap()
                 .u8(2)
-                .unwrap()
                 .u8(3)
-                .unwrap()
                 .i8(-25)
-                .unwrap()
                 .i8(-1)
-                .unwrap()
                 .u8(1)
-                .unwrap()
                 .i8(-2)
-                .unwrap()
                 .bytes(&[2; 32])
-                .unwrap()
                 .i8(-3)
-                .unwrap()
                 .bytes(&[3; 32])
-                .unwrap()
                 .u8(2)
-                .unwrap()
                 .bytes(&[4; 80][..if protocol == 1 { 64 } else { 80 }])
-                .unwrap()
                 .u8(3)
-                .unwrap()
                 .bytes(&[5; 32][..if protocol == 1 { 16 } else { 32 }])
+                .finish()
                 .unwrap();
             if protocol == 2 {
-                e.u8(4).unwrap().u8(2).unwrap();
+                e.u8(4).u8(2).finish().unwrap();
             }
             let n = 384 - e.writer().len();
             for split in 0..=n {

@@ -17,7 +17,7 @@ pub struct Metadata {
     key: Option<[u8; ACCESS_KEY_BYTES]>,
 }
 impl Metadata {
-    pub fn new(crypto: &mut dyn Crypto) -> Result<Self, Error> {
+    pub fn new(crypto: &mut (impl Crypto + ?Sized)) -> Result<Self, Error> {
         let mut handle = [0; HANDLE_BYTES];
         crypto.random(&mut handle)?;
         Ok(Self { handle, key: None })
@@ -56,7 +56,7 @@ impl Metadata {
             },
         })
     }
-    fn clear(&mut self, crypto: &mut dyn Crypto) {
+    fn clear(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
         if let Some(key) = &mut self.key {
             crypto.wipe(key);
         }
@@ -68,7 +68,10 @@ pub trait Repository {
     fn load(&mut self) -> Result<Option<Metadata>, Error>;
     fn replace(&mut self, value: &Metadata) -> Result<(), Error>;
 }
-pub fn install(repository: &mut dyn Repository, crypto: &mut dyn Crypto) -> Result<(), Error> {
+pub fn install(
+    repository: &mut (impl Repository + ?Sized),
+    crypto: &mut (impl Crypto + ?Sized),
+) -> Result<(), Error> {
     if let Some(mut value) = repository.load()? {
         value.clear(crypto);
         return Ok(());
@@ -95,7 +98,7 @@ impl Session {
             authorized: false,
         }
     }
-    pub fn reset(&mut self, crypto: &mut dyn Crypto) {
+    pub fn reset(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
         crypto.wipe(&mut self.challenge);
         self.selected = false;
         self.authorized = false;
@@ -105,8 +108,8 @@ impl Session {
     }
     pub fn select(
         &mut self,
-        repository: &mut dyn Repository,
-        crypto: &mut dyn Crypto,
+        repository: &mut (impl Repository + ?Sized),
+        crypto: &mut (impl Crypto + ?Sized),
     ) -> Result<Selection, Error> {
         self.reset(crypto);
         let mut metadata = repository.load()?.ok_or(Error::Storage)?;
@@ -131,8 +134,8 @@ impl Session {
     // authorization to replace the old key is checked separately below.
     pub fn set_code(
         &mut self,
-        repository: &mut dyn Repository,
-        crypto: &mut dyn Crypto,
+        repository: &mut (impl Repository + ?Sized),
+        crypto: &mut (impl Crypto + ?Sized),
         key: &[u8; ACCESS_KEY_BYTES],
         challenge: &[u8],
         response: &[u8; 20],
@@ -158,8 +161,8 @@ impl Session {
     }
     pub fn clear_code(
         &mut self,
-        repository: &mut dyn Repository,
-        crypto: &mut dyn Crypto,
+        repository: &mut (impl Repository + ?Sized),
+        crypto: &mut (impl Crypto + ?Sized),
     ) -> Result<(), Error> {
         if !self.authorized {
             return Err(Error::Unauthorized);
@@ -175,8 +178,8 @@ impl Session {
     // the host challenge. This authenticates both sides using the access key.
     pub fn validate(
         &mut self,
-        repository: &mut dyn Repository,
-        crypto: &mut dyn Crypto,
+        repository: &mut (impl Repository + ?Sized),
+        crypto: &mut (impl Crypto + ?Sized),
         response: &[u8; 20],
         challenge: &[u8],
         output: &mut [u8; 20],

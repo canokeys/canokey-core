@@ -330,7 +330,7 @@ impl Session {
         self.token_used = p.device.now();
         Ok(())
     }
-    pub(super) fn expire_token(&mut self, now: u32, memory: &dyn crate::ports::Memory) {
+    pub(super) fn expire_token(&mut self, now: u32, memory: &crate::ports::MemoryPort<'_>) {
         // Match C: 30 seconds without successful authentication, at most ten
         // minutes from issuance. Unauthenticated requests never refresh either.
         if self.permissions != 0
@@ -340,7 +340,7 @@ impl Session {
             self.clear_token(memory);
         }
     }
-    pub(super) fn clear_token(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(super) fn clear_token(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.token);
         self.permissions = 0;
         memory.wipe(&mut self.rp_binding);

@@ -5,7 +5,7 @@ use crate::{
     ports::{DigestOperation, HashState, Platform, Record, StorageError},
     runtime::workspace::Workspace,
 };
-use canokey_protocol::cbor::{self, Encoder, Event};
+use canokey_protocol::cbor::{Encoder, Event};
 
 pub(super) const LIMIT: u16 = 4096;
 const FRAGMENT: usize = super::MAX_REQUEST - 64;
@@ -41,9 +41,8 @@ impl Parameters {
     }
 }
 pub struct Parser {
-    decoder: cbor::Decoder,
+    decoder: super::request_decoder::RequestDecoder,
     fields: Fields,
-    error: Option<Status>,
 }
 struct Fields {
     params: Parameters,
@@ -56,7 +55,7 @@ struct Fields {
 impl Parser {
     pub const fn new() -> Self {
         Self {
-            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16),
+            decoder: super::request_decoder::RequestDecoder::new(),
             fields: Fields {
                 params: Parameters::new(),
                 started: false,
@@ -65,40 +64,22 @@ impl Parser {
                 skip: 0,
                 body: None,
             },
-            error: None,
         }
     }
     // Share this parser across HID and APDU callers on size-constrained targets.
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
-        if self.error.is_some() {
-            return;
-        }
         let fields = &mut self.fields;
-        let error = &mut self.error;
-        if self
-            .decoder
-            .feed(bytes, &mut |event| {
-                fields.event(event).map_err(|status| {
-                    *error = Some(status);
-                    cbor::Error::Consumer
-                })
-            })
-            .is_err()
-        {
-            error.get_or_insert(Status::InvalidCbor);
-        }
+        self.decoder
+            .consume(bytes, &mut |event, _| fields.event(event));
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.fields.params.bytes);
         memory.wipe(&mut self.fields.params.auth);
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
-        self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
+        self.decoder.finish()?;
         let p = &self.fields.params;
         let offset = p.offset.ok_or(Status::InvalidParameter)?;
         if p.get.is_some() == p.set.is_some() {
@@ -282,8 +263,9 @@ impl Session {
             w.output[0] = 0;
             let mut e = Encoder::new(&mut w.output[1..]);
             e.map(1)
-                .and_then(|e| e.u8(1))
-                .and_then(|e| e.bytes_len(n as u64))
+                .u8(1)
+                .bytes_len(n as u64)
+                .finish()
                 .map_err(|_| Status::Other)?;
             let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
             if size.is_some() {

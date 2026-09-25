@@ -28,7 +28,7 @@ fn mldsa_public_response(
     let mut e = Encoder::new(&mut w.output[..]);
     super::encoding::management_header(&mut e, entry, subcommand == 4, has_blob_key)
         .map_err(|_| Status::Other)?;
-    e.u8(8).map_err(|_| Status::Other)?;
+    e.u8(8).finish().map_err(|_| Status::Other)?;
     let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     super::encoding::mldsa_public_header(&mut e).map_err(|_| Status::Other)?;
     super::encoding::management_tail(
@@ -296,10 +296,11 @@ impl Session {
             let count = credential_count(None, &mut w.input, p)?;
             let mut e = Encoder::new(&mut w.output[1..]);
             e.map(2)
-                .and_then(|e| e.u8(1))
-                .and_then(|e| e.u8(count))
-                .and_then(|e| e.u8(2))
-                .and_then(|e| e.u8(Record::CTAP_CREDENTIALS - count))
+                .u8(1)
+                .u8(count)
+                .u8(2)
+                .u8(Record::CTAP_CREDENTIALS - count)
+                .finish()
                 .map_err(|_| Status::Other)?;
             return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
         }
@@ -320,16 +321,16 @@ impl Session {
             let entry = resident::Entry::decode(&w.input[..n])?;
             let mut e = Encoder::new(&mut w.output[1..]);
             let result = (|| {
-                e.map(if subcommand == 2 { 3 } else { 2 })?
-                    .u8(3)?
-                    .map(1)?
-                    .str("id")?
-                    .str(core::str::from_utf8(entry.rp).unwrap_or_default())?;
-                e.u8(4)?.bytes(entry.rp_hash)?;
+                e.map(if subcommand == 2 { 3 } else { 2 })
+                    .u8(3)
+                    .map(1)
+                    .str("id")
+                    .str(core::str::from_utf8(entry.rp).unwrap_or_default());
+                e.u8(4).bytes(entry.rp_hash);
                 if subcommand == 2 {
-                    e.u8(5)?.u8(total)?;
+                    e.u8(5).u8(total);
                 }
-                Ok::<(), canokey_protocol::cbor::EncodeError>(())
+                e.finish()
             })();
             result.map_err(|_| Status::Other)?;
             return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
@@ -416,7 +417,7 @@ impl Session {
                             has_blob_key,
                         )?;
                         if public_len != 0 {
-                            e.u8(8)?;
+                            e.u8(8);
                             super::encoding::public_key(
                                 &mut e,
                                 algorithm,
@@ -432,10 +433,10 @@ impl Session {
                                 .then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
                         )?;
                         if public_len == 0 {
-                            e.u8(0x80)?
-                                .i32(credential::cose_algorithm(algorithm, self.sm2))?;
+                            e.u8(0x80)
+                                .i32(credential::cose_algorithm(algorithm, self.sm2));
                         }
-                        Ok::<(), canokey_protocol::cbor::EncodeError>(())
+                        e.finish()
                     })();
                     result.map_err(|_| Status::Other)?;
                     return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());

@@ -54,7 +54,8 @@ impl Piv {
                 self.sm2_id_used = 0;
                 self.sm2_id.fill(0);
                 let id = repo::slot(h.p2)?;
-                let m = repo::meta(id, p)?;
+                let mut m = [0; repo::META];
+                repo::read_meta(id, p, &mut m)?;
                 if m[repo::ORIGIN] == 0 {
                     return Err(Sw::CONDITIONS_NOT_SATISFIED);
                 }
@@ -242,31 +243,32 @@ impl Piv {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
-            let m = repo::meta(id, p)?;
-            let a = m[repo::ALGORITHM];
-            w.wipe_active(p.memory);
-            let s = w.stream_with(p.memory);
-            let n = super::init_public_stream(id, a, s, p)?;
-            self.memory(n);
-            self.response = ResponseBacking::Crypto(a);
-            let mut at = 0;
+        let mut m = [0; repo::META];
+        repo::read_meta(id, p, &mut m)?;
+        let a = m[repo::ALGORITHM];
+        w.wipe_active(p.memory);
+        let s = w.stream_with(p.memory);
+        let n = super::init_public_stream(id, a, s, p)?;
+        self.memory(n);
+        self.response = ResponseBacking::Crypto(a);
+        let mut at = 0;
+        if metadata {
+            at = self.metadata_header(a, &m);
+        }
+        let point = usize::from(a != alg::ED25519 && a != alg::X25519);
+        let inner = n + point + if n + point < 128 { 2 } else { 3 };
+        at += codec::header(
+            &mut self.header[at..],
             if metadata {
-                at = self.metadata_header(a, &m);
-            }
-            let point = usize::from(a != alg::ED25519 && a != alg::X25519);
-            let inner = n + point + if n + point < 128 { 2 } else { 3 };
-            at += codec::header(
-                &mut self.header[at..],
-                if metadata {
-                    &[metadata_tag::PUBLIC_KEY]
-                } else {
-                    &key_tag::PUBLIC_TEMPLATE
-                },
-                inner,
-            )?;
-            at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n)?;
-            self.header_len = at;
-            Ok(((at + n) as u32, Sw::SUCCESS))
+                &[metadata_tag::PUBLIC_KEY]
+            } else {
+                &key_tag::PUBLIC_TEMPLATE
+            },
+            inner,
+        )?;
+        at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n)?;
+        self.header_len = at;
+        Ok(((at + n) as u32, Sw::SUCCESS))
     }
     pub fn read(
         &mut self,

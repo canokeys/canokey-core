@@ -283,7 +283,9 @@ impl Piv {
                     return Err(Sw::WRONG_P1P2);
                 }
                 self.import = Import::new();
-                self.import.meta = repo::meta(id, p)?;
+                let mut metadata = [0; repo::META];
+                repo::read_meta(id, p, &mut metadata)?;
+                self.import.meta = metadata;
                 self.import.meta[repo::ALGORITHM] = a;
                 self.import.meta[repo::ORIGIN] = 2;
                 self.import.meta[repo::NAME_LENGTH..].fill(0);
@@ -614,15 +616,14 @@ impl Piv {
                 .read_at(repo::OBJECTS[i], offset as u32, out)
                 .map_err(repo::io)?,
             ResponseBacking::Memory => {
-                for (i, b) in out.iter_mut().enumerate() {
-                    let at = offset + i;
-                    *b = if at < self.header_len {
-                        self.header[at]
-                    } else if at < self.header_len + self.body_len {
-                        w.output[at - self.header_len]
-                    } else {
-                        self.suffix[at - self.header_len - self.body_len]
-                    };
+                let mut window = canokey_protocol::response::ReadWindow::new(offset, out);
+                for segment in [
+                    &self.header[..self.header_len],
+                    &w.output[..self.body_len],
+                    &self.suffix[..self.suffix_len],
+                ] {
+                    let (start, dest) = window.take(segment.len());
+                    dest.copy_from_slice(&segment[start..start + dest.len()]);
                 }
             }
         }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared authenticated subcommand envelope; preserve only the exact parameter map.
 use super::{Command, Key, Status};
-use canokey_protocol::cbor::{self, Event};
+use canokey_protocol::cbor::Event;
 
 pub(super) const PREFIX: usize = 34;
 pub struct Parameters {
@@ -33,39 +33,25 @@ impl Parameters {
     }
 }
 pub struct Parser {
-    decoder: cbor::Decoder,
+    decoder: super::request_decoder::RequestDecoder,
     fields: Fields,
     offset: usize,
-    error: Option<Status>,
 }
 impl Parser {
     pub const fn new(command: u8) -> Self {
         Self {
-            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16),
+            decoder: super::request_decoder::RequestDecoder::new(),
             fields: Fields::new(command),
             offset: 0,
-            error: None,
         }
     }
     // Share this parser across HID and APDU callers on size-constrained targets.
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
-        if self.error.is_some() {
-            return;
-        }
         let f = &mut self.fields;
-        let error = &mut self.error;
-        if self
-            .decoder
-            .feed_at(bytes, &mut |event, offset| {
-                f.event(event, usize::from(offset)).map_err(|status| {
-                    *error = Some(status);
-                    cbor::Error::Consumer
-                })
-            })
-            .is_err()
-        {
-            error.get_or_insert(Status::InvalidCbor);
+        if !self.decoder.consume(bytes, &mut |event, offset| {
+            f.event(event, usize::from(offset))
+        }) {
             return;
         }
         // Only the authenticated parameter map crosses the source lifetime.
@@ -85,16 +71,13 @@ impl Parser {
         }
         self.offset += bytes.len();
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.fields.params.message);
         memory.wipe(&mut self.fields.params.auth);
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
-        if let Some(error) = self.error {
-            return Err(error);
-        }
-        self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
+        self.decoder.finish()?;
         let p = &mut self.fields.params;
         if !self.fields.subcommand_seen {
             return Err(Status::MissingParameter);

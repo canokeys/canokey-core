@@ -35,7 +35,7 @@ pub(crate) fn read_response_chunk(
 
 #[cfg(any(feature = "admin", feature = "oath"))]
 pub(crate) fn close_response(
-    memory: &dyn crate::ports::Memory,
+    memory: &crate::ports::MemoryPort<'_>,
     response: &mut [u8],
     length: &mut usize,
 ) {

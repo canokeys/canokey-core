@@ -217,8 +217,11 @@ pub fn config_valid(c: &[u8]) -> bool {
                 ) && !c[1..i + 1].contains(v)
             }))
 }
-pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
-    let mut m = [0; META];
+/// Fill a caller-owned metadata buffer; its contents are valid only on success.
+/// Keeping the output separate from the status avoids a second large return
+/// buffer on targets whose ABI returns Result<[u8; META], Sw> indirectly.
+pub fn read_meta(id: usize, p: &mut Platform<'_>, m: &mut [u8; META]) -> Result<(), Sw> {
+    m.fill(0);
     let n = match p.storage.size(KEYS[id]) {
         Err(StorageError::Missing) => 0,
         Ok(n) => n,
@@ -233,7 +236,7 @@ pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
             _ => policy::PIN_ONCE,
         };
         m[TOUCH_POLICY] = policy::TOUCH_NEVER;
-        return Ok(m);
+        return Ok(());
     }
     p.storage
         .read_at(KEYS[id], 0, &mut m[..HEADER])
@@ -256,7 +259,7 @@ pub fn meta(id: usize, p: &mut Platform<'_>) -> Result<[u8; META], Sw> {
             &mut m[NAME..NAME + name_len],
         )
         .map_err(io)?;
-    Ok(m)
+    Ok(())
 }
 pub fn load(
     id: usize,

@@ -40,14 +40,15 @@ enum Selected {
     Piv,
 }
 
-/// CCID-selected applet states are mutually exclusive: `Selected` is the
-/// discriminant, switching or any session reset wipes the live variant, and
-/// only one variant's bytes exist at a time. CTAP keeps separate state because
-/// HID frames do not pass through AID selection and may interleave with a
-/// selected CCID applet. Boot install and ADMIN resets use fresh instances.
-#[cfg(classic_presence)]
-enum ClassicState {
+/// One discriminant owns both CCID selection and its live applet state.
+/// CTAP state stays outside this enum because native HID does not use AID selection.
+/// ADMIN/PASS services likewise remain available to cross-applet flows.
+enum AppletState {
     None,
+    #[cfg(feature = "admin")]
+    Admin,
+    #[cfg(feature = "ctap")]
+    Ctap,
     #[cfg(feature = "oath")]
     Oath(crate::applets::oath::protocol::Oath),
     #[cfg(feature = "openpgp")]
@@ -55,38 +56,23 @@ enum ClassicState {
     #[cfg(feature = "piv")]
     Piv(Piv),
 }
-#[cfg(classic_presence)]
-impl ClassicState {
-    /// Lean accessors rely on the registry invariant: `select` creates the
-    /// matching variant and every reset returns to `None` first. The trap is
-    /// shared so the impossible path does not expand at every call site.
-    #[cold]
-    #[inline(never)]
-    fn bad_variant() -> ! {
-        unreachable!()
-    }
-    #[cfg(feature = "oath")]
-    fn oath(&mut self) -> &mut crate::applets::oath::protocol::Oath {
+impl AppletState {
+    fn selected(&self) -> Selected {
         match self {
-            Self::Oath(s) => s,
-            _ => Self::bad_variant(),
+            Self::None => Selected::None,
+            #[cfg(feature = "admin")]
+            Self::Admin => Selected::Admin,
+            #[cfg(feature = "ctap")]
+            Self::Ctap => Selected::Ctap,
+            #[cfg(feature = "oath")]
+            Self::Oath(_) => Selected::Oath,
+            #[cfg(feature = "openpgp")]
+            Self::OpenPgp(_) => Selected::OpenPgp,
+            #[cfg(feature = "piv")]
+            Self::Piv(_) => Selected::Piv,
         }
     }
-    #[cfg(feature = "openpgp")]
-    fn pgp(&mut self) -> &mut crate::applets::openpgp::protocol::OpenPgp {
-        match self {
-            Self::OpenPgp(s) => s,
-            _ => Self::bad_variant(),
-        }
-    }
-    #[cfg(feature = "piv")]
-    fn piv(&mut self) -> &mut Piv {
-        match self {
-            Self::Piv(s) => s,
-            _ => Self::bad_variant(),
-        }
-    }
-    #[cfg(feature = "pass")]
+    #[cfg(all(feature = "pass", classic_presence))]
     fn take_presence(&mut self) -> bool {
         match self {
             #[cfg(feature = "oath")]
@@ -95,7 +81,7 @@ impl ClassicState {
             Self::OpenPgp(s) => s.take_presence(),
             #[cfg(feature = "piv")]
             Self::Piv(s) => s.take_presence(),
-            Self::None => false,
+            _ => false,
         }
     }
 }
@@ -116,8 +102,10 @@ impl Selected {
             _ => None,
         }
     }
+}
 
-    fn command_limit(self, h: Header) -> (u8, u32) {
+impl AppletState {
+    fn command_limit(&self, h: Header) -> (u8, u32) {
         match self {
             #[cfg(feature = "admin")]
             Self::Admin => {
@@ -130,17 +118,17 @@ impl Selected {
             #[cfg(feature = "ctap")]
             Self::Ctap => (h.unchained().cla & !0x80, ctap::MAX_REQUEST as u32),
             #[cfg(feature = "oath")]
-            Self::Oath => (
+            Self::Oath(_) => (
                 h.unchained().cla,
                 crate::applets::oath::protocol::CAPACITY as u32,
             ),
             #[cfg(feature = "openpgp")]
-            Self::OpenPgp => (
+            Self::OpenPgp(_) => (
                 h.unchained().cla,
                 crate::applets::openpgp::protocol::OpenPgp::limit(h),
             ),
             #[cfg(feature = "piv")]
-            Self::Piv => (
+            Self::Piv(_) => (
                 if h.chained() && !crate::applets::piv::Piv::supports_chaining(h.ins) {
                     h.cla
                 } else {
@@ -154,7 +142,7 @@ impl Selected {
 }
 
 pub struct Registry {
-    selected: Selected,
+    applet: AppletState,
     #[cfg(feature = "admin")]
     admin: admin::Admin,
     #[cfg(feature = "ctap")]
@@ -165,15 +153,13 @@ pub struct Registry {
     pass: Pass,
     #[cfg(feature = "pass")]
     output: crate::applets::pass::output::Output,
-    #[cfg(classic_presence)]
-    classic: ClassicState,
     #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
     workspace: super::workspace::SessionWorkspace,
 }
 impl Registry {
     pub const fn new() -> Self {
         Self {
-            selected: Selected::None,
+            applet: AppletState::None,
             #[cfg(feature = "admin")]
             admin: admin::Admin::new(),
             #[cfg(feature = "ctap")]
@@ -184,8 +170,6 @@ impl Registry {
             pass: Pass::new(),
             #[cfg(feature = "pass")]
             output: crate::applets::pass::output::Output::new(),
-            #[cfg(classic_presence)]
-            classic: ClassicState::None,
             #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
             workspace: super::workspace::SessionWorkspace::new(),
         }
@@ -201,25 +185,29 @@ impl Registry {
         }
         #[cfg(feature = "ctap")]
         self.ctap.reset(&mut self.workspace, platform);
-        // Only the live CCID applet variant holds state; wipe it through its
-        // own reset path, then vacate the union. Workspace side effects match
-        // the previous per-field resets because the workspace was already wiped.
+        // Wipe the live classic state before vacating it. ADMIN selection survives
+        // its factory-reset command; CTAP state was reset separately above.
         #[cfg(classic_presence)]
-        {
-            match &mut self.classic {
-                #[cfg(feature = "oath")]
-                ClassicState::Oath(s) => s.reset(platform),
-                #[cfg(feature = "openpgp")]
-                ClassicState::OpenPgp(s) => {
-                    s.reset(self.workspace.classic_with(platform.memory), platform)
-                }
-                #[cfg(feature = "piv")]
-                ClassicState::Piv(s) => s.reset(&mut self.workspace, platform),
-                ClassicState::None => (),
+        match &mut self.applet {
+            #[cfg(feature = "oath")]
+            AppletState::Oath(s) => {
+                s.reset(platform);
+                self.applet = AppletState::None;
             }
-            self.classic = ClassicState::None;
+            #[cfg(feature = "openpgp")]
+            AppletState::OpenPgp(s) => {
+                s.reset(self.workspace.classic_with(platform.memory), platform);
+                self.applet = AppletState::None;
+            }
+            #[cfg(feature = "piv")]
+            AppletState::Piv(s) => {
+                s.reset(&mut self.workspace, platform);
+                self.applet = AppletState::None;
+            }
+            _ => (),
         }
     }
+
     #[cfg(feature = "ctap")]
     pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
         use super::workspace::SessionWorkspace;
@@ -377,57 +365,60 @@ impl Router for Registry {
         #[cfg(feature = "pass")]
         self.output.inhibit(true, p.memory);
         self.reset_sessions(p);
-        self.selected = Selected::None;
+        self.applet = AppletState::None;
     }
     fn selected(&self) -> bool {
-        self.selected != Selected::None
+        !matches!(self.applet, AppletState::None)
     }
     #[inline(never)]
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
         let next = Selected::from_aid(aid).ok_or(Sw::FILE_NOT_FOUND)?;
-        if self.selected != next {
+        if self.applet.selected() != next {
             self.reset_sessions(p);
-        }
-        self.selected = next;
-        match next {
-            #[cfg(feature = "ctap")]
-            Selected::Ctap => Ok(self.ctap.select(&mut self.workspace, p)),
-            #[cfg(feature = "oath")]
-            Selected::Oath => {
-                if !matches!(self.classic, ClassicState::Oath(_)) {
-                    self.classic = ClassicState::Oath(crate::applets::oath::protocol::Oath::new());
+            match next {
+                Selected::None => self.applet = AppletState::None,
+                #[cfg(feature = "admin")]
+                Selected::Admin => self.applet = AppletState::Admin,
+                #[cfg(feature = "ctap")]
+                Selected::Ctap => self.applet = AppletState::Ctap,
+                #[cfg(feature = "oath")]
+                Selected::Oath => {
+                    self.applet = AppletState::Oath(crate::applets::oath::protocol::Oath::new())
                 }
-                self.classic.oath().select(p)
-            }
-            #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => {
-                if !matches!(self.classic, ClassicState::OpenPgp(_)) {
-                    self.classic =
-                        ClassicState::OpenPgp(crate::applets::openpgp::protocol::OpenPgp::new());
+                #[cfg(feature = "openpgp")]
+                Selected::OpenPgp => {
+                    self.applet =
+                        AppletState::OpenPgp(crate::applets::openpgp::protocol::OpenPgp::new())
                 }
-                self.classic.pgp().select(p)
-            }
+                #[cfg(feature = "piv")]
+                Selected::Piv => self.applet = AppletState::Piv(Piv::new()),
+            };
+            // Boot validates a temporary instance. Reload durable PIN/config
+            // only on a real switch, preserving grants on same-AID SELECT.
             #[cfg(feature = "piv")]
-            Selected::Piv => {
-                if !matches!(self.classic, ClassicState::Piv(_)) {
-                    self.classic = ClassicState::Piv(Piv::new());
-                    // Installation at boot validates durable state in a temporary
-                    // instance. Reload the PIN/config cache when reentering PIV.
-                    if let Err(error) = self.classic.piv().install(p) {
-                        self.classic = ClassicState::None;
-                        self.selected = Selected::None;
-                        return Err(error);
-                    }
-                }
-                self.classic.piv().select(&mut self.workspace, p)
+            if let AppletState::Piv(piv) = &mut self.applet
+                && let Err(error) = piv.install(p)
+            {
+                self.applet = AppletState::None;
+                return Err(error);
             }
+        }
+        match &mut self.applet {
+            #[cfg(feature = "ctap")]
+            AppletState::Ctap => Ok(self.ctap.select(&mut self.workspace, p)),
+            #[cfg(feature = "oath")]
+            AppletState::Oath(s) => s.select(p),
+            #[cfg(feature = "openpgp")]
+            AppletState::OpenPgp(s) => s.select(p),
+            #[cfg(feature = "piv")]
+            AppletState::Piv(s) => s.select(&mut self.workspace, p),
             _ => Ok(0),
         }
     }
     fn allows_extended(&self, header: Header) -> bool {
         let _ = header;
         #[cfg(feature = "ctap")]
-        if self.selected == Selected::Ctap {
+        if matches!(self.applet, AppletState::Ctap) {
             return ctap::apdu::allows_extended(header);
         }
         false
@@ -436,7 +427,7 @@ impl Router for Registry {
         // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
         // chaining is supported; leaving it set deliberately makes the final
         // CLA check reject chained ADMIN or unsupported chained PIV commands.
-        let (cla, limit) = self.selected.command_limit(h);
+        let (cla, limit) = self.applet.command_limit(h);
         if !self.selected() {
             return Err(Sw::FILE_NOT_FOUND);
         }
@@ -448,72 +439,58 @@ impl Router for Registry {
     }
     #[allow(unused_variables)]
     fn abort_command(&mut self, platform: &mut Platform<'_>) {
-        match self.selected {
+        match &mut self.applet {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.cancel_command(platform),
+            AppletState::Admin => self.admin.cancel_command(platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.cancel_command(&mut self.workspace),
+            AppletState::Ctap => self.ctap.cancel_command(&mut self.workspace),
             #[cfg(feature = "oath")]
-            Selected::Oath => self.classic.oath().cancel_command(platform),
+            AppletState::Oath(s) => s.cancel_command(platform),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self
-                .classic
-                .pgp()
-                .abort(self.workspace.classic_with(platform.memory), platform),
+            AppletState::OpenPgp(s) => {
+                s.abort(self.workspace.classic_with(platform.memory), platform)
+            }
             #[cfg(feature = "piv")]
-            Selected::Piv => self.classic.piv().cancel(&mut self.workspace, platform),
-            Selected::None => (),
+            AppletState::Piv(s) => s.cancel(&mut self.workspace, platform),
+            AppletState::None => (),
         }
     }
+    #[allow(unused_variables)]
     fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
-        #[cfg(not(has_applet))]
-        let _ = (header, &platform);
-        #[cfg(feature = "admin")]
-        if self.selected == Selected::Admin {
-            return self.admin.begin(header, &self.grants, platform);
-        }
-        #[cfg(feature = "ctap")]
-        if self.selected == Selected::Ctap {
-            return self.ctap.begin(header, &mut self.workspace, platform);
-        }
-        #[cfg(feature = "openpgp")]
-        if self.selected == Selected::OpenPgp {
-            return self.classic.pgp().begin(
+        match &mut self.applet {
+            #[cfg(feature = "admin")]
+            AppletState::Admin => self.admin.begin(header, &self.grants, platform),
+            #[cfg(feature = "ctap")]
+            AppletState::Ctap => self.ctap.begin(header, &mut self.workspace, platform),
+            #[cfg(feature = "openpgp")]
+            AppletState::OpenPgp(s) => s.begin(
                 header,
                 self.workspace.classic_with(platform.memory),
                 platform,
-            );
+            ),
+            #[cfg(feature = "piv")]
+            AppletState::Piv(s) => s.begin(header, &mut self.workspace, platform),
+            _ => Ok(()),
         }
-        #[cfg(feature = "piv")]
-        if self.selected == Selected::Piv {
-            return self
-                .classic
-                .piv()
-                .begin(header, &mut self.workspace, platform);
-        }
-        Ok(())
     }
     #[allow(unused_variables)]
     fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
-        match self.selected {
+        match &mut self.applet {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.consume(bytes, platform),
+            AppletState::Admin => self.admin.consume(bytes, platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.consume(bytes, &mut self.workspace),
+            AppletState::Ctap => self.ctap.consume(bytes, &mut self.workspace),
             #[cfg(feature = "oath")]
-            Selected::Oath => self.classic.oath().consume(bytes),
+            AppletState::Oath(s) => s.consume(bytes),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.classic.pgp().consume(
+            AppletState::OpenPgp(s) => s.consume(
                 bytes,
                 self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
-            Selected::Piv => self
-                .classic
-                .piv()
-                .consume(bytes, &mut self.workspace, platform),
-            Selected::None => Err(Sw::FILE_NOT_FOUND),
+            AppletState::Piv(s) => s.consume(bytes, &mut self.workspace, platform),
+            AppletState::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
     #[allow(unused_variables)]
@@ -525,32 +502,29 @@ impl Router for Registry {
         le: u32,
         platform: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
-        match self.selected {
+        match &mut self.applet {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.finish_admin(header, platform),
+            AppletState::Admin => self.finish_admin(header, platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self
+            AppletState::Ctap => self
                 .ctap
                 .finish(&mut self.workspace, platform)
                 .map(|n| (n, Sw::SUCCESS)),
             #[cfg(feature = "oath")]
-            Selected::Oath => {
+            AppletState::Oath(s) => {
                 let pass = pass_arg!(self);
-                self.classic.oath().finish(header, le, pass, platform)
+                s.finish(header, le, pass, platform)
             }
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.classic.pgp().finish(
+            AppletState::OpenPgp(s) => s.finish(
                 header,
                 le,
                 self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
-            Selected::Piv => self
-                .classic
-                .piv()
-                .finish(header, le, &mut self.workspace, platform),
-            Selected::None => Err(Sw::FILE_NOT_FOUND),
+            AppletState::Piv(s) => s.finish(header, le, &mut self.workspace, platform),
+            AppletState::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
     #[allow(unused_variables)]
@@ -560,56 +534,47 @@ impl Router for Registry {
         out: &mut [u8],
         platform: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
-        match self.selected {
+        match &mut self.applet {
             #[cfg(feature = "admin")]
-            Selected::Admin => self
+            AppletState::Admin => self
                 .admin
                 .read_response(offset as usize, out)
                 .map(|()| out.len()),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self
+            AppletState::Ctap => self
                 .ctap
                 .read(offset as usize, out, &mut self.workspace, platform)
                 .map(|()| out.len()),
             #[cfg(feature = "oath")]
-            Selected::Oath => self
-                .classic
-                .oath()
-                .read_response(offset as usize, out)
-                .map(|()| out.len()),
+            AppletState::Oath(s) => s.read_response(offset as usize, out).map(|()| out.len()),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self.classic.pgp().read(
+            AppletState::OpenPgp(s) => s.read(
                 offset as usize,
                 out,
                 self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
-            Selected::Piv => {
-                self.classic
-                    .piv()
-                    .read(offset as usize, out, &mut self.workspace, platform)
-            }
-            Selected::None => Err(Sw::COMMAND_NOT_ALLOWED),
+            AppletState::Piv(s) => s.read(offset as usize, out, &mut self.workspace, platform),
+            AppletState::None => Err(Sw::COMMAND_NOT_ALLOWED),
         }
     }
     #[allow(unused_variables)]
     fn close_response(&mut self, platform: &mut Platform<'_>) {
-        match self.selected {
+        match &mut self.applet {
             #[cfg(feature = "admin")]
-            Selected::Admin => self.admin.close_response(platform),
+            AppletState::Admin => self.admin.close_response(platform),
             #[cfg(feature = "ctap")]
-            Selected::Ctap => self.ctap.close(&mut self.workspace, platform),
+            AppletState::Ctap => self.ctap.close(&mut self.workspace, platform),
             #[cfg(feature = "oath")]
-            Selected::Oath => self.classic.oath().close_response(platform),
+            AppletState::Oath(s) => s.close_response(platform),
             #[cfg(feature = "openpgp")]
-            Selected::OpenPgp => self
-                .classic
-                .pgp()
-                .close(self.workspace.classic_with(platform.memory), platform),
+            AppletState::OpenPgp(s) => {
+                s.close(self.workspace.classic_with(platform.memory), platform)
+            }
             #[cfg(feature = "piv")]
-            Selected::Piv => self.classic.piv().close(&mut self.workspace, platform),
-            Selected::None => (),
+            AppletState::Piv(s) => s.close(&mut self.workspace, platform),
+            AppletState::None => (),
         }
     }
     #[cfg(feature = "pass")]
@@ -631,7 +596,7 @@ impl Router for Registry {
         let mut presence = false;
         #[cfg(classic_presence)]
         {
-            presence |= self.classic.take_presence();
+            presence |= self.applet.take_presence();
         }
         #[cfg(feature = "ctap")]
         {

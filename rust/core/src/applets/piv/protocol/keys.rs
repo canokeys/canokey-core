@@ -157,7 +157,8 @@ impl Piv {
         if id == repo::ATTESTATION_KEY && a != alg::P256 {
             return Err(Sw::WRONG_DATA);
         }
-        let mut m = repo::meta(id, p)?;
+        let mut m = [0; repo::META];
+        repo::read_meta(id, p, &mut m)?;
         m[repo::ALGORITHM] = a;
         m[repo::ORIGIN] = 1;
         m[repo::NAME_LENGTH..].fill(0);
@@ -189,7 +190,8 @@ impl Piv {
             return self.management_auth(h, &fields, w.output.as_mut_slice(), p);
         }
         let id = repo::slot(h.p2)?;
-        let m = repo::meta(id, p)?;
+        let mut m = [0; repo::META];
+        repo::read_meta(id, p, &mut m)?;
         if m[repo::ORIGIN] == 0 {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }

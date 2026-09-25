@@ -2,6 +2,7 @@
 //! Shared CTAP parsing, PIN session and prepared responses for HID and APDU.
 #![forbid(unsafe_code)]
 
+mod agreement;
 pub mod apdu;
 mod authentication;
 mod client_pin;
@@ -18,6 +19,7 @@ mod management;
 mod pin;
 pub(crate) mod pq;
 pub(crate) mod provision;
+mod request_decoder;
 mod resident;
 pub(crate) mod settings;
 use crate::ports::Record;
@@ -32,6 +34,7 @@ pub const MAX_REQUEST: usize = 1024;
 /// Response bytes are either immutable or in the sole session workspace.
 /// Encoding happens once; transport retries only read the prepared result.
 pub enum Response {
+    Error(Status),
     Pending(pq::Pending),
     Stream(usize),
     Authentication {
@@ -51,6 +54,7 @@ pub enum Response {
 impl Response {
     pub fn len(&self) -> usize {
         match self {
+            Self::Error(_) => 1,
             Self::Pending(_) => 0,
             Self::Stream(n) => *n,
             Self::Authentication { total, .. } => *total,
@@ -64,7 +68,7 @@ impl Response {
         workspace: &crate::runtime::workspace::Workspace,
         offset: usize,
         out: &mut [u8],
-        storage: &mut dyn crate::ports::Storage,
+        storage: &mut crate::ports::StoragePort<'_>,
     ) -> Result<(), canokey_protocol::response::StatusWord> {
         use canokey_protocol::response::StatusWord as Sw;
         if let Self::Authentication {
@@ -87,26 +91,18 @@ impl Response {
                 &[],
                 &workspace.output[split..output_len],
             ];
-            let mut skip = offset;
-            let mut written = 0;
+            let mut window = canokey_protocol::response::ReadWindow::new(offset, out);
             for (index, segment) in segments.iter().enumerate() {
                 let length = if index == 3 { cert_len } else { segment.len() };
-                let start = skip.min(length);
-                skip -= start;
-                let n = (length - start).min(out.len() - written);
-                if n != 0 {
+                let (start, dest) = window.take(length);
+                if !dest.is_empty() {
                     if index == 3 {
                         storage
-                            .read_at(
-                                crate::ports::Record::CtapCertificate,
-                                start as u32,
-                                &mut out[written..written + n],
-                            )
+                            .read_at(crate::ports::Record::CtapCertificate, start as u32, dest)
                             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                     } else {
-                        out[written..written + n].copy_from_slice(&segment[start..start + n]);
+                        dest.copy_from_slice(&segment[start..start + dest.len()]);
                     }
-                    written += n;
                 }
             }
             return Ok(());
@@ -138,7 +134,12 @@ impl Response {
             }
             return Ok(());
         }
+        let status;
         let bytes = match self {
+            Self::Error(error) => {
+                status = [*error as u8];
+                &status[..]
+            }
             Self::Constant(bytes) => bytes,
             Self::Prepared(n) => &workspace.output[..*n],
             Self::Blob { .. }
@@ -197,7 +198,7 @@ impl Session {
             sm2: settings::Sm2::DEFAULT,
         }
     }
-    pub fn reset(&mut self, memory: &dyn crate::ports::Memory) {
+    pub fn reset(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         self.assertion.remaining = 0;
         self.assertion.hmac.clear(memory);
         self.management = management::Cursor::new();
@@ -287,7 +288,7 @@ impl Session {
                 }
                 Response::Prepared(n)
             }
-            Err(status) => Response::Constant(status.response()),
+            Err(status) => Response::Error(status),
         }
     }
     fn reset_data(
@@ -452,73 +453,38 @@ pub enum Command {
     Credential(credential_request::Parameters),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Status {
-    LargeBlobFull,
-    IntegrityFailure,
-    InvalidSequence,
-    UnsupportedAlgorithm,
-    NoCredentials,
-    InvalidOption,
-    UnsupportedOption,
-    CredentialExcluded,
-    OperationDenied,
-    LimitExceeded,
-    PuatRequired,
-    KeyStoreFull,
-    NotAllowed,
-    Cancelled,
-    UserActionTimeout,
-    Other,
-    PinInvalid,
-    PinBlocked,
-    PinAuthInvalid,
-    PinAuthBlocked,
-    PinNotSet,
-    PinPolicy,
-    UnauthorizedPermission,
-    InvalidLength,
-    InvalidCommand,
-    InvalidParameter,
-    UnexpectedType,
-    InvalidCbor,
-    MissingParameter,
-    InvalidSubcommand,
-}
-impl Status {
-    fn response(self) -> &'static [u8] {
-        match self {
-            Self::LargeBlobFull => &[0x18],
-            Self::IntegrityFailure => &[0x3d],
-            Self::InvalidSequence => &[0x04],
-            Self::UnsupportedAlgorithm => &[0x26],
-            Self::NoCredentials => &[0x2e],
-            Self::UnsupportedOption => &[0x2b],
-            Self::InvalidOption => &[0x2c],
-            Self::CredentialExcluded => &[0x19],
-            Self::OperationDenied => &[0x27],
-            Self::LimitExceeded => &[0x15],
-            Self::PuatRequired => &[0x36],
-            Self::KeyStoreFull => &[0x28],
-            Self::NotAllowed => &[0x30],
-            Self::Cancelled => &[0x2d],
-            Self::UserActionTimeout => &[0x2f],
-            Self::UnauthorizedPermission => &[0x40],
-            Self::PinInvalid => &[0x31],
-            Self::PinBlocked => &[0x32],
-            Self::PinAuthInvalid => &[0x33],
-            Self::PinAuthBlocked => &[0x34],
-            Self::PinNotSet => &[0x35],
-            Self::PinPolicy => &[0x37],
-            Self::Other => &[0x7f],
-            Self::InvalidCommand => &[0x01],
-            Self::InvalidParameter => &[0x02],
-            Self::InvalidLength => &[0x03],
-            Self::UnexpectedType => &[0x11],
-            Self::InvalidCbor => &[0x12],
-            Self::MissingParameter => &[0x14],
-            Self::InvalidSubcommand => &[0x3e],
-        }
-    }
+    LargeBlobFull = 0x18,
+    IntegrityFailure = 0x3d,
+    InvalidSequence = 0x04,
+    UnsupportedAlgorithm = 0x26,
+    NoCredentials = 0x2e,
+    UnsupportedOption = 0x2b,
+    InvalidOption = 0x2c,
+    CredentialExcluded = 0x19,
+    OperationDenied = 0x27,
+    LimitExceeded = 0x15,
+    PuatRequired = 0x36,
+    KeyStoreFull = 0x28,
+    NotAllowed = 0x30,
+    Cancelled = 0x2d,
+    UserActionTimeout = 0x2f,
+    UnauthorizedPermission = 0x40,
+    PinInvalid = 0x31,
+    PinBlocked = 0x32,
+    PinAuthInvalid = 0x33,
+    PinAuthBlocked = 0x34,
+    PinNotSet = 0x35,
+    PinPolicy = 0x37,
+    Other = 0x7f,
+    InvalidCommand = 0x01,
+    InvalidParameter = 0x02,
+    InvalidLength = 0x03,
+    UnexpectedType = 0x11,
+    InvalidCbor = 0x12,
+    MissingParameter = 0x14,
+    InvalidSubcommand = 0x3e,
 }
 
 pub struct Request {
@@ -548,7 +514,7 @@ impl Request {
             Parser::None => self.extra |= !bytes.is_empty(),
         }
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         match &mut self.parser {
             Parser::ClientPin(p) => p.clear(memory),
             Parser::Config(p) => p.clear(memory),
@@ -651,31 +617,6 @@ impl Key {
         let n = i8::try_from(self.argument).ok()?;
         Some(if self.negative { -1 - n } else { n })
     }
-}
-
-/// Validate one member of the COSE_Key agreement map shared by clientPIN and
-/// hmac-secret. Unknown optional members are ignored by the caller.
-#[inline(never)]
-pub(super) fn cose_key_field(
-    key: i8,
-    event: canokey_protocol::cbor::Event<'_>,
-) -> Result<u8, Status> {
-    let (bit, expected) = match key {
-        1 => (1, Some(2)),
-        3 => (2, Some(-25)),
-        -1 => (4, Some(1)),
-        -2 => (8, None),
-        -3 => (16, None),
-        _ => return Ok(0),
-    };
-    if let Some(expected) = expected {
-        if Key::parse(event)?.integer() != Some(expected) {
-            return Err(Status::InvalidParameter);
-        }
-    }
-    // Coordinates retain their caller's byte-length error policy. Return the
-    // presence bit instead of specializing this validator for each callback.
-    Ok(bit)
 }
 
 #[inline]

@@ -118,8 +118,9 @@ rust/
       fido/                  # future: APDU/native adapters and CTAP/U2F policy
       ndef/                  # future: Type 4 Tag application/file semantics
     flows/                   # explicit cross-applet reset and HOTP-output workflows
-    ports/                   # narrow storage/crypto/presence/device contracts
-  ffi/src/                   # unsafe C ABI and platform backend implementations
+    ports/                   # safe reexports of shared platform contracts
+  ports/src/                 # storage/crypto/device contracts; native/ owns C calls
+  ffi/src/                   # unsafe transport entrypoints and backend assembly
 interfaces/rust-core/        # retained C transport adapters and public ABI header
 ```
 
@@ -668,7 +669,7 @@ These are design walkthroughs, not additional runtime tests in this checkpoint.
 | `core/src/applets/admin/protocol.rs`, `pass_config.rs` | ADMIN owns PIN and PASS management commands; remaining C ADMIN commands are tracked in the checkpoint |
 | `core/src/applets/pass/` | Typed slot service and explicit codec; shared APDU status mapping at the module boundary, not in domain/service code |
 | `core/src/applets/admin/pin.rs` | Typed C-compatible PIN mechanism; no KDF; grants held by runtime |
-| `core/src/ports/`, `ffi/src/` | Typed storage/crypto contracts and separate unsafe C ABI; add capabilities only for real operations |
+| `ports/src/`, `core/src/ports/`, `ffi/src/` | Shared typed contracts, native implementation boundary and transport entrypoints; production uses static backends, host mocks remain injectable |
 | `core/src/applets/pass/output.rs`, C keyboard transport | Rust owns gesture/job/secret text; C maps and transmits one character; physical typing still needs an end-to-end normal check |
 | CIU storage backend | Mount without autoformat; root-level hexadecimal filenames; atomic replacement; word-aligned file cache |
 | `core/src/applets/oath/` | Typed credentials/codec, repository contract, naming, HOTP/TOTP and access-code services implemented; five normal domain tests pass. Adapter, concrete storage, USB, presence and PASS binding are integrated; see oath.md for measured validation |

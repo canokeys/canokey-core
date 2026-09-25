@@ -15,35 +15,36 @@ pub(super) fn encode(
     let capacity = output.len();
     let always_uv = flags & pin::ALWAYS_UV != 0;
     let mut e = Encoder::new(output);
-    e.encoded(HEADER)?.array(if always_uv { 3 } else { 4 })?;
+    e.encoded(HEADER).array(if always_uv { 3 } else { 4 });
     if !always_uv {
-        e.encoded(U2F)?;
+        e.encoded(U2F);
     }
-    e.encoded(VERSIONS_EXTENSIONS)?
-        .bytes(&provision::AAGUID)?
-        .encoded(OPTIONS)?
-        .bool(always_uv)?
-        .encoded(CLIENT_PIN)?
-        .bool(configured)?
-        .encoded(OPTIONS_END)?
-        .u16(MAX_REQUEST as u16)?
-        .encoded(PIN_PROTOCOLS)?
-        .u8(credential_request::MAX_LIST as u8)?
-        .u8(8)?
-        .u8(credential::ID_BYTES as u8)?
-        .encoded(ALGORITHMS)?
-        .i32(sm2_algorithm)?
-        .encoded(ALGORITHMS_END)?
-        .u16(large_blob::LIMIT)?
-        .u8(12)?
-        .bool(flags & pin::FORCE_CHANGE != 0)?
-        .u8(13)?
-        .u8(minimum)?
-        .encoded(LIMITS)?
-        .u8(Record::CTAP_CREDENTIALS - used)?
-        .encoded(RESET)?
-        .bool(flags & pin::LONG_RESET != 0)?
-        .encoded(END)?;
+    e.encoded(VERSIONS_EXTENSIONS)
+        .bytes(&provision::AAGUID)
+        .encoded(OPTIONS)
+        .bool(always_uv)
+        .encoded(CLIENT_PIN)
+        .bool(configured)
+        .encoded(OPTIONS_END)
+        .u16(MAX_REQUEST as u16)
+        .encoded(PIN_PROTOCOLS)
+        .u8(credential_request::MAX_LIST as u8)
+        .u8(8)
+        .u8(credential::ID_BYTES as u8)
+        .encoded(ALGORITHMS)
+        .i32(sm2_algorithm)
+        .encoded(ALGORITHMS_END)
+        .u16(large_blob::LIMIT)
+        .u8(12)
+        .bool(flags & pin::FORCE_CHANGE != 0)
+        .u8(13)
+        .u8(minimum)
+        .encoded(LIMITS)
+        .u8(Record::CTAP_CREDENTIALS - used)
+        .encoded(RESET)
+        .bool(flags & pin::LONG_RESET != 0)
+        .encoded(END);
+    e.finish()?;
     Ok(capacity - e.writer().len())
 }
 
@@ -68,63 +69,59 @@ mod tests {
             } else {
                 ["U2F_V2", "FIDO_2_0", "FIDO_2_1", "FIDO_2_3"].as_slice()
             };
-            e.map(22)?.u8(1)?.array(versions.len() as u64)?;
+            e.map(22).u8(1).array(versions.len() as u64);
             for version in versions {
-                e.str(version)?;
+                e.str(version);
             }
-            e.u8(2)?
-                .array(7)?
-                .str("credBlob")?
-                .str("credProtect")?
-                .str("minPinLength")?
-                .str("largeBlobKey")?
-                .str("hmac-secret")?
-                .str("hmac-secret-mc")?
-                .str("thirdPartyPayment")?;
-            e.u8(3)?.bytes(&provision::AAGUID)?;
+            e.u8(2)
+                .array(7)
+                .str("credBlob")
+                .str("credProtect")
+                .str("minPinLength")
+                .str("largeBlobKey")
+                .str("hmac-secret")
+                .str("hmac-secret-mc")
+                .str("thirdPartyPayment");
+            e.u8(3).bytes(&provision::AAGUID);
             // Development profile: credential-key self attestation for the
             // compact non-PQ credential formats.
-            e.u8(4)?
-                .map(9)?
-                .str("rk")?
-                .bool(true)?
-                .str("up")?
-                .bool(true)?;
-            e.str("alwaysUv")?.bool(flags & pin::ALWAYS_UV != 0)?;
-            e.str("credMgmt")?.bool(true)?;
-            e.str("authnrCfg")?.bool(true)?;
-            e.str("clientPin")?.bool(configured)?;
-            e.str("largeBlobs")?.bool(true)?;
-            e.str("setMinPINLength")?.bool(true)?;
-            e.str("makeCredUvNotRqd")?.bool(true)?;
-            e.u8(5)?.u16(MAX_REQUEST as u16)?;
-            e.u8(6)?.array(2)?.u8(1)?.u8(2)?;
-            e.u8(7)?.u8(credential_request::MAX_LIST as u8)?;
-            e.u8(8)?.u8(credential::ID_BYTES as u8)?;
-            e.u8(9)?.array(1)?.str("usb")?;
-            e.u8(10)?.array(4)?;
+            e.u8(4).map(9).str("rk").bool(true).str("up").bool(true);
+            e.str("alwaysUv").bool(flags & pin::ALWAYS_UV != 0);
+            e.str("credMgmt").bool(true);
+            e.str("authnrCfg").bool(true);
+            e.str("clientPin").bool(configured);
+            e.str("largeBlobs").bool(true);
+            e.str("setMinPINLength").bool(true);
+            e.str("makeCredUvNotRqd").bool(true);
+            e.u8(5).u16(MAX_REQUEST as u16);
+            e.u8(6).array(2).u8(1).u8(2);
+            e.u8(7).u8(credential_request::MAX_LIST as u8);
+            e.u8(8).u8(credential::ID_BYTES as u8);
+            e.u8(9).array(1).str("usb");
+            e.u8(10).array(4);
             for algorithm in [-7, -8, sm2_algorithm, -49] {
-                e.map(2)?
-                    .str("alg")?
-                    .i32(algorithm)?
-                    .str("type")?
-                    .str("public-key")?;
+                e.map(2)
+                    .str("alg")
+                    .i32(algorithm)
+                    .str("type")
+                    .str("public-key");
             }
-            e.u8(11)?.u16(large_blob::LIMIT)?;
-            e.u8(12)?.bool(flags & pin::FORCE_CHANGE != 0)?;
-            e.u8(13)?.u8(minimum)?;
-            e.u8(14)?.u32(0)?;
-            e.u8(15)?.u8(32)?;
-            e.u8(16)?.u8(4)?;
-            e.u8(20)?.u8(Record::CTAP_CREDENTIALS - used)?;
-            e.u8(22)?.array(1)?.str("packed")?;
-            e.u8(24)?.bool(flags & pin::LONG_RESET != 0)?;
-            e.u8(26)?.array(2)?.str("nfc")?.str("usb")?;
-            e.u8(29)?.u8(63)?;
-            e.u8(31)?.array(3)?.u8(2)?.u8(3)?.u8(4)?;
-            Ok::<(), canokey_protocol::cbor::EncodeError>(())
+            e.u8(11).u16(large_blob::LIMIT);
+            e.u8(12).bool(flags & pin::FORCE_CHANGE != 0);
+            e.u8(13).u8(minimum);
+            e.u8(14).u32(0);
+            e.u8(15).u8(32);
+            e.u8(16).u8(4);
+            e.u8(20).u8(Record::CTAP_CREDENTIALS - used);
+            e.u8(22).array(1).str("packed");
+            e.u8(24).bool(flags & pin::LONG_RESET != 0);
+            e.u8(26).array(2).str("nfc").str("usb");
+            e.u8(29).u8(63);
+            e.u8(31).array(3).u8(2).u8(3).u8(4);
+            e.finish()
         })();
         result?;
+        e.finish()?;
         Ok(capacity - e.writer().len())
     }
     #[test]

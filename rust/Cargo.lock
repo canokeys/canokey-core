@@ -12,6 +12,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "canokey-ports"
+version = "0.1.0"
+
+[[package]]
 name = "canokey-protocol"
 version = "0.1.0"
 dependencies = [
@@ -22,6 +26,7 @@ dependencies = [
 name = "canokey-rust-core"
 version = "0.1.0"
 dependencies = [
+ "canokey-ports",
  "canokey-protocol",
  "cfg_aliases",
  "minicbor",
@@ -32,6 +37,7 @@ dependencies = [
 name = "canokey-rust-ffi"
 version = "0.1.0"
 dependencies = [
+ "canokey-ports",
  "canokey-protocol",
  "canokey-rust-core",
 ]

@@ -36,12 +36,16 @@ LittleFS and crypto boundary. CCID now runs in Rust with a platform packet adapt
   called only by registry. Flows do not depend on protocol adapters or status
   words. Registry revokes sessions and routes output requests; PASS output only
   owns gesture and byte-draining state.
-- `core/src/ports/`: disjoint mutable storage/crypto/device capabilities and an
-  immutable erasure capability. OATH does not use RefCell or share a mutable
-  whole-platform handle. Stored bytes and record IDs are unchanged.
+- `ports/src/`: shared storage/crypto/device/erasure contracts and native
+  implementations under `native/`. `core/src/ports/` reexports the safe API.
+  Disjoint borrows preserve ownership without a mutable whole-platform handle.
+  Record IDs, persistent encodings and the native ABI are unchanged.
 - `ffi/src/entrypoints.rs`: serialized C ABI and alias-safe RX/TX borrows;
-  `ffi/src/platform/`: storage, crypto and device adapters, with volatile
-  erasure in the device module. Safe core forbids unsafe code at the crate root.
+  `ffi/src/platform/` assembles the backend. CIU and CMake host adapter builds
+  select `static-backend`, eliminating capability vtable calls in production.
+  Host unit tests use injectable ports (`dynamic-backend` takes precedence when
+  all Cargo features are enabled). Both use the same native implementation.
+  See [ports/README.md](ports/README.md). Core still forbids unsafe code.
 - `interfaces/rust-core/`: retained C USB/HID code and narrow native service headers.
 
 The `admin`, `pass`, `oath`, `openpgp` and `piv` core/FFI features are independent.

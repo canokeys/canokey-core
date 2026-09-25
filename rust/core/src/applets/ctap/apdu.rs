@@ -186,7 +186,7 @@ impl Applet {
                 Ok(n) => Response::Stream(n),
                 Err(error) => {
                     self.session.reset(p.memory);
-                    Response::Constant(error.response())
+                    Response::Error(error)
                 }
             };
         }
@@ -265,7 +265,7 @@ impl MessageParser {
             self.decoder = None;
         }
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         match &mut self.request {
             MessageInput::Ctap(r) => r.clear(memory),
             MessageInput::U2f(r) => r.clear(memory),

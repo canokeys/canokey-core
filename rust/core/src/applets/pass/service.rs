@@ -5,7 +5,7 @@ use crate::applets::pass::{
     codec::{FILE_SIZE, Layout},
     domain::{self, Error, Slot, SlotIndex},
 };
-use crate::ports::{Memory, Platform, Record, Storage, StorageError};
+use crate::ports::{Platform, Record, StorageError};
 pub struct Pass {
     slots: [u8; FILE_SIZE],
     available: bool,
@@ -17,7 +17,11 @@ impl Pass {
             available: false,
         }
     }
-    pub fn install(&mut self, storage: &mut dyn Storage, memory: &dyn Memory) -> Result<(), Error> {
+    pub fn install(
+        &mut self,
+        storage: &mut crate::ports::StoragePort<'_>,
+        memory: &crate::ports::MemoryPort<'_>,
+    ) -> Result<(), Error> {
         self.available = false;
         memory.wipe(&mut self.slots);
         match storage.load(Record::Pass, &mut self.slots) {
@@ -50,7 +54,11 @@ impl Pass {
         }
         Ok(())
     }
-    fn persist(&mut self, storage: &mut dyn Storage, memory: &dyn Memory) -> Result<(), Error> {
+    fn persist(
+        &mut self,
+        storage: &mut crate::ports::StoragePort<'_>,
+        memory: &crate::ports::MemoryPort<'_>,
+    ) -> Result<(), Error> {
         let mut packed = [0; FILE_SIZE];
         let result = super::codec::pack(&self.slots, &mut packed).and_then(|n| {
             storage
@@ -69,8 +77,8 @@ impl Pass {
         &mut self,
         index: SlotIndex,
         slot: Slot<'_>,
-        storage: &mut dyn Storage,
-        memory: &dyn Memory,
+        storage: &mut crate::ports::StoragePort<'_>,
+        memory: &crate::ports::MemoryPort<'_>,
     ) -> Result<(), Error> {
         if !self.available {
             return Err(Error::Persistence);
@@ -81,7 +89,11 @@ impl Pass {
         Layout.encode_cleared(record, slot)?;
         self.persist(storage, memory)
     }
-    pub fn clear(&mut self, storage: &mut dyn Storage, memory: &dyn Memory) -> Result<(), Error> {
+    pub fn clear(
+        &mut self,
+        storage: &mut crate::ports::StoragePort<'_>,
+        memory: &crate::ports::MemoryPort<'_>,
+    ) -> Result<(), Error> {
         if !self.available {
             return Err(Error::Persistence);
         }
@@ -103,8 +115,8 @@ impl Pass {
     pub fn remove_oath(
         &mut self,
         id: Option<u32>,
-        storage: &mut dyn Storage,
-        memory: &dyn Memory,
+        storage: &mut crate::ports::StoragePort<'_>,
+        memory: &crate::ports::MemoryPort<'_>,
     ) -> Result<(), Error> {
         let mut changed = false;
         for index in 0..crate::applets::pass::codec::SLOT_COUNT {
@@ -135,7 +147,7 @@ impl Pass {
         domain::challenge_response(self.slot(index)?, input, out, &mut Crypto(p.crypto))
     }
 }
-struct Crypto<'a>(&'a mut dyn crate::ports::Crypto);
+struct Crypto<'a>(&'a mut crate::ports::CryptoPort<'a>);
 impl domain::Crypto for Crypto<'_> {
     fn hmac(&mut self, key: &[u8; 20], input: &[u8], out: &mut [u8; 20]) {
         self.0.hmac_sha1(key, input, out);

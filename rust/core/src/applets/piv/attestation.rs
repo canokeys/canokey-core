@@ -53,14 +53,20 @@ pub struct Attestation {
 // A classic subject retains only its public bytes while the key area is reused
 // for the F9 signer. PQ generation is restarted after signing as before.
 enum Public {
-    Classic { key: KeyMaterial, bytes: [u8; OUTPUT_BYTES] },
+    Classic {
+        key: KeyMaterial,
+        bytes: [u8; OUTPUT_BYTES],
+    },
     Pq(CryptoScratch),
 }
 impl Public {
     const fn new() -> Self {
-        Self::Classic { key: KeyMaterial::new(), bytes: [0; OUTPUT_BYTES] }
+        Self::Classic {
+            key: KeyMaterial::new(),
+            bytes: [0; OUTPUT_BYTES],
+        }
     }
-    fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         match self {
             Self::Classic { key, bytes } => {
                 memory.wipe(&mut key.bytes);
@@ -78,14 +84,16 @@ impl Public {
         }
     }
     #[inline(never)]
-    fn classic(&mut self, memory: &dyn crate::ports::Memory) -> &mut KeyMaterial {
+    fn classic(&mut self, memory: &crate::ports::MemoryPort<'_>) -> &mut KeyMaterial {
         if !matches!(self, Self::Classic { .. }) {
             self.clear(memory);
             // No const template: the enum-sized rodata copy costs more Flash
             // than in-place construction costs instructions.
             *self = Self::new();
         }
-        let Self::Classic { key, .. } = self else { unreachable!() };
+        let Self::Classic { key, .. } = self else {
+            unreachable!()
+        };
         key
     }
 }
@@ -101,7 +109,7 @@ impl Attestation {
             algorithm: 0,
         }
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.encoded);
         self.public.clear(memory);
         self.segments.fill(0);
@@ -255,14 +263,16 @@ impl Attestation {
     #[inline(never)]
     pub fn prepare(&mut self, id: usize, p: &mut Platform<'_>) -> Result<(), Sw> {
         let (issuer, validity) = parse_cert(p)?;
-        let m = repo::meta(id, p)?;
+        let mut m = [0; repo::META];
+        repo::read_meta(id, p, &mut m)?;
         if m[repo::ORIGIN] != 1 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
         if m[repo::ALGORITHM] == alg::MLKEM768 {
             return Err(Sw::WRONG_DATA);
         }
-        let signer = repo::meta(repo::ATTESTATION_KEY, p)?;
+        let mut signer = [0; repo::META];
+        repo::read_meta(repo::ATTESTATION_KEY, p, &mut signer)?;
         if signer[repo::ORIGIN] == 0 || signer[repo::ALGORITHM] != alg::P256 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
@@ -325,12 +335,16 @@ impl Attestation {
         // In-place init: a const CryptoScratch template would duplicate its
         // 2,400 zero bytes into rodata for a single copy.
         self.public = Public::Pq(CryptoScratch::new());
-        let Public::Pq(s) = &mut self.public else { unreachable!() };
+        let Public::Pq(s) = &mut self.public else {
+            unreachable!()
+        };
         super::protocol::init_public_stream(id, alg::MLDSA65, s, p)
     }
     fn abort_pq(&mut self, p: &mut Platform<'_>) {
         if let Public::Pq(s) = &mut self.public {
-            let _ = p.crypto.stream(StreamOperation::Abort, alg::MLDSA65, s, &[], &mut []);
+            let _ = p
+                .crypto
+                .stream(StreamOperation::Abort, alg::MLDSA65, s, &[], &mut []);
         }
     }
     #[inline(never)]
@@ -341,18 +355,14 @@ impl Attestation {
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
         self.public.classic(p.memory);
-        let Public::Classic { key, bytes } = &mut self.public else { unreachable!() };
+        let Public::Classic { key, bytes } = &mut self.public else {
+            unreachable!()
+        };
         let result = (|| {
             repo::load(id, m, &mut key.bytes, p)?;
             let n = p
                 .crypto
-                .key_operation(
-                    KeyOperation::Public,
-                    m[repo::ALGORITHM],
-                    key,
-                    &[],
-                    bytes,
-                )
+                .key_operation(KeyOperation::Public, m[repo::ALGORITHM], key, &[], bytes)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             if n > RSA_OUTPUT_BYTES {
                 return Err(Sw::UNABLE_TO_PROCESS);
@@ -405,17 +415,15 @@ impl Attestation {
         if offset.checked_add(out.len()).is_none_or(|n| n > self.total) {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
-        let mut pos = 0;
-        let end = offset + out.len();
+        let count = out.len();
+        let mut window = canokey_protocol::response::ReadWindow::new(offset, out);
         for s in self.segments[..self.count * SEGMENT_WORDS]
             .as_chunks::<SEGMENT_WORDS>()
             .0
         {
-            let lo = offset.max(pos);
-            let hi = end.min(pos + s[LENGTH]);
-            if lo < hi {
-                let at = s[OFFSET] + lo - pos;
-                let dst = &mut out[lo - offset..hi - offset];
+            let (start, dst) = window.take(s[LENGTH]);
+            if !dst.is_empty() {
+                let at = s[OFFSET] + start;
                 match s[SOURCE] {
                     SOURCE_ENCODED => dst.copy_from_slice(&self.encoded[at..at + dst.len()]),
                     SOURCE_ISSUER => {
@@ -430,13 +438,7 @@ impl Attestation {
                             };
                             let n = p
                                 .crypto
-                                .stream(
-                                    StreamOperation::Read,
-                                    alg::MLDSA65,
-                                    scratch,
-                                    &[],
-                                    dst,
-                                )
+                                .stream(StreamOperation::Read, alg::MLDSA65, scratch, &[], dst)
                                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
                             if n != dst.len() {
                                 return Err(Sw::UNABLE_TO_PROCESS);
@@ -447,9 +449,8 @@ impl Attestation {
                     }
                 }
             }
-            pos += s[LENGTH];
         }
-        Ok(out.len())
+        Ok(count)
     }
     pub fn close(&mut self, p: &mut Platform<'_>) {
         if self.algorithm == alg::MLDSA65 as usize {

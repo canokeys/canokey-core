@@ -14,7 +14,7 @@ if(CANOKEY_APPLET_OATH)
 endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/ReleaseVersions.cmake")
 find_program(CARGO cargo REQUIRED)
-set(FEATURES host-runtime)
+set(FEATURES host-runtime,static-backend)
 if(CANOKEY_APPLET_CTAP)
   string(APPEND FEATURES ,ctap,admin)
 endif()
@@ -41,6 +41,7 @@ add_custom_target(rust-core-build ALL
   BYPRODUCTS ${ARCHIVE}
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ffi/Cargo.toml
           ${CMAKE_CURRENT_SOURCE_DIR}/core/Cargo.toml
+          ${CMAKE_CURRENT_SOURCE_DIR}/ports/Cargo.toml
           ${CMAKE_CURRENT_SOURCE_DIR}/protocol/Cargo.toml
   VERBATIM)
 add_library(canokey-rust-core STATIC IMPORTED GLOBAL)

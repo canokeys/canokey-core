@@ -1,9 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Device callbacks and volatile secret erasure adapter.
-use canokey_rust_core::ports::{Device, Memory};
+use crate::{Device, Memory};
 
-pub(super) struct DeviceBackend;
-pub(super) struct MemoryBackend;
+/// Native platform capability, created only at the serialized FFI boundary.
+/// The marker prevents transferring a borrowed hardware session across threads.
+pub struct DeviceBackend(core::marker::PhantomData<*mut ()>);
+
+impl DeviceBackend {
+    /// # Safety
+    /// All native platform access, including callbacks and other backend values,
+    /// must remain serialized for this value's entire lifetime. Native global
+    /// storage, crypto scratch and presence state are not independently locked.
+    pub unsafe fn new() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+pub struct MemoryBackend;
 
 #[cfg(feature = "platform-device")]
 unsafe extern "C" {
@@ -21,8 +33,7 @@ unsafe extern "C" {
     fn ck_hid_keepalive(waiting: u8);
 }
 #[cfg(feature = "ctap")]
-static mut PRESENCE: canokey_rust_core::runtime::Polling =
-    canokey_rust_core::runtime::Polling::new();
+static mut PRESENCE: crate::Polling = crate::Polling::new();
 
 // Main loop only, including while neither transport owns a core session.
 #[cfg(feature = "ctap")]
@@ -35,7 +46,7 @@ pub unsafe extern "C" fn ck_core_presence_sample() {
         }
     }
 }
-impl Device for DeviceBackend {
+native_port! { impl Device for DeviceBackend {
     #[cfg(feature = "ctap")]
     fn wink(&mut self) {
         unsafe {
@@ -118,12 +129,20 @@ impl Device for DeviceBackend {
         }
     }
 }
-impl Memory for MemoryBackend {
-    fn wipe(&self, bytes: &mut [u8]) {
+}
+impl MemoryBackend {
+    #[inline(never)]
+    pub fn wipe(&self, bytes: &mut [u8]) {
         for byte in bytes {
             unsafe {
                 core::ptr::write_volatile(byte, 0);
             }
         }
+    }
+}
+
+impl Memory for MemoryBackend {
+    fn wipe(&self, bytes: &mut [u8]) {
+        MemoryBackend::wipe(self, bytes)
     }
 }

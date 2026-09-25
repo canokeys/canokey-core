@@ -90,7 +90,7 @@ impl Backend for Platform {
         {
             super::entrypoints::with_core(|core, p| {
                 core.prepare_extended(1, prefix, total, p)
-                    .map_err(|sw| sw.0)
+                    .map_err(|sw| sw.value())
             })
         }
         #[cfg(not(feature = "ctap"))]
@@ -188,9 +188,16 @@ unsafe fn receive_packet(transport: &mut Transport, platform: &mut Platform) -> 
     let mut packet = [0; 64];
     let mut tick = 0;
     let n = unsafe { ck_ccid_io_take(platform.generation, packet.as_mut_ptr(), &mut tick) };
-    if n < 0 { return false; }
+    if n < 0 {
+        return false;
+    }
     if n > 0 {
-        transport.receive(&packet[..n as usize], tick, cfg!(feature = "ctap"), platform);
+        transport.receive(
+            &packet[..n as usize],
+            tick,
+            cfg!(feature = "ctap"),
+            platform,
+        );
     } else {
         transport.timeout(unsafe { ck_ccid_io_now() }, platform);
     }

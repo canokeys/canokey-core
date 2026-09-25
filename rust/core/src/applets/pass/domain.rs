@@ -63,7 +63,7 @@ pub fn challenge_response(
     slot: Slot<'_>,
     challenge: &[u8],
     output: &mut [u8; KEY_LENGTH],
-    crypto: &mut dyn Crypto,
+    crypto: &mut (impl Crypto + ?Sized),
 ) -> Result<(), Error> {
     if challenge.len() > CHALLENGE_LIMIT {
         return Err(Error::Length);

@@ -12,7 +12,6 @@ use canokey_protocol::cbor::Event;
 // Sentinel for an absent/non-integer COSE label; no valid agreement field uses
 // this value.
 const COSE_KEY_MISSING: i8 = 127;
-const COSE_REQUIRED_MASK: u8 = 0x1f;
 const HMAC_COSE_REQUIRED_MASK: u8 = 0x07;
 
 pub struct Parameters {
@@ -34,7 +33,7 @@ impl Parameters {
             protocol: 1,
         }
     }
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.agreement);
         memory.wipe(&mut self.salt);
         memory.wipe(&mut self.auth);
@@ -43,11 +42,11 @@ impl Parameters {
 /// The outer credential parser delegates just the extension's integer map here.
 pub struct Parser {
     pub params: Parameters,
-    previous: [Option<Key>; 2],
+    previous: Option<Key>,
+    agreement: super::agreement::Parser,
     key: Option<Option<i8>>,
     cose: bool,
     seen: u8,
-    cose_seen: u8,
     body: Option<(i8, usize)>,
     skip: u8,
 }
@@ -55,24 +54,31 @@ impl Parser {
     pub const fn new() -> Self {
         Self {
             params: Parameters::new(),
-            previous: [None; 2],
+            previous: None,
+            agreement: super::agreement::Parser::new(),
             key: None,
             cose: false,
             seen: 0,
-            cose_seen: 0,
             body: None,
             skip: 0,
         }
     }
     /// Returns true only after the extension map has closed and validated.
     pub fn event(&mut self, event: Event<'_>) -> Result<bool, Status> {
+        if self.cose {
+            if self
+                .agreement
+                .event(event, &mut self.params.agreement, Status::InvalidParameter)?
+            {
+                self.cose = false;
+            }
+            return Ok(false);
+        }
         if super::skip_cbor_event(&mut self.skip, event) {
             return Ok(false);
         }
         if let Some((key, _)) = self.body {
             let out: &mut [u8] = match key {
-                -2 => &mut self.params.agreement[..32],
-                -3 => &mut self.params.agreement[32..],
                 2 => &mut self.params.salt,
                 _ => &mut self.params.auth,
             };
@@ -81,13 +87,6 @@ impl Parser {
         }
         let Some(key) = self.key.take() else {
             if matches!(event, Event::End) {
-                if self.cose {
-                    if self.cose_seen != COSE_REQUIRED_MASK {
-                        return Err(Status::MissingParameter);
-                    }
-                    self.cose = false;
-                    return Ok(false);
-                }
                 if self.seen & HMAC_COSE_REQUIRED_MASK != HMAC_COSE_REQUIRED_MASK {
                     return Err(Status::MissingParameter);
                 }
@@ -101,45 +100,32 @@ impl Parser {
                 }
                 return Ok(true);
             }
-            let previous = &mut self.previous[usize::from(self.cose)];
-            let key = Key::ordered(event, previous)?;
+            let key = Key::ordered(event, &mut self.previous)?;
             self.key = Some(key);
             return Ok(false);
         };
         let key = key.unwrap_or(COSE_KEY_MISSING);
-        if self.cose {
-            let bit = super::cose_key_field(key, event)?;
-            if bit == 0 {
-                self.ignore(event);
-            } else {
-                if matches!(key, -2 | -3) {
-                    self.bytes(key, event, 32, 32)?;
+        match key {
+            1 => {
+                if !matches!(event, Event::Map(_)) {
+                    return Err(Status::UnexpectedType);
                 }
-                self.cose_seen |= bit;
+                self.seen |= 1;
+                self.cose = true;
             }
-        } else {
-            match key {
-                1 => {
-                    if !matches!(event, Event::Map(_)) {
-                        return Err(Status::UnexpectedType);
-                    }
-                    self.seen |= 1;
-                    self.cose = true;
-                }
-                2 => {
-                    self.seen |= 2;
-                    self.params.salt_len = self.bytes(key, event, 32, 80)?;
-                }
-                3 => {
-                    self.seen |= 4;
-                    self.params.auth_len = self.bytes(key, event, 16, 32)?;
-                }
-                4 => match event {
-                    Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
-                    _ => return Err(Status::InvalidParameter),
-                },
-                _ => self.ignore(event),
+            2 => {
+                self.seen |= 2;
+                self.params.salt_len = self.bytes(key, event, 32, 80)?;
             }
+            3 => {
+                self.seen |= 4;
+                self.params.auth_len = self.bytes(key, event, 16, 32)?;
+            }
+            4 => match event {
+                Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
+                _ => return Err(Status::InvalidParameter),
+            },
+            _ => self.ignore(event),
         }
         Ok(false)
     }
@@ -175,7 +161,7 @@ impl Prepared {
             protocol: 1,
         }
     }
-    pub fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.salts);
         memory.wipe(&mut self.aes_key);
         self.length = 0;

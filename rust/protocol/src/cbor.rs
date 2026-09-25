@@ -146,7 +146,7 @@ pub struct EncodeError;
 macro_rules! encode_unsigned {
     ($($method:ident($ty:ty)),* $(,)?) => {$(
         #[inline(never)]
-        pub fn $method(&mut self, value: $ty) -> Result<&mut Self, EncodeError> {
+        pub fn $method(&mut self, value: $ty) -> &mut Self {
             self.header(0, u64::from(value))
         }
     )*};
@@ -154,7 +154,7 @@ macro_rules! encode_unsigned {
 macro_rules! encode_signed {
     ($($method:ident($ty:ty)),* $(,)?) => {$(
         #[inline(never)]
-        pub fn $method(&mut self, value: $ty) -> Result<&mut Self, EncodeError> {
+        pub fn $method(&mut self, value: $ty) -> &mut Self {
             // For v < 0 the CBOR argument is -1-v, i.e. !v in two's complement.
             let (major, arg) = if value >= 0 { (0, value as u64) } else { (1, !value as u64) };
             self.header(major, arg)
@@ -164,29 +164,50 @@ macro_rules! encode_signed {
 
 /// Shortest-form encoder over a caller-owned buffer. The remaining unwritten
 /// tail is the writer state, so `writer().len()` is the capacity left.
-pub struct Encoder<W>(W);
+/// Writes latch the first capacity error. Call `finish()` before publishing any
+/// result; keeping the error inside the encoder shares failure handling across
+/// all fields of a response without weakening individual write bounds checks.
+pub struct Encoder<W> {
+    output: W,
+    failed: bool,
+}
 
 impl<'a> Encoder<&'a mut [u8]> {
     pub fn new(output: &'a mut [u8]) -> Self {
-        Self(output)
+        Self {
+            output,
+            failed: false,
+        }
+    }
+
+    /// Check the complete response before publishing it or using its bytes.
+    /// Once a write fails, subsequent writes leave both the buffer and cursor
+    /// unchanged. Intermediate cursor reads are valid only if this succeeds.
+    pub fn finish(&self) -> Result<(), EncodeError> {
+        if self.failed {
+            Err(EncodeError)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn writer(&self) -> &&'a mut [u8] {
-        &self.0
+        &self.output
     }
 
-    fn raw(&mut self, bytes: &[u8]) -> Result<&mut Self, EncodeError> {
-        if self.0.len() < bytes.len() {
-            return Err(EncodeError);
+    fn raw(&mut self, bytes: &[u8]) -> &mut Self {
+        if self.failed || self.output.len() < bytes.len() {
+            self.failed = true;
+            return self;
         }
-        let tail = core::mem::take(&mut self.0);
+        let tail = core::mem::take(&mut self.output);
         tail[..bytes.len()].copy_from_slice(bytes);
-        self.0 = &mut tail[bytes.len()..];
-        Ok(self)
+        self.output = &mut tail[bytes.len()..];
+        self
     }
 
     /// Append one shortest-form item header: major type in the top 3 bits.
-    fn header(&mut self, major: u8, value: u64) -> Result<&mut Self, EncodeError> {
+    fn header(&mut self, major: u8, value: u64) -> &mut Self {
         let mut head = [0u8; 9];
         let mt = major << 5;
         let n = if value < 24 {
@@ -215,7 +236,7 @@ impl<'a> Encoder<&'a mut [u8]> {
     /// Append trusted, pre-encoded CBOR tokens (for build-generated schemas).
     /// Dynamic values must still use the typed encoding methods below.
     #[inline(never)]
-    pub fn encoded(&mut self, tokens: &[u8]) -> Result<&mut Self, EncodeError> {
+    pub fn encoded(&mut self, tokens: &[u8]) -> &mut Self {
         self.raw(tokens)
     }
 
@@ -224,28 +245,28 @@ impl<'a> Encoder<&'a mut [u8]> {
     encode_signed! { i8(i8), i16(i16), i32(i32), i64(i64) }
 
     #[inline(never)]
-    pub fn map(&mut self, count: u64) -> Result<&mut Self, EncodeError> {
+    pub fn map(&mut self, count: u64) -> &mut Self {
         self.header(5, count)
     }
     #[inline(never)]
-    pub fn array(&mut self, count: u64) -> Result<&mut Self, EncodeError> {
+    pub fn array(&mut self, count: u64) -> &mut Self {
         self.header(4, count)
     }
     #[inline(never)]
-    pub fn bytes_len(&mut self, len: u64) -> Result<&mut Self, EncodeError> {
+    pub fn bytes_len(&mut self, len: u64) -> &mut Self {
         self.header(2, len)
     }
     #[inline(never)]
-    pub fn bool(&mut self, value: bool) -> Result<&mut Self, EncodeError> {
+    pub fn bool(&mut self, value: bool) -> &mut Self {
         self.raw(&[0xf4 | u8::from(value)])
     }
     #[inline(never)]
-    pub fn bytes(&mut self, value: &[u8]) -> Result<&mut Self, EncodeError> {
-        self.header(2, value.len() as u64)?.raw(value)
+    pub fn bytes(&mut self, value: &[u8]) -> &mut Self {
+        self.header(2, value.len() as u64).raw(value)
     }
     #[inline(never)]
-    pub fn str(&mut self, value: &str) -> Result<&mut Self, EncodeError> {
-        self.header(3, value.len() as u64)?.raw(value.as_bytes())
+    pub fn str(&mut self, value: &str) -> &mut Self {
+        self.header(3, value.len() as u64).raw(value.as_bytes())
     }
 }
 
@@ -282,6 +303,7 @@ pub struct Decoder {
     depth: usize,
     body: u16,
     text: bool,
+    end_string: bool,
     utf8: Utf8,
     budget: u16,
     limit: u16,
@@ -299,6 +321,7 @@ impl Decoder {
             depth: 0,
             body: 0,
             text: false,
+            end_string: false,
             utf8: Utf8::new(),
             budget: byte_limit,
             limit: byte_limit,
@@ -322,57 +345,80 @@ impl Decoder {
         if self.failed {
             return Err(Error::Failed);
         }
-        let result = self.feed_inner(bytes, emit);
+        let mut input = bytes;
+        while let Some(event) = self.next_event(&mut input)? {
+            if emit(event, self.position()).is_err() {
+                self.failed = true;
+                return Err(Error::Consumer);
+            }
+        }
+        Ok(())
+    }
+
+    /// Pull one event and advance the caller's fragment. Keep calling with the
+    /// same fragment until None, even after it becomes empty: string/container
+    /// End events may still be pending. No request bytes are retained.
+    /// A failed decoder never emits another event, including on a new fragment.
+    pub fn next_event<'a>(&mut self, bytes: &mut &'a [u8]) -> Result<Option<Event<'a>>, Error> {
+        if self.failed {
+            return Err(Error::Failed);
+        }
+        let result = self.next_inner(bytes);
         self.failed = result.is_err();
         result
     }
-    fn feed_inner(
-        &mut self,
-        mut bytes: &[u8],
-        emit: &mut dyn FnMut(Event<'_>, u16) -> Result<(), Error>,
-    ) -> Result<(), Error> {
+
+    pub fn position(&self) -> u16 {
+        self.limit - self.budget
+    }
+
+    #[inline(never)]
+    fn next_inner<'a>(&mut self, bytes: &mut &'a [u8]) -> Result<Option<Event<'a>>, Error> {
+        // Reject an oversized fragment before delivering any of its events,
+        // just as feed_at does. Remaining bytes and budget advance together.
         if bytes.len() > usize::from(self.budget) {
             return Err(Error::Limit);
         }
-        while !bytes.is_empty() {
+        loop {
+            if self.end_string {
+                if self.text && self.utf8.len != 0 {
+                    return Err(Error::Invalid);
+                }
+                self.end_string = false;
+                return Ok(Some(Event::End));
+            }
+            if self.body == 0 && self.depth != 0 && self.pending[self.depth] == 0 {
+                self.depth -= 1;
+                return Ok(Some(Event::End));
+            }
+            if bytes.is_empty() {
+                return Ok(None);
+            }
             if self.body != 0 {
                 let n = bytes.len().min(usize::from(self.body));
+                let (value, rest) = bytes.split_at(n);
                 if self.text {
-                    self.utf8.feed(&bytes[..n])?;
+                    self.utf8.feed(value)?;
                 }
                 self.body -= n as u16;
                 self.budget -= n as u16;
-                emit(Event::Data(&bytes[..n]), self.limit - self.budget)
-                    .map_err(|_| Error::Consumer)?;
-                bytes = &bytes[n..];
-                if self.body == 0 {
-                    if self.text && self.utf8.len != 0 {
-                        return Err(Error::Invalid);
-                    }
-                    emit(Event::End, self.limit - self.budget).map_err(|_| Error::Consumer)?;
-                    self.close_containers(emit)?;
-                }
-                continue;
+                *bytes = rest;
+                self.end_string = self.body == 0;
+                return Ok(Some(Event::Data(value)));
             }
             if self.pending[self.depth] == 0 {
                 return Err(Error::Invalid); // Trailing top-level item.
             }
             let head = self.read_header(bytes[0])?;
             self.budget -= 1;
-            bytes = &bytes[1..];
+            *bytes = &bytes[1..];
             if let Some((major, value)) = head {
                 self.pending[self.depth] -= 1;
                 let event = self.start_value(major, value)?;
-                emit(event, self.limit - self.budget).map_err(|_| Error::Consumer)?;
-                if self.body == 0 {
-                    if major == 2 || major == 3 {
-                        emit(Event::End, self.limit - self.budget).map_err(|_| Error::Consumer)?;
-                    }
-                    self.close_containers(emit)?;
-                }
+                self.end_string = (major == 2 || major == 3) && self.body == 0;
+                return Ok(Some(event));
             }
         }
-        Ok(())
     }
     #[inline(never)]
     fn read_header(&mut self, byte: u8) -> Result<Option<(u8, u64)>, Error> {
@@ -462,20 +508,15 @@ impl Decoder {
             _ => Err(Error::Invalid),
         }
     }
-    fn close_containers(
-        &mut self,
-        emit: &mut dyn FnMut(Event<'_>, u16) -> Result<(), Error>,
-    ) -> Result<(), Error> {
-        while self.depth != 0 && self.pending[self.depth] == 0 {
-            emit(Event::End, self.limit - self.budget).map_err(|_| Error::Consumer)?;
-            self.depth -= 1;
-        }
-        Ok(())
-    }
     pub fn finish(&self) -> Result<(), Error> {
         if self.failed {
             Err(Error::Failed)
-        } else if self.head_len != 0 || self.body != 0 || self.depth != 0 || self.pending[0] != 0 {
+        } else if self.head_len != 0
+            || self.body != 0
+            || self.end_string
+            || self.depth != 0
+            || self.pending[0] != 0
+        {
             Err(Error::Truncated)
         } else {
             Ok(())

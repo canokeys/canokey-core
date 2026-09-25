@@ -325,9 +325,9 @@ fn forced_pin_change_blocks_both_tokens_and_clears_atomically_on_valid_change() 
     let mut session = Session::new();
     session.agreement_ready = true;
     for (subcommand, new_pin, expected) in [
-        (5, "", Status::PinInvalid.response()[0]),
-        (9, "", Status::PinPolicy.response()[0]),
-        (4, "12345679", Status::PinPolicy.response()[0]),
+        (5, "", 0x31), // CTAP2_ERR_PIN_INVALID
+        (9, "", 0x37), // CTAP2_ERR_PIN_POLICY_VIOLATION
+        (4, "12345679", 0x37),
         (4, "1234567890", 0),
     ] {
         let mut cp = client_pin::Parameters {
@@ -359,7 +359,7 @@ fn forced_pin_change_blocks_both_tokens_and_clears_atomically_on_valid_change() 
                 memory: &Backend::default(),
             },
         );
-        assert_eq!(result.err().map_or(0, |s| s.response()[0]), expected);
+        assert_eq!(result.err().map_or(0, |s| s as u8), expected);
         assert_eq!(store.record[16], 8);
         assert_eq!(store.record[18], 10);
         assert_eq!(

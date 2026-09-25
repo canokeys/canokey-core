@@ -116,7 +116,7 @@ impl Credential {
         self.name_len = name.len() as u8;
         Ok(())
     }
-    pub fn clear(&mut self, crypto: &mut dyn Crypto) {
+    pub fn clear(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
         crypto.wipe(&mut self.key);
         self.key_len = 0;
     }

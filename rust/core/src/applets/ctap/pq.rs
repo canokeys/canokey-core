@@ -57,7 +57,7 @@ struct Part {
     length: usize,
 }
 impl Stream {
-    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.crypto.bytes);
         memory.wipe(&mut self.framing.bytes);
         memory.wipe(&mut self.framing.seed);
@@ -308,7 +308,10 @@ impl Stream {
             let n = der_signature(&mut signature, 64).map_err(|_| Status::Other)?;
             let mut encoded = [0; 74];
             let mut encoder = Encoder::new(&mut encoded[..]);
-            encoder.bytes(&signature[..n]).map_err(|_| Status::Other)?;
+            encoder
+                .bytes(&signature[..n])
+                .finish()
+                .map_err(|_| Status::Other)?;
             let count = 74 - encoder.writer().len();
             let end = self.framing.length;
             if end + count > FRAMING_BYTES {
@@ -352,16 +355,14 @@ impl Stream {
                 length: self.framing.length - self.certificate_at,
             },
         ];
-        let mut skip = offset;
-        let mut written = 0;
+        let count = out.len();
+        let mut window = canokey_protocol::response::ReadWindow::new(offset, out);
         for part in parts {
-            let at = skip.min(part.length);
-            skip -= at;
-            let n = (part.length - at).min(out.len() - written);
-            if n == 0 {
+            let (at, dest) = window.take(part.length);
+            let n = dest.len();
+            if dest.is_empty() {
                 continue;
             }
-            let dest = &mut out[written..written + n];
             match part.source {
                 PartSource::Generated => {
                     if p.crypto
@@ -380,9 +381,8 @@ impl Stream {
                     dest.copy_from_slice(&self.framing.bytes[start + at..start + at + n])
                 }
             }
-            written += n;
         }
-        self.emitted += out.len();
+        self.emitted += count;
         Ok(())
     }
     pub fn close(&mut self, p: &mut Platform<'_>) {

@@ -6,29 +6,32 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 [dependencies]
+canokey-ports = { path = "../ports" }
 canokey-protocol = { path = "../protocol" }
 canokey-rust-core = { path = "../core" }
 [features]
+dynamic-backend = ["canokey-ports/dynamic-backend"]
+static-backend = ["canokey-ports/static-backend"]
 usb-ccid = []
-storage = []
-platform-device = []
-platform-serial = []
+storage = ["canokey-ports/storage"]
+platform-device = ["canokey-ports/platform-device"]
+platform-serial = ["canokey-ports/platform-serial"]
 # Fixed 20-byte HMAC-SHA1 keys are used by PASS only.
-platform-hmac = []
-platform-key = []
+platform-hmac = ["canokey-ports/platform-hmac"]
+platform-key = ["canokey-ports/platform-key"]
 # Randomness must not retain the MAC vtable implementation in PIV/OpenPGP.
-platform-random = []
-platform-mac = ["platform-random"]
-platform-stream = []
-platform-stage = []
-admin = ["canokey-rust-core/admin", "storage", "platform-device"]
-ctap = ["canokey-rust-core/ctap", "storage", "platform-device", "platform-serial", "platform-mac", "platform-stream", "platform-key", "platform-stage"]
-openpgp = ["canokey-rust-core/openpgp", "storage", "platform-device", "platform-serial", "platform-random", "platform-key"]
-piv = ["canokey-rust-core/piv", "storage", "platform-device", "platform-serial", "platform-random", "platform-stream", "platform-key", "platform-stage"]
+platform-random = ["canokey-ports/platform-random"]
+platform-mac = ["platform-random", "canokey-ports/platform-mac"]
+platform-stream = ["canokey-ports/platform-stream"]
+platform-stage = ["canokey-ports/platform-stage"]
+admin = ["canokey-rust-core/admin", "storage", "platform-device", "canokey-ports/admin"]
+ctap = ["canokey-rust-core/ctap", "storage", "platform-device", "platform-serial", "platform-mac", "platform-stream", "platform-key", "platform-stage", "canokey-ports/ctap"]
+openpgp = ["canokey-rust-core/openpgp", "storage", "platform-device", "platform-serial", "platform-random", "platform-key", "canokey-ports/openpgp"]
+piv = ["canokey-rust-core/piv", "storage", "platform-device", "platform-serial", "platform-random", "platform-stream", "platform-key", "platform-stage", "canokey-ports/piv"]
 
 default = []
-pass = ["canokey-rust-core/pass", "storage", "platform-device", "platform-hmac"]
-oath = ["canokey-rust-core/oath", "storage", "platform-device", "platform-serial", "platform-mac"]
+pass = ["canokey-rust-core/pass", "storage", "platform-device", "platform-hmac", "canokey-ports/pass"]
+oath = ["canokey-rust-core/oath", "storage", "platform-device", "platform-serial", "platform-mac", "canokey-ports/oath"]
 host-runtime = []
 
 [lints]

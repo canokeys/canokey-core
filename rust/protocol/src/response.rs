@@ -1,38 +1,54 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use core::num::NonZeroU16;
+
+/// A nonzero APDU status word. Zero is not a response status; reserving it lets
+/// Rust represent optional statuses and unit results without a separate tag.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct StatusWord(pub u16);
+#[repr(transparent)]
+pub struct StatusWord(NonZeroU16);
 
 impl StatusWord {
-    pub const REFERENCE_NOT_FOUND: Self = Self(0x6a88);
-    pub const SELECTED_FILE_TERMINATED: Self = Self(0x6285);
-    pub const EXECUTION_ERROR: Self = Self(0x6400);
-    pub const DATA_INVALID: Self = Self(0x6984);
-    pub const NOT_ENOUGH_MEMORY: Self = Self(0x6a84);
-    pub const SUCCESS: Self = Self(0x9000);
-    pub const FILE_NOT_FOUND: Self = Self(0x6a82);
-    pub const INS_NOT_SUPPORTED: Self = Self(0x6d00);
-    pub const CLA_NOT_SUPPORTED: Self = Self(0x6e00);
-    pub const SECURITY_STATUS_NOT_SATISFIED: Self = Self(0x6982);
-    pub const AUTHENTICATION_BLOCKED: Self = Self(0x6983);
-    pub const CONDITIONS_NOT_SATISFIED: Self = Self(0x6985);
-    pub const WRONG_LENGTH: Self = Self(0x6700);
-    pub const WRONG_DATA: Self = Self(0x6a80);
-    pub const WRONG_P1P2: Self = Self(0x6a86);
-    pub const UNABLE_TO_PROCESS: Self = Self(0x6900);
-    pub const COMMAND_NOT_ALLOWED: Self = Self(0x6986);
+    /// Construct a wire status, rejecting the reserved zero value.
+    pub const fn new(value: u16) -> Option<Self> {
+        match NonZeroU16::new(value) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+    pub const fn value(self) -> u16 {
+        self.0.get()
+    }
+
+    pub const REFERENCE_NOT_FOUND: Self = Self::new(0x6a88).unwrap();
+    pub const SELECTED_FILE_TERMINATED: Self = Self::new(0x6285).unwrap();
+    pub const EXECUTION_ERROR: Self = Self::new(0x6400).unwrap();
+    pub const DATA_INVALID: Self = Self::new(0x6984).unwrap();
+    pub const NOT_ENOUGH_MEMORY: Self = Self::new(0x6a84).unwrap();
+    pub const SUCCESS: Self = Self::new(0x9000).unwrap();
+    pub const FILE_NOT_FOUND: Self = Self::new(0x6a82).unwrap();
+    pub const INS_NOT_SUPPORTED: Self = Self::new(0x6d00).unwrap();
+    pub const CLA_NOT_SUPPORTED: Self = Self::new(0x6e00).unwrap();
+    pub const SECURITY_STATUS_NOT_SATISFIED: Self = Self::new(0x6982).unwrap();
+    pub const AUTHENTICATION_BLOCKED: Self = Self::new(0x6983).unwrap();
+    pub const CONDITIONS_NOT_SATISFIED: Self = Self::new(0x6985).unwrap();
+    pub const WRONG_LENGTH: Self = Self::new(0x6700).unwrap();
+    pub const WRONG_DATA: Self = Self::new(0x6a80).unwrap();
+    pub const WRONG_P1P2: Self = Self::new(0x6a86).unwrap();
+    pub const UNABLE_TO_PROCESS: Self = Self::new(0x6900).unwrap();
+    pub const COMMAND_NOT_ALLOWED: Self = Self::new(0x6986).unwrap();
 
     /// ISO 7816 63Cx: x is the remaining retry count (caller guarantees 0..15).
     pub fn retries(remaining: u8) -> Self {
-        Self(0x63c0 | u16::from(remaining))
+        Self::new(0x63c0 | u16::from(remaining)).unwrap()
     }
     /// 61xx asks for GET RESPONSE. This profile caps the advertised next chunk
     /// at 255 bytes even when more data remains; it is not a total-length field.
     pub fn remaining(bytes: u32) -> Self {
-        Self(0x6100 | bytes.min(255) as u16)
+        Self::new(0x6100 | bytes.min(255) as u16).unwrap()
     }
     pub fn bytes(self) -> [u8; 2] {
-        self.0.to_be_bytes()
+        self.value().to_be_bytes()
     }
 }
 
@@ -46,6 +62,35 @@ pub struct ReadError(pub StatusWord);
 pub trait Source {
     fn read(&mut self, offset: u32, output: &mut [u8]) -> Result<usize, ReadError>;
     fn close(&mut self);
+}
+
+/// A requested byte window over consecutive response segments. Call `take`
+/// once per segment, in wire order. The caller validates the complete response
+/// length and supplies each segment's storage or generator; no source is retained.
+pub struct ReadWindow<'a> {
+    skip: usize,
+    output: &'a mut [u8],
+}
+
+impl<'a> ReadWindow<'a> {
+    pub fn new(offset: usize, output: &'a mut [u8]) -> Self {
+        Self {
+            skip: offset,
+            output,
+        }
+    }
+
+    /// Return the offset within this segment and its portion of the output.
+    /// Empty portions need no source read, including at segment boundaries.
+    #[inline(never)]
+    pub fn take(&mut self, length: usize) -> (usize, &mut [u8]) {
+        let start = self.skip.min(length);
+        self.skip -= start;
+        let count = (length - start).min(self.output.len());
+        let (part, rest) = core::mem::take(&mut self.output).split_at_mut(count);
+        self.output = rest;
+        (start, part)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -186,7 +231,55 @@ impl ResponsePlan {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn status_words_preserve_wire_values_and_reserve_zero() {
+        use super::StatusWord;
+        assert_eq!(StatusWord::new(0), None);
+        for value in 1..=u16::MAX {
+            let status = StatusWord::new(value).unwrap();
+            assert_eq!(status.value(), value);
+            assert_eq!(status.bytes(), value.to_be_bytes());
+        }
+        // This representation is the reason for the nonzero invariant. No
+        // code depends on the bit layout of Result or reads it through FFI.
+        assert_eq!(core::mem::size_of::<Result<(), StatusWord>>(), 2);
+        assert_eq!(core::mem::size_of::<Option<StatusWord>>(), 2);
+    }
+
     use super::*;
+
+    #[test]
+    fn segmented_windows_match_contiguous_reads() {
+        let bytes: [u8; 32] = core::array::from_fn(|i| i as u8);
+        // Empty, adjacent and split segments, with every requested subrange.
+        for split in 0..=bytes.len() {
+            let segments = [&[][..], &bytes[..split], &[][..], &bytes[split..], &[][..]];
+            for offset in 0..=bytes.len() {
+                for count in 0..=bytes.len() - offset {
+                    let mut output = [0xa5; 34];
+                    let mut window = ReadWindow::new(offset, &mut output[1..1 + count]);
+                    for segment in segments {
+                        let (start, dest) = window.take(segment.len());
+                        dest.copy_from_slice(&segment[start..start + dest.len()]);
+                    }
+                    assert_eq!(&output[1..1 + count], &bytes[offset..offset + count]);
+                    assert_eq!(output[0], 0xa5);
+                    assert!(output[1 + count..].iter().all(|byte| *byte == 0xa5));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn segmented_windows_do_not_add_total_lengths() {
+        let mut output = [0; 2];
+        let mut window = ReadWindow::new(usize::MAX, &mut output);
+        assert!(window.take(usize::MAX - 1).1.is_empty());
+        let (start, dest) = window.take(4);
+        assert_eq!(start, 1);
+        assert_eq!(dest.len(), 2);
+        assert!(window.take(usize::MAX).1.is_empty());
+    }
 
     struct Reader {
         offset: u32,
@@ -287,15 +380,15 @@ mod tests {
         for expected in [
             Chunk {
                 len: 3,
-                sw: StatusWord(0x6107),
+                sw: StatusWord::new(0x6107).unwrap(),
             },
             Chunk {
                 len: 3,
-                sw: StatusWord(0x6104),
+                sw: StatusWord::new(0x6104).unwrap(),
             },
             Chunk {
                 len: 3,
-                sw: StatusWord(0x6101),
+                sw: StatusWord::new(0x6101).unwrap(),
             },
             Chunk {
                 len: 1,

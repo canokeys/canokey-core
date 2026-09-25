@@ -2,7 +2,7 @@
 //! One session-owned workspace, lent by the registry to the selected applet.
 //! Key material, crypto input and result are simultaneously live at the crypto
 //! boundary. Certificates and encoded import messages never occupy this area.
-use crate::ports::{KeyMaterial, Memory};
+use crate::ports::KeyMaterial;
 /// Byte offsets in retained SM2 exchange state, separate from the primitive
 /// input packet: our ephemeral scalar, our ephemeral/static public X||Y,
 /// then our length-prefixed identity. No SEC1 04 point prefixes are stored.
@@ -39,7 +39,7 @@ impl Workspace {
             output: [0; OUTPUT_BYTES],
         }
     }
-    pub fn clear(&mut self, memory: &dyn Memory) {
+    pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         #[cfg(feature = "piv")]
         memory.wipe(&mut self.agreement);
         memory.wipe(&mut self.key.bytes);
@@ -72,7 +72,7 @@ impl SessionWorkspace {
     pub const fn new() -> Self {
         Self::Classic(Workspace::new())
     }
-    pub(crate) fn wipe_active(&mut self, memory: &dyn Memory) {
+    pub(crate) fn wipe_active(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         match self {
             Self::Classic(w) => w.clear(memory),
             #[cfg(feature = "ctap")]
@@ -90,7 +90,7 @@ impl SessionWorkspace {
         }
     }
     #[inline(never)]
-    pub fn classic_with(&mut self, memory: &dyn Memory) -> &mut Workspace {
+    pub fn classic_with(&mut self, memory: &crate::ports::MemoryPort<'_>) -> &mut Workspace {
         #[cfg(not(any(feature = "piv", feature = "ctap")))]
         let _ = memory;
         #[cfg(any(feature = "piv", feature = "ctap"))]
@@ -107,11 +107,14 @@ impl SessionWorkspace {
     #[cfg(any(feature = "piv", feature = "ctap"))]
     #[inline(never)]
     pub fn classic(&mut self) -> &mut Workspace {
-        let memory = LocalMemory;
+        let memory = crate::ports::native::MemoryBackend;
         self.classic_with(&memory)
     }
     #[cfg(feature = "ctap")]
-    pub fn ctap_request_with(&mut self, memory: &dyn Memory) -> &mut crate::applets::ctap::Request {
+    pub fn ctap_request_with(
+        &mut self,
+        memory: &crate::ports::MemoryPort<'_>,
+    ) -> &mut crate::applets::ctap::Request {
         if !matches!(self, Self::CtapRequest(_)) {
             self.wipe_active(memory);
             *self = Self::CtapRequest(crate::applets::ctap::Request::new());
@@ -123,20 +126,23 @@ impl SessionWorkspace {
     }
     #[cfg(feature = "ctap")]
     pub fn ctap_request(&mut self) -> &mut crate::applets::ctap::Request {
-        let memory = LocalMemory;
+        let memory = crate::ports::native::MemoryBackend;
         self.ctap_request_with(&memory)
     }
     #[cfg(feature = "ctap")]
     pub fn cancel_ctap_request(&mut self) {
         if let Self::CtapRequest(request) = self {
-            let memory = LocalMemory;
+            let memory = crate::ports::native::MemoryBackend;
             request.clear(&memory);
             *request = crate::applets::ctap::Request::new();
         }
     }
     #[cfg(feature = "piv")]
     #[inline(never)]
-    pub fn stream_with(&mut self, memory: &dyn Memory) -> &mut crate::ports::CryptoScratch {
+    pub fn stream_with(
+        &mut self,
+        memory: &crate::ports::MemoryPort<'_>,
+    ) -> &mut crate::ports::CryptoScratch {
         self.wipe_active(memory);
         *self = Self::Stream(crate::ports::CryptoScratch::new());
         let Self::Stream(s) = self else {
@@ -147,14 +153,14 @@ impl SessionWorkspace {
     #[cfg(feature = "piv")]
     #[inline(never)]
     pub fn stream(&mut self) -> &mut crate::ports::CryptoScratch {
-        let memory = LocalMemory;
+        let memory = crate::ports::native::MemoryBackend;
         self.stream_with(&memory)
     }
     #[cfg(feature = "piv")]
     #[inline(never)]
     pub fn attestation_with(
         &mut self,
-        memory: &dyn Memory,
+        memory: &crate::ports::MemoryPort<'_>,
     ) -> &mut crate::applets::piv::attestation::Attestation {
         self.wipe_active(memory);
         *self = Self::Attestation(crate::applets::piv::attestation::Attestation::new());
@@ -166,17 +172,7 @@ impl SessionWorkspace {
     #[cfg(feature = "piv")]
     #[inline(never)]
     pub fn attestation(&mut self) -> &mut crate::applets::piv::attestation::Attestation {
-        let memory = LocalMemory;
+        let memory = crate::ports::native::MemoryBackend;
         self.attestation_with(&memory)
-    }
-}
-
-#[cfg(any(feature = "ctap", feature = "piv"))]
-struct LocalMemory;
-#[cfg(any(feature = "ctap", feature = "piv"))]
-impl Memory for LocalMemory {
-    fn wipe(&self, bytes: &mut [u8]) {
-        bytes.fill(0);
-        core::hint::black_box(bytes);
     }
 }

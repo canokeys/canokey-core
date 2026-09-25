@@ -9,8 +9,8 @@ include!(concat!(env!("OUT_DIR"), "/ctap_response.rs"));
 // These boundaries share the schema across authentication and management.
 #[inline(never)]
 pub(super) fn descriptor(e: &mut Encoder<&mut [u8]>, id: &[u8]) -> Result<(), EncodeError> {
-    e.encoded(DESCRIPTOR)?.bytes(id)?.encoded(PUBLIC_KEY_TYPE)?;
-    Ok(())
+    e.encoded(DESCRIPTOR).bytes(id).encoded(PUBLIC_KEY_TYPE);
+    e.finish()
 }
 
 #[inline(never)]
@@ -21,18 +21,18 @@ pub(super) fn user(
 ) -> Result<(), EncodeError> {
     let name = details && !entry.name.is_empty();
     let display = details && !entry.display.is_empty();
-    e.map(1 + u64::from(name) + u64::from(display))?
-        .encoded(USER_ID)?
-        .bytes(entry.user)?;
+    e.map(1 + u64::from(name) + u64::from(display))
+        .encoded(USER_ID)
+        .bytes(entry.user);
     if name {
-        e.encoded(USER_NAME)?
-            .str(core::str::from_utf8(entry.name).unwrap_or_default())?;
+        e.encoded(USER_NAME)
+            .str(core::str::from_utf8(entry.name).unwrap_or_default());
     }
     if display {
-        e.encoded(USER_DISPLAY)?
-            .str(core::str::from_utf8(entry.display).unwrap_or_default())?;
+        e.encoded(USER_DISPLAY)
+            .str(core::str::from_utf8(entry.display).unwrap_or_default());
     }
-    Ok(())
+    e.finish()
 }
 
 // Classic and streamed PQ management responses share the same envelope.
@@ -44,10 +44,9 @@ pub(super) fn management_header(
     first: bool,
     has_blob_key: bool,
 ) -> Result<(), EncodeError> {
-    e.map(5 + u64::from(first) + u64::from(has_blob_key))?
-        .u8(6)?;
+    e.map(5 + u64::from(first) + u64::from(has_blob_key)).u8(6);
     user(e, entry, true)?;
-    e.u8(7)?;
+    e.u8(7);
     descriptor(e, entry.id)
 }
 
@@ -59,29 +58,28 @@ pub(super) fn management_tail(
     blob_key: Option<&[u8]>,
 ) -> Result<(), EncodeError> {
     if let Some(total) = total {
-        e.u8(9)?.u8(total)?;
+        e.u8(9).u8(total);
     }
-    e.u8(10)?.u8(id[1] & 3)?;
+    e.u8(10).u8(id[1] & 3);
     if let Some(key) = blob_key {
-        e.u8(11)?.bytes(key)?;
+        e.u8(11).bytes(key);
     }
-    e.u8(12)?
-        .bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0)?;
-    Ok(())
+    e.u8(12).bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0);
+    e.finish()
 }
 
 pub(super) fn mldsa_public_header(e: &mut Encoder<&mut [u8]>) -> Result<(), EncodeError> {
-    e.encoded(COSE_MLDSA65)?
-        .bytes_len(super::pq::PUBLIC_BYTES as u64)?;
-    Ok(())
+    e.encoded(COSE_MLDSA65)
+        .bytes_len(super::pq::PUBLIC_BYTES as u64);
+    e.finish()
 }
 
 pub(super) fn key_agreement(e: &mut Encoder<&mut [u8]>, public: &[u8]) -> Result<(), EncodeError> {
-    e.encoded(KEY_AGREEMENT)?
-        .bytes(&public[..32])?
-        .i8(-3)?
-        .bytes(&public[32..64])?;
-    Ok(())
+    e.encoded(KEY_AGREEMENT)
+        .bytes(&public[..32])
+        .i8(-3)
+        .bytes(&public[32..64]);
+    e.finish()
 }
 
 pub(super) fn public_key(
@@ -91,20 +89,20 @@ pub(super) fn public_key(
     public: &[u8],
 ) -> Result<(), EncodeError> {
     if algorithm == alg::MLDSA65 {
-        e.encoded(COSE_MLDSA65)?.bytes(public)?;
+        e.encoded(COSE_MLDSA65).bytes(public);
     } else if algorithm != alg::ED25519 {
-        e.encoded(COSE_EC2)?
-            .i32(credential::cose_algorithm(algorithm, sm2))?
-            .i8(-1)?
-            .i32(if algorithm == alg::SM2 { sm2.curve } else { 1 })?
-            .i8(-2)?
-            .bytes(&public[..32])?
-            .i8(-3)?
-            .bytes(&public[32..64])?;
+        e.encoded(COSE_EC2)
+            .i32(credential::cose_algorithm(algorithm, sm2))
+            .i8(-1)
+            .i32(if algorithm == alg::SM2 { sm2.curve } else { 1 })
+            .i8(-2)
+            .bytes(&public[..32])
+            .i8(-3)
+            .bytes(&public[32..64]);
     } else {
-        e.encoded(COSE_ED25519)?.bytes(&public[..32])?;
+        e.encoded(COSE_ED25519).bytes(&public[..32]);
     }
-    Ok(())
+    e.finish()
 }
 
 #[cfg(test)]
@@ -214,47 +212,34 @@ mod tests {
                     let mut e = Encoder::new(&mut expected[..]);
                     // Previous schema, encoded independently of the shared helpers.
                     e.map(5 + u64::from(total.is_some()) + u64::from(blob_key.is_some()))
-                        .unwrap()
                         .u8(6)
-                        .unwrap()
                         .map(3)
-                        .unwrap()
                         .str("id")
-                        .unwrap()
                         .bytes(b"AB")
-                        .unwrap()
                         .str("name")
-                        .unwrap()
                         .str("Alice")
-                        .unwrap()
                         .str("displayName")
-                        .unwrap()
                         .str("A")
-                        .unwrap()
                         .u8(7)
-                        .unwrap()
                         .map(2)
-                        .unwrap()
                         .str("id")
-                        .unwrap()
                         .bytes(&id)
-                        .unwrap()
                         .str("type")
-                        .unwrap()
                         .str("public-key")
+                        .finish()
                         .unwrap();
                     // Key 8 is the insertion point for either COSE representation.
                     let boundary = 256 - e.writer().len();
                     if let Some(total) = total {
-                        e.u8(9).unwrap().u8(total).unwrap();
+                        e.u8(9).u8(total).finish().unwrap();
                     }
-                    e.u8(10).unwrap().u8(flags & 3).unwrap();
+                    e.u8(10).u8(flags & 3).finish().unwrap();
                     if let Some(key) = blob_key {
-                        e.u8(11).unwrap().bytes(key).unwrap();
+                        e.u8(11).bytes(key).finish().unwrap();
                     }
                     e.u8(12)
-                        .unwrap()
                         .bool(flags & credential::THIRD_PARTY_PAYMENT != 0)
+                        .finish()
                         .unwrap();
                     let used = 256 - e.writer().len();
                     check(&expected[..used], |e| {
@@ -276,7 +261,7 @@ mod tests {
             (ATTESTATION, &b"\xa3\x63alg\x26\x63sig"[..]),
             (CERTIFICATE, &b"\x63x5c\x81"[..]),
         ] {
-            check(expected, |e| e.encoded(tokens).map(|_| ()));
+            check(expected, |e| e.encoded(tokens).finish());
         }
     }
 
@@ -301,38 +286,38 @@ mod tests {
         public: &[u8],
     ) -> Result<(), canokey_protocol::cbor::EncodeError> {
         if algorithm == alg::MLDSA65 {
-            e.map(4)?
-                .u8(1)?
-                .u8(7)?
-                .u8(3)?
-                .i8(-49)?
-                .i8(-1)?
-                .u8(6)?
-                .i8(-2)?
-                .bytes(public)?;
+            e.map(4)
+                .u8(1)
+                .u8(7)
+                .u8(3)
+                .i8(-49)
+                .i8(-1)
+                .u8(6)
+                .i8(-2)
+                .bytes(public);
         } else if algorithm != alg::ED25519 {
-            e.map(5)?
-                .u8(1)?
-                .u8(2)?
-                .u8(3)?
-                .i32(credential::cose_algorithm(algorithm, sm2))?
-                .i8(-1)?
-                .i32(if algorithm == alg::SM2 { sm2.curve } else { 1 })?
-                .i8(-2)?
-                .bytes(&public[..32])?
-                .i8(-3)?
-                .bytes(&public[32..64])?;
+            e.map(5)
+                .u8(1)
+                .u8(2)
+                .u8(3)
+                .i32(credential::cose_algorithm(algorithm, sm2))
+                .i8(-1)
+                .i32(if algorithm == alg::SM2 { sm2.curve } else { 1 })
+                .i8(-2)
+                .bytes(&public[..32])
+                .i8(-3)
+                .bytes(&public[32..64]);
         } else {
-            e.map(4)?
-                .u8(1)?
-                .u8(1)?
-                .u8(3)?
-                .i8(-8)?
-                .i8(-1)?
-                .u8(6)?
-                .i8(-2)?
-                .bytes(&public[..32])?;
+            e.map(4)
+                .u8(1)
+                .u8(1)
+                .u8(3)
+                .i8(-8)
+                .i8(-1)
+                .u8(6)
+                .i8(-2)
+                .bytes(&public[..32]);
         }
-        Ok(())
+        e.finish()
     }
 }

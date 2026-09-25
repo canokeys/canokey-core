@@ -39,7 +39,8 @@ impl Piv {
             ]);
             let mut n = INVENTORY_HEADER_BYTES;
             for i in 0..repo::USER_KEY_COUNT {
-                let m = repo::meta(i, p)?;
+                let mut m = [0; repo::META];
+                repo::read_meta(i, p, &mut m)?;
                 let cert = match p.storage.size(repo::OBJECTS[i]) {
                     Err(StorageError::Missing) => false,
                     Ok(n) => n > 0,
@@ -137,7 +138,8 @@ impl Piv {
             return Ok(10);
         }
         let id = repo::slot(h.p2).map_err(|_| Sw::REFERENCE_NOT_FOUND)?;
-        let m = repo::meta(id, p)?;
+        let mut m = [0; repo::META];
+        repo::read_meta(id, p, &mut m)?;
         self.public(id, &m, true, w, p)
     }
     pub(super) fn name(
@@ -158,7 +160,8 @@ impl Piv {
         if h.p1 == 0x01 {
             self.authorized()?;
         }
-        let mut m = repo::meta(id, p)?;
+        let mut m = [0; repo::META];
+        repo::read_meta(id, p, &mut m)?;
         if m[repo::ORIGIN] == 0 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
@@ -196,7 +199,8 @@ impl Piv {
                 if other == id {
                     continue;
                 }
-                let o = repo::meta(other, p)?;
+                let mut o = [0; repo::META];
+                repo::read_meta(other, p, &mut o)?;
                 if o[repo::ORIGIN] != 0
                     && o[repo::NAME_LENGTH] as usize == value.len()
                     && value == &o[repo::NAME..repo::NAME + value.len()]
@@ -230,10 +234,13 @@ impl Piv {
         if to == repo::ATTESTATION_KEY {
             return Err(Sw::WRONG_P1P2);
         }
-        if repo::meta(from, p)?[repo::ORIGIN] == 0 {
+        let mut metadata = [0; repo::META];
+        repo::read_meta(from, p, &mut metadata)?;
+        if metadata[repo::ORIGIN] == 0 {
             return Err(Sw::REFERENCE_NOT_FOUND);
         }
-        if repo::meta(to, p)?[repo::ORIGIN] != 0 {
+        repo::read_meta(to, p, &mut metadata)?;
+        if metadata[repo::ORIGIN] != 0 {
             return Err(Sw::WRONG_DATA);
         }
         p.storage

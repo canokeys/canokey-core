@@ -49,7 +49,7 @@ impl Session {
                 .any(|allowed| allowed == rp))
         .then_some(policy[pin::MIN_PIN_LENGTH]);
         p.memory.wipe(&mut policy);
-        hash_result.unwrap_or_default();
+        hash_result.map_err(|_| Status::Other)?;
         if params.auth_len == Some(0) {
             self.credential_presence(w, p)?;
             return Err(if pin_set {
@@ -359,7 +359,7 @@ fn respond(
         let capacity = tail.len();
         let mut e = Encoder::new(tail);
         super::encoding::public_key(&mut e, request.algorithm, request.sm2, &w.output[..n])
-            .unwrap_or_default();
+            .map_err(|_| Status::Other)?;
         auth_len += capacity - e.writer().len();
     }
     let extensions = u64::from(request.protection.is_some())
@@ -390,35 +390,34 @@ fn respond(
         };
         let capacity = w.input.len() - auth_len;
         let mut e = Encoder::new(&mut w.input[auth_len..]);
-        let result = (|| {
-            e.map(extensions)?;
+        {
+            e.map(extensions);
             if let Some(accepted) = request.cred_blob {
-                e.str("credBlob")?.bool(accepted)?;
+                e.str("credBlob").bool(accepted);
             } else if request.get_cred_blob {
-                e.str("credBlob")?.bytes(&blob[..blob_len])?;
+                e.str("credBlob").bytes(&blob[..blob_len]);
             }
             if let Some(protection) = request.protection {
-                e.str("credProtect")?.u8(protection)?;
+                e.str("credProtect").u8(protection);
             }
             if request.hmac_secret {
-                e.str("hmac-secret")?.bool(true)?;
+                e.str("hmac-secret").bool(true);
             }
             if !request.make && hmac_len != 0 {
-                e.str("hmac-secret")?.bytes(&hmac_output[..hmac_len])?;
+                e.str("hmac-secret").bytes(&hmac_output[..hmac_len]);
             }
             if let Some(minimum) = request.min_pin_length {
-                e.str("minPinLength")?.u8(minimum)?;
+                e.str("minPinLength").u8(minimum);
             }
             if request.make && hmac_len != 0 {
-                e.str("hmac-secret-mc")?.bytes(&hmac_output[..hmac_len])?;
+                e.str("hmac-secret-mc").bytes(&hmac_output[..hmac_len]);
             }
             if !request.make && request.third_party_payment {
-                e.str("thirdPartyPayment")?
-                    .bool(request.id[1] & credential::THIRD_PARTY_PAYMENT != 0)?;
+                e.str("thirdPartyPayment")
+                    .bool(request.id[1] & credential::THIRD_PARTY_PAYMENT != 0);
             }
-            Ok::<(), canokey_protocol::cbor::EncodeError>(())
-        })();
-        result.unwrap_or_default();
+        }
+        e.finish().map_err(|_| Status::Other)?;
         auth_len += capacity - e.writer().len();
     }
     if !request.make && request.algorithm == alg::MLDSA65 {
@@ -524,48 +523,48 @@ fn respond(
     let encoded = (|| {
         e.map(
             3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key),
-        )?
-        .u8(1)?;
+        )
+        .u8(1);
         if request.make {
-            e.str("packed")?;
+            e.str("packed");
         } else {
             super::encoding::descriptor(&mut e, request.id)?;
         }
-        e.u8(2)?.bytes_len(auth_len as u64)?;
+        e.u8(2).bytes_len(auth_len as u64);
         prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-        e.u8(3)?;
+        e.u8(3);
         if request.make {
             if self_attest {
-                e.encoded(super::encoding::SELF_ATTESTATION)?
-                    .i32(credential::cose_algorithm(request.algorithm, request.sm2))?
-                    .str("sig")?;
+                e.encoded(super::encoding::SELF_ATTESTATION)
+                    .i32(credential::cose_algorithm(request.algorithm, request.sm2))
+                    .str("sig");
             } else {
-                e.encoded(super::encoding::ATTESTATION)?;
+                e.encoded(super::encoding::ATTESTATION);
             }
         }
-        e.bytes(&signature[..n])?;
+        e.bytes(&signature[..n]);
         if request.make && !self_attest {
-            e.encoded(super::encoding::CERTIFICATE)?
-                .bytes_len(cert_len as u64)?;
+            e.encoded(super::encoding::CERTIFICATE)
+                .bytes_len(cert_len as u64);
             certificate = Some((
                 crate::runtime::workspace::OUTPUT_BYTES - e.writer().len(),
                 cert_len,
             ));
         }
         if let Some(user) = &user {
-            e.u8(4)?;
+            e.u8(4);
             super::encoding::user(&mut e, user, request.uv && request.details)?;
         }
         if request.count > 1 {
-            e.u8(5)?.u8(request.count)?;
+            e.u8(5).u8(request.count);
         }
         if has_blob_key {
-            e.u8(if request.make { 5 } else { 7 })?.bytes(&blob_key)?;
+            e.u8(if request.make { 5 } else { 7 }).bytes(&blob_key);
         }
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
+        e.finish()
     })();
     p.memory.wipe(&mut blob_key);
-    encoded.unwrap_or_default();
+    encoded.map_err(|_| Status::Other)?;
     let total = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len() + auth_len + cert_len;
     *response = Some(super::Response::Authentication {
         prefix,
@@ -585,30 +584,25 @@ fn respond_mldsa_assertion(
 ) -> Result<usize, Status> {
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
     let mut e = Encoder::new(&mut w.output[..]);
-    e.map(2 + u64::from(request.count > 1) + u64::from(has_blob_key))
-        .map_err(|_| Status::Other)?;
+    e.map(2 + u64::from(request.count > 1) + u64::from(has_blob_key));
     e.u8(2)
-        .and_then(|e| e.bytes_len(auth_len as u64))
+        .bytes_len(auth_len as u64)
+        .finish()
         .map_err(|_| Status::Other)?;
     let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     let mut tail = Encoder::new(&mut w.output[prefix..]);
-    tail.u8(3)
-        .and_then(|e| e.bytes_len(super::pq::SIGNATURE_BYTES as u64))
-        .map_err(|_| Status::Other)?;
+    tail.u8(3).bytes_len(super::pq::SIGNATURE_BYTES as u64);
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     if request.count > 1 {
-        tail.u8(5)
-            .and_then(|e| e.u8(request.count))
-            .map_err(|_| Status::Other)?;
+        tail.u8(5).u8(request.count);
     }
     if has_blob_key {
         let mut key = [0; 32];
         credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        tail.u8(7)
-            .and_then(|e| e.bytes(&key))
-            .map_err(|_| Status::Other)?;
+        tail.u8(7).bytes(&key);
         p.memory.wipe(&mut key);
     }
+    tail.finish().map_err(|_| Status::Other)?;
     let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
     w.input[auth_len + 32..auth_len + 64].copy_from_slice(&w.key.bytes[..32]);
@@ -648,7 +642,7 @@ fn respond_mldsa_make(
 
     let mut cose = [0u8; 32];
     let mut ce = Encoder::new(&mut cose[..]);
-    super::encoding::mldsa_public_header(&mut ce).unwrap_or_default();
+    super::encoding::mldsa_public_header(&mut ce).map_err(|_| Status::Other)?;
     let cose_prefix_len = 32 - ce.writer().len();
     // authenticatorData = rpIdHash (32) || flags (1) || counter (4) ||
     // AAGUID (16) || credentialIdLength (2) || credentialId || COSE key.
@@ -656,12 +650,9 @@ fn respond_mldsa_make(
     let auth_len = auth_prefix_len + 0;
 
     let mut e = Encoder::new(&mut w.output[..]);
-    (|| {
-        e.encoded(super::encoding::MAKE_HEADER)?
-            .bytes_len((auth_len + super::pq::PUBLIC_BYTES) as u64)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
-    .unwrap_or_default();
+    e.encoded(super::encoding::MAKE_HEADER)
+        .bytes_len((auth_len + super::pq::PUBLIC_BYTES) as u64);
+    e.finish().map_err(|_| Status::Other)?;
     let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     let public_at = auth_start + auth_prefix_len;
     w.output[auth_start..auth_start + 32].copy_from_slice(request.rp);
@@ -676,20 +667,14 @@ fn respond_mldsa_make(
 
     let after_cose = public_at + cose_prefix_len;
     let mut tail = Encoder::new(&mut w.output[after_cose..]);
-    (|| {
-        tail.u8(3)?
-            .encoded(super::encoding::ATTESTATION)?
-            .bytes_len(72)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
-    .unwrap_or_default();
+    tail.u8(3)
+        .encoded(super::encoding::ATTESTATION)
+        .bytes_len(72);
+    tail.finish().map_err(|_| Status::Other)?;
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    (|| {
-        tail.encoded(super::encoding::CERTIFICATE)?
-            .bytes_len(cert_len as u64)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
-    .unwrap_or_default();
+    tail.encoded(super::encoding::CERTIFICATE)
+        .bytes_len(cert_len as u64);
+    tail.finish().map_err(|_| Status::Other)?;
     let cert_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     let output = cert_at;
     let total = output + super::pq::PUBLIC_BYTES + cert_len;

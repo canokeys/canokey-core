@@ -6,18 +6,29 @@ use crate::applets::oath::{
     credential::Credential,
     service::{CredentialId, Repository},
 };
-use crate::ports::{Crypto as CryptoPort, Memory, Record, Storage, StorageError};
+use crate::ports::{CryptoPort, Record, StorageError};
 pub struct Store<'a> {
-    storage: &'a mut dyn Storage,
-    memory: &'a dyn Memory,
-    located: Option<(CredentialId, u32)>,
+    storage: &'a mut crate::ports::StoragePort<'a>,
+    memory: &'a crate::ports::MemoryPort<'a>,
+    located: Option<Entry>,
+}
+/// Validated record boundaries, local to this exclusive storage borrow.
+/// Every record mutation invalidates them before attempting a write.
+#[derive(Clone, Copy)]
+struct Entry {
+    id: CredentialId,
+    offset: u32,
+    end: u32,
 }
 pub struct Mac<'a> {
-    crypto: &'a mut dyn CryptoPort,
-    memory: &'a dyn Memory,
+    crypto: &'a mut CryptoPort<'a>,
+    memory: &'a crate::ports::MemoryPort<'a>,
 }
 impl<'a> Store<'a> {
-    pub fn new(storage: &'a mut dyn Storage, memory: &'a dyn Memory) -> Self {
+    pub fn new(
+        storage: &'a mut crate::ports::StoragePort<'a>,
+        memory: &'a crate::ports::MemoryPort<'a>,
+    ) -> Self {
         Self {
             storage,
             memory,
@@ -26,7 +37,7 @@ impl<'a> Store<'a> {
     }
 }
 impl<'a> Mac<'a> {
-    pub fn new(crypto: &'a mut dyn CryptoPort, memory: &'a dyn Memory) -> Self {
+    pub fn new(crypto: &'a mut CryptoPort<'a>, memory: &'a crate::ports::MemoryPort<'a>) -> Self {
         Self { crypto, memory }
     }
 }
@@ -59,6 +70,7 @@ impl Crypto for Mac<'_> {
 }
 impl Store<'_> {
     pub fn initialize(&mut self) -> Result<(), Error> {
+        self.located = None;
         self.storage
             .replace(Record::OathRecords, &1u32.to_be_bytes())
             .map_err(io)
@@ -83,6 +95,10 @@ impl Store<'_> {
     }
     /// Entry at a byte offset; zero starts an iteration after the file header.
     pub fn at(&mut self, offset: u32) -> Result<Option<(CredentialId, u32)>, Error> {
+        Ok(self.read_entry(offset)?.map(|entry| (entry.id, entry.end)))
+    }
+    fn read_entry(&mut self, offset: u32) -> Result<Option<Entry>, Error> {
+        self.located = None;
         let offset = offset.max(NEXT_ID_BYTES);
         let size = self.storage.size(Record::OathRecords).map_err(io)?;
         if offset == size {
@@ -101,21 +117,26 @@ impl Store<'_> {
         if id.0 == 0 || length > size - offset {
             return Err(Error::Storage);
         }
-        self.located = Some((id, offset));
-        Ok(Some((id, offset + length)))
+        let entry = Entry {
+            id,
+            offset,
+            end: offset + length,
+        };
+        self.located = Some(entry);
+        Ok(Some(entry))
     }
-    fn locate(&mut self, id: CredentialId) -> Result<u32, Error> {
-        if let Some((cached, offset)) = self.located
-            && cached == id
+    fn locate(&mut self, id: CredentialId) -> Result<Entry, Error> {
+        if let Some(entry) = self.located
+            && entry.id == id
         {
-            return Ok(offset);
+            return Ok(entry);
         }
         let mut offset = NEXT_ID_BYTES;
-        while let Some((current, next)) = self.at(offset)? {
-            if current == id {
-                return Ok(offset);
+        while let Some(entry) = self.read_entry(offset)? {
+            if entry.id == id {
+                return Ok(entry);
             }
-            offset = next;
+            offset = entry.end;
         }
         Err(Error::Missing)
     }
@@ -171,20 +192,18 @@ impl Repository for Store<'_> {
         Ok(self.at(0)?.map(|(id, _)| id))
     }
     fn next(&mut self, id: CredentialId) -> Result<Option<CredentialId>, Error> {
-        let offset = self.locate(id)?;
-        let (_, end) = self.at(offset)?.ok_or(Error::Missing)?;
-        Ok(self.at(end)?.map(|(id, _)| id))
+        let entry = self.locate(id)?;
+        Ok(self.at(entry.end)?.map(|(id, _)| id))
     }
     fn load(&mut self, id: CredentialId) -> Result<Credential, Error> {
-        let offset = self.locate(id)?;
-        let (_, end) = self.at(offset)?.ok_or(Error::Missing)?;
+        let entry = self.locate(id)?;
         let mut bytes = [0; codec::LENGTH];
-        let n = (end - offset - ID_BYTES as u32) as usize;
+        let n = (entry.end - entry.offset - ID_BYTES as u32) as usize;
         let result = self
             .storage
             .read_at(
                 Record::OathRecords,
-                offset + ID_BYTES as u32,
+                entry.offset + ID_BYTES as u32,
                 &mut bytes[..n],
             )
             .map_err(io)
@@ -209,16 +228,14 @@ impl Repository for Store<'_> {
         Ok(id)
     }
     fn replace(&mut self, id: CredentialId, value: &Credential) -> Result<(), Error> {
-        let offset = self.locate(id)?;
-        let (_, end) = self.at(offset)?.ok_or(Error::Missing)?;
+        let entry = self.locate(id)?;
         let next = self.next_id()?;
-        self.write(offset, end, id, Some(value), next)
+        self.write(entry.offset, entry.end, id, Some(value), next)
     }
     fn delete(&mut self, id: CredentialId) -> Result<(), Error> {
-        let offset = self.locate(id)?;
-        let (_, end) = self.at(offset)?.ok_or(Error::Missing)?;
+        let entry = self.locate(id)?;
         let next = self.next_id()?;
-        self.write(offset, end, id, None, next)
+        self.write(entry.offset, entry.end, id, None, next)
     }
 }
 impl auth::Repository for Store<'_> {
@@ -247,9 +264,9 @@ impl auth::Repository for Store<'_> {
 /// Reset persistent OATH state; the caller first removes PASS bindings.
 #[cfg(feature = "admin")]
 pub fn reset(
-    storage: &mut dyn Storage,
-    crypto: &mut dyn CryptoPort,
-    memory: &dyn Memory,
+    storage: &mut crate::ports::StoragePort<'_>,
+    crypto: &mut CryptoPort<'_>,
+    memory: &crate::ports::MemoryPort<'_>,
 ) -> Result<(), Error> {
     storage
         .replace(Record::OathRecords, &1u32.to_be_bytes())
@@ -258,3 +275,9 @@ pub fn reset(
     let metadata = auth::Metadata::new(&mut mac)?;
     auth::Repository::replace(&mut Store::new(storage, memory), &metadata)
 }
+
+#[cfg(all(
+    test,
+    any(not(feature = "static-backend"), feature = "dynamic-backend")
+))]
+mod tests;

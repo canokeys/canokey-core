@@ -7,19 +7,22 @@ license = "Apache-2.0"
 publish = false
 build = "build.rs"
 [dependencies]
+canokey-ports = { path = "../ports" }
 canokey-protocol = { path = "../protocol" }
 [build-dependencies]
 cfg_aliases = "0.2.1"
 minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", features = ["std"] }
 [features]
-admin = []
-ctap = []
-openpgp = []
-piv = []
+dynamic-backend = ["canokey-ports/dynamic-backend"]
+static-backend = ["canokey-ports/static-backend"]
+admin = ["canokey-ports/admin"]
+ctap = ["canokey-ports/ctap"]
+openpgp = ["canokey-ports/openpgp"]
+piv = ["canokey-ports/piv"]
 
 default = []
-pass = []
-oath = []
+pass = ["canokey-ports/pass"]
+oath = ["canokey-ports/oath"]
 
 [dev-dependencies]
 sha2 = "0.10.9"

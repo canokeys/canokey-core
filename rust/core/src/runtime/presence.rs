@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
+#[cfg(test)]
 use crate::ports::Device;
 #[cfg(persistent_applet)]
 const PRESENCE_TIMEOUT_MS: u32 = 30_000;
 #[cfg(persistent_applet)]
-fn wait(device: &mut dyn Device, minimum_ms: u32) -> Result<(), Error> {
+fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<(), Error> {
     let start = device.now();
     // A contact predating this request must be released before a fresh gesture.
     let mut armed = !device.touched();
@@ -46,16 +47,6 @@ const LONG_TOUCH_MS: u32 = 500;
 const STRONG_TOUCH_COUNT: u32 = 5;
 #[cfg(feature = "admin")]
 const STRONG_RELEASE_GAP_MS: u32 = SHORT_TOUCH_WINDOW_MS;
-#[cfg(feature = "ctap")]
-const POLL_LATCH_MS: u32 = 1_000;
-#[cfg(feature = "ctap")]
-const WINK_MS: u32 = 1_000;
-#[cfg(feature = "ctap")]
-const PROMPT_MS: u32 = 2_000;
-#[cfg(feature = "ctap")]
-const WINK_INTERVAL_MS: u32 = 50;
-#[cfg(feature = "ctap")]
-const PROMPT_INTERVAL_MS: u32 = 100;
 #[cfg(feature = "admin")]
 const BLINK_FAST_MS: u32 = 50;
 #[cfg(feature = "admin")]
@@ -64,7 +55,7 @@ const BLINK_SLOW_MS: u32 = 200;
 /// Five fresh short touches, each prompted within a two-second blink window.
 /// Delay after each release separates prompts; only raw transport progress runs.
 #[cfg(feature = "admin")]
-pub fn strong(device: &mut dyn Device) -> bool {
+pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
     // This deliberately remains separate from `wait`: factory reset requires
     // five released, short gestures with LED prompts between them, while
     // ordinary applet authorization accepts one gesture and no prompt.
@@ -124,20 +115,20 @@ impl Request {
         Self { attempted: false }
     }
     #[cfg(classic_presence)]
-    pub fn wait(&mut self, device: &mut dyn Device) -> bool {
+    pub fn wait(&mut self, device: &mut crate::ports::DevicePort<'_>) -> bool {
         self.wait_result(device).is_ok()
     }
     #[cfg(feature = "ctap")]
-    pub fn poll(&mut self, device: &mut dyn Device) -> bool {
+    pub fn poll(&mut self, device: &mut crate::ports::DevicePort<'_>) -> bool {
         self.attempted = true;
         device.poll_presence()
     }
-    pub fn wait_result(&mut self, device: &mut dyn Device) -> Result<(), Error> {
+    pub fn wait_result(&mut self, device: &mut crate::ports::DevicePort<'_>) -> Result<(), Error> {
         self.attempted = true;
         wait(device, 0)
     }
     #[cfg(feature = "ctap")]
-    pub fn wait_long(&mut self, device: &mut dyn Device) -> Result<(), Error> {
+    pub fn wait_long(&mut self, device: &mut crate::ports::DevicePort<'_>) -> Result<(), Error> {
         self.attempted = true;
         wait(device, LONG_TOUCH_MS)
     }
@@ -188,73 +179,5 @@ mod tests {
     }
 }
 
-/// CTAP1 polling observes completed gestures between commands. The latch has
-/// the same one-second lifetime as the C touch driver and is consumed once.
 #[cfg(feature = "ctap")]
-pub struct Polling {
-    // Polling is a nonblocking CTAP1 latch; it intentionally does not share
-    // the blocking waiter's timing state or strong factory-reset sequence.
-    armed: bool,
-    pressed: bool,
-    released: Option<u32>,
-    prompt: Option<(u32, bool)>,
-}
-#[cfg(feature = "ctap")]
-impl Polling {
-    pub const fn new() -> Self {
-        Self {
-            armed: false,
-            pressed: false,
-            released: None,
-            prompt: None,
-        }
-    }
-    pub fn sample(&mut self, pressed: bool, now: u32) -> Option<bool> {
-        if self.armed && self.pressed && !pressed {
-            self.released = Some(now);
-        }
-        self.armed |= !pressed;
-        self.pressed = pressed;
-        if self
-            .released
-            .is_some_and(|t| now.wrapping_sub(t) >= POLL_LATCH_MS)
-        {
-            self.released = None;
-        }
-        self.prompt.map(|(start, wink)| {
-            let elapsed = now.wrapping_sub(start);
-            let duration = if wink { WINK_MS } else { PROMPT_MS };
-            let interval = if wink {
-                WINK_INTERVAL_MS
-            } else {
-                PROMPT_INTERVAL_MS
-            };
-            if elapsed >= duration {
-                self.prompt = None;
-            }
-            elapsed < duration && (elapsed / interval).is_multiple_of(2)
-        })
-    }
-    pub fn take(&mut self, now: u32) -> bool {
-        if self
-            .released
-            .take()
-            .is_some_and(|t| now.wrapping_sub(t) < POLL_LATCH_MS)
-        {
-            self.prompt = None;
-            true
-        } else {
-            self.prompt.get_or_insert((now, false));
-            false
-        }
-    }
-    pub fn wink(&mut self, now: u32) {
-        self.prompt = Some((now, true));
-    }
-    pub fn clear(&mut self) {
-        self.released = None;
-        self.prompt = None;
-        self.armed = false;
-        self.pressed = false;
-    }
-}
+pub use canokey_ports::Polling;

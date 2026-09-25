@@ -7,20 +7,20 @@ fn bounded_encoder_canonical_wire_and_output_exhaustion() {
     // RFC 8949 preferred integer widths, UTF-8 byte length and empty map.
     const EXPECTED: &[u8] = b"\x8c\x17\x19\x01\x00\x1a\x00\x01\x00\x00\x1b\xff\xff\xff\xff\xff\xff\xff\xff\x37\x39\x01\x00\x3a\x00\x01\x00\x00\x3b\x7f\xff\xff\xff\xff\xff\xff\xff\xf5\x42\x00\xff\x62\xc3\xa9\xa0";
     fn encode(e: &mut Encoder<&mut [u8]>) -> Result<(), EncodeError> {
-        e.array(12)?
-            .u8(23)?
-            .u16(256)?
-            .u32(65536)?
-            .u64(u64::MAX)?
-            .i8(-24)?
-            .i16(-257)?
-            .i32(-65537)?
-            .i64(i64::MIN)?
-            .bool(true)?
-            .bytes(&[0, 255])?
-            .str("é")?
-            .map(0)?;
-        Ok(())
+        e.array(12)
+            .u8(23)
+            .u16(256)
+            .u32(65536)
+            .u64(u64::MAX)
+            .i8(-24)
+            .i16(-257)
+            .i32(-65537)
+            .i64(i64::MIN)
+            .bool(true)
+            .bytes(&[0, 255])
+            .str("é")
+            .map(0);
+        e.finish()
     }
     for capacity in 0..=EXPECTED.len() {
         let mut guarded = [0xa5; 128];
@@ -38,9 +38,76 @@ fn bounded_encoder_canonical_wire_and_output_exhaustion() {
     // A streamed byte string writes its header without reserving its payload.
     let mut header = [0; 3];
     let mut e = Encoder::new(&mut header[..]);
-    e.bytes_len(3309).unwrap();
+    e.bytes_len(3309).finish().unwrap();
     assert_eq!(e.writer().len(), 0);
     assert_eq!(header, [0x59, 0x0c, 0xed]);
+}
+
+#[test]
+fn encoder_failure_is_sticky_across_fragments() {
+    use canokey_protocol::cbor::{EncodeError, Encoder};
+    for capacity in 1..12 {
+        let mut guarded = [0xa5; 16];
+        let mut e = Encoder::new(&mut guarded[1..1 + capacity]);
+        e.map(2);
+        assert_eq!(e.finish(), Ok(()));
+        // The byte-string header may fit, but its body never does. No later
+        // field may reuse the still-unwritten tail after that failure.
+        e.bytes(&[0x42; 12]);
+        assert_eq!(e.finish(), Err(EncodeError));
+        let remaining = e.writer().len();
+        e.u8(1).bool(true).encoded(b"suffix").bytes(&[]);
+        assert_eq!(e.finish(), Err(EncodeError));
+        assert_eq!(e.writer().len(), remaining);
+        assert!(e.writer().iter().all(|b| *b == 0xa5));
+        assert_eq!(guarded[0], 0xa5);
+        assert!(guarded[1 + capacity..].iter().all(|b| *b == 0xa5));
+    }
+}
+
+#[test]
+fn pull_decoder_drains_closing_events_and_latches_failures() {
+    let wire = [0x82, 0x40, 0xa0]; // [h'', {}]
+    for split in 0..=wire.len() {
+        let mut d = Decoder::new(3);
+        let mut events = Vec::new();
+        for mut fragment in [&wire[..split], &wire[split..]] {
+            while let Some(event) = d.next_event(&mut fragment).unwrap() {
+                events.push((format!("{event:?}"), d.position()));
+            }
+        }
+        assert_eq!(
+            events,
+            [
+                ("Array(2)".into(), 1),
+                ("Bytes(0)".into(), 2),
+                ("End".into(), 2),
+                ("Map(0)".into(), 3),
+                ("End".into(), 3),
+                ("End".into(), 3),
+            ]
+        );
+        assert_eq!(d.finish(), Ok(()));
+    }
+    let mut d = Decoder::new(1);
+    assert_eq!(d.next_event(&mut &[0x00, 0x00][..]), Err(Error::Limit));
+    assert_eq!(d.position(), 0);
+    assert_eq!(d.next_event(&mut &[0x00][..]), Err(Error::Failed));
+    assert_eq!(d.finish(), Err(Error::Failed));
+
+    let mut d = Decoder::new(1);
+    assert_eq!(d.next_event(&mut &[0x40][..]), Ok(Some(Event::Bytes(0))));
+    assert_eq!(d.finish(), Err(Error::Truncated)); // End was not consumed yet.
+    assert_eq!(d.next_event(&mut &[][..]), Ok(Some(Event::End)));
+    assert_eq!(d.next_event(&mut &[][..]), Ok(None));
+    assert_eq!(d.finish(), Ok(()));
+
+    let mut d = Decoder::new(1);
+    assert_eq!(
+        d.feed(&[0xa0], &mut |_| Err(Error::Invalid)),
+        Err(Error::Consumer)
+    );
+    assert_eq!(d.next_event(&mut &[][..]), Err(Error::Failed));
 }
 
 #[test]

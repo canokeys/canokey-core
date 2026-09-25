@@ -99,11 +99,11 @@ fn verify_status_retries_logout_and_restart() {
     let (mut piv, mut store) = installed();
     assert_eq!(
         command(&mut piv, &mut store, 0x20, 0, 0x80, &[]),
-        Sw(0x63c3)
+        Sw::new(0x63c3).unwrap()
     );
     assert_eq!(
         command(&mut piv, &mut store, 0x20, 0, 0x80, b"00000000"),
-        Sw(0x63c2)
+        Sw::new(0x63c2).unwrap()
     );
     assert_eq!(
         command(&mut piv, &mut store, 0x20, 0, 0x80, PIN),
@@ -123,7 +123,7 @@ fn verify_status_retries_logout_and_restart() {
     assert_eq!(store.writes, writes);
     assert_eq!(
         command(&mut piv, &mut store, 0x20, 0, 0x80, &[]),
-        Sw(0x63c3)
+        Sw::new(0x63c3).unwrap()
     );
     // Authorization is session-only and must not survive reinstallation.
     piv.install(&mut platform!(&mut store)).unwrap();
@@ -136,7 +136,11 @@ fn failed_verify_revokes_session_and_block_survives_restart() {
         command(&mut piv, &mut store, 0x20, 0, 0x80, PIN),
         Sw::SUCCESS
     );
-    for sw in [Sw(0x63c2), Sw(0x63c1), Sw::AUTHENTICATION_BLOCKED] {
+    for sw in [
+        Sw::new(0x63c2).unwrap(),
+        Sw::new(0x63c1).unwrap(),
+        Sw::AUTHENTICATION_BLOCKED,
+    ] {
         assert_eq!(
             command(&mut piv, &mut store, 0x20, 0, 0x80, b"00000000"),
             sw
@@ -150,7 +154,7 @@ fn failed_verify_revokes_session_and_block_survives_restart() {
     );
     assert_eq!(
         command(&mut piv, &mut store, 0x20, 0, 0x80, &[]),
-        Sw(0x63c0)
+        Sw::new(0x63c0).unwrap()
     );
 }
 #[test]
@@ -184,7 +188,7 @@ fn change_pin_and_puk_then_unblock_with_new_pin() {
             0x80,
             b"12345678111111\xff\xff"
         ),
-        Sw(0x63c2)
+        Sw::new(0x63c2).unwrap()
     );
     assert_eq!(
         command(
@@ -250,7 +254,11 @@ fn uncertain_storage_never_authorizes_or_uses_cached_credentials() {
 fn wrong_change_consumes_retries_and_blocked_puk_cannot_reset_pin() {
     let (mut piv, mut store) = installed();
     for reference in [0x80, 0x81] {
-        for sw in [Sw(0x63c2), Sw(0x63c1), Sw::AUTHENTICATION_BLOCKED] {
+        for sw in [
+            Sw::new(0x63c2).unwrap(),
+            Sw::new(0x63c1).unwrap(),
+            Sw::AUTHENTICATION_BLOCKED,
+        ] {
             assert_eq!(
                 command(
                     &mut piv,
