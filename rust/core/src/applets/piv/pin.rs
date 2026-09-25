@@ -205,6 +205,7 @@ impl Pins {
         }
         Ok(())
     }
+    #[inline(never)]
     pub(super) fn verify(
         &mut self,
         h: Header,
@@ -238,6 +239,7 @@ impl Pins {
         self.authenticate(false, data, p)?;
         Ok(0)
     }
+    #[inline(never)]
     pub(super) fn change(
         &mut self,
         h: Header,
@@ -267,6 +269,7 @@ impl Pins {
         self.save(p)?;
         Ok(0)
     }
+    #[inline(never)]
     pub(super) fn reset_retry(
         &mut self,
         h: Header,

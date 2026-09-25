@@ -53,6 +53,16 @@ Workspace crates deny warnings through inherited Cargo lints. Check both isolate
 features and the combined configuration. Cargo's host-only SHA-256 test
 dependency is not included in the firmware dependency graph.
 
+The C primitive adapters require `RUST_CORE_OPENPGP`, `RUST_CORE_PIV` and/or
+`RUST_CORE_CTAP` to match the selected Rust applets. Both the CIU and host CMake
+builds supply these flags. ML-KEM streaming is PIV-only; RSA/X25519 require
+OpenPGP or PIV, and SM2 requires CTAP or PIV. Disabled operations return an error.
+`crypto-profile` tests these boundaries and compares supported public-key output
+with the native crypto implementation. The FFI enables fixed HMAC-SHA1 only for
+PASS, general MAC for OATH/CTAP, and independent random-number support for
+OpenPGP/PIV. This prevents unused `dyn Crypto` methods from retaining primitives
+through the vtable. Combined profiles retain the union of applet capabilities.
+
 ## Streaming contract
 
 The production short-frame entrypoint feeds the common `FrameDecoder`; packet

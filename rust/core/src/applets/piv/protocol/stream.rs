@@ -31,6 +31,8 @@ impl Piv {
         }
         self.cancel_classic(w.classic_with(p.memory), p);
     }
+    // Share input handling without expanding it into the runtime dispatcher.
+    #[inline(never)]
     pub fn begin(
         &mut self,
         h: Header,
@@ -84,6 +86,7 @@ impl Piv {
         }
         self.begin_classic(h, w.classic_with(p.memory), p)
     }
+    #[inline(never)]
     pub fn consume(
         &mut self,
         b: &[u8],
@@ -226,6 +229,19 @@ impl Piv {
                 include_metadata: metadata,
             }) = self.pending_public.take()
         {
+            return self.finish_public(id, metadata, w, p);
+        }
+        result
+    }
+    // Encoding a prepared public stream is disjoint from private operations.
+    #[inline(never)]
+    fn finish_public(
+        &mut self,
+        id: usize,
+        metadata: bool,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) -> Result<(u32, Sw), Sw> {
             let m = repo::meta(id, p)?;
             let a = m[repo::ALGORITHM];
             w.wipe_active(p.memory);
@@ -250,9 +266,7 @@ impl Piv {
             )?;
             at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n)?;
             self.header_len = at;
-            return Ok(((at + n) as u32, Sw::SUCCESS));
-        }
-        result
+            Ok(((at + n) as u32, Sw::SUCCESS))
     }
     pub fn read(
         &mut self,

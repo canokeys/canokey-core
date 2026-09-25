@@ -1,4 +1,11 @@
+#[path = "codegen/ctap.rs"]
+mod ctap;
+
 fn main() {
+    if std::env::var_os("CARGO_FEATURE_CTAP").is_some() {
+        ctap::generate_info();
+        ctap::generate_response();
+    }
     cfg_aliases::cfg_aliases! {
         has_applet: { any(feature = "admin", feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
         persistent_applet: { any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },

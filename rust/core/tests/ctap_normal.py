@@ -102,10 +102,18 @@ def run(wire):
     assert blob_assertion[7] == blob_key
     assert AuthenticatorData(blob_assertion[2]).extensions == {"credBlob": b"stored blob"}
     blob_auth.credential_data.public_key.verify(blob_assertion[2] + assertion_hash, blob_assertion[3])
-    for resident, value in [(False, b"small"), (True, b"x" * 33)]:
+    for resident, value in [(False, b"small"), (True, b"x" * 33), (True, b"y" * 512)]:
         rejected = call(1, request | {2: {"id": "rejected.example"}, 6: {"credBlob": value}, 7: {"rk": resident}})
-        assert AuthenticatorData(rejected[2]).extensions == {"credBlob": False}
-    
+        rejected_auth = AuthenticatorData(rejected[2])
+        assert rejected_auth.extensions == {"credBlob": False}
+        if resident:
+            # Oversized input must not persist its truncated 32-byte prefix.
+            wire.command("RESET")
+            select()
+            answer = call(2, {1: "rejected.example", 2: assertion_hash, 4: {"credBlob": True}})
+            assert AuthenticatorData(answer[2]).extensions == {"credBlob": b""}
+            rejected_auth.credential_data.public_key.verify(answer[2] + assertion_hash, answer[3])
+
 
     salts = hashlib.sha256(b"salt one").digest() + hashlib.sha256(b"salt two").digest()
     hmac_results = {}
@@ -193,11 +201,14 @@ def run(wire):
         return call(0x0a, request, status)
     manage(3, status=0x30)
     assert manage(1) == {1: 4, 2: 96}
-    info = manage(2)
-    assert info == {3: {"id": rp}, 4: hashlib.sha256(rp.encode()).digest(), 5: 3}
-    assert manage(3)[3] == {"id": "blob.example"}
-    assert manage(3)[3] == {"id": "rejected.example"}
-    manage(3, status=0x30)
+    # Restarting enumeration must preserve each selected RP/hash despite scans
+    # of differently-sized records, while grouping duplicate RP records once.
+    for _ in range(2):
+        info = manage(2)
+        assert info == {3: {"id": rp}, 4: hashlib.sha256(rp.encode()).digest(), 5: 3}
+        for name in ["blob.example", "rejected.example"]:
+            assert manage(3) == {3: {"id": name}, 4: hashlib.sha256(name.encode()).digest()}
+        manage(3, status=0x30)
     first = manage(4, {1: hashlib.sha256(rp.encode()).digest()})
     assert first[9] == 2 and first[6]["id"] == b"first"
     second = manage(5)

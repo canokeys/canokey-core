@@ -85,9 +85,9 @@ impl<R: Router> Source for RoutedSource<'_, '_, R> {
 
 enum FrameRoute {
     None,
-    Select { aid: [u8; 16], used: usize, p2: u8 },
+    Select { aid: [u8; 16], used: usize },
     GetResponse,
-    Command { header: Header, last: bool },
+    Command,
 }
 
 pub struct Runtime<R> {
@@ -210,6 +210,7 @@ impl<R: Router> Runtime<R> {
         self.owner = Some(owner);
         Ok(lc)
     }
+    #[inline(never)]
     fn start(&mut self, info: CommandInfo, p: &mut Platform<'_>) -> Result<(), Sw> {
         if info.extended && !self.extended_allowed(self.owner.unwrap_or(OWNER_APDU), info.header) {
             return Err(Sw::WRONG_LENGTH);
@@ -233,7 +234,6 @@ impl<R: Router> Runtime<R> {
             self.route = FrameRoute::Select {
                 aid: [0; 16],
                 used: 0,
-                p2: h.p2,
             };
             return Ok(());
         }
@@ -249,12 +249,12 @@ impl<R: Router> Runtime<R> {
             self.router.abort_command(p);
             self.router.begin_command(h, p)?;
         }
-        self.route = FrameRoute::Command {
-            header: h.unchained(),
-            last: step.last,
-        };
+        // Header and chain bit stay in FrameDecoder until end_frame; the
+        // route retains only the selected consumer, not a second header copy.
+        self.route = FrameRoute::Command;
         Ok(())
     }
+    #[inline(never)]
     fn data(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
         match &mut self.route {
             FrameRoute::Select { aid, used, .. } => {
@@ -266,7 +266,7 @@ impl<R: Router> Runtime<R> {
                 *used = end;
                 Ok(())
             }
-            FrameRoute::Command { .. } => self.router.consume(bytes, p),
+            FrameRoute::Command => self.router.consume(bytes, p),
             FrameRoute::GetResponse => Ok(()),
             FrameRoute::None => Err(Sw::WRONG_LENGTH),
         }
@@ -298,7 +298,7 @@ impl<R: Router> Runtime<R> {
         Ok(())
     }
     pub fn end_frame(&mut self, p: &mut Platform<'_>) -> Reply {
-        let info = match self.frame.take().and_then(|frame| frame.finish().ok()) {
+        let info = match self.frame.as_ref().and_then(|frame| frame.finish().ok()) {
             Some(info) => info,
             None => {
                 self.close_response(p);
@@ -306,6 +306,7 @@ impl<R: Router> Runtime<R> {
                 return Reply::Status(Sw::WRONG_LENGTH);
             }
         };
+        self.frame = None;
         // This short-APDU profile treats omitted Le as a 256-byte response
         // allowance; the decoder has already normalized encoded Le=00 to 256.
         let le = info.le.unwrap_or(DEFAULT_APDU_LE);
@@ -318,8 +319,8 @@ impl<R: Router> Runtime<R> {
                     Reply::Status(Sw::COMMAND_NOT_ALLOWED)
                 };
             }
-            FrameRoute::Select { aid, used, p2 } => {
-                if p2 != 0x00 {
+            FrameRoute::Select { aid, used } => {
+                if info.header.p2 != 0x00 {
                     Err(Sw::WRONG_P1P2)
                 } else {
                     self.router
@@ -327,7 +328,8 @@ impl<R: Router> Runtime<R> {
                         .map(|n| (n, Sw::SUCCESS))
                 }
             }
-            FrameRoute::Command { header, last } => {
+            FrameRoute::Command => {
+                let last = !info.header.chained();
                 if let Err(sw) = self.router.end_frame(last, p) {
                     self.abort_input(p);
                     return Reply::Status(sw);
@@ -335,7 +337,7 @@ impl<R: Router> Runtime<R> {
                 if !last {
                     return Reply::Status(Sw::SUCCESS);
                 }
-                self.router.finish(header, le, p)
+                self.router.finish(info.header.unchained(), le, p)
             }
             FrameRoute::None => Err(Sw::WRONG_LENGTH),
         };
@@ -480,6 +482,18 @@ impl Core {
             self.owner = Some(OWNER_CTAP);
         }
         self.router.close_ctap(p);
+    }
+    #[cfg(feature = "ctap")]
+    pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
+        self.router.begin_hid_request(message_length, p);
+    }
+    #[cfg(feature = "ctap")]
+    pub fn consume_hid_request(&mut self, bytes: &[u8]) {
+        self.router.consume_hid_request(bytes);
+    }
+    #[cfg(feature = "ctap")]
+    pub fn finish_hid_request(&mut self, p: &mut Platform<'_>) -> usize {
+        self.router.finish_hid_request(p)
     }
     #[cfg(feature = "ctap")]
     pub fn execute_ctap(

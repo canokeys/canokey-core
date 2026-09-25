@@ -57,6 +57,7 @@ fn parse_sm2_packet(
 }
 
 impl Piv {
+    #[inline(never)]
     pub(super) fn public(
         &mut self,
         id: usize,
@@ -130,6 +131,7 @@ impl Piv {
         self.header_len = at;
         Ok((at + n + self.suffix_len) as u32)
     }
+    #[inline(never)]
     pub(super) fn generate(
         &mut self,
         h: Header,

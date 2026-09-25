@@ -89,9 +89,17 @@ if(BUILD_TESTING)
     # Exercise the production adapters against host crypto primitives.
     add_library(host-key-services STATIC ../interfaces/rust-core/key_crypto.c ../interfaces/rust-core/digest_crypto.c)
     target_link_libraries(host-key-services PUBLIC canokey-crypto)
+    target_compile_definitions(host-key-services PUBLIC
+      $<$<BOOL:${CANOKEY_APPLET_OPENPGP}>:RUST_CORE_OPENPGP>
+      $<$<BOOL:${CANOKEY_APPLET_CTAP}>:RUST_CORE_CTAP>
+      $<$<BOOL:${CANOKEY_APPLET_PIV}>:RUST_CORE_PIV>)
+    add_executable(crypto-profile core/tests/crypto_profile.c)
+    target_include_directories(crypto-profile PRIVATE ../interfaces/rust-core)
+    target_compile_options(crypto-profile PRIVATE -Wall -Wextra -UNDEBUG)
+    target_link_libraries(crypto-profile PRIVATE host-key-services)
+    add_test(NAME crypto-profile COMMAND crypto-profile)
     if(CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
       target_sources(host-key-services PRIVATE ../interfaces/rust-core/piv_crypto.c)
-      target_compile_definitions(host-key-services PRIVATE $<$<BOOL:${CANOKEY_APPLET_PIV}>:RUST_CORE_PIV>)
     endif()
     if(NOT CANOKEY_APPLET_PASS)
       target_sources(core-normal PRIVATE core/tests/services.c)

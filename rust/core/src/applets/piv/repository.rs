@@ -352,44 +352,59 @@ pub const CAPABILITY_OBJECT_INDEX: usize = 28;
 const ADMIN_OBJECT_INDEX: usize = 33;
 
 pub fn object(tag: u32) -> Option<ObjectDescriptor> {
-    let cert = match tag {
-        object_tag::CERT_AUTHENTICATION => Some(0),
-        object_tag::CERT_SIGNATURE => Some(1),
-        object_tag::CERT_KEY_MANAGEMENT => Some(2),
-        object_tag::CERT_CARD_AUTHENTICATION => Some(3),
-        object_tag::CERT_RETIRED_FIRST..=object_tag::CERT_RETIRED_LAST => {
-            Some(4 + (tag - object_tag::CERT_RETIRED_FIRST) as usize)
+    // Standard object tags form a small dense interval. The high bit records
+    // PIN policy; 0xff is an unassigned tag, not an object or record number.
+    const PIN: u8 = 0x80;
+    const UNUSED: u8 = 0xff;
+    const FIRST: u32 = object_tag::CERT_CARD_AUTHENTICATION;
+    const COUNT: usize = (object_tag::IRIS_IMAGES - FIRST + 1) as usize;
+    const STANDARD: [u8; COUNT] = {
+        let mut table = [UNUSED; COUNT];
+        let entries = [
+            (object_tag::CERT_AUTHENTICATION, 0),
+            (object_tag::CERT_SIGNATURE, 1),
+            (object_tag::CERT_KEY_MANAGEMENT, 2),
+            (object_tag::CERT_CARD_AUTHENTICATION, 3),
+            (object_tag::CHUID, CHUID_OBJECT_INDEX as u8),
+            (object_tag::FINGERPRINTS, PIN | 26),
+            (object_tag::SECURITY, 27),
+            (object_tag::CAPABILITY, CAPABILITY_OBJECT_INDEX as u8),
+            (object_tag::FACIAL_IMAGE, PIN | 29),
+            (object_tag::PRINTED_INFORMATION, PIN | 30),
+            (object_tag::KEY_HISTORY, 31),
+            (object_tag::IRIS_IMAGES, PIN | 32),
+        ];
+        let mut i = 0;
+        while i < entries.len() {
+            table[(entries[i].0 - FIRST) as usize] = entries[i].1;
+            i += 1;
         }
-        object_tag::CERT_ATTESTATION => Some(ATTESTATION_KEY),
-        _ => None,
+        let mut tag = object_tag::CERT_RETIRED_FIRST;
+        while tag <= object_tag::CERT_RETIRED_LAST {
+            table[(tag - FIRST) as usize] = 4 + (tag - object_tag::CERT_RETIRED_FIRST) as u8;
+            tag += 1;
+        }
+        table
     };
-    if let Some(i) = cert {
-        return Some(ObjectDescriptor {
-            index: i,
-            capacity_bytes: limits::CERTIFICATE_OBJECT_BYTES,
-            requires_pin: false,
-        });
+    let entry = match tag {
+        object_tag::CERT_ATTESTATION => ATTESTATION_KEY as u8,
+        object_tag::ADMIN => ADMIN_OBJECT_INDEX as u8,
+        _ => *STANDARD.get(tag.checked_sub(object_tag::CERT_CARD_AUTHENTICATION)? as usize)?,
+    };
+    if entry == UNUSED {
+        return None;
     }
-    let (i, pin) = match tag {
-        object_tag::CHUID => (CHUID_OBJECT_INDEX, false),
-        object_tag::FINGERPRINTS => (26, true),
-        object_tag::SECURITY => (27, false),
-        object_tag::CAPABILITY => (CAPABILITY_OBJECT_INDEX, false),
-        object_tag::FACIAL_IMAGE => (29, true),
-        object_tag::PRINTED_INFORMATION => (30, true),
-        object_tag::KEY_HISTORY => (31, false),
-        object_tag::IRIS_IMAGES => (32, true),
-        object_tag::ADMIN => (ADMIN_OBJECT_INDEX, false),
-        _ => return None,
-    };
+    let index = usize::from(entry & !PIN);
     Some(ObjectDescriptor {
-        index: i,
-        capacity_bytes: if i == ADMIN_OBJECT_INDEX {
+        index,
+        capacity_bytes: if index < KEY_COUNT {
+            limits::CERTIFICATE_OBJECT_BYTES
+        } else if index == ADMIN_OBJECT_INDEX {
             ADMIN_OBJECT_CAPACITY_BYTES
         } else {
             DATA_OBJECT_CAPACITY_BYTES
         },
-        requires_pin: pin,
+        requires_pin: entry & PIN != 0,
     })
 }
 pub const MANAGEMENT_KEY_BYTES: usize = 24;
@@ -416,4 +431,66 @@ pub fn management(p: &mut Platform<'_>) -> Result<[u8; MANAGEMENT_SIZE], Sw> {
         return Err(Sw::UNABLE_TO_PROCESS);
     }
     Ok(b)
+}
+
+#[cfg(test)]
+mod object_tests {
+    use super::*;
+
+    #[test]
+    fn dense_object_table_preserves_slots_limits_and_pin_policy() {
+        // Include every tag in and around both standard and vendor intervals,
+        // plus extremes to catch subtraction/wraparound and high-bit aliasing.
+        for tag in (0x5fc000..=0x600000).chain([0, 0x5fbfff, 0x805fc105, u32::MAX]) {
+            let describe = |object: Option<ObjectDescriptor>| {
+                object.map(|o| (o.index, o.capacity_bytes, o.requires_pin))
+            };
+            assert_eq!(
+                describe(object(tag)),
+                describe(reference_object(tag)),
+                "{tag:08x}"
+            );
+        }
+    }
+    fn reference_object(tag: u32) -> Option<ObjectDescriptor> {
+        let cert = match tag {
+            object_tag::CERT_AUTHENTICATION => Some(0),
+            object_tag::CERT_SIGNATURE => Some(1),
+            object_tag::CERT_KEY_MANAGEMENT => Some(2),
+            object_tag::CERT_CARD_AUTHENTICATION => Some(3),
+            object_tag::CERT_RETIRED_FIRST..=object_tag::CERT_RETIRED_LAST => {
+                Some(4 + (tag - object_tag::CERT_RETIRED_FIRST) as usize)
+            }
+            object_tag::CERT_ATTESTATION => Some(ATTESTATION_KEY),
+            _ => None,
+        };
+        if let Some(i) = cert {
+            return Some(ObjectDescriptor {
+                index: i,
+                capacity_bytes: limits::CERTIFICATE_OBJECT_BYTES,
+                requires_pin: false,
+            });
+        }
+        let (i, pin) = match tag {
+            object_tag::CHUID => (CHUID_OBJECT_INDEX, false),
+            object_tag::FINGERPRINTS => (26, true),
+            object_tag::SECURITY => (27, false),
+            object_tag::CAPABILITY => (CAPABILITY_OBJECT_INDEX, false),
+            object_tag::FACIAL_IMAGE => (29, true),
+            object_tag::PRINTED_INFORMATION => (30, true),
+            object_tag::KEY_HISTORY => (31, false),
+            object_tag::IRIS_IMAGES => (32, true),
+            object_tag::ADMIN => (ADMIN_OBJECT_INDEX, false),
+            _ => return None,
+        };
+        Some(ObjectDescriptor {
+            index: i,
+            capacity_bytes: if i == ADMIN_OBJECT_INDEX {
+                ADMIN_OBJECT_CAPACITY_BYTES
+            } else {
+                DATA_OBJECT_CAPACITY_BYTES
+            },
+            requires_pin: pin,
+        })
+    }
 }

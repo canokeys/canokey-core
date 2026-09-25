@@ -10,6 +10,7 @@ build = "build.rs"
 canokey-protocol = { path = "../protocol" }
 [build-dependencies]
 cfg_aliases = "0.2.1"
+minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", features = ["std"] }
 [features]
 admin = []
 ctap = []

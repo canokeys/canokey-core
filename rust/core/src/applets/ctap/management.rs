@@ -25,67 +25,20 @@ fn mldsa_public_response(
     has_blob_key: bool,
     w: &mut Workspace,
 ) -> Result<(super::pq::Pending, usize), Status> {
-    let mut cose = [0; 32];
-    let mut ce = Encoder::new(&mut cose[..]);
-    (|| {
-        ce.map(4)?
-            .u8(1)?
-            .u8(7)?
-            .u8(3)?
-            .i8(-49)?
-            .i8(-1)?
-            .u8(6)?
-            .i8(-2)?
-            .bytes_len(super::pq::PUBLIC_BYTES as u64)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
-    .map_err(|_| Status::Other)?;
-    let cose_len = 32 - ce.writer().len();
     let mut e = Encoder::new(&mut w.output[..]);
-    let name = !entry.name.is_empty();
-    let display = !entry.display.is_empty();
-    (|| {
-        e.map(5 + u64::from(subcommand == 4) + u64::from(has_blob_key))?
-            .u8(6)?
-            .map(1 + u64::from(name) + u64::from(display))?
-            .str("id")?
-            .bytes(entry.user)?;
-        if name {
-            e.str("name")?
-                .str(core::str::from_utf8(entry.name).unwrap_or_default())?;
-        }
-        if display {
-            e.str("displayName")?
-                .str(core::str::from_utf8(entry.display).unwrap_or_default())?;
-        }
-        e.u8(7)?
-            .map(2)?
-            .str("id")?
-            .bytes(id)?
-            .str("type")?
-            .str("public-key")?
-            .u8(8)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
-    .map_err(|_| Status::Other)?;
+    super::encoding::management_header(&mut e, entry, subcommand == 4, has_blob_key)
+        .map_err(|_| Status::Other)?;
+    e.u8(8).map_err(|_| Status::Other)?;
     let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    w.output[public_at..public_at + cose_len].copy_from_slice(&cose[..cose_len]);
-    let mut tail = Encoder::new(&mut w.output[public_at + cose_len..]);
-    (|| {
-        if subcommand == 4 {
-            tail.u8(9)?.u8(total)?;
-        }
-        tail.u8(10)?.u8(id[1] & 3)?;
-        if has_blob_key {
-            tail.u8(11)?
-                .bytes(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])?;
-        }
-        tail.u8(12)?
-            .bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
+    super::encoding::mldsa_public_header(&mut e).map_err(|_| Status::Other)?;
+    super::encoding::management_tail(
+        &mut e,
+        id,
+        (subcommand == 4).then_some(total),
+        has_blob_key.then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
+    )
     .map_err(|_| Status::Other)?;
-    let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
+    let output = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
     Ok((
         super::pq::Pending {
@@ -267,9 +220,8 @@ fn next_rp(
         };
         let entry = resident::Entry::decode(&buffer[..n])?;
         let hash = *entry.rp_hash;
-        // Mark every record for this RP. Visited records are skipped before
-        // loading, so each resident record is read from Flash at most once
-        // during an enumeration; the remaining grouping loop is RAM-only.
+        // Group records using the one shared buffer. Scanning can overwrite
+        // the selected entry, so reload it before returning its length.
         cursor.visited[usize::from(index / 8)] |= 1 << (index % 8);
         for candidate in (index + 1)..Record::CTAP_CREDENTIALS {
             if cursor.visited[usize::from(candidate / 8)] & (1 << (candidate % 8)) != 0 {
@@ -281,6 +233,7 @@ fn next_rp(
                 }
             }
         }
+        let n = resident::load(index, buffer, p)?.ok_or(Status::Other)?;
         return Ok(Some((index, n)));
     }
     Ok(None)
@@ -456,46 +409,28 @@ impl Session {
                     w.output[0] = 0;
                     let mut e = Encoder::new(&mut w.output[1..]);
                     let result = (|| {
-                        e.map(5 + u64::from(subcommand == 4) + u64::from(has_blob_key))?
-                            .u8(6)?;
-                        let name = !entry.name.is_empty();
-                        let display = !entry.display.is_empty();
-                        e.map(1 + u64::from(name) + u64::from(display))?
-                            .str("id")?
-                            .bytes(entry.user)?;
-                        if name {
-                            e.str("name")?
-                                .str(core::str::from_utf8(entry.name).unwrap_or_default())?;
-                        }
-                        if display {
-                            e.str("displayName")?
-                                .str(core::str::from_utf8(entry.display).unwrap_or_default())?;
-                        }
-                        e.u8(7)?
-                            .map(2)?
-                            .str("id")?
-                            .bytes(entry.id)?
-                            .str("type")?
-                            .str("public-key")?;
+                        super::encoding::management_header(
+                            &mut e,
+                            &entry,
+                            subcommand == 4,
+                            has_blob_key,
+                        )?;
                         if public_len != 0 {
                             e.u8(8)?;
-                            super::authentication::public_key(
+                            super::encoding::public_key(
                                 &mut e,
                                 algorithm,
                                 self.sm2,
                                 &w.key.bytes[PUBLIC_KEY_OFFSET..PUBLIC_KEY_OFFSET + public_len],
                             )?;
                         }
-                        if subcommand == 4 {
-                            e.u8(9)?.u8(total)?;
-                        }
-                        e.u8(10)?.u8(id[1] & 3)?;
-                        if has_blob_key {
-                            e.u8(11)?
-                                .bytes(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])?;
-                        }
-                        e.u8(12)?
-                            .bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0)?;
+                        super::encoding::management_tail(
+                            &mut e,
+                            &id,
+                            (subcommand == 4).then_some(total),
+                            has_blob_key
+                                .then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
+                        )?;
                         if public_len == 0 {
                             e.u8(0x80)?
                                 .i32(credential::cose_algorithm(algorithm, self.sm2))?;

@@ -218,7 +218,7 @@ impl FrameDecoder {
             FrameEvent::Data(bytes) => emit(bytes),
         })
     }
-    pub fn finish(self) -> Result<CommandInfo, Error> {
+    pub fn finish(&self) -> Result<CommandInfo, Error> {
         if self.failed {
             return Err(Error::Failed);
         }

@@ -5,8 +5,249 @@
 //! Map key types/order/uniqueness belong to the command schema. Events are
 //! provisional until finish succeeds; consumers must not perform side effects.
 
-pub use minicbor::{Decoder as SliceDecoder, Encoder};
-pub type EncodeError = minicbor::encode::Error<minicbor::encode::write::EndOfSlice>;
+/// Bounded CTAP consumers translate decoder failures into protocol status codes;
+/// they do not retain diagnostic strings or byte positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodeError;
+
+/// Cursor over a contiguous input slice. Accepts every definite-length
+/// encoding width (shortest form is enforced only by the incremental Decoder),
+/// rejects indefinite lengths, and bounds every skip by the remaining input.
+pub struct SliceDecoder<'a> {
+    input: &'a [u8],
+}
+
+impl<'a> SliceDecoder<'a> {
+    pub fn new(input: &'a [u8]) -> Self {
+        Self { input }
+    }
+
+    /// Consume one header, returning (major type, argument).
+    fn header(&mut self) -> Result<(u8, u64), DecodeError> {
+        let (&first, _) = self.input.split_first().ok_or(DecodeError)?;
+        let (major, info) = (first >> 5, first & 0x1f);
+        let width = match info {
+            0..=23 => 0,
+            24 => 1,
+            25 => 2,
+            26 => 4,
+            27 => 8,
+            _ => return Err(DecodeError),
+        };
+        if self.input.len() < 1 + width {
+            return Err(DecodeError);
+        }
+        let mut value = 0u64;
+        if width == 0 {
+            value = u64::from(info);
+        } else {
+            for &byte in &self.input[1..1 + width] {
+                value = value << 8 | u64::from(byte);
+            }
+        }
+        self.input = &self.input[1 + width..];
+        Ok((major, value))
+    }
+
+    fn bytes_of(&mut self, major: u8) -> Result<&'a [u8], DecodeError> {
+        let (m, len) = self.header()?;
+        if m != major {
+            return Err(DecodeError);
+        }
+        let len = usize::try_from(len).map_err(|_| DecodeError)?;
+        if self.input.len() < len {
+            return Err(DecodeError);
+        }
+        let (value, rest) = self.input.split_at(len);
+        self.input = rest;
+        Ok(value)
+    }
+
+    pub fn map(&mut self) -> Result<Option<u64>, DecodeError> {
+        if self.input.first() == Some(&0xbf) {
+            self.input = &self.input[1..];
+            return Ok(None);
+        }
+        let (major, value) = self.header()?;
+        if major != 5 {
+            return Err(DecodeError);
+        }
+        Ok(Some(value))
+    }
+    #[inline(never)]
+    pub fn u64(&mut self) -> Result<u64, DecodeError> {
+        let (major, value) = self.header()?;
+        if major != 0 {
+            return Err(DecodeError);
+        }
+        Ok(value)
+    }
+    #[inline(never)]
+    pub fn bool(&mut self) -> Result<bool, DecodeError> {
+        match self.input.split_first() {
+            Some((&0xf4, rest)) => {
+                self.input = rest;
+                Ok(false)
+            }
+            Some((&0xf5, rest)) => {
+                self.input = rest;
+                Ok(true)
+            }
+            _ => Err(DecodeError),
+        }
+    }
+    #[inline(never)]
+    pub fn bytes(&mut self) -> Result<&'a [u8], DecodeError> {
+        self.bytes_of(2)
+    }
+    #[inline(never)]
+    pub fn str(&mut self) -> Result<&'a str, DecodeError> {
+        core::str::from_utf8(self.bytes_of(3)?).map_err(|_| DecodeError)
+    }
+    #[inline(never)]
+    pub fn skip(&mut self) -> Result<(), DecodeError> {
+        self.skip_value(0)
+    }
+    fn skip_value(&mut self, depth: usize) -> Result<(), DecodeError> {
+        if depth >= MAX_DEPTH {
+            return Err(DecodeError);
+        }
+        let (major, value) = self.header()?;
+        match major {
+            0 | 1 | 7 => Ok(()),
+            2 | 3 => {
+                let len = usize::try_from(value).map_err(|_| DecodeError)?;
+                if self.input.len() < len {
+                    return Err(DecodeError);
+                }
+                self.input = &self.input[len..];
+                Ok(())
+            }
+            4..=6 => {
+                let items = match major {
+                    4 => value,
+                    5 => value.checked_mul(2).ok_or(DecodeError)?,
+                    _ => 1,
+                };
+                for _ in 0..items {
+                    self.skip_value(depth + 1)?;
+                }
+                Ok(())
+            }
+            _ => Err(DecodeError),
+        }
+    }
+}
+
+/// Card responses only need to distinguish success from exhausted output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EncodeError;
+
+macro_rules! encode_unsigned {
+    ($($method:ident($ty:ty)),* $(,)?) => {$(
+        #[inline(never)]
+        pub fn $method(&mut self, value: $ty) -> Result<&mut Self, EncodeError> {
+            self.header(0, u64::from(value))
+        }
+    )*};
+}
+macro_rules! encode_signed {
+    ($($method:ident($ty:ty)),* $(,)?) => {$(
+        #[inline(never)]
+        pub fn $method(&mut self, value: $ty) -> Result<&mut Self, EncodeError> {
+            // For v < 0 the CBOR argument is -1-v, i.e. !v in two's complement.
+            let (major, arg) = if value >= 0 { (0, value as u64) } else { (1, !value as u64) };
+            self.header(major, arg)
+        }
+    )*};
+}
+
+/// Shortest-form encoder over a caller-owned buffer. The remaining unwritten
+/// tail is the writer state, so `writer().len()` is the capacity left.
+pub struct Encoder<W>(W);
+
+impl<'a> Encoder<&'a mut [u8]> {
+    pub fn new(output: &'a mut [u8]) -> Self {
+        Self(output)
+    }
+
+    pub fn writer(&self) -> &&'a mut [u8] {
+        &self.0
+    }
+
+    fn raw(&mut self, bytes: &[u8]) -> Result<&mut Self, EncodeError> {
+        if self.0.len() < bytes.len() {
+            return Err(EncodeError);
+        }
+        let tail = core::mem::take(&mut self.0);
+        tail[..bytes.len()].copy_from_slice(bytes);
+        self.0 = &mut tail[bytes.len()..];
+        Ok(self)
+    }
+
+    /// Append one shortest-form item header: major type in the top 3 bits.
+    fn header(&mut self, major: u8, value: u64) -> Result<&mut Self, EncodeError> {
+        let mut head = [0u8; 9];
+        let mt = major << 5;
+        let n = if value < 24 {
+            head[0] = mt | value as u8;
+            1
+        } else if value <= 0xff {
+            head[0] = mt | 24;
+            head[1] = value as u8;
+            2
+        } else if value <= 0xffff {
+            head[0] = mt | 25;
+            head[1..3].copy_from_slice(&(value as u16).to_be_bytes());
+            3
+        } else if value <= 0xffff_ffff {
+            head[0] = mt | 26;
+            head[1..5].copy_from_slice(&(value as u32).to_be_bytes());
+            5
+        } else {
+            head[0] = mt | 27;
+            head[1..9].copy_from_slice(&value.to_be_bytes());
+            9
+        };
+        self.raw(&head[..n])
+    }
+
+    /// Append trusted, pre-encoded CBOR tokens (for build-generated schemas).
+    /// Dynamic values must still use the typed encoding methods below.
+    #[inline(never)]
+    pub fn encoded(&mut self, tokens: &[u8]) -> Result<&mut Self, EncodeError> {
+        self.raw(tokens)
+    }
+
+    encode_unsigned! { u8(u8), u16(u16), u32(u32), u64(u64) }
+
+    encode_signed! { i8(i8), i16(i16), i32(i32), i64(i64) }
+
+    #[inline(never)]
+    pub fn map(&mut self, count: u64) -> Result<&mut Self, EncodeError> {
+        self.header(5, count)
+    }
+    #[inline(never)]
+    pub fn array(&mut self, count: u64) -> Result<&mut Self, EncodeError> {
+        self.header(4, count)
+    }
+    #[inline(never)]
+    pub fn bytes_len(&mut self, len: u64) -> Result<&mut Self, EncodeError> {
+        self.header(2, len)
+    }
+    #[inline(never)]
+    pub fn bool(&mut self, value: bool) -> Result<&mut Self, EncodeError> {
+        self.raw(&[0xf4 | u8::from(value)])
+    }
+    #[inline(never)]
+    pub fn bytes(&mut self, value: &[u8]) -> Result<&mut Self, EncodeError> {
+        self.header(2, value.len() as u64)?.raw(value)
+    }
+    #[inline(never)]
+    pub fn str(&mut self, value: &str) -> Result<&mut Self, EncodeError> {
+        self.header(3, value.len() as u64)?.raw(value.as_bytes())
+    }
+}
 
 const MAX_DEPTH: usize = 8;
 
@@ -137,8 +378,8 @@ impl Decoder {
     fn read_header(&mut self, byte: u8) -> Result<Option<(u8, u64)>, Error> {
         self.head[usize::from(self.head_len)] = byte;
         self.head_len += 1;
-        // Buffer one complete header before calling minicbor. Framing only
-        // needs the encoded width; minicbor still decodes and validates it.
+        // Buffer one complete header before decoding. Framing only
+        // needs the encoded width; the argument is decoded and validated below.
         let width = match self.head[0] & 0x1f {
             0..=23 => 1,
             24 => 2,
@@ -151,36 +392,22 @@ impl Decoder {
             return Ok(None);
         }
         let major = self.head[0] >> 5;
-        if major == 2 || major == 3 {
-            // String lengths use the same argument encoding as unsigned integers.
-            // Normalize only the major type so upstream minicbor can decode the
-            // length without requiring the streamed payload in this header buffer.
-            self.head[0] &= 0x1f;
+        if major > 5 && !(major == 7 && matches!(self.head[0], 0xf4..=0xf6)) {
+            return Err(Error::Invalid);
         }
-        let mut decoder = minicbor::Decoder::new(&self.head[..usize::from(self.head_len)]);
-        let result = match major {
-            0 | 2 | 3 => decoder.u64(),
-            1 => decoder.int().map(|n| (-1 - i128::from(n)) as u64),
-            4 | 5 => {
-                let count = if major == 4 {
-                    decoder.array()
-                } else {
-                    decoder.map()
-                };
-                Ok(count.map_err(|_| Error::Invalid)?.ok_or(Error::Invalid)?)
+        // All supported major types share the unsigned argument representation.
+        // For negative integers this is n in -1-n, not a signed Rust integer.
+        // The argument is the big-endian header bytes after the first byte;
+        // payload/container policy is handled by start_value below.
+        let mut value = 0u64;
+        if self.head_len == 1 {
+            value = u64::from(self.head[0] & 0x1f);
+        } else {
+            for &byte in &self.head[1..usize::from(self.head_len)] {
+                value = value << 8 | u64::from(byte);
             }
-            7 if self.head[0] == 0xf4 || self.head[0] == 0xf5 => {
-                decoder.bool().map(|b| 20 + u64::from(b))
-            }
-            7 if self.head[0] == 0xf6 => decoder.null().map(|()| 22),
-            _ => return Err(Error::Invalid),
-        };
-        let value = match result {
-            Ok(value) => value,
-            Err(_) => return Err(Error::Invalid),
-        };
-        // CTAP requires shortest arguments; minicbor intentionally accepts all
-        // valid CBOR widths, so this protocol policy belongs in the adapter.
+        }
+        // CTAP requires shortest arguments, so width policy belongs in the adapter.
         let shortest = match value {
             0..=23 => 1,
             24..=0xff => 2,
@@ -245,7 +472,7 @@ impl Decoder {
         }
         Ok(())
     }
-    pub fn finish(self) -> Result<(), Error> {
+    pub fn finish(&self) -> Result<(), Error> {
         if self.failed {
             Err(Error::Failed)
         } else if self.head_len != 0 || self.body != 0 || self.depth != 0 || self.pending[0] != 0 {

@@ -47,6 +47,8 @@ impl Parser {
             error: None,
         }
     }
+    // Share this parser across HID and APDU callers on size-constrained targets.
+    #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         if self.error.is_some() {
             return;
@@ -87,7 +89,8 @@ impl Parser {
         memory.wipe(&mut self.fields.params.message);
         memory.wipe(&mut self.fields.params.auth);
     }
-    pub fn finish(mut self) -> Result<Command, Status> {
+    #[inline(never)]
+    pub fn finish(&mut self) -> Result<Command, Status> {
         if let Some(error) = self.error {
             return Err(error);
         }
@@ -107,9 +110,15 @@ impl Parser {
         p.message[32] = super::CONFIG;
         p.message[33] = p.subcommand;
         Ok(if self.fields.command == super::CONFIG {
-            Command::Config(self.fields.params)
+            Command::Config(core::mem::replace(
+                &mut self.fields.params,
+                Parameters::new(),
+            ))
         } else {
-            Command::Management(self.fields.params)
+            Command::Management(core::mem::replace(
+                &mut self.fields.params,
+                Parameters::new(),
+            ))
         })
     }
 }
@@ -119,12 +128,12 @@ struct Fields {
     subcommand_seen: bool,
     command: u8,
     previous: Option<Key>,
-    key: Option<Key>,
+    key: Option<Option<i8>>,
     depth: u8,
     auth_offset: Option<usize>,
     start: Option<usize>,
     end: Option<usize>,
-    param_key: Option<Key>,
+    param_key: Option<Option<i8>>,
     param_previous: Option<Key>,
     rp_array: bool,
 }
@@ -187,18 +196,14 @@ impl Fields {
             if matches!(event, Event::End) {
                 return Ok(());
             }
-            let key = Key::parse(event)?;
-            if self.previous.is_some_and(|old| key <= old) {
-                return Err(Status::InvalidCbor);
-            }
-            self.previous = Some(key);
+            let key = Key::ordered(event, &mut self.previous)?;
             self.key = Some(key);
-            if key.integer() == Some(2) {
+            if key == Some(2) {
                 self.start = Some(offset);
             }
             return Ok(());
         };
-        match key.integer() {
+        match key {
             Some(1) => match event {
                 Event::Unsigned(n) => {
                     self.subcommand_seen = true;
@@ -259,19 +264,11 @@ impl Fields {
             if matches!(event, Event::End) {
                 return Ok(());
             }
-            let key = match *event {
-                Event::Unsigned(n) => Key::parse(Event::Unsigned(n))?,
-                Event::Negative(n) => Key::parse(Event::Negative(n))?,
-                _ => return Err(Status::UnexpectedType),
-            };
-            if self.param_previous.is_some_and(|old| key <= old) {
-                return Err(Status::InvalidCbor);
-            }
-            self.param_previous = Some(key);
+            let key = Key::ordered(*event, &mut self.param_previous)?;
             self.param_key = Some(key);
             return Ok(());
         };
-        match key.integer() {
+        match key {
             Some(1) => match *event {
                 Event::Unsigned(n) if n <= 63 => self.params.minimum = Some(n as u8),
                 Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),

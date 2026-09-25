@@ -60,6 +60,8 @@ impl Applet {
         self.response = Response::Constant(VERSION);
         VERSION.len() as u32
     }
+    // Share input handling without expanding it into the runtime dispatcher.
+    #[inline(never)]
     pub fn begin(
         &mut self,
         header: Header,
@@ -82,6 +84,7 @@ impl Applet {
         }
         Ok(())
     }
+    #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8], w: &mut SessionWorkspace) -> Result<(), Sw> {
         if let SessionWorkspace::U2fRequest(request) = w {
             request.consume(bytes);
@@ -96,8 +99,7 @@ impl Applet {
             self.response = self.session.u2f(&request, w.classic_with(p.memory), p)?;
             return Ok(self.response.len() as u32);
         }
-        let mut command =
-            core::mem::replace(w.ctap_request_with(p.memory), Request::new()).finish();
+        let mut command = w.ctap_request_with(p.memory).finish();
         Ok(self.execute(&mut command, w, p) as u32)
     }
     pub fn execute(
@@ -112,19 +114,16 @@ impl Applet {
     }
     pub fn execute_message(
         &mut self,
-        command: Message,
+        command: &mut Message,
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> usize {
         let result = match command {
             Message::Ctap(command) => {
-                let mut command = command;
-                Ok(self
-                    .session
-                    .execute(&mut command, w.classic_with(p.memory), p))
+                Ok(self.session.execute(command, w.classic_with(p.memory), p))
             }
-            Message::U2f(request) => self.session.u2f(&request, w.classic_with(p.memory), p),
-            Message::Error(error) => Err(error),
+            Message::U2f(request) => self.session.u2f(request, w.classic_with(p.memory), p),
+            Message::Error(error) => Err(*error),
         };
         let (response, sw) = match result {
             Ok(response) => (response, Sw::SUCCESS),
@@ -232,6 +231,7 @@ impl MessageParser {
             request: MessageInput::Empty,
         }
     }
+    #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         use canokey_protocol::apdu::FrameEvent;
         let Some(decoder) = &mut self.decoder else {
@@ -265,14 +265,30 @@ impl MessageParser {
             self.decoder = None;
         }
     }
-    pub fn finish(self) -> Message {
-        if self.decoder.is_none_or(|decoder| decoder.finish().is_err()) {
+    pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+        match &mut self.request {
+            MessageInput::Ctap(r) => r.clear(memory),
+            MessageInput::U2f(r) => r.clear(memory),
+            _ => (),
+        }
+        self.request = MessageInput::Empty;
+        self.decoder = None;
+    }
+    pub fn finish(&mut self) -> Message {
+        if self
+            .decoder
+            .take()
+            .is_none_or(|decoder| decoder.finish().is_err())
+        {
             return Message::Error(Sw::WRONG_LENGTH);
         }
-        match self.request {
+        match &mut self.request {
             MessageInput::Ctap(request) => Message::Ctap(request.finish()),
-            MessageInput::U2f(request) => Message::U2f(request),
-            MessageInput::Error(error) => Message::Error(error),
+            MessageInput::U2f(request) => Message::U2f(core::mem::replace(
+                request,
+                super::u2f::Request::new(request.header),
+            )),
+            MessageInput::Error(error) => Message::Error(*error),
             MessageInput::Empty => Message::Error(Sw::WRONG_LENGTH),
         }
     }

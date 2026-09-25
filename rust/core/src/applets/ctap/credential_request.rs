@@ -35,7 +35,7 @@ pub struct Parameters {
     pub protection_requested: bool,
     pub min_pin_length: bool,
     pub large_blob_key: bool,
-    pub cred_blob: [u8; 32],
+    pub cred_blob: [u8; CRED_BLOB_BYTES],
     pub cred_blob_len: Option<usize>,
     pub get_cred_blob: bool,
     pub hmac_secret: bool,
@@ -71,7 +71,7 @@ impl Parameters {
             protection_requested: false,
             min_pin_length: false,
             large_blob_key: false,
-            cred_blob: [0; 32],
+            cred_blob: [0; CRED_BLOB_BYTES],
             cred_blob_len: None,
             get_cred_blob: false,
             hmac_secret: false,
@@ -122,6 +122,62 @@ enum Field {
     HmacSecretMc,
     Enterprise,
 }
+// Each entry is (context, wire key, destination, makeCredential only).
+// Keep schema matching data-driven rather than expanding a string match tree.
+fn text_field(context: Context, key: &[u8], make: bool) -> Field {
+    const FIELDS: &[(Context, &[u8], Field, bool)] = &[
+        (Context::Rp, b"id", Field::Rp, false),
+        (Context::User, b"id", Field::UserId, false),
+        (Context::User, b"name", Field::Name, false),
+        (Context::User, b"displayName", Field::Display, false),
+        (Context::Algorithm, b"alg", Field::Algorithm, false),
+        (Context::Algorithm, b"type", Field::Type, false),
+        (Context::Descriptor, b"type", Field::Type, false),
+        (Context::Descriptor, b"id", Field::DescriptorId, false),
+        (Context::Options, b"rk", Field::Resident, false),
+        (Context::Options, b"uv", Field::Uv, false),
+        (Context::Options, b"up", Field::Up, false),
+        (
+            Context::Extensions,
+            b"thirdPartyPayment",
+            Field::ThirdPartyPayment,
+            false,
+        ),
+        (
+            Context::Extensions,
+            b"hmac-secret",
+            Field::HmacSecret,
+            false,
+        ),
+        (
+            Context::Extensions,
+            b"hmac-secret-mc",
+            Field::HmacSecretMc,
+            true,
+        ),
+        (Context::Extensions, b"credBlob", Field::CredBlob, false),
+        (
+            Context::Extensions,
+            b"largeBlobKey",
+            Field::LargeBlobKey,
+            true,
+        ),
+        (
+            Context::Extensions,
+            b"minPinLength",
+            Field::MinPinLength,
+            true,
+        ),
+        (Context::Extensions, b"credProtect", Field::Protection, true),
+    ];
+    FIELDS
+        .iter()
+        .find(|(scope, name, _, make_only)| {
+            *scope == context && *name == key && (!make_only || make)
+        })
+        .map_or(Field::Ignore, |(_, _, field, _)| *field)
+}
+
 struct Map {
     context: Context,
     previous_int: Option<Key>,
@@ -198,6 +254,8 @@ impl Parser {
             },
         }
     }
+    // Share this parser across HID and APDU callers on size-constrained targets.
+    #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         if self.error.is_some() {
             return;
@@ -237,12 +295,13 @@ impl Parser {
             memory.wipe(&mut map.previous_text);
         }
     }
-    pub fn finish(self) -> Result<Command, Status> {
+    #[inline(never)]
+    pub fn finish(&mut self) -> Result<Command, Status> {
         if let Some(error) = self.error {
             return Err(error);
         }
         self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
-        let mut f = self.fields;
+        let f = &mut self.fields;
         f.params.name_len = super::resident::text_prefix(&f.params.name[..f.params.name_len]).len();
         f.params.display_len =
             super::resident::text_prefix(&f.params.display[..f.params.display_len]).len();
@@ -265,10 +324,14 @@ impl Parser {
         if f.params.make && f.params.hmac.is_some() && !f.params.hmac_secret {
             return Err(Status::InvalidOption);
         }
-        Ok(Command::Credential(f.params))
+        Ok(Command::Credential(core::mem::replace(
+            &mut f.params,
+            Parameters::new(false),
+        )))
     }
 }
 impl Fields {
+    #[inline(never)]
     fn event(&mut self, event: Event<'_>) -> Result<(), Status> {
         if !self.started {
             if !matches!(event, Event::Map(_)) {
@@ -392,13 +455,8 @@ impl Fields {
             return self.value(field, event);
         }
         if context == Context::Root {
-            let key = Key::parse(event)?;
             let map = &mut self.maps[self.level];
-            if map.previous_int.is_some_and(|old| key <= old) {
-                return Err(Status::InvalidCbor);
-            }
-            map.previous_int = Some(key);
-            let key = key.integer();
+            let key = Key::ordered(event, &mut map.previous_int)?;
             map.field = Some(if self.params.make {
                 match key {
                     Some(1) => Field::ClientHash,
@@ -438,6 +496,7 @@ impl Fields {
         }
         Ok(())
     }
+    #[inline(never)]
     fn text_key(&mut self) -> Result<(), Status> {
         let key = &self.key[..self.key_len];
         let map = &mut self.maps[self.level];
@@ -449,26 +508,7 @@ impl Fields {
         map.previous_len = self.key_len;
         map.previous_text[..self.key_len].copy_from_slice(key);
         map.seen_text = true;
-        map.field = Some(match (map.context, key) {
-            (Context::Rp, b"id") => Field::Rp,
-            (Context::User, b"id") => Field::UserId,
-            (Context::User, b"name") => Field::Name,
-            (Context::User, b"displayName") => Field::Display,
-            (Context::Algorithm, b"alg") => Field::Algorithm,
-            (Context::Algorithm | Context::Descriptor, b"type") => Field::Type,
-            (Context::Descriptor, b"id") => Field::DescriptorId,
-            (Context::Options, b"rk") => Field::Resident,
-            (Context::Options, b"uv") => Field::Uv,
-            (Context::Options, b"up") => Field::Up,
-            (Context::Extensions, b"thirdPartyPayment") => Field::ThirdPartyPayment,
-            (Context::Extensions, b"hmac-secret") => Field::HmacSecret,
-            (Context::Extensions, b"hmac-secret-mc") if self.params.make => Field::HmacSecretMc,
-            (Context::Extensions, b"credBlob") => Field::CredBlob,
-            (Context::Extensions, b"largeBlobKey") if self.params.make => Field::LargeBlobKey,
-            (Context::Extensions, b"minPinLength") if self.params.make => Field::MinPinLength,
-            (Context::Extensions, b"credProtect") if self.params.make => Field::Protection,
-            _ => Field::Ignore,
-        });
+        map.field = Some(text_field(map.context, key, self.params.make));
         Ok(())
     }
     fn push(&mut self, context: Context) {
@@ -605,12 +645,9 @@ impl Fields {
                     let Event::Bytes(n) = event else {
                         return Err(Status::UnexpectedType);
                     };
-                    // The parser owns the wire-size bound; resident decoding
-                    // keeps its own bound because records may be loaded from
-                    // storage without passing through this request parser.
-                    if usize::from(n) > CRED_BLOB_BYTES {
-                        return Err(Status::InvalidParameter);
-                    }
+                    // Consume the entire byte string, retaining only the bounded
+                    // prefix. Oversized blobs produce credBlob=false, not a
+                    // makeCredential error, and must never be persisted truncated.
                     self.params.cred_blob_len = Some(usize::from(n));
                     self.body = Some((field, 0));
                 } else {
@@ -653,6 +690,7 @@ impl Fields {
         }
         Ok(())
     }
+    #[inline(never)]
     fn bytes(
         &mut self,
         field: Field,
@@ -675,6 +713,161 @@ impl Fields {
 mod tests {
     use super::*;
     use canokey_protocol::cbor::Encoder;
+
+    #[test]
+    fn table_preserves_field_scope_and_make_only_extensions() {
+        fn reference(context: Context, key: &[u8], make: bool) -> Field {
+            match (context, key) {
+                (Context::Rp, b"id") => Field::Rp,
+                (Context::User, b"id") => Field::UserId,
+                (Context::User, b"name") => Field::Name,
+                (Context::User, b"displayName") => Field::Display,
+                (Context::Algorithm, b"alg") => Field::Algorithm,
+                (Context::Algorithm | Context::Descriptor, b"type") => Field::Type,
+                (Context::Descriptor, b"id") => Field::DescriptorId,
+                (Context::Options, b"rk") => Field::Resident,
+                (Context::Options, b"uv") => Field::Uv,
+                (Context::Options, b"up") => Field::Up,
+                (Context::Extensions, b"thirdPartyPayment") => Field::ThirdPartyPayment,
+                (Context::Extensions, b"hmac-secret") => Field::HmacSecret,
+                (Context::Extensions, b"hmac-secret-mc") if make => Field::HmacSecretMc,
+                (Context::Extensions, b"credBlob") => Field::CredBlob,
+                (Context::Extensions, b"largeBlobKey") if make => Field::LargeBlobKey,
+                (Context::Extensions, b"minPinLength") if make => Field::MinPinLength,
+                (Context::Extensions, b"credProtect") if make => Field::Protection,
+                _ => Field::Ignore,
+            }
+        }
+        let keys: &[&[u8]] = &[
+            b"id",
+            b"name",
+            b"displayName",
+            b"alg",
+            b"type",
+            b"rk",
+            b"uv",
+            b"up",
+            b"thirdPartyPayment",
+            b"hmac-secret",
+            b"hmac-secret-mc",
+            b"credBlob",
+            b"largeBlobKey",
+            b"minPinLength",
+            b"credProtect",
+            b"",
+            b"unknown",
+        ];
+        for context in [
+            Context::Root,
+            Context::Rp,
+            Context::User,
+            Context::Algorithms,
+            Context::Algorithm,
+            Context::List,
+            Context::Descriptor,
+            Context::Options,
+            Context::Extensions,
+        ] {
+            for make in [false, true] {
+                for key in keys {
+                    for length in 0..=key.len() {
+                        let key = &key[..length];
+                        assert_eq!(
+                            text_field(context, key, make) as u8,
+                            reference(context, key, make) as u8
+                        );
+                        for position in 0..key.len() {
+                            let mut changed = key.to_vec();
+                            changed[position] ^= 0x20;
+                            assert_eq!(
+                                text_field(context, &changed, make) as u8,
+                                reference(context, &changed, make) as u8
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cred_blob_consumes_oversized_values_without_growing_storage() {
+        let value = [0x5a; 512];
+        for length in [0, 31, 32, 33, 255, 256, 512] {
+            let mut bytes = [0; 1024];
+            let mut e = Encoder::new(&mut bytes[..]);
+            e.map(6)
+                .unwrap()
+                .u8(1)
+                .unwrap()
+                .bytes(&[1; 32])
+                .unwrap()
+                .u8(2)
+                .unwrap()
+                .map(1)
+                .unwrap()
+                .str("id")
+                .unwrap()
+                .str("example.com")
+                .unwrap()
+                .u8(3)
+                .unwrap()
+                .map(1)
+                .unwrap()
+                .str("id")
+                .unwrap()
+                .bytes(b"user")
+                .unwrap()
+                .u8(4)
+                .unwrap()
+                .array(1)
+                .unwrap()
+                .map(2)
+                .unwrap()
+                .str("alg")
+                .unwrap()
+                .i8(-7)
+                .unwrap()
+                .str("type")
+                .unwrap()
+                .str("public-key")
+                .unwrap()
+                .u8(6)
+                .unwrap()
+                .map(1)
+                .unwrap()
+                .str("credBlob")
+                .unwrap()
+                .bytes(&value[..length])
+                .unwrap()
+                .u8(7)
+                .unwrap()
+                .map(1)
+                .unwrap()
+                .str("rk")
+                .unwrap()
+                .bool(true)
+                .unwrap();
+            let n = 1024 - e.writer().len();
+            for split in 0..=n {
+                let mut parser = Parser::new(true);
+                parser.consume(&bytes[..split]);
+                parser.consume(&bytes[split..n]);
+                let Ok(Command::Credential(p)) = parser.finish() else {
+                    panic!("length {length}, split {split}");
+                };
+                assert_eq!(p.cred_blob_len, Some(length));
+                let retained = length.min(CRED_BLOB_BYTES);
+                assert_eq!(&p.cred_blob[..retained], &value[..retained]);
+                assert!(p.resident, "the field after the blob must be decoded");
+            }
+            for truncated in 0..n {
+                let mut parser = Parser::new(true);
+                parser.consume(&bytes[..truncated]);
+                assert!(parser.finish().is_err());
+            }
+        }
+    }
 
     #[test]
     fn hmac_extension_survives_every_input_split() {

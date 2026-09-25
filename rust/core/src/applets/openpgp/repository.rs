@@ -130,15 +130,12 @@ pub fn save_state(p: &mut Platform<'_>, b: &[u8; STATE_LEN]) -> Result<(), Error
     result
 }
 pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> {
-    // A key record is bounded by key_layout::SIZE. Loading that bounded
-    // record once lets us validate both the metadata prefix and the exact
-    // material length without a second size query to storage.
-    let mut record = [0; crate::ports::key_layout::SIZE];
-    let n = p.storage.load(KEYS[role], &mut record).map_err(io)?;
-    if n < META_LEN {
-        return Err(Error::Storage);
-    }
-    let b: [u8; META_LEN] = record[..META_LEN].try_into().map_err(|_| Error::Storage)?;
+    // The stored record includes metadata in addition to native key material:
+    // RSA-4096 needs META_LEN + key_layout::SIZE bytes. Read only the prefix
+    // and validate the full record length without a key-sized stack buffer.
+    let n = p.storage.size(KEYS[role]).map_err(io)?;
+    let mut b = [0; META_LEN];
+    p.storage.read_at(KEYS[role], 0, &mut b).map_err(io)?;
     if b[key_meta::VERSION] != FORMAT_VERSION
         || b[key_meta::ORIGIN] > 2
         || b[key_meta::TOUCH_POLICY] > 2
@@ -154,7 +151,7 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
     } else {
         key_storage::length(a.rsa(), a.private_component_bytes())
     };
-    if n != META_LEN + material {
+    if n != (META_LEN + material) as u32 {
         return Err(Error::Storage);
     }
     Ok(b)

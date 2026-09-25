@@ -26,7 +26,7 @@ _Static_assert(sizeof(rsa_key_t) == CK_KEY_METADATA_BYTES + CK_KEY_BYTES &&
                    offsetof(rsa_key_t, dq) == offsetof(rsa_key_t, dp) + CK_RSA_LIMB_BYTES &&
                    offsetof(rsa_key_t, qinv) == offsetof(rsa_key_t, dq) + CK_RSA_LIMB_BYTES,
                "Rust KeyMaterial ABI");
-#if !defined(RUST_CORE_CTAP) || defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
+#if defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
 static int rsa_operation(uint8_t op, uint8_t alg, rsa_key_t *key, const uint8_t *in, size_t n, uint8_t *out) {
   key->nbits = (uint16_t)(RSA_MIN_BITS + RSA_BITS_STEP * (alg - RSA2048));
   int result = -1;
@@ -59,10 +59,11 @@ static int rsa_operation(uint8_t op, uint8_t alg, rsa_key_t *key, const uint8_t 
   return result;
 }
 #endif
+#if defined(RUST_CORE_CTAP) || defined(RUST_CORE_PIV)
 // Keep the SM3 context out of the ordinary ECC signing call's stack frame.
 static __attribute__((noinline)) int sm2_message_digest(ecc_key_t *key, const uint8_t *input,
                                                        size_t length, uint8_t *out) {
-  if (ecc_complete_key(SM2, key) < 0 || sm2_z(SM2_ID_DEFAULT, key, out) < 0) return -1;
+  if (ck_ecc_complete_key(SM2, key) < 0 || sm2_z(SM2_ID_DEFAULT, key, out) < 0) return -1;
   sm3_ctx_t hash;
   sm3_init(&hash);
   sm3_update(&hash, out, SM3_DIGEST_LENGTH);
@@ -72,8 +73,16 @@ static __attribute__((noinline)) int sm2_message_digest(ecc_key_t *key, const ui
   return SM3_DIGEST_LENGTH;
 }
 
+#endif
+
 static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *in,
                                                    size_t n, uint8_t *out) {
+#if !defined(RUST_CORE_OPENPGP) && !defined(RUST_CORE_PIV)
+  if (alg == X25519) return -1;
+#endif
+#if !defined(RUST_CORE_CTAP) && !defined(RUST_CORE_PIV)
+  if (alg == SM2) return -1;
+#endif
   uint8_t *key = (uint8_t *)material + offsetof(rsa_key_t, e);
   ecc_key_t *ec = (ecc_key_t *)(void *)key;
   int result = -1;
@@ -84,10 +93,10 @@ static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_
     }
     break;
   case CK_KEY_VALIDATE:
-    if (ecc_verify_private_key(alg, ec) && ecc_complete_key(alg, ec) == 0) result = 0;
+    if (ecc_verify_private_key(alg, ec) && ck_ecc_complete_key(alg, ec) == 0) result = 0;
     break;
   case CK_KEY_PUBLIC:
-    if (ecc_complete_key(alg, ec) == 0) {
+    if (ck_ecc_complete_key(alg, ec) == 0) {
       memcpy(out, ec->pub, PUBLIC_KEY_LENGTH[alg]);
       if (alg == X25519) swap_big_number_endian(out);
       result = (int)PUBLIC_KEY_LENGTH[alg];
@@ -98,11 +107,13 @@ static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_
       // ECC uses only bytes [0,198); borrow the unused RSA-capacity tail.
       if (K__short_weierstrass_sign_with_scratch(alg, ec, in, n, out, key + ECC_SCRATCH_OFFSET, ECC_SCRATCH_BYTES) == 0)
         result = (int)SIGNATURE_LENGTH[alg];
-    } else if (alg == ED25519 && ecc_complete_key(alg, ec) == 0 && ecc_sign(alg, ec, in, n, out) == 0)
+    } else if (alg == ED25519 && ck_ecc_complete_key(alg, ec) == 0 && ecc_sign(alg, ec, in, n, out) == 0)
       result = (int)SIGNATURE_LENGTH[alg];
     break;
   case CK_KEY_SM2_MESSAGE_DIGEST:
+#if defined(RUST_CORE_CTAP) || defined(RUST_CORE_PIV)
     if (alg == SM2) result = sm2_message_digest(ec, in, n, out);
+#endif
     break;
   case CK_KEY_SM2_EXCHANGE:
 #ifdef RUST_CORE_PIV
@@ -127,7 +138,7 @@ int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint
   ck_stack_context(op, alg);
 #endif
   if (IS_RSA(alg)) {
-#if !defined(RUST_CORE_CTAP) || defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
+#if defined(RUST_CORE_OPENPGP) || defined(RUST_CORE_PIV)
     return rsa_operation(op, alg, material, in, n, out);
 #else
     // The independent CTAP profile has no RSA protocol operations.

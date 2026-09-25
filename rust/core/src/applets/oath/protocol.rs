@@ -71,6 +71,20 @@ fn challenge<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
     }
     Ok(bytes)
 }
+// Run after the legacy OTP route and OATH access-code gate. These checks
+// precede TLV parsing, storage reads, and presence requests for every command.
+fn validate_parameters(h: Header) -> Result<(), Sw> {
+    let valid = match h.ins {
+        INS_PUT | INS_DELETE | INS_RENAME | INS_SET_CODE | INS_VALIDATE | INS_LIST
+        | INS_SEND_REMAINING => h.p1 == 0 && h.p2 == 0,
+        INS_CALCULATE | INS_CALCULATE_ALL => h.p1 == 0 && h.p2 <= 1,
+        // Missing PASS must remain INS_NOT_SUPPORTED even with invalid P1/P2.
+        INS_SET_DEFAULT => true,
+        _ => return Err(Sw::INS_NOT_SUPPORTED),
+    };
+    if valid { Ok(()) } else { Err(Sw::WRONG_P1P2) }
+}
+
 #[derive(Clone, Copy)]
 enum Page {
     None,
@@ -165,16 +179,10 @@ impl State {
     }
     fn execute_put(
         &mut self,
-        h: Header,
         mut c: &mut ByteCursor<'_>,
         store: &mut Store<'_>,
         mac: &mut Mac<'_>,
     ) -> Result<(), Sw> {
-        // Ordinary OATH PUT uses 00/00; kind/algorithm/name are in TLVs.
-        // Nonzero legacy OTP P1 selectors were handled before this match.
-        if h.p1 != 0x00 || h.p2 != 0x00 {
-            return Err(Sw::WRONG_P1P2);
-        }
         let name = name(&mut c)?;
         let key = field(&mut c, tag::KEY)?;
         if key.len() < KEY_HEADER_BYTES + 1 || key.len() > KEY_HEADER_BYTES + OATH_KEY_LIMIT {
@@ -228,10 +236,6 @@ impl State {
     ) -> Result<(), Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
-        // P1/P2 are reserved (00); NAME TLVs identify old/new names.
-        if h.p1 != 0x00 || h.p2 != 0x00 {
-            return Err(Sw::WRONG_P1P2);
-        }
         let old = name(&mut c)?;
         if h.ins == INS_RENAME {
             let new = name(&mut c)?;
@@ -258,16 +262,11 @@ impl State {
 
     fn execute_set_code(
         &mut self,
-        h: Header,
         data: &[u8],
         mut c: &mut ByteCursor<'_>,
         store: &mut Store<'_>,
         mac: &mut Mac<'_>,
     ) -> Result<(), Sw> {
-        // P1/P2=00; the KEY field (or empty body) selects set vs clear.
-        if h.p1 != 0x00 || h.p2 != 0x00 {
-            return Err(Sw::WRONG_P1P2);
-        }
         let key = if data.is_empty() {
             &[][..]
         } else {
@@ -303,15 +302,10 @@ impl State {
 
     fn execute_validate(
         &mut self,
-        h: Header,
         mut c: &mut ByteCursor<'_>,
         store: &mut Store<'_>,
         mac: &mut Mac<'_>,
     ) -> Result<(), Sw> {
-        // P1/P2=00; RESPONSE/CHALLENGE TLVs carry the mutual proof.
-        if h.p1 != 0x00 || h.p2 != 0x00 {
-            return Err(Sw::WRONG_P1P2);
-        }
         let response = field(&mut c, tag::RESPONSE)?
             .try_into()
             .map_err(|_| Sw::WRONG_DATA)?;
@@ -339,11 +333,6 @@ impl State {
     ) -> Result<(), Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
-        // P1=00; P2=00 returns the full MAC, P2=01 the 31-bit
-        // dynamically truncated value. NAME selects the credential.
-        if h.p1 != 0x00 || h.p2 > 0x01 {
-            return Err(Sw::WRONG_P1P2);
-        }
         let name = name(&mut c)?;
         let id = service::find(&mut store, &mut mac, name).map_err(status)?;
         let mut record = store.load(id).map_err(status)?;
@@ -466,12 +455,10 @@ impl State {
         if !self.session.authorized() && h.ins != INS_VALIDATE {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
+        validate_parameters(h)?;
         // SEND REMAINING has no parameter modes: P1/P2=00 continues the
         // saved credential enumeration, rather than selecting a new page index.
         if h.ins == INS_SEND_REMAINING {
-            if h.p1 != 0x00 || h.p2 != 0x00 {
-                return Err(Sw::WRONG_P1P2);
-            }
             if !data.is_empty() {
                 return Err(Sw::WRONG_LENGTH);
             }
@@ -482,7 +469,7 @@ impl State {
         let mut c = ByteCursor::new(data);
         match h.ins {
             INS_PUT => {
-                self.execute_put(h, &mut c, &mut store, &mut mac)?;
+                self.execute_put(&mut c, &mut store, &mut mac)?;
             }
             INS_DELETE | INS_RENAME => {
                 // Store borrows the shared storage/memory handles; release it
@@ -492,25 +479,19 @@ impl State {
                 self.execute_delete_rename(h, &mut c, pass, p)?;
             }
             INS_SET_CODE => {
-                self.execute_set_code(h, data, &mut c, &mut store, &mut mac)?;
+                self.execute_set_code(data, &mut c, &mut store, &mut mac)?;
             }
             INS_VALIDATE => {
-                self.execute_validate(h, &mut c, &mut store, &mut mac)?;
+                self.execute_validate(&mut c, &mut store, &mut mac)?;
             }
             INS_LIST => {
                 // P1/P2=00 starts enumeration; continuation uses SEND REMAINING.
-                if h.p1 != 0x00 || h.p2 != 0x00 {
-                    return Err(Sw::WRONG_P1P2);
-                }
                 self.page = Page::List;
                 return self.page(le, p);
             }
             INS_CALCULATE_ALL => {
                 // P1=00; P2=00 returns full MACs, P2=01 dynamic truncation.
                 // The challenge is in the body and applies to the whole list.
-                if h.p1 != 0x00 || h.p2 > 0x01 {
-                    return Err(Sw::WRONG_P1P2);
-                }
                 let challenge = challenge(&mut c)?;
                 if !c.is_empty() {
                     return Err(Sw::WRONG_LENGTH);
@@ -628,5 +609,162 @@ impl Oath {
             self.state.close_response(p);
         }
         result.map(|sw| (self.state.length as u32, sw))
+    }
+}
+
+#[cfg(test)]
+mod parameter_tests {
+    use super::*;
+    use crate::ports::{CryptoError, Device, Memory, Record, Storage, StorageError};
+
+    struct MetadataOnly {
+        locked: bool,
+        selecting: bool,
+    }
+    impl Storage for MetadataOnly {
+        fn load(&mut self, record: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+            assert!(
+                self.selecting,
+                "parameter rejection must precede storage reads"
+            );
+            assert_eq!(record, Record::OathMetadata);
+            out.fill(0);
+            out[0] = 1;
+            out[1] = u8::from(self.locked);
+            Ok(if self.locked { 26 } else { 10 })
+        }
+        fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
+            panic!("parameter rejection must not write storage")
+        }
+    }
+    struct NoMac;
+    impl crate::ports::Crypto for NoMac {
+        fn mac(&mut self, _: u8, _: &[u8], _: &[u8], _: &mut [u8; 64]) -> Result<(), CryptoError> {
+            panic!("parameter rejection must precede MAC operations")
+        }
+        fn random(&mut self, out: &mut [u8]) -> Result<(), CryptoError> {
+            out.fill(0x5a);
+            Ok(())
+        }
+        fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
+            panic!("parameter rejection must precede MAC operations")
+        }
+    }
+    struct NoPresence;
+    impl Device for NoPresence {
+        fn serial(&mut self, out: &mut [u8; 4]) {
+            *out = [1, 2, 3, 4];
+        }
+        fn now(&mut self) -> u32 {
+            0
+        }
+        fn touched(&mut self) -> bool {
+            panic!("parameter rejection must precede touch")
+        }
+        fn progress(&mut self) -> bool {
+            panic!("parameter rejection must not yield")
+        }
+        fn led(&mut self, _: bool) {}
+    }
+    struct Wipe;
+    impl Memory for Wipe {
+        fn wipe(&self, bytes: &mut [u8]) {
+            bytes.fill(0);
+        }
+    }
+
+    #[test]
+    fn parameter_rejection_preserves_auth_legacy_and_parse_precedence() {
+        for locked in [false, true] {
+            let mut storage = MetadataOnly {
+                locked,
+                selecting: true,
+            };
+            let mut crypto = NoMac;
+            let mut device = NoPresence;
+            let mut state = State::new();
+            state
+                .select(&mut Platform {
+                    storage: &mut storage,
+                    crypto: &mut crypto,
+                    device: &mut device,
+                    memory: &Wipe,
+                })
+                .unwrap();
+            storage.selecting = false;
+            let mut p = Platform {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &Wipe,
+            };
+            for ins in [
+                INS_PUT,
+                INS_DELETE,
+                INS_RENAME,
+                INS_SET_CODE,
+                INS_LIST,
+                INS_VALIDATE,
+                INS_SEND_REMAINING,
+                INS_CALCULATE,
+                INS_CALCULATE_ALL,
+            ] {
+                for (p1, p2) in [(1, 0), (0, 2), (0xff, 0xff)] {
+                    let h = Header {
+                        cla: 0,
+                        ins,
+                        p1,
+                        p2,
+                    };
+                    // A truncated NAME TLV must not obscure parameter/auth errors.
+                    assert_eq!(
+                        state.execute(h, 256, &[tag::NAME, 0xff], None, &mut p),
+                        Err(if locked && ins != INS_VALIDATE {
+                            Sw::SECURITY_STATUS_NOT_SATISFIED
+                        } else {
+                            Sw::WRONG_P1P2
+                        })
+                    );
+                }
+            }
+            for ins in [INS_SET_DEFAULT, 0xff] {
+                assert_eq!(
+                    state.execute(
+                        Header {
+                            cla: 0,
+                            ins,
+                            p1: 0xff,
+                            p2: 0xff
+                        },
+                        256,
+                        &[],
+                        None,
+                        &mut p
+                    ),
+                    Err(if locked {
+                        Sw::SECURITY_STATUS_NOT_SATISFIED
+                    } else {
+                        Sw::INS_NOT_SUPPORTED
+                    })
+                );
+            }
+            // The legacy serial route remains available outside the access-code gate.
+            let h = Header {
+                cla: 0,
+                ins: INS_PUT,
+                p1: otp_selector::SERIAL,
+                p2: 0,
+            };
+            assert_eq!(state.execute(h, 256, &[], None, &mut p), Ok(Sw::SUCCESS));
+            assert_eq!(&state.response[..4], &[1, 2, 3, 4]);
+            assert_eq!(
+                state.execute(Header { p2: 1, ..h }, 256, &[], None, &mut p),
+                Err(Sw::WRONG_P1P2)
+            );
+            assert_eq!(
+                state.execute(h, 256, &[0], None, &mut p),
+                Err(Sw::WRONG_LENGTH)
+            );
+        }
     }
 }

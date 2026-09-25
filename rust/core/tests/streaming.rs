@@ -95,6 +95,8 @@ struct Fixture {
     closes: usize,
     reads: usize,
     generated: usize,
+    finished_header: Option<Header>,
+    last_frame: bool,
     next: u32,
     total: u32,
     digest: [u8; 32],
@@ -112,6 +114,8 @@ impl Fixture {
             closes: 0,
             reads: 0,
             generated: 0,
+            finished_header: None,
+            last_frame: false,
             next: 0,
             total: 0,
             digest: [0; 32],
@@ -193,12 +197,14 @@ impl Router for Fixture {
         };
         Ok(())
     }
-    fn end_frame(&mut self, _: bool, _: &mut Platform<'_>) -> Result<(), Sw> {
+    fn end_frame(&mut self, last: bool, _: &mut Platform<'_>) -> Result<(), Sw> {
         self.frames += 1;
+        self.last_frame = last;
         Ok(())
     }
     fn finish(&mut self, h: Header, _: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
         self.finishes += 1;
+        self.finished_header = Some(h);
         self.total = match core::mem::replace(&mut self.sink, Sink::None) {
             Sink::Key {
                 components, field, ..
@@ -391,6 +397,64 @@ fn generated_response_does_not_reexecute_operation() {
     assert_eq!(r.closes, 1);
     assert!(r.reads > 1);
     assert!(core::mem::size_of::<Runtime<Fixture>>() < 2048);
+}
+
+#[test]
+fn frame_decoder_owns_select_parameters_and_final_command_header() {
+    for split in 0..=6 {
+        let mut storage = StorageBackend::default();
+        let mut crypto = CryptoBackend;
+        let mut device = DeviceBackend;
+        let mut p = Platform {
+            storage: &mut storage,
+            crypto: &mut crypto,
+            device: &mut device,
+            memory: &MemoryBackend,
+        };
+        let mut runtime = Runtime::with_router(Fixture::new());
+        for p2 in [1, 0] {
+            let select = [0, 0xa4, 4, p2, 1, 1];
+            runtime.begin_frame(1, select.len(), &mut p).unwrap();
+            runtime.feed_frame(&select[..split], &mut p).unwrap();
+            runtime.feed_frame(&select[split..], &mut p).unwrap();
+            let reply = runtime.end_frame(&mut p);
+            let mut out = [0; 258];
+            let n = runtime.transmit(reply, &mut out, &mut p).unwrap();
+            assert_eq!(
+                &out[..n],
+                if p2 == 0 {
+                    &[0x90, 0][..]
+                } else {
+                    &[0x6a, 0x86][..]
+                }
+            );
+            assert_eq!(runtime.router().selected, p2 == 0);
+        }
+        for last in [false, true] {
+            let header = [if last { 0x80 } else { 0x90 }, 4, 0x12, 0x34];
+            runtime.begin_frame(1, header.len(), &mut p).unwrap();
+            for byte in header {
+                runtime.feed_frame(&[byte], &mut p).unwrap();
+            }
+            let reply = runtime.end_frame(&mut p);
+            let mut out = [0; 258];
+            runtime.transmit(reply, &mut out, &mut p).unwrap();
+            assert_eq!(runtime.router().last_frame, last);
+            assert_eq!(runtime.router().finishes, usize::from(last));
+        }
+        assert_eq!(
+            runtime.router().finished_header,
+            Some(Header {
+                cla: 0x80,
+                ins: 4,
+                p1: 0x12,
+                p2: 0x34
+            })
+        );
+        assert_eq!(runtime.router().generated, 1);
+        runtime.reset(&mut p);
+        assert_eq!(runtime.router().closes, 1);
+    }
 }
 
 #[cfg(feature = "ctap")]

@@ -18,6 +18,9 @@ unsafe extern "C" {
         len: usize,
         out: *mut u8,
     ) -> i32;
+}
+#[cfg(feature = "platform-random")]
+unsafe extern "C" {
     fn ck_platform_random(out: *mut u8, len: usize) -> i32;
 }
 #[cfg(feature = "platform-stream")]
@@ -240,7 +243,7 @@ impl Crypto for CryptoBackend {
         }
     }
     fn random(&mut self, out: &mut [u8]) -> Result<(), CryptoError> {
-        #[cfg(feature = "platform-mac")]
+        #[cfg(feature = "platform-random")]
         {
             if unsafe { ck_platform_random(out.as_mut_ptr(), out.len()) } == 0 {
                 Ok(())
@@ -248,7 +251,7 @@ impl Crypto for CryptoBackend {
                 Err(CryptoError)
             }
         }
-        #[cfg(not(feature = "platform-mac"))]
+        #[cfg(not(feature = "platform-random"))]
         {
             let _ = out;
             Err(CryptoError)

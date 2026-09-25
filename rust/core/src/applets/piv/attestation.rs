@@ -46,8 +46,48 @@ pub struct Attestation {
     encoded: [u8; ENCODED_CAPACITY],
     used: usize,
     pub total: usize,
-    public: CryptoScratch,
+    public: Public,
     algorithm: usize,
+}
+// These states are mutually exclusive views of the existing public workspace.
+// A classic subject retains only its public bytes while the key area is reused
+// for the F9 signer. PQ generation is restarted after signing as before.
+enum Public {
+    Classic { key: KeyMaterial, bytes: [u8; OUTPUT_BYTES] },
+    Pq(CryptoScratch),
+}
+impl Public {
+    const fn new() -> Self {
+        Self::Classic { key: KeyMaterial::new(), bytes: [0; OUTPUT_BYTES] }
+    }
+    fn clear(&mut self, memory: &dyn crate::ports::Memory) {
+        match self {
+            Self::Classic { key, bytes } => {
+                memory.wipe(&mut key.bytes);
+                key.bits = 0;
+                key.reserved = 0;
+                memory.wipe(bytes);
+            }
+            Self::Pq(s) => memory.wipe(&mut s.bytes),
+        }
+    }
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Classic { bytes, .. } => bytes,
+            Self::Pq(_) => unreachable!(),
+        }
+    }
+    #[inline(never)]
+    fn classic(&mut self, memory: &dyn crate::ports::Memory) -> &mut KeyMaterial {
+        if !matches!(self, Self::Classic { .. }) {
+            self.clear(memory);
+            // No const template: the enum-sized rodata copy costs more Flash
+            // than in-place construction costs instructions.
+            *self = Self::new();
+        }
+        let Self::Classic { key, .. } = self else { unreachable!() };
+        key
+    }
 }
 impl Attestation {
     pub const fn new() -> Self {
@@ -57,13 +97,13 @@ impl Attestation {
             encoded: [0; ENCODED_CAPACITY],
             used: 0,
             total: 0,
-            public: CryptoScratch::new(),
+            public: Public::new(),
             algorithm: 0,
         }
     }
     pub(crate) fn clear(&mut self, memory: &dyn crate::ports::Memory) {
         memory.wipe(&mut self.encoded);
-        memory.wipe(&mut self.public.bytes);
+        self.public.clear(memory);
         self.segments.fill(0);
         self.count = 0;
         self.used = 0;
@@ -165,7 +205,7 @@ impl Attestation {
                 (0, n - key_layout::EXPONENT_BYTES),
                 (n - key_layout::EXPONENT_BYTES, key_layout::EXPONENT_BYTES),
             ] {
-                let data = &self.public.bytes[offset..offset + length];
+                let data = &self.public.bytes()[offset..offset + length];
                 let skip = data.iter().position(|v| *v != 0).unwrap_or(length - 1);
                 let pad = usize::from(data[skip] & DER_SIGN_BIT != 0);
                 let mut h = [0; 4];
@@ -261,12 +301,15 @@ impl Attestation {
             let mut digest = [0; SHA256_BYTES];
             self.hash(&mut digest, p)?;
             let mut sig = [0; P256_DER_SIGNATURE_MAX];
-            let signed = sign(&signer, &digest, &mut sig, p);
+            if m[repo::ALGORITHM] == alg::MLDSA65 {
+                self.abort_pq(p);
+            }
+            let key = self.public.classic(p.memory);
+            let signed = sign(key, &signer, &digest, &mut sig, p);
             p.memory.wipe(&mut digest);
             let n = signed?;
             // Complete the F9 primitive before starting the response source.
             if m[repo::ALGORITHM] == alg::MLDSA65 {
-                self.abort_pq(p);
                 self.pq_public(id, p)?;
             }
             self.bytes(SIGNATURE_ALGORITHM)?;
@@ -278,16 +321,17 @@ impl Attestation {
     }
     #[inline(never)]
     fn pq_public(&mut self, id: usize, p: &mut Platform<'_>) -> Result<usize, Sw> {
-        super::protocol::init_public_stream(id, alg::MLDSA65, &mut self.public, p)
+        self.public.clear(p.memory);
+        // In-place init: a const CryptoScratch template would duplicate its
+        // 2,400 zero bytes into rodata for a single copy.
+        self.public = Public::Pq(CryptoScratch::new());
+        let Public::Pq(s) = &mut self.public else { unreachable!() };
+        super::protocol::init_public_stream(id, alg::MLDSA65, s, p)
     }
     fn abort_pq(&mut self, p: &mut Platform<'_>) {
-        let _ = p.crypto.stream(
-            StreamOperation::Abort,
-            alg::MLDSA65,
-            &mut self.public,
-            &[],
-            &mut [],
-        );
+        if let Public::Pq(s) = &mut self.public {
+            let _ = p.crypto.stream(StreamOperation::Abort, alg::MLDSA65, s, &[], &mut []);
+        }
     }
     #[inline(never)]
     fn classic_public(
@@ -296,7 +340,8 @@ impl Attestation {
         m: &[u8; repo::META],
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
-        let mut key = KeyMaterial::new();
+        self.public.classic(p.memory);
+        let Public::Classic { key, bytes } = &mut self.public else { unreachable!() };
         let result = (|| {
             repo::load(id, m, &mut key.bytes, p)?;
             let n = p
@@ -304,16 +349,16 @@ impl Attestation {
                 .key_operation(
                     KeyOperation::Public,
                     m[repo::ALGORITHM],
-                    &mut key,
+                    key,
                     &[],
-                    &mut self.public.bytes[..OUTPUT_BYTES],
+                    bytes,
                 )
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             if n > RSA_OUTPUT_BYTES {
                 return Err(Sw::UNABLE_TO_PROCESS);
             }
             if repo::rsa(m[repo::ALGORITHM]) {
-                self.public.bytes[n..n + key_layout::EXPONENT_BYTES]
+                bytes[n..n + key_layout::EXPONENT_BYTES]
                     .copy_from_slice(&key.bytes[..key_layout::EXPONENT_BYTES]);
                 Ok(n + key_layout::EXPONENT_BYTES)
             } else {
@@ -380,12 +425,15 @@ impl Attestation {
                     }
                     _ => {
                         if self.algorithm == alg::MLDSA65 as usize {
+                            let Public::Pq(scratch) = &mut self.public else {
+                                return Err(Sw::UNABLE_TO_PROCESS);
+                            };
                             let n = p
                                 .crypto
                                 .stream(
                                     StreamOperation::Read,
                                     alg::MLDSA65,
-                                    &mut self.public,
+                                    scratch,
                                     &[],
                                     dst,
                                 )
@@ -394,7 +442,7 @@ impl Attestation {
                                 return Err(Sw::UNABLE_TO_PROCESS);
                             }
                         } else {
-                            dst.copy_from_slice(&self.public.bytes[at..at + dst.len()])
+                            dst.copy_from_slice(&self.public.bytes()[at..at + dst.len()])
                         }
                     }
                 }
@@ -407,7 +455,7 @@ impl Attestation {
         if self.algorithm == alg::MLDSA65 as usize {
             self.abort_pq(p);
         }
-        p.memory.wipe(&mut self.public.bytes);
+        self.public.clear(p.memory);
         self.count = 0;
         self.used = 0;
         self.total = 0;
@@ -415,18 +463,18 @@ impl Attestation {
 }
 #[inline(never)]
 fn sign(
+    key: &mut KeyMaterial,
     m: &[u8; repo::META],
     digest: &[u8; SHA256_BYTES],
     signature: &mut [u8; P256_DER_SIGNATURE_MAX],
     p: &mut Platform<'_>,
 ) -> Result<usize, Sw> {
-    let mut key = KeyMaterial::new();
     let mut out = [0; OUTPUT_BYTES];
     let result = (|| {
         repo::load(repo::ATTESTATION_KEY, m, &mut key.bytes, p)?;
         let n = p
             .crypto
-            .key_operation(KeyOperation::EcSign, alg::P256, &mut key, digest, &mut out)
+            .key_operation(KeyOperation::EcSign, alg::P256, key, digest, &mut out)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if n != P256_SIGNATURE_BYTES {
             return Err(Sw::UNABLE_TO_PROCESS);

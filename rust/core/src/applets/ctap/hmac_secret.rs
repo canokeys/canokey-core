@@ -44,7 +44,7 @@ impl Parameters {
 pub struct Parser {
     pub params: Parameters,
     previous: [Option<Key>; 2],
-    key: Option<Key>,
+    key: Option<Option<i8>>,
     cose: bool,
     seen: u8,
     cose_seen: u8,
@@ -101,26 +101,21 @@ impl Parser {
                 }
                 return Ok(true);
             }
-            let key = Key::parse(event)?;
             let previous = &mut self.previous[usize::from(self.cose)];
-            if previous.is_some_and(|old| key <= old) {
-                return Err(Status::InvalidCbor);
-            }
-            *previous = Some(key);
+            let key = Key::ordered(event, previous)?;
             self.key = Some(key);
             return Ok(false);
         };
-        let key = key.integer().unwrap_or(COSE_KEY_MISSING);
+        let key = key.unwrap_or(COSE_KEY_MISSING);
         if self.cose {
-            if !matches!(key, 1 | 3 | -1 | -2 | -3) {
+            let bit = super::cose_key_field(key, event)?;
+            if bit == 0 {
                 self.ignore(event);
-                return Ok(false);
-            }
-            let mut seen = self.cose_seen;
-            if super::cose_key_field(key, event, &mut seen, |key, event| {
-                self.bytes(key, event, 32, 32).map(|_| ())
-            })? {
-                self.cose_seen = seen;
+            } else {
+                if matches!(key, -2 | -3) {
+                    self.bytes(key, event, 32, 32)?;
+                }
+                self.cose_seen |= bit;
             }
         } else {
             match key {

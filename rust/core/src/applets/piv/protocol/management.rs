@@ -3,6 +3,7 @@
 use super::*;
 
 impl Piv {
+    #[inline(never)]
     pub(super) fn management_auth(
         &mut self,
         h: Header,

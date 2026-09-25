@@ -61,6 +61,14 @@ index is stored. Re-registering the same RP/user replaces one atomic record,
 invalidating the old resident ID. Enumeration scans these records and keeps only
 small cursors in RAM. getNextAssertion expires after 30 seconds or another command.
 
+For makeCredential, a credBlob longer than 32 bytes is consumed within the
+normal request-size limit and reported as `credBlob: false`; the credential
+still succeeds, and no truncated blob is persisted. getAssertion then returns
+an empty blob. Nonresident credentials also report `false`. RP enumeration
+groups duplicate RP hashes using its visited bitmap and reloads the selected
+record after scanning with the shared buffer, so its RP ID and hash always
+come from the same record.
+
 Record `b4` holds the committed serialized large-blob array. Each set fragment is
 materialized in the shared command workspace, releasing input PKE before crypto.
 PIN-protected writes require LBW permission and authenticate exactly
@@ -255,8 +263,9 @@ must not be used as permission to overwrite endpoint-owned bytes.
 
 HID and APDU use `ctap::Request` to consume fragments and produce an owned
 `Command` or CTAP error. `Session::execute` runs only after request storage closes.
-APDU parsing occupies an alternative view of the shared session workspace; it
-never adds an applet-sized request buffer. Response cleanup preserves key agreement,
+APDU and HID semantic parsing occupy alternative views of the shared session
+workspace (including HID MSG parsing); they
+never add an applet-sized request buffer. Response cleanup preserves key agreement,
 while session reset wipes authorization. HID reuses its 192-byte inline area as
 its PKE read window. Prepared response reads never repeat crypto or encoding.
 

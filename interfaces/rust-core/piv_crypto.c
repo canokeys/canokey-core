@@ -26,10 +26,12 @@ enum stream_kind { STREAM_PUBLIC = 1, STREAM_SIGNING = 2, STREAM_SIGNATURE = 3, 
 typedef struct {
   uint32_t kind, alg, emitted, position, length;
   union {
+#ifdef RUST_CORE_PIV
     struct {
       uint8_t seed[MLKEM768_KEYGEN_SEED_BYTES], ciphertext[MLKEM768_CIPHERTEXT_BYTES],
           public_key[MLKEM768_PUBLIC_KEY_BYTES];
     } kem;
+#endif
     struct {
       union {
         mldsa_keygen_state_t keygen;
@@ -67,7 +69,7 @@ static int refill(stream_t *s) {
 static __attribute__((noinline)) int ed_init(stream_t *s, const uint8_t *seed) {
   ecc_key_t key = {0};
   memcpy(key.pri, seed, ED25519_SEED_BYTES);
-  int r = ecc_complete_key(ED25519, &key);
+  int r = ck_ecc_complete_key(ED25519, &key);
   if (r == 0) r = ed25519_randomized_sign_init(&s->data.ed.state, &key);
   memzero(&key, sizeof(key));
   return r;
@@ -110,12 +112,15 @@ int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t
   }
   if (op == CK_STREAM_PUBLIC_INIT) {
     s->kind = STREAM_PUBLIC;
+    // Only PIV exposes ML-KEM public keys and decapsulation.
+#ifdef RUST_CORE_PIV
     if (alg == MLKEM768 && n == MLKEM768_KEYGEN_SEED_BYTES) {
       memcpy(s->data.kem.seed, input, sizeof(s->data.kem.seed));
       if (ml_kem_768_seed_to_public(s->data.kem.public_key, s->data.kem.seed) < 0) return -1;
       s->length = MLKEM768_PUBLIC_KEY_BYTES;
       return MLKEM768_PUBLIC_KEY_BYTES;
     }
+#endif
     if (alg == MLDSA65 && n == MLDSA_SEEDBYTES) {
       memcpy(s->data.dsa.state.keygen.seed, input, MLDSA_SEEDBYTES);
       if (refill(s) < 0) return -1;
@@ -127,7 +132,7 @@ int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t
     s->kind = STREAM_SIGNING;
     if (alg == SM2 && n == SM2_SCALAR_BYTES) {
       memcpy(s->data.sm2.key.pri, input, SM2_SCALAR_BYTES);
-      if (ecc_complete_key(SM2, &s->data.sm2.key) < 0) return -1;
+      if (ck_ecc_complete_key(SM2, &s->data.sm2.key) < 0) return -1;
       sm3_init(&s->data.sm2.hash);
       return 0;
     }
@@ -181,6 +186,7 @@ int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t
     }
     return -1;
   }
+#ifdef RUST_CORE_PIV
   if (op == CK_STREAM_DECAPSULATE_INIT) {
     if (alg != MLKEM768 || n != MLKEM768_KEYGEN_SEED_BYTES) return -1;
     s->kind = STREAM_DECAPSULATING;
@@ -201,12 +207,16 @@ int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t
                ? -1
                : MLKEM768_SHARED_KEY_BYTES;
   }
+#endif
   if (op == CK_STREAM_READ) {
     if (s->kind != STREAM_PUBLIC && s->kind != STREAM_SIGNATURE) return -1;
     size_t written = 0;
     uint32_t total = s->kind == STREAM_PUBLIC
-                         ? (s->alg == MLKEM768 ? MLKEM768_PUBLIC_KEY_BYTES : MLDSA_PK_BYTES)
+                         ? MLDSA_PK_BYTES
                          : (s->alg == ED25519 || s->alg == SM2 ? EC_SIGNATURE_BYTES : MLDSA_SIG_BYTES);
+#ifdef RUST_CORE_PIV
+    if (s->alg == MLKEM768) total = MLKEM768_PUBLIC_KEY_BYTES;
+#endif
     if (capacity > total - s->emitted) return -1;
     while (written < capacity) {
       if (s->position == s->length) {
@@ -214,10 +224,12 @@ int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t
       }
       size_t count = s->length - s->position;
       if (count > capacity - written) count = capacity - written;
-      const uint8_t *source = s->alg == MLKEM768  ? s->data.kem.public_key
-                              : s->alg == ED25519 ? s->data.ed.signature
+      const uint8_t *source = s->alg == ED25519 ? s->data.ed.signature
                               : s->alg == SM2     ? s->data.sm2.signature
                                                   : s->data.dsa.stage;
+#ifdef RUST_CORE_PIV
+      if (s->alg == MLKEM768) source = s->data.kem.public_key;
+#endif
       memcpy(out + written, source + s->position, count);
       s->position += count;
       written += count;
@@ -236,8 +248,8 @@ int32_t ck_sm2_exchange(ecc_key_t *key, const uint8_t *in, size_t n, uint8_t *ou
     return -1;
   ecc_key_t ephemeral = {0};
   memcpy(ephemeral.pri, in, SM2_SCALAR_BYTES);
-  int r = ecc_complete_key(SM2, key);
-  if (r == 0) r = ecc_complete_key(SM2, &ephemeral);
+  int r = ck_ecc_complete_key(SM2, key);
+  if (r == 0) r = ck_ecc_complete_key(SM2, &ephemeral);
   if (r == 0)
     r = sm2_key_exchange((sm2_ke_role_t)in[CK_SM2_ROLE], in + CK_SM2_OWN_ID, in + CK_SM2_PEER_ID, key, &ephemeral,
                          in + CK_SM2_PEER_STATIC, in + CK_SM2_PEER_EPHEMERAL, out, in[CK_SM2_OUTPUT_LENGTH]);

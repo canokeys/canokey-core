@@ -13,7 +13,6 @@ use crate::ports::key_layout;
 use canokey_protocol::{
     response::StatusWord as Sw,
     tlv::length::{Feed, LengthState},
-    tlv::{Decoder, Error as TlvError, Event},
 };
 fn length(b: &[u8], at: &mut usize) -> Result<Option<usize>, Sw> {
     // This parser is intentionally local: import headers arrive incrementally
@@ -31,55 +30,56 @@ fn length(b: &[u8], at: &mut usize) -> Result<Option<usize>, Sw> {
     }
     Ok(None)
 }
-/// Parse a complete BER object, returning its tag and value without allocation.
+// Complete headers need no event callback or streaming decoder state. Match
+// the streaming decoder's tag grammar and retain incomplete vs invalid errors.
+fn object_header(b: &[u8]) -> Result<(u16, usize, usize), Sw> {
+    let mut at = 0;
+    loop {
+        let byte = *b.get(at).ok_or(Sw::WRONG_LENGTH)?;
+        if at == 3 || (at == 1 && byte & 0x7f == 0) {
+            return Err(Sw::WRONG_DATA);
+        }
+        let last = if at == 0 {
+            byte & 0x1f != 0x1f
+        } else {
+            byte & 0x80 == 0
+        };
+        at += 1;
+        if last {
+            break;
+        }
+    }
+    let tag_end = at;
+    let size = length(b, &mut at)?.ok_or(Sw::WRONG_LENGTH)?;
+    // The streaming parser rejects wide tags when their complete header is
+    // emitted, not before: a truncated three-byte-tag header is WRONG_LENGTH.
+    if tag_end > 2 {
+        return Err(Sw::WRONG_DATA);
+    }
+    let tag = if tag_end == 1 {
+        u16::from(b[0])
+    } else {
+        u16::from_be_bytes([b[0], b[1]])
+    };
+    Ok((tag, at, size))
+}
+
+/// Parse exactly one complete BER object, borrowing its value without copying.
 pub fn object(b: &[u8]) -> Result<(u16, &[u8]), Sw> {
     if b.is_empty() {
         return Err(Sw::WRONG_DATA);
     }
-    let mut decoder = Decoder::default();
-    let mut tag = None;
-    let mut value_seen = false;
-    decoder
-        .feed(b, &mut |event| {
-            match event {
-                Event::Start {
-                    tag: encoded,
-                    length,
-                } => {
-                    if tag.is_some() || encoded.bytes().len() > 2 {
-                        return Err(TlvError::Invalid);
-                    }
-                    let bytes = encoded.bytes();
-                    let number = bytes
-                        .iter()
-                        .fold(0u16, |n, byte| (n << 8) | u16::from(*byte));
-                    tag = Some((number, usize::from(length)));
-                }
-                Event::Value(bytes) => {
-                    if value_seen || bytes.is_empty() {
-                        return Err(TlvError::Invalid);
-                    }
-                    value_seen = true;
-                }
-                Event::End => (),
-            }
-            Ok(())
-        })
-        .map_err(|error| match error {
-            TlvError::Truncated => Sw::WRONG_LENGTH,
-            _ => Sw::WRONG_DATA,
-        })?;
-    decoder.finish().map_err(|error| match error {
-        TlvError::Truncated => Sw::WRONG_LENGTH,
-        _ => Sw::WRONG_DATA,
-    })?;
-    let (tag, length) = tag.ok_or(Sw::WRONG_DATA)?;
-    if length > b.len() || (length != 0 && !value_seen) {
-        return Err(Sw::WRONG_LENGTH);
+    let (tag, at, size) = object_header(b)?;
+    let (value, tail) = b[at..].split_at_checked(size).ok_or(Sw::WRONG_LENGTH)?;
+    if !tail.is_empty() {
+        // A complete sibling header is forbidden; an incomplete trailing
+        // header must still report WRONG_LENGTH, just like Decoder::finish.
+        object_header(tail)?;
+        return Err(Sw::WRONG_DATA);
     }
-    let value = &b[b.len() - length..];
     Ok((tag, value))
 }
+
 pub struct Import {
     // Only the 4D envelope, control reference and 7F48/5F48 descriptors
     // are buffered. Private component bytes bypass this prefix buffer.
@@ -273,5 +273,124 @@ impl Import {
             key[..32].reverse();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod object_tests {
+    use super::*;
+    use canokey_protocol::tlv::{Decoder, Error as TlvError, Event};
+
+    fn compare(bytes: &[u8]) {
+        let actual = object(bytes);
+        let expected = reference_object(bytes);
+        assert_eq!(actual, expected, "input: {bytes:02x?}");
+        if let Ok((_, value)) = actual {
+            // A successful value is a borrow of the original object's suffix.
+            assert_eq!(value.as_ptr(), bytes[bytes.len() - value.len()..].as_ptr());
+        }
+    }
+
+    #[test]
+    fn complete_objects_match_streaming_grammar_and_trailing_errors() {
+        compare(&[]);
+        for first in 0..=u8::MAX {
+            compare(&[first]);
+            for second in 0..=u8::MAX {
+                compare(&[first, second]);
+                for third in [0, 1, 0x1f, 0x7f, 0x80, 0x81, 0x82, 0xff] {
+                    compare(&[first, second, third]);
+                    compare(&[0x30, 0, first, second, third]);
+                }
+            }
+        }
+        for bytes in [
+            &b"\x7f\x81\x01\x00"[..],
+            &b"\x7f\x81\x81\x01\x00"[..],
+            &b"\x7f\x81\x01\x82\x00"[..],
+            &b"\x30\x00\x7f\x81\x01\x00"[..],
+        ] {
+            for n in 0..=bytes.len() {
+                compare(&bytes[..n]);
+            }
+        }
+    }
+
+    #[test]
+    fn complete_objects_accept_ber_lengths_and_reject_each_truncation() {
+        let mut bytes = [0x5a; 65540];
+        for tag in [&b"\x30"[..], &b"\x5f\x2d"[..]] {
+            for size in [0u16, 1, 127, 128, 255, 256, 513, u16::MAX] {
+                for form in 0..=2 {
+                    if (form == 0 && size >= 128) || (form == 1 && size >= 256) {
+                        continue;
+                    }
+                    bytes[..tag.len()].copy_from_slice(tag);
+                    let [hi, lo] = size.to_be_bytes();
+                    let encoded = match form {
+                        0 => [lo, 0, 0],
+                        1 => [0x81, lo, 0],
+                        _ => [0x82, hi, lo],
+                    };
+                    let at = tag.len() + form + 1;
+                    bytes[tag.len()..at].copy_from_slice(&encoded[..form + 1]);
+                    let end = at + usize::from(size);
+                    for n in 0..=end {
+                        compare(&bytes[..n]);
+                    }
+                    assert_eq!(object(&bytes[..end]).unwrap().1.len(), usize::from(size));
+                }
+            }
+        }
+    }
+
+    /// Parse a complete BER object, returning its tag and value without allocation.
+    fn reference_object(b: &[u8]) -> Result<(u16, &[u8]), Sw> {
+        if b.is_empty() {
+            return Err(Sw::WRONG_DATA);
+        }
+        let mut decoder = Decoder::default();
+        let mut tag = None;
+        let mut value_seen = false;
+        decoder
+            .feed(b, &mut |event| {
+                match event {
+                    Event::Start {
+                        tag: encoded,
+                        length,
+                    } => {
+                        if tag.is_some() || encoded.bytes().len() > 2 {
+                            return Err(TlvError::Invalid);
+                        }
+                        let bytes = encoded.bytes();
+                        let number = bytes
+                            .iter()
+                            .fold(0u16, |n, byte| (n << 8) | u16::from(*byte));
+                        tag = Some((number, usize::from(length)));
+                    }
+                    Event::Value(bytes) => {
+                        if value_seen || bytes.is_empty() {
+                            return Err(TlvError::Invalid);
+                        }
+                        value_seen = true;
+                    }
+                    Event::End => (),
+                }
+                Ok(())
+            })
+            .map_err(|error| match error {
+                TlvError::Truncated => Sw::WRONG_LENGTH,
+                _ => Sw::WRONG_DATA,
+            })?;
+        decoder.finish().map_err(|error| match error {
+            TlvError::Truncated => Sw::WRONG_LENGTH,
+            _ => Sw::WRONG_DATA,
+        })?;
+        let (tag, length) = tag.ok_or(Sw::WRONG_DATA)?;
+        if length > b.len() || (length != 0 && !value_seen) {
+            return Err(Sw::WRONG_LENGTH);
+        }
+        let value = &b[b.len() - length..];
+        Ok((tag, value))
     }
 }

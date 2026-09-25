@@ -49,7 +49,7 @@ struct Fields {
     params: Parameters,
     started: bool,
     previous: Option<Key>,
-    key: Option<Key>,
+    key: Option<Option<i8>>,
     skip: u8,
     body: Option<(i8, usize)>,
 }
@@ -68,6 +68,8 @@ impl Parser {
             error: None,
         }
     }
+    // Share this parser across HID and APDU callers on size-constrained targets.
+    #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         if self.error.is_some() {
             return;
@@ -91,12 +93,13 @@ impl Parser {
         memory.wipe(&mut self.fields.params.bytes);
         memory.wipe(&mut self.fields.params.auth);
     }
-    pub fn finish(self) -> Result<Command, Status> {
+    #[inline(never)]
+    pub fn finish(&mut self) -> Result<Command, Status> {
         if let Some(error) = self.error {
             return Err(error);
         }
         self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
-        let p = self.fields.params;
+        let p = &self.fields.params;
         let offset = p.offset.ok_or(Status::InvalidParameter)?;
         if p.get.is_some() == p.set.is_some() {
             return Err(Status::InvalidParameter);
@@ -124,7 +127,10 @@ impl Parser {
                 return Err(Status::InvalidParameter);
             }
         }
-        Ok(Command::LargeBlob(p))
+        Ok(Command::LargeBlob(core::mem::replace(
+            &mut self.fields.params,
+            Parameters::new(),
+        )))
     }
 }
 impl Fields {
@@ -152,15 +158,11 @@ impl Fields {
             if matches!(event, Event::End) {
                 return Ok(());
             }
-            let key = Key::parse(event)?;
-            if self.previous.is_some_and(|old| key <= old) {
-                return Err(Status::InvalidCbor);
-            }
-            self.previous = Some(key);
+            let key = Key::ordered(event, &mut self.previous)?;
             self.key = Some(key);
             return Ok(());
         };
-        match key.integer() {
+        match key {
             Some(key @ (1 | 3 | 4 | 6)) => {
                 let Event::Unsigned(n) = event else {
                     return Err(Status::UnexpectedType);

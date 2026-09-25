@@ -110,7 +110,10 @@ pub(super) fn store(
         &params.user[..params.user_len],
         &params.name[..params.name_len],
         &params.display[..params.display_len],
-        &params.cred_blob[..params.cred_blob_len.unwrap_or(0)],
+        &params.cred_blob[..params
+            .cred_blob_len
+            .filter(|&n| n <= params.cred_blob.len())
+            .unwrap_or(0)],
     ] {
         out[at] = field.len() as u8;
         at += 1;

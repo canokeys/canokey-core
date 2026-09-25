@@ -107,3 +107,40 @@ fn agreement_survives_response_cleanup_but_not_session_reset() {
     });
     assert_eq!(crypto.generated, 2);
 }
+
+#[test]
+fn unknown_integer_keys_keep_full_width_order_across_fragments() {
+    // These labels cannot name a clientPIN field. They must still consume one
+    // whole value and participate in ordering without narrowing to eight bits.
+    let keys: &[&[u8]] = &[
+        &[0x18, 0x7f],
+        &[0x18, 0x80],
+        &[0x1a, 0xff, 0xff, 0xff, 0xff],
+        &[0x1b, 0, 0, 0, 1, 0, 0, 0, 0],
+        &[0x1b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        &[0x20],
+        &[0x38, 0x7f],
+        &[0x38, 0x80],
+        &[0x3b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+    ];
+    for (i, first) in keys.iter().enumerate() {
+        for (j, second) in keys.iter().enumerate() {
+            let mut request = vec![6, 0xa3, 2, 1];
+            for key in [first, second] {
+                request.extend_from_slice(key);
+                request.extend_from_slice(&[0x82, 0xa0, 0x41, 7]);
+            }
+            for split in 0..=request.len() {
+                let actual = reply(&[&request[..split], &request[split..]]);
+                assert_eq!(
+                    actual,
+                    if i < j {
+                        vec![0, 0xa1, 3, 8]
+                    } else {
+                        vec![0x12]
+                    }
+                );
+            }
+        }
+    }
+}

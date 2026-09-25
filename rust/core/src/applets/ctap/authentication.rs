@@ -358,7 +358,8 @@ fn respond(
         let tail = &mut w.input[auth_len..];
         let capacity = tail.len();
         let mut e = Encoder::new(tail);
-        public_key(&mut e, request.algorithm, request.sm2, &w.output[..n]).unwrap_or_default();
+        super::encoding::public_key(&mut e, request.algorithm, request.sm2, &w.output[..n])
+            .unwrap_or_default();
         auth_len += capacity - e.writer().len();
     }
     let extensions = u64::from(request.protection.is_some())
@@ -528,49 +529,32 @@ fn respond(
         if request.make {
             e.str("packed")?;
         } else {
-            e.map(2)?
-                .str("id")?
-                .bytes(request.id)?
-                .str("type")?
-                .str("public-key")?;
+            super::encoding::descriptor(&mut e, request.id)?;
         }
         e.u8(2)?.bytes_len(auth_len as u64)?;
         prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
         e.u8(3)?;
         if request.make {
             if self_attest {
-                e.map(2)?
-                    .str("alg")?
+                e.encoded(super::encoding::SELF_ATTESTATION)?
                     .i32(credential::cose_algorithm(request.algorithm, request.sm2))?
                     .str("sig")?;
             } else {
-                e.map(3)?.str("alg")?.i8(-7)?.str("sig")?;
+                e.encoded(super::encoding::ATTESTATION)?;
             }
         }
         e.bytes(&signature[..n])?;
         if request.make && !self_attest {
-            e.str("x5c")?.array(1)?.bytes_len(cert_len as u64)?;
+            e.encoded(super::encoding::CERTIFICATE)?
+                .bytes_len(cert_len as u64)?;
             certificate = Some((
                 crate::runtime::workspace::OUTPUT_BYTES - e.writer().len(),
                 cert_len,
             ));
         }
         if let Some(user) = &user {
-            let details = request.uv && request.details;
-            let has_name = details && !user.name.is_empty();
-            let has_display = details && !user.display.is_empty();
-            e.u8(4)?
-                .map(1 + u64::from(has_name) + u64::from(has_display))?
-                .str("id")?
-                .bytes(user.user)?;
-            if has_name {
-                e.str("name")?
-                    .str(core::str::from_utf8(user.name).unwrap_or_default())?;
-            }
-            if has_display {
-                e.str("displayName")?
-                    .str(core::str::from_utf8(user.display).unwrap_or_default())?;
-            }
+            e.u8(4)?;
+            super::encoding::user(&mut e, user, request.uv && request.details)?;
         }
         if request.count > 1 {
             e.u8(5)?.u8(request.count)?;
@@ -664,19 +648,7 @@ fn respond_mldsa_make(
 
     let mut cose = [0u8; 32];
     let mut ce = Encoder::new(&mut cose[..]);
-    (|| {
-        ce.map(4)?
-            .u8(1)?
-            .u8(7)?
-            .u8(3)?
-            .i8(-49)?
-            .i8(-1)?
-            .u8(6)?
-            .i8(-2)?
-            .bytes_len(super::pq::PUBLIC_BYTES as u64)?;
-        Ok::<(), canokey_protocol::cbor::EncodeError>(())
-    })()
-    .unwrap_or_default();
+    super::encoding::mldsa_public_header(&mut ce).unwrap_or_default();
     let cose_prefix_len = 32 - ce.writer().len();
     // authenticatorData = rpIdHash (32) || flags (1) || counter (4) ||
     // AAGUID (16) || credentialIdLength (2) || credentialId || COSE key.
@@ -685,10 +657,7 @@ fn respond_mldsa_make(
 
     let mut e = Encoder::new(&mut w.output[..]);
     (|| {
-        e.map(3)?
-            .u8(1)?
-            .str("packed")?
-            .u8(2)?
+        e.encoded(super::encoding::MAKE_HEADER)?
             .bytes_len((auth_len + super::pq::PUBLIC_BYTES) as u64)?;
         Ok::<(), canokey_protocol::cbor::EncodeError>(())
     })()
@@ -709,17 +678,15 @@ fn respond_mldsa_make(
     let mut tail = Encoder::new(&mut w.output[after_cose..]);
     (|| {
         tail.u8(3)?
-            .map(3)?
-            .str("alg")?
-            .i8(-7)?
-            .str("sig")?
+            .encoded(super::encoding::ATTESTATION)?
             .bytes_len(72)?;
         Ok::<(), canokey_protocol::cbor::EncodeError>(())
     })()
     .unwrap_or_default();
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     (|| {
-        tail.str("x5c")?.array(1)?.bytes_len(cert_len as u64)?;
+        tail.encoded(super::encoding::CERTIFICATE)?
+            .bytes_len(cert_len as u64)?;
         Ok::<(), canokey_protocol::cbor::EncodeError>(())
     })()
     .unwrap_or_default();
@@ -738,46 +705,4 @@ fn respond_mldsa_make(
         hash_suffix: (after_cose, 0),
     }));
     Ok(total)
-}
-
-pub(super) fn public_key(
-    e: &mut Encoder<&mut [u8]>,
-    algorithm: u8,
-    sm2: super::settings::Sm2,
-    public: &[u8],
-) -> Result<(), canokey_protocol::cbor::EncodeError> {
-    if algorithm == alg::MLDSA65 {
-        e.map(4)?
-            .u8(1)?
-            .u8(7)?
-            .u8(3)?
-            .i8(-49)?
-            .i8(-1)?
-            .u8(6)?
-            .i8(-2)?
-            .bytes(public)?;
-    } else if algorithm != alg::ED25519 {
-        e.map(5)?
-            .u8(1)?
-            .u8(2)?
-            .u8(3)?
-            .i32(credential::cose_algorithm(algorithm, sm2))?
-            .i8(-1)?
-            .i32(if algorithm == alg::SM2 { sm2.curve } else { 1 })?
-            .i8(-2)?
-            .bytes(&public[..32])?
-            .i8(-3)?
-            .bytes(&public[32..64])?;
-    } else {
-        e.map(4)?
-            .u8(1)?
-            .u8(1)?
-            .u8(3)?
-            .i8(-8)?
-            .i8(-1)?
-            .u8(6)?
-            .i8(-2)?
-            .bytes(&public[..32])?;
-    }
-    Ok(())
 }

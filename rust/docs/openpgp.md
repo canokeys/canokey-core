@@ -141,6 +141,11 @@ Certificates store only their contents. No previous-format decoder is included.
 The key record is a 31-byte version/algorithm/origin/UIF/fingerprint/date/counter
 header followed by explicit private components. RSA stores exponent4 and five
 active-width components: 644/964/1284 material bytes for RSA-2048/3072/4096.
+Including metadata, RSA-4096 occupies 1315 bytes. Metadata reads fetch only the
+31-byte prefix and check the exact complete record size; the native 1284-byte
+key workspace is not a bound on the stored record. Generated and imported
+RSA-4096 keys are exercised after host reset for signing, authentication and
+decryption in `openpgp-normal`.
 ECC stores only its private scalar. A new signing key and its zero
 counter publish in one transaction. Successful signing persists its increment
 before exposing the response; delivery failure does not roll the counter back.

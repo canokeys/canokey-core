@@ -6,6 +6,19 @@
 #include <ecc.h>
 #include <rsa.h>
 
+// The CTAP-only adapter must not keep X25519 through the generic, out-of-line
+// ECC public-key dispatcher. Keep the same primitive and validation semantics.
+static inline int ck_ecc_complete_key(key_type_t alg, ecc_key_t *key) {
+#if defined(RUST_CORE_CTAP) && !defined(RUST_CORE_OPENPGP) && !defined(RUST_CORE_PIV)
+  if (IS_SHORT_WEIERSTRASS(alg)) return K__short_weierstrass_complete_key(alg, key);
+  if (alg != ED25519) return -1;
+  K__ed25519_publickey(key->pri, key->pub);
+  return 0;
+#else
+  return ecc_complete_key(alg, key);
+#endif
+}
+
 // Native workspace ABI mirrored by ports/crypto.rs::key_layout and state types.
 enum ck_crypto_workspace {
   CK_KEY_METADATA_BYTES = 4,

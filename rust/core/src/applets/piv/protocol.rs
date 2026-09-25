@@ -346,6 +346,7 @@ impl Piv {
                 .ga
                 .finish()
                 .and_then(|()| self.general_authenticate(h, w, p)),
+            Request::Buffered if h.ins == INS_GENERATE_KEY => self.generate(h, w, p),
             Request::Buffered => self.command(h, le, w, p),
             Request::Import => (|| {
                 self.import.finish(&mut w.key.bytes)?;

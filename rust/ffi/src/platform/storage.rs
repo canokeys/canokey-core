@@ -9,11 +9,11 @@ unsafe extern "C" {
     fn ck_platform_read(file: u8, out: *mut u8, len: usize) -> i32;
     fn ck_platform_write(file: u8, input: *const u8, len: usize) -> i32;
 }
-#[cfg(feature = "storage")]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
 unsafe extern "C" {
     fn ck_platform_stage(operation: u8, file: u8, input: *const u8, len: usize) -> i32;
 }
-#[cfg(feature = "storage")]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
 unsafe extern "C" {
     fn ck_platform_size(file: u8) -> i32;
     fn ck_platform_read_at(file: u8, offset: u32, out: *mut u8, len: usize) -> i32;
@@ -22,7 +22,7 @@ unsafe extern "C" {
 }
 
 // Stable byte ABI, mirrored in interfaces/rust-core/core.h.
-#[cfg(feature = "storage")]
+#[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
 #[repr(u8)]
 // Variants are gated by the applet profiles that can issue them; the numeric
 // values remain aligned with the shared C StageOperation ABI.
@@ -61,7 +61,7 @@ impl Storage for StorageBackend {
         }
     }
 
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(StageOperation::Begin as u8, 0, core::ptr::null(), 0) } == 0 {
             Ok(())
@@ -69,7 +69,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn stage_append(&mut self, b: &[u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_stage(StageOperation::Append as u8, 0, b.as_ptr(), b.len()) } == 0 {
             Ok(())
@@ -77,7 +77,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn stage_commit(&mut self, id: Record) -> Result<(), StorageError> {
         if unsafe {
             ck_platform_stage(StageOperation::Publish as u8, id.id(), core::ptr::null(), 0)
@@ -88,14 +88,14 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn stage_abort(&mut self) {
         unsafe {
             ck_platform_stage(StageOperation::Abort as u8, 0, core::ptr::null(), 0);
         }
     }
 
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn size(&mut self, file: Record) -> Result<u32, StorageError> {
         match unsafe { ck_platform_size(file.id()) } {
             -1 => Err(StorageError::Missing),
@@ -103,7 +103,7 @@ impl Storage for StorageBackend {
             _ => Err(StorageError::Unavailable),
         }
     }
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn read_at(&mut self, file: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) }
             == out.len() as i32
@@ -113,7 +113,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Unavailable)
         }
     }
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) }
             == input.len() as i32
@@ -123,7 +123,7 @@ impl Storage for StorageBackend {
             Err(StorageError::Uncertain)
         }
     }
-    #[cfg(feature = "storage")]
+    #[cfg(any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap"))]
     fn has_space(&mut self, bytes: u32, reserve: u32) -> Result<bool, StorageError> {
         match unsafe { ck_platform_has_space(bytes, reserve) } {
             0 => Ok(false),

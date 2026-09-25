@@ -58,6 +58,8 @@ pub enum SessionWorkspace {
     #[cfg(feature = "ctap")]
     CtapRequest(crate::applets::ctap::Request),
     #[cfg(feature = "ctap")]
+    CtapMessage(crate::applets::ctap::apdu::MessageParser),
+    #[cfg(feature = "ctap")]
     U2fRequest(crate::applets::ctap::u2f::Request),
     #[cfg(feature = "ctap")]
     CtapStream(crate::applets::ctap::pq::Stream),
@@ -83,6 +85,8 @@ impl SessionWorkspace {
             Self::Attestation(a) => a.clear(memory),
             #[cfg(feature = "ctap")]
             Self::CtapRequest(request) => request.clear(memory),
+            #[cfg(feature = "ctap")]
+            Self::CtapMessage(request) => request.clear(memory),
         }
     }
     #[inline(never)]

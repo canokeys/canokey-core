@@ -62,26 +62,24 @@ impl Scratch for RequestScratch {
             Err(Error::Other)
         }
     }
-    fn execute(
-        &mut self,
-        cid: u32,
-        command: Result<
-            canokey_rust_core::applets::ctap::Command,
-            canokey_rust_core::applets::ctap::Status,
-        >,
-    ) -> usize {
+    fn begin_request(&mut self, message_length: Option<usize>) {
+        super::entrypoints::with_core(|core, p| core.begin_hid_request(message_length, p));
+    }
+    fn consume_request(&mut self, bytes: &[u8]) {
+        super::entrypoints::with_core(|core, _| core.consume_hid_request(bytes));
+    }
+    fn finish_request(&mut self, cid: u32) -> usize {
         unsafe { ck_hid_execution_begin(cid) };
-        let length = super::entrypoints::with_core(|core, p| core.execute_ctap(command, p));
+        let length = super::entrypoints::with_core(|core, p| core.finish_hid_request(p));
         unsafe { ck_hid_execution_end() };
         length
     }
-    fn execute_message(
-        &mut self,
-        cid: u32,
-        command: canokey_rust_core::applets::ctap::apdu::Message,
-    ) -> usize {
+    #[inline(never)]
+    fn wink(&mut self, cid: u32) -> usize {
         unsafe { ck_hid_execution_begin(cid) };
-        let length = super::entrypoints::with_core(|core, p| core.execute_ctap_message(command, p));
+        let length = super::entrypoints::with_core(|core, p| {
+            core.execute_ctap(Ok(canokey_rust_core::applets::ctap::Command::Wink), p)
+        });
         unsafe { ck_hid_execution_end() };
         length
     }

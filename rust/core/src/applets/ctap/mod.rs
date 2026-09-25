@@ -9,8 +9,10 @@ mod config;
 mod credential;
 mod credential_request;
 mod crypto;
+mod encoding;
 mod envelope;
 mod hmac_secret;
+mod info;
 mod large_blob;
 mod management;
 mod pin;
@@ -371,72 +373,18 @@ impl Session {
                 used = used.saturating_add(1);
             }
         }
-        let mut e = canokey_protocol::cbor::Encoder::new(&mut w.output[1..]);
-        let result = (|| {
-            let versions = if flags & pin::ALWAYS_UV != 0 {
-                ["FIDO_2_0", "FIDO_2_1", "FIDO_2_3"].as_slice()
-            } else {
-                ["U2F_V2", "FIDO_2_0", "FIDO_2_1", "FIDO_2_3"].as_slice()
-            };
-            e.map(22)?.u8(1)?.array(versions.len() as u64)?;
-            for version in versions {
-                e.str(version)?;
-            }
-            e.u8(2)?
-                .array(7)?
-                .str("credBlob")?
-                .str("credProtect")?
-                .str("minPinLength")?
-                .str("largeBlobKey")?
-                .str("hmac-secret")?
-                .str("hmac-secret-mc")?
-                .str("thirdPartyPayment")?;
-            e.u8(3)?.bytes(&provision::AAGUID)?;
-            // Development profile: credential-key self attestation for the
-            // compact non-PQ credential formats.
-            e.u8(4)?
-                .map(9)?
-                .str("rk")?
-                .bool(true)?
-                .str("up")?
-                .bool(true)?;
-            e.str("alwaysUv")?.bool(flags & pin::ALWAYS_UV != 0)?;
-            e.str("credMgmt")?.bool(true)?;
-            e.str("authnrCfg")?.bool(true)?;
-            e.str("clientPin")?.bool(configured)?;
-            e.str("largeBlobs")?.bool(true)?;
-            e.str("setMinPINLength")?.bool(true)?;
-            e.str("makeCredUvNotRqd")?.bool(true)?;
-            e.u8(5)?.u16(MAX_REQUEST as u16)?;
-            e.u8(6)?.array(2)?.u8(1)?.u8(2)?;
-            e.u8(7)?.u8(credential_request::MAX_LIST as u8)?;
-            e.u8(8)?.u8(credential::ID_BYTES as u8)?;
-            e.u8(9)?.array(1)?.str("usb")?;
-            e.u8(10)?.array(4)?;
-            for algorithm in [-7, -8, self.sm2.algorithm, -49] {
-                e.map(2)?
-                    .str("alg")?
-                    .i32(algorithm)?
-                    .str("type")?
-                    .str("public-key")?;
-            }
-            e.u8(11)?.u16(large_blob::LIMIT)?;
-            e.u8(12)?.bool(flags & pin::FORCE_CHANGE != 0)?;
-            e.u8(13)?.u8(minimum)?;
-            e.u8(14)?.u32(0)?;
-            e.u8(15)?.u8(32)?;
-            e.u8(16)?.u8(4)?;
-            e.u8(20)?.u8(Record::CTAP_CREDENTIALS - used)?;
-            e.u8(22)?.array(1)?.str("packed")?;
-            e.u8(24)?.bool(flags & pin::LONG_RESET != 0)?;
-            e.u8(26)?.array(2)?.str("nfc")?.str("usb")?;
-            e.u8(29)?.u8(63)?;
-            e.u8(31)?.array(3)?.u8(2)?.u8(3)?.u8(4)?;
-            Ok::<(), canokey_protocol::cbor::EncodeError>(())
-        })();
-        result.map_err(|_| Status::Other)?;
-        Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
+        info::encode(
+            &mut w.output[1..],
+            flags,
+            configured,
+            minimum,
+            used,
+            self.sm2.algorithm,
+        )
+        .map(|n| n + 1)
+        .map_err(|_| Status::Other)
     }
+
     fn key_agreement(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
@@ -476,20 +424,7 @@ impl Session {
             w.output[0] = 0;
             let mut e = canokey_protocol::cbor::Encoder::new(&mut w.output[1..]);
             // {keyAgreement: {kty: EC2, alg: ECDH-ES+HKDF-256, crv: P-256, x, y}}
-            e.map(1)
-                .and_then(|e| e.u8(1))
-                .and_then(|e| e.map(5))
-                .and_then(|e| e.u8(1))
-                .and_then(|e| e.u8(2))
-                .and_then(|e| e.u8(3))
-                .and_then(|e| e.i8(-25))
-                .and_then(|e| e.i8(-1))
-                .and_then(|e| e.u8(1))
-                .and_then(|e| e.i8(-2))
-                .and_then(|e| e.bytes(&w.input[..32]))
-                .and_then(|e| e.i8(-3))
-                .and_then(|e| e.bytes(&w.input[32..64]))
-                .map_err(|_| Status::Other)?;
+            encoding::key_agreement(&mut e, &w.input[..64]).map_err(|_| Status::Other)?;
             Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
         })();
         p.memory.wipe(&mut w.key.bytes);
@@ -603,14 +538,7 @@ impl Request {
         if self.command.is_none() {
             self.command = bytes.first().copied();
             bytes = bytes.get(1..).unwrap_or_default();
-            self.parser = match self.command {
-                Some(CLIENT_PIN) => Parser::ClientPin(client_pin::Parser::new()),
-                Some(n @ (0x0a | 0x41)) => Parser::Config(envelope::Parser::new(n)),
-                Some(12) => Parser::LargeBlob(large_blob::Parser::new()),
-                Some(CONFIG) => Parser::Config(envelope::Parser::new(CONFIG)),
-                Some(n @ (1 | 2)) => Parser::Credential(credential_request::Parser::new(n == 1)),
-                _ => Parser::None,
-            };
+            self.parser.initialize(self.command);
         }
         match &mut self.parser {
             Parser::ClientPin(parser) => parser.consume(bytes),
@@ -632,8 +560,9 @@ impl Request {
         self.extra = false;
         self.parser = Parser::None;
     }
-    pub fn finish(self) -> Result<Command, Status> {
-        match self.command {
+    #[inline(never)]
+    pub fn finish(&mut self) -> Result<Command, Status> {
+        match self.command.take() {
             None => Err(Status::InvalidLength),
             Some(8) if !self.extra => Ok(Command::NextAssertion),
             Some(8) => Err(Status::InvalidLength),
@@ -643,7 +572,7 @@ impl Request {
             Some(SELECTION) => Err(Status::InvalidLength),
             Some(GET_INFO) if !self.extra => Ok(Command::GetInfo),
             Some(GET_INFO) => Err(Status::InvalidLength),
-            Some(1 | 2 | CLIENT_PIN | CONFIG | 0x0a | 0x41 | 12) => match self.parser {
+            Some(1 | 2 | CLIENT_PIN | CONFIG | 0x0a | 0x41 | 12) => match &mut self.parser {
                 Parser::ClientPin(parser) => parser.finish(),
                 Parser::Config(parser) => parser.finish(),
                 Parser::LargeBlob(parser) => parser.finish(),
@@ -664,6 +593,25 @@ enum Parser {
     Credential(credential_request::Parser),
 }
 
+impl Parser {
+    // Variants initialize in place: a const template would materialize one
+    // full-enum-sized rodata copy per arm (enum size × 7 arms of Flash), while
+    // the transient construction stack frame is freed before any crypto runs.
+    #[inline(never)]
+    fn initialize(&mut self, command: Option<u8>) {
+        match command {
+            Some(CLIENT_PIN) => *self = Self::ClientPin(client_pin::Parser::new()),
+            Some(0x0a) => *self = Self::Config(envelope::Parser::new(0x0a)),
+            Some(0x41) => *self = Self::Config(envelope::Parser::new(0x41)),
+            Some(12) => *self = Self::LargeBlob(large_blob::Parser::new()),
+            Some(CONFIG) => *self = Self::Config(envelope::Parser::new(CONFIG)),
+            Some(1) => *self = Self::Credential(credential_request::Parser::new(true)),
+            Some(2) => *self = Self::Credential(credential_request::Parser::new(false)),
+            _ => *self = Self::None,
+        }
+    }
+}
+
 // Encoded integer ordering: positive major type, then negative argument.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Key {
@@ -671,6 +619,21 @@ struct Key {
     argument: u64,
 }
 impl Key {
+    // Preserve the full 64-bit ordering even for unrecognized field labels.
+    // One call boundary avoids duplicating the comparison in every schema.
+    // None is an unknown label, not an absent key; callers retain it as Some(None).
+    #[inline(never)]
+    fn ordered(
+        event: canokey_protocol::cbor::Event<'_>,
+        previous: &mut Option<Self>,
+    ) -> Result<Option<i8>, Status> {
+        let key = Self::parse(event)?;
+        if previous.is_some_and(|old| key <= old) {
+            return Err(Status::InvalidCbor);
+        }
+        *previous = Some(key);
+        Ok(key.integer())
+    }
     fn parse(event: canokey_protocol::cbor::Event<'_>) -> Result<Self, Status> {
         match event {
             canokey_protocol::cbor::Event::Unsigned(argument) => Ok(Self {
@@ -692,32 +655,27 @@ impl Key {
 
 /// Validate one member of the COSE_Key agreement map shared by clientPIN and
 /// hmac-secret. Unknown optional members are ignored by the caller.
-pub(super) fn cose_key_field<F>(
+#[inline(never)]
+pub(super) fn cose_key_field(
     key: i8,
     event: canokey_protocol::cbor::Event<'_>,
-    seen: &mut u8,
-    mut bytes: F,
-) -> Result<bool, Status>
-where
-    F: FnMut(i8, canokey_protocol::cbor::Event<'_>) -> Result<(), Status>,
-{
+) -> Result<u8, Status> {
     let (bit, expected) = match key {
         1 => (1, Some(2)),
         3 => (2, Some(-25)),
         -1 => (4, Some(1)),
         -2 => (8, None),
         -3 => (16, None),
-        _ => return Ok(false),
+        _ => return Ok(0),
     };
-    *seen |= bit;
     if let Some(expected) = expected {
         if Key::parse(event)?.integer() != Some(expected) {
             return Err(Status::InvalidParameter);
         }
-    } else {
-        bytes(key, event)?;
     }
-    Ok(true)
+    // Coordinates retain their caller's byte-length error policy. Return the
+    // presence bit instead of specializing this validator for each callback.
+    Ok(bit)
 }
 
 #[inline]

@@ -201,6 +201,17 @@ def run(wire, host):
     c.cmd("restore_pw3", 0x24, 0, 0x83, b"8765432112345678", le=None)
     c.verify()
     assert len(c.cmd("challenge", 0x84, le=32)) == 32
+    def rsa4096_reload(role, key):
+        if not host:
+            return
+        assert int.from_bytes(wire.command(f"SIZE {8 + role}"), "big") == 31 + 1284
+        wire.command("RESET")
+        c.select()
+        restored = pubkey(7, c.public(role))
+        assert restored.public_numbers() == key.public_numbers()
+        exercise(c, 7, role, restored)
+        c.verify()  # Restore ADMIN authorization for the following import/attributes.
+
     for alg in range(9):
         for role in range(3):
             if alg == 3 and role == 1 or alg == 4 and role != 1:
@@ -211,6 +222,8 @@ def run(wire, host):
             if role == (1 if alg == 4 else 0):
                 key = pubkey(alg, c.public(role, True))
                 exercise(c, alg, role, key)
+                if alg == 7:
+                    rsa4096_reload(role, key)
             if alg in (5, 6, 7):
                 private = rsa.generate_private_key(65537, (alg - 3) * 1024)
             elif alg in CURVES:
@@ -227,6 +240,8 @@ def run(wire, host):
                 serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
             )
             exercise(c, alg, role, private.public_key())
+            if alg == 7:
+                rsa4096_reload(role, private.public_key())
         print(f"OpenPGP algorithm {alg}: generate/import/use passed", file=sys.stderr, flush=True)
     # Re-selection retains current grants; real reset clears session grants and
     # reloads persistent metadata/keys. No boundary or fault-injection tests.

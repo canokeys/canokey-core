@@ -14,6 +14,9 @@ struct Memory {
     leased: bool,
     busy: bool,
     fail: bool,
+    fail_read: bool,
+    request: Option<canokey_rust_core::applets::ctap::Request>,
+    message: Option<canokey_rust_core::applets::ctap::apdu::MessageParser>,
 }
 impl Scratch for Memory {
     fn begin(&mut self, pke: bool) -> Result<(), Error> {
@@ -40,48 +43,48 @@ impl Scratch for Memory {
         if self.fail {
             return Err(Error::Other);
         }
+        if self.fail_read {
+            return Err(Error::Other);
+        }
         self.reads.push((offset, bytes.len()));
         bytes.copy_from_slice(&self.bytes[offset..offset + bytes.len()]);
         Ok(())
     }
-    fn execute(
-        &mut self,
-        _cid: u32,
-        command: Result<
-            canokey_rust_core::applets::ctap::Command,
-            canokey_rust_core::applets::ctap::Status,
-        >,
-    ) -> usize {
-        assert!(
-            !self.leased,
-            "crypto must execute only after source release"
-        );
-        self.response = support::execute(&mut canokey_rust_core::Core::new(), command);
-        self.response.len()
+    fn begin_request(&mut self, message_length: Option<usize>) {
+        if let Some(length) = message_length {
+            self.message = Some(canokey_rust_core::applets::ctap::apdu::MessageParser::new(
+                length,
+            ));
+        } else {
+            self.request = Some(canokey_rust_core::applets::ctap::Request::new());
+        }
     }
-    fn execute_message(
-        &mut self,
-        _: u32,
-        command: canokey_rust_core::applets::ctap::apdu::Message,
-    ) -> usize {
-        assert!(
-            !self.leased,
-            "MSG crypto must execute only after source release"
-        );
-        self.response = support::with_platform(&mut support::Backend::default(), |p| {
-            let mut core = canokey_rust_core::Core::new();
-            let n = core.execute_ctap_message(command, p);
-            let mut out = vec![0; n];
-            core.read_ctap(0, &mut out, p).unwrap();
-            out
-        });
-        self.response.len()
+    fn consume_request(&mut self, bytes: &[u8]) {
+        if let Some(request) = &mut self.request {
+            request.consume(bytes);
+        }
+        if let Some(request) = &mut self.message {
+            request.consume(bytes);
+        }
+    }
+    fn finish_request(&mut self, cid: u32) -> usize {
+        if let Some(mut request) = self.request.take() {
+            self.execute(cid, request.finish())
+        } else {
+            let command = self.message.take().unwrap().finish();
+            self.execute_message(cid, command)
+        }
+    }
+    fn wink(&mut self, cid: u32) -> usize {
+        self.execute(cid, Ok(canokey_rust_core::applets::ctap::Command::Wink))
     }
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
         out.copy_from_slice(&self.response[offset..offset + out.len()]);
         Ok(())
     }
     fn close_response(&mut self) {
+        self.request = None;
+        self.message = None;
         self.response.clear();
     }
     fn close(&mut self) {
@@ -361,4 +364,61 @@ fn polling_presence_is_fresh_single_use_and_expires() {
     touch.sample(false, 3);
     touch.clear();
     assert!(!touch.take(4));
+}
+
+impl Memory {
+    fn execute(
+        &mut self,
+        _cid: u32,
+        command: Result<
+            canokey_rust_core::applets::ctap::Command,
+            canokey_rust_core::applets::ctap::Status,
+        >,
+    ) -> usize {
+        assert!(
+            !self.leased,
+            "crypto must execute only after source release"
+        );
+        self.response = support::execute(&mut canokey_rust_core::Core::new(), command);
+        self.response.len()
+    }
+    fn execute_message(
+        &mut self,
+        _: u32,
+        command: canokey_rust_core::applets::ctap::apdu::Message,
+    ) -> usize {
+        assert!(
+            !self.leased,
+            "MSG crypto must execute only after source release"
+        );
+        self.response = support::with_platform(&mut support::Backend::default(), |p| {
+            let mut core = canokey_rust_core::Core::new();
+            let n = core.execute_ctap_message(command, p);
+            let mut out = vec![0; n];
+            core.read_ctap(0, &mut out, p).unwrap();
+            out
+        });
+        self.response.len()
+    }
+}
+
+#[test]
+fn parser_workspace_is_released_after_staged_read_failure() {
+    for command in [wire::CBOR, wire::MSG] {
+        let mut hid = Transport::new();
+        let mut mem = Memory {
+            fail_read: true,
+            ..Memory::default()
+        };
+        let mut out = [0; 64];
+        assert!(!hid.receive(&initial(1, command, 193, &[0; 57]), 0, &mut out, &mut mem));
+        assert!(!hid.receive(&continuation(1, 0, &[0; 59]), 1, &mut out, &mut mem));
+        assert!(!hid.receive(&continuation(1, 1, &[0; 59]), 2, &mut out, &mut mem));
+        assert!(hid.receive(&continuation(1, 2, &[0; 18]), 3, &mut out, &mut mem));
+        assert_eq!(out[7], 0x7f);
+        assert!(!hid.active());
+        assert!(!mem.leased);
+        assert_eq!(mem.closes, 1);
+        assert!(mem.request.is_none() && mem.message.is_none());
+    }
 }

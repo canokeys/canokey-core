@@ -10,4 +10,8 @@ publish = false
 workspace = true
 
 [dependencies]
-minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", default-features = false }
+
+[dev-dependencies]
+# Host-side oracle for CBOR test vectors only; the firmware decoder/encoder
+# are hand-rolled in this crate.
+minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", features = ["std"] }

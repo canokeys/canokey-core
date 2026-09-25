@@ -48,6 +48,8 @@ impl Parser {
             error: None,
         }
     }
+    // Share this parser across HID and APDU callers on size-constrained targets.
+    #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         if self.error.is_some() {
             return;
@@ -75,12 +77,13 @@ impl Parser {
         memory.wipe(&mut self.fields.params.pin_hash);
         memory.wipe(&mut self.fields.params.rp);
     }
-    pub fn finish(self) -> Result<Command, Status> {
+    #[inline(never)]
+    pub fn finish(&mut self) -> Result<Command, Status> {
         if let Some(error) = self.error {
             return Err(error);
         }
         self.decoder.finish().map_err(|_| Status::InvalidCbor)?;
-        let f = self.fields;
+        let f = &mut self.fields;
         if f.seen & (1 << 2) == 0 {
             return Err(Status::MissingParameter);
         }
@@ -105,7 +108,10 @@ impl Parser {
         if f.params.subcommand == 2 {
             Ok(Command::GetKeyAgreement)
         } else {
-            Ok(Command::ClientPin(f.params))
+            Ok(Command::ClientPin(core::mem::replace(
+                &mut f.params,
+                Parameters::new(),
+            )))
         }
     }
 }
@@ -114,7 +120,7 @@ struct Fields {
     started: bool,
     previous: Option<Key>,
     cose_previous: Option<Key>,
-    key: Option<Key>,
+    key: Option<Option<i8>>,
     cose: bool,
     cose_seen: u8,
     seen: u16,
@@ -170,34 +176,29 @@ impl Fields {
                 }
                 return Ok(());
             }
-            let key = Key::parse(event)?;
             let previous = if self.cose {
                 &mut self.cose_previous
             } else {
                 &mut self.previous
             };
-            if previous.is_some_and(|old| key <= old) {
-                return Err(Status::InvalidCbor);
-            }
-            *previous = Some(key);
+            let key = Key::ordered(event, previous)?;
             self.key = Some(key);
             return Ok(());
         };
-        let key = key.integer().unwrap_or(COSE_KEY_MISSING);
+        let key = key.unwrap_or(COSE_KEY_MISSING);
         if self.cose {
-            if !matches!(key, 1 | 3 | -1 | -2 | -3) {
+            let bit = super::cose_key_field(key, event)?;
+            if bit == 0 {
                 self.skip(event);
-                return Ok(());
-            }
-            let mut seen = self.cose_seen;
-            if super::cose_key_field(key, event, &mut seen, |key, event| {
-                self.bytes(key, event, 32)
-            })? {
-                self.cose_seen = seen;
-                return Ok(());
+            } else {
+                if matches!(key, -2 | -3) {
+                    self.bytes(key, event, 32)?;
+                }
+                self.cose_seen |= bit;
             }
             return Ok(());
         }
+
         if (1..=6).contains(&key) || key == 9 || key == 10 {
             self.seen |= 1 << key;
         }

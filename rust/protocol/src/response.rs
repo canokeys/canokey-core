@@ -104,8 +104,11 @@ impl Response {
         le: u32,
     ) -> Result<Chunk, StatusWord> {
         let p = self.pending.ok_or(StatusWord::COMMAND_NOT_ALLOWED)?;
-        let plan = ResponsePlan::new(p.total, p.offset, le.min(output.len() as u32), p.sw)?;
-        let n = plan.length as usize;
+        let remaining = p
+            .total
+            .checked_sub(p.offset)
+            .ok_or(StatusWord::UNABLE_TO_PROCESS)?;
+        let n = remaining.min(le).min(output.len() as u32) as usize;
         let len = if n == 0 {
             0
         } else {
@@ -125,20 +128,27 @@ impl Response {
         };
         // A generator may return fewer bytes than requested. Advance by the
         // actual read, keeping the final status until every byte is delivered.
-        let plan = ResponsePlan::new(p.total, p.offset, len as u32, p.sw)?;
-        if plan.complete {
+        // The read bound above proves len <= remaining; no second plan or
+        // addition is needed, including when total is u32::MAX.
+        let remaining = remaining - len as u32;
+        let sw = if remaining == 0 {
+            p.sw
+        } else {
+            StatusWord::remaining(remaining)
+        };
+        if remaining == 0 {
             self.clear(source);
         } else {
             self.pending = Some(Pending {
-                offset: plan.next,
+                offset: p.total - remaining,
                 ..p
             });
         }
-        Ok(Chunk { len, sw: plan.sw })
+        Ok(Chunk { len, sw })
     }
 }
 
-/// Pure continuation arithmetic shared by safe Rust streams and the C adapter.
+/// Pure continuation arithmetic for callers planning a chunk without a source.
 /// Storage aliases and source callbacks remain outside this value calculation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ResponsePlan {
@@ -176,7 +186,148 @@ impl ResponsePlan {
 
 #[cfg(test)]
 mod tests {
-    use super::{Response, StatusWord};
+    use super::*;
+
+    struct Reader {
+        offset: u32,
+        limit: usize,
+        reads: usize,
+        closes: usize,
+        error: Option<StatusWord>,
+        excessive: bool,
+    }
+    impl Reader {
+        fn new(offset: u32, limit: usize) -> Self {
+            Self {
+                offset,
+                limit,
+                reads: 0,
+                closes: 0,
+                error: None,
+                excessive: false,
+            }
+        }
+    }
+    impl Source for Reader {
+        fn read(&mut self, offset: u32, out: &mut [u8]) -> Result<usize, ReadError> {
+            assert_eq!(offset, self.offset);
+            assert!(!out.is_empty());
+            assert_eq!(self.closes, 0);
+            self.reads += 1;
+            out.fill(0x5a);
+            if let Some(sw) = self.error {
+                return Err(ReadError(sw));
+            }
+            let n = if self.excessive {
+                out.len() + 1
+            } else {
+                self.limit.min(out.len())
+            };
+            self.offset += n as u32;
+            Ok(n)
+        }
+        fn close(&mut self) {
+            self.closes += 1;
+        }
+    }
+
+    #[test]
+    fn short_reads_preserve_offsets_status_and_exactly_one_close() {
+        for total in [0, 1, 255, 256, 257, 4096, u32::MAX] {
+            for offset in [0, total / 2, total.saturating_sub(1), total] {
+                for capacity in [0, 1, 7, 256] {
+                    for le in [0, 1, 255, 256, u32::MAX] {
+                        for limit in [1, 17, usize::MAX] {
+                            let mut source = Reader::new(offset, limit);
+                            let final_sw = StatusWord::DATA_INVALID;
+                            let mut response = Response {
+                                pending: Some(Pending {
+                                    total,
+                                    offset,
+                                    sw: final_sw,
+                                }),
+                            };
+                            let mut out = [0xa5; 258];
+                            let plan =
+                                ResponsePlan::new(total, offset, le.min(capacity as u32), final_sw)
+                                    .unwrap();
+                            let n = (plan.length as usize).min(limit);
+                            let expected =
+                                ResponsePlan::new(total, offset, n as u32, final_sw).unwrap();
+                            let chunk = response
+                                .next(&mut source, &mut out[1..1 + capacity], le)
+                                .unwrap();
+                            assert_eq!(
+                                chunk,
+                                Chunk {
+                                    len: n,
+                                    sw: expected.sw
+                                }
+                            );
+                            assert_eq!(source.reads, usize::from(plan.length != 0));
+                            assert_eq!(source.offset, expected.next);
+                            assert_eq!(response.active(), !expected.complete);
+                            if let Some(p) = response.pending {
+                                assert_eq!(p.offset, expected.next);
+                            }
+                            assert_eq!(source.closes, usize::from(expected.complete));
+                            assert_eq!(out[0], 0xa5);
+                            assert!(out[1 + capacity..].iter().all(|b| *b == 0xa5));
+                            response.clear(&mut source);
+                            response.clear(&mut source);
+                            assert_eq!(source.closes, 1);
+                        }
+                    }
+                }
+            }
+        }
+        let mut response = Response::new();
+        response.start(10, StatusWord::SUCCESS);
+        let mut source = Reader::new(0, 3);
+        for expected in [
+            Chunk {
+                len: 3,
+                sw: StatusWord(0x6107),
+            },
+            Chunk {
+                len: 3,
+                sw: StatusWord(0x6104),
+            },
+            Chunk {
+                len: 3,
+                sw: StatusWord(0x6101),
+            },
+            Chunk {
+                len: 1,
+                sw: StatusWord::SUCCESS,
+            },
+        ] {
+            assert_eq!(response.next(&mut source, &mut [0; 8], 8), Ok(expected));
+        }
+        assert_eq!((source.reads, source.closes), (4, 1));
+        assert_eq!(
+            response.next(&mut source, &mut [0; 8], 8),
+            Err(StatusWord::COMMAND_NOT_ALLOWED)
+        );
+    }
+
+    #[test]
+    fn invalid_reads_wipe_requested_window_and_end_the_lease() {
+        for kind in 0..3 {
+            let mut source = Reader::new(0, if kind == 0 { 0 } else { 4 });
+            source.excessive = kind == 1;
+            source.error = (kind == 2).then_some(StatusWord::EXECUTION_ERROR);
+            let mut response = Response::new();
+            response.start(10, StatusWord::SUCCESS);
+            let mut out = [0xa5; 8];
+            let expected = source.error.unwrap_or(StatusWord::UNABLE_TO_PROCESS);
+            assert_eq!(response.next(&mut source, &mut out[1..7], 4), Err(expected));
+            assert_eq!(out, [0xa5, 0, 0, 0, 0, 0xa5, 0xa5, 0xa5]);
+            assert!(!response.active());
+            response.clear(&mut source);
+            assert_eq!((source.reads, source.closes), (1, 1));
+        }
+    }
 
     #[test]
     fn start_does_not_replace_an_active_lease() {

@@ -4,14 +4,8 @@
 use crate::applets::ctap;
 use canokey_protocol::ctaphid::{self as wire, Error, REPORT_SIZE, Report};
 
-// Keep the common CTAPHID request inline; larger requests spill to the staged
-// source while preserving the 64-byte HID report framing budget.
-// Keep one HID request's common prefix inline; larger CTAP messages use the
-// staged source so this buffer does not increase the transport stack frame.
-// Keep the common prefix inline so short HID requests avoid a PKE round-trip;
-// the remaining bytes stay in the transport-owned backing buffer.
-// Keep short CTAP messages inline; this is the 3×64-byte HID packet window
-// documented in docs/ctap.md and avoids a separate PKE staging allocation.
+// Three HID packet windows stay inline; larger requests use PKE staging.
+// Semantic parsers reuse the core session workspace, not this transport buffer.
 const INLINE: usize = 192;
 const TIMEOUT_MS: u32 = 800;
 
@@ -24,9 +18,12 @@ pub trait Scratch {
     fn write(&mut self, offset: usize, bytes: &[u8]) -> Result<(), Error>;
     fn read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), Error>;
     fn close(&mut self);
+    /// Parser storage aliases the core's existing session workspace.
+    fn begin_request(&mut self, message_length: Option<usize>);
+    fn consume_request(&mut self, bytes: &[u8]);
     /// Source is closed before execution; response reads never reexecute crypto.
-    fn execute(&mut self, cid: u32, command: Result<ctap::Command, ctap::Status>) -> usize;
-    fn execute_message(&mut self, cid: u32, command: ctap::apdu::Message) -> usize;
+    fn finish_request(&mut self, cid: u32) -> usize;
+    fn wink(&mut self, cid: u32) -> usize;
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error>;
     fn close_response(&mut self);
 }
@@ -65,24 +62,6 @@ impl Default for Transport {
     }
 }
 impl Transport {
-    fn read_staged(
-        total: usize,
-        storage: Storage,
-        scratch: &mut impl Scratch,
-        inline: &mut [u8; INLINE],
-        mut consume: impl FnMut(&[u8]),
-    ) -> Result<(), Error> {
-        if storage == Storage::Pke {
-            for offset in (0..total).step_by(INLINE) {
-                let n = INLINE.min(total - offset);
-                scratch.read(offset, &mut inline[..n])?;
-                consume(&inline[..n]);
-            }
-        } else {
-            consume(&inline[..total]);
-        }
-        Ok(())
-    }
     pub const fn new() -> Self {
         Self {
             phase: Phase::Idle,
@@ -244,6 +223,7 @@ impl Transport {
     }
     /// Finish parsing before releasing input; execute only after release.
     /// PING keeps its source until the last response report completes.
+    #[inline(never)]
     fn finish_request(&mut self, scratch: &mut impl Scratch) -> Result<(), Error> {
         if self.command == wire::WINK {
             if self.total != 0 {
@@ -252,37 +232,25 @@ impl Transport {
             }
             self.close_request(scratch);
             self.inline.fill(0);
-            self.total = scratch.execute(self.cid, Ok(ctap::Command::Wink));
+            self.total = scratch.wink(self.cid);
             self.response = true;
         }
-        if self.command == wire::CBOR {
-            let mut request = ctap::Request::new();
-            Self::read_staged(
-                self.total,
-                self.storage,
-                scratch,
-                &mut self.inline,
-                |chunk| request.consume(chunk),
-            )?;
-            let command = request.finish();
-            self.close_request(scratch);
-            self.inline.fill(0);
-            self.total = scratch.execute(self.cid, command);
+        if self.command == wire::CBOR || self.command == wire::MSG {
+            // The shared parser also needs cleanup when a staged read fails.
             self.response = true;
-        }
-        if self.command == wire::MSG {
-            let mut parser = ctap::apdu::MessageParser::new(self.total);
-            Self::read_staged(
-                self.total,
-                self.storage,
-                scratch,
-                &mut self.inline,
-                |chunk| parser.consume(chunk),
-            )?;
-            let command = parser.finish();
+            scratch.begin_request((self.command == wire::MSG).then_some(self.total));
+            if self.storage == Storage::Pke {
+                for offset in (0..self.total).step_by(INLINE) {
+                    let n = INLINE.min(self.total - offset);
+                    scratch.read(offset, &mut self.inline[..n])?;
+                    scratch.consume_request(&self.inline[..n]);
+                }
+            } else {
+                scratch.consume_request(&self.inline[..self.total]);
+            }
             self.close_request(scratch);
             self.inline.fill(0);
-            self.total = scratch.execute_message(self.cid, command);
+            self.total = scratch.finish_request(self.cid);
             self.response = true;
         }
         self.offset = 0;
@@ -308,12 +276,12 @@ impl Transport {
         if self.phase != Phase::Sending {
             return false;
         }
-        let tag = if self.offset == 0 {
-            self.command
+        let (tag, length) = if self.offset == 0 {
+            (self.command, self.total)
         } else {
-            self.sequence
+            (self.sequence, 0)
         };
-        let payload = wire::header(out, self.cid, tag, self.total);
+        let payload = wire::header(out, self.cid, tag, length);
         let n = payload.len().min(self.total - self.offset);
         let dest = &mut payload[..n];
         if self.response {
