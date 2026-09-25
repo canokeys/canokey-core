@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Rust transport migration contract
 
-Status: Rust CCID implementation and device validation in progress, 2026-09-25.
-CCID protocol ownership has moved to Rust; generic USB and HID still use C. Protocol migration takes
+Status: Rust HID execution and keyboard migration, 2026-09-25.
+CCID and HID execution policy are Rust-owned; generic USB and HID class handling still use C. Protocol migration takes
 priority over final combined-image size optimization; each replacement still
 has to fit its independent device profile and pass stack and correctness gates.
 
@@ -40,17 +40,34 @@ inventory is maintained in the parent port at
 
 | Current source | Responsibility to replace | Rust destination |
 |---|---|---|
-| `interfaces/rust-core/ctaphid.c` | Execution-time CANCEL/INIT handling, busy errors, keepalive construction, lease timing, pending report lifetime | Extend existing Rust CTAPHID runtime and separate execution progress state |
 | `interfaces/USB/class/ctaphid/usbd_ctaphid.c` | HID class requests/descriptors and report transfer state | Rust USB HID class |
 | `interfaces/USB/class/kbdhid/usbd_kbdhid.c` | Keyboard HID requests/descriptors and report state | Rust keyboard HID class |
 | `interfaces/rust-core/usb.c` | Composite descriptors, interface/endpoint routing and class initialization | Rust USB device composition |
 | `interfaces/USB/device/usb_device.c` | Device/class registration and lifecycle | Rust USB device composition plus platform startup call |
 | `interfaces/USB/core/src/usbd_core.c`, `usbd_ctlreq.c`, `usbd_ioreq.c` | USB standard requests, setup decoding, device and EP0 control-transfer state | Rust USB device/control layer |
 
-The C HID adapter is not merely an IRQ queue: `ck_hid_progress` currently parses
-CANCEL and INIT while a Rust applet is executing. Replacing only normal HID
-fragmentation leaves protocol policy in C. Likewise the CIU keyboard adapter
-maps characters to reports and sequences press/release; that belongs in Rust.
+HID execution-time CANCEL, INIT resynchronization, busy errors, keepalive and
+lease deadlines now live in `ffi/src/hid_link.rs`. This state is disjoint from
+both the borrowed applet engine and `runtime::ctaphid::Transport`: progress must
+not reenter either. The CIU adapter publishes an IRQ mailbox and accepts opaque
+reports with an epoch check inside a critical section. OUT remains NAKed until
+consumption, and IN buffers remain immutable through delayed completion, even
+after a software timeout. The control report is distinct from the normal reply
+that Rust may be building during a presence wait. Progress copies only the
+seven-byte header, avoiding another full HID report on a crypto call's stack.
+
+Keyboard QWERTY encoding and press/release sequencing now live in
+`runtime::keyboard` and `ffi/src/keyboard.rs`. A failed send retains the same
+report for retry; neither repeated keys nor their releases consume the next
+character until completion. Reset generation invalidates pending reports and
+cancels the shared output job after competing core ownership has ended.
+`core/tests/support/transport_link.rs` compiles these production facades with
+fake asynchronous hardware; no test-only copy of either state machine exists.
+
+This stage preserves the existing Rust profile's QWERTY behavior. Legacy custom
+keyboard-map configuration and eject compatibility still need an explicit
+whole-product audit, as do physical typing, cancellation latency and stack
+measurements. Host tests and independent profile links do not close those gaps.
 
 WebUSB and NFC/NDEF are disabled in the current Rust DevKit build. They are
 missing migration work, not evidence that all supported product interfaces are

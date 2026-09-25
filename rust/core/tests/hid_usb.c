@@ -7,7 +7,14 @@
 #include <usbd_ctaphid.h>
 
 USBD_HandleTypeDef usb_device;
-static uint32_t now;
+static uint32_t now, masked;
+static uint8_t reset_on_lock;
+uint32_t __get_PRIMASK(void) { return masked; }
+void __disable_irq(void) {
+  masked = 1;
+  if (reset_on_lock) { reset_on_lock = 0; CTAPHID_TxReset(); }
+}
+void __enable_irq(void) { masked = 0; }
 static unsigned received, resets, sent;
 static uint8_t inject, reset_during_poll, respond, idle = 1;
 static const uint8_t *in_flight;
@@ -42,7 +49,7 @@ uint8_t ck_hid_poll(const uint8_t *input, uint32_t tick, uint32_t clock, uint8_t
 }
 uint8_t USBD_CTAPHID_IsIdle(void) { return idle ? USBD_OK : USBD_BUSY; }
 uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *d, uint8_t *out, uint16_t n) {
-  assert(d == &usb_device && idle && n == 64);
+  assert(d == &usb_device && idle && n == 64 && masked);
   idle = 0;
   in_flight = out;
   sent++;
@@ -137,4 +144,16 @@ int main(void) {
   assert(ck_hid_busy());
   now++;
   assert(!ck_hid_busy());
+
+  // Reset between Rust's epoch check and native submission rejects stale bytes.
+  assert(CTAPHID_OutEvent(packet));
+  unsigned old_sent = sent;
+  reset_on_lock = respond = 1;
+  CTAPHID_Loop(0);
+  assert(sent == old_sent && !masked);
+  CTAPHID_Loop(0);
+  masked = 1;
+  respond = 1;
+  CTAPHID_Loop(0);
+  assert(masked); // never unmask an already masked caller
 }

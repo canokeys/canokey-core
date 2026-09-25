@@ -13,6 +13,8 @@ canokey-rust-core = { path = "../core" }
 dynamic-backend = ["canokey-ports/dynamic-backend"]
 static-backend = ["canokey-ports/static-backend"]
 usb-ccid = []
+usb-hid = ["ctap"]
+usb-keyboard = ["pass"]
 storage = ["canokey-ports/storage"]
 platform-device = ["canokey-ports/platform-device"]
 platform-serial = ["canokey-ports/platform-serial"]

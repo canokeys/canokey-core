@@ -50,17 +50,6 @@ set_target_properties(canokey-rust-core PROPERTIES IMPORTED_LOCATION "${ARCHIVE}
 add_dependencies(canokey-rust-core rust-core-build)
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(hid-usb core/tests/hid_usb.c ../interfaces/rust-core/ctaphid.c)
-  foreach(transport hid-usb)
-    target_include_directories(${transport} PRIVATE
-      ../interfaces/rust-core ../interfaces/USB/core/inc ../interfaces/USB/device
-      ../interfaces/USB/class/ccid ../interfaces/USB/class/ctaphid
-      ../interfaces/NFC ../include ../littlefs ../canokey-crypto/include)
-    target_compile_definitions(${transport} PRIVATE RUST_CORE_USB=1 ENABLE_IFACE_CTAPHID=1
-      ENABLE_IFACE_CCID=1 ENABLE_IFACE_WEBUSB=0 ENABLE_IFACE_KBDHID=0)
-    target_compile_options(${transport} PRIVATE -Wall -Wextra -UNDEBUG)
-    add_test(NAME ${transport} COMMAND ${transport})
-  endforeach()
   add_executable(core-normal core/tests/normal.c)
   target_compile_options(core-normal PRIVATE -Wall -Wextra -UNDEBUG)
   target_link_libraries(core-normal PRIVATE canokey-rust-core)
@@ -167,6 +156,9 @@ if(BUILD_TESTING)
     add_test(NAME ccid-usb COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_ccid.py")
     set_tests_properties(ccid-usb PROPERTIES TIMEOUT 120)
+    add_test(NAME hid-usb COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_hid.py")
+    set_tests_properties(hid-usb PROPERTIES TIMEOUT 120)
   endif()
   add_test(NAME core-normal COMMAND core-normal)
   # Pure transport tests also run in profiles without the CTAP firmware applet.

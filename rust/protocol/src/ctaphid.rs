@@ -10,6 +10,7 @@ pub const INIT: u8 = 0x86;
 pub const CBOR: u8 = 0x90;
 pub const CANCEL: u8 = 0x91;
 pub const ERROR: u8 = 0xbf;
+pub const KEEPALIVE: u8 = 0xbb;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

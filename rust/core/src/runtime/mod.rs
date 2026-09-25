@@ -14,3 +14,5 @@ pub mod ctaphid;
 pub use presence::Polling;
 
 pub mod ccid;
+
+pub mod keyboard;

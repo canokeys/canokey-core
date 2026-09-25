@@ -56,3 +56,8 @@ mod ctaphid;
 
 #[cfg(feature = "usb-ccid")]
 mod ccid;
+
+#[cfg(feature = "usb-hid")]
+mod hid_link;
+#[cfg(feature = "usb-keyboard")]
+mod keyboard;

@@ -91,6 +91,12 @@ pub unsafe extern "C" fn ck_core_challenge(
 
 #[cfg(feature = "pass")]
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_core_output_cancel(pressed: u8) {
+    with_platform(|p| unsafe { core().cancel_output(pressed != 0, p) })
+}
+
+#[cfg(feature = "pass")]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_core_output_sample(pressed: u8, now: u32, ready: u8) -> i32 {
     with_platform(|p| unsafe {
         core()

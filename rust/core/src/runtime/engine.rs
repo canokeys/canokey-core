@@ -451,6 +451,11 @@ impl<R: Router> Runtime<R> {
         output[len..len + 2].copy_from_slice(&sw.bytes());
         Ok(len + 2)
     }
+    /// Discard queued output and consume the current contact after USB reset.
+    #[cfg(feature = "pass")]
+    pub fn cancel_output(&mut self, pressed: bool, p: &mut Platform<'_>) {
+        self.router.sample_output(pressed, 0, false, true, p);
+    }
     pub fn sample_output(
         &mut self,
         pressed: bool,

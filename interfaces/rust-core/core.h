@@ -14,7 +14,7 @@ void ck_hid_reset(void);
 uint8_t ck_hid_poll(const uint8_t *input, uint32_t received, uint32_t now, uint8_t *output);
 uint8_t ck_hid_busy(void);
 uint8_t ck_hid_active(void);
-/* Serialized transport callbacks; never reenter Rust or use PKE. */
+/* Serialized Rust transport callbacks; never reenter applet state or use PKE. */
 void ck_hid_execution_begin(uint32_t cid);
 void ck_hid_execution_end(void);
 uint8_t ck_hid_executing(void);
