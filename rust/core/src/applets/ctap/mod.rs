@@ -300,7 +300,8 @@ impl Session {
         if p.device.now() > 10_000 {
             return Err(Status::NotAllowed);
         }
-        let mut record = pin::load(p)?;
+        let mut record = [0; pin::RECORD_BYTES];
+        pin::load(p, &mut record)?;
         let long = record[pin::FLAGS] & pin::LONG_RESET != 0;
         p.memory.wipe(&mut record);
         self.wait_presence(w, p, long)?;
@@ -361,7 +362,8 @@ impl Session {
         w: &mut crate::runtime::workspace::Workspace,
         p: &mut crate::ports::Platform<'_>,
     ) -> Result<usize, Status> {
-        let mut record = pin::load(p)?;
+        let mut record = [0; pin::RECORD_BYTES];
+        pin::load(p, &mut record)?;
         let configured = record[pin::PIN_LENGTH] != 0;
         let minimum = record[pin::MIN_PIN_LENGTH];
         let flags = record[pin::FLAGS];
@@ -561,18 +563,21 @@ enum Parser {
 
 impl Parser {
     // Variants initialize in place: a const template would materialize one
-    // full-enum-sized rodata copy per arm (enum size × 7 arms of Flash), while
+    // full-enum-sized rodata copy per arm, while
     // the transient construction stack frame is freed before any crypto runs.
+    // Commands sharing a schema also share its construction path; only the
+    // command-specific mode changes, not the initialized parser state.
     #[inline(never)]
     fn initialize(&mut self, command: Option<u8>) {
         match command {
             Some(CLIENT_PIN) => *self = Self::ClientPin(client_pin::Parser::new()),
-            Some(0x0a) => *self = Self::Config(envelope::Parser::new(0x0a)),
-            Some(0x41) => *self = Self::Config(envelope::Parser::new(0x41)),
+            Some(command @ (0x0a | 0x41 | CONFIG)) => {
+                *self = Self::Config(envelope::Parser::new(command))
+            }
             Some(12) => *self = Self::LargeBlob(large_blob::Parser::new()),
-            Some(CONFIG) => *self = Self::Config(envelope::Parser::new(CONFIG)),
-            Some(1) => *self = Self::Credential(credential_request::Parser::new(true)),
-            Some(2) => *self = Self::Credential(credential_request::Parser::new(false)),
+            Some(command @ (1 | 2)) => {
+                *self = Self::Credential(credential_request::Parser::new(command == 1))
+            }
             _ => *self = Self::None,
         }
     }

@@ -11,7 +11,8 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let mut record = pin::load(p)?;
+        let mut record = [0; pin::RECORD_BYTES];
+        pin::load(p, &mut record)?;
         let result = (|| {
             let configured = record[pin::PIN_LENGTH] != 0;
             let always_uv = record[pin::FLAGS] & pin::ALWAYS_UV != 0;

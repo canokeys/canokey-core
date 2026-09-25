@@ -36,7 +36,8 @@ impl Session {
         if params.make && params.algorithm.is_none() {
             return Err(Status::UnsupportedAlgorithm);
         }
-        let mut policy = pin::load(p)?;
+        let mut policy = [0; pin::RECORD_BYTES];
+        pin::load(p, &mut policy)?;
         let pin_set = policy[pin::PIN_LENGTH] != 0;
         let always_uv = policy[pin::FLAGS] & pin::ALWAYS_UV != 0;
 

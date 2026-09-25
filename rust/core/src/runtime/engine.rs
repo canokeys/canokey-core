@@ -383,7 +383,7 @@ impl<R: Router> Runtime<R> {
         &mut self,
         owner: u8,
         total: usize,
-        source: &mut dyn InputSource,
+        source: &mut (impl InputSource + ?Sized),
         p: &mut Platform<'_>,
     ) -> Reply {
         let result = (|| {

@@ -279,7 +279,8 @@ impl Session {
         if offset != 0 && (!self.upload.active || offset != usize::from(self.upload.next)) {
             return Err(Status::InvalidSequence);
         }
-        let mut policy = pin::load(p)?;
+        let mut policy = [0; pin::RECORD_BYTES];
+        pin::load(p, &mut policy)?;
         let required = policy[pin::PIN_LENGTH] != 0 || policy[pin::FLAGS] & pin::ALWAYS_UV != 0;
         p.memory.wipe(&mut policy);
         if required {

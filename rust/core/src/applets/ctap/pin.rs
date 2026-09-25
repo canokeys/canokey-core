@@ -15,7 +15,7 @@ use crate::{
 pub(super) const ALWAYS_UV: u8 = 1;
 pub(super) const FORCE_CHANGE: u8 = 2;
 pub(super) const LONG_RESET: u8 = 4;
-const RECORD_BYTES: usize = 20 + 4 * 32;
+pub(super) const RECORD_BYTES: usize = 20 + 4 * 32;
 pub(super) const RETRIES: usize = 16;
 pub(super) const PIN_LENGTH: usize = 17;
 pub(super) const MIN_PIN_LENGTH: usize = 18;
@@ -25,9 +25,11 @@ pub(super) const RP_HASH_COUNT_SHIFT: u8 = 3;
 pub(super) const RP_HASHES: usize = 20;
 pub(super) const PERMISSION_LARGE_BLOB_WRITE: u8 = 0x10;
 pub(super) const PERMISSION_CONFIG: u8 = 0x20;
-pub(super) fn load(p: &mut Platform<'_>) -> Result<[u8; RECORD_BYTES], Status> {
-    let mut record = [0; RECORD_BYTES];
-    match p.storage.load(Record::CtapPin, &mut record) {
+/// Fill a caller-owned PIN record without returning a second array copy.
+/// A failed read/validation wipes even partially supplied backend data.
+pub(super) fn load(p: &mut Platform<'_>, record: &mut [u8; RECORD_BYTES]) -> Result<(), Status> {
+    record.fill(0);
+    match p.storage.load(Record::CtapPin, record) {
         Err(StorageError::Missing) => {
             record[RETRIES] = 8;
             record[MIN_PIN_LENGTH] = 4;
@@ -42,9 +44,12 @@ pub(super) fn load(p: &mut Platform<'_>) -> Result<[u8; RECORD_BYTES], Status> {
         {
             ()
         }
-        _ => return Err(Status::Other),
+        _ => {
+            p.memory.wipe(record);
+            return Err(Status::Other);
+        }
     }
-    Ok(record)
+    Ok(())
 }
 pub(super) fn save(record: &[u8; RECORD_BYTES], p: &mut Platform<'_>) -> Result<(), Status> {
     let n = RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32;
@@ -136,7 +141,8 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let mut record = load(p)?;
+        let mut record = [0; RECORD_BYTES];
+        load(p, &mut record)?;
         w.output[..4].copy_from_slice(&[0, 0xa1, 3, record[RETRIES]]);
         p.memory.wipe(&mut record);
         Ok(4)
@@ -151,7 +157,7 @@ impl Session {
         let mut shared = [0; 64];
         let mut record = [0; RECORD_BYTES];
         let result = (|| {
-            record = load(p)?;
+            load(p, &mut record)?;
             let configured = record[PIN_LENGTH] != 0;
             if cp.subcommand == 3 {
                 if configured {

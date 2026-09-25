@@ -135,7 +135,9 @@ impl Response {
         });
         true
     }
-    pub fn clear(&mut self, source: &mut dyn Source) {
+    // Preserve the concrete source through the lifecycle calls. Firmware has
+    // one routed source; callers with a trait object remain supported.
+    pub fn clear(&mut self, source: &mut (impl Source + ?Sized)) {
         if self.pending.take().is_some() {
             source.close();
         }
@@ -144,7 +146,7 @@ impl Response {
     /// rather than rewinding a generator or repeating a credential operation.
     pub fn next(
         &mut self,
-        source: &mut dyn Source,
+        source: &mut (impl Source + ?Sized),
         output: &mut [u8],
         le: u32,
     ) -> Result<Chunk, StatusWord> {

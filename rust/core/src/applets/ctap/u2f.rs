@@ -84,7 +84,8 @@ impl Session {
             1 | 2 => (),
             _ => return Err(Sw::INS_NOT_SUPPORTED),
         }
-        let mut policy = pin::load(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        let mut policy = [0; pin::RECORD_BYTES];
+        pin::load(p, &mut policy).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         let always_uv = policy[pin::FLAGS] & pin::ALWAYS_UV != 0;
         p.memory.wipe(&mut policy);
         if always_uv {

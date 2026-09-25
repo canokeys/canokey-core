@@ -10,6 +10,7 @@ struct Backend {
     record: Vec<u8>,
     writes: usize,
     fail: bool,
+    read_fail: bool,
     now: u32,
     expected_message: Vec<u8>,
     expected_key: Option<[u8; 32]>,
@@ -20,7 +21,11 @@ impl Storage for Backend {
             return Err(StorageError::Missing);
         }
         out[..self.record.len()].copy_from_slice(&self.record);
-        Ok(self.record.len())
+        if self.read_fail {
+            Err(StorageError::Unavailable)
+        } else {
+            Ok(self.record.len())
+        }
     }
     fn replace(&mut self, _: Record, bytes: &[u8]) -> Result<(), StorageError> {
         self.writes += 1;
@@ -99,6 +104,60 @@ impl Memory for Backend {
         bytes.fill(0);
     }
 }
+
+#[test]
+fn pin_record_reads_initialize_tail_and_wipe_failed_data() {
+    let mut store = Backend::default();
+    let mut crypto = Backend::default();
+    let mut device = Backend::default();
+    let memory = Backend::default();
+    let mut output = [0xcc; pin::RECORD_BYTES];
+    let mut read = |store: &mut Backend, output: &mut [u8; pin::RECORD_BYTES]| {
+        pin::load(
+            &mut Platform {
+                storage: store,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &memory,
+            },
+            output,
+        )
+    };
+    assert_eq!(read(&mut store, &mut output), Ok(()));
+    let mut expected = [0; pin::RECORD_BYTES];
+    expected[pin::RETRIES] = 8;
+    expected[pin::MIN_PIN_LENGTH] = 4;
+    assert_eq!(output, expected);
+
+    // No RP hashes: a short valid record must not retain a previous caller's tail.
+    expected[..16].fill(0x5a);
+    expected[pin::PIN_LENGTH] = 8;
+    store.record = expected[..pin::RP_HASHES].to_vec();
+    output.fill(0xcc);
+    assert_eq!(read(&mut store, &mut output), Ok(()));
+    assert_eq!(output, expected);
+
+    for (length, byte, value, read_fail) in [
+        (19, pin::RETRIES, 8, false),
+        (20, pin::RETRIES, 9, false),
+        (20, pin::PIN_LENGTH, 3, false),
+        (20, pin::MIN_PIN_LENGTH, 3, false),
+        (20, pin::FLAGS, 5 << pin::RP_HASH_COUNT_SHIFT, false),
+        (20, pin::FLAGS, 1 << pin::RP_HASH_COUNT_SHIFT, false),
+        // The backend copied a secret prefix before reporting an I/O failure.
+        (7, pin::RETRIES, 8, true),
+    ] {
+        let mut bytes = expected;
+        bytes[byte] = value;
+        store.record = bytes[..length].to_vec();
+        store.read_fail = read_fail;
+        output.fill(0xcc);
+        assert_eq!(read(&mut store, &mut output), Err(Status::Other));
+        assert_eq!(output, [0; pin::RECORD_BYTES]);
+        assert_eq!(store.writes, 0);
+    }
+}
+
 fn run(
     session: &mut Session,
     parts: &[&[u8]],
