@@ -389,6 +389,8 @@ impl OpenPgp {
 }
 
 impl From<super::domain::Error> for Sw {
+    // Keep a single status table across data, key and orchestration paths.
+    #[inline(never)]
     fn from(error: super::domain::Error) -> Self {
         use super::domain::Error;
         match error {

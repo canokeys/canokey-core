@@ -89,7 +89,7 @@ impl Session {
         };
         let mut selected = None;
         let mut user_slot = None;
-        for id in &params.list[..params.list_len] {
+        for id in params.ids() {
             if id[1] & resident::RESIDENT != 0 {
                 let Some((index, _)) = resident::find(id, &rp, &mut w.input, p)? else {
                     continue;

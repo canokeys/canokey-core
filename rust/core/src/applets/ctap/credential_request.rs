@@ -23,7 +23,9 @@ pub struct Parameters {
     pub algorithm: Option<u8>,
     pub algorithms: [i32; super::MAX_REQUEST / 20],
     pub algorithm_count: usize,
-    pub list: [Id; MAX_LIST],
+    // A flat zero initializer avoids a nested-array temporary on Thumb-1.
+    // Typed views below preserve credential boundaries without layout casts.
+    list: [u8; ID_BYTES * MAX_LIST],
     pub list_len: usize,
     pub resident: bool,
     pub up: bool,
@@ -43,6 +45,10 @@ pub struct Parameters {
     pub hmac: Option<super::hmac_secret::Parameters>,
 }
 impl Parameters {
+    pub(super) fn ids(&self) -> &[Id] {
+        &self.list.as_chunks::<ID_BYTES>().0[..self.list_len]
+    }
+
     const fn new(make: bool) -> Self {
         Self {
             make,
@@ -59,7 +65,7 @@ impl Parameters {
             algorithm: None,
             algorithms: [0; super::MAX_REQUEST / 20],
             algorithm_count: 0,
-            list: [[0; ID_BYTES]; MAX_LIST],
+            list: [0; ID_BYTES * MAX_LIST],
             list_len: 0,
             resident: false,
             up: true,
@@ -268,9 +274,7 @@ impl Parser {
         memory.wipe(&mut p.display);
         memory.wipe(&mut p.auth);
         memory.wipe(&mut p.cred_blob);
-        for id in &mut p.list {
-            memory.wipe(id);
-        }
+        memory.wipe(&mut p.list);
         if let Some(hmac) = &mut p.hmac {
             hmac.clear(memory);
         }
@@ -354,14 +358,17 @@ impl Fields {
                             Field::Display => &mut self.params.display,
                             Field::Auth => &mut self.params.auth,
                             Field::CredBlob => &mut self.params.cred_blob,
-                            Field::DescriptorId => &mut self.params.list[self.params.list_len],
+                            Field::DescriptorId => {
+                                &mut self.params.list.as_chunks_mut::<ID_BYTES>().0
+                                    [self.params.list_len]
+                            }
                             Field::Type => &mut self.key,
                             _ => return Err(Status::InvalidCbor),
                         }
                     };
-                    let copied = bytes.len().min(out.len().saturating_sub(pos));
-                    if copied != 0 {
-                        out[pos..pos + copied].copy_from_slice(&bytes[..copied]);
+                    if let Some(tail) = out.get_mut(pos..) {
+                        let copied = bytes.len().min(tail.len());
+                        tail[..copied].copy_from_slice(&bytes[..copied]);
                     }
                     self.body = Some((field, pos + bytes.len()));
                 }
@@ -694,6 +701,85 @@ impl Fields {
 mod tests {
     use super::*;
     use canokey_protocol::cbor::Encoder;
+
+    #[test]
+    fn credential_lists_preserve_boundaries_across_fragments() {
+        for make in [false, true] {
+            for count in [0, 1, MAX_LIST, MAX_LIST + 1] {
+                for skip_invalid in [false, true] {
+                    let mut bytes = [0; 2048];
+                    let mut e = Encoder::new(&mut bytes[..]);
+                    if make {
+                        e.map(5)
+                            .u8(1)
+                            .bytes(&[1; 32])
+                            .u8(2)
+                            .map(1)
+                            .str("id")
+                            .str("example.com")
+                            .u8(3)
+                            .map(1)
+                            .str("id")
+                            .bytes(b"user")
+                            .u8(4)
+                            .array(1)
+                            .map(2)
+                            .str("alg")
+                            .i8(-7)
+                            .str("type")
+                            .str("public-key")
+                            .u8(5);
+                    } else {
+                        e.map(3)
+                            .u8(1)
+                            .str("example.com")
+                            .u8(2)
+                            .bytes(&[1; 32])
+                            .u8(3);
+                    }
+                    e.array(count as u64);
+                    let mut expected = [[0; ID_BYTES]; MAX_LIST + 1];
+                    let mut expected_len = 0;
+                    // An oversized list is rejected at its array header. Omit
+                    // its body so the request-byte limit cannot mask that error.
+                    let encoded_count = if count <= MAX_LIST { count } else { 0 };
+                    for index in 0..encoded_count {
+                        let id = [index as u8 + 1; ID_BYTES];
+                        let invalid = skip_invalid && index % 3 == 0;
+                        e.map(2)
+                            .str("id")
+                            .bytes(if invalid { &id[..ID_BYTES - 1] } else { &id })
+                            .str("type")
+                            .str("public-key");
+                        if !invalid {
+                            expected[expected_len] = id;
+                            expected_len += 1;
+                        }
+                    }
+                    e.finish().unwrap();
+                    let n = 2048 - e.writer().len();
+                    for split in 0..=n {
+                        let mut parser = Parser::new(make);
+                        parser.consume(&bytes[..split]);
+                        parser.consume(&bytes[split..n]);
+                        let result = parser.finish();
+                        if count > MAX_LIST {
+                            assert!(
+                                matches!(result, Err(Status::LimitExceeded)),
+                                "make {make}, count {count}, split {split}, bytes {n}"
+                            );
+                        } else {
+                            let Ok(Command::Credential(p)) = result else {
+                                panic!("make {make}, count {count}, split {split}");
+                            };
+                            assert!(p.list_present);
+                            assert_eq!(p.ids(), &expected[..expected_len]);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn table_preserves_field_scope_and_make_only_extensions() {

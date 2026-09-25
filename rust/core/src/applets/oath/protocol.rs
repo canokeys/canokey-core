@@ -26,6 +26,8 @@ const OATH_KEY_LIMIT: usize = credential::KEY_LIMIT;
 const SET_CODE_KEY_BYTES: usize = 1 + 16;
 const SET_CODE_ALGORITHM: u8 = 0x01;
 const OTP_INPUT_LIMIT: usize = 64;
+// Share the status lookup instead of cloning it into each protocol/flow caller.
+#[inline(never)]
 pub fn status(error: Error) -> Sw {
     match error {
         Error::Missing | Error::AccessCodeMissing => Sw::DATA_INVALID,
