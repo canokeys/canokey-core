@@ -15,10 +15,10 @@ pub(super) const MAX_BYTES: usize = ID_BYTES + 32 + 5 + 32 + 64 * 3 + 32;
 pub(super) struct Entry<'a> {
     pub id: &'a Id,
     pub rp_hash: &'a [u8; 32],
-    pub rp: &'a [u8],
+    pub rp: &'a str,
     pub user: &'a [u8],
-    pub name: &'a [u8],
-    pub display: &'a [u8],
+    pub name: &'a str,
+    pub display: &'a str,
     pub blob: &'a [u8],
 }
 impl<'a> Entry<'a> {
@@ -37,9 +37,9 @@ impl<'a> Entry<'a> {
         if user.is_empty() || !rest.is_empty() || id[1] & RESIDENT == 0 {
             return Err(Status::Other);
         }
-        for text in [rp, name, display] {
-            core::str::from_utf8(text).map_err(|_| Status::Other)?;
-        }
+        let rp = core::str::from_utf8(rp).map_err(|_| Status::Other)?;
+        let name = core::str::from_utf8(name).map_err(|_| Status::Other)?;
+        let display = core::str::from_utf8(display).map_err(|_| Status::Other)?;
         let entry = Self {
             id,
             rp_hash,
@@ -104,25 +104,35 @@ pub(super) fn store(
     let record = Record::ctap_credential(slot.ok_or(Status::KeyStoreFull)?).unwrap();
     out[..ID_BYTES].copy_from_slice(id);
     out[ID_BYTES..ID_BYTES + 32].copy_from_slice(rp_hash);
-    let mut at = ID_BYTES + 32;
-    for field in [
-        text_prefix(&params.rp[..params.rp_len.min(32)]),
-        &params.user[..params.user_len],
-        &params.name[..params.name_len],
-        &params.display[..params.display_len],
-        &params.cred_blob[..params
-            .cred_blob_len
-            .filter(|&n| n <= params.cred_blob.len())
-            .unwrap_or(0)],
-    ] {
+    let at = ID_BYTES + 32;
+    let n = encode_fields(
+        &mut out[at..],
+        &[
+            text_prefix(&params.rp[..params.rp_len.min(32)]),
+            &params.user[..params.user_len],
+            &params.name[..params.name_len],
+            &params.display[..params.display_len],
+            &params.cred_blob[..params
+                .cred_blob_len
+                .filter(|&n| n <= params.cred_blob.len())
+                .unwrap_or(0)],
+        ],
+    );
+    p.storage
+        .replace(record, &out[..at + n])
+        .map_err(|_| Status::Other)
+}
+
+/// Encode the five bounded variable fields shared by creation and user updates.
+pub(super) fn encode_fields(out: &mut [u8], fields: &[&[u8]; 5]) -> usize {
+    let mut at = 0;
+    for field in fields {
         out[at] = field.len() as u8;
         at += 1;
         out[at..at + field.len()].copy_from_slice(field);
         at += field.len();
     }
-    p.storage
-        .replace(record, &out[..at])
-        .map_err(|_| Status::Other)
+    at
 }
 
 pub(super) fn find(
@@ -169,5 +179,113 @@ impl Assertion {
             hmac: super::hmac_secret::Prepared::new(),
             started: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const HEADER: usize = ID_BYTES + 32;
+    // Binary user/blob fields deliberately contain non-UTF-8 bytes.
+    const FIELDS: &[u8] = b"\x01r\x01\xff\x02\xc3\xa9\x04\xf0\x9f\x94\x91\x01\xfe";
+
+    fn record() -> [u8; MAX_BYTES] {
+        let mut bytes = [0; MAX_BYTES];
+        bytes[1] = RESIDENT;
+        bytes[HEADER..HEADER + FIELDS.len()].copy_from_slice(FIELDS);
+        bytes
+    }
+
+    #[test]
+    fn stored_text_keeps_unicode_and_binary_fields_distinct() {
+        let bytes = record();
+        let entry = Entry::decode(&bytes[..HEADER + FIELDS.len()]).unwrap();
+        assert_eq!(entry.rp, "r");
+        assert_eq!(entry.user, b"\xff");
+        assert_eq!(entry.name, "é");
+        assert_eq!(entry.display, "🔑");
+        assert_eq!(entry.blob, b"\xfe");
+
+        let mut out = [0xa5; MAX_BYTES];
+        let n = encode_fields(
+            &mut out,
+            &[
+                entry.rp.as_bytes(),
+                entry.user,
+                entry.name.as_bytes(),
+                entry.display.as_bytes(),
+                entry.blob,
+            ],
+        );
+        assert_eq!(&out[..n], FIELDS);
+        assert!(out[n..].iter().all(|&byte| byte == 0xa5));
+    }
+
+    #[test]
+    fn malformed_stored_text_and_record_boundaries_are_rejected() {
+        let bytes = record();
+        let length = HEADER + FIELDS.len();
+        for cut in 0..length {
+            assert!(matches!(Entry::decode(&bytes[..cut]), Err(Status::Other)));
+        }
+        assert!(matches!(
+            Entry::decode(&bytes[..length + 1]),
+            Err(Status::Other)
+        ));
+        for offset in [1, 5, 8] {
+            let mut corrupt = bytes;
+            corrupt[HEADER + offset] = 0xff;
+            assert!(matches!(
+                Entry::decode(&corrupt[..length]),
+                Err(Status::Other)
+            ));
+        }
+        for (offset, invalid) in [(0, 33), (2, 65), (4, 65), (7, 65), (12, 33)] {
+            let mut corrupt = bytes;
+            corrupt[HEADER + offset] = invalid;
+            assert!(matches!(
+                Entry::decode(&corrupt[..length]),
+                Err(Status::Other)
+            ));
+        }
+        let mut non_resident = bytes;
+        non_resident[1] = 0;
+        assert!(matches!(
+            Entry::decode(&non_resident[..length]),
+            Err(Status::Other)
+        ));
+    }
+
+    #[test]
+    fn record_fields_fit_at_all_capacity_limits() {
+        let mut bytes = [0; MAX_BYTES];
+        bytes[1] = RESIDENT;
+        let n = encode_fields(
+            &mut bytes[HEADER..],
+            &[
+                &[b'r'; 32],
+                &[0xff; 64],
+                &[b'n'; 64],
+                &[b'd'; 64],
+                &[0xfe; 32],
+            ],
+        );
+        assert_eq!(HEADER + n, MAX_BYTES);
+        let entry = Entry::decode(&bytes).unwrap();
+        assert_eq!(entry.rp, "r".repeat(32));
+        assert_eq!(entry.user, &[0xff; 64]);
+        assert_eq!(entry.name, "n".repeat(64));
+        assert_eq!(entry.display, "d".repeat(64));
+        assert_eq!(entry.blob, &[0xfe; 32]);
+
+        // Empty optional fields remain valid, including after a Unicode prefix
+        // is cut at a persistence limit in the middle of a code point.
+        let n = encode_fields(
+            &mut bytes[HEADER..],
+            &[b"r", b"u", text_prefix(&"é".as_bytes()[..1]), b"", b""],
+        );
+        let entry = Entry::decode(&bytes[..HEADER + n]).unwrap();
+        assert_eq!((entry.name, entry.display, entry.blob), ("", "", &b""[..]));
     }
 }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::wire::object_tlv;
+pub(super) use crate::mechanisms::equal;
 use canokey_protocol::{
     response::StatusWord as Sw,
     tlv::{
@@ -40,14 +41,6 @@ pub fn header(out: &mut [u8], tag: &[u8], n: usize) -> Result<usize, Sw> {
     }
     out[..tag.len()].copy_from_slice(tag);
     Ok(tag.len() + write_length(n as u16, &mut out[tag.len()..]).map_err(|_| Sw::WRONG_LENGTH)?)
-}
-// Fold every overlapping byte and the public length difference; do not
-// return early at the first differing secret byte.
-pub fn equal(a: &[u8], b: &[u8]) -> bool {
-    a.iter()
-        .zip(b)
-        .fold(a.len() ^ b.len(), |v, (a, b)| v | usize::from(a ^ b))
-        == 0
 }
 pub fn tag_list(b: &[u8]) -> Result<(u32, usize), Sw> {
     if b.len() < 2 {

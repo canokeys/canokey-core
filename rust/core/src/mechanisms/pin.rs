@@ -81,13 +81,7 @@ impl<'a> Credential<'a> {
         // Length is public. Compare every supplied/stored overlapping byte,
         // combining the length difference without early exit on secret data.
         let stored = &self.bytes[self.value.clone()];
-        let diff = input
-            .iter()
-            .zip(stored)
-            .fold(input.len() ^ stored.len(), |v, (a, b)| {
-                v | usize::from(a ^ b)
-            });
-        if diff != 0 {
+        if !super::equal(input, stored) {
             if !prepaid {
                 self.bytes[self.counter] -= 1;
                 commit(self.bytes)?;

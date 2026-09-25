@@ -325,7 +325,7 @@ impl Session {
                     .u8(3)
                     .map(1)
                     .str("id")
-                    .str(core::str::from_utf8(entry.rp).unwrap_or_default());
+                    .str(entry.rp);
                 e.u8(4).bytes(entry.rp_hash);
                 if subcommand == 2 {
                     e.u8(5).u8(total);
@@ -475,24 +475,22 @@ impl Session {
                 }
                 // Keep the ID, RP and user handle. Rewrite only variable strings,
                 // then atomically replace this record; no second metadata commit.
-                let name = user.name.map_or(entry.name, str::as_bytes);
-                let display = user.display.map_or(entry.display, str::as_bytes);
-                let mut at = credential::ID_BYTES + 32;
+                let name = user.name.unwrap_or(entry.name).as_bytes();
+                let display = user.display.unwrap_or(entry.display).as_bytes();
+                let at = credential::ID_BYTES + 32;
                 w.output[..at].copy_from_slice(&w.input[..at]);
-                for value in [
-                    entry.rp,
-                    entry.user,
-                    resident::text_prefix(&name[..name.len().min(64)]),
-                    resident::text_prefix(&display[..display.len().min(64)]),
-                    entry.blob,
-                ] {
-                    w.output[at] = value.len() as u8;
-                    at += 1;
-                    w.output[at..at + value.len()].copy_from_slice(value);
-                    at += value.len();
-                }
+                let n = resident::encode_fields(
+                    &mut w.output[at..],
+                    &[
+                        entry.rp.as_bytes(),
+                        entry.user,
+                        resident::text_prefix(&name[..name.len().min(64)]),
+                        resident::text_prefix(&display[..display.len().min(64)]),
+                        entry.blob,
+                    ],
+                );
                 p.storage
-                    .replace(record, &w.output[..at])
+                    .replace(record, &w.output[..at + n])
                     .unwrap_or_default();
             }
             w.output[0] = 0;

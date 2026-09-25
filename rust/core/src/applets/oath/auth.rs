@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Existing OATH access-code challenge protocol, independent of ADMIN PINs.
 use super::{Algorithm, Crypto, Error};
+use crate::mechanisms::equal;
 pub const HANDLE_BYTES: usize = 8;
 pub const CHALLENGE_BYTES: usize = 8;
 pub const ACCESS_KEY_BYTES: usize = 16;
@@ -208,7 +209,4 @@ impl Session {
         metadata.clear(crypto);
         result
     }
-}
-fn equal(a: &[u8], b: &[u8]) -> bool {
-    a.len() == b.len() && a.iter().zip(b).fold(0, |v, (x, y)| v | (x ^ y)) == 0
 }

@@ -25,12 +25,10 @@ pub(super) fn user(
         .encoded(USER_ID)
         .bytes(entry.user);
     if name {
-        e.encoded(USER_NAME)
-            .str(core::str::from_utf8(entry.name).unwrap_or_default());
+        e.encoded(USER_NAME).str(entry.name);
     }
     if display {
-        e.encoded(USER_DISPLAY)
-            .str(core::str::from_utf8(entry.display).unwrap_or_default());
+        e.encoded(USER_DISPLAY).str(entry.display);
     }
     e.finish()
 }
@@ -165,10 +163,10 @@ mod tests {
         let entry = resident::Entry {
             id: &[0; credential::ID_BYTES],
             rp_hash: &[0; 32],
-            rp: b"example.org",
+            rp: "example.org",
             user: b"AB",
-            name: b"Alice",
-            display: b"A",
+            name: "Alice",
+            display: "A",
             blob: b"",
         };
         check(b"\xa1\x62id\x42AB", |e| user(e, &entry, false));
@@ -176,20 +174,29 @@ mod tests {
             b"\xa3\x62id\x42AB\x64name\x65Alice\x6bdisplayName\x61A",
             |e| user(e, &entry, true),
         );
-        let entry = resident::Entry { name: b"", ..entry };
+        let entry = resident::Entry { name: "", ..entry };
         check(b"\xa2\x62id\x42AB\x6bdisplayName\x61A", |e| {
             user(e, &entry, true)
         });
         let entry = resident::Entry {
-            name: b"Alice",
-            display: b"",
+            name: "Alice",
+            display: "",
             ..entry
         };
         check(b"\xa2\x62id\x42AB\x64name\x65Alice", |e| {
             user(e, &entry, true)
         });
-        let entry = resident::Entry { name: b"", ..entry };
+        let entry = resident::Entry { name: "", ..entry };
         check(b"\xa1\x62id\x42AB", |e| user(e, &entry, true));
+        let entry = resident::Entry {
+            name: "é",
+            display: "🔑",
+            ..entry
+        };
+        check(
+            b"\xa3\x62id\x42AB\x64name\x62\xc3\xa9\x6bdisplayName\x64\xf0\x9f\x94\x91",
+            |e| user(e, &entry, true),
+        );
     }
 
     #[test]
@@ -200,10 +207,10 @@ mod tests {
             let entry = resident::Entry {
                 id: &id,
                 rp_hash: &[0; 32],
-                rp: b"example.org",
+                rp: "example.org",
                 user: b"AB",
-                name: b"Alice",
-                display: b"A",
+                name: "Alice",
+                display: "A",
                 blob: b"",
             };
             for total in [None, Some(0), Some(23), Some(24), Some(100)] {

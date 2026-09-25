@@ -3,12 +3,7 @@
 use super::Status;
 use crate::ports::Platform;
 
-pub(super) fn equal(a: &[u8], b: &[u8]) -> bool {
-    a.iter()
-        .zip(b)
-        .fold(a.len() ^ b.len(), |diff, (a, b)| diff | usize::from(a ^ b))
-        == 0
-}
+pub(super) use crate::mechanisms::equal;
 pub(super) fn mac(
     key: &[u8],
     input: &[u8],
