@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 115 registered cases: APDU (57)
+Two legacy C test executables remain, with 111 registered cases: APDU (53)
 and PIV (58). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -477,3 +477,19 @@ suite preserves file/attribute operations, commit validation and uncertain
 outcomes, reader ownership/cache cleanup, injected block failures and mutation
 generation. These are allowed LittleFS thin-adapter correctness tests, not
 remaining native applet functionality.
+
+
+## Replaced clientPIN length and token timing cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_client_pin_encrypted_length_policy` | `client_pin::tests::encrypted_pin_length_policy_is_identical_at_every_fragment_boundary`: protocols 1/2, SET/CHANGE, lengths 0/expected-1/expected/expected+1/expected+16/240 at every two-fragment split including whole-buffer input |
+| `test_pin_uv_auth_token_timer_wraparound` | `config::tests::token_authorization_refresh_and_expiry_follow_successful_uses_across_wrap` runs successful authorization across wrap for both protocols; `pin::tests::token_expiry_checks_idle_and_absolute_limits_across_clock_wrap` checks exact idle/absolute boundary pairs |
+| `test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer` | Authorization regression submits a bad MAC at 20 seconds and a correct MAC at 30001 ms, checks unchanged last-use time, rejection, token wipe and no storage writes |
+| `test_pin_uv_auth_token_max_lifetime` | Authorization regression successfully authenticates every 29 seconds, verifies only last-use changes, then rejects exactly at 600000 ms and wipes token/permissions; repeated near u32 wrap |
+
+The incremental Rust parser replaces both native contiguous/source-backed
+parsers. Exact-size encrypted PIN values proceed to missing-parameter checks;
+undersized values return invalid CBOR, oversized values PIN policy violation.
+Token timing tests use a controlled MAC backend to isolate authorization policy;
+independent protocol encryption/MAC compatibility remains in `ctap-normal`.

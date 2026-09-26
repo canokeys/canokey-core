@@ -1157,67 +1157,8 @@ static void test_large_blob_noncanonical_string_offset(void **state) {
 
 
 
-static void test_pin_uv_auth_token_timer_wraparound(void **state) {
-  (void)state;
 
-  static const uint8_t msg[] = {0x01, 0x02, 0x03};
-  uint8_t sig[PIN_AUTH_SIZE_P1];
 
-  set_test_tick(UINT32_MAX - 10000u);
-  cp_reset_pin_uv_auth_token();
-  cp_begin_using_uv_auth_token(false);
-  cp_test_authenticate_pin_token(msg, sizeof(msg), sig, 1);
-
-  set_test_tick(UINT32_MAX - 5000u);
-  assert_true(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
-  set_test_tick(10000u);
-  assert_true(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
-  set_test_tick(40001u);
-  assert_false(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
-
-  set_test_tick(0);
-}
-
-static void test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer(void **state) {
-  (void)state;
-
-  static const uint8_t msg[] = {0x04, 0x05, 0x06};
-  uint8_t sig[PIN_AUTH_SIZE_P1];
-  uint8_t invalid_sig[PIN_AUTH_SIZE_P1] = {0};
-
-  set_test_tick(100000u);
-  cp_reset_pin_uv_auth_token();
-  cp_begin_using_uv_auth_token(false);
-  cp_test_authenticate_pin_token(msg, sizeof(msg), sig, 1);
-
-  set_test_tick(120000u);
-  assert_false(cp_verify_pin_token(msg, sizeof(msg), invalid_sig, 1));
-  set_test_tick(130001u);
-  assert_false(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
-
-  set_test_tick(0);
-}
-
-static void test_pin_uv_auth_token_max_lifetime(void **state) {
-  (void)state;
-
-  static const uint8_t msg[] = {0x07, 0x08, 0x09};
-  uint8_t sig[PIN_AUTH_SIZE_P1];
-
-  set_test_tick(0);
-  cp_reset_pin_uv_auth_token();
-  cp_begin_using_uv_auth_token(false);
-  cp_test_authenticate_pin_token(msg, sizeof(msg), sig, 1);
-
-  for (uint32_t tick = 29000u; tick < 600000u; tick += 29000u) {
-    set_test_tick(tick);
-    assert_true(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
-  }
-  set_test_tick(600000u);
-  assert_false(cp_verify_pin_token(msg, sizeof(msg), sig, 1));
-
-  set_test_tick(0);
-}
 
 static void test_fido_ctap1_register_rejects_missing_attestation_key(void **state) {
   (void)state;
@@ -2754,42 +2695,7 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
 }
 
-static int client_pin_length_source_read(void *ctx, size_t offset, uint8_t *buf, size_t len) {
-  memcpy(buf, (const uint8_t *)ctx + offset, len);
-  return 0;
-}
 
-static void test_client_pin_encrypted_length_policy(void **state) {
-  UNUSED(state);
-  for (uint8_t protocol = 1; protocol <= 2; ++protocol) {
-    size_t expected_len = protocol == 1 ? PIN_ENC_SIZE_P1 : PIN_ENC_SIZE_P2;
-    const size_t lengths[] = {0, expected_len - 1, expected_len, expected_len + 1, expected_len + 16, 240};
-    for (uint8_t command = CP_CMD_SET_PIN; command <= CP_CMD_CHANGE_PIN; ++command) {
-      for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
-        uint8_t request[256], encrypted[240] = {0};
-        CborEncoder encoder, map;
-        cbor_encoder_init(&encoder, request, sizeof(request), 0);
-        assert_int_equal(cbor_encoder_create_map(&encoder, &map, 3), CborNoError);
-        assert_int_equal(cbor_encode_int(&map, CP_REQ_PIN_UV_AUTH_PROTOCOL), CborNoError);
-        assert_int_equal(cbor_encode_int(&map, protocol), CborNoError);
-        assert_int_equal(cbor_encode_int(&map, CP_REQ_SUB_COMMAND), CborNoError);
-        assert_int_equal(cbor_encode_int(&map, command), CborNoError);
-        assert_int_equal(cbor_encode_int(&map, CP_REQ_NEW_PIN_ENC), CborNoError);
-        assert_int_equal(cbor_encode_byte_string(&map, encrypted, lengths[i]), CborNoError);
-        assert_int_equal(cbor_encoder_close_container(&encoder, &map), CborNoError);
-        size_t request_len = cbor_encoder_get_buffer_size(&encoder, request);
-        // An exact-size field passes parsing and reaches the missing-key check.
-        uint8_t expected = lengths[i] > expected_len ? CTAP2_ERR_PIN_POLICY_VIOLATION :
-                           lengths[i] < expected_len ? CTAP2_ERR_INVALID_CBOR : CTAP2_ERR_MISSING_PARAMETER;
-        CborParser parser;
-        CTAP_client_pin cp;
-        assert_int_equal(parse_client_pin(&parser, &cp, request, request_len), expected);
-        ctap_req_src_t source = {.read = client_pin_length_source_read, .ctx = request, .len = request_len};
-        assert_int_equal(parse_client_pin_src(&parser, &cp, &source, request_len), expected);
-      }
-    }
-  }
-}
 
 int main() {
   struct lfs_config cfg;
@@ -2825,7 +2731,6 @@ int main() {
   assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
-      cmocka_unit_test(test_client_pin_encrypted_length_policy),
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
       cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
@@ -2843,9 +2748,6 @@ int main() {
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
-      cmocka_unit_test(test_pin_uv_auth_token_timer_wraparound),
-      cmocka_unit_test(test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer),
-      cmocka_unit_test(test_pin_uv_auth_token_max_lifetime),
       cmocka_unit_test(test_fido_ctap1_register_rejects_missing_attestation_key),
       cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),

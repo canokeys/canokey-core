@@ -251,3 +251,45 @@ impl Fields {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encrypted_pin_length_policy_is_identical_at_every_fragment_boundary() {
+        for protocol in [1, 2] {
+            let expected = if protocol == 1 { 64 } else { 80 };
+            for command in [3, 4] {
+                for length in [0, expected - 1, expected, expected + 1, expected + 16, 240] {
+                    let mut wire = [0u8; 248];
+                    wire[..6].copy_from_slice(&[0xa3, 1, protocol, 2, command, 5]);
+                    let header = if length == 0 {
+                        wire[6] = 0x40;
+                        7
+                    } else {
+                        wire[6..8].copy_from_slice(&[0x58, length as u8]);
+                        8
+                    };
+                    let wire = &wire[..header + length];
+                    let status = if length > expected {
+                        Status::PinPolicy
+                    } else if length < expected {
+                        Status::InvalidCbor
+                    } else {
+                        Status::MissingParameter
+                    };
+                    for split in 0..=wire.len() {
+                        let mut parser = Parser::new();
+                        parser.consume(&wire[..split]);
+                        parser.consume(&wire[split..]);
+                        assert!(
+                            matches!(parser.finish(), Err(e) if e == status),
+                            "protocol={protocol} command={command} length={length} split={split}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

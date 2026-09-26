@@ -463,3 +463,66 @@ fn malformed_config_has_no_persistent_effects() {
         assert_eq!(store.writes, 0);
     }
 }
+
+#[test]
+fn token_authorization_refresh_and_expiry_follow_successful_uses_across_wrap() {
+    for protocol in [1, 2] {
+        for start in [0u32, u32::MAX - 10_000] {
+            for invalid_attempt in [false, true] {
+                let mut session = Session::new();
+                session.token.fill(7);
+                session.permissions = pin::PERMISSION_CONFIG;
+                session.token_started = start;
+                session.token_used = start;
+                let mut store = Backend::default();
+                let mut crypto = Backend {
+                    expected_message: vec![1, 2, 3],
+                    ..Backend::default()
+                };
+                let mut device = Backend::default();
+                let memory = Backend::default();
+                let mut authorize = |session: &mut Session, elapsed: u32, valid: bool| {
+                    device.now = start.wrapping_add(elapsed);
+                    let auth = [if valid { 0x5a } else { 0 }; 32];
+                    session.authorize(
+                        protocol,
+                        &auth[..if protocol == 1 { 16 } else { 32 }],
+                        &[1, 2, 3],
+                        pin::PERMISSION_CONFIG,
+                        None,
+                        &mut Platform {
+                            storage: &mut store,
+                            crypto: &mut crypto,
+                            device: &mut device,
+                            memory: &memory,
+                        },
+                    )
+                };
+                if invalid_attempt {
+                    assert_eq!(
+                        authorize(&mut session, 20_000, false),
+                        Err(Status::PinAuthInvalid)
+                    );
+                    assert_eq!(session.token_used, start);
+                    assert_eq!(
+                        authorize(&mut session, 30_001, true),
+                        Err(Status::PinAuthInvalid)
+                    );
+                } else {
+                    for elapsed in (29_000..600_000).step_by(29_000) {
+                        assert_eq!(authorize(&mut session, elapsed, true), Ok(()));
+                        assert_eq!(session.token_used, start.wrapping_add(elapsed));
+                        assert_eq!(session.token_started, start);
+                    }
+                    assert_eq!(
+                        authorize(&mut session, 600_000, true),
+                        Err(Status::PinAuthInvalid)
+                    );
+                }
+                assert_eq!(session.permissions, 0);
+                assert_eq!(session.token, [0; 32]);
+                assert_eq!(store.writes, 0);
+            }
+        }
+    }
+}
