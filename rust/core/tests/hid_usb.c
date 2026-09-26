@@ -2,7 +2,7 @@
 // Exercise the production ISR/main-loop adapter with deterministic interrupts.
 #include "core.h"
 #include <assert.h>
-#include <ctaphid.h>
+#include <string.h>
 #include "usb_io.h"
 
 

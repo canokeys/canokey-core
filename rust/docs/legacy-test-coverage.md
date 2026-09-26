@@ -108,6 +108,9 @@ is not a completion certificate for stage six, capacity, stack or interoperabili
 The unused TinyCBOR submodule and C applet/scratch headers have also been
 removed. CBOR decoding remains in Rust; the native crypto and LittleFS
 dependencies are unchanged.
+The old USB header tree and unused CTAP C API are removed as well. Existing
+HID/CCID hardware fixtures compile against only `interfaces/rust-core`, with
+standard C headers for their mocks; no legacy protocol types are required.
 
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
 Literal malformed-input regressions remain correctness tests with explicit

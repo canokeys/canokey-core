@@ -34,6 +34,10 @@ void usb_device_deinit(void);
 /* Packet mailboxes; these callbacks do not enter applet/core Rust state. */
 void ck_ccid_packet_reset(void);
 uint8_t ck_ccid_packet_out(const uint8_t *bytes, uint16_t length);
+/* Legacy-named ABI aliases implemented by the Rust HID mailbox. OutEvent
+ * borrows exactly 64 readable bytes and copies them before returning. */
+uint8_t CTAPHID_RxCanAccept(void);
+uint8_t CTAPHID_OutEvent(const uint8_t *bytes);
 void ck_hid_packet_reset(void);
 uint8_t ck_hid_packet_out(const uint8_t *bytes);
 void ck_keyboard_packet_reset(void);
