@@ -69,6 +69,9 @@ Non-chained key agreement accepts:
 
 The peer template is ordered `86 <04||static>, 87 <04||ephemeral>, [88 <ID>],
 [89 <two-byte key length>]`; key length defaults to 16, range 1..128.
+The GA dispatcher treats tag 80 as an identity only for SM2 agreement; other
+private-key operations reject it. `piv-normal` independently verifies both
+agreement roles, custom identity binding and 125..128-byte BER transitions.
 Plain ECDH is rejected for SM2. Initiator ephemeral material lives in the shared
 workspace, is checked against its public key and current slot key before use,
 and is cleared on failure, non-GA commands, selection and reset.

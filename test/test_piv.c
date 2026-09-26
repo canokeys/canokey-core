@@ -911,24 +911,18 @@ static const uint8_t piv_sm2ka_pb[64] = "\x6A\xE8\x48\xC5\x7C\x53\xC7\xB1\xB5\xF
                                        "\x8B\xA6\x4C\x64\x59\x1B\x8B\x56\x6F\x73\x57\xD5\x76\xF1\x6D\xFB"
                                        "\xEE\x48\x9D\x77\x16\x21\xA2\x7B\x36\xC5\xC7\x99\x20\x62\xE9\xCD"
                                        "\x09\xA9\x26\x43\x86\xF3\xFB\xEA\x54\xDF\xF6\x93\x05\x62\x1C\x4D";
-static const uint8_t piv_sm2ka_ra[32] = "\xD4\xDE\x15\x47\x4D\xB7\x4D\x06\x49\x1C\x44\x0D\x30\x5E\x01\x24"
-                                       "\x00\x99\x0F\x3E\x39\x0C\x7E\x87\x15\x3C\x12\xDB\x2E\xA6\x0B\xB3";
+
 static const uint8_t piv_sm2ka_eph_a[64] = "\x64\xCE\xD1\xBD\xBC\x99\xD5\x90\x04\x9B\x43\x4D\x0F\xD7\x34\x28"
                                            "\xCF\x60\x8A\x5D\xB8\xFE\x5C\xE0\x7F\x15\x02\x69\x40\xBA\xE4\x0E"
                                            "\x37\x66\x29\xC7\xAB\x21\xE7\xDB\x26\x09\x22\x49\x9D\xDB\x11\x8F"
                                            "\x07\xCE\x8E\xAA\xE3\xE7\x72\x0A\xFE\xF6\xA5\xCC\x06\x20\x70\xC0";
-static const uint8_t piv_sm2ka_rb[32] = "\x7E\x07\x12\x48\x14\xB3\x09\x48\x91\x25\xEA\xED\x10\x11\x13\x16"
-                                       "\x4E\xBF\x0F\x34\x58\xC5\xBD\x88\x33\x5C\x1F\x9D\x59\x62\x43\xD6";
+
 static const uint8_t piv_sm2ka_eph_b[64] = "\xAC\xC2\x76\x88\xA6\xF7\xB7\x06\x09\x8B\xC9\x1F\xF3\xAD\x1B\xFF"
                                            "\x7D\xC2\x80\x2C\xDB\x14\xCC\xCC\xDB\x0A\x90\x47\x1F\x9B\xD7\x07"
                                            "\x2F\xED\xAC\x04\x94\xB2\xFF\xC4\xD6\x85\x38\x76\xC7\x9B\x8F\x30"
                                            "\x1C\x65\x73\xAD\x0A\xA5\x0F\x39\xFC\x87\x18\x1E\x1A\x1B\x46\xFE";
 
-static void piv_test_make_sm2_key(ecc_key_t *key, const uint8_t pri[32], const uint8_t pub[64]) {
-  memset(key, 0, sizeof(*key));
-  memcpy(key->pri, pri, 32);
-  memcpy(key->pub, pub, 64);
-}
+
 
 static void piv_test_write_sm2_key_full(const char *path, const uint8_t pri[32], pin_policy_t pin_policy) {
   ck_key_t key = {.meta = {.type = SM2,
@@ -1106,130 +1100,6 @@ static void test_piv_sm2_key_agreement_roundtrip(void **state) {
 
   memzero(k_a, sizeof(k_a));
   memzero(k_b, sizeof(k_b));
-}
-
-// Card initiator vs host-side sm2_key_exchange() responder reference, with
-// custom IDs on both sides (tag 80 own ID, inner tag 88 peer ID) and klen=32
-// (inner tag 89).
-static void test_piv_sm2_key_agreement_initiator_reference(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
-
-  static const uint8_t id_a[] = {'c', 'a', 'r', 'd', '-', 'a'};
-  static const uint8_t id_b[] = {'h', 'o', 's', 't', '-', 'b', '-', 'r', 'e', 's', 'p'};
-  const uint8_t id_a_buf[1 + sizeof(id_a)] = {sizeof(id_a), 'c', 'a', 'r', 'd', '-', 'a'};
-  const uint8_t id_b_buf[1 + sizeof(id_b)] = {sizeof(id_b), 'h', 'o', 's', 't', '-', 'b', '-', 'r', 'e', 's', 'p'};
-
-  uint8_t request[192];
-  uint8_t inner[172];
-  uint8_t response[160];
-  uint16_t response_len;
-  const uint8_t *value;
-  uint8_t eph_a_pub[64];
-
-  size_t request_len = piv_test_build_sm2_ka_request(request, id_a, sizeof(id_a), NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
-  memcpy(eph_a_pub, value + 1, 64);
-
-  // Host reference: B is the responder with the fixed vector keys.
-  ecc_key_t key_b, eph_b;
-  piv_test_make_sm2_key(&key_b, piv_sm2ka_db, piv_sm2ka_pb);
-  piv_test_make_sm2_key(&eph_b, piv_sm2ka_rb, piv_sm2ka_eph_b);
-  uint8_t k_ref[32];
-  assert_int_equal(sm2_key_exchange(SM2_KE_RESPONDER, id_b_buf, id_a_buf, &key_b, &eph_b, piv_sm2ka_pa, eph_a_pub,
-                                    k_ref, sizeof(k_ref)),
-                   0);
-
-  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, id_b, sizeof(id_b), 32);
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), sizeof(k_ref));
-  assert_memory_equal(value, k_ref, sizeof(k_ref));
-
-  // A reference computed with the default IDs must NOT match: the custom IDs
-  // on tags 80/88 are effective.
-  uint8_t k_wrong_id[32];
-  assert_int_equal(sm2_key_exchange(SM2_KE_RESPONDER, SM2_ID_DEFAULT, SM2_ID_DEFAULT, &key_b, &eph_b, piv_sm2ka_pa,
-                                    eph_a_pub, k_wrong_id, sizeof(k_wrong_id)),
-                   0);
-  assert_memory_not_equal(value, k_wrong_id, sizeof(k_wrong_id));
-
-  memzero(&key_b, sizeof(key_b));
-  memzero(&eph_b, sizeof(eph_b));
-  memzero(k_ref, sizeof(k_ref));
-  memzero(k_wrong_id, sizeof(k_wrong_id));
-}
-
-// Outer and inner TLV lengths cross the short-form limit independently.
-static void test_piv_sm2_key_agreement_length_boundaries(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
-  ecc_key_t key_b, eph_b;
-  piv_test_make_sm2_key(&key_b, piv_sm2ka_db, piv_sm2ka_pb);
-  piv_test_make_sm2_key(&eph_b, piv_sm2ka_rb, piv_sm2ka_eph_b);
-
-  for (uint16_t klen = 125; klen <= 128; ++klen) {
-    uint8_t request[192], inner[172], response[160], eph_a_pub[64], expected[128];
-    uint16_t response_len;
-    const uint8_t *value;
-    size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
-    assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-    assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
-    memcpy(eph_a_pub, value + 1, sizeof(eph_a_pub));
-    assert_int_equal(sm2_key_exchange(SM2_KE_RESPONDER, SM2_ID_DEFAULT, SM2_ID_DEFAULT, &key_b, &eph_b,
-                                      piv_sm2ka_pa, eph_a_pub, expected, klen), 0);
-
-    const size_t inner_len =
-        piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, klen);
-    request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-    assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-    assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), klen);
-    assert_memory_equal(value, expected, klen);
-    memzero(expected, sizeof(expected));
-  }
-  memzero(&key_b, sizeof(key_b));
-  memzero(&eph_b, sizeof(eph_b));
-}
-
-// Card responder vs host-side sm2_key_exchange() initiator reference, default
-// IDs, klen=128 (the maximum; exercises the long-form 7C response and the
-// long-form inner 85 tag).
-static void test_piv_sm2_key_agreement_responder_reference(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
-
-  uint8_t request[192];
-  uint8_t inner[172];
-  uint8_t response[224];
-  uint16_t response_len;
-  const uint8_t *value;
-
-  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pa, piv_sm2ka_eph_a, NULL, 0, 128);
-  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_NO_ERROR);
-  assert_int_equal(piv_test_7c_find(response, response_len, 0x82, &value), 65);
-  assert_int_equal(value[0], 0x04);
-  uint8_t eph_b_pub[64];
-  memcpy(eph_b_pub, value + 1, 64);
-  assert_int_equal(piv_test_7c_find(response, response_len, 0x85, &value), 128);
-
-  // Host reference: A is the initiator with the fixed vector keys.
-  ecc_key_t key_a, eph_a;
-  piv_test_make_sm2_key(&key_a, piv_sm2ka_da, piv_sm2ka_pa);
-  piv_test_make_sm2_key(&eph_a, piv_sm2ka_ra, piv_sm2ka_eph_a);
-  uint8_t k_ref[128];
-  assert_int_equal(sm2_key_exchange(SM2_KE_INITIATOR, SM2_ID_DEFAULT, SM2_ID_DEFAULT, &key_a, &eph_a, piv_sm2ka_pb,
-                                    eph_b_pub, k_ref, sizeof(k_ref)),
-                   0);
-  assert_memory_equal(value, k_ref, sizeof(k_ref));
-
-  memzero(&key_a, sizeof(key_a));
-  memzero(&eph_a, sizeof(eph_a));
-  memzero(k_ref, sizeof(k_ref));
 }
 
 static void test_piv_sm2_key_agreement_shape_errors(void **state) {
@@ -1474,9 +1344,6 @@ int main() {
       cmocka_unit_test(test_piv_attestation_f9_policy),
       cmocka_unit_test(test_piv_attestation_all_target_algorithms),
       cmocka_unit_test(test_piv_sm2_key_agreement_roundtrip),
-      cmocka_unit_test(test_piv_sm2_key_agreement_initiator_reference),
-      cmocka_unit_test(test_piv_sm2_key_agreement_responder_reference),
-      cmocka_unit_test(test_piv_sm2_key_agreement_length_boundaries),
       cmocka_unit_test(test_piv_sm2_key_agreement_shape_errors),
       cmocka_unit_test(test_piv_sm2_key_agreement_state_machine),
       cmocka_unit_test(test_piv_sm2_key_agreement_pin_policy),

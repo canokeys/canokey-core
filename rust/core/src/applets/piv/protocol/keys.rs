@@ -219,14 +219,18 @@ impl Piv {
         if a != m[repo::ALGORITHM] {
             return Err(Sw::WRONG_P1P2);
         }
-        if fields[ga_field::WITNESS].is_some() || fields[ga_field::RESPONSE] != Some(&[][..]) {
+        let sm2_agreement = a == alg::SM2 && fields[ga_field::CHALLENGE].is_none();
+        // Tag 80 is the own identity in SM2 agreement, not a management witness.
+        if (!sm2_agreement && fields[ga_field::WITNESS].is_some())
+            || fields[ga_field::RESPONSE] != Some(&[][..])
+        {
             return Err(Sw::WRONG_DATA);
         }
         self.auth_clear(p);
         // GA operation selection is in the nested tags: 81 carries signing/
         // RSA input, 85 carries agreement input, and empty 82 requests output.
         // SM2 without 81 enters its dedicated multi-step agreement protocol.
-        if a == alg::SM2 && fields[ga_field::CHALLENGE].is_none() {
+        if sm2_agreement {
             return self.sm2_agree(id, &m, w, p);
         }
         let (op, data) = if let Some(input) = fields[ga_field::CHALLENGE] {

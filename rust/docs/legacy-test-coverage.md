@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 63 registered cases: APDU (49)
-and PIV (14). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 60 registered cases: APDU (49)
+and PIV (11). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -757,3 +757,20 @@ Python curve arithmetic and SM3:
 The duplicated byte-at-a-time long-message run and native verifier/helpers are
 removed. Malformed identity tests use correctly encoded outer lengths so each
 failure exercises its intended semantic rule. No production behavior changed.
+
+## SM2 agreement reference and length coverage
+
+`test_piv_sm2_key_agreement_initiator_reference`,
+`test_piv_sm2_key_agreement_length_boundaries` and
+`test_piv_sm2_key_agreement_responder_reference` are replaced by the existing
+`piv-normal::sm2_operations` scenario. Python independently computes the peer
+side for both roles; initiator lengths 16, 32, 125..128 cover the default, custom
+identities, and both BER response-length transitions. The responder derives
+128 bytes with exact ephemeral-point and response encoding checks. Custom
+identities must produce a different key from default identities.
+
+This exposed and fixed a Rust dispatcher bug: the generic rejection of tag 80
+prevented SM2 agreement's own-identity parser from being reached. Tag 80 is now
+admitted only for SM2 agreement; other private operations retain rejection.
+The remaining native agreement lifecycle, malformed-input and PIN-policy cases
+still require audit before removal.

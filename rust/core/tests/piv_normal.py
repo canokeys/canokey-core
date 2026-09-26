@@ -788,30 +788,42 @@ def sm2_operations(c):
     c.cmd("sm2_restore_key", 0xFE, 0x54, 0x9A, tlv(6, sm2.V_DA), le=None)
     c.verify()
     exp = tlv(0x86, b"\x04" + sm2.V_PB) + tlv(0x87, b"\x04" + sm2.V_EB)
-    reply = c.cmd("sm2_initiator_start", 0x87, 0x54, 0x9A, tlv(0x7C, tlv(0x82, b"")))
-    eph = fields(fields(reply)[0x7C])[0x82][1:]
-    expected = sm2.key_exchange_full(
-        1, sm2.ID_DEFAULT, sm2.ID_DEFAULT, sm2.V_DB, sm2.V_PB, sm2.V_RB, sm2.V_EB, public, eph, 16
-    )[0]
-    reply = c.cmd(
-        "sm2_initiator_finish", 0x87, 0x54, 0x9A, tlv(0x7C, tlv(0x82, b"") + tlv(0x85, exp))
-    )
-    assert fields(fields(reply)[0x7C])[0x82] == expected
-    reply = c.cmd("sm2_responder", 0x87, 0x54, 0x9A, tlv(0x7C, tlv(0x82, b"") + tlv(0x85, exp)))
-    values = fields(fields(reply)[0x7C])
-    expected = sm2.key_exchange_full(
-        0,
-        sm2.ID_DEFAULT,
-        sm2.ID_DEFAULT,
-        sm2.V_DB,
-        sm2.V_PB,
-        sm2.V_RB,
-        sm2.V_EB,
-        public,
-        values[0x82][1:],
-        16,
-    )[0]
-    assert values[0x85] == expected
+    # Cover both roles with an independent peer, custom identity binding and
+    # the outer/inner BER length transitions at 125..128 derived bytes.
+    for initiator, size in [(True, n) for n in (16, 32, 125, 126, 127, 128)] + [(False, 128)]:
+        own, peer = (b"card-a", b"host-b-resp") if size == 32 else (sm2.ID_DEFAULT, sm2.ID_DEFAULT)
+        custom = size == 32
+        start = tlv(0x7C, (tlv(0x80, own) if custom else b"") + tlv(0x82, b""))
+        inner = exp + (tlv(0x88, peer) if custom else b"")
+        if size != 16:
+            inner += tlv(0x89, size.to_bytes(2, "big"))
+        if initiator:
+            reply = c.cmd("sm2_initiator_start", 0x87, 0x54, 0x9A, start)
+            encoded = fields(fields(reply)[0x7C])[0x82]
+            assert len(encoded) == 65 and encoded[0] == 4
+            eph = encoded[1:]
+            reply = c.cmd("sm2_initiator_finish", 0x87, 0x54, 0x9A,
+                          tlv(0x7C, tlv(0x82, b"") + tlv(0x85, inner)))
+            actual = fields(fields(reply)[0x7C])[0x82]
+            assert reply == tlv(0x7C, tlv(0x82, actual))
+        else:
+            reply = c.cmd("sm2_responder", 0x87, 0x54, 0x9A,
+                          tlv(0x7C, tlv(0x82, b"") + tlv(0x85, inner)))
+            values = fields(fields(reply)[0x7C])
+            assert len(values[0x82]) == 65 and values[0x82][0] == 4
+            eph, actual = values[0x82][1:], values[0x85]
+            assert reply == tlv(0x7C, tlv(0x82, values[0x82]) + tlv(0x85, actual))
+        expected = sm2.key_exchange_full(
+            int(initiator), peer, own, sm2.V_DB, sm2.V_PB,
+            sm2.V_RB, sm2.V_EB, public, eph, size,
+        )[0]
+        assert len(actual) == size and actual == expected
+        if custom:
+            wrong = sm2.key_exchange_full(
+                1, sm2.ID_DEFAULT, sm2.ID_DEFAULT, sm2.V_DB, sm2.V_PB,
+                sm2.V_RB, sm2.V_EB, public, eph, size,
+            )[0]
+            assert actual != wrong
     c.cmd(
         "sm2_reject_plain_ecdh",
         0x87,
