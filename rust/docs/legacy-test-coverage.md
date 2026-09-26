@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 7 registered APDU cases.
+One legacy C test executable remains, with 6 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1338,3 +1338,14 @@ The APDU route covers signed 32-bit SM2 identifier extremes; the UDP HID route
 covers full 1952-byte public keys through actual report fragmentation.
 The old C fixture's synthetic records, request builders, CBOR parser and
 response collector are removed together with the test.
+
+`test_ctap_kh_cache_lifecycle` is replaced by master-record fault/recovery in
+the existing `ctap-normal` and reset/rotation rejection in `ctap-config`. Rust
+deliberately has no long-lived master cache: read failures after successful
+credential use reject both registration and assertion without exposing partial
+responses or changing the record. A one-byte record repeatedly fails without
+regeneration; a missing master cannot be created by authentication. Restoring
+the original record recovers an independently verified signature and valid
+attestation. Credential reset rejects the old handle both before and after
+generating a new master; factory reset rejection remains covered. The C-only
+cache-hit/read-count optimization is not retained as a functional requirement.

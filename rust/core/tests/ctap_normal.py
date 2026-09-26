@@ -93,6 +93,31 @@ def run(wire):
     key.verify(answer[2] + assertion_hash, answer[3])
     assert not AuthenticatorData(answer[2]).is_user_present()
 
+    # Rust loads the master for each operation; failures must never use an old
+    # derived key, replace malformed storage, or publish a partial response.
+    master = wire.command("RECORD 78")
+    assert len(master) == 34 and master[-2:] == b"\x90\x00"
+    assertion = {1: rp, 2: assertion_hash, 3: [descriptor]}
+    registration = {1: client_hash, 2: {"id": rp}, 3: user,
+                    4: [{"type": "public-key", "alg": -7}]}
+    for command, parameters in [(2, assertion), (1, registration)]:
+        wire.command("FAIL_READ 78")
+        call(command, parameters, 0x7f)
+        card.cmd("no response after master read failure", 0xc0, status=0x6986)
+        assert wire.command("RECORD 78") == master
+    # A short record is a persistent failure, not a request to generate a key.
+    wire.command(f"RECORD 78 {master[:1].hex()}")
+    for command, parameters in [(2, assertion), (2, assertion), (1, registration)]:
+        call(command, parameters, 0x7f)
+        assert wire.command("RECORD 78") == master[:1] + b"\x90\x00"
+    wire.command("REMOVE 78")
+    call(2, assertion, 0x2e)
+    assert wire.command("SIZE 78") == bytes.fromhex("ffffffff")
+    wire.command(f"RECORD 78 {master[:-2].hex()}")
+    answer = call(2, assertion)
+    key.verify(answer[2] + assertion_hash, answer[3])
+    verify_attestation(call(1, registration), client_hash)
+
     resident_keys = {}
     for identity in [b"first", b"second"]:
         result = call(1, {1: client_hash, 2: {"id": rp}, 3: user | {"id": identity},

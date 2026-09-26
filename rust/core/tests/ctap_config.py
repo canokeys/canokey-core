@@ -86,9 +86,13 @@ def run(wire):
     handle = {"id": AuthenticatorData(result[2]).credential_data.credential_id, "type": "public-key"}
     call(2, {1: "example.com", 2: request[1], 3: [handle]})
     call(7) # Credential reset preserves provisioned SM2 identifiers.
+    retired = dict(handle)
+    call(2, {1: "example.com", 2: request[1], 3: [retired]}, 0x2e)
     assert [a["alg"] for a in call(4)[10]] == [-7, -8, -65537, -49]
     # Factory recovery also revokes CTAP credentials, but retains manufacturing material.
     result = call(1, request)
+    verify_attestation(result, request[1])
+    call(2, {1: "example.com", 2: request[1], 3: [retired]}, 0x2e)
     handle["id"] = AuthenticatorData(result[2]).credential_data.credential_id
     admin()
     for status in (0x63c2, 0x63c1, 0x6983):
