@@ -12,7 +12,9 @@ sanitizers. The former C applets, dispatcher, USB/NFC protocols and virtual-card
 implementations have been removed. `src/fs.c`, crypto and thin native adapters
 remain. The unused TinyCBOR submodule and obsolete applet/scratch headers
 are removed, together with the old USB header tree and unused CTAP C API.
-Native USB callers use the thin ABI headers in `interfaces/rust-core`.
+Native USB callers use the thin ABI headers in `interfaces/rust-core`. The
+unused C applet, APDU dispatcher and PIN declarations are removed too; key,
+PKE, filesystem and hardware headers still have native consumers.
 
 Current implementation entrypoints are `rust/core` (applets and shared runtime),
 `rust/protocol` (transport state machines), `rust/ffi` and `rust/ports` (integration),
