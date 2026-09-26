@@ -124,3 +124,14 @@ reentering Core. `hid-usb` checks busy/invalid-channel replies, INIT and CANCEL
 isolation, endpoint-buffer ownership and deferred reset cleanup. All eight USB
 feature combinations verify dispatch. This does not yet retire the old session
 and metadata helper cases or establish physical interoperability.
+
+`usb-sessions` now links the actual USB facade, all four USB interfaces, Core
+and applets into one host executable. Only raw DCD/FIFO, time, PKE memory and
+native storage/crypto services are replaced. It checks CCID authorization
+retention after idle, rejected WebUSB/HID takeover at 1999 ms, accepted takeover
+at 2000 ms, grant revocation across CCID/WebUSB/HID ownership changes, queued
+CCID admission after a HID lease, immutable pending HID/CCID responses, USB
+reset revocation and lease arithmetic across tick wraparound. No Core or peer
+transport entrypoint is mocked. This strengthens the session-helper replacement
+evidence; the remaining filesystem/metadata mapping still needs audit before
+retiring `test_core_helpers`.
