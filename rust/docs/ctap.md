@@ -511,15 +511,24 @@ removal must not be reported as success; retry requires fresh PIN authorization.
 Host coverage verifies preserved records after rejected replacement/deletion
 and session reset, but does not establish LittleFS power-loss atomicity.
 
-### Open HID MSG continuation compatibility gap
+### HID MSG response windows
 
-The actual `hid-core` fixture checks extended case 3 (no Le) and case 4
-(Le=0000) against the complete native CBOR GetInfo bytes plus 9000. Limited Le
-and subsequent GET RESPONSE are not yet compatible with the legacy path:
-`MessageParser::finish` discards decoded Le; `execute_message` always publishes
-the whole response; `begin_ctap` and `begin_hid_request` close/wipe the backing
-before another MSG can continue it. Repair must preserve the existing shared
-workspace and distinguish completed HID packet delivery from completed APDU
-response consumption. Do not introduce a second response buffer or disable MSG.
-The native `test_ctaphid_msg_case3_and_case4_send_complete_response` remains
-until its limited-Le/continuation contract passes the actual Rust HID path.
+HID MSG preserves Le for both CTAP and U2F responses. Absent Le returns the full
+response; encoded zero follows the APDU format maximum. A limited response ends
+in 61xx and retains its backing in the shared session workspace. GET RESPONSE
+accepts ISO/proprietary CLA, absent/short/extended Le and the legacy nine-byte
+empty-Lc form. Other nonempty-data forms are rejected; general APDU parsing is
+unchanged. Exhausted or abandoned continuations return 6986.
+
+Only acknowledged final HID IN completion advances the response window. A
+continuation parses its bounded header without overwriting the shared workspace.
+New commands, malformed continuations, INIT, channel changes, transport reset
+and cross-transport preemption discard pending backing. New PKE-staged input
+closes the preceding response before borrowing accelerator scratch. HID cleanup
+checks core ownership so it cannot close another interface's response.
+
+`hid-core` compares full case 3/case 4 responses against native CBOR, checks
+limited/multiple windows, held-IN completion, file-backed payloads and aborts.
+`usb-sessions` verifies CCID/WebUSB takeover after the existing two-second lease
+invalidates the HID continuation. Two word-sized window fields are added to the
+applet; no private response buffer or protocol implementation is moved to C.

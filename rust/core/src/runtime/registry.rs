@@ -282,6 +282,7 @@ impl Registry {
     #[cfg(feature = "ctap")]
     pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
         use super::workspace::SessionWorkspace;
+        self.ctap.close(&mut self.workspace, p);
         self.workspace.wipe_active(p.memory);
         if let Some(length) = message_length {
             self.workspace = SessionWorkspace::CtapMessage(ctap::apdu::MessageParser::new(length));
@@ -336,6 +337,22 @@ impl Registry {
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         self.ctap.read(offset, out, &mut self.workspace, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn resume_ctap(&mut self, p: &mut Platform<'_>) {
+        if !self.ctap.pending_message() {
+            self.close_ctap(p);
+        }
+    }
+    #[cfg(feature = "ctap")]
+    pub fn complete_ctap(&mut self, p: &mut Platform<'_>) {
+        if !self.ctap.complete_message() {
+            self.close_ctap(p);
+        }
+    }
+    #[cfg(feature = "ctap")]
+    pub fn continue_ctap_message(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Option<usize> {
+        self.ctap.continue_message(bytes, &mut self.workspace, p)
     }
     #[cfg(feature = "ctap")]
     pub fn close_ctap(&mut self, p: &mut Platform<'_>) {
@@ -592,7 +609,11 @@ impl Router for Registry {
         // P1/P2 values do not restart that applet's write cursor.
         #[cfg(feature = "ndef")]
         if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xd6 {
-            return Header { p1: 0, p2: 0, ..header };
+            return Header {
+                p1: 0,
+                p2: 0,
+                ..header
+            };
         }
         header
     }

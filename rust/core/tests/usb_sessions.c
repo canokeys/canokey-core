@@ -287,6 +287,27 @@ int main(void) {
   now+=1; size_t count=ccid_read(out); sw(out+10,count-10,0x9000);
   ccid_apdu(query,sizeof(query),0x63c3);
   ccid_apdu(verify,sizeof(verify),0x9000);
+  /* APDU continuation backing shares the same two-second transport lease. */
+  const uint8_t limited_msg[]={0x80,0x10,0,0,0,0,1,4,0,1};
+  const uint8_t msg_more[]={0,0xc0,0,0,0,0,0};
+  for(unsigned via_web=0;via_web<2;++via_web) {
+    hid_send(cid,0x83,limited_msg,sizeof(limited_msg));
+    assert(hid_read(cid,0x83,hid)==3 && hid[0]==0 && hid[1]==0x61);
+    if(via_web) {
+      web_send(select_admin,sizeof(select_admin)); assert(halted[1]);
+      now+=2000;
+      web_apdu(select_admin,sizeof(select_admin),0x9000);
+    } else {
+      ccid_send(0x6f,select_admin,sizeof(select_admin));
+      now+=1999; CCID_Loop(); assert(!pending[3]);
+      now+=1; count=ccid_read(out); sw(out+10,count-10,0x9000);
+    }
+    hid_send(cid,0x83,msg_more,sizeof(msg_more));
+    assert(hid_read(cid,0x83,hid)==2 && hid[0]==0x69 && hid[1]==0x86);
+    now+=2000;
+    ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+    ccid_apdu(verify,sizeof(verify),0x9000);
+  }
   /* Bus reset revokes authentication even when the same interface returns. */
   usb_device_deinit(); configure(); loops();
   ccid_send(0x62,NULL,0); (void)ccid_read(out);

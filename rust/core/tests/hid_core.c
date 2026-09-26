@@ -11,7 +11,7 @@ extern uint8_t CTAPHID_OutEvent(const uint8_t *report);
 extern uint8_t CTAPHID_RxCanAccept(void);
 extern int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n);
 static uint32_t ticks;
-static uint8_t configured = 1;
+static uint8_t configured = 1, tx_idle = 1;
 static uint8_t output[128][64];
 static size_t output_count;
 static uint8_t scratch[3072], scratch_owner;
@@ -26,7 +26,7 @@ void device_delay(int ms) { assert(ms >= 0); ticks += (uint32_t)ms; }
 uint32_t ck_usb_dcd_lock(void) { return 0; }
 void ck_usb_dcd_unlock(uint32_t mask) { assert(mask == 0); }
 uint8_t ck_usb_configured(void) { return configured; }
-uint8_t ck_usb_tx_idle(uint8_t ep) { assert(ep == 0x82); return 1; }
+uint8_t ck_usb_tx_idle(uint8_t ep) { assert(ep == 0x82); return tx_idle; }
 void ck_usb_receive(uint8_t ep) { assert(ep == 2); rearms++; }
 int32_t ck_usb_submit(uint8_t ep, const uint8_t *data, uint16_t n, uint8_t zlp) {
   assert(ep == 0x82 && n == 64 && zlp == 0 && output_count < 128);
@@ -239,6 +239,79 @@ int main(void) {
     assert(result[info_length] == 0x90 && result[info_length + 1] == 0);
   }
 
+  uint8_t limited_info[sizeof(msg_info)];
+  memcpy(limited_info, msg_info, sizeof(msg_info));
+  limited_info[9] = 1;
+  output_count = 0;
+  uint8_t msg_packet[64];
+  header(msg_packet, cid, 0x83, sizeof(limited_info));
+  memcpy(msg_packet + 7, limited_info, sizeof(limited_info));
+  feed(msg_packet);
+  assert(response(cid, 0x83, result, sizeof(result)) == 3);
+  assert(result[0] == data[0] && result[1] == 0x61 && result[2] == 0xff);
+  const uint8_t next_info[] = {0, 0xc0, 0, 0, 0, 0, 0, 0, 0};
+  // A queued continuation cannot consume backing until the preceding IN ends.
+  tx_idle = 0;
+  header(msg_packet, cid, 0x83, sizeof(next_info));
+  memcpy(msg_packet + 7, next_info, sizeof(next_info));
+  feed(msg_packet);
+  CTAPHID_Loop(0);
+  assert(output_count == 1 && ck_hid_active());
+  output_count = 0;
+  tx_idle = 1;
+  CTAPHID_Loop(0); drain();
+  assert(response(cid, 0x83, result, sizeof(result)) == info_length + 1);
+  assert(!memcmp(result, data + 1, info_length - 1));
+  assert(result[info_length - 1] == 0x90 && result[info_length] == 0);
+  output_count = 0;
+  command(cid, 0x83, next_info, sizeof(next_info));
+  assert(response(cid, 0x83, result, sizeof(result)) == 2);
+  assert(result[0] == 0x69 && result[1] == 0x86);
+
+  // Multiple windows accept ISO and proprietary GET RESPONSE forms.
+  output_count = 0;
+  command(cid, 0x83, limited_info, sizeof(limited_info));
+  const uint8_t short_next[] = {0x80, 0xc0, 0, 0, 17};
+  output_count = 0;
+  command(cid, 0x83, short_next, sizeof(short_next));
+  assert(response(cid, 0x83, result, sizeof(result)) == 19);
+  assert(!memcmp(result, data + 1, 17) && result[17] == 0x61);
+  const uint8_t extended_next[] = {0, 0xc0, 0, 0, 0, 0, 0};
+  output_count = 0;
+  command(cid, 0x83, extended_next, sizeof(extended_next));
+  assert(response(cid, 0x83, result, sizeof(result)) == info_length - 18 + 2);
+  assert(!memcmp(result, data + 18, info_length - 18));
+  assert(result[info_length - 18] == 0x90 && result[info_length - 17] == 0);
+
+  // Unrelated commands, INIT, another channel, reset and malformed continuations
+  // must not expose an abandoned response through a later GET RESPONSE.
+  for (unsigned mode = 0; mode < 5; ++mode) {
+    output_count = 0;
+    command(cid, 0x83, limited_info, sizeof(limited_info));
+    output_count = 0;
+    if (mode == 0) {
+      const uint8_t get_info = 4;
+      command(cid, 0x90, &get_info, 1);
+    } else if (mode == 1) {
+      command(cid, 0x86, nonce, sizeof(nonce));
+    } else if (mode == 2) {
+      command(cid + 1, 0x83, next_info, sizeof(next_info));
+      assert(response(cid + 1, 0x83, result, sizeof(result)) == 2);
+      assert(result[0] == 0x69 && result[1] == 0x86);
+    } else if (mode == 3) {
+      reset();
+    } else {
+      const uint8_t bad_next[] = {0, 0xc0, 1, 0, 0};
+      command(cid, 0x83, bad_next, sizeof(bad_next));
+      assert(response(cid, 0x83, result, sizeof(result)) == 2);
+      assert(result[0] == 0x6a && result[1] == 0x86);
+    }
+    output_count = 0;
+    command(cid, 0x83, next_info, sizeof(next_info));
+    assert(response(cid, 0x83, result, sizeof(result)) == 2);
+    assert(result[0] == 0x69 && result[1] == 0x86);
+  }
+
   /* A file-backed response crosses both the shared workspace and HID packets.
    * Verify every payload byte, including the final short continuation. */
   for (size_t i = 0; i < 960; ++i) data[i] = (uint8_t)i;
@@ -250,6 +323,18 @@ int main(void) {
   assert(response(cid, 0x90, result, sizeof(result)) == sizeof(blob_prefix) + 960);
   assert(!memcmp(result, blob_prefix, sizeof(blob_prefix)));
   assert(!memcmp(result + sizeof(blob_prefix), data, 960));
+  uint8_t blob_msg[14] = {0x80, 0x10, 0, 0, sizeof(blob_get)};
+  memcpy(blob_msg + 5, blob_get, sizeof(blob_get));
+  blob_msg[13] = 53;
+  output_count = 0;
+  command(cid, 0x83, blob_msg, sizeof(blob_msg));
+  assert(response(cid, 0x83, result, sizeof(result)) == 55);
+  assert(!memcmp(result, blob_prefix, sizeof(blob_prefix)));
+  assert(!memcmp(result + sizeof(blob_prefix), data, 47) && result[53] == 0x61);
+  output_count = 0;
+  command(cid, 0x83, next_info, sizeof(next_info));
+  assert(response(cid, 0x83, result, sizeof(result)) == 915);
+  assert(!memcmp(result, data + 47, 913) && result[913] == 0x90 && result[914] == 0);
   const uint8_t blob_end[] = {0x0c, 0xa2, 1, 1, 3, 0x19, 3, 0xc0};
   output_count = 0;
   command(cid, 0x90, blob_end, sizeof(blob_end));

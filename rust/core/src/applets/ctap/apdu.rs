@@ -25,6 +25,8 @@ pub struct Applet {
     response: Response,
     session: Session,
     message_status: Option<Sw>,
+    message_offset: usize,
+    message_length: usize,
 }
 impl Applet {
     pub const fn new() -> Self {
@@ -32,6 +34,8 @@ impl Applet {
             response: Response::Constant(&[]),
             session: Session::new(),
             message_status: None,
+            message_offset: 0,
+            message_length: 0,
         }
     }
     #[cfg(feature = "pass")]
@@ -51,7 +55,13 @@ impl Applet {
         // CTAP's encoded-response threshold excluded the 32-byte command
         // overhead. U2F registration always published a certificate source.
         self.response.len() > 256
-            || matches!(self.response, Response::Authentication { certificate: Some(_), .. })
+            || matches!(
+                self.response,
+                Response::Authentication {
+                    certificate: Some(_),
+                    ..
+                }
+            )
     }
     pub fn reset(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         self.session.abort_blob(p);
@@ -125,11 +135,15 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> usize {
+        let limit = match command {
+            Message::Ctap(_, limit) | Message::U2f(_, limit) => *limit,
+            Message::Error(_) => u32::MAX,
+        };
         let result = match command {
-            Message::Ctap(command) => {
+            Message::Ctap(command, _) => {
                 Ok(self.session.execute(command, w.classic_with(p.memory), p))
             }
-            Message::U2f(request) => self.session.u2f(request, w.classic_with(p.memory), p),
+            Message::U2f(request, _) => self.session.u2f(request, w.classic_with(p.memory), p),
             Message::Error(error) => Err(*error),
         };
         let (response, sw) = match result {
@@ -138,8 +152,8 @@ impl Applet {
         };
         self.response = response;
         self.prepare(w, p);
-        self.message_status = Some(sw);
-        self.response.len() + 2
+        self.message_offset = 0;
+        self.message_window(limit, sw)
     }
     pub fn read(
         &mut self,
@@ -149,7 +163,7 @@ impl Applet {
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         if let Some(sw) = self.message_status {
-            let length = self.response.len();
+            let length = self.message_length;
             if offset
                 .checked_add(output.len())
                 .is_none_or(|end| end > length + 2)
@@ -158,7 +172,7 @@ impl Applet {
             }
             let n = output.len().min(length.saturating_sub(offset));
             if n != 0 {
-                self.read_payload(offset, &mut output[..n], w, p)?;
+                self.read_payload(self.message_offset + offset, &mut output[..n], w, p)?;
             }
             if n < output.len() {
                 let start = offset + n - length;
@@ -198,6 +212,70 @@ impl Applet {
             };
         }
     }
+    fn message_window(&mut self, limit: u32, final_sw: Sw) -> usize {
+        let plan = canokey_protocol::response::ResponsePlan::new(
+            self.response.len() as u32,
+            self.message_offset as u32,
+            limit,
+            final_sw,
+        )
+        .expect("MSG offset remains within response");
+        self.message_length = plan.length as usize;
+        self.message_status = Some(plan.sw);
+        self.message_length + 2
+    }
+    pub fn pending_message(&self) -> bool {
+        self.message_status.is_some()
+            && self.message_length == 0
+            && self.message_offset < self.response.len()
+    }
+    /// Advance only after the last HID IN report is acknowledged. The backing
+    /// remains in the shared workspace until GET RESPONSE or explicit abort.
+    pub fn complete_message(&mut self) -> bool {
+        if self.message_status.is_some() {
+            self.message_offset += self.message_length;
+            self.message_length = 0;
+            return self.pending_message();
+        }
+        false
+    }
+    pub fn continue_message(
+        &mut self,
+        bytes: &[u8],
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) -> Option<usize> {
+        if bytes.len() < 2 || !matches!(bytes[0], 0 | 0x80) || bytes[1] != 0xc0 {
+            return None;
+        }
+        // GET RESPONSE has no body. Decode only its bounded header shapes,
+        // including the legacy nine-byte empty-Lc form, without constructing
+        // the shared request parser over live response bytes.
+        let result = match bytes {
+            [_, _, 0, 0] => Ok(256),
+            [_, _, 0, 0, le] => Ok(if *le == 0 { 256 } else { u32::from(*le) }),
+            [_, _, 0, 0, 0, hi, lo] | [_, _, 0, 0, 0, 0, 0, hi, lo] => {
+                let le = u16::from_be_bytes([*hi, *lo]);
+                Ok(if le == 0 { 65536 } else { u32::from(le) })
+            }
+            [_, _, p1, p2, ..] if *p1 != 0 || *p2 != 0 => Err(Sw::WRONG_P1P2),
+            _ => Err(Sw::WRONG_LENGTH),
+        }
+        .and_then(|limit| {
+            if self.pending_message() {
+                Ok(limit)
+            } else {
+                Err(Sw::COMMAND_NOT_ALLOWED)
+            }
+        });
+        Some(match result {
+            Ok(limit) => self.message_window(limit, Sw::SUCCESS),
+            Err(sw) => {
+                self.close(w, p);
+                self.message_window(0, sw)
+            }
+        })
+    }
     pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         if let SessionWorkspace::CtapStream(stream) = w {
             stream.close(p);
@@ -205,6 +283,8 @@ impl Applet {
 
         self.response = Response::Constant(&[]);
         self.message_status = None;
+        self.message_offset = 0;
+        self.message_length = 0;
     }
 }
 
@@ -216,8 +296,8 @@ impl Default for Applet {
 
 /// Parsed HID MSG envelope. It owns semantic input, never source/PKE offsets.
 pub enum Message {
-    Ctap(Result<super::Command, super::Status>),
-    U2f(super::u2f::Request),
+    Ctap(Result<super::Command, super::Status>, u32),
+    U2f(super::u2f::Request, u32),
     Error(Sw),
 }
 
@@ -282,19 +362,16 @@ impl MessageParser {
         self.decoder = None;
     }
     pub fn finish(&mut self) -> Message {
-        if self
-            .decoder
-            .take()
-            .is_none_or(|decoder| decoder.finish().is_err())
-        {
+        let Some(Ok(info)) = self.decoder.take().map(|decoder| decoder.finish()) else {
             return Message::Error(Sw::WRONG_LENGTH);
-        }
+        };
+        let limit = info.le.unwrap_or(u32::MAX);
         match &mut self.request {
-            MessageInput::Ctap(request) => Message::Ctap(request.finish()),
-            MessageInput::U2f(request) => Message::U2f(core::mem::replace(
-                request,
-                super::u2f::Request::new(request.header),
-            )),
+            MessageInput::Ctap(request) => Message::Ctap(request.finish(), limit),
+            MessageInput::U2f(request) => Message::U2f(
+                core::mem::replace(request, super::u2f::Request::new(request.header)),
+                limit,
+            ),
             MessageInput::Error(error) => Message::Error(*error),
             MessageInput::Empty => Message::Error(Sw::WRONG_LENGTH),
         }
@@ -327,7 +404,7 @@ mod message_parameters_tests {
                     if valid {
                         assert!(matches!(
                             reply,
-                            Message::Ctap(Ok(super::super::Command::GetInfo))
+                            Message::Ctap(Ok(super::super::Command::GetInfo), _)
                         ));
                     } else {
                         assert!(matches!(reply, Message::Error(Sw::WRONG_P1P2)));

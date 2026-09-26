@@ -31,6 +31,15 @@ pub trait Scratch {
     fn wink(&mut self, cid: u32) -> usize;
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error>;
     fn close_response(&mut self);
+    /// Successful packet completion may retain an APDU response continuation.
+    fn complete_response(&mut self) {
+        self.close_response();
+    }
+    fn discard_continuation(&mut self) {}
+    /// Header-only GET RESPONSE must not overwrite shared response backing.
+    fn continue_message(&mut self, _bytes: &[u8]) -> Option<usize> {
+        None
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -98,6 +107,7 @@ impl Transport {
             scratch.close_response();
             self.response = false;
         }
+        scratch.discard_continuation();
         self.inline.fill(0);
     }
     fn error(out: &mut [u8; REPORT_SIZE], cid: u32, error: Error) -> bool {
@@ -117,7 +127,13 @@ impl Transport {
     /// here keeps a PING source alive through the final USB IN completion.
     pub fn completed(&mut self, scratch: &mut impl Scratch) {
         if self.phase == Phase::Completing {
-            self.reset(scratch);
+            self.close_request(scratch);
+            self.phase = Phase::Idle;
+            if self.response {
+                scratch.complete_response();
+                self.response = false;
+            }
+            self.inline.fill(0);
         }
     }
     /// Process queued packets before checking the clock: deadlines use receipt
@@ -177,6 +193,9 @@ impl Transport {
             let pke = length > INLINE;
             if let Err(error) = scratch.begin(pke) {
                 return Self::error(out, frame.cid, error);
+            }
+            if frame.cid != self.cid || frame.tag != wire::MSG {
+                scratch.discard_continuation();
             }
             self.storage = if pke { Storage::Pke } else { Storage::Inline };
             self.cid = frame.cid;
@@ -251,19 +270,30 @@ impl Transport {
             }
             // The shared parser also needs cleanup when a staged read fails.
             self.response = true;
-            scratch.begin_request((self.command == wire::MSG).then_some(self.total));
-            if self.storage == Storage::Pke {
-                for offset in (0..self.total).step_by(INLINE) {
-                    let n = INLINE.min(self.total - offset);
-                    scratch.read(offset, &mut self.inline[..n])?;
-                    scratch.consume_request(&self.inline[..n]);
-                }
+            let continued = if self.command == wire::MSG && self.storage == Storage::Inline {
+                scratch.continue_message(&self.inline[..self.total])
             } else {
-                scratch.consume_request(&self.inline[..self.total]);
+                None
+            };
+            if let Some(length) = continued {
+                self.close_request(scratch);
+                self.inline.fill(0);
+                self.total = length;
+            } else {
+                scratch.begin_request((self.command == wire::MSG).then_some(self.total));
+                if self.storage == Storage::Pke {
+                    for offset in (0..self.total).step_by(INLINE) {
+                        let n = INLINE.min(self.total - offset);
+                        scratch.read(offset, &mut self.inline[..n])?;
+                        scratch.consume_request(&self.inline[..n]);
+                    }
+                } else {
+                    scratch.consume_request(&self.inline[..self.total]);
+                }
+                self.close_request(scratch);
+                self.inline.fill(0);
+                self.total = scratch.finish_request(self.cid);
             }
-            self.close_request(scratch);
-            self.inline.fill(0);
-            self.total = scratch.finish_request(self.cid);
             self.response = true;
         }
         // Continuation tags have seven sequence bits. Reject before publishing

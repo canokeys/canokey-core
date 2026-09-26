@@ -525,7 +525,7 @@ impl Core {
             self.reset(p);
             self.owner = Some(OWNER_CTAP);
         }
-        self.router.close_ctap(p);
+        self.router.resume_ctap(p);
     }
     #[cfg(feature = "ctap")]
     pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
@@ -563,6 +563,21 @@ impl Core {
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         self.router.read_ctap(offset, out, p)
+    }
+    #[cfg(feature = "ctap")]
+    pub fn discard_ctap_continuation(&mut self, p: &mut Platform<'_>) {
+        // An idle HID reset/INIT must never close another transport's backing.
+        if self.owner == Some(OWNER_CTAP) {
+            self.router.close_ctap(p);
+        }
+    }
+    #[cfg(feature = "ctap")]
+    pub fn complete_ctap(&mut self, p: &mut Platform<'_>) {
+        self.router.complete_ctap(p);
+    }
+    #[cfg(feature = "ctap")]
+    pub fn continue_ctap_message(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Option<usize> {
+        self.router.continue_ctap_message(bytes, p)
     }
     #[cfg(feature = "ctap")]
     pub fn close_ctap(&mut self, p: &mut Platform<'_>) {

@@ -48,6 +48,9 @@ impl Scratch for RequestScratch {
             // End the previous idle CCID session before staging any HID bytes.
             super::entrypoints::with_core(|core, p| core.begin_ctap(p));
             if use_pke {
+                // A valid GET RESPONSE fits inline. Close a prior response
+                // before new staged input borrows the accelerator workspace.
+                super::entrypoints::with_core(|core, p| core.close_ctap(p));
                 if pke_buffer_acquire(PKE_OWNER_CTAP) != 0 {
                     return Err(Error::Busy);
                 }
@@ -98,6 +101,16 @@ impl Scratch for RequestScratch {
     fn close_response(&mut self) {
         super::entrypoints::with_core(|core, p| core.close_ctap(p));
     }
+    fn complete_response(&mut self) {
+        super::entrypoints::with_core(|core, p| core.complete_ctap(p));
+    }
+    fn discard_continuation(&mut self) {
+        super::entrypoints::with_core(|core, p| core.discard_ctap_continuation(p));
+    }
+    fn continue_message(&mut self, bytes: &[u8]) -> Option<usize> {
+        super::entrypoints::with_core(|core, p| core.continue_ctap_message(bytes, p))
+    }
+
     fn close(&mut self) {
         unsafe {
             if PKE_LEASED {

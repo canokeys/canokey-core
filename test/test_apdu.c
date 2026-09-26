@@ -190,51 +190,6 @@ static int read_tx_source_all(CTAPHID_TxSource *source, uint8_t *out, size_t out
   return 0;
 }
 
-enum { HID_CAPTURE_MAX_FRAMES = 64 };
-static CTAPHID_FRAME hid_capture[HID_CAPTURE_MAX_FRAMES];
-static size_t hid_capture_count;
-
-static uint8_t capture_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len) {
-  (void)pdev;
-  if (len != sizeof(CTAPHID_FRAME) || hid_capture_count >= sizeof(hid_capture) / sizeof(hid_capture[0])) return 1;
-  memcpy(&hid_capture[hid_capture_count++], report, sizeof(CTAPHID_FRAME));
-  return 0;
-}
-
-static int capture_ctaphid_msg(const uint8_t *apdu, size_t apdu_len, uint8_t *response, size_t response_size,
-                               size_t *response_len) {
-  if (apdu_len > sizeof(((CTAPHID_FRAME *)0)->init.data)) return -1;
-
-  hid_capture_count = 0;
-  memset(hid_capture, 0, sizeof(hid_capture));
-  CTAPHID_Init(capture_hid_report);
-
-  CTAPHID_FRAME request = {0};
-  request.cid = 0x12345678;
-  request.init.cmd = CTAPHID_MSG;
-  request.init.bcnth = (uint8_t)(apdu_len >> 8);
-  request.init.bcntl = (uint8_t)apdu_len;
-  memcpy(request.init.data, apdu, apdu_len);
-  if (CTAPHID_OutEvent((uint8_t *)&request) != 1 || CTAPHID_Loop(0) != LOOP_SUCCESS || hid_capture_count == 0)
-    return -1;
-
-  const CTAPHID_FRAME *first = &hid_capture[0];
-  const size_t total = MSG_LEN(*first);
-  if (first->cid != request.cid || first->init.cmd != CTAPHID_MSG || total > response_size) return -1;
-
-  size_t copied = MIN(total, sizeof(first->init.data));
-  memcpy(response, first->init.data, copied);
-  for (size_t i = 1; copied < total; ++i) {
-    if (i >= hid_capture_count || hid_capture[i].cid != request.cid || hid_capture[i].cont.seq != i - 1) return -1;
-    const size_t chunk = MIN(total - copied, sizeof(hid_capture[i].cont.data));
-    memcpy(response + copied, hid_capture[i].cont.data, chunk);
-    copied += chunk;
-  }
-
-  *response_len = total;
-  return 0;
-}
-
 typedef struct {
   const uint8_t *ptr;
   size_t len;
@@ -567,69 +522,6 @@ static void test_ctap_kh_cache_lifecycle(void **state) {
   assert_int_equal(verify_key_handle(&second, &key), 0);
 }
 
-static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state) {
-  (void)state;
-
-  static const uint8_t case3_get_info[] = {
-      0x80, 0x10, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04,
-  };
-  static const uint8_t case4_get_info[] = {
-      0x80, 0x10, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x00, 0x00,
-  };
-  static const uint8_t case4_limited_get_info[] = {
-      0x80, 0x10, 0x00, 0x00, 0x00, 0x00, 0x01, 0x04, 0x00, 0x01,
-  };
-  static const uint8_t get_response[] = {
-      0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  };
-  uint8_t case3_response[1024] = {0};
-  uint8_t case4_response[1024] = {0};
-  uint8_t limited_response[8] = {0};
-  uint8_t continuation_response[1024] = {0};
-  size_t case3_len = 0, case4_len = 0, limited_len = 0, continuation_len = 0;
-
-  init_apdu_buffer();
-  device_init();
-  set_nfc_state(0);
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(
-      capture_ctaphid_msg(case3_get_info, sizeof(case3_get_info), case3_response, sizeof(case3_response), &case3_len),
-      0);
-  assert_true(case3_len > APDU_BUFFER_SIZE + 2);
-  assert_int_equal(case3_response[0], 0x00);
-  assert_int_equal(case3_response[case3_len - 2], HI(SW_NO_ERROR));
-  assert_int_equal(case3_response[case3_len - 1], LO(SW_NO_ERROR));
-
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  assert_int_equal(
-      capture_ctaphid_msg(case4_get_info, sizeof(case4_get_info), case4_response, sizeof(case4_response), &case4_len),
-      0);
-  assert_int_equal(case4_len, case3_len);
-  assert_memory_equal(case4_response, case3_response, case3_len);
-
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  assert_int_equal(capture_ctaphid_msg(case4_limited_get_info, sizeof(case4_limited_get_info), limited_response,
-                                       sizeof(limited_response), &limited_len),
-                   0);
-  assert_int_equal(limited_len, 3);
-  assert_int_equal(limited_response[0], 0x00);
-  assert_int_equal(limited_response[1], 0x61);
-  assert_true(apdu_response_source_active());
-
-  assert_int_equal(capture_ctaphid_msg(get_response, sizeof(get_response), continuation_response,
-                                       sizeof(continuation_response), &continuation_len),
-                   0);
-  assert_int_equal(continuation_len, case3_len - 1);
-  assert_memory_equal(continuation_response, case3_response + 1, continuation_len);
-  assert_false(apdu_response_source_active());
-}
-
-
-
-
 static void test_ctap_install_preserves_sm2_during_state_rebuild(void **state) {
   (void)state;
   CTAP_sm2_attr saved, actual;
@@ -836,7 +728,6 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
-      cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);

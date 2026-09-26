@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 12 registered APDU cases.
+One legacy C test executable remains, with 11 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1278,3 +1278,24 @@ seeds the storage record directly; authenticated blob writes remain covered by
 Validation: combined CTest 28/28 passed (55.90 s). Full DevKit/NFCC
 links remain over Flash at 188472/195952 B (24632/32112 B over), with
 RAM_DATA 8640/8760 B. Runtime stack and physical acceptance remain open.
+
+## HID MSG Le and continuation lifetime
+
+Removed `test_ctaphid_msg_case3_and_case4_send_complete_response` and its native
+packet-capture helpers after fixing Rust's discarded Le and prematurely closed
+response backing. The existing actual Rust HID fixture covers case 3/unlimited
+case 4, Le=1 followed by the exact remaining payload and 9000, additional short
+and extended windows, the original nine-byte empty-Lc GET RESPONSE, exhausted
+6986, and queued continuation while the first IN remains unacknowledged. It also
+checks complete file-backed continuation content and abandonment on a new
+command, INIT, another CID, bus reset or malformed GET RESPONSE.
+
+The existing shared USB fixture checks both CCID and WebUSB takeover at the
+idle lease boundary clears pending HID continuation. Continuations retain the
+existing shared workspace rather than allocating another response buffer.
+
+Validation: combined CTest 28/28 passed (63.74 s). Full DevKit/NFCC
+links still fail at 189696/197152 B Flash (25856/33312 B over); RAM_DATA
+is 8648/8768 B. This adds 1224/1200 B Flash and 8 B RAM per board relative
+to the preceding revision. Physical USB/NFC compatibility and runtime stack
+acceptance remain open.
