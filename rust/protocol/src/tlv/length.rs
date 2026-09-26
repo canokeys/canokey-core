@@ -58,12 +58,13 @@ mod tests {
     #[test]
     fn accepts_short_and_long_lengths() {
         let mut state = LengthState::default();
-        assert_eq!(state.feed(7), Feed::Complete(7));
+        assert_eq!(state.feed(0x7f), Feed::Complete(127));
         assert_eq!(state.feed(0x81), Feed::More);
         assert_eq!(state.feed(0x80), Feed::Complete(128));
         assert_eq!(state.feed(0x82), Feed::More);
         assert_eq!(state.feed(0x01), Feed::More);
-        assert_eq!(state.feed(0x00), Feed::Complete(256));
+        assert_eq!(state.feed(0x02), Feed::Complete(258));
+        assert_eq!(state.feed(0x20), Feed::Complete(32));
     }
 
     #[test]

@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import (
 )
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.x509.oid import NameOID
-from key_test import CURVES, pubkey
+from key_test import CURVES, pubkey, encoding_vectors, chained_import, ALICE_PRIVATE_LE, ALICE_PUBLIC
 
 AID = bytes.fromhex("a000000308000010000100")
 PIN = b"123456\xff\xff"
@@ -64,7 +64,9 @@ class Piv(Card):
         reply = self.cmd(
             f"generate_alg_{a}", 0x47, 0, slot, tlv(0xAC, tlv(0x80, bytes([IDS[a]])) + policies)
         )
-        return pubkey(a, fields(reply)[0x7F49])
+        value = fields(reply)[0x7f49]
+        assert reply == tlv(0x7f49, value)
+        return pubkey(a, value)
 
     def import_key(self, a, key, slot=0x9A):
         if a in (5, 6, 7):
@@ -183,6 +185,23 @@ def classic_keys(c):
         ) == key.public_key().public_bytes(
             serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
         )
+
+
+def encoding_regressions(c):
+    for algorithm, private, expected in encoding_vectors():
+        c.import_key(algorithm, private)
+        assert fields(c.cmd("fixed_public_encoding", 0xf7, 0, 0x9a))[4] == expected
+        exercise(c, algorithm, private.public_key())
+    chained_import(c, 0xfe, IDS[4], 0x9a, tlv(8, ALICE_PRIVATE_LE), 5)
+    assert fields(c.cmd("alice_public_encoding", 0xf7, 0, 0x9a))[4] == bytes.fromhex("8620") + ALICE_PUBLIC
+    exercise(c, 4, x25519.X25519PrivateKey.from_private_bytes(ALICE_PRIVATE_LE).public_key())
+    for seed in (bytes(32), bytes([255]) * 32, bytes(i * 2 + 1 for i in range(32)), bytes(i * 3 + 1 for i in range(32))):
+        c.cmd("mldsa_fixed_seed", 0xfe, 0xe2, 0x9a, tlv(9, seed))
+        public = mldsa.MLDSA65PrivateKey.from_seed_bytes(seed).public_key().public_bytes_raw()
+        expected = bytes.fromhex("868207a0") + public
+        assert len(public) == 1952
+        for _ in range(2):
+            assert fields(c.cmd("mldsa_fixed_encoding", 0xf7, 0, 0x9a))[4] == expected
 
 
 def pq_keys(c):
@@ -510,6 +529,7 @@ def run(wire, progress=None, report=None):
             authentication,
             objects,
             classic_keys,
+            encoding_regressions,
             pq_keys,
             randomized_ed25519,
             sm2_operations,

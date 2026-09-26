@@ -23,7 +23,7 @@ from cryptography.hazmat.primitives.asymmetric import (
     utils,
     x25519,
 )
-from key_test import CURVES, pubkey
+from key_test import CURVES, pubkey, encoding_vectors, chained_import, ALICE_PRIVATE_LE, ALICE_PUBLIC
 
 AID = bytes.fromhex("d27600012401")
 REF = [0xB6, 0xB8, 0xA4]
@@ -73,14 +73,13 @@ class Card(ApduCard):
         self.put(0xC1 + role, a)
 
     def public(self, role, generate=False):
-        return fields(
-            self.cmd(
-                "generate" if generate else "public",
-                0x47,
-                0x80 if generate else 0x81,
-                data=bytes([REF[role], 0]),
-            )
-        )[0x7F49]
+        reply = self.cmd(
+            "generate" if generate else "public", 0x47, 0x80 if generate else 0x81,
+            data=bytes([REF[role], 0]),
+        )
+        value = fields(reply)[0x7f49]
+        assert reply == tlv(0x7f49, value)
+        return value
 
     def import_key(self, alg, role, key):
         if alg in (5, 6, 7):
@@ -170,6 +169,20 @@ def import_template(role, tags, parts):
     descriptors = b"".join(bytes([t]) + length(len(v)) for t, v in zip(tags, parts))
     return tlv(0x4d, bytes([REF[role], 0]) + tlv(0x7f48, descriptors)
                + tlv(0x5f48, b"".join(parts)))
+
+
+def encoding_regressions(c):
+    for algorithm, private, expected in encoding_vectors():
+        c.attrs(algorithm, 0)
+        c.import_key(algorithm, 0, private)
+        assert c.cmd("fixed_public_encoding", 0x47, 0x81, data=bytes.fromhex("b600")) == tlv(0x7f49, expected)
+        exercise(c, algorithm, 0, private.public_key())
+    c.attrs(4, 1)
+    body = import_template(1, [0x92], [ALICE_PRIVATE_LE[::-1]])
+    chained_import(c, 0xdb, 0x3f, 0xff, body, 7)
+    assert c.public(1) == bytes.fromhex("8620") + ALICE_PUBLIC
+    exercise(c, 4, 1, x25519.X25519PrivateKey.from_private_bytes(ALICE_PRIVATE_LE).public_key())
+    c.reset()
 
 
 def extended_key_regressions(c, wire):
@@ -288,6 +301,7 @@ def run(wire, host):
     c.reset()
     pin_regressions(c, wire, host)
     key_regressions(c)
+    encoding_regressions(c)
     extended_key_regressions(c, wire)
     assert c.get(0x4F)[:6] == AID
     assert len(c.get(0xC4)) == 7

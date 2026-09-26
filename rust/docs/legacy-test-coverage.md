@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Three C test executables remain, with 140 registered cases: APDU (57),
-key (25), PIV (58). Their C applet/protocol dependencies
+Three C test executables remain, with 132 registered cases: APDU (57),
+key (17), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -386,3 +386,25 @@ zero. Returning success for unsupported operations is not retained. These are
 intentional protocol corrections, not claims of byte identity to every old C
 response. The actual endpoint/EP0 stall lifecycle remains covered by USB adapter
 fixtures; these tests exercise the Rust wire and policy boundaries.
+
+## Replaced key encoding and scalar streaming cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_encode_rsa` | OpenPGP/PIV `encoding_regressions`: original RSA-4096 p/q and complete 522-byte public encoding preserved in `vectors/rsa4096-public.json`; actual import/read/use with independently completed CRT |
+| `test_encode_ecdsa` | Both APDU suites import the original P-256 private scalar, compare the entire canonical SEC1/TLV public value and independently verify operations |
+| `test_encode_p521_length` | Strict `key_test.pubkey` checks all P-521 generated/imported values have the exact 86818504 prefix and 136-byte inner length; both suites assert canonical outer 7F49 lengths |
+| `test_encode_eddsa` | RFC 8032 fixed seed/public encoding on both APDU routes, plus literal RFC 7748 public output and independent signature/agreement checks |
+| `test_encode_mldsa` | PIV `encoding_regressions`: original zero/FF/two patterned seeds, all 1952 public bytes independently derived, exact 868207a0 prefix and repeated metadata streaming; native stream canaries/seed immutability remain in `stream-crypto` |
+| `test_parse_openpgp_x25519_streaming_rfc7748` | Alice's clamped big-endian scalar imported in seven-byte APDU fragments, exact RFC public encoding and independent shared secret |
+| `test_parse_piv_x25519_streaming_rfc7748` | Alice's clamped little-endian scalar using tag 08 in five-byte APDU fragments, same public value and shared-secret check |
+| `test_tlv_len_stream_feed` | `tlv::length::tests`: sequential 7F/81-80/82-0102/20 lengths and rejected 80/83 forms, plus full decoder truncation regressions |
+
+The old P-256 encoder fixture supplied a public point unrelated to its private
+scalar. Its replacement uses a literal public point independently derived from
+the original scalar, enabling real import and signature verification. The old
+X25519 encoder similarly copied arbitrary stored public bytes; RFC 7748 tests
+now exercise actual derivation and both applets' distinct private-wire formats.
+Strict decoding additionally rejects noncanonical widths/lengths, duplicate or
+extra public fields instead of merely extracting a valid key from them. Native
+key storage/error paths and malformed PIV import cases remain pending audit.
