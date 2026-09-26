@@ -135,7 +135,9 @@ impl Selected {
             #[cfg(feature = "piv")]
             // Match the full AID, the standardized nine-byte prefix, or the
             // legacy RID-only selector; other partial versions are not AIDs.
-            aid if matches!(aid.len(), 5 | 9 | 11) && crate::applets::piv::AID.starts_with(aid) => Some(Self::Piv),
+            aid if matches!(aid.len(), 5 | 9 | 11) && crate::applets::piv::AID.starts_with(aid) => {
+                Some(Self::Piv)
+            }
             _ => None,
         }
     }
@@ -527,6 +529,10 @@ impl Router for Registry {
     }
     fn allows_extended(&self, header: Header) -> bool {
         let _ = header;
+        #[cfg(feature = "openpgp")]
+        if matches!(self.applet, AppletState::OpenPgp(_)) {
+            return true;
+        }
         #[cfg(feature = "ndef")]
         if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xb0 {
             return true;

@@ -172,6 +172,27 @@ def import_template(role, tags, parts):
                + tlv(0x5f48, b"".join(parts)))
 
 
+def extended_key_regressions(c, wire):
+    c.reset()
+
+    def public(p1, status=0x9000):
+        with c.step("extended_public", 0x47, p1, 0):
+            reply, hi, lo = wire.transmit(bytes.fromhex("0047") + bytes([p1])
+                                        + bytes.fromhex("00000002b600010f"))
+            answer = bytes(reply)
+            while hi == 0x61:
+                reply, hi, lo = wire.transmit(bytes.fromhex("00c0000000"))
+                answer += bytes(reply)
+            assert hi * 256 + lo == status, (hex(hi * 256 + lo), hex(status))
+            return answer
+
+    assert public(0x81, 0x6a88) == b""
+    generated = public(0x80)
+    assert public(0x81) == generated
+    exercise(c, 5, 0, pubkey(5, fields(generated)[0x7f49]))
+    c.reset()
+
+
 def key_regressions(c):
     c.attrs(3, 0)
     for attributes in (bytes.fromhex("01"), bytes.fromhex("132a8648ce3d")):
@@ -267,6 +288,7 @@ def run(wire, host):
     c.reset()
     pin_regressions(c, wire, host)
     key_regressions(c)
+    extended_key_regressions(c, wire)
     assert c.get(0x4F)[:6] == AID
     assert len(c.get(0xC4)) == 7
     expected_algorithms = b""

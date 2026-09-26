@@ -103,8 +103,11 @@ failures; both retain the existing APDU status `6900` (unable to process).
 
 ## Streaming and memory
 
-CCID retains its 261-byte short-frame limit. Logical commands span ISO chained
-APDUs; general extended APDU support is not advertised. Request modes are:
+Logical commands support ISO chaining. CCID/NFC also accept extended OpenPGP
+envelopes under the existing transport/session and command-size limits; short
+commands retain their 261-byte transport frame. Extended GET PUBLIC/GENERATE
+with a two-byte control reference is covered by the literal legacy frames and
+GET RESPONSE checks. This does not enlarge transport buffers. Request modes are:
 
 - Small commands and irreducible RSA ciphertext: at most 544 bytes in the shared
   session input (including protocol framing), rather than a separate worst-case
@@ -196,3 +199,15 @@ which remains unavailable to PASS until release. Core/FFI `openpgp` alone does
 not initialize ADMIN, PASS or OATH; the CIU preset deliberately combines all four.
 See `hil-reports/rust-design-review-20260923/README.md` for current resource and
 validation measurements; earlier stack evidence is not reused as a new bound.
+
+### Lifecycle cache and uncertain writes
+
+The selected applet caches the durable terminated flag. Install and successful
+activation prime it; successful termination records the terminated value.
+Reset discards the cache. PUT DATA may replace the shared state record and
+invalidates the flag before mutation, as do termination and activation.
+Any failed lifecycle write leaves the outcome unknown; the next command reloads
+the durable flag and fails closed if that read fails. TERMINATE clears PIN and
+touch grants before the write, including when persistence subsequently fails.
+The `lifecycle_cache_reloads_uncertain_commits_and_revokes_grants` unit test
+covers both applied and unapplied errors and counts backing reads.

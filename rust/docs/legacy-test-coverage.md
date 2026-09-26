@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 151 registered cases: APDU (66),
-key (25), OpenPGP (2), PIV (58). Their C applet/protocol dependencies
+Three C test executables remain, with 149 registered cases: APDU (66),
+key (25), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -324,3 +324,22 @@ failure distinctly and Rust maps it to 6A80; other crypto failures remain 6900.
 OpenPGP keeps its big-endian private scalar. The randomized host import helper
 now encodes that convention independently instead of agreeing with the defect.
 Extended-APDU and termination/cache cases remain in the C suite pending audit.
+
+## Final OpenPGP suite replacement
+
+The last two cases in `test/test_openpgp.c` are now replaced and that executable
+is removed. Its native applet still has callers in the remaining APDU/key suite.
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_special` | `openpgp-normal::extended_key_regressions`: literal extended 0047/81 and 0047/80 envelopes, missing-key status, generated/read public-key equality after GET RESPONSE, independently verified signature |
+| `test_terminated_cache` | `lifecycle_cache_reloads_uncertain_commits_and_revokes_grants`: install/activation cache priming, zero backing reads for active AID and terminated rejection, successful termination, unapplied/applied failing commits, failed reload, authorization revocation, interrupted activation, metadata-write invalidation and transport reset |
+
+Rust now admits extended OpenPGP envelopes on CCID/NFC under the existing
+transport ownership and bounded command rules. The old `test_special` only
+printed results; its replacement asserts them. The lifecycle cache is local to
+the selected applet, discarded on reset/reselection through another applet and
+invalidated before state-record mutation. A failed terminate clears grants and
+forces a durable reload: neither success nor failure of a write is guessed.
+The storage fixture models both commit outcomes and counts actual trait reads;
+physical LittleFS power-loss behavior remains a separate acceptance item.

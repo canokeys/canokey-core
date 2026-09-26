@@ -36,6 +36,7 @@ pub struct OpenPgp {
     response: Response,
     pub(super) used: usize,
     import: Import,
+    terminated: Option<bool>,
 }
 impl Default for OpenPgp {
     fn default() -> Self {
@@ -51,13 +52,18 @@ impl OpenPgp {
             response: Response::Memory,
             used: 0,
             import: Import::new(),
+            terminated: None,
         }
     }
     pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
-        repo::install(p).map_err(Into::into)
+        self.terminated = None;
+        repo::install(p)?;
+        self.is_terminated(p)?;
+        Ok(())
     }
     pub fn reset(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
         self.abort(w, p);
+        self.terminated = None;
         self.session.grants = 0;
         self.occurrence = 0;
         self.session.clear_touch();
@@ -65,11 +71,21 @@ impl OpenPgp {
     }
     pub fn clear(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<(), Sw> {
         self.reset(w, p);
-        repo::reset(p).map_err(Into::into)
+        repo::reset(p)?;
+        self.terminated = Some(false);
+        Ok(())
+    }
+    fn is_terminated(&mut self, p: &mut Platform<'_>) -> Result<bool, Sw> {
+        if let Some(value) = self.terminated {
+            return Ok(value);
+        }
+        let value = repo::terminated(p)?;
+        self.terminated = Some(value);
+        Ok(value)
     }
     pub fn select(&mut self, p: &mut Platform<'_>) -> Result<u32, Sw> {
         self.occurrence = 0;
-        let terminated = repo::terminated(p)?;
+        let terminated = self.is_terminated(p)?;
         if terminated {
             return Err(Sw::SELECTED_FILE_TERMINATED);
         }
@@ -96,9 +112,14 @@ impl OpenPgp {
         self.used = 0;
         w.clear(p.memory);
         self.response = Response::Memory;
-        let terminated = repo::terminated(p)?;
+        let terminated = self.is_terminated(p)?;
         if terminated && h.ins != ACTIVATE {
             return Err(Sw::SELECTED_FILE_TERMINATED);
+        }
+        // PUT DATA can replace the state record. An error may occur after
+        // commit, so discard the cached lifecycle byte before any such write.
+        if h.ins == PUT_DATA {
+            self.terminated = None;
         }
         self.request = match h.ins {
             PUT_DATA if u16::from_be_bytes([h.p1, h.p2]) == tag::CERTIFICATE => {
@@ -351,11 +372,14 @@ impl OpenPgp {
                 if pin::info(Record::PgpPw3, p)?.retries_remaining != 0 {
                     self.admin()?;
                 }
+                // A storage error does not establish whether the write landed.
+                self.terminated = None;
+                self.session.grants = 0;
+                self.session.clear_touch();
                 p.storage
                     .replace_at(Record::PgpState, 1, &[1])
                     .map_err(io)?;
-                self.session.grants = 0;
-                self.session.clear_touch();
+                self.terminated = Some(true);
                 Ok(0)
             }
             ACTIVATE => {
@@ -364,7 +388,7 @@ impl OpenPgp {
                 if tag != 0x0000 || !b.is_empty() {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if repo::terminated(p)? {
+                if self.is_terminated(p)? {
                     self.clear(w, p)?;
                 }
                 Ok(0)

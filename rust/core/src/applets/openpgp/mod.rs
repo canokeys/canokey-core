@@ -10,3 +10,6 @@ pub(crate) mod repository;
 mod service;
 
 mod wire;
+
+#[cfg(test)]
+mod lifecycle_tests;

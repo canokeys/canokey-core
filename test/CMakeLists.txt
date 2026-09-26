@@ -1,12 +1,3 @@
-add_mocked_test(openpgp
-        SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core
-)
-add_dependencies(test_openpgp generate_virt_card_git_rev)
-
 add_mocked_test(apdu
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
@@ -43,5 +34,5 @@ add_mocked_test(key
 add_dependencies(test_key generate_virt_card_git_rev)
 
 # Sanitizer diagnostics are correctness failures, not passing-test log output.
-set_tests_properties(test_openpgp test_apdu test_piv test_key PROPERTIES
+set_tests_properties(test_apdu test_piv test_key PROPERTIES
     ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
