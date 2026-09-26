@@ -353,7 +353,17 @@ def run(wire):
         version = protocol.VERSION
         public, secret = protocol.encapsulate(call(6, {1: version, 2: 2})[1])
         hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
-        token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 0x10})[2])
+        token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 0x13, 10: rp})[2])
+        token_auth = protocol.authenticate(token, assertion_hash)
+        assertion = {1: rp, 2: assertion_hash, 3: [credentials[0][0]], 6: token_auth, 7: version}
+        signed = call(2, assertion)
+        credentials[0][1].verify(signed[2] + assertion_hash, signed[3])
+        assert AuthenticatorData(signed[2]).is_user_verified()
+        call(2, assertion, 0x33)
+        call(1, {1: client_hash, 2: {"id": rp}, 3: user,
+                 4: [{"type": "public-key", "alg": -7}],
+                 8: protocol.authenticate(token, client_hash), 9: version}, 0x33)
+        # Credential use consumes MC/GA, but this same token must still write blobs.
         def write_blob(fragment, offset, length=None, status=0, byteorder="little"):
             message = b"\xff" * 32 + b"\x0c\x00" + offset.to_bytes(4, byteorder) + hashlib.sha256(fragment).digest()
             params = {2: fragment, 3: offset, 5: protocol.authenticate(token, message), 6: version}

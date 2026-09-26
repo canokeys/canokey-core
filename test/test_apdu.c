@@ -630,20 +630,6 @@ static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state
 
 
 
-static void test_pin_uv_auth_clear_permissions_except_lbw(void **state) {
-  (void)state;
-
-  cp_reset_pin_uv_auth_token();
-  cp_begin_using_uv_auth_token(false);
-  cp_set_permission(CP_PERMISSION_MC | CP_PERMISSION_GA | CP_PERMISSION_LBW);
-
-  cp_clear_pin_uv_auth_token_permissions_except_lbw();
-
-  assert_false(cp_has_permission(CP_PERMISSION_MC));
-  assert_false(cp_has_permission(CP_PERMISSION_GA));
-  assert_true(cp_has_permission(CP_PERMISSION_LBW));
-}
-
 static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
   (void)state;
 
@@ -889,7 +875,6 @@ int main() {
       cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
-      cmocka_unit_test(test_pin_uv_auth_clear_permissions_except_lbw),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
   };
 
