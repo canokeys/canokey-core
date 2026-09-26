@@ -93,7 +93,12 @@ int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_
   if (operation == 5) { assert(id < 186 && n == 1 && b[0] < 186);uint8_t to=b[0];if(sizes[id]<0)return -2;memcpy(files[to],files[id],sizes[id]);sizes[to]=sizes[id];memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
   if (operation == 0 || operation == 3) { memset(stage,0,sizeof(stage)); stage_size=0; return 0; }
   if (operation == 1) { assert(stage_size+n<=sizeof(stage));memcpy(stage+stage_size,b,n);stage_size+=n;return 0; }
-  assert(operation==2);ck_platform_write(id,stage,stage_size);memset(stage,0,sizeof(stage));stage_size=0;return 0;
+  assert(operation == 2);
+  int32_t result = ck_platform_write(id, stage, stage_size);
+  memset(stage, 0, sizeof(stage));
+  stage_size = 0;
+  // Staged callers must observe the same one-shot failure as direct writes.
+  return result < 0 ? result : 0;
 }
 #endif
 

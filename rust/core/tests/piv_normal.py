@@ -351,6 +351,57 @@ def classic_keys(c):
         )
 
 
+def container_names(c):
+    c.generate(0)
+    c.generate(0, 0x95)
+    c.generate(0, 0xF9)
+    name = bytes.fromhex("41002d4e3dd800de")
+    assert c.cmd("initial_name_empty", 0xF5, 0, 0x9A) == b""
+    c.wire.command("RESET")
+    c.select()
+    c.cmd("name_write_requires_management", 0xF5, 1, 0x9A, name, status=0x6982)
+    c.auth()
+    for value in (b"A", bytes(2), bytes.fromhex("00d8"), bytes.fromhex("00dc"),
+                  bytes.fromhex("00d84100"), b"X\0" * 40):
+        c.cmd("invalid_container_name", 0xF5, 1, 0x9A, value, status=0x6A80)
+    maximum = b"X\0" * 39
+    c.cmd("maximum_container_name", 0xF5, 1, 0x9A, maximum)
+    assert c.cmd("maximum_name_read", 0xF5, 0, 0x9A) == maximum
+    c.cmd("unicode_container_name", 0xF5, 1, 0x9A, name)
+    for slot in (0x95, 0xF9):
+        c.cmd("duplicate_container_name", 0xF5, 1, slot, name, status=0x6A80)
+    c.wire.command("RESET")
+    c.select()
+    assert c.cmd("persistent_container_name", 0xF5, 0, 0x9A) == name
+    c.auth()
+    before = c.cmd("named_key_metadata", 0xF7, 0, 0x9A)
+    for replacement in (maximum, b""):
+        c.wire.command("FAIL_WRITE 17")
+        c.cmd("idempotent_name_needs_no_write", 0xF5, 1, 0x9A, name)
+        c.cmd("name_commit_failure", 0xF5, 1, 0x9A, replacement, status=0x6900)
+        assert c.cmd("failed_name_preserved", 0xF5, 0, 0x9A) == name
+        assert c.cmd("failed_name_keeps_key", 0xF7, 0, 0x9A) == before
+    c.wire.command("FAIL_WRITE 17")
+    c.cmd("failed_named_key_generation", 0x47, 0, 0x9A,
+          bytes.fromhex("ac03800111"), status=0x6900)
+    assert c.cmd("failed_generation_keeps_name", 0xF5, 0, 0x9A) == name
+    assert c.cmd("failed_generation_keeps_key", 0xF7, 0, 0x9A) == before
+    old_public = c.public(0)
+    exercise(c, 0, old_public)
+    imported = tlv(6, bytes(31) + b"\x01")
+    c.raw("named_import_first", 0xFE, 0x11, 0x9A, imported[:17], cla=0x10)
+    c.raw("named_import_truncated", 0xFE, 0x11, 0x9A, imported[17:-1], status=0x6700)
+    assert c.cmd("truncated_import_keeps_name", 0xF5, 0, 0x9A) == name
+    assert c.cmd("truncated_import_keeps_key", 0xF7, 0, 0x9A) == before
+    c.cmd("named_import_success", 0xFE, 0x11, 0x9A, imported)
+    assert c.cmd("import_clears_name", 0xF5, 0, 0x9A) == b""
+    exercise(c, 0, ec.derive_private_key(1, ec.SECP256R1()).public_key())
+    c.cmd("rename_before_generate", 0xF5, 1, 0x9A, name)
+    c.generate(0)
+    assert c.cmd("generation_clears_name", 0xF5, 0, 0x9A) == b""
+    c.cmd("remove_name_test_retired_key", 0xF6, 0xFF, 0x95)
+
+
 def custom_p521(c):
     config = c.cmd("read_before_p521_mapping", 0xEE, 1, 0)
     custom = bytearray(config)
@@ -563,6 +614,7 @@ def sm2_operations(c):
 def attestation(c):
     issuer_key = ec.generate_private_key(ec.SECP256R1())
     c.import_key(0, issuer_key, 0xF9)
+    c.cmd("issuer_container_name", 0xF5, 1, 0xF9, b"F\0")
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Independent attestation CA")])
     now = datetime.datetime.now(datetime.timezone.utc)
     issuer = (
@@ -740,6 +792,7 @@ def reset_and_persistence(c, issuer_key, issuer):
     )
     assert c.cmd("reset_preserved_algorithms", 0xEE, 1, 0) == bytes(config)
     assert c.public(0, 0xF9).public_numbers() == issuer_key.public_key().public_numbers()
+    assert c.cmd("reset_preserves_issuer_name", 0xF5, 0, 0xF9) == b"F\0"
     generated = c.cmd("generate_with_preserved_algorithm", 0x47, 0, 0x9A,
                       bytes.fromhex("ac03800122"))
     public = fields(fields(generated)[0x7F49])[0x86]
@@ -760,6 +813,7 @@ def run(wire, progress=None, report=None):
             algorithm_configuration,
             object_capacity,
             objects,
+            container_names,
             classic_keys,
             custom_p521,
             encoding_regressions,

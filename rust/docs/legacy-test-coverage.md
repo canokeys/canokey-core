@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 86 registered cases: APDU (49)
-and PIV (37). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 84 registered cases: APDU (49)
+and PIV (35). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -614,3 +614,25 @@ AA/AB policies. The native fixture's inconsistent outer length is not retained
 as a required successful malformed-input behavior. Important malformed-input
 rejection and interrupted-operation tests remain separate. Production code and
 storage formats are unchanged by this consolidation.
+
+
+## Container-name authorization and atomic replacement
+
+| Retired native case | Important Rust coverage |
+|---|---|
+| `test_piv_container_names` | `piv-normal::container_names`: management authorization, valid Unicode including a surrogate pair, invalid UTF-16 and 78/80-byte boundaries, duplicate names across ordinary/F9 slots, reset persistence, idempotent writes, failed rename/clear preserving key and name; `reset_and_persistence` preserves the F9 name through factory reset |
+| `test_piv_container_name_replacement` | Same scenario injects a key-generation commit failure and verifies old metadata/name plus an independently verified private operation; a truncated import preserves both, successful import/generation clears the name and the imported key is independently verified |
+
+These use the actual aliased FFI APDU buffer. The host staged-write fixture now
+propagates its backing write error instead of falsely returning success. Arming
+a one-shot failure before an unchanged-name command also proves that idempotent
+writes do not consume a storage write. C attribute layout and duplicate remount
+assertions are not replicated; native LittleFS atomic storage tests remain.
+The native flash-program failure fixture is still needed by the remaining PQ
+name-replacement case, so only unused counters/mount pointers are removed.
+
+**Open functional discrepancy:** Rust currently saves a PQ-generated seed and
+clears the prior name before streaming its public response. Native ML-DSA
+replacement commits at response completion and preserves the old key/name if
+the response is abandoned. The native PQ aborted-generation/name cases remain
+pending; they must not be removed as equivalent coverage or marked complete.
