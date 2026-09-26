@@ -72,3 +72,8 @@ if(BUILD_TESTING OR ENABLE_TESTS)
     --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-tests --lib)
   set_tests_properties(virtual-storage PROPERTIES TIMEOUT 120)
 endif()
+
+if(BUILD_TESTING)
+  get_property(host_correctness_tests DIRECTORY PROPERTY TESTS)
+  set_property(TEST ${host_correctness_tests} APPEND PROPERTY ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
+endif()

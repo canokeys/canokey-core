@@ -69,6 +69,12 @@ if(BUILD_TESTING AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(native-sm3 PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
   target_link_options(native-sm3 PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
   add_test(NAME native-sm3 COMMAND native-sm3)
+  add_executable(native-keccak-bytes
+    ../canokey-crypto/test/keccak_bytes_correctness.c
+    ../canokey-crypto/src/keccak_p1600.c)
+  target_compile_options(native-keccak-bytes PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+  target_link_options(native-keccak-bytes PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+  add_test(NAME native-keccak-bytes COMMAND native-keccak-bytes)
 endif()
 
 if(CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
@@ -304,4 +310,9 @@ if(CANOKEY_VIRTUAL_CARD)
     endif()
   endforeach()
   add_subdirectory(host)
+endif()
+
+if(BUILD_TESTING)
+  get_property(rust_correctness_tests DIRECTORY PROPERTY TESTS)
+  set_property(TEST ${rust_correctness_tests} APPEND PROPERTY ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
 endif()
