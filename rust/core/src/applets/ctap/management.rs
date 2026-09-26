@@ -258,6 +258,7 @@ impl Session {
         }
         result
     }
+    #[inline(never)]
     fn manage_inner(
         &mut self,
         params: &Parameters,
