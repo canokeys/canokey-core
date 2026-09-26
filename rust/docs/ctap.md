@@ -495,3 +495,8 @@ mode omits it. No second full public-key buffer or Flash scratch is introduced.
 `ctap-normal` independently verifies packed attestation and ML-DSA signatures,
 decrypts hmac-secret-mc results and compares full/metadata mixed enumeration.
 Hardware stack measurements remain required for the repaired call paths.
+
+Applet deselection clears both resident assertion and credential-management
+continuations as well as volatile PIN authorization and key agreement. The
+`ctap-normal` APDU fixture verifies this through SELECT ADMIN / SELECT FIDO,
+then confirms management works after fresh clientPIN authorization.

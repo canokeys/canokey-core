@@ -103,6 +103,10 @@ def run(wire):
     call(2, {1: rp, 2: assertion_hash})
     call(4)
     call(8, status=0x30) # any intervening command invalidates enumeration
+    call(2, {1: rp, 2: assertion_hash})
+    card.cmd("deselect FIDO", 0xa4, 4, data=bytes.fromhex("f000000000"))
+    select()
+    call(8, status=0x30)
     old = first[1]
     call(1, {1: client_hash, 2: {"id": rp}, 3: {"id": b"first"},
              4: [{"type": "public-key", "alg": -8}], 7: {"rk": True}})
@@ -261,6 +265,15 @@ def run(wire):
     second = manage(5)
     assert second[6]["id"] == b"second"
     manage(5, status=0x30)
+    manage(4, {1: hashlib.sha256(rp.encode()).digest()})
+    card.cmd("deselect FIDO management", 0xa4, 4, data=bytes.fromhex("f000000000"))
+    select()
+    manage(5, status=0x30)
+    # Applet switching also revokes the token and key agreement.
+    manage(1, status=0x33)
+    public, secret = protocol.encapsulate(call(6, {1: version, 2: 2})[1])
+    hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
+    token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 4})[2])
     manage(7, {2: first[7], 3: {"id": b"wrong", "name": "Changed"}}, 2)
     manage(7, {2: first[7], 3: {"id": b"first", "name": "Changed", "displayName": "改" * 30}})
     updated = manage(4, {1: hashlib.sha256(rp.encode()).digest(), 0x80: True})

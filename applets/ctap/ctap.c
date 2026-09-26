@@ -1025,14 +1025,6 @@ static void ctap_get_assertion_save_state(const CTAP_get_assertion *src) {
 }
 
 #ifdef TEST
-void ctap_test_seed_get_next_assertion_state(void) {
-  ctap_get_assertion_reset_state();
-  last_cmd = CTAP_GET_ASSERTION;
-  ga_state.number_of_credentials = 2;
-  ga_state.credential_counter = 1;
-  timer = device_get_tick();
-}
-
 void ctap_test_seed_credential_management_state(void) {
   ctap_credential_management_reset_state();
   last_cmd = CTAP_CREDENTIAL_MANAGEMENT;

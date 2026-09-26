@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 24 registered APDU cases.
+One legacy C test executable remains, with 22 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1130,3 +1130,22 @@ Validation: combined CTest 28/28 passed (58.52 s). Both full production
 links still fail at unchanged sizes: DevKit 188432 B (24592 B over), NFCC
 195912 B (32072 B over), RAM_DATA 8640/8760 B. No accepted firmware or
 hardware stack/compatibility evidence was produced.
+
+## CTAP deselection invalidates enumeration and authorization
+
+Removed `test_ctap_deselect_clears_get_next_assertion_state` and
+`test_ctap_deselect_clears_credential_management_state`, plus the unused
+getNextAssertion state injection helper. Existing `ctap-normal` now starts
+real resident assertion and credential-management enumerations, SELECTs ADMIN,
+returns to FIDO and verifies both continuation commands reject with CTAP 30.
+It also rejects the old management token with 33, establishes fresh key
+agreement/authorization, and continues the existing credential update/delete
+checks. No synthetic cursor injection or separate fixture is needed.
+
+The native `ctap_poweroff` preservation case remains pending audit: that helper
+releases transient resources and is not equivalent to a real slot power-off.
+
+Validation: combined CTest 28/28 passed (56.80 s). Both complete board
+links still fail capacity: DevKit 188432 B (24592 B over), NFCC 195912 B
+(32072 B over), RAM_DATA 8640/8760 B. Hardware compatibility and runtime
+stack acceptance remain open.

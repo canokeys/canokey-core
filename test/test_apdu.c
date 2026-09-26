@@ -388,25 +388,6 @@ static void test_large_blob_noncanonical_string_offset(void **state) {
 
 
 
-static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
-  (void)state;
-
-  uint8_t req[] = {0x08};
-  uint8_t resp[16] = {0};
-  size_t resp_len = sizeof(resp);
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  ctap_test_seed_get_next_assertion_state();
-  ctap_deselect();
-
-  assert_int_equal(ctap_process_cbor_with_src(req, sizeof(req), resp, &resp_len, CTAP_SRC_CCID), 0);
-  assert_int_equal(resp_len, 1);
-  assert_int_equal(resp[0], 0x30);
-}
-
 static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
   (void)state;
 
@@ -418,19 +399,6 @@ static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
   ctap_poweroff();
 
   assert_true(ctap_test_credential_management_state_active());
-}
-
-static void test_ctap_deselect_clears_credential_management_state(void **state) {
-  (void)state;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  ctap_test_seed_credential_management_state();
-  ctap_deselect();
-
-  assert_false(ctap_test_credential_management_state_active());
 }
 
 static void write_ctap_dc_fixture(const CTAP_discoverable_credential *credentials, size_t credential_count,
@@ -1215,9 +1183,7 @@ int main() {
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
-      cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
-      cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),
       cmocka_unit_test(test_ctap_capacity_uses_credential_metadata),
       cmocka_unit_test(test_ctap_capacity_cached_by_fs_generation),
       cmocka_unit_test(test_ctap_capacity_dc_read_failure_not_cached),
