@@ -296,7 +296,8 @@ impl State {
             if key[0] != SET_CODE_ALGORITHM {
                 return Err(Sw::WRONG_DATA);
             }
-            let challenge = challenge(&mut c)?;
+            // Access-code proofs use a host nonce, not the bounded TOTP counter.
+            let challenge = field(&mut c, tag::CHALLENGE)?;
             let response = field(&mut c, tag::RESPONSE)?;
             if !c.is_empty() {
                 return Err(Sw::WRONG_LENGTH);
@@ -359,7 +360,8 @@ impl State {
         } else {
             &[]
         };
-        if !c.is_empty() {
+        // HOTP ignores a client-supplied timestamp (as the legacy applet did).
+        if kind == Kind::Totp && !c.is_empty() {
             return Err(Sw::WRONG_LENGTH);
         }
         let presence = if touch {

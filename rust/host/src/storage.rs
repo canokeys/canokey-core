@@ -8,8 +8,10 @@ use std::{
 };
 const MAGIC: &[u8; 8] = b"CKRHOST1";
 const COUNT: usize = 186;
-const MAX_RECORD: usize = 32768;
 const CAPACITY: usize = 128 * 1024;
+// A shared OATH file may consume the available image budget. Do not impose a
+// lower per-record limit that contradicts the storage free-space query.
+const MAX_RECORD: usize = CAPACITY;
 pub struct Storage {
     path: PathBuf,
     records: Vec<Option<Vec<u8>>>,

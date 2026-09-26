@@ -86,6 +86,9 @@ def run(card, host, touch, expected_version=None):
         body = tlv(0x71, name)
         if not hotp:
             body += tlv(0x74, challenge)
+        elif not truncate:
+            # ykoath sends a timestamp even for HOTP; only the durable counter matters.
+            body += tlv(0x74, b'ignored!')
         data = cmd('calculate_'+name.decode(), 0xa2, p2=int(truncate), data=body)
         assert data == expected(alg, key, challenge, digits, truncate), (name, data.hex())
         return data
@@ -167,7 +170,7 @@ def run(card, host, touch, expected_version=None):
     select()
     cmd('validate_without_access_code',0xa3,data=tlv(0x75,bytes(20))+tlv(0x74,b'hosttest'),status=0x6984)
     select()
-    key=bytes(range(16));challenge=b'hosttest'
+    key=bytes(range(16));challenge=b'host-challenge16'
     proof=hmac.digest(key,challenge,'sha1')
     cmd('set_code',3,data=tlv(0x73,b'\x01'+key)+tlv(0x74,challenge)+tlv(0x75,proof),le=None)
     locked=select()

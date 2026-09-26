@@ -4,7 +4,10 @@
 The `fido-hid-over-udp` executable uses the production Rust CTAPHID mailbox,
 execution/framing engine, APDU engine, shared session/workspace and all applets.
 The host crate supplies UDP, a simulated touch input/PKE scratch area and durable
-host records. Native inputs are the POSIX signal shim, host crypto and the same
+host records. The image has a 128 KiB total record budget; an individual
+record may grow to that same bound. There is no smaller 32 KiB file ceiling,
+so OATH's shared record can reach its free-space reserve and report storage
+full consistently with the usage query. Native inputs are the POSIX signal shim, host crypto and the same
 key/digest/PIV crypto adapters used by firmware. No C applet or protocol engine
 is linked. This host-only crate uses `std` and must never enter firmware.
 

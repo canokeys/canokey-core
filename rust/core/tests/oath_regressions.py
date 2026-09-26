@@ -132,6 +132,28 @@ def run(library):
                 before=record_size();cmd(2,data=tlv(0x71,b'R-1'),le=None)
                 put(b'R-3',0x21)
                 assert record_size()==before
+                # A shared OATH file grows beyond 32 KiB until the free-space
+                # reserve is reached, then reports full without losing records.
+                filled = []
+                for i in range(1024):
+                    name = f'capacity-{i:04d}'.encode().ljust(64, b'x')
+                    body = tlv(0x71, name) + tlv(0x73, b'\x21\x06' + b'k' * 64)
+                    reply, a, b = driver.transmit(bytes([0, 1, 0, 0, len(body)]) + body)
+                    assert not reply
+                    if (a, b) != (0x90, 0):
+                        assert (a, b) == (0x6a, 0x84), (i, a, b)
+                        break
+                    filled.append(name)
+                else:
+                    raise AssertionError('OATH never reported full')
+                assert record_size() > 32768 and filled
+                full_size = record_size()
+                assert driver.power(502)[0] == 0
+                oath()
+                assert record_size() == full_size
+                cmd(2, data=tlv(0x71, filled[-1]), le=None)
+                put(filled[-1], 0x21, key=b'k' * 64)
+                assert record_size() == full_size
             finally:
                 assert driver.lib.IFDHCloseChannel(driver.lun)==0
     finally:

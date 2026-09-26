@@ -34,6 +34,11 @@ access code requires successful OATH authentication; ADMIN PIN is separate.
 Name/key lengths are 1–64 bytes, digits 4–8, TOTP challenge length 1–8.
 Properties use raw tag 78 plus flags, not a BER length. HOTP initial counter
 zero calculates counter one first, committing the increment before HMAC.
+HOTP CALCULATE ignores bytes after NAME, including the timestamp sent by
+ykoath; those bytes never replace the durable counter. SET CODE uses a
+length-delimited host nonce within the existing command buffer, including
+ykoath's 16-byte nonce, rather than the 1–8-byte TOTP challenge restriction.
+The new-key HMAC proof and existing access-code authorization remain required.
 VALIDATE consumes the SELECT challenge after a successful proof and rotates it,
 so a response cannot be replayed within the same selection.
 Increasing credentials require eight-byte, nondecreasing challenges and accept
