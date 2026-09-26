@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 91 registered cases: APDU (49)
-and PIV (42). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 86 registered cases: APDU (49)
+and PIV (37). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -594,3 +594,23 @@ The factory-reset regression also retains its existing issuer preservation,
 credential deletion and default management/PIN restoration checks. Public
 configuration access does not restore authorization; protected writes after
 reset are explicitly rejected. No production code changed in this batch.
+
+
+## Consolidated PIV algorithm and slot correctness coverage
+
+The current test policy retains important behavioral correctness checks rather
+than reproducing every native fixture or repeated internal assertion.
+
+| Retired native case | Retained Rust coverage |
+|---|---|
+| `test_piv_get_metadata_extended_algo_ids` | `piv-normal::classic_keys` checks wire algorithm, policy and generated origin alongside independently verified generated/imported keys; `sm2_operations` checks SM2 wire ID and imported origin alongside independent SM2 verification |
+| `test_piv_dynamic_retired_key_slots` | `slots` checks every retired slot is missing before generation, exposes P-256/default PIN metadata afterwards, and is missing after deletion; no separate C filename allocation test |
+| `test_ed25519_randomized_streaming` | `randomized_ed25519` independently verifies two long-message signatures, requires distinct signatures and rejects FF signing while extensions are disabled; the duplicated native byte-at-a-time long-message run is removed |
+| `test_secp521r1_generate_and_authenticate` | `Piv.generate` checks the exact 140-byte P-521 public response prefix; `classic_keys` independently verifies generation/import signatures and ECDH; native-only nonminimal response wrapper assertions are removed |
+| `test_secp521r1_custom_algorithm_id` | `custom_p521` sets 55, generates with explicit PIN/touch policies, checks public encoding and metadata, independently verifies SHA-512 signing through 55, then restores the mapping |
+
+The P-521 generation policy template uses a correct AC length covering both
+AA/AB policies. The native fixture's inconsistent outer length is not retained
+as a required successful malformed-input behavior. Important malformed-input
+rejection and interrupted-operation tests remain separate. Production code and
+storage formats are unchanged by this consolidation.

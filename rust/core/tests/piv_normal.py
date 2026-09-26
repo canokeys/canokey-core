@@ -66,6 +66,8 @@ class Piv(Card):
         )
         value = fields(reply)[0x7f49]
         assert reply == tlv(0x7f49, value)
+        if a == 8:
+            assert len(reply) == 140 and reply[:8] == bytes.fromhex("7f49818886818504")
         return pubkey(a, value)
 
     def import_key(self, a, key, slot=0x9A):
@@ -327,6 +329,9 @@ def objects(c):
 def classic_keys(c):
     for a in range(9):
         public = c.generate(a)
+        metadata = fields(c.cmd("generated_algorithm_metadata", 0xF7, 0, 0x9A))
+        assert metadata[1] == bytes([IDS[a]])
+        assert metadata[2] == b"\x02\x01" and metadata[3] == b"\x01"
         exercise(c, a, public)
         key = (
             rsa.generate_private_key(public_exponent=65537, key_size=2048 + (a - 5) * 1024)
@@ -344,6 +349,26 @@ def classic_keys(c):
         ) == key.public_key().public_bytes(
             serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
         )
+
+
+def custom_p521(c):
+    config = c.cmd("read_before_p521_mapping", 0xEE, 1, 0)
+    custom = bytearray(config)
+    custom[6] = 0x55
+    c.cmd("custom_p521_mapping", 0xEE, 2, 0, bytes(custom), le=None)
+    reply = c.cmd("custom_p521_generate", 0x47, 0, 0x9A,
+                  bytes.fromhex("ac09800155aa0102ab0101"))
+    assert len(reply) == 140 and reply[:8] == bytes.fromhex("7f49818886818504")
+    metadata = fields(c.cmd("custom_p521_metadata", 0xF7, 0, 0x9A))
+    assert metadata[1] == b"\x55" and metadata[2] == b"\x02\x01"
+    public = pubkey(8, fields(reply)[0x7F49])
+    c.verify()
+    digest = hashlib.sha512(b"custom P-521 mapping").digest()
+    answer = c.cmd("custom_p521_sign", 0x87, 0x55, 0x9A,
+                   tlv(0x7C, tlv(0x82, b"") + tlv(0x81, digest)))
+    public.verify(fields(fields(answer)[0x7C])[0x82], digest,
+                  ec.ECDSA(utils.Prehashed(hashes.SHA512())))
+    c.cmd("restore_p521_mapping", 0xEE, 2, 0, config, le=None)
 
 
 def import_boundary_regressions(c):
@@ -457,6 +482,11 @@ def randomized_ed25519(c):
         key.verify(sig, message)
         signatures.append(sig)
     assert signatures[0] != signatures[1]
+    config = c.cmd("read_before_disabling_stream_extension", 0xEE, 1, 0)
+    c.cmd("disable_stream_extension", 0xEE, 2, 0, bytes(10), le=None)
+    c.cmd("disabled_stream_rejected", 0x87, 0xFF, 0x9A,
+          bytes.fromhex("7c0482008100"), status=0x6A86)
+    c.cmd("restore_stream_extension", 0xEE, 2, 0, config, le=None)
 
 
 def sm2_operations(c):
@@ -464,6 +494,8 @@ def sm2_operations(c):
     c.verify()
     public = fields(fields(c.cmd("sm2_metadata", 0xF7, 0, 0x9A))[4])[0x86][1:]
     assert public == sm2.V_PA
+    metadata = fields(c.cmd("sm2_algorithm_metadata", 0xF7, 0, 0x9A))
+    assert metadata[1] == b"\x54" and metadata[3] == b"\x02"
 
     def verify_sm2(sig, digest):
         r = int.from_bytes(sig[:32], "big")
@@ -639,12 +671,16 @@ def interruptions(c):
 
 def slots(c):
     for slot in range(0x82, 0x96):
+        c.cmd("retired_slot_initially_missing", 0xF7, 0, slot, status=0x6A88)
         c.generate(0, slot)
+        metadata = fields(c.cmd("retired_slot_metadata", 0xF7, 0, slot))
+        assert metadata[1] == b"\x11" and metadata[2] == b"\x02\x01"
     directory = fields(c.cmd("directory", 0xF7, 1, 0))
     entries = directory[2]
     assert all(slot in entries[::6] for slot in range(0x82, 0x96))
     for slot in range(0x82, 0x96):
         c.cmd("delete_retired", 0xF6, 0xFF, slot, le=None)
+        c.cmd("deleted_retired_slot_missing", 0xF7, 0, slot, status=0x6A88)
     c.generate(0)
     c.verify()
     name = "PIV测试".encode("utf-16le")
@@ -725,6 +761,7 @@ def run(wire, progress=None, report=None):
             object_capacity,
             objects,
             classic_keys,
+            custom_p521,
             encoding_regressions,
             import_boundary_regressions,
             pq_keys,
