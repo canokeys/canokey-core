@@ -92,42 +92,40 @@ impl Piv {
         if metadata {
             at = self.metadata_header(a, m);
         }
-        if repo::rsa(a) {
-            // RSA body: modulus TLV (4-byte header for 2048..4096 bits),
-            // then exponent TLV (2-byte header plus the 4-byte exponent).
-            const MODULUS_HEADER_BYTES: usize = 4;
-            const EXPONENT_TLV_BYTES: usize = 6;
-            let inner = n + MODULUS_HEADER_BYTES + EXPONENT_TLV_BYTES;
-            at += codec::header(
-                &mut self.header[at..],
-                if metadata {
-                    &[metadata_tag::PUBLIC_KEY]
-                } else {
-                    &key_tag::PUBLIC_TEMPLATE
-                },
-                inner,
-            )?;
-            at += codec::header(&mut self.header[at..], &[key_tag::MODULUS], n)?;
+        let rsa = repo::rsa(a);
+        let point = usize::from(!rsa && a != alg::ED25519 && a != alg::X25519);
+        // RSA includes the modulus header and exponent TLV; EC includes its
+        // point tag and optional uncompressed-point prefix.
+        let inner = if rsa {
+            n + 4 + 6
+        } else {
+            n + point + if n + point < 128 { 2 } else { 3 }
+        };
+        at += codec::header(
+            &mut self.header[at..],
+            if metadata {
+                &[metadata_tag::PUBLIC_KEY]
+            } else {
+                &key_tag::PUBLIC_TEMPLATE
+            },
+            inner,
+        )?;
+        at += codec::header(
+            &mut self.header[at..],
+            &[if rsa {
+                key_tag::MODULUS
+            } else {
+                key_tag::PUBLIC_POINT
+            }],
+            n + point,
+        )?;
+        if rsa {
             self.suffix[..2].copy_from_slice(&[key_tag::EXPONENT, 0x04]);
             self.suffix[2..].copy_from_slice(&w.key.bytes[..4]);
             self.suffix_len = 6;
-        } else {
-            let point = usize::from(a != alg::ED25519 && a != alg::X25519);
-            let inner = n + point + if n + point < 128 { 2 } else { 3 };
-            at += codec::header(
-                &mut self.header[at..],
-                if metadata {
-                    &[metadata_tag::PUBLIC_KEY]
-                } else {
-                    &key_tag::PUBLIC_TEMPLATE
-                },
-                inner,
-            )?;
-            at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n + point)?;
-            if point != 0 {
-                self.header[at] = EC_POINT_UNCOMPRESSED;
-                at += 1;
-            }
+        } else if point != 0 {
+            self.header[at] = EC_POINT_UNCOMPRESSED;
+            at += 1;
         }
         self.header_len = at;
         Ok((at + n + self.suffix_len) as u32)
