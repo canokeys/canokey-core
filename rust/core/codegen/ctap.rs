@@ -166,14 +166,16 @@ pub fn generate_response() {
     }
     for (name, kind, algorithm) in [("COSE_ED25519", 1, -8), ("COSE_MLDSA65", 7, -49)] {
         fragment(&mut out, name, |e| {
-            e.map(4)?
+            e.map(if kind == 7 { 3 } else { 4 })?
                 .u8(1)?
                 .u8(kind)?
                 .u8(3)?
                 .i8(algorithm)?
-                .i8(-1)?
-                .u8(6)?
-                .i8(-2)?;
+                .i8(-1)?;
+            // AKP carries the public key directly at -1, without an OKP curve.
+            if kind != 7 {
+                e.u8(6)?.i8(-2)?;
+            }
             Ok(())
         });
     }

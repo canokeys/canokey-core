@@ -480,6 +480,10 @@ presence wait.
 
 ### ML-DSA response streaming correctness
 
+ML-DSA-65 public keys use the AKP COSE map `{1: 7, 3: -49, -1: public_key}`
+for both registration and credential management. The 1952-byte public key is
+carried at label -1; AKP has no OKP curve field or label -2 coordinate.
+
 ML-DSA makeCredential uses the same extension encoder as classic credentials,
 preserves UP/UV/ED flags and one counter increment, and splices the public bytes
 after the COSE header and before extensions. The P-256 attestation hash covers

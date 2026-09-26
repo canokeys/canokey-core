@@ -22,9 +22,9 @@ def run(wire):
     verify_attestation = provision(card)
     def verify_credential(key, message, signature):
         if key[3] == -49:
-            assert key[1] == 7 and key[-1] == 6 and len(key[-2]) == 1952
+            assert set(key) == {1, 3, -1} and key[1] == 7 and len(key[-1]) == 1952
             assert len(signature) == 3309
-            mldsa.MLDSA65PublicKey.from_public_bytes(key[-2]).verify(signature, message)
+            mldsa.MLDSA65PublicKey.from_public_bytes(key[-1]).verify(signature, message)
         else:
             key.verify(message, signature)
     def select():

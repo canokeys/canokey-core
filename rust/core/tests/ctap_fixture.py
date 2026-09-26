@@ -49,8 +49,11 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
         key = credential.public_key
         assert key[3] == alg
         assert key[1] == (7 if alg == -49 else 1 if alg == -8 else 2)
-        assert key[-1] == (6 if alg in (-49, -8) else 1 if alg == -7 else curve)
-        assert len(key[-2]) == (1952 if alg == -49 else 32)
+        if alg == -49:
+            assert set(key) == {1, 3, -1} and len(key[-1]) == 1952
+        else:
+            assert key[-1] == (6 if alg == -8 else 1 if alg == -7 else curve)
+            assert len(key[-2]) == 32
         if alg not in (-49, -8):
             assert len(key[-3]) == 32
         blob_key = result.get(5)

@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn streamed_public_and_agreement_headers_match_cose() {
         check(
-            b"\xa4\x01\x07\x03\x38\x30\x20\x06\x21\x59\x07\xa0",
+            b"\xa3\x01\x07\x03\x38\x30\x20\x59\x07\xa0",
             mldsa_public_header,
         );
         let mut expected = [0; 80];
@@ -293,15 +293,7 @@ mod tests {
         public: &[u8],
     ) -> Result<(), canokey_protocol::cbor::EncodeError> {
         if algorithm == alg::MLDSA65 {
-            e.map(4)
-                .u8(1)
-                .u8(7)
-                .u8(3)
-                .i8(-49)
-                .i8(-1)
-                .u8(6)
-                .i8(-2)
-                .bytes(public);
+            e.map(3).u8(1).u8(7).u8(3).i8(-49).i8(-1).bytes(public);
         } else if algorithm != alg::ED25519 {
             e.map(5)
                 .u8(1)
