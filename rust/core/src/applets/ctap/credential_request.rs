@@ -561,7 +561,10 @@ impl Fields {
                     return Err(Status::LimitExceeded);
                 }
                 if matches!(field, Field::List) {
-                    self.params.list_present = true;
+                    // An empty allowList requests discoverable credentials too.
+                    // Use the wire count: nonempty lists of unusable IDs must
+                    // never fall back to resident discovery.
+                    self.params.list_present = n != 0;
                 }
                 let context = if matches!(field, Field::Algorithms) {
                     self.seen |= 8;
@@ -780,7 +783,7 @@ mod tests {
                             let Ok(Command::Credential(p)) = result else {
                                 panic!("make {make}, count {count}, split {split}");
                             };
-                            assert!(p.list_present);
+                            assert_eq!(p.list_present, count != 0);
                             assert_eq!(p.ids(), &expected[..expected_len]);
                         }
                     }

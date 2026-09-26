@@ -58,14 +58,17 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
         if blob_key is not None:
             assert len(blob_key) == 32
         expected.append(({"id": credential.credential_id, "type": "public-key"}, key, blob_key))
-    for i, (descriptor, key, blob_key) in enumerate(expected):
-        cycle()
-        answer = call(2, {1: rp, 2: challenge}) if i == 0 else call(8)
-        assert answer[1] == descriptor and answer[4] == {"id": bytes([i])}
-        assert answer.get(5) == (6 if i == 0 else None)
-        assert answer.get(7) == blob_key
-        if key[3] in (-7, -8):
-            key.verify(answer[2] + challenge, answer[3])
+    # Omitted and explicitly empty allow lists both discover resident keys.
+    for allow in ({}, {3: []}):
+        for i, (descriptor, key, blob_key) in enumerate(expected):
+            cycle()
+            answer = call(2, {1: rp, 2: challenge} | allow) if i == 0 else call(8)
+            assert answer[1] == descriptor and answer[4] == {"id": bytes([i])}
+            assert answer.get(5) == (6 if i == 0 else None)
+            assert answer.get(7) == blob_key
+            if key[3] in (-7, -8):
+                key.verify(answer[2] + challenge, answer[3])
+    call(2, {1: rp, 2: challenge, 3: [{"id": b"unknown", "type": "public-key"}]}, status=0x2e)
     protocol = PinProtocolV1()
     public, secret = protocol.encapsulate(call(6, {1: 1, 2: 2})[1])
     pin = b"12345678"

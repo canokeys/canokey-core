@@ -605,3 +605,8 @@ treating transient I/O errors as proof that valid credentials should be erased.
 Logical reader power cycles do not invoke the boot installation gate. The
 existing configuration fixture tests actual credentials, signed counters, PIN
 removal, SM2 preservation/default repair and read/cleanup failure recovery.
+
+An omitted or empty getAssertion `allowList` discovers resident credentials.
+A nonempty list with no usable matching IDs returns `NO_CREDENTIALS`; it must
+not fall back to discovery. The shared mixed-algorithm fixture checks both
+discovery forms and rejects an unknown nonempty list.
