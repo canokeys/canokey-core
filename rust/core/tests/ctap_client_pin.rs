@@ -144,3 +144,58 @@ fn unknown_integer_keys_keep_full_width_order_across_fragments() {
         }
     }
 }
+
+#[test]
+fn pin_read_failures_never_advertise_unconfigured_state_or_reset_retries() {
+    use canokey_rust_core::{applets::ctap::Command, ports::*};
+    struct PinStore {
+        result: Result<usize, StorageError>,
+        retries: u8,
+    }
+    impl Storage for PinStore {
+        fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+            if id != Record::CtapPin {
+                return Err(StorageError::Missing);
+            }
+            // Include partial data even on I/O failure; it must not become policy.
+            out[..20].fill(0x55);
+            out[16..20].copy_from_slice(&[self.retries, 8, 4, 0]);
+            self.result
+        }
+        fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
+            panic!("read failure must not replace durable PIN state");
+        }
+    }
+    let mut core = Core::new();
+    for (result, retries, failed) in [
+        (Ok(20), 6, false),
+        (Err(StorageError::Unavailable), 0, true),
+        (Err(StorageError::Uncertain), 0, true),
+        (Ok(19), 6, true),
+        (Ok(20), 9, true),
+        (Ok(20), 6, false),
+    ] {
+        let mut store = PinStore { result, retries };
+        let mut p = Platform {
+            storage: &mut store,
+            crypto: &mut support::Backend::default(),
+            device: &mut support::Backend::default(),
+            memory: &support::Backend::default(),
+        };
+        for command in [Command::GetInfo, Command::GetPinRetries] {
+            core.begin_ctap(&mut p);
+            let is_info = matches!(command, Command::GetInfo);
+            let n = core.execute_ctap(Ok(command), &mut p);
+            let mut response = vec![0; n];
+            core.read_ctap(0, &mut response, &mut p).unwrap();
+            if failed {
+                assert_eq!(response, [0x7f]);
+            } else if is_info {
+                assert!(n > 256 && response[0] == 0);
+            } else {
+                assert_eq!(response, [0, 0xa1, 3, 6]);
+            }
+            core.close_ctap(&mut p);
+        }
+    }
+}

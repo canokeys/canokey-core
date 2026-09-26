@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 21 registered APDU cases.
+One legacy C test executable remains, with 20 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1166,3 +1166,18 @@ Validation: combined CTest 28/28 passed (56.07 s). Full links remain over
 Flash: DevKit 188448 B (24608 B over), NFCC 195928 B (32088 B over), an
 increase of 16 B each. RAM_DATA remains 8640/8760 B. Physical compatibility
 and runtime stack acceptance remain open.
+
+## PIN state read failures
+
+Removed `test_ctap_pin_state_read_errors_are_propagated`. The existing Rust
+clientPIN suite now executes GetInfo and getPinRetries through the real Core
+with unavailable/uncertain reads (including partially populated buffers), a
+truncated PIN record and invalid retry count. Each returns only CTAP 7F and
+must not write durable state. Successful reads before and after faults return
+the original six retries and a complete GetInfo response, proving errors are
+neither treated as unconfigured PIN state nor cached as a default retry count.
+
+Validation: combined CTest 28/28 passed (58.42 s). Both full board links
+still fail at unchanged sizes: DevKit 188448 B (24608 B over), NFCC 195928 B
+(32088 B over), RAM_DATA 8640/8760 B. Physical and runtime stack acceptance
+remain open.

@@ -772,34 +772,6 @@ static void test_ctap_kh_cache_lifecycle(void **state) {
   assert_int_equal(verify_key_handle(&second, &key), 0);
 }
 
-static void test_ctap_pin_state_read_errors_are_propagated(void **state) {
-  (void)state;
-
-  static const uint8_t cert_path[] = CTAP_CERT_FILE;
-  static const uint8_t dc_path[] = DC_FILE;
-  uint8_t req[] = {CTAP_GET_INFO};
-  uint8_t scratch[64] = {0};
-  CTAPHID_TxSource source = {0};
-  CTAP_dc_general_attr attr;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  testmode_inject_error(TESTMODE_ERR_WRITE, 0, sizeof(dc_path) - 1, dc_path);
-  assert_int_equal(read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), sizeof(attr));
-  assert_int_equal(write_file(DC_FILE, NULL, 0, 0, 0), LFS_ERR_IO);
-
-  testmode_inject_error(TESTMODE_ERR_READ, 0, sizeof(cert_path) - 1, cert_path);
-  assert_int_equal(has_pin(), LFS_ERR_IO);
-
-  testmode_inject_error(TESTMODE_ERR_READ, 0, sizeof(cert_path) - 1, cert_path);
-  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
-                   -1);
-  assert_null(source.read);
-}
-
-
 static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state) {
   (void)state;
 
@@ -1129,7 +1101,6 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
-      cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
       cmocka_unit_test(test_pin_uv_auth_clear_permissions_except_lbw),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
