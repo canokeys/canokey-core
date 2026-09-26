@@ -36,7 +36,7 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
     from fido2.ctap2.base import AuthenticatorData
     from fido2.ctap2.pin import PinProtocolV1
 
-    rp = "mixed.example"
+    rp = "otherprotocol://myfidousingwebsite.hostingprovider.net"
     challenge = hashlib.sha256(b"mixed management").digest()
     expected = []
     for i, alg in enumerate([algorithm, -49, -7, -49, -8, algorithm]):
@@ -77,6 +77,9 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lam
     call(6, {1: 1, 2: 3, 3: public, 4: protocol.authenticate(secret, encrypted), 5: encrypted})
     hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
     token = protocol.decrypt(secret, call(6, {1: 1, 2: 9, 3: public, 6: hashed, 9: 4})[2])
+    rp_entry = call(10, {1: 2, 3: 1, 4: protocol.authenticate(token, b"\x02")})
+    assert rp_entry == {3: {"id": "otherprotocol:…ingprovider.net"},
+                        4: hashlib.sha256(rp.encode()).digest(), 5: 1}
     params = {1: hashlib.sha256(rp.encode()).digest()}
     begin = {1: 4, 2: params, 3: 1, 4: protocol.authenticate(token, b"\x04" + cbor.encode(params))}
     # Repeat the scan to expose stale source/cursor state after the large keys.

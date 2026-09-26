@@ -651,3 +651,9 @@ authentication returns `PUAT_REQUIRED`; missing protocol or required RP,
 credential or user fields returns `MISSING_PARAMETER`. With required fields
 present, invalid authentication (including a protocol/length mismatch) returns
 `PIN_AUTH_INVALID`. Continuation commands retain their existing cursor checks.
+
+Resident RP display IDs retain at most 32 bytes. Long IDs preserve a scheme
+prefix through the first colon when present, then an ellipsis and suffix when
+space permits. UTF-8 characters are never split. RP hashing and authentication
+use the complete input ID. Unknown CTAP CBOR commands retain the legacy
+`UNHANDLED_REQUEST` status (0xf1), including unsupported biometric enrollment.

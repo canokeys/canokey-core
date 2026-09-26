@@ -38,6 +38,8 @@ def run(wire):
             assert cbor.encode(decoded) == answer[1:], "CTAP discovery/management must be canonical and complete"
         return decoded
     select()
+    for unsupported in (9, 0x40, 0xff):
+        call(unsupported, status=0xf1)
     call(13, status=0xf1)
     info = call(4)
     assert info[3] == AAGUID

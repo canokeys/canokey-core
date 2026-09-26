@@ -70,6 +70,30 @@ pub(super) fn text_prefix(bytes: &[u8]) -> &[u8] {
         Err(error) => &bytes[..error.valid_up_to()],
     }
 }
+// Preserve scheme and domain suffix for the legacy 32-byte RP display field.
+// Hashing and credential matching always use the complete original RP ID.
+fn display_rp<'a>(rp: &'a [u8], out: &'a mut [u8; 32]) -> &'a [u8] {
+    if rp.len() <= out.len() {
+        return rp;
+    }
+    let prefix = rp.iter().position(|&b| b == b':').map_or(0, |n| n + 1);
+    let prefix = text_prefix(&rp[..prefix.min(out.len())]);
+    let mut used = prefix.len();
+    out[..used].copy_from_slice(prefix);
+    if out.len() - used >= 3 {
+        out[used..used + 3].copy_from_slice("…".as_bytes());
+        used += 3;
+        let mut start = rp.len() - (out.len() - used);
+        // Never start the suffix inside a UTF-8 code point.
+        while start < rp.len() && rp[start] & 0xc0 == 0x80 {
+            start += 1;
+        }
+        out[used..used + rp.len() - start].copy_from_slice(&rp[start..]);
+        used += rp.len() - start;
+    }
+    &out[..used]
+}
+
 pub(super) fn load(
     index: u8,
     out: &mut [u8],
@@ -105,10 +129,11 @@ pub(super) fn store(
     out[..ID_BYTES].copy_from_slice(id);
     out[ID_BYTES..ID_BYTES + 32].copy_from_slice(rp_hash);
     let at = ID_BYTES + 32;
+    let mut display = [0; 32];
     let n = encode_fields(
         &mut out[at..],
         &[
-            text_prefix(&params.rp[..params.rp_len.min(32)]),
+            display_rp(&params.rp[..params.rp_len], &mut display),
             &params.user[..params.user_len],
             &params.name[..params.name_len],
             &params.display[..params.display_len],
@@ -199,6 +224,17 @@ mod tests {
 
     #[test]
     fn stored_text_keeps_unicode_and_binary_fields_distinct() {
+        for (rp, expected) in [
+            ("example.com", "example.com"),
+            ("myfidousingwebsite.hostingprovider.net", "…ngwebsite.hostingprovider.net"),
+            ("mygreatsite.hostingprovider.info", "mygreatsite.hostingprovider.info"),
+            ("otherprotocol://myfidousingwebsite.hostingprovider.net", "otherprotocol:…ingprovider.net"),
+            ("veryexcessivelylargeprotocolname://example.com", "veryexcessivelylargeprotocolname"),
+            ("界界界界界界界界界界界界", "…界界界界界界界界界"),
+        ] {
+            let mut out = [0; 32];
+            assert_eq!(display_rp(rp.as_bytes(), &mut out), expected.as_bytes());
+        }
         let bytes = record();
         let entry = Entry::decode(&bytes[..HEADER + FIELDS.len()]).unwrap();
         assert_eq!(entry.rp, "r");

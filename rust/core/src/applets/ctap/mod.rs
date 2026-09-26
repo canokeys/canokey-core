@@ -555,7 +555,7 @@ impl Request {
                 Parser::Credential(parser) => parser.finish(),
                 Parser::None => Err(Status::InvalidCbor),
             },
-            _ => Err(Status::InvalidCommand),
+            _ => Err(Status::UnhandledRequest),
         }
     }
 }

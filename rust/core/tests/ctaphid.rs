@@ -279,7 +279,7 @@ fn cbor_releases_input_before_response_and_cancel_is_silent() {
     assert_eq!(mem.reads, [(0, 192), (192, 1)]);
     assert!(!mem.leased);
     assert!(hid.transmit(&mut out, &mut mem));
-    assert_eq!(&out[4..8], &[0x90, 0, 1, 1]);
+    assert_eq!(&out[4..8], &[0x90, 0, 1, 0xf1]);
     hid.completed(&mut mem);
     let mut query = vec![6, 0xa2, 2, 1, 0x18, 99, 0x58, 200];
     query.extend_from_slice(&[0x37; 200]);
@@ -342,7 +342,7 @@ fn msg_apdu_status_and_source_release() {
             [vec![0, 3, 0, 0, 0, 1, 0], vec![0; 256]].concat(),
             vec![0x67, 0],
         ),
-        (vec![0x80, 0x10, 0, 0, 1, 0x7f], vec![1, 0x90, 0]),
+        (vec![0x80, 0x10, 0, 0, 1, 0x7f], vec![0xf1, 0x90, 0]),
     ] {
         let mut hid = Transport::new();
         let mut memory = Memory::default();
