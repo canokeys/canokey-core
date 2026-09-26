@@ -351,14 +351,11 @@ impl Piv {
 
     fn sm2_responder(
         packet: &mut [u8; sm2_packet::SIZE],
-        own: Option<&[u8]>,
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<[u8; 65], Sw> {
-        if let Some(v) = own {
-            packet[sm2_packet::OWN_ID] = v.len() as u8;
-            packet[sm2_packet::OWN_ID + 1..sm2_packet::OWN_ID + 1 + v.len()].copy_from_slice(v);
-        }
+        // parse_sm2_packet already owns the validated identity, including the
+        // default when no witness is supplied; it survives workspace reuse.
         p.crypto
             .key_operation(
                 KeyOperation::Generate,
@@ -422,11 +419,6 @@ impl Piv {
                 return Err(Sw::WRONG_DATA);
             }
             let (mut packet, klen) = parse_sm2_packet(&mut exp, own)?;
-            let own_copy = own.map(|value| {
-                let mut copy = [0; 32];
-                copy[..value.len()].copy_from_slice(value);
-                (copy, value.len())
-            });
             // Same-slot retained state means initiator step 2; otherwise this
             // is the responder path. Step 2 must reuse its original own ID,
             // so a new witness/identity field is forbidden.
@@ -439,12 +431,7 @@ impl Piv {
             if step2 {
                 self.sm2_step2(&mut packet, w, p)?;
             } else {
-                ephemeral = Self::sm2_responder(
-                    &mut packet,
-                    own_copy.as_ref().map(|(copy, n)| &copy[..*n]),
-                    w,
-                    p,
-                )?;
+                ephemeral = Self::sm2_responder(&mut packet, w, p)?;
             }
             repo::load(id, m, &mut w.key.bytes, p)?;
             packet[sm2_packet::ROLE] = u8::from(!step2);

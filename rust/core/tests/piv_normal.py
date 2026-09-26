@@ -859,7 +859,7 @@ def sm2_operations(c):
     exp = tlv(0x86, b"\x04" + sm2.V_PB) + tlv(0x87, b"\x04" + sm2.V_EB)
     # Cover both roles with an independent peer, custom identity binding and
     # the outer/inner BER length transitions at 125..128 derived bytes.
-    for initiator, size in [(True, n) for n in (16, 32, 125, 126, 127, 128)] + [(False, 128)]:
+    for initiator, size in [(True, n) for n in (16, 32, 125, 126, 127, 128)] + [(False, 32), (False, 128)]:
         own, peer = (b"card-a", b"host-b-resp") if size == 32 else (sm2.ID_DEFAULT, sm2.ID_DEFAULT)
         custom = size == 32
         start = tlv(0x7C, (tlv(0x80, own) if custom else b"") + tlv(0x82, b""))
@@ -877,7 +877,7 @@ def sm2_operations(c):
             assert reply == tlv(0x7C, tlv(0x82, actual))
         else:
             reply = c.cmd("sm2_responder", 0x87, 0x54, 0x9A,
-                          tlv(0x7C, tlv(0x82, b"") + tlv(0x85, inner)))
+                          tlv(0x7C, (tlv(0x80, own) if custom else b"") + tlv(0x82, b"") + tlv(0x85, inner)))
             values = fields(fields(reply)[0x7C])
             assert len(values[0x82]) == 65 and values[0x82][0] == 4
             eph, actual = values[0x82][1:], values[0x85]
@@ -889,7 +889,7 @@ def sm2_operations(c):
         assert len(actual) == size and actual == expected
         if custom:
             wrong = sm2.key_exchange_full(
-                1, sm2.ID_DEFAULT, sm2.ID_DEFAULT, sm2.V_DB, sm2.V_PB,
+                int(initiator), sm2.ID_DEFAULT, sm2.ID_DEFAULT, sm2.V_DB, sm2.V_PB,
                 sm2.V_RB, sm2.V_EB, public, eph, size,
             )[0]
             assert actual != wrong
