@@ -639,3 +639,9 @@ Unused RP `name` and `icon` metadata must still be CBOR text; the parser
 validates their types without retaining them. HMAC-secret salt ciphertext must
 encode one or two 32-byte salts (plus the protocol-2 IV); invalid sizes return
 `INVALID_LENGTH`. Authentication and key-agreement validation are unchanged.
+
+A largeBlob fragment rejected with `INVALID_SEQ` leaves the accepted upload
+prefix and expected offset intact. A corrected authenticated fragment can
+continue; a corrected offset exceeding the declared length returns
+`INVALID_PARAMETER`. Other upload errors still abort staging, and uncommitted
+bytes never replace the durable blob.

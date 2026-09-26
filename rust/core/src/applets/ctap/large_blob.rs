@@ -237,7 +237,10 @@ impl Session {
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
         let result = self.large_blob_inner(params, w, p);
-        if result.is_err() {
+        // Offset validation precedes authentication and staging. Reject the
+        // fragment without discarding the accepted prefix, so the client can
+        // retry at the expected offset. Other errors still abort the upload.
+        if result.is_err() && !matches!(result, Err(Status::InvalidSequence)) {
             self.abort_blob(p);
         }
         result

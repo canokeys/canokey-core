@@ -452,6 +452,12 @@ def run(wire):
         assert call(12, {1: 960, 3: 0})[1] == blob[:960]
         write_blob(blob[:700], 0, len(blob))
         write_blob(blob[701:], 701, status=4)
+        # A rejected offset must not destroy the authenticated upload prefix.
+        write_blob(blob[700:], 700)
+        assert call(12, {1: 960, 3: 960})[1] == blob[960:]
+        write_blob(blob[:700], 0, len(blob))
+        write_blob(blob[701:], 701, status=4)
+        write_blob(blob[700:] + b"x", 700, status=2)
         write_blob(empty[:-1] + bytes([empty[-1] ^ 1]), 0, len(empty), status=0x3d)
         assert call(12, {1: 960, 3: 0})[1] == blob[:960]
         write_blob(empty[:1], 0, len(empty))
