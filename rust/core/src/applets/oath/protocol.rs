@@ -415,6 +415,9 @@ impl State {
         Ok(())
     }
 
+    // Keep command dispatch separate from finish-time wiping and error cleanup.
+    // This boundary reduces both full CIU images with the pinned optimizer.
+    #[inline(never)]
     fn execute(
         &mut self,
         h: Header,
