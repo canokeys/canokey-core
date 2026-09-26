@@ -63,3 +63,6 @@ mod hid_link;
 mod keyboard;
 #[cfg(feature = "usb-device")]
 mod usb;
+
+#[cfg(feature = "usb-webusb")]
+mod webusb_link;

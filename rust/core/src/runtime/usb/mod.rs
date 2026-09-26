@@ -2,12 +2,14 @@
 //! USB control policy. IRQ-local USB state never borrows applet or session state.
 #![forbid(unsafe_code)]
 pub mod descriptors;
+pub mod webusb;
 use canokey_protocol::usb::Setup;
 use descriptors::Interfaces;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reply {
     Data(usize),
+    Descriptor(webusb::Descriptor),
     Status,
     Address(u8),
     Configure(bool),
@@ -37,6 +39,11 @@ impl Device {
         *self = Self::new(self.interfaces);
     }
     pub fn setup(&mut self, s: Setup, stalled: bool, out: &mut [u8; 160]) -> Reply {
+        if self.interfaces.webusb {
+            if let Some(d) = webusb::Descriptor::request(s, self.interfaces.webusb()) {
+                return Reply::Descriptor(d);
+            }
+        }
         let zero = s.value == 0 && s.index == 0;
         match (s.kind, s.request) {
             (0x80, 6) if s.value as u8 == 0 && s.index == 0 => {
@@ -47,12 +54,16 @@ impl Device {
                     _ => return Reply::Stall,
                 };
                 out[..desc.len()].copy_from_slice(desc);
+                if s.value >> 8 == 1 && self.interfaces.webusb {
+                    out[2] = 0x10;
+                }
                 Reply::Data(desc.len())
             }
             (0x80, 6) if s.value >> 8 == 3 && (s.index == 0 || s.index == 0x409) => {
                 let text: &[u8] = match s.value as u8 {
                     1 => b"canokeys.org",
                     2 => b"CanoKey Rust Core",
+                    0x12 if self.interfaces.webusb => b"WebUSB",
                     _ => return Reply::Stall,
                 };
                 Reply::Data(descriptors::string(text, out))

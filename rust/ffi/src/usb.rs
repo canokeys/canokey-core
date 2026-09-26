@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IRQ-local USB facade. No USB event accesses Core, transport parsers or PKE.
+//! IRQ-local USB facade. No USB event accesses Core, APDU/HID/CCID parsers or PKE.
 //! All exports except init/deinit require the platform IRQ mask. Native packet
 //! callbacks publish mailboxes only. No Rust borrow crosses such a callback.
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::usb::{ControlIn, Device, Reply, descriptors::Interfaces};
 const INTERFACES: Interfaces = Interfaces {
+    webusb: cfg!(feature = "usb-webusb"),
     hid: cfg!(feature = "usb-hid"),
     keyboard: cfg!(feature = "usb-keyboard"),
 };
@@ -52,6 +53,10 @@ enum Phase {
     StatusIn,
     Address(u8),
     Led,
+    #[cfg(feature = "usb-webusb")]
+    WebReceive,
+    #[cfg(feature = "usb-webusb")]
+    WebStatus,
 }
 static mut DEVICE: Device = Device::new(INTERFACES);
 static mut TX: [Tx; 4] = [Tx::EMPTY; 4];
@@ -59,10 +64,18 @@ static mut HALTED: u8 = 0;
 static mut SUSPENDED: bool = false;
 static mut CONTROL: [u8; 160] = [0; 160];
 static mut CONTROL_IN: ControlIn = ControlIn::new();
+#[cfg(feature = "usb-webusb")]
+static mut CONTROL_WEB: bool = false;
+static mut CONTROL_SOURCE: Option<canokey_rust_core::runtime::usb::webusb::Descriptor> = None;
 static mut PHASE: Phase = Phase::Idle;
 
 unsafe fn stall() {
     unsafe {
+        #[cfg(feature = "usb-webusb")]
+        if CONTROL_WEB || PHASE == Phase::WebReceive {
+            super::webusb_link::reset();
+            CONTROL_WEB = false;
+        }
         PHASE = Phase::Idle;
         ck_usb_dcd_stall(0, 1);
         ck_usb_dcd_stall(0x80, 1);
@@ -79,15 +92,27 @@ unsafe fn status(phase: Phase) {
 unsafe fn next_control() {
     unsafe {
         if let Some((offset, len)) = (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).next_packet() {
-            if ck_usb_dcd_write(
-                0x80,
-                core::ptr::addr_of!(CONTROL).cast::<u8>().add(offset),
-                len as u16,
-            ) == 0
-            {
+            let pointer = if let Some(source) = CONTROL_SOURCE {
+                source.read(offset, &mut (&mut *core::ptr::addr_of_mut!(CONTROL))[..len]);
+                core::ptr::addr_of!(CONTROL).cast::<u8>()
+            } else {
+                core::ptr::addr_of!(CONTROL).cast::<u8>().add(offset)
+            };
+            #[cfg(feature = "usb-webusb")]
+            let pointer = if CONTROL_WEB {
+                super::webusb_link::pointer(offset)
+            } else {
+                pointer
+            };
+            if ck_usb_dcd_write(0x80, pointer, len as u16) == 0 {
                 stall();
             }
         } else {
+            #[cfg(feature = "usb-webusb")]
+            if CONTROL_WEB {
+                super::webusb_link::completed();
+                CONTROL_WEB = false;
+            }
             PHASE = Phase::StatusOut;
         }
         ck_usb_dcd_receive(0);
@@ -116,6 +141,8 @@ unsafe fn reset_pipe(ep: u8, enabled: bool) {
 }
 unsafe fn endpoints(enabled: bool) {
     unsafe {
+        #[cfg(feature = "usb-webusb")]
+        super::webusb_link::reset();
         DEVICE.configured = false;
         for ep in 1..=3 {
             reset_pipe(ep, enabled && INTERFACES.endpoint(ep as u16));
@@ -146,6 +173,10 @@ pub unsafe extern "C" fn usb_device_deinit() {
 pub unsafe extern "C" fn ck_usb_reset() {
     unsafe {
         endpoints(false);
+        #[cfg(feature = "usb-webusb")]
+        {
+            CONTROL_WEB = false;
+        }
         SUSPENDED = false;
         ck_usb_dcd_close(0);
         ck_usb_dcd_close(0x80);
@@ -179,7 +210,13 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
         ck_usb_dcd_open(0x80);
         ck_usb_dcd_stall(0, 0);
         ck_usb_dcd_stall(0x80, 0);
+        #[cfg(feature = "usb-webusb")]
+        {
+            super::webusb_link::abort_control();
+            CONTROL_WEB = false;
+        }
         PHASE = Phase::Idle;
+        CONTROL_SOURCE = None;
         if length != 8 {
             stall();
             return;
@@ -188,6 +225,34 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
             stall();
             return;
         };
+        #[cfg(feature = "usb-webusb")]
+        if DEVICE.configured && s.index == INTERFACES.webusb() as u16 && s.kind & 0x7f == 0x41 {
+            use super::webusb_link::{self as web, Action};
+            match web::setup(s, INTERFACES.webusb()) {
+                Some(Action::Receive) => {
+                    PHASE = Phase::WebReceive;
+                    ck_usb_dcd_receive(0);
+                }
+                Some(Action::Send(n)) => {
+                    CONTROL_WEB = true;
+                    if s.length == 0 {
+                        status(Phase::WebStatus);
+                    } else {
+                        (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(n, s.length);
+                        PHASE = Phase::DataIn;
+                        next_control();
+                    }
+                }
+                Some(Action::Status(value)) => {
+                    CONTROL[0] = value;
+                    (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(1, s.length);
+                    PHASE = Phase::DataIn;
+                    next_control();
+                }
+                _ => stall(),
+            }
+            return;
+        }
         let halted = if INTERFACES.endpoint(s.index) {
             HALTED & (1 << ((s.index as u8 & 3) * 2 + ((s.index >> 7) as u8))) != 0
         } else {
@@ -199,6 +264,16 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
             &mut *core::ptr::addr_of_mut!(CONTROL),
         );
         match reply {
+            Reply::Descriptor(source) => {
+                if s.length == 0 {
+                    status(Phase::StatusIn);
+                    return;
+                }
+                CONTROL_SOURCE = Some(source);
+                (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(source.len(), s.length);
+                PHASE = Phase::DataIn;
+                next_control();
+            }
             Reply::Data(n) => {
                 if s.length == 0 {
                     status(Phase::StatusIn);
@@ -215,6 +290,13 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
                 status(Phase::StatusIn);
             }
             Reply::Interface(index) => {
+                #[cfg(feature = "usb-webusb")]
+                if index == INTERFACES.webusb() {
+                    super::webusb_link::reset();
+                    status(Phase::StatusIn);
+                    return;
+                }
+
                 let ep = if index == INTERFACES.ccid() {
                     3
                 } else if INTERFACES.hid && index == 0 {
@@ -311,6 +393,13 @@ pub unsafe extern "C" fn ck_usb_in(ep: u8) {
                     ck_usb_dcd_address(address);
                 }
                 Phase::StatusIn => PHASE = Phase::Idle,
+                #[cfg(feature = "usb-webusb")]
+                Phase::WebStatus => {
+                    super::webusb_link::completed();
+                    CONTROL_WEB = false;
+                    PHASE = Phase::Idle;
+                }
+
                 _ => (),
             }
         } else if ep & !0x83 == 0 && DEVICE.configured && TX[(ep & 3) as usize].active {
@@ -337,8 +426,23 @@ pub unsafe extern "C" fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8
                 Phase::StatusOut | Phase::DataIn if length == 0 => {
                     ck_usb_dcd_close(0x80);
                     ck_usb_dcd_open(0x80);
+                    #[cfg(feature = "usb-webusb")]
+                    if CONTROL_WEB {
+                        super::webusb_link::abort_control();
+                        CONTROL_WEB = false;
+                    }
                     PHASE = Phase::Idle;
                 }
+                #[cfg(feature = "usb-webusb")]
+                Phase::WebReceive => match super::webusb_link::receive(bytes, length as usize) {
+                    1 => status(Phase::StatusIn),
+                    0 => ck_usb_dcd_receive(0),
+                    2 => return 0,
+                    _ => {
+                        super::webusb_link::reset();
+                        stall();
+                    }
+                },
                 Phase::Led if length == 2 && *bytes == 1 => {
                     DEVICE.leds = *bytes.add(1) & 31;
                     status(Phase::StatusIn);
@@ -361,5 +465,46 @@ pub unsafe extern "C" fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8
             }
             _ => 1, // Ignore malformed interrupt reports; never parse stale tail.
         }
+    }
+}
+
+#[cfg(feature = "usb-webusb")]
+pub(super) unsafe fn web_admission(accepted: bool, complete: bool) {
+    unsafe {
+        if PHASE != Phase::WebReceive {
+            return;
+        }
+        if !accepted {
+            stall();
+        } else if complete {
+            status(Phase::StatusIn);
+            ck_usb_dcd_receive(0);
+        } else {
+            ck_usb_dcd_receive(0);
+        }
+    }
+}
+
+/// Cooperative progress dispatch is portable policy. Native code only waits
+/// one hardware tick before calling this function; no callback enters Core.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_transport_progress() -> u8 {
+    unsafe extern "C" {
+        fn ck_ccid_progress() -> u8;
+        #[cfg(feature = "usb-hid")]
+        fn ck_hid_executing() -> u8;
+        #[cfg(feature = "usb-hid")]
+        fn ck_hid_progress() -> u8;
+    }
+    unsafe {
+        #[cfg(feature = "usb-webusb")]
+        if let Some(live) = super::webusb_link::progress() {
+            return live as u8;
+        }
+        #[cfg(feature = "usb-hid")]
+        if ck_hid_executing() != 0 {
+            return ck_hid_progress();
+        }
+        ck_ccid_progress()
     }
 }

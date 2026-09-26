@@ -3,9 +3,19 @@
 extern crate self as canokey_protocol;
 extern crate self as canokey_rust_core;
 #[path = "../../../protocol/src/usb.rs"]
-pub mod usb;
+mod usb_wire;
+pub mod usb { pub use crate::usb_wire::*; #[cfg(feature = "usb-webusb")] pub(crate) use crate::usb_ffi::web_admission; }
 #[path = "../../src/runtime/usb/mod.rs"]
 pub mod usb_runtime;
-pub mod runtime { pub use crate::usb_runtime as usb; }
+#[path = "../../src/runtime/webusb.rs"]
+pub mod webusb_runtime;
+pub mod runtime { pub use crate::usb_runtime as usb; pub use crate::webusb_runtime as webusb; }
 #[path = "../../../ffi/src/usb.rs"]
 mod usb_ffi;
+#[cfg(feature = "usb-webusb")]
+#[path = "../../../ffi/src/webusb_link.rs"]
+mod webusb_link;
+
+#[cfg(feature = "usb-webusb")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn test_web_blocked() -> u8 { unsafe { webusb_link::block_competitor() as u8 } }

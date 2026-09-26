@@ -210,6 +210,10 @@ unsafe fn receive_packet(transport: &mut Transport, platform: &mut Platform) -> 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CCID_Loop() {
     unsafe {
+        #[cfg(feature = "usb-webusb")]
+        if super::webusb_link::block_competitor() {
+            return;
+        }
         let generation = ck_ccid_io_generation();
         let mut platform = Platform { generation };
         let transport = ccid();
@@ -257,4 +261,10 @@ pub unsafe extern "C" fn CCID_Loop() {
         }
         transport.tx_timeout(ck_ccid_io_now(), &mut platform);
     }
+}
+
+#[cfg(feature = "usb-webusb")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ck_ccid_response_buffer() -> *mut u8 {
+    core::ptr::addr_of_mut!(RESPONSE).cast()
 }

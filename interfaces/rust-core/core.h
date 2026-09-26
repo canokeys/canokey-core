@@ -8,6 +8,8 @@
  * exchange supports identical input/output buffers; capacity includes SW.
  * Reset releases transport ownership and authorization, not stored slots. */
 void CCID_Loop(void);
+void WebUSB_Loop(void);
+uint8_t ck_transport_progress(void);
 #if ENABLE_IFACE_CTAPHID
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 #endif

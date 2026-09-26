@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Rust transport migration contract
 
-Status: Rust USB common stack implementation, 2026-09-26.
-CCID, HID execution, keyboard reports and generic USB/HID class policy are Rust-owned. Protocol migration takes
+Status: Rust USB and WebUSB implementation, 2026-09-26.
+CCID, HID execution, keyboard reports and generic USB/HID class policy and WebUSB are Rust-owned. Protocol migration takes
 priority over final combined-image size optimization; each replacement still
 has to fit its independent device profile and pass stack and correctness gates.
 
@@ -17,7 +17,7 @@ authorization, CCID, CTAPHID, keyboard or APDU policy decisions.
 Moving existing C protocol files into a platform directory does not meet this
 boundary. USB standard requests, EP0 transfer state, configuration/descriptors,
 class requests and endpoint response framing are protocol responsibilities too.
-The retained C DCD must eventually work without the old `USBD_HandleTypeDef`,
+The retained C DCD works without the old `USBD_HandleTypeDef`,
 `USBD_ClassTypeDef` and protocol callbacks. Compiler support libraries and the
 board's boot/recovery code are outside the pure-Rust core requirement.
 
@@ -78,7 +78,7 @@ keyboard-map configuration and eject compatibility still need an explicit
 whole-product audit, as do physical typing, cancellation latency and stack
 measurements. Host tests and independent profile links do not close those gaps.
 
-WebUSB and NFC/NDEF are disabled in the current Rust DevKit build. They are
+WebUSB is enabled in Rust DevKit builds. NFC/NDEF are still disabled and remain
 missing migration work, not evidence that all supported product interfaces are
 Rust. USB-only completion and whole-product completion must be reported separately.
 
@@ -206,8 +206,8 @@ documented:
 Both `interfaces/rust-core/ccid.c` and `interfaces/USB/class/ccid/usbd_ccid.c`
 are absent from Rust firmware inputs. The platform packet adapter implements
 endpoint I/O, generation checks, mailbox synchronization and opaque transfers.
-Rust supplies response bytes, extension bytes and final ZLP policy. Generic C
-USB still routes class callbacks; this is not a fully Rust protocol stack.
+Rust supplies response bytes, extension bytes and final ZLP policy. Generic
+USB and WebUSB policy also use Rust; NFC/NDEF still require migration.
 
 ### Tests required for the CCID switch
 
@@ -259,3 +259,57 @@ The host Rust transport tests must run without C USB libraries; native crypto
 and storage integration tests remain separate. Whole-product completion also
 requires the enabled interfaces to work together on device and fit the target,
 not merely disappear from the build.
+
+## WebUSB control and shared storage
+
+`runtime::usb::webusb` streams BOS, URL and Microsoft OS 2.0 descriptors from
+constants. The 178-byte Microsoft descriptor is patched at byte 22 for the
+actual WebUSB interface; it does not require a larger EP0 RAM buffer. Interface
+order remains HID, WebUSB, CCID, keyboard, omitting disabled optional classes.
+The WebUSB interface string remains index 0x12 and bcdUSB becomes 0x0210.
+
+Device discovery uses IN vendor requests `(request=1, value=1, index=2)` for the
+URL and `(request=2, value=0, index=7)` for Microsoft OS 2.0. Interface requests
+require value zero and the actual interface index: OUT command 0 (at most 261
+bytes), IN response 1 (at most the prepared 258 bytes), IN status 2 (one byte).
+Malformed directions, recipients, lengths and indices stall EP0. The status
+bytes preserve idle FF, receiving 03, processing 01, response-ready 00,
+sending 02 and held-session 04. Short reads consume that transport reply;
+logical APDU GET RESPONSE chaining remains in the existing Core engine.
+
+`ffi::webusb_link` reserves the channel in IRQ context but does not acquire
+Core there. If the first OUT packet arrives while another Core call is live,
+only a 16-byte mailbox is filled and the FIFO remains held. Main-loop admission
+checks the existing CCID/HID lease state before copying that packet into the
+existing CCID response allocation. Rejected admission never resets the foreign
+session. CCID/HID entrypoints yield to this reservation; keyboard can finish an
+already submitted key release without entering Core. No additional maximum-size
+command, response or crypto workspace is allocated.
+
+After admission, the same allocation receives the rest of the command and then
+holds the response. `ck_core_exchange(owner=3)` ends its input borrow before
+borrowing output, so the exact same pointer can be used for RX and TX. IRQ
+status/discovery requests use disjoint EP0 storage while execution borrows the
+APDU buffer. During response transmission, competitors cannot reuse that buffer
+until actual completion/explicit endpoint quiescence. A software timeout never
+ends an in-flight pointer lease. A reset during execution marks the result for
+discard and defers Core cleanup until the running borrow has returned.
+
+An idle WebUSB session expires after two seconds, with wrapping tick arithmetic.
+Polling status refreshes the held-session deadline. Same-owner commands retain
+applet selection, PIN grants and APDU chains; acquiring a free/expired foreign
+session resets the previous Core state once. USB reset, deconfiguration and
+WebUSB SET_INTERFACE release protocol state without resetting other endpoint
+mailboxes. Full physical browser/Windows/CIU timing and stack acceptance still
+require a connected device.
+
+Host coverage includes literal discovery fixtures, every short command length,
+all descriptor packet boundaries, eight HID/keyboard/WebUSB combinations, the
+actual EP0 facade, busy foreign sessions, maximum command reassembly, status
+polling during execution, superseded setup, reset during execution, response
+truncation, idle expiry and keyboard release while WebUSB holds the session.
+
+Cooperative progress dispatch also lives in Rust. Native services perform only
+a one-millisecond hardware delay before asking the active Rust transport whether
+execution is still live. WebUSB touch/crypto waits therefore do not depend on a
+CCID extension timer, and USB reset cancels them without reentering Core.

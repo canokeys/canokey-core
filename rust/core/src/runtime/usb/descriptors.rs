@@ -23,12 +23,16 @@ pub const KEYBOARD_HID: &[u8] = &[9, 0x21, 0x11, 1, 0, 1, 0x22, KEYBOARD_REPORT.
 pub struct Interfaces {
     pub hid: bool,
     pub keyboard: bool,
+    pub webusb: bool,
 }
 impl Interfaces {
     pub const fn count(self) -> u8 {
-        1 + self.hid as u8 + self.keyboard as u8
+        1 + self.hid as u8 + self.keyboard as u8 + self.webusb as u8
     }
     pub const fn ccid(self) -> u8 {
+        self.hid as u8 + self.webusb as u8
+    }
+    pub const fn webusb(self) -> u8 {
         self.hid as u8
     }
     pub const fn keyboard(self) -> u8 {
@@ -53,7 +57,8 @@ impl Interfaces {
         }
     }
     pub fn configuration(self, out: &mut [u8; 160]) -> usize {
-        let length = 86 + 32 * (self.hid as usize + self.keyboard as usize);
+        let length =
+            86 + 32 * (self.hid as usize + self.keyboard as usize) + 9 * self.webusb as usize;
         let mut offset = 0;
         let mut append = |bytes: &[u8]| {
             out[offset..offset + bytes.len()].copy_from_slice(bytes);
@@ -64,6 +69,9 @@ impl Interfaces {
             append(&[9, 4, 0, 0, 2, 3, 0, 0, 0]);
             append(CTAP_HID);
             append(&[7, 5, 0x82, 3, 64, 0, 5, 7, 5, 2, 3, 64, 0, 5]);
+        }
+        if self.webusb {
+            append(&[9, 4, self.webusb(), 0, 0, 0xff, 0xff, 0xff, 0x12]);
         }
         append(&[9, 4, self.ccid(), 0, 2, 0x0b, 0, 0, 0]);
         let max: u16 = if self.hid { 10 + 7 + 1024 + 2 } else { 271 };

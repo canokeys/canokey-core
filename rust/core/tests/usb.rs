@@ -26,7 +26,11 @@ fn setup_literal_little_endian_and_exact_length() {
 fn descriptors_match_interfaces_and_endpoint_directions() {
     for hid in [false, true] {
         for keyboard in [false, true] {
-            let interfaces = Interfaces { hid, keyboard };
+            let interfaces = Interfaces {
+                hid,
+                keyboard,
+                webusb: false,
+            };
             let mut out = [0; 160];
             let n = interfaces.configuration(&mut out);
             assert_eq!(n, 86 + 32 * (hid as usize + keyboard as usize));
@@ -65,6 +69,7 @@ fn descriptors_match_interfaces_and_endpoint_directions() {
 #[test]
 fn standard_request_validation_and_state() {
     let mut d = Device::new(Interfaces {
+        webusb: false,
         hid: true,
         keyboard: true,
     });
@@ -116,6 +121,7 @@ fn standard_request_validation_and_state() {
 #[test]
 fn hid_reports_idle_leds_and_rejected_class_requests() {
     let mut d = Device::new(Interfaces {
+        webusb: false,
         hid: true,
         keyboard: true,
     });
@@ -156,7 +162,7 @@ fn hid_reports_idle_leds_and_rejected_class_requests() {
 }
 #[test]
 fn control_in_every_length_and_short_termination() {
-    for available in 0..=160 {
+    for available in 0..=258 {
         for requested in [0, 1, 8, 15, 16, 17, 31, 32, 64, 128, 255, 65535] {
             let mut input = ControlIn::new();
             input.begin(available, requested);
@@ -188,6 +194,7 @@ fn configurations_match_legacy_wire_fixtures() {
     ];
     for (i, hex) in fixtures.iter().enumerate() {
         let interfaces = Interfaces {
+            webusb: false,
             hid: i & 2 != 0,
             keyboard: i & 1 != 0,
         };

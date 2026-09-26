@@ -22,6 +22,8 @@ static mut RESET_OUTPUT: bool = false;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_keyboard_loop() {
     unsafe {
+        #[cfg(feature = "usb-webusb")]
+        let web_busy = super::webusb_link::block_competitor();
         let epoch = ck_keyboard_io_epoch();
         if EPOCH != epoch {
             EPOCH = epoch;
@@ -30,6 +32,24 @@ pub unsafe extern "C" fn ck_keyboard_loop() {
             RESET_OUTPUT = true;
         }
         if ck_keyboard_io_configured() == 0 {
+            return;
+        }
+        #[cfg(feature = "usb-webusb")]
+        if web_busy {
+            // Finish a previously submitted key release without entering Core.
+            // WebUSB may own the session while the keyboard IN completes.
+            if ck_keyboard_io_idle() != 0 {
+                PENDING = (&*core::ptr::addr_of!(KEYBOARD))
+                    .prepare(None, &mut *core::ptr::addr_of_mut!(REPORT))
+                    .unwrap_or(0) as u8;
+                if PENDING != 0
+                    && ck_keyboard_io_send(core::ptr::addr_of_mut!(REPORT).cast(), PENDING, epoch)
+                        != 0
+                {
+                    (&mut *core::ptr::addr_of_mut!(KEYBOARD)).accepted(REPORT[0]);
+                    PENDING = 0;
+                }
+            }
             return;
         }
         #[cfg(feature = "ctap")]

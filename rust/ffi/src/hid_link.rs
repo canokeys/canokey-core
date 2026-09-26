@@ -173,6 +173,10 @@ pub unsafe extern "C" fn ck_hid_execution_end() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
     unsafe {
+        #[cfg(feature = "usb-webusb")]
+        if super::webusb_link::block_competitor() {
+            return 0;
+        }
         if ck_hid_io_reset_pending() != 0 {
             let generation = ck_hid_io_epoch();
             ck_hid_reset();
