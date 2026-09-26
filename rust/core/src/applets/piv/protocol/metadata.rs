@@ -13,6 +13,7 @@ const INVENTORY_HAS_KEY: u8 = 0x01;
 const INVENTORY_HAS_CERTIFICATE: u8 = 0x02;
 
 impl Piv {
+    #[inline(never)]
     pub(super) fn metadata(
         &mut self,
         h: Header,
