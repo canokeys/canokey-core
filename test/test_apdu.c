@@ -347,41 +347,6 @@ static CTAPHID_FRAME make_hid_init(uint32_t cid, uint8_t cmd, uint16_t len) {
   return frame;
 }
 
-static void test_ctaphid_large_rx_session_cleanup(void **state) {
-  (void)state;
-  const uint32_t cid = 0x12345678;
-  for (int mode = 0; mode < 4; ++mode) {
-    init_apdu_buffer();
-    device_init();
-    CTAPHID_Init(capture_hid_report);
-    reset_hid_capture();
-    set_test_tick(100);
-    CTAPHID_FRAME frame = make_hid_init(cid, CTAPHID_PING, CTAPHID_INLINE_BUFSIZE + 1);
-    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
-    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
-    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-    // A CCID interrupt must not acquire the session between HID fragments.
-    assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), -1);
-    if (mode == 0) {
-      set_test_tick(1000); // RX timeout
-    } else if (mode == 1) {
-      frame = (CTAPHID_FRAME){.cid = cid};
-      frame.cont.seq = 1; // Invalid first continuation
-      assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
-    } else if (mode == 2) {
-      frame = make_hid_init(cid, CTAPHID_INIT, 8); // Resynchronize
-      assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
-    } else {
-      CTAPHID_Init(capture_hid_report); // Transport reset
-    }
-    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
-    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
-    assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
-    assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
-  }
-  set_test_tick(0);
-}
-
 static void test_ccid_large_hid_request_survives_session_switch(void **state) {
   (void)state;
   for (int prior_ccid = 0; prior_ccid < 2; ++prior_ccid) {
@@ -2466,7 +2431,6 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
-      cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),

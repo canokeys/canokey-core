@@ -407,6 +407,21 @@ int main(void) {
   assert(hid_read(cid,0x81,hid)==8 && !memcmp(hid,nonce,8));
   assert(now==before);
   now+=2000; ccid_apdu(stale_response,sizeof(stale_response),0x6986);
+  // A fragmented HID request owns the shared session before staging RX.
+  // CCID waits until resynchronization releases and wipes that lease.
+  uint8_t fragmented[64] = {0};
+  fragmented[0]=(uint8_t)(cid>>24); fragmented[1]=(uint8_t)(cid>>16);
+  fragmented[2]=(uint8_t)(cid>>8); fragmented[3]=(uint8_t)cid;
+  fragmented[4]=0x81; fragmented[6]=193;
+  assert(ck_usb_out(2,fragmented,64)==0); CTAPHID_Loop(0);
+  assert(scratch_owner);
+  ccid_send(0x6f,select_admin,sizeof(select_admin));
+  assert(!pending[3] && scratch_owner);
+  hid_send(cid,0x86,nonce,8);
+  assert(hid_read(cid,0x86,hid)==17 && !memcmp(hid,nonce,8));
+  assert(!scratch_owner);
+  now+=2000; // Preserve the existing idle ownership deadline.
+  count=ccid_read(out); sw(out+10,count-10,0x9000);
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;

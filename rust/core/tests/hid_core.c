@@ -255,6 +255,29 @@ int main(void) {
   assert(response(cid, 0xbf, result, sizeof(result)) == 1 && result[0] == 5);
   assert(clears == leases);
 
+  /* Resynchronization and transport reset also abandon staged RX, before
+   * any crypto executes. A fresh request must reacquire the wiped lease. */
+  for (int transport_reset = 0; transport_reset < 2; ++transport_reset) {
+    output_count = 0;
+    header(partial, cid, 0x90, 700); partial[7] = 6;
+    feed(partial);
+    assert(scratch_owner);
+    if (transport_reset) {
+      reset();
+    } else {
+      header(partial, cid, 0x86, 8); memcpy(partial + 7, nonce, 8);
+      feed(partial); drain();
+      assert(response(cid, 0x86, result, sizeof(result)) == 17);
+      assert(!memcmp(result, nonce, 8));
+    }
+    assert(!scratch_owner && clears == leases);
+    output_count = 0;
+    memset(data, 0x5a, 193);
+    command(cid, 0x81, data, 193);
+    assert(response(cid, 0x81, result, sizeof(result)) == 193);
+    assert(!memcmp(result, data, 193));
+  }
+
   /* The real selection command blocks in Rust presence. A foreign request
    * receives BUSY, then the owning channel cancels without reentering CORE. */
   output_count = 0;

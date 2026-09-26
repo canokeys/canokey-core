@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 46 registered APDU cases.
+One legacy C test executable remains, with 45 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -895,3 +895,16 @@ The immediately following 1024-byte extended read completes through the real
 response source. This complements the existing 300-byte read, proving that Le
 is not truncated to the short output buffer before applet validation. Removed
 the native callback-only observer; no production code changed.
+
+## HID staged request cleanup
+
+`test_ctaphid_large_rx_session_cleanup` is replaced by `hid-core` and
+`usb-sessions`, both driving Rust production transport entrypoints. Existing
+sequence-error/timeout checks and new same-channel INIT/transport-reset checks
+require wiped scratch release, then successful staged PING reuse. The native
+lease fixture asserts every released byte is zero. Real USB integration queues
+CCID during partial HID RX, verifies it cannot execute, then checks scratch
+release on INIT and CCID recovery after the existing two-second idle ownership
+deadline. Unlike the old C owner-enum assertion, scratch release is not treated
+as proof that Rust's idle session retention has ended. No production behavior
+changed; CCID extended-input and other legacy session cases remain pending.
