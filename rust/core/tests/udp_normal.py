@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
+from ctap_fixture import mixed_management
 
 REBOOT = bytes.fromhex('ac1052ca95e569de69e02ebff333485f13f9b2da34c5a8a340526697a9ab2e0b394d8d04973c134005be1a0140bff6045bb26eb77a73eaa47813f6b49a7250dc')
 INJECT = bytes.fromhex('991052ca95e569de69e02ebf')
@@ -83,7 +84,10 @@ class Card:
         self.send(0x90, bytes([command]) + (cbor.encode(params) if params is not None else b''))
         data = self.recv(0x90)
         assert data and data[0] == status, (command, data.hex(), status)
-        return cbor.decode(data[1:]) if len(data) > 1 else None
+        result = cbor.decode(data[1:]) if len(data) > 1 else None
+        if command == 10 and len(data) > 1:
+            assert cbor.encode(result) == data[1:], "complete canonical management response"
+        return result
 
     def close(self):
         if self.process.poll() is None:
@@ -107,6 +111,10 @@ def run(executable):
                 assert info[5] == 1024
                 assert info[4]['credMgmt'] and info[4]['largeBlobs'] and info[11] == 4096
                 card.ctap(6, {1: 1, 2: 2, 127: bytes(700)})
+                def verify_attestation(result, challenge):
+                    cert = x509.load_der_x509_certificate(result[3]['x5c'][0])
+                    cert.public_key().verify(result[3]['sig'], result[2] + challenge, ec.ECDSA(hashes.SHA256()))
+                mixed_management(card.ctap, verify_attestation)
                 request_hash = hashlib.sha256(b'UDP credential test').digest()
                 rp = 'rust-udp.example'
                 made = card.ctap(1, {1: request_hash, 2: {'id': rp}, 3: {'id': b'udp-user'},

@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 8 registered APDU cases.
+One legacy C test executable remains, with 7 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1327,3 +1327,14 @@ resident handles originate from actual full Rust makeCredential requests.
 The restricted build verifies GetInfo, registration fallback, explicit and
 discoverable authentication, getNextAssertion filtering, and management of
 all four algorithms without rewriting stored key types.
+
+`test_ctap_cm_mixed_algorithms` is replaced by a shared `mixed_management`
+fixture in the existing `ctap-config` and `virtual-hid-udp` tests. Actual Rust
+makeCredential produces six interleaved SM2/ML-DSA/P-256/Ed25519 residents;
+independent attestation verification authenticates their exact public keys.
+Authenticated management must reproduce every key byte, identity, total count
+and canonical CBOR across two complete scans, then reject an exhausted cursor.
+The APDU route covers signed 32-bit SM2 identifier extremes; the UDP HID route
+covers full 1952-byte public keys through actual report fragmentation.
+The old C fixture's synthetic records, request builders, CBOR parser and
+response collector are removed together with the test.

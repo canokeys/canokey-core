@@ -6,7 +6,7 @@ import hashlib
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
 from card_test import Card, connection
-from ctap_fixture import provision
+from ctap_fixture import provision, mixed_management
 
 
 def run(wire):
@@ -21,7 +21,10 @@ def run(wire):
         data = bytes([command]) + (cbor.encode(params) if params is not None else b"")
         out = card.cmd("ctap", 0x10, cla=0x80, data=data)
         assert out[0] == status, out.hex()
-        return cbor.decode(out[1:]) if len(out) > 1 else {}
+        result = cbor.decode(out[1:]) if len(out) > 1 else {}
+        if command == 10 and len(out) > 1:
+            assert cbor.encode(result) == out[1:], "complete canonical management response"
+        return result
     admin()
     card.cmd("unauthorized", 0x12, data=bytes.fromhex("ffff0000fffeffff"), status=0x6982)
     card.cmd("verify", 0x20, data=b"123456")
@@ -58,6 +61,7 @@ def run(wire):
             assert card.cmd("unchanged after invalid size", 0x11) == config
         fido()
         assert [a["alg"] for a in call(4)[10]] == [-7, -8, algorithm, -49]
+        mixed_management(call, verify_attestation, int.from_bytes(config[:4], "big", signed=True), algorithm)
         admin()
         card.cmd("verify", 0x20, data=b"123456")
     # Certificate provisioning above traverses multiple ISO command fragments;
