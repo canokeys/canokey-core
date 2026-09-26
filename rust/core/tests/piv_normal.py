@@ -481,7 +481,12 @@ def pq_keys(c):
                         f"pq_generate_{alg:02x}", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, bytes([alg])))
                     )
                 )[0x7F49]
+            metadata = fields(c.cmd("pq_algorithm_origin", 0xF7, 0, 0x9A))
+            assert metadata[1] == bytes([alg]) and metadata[3] == bytes([2 if imported else 1])
+            assert metadata[4] == encoded
+            assert c.wire.command("SIZE 17") == (6 + size).to_bytes(4, "big")
             public = cls.from_public_bytes(fields(encoded)[0x86])
+            assert len(fields(encoded)[0x86]) == (1952 if alg == 0xE2 else 1184)
             c.verify()
             if imported:
                 private = (
@@ -518,6 +523,59 @@ def pq_keys(c):
                     and results[0] != shared
                     and (expected is None or results[0] == expected)
                 )
+
+
+def pq_seed_lifecycle(c):
+    config = c.cmd("read_before_custom_pq", 0xEE, 1, 0)
+    custom = bytearray(config)
+    custom[8:] = bytes([0x56, 0x57])
+    c.cmd("custom_pq_mapping", 0xEE, 2, 0, bytes(custom))
+    for algorithm, tag, size, base, cls in (
+        (0x56, 9, 32, 0x80, mldsa.MLDSA65PrivateKey),
+        (0x57, 10, 64, 0x40, mlkem.MLKEM768PrivateKey),
+    ):
+        seed = bytes(range(base, base + size))
+        body = tlv(tag, seed)
+        private = cls.from_seed_bytes(seed)
+        c.cmd("custom_pq_import", 0xFE, algorithm, 0x9A, body)
+        before = c.cmd("custom_pq_import_metadata", 0xF7, 0, 0x9A)
+        meta = fields(before)
+        assert meta[1] == bytes([algorithm]) and meta[3] == b"\x02"
+        assert fields(meta[4])[0x86] == private.public_key().public_bytes_raw()
+        c.cmd("pq_seed_explicit_policy", 0xFE, algorithm, 0x94,
+              body + bytes.fromhex("aa0103ab0102"))
+        assert fields(c.cmd("pq_seed_policy_metadata", 0xF7, 0, 0x94))[2] == b"\x03\x02"
+        c.cmd("delete_pq_policy_key", 0xF6, 0xFF, 0x94)
+        malformed = [(tlv(11, b""), 0x6A80), (tlv(tag, seed[:-1]), 0x6700)]
+        if tag == 10:
+            malformed.append((body + body, 0x6A80))
+        for value, status in malformed:
+            c.cmd("invalid_pq_seed_import", 0xFE, algorithm, 0x9A, value, status=status)
+            assert c.cmd("invalid_seed_keeps_key", 0xF7, 0, 0x9A) == before
+        c.wire.command("FAIL_WRITE 17")
+        c.cmd("failed_pq_seed_import", 0xFE, algorithm, 0x9A,
+              tlv(tag, bytes(size)), status=0x6900)
+        assert c.cmd("failed_seed_keeps_key", 0xF7, 0, 0x9A) == before
+        c.cmd("move_imported_pq", 0xF6, 0x95, 0x9A)
+        c.cmd("moved_pq_source_missing", 0xF7, 0, 0x9A, status=0x6A88)
+        c.wire.command("RESET")
+        c.select()
+        assert c.cmd("persistent_moved_pq", 0xF7, 0, 0x95) == before
+        c.verify()
+        if tag == 9:
+            message = b"pq-custom"
+            answer = c.cmd("custom_moved_pq_sign", 0x87, algorithm, 0x95,
+                           tlv(0x7C, tlv(0x82, b"") + tlv(0x81, message)))
+            private.public_key().verify(fields(fields(answer)[0x7C])[0x82], message)
+        else:
+            secret, ciphertext = private.public_key().encapsulate()
+            answer = c.cmd("custom_moved_pq_decaps", 0x87, algorithm, 0x95,
+                           tlv(0x7C, tlv(0x82, b"") + tlv(0x81, ciphertext)))
+            assert fields(fields(answer)[0x7C])[0x82] == secret
+        c.auth()
+        c.cmd("delete_imported_pq", 0xF6, 0xFF, 0x95)
+        c.cmd("deleted_pq_missing", 0xF7, 0, 0x95, status=0x6A88)
+    c.cmd("restore_custom_pq_mapping", 0xEE, 2, 0, config)
 
 
 def pq_replacement(c):
@@ -858,6 +916,7 @@ def run(wire, progress=None, report=None):
             encoding_regressions,
             import_boundary_regressions,
             pq_keys,
+            pq_seed_lifecycle,
             pq_replacement,
             randomized_ed25519,
             sm2_operations,

@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 82 registered cases: APDU (49)
-and PIV (33). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 78 registered cases: APDU (49)
+and PIV (29). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -651,3 +651,21 @@ PQ tests independently verify signatures/decapsulation from fully committed
 generated keys. The obsolete native flash-program failure wrapper is removed.
 This resolves the early-commit discrepancy found in the preceding audit; device
 power-loss, runtime stack and physical interoperability acceptance remain open.
+
+
+## Consolidated PQ seed, generation and configurable algorithm coverage
+
+| Retired native case | Important Rust coverage |
+|---|---|
+| `test_piv_mldsa65_import_seed_only` | `pq_keys` independently derives the imported public key and verifies signatures; `pq_seed_lifecycle` rejects wrong seed tags, moves the imported key, resets and verifies a signature using the original independent public key |
+| `test_piv_mldsa65_generate_metadata_and_sign` | `pq_keys` checks generated origin/algorithm, matching generated and metadata public bytes, 1952-byte public key and compact seed-record size, then independently verifies empty/long-message signatures |
+| `test_piv_mlkem768_import_seed_only` | `pq_keys` checks independent seed-derived public bytes and exact implicit rejection; `pq_seed_lifecycle` checks explicit PIN/touch policies, rejects unsupported/duplicate/short seed encodings, preserves old metadata on commit failure and verifies decapsulation after move/reset |
+| `test_piv_pq_custom_algorithm_ids` | `pq_seed_lifecycle` uses original 56/57 custom IDs and 80../40.. seed patterns, checks metadata IDs, independently verifies signing/decapsulation, deletes moved keys and restores the mapping |
+
+Native expanded-key/TR structure assertions and deterministic signature
+self-comparisons are replaced by independent cryptographic verification and
+compact record sizes. No expanded private key is required by the Rust format.
+The native ML-KEM lifecycle test remains: its malformed/unauthorized requests
+must preserve a pending touch. The current Rust stream entrypoint calls touch
+before PIN authorization and before complete GA validation; that ordering needs
+its own behavioral regression and review before retiring this case.
