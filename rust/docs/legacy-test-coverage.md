@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 165 registered cases: APDU (66),
-key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
+Four C test executables remain, with 156 registered cases: APDU (66),
+key (25), OpenPGP (7), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -282,3 +282,24 @@ The port exposed two compatibility gaps: Rust accepted invalid PIV AID prefix
 lengths and did not bound response-source lengths before HID transmission. Both
 are corrected. HID's 7609-byte response framing bound is independent of its
 1024-byte request policy; rejecting only lengths above UINT16_MAX was insufficient.
+
+## Replaced OpenPGP PIN, data and certificate cases
+
+Nine of the 16 original OpenPGP cases now have real Rust APDU replacements:
+
+| Legacy case | Executable replacement in `openpgp-normal` |
+|---|---|
+| `test_verify` | `pin_regressions`: successful PW1, short length, two wrong values then permanent block |
+| `test_reselect_preserves_pin_authorization` | `pin_regressions`: verified PW1/PW3 survive SELECT and status queries |
+| `test_change_reference_data` | Invalid P1, short new PIN, incorrect old PIN, successful change and authentication with the new value |
+| `test_reset_retry_counter` | Admin-reset denied without PW3, reset-code recovery, new PW1 authentication |
+| `test_set_pin_retries` | Unauthorized and short/long requests, all 0/16 field boundaries, limits 4/5/6 and 15/15/15, disabled RC status and exact retry queries |
+| `test_set_pin_retries_failure_invalidates_auth` | Test-only one-shot record-write failure at PgpPw3 after earlier writes: 6900, subsequent F2 denied with 6982, authentication recovery |
+| `test_get_data` | Application-related DO parsed and its AID checked |
+| `test_algorithm_information` | Exact FA encoding of all 24 supported algorithm attributes across SIG/DEC/AUT; no duplicate-tag dictionary loses entries |
+| `test_openpgp_cert_chained_read` | Three 1024-byte patterned certificates written over command chaining and fully compared after GET RESPONSE |
+
+The port exposed F2's invalid-length status difference, now corrected to 6700.
+Fault injection is a test-only native storage seam, not a firmware command or
+presence bypass. It models a rejected write and tests authorization cleanup;
+it does not claim physical power-loss durability or atomicity across PIN records.

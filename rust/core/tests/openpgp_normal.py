@@ -165,12 +165,59 @@ def exercise(c, alg, role, key):
         assert c.cmd("decipher", 0x2A, 0x80, 0x86, value) == expected
 
 
+def pin_regressions(c, wire, host):
+    c.cmd("logout_pw3", 0x20, 0xff, 0x83, le=None)
+    c.cmd("unauthorized_retry_policy", 0xf2, data=bytes([4, 5, 6]), status=0x6982)
+    c.verify(0x81)
+    c.cmd("short_pw1", 0x20, 0, 0x81, b"1234", status=0x6700)
+    for status in (0x6982, 0x6982, 0x6983):
+        c.cmd("wrong_pw1", 0x20, 0, 0x81, b"123465", status=status)
+    c.reset()
+    c.verify(0x81)
+    c.select()
+    c.cmd("reselect_pw1", 0x20, 0, 0x81, le=None)
+    c.cmd("reselect_pw3", 0x20, 0, 0x83, le=None)
+    c.cmd("change_invalid_p1", 0x24, 1, 0x81, b"123456", status=0x6a86)
+    c.cmd("change_short_new_pin", 0x24, 0, 0x81, b"1234561234", status=0x6700)
+    c.cmd("change_wrong_old_pin", 0x24, 0, 0x81, b"1234651234", status=0x6982)
+    c.cmd("change_valid_pin", 0x24, 0, 0x81, b"123456654321")
+    c.verify(0x82, b"654321")
+    c.put(0xd3, b"abcdefgh")
+    c.cmd("logout_before_reset", 0x20, 0xff, 0x83, le=None)
+    c.cmd("reset_requires_pw3", 0x2c, 2, 0x81, b"abcdefgh123456", status=0x6982)
+    c.cmd("reset_with_code", 0x2c, 0, 0x81, b"abcdefgh123456")
+    c.verify(0x82)
+    c.reset() # Reset code is disabled for retry-policy status checks.
+    c.cmd("retry_policy_short", 0xf2, data=bytes([4, 5]), status=0x6700)
+    c.cmd("retry_policy_long", 0xf2, data=bytes([4, 5, 6, 7]), status=0x6700)
+    c.cmd("retry_policy", 0xf2, data=bytes([4, 5, 6]))
+    assert c.get(0xc4)[4:] == bytes([4, 0, 6])
+    c.cmd("pw1_policy_query", 0x20, 0, 0x81, le=None, status=0x63c4)
+    c.verify(0x81)
+    c.verify()
+    if host:
+        wire.command("FAIL_WRITE 6") # PgpPw3, after PW1/reset-code updates.
+        c.cmd("failed_retry_policy", 0xf2, data=bytes([4, 5, 6]), status=0x6900)
+        c.cmd("failure_revokes_authorization", 0xf2, data=bytes([4, 5, 6]), status=0x6982)
+        c.verify()
+    c.reset()
+
+
 def run(wire, host):
     c = Card(wire)
     c.reset()
+    pin_regressions(c, wire, host)
     assert c.get(0x4F)[:6] == AID
     assert len(c.get(0xC4)) == 7
-    assert len(fields(fields(c.get(0xFA))[0xFA])) == 3
+    expected_algorithms = b""
+    for role in range(3):
+        for algorithm, attributes in enumerate(ATTR):
+            if algorithm == 3 and role == 1 or algorithm == 4 and role != 1:
+                continue
+            if role == 1 and algorithm in CURVES:
+                attributes = b"\x12" + attributes[1:]
+            expected_algorithms += tlv(0xc1 + role, attributes)
+    assert c.get(0xfa) == tlv(0xfa, expected_algorithms)
     for tag, b in [
         (0x5B, b"Doe<<Jane"),
         (0x5E, b"jane"),

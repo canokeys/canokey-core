@@ -377,7 +377,10 @@ impl OpenPgp {
                 if tag != 0x0000 {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if b.len() != 3 || b.iter().any(|v| *v == 0 || *v > 15) {
+                if b.len() != 3 {
+                    return Err(Sw::WRONG_LENGTH);
+                }
+                if b.iter().any(|v| *v == 0 || *v > 15) {
                     return Err(Sw::WRONG_DATA);
                 }
                 self.session.grants = 0;

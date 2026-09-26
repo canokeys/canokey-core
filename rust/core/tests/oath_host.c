@@ -24,6 +24,15 @@ int main(void) {
       continue;
     }
 #endif
+    if (strncmp(line, "FAIL_WRITE ", 11) == 0) {
+      extern void ck_test_fail_write(uint8_t id);
+      unsigned id;
+      assert(sscanf(line + 11, "%u", &id) == 1 && id < 186);
+      ck_test_fail_write((uint8_t)id);
+      puts("9000");
+      fflush(stdout);
+      continue;
+    }
     if (strncmp(line, "SIZE ", 5) == 0) {
       printf("%08x\n", (unsigned)ck_platform_size((uint8_t)atoi(line + 5)));
       fflush(stdout);

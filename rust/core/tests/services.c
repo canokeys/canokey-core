@@ -7,6 +7,8 @@
 static uint8_t files[186][32768];
 static int32_t sizes[186];
 static int initialized;
+static int failed_write_record = -1;
+void ck_test_fail_write(uint8_t id) { failed_write_record = id; }
 static void storage_init(void) {
   if (!initialized) { for (size_t i = 0; i < 186; i++) sizes[i] = -1; initialized = 1; }
 }
@@ -29,6 +31,7 @@ int32_t ck_platform_read(uint8_t id, uint8_t *out, size_t n) {
   return sizes[id];
 }
 int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n) {
+  if (failed_write_record == id) { failed_write_record = -1; return -2; }
   storage_init();
   assert(id < 186 && n <= sizeof(files[id]));
   memcpy(files[id], input, n);

@@ -90,6 +90,9 @@ legacy permissive parsing is not a compatibility requirement.
 The vendor retry command is `00 F2 00 00 03 <PW1-limit> <RC-limit> <PW3-limit>`.
 It requires a verified PW3 grant, accepts limits 1..15, resets PW1/PW3 to their
 default values, preserves the reset-code value, and revokes session grants.
+With authorization established, a body length other than three returns 6700;
+an out-of-range limit returns 6A80. A failed persistence update returns 6900
+and does not retain the prior grant.
 Normal OpenPGP host regression exercises this command with a verified PW3 grant
 and verifies the default PW3 afterward.
 Crypto failures are reported internally as `Error::Crypto`, distinct from storage
