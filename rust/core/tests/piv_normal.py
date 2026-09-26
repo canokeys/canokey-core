@@ -192,6 +192,55 @@ def authentication(c):
     c.cmd("reselect_preserves_pin", 0x20, 0, 0x80, le=None)
 
 
+def directory_and_move(c):
+    public = c.generate(0)
+    c.cmd("directory_import", 0xFE, 0x14, 0x82,
+          tlv(6, bytes(47) + b"\x01") + tlv(0xAA, b"\x03") + tlv(0xAB, b"\x03"), le=None)
+    certificate = tlv(0x53, b"\xa5")
+    c.put(0x5FC10A, certificate)
+    c.put(0x5FC10B, b"")
+    c.put(0x5FC10D, certificate)
+    assert c.cmd("sparse_directory", 0xF7, 1, 0) == bytes.fromhex(
+        "0101010212 9a0111010201 9c0200000000 820314020303")
+    for p1, p2, data, status in ((1, 1, b"", 0x6A86), (2, 0, b"", 0x6A86), (1, 0, b"x", 0x6700)):
+        c.cmd("invalid_directory", 0xF7, p1, p2, data, status=status)
+    c.cmd("remove_directory_import", 0xF6, 0xFF, 0x82)
+    c.put(0x5FC105, certificate)
+    c.wire.command("RESET")
+    c.select()
+    c.cmd("unauthorized_delete", 0xF6, 0xFF, 0x9A, status=0x6982)
+    c.auth()
+    for to, source, data, status in (
+        (0xFF, 0x9A, b"x", 0x6700), (0xFF, 0x9B, b"", 0x6A86),
+        (0x9B, 0x9A, b"", 0x6A86), (0x9C, 0x9D, b"", 0x6A88),
+        (0x9A, 0x9A, b"", 0x6A80),
+    ):
+        c.cmd("invalid_move", 0xF6, to, source, data, status=status)
+    c.generate(0, 0x9C)
+    c.cmd("occupied_destination", 0xF6, 0x9C, 0x9A, status=0x6A80)
+    c.cmd("clear_destination", 0xF6, 0xFF, 0x9C)
+    c.cmd("move_to_signature", 0xF6, 0x9C, 0x9A)
+    c.wire.command("RESET")
+    c.select()
+    c.cmd("move_source_stays_absent", 0xF7, 0, 0x9A, status=0x6A88)
+    c.verify()
+    digest = hashlib.sha256(b"moved key after reset").digest()
+    public.verify(c.ga(0, 0x9C, digest), digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
+    c.auth()
+    c.cmd("move_to_retired", 0xF6, 0x95, 0x9C)
+    c.cmd("move_from_retired", 0xF6, 0x9D, 0x95)
+    c.cmd("delete_moved_key", 0xF6, 0xFF, 0x9D)
+    assert c.get(0x5FC105) == certificate
+    slots = [0x9A, 0x9C, 0x9D, 0x9E] + list(range(0x82, 0x96))
+    tags = [0x5FC105, 0x5FC10A, 0x5FC10B, 0x5FC101] + list(range(0x5FC10D, 0x5FC121))
+    for tag in tags:
+        c.put(tag, certificate)
+    expected = b"".join(bytes([slot, 2, 0, 0, 0, 0]) for slot in slots)
+    assert c.raw("full_directory", 0xF7, 1, 0, le=256) == bytes.fromhex("0101010290") + expected
+    for record in range(42, 66):
+        c.wire.command(f"REMOVE {record}")
+
+
 def host_managed_objects(c):
     printed = bytes.fromhex("531c881a8918") + KEY
     admin = bytes.fromhex("53058003810103")
@@ -1236,6 +1285,7 @@ def run(wire, progress=None, report=None):
         for scenario in (
             unauthenticated_queries,
             authentication,
+            directory_and_move,
             host_managed_objects,
             management_rotation,
             algorithm_configuration,

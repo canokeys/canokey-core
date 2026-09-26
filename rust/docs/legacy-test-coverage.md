@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 53 registered cases: APDU (49)
-and PIV (4). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 51 registered cases: APDU (49)
+and PIV (2). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -839,3 +839,16 @@ key/certificate, with independent verification and public-key matching.
 Removed the C certificate fixture, DER walker and native signature-verification
 helpers. No production behavior changed; these tests exercise the existing
 Rust engine and crypto adapters.
+
+## PIV directory and move/delete correctness
+
+`test_piv_get_metadata_directory` and `test_piv_move_delete_key_extension` are
+replaced by `piv-normal::directory_and_move`. Literal wire checks cover sparse
+key/certificate flags and policies, empty certificate exclusion and the full
+24-slot certificate-only directory in one response. Invalid parameters and
+unexpected data are rejected. Move/delete checks require management auth,
+reject reserved slots, absent sources, same-slot and occupied destinations;
+move across ordinary/retired slots, preserve the source certificate, and delete
+the moved key. After reset, the source stays absent and an independently
+verified signature proves the original key survived the move. Native key-struct
+byte comparisons are removed. No production behavior changed.
