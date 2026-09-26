@@ -624,3 +624,8 @@ the command defaults; getAssertion continues to support `up: false`.
 Resident getAssertion/getNextAssertion enumeration preserves the legacy descending
 record-slot order. The cursor is an exclusive upper slot bound, including slot
 zero without underflow. Credential management retains its separate scan order.
+
+Successful boot installation restores the volatile three-attempt PIN allowance
+without changing durable retries. Transport/session reset and CTAPHID INIT do
+not clear temporary lockout. The UDP fixture verifies lockout across INIT and
+recovery after a real simulated reboot, including durable retry preservation.

@@ -49,6 +49,9 @@ impl Session {
                     .map_err(|_| Status::Other)?;
             }
         }
+        // Only boot installation restores the volatile retry allowance.
+        // Transport/session reset must not bypass temporary PIN lockout.
+        self.pin_attempts = 3;
         self.sm2 = sm2.unwrap_or(Sm2::DEFAULT);
         Ok(())
     }

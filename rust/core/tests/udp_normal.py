@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
+from fido2.ctap2.pin import PinProtocolV1
 from ctap_fixture import mixed_management
 
 REBOOT = bytes.fromhex('ac1052ca95e569de69e02ebff333485f13f9b2da34c5a8a340526697a9ab2e0b394d8d04973c134005be1a0140bff6045bb26eb77a73eaa47813f6b49a7250dc')
@@ -138,6 +139,29 @@ def run(executable):
                     key.verify(answer[2]+request_hash, answer[3])
                     assert AuthenticatorData(answer[2]).counter > counter
                     counter = AuthenticatorData(answer[2]).counter
+
+                # Volatile PIN lockout survives INIT but clears on real boot;
+                # durable retries must not be restored by either operation.
+                protocol = PinProtocolV1()
+                pin = b'12345678'
+                public, shared = protocol.encapsulate(card.ctap(6, {1: 1, 2: 2})[1])
+                encrypted = protocol.encrypt(shared, pin.ljust(64, b'\0'))
+                card.ctap(6, {1: 1, 2: 3, 3: public,
+                              4: protocol.authenticate(shared, encrypted), 5: encrypted})
+                def try_pin(value, status=0):
+                    public, shared = protocol.encapsulate(card.ctap(6, {1: 1, 2: 2})[1])
+                    encrypted = protocol.encrypt(shared, hashlib.sha256(value).digest()[:16])
+                    return card.ctap(6, {1: 1, 2: 5, 3: public, 6: encrypted}, status=status)
+                for status in (0x31, 0x31, 0x34):
+                    try_pin(b'wrong PIN', status)
+                assert card.ctap(6, {1: 1, 2: 1})[3] == 5
+                card.init()
+                try_pin(pin, 0x34)
+                card.socket.sendto(REBOOT, ('127.0.0.1', 8111))
+                card.init()
+                assert card.ctap(6, {1: 1, 2: 1})[3] == 5
+                try_pin(pin)
+                assert card.ctap(6, {1: 1, 2: 1})[3] == 8
 
                 # Runtime callback polls UDP while the applet waits for touch.
                 UP.write_text('-1\n')
