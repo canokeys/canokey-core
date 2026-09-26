@@ -307,7 +307,7 @@ impl Parser {
             return Err(Status::InvalidParameter);
         }
         if f.params.make && f.params.hmac.is_some() && !f.params.hmac_secret {
-            return Err(Status::InvalidOption);
+            return Err(Status::MissingParameter);
         }
         Ok(Command::Credential(core::mem::replace(
             &mut f.params,
@@ -666,7 +666,15 @@ impl Fields {
                 }
                 self.in_hmac = true;
             }
-            Field::Enterprise => return Err(Status::InvalidParameter),
+            Field::Enterprise => {
+                // Unsupported enterprise modes still distinguish a wrong CBOR
+                // type from an unsupported unsigned parameter, as CTAP requires.
+                return Err(if matches!(event, Event::Unsigned(_)) {
+                    Status::InvalidParameter
+                } else {
+                    Status::UnexpectedType
+                });
+            }
             Field::Ignore => {
                 if matches!(
                     event,

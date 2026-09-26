@@ -131,6 +131,12 @@ def run(wire):
             rejected_auth.credential_data.public_key.verify(answer[2] + assertion_hash, answer[3])
 
 
+    # Enterprise attestation is unsupported; wrong CBOR types remain distinct.
+    registration = {1: client_hash, 2: {"id": rp}, 3: user,
+                    4: [{"type": "public-key", "alg": -7}]}
+    for enterprise, status in [(1, 2), (2, 2), (3, 2), (-1, 0x11), (True, 0x11)]:
+        call(1, registration | {10: enterprise}, status)
+
     salts = hashlib.sha256(b"salt one").digest() + hashlib.sha256(b"salt two").digest()
     hmac_results = {}
     for protocol in [PinProtocolV1(), PinProtocolV2()]:
@@ -139,6 +145,9 @@ def run(wire):
             encrypted = protocol.encrypt(secret, value)
             return {1: public, 2: encrypted, 3: protocol.authenticate(secret, encrypted), 4: protocol.VERSION}
         extension = hmac_input(salts)
+        for extensions in [{"hmac-secret-mc": extension},
+                           {"hmac-secret": False, "hmac-secret-mc": extension}]:
+            call(1, registration | {6: extensions}, 0x14)
         result = call(1, {1: client_hash, 2: {"id": rp}, 3: user,
                          4: [{"type": "public-key", "alg": -7}],
                          6: {"hmac-secret": True, "hmac-secret-mc": extension}})

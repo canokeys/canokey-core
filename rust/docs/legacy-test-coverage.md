@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 36 registered APDU cases.
+One legacy C test executable remains, with 32 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1007,3 +1007,31 @@ new test-only C ownership API is carried into Rust.
 Validation: host CTest passed 28/28 in 57.82 seconds. Full production links
 remain over Flash: DevKit 187832 B (23992 B over), NFCC 195312 B (31472 B
 over), RAM_DATA 8640/8760 B. Capacity, hardware and stack acceptance remain open.
+
+## makeCredential parameter and extension correctness
+
+Removed four native cases in favor of the existing `ctap-normal` end-to-end
+fixture, which runs the production Rust applet with independent python-fido2
+CBOR and crypto verification:
+
+- `test_ctap_hid_make_credential_accepts_p9_pub_key_param_order`: the existing
+  ES256/Ed25519 registrations use canonical python-fido2 maps (`alg` before
+  `type`), skip unsupported algorithm candidates and verify successful packed
+  attestation and later assertions. This replaces the old weaker non-11 check.
+- `test_ctap_make_credential_rejects_enterprise_attestation`: unsigned 1/2/3
+  return 02; negative integers and booleans return 11. These checks exposed and
+  corrected Rust's former unconditional 02 rejection.
+- `test_ctap_hid_make_credential_hmac_secret_mc_requires_hmac_secret`: both PIN
+  protocols now check absent and false `hmac-secret`, requiring 14. Rust formerly
+  returned 2C; it now preserves the native missing-parameter contract.
+- `test_ctap_hid_make_credential_hmac_secret_mc_output_key_is_separate`: existing
+  checks decode separate `hmac-secret` and `hmac-secret-mc` extension entries,
+  verify attestation, independently decrypt two distinct salt outputs and compare
+  subsequent signed getAssertion results. No duplicate success fixture added.
+
+The separate ML-DSA hmac-secret-mc native case remains pending its own audit.
+
+Validation: full host CTest passed 28/28 in 54.97 seconds. Full production
+links still fail: DevKit 187880 B Flash (24040 B over), NFCC 195360 B
+(31520 B over), each 48 B larger; RAM_DATA remains 8640/8760 B. Capacity,
+runtime stack and physical compatibility remain unaccepted.

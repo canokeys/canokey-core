@@ -115,7 +115,10 @@ resident enumeration, RP/algorithm-tamper rejection and restart persistence.
 hmac-secret and hmac-secret-mc reuse clientPIN's P-256 decapsulation and protocol
 1/2 key derivation. The streaming schema owns only the peer point, encrypted
 salts and authentication tag; no request/PKE bytes remain live during crypto.
-The MC variant requires `hmac-secret: true`. Assertions with hmac-secret require
+The MC variant requires `hmac-secret: true`; absent or false returns
+MISSING_PARAMETER (14). Unsupported unsigned enterpriseAttestation values return
+INVALID_PARAMETER (02), while other CBOR types return UNEXPECTED_TYPE (11).
+Assertions with hmac-secret require
 user presence. Invalid salt authentication never decrypts the salt.
 
 CredRandom derives from the credential master with separate domains for UV and
