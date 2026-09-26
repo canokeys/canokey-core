@@ -88,8 +88,11 @@ callbacks borrow a separate host-state mutex, never reentering the core. The
 bound reader/slot is identified by the first open's LUN. T=1 negotiation, ATR,
 polling callback and single-slot capabilities remain available. Capabilities,
 ATR and transmit responses check caller capacity and never overrun the buffer.
-Power-down, warm reset and close remove authorization and response state while
-retaining records. Slot resets do not reopen the CTAP power-on reset window.
+Reader power-down and warm reset drop APDU fragments/responses and non-CTAP
+applet grants. A selected CTAP session retains its token, key agreement and
+GA/CM continuations, matching implicit reader PowerICC cycles. Close, device
+reboot, applet switches and cross-transport preemption still revoke CTAP state.
+Slot cycles do not reopen the CTAP power-on reset window or token lifetimes.
 
 The default image path remains `/tmp/lfs-root`, overridable with
 `CANOKEY_VIRT_LFS_ROOT`; reset/keep behavior uses `CANOKEY_VIRT_RESET_STORAGE` as

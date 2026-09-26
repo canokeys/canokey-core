@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 5 registered APDU cases.
+One legacy C test executable remains, with 4 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1358,3 +1358,10 @@ length/offset overflow rejection before dereferencing the supplied pointer.
 The audit fixed Rust's rejection of same-owner reacquisition; this must not
 be reference-counted, and one matching release permits the next owner. The
 legacy C RAM fallback remains only in the residual C-test dependency closure.
+
+`test_ctap_poweroff_keeps_credential_management_state` is replaced by actual
+PC/SC PowerICC cycles in the shared mixed-management fixture. The audit found
+and corrected Rust's use of complete reset for logical reader power events.
+Both GA and CM continuations survive alternating power-down/up and warm reset
+with FIDO reselect, while existing other-applet authorization/reset checks pass.
+The synthetic C cursor seed/query hooks are deleted with the native test.

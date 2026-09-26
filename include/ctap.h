@@ -58,8 +58,6 @@ int ctap_process_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src)
 int ctap_process_pke_apdu_with_src(const CAPDU *capdu, RAPDU *rapdu, ctap_src_t src, ctap_req_close_t close,
                                    void *close_ctx);
 #ifdef TEST
-void ctap_test_seed_credential_management_state(void);
-int ctap_test_credential_management_state_active(void);
 #endif
 static inline int ctap_process_apdu(const CAPDU *capdu, RAPDU *rapdu) {
   return ctap_process_apdu_with_src(capdu, rapdu, CTAP_SRC_CCID);

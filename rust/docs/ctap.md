@@ -567,3 +567,21 @@ host: real four-algorithm credentials and their master/resident records cross
 the build boundary, followed by registration fallback, independently verified
 allowed signatures, resident continuation filtering and authenticated management.
 `RECORD` is an in-process host fixture control, never a firmware APDU.
+
+### Reader logical power versus device reset
+
+CCID PowerOn/PowerOff and virtual PC/SC PowerICC do not represent device power
+loss. When CCID owns a selected CTAP applet, these events discard wire response
+and partial command state while preserving token/key agreement and assertion/
+management continuations. A FIDO reselect on that reader also preserves them.
+The engine retains the transport owner so another interface must pass normal
+session preemption, which clears CTAP state. USB/device reset, reader close,
+application deselection and failed storage reopen remain full reset boundaries.
+Other applets still lose their grants on every reader power cycle. No timestamp
+is restarted: token expiry, assertion timeout and the reset power-on gate apply.
+
+The existing PC/SC fixture runs mixed GA/CM enumeration through alternating
+power-down/up pairs and warm PowerICC resets, reselecting FIDO between commands.
+Full public keys, credential identities and P-256/Ed25519 assertion signatures
+are checked; the same management token starts the second enumeration afterward.
+The CCID transport test distinguishes logical power from timeout/full reset.

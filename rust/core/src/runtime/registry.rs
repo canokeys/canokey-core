@@ -476,6 +476,16 @@ impl Router for Registry {
         self.reset_sessions(p);
         self.applet = AppletState::None;
     }
+    fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
+        #[cfg(feature = "ctap")]
+        if matches!(self.applet, AppletState::Ctap) {
+            self.ctap.close(&mut self.workspace, p);
+            self.workspace.wipe_active(p.memory);
+            return true;
+        }
+        self.reset(p);
+        false
+    }
     fn implicit_select(&mut self, header: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
         let _ = (&header, &p);
         #[cfg(feature = "ctap")]

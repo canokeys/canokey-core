@@ -19,6 +19,9 @@ pub trait Scratch {
 pub trait Backend: Scratch {
     fn now(&mut self) -> u32;
     fn reset(&mut self);
+    fn slot_power(&mut self) {
+        self.reset();
+    }
     fn prepare_extended(&mut self, prefix: &[u8; 7], total: usize) -> Result<u16, u16>;
     /// The backend must close staged input before executing the parsed command.
     fn exchange(&mut self, request: &mut Request, out: &mut [u8]) -> Result<usize, ()>;
@@ -320,7 +323,7 @@ impl Transport {
                     } else {
                         self.session_owned = !hid_busy;
                         if self.session_owned {
-                            backend.reset();
+                            backend.slot_power();
                         }
                         self.session_last = backend.now();
                         self.active = true;
@@ -333,7 +336,7 @@ impl Transport {
                         error = BAD_LENGTH;
                     } else {
                         if !hid_busy {
-                            backend.reset();
+                            backend.slot_power();
                         }
                         self.session_owned = false;
                         self.active = false;

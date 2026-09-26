@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
 from card_test import Card
+from ctap_fixture import mixed_management
 
 DWORD = C.c_uint32 if sys.platform == 'darwin' else C.c_ulong
 BYTE = C.c_ubyte
@@ -171,7 +172,6 @@ def run(library):
             def ctap(command, params=None, expected=0):
                 payload = bytes([command]) + (cbor.encode(params) if params is not None else b'')
                 if command == 1:
-                    assert len(payload) > 256
                     for at in range(0, len(payload), 128):
                         chunk = payload[at:at+128]
                         last = at+len(chunk) == len(payload)
@@ -184,6 +184,21 @@ def run(library):
                     rc, result, _ = d.raw(apdu)
                 assert rc == 0 and result[-2:] == b'\x90\x00' and result[0] == expected, (rc, result.hex())
                 return cbor.decode(result[1:-2]) if len(result) > 3 else None
+            reader_cycles = 0
+            def reader_cycle():
+                nonlocal reader_cycles
+                reader_cycles += 1
+                if reader_cycles % 2:
+                    assert d.power(501) == (0, b'', 0)
+                    assert d.power(500)[0] == 0
+                else:
+                    assert d.power(502)[0] == 0
+                card.cmd('reselect FIDO', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
+            def verify_attestation(result, challenge):
+                cert = x509.load_der_x509_certificate(result[3]['x5c'][0])
+                cert.public_key().verify(result[3]['sig'], result[2] + challenge, ec.ECDSA(hashes.SHA256()))
+            mixed_management(lambda command, params=None, status=0: ctap(command, params, status),
+                             verify_attestation, cycle=reader_cycle)
             ctap(6, {1: 1, 2: 2, 127: bytes(700)}) # full standalone extended input
             digest = hashlib.sha256(b'IFD boundary').digest()
             rp = 'rust-pcsc.example'

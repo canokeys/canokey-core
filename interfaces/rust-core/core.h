@@ -39,6 +39,7 @@ int32_t ck_core_install(void);
 /* Boot/main-loop only: reads persistent NFC mode policy, never from an IRQ. */
 uint8_t ck_core_nfc_enabled(void);
 void ck_core_reset(void);
+void ck_core_slot_power(void);
 uint8_t ck_core_applet_count(void);
 int32_t ck_core_exchange(uint8_t owner, const uint8_t *input, size_t length, uint8_t *output, size_t capacity);
 /* Present only when PASS is enabled. Slot indices here are zero based. */

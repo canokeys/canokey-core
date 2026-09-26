@@ -43,19 +43,6 @@
 
 extern ccid_bulkin_data_t bulkin_data;
 
-static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
-  (void)state;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  ctap_test_seed_credential_management_state();
-  ctap_poweroff();
-
-  assert_true(ctap_test_credential_management_state_active());
-}
-
 static void provision_test_attestation(void) {
   static const uint8_t private_key[PRI_KEY_SIZE] = {1};
   static const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
@@ -161,7 +148,6 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
-      cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),

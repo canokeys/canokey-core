@@ -24,6 +24,7 @@ unsafe extern "C" {
         capacity: usize,
     ) -> i32;
     fn ck_core_reset();
+    fn ck_core_slot_power();
     fn ck_core_presence_sample();
     fn CTAPHID_Loop(wait: u8) -> u8;
     fn CTAPHID_OutEvent(data: *const u8) -> u8;

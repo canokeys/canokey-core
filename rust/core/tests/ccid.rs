@@ -8,6 +8,7 @@ struct Mock {
     held: bool,
     closes: usize,
     resets: usize,
+    power_cycles: usize,
     executions: usize,
     input: Vec<u8>,
     prepare_error: Option<u16>,
@@ -27,6 +28,7 @@ impl Default for Mock {
             held: false,
             closes: 0,
             resets: 0,
+            power_cycles: 0,
             executions: 0,
             input: vec![],
             prepare_error: None,
@@ -80,6 +82,10 @@ impl Backend for Mock {
     fn reset(&mut self) {
         assert!(!self.held);
         self.resets += 1;
+    }
+    fn slot_power(&mut self) {
+        assert!(!self.held);
+        self.power_cycles += 1;
     }
     fn prepare_extended(&mut self, prefix: &[u8; 7], total: usize) -> Result<u16, u16> {
         assert!(!self.held);
@@ -332,6 +338,8 @@ fn slot_parameter_precedence_and_zero_error_unsupported() {
 #[test]
 fn leases_discovery_and_delayed_final_completion() {
     let (mut t, mut m) = start();
+    assert_eq!(m.power_cycles, 1);
+    assert_eq!(m.resets, 0);
     assert!(!t.idle(1999));
     assert!(t.idle(2000));
     assert!(t.blocked_by_hid(Some(TRANSFER)));

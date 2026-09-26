@@ -23,6 +23,11 @@ pub unsafe extern "C" fn ck_core_reset() {
         core().reset(p);
     })
 }
+/// Reader logical power only; USB/device reset must use ck_core_reset.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_core_slot_power() {
+    with_platform(|p| unsafe { core().slot_power(p) })
+}
 #[unsafe(no_mangle)]
 pub extern "C" fn ck_core_applet_count() -> u8 {
     Core::applet_count()

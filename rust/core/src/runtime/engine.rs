@@ -35,6 +35,11 @@ pub trait InputSource {
 pub trait Router {
     fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw>;
     fn reset(&mut self, p: &mut Platform<'_>);
+    /// Keep only applet state that survives a reader's logical power cycle.
+    fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
+        self.reset(p);
+        false
+    }
     fn selected(&self) -> bool;
     fn implicit_select(&mut self, _header: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
         Ok(())
@@ -165,6 +170,18 @@ impl<R: Router> Runtime<R> {
         self.abort_input(p);
         self.router.reset(p);
         self.owner = None;
+    }
+    pub fn slot_power(&mut self, p: &mut Platform<'_>) {
+        if self.owner != Some(OWNER_CCID) {
+            self.reset(p);
+            return;
+        }
+        self.close_response(p);
+        self.abort_input(p);
+        if !self.router.slot_power(p) {
+            self.owner = None;
+        }
+        // Retained CTAP state keeps its owner: other transports must preempt.
     }
     /// Frame length is supplied by the transport; no body buffer is allocated.
     #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]

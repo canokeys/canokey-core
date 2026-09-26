@@ -89,6 +89,9 @@ impl Backend for Platform {
     fn reset(&mut self) {
         unsafe { super::entrypoints::ck_core_reset() }
     }
+    fn slot_power(&mut self) {
+        unsafe { super::entrypoints::ck_core_slot_power() }
+    }
     fn prepare_extended(&mut self, prefix: &[u8; 7], total: usize) -> Result<u16, u16> {
         #[cfg(feature = "ctap")]
         {

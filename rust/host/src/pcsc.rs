@@ -149,11 +149,11 @@ unsafe extern "C" fn ck_pcsc_power(
         }
         return SMALL;
     }
-    // Power-down is a real authorization/session boundary, even if the reader
-    // still reports that its virtual card is physically present. Slot resets
-    // do not restart the CTAP power-on window; only MAGIC REBOOT does that.
+    // Reader power cycles preserve CTAP continuations, as on USB CCID.
+    // Other applet grants and transport fragments are revoked; actual device
+    // reset/close still clears every session and the power-on window is unchanged.
     unsafe {
-        ck_core_reset();
+        ck_core_slot_power();
     }
     host(|h| {
         h.powered = false;
@@ -165,15 +165,17 @@ unsafe extern "C" fn ck_pcsc_power(
     }
     let storage = match host(|h| h.storage.reopen()) {
         Ok(s) => s,
-        Err(_) => return COMM,
+        Err(_) => {
+            unsafe {
+                ck_core_reset();
+            }
+            return COMM;
+        }
     };
     host(|h| {
         h.storage = storage;
         h.nfc = contactless();
     });
-    if unsafe { ck_core_install() } != 0 {
-        return COMM;
-    }
     host(|h| h.powered = true);
     unsafe { copy(ATR, out, cap, length) }
 }

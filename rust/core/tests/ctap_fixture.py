@@ -29,7 +29,7 @@ def provision(card):
     return verify
 
 
-def mixed_management(call, verify_attestation, curve=9, algorithm=-54):
+def mixed_management(call, verify_attestation, curve=9, algorithm=-54, cycle=lambda: None):
     """Full public keys across mixed streamed responses, using a fresh CTAP store."""
     import hashlib
     from fido2 import cbor
@@ -53,6 +53,13 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54):
         if alg not in (-49, -8):
             assert len(key[-3]) == 32
         expected.append(({"id": credential.credential_id, "type": "public-key"}, key))
+    for i, (descriptor, key) in enumerate(expected):
+        cycle()
+        answer = call(2, {1: rp, 2: challenge}) if i == 0 else call(8)
+        assert answer[1] == descriptor and answer[4] == {"id": bytes([i])}
+        assert answer.get(5) == (6 if i == 0 else None)
+        if key[3] in (-7, -8):
+            key.verify(answer[2] + challenge, answer[3])
     protocol = PinProtocolV1()
     public, secret = protocol.encapsulate(call(6, {1: 1, 2: 2})[1])
     pin = b"12345678"
@@ -65,6 +72,7 @@ def mixed_management(call, verify_attestation, curve=9, algorithm=-54):
     # Repeat the scan to expose stale source/cursor state after the large keys.
     for _ in range(2):
         for i, (descriptor, key) in enumerate(expected):
+            cycle()
             result = call(10, begin if i == 0 else {1: 5})
             assert result[6] == {"id": bytes([i])}
             assert result[7] == descriptor and result[8] == key

@@ -1013,24 +1013,6 @@ static void ctap_get_assertion_save_state(const CTAP_get_assertion *src) {
   ga_state.ext_third_party_payment = src->ext_third_party_payment;
 }
 
-#ifdef TEST
-void ctap_test_seed_credential_management_state(void) {
-  ctap_credential_management_reset_state();
-  last_cmd = CTAP_CREDENTIAL_MANAGEMENT;
-  cred_mgmt_state.last_subcommand = CM_CMD_ENUMERATE_CREDENTIALS_BEGIN;
-  cred_mgmt_state.next_idx = 7;
-  cred_mgmt_state.total = 3;
-  cred_mgmt_state.has_rp_filter = true;
-  memset(cred_mgmt_state.rp_id_hash, 0x10, sizeof(cred_mgmt_state.rp_id_hash));
-}
-
-int ctap_test_credential_management_state_active(void) {
-  return last_cmd == CTAP_CREDENTIAL_MANAGEMENT &&
-         cred_mgmt_state.last_subcommand == CM_CMD_ENUMERATE_CREDENTIALS_BEGIN && cred_mgmt_state.next_idx == 7 &&
-         cred_mgmt_state.total == 3 && cred_mgmt_state.has_rp_filter && cred_mgmt_state.rp_id_hash[0] == 0x10;
-}
-#endif
-
 void ctap_schedule_runtime_reset(void) { runtime_reset_pending = true; }
 
 void ctap_deselect(void) {
