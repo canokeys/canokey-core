@@ -328,6 +328,16 @@ int main(void) {
   ccid_apdu(stale_response,sizeof(stale_response),0x6986);
   const uint8_t pgp_query[]={0,0x20,0,0x83};
   ccid_apdu(pgp_query,sizeof(pgp_query),0x63c3);
+  const uint8_t verify_pw1[]={0,0x20,0,0x81,6,'1','2','3','4','5','6'};
+  const uint8_t query_pw1[]={0,0x20,0,0x81};
+  ccid_apdu(verify_pw1,sizeof(verify_pw1),0x9000);
+  now+=2001; loops();
+  ccid_apdu(select_pgp,sizeof(select_pgp),0x9000);
+  ccid_apdu(query_pw1,sizeof(query_pw1),0x9000);
+  now+=2001;
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(select_pgp,sizeof(select_pgp),0x9000);
+  ccid_apdu(query_pw1,sizeof(query_pw1),0x63c3);
 #endif
 #ifdef WITH_PIV
   // Provision only an opaque test object; protocol selection/read are real.
@@ -335,6 +345,18 @@ int main(void) {
   const uint8_t object[]={0x53,1,7};
   assert(ck_platform_write(42,object,sizeof(object))==3); // PivObject0, 5FC105.
   const uint8_t select_piv[]={0,0xa4,4,0,11,0xa0,0,0,3,8,0,0,0x10,0,1,0};
+  const uint8_t piv_rid[]={0,0xa4,4,0,5,0xa0,0,0,3,8};
+  const uint8_t verify_piv[]={0,0x20,0,0x80,8,'1','2','3','4','5','6',0xff,0xff};
+  const uint8_t query_piv[]={0,0x20,0,0x80};
+  ccid_apdu(select_piv,sizeof(select_piv),0x9000);
+  ccid_apdu(verify_piv,sizeof(verify_piv),0x9000);
+  ccid_apdu(select_piv,sizeof(select_piv),0x9000);
+  ccid_apdu(query_piv,sizeof(query_piv),0x9000);
+  ccid_apdu(piv_rid,sizeof(piv_rid),0x9000);
+  ccid_apdu(query_piv,sizeof(query_piv),0x9000);
+  ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(select_piv,sizeof(select_piv),0x9000);
+  ccid_apdu(query_piv,sizeof(query_piv),0x63c3);
   const uint8_t read_object[]={0,0xcb,0x3f,0xff,5,0x5c,3,0x5f,0xc1,5,1};
   const uint8_t discovery[]={0,0xcb,0x3f,0xff,3,0x5c,1,0x7e,1};
   const uint8_t rest[]={0,0xc0,0,0,0};

@@ -184,6 +184,20 @@ mod tests {
         assert!(Page(disk.page).valid());
     }
     #[test]
+    fn admin_flags_preserve_initialization_nfc_and_identity() {
+        let mut disk = Disk::new();
+        write_serial(&mut disk, &[0xa1, 0xb2, 0xc3, 0xd4]).unwrap();
+        update(&mut disk, INITIALIZED | NFC, INITIALIZED).unwrap();
+        let before = disk.page;
+        let selected = LED | WEBUSB | OPENPGP_USB | PIV_USB | WEBAUTHN;
+        update(&mut disk, ADMIN_FLAGS, selected).unwrap();
+        assert_eq!(flags(&mut disk).unwrap(), selected | INITIALIZED | SERIAL_VALID);
+        assert_eq!(serial(&mut disk), [0xa1, 0xb2, 0xc3, 0xd4]);
+        assert_eq!(&disk.page[..12], &before[..12]);
+        assert_eq!(&disk.page[16..508], &before[16..508]);
+        assert!(Page(disk.page).valid());
+    }
+    #[test]
     fn recovery_preserves_raw_metadata_or_explicitly_erases_it() {
         let mut disk = Disk::new();
         write_serial(&mut disk, &[1, 2, 3, 4]).unwrap();

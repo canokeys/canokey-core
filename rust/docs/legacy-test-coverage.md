@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 174 registered cases: APDU (75),
+Four C test executables remain, with 169 registered cases: APDU (70),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -254,3 +254,17 @@ macro. Firmware board-information plumbing is separately exercised by the device
 adapter tests. Usage attributes versioned Rust records rather than legacy file
 names and LittleFS attributes. Missing flags describe missing records in that
 namespace; native storage tests separately verify physical capacity reporting.
+
+## Replaced reselection, configuration preservation and routing cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect` | `usb-sessions`: actual CCID PW1 verification, 2001 ms idle, same-app SELECT/query success, foreign WebUSB takeover and revoked PW1 |
+| `test_piv_reselect_preserves_security_status` | `usb-sessions`: real PIN verification, full and RID-only reselect/query success, applet switch and revoked PIN |
+| `test_platform_config_flags_preserve_other_state` | `admin_flags_preserve_initialization_nfc_and_identity`: exact flag mask, initialized/NFC state, serial, CRC and every non-flag/non-CRC page byte |
+| `test_virt_card_config_page_persistence` | `virtual-storage::configuration_snapshot_reopens_and_explicit_reset_erases_it`: 512-byte page survives reopening; explicit reset persists an erased page |
+| `test_runtime_feature_apdu_routing` | `independent_transport_bits_and_failed_reads_guard_actual_select`: independent USB/NFC masks reject actual PIV/OpenPGP SELECT; `core-normal`: restored successful selection/read, disabled implicit FIDO and reset persistence |
+
+The virtual card uses the Rust host snapshot rather than the removed C sidecar
+format. These are host persistence tests; physical configuration-page writes
+and Flash power-loss durability require separate hardware acceptance.

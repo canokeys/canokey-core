@@ -331,6 +331,21 @@ mod tests {
         assert_eq!(store.write(186, b"bad"), Err(-2));
     }
     #[test]
+    fn configuration_snapshot_reopens_and_explicit_reset_erases_it() {
+        let image = Image::new();
+        let mut store = image.open();
+        store.config_write(&[0x5a; 512]).unwrap();
+        let mut bytes = [0; 512];
+        image.open().config_read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [0x5a; 512]);
+        let (reset, fresh) = Storage::open(&image.path(), true).unwrap();
+        assert!(fresh);
+        reset.config_read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [0xff; 512]);
+        image.open().config_read(0, &mut bytes).unwrap();
+        assert_eq!(bytes, [0xff; 512]);
+    }
+    #[test]
     fn stage_publishes_only_on_commit_and_rename_is_durable() {
         let image = Image::new();
         let mut store = image.open();
