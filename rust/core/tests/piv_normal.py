@@ -44,18 +44,18 @@ class Piv(Card):
         return self.cmd("verify_pin", 0x20, 0, 0x80, PIN, le=None)
 
     def auth(self, key=KEY):
-        witness = fields(
-            fields(self.cmd("witness", 0x87, 8, 0x9B, tlv(0x7C, tlv(0x80, b""))))[0x7C]
-        )[0x80]
+        encoded = self.cmd("witness", 0x87, 0x0A, 0x9B, tlv(0x7C, tlv(0x80, b"")))
+        witness = fields(fields(encoded)[0x7C])[0x80]
+        assert len(witness) == 16 and encoded == tlv(0x7C, tlv(0x80, witness))
         challenge = bytes(range(16))
         reply = self.cmd(
             "prove_management",
             0x87,
-            8,
+            0x0A,
             0x9B,
-            tlv(0x7C, tlv(0x80, aes(key, witness, True)) + tlv(0x81, challenge)),
+            tlv(0x7C, tlv(0x80, aes(key, witness, True)) + tlv(0x81, challenge) + tlv(0x82, b"")),
         )
-        assert fields(fields(reply)[0x7C])[0x82] == aes(key, challenge)
+        assert reply == tlv(0x7C, tlv(0x82, aes(key, challenge)))
 
     def public(self, a, slot=0x9A):
         return pubkey(a, fields(self.cmd(f"metadata_alg_{a}", 0xF7, 0, slot))[4])
@@ -154,6 +154,36 @@ def authentication(c):
     c.verify()
     c.select()
     c.cmd("reselect_preserves_pin", 0x20, 0, 0x80, le=None)
+
+
+def host_managed_objects(c):
+    printed = bytes.fromhex("531c881a8918") + KEY
+    admin = bytes.fromhex("53058003810103")
+    management_size = c.wire.command("SIZE 15")
+    c.put(0x5FC109, printed)
+    c.put(0x5FFF00, admin)
+    assert c.wire.command("SIZE 15") == management_size
+    c.wire.command("RESET")
+    c.select()
+    assert c.get(0x5FFF00) == admin
+    c.get(0x5FC109, status=0x6982)
+    put = bytes.fromhex("5c035fc1055301aa")
+    for verified in (False, True):
+        if verified:
+            c.verify()
+        c.cmd("pin_does_not_grant_management", 0xDB, 0x3F, 0xFF, put, status=0x6982)
+        c.get(0x5FC105, status=0x6A82)
+        assert c.wire.command("SIZE 42") == b"\xff" * 4
+    assert c.get(0x5FC109) == printed
+    assert c.raw("bounded_printed_read", 0xCB, 0x3F, 0xFF,
+                 bytes.fromhex("5c035fc109"), le=256) == printed
+    # Host-managed printed/admin objects never replace the AES management key.
+    c.auth()
+    c.put(0x5FC105, bytes.fromhex("5301aa"))
+    assert c.wire.command("SIZE 42") == (3).to_bytes(4, "big")
+    c.put(0x5FC105, bytes.fromhex("5300"))
+    c.get(0x5FC105, status=0x6A82)
+    assert c.wire.command("SIZE 42") == b"\xff" * 4
 
 
 def objects(c):
@@ -503,7 +533,7 @@ def reset_and_persistence(c, issuer_key, issuer):
     c.cmd("unauthorized_after_retries", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, b"\x11")), status=0x6982)
     c.auth()
     new = bytes(range(24))
-    c.cmd("rotate_management", 0xFF, 0xFF, 0xFF, bytes([8, 0x9B, 24]) + new, le=None)
+    c.cmd("rotate_management", 0xFF, 0xFF, 0xFF, bytes([0x0A, 0x9B, 24]) + new, le=None)
     c.auth(new)
     original_config = c.cmd("read_algorithms", 0xEE, 1, 0)
     config = bytearray(original_config)
@@ -548,6 +578,7 @@ def run(wire, progress=None, report=None):
     try:
         for scenario in (
             authentication,
+            host_managed_objects,
             objects,
             classic_keys,
             encoding_regressions,

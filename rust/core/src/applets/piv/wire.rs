@@ -71,7 +71,7 @@ pub(super) mod reference {
 pub(super) mod wire_alg {
     pub const DEFAULT: u8 = 0x00;
     pub const RSA2048: u8 = 0x07;
-    pub const AES192: u8 = 0x08;
+    pub const AES192: u8 = 0x0a;
     pub const P256: u8 = 0x11;
     pub const P384: u8 = 0x14;
     pub const ED25519_STREAM: u8 = 0xff;

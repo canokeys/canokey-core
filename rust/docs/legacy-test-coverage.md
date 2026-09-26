@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 107 registered cases: APDU (49)
-and PIV (58). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 103 registered cases: APDU (49)
+and PIV (54). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -527,3 +527,21 @@ the shared command limit/session lifecycle remain unchanged. The streamed read
 uses the Rust transport's response chunk size rather than the obsolete C
 250-byte internal window; requested length and content remain exact.
 Bare authenticatorConfig now explicitly preserves the legacy F1 status.
+
+
+## Replaced PIV management authentication and object authorization cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_piv_aes192_mutual_authentication` | `piv-normal::Piv.auth` uses explicit AES-192 ID 0A, checks exact witness/response TLVs and independently computes AES-192 over the original 00..0F host challenge; retains the native empty 82 response placeholder |
+| `test_piv_host_managed_admin_data_objects` | `host_managed_objects` writes original PRINTED/admin bytes, checks unchanged management-record size and successful authentication with the original key, resets, checks public admin/private PRINTED reads and a bounded one-APDU PRINTED read |
+| `test_piv_pin_does_not_satisfy_admin` | Same scenario rejects certificate writes before/after PIN verification, checks no certificate record is created, then authenticates the management key and writes successfully |
+| `test_delete_certificate_object` | Same scenario writes original 5301AA, checks three-byte backing record, deletes with 5300, checks 6A82 and missing record |
+
+The original mutual-authentication packet exposed two compatibility errors:
+AES-192's wire ID is 0A (not 08), and an empty response tag in a mutual proof
+must not select external authentication. Rust now preserves both native wire
+behaviors; the persistent management key itself remains AES-192 and is not
+rewritten. Host and HIL key-rotation helpers use the corrected algorithm ID.
+The remaining native management-key install/rotation and old-record migration
+cases still require separate audit; these four replacements do not close them.

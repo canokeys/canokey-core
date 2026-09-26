@@ -1067,19 +1067,6 @@ static void test_regression_fuzz(void **state) {
   }
 }
 
-static void test_delete_certificate_object(void **state) {
-  (void)state;
-
-  set_admin_status(1);
-
-  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
-  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-c9a"), 3);
-
-  uint8_t delete_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x00};
-  test_helper(delete_cert, sizeof(delete_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_true(get_file_size("piv-c9a") < 0);
-}
 
 static const uint8_t default_piv_pin[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
 static const uint8_t default_mgmt_key[24] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
@@ -1224,39 +1211,6 @@ static void test_piv_startup_preserves_state_when_platform_config_is_invalid(voi
   assert_int_equal(piv_install(1), 0);
 }
 
-static void test_piv_aes192_mutual_authentication(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-
-  uint8_t init[] = {0x7C, 0x02, 0x80, 0x00};
-  uint8_t r_buf[64];
-  RAPDU R = {.data = r_buf};
-  CAPDU C = {
-      .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x0A, .p2 = 0x9B, .lc = sizeof(init)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.len, 20);
-  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x12, 0x80, 0x10}), 4);
-
-  uint8_t complete[40] = {0x7C, 0x26, 0x80, 0x10};
-  assert_int_equal(aes192_dec(R.data + 4, complete + 4, default_mgmt_key), 0);
-  complete[20] = 0x81;
-  complete[21] = 0x10;
-  for (uint8_t i = 0; i < AES_BLOCK_SIZE; ++i)
-    complete[22 + i] = i;
-  complete[38] = 0x82;
-  complete[39] = 0x00;
-  C.data = complete;
-  C.lc = sizeof(complete);
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.len, 20);
-  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x12, 0x82, 0x10}), 4);
-
-  uint8_t expected[AES_BLOCK_SIZE];
-  assert_int_equal(aes192_enc(complete + 22, expected, default_mgmt_key), 0);
-  assert_memory_equal(R.data + 4, expected, sizeof(expected));
-}
 
 static void configure_host_managed_admin_data(void) {
   set_admin_status(1);
@@ -1271,62 +1225,7 @@ static void configure_host_managed_admin_data(void) {
   set_admin_status(0);
 }
 
-static void test_piv_host_managed_admin_data_objects(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  const int admin_key_size = get_file_size("piv-k9b");
-  configure_host_managed_admin_data();
-  assert_int_equal(get_file_size("piv-k9b"), admin_key_size);
-  piv_poweroff();
 
-  uint8_t get_printed[] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
-  test_helper(get_printed, sizeof(get_printed), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
-
-  uint8_t expected_printed[30] = {0x53, 0x1C, 0x88, 0x1A, 0x89, 0x18};
-  memcpy(expected_printed + 6, default_mgmt_key, sizeof(default_mgmt_key));
-  test_helper_resp(get_printed, sizeof(get_printed), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_NO_ERROR, expected_printed,
-                   sizeof(expected_printed));
-
-  // Inline DO reads must use the stored attribute length, not the overall
-  // PRINTED object capacity. The target response buffer is only 256 bytes.
-  uint8_t *bounded_response = malloc(APDU_BUFFER_SIZE);
-  assert_non_null(bounded_response);
-  CAPDU get_printed_command = {.data = get_printed,
-                               .cla = 0x00,
-                               .ins = PIV_INS_GET_DATA,
-                               .p1 = 0x3F,
-                               .p2 = 0xFF,
-                               .lc = sizeof(get_printed),
-                               .le = APDU_BUFFER_SIZE};
-  RAPDU get_printed_response = {.data = bounded_response};
-  piv_process_apdu(&get_printed_command, &get_printed_response);
-  assert_int_equal(get_printed_response.sw, SW_NO_ERROR);
-  assert_int_equal(get_printed_response.len, sizeof(expected_printed));
-  assert_memory_equal(bounded_response, expected_printed, sizeof(expected_printed));
-  free(bounded_response);
-
-  piv_poweroff();
-  uint8_t get_admin[] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
-  uint8_t expected_admin[] = {0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03};
-  test_helper_resp(get_admin, sizeof(get_admin), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_NO_ERROR, expected_admin,
-                   sizeof(expected_admin));
-}
-
-static void test_piv_pin_does_not_satisfy_admin(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  configure_host_managed_admin_data();
-  piv_poweroff();
-
-  uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x05, 0x53, 0x01, 0xAA};
-  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  test_helper((uint8_t *)default_piv_pin, sizeof(default_piv_pin), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
-  test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_SECURITY_STATUS_NOT_SATISFIED);
-  assert_true(get_file_size("piv-c9a") < 0);
-}
 
 static void test_piv_retired_cert_lazy_storage(void **state) {
   (void)state;
@@ -4186,10 +4085,6 @@ int main() {
       cmocka_unit_test(test_piv_aes192_management_key),
       cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
       cmocka_unit_test(test_piv_startup_preserves_state_when_platform_config_is_invalid),
-      cmocka_unit_test(test_piv_aes192_mutual_authentication),
-      cmocka_unit_test(test_delete_certificate_object),
-      cmocka_unit_test(test_piv_host_managed_admin_data_objects),
-      cmocka_unit_test(test_piv_pin_does_not_satisfy_admin),
       cmocka_unit_test(test_piv_retired_cert_lazy_storage),
       cmocka_unit_test(test_piv_file_data_object_capacity),
       cmocka_unit_test(test_piv_metadata_bounded_do_storage),

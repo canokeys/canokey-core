@@ -12,7 +12,7 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         // P2 already selected the management key. P1=00 uses its default
-        // algorithm; P1=08 explicitly requests the supported AES-192 key.
+        // algorithm; P1=0A explicitly requests the supported AES-192 key.
         if !matches!(h.p1, wire_alg::DEFAULT | wire_alg::AES192) {
             return Err(Sw::WRONG_P1P2);
         }
@@ -76,7 +76,10 @@ impl Piv {
                 self.memory(20);
                 return Ok(20);
             }
-            if let Some(response) = f[ga_field::RESPONSE] {
+            // Mutual templates may include an empty 82 response placeholder.
+            if let Some(response) = f[ga_field::RESPONSE]
+                && !(self.auth_mode == AuthMode::Mutual && response.is_empty())
+            {
                 if self.auth_mode != AuthMode::External || !codec::equal(response, &self.challenge)
                 {
                     return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);

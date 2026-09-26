@@ -18,10 +18,10 @@ dispatcher. NFCC support remains deferred for all independent Rust profiles.
 | RESET RETRY COUNTER | `2C 00 80`, eight-byte PUK and new PIN; does not grant PIN authorization. |
 | GET CHALLENGE / version / serial | `84`, `FD`, `F8`, zero P1/P2. Versions come from the same CMake release fields as C. |
 | GET / PUT DATA | `CB/DB 3F FF`, `5C <tag>`; PUT requires management authorization. PIN protects biometric and printed objects. |
-| GENERAL AUTHENTICATE | `87 <algorithm> <slot>`, `7C` template; key-specific PIN and touch policies. AES-192 external and mutual management authentication use slot 9B, P1=00/08. |
+| GENERAL AUTHENTICATE | `87 <algorithm> <slot>`, `7C` template; key-specific PIN and touch policies. AES-192 external and mutual management authentication use slot 9B, P1=00/0A. |
 | GENERATE | `47 00 <slot>`, `AC {80 <algorithm>, [AA <PIN policy>], [AB <touch policy>]}`; management authorization. |
 | IMPORT | `FE <algorithm> <slot>`, incremental native PIV component TLVs and optional AA/AB policies; management authorization. |
-| Management-key rotation | `FF FF FF/FE`, `08 9B 18 <24 bytes>`; management authorization, FE enables mandatory touch. |
+| Management-key rotation | `FF FF FF/FE`, `0A 9B 18 <24 bytes>`; management authorization, FE enables mandatory touch. |
 | Metadata / directory | `F7 00 <reference>` or `F7 01 00`; public keys, policies, origin, default-credential and retry information. |
 | Container name | `F5 00/01 <slot>` reads/writes up to 78 bytes of valid UTF-16LE; writes require management authorization and nonempty names must be unique. |
 | Move / delete | `F6 <destination/FF> <source>`; management authorization, ordinary slots only, certificates stay in place. |
@@ -42,6 +42,10 @@ matching the native parser. Truncated AA/AB policy fields in IMPORT or GENERATE
 return `6700`. Failed requests preserve the previous key and policies;
 `piv-normal` checks metadata preservation and independently verifies a subsequent
 private operation with the original key.
+
+Mutual management authentication accepts the optional empty `82 00` response
+placeholder alongside the witness and host challenge, as in the native applet.
+AES-192 uses algorithm ID `0A`; `08` is not an AES-192 alias.
 
 ## Algorithms and streaming
 
