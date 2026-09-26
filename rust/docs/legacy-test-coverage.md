@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 51 registered cases: APDU (49)
-and PIV (2). Their C applet/protocol dependencies remain until each case is
+One legacy C test executable remains, with 49 registered APDU cases.
+Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -852,3 +852,22 @@ move across ordinary/retired slots, preserve the source certificate, and delete
 the moved key. After reset, the source stays absent and an independently
 verified signature proves the original key survived the move. Native key-struct
 byte comparisons are removed. No production behavior changed.
+
+## PIV native test executable retired
+
+`test_piv_startup_preserves_state_when_platform_config_is_invalid` is replaced
+by `piv-normal::invalid_startup_configuration`. A host-only TRY_RESET command
+returns the Rust installation result without aborting the harness. An invalid
+stored mapping must fail installation; restoring its byte then permits startup,
+with identical key metadata/certificate and an independently verified signature.
+
+`test_piv_migrates_legacy_management_key_types` is retired without recreating
+its C enum/storage layout conversion. The documented Rust storage contract
+(`piv.md`) does not import legacy C credential files; compact AES-192 management
+records and their authentication/rotation are already exercised by
+`management_rotation`. This is a storage-format-specific test, not an assertion
+that old C credential images are compatible with the Rust firmware.
+
+The `test_piv` executable and its native curve/DER test dependencies are removed
+from CMake. The APDU legacy executable remains pending; this does not remove
+its shared legacy C applet dependencies or complete the native dependency gate.

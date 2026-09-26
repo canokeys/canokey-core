@@ -241,6 +241,26 @@ def directory_and_move(c):
         c.wire.command(f"REMOVE {record}")
 
 
+def invalid_startup_configuration(c):
+    public = c.generate(0)
+    certificate = tlv(0x53, b"persistent certificate sentinel")
+    c.put(0x5FC105, certificate)
+    metadata = c.cmd("before_config_corruption", 0xF7, 0, 0x9A)
+    c.wire.command("CORRUPT 16 0 2")  # enabled=3 is not a valid stored mapping.
+    assert c.wire.command("TRY_RESET") != bytes(4)
+    c.wire.command("CORRUPT 16 0 2")
+    c.wire.command("RESET")
+    c.select()
+    assert c.cmd("key_survives_invalid_config", 0xF7, 0, 0x9A) == metadata
+    assert c.get(0x5FC105) == certificate
+    c.verify()
+    digest = hashlib.sha256(b"key survives failed installation").digest()
+    public.verify(c.ga(0, 0x9A, digest), digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
+    c.auth()
+    c.cmd("remove_startup_test_key", 0xF6, 0xFF, 0x9A)
+    c.wire.command("REMOVE 42")
+
+
 def host_managed_objects(c):
     printed = bytes.fromhex("531c881a8918") + KEY
     admin = bytes.fromhex("53058003810103")
@@ -1286,6 +1306,7 @@ def run(wire, progress=None, report=None):
             unauthenticated_queries,
             authentication,
             directory_and_move,
+            invalid_startup_configuration,
             host_managed_objects,
             management_rotation,
             algorithm_configuration,

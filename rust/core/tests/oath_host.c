@@ -57,6 +57,12 @@ int main(void) {
       fflush(stdout);
       continue;
     }
+    if (strncmp(line, "TRY_RESET", 9) == 0) {
+      ck_core_reset();
+      printf("%08x\n", (unsigned)ck_core_install());
+      fflush(stdout);
+      continue;
+    }
     if (strncmp(line, "RESET", 5) == 0) {
       ck_core_reset();
       assert(ck_core_install() == 0);
