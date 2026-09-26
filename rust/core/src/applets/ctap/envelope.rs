@@ -100,16 +100,13 @@ impl Parser {
         p.message[..32].fill(0xff);
         p.message[32] = super::CONFIG;
         p.message[33] = p.subcommand;
+        // Transfer once before choosing the command tag, avoiding a large
+        // branch-local temporary with the pinned Thumb-1 compiler.
+        let params = core::mem::replace(&mut self.fields.params, Parameters::new());
         Ok(if self.fields.command == super::CONFIG {
-            Command::Config(core::mem::replace(
-                &mut self.fields.params,
-                Parameters::new(),
-            ))
+            Command::Config(params)
         } else {
-            Command::Management(core::mem::replace(
-                &mut self.fields.params,
-                Parameters::new(),
-            ))
+            Command::Management(params)
         })
     }
 }
