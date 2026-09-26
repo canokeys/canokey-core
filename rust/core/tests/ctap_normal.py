@@ -106,6 +106,10 @@ def run(wire):
     assert 5 not in second and second[4] == {"id": b"second"}
     resident_keys[second[1]["id"]].verify(second[2] + assertion_hash, second[3])
     call(8, status=0x30)
+    unknown = dict(first[1], id=bytes([first[1]["id"][0] ^ 1]) + first[1]["id"][1:])
+    allowed = call(2, {1: rp, 2: assertion_hash, 3: [unknown, second[1]]})
+    assert allowed[1] == second[1]
+    resident_keys[allowed[1]["id"]].verify(allowed[2] + assertion_hash, allowed[3])
     call(2, {1: rp, 2: assertion_hash})
     call(4)
     call(8, status=0x30) # any intervening command invalidates enumeration
@@ -285,12 +289,19 @@ def run(wire):
     updated = manage(4, {1: hashlib.sha256(rp.encode()).digest(), 0x80: True})
     assert updated[6] == {"id": b"first", "name": "Changed", "displayName": "改" * 21}
     assert 8 not in updated and updated[0x80] == -8
+    blob_before = manage(4, {1: hashlib.sha256(b"blob.example").digest()})
+    other_before = manage(4, {1: hashlib.sha256(b"rejected.example").digest()})
     manage(6, {2: first[7]})
     assert manage(1) == {1: 3, 2: 97}
     call(2, {1: rp, 2: assertion_hash, 3: [first[7]]}, 0x2e)
     blob_entry = manage(4, {1: hashlib.sha256(b"blob.example").digest()})
-    assert blob_entry[11] == blob_key
+    assert blob_entry == blob_before and blob_entry[11] == blob_key
     manage(6, {2: blob_descriptor})
+    assert manage(1) == {1: 2, 2: 98}
+    assert manage(4, {1: hashlib.sha256(b"rejected.example").digest()}) == other_before
+    assert manage(2) == {3: {"id": rp}, 4: hashlib.sha256(rp.encode()).digest(), 5: 2}
+    assert manage(3) == {3: {"id": "rejected.example"}, 4: hashlib.sha256(b"rejected.example").digest()}
+    manage(3, status=0x30)
     wire.command("RESET")
     select()
     remaining = call(2, {1: rp, 2: assertion_hash})

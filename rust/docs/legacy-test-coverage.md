@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 20 registered APDU cases.
+One legacy C test executable remains, with 18 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1181,3 +1181,23 @@ Validation: combined CTest 28/28 passed (58.42 s). Both full board links
 still fail at unchanged sizes: DevKit 188448 B (24608 B over), NFCC 195928 B
 (32088 B over), RAM_DATA 8640/8760 B. Physical and runtime stack acceptance
 remain open.
+
+## Resident allow-list selection and RP-isolated deletion
+
+Removed `test_ctap_allow_list_matches_multiple_dc_ids_in_one_scan` and
+`test_ctap_delete_updates_only_target_rp`, together with their private C test
+entrypoints. Existing `ctap-normal` now submits an unknown resident ID before a
+valid second descriptor, checks the selected ID and independently verifies its
+signature. Correct selection is the retained contract; a particular C scan
+count is not a required Rust implementation detail.
+
+The existing authenticated deletion flow now snapshots complete management
+records for other RPs and compares them after deletions. Removing the last
+credential of one RP updates the RP list and total/free credential counts,
+while another RP's complete record remains unchanged. The existing subsequent
+reset and independently verified surviving assertion remain in this fixture.
+
+Validation: combined CTest 28/28 passed (55.06 s). Complete DevKit/NFCC
+links still fail at 188448/195928 B Flash (24608/32088 B over), with
+RAM_DATA 8640/8760 B. Capacity, physical compatibility and runtime stack
+acceptance remain open.

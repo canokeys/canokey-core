@@ -2065,13 +2065,6 @@ ctap_find_allow_list_dc(const credential_id *allow_list, size_t allow_list_size,
   return CTAP2_ERR_NO_CREDENTIALS;
 }
 
-#ifdef TEST
-uint8_t ctap_test_find_allow_list_dc(const credential_id *allow_list, size_t allow_list_size,
-                                     const uint8_t rp_id_hash[SHA256_DIGEST_LENGTH], bool uv,
-                                     CTAP_discoverable_credential *out) {
-  return ctap_find_allow_list_dc(allow_list, allow_list_size, rp_id_hash, uv, out);
-}
-#endif
 
 static uint8_t ctap_get_assertion(CborEncoder *encoder, uint8_t *params, size_t len, bool in_get_next_assertion) {
   // https://fidoalliance.org/specs/fido-v2.1-ps-20210615/fido-client-to-authenticator-protocol-v2.1-ps-20210615.html#sctn-getAssert-authnr-alg
@@ -2842,13 +2835,6 @@ static uint8_t ctap_delete_discoverable_credential(const credential_id *target, 
   return 0;
 }
 
-#ifdef TEST
-uint8_t ctap_test_delete_discoverable_credential(const credential_id *target) {
-  CTAP_dc_general_attr attr;
-  if (read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) < 0) return CTAP2_ERR_UNHANDLED_REQUEST;
-  return ctap_delete_discoverable_credential(target, attr.numbers);
-}
-#endif
 
 static uint8_t cm_find_next_rp(uint32_t start_idx, CTAP_rp_meta *meta, uint32_t *out_idx, uint32_t *total) {
   uint32_t n;

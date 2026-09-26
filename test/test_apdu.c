@@ -544,50 +544,6 @@ static void test_ctap_pending_recovery_rebuilds_metadata(void **state) {
   }
 }
 
-static void test_ctap_delete_updates_only_target_rp(void **state) {
-  (void)state;
-  CTAP_discoverable_credential credentials[2];
-  CTAP_rp_meta metadata[2], unchanged;
-  CTAP_dc_general_attr attr = {.numbers = 2, .pending_op = CTAP_DC_PENDING_NONE};
-  init_dc_record(&credentials[0], 0x51, 1);
-  init_dc_record(&credentials[1], 0x52, 2);
-  init_rp_meta(&metadata[0], 0x51, 1);
-  init_rp_meta(&metadata[1], 0x52, 9);
-  unchanged = metadata[1];
-  write_ctap_dc_fixture(credentials, 2, metadata, 2, &attr);
-
-  assert_int_equal(ctap_test_delete_discoverable_credential(&credentials[0].credential_id), 0);
-  assert_int_equal(read_file(DC_FILE, credentials, 0, sizeof(credentials)), sizeof(credentials));
-  assert_true(credentials[0].deleted);
-  assert_false(credentials[1].deleted);
-  assert_int_equal(read_file(DC_META_FILE, metadata, 0, sizeof(metadata)), sizeof(metadata));
-  assert_true(metadata[0].deleted);
-  assert_int_equal(metadata[0].live_count, 0);
-  assert_memory_equal(&metadata[1], &unchanged, sizeof(unchanged));
-  assert_int_equal(read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), sizeof(attr));
-  assert_int_equal(attr.numbers, 1);
-  assert_int_equal(attr.pending_op, CTAP_DC_PENDING_NONE);
-}
-
-static void test_ctap_allow_list_matches_multiple_dc_ids_in_one_scan(void **state) {
-  (void)state;
-  CTAP_discoverable_credential credentials[2], selected;
-  CTAP_rp_meta metadata;
-  CTAP_dc_general_attr attr = {.numbers = 2, .pending_op = CTAP_DC_PENDING_NONE};
-  credential_id allow_list[2];
-  init_dc_record(&credentials[0], 0x61, 1);
-  init_dc_record(&credentials[1], 0x61, 2);
-  init_rp_meta(&metadata, 0x61, 2);
-  write_ctap_dc_fixture(credentials, 2, &metadata, 1, &attr);
-  allow_list[0] = credentials[0].credential_id;
-  allow_list[0].nonce[0] = 0x7f;
-  allow_list[1] = credentials[1].credential_id;
-
-  assert_int_equal(
-      ctap_test_find_allow_list_dc(allow_list, 2, credentials[0].credential_id.rp_id_hash, false, &selected), 0);
-  assert_memory_equal(&selected.credential_id, &credentials[1].credential_id, sizeof(credential_id));
-}
-
 static void provision_test_attestation(void) {
   static const uint8_t private_key[PRI_KEY_SIZE] = {1};
   static const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
@@ -1093,8 +1049,6 @@ int main() {
       cmocka_unit_test(test_ctap_capacity_cached_by_fs_generation),
       cmocka_unit_test(test_ctap_capacity_dc_read_failure_not_cached),
       cmocka_unit_test(test_ctap_pending_recovery_rebuilds_metadata),
-      cmocka_unit_test(test_ctap_delete_updates_only_target_rp),
-      cmocka_unit_test(test_ctap_allow_list_matches_multiple_dc_ids_in_one_scan),
       cmocka_unit_test(test_ctap_install_preserves_complete_attestation_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
