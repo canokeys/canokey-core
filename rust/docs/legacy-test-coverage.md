@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 49 registered APDU cases.
+One legacy C test executable remains, with 47 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -871,3 +871,16 @@ that old C credential images are compatible with the Rust firmware.
 The `test_piv` executable and its native curve/DER test dependencies are removed
 from CMake. The APDU legacy executable remains pending; this does not remove
 its shared legacy C applet dependencies or complete the native dependency gate.
+
+## APDU command/response chaining
+
+`test_input_chaining` and `test_output_chaining` are replaced by Rust protocol
+coverage. `tlv_value_spans_iso_command_chain_without_reassembly` checks actual
+incrementally consumed bytes across a multi-fragment command.
+`changed_chain_header_discards_previous_command_and_overflow_recovers` checks
+all four header fields, both final/chained replacements, reset of the byte
+budget and recovery after overflow. `response_in_two_chunks` additionally
+checks the original 512-byte / 254-byte chunk boundary with literal status
+words 61FF, 6104 and 9000. Existing response lease tests cover short reads,
+cleanup and data wiping. Native chain buffer/internal flag checks are removed;
+production code is unchanged.
