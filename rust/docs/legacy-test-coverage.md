@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Three C test executables remain, with 143 registered cases: APDU (60),
+Three C test executables remain, with 140 registered cases: APDU (57),
 key (25), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -367,3 +367,22 @@ capacity (or inline capacity), capped at HID's 7609-byte framing maximum.
 CBOR/MSG still enforce their independent 1024/1033-byte admission policies;
 all staged commands check storage capacity before acquiring it. No additional
 firmware buffer or persistent staging was introduced.
+
+## Replaced CCID header and HID descriptor cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_ccid_le32_wire_encoding` | `header_length_is_unaligned_little_endian_without_native_layout`: literal 78563412 length, all ten response bytes; the old C struct-offset assertions are replaced by byte encoding with no native struct ABI |
+| `test_ccid_response_headers` | `literal_discovery_and_rejected_command_headers`: all original request/slot pairs and four additional rejected-slot families, complete literal headers, exact ATR/T=1 payloads and lengths |
+| `test_hid_setup_descriptors_and_errors` | `hid_descriptor_bytes_short_reads_and_unknown_class_requests`: both literal nine-byte HID descriptors, report lengths and prefixes, four-byte control transfer, SET_IDLE and unsupported-class stall |
+
+The CCID port found incorrect response-family selection when a bad slot bypassed
+parameter dispatch, and for unsupported Secure/Escape commands. The family and
+protocol-number field now come from the request before validation. Existing Rust
+corrections are retained explicitly: successful bError is zero (the old C fixture
+expected 81), ResetParameters returns T=1 parameters, empty SetParameters fails
+validation, and unsupported commands set the command-failed status with bError
+zero. Returning success for unsupported operations is not retained. These are
+intentional protocol corrections, not claims of byte identity to every old C
+response. The actual endpoint/EP0 stall lifecycle remains covered by USB adapter
+fixtures; these tests exercise the Rust wire and policy boundaries.

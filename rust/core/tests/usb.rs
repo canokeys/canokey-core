@@ -209,3 +209,44 @@ fn configurations_match_legacy_wire_fixtures() {
         assert_eq!(&out[..n], &expected);
     }
 }
+
+#[test]
+fn hid_descriptor_bytes_short_reads_and_unknown_class_requests() {
+    let mut d = Device::new(Interfaces {
+        webusb: false,
+        hid: true,
+        keyboard: true,
+    });
+    d.address = 1;
+    d.configured = true;
+    let mut bytes = [0; 160];
+    for (interface, length, prefix) in [(0, 34, [6, 0xd0, 0xf1, 9]), (2, 87, [5, 1, 9, 6])] {
+        assert_eq!(
+            d.setup(request(0x81, 6, 0x2100, interface, 255), false, &mut bytes),
+            Reply::Data(9)
+        );
+        assert_eq!(&bytes[..9], &[9, 0x21, 0x11, 1, 0, 1, 0x22, length, 0]);
+        assert_eq!(
+            d.setup(request(0x81, 6, 0x2200, interface, 255), false, &mut bytes),
+            Reply::Data(length as usize)
+        );
+        assert_eq!(&bytes[..4], &prefix);
+        let setup = request(0x81, 6, 0x2200, interface, 4);
+        let Reply::Data(available) = d.setup(setup, false, &mut bytes) else {
+            panic!("missing report descriptor");
+        };
+        let mut transfer = ControlIn::new();
+        transfer.begin(available, setup.length);
+        assert_eq!(transfer.next_packet(), Some((0, 4)));
+        assert_eq!(&bytes[..4], &prefix);
+        assert_eq!(transfer.next_packet(), None);
+        assert_eq!(
+            d.setup(request(0x21, 10, 0x1200, interface, 0), false, &mut bytes),
+            Reply::Status
+        );
+        assert_eq!(
+            d.setup(request(0x21, 0xff, 0x1200, interface, 0), false, &mut bytes),
+            Reply::Stall
+        );
+    }
+}

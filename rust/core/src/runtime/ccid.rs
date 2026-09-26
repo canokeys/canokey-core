@@ -294,13 +294,16 @@ impl Transport {
         let command = r.bytes[0];
         let slot = r.bytes[5];
         let seq = r.bytes[6];
-        let mut kind = if command == TRANSFER || command == POWER_ON {
-            DATA
-        } else {
-            STATUS
+        // Response family is determined by the request even when validation
+        // fails before dispatch (for example an invalid slot).
+        let kind = match command {
+            TRANSFER | POWER_ON | 0x69 => DATA, // Secure
+            GET_PARAMETERS | RESET_PARAMETERS | SET_PARAMETERS => PARAMETERS,
+            0x6b => 0x83, // Escape
+            _ => STATUS,
         };
         let mut error = if slot != 0 { BAD_SLOT } else { self.error };
-        let mut specific = 0;
+        let specific = u8::from(kind == PARAMETERS);
         let mut unsupported = false;
         let mut length = 0;
         if error == 0 {
@@ -360,8 +363,6 @@ impl Transport {
                     }
                 }
                 GET_PARAMETERS | RESET_PARAMETERS | SET_PARAMETERS => {
-                    kind = PARAMETERS;
-                    specific = 1;
                     if command == SET_PARAMETERS && (r.bytes[7] != 1 || r.len() != T1.len()) {
                         error = BAD_POWER;
                     } else {

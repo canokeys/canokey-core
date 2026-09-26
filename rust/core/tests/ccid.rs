@@ -358,3 +358,55 @@ fn leases_discovery_and_delayed_final_completion() {
     t.completed();
     assert!(t.can_receive());
 }
+
+#[test]
+fn literal_discovery_and_rejected_command_headers() {
+    // request, slot, response family, length, status, error, protocol number
+    for [command, slot, kind, length, status, error, specific] in [
+        [0x62, 0, 0x80, 17, 0, 0, 0],
+        [0x63, 0, 0x81, 0, 1, 0, 0],
+        [0x65, 0, 0x81, 0, 1, 0, 0],
+        [0x6c, 0, 0x82, 7, 1, 0, 1],
+        [0x6d, 0, 0x82, 7, 1, 0, 1],
+        [0x61, 0, 0x82, 0, 0x41, 7, 1],
+        [0x6b, 0, 0x83, 0, 0x41, 0, 0],
+        [0x69, 0, 0x80, 0, 0x41, 0, 0],
+        [0x72, 0, 0x81, 0, 0x41, 0, 0],
+        [0x65, 1, 0x81, 0, 0x41, 5, 0],
+        [0x6c, 1, 0x82, 0, 0x41, 5, 1],
+        [0x62, 1, 0x80, 0, 0x41, 5, 0],
+        [0x6d, 1, 0x82, 0, 0x41, 5, 1],
+        [0x61, 1, 0x82, 0, 0x41, 5, 1],
+        [0x6b, 1, 0x83, 0, 0x41, 5, 0],
+        [0x69, 1, 0x80, 0, 0x41, 5, 0],
+    ] {
+        let mut t = Transport::new();
+        let mut m = Mock::default();
+        t.receive(&[command, 0, 0, 0, 0, slot, 0x37, 0, 0, 0], 0, true, &mut m);
+        let reply = finish(&mut t, &mut m);
+        assert_eq!(
+            &reply[..10],
+            &[kind, length, 0, 0, 0, slot, 0x37, status, error, specific],
+            "command {command:02x}, slot {slot}"
+        );
+        assert_eq!(reply.len(), 10 + usize::from(length));
+        if length == 7 {
+            assert_eq!(&reply[10..], &[0x11, 0x10, 0, 0x15, 0, 0xfe, 0]);
+        }
+        if length == 17 {
+            assert_eq!(
+                &reply[10..],
+                b"\x3b\xf7\x11\x00\x00\x81\x31\xfe\x65CanoKey\x99"
+            );
+        }
+    }
+}
+
+#[test]
+fn header_length_is_unaligned_little_endian_without_native_layout() {
+    let input = [0x6f, 0x12, 0x34, 0x56, 0x78, 0, 0x37, 0, 0, 0];
+    assert_eq!(payload_length(&input), 0x78563412);
+    let mut output = [0xa5; 10];
+    response(&mut output, 0x80, 0x78563412, 1, 0x37, 0x41, 5, 0);
+    assert_eq!(output, [0x80, 0x12, 0x34, 0x56, 0x78, 1, 0x37, 0x41, 5, 0]);
+}

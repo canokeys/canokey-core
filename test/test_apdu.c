@@ -774,103 +774,6 @@ static void test_acquire_apdu_interface_releases_session_on_buffer_conflict(void
   assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CCID), 0);
 }
 
-static void test_ccid_le32_wire_encoding(void **state) {
-  (void)state;
-
-  uint8_t encoded[4];
-  static const uint8_t expected[] = {0x12, 0x34, 0x56, 0x78};
-  ccid_put_le32(encoded, 0x78563412u);
-  assert_memory_equal(encoded, expected, sizeof(expected));
-  assert_int_equal(ccid_get_le32(encoded), 0x78563412u);
-
-  assert_int_equal(offsetof(ccid_bulkout_data_t, dwLength), 1);
-  assert_int_equal(offsetof(ccid_bulkout_data_t, abDataShort), CCID_CMD_HEADER_SIZE);
-  assert_int_equal(offsetof(ccid_bulkin_data_t, dwLength), 1);
-  assert_int_equal(offsetof(ccid_bulkin_data_t, abData), CCID_CMD_HEADER_SIZE);
-  assert_int_equal(offsetof(ccid_bulkin_short_t, dwLength), 1);
-  assert_int_equal(offsetof(ccid_bulkin_short_t, abData), CCID_CMD_HEADER_SIZE);
-  assert_int_equal(offsetof(empty_ccid_bulkin_data_t, dwLength), 1);
-  assert_int_equal(sizeof(empty_ccid_bulkin_data_t), CCID_CMD_HEADER_SIZE);
-}
-
-// Literal wire headers pin existing behavior, including unsupported commands.
-static void test_ccid_response_headers(void **state) {
-  (void)state;
-  static const uint8_t cases[][7] = {
-      // request, slot, response, payload length, status, error, specific
-      {0x62, 0, 0x80, 17, 0x00, 0x81, 0},
-      {0x63, 0, 0x81, 0, 0x01, 0x81, 0},
-      {0x65, 0, 0x81, 0, 0x01, 0x81, 0},
-      {0x6C, 0, 0x82, 7, 0x01, 0x81, 1},
-      {0x6D, 0, 0x82, 0, 0x01, 0x00, 1},
-      {0x61, 0, 0x82, 0, 0x01, 0x00, 1},
-      {0x6B, 0, 0x83, 0, 0x01, 0x00, 0},
-      {0x69, 0, 0x80, 0, 0x01, 0x00, 0},
-      {0x72, 0, 0x81, 0, 0x01, 0x00, 0},
-      {0x65, 1, 0x81, 0, 0x41, 0x05, 0},
-      {0x6C, 1, 0x82, 0, 0x41, 0x05, 1},
-      {0x62, 1, 0x80, 0, 0x41, 0x05, 0},
-  };
-  const uint8_t previous_state = usb_device.dev_state;
-  init_apdu_buffer();
-  device_init();
-  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-    const uint8_t *c = cases[i];
-    USBD_CCID_Init(&usb_device);
-    usb_device.dev_state = USBD_STATE_CONFIGURED;
-    EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
-    in->maxpacket = 64;
-    uint8_t request[] = {c[0], 0, 0, 0, 0, c[1], 0x37, 0, 0, 0};
-    uint8_t expected[] = {c[2], c[3], 0, 0, 0, c[1], 0x37, c[4], c[5], c[6]};
-    assert_int_equal(CCID_OutEvent(request, sizeof(request)), 0);
-    CCID_Loop();
-    assert_non_null(in->xfer_buff);
-    const uint8_t *response = in->xfer_buff - (10 + c[3]);
-    assert_memory_equal(response, expected, sizeof(expected));
-    if (c[0] == 0x6C && c[1] == 0) {
-      const uint8_t params[] = {0x11, 0x10, 0, 0x15, 0, 0xFE, 0};
-      assert_memory_equal(response + 10, params, sizeof(params));
-    }
-    USBD_CCID_DataIn(&usb_device);
-  }
-  usb_device.dev_state = previous_state;
-}
-
-static void test_hid_setup_descriptors_and_errors(void **state) {
-  (void)state;
-  uint8_t (*const setup[])(USBD_HandleTypeDef *, USBD_SetupReqTypedef *) = {
-      USBD_CTAPHID_Setup, USBD_KBDHID_Setup,
-  };
-  const uint8_t report_lengths[] = {34, 87};
-  for (size_t i = 0; i < 2; ++i) {
-    EPType *in = dummy_get_ep_by_addr(0x80);
-    in->maxpacket = 128;
-    USBD_SetupReqTypedef req = {.bmRequest = 0x81, .bRequest = 6, .wValue = 0x2100, .wLength = 255};
-    const uint8_t expected[] = {9, 0x21, 0x11, 1, 0, 1, 0x22, report_lengths[i], 0};
-    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
-    assert_int_equal(usb_device.ep0_in.total_length, sizeof(expected));
-    assert_memory_equal(in->xfer_buff - sizeof(expected), expected, sizeof(expected));
-    req.wValue = 0x2200;
-    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
-    assert_int_equal(usb_device.ep0_in.total_length, report_lengths[i]);
-    uint8_t prefix[4];
-    memcpy(prefix, in->xfer_buff - report_lengths[i], sizeof(prefix));
-    req.wLength = sizeof(prefix);
-    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
-    assert_int_equal(usb_device.ep0_in.total_length, sizeof(prefix));
-    assert_memory_equal(in->xfer_buff - sizeof(prefix), prefix, sizeof(prefix));
-    req.bmRequest = 0x21;
-    req.bRequest = 0x0A;
-    req.wValue = 0x1200;
-    assert_int_equal(setup[i](&usb_device, &req), USBD_OK);
-    req.bRequest = 0xFF;
-    assert_int_equal(setup[i](&usb_device, &req), USBD_FAIL);
-    assert_true(USBD_LL_IsStallEP(&usb_device, 0x80));
-    USBD_LL_ClearStallEP(&usb_device, 0x80);
-    USBD_LL_ClearStallEP(&usb_device, 0);
-  }
-}
-
 static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
   (void)state;
 
@@ -2923,8 +2826,6 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_client_pin_encrypted_length_policy),
-      cmocka_unit_test(test_ccid_response_headers),
-      cmocka_unit_test(test_hid_setup_descriptors_and_errors),
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
       cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
@@ -2932,7 +2833,6 @@ int main() {
       cmocka_unit_test(test_input_chaining),
       cmocka_unit_test(test_output_chaining),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
-      cmocka_unit_test(test_ccid_le32_wire_encoding),
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
       cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
       cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),

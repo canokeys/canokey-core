@@ -330,3 +330,15 @@ and echo storage is wiped/released after final transmission or interruption.
 The full adapter fixture verifies boundaries through its 3072-byte scratch
 capacity and rejects capacity+1 without acquiring storage. The platform's
 actual capacity remains authoritative; no Flash transport cache is used.
+
+### CCID response-family validation
+
+A rejected request retains its command's response family: PowerOn/XfrBlock/
+Secure use DataBlock, Get/Reset/SetParameters use Parameters with protocol one,
+Escape uses Escape, and slot/mechanical/unknown commands use SlotStatus. This
+selection precedes slot validation. Unsupported Secure/Escape remain failures;
+recognizing their response type does not add secure-PIN or escape execution.
+Successful commands clear bError, ResetParameters returns the fixed T=1 values,
+invalid SetParameters is rejected, and unsupported commands set command-failed
+with bError zero. Literal regression vectors document these intentional fixes
+to the old C response headers as well as the retained command families.
