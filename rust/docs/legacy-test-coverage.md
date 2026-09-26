@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 99 registered cases: APDU (49)
-and PIV (50). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 95 registered cases: APDU (49)
+and PIV (46). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -563,3 +563,19 @@ compact record rather than switching between native attributes and separate
 files; exact size, content and shrinkage replace obsolete placement assertions.
 Native management-key type migration and invalid-platform-config boot handling
 remain pending and are not claimed covered by these replacements.
+
+
+## Replaced PIV response chaining and unauthenticated queries
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_piv_cert_chained_read` | `piv-normal::object_capacity`: original 6564-byte payload pattern, first 200 payload bytes plus selector/TLV then 200-byte PUT fragments; `read_in_chunks` verifies every 256-byte response length, exact 61xx status, complete certificate and exhausted GET RESPONSE rejection |
+| `test_piv_get_version_chained_le_absent` | `unauthenticated_queries`: complete three-byte version with absent Le, Le=1/6102 continuation, exact reassembled bytes and exhausted GET RESPONSE; `core-normal::aliased_response_regressions` and `ordinary_response_cleanup_regressions` retain FFI overwrite, zero-progress and abandoned-response coverage |
+| `test_piv_get_random_without_authentication` | `unauthenticated_queries`: no PIN authorization before/after queries, 256/32-byte challenges, invalid P1/data rejection, absent-Le default and literal extended Le=257 rejection |
+| `test_piv_rsa4096_metadata_chained_read` | `encoding_regressions`: fixed RSA-4096 public-key vector, exact 536-byte metadata with literal prefix/exponent suffix, 256/256/24-byte response chunks and exhausted GET RESPONSE rejection |
+
+The established Rust APDU policy treats absent Le as 256, whereas the native
+internal CAPDU fixture represented it as zero. These replacements explicitly
+check that policy rather than reintroducing the native zero-Le behavior.
+Actual zero-progress output and shared-buffer trailer aliasing remain covered
+at the Rust FFI boundary. This batch changes tests only, not production behavior.

@@ -138,6 +138,40 @@ def exercise(c, a, key):
             assert c.ga(a, 0x9A, point, 0x85) == peer.exchange(ec.ECDH(), key)
 
 
+def read_in_chunks(c, ins, p1, p2, data, expected):
+    result = b""
+    while len(result) < len(expected):
+        length = min(256, len(expected) - len(result))
+        remaining = len(expected) - len(result) - length
+        status = 0x9000 if remaining == 0 else 0x6100 + min(remaining, 255)
+        part = c.raw("bounded_response_chunk", ins, p1, p2, data, le=256, status=status)
+        assert len(part) == length
+        result += part
+        ins, p1, p2, data = 0xC0, 0, 0, b""
+    assert result == expected
+    c.raw("completed_response_unavailable", 0xC0, le=256, status=0x6986)
+
+
+def unauthenticated_queries(c):
+    c.select()
+    c.cmd("queries_without_pin", 0x20, 0, 0x80, le=None, status=0x63C3)
+    version = c.raw("version_full", 0xFD, le=256)
+    assert len(version) == 3
+    assert c.raw("version_without_le", 0xFD) == version
+    first = c.raw("version_first_byte", 0xFD, le=1, status=0x6102)
+    last = c.raw("version_remaining", 0xC0, le=256)
+    assert len(first) == 1 and first + last == version
+    c.raw("version_no_more_data", 0xC0, le=256, status=0x6986)
+    for length in (256, 32):
+        assert len(c.raw("unauthenticated_random", 0x84, le=length)) == length
+    c.raw("random_invalid_p1", 0x84, 1, le=32, status=0x6A86)
+    c.raw("random_with_data", 0x84, data=b"x", le=32, status=0x6700)
+    assert len(c.raw("random_without_le", 0x84)) == 256
+    answer, a, b = c.wire.transmit(bytes.fromhex("00840000000101"))
+    assert not answer and (a, b) == (0x67, 0)
+    c.cmd("queries_do_not_grant_pin", 0x20, 0, 0x80, le=None, status=0x63C3)
+
+
 def authentication(c):
     c.select()
     c.cmd("pin_status", 0x20, 0, 0x80, le=None, status=0x63C3)
@@ -216,8 +250,14 @@ def object_capacity(c):
         assert c.wire.command(f"SIZE {record}") == (3).to_bytes(4, "big")
         assert c.get(tag) == bytes.fromhex("530155")
         c.put(tag, b"\x53\x00")
-    certificate = tlv(0x53, bytes(i % 256 for i in range(6564)))
-    c.put(0x5FC105, certificate)
+    certificate = tlv(0x53, bytes(0xC0 + (i & 0x3F) for i in range(6564)))
+    c.raw("certificate_first_put", 0xDB, 0x3F, 0xFF,
+          bytes.fromhex("5c035fc105") + certificate[:204], cla=0x10)
+    for offset in range(204, len(certificate), 200):
+        chunk = certificate[offset:offset + 200]
+        c.raw("certificate_next_put", 0xDB, 0x3F, 0xFF, chunk,
+              cla=0 if offset + len(chunk) == len(certificate) else 0x10)
+    read_in_chunks(c, 0xCB, 0x3F, 0xFF, bytes.fromhex("5c035fc105"), certificate)
     assert len(certificate) == 6568 and c.get(0x5FC105) == certificate
     c.cmd("certificate_over_capacity", 0xDB, 0x3F, 0xFF,
           bytes.fromhex("5c035fc105") + certificate + b"\0", status=0x6700)
@@ -308,7 +348,13 @@ def import_boundary_regressions(c):
 def encoding_regressions(c):
     for algorithm, private, expected in encoding_vectors():
         c.import_key(algorithm, private)
-        assert fields(c.cmd("fixed_public_encoding", 0xf7, 0, 0x9a))[4] == expected
+        metadata = c.cmd("fixed_public_encoding", 0xf7, 0, 0x9a)
+        assert fields(metadata)[4] == expected
+        if algorithm == 7:
+            assert len(metadata) == 536
+            assert metadata[:18] == bytes.fromhex("010116020202010301020482020a81820200")
+            assert metadata[-6:] == bytes.fromhex("820400010001")
+            read_in_chunks(c, 0xF7, 0, 0x9A, b"", metadata)
         exercise(c, algorithm, private.public_key())
     chained_import(c, 0xfe, IDS[4], 0x9a, tlv(8, ALICE_PRIVATE_LE), 5)
     assert fields(c.cmd("alice_public_encoding", 0xf7, 0, 0x9a))[4] == bytes.fromhex("8620") + ALICE_PUBLIC
@@ -644,6 +690,7 @@ def run(wire, progress=None, report=None):
     c = Piv(wire, progress, report)
     try:
         for scenario in (
+            unauthenticated_queries,
             authentication,
             host_managed_objects,
             management_rotation,
