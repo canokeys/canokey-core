@@ -500,3 +500,7 @@ Applet deselection clears both resident assertion and credential-management
 continuations as well as volatile PIN authorization and key agreement. The
 `ctap-normal` APDU fixture verifies this through SELECT ADMIN / SELECT FIDO,
 then confirms management works after fresh clientPIN authorization.
+
+GetInfo advertises `pinUvAuthToken: true` for permission-scoped clientPIN
+subcommands, alongside PIN protocols 1 and 2. This option lets clients select
+the supported permission-scoped authorization flow rather than legacy tokens.

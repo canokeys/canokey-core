@@ -83,14 +83,13 @@ mod tests {
                 .str("hmac-secret-mc")
                 .str("thirdPartyPayment");
             e.u8(3).bytes(&provision::AAGUID);
-            // Development profile: credential-key self attestation for the
-            // compact non-PQ credential formats.
-            e.u8(4).map(9).str("rk").bool(true).str("up").bool(true);
+            e.u8(4).map(10).str("rk").bool(true).str("up").bool(true);
             e.str("alwaysUv").bool(flags & pin::ALWAYS_UV != 0);
             e.str("credMgmt").bool(true);
             e.str("authnrCfg").bool(true);
             e.str("clientPin").bool(configured);
             e.str("largeBlobs").bool(true);
+            e.str("pinUvAuthToken").bool(true);
             e.str("setMinPINLength").bool(true);
             e.str("makeCredUvNotRqd").bool(true);
             e.u8(5).u16(MAX_REQUEST as u16);

@@ -68,18 +68,6 @@ static void encode_sm2_config(uint8_t wire[CTAP_SM2_CONFIG_WIRE_SIZE], const CTA
   memcpy(wire, words, CTAP_SM2_CONFIG_WIRE_SIZE);
 }
 
-static const void *find_bytes(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len) {
-  const uint8_t *h = haystack;
-  const uint8_t *n = needle;
-
-  if (needle_len == 0) return haystack;
-  if (haystack_len < needle_len) return NULL;
-  for (size_t i = 0; i <= haystack_len - needle_len; ++i) {
-    if (memcmp(h + i, n, needle_len) == 0) return h + i;
-  }
-  return NULL;
-}
-
 static void put_cbor_text(uint8_t **p, const char *text) {
   size_t len = strlen(text);
 
@@ -662,61 +650,6 @@ static void test_ctap_install_rebuilds_state_with_empty_attestation_cert(void **
   assert_ctap_install_resets_counter();
 }
 
-static void test_ctap_hid_get_info_stream_source(void **state) {
-  (void)state;
-
-  uint8_t req[] = {0x04};
-  uint8_t scratch[64] = {0};
-  uint8_t chunk[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  CTAPHID_TxSource source = {0};
-  size_t written = 0;
-  const uint8_t canonical_options[] = {
-      0x04, 0xA9, 0x62, 'r',  'k', 0xF5, 0x68, 'a',  'l', 'w',  'a',  'y', 's', 'U', 'v', 0xF4, 0x68, 'c',  'r',
-      'e',  'd',  'M',  'g',  'm', 't',  0xF5, 0x69, 'a', 'u',  't',  'h', 'n', 'r', 'C', 'f',  'g',  0xF5, 0x69,
-      'c',  'l',  'i',  'e',  'n', 't',  'P',  'i',  'n', 0xF4, 0x6A, 'l', 'a', 'r', 'g', 'e',  'B',  'l',  'o',
-      'b',  's',  0xF5, 0x6E, 'p', 'i',  'n',  'U',  'v', 'A',  'u',  't', 'h', 'T', 'o', 'k',  'e',  'n',  0xF5,
-      0x6F, 's',  'e',  't',  'M', 'i',  'n',  'P',  'I', 'N',  'L',  'e', 'n', 'g', 't', 'h',  0xF5, 0x70, 'm',
-      'a',  'k',  'e',  'C',  'r', 'e',  'd',  'U',  'v', 'N',  'o',  't', 'R', 'q', 'd', 0xF5,
-  };
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
-                   1);
-  assert_true(source.total_len > 1);
-  assert_true(source.total_len <= sizeof(chunk));
-  assert_non_null(source.read);
-  assert_int_equal(source.read(source.ctx, chunk, source.total_len, &written), 0);
-  assert_int_equal(written, source.total_len);
-  assert_int_equal(chunk[0], 0x00);
-  assert_non_null(find_bytes(chunk, written, "FIDO_2_3", sizeof("FIDO_2_3") - 1));
-  assert_non_null(find_bytes(chunk, written, "minPinLength", sizeof("minPinLength") - 1));
-  assert_non_null(find_bytes(chunk, written, "thirdPartyPayment", sizeof("thirdPartyPayment") - 1));
-  assert_non_null(find_bytes(chunk + 1, written - 1, canonical_options, sizeof(canonical_options)));
-  test_cbor_view algorithms;
-  assert_int_equal(test_cbor_map_lookup_int_key(chunk + 1, written - 1, GI_RESP_ALGORITHMS, &algorithms), 0);
-  CborParser parser;
-  CborValue array, entry, alg;
-  size_t count;
-  CTAP_sm2_attr sm2;
-  assert_int_equal(ctap_platform_sm2_config_read(&sm2, sizeof(sm2)), 0);
-  const int32_t expected[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id};
-  assert_int_equal(cbor_parser_init(algorithms.ptr, algorithms.len, 0, &parser, &array), CborNoError);
-  assert_int_equal(cbor_value_get_array_length(&array, &count), CborNoError);
-  assert_int_equal(count, CTAP_RESTRICT_ALGORITHMS ? 2 : 4);
-  assert_int_equal(cbor_value_enter_container(&array, &entry), CborNoError);
-  for (size_t i = 0; i < count; ++i) {
-    int algorithm;
-    assert_int_equal(cbor_value_map_find_value(&entry, "alg", &alg), CborNoError);
-    assert_int_equal(cbor_value_get_int(&alg, &algorithm), CborNoError);
-    assert_int_equal(algorithm, expected[i]);
-    assert_int_equal(cbor_value_advance(&entry), CborNoError);
-  }
-  assert_true(cbor_value_at_end(&entry));
-}
-
 static void test_ctap_algorithm_policy(void **state) {
   (void)state;
   init_apdu_buffer();
@@ -1194,7 +1127,6 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
-      cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),

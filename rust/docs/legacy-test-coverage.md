@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 22 registered APDU cases.
+One legacy C test executable remains, with 21 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1149,3 +1149,20 @@ Validation: combined CTest 28/28 passed (56.80 s). Both complete board
 links still fail capacity: DevKit 188432 B (24592 B over), NFCC 195912 B
 (32072 B over), RAM_DATA 8640/8760 B. Hardware compatibility and runtime
 stack acceptance remain open.
+
+## GetInfo capabilities and HID response streaming
+
+Removed `test_ctap_hid_get_info_stream_source` and its unused byte-search helper.
+Existing `hid-core` receives the actual fragmented Rust HID GetInfo response
+above 256 bytes; `ctap-normal` independently decodes and re-encodes complete
+canonical CBOR, checks FIDO 2.3, payment/minimum-PIN extensions and the full
+option map; `ctap-config` checks advertised default/custom algorithms.
+This audit found a missing `pinUvAuthToken` capability in Rust. Both the
+production fragment generator and independent reference schema now advertise
+it, matching the implemented permission-scoped clientPIN protocols 1 and 2.
+The separate native restricted-algorithm policy case remains pending audit.
+
+Validation: combined CTest 28/28 passed (56.07 s). Full links remain over
+Flash: DevKit 188448 B (24608 B over), NFCC 195928 B (32088 B over), an
+increase of 16 B each. RAM_DATA remains 8640/8760 B. Physical compatibility
+and runtime stack acceptance remain open.

@@ -37,7 +37,7 @@ pub fn generate_info() {
     });
     fragment(&mut out, "OPTIONS", |e| {
         e.u8(4)?
-            .map(9)?
+            .map(10)?
             .str("rk")?
             .bool(true)?
             .str("up")?
@@ -55,6 +55,8 @@ pub fn generate_info() {
     });
     fragment(&mut out, "OPTIONS_END", |e| {
         e.str("largeBlobs")?
+            .bool(true)?
+            .str("pinUvAuthToken")?
             .bool(true)?
             .str("setMinPINLength")?
             .bool(true)?

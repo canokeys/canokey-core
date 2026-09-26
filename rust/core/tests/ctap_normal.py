@@ -42,6 +42,12 @@ def run(wire):
     info = call(4)
     assert info[3] == AAGUID
     assert info[5] == 1024
+    assert "FIDO_2_3" in info[1]
+    assert {"minPinLength", "thirdPartyPayment"} <= set(info[2])
+    assert info[4] == {"rk": True, "up": True, "alwaysUv": False,
+                       "credMgmt": True, "authnrCfg": True, "clientPin": False,
+                       "largeBlobs": True, "pinUvAuthToken": True,
+                       "setMinPINLength": True, "makeCredUvNotRqd": True}
     assert info[4]["credMgmt"] and info[4]["largeBlobs"] and info[11] == 4096
     # No-PIN policy changes must update advertised protocols and survive reset.
     assert info[4]["clientPin"] is False and info[4]["alwaysUv"] is False
