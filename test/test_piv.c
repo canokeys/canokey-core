@@ -30,9 +30,6 @@
 
 extern void set_admin_status(int status);
 
-static void inject_write_error(const char *path) {
-  testmode_inject_error(0, 0, (uint16_t)strlen(path), (const uint8_t *)path);
-}
 
 static void test_helper_resp(uint8_t *data, size_t data_len, uint8_t ins, uint8_t p1, uint8_t p2,
                              uint16_t expected_error, uint8_t *expected_resp, size_t resp_len) {
@@ -238,31 +235,6 @@ static size_t piv_test_send_chained_message(uint8_t p1, uint8_t p2, const uint8_
 
 
 
-static void test_piv_regular_slot_defaults(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-
-  static const struct {
-    const char *path;
-    uint8_t slot;
-    pin_policy_t pin_policy;
-  } slots[] = {
-      {"piv-k9a", 0x9A, PIN_POLICY_ONCE},   {"piv-k9c", 0x9C, PIN_POLICY_ALWAYS},
-      {"piv-k9d", 0x9D, PIN_POLICY_ONCE},   {"piv-k9e", 0x9E, PIN_POLICY_NEVER},
-      {"piv-k82", 0x82, PIN_POLICY_ONCE},   {"piv-k95", 0x95, PIN_POLICY_ONCE},
-  };
-  uint8_t imported[2 + sizeof(piv_test_f9_private_key)] = {0x06, sizeof(piv_test_f9_private_key)};
-  memcpy(imported + 2, piv_test_f9_private_key, sizeof(piv_test_f9_private_key));
-
-  for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
-    test_helper(imported, sizeof(imported), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x11, slots[i].slot, SW_NO_ERROR);
-    key_meta_t meta;
-    assert_true(ck_read_key_metadata(slots[i].path, &meta) >= 0);
-    assert_int_equal(meta.usage, KEY_USAGE_ANY);
-    assert_int_equal(meta.pin_policy, slots[i].pin_policy);
-  }
-}
 
 
 
@@ -958,100 +930,7 @@ static void test_piv_attestation_all_target_algorithms(void **state) {
 
 
 
-static void test_set_pin_retries(void **state) {
-  (void)state;
 
-  uint8_t r_buf[128];
-  RAPDU R = {.data = r_buf};
-  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
-
-  set_admin_status(1);
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
-  C = (CAPDU){.data = pin_data, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(pin_data)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 0, .p2 = 5, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_WRONG_P1P2);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 16, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_WRONG_P1P2);
-
-  C = (CAPDU){.data = pin_data, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 1};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_WRONG_LENGTH);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x80, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.data[5], 1);
-  assert_int_equal(R.data[8], 4);
-  assert_int_equal(R.data[9], 4);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x81, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.data[5], 1);
-  assert_int_equal(R.data[8], 5);
-  assert_int_equal(R.data[9], 5);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, 0x63C4);
-
-  uint8_t old_pin[8] = {'0', '0', '0', '0', '0', '0', 0xFF, 0xFF};
-  C = (CAPDU){.data = old_pin, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(old_pin)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, 0x63C3);
-
-  C = (CAPDU){.data = pin_data, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(pin_data)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-
-  set_admin_status(1);
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 15, .p2 = 15, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-
-  piv_install(1);
-}
-
-static void test_set_pin_retries_failure_invalidates_auth(void **state) {
-  (void)state;
-
-  uint8_t r_buf[128];
-  RAPDU R = {.data = r_buf};
-  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
-  CAPDU C = {.data = pin_data, .cla = 0x00, .ins = PIV_INS_VERIFY, .p1 = 0x00, .p2 = 0x80, .lc = sizeof(pin_data)};
-
-  set_admin_status(1);
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-
-  inject_write_error("piv-puk");
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_UNABLE_TO_PROCESS);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_SET_PIN_RETRIES, .p1 = 4, .p2 = 5, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  set_admin_status(1);
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  piv_install(1);
-}
 
 // An imported RSA key with an inconsistent CRT component must be rejected
 // at import time with SW_WRONG_DATA via rsa_check_crt. Writing a corrupt key
@@ -2158,9 +2037,6 @@ int main() {
       cmocka_unit_test(test_piv_attestation_certificate),
       cmocka_unit_test(test_piv_attestation_f9_policy),
       cmocka_unit_test(test_piv_attestation_all_target_algorithms),
-      cmocka_unit_test(test_piv_regular_slot_defaults),
-      cmocka_unit_test(test_set_pin_retries),
-      cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_rsa_sign_rejects_inconsistent_crt_key),
       cmocka_unit_test(test_piv_ecdh_rejects_invalid_peer_point),
       cmocka_unit_test(test_piv_sm2_stream_sign),

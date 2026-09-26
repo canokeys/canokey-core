@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 73 registered cases: APDU (49)
-and PIV (24). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 70 registered cases: APDU (49)
+and PIV (21). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -709,3 +709,18 @@ checks no response data before the empty final fragment and verifies the final
 signature. Native immediate rejection of that framing is not replicated.
 Redundant malformed combinations and obsolete internal buffer-layout assertions
 are omitted; bounds, invalid input, cleanup and recovery remain explicit.
+
+
+## Retry configuration and default slot policies
+
+| Retired native case | Important Rust coverage |
+|---|---|
+| `test_set_pin_retries` | `piv-normal::retry_configuration`: management plus PIN authorization, zero/16 invalid limits, unexpected data, distinct PIN/PUK default/retry metadata, wrong-PIN charging, authorization revocation and maximum 15 limits |
+| `test_set_pin_retries_failure_invalidates_auth` | Same scenario injects failure into the atomic PIN/PUK record, rejects reuse of both old grants, refuses the uncertain credential cache, and after reset checks the previous durable counters before restoring defaults |
+| `test_piv_regular_slot_defaults` | `slots` imports into fresh 9A/9C/9D/9E/82/95 slots, checks exact PIN/touch policies, independently verifies signatures and ECDH for each slot, then deletes test keys |
+
+Rust stores PIN/PUK together in one atomic record, so the former separate-PUK
+write-failure fixture is replaced at that transaction boundary. Existing PIN
+unit regressions separately cover errors where storage may have committed and
+require reloading the actual committed credential. Slot usage is verified by
+real operations rather than a native KEY_USAGE_ANY struct field.

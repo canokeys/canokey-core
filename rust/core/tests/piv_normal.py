@@ -267,6 +267,45 @@ def algorithm_configuration(c):
     c.verify()
 
 
+def retry_configuration(c):
+    c.wire.command("RESET")
+    c.select()
+    c.auth()
+    c.cmd("retry_limits_need_pin", 0xFA, 4, 5, status=0x6982)
+    c.verify()
+    for pin, puk in ((0, 5), (4, 16)):
+        c.cmd("invalid_retry_limits", 0xFA, pin, puk, status=0x6A86)
+    c.cmd("retry_limits_reject_data", 0xFA, 4, 5, b"x", status=0x6700)
+    c.cmd("set_distinct_retry_limits", 0xFA, 4, 5)
+    for reference, limit in ((0x80, 4), (0x81, 5)):
+        metadata = fields(c.cmd("retry_limit_metadata", 0xF7, 0, reference))
+        assert metadata[5] == b"\x01" and metadata[6] == bytes([limit, limit])
+    c.cmd("retry_limits_revoke_pin", 0x20, 0, 0x80, status=0x63C4)
+    c.cmd("retry_wrong_pin_charged", 0x20, 0, 0x80, b"000000\xff\xff", status=0x63C3)
+    c.verify()
+    c.cmd("retry_limits_need_management", 0xFA, 4, 5, status=0x6982)
+    c.auth()
+    c.wire.command("FAIL_WRITE 14")
+    c.cmd("retry_limit_commit_failure", 0xFA, 6, 7, status=0x6900)
+    c.cmd("failed_retry_write_revokes_management", 0xFA, 6, 7, status=0x6982)
+    c.auth()
+    c.cmd("failed_retry_write_revokes_pin", 0xFA, 6, 7, status=0x6982)
+    c.cmd("failed_retry_cache_unavailable", 0x20, 0, 0x80, PIN, status=0x6900)
+    c.wire.command("RESET")
+    c.select()
+    for reference, limit in ((0x80, 4), (0x81, 5)):
+        assert fields(c.cmd("failed_retry_write_preserves_limits", 0xF7, 0, reference))[6] == bytes([limit, limit])
+    c.auth()
+    c.verify()
+    c.cmd("maximum_retry_limits", 0xFA, 15, 15)
+    assert fields(c.cmd("maximum_retry_metadata", 0xF7, 0, 0x80))[6] == b"\x0f\x0f"
+    c.auth()
+    c.verify()
+    c.cmd("restore_retry_limits", 0xFA, 3, 3)
+    c.auth()
+    c.verify()
+
+
 def object_capacity(c):
     for tag, record in [(0x5FC10D, 46), (0x5FC10E, 47), (0x5FC10F, 48), (0x5FC120, 65)]:
         assert c.wire.command(f"SIZE {record}") == b"\xff" * 4
@@ -855,6 +894,21 @@ def interruptions(c):
 
 
 def slots(c):
+    private = ec.derive_private_key(1, ec.SECP256R1())
+    digest = hashlib.sha256(b"default slot usage").digest()
+    peer = ec.derive_private_key(2, ec.SECP256R1())
+    point = peer.public_key().public_bytes(serialization.Encoding.X962,
+                                          serialization.PublicFormat.UncompressedPoint)
+    for slot, policy in ((0x9A, 2), (0x9C, 3), (0x9D, 2), (0x9E, 1), (0x82, 2), (0x95, 2)):
+        c.cmd("clear_slot_before_default_import", 0xF6, 0xFF, slot)
+        c.import_key(0, private, slot)
+        assert fields(c.cmd("default_import_policy", 0xF7, 0, slot))[2] == bytes([policy, 1])
+        c.verify()
+        signature = c.ga(0, slot, digest)
+        private.public_key().verify(signature, digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
+        c.verify()
+        assert c.ga(0, slot, point, 0x85) == peer.exchange(ec.ECDH(), private.public_key())
+        c.cmd("delete_default_policy_test_key", 0xF6, 0xFF, slot)
     for slot in range(0x82, 0x96):
         c.cmd("retired_slot_initially_missing", 0xF7, 0, slot, status=0x6A88)
         c.generate(0, slot)
@@ -944,6 +998,7 @@ def run(wire, progress=None, report=None):
             host_managed_objects,
             management_rotation,
             algorithm_configuration,
+            retry_configuration,
             object_capacity,
             objects,
             container_names,
