@@ -55,7 +55,7 @@ struct Fields {
 impl Parser {
     pub const fn new() -> Self {
         Self {
-            decoder: super::request_decoder::RequestDecoder::new(),
+            decoder: super::request_decoder::RequestDecoder::large_blob(),
             fields: Fields {
                 params: Parameters::new(),
                 started: false,

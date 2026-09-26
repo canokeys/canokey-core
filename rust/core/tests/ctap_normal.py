@@ -29,8 +29,8 @@ def run(wire):
             key.verify(message, signature)
     def select():
         assert card.cmd("select", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"FIDO_2_0"
-    def call(command, parameters=None, status=0):
-        data = bytes([command]) + (cbor.encode(parameters) if parameters is not None else b"")
+    def call(command, parameters=None, status=0, raw=None):
+        data = bytes([command]) + (raw if raw is not None else cbor.encode(parameters) if parameters is not None else b"")
         answer = card.cmd(f"CTAP {command:02x}", 0x10, data=data, cla=0x80)
         assert answer[0] == status, (command, answer.hex(), status)
         decoded = cbor.decode(answer[1:]) if len(answer) > 1 else {}
@@ -364,12 +364,21 @@ def run(wire):
                  4: [{"type": "public-key", "alg": -7}],
                  8: protocol.authenticate(token, client_hash), 9: version}, 0x33)
         # Credential use consumes MC/GA, but this same token must still write blobs.
-        def write_blob(fragment, offset, length=None, status=0, byteorder="little"):
+        def write_blob(fragment, offset, length=None, status=0, byteorder="little", width=None):
             message = b"\xff" * 32 + b"\x0c\x00" + offset.to_bytes(4, byteorder) + hashlib.sha256(fragment).digest()
             params = {2: fragment, 3: offset, 5: protocol.authenticate(token, message), 6: version}
             if length is not None:
                 params[4] = length
-            return call(12, params, status)
+            raw = None
+            if width is not None:
+                # Encode only the payload length overlong; authenticate the exact bytes.
+                raw = bytes([0xa0 + len(params), 2, {2: 0x59, 4: 0x5a, 8: 0x5b}[width]])
+                raw += len(fragment).to_bytes(width, "big") + fragment
+                raw += b"".join(cbor.encode(k) + cbor.encode(v) for k, v in sorted(params.items()) if k != 2)
+            return call(12, params, status, raw=raw)
+        for width in (2, 4, 8):
+            write_blob(empty, 0, len(empty), width=width)
+            assert call(12, {1: 960, 3: 0})[1] == empty
         body = cbor.encode([bytes(range(256)) * 5])
         blob = body + hashlib.sha256(body).digest()[:16]
         write_blob(blob[:700], 0, len(blob))

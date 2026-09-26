@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 10 registered APDU cases.
+One legacy C test executable remains, with 9 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1314,3 +1314,9 @@ this change does not claim to replace their recovery behavior.
 Validation: combined CTest 28/28 passed (64.98 s). Full DevKit/NFCC
 links remain over Flash at 189696/197152 B (25856/33312 B over), with
 RAM_DATA 8648/8768 B. Runtime stack and physical acceptance remain open.
+
+The native `test_large_blob_noncanonical_string_offset` is replaced by the existing
+`ctap-normal` authenticated largeBlob flow: both PIN protocols upload a valid
+17-byte array using uint16/uint32/uint64 byte-string lengths and compare the
+complete readback. Incremental CBOR coverage checks split headers/payloads,
+continued rejection of other noncanonical types, and oversized lengths.

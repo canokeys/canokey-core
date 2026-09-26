@@ -293,30 +293,6 @@ static void test_pke_buffer_fallback_for_ctap(void **state) {
   assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_CTAP), 0);
 }
 
-static void test_large_blob_noncanonical_string_offset(void **state) {
-  (void)state;
-
-  // Map {2: h'000102...10', 3: 0, 4: 17}; the byte string uses a non-canonical
-  // uint16 length header, so its payload starts at offset 5 rather than 3.
-  static const uint8_t request[] = {0xA3, 0x02, 0x59, 0x00, 0x11, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
-                                    0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
-                                    0x03, 0x00, 0x04, 0x11};
-  CborParser parser;
-  CTAP_large_blobs large_blobs;
-
-  assert_int_equal(parse_large_blobs(&parser, &large_blobs, request, sizeof(request)), 0);
-  assert_int_equal(large_blobs.set_len, 17);
-  assert_int_equal(large_blobs.set_offset, 5);
-  for (size_t i = 0; i < large_blobs.set_len; ++i) {
-    assert_int_equal(request[large_blobs.set_offset + i], i);
-  }
-}
-
-
-
-
-
-
 static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
   (void)state;
 
@@ -707,7 +683,6 @@ int main() {
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
-      cmocka_unit_test(test_large_blob_noncanonical_string_offset),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),

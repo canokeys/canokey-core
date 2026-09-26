@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental, definite-length CBOR for CTAP. No heap or request buffer.
 //! Accepts shortest integer/length encodings, UTF-8 text, bytes, arrays, maps,
-//! booleans and null. Tags, floats and indefinite values are not CTAP input.
+//! booleans and null. Legacy byte-string widths require explicit opt-in.
+//! Tags, floats and indefinite values are not CTAP input.
 //! Map key types/order/uniqueness belong to the command schema. Events are
 //! provisional until finish succeeds; consumers must not perform side effects.
 
@@ -308,6 +309,7 @@ pub struct Decoder {
     budget: u16,
     limit: u16,
     failed: bool,
+    wide_bytes: bool,
 }
 impl Decoder {
     /// byte_limit bounds total input and declared collection/string lengths.
@@ -326,7 +328,13 @@ impl Decoder {
             budget: byte_limit,
             limit: byte_limit,
             failed: false,
+            wide_bytes: false,
         }
+    }
+    /// Preserve legacy definite byte-string widths without relaxing other types.
+    pub const fn with_wide_byte_lengths(mut self) -> Self {
+        self.wide_bytes = true;
+        self
     }
     pub fn feed(
         &mut self,
@@ -461,7 +469,7 @@ impl Decoder {
             0x10000..=0xffff_ffff => 5,
             _ => 9,
         };
-        if usize::from(self.head_len) != shortest {
+        if usize::from(self.head_len) != shortest && !(major == 2 && self.wide_bytes) {
             return Err(Error::Invalid);
         }
         self.head_len = 0;

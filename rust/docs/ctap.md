@@ -297,7 +297,8 @@ validates UTF-8 separately. No local minicbor patch or fork is required.
 The adapter buffers at most a nine-byte header, container counters, and one
 incomplete UTF-8 code point. minicbor interprets scalars and length headers;
 `core::str::from_utf8` validates text. The adapter preserves push input across USB
-and ISO APDU fragments. It enforces shortest arguments, definite lengths, a byte
+and ISO APDU fragments. It enforces shortest arguments (except legacy largeBlob definite byte-string
+lengths, which accept wider encodings), definite lengths, a byte
 budget, depth eight and exactly one complete value. Tags/floats, invalid UTF-8,
 truncation and trailing values fail. Consumer failure is terminal; provisional
 events never authorize or write storage.

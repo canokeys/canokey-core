@@ -17,6 +17,13 @@ impl RequestDecoder {
         }
     }
 
+    pub const fn large_blob() -> Self {
+        Self {
+            decoder: cbor::Decoder::new((super::MAX_REQUEST - 1) as u16).with_wide_byte_lengths(),
+            error: None,
+        }
+    }
+
     /// Returns false after any failure. A rejected request never re-enters its
     /// schema, and a schema error takes precedence over the generic CBOR error.
     #[inline(never)]

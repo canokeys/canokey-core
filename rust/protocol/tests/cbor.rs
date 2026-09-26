@@ -290,6 +290,40 @@ fn reject_noncanonical_unsupported_invalid_text_and_trailing_values() {
             );
         }
     }
+    // The largeBlob compatibility mode relaxes only definite byte-string widths.
+    for &bytes in invalid.iter().filter(|bytes| **bytes != [0x58, 0]) {
+        let mut decoder = Decoder::new(1024).with_wide_byte_lengths();
+        assert!(
+            decoder
+                .feed(bytes, &mut |_| Ok(()))
+                .and_then(|_| decoder.finish())
+                .is_err()
+        );
+    }
+    for bytes in [
+        &[0x59, 0, 2, 0x12, 0x34][..],
+        &[0x5b, 0, 0, 0, 0, 0, 0, 0, 2, 0x12, 0x34][..],
+    ] {
+        for split in 0..=bytes.len() {
+            let mut decoder = Decoder::new(1024).with_wide_byte_lengths();
+            let mut payload = Vec::new();
+            let mut emit = |event: Event<'_>| {
+                if let Event::Data(data) = event {
+                    payload.extend_from_slice(data);
+                }
+                Ok(())
+            };
+            decoder.feed(&bytes[..split], &mut emit).unwrap();
+            decoder.feed(&bytes[split..], &mut emit).unwrap();
+            decoder.finish().unwrap();
+            assert_eq!(payload, [0x12, 0x34]);
+        }
+    }
+    let mut decoder = Decoder::new(1024).with_wide_byte_lengths();
+    assert_eq!(
+        decoder.feed(&[0x5b, 0, 0, 0, 0, 0, 1, 0, 0], &mut |_| Ok(())),
+        Err(Error::Limit)
+    );
     assert_eq!(decode(&[&[0xa1, 0]], 1024), Err(Error::Truncated));
     assert_eq!(decode(&[&[0x5a, 0, 1, 0, 0]], 1024), Err(Error::Limit));
     let mut nested = vec![0x81; 8];
