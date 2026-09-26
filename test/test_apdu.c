@@ -54,19 +54,6 @@ static void encode_sm2_config(uint8_t wire[CTAP_SM2_CONFIG_WIRE_SIZE], const CTA
   memcpy(wire, words, CTAP_SM2_CONFIG_WIRE_SIZE);
 }
 
-static void put_cbor_text(uint8_t **p, const char *text) {
-  size_t len = strlen(text);
-
-  if (len < 24) {
-    *(*p)++ = 0x60 | (uint8_t)len;
-  } else {
-    assert_true(len <= UINT8_MAX);
-    *(*p)++ = 0x78;
-    *(*p)++ = (uint8_t)len;
-  }
-  memcpy(*p, text, len);
-  *p += len;
-}
 
 static void put_cbor_bytes(uint8_t **p, const uint8_t *buf, size_t len) {
   if (len < 24) {
@@ -97,34 +84,6 @@ static void put_cbor_int(uint8_t **p, int32_t value) {
   }
 }
 
-static size_t build_third_party_payment_get_assertion(uint8_t *req, const credential_id *cid) {
-  uint8_t *p = req;
-  uint8_t zero32[32] = {0};
-
-  *p++ = CTAP_GET_ASSERTION;
-  *p++ = 0xA5;
-  *p++ = 0x01;
-  put_cbor_text(&p, "pay.example");
-  *p++ = 0x02;
-  put_cbor_bytes(&p, zero32, 32);
-  *p++ = 0x03;
-  *p++ = 0x81;
-  *p++ = 0xA2;
-  put_cbor_text(&p, "id");
-  put_cbor_bytes(&p, (const uint8_t *)cid, sizeof(*cid));
-  put_cbor_text(&p, "type");
-  put_cbor_text(&p, "public-key");
-  *p++ = 0x04;
-  *p++ = 0xA1;
-  put_cbor_text(&p, "thirdPartyPayment");
-  *p++ = 0xF5;
-  *p++ = 0x05;
-  *p++ = 0xA1;
-  put_cbor_text(&p, "up");
-  *p++ = 0xF4;
-
-  return (size_t)(p - req);
-}
 
 static size_t build_enumerate_credentials_pin_message(uint8_t *msg, const uint8_t *rp_id_hash, bool metadata_only) {
   uint8_t *p = msg;
@@ -173,21 +132,6 @@ static size_t build_credential_management_get_next(uint8_t *req) {
   *p++ = CM_REQ_SUB_COMMAND;
   *p++ = CM_CMD_ENUMERATE_CREDENTIALS_GET_NEXT_CREDENTIAL;
   return (size_t)(p - req);
-}
-
-static int read_tx_source_all(CTAPHID_TxSource *source, uint8_t *out, size_t out_len, size_t *written) {
-  size_t total = 0;
-
-  while (total < source->total_len) {
-    size_t chunk_written = 0;
-    size_t chunk = MIN(out_len - total, source->total_len - total);
-    if (chunk == 0) return -1;
-    if (source->read(source->ctx, out + total, chunk, &chunk_written) != 0) return -1;
-    if (chunk_written == 0) return -1;
-    total += chunk_written;
-  }
-  *written = total;
-  return 0;
 }
 
 typedef struct {
@@ -361,82 +305,6 @@ static void test_ctap_install_rebuilds_state_with_empty_attestation_cert(void **
   assert_int_equal(write_file(CTAP_CERT_FILE, NULL, 0, 0, 1), 0);
   assert_int_equal(write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &counter, sizeof(counter)), 0);
   assert_ctap_install_resets_counter();
-}
-
-static void test_ctap_algorithm_policy(void **state) {
-  (void)state;
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  CTAP_sm2_attr sm2;
-  assert_int_equal(ctap_platform_sm2_config_read(&sm2, sizeof(sm2)), 0);
-  const int32_t algorithms[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id};
-  for (size_t i = 0; i < 4; ++i) {
-    // Exercise unsupported-only lists and fallback to the RP's next choice.
-    for (size_t fallback = 0; fallback < 2; ++fallback) {
-      uint8_t req[256], zero32[32] = {0}, *p = req;
-      *p++ = 0xA4;
-      *p++ = 1;
-      put_cbor_bytes(&p, zero32, sizeof(zero32));
-      *p++ = 2;
-      *p++ = 0xA1;
-      put_cbor_text(&p, "id");
-      put_cbor_text(&p, "pay.example");
-      *p++ = 3;
-      *p++ = 0xA1;
-      put_cbor_text(&p, "id");
-      put_cbor_bytes(&p, zero32, 1);
-      *p++ = 4;
-      *p++ = 0x81 + fallback;
-      for (size_t j = 0; j <= fallback; ++j) {
-        *p++ = 0xA2;
-        put_cbor_text(&p, "alg");
-        put_cbor_int(&p, j ? COSE_ALG_EDDSA : algorithms[i]);
-        put_cbor_text(&p, "type");
-        put_cbor_text(&p, "public-key");
-      }
-      CborParser parser;
-      CTAP_make_credential mc = {0};
-      bool restricted = CTAP_RESTRICT_ALGORITHMS && i >= 2;
-      assert_int_equal(parse_make_credential(&parser, &mc, req, p - req),
-                       restricted && !fallback ? CTAP2_ERR_UNSUPPORTED_ALGORITHM : 0);
-      if (!restricted || fallback) assert_int_equal(mc.alg_type, restricted ? COSE_ALG_EDDSA : algorithms[i]);
-    }
-
-    // Construct genuine pre-existing credentials independent of registration policy.
-    for (int mode = 0; mode < 3; ++mode) {
-      bool resident = mode != 0;
-      CTAP_discoverable_credential dc = {0};
-      uint8_t pub[64], req[256], scratch[64], resp[8192];
-      size_t written = 0;
-      CTAPHID_TxSource source = {0};
-      sha256_raw((const uint8_t *)"pay.example", 11, dc.credential_id.rp_id_hash);
-      assert_int_equal(generate_key_handle(&dc.credential_id, pub, algorithms[i], resident,
-                                           CRED_PROTECT_VERIFICATION_OPTIONAL, false), 0);
-      assert_int_equal(write_file(DC_FILE, resident ? &dc : NULL, 0, resident ? sizeof(dc) : 0, 1), 0);
-      size_t len = build_third_party_payment_get_assertion(req, &dc.credential_id);
-      if (mode == 2) {
-        // Discoverable assertion without an allowList must enforce the same policy.
-        uint8_t zero32[32] = {0}, *p = req;
-        *p++ = CTAP_GET_ASSERTION;
-        *p++ = 0xA3;
-        *p++ = 1;
-        put_cbor_text(&p, "pay.example");
-        *p++ = 2;
-        put_cbor_bytes(&p, zero32, sizeof(zero32));
-        *p++ = 5;
-        *p++ = 0xA1;
-        put_cbor_text(&p, "up");
-        *p++ = 0xF4;
-        len = p - req;
-      }
-      assert_int_equal(ctap_process_cbor_stream_with_src(req, len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
-      assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
-      assert_int_equal(resp[0], CTAP_RESTRICT_ALGORITHMS && i >= 2 ? CTAP2_ERR_NO_CREDENTIALS : 0);
-      if (source.close) source.close(source.ctx);
-    }
-  }
-  assert_int_equal(write_file(DC_FILE, NULL, 0, 0, 1), 0);
 }
 
 static void test_ctap_kh_cache_lifecycle(void **state) {
@@ -687,7 +555,6 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
-      cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
   };
 

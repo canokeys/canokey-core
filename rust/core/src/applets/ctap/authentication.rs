@@ -90,6 +90,9 @@ impl Session {
         let mut selected = None;
         let mut user_slot = None;
         for id in params.ids() {
+            if !credential::permitted_id(id) {
+                continue;
+            }
             if id[1] & resident::RESIDENT != 0 {
                 let Some((index, _)) = resident::find(id, &rp, &mut w.input, p)? else {
                     continue;
@@ -112,7 +115,10 @@ impl Session {
             for index in 0..crate::ports::Record::CTAP_CREDENTIALS {
                 if let Some(n) = resident::load(index, &mut w.input, p)? {
                     let entry = resident::Entry::decode(&w.input[..n])?;
-                    if entry.rp_hash == &rp && (uv || entry.id[1] & 3 == 1) {
+                    if entry.rp_hash == &rp
+                        && (uv || entry.id[1] & 3 == 1)
+                        && credential::permitted_id(entry.id)
+                    {
                         count += 1;
                         if selected.is_none() {
                             selected = Some(*entry.id);
@@ -239,6 +245,7 @@ impl Session {
                 if let Some(n) = resident::load(index, &mut w.input, p)? {
                     let entry = resident::Entry::decode(&w.input[..n])?;
                     if entry.rp_hash != &self.assertion.rp
+                        || !credential::permitted_id(entry.id)
                         || (!self.assertion.uv && entry.id[1] & 3 != 1)
                     {
                         continue;

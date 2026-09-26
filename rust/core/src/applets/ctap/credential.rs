@@ -207,6 +207,14 @@ pub(super) fn large_blob_key(
     extension_key(2, id, rp, out, p)
 }
 
+// Keep credential decoding available to management even when authentication is restricted.
+pub(super) fn permitted(algorithm: u8) -> bool {
+    !cfg!(feature = "ctap-restrict-algorithms") || matches!(algorithm, alg::P256 | alg::ED25519)
+}
+pub(super) fn permitted_id(id: &Id) -> bool {
+    !cfg!(feature = "ctap-restrict-algorithms") || algorithm(id).is_ok_and(permitted)
+}
+
 pub(super) fn cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
     match algorithm {
         alg::P256 => -7,

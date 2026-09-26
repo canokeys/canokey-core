@@ -549,3 +549,21 @@ attestation-key bytes are wiped on certificate/key validation errors as well as
 success. `ctap-config` injects a read that supplies key bytes then reports I/O
 failure, checks rejection/no pending response and independently verifies a fresh
 packed attestation after the fault clears.
+
+### Optional credential algorithm restriction
+
+The `ctap-restrict-algorithms` Cargo feature (CIU CMake
+`CTAP_RESTRICT_ALGORITHMS=ON`) retains the existing optional policy. GetInfo
+advertises only ES256/Ed25519; makeCredential chooses the first permitted RP
+algorithm or returns UnsupportedAlgorithm (26). Allow/exclude lists and
+discoverable assertion enumeration ignore existing SM2/ML-DSA credentials;
+authentication with only such credentials returns NoCredentials (2e).
+Credential management still lists their original public keys and can delete
+them. Persistent records and U2F's P-256 path are unchanged. Full production
+presets leave this option OFF; restriction is not a firmware-capacity solution.
+
+The existing `ctap-normal` test also runs a separately compiled restricted
+host: real four-algorithm credentials and their master/resident records cross
+the build boundary, followed by registration fallback, independently verified
+allowed signatures, resident continuation filtering and authenticated management.
+`RECORD` is an in-process host fixture control, never a firmware APDU.

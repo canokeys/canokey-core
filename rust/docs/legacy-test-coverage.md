@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 9 registered APDU cases.
+One legacy C test executable remains, with 8 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1320,3 +1320,10 @@ The native `test_large_blob_noncanonical_string_offset` is replaced by the exist
 17-byte array using uint16/uint32/uint64 byte-string lengths and compare the
 complete readback. Incremental CBOR coverage checks split headers/payloads,
 continued rejection of other noncanonical types, and oversized lengths.
+
+`test_ctap_algorithm_policy` and its C request builders are replaced by the
+existing `ctap-normal` cross-build algorithm-policy flow. Both nonresident and
+resident handles originate from actual full Rust makeCredential requests.
+The restricted build verifies GetInfo, registration fallback, explicit and
+discoverable authentication, getNextAssertion filtering, and management of
+all four algorithms without rewriting stored key types.

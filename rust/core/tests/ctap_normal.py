@@ -509,12 +509,110 @@ def run(wire):
     return {"passed": True, "algorithms": ["ES256", "Ed25519", "SM2", "ML-DSA-65"], "checks": len(card.checks)}
 
 
+def algorithm_policy(full_path, restricted_path):
+    # Real credentials survive a firmware-policy change. Transfer only persistent
+    # records, never session state; both processes use the normal crypto adapters.
+    with connection(full_path) as full, connection(restricted_path) as restricted:
+        source, target = Card(full), Card(restricted)
+        attest = provision(source)
+        target_attest = provision(target)
+        for card in (source, target):
+            card.cmd("FIDO", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+        def call(card, command, params=None, status=0):
+            answer = card.cmd("algorithm policy", 0x10, cla=0x80,
+                              data=bytes([command]) + (cbor.encode(params) if params is not None else b""))
+            assert answer[0] == status, (command, answer.hex(), status)
+            return cbor.decode(answer[1:]) if len(answer) > 1 else {}
+        assert [a["alg"] for a in call(source, 4)[10]] == [-7, -8, -54, -49]
+        assert [a["alg"] for a in call(target, 4)[10]] == [-7, -8]
+        challenge = hashlib.sha256(b"policy migration").digest()
+        rp = "policy.example"
+        # Disallowed residents surround permitted records to check continuation.
+        algorithms = [-54, -7, -49, -8]
+        credentials = []
+        for resident in (False, True):
+            for i, algorithm in enumerate(algorithms):
+                request = {1: challenge, 2: {"id": rp}, 3: {"id": bytes([i])},
+                           4: [{"type": "public-key", "alg": algorithm}], 7: {"rk": resident}}
+                answer = call(source, 1, request)
+                attest(answer, challenge)
+                data = AuthenticatorData(answer[2]).credential_data
+                credentials.append((resident, algorithm, {"id": data.credential_id, "type": "public-key"}, data.public_key))
+        for record in [78, *range(80, 84)]:
+            data = full.command(f"RECORD {record}")
+            assert data[-2:] == b"\x90\x00"
+            assert restricted.command(f"RECORD {record} {data[:-2].hex()}") == b"\x90\x00"
+        restricted.command("RESET")
+        target.cmd("FIDO", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+        for resident, algorithm, descriptor, key in credentials:
+            params = {1: rp, 2: challenge, 3: [descriptor]}
+            allowed = algorithm in (-7, -8)
+            answer = call(target, 2, params, 0 if allowed else 0x2e)
+            if allowed:
+                key.verify(answer[2] + challenge, answer[3])
+        answer = call(target, 2, {1: rp, 2: challenge,
+                                 3: [credentials[0][2], credentials[1][2]]})
+        assert answer[1] == credentials[1][2]
+        credentials[1][3].verify(answer[2] + challenge, answer[3])
+        answer = call(target, 2, {1: rp, 2: challenge})
+        assert answer[5] == 2
+        keys = {descriptor["id"]: key for _, algorithm, descriptor, key in credentials if algorithm in (-7, -8)}
+        keys[answer[1]["id"]].verify(answer[2] + challenge, answer[3])
+        following = call(target, 8)
+        assert following[1] != answer[1]
+        keys[following[1]["id"]].verify(following[2] + challenge, following[3])
+        call(target, 8, status=0x30)
+        for algorithm in algorithms:
+            params = {1: challenge, 2: {"id": rp}, 3: {"id": b"new"},
+                      4: [{"type": "public-key", "alg": algorithm}]}
+            if algorithm not in (-7, -8):
+                call(target, 1, params, 0x26)
+                params[4].append({"type": "public-key", "alg": -8})
+            answer = call(target, 1, params)
+            target_attest(answer, challenge)
+            assert AuthenticatorData(answer[2]).credential_data.public_key[3] == (algorithm if algorithm in (-7, -8) else -8)
+        excluded = {1: challenge, 2: {"id": rp}, 3: {"id": b"excluded"},
+                    4: [{"type": "public-key", "alg": -7}], 5: [credentials[1][2]]}
+        call(target, 1, excluded, 0x19)
+        target_attest(call(target, 1, excluded | {5: [credentials[0][2]]}), challenge)
+        # Restriction must not hide or prevent deletion of existing credentials.
+        protocol = PinProtocolV2()
+        public, secret = protocol.encapsulate(call(target, 6, {1: 2, 2: 2})[1])
+        pin = b"12345678"
+        encrypted = protocol.encrypt(secret, pin.ljust(64, b"\0"))
+        call(target, 6, {1: 2, 2: 3, 3: public, 4: protocol.authenticate(secret, encrypted), 5: encrypted})
+        hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
+        token = protocol.decrypt(secret, call(target, 6, {1: 2, 2: 9, 3: public, 6: hashed, 9: 4})[2])
+        def manage(command, params=None):
+            request = {1: command}
+            if params is not None:
+                request[2] = params
+            if command != 5:
+                message = bytes([command]) + (cbor.encode(params) if params is not None else b"")
+                request.update({3: 2, 4: protocol.authenticate(token, message)})
+            return call(target, 10, request)
+        assert manage(1) == {1: 4, 2: 96}
+        answer = manage(4, {1: hashlib.sha256(rp.encode()).digest()})
+        assert answer[9] == 4
+        for i, (_, algorithm, descriptor, key) in enumerate(credentials[4:]):
+            if i:
+                answer = manage(5)
+            assert answer[7] == descriptor and answer[8] == key
+        for _, algorithm, descriptor, _ in credentials[4:]:
+            if algorithm not in (-7, -8):
+                manage(6, {2: descriptor})
+        assert manage(1) == {1: 2, 2: 98}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True)
+    parser.add_argument("--restricted-host")
     args = parser.parse_args()
     with connection(args.host) as wire:
         print(json.dumps(run(wire), indent=2))
+    if args.restricted_host:
+        algorithm_policy(args.host, args.restricted_host)
 
 
 if __name__ == "__main__":

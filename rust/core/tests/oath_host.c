@@ -24,6 +24,34 @@ int main(void) {
       continue;
     }
 #endif
+    // Transfer compact persistent records between builds; host fixture only.
+    if (strncmp(line, "RECORD ", 7) == 0) {
+      extern int32_t ck_platform_read(uint8_t, uint8_t *, size_t);
+      extern int32_t ck_platform_write(uint8_t, const uint8_t *, size_t);
+      unsigned id;
+      int offset;
+      assert(sscanf(line + 7, "%u%n", &id, &offset) == 1 && id < 186);
+      char *data = line + 7 + offset;
+      if (*data == ' ') {
+        data++;
+        size_t len = strcspn(data, "\r\n");
+        assert(len % 2 == 0 && len / 2 <= sizeof(buffer));
+        for (size_t i = 0; i < len / 2; i++) {
+          unsigned byte;
+          assert(sscanf(data + 2 * i, "%2x", &byte) == 1);
+          buffer[i] = (uint8_t)byte;
+        }
+        assert(ck_platform_write((uint8_t)id, buffer, len / 2) == (int32_t)(len / 2));
+        puts("9000");
+      } else {
+        n = ck_platform_read((uint8_t)id, buffer, sizeof(buffer));
+        assert(n >= 0);
+        for (int32_t i = 0; i < n; i++) printf("%02x", buffer[i]);
+        puts("9000");
+      }
+      fflush(stdout);
+      continue;
+    }
     if (strncmp(line, "FAIL_READ ", 10) == 0) {
       extern void ck_test_fail_read(uint8_t id);
       unsigned id;

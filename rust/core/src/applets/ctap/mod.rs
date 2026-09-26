@@ -254,8 +254,14 @@ impl Session {
                         .find_map(|id| match *id {
                             -7 => Some(crate::ports::alg::P256),
                             -8 => Some(crate::ports::alg::ED25519),
-                            -49 => Some(crate::ports::alg::MLDSA65),
-                            n if n == self.sm2.algorithm => Some(crate::ports::alg::SM2),
+                            -49 if credential::permitted(crate::ports::alg::MLDSA65) => {
+                                Some(crate::ports::alg::MLDSA65)
+                            }
+                            n if n == self.sm2.algorithm
+                                && credential::permitted(crate::ports::alg::SM2) =>
+                            {
+                                Some(crate::ports::alg::SM2)
+                            }
                             _ => None,
                         });
                 self.credential(params, workspace, p)

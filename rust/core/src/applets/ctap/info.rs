@@ -31,9 +31,11 @@ pub(super) fn encode(
         .u8(credential_request::MAX_LIST as u8)
         .u8(8)
         .u8(credential::ID_BYTES as u8)
-        .encoded(ALGORITHMS)
-        .i32(sm2_algorithm)
-        .encoded(ALGORITHMS_END)
+        .encoded(ALGORITHMS);
+    if !cfg!(feature = "ctap-restrict-algorithms") {
+        e.i32(sm2_algorithm);
+    }
+    e.encoded(ALGORITHMS_END)
         .u16(large_blob::LIMIT)
         .u8(12)
         .bool(flags & pin::FORCE_CHANGE != 0)
@@ -97,8 +99,14 @@ mod tests {
             e.u8(7).u8(credential_request::MAX_LIST as u8);
             e.u8(8).u8(credential::ID_BYTES as u8);
             e.u8(9).array(1).str("usb");
-            e.u8(10).array(4);
-            for algorithm in [-7, -8, sm2_algorithm, -49] {
+            let algorithms = [-7, -8, sm2_algorithm, -49];
+            let algorithms = &algorithms[..if cfg!(feature = "ctap-restrict-algorithms") {
+                2
+            } else {
+                4
+            }];
+            e.u8(10).array(algorithms.len() as u64);
+            for &algorithm in algorithms {
                 e.map(2)
                     .str("alg")
                     .i32(algorithm)

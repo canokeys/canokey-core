@@ -171,8 +171,16 @@ if(BUILD_TESTING)
     target_compile_options(ctap-host PRIVATE -Wall -Wextra -UNDEBUG)
     target_link_libraries(ctap-host PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    # Same fixture and native crypto, independently compiled algorithm policy.
+    add_rust_host_archive(canokey-rust-restricted rust-restricted-build cargo-restricted
+      "${FEATURES},ctap-restrict-algorithms")
+    add_executable(ctap-restricted-host core/tests/oath_host.c core/tests/services.c)
+    target_compile_definitions(ctap-restricted-host PRIVATE WITH_CTAP)
+    target_compile_options(ctap-restricted-host PRIVATE -Wall -Wextra -UNDEBUG)
+    target_link_libraries(ctap-restricted-host PRIVATE canokey-rust-restricted OpenSSL::Crypto host-key-services)
     add_test(NAME ctap-normal COMMAND "${Python3_EXECUTABLE}"
-      "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/ctap_normal.py" --host $<TARGET_FILE:ctap-host>)
+      "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/ctap_normal.py" --host $<TARGET_FILE:ctap-host>
+      --restricted-host $<TARGET_FILE:ctap-restricted-host>)
   endif()
   if(CANOKEY_APPLET_OPENPGP)
     foreach(target core-normal oath-host)
