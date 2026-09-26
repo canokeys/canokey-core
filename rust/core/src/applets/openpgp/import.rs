@@ -265,12 +265,9 @@ impl Import {
         }
         Ok(())
     }
-    pub fn finish(&self, key: &mut [u8; crate::ports::key_layout::SIZE]) -> Result<(), Sw> {
+    pub fn finish(&self) -> Result<(), Sw> {
         if !self.ready || self.received != self.total {
             return Err(Sw::WRONG_LENGTH);
-        }
-        if self.algorithm.0 == alg::X25519 {
-            key[..32].reverse();
         }
         Ok(())
     }

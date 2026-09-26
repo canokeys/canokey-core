@@ -61,11 +61,14 @@ ADMIN authentication; the ADMIN factory-reset workflow also resets OpenPGP.
 
 Supported algorithms remain RSA-2048/3072/4096, P-256, secp256k1, P-384, P-521,
 Ed25519 and X25519. X25519 is decrypt-role only; Ed25519 is sign/auth-role only.
-RSA signatures use PKCS#1 v1.5 and RSA decipher validates v1.5 padding. Short
+RSA signatures use PKCS#1 v1.5 and RSA decipher validates v1.5 padding.
+Invalid decipher padding returns 6A80; primitive failures retain 6900. Short
 Weierstrass digests are left-zero-padded to the native scalar width without
 changing their numeric value. Signatures are raw r||s; ECDH consumes the nested
-A6/7F49/86 object. X25519 wire scalars are converted to the native representation
-at import; public values and shared secrets retain their wire byte order.
+A6/7F49/86 object. OpenPGP X25519 imported scalars are big-endian integers, matching the native
+representation (unlike the PIV import convention). Public values and shared
+secrets use RFC 7748 little-endian wire order. `key_regressions` verifies the
+legacy literal public-key vector as well as independent shared-secret checks.
 
 PW1 defaults to `123456`, PW3 to `12345678`; both start with three tries. Reset
 code is initially unset. There is no KDF or enrollment procedure. PW1 grants

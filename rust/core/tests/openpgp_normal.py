@@ -101,11 +101,12 @@ class Card(ApduCard):
                     serialization.PrivateFormat.Raw,
                     serialization.NoEncryption(),
                 )
+            if alg == 4:
+                # OpenPGP imports the scalar as a big-endian integer.
+                value = value[::-1]
             parts = [value]
             tags = [0x92]
-        descriptors = b"".join(bytes([t]) + length(len(v)) for t, v in zip(tags, parts))
-        body = bytes([REF[role], 0]) + tlv(0x7F48, descriptors) + tlv(0x5F48, b"".join(parts))
-        self.cmd("import", 0xDB, 0x3F, 0xFF, tlv(0x4D, body), le=None)
+        self.cmd("import", 0xDB, 0x3F, 0xFF, import_template(role, tags, parts), le=None)
 
 
 def exercise(c, alg, role, key):
@@ -165,6 +166,64 @@ def exercise(c, alg, role, key):
         assert c.cmd("decipher", 0x2A, 0x80, 0x86, value) == expected
 
 
+def import_template(role, tags, parts):
+    descriptors = b"".join(bytes([t]) + length(len(v)) for t, v in zip(tags, parts))
+    return tlv(0x4d, bytes([REF[role], 0]) + tlv(0x7f48, descriptors)
+               + tlv(0x5f48, b"".join(parts)))
+
+
+def key_regressions(c):
+    c.attrs(3, 0)
+    for attributes in (bytes.fromhex("01"), bytes.fromhex("132a8648ce3d")):
+        c.cmd("invalid_attributes", 0xda, 0, 0xc1, attributes, status=0x6a80)
+    seed = bytes.fromhex("4adb8d21b8b7f3dd22fde3b8ebaddce1892a24a57b9e35d01067bb5af98989eb")
+    ed = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+    for tags, parts in (([0x92], [seed]), ([0x92, 0x99], [seed, bytes(32)])):
+        c.cmd("ed_import", 0xdb, 0x3f, 0xff, import_template(0, tags, parts))
+        assert fields(c.public(0))[0x86] == ed.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        exercise(c, 3, 0, ed.public_key())
+
+    c.attrs(5, 0)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    c.import_key(5, 0, key)
+    v = key.private_numbers()
+    good = [v.public_numbers.e.to_bytes(4, "big")] + [
+        x.to_bytes(128, "big") for x in (v.p, v.q, v.iqmp, v.dmp1, v.dmq1)]
+    for defect in ("dp", "equal_primes"):
+        parts = good.copy()
+        if defect == "dp":
+            value = bytearray(parts[4])
+            value[50] ^= 0x55
+            parts[4] = bytes(value)
+        else:
+            parts[2] = parts[1]
+        c.cmd("invalid_crt_" + defect, 0xdb, 0x3f, 0xff,
+              import_template(0, range(0x91, 0x97), parts), status=0x6a80)
+        exercise(c, 5, 0, key.public_key())
+
+    c.attrs(5, 1)
+    c.cmd("logout_for_generate", 0x20, 0xff, 0x83)
+    c.cmd("unauthorized_generate", 0x47, 0x80, data=bytes.fromhex("b800"), status=0x6982)
+    c.verify()
+    public = pubkey(5, c.public(1, True))
+    c.verify(0x82)
+    c.cmd("short_decipher", 0x2a, 0x80, 0x86, b"123456", status=0x6700)
+    c.raw("decipher_first_fragment", 0x2a, 0x80, 0x86, bytes(254), cla=0x10)
+    c.raw("decipher_invalid_padding", 0x2a, 0x80, 0x86, bytes(3), status=0x6a80)
+    exercise(c, 5, 1, public)
+
+    c.attrs(4, 1)
+    private = x25519.X25519PrivateKey.from_private_bytes(bytes.fromhex(
+        "5a8340fb623e8536b1114ed6c468dca949578972e83cb02aaf1ce3349dca0d68")[::-1])
+    c.import_key(4, 1, private)
+    actual = c.cmd("x25519_wire_public", 0x47, 0x81, data=bytes.fromhex("b800"))
+    assert actual == bytes.fromhex(
+        "7f49228620a82e8b07b35e0bffb5d33d7ca6534f0c2b03b00f65a49aa985f116de4942153d"), actual.hex()
+    exercise(c, 4, 1, private.public_key())
+    c.reset()
+
+
 def pin_regressions(c, wire, host):
     c.cmd("logout_pw3", 0x20, 0xff, 0x83, le=None)
     c.cmd("unauthorized_retry_policy", 0xf2, data=bytes([4, 5, 6]), status=0x6982)
@@ -207,6 +266,7 @@ def run(wire, host):
     c = Card(wire)
     c.reset()
     pin_regressions(c, wire, host)
+    key_regressions(c)
     assert c.get(0x4F)[:6] == AID
     assert len(c.get(0xC4)) == 7
     expected_algorithms = b""

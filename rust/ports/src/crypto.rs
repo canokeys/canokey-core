@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #[derive(Clone, Copy, Debug)]
-pub struct CryptoError;
+pub enum CryptoError {
+    Failure,
+    InvalidPadding,
+}
 /// Key primitive operation codes, mirrored by ck_key_operation in crypto_ops.h.
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -81,12 +84,12 @@ pub trait Crypto {
         _digest: &[u8; 32],
         _out: &mut [u8; 64],
     ) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
 
     #[cfg(feature = "ctap")]
     fn sha256(&mut self, _input: &[u8], _out: &mut [u8; 32]) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
     #[cfg(feature = "ctap")]
     fn aes256_cbc(
@@ -96,7 +99,7 @@ pub trait Crypto {
         _iv: &[u8; 16],
         _data: &mut [u8],
     ) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
 
     #[cfg(any(feature = "piv", feature = "ctap"))]
@@ -107,7 +110,7 @@ pub trait Crypto {
         _input: &[u8],
         _out: &mut [u8],
     ) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
     #[cfg(any(feature = "piv", feature = "ctap"))]
     fn stream(
@@ -118,7 +121,7 @@ pub trait Crypto {
         _input: &[u8],
         _output: &mut [u8],
     ) -> Result<usize, CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
 
     #[cfg(feature = "piv")]
@@ -128,7 +131,7 @@ pub trait Crypto {
         _input: &[u8; 16],
         _out: &mut [u8; 16],
     ) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
 
     #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
@@ -140,7 +143,7 @@ pub trait Crypto {
         _input: &[u8],
         _output: &mut [u8],
     ) -> Result<usize, CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
     fn mac(
         &mut self,

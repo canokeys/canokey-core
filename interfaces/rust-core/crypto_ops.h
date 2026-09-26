@@ -6,6 +6,9 @@
 #include <ecc.h>
 #include <rsa.h>
 
+// Distinct primitive failure; the Rust applet chooses the protocol status.
+#define CK_KEY_INVALID_PADDING (-2)
+
 // The CTAP-only adapter must not keep X25519 through the generic, out-of-line
 // ECC public-key dispatcher. Keep the same primitive and validation semantics.
 static inline int ck_ecc_complete_key(key_type_t alg, ecc_key_t *key) {

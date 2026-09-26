@@ -96,7 +96,7 @@ native_port! { impl Crypto for CryptoBackend {
         {
             Ok(())
         } else {
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         }
     }
 
@@ -127,7 +127,7 @@ native_port! { impl Crypto for CryptoBackend {
         {
             Ok(())
         } else {
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         }
     }
 
@@ -152,7 +152,7 @@ native_port! { impl Crypto for CryptoBackend {
         {
             Ok(())
         } else {
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         }
     }
     #[cfg(feature = "platform-stream")]
@@ -176,7 +176,7 @@ native_port! { impl Crypto for CryptoBackend {
             )
         };
         if n < 0 {
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         } else {
             Ok(n as usize)
         }
@@ -192,7 +192,7 @@ native_port! { impl Crypto for CryptoBackend {
         if unsafe { ck_platform_aes192(key.as_ptr(), input.as_ptr(), out.as_mut_ptr()) } == 0 {
             Ok(())
         } else {
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         }
     }
 
@@ -216,8 +216,11 @@ native_port! { impl Crypto for CryptoBackend {
                 out.len(),
             )
         };
-        if n < 0 || n as usize > out.len() {
-            Err(CryptoError)
+        if n == -2 && matches!(op, crate::KeyOperation::RsaPkcs1Decipher) {
+            // CK_KEY_INVALID_PADDING in crypto_ops.h.
+            Err(CryptoError::InvalidPadding)
+        } else if n < 0 || n as usize > out.len() {
+            Err(CryptoError::Failure)
         } else {
             Ok(n as usize)
         }
@@ -245,13 +248,13 @@ native_port! { impl Crypto for CryptoBackend {
             {
                 Ok(())
             } else {
-                Err(CryptoError)
+                Err(CryptoError::Failure)
             }
         }
         #[cfg(not(feature = "platform-mac"))]
         {
             let _ = (algorithm, key, input, out);
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         }
     }
     fn random(&mut self, out: &mut [u8]) -> Result<(), CryptoError> {
@@ -260,13 +263,13 @@ native_port! { impl Crypto for CryptoBackend {
             if unsafe { ck_platform_random(out.as_mut_ptr(), out.len()) } == 0 {
                 Ok(())
             } else {
-                Err(CryptoError)
+                Err(CryptoError::Failure)
             }
         }
         #[cfg(not(feature = "platform-random"))]
         {
             let _ = out;
-            Err(CryptoError)
+            Err(CryptoError::Failure)
         }
     }
     fn hmac_sha1(&mut self, key: &[u8; 20], input: &[u8], out: &mut [u8; 20]) {

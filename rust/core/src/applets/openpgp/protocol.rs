@@ -200,7 +200,7 @@ impl OpenPgp {
                 r.map(|_| 0)
             }
             Request::Import => (|| {
-                self.import.finish(&mut w.key.bytes)?;
+                self.import.finish()?;
                 let a = self.import.algorithm;
                 p.crypto
                     .key_operation(KeyOperation::Validate, a.0, &mut w.key, &[], &mut w.output)
@@ -401,6 +401,7 @@ impl From<super::domain::Error> for Sw {
         use super::domain::Error;
         match error {
             Error::Storage | Error::Crypto => Sw::UNABLE_TO_PROCESS,
+            Error::Data => Sw::WRONG_DATA,
             Error::Length => Sw::WRONG_LENGTH,
             Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
             Error::Unauthorized => Sw::SECURITY_STATUS_NOT_SATISFIED,

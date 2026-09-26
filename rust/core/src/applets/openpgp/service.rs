@@ -161,7 +161,10 @@ impl Session {
         let n = p
             .crypto
             .key_operation(op, a.0, &mut w.key, input, &mut w.output)
-            .map_err(|_| Error::Crypto)?;
+            .map_err(|error| match error {
+                crate::ports::CryptoError::InvalidPadding => Error::Data,
+                crate::ports::CryptoError::Failure => Error::Crypto,
+            })?;
         // Publish the signature counter before returning the signature. A
         // persistence error fails the operation rather than exposing an
         // unaccounted signature; the three-byte counter saturates at FFFFFF.

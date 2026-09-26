@@ -32,14 +32,14 @@ impl Crypto for Backend {
                 out[..64].fill(8);
                 Ok(64)
             }
-            _ => Err(CryptoError),
+            _ => Err(CryptoError::Failure),
         }
     }
     fn mac(&mut self, _: u8, _: &[u8], _: &[u8], _: &mut [u8; 64]) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
     fn random(&mut self, _: &mut [u8]) -> Result<(), CryptoError> {
-        Err(CryptoError)
+        Err(CryptoError::Failure)
     }
     fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
         unreachable!()

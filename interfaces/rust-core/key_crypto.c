@@ -50,7 +50,11 @@ static int rsa_operation(uint8_t op, uint8_t alg, rsa_key_t *key, const uint8_t 
   case CK_KEY_RSA_PKCS1_DECIPHER: {
     size_t len = 0;
     uint8_t invalid = 0;
-    if (n == width && rsa_decrypt_pkcs_v15(key, in, &len, out, &invalid) == 0 && !invalid) result = (int)len;
+    if (n == width) {
+      int status = rsa_decrypt_pkcs_v15(key, in, &len, out, &invalid);
+      if (invalid) result = CK_KEY_INVALID_PADDING;
+      else if (status == 0) result = (int)len;
+    }
     break;
   }
   default:

@@ -92,6 +92,7 @@ pub fn role(reference: u8) -> Option<usize> {
 pub enum Error {
     Storage,
     Crypto,
+    Data,
     Length,
     Blocked,
     Unauthorized,

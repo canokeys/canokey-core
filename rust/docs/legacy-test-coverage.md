@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 156 registered cases: APDU (66),
-key (25), OpenPGP (7), PIV (58). Their C applet/protocol dependencies
+Four C test executables remain, with 151 registered cases: APDU (66),
+key (25), OpenPGP (2), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -303,3 +303,24 @@ The port exposed F2's invalid-length status difference, now corrected to 6700.
 Fault injection is a test-only native storage seam, not a firmware command or
 presence bypass. It models a rejected write and tests authorization cleanup;
 it does not claim physical power-loss durability or atomicity across PIN records.
+
+## Replaced OpenPGP key cases
+
+Five additional cases now run through actual Rust APDUs in
+`openpgp-normal::key_regressions`:
+
+| Legacy case | Replacement |
+|---|---|
+| `test_import_key` | Malformed attributes, fixed Ed25519 seed with/without an ignored supplied public component, independent public-key and signature verification |
+| `test_import_rsa_rejects_inconsistent_crt` | Corrupted dp and equal-prime imports return 6A80; the previous valid RSA key still signs correctly after each rejection |
+| `test_generate_key` | Generation denied without PW3, authenticated RSA generation, short decipher input returns 6700 |
+| `test_decipher_chaining` | Exact 254/3-byte zero-ciphertext fragments return 9000/6A80, followed by independently encrypted successful decryption |
+| `test_x25519_public_key_encoding` | Literal big-endian imported scalar and complete expected 7F49 public-key encoding, plus independent shared-secret verification |
+
+The port exposed two compatibility defects: invalid RSA padding was collapsed
+into generic crypto failure, and the OpenPGP X25519 import incorrectly reversed
+the scalar (the PIV convention). The primitive adapter now reports padding
+failure distinctly and Rust maps it to 6A80; other crypto failures remain 6900.
+OpenPGP keeps its big-endian private scalar. The randomized host import helper
+now encodes that convention independently instead of agreeing with the defect.
+Extended-APDU and termination/cache cases remain in the C suite pending audit.
