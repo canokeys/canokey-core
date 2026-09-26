@@ -37,6 +37,12 @@ always for 9C, never for 9E/F9, once elsewhere. Touch policies are never/always/
 cached (1/2/3), with the C 15-second cache. A request owns its gesture so PASS
 cannot reuse a touch consumed by PIV.
 
+RSA IMPORT rejects zero-length or oversized integer components with `6A80`,
+matching the native parser. Truncated AA/AB policy fields in IMPORT or GENERATE
+return `6700`. Failed requests preserve the previous key and policies;
+`piv-normal` checks metadata preservation and independently verifies a subsequent
+private operation with the original key.
+
 ## Algorithms and streaming
 
 RSA-2048/3072/4096 support key generation, validated CRT import, public export,

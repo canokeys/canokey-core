@@ -187,6 +187,27 @@ def classic_keys(c):
         )
 
 
+def import_boundary_regressions(c):
+    private = ec.generate_private_key(ec.SECP256R1())
+    c.import_key(0, private)
+    before = c.cmd("import_baseline", 0xf7, 0, 0x9a)
+    for algorithm in (0x08, 0x0c, 0xff):
+        c.cmd("invalid_public_algorithm", 0x47, 0, 0x9a,
+              tlv(0xac, tlv(0x80, bytes([algorithm]))), status=0x6a80)
+        assert c.cmd("failed_generate_keeps_key", 0xf7, 0, 0x9a) == before
+    c.cmd("empty_rsa_component", 0xfe, 0x16, 0x9a, bytes.fromhex("0100a5"), status=0x6a80)
+    c.cmd("oversized_rsa_component", 0xfe, 0x16, 0x9a, bytes.fromhex("01820101a5"), status=0x6a80)
+    c.cmd("completed_rsa_component", 0xfe, 0x16, 0x9a, bytes.fromhex("0101a5a5"), status=0x6a80)
+    scalar = private.private_numbers().private_value.to_bytes(32, "big")
+    for tail in (b"\xaa", b"\xaa\x01", b"\xab", b"\xab\x01"):
+        c.cmd("truncated_generation_policy", 0x47, 0, 0x9a,
+              tlv(0xac, tlv(0x80, b"\x11") + tail), status=0x6700)
+        c.cmd("truncated_import_policy", 0xfe, 0x11, 0x9a,
+              tlv(6, scalar) + tail, status=0x6700)
+        assert c.cmd("failed_import_keeps_policy_and_key", 0xf7, 0, 0x9a) == before
+    exercise(c, 0, private.public_key())
+
+
 def encoding_regressions(c):
     for algorithm, private, expected in encoding_vectors():
         c.import_key(algorithm, private)
@@ -530,6 +551,7 @@ def run(wire, progress=None, report=None):
             objects,
             classic_keys,
             encoding_regressions,
+            import_boundary_regressions,
             pq_keys,
             randomized_ed25519,
             sm2_operations,

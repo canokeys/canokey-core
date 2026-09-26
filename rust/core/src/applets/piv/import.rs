@@ -76,6 +76,10 @@ impl Import {
                     Feed::Complete(n) => {
                         self.n = n as usize;
                         self.offset = 0;
+                        // Invalid RSA integer bounds retain the legacy data-error status.
+                        if repo::rsa(a) && (self.n == 0 || self.n > repo::width(a)) {
+                            return Err(Sw::WRONG_DATA);
+                        }
                         if self.n == 0
                             || self.n > repo::width(a)
                             || (!repo::rsa(a) && self.n != repo::width(a))
