@@ -163,3 +163,18 @@ pub unsafe extern "C" fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut
 pub unsafe extern "C" fn ck_ccid_progress() -> u8 {
     unsafe { ck_ccid_io_live() }
 }
+
+/// Take only a complete, bodyless slot poll. Other commands stay queued for
+/// the main loop; a progress callback must never trigger Core dispatch/reset.
+#[cfg(all(feature = "usb-device", feature = "usb-hid"))]
+pub unsafe fn take_presence(epoch: u32, output: &mut [u8; 10]) -> bool {
+    locked(|| unsafe {
+        if epoch != GENERATION || QUEUED != 10 || RX[0] != 0x65 || RX[1..5] != [0; 4] {
+            return false;
+        }
+        core::ptr::copy_nonoverlapping(core::ptr::addr_of!(RX).cast(), output.as_mut_ptr(), 10);
+        QUEUED = 0;
+        ck_usb_receive(3);
+        true
+    })
+}

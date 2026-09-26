@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 40 registered APDU cases.
+One legacy C test executable remains, with 39 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -964,3 +964,23 @@ established by this replacement. Rust cooperative HID progress currently does
 not service the CCID presence mailbox.
 
 Validation: full host CTest passed 28/28 in 66.71 seconds.
+
+## HID execution services CCID presence polls
+
+Closed the progress-path gap identified above and removed
+`test_ctaphid_wait_services_only_ccid_presence_poll`. The real `usb-sessions`
+fixture injects two CCID slot polls inside a HID selection presence wait. It
+checks literal response bytes/sequence, keeps the first IN pending while the
+second request arrives, then verifies ordered delivery. A queued power-on
+cannot dispatch until HID cancellation unwinds; the CTAP response must remain
+KEEPALIVE_CANCEL (2D), after which power-on returns its ATR.
+
+Rust admits only a complete bodyless slot poll in this callback, uses the
+existing CCID parser/response buffer, and never resets Core for USB generation
+changes or timeouts. Other requests stay queued for ordinary main-loop handling.
+No separate workspace or endpoint buffer was added. Physical compatibility and
+stack acceptance remain open.
+
+Validation: full host CTest passed 28/28 in 56.93 seconds; the USB-only
+composition test also passed after making its excluded HID execution boundary
+fail explicitly if accidentally invoked.

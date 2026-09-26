@@ -462,3 +462,14 @@ workspace. Other P1 bits and nonzero P2 remain rejected with `6A86`. This admiss
 is shared by short/chained APDUs, standalone extended CTAP input and HID MSG.
 The PC/SC daemon/client regression uses the client's default P1=80; disabling
 that flag on the client would hide a firmware compatibility failure.
+
+### CCID presence polls during HID execution
+
+The cooperative HID progress path services complete, bodyless CCID
+`PC_to_RDR_GetSlotStatus` requests without borrowing Core or shared scratch.
+Replies preserve the CCID slot state and sequence and retain their endpoint
+buffer until IN completion. Power/reset, APDU, fragmented and body-bearing
+requests remain queued for the main loop. A USB generation change never triggers
+Core reset from this callback. The `usb-sessions` fixture exercises two polls,
+IN backpressure, deferred power-on and cancellation inside a real HID selection
+presence wait.

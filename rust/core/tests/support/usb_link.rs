@@ -41,3 +41,10 @@ mod entrypoints {
 pub unsafe extern "C" fn test_web_preempt(requested: u8) -> u8 {
     unsafe { webusb_link::try_preempt(requested != 0) as u8 }
 }
+
+// This fixture isolates USB/controller behavior; usb-sessions links the actual
+// CCID/Core progress path and verifies presence polling during HID execution.
+#[cfg(feature = "usb-hid")]
+mod ccid {
+    pub unsafe fn presence_progress() { unreachable!("HID execution belongs in usb-sessions") }
+}

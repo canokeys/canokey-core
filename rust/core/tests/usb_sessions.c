@@ -22,7 +22,14 @@ extern uint8_t ck_ccid_idle(void);
 uint32_t ck_platform_now(void) { return now; }
 uint8_t ck_platform_touched(void) { return 0; }
 void ck_platform_led(uint8_t on) { (void)on; }
-uint8_t ck_platform_progress(void) { ++now; return ck_transport_progress(); }
+static uint8_t presence_stage;
+static uint32_t presence_cid;
+static void presence_progress(void);
+uint8_t ck_platform_progress(void) {
+  ++now;
+  if(presence_stage) presence_progress();
+  return ck_transport_progress();
+}
 void device_delay(int ms) { assert(ms >= 0); now += (uint32_t)ms; }
 static unsigned ix(uint8_t ep) { return (ep&3)*2+(ep>>7); }
 uint32_t __get_PRIMASK(void) { return masked; }
@@ -48,6 +55,40 @@ uint8_t ck_usb_dcd_write(uint8_t ep,const uint8_t *p,uint16_t n) {
   lengths[ep&3]=n;pending[ep&3]=1;submissions[ep&3]++;return 1;
 }
 static void complete(uint8_t ep) { assert(pending[ep&3]);pending[ep&3]=0;ck_usb_in(ep); }
+/* Inject host traffic while the real selection command borrows Core. */
+static void presence_progress(void) {
+  assert(ck_hid_executing());
+  if(pending[2]) complete(0x82); // Host consumes keepalive reports.
+  uint8_t poll[]={0x65,0,0,0,0,0,0x37,0,0,0};
+  if(presence_stage==1) {
+    assert(ck_usb_out(3,poll,sizeof(poll))==0);
+    presence_stage=2;
+  } else if(presence_stage==2) {
+    const uint8_t expected[]={0x81,0,0,0,0,0,0x37,0,0,0};
+    assert(pending[3] && lengths[3]==10 && !memcmp(packets[3],expected,10));
+    poll[6]=0x38; assert(ck_usb_out(3,poll,sizeof(poll))==0);
+    presence_stage=3;
+  } else if(presence_stage==3) {
+    assert(pending[3] && packets[3][6]==0x37); // IN still owns the first reply.
+    complete(0x83);
+    presence_stage=4;
+  } else if(presence_stage==4) {
+    const uint8_t expected[]={0x81,0,0,0,0,0,0x38,0,0,0};
+    assert(pending[3] && lengths[3]==10 && !memcmp(packets[3],expected,10));
+    complete(0x83);
+    poll[0]=0x62; poll[6]=0x39;
+    assert(ck_usb_out(3,poll,sizeof(poll))==0);
+    presence_stage=5;
+  } else {
+    assert(!pending[3]); // Power-on must not reset the borrowed Core.
+    uint8_t cancel[64]={0};
+    cancel[0]=(uint8_t)(presence_cid>>24); cancel[1]=(uint8_t)(presence_cid>>16);
+    cancel[2]=(uint8_t)(presence_cid>>8); cancel[3]=(uint8_t)presence_cid;
+    cancel[4]=0x91;
+    assert(ck_usb_out(2,cancel,64)==0);
+    presence_stage=0;
+  }
+}
 static void setup(uint8_t type,uint8_t req,uint16_t value,uint16_t index,uint16_t len) {
   uint8_t b[]={type,req,(uint8_t)value,(uint8_t)(value>>8),(uint8_t)index,(uint8_t)(index>>8),(uint8_t)len,(uint8_t)(len>>8)};
   ck_usb_setup(b,8);
@@ -506,6 +547,14 @@ int main(void) {
   count=ccid_read(out); sw(out+10,count-10,0x9000);
   assert(count>76 && out[10]==0);
   assert(!scratch_owner && leases==clears);
+  now+=2000;
+  presence_cid=cid; presence_stage=1;
+  const uint8_t selection[]={0x0b};
+  hid_send(cid,0x90,selection,sizeof(selection));
+  assert(presence_stage==0);
+  assert(hid_read(cid,0x90,hid)==1 && hid[0]==0x2d);
+  sequence=0x39; count=ccid_read(out);
+  assert(count>10 && out[0]==0x80);
   puts("USB shared session correctness passed");
   return 0;
 }

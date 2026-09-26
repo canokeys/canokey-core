@@ -506,6 +506,7 @@ pub unsafe extern "C" fn ck_transport_progress() -> u8 {
         #[cfg(feature = "usb-hid")]
         {
             if ck_hid_executing() != 0 {
+                super::ccid::presence_progress();
                 return ck_hid_progress();
             }
             ck_hid_foreign_progress();

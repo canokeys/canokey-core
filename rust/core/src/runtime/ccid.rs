@@ -281,6 +281,10 @@ impl Transport {
     pub fn queued(&self) -> bool {
         self.phase == Phase::Queued
     }
+    /// A progress callback may retry only a slot poll's unsent response.
+    pub fn presence_reply(&self) -> bool {
+        self.phase == Phase::Reply && self.request.bytes[0] == SLOT_STATUS
+    }
     pub fn execute(
         &mut self,
         hid_busy: bool,

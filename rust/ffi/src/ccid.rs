@@ -277,3 +277,36 @@ pub unsafe extern "C" fn CCID_Loop() {
 pub extern "C" fn ck_ccid_response_buffer() -> *mut u8 {
     core::ptr::addr_of_mut!(RESPONSE).cast()
 }
+
+/// Called only from HID execution, when no CCID borrow is outstanding.
+/// Never reset on generation change, consume APDUs/power commands, expire a
+/// session or touch the shared workspace. Slot replies use the CCID TX buffer.
+#[cfg(all(feature = "usb-device", feature = "usb-hid"))]
+pub unsafe fn presence_progress() {
+    unsafe {
+        let generation = ck_ccid_io_generation();
+        if GENERATION != generation || ck_ccid_io_idle() == 0 {
+            return;
+        }
+        let transport = ccid();
+        transport.completed();
+        let mut platform = Platform { generation };
+        if transport.completed_transaction() {
+            let mut packet = [0; 10];
+            if !super::ccid_io::take_presence(generation, &mut packet) {
+                return;
+            }
+            transport.receive(&packet, ck_ccid_io_now(), false, &mut platform);
+            // take_presence admits only bodyless SLOT_STATUS: execute cannot
+            // invoke the backend's reset, exchange or scratch operations.
+            transport.execute(true, &mut platform, &mut *core::ptr::addr_of_mut!(RESPONSE));
+        }
+        if transport.presence_reply() {
+            if let Some(reply) = transport.reply(&*core::ptr::addr_of!(RESPONSE)) {
+                if ck_ccid_io_submit(generation, reply.as_ptr(), reply.len() as u16, 0) == 1 {
+                    transport.submitted();
+                }
+            }
+        }
+    }
+}
