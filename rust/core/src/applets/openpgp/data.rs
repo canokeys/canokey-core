@@ -319,7 +319,7 @@ impl OpenPgp {
                         + (tag - tag::CA_FINGERPRINT_1) as usize * state_layout::FINGERPRINT_BYTES;
                     s[at..at + state_layout::FINGERPRINT_BYTES].copy_from_slice(b);
                 }
-                _ => return Err(Sw::REFERENCE_NOT_FOUND),
+                _ => return Err(Sw::WRONG_P1P2),
             }
         }
         repo::save_state(p, &s).map_err(Into::into)

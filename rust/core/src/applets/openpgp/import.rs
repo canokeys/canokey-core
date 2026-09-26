@@ -139,7 +139,7 @@ impl Import {
         if b.len() < at + control_reference_len as usize {
             return Ok(false);
         }
-        if control_reference_len == 3 && b[at..at + 3] != key_tag::KEY_REFERENCE {
+        if control_reference_len == 3 && b[at..at + 2] != key_tag::KEY_REFERENCE[..2] {
             return Err(Sw::WRONG_DATA);
         }
         at += control_reference_len as usize;

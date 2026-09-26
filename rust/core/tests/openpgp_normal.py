@@ -75,7 +75,7 @@ class Card(ApduCard):
     def public(self, role, generate=False):
         reply = self.cmd(
             "generate" if generate else "public", 0x47, 0x80 if generate else 0x81,
-            data=bytes([REF[role], 0]),
+            data=(bytes([REF[role], 3, 0x84, 1, 2]) if role == 1 else bytes([REF[role], 0])),
         )
         value = fields(reply)[0x7f49]
         assert reply == tlv(0x7f49, value)
@@ -163,11 +163,19 @@ def exercise(c, alg, role, key):
                 expected = peer.exchange(ec.ECDH(), key)
             value = tlv(0xA6, tlv(0x7F49, tlv(0x86, point)))
         assert c.cmd("decipher", 0x2A, 0x80, 0x86, value) == expected
+        if alg in (5, 6, 7):
+            c.cmd("rsa_bad_indicator", 0x2A, 0x80, 0x86, b"\xff" + value[1:], status=0x6a80)
+            c.cmd("rsa_short_ciphertext", 0x2A, 0x80, 0x86, value[:-1], status=0x6700)
+        else:
+            c.cmd("ecdh_short_body", 0x2A, 0x80, 0x86, bytes(7), status=0x6700)
+            c.cmd("ecdh_malformed_tlv", 0x2A, 0x80, 0x86, bytes.fromhex("a63377a677a63377"), status=0x6a80)
+            c.cmd("ecdh_bad_point_length", 0x2A, 0x80, 0x86, tlv(0xa6, tlv(0x7f49, tlv(0x86, point[:-1]))), status=0x6a80)
 
 
 def import_template(role, tags, parts):
     descriptors = b"".join(bytes([t]) + length(len(v)) for t, v in zip(tags, parts))
-    return tlv(0x4d, bytes([REF[role], 0]) + tlv(0x7f48, descriptors)
+    reference = bytes([REF[role], 3, 0x84, 1, 2]) if role == 1 else bytes([REF[role], 0])
+    return tlv(0x4d, reference + tlv(0x7f48, descriptors)
                + tlv(0x5f48, b"".join(parts)))
 
 
@@ -299,6 +307,15 @@ def pin_regressions(c, wire, host):
 def run(wire, host):
     c = Card(wire)
     c.reset()
+    c.cmd("unknown_put_parameters", 0xDA, 1, 1, b"x", status=0x6a86)
+    c.cmd("unknown_get_reference", 0xCA, 1, 1, status=0x6a88)
+    c.cmd("terminate_before_reselect", 0xE6, le=None)
+    c.select()
+    c.cmd("reselect_does_not_activate", 0xCA, 0, 0x4F, status=0x6285)
+    c.cmd("activate_after_reselect", 0x44, le=None)
+    c.cmd("already_active", 0x44, le=None, status=0x6985)
+    c.select()
+    c.verify()
     pin_regressions(c, wire, host)
     key_regressions(c)
     encoding_regressions(c)

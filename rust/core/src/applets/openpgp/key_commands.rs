@@ -92,26 +92,34 @@ impl OpenPgp {
         };
         let a = self.session.prepare(r, &mut w.key.bytes, p)?;
         let input = if r == key_role::DECIPHER && a.rsa() {
-            if b.len() != a.public_value_bytes() + 1 || b[0] != 0 {
+            if b.len() != a.public_value_bytes() + 1 {
                 return Err(Sw::WRONG_LENGTH);
+            }
+            if b[0] != 0 {
+                return Err(Sw::WRONG_DATA);
             }
             &b[1..]
         } else if r == key_role::DECIPHER {
-            let (t, b) = object(b)?;
+            // Legacy ECDH distinguishes a short APDU body from a malformed
+            // nested public-key object; all TLV failures are data errors.
+            if b.len() < 8 {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            let (t, b) = object(b).map_err(|_| Sw::WRONG_DATA)?;
             if t != key_tag::AGREEMENT_TEMPLATE {
                 return Err(Sw::WRONG_DATA);
             }
-            let (t, b) = object(b)?;
+            let (t, b) = object(b).map_err(|_| Sw::WRONG_DATA)?;
             if t != key_tag::PUBLIC_TEMPLATE {
                 return Err(Sw::WRONG_DATA);
             }
-            let (t, b) = object(b)?;
+            let (t, b) = object(b).map_err(|_| Sw::WRONG_DATA)?;
             if t != key_tag::POINT {
                 return Err(Sw::WRONG_DATA);
             }
             if a.0 == alg::X25519 {
                 if b.len() != 32 {
-                    return Err(Sw::WRONG_LENGTH);
+                    return Err(Sw::WRONG_DATA);
                 }
                 b
             } else {
@@ -141,12 +149,13 @@ impl OpenPgp {
     }
 }
 // Decode a Control Reference Template (CRT), not RSA CRT arithmetic.
-// Accepted forms are [role, 00] or [role, 03, 84, 01, 01].
+// Accepted forms are [role, 00] or [role, 03, 84, 01, reference].
+// There is one key per role; the optional reference does not select another key.
 fn parse_key_role(b: &[u8]) -> Result<usize, Sw> {
     if b.len() != 2 && b.len() != 5 {
         return Err(Sw::WRONG_LENGTH);
     }
-    if b[1] as usize + 2 != b.len() || (b.len() == 5 && b[2..] != key_tag::KEY_REFERENCE) {
+    if b[1] as usize + 2 != b.len() || (b.len() == 5 && b[2..4] != key_tag::KEY_REFERENCE[..2]) {
         return Err(Sw::WRONG_DATA);
     }
     role(b[0]).ok_or(Sw::WRONG_DATA)

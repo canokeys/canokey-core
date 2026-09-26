@@ -165,8 +165,17 @@ an interrupted reset remains recoverable with ACTIVATE. Storage failures are
 fail-closed (`6900`), never a trigger to format or reinterpret old C records.
 `s` is separate from `t` used for atomic record updates.
 
-When the terminated marker is set, SELECT returns `6285` until ACTIVATE
-completes recovery. Presence cancellation is reported as `6400`; this is the
+When the terminated marker is set, SELECT still succeeds so clients can
+reach ACTIVATE, matching the legacy applet. Ordinary commands return `6285`
+until ACTIVATE completes recovery; reselecting alone does not clear the marker.
+Unsupported PUT DATA object parameters return `6A86`, while unsupported GET
+DATA references return `6A88`. ACTIVATE on an already active applet returns
+`6985` without changing records. Key generation, reading and import accept
+the optional `84 01 reference` CRT field; its value does not select a second
+key because each outer role has one key. ECDH bodies shorter than eight bytes
+return `6700`; malformed nested TLVs and point lengths return `6A80`. RSA
+decipher distinguishes wrong ciphertext length (`6700`) from a wrong padding
+indicator (`6A80`). Presence cancellation is reported as `6400`; this is the
 Rust profile's explicit mapping for the legacy touch-cancel path.
 
 ## Validation scope

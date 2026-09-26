@@ -224,7 +224,14 @@ fn lifecycle_cache_reloads_uncertain_commits_and_revokes_grants() {
                 Err(Sw::SECURITY_STATUS_NOT_SATISFIED)
             );
         }
-        assert_eq!(c.command(0x44, 0, &[]), Ok((0, Sw::SUCCESS)));
+        assert_eq!(
+            c.command(0x44, 0, &[]),
+            if applied {
+                Ok((0, Sw::SUCCESS))
+            } else {
+                Err(Sw::CONDITIONS_NOT_SATISFIED)
+            }
+        );
     }
 
     // An interrupted reinstall remains terminated until a successful retry.

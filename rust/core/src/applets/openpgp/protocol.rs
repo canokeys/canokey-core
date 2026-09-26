@@ -85,10 +85,9 @@ impl OpenPgp {
     }
     pub fn select(&mut self, p: &mut Platform<'_>) -> Result<u32, Sw> {
         self.occurrence = 0;
-        let terminated = self.is_terminated(p)?;
-        if terminated {
-            return Err(Sw::SELECTED_FILE_TERMINATED);
-        }
+        // Selection permits ACTIVATE recovery. Ordinary commands still reject
+        // a terminated applet in begin(), including after a new selection.
+        self.is_terminated(p)?;
         Ok(0)
     }
     pub fn limit(h: Header) -> u32 {
@@ -383,14 +382,14 @@ impl OpenPgp {
                 Ok(0)
             }
             ACTIVATE => {
-                // 44 00 00 reinitializes a terminated applet; on an active
-                // applet it succeeds without resetting credentials or keys.
+                // 44 00 00 only reinitializes a terminated applet.
                 if tag != 0x0000 || !b.is_empty() {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if self.is_terminated(p)? {
-                    self.clear(w, p)?;
+                if !self.is_terminated(p)? {
+                    return Err(Sw::CONDITIONS_NOT_SATISFIED);
                 }
+                self.clear(w, p)?;
                 Ok(0)
             }
             SET_RETRIES => {
