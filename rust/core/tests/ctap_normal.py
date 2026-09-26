@@ -143,10 +143,10 @@ def run(wire):
         auth = AuthenticatorData(result[2])
         resident_keys[auth.credential_data.credential_id] = auth.credential_data.public_key
     first = call(2, {1: rp, 2: assertion_hash})
-    assert first[5] == 2 and first[4] == {"id": b"first"}
+    assert first[5] == 2 and first[4] == {"id": b"second"}
     resident_keys[first[1]["id"]].verify(first[2] + assertion_hash, first[3])
     second = call(8)
-    assert 5 not in second and second[4] == {"id": b"second"}
+    assert 5 not in second and second[4] == {"id": b"first"}
     resident_keys[second[1]["id"]].verify(second[2] + assertion_hash, second[3])
     call(8, status=0x30)
     unknown = dict(first[1], id=bytes([first[1]["id"][0] ^ 1]) + first[1]["id"][1:])
@@ -160,7 +160,7 @@ def run(wire):
     card.cmd("deselect FIDO", 0xa4, 4, data=bytes.fromhex("f000000000"))
     select()
     call(8, status=0x30)
-    old = first[1]
+    old = second[1]
     replacement = {1: client_hash, 2: {"id": rp}, 3: {"id": b"first"},
                    4: [{"type": "public-key", "alg": -8}], 7: {"rk": True}}
     wire.command("FAIL_WRITE 80")
@@ -473,7 +473,7 @@ def run(wire):
                          "hmac-secret": {1: public, 2: encrypted, 3: protocol.authenticate(secret, encrypted), 4: 2}},
                      6: protocol.authenticate(token, assertion_hash), 7: 2})
     following = call(8)
-    for answer, payment in [(result, False), (following, True)]:
+    for answer, payment in [(result, True), (following, False)]:
         assert len(cbor.encode(answer)) + 1 > 528
         auth = AuthenticatorData(answer[2])
         assert auth.extensions["credBlob"] == b"b" * 32

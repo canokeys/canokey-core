@@ -620,3 +620,7 @@ Credential options are command-specific: makeCredential rejects explicit `up`
 with `INVALID_OPTION`, and getAssertion rejects explicit `rk` with
 `UNSUPPORTED_OPTION`, regardless of their boolean value. Omitted options retain
 the command defaults; getAssertion continues to support `up: false`.
+
+Resident getAssertion/getNextAssertion enumeration preserves the legacy descending
+record-slot order. The cursor is an exclusive upper slot bound, including slot
+zero without underflow. Credential management retains its separate scan order.

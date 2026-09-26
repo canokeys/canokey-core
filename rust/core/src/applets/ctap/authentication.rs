@@ -112,7 +112,8 @@ impl Session {
         }
         let mut count = 0;
         if !params.make && !params.list_present {
-            for index in 0..crate::ports::Record::CTAP_CREDENTIALS {
+            // Preserve the legacy descending record order for discovery.
+            for index in (0..crate::ports::Record::CTAP_CREDENTIALS).rev() {
                 if let Some(n) = resident::load(index, &mut w.input, p)? {
                     let entry = resident::Entry::decode(&w.input[..n])?;
                     if entry.rp_hash == &rp
@@ -190,7 +191,7 @@ impl Session {
             self.assertion = resident::Assertion {
                 rp,
                 client_hash: params.client_hash,
-                next: user_slot.unwrap() + 1,
+                next: user_slot.unwrap(),
                 remaining: count - 1,
                 uv,
                 up: params.up,
@@ -241,7 +242,7 @@ impl Session {
             {
                 return Err(Status::NotAllowed);
             }
-            for index in self.assertion.next..crate::ports::Record::CTAP_CREDENTIALS {
+            for index in (0..self.assertion.next).rev() {
                 if let Some(n) = resident::load(index, &mut w.input, p)? {
                     let entry = resident::Entry::decode(&w.input[..n])?;
                     if entry.rp_hash != &self.assertion.rp
@@ -252,7 +253,7 @@ impl Session {
                     }
                     let id = *entry.id;
                     let algorithm = credential::open(&id, self.sm2, &self.assertion.rp, w, p)?;
-                    self.assertion.next = index + 1;
+                    self.assertion.next = index;
                     self.assertion.remaining -= 1;
                     self.assertion.started = p.device.now();
                     return respond(
