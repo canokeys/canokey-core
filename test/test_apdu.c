@@ -829,37 +829,6 @@ static void test_ccid_rejects_reentrant_command_until_response_finishes(void **s
   device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
 }
 
-static uint32_t observed_streaming_le;
-
-static int record_streaming_capdu_le(const CAPDU *capdu, RAPDU *rapdu) {
-  observed_streaming_le = capdu->le;
-  rapdu->len = 0;
-  rapdu->sw = SW_NO_ERROR;
-  return 0;
-}
-
-static void test_streaming_message_preserves_original_le_for_handler(void **state) {
-  (void)state;
-
-  static const uint8_t read_binary_extended[] = {
-      0x00, 0xB0, 0x00, 0x00, 0x00, 0x04, 0x01,
-  };
-
-  uint8_t c_buf[16], r_buf[16];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-  RAPDU_CHAINING rapdu_chaining = {.rapdu.data = r_buf};
-
-  observed_streaming_le = 0;
-
-  assert_int_equal(build_capdu(&capdu, read_binary_extended, sizeof(read_binary_extended)), 0);
-  assert_int_equal(capdu.le, 0x0401);
-  assert_int_equal(
-      apdu_process_streaming_message(&rapdu_chaining, &capdu, &rapdu, 0, APDU_BUFFER_SIZE, record_streaming_capdu_le),
-      0);
-  assert_int_equal(observed_streaming_le, 0x0401);
-}
-
 static void test_pke_buffer_fallback_for_ctap(void **state) {
   (void)state;
 
@@ -2505,7 +2474,6 @@ int main() {
       cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
       cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),
       cmocka_unit_test(test_ccid_rejects_reentrant_command_until_response_finishes),
-      cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_ccid_extended_fido_request_uses_pke),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),

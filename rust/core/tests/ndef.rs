@@ -346,6 +346,13 @@ mod apdu {
         }
         assert_eq!(data.len(), 300);
         assert_eq!(&data[20..25], &[0x11, 0x22, 0x33, 0x44, 0x55]);
+        // Preserve the full extended Le at the applet boundary: 1025 cannot
+        // be clamped to a short response before validating the 1024-byte file.
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 1]),
+            [0x67, 0]
+        );
+        assert_eq!(exchange(&mut core, &mut p, &[0, 0xc0, 0, 0, 0]), [0x69, 0x86]);
         let mut chunk = exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 0]);
         assert!(core.can_preempt()); // Large NDEF reads used an abandonable source.
         let mut total = 0;

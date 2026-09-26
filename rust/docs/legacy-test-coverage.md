@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 47 registered APDU cases.
+One legacy C test executable remains, with 46 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -884,3 +884,14 @@ checks the original 512-byte / 254-byte chunk boundary with literal status
 words 61FF, 6104 and 9000. Existing response lease tests cover short reads,
 cleanup and data wiping. Native chain buffer/internal flag checks are removed;
 production code is unchanged.
+
+## Extended Le reaches the applet unchanged
+
+`test_streaming_message_preserves_original_le_for_handler` is replaced by the
+actual NDEF registry/engine test in `core/tests/ndef.rs`. The original command
+00 B0 00 00 00 04 01 now traverses the Rust engine and must reject a 1025-byte
+read from a 1024-byte file with 6700 and no data or pending GET RESPONSE.
+The immediately following 1024-byte extended read completes through the real
+response source. This complements the existing 300-byte read, proving that Le
+is not truncated to the short output buffer before applet validation. Removed
+the native callback-only observer; no production code changed.
