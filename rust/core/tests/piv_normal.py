@@ -754,6 +754,23 @@ def attestation(c):
     return issuer_key, issuer
 
 
+def malformed_commands(c):
+    # Fixed command-boundary regressions, with explicit outcomes and recovery.
+    for ins, p1, p2, body in (
+        (0x87, 0x0A, 0x9B, b""),
+        (0x87, 0x0A, 0x9B, b"\x7c"),
+        (0xCB, 0x3F, 0xFF, b""),
+        (0xDB, 0x3F, 0xFF, bytes.fromhex("5c035fc1")),
+        (0x47, 0, 0x9A, bytes.fromhex("ac008001")),
+        (0xFE, 7, 0x9C, bytes.fromhex("013e0100")),
+    ):
+        c.cmd("truncated_command", ins, p1, p2, body, status=0x6700)
+    c.cmd("wrong_management_template", 0x87, 0x0A, 0x9B, bytes(2), status=0x6A80)
+    c.cmd("unsupported_management_algorithm", 0x87, 0xFF, 0x9B,
+          bytes.fromhex("7c00"), status=0x6A86)
+    c.auth()
+
+
 def interruptions(c):
     raw = c.raw
     old = c.get(0x5FC109)
@@ -796,6 +813,25 @@ def interruptions(c):
         cla=0x10,
         status=0x6700,
     )
+    empty = bytes.fromhex("7c0482008100")
+    for body, status in ((bytes.fromhex("7c058201008100"), 0x6A80),
+                         (bytes.fromhex("7c0582008100"), 0x6700),
+                         (empty[:3], 0x6700)):
+        raw("malformed_stream_template", 0x87, 0xFF, 0x9A, body, status=status)
+    assert raw("complete_stream_waits_for_final_fragment", 0x87, 0xFF, 0x9A,
+               empty, cla=0x10) == b""
+    answer = raw("empty_final_fragment_finishes_stream", 0x87, 0xFF, 0x9A, le=256)
+    public.verify(fields(fields(answer)[0x7C])[0x82], b"")
+    for rejected, status in (("00fd0000000001", 0x6700), ("80fd000000", 0x6E00)):
+        raw("stream_before_rejected_command", 0x87, 0xFF, 0x9A, empty[:2], cla=0x10)
+        answer, a, b = c.wire.transmit(bytes.fromhex(rejected))
+        assert not answer and (a << 8 | b) == status
+        raw("stale_stream_suffix_rejected", 0x87, 0xFF, 0x9A, empty[2:], status=0x6A80)
+        answer = c.cmd("stream_recovers_after_rejection", 0x87, 0xFF, 0x9A, empty)
+        public.verify(fields(fields(answer)[0x7C])[0x82], b"")
+    raw("stream_before_algorithm_change", 0x87, 0xFF, 0x9A, empty[:2], cla=0x10)
+    raw("changed_stream_algorithm_rejected", 0x87, 0xE0, 0x9A, empty[2:], status=0x6A80)
+    public.verify(c.ga(3, 0x9A, b"recovered"), b"recovered")
     raw("pq_partial_public", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, b"\xe2")), le=1, status=0x61FF)
     c.select()
     raw("abandoned_public_not_readable", 0xC0, le=256, status=0x6986)
@@ -925,7 +961,7 @@ def run(wire, progress=None, report=None):
             scenario(c)
         c.report["scenario"] = "attestation"
         issuer_key, issuer = attestation(c)
-        for scenario in (interruptions, slots):
+        for scenario in (malformed_commands, interruptions, slots):
             c.report["scenario"] = scenario.__name__
             scenario(c)
         c.report["scenario"] = "reset_and_persistence"

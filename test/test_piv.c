@@ -235,21 +235,6 @@ static size_t piv_test_send_chained_message(uint8_t p1, uint8_t p2, const uint8_
   return total;
 }
 
-static size_t piv_test_build_long_auth(uint8_t *request, const uint8_t *message, uint16_t message_len) {
-  const uint16_t outer_len = message_len + 6;
-  request[0] = 0x7C;
-  request[1] = 0x82;
-  request[2] = (uint8_t)(outer_len >> 8);
-  request[3] = (uint8_t)outer_len;
-  request[4] = 0x82;
-  request[5] = 0x00;
-  request[6] = 0x81;
-  request[7] = 0x82;
-  request[8] = (uint8_t)(message_len >> 8);
-  request[9] = (uint8_t)message_len;
-  memcpy(request + 10, message, message_len);
-  return (size_t)message_len + 10;
-}
 
 
 
@@ -456,83 +441,6 @@ static void piv_test_assert_attestation_certificate(const uint8_t *certificate, 
   piv_test_assert_attestation_signature(tbs_start, tbs.total_len, &signature_value);
 }
 
-// regression tests for crashes discovered by fuzzing
-static void test_regression_fuzz(void **state) {
-  (void)state;
-
-  if (1) {
-    // zero length data
-    uint8_t data[] = {};
-    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0x00, 0x00, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // only tag
-    uint8_t data[] = {0x7C};
-    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0x00, 0x9B, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // only tag and bad length
-    uint8_t data[] = {0x7C, 0x80};
-    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0x00, 0x9B, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // malformed authenticate payload
-    uint8_t data[] = {0x00, 0x00};
-    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0x0A, 0x9B, SW_WRONG_DATA);
-  }
-
-  if (1) {
-    // valid authenticate payload with unsupported card admin algorithm
-    uint8_t data[] = {0x7C, 0x00};
-    test_helper(data, sizeof(data), PIV_INS_GENERAL_AUTHENTICATE, 0xFF, 0x9B, SW_WRONG_P1P2);
-  }
-
-  if (1) {
-    // empty input
-    uint8_t data[] = {};
-    test_helper(data, sizeof(data), PIV_INS_GET_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
-  }
-
-  // bypass authentication, testing only
-  set_admin_status(1);
-
-  if (1) {
-    // empty input
-    uint8_t data[] = {};
-    test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // empty input
-    uint8_t data[] = {};
-    test_helper(data, sizeof(data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // empty object path
-    uint8_t data[] = {0x5C, 0x03, 0x5F, 0xC1};
-    test_helper(data, sizeof(data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // empty object path
-    uint8_t data[] = {0xAC, 0x00, 0x80, 0x01};
-    test_helper(data, sizeof(data), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0x00, 0x9A, SW_WRONG_LENGTH);
-  }
-
-  if (1) {
-    // import symmetric key
-    // 00FE079C 91
-    // 013E4C9CA1020204000000000000005B08020C00000000000000020202020202020202020202020202020202022D0D0202020202020202020202020202020202025050505050505002505050505002020202025002020202020202028202020202E78DE4F3D506F6B7A3F8BD10CB29DADE18B83B6ED7AB37A3B73A9A11348E17B60B65119055DD2497942D363431323734
-    uint8_t data[] = {0x01,
-                      // TLV
-                      0x3E, 0x01, 0x00};
-    test_helper(data, sizeof(data), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0x07, 0x9C, SW_WRONG_LENGTH);
-  }
-}
 
 
 
@@ -1044,192 +952,9 @@ static void test_piv_attestation_all_target_algorithms(void **state) {
 
 
 
-static void test_ed25519_general_authenticate_limits(void **state) {
-  (void)state;
-
-  assert_int_equal(piv_install(1), 0);
-
-  ck_key_t key = {.meta = {.type = ED25519,
-                           .origin = KEY_ORIGIN_GENERATED,
-                           .usage = SIGN,
-                           .pin_policy = PIN_POLICY_NEVER,
-                           .touch_policy = TOUCH_POLICY_NEVER}};
-  assert_int_equal(ck_generate_key(&key), 0);
-  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
-
-  static uint8_t message[545];
-  static uint8_t request[sizeof(message) + 10];
-  uint8_t response[68];
-  uint8_t expected[64];
-  uint16_t sw;
-  for (size_t i = 0; i < sizeof(message); ++i)
-    message[i] = (uint8_t)i;
-
-  size_t request_len = piv_test_build_long_auth(request, message, 544);
-  size_t response_len =
-      piv_test_send_chained_message(0xE0, 0x9A, request, request_len, 240, response, sizeof(response), &sw);
-  assert_int_equal(sw, SW_NO_ERROR);
-  assert_int_equal(response_len, sizeof(response));
-  assert_memory_equal(response, ((uint8_t[]){0x7C, 0x42, 0x82, 0x40}), 4);
-  assert_int_equal(ecc_sign(ED25519, &key.ecc, message, 544, expected), 0);
-  assert_memory_equal(response + 4, expected, sizeof(expected));
-
-  request_len = piv_test_build_long_auth(request, message, 545);
-  response_len = piv_test_send_chained_message(0xE0, 0x9A, request, request_len, 240, response, sizeof(response), &sw);
-  assert_int_equal(sw, SW_WRONG_LENGTH);
-  assert_int_equal(response_len, 0);
-  memzero(&key, sizeof(key));
-  memzero(expected, sizeof(expected));
-}
 
 
-static void test_piv_streaming_auth_parser_errors(void **state) {
-  (void)state;
 
-  const piv_algorithm_extension_config_t config = {
-      .enabled = 1,
-      .ed25519 = 0xE0,
-      .rsa3072 = 0x05,
-      .rsa4096 = 0x16,
-      .x25519 = 0xE1,
-      .secp256k1 = 0x53,
-      .secp521r1 = 0x15,
-      .sm2 = 0x54,
-      .mldsa65 = 0xE2,
-      .mlkem768 = 0xE3,
-  };
-  assert_int_equal(piv_platform_algorithm_extension_config_write(&config), 0);
-  assert_int_equal(piv_install(1), 0);
-  ck_key_t key = {.meta = {.type = ED25519,
-                           .origin = KEY_ORIGIN_GENERATED,
-                           .usage = SIGN,
-                           .pin_policy = PIN_POLICY_NEVER,
-                           .touch_policy = TOUCH_POLICY_NEVER}};
-  assert_int_equal(ck_generate_key(&key), 0);
-  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
-  memzero(&key, sizeof(key));
-
-  static const uint8_t empty_request[] = {0x7C, 0x04, 0x82, 0x00, 0x81, 0x00};
-  uint8_t response[128];
-  RAPDU rapdu = {.data = response};
-  RAPDU_CHAINING chaining = {.rapdu.data = response};
-  CAPDU command = {.data = (uint8_t *)empty_request,
-                   .cla = 0x10,
-                   .ins = PIV_INS_GENERAL_AUTHENTICATE,
-                   .p1 = 0xFF,
-                   .p2 = 0x9A,
-                   .lc = 2,
-                   .le = APDU_BUFFER_SIZE};
-
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  command.data = (uint8_t *)empty_request + 2;
-  command.p1 = 0xE0;
-  command.lc = sizeof(empty_request) - 2;
-  command.cla = 0x00;
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_DATA);
-
-  static const uint8_t nonempty_response[] = {0x7C, 0x05, 0x82, 0x01, 0x00, 0x81, 0x00};
-  command = (CAPDU){.data = (uint8_t *)nonempty_response,
-                    .cla = 0x00,
-                    .ins = PIV_INS_GENERAL_AUTHENTICATE,
-                    .p1 = 0xFF,
-                    .p2 = 0x9A,
-                    .lc = sizeof(nonempty_response),
-                    .le = APDU_BUFFER_SIZE};
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_DATA);
-
-  uint8_t wrong_outer[] = {0x7C, 0x05, 0x82, 0x00, 0x81, 0x00};
-  command.data = wrong_outer;
-  command.lc = sizeof(wrong_outer);
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  command.data = (uint8_t *)empty_request;
-  command.lc = 3;
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  command.data = (uint8_t *)empty_request;
-  command.lc = sizeof(empty_request);
-  command.cla = 0x10;
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  command.data = (uint8_t *)empty_request;
-  command.lc = 2;
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  command = (CAPDU){
-      .data = NULL, .cla = 0x00, .ins = PIV_INS_GET_VERSION, .p1 = 0, .p2 = 0, .lc = 0, .le = APDU_BUFFER_SIZE};
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  command = (CAPDU){.data = (uint8_t *)empty_request,
-                    .cla = 0x00,
-                    .ins = PIV_INS_GENERAL_AUTHENTICATE,
-                    .p1 = 0xFF,
-                    .p2 = 0x9A,
-                    .lc = sizeof(empty_request),
-                    .le = APDU_BUFFER_SIZE};
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 68);
-
-  command.extended = 1;
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-  assert_int_equal(rapdu.len, 0);
-}
-
-static void test_piv_rejected_apdu_aborts_streaming_auth(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-
-  ck_key_t key = {.meta = {.type = ED25519,
-                           .origin = KEY_ORIGIN_GENERATED,
-                           .usage = SIGN,
-                           .pin_policy = PIN_POLICY_NEVER,
-                           .touch_policy = TOUCH_POLICY_NEVER}};
-  assert_int_equal(ck_generate_key(&key), 0);
-  assert_int_equal(ck_write_key("piv-k9a", &key), 0);
-  memzero(&key, sizeof(key));
-
-  static const uint8_t request[] = {0x7C, 0x04, 0x82, 0x00, 0x81, 0x00};
-  uint8_t response[128];
-  RAPDU rapdu = {.data = response};
-  RAPDU_CHAINING chaining = {.rapdu.data = response};
-
-  for (size_t i = 0; i < 2; ++i) {
-    CAPDU command = {.data = (uint8_t *)request,
-                     .cla = 0x10,
-                     .ins = PIV_INS_GENERAL_AUTHENTICATE,
-                     .p1 = 0xFF,
-                     .p2 = 0x9A,
-                     .lc = 2,
-                     .le = APDU_BUFFER_SIZE};
-    piv_process_apdu_message(&chaining, &command, &rapdu);
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-    CAPDU rejected = {.data = NULL,
-                      .cla = i == 0 ? 0x00 : 0x80,
-                      .ins = PIV_INS_GET_VERSION,
-                      .p1 = 0,
-                      .p2 = 0,
-                      .lc = 0,
-                      .le = APDU_BUFFER_SIZE,
-                      .extended = i == 0};
-    piv_process_apdu_message(&chaining, &rejected, &rapdu);
-    assert_int_equal(rapdu.sw, i == 0 ? SW_WRONG_LENGTH : SW_CLA_NOT_SUPPORTED);
-
-    command.data = (uint8_t *)request + 2;
-    command.cla = 0x00;
-    command.lc = sizeof(request) - 2;
-    piv_process_apdu_message(&chaining, &command, &rapdu);
-    assert_int_equal(rapdu.sw, SW_WRONG_DATA);
-  }
-}
 
 
 
@@ -2426,7 +2151,6 @@ int main() {
   piv_install(1);
 
   const struct CMUnitTest tests[] = {
-      cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
       cmocka_unit_test(test_piv_startup_preserves_state_when_platform_config_is_invalid),
       cmocka_unit_test(test_piv_get_metadata_directory),
@@ -2435,9 +2159,6 @@ int main() {
       cmocka_unit_test(test_piv_attestation_f9_policy),
       cmocka_unit_test(test_piv_attestation_all_target_algorithms),
       cmocka_unit_test(test_piv_regular_slot_defaults),
-      cmocka_unit_test(test_ed25519_general_authenticate_limits),
-      cmocka_unit_test(test_piv_streaming_auth_parser_errors),
-      cmocka_unit_test(test_piv_rejected_apdu_aborts_streaming_auth),
       cmocka_unit_test(test_set_pin_retries),
       cmocka_unit_test(test_set_pin_retries_failure_invalidates_auth),
       cmocka_unit_test(test_piv_rsa_sign_rejects_inconsistent_crt_key),

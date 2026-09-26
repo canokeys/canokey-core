@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 77 registered cases: APDU (49)
-and PIV (28). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 73 registered cases: APDU (49)
+and PIV (24). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -692,3 +692,20 @@ that is both malformed and unauthorized is not replicated from the native
 fixture: admission rejects unauthorized private crypto first. No touch occurs
 in either rejection case. Unused native ML-KEM/response collection helpers are
 removed; physical gesture/transport compatibility still requires hardware.
+
+
+## Consolidated PIV malformed-input and stream recovery checks
+
+| Retired native case | Important Rust coverage |
+|---|---|
+| `test_regression_fuzz` | `piv-normal::malformed_commands`: fixed truncated GA/GET/PUT/GENERATE/IMPORT boundaries, invalid management template/algorithm and successful re-authentication; no fuzz harness, corpus or mutation loop |
+| `test_ed25519_general_authenticate_limits` | `interruptions` independently verifies the maximum 544-byte deterministic Ed25519 message and rejects a declared 545-byte message; same-backend signature self-comparison is removed |
+| `test_piv_streaming_auth_parser_errors` | `interruptions` rejects a nonempty response tag, inconsistent outer length, truncated template and changed algorithm continuation; independently verifies recovery signatures |
+| `test_piv_rejected_apdu_aborts_streaming_auth` | Same scenario interrupts a partially received stream with rejected extended/unsupported-CLA commands, rejects the stale suffix and independently verifies a fresh empty-message signature after each rejection |
+
+The established Rust chain engine waits for a final fragment when CLA still
+requests continuation, even if the current TLV is complete. The regression
+checks no response data before the empty final fragment and verifies the final
+signature. Native immediate rejection of that framing is not replicated.
+Redundant malformed combinations and obsolete internal buffer-layout assertions
+are omitted; bounds, invalid input, cleanup and recovery remain explicit.
