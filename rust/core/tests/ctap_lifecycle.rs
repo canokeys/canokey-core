@@ -191,3 +191,55 @@ fn long_reset_ignores_short_touch_and_requires_release_after_half_second() {
     assert_eq!(run(&mut core, &[7], &mut device, &mut store), 0x2f);
     assert!(!store.removed);
 }
+
+#[test]
+fn credential_scan_errors_do_not_publish_or_cache_capacity() {
+    struct ScanStore(Result<usize, StorageError>);
+    impl Storage for ScanStore {
+        fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+            if Some(id) == Record::ctap_credential(0) {
+                out[0] = 0xff;
+                self.0
+            } else {
+                Err(StorageError::Missing)
+            }
+        }
+        fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
+            panic!("capacity queries must not rewrite records");
+        }
+    }
+    let mut core = Core::new();
+    let mut baseline = Vec::new();
+    for result in [
+        Err(StorageError::Missing),
+        Err(StorageError::Unavailable),
+        Err(StorageError::Uncertain),
+        Ok(1), // corrupt resident record, not an empty slot
+        Err(StorageError::Missing),
+    ] {
+        let mut p = Platform {
+            storage: &mut ScanStore(result),
+            crypto: &mut support::Backend::default(),
+            device: &mut support::Backend::default(),
+            memory: &support::Backend::default(),
+        };
+        core.begin_ctap(&mut p);
+        let n = core.execute_ctap(
+            Ok(canokey_rust_core::applets::ctap::Command::GetInfo),
+            &mut p,
+        );
+        let mut response = vec![0; n];
+        core.read_ctap(0, &mut response, &mut p).unwrap();
+        if matches!(result, Err(StorageError::Missing)) {
+            assert!(n > 256 && response[0] == 0);
+            if baseline.is_empty() {
+                baseline = response;
+            } else {
+                assert_eq!(response, baseline);
+            }
+        } else {
+            assert_eq!(response, [0x7f]);
+        }
+        core.close_ctap(&mut p);
+    }
+}

@@ -262,6 +262,7 @@ def run(wire):
         return call(0x0a, request, status)
     manage(3, status=0x30)
     assert manage(1) == {1: 4, 2: 96}
+    assert call(4)[20] == 96
     # Restarting enumeration must preserve each selected RP/hash despite scans
     # of differently-sized records, while grouping duplicate RP records once.
     for _ in range(2):
@@ -293,11 +294,13 @@ def run(wire):
     other_before = manage(4, {1: hashlib.sha256(b"rejected.example").digest()})
     manage(6, {2: first[7]})
     assert manage(1) == {1: 3, 2: 97}
+    assert call(4)[20] == 97
     call(2, {1: rp, 2: assertion_hash, 3: [first[7]]}, 0x2e)
     blob_entry = manage(4, {1: hashlib.sha256(b"blob.example").digest()})
     assert blob_entry == blob_before and blob_entry[11] == blob_key
     manage(6, {2: blob_descriptor})
     assert manage(1) == {1: 2, 2: 98}
+    assert call(4)[20] == 98
     assert manage(4, {1: hashlib.sha256(b"rejected.example").digest()}) == other_before
     assert manage(2) == {3: {"id": rp}, 4: hashlib.sha256(rp.encode()).digest(), 5: 2}
     assert manage(3) == {3: {"id": "rejected.example"}, 4: hashlib.sha256(b"rejected.example").digest()}

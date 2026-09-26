@@ -300,9 +300,6 @@ static struct {
   uint32_t generation;
   bool valid;
 } capacity_cache;
-#ifdef TEST
-static uint32_t capacity_compute_count;
-#endif
 
 static uint32_t ctap_capacity_remaining_new_credentials(void) {
   // Report reusable tombstones plus a conservative estimate for new records
@@ -316,9 +313,6 @@ static uint32_t ctap_capacity_remaining_new_credentials(void) {
   const bool dc_ok = ctap_dc_record_count(&n_dc) == 0 &&
                      read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)) == sizeof(attr) && attr.numbers <= n_dc;
   if (dc_ok) reusable = n_dc - attr.numbers;
-#ifdef TEST
-  ++capacity_compute_count;
-#endif
   const int free_bytes = get_fs_free_bytes();
   if (!dc_ok || free_bytes < 0) return reusable; // Do not cache a failed computation.
   uint32_t capacity = reusable;
@@ -330,11 +324,6 @@ static uint32_t ctap_capacity_remaining_new_credentials(void) {
   return capacity;
 }
 
-#ifdef TEST
-uint32_t ctap_test_capacity_remaining_new_credentials(void) { return ctap_capacity_remaining_new_credentials(); }
-
-uint32_t ctap_test_capacity_compute_count(void) { return capacity_compute_count; }
-#endif
 
 static uint8_t ctap_rebuild_rp_meta_counts(void) {
   // Rebuild denormalized RP live counts from DC_FILE after an interrupted

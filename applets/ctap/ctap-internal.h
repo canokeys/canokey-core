@@ -341,8 +341,6 @@ typedef struct {
 #ifdef TEST
 int ctap_consistency_check(void);
 int ctap_test_set_force_pin_change(bool required);
-uint32_t ctap_test_capacity_remaining_new_credentials(void);
-uint32_t ctap_test_capacity_compute_count(void);
 #endif
 
 typedef struct {

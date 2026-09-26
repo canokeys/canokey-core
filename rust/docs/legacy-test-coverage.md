@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 18 registered APDU cases.
+One legacy C test executable remains, with 15 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1201,3 +1201,27 @@ Validation: combined CTest 28/28 passed (55.06 s). Complete DevKit/NFCC
 links still fail at 188448/195928 B Flash (24608/32088 B over), with
 RAM_DATA 8640/8760 B. Capacity, physical compatibility and runtime stack
 acceptance remain open.
+
+## Credential capacity queries and scan recovery
+
+Removed the native `test_ctap_capacity_uses_credential_metadata`,
+`test_ctap_capacity_cached_by_fs_generation`, and
+`test_ctap_capacity_dc_read_failure_not_cached` cases, their computation counter,
+private query entrypoints and test-only block-device read injector. Rust scans
+independent atomic records; it has no tombstones or filesystem-generation cache.
+
+Existing `ctap-normal` now compares GetInfo remaining slots with management
+metadata before and after deletions (96, 97, 98). The lifecycle suite executes
+GetInfo before, during and after unavailable/uncertain/corrupt resident reads:
+faults return only CTAP 7F, never write records, and recovery reproduces the
+complete original response without reset or intervening mutation.
+
+These checks establish logical slot accounting and failure recovery, not the
+old C free-Flash estimate. Rust currently reports 100 minus occupied slots;
+physical filesystem capacity/admission and full firmware fit remain separate
+acceptance issues. No claim of equivalent numerical free-Flash estimation is
+made by retiring cache-implementation tests.
+
+Validation: combined CTest 28/28 passed (53.48 s). Full DevKit/NFCC
+links remain over Flash at 188448/195928 B (24608/32088 B over), with
+RAM_DATA 8640/8760 B. Runtime stack and physical acceptance remain open.
