@@ -371,22 +371,26 @@ fn respond(
     let cert_len = if request.make {
         let certificate = p.storage.size(crate::ports::Record::CtapCertificate);
         let mut attestation_key = [0; 32];
-        let key_ok = matches!(
-            p.storage.load(
-                crate::ports::Record::CtapAttestationKey,
-                &mut attestation_key
-            ),
-            Ok(32)
+        let key = p.storage.load(
+            crate::ports::Record::CtapAttestationKey,
+            &mut attestation_key,
         );
-        let cert_len = match (key_ok, certificate) {
-            (true, Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => n as usize,
-            (false, Err(crate::ports::StorageError::Missing))
-            | (true, Err(crate::ports::StorageError::Missing))
-            | (false, Ok(_)) => {
+        let cert_len = match (key, certificate) {
+            (Ok(32), Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => n as usize,
+            (
+                Ok(32) | Err(crate::ports::StorageError::Missing),
+                Err(crate::ports::StorageError::Missing),
+            )
+            | (Err(crate::ports::StorageError::Missing), Ok(_)) => {
                 self_attest = true;
                 0
             }
-            _ => return Err(Status::Other),
+            _ => {
+                // I/O failure or malformed key material is not an unprovisioned
+                // device. Clear even partially supplied private bytes on error.
+                p.memory.wipe(&mut attestation_key);
+                return Err(Status::Other);
+            }
         };
         if !self_attest {
             p.memory.wipe(&mut w.key.bytes);

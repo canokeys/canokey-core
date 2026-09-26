@@ -540,3 +540,11 @@ The existing configuration fixture checks both CTAP algorithms fail and recover
 after valid ADMIN reprovisioning, with independently verified packed signatures.
 The U2F fixture separately checks empty-certificate rejection. This validates
 use-time rejection, not the legacy install-time incomplete-state rebuild.
+
+Classic makeCredential only falls back to self-attestation when provisioned
+material is genuinely missing. Attestation-key read errors and malformed key
+lengths return CTAP 7F; they must not change the attestation mode. Temporary
+attestation-key bytes are wiped on certificate/key validation errors as well as
+success. `ctap-config` injects a read that supplies key bytes then reports I/O
+failure, checks rejection/no pending response and independently verifies a fresh
+packed attestation after the fault clears.

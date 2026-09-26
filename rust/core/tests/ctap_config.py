@@ -94,6 +94,10 @@ def run(wire):
     call(2, {1: "example.com", 2: request[1], 3: [handle]}, 0x2e)
     assert [a["alg"] for a in call(4)[10]] == [-7, -8, -65537, -49]
     verify_attestation(call(1, request), request[1])
+    wire.command("FAIL_READ 182")
+    call(1, request, 0x7f)
+    card.cmd("no partial failed-read attestation", 0xc0, status=0x6986)
+    verify_attestation(call(1, request), request[1])
     admin()
     card.cmd("verify", 0x20, data=b"123456")
     card.cmd("restore", 0x12, data=default)

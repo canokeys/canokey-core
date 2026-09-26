@@ -24,6 +24,15 @@ int main(void) {
       continue;
     }
 #endif
+    if (strncmp(line, "FAIL_READ ", 10) == 0) {
+      extern void ck_test_fail_read(uint8_t id);
+      unsigned id;
+      assert(sscanf(line + 10, "%u", &id) == 1 && id < 186);
+      ck_test_fail_read((uint8_t)id);
+      puts("9000");
+      fflush(stdout);
+      continue;
+    }
     if (strncmp(line, "FAIL_WRITE ", 11) == 0) {
       extern void ck_test_fail_write(uint8_t id);
       unsigned id;
