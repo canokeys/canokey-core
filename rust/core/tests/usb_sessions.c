@@ -115,7 +115,7 @@ static void ccid_send(uint8_t command, const uint8_t *apdu, size_t n) {
   assert(ck_usb_out(3, packet, (uint16_t)(n+10)) == 0);
   CCID_Loop();
 }
-static size_t ccid_read(uint8_t *out) {
+static size_t ccid_read_state(uint8_t *out, uint8_t state) {
   size_t n=0;
   for(unsigned i=0; i<20; ++i) {
     CCID_Loop();
@@ -124,10 +124,11 @@ static size_t ccid_read(uint8_t *out) {
     memcpy(out+n, packets[3], lengths[3]); n+=lengths[3]; complete(0x83);
   }
   CCID_Loop();
-  assert(n >= 10 && out[6] == sequence && out[7] == 0 && out[8] == 0);
+  assert(n >= 10 && out[6] == sequence && out[7] == state && out[8] == 0);
   assert(n == 10u + out[1] + ((unsigned)out[2]<<8));
   return n;
 }
+static size_t ccid_read(uint8_t *out) { return ccid_read_state(out,0); }
 static void ccid_apdu(const uint8_t *apdu, size_t n, uint16_t expected) {
   uint8_t out[268]; ccid_send(0x6f, apdu, n);
   size_t count=ccid_read(out); sw(out+10,count-10,expected);
@@ -347,6 +348,43 @@ int main(void) {
   ccid_apdu(select_piv,sizeof(select_piv),0x9000);
   ccid_apdu(stale_response,sizeof(stale_response),0x6986);
 #endif
+  // Slot power commands can reset a completed WebUSB session immediately.
+  for(uint8_t power=0x62;power<=0x63;++power) {
+    web_apdu(select_admin,sizeof(select_admin),0x9000);
+    web_apdu(verify,sizeof(verify),0x9000);
+    before=now; ccid_send(power,NULL,0); count=ccid_read_state(out,power==0x63);
+    assert(now==before && out[7]==(power==0x63));
+    if(power==0x62)assert(count>10 && out[0]==0x80);
+    else {
+      assert(count==10 && out[0]==0x81);
+      ccid_send(0x62,NULL,0); (void)ccid_read(out);
+    }
+    ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+    ccid_apdu(query,sizeof(query),0x63c3);
+    ccid_apdu(verify,sizeof(verify),0x9000);
+    now+=2000; WebUSB_Loop(); ccid_apdu(query,sizeof(query),0x9000);
+  }
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  web_apdu(verify,sizeof(verify),0x9000);
+  web_apdu(partial_config,sizeof(partial_config),0x6101);
+  ccid_send(0x62,NULL,0); assert(!pending[3]);
+  now+=1999; CCID_Loop(); assert(!pending[3]);
+  web_apdu(get_response,sizeof(get_response),0x9000);
+  (void)ccid_read(out); assert(out[0]==0x80 && out[7]==0);
+  ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
+  // A stream is abandonable only after the endpoint has finished its packet.
+  ccid_apdu(select_fido,sizeof(select_fido),0x9000);
+  ccid_send(0x6f,info_short,sizeof(info_short)); assert(pending[3]);
+  ccid_length=lengths[3]; memcpy(ccid_saved,packets[3],ccid_length);
+  hid_send(cid,0x81,nonce,8);
+  assert(hid_read(cid,0xbf,hid)==1 && hid[0]==6);
+  assert(pending[3] && lengths[3]==ccid_length && !memcmp(ccid_saved,packets[3],ccid_length));
+  count=ccid_read(out); sw(out+10,count-10,0x61ff);
+  before=now; hid_send(cid,0x81,nonce,8);
+  assert(hid_read(cid,0x81,hid)==8 && !memcmp(hid,nonce,8));
+  assert(now==before);
+  now+=2000; ccid_apdu(stale_response,sizeof(stale_response),0x6986);
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;

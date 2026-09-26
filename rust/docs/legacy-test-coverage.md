@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 195 registered cases: APDU (96),
+Four C test executables remain, with 190 registered cases: APDU (91),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -172,3 +172,19 @@ but cannot authenticate; this replaces the old `pin_clear` attribute layout.
 Generic Rust retry storage is not limited to 15: the OpenPGP wire policy enforces
 1..15 and ADMIN uses its fixed limit. No obsolete C helper API was recreated
 just to keep an internal-layout assertion passing.
+
+## Replaced APDU transport/session cases
+
+Five of the original 96 `test_apdu.c` cases are now retired:
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_ccid_power_on_preempts_idle_webusb_session` | `usb-sessions`: real PowerOn/PowerOff takeover, ATR/inactive status, grant revocation, partial-response exclusion and stale cleanup isolation |
+| `test_applet_session_deadline_wraparound` | `usb-sessions`: actual 1999/2000 ms cross-interface admission across uint32 tick wraparound |
+| `test_get_response_after_reset_without_pending_response` | `core-normal`: 6986 without a pending response; `usb-sessions`: direct GET RESPONSE after takeover and reset |
+| `test_pending_ccid_response_can_be_abandoned_by_ctaphid` | `usb-sessions`: unread real CTAP GetInfo source is abandoned immediately by HID PING after CCID IN completion; protocol response tests check exactly-once close |
+| `test_active_ccid_transfer_cannot_be_preempted` | `usb-sessions`: same source rejects HID PING while CCID IN owns its packet, verifies unchanged bytes, then permits takeover after completion |
+
+The first port exposed missing PowerOn/PowerOff admission in Rust's WebUSB
+preemption gate. Slot-status discovery alone still does not request takeover.
+Other APDU cases remain registered until their coverage is individually mapped.

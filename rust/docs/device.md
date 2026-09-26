@@ -55,7 +55,7 @@ The `hid-usb` fixture verifies these rules and the USB fixture checks that both
 CCID and WebUSB progress dispatch reach the foreign-HID service.
 
 Completed WebUSB responses retain same-owner authorization until timeout or
-actual takeover. A queued CCID APDU or a valid-channel HID PING/MSG/CBOR/WINK
+actual takeover. A queued CCID APDU or slot power command, or a valid-channel HID PING/MSG/CBOR/WINK
 may immediately take a completed session with no input chain and either no unread Core response or an explicitly
 abandonable applet response source. Polling, keyboard activity, HID INIT/CANCEL and continuation reports
 do not trigger takeover. EP0 reception/execution/transmission remain exclusive.
@@ -78,3 +78,10 @@ above 256 bytes used sources; U2F registration always uses a certificate source.
 The runtime still excludes input chains and the transport still excludes
 controller-owned bytes. Taking over calls the existing response close/reset
 path, which erases workspace and revokes grants before admitting the new owner.
+
+CCID PowerOn/PowerOff use the same completed-WebUSB admission as APDU Transfer.
+They revoke the WebUSB grant immediately when preemption is allowed; an ordinary
+pending continuation still excludes them. The USB session fixture verifies ATR
+and inactive-slot status, grant revocation, delayed WebUSB cleanup isolation and
+PowerOn waiting until GET RESPONSE completes. Slot-status discovery alone does
+not request takeover.

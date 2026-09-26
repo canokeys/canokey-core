@@ -1180,26 +1180,6 @@ static void test_ccid_rejects_reentrant_command_until_response_finishes(void **s
   device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
 }
 
-static void test_ccid_power_on_preempts_idle_webusb_session(void **state) {
-  (void)state;
-
-  static const uint8_t power_on[] = {
-      PC_TO_RDR_ICCPOWERON, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-  };
-
-  init_apdu_buffer();
-  device_init();
-  CCID_Init();
-
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_WEBUSB);
-
-  assert_int_equal(CCID_OutEvent((uint8_t *)power_on, sizeof(power_on)), 0);
-  CCID_Loop();
-
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
-}
-
 static uint32_t observed_streaming_le;
 
 static int record_streaming_capdu_le(const CAPDU *capdu, RAPDU *rapdu) {
@@ -1442,21 +1422,7 @@ static void test_large_blob_noncanonical_string_offset(void **state) {
   }
 }
 
-static void test_applet_session_deadline_wraparound(void **state) {
-  (void)state;
 
-  testmode_set_initial_ticks(0);
-  const uint32_t raw_ticks = device_get_tick();
-  testmode_set_initial_ticks(raw_ticks - (UINT32_MAX - 1000u));
-  device_init();
-
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
-
-  testmode_set_initial_ticks(0);
-  testmode_set_initial_ticks(device_get_tick());
-}
 
 static void test_pin_uv_auth_token_timer_wraparound(void **state) {
   (void)state;
@@ -2970,27 +2936,7 @@ static void test_ctap_get_info_reports_transport_msg_size(void **state) {
   if (source.close) source.close(source.ctx);
 }
 
-static void test_get_response_after_reset_without_pending_response(void **state) {
-  (void)state;
 
-  static const uint8_t get_response[] = {
-      0x00, 0xC0, 0x00, 0x00, 0x2D,
-  };
-
-  uint8_t c_buf[64], r_buf[64];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(build_capdu(&capdu, get_response, sizeof(get_response)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_equal(rapdu.len, 0);
-  assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
-}
 
 // ---------------------------------------------------------------------------
 // Streaming response source coverage
@@ -3031,45 +2977,9 @@ static void streaming_source_close(void *ctx) {
   s->closes++;
 }
 
-static void test_pending_ccid_response_can_be_abandoned_by_ctaphid(void **state) {
-  (void)state;
 
-  static const uint8_t payload[300] = {0};
-  init_apdu_buffer();
-  device_init();
-  stream_ctx = (streaming_source_ctx){.data = payload, .total = sizeof(payload)};
 
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
-  apdu_response_source_set(sizeof(payload), SW_NO_ERROR, streaming_source_read, streaming_source_close, &stream_ctx);
-  assert_true(apdu_response_source_active());
 
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_false(apdu_response_source_active());
-  assert_int_equal(stream_ctx.closes, 1);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
-}
-
-static void test_active_ccid_transfer_cannot_be_preempted(void **state) {
-  (void)state;
-
-  static const uint8_t payload[300] = {0};
-  init_apdu_buffer();
-  device_init();
-  stream_ctx = (streaming_source_ctx){.data = payload, .total = sizeof(payload)};
-
-  assert_int_equal(acquire_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID), 0);
-  apdu_response_source_set(sizeof(payload), SW_NO_ERROR, streaming_source_read, streaming_source_close, &stream_ctx);
-
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), -1);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-  assert_true(apdu_response_source_active());
-  assert_int_equal(stream_ctx.closes, 0);
-
-  release_apdu_interface(DEVICE_APPLET_SESSION_CCID, BUFFER_OWNER_CCID);
-  assert_false(apdu_response_source_active());
-  assert_int_equal(stream_ctx.closes, 1);
-}
 
 static void test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect(void **state) {
   (void)state;
@@ -4474,7 +4384,6 @@ int main() {
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
       cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
       cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),
-      cmocka_unit_test(test_ccid_power_on_preempts_idle_webusb_session),
       cmocka_unit_test(test_ccid_rejects_reentrant_command_until_response_finishes),
       cmocka_unit_test(test_streaming_message_preserves_original_le_for_handler),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
@@ -4482,7 +4391,6 @@ int main() {
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
-      cmocka_unit_test(test_applet_session_deadline_wraparound),
       cmocka_unit_test(test_pin_uv_auth_token_timer_wraparound),
       cmocka_unit_test(test_pin_uv_auth_token_invalid_auth_does_not_refresh_timer),
       cmocka_unit_test(test_pin_uv_auth_token_max_lifetime),
@@ -4531,10 +4439,7 @@ int main() {
       cmocka_unit_test(test_ctaphid_rejected_source_closes_once),
       cmocka_unit_test(test_ctaphid_active_source_failure_closes_once),
       cmocka_unit_test(test_ctap_get_info_reports_transport_msg_size),
-      cmocka_unit_test(test_get_response_after_reset_without_pending_response),
       cmocka_unit_test(test_response_source_multi_chunk_get_response),
-      cmocka_unit_test(test_pending_ccid_response_can_be_abandoned_by_ctaphid),
-      cmocka_unit_test(test_active_ccid_transfer_cannot_be_preempted),
       cmocka_unit_test(test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect),
       cmocka_unit_test(test_piv_reselect_preserves_security_status),
       cmocka_unit_test(test_response_source_tail_restore_on_shared_buffer),
