@@ -3,11 +3,15 @@ find_program(CARGO cargo REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 set(HOST_ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/cargo/release/libcanokey_rust_host.a")
+set(HOST_FEATURE_ARGS "")
+if(CTAP_RESTRICT_ALGORITHMS)
+  list(APPEND HOST_FEATURE_ARGS --features ctap-restrict-algorithms)
+endif()
 add_custom_target(rust-host-build ALL
   COMMAND "${CMAKE_COMMAND}" -E env "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
     ${CARGO} +nightly-2026-09-04 build
     --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
-    --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo --release
+    --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo --release ${HOST_FEATURE_ARGS}
   BYPRODUCTS "${HOST_ARCHIVE}" VERBATIM)
 add_library(canokey-rust-host STATIC IMPORTED GLOBAL)
 set_target_properties(canokey-rust-host PROPERTIES IMPORTED_LOCATION "${HOST_ARCHIVE}")

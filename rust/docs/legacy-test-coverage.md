@@ -102,7 +102,8 @@ No legacy C APDU test executable remains. `ENABLE_TESTS` selects the full Rust
 composition directly and no longer compiles its former C applet/protocol
 dependencies. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage.
-The obsolete source/default C library path still requires deletion; this ledger
+The obsolete C applet/protocol sources and default C library build path have
+been removed; default CMake now selects the full Rust host composition. This ledger
 is not a completion certificate for stage six, capacity, stack or interoperability.
 
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.

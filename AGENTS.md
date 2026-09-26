@@ -4,6 +4,26 @@
 
 ---
 
+## Current Rust composition (2026-09-27)
+
+The default top-level CMake build selects the complete Rust host composition.
+`ENABLE_TESTS=ON` additionally enables the native LittleFS helper suite and its
+sanitizers. The former C applets, dispatcher, USB/NFC protocols and virtual-card
+implementations have been removed. `src/fs.c`, crypto and thin native adapters
+remain. Compatibility headers are retained pending dependency cleanup.
+
+Current implementation entrypoints are `rust/core` (applets and shared runtime),
+`rust/protocol` (transport state machines), `rust/ffi` and `rust/ports` (integration),
+and `rust/host` (UDP and PC/SC host). See `rust/docs/legacy-test-coverage.md` for
+replacement coverage and the platform migration status for outstanding Flash,
+runtime stack and physical compatibility acceptance.
+
+The C layout, entrypoints and build flags described below are historical migration
+reference, not instructions to restore deleted implementations. Resource budgets,
+shared-session scratch ownership, streaming lifetimes and crypto validation
+requirements still apply to their Rust replacements. Rust wire conversions use
+explicit `from_be_bytes`/`from_le_bytes` and corresponding encoders.
+
 ## Project Overview
 
 `canokey-core` is a platform-independent C11 library implementing an open-source security key. It supports:
