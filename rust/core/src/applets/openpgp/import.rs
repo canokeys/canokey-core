@@ -10,25 +10,18 @@ use super::{
 use crate::Platform;
 use crate::ports::alg;
 use crate::ports::key_layout;
-use canokey_protocol::{
-    response::StatusWord as Sw,
-    tlv::length::{Feed, LengthState},
-};
+use canokey_protocol::{response::StatusWord as Sw, tlv::length::read_prefix};
 fn length(b: &[u8], at: &mut usize) -> Result<Option<usize>, Sw> {
-    // This parser is intentionally local: import headers arrive incrementally
-    // and must report "incomplete" separately from malformed BER. The shared
-    // protocol helpers parse complete TLVs and cannot provide that distinction.
-    let mut state = LengthState::Initial;
-    while *at < b.len() {
-        let v = b[*at];
-        *at += 1;
-        match state.feed(v) {
-            Feed::More => (),
-            Feed::Complete(n) => return Ok(Some(n as usize)),
-            Feed::Invalid => return Err(Sw::WRONG_DATA),
+    match read_prefix(&b[*at..]).map_err(|_| Sw::WRONG_DATA)? {
+        Some((n, consumed)) => {
+            *at += consumed;
+            Ok(Some(n as usize))
+        }
+        None => {
+            *at = b.len();
+            Ok(None)
         }
     }
-    Ok(None)
 }
 // Complete headers need no event callback or streaming decoder state. Match
 // the streaming decoder's tag grammar and retain incomplete vs invalid errors.

@@ -3,26 +3,17 @@ use super::wire::object_tlv;
 pub(super) use crate::mechanisms::equal;
 use canokey_protocol::{
     response::StatusWord as Sw,
-    tlv::{
-        length::{Feed, LengthState},
-        write_length,
-    },
+    tlv::{length::read_prefix, write_length},
 };
 /// Consume one single-byte-tag BER-TLV and advance the borrowed input slice.
 /// Unlike object(), trailing sibling TLVs are allowed.
 pub fn take<'a>(bytes: &mut &'a [u8]) -> Result<(u8, &'a [u8]), Sw> {
     let tag = *bytes.first().ok_or(Sw::WRONG_LENGTH)?;
-    let mut n = 1;
-    let mut length = LengthState::Initial;
-    let size = loop {
-        let b = *bytes.get(n).ok_or(Sw::WRONG_LENGTH)?;
-        n += 1;
-        match length.feed(b) {
-            Feed::More => (),
-            Feed::Invalid => return Err(Sw::WRONG_DATA),
-            Feed::Complete(l) => break l as usize,
-        }
-    };
+    let (size, consumed) = read_prefix(&bytes[1..])
+        .map_err(|_| Sw::WRONG_DATA)?
+        .ok_or(Sw::WRONG_LENGTH)?;
+    let n = 1 + consumed;
+    let size = usize::from(size);
     let value = bytes.get(n..n + size).ok_or(Sw::WRONG_LENGTH)?;
     *bytes = &bytes[n + size..];
     Ok((tag, value))
