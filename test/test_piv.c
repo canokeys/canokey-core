@@ -917,10 +917,7 @@ static const uint8_t piv_sm2ka_eph_a[64] = "\x64\xCE\xD1\xBD\xBC\x99\xD5\x90\x04
                                            "\x37\x66\x29\xC7\xAB\x21\xE7\xDB\x26\x09\x22\x49\x9D\xDB\x11\x8F"
                                            "\x07\xCE\x8E\xAA\xE3\xE7\x72\x0A\xFE\xF6\xA5\xCC\x06\x20\x70\xC0";
 
-static const uint8_t piv_sm2ka_eph_b[64] = "\xAC\xC2\x76\x88\xA6\xF7\xB7\x06\x09\x8B\xC9\x1F\xF3\xAD\x1B\xFF"
-                                           "\x7D\xC2\x80\x2C\xDB\x14\xCC\xCC\xDB\x0A\x90\x47\x1F\x9B\xD7\x07"
-                                           "\x2F\xED\xAC\x04\x94\xB2\xFF\xC4\xD6\x85\x38\x76\xC7\x9B\x8F\x30"
-                                           "\x1C\x65\x73\xAD\x0A\xA5\x0F\x39\xFC\x87\x18\x1E\x1A\x1B\x46\xFE";
+
 
 
 
@@ -1102,157 +1099,6 @@ static void test_piv_sm2_key_agreement_roundtrip(void **state) {
   memzero(k_b, sizeof(k_b));
 }
 
-static void test_piv_sm2_key_agreement_shape_errors(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
-  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
-
-  uint8_t request[200];
-  uint8_t inner[180];
-  uint8_t response[160];
-  uint16_t response_len;
-
-  // Legacy plain-ECDH Case 6 shape (0x85 value starting with 0x04) is
-  // rejected for SM2 keys.
-  uint8_t *req = request;
-  *req++ = 0x7C;
-  *req++ = 0x45;
-  *req++ = 0x82;
-  *req++ = 0x00;
-  *req++ = 0x85;
-  *req++ = 0x41;
-  *req++ = 0x04;
-  memcpy(req, piv_sm2ka_pa, 64);
-  req += 64;
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, req - request, response, &response_len), SW_WRONG_DATA);
-
-  // Session-key length out of range: 0 and 129 (max is 128).
-  for (size_t i = 0; i < 2; ++i) {
-    const int klen = i == 0 ? 0 : 129;
-    const size_t inner_len =
-        piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, klen);
-    const size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-    assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
-  }
-
-  // Off-curve peer points (flip one byte of Y), static and ephemeral.
-  for (size_t i = 0; i < 2; ++i) {
-    uint8_t bad_static[64], bad_eph[64];
-    memcpy(bad_static, piv_sm2ka_pb, 64);
-    memcpy(bad_eph, piv_sm2ka_eph_b, 64);
-    (i == 0 ? bad_static : bad_eph)[63] ^= 0x01;
-    const size_t inner_len = piv_test_build_sm2_ka_inner(inner, bad_static, bad_eph, NULL, 0, -1);
-    const size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-    assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
-  }
-
-  // Duplicate inner tag 86 (second 86 appears where 87 is mandatory).
-  size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
-  inner[67] = 0x86;
-  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
-
-  // Unknown inner tag 0x8A after the mandatory tags.
-  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
-  inner[inner_len++] = 0x8A;
-  inner[inner_len++] = 0x00;
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
-
-  // Trailing garbage byte.
-  inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
-  inner[inner_len++] = 0x00;
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9C, request, request_len, response, &response_len), SW_WRONG_DATA);
-
-  // Missing the mandatory empty response request tag 0x82.
-  request[0] = 0x7C;
-  request[1] = 0x02;
-  request[2] = 0x80;
-  request[3] = 0x00;
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, 4, response, &response_len), SW_WRONG_DATA);
-
-  // Own ID out of range at step 1: zero length and oversized (33).
-  uint8_t big_id[33];
-  memset(big_id, 0x5A, sizeof(big_id));
-  request_len = piv_test_build_sm2_ka_request(request, big_id, sizeof(big_id), NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_WRONG_DATA);
-  static const uint8_t id_empty_request[] = {0x7C, 0x04, 0x80, 0x00, 0x82, 0x00};
-  assert_int_equal(piv_test_sm2_ka(0x9A, id_empty_request, sizeof(id_empty_request), response, &response_len),
-                   SW_WRONG_DATA);
-
-  // P1/key-type mismatch: the SM2 algorithm id against a P-256 slot, and an
-  // empty slot.
-  ck_key_t p256_key = {.meta = {.type = SECP256R1,
-                                .origin = KEY_ORIGIN_GENERATED,
-                                .usage = KEY_USAGE_ANY,
-                                .pin_policy = PIN_POLICY_NEVER,
-                                .touch_policy = TOUCH_POLICY_NEVER}};
-  assert_int_equal(ck_generate_key(&p256_key), 0);
-  assert_int_equal(ck_write_key("piv-k9d", &p256_key), 0);
-  memzero(&p256_key, sizeof(p256_key));
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9D, request, request_len, response, &response_len), SW_WRONG_P1P2);
-  assert_int_equal(piv_test_sm2_ka(0x9E, request, request_len, response, &response_len), SW_CONDITIONS_NOT_SATISFIED);
-}
-
-static void test_piv_sm2_key_agreement_state_machine(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  piv_test_write_sm2_key_full("piv-k9a", piv_sm2ka_da, PIN_POLICY_NEVER);
-  piv_test_write_sm2_key_full("piv-k9c", piv_sm2ka_db, PIN_POLICY_NEVER);
-
-  uint8_t request[192];
-  uint8_t inner[172];
-  uint8_t response[160];
-  uint16_t response_len;
-
-  // A new step 1 while an agreement is active is rejected and aborts the old
-  // one; a following 0x85 shape on the same slot is then a responder call.
-  size_t request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len),
-                   SW_CONDITIONS_NOT_SATISFIED);
-  const size_t inner_len = piv_test_build_sm2_ka_inner(inner, piv_sm2ka_pb, piv_sm2ka_eph_b, NULL, 0, -1);
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-  const uint8_t *value;
-  assert_int_equal(piv_test_7c_find(response, response_len, 0x85, &value), 16);
-
-  // Tag 80 is forbidden at step 2 (the own ID was fixed at step 1); the error
-  // also wipes the in-flight agreement.
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-  static const uint8_t some_id[] = {'x'};
-  request_len = piv_test_build_sm2_ka_request(request, some_id, sizeof(some_id), inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_WRONG_DATA);
-  // State was wiped: the same 0x85 shape without tag 80 is a responder call.
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-
-  // An interleaved non-agreement GA (a digest sign, which memzeroes the
-  // scratch union via piv_crypto_buffer) destroys the stored state. This is
-  // detected through the empty key_path: a new step 1 recovers cleanly, and a
-  // step-2-shaped command is just a stateless responder call.
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-  uint8_t sign_request[6 + 32] = {0x7C, 0x24, 0x82, 0x00, 0x81, 0x20};
-  for (size_t i = 6; i < sizeof(sign_request); ++i)
-    sign_request[i] = (uint8_t)i;
-  assert_int_equal(piv_test_sm2_ka(0x9C, sign_request, sizeof(sign_request), response, &response_len), SW_NO_ERROR);
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, NULL, 0);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-
-  // A non-GA command aborts the in-flight agreement (still active from the
-  // recovery step 1 above).
-  uint8_t pin_data[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
-  test_helper(pin_data, sizeof(pin_data), PIV_INS_VERIFY, 0x00, 0x80, SW_NO_ERROR);
-  // The stored ephemeral is gone; the 0x85 shape is a responder call again.
-  request_len = piv_test_build_sm2_ka_request(request, NULL, 0, inner, inner_len);
-  assert_int_equal(piv_test_sm2_ka(0x9A, request, request_len, response, &response_len), SW_NO_ERROR);
-}
-
 static void test_piv_sm2_key_agreement_pin_policy(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -1344,8 +1190,6 @@ int main() {
       cmocka_unit_test(test_piv_attestation_f9_policy),
       cmocka_unit_test(test_piv_attestation_all_target_algorithms),
       cmocka_unit_test(test_piv_sm2_key_agreement_roundtrip),
-      cmocka_unit_test(test_piv_sm2_key_agreement_shape_errors),
-      cmocka_unit_test(test_piv_sm2_key_agreement_state_machine),
       cmocka_unit_test(test_piv_sm2_key_agreement_pin_policy),
   };
 

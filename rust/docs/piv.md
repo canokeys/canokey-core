@@ -74,7 +74,9 @@ private-key operations reject it. `piv-normal` independently verifies both
 agreement roles, custom identity binding and 125..128-byte BER transitions.
 Plain ECDH is rejected for SM2. Initiator ephemeral material lives in the shared
 workspace, is checked against its public key and current slot key before use,
-and is cleared on failure, non-GA commands, selection and reset.
+and is cleared on failure, signing GA, non-GA commands, selection and reset.
+A truncated nested agreement TLV returns 6700; complete but invalid peer
+templates return 6A80. Both errors return no key bytes.
 
 ML-DSA-65 persists a 32-byte seed (import tag 09), streams its 1952-byte public
 key and 3309-byte signature, and hashes messages incrementally. ML-KEM-768

@@ -233,6 +233,9 @@ impl Piv {
         if sm2_agreement {
             return self.sm2_agree(id, &m, w, p);
         }
+        // A signing GA must not leave a previous SM2 initiator exchange live.
+        self.agreement = None;
+        p.memory.wipe(&mut w.agreement);
         let (op, data) = if let Some(input) = fields[ga_field::CHALLENGE] {
             if fields[ga_field::EXPONENTIATION].is_some() || input.is_empty() {
                 return Err(Sw::WRONG_DATA);

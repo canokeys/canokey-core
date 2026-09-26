@@ -833,6 +833,64 @@ def sm2_operations(c):
         status=0x6A80,
     )
 
+    start = tlv(0x7C, tlv(0x82, b""))
+    finish = tlv(0x7C, tlv(0x82, b"") + tlv(0x85, exp))
+    invalid = [
+        exp + tlv(0x89, n.to_bytes(2, "big")) for n in (0, 129)
+    ] + [
+        tlv(0x86, b"\x04" + sm2.V_PB) * 2,
+        exp + tlv(0x8A, b""),
+        exp + b"\0",
+    ]
+    for index in (0, 1):
+        points = [bytearray(sm2.V_PB), bytearray(sm2.V_EB)]
+        points[index][-1] ^= 1
+        invalid.append(tlv(0x86, b"\x04" + points[0]) + tlv(0x87, b"\x04" + points[1]))
+    for inner in invalid:
+        assert not c.cmd("sm2_invalid_peer_template", 0x87, 0x54, 0x9A,
+                         tlv(0x7C, tlv(0x82, b"") + tlv(0x85, inner)),
+                         status=0x6700 if inner == exp + b"\0" else 0x6A80)
+    for own in (b"", bytes(33)):
+        assert not c.cmd("sm2_invalid_agreement_identity", 0x87, 0x54, 0x9A,
+                         tlv(0x7C, tlv(0x80, own) + tlv(0x82, b"")), status=0x6A80)
+    assert not c.cmd("sm2_missing_response_tag", 0x87, 0x54, 0x9A,
+                     tlv(0x7C, tlv(0x80, b"id")), status=0x6A80)
+
+    c.import_key(0, ec.derive_private_key(1, ec.SECP256R1()), 0x95)
+    assert not c.cmd("sm2_agreement_wrong_key_type", 0x87, 0x54, 0x95, start, status=0x6A86)
+    c.cmd("sm2_delete_mismatch_key", 0xF6, 0xFF, 0x95)
+    assert not c.cmd("sm2_agreement_empty_slot", 0x87, 0x54, 0x95, start, status=0x6985)
+
+    # After each interruption, a peer template must be a fresh responder
+    # operation. Verify its key independently, rather than just checking SW.
+    for interruption in ("restart", "identity", "sign", "verify", "select", "reset"):
+        c.cmd("sm2_before_interruption", 0x87, 0x54, 0x9A, start)
+        if interruption == "restart":
+            assert not c.cmd("sm2_duplicate_start", 0x87, 0x54, 0x9A, start, status=0x6985)
+        elif interruption == "identity":
+            assert not c.cmd("sm2_change_identity_mid_session", 0x87, 0x54, 0x9A,
+                             tlv(0x7C, tlv(0x80, b"x") + tlv(0x82, b"") + tlv(0x85, exp)),
+                             status=0x6A80)
+        elif interruption == "sign":
+            reply = c.cmd("sm2_sign_interrupts_agreement", 0x87, 0x54, 0x9A,
+                          tlv(0x7C, tlv(0x82, b"") + tlv(0x81, digest)))
+            assert verify_sm2(fields(fields(reply)[0x7C])[0x82], digest)
+        elif interruption == "verify":
+            c.verify()
+        else:
+            if interruption == "reset":
+                c.wire.command("RESET")
+            c.select()
+            c.verify()
+        reply = fields(fields(c.cmd("sm2_recover_as_responder", 0x87, 0x54, 0x9A, finish))[0x7C])
+        assert 0x85 in reply, interruption
+        expected = sm2.key_exchange_full(
+            0, sm2.ID_DEFAULT, sm2.ID_DEFAULT, sm2.V_DB, sm2.V_PB,
+            sm2.V_RB, sm2.V_EB, public, reply[0x82][1:], 16,
+        )[0]
+        assert reply[0x85] == expected
+    c.auth()
+
 
 def attestation(c):
     issuer_key = ec.generate_private_key(ec.SECP256R1())

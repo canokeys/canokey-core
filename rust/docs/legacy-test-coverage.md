@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 60 registered cases: APDU (49)
-and PIV (11). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 58 registered cases: APDU (49)
+and PIV (9). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -774,3 +774,20 @@ prevented SM2 agreement's own-identity parser from being reached. Tag 80 is now
 admitted only for SM2 agreement; other private operations retain rejection.
 The remaining native agreement lifecycle, malformed-input and PIN-policy cases
 still require audit before removal.
+
+## SM2 agreement rejection and interruption coverage
+
+`test_piv_sm2_key_agreement_shape_errors` and
+`test_piv_sm2_key_agreement_state_machine` are replaced by
+`piv-normal::sm2_operations`. Important rejection checks cover both off-curve
+peer points, key lengths 0/129, duplicate/unknown inner tags, a truncated TLV,
+missing response tag, own identity bounds, wrong slot algorithm and an empty
+slot. Errors must return no data. The truncated inner TLV returns Rust's 6700
+length error instead of the native test's 6A80; semantic errors retain 6A80.
+
+Duplicate initiation, changing identity at step 2, signing, PIN verification,
+selection and reset must discard the old exchange. A following peer request
+must be a responder operation whose derived key matches independent Python
+arithmetic. This exposed and fixed a Rust bug retaining initiator state across
+SM2 digest signing. The legacy native slot-to-slot roundtrip and PIN-policy
+cases remain pending; their interleaving contract is not covered by this removal.
