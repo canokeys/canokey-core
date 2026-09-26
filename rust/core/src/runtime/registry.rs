@@ -280,6 +280,8 @@ impl Registry {
     }
 
     #[cfg(feature = "ctap")]
+    // Drop parser-construction temporaries before the HID caller runs crypto.
+    #[inline(never)]
     pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
         use super::workspace::SessionWorkspace;
         self.ctap.close(&mut self.workspace, p);
