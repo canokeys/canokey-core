@@ -41,3 +41,7 @@ add_mocked_test(key
         LINK_LIBRARIES canokey-core
 )
 add_dependencies(test_key generate_virt_card_git_rev)
+
+# Sanitizer diagnostics are correctness failures, not passing-test log output.
+set_tests_properties(test_openpgp test_apdu test_piv test_key PROPERTIES
+    ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")

@@ -59,6 +59,18 @@ function(add_rust_host_archive target build_target directory features)
 endfunction()
 add_rust_host_archive(canokey-rust-core rust-core-build cargo "${FEATURES}")
 include(CTest)
+if(BUILD_TESTING AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  # The retained native SM3 fallback must pass with fatal sanitizer diagnostics.
+  add_executable(native-sm3
+    ../canokey-crypto/test/sm3_correctness.c
+    ../canokey-crypto/src/sm3.c ../canokey-crypto/src/memzero.c)
+  target_include_directories(native-sm3 PRIVATE ../canokey-crypto/include)
+  target_compile_definitions(native-sm3 PRIVATE USE_MBEDCRYPTO)
+  target_compile_options(native-sm3 PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+  target_link_options(native-sm3 PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+  add_test(NAME native-sm3 COMMAND native-sm3)
+endif()
+
 if(CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
   find_package(OpenSSL REQUIRED)
   set(USE_MBEDCRYPTO ON CACHE BOOL "" FORCE)
