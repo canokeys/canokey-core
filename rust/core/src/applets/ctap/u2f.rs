@@ -162,7 +162,7 @@ impl Session {
                 .storage
                 .size(Record::CtapCertificate)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)? as usize;
-            if cert > provision::CERT_LIMIT {
+            if cert == 0 || cert > provision::CERT_LIMIT {
                 return Err(Sw::UNABLE_TO_PROCESS);
             }
             (public + 65, 67 + id.len(), Some(cert))

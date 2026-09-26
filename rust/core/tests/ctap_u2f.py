@@ -64,6 +64,15 @@ def run(wire):
     card.cmd("erased handle", 2, 7, data=request, status=0x6a80)
     wire.command("POLL 100")
     assert card.cmd("reprovision unnecessary", 1, data=challenge + app)[0] == 5
+    card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
+    card.cmd("verify", 0x20, data=b"123456")
+    card.cmd("empty certificate", 2, data=b"")
+    card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+    wire.command("POLL 100")
+    assert card.cmd("empty certificate rejects registration", 1, data=challenge+app, status=0x6900) == b""
+    card.cmd("no partial empty-certificate registration", 0xc0, status=0x6986)
+    provision(card)
+    card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
     wire.command("REMOVE 182") # CtapAttestationKey; certificate remains provisioned.
     wire.command("POLL 100")
     assert card.cmd("missing attestation key", 1, data=challenge+app, status=0x6900) == b""

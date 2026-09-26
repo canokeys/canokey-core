@@ -97,6 +97,15 @@ def run(wire):
     admin()
     card.cmd("verify", 0x20, data=b"123456")
     card.cmd("restore", 0x12, data=default)
+    card.cmd("empty attestation certificate", 2, data=b"")
+    fido()
+    for algorithm in [-7, -49]:
+        call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}, 0x7f)
+        card.cmd("no partial attestation", 0xc0, status=0x6986)
+    verify_attestation = provision(card)
+    fido()
+    for algorithm in [-7, -49]:
+        verify_attestation(call(1, request | {4: [{"type": "public-key", "alg": algorithm}]}), request[1])
     print(f"CTAP configuration: {len(card.checks)} checks passed")
 
 

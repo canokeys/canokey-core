@@ -532,3 +532,11 @@ limited/multiple windows, held-IN completion, file-backed payloads and aborts.
 `usb-sessions` verifies CCID/WebUSB takeover after the existing two-second lease
 invalidates the HID continuation. Two word-sized window fields are added to the
 applet; no private response buffer or protocol implementation is moved to C.
+
+Provisioned attestation certificates must contain 1..1152 bytes. With a provisioned key, an
+empty certificate is rejected by classic and ML-DSA makeCredential with CTAP
+7F and by U2F registration with 6900; no partial registration response remains.
+The existing configuration fixture checks both CTAP algorithms fail and recover
+after valid ADMIN reprovisioning, with independently verified packed signatures.
+The U2F fixture separately checks empty-certificate rejection. This validates
+use-time rejection, not the legacy install-time incomplete-state rebuild.

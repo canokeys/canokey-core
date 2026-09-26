@@ -379,7 +379,7 @@ fn respond(
             Ok(32)
         );
         let cert_len = match (key_ok, certificate) {
-            (true, Ok(n)) if (n as usize) <= super::provision::CERT_LIMIT => n as usize,
+            (true, Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => n as usize,
             (false, Err(crate::ports::StorageError::Missing))
             | (true, Err(crate::ports::StorageError::Missing))
             | (false, Ok(_)) => {
@@ -659,7 +659,7 @@ fn respond_mldsa_make(
         .storage
         .size(crate::ports::Record::CtapCertificate)
         .map_err(|_| Status::Other)? as usize;
-    if cert_len > super::provision::CERT_LIMIT {
+    if cert_len == 0 || cert_len > super::provision::CERT_LIMIT {
         return Err(Status::Other);
     }
     // Extensions are encoded once for classic and streamed keys. The large
