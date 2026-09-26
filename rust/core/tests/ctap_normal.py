@@ -280,9 +280,17 @@ def run(wire):
         token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 0x22, 10: rp})[2])
         params = {1: rp, 2: assertion_hash, 3: [descriptor], 6: protocol.authenticate(token, assertion_hash), 7: version}
         call(2, params | {1: "wrong.example"}, 0x33) # token RP mismatch, not credential lookup
+        # Silent assertions retain authorization for a later interactive one.
+        for _ in range(2):
+            silent = call(2, params | {5: {"up": False}})
+            key.verify(silent[2] + assertion_hash, silent[3])
+            flags = AuthenticatorData(silent[2])
+            assert flags.is_user_verified() and not flags.is_user_present()
+            call(2, params | {1: "wrong.example", 5: {"up": False}}, 0x33)
         answer = call(2, params)
         key.verify(answer[2] + assertion_hash, answer[3])
         assert AuthenticatorData(answer[2]).is_user_verified()
+        assert AuthenticatorData(answer[2]).is_user_present()
         call(2, params, 0x33) # credential use consumed GA/ACFG permissions
         token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 2, 10: rp})[2])
         encrypted = protocol.encrypt(secret, salts)

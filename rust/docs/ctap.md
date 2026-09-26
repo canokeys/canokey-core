@@ -629,3 +629,8 @@ Successful boot installation restores the volatile three-attempt PIN allowance
 without changing durable retries. Transport/session reset and CTAPHID INIT do
 not clear temporary lockout. The UDP fixture verifies lockout across INIT and
 recovery after a real simulated reboot, including durable retry preservation.
+
+A successful `getAssertion` with `up: false` preserves token permissions for
+subsequent assertions. An assertion with user presence consumes permissions
+except large-blob write. RP binding, token expiry and UV checks apply to both
+paths; rejected RP mismatches neither authorize nor consume the valid token.

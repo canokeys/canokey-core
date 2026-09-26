@@ -141,12 +141,12 @@ impl Session {
         }
         if params.up {
             self.credential_presence(w, p)?;
-        }
-        // A credential operation consumes all token permissions except LBW.
-        // Future operations must obtain fresh verification/presence as in C.
-        self.permissions &= pin::PERMISSION_LARGE_BLOB_WRITE;
-        if self.permissions == 0 {
-            self.clear_token(p.memory);
+            // Presence consumes permissions except LBW. Silent assertions
+            // retain authorization for subsequent interactive assertions.
+            self.permissions &= pin::PERMISSION_LARGE_BLOB_WRITE;
+            if self.permissions == 0 {
+                self.clear_token(p.memory);
+            }
         }
         if let Some(hmac) = &params.hmac {
             self.prepare_hmac(hmac, w, p)?;
