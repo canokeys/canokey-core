@@ -102,6 +102,7 @@ static uint8_t stage[8192];
 static size_t stage_size;
 int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_t n) {
   storage_init();
+  if (operation == 4 && failed_write_record == id) { failed_write_record = -1; return -2; }
   if (operation == 4) { assert(id < 186); memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
   if (operation == 5) { assert(id < 186 && n == 1 && b[0] < 186);uint8_t to=b[0];if(sizes[id]<0)return -2;memcpy(files[to],files[id],sizes[id]);sizes[to]=sizes[id];memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
   if (operation == 0 || operation == 3) { memset(stage,0,sizeof(stage)); stage_size=0; return 0; }

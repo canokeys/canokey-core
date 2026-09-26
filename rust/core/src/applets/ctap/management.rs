@@ -482,7 +482,7 @@ impl Session {
             )?;
             let record = Record::ctap_credential(index).unwrap();
             if subcommand == 6 {
-                p.storage.remove(record).unwrap_or_default();
+                p.storage.remove(record).map_err(|_| Status::Other)?;
             } else {
                 let user = fields.user.as_ref().ok_or(Status::MissingParameter)?;
                 if user.id != entry.user {

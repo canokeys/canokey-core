@@ -504,3 +504,9 @@ then confirms management works after fresh clientPIN authorization.
 GetInfo advertises `pinUvAuthToken: true` for permission-scoped clientPIN
 subcommands, alongside PIN protocols 1 and 2. This option lets clients select
 the supported permission-scoped authorization flow rather than legacy tokens.
+
+Credential-management delete propagates storage removal failures as CTAP 7F
+and revokes volatile authorization through the common failure path. A failed
+removal must not be reported as success; retry requires fresh PIN authorization.
+Host coverage verifies preserved records after rejected replacement/deletion
+and session reset, but does not establish LittleFS power-loss atomicity.

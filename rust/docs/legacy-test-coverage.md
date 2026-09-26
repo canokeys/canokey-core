@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 15 registered APDU cases.
+One legacy C test executable remains, with 14 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1225,3 +1225,26 @@ made by retiring cache-implementation tests.
 Validation: combined CTest 28/28 passed (53.48 s). Full DevKit/NFCC
 links remain over Flash at 188448/195928 B (24608/32088 B over), with
 RAM_DATA 8640/8760 B. Runtime stack and physical acceptance remain open.
+
+## Resident mutation failures and recovery
+
+Removed `test_ctap_pending_recovery_rebuilds_metadata` and its unused synthetic
+record/metadata constructors. Rust uses one atomic record per credential, with
+no separate RP metadata or pending-operation journal to rebuild. Existing
+`ctap-normal` now injects a failed replacement, resets the session, independently
+verifies the old credential signature and checks unchanged slot count. It also
+injects failed deletion, requires CTAP 7F and revocation of the old management
+token, resets/re-authorizes, compares the entire retained management record and
+count, then successfully retries deletion.
+
+This found and fixed a production bug: management deletion discarded storage
+errors and reported success. Removal now propagates the error through the common
+authorization-reset path. The host injector rejects mutations before commit;
+physical interruption/power-loss behavior remains separate acceptance work.
+
+Validation: full CTest passed 27/28 initially; the new deletion test then
+accounted for the existing token-revocation policy and `ctap-normal` passed
+on its focused rerun (1.47 s). All 28 entries have passed for the final change.
+Full DevKit/NFCC links still fail at 188472/195952 B Flash (24632/32112 B
+over), +24 B each; RAM_DATA remains 8640/8760 B. Hardware stack and
+compatibility acceptance remain open.

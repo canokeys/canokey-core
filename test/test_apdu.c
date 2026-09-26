@@ -383,51 +383,6 @@ static void write_ctap_dc_fixture(const CTAP_discoverable_credential *credential
   assert_int_equal(write_attr(DC_FILE, DC_GENERAL_ATTR, attr, sizeof(*attr)), 0);
 }
 
-static void init_dc_record(CTAP_discoverable_credential *dc, uint8_t rp_hash_byte, uint8_t nonce_byte) {
-  memset(dc, 0, sizeof(*dc));
-  memset(dc->credential_id.rp_id_hash, rp_hash_byte, SHA256_DIGEST_LENGTH);
-  dc->credential_id.nonce[0] = nonce_byte;
-  dc->credential_id.nonce[CREDENTIAL_NONCE_DC_POS] = 1;
-  dc->credential_id.alg_type = COSE_ALG_ES256;
-}
-
-static void init_rp_meta(CTAP_rp_meta *meta, uint8_t rp_hash_byte, uint32_t live_count) {
-  memset(meta, 0, sizeof(*meta));
-  memset(meta->rp_id_hash, rp_hash_byte, SHA256_DIGEST_LENGTH);
-  meta->live_count = live_count;
-  meta->deleted = live_count == 0;
-}
-
-static void test_ctap_pending_recovery_rebuilds_metadata(void **state) {
-  (void)state;
-  for (uint8_t pending_op = CTAP_DC_PENDING_ADD; pending_op <= CTAP_DC_PENDING_DELETE; ++pending_op) {
-    CTAP_discoverable_credential credentials[2];
-    CTAP_rp_meta metadata[2];
-    CTAP_dc_general_attr attr = {
-        .numbers = pending_op == CTAP_DC_PENDING_ADD ? 1 : 2,
-        .pending_index = 0,
-        .pending_op = pending_op,
-    };
-    init_dc_record(&credentials[0], 0x41, 1);
-    init_dc_record(&credentials[1], 0x42, 2);
-    init_rp_meta(&metadata[0], 0x41, 1);
-    init_rp_meta(&metadata[1], 0x42, 9);
-    write_ctap_dc_fixture(credentials, 2, metadata, 2, &attr);
-
-    assert_int_equal(ctap_consistency_check(), 0);
-    assert_int_equal(read_file(DC_FILE, &credentials[0], 0, sizeof(credentials[0])), sizeof(credentials[0]));
-    assert_true(credentials[0].deleted);
-    assert_int_equal(read_file(DC_META_FILE, metadata, 0, sizeof(metadata)), sizeof(metadata));
-    assert_true(metadata[0].deleted);
-    assert_int_equal(metadata[0].live_count, 0);
-    assert_false(metadata[1].deleted);
-    assert_int_equal(metadata[1].live_count, 1);
-    assert_int_equal(read_attr(DC_FILE, DC_GENERAL_ATTR, &attr, sizeof(attr)), sizeof(attr));
-    assert_int_equal(attr.pending_op, CTAP_DC_PENDING_NONE);
-    assert_int_equal(attr.numbers, 1);
-  }
-}
-
 static void provision_test_attestation(void) {
   static const uint8_t private_key[PRI_KEY_SIZE] = {1};
   static const uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
@@ -927,7 +882,6 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
-      cmocka_unit_test(test_ctap_pending_recovery_rebuilds_metadata),
       cmocka_unit_test(test_ctap_install_preserves_complete_attestation_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),

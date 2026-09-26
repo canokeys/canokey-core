@@ -118,8 +118,16 @@ def run(wire):
     select()
     call(8, status=0x30)
     old = first[1]
-    call(1, {1: client_hash, 2: {"id": rp}, 3: {"id": b"first"},
-             4: [{"type": "public-key", "alg": -8}], 7: {"rk": True}})
+    replacement = {1: client_hash, 2: {"id": rp}, 3: {"id": b"first"},
+                   4: [{"type": "public-key", "alg": -8}], 7: {"rk": True}}
+    wire.command("FAIL_WRITE 80")
+    call(1, replacement, 0x7f)
+    wire.command("RESET")
+    select()
+    retained = call(2, {1: rp, 2: assertion_hash, 3: [old]})
+    resident_keys[old["id"]].verify(retained[2] + assertion_hash, retained[3])
+    assert call(4)[20] == 98
+    call(1, replacement)
     call(2, {1: rp, 2: assertion_hash, 3: [old]}, 0x2e)
     assert int.from_bytes(wire.command("SIZE 80"), "big") < 120
     assert wire.command("SIZE 82") == bytes.fromhex("ffffffff")
@@ -292,6 +300,16 @@ def run(wire):
     assert 8 not in updated and updated[0x80] == -8
     blob_before = manage(4, {1: hashlib.sha256(b"blob.example").digest()})
     other_before = manage(4, {1: hashlib.sha256(b"rejected.example").digest()})
+    wire.command("FAIL_WRITE 80")
+    manage(6, {2: first[7]}, 0x7f)
+    manage(1, status=0x33) # uncertain storage errors revoke volatile authorization
+    wire.command("RESET")
+    select()
+    public, secret = protocol.encapsulate(call(6, {1: version, 2: 2})[1])
+    hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
+    token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 4})[2])
+    assert manage(4, {1: hashlib.sha256(rp.encode()).digest(), 0x80: True}) == updated
+    assert manage(1) == {1: 4, 2: 96}
     manage(6, {2: first[7]})
     assert manage(1) == {1: 3, 2: 97}
     assert call(4)[20] == 97
