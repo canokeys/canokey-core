@@ -108,12 +108,16 @@ static void sw(const uint8_t *b, size_t n, uint16_t expected) {
   }
 }
 static void ccid_send(uint8_t command, const uint8_t *apdu, size_t n) {
-  uint8_t packet[64] = {0};
-  assert(n <= 54);
-  packet[0] = command; packet[1] = (uint8_t)n; packet[6] = ++sequence;
-  if(n) memcpy(packet+10, apdu, n);
-  assert(ck_usb_out(3, packet, (uint16_t)(n+10)) == 0);
-  CCID_Loop();
+  uint8_t request[1043] = {0};
+  assert(n <= sizeof(request)-10);
+  request[0] = command; request[1] = (uint8_t)n;
+  request[2] = (uint8_t)(n>>8); request[6] = ++sequence;
+  if(n) memcpy(request+10, apdu, n);
+  for(size_t at=0;at<n+10;) {
+    size_t part=n+10-at; if(part>64)part=64;
+    assert(ck_usb_out(3,request+at,(uint16_t)part)==0);
+    CCID_Loop(); at+=part;
+  }
 }
 static size_t ccid_read_state(uint8_t *out, uint8_t state) {
   size_t n=0;
@@ -442,6 +446,32 @@ int main(void) {
   assert(!scratch_owner && leases==clears);
   now+=2000; ccid_apdu(select_admin,sizeof(select_admin),0x9000);
   ccid_apdu(query,sizeof(query),0x63c3);
+  // Extended FIDO input is staged through CCID, consumed before key-agreement
+  // crypto, then released even though the response endpoint is still pending.
+  uint8_t extended[7+sizeof(pin_request)+2] = {0x80,0x10,0x80,0,0};
+  extended[5]=(uint8_t)(sizeof(pin_request)>>8);
+  extended[6]=(uint8_t)sizeof(pin_request);
+  memcpy(extended+7,pin_request,sizeof(pin_request));
+  ccid_apdu(select_fido,sizeof(select_fido),0x9000);
+  ccid_send(0x6f,extended,sizeof(extended));
+  assert(!scratch_owner && leases==clears);
+  count=ccid_read(out); sw(out+10,count-10,0x9000);
+  assert(count>76 && out[10]==0);
+  uint8_t partial_ccid[64]={0x6f};
+  partial_ccid[1]=(uint8_t)sizeof(extended);
+  partial_ccid[2]=(uint8_t)(sizeof(extended)>>8);
+  partial_ccid[6]=++sequence;
+  memcpy(partial_ccid+10,extended,54);
+  assert(ck_usb_out(3,partial_ccid,64)==0); CCID_Loop();
+  assert(scratch_owner);
+  setup(0,9,0,0,0); status(); loops();
+  assert(!scratch_owner && leases==clears);
+  setup(0,9,1,0,0); status(); loops();
+  ccid_send(0x62,NULL,0); (void)ccid_read(out);
+  ccid_apdu(select_fido,sizeof(select_fido),0x9000);
+  ccid_send(0x6f,extended,sizeof(extended));
+  count=ccid_read(out); sw(out+10,count-10,0x9000);
+  assert(count>76 && out[10]==0);
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;

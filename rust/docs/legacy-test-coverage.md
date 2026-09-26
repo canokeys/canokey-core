@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 44 registered APDU cases.
+One legacy C test executable remains, with 43 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -920,3 +920,14 @@ that runs after new HID bytes have already been staged. The existing `hid-core`
 large clientPIN test covers the standalone HID path; duplicated padded GetInfo
 runs and C session-owner enum assertions are removed. Production code is
 unchanged.
+
+## CCID extended FIDO staging
+
+`test_ccid_extended_fido_request_uses_pke` is replaced by `usb-sessions`.
+A real Case 4E clientPIN getKeyAgreement request with a 700-byte extension
+crosses USB packets, Rust CCID staging, APDU decoding and crypto. Scratch is
+wiped/released while the response remains pending, and the response completes
+successfully. USB deconfiguration during partial RX must release scratch;
+reconfiguration and power-on permit the full request again. Protocol-level
+`ccid.rs` tests additionally cover all split points and reset cleanup. The
+native padded GetInfo/abort-helper fixture is removed; no production code changed.
