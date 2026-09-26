@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 181 registered cases: APDU (82),
+Four C test executables remain, with 178 registered cases: APDU (79),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -225,3 +225,17 @@ regression checks the actual runtime lease and a new successful command after
 rejection. Standalone extended PKE input remains separately covered by
 `extended_fido_source_is_bounded_and_ccid_only` and the USB fixtures. Magic reboot
 is a host compatibility control, not a production firmware APDU extension.
+
+## Replaced ADMIN certificate and SM2 configuration cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_admin_chained_fido_cert_write` | `ctap-config` with `ctap_fixture.provision`: real multi-fragment certificate provisioning, exact x5c bytes and independently verified signatures; rejects chained READ_VERSION with 6E00 |
+| `test_admin_sm2_config_validation` | `ctap-config`: all 13 reserved curves, three reserved algorithms, all ten allowed curves, unauthorized write and unchanged config after each rejection |
+| `test_admin_sm2_config_wire_format` | `ctap-config`: all four literal BE32 vectors, including both INT32 extremes; reset/re-authentication, exact persisted readback, decoded GetInfo algorithm and 7/9-byte rejected writes preserving state |
+
+The certificate regression uses a real certificate larger than 528 bytes rather
+than the old five-byte placeholder. It verifies the complete resulting bytes
+through CTAP attestation, not an internal native filename. SM2 configuration is
+an opaque eight-byte Rust record; byte round trips are supplemented by decoded
+GetInfo identifiers and the existing custom-curve credential/signature checks.

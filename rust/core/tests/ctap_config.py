@@ -27,8 +27,42 @@ def run(wire):
     card.cmd("verify", 0x20, data=b"123456")
     default = bytes.fromhex("00000009ffffffca")
     assert card.cmd("read default", 0x11) == default
-    for invalid in ["00000001ffffffca", "00000100ffffffca", "00000009fffffff9", "00000009ffffffcf"]:
-        card.cmd("invalid config", 0x12, data=bytes.fromhex(invalid), status=0x6a80)
+    # Every reserved curve and algorithm from the legacy ADMIN policy.
+    for curve in [*range(9), 256, 257, 258, 259]:
+        invalid = curve.to_bytes(4, "big", signed=True) + default[4:]
+        card.cmd("reserved curve", 0x12, data=invalid, status=0x6a80)
+        assert card.cmd("unchanged after invalid curve", 0x11) == default
+    for algorithm in [-7, -8, -49]:
+        invalid = default[:4] + algorithm.to_bytes(4, "big", signed=True)
+        card.cmd("reserved algorithm", 0x12, data=invalid, status=0x6a80)
+        assert card.cmd("unchanged after invalid algorithm", 0x11) == default
+    for curve in [9, 23, 24, 255, 260, -1, -65536, -65537, -(1 << 31), (1 << 31)-1]:
+        config = curve.to_bytes(4, "big", signed=True) + default[4:]
+        card.cmd("allowed curve", 0x12, data=config)
+        assert card.cmd("curve readback", 0x11) == config
+    for encoded, algorithm in [
+        ("00000009ffffffca", -54),
+        ("01234567fedcba98", -19088744),
+        ("800000007fffffff", 2147483647),
+        ("7fffffff80000000", -2147483648),
+    ]:
+        config = bytes.fromhex(encoded)
+        card.cmd("literal wire config", 0x12, data=config)
+        wire.command("RESET")
+        admin()
+        card.cmd("read requires grant", 0x11, status=0x6982)
+        card.cmd("verify", 0x20, data=b"123456")
+        assert card.cmd("reload literal bytes", 0x11) == config
+        for size in [7, 9]:
+            card.cmd("invalid config size", 0x12, data=bytes(size), status=0x6700)
+            assert card.cmd("unchanged after invalid size", 0x11) == config
+        fido()
+        assert [a["alg"] for a in call(4)[10]] == [-7, -8, algorithm, -49]
+        admin()
+        card.cmd("verify", 0x20, data=b"123456")
+    # Certificate provisioning above traverses multiple ISO command fragments;
+    # other ADMIN commands must not silently accept the chaining class bit.
+    card.raw("version cannot chain", 0x31, cla=0x10, status=0x6e00)
     custom = bytes.fromhex("ffff0000fffeffff") # curve -65536, algorithm -65537
     card.cmd("configure", 0x12, data=custom)
     assert card.cmd("read custom", 0x11) == custom

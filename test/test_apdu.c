@@ -3075,50 +3075,6 @@ static void admin_send(CAPDU *capdu, RAPDU *rapdu, uint8_t ins, uint8_t p1, uint
   admin_process_apdu(capdu, rapdu);
 }
 
-static void test_admin_chained_fido_cert_write(void **state) {
-  (void)state;
-
-  static const uint8_t first[] = {0x30, 0x03, 0x01};
-  static const uint8_t second[] = {0x01, 0x00};
-  static const uint8_t expected[] = {0x30, 0x03, 0x01, 0x01, 0x00};
-  static const uint8_t default_pin[] = {'1', '2', '3', '4', '5', '6'};
-  uint8_t c_buf[sizeof(default_pin)];
-  uint8_t r_buf[sizeof(expected)];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  admin_send(&capdu, &rapdu, ADMIN_INS_VERIFY, 0x00, 0x00, default_pin, sizeof(default_pin), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  capdu.cla = 0x10;
-  capdu.ins = ADMIN_INS_WRITE_FIDO_CERT;
-  capdu.p1 = 0x00;
-  capdu.p2 = 0x00;
-  capdu.lc = sizeof(first);
-  capdu.le = 0;
-  memcpy(capdu.data, first, sizeof(first));
-  admin_process_apdu(&capdu, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  capdu.cla = 0x00;
-  capdu.lc = sizeof(second);
-  memcpy(capdu.data, second, sizeof(second));
-  admin_process_apdu(&capdu, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  assert_int_equal(read_file(CTAP_CERT_FILE, r_buf, 0, sizeof(r_buf)), sizeof(expected));
-  assert_memory_equal(r_buf, expected, sizeof(expected));
-
-  capdu.cla = 0x10;
-  capdu.ins = ADMIN_INS_READ_VERSION;
-  capdu.lc = 0;
-  admin_process_apdu(&capdu, &rapdu);
-  assert_int_equal(rapdu.sw, SW_CLA_NOT_SUPPORTED);
-}
-
 static void admin_verify_default_pin(CAPDU *capdu, RAPDU *rapdu) {
   static const uint8_t default_pin[] = {'1', '2', '3', '4', '5', '6'};
 
@@ -3597,112 +3553,6 @@ static void test_select_and_read_command_validation(void **state) {
   assert_int_equal(rapdu.sw, SW_CLA_NOT_SUPPORTED);
 }
 
-static void test_admin_sm2_config_validation(void **state) {
-  (void)state;
-  const int32_t invalid_curves[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 256, 257, 258, 259};
-  const int32_t valid_curves[] = {9, 23, 24, 255, 260, -1, -65536, -65537, INT32_MIN, INT32_MAX};
-  const int32_t invalid_algorithms[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65};
-  uint8_t c_buf[64], r_buf[64];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-  CTAP_sm2_attr saved, actual, attr = {.curve_id = 9, .algo_id = -54};
-  uint8_t wire[CTAP_SM2_CONFIG_WIRE_SIZE];
-  encode_sm2_config(wire, &attr);
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(ctap_install(1), 0);
-  assert_int_equal(ctap_platform_sm2_config_read(&saved, sizeof(saved)), 0);
-  assert_int_equal(admin_install(1), 0);
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
-  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-  admin_verify_default_pin(&capdu, &rapdu);
-
-  for (size_t i = 0; i < sizeof(invalid_curves) / sizeof(invalid_curves[0]); ++i) {
-    attr.curve_id = invalid_curves[i];
-    encode_sm2_config(wire, &attr);
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
-    assert_int_equal(rapdu.sw, SW_WRONG_DATA);
-    assert_int_equal(ctap_platform_sm2_config_read(&actual, sizeof(actual)), 0);
-    assert_memory_equal(&actual, &saved, sizeof(actual));
-  }
-  attr.curve_id = 9;
-  for (size_t i = 0; i < sizeof(invalid_algorithms) / sizeof(invalid_algorithms[0]); ++i) {
-    attr.algo_id = invalid_algorithms[i];
-    encode_sm2_config(wire, &attr);
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
-    assert_int_equal(rapdu.sw, SW_WRONG_DATA);
-  }
-  attr.algo_id = -54;
-  for (size_t i = 0; i < sizeof(valid_curves) / sizeof(valid_curves[0]); ++i) {
-    attr.curve_id = valid_curves[i];
-    encode_sm2_config(wire, &attr);
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-    admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, sizeof(attr));
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-    assert_int_equal(rapdu.len, sizeof(attr));
-    assert_memory_equal(rapdu.data, wire, sizeof(wire));
-    assert_int_equal(ctap_platform_sm2_config_read(&actual, sizeof(actual)), 0);
-    assert_memory_equal(&actual, &attr, sizeof(actual));
-  }
-  encode_sm2_config(wire, &saved);
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, wire, sizeof(wire), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-}
-
-static void test_admin_sm2_config_wire_format(void **state) {
-  (void)state;
-  static const struct {
-    uint8_t wire[8];
-    int32_t curve, algo;
-  } cases[] = {
-      {{0x00, 0x00, 0x00, 0x09, 0xff, 0xff, 0xff, 0xca}, 9, -54},
-      {{0x01, 0x23, 0x45, 0x67, 0xfe, 0xdc, 0xba, 0x98}, 0x01234567, -19088744},
-      {{0x80, 0x00, 0x00, 0x00, 0x7f, 0xff, 0xff, 0xff}, INT32_MIN, INT32_MAX},
-      {{0x7f, 0xff, 0xff, 0xff, 0x80, 0x00, 0x00, 0x00}, INT32_MAX, INT32_MIN},
-  };
-  uint8_t c_buf[64], r_buf[64], saved_wire[8];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-  CTAP_sm2_attr actual;
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(ctap_install(1), 0);
-  assert_int_equal(admin_install(1), 0);
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
-  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-  admin_verify_default_pin(&capdu, &rapdu);
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 8);
-  memcpy(saved_wire, rapdu.data, sizeof(saved_wire));
-
-  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, cases[i].wire, 8, 0);
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-    assert_int_equal(ctap_platform_sm2_config_read(&actual, sizeof(actual)), 0);
-    assert_int_equal(actual.curve_id, cases[i].curve);
-    assert_int_equal(actual.algo_id, cases[i].algo);
-    // Reload persisted configuration before checking the fixed response bytes.
-    assert_int_equal(ctap_install(0), 0);
-    admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-    assert_int_equal(rapdu.len, 8);
-    assert_memory_equal(rapdu.data, cases[i].wire, 8);
-  }
-  for (size_t len = 7; len <= 9; len += 2) {
-    const uint8_t invalid[9] = {0};
-    admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, invalid, len, 0);
-    assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-    admin_send(&capdu, &rapdu, ADMIN_INS_READ_CTAP_SM2_CONFIG, 0, 0, NULL, 0, 8);
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-    assert_memory_equal(rapdu.data, cases[3].wire, 8);
-  }
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_CTAP_SM2_CONFIG, 0, 0, saved_wire, 8, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-}
-
 static void test_ctap_install_preserves_sm2_during_state_rebuild(void **state) {
   (void)state;
   CTAP_sm2_attr saved, actual;
@@ -3940,8 +3790,6 @@ int main() {
       cmocka_unit_test(test_hid_setup_descriptors_and_errors),
       cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
       cmocka_unit_test(test_ctaphid_large_rx_session_cleanup),
-      cmocka_unit_test(test_admin_sm2_config_validation),
-      cmocka_unit_test(test_admin_sm2_config_wire_format),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_input_chaining),
@@ -4010,7 +3858,6 @@ int main() {
       cmocka_unit_test(test_piv_reselect_preserves_security_status),
       cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
       cmocka_unit_test(test_platform_config_flags_preserve_other_state),
-      cmocka_unit_test(test_admin_chained_fido_cert_write),
       cmocka_unit_test(test_admin_read_core_commit_apdu),
       cmocka_unit_test(test_admin_flash_usage_apdus),
       cmocka_unit_test(test_admin_kbd_keymap_apdus),
