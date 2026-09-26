@@ -401,10 +401,13 @@ impl Registry {
             admin::Action::ResetCtap => self.ctap.erase(&mut self.workspace, p)?,
             #[cfg(feature = "openpgp")]
             admin::Action::ResetOpenPgp => {
-                // No live CCID state can exist under ADMIN selection; the fresh
-                // instance only runs the persistent-storage clear.
-                crate::applets::openpgp::protocol::OpenPgp::new()
-                    .clear(self.workspace.classic_with(p.memory), p)?
+                // ADMIN selection already revoked the OpenPGP session. Keep
+                // the clear operation's workspace wipe without constructing
+                // a temporary applet whose session state is never observed.
+                let workspace = self.workspace.classic_with(p.memory);
+                p.memory.wipe(&mut workspace.key.bytes);
+                p.memory.wipe(&mut workspace.input);
+                crate::applets::openpgp::repository::reset(p)?;
             }
             #[cfg(feature = "oath")]
             admin::Action::ResetOath => {

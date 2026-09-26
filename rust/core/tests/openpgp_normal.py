@@ -435,12 +435,15 @@ def run(wire, host):
         c.select()
         c.verify(0x81)
         c.public(0)
-    c.reset()
+    # Exercise ADMIN reset on populated keys, not an already reset applet.
+    assert c.get(0xDE) != bytes([1, 0, 2, 0, 3, 0])
     c.cmd("select_admin_reset", 0xA4, 4, data=bytes.fromhex("f000000000"))
     c.cmd("verify_admin_reset", 0x20, data=b"123456", le=None)
     c.cmd("admin_reset_openpgp", 3, le=None)
     c.select()
     assert c.get(0xDE) == bytes([1, 0, 2, 0, 3, 0])
+    c.cmd("admin_reset_revokes_pw3", 0x20, 0, 0x83, le=None, status=0x63C3)
+    c.verify()
     return {"checks": len(c.checks), "cases": c.checks, "result": "pass"}
 
 
