@@ -8,7 +8,9 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
   the native transport path.
 - CCID FIDO SELECT (`00 A4 04 00`, AID `A0000006472F0001`) returns the legacy six-byte `U2F_V2` response.
   CTAP2 GetInfo continues to advertise the supported FIDO2 versions; keeping
-  SELECT at six bytes preserves existing U2F/NFC client buffers.
+  SELECT at six bytes preserves existing U2F/NFC client buffers. Unknown U2F
+  instructions return `6D00` for both short and well-formed extended APDUs;
+  malformed framing and command-size limits still reject invalid lengths.
   `80 10 00 00` carries CTAP bytes; ISO chaining uses CLA `90` and final CLA `80`.
   GetInfo is command `04`, with no parameters. Unknown CTAP commands return
   CTAP INVALID_COMMAND inside a successful APDU envelope.

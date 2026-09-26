@@ -14,6 +14,10 @@ def run(wire):
     card = Card(wire)
     provision(card)
     assert card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
+    # Unknown U2F commands must report INS, including case-2 extended APDUs.
+    for ins in (0, 4, 0xff):
+        for suffix in (b"\x00", b"\x00\x00\x00", b"\x00\x00\x01x\x00\x00"):
+            assert wire.transmit(bytes([0, ins, 0, 0]) + suffix) == (b"", 0x6d, 0)
     assert card.cmd("version", 3) == b"U2F_V2"
     card.cmd("version length", 3, data=b"x", status=0x6700)
     challenge = hashlib.sha256(b"challenge").digest()

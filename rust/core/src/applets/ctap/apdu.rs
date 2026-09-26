@@ -18,7 +18,9 @@ fn valid_message_parameters(header: Header) -> bool {
 }
 
 pub fn allows_extended(header: Header) -> bool {
-    (header.cla == 0 && matches!(header.ins, 1 | 2 | 3 | 0xa4 | 0x10))
+    // Let U2F classify unknown instructions after valid extended framing, just
+    // as for short APDUs. Runtime ownership and command-size limits still apply.
+    header.cla == 0
         || (header.cla == 0x80 && header.ins == INS_MSG && valid_message_parameters(header))
 }
 
