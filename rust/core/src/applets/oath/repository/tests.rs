@@ -11,6 +11,8 @@ use std::vec::Vec;
 struct Controls {
     header_reads: Cell<usize>,
     uncertain_commit: Cell<bool>,
+    capacity: Cell<Option<u32>>,
+    reserve: Cell<u32>,
 }
 struct Files<'a> {
     bytes: Vec<u8>,
@@ -44,14 +46,25 @@ impl Storage for Files<'_> {
         out.copy_from_slice(source);
         Ok(())
     }
-    fn has_space(&mut self, _: u32, _: u32) -> Result<bool, StorageError> {
-        Ok(true)
+    fn has_space(&mut self, needed: u32, reserve: u32) -> Result<bool, StorageError> {
+        self.controls.reserve.set(reserve);
+        Ok(self.controls.capacity.get().is_none_or(|capacity| {
+            (self.bytes.len() as u32)
+                .checked_add(needed)
+                .and_then(|used| used.checked_add(reserve))
+                .is_some_and(|used| used <= capacity)
+        }))
     }
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         self.stage.clear();
         Ok(())
     }
     fn stage_append(&mut self, bytes: &[u8]) -> Result<(), StorageError> {
+        if self.controls.capacity.get().is_some_and(|capacity| {
+            self.bytes.len() + self.stage.len() + bytes.len() > capacity as usize
+        }) {
+            return Err(StorageError::Unavailable);
+        }
         self.stage.extend_from_slice(bytes);
         Ok(())
     }
@@ -170,4 +183,53 @@ fn truncated_or_invalid_entry_headers_fail_closed() {
         let mut store = Store::new(&mut files, &Wipe);
         assert_eq!(store.first(), Err(Error::Storage));
     }
+}
+
+#[test]
+fn capacity_exceeds_one_hundred_and_reserves_delete_and_reinsert_space() {
+    let controls = Controls::default();
+    // A finite device, including the old image while its atomic replacement
+    // is staged. The reserve must leave deletion possible after append denial.
+    controls.capacity.set(Some(70 * 1024));
+    let mut files = Files {
+        bytes: Vec::new(),
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    let mut ids = Vec::new();
+    {
+        let mut store = Store::new(&mut files, &Wipe);
+        store.initialize().unwrap();
+        for index in 0u32..2048 {
+            match store.insert(&credential(&index.to_be_bytes())) {
+                Ok(id) => ids.push(id),
+                Err(Error::NoSpace) => break,
+                other => panic!("unexpected insertion result: {other:?}"),
+            }
+        }
+        assert!(ids.len() > 100 && ids.len() < 2048);
+        assert_eq!(controls.reserve.get(), 64 * 1024);
+    }
+    let original = files.bytes.clone();
+    {
+        let mut store = Store::new(&mut files, &Wipe);
+        assert_eq!(store.insert(&credential(b"next")), Err(Error::NoSpace));
+    }
+    assert_eq!(files.bytes, original);
+    assert!(files.stage.is_empty());
+    {
+        let mut store = Store::new(&mut files, &Wipe);
+        store.delete(ids[0]).unwrap();
+        let replacement = store.insert(&credential(&0u32.to_be_bytes())).unwrap();
+        assert!(replacement.0 > ids.last().unwrap().0);
+        assert!(matches!(store.load(ids[0]), Err(Error::Missing)));
+        assert_eq!(store.load(replacement).unwrap().name(), &0u32.to_be_bytes());
+        for (index, id) in ids.iter().enumerate().skip(1) {
+            assert_eq!(
+                store.load(*id).unwrap().name(),
+                &(index as u32).to_be_bytes()
+            );
+        }
+    }
+    assert_eq!(files.bytes.len(), original.len());
 }

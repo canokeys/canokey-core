@@ -156,3 +156,12 @@ USB checks, 29 reset/power-cycle checks and 19
 ADMIN USB checks. Both release-version and development-version OATH CTest
 profiles run two tests and pass. Local evidence is in
 `hil-reports/rust-oath-review-20260923/`; no new physical-touch run was performed.
+
+## Malformed input compatibility
+
+KEY and challenge TLVs reject an impossible declared length with `6A80` before
+reading the value; a valid declared length with missing bytes returns `6700`.
+This preserves legacy status precedence without out-of-bounds access. The
+`virtual-oath-regressions` host suite includes the legacy literal vectors,
+failed counter commits, PASS configuration and persistence. Capacity/reserve
+coverage and the retired C cases are recorded in `legacy-test-coverage.md`.

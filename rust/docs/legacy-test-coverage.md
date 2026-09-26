@@ -24,7 +24,7 @@ separately exercised by `native-storage` (`tools/hil/test_rust_storage.py` in th
 CIU parent checkout), using the real service adapter and LittleFS with mock
 Flash. Rust host snapshots are not evidence for LittleFS power-loss durability.
 Registry tests additionally verify selection, chained writes and streamed reads
-through the actual APDU engine; the AFL test exercises persistent NDEF updates.
+through the actual APDU engine.
 
 ## Replaced keyboard suite
 
@@ -60,22 +60,48 @@ new adapter; invalid keygen results now fail before being published. The Rust
 PIV host suite separately verifies real PQ public keys, signatures and recovery
 after aborted streams; the native test is not a replacement for those policies.
 
+## Replaced OATH/PASS suite
+
+All 18 cases in `test/test_oath.c` now have correctness replacements:
+
+| Legacy case | Rust regression |
+|---|---|
+| `test_select_ins` | `oath-normal`: SELECT fields and persisted handle |
+| `test_invalid_ins` | `virtual-oath-regressions`: unsupported INS |
+| `test_put` | `oath-normal`: SHA-1/256/512 creation; `virtual-oath-regressions`: duplicate and increasing-only creation |
+| `test_put_long_key` | `virtual-oath-regressions`: literal FF KEY declaration, 6A80 |
+| `test_put_unsupported_algo` | `virtual-oath-regressions`: literal unsupported algorithm |
+| `test_put_unsupported_counter` | `virtual-oath-regressions`: TOTP initial-counter rejection |
+| `test_calc` | `virtual-oath-regressions`: original short-challenge digest, decreasing ordinary TOTP, missing/truncated/invalid challenge |
+| `test_increasing_only` | `virtual-oath-regressions`: equal/increasing accepted, decreasing rejected |
+| `test_counter_write_failures_do_not_return_otp` | `virtual-oath-regressions`: HOTP, increasing-only and PASS failed counter commits, empty response and counter recovery |
+| `test_list` | `oath-normal`: ordered listing and A5 pagination |
+| `test_calc_all` | `oath-normal`: full/truncated paginated results; `virtual-oath-regressions`: malformed challenge |
+| `test_hotp_touch` | `virtual-oath-regressions`: RFC 4226 counters 1..10, both slots, initial counter, binding config and deletion |
+| `test_static_pass` | `virtual-oath-regressions`: maximum length, oversize, Enter and reset persistence |
+| `test_pass_hmacsha1_config` | `virtual-oath-regressions`: configured/disabled slots, suppressed typing and persistence |
+| `test_oath_yk_hmacsha1_api` | `virtual-oath-regressions`: short/padded independent HMAC, missing slot and serial |
+| `test_tombstone_reuse` | `virtual-oath-regressions`: delete/reinsert does not grow the live record |
+| `test_regression_fuzz` | `virtual-oath-regressions`: fixed malformed TLVs with explicit statuses; no mutation campaign |
+| `test_space_full` | `repository::tests::capacity_exceeds_one_hundred_and_reserves_delete_and_reinsert_space` |
+
+Capacity coverage checks more than 100 records, finite-capacity rejection with
+an unchanged image, the 64 KiB reserve, deletion and reinsertion after rejection,
+and every surviving credential. Staging counts both old and new images. The
+production native LittleFS adapter separately checks exact reserve boundaries
+and oversized arithmetic through `native-storage`; a mock is not a physical
+Flash power-loss oracle.
+
+KEY and challenge declarations preserve the legacy 6A80 semantic-length
+precedence while using bounded reads for 6700 truncation. The previously noted
+FF KEY compatibility difference is resolved.
+
 ## Still requiring individual coverage audit
 
-Six C test executables remain, with 226 registered cases: APDU (96), core
-helpers (13), key (25), OATH (18), OpenPGP (16), PIV (58).
-Existing Rust suites cover many of these behaviors, but no blanket equivalence
-is claimed. Their C applet/protocol dependencies must remain until each case is
-mapped to an existing replacement or ported. This ledger is intentionally not
-a completion certificate for stage six, production capacity, stack or hardware
-interoperability.
-
-The supplemental `virtual-oath-regressions` suite checks OATH counter commit
-faults, duplicate records, malformed requests, PASS slots, HMAC, reload and
-record-size reuse. It does not yet replace the 18 legacy OATH cases. A truncated
-key TLV declaring length FF returns 6700 in the bounded Rust parser, before
-semantic validation (legacy C returned 6A80); this parser precedence difference
-remains an explicit compatibility item.
+Five C test executables remain, with 208 registered cases: APDU (96), core
+helpers (13), key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
+remain until each case is mapped or ported. This ledger is not a completion
+certificate for stage six, production capacity, stack or interoperability.
 
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
 Literal malformed-input regressions remain correctness tests with explicit

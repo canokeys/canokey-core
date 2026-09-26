@@ -66,11 +66,13 @@ def run(library):
                 calculate(b'FI',1,0x21,sw=0x6982);calculate(b'FI',2,0x21);calculate(b'FI',3,0x21)
                 calculate(b'FI',2,0x21,sw=0x6982)
                 put(b'FP');cmd(0x55,1,data=tlv(0x71,b'FP'),le=None)
+                admin();assert cmd(0x43)==bytes([1,2])+b'FP'+b'\x00\x00';oath()
                 inject();touch(0,failure=True);touch(0,b'287082')
                 # Counter 1..10 from RFC 4226, both PASS slots and initial counter.
                 for counter, code in enumerate([b'359152',b'969429',b'338314',b'254676',b'287922',b'162583',b'399871',b'520489',b'403154'],2):
                     touch(0,code)
                 cmd(2,data=tlv(0x71,b'FP'),le=None);touch(0,b'')
+                admin();assert cmd(0x43)==b'\x00\x00';oath()
                 put(b'initial',digits=8,extra=tlv(0x7a,(2).to_bytes(4,'big')))
                 cmd(0x55,2,data=tlv(0x71,b'initial'),le=None)
                 digest=hmac.digest(b'12345678901234567890',(3).to_bytes(8,'big'),'sha1');off=digest[-1]&15
@@ -80,13 +82,23 @@ def run(library):
                 for ins,p1,data in [(1,0,'71'),(1,0,'71012073031104007a04'),(2,0,'71'),
                                     (0xa2,0,'71'),(0x55,1,'71'),(1,0,'7101007303')]:
                     cmd(ins,p1,data=bytes.fromhex(data),sw=0x6700)
-                cmd(1,data=bytes.fromhex('71012073ff111000'),sw=0x6700)
+                cmd(1,data=bytes.fromhex('71012073ff111000'),sw=0x6a80)
                 cmd(1,data=bytes.fromhex('7101207303001000'),sw=0x6a80)
                 cmd(1,data=bytes.fromhex('71012073032110007a0400000000'),sw=0x6a80)
                 for data in ['74','7408','740800000021060001']:
                     cmd(0xa4,p2=1,data=bytes.fromhex(data),sw=0x6700)
                 for challenge in [b'',bytes(65)]:
                     cmd(0xa2,data=tlv(0x71,b'FI')+tlv(0x74,challenge),sw=0x6a80)
+                # Legacy short TOTP vector and malformed challenge declarations.
+                put(b'abc',0x21,key=bytes([0,1,2]))
+                value=tlv(0x71,b'abc')+tlv(0x74,bytes.fromhex('2106000102'))
+                assert cmd(0xa2,p2=1,data=value)==bytes.fromhex('7605067ff136be')
+                cmd(0xa2,p2=1,data=value[:-1]+b'\x01')  # Non-increasing-only TOTP.
+                for data in [value[:-1],value[:1],value[:2],value[:5]]:
+                    cmd(0xa2,p2=1,data=data,sw=0x6700)
+                for n in (0,9,255):
+                    cmd(0xa2,p2=1,data=tlv(0x71,b'abc')+bytes([0x74,n])+b'x',sw=0x6a80)
+                    cmd(0xa4,p2=1,data=bytes([0x74,n])+b'x',sw=0x6a80)
                 # Maximum static password, append-Enter, reload and HMAC-only slots.
                 admin();password=b'0123456789abcdefghijklmnopqrstuv'
                 assert len(password)==32
@@ -106,6 +118,7 @@ def run(library):
                 assert len(cmd(1,0x10))==4
                 admin();cmd(0x44,1,data=b'\x00',le=None)
                 assert driver.power(502)[0]==0
+                admin();assert cmd(0x43)[0]==0
                 oath();cmd(1,0x30,data=bytes(64),sw=0x6a82)
                 # Removing/reinserting same-sized data does not grow the live file.
                 def record_size():

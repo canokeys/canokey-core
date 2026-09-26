@@ -55,6 +55,21 @@ fn field<'a>(cursor: &mut ByteCursor<'a>, expected: u8) -> Result<&'a [u8], Sw> 
     }
     Ok(value)
 }
+fn bounded_field<'a>(
+    cursor: &mut ByteCursor<'a>,
+    expected: u8,
+    min: usize,
+    max: usize,
+) -> Result<&'a [u8], Sw> {
+    let tag = cursor.byte().map_err(|_| Sw::WRONG_LENGTH)?;
+    let len = usize::from(cursor.byte().map_err(|_| Sw::WRONG_LENGTH)?);
+    // Preserve legacy semantic-length precedence without ever reading past
+    // the received bytes: an impossible declaration is 6A80, truncation 6700.
+    if tag != expected || len < min || len > max {
+        return Err(Sw::WRONG_DATA);
+    }
+    cursor.take(len).map_err(|_| Sw::WRONG_LENGTH)
+}
 fn name<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
     // Validate at the wire boundary before borrowing storage; Credential::new
     // repeats the invariant for callers that construct domain values directly.
@@ -67,11 +82,7 @@ fn name<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
 fn challenge<'a>(cursor: &mut ByteCursor<'a>) -> Result<&'a [u8], Sw> {
     // Keep challenge validation at the protocol boundary; callers may then
     // safely apply the session's challenge semantics without rechecking size.
-    let bytes = field(cursor, tag::CHALLENGE)?;
-    if bytes.is_empty() || bytes.len() > CHALLENGE_LIMIT {
-        return Err(Sw::WRONG_DATA);
-    }
-    Ok(bytes)
+    bounded_field(cursor, tag::CHALLENGE, 1, CHALLENGE_LIMIT)
 }
 // Run after the legacy OTP route and OATH access-code gate. These checks
 // precede TLV parsing, storage reads, and presence requests for every command.
@@ -186,10 +197,12 @@ impl State {
         mac: &mut Mac<'_>,
     ) -> Result<(), Sw> {
         let name = name(&mut c)?;
-        let key = field(&mut c, tag::KEY)?;
-        if key.len() < KEY_HEADER_BYTES + 1 || key.len() > KEY_HEADER_BYTES + OATH_KEY_LIMIT {
-            return Err(Sw::WRONG_DATA);
-        }
+        let key = bounded_field(
+            &mut c,
+            tag::KEY,
+            KEY_HEADER_BYTES + 1,
+            KEY_HEADER_BYTES + OATH_KEY_LIMIT,
+        )?;
         // KEY starts with the OATH kind/algorithm byte; the remaining
         // bytes are the secret material.
         let kind = Kind::from_byte(key[0]).map_err(status)?;

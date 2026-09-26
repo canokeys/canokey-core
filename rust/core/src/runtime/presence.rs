@@ -5,7 +5,7 @@
 const PRESENCE_TIMEOUT_MS: u32 = 30_000;
 #[cfg(persistent_applet)]
 fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<(), Error> {
-    if device.contactless() || cfg!(feature = "test-presence") {
+    if device.contactless() {
         return if device.progress() {
             Ok(())
         } else {
@@ -68,9 +68,6 @@ pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
     // Factory reset requires physical gestures and is forbidden over NFC.
     if device.contactless() {
         return false;
-    }
-    if cfg!(feature = "test-presence") {
-        return device.progress();
     }
     // This deliberately remains separate from `wait`: factory reset requires
     // five released, short gestures with LED prompts between them, while
@@ -137,7 +134,7 @@ impl Request {
     #[cfg(feature = "ctap")]
     pub fn poll(&mut self, device: &mut crate::ports::DevicePort<'_>) -> bool {
         self.attempted = true;
-        if device.contactless() || cfg!(feature = "test-presence") {
+        if device.contactless() {
             device.progress()
         } else {
             device.poll_presence()
@@ -160,7 +157,6 @@ impl Request {
 
 #[cfg(all(
     test,
-    not(feature = "test-presence"),
     feature = "pass",
     any(feature = "oath", feature = "openpgp", feature = "piv")
 ))]
@@ -285,60 +281,5 @@ mod contactless_tests {
         device.0 = false;
         assert_eq!(request.wait_result(&mut device), Err(Error::Cancelled));
         assert!(!request.poll(&mut device));
-    }
-}
-
-#[cfg(all(test, feature = "test-presence", feature = "admin", feature = "ctap"))]
-mod test_presence {
-    use super::*;
-    use crate::ports::Device;
-    struct NoTouch {
-        connected: bool,
-        nfc: bool,
-    }
-    impl Device for NoTouch {
-        fn serial(&mut self, _: &mut [u8; 4]) {
-            unreachable!()
-        }
-        fn now(&mut self) -> u32 {
-            panic!("test bypass must not wait for a clock")
-        }
-        fn touched(&mut self) -> bool {
-            panic!("test bypass must not access touch hardware")
-        }
-        fn contactless(&mut self) -> bool {
-            self.nfc
-        }
-        fn progress(&mut self) -> bool {
-            self.connected
-        }
-        fn led(&mut self, _: bool) {
-            panic!("test bypass must not prompt for a touch")
-        }
-    }
-    #[test]
-    fn bypass_accepts_without_touch_but_keeps_transport_cancellation() {
-        let mut device = NoTouch {
-            connected: true,
-            nfc: false,
-        };
-        let mut request = Request::new();
-        assert_eq!(request.wait_result(&mut device), Ok(()));
-        assert_eq!(request.wait_long(&mut device), Ok(()));
-        assert!(request.poll(&mut device));
-        assert!(strong(&mut device));
-        device.connected = false;
-        assert_eq!(request.wait_result(&mut device), Err(Error::Cancelled));
-        assert_eq!(request.wait_long(&mut device), Err(Error::Cancelled));
-        assert!(!request.poll(&mut device));
-        assert!(!strong(&mut device));
-    }
-    #[test]
-    fn bypass_does_not_enable_factory_reset_over_nfc() {
-        let mut device = NoTouch {
-            connected: true,
-            nfc: true,
-        };
-        assert!(!strong(&mut device));
     }
 }
