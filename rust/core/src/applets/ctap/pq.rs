@@ -97,7 +97,7 @@ impl Stream {
             stream.framing.bytes[..plan.prefix].copy_from_slice(&old.output[..plan.prefix]);
             stream.framing.bytes[plan.prefix..plan.prefix + plan.auth]
                 .copy_from_slice(&old.input[..plan.auth]);
-            stream.framing.bytes[plan.prefix + plan.auth..plan.output]
+            stream.framing.bytes[plan.prefix + plan.auth..plan.output + plan.auth]
                 .copy_from_slice(&old.output[plan.prefix..plan.output]);
             stream
                 .framing
@@ -117,7 +117,9 @@ impl Stream {
         } else {
             PUBLIC_BYTES
         };
-        stream.certificate_at = plan.certificate.map_or(plan.output, |(at, _)| at);
+        stream.certificate_at = plan
+            .certificate
+            .map_or(plan.output + plan.auth, |(at, _)| at);
         stream.certificate_length = plan.certificate.map_or(0, |(_, n)| n);
     }
 
@@ -127,7 +129,7 @@ impl Stream {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> Result<(), Status> {
-        if plan.output > FRAMING_BYTES {
+        if plan.output + plan.auth > FRAMING_BYTES {
             return Err(Status::Other);
         }
         let old_workspace = core::mem::replace(w, SessionWorkspace::CtapStream(Self::empty()));
@@ -137,7 +139,7 @@ impl Stream {
         let SessionWorkspace::CtapStream(stream) = w else {
             unreachable!()
         };
-        stream.framing.length = plan.output;
+        stream.framing.length = plan.output + plan.auth;
         Self::fill(stream, plan, &old);
         old.clear(p.memory);
         let SessionWorkspace::CtapStream(_) = w else {
@@ -297,7 +299,7 @@ impl Stream {
     // PKE public generation is closed before the P-256 primitive runs.
     fn attest(&mut self, at: usize, digest: &[u8; 32], p: &mut Platform<'_>) -> Result<(), Status> {
         let mut key = [0; 32];
-        let mut signature = [0; 72];
+        let mut signature = [0; 73];
         let result = (|| {
             if !matches!(p.storage.load(Record::CtapAttestationKey, &mut key), Ok(32)) {
                 return Err(Status::Other);

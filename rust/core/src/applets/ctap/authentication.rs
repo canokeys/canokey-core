@@ -363,64 +363,7 @@ fn respond(
             .map_err(|_| Status::Other)?;
         auth_len += capacity - e.writer().len();
     }
-    let extensions = u64::from(request.protection.is_some())
-        + u64::from(request.min_pin_length.is_some())
-        + u64::from(request.cred_blob.is_some() || request.get_cred_blob)
-        + u64::from(request.hmac_secret)
-        + u64::from(request.hmac.active())
-        + u64::from(!request.make && request.third_party_payment);
-    if extensions != 0 {
-        w.input[32] |= 0x80;
-        let mut blob = [0; 32];
-        let mut blob_len = 0;
-        if request.get_cred_blob {
-            if let Some(index) = request.user_slot {
-                let n = resident::load(index, &mut w.output, p)?.ok_or(Status::NoCredentials)?;
-                let entry = resident::Entry::decode(&w.output[..n])?;
-                blob_len = entry.blob.len();
-                blob[..blob_len].copy_from_slice(entry.blob);
-            }
-        }
-        let mut hmac_output = [0; 80];
-        let hmac_len = if request.hmac.active() {
-            request
-                .hmac
-                .output(request.id, request.rp, request.uv, &mut hmac_output, p)?
-        } else {
-            0
-        };
-        let capacity = w.input.len() - auth_len;
-        let mut e = Encoder::new(&mut w.input[auth_len..]);
-        {
-            e.map(extensions);
-            if let Some(accepted) = request.cred_blob {
-                e.str("credBlob").bool(accepted);
-            } else if request.get_cred_blob {
-                e.str("credBlob").bytes(&blob[..blob_len]);
-            }
-            if let Some(protection) = request.protection {
-                e.str("credProtect").u8(protection);
-            }
-            if request.hmac_secret {
-                e.str("hmac-secret").bool(true);
-            }
-            if !request.make && hmac_len != 0 {
-                e.str("hmac-secret").bytes(&hmac_output[..hmac_len]);
-            }
-            if let Some(minimum) = request.min_pin_length {
-                e.str("minPinLength").u8(minimum);
-            }
-            if request.make && hmac_len != 0 {
-                e.str("hmac-secret-mc").bytes(&hmac_output[..hmac_len]);
-            }
-            if !request.make && request.third_party_payment {
-                e.str("thirdPartyPayment")
-                    .bool(request.id[1] & credential::THIRD_PARTY_PAYMENT != 0);
-            }
-        }
-        e.finish().map_err(|_| Status::Other)?;
-        auth_len += capacity - e.writer().len();
-    }
+    auth_len = append_extensions(request, w, p, auth_len)?;
     if !request.make && request.algorithm == alg::MLDSA65 {
         return respond_mldsa_assertion(request, w, p, response, auth_len);
     }
@@ -576,6 +519,73 @@ fn respond(
     Ok(total)
 }
 
+fn append_extensions(
+    request: &Signing<'_>,
+    w: &mut Workspace,
+    p: &mut Platform<'_>,
+    mut auth_len: usize,
+) -> Result<usize, Status> {
+    let extensions = u64::from(request.protection.is_some())
+        + u64::from(request.min_pin_length.is_some())
+        + u64::from(request.cred_blob.is_some() || request.get_cred_blob)
+        + u64::from(request.hmac_secret)
+        + u64::from(request.hmac.active())
+        + u64::from(!request.make && request.third_party_payment);
+    if extensions != 0 {
+        w.input[32] |= 0x80;
+        let mut blob = [0; 32];
+        let mut blob_len = 0;
+        if request.get_cred_blob {
+            if let Some(index) = request.user_slot {
+                let n = resident::load(index, &mut w.output, p)?.ok_or(Status::NoCredentials)?;
+                let entry = resident::Entry::decode(&w.output[..n])?;
+                blob_len = entry.blob.len();
+                blob[..blob_len].copy_from_slice(entry.blob);
+            }
+        }
+        let mut hmac_output = [0; 80];
+        let hmac_len = if request.hmac.active() {
+            request
+                .hmac
+                .output(request.id, request.rp, request.uv, &mut hmac_output, p)?
+        } else {
+            0
+        };
+        let capacity = w.input.len() - auth_len;
+        let mut e = Encoder::new(&mut w.input[auth_len..]);
+        {
+            e.map(extensions);
+            if let Some(accepted) = request.cred_blob {
+                e.str("credBlob").bool(accepted);
+            } else if request.get_cred_blob {
+                e.str("credBlob").bytes(&blob[..blob_len]);
+            }
+            if let Some(protection) = request.protection {
+                e.str("credProtect").u8(protection);
+            }
+            if request.hmac_secret {
+                e.str("hmac-secret").bool(true);
+            }
+            if !request.make && hmac_len != 0 {
+                e.str("hmac-secret").bytes(&hmac_output[..hmac_len]);
+            }
+            if let Some(minimum) = request.min_pin_length {
+                e.str("minPinLength").u8(minimum);
+            }
+            if request.make && hmac_len != 0 {
+                e.str("hmac-secret-mc").bytes(&hmac_output[..hmac_len]);
+            }
+            if !request.make && request.third_party_payment {
+                e.str("thirdPartyPayment")
+                    .bool(request.id[1] & credential::THIRD_PARTY_PAYMENT != 0);
+            }
+        }
+        e.finish().map_err(|_| Status::Other)?;
+        auth_len += capacity - e.writer().len();
+    }
+    Ok(auth_len)
+}
+
 fn respond_mldsa_assertion(
     request: &Signing<'_>,
     w: &mut Workspace,
@@ -584,8 +594,19 @@ fn respond_mldsa_assertion(
     auth_len: usize,
 ) -> Result<usize, Status> {
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
-    let mut e = Encoder::new(&mut w.output[..]);
-    e.map(2 + u64::from(request.count > 1) + u64::from(has_blob_key));
+    w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
+    w.input[auth_len + 32..auth_len + 64].copy_from_slice(&w.key.bytes[..32]);
+    let user = if let Some(index) = request.user_slot {
+        let n = resident::load(index, &mut w.key.bytes, p)?.ok_or(Status::NoCredentials)?;
+        Some(resident::Entry::decode(&w.key.bytes[..n])?)
+    } else {
+        None
+    };
+    w.output[0] = 0;
+    let mut e = Encoder::new(&mut w.output[1..]);
+    e.map(3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key));
+    e.u8(1);
+    super::encoding::descriptor(&mut e, request.id).map_err(|_| Status::Other)?;
     e.u8(2)
         .bytes_len(auth_len as u64)
         .finish()
@@ -594,6 +615,11 @@ fn respond_mldsa_assertion(
     let mut tail = Encoder::new(&mut w.output[prefix..]);
     tail.u8(3).bytes_len(super::pq::SIGNATURE_BYTES as u64);
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
+    if let Some(user) = &user {
+        tail.u8(4);
+        super::encoding::user(&mut tail, user, request.uv && request.details)
+            .map_err(|_| Status::Other)?;
+    }
     if request.count > 1 {
         tail.u8(5).u8(request.count);
     }
@@ -605,8 +631,6 @@ fn respond_mldsa_assertion(
     }
     tail.finish().map_err(|_| Status::Other)?;
     let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    w.input[auth_len..auth_len + 32].copy_from_slice(request.client_hash);
-    w.input[auth_len + 32..auth_len + 64].copy_from_slice(&w.key.bytes[..32]);
     *response = Some(super::Response::Pending(super::pq::Pending {
         mode: super::pq::Mode::Assert,
         prefix,
@@ -629,56 +653,60 @@ fn respond_mldsa_make(
     w: &mut Workspace,
     p: &mut Platform<'_>,
     response: &mut Option<super::Response>,
-    _auth_prefix_len: usize,
+    auth_prefix: usize,
 ) -> Result<usize, Status> {
     let cert_len = p
         .storage
         .size(crate::ports::Record::CtapCertificate)
-        .unwrap_or_default() as usize;
+        .map_err(|_| Status::Other)? as usize;
     if cert_len > super::provision::CERT_LIMIT {
         return Err(Status::Other);
     }
-    w.input[..32].copy_from_slice(request.client_hash);
-    w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
-
+    // Extensions are encoded once for classic and streamed keys. The large
+    // public key is spliced between the COSE header and these extension bytes.
+    let auth_end = append_extensions(request, w, p, auth_prefix)?;
+    let extension_len = auth_end - auth_prefix;
     let mut cose = [0u8; 32];
     let mut ce = Encoder::new(&mut cose[..]);
     super::encoding::mldsa_public_header(&mut ce).map_err(|_| Status::Other)?;
     let cose_prefix_len = 32 - ce.writer().len();
-    // authenticatorData = rpIdHash (32) || flags (1) || counter (4) ||
-    // AAGUID (16) || credentialIdLength (2) || credentialId || COSE key.
     let auth_prefix_len = 55 + credential::ID_BYTES + cose_prefix_len;
-    let auth_len = auth_prefix_len + 0;
-
-    let mut e = Encoder::new(&mut w.output[..]);
-    e.encoded(super::encoding::MAKE_HEADER)
-        .bytes_len((auth_len + super::pq::PUBLIC_BYTES) as u64);
+    let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
+    w.output[0] = 0;
+    let mut e = Encoder::new(&mut w.output[1..]);
+    e.map(3 + u64::from(has_blob_key))
+        .encoded(&super::encoding::MAKE_HEADER[1..])
+        .bytes_len((auth_prefix_len + super::pq::PUBLIC_BYTES + extension_len) as u64);
     e.finish().map_err(|_| Status::Other)?;
     let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    let public_at = auth_start + auth_prefix_len;
-    w.output[auth_start..auth_start + 32].copy_from_slice(request.rp);
-    w.output[auth_start + 32] = 0x41;
-    let counter = credential::counter(p)?;
-    w.output[auth_start + 33..auth_start + 37].copy_from_slice(&counter);
+    w.output[auth_start..auth_start + auth_prefix].copy_from_slice(&w.input[..auth_prefix]);
     w.output[auth_start + 37..auth_start + 53].copy_from_slice(&super::provision::AAGUID);
     w.output[auth_start + 53..auth_start + 55]
         .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
-    w.output[auth_start + 55..auth_start + 55 + credential::ID_BYTES].copy_from_slice(request.id);
-    w.output[public_at..public_at + cose_prefix_len].copy_from_slice(&cose[..cose_prefix_len]);
-
-    let after_cose = public_at + cose_prefix_len;
-    let mut tail = Encoder::new(&mut w.output[after_cose..]);
-    tail.u8(3)
-        .encoded(super::encoding::ATTESTATION)
-        .bytes_len(72);
+    let cose_at = auth_start + 55 + credential::ID_BYTES;
+    w.output[auth_start + 55..cose_at].copy_from_slice(request.id);
+    let public_at = cose_at + cose_prefix_len;
+    w.output[cose_at..public_at].copy_from_slice(&cose[..cose_prefix_len]);
+    w.output[public_at..public_at + extension_len].copy_from_slice(&w.input[auth_prefix..auth_end]);
+    let mut tail = Encoder::new(&mut w.output[public_at + extension_len..]);
+    tail.u8(3).encoded(super::encoding::ATTESTATION);
     tail.finish().map_err(|_| Status::Other)?;
+    // Stream::attest inserts the encoded DER signature here, exactly once.
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     tail.encoded(super::encoding::CERTIFICATE)
         .bytes_len(cert_len as u64);
     tail.finish().map_err(|_| Status::Other)?;
     let cert_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
-    let output = cert_at;
-    let total = output + super::pq::PUBLIC_BYTES + cert_len;
+    if has_blob_key {
+        let mut key = [0; 32];
+        credential::large_blob_key(request.id, request.rp, &mut key, p)?;
+        tail.u8(5).bytes(&key);
+        p.memory.wipe(&mut key);
+    }
+    tail.finish().map_err(|_| Status::Other)?;
+    let output = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
+    w.input[..32].copy_from_slice(request.client_hash);
+    w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
     *response = Some(super::Response::Pending(super::pq::Pending {
         mode: super::pq::Mode::Make,
         prefix: auth_start,
@@ -688,7 +716,7 @@ fn respond_mldsa_make(
         certificate: Some((cert_at, cert_len)),
         output,
         hash_prefix: (auth_start, auth_prefix_len),
-        hash_suffix: (after_cose, 0),
+        hash_suffix: (public_at, extension_len),
     }));
-    Ok(total)
+    Ok(output + super::pq::PUBLIC_BYTES + cert_len)
 }

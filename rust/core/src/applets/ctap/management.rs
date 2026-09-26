@@ -13,7 +13,6 @@ use canokey_protocol::cbor::{Encoder, SliceDecoder};
 
 const PUBLIC_KEY_OFFSET: usize = crate::ports::key_layout::P;
 const CREDENTIAL_MANAGEMENT_PERMISSION: u8 = 4;
-const RESIDENT_RECORD_BUFFER_BYTES: usize = 256;
 const LARGE_BLOB_KEY_OFFSET: usize = 320;
 const LARGE_BLOB_KEY_END: usize = LARGE_BLOB_KEY_OFFSET + 32;
 
@@ -22,24 +21,24 @@ fn mldsa_public_response(
     id: &credential::Id,
     total: u8,
     subcommand: u8,
-    has_blob_key: bool,
-    w: &mut Workspace,
+    blob_key: Option<&[u8; 32]>,
+    output: &mut [u8; crate::runtime::workspace::OUTPUT_BYTES],
 ) -> Result<(super::pq::Pending, usize), Status> {
-    let mut e = Encoder::new(&mut w.output[..]);
-    super::encoding::management_header(&mut e, entry, subcommand == 4, has_blob_key)
+    output[0] = 0;
+    let mut e = Encoder::new(&mut output[1..]);
+    super::encoding::management_header(&mut e, entry, subcommand == 4, blob_key.is_some())
         .map_err(|_| Status::Other)?;
     e.u8(8).finish().map_err(|_| Status::Other)?;
-    let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     super::encoding::mldsa_public_header(&mut e).map_err(|_| Status::Other)?;
+    let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     super::encoding::management_tail(
         &mut e,
         id,
         (subcommand == 4).then_some(total),
-        has_blob_key.then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
+        blob_key.map(|key| &key[..]),
     )
     .map_err(|_| Status::Other)?;
     let output = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-    w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
     Ok((
         super::pq::Pending {
             mode: super::pq::Mode::Public,
@@ -248,7 +247,11 @@ impl Session {
     ) -> Result<usize, Status> {
         let result = self.manage_inner(params, w, p);
         p.memory.wipe(&mut w.key.bytes);
-        p.memory.wipe(&mut w.input);
+        // A pending PQ response owns its seed in input until Stream::transfer
+        // copies it and wipes the old workspace. Never zero it before that handoff.
+        if !matches!(self.auth_response, Some(super::Response::Pending(_))) {
+            p.memory.wipe(&mut w.input);
+        }
         if result.is_err() {
             self.management = Cursor::new();
             p.memory.wipe(&mut w.output);
@@ -356,9 +359,7 @@ impl Session {
                     let id = *entry.id;
                     let algorithm = credential::open(&id, self.sm2, &self.management.rp, w, p)?;
                     if algorithm == crate::ports::alg::MLDSA65 && !self.management.metadata_only {
-                        let mut record = [0; RESIDENT_RECORD_BUFFER_BYTES];
-                        record[..n].copy_from_slice(&w.input[..n]);
-                        let entry = resident::Entry::decode(&record[..n])?;
+                        let entry = resident::Entry::decode(&w.input[..n])?;
                         let has_blob_key = id[1] & resident::LARGE_BLOB_KEY != 0;
                         if has_blob_key {
                             credential::large_blob_key(
@@ -370,8 +371,22 @@ impl Session {
                                 p,
                             )?;
                         }
-                        let (plan, length) =
-                            mldsa_public_response(&entry, &id, total, subcommand, has_blob_key, w)?;
+                        let blob_key = has_blob_key.then(|| {
+                            (&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
+                                .try_into()
+                                .unwrap()
+                        });
+                        let (plan, length) = mldsa_public_response(
+                            &entry,
+                            &id,
+                            total,
+                            subcommand,
+                            blob_key,
+                            &mut w.output,
+                        )?;
+                        // Encode directly from the input record before reusing
+                        // it for the stream seed; maximal user records exceed 256 B.
+                        w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
                         self.auth_response = Some(super::Response::Pending(plan));
                         return Ok(length + super::pq::PUBLIC_BYTES);
                     }

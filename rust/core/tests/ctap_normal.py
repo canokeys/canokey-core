@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import piv_sm2 as sm2
+from cryptography.hazmat.primitives.asymmetric import mldsa
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
 from fido2.ctap2.pin import PinProtocolV1, PinProtocolV2
@@ -19,6 +20,13 @@ from ctap_fixture import provision, AAGUID
 def run(wire):
     card = Card(wire)
     verify_attestation = provision(card)
+    def verify_credential(key, message, signature):
+        if key[3] == -49:
+            assert key[1] == 7 and key[-1] == 6 and len(key[-2]) == 1952
+            assert len(signature) == 3309
+            mldsa.MLDSA65PublicKey.from_public_bytes(key[-2]).verify(signature, message)
+        else:
+            key.verify(message, signature)
     def select():
         assert card.cmd("select", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"FIDO_2_0"
     def call(command, parameters=None, status=0):
@@ -139,7 +147,7 @@ def run(wire):
 
     salts = hashlib.sha256(b"salt one").digest() + hashlib.sha256(b"salt two").digest()
     hmac_results = {}
-    for protocol in [PinProtocolV1(), PinProtocolV2()]:
+    for protocol, algorithm in [(PinProtocolV1(), -7), (PinProtocolV2(), -49)]:
         public, secret = protocol.encapsulate(call(6, {1: protocol.VERSION, 2: 2})[1])
         def hmac_input(value):
             encrypted = protocol.encrypt(secret, value)
@@ -149,7 +157,7 @@ def run(wire):
                            {"hmac-secret": False, "hmac-secret-mc": extension}]:
             call(1, registration | {6: extensions}, 0x14)
         result = call(1, {1: client_hash, 2: {"id": rp}, 3: user,
-                         4: [{"type": "public-key", "alg": -7}],
+                         4: [{"type": "public-key", "alg": algorithm}],
                          6: {"hmac-secret": True, "hmac-secret-mc": extension}})
         auth = AuthenticatorData(result[2])
         assert auth.extensions["hmac-secret"] is True
@@ -159,7 +167,8 @@ def run(wire):
         assert len(expected) == 64 and expected[:32] != expected[32:]
         request = {1: rp, 2: assertion_hash, 3: [handle], 4: {"hmac-secret": extension}}
         result = call(2, request)
-        auth.credential_data.public_key.verify(result[2] + assertion_hash, result[3])
+        assert result[1] == handle
+        verify_credential(auth.credential_data.public_key, result[2]+assertion_hash, result[3])
         assert protocol.decrypt(secret, AuthenticatorData(result[2]).extensions["hmac-secret"]) == expected
         single = call(2, request | {4: {"hmac-secret": hmac_input(salts[:32])}})
         assert protocol.decrypt(secret, AuthenticatorData(single[2]).extensions["hmac-secret"]) == expected[:32]
@@ -325,7 +334,7 @@ def run(wire):
     hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
     def permission(mask):
         return protocol.decrypt(secret, call(6, {1: 2, 2: 9, 3: public, 6: hashed, 9: mask, 10: "full.example"})[2])
-    full_keys = {}
+    full_keys, full_blob_keys = {}, {}
     for payment in [False, True]:
         extensions = {"credBlob": b"b" * 32, "largeBlobKey": True, "hmac-secret": True}
         if payment:
@@ -333,13 +342,16 @@ def run(wire):
         token = permission(1)
         registration = {1: client_hash, 2: {"id": "full.example"},
                         3: {"id": bytes([payment]) * 64, "name": "n" * 64, "displayName": "d" * 64},
-                        4: [{"type": "public-key", "alg": -7}], 6: extensions, 7: {"rk": True},
+                        4: [{"type": "public-key", "alg": -7 if payment else -49}], 6: extensions, 7: {"rk": True},
                         8: protocol.authenticate(token, client_hash), 9: 2}
         if not payment:
             call(1, registration | {6: extensions | {"thirdPartyPayment": False}}, 0x2c)
         result = call(1, registration)
         auth = AuthenticatorData(result[2])
         full_keys[auth.credential_data.credential_id] = auth.credential_data.public_key
+        verify_attestation(result, client_hash)
+        assert auth.is_user_verified()
+        full_blob_keys[auth.credential_data.credential_id] = result[5]
     token = permission(2)
     encrypted = protocol.encrypt(secret, salts)
     result = call(2, {1: "full.example", 2: assertion_hash,
@@ -354,7 +366,8 @@ def run(wire):
         assert auth.extensions["thirdPartyPayment"] is payment
         assert len(protocol.decrypt(secret, auth.extensions["hmac-secret"])) == 64
         assert len(answer[4]["name"]) == len(answer[4]["displayName"]) == 64
-        full_keys[answer[1]["id"]].verify(answer[2] + assertion_hash, answer[3])
+        assert answer[7] == full_blob_keys[answer[1]["id"]]
+        verify_credential(full_keys[answer[1]["id"]], answer[2]+assertion_hash, answer[3])
     call(8, status=0x30)
     # SM2 follows the C wire contract: curve 9, alg -54, raw r||s,
     # SM3(ZA || authData || clientDataHash), with the standard identity.
@@ -389,12 +402,15 @@ def run(wire):
     entries.extend(manage(5) for _ in range(entries[0][9] - 1))
     stored = next(entry for entry in entries if entry[7] == sm2_handle)
     assert stored[8] == cose
+    for entry in entries:
+        if entry[7] != sm2_handle:
+            assert entry[8] == full_keys[entry[7]["id"]]
     metadata = [manage(4, {1: hashlib.sha256(b"full.example").digest(), 0x80: True})]
     metadata.extend(manage(5) for _ in range(metadata[0][9]-1))
     assert len(metadata) == 3
     for entry in metadata:
         assert 8 not in entry
-        assert entry[0x80] == (-54 if entry[7] == sm2_handle else -7)
+        assert entry[0x80] == (-54 if entry[7] == sm2_handle else full_keys[entry[7]["id"]][3])
         assert entry[12] is (entry[6]["id"] == b"\x01" * 64)
     wire.command("RESET")
     select()
@@ -420,7 +436,7 @@ def run(wire):
     call(6, {1: 2, 2: 4, 3: public, 4: protocol.authenticate(secret, encrypted + hashed),
              5: encrypted, 6: hashed})
     assert call(4)[12] is False
-    return {"passed": True, "algorithms": ["ES256", "Ed25519", "SM2"], "checks": len(card.checks)}
+    return {"passed": True, "algorithms": ["ES256", "Ed25519", "SM2", "ML-DSA-65"], "checks": len(card.checks)}
 
 
 def main():

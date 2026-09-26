@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 30 registered APDU cases.
+One legacy C test executable remains, with 28 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1056,3 +1056,31 @@ Validation: host CTest passed 28/28 in 55.88 seconds. Both full builds were
 retried and still fail Flash capacity: DevKit 187880 B (24040 B over), NFCC
 195360 B (31520 B over), RAM_DATA 8640/8760 B. No capacity, hardware or runtime
 stack acceptance is claimed.
+
+## ML-DSA extension and public-key stream correctness
+
+Removed `test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_separate`
+and `test_ctap_apdu_credential_management_streams_mldsa_public_key`. The existing
+`ctap-normal` hmac-secret protocol-2 registration now uses ML-DSA; protocol 1
+keeps ES256. Independent packed-attestation verification, decrypted distinct
+salt outputs and a cryptography MLDSA65 verification of the 3309-byte assertion
+prove the generated key, extension and signature streams agree.
+
+The existing maximal-user resident pair now mixes ML-DSA and ES256, followed by
+SM2. Tests verify UV, extensions, descriptor/user fields, largeBlobKey equality,
+assertion signatures, canonical full/metadata enumeration and exact public-key
+equality with registration. The broader native custom-SM2/mixed-transport case
+remains for further audit.
+
+These tests exposed and repaired live Rust failures: insufficient DER scratch;
+missing status, descriptor/user and extension fields; incorrect COSE/signature
+insertion offsets; assertion framing lengths that panicked during transfer;
+a 256-byte resident copy that panicked on maximal metadata; and management seed
+wiping before stream initialization. The obsolete record copy and unused
+native encoding/CBOR helpers were removed. No added workspace or Flash cache.
+
+Validation: host CTest passed 28/28 in 58.84 seconds. After dead-helper deletion,
+the native APDU target rebuilt without unused-function warnings. Full production
+links remain over Flash: DevKit 188432 B (24592 B over), NFCC 195912 B (32072 B
+over); RAM_DATA is unchanged at 8640/8760 B. Runtime stack and hardware acceptance
+remain unverified.

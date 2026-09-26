@@ -476,3 +476,22 @@ requests remain queued for the main loop. A USB generation change never triggers
 Core reset from this callback. The `usb-sessions` fixture exercises two polls,
 IN backpressure, deferred power-on and cancellation inside a real HID selection
 presence wait.
+
+### ML-DSA response streaming correctness
+
+ML-DSA makeCredential uses the same extension encoder as classic credentials,
+preserves UP/UV/ED flags and one counter increment, and splices the public bytes
+after the COSE header and before extensions. The P-256 attestation hash covers
+that exact authenticatorData; its DER signature is inserted once. Assertion
+framing includes CTAP status, credential descriptor, resident user data and
+largeBlobKey, and accounts for authenticatorData when moving into the shared
+stream workspace.
+
+Credential management encodes directly from the shared resident input record,
+including maximum user fields, before reusing that input for its ML-DSA seed.
+The seed remains owned until Stream::transfer copies it and clears the old
+workspace. Full enumeration returns the registration public key; metadata-only
+mode omits it. No second full public-key buffer or Flash scratch is introduced.
+`ctap-normal` independently verifies packed attestation and ML-DSA signatures,
+decrypts hmac-secret-mc results and compares full/metadata mixed enumeration.
+Hardware stack measurements remain required for the repaired call paths.
