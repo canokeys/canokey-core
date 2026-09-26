@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 58 registered cases: APDU (49)
-and PIV (9). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 56 registered cases: APDU (49)
+and PIV (7). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -791,3 +791,19 @@ must be a responder operation whose derived key matches independent Python
 arithmetic. This exposed and fixed a Rust bug retaining initiator state across
 SM2 digest signing. The legacy native slot-to-slot roundtrip and PIN-policy
 cases remain pending; their interleaving contract is not covered by this removal.
+
+## SM2 interleaved agreement and PIN coverage
+
+The final native SM2 cases, `test_piv_sm2_key_agreement_roundtrip` and
+`test_piv_sm2_key_agreement_pin_policy`, now run through
+`piv-normal::sm2_operations`. A responder call on slot 9C must preserve the
+initiator state on 9A, both keys must agree, and initiation must work again
+after completion. This runs under PIN_NEVER and PIN_ONCE (one verification
+covers all three operations). PIN_ALWAYS rejects unauthenticated initiation
+and response without output; an authenticated responder result is independently
+verified and a second operation is rejected because the grant was consumed.
+
+The independent host-role checks retained above complement the two-slot
+roundtrip; same-backend agreement alone is not the cryptographic oracle.
+Removed all remaining native SM2 fixture helpers and the now-unused chained
+request helper. No production code changed in this consolidation.

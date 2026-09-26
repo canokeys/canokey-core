@@ -891,6 +891,46 @@ def sm2_operations(c):
         assert reply[0x85] == expected
     c.auth()
 
+    # One shared initiator state must survive a responder operation on another
+    # slot. Exercise both PIN_NEVER and one verification for PIN_ONCE.
+    for policy in (1, 2):
+        for slot, private in ((0x9A, sm2.V_DA), (0x9C, sm2.V_DB)):
+            c.cmd("sm2_interleaved_import", 0xFE, 0x54, slot,
+                  tlv(6, private) + tlv(0xAA, bytes([policy])), le=None)
+        c.select()
+        if policy == 2:
+            c.verify()
+        a = fields(fields(c.cmd("sm2_slot_a_start", 0x87, 0x54, 0x9A, start))[0x7C])[0x82]
+        assert len(a) == 65 and a[0] == 4
+        peer = tlv(0x86, b"\x04" + sm2.V_PA) + tlv(0x87, a)
+        b = fields(fields(c.cmd("sm2_slot_b_respond", 0x87, 0x54, 0x9C,
+                               tlv(0x7C, tlv(0x82, b"") + tlv(0x85, peer))))[0x7C])
+        assert len(b[0x82]) == 65 and b[0x82][0] == 4 and len(b[0x85]) == 16
+        peer = tlv(0x86, b"\x04" + sm2.V_PB) + tlv(0x87, b[0x82])
+        derived = fields(fields(c.cmd("sm2_slot_a_finish", 0x87, 0x54, 0x9A,
+                                     tlv(0x7C, tlv(0x82, b"") + tlv(0x85, peer))))[0x7C])
+        assert derived == {0x82: b[0x85]}
+        c.cmd("sm2_completed_exchange_can_restart", 0x87, 0x54, 0x9A, start)
+        c.select()
+        c.auth()
+    c.cmd("sm2_always_import", 0xFE, 0x54, 0x9A,
+          tlv(6, sm2.V_DA) + tlv(0xAA, b"\x03"), le=None)
+    c.select()
+    for request in (start, finish):
+        assert not c.cmd("sm2_always_requires_pin", 0x87, 0x54, 0x9A,
+                         request, status=0x6982)
+    c.verify()
+    reply = fields(fields(c.cmd("sm2_always_authorized_responder", 0x87, 0x54, 0x9A, finish))[0x7C])
+    expected = sm2.key_exchange_full(
+        0, sm2.ID_DEFAULT, sm2.ID_DEFAULT, sm2.V_DB, sm2.V_PB,
+        sm2.V_RB, sm2.V_EB, public, reply[0x82][1:], 16,
+    )[0]
+    assert reply[0x85] == expected
+    assert not c.cmd("sm2_always_consumed_pin", 0x87, 0x54, 0x9A, finish, status=0x6982)
+    c.auth()
+    c.cmd("sm2_restore_once_policy", 0xFE, 0x54, 0x9A,
+          tlv(6, sm2.V_DA) + tlv(0xAA, b"\x02"), le=None)
+
 
 def attestation(c):
     issuer_key = ec.generate_private_key(ec.SECP256R1())
