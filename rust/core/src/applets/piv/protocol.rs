@@ -648,3 +648,6 @@ impl Default for Piv {
     }
 }
 pub(super) use super::codec::der_signature;
+
+#[cfg(test)]
+mod key_record_tests;

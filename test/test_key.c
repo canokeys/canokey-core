@@ -5,63 +5,10 @@
 #include <cmocka.h>
 
 #include <bd/lfs_filebd.h>
-#include <crypto-util.h>
 #include <device.h>
 #include <fs.h>
-#include <key.h>
 #include <lfs.h>
 #include <pin.h>
-
-#define PATH "key"
-
-static void test_encode_invalid_type(void **state) {
-  (void)state;
-
-  uint8_t buf[1] = {0};
-  ck_key_t key = {.meta.type = KEY_TYPE_PKC_END};
-
-  assert_int_equal(ck_encode_public_key(&key, buf, false), -1);
-  key.meta.type = AES128;
-  assert_int_equal(ck_encode_public_key(&key, buf, true), -1);
-}
-
-static void test_read_key_rejects_short_material(void **state) {
-  (void)state;
-  const key_meta_t meta = {.type = MLKEM768, .origin = KEY_ORIGIN_IMPORTED, .usage = KEY_AGREEMENT};
-  uint8_t short_seed[MLKEM768_KEYGEN_SEED_BYTES - 1];
-  memset(short_seed, 0x5A, sizeof(short_seed));
-  assert_int_equal(write_file(PATH, short_seed, 0, sizeof(short_seed), 1), 0);
-  assert_int_equal(ck_write_key_metadata(PATH, &meta), 0);
-
-  ck_key_t key;
-  memset(&key, 0xA5, sizeof(key));
-  assert_int_equal(ck_read_key(PATH, &key), LFS_ERR_CORRUPT);
-  const uint8_t zero[sizeof(rsa_key_t)] = {0};
-  assert_memory_equal(key.data, zero, sizeof(zero));
-}
-
-static void test_read_empty_key_ignores_stale_material(void **state) {
-  (void)state;
-  uint8_t stale_ecc_material[sizeof(ecc_key_t)];
-  memset(stale_ecc_material, 0x5A, sizeof(stale_ecc_material));
-  assert_int_equal(write_file(PATH, stale_ecc_material, 0, sizeof(stale_ecc_material), 1), 0);
-
-  const key_meta_t meta = {
-      .type = RSA2048,
-      .origin = KEY_ORIGIN_NOT_PRESENT,
-      .usage = SIGN,
-      .pin_policy = PIN_POLICY_ONCE,
-      .touch_policy = TOUCH_POLICY_CACHED,
-  };
-  assert_int_equal(ck_write_key_metadata(PATH, &meta), 0);
-
-  ck_key_t key;
-  memset(&key, 0xA5, sizeof(key));
-  assert_int_equal(ck_read_key(PATH, &key), 0);
-  assert_memory_equal(&key.meta, &meta, sizeof(meta));
-  const uint8_t zero[sizeof(rsa_key_t)] = {0};
-  assert_memory_equal(key.data, zero, sizeof(zero));
-}
 
 static void test_fs_file_operations(void **state) {
   (void)state;
@@ -728,9 +675,6 @@ int main() {
       cmocka_unit_test(test_fs_reader_lifecycle),
       cmocka_unit_test(test_fs_reader_open_failure_releases_cache),
       cmocka_unit_test(test_fs_wrapper_error_paths_release_cache),
-      cmocka_unit_test(test_encode_invalid_type),
-      cmocka_unit_test(test_read_key_rejects_short_material),
-      cmocka_unit_test(test_read_empty_key_ignores_stale_material),
       // Formats the fs; keep last.
       cmocka_unit_test(test_fs_generation),
   };

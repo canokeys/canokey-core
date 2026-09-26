@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Three C test executables remain, with 129 registered cases: APDU (57),
-key (14), PIV (58). Their C applet/protocol dependencies
+Three C test executables remain, with 126 registered cases: APDU (57),
+key (11), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -407,7 +407,7 @@ X25519 encoder similarly copied arbitrary stored public bytes; RFC 7748 tests
 now exercise actual derivation and both applets' distinct private-wire formats.
 Strict decoding additionally rejects noncanonical widths/lengths, duplicate or
 extra public fields instead of merely extracting a valid key from them. Native
-key storage/error paths remain pending audit.
+key storage/error paths are mapped below; native PIN and LittleFS cases remain.
 
 
 ## Replaced key import bounds and compact ECC storage
@@ -428,3 +428,25 @@ Rust ECC records contain only the private scalar and metadata; public points
 are derived after reload. The old 198-byte native ECC-structure persistence
 contract is intentionally replaced by the compact record contract, with actual
 post-reset private-key use rather than comparing unused structure padding.
+
+
+## Replaced invalid and absent key record cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_encode_invalid_type` | `protocol::key_record_tests::truncated_seed_and_invalid_key_types_never_reach_crypto`: stored algorithms 12 (PKC end), 14 (AES-128) and FF rejected at metadata validation; the crypto backend panics if invoked |
+| `test_read_key_rejects_short_material` | Same test submits a 63-byte ML-KEM seed record to GET METADATA, checks 6900, no material read/crypto, no response body and an entirely zero key/output workspace |
+| `test_read_empty_key_ignores_stale_material` | `absent_keys_and_stale_origin_zero_records_never_load_material`: missing/zero-sized records return 6A88, an origin-zero record containing stale material returns 6900; none reads material or reaches crypto and all clear the key workspace |
+
+Rust does not persist a native origin-zero metadata structure alongside stale
+key bytes. Missing/empty records represent absence; a nonempty record must have
+origin 1 or 2 and an exact validated length. Rejecting origin-zero stale records
+is intentional corruption handling, not preservation of the C storage format.
+
+`partial_scalar_and_each_rsa_component_read_failure_clear_the_workspace` also
+injects a prefix write followed by a read error for P-521 and each exponent/CRT
+component of RSA-2048/4096. These checks execute PIV begin/finish, including the
+real command cleanup boundary. The shared low-level loader may contain partial
+material on failure; its caller owns wiping. No duplicate loader wipe or extra
+production buffer is introduced. These fixtures test cleanup and rejection;
+actual valid key derivation/use remains independently checked by APDU suites.
