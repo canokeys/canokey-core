@@ -1,0 +1,165 @@
+--- a/tests/vendor/canokeys/test_power_loss.py
++++ b/tests/vendor/canokeys/test_power_loss.py
+@@ -27,102 +27,64 @@
+     pin_protocol = PinProtocolV1()
+     return CredentialManagement(device.ctap2, pin_protocol, _get_pin_token_with_CM_permission(device))
+ 
+-class TestPowerLoss(object):
++# Rust atomic credential records replace the legacy DC/DM multi-file layout.
++# Test both failure before commit and lost acknowledgement after durable commit.
++class TestPowerLoss:
++    @pytest.mark.parametrize("after_commit", [False, True])
++    def test_make_cred(self, device, PinToken, CredMgmt, after_commit):
++        req = FidoRequest(pin=PIN, rp={"id": "power-loss.test"}, options={"rk": True},
++                          key_params=[{"type": "public-key", "alg": ES256.ALGORITHM}])
++        device.send_err_injection(b"50", p1=2 if after_commit else 0)
++        with pytest.raises(CtapError) as error:
++            device.sendMC(*req.toMC())
++        assert error.value.code == CtapError.ERR.OTHER
++        device.reboot()
++        CredMgmt.pin_uv_token = _get_pin_token_with_CM_permission(device)
++        expected = int(after_commit)
++        assert CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT] == expected
++        assert len(CredMgmt.enumerate_rps()) == expected
++        if after_commit:
++            creds = CredMgmt.enumerate_creds(sha256(req.rp['id'].encode()))
++            assert len(creds) == 1
++            assertion = device.sendGA(*FidoRequest(req, options=None).toGA())
++            assert assertion.credential == creds[0][CredentialManagement.RESULT.CREDENTIAL_ID]
++            key = creds[0][CredentialManagement.RESULT.PUBLIC_KEY]
++            ES256(key).verify(assertion.auth_data + req.cdh, assertion.signature)
++        else:
++            with pytest.raises(CtapError) as error:
++                device.sendGA(*FidoRequest(req, options=None).toGA())
++            assert error.value.code == CtapError.ERR.NO_CREDENTIALS
+ 
+-    def test_make_cred(self, device, PinToken, CredMgmt):
+-        mc_req = FidoRequest(
+-            pin=PIN,
+-            rp={'id': 'power-loss.test'},
+-            options={"rk": True},
+-        )
+-        device.send_err_injection(b"ctap_dm")
+-        with pytest.raises(CtapError) as e:
+-            mc_res = device.sendMC(*mc_req.toMC())
+-        assert e.value.code == 0xF1
+-        device.reboot()
+-
+-        nr_dc = 0
+-        try:
+-            ga_req = FidoRequest(mc_req, options=None)
+-            device.sendGA(*ga_req.toGA())
+-            nr_dc = 1
+-        except CtapError as e:
+-            assert e.code == CtapError.ERR.NO_CREDENTIALS
+-
+-        CredMgmt.pin_uv_token = device.sendPP(PIN, permissions=ClientPin.PERMISSION.CREDENTIAL_MGMT)
+-        assert nr_dc == CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
+-
+-        res = CredMgmt.enumerate_rps()
+-        cnt = 0
+-        for d in res:
+-            rpid = d[CredentialManagement.RESULT.RP]["id"]
+-            if rpid == mc_req.rp['id']:
+-                print("Match RpID:", rpid)
+-                cnt += 1
+-        assert cnt == nr_dc
+-            
+-        mc_req = FidoRequest(
+-            pin=PIN,
+-            rp={'id': 'power-loss2.test'},
+-            options={"rk": True},
+-        )
+-        device.send_err_injection(b"ctap_dc")
+-        with pytest.raises(CtapError) as e:
+-            mc_res = device.sendMC(*mc_req.toMC())
+-        assert e.value.code == 0xF1
+-        device.reboot()
+-
+-        with pytest.raises(CtapError) as e:
+-            ga_req = FidoRequest(mc_req, options=None)
+-            device.sendGA(*ga_req.toGA())
+-        assert e.value.code == CtapError.ERR.NO_CREDENTIALS
+-
+-        CredMgmt.pin_uv_token = device.sendPP(PIN, permissions=ClientPin.PERMISSION.CREDENTIAL_MGMT)
+-        assert nr_dc == CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
+-
+-    def test_del_cred(self, device, PinToken, CredMgmt):
+-        mc_req = FidoRequest(
+-            pin=PIN,
+-            rp={'id': 'power-loss.test'},
+-            options={"rk": True},
+-        )
+-        mc_res1 = device.sendMC(*mc_req.toMC())
+-        mc_req.user = generate_user()
+-        mc_res2 = device.sendMC(*mc_req.toMC())
+-        nr_dc = 2
+-
+-        CredMgmt.pin_uv_token = device.sendPP(PIN, permissions=ClientPin.PERMISSION.CREDENTIAL_MGMT)
+-        assert nr_dc == CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
+-        assert 1 == len(CredMgmt.enumerate_rps())
+-        creds = CredMgmt.enumerate_creds(sha256(mc_req.rp['id'].encode("utf8")))
+-        assert len(creds) == nr_dc
+-
+-        device.send_err_injection(b"ctap_dm")
+-        with pytest.raises(CtapError) as e:
+-            CredMgmt.delete_cred({
+-                "id": mc_res1.auth_data.credential_data.credential_id[:],
+-                "type": "public-key",
+-            })
+-        assert e.value.code == 0xF1
+-        device.reboot()
+-        nr_dc -= 1
+-
+-        CredMgmt.pin_uv_token = device.sendPP(PIN, permissions=ClientPin.PERMISSION.CREDENTIAL_MGMT)
+-        assert nr_dc == CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
+-        assert 1 == len(CredMgmt.enumerate_rps())
+-        creds = CredMgmt.enumerate_creds(sha256(mc_req.rp['id'].encode("utf8")))
+-        assert len(creds) == nr_dc
+-
+-        device.send_err_injection(b"ctap_dc")
+-        with pytest.raises(CtapError) as e:
+-            CredMgmt.delete_cred({
+-                "id": mc_res2.auth_data.credential_data.credential_id[:],
+-                "type": "public-key",
+-            })
+-        assert e.value.code == 0xF1
+-        device.reboot()
+-        nr_dc -= 1
+-        
+-        CredMgmt.pin_uv_token = device.sendPP(PIN, permissions=ClientPin.PERMISSION.CREDENTIAL_MGMT)
+-        assert nr_dc == CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT]
+-        assert 0 == len(CredMgmt.enumerate_rps())
++    @pytest.mark.parametrize("after_commit", [False, True])
++    def test_del_cred(self, device, PinToken, CredMgmt, after_commit):
++        req = FidoRequest(pin=PIN, rp={"id": "power-loss.test"}, options={"rk": True},
++                          key_params=[{"type": "public-key", "alg": ES256.ALGORITHM}])
++        registrations = []
++        for _ in range(2):
++            req.user = generate_user()
++            registrations.append(device.sendMC(*req.toMC()))
++        count = 2
++        for index, registration in enumerate(registrations):
++            descriptor = {"type": "public-key", "id": registration.auth_data.credential_data.credential_id}
++            CredMgmt.pin_uv_token = _get_pin_token_with_CM_permission(device)
++            device.send_err_injection(("%02x" % (80 + index)).encode(), p1=2 if after_commit else 0)
++            with pytest.raises(CtapError) as error:
++                CredMgmt.delete_cred(descriptor)
++            assert error.value.code == CtapError.ERR.OTHER
++            device.reboot()
++            count -= int(after_commit)
++            CredMgmt.pin_uv_token = _get_pin_token_with_CM_permission(device)
++            assert CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT] == count
++            assert len(CredMgmt.enumerate_rps()) == int(count != 0)
++            assertion_request = FidoRequest(req, options=None, allow_list=[descriptor])
++            if after_commit:
++                with pytest.raises(CtapError) as error:
++                    device.sendGA(*assertion_request.toGA())
++                assert error.value.code == CtapError.ERR.NO_CREDENTIALS
++            else:
++                assertion = device.sendGA(*assertion_request.toGA())
++                verify(registration, assertion, req.cdh)
++                CredMgmt.pin_uv_token = _get_pin_token_with_CM_permission(device)
++                CredMgmt.delete_cred(descriptor)
++                count -= 1
++                assert CredMgmt.get_metadata()[CredentialManagement.RESULT.EXISTING_CRED_COUNT] == count

@@ -57,8 +57,10 @@ these are host compatibility identifiers, not device release metadata.
 - The existing 64-byte MAGIC REBOOT datagram cancels live execution, then resets
   authorization and the power-on clock **after callbacks unwind**. It reloads
   durable records/configuration and drops transient staging/error injection.
-- The existing error-injection prefix followed by operation `0` (write) or `1`
-  (read), suboperation `0`, and a filename injects one matching record failure.
+- The existing error-injection prefix followed by operation `0` (before write), `1`
+  (read), or `2` (after durable record replace/remove), suboperation `0`, and a
+  filename injects one matching record failure. Operation 2 models a lost
+  acknowledgement after commit and blocks further storage access until reboot.
   Names follow the Rust ABI: two lowercase hexadecimal digits (`4f` is the CTAP
   counter), with `E103`/`NDEF` exceptions. Legacy C record names do not identify
   the new layout.
@@ -112,7 +114,7 @@ response returns no successful prefix and clears the pending session/response;
 an invalid buffer is rejected before executing the command.
 
 Host-only INS `00 EE` with data `12 56 AB F0` reboots the session/power-on clock;
-INS `00 EF` injects one record failure (P1 read/write selector, P2 zero, filename
+INS `00 EF` injects one record failure (P1 operation selector, P2 zero, filename
 in data). Both parse the shared APDU format, and use the same Rust record names
 as UDP injection. These controls are absent from firmware and APDU replay.
 
@@ -151,3 +153,13 @@ owners and mismatched releases fail. Reads/writes require an active owner and
 validate offsets/lengths before accessing pointers. Release preserves bytes;
 the core explicitly clears transient data before handing off the shared buffer.
 The existing `virtual-pcsc` correctness test checks the exported ABI directly.
+
+
+The external vendor power-loss tests are patched by
+`test-via-pcsc/fido2_rust_atomic_records.patch` for the Rust storage contract.
+Legacy `ctap_dm`/`ctap_dc` files no longer exist; numeric records `50`/`51`
+represent the first two residents, each with atomic metadata. The tests require
+`OTHER` on an actual injected error, then reopen storage and verify creation or
+deletion before/after commit against discovery, management counts and signatures.
+They do not fake legacy multi-file commit points or skip the recovery cases.
+These host tests do not establish physical LittleFS power-cut durability.

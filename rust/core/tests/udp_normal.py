@@ -116,6 +116,46 @@ def run(executable):
                     cert = x509.load_der_x509_certificate(result[3]['x5c'][0])
                     cert.public_key().verify(result[3]['sig'], result[2] + challenge, ec.ECDSA(hashes.SHA256()))
                 mixed_management(card.ctap, verify_attestation)
+                # Atomic resident creation/deletion: fail before commit and
+                # after commit but before acknowledgement, then reopen storage.
+                protocol = PinProtocolV1()
+                pin = b'12345678'
+                public, shared = protocol.encapsulate(card.ctap(6, {1: 1, 2: 2})[1])
+                encrypted = protocol.encrypt(shared, pin.ljust(64, b'\0'))
+                card.ctap(6, {1: 1, 2: 3, 3: public,
+                              4: protocol.authenticate(shared, encrypted), 5: encrypted})
+                def manage(command, params=None):
+                    public, shared = protocol.encapsulate(card.ctap(6, {1: 1, 2: 2})[1])
+                    hashed = protocol.encrypt(shared, hashlib.sha256(pin).digest()[:16])
+                    token = protocol.decrypt(shared, card.ctap(6, {1: 1, 2: 9, 3: public, 6: hashed, 9: 4})[2])
+                    message = bytes([command]) + (cbor.encode(params) if params is not None else b'')
+                    request = {1: command, 3: 1, 4: protocol.authenticate(token, message)}
+                    if params is not None:
+                        request[2] = params
+                    return request
+                challenge = hashlib.sha256(b'atomic resident').digest()
+                request = {1: challenge, 2: {'id': 'atomic.example'}, 3: {'id': b'atomic'},
+                           4: [{'type': 'public-key', 'alg': -7}], 7: {'rk': True}}
+                for after in (0, 2):
+                    public, shared = protocol.encapsulate(card.ctap(6, {1: 1, 2: 2})[1])
+                    hashed = protocol.encrypt(shared, hashlib.sha256(pin).digest()[:16])
+                    token = protocol.decrypt(shared, card.ctap(6, {1: 1, 2: 9, 3: public, 6: hashed,
+                                                                  9: 1, 10: 'atomic.example'})[2])
+                    card.socket.sendto(INJECT + bytes([after, 0]) + b'50', ('127.0.0.1', 8111))
+                    card.ctap(1, request | {8: protocol.authenticate(token, challenge), 9: 1}, status=0x7f)
+                    card.socket.sendto(REBOOT, ('127.0.0.1', 8111))
+                    card.init()
+                    assert card.ctap(10, manage(1))[1] == int(after == 2)
+                descriptor = card.ctap(2, {1: 'atomic.example', 2: challenge})[1]
+                for after in (0, 2):
+                    deletion = manage(6, {2: descriptor})
+                    card.socket.sendto(INJECT + bytes([after, 0]) + b'50', ('127.0.0.1', 8111))
+                    card.ctap(10, deletion, status=0x7f)
+                    card.socket.sendto(REBOOT, ('127.0.0.1', 8111))
+                    card.init()
+                    assert card.ctap(10, manage(1))[1] == int(after == 0)
+                card.ctap(2, {1: 'atomic.example', 2: challenge}, status=0x2e)
+                card.ctap(7)
                 request_hash = hashlib.sha256(b'UDP credential test').digest()
                 rp = 'rust-udp.example'
                 made = card.ctap(1, {1: request_hash, 2: {'id': rp}, 3: {'id': b'udp-user'},

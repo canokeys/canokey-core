@@ -144,7 +144,7 @@ impl Storage {
         Ok(usize::from(id))
     }
     pub fn inject(&mut self, op: u8, sub: u8, path: &[u8]) {
-        if op <= 1 && sub == 0 && !path.is_empty() && path.len() < 32 {
+        if op <= 2 && sub == 0 && !path.is_empty() && path.len() < 32 {
             self.fault = Some((op, path.to_vec()));
         }
     }
@@ -168,6 +168,16 @@ impl Storage {
         out[..count].copy_from_slice(&data[offset..offset + count]);
         Ok(count)
     }
+    fn commit_record(&mut self, id: usize) -> Result<(), i32> {
+        self.persist().map_err(|_| -2)?;
+        // Host-only lost acknowledgement after the durable rename. Require
+        // reopening before any further access, as for uncertain host I/O.
+        if self.check(id as u8, 2).is_err() {
+            self.uncertain = true;
+            return Err(-2);
+        }
+        Ok(())
+    }
     fn replace(&mut self, id: usize, data: Vec<u8>) -> Result<usize, i32> {
         let len = data.len();
         if len > MAX_RECORD
@@ -176,7 +186,7 @@ impl Storage {
             return Err(-2);
         }
         self.records[id] = Some(data);
-        self.persist().map_err(|_| -2)?;
+        self.commit_record(id)?;
         Ok(len)
     }
     pub fn write(&mut self, id: u8, data: &[u8]) -> Result<usize, i32> {
@@ -236,7 +246,7 @@ impl Storage {
                 }
                 let id = self.check(id, 0)?;
                 self.records[id] = None;
-                self.persist().map_err(|_| -2)?;
+                self.commit_record(id)?;
             }
             5 => {
                 if data.len() != 1 {
@@ -329,6 +339,20 @@ mod tests {
         assert_eq!(store.read(3, 0, &mut data, true), Ok(7));
         assert_eq!(store.read(3, 7, &mut [0], false), Err(-2));
         assert_eq!(store.write(186, b"bad"), Err(-2));
+        store.inject(2, 0, b"03");
+        assert_eq!(store.write(3, b"committed"), Err(-2));
+        assert_eq!(store.size(3), Err(-2));
+        let mut store = image.open();
+        let mut data = [0; 9];
+        assert_eq!(store.read(3, 0, &mut data, true), Ok(9));
+        assert_eq!(&data, b"committed");
+        store.inject(0, 0, b"03");
+        assert_eq!(store.stage(4, 3, &[]), Err(-2));
+        assert_eq!(image.open().size(3), Ok(9));
+        store.inject(2, 0, b"03");
+        assert_eq!(store.stage(4, 3, &[]), Err(-2));
+        assert_eq!(store.size(3), Err(-2));
+        assert_eq!(image.open().size(3), Err(-1));
     }
     #[test]
     fn configuration_snapshot_reopens_and_explicit_reset_erases_it() {
