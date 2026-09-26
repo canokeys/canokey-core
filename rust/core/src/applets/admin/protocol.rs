@@ -284,6 +284,9 @@ impl Admin {
         }
         self.execute(h, grants, pass, p, w).map(Action::Response)
     }
+    // Keep command execution outside the reset/provisioning dispatcher: this
+    // boundary reduces both complete CIU images with the pinned size optimizer.
+    #[inline(never)]
     fn execute(
         &mut self,
         h: Header,
