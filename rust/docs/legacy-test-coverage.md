@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 111 registered cases: APDU (53)
+Two legacy C test executables remain, with 109 registered cases: APDU (51)
 and PIV (58). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -493,3 +493,19 @@ parsers. Exact-size encrypted PIN values proceed to missing-parameter checks;
 undersized values return invalid CBOR, oversized values PIN policy violation.
 Token timing tests use a controlled MAC backend to isolate authorization policy;
 independent protocol encryption/MAC compatibility remains in `ctap-normal`.
+
+
+## Replaced authenticator policy/GetInfo cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_ctap_config_toggle_always_uv_without_pin` | `ctap-normal` toggles alwaysUv without a PIN, checks clientPin/alwaysUv and U2F_V2 advertising, resets and verifies persisted GetInfo, then disables the policy and compares the original full GetInfo |
+| `test_ctap_hid_get_info_with_force_pin_change_is_canonical` | `ctap-normal` authenticates a forcePINChange configuration, checks flag 12 and exact canonical CBOR re-encoding, resets and compares the full response, checks token refusal, changes the PIN and verifies flag clearing |
+
+Every `ctap-normal` GetInfo reply now must exactly equal independently
+re-encoded canonical CBOR, including complete consumption (no trailing bytes)
+and ordered maps. The native test directly mutated a force-change flag; the
+replacement configures it through the authenticated production APDU path.
+GetInfo uses the shared Rust CTAP encoder on HID and APDU; endpoint framing
+continues to be checked by `hid-core`, while these regressions exercise policy,
+encoding and reset persistence. They do not claim physical HID interoperability.

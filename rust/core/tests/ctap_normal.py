@@ -25,12 +25,26 @@ def run(wire):
         data = bytes([command]) + (cbor.encode(parameters) if parameters is not None else b"")
         answer = card.cmd(f"CTAP {command:02x}", 0x10, data=data, cla=0x80)
         assert answer[0] == status, (command, answer.hex(), status)
-        return cbor.decode(answer[1:]) if len(answer) > 1 else {}
+        decoded = cbor.decode(answer[1:]) if len(answer) > 1 else {}
+        if command == 4:
+            assert cbor.encode(decoded) == answer[1:], "GetInfo must be canonical and complete"
+        return decoded
     select()
     info = call(4)
     assert info[3] == AAGUID
     assert info[5] == 1024
     assert info[4]["credMgmt"] and info[4]["largeBlobs"] and info[11] == 4096
+    # No-PIN policy changes must update advertised protocols and survive reset.
+    assert info[4]["clientPin"] is False and info[4]["alwaysUv"] is False
+    assert "U2F_V2" in info[1]
+    call(13, {1: 2})
+    enabled = call(4)
+    assert enabled[4]["alwaysUv"] is True and "U2F_V2" not in enabled[1]
+    wire.command("RESET")
+    select()
+    assert call(4) == enabled
+    call(13, {1: 2})
+    assert call(4) == info
     rp = "example.com"
     client_hash = hashlib.sha256(b"registration challenge").digest()
     assertion_hash = hashlib.sha256(b"authentication challenge").digest()
@@ -356,6 +370,26 @@ def run(wire):
     select()
     assertion = call(2, {1: "full.example", 2: assertion_hash, 3: [sm2_handle]})
     verify_sm2(assertion[2] + assertion_hash, assertion[3])
+    # Set and clear forcePINChange through authenticated configuration/PIN commands.
+    protocol = PinProtocolV2()
+    public, secret = protocol.encapsulate(call(6, {1: 2, 2: 2})[1])
+    hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
+    token = permission(0x20)
+    policy = {3: True}
+    message = b"\xff" * 32 + b"\x0d\x03" + cbor.encode(policy)
+    call(13, {1: 3, 2: policy, 3: 2, 4: protocol.authenticate(token, message)})
+    forced = call(4)
+    assert forced[12] is True
+    wire.command("RESET")
+    select()
+    assert call(4) == forced
+    public, secret = protocol.encapsulate(call(6, {1: 2, 2: 2})[1])
+    hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
+    call(6, {1: 2, 2: 9, 3: public, 6: hashed, 9: 0x20}, 0x37)
+    encrypted = protocol.encrypt(secret, pin.ljust(64, b"\0"))
+    call(6, {1: 2, 2: 4, 3: public, 4: protocol.authenticate(secret, encrypted + hashed),
+             5: encrypted, 6: hashed})
+    assert call(4)[12] is False
     return {"passed": True, "algorithms": ["ES256", "Ed25519", "SM2"], "checks": len(card.checks)}
 
 

@@ -1800,32 +1800,6 @@ static void test_ctap_pin_state_read_errors_are_propagated(void **state) {
   assert_null(source.read);
 }
 
-static void test_ctap_hid_get_info_with_force_pin_change_is_canonical(void **state) {
-  (void)state;
-
-  uint8_t req[] = {CTAP_GET_INFO};
-  uint8_t scratch[64] = {0};
-  uint8_t resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  CTAPHID_TxSource source = {0};
-  CborParser parser;
-  CborValue value;
-  size_t written = 0;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  assert_int_equal(ctap_test_set_force_pin_change(true), 0);
-
-  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
-                   1);
-  assert_int_equal(read_tx_source_all(&source, resp, sizeof(resp), &written), 0);
-  assert_true(written > 1);
-  assert_int_equal(resp[0], CTAP1_ERR_SUCCESS);
-  assert_int_equal(cbor_parser_init(resp + 1, written - 1, 0, &parser, &value), CborNoError);
-  assert_int_equal(cbor_value_validate(&value, CborValidateCanonicalFormat | CborValidateCompleteData), CborNoError);
-  assert_int_equal(ctap_test_set_force_pin_change(false), 0);
-  if (source.close) source.close(source.ctx);
-}
 
 static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state) {
   (void)state;
@@ -1981,39 +1955,6 @@ static void test_ctap_config_empty_request_is_legacy_unhandled(void **state) {
   assert_int_equal(resp[0], CTAP2_ERR_UNHANDLED_REQUEST);
 }
 
-static void test_ctap_config_toggle_always_uv_without_pin(void **state) {
-  (void)state;
-
-  uint8_t config_req[] = {CTAP_CONFIG, 0xA1, 0x01, 0x02};
-  uint8_t get_info_req[] = {0x04};
-  uint8_t resp[64] = {0};
-  size_t resp_len = sizeof(resp);
-  uint8_t scratch[64] = {0};
-  uint8_t chunk[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  CTAPHID_TxSource source = {0};
-  size_t written = 0;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
-  assert_int_equal(resp_len, 1);
-  assert_int_equal(resp[0], 0x00);
-
-  assert_int_equal(ctap_process_cbor_stream_with_src(get_info_req, sizeof(get_info_req), scratch, sizeof(scratch),
-                                                     &source, CTAP_SRC_HID),
-                   1);
-  assert_true(source.total_len <= sizeof(chunk));
-  assert_int_equal(source.read(source.ctx, chunk, source.total_len, &written), 0);
-  assert_int_equal(written, source.total_len);
-  assert_null(find_bytes(chunk, written, "U2F_V2", sizeof("U2F_V2") - 1));
-
-  resp_len = sizeof(resp);
-  assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
-  assert_int_equal(resp_len, 1);
-  assert_int_equal(resp[0], 0x00);
-}
 
 static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **state) {
   (void)state;
@@ -2769,11 +2710,9 @@ int main() {
       cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
-      cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
       cmocka_unit_test(test_ndef_chained_update_and_streaming_read),
       cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),
-      cmocka_unit_test(test_ctap_config_toggle_always_uv_without_pin),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
       cmocka_unit_test(test_ctap_make_credential_rejects_enterprise_attestation),
       cmocka_unit_test(test_ctap_hid_make_credential_hmac_secret_mc_requires_hmac_secret),
