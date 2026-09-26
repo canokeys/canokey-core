@@ -134,3 +134,10 @@ an independently verified assertion through pyscard/python-fido2. This exposed
 and fixed the common Rust engine's rejection of the client's default P1=80
 NFC polling hint; it now completes synchronously as the C engine did. This
 software compatibility result still does not establish physical USB/NFC behavior.
+
+The RAM PKE-buffer fallback keeps the legacy idempotent same-owner acquisition
+contract: repeated acquisition does not require repeated release. Competing
+owners and mismatched releases fail. Reads/writes require an active owner and
+validate offsets/lengths before accessing pointers. Release preserves bytes;
+the core explicitly clears transient data before handing off the shared buffer.
+The existing `virtual-pcsc` correctness test checks the exported ABI directly.

@@ -93,6 +93,39 @@ def run(library):
             assert rc == 0 and n == 17 and atr.hex() == '3bf71100008131fe6543616e6f4b657999'
             assert d.capability(0x303) == (0, atr, n)
             assert d.capability(0x303, capacity=1)[0] == 618
+            # Exercise the actual Rust RAM fallback through its exported ABI.
+            # Reacquiring the same owner is idempotent, never a reference count.
+            for name, args, result in [
+                ('size', [], C.c_size_t), ('acquire', [BYTE], C.c_int32),
+                ('release', [BYTE], C.c_int32), ('clear', [], C.c_int32),
+                ('read', [C.c_size_t, C.c_void_p, C.c_size_t], C.c_int32),
+                ('write', [C.c_size_t, C.c_void_p, C.c_size_t], C.c_int32),
+            ]:
+                fn = getattr(d.lib, 'pke_buffer_' + name)
+                fn.argtypes, fn.restype = args, result
+            capacity = d.lib.pke_buffer_size()
+            assert capacity >= 1024
+            payload = bytes(i & 255 for i in range(capacity))
+            tx = C.create_string_buffer(payload)
+            rx = (BYTE * len(payload))()
+            assert d.lib.pke_buffer_acquire(0) == -1
+            assert d.lib.pke_buffer_acquire(3) == 0
+            assert d.lib.pke_buffer_acquire(3) == 0
+            assert d.lib.pke_buffer_acquire(2) == -1
+            assert d.lib.pke_buffer_write(0, tx, len(payload)) == 0
+            assert d.lib.pke_buffer_release(2) == -1
+            assert d.lib.pke_buffer_release(3) == 0
+            assert d.lib.pke_buffer_read(0, rx, len(payload)) == -1
+            assert d.lib.pke_buffer_acquire(2) == 0
+            assert d.lib.pke_buffer_read(0, rx, len(payload)) == 0
+            assert bytes(rx) == payload
+            for offset, length in [(capacity, 1), (capacity + 1, 0), (0, C.c_size_t(-1).value)]:
+                assert d.lib.pke_buffer_read(offset, rx, length) == -1
+                assert d.lib.pke_buffer_write(offset, tx, length) == -1
+            assert d.lib.pke_buffer_clear() == 0
+            assert d.lib.pke_buffer_read(0, rx, len(payload)) == 0
+            assert bytes(rx) == bytes(len(payload))
+            assert d.lib.pke_buffer_release(2) == 0
             card = Card(d)
             # Legacy test-control reboot works before any applet selection.
             assert d.power(502)[0] == 0

@@ -23,7 +23,6 @@
 #include <oath.h>
 #include <openpgp.h>
 #include <platform-config.h>
-#include <pke.h>
 #include "../applets/ctap/secret.h"
 #include "../applets/ctap/ctap-errors.h"
 #include "../applets/ctap/ctap-internal.h"
@@ -43,35 +42,6 @@
 #include "../virt-card/usb-dummy.h"
 
 extern ccid_bulkin_data_t bulkin_data;
-
-static void test_pke_buffer_fallback_for_ctap(void **state) {
-  (void)state;
-
-  assert_true(pke_buffer_size() >= CTAP_MAX_REQUEST_SIZE);
-  assert_int_equal(pke_buffer_clear(), 0);
-
-  static const uint8_t payload[] = {
-      0x01, 0xA6, 0x01, 0x58, 0x20, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x61, 0x62,
-  };
-  uint8_t out[sizeof(payload)];
-  uint8_t zero[sizeof(payload)] = {0};
-
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP), 0);
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP), 0);
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), -1);
-  assert_int_equal(pke_buffer_write(0, payload, sizeof(payload)), 0);
-  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_CTAP), 0);
-
-  memset(out, 0, sizeof(out));
-  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_CTAP), 0);
-  assert_int_equal(pke_buffer_read(0, out, sizeof(out)), 0);
-  assert_memory_equal(out, payload, sizeof(payload));
-  assert_int_equal(pke_buffer_clear(), 0);
-  memset(out, 0xA5, sizeof(out));
-  assert_int_equal(pke_buffer_read(0, out, sizeof(out)), 0);
-  assert_memory_equal(out, zero, sizeof(out));
-  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_CTAP), 0);
-}
 
 static void test_ctap_poweroff_keeps_credential_management_state(void **state) {
   (void)state;
@@ -191,7 +161,6 @@ int main() {
 
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
-      cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),

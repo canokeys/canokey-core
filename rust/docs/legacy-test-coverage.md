@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 6 registered APDU cases.
+One legacy C test executable remains, with 5 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1349,3 +1349,12 @@ the original record recovers an independently verified signature and valid
 attestation. Credential reset rejects the old handle both before and after
 generating a new master; factory reset rejection remains covered. The C-only
 cache-hit/read-count optimization is not retained as a functional requirement.
+
+`test_pke_buffer_fallback_for_ctap` is replaced by the existing `virtual-pcsc`
+fixture calling the actual Rust host's exported PKE-buffer ABI. It checks the
+full reported capacity, same-owner idempotent acquire, competing-owner and
+wrong-release rejection, data preservation across owner changes, zeroing and
+length/offset overflow rejection before dereferencing the supplied pointer.
+The audit fixed Rust's rejection of same-owner reacquisition; this must not
+be reference-counted, and one matching release permits the next owner. The
+legacy C RAM fallback remains only in the residual C-test dependency closure.

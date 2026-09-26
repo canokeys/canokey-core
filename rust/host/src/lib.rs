@@ -281,7 +281,7 @@ extern "C" fn pke_buffer_size() -> usize {
 #[unsafe(no_mangle)]
 extern "C" fn pke_buffer_acquire(owner: u8) -> i32 {
     host(|h| {
-        if owner == 0 || h.owner != 0 {
+        if owner == 0 || (h.owner != 0 && h.owner != owner) {
             -1
         } else {
             h.owner = owner;
