@@ -320,7 +320,7 @@ fn apdu_input_abort_preserves_response_backing() {
             p1: 0,
             p2: 0,
         };
-        assert!(ctap.finish(h, 0, p).unwrap().0 > 0);
+        assert!(ctap.finish(h, None, p).unwrap().0 > 0);
         ctap.abort_command(p);
         let mut prefix = [0; 8];
         ctap.read_response(2, &mut prefix, p).unwrap();

@@ -102,6 +102,16 @@ def run(library):
             assert d.raw(bytes.fromhex('0020000006313233343536'))[1] == b'\x90\x00'
             assert d.raw(bytes.fromhex('00ee0000'))[1] == b'\x6d\x00'
             assert d.power(502)[0] == 0
+            # NDEF omitted Le is empty; explicit Le=00 still requests 256 bytes.
+            assert d.raw(bytes.fromhex('00a4040007d2760000850101'))[1] == b'\x90\x00'
+            assert d.raw(bytes.fromhex('00a4000c020001'))[1] == b'\x90\x00'
+            assert d.raw(bytes.fromhex('00b00000'))[1] == b'\x90\x00'
+            response = d.raw(bytes.fromhex('00b0000000'))[1]
+            assert len(response) == 258 and response[-2:] == b'\x90\x00'
+            assert response[:19] == bytes.fromhex('0011d1010d5504') + b'canokeys.org'
+            assert d.raw(bytes.fromhex('00b00400'))[1] == b'\x90\x00'
+            assert d.raw(bytes.fromhex('00b0040001'))[1] == b'\x67\x00'
+            assert d.power(502)[0] == 0
             # Exercise the actual Rust RAM fallback through its exported ABI.
             # Reacquiring the same owner is idempotent, never a reference count.
             for name, args, result in [

@@ -218,7 +218,8 @@ actual applets through the same-pointer RX/TX FFI:
 Rust keeps response backing separate from transport bytes; it does not need the
 old C shared-buffer tail-restore algorithm. The actual FFI regressions overwrite
 the RX/TX buffer between calls and verify every returned byte. Rust's established
-absent-Le default is 256 rather than the old C zero; bounded output capacities
+absent-Le default is 256 rather than the old C zero (except NDEF READ BINARY,
+which preserves an omitted-Le zero-byte read); bounded output capacities
 exercise zero-progress responses without changing that wire policy. Chunk
 boundaries may differ from the old 250-byte source path. These tests establish
 byte/status/lifetime correctness, not physical transport interoperability.

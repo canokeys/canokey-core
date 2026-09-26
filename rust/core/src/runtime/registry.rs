@@ -694,12 +694,14 @@ impl Router for Registry {
     fn finish(
         &mut self,
         header: Header,
-        le: u32,
+        requested: Option<u32>,
         platform: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
+        let le = requested.unwrap_or(super::engine::DEFAULT_APDU_LE);
         match &mut self.applet {
             #[cfg(feature = "ndef")]
-            AppletState::Ndef(s) => s.finish(le, platform),
+            // READ BINARY without Le is a zero-byte read; encoded 00 is 256.
+            AppletState::Ndef(s) => s.finish(requested.unwrap_or(0), platform),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.finish_admin(header, le, platform),
             #[cfg(feature = "ctap")]

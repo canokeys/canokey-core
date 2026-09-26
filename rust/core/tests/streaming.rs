@@ -202,7 +202,7 @@ impl Router for Fixture {
         self.last_frame = last;
         Ok(())
     }
-    fn finish(&mut self, h: Header, _: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
+    fn finish(&mut self, h: Header, _: Option<u32>, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
         self.finishes += 1;
         self.finished_header = Some(h);
         self.total = match core::mem::replace(&mut self.sink, Sink::None) {

@@ -6,7 +6,7 @@ use canokey_protocol::{
     response::{ReadError, Response, Source, StatusWord as Sw},
 };
 
-const DEFAULT_APDU_LE: u32 = 256;
+pub(super) const DEFAULT_APDU_LE: u32 = 256;
 const MAX_FRAME_CHUNK: usize = 256;
 pub(crate) const OWNER_APDU: u8 = 0;
 pub(crate) const OWNER_CCID: u8 = 1;
@@ -60,7 +60,7 @@ pub trait Router {
     fn end_frame(&mut self, _last: bool, _p: &mut Platform<'_>) -> Result<(), Sw> {
         Ok(())
     }
-    fn finish(&mut self, header: Header, le: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw>;
+    fn finish(&mut self, header: Header, le: Option<u32>, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw>;
     fn read_response(
         &mut self,
         offset: u32,
@@ -362,8 +362,8 @@ impl<R: Router> Runtime<R> {
             }
         };
         self.frame = None;
-        // This short-APDU profile treats omitted Le as a 256-byte response
-        // allowance; the decoder has already normalized encoded Le=00 to 256.
+        // Transport reads use a 256-byte default allowance. Keep optional Le
+        // intact for applet policy; the decoder normalized encoded Le=00 to 256.
         let le = info.le.unwrap_or(DEFAULT_APDU_LE);
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
         let result = match route {
@@ -393,7 +393,7 @@ impl<R: Router> Runtime<R> {
                 if !last {
                     return Reply::Status(Sw::SUCCESS);
                 }
-                self.router.finish(info.header.unchained(), le, p)
+                self.router.finish(info.header.unchained(), info.le, p)
             }
             FrameRoute::None => Err(Sw::WRONG_LENGTH),
         };
