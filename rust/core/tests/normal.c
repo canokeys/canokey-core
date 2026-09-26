@@ -246,19 +246,25 @@ int main(void) {
   SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
   SEND(0x6982,0,0x14,1,0);
   SEND(0x6982,0,0x40,6,0);
+  SEND(0x6982,0,0x40,1,0);
+  SEND(0x6a86,0,0x42,1,0,6);
   SEND(0x6700,0,0x42,0,0,5);
   SEND(0x9000,0,0x42,0,0,6);
   assert(buffer[0]==1 && buffer[1]==0 && buffer[3]==1 && buffer[4]==1 && buffer[5]==0x3f);
   SEND(0x9000,0,0x14,0,0,1);assert(buffer[0]==1);
   SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
   SEND(0x6a86,0,0x40,6,0x80);
+  SEND(0x6700,0,0x40,6,0x3f,1,0);
+  SEND(0x6a86,0,0x40,0x7f,0);
+  SEND(0x9000,0,0x40,1,0);
+  SEND(0x9000,0,0x40,5,0);
   SEND(0x9000,0,0x14,1,0);
   SEND(0x9000,0,0x40,6,0);
   SEND(0x9000,0,0x40,4,0);
   ck_core_reset();
   SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
   SEND(0x9000,0,0x14,0,0,1);assert(buffer[0]==0);
-  SEND(0x9000,0,0x42,0,0,6);assert(buffer[3]==0 && buffer[5]==0);
+  SEND(0x9000,0,0x42,0,0,6);assert(buffer[0]==0 && buffer[3]==0 && buffer[4]==0 && buffer[5]==0);
 #ifdef WITH_NDEF
   SEND(0x6a82,0,0xa4,4,0,7,0xd2,0x76,0,0,0x85,1,1);
 #endif
@@ -277,6 +283,7 @@ int main(void) {
   SEND(0x9000,0,0x30,0,0,4,0x12,0x34,0x56,0x78);
   SEND(0x6985,0,0x30,0,0,4,0xff,0xff,0xff,0xff);
   SEND(0x9000,0,0x32,0,0,4);assert(!memcmp(buffer,"\x12\x34\x56\x78",4));
+  SEND(0x6700,0,0x32,0,0,3);
   SEND(0x6a86,0,0xff,0xff,0,1,0);
   SEND(0x6a86,0,0xff,0xfe,0,15,'D','3','5','4','9','F','a','2','d','c','b','$','2','3','n');
   SEND(0x6a86,0,0xff,0xff,2,15,'D','3','5','4','9','F','a','2','d','c','b','$','2','3','n');
@@ -301,6 +308,10 @@ int main(void) {
     assert(!memcmp(buffer,"unk",3));
   }
   SEND(0x6986,0,0xc0,0,0,0);
+  const uint8_t revision[]={0,0x31,2,0,0};
+  assert(exchange(revision,sizeof(revision),0x9000)==7);
+  assert(!memcmp(buffer,"unknown",7));
+  SEND(0x6a86,0,0x31,2,1,0);
   SEND(0x6a86,0,0x31,3,0,4);
   SEND(0x6700,0,0x31,0,0,1,0);
   const uint8_t chip[]={0,0x32,1,0,13};assert(exchange(chip,sizeof(chip),0x9000)==13);
@@ -309,11 +320,20 @@ int main(void) {
   SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
   /* Stream a full keymap through the existing short APDU buffer. */
   SEND(0x6a88,0,0x46,0,0,1);
+  SEND(0x6a86,0,0x45,1,17);
   uint8_t map_part[133]={0x10,0x45,0,17,128};
+  exchange(map_part,sizeof(map_part),0x9000);
+  map_part[0]=0;map_part[4]=127;
+  exchange(map_part,sizeof(map_part)-1,0x6700);
+  map_part[0]=0x10;map_part[4]=128;
   exchange(map_part,sizeof(map_part),0x9000);
   map_part[0]=0;map_part[7]=0x40;map_part[8]=0x1d; /* ASCII A */
   exchange(map_part,sizeof(map_part),0x9000);
   SEND(0x9000,0,0x46,0,0,1);assert(buffer[0]==17);
+  SEND(0x6a86,0,0x46,0,0x7f,1);
+  SEND(0x6700,0,0x46,0,1,1,0,0);
+  SEND(0x6a86,0,0x47,0,1);
+  SEND(0x6700,0,0x47,0,0,1,0);
   SEND(0x6700,0,0x46,0,1,255);
   SEND(0x9000,0,0x46,0,1,0);
   for(unsigned i=0;i<256;i++) assert(buffer[i]==(i==130?0x40:i==131?0x1d:0));
@@ -335,6 +355,8 @@ int main(void) {
   SEND(0x9000,0,0x14,1,1);
   SEND(0x9000,0,0x40,6,0x3f);
   SEND(0x9000,0,0x40,4,1);
+  SEND(0x9000,0,0x40,1,1);
+  SEND(0x9000,0,0x40,5,1);
 #endif
 #ifdef WITH_CTAP
   /* Card resets may precede FIDO without an explicit AID SELECT. */

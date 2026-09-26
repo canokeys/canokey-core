@@ -50,6 +50,7 @@ mod tests {
     struct Disk {
         error: bool,
         physical: u32,
+        piv_extra: u32,
     }
     impl Storage for Disk {
         fn load(&mut self, _: Record, _: &mut [u8]) -> Result<usize, StorageError> {
@@ -70,7 +71,7 @@ mod tests {
                 1 => Ok(1),
                 2 => Ok(4),
                 13 => Ok(2),
-                76 => Ok(3),
+                76 => Ok(3 + self.piv_extra),
                 180 => Ok(5),
                 185 => Ok(6),
                 _ => Err(StorageError::Missing),
@@ -82,6 +83,7 @@ mod tests {
         let mut disk = Disk {
             error: false,
             physical: 4124,
+            piv_extra: 0,
         };
         let mut out = [0; 48];
         assert_eq!(read(&mut disk, false, &mut out), Ok(2));
@@ -95,6 +97,14 @@ mod tests {
             );
         }
         assert_eq!(&out[42..], &[0, 0, 0, 0, 0x10, 0]);
+        // Added PIV records affect only PIV attribution, not system overhead.
+        let before = out;
+        disk.piv_extra = 7;
+        disk.physical += 7;
+        read(&mut disk, true, &mut out).unwrap();
+        assert_eq!(&out[..12], &before[..12]);
+        assert_eq!(&out[12..18], &[3, 1, 0, 0, 0, 10]);
+        assert_eq!(&out[18..], &before[18..]);
         disk.physical = 1;
         read(&mut disk, true, &mut out).unwrap();
         assert_eq!(&out[44..], &[0; 4]);

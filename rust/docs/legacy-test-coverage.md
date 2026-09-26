@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 178 registered cases: APDU (79),
+Four C test executables remain, with 174 registered cases: APDU (75),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -239,3 +239,18 @@ than the old five-byte placeholder. It verifies the complete resulting bytes
 through CTAP attestation, not an internal native filename. SM2 configuration is
 an opaque eight-byte Rust record; byte round trips are supplemented by decoded
 GetInfo identifiers and the existing custom-curve credential/signature checks.
+
+## Replaced ADMIN public configuration and reporting cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_admin_platform_config_and_serial_apdus` | `core-normal`: unauthorized writes, invalid selectors/lengths, LED/NDEF/WebUSB and feature changes surviving reset, disabled applet routing, one-time serial write/read and short-Le rejection |
+| `test_admin_read_core_commit_apdu` | `core-normal`: full host revision, truncated public fields, no pending continuation and invalid P1/P2 |
+| `test_admin_flash_usage_apdus` | `core-normal`: total and eight-record APDU shape/length/selectors; `groups_use_big_endian_bytes_and_system_overhead`: every record group, missing flags, seven added PIV bytes, stable system overhead and read/capacity failures |
+| `test_admin_kbd_keymap_apdus` | `core-normal`: missing map, invalid write selector/255-byte length, full streamed 256-byte map, layout ID, exact readback and real keyboard lookup, invalid read/clear requests, reset persistence and clear restoring default mapping |
+
+The host revision is the native information provider's `unknown`, not a C build
+macro. Firmware board-information plumbing is separately exercised by the device
+adapter tests. Usage attributes versioned Rust records rather than legacy file
+names and LittleFS attributes. Missing flags describe missing records in that
+namespace; native storage tests separately verify physical capacity reporting.

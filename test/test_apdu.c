@@ -3089,111 +3089,16 @@ static void admin_set_feature_mask(CAPDU *capdu, RAPDU *rapdu, uint8_t mask) {
   assert_int_equal(rapdu->len, 0);
 }
 
-static uint32_t admin_usage_record_bytes(const uint8_t *data, uint8_t id, uint8_t *flags) {
-  for (size_t off = 0; off < ADMIN_APPLET_USAGE_RESPONSE_LENGTH; off += ADMIN_APPLET_USAGE_RECORD_LENGTH) {
-    if (data[off] != id) continue;
-    if (flags) *flags = data[off + 1];
-    return ((uint32_t)data[off + 2] << 24) | ((uint32_t)data[off + 3] << 16) | ((uint32_t)data[off + 4] << 8) |
-           data[off + 5];
-  }
-  fail_msg("admin applet usage id %u not found", id);
-  return 0;
-}
-
-static void test_admin_platform_config_and_serial_apdus(void **state) {
-  (void)state;
-
-  uint8_t c_buf[ADMIN_KBD_KEYMAP_LENGTH];
-  uint8_t r_buf[ADMIN_KBD_KEYMAP_LENGTH];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(admin_install(1), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x00, 0x00, NULL, 0, 6);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 6);
-  assert_int_equal(rapdu.data[0], 1);
-  assert_int_equal(rapdu.data[3], 1);
-  assert_int_equal(rapdu.data[4], 1);
-  assert_int_equal(rapdu.data[5], ADMIN_FEATURE_MASK);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x01, 0x00, NULL, 0, 6);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x00, 0x00, NULL, 0, 5);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_LED_ON, 0x00, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-
-  admin_verify_default_pin(&capdu, &rapdu);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_LED_ON, 0x00, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(device_config_is_led_normally_on(), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_NDEF, 0x00, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(device_config_is_ndef_enabled(), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_WEBUSB_LANDING, 0x00, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(device_config_is_webusb_landing_enabled(), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_FEATURE, ADMIN_FEATURE_MASK | 0x80, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  uint8_t feature_value = 0;
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, ADMIN_P1_CFG_FEATURE, ADMIN_FEATURE_MASK, &feature_value, 1, 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_set_feature_mask(&capdu, &rapdu, 0);
-  assert_int_equal(device_config_is_pass_enabled(), 0);
-  assert_int_equal(device_config_is_openpgp_ccid_enabled(), 0);
-  assert_int_equal(device_config_is_openpgp_nfc_enabled(), 0);
-  assert_int_equal(device_config_is_piv_ccid_enabled(), 0);
-  assert_int_equal(device_config_is_piv_nfc_enabled(), 0);
-  assert_int_equal(device_config_is_webauthn_enabled(), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CONFIG, 0x7F, 0x00, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_CONFIG, 0x00, 0x00, NULL, 0, 6);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 6);
-  assert_int_equal(rapdu.data[0], 0);
-  assert_int_equal(rapdu.data[3], 0);
-  assert_int_equal(rapdu.data[4], 0);
-  assert_int_equal(rapdu.data[5], 0);
-
-  uint8_t serial[4];
-  device_config_fill_serial(serial);
-  assert_memory_equal(serial, "\x00\x00\x00\x00", sizeof(serial));
-
-  const uint8_t expected_serial[] = {0xA1, 0xB2, 0xC3, 0xD4};
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_SN, 0x00, 0x00, expected_serial, sizeof(expected_serial), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_SN, 0x00, 0x00, NULL, 0, sizeof(expected_serial));
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, sizeof(expected_serial));
-  assert_memory_equal(rapdu.data, expected_serial, sizeof(expected_serial));
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_SN, 0x00, 0x00, expected_serial, sizeof(expected_serial), 0);
-  assert_int_equal(rapdu.sw, SW_CONDITIONS_NOT_SATISFIED);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_SN, 0x00, 0x00, NULL, 0, sizeof(expected_serial) - 1);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-}
-
 static void test_platform_config_flags_preserve_other_state(void **state) {
   (void)state;
   admin_device_config_t saved, actual;
   uint8_t serial[4], after_serial[4];
   assert_int_equal(admin_platform_device_config_read(&saved), 0);
+  // This fixture owns its serial precondition; do not depend on another test.
+  if (admin_platform_serial_read(serial) < 0) {
+    const uint8_t provisioned[] = {0xa1, 0xb2, 0xc3, 0xd4};
+    assert_int_equal(admin_platform_serial_write_once(provisioned), 0);
+  }
   assert_int_equal(admin_platform_serial_read(serial), 0);
   assert_int_equal(device_config_mark_initialized(), 0);
   const uint8_t nfc_enabled = device_config_is_nfc_enabled();
@@ -3240,155 +3145,6 @@ static void test_virt_card_config_page_persistence(void **state) {
   assert_int_equal(platform_config_page_read(0, restored, sizeof(restored)), 0);
   for (size_t i = 0; i < sizeof(restored); ++i) assert_int_equal(restored[i], 0xFF);
   assert_int_equal(remove(sidecar), -1);
-}
-
-static void test_admin_read_core_commit_apdu(void **state) {
-  (void)state;
-
-  uint8_t c_buf[64], r_buf[APDU_BUFFER_SIZE];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT, 0x00, NULL, 0, sizeof(r_buf));
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  size_t expected_len = sizeof(CANOKEY_CORE_GIT_REV) - 1;
-  if (expected_len > APDU_BUFFER_SIZE) expected_len = APDU_BUFFER_SIZE;
-  assert_int_equal(rapdu.len, expected_len);
-  assert_memory_equal(rapdu.data, CANOKEY_CORE_GIT_REV, expected_len);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT, 0x01, NULL, 0, sizeof(r_buf));
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_VERSION, ADMIN_P1_READ_CORE_COMMIT + 1, 0x00, NULL, 0, sizeof(r_buf));
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-}
-
-static void test_admin_flash_usage_apdus(void **state) {
-  (void)state;
-
-  uint8_t c_buf[64], r_buf[ADMIN_APPLET_USAGE_RESPONSE_LENGTH];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 2);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x01, NULL, 0, 2);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 1);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_TOTAL, 0x00, NULL, 0, 2);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 2);
-
-  assert_int_equal(write_file("oath", "abcd", 0, 4, 1), 0);
-  assert_int_equal(write_attr("oath", ATTR_KEY, "xy", 2), 0);
-  assert_int_equal(write_file("ctap_lb", "12345", 0, 5, 1), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
-             ADMIN_APPLET_USAGE_RESPONSE_LENGTH - 1);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
-             ADMIN_APPLET_USAGE_RESPONSE_LENGTH);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, ADMIN_APPLET_USAGE_RESPONSE_LENGTH);
-
-  uint8_t flags = 0;
-  assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_OATH, &flags) >= 6);
-  assert_int_equal(flags & ADMIN_APPLET_USAGE_FLAG_MISSING, 0);
-  assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_CTAP, &flags) >= 5);
-  (void)admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_OPENPGP, &flags);
-  assert_true(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_SYSTEM, &flags) > 0);
-  assert_int_equal(flags, 0);
-
-  const uint32_t piv_before = admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_PIV, NULL);
-  if (get_file_size("piv-cf9") >= 0) assert_int_equal(remove_file("piv-cf9"), 0);
-  if (get_file_size("piv-kf9") >= 0) assert_int_equal(remove_file("piv-kf9"), 0);
-  assert_int_equal(write_file("piv-cf9", "cert", 0, 4, 1), 0);
-  assert_int_equal(write_file("piv-kf9", "key", 0, 3, 1), 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_FLASH_USAGE, ADMIN_FLASH_USAGE_APPLETS, 0x00, NULL, 0,
-             ADMIN_APPLET_USAGE_RESPONSE_LENGTH);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(admin_usage_record_bytes(rapdu.data, ADMIN_APPLET_USAGE_ID_PIV, NULL), piv_before + 7);
-}
-
-static void test_admin_kbd_keymap_apdus(void **state) {
-  (void)state;
-
-  uint8_t c_buf[ADMIN_KBD_KEYMAP_LENGTH];
-  uint8_t r_buf[ADMIN_KBD_KEYMAP_LENGTH];
-  uint8_t keymap[ADMIN_KBD_KEYMAP_LENGTH];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(admin_install(1), 0);
-  admin_verify_default_pin(&capdu, &rapdu);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, ADMIN_P2_KBD_READ_LAYOUT_ID, NULL, 0, 1);
-  assert_int_equal(rapdu.sw, SW_REFERENCE_DATA_NOT_FOUND);
-
-  for (size_t i = 0; i < sizeof(keymap); ++i)
-    keymap[i] = (uint8_t)(i ^ 0x5A);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_KBD_KEYMAP, 0x01, 0x33, keymap, sizeof(keymap), 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_KBD_KEYMAP, 0x00, 0x33, keymap, sizeof(keymap) - 1, 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_WRITE_KBD_KEYMAP, 0x00, 0x33, keymap, sizeof(keymap), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 0);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, ADMIN_P2_KBD_READ_LAYOUT_ID, NULL, 0, 1);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 1);
-  assert_int_equal(rapdu.data[0], 0x33);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, ADMIN_P2_KBD_READ_KEYMAP, NULL, 0,
-             ADMIN_KBD_KEYMAP_LENGTH - 1);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, ADMIN_P2_KBD_READ_KEYMAP, keymap, 1,
-             ADMIN_KBD_KEYMAP_LENGTH);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, ADMIN_P2_KBD_READ_KEYMAP, NULL, 0,
-             ADMIN_KBD_KEYMAP_LENGTH);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, ADMIN_KBD_KEYMAP_LENGTH);
-  assert_memory_equal(rapdu.data, keymap, sizeof(keymap));
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, 0x7F, NULL, 0, 1);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CLEAR_KBD_KEYMAP, 0x00, 0x01, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_P1P2);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CLEAR_KBD_KEYMAP, 0x00, 0x00, keymap, 1, 0);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_CLEAR_KBD_KEYMAP, 0x00, 0x00, NULL, 0, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  admin_send(&capdu, &rapdu, ADMIN_INS_READ_KBD_KEYMAP, 0x00, ADMIN_P2_KBD_READ_KEYMAP, NULL, 0,
-             ADMIN_KBD_KEYMAP_LENGTH);
-  assert_int_equal(rapdu.sw, SW_REFERENCE_DATA_NOT_FOUND);
 }
 
 static void test_runtime_feature_apdu_routing(void **state) {
@@ -3856,11 +3612,7 @@ int main() {
       cmocka_unit_test(test_ctap_get_info_reports_transport_msg_size),
       cmocka_unit_test(test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect),
       cmocka_unit_test(test_piv_reselect_preserves_security_status),
-      cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
       cmocka_unit_test(test_platform_config_flags_preserve_other_state),
-      cmocka_unit_test(test_admin_read_core_commit_apdu),
-      cmocka_unit_test(test_admin_flash_usage_apdus),
-      cmocka_unit_test(test_admin_kbd_keymap_apdus),
       cmocka_unit_test(test_runtime_feature_apdu_routing),
       cmocka_unit_test(test_select_and_read_command_validation),
       cmocka_unit_test(test_virt_card_config_page_persistence),
