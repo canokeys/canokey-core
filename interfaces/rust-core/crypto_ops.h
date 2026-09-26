@@ -77,6 +77,8 @@ enum ck_sm2_packet {
 
 /* Buffers are borrowed for the call. Material/scratch use the native workspace
  * layout checked by the adapters; persisted keys are encoded by Rust. */
+// EC signing requires SIGNATURE_LENGTH[algorithm] output bytes; other key
+// operations require CK_RSA_OUTPUT_BYTES, including scratch-only operations.
 int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *input, size_t length,
                         uint8_t *output, size_t capacity);
 int32_t ck_platform_aes192(const uint8_t *key, const uint8_t *input, uint8_t *output);

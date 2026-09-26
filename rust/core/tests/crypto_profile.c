@@ -33,8 +33,27 @@ static void public_key(uint8_t alg) {
   assert(memcmp(output, reference.pub, PUBLIC_KEY_LENGTH[alg]) == 0);
 }
 
+static void signature_capacity(void) {
+  rsa_key_t key, before;
+  uint8_t digest[32] = {0}, output[64];
+  memset(&key, 0xa5, sizeof(key));
+  memcpy(&before, &key, sizeof(key));
+  memset(output, 0x5a, sizeof(output));
+  // Reject before touching key material or output, including a NULL output.
+  for (size_t capacity = 0; capacity < sizeof(output); ++capacity) {
+    assert(ck_platform_key(CK_KEY_EC_SIGN, SECP256R1, &key, digest, sizeof(digest),
+                           capacity ? output : NULL, capacity) == -1);
+    assert(memcmp(&key, &before, sizeof(key)) == 0);
+    for (size_t i = 0; i < sizeof(output); ++i) assert(output[i] == 0x5a);
+  }
+  // Other operations still require their generic output/scratch reservation.
+  assert(ck_platform_key(CK_KEY_PUBLIC, SECP256R1, &key, NULL, 0, output, sizeof(output)) == -1);
+  assert(memcmp(&key, &before, sizeof(key)) == 0);
+}
+
 int main(void) {
   rejected_key(255);
+  signature_capacity();
   public_key(SECP256R1);
   public_key(SECP256K1);
   public_key(SECP384R1);

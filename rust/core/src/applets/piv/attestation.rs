@@ -35,7 +35,8 @@ const SOURCE_PUBLIC: usize = 2;
 const ENCODED_CAPACITY: usize = 256;
 const SHA256_BYTES: usize = 32;
 const P256_SIGNATURE_BYTES: usize = 64;
-const P256_DER_SIGNATURE_MAX: usize = 72;
+// The shared DER encoder requires nine bytes beyond the 64 raw bytes.
+const P256_SIGNATURE_CAPACITY: usize = P256_SIGNATURE_BYTES + 9;
 const HASH_CHUNK_BYTES: usize = 64;
 // DER AlgorithmIdentifier for ecdsa-with-SHA256 (OID 1.2.840.10045.4.3.2).
 const SIGNATURE_ALGORITHM: &[u8] = b"\x30\x0a\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02";
@@ -310,7 +311,7 @@ impl Attestation {
             self.wrap(0, 0, DER_SEQUENCE)?;
             let mut digest = [0; SHA256_BYTES];
             self.hash(&mut digest, p)?;
-            let mut sig = [0; P256_DER_SIGNATURE_MAX];
+            let mut sig = [0; P256_SIGNATURE_CAPACITY];
             if m[repo::ALGORITHM] == alg::MLDSA65 {
                 self.abort_pq(p);
             }
@@ -467,25 +468,24 @@ fn sign(
     key: &mut KeyMaterial,
     m: &[u8; repo::META],
     digest: &[u8; SHA256_BYTES],
-    signature: &mut [u8; P256_DER_SIGNATURE_MAX],
+    signature: &mut [u8; P256_SIGNATURE_CAPACITY],
     p: &mut Platform<'_>,
 ) -> Result<usize, Sw> {
-    let mut out = [0; OUTPUT_BYTES];
     let result = (|| {
         repo::load(repo::ATTESTATION_KEY, m, &mut key.bytes, p)?;
         let n = p
             .crypto
-            .key_operation(KeyOperation::EcSign, alg::P256, key, digest, &mut out)
+            .key_operation(KeyOperation::EcSign, alg::P256, key, digest, signature)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if n != P256_SIGNATURE_BYTES {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
-        let n = super::protocol::der_signature(&mut out, n)?;
-        signature[..n].copy_from_slice(&out[..n]);
-        Ok(n)
+        super::protocol::der_signature(signature, n)
     })();
     p.memory.wipe(&mut key.bytes);
-    p.memory.wipe(&mut out);
+    if result.is_err() {
+        p.memory.wipe(signature);
+    }
     result
 }
 struct Tlv {

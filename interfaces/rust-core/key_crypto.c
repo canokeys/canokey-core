@@ -136,7 +136,11 @@ static __attribute__((noinline)) int ecc_operation(uint8_t op, uint8_t alg, rsa_
 
 int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *in, size_t n, uint8_t *out,
                         size_t capacity) {
-  if (alg > SM2 || capacity < CK_RSA_OUTPUT_BYTES) return -1;
+  if (alg > SM2) return -1;
+  // EC signing only writes the fixed-width raw signature; other operations
+  // retain their generic output/scratch capacity contract.
+  size_t required = op == CK_KEY_EC_SIGN && !IS_RSA(alg) ? SIGNATURE_LENGTH[alg] : CK_RSA_OUTPUT_BYTES;
+  if (capacity < required) return -1;
 #ifdef RUST_CORE_STACK_REPORT
   extern void ck_stack_context(uint8_t, uint8_t);
   ck_stack_context(op, alg);
