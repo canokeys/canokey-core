@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 54 registered cases: APDU (49)
-and PIV (5). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 53 registered cases: APDU (49)
+and PIV (4). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -823,3 +823,19 @@ public-key object. Missing issuer prerequisites remain covered by the retained
 native `test_piv_attestation_certificate`; duplicating its missing-F9 check for
 ML-DSA is unnecessary. That remaining case still requires migration of its
 prerequisite, certificate-field and persistence checks before removal.
+
+## Final native attestation fixture removal
+
+`test_piv_attestation_certificate` now maps to `piv-normal::attestation` and
+`reset_and_persistence`. Missing F9 key/certificate combinations return 6A88
+with no response data; an in-process host-only `REMOVE <record>` fixture creates
+these states without adding a firmware/APDU command. Independent X.509 parsing
+and signature verification checks issuer, copied validity, target subject/SPKI,
+exact serial/policy extensions and rejection of imported targets. An explicitly
+generated PIN_ALWAYS/TOUCH_CACHED key exercises nondefault policy bytes.
+After factory reset, a newly generated key is attested using the preserved F9
+key/certificate, with independent verification and public-key matching.
+
+Removed the C certificate fixture, DER walker and native signature-verification
+helpers. No production behavior changed; these tests exercise the existing
+Rust engine and crypto adapters.

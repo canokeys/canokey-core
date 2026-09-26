@@ -944,7 +944,11 @@ def attestation(c):
           tlv(0xAC, tlv(0x80, b"\x14")), status=0x6A80)
     c.cmd("f9_reject_p384_import", 0xFE, 0x14, 0xF9,
           tlv(6, bytes(47) + b"\x01"), status=0x6A86)
+    c.generate(0, policies=tlv(0xAA, b"\x03") + tlv(0xAB, b"\x03"))
+    c.wire.command("REMOVE 41")
+    assert not c.cmd("attestation_without_issuer", 0xF9, 0x9A, status=0x6A88)
     c.generate(0, 0xF9)
+    assert not c.cmd("attestation_without_certificate", 0xF9, 0x9A, status=0x6A88)
     metadata = fields(c.cmd("f9_generated_metadata", 0xF7, 0, 0xF9))
     assert metadata[1] == b"\x11" and metadata[3] == b"\x01"
     for alg in (2, 0):
@@ -976,6 +980,10 @@ def attestation(c):
             + tlv(0xFE, b""),
         ),
     )
+    c.wire.command("REMOVE 41")
+    assert not c.cmd("attestation_certificate_without_key", 0xF9, 0x9A, status=0x6A88)
+    c.import_key(0, issuer_key, 0xF9)
+    c.cmd("restore_issuer_name", 0xF5, 1, 0xF9, b"F\0")
     for alg in list(range(9)) + [10, 11]:
         if alg == 11:
             encoded = fields(
@@ -990,12 +998,21 @@ def attestation(c):
             sm2_spki = tlv(0x30, tlv(0x30, bytes.fromhex("06072a8648ce3d020106082a811ccf5501822d"))
                            + tlv(0x03, b"\0" + point))
         else:
-            public = c.generate(alg)
+            policies = tlv(0xAA, b"\x03") + tlv(0xAB, b"\x03") if alg == 0 else b""
+            public = c.generate(alg, policies=policies)
         certificate = x509.load_der_x509_certificate(c.cmd(f"attest_alg_{alg}", 0xF9, 0x9A))
         issuer_key.public_key().verify(
             certificate.signature, certificate.tbs_certificate_bytes, ec.ECDSA(hashes.SHA256())
         )
         assert certificate.issuer == issuer.subject
+        assert certificate.not_valid_before_utc == issuer.not_valid_before_utc
+        assert certificate.not_valid_after_utc == issuer.not_valid_after_utc
+        assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "CanoKey PIV Attestation 9a"
+        extensions = {e.oid.dotted_string: e.value.value for e in certificate.extensions}
+        assert extensions == {
+            "1.3.6.1.4.1.66602.1.1": bytes(4),
+            "1.3.6.1.4.1.66602.1.2": b"\x03\x03",
+        }
         if alg == 10:
             # OpenSSL does not expose SM2 through cryptography's public_key API.
             # Require the complete expected SPKI (algorithm OIDs and exact point).
@@ -1006,7 +1023,9 @@ def attestation(c):
             ) == public.public_bytes(
                 serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
             )
-    c.import_key(0, issuer_key)
+    c.cmd("restore_attested_slot_policy", 0xFE, 0x11, 0x9A,
+          tlv(6, issuer_key.private_numbers().private_value.to_bytes(32, "big"))
+          + tlv(0xAA, b"\x02") + tlv(0xAB, b"\x01"), le=None)
     c.cmd("no_attestation_for_import", 0xF9, 0x9A, status=0x6A88)
     c.verify()
     return issuer_key, issuer
@@ -1205,6 +1224,9 @@ def reset_and_persistence(c, issuer_key, issuer):
     assert len(public) == 32
     metadata = fields(c.cmd("preserved_algorithm_metadata", 0xF7, 0, 0x9A))
     assert metadata[1] == b"\x22" and fields(metadata[4])[0x86] == public
+    proof = x509.load_der_x509_certificate(c.cmd("attestation_after_factory_reset", 0xF9, 0x9A))
+    issuer_key.public_key().verify(proof.signature, proof.tbs_certificate_bytes, ec.ECDSA(hashes.SHA256()))
+    assert proof.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw) == public
     c.cmd("restore_algorithms", 0xEE, 2, 0, original_config, le=None)
 
 
