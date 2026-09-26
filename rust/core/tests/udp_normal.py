@@ -104,6 +104,7 @@ def run(executable):
                 card.send(0x81, echo)
                 assert card.recv(0x81) == echo
                 info = card.ctap(4)
+                assert info[5] == 1024
                 assert info[4]['credMgmt'] and info[4]['largeBlobs'] and info[11] == 4096
                 card.ctap(6, {1: 1, 2: 2, 127: bytes(700)})
                 request_hash = hashlib.sha256(b'UDP credential test').digest()

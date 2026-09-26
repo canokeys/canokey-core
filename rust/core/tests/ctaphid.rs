@@ -16,6 +16,9 @@ struct Memory {
     busy: bool,
     fail: bool,
     fail_read: bool,
+    response_length: Option<usize>,
+    response_failure: bool,
+    response_closes: usize,
     request: Option<canokey_rust_core::applets::ctap::Request>,
     message: Option<canokey_rust_core::applets::ctap::apdu::MessageParser>,
 }
@@ -83,10 +86,14 @@ impl Scratch for Memory {
         self.execute(cid, Ok(canokey_rust_core::applets::ctap::Command::Wink))
     }
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
+        if self.response_failure {
+            return Err(Error::Other);
+        }
         out.copy_from_slice(&self.response[offset..offset + out.len()]);
         Ok(())
     }
     fn close_response(&mut self) {
+        self.response_closes += 1;
         self.request = None;
         self.message = None;
         self.response.clear();
@@ -371,6 +378,13 @@ fn polling_presence_is_fresh_single_use_and_expires() {
 }
 
 impl Memory {
+    fn override_response(&mut self) -> Option<usize> {
+        let length = self.response_length?;
+        self.response = (0..length.min(wire::MAX_MESSAGE))
+            .map(|i| (i * 13) as u8)
+            .collect();
+        Some(length)
+    }
     fn execute(
         &mut self,
         _cid: u32,
@@ -383,6 +397,9 @@ impl Memory {
             !self.leased,
             "crypto must execute only after source release"
         );
+        if let Some(length) = self.override_response() {
+            return length;
+        }
         self.response = support::execute(&mut canokey_rust_core::Core::new(), command);
         self.response.len()
     }
@@ -395,6 +412,9 @@ impl Memory {
             !self.leased,
             "MSG crypto must execute only after source release"
         );
+        if let Some(length) = self.override_response() {
+            return length;
+        }
         self.response = support::with_platform(&mut support::Backend::default(), |p| {
             let mut core = canokey_rust_core::Core::new();
             let n = core.execute_ctap_message(command, p);
@@ -449,4 +469,85 @@ fn disabled_webauthn_rejects_cbor_and_msg_without_disabling_ping() {
     request(&mut hid, &mut memory, wire::PING, &[1, 2, 3]);
     assert!(hid.transmit(&mut out, &mut memory));
     assert_eq!(&out[4..10], &[wire::PING, 0, 3, 1, 2, 3]);
+}
+
+#[test]
+fn response_limits_and_read_failure_close_once() {
+    for (command, body) in [
+        (wire::CBOR, &[4][..]),
+        (wire::MSG, &[0, 3, 0, 0, 0][..]),
+        (wire::WINK, &[][..]),
+    ] {
+        for length in [
+            0,
+            1,
+            57,
+            58,
+            wire::MAX_MESSAGE,
+            wire::MAX_MESSAGE + 1,
+            65536,
+            usize::MAX,
+        ] {
+            for read_failure in [false, true] {
+                let mut hid = Transport::new();
+                let mut memory = Memory {
+                    response_length: Some(length),
+                    response_failure: read_failure,
+                    ..Memory::default()
+                };
+                let mut out = [0; 64];
+                let rejected = hid.receive(
+                    &initial(1, command, body.len(), body),
+                    0,
+                    &mut out,
+                    &mut memory,
+                );
+                if length > wire::MAX_MESSAGE {
+                    assert!(rejected);
+                    assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Length as u8]);
+                } else {
+                    assert!(!rejected);
+                    let mut offset = 0;
+                    let mut frame = 0;
+                    while hid.transmit(&mut out, &mut memory) {
+                        if read_failure {
+                            assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Other as u8]);
+                            break;
+                        }
+                        let start = if frame == 0 { 7 } else { 5 };
+                        assert_eq!(
+                            out[4],
+                            if frame == 0 {
+                                command
+                            } else {
+                                (frame - 1) as u8
+                            }
+                        );
+                        if frame == 0 {
+                            assert_eq!(u16::from_be_bytes([out[5], out[6]]) as usize, length);
+                        }
+                        let count = (length - offset).min(64 - start);
+                        for i in 0..count {
+                            assert_eq!(out[start + i], ((offset + i) * 13) as u8);
+                        }
+                        assert_eq!(memory.response_closes, 0);
+                        offset += count;
+                        frame += 1;
+                        assert!(frame <= 129);
+                        hid.completed(&mut memory);
+                    }
+                    if !read_failure {
+                        assert_eq!(offset, length);
+                    }
+                }
+                assert!(!hid.active());
+                assert_eq!(memory.closes, 1);
+                assert_eq!(memory.response_closes, 1);
+                hid.reset(&mut memory);
+                hid.completed(&mut memory);
+                assert!(!hid.transmit(&mut out, &mut memory));
+                assert_eq!(memory.response_closes, 1);
+            }
+        }
+    }
 }

@@ -12,7 +12,7 @@ dispatcher. NFCC support remains deferred for all independent Rust profiles.
 
 | Command | Shape / authorization / effects |
 |---|---|
-| SELECT | Full or right-truncated AID (at least the five-byte RID); repeated selection preserves PIN/PUK and management authorization, abandons transient streams and challenges. |
+| SELECT | Full 11-byte AID, nine-byte right-truncated AID, or legacy five-byte RID; other prefix lengths are rejected; repeated selection preserves PIN/PUK and management authorization, abandons transient streams and challenges. |
 | VERIFY / logout | `20 00 80` with eight bytes verifies PIN; empty queries status. `20 FF 80` revokes PIN authorization. |
 | CHANGE REFERENCE DATA | `24 00 80/81`, old and new eight-byte PIN/PUK. |
 | RESET RETRY COUNTER | `2C 00 80`, eight-byte PUK and new PIN; does not grant PIN authorization. |

@@ -133,7 +133,9 @@ impl Selected {
             #[cfg(feature = "openpgp")]
             crate::applets::openpgp::protocol::AID => Some(Self::OpenPgp),
             #[cfg(feature = "piv")]
-            aid if aid.len() >= 5 && crate::applets::piv::AID.starts_with(aid) => Some(Self::Piv),
+            // Match the full AID, the standardized nine-byte prefix, or the
+            // legacy RID-only selector; other partial versions are not AIDs.
+            aid if matches!(aid.len(), 5 | 9 | 11) && crate::applets::piv::AID.starts_with(aid) => Some(Self::Piv),
             _ => None,
         }
     }

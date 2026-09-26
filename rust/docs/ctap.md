@@ -220,7 +220,10 @@ A source must not become a persistent collection of offsets into PKE.
 
 PING is a transport-only exception: it echoes the staged request in ascending
 chunks, without invoking applets/crypto, while retaining exclusive ownership.
-The source closes once, after final IN completion or on abort/reset/error. Each
+The source closes once, after final IN completion or on abort/reset/error.
+Rust rejects source results above the 7609-byte HID framing limit with
+ERR_INVALID_LEN before sending a report, closing the response exactly once.
+This response limit is distinct from the advertised 1024-byte request limit. Each
 outgoing report remains owned by C until USB completes it; host retries never
 repeat source reads or execute an operation again.
 

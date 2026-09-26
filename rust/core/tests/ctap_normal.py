@@ -29,6 +29,7 @@ def run(wire):
     select()
     info = call(4)
     assert info[3] == AAGUID
+    assert info[5] == 1024
     assert info[4]["credMgmt"] and info[4]["largeBlobs"] and info[11] == 4096
     rp = "example.com"
     client_hash = hashlib.sha256(b"registration challenge").digest()

@@ -101,6 +101,33 @@ static void ordinary_response_cleanup_regressions(void) {
   ck_core_reset();
 }
 #endif
+#if defined(WITH_PASS) || defined(WITH_CTAP)
+static void select_validation_regressions(void) {
+  ck_core_reset(); transport_owner=1;
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6a82,0,0xa4,4,0,6,0xf0,0,0,0,0,0);
+#ifdef WITH_PIV
+  SEND(0x9000,0,0xa4,4,0,9,0xa0,0,0,3,8,0,0,0x10,0);
+  SEND(0x9000,0,0xa4,4,0,11,0xa0,0,0,3,8,0,0,0x10,0,1,0);
+  SEND(0x9000,0,0xa4,4,0,5,0xa0,0,0,3,8);
+  for (uint8_t length=6;length<=8;++length) {
+    const uint8_t request[]={0,0xa4,4,0,length,0xa0,0,0,3,8,0,0,0x10};
+    exchange(request,5+length,0x6a82);
+  }
+  SEND(0x6a82,0,0xa4,4,0,10,0xa0,0,0,3,8,0,0,0x10,0,1);
+  SEND(0x6a82,0,0xa4,4,0,11,0xa0,0,0,3,8,0,0,0x10,0,1,1);
+#endif
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6e00,0x80,0x31,0,0,0);
+  SEND(0x6700,0,0x31,0,0,1,0xff);
+  SEND(0x6a86,0,0xa4,4,12,1,0xff);
+#ifdef WITH_OATH
+  SEND(0x9000,0,0xa4,4,0,7,0xa0,0,0,5,0x27,0x21,1);
+  SEND(0x6e00,0xfe,0xa1,0,0,0);
+#endif
+  ck_core_reset();
+}
+#endif
 int main(void) {
   assert(ck_core_install() == 0);
 #ifdef WITH_PASS
@@ -403,5 +430,8 @@ int main(void) {
 #ifdef WITH_PIV
   ordinary_response_cleanup_regressions();
 #endif
+  #if defined(WITH_PASS) || defined(WITH_CTAP)
+  select_validation_regressions();
+  #endif
   return 0;
 }

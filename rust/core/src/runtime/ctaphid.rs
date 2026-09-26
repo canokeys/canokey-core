@@ -259,6 +259,11 @@ impl Transport {
             self.total = scratch.finish_request(self.cid);
             self.response = true;
         }
+        // Continuation tags have seven sequence bits. Reject before publishing
+        // a truncated length or wrapping the final continuation into INIT.
+        if self.total > wire::MAX_MESSAGE {
+            return Err(Error::Length);
+        }
         self.offset = 0;
         self.sequence = 0;
         self.phase = Phase::Sending;

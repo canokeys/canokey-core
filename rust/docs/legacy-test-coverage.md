@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 169 registered cases: APDU (70),
+Four C test executables remain, with 165 registered cases: APDU (66),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -268,3 +268,17 @@ namespace; native storage tests separately verify physical capacity reporting.
 The virtual card uses the Rust host snapshot rather than the removed C sidecar
 format. These are host persistence tests; physical configuration-page writes
 and Flash power-loss durability require separate hardware acceptance.
+
+## Replaced SELECT, HID response-source and GetInfo cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_select_and_read_command_validation` | `core-normal::select_validation_regressions`: ADMIN suffix/class/data, SELECT P2 precedence, all legacy PIV AID forms and invalid partial/version forms, OATH class rejection |
+| `test_ctaphid_rejected_source_closes_once` | `response_limits_and_read_failure_close_once`: CBOR/MSG/WINK reject 7610, 65536 and usize::MAX lengths, one request/response close, repeated reset/completion cannot close again |
+| `test_ctaphid_active_source_failure_closes_once` | Same Rust regression: source read failure closes once; successful lengths 0/1/57/58/7609 verify every payload byte, sequence and ownership through final completion |
+| `test_ctap_get_info_reports_transport_msg_size` | `ctap-normal` and `virtual-hid-udp`: decoded GetInfo key 5 equals 1024 on real APDU/HID routes |
+
+The port exposed two compatibility gaps: Rust accepted invalid PIV AID prefix
+lengths and did not bound response-source lengths before HID transmission. Both
+are corrected. HID's 7609-byte response framing bound is independent of its
+1024-byte request policy; rejecting only lengths above UINT16_MAX was insufficient.
