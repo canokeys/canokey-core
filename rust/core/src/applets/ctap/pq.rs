@@ -324,19 +324,18 @@ impl Stream {
                 .p256_sign(&key, digest, (&mut signature[..64]).try_into().unwrap())
                 .map_err(|_| Status::Other)?;
             let n = der_signature(&mut signature, 64).map_err(|_| Status::Other)?;
-            let mut encoded = [0; 74];
-            let mut encoder = Encoder::new(&mut encoded[..]);
-            encoder
-                .bytes(&signature[..n])
-                .finish()
-                .map_err(|_| Status::Other)?;
-            let count = 74 - encoder.writer().len();
+            // A P-256 DER signature is at most 72 bytes, so its CBOR
+            // byte-string header occupies one or two bytes.
+            let count = n + if n < 24 { 1 } else { 2 };
             let end = self.framing.length;
             if end + count > FRAMING_BYTES {
                 return Err(Status::Other);
             }
             self.framing.bytes.copy_within(at..end, at + count);
-            self.framing.bytes[at..at + count].copy_from_slice(&encoded[..count]);
+            Encoder::new(&mut self.framing.bytes[at..at + count])
+                .bytes(&signature[..n])
+                .finish()
+                .map_err(|_| Status::Other)?;
             self.framing.length += count;
             self.certificate_at += count;
             Ok(())
