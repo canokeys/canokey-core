@@ -463,6 +463,61 @@ fn frame_decoder_owns_select_parameters_and_final_command_header() {
 
 #[cfg(feature = "ctap")]
 #[test]
+fn fido_chain_exact_limit_overflow_and_recovery() {
+    use canokey_rust_core::Core;
+    for owner in [1, 4] {
+        for overflow in [false, true] {
+            let (mut storage, mut crypto, mut device) =
+                (StorageBackend::default(), CryptoBackend, DeviceBackend);
+            let mut p = Platform {
+                storage: &mut storage,
+                crypto: &mut crypto,
+                device: &mut device,
+                memory: &MemoryBackend,
+            };
+            let mut core = Core::new();
+            let mut out = [0; 258];
+            // getPinRetries plus an ignored 1015-byte extension: exactly 1024.
+            let mut request = vec![6, 0xa2, 2, 1, 0x18, 99, 0x59, 3, 0xf7];
+            request.extend_from_slice(&[0x37; 1015]);
+            for (index, bytes) in request.chunks(255).enumerate() {
+                let final_chunk = index == 4 && !overflow;
+                let mut frame = vec![
+                    if final_chunk { 0x80 } else { 0x90 },
+                    0x10,
+                    0,
+                    0,
+                    bytes.len() as u8,
+                ];
+                frame.extend_from_slice(bytes);
+                let reply = core.receive(owner, &frame, &mut p);
+                let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                assert_eq!(
+                    &out[..n],
+                    if final_chunk {
+                        &[0, 0xa1, 3, 8, 0x90, 0][..]
+                    } else {
+                        &[0x90, 0][..]
+                    }
+                );
+                assert_eq!(core.can_preempt(), final_chunk);
+            }
+            if overflow {
+                let reply = core.receive(owner, &[0x90, 0x10, 0, 0, 1, 0], &mut p);
+                let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                assert_eq!(&out[..n], &[0x67, 0]);
+                assert!(core.can_preempt());
+            }
+            let reply = core.receive(owner, &[0x80, 0x10, 0, 0, 4, 6, 0xa1, 2, 1], &mut p);
+            let n = core.transmit(reply, &mut out, &mut p).unwrap();
+            assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
+            assert!(core.can_preempt());
+        }
+    }
+}
+
+#[cfg(feature = "ctap")]
+#[test]
 fn extended_fido_source_is_bounded_and_ccid_only() {
     use canokey_rust_core::{Core, runtime::engine::InputSource};
     let (mut storage, mut crypto, mut device, memory) = (

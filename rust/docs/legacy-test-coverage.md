@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 183 registered cases: APDU (84),
+Four C test executables remain, with 181 registered cases: APDU (82),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -211,3 +211,17 @@ absent-Le default is 256 rather than the old C zero; bounded output capacities
 exercise zero-progress responses without changing that wire policy. Chunk
 boundaries may differ from the old 250-byte source path. These tests establish
 byte/status/lifetime correctness, not physical transport interoperability.
+
+## Replaced FIDO input boundary and host reboot cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_fido_apdu_chain_overflow_returns_wrong_length` | `streaming::fido_chain_exact_limit_overflow_and_recovery`: actual Core accepts exactly 1024 bytes, rejects byte 1025 with 6700, releases the chain lease and executes a fresh getPinRetries under both CCID and NFC owners |
+| `test_fido_magic_reboot_after_reset_without_select` | `virtual-pcsc`: real IFD reset followed immediately by the host-only magic reboot APDU returns 9000 without selecting an applet |
+
+The Rust CTAP parser consumes ISO fragments incrementally; it does not retain
+an accumulated PKE request or expose the former C PKE owner flag. The boundary
+regression checks the actual runtime lease and a new successful command after
+rejection. Standalone extended PKE input remains separately covered by
+`extended_fido_source_is_bounded_and_ccid_only` and the USB fixtures. Magic reboot
+is a host compatibility control, not a production firmware APDU extension.

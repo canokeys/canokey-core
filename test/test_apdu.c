@@ -3062,78 +3062,6 @@ static void test_piv_reselect_preserves_security_status(void **state) {
   assert_int_equal(rapdu.sw, SW_PIN_RETRIES | 3);
 }
 
-// fido_apdu_input rejects chains whose accumulated length would exceed the
-// PKE staging buffer. Send maximum-sized chained APDUs until APDU_CHAINING_OVERFLOW
-// fires, which process_apdu maps to SW_WRONG_LENGTH and which must also reset
-// the chain so subsequent commands can run.
-static void test_fido_apdu_chain_overflow_returns_wrong_length(void **state) {
-  (void)state;
-
-  static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
-  };
-
-  uint8_t c_buf[512], r_buf[64];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  set_nfc_state(0);
-
-  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  // Build a maximally-sized chained APDU (CLA=0x90, INS=0x10, Lc=0xFF=255).
-  uint8_t big[5 + 255];
-  big[0] = 0x90;
-  big[1] = 0x10;
-  big[2] = 0x00;
-  big[3] = 0x00;
-  big[4] = 0xFF;
-  memset(big + 5, 0xAB, 255);
-
-  size_t total = 0;
-  for (int i = 0; i < 32; ++i) {
-    assert_int_equal(build_capdu(&capdu, big, sizeof(big)), 0);
-    process_apdu(&capdu, &rapdu);
-    if (rapdu.sw == SW_WRONG_LENGTH) {
-      // Overflow correctly signaled. fido_capdu_reset was called on this
-      // path, releasing PKE; we should now be able to acquire it elsewhere.
-      assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
-      assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
-      return;
-    }
-    assert_int_equal(rapdu.sw, SW_NO_ERROR);
-    total += 255;
-  }
-  fail_msg("Expected SW_WRONG_LENGTH after %zu accumulated bytes", total);
-}
-
-static void test_fido_magic_reboot_after_reset_without_select(void **state) {
-  (void)state;
-
-  static const uint8_t magic_reboot_apdu[] = {
-      0x00, 0xEE, 0x00, 0x00, 0x04, 0x12, 0x56, 0xAB, 0xF0,
-  };
-
-  uint8_t c_buf[64], r_buf[64];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(build_capdu(&capdu, magic_reboot_apdu, sizeof(magic_reboot_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_equal(rapdu.len, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-}
-
 static void admin_send(CAPDU *capdu, RAPDU *rapdu, uint8_t ins, uint8_t p1, uint8_t p2, const uint8_t *data,
                        uint16_t lc, uint32_t le) {
   capdu->cla = 0x00;
@@ -4080,8 +4008,6 @@ int main() {
       cmocka_unit_test(test_ctap_get_info_reports_transport_msg_size),
       cmocka_unit_test(test_openpgp_ccid_idle_timeout_preserves_pin_on_reselect),
       cmocka_unit_test(test_piv_reselect_preserves_security_status),
-      cmocka_unit_test(test_fido_apdu_chain_overflow_returns_wrong_length),
-      cmocka_unit_test(test_fido_magic_reboot_after_reset_without_select),
       cmocka_unit_test(test_admin_platform_config_and_serial_apdus),
       cmocka_unit_test(test_platform_config_flags_preserve_other_state),
       cmocka_unit_test(test_admin_chained_fido_cert_write),

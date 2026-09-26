@@ -94,6 +94,9 @@ def run(library):
             assert d.capability(0x303) == (0, atr, n)
             assert d.capability(0x303, capacity=1)[0] == 618
             card = Card(d)
+            # Legacy test-control reboot works before any applet selection.
+            assert d.power(502)[0] == 0
+            assert d.raw(bytes.fromhex('00ee0000041256abf0'))[:2] == (0, b'\x90\x00')
             admin = lambda: card.cmd('admin', 0xa4, 4, data=bytes.fromhex('f000000000'))
             verify = lambda: card.cmd('admin PIN', 0x20, data=b'123456')
             edit = lambda status=0x9000: card.cmd('slot write', 0x44, 1, data=bytes.fromhex('020361626300'), status=status)
