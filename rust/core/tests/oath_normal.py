@@ -182,7 +182,13 @@ def run(card, host, touch, expected_version=None):
     data=cmd('validate',0xa3,data=tlv(0x75,hmac.digest(key,locked[0x74],'sha1'))+tlv(0x74,challenge))
     assert data==tlv(0x75,proof)
     cmd('authenticated_list',0xa1)
+    valid_proof = tlv(0x75,hmac.digest(key,locked[0x74],'sha1'))+tlv(0x74,challenge)
+    cmd('wrong_validation_revokes_grant',0xa3,data=tlv(0x75,bytes(20))+tlv(0x74,challenge),status=0x6a80)
+    cmd('wrong_validation_locks_list',0xa1,status=0x6982)
+    assert cmd('retry_same_selection_challenge',0xa3,data=valid_proof)==tlv(0x75,proof)
     renewed=select()
+    assert renewed[0x74] != locked[0x74]
+    cmd('previous_selection_proof_rejected',0xa3,data=valid_proof,status=0x6a80)
     cmd('reselection_requires_validate',0xa1,status=0x6982)
     assert cmd('validate_renewed_challenge',0xa3,data=tlv(0x75,hmac.digest(key,renewed[0x74],'sha1'))+tlv(0x74,challenge))==tlv(0x75,proof)
     cmd('clear_code',3,data=tlv(0x73,b''),le=None)

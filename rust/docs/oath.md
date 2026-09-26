@@ -39,8 +39,10 @@ ykoath; those bytes never replace the durable counter. SET CODE uses a
 length-delimited host nonce within the existing command buffer, including
 ykoath's 16-byte nonce, rather than the 1–8-byte TOTP challenge restriction.
 The new-key HMAC proof and existing access-code authorization remain required.
-VALIDATE consumes the SELECT challenge after a successful proof and rotates it,
-so a response cannot be replayed within the same selection.
+VALIDATE preserves the current SELECT challenge so a client may authenticate
+again after a failed proof, matching the legacy applet. Every failed proof
+revokes the access grant. A new SELECT generates a new challenge and clears
+authorization, so the previous selection's proof is not accepted.
 Increasing credentials require eight-byte, nondecreasing challenges and accept
 equality in both CALCULATE and CALCULATE ALL. Rejected challenges return 6982;
 the former C CALCULATE ALL bypass is intentionally removed. Enumeration is not

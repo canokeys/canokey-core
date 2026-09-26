@@ -199,9 +199,8 @@ impl Session {
             }
             crypto.hmac(Algorithm::Sha1, key, challenge, &mut digest)?;
             output.copy_from_slice(&digest[..20]);
-            // Consume the SELECT challenge after one successful validation so
-            // the same response cannot be replayed in this selection.
-            crypto.random(&mut self.challenge)?;
+            // The challenge belongs to this SELECT session. Clients may retry
+            // authentication after a failed proof; only a new SELECT rotates it.
             self.authorized = true;
             Ok(())
         })();
