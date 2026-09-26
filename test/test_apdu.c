@@ -1054,6 +1054,11 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
   init_apdu_buffer();
   device_init();
   CCID_Init();
+  uint8_t aid[] = {0xA0, 0, 0, 6, 0x47, 0x2F, 0, 1}, response[16];
+  CAPDU capdu = {.ins = 0xA4, .p1 = 4, .lc = sizeof(aid), .le = sizeof(response), .data = aid};
+  RAPDU rapdu = {.data = response};
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
 
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
@@ -1070,7 +1075,55 @@ static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
 
   assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
   assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
+  // Both refused resets must leave the selected application intact.
+  capdu = (CAPDU){.ins = 3, .le = sizeof(response), .data = aid};
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.len, 6);
+  assert_memory_equal(rapdu.data, "U2F_V2", 6);
   device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
+}
+
+static void test_ccid_slot_reset_clears_selection(void **state) {
+  (void)state;
+  static const uint8_t select_fido[] = {
+      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01, 0x00,
+  };
+  static const uint8_t version[] = {0x00, 0x03, 0x00, 0x00, 0x00};
+  static const uint8_t reset_commands[] = {PC_TO_RDR_ICCPOWERON, PC_TO_RDR_ICCPOWEROFF};
+  uint8_t c_buf[16], r_buf[16];
+  CAPDU capdu = {.data = c_buf};
+  RAPDU rapdu = {.data = r_buf};
+
+  for (unsigned owned = 0; owned < 2; ++owned) {
+    for (size_t i = 0; i < sizeof(reset_commands); ++i) {
+      init_apdu_buffer();
+      device_init();
+      CCID_Init();
+      if (owned) assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
+      assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+      process_apdu(&capdu, &rapdu);
+      assert_int_equal(rapdu.sw, SW_NO_ERROR);
+
+      uint8_t request[10] = {reset_commands[i], 0, 0, 0, 0, 0, 1, 0, 0, 0};
+      assert_int_equal(CCID_OutEvent(request, sizeof(request)), 0);
+      CCID_Loop();
+      CCID_InFinished(0);
+      assert_int_equal(build_capdu(&capdu, version, sizeof(version)), 0);
+      process_apdu(&capdu, &rapdu);
+      assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+      assert_int_equal(rapdu.len, 0);
+
+      assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
+      process_apdu(&capdu, &rapdu);
+      assert_int_equal(rapdu.sw, SW_NO_ERROR);
+      assert_int_equal(build_capdu(&capdu, version, sizeof(version)), 0);
+      process_apdu(&capdu, &rapdu);
+      assert_int_equal(rapdu.sw, SW_NO_ERROR);
+      assert_int_equal(rapdu.len, 6);
+      assert_memory_equal(rapdu.data, "U2F_V2", 6);
+    }
+  }
 }
 
 static void test_ccid_slot_status_survives_ctaphid_release(void **state) {
@@ -1286,6 +1339,29 @@ static void test_ccid_extended_fido_request_uses_pke(void **state) {
   init_apdu_buffer();
   device_init();
   assert_int_equal(applets_install(), 0);
+  // Extended transport staging must not bypass explicit applet selection.
+  CCID_Init();
+  for (size_t offset = 0; offset < sizeof(request);) {
+    const uint8_t chunk = (uint8_t)MIN(sizeof(request) - offset, 64);
+    assert_int_equal(CCID_OutEvent(request + offset, chunk), 0);
+    offset += chunk;
+  }
+  CCID_Loop();
+  assert_int_equal(ccid_get_le32(bulkin_data.dwLength), 2);
+  assert_memory_equal(bulkin_data.abData, "\x6A\x82", 2);
+  assert_int_equal(pke_buffer_acquire(PKE_BUFFER_OWNER_PIV), 0);
+  assert_int_equal(pke_buffer_release(PKE_BUFFER_OWNER_PIV), 0);
+  CCID_InFinished(0);
+  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
+
+  static const uint8_t select_fido[] = {0x00, 0xA4, 0x04, 0x00, 0x08,
+                                       0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01, 0x00};
+  uint8_t select_data[16], select_response[16];
+  CAPDU select_capdu = {.data = select_data};
+  RAPDU select_rapdu = {.data = select_response};
+  assert_int_equal(build_capdu(&select_capdu, select_fido, sizeof(select_fido)), 0);
+  process_apdu(&select_capdu, &select_rapdu);
+  assert_int_equal(select_rapdu.sw, SW_NO_ERROR);
   CCID_Init();
 
   for (size_t offset = 0; offset < sizeof(request);) {
@@ -1621,10 +1697,8 @@ static void test_fido_cbor_after_reset_without_select(void **state) {
   assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
   process_apdu(&capdu, &rapdu);
 
-  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
-  assert_true(rapdu.sw == SW_NO_ERROR || (rapdu.sw & 0xFF00) == 0x6100);
-  assert_true(rapdu.len > 0);
-  assert_int_equal(rapdu.data[0], 0x00);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+  assert_int_equal(rapdu.len, 0);
 }
 
 static void test_fido_chained_cbor_after_reset_without_select(void **state) {
@@ -1645,9 +1719,30 @@ static void test_fido_chained_cbor_after_reset_without_select(void **state) {
   assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
   process_apdu(&capdu, &rapdu);
 
-  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
   assert_int_equal(rapdu.len, 0);
+}
+
+static void test_fido_u2f_without_select(void **state) {
+  (void)state;
+  static const uint8_t instructions[] = {0x01, 0x02, 0x03, 0xA4};
+  static const apdu_transport_t transports[] = {APDU_TRANSPORT_CCID, APDU_TRANSPORT_WEBUSB, APDU_TRANSPORT_NFC};
+  uint8_t c_buf[16], r_buf[16];
+  for (size_t t = 0; t < sizeof(transports) / sizeof(transports[0]); ++t) {
+    for (size_t i = 0; i < sizeof(instructions); ++i) {
+      init_apdu_buffer();
+      CAPDU capdu = {.ins = instructions[i], .le = sizeof(r_buf), .data = c_buf};
+      RAPDU rapdu = {.data = r_buf};
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+      assert_int_equal(rapdu.len, 0);
+      // Rejection must not leave FIDO selected for the next command.
+      capdu.ins = 0x03;
+      process_apdu_from(&capdu, &rapdu, transports[t]);
+      assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
+      assert_int_equal(rapdu.len, 0);
+    }
+  }
 }
 
 static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
@@ -3481,6 +3576,9 @@ static void test_session_reset_drops_pending_rapdu_chain(void **state) {
   assert_int_equal(rapdu.sw, SW_COMMAND_NOT_ALLOWED);
 
   // Variant 2: session owned — reset goes through session expiry.
+  assert_int_equal(build_capdu(&capdu, select_piv, sizeof(select_piv)), 0);
+  process_apdu(&capdu, &rapdu);
+  assert_int_equal(rapdu.sw, SW_NO_ERROR);
   assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
   assert_int_equal(build_capdu(&capdu, piv_version_no_le, sizeof(piv_version_no_le)), 0);
   process_apdu(&capdu, &rapdu);
@@ -3582,7 +3680,7 @@ static void test_fido_magic_reboot_after_reset_without_select(void **state) {
   process_apdu(&capdu, &rapdu);
 
   assert_int_equal(rapdu.len, 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
+  assert_int_equal(rapdu.sw, SW_FILE_NOT_FOUND);
 }
 
 static void admin_send(CAPDU *capdu, RAPDU *rapdu, uint8_t ins, uint8_t p1, uint8_t p2, const uint8_t *data,
@@ -4472,6 +4570,7 @@ int main() {
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
       cmocka_unit_test(test_ccid_le32_wire_encoding),
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
+      cmocka_unit_test(test_ccid_slot_reset_clears_selection),
       cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
       cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),
       cmocka_unit_test(test_ccid_power_on_preempts_idle_webusb_session),
@@ -4488,6 +4587,7 @@ int main() {
       cmocka_unit_test(test_pin_uv_auth_token_max_lifetime),
       cmocka_unit_test(test_fido_ctap1_register_rejects_missing_attestation_key),
       cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
+      cmocka_unit_test(test_fido_u2f_without_select),
       cmocka_unit_test(test_fido_cbor_after_reset_without_select),
       cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),

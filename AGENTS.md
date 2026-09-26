@@ -338,6 +338,17 @@ Use this helper for any response that does not fit `APDU_BUFFER_SIZE` instead of
 
 ### CTAP transport entrypoints
 
+APDU transports (CCID, WebUSB and NFC) require an explicit FIDO SELECT by AID
+(`00 A4 04 00 08 A0000006472F0001`) before CTAP/U2F commands. After a firmware
+restart or other initialization that clears selection, clients must SELECT again.
+FIDO-shaped commands do not implicitly select an applet and return `6A82` when
+none is selected. This includes chained and CCID extended FIDO APDUs.
+A successful CCID slot power-on/off (including PC/SC `SCARD_RESET_CARD`)
+clears applet selection as well as security and chain state; SELECT is required
+again. A refused reset must preserve the active session. Ordinary session
+release/preemption is not a slot reset. Native CTAPHID CBOR/MSG dispatch remains
+independent of APDU applet selection.
+
 `CTAPHID_Execute_Cbor()` receives a full HID CBOR message:
 
 - Requests up to `CTAPHID_INLINE_BUFSIZE` live in `channel.data`.
@@ -429,7 +440,7 @@ Test-mode extras (enabled by `TEST` define):
 - `testmode_set_initial_ticks(uint32_t)` — pin the device tick counter to a known value (used by the virt-card and the MAGIC REBOOT path)
 - `testmode_err_triggered(path, file_wr)` — query whether the most recent injected error fired for a given file/operation
 
-The APDU-level hooks that expose testmode functions over the wire (INS `0xEE` MAGIC REBOOT and INS `0xEF` error injection in the FIDO dispatch, plus their `is_fido_apdu` routing) are gated behind `TESTMODE_INS_HOOKS`, defined by `ENABLE_TESTS`/`ENABLE_FUZZING` but deliberately NOT by `ENABLE_APDU_REPLAY` — real firmware has no such INS, so the differential harness must not have them either.
+The APDU-level hooks that expose testmode functions over the wire (INS `0xEE` MAGIC REBOOT and INS `0xEF` error injection in the FIDO dispatch, which require explicit FIDO selection) are gated behind `TESTMODE_INS_HOOKS`, defined by `ENABLE_TESTS`/`ENABLE_FUZZING` but deliberately NOT by `ENABLE_APDU_REPLAY` — real firmware has no such INS, so the differential harness must not have them either.
 
 ---
 

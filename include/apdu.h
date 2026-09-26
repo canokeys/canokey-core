@@ -105,6 +105,8 @@ enum {
 };
 
 void init_apdu_buffer(void);
+// Clear routing selection after applet security/chain cleanup on a slot reset.
+void apdu_selection_reset(void);
 int acquire_apdu_buffer(uint8_t owner);
 int release_apdu_buffer(uint8_t owner);
 

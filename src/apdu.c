@@ -101,26 +101,6 @@ typedef struct {
   APDU_RESPONSE_SOURCE_CLOSE close;
 } APDU_RESPONSE_SOURCE;
 
-static uint8_t is_fido_apdu(const CAPDU *capdu) {
-  // Allow implicit routing for both standalone and chained CTAP2 CBOR APDUs.
-  if ((capdu->cla & 0xEF) == 0x80 && capdu->ins == 0x10) return 1;
-#ifdef TESTMODE_INS_HOOKS
-  if (capdu->cla == 0x00 && (capdu->ins == 0xEE || capdu->ins == 0xEF)) return 1;
-#endif
-  if (capdu->cla != 0x00) return 0;
-
-  switch (capdu->ins) {
-  case 0x01: // U2F_REGISTER
-  case 0x02: // U2F_AUTHENTICATE
-  case 0x03: // U2F_VERSION
-    return 1;
-  case 0xA4: // U2F_SELECT, distinct from ISO SELECT by P1/P2
-    return !(capdu->p1 == 0x04 && capdu->p2 == 0x00);
-  default:
-    return 0;
-  }
-}
-
 static uint8_t applet_enabled_on_transport(enum APPLET applet, apdu_transport_t transport) {
   switch (applet) {
   case APPLET_OPENPGP:
@@ -157,6 +137,8 @@ static APDU_RESPONSE_SOURCE response_source;
 extern void ccid_init_apdu_buffer(void);
 extern void ccid_release_pke_request(void *ctx);
 #endif
+
+void apdu_selection_reset(void) { current_applet = APPLET_NULL; }
 
 void init_apdu_buffer(void) {
 #if !ENABLE_IFACE_CCID
@@ -607,17 +589,8 @@ void process_apdu_from(CAPDU *capdu, RAPDU *rapdu, apdu_transport_t transport) {
       return;
     }
   }
-  if (current_applet == APPLET_NULL && is_fido_apdu(capdu)) {
-    // Some PC/SC stacks reconnect or reset the card between CTAP INIT and the
-    // next CBOR/U2F exchange. Accepting unmistakably FIDO APDUs here keeps the
-    // FIDO CCID path usable across those implicit resets.
-    if (!applet_enabled_on_transport(APPLET_FIDO, transport)) {
-      disabled_applet_response(rapdu);
-      return;
-    }
-    current_applet = APPLET_FIDO;
-    DBG_MSG("implicit applet switched to: %d\n", current_applet);
-  }
+  // APDU clients must SELECT after selection is cleared; command headers
+  // alone do not select FIDO. Native CTAPHID dispatch bypasses this applet router.
   switch (current_applet) {
   case APPLET_OPENPGP:
     openpgp_process_apdu(capdu, &rapdu_chaining.rapdu);

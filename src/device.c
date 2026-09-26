@@ -301,9 +301,12 @@ int device_applet_session_reset(device_applet_session_owner_t owner) {
     // the APDU context: drop any pending chain.
     apdu_fido_chain_reset();
     apdu_rapdu_chain_reset();
-    return 0;
+  } else {
+    device_applet_session_expire();
   }
-  device_applet_session_expire();
+  // IccPowerOn/Off resets the card context, including SELECT. Ordinary session
+  // release/preemption is not a slot reset and retains its routing behavior.
+  apdu_selection_reset();
   return 0;
 }
 
