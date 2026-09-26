@@ -31,6 +31,7 @@ const URL: &[u8] = &[
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Descriptor {
     Bos,
+    BosWithoutLanding,
     Url,
     Microsoft { interface: u8 },
 }
@@ -45,7 +46,7 @@ impl Descriptor {
     }
     fn bytes(self) -> &'static [u8] {
         match self {
-            Self::Bos => BOS,
+            Self::Bos | Self::BosWithoutLanding => BOS,
             Self::Url => URL,
             Self::Microsoft { .. } => MS_OS_20,
         }
@@ -64,6 +65,9 @@ impl Descriptor {
         }
         let n = out.len().min(bytes.len() - offset);
         out[..n].copy_from_slice(&bytes[offset..offset + n]);
+        if self == Self::BosWithoutLanding && offset <= 28 && 28 - offset < n {
+            out[28 - offset] = 0;
+        }
         if let Self::Microsoft { interface } = self {
             if offset <= 22 && 22 - offset < n {
                 out[22 - offset] = interface;

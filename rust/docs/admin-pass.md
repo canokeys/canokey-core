@@ -129,3 +129,66 @@ static output, and the complete locked-PIN -> five-touch -> restored-PIN flow.
 The host supplies raw input timing, not a production presence-bypass command.
 Hardware factory-reset validation requires a separate user-assisted five-touch
 run; do not infer it from the prior single-touch OATH test.
+
+### Device configuration and keyboard layout migration
+
+Rust retains the native-endian 512-byte platform configuration format, including
+CRC, loader-word exclusion and write-once serial at bytes 16..20. ADMIN `30 00 00`
+requires authorization and four serial bytes; `32 00 00` reads four bytes with
+Le >= 4. Missing or invalid identity reads as zeros; a second serial write returns
+6985. Config updates preserve serial, keyboard and algorithm fields.
+
+Authenticated ADMIN `45 00 <layout>` writes exactly 256 bytes, one
+`{modifier, usage}` pair per ASCII value. It accepts a short-APDU command chain,
+using the shared session workspace until the final command validates and commits
+one configuration page. `46 00 00` (Le >= 1) reads the layout ID; `46 00 01`
+(Le >= 256) reads the table. Both require an empty command body and return 6A88
+when no layout is installed. `47 00 00`, with an empty body, clears the layout.
+All three commands require ADMIN authorization. A configured usage of zero
+suppresses that character; clearing the table restores the built-in US layout.
+The loader word, serial and optional algorithm TLVs survive layout updates.
+
+ADMIN command and response data borrow the existing session workspace. They do
+not add a keyboard-table cache or enlarge the transport APDU buffer. Unit tests
+cover literal legacy page offsets and zero-usage behavior; the combined native
+fixture verifies APDU chaining, persistence, grant revocation and clear/readback.
+
+`31 <kind> 00` exposes firmware version (kind 0), product name (1) or core
+revision (2); `32 01 00` exposes the 13-byte chip ID. These read-only commands
+need no authorization and accept no data. Responses truncate to Le and do not
+create pending GET RESPONSE data. The board supplies only raw metadata and chip
+bytes; Rust validates command shape and bounds the response.
+
+Authenticated vendor command `FF FF <mode>` requires the exact 15-byte literal
+`D3549Fa2dcb$23n`. Mode 0 writes the board's loader handoff word while preserving
+all remaining configuration bytes, including corrupt metadata. Mode 1 rebuilds
+an erased configuration page containing only that handoff word. Neither mode
+resets the device. Other parameters or payloads return 6A86; missing recovery
+capability and storage failures return 6900. The explicit mode-1 operation loses
+serial, keyboard and other configuration metadata, matching the CIU vendor
+command. Unit tests cover raw-page preservation, erase semantics and I/O errors;
+host APDU tests cover authentication and parameter rejection.
+
+The legacy special APDU `FF EE FF EE` queues keyboard consumer-control Eject
+when PASS is enabled, regardless of the selected applet. It requires no ADMIN
+PIN and retains legacy acceptance of command data. The command is only queued
+after the complete frame validates. It replaces queued text; the keyboard
+transport finishes any prior key release before sending Eject (report ID 2,
+usage B8), then sends report ID 2 with a zero usage. USB epoch/reset discards
+pending output. An explicit eject does not require touch or wait for the startup
+touch ignore window; subsequent gestures still use the normal timing policy.
+The HID facade fixture tests a failed Eject submission, byte-stable retry,
+release while WebUSB owns the session, and USB-reset cleanup.
+
+Public ADMIN `41 00 00` (Le >= 2) returns `{used_kib,total_kib}`, retaining
+integer truncation and the original byte-sized fields. `41 01 00` (Le >= 48)
+returns eight six-byte records: `{applet_id,flags,logical_bytes_be32}` for ADMIN,
+OpenPGP, PIV, OATH, CTAP, NDEF, PASS, then system (ID 0). A missing known record
+sets flag bit 0 and contributes zero; storage errors return 6900. P2 must be zero.
+
+Attribution follows the Rust durable record namespace, including optional or
+currently disabled applet records. Security metadata stored inside a Rust record
+is included in that record's payload size. Filesystem metadata, old/unrecognized
+files and temporary files contribute to the nonnegative system remainder.
+LittleFS supplies allocated and total bytes; all grouping and wire encoding is
+Rust. The operation is read-only and uses the existing response workspace.

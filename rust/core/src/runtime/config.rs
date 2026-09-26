@@ -3,10 +3,12 @@
 //! The loader owns bytes 0..4. Never include them in the CRC or reset them.
 #![forbid(unsafe_code)]
 use crate::ports::{StorageError, StoragePort};
+pub const INITIALIZED: u32 = 1;
 pub const NFC: u32 = 1 << 1;
 pub const LED: u32 = 1 << 2;
 pub const NDEF: u32 = 1 << 3;
 pub const WEBUSB: u32 = 1 << 4;
+pub const SERIAL_VALID: u32 = 1 << 5;
 pub const PASS: u32 = 1 << 7;
 pub const OPENPGP_USB: u32 = 1 << 8;
 pub const OPENPGP_NFC: u32 = 1 << 9;
@@ -55,6 +57,15 @@ impl Page {
         self.0[32..288].fill(0);
         self.seal();
     }
+    fn commit(&mut self, s: &mut StoragePort<'_>) -> Result<(), StorageError> {
+        // Loader state can change independently of the core metadata.
+        match s.config_read(0, &mut self.0[..4]) {
+            Ok(()) | Err(StorageError::Missing) => (),
+            Err(e) => return Err(e),
+        }
+        self.seal();
+        s.config_write(&self.0)
+    }
     fn load(&mut self, s: &mut StoragePort<'_>, repair: bool) -> Result<(), StorageError> {
         match s.config_read(0, &mut self.0) {
             Ok(()) => {
@@ -88,13 +99,7 @@ pub fn update(s: &mut StoragePort<'_>, mask: u32, value: u32) -> Result<(), Stor
     page.load(s, true)?;
     let flags = (word(&page.0[12..16]) & !mask) | (value & mask);
     page.0[12..16].copy_from_slice(&flags.to_ne_bytes());
-    // Loader state can be changed independently of the core metadata.
-    match s.config_read(0, &mut page.0[..4]) {
-        Ok(()) | Err(StorageError::Missing) => (),
-        Err(e) => return Err(e),
-    }
-    page.seal();
-    s.config_write(&page.0)
+    page.commit(s)
 }
 pub fn enabled(s: &mut StoragePort<'_>, mask: u32) -> bool {
     flags(s).is_ok_and(|flags| flags & mask != 0)
@@ -179,6 +184,68 @@ mod tests {
         assert!(Page(disk.page).valid());
     }
     #[test]
+    fn recovery_preserves_raw_metadata_or_explicitly_erases_it() {
+        let mut disk = Disk::new();
+        write_serial(&mut disk, &[1, 2, 3, 4]).unwrap();
+        disk.page[400] = 0x42; // Preserve even invalid CRC bytes on handoff.
+        let original = disk.page;
+        recovery(&mut disk, 0xb639a527, false).unwrap();
+        assert_eq!(&disk.page[..4], &0xb639a527u32.to_ne_bytes());
+        assert_eq!(&disk.page[4..], &original[4..]);
+        disk.read_error = true;
+        assert!(recovery(&mut disk, 0, false).is_err());
+        recovery(&mut disk, 0xb639a527, true).unwrap();
+        assert!(disk.page[4..].iter().all(|b| *b == 0xff));
+        disk.write_error = true;
+        assert!(recovery(&mut disk, 0, true).is_err());
+    }
+    #[test]
+    fn keyboard_table_preserves_identity_and_explicit_zero_usage() {
+        let mut disk = Disk::new();
+        write_serial(&mut disk, &[1, 2, 3, 4]).unwrap();
+        assert_eq!(keyboard_usage(&mut disk, b'A'), Some((2, 4)));
+        let mut table = [0; 256];
+        table[130..132].copy_from_slice(&[0x40, 0x1d]);
+        write_keymap(&mut disk, 17, Some(&table)).unwrap();
+        assert_eq!(serial(&mut disk), [1, 2, 3, 4]);
+        assert_eq!(&disk.page[20..24], &[17, 2, 0, 128]);
+        assert_eq!(keyboard_usage(&mut disk, b'A'), Some((0x40, 0x1d)));
+        assert_eq!(keyboard_usage(&mut disk, b'B'), None);
+        let mut read = [0; 256];
+        assert_eq!(read_keymap(&mut disk, &mut read).unwrap(), 17);
+        assert_eq!(read, table);
+        write_keymap(&mut disk, 0, None).unwrap();
+        assert!(matches!(
+            read_keymap(&mut disk, &mut read),
+            Err(StorageError::Missing)
+        ));
+        assert_eq!(keyboard_usage(&mut disk, b'A'), Some((2, 4)));
+        assert_eq!(serial(&mut disk), [1, 2, 3, 4]);
+    }
+    #[test]
+    fn identity_matches_legacy_offsets_crc_and_write_once_contract() {
+        let mut disk = Disk::new();
+        assert_eq!(serial(&mut disk), [0; 4]);
+        assert_eq!(disk.writes, 0);
+        write_serial(&mut disk, &[0x12, 0x34, 0x56, 0x78]).unwrap();
+        assert_eq!(&disk.page[16..20], &[0x12, 0x34, 0x56, 0x78]);
+        assert_ne!(word(&disk.page[12..16]) & (1 << 5), 0);
+        assert_eq!(serial(&mut disk), [0x12, 0x34, 0x56, 0x78]);
+        let writes = disk.writes;
+        assert!(write_serial(&mut disk, &[1, 2, 3, 4]).is_err());
+        assert_eq!(disk.writes, writes);
+        disk.page[0] ^= 1;
+        assert_eq!(serial(&mut disk), [0x12, 0x34, 0x56, 0x78]);
+        disk.page[16] ^= 1;
+        assert_eq!(serial(&mut disk), [0; 4]);
+        disk.page[16] ^= 1;
+        disk.read_error = true;
+        assert_eq!(serial(&mut disk), [0; 4]);
+        disk.read_error = false;
+        update(&mut disk, SERIAL_VALID, 0).unwrap();
+        assert_eq!(serial(&mut disk), [0; 4]);
+    }
+    #[test]
     fn read_failures_deny_access_and_uncertain_updates_reload_actual_storage() {
         let mut disk = Disk::new();
         disk.read_error = true;
@@ -210,4 +277,92 @@ pub fn reset_admin(s: &mut StoragePort<'_>) -> Result<(), StorageError> {
         Err(e) => Err(e),
         Ok(()) => update(s, ADMIN_FLAGS, ADMIN_FLAGS),
     }
+}
+
+/// Notification only touches disjoint device state after the page borrow ends.
+pub fn notify(p: &mut crate::Platform<'_>) {
+    let flags = flags(p.storage).unwrap_or(0);
+    p.device.configuration_changed(flags);
+}
+
+/// Read-only identity access. Invalid/unprovisioned pages return the legacy
+/// zero identity; never initialize Flash to answer a serial-number query.
+#[inline(never)]
+pub fn serial(s: &mut StoragePort<'_>) -> [u8; 4] {
+    let mut page = Page([0xff; 512]);
+    if page.load(s, false).is_err() || word(&page.0[12..16]) & SERIAL_VALID == 0 {
+        return [0; 4];
+    }
+    page.0[16..20].try_into().unwrap()
+}
+#[inline(never)]
+pub fn write_serial(s: &mut StoragePort<'_>, serial: &[u8; 4]) -> Result<(), StorageError> {
+    let mut page = Page([0xff; 512]);
+    page.load(s, true)?;
+    let flags = word(&page.0[12..16]);
+    if flags & SERIAL_VALID != 0 {
+        return Err(StorageError::Unavailable);
+    }
+    page.0[12..16].copy_from_slice(&(flags | SERIAL_VALID).to_ne_bytes());
+    page.0[16..20].copy_from_slice(serial);
+    page.commit(s)
+}
+
+const KEYMAP_VALID: u32 = 1 << 6;
+impl Page {
+    fn has_keymap(&self) -> bool {
+        word(&self.0[12..16]) & KEYMAP_VALID != 0 && self.0[21..24] == [2, 0, 128]
+    }
+}
+/// Keep keyboard settings in the existing page, preserving serial and TLVs.
+#[inline(never)]
+pub fn write_keymap(
+    s: &mut StoragePort<'_>,
+    layout: u8,
+    table: Option<&[u8; 256]>,
+) -> Result<(), StorageError> {
+    let mut page = Page([0xff; 512]);
+    page.load(s, true)?;
+    let mut flags = word(&page.0[12..16]) & !KEYMAP_VALID;
+    page.0[20..24].copy_from_slice(&[layout, 2, 0, 128]);
+    if let Some(table) = table {
+        page.0[32..288].copy_from_slice(table);
+        flags |= KEYMAP_VALID;
+    } else {
+        page.0[32..288].fill(0);
+    }
+    page.0[12..16].copy_from_slice(&flags.to_ne_bytes());
+    page.commit(s)
+}
+#[inline(never)]
+pub fn read_keymap(s: &mut StoragePort<'_>, table: &mut [u8; 256]) -> Result<u8, StorageError> {
+    let mut page = Page([0xff; 512]);
+    page.load(s, false)?;
+    if !page.has_keymap() {
+        return Err(StorageError::Missing);
+    }
+    table.copy_from_slice(&page.0[32..288]);
+    Ok(page.0[20])
+}
+/// A stored zero usage suppresses the character; it never falls back to US.
+#[inline(never)]
+pub fn keyboard_usage(s: &mut StoragePort<'_>, ch: u8) -> Option<(u8, u8)> {
+    let mut page = Page([0xff; 512]);
+    if ch < 128 && page.load(s, false).is_ok() && page.has_keymap() {
+        let offset = 32 + usize::from(ch) * 2;
+        return (page.0[offset + 1] != 0).then_some((page.0[offset], page.0[offset + 1]));
+    }
+    super::keyboard::ascii(ch)
+}
+
+/// Recovery deliberately operates on raw pages, including corrupt metadata.
+/// P2=0 preserves every non-loader byte; P2=1 erases metadata as on legacy CIU.
+#[inline(never)]
+pub fn recovery(s: &mut StoragePort<'_>, word: u32, erase: bool) -> Result<(), StorageError> {
+    let mut page = Page([0xff; 512]);
+    if !erase {
+        s.config_read(0, &mut page.0)?;
+    }
+    page.0[..4].copy_from_slice(&word.to_ne_bytes());
+    s.config_write(&page.0)
 }

@@ -1,11 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 pub trait Device {
     fn serial(&mut self, output: &mut [u8; 4]);
+    /// Raw firmware version (0), product (1), core revision (2), or chip ID (3).
+    /// The caller owns protocol validation and response truncation.
+    fn information(&mut self, kind: u8, output: &mut [u8]) -> usize {
+        let data: &[u8] = if kind == 3 { &[0; 13] } else { b"unknown" };
+        let len = output.len().min(data.len());
+        output[..len].copy_from_slice(&data[..len]);
+        len
+    }
+    /// Hardware bootloader handoff word, if this board supports recovery.
+    fn recovery_word(&mut self) -> Option<u32> {
+        None
+    }
     fn now(&mut self) -> u32;
     fn touched(&mut self) -> bool;
     /// Active contactless mode supplies presence without a touch sensor.
     fn contactless(&mut self) -> bool {
         false
+    }
+    /// Publish settings to disjoint device/IRQ state; must not reenter Core.
+    fn configuration_changed(&mut self, _flags: u32) {}
+    fn led_idle(&mut self) {
+        self.led(false);
     }
     fn wink(&mut self) {}
     /// Consume a completed, unexpired gesture for CTAP1 polling.
@@ -89,6 +106,9 @@ impl Polling {
             self.prompt.get_or_insert((now, false));
             false
         }
+    }
+    pub fn prompt_active(&self) -> bool {
+        self.prompt.is_some()
     }
     pub fn wink(&mut self, now: u32) {
         self.prompt = Some((now, true));

@@ -184,6 +184,9 @@ if(BUILD_TESTING)
     add_test(NAME nfc-bus COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_nfc.py")
     set_tests_properties(nfc-bus PROPERTIES TIMEOUT 30)
+    add_test(NAME device-runtime COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_device.py")
+    set_tests_properties(device-runtime PROPERTIES TIMEOUT 30)
   endif()
   add_test(NAME core-normal COMMAND core-normal)
   # Pure transport tests also run in profiles without the CTAP firmware applet.

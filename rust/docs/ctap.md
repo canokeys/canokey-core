@@ -411,3 +411,14 @@ changes; requires that PIN if already configured):
 The script uses python-fido2/cryptography independently for ECDH, KDF, AES-CBC,
 HMAC and token decryption under both protocols. Run the read-only transport smoke
 before/after it. Preserve evidence of firmware identity and stack profile settings.
+
+Implicit APDU routing after a slot reset is supported for CLA 80/90 INS 10
+(CTAP2), CLA 00 INS 01/02/03 (U2F), and CLA 00 INS A4 with P1 other than 04.
+ISO SELECT-by-name retains precedence, including invalid-P2 rejection. Routing
+only applies while no applet is selected and still checks the persistent
+WebAuthn permission before consuming/executing a request. An already selected
+ADMIN, OpenPGP, PIV, OATH or NDEF applet is never replaced by this heuristic.
+Extended CCID/NFC admission can recognize an implicit FIDO header without
+mutating selection; normal command start performs the permission check. The
+streaming regression exercises a source-backed CBOR request without SELECT,
+including bounded length, owner restrictions, source cleanup and chain errors.

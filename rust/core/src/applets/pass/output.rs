@@ -33,6 +33,13 @@ impl Output {
         self.reset(memory);
         self.suppressed = pressed;
     }
+    /// Replace queued text; the transport completes any prior key release.
+    pub fn eject(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+        self.reset(memory);
+        self.suppressed = false;
+        self.bytes[0] = 3;
+        self.used = 1;
+    }
     pub fn busy(&self) -> bool {
         self.used != 0 || self.draining
     }
@@ -61,7 +68,7 @@ impl Output {
             }
             self.contact = false;
         }
-        if !self.boot_ready {
+        if !self.boot_ready && self.used == 0 {
             if now <= 1500 {
                 self.contact = false;
                 return None;

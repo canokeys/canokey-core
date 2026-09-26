@@ -35,7 +35,10 @@ use crate::{
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 pub const AID: &[u8] = &[0xf0, 0x00, 0x00, 0x00, 0x00];
-pub const COMMAND_CAPACITY: usize = 64;
+pub const COMMAND_CAPACITY: usize = 256;
+use crate::runtime::workspace::Workspace;
+const _: () =
+    assert!(crate::runtime::workspace::OUTPUT_BYTES >= pass_protocol::MAX_DESCRIPTION_LENGTH);
 #[derive(Default)]
 pub struct Grants {
     pub admin: bool,
@@ -64,9 +67,7 @@ pub enum Action {
     ResetOpenPgp,
 }
 pub struct Admin {
-    command: [u8; COMMAND_CAPACITY],
     used: usize,
-    response: [u8; pass_protocol::MAX_DESCRIPTION_LENGTH],
     response_len: usize,
     #[cfg(feature = "ctap")]
     certificate: bool,
@@ -74,9 +75,7 @@ pub struct Admin {
 impl Admin {
     pub const fn new() -> Self {
         Self {
-            command: [0; COMMAND_CAPACITY],
             used: 0,
-            response: [0; pass_protocol::MAX_DESCRIPTION_LENGTH],
             response_len: 0,
             #[cfg(feature = "ctap")]
             certificate: false,
@@ -100,16 +99,21 @@ impl Admin {
         }
         Ok(())
     }
-    pub fn cancel_command(&mut self, p: &mut Platform<'_>) {
+    pub fn cancel_command(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
         #[cfg(feature = "ctap")]
         if self.certificate {
             p.storage.stage_abort();
             self.certificate = false;
         }
-        p.memory.wipe(&mut self.command);
+        p.memory.wipe(&mut w.input);
         self.used = 0;
     }
-    pub fn consume(&mut self, data: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn consume(
+        &mut self,
+        data: &[u8],
+        w: &mut Workspace,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
         let _ = &p;
         #[cfg(feature = "ctap")]
         if self.certificate {
@@ -128,7 +132,7 @@ impl Admin {
             .checked_add(data.len())
             .filter(|n| *n <= COMMAND_CAPACITY)
             .ok_or(Sw::WRONG_LENGTH)?;
-        self.command[self.used..end].copy_from_slice(data);
+        w.input[self.used..end].copy_from_slice(data);
         self.used = end;
         Ok(())
     }
@@ -139,17 +143,61 @@ impl Admin {
         grants: &mut Grants,
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
+        w: &mut Workspace,
     ) -> Result<Action, Sw> {
         self.response_len = 0;
-        let result = if h.ins == 0x42 && h.p1 == 0 && h.p2 == 0 && le < 6 {
-            Err(Sw::WRONG_LENGTH)
-        } else if h.ins == INS_FACTORY_RESET {
-            self.check_factory_reset(h, p)
-                .map(|()| Action::FactoryReset)
-        } else {
-            self.dispatch(h, grants, pass, p)
-        };
-        self.cancel_command(p);
+        if h.ins == 0x46 && h.p1 == 0 && h.p2 <= 1 && le < if h.p2 == 0 { 1 } else { 256 } {
+            self.cancel_command(w, p);
+            return Err(Sw::WRONG_LENGTH);
+        }
+
+        // Information queries truncate at Le, without GET RESPONSE chaining.
+        if h.ins == 0x31 || (h.ins == 0x32 && h.p1 != 0) {
+            let result = if h.p2 != 0 || (h.ins == 0x31 && h.p1 > 2) || (h.ins == 0x32 && h.p1 != 1)
+            {
+                Err(Sw::WRONG_P1P2)
+            } else if self.used != 0 {
+                Err(Sw::WRONG_LENGTH)
+            } else {
+                let capacity = (le as usize).min(w.output.len());
+                self.response_len = p.device.information(
+                    if h.ins == 0x32 { 3 } else { h.p1 },
+                    &mut w.output[..capacity],
+                );
+                if self.response_len > capacity {
+                    self.response_len = 0;
+                    Err(Sw::UNABLE_TO_PROCESS)
+                } else {
+                    Ok(Action::Response(self.response_len as u32))
+                }
+            };
+            self.cancel_command(w, p);
+            return result;
+        }
+        if h.ins == 0x41 {
+            let result = if h.p1 > 1 || h.p2 != 0 {
+                Err(Sw::WRONG_P1P2)
+            } else if le < if h.p1 == 0 { 2 } else { 48 } {
+                Err(Sw::WRONG_LENGTH)
+            } else {
+                super::usage::read(p.storage, h.p1 == 1, &mut w.output).map(|n| {
+                    self.response_len = n;
+                    Action::Response(n as u32)
+                })
+            };
+            self.cancel_command(w, p);
+            return result;
+        }
+        let result =
+            if h.p1 == 0 && h.p2 == 0 && ((h.ins == 0x42 && le < 6) || (h.ins == 0x32 && le < 4)) {
+                Err(Sw::WRONG_LENGTH)
+            } else if h.ins == INS_FACTORY_RESET {
+                self.check_factory_reset(h, w, p)
+                    .map(|()| Action::FactoryReset)
+            } else {
+                self.dispatch(h, grants, pass, p, w)
+            };
+        self.cancel_command(w, p);
         result
     }
     fn dispatch(
@@ -158,6 +206,7 @@ impl Admin {
         grants: &mut Grants,
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
+        w: &mut Workspace,
     ) -> Result<Action, Sw> {
         #[cfg(feature = "ctap")]
         if matches!(
@@ -171,7 +220,7 @@ impl Admin {
                 return Err(Sw::WRONG_P1P2);
             }
             if h.ins == INS_CTAP_INSTALL {
-                let key = self.command[..self.used]
+                let key = w.input[..self.used]
                     .try_into()
                     .map_err(|_| Sw::WRONG_LENGTH)?;
                 return Ok(Action::InstallFidoKey(key));
@@ -233,7 +282,7 @@ impl Admin {
             }
             return Ok(Action::Response(0));
         }
-        self.execute(h, grants, pass, p).map(Action::Response)
+        self.execute(h, grants, pass, p, w).map(Action::Response)
     }
     fn execute(
         &mut self,
@@ -241,9 +290,76 @@ impl Admin {
         grants: &mut Grants,
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
+        w: &mut Workspace,
     ) -> Result<u32, Sw> {
+        if h.ins == 0xff {
+            if !grants.admin {
+                return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+            }
+            if h.p1 != 0xff || h.p2 > 1 || &w.input[..self.used] != b"D3549Fa2dcb$23n" {
+                return Err(Sw::WRONG_P1P2);
+            }
+            let word = p.device.recovery_word().ok_or(Sw::UNABLE_TO_PROCESS)?;
+            let result = crate::runtime::config::recovery(p.storage, word, h.p2 == 1);
+            crate::runtime::config::notify(p);
+            result.map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+            return Ok(0);
+        }
+        if matches!(h.ins, 0x45..=0x47) {
+            if !grants.admin {
+                return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+            }
+            if h.p1 != 0 || (h.ins == 0x46 && h.p2 > 1) || (h.ins == 0x47 && h.p2 != 0) {
+                return Err(Sw::WRONG_P1P2);
+            }
+            if self.used != if h.ins == 0x45 { 256 } else { 0 } {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            use crate::runtime::config;
+            if h.ins == 0x46 {
+                let layout =
+                    config::read_keymap(p.storage, (&mut w.output[..256]).try_into().unwrap())
+                        .map_err(|_| Sw::REFERENCE_NOT_FOUND)?;
+                self.response_len = if h.p2 == 0 {
+                    w.output[0] = layout;
+                    1
+                } else {
+                    256
+                };
+                return Ok(self.response_len as u32);
+            }
+            let table = if h.ins == 0x45 {
+                Some((&w.input[..256]).try_into().unwrap())
+            } else {
+                None
+            };
+            config::write_keymap(p.storage, h.p2, table).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+            return Ok(0);
+        }
+        if h.ins == 0x30 || (h.ins == 0x32 && h.p1 == 0) {
+            if h.p1 != 0 || h.p2 != 0 {
+                return Err(Sw::WRONG_P1P2);
+            }
+            if h.ins == 0x30 {
+                if !grants.admin {
+                    return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+                }
+                let serial = w.input[..self.used]
+                    .try_into()
+                    .map_err(|_| Sw::WRONG_LENGTH)?;
+                crate::runtime::config::write_serial(p.storage, serial)
+                    .map_err(|_| Sw::CONDITIONS_NOT_SATISFIED)?;
+                return Ok(0);
+            }
+            if self.used != 0 {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            w.output[..4].copy_from_slice(&crate::runtime::config::serial(p.storage));
+            self.response_len = 4;
+            return Ok(4);
+        }
         if matches!(h.ins, 0x14 | 0x40 | 0x42) {
-            return self.device_config(h, grants, p);
+            return self.device_config(h, grants, p, w);
         }
         #[cfg(feature = "ctap")]
         if matches!(h.ins, INS_CTAP_BEGIN | INS_CTAP_END) {
@@ -255,14 +371,14 @@ impl Admin {
             }
             use crate::applets::ctap::settings::Sm2;
             if h.ins == INS_CTAP_END {
-                Sm2::save(&self.command[..self.used], p)?;
+                Sm2::save(&w.input[..self.used], p)?;
                 return Ok(0);
             }
             if self.used != 0 {
                 return Err(Sw::WRONG_LENGTH);
             }
             let config = Sm2::load(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-            self.response[..8].copy_from_slice(&config.encode());
+            w.output[..8].copy_from_slice(&config.encode());
             self.response_len = 8;
             return Ok(8);
         }
@@ -294,7 +410,7 @@ impl Admin {
                 };
             }
             grants.admin = false;
-            auth::verify(&self.command[..self.used], p).map_err(auth_error)?;
+            auth::verify(&w.input[..self.used], p).map_err(auth_error)?;
             grants.admin = true;
             return Ok(0);
         }
@@ -310,11 +426,11 @@ impl Admin {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 grants.admin = false;
-                auth::change(&self.command[..self.used], p).map_err(auth_error)?;
+                auth::change(&w.input[..self.used], p).map_err(auth_error)?;
             }
             INS_SET_PASS_CONFIG => {
                 let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
-                let (index, slot) = pass_protocol::decode_config(h.p1, &self.command[..self.used])?;
+                let (index, slot) = pass_protocol::decode_config(h.p1, &w.input[..self.used])?;
                 pass.configure(index, slot, p.storage, p.memory)
                     .map_err(crate::applets::pass::status)?;
             }
@@ -331,9 +447,8 @@ impl Admin {
                         .map_err(crate::applets::pass::status)?;
                 } else {
                     let records = pass.records().map_err(crate::applets::pass::status)?;
-                    self.response_len =
-                        pass_protocol::read_config(records, Layout, &mut self.response)
-                            .map_err(crate::applets::pass::status)?;
+                    self.response_len = pass_protocol::read_config(records, Layout, &mut w.output)
+                        .map_err(crate::applets::pass::status)?;
                 }
             }
             _ => return Err(Sw::INS_NOT_SUPPORTED),
@@ -357,6 +472,7 @@ impl Admin {
         h: Header,
         grants: &Grants,
         p: &mut Platform<'_>,
+        w: &mut Workspace,
     ) -> Result<u32, Sw> {
         use crate::runtime::config;
         let io = |_| Sw::UNABLE_TO_PROCESS;
@@ -368,20 +484,20 @@ impl Admin {
                 return Err(Sw::WRONG_LENGTH);
             }
             if h.p1 == 0 {
-                self.response[0] =
-                    u8::from(config::flags(p.storage).map_err(io)? & config::NFC != 0);
+                w.output[0] = u8::from(config::flags(p.storage).map_err(io)? & config::NFC != 0);
                 self.response_len = 1;
                 return Ok(1);
             }
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
-            config::update(
+            let result = config::update(
                 p.storage,
                 config::NFC,
                 if h.p2 == 0 { 0 } else { config::NFC },
-            )
-            .map_err(io)?;
+            );
+            config::notify(p);
+            result.map_err(io)?;
             return Ok(0);
         }
         if h.ins == 0x42 {
@@ -389,7 +505,7 @@ impl Admin {
                 return Err(Sw::WRONG_P1P2);
             }
             let flags = config::flags(p.storage).map_err(io)?;
-            self.response[..6].copy_from_slice(&[
+            w.output[..6].copy_from_slice(&[
                 u8::from(flags & config::LED != 0),
                 0,
                 0,
@@ -399,7 +515,7 @@ impl Admin {
             ]);
             #[cfg(feature = "ndef")]
             {
-                self.response[2] = u8::from(crate::applets::ndef::Ndef::new().read_only(p.storage));
+                w.output[2] = u8::from(crate::applets::ndef::Ndef::new().read_only(p.storage));
             }
             self.response_len = 6;
             return Ok(6);
@@ -429,13 +545,20 @@ impl Admin {
         } else {
             0
         };
-        config::update(p.storage, mask, value).map_err(io)?;
+        let result = config::update(p.storage, mask, value);
+        config::notify(p);
+        result.map_err(io)?;
         Ok(0)
     }
     // Factory reset is the blocked-ADMIN recovery path: 50 00 00 plus literal
     // RESET, with no retries left. The runtime separately requires five touches
     // before executing the returned reset action; this check alone never erases.
-    pub fn check_factory_reset(&self, h: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn check_factory_reset(
+        &self,
+        h: Header,
+        w: &Workspace,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
         if p.device.contactless() {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
@@ -445,7 +568,7 @@ impl Admin {
         if self.used != b"RESET".len() {
             return Err(Sw::WRONG_LENGTH);
         }
-        if &self.command[..b"RESET".len()] != b"RESET" {
+        if &w.input[..b"RESET".len()] != b"RESET" {
             return Err(Sw::WRONG_DATA);
         }
         if auth::retries(p).map_err(auth_error)? != 0 {
@@ -453,10 +576,10 @@ impl Admin {
         }
         Ok(())
     }
-    pub fn close_response(&mut self, p: &mut Platform<'_>) {
-        crate::applets::close_response(p.memory, &mut self.response, &mut self.response_len);
+    pub fn close_response(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+        crate::applets::close_response(p.memory, &mut w.output, &mut self.response_len);
     }
-    pub fn read_response(&self, offset: usize, out: &mut [u8]) -> Result<(), Sw> {
-        crate::applets::read_response_chunk(&self.response, self.response_len, offset, out)
+    pub fn read_response(&self, offset: usize, out: &mut [u8], w: &Workspace) -> Result<(), Sw> {
+        crate::applets::read_response_chunk(&w.output, self.response_len, offset, out)
     }
 }

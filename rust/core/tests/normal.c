@@ -56,6 +56,13 @@ int main(void) {
   SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
   SEND(0x9000, 0, 0x20, 0, 0, 6, '1', '2', '3', '4', '5', '6');
   SEND(0x9000, 0, 0x20, 0, 0); /* Query retains the current grant. */
+  SEND(0x9000,0xff,0xee,0xff,0xee);
+  assert(ck_core_output_sample(0,100,0)==-1);
+  assert(ck_core_output_sample(0,101,1)==3); /* Explicit eject bypasses startup touch gate. */
+  assert(ck_core_output_sample(0,102,1)==-1);
+  SEND(0x9000,0xff,0xee,0xff,0xee);
+  ck_core_output_cancel(0);
+  assert(ck_core_output_sample(0,103,1)==-1);
   /* ADMIN allows command chaining only for the (not yet enabled) FIDO certificate. */
   SEND(0x9000, 0, 0x44, 1, 0, 6, 2, 3, 'a', 'b', 'c', 1);
   SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
@@ -185,14 +192,91 @@ int main(void) {
 #endif
   SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
   SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x9000,0,0x32,0,0,4);assert(!memcmp(buffer,"\0\0\0\0",4));
+  SEND(0x9000,0,0x30,0,0,4,0x12,0x34,0x56,0x78);
+  SEND(0x6985,0,0x30,0,0,4,0xff,0xff,0xff,0xff);
+  SEND(0x9000,0,0x32,0,0,4);assert(!memcmp(buffer,"\x12\x34\x56\x78",4));
+  SEND(0x6a86,0,0xff,0xff,0,1,0);
+  SEND(0x6a86,0,0xff,0xfe,0,15,'D','3','5','4','9','F','a','2','d','c','b','$','2','3','n');
+  SEND(0x6a86,0,0xff,0xff,2,15,'D','3','5','4','9','F','a','2','d','c','b','$','2','3','n');
+  /* Host backend has no loader capability; a valid request must fail closed. */
+  SEND(0x6900,0,0xff,0xff,0,15,'D','3','5','4','9','F','a','2','d','c','b','$','2','3','n');
+  /* Public board information is truncated, never response-chained. */
+  ck_core_reset();
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6982,0,0xff,0xff,0,15,'D','3','5','4','9','F','a','2','d','c','b','$','2','3','n');
+  /* Read-only usage retains the legacy 8-record wire format. */
+  SEND(0x9000,0,0x41,0,0,2);assert(buffer[0]>=4 && buffer[1]==128);
+  SEND(0x6700,0,0x41,0,0,1);
+  SEND(0x6700,0,0x41,1,0,47);
+  SEND(0x6a86,0,0x41,2,0,48);
+  SEND(0x6a86,0,0x41,0,1,2);
+  SEND(0x9000,0,0x41,1,0,48);
+  for(unsigned i=0;i<7;i++) assert(buffer[i*6]==i+1);
+  assert(buffer[42]==0 && buffer[43]==0 && !memcmp(buffer+44,"\0\0\x10\0",4));
+  for (uint8_t kind=0;kind<3;kind++) {
+    uint8_t query[]={0,0x31,kind,0,3};
+    assert(exchange(query,sizeof(query),0x9000)==3);
+    assert(!memcmp(buffer,"unk",3));
+  }
+  SEND(0x6986,0,0xc0,0,0,0);
+  SEND(0x6a86,0,0x31,3,0,4);
+  SEND(0x6700,0,0x31,0,0,1,0);
+  const uint8_t chip[]={0,0x32,1,0,13};assert(exchange(chip,sizeof(chip),0x9000)==13);
+  const uint8_t chip_short[]={0,0x32,1,0,3};assert(exchange(chip_short,sizeof(chip_short),0x9000)==3);
+  SEND(0x6a86,0,0x32,2,0,4);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  /* Stream a full keymap through the existing short APDU buffer. */
+  SEND(0x6a88,0,0x46,0,0,1);
+  uint8_t map_part[133]={0x10,0x45,0,17,128};
+  exchange(map_part,sizeof(map_part),0x9000);
+  map_part[0]=0;map_part[7]=0x40;map_part[8]=0x1d; /* ASCII A */
+  exchange(map_part,sizeof(map_part),0x9000);
+  SEND(0x9000,0,0x46,0,0,1);assert(buffer[0]==17);
+  SEND(0x6700,0,0x46,0,1,255);
+  SEND(0x9000,0,0x46,0,1,0);
+  for(unsigned i=0;i<256;i++) assert(buffer[i]==(i==130?0x40:i==131?0x1d:0));
+#ifdef WITH_PASS
+  extern int32_t ck_core_keyboard_usage(uint8_t ch);
+  assert(ck_core_keyboard_usage('A')==0x401d);
+  assert(ck_core_keyboard_usage('B')==-1);
+#endif
+  ck_core_reset();
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6982,0,0x46,0,0,1);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x9000,0,0x46,0,0,1);assert(buffer[0]==17);
+  SEND(0x9000,0,0x47,0,0);
+  SEND(0x6a88,0,0x46,0,0,1);
+#ifdef WITH_PASS
+  assert(ck_core_keyboard_usage('A')==0x0204);
+#endif
   SEND(0x9000,0,0x14,1,1);
   SEND(0x9000,0,0x40,6,0x3f);
   SEND(0x9000,0,0x40,4,1);
 #endif
 #ifdef WITH_CTAP
-  /* The NFC owner uses the same extended FIDO decoder and response cursor. */
+  /* Card resets may precede FIDO without an explicit AID SELECT. */
+  for (uint8_t owner=1;owner<=4;owner++) {
+    if (owner==2) continue; /* HID owns its separate MSG framing entrypoint. */
+    ck_core_reset();transport_owner=owner;
+    SEND(0x9000,0,3,0,0,6);assert(!memcmp(buffer,"U2F_V2",6));
+  }
+  transport_owner=1;
+  ck_core_reset();
+  SEND(0x6a82,0,0x11,0,0); /* Unknown commands cannot select FIDO. */
+  SEND(0x6a86,0,0xa4,4,1,1,0); /* ISO SELECT validation keeps precedence. */
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6e00,0x80,0x10,0,0,1,4); /* Selected ADMIN is not preempted by FIDO. */
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x9000,0,0x40,6,0x1f); /* Disable WebAuthn only. */
+  ck_core_reset();
+  SEND(0x6a82,0,3,0,0,6);
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x9000,0,0x40,6,0x3f);
+  /* NFC extended GetInfo also routes implicitly after reset. */
   ck_core_reset();transport_owner=4;
-  SEND(0x9000,0,0xa4,4,0,8,0xa0,0,0,6,0x47,0x2f,0,1);
   const uint8_t get_info[]={0x80,0x10,0,0,0,0,1,4};
   memcpy(buffer,get_info,sizeof(get_info));
   int initial=ck_core_exchange(4,buffer,sizeof(get_info),buffer,sizeof(buffer));

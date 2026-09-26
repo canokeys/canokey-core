@@ -19,3 +19,14 @@ mod webusb_link;
 #[cfg(feature = "usb-webusb")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn test_web_blocked() -> u8 { unsafe { webusb_link::block_competitor() as u8 } }
+
+#[cfg(feature = "usb-keyboard")]
+#[path = "../../../ffi/src/keyboard_io.rs"]
+mod keyboard_io;
+
+#[cfg(feature = "usb-hid")]
+#[path = "../../../ffi/src/hid_io.rs"]
+mod hid_io;
+
+#[path = "../../../ffi/src/ccid_io.rs"]
+mod ccid_io;

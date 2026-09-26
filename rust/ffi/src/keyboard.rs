@@ -8,6 +8,7 @@ unsafe extern "C" {
     fn ck_keyboard_io_send(report: *mut u8, len: u8, epoch: u32) -> u8;
     fn ck_platform_touched() -> u8;
     fn ck_platform_now() -> u32;
+    fn ck_core_keyboard_usage(ch: u8) -> i32;
     fn ck_core_output_cancel(pressed: u8);
     fn ck_core_output_sample(pressed: u8, now: u32, ready: u8) -> i32;
     fn ck_ccid_scratch_busy() -> u8;
@@ -75,9 +76,18 @@ pub unsafe extern "C" fn ck_keyboard_loop() {
             return;
         }
         if PENDING == 0 {
-            PENDING = (&*core::ptr::addr_of!(KEYBOARD))
-                .prepare(u8::try_from(ch).ok(), &mut *core::ptr::addr_of_mut!(REPORT))
-                .unwrap_or(0) as u8;
+            let keyboard = &*core::ptr::addr_of!(KEYBOARD);
+            let report = &mut *core::ptr::addr_of_mut!(REPORT);
+            PENDING = if ch == 3 {
+                keyboard.prepare_eject(report)
+            } else {
+                let usage = u8::try_from(ch).ok().and_then(|ch| {
+                    let encoded = ck_core_keyboard_usage(ch);
+                    (encoded >= 0).then_some(((encoded >> 8) as u8, encoded as u8))
+                });
+                keyboard.prepare_usage(usage, report)
+            }
+            .unwrap_or(0) as u8;
         }
         if PENDING != 0
             && ck_keyboard_io_send(core::ptr::addr_of_mut!(REPORT).cast(), PENDING, epoch) != 0

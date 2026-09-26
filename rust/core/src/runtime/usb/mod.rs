@@ -24,6 +24,7 @@ pub struct Device {
     pub configured: bool,
     idle: [u8; 2],
     pub leds: u8,
+    pub landing: bool,
 }
 impl Device {
     pub const fn new(interfaces: Interfaces) -> Self {
@@ -33,15 +34,22 @@ impl Device {
             configured: false,
             idle: [0; 2],
             leds: 0,
+            landing: true,
         }
     }
     pub fn reset(&mut self) {
+        let landing = self.landing;
         *self = Self::new(self.interfaces);
+        self.landing = landing;
     }
     pub fn setup(&mut self, s: Setup, stalled: bool, out: &mut [u8; 160]) -> Reply {
         if self.interfaces.webusb {
             if let Some(d) = webusb::Descriptor::request(s, self.interfaces.webusb()) {
-                return Reply::Descriptor(d);
+                return Reply::Descriptor(if d == webusb::Descriptor::Bos && !self.landing {
+                    webusb::Descriptor::BosWithoutLanding
+                } else {
+                    d
+                });
             }
         }
         let zero = s.value == 0 && s.index == 0;

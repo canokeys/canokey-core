@@ -92,6 +92,14 @@ impl Record {
     pub const CtapCertificate: Self = Self(183);
     pub const NdefCapability: Self = Self(184);
     pub const NdefMessage: Self = Self(185);
+    /// Enumerate the durable Rust record namespace without exposing unchecked IDs.
+    pub const fn from_id(id: u8) -> Option<Self> {
+        if id <= Self::NdefMessage.0 {
+            Some(Self(id))
+        } else {
+            None
+        }
+    }
     pub const fn id(self) -> u8 {
         self.0
     }
@@ -114,6 +122,11 @@ pub enum StorageError {
     Uncertain,
 }
 pub trait Storage {
+    /// Allocated filesystem bytes and total capacity, including metadata.
+    fn usage(&mut self) -> Result<(u32, u32), StorageError> {
+        Err(StorageError::Unavailable)
+    }
+
     /// Raw platform configuration page. Missing means an unprovisioned/test
     /// backend; other read failures must not enable restricted interfaces.
     fn config_read(&mut self, _offset: usize, _bytes: &mut [u8]) -> Result<(), StorageError> {

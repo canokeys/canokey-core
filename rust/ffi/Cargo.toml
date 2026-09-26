@@ -10,6 +10,7 @@ canokey-ports = { path = "../ports" }
 canokey-protocol = { path = "../protocol" }
 canokey-rust-core = { path = "../core" }
 [features]
+device-runtime = ["usb-device", "canokey-ports/device-runtime"]
 nfc = ["ndef", "usb-device", "canokey-ports/nfc"]
 ndef = ["canokey-rust-core/ndef", "canokey-ports/ndef", "storage"]
 dynamic-backend = ["canokey-ports/dynamic-backend"]

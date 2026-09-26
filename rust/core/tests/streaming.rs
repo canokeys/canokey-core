@@ -476,13 +476,9 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     let mut core = Core::new();
     let mut out = [0; 258];
     let prefix = [0x80, 0x10, 0, 0, 0, 1, 0x23]; // Lc=291, BE
-    assert_eq!(
-        core.prepare_extended(1, &prefix, 300, &mut p),
-        Err(Sw::WRONG_LENGTH)
-    );
+    assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
     let select = [0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0];
-    let reply = core.receive(1, &select, &mut p);
-    assert_eq!(core.transmit(reply, &mut out, &mut p).unwrap(), 10);
+    // Admission and source parsing work without a prior AID selection.
     for (owner, head, total) in [
         (2, prefix, 300),
         (1, [0x90, 0x10, 0, 0, 0, 1, 0x23], 300),

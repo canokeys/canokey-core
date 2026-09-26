@@ -36,6 +36,9 @@ pub trait Router {
     fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw>;
     fn reset(&mut self, p: &mut Platform<'_>);
     fn selected(&self) -> bool;
+    fn implicit_select(&mut self, _header: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
+        Ok(())
+    }
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw>;
     fn command_limit(&self, header: Header) -> Result<u32, Sw>;
     fn allows_extended(&self, _header: Header) -> bool {
@@ -57,6 +60,12 @@ pub trait Router {
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw>;
     fn close_response(&mut self, p: &mut Platform<'_>);
+    fn is_eject(&self, _header: Header, _p: &mut Platform<'_>) -> bool {
+        false
+    }
+    fn eject(&mut self, _p: &mut Platform<'_>) -> Result<(), Sw> {
+        Err(Sw::INS_NOT_SUPPORTED)
+    }
     fn output_busy(&self) -> bool {
         false
     }
@@ -88,6 +97,7 @@ enum FrameRoute {
     None,
     Select { aid: [u8; 16], used: usize },
     GetResponse,
+    Eject,
     Command,
 }
 
@@ -122,7 +132,9 @@ impl<R: Router> Runtime<R> {
     }
     pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
         self.reset(p);
-        self.router.install(p)
+        self.router.install(p)?;
+        super::config::notify(p);
+        Ok(())
     }
     fn close_response(&mut self, p: &mut Platform<'_>) {
         self.response.clear(&mut RoutedSource(&mut self.router, p));
@@ -223,6 +235,13 @@ impl<R: Router> Runtime<R> {
             self.route = FrameRoute::GetResponse;
             return Ok(());
         }
+        if self.router.is_eject(h, p) {
+            self.close_response(p);
+            self.chain.reset();
+            self.router.abort_command(p);
+            self.route = FrameRoute::Eject;
+            return Ok(());
+        }
         if self.router.output_busy() {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
@@ -238,6 +257,7 @@ impl<R: Router> Runtime<R> {
             };
             return Ok(());
         }
+        self.router.implicit_select(h, p)?;
         if !self.router.selected() {
             return Err(Sw::FILE_NOT_FOUND);
         }
@@ -268,7 +288,7 @@ impl<R: Router> Runtime<R> {
                 Ok(())
             }
             FrameRoute::Command => self.router.consume(bytes, p),
-            FrameRoute::GetResponse => Ok(()),
+            FrameRoute::GetResponse | FrameRoute::Eject => Ok(()),
             FrameRoute::None => Err(Sw::WRONG_LENGTH),
         }
     }
@@ -313,6 +333,7 @@ impl<R: Router> Runtime<R> {
         let le = info.le.unwrap_or(DEFAULT_APDU_LE);
         let route = core::mem::replace(&mut self.route, FrameRoute::None);
         let result = match route {
+            FrameRoute::Eject => self.router.eject(p).map(|()| (0, Sw::SUCCESS)),
             FrameRoute::GetResponse => {
                 return if self.response.active() {
                     Reply::Data(le)

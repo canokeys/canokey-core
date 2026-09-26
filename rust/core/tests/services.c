@@ -10,6 +10,11 @@ static int initialized;
 static void storage_init(void) {
   if (!initialized) { for (size_t i = 0; i < 186; i++) sizes[i] = -1; initialized = 1; }
 }
+int32_t ck_platform_usage(uint32_t *used, uint32_t *total) {
+  storage_init();*used=4096;*total=128*1024;
+  for(size_t i=0;i<186;i++) if(sizes[i]>0) *used+=(uint32_t)sizes[i];
+  return *used<=*total ? 0 : -2;
+}
 int32_t ck_platform_size(uint8_t id) {
   storage_init();
   assert(id < 186);

@@ -22,3 +22,11 @@ mod webusb_link {
     unsafe extern "C" { fn test_web_blocked() -> u8; }
     pub unsafe fn block_competitor() -> bool { unsafe { test_web_blocked() != 0 } }
 }
+
+#[cfg(keyboard_fixture)]
+#[path = "../../../ffi/src/keyboard_io.rs"]
+mod keyboard_io;
+
+#[cfg(hid_fixture)]
+#[path = "../../../ffi/src/hid_io.rs"]
+mod hid_io;

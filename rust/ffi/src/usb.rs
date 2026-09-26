@@ -512,3 +512,14 @@ pub unsafe extern "C" fn ck_transport_progress() -> u8 {
         ck_ccid_progress()
     }
 }
+
+/// Main-loop settings notification. Only the IRQ-local descriptor snapshot is
+/// changed; an in-flight descriptor keeps its captured immutable variant.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
+    unsafe {
+        let mask = ck_usb_dcd_lock();
+        DEVICE.landing = enabled != 0;
+        ck_usb_dcd_unlock(mask);
+    }
+}

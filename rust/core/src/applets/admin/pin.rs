@@ -33,6 +33,8 @@ pub fn verify(pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
 }
 /// Registry calls only after locked-PIN and strong-presence checks, with PIN last.
 pub fn factory_reset(p: &mut Platform<'_>) -> Result<(), Error> {
-    crate::runtime::config::reset_admin(p.storage).map_err(|_| Error::Persistence)?;
+    let result = crate::runtime::config::reset_admin(p.storage);
+    crate::runtime::config::notify(p);
+    result.map_err(|_| Error::Persistence)?;
     PIN.create(DEFAULT_PIN, RETRIES, p)
 }

@@ -105,6 +105,19 @@ pub unsafe extern "C" fn ck_core_output_sample(pressed: u8, now: u32, ready: u8)
     })
 }
 
+// Main-loop only, after keyboard session arbitration. Config reads do not
+// retain the shared APDU or crypto workspace.
+#[cfg(feature = "pass")]
+#[unsafe(no_mangle)]
+pub extern "C" fn ck_core_keyboard_usage(ch: u8) -> i32 {
+    with_platform(|p| {
+        canokey_rust_core::runtime::config::keyboard_usage(p.storage, ch)
+            .map_or(-1, |(modifier, usage)| {
+                (i32::from(modifier) << 8) | i32::from(usage)
+            })
+    })
+}
+
 // Native HID uses the same registry, authorization state and workspace as APDU.
 #[cfg(feature = "ctap")]
 pub(crate) fn with_core<T>(
@@ -121,5 +134,28 @@ pub unsafe extern "C" fn ck_core_nfc_enabled() -> u8 {
             p.storage,
             canokey_rust_core::runtime::config::NFC,
         ))
+    })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_core_boot_flags(out: *mut u32) -> i32 {
+    if out.is_null() {
+        return -1;
+    }
+    with_platform(
+        |p| match canokey_rust_core::runtime::config::flags(p.storage) {
+            Ok(flags) => {
+                unsafe { *out = flags };
+                0
+            }
+            Err(_) => -1,
+        },
+    )
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_core_mark_initialized() -> i32 {
+    use canokey_rust_core::runtime::config;
+    with_platform(|p| {
+        config::update(p.storage, config::INITIALIZED, config::INITIALIZED).map_or(-1, |_| 0)
     })
 }

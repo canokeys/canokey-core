@@ -20,6 +20,8 @@ impl StorageBackend {
 unsafe extern "C" {
     fn platform_config_page_read(offset: usize, out: *mut u8, len: usize) -> i32;
     fn platform_config_page_write(page: *const u8, len: usize) -> i32;
+    fn ck_platform_usage(used: *mut u32, total: *mut u32) -> i32;
+    fn ck_platform_size(file: u8) -> i32;
     fn ck_platform_read(file: u8, out: *mut u8, len: usize) -> i32;
     fn ck_platform_write(file: u8, input: *const u8, len: usize) -> i32;
 }
@@ -41,7 +43,6 @@ unsafe extern "C" {
     feature = "ndef"
 ))]
 unsafe extern "C" {
-    fn ck_platform_size(file: u8) -> i32;
     fn ck_platform_read_at(file: u8, offset: u32, out: *mut u8, len: usize) -> i32;
     fn ck_platform_write_at(file: u8, offset: u32, input: *const u8, len: usize) -> i32;
     fn ck_platform_has_space(bytes: u32, reserve: u32) -> i32;
@@ -78,6 +79,17 @@ enum StageOperation {
 // mutations map to Uncertain: a backend error does not prove nothing was written,
 // so applets must invalidate cached state rather than retry from assumptions.
 native_port! { impl Storage for StorageBackend {
+    fn usage(&mut self) -> Result<(u32,u32),StorageError> {
+        #[cfg(feature = "storage")]
+        {
+            let(mut used,mut total)=(0,0);
+            if unsafe {ck_platform_usage(&mut used,&mut total)}==0 && used<=total {Ok((used,total))}
+            else {Err(StorageError::Unavailable)}
+        }
+        #[cfg(not(feature = "storage"))]
+        {Err(StorageError::Unavailable)}
+    }
+
     fn config_read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
         { if unsafe { platform_config_page_read(offset, bytes.as_mut_ptr(), bytes.len()) } == 0 { Ok(()) }
@@ -175,19 +187,13 @@ native_port! { impl Storage for StorageBackend {
         }
     }
 
-    #[cfg(any(
-        feature = "oath",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
     fn size(&mut self, file: Record) -> Result<u32, StorageError> {
-        match unsafe { ck_platform_size(file.id()) } {
-            -1 => Err(StorageError::Missing),
-            n if n >= 0 => Ok(n as u32),
-            _ => Err(StorageError::Unavailable),
-        }
+        #[cfg(feature = "storage")]
+        { match unsafe {ck_platform_size(file.id())} {
+            -1 => Err(StorageError::Missing), n if n>=0 => Ok(n as u32), _ => Err(StorageError::Unavailable)
+        } }
+        #[cfg(not(feature = "storage"))]
+        {let _=file;Err(StorageError::Unavailable)}
     }
     #[cfg(any(
         feature = "oath",

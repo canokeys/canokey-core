@@ -148,7 +148,14 @@ impl AppletState {
                 if h.ins == crate::applets::admin::protocol::INS_PROVISION_ATTESTATION {
                     return (h.unchained().cla, ctap::provision::CERT_LIMIT as u32);
                 }
-                (h.cla, admin::COMMAND_CAPACITY as u32)
+                (
+                    if h.ins == 0x45 {
+                        h.unchained().cla
+                    } else {
+                        h.cla
+                    },
+                    admin::COMMAND_CAPACITY as u32,
+                )
             }
             #[cfg(feature = "ctap")]
             Self::Ctap => (h.unchained().cla & !0x80, ctap::MAX_REQUEST as u32),
@@ -197,7 +204,12 @@ pub struct Registry {
     pass: Pass,
     #[cfg(feature = "pass")]
     output: crate::applets::pass::output::Output,
-    #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
+    #[cfg(any(
+        feature = "admin",
+        feature = "openpgp",
+        feature = "piv",
+        feature = "ctap"
+    ))]
     workspace: super::workspace::SessionWorkspace,
 }
 impl Registry {
@@ -214,18 +226,29 @@ impl Registry {
             pass: Pass::new(),
             #[cfg(feature = "pass")]
             output: crate::applets::pass::output::Output::new(),
-            #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
+            #[cfg(any(
+                feature = "admin",
+                feature = "openpgp",
+                feature = "piv",
+                feature = "ctap"
+            ))]
             workspace: super::workspace::SessionWorkspace::new(),
         }
     }
     #[allow(unused_variables)]
     fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
-        #[cfg(any(feature = "openpgp", feature = "piv", feature = "ctap"))]
+        #[cfg(any(
+            feature = "admin",
+            feature = "openpgp",
+            feature = "piv",
+            feature = "ctap"
+        ))]
         self.workspace.wipe_active(platform.memory);
         #[cfg(feature = "admin")]
         {
             self.grants.admin = false;
-            self.admin.cancel_command(platform);
+            self.admin
+                .cancel_command(self.workspace.classic_with(platform.memory), platform);
         }
         #[cfg(feature = "ctap")]
         self.ctap.reset(&mut self.workspace, platform);
@@ -340,7 +363,14 @@ impl Registry {
     #[cfg_attr(feature = "openpgp", inline(never))]
     fn finish_admin(&mut self, h: Header, le: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
         let pass = pass_arg!(self);
-        match self.admin.finish(h, le, &mut self.grants, pass, p)? {
+        match self.admin.finish(
+            h,
+            le,
+            &mut self.grants,
+            pass,
+            p,
+            self.workspace.classic_with(p.memory),
+        )? {
             admin::Action::Response(n) => return Ok((n, Sw::SUCCESS)),
             #[cfg(feature = "ctap")]
             admin::Action::InstallFidoKey(mut key) => {
@@ -393,6 +423,13 @@ impl Registry {
         Ok((0, Sw::SUCCESS))
     }
 }
+/// Unambiguous FIDO commands accepted after card/slot reset, before SELECT.
+/// Never steal an APDU from an explicitly selected applet.
+#[cfg(feature = "ctap")]
+fn implicit_fido(h: Header) -> bool {
+    (h.cla & !0x10 == 0x80 && h.ins == 0x10)
+        || (h.cla == 0 && (matches!(h.ins, 1..=3) || (h.ins == 0xa4 && h.p1 != 4)))
+}
 impl Router for Registry {
     #[allow(unused_variables)]
     fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
@@ -417,6 +454,17 @@ impl Router for Registry {
         self.output.inhibit(true, p.memory);
         self.reset_sessions(p);
         self.applet = AppletState::None;
+    }
+    fn implicit_select(&mut self, header: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
+        let _ = (&header, &p);
+        #[cfg(feature = "ctap")]
+        if matches!(self.applet, AppletState::None) && implicit_fido(header) {
+            if !Selected::Ctap.enabled(p) {
+                return Err(Sw::FILE_NOT_FOUND);
+            }
+            self.applet = AppletState::Ctap;
+        }
+        Ok(())
     }
     fn selected(&self) -> bool {
         !matches!(self.applet, AppletState::None)
@@ -482,7 +530,9 @@ impl Router for Registry {
             return true;
         }
         #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::Ctap) {
+        if matches!(self.applet, AppletState::Ctap)
+            || (matches!(self.applet, AppletState::None) && implicit_fido(header))
+        {
             return ctap::apdu::allows_extended(header);
         }
         false
@@ -491,6 +541,12 @@ impl Router for Registry {
         // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
         // chaining is supported; leaving it set deliberately makes the final
         // CLA check reject chained ADMIN or unsupported chained PIV commands.
+        #[cfg(feature = "ctap")]
+        if matches!(self.applet, AppletState::None) && implicit_fido(h) {
+            // Admission is read-only; start performs the configuration check
+            // before consuming staged input or executing any applet operation.
+            return Ok(ctap::MAX_REQUEST as u32);
+        }
         let (cla, limit) = self.applet.command_limit(h);
         if !self.selected() {
             return Err(Sw::FILE_NOT_FOUND);
@@ -507,7 +563,9 @@ impl Router for Registry {
             #[cfg(feature = "ndef")]
             AppletState::Ndef(s) => s.cancel(),
             #[cfg(feature = "admin")]
-            AppletState::Admin => self.admin.cancel_command(platform),
+            AppletState::Admin => self
+                .admin
+                .cancel_command(self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self.ctap.cancel_command(&mut self.workspace),
             #[cfg(feature = "oath")]
@@ -552,7 +610,11 @@ impl Router for Registry {
             #[cfg(feature = "ndef")]
             AppletState::Ndef(s) => s.consume(bytes),
             #[cfg(feature = "admin")]
-            AppletState::Admin => self.admin.consume(bytes, platform),
+            AppletState::Admin => self.admin.consume(
+                bytes,
+                self.workspace.classic_with(platform.memory),
+                platform,
+            ),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self.ctap.consume(bytes, &mut self.workspace),
             #[cfg(feature = "oath")]
@@ -625,7 +687,11 @@ impl Router for Registry {
             #[cfg(feature = "admin")]
             AppletState::Admin => self
                 .admin
-                .read_response(offset as usize, out)
+                .read_response(
+                    offset as usize,
+                    out,
+                    self.workspace.classic_with(platform.memory),
+                )
                 .map(|()| out.len()),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self
@@ -652,7 +718,9 @@ impl Router for Registry {
             #[cfg(feature = "ndef")]
             AppletState::Ndef(s) => s.close(),
             #[cfg(feature = "admin")]
-            AppletState::Admin => self.admin.close_response(platform),
+            AppletState::Admin => self
+                .admin
+                .close_response(self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self.ctap.close(&mut self.workspace, platform),
             #[cfg(feature = "oath")]
@@ -665,6 +733,19 @@ impl Router for Registry {
             AppletState::Piv(s) => s.close(&mut self.workspace, platform),
             AppletState::None => (),
         }
+    }
+    #[cfg(feature = "pass")]
+    fn is_eject(&self, h: Header, p: &mut Platform<'_>) -> bool {
+        h.cla == 0xff
+            && h.ins == 0xee
+            && h.p1 == 0xff
+            && h.p2 == 0xee
+            && super::config::enabled(p.storage, super::config::PASS)
+    }
+    #[cfg(feature = "pass")]
+    fn eject(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+        self.output.eject(p.memory);
+        Ok(())
     }
     #[cfg(feature = "pass")]
     fn output_busy(&self) -> bool {

@@ -21,17 +21,28 @@ impl Keyboard {
     /// Call accepted only after a successful submission; a failed submission
     /// must retry the same bytes without consuming another character.
     pub fn prepare(&self, character: Option<u8>, report: &mut [u8; 8]) -> Option<usize> {
+        self.prepare_usage(character.and_then(ascii), report)
+    }
+    pub fn prepare_usage(&self, usage: Option<(u8, u8)>, report: &mut [u8; 8]) -> Option<usize> {
         report.fill(0);
         if self.release_id != 0 {
             report[0] = self.release_id;
             return Some(if self.release_id == 2 { 2 } else { 8 });
         }
-        let ch = character?;
-        let (modifier, usage) = ascii(ch)?;
+        let (modifier, usage) = usage?;
         report[0] = 1;
         report[1] = modifier;
         report[3] = usage;
         Some(8)
+    }
+    pub fn prepare_eject(&self, report: &mut [u8; 8]) -> Option<usize> {
+        if self.release_id != 0 {
+            return self.prepare_usage(None, report);
+        }
+        report.fill(0);
+        report[0] = 2;
+        report[1] = 0xb8;
+        Some(2)
     }
     pub fn accepted(&mut self, report_id: u8) {
         self.release_id = if self.release_id == 0 { report_id } else { 0 };
@@ -99,6 +110,19 @@ mod tests {
         assert_eq!(ascii(b'0'), Some((0, 39)));
         assert_eq!(ascii(b'@'), Some((2, 31)));
         assert_eq!(ascii(b'\\'), Some((0, 49)));
+    }
+    #[test]
+    fn eject_uses_consumer_report_and_matching_release() {
+        let mut keyboard = Keyboard::new();
+        let mut report = [0xff; 8];
+        assert_eq!(keyboard.prepare_eject(&mut report), Some(2));
+        assert_eq!(report, [2, 0xb8, 0, 0, 0, 0, 0, 0]);
+        keyboard.accepted(report[0]);
+        assert!(!keyboard.ready(true));
+        assert_eq!(keyboard.prepare(None, &mut report), Some(2));
+        assert_eq!(report, [2, 0, 0, 0, 0, 0, 0, 0]);
+        keyboard.accepted(report[0]);
+        assert!(keyboard.ready(true));
     }
     #[test]
     fn press_then_release_before_next_character() {

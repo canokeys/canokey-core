@@ -4,7 +4,7 @@ pub mod engine;
 pub(crate) mod presence;
 pub mod registry;
 
-#[cfg(crypto_applet)]
+#[cfg(any(crypto_applet, feature = "admin"))]
 pub(crate) mod workspace;
 
 #[cfg(feature = "ctap")]

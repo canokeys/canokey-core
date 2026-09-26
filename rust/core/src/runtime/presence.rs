@@ -16,13 +16,15 @@ fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<()
     // A contact predating this request must be released before a fresh gesture.
     let mut armed = !device.touched();
     let mut pressed = None;
-    loop {
+    let result = (|| loop {
         if !device.progress() {
             return Err(Error::Cancelled);
         }
         if device.now().wrapping_sub(start) >= PRESENCE_TIMEOUT_MS {
             return Err(Error::Timeout);
         }
+        let blink = (device.now().wrapping_sub(start) / 100).is_multiple_of(2);
+        device.led(blink);
         let touch = device.touched();
         if !armed {
             armed = !touch;
@@ -35,7 +37,9 @@ fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<()
                 return Ok(());
             }
         }
-    }
+    })();
+    device.led_idle();
+    result
 }
 
 #[cfg(persistent_applet)]
@@ -109,7 +113,7 @@ pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
         }
         true
     })();
-    device.led(false);
+    device.led_idle();
     accepted
 }
 
@@ -178,6 +182,49 @@ mod tests {
             self.connected
         }
         fn led(&mut self, _: bool) {}
+    }
+    #[test]
+    fn ordinary_prompt_restores_idle_on_success_timeout_and_cancellation() {
+        struct Prompt {
+            ticks: u32,
+            mode: u8,
+            restored: u8,
+            samples: u16,
+        }
+        impl Device for Prompt {
+            fn serial(&mut self, _: &mut [u8; 4]) {}
+            fn now(&mut self) -> u32 {
+                self.ticks
+            }
+            fn touched(&mut self) -> bool {
+                self.mode == 0 && (100..300).contains(&self.ticks)
+            }
+            fn progress(&mut self) -> bool {
+                self.ticks += 100;
+                self.mode != 2
+            }
+            fn led(&mut self, _: bool) {
+                self.samples += 1;
+            }
+            fn led_idle(&mut self) {
+                self.restored += 1;
+            }
+        }
+        for (mode, expected) in [
+            (0, Ok(())),
+            (1, Err(Error::Timeout)),
+            (2, Err(Error::Cancelled)),
+        ] {
+            let mut p = Prompt {
+                ticks: 0,
+                mode,
+                restored: 0,
+                samples: 0,
+            };
+            assert_eq!(Request::new().wait_result(&mut p), expected);
+            assert_eq!(p.restored, 1);
+            assert_eq!(p.samples > 0, mode != 2);
+        }
     }
     #[test]
     fn failed_wait_still_claims_gesture() {

@@ -31,6 +31,7 @@ uint8_t ck_ccid_scratch_busy(void);
 /* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
 #define CK_CTAP_MAX_REQUEST 1024u
 #endif
+void ck_device_main(void);
 int32_t ck_core_install(void);
 /* Boot/main-loop only: reads persistent NFC mode policy, never from an IRQ. */
 uint8_t ck_core_nfc_enabled(void);
@@ -38,6 +39,7 @@ void ck_core_reset(void);
 uint8_t ck_core_applet_count(void);
 int32_t ck_core_exchange(uint8_t owner, const uint8_t *input, size_t length, uint8_t *output, size_t capacity);
 /* Present only when PASS is enabled. Slot indices here are zero based. */
+void ck_core_output_cancel(uint8_t pressed);
 int32_t ck_core_output_sample(uint8_t pressed, uint32_t now, uint8_t ready);
 int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
 int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
@@ -62,6 +64,7 @@ int32_t ck_platform_size(uint8_t file);
 int32_t ck_platform_resize(uint8_t file, uint32_t length);
 int32_t ck_platform_read_at(uint8_t file, uint32_t offset, uint8_t *output, size_t length);
 int32_t ck_platform_write_at(uint8_t file, uint32_t offset, const uint8_t *input, size_t length);
+int32_t ck_platform_usage(uint32_t *used, uint32_t *total);
 int32_t ck_platform_has_space(uint32_t required, uint32_t reserve);
 int32_t ck_platform_mac(uint8_t algorithm, const uint8_t *key, size_t key_length, const uint8_t *input, size_t length,
                         uint8_t output[64]);

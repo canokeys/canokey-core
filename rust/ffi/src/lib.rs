@@ -69,3 +69,18 @@ mod webusb_link;
 
 #[cfg(feature = "nfc")]
 mod nfc;
+
+#[cfg(feature = "device-runtime")]
+mod device;
+
+#[cfg(feature = "device-runtime")]
+mod timer;
+
+#[cfg(feature = "usb-keyboard")]
+mod keyboard_io;
+
+#[cfg(feature = "usb-hid")]
+mod hid_io;
+
+#[cfg(feature = "usb-ccid")]
+mod ccid_io;

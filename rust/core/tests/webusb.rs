@@ -215,3 +215,42 @@ fn webusb_composition_preserves_native_interface_order() {
         }
     }
 }
+
+#[test]
+fn landing_setting_changes_only_bos_index_and_survives_usb_reset() {
+    use canokey_rust_core::runtime::usb::{Device, Reply, descriptors::Interfaces};
+    let mut device = Device::new(Interfaces {
+        hid: true,
+        keyboard: true,
+        webusb: true,
+    });
+    let mut scratch = [0; 160];
+    let request = setup(0x80, 6, 0x0f00, 0, 255);
+    let Reply::Descriptor(first) = device.setup(request, false, &mut scratch) else {
+        panic!()
+    };
+    device.landing = false;
+    device.reset();
+    let Reply::Descriptor(second) = device.setup(request, false, &mut scratch) else {
+        panic!()
+    };
+    assert_eq!(first, Descriptor::Bos); // In-flight reply captures the earlier setting.
+    assert_eq!(second, Descriptor::BosWithoutLanding);
+    for offset in 0..57 {
+        for count in 1..=64 {
+            let mut before = [0; 64];
+            let mut after = [0; 64];
+            let n = first.read(offset, &mut before[..count]);
+            assert_eq!(second.read(offset, &mut after[..count]), n);
+            if offset <= 28 && 28 - offset < n {
+                assert_eq!(before[28 - offset], 1);
+                before[28 - offset] = 0;
+            }
+            assert_eq!(after, before);
+        }
+    }
+    assert_eq!(
+        device.setup(setup(0xc0, 1, 1, 2, 255), false, &mut scratch),
+        Reply::Descriptor(Descriptor::Url)
+    );
+}
