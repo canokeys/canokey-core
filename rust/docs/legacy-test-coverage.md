@@ -105,6 +105,9 @@ helper cases and has no applet/protocol/crypto/device-simulator linkage.
 The obsolete C applet/protocol sources and default C library build path have
 been removed; default CMake now selects the full Rust host composition. This ledger
 is not a completion certificate for stage six, capacity, stack or interoperability.
+The unused TinyCBOR submodule and C applet/scratch headers have also been
+removed. CBOR decoding remains in Rust; the native crypto and LittleFS
+dependencies are unchanged.
 
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
 Literal malformed-input regressions remain correctness tests with explicit

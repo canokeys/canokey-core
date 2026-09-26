@@ -10,7 +10,8 @@ The default top-level CMake build selects the complete Rust host composition.
 `ENABLE_TESTS=ON` additionally enables the native LittleFS helper suite and its
 sanitizers. The former C applets, dispatcher, USB/NFC protocols and virtual-card
 implementations have been removed. `src/fs.c`, crypto and thin native adapters
-remain. Compatibility headers are retained pending dependency cleanup.
+remain. The unused TinyCBOR submodule and obsolete applet/scratch headers
+are removed; USB compatibility headers remain pending dependency cleanup.
 
 Current implementation entrypoints are `rust/core` (applets and shared runtime),
 `rust/protocol` (transport state machines), `rust/ffi` and `rust/ports` (integration),

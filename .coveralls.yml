@@ -4,13 +4,9 @@ gcov_options: -lp
 exclude_lines_pattern:
   - '.*/build/.+\.c'
 exclude:
-  - fuzzer 
-  - fuzzing 
   - gnupg 
   - canokey-crypto 
-  - virt-card 
   - u2f-ref-code 
-  - tinycbor 
   - littlefs 
   - test 
   - interfaces
