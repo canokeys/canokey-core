@@ -191,9 +191,12 @@ retains another 64-byte RX report; none is an entire request. Short requests use
 `pke_buffer_read/write`, with a public message limit of 1024 bytes. There are no
 transport files, Flash caches, heap allocations or full-request RAM buffers.
 
-Before request staging, the FFI adapter requires CCID to be idle. Each transport retains its idle lease for two seconds after completing a command
-(CCID also after slot power-on). Only then may the other transport reset its
-session (including PIN grants and key agreement) and acquire PKE. A queued CCID
+Before request staging, the FFI adapter requires CCID to be idle. After CCID's
+final IN completion, a session with no input chain or unread response permits
+immediate takeover, matching the legacy preemptable-APDU rule. A remaining
+continuation retains the two-second lease. The HID session retains its own
+two-second idle lease. Admission then lets the other transport reset the session
+(including PIN grants and key agreement) and acquire PKE. A queued CCID
 packet cannot block the HID owner's commands during that lease; otherwise it
 would force a premature preemption between getKeyAgreement and clientPIN. CCID
 slot discovery and power requests remain responsive during an idle HID lease,

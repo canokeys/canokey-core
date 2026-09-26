@@ -7,6 +7,12 @@ use canokey_rust_core::Core;
 // Storage lives in BSS; construct state on first main-loop access instead of
 // storing a mostly-zero Core initialization image in Flash.
 crate::lazy_state!(CORE, CORE_READY, Core, Core::new(), initialize_core, core);
+/// Serialized main-loop query. Never call from an IRQ or a progress callback
+/// while Core is executing; it would overlap the active mutable borrow.
+#[cfg(feature = "usb-ccid")]
+pub unsafe fn can_preempt() -> bool {
+    unsafe { core().can_preempt() }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_core_install() -> i32 {
     with_platform(|p| unsafe { core().install(p).map_or(-1, |_| 0) })

@@ -292,6 +292,7 @@ fn frame(runtime: &mut Runtime<Fixture>, bytes: &[u8], p: &mut Platform<'_>) -> 
         return out[..n].to_vec();
     }
     runtime.begin_frame(1, bytes.len(), p).unwrap();
+    assert!(!runtime.can_preempt());
     // Model USB packets, including a split header, using the production entrypoint.
     for part in bytes.chunks(3) {
         runtime.feed_frame(part, p).unwrap();
@@ -335,6 +336,7 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
             if !last {
                 assert_eq!(response, [0x90, 0x00]);
                 assert_eq!(runtime.router().finishes, 0);
+                assert!(!runtime.can_preempt());
             }
         }
         response
@@ -348,9 +350,11 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
             break;
         }
         assert_eq!(sw >> 8, 0x61);
+        assert!(!runtime.can_preempt());
         response = frame(&mut runtime, &[0x00, 0xc0, 0x00, 0x00, 0x61], &mut p);
     }
     assert_eq!(runtime.router().finishes, 1);
+    assert!(runtime.can_preempt());
     // Move the host fixture out without granting mutable access to runtime state.
     let router = runtime.into_router(&mut p);
     (router, storage, result)

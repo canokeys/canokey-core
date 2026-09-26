@@ -144,6 +144,10 @@ impl Transport {
     pub fn scratch_busy(&self) -> bool {
         self.request.held
     }
+    /// Logical completion is separate from the controller's final IN completion.
+    pub fn completed_transaction(&self) -> bool {
+        self.phase == Phase::Idle
+    }
     pub fn idle(&self, now: u32) -> bool {
         self.phase == Phase::Idle
             && (!self.session_owned || now.wrapping_sub(self.session_last) >= TIMEOUT)

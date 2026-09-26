@@ -178,7 +178,10 @@ pub unsafe extern "C" fn ck_ccid_idle() -> u8 {
         u8::from(
             GENERATION == ck_ccid_io_generation()
                 && ck_ccid_io_pending() == 0
-                && ccid().idle(ck_ccid_io_now()),
+                && (ccid().idle(ck_ccid_io_now())
+                    || (ck_ccid_io_idle() != 0
+                        && ccid().completed_transaction()
+                        && super::entrypoints::can_preempt())),
         )
     }
 }

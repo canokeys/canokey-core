@@ -122,6 +122,11 @@ impl<R: Router> Runtime<R> {
             router,
         }
     }
+    /// Main-loop admission only, after transport TX ownership has ended.
+    /// An input chain or unread response must retain its bounded session lease.
+    pub fn can_preempt(&self) -> bool {
+        self.frame.is_none() && !self.chain.active() && !self.response.active()
+    }
     pub fn router(&self) -> &R {
         &self.router
     }

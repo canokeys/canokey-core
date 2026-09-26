@@ -161,3 +161,12 @@ and both PIN suites. In particular, the legacy session case also permits
 immediate takeover when `apdu_session_can_preempt()` is true. The two-second
 lease tests alone do not replace that branch. Keep this behavior under audit
 before removing the old session case or declaring arbitration compatibility.
+
+The preemption audit restored immediate takeover of a completed CCID transaction
+with no input chain or unread response. `usb-sessions` verifies both WebUSB and
+HID takeover without advancing the clock, grant revocation, and unchanged
+protection for partial APDU responses and endpoint-owned data. `streaming`
+checks the admission predicate during frame input, command chaining and output
+continuations. The old session case remains: WebUSB-held session preemption and
+the legacy distinction between ordinary and source-backed continuations still
+need comparison. The whole arbitration audit is not yet closed.

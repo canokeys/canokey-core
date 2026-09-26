@@ -97,6 +97,7 @@ int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
 static const uint8_t select_admin[] = {0,0xa4,4,0,5,0xf0,0,0,0,0};
 static const uint8_t verify[] = {0,0x20,0,0,6,'1','2','3','4','5','6'};
 static const uint8_t query[] = {0,0x20,0,0};
+static const uint8_t partial_config[] = {0,0x43,0,0,1};
 static uint8_t sequence;
 static void loops(void) { CCID_Loop(); CTAPHID_Loop(0); WebUSB_Loop(); }
 static void sw(const uint8_t *b, size_t n, uint16_t expected) {
@@ -174,6 +175,7 @@ int main(void) {
   ccid_apdu(verify,sizeof(verify),0x9000);
   now+=2000; loops();
   ccid_apdu(query,sizeof(query),0x9000); /* Idle does not revoke same-owner grant. */
+  ccid_apdu(partial_config,sizeof(partial_config),0x6101);
   now+=1999;
   web_send(select_admin,sizeof(select_admin)); assert(halted[1]);
   ccid_apdu(query,sizeof(query),0x9000); /* Refused takeover cannot revoke it. */
@@ -192,6 +194,7 @@ int main(void) {
   assert(hid_read(UINT32_MAX,0x86,hid)==17 && !memcmp(hid,nonce,8));
   uint32_t cid=(uint32_t)hid[8]<<24 | (uint32_t)hid[9]<<16 | (uint32_t)hid[10]<<8 | hid[11];
   assert(cid && cid!=UINT32_MAX);
+  ccid_apdu(partial_config,sizeof(partial_config),0x6101);
   now+=1999;
   hid_send(cid,0x81,nonce,8);
   assert(hid_read(cid,0xbf,hid)==1 && hid[0]==6);
@@ -217,6 +220,7 @@ int main(void) {
   ccid_apdu(query,sizeof(query),0x63c3);
   now=UINT32_MAX-1000;
   ccid_apdu(verify,sizeof(verify),0x9000);
+  ccid_apdu(partial_config,sizeof(partial_config),0x6101);
   now+=1999; web_send(select_admin,sizeof(select_admin)); assert(halted[1]);
   now+=1; web_apdu(select_admin,sizeof(select_admin),0x9000);
   web_apdu(query,sizeof(query),0x63c3);
@@ -229,6 +233,24 @@ int main(void) {
   web_send(select_admin,sizeof(select_admin)); assert(halted[1]);
   assert(pending[3] && lengths[3]==ccid_length && !memcmp(ccid_saved,packets[3],ccid_length));
   count=ccid_read(out); sw(out+10,count-10,0x9000);
+  // A fully consumed CCID response has no continuation lease to protect.
+  // Both competitors can take it immediately, without revoking a same-owner
+  // grant merely because the main loop polled the admission predicate.
+  loops(); ccid_apdu(query,sizeof(query),0x9000);
+  uint32_t before=now;
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  web_apdu(query,sizeof(query),0x63c3);
+  assert(now==before);
+  now+=2000; loops();
+  ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(verify,sizeof(verify),0x9000);
+  before=now;
+  hid_send(cid,0x81,nonce,8);
+  assert(hid_read(cid,0x81,hid)==8 && !memcmp(hid,nonce,8));
+  assert(now==before);
+  now+=2000;
+  ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;

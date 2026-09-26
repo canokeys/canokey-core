@@ -27,6 +27,8 @@ uint8_t ck_hid_executing(void);
 uint8_t ck_hid_progress(void);
 void ck_hid_foreign_progress(void);
 void ck_hid_keepalive(uint8_t waiting);
+/* Main-loop admission only: may inspect Core after completed USB transfers.
+ * Never call while a Core entrypoint is borrowed (including progress/IRQ). */
 uint8_t ck_ccid_idle(void);
 uint8_t ck_ccid_scratch_busy(void);
 /* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
