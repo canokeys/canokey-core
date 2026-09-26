@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 28 registered APDU cases.
+One legacy C test executable remains, with 25 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1084,3 +1084,32 @@ the native APDU target rebuilt without unused-function warnings. Full production
 links remain over Flash: DevKit 188432 B (24592 B over), NFCC 195912 B (32072 B
 over); RAM_DATA is unchanged at 8640/8760 B. Runtime stack and hardware acceptance
 remain unverified.
+
+## NFC FIDO registration and missing-attestation rejection
+
+Removed `test_fido_chained_make_credential_nfc`,
+`test_fido_ctap1_register_nfc` and
+`test_fido_ctap1_register_rejects_missing_attestation_key`.
+
+The existing `virtual-pcsc` fixture now sends its NFC makeCredential as 128-byte
+ISO command fragments, with total payload exceeding 256 bytes. Every intermediate
+response must be empty 9000. The final response is independently verified as
+packed attestation, including the hmac-secret extension; subsequent assertions
+and persistence use that same credential. This replaces an opaque length/status
+check without adding another credential scenario.
+
+The existing independently verified U2F registration now runs through USB
+polling and NFC direct completion. NFC must aggregate the full response above
+258 bytes and return 9000 without touch polling. In `ctap-u2f`, deleting only the
+attestation-key record after successful registrations must produce an empty
+6900 response, followed by GET RESPONSE 6986; the provisioned certificate stays.
+That fail-closed assertion targets the shared U2F handler. USB PKE ownership and
+cleanup remain covered by the existing staged-request session fixtures.
+
+These are real Rust host/APDU paths with NFC mode enabled; they do not establish
+physical NFC block timing, RF compatibility or LittleFS power-loss acceptance.
+
+Validation: full host CTest passed 28/28 in 59.31 seconds. Both full firmware
+links still fail at unchanged sizes: DevKit 188432 B (24592 B over), NFCC
+195912 B (32072 B over), RAM_DATA 8640/8760 B. Capacity, runtime stack and
+physical compatibility remain open.

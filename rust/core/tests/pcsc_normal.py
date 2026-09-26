@@ -137,17 +137,28 @@ def run(library):
 
             def ctap(command, params=None, expected=0):
                 payload = bytes([command]) + (cbor.encode(params) if params is not None else b'')
-                apdu = b'\x80\x10\x80\x00\x00'+len(payload).to_bytes(2,'big')+payload
-                rc, result, _ = d.raw(apdu)
+                if command == 1:
+                    assert len(payload) > 256
+                    for at in range(0, len(payload), 128):
+                        chunk = payload[at:at+128]
+                        last = at+len(chunk) == len(payload)
+                        apdu = bytes([0x80 if last else 0x90, 0x10, 0x80, 0, len(chunk)])+chunk+b'\0'
+                        rc, result, _ = d.raw(apdu)
+                        if not last:
+                            assert rc == 0 and result == b'\x90\x00'
+                else:
+                    apdu = b'\x80\x10\x80\x00\x00'+len(payload).to_bytes(2,'big')+payload
+                    rc, result, _ = d.raw(apdu)
                 assert rc == 0 and result[-2:] == b'\x90\x00' and result[0] == expected, (rc, result.hex())
                 return cbor.decode(result[1:-2]) if len(result) > 3 else None
             ctap(6, {1: 1, 2: 2, 127: bytes(700)}) # full standalone extended input
             digest = hashlib.sha256(b'IFD boundary').digest()
             rp = 'rust-pcsc.example'
-            made = ctap(1, {1: digest, 2: {'id': rp}, 3: {'id': b'pcsc'},
-                             4: [{'type': 'public-key', 'alg': -7}], 7: {'rk': True}})
+            made = ctap(1, {1: digest, 2: {'id': rp}, 3: {'id': b'p'*64, 'name': 'n'*64, 'displayName': 'd'*64},
+                             4: [{'type': 'public-key', 'alg': -7}], 6: {'hmac-secret': True}, 7: {'rk': True}})
             auth = AuthenticatorData(made[2])
             key = auth.credential_data.public_key
+            assert auth.extensions == {'hmac-secret': True}
             x509.load_der_x509_certificate(made[3]['x5c'][0]).public_key().verify(made[3]['sig'], made[2]+digest, ec.ECDSA(hashes.SHA256()))
             request = {1: rp, 2: digest, 5: {'up': False}}
             answer = ctap(2, request)
@@ -169,30 +180,35 @@ def run(library):
                 replies = list(threads.map(lambda _: d.raw(bytes.fromhex('00030000000000'))[1], range(40)))
             assert replies == [b'U2F_V2\x90\x00']*40
 
-            # USB U2F polling advances raw presence between serialized calls.
-            os.environ['CANOKEY_TEST_NFC'] = '0'
+            # NFC registration needs no touch polling; USB still requires it.
             challenge, app = hashlib.sha256(b'challenge').digest(), hashlib.sha256(b'app').digest()
             register = bytes.fromhex('00010000000040')+challenge+app
-            rc, reply, _ = d.raw(register)
-            assert rc == 0 and reply == b'\x69\x85'
-            for _ in range(80):
-                time.sleep(.025)
+            for nfc in [False, True]:
+                os.environ['CANOKEY_TEST_NFC'] = str(int(nfc))
                 rc, reply, _ = d.raw(register)
                 assert rc == 0
-                if reply != b'\x69\x85': break
-            else:
-                raise AssertionError('U2F polling never accepted a fresh gesture')
-            registration = reply[:-2]
-            while reply[-2] == 0x61:
-                rc, reply, _ = d.raw(bytes.fromhex('00c0000000'))
-                assert rc == 0
-                registration += reply[:-2]
-            assert reply[-2:] == b'\x90\x00' and registration[:2] == b'\x05\x04'
-            length = registration[66]
-            handle, tail = registration[67:67+length], registration[67+length:]
-            width = tail[1] & 127
-            cert_len = 2+width+int.from_bytes(tail[2:2+width], 'big')
-            x509.load_der_x509_certificate(tail[:cert_len]).public_key().verify(tail[cert_len:], b'\0'+app+challenge+handle+registration[1:66], ec.ECDSA(hashes.SHA256()))
+                if nfc:
+                    assert len(reply) > 258 and reply[-2:] == b'\x90\x00'
+                else:
+                    assert reply == b'\x69\x85'
+                    for _ in range(80):
+                        time.sleep(.025)
+                        rc, reply, _ = d.raw(register)
+                        assert rc == 0
+                        if reply != b'\x69\x85': break
+                    else:
+                        raise AssertionError('U2F polling never accepted a fresh gesture')
+                registration = reply[:-2]
+                while reply[-2] == 0x61:
+                    rc, reply, _ = d.raw(bytes.fromhex('00c0000000'))
+                    assert rc == 0
+                    registration += reply[:-2]
+                assert reply[-2:] == b'\x90\x00' and registration[:2] == b'\x05\x04'
+                length = registration[66]
+                handle, tail = registration[67:67+length], registration[67+length:]
+                width = tail[1] & 127
+                cert_len = 2+width+int.from_bytes(tail[2:2+width], 'big')
+                x509.load_der_x509_certificate(tail[:cert_len]).public_key().verify(tail[cert_len:], b'\0'+app+challenge+handle+registration[1:66], ec.ECDSA(hashes.SHA256()))
 
             assert d.lib.IFDHCloseChannel(d.lun) == 0
             assert d.lib.IFDHICCPresence(d.lun) == 616

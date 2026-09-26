@@ -60,6 +60,10 @@ def run(wire):
     card.cmd("erased handle", 2, 7, data=request, status=0x6a80)
     wire.command("POLL 100")
     assert card.cmd("reprovision unnecessary", 1, data=challenge + app)[0] == 5
+    wire.command("REMOVE 182") # CtapAttestationKey; certificate remains provisioned.
+    wire.command("POLL 100")
+    assert card.cmd("missing attestation key", 1, data=challenge+app, status=0x6900) == b""
+    card.cmd("no partial registration response", 0xc0, status=0x6986)
     print(f"CTAP1: {len(card.checks)} checks passed")
 
 
