@@ -327,66 +327,6 @@ static uint8_t capture_hid_report(USBD_HandleTypeDef *pdev, uint8_t *report, uin
   return 0;
 }
 
-static void reset_hid_capture(void) {
-  hid_capture_count = 0;
-  memset(hid_capture, 0, sizeof(hid_capture));
-}
-
-static void set_test_tick(uint32_t tick) {
-  testmode_set_initial_ticks(0);
-  const uint32_t absolute_tick = device_get_tick();
-  testmode_set_initial_ticks(absolute_tick - tick);
-}
-
-static CTAPHID_FRAME make_hid_init(uint32_t cid, uint8_t cmd, uint16_t len) {
-  CTAPHID_FRAME frame = {0};
-  frame.cid = cid;
-  frame.init.cmd = cmd;
-  frame.init.bcnth = (uint8_t)(len >> 8);
-  frame.init.bcntl = (uint8_t)len;
-  return frame;
-}
-
-static void test_ccid_large_hid_request_survives_session_switch(void **state) {
-  (void)state;
-  for (int prior_ccid = 0; prior_ccid < 2; ++prior_ccid) {
-    init_apdu_buffer();
-    device_init();
-    CCID_Init();
-    CTAPHID_Init(capture_hid_report);
-    reset_hid_capture();
-    if (prior_ccid) {
-      uint8_t select[] = {PC_TO_RDR_XFRBLOCK, 9, 0, 0, 0, 0, 1, 0, 0, 0,
-                         0, 0xA4, 4, 0, 4, 0xDE, 0xAD, 0xBE, 0xEF};
-      assert_int_equal(CCID_OutEvent(select, sizeof(select)), 0);
-      CCID_Loop();
-      CCID_InFinished(0);
-      assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-    }
-    // Padding forces GetInfo through PKE without creating credentials.
-    uint8_t payload[CTAPHID_INLINE_BUFSIZE + 1] = {0x04};
-    CTAPHID_FRAME frame = make_hid_init(0x12345678, CTAPHID_CBOR, sizeof(payload));
-    size_t offset = sizeof(frame.init.data);
-    memcpy(frame.init.data, payload, offset);
-    assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
-    assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
-    for (uint8_t seq = 0; offset < sizeof(payload); ++seq) {
-      memset(&frame, 0, sizeof(frame));
-      frame.cid = 0x12345678;
-      frame.cont.seq = seq;
-      size_t n = MIN(sizeof(frame.cont.data), sizeof(payload) - offset);
-      memcpy(frame.cont.data, payload + offset, n);
-      offset += n;
-      assert_int_equal(CTAPHID_OutEvent((uint8_t *)&frame), 1);
-      assert_int_equal(CTAPHID_Loop(0), LOOP_SUCCESS);
-    }
-    assert_true(hid_capture_count > 0);
-    assert_int_equal(hid_capture[0].init.cmd, CTAPHID_CBOR);
-    assert_int_equal(hid_capture[0].init.data[0], CTAP1_ERR_SUCCESS);
-    assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
-  }
-}
-
 static int capture_ctaphid_msg(const uint8_t *apdu, size_t apdu_len, uint8_t *response, size_t response_size,
                                size_t *response_len) {
   if (apdu_len > sizeof(((CTAPHID_FRAME *)0)->init.data)) return -1;
@@ -2430,7 +2370,6 @@ int main() {
   assert_int_equal(applets_install(), 0);
 
   const struct CMUnitTest tests[] = {
-      cmocka_unit_test(test_ccid_large_hid_request_survives_session_switch),
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),

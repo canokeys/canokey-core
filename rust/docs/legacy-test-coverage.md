@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 45 registered APDU cases.
+One legacy C test executable remains, with 44 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -908,3 +908,15 @@ release on INIT and CCID recovery after the existing two-second idle ownership
 deadline. Unlike the old C owner-enum assertion, scratch release is not treated
 as proof that Rust's idle session retention has ended. No production behavior
 changed; CCID extended-input and other legacy session cases remain pending.
+
+## Large HID input after CCID ownership
+
+`test_ccid_large_hid_request_survives_session_switch` is replaced by
+`usb-sessions`: after CCID selection/authentication, a fragmented clientPIN
+getKeyAgreement request with a 700-byte ignored extension completes over real
+USB/Rust entrypoints. It requires a successful key-agreement response, wiped
+scratch release and revoked CCID authorization on return. This catches cleanup
+that runs after new HID bytes have already been staged. The existing `hid-core`
+large clientPIN test covers the standalone HID path; duplicated padded GetInfo
+runs and C session-owner enum assertions are removed. Production code is
+unchanged.

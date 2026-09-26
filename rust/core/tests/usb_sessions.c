@@ -146,12 +146,19 @@ static void web_apdu(const uint8_t *apdu, size_t n, uint16_t expected) {
   setup(0xc1,1,0,1,256); size_t count=read_control(out); sw(out,count,expected);
 }
 static void hid_send(uint32_t cid, uint8_t command, const uint8_t *body, size_t n) {
-  uint8_t report[64] = {0}; assert(n<=57);
+  uint8_t report[64] = {0}; assert(n<=1024);
   report[0]=(uint8_t)(cid>>24); report[1]=(uint8_t)(cid>>16);
   report[2]=(uint8_t)(cid>>8); report[3]=(uint8_t)cid;
-  report[4]=command; report[6]=(uint8_t)n;
-  if(n)memcpy(report+7,body,n);
+  report[4]=command; report[5]=(uint8_t)(n>>8); report[6]=(uint8_t)n;
+  size_t used=n<57?n:57;
+  if(used)memcpy(report+7,body,used);
   assert(ck_usb_out(2,report,64)==0); CTAPHID_Loop(0);
+  for(uint8_t seq=0;used<n;++seq) {
+    memset(report+4,0,60); report[4]=seq;
+    size_t part=n-used; if(part>59)part=59;
+    memcpy(report+5,body+used,part); used+=part;
+    assert(ck_usb_out(2,report,64)==0); CTAPHID_Loop(0);
+  }
 }
 static size_t hid_read(uint32_t cid, uint8_t command, uint8_t *out) {
   size_t copied=0, total=0; uint8_t seq=0;
@@ -422,6 +429,19 @@ int main(void) {
   assert(!scratch_owner);
   now+=2000; // Preserve the existing idle ownership deadline.
   count=ccid_read(out); sw(out+10,count-10,0x9000);
+  // Acquire the new HID session before staging bytes: prior CCID cleanup
+  // must not wipe a large clientPIN request that will subsequently use crypto.
+  const uint8_t pin_header[]={6,0xa3,1,1,2,2,0x18,0x7f,0x59,2,0xbc};
+  uint8_t pin_request[sizeof(pin_header)+700];
+  memcpy(pin_request,pin_header,sizeof(pin_header));
+  memset(pin_request+sizeof(pin_header),0xa5,700);
+  ccid_apdu(verify,sizeof(verify),0x9000);
+  hid_send(cid,0x90,pin_request,sizeof(pin_request));
+  count=hid_read(cid,0x90,hid);
+  assert(count>64 && hid[0]==0);
+  assert(!scratch_owner && leases==clears);
+  now+=2000; ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;
