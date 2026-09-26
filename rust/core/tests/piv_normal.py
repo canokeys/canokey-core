@@ -933,8 +933,27 @@ def sm2_operations(c):
 
 
 def attestation(c):
+    c.wire.command("RESET")
+    c.select()
+    c.cmd("unauthorized_f9_generate", 0x47, 0, 0xF9,
+          tlv(0xAC, tlv(0x80, b"\x14")), status=0x6982)
+    c.cmd("unauthorized_f9_certificate_write", 0xDB, 0x3F, 0xFF,
+          tlv(0x5C, bytes.fromhex("5fff01")) + tlv(0x53, b""), status=0x6982)
+    c.auth()
+    c.cmd("f9_reject_p384_generate", 0x47, 0, 0xF9,
+          tlv(0xAC, tlv(0x80, b"\x14")), status=0x6A80)
+    c.cmd("f9_reject_p384_import", 0xFE, 0x14, 0xF9,
+          tlv(6, bytes(47) + b"\x01"), status=0x6A86)
+    c.generate(0, 0xF9)
+    metadata = fields(c.cmd("f9_generated_metadata", 0xF7, 0, 0xF9))
+    assert metadata[1] == b"\x11" and metadata[3] == b"\x01"
+    for alg in (2, 0):
+        c.generate(alg)
+        c.cmd("no_move_into_f9", 0xF6, 0xF9, 0x9A, status=0x6A86)
+    c.put(0x5FFF01, tlv(0x53, b""))
     issuer_key = ec.generate_private_key(ec.SECP256R1())
     c.import_key(0, issuer_key, 0xF9)
+    assert fields(c.cmd("f9_imported_metadata", 0xF7, 0, 0xF9))[3] == b"\x02"
     c.cmd("issuer_container_name", 0xF5, 1, 0xF9, b"F\0")
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Independent attestation CA")])
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -957,12 +976,19 @@ def attestation(c):
             + tlv(0xFE, b""),
         ),
     )
-    for alg in list(range(9)) + [11]:
+    for alg in list(range(9)) + [10, 11]:
         if alg == 11:
             encoded = fields(
                 c.cmd("attest_pq_generate", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, b"\xe2")))
             )[0x7F49]
             public = mldsa.MLDSA65PublicKey.from_public_bytes(fields(encoded)[0x86])
+        elif alg == 10:
+            encoded = fields(c.cmd("attest_sm2_generate", 0x47, 0, 0x9A,
+                                   tlv(0xAC, tlv(0x80, b"\x54"))))[0x7F49]
+            point = fields(encoded)[0x86]
+            assert len(point) == 65 and point[0] == 4
+            sm2_spki = tlv(0x30, tlv(0x30, bytes.fromhex("06072a8648ce3d020106082a811ccf5501822d"))
+                           + tlv(0x03, b"\0" + point))
         else:
             public = c.generate(alg)
         certificate = x509.load_der_x509_certificate(c.cmd(f"attest_alg_{alg}", 0xF9, 0x9A))
@@ -970,13 +996,19 @@ def attestation(c):
             certificate.signature, certificate.tbs_certificate_bytes, ec.ECDSA(hashes.SHA256())
         )
         assert certificate.issuer == issuer.subject
-        assert certificate.public_key().public_bytes(
-            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
-        ) == public.public_bytes(
-            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
-        )
+        if alg == 10:
+            # OpenSSL does not expose SM2 through cryptography's public_key API.
+            # Require the complete expected SPKI (algorithm OIDs and exact point).
+            assert sm2_spki in certificate.tbs_certificate_bytes
+        else:
+            assert certificate.public_key().public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+            ) == public.public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
     c.import_key(0, issuer_key)
     c.cmd("no_attestation_for_import", 0xF9, 0x9A, status=0x6A88)
+    c.verify()
     return issuer_key, issuer
 
 

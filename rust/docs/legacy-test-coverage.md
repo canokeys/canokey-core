@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 56 registered cases: APDU (49)
-and PIV (7). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 54 registered cases: APDU (49)
+and PIV (5). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -807,3 +807,19 @@ The independent host-role checks retained above complement the two-slot
 roundtrip; same-backend agreement alone is not the cryptographic oracle.
 Removed all remaining native SM2 fixture helpers and the now-unused chained
 request helper. No production code changed in this consolidation.
+
+## PIV attestation algorithms and F9 policy
+
+`test_piv_attestation_f9_policy` is replaced by `piv-normal::attestation`:
+authentication is required for F9 generation and certificate writes, P-384
+issuer generation/import is rejected, P-256 generation/import has the correct
+origin metadata, and moving P-256/P-384 keys into F9 is forbidden.
+
+`test_piv_attestation_all_target_algorithms` is also retired. Rust integration
+independently verifies the issuer signature and target public key for all
+classical, SM2 and ML-DSA target algorithms covered by that test. SM2 uses the
+complete expected SPKI encoding because cryptography does not expose an SM2
+public-key object. Missing issuer prerequisites remain covered by the retained
+native `test_piv_attestation_certificate`; duplicating its missing-F9 check for
+ML-DSA is unnecessary. That remaining case still requires migration of its
+prerequisite, certificate-field and persistence checks before removal.
