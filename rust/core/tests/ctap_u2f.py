@@ -44,6 +44,10 @@ def run(wire):
     previous = 0
     for p1 in (3, 8): # The C implementation requires presence for both values.
         if p1 == 8:
+            # Reinstall must preserve the credential and monotonic signing counter,
+            # while volatile presence is cleared by a real session reset.
+            wire.command("RESET")
+            card.cmd("fido after reset", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
             card.cmd("p1=8 still polls", 2, p1, data=request, status=0x6985)
             wire.command("POLL 100")
         response = card.cmd("authenticate", 2, p1, data=request)

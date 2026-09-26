@@ -356,19 +356,6 @@ static void assert_ctap_install_resets_counter(void) {
   assert_int_equal(ctap_install(0), 0);
 }
 
-static void test_ctap_install_preserves_complete_attestation_state(void **state) {
-  (void)state;
-  const uint32_t expected_counter = 0x12345678;
-  uint32_t actual_counter = 0;
-
-  provision_test_attestation();
-  assert_int_equal(write_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &expected_counter, sizeof(expected_counter)), 0);
-  assert_int_equal(ctap_install(0), 0);
-  assert_int_equal(read_attr(CTAP_CERT_FILE, SIGN_CTR_ATTR, &actual_counter, sizeof(actual_counter)),
-                   sizeof(actual_counter));
-  assert_int_equal(actual_counter, expected_counter);
-}
-
 static void test_ctap_install_rebuilds_state_without_attestation_key(void **state) {
   (void)state;
   const uint32_t counter = 0x12345678;
@@ -722,7 +709,6 @@ int main() {
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
-      cmocka_unit_test(test_ctap_install_preserves_complete_attestation_state),
       cmocka_unit_test(test_ctap_install_rebuilds_state_without_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_short_attestation_key),
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),

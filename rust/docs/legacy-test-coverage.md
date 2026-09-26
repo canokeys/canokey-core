@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 11 registered APDU cases.
+One legacy C test executable remains, with 10 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1299,3 +1299,18 @@ links still fail at 189696/197152 B Flash (25856/33312 B over); RAM_DATA
 is 8648/8768 B. This adds 1224/1200 B Flash and 8 B RAM per board relative
 to the preceding revision. Physical USB/NFC compatibility and runtime stack
 acceptance remain open.
+
+## Installed credential and signing-counter persistence
+
+Removed `test_ctap_install_preserves_complete_attestation_state`, whose observable
+check was retention of a synthetic signing counter. The existing `ctap-u2f`
+authentication loop now resets/reinstalls between its two independently verified
+signatures. It requires the original credential to remain valid, the signed
+counter to increase across reinstall, and a fresh presence gesture afterwards.
+Packed attestation/provisioning preservation remains covered by `ctap-config`.
+The three incomplete-attestation rebuild cases remain pending lifecycle audit;
+this change does not claim to replace their recovery behavior.
+
+Validation: combined CTest 28/28 passed (64.98 s). Full DevKit/NFCC
+links remain over Flash at 189696/197152 B (25856/33312 B over), with
+RAM_DATA 8648/8768 B. Runtime stack and physical acceptance remain open.
