@@ -1068,91 +1068,8 @@ static void test_regression_fuzz(void **state) {
 }
 
 
-static const uint8_t default_piv_pin[8] = {'1', '2', '3', '4', '5', '6', 0xFF, 0xFF};
-static const uint8_t default_mgmt_key[24] = {1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4, 5, 6, 7, 8};
 
-static void authenticate_management_key(const uint8_t key[24]) {
-  uint8_t init[] = {0x7C, 0x02, 0x81, 0x00};
-  uint8_t r_buf[64];
-  RAPDU R = {.data = r_buf};
-  CAPDU C = {
-      .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x0A, .p2 = 0x9B, .lc = sizeof(init)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.len, 20);
-  assert_memory_equal(R.data, ((uint8_t[]){0x7C, 0x12, 0x81, 0x10}), 4);
 
-  uint8_t complete[20] = {0x7C, 0x12, 0x82, 0x10};
-  assert_int_equal(aes192_enc(R.data + 4, complete + 4, key), 0);
-  C.data = complete;
-  C.lc = sizeof(complete);
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.len, 0);
-}
-
-static void test_piv_aes192_management_key(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-
-  key_meta_t meta;
-  assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
-  assert_int_equal(meta.type, AES192);
-  assert_int_equal(meta.usage, ENCRYPT);
-  assert_int_equal(meta.touch_policy, TOUCH_POLICY_NEVER);
-  assert_int_equal(get_file_size("piv-k9c"), LFS_ERR_NOENT);
-
-  uint8_t r_buf[64];
-  RAPDU R = {.data = r_buf};
-  CAPDU C = {.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9B, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.data[2], 0x0A);
-  assert_int_equal(R.data[5], 0x00);
-  assert_int_equal(R.data[6], TOUCH_POLICY_NEVER);
-
-  authenticate_management_key(default_mgmt_key);
-
-  static const uint8_t new_key[24] = {0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x20, 0x21, 0x22, 0x23,
-                                      0x24, 0x25, 0x26, 0x27, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37};
-  uint8_t set_key[27] = {0x0A, 0x9B, 0x18};
-  memcpy(set_key + 3, new_key, sizeof(new_key));
-  C = (CAPDU){
-      .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFE, .lc = sizeof(set_key)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
-  assert_int_equal(meta.touch_policy, TOUCH_POLICY_ALWAYS);
-
-  C = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_GET_METADATA, .p1 = 0x00, .p2 = 0x9B, .lc = 0};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.data[5], 0x00);
-  assert_int_equal(R.data[6], TOUCH_POLICY_ALWAYS);
-
-  C = (CAPDU){
-      .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFD, .lc = sizeof(set_key)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_WRONG_P1P2);
-
-  C = (CAPDU){
-      .data = set_key, .cla = 0x00, .ins = PIV_INS_SET_MANAGEMENT_KEY, .p1 = 0xFF, .p2 = 0xFF, .lc = sizeof(set_key)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
-  assert_int_equal(meta.touch_policy, TOUCH_POLICY_NEVER);
-
-  piv_poweroff();
-  authenticate_management_key(new_key);
-
-  uint8_t init[] = {0x7C, 0x02, 0x81, 0x00};
-  C = (CAPDU){
-      .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x03, .p2 = 0x9B, .lc = sizeof(init)};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_WRONG_P1P2);
-
-  assert_int_equal(piv_install(1), 0);
-}
 
 static void test_piv_migrates_legacy_management_key_types(void **state) {
   (void)state;
@@ -1212,148 +1129,12 @@ static void test_piv_startup_preserves_state_when_platform_config_is_invalid(voi
 }
 
 
-static void configure_host_managed_admin_data(void) {
-  set_admin_status(1);
-
-  uint8_t printed[5 + 30] = {0x5C, 0x03, 0x5F, 0xC1, 0x09, 0x53, 0x1C, 0x88, 0x1A, 0x89, 0x18};
-  memcpy(printed + 11, default_mgmt_key, sizeof(default_mgmt_key));
-  test_helper(printed, sizeof(printed), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-
-  uint8_t admin_data[] = {0x5C, 0x03, 0x5F, 0xFF, 0x00, 0x53, 0x05, 0x80, 0x03, 0x81, 0x01, 0x03};
-  test_helper(admin_data, sizeof(admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-
-  set_admin_status(0);
-}
 
 
 
-static void test_piv_retired_cert_lazy_storage(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-  static const struct {
-    const char *path;
-    uint8_t tag;
-  } certs[] = {
-      {"piv-c82", 0x0D}, {"piv-c83", 0x0E}, {"piv-c84", 0x0F}, {"piv-c95", 0x20},
-  };
-  for (size_t i = 0; i < sizeof(certs) / sizeof(certs[0]); ++i) {
-    assert_int_equal(get_file_size(certs[i].path), LFS_ERR_NOENT);
-    uint8_t put_cert[] = {0x5C, 0x03, 0x5F, 0xC1, certs[i].tag, 0x53, 0x01, 0x55};
-    test_helper(put_cert, sizeof(put_cert), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-    assert_int_equal(get_file_size(certs[i].path), 3);
-  }
 
-  uint8_t get_cert[] = {0x5C, 0x03, 0x5F, 0xC1, 0x20};
-  uint8_t expected[] = {0x53, 0x01, 0x55};
-  uint8_t r_buf[256];
-  CAPDU C = {.data = get_cert, .ins = PIV_INS_GET_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(get_cert), .le = 256};
-  RAPDU R = {.data = r_buf};
-  piv_process_apdu(&C, &R);
-  assert_int_equal(R.sw, SW_NO_ERROR);
-  assert_int_equal(R.len, sizeof(expected));
-  assert_memory_equal(R.data, expected, sizeof(expected));
-}
 
-static uint16_t piv_test_ctz_capacity(uint8_t blocks) {
-  uint16_t capacity = 512;
-  for (uint8_t index = 1; index < blocks; ++index)
-    capacity += (uint16_t)(512 - 4 * (__builtin_ctz(index) + 1));
-  return capacity;
-}
 
-static void test_piv_file_data_object_capacity(void **state) {
-  (void)state;
-  assert_int_equal(piv_test_ctz_capacity(6), PIV_DATA_OBJECT_MAX_SIZE);
-  assert_int_equal(piv_test_ctz_capacity(13), PIV_CERT_OBJECT_MAX_SIZE);
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-
-  static const struct {
-    uint8_t tag[3];
-    const char *path;
-  } objects[] = {
-      {{0x5F, 0xC1, 0x02}, "piv-chu"},  {{0x5F, 0xC1, 0x03}, "piv-fig"},
-      {{0x5F, 0xC1, 0x06}, "piv-sec"},  {{0x5F, 0xC1, 0x07}, "piv-ccc"},
-      {{0x5F, 0xC1, 0x08}, "piv-face"}, {{0x5F, 0xC1, 0x09}, "piv-pi"},
-      {{0x5F, 0xC1, 0x0C}, "piv-kh"},   {{0x5F, 0xC1, 0x21}, "piv-iris"},
-  };
-  static uint8_t put[5 + PIV_DATA_OBJECT_MAX_SIZE + 1];
-  put[0] = 0x5C;
-  put[1] = 0x03;
-  put[5] = 0x53;
-  put[6] = 0x82;
-  put[7] = (uint8_t)((PIV_DATA_OBJECT_MAX_SIZE - 4) >> 8);
-  put[8] = (uint8_t)(PIV_DATA_OBJECT_MAX_SIZE - 4);
-
-  for (size_t i = 0; i < sizeof(objects) / sizeof(objects[0]); ++i) {
-    memcpy(put + 2, objects[i].tag, sizeof(objects[i].tag));
-    test_helper(put, 5 + PIV_DATA_OBJECT_MAX_SIZE, PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-    assert_int_equal(get_file_size(objects[i].path), PIV_DATA_OBJECT_MAX_SIZE);
-    assert_int_equal(remove_file(objects[i].path), 0);
-  }
-
-  memcpy(put + 2, objects[2].tag, sizeof(objects[2].tag));
-  test_helper(put, sizeof(put), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_WRONG_LENGTH);
-
-  // A small first fragment must still select file storage when more fragments follow.
-  uint8_t response[16];
-  RAPDU R = {.data = response};
-  for (size_t i = 5; i < sizeof(objects) / sizeof(objects[0]); i += 3) {
-    uint8_t first[] = {0x5C, 0x03, objects[i].tag[0], objects[i].tag[1], objects[i].tag[2], 0x53, 0x03, 0xAA};
-    CAPDU C = {.data = first, .cla = 0x10, .ins = PIV_INS_PUT_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(first)};
-    piv_process_apdu(&C, &R);
-    assert_int_equal(R.sw, SW_NO_ERROR);
-    uint8_t last[] = {0xBB, 0xCC};
-    C = (CAPDU){.data = last, .ins = PIV_INS_PUT_DATA, .p1 = 0x3F, .p2 = 0xFF, .lc = sizeof(last)};
-    piv_process_apdu(&C, &R);
-    assert_int_equal(R.sw, SW_NO_ERROR);
-    assert_int_equal(get_file_size(objects[i].path), 5);
-    assert_int_equal(remove_file(objects[i].path), 0);
-  }
-  assert_int_equal(piv_install(1), 0);
-}
-
-static void test_piv_metadata_bounded_do_storage(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-
-  uint8_t inline_printed[5 + 64] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
-  for (size_t i = 5; i < sizeof(inline_printed); ++i) {
-    inline_printed[i] = (uint8_t)i;
-  }
-  test_helper(inline_printed, sizeof(inline_printed), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_true(get_file_size("piv-pi") < 0);
-
-  uint8_t max_admin_data[5 + 128] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
-  for (size_t i = 5; i < sizeof(max_admin_data); ++i) {
-    max_admin_data[i] = (uint8_t)(0x80 + i);
-  }
-  test_helper(max_admin_data, sizeof(max_admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-
-  uint8_t oversized_admin_data[5 + 129] = {0x5C, 0x03, 0x5F, 0xFF, 0x00};
-  test_helper(oversized_admin_data, sizeof(oversized_admin_data), PIV_INS_PUT_DATA, 0x3F, 0xFF,
-              SW_WRONG_LENGTH);
-
-  uint8_t large_printed[5 + 80] = {0x5C, 0x03, 0x5F, 0xC1, 0x09};
-  for (size_t i = 5; i < sizeof(large_printed); ++i) {
-    large_printed[i] = (uint8_t)i;
-  }
-  test_helper(large_printed, sizeof(large_printed), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-pi"), 80);
-
-  uint8_t security[] = {0x5C, 0x03, 0x5F, 0xC1, 0x06, 0x53, 0x02, 0x11, 0x22};
-  test_helper(security, sizeof(security), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-sec"), 4);
-
-  uint8_t key_history[] = {0x5C, 0x03, 0x5F, 0xC1, 0x0C, 0x53, 0x01, 0x33};
-  test_helper(key_history, sizeof(key_history), PIV_INS_PUT_DATA, 0x3F, 0xFF, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-kh"), 3);
-
-  configure_host_managed_admin_data();
-  assert_true(get_file_size("piv-pi") < 0);
-}
 
 static void test_piv_get_metadata_directory(void **state) {
   (void)state;
@@ -4082,12 +3863,8 @@ int main() {
       cmocka_unit_test(test_piv_container_name_replacement),
       cmocka_unit_test(test_piv_container_name_mldsa_replacement),
       cmocka_unit_test(test_regression_fuzz),
-      cmocka_unit_test(test_piv_aes192_management_key),
       cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
       cmocka_unit_test(test_piv_startup_preserves_state_when_platform_config_is_invalid),
-      cmocka_unit_test(test_piv_retired_cert_lazy_storage),
-      cmocka_unit_test(test_piv_file_data_object_capacity),
-      cmocka_unit_test(test_piv_metadata_bounded_do_storage),
       cmocka_unit_test(test_piv_get_metadata_directory),
       cmocka_unit_test(test_piv_get_metadata_extended_algo_ids),
       cmocka_unit_test(test_piv_rsa4096_metadata_chained_read),

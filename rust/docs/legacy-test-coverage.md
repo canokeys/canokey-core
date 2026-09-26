@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 103 registered cases: APDU (49)
-and PIV (54). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 99 registered cases: APDU (49)
+and PIV (50). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -545,3 +545,21 @@ behaviors; the persistent management key itself remains AES-192 and is not
 rewritten. Host and HIL key-rotation helpers use the corrected algorithm ID.
 The remaining native management-key install/rotation and old-record migration
 cases still require separate audit; these four replacements do not close them.
+
+
+## Replaced PIV rotation and object-capacity cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_piv_aes192_management_key` | `piv-normal::management_rotation`: exact default/rotated management metadata, absent 9C key, original new key bytes, FE/FF touch selectors and invalid FD rejection, reset/re-authentication, rejected algorithms 03/08/0C and restored default key |
+| `test_piv_retired_cert_lazy_storage` | `object_capacity`: original retired certificate tags 5FC10D/0E/0F/20 start missing, allocate exactly three bytes on PUT, round-trip literal 530155 and delete |
+| `test_piv_file_data_object_capacity` | `object_capacity`: all eight original data-object tags accept exactly 3040 bytes; 3041 is rejected without replacing existing data; small first fragments complete PRINTED/IRIS records correctly; certificate boundary additionally checks 6568 accepted and 6569 rejected |
+| `test_piv_metadata_bounded_do_storage` | `object_capacity`: PRINTED grows/shrinks through 64/80/30 bytes with exact record sizes, admin data accepts 128 and rejects 129 preserving prior data, original short security/key-history values round-trip |
+
+The native helper's six-/thirteen-block CTZ arithmetic described its LittleFS
+layout. The Rust wire quotas remain the same literal 3040/6568 bytes and are
+verified through real chained PUT/GET operations. Rust stores each object in its
+compact record rather than switching between native attributes and separate
+files; exact size, content and shrinkage replace obsolete placement assertions.
+Native management-key type migration and invalid-platform-config boot handling
+remain pending and are not claimed covered by these replacements.

@@ -186,6 +186,73 @@ def host_managed_objects(c):
     assert c.wire.command("SIZE 42") == b"\xff" * 4
 
 
+def management_rotation(c):
+    metadata = c.cmd("management_default_metadata", 0xF7, 0, 0x9B)
+    assert metadata == bytes.fromhex("01010a02020001050101")
+    c.cmd("signature_key_absent", 0xF7, 0, 0x9C, status=0x6A88)
+    new_key = bytes.fromhex("101112131415161720212223242526273031323334353637")
+    body = bytes.fromhex("0a9b18") + new_key
+    c.cmd("management_touch_required", 0xFF, 0xFF, 0xFE, body, le=None)
+    assert c.cmd("management_touch_metadata", 0xF7, 0, 0x9B) == bytes.fromhex("01010a02020002050100")
+    c.cmd("management_invalid_touch_selector", 0xFF, 0xFF, 0xFD, body, status=0x6A86)
+    c.cmd("management_touch_disabled", 0xFF, 0xFF, 0xFF, body, le=None)
+    assert c.cmd("management_rotated_metadata", 0xF7, 0, 0x9B) == bytes.fromhex("01010a02020001050100")
+    c.wire.command("RESET")
+    c.select()
+    c.auth(new_key)
+    for algorithm in (3, 8, 0x0C):
+        c.cmd("unsupported_management_algorithm", 0x87, algorithm, 0x9B,
+              tlv(0x7C, tlv(0x81, b"")), status=0x6A86)
+    c.auth(new_key)
+    c.cmd("restore_management", 0xFF, 0xFF, 0xFF, bytes.fromhex("0a9b18") + KEY, le=None)
+    c.auth()
+    c.verify()
+
+
+def object_capacity(c):
+    for tag, record in [(0x5FC10D, 46), (0x5FC10E, 47), (0x5FC10F, 48), (0x5FC120, 65)]:
+        assert c.wire.command(f"SIZE {record}") == b"\xff" * 4
+        c.put(tag, bytes.fromhex("530155"))
+        assert c.wire.command(f"SIZE {record}") == (3).to_bytes(4, "big")
+        assert c.get(tag) == bytes.fromhex("530155")
+        c.put(tag, b"\x53\x00")
+    certificate = tlv(0x53, bytes(i % 256 for i in range(6564)))
+    c.put(0x5FC105, certificate)
+    assert len(certificate) == 6568 and c.get(0x5FC105) == certificate
+    c.cmd("certificate_over_capacity", 0xDB, 0x3F, 0xFF,
+          bytes.fromhex("5c035fc105") + certificate + b"\0", status=0x6700)
+    assert c.get(0x5FC105) == certificate
+    c.put(0x5FC105, b"\x53\x00")
+    tags = [0x5FC102, 0x5FC103, 0x5FC106, 0x5FC107, 0x5FC108, 0x5FC109, 0x5FC10C, 0x5FC121]
+    value = tlv(0x53, bytes(i % 256 for i in range(3036)))
+    assert len(value) == 3040
+    for tag, record in zip(tags, range(67, 75)):
+        c.put(tag, value)
+        assert c.get(tag) == value
+        assert c.wire.command(f"SIZE {record}") == (3040).to_bytes(4, "big")
+    c.cmd("data_object_over_capacity", 0xDB, 0x3F, 0xFF,
+          bytes.fromhex("5c035fc106") + value + b"\0", status=0x6700)
+    assert c.get(0x5FC106) == value
+    for tag in (0x5FC109, 0x5FC121):
+        c.raw("small_first_object_fragment", 0xDB, 0x3F, 0xFF,
+              tlv(0x5C, tag.to_bytes(3, "big")) + bytes.fromhex("5303aa"), cla=0x10)
+        c.raw("last_object_fragment", 0xDB, 0x3F, 0xFF, bytes.fromhex("bbcc"))
+        assert c.get(tag) == bytes.fromhex("5303aabbcc")
+    for size in (64, 80, 30):
+        value = bytes(range(5, 5 + size))
+        c.put(0x5FC109, value)
+        assert c.get(0x5FC109) == value
+        assert c.wire.command("SIZE 72") == size.to_bytes(4, "big")
+    value = bytes((0x85 + i) % 256 for i in range(128))
+    c.put(0x5FFF00, value)
+    c.cmd("admin_object_over_capacity", 0xDB, 0x3F, 0xFF,
+          bytes.fromhex("5c035fff00") + bytes(129), status=0x6700)
+    assert c.get(0x5FFF00) == value
+    for tag, value in [(0x5FC106, bytes.fromhex("53021122")), (0x5FC10C, bytes.fromhex("530133"))]:
+        c.put(tag, value)
+        assert c.get(tag) == value
+
+
 def objects(c):
     for tag in [0x5FC105, 0x5FC10D, 0x5FC120, 0x5FC109, 0x5FFF00]:
         value = tlv(0x53, bytes(i % 256 for i in range(120 if tag == 0x5FFF00 else 2700)))
@@ -579,6 +646,8 @@ def run(wire, progress=None, report=None):
         for scenario in (
             authentication,
             host_managed_objects,
+            management_rotation,
+            object_capacity,
             objects,
             classic_keys,
             encoding_regressions,
