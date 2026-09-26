@@ -12,13 +12,29 @@ option(VIRTCARD "Build the complete Rust virtual-card host" OFF)
 
 # Host tools exercise the Rust product engine. Do not link the superseded
 # C dispatcher into a host executable and mistake it for a product oracle.
-if(ENABLE_APDU_REPLAY OR VIRTCARD)
+if(ENABLE_TESTS OR ENABLE_APDU_REPLAY OR VIRTCARD)
     foreach(applet NDEF CTAP PASS OATH OPENPGP PIV)
         set(CANOKEY_APPLET_${applet} ON)
     endforeach()
     set(CANOKEY_APDU_REPLAY ${ENABLE_APDU_REPLAY})
     set(CANOKEY_VIRTUAL_CARD ON)
     include(CTest)
+    if(ENABLE_TESTS)
+        set(CMAKE_C_STANDARD 11)
+        set(CMAKE_C_STANDARD_REQUIRED ON)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+        add_compile_options(-Wall --coverage -fsanitize=address -fsanitize=undefined)
+        add_compile_options($<$<CONFIG:Debug>:-fno-omit-frame-pointer>)
+        add_link_options(--coverage -fsanitize=address -fsanitize=undefined)
+        if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+            add_compile_options(-fstack-usage)
+        endif()
+        list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
+        find_package(CMocka CONFIG REQUIRED)
+        include(AddCMockaTest)
+        include(AddMockedTest)
+        add_subdirectory(test)
+    endif()
     add_subdirectory(rust)
     return()
 endif()
@@ -227,39 +243,3 @@ target_link_libraries(canokey-core canokey-crypto)
 add_dependencies(canokey-core generate_ctap_get_info_cbor generate_canokey_core_git_rev)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules")
-
-if(ENABLE_TESTS)
-    set(VIRT_CARD_GIT_REV_HEADER ${CMAKE_CURRENT_BINARY_DIR}/virt-card-git-rev.h)
-    add_custom_target(
-        generate_virt_card_git_rev
-        COMMAND ${CMAKE_COMMAND}
-            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-            -DOUTPUT_FILE=${VIRT_CARD_GIT_REV_HEADER}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_virt_card_git_rev_header.cmake
-        BYPRODUCTS ${VIRT_CARD_GIT_REV_HEADER}
-        COMMENT "Generating virt-card git revision"
-        VERBATIM
-    )
-
-    function(add_virt_card_git_revision target)
-        add_dependencies(${target} generate_virt_card_git_rev)
-        target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-    endfunction()
-endif()
-
-if(ENABLE_TESTS)
-    find_package(CMocka CONFIG REQUIRED)
-    include(AddCMockaTest)
-    include(AddMockedTest)
-    add_subdirectory(test)
-    enable_testing()
-
-    # Keep the remaining legacy tests until their individual coverage is ported.
-    # Replaced suites (NDEF/keyboard) execute against Rust in this same entry.
-    foreach(applet NDEF CTAP PASS OATH OPENPGP PIV)
-        set(CANOKEY_APPLET_${applet} ON)
-    endforeach()
-    set(CANOKEY_VIRTUAL_CARD ON)
-    add_subdirectory(rust)
-
-endif(ENABLE_TESTS)

@@ -21,7 +21,7 @@ impl Sm2 {
         wire[4..].copy_from_slice(&self.algorithm.to_be_bytes());
         wire
     }
-    fn decode(wire: &[u8]) -> Option<Self> {
+    pub(super) fn decode(wire: &[u8]) -> Option<Self> {
         if wire.len() != 8 {
             return None;
         }

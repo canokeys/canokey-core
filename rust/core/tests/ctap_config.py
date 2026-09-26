@@ -5,6 +5,7 @@ import argparse
 import hashlib
 from fido2 import cbor
 from fido2.ctap2.base import AuthenticatorData
+from fido2.ctap2.pin import PinProtocolV1
 from card_test import Card, connection
 from ctap_fixture import provision, mixed_management
 
@@ -121,9 +122,82 @@ def run(wire):
     print(f"CTAP configuration: {len(card.checks)} checks passed")
 
 
+def boot_rebuild(wire, damage):
+    # Fresh device per case: never extend the protocol's ten-second reset gate.
+    card = Card(wire)
+    default = bytes.fromhex("00000009ffffffca")
+    request = {1: hashlib.sha256(b"boot rebuild").digest()}
+    def admin():
+        card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
+    def fido():
+        card.cmd("fido", 0xa4, 4, data=bytes.fromhex("a0000006472f0001"))
+    def call(command, params=None, status=0):
+        out = card.cmd("ctap", 0x10, cla=0x80,
+                       data=bytes([command]) + (cbor.encode(params) if params is not None else b""))
+        assert out[0] == status, out.hex()
+        return cbor.decode(out[1:]) if len(out) > 1 else {}
+    verify_attestation = provision(card)
+    admin()
+    card.cmd("verify", 0x20, data=b"123456")
+    custom = bytes.fromhex("800000007fffffff")
+    card.cmd("custom SM2 before rebuild", 0x12, data=custom)
+    fido()
+    registration = {1: request[1], 2: {"id": "boot.example"}, 3: {"id": b"boot"},
+                    4: [{"type": "public-key", "alg": -7}], 7: {"rk": True}}
+    made = call(1, registration)
+    verify_attestation(made, request[1])
+    credential = AuthenticatorData(made[2]).credential_data
+    descriptor = {"id": credential.credential_id, "type": "public-key"}
+    protocol = PinProtocolV1()
+    public, secret = protocol.encapsulate(call(6, {1: 1, 2: 2})[1])
+    encrypted = protocol.encrypt(secret, b"12345678".ljust(64, b"\0"))
+    call(6, {1: 1, 2: 3, 3: public, 4: protocol.authenticate(secret, encrypted), 5: encrypted})
+    records = {record: wire.command(f"RECORD {record}") for record in (77, 78, 79, 80, 181, 182)}
+    if damage == "missing-key":
+        wire.command("FAIL_READ 182")
+        assert wire.command("TRY_RESET") == bytes.fromhex("ffffffff")
+        for record, value in records.items():
+            assert wire.command(f"RECORD {record}") == value, "read error must not rebuild"
+    wire.command("RESET")
+    fido()
+    assert call(4)[4]["clientPin"] is True
+    assertion = {1: "boot.example", 2: request[1], 3: [descriptor]}
+    signed = call(2, assertion)
+    credential.public_key.verify(signed[2] + request[1], signed[3])
+    if damage == "missing-key":
+        wire.command("REMOVE 182")
+        wire.command("FAIL_WRITE 80")
+        assert wire.command("TRY_RESET") == bytes.fromhex("ffffffff")
+        assert wire.command("RECORD 80") == records[80]
+    elif damage == "short-key":
+        wire.command(f"RECORD 182 {records[182][:-3].hex()}")
+    elif damage == "empty-cert":
+        wire.command("RECORD 183 ")
+    else:
+        wire.command("RECORD 181 00000001ffffffca")
+    wire.command("RESET")
+    for record in (77, 78, 79, 80, 180):
+        assert wire.command(f"SIZE {record}") == bytes.fromhex("ffffffff")
+    admin()
+    card.cmd("verify", 0x20, data=b"123456")
+    assert card.cmd("SM2 after rebuild", 0x11) == (default if damage == "invalid-sm2" else custom)
+    fido()
+    assert call(4)[4]["clientPin"] is False
+    call(2, assertion, 0x2e)
+    verify_attestation = provision(card)
+    fido()
+    made = call(1, registration | {7: {"rk": False}})
+    verify_attestation(made, request[1])
+    assert AuthenticatorData(made[2]).counter == 1
+    call(2, assertion, 0x2e)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True)
     args = parser.parse_args()
     with connection(args.host) as wire:
         run(wire)
+    for damage in ("missing-key", "short-key", "empty-cert", "invalid-sm2"):
+        with connection(args.host) as wire:
+            boot_rebuild(wire, damage)

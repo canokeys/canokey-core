@@ -585,3 +585,23 @@ power-down/up pairs and warm PowerICC resets, reselecting FIDO between commands.
 Full public keys, credential identities and P-256/Ed25519 assertion signatures
 are checked; the same management token starts the second enumeration afterward.
 The CCID transport test distinguishes logical power from timeout/full reset.
+
+### Boot reconstruction of incomplete provisioning
+
+Core installation validates attestation key length/readability, certificate
+length (1..1152), and the provisioned SM2 identifiers before admitting commands.
+Missing or malformed manufacturing prerequisites erase CTAP master, PIN/policy,
+counter, largeBlob and resident credentials as in the legacy startup contract.
+Sparse absent records represent fresh default state; the next successful
+registration signs counter one. Valid SM2 identifiers survive; invalid/missing
+SM2 is repaired only after erasure succeeds. Attestation material is retained
+for explicit ADMIN reprovisioning. Use-time self-attestation remains possible
+on an unprovisioned device, but those credentials do not survive this boot gate.
+
+A storage error that prevents validation fails installation without deleting
+records. Failed cleanup also fails installation and leaves its invalid
+prerequisite in place so the next boot retries. This differs deliberately from
+treating transient I/O errors as proof that valid credentials should be erased.
+Logical reader power cycles do not invoke the boot installation gate. The
+existing configuration fixture tests actual credentials, signed counters, PIN
+removal, SM2 preservation/default repair and read/cleanup failure recovery.

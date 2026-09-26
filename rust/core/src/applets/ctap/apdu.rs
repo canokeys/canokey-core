@@ -51,6 +51,9 @@ impl Applet {
         self.close(w, p);
         self.session.erase(p).map_err(|_| Sw::UNABLE_TO_PROCESS)
     }
+    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+        self.session.install(p).map_err(|_| Sw::UNABLE_TO_PROCESS)
+    }
     pub fn response_preemptable(&self) -> bool {
         // CTAP's encoded-response threshold excluded the 32-byte command
         // overhead. U2F registration always published a certificate source.

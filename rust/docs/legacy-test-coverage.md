@@ -2,8 +2,8 @@
 # Legacy test replacement ledger
 
 Stage six removes a legacy test only after its behavior has executable Rust
-coverage. The remaining C suite still builds alongside the complete Rust suite
-with `ENABLE_TESTS=ON`; passing it does not establish Rust coverage. Reference
+coverage. `ENABLE_TESTS=ON` now builds the complete Rust suite and the permitted
+native LittleFS helper tests; the legacy APDU executable is removed. Reference
 C tests can be inspected in core commit `1c64f28`.
 
 ## Replaced NDEF suite
@@ -96,13 +96,14 @@ KEY and challenge declarations preserve the legacy 6A80 semantic-length
 precedence while using bounded reads for 6700 truncation. The previously noted
 FF KEY compatibility difference is resolved.
 
-## Still requiring individual coverage audit
+## Native boundary after test replacement
 
-One legacy C test executable remains, with 4 registered APDU cases.
-Its C applet/protocol dependencies remain until each case is
-mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
-helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
-certificate for stage six, production capacity, stack or interoperability.
+No legacy C APDU test executable remains. `ENABLE_TESTS` selects the full Rust
+composition directly and no longer compiles its former C applet/protocol
+dependencies. The independent `test_fs` retains ten allowed native LittleFS
+helper cases and has no applet/protocol/crypto/device-simulator linkage.
+The obsolete source/default C library path still requires deletion; this ledger
+is not a completion certificate for stage six, capacity, stack or interoperability.
 
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
 Literal malformed-input regressions remain correctness tests with explicit
@@ -1365,3 +1366,13 @@ and corrected Rust's use of complete reset for logical reader power events.
 Both GA and CM continuations survive alternating power-down/up and warm reset
 with FIDO reselect, while existing other-applet authorization/reset checks pass.
 The synthetic C cursor seed/query hooks are deleted with the native test.
+
+The final four startup tests are replaced by `ctap-config::boot_rebuild` through
+actual registration, PIN setup, injected record damage, core reinstall and
+independently verified signatures. Missing/short attestation keys and an empty
+certificate rebuild credential/PIN/counter state while retaining valid custom
+SM2 identifiers. Invalid SM2 is restored to defaults after cleanup. Complete
+provisioning preserves the old credential/PIN on reboot. A failed key read
+refuses install without deleting data; interrupted cleanup is retried on boot.
+Reprovisioning restarts the signed counter at one and cannot revive old handles.
+The native APDU executable, final four cases and CMake target are deleted.

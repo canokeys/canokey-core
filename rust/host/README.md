@@ -22,9 +22,9 @@ ctest --test-dir build-host -R '^virtual-' --output-on-failure
 ```
 
 The full APDU replay host build also includes this tool and its tests.
-`BUILD_TESTING=OFF` omits regression targets without removing either host tool. During
-removal of the old C unit suite, `ENABLE_TESTS=ON` builds this Rust UDP executable
-alongside the remaining C tests; that does not make those tests Rust coverage.
+`BUILD_TESTING=OFF` omits regression targets without removing either host tool. `ENABLE_TESTS=ON` builds this Rust UDP executable and the complete Rust suite,
+with the independent native LittleFS helper tests. The legacy C APDU test
+executable and its compilation dependency closure have been removed.
 The PC/SC IFD library also uses this crate.
 
 ## Compatibility and storage

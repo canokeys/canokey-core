@@ -456,6 +456,8 @@ impl Router for Registry {
     fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
         #[cfg(feature = "admin")]
         self.admin.install(platform)?;
+        #[cfg(feature = "ctap")]
+        self.ctap.install(platform)?;
         #[cfg(feature = "ndef")]
         crate::applets::ndef::Applet::install(false, platform)?;
         #[cfg(feature = "pass")]

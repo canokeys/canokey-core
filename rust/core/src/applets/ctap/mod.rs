@@ -14,6 +14,7 @@ mod encoding;
 mod envelope;
 mod hmac_secret;
 mod info;
+mod install;
 mod large_blob;
 mod management;
 mod pin;
