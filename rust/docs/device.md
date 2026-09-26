@@ -56,8 +56,8 @@ CCID and WebUSB progress dispatch reach the foreign-HID service.
 
 Completed WebUSB responses retain same-owner authorization until timeout or
 actual takeover. A queued CCID APDU or a valid-channel HID PING/MSG/CBOR/WINK
-may immediately take a completed session with no input chain or unread Core
-response. Polling, keyboard activity, HID INIT/CANCEL and continuation reports
+may immediately take a completed session with no input chain and either no unread Core response or an explicitly
+abandonable applet response source. Polling, keyboard activity, HID INIT/CANCEL and continuation reports
 do not trigger takeover. EP0 reception/execution/transmission remain exclusive.
 The main-loop admission clears WebUSB ownership before resetting Core, so an
 old WebUSB timeout cannot revoke the next owner's grant. USB interrupts and
@@ -65,5 +65,16 @@ progress callbacks never perform this Core inspection or reset.
 
 `usb-sessions` covers immediate CCID/HID takeover, same-owner grant retention,
 partial-response protection, pending EP0 bytes, INIT/CANCEL isolation and stale
-timeout cleanup against the real Core. The legacy source-backed-versus-ordinary
-response preemption distinction remains a separate compatibility audit item.
+timeout cleanup against the real Core. The applet registry now preserves the legacy source-backed-versus-ordinary
+response distinction: certificate/object cursors and explicit crypto streams
+may be abandoned, while ordinary response continuations retain their lease.
+
+Source admission follows the legacy full-profile sizes (256 response bytes,
+288 command-buffer bytes), not the current chunk size. OpenPGP certificates
+are always abandonable; other OpenPGP results above 288 bytes used a source.
+PIV object cursors, crypto streams and attestation generators are abandonable,
+as are its results above 288 bytes. NDEF reads above 288 bytes and CTAP results
+above 256 bytes used sources; U2F registration always uses a certificate source.
+The runtime still excludes input chains and the transport still excludes
+controller-owned bytes. Taking over calls the existing response close/reset
+path, which erases workspace and revokes grants before admitting the new owner.

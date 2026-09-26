@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Five C test executables remain, with 200 registered cases: APDU (96), core
-helpers (5), key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
+Five C test executables remain, with 199 registered cases: APDU (96), core
+helpers (4), key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -177,3 +177,24 @@ new owner, partial-response/EP0 ownership and INIT/CANCEL isolation. Eight USB
 feature combinations check facade cleanup without an actual Core. Source-backed
 versus ordinary response preemption remains unresolved; the legacy session
 helper stays registered until that final distinction is covered.
+
+## Replaced session/keepalive helper
+
+`test_device_sessions_and_keepalive` is now removed. The `usb-sessions` fixture
+covers same-owner grant retention, idle lease expiry and tick wraparound,
+foreign busy rejection, completed CCID/WebUSB immediate takeover, HID lease
+protection despite queued foreign traffic, reset revocation and stale WebUSB
+cleanup isolation. `hid-usb` verifies both processing and presence keepalive
+reports with asynchronous IN ownership; `hid-core` exercises actual presence
+execution/cancel/disconnect. These replace the old helper's mocked counters.
+
+Source-aware admission now additionally permits abandonment of OpenPGP
+certificates, PIV object cursors/crypto streams/attestation, large OpenPGP/PIV/NDEF
+results and large CTAP/U2F registration responses. The sizes and backing rules
+are documented in `device.md`. The actual USB fixture verifies unread CTAP,
+OpenPGP certificate and PIV object takeover, rejection for PIV Discovery, stale
+GET RESPONSE rejection and PIN-grant revocation. The NDEF engine fixture checks
+large-read admission; streaming engine tests retain input-chain protection.
+The four remaining helper cases cover LED timing, keyboard-touch gating and PIN
+lifecycle/errors. Production capacity, stack and physical interoperability are
+still independent, incomplete acceptance items.

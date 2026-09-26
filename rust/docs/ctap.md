@@ -192,9 +192,10 @@ retains another 64-byte RX report; none is an entire request. Short requests use
 transport files, Flash caches, heap allocations or full-request RAM buffers.
 
 Before request staging, the FFI adapter requires CCID to be idle. After CCID's
-final IN completion, a session with no input chain or unread response permits
-immediate takeover, matching the legacy preemptable-APDU rule. A remaining
-continuation retains the two-second lease. The HID session retains its own
+final IN completion, a session with no input chain permits immediate takeover
+when its response is complete or the applet declares its source abandonable,
+matching the legacy preemptable-APDU rule. An ordinary response continuation
+retains the two-second lease. The HID session retains its own
 two-second idle lease. Admission then lets the other transport reset the session
 (including PIN grants and key agreement) and acquire PKE. A queued CCID
 packet cannot block the HID owner's commands during that lease; otherwise it

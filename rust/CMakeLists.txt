@@ -140,6 +140,9 @@ if(BUILD_TESTING)
         "${FEATURES},usb-hid,usb-device,usb-webusb,usb-keyboard")
       add_executable(usb-sessions core/tests/usb_sessions.c core/tests/services.c)
       target_compile_definitions(usb-sessions PRIVATE WITH_CTAP WITH_HID ENABLE_IFACE_CTAPHID=1)
+      target_compile_definitions(usb-sessions PRIVATE
+        $<$<BOOL:${CANOKEY_APPLET_OPENPGP}>:WITH_OPENPGP>
+        $<$<BOOL:${CANOKEY_APPLET_PIV}>:WITH_PIV>)
       target_compile_options(usb-sessions PRIVATE -Wall -Wextra -Werror -UNDEBUG)
       target_link_libraries(usb-sessions PRIVATE canokey-rust-usb OpenSSL::Crypto host-key-services)
       add_test(NAME usb-sessions COMMAND usb-sessions)

@@ -335,6 +335,7 @@ mod apdu {
             [0xaa, 0xbb, 0xcc, 0x90, 0]
         );
         let mut chunk = exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 0]);
+        assert!(core.can_preempt()); // Large NDEF reads used an abandonable source.
         let mut total = 0;
         loop {
             total += chunk.len() - 2;

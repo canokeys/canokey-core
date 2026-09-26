@@ -47,6 +47,12 @@ impl Applet {
         self.close(w, p);
         self.session.erase(p).map_err(|_| Sw::UNABLE_TO_PROCESS)
     }
+    pub fn response_preemptable(&self) -> bool {
+        // CTAP's encoded-response threshold excluded the 32-byte command
+        // overhead. U2F registration always published a certificate source.
+        self.response.len() > 256
+            || matches!(self.response, Response::Authentication { certificate: Some(_), .. })
+    }
     pub fn reset(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         self.session.abort_blob(p);
         self.session.reset(p.memory);

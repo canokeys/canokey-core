@@ -149,6 +149,9 @@ impl OpenPgp {
         p.memory.wipe(&mut w.input);
         self.import = Import::new();
     }
+    pub fn response_preemptable(&self, total: u32) -> bool {
+        matches!(self.response, Response::Certificate(_)) || total > 288
+    }
     pub fn close(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
         p.memory.wipe(&mut w.output);
         self.response = Response::Memory;

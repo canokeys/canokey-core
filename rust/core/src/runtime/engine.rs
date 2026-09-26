@@ -60,6 +60,11 @@ pub trait Router {
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw>;
     fn close_response(&mut self, p: &mut Platform<'_>);
+    /// Match applet response-source abandonment policy, not buffer ownership.
+    /// Transport admission must still wait for final endpoint completion.
+    fn response_preemptable(&self, _total: u32) -> bool {
+        false
+    }
     fn is_eject(&self, _header: Header, _p: &mut Platform<'_>) -> bool {
         false
     }
@@ -123,9 +128,11 @@ impl<R: Router> Runtime<R> {
         }
     }
     /// Main-loop admission only, after transport TX ownership has ended.
-    /// An input chain or unread response must retain its bounded session lease.
+    /// Input chains and ordinary unread replies retain their bounded lease.
     pub fn can_preempt(&self) -> bool {
-        self.frame.is_none() && !self.chain.active() && !self.response.active()
+        self.frame.is_none()
+            && !self.chain.active()
+            && (!self.response.active() || self.router.response_preemptable(self.response.total()))
     }
     pub fn router(&self) -> &R {
         &self.router

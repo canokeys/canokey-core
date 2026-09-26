@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent PIV adapter. APDU lifecycle and byte cursors belong to the runtime.
 
+use crate::runtime::workspace::SessionWorkspace;
 use super::wire::{
     ga_field, ga_tag, ins::*, key_tag, limits, metadata_tag, object_tlv, policy, reference,
     wire_alg,
@@ -383,6 +384,13 @@ impl Piv {
         p.memory.wipe(&mut w.key.bytes);
         p.memory.wipe(&mut w.input);
         r.map(|n| (n, Sw::SUCCESS))
+    }
+    pub fn response_preemptable(&self, total: u32, w: &SessionWorkspace) -> bool {
+        // Object GET RESPONSE had its own file cursor in the legacy applet;
+        // it did not reserve the ordinary APDU continuation buffer.
+        matches!(self.response, ResponseBacking::Object(_) | ResponseBacking::Crypto(_))
+            || matches!(w, SessionWorkspace::Attestation(_))
+            || total > 288
     }
     fn memory(&mut self, n: usize) {
         self.response = ResponseBacking::Memory;

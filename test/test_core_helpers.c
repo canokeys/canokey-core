@@ -250,67 +250,6 @@ static void test_device_allow_kbd_touch_rules(void **state) {
   assert_false(device_allow_kbd_touch());
 }
 
-static void test_device_sessions_and_keepalive(void **state) {
-  (void)state;
-
-  reset_test_state();
-  device_init();
-
-  fake_tick = 100;
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-  assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
-  assert_int_equal(keepalive_processing_calls, 0);
-
-  fake_tick = 2099;
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), -1);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-
-  fake_tick = 2101;
-  // Idle time alone does not reset the card security environment.
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CCID);
-  assert_int_equal(applets_poweroff_calls, 0);
-  assert_int_equal(apdu_response_source_clear_calls, 0);
-
-  // Once the lease has timed out, another transport may force cleanup and
-  // take ownership even when an active session was not otherwise preemptable.
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_int_equal(applets_poweroff_calls, 1);
-  assert_int_equal(apdu_response_source_clear_calls, 1);
-
-  fake_tick = 2200;
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
-  assert_int_equal(keepalive_processing_calls, 1);
-
-  fake_tick = 3000;
-  device_applet_session_touch(DEVICE_APPLET_SESSION_CCID);
-  fake_tick = 4199;
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-
-  fake_tick = 4201;
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(applets_poweroff_calls, 1);
-
-  fake_tick = 6302;
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CCID), 0);
-  assert_int_equal(applets_poweroff_calls, 2);
-  apdu_session_preemptable = true;
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_WEBUSB);
-
-  fake_tick = 6400;
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_WEBUSB), 0);
-  assert_int_equal(send_keepalive_during_processing(WAIT_ENTRY_CCID), 0);
-  assert_int_equal(keepalive_processing_calls, 1);
-  device_applet_session_release(DEVICE_APPLET_SESSION_WEBUSB);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
-}
-
 static void test_pin_lifecycle(void **state) {
   (void)state;
 
@@ -408,7 +347,6 @@ int main(void) {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_device_blinking_and_led_behaviour),
       cmocka_unit_test(test_device_allow_kbd_touch_rules),
-      cmocka_unit_test(test_device_sessions_and_keepalive),
       cmocka_unit_test(test_pin_lifecycle),
       cmocka_unit_test(test_pin_error_paths),
   };

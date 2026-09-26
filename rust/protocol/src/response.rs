@@ -115,6 +115,9 @@ impl Response {
     pub const fn new() -> Self {
         Self { pending: None }
     }
+    pub fn total(&self) -> u32 {
+        self.pending.map_or(0, |pending| pending.total)
+    }
     pub fn active(&self) -> bool {
         self.pending.is_some()
     }

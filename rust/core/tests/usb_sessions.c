@@ -303,6 +303,50 @@ int main(void) {
     if(cmd==0x86)assert(hid_read(UINT32_MAX,0x86,hid)==17);
     else assert(!pending[2]);
   }
+  const uint8_t select_fido[]={0,0xa4,4,0,8,0xa0,0,0,6,0x47,0x2f,0,1};
+  const uint8_t info_short[]={0x80,0x10,0,0,1,4,1};
+  const uint8_t stale_response[]={0,0xc0,0,0,1};
+  ccid_apdu(select_fido,sizeof(select_fido),0x9000);
+  ccid_apdu(info_short,sizeof(info_short),0x61ff);
+  before=now; web_apdu(stale_response,sizeof(stale_response),0x6986);
+  assert(now==before); // Large CTAP source can be abandoned without waiting.
+  ccid_apdu(select_fido,sizeof(select_fido),0x9000);
+  ccid_apdu(stale_response,sizeof(stale_response),0x6986);
+#ifdef WITH_OPENPGP
+  const uint8_t select_pgp[]={0,0xa4,4,0,6,0xd2,0x76,0,1,0x24,1};
+  const uint8_t verify_pgp[]={0,0x20,0,0x83,8,'1','2','3','4','5','6','7','8'};
+  const uint8_t put_cert[]={0,0xda,0x7f,0x21,3,'a','b','c'};
+  const uint8_t read_cert[]={0,0xca,0x7f,0x21,1};
+  ccid_apdu(select_pgp,sizeof(select_pgp),0x9000);
+  ccid_apdu(verify_pgp,sizeof(verify_pgp),0x9000);
+  ccid_apdu(put_cert,sizeof(put_cert),0x9000);
+  ccid_apdu(read_cert,sizeof(read_cert),0x6102);
+  before=now; web_apdu(stale_response,sizeof(stale_response),0x6986);
+  assert(now==before); // Even a short certificate is an explicit file source.
+  ccid_apdu(select_pgp,sizeof(select_pgp),0x9000);
+  ccid_apdu(stale_response,sizeof(stale_response),0x6986);
+  const uint8_t pgp_query[]={0,0x20,0,0x83};
+  ccid_apdu(pgp_query,sizeof(pgp_query),0x63c3);
+#endif
+#ifdef WITH_PIV
+  // Provision only an opaque test object; protocol selection/read are real.
+  extern int32_t ck_platform_write(uint8_t,const uint8_t *,size_t);
+  const uint8_t object[]={0x53,1,7};
+  assert(ck_platform_write(42,object,sizeof(object))==3); // PivObject0, 5FC105.
+  const uint8_t select_piv[]={0,0xa4,4,0,11,0xa0,0,0,3,8,0,0,0x10,0,1,0};
+  const uint8_t read_object[]={0,0xcb,0x3f,0xff,5,0x5c,3,0x5f,0xc1,5,1};
+  const uint8_t discovery[]={0,0xcb,0x3f,0xff,3,0x5c,1,0x7e,1};
+  const uint8_t rest[]={0,0xc0,0,0,0};
+  ccid_apdu(select_piv,sizeof(select_piv),0x9000);
+  ccid_apdu(discovery,sizeof(discovery),0x6113);
+  web_send(select_admin,sizeof(select_admin)); assert(halted[1]);
+  ccid_apdu(rest,sizeof(rest),0x9000); // Ordinary response survives refusal.
+  ccid_apdu(read_object,sizeof(read_object),0x6102);
+  before=now; web_apdu(stale_response,sizeof(stale_response),0x6986);
+  assert(now==before);
+  ccid_apdu(select_piv,sizeof(select_piv),0x9000);
+  ccid_apdu(stale_response,sizeof(stale_response),0x6986);
+#endif
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;

@@ -712,6 +712,23 @@ impl Router for Registry {
             AppletState::None => Err(Sw::COMMAND_NOT_ALLOWED),
         }
     }
+    fn response_preemptable(&self, total: u32) -> bool {
+        // Legacy ordinary replies used 256 bytes plus 32 bytes of APDU
+        // overhead; larger results used explicitly closeable response sources.
+        // The limits describe compatibility, not new runtime allocations.
+        let _ = total;
+        match &self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(_) => total > 288,
+            #[cfg(feature = "openpgp")]
+            AppletState::OpenPgp(s) => s.response_preemptable(total),
+            #[cfg(feature = "piv")]
+            AppletState::Piv(s) => s.response_preemptable(total, &self.workspace),
+            #[cfg(feature = "ctap")]
+            AppletState::Ctap => self.ctap.response_preemptable(),
+            _ => false,
+        }
+    }
     #[allow(unused_variables)]
     fn close_response(&mut self, platform: &mut Platform<'_>) {
         match &mut self.applet {
