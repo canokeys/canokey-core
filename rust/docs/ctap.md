@@ -499,7 +499,12 @@ stream workspace.
 Credential management encodes directly from the shared resident input record,
 including maximum user fields, before reusing that input for its ML-DSA seed.
 The seed remains owned until Stream::transfer copies it and clears the old
-workspace. Full enumeration returns the registration public key; metadata-only
+workspace. Transfer stages only the bounded framing, seed and client hash,
+wipes the classic workspace before replacing its variant, then explicitly
+wipes the staging bytes after copying them into the stream. It must not move
+the entire session workspace through a stack temporary. The transfer frame
+returns before primitive initialization; the crypto state remains in the sole
+shared workspace. Full enumeration returns the registration public key; metadata-only
 mode omits it. No second full public-key buffer or Flash scratch is introduced.
 `ctap-normal` independently verifies packed attestation and ML-DSA signatures,
 decrypts hmac-secret-mc results and compares full/metadata mixed enumeration.

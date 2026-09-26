@@ -69,8 +69,6 @@ impl Stream {
         self.certificate_length = 0;
         self.emitted = 0;
     }
-    // Transfer has its own frame, which is gone before invoking expensive crypto.
-    #[inline(never)]
     fn empty() -> Self {
         Self {
             crypto: CryptoScratch::new(),
@@ -88,26 +86,63 @@ impl Stream {
         }
     }
 
-    fn fill(stream: &mut Self, plan: Pending, old: &crate::runtime::workspace::Workspace) {
+    fn fill(framing: &mut Framing, plan: Pending, old: &crate::runtime::workspace::Workspace) {
         if matches!(plan.mode, Mode::Make | Mode::Public) {
-            stream.framing.bytes[..plan.output].copy_from_slice(&old.output[..plan.output]);
-            stream.framing.client_hash.copy_from_slice(&old.input[..32]);
-            stream.framing.seed.copy_from_slice(&old.input[32..64]);
+            framing.bytes[..plan.output].copy_from_slice(&old.output[..plan.output]);
+            framing.client_hash.copy_from_slice(&old.input[..32]);
+            framing.seed.copy_from_slice(&old.input[32..64]);
         } else {
-            stream.framing.bytes[..plan.prefix].copy_from_slice(&old.output[..plan.prefix]);
-            stream.framing.bytes[plan.prefix..plan.prefix + plan.auth]
+            framing.bytes[..plan.prefix].copy_from_slice(&old.output[..plan.prefix]);
+            framing.bytes[plan.prefix..plan.prefix + plan.auth]
                 .copy_from_slice(&old.input[..plan.auth]);
-            stream.framing.bytes[plan.prefix + plan.auth..plan.output + plan.auth]
+            framing.bytes[plan.prefix + plan.auth..plan.output + plan.auth]
                 .copy_from_slice(&old.output[plan.prefix..plan.output]);
-            stream
-                .framing
+            framing
                 .seed
                 .copy_from_slice(&old.input[plan.auth + 32..plan.auth + 64]);
-            stream
-                .framing
+            framing
                 .client_hash
                 .copy_from_slice(&old.input[plan.auth..plan.auth + 32]);
         }
+    }
+
+    // The framing temporary is gone before invoking expensive crypto.
+    #[inline(never)]
+    fn transfer(
+        plan: Pending,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Status> {
+        if plan.output + plan.auth > FRAMING_BYTES {
+            return Err(Status::Other);
+        }
+        // Preserve only the response framing across the workspace transition.
+        // Moving the entire Classic variant creates a multi-kilobyte stack copy.
+        let mut framing = Framing {
+            bytes: [0; FRAMING_BYTES],
+            length: plan.output + plan.auth,
+            seed: [0; 32],
+            client_hash: [0; 32],
+        };
+        let SessionWorkspace::Classic(old) = w else {
+            unreachable!()
+        };
+        Self::fill(&mut framing, plan, old);
+        old.clear(p.memory);
+        *w = SessionWorkspace::CtapStream(Self::empty());
+        let SessionWorkspace::CtapStream(stream) = w else {
+            unreachable!()
+        };
+        stream.framing.bytes.copy_from_slice(&framing.bytes);
+        stream.framing.seed.copy_from_slice(&framing.seed);
+        stream
+            .framing
+            .client_hash
+            .copy_from_slice(&framing.client_hash);
+        stream.framing.length = framing.length;
+        p.memory.wipe(&mut framing.bytes);
+        p.memory.wipe(&mut framing.seed);
+        p.memory.wipe(&mut framing.client_hash);
         stream.generated_at = match plan.mode {
             Mode::Make | Mode::Public => plan.public_at,
             Mode::Assert => plan.signature_at + plan.auth,
@@ -121,30 +156,6 @@ impl Stream {
             .certificate
             .map_or(plan.output + plan.auth, |(at, _)| at);
         stream.certificate_length = plan.certificate.map_or(0, |(_, n)| n);
-    }
-
-    #[inline(never)]
-    fn transfer(
-        plan: Pending,
-        w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
-    ) -> Result<(), Status> {
-        if plan.output + plan.auth > FRAMING_BYTES {
-            return Err(Status::Other);
-        }
-        let old_workspace = core::mem::replace(w, SessionWorkspace::CtapStream(Self::empty()));
-        let SessionWorkspace::Classic(mut old) = old_workspace else {
-            unreachable!()
-        };
-        let SessionWorkspace::CtapStream(stream) = w else {
-            unreachable!()
-        };
-        stream.framing.length = plan.output + plan.auth;
-        Self::fill(stream, plan, &old);
-        old.clear(p.memory);
-        let SessionWorkspace::CtapStream(_) = w else {
-            unreachable!()
-        };
         Ok(())
     }
     pub fn prepare(
