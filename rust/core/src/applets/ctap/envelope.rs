@@ -77,6 +77,10 @@ impl Parser {
     }
     #[inline(never)]
     pub fn finish(&mut self) -> Result<Command, Status> {
+        // Preserve the legacy bare authenticatorConfig command status.
+        if self.fields.command == super::CONFIG && self.offset == 0 {
+            return Err(Status::UnhandledRequest);
+        }
         self.decoder.finish()?;
         let p = &mut self.fields.params;
         if !self.fields.subcommand_seen {

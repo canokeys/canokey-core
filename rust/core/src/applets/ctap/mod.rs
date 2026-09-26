@@ -487,6 +487,7 @@ pub enum Status {
     InvalidCbor = 0x12,
     MissingParameter = 0x14,
     InvalidSubcommand = 0x3e,
+    UnhandledRequest = 0xf1,
 }
 
 pub struct Request {

@@ -147,6 +147,10 @@ Flash cache. This replaces the development 18-byte record: provision fresh
 storage; no data migration is provided. PINs contain up to 63 code points and
 63 UTF-8 bytes, without embedded NUL. Minimum length can only increase.
 
+A bare `0d` command (no CBOR body) returns legacy status `F1`; a truncated
+CBOR body returns `12`, while an empty map returns missing-parameter `14`.
+These rejected requests do not mutate authenticator policy.
+
 Config authentication covers `FF*32 || 0d || subcommand || subCommandParams`,
 including the exact optional parameter-map encoding and unknown parameters.
 When PIN or alwaysUV is set it requires a valid protocol 1/2 token with ACFG

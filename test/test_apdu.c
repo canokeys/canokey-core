@@ -1861,99 +1861,7 @@ static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state
   assert_false(apdu_response_source_active());
 }
 
-static void test_ndef_chained_update_and_streaming_read(void **state) {
-  (void)state;
 
-  static const uint8_t select_ndef[] = {0x00, 0x01};
-  static const uint8_t first[] = {0x11, 0x22, 0x33};
-  static const uint8_t second[] = {0x44, 0x55};
-  static const uint8_t expected[] = {0x11, 0x22, 0x33, 0x44, 0x55};
-  uint8_t response[APDU_COMMAND_BUFFER_SIZE] = {0};
-  CAPDU capdu = {.data = (uint8_t *)select_ndef};
-  RAPDU rapdu = {.data = response};
-
-  assert_int_equal(ndef_install(1), 0);
-
-  capdu.ins = NDEF_INS_SELECT;
-  capdu.p1 = 0x00;
-  capdu.p2 = 0x0C;
-  capdu.lc = sizeof(select_ndef);
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  capdu.cla = 0x10;
-  capdu.ins = NDEF_INS_UPDATE;
-  capdu.p1 = 0x00;
-  capdu.p2 = 20;
-  capdu.data = (uint8_t *)first;
-  capdu.lc = sizeof(first);
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  capdu.cla = 0x00;
-  capdu.p1 = 0x03;
-  capdu.p2 = 0xFF;
-  capdu.data = (uint8_t *)second;
-  capdu.lc = sizeof(second);
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  capdu.ins = NDEF_INS_READ_BINARY;
-  capdu.p1 = 0x00;
-  capdu.p2 = 20;
-  capdu.le = sizeof(expected);
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  assert_int_equal(rapdu.len, sizeof(expected));
-  assert_memory_equal(rapdu.data, expected, sizeof(expected));
-
-  capdu.p2 = 0;
-  capdu.le = 300;
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  assert_true(apdu_response_source_active());
-  assert_int_equal(apdu_response_source_output(&rapdu, capdu.le), 0);
-  assert_int_equal(rapdu.len, 250);
-  assert_int_equal(rapdu.sw, 0x6132);
-  assert_int_equal(apdu_response_source_output(&rapdu, capdu.le), 0);
-  assert_int_equal(rapdu.len, 50);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_false(apdu_response_source_active());
-
-  // Recover the fixed-size backing file before serving reads from a persisted
-  // image that was truncated by an interrupted write or an older build.
-  assert_int_equal(truncate_file("NDEF", 32), 0);
-  assert_int_equal(ndef_install(0), 0);
-  assert_int_equal(get_file_size("NDEF"), 1024);
-  capdu.ins = NDEF_INS_SELECT;
-  capdu.p1 = 0x00;
-  capdu.p2 = 0x0C;
-  capdu.data = (uint8_t *)select_ndef;
-  capdu.lc = sizeof(select_ndef);
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  capdu.ins = NDEF_INS_READ_BINARY;
-  capdu.p1 = 0x00;
-  capdu.p2 = 31;
-  capdu.le = 2;
-  memset(response, 0xA5, 2);
-  assert_int_equal(ndef_process_apdu(&capdu, &rapdu), 0);
-  assert_int_equal(rapdu.len, 2);
-  assert_memory_equal(response, ((const uint8_t[]){0, 0}), 2);
-}
-
-static void test_ctap_config_empty_request_is_legacy_unhandled(void **state) {
-  (void)state;
-
-  uint8_t config_req[] = {CTAP_CONFIG};
-  uint8_t resp[64] = {0};
-  size_t resp_len = sizeof(resp);
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(ctap_process_cbor_with_src(config_req, sizeof(config_req), resp, &resp_len, CTAP_SRC_HID), 0);
-  assert_int_equal(resp_len, 1);
-  assert_int_equal(resp[0], CTAP2_ERR_UNHANDLED_REQUEST);
-}
 
 
 static void test_ctap_hid_make_credential_accepts_p9_pub_key_param_order(void **state) {
@@ -2711,8 +2619,6 @@ int main() {
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
-      cmocka_unit_test(test_ndef_chained_update_and_streaming_read),
-      cmocka_unit_test(test_ctap_config_empty_request_is_legacy_unhandled),
       cmocka_unit_test(test_ctap_hid_make_credential_accepts_p9_pub_key_param_order),
       cmocka_unit_test(test_ctap_make_credential_rejects_enterprise_attestation),
       cmocka_unit_test(test_ctap_hid_make_credential_hmac_secret_mc_requires_hmac_secret),

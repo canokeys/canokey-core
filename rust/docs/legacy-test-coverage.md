@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 109 registered cases: APDU (51)
+Two legacy C test executables remain, with 107 registered cases: APDU (49)
 and PIV (58). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -509,3 +509,21 @@ replacement configures it through the authenticated production APDU path.
 GetInfo uses the shared Rust CTAP encoder on HID and APDU; endpoint framing
 continues to be checked by `hid-core`, while these regressions exercise policy,
 encoding and reset persistence. They do not claim physical HID interoperability.
+
+
+## Replaced NDEF streaming and empty configuration cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_ndef_chained_update_and_streaming_read` | `ndef::apdu::actual_registry_selection_chained_updates_and_streamed_read`: original bytes at offset 20, continuation P1/P2=03FF, exact 300-byte streamed response, 1024-byte streaming, reset selection and repair of a 32-byte record with a cross-boundary read; installation test checks all repaired padding is zero |
+| `test_ctap_config_empty_request_is_legacy_unhandled` | `ctap-normal` submits bare 0D and checks F1; `config::tests::malformed_config_has_no_persistent_effects` additionally distinguishes no body, truncated map (12), empty map (14), and verifies no writes |
+
+The NDEF regression exposed a runtime integration discrepancy: the generic
+header matcher restarted UPDATE when a later fragment changed P1/P2. NDEF's
+write cursor must keep the first fragment's offset. The registry now normalizes
+only NDEF UPDATE offsets for chain identity; the original header still reaches
+the applet, other instructions and applets retain normal header matching, and
+the shared command limit/session lifecycle remain unchanged. The streamed read
+uses the Rust transport's response chunk size rather than the obsolete C
+250-byte internal window; requested length and content remain exact.
+Bare authenticatorConfig now explicitly preserves the legacy F1 status.

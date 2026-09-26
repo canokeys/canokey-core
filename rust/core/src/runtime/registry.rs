@@ -587,6 +587,15 @@ impl Router for Registry {
             AppletState::None => (),
         }
     }
+    fn chain_header(&self, header: Header) -> Header {
+        // NDEF UPDATE continues at the first fragment's offset; subsequent
+        // P1/P2 values do not restart that applet's write cursor.
+        #[cfg(feature = "ndef")]
+        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xd6 {
+            return Header { p1: 0, p2: 0, ..header };
+        }
+        header
+    }
     #[allow(unused_variables)]
     fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
         if !self.applet.selected().enabled(platform) {

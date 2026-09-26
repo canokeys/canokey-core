@@ -433,6 +433,8 @@ fn forced_pin_change_blocks_both_tokens_and_clears_atomically_on_valid_change() 
 #[test]
 fn malformed_config_has_no_persistent_effects() {
     let cases: &[(&[u8], u8)] = &[
+        (&[13], 0xf1),
+        (&[13, 0xa1], 0x12),
         (&[13, 0xa0], 0x14),
         (&[13, 0xa1, 1, 1], 2),
         (&[13, 0xa2, 1, 3, 2, 0xa1, 1, 0x18, 64], 2),

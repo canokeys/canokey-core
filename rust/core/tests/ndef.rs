@@ -76,6 +76,8 @@ fn install_initial_uri_and_preserve_existing_content() {
     d.message = Some(vec![1, 2, 3]);
     n.install(false, &mut d).unwrap();
     assert_eq!(&d.message.as_ref().unwrap()[..3], &[1, 2, 3]);
+    assert_eq!(d.message.as_ref().unwrap().len(), 1024);
+    assert!(d.message.as_ref().unwrap()[3..].iter().all(|&b| b == 0));
     n.install(true, &mut d).unwrap();
     assert_eq!(&d.message.as_ref().unwrap()[..2], &[0, 17]);
 }
@@ -323,17 +325,27 @@ mod apdu {
             [0x90, 0]
         );
         assert_eq!(
-            exchange(&mut core, &mut p, &[0x10, 0xd6, 0, 100, 2, 0xaa, 0xbb]),
+            exchange(&mut core, &mut p, &[0x10, 0xd6, 0, 20, 3, 0x11, 0x22, 0x33]),
             [0x90, 0]
         );
         assert_eq!(
-            exchange(&mut core, &mut p, &[0, 0xd6, 0, 100, 1, 0xcc]),
+            exchange(&mut core, &mut p, &[0, 0xd6, 3, 0xff, 2, 0x44, 0x55]),
             [0x90, 0]
         );
         assert_eq!(
-            exchange(&mut core, &mut p, &[0, 0xb0, 0, 100, 3]),
-            [0xaa, 0xbb, 0xcc, 0x90, 0]
+            exchange(&mut core, &mut p, &[0, 0xb0, 0, 20, 5]),
+            [0x11, 0x22, 0x33, 0x44, 0x55, 0x90, 0]
         );
+        let mut reply = exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 1, 44]);
+        let mut data = Vec::new();
+        loop {
+            data.extend_from_slice(&reply[..reply.len() - 2]);
+            if reply[reply.len() - 2..] == [0x90, 0] { break; }
+            assert_eq!(reply[reply.len() - 2], 0x61);
+            reply = exchange(&mut core, &mut p, &[0, 0xc0, 0, 0, 0]);
+        }
+        assert_eq!(data.len(), 300);
+        assert_eq!(&data[20..25], &[0x11, 0x22, 0x33, 0x44, 0x55]);
         let mut chunk = exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 0]);
         assert!(core.can_preempt()); // Large NDEF reads used an abandonable source.
         let mut total = 0;
@@ -352,6 +364,11 @@ mod apdu {
             exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 2]),
             [0x69, 0x85]
         );
+        p.storage.replace(Record::NdefMessage, &[0; 32]).unwrap();
+        canokey_rust_core::applets::ndef::Applet::install(false, &mut p).unwrap();
+        assert_eq!(p.storage.size(Record::NdefMessage).unwrap(), 1024);
+        assert_eq!(exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]), [0x90, 0]);
+        assert_eq!(exchange(&mut core, &mut p, &[0, 0xb0, 0, 31, 2]), [0, 0, 0x90, 0]);
     }
     #[test]
     fn truncated_frame_never_publishes_update() {

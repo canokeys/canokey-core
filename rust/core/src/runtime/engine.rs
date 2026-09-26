@@ -41,6 +41,9 @@ pub trait Router {
     }
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw>;
     fn command_limit(&self, header: Header) -> Result<u32, Sw>;
+    fn chain_header(&self, header: Header) -> Header {
+        header
+    }
     fn allows_extended(&self, _header: Header) -> bool {
         false
     }
@@ -274,9 +277,11 @@ impl<R: Router> Runtime<R> {
             return Err(Sw::FILE_NOT_FOUND);
         }
         let limit = self.router.command_limit(h)?;
+        let mut chain_info = info;
+        chain_info.header = self.router.chain_header(h);
         let step = self
             .chain
-            .accept(info, limit)
+            .accept(chain_info, limit)
             .map_err(|_| Sw::WRONG_LENGTH)?;
         if step.restarted {
             self.router.abort_command(p);
