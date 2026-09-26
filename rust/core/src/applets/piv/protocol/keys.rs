@@ -74,6 +74,7 @@ impl Piv {
             self.pending_public = Some(PendingPublicKey {
                 slot_index: id,
                 include_metadata: metadata,
+                generated_algorithm: None,
             });
             return Ok((if a == alg::MLKEM768 {
                 crate::ports::mlkem768::PUBLIC_BYTES
@@ -172,8 +173,27 @@ impl Piv {
                 .key_operation(KeyOperation::Generate, a, &mut w.key, &[], &mut w.output)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         }
-        repo::save(id, &m, &w.key.bytes, p)?;
-        self.public(id, &m, false, w, p)
+        if a >= alg::MLKEM768 {
+            // Keep the previous slot untouched until the final public chunk.
+            // Only the compact metadata/seed record is staged, never the public key.
+            self.pending_commit = Some(id as u8);
+            p.storage.stage_begin().map_err(repo::io)?;
+            p.storage
+                .stage_append(&m[..repo::HEADER])
+                .map_err(repo::io)?;
+            p.storage
+                .stage_append(&w.key.bytes[..repo::material(a)])
+                .map_err(repo::io)?;
+            self.pending_public = Some(PendingPublicKey {
+                slot_index: id,
+                include_metadata: false,
+                generated_algorithm: Some(a),
+            });
+            Ok(0) // finish_public supplies the encoded streaming response length.
+        } else {
+            repo::save(id, &m, &w.key.bytes, p)?;
+            self.public(id, &m, false, w, p)
+        }
     }
     #[inline(never)]
     pub(super) fn general_authenticate(

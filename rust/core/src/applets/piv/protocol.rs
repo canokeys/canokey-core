@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent PIV adapter. APDU lifecycle and byte cursors belong to the runtime.
 
-use crate::runtime::workspace::SessionWorkspace;
 use super::wire::{
     ga_field, ga_tag, ins::*, key_tag, limits, metadata_tag, object_tlv, policy, reference,
     wire_alg,
@@ -9,6 +8,7 @@ use super::wire::{
 use super::{codec, ga::Ga, import::Import, pin::Pins, repository as repo};
 use crate::ports::alg;
 use crate::ports::{CryptoScratch, StreamOperation};
+use crate::runtime::workspace::SessionWorkspace;
 mod keys;
 mod management;
 mod metadata;
@@ -107,6 +107,7 @@ enum ResponseBacking {
 struct PendingPublicKey {
     slot_index: usize,
     include_metadata: bool,
+    generated_algorithm: Option<u8>,
 }
 pub struct Piv {
     pub(super) pins: Pins,
@@ -133,6 +134,7 @@ pub struct Piv {
     last_touch: Option<u32>,
     pub presence: presence::Request,
     pending_public: Option<PendingPublicKey>,
+    pending_commit: Option<u8>,
     agreement: Option<usize>,
     stream_phase: StreamPhase,
     sm2_id: [u8; 32],
@@ -174,6 +176,7 @@ impl Piv {
             last_touch: None,
             presence: presence::Request::new(),
             pending_public: None,
+            pending_commit: None,
             agreement: None,
             stream_phase: StreamPhase::Identity,
             sm2_id: [0; 32],
@@ -381,15 +384,21 @@ impl Piv {
         self.request = Request::None;
         self.import = Import::new();
         self.used = 0;
-        p.memory.wipe(&mut w.key.bytes);
+        // A pending generated public stream still needs its seed during the
+        // classic-to-stream workspace transition; finish_public wipes it there.
+        if self.pending_commit.is_none() {
+            p.memory.wipe(&mut w.key.bytes);
+        }
         p.memory.wipe(&mut w.input);
         r.map(|n| (n, Sw::SUCCESS))
     }
     pub fn response_preemptable(&self, total: u32, w: &SessionWorkspace) -> bool {
         // Object GET RESPONSE had its own file cursor in the legacy applet;
         // it did not reserve the ordinary APDU continuation buffer.
-        matches!(self.response, ResponseBacking::Object(_) | ResponseBacking::Crypto(_))
-            || matches!(w, SessionWorkspace::Attestation(_))
+        matches!(
+            self.response,
+            ResponseBacking::Object(_) | ResponseBacking::Crypto(_)
+        ) || matches!(w, SessionWorkspace::Attestation(_))
             || total > 288
     }
     fn memory(&mut self, n: usize) {
@@ -637,7 +646,13 @@ impl Piv {
         }
         Ok(out.len())
     }
+    fn abort_generation(&mut self, p: &mut Platform<'_>) {
+        if self.pending_commit.take().is_some() {
+            p.storage.stage_abort();
+        }
+    }
     fn close_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+        self.abort_generation(p);
         p.memory.wipe(&mut w.output);
         self.memory(0);
     }

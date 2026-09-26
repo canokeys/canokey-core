@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 84 registered cases: APDU (49)
-and PIV (35). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 82 registered cases: APDU (49)
+and PIV (33). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -631,8 +631,23 @@ assertions are not replicated; native LittleFS atomic storage tests remain.
 The native flash-program failure fixture is still needed by the remaining PQ
 name-replacement case, so only unused counters/mount pointers are removed.
 
-**Open functional discrepancy:** Rust currently saves a PQ-generated seed and
-clears the prior name before streaming its public response. Native ML-DSA
+**Discrepancy found during the name audit (resolved below):** Rust saved a PQ-generated seed and
+cleared the prior name before streaming its public response. Native ML-DSA
 replacement commits at response completion and preserves the old key/name if
-the response is abandoned. The native PQ aborted-generation/name cases remain
-pending; they must not be removed as equivalent coverage or marked complete.
+the response is abandoned. The native PQ aborted-generation/name cases were retained pending the fix below.
+
+
+## PQ generation commits at public-response completion
+
+| Retired native case | Important Rust coverage |
+|---|---|
+| `test_piv_mldsa65_aborted_generation_not_installed` | `piv-normal::pq_replacement`: both ML-DSA and ML-KEM new slots remain absent after an interrupted response and reset; rejected extended APDUs invalidate a pending response |
+| `test_piv_container_name_mldsa_replacement` | Same scenario partially reads generated public keys, then selects/resets/rejects a command; old key metadata and name survive. Final-commit failure also preserves them; a successful retry publishes matching public metadata and clears the name |
+
+Rust now stages only metadata and seed, initializes the crypto stream from a
+wiped bounded seed copy across the shared workspace transition, and commits on
+the final response read before success. Cleanup aborts pending staging. Existing
+PQ tests independently verify signatures/decapsulation from fully committed
+generated keys. The obsolete native flash-program failure wrapper is removed.
+This resolves the early-commit discrepancy found in the preceding audit; device
+power-loss, runtime stack and physical interoperability acceptance remain open.

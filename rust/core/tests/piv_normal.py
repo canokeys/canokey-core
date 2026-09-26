@@ -520,6 +520,43 @@ def pq_keys(c):
                 )
 
 
+def pq_replacement(c):
+    for algorithm in (0xE2, 0xE3):
+        body = tlv(0xAC, tlv(0x80, bytes([algorithm])))
+        c.raw("pending_new_pq_key", 0x47, 0, 0x95, body, le=256, status=0x61FF)
+        c.wire.command("RESET")
+        c.select()
+        c.cmd("aborted_new_pq_key_absent", 0xF7, 0, 0x95, status=0x6A88)
+        c.auth()
+        c.generate(0, 0x95)
+        c.cmd("name_before_pq_replacement", 0xF5, 1, 0x95, b"M\0")
+        before = c.cmd("key_before_pq_replacement", 0xF7, 0, 0x95)
+        for interruption in ("select", "reset", "rejected"):
+            c.raw("pending_pq_replacement", 0x47, 0, 0x95, body, le=256, status=0x61FF)
+            for _ in range(5 if algorithm == 0xE2 else 2):
+                c.raw("partial_pq_public", 0xC0, le=256, status=0x61FF)
+            if interruption == "reset":
+                c.wire.command("RESET")
+            elif interruption == "rejected":
+                answer, a, b = c.wire.transmit(bytes.fromhex("00fd0000000001"))
+                assert not answer and (a, b) == (0x67, 0)
+                c.raw("rejected_command_abandons_pq_response", 0xC0, le=256, status=0x6986)
+            c.select()
+            assert c.cmd("aborted_pq_keeps_key", 0xF7, 0, 0x95) == before
+            assert c.cmd("aborted_pq_keeps_name", 0xF5, 0, 0x95) == b"M\0"
+            c.auth()
+        c.raw("pq_before_commit_failure", 0x47, 0, 0x95, body, le=256, status=0x61FF)
+        c.wire.command("FAIL_WRITE 40")
+        c.cmd("pq_commit_failure", 0xC0, le=256, status=0x6900)
+        assert c.cmd("failed_pq_keeps_key", 0xF7, 0, 0x95) == before
+        assert c.cmd("failed_pq_keeps_name", 0xF5, 0, 0x95) == b"M\0"
+        generated = c.cmd("complete_pq_replacement", 0x47, 0, 0x95, body)
+        metadata = fields(c.cmd("committed_pq_metadata", 0xF7, 0, 0x95))
+        assert metadata[1] == bytes([algorithm]) and metadata[4] == fields(generated)[0x7F49]
+        assert c.cmd("committed_pq_clears_name", 0xF5, 0, 0x95) == b""
+        c.cmd("delete_pq_replacement_test_key", 0xF6, 0xFF, 0x95)
+
+
 def randomized_ed25519(c):
     key = c.generate(3)
     c.verify()
@@ -704,6 +741,8 @@ def interruptions(c):
     raw("pq_partial_public", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, b"\xe2")), le=1, status=0x61FF)
     c.select()
     raw("abandoned_public_not_readable", 0xC0, le=256, status=0x6986)
+    assert fields(c.cmd("abandoned_generation_keeps_ed25519", 0xF7, 0, 0x9A))[1] == b"\xe0"
+    c.cmd("complete_pq_for_signing", 0x47, 0, 0x9A, tlv(0xAC, tlv(0x80, b"\xe2")))
     c.verify()
     body = tlv(0x7C, tlv(0x82, b"") + tlv(0x81, b"x" * 1000))
     raw("pq_partial_sign", 0x87, 0xE2, 0x9A, body[:80], cla=0x10)
@@ -819,6 +858,7 @@ def run(wire, progress=None, report=None):
             encoding_regressions,
             import_boundary_regressions,
             pq_keys,
+            pq_replacement,
             randomized_ed25519,
             sm2_operations,
         ):

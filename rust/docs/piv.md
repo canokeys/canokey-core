@@ -78,6 +78,13 @@ key and 3309-byte signature, and hashes messages incrementally. ML-KEM-768
 persists only 64-byte d||z (import tag 0A), derives its 1184-byte public key,
 and decapsulates 1088-byte ciphertexts into 32-byte shared secrets with implicit
 rejection. Neither expanded private keys nor complete long messages are stored.
+PQ GENERATE stages only the compact metadata/seed record. The previous slot and
+name remain intact until the final public-response chunk has been generated;
+that chunk commits the replacement before returning success. Selection, reset,
+rejected commands and session cleanup abort an unfinished replacement. Commit
+failure returns an error and preserves the previous record. The seed crosses
+the classic-to-stream workspace transition in a wiped 64-byte local; no extra
+persistent scratch buffer or public-key Flash cache is allocated.
 Short command chaining and GET RESPONSE are supported; extended APDUs are
 rejected, matching C. Only GA, PUT and IMPORT accept command chaining.
 

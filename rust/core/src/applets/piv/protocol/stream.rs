@@ -228,9 +228,14 @@ impl Piv {
             && let Some(PendingPublicKey {
                 slot_index: id,
                 include_metadata: metadata,
+                generated_algorithm,
             }) = self.pending_public.take()
         {
-            return self.finish_public(id, metadata, w, p);
+            let result = self.finish_public(id, metadata, generated_algorithm, w, p);
+            if result.is_err() {
+                self.close(w, p);
+            }
+            return result;
         }
         result
     }
@@ -240,15 +245,30 @@ impl Piv {
         &mut self,
         id: usize,
         metadata: bool,
+        generated_algorithm: Option<u8>,
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
         let mut m = [0; repo::META];
-        repo::read_meta(id, p, &mut m)?;
-        let a = m[repo::ALGORITHM];
-        w.wipe_active(p.memory);
-        let s = w.stream_with(p.memory);
-        let n = super::init_public_stream(id, a, s, p)?;
+        let (a, n) = if let Some(a) = generated_algorithm {
+            // The seed crosses the workspace variant transition only on this
+            // bounded stack frame. Persistent staging owns the eventual commit.
+            let mut seed = [0; 64];
+            let length = repo::material(a);
+            seed[..length].copy_from_slice(&w.classic_with(p.memory).key.bytes[..length]);
+            let s = w.stream_with(p.memory);
+            let result = p
+                .crypto
+                .stream(StreamOperation::PublicInit, a, s, &seed[..length], &mut [])
+                .map_err(|_| Sw::UNABLE_TO_PROCESS);
+            p.memory.wipe(&mut seed);
+            (a, result?)
+        } else {
+            repo::read_meta(id, p, &mut m)?;
+            let a = m[repo::ALGORITHM];
+            let s = w.stream_with(p.memory);
+            (a, super::init_public_stream(id, a, s, p)?)
+        };
         self.memory(n);
         self.response = ResponseBacking::Crypto(a);
         let mut at = 0;
@@ -303,12 +323,21 @@ impl Piv {
                     return Err(Sw::UNABLE_TO_PROCESS);
                 }
             }
+            if offset + out.len() == self.header_len + self.body_len
+                && let Some(id) = self.pending_commit.take()
+            {
+                if let Err(error) = p.storage.stage_commit(repo::KEYS[id as usize]) {
+                    p.storage.stage_abort();
+                    return Err(repo::io(error));
+                }
+            }
             Ok(out.len())
         } else {
             self.read_classic(offset, out, w.classic_with(p.memory), p)
         }
     }
     pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+        self.abort_generation(p);
         if let SessionWorkspace::Attestation(a) = w {
             a.close(p);
             self.memory(0);

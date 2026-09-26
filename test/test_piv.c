@@ -445,54 +445,6 @@ static void test_piv_mldsa65_generate_metadata_and_sign(void **state) {
   memzero(expected_signature, sizeof(expected_signature));
 }
 
-static void test_piv_mldsa65_aborted_generation_not_installed(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-
-  uint8_t generate[] = {0xAC, 0x06, 0x80, 0x01, 0xE2, 0xAA, 0x01, PIN_POLICY_NEVER};
-  uint8_t response[APDU_BUFFER_SIZE];
-  RAPDU rapdu = {.data = response};
-  RAPDU_CHAINING chaining = {.rapdu.data = response};
-  CAPDU command = {.data = generate,
-                   .cla = 0x00,
-                   .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
-                   .p1 = 0x00,
-                   .p2 = 0x95,
-                   .lc = sizeof(generate),
-                   .le = APDU_BUFFER_SIZE};
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  assert_int_equal(rapdu.sw & 0xFF00u, 0x6100u);
-  assert_int_equal(get_file_size("piv-k95"), LFS_ERR_NOENT);
-
-  // Drain enough response chunks to compute and partially emit t1[4..5]. The
-  // key must remain pending until the complete public-key response is read.
-  command = (CAPDU){.data = NULL,
-                    .cla = 0x00,
-                    .ins = PIV_INS_GET_DATA_RESPONSE,
-                    .p1 = 0,
-                    .p2 = 0,
-                    .lc = 0,
-                    .le = APDU_BUFFER_SIZE};
-  for (size_t i = 0; i < 5; ++i) {
-    piv_process_apdu_message(&chaining, &command, &rapdu);
-    assert_int_equal(rapdu.sw & 0xFF00u, 0x6100u);
-    assert_int_equal(get_file_size("piv-k95"), LFS_ERR_NOENT);
-  }
-
-  CAPDU rejected = {.data = NULL,
-                    .cla = 0x00,
-                    .ins = PIV_INS_GET_VERSION,
-                    .p1 = 0,
-                    .p2 = 0,
-                    .lc = 0,
-                    .le = APDU_BUFFER_SIZE,
-                    .extended = 1};
-  piv_process_apdu_message(&chaining, &rejected, &rapdu);
-  assert_int_equal(rapdu.sw, SW_WRONG_LENGTH);
-  assert_false(apdu_response_source_active());
-  assert_int_equal(get_file_size("piv-k95"), LFS_ERR_NOENT);
-}
 
 static void test_piv_mlkem768_generate_metadata_decaps_and_lifecycle(void **state) {
   (void)state;
@@ -2930,52 +2882,9 @@ static void test_piv_sm2_key_agreement_pin_policy(void **state) {
 }
 
 // Observe/fail physical writes without changing production filesystem helpers.
-static bool container_name_fail_prog;
-static int container_name_prog(const struct lfs_config *cfg, lfs_block_t block, lfs_off_t off, const void *buffer,
-                               lfs_size_t size) {
-  if (container_name_fail_prog) return LFS_ERR_IO;
-  return lfs_filebd_prog(cfg, block, off, buffer, size);
-}
 
 
 
-static void test_piv_container_name_mldsa_replacement(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-  uint8_t gen[] = {0xAC, 3, 0x80, 1, 0x11};
-  uint8_t name[] = {'M', 0}, stored[78];
-  test_helper(gen, sizeof(gen), PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, 0, 0x95, SW_NO_ERROR);
-  test_helper(name, sizeof(name), PIV_INS_CONTAINER_NAME, 1, 0x95, SW_NO_ERROR);
-  ck_key_t old, after;
-  assert_true(ck_read_key("piv-k95", &old) >= 0);
-  gen[4] = 0xE2;
-  uint8_t response[MLDSA_PK_BYTES + 16];
-  CAPDU c = {.ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR, .p2 = 0x95, .data = gen, .lc = sizeof(gen), .le = 256};
-  RAPDU r = {.data = response};
-  RAPDU_CHAINING chaining = {.rapdu.data = response};
-  piv_process_apdu_message(&chaining, &c, &r);
-  assert_int_equal(r.sw & 0xFF00u, 0x6100u);
-  assert_int_equal(read_attr("piv-k95", PIV_CONTAINER_NAME_ATTR, stored, sizeof(stored)), sizeof(name));
-  assert_memory_equal(stored, name, sizeof(name));
-  piv_poweroff(); // Abort pending generation: old key and name must survive.
-  assert_true(ck_read_key("piv-k95", &after) >= 0);
-  assert_memory_equal(&old, &after, sizeof(old));
-  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x95, SW_NO_ERROR, name, sizeof(name));
-  set_admin_status(1);
-  uint16_t sw;
-  container_name_fail_prog = true;
-  piv_test_collect_response(c, response, sizeof(response), &sw);
-  container_name_fail_prog = false;
-  assert_int_not_equal(sw, SW_NO_ERROR);
-  assert_true(ck_read_key("piv-k95", &after) >= 0);
-  assert_memory_equal(&old, &after, sizeof(old));
-  test_helper_resp(NULL, 0, PIV_INS_CONTAINER_NAME, 0, 0x95, SW_NO_ERROR, name, sizeof(name));
-  assert_int_equal(piv_test_collect_response(c, response, sizeof(response), &sw), MLDSA_PK_BYTES + 9);
-  assert_int_equal(sw, SW_NO_ERROR);
-  // A successful replacement leaves a permanent zero-length name attr.
-  assert_int_equal(get_attr_size("piv-k95", PIV_CONTAINER_NAME_ATTR), 0);
-}
 
 int main() {
   struct lfs_config cfg;
@@ -2985,7 +2894,7 @@ int main() {
   memset(&cfg, 0, sizeof(cfg));
   cfg.context = &bd;
   cfg.read = &lfs_filebd_read;
-  cfg.prog = &container_name_prog;
+  cfg.prog = &lfs_filebd_prog;
   cfg.erase = &lfs_filebd_erase;
   cfg.sync = &lfs_filebd_sync;
   cfg.read_size = 1;
@@ -3002,7 +2911,6 @@ int main() {
   piv_install(1);
 
   const struct CMUnitTest tests[] = {
-      cmocka_unit_test(test_piv_container_name_mldsa_replacement),
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
       cmocka_unit_test(test_piv_startup_preserves_state_when_platform_config_is_invalid),
@@ -3014,7 +2922,6 @@ int main() {
       cmocka_unit_test(test_piv_regular_slot_defaults),
       cmocka_unit_test(test_piv_mldsa65_import_seed_only),
       cmocka_unit_test(test_piv_mldsa65_generate_metadata_and_sign),
-      cmocka_unit_test(test_piv_mldsa65_aborted_generation_not_installed),
       cmocka_unit_test(test_piv_mlkem768_generate_metadata_decaps_and_lifecycle),
       cmocka_unit_test(test_piv_mlkem768_import_seed_only),
       cmocka_unit_test(test_piv_pq_custom_algorithm_ids),
