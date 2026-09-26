@@ -98,9 +98,10 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Three C test executables remain, with 126 registered cases: APDU (57),
-key (11), PIV (58). Their C applet/protocol dependencies
-remain until each case is mapped or ported. This ledger is not a completion
+Two legacy C test executables remain, with 115 registered cases: APDU (57)
+and PIV (58). Their C applet/protocol dependencies remain until each case is
+mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
+helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
@@ -450,3 +451,29 @@ real command cleanup boundary. The shared low-level loader may contain partial
 material on failure; its caller owns wiping. No duplicate loader wipe or extra
 production buffer is introduced. These fixtures test cleanup and rejection;
 actual valid key derivation/use remains independently checked by APDU suites.
+
+
+## PIN batching and independent LittleFS tests
+
+`test_pin_batched_retry_updates` is replaced by Rust
+`mechanisms::pin::tests::records::batched_retry_updates_and_failed_restore_preserve_the_record`
+and the existing `record_lifecycle_blocking_and_storage_errors`,
+`retry_policies_preserve_exact_write_sequences`, `no_success_after_any_failed_commit`
+and PIV authorization/retry tests. Coverage includes one replacement containing
+secret and both counters, no write on ordinary successful verification, decrement
+and restore commits, failed restore rejection/recovery, blocked correct PIN,
+missing/incomplete records, and atomic change/clear with persisted policy.
+The record fixture counts backend replacements; LittleFS physical commit and
+fault recovery remain separately checked by the native helper suite. OpenPGP's
+prepaid-attempt policy has intentionally different successful-verification writes
+and retains its dedicated tests.
+
+`test_key.c` is retired. Its ten filesystem cases live in `test_fs.c`, compiled
+with only `src/fs.c`, `littlefs/lfs.c`, `littlefs/lfs_util.c` and
+`littlefs/bd/lfs_filebd.c`. A one-shot file-error fixture replaces the virtual
+card simulator hook. There is no link to `canokey-core`, crypto, the USB dummy,
+or device simulation. Sanitizers and fatal UBSan remain enabled. The standalone
+suite preserves file/attribute operations, commit validation and uncertain
+outcomes, reader ownership/cache cleanup, injected block failures and mutation
+generation. These are allowed LittleFS thin-adapter correctness tests, not
+remaining native applet functionality.

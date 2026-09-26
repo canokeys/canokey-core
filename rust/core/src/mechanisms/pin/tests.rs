@@ -126,6 +126,7 @@ mod records {
         exists: bool,
         writes: usize,
         unavailable: bool,
+        fail_write: bool,
         id: u8,
     }
     impl Default for Store {
@@ -136,6 +137,7 @@ mod records {
                 exists: false,
                 writes: 0,
                 unavailable: false,
+                fail_write: false,
                 id: 0,
             }
         }
@@ -154,7 +156,7 @@ mod records {
         }
         fn replace(&mut self, id: Record, input: &[u8]) -> Result<(), StorageError> {
             self.writes += 1;
-            if self.unavailable {
+            if self.unavailable || self.fail_write {
                 return Err(StorageError::Uncertain);
             }
             self.id = id.id();
@@ -395,6 +397,65 @@ mod records {
             ),
             Err(Error::Blocked)
         );
+    }
+
+    #[cfg(feature = "openpgp")]
+    #[test]
+    fn batched_retry_updates_and_failed_restore_preserve_the_record() {
+        let pin = RecordPin {
+            id: Record::PgpRc,
+            stored_min: 0,
+            fixed_limit: None,
+        };
+        let mut store = Store::default();
+        let memory = Eraser::default();
+        for empty in [false, true] {
+            assert_eq!(
+                pin.change(
+                    if empty { b"" } else { b"5678" },
+                    0,
+                    &mut platform!(&mut store, &memory)
+                ),
+                Err(Error::Persistence)
+            );
+            assert_eq!(
+                pin.retry_limit(3, &mut platform!(&mut store, &memory)),
+                Err(Error::Persistence)
+            );
+            assert!(!store.exists);
+            assert_eq!(store.writes, 0);
+        }
+        pin.create(b"1234", 3, &mut platform!(&mut store, &memory))
+            .unwrap();
+        assert_eq!(store.writes, 1);
+        assert_eq!(&store.value[..8], b"\x01\x04\x03\x031234");
+        let verify = |store: &mut Store, value: &[u8]| {
+            pin.verify(value, 4, Charge::OnMismatch, &mut platform!(store, &memory))
+        };
+        assert_eq!(verify(&mut store, b"1234"), Ok(()));
+        assert_eq!(store.writes, 1);
+        assert_eq!(verify(&mut store, b"0000"), Err(Error::Retries(2)));
+        assert_eq!(store.writes, 2);
+        let old = store.value;
+        store.fail_write = true;
+        assert_eq!(verify(&mut store, b"1234"), Err(Error::Persistence));
+        assert_eq!(store.value, old);
+        store.fail_write = false;
+        assert_eq!(verify(&mut store, b"1234"), Ok(()));
+        assert_eq!(store.writes, 4);
+        assert_eq!(&store.value[..8], b"\x01\x04\x03\x031234");
+        pin.change(b"5678", 4, &mut platform!(&mut store, &memory))
+            .unwrap();
+        assert_eq!(store.writes, 5);
+        assert_eq!(&store.value[..8], b"\x01\x04\x03\x035678");
+        pin.change(b"", 0, &mut platform!(&mut store, &memory))
+            .unwrap();
+        assert_eq!(store.writes, 6);
+        assert_eq!(store.length, 4);
+        assert_eq!(&store.value[..4], b"\x01\x00\x00\x03");
+        store.length = 3; // No complete retry-policy header.
+        assert_eq!(verify(&mut store, b"1234"), Err(Error::Persistence));
+        assert_eq!(store.writes, 6);
     }
 
     #[cfg(feature = "admin")]
