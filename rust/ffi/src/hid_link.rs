@@ -11,8 +11,8 @@ unsafe extern "C" {
     fn ck_hid_io_ack_reset(epoch: u32);
     fn ck_hid_io_configured() -> u8;
     fn ck_hid_io_idle() -> u8;
-    fn ck_hid_io_peek(report: *mut u8, length: u8, tick: *mut u32) -> u8;
-    fn ck_hid_io_consume();
+    fn ck_hid_io_peek(report: *mut u8, length: u8, tick: *mut u32, epoch: u32) -> u8;
+    fn ck_hid_io_consume(epoch: u32);
     fn ck_hid_io_receive();
     fn ck_hid_io_send(report: *mut u8, epoch: u32) -> u8;
     fn ck_hid_reset();
@@ -116,7 +116,13 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
         // Only the initial header is needed while crypto owns the core stack.
         let mut report = [0; 7];
         let mut received = 0;
-        if ck_hid_io_peek(report.as_mut_ptr(), report.len() as u8, &mut received) != 0 {
+        if ck_hid_io_peek(
+            report.as_mut_ptr(),
+            report.len() as u8,
+            &mut received,
+            LINK.execution_epoch,
+        ) != 0
+        {
             let cid = u32::from_be_bytes(report[..4].try_into().unwrap());
             let length = u16::from_be_bytes([report[5], report[6]]);
             if cid == LINK.executing_cid && report[4] == wire::INIT && length == 8 {
@@ -124,7 +130,7 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
                 LINK.abandon = true;
             } else if cid == LINK.executing_cid && report[4] == wire::CANCEL && length == 0 {
                 LINK.cancelled = true;
-                ck_hid_io_consume();
+                ck_hid_io_consume(LINK.execution_epoch);
             } else if idle {
                 if report[4] & 0x80 != 0 {
                     let error = if cid == 0 || (cid == wire::BROADCAST && report[4] != wire::INIT) {
@@ -137,7 +143,7 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
                     send_control(cid, wire::ERROR, error);
                     idle = false;
                 }
-                ck_hid_io_consume();
+                ck_hid_io_consume(LINK.execution_epoch);
             }
             ck_hid_io_receive();
         }
@@ -191,9 +197,14 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         let generation = ck_hid_io_epoch();
         let mut report = [0; 64];
         let mut received = 0;
-        let has_input = ck_hid_io_peek(report.as_mut_ptr(), report.len() as u8, &mut received) != 0;
+        let has_input = ck_hid_io_peek(
+            report.as_mut_ptr(),
+            report.len() as u8,
+            &mut received,
+            generation,
+        ) != 0;
         if has_input {
-            ck_hid_io_consume();
+            ck_hid_io_consume(generation);
             ck_hid_io_receive();
         }
         let result = ck_hid_poll(

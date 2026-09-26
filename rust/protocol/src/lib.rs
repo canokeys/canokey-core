@@ -12,3 +12,4 @@ pub mod tlv;
 pub mod der;
 
 pub mod ccid;
+pub mod usb;

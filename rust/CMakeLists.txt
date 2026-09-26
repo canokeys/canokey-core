@@ -159,6 +159,9 @@ if(BUILD_TESTING)
     add_test(NAME hid-usb COMMAND "${Python3_EXECUTABLE}"
       "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_hid.py")
     set_tests_properties(hid-usb PROPERTIES TIMEOUT 120)
+    add_test(NAME usb-device COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_usb.py")
+    set_tests_properties(usb-device PROPERTIES TIMEOUT 120)
   endif()
   add_test(NAME core-normal COMMAND core-normal)
   # Pure transport tests also run in profiles without the CTAP firmware applet.

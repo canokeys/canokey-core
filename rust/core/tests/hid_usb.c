@@ -3,16 +3,15 @@
 #include "core.h"
 #include <assert.h>
 #include <ctaphid.h>
-#include <usb_device.h>
-#include <usbd_ctaphid.h>
+#include "usb_io.h"
 
-USBD_HandleTypeDef usb_device;
+
 static uint32_t now, masked;
 static uint8_t reset_on_lock;
 uint32_t __get_PRIMASK(void) { return masked; }
 void __disable_irq(void) {
   masked = 1;
-  if (reset_on_lock) { reset_on_lock = 0; CTAPHID_TxReset(); }
+  if (reset_on_lock) { reset_on_lock = 0; ck_hid_packet_reset(); }
 }
 void __enable_irq(void) { masked = 0; }
 static unsigned received, resets, sent;
@@ -43,22 +42,24 @@ uint8_t ck_hid_poll(const uint8_t *input, uint32_t tick, uint32_t clock, uint8_t
     assert(!input);
     assert(CTAPHID_OutEvent(packet));
   }
-  if (reset_during_poll) { reset_during_poll = 0; CTAPHID_TxReset(); }
+  if (reset_during_poll) { reset_during_poll = 0; ck_hid_packet_reset(); }
   if (respond) { respond = 0; memset(out, 0x5a, 64); return 3; }
   return 0;
 }
-uint8_t USBD_CTAPHID_IsIdle(void) { return idle ? USBD_OK : USBD_BUSY; }
-uint8_t USBD_CTAPHID_SendReport(USBD_HandleTypeDef *d, uint8_t *out, uint16_t n) {
-  assert(d == &usb_device && idle && n == 64 && masked);
+uint32_t ck_usb_dcd_lock(void) { uint32_t m=masked;__disable_irq();return m; }
+void ck_usb_dcd_unlock(uint32_t m) { if(!m)__enable_irq(); }
+uint8_t ck_usb_configured(void) { return 1; }
+uint8_t ck_usb_tx_idle(uint8_t ep) { assert(ep==0x82);return idle; }
+int32_t ck_usb_submit(uint8_t ep, const uint8_t *out, uint16_t n, uint8_t zlp) {
+  assert(ep == 0x82 && !zlp && idle && n == 64 && masked);
   idle = 0;
   in_flight = out;
   sent++;
-  return USBD_OK;
+  return 1;
 }
-void USBD_CTAPHID_ServiceReceive(void) {}
+void ck_usb_receive(uint8_t ep) { assert(masked && ep==2); }
 int main(void) {
-  usb_device.dev_state = USBD_STATE_CONFIGURED;
-  CTAPHID_Init(NULL);
+  ck_hid_packet_reset();
   inject = 1;
   CTAPHID_Loop(0); // IRQ arrives during an empty Rust poll
   assert(received == 0 && !CTAPHID_RxCanAccept());
@@ -92,7 +93,7 @@ int main(void) {
   inject = 2;
   CTAPHID_Loop(0);
   assert(!CTAPHID_RxCanAccept());
-  CTAPHID_TxReset();
+  ck_hid_packet_reset();
   CTAPHID_Loop(0);
 
   ck_hid_execution_begin(0x12345678);
@@ -122,7 +123,7 @@ int main(void) {
   assert(!ck_hid_progress()); // INIT stays queued for Rust after unwinding
   assert(!CTAPHID_RxCanAccept());
   ck_hid_execution_end();
-  CTAPHID_TxReset();
+  ck_hid_packet_reset();
   CTAPHID_Loop(0);
 
   ck_hid_execution_begin(0x12345678);
@@ -132,7 +133,7 @@ int main(void) {
   assert(!ck_hid_executing());
 
   idle = 1;
-  CTAPHID_TxReset();
+  ck_hid_packet_reset();
   CTAPHID_Loop(0);
   assert(CTAPHID_OutEvent(packet));
   respond = 1;
@@ -152,6 +153,12 @@ int main(void) {
   CTAPHID_Loop(0);
   assert(sent == old_sent && !masked);
   CTAPHID_Loop(0);
+  // New-connection input queued before main-loop reset acknowledgement survives.
+  ck_hid_packet_reset();
+  unsigned old_received = received;
+  assert(CTAPHID_OutEvent(packet));
+  CTAPHID_Loop(0);
+  assert(received == old_received + 1);
   masked = 1;
   respond = 1;
   CTAPHID_Loop(0);

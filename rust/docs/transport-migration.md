@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # Rust transport migration contract
 
-Status: Rust HID execution and keyboard migration, 2026-09-25.
-CCID and HID execution policy are Rust-owned; generic USB and HID class handling still use C. Protocol migration takes
+Status: Rust USB common stack implementation, 2026-09-26.
+CCID, HID execution, keyboard reports and generic USB/HID class policy are Rust-owned. Protocol migration takes
 priority over final combined-image size optimization; each replacement still
 has to fit its independent device profile and pass stack and correctness gates.
 
@@ -32,19 +32,28 @@ Existing Rust ownership remains the foundation:
 - Platform: device operations, bounded buffers actually needed by the controller,
   LittleFS and crypto implementations. No per-applet worst-case buffer.
 
-## Remaining native protocol responsibilities
+## Implemented USB boundary
 
-Paths in this table are relative to `canokey-core`. The CIU-specific source
-inventory is maintained in the parent port at
-`docs/rust-transport-inventory.md`.
+`protocol::usb` decodes SETUP bytes. `runtime::usb` owns descriptor composition,
+request validation and control-IN segmentation. `ffi::usb` owns IRQ-local USB
+state, endpoint transfer continuations and ZLPs. Its storage is disjoint from
+Core and applet transports. All facade entrypoints are serialized by the IRQ
+mask. Neither hardware events nor timer callbacks enter the applet runtime.
 
-| Current source | Responsibility to replace | Rust destination |
-|---|---|---|
-| `interfaces/USB/class/ctaphid/usbd_ctaphid.c` | HID class requests/descriptors and report transfer state | Rust USB HID class |
-| `interfaces/USB/class/kbdhid/usbd_kbdhid.c` | Keyboard HID requests/descriptors and report state | Rust keyboard HID class |
-| `interfaces/rust-core/usb.c` | Composite descriptors, interface/endpoint routing and class initialization | Rust USB device composition |
-| `interfaces/USB/device/usb_device.c` | Device/class registration and lifecycle | Rust USB device composition plus platform startup call |
-| `interfaces/USB/core/src/usbd_core.c`, `usbd_ctlreq.c`, `usbd_ioreq.c` | USB standard requests, setup decoding, device and EP0 control-transfer state | Rust USB device/control layer |
+The hardware-only CIU DCD sends or receives one FIFO packet at a time. It exposes
+no USBD_HandleTypeDef, class callbacks or descriptors. Native mailboxes only
+copy incoming packets and retain timestamps/epochs; the CCID timer repeats
+opaque Rust-prepared bytes. Native USB core, composition and HID class sources
+are excluded from Rust builds and the replaced Rust-profile C composition file
+has been deleted. The legacy C product still uses its original stack until the
+whole-product migration permits removing it.
+
+Configuration descriptors are compared byte-for-byte against captures from all
+four previous C HID/keyboard configurations. Host tests cover setup replacement,
+status-stage address commit, premature control-IN termination, endpoint halts,
+per-interface reset, failed submission, multi-packet transfers, ZLP completion,
+suspend/resume, deconfiguration and preservation of new-epoch queued input.
+Physical CIU timing and stack acceptance remain pending.
 
 HID execution-time CANCEL, INIT resynchronization, busy errors, keepalive and
 lease deadlines now live in `ffi/src/hid_link.rs`. This state is disjoint from
@@ -76,7 +85,7 @@ Rust. USB-only completion and whole-product completion must be reported separate
 ## Platform contract
 
 The operations below specify the target semantics. The CCID subset is implemented
-in `interfaces/rust-core/ccid_io.h`; generic USB/HID migration remains pending.
+in `interfaces/rust-core/ccid_io.h`; USB packet operations are in `usb_io.h`.
 Use fixed-width fields and explicit status values; encode wire integers from
 bytes, never by exposing native USB/CCID structs. On CIU USB and CCID lengths are
 little-endian; APDU extended lengths and CTAPHID identifiers are big-endian.
@@ -94,12 +103,12 @@ little-endian; APDU extended lengths and CTAPHID identifiers are big-endian.
 
 Tick comparisons use elapsed wrapping subtraction with bounded intervals. A
 software timeout cancels logical work, but does not revoke a controller's borrow
-of its TX buffer. The Rust-profile CIU `CloseEP` clears the FIFO and software continuation while
-interrupts are masked; the driver rejects work on closed endpoints. `FlushEP`
+of its TX buffer. The Rust USB close path clears the CIU FIFO and then revokes software continuation
+while interrupts are masked; the driver rejects work on closed endpoints. `FlushEP`
 alone is not evidence that a buffer borrow ended. Completion or confirmed
 controller quiescence must discharge that lease.
 
-IRQ code may publish events and operate controller-owned state. It must not
+IRQ code may enter disjoint Rust USB state, publish events and operate controller-owned state. It must not
 borrow `Core`, applet state, session scratch, filesystem state or PKE. Main-loop
 cleanup closes sources, revokes authorization and releases scratch after reset.
 Generation checks also occur at submission under the platform synchronization
@@ -136,11 +145,28 @@ PKE. Native crypto with no progress callbacks remains non-cancellable until it
 returns; this limitation must stay explicit until primitives support safe
 checkpoints. No IRQ may interrupt a primitive to reuse its scratch.
 
-EP0 must also remain responsive during long crypto. Before removing the old USB
-control layer, supply either proven bounded cooperative service or a separately
-owned Rust USB link service that cannot reach `Core`. The latter requires its
-own documented IRQ ownership/aliasing proof; it is not permission to call today's
-main-loop FFI entrypoints from interrupts.
+### USB IRQ ownership and aliasing
+
+EP0 remains responsive during native crypto through `ffi::usb`, not cooperative
+calls into Core. USB IRQ and timer/main-loop USB operations take the same IRQ
+mask and restore its previous value. `DEVICE`, `CONTROL`, `CONTROL_IN` and `TX`
+are separate USB globals; none is part of Core, HID or CCID transport storage.
+SETUP policy borrows end before calling packet-reset callbacks. Packet callbacks
+publish C mailboxes only; raw DCD operations never synchronously reenter Rust.
+
+A DCD write copies one packet to FIFO before returning, so EP0 does not lend its
+control buffer to C across callbacks. USB retains raw pointers only for generic
+multi-packet IN transfers. Those source bytes stay immutable until completion or
+hardware close. CCID's existing response array is now outside `Transport`, with
+no increase in aggregate capacity: polling, timeout and session cleanup can
+borrow Transport without invalidating the USB reader's pointer. The response
+array is mutably borrowed only for a queued execution or after a reset epoch
+has quiesced the endpoint. HID control/final and keyboard reports likewise use
+separate buffers whose writers wait for completion or confirmed reset.
+
+A reset closes/flushes endpoints before revoking Rust TX leases and publishing
+new mailbox epochs. Main-loop cleanup never clears a packet from a newer epoch.
+Native C crypto callbacks cannot reach Core through any USB event path.
 
 ## First implementation slice: CCID
 
@@ -225,9 +251,9 @@ and link evidence together: reject legacy C applets, dispatch/session code,
 `interfaces/rust-core/{ccid,ctaphid,usb}.c` and C USB protocol files in Rust
 firmware. A symbol-only gate is insufficient under LTO. Keep a narrow explicit
 allowlist for crypto adapters and LittleFS; review platform helpers for hidden
-protocol policy. The CCID subset is enforced now by the CIU `verify-ccid.py` gate: resolved
-sources and linker inputs exclude both legacy CCID files and `CCID_Loop` must
-come from the Rust archive. The full-stack allowlist remains future work.
+protocol policy. The CCID/HID/USB stage gates now check resolved sources and retained Rust
+ownership. `verify-usb.py` additionally inspects the compiler command database,
+including transitive native target inputs. The full-stack allowlist remains future work.
 
 The host Rust transport tests must run without C USB libraries; native crypto
 and storage integration tests remain separate. Whole-product completion also

@@ -7,6 +7,10 @@
  * must never reenter the core. Buffers are borrowed only until return.
  * exchange supports identical input/output buffers; capacity includes SW.
  * Reset releases transport ownership and authorization, not stored slots. */
+void CCID_Loop(void);
+#if ENABLE_IFACE_CTAPHID
+uint8_t CTAPHID_Loop(uint8_t wait_for_user);
+#endif
 /* HID calls are main-loop-only. poll requires distinct 64-byte buffers and
  * completion of the previous IN report. See the Rust ABI for result bits. */
 #if ENABLE_IFACE_CTAPHID

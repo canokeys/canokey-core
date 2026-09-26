@@ -102,7 +102,6 @@ enum Phase {
 }
 pub struct Transport {
     request: Request,
-    response: [u8; HEADER + REPLY],
     reply_len: usize,
     phase: Phase,
     error: u8,
@@ -121,7 +120,6 @@ impl Transport {
     pub const fn new() -> Self {
         Self {
             request: Request::new(),
-            response: [0; HEADER + REPLY],
             reply_len: 0,
             phase: Phase::Idle,
             error: 0,
@@ -137,7 +135,6 @@ impl Transport {
         self.request.close(backend);
         backend.reset();
         self.request.bytes.fill(0);
-        self.response.fill(0);
         self.request.received = 0;
         self.request.expected = HEADER as u32;
         self.phase = Phase::Idle;
@@ -275,7 +272,17 @@ impl Transport {
             self.phase = Phase::Queued;
         }
     }
-    pub fn execute(&mut self, hid_busy: bool, backend: &mut impl Backend) {
+    /// Reply storage is external: borrowing transport state must not invalidate
+    /// an asynchronous USB reader's pointer into its in-flight response.
+    pub fn queued(&self) -> bool {
+        self.phase == Phase::Queued
+    }
+    pub fn execute(
+        &mut self,
+        hid_busy: bool,
+        backend: &mut impl Backend,
+        output: &mut [u8; HEADER + REPLY],
+    ) {
         if self.phase != Phase::Queued {
             return;
         }
@@ -306,7 +313,7 @@ impl Transport {
                         }
                         self.session_last = backend.now();
                         self.active = true;
-                        self.response[HEADER..HEADER + ATR.len()].copy_from_slice(ATR);
+                        output[HEADER..HEADER + ATR.len()].copy_from_slice(ATR);
                         length = ATR.len();
                     }
                 }
@@ -334,11 +341,10 @@ impl Transport {
                     } else {
                         backend.arm(&extension(slot, seq), EXTENSION_INTERVAL);
                         let result = if r.status != 0 {
-                            self.response[HEADER..HEADER + 2]
-                                .copy_from_slice(&r.status.to_be_bytes());
+                            output[HEADER..HEADER + 2].copy_from_slice(&r.status.to_be_bytes());
                             Ok(2)
                         } else {
-                            backend.exchange(r, &mut self.response[HEADER..])
+                            backend.exchange(r, &mut output[HEADER..])
                         };
                         backend.disarm();
                         self.session_owned = true;
@@ -355,7 +361,7 @@ impl Transport {
                     if command == SET_PARAMETERS && (r.bytes[7] != 1 || r.len() != T1.len()) {
                         error = BAD_POWER;
                     } else {
-                        self.response[HEADER..HEADER + T1.len()].copy_from_slice(T1);
+                        output[HEADER..HEADER + T1.len()].copy_from_slice(T1);
                         length = T1.len();
                     }
                 }
@@ -367,7 +373,7 @@ impl Transport {
         r.close(backend);
         let status = u8::from(!self.active) | if error != 0 || unsupported { 0x40 } else { 0 };
         response(
-            (&mut self.response[..HEADER]).try_into().unwrap(),
+            (&mut output[..HEADER]).try_into().unwrap(),
             kind,
             length as u32,
             slot,
@@ -380,8 +386,8 @@ impl Transport {
         self.phase = Phase::Reply;
         self.tx_started = backend.now();
     }
-    pub fn reply(&self) -> Option<&[u8]> {
-        (self.phase == Phase::Reply).then_some(&self.response[..self.reply_len])
+    pub fn reply<'a>(&self, output: &'a [u8; HEADER + REPLY]) -> Option<&'a [u8]> {
+        (self.phase == Phase::Reply).then_some(&output[..self.reply_len])
     }
     pub fn submitted(&mut self) {
         self.phase = Phase::InFlight;

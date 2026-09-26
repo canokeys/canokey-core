@@ -138,8 +138,9 @@ fn frame(command: u8, payload: &[u8]) -> Vec<u8> {
     v
 }
 fn finish(t: &mut Transport, m: &mut Mock) -> Vec<u8> {
-    t.execute(false, m);
-    let r = t.reply().unwrap().to_vec();
+    let mut output = [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
+    t.execute(false, m, &mut output);
+    let r = t.reply(&output).unwrap().to_vec();
     t.submitted();
     t.completed();
     r
@@ -209,7 +210,7 @@ fn every_truncated_header_and_payload_expires() {
             t.receive(piece, m.now, true, &mut m);
         }
         t.timeout(m.now.wrapping_add(TIMEOUT - 1), &mut m);
-        assert!(t.reply().is_none());
+        assert!(!t.queued());
         t.timeout(m.now.wrapping_add(TIMEOUT), &mut m);
         if end >= 10 {
             assert_eq!(finish(&mut t, &mut m)[7..9], [0x40, 8]);
@@ -337,16 +338,17 @@ fn leases_discovery_and_delayed_final_completion() {
     assert!(!t.blocked_by_hid(Some(SLOT_STATUS)));
     let resets = m.resets;
     t.receive(&frame(POWER_ON, &[]), 0, true, &mut m);
-    t.execute(true, &mut m);
+    let mut output = [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
+    t.execute(true, &mut m, &mut output);
     assert_eq!(m.resets, resets);
     t.submitted();
     assert!(!t.can_receive());
     t.completed();
     t.receive(&frame(TRANSFER, &[0]), 0, true, &mut m);
-    t.execute(false, &mut m);
-    let reply = t.reply().unwrap().to_vec();
+    t.execute(false, &mut m, &mut output);
+    let reply = t.reply(&output).unwrap().to_vec();
     t.receive(&frame(POWER_OFF, &[]), 0, true, &mut m);
-    assert_eq!(t.reply().unwrap(), reply);
+    assert_eq!(t.reply(&output).unwrap(), reply);
     t.submitted();
     t.tx_timeout(2000, &mut m);
     assert_eq!(m.resets, resets + 1);

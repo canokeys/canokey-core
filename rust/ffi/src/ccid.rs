@@ -11,6 +11,10 @@ crate::lazy_state!(
     ccid
 );
 static mut GENERATION: u32 = u32::MAX;
+// Endpoint-owned bytes are outside Transport. Polling/timeout may mutably
+// borrow Transport while the USB IRQ reads this buffer through its TX lease.
+static mut RESPONSE: [u8; 10 + canokey_rust_core::runtime::ccid::REPLY] =
+    [0; 10 + canokey_rust_core::runtime::ccid::REPLY];
 unsafe extern "C" {
     fn ck_ccid_io_generation() -> u32;
     fn ck_ccid_io_now() -> u32;
@@ -211,6 +215,7 @@ pub unsafe extern "C" fn CCID_Loop() {
         let transport = ccid();
         if GENERATION != generation {
             transport.reset(&mut platform);
+            (&mut *core::ptr::addr_of_mut!(RESPONSE)).fill(0);
             GENERATION = generation;
             return;
         }
@@ -233,11 +238,13 @@ pub unsafe extern "C" fn CCID_Loop() {
         if generation != ck_ccid_io_generation() {
             return;
         }
-        transport.execute(busy, &mut platform);
+        if transport.queued() {
+            transport.execute(busy, &mut platform, &mut *core::ptr::addr_of_mut!(RESPONSE));
+        }
         if generation != ck_ccid_io_generation() {
             return;
         }
-        if let Some(reply) = transport.reply() {
+        if let Some(reply) = transport.reply(&*core::ptr::addr_of!(RESPONSE)) {
             if ck_ccid_io_submit(
                 generation,
                 reply.as_ptr(),

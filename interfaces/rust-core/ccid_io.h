@@ -3,7 +3,7 @@
 #define CK_CCID_IO_H
 #include <stddef.h>
 #include <stdint.h>
-/* Main-loop packet lease API. IRQs never call Rust. Generation is checked
+/* Main-loop packet lease API. IRQs may call disjoint Rust USB state, never the applet runtime. Generation is checked
  * inside each operation's critical section. A submitted buffer is immutable
  * until idle or a real bus reset has quiesced the controller. */
 uint32_t ck_ccid_io_generation(void);

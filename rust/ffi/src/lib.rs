@@ -61,3 +61,5 @@ mod ccid;
 mod hid_link;
 #[cfg(feature = "usb-keyboard")]
 mod keyboard;
+#[cfg(feature = "usb-device")]
+mod usb;

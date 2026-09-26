@@ -16,3 +16,4 @@ pub use presence::Polling;
 pub mod ccid;
 
 pub mod keyboard;
+pub mod usb;
