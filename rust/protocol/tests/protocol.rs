@@ -32,11 +32,13 @@ fn response_in_two_chunks() {
     let mut offset = 0;
     for (length, sw) in [(254, 0x61ff), (254, 0x6104), (4, 0x9000)] {
         let chunk = ResponsePlan::new(512, offset, 254, StatusWord::SUCCESS).unwrap();
-        assert_eq!((chunk.length, chunk.sw), (length, StatusWord::new(sw).unwrap()));
+        assert_eq!(
+            (chunk.length, chunk.sw),
+            (length, StatusWord::new(sw).unwrap())
+        );
         offset = chunk.next;
     }
     assert_eq!(offset, 512);
-
 }
 
 #[test]
@@ -102,5 +104,49 @@ fn changed_chain_header_discards_previous_command_and_overflow_recovers() {
             assert!(!chain.active());
             assert!(chain.accept(original, 2).unwrap().restarted);
         }
+    }
+}
+
+#[test]
+fn der_signature_preserves_coordinates_across_overlapping_moves() {
+    use canokey_protocol::der::der_signature;
+    // Exercise every supported width, leading-zero count and sign-padding
+    // combination, including the DER sequence's 127/128-byte boundary.
+    for width in 1..=66 {
+        for r_skip in 0..width {
+            for s_skip in 0..width {
+                for sign_bits in 0..4 {
+                    let mut raw = vec![0; width * 2];
+                    let mut body = Vec::new();
+                    for (i, skip) in [r_skip, s_skip].into_iter().enumerate() {
+                        let negative = sign_bits & (1 << i) != 0;
+                        let value = &mut raw[i * width + skip..(i + 1) * width];
+                        value.fill(if negative { 0x80 } else { 0x01 });
+                        body.extend([2, (value.len() + usize::from(negative)) as u8]);
+                        if negative {
+                            body.push(0);
+                        }
+                        body.extend_from_slice(value);
+                    }
+                    let mut expected = vec![0x30];
+                    if body.len() >= 128 {
+                        expected.push(0x81);
+                    }
+                    expected.push(body.len() as u8);
+                    expected.extend(body);
+                    raw.resize(width * 2 + 9, 0xa5);
+                    let n = der_signature(&mut raw, width * 2).unwrap();
+                    assert_eq!(&raw[..n], expected);
+                }
+            }
+        }
+        let mut zeros = vec![0; width * 2 + 9];
+        let n = der_signature(&mut zeros, width * 2).unwrap();
+        assert_eq!(&zeros[..n], &[0x30, 6, 2, 1, 0, 2, 1, 0]);
+    }
+    for (len, n) in [(9, 0), (10, 1), (142, 134), (72, 64)] {
+        let mut out = vec![0xa5; len];
+        assert!(der_signature(&mut out, n).is_err());
+        assert!(out.iter().all(|b| *b == 0xa5));
     }
 }
