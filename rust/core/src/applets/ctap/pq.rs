@@ -189,31 +189,7 @@ impl Stream {
     }
     fn initialize(&mut self, plan: Pending, p: &mut Platform<'_>) -> Result<(), Status> {
         match plan.mode {
-            Mode::Make => {
-                if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
-                    return Err(Status::Other);
-                }
-                // The stream API exposes public bytes only while the primitive
-                // is open. Close it after hashing the first public view, then
-                // reopen it to emit the response; retaining a second 1952-byte
-                // copy would exceed the shared workspace budget.
-                let mut hash = HashState {
-                    bytes: [0; crate::ports::HASH_STATE_BYTES],
-                };
-                let digest_result = self.attestation_digest(plan, &mut hash, p);
-                let _ = p.crypto.digest(Hash::Abort, &mut hash, &[], &mut []);
-                let _ = p
-                    .crypto
-                    .stream(Op::Abort, alg::MLDSA65, &mut self.crypto, &[], &mut []);
-                let digest = digest_result?;
-                self.attest(plan.signature_at + plan.auth, &digest, p)?;
-                // PublicInit is intentionally repeated: the primitive exposes
-                // the public key only through its live stream and retaining a
-                // second 1952-byte copy would exceed the shared workspace.
-                if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
-                    return Err(Status::Other);
-                }
-            }
+            Mode::Make => self.initialize_make(plan, p)?,
             Mode::Assert => {
                 self.init(Op::SignInit, p)?;
                 p.crypto
@@ -247,6 +223,35 @@ impl Stream {
                     return Err(Status::Other);
                 }
             }
+        }
+        Ok(())
+    }
+    // Registration-only hash/signature temporaries must not remain live on
+    // the ML-DSA assertion signing path.
+    #[inline(never)]
+    fn initialize_make(&mut self, plan: Pending, p: &mut Platform<'_>) -> Result<(), Status> {
+        if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
+            return Err(Status::Other);
+        }
+        // The stream API exposes public bytes only while the primitive
+        // is open. Close it after hashing the first public view, then
+        // reopen it to emit the response; retaining a second 1952-byte
+        // copy would exceed the shared workspace budget.
+        let mut hash = HashState {
+            bytes: [0; crate::ports::HASH_STATE_BYTES],
+        };
+        let digest_result = self.attestation_digest(plan, &mut hash, p);
+        let _ = p.crypto.digest(Hash::Abort, &mut hash, &[], &mut []);
+        let _ = p
+            .crypto
+            .stream(Op::Abort, alg::MLDSA65, &mut self.crypto, &[], &mut []);
+        let digest = digest_result?;
+        self.attest(plan.signature_at + plan.auth, &digest, p)?;
+        // PublicInit is intentionally repeated: the primitive exposes
+        // the public key only through its live stream and retaining a
+        // second 1952-byte copy would exceed the shared workspace.
+        if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
+            return Err(Status::Other);
         }
         Ok(())
     }
