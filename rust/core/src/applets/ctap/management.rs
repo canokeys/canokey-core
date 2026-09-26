@@ -358,39 +358,9 @@ impl Session {
                     self.management.mode = 5;
                     let id = *entry.id;
                     let algorithm = credential::open(&id, self.sm2, &self.management.rp, w, p)?;
-                    if algorithm == crate::ports::alg::MLDSA65 && !self.management.metadata_only {
-                        let entry = resident::Entry::decode(&w.input[..n])?;
-                        let has_blob_key = id[1] & resident::LARGE_BLOB_KEY != 0;
-                        if has_blob_key {
-                            credential::large_blob_key(
-                                &id,
-                                &self.management.rp,
-                                (&mut w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
-                                    .try_into()
-                                    .unwrap(),
-                                p,
-                            )?;
-                        }
-                        let blob_key = has_blob_key.then(|| {
-                            (&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
-                                .try_into()
-                                .unwrap()
-                        });
-                        let (plan, length) = mldsa_public_response(
-                            &entry,
-                            &id,
-                            total,
-                            subcommand,
-                            blob_key,
-                            &mut w.output,
-                        )?;
-                        // Encode directly from the input record before reusing
-                        // it for the stream seed; maximal user records exceed 256 B.
-                        w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
-                        self.auth_response = Some(super::Response::Pending(plan));
-                        return Ok(length + super::pq::PUBLIC_BYTES);
-                    }
-                    let public_len = if self.management.metadata_only {
+                    let pq_public =
+                        algorithm == crate::ports::alg::MLDSA65 && !self.management.metadata_only;
+                    let public_len = if self.management.metadata_only || pq_public {
                         0
                     } else {
                         let n = p
@@ -422,6 +392,26 @@ impl Session {
                         )?;
                     }
                     let entry = resident::Entry::decode(&w.input[..n])?;
+                    if pq_public {
+                        let blob_key = has_blob_key.then(|| {
+                            (&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
+                                .try_into()
+                                .unwrap()
+                        });
+                        let (plan, length) = mldsa_public_response(
+                            &entry,
+                            &id,
+                            total,
+                            subcommand,
+                            blob_key,
+                            &mut w.output,
+                        )?;
+                        // Encode directly from the input record before reusing
+                        // it for the stream seed; maximal user records exceed 256 B.
+                        w.input[32..64].copy_from_slice(&w.key.bytes[..32]);
+                        self.auth_response = Some(super::Response::Pending(plan));
+                        return Ok(length + super::pq::PUBLIC_BYTES);
+                    }
                     w.output[0] = 0;
                     let mut e = Encoder::new(&mut w.output[1..]);
                     let result = (|| {
