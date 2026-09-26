@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 70 registered cases: APDU (49)
-and PIV (21). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 68 registered cases: APDU (49)
+and PIV (19). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -724,3 +724,18 @@ write-failure fixture is replaced at that transaction boundary. Existing PIN
 unit regressions separately cover errors where storage may have committed and
 require reloading the actual committed credential. Slot usage is verified by
 real operations rather than a native KEY_USAGE_ANY struct field.
+
+
+## Invalid private-key and peer-point inputs
+
+| Retired native case | Important Rust coverage |
+|---|---|
+| `test_piv_rsa_sign_rejects_inconsistent_crt_key` | `piv-normal::invalid_private_inputs`: rejects corrupt dp and p=q imports, checks the previous public metadata and independently verifies the surviving key; a host-only record corruption then exercises actual use-time rejection with empty output, followed by restoration and a verified private operation |
+| `test_piv_ecdh_rejects_invalid_peer_point` | Same scenario rejects an in-field off-curve P-256 point and a point whose X equals the field modulus, with empty output; valid independently checked signing/ECDH still work afterwards |
+
+The CORRUPT line command belongs only to the in-process test card, not the
+firmware or an APDU extension. It changes a bounds-checked byte in the test
+storage backend so use-time validation traverses the real Rust loader and
+native crypto adapter. No test-only crypto implementation replaces the real
+backend. The old purported out-of-field vector had an in-range X; the new
+literal modulus boundary actually tests field membership.

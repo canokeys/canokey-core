@@ -12,6 +12,12 @@ void ck_test_fail_write(uint8_t id) { failed_write_record = id; }
 static void storage_init(void) {
   if (!initialized) { for (size_t i = 0; i < 186; i++) sizes[i] = -1; initialized = 1; }
 }
+// Host-only corruption fixture: exercise use-time validation after a valid import.
+void ck_test_corrupt_record(uint8_t id, size_t offset, uint8_t mask) {
+  storage_init();
+  assert(id < 186 && sizes[id] >= 0 && offset < (size_t)sizes[id]);
+  files[id][offset] ^= mask;
+}
 int32_t ck_platform_usage(uint32_t *used, uint32_t *total) {
   storage_init();*used=4096;*total=128*1024;
   for(size_t i=0;i<186;i++) if(sizes[i]>0) *used+=(uint32_t)sizes[i];

@@ -33,6 +33,16 @@ int main(void) {
       fflush(stdout);
       continue;
     }
+    if (strncmp(line, "CORRUPT ", 8) == 0) {
+      extern void ck_test_corrupt_record(uint8_t id, size_t offset, uint8_t mask);
+      unsigned id, mask;
+      size_t offset;
+      assert(sscanf(line + 8, "%u %zu %u", &id, &offset, &mask) == 3 && id < 186 && mask < 256);
+      ck_test_corrupt_record((uint8_t)id, offset, (uint8_t)mask);
+      puts("9000");
+      fflush(stdout);
+      continue;
+    }
     if (strncmp(line, "SIZE ", 5) == 0) {
       printf("%08x\n", (unsigned)ck_platform_size((uint8_t)atoi(line + 5)));
       fflush(stdout);

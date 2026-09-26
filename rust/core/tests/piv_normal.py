@@ -482,6 +482,43 @@ def import_boundary_regressions(c):
     exercise(c, 0, private.public_key())
 
 
+def invalid_private_inputs(c):
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    c.import_key(5, private)
+    before = c.cmd("rsa_validation_baseline", 0xF7, 0, 0x9A)
+    numbers = private.private_numbers()
+    components = [numbers.p, numbers.q, numbers.dmp1, numbers.dmq1, numbers.iqmp]
+    for index, replacement in ((2, numbers.dmp1 ^ 0x55), (1, numbers.p)):
+        changed = components.copy()
+        changed[index] = replacement
+        body = b"".join(tlv(i + 1, value.to_bytes(128, "big")) for i, value in enumerate(changed))
+        c.cmd("reject_inconsistent_crt_import", 0xFE, 7, 0x9A, body, status=0x6A80)
+        assert c.cmd("invalid_crt_keeps_key", 0xF7, 0, 0x9A) == before
+    exercise(c, 5, private.public_key())
+    # Compact record: header6, exponent4, p128, q128, then dp128.
+    c.wire.command("CORRUPT 17 366 85")
+    answer = c.cmd("reject_corrupt_stored_crt", 0x87, 7, 0x9A,
+                   tlv(0x7C, tlv(0x82, b"") + tlv(0x81, (42).to_bytes(256, "big"))),
+                   status=0x6900)
+    assert answer == b""
+    c.wire.command("CORRUPT 17 366 85")
+    exercise(c, 5, private.public_key())
+
+    private = ec.derive_private_key(1, ec.SECP256R1())
+    c.import_key(0, private)
+    c.verify()
+    point = private.public_key().public_bytes(serialization.Encoding.X962,
+                                             serialization.PublicFormat.UncompressedPoint)
+    off_curve = point[:-1] + bytes([point[-1] ^ 1])
+    prime = bytes.fromhex("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff")
+    out_of_field = b"\x04" + prime + point[33:]
+    for invalid in (off_curve, out_of_field):
+        answer = c.cmd("reject_invalid_ecdh_peer", 0x87, 0x11, 0x9A,
+                       tlv(0x7C, tlv(0x82, b"") + tlv(0x85, invalid)), status=0x6900)
+        assert answer == b""
+    exercise(c, 0, private.public_key())
+
+
 def encoding_regressions(c):
     for algorithm, private, expected in encoding_vectors():
         c.import_key(algorithm, private)
@@ -1006,6 +1043,7 @@ def run(wire, progress=None, report=None):
             custom_p521,
             encoding_regressions,
             import_boundary_regressions,
+            invalid_private_inputs,
             pq_keys,
             pq_seed_lifecycle,
             pq_replacement,
