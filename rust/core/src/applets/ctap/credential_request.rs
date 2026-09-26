@@ -297,14 +297,16 @@ impl Parser {
         if f.params.make && f.params.algorithm_count == 0 {
             return Err(Status::UnsupportedAlgorithm);
         }
-        if f.params.auth_len.is_some() && f.params.protocol == 0 {
+        // Empty pinUvAuthParam is a presence-gated PIN-state probe and does
+        // not require a protocol. Nonempty authentication still requires one.
+        if f.params.auth_len.is_some_and(|n| n != 0) && f.params.protocol == 0 {
             return Err(Status::MissingParameter);
         }
         if f.params
             .auth_len
             .is_some_and(|n| n != 0 && n != if f.params.protocol == 1 { 16 } else { 32 })
         {
-            return Err(Status::InvalidParameter);
+            return Err(Status::PinAuthInvalid);
         }
         if f.params.make && f.params.hmac.is_some() && !f.params.hmac_secret {
             return Err(Status::MissingParameter);

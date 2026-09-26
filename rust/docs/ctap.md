@@ -610,3 +610,8 @@ An omitted or empty getAssertion `allowList` discovers resident credentials.
 A nonempty list with no usable matching IDs returns `NO_CREDENTIALS`; it must
 not fall back to discovery. The shared mixed-algorithm fixture checks both
 discovery forms and rejects an unknown nonempty list.
+
+For makeCredential/getAssertion, empty `pinUvAuthParam` is a user-presence-gated
+PIN-state probe even when `pinUvAuthProtocol` is omitted: it returns `PIN_INVALID`
+when a PIN exists and `PIN_NOT_SET` otherwise. Nonempty authentication requires
+a protocol; a protocol/authentication-length mismatch returns `PIN_AUTH_INVALID`.

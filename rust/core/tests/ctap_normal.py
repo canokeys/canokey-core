@@ -64,6 +64,19 @@ def run(wire):
     client_hash = hashlib.sha256(b"registration challenge").digest()
     assertion_hash = hashlib.sha256(b"authentication challenge").digest()
     user = {"id": b"user", "name": "user@example.com", "displayName": "Example"}
+    def check_pin_probe(pin_set):
+        make = {1: client_hash, 2: {"id": rp}, 3: user,
+                4: [{"type": "public-key", "alg": -7}]}
+        for command, request, auth_field, protocol_field in [
+                (1, make, 8, 9), (2, {1: rp, 2: assertion_hash}, 6, 7)]:
+            for protocol in ({}, {protocol_field: 1}, {protocol_field: 2}):
+                call(command, request | {auth_field: b""} | protocol,
+                     0x31 if pin_set else 0x35)
+            call(command, request | {auth_field: b"x"}, 0x14)
+            if pin_set:
+                for version, length in [(1, 1), (1, 32), (2, 16)]:
+                    call(command, request | {auth_field: bytes(length), protocol_field: version}, 0x33)
+    check_pin_probe(False)
     credentials = []
     for algorithm in [-7, -8]:
         request = {1: client_hash, 2: {"id": rp, "name": "Example"}, 3: user,
@@ -257,6 +270,7 @@ def run(wire):
         if version == 1:
             encrypted = protocol.encrypt(secret, pin.ljust(64, b"\0"))
             call(6, {1: version, 2: 3, 3: public, 4: protocol.authenticate(secret, encrypted), 5: encrypted})
+        check_pin_probe(True)
         hashed = protocol.encrypt(secret, hashlib.sha256(pin).digest()[:16])
         token = protocol.decrypt(secret, call(6, {1: version, 2: 9, 3: public, 6: hashed, 9: 0x22, 10: rp})[2])
         params = {1: rp, 2: assertion_hash, 3: [descriptor], 6: protocol.authenticate(token, assertion_hash), 7: version}
