@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 78 registered cases: APDU (49)
-and PIV (29). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 77 registered cases: APDU (49)
+and PIV (28). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -669,3 +669,26 @@ The native ML-KEM lifecycle test remains: its malformed/unauthorized requests
 must preserve a pending touch. The current Rust stream entrypoint calls touch
 before PIN authorization and before complete GA validation; that ordering needs
 its own behavioral regression and review before retiring this case.
+
+
+## Private-operation authorization precedes touch
+
+`test_piv_mlkem768_generate_metadata_decaps_and_lifecycle` is now retired.
+`pq_keys` and `pq_seed_lifecycle` already independently check generation/import,
+public metadata, compact storage, decapsulation/implicit rejection and move,
+reset and deletion. Its remaining touch-preservation contract is covered by
+`key_record_tests::stream_validation_and_pin_precede_touch_and_one_use_grant`:
+unauthorized requests never initialize crypto or sample touch; missing and
+truncated ciphertext never sample touch or finalize crypto; cancelled presence
+retains a PIN_ALWAYS grant; a successful fresh gesture permits one finalization,
+and reuse is rejected without another gesture. The classic-signature regression
+also rejects an unauthorized request before sampling touch.
+
+Rust now checks authorization at stream admission and waits for touch only after
+complete GA validation, consuming the one-use grant after presence succeeds.
+Classic signatures likewise check authorization before touch. This resolves the
+ordering concern noted in the preceding audit. Error precedence for an input
+that is both malformed and unauthorized is not replicated from the native
+fixture: admission rejects unauthorized private crypto first. No touch occurs
+in either rejection case. Unused native ML-KEM/response collection helpers are
+removed; physical gesture/transport compatibility still requires hardware.

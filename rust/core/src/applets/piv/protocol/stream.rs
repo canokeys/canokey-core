@@ -62,8 +62,11 @@ impl Piv {
                 if m[repo::ALGORITHM] != a {
                     return Err(Sw::WRONG_P1P2);
                 }
-                self.touch(m[repo::TOUCH_POLICY], p)?;
-                self.authorize_private(m[repo::PIN_POLICY])?;
+                // Reject unauthorized input before initializing private crypto.
+                // A gesture belongs only to a complete, validated request.
+                self.check_private(m[repo::PIN_POLICY])?;
+                self.stream_pin_policy = m[repo::PIN_POLICY];
+                self.stream_touch_policy = m[repo::TOUCH_POLICY];
                 self.auth_clear(p);
                 // Changing the workspace variant destroys classic key/input
                 // backing; initialize the stream only after the transition.
@@ -194,6 +197,9 @@ impl Piv {
             {
                 return Err(Sw::WRONG_DATA);
             }
+            self.check_private(self.stream_pin_policy)?;
+            self.touch(self.stream_touch_policy, p)?;
+            self.authorize_private(self.stream_pin_policy)?;
             let SessionWorkspace::Stream(s) = w else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };

@@ -137,6 +137,8 @@ pub struct Piv {
     pending_commit: Option<u8>,
     agreement: Option<usize>,
     stream_phase: StreamPhase,
+    stream_pin_policy: u8,
+    stream_touch_policy: u8,
     sm2_id: [u8; 32],
     sm2_id_used: usize,
 }
@@ -179,6 +181,8 @@ impl Piv {
             pending_commit: None,
             agreement: None,
             stream_phase: StreamPhase::Identity,
+            stream_pin_policy: policy::PIN_NEVER,
+            stream_touch_policy: policy::TOUCH_NEVER,
             sm2_id: [0; 32],
             sm2_id_used: 0,
         }
@@ -414,13 +418,17 @@ impl Piv {
             Err(Sw::SECURITY_STATUS_NOT_SATISFIED)
         }
     }
-    fn authorize_private(&mut self, pin_policy: u8) -> Result<(), Sw> {
+    fn check_private(&self, pin_policy: u8) -> Result<(), Sw> {
         if pin_policy != policy::PIN_NEVER
             && (!self.pins.state.pin_ok
                 || (pin_policy == policy::PIN_ALWAYS && self.pin_grant_consumed))
         {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
+        Ok(())
+    }
+    fn authorize_private(&mut self, pin_policy: u8) -> Result<(), Sw> {
+        self.check_private(pin_policy)?;
         self.pin_grant_consumed = true;
         Ok(())
     }

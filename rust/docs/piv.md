@@ -124,7 +124,14 @@ locked and retryable.
 
 `protocol.rs` owns command dispatch and session state. Its child modules handle
 management authentication, keys, metadata, staged objects, provisioning and
-streaming. All private-operation paths use one PIN-consumption rule. Parser and
+streaming. All private-operation paths use one PIN-consumption rule. Classic operations
+check PIN authorization before requesting a touch. Streaming operations reject
+unauthorized requests before initializing private crypto, validate the complete
+GA input before requesting touch, and consume a PIN_ALWAYS grant only after a
+successful gesture (or a policy allowing no gesture). Malformed input and a
+cancelled gesture do not consume that one-use grant. Streaming initialization
+and incremental hashing/ciphertext processing may precede touch; no final
+signature or shared secret is returned until the gesture succeeds. Parser and
 stream phases have named variants; persistent metadata uses named, stable byte
 offsets. Crypto operations have explicit ABI discriminants in Rust and matching
 C constants in `interfaces/rust-core/crypto_ops.h`.

@@ -269,7 +269,8 @@ impl Piv {
         } else {
             return Err(Sw::WRONG_DATA);
         };
-        // Validate the operation shape completely before consuming a touch.
+        // Validate both operation shape and PIN authorization before a gesture.
+        self.check_private(m[repo::PIN_POLICY])?;
         self.touch(m[repo::TOUCH_POLICY], p)?;
         self.authorize_private(m[repo::PIN_POLICY])?;
         repo::load(id, &m, &mut w.key.bytes, p)?;

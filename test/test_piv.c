@@ -168,28 +168,6 @@ static size_t piv_test_collect_attestation(uint8_t slot, uint8_t *certificate, s
   return total;
 }
 
-static size_t piv_test_collect_response(CAPDU command, uint8_t *response, size_t capacity, uint16_t *sw) {
-  uint8_t chunk[APDU_BUFFER_SIZE];
-  RAPDU rapdu = {.data = chunk};
-  RAPDU_CHAINING chaining = {.rapdu.data = chunk};
-
-  piv_process_apdu_message(&chaining, &command, &rapdu);
-  size_t total = 0;
-  for (;;) {
-    assert_true(total + rapdu.len <= capacity);
-    memcpy(response + total, rapdu.data, rapdu.len);
-    total += rapdu.len;
-    if (rapdu.sw == SW_NO_ERROR) break;
-    if ((rapdu.sw & 0xFF00u) != 0x6100u) break;
-    command = (CAPDU){.data = NULL, .cla = 0x00, .ins = 0xC0, .p1 = 0x00, .p2 = 0x00, .lc = 0,
-                      .le = APDU_BUFFER_SIZE};
-    rapdu.len = 0;
-    rapdu.sw = 0;
-    piv_process_apdu_message(&chaining, &command, &rapdu);
-  }
-  *sw = rapdu.sw;
-  return total;
-}
 
 static uint16_t piv_test_send_chained(uint8_t ins, uint8_t p1, uint8_t p2, const uint8_t *data, size_t data_len,
                                       uint8_t *response, uint16_t *response_len) {
@@ -273,18 +251,6 @@ static size_t piv_test_build_long_auth(uint8_t *request, const uint8_t *message,
   return (size_t)message_len + 10;
 }
 
-static size_t piv_test_mlkem_auth(uint8_t algorithm, uint8_t slot,
-                                  const uint8_t ciphertext[MLKEM768_CIPHERTEXT_BYTES], uint8_t response[64],
-                                  uint16_t *sw) {
-  uint8_t request[10 + MLKEM768_CIPHERTEXT_BYTES] = {0x7C, 0x82, 0x04, 0x46, 0x82,
-                                                     0x00, 0x81, 0x82, 0x04, 0x40};
-  memcpy(request + 10, ciphertext, MLKEM768_CIPHERTEXT_BYTES);
-  uint16_t response_len = 0;
-  *sw = piv_test_send_chained(PIV_INS_GENERAL_AUTHENTICATE, algorithm, slot, request, sizeof(request), response,
-                              &response_len);
-  memzero(request, sizeof(request));
-  return response_len;
-}
 
 
 static void test_piv_regular_slot_defaults(void **state) {
@@ -316,119 +282,6 @@ static void test_piv_regular_slot_defaults(void **state) {
 
 
 
-static void test_piv_mlkem768_generate_metadata_decaps_and_lifecycle(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-  set_admin_status(1);
-
-  uint8_t generate[] = {0xAC, 0x06, 0x80, 0x01, 0xE3, 0xAA, 0x01, PIN_POLICY_NEVER};
-  static uint8_t response[MLKEM768_PUBLIC_KEY_BYTES + 32];
-  uint16_t sw;
-  CAPDU command = {.data = generate,
-                   .cla = 0x00,
-                   .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
-                   .p1 = 0x00,
-                   .p2 = 0x95,
-                   .lc = sizeof(generate),
-                   .le = APDU_BUFFER_SIZE};
-  size_t response_len = piv_test_collect_response(command, response, sizeof(response), &sw);
-  assert_int_equal(sw, SW_NO_ERROR);
-  assert_int_equal(response_len, 9 + MLKEM768_PUBLIC_KEY_BYTES);
-  assert_memory_equal(response, ((uint8_t[]){0x7F, 0x49, 0x82, 0x04, 0xA4, 0x86, 0x82, 0x04, 0xA0}), 9);
-  assert_int_equal(get_file_size("piv-k95"), MLKEM768_KEYGEN_SEED_BYTES);
-
-  uint8_t public_key[MLKEM768_PUBLIC_KEY_BYTES];
-  memcpy(public_key, response + 9, sizeof(public_key));
-  uint8_t stored_seed[MLKEM768_KEYGEN_SEED_BYTES];
-  uint8_t derived_public[MLKEM768_PUBLIC_KEY_BYTES];
-  assert_int_equal(read_file("piv-k95", stored_seed, 0, sizeof(stored_seed)), (int)sizeof(stored_seed));
-  assert_int_equal(ml_kem_768_seed_to_public(derived_public, stored_seed), 0);
-  assert_memory_equal(derived_public, public_key, sizeof(public_key));
-  key_meta_t meta;
-  assert_int_equal(ck_read_key_metadata("piv-k95", &meta), (int)sizeof(meta));
-  assert_int_equal(meta.type, MLKEM768);
-  assert_int_equal(meta.origin, KEY_ORIGIN_GENERATED);
-  assert_int_equal(meta.usage, KEY_USAGE_ANY);
-  assert_int_equal(meta.pin_policy, PIN_POLICY_NEVER);
-
-  command = (CAPDU){.data = NULL,
-                    .cla = 0x00,
-                    .ins = PIV_INS_GET_METADATA,
-                    .p1 = 0x00,
-                    .p2 = 0x95,
-                    .lc = 0,
-                    .le = APDU_BUFFER_SIZE};
-  response_len = piv_test_collect_response(command, response, sizeof(response), &sw);
-  assert_int_equal(sw, SW_NO_ERROR);
-  assert_int_equal(response_len, 18 + MLKEM768_PUBLIC_KEY_BYTES);
-  assert_memory_equal(response,
-                      ((uint8_t[]){0x01, 0x01, 0xE3, 0x02, 0x02, PIN_POLICY_NEVER, TOUCH_POLICY_NEVER, 0x03, 0x01,
-                                   KEY_ORIGIN_GENERATED, 0x04, 0x82, 0x04, 0xA4, 0x86, 0x82, 0x04, 0xA0}),
-                      18);
-  assert_memory_equal(response + 18, public_key, sizeof(public_key));
-
-  uint8_t ciphertext[MLKEM768_CIPHERTEXT_BYTES];
-  uint8_t expected_secret[MLKEM768_SHARED_KEY_BYTES];
-  uint8_t coins[MLKEM768_ENCAPS_SEED_BYTES];
-  memset(coins, 0x5A, sizeof(coins));
-  assert_int_equal(ml_kem_768_encaps(ciphertext, expected_secret, public_key, coins), 0);
-  response_len = piv_test_mlkem_auth(0xE3, 0x95, ciphertext, response, &sw);
-  assert_int_equal(sw, SW_NO_ERROR);
-  assert_int_equal(response_len, 4 + MLKEM768_SHARED_KEY_BYTES);
-  assert_memory_equal(response, ((uint8_t[]){0x7C, 0x22, 0x82, 0x20}), 4);
-  assert_memory_equal(response + 4, expected_secret, MLKEM768_SHARED_KEY_BYTES);
-
-  ciphertext[0] ^= 0x80;
-  response_len = piv_test_mlkem_auth(0xE3, 0x95, ciphertext, response, &sw);
-  assert_int_equal(sw, SW_NO_ERROR);
-  assert_int_equal(response_len, 4 + MLKEM768_SHARED_KEY_BYTES);
-  assert_memory_not_equal(response + 4, expected_secret, MLKEM768_SHARED_KEY_BYTES);
-
-  meta.pin_policy = PIN_POLICY_ONCE;
-  meta.touch_policy = TOUCH_POLICY_ALWAYS;
-  assert_int_equal(ck_write_key_metadata("piv-k95", &meta), 0);
-
-  // Request validation and PIN authorization must both complete before touch.
-  // A pending simulated touch therefore remains unconsumed on either error.
-  uint8_t malformed_auth[] = {0x7C, 0x02, 0x82, 0x00};
-  stop_blinking();
-  set_touch_result(TOUCH_SHORT);
-  test_helper(malformed_auth, sizeof(malformed_auth), PIV_INS_GENERAL_AUTHENTICATE, 0xE3, 0x95, SW_WRONG_DATA);
-  assert_int_equal(get_touch_result(), TOUCH_SHORT);
-  set_touch_result(TOUCH_NO);
-
-  stop_blinking();
-  set_touch_result(TOUCH_SHORT);
-  response_len = piv_test_mlkem_auth(0xE3, 0x95, ciphertext, response, &sw);
-  assert_int_equal(sw, SW_SECURITY_STATUS_NOT_SATISFIED);
-  assert_int_equal(response_len, 0);
-  assert_int_equal(get_touch_result(), TOUCH_SHORT);
-  set_touch_result(TOUCH_NO);
-
-  set_admin_status(1);
-  command = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0x9D, .p2 = 0x95, .lc = 0};
-  RAPDU rapdu = {.data = response};
-  piv_process_apdu(&command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-k95"), LFS_ERR_NOENT);
-  assert_int_equal(get_file_size("piv-k9d"), MLKEM768_KEYGEN_SEED_BYTES);
-
-  piv_poweroff();
-  assert_int_equal(piv_install(0), 0);
-  assert_int_equal(ck_read_key_metadata("piv-k9d", &meta), (int)sizeof(meta));
-  assert_int_equal(meta.type, MLKEM768);
-  set_admin_status(1);
-  command = (CAPDU){.data = NULL, .cla = 0x00, .ins = PIV_INS_MOVE_DELETE_KEY, .p1 = 0xFF, .p2 = 0x9D, .lc = 0};
-  piv_process_apdu(&command, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(get_file_size("piv-k9d"), LFS_ERR_NOENT);
-
-  memzero(public_key, sizeof(public_key));
-  memzero(stored_seed, sizeof(stored_seed));
-  memzero(derived_public, sizeof(derived_public));
-  memzero(ciphertext, sizeof(ciphertext));
-  memzero(expected_secret, sizeof(expected_secret));
-}
 
 
 
@@ -2582,7 +2435,6 @@ int main() {
       cmocka_unit_test(test_piv_attestation_f9_policy),
       cmocka_unit_test(test_piv_attestation_all_target_algorithms),
       cmocka_unit_test(test_piv_regular_slot_defaults),
-      cmocka_unit_test(test_piv_mlkem768_generate_metadata_decaps_and_lifecycle),
       cmocka_unit_test(test_ed25519_general_authenticate_limits),
       cmocka_unit_test(test_piv_streaming_auth_parser_errors),
       cmocka_unit_test(test_piv_rejected_apdu_aborts_streaming_auth),
