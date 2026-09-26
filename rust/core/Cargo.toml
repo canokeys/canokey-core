@@ -13,6 +13,7 @@ canokey-protocol = { path = "../protocol" }
 cfg_aliases = "0.2.1"
 minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", features = ["std"] }
 [features]
+ndef = ["canokey-ports/ndef"]
 dynamic-backend = ["canokey-ports/dynamic-backend"]
 static-backend = ["canokey-ports/static-backend"]
 admin = ["canokey-ports/admin"]

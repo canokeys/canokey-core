@@ -210,6 +210,10 @@ unsafe fn receive_packet(transport: &mut Transport, platform: &mut Platform) -> 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CCID_Loop() {
     unsafe {
+        #[cfg(feature = "nfc")]
+        if super::nfc::is_nfc() != 0 {
+            return;
+        }
         #[cfg(feature = "usb-webusb")]
         if super::webusb_link::block_competitor() {
             return;
@@ -263,7 +267,7 @@ pub unsafe extern "C" fn CCID_Loop() {
     }
 }
 
-#[cfg(feature = "usb-webusb")]
+#[cfg(any(feature = "usb-webusb", feature = "nfc"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn ck_ccid_response_buffer() -> *mut u8 {
     core::ptr::addr_of_mut!(RESPONSE).cast()

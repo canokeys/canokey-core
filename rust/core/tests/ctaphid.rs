@@ -7,6 +7,7 @@ mod support;
 
 #[derive(Default)]
 struct Memory {
+    disabled: bool,
     bytes: Vec<u8>,
     response: Vec<u8>,
     closes: usize,
@@ -19,6 +20,9 @@ struct Memory {
     message: Option<canokey_rust_core::applets::ctap::apdu::MessageParser>,
 }
 impl Scratch for Memory {
+    fn webauthn_enabled(&mut self) -> bool {
+        !self.disabled
+    }
     fn begin(&mut self, pke: bool) -> Result<(), Error> {
         assert!(!self.leased);
         if self.busy {
@@ -421,4 +425,28 @@ fn parser_workspace_is_released_after_staged_read_failure() {
         assert_eq!(mem.closes, 1);
         assert!(mem.request.is_none() && mem.message.is_none());
     }
+}
+
+#[test]
+fn disabled_webauthn_rejects_cbor_and_msg_without_disabling_ping() {
+    let mut hid = Transport::new();
+    let mut memory = Memory {
+        disabled: true,
+        ..Memory::default()
+    };
+    let mut out = [0; 64];
+    for command in [wire::CBOR, wire::MSG] {
+        assert!(hid.receive(
+            &initial(0x12345678, command, 1, &[4]),
+            0,
+            &mut out,
+            &mut memory
+        ));
+        assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Command as u8]);
+        assert!(memory.request.is_none() && memory.message.is_none());
+        assert!(!memory.leased);
+    }
+    request(&mut hid, &mut memory, wire::PING, &[1, 2, 3]);
+    assert!(hid.transmit(&mut out, &mut memory));
+    assert_eq!(&out[4..10], &[wire::PING, 0, 3, 1, 2, 3]);
 }

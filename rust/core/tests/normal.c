@@ -2,11 +2,15 @@
 #include "core.h"
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 static uint8_t buffer[258];
+static uint8_t transport_owner = 1;
 static int exchange(const uint8_t *in, size_t n, uint16_t sw) {
   memcpy(buffer, in, n);
-  int result = ck_core_exchange(1, buffer, n, buffer, sizeof(buffer));
+  int result = ck_core_exchange(transport_owner, buffer, n, buffer, sizeof(buffer));
   assert(result >= 2);
+  if (buffer[result-2] != (sw>>8) || buffer[result-1] != (sw&255))
+    fprintf(stderr,"owner=%u INS=%02x len=%zu expected=%04x actual=%02x%02x\n",transport_owner,in[1],n,sw,buffer[result-2],buffer[result-1]);
   assert(buffer[result - 2] == (sw >> 8));
   assert(buffer[result - 1] == (sw & 255));
   return result - 2;
@@ -26,6 +30,9 @@ int main(void) {
 #else
   2
 #endif
+#ifdef WITH_NDEF
+ + 1
+#endif
 #ifdef WITH_PIV
   + 1
 #endif
@@ -35,6 +42,9 @@ int main(void) {
 );
 #else
   assert(ck_core_applet_count() == 1
+#ifdef WITH_NDEF
+ + 1
+#endif
 #ifdef WITH_PIV
   + 1
 #endif
@@ -97,6 +107,9 @@ int main(void) {
 #else
   assert(ck_core_applet_count() ==
  0
+#ifdef WITH_NDEF
+ + 1
+#endif
 #ifdef WITH_PIV
  + 1
 #endif
@@ -109,6 +122,93 @@ int main(void) {
 #else
   SEND(0x6a82, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
 #endif
+#endif
+#ifdef WITH_NDEF
+  ck_core_reset();
+#if defined(WITH_PASS) || defined(WITH_CTAP)
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6982,0,0x08,1,0);
+  SEND(0x6982,0,0x07,0,0);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x6a86,0,0x08,2,0);
+  SEND(0x9000,0,0x08,1,0);
+  SEND(0x9000,0,0xa4,4,0,7,0xd2,0x76,0,0,0x85,1,1);
+  SEND(0x9000,0,0xa4,0,12,2,0,1);
+  SEND(0x6982,0,0xd6,0,0,1,0);
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x9000,0,0x07,0,0);
+#endif
+  SEND(0x9000,0,0xa4,4,0,7,0xd2,0x76,0,0,0x85,1,1);
+  SEND(0x9000,0,0xa4,0,12,2,0xe1,3);
+  SEND(0x9000,0,0xb0,0,0,15);
+  const uint8_t cc[]={0,15,0x20,4,0,4,0,4,6,0,1,4,0,0,0};
+  assert(!memcmp(buffer,cc,sizeof(cc)));
+  SEND(0x9000,0,0xa4,0,12,2,0,1);
+  SEND(0x9000,0x10,0xd6,0,100,2,0xaa,0xbb);
+  SEND(0x9000,0,0xd6,0,100,1,0xcc);
+  SEND(0x9000,0,0xb0,0,100,3);assert(!memcmp(buffer,"\xaa\xbb\xcc",3));
+  SEND(0x61ff,0,0xb0,0,0,0,4,0);
+  SEND(0x61ff,0,0xc0,0,0,0);
+  SEND(0x61ff,0,0xc0,0,0,0);
+  SEND(0x9000,0,0xc0,0,0,0);
+#endif
+#if defined(WITH_PASS) || defined(WITH_CTAP)
+  ck_core_reset();
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x6982,0,0x14,1,0);
+  SEND(0x6982,0,0x40,6,0);
+  SEND(0x6700,0,0x42,0,0,5);
+  SEND(0x9000,0,0x42,0,0,6);
+  assert(buffer[0]==1 && buffer[1]==0 && buffer[3]==1 && buffer[4]==1 && buffer[5]==0x3f);
+  SEND(0x9000,0,0x14,0,0,1);assert(buffer[0]==1);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x6a86,0,0x40,6,0x80);
+  SEND(0x9000,0,0x14,1,0);
+  SEND(0x9000,0,0x40,6,0);
+  SEND(0x9000,0,0x40,4,0);
+  ck_core_reset();
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x9000,0,0x14,0,0,1);assert(buffer[0]==0);
+  SEND(0x9000,0,0x42,0,0,6);assert(buffer[3]==0 && buffer[5]==0);
+#ifdef WITH_NDEF
+  SEND(0x6a82,0,0xa4,4,0,7,0xd2,0x76,0,0,0x85,1,1);
+#endif
+#ifdef WITH_OPENPGP
+  SEND(0x6a82,0,0xa4,4,0,6,0xd2,0x76,0,1,0x24,1);
+#endif
+#ifdef WITH_PIV
+  SEND(0x6a82,0,0xa4,4,0,5,0xa0,0,0,3,8);
+#endif
+#ifdef WITH_CTAP
+  SEND(0x6a82,0,0xa4,4,0,8,0xa0,0,0,6,0x47,0x2f,0,1);
+#endif
+  SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+  SEND(0x9000,0,0x20,0,0,6,'1','2','3','4','5','6');
+  SEND(0x9000,0,0x14,1,1);
+  SEND(0x9000,0,0x40,6,0x3f);
+  SEND(0x9000,0,0x40,4,1);
+#endif
+#ifdef WITH_CTAP
+  /* The NFC owner uses the same extended FIDO decoder and response cursor. */
+  ck_core_reset();transport_owner=4;
+  SEND(0x9000,0,0xa4,4,0,8,0xa0,0,0,6,0x47,0x2f,0,1);
+  const uint8_t get_info[]={0x80,0x10,0,0,0,0,1,4};
+  memcpy(buffer,get_info,sizeof(get_info));
+  int initial=ck_core_exchange(4,buffer,sizeof(get_info),buffer,sizeof(buffer));
+  assert(initial==258 && buffer[256]==0x61 && buffer[0]==0 && (buffer[1]&0xe0)==0xa0);
+  unsigned chunks=0,total=256;
+  for(;;) {
+    const uint8_t next[]={0,0xc0,0,0,0};
+    memcpy(buffer,next,sizeof(next));
+    int n=ck_core_exchange(4,buffer,sizeof(next),buffer,sizeof(buffer));
+    assert(n>=2 && ++chunks<=8);
+    total+=(unsigned)n-2;
+    if(buffer[n-2]==0x90){assert(buffer[n-1]==0);break;}
+    assert(buffer[n-2]==0x61);
+  }
+  assert(total>256);
+  ck_core_reset();transport_owner=1;
 #endif
   return 0;
 }

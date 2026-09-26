@@ -119,6 +119,10 @@ pub unsafe fn completed() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn WebUSB_Loop() {
     unsafe {
+        #[cfg(feature = "nfc")]
+        if super::nfc::is_nfc() != 0 {
+            return;
+        }
         let mask = ck_usb_dcd_lock();
         let cleanup = CLEANUP || (&*core::ptr::addr_of!(STATE)).expired(device_get_tick());
         if cleanup {

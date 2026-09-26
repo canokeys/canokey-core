@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+#[cfg(any(feature = "admin", feature = "openpgp", feature = "piv", test))]
 pub(crate) mod pin;
 
 #[cfg(any(feature = "openpgp", feature = "piv"))]

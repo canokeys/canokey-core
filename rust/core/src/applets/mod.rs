@@ -42,3 +42,6 @@ pub(crate) fn close_response(
     memory.wipe(response);
     *length = 0;
 }
+
+#[cfg(feature = "ndef")]
+pub mod ndef;

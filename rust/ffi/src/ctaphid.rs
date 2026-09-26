@@ -29,6 +29,14 @@ struct RequestScratch;
 // The backend owns only PKE bookkeeping, never a slice into hardware memory.
 static mut PKE_LEASED: bool = false;
 impl Scratch for RequestScratch {
+    fn webauthn_enabled(&mut self) -> bool {
+        crate::platform::with_platform(|p| {
+            canokey_rust_core::runtime::config::enabled(
+                p.storage,
+                canokey_rust_core::runtime::config::WEBAUTHN,
+            )
+        })
+    }
     fn begin(&mut self, use_pke: bool) -> Result<(), Error> {
         unsafe {
             if ck_ccid_idle() == 0 {

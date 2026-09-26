@@ -4,20 +4,20 @@
 #include <string.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
-static uint8_t files[184][32768];
-static int32_t sizes[184];
+static uint8_t files[186][32768];
+static int32_t sizes[186];
 static int initialized;
 static void storage_init(void) {
-  if (!initialized) { for (size_t i = 0; i < 184; i++) sizes[i] = -1; initialized = 1; }
+  if (!initialized) { for (size_t i = 0; i < 186; i++) sizes[i] = -1; initialized = 1; }
 }
 int32_t ck_platform_size(uint8_t id) {
   storage_init();
-  assert(id < 184);
+  assert(id < 186);
   return sizes[id];
 }
 int32_t ck_platform_read(uint8_t id, uint8_t *out, size_t n) {
   storage_init();
-  assert(id < 184);
+  assert(id < 186);
   if (sizes[id] < 0) return -1;
   if ((size_t)sizes[id] > n) return -2;
   memcpy(out, files[id], sizes[id]);
@@ -25,7 +25,7 @@ int32_t ck_platform_read(uint8_t id, uint8_t *out, size_t n) {
 }
 int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n) {
   storage_init();
-  assert(id < 184 && n <= sizeof(files[id]));
+  assert(id < 186 && n <= sizeof(files[id]));
   memcpy(files[id], input, n);
   sizes[id] = (int32_t)n;
   return (int32_t)n;
@@ -34,17 +34,17 @@ void ck_platform_hmac_sha1(const uint8_t key[20], const uint8_t *input, size_t n
   unsigned len = 20;
   assert(HMAC(EVP_sha1(), key, 20, input, n, out, &len));
 }
-#if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP)
+#if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
 int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n) {
   storage_init();
-  assert(id < 184);
+  assert(id < 186);
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id] || n > (uint32_t)sizes[id] - offset) return -2;
   memcpy(out, files[id] + offset, n);
   return (int32_t)n;
 }
 int32_t ck_platform_write_at(uint8_t id, uint32_t offset, const uint8_t *input, size_t n) {
   storage_init();
-  assert(id < 184 && offset + n <= sizeof(files[id]));
+  assert(id < 186 && offset + n <= sizeof(files[id]));
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id]) return -2;
   memcpy(files[id] + offset, input, n);
   if (offset + n > (uint32_t)sizes[id]) sizes[id] = (int32_t)(offset + n);
@@ -74,13 +74,13 @@ uint8_t ck_platform_progress(void) {
 }
 void ck_platform_led(uint8_t on) { (void)on; }
 
-#if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP)
+#if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
 static uint8_t stage[8192];
 static size_t stage_size;
 int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_t n) {
   storage_init();
-  if (operation == 4) { assert(id < 184); memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
-  if (operation == 5) { assert(id < 184 && n == 1 && b[0] < 184);uint8_t to=b[0];if(sizes[id]<0)return -2;memcpy(files[to],files[id],sizes[id]);sizes[to]=sizes[id];memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
+  if (operation == 4) { assert(id < 186); memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
+  if (operation == 5) { assert(id < 186 && n == 1 && b[0] < 186);uint8_t to=b[0];if(sizes[id]<0)return -2;memcpy(files[to],files[id],sizes[id]);sizes[to]=sizes[id];memset(files[id],0,sizeof(files[id]));sizes[id]=-1;return 0; }
   if (operation == 0 || operation == 3) { memset(stage,0,sizeof(stage)); stage_size=0; return 0; }
   if (operation == 1) { assert(stage_size+n<=sizeof(stage));memcpy(stage+stage_size,b,n);stage_size+=n;return 0; }
   assert(operation==2);ck_platform_write(id,stage,stage_size);memset(stage,0,sizeof(stage));stage_size=0;return 0;
@@ -121,3 +121,24 @@ int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
   (void)offset; (void)in; (void)n; assert(0); return -1;
 }
 #endif
+
+int32_t ck_platform_resize(uint8_t id, uint32_t length) {
+  storage_init();
+  assert(id < 186 && length <= sizeof(files[id]));
+  if(sizes[id] < 0)return -1;
+  if(length > (uint32_t)sizes[id])memset(files[id]+sizes[id],0,length-(uint32_t)sizes[id]);
+  sizes[id]=(int32_t)length;return 0;
+}
+
+/* Raw configuration-page backend; Rust owns metadata, flags and CRC policy. */
+static uint8_t config_page[512];
+static int config_page_ready;
+int platform_config_page_read(size_t offset, void *out, size_t length) {
+  if (!config_page_ready) { memset(config_page, 0xff, sizeof(config_page)); config_page_ready=1; }
+  assert(offset <= sizeof(config_page) && length <= sizeof(config_page) - offset);
+  memcpy(out, config_page + offset, length);return 0;
+}
+int platform_config_page_write(const void *page, size_t length) {
+  assert(length == sizeof(config_page) && ((uintptr_t)page & 3) == 0);
+  config_page_ready=1;memcpy(config_page, page, length);return 0;
+}

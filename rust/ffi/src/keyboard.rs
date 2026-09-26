@@ -22,6 +22,10 @@ static mut RESET_OUTPUT: bool = false;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_keyboard_loop() {
     unsafe {
+        #[cfg(feature = "nfc")]
+        if super::nfc::is_nfc() != 0 {
+            return;
+        }
         #[cfg(feature = "usb-webusb")]
         let web_busy = super::webusb_link::block_competitor();
         let epoch = ck_keyboard_io_epoch();

@@ -3,6 +3,10 @@ pub trait Device {
     fn serial(&mut self, output: &mut [u8; 4]);
     fn now(&mut self) -> u32;
     fn touched(&mut self) -> bool;
+    /// Active contactless mode supplies presence without a touch sensor.
+    fn contactless(&mut self) -> bool {
+        false
+    }
     fn wink(&mut self) {}
     /// Consume a completed, unexpired gesture for CTAP1 polling.
     fn poll_presence(&mut self) -> bool {

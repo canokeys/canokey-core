@@ -17,6 +17,11 @@ impl DeviceBackend {
 }
 pub struct MemoryBackend;
 
+#[cfg(feature = "nfc")]
+unsafe extern "C" {
+    fn is_nfc() -> u8;
+}
+
 #[cfg(feature = "platform-device")]
 unsafe extern "C" {
     fn ck_platform_now() -> u32;
@@ -39,6 +44,10 @@ static mut PRESENCE: crate::Polling = crate::Polling::new();
 #[cfg(feature = "ctap")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_core_presence_sample() {
+    #[cfg(feature = "nfc")]
+    if unsafe { is_nfc() != 0 } {
+        return;
+    }
     unsafe {
         let poll = &mut *core::ptr::addr_of_mut!(PRESENCE);
         if let Some(on) = poll.sample(ck_platform_touched() != 0, ck_platform_now()) {
@@ -47,6 +56,12 @@ pub unsafe extern "C" fn ck_core_presence_sample() {
     }
 }
 native_port! { impl Device for DeviceBackend {
+    fn contactless(&mut self) -> bool {
+        #[cfg(feature = "nfc")]
+        { unsafe { is_nfc() != 0 } }
+        #[cfg(not(feature = "nfc"))]
+        { false }
+    }
     #[cfg(feature = "ctap")]
     fn wink(&mut self) {
         unsafe {
@@ -64,6 +79,8 @@ native_port! { impl Device for DeviceBackend {
         }
     }
     fn keepalive(&mut self, waiting: bool) {
+        #[cfg(feature = "nfc")]
+        if unsafe { is_nfc() != 0 } { return; }
         #[cfg(feature = "ctap")]
         unsafe {
             ck_hid_keepalive(u8::from(waiting))

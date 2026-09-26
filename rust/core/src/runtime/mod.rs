@@ -15,6 +15,10 @@ pub use presence::Polling;
 
 pub mod ccid;
 
+pub mod config;
 pub mod keyboard;
+pub mod nfc;
+pub mod nfc_io;
+pub mod nfc_provision;
 pub mod usb;
 pub mod webusb;

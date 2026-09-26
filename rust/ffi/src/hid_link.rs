@@ -173,6 +173,10 @@ pub unsafe extern "C" fn ck_hid_execution_end() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
     unsafe {
+        #[cfg(feature = "nfc")]
+        if super::nfc::is_nfc() != 0 {
+            return 0;
+        }
         #[cfg(feature = "usb-webusb")]
         if super::webusb_link::block_competitor() {
             return 0;

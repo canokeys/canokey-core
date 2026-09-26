@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
-/// Record IDs map directly to two hexadecimal filename characters.
+/// Stable record IDs. The native backend preserves legacy NDEF filenames.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct Record(u8);
@@ -90,6 +90,8 @@ impl Record {
     pub const CtapSm2: Self = Self(181);
     pub const CtapAttestationKey: Self = Self(182);
     pub const CtapCertificate: Self = Self(183);
+    pub const NdefCapability: Self = Self(184);
+    pub const NdefMessage: Self = Self(185);
     pub const fn id(self) -> u8 {
         self.0
     }
@@ -112,13 +114,23 @@ pub enum StorageError {
     Uncertain,
 }
 pub trait Storage {
+    /// Raw platform configuration page. Missing means an unprovisioned/test
+    /// backend; other read failures must not enable restricted interfaces.
+    fn config_read(&mut self, _offset: usize, _bytes: &mut [u8]) -> Result<(), StorageError> {
+        Err(StorageError::Missing)
+    }
+    /// Replace the entire aligned 512-byte page. A failure has uncertain outcome.
+    fn config_write(&mut self, _bytes: &[u8; 512]) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
+    }
     /// A single session-scoped staged object, separate from record replacements.
     /// Publication is atomic; abort/disconnect must discard unpublished bytes.
     #[cfg(any(
         feature = "oath",
         feature = "openpgp",
         feature = "piv",
-        feature = "ctap"
+        feature = "ctap",
+        feature = "ndef"
     ))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
@@ -127,7 +139,8 @@ pub trait Storage {
         feature = "oath",
         feature = "openpgp",
         feature = "piv",
-        feature = "ctap"
+        feature = "ctap",
+        feature = "ndef"
     ))]
     fn stage_append(&mut self, _bytes: &[u8]) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
@@ -136,7 +149,8 @@ pub trait Storage {
         feature = "oath",
         feature = "openpgp",
         feature = "piv",
-        feature = "ctap"
+        feature = "ctap",
+        feature = "ndef"
     ))]
     fn stage_commit(&mut self, _record: Record) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
@@ -145,7 +159,8 @@ pub trait Storage {
         feature = "oath",
         feature = "openpgp",
         feature = "piv",
-        feature = "ctap"
+        feature = "ctap",
+        feature = "ndef"
     ))]
     fn stage_abort(&mut self) {}
     /// Delete the record, treating an absent record as success. Empty data is
@@ -175,6 +190,10 @@ pub trait Storage {
         _offset: u32,
         _input: &[u8],
     ) -> Result<(), StorageError> {
+        Err(StorageError::Unavailable)
+    }
+    #[cfg(feature = "ndef")]
+    fn resize(&mut self, _record: Record, _length: u32) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
     fn has_space(&mut self, _bytes: u32, _reserve: u32) -> Result<bool, StorageError> {

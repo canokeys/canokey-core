@@ -10,6 +10,7 @@ const DEFAULT_APDU_LE: u32 = 256;
 const MAX_FRAME_CHUNK: usize = 256;
 pub(crate) const OWNER_APDU: u8 = 0;
 pub(crate) const OWNER_CCID: u8 = 1;
+pub(crate) const OWNER_NFC: u8 = 4;
 #[cfg(feature = "ctap")]
 pub(crate) const OWNER_CTAP: u8 = 2;
 
@@ -168,7 +169,7 @@ impl<R: Router> Runtime<R> {
         }
     }
     fn extended_allowed(&self, owner: u8, header: Header) -> bool {
-        owner == OWNER_CCID
+        (owner == OWNER_CCID || owner == OWNER_NFC)
             && self.owner.is_none_or(|current| current == owner)
             && !self.chain.active()
             && !self.router.output_busy()
@@ -534,6 +535,7 @@ impl Core {
             + cfg!(feature = "oath") as u8
             + cfg!(feature = "openpgp") as u8
             + cfg!(feature = "piv") as u8
+            + cfg!(feature = "ndef") as u8
             + cfg!(feature = "ctap") as u8
     }
     #[cfg(feature = "pass")]

@@ -11,5 +11,10 @@ pub use runtime::engine::{Core, Reply};
 #[cfg(any(feature = "admin", feature = "pass"))]
 mod flows;
 
-#[cfg(any(feature = "admin", feature = "openpgp", feature = "piv"))]
+#[cfg(any(
+    feature = "admin",
+    feature = "openpgp",
+    feature = "piv",
+    feature = "ctap"
+))]
 mod mechanisms;

@@ -66,3 +66,6 @@ mod usb;
 
 #[cfg(feature = "usb-webusb")]
 mod webusb_link;
+
+#[cfg(feature = "nfc")]
+mod nfc;

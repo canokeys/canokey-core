@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
-#[cfg(test)]
-use crate::ports::Device;
 #[cfg(persistent_applet)]
 const PRESENCE_TIMEOUT_MS: u32 = 30_000;
 #[cfg(persistent_applet)]
 fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<(), Error> {
+    if device.contactless() {
+        return if device.progress() {
+            Ok(())
+        } else {
+            Err(Error::Cancelled)
+        };
+    }
     let start = device.now();
     // A contact predating this request must be released before a fresh gesture.
     let mut armed = !device.touched();
@@ -56,6 +61,10 @@ const BLINK_SLOW_MS: u32 = 200;
 /// Delay after each release separates prompts; only raw transport progress runs.
 #[cfg(feature = "admin")]
 pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
+    // Factory reset requires physical gestures and is forbidden over NFC.
+    if device.contactless() {
+        return false;
+    }
     // This deliberately remains separate from `wait`: factory reset requires
     // five released, short gestures with LED prompts between them, while
     // ordinary applet authorization accepts one gesture and no prompt.
@@ -121,7 +130,11 @@ impl Request {
     #[cfg(feature = "ctap")]
     pub fn poll(&mut self, device: &mut crate::ports::DevicePort<'_>) -> bool {
         self.attempted = true;
-        device.poll_presence()
+        if device.contactless() {
+            device.progress()
+        } else {
+            device.poll_presence()
+        }
     }
     pub fn wait_result(&mut self, device: &mut crate::ports::DevicePort<'_>) -> Result<(), Error> {
         self.attempted = true;
@@ -145,6 +158,7 @@ impl Request {
 ))]
 mod tests {
     use super::*;
+    use crate::ports::Device;
     struct Held {
         ticks: u32,
         connected: bool,
@@ -181,3 +195,44 @@ mod tests {
 
 #[cfg(feature = "ctap")]
 pub use canokey_ports::Polling;
+
+#[cfg(all(
+    test,
+    feature = "ctap",
+    feature = "admin",
+    not(feature = "static-backend")
+))]
+mod contactless_tests {
+    use super::*;
+    struct Contactless(bool);
+    impl crate::ports::Device for Contactless {
+        fn serial(&mut self, _: &mut [u8; 4]) {}
+        fn now(&mut self) -> u32 {
+            panic!("contactless presence must not poll time")
+        }
+        fn touched(&mut self) -> bool {
+            panic!("no touch hardware in NFC mode")
+        }
+        fn contactless(&mut self) -> bool {
+            true
+        }
+        fn progress(&mut self) -> bool {
+            self.0
+        }
+        fn led(&mut self, _: bool) {
+            panic!("no LED prompts in NFC mode")
+        }
+    }
+    #[test]
+    fn contactless_presence_checks_transport_and_denies_factory_reset() {
+        let mut request = Request::new();
+        let mut device = Contactless(true);
+        assert_eq!(request.wait_result(&mut device), Ok(()));
+        assert_eq!(request.wait_long(&mut device), Ok(()));
+        assert!(request.poll(&mut device));
+        assert!(!strong(&mut device));
+        device.0 = false;
+        assert_eq!(request.wait_result(&mut device), Err(Error::Cancelled));
+        assert!(!request.poll(&mut device));
+    }
+}

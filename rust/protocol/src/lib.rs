@@ -12,4 +12,5 @@ pub mod tlv;
 pub mod der;
 
 pub mod ccid;
+pub mod nfc;
 pub mod usb;

@@ -135,12 +135,15 @@ impl Admin {
     pub fn finish(
         &mut self,
         h: Header,
+        le: u32,
         grants: &mut Grants,
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
     ) -> Result<Action, Sw> {
         self.response_len = 0;
-        let result = if h.ins == INS_FACTORY_RESET {
+        let result = if h.ins == 0x42 && h.p1 == 0 && h.p2 == 0 && le < 6 {
+            Err(Sw::WRONG_LENGTH)
+        } else if h.ins == INS_FACTORY_RESET {
             self.check_factory_reset(h, p)
                 .map(|()| Action::FactoryReset)
         } else {
@@ -215,6 +218,21 @@ impl Admin {
             self.check_empty(h)?;
             return Ok(Action::ResetOath);
         }
+        #[cfg(feature = "ndef")]
+        if matches!(h.ins, 0x07 | 0x08) {
+            if !grants.admin {
+                return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+            }
+            // ADMIN selection has already dropped the NDEF session. This
+            // temporary policy object shares storage and needs no file buffer.
+            let mut ndef = crate::applets::ndef::Ndef::new();
+            if h.ins == 0x07 {
+                ndef.install(true, p.storage)?;
+            } else {
+                ndef.set_read_only(h.p1, p.storage)?;
+            }
+            return Ok(Action::Response(0));
+        }
         self.execute(h, grants, pass, p).map(Action::Response)
     }
     fn execute(
@@ -224,6 +242,9 @@ impl Admin {
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
+        if matches!(h.ins, 0x14 | 0x40 | 0x42) {
+            return self.device_config(h, grants, p);
+        }
         #[cfg(feature = "ctap")]
         if matches!(h.ins, INS_CTAP_BEGIN | INS_CTAP_END) {
             if h.p1 != 0 || h.p2 != 0 {
@@ -331,10 +352,93 @@ impl Admin {
         }
         Ok(())
     }
+    fn device_config(
+        &mut self,
+        h: Header,
+        grants: &Grants,
+        p: &mut Platform<'_>,
+    ) -> Result<u32, Sw> {
+        use crate::runtime::config;
+        let io = |_| Sw::UNABLE_TO_PROCESS;
+        if h.ins == 0x14 {
+            if h.p1 > 1 || h.p2 > 1 {
+                return Err(Sw::WRONG_P1P2);
+            }
+            if self.used != 0 {
+                return Err(Sw::WRONG_LENGTH);
+            }
+            if h.p1 == 0 {
+                self.response[0] =
+                    u8::from(config::flags(p.storage).map_err(io)? & config::NFC != 0);
+                self.response_len = 1;
+                return Ok(1);
+            }
+            if !grants.admin {
+                return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+            }
+            config::update(
+                p.storage,
+                config::NFC,
+                if h.p2 == 0 { 0 } else { config::NFC },
+            )
+            .map_err(io)?;
+            return Ok(0);
+        }
+        if h.ins == 0x42 {
+            if h.p1 != 0 || h.p2 != 0 {
+                return Err(Sw::WRONG_P1P2);
+            }
+            let flags = config::flags(p.storage).map_err(io)?;
+            self.response[..6].copy_from_slice(&[
+                u8::from(flags & config::LED != 0),
+                0,
+                0,
+                u8::from(flags & config::NDEF != 0),
+                u8::from(flags & config::WEBUSB != 0),
+                ((flags & config::FEATURES) >> 7) as u8,
+            ]);
+            #[cfg(feature = "ndef")]
+            {
+                self.response[2] = u8::from(crate::applets::ndef::Ndef::new().read_only(p.storage));
+            }
+            self.response_len = 6;
+            return Ok(6);
+        }
+        if !grants.admin {
+            return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
+        }
+        let mask = match h.p1 {
+            1 => config::LED,
+            4 => config::NDEF,
+            5 => config::WEBUSB,
+            6 => {
+                if self.used != 0 {
+                    return Err(Sw::WRONG_LENGTH);
+                }
+                if h.p2 & !0x3f != 0 {
+                    return Err(Sw::WRONG_P1P2);
+                }
+                config::FEATURES
+            }
+            _ => return Err(Sw::WRONG_P1P2),
+        };
+        let value = if h.p1 == 6 {
+            u32::from(h.p2) << 7
+        } else if h.p2 & 1 != 0 {
+            mask
+        } else {
+            0
+        };
+        config::update(p.storage, mask, value).map_err(io)?;
+        Ok(0)
+    }
     // Factory reset is the blocked-ADMIN recovery path: 50 00 00 plus literal
     // RESET, with no retries left. The runtime separately requires five touches
     // before executing the returned reset action; this check alone never erases.
     pub fn check_factory_reset(&self, h: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
+        if p.device.contactless() {
+            return Err(Sw::CONDITIONS_NOT_SATISFIED);
+        }
         if h.p1 != 0x00 || h.p2 != 0x00 {
             return Err(Sw::WRONG_P1P2);
         }

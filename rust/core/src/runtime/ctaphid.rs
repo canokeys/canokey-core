@@ -14,6 +14,9 @@ const TIMEOUT_MS: u32 = 800;
 /// close releases request storage, not the transport transaction. The caller
 /// must exclude all other core/crypto entrypoints while Transport::active().
 pub trait Scratch {
+    fn webauthn_enabled(&mut self) -> bool {
+        true
+    }
     fn begin(&mut self, use_pke: bool) -> Result<(), Error>;
     fn write(&mut self, offset: usize, bytes: &[u8]) -> Result<(), Error>;
     fn read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), Error>;
@@ -236,6 +239,9 @@ impl Transport {
             self.response = true;
         }
         if self.command == wire::CBOR || self.command == wire::MSG {
+            if !scratch.webauthn_enabled() {
+                return Err(Error::Command);
+            }
             // The shared parser also needs cleanup when a staged read fails.
             self.response = true;
             scratch.begin_request((self.command == wire::MSG).then_some(self.total));

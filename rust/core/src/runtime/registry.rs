@@ -28,6 +28,8 @@ macro_rules! pass_arg {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selected {
     None,
+    #[cfg(feature = "ndef")]
+    Ndef,
     #[cfg(feature = "admin")]
     Admin,
     #[cfg(feature = "ctap")]
@@ -45,6 +47,8 @@ enum Selected {
 /// ADMIN/PASS services likewise remain available to cross-applet flows.
 enum AppletState {
     None,
+    #[cfg(feature = "ndef")]
+    Ndef(crate::applets::ndef::Applet),
     #[cfg(feature = "admin")]
     Admin,
     #[cfg(feature = "ctap")]
@@ -60,6 +64,8 @@ impl AppletState {
     fn selected(&self) -> Selected {
         match self {
             Self::None => Selected::None,
+            #[cfg(feature = "ndef")]
+            Self::Ndef(_) => Selected::Ndef,
             #[cfg(feature = "admin")]
             Self::Admin => Selected::Admin,
             #[cfg(feature = "ctap")]
@@ -87,8 +93,37 @@ impl AppletState {
 }
 
 impl Selected {
+    fn enabled(self, p: &mut Platform<'_>) -> bool {
+        use super::config;
+        let mask = match self {
+            #[cfg(feature = "ndef")]
+            Self::Ndef => config::NDEF,
+            #[cfg(feature = "openpgp")]
+            Self::OpenPgp => {
+                if p.device.contactless() {
+                    config::OPENPGP_NFC
+                } else {
+                    config::OPENPGP_USB
+                }
+            }
+            #[cfg(feature = "piv")]
+            Self::Piv => {
+                if p.device.contactless() {
+                    config::PIV_NFC
+                } else {
+                    config::PIV_USB
+                }
+            }
+            #[cfg(feature = "ctap")]
+            Self::Ctap => config::WEBAUTHN,
+            _ => 0,
+        };
+        mask == 0 || config::enabled(p.storage, mask)
+    }
     fn from_aid(aid: &[u8]) -> Option<Self> {
         match aid {
+            #[cfg(feature = "ndef")]
+            crate::applets::ndef::AID => Some(Self::Ndef),
             #[cfg(feature = "ctap")]
             ctap::apdu::AID => Some(Self::Ctap),
             #[cfg(feature = "admin")]
@@ -135,6 +170,15 @@ impl AppletState {
                     h.unchained().cla
                 },
                 Piv::limit(h),
+            ),
+            #[cfg(feature = "ndef")]
+            Self::Ndef(_) => (
+                if h.ins == 0xd6 {
+                    h.unchained().cla
+                } else {
+                    h.cla
+                },
+                1024,
             ),
             Self::None => (h.cla, 0),
         }
@@ -273,6 +317,9 @@ impl Registry {
     }
     #[cfg(feature = "pass")]
     pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
+        if !super::config::enabled(p.storage, super::config::PASS) {
+            return Ok(0);
+        }
         // HOTP touch is a flow operation and uses flow_status; challenge is
         // a PASS service primitive and maps its domain status directly below.
         crate::flows::hotp_output::touch(&self.pass, index, out, p).map_err(flow_status)
@@ -291,9 +338,9 @@ impl Registry {
     }
     #[cfg(feature = "admin")]
     #[cfg_attr(feature = "openpgp", inline(never))]
-    fn finish_admin(&mut self, h: Header, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
+    fn finish_admin(&mut self, h: Header, le: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
         let pass = pass_arg!(self);
-        match self.admin.finish(h, &mut self.grants, pass, p)? {
+        match self.admin.finish(h, le, &mut self.grants, pass, p)? {
             admin::Action::Response(n) => return Ok((n, Sw::SUCCESS)),
             #[cfg(feature = "ctap")]
             admin::Action::InstallFidoKey(mut key) => {
@@ -327,6 +374,8 @@ impl Registry {
                     return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
                 }
                 self.reset_sessions(p);
+                #[cfg(feature = "ndef")]
+                crate::applets::ndef::Applet::install(true, p)?;
                 #[cfg(feature = "ctap")]
                 self.ctap.erase(&mut self.workspace, p)?;
                 let pass = pass_arg!(self);
@@ -349,6 +398,8 @@ impl Router for Registry {
     fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
         #[cfg(feature = "admin")]
         self.admin.install(platform)?;
+        #[cfg(feature = "ndef")]
+        crate::applets::ndef::Applet::install(false, platform)?;
         #[cfg(feature = "pass")]
         self.pass
             .install(platform.storage, platform.memory)
@@ -373,10 +424,19 @@ impl Router for Registry {
     #[inline(never)]
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
         let next = Selected::from_aid(aid).ok_or(Sw::FILE_NOT_FOUND)?;
+        if !next.enabled(p) {
+            self.reset_sessions(p);
+            self.applet = AppletState::None;
+            return Err(Sw::FILE_NOT_FOUND);
+        }
         if self.applet.selected() != next {
             self.reset_sessions(p);
             match next {
                 Selected::None => self.applet = AppletState::None,
+                #[cfg(feature = "ndef")]
+                Selected::Ndef => {
+                    self.applet = AppletState::Ndef(crate::applets::ndef::Applet::new())
+                }
                 #[cfg(feature = "admin")]
                 Selected::Admin => self.applet = AppletState::Admin,
                 #[cfg(feature = "ctap")]
@@ -417,6 +477,10 @@ impl Router for Registry {
     }
     fn allows_extended(&self, header: Header) -> bool {
         let _ = header;
+        #[cfg(feature = "ndef")]
+        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xb0 {
+            return true;
+        }
         #[cfg(feature = "ctap")]
         if matches!(self.applet, AppletState::Ctap) {
             return ctap::apdu::allows_extended(header);
@@ -440,6 +504,8 @@ impl Router for Registry {
     #[allow(unused_variables)]
     fn abort_command(&mut self, platform: &mut Platform<'_>) {
         match &mut self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(s) => s.cancel(),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.cancel_command(platform),
             #[cfg(feature = "ctap")]
@@ -457,7 +523,14 @@ impl Router for Registry {
     }
     #[allow(unused_variables)]
     fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        if !self.applet.selected().enabled(platform) {
+            self.reset_sessions(platform);
+            self.applet = AppletState::None;
+            return Err(Sw::FILE_NOT_FOUND);
+        }
         match &mut self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(s) => s.begin(header),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.begin(header, &self.grants, platform),
             #[cfg(feature = "ctap")]
@@ -476,6 +549,8 @@ impl Router for Registry {
     #[allow(unused_variables)]
     fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
         match &mut self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(s) => s.consume(bytes),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.consume(bytes, platform),
             #[cfg(feature = "ctap")]
@@ -494,6 +569,14 @@ impl Router for Registry {
         }
     }
     #[allow(unused_variables)]
+    fn end_frame(&mut self, last: bool, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        #[cfg(feature = "ndef")]
+        if let AppletState::Ndef(s) = &mut self.applet {
+            return s.end_frame(last, platform);
+        }
+        Ok(())
+    }
+    #[allow(unused_variables)]
     // Share final dispatch without expanding it into frame/response handling.
     #[inline(never)]
     fn finish(
@@ -503,8 +586,10 @@ impl Router for Registry {
         platform: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
         match &mut self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(s) => s.finish(le, platform),
             #[cfg(feature = "admin")]
-            AppletState::Admin => self.finish_admin(header, platform),
+            AppletState::Admin => self.finish_admin(header, le, platform),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self
                 .ctap
@@ -535,6 +620,8 @@ impl Router for Registry {
         platform: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
         match &mut self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(s) => s.read(offset as usize, out, platform),
             #[cfg(feature = "admin")]
             AppletState::Admin => self
                 .admin
@@ -562,6 +649,8 @@ impl Router for Registry {
     #[allow(unused_variables)]
     fn close_response(&mut self, platform: &mut Platform<'_>) {
         match &mut self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(s) => s.close(),
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.close_response(platform),
             #[cfg(feature = "ctap")]
@@ -608,7 +697,11 @@ impl Router for Registry {
         }
         self.output
             .sample(pressed, now, ready, p.memory, |index, out| {
-                crate::flows::hotp_output::touch(&self.pass, index, out, p).unwrap_or(0)
+                if super::config::enabled(p.storage, super::config::PASS) {
+                    crate::flows::hotp_output::touch(&self.pass, index, out, p).unwrap_or(0)
+                } else {
+                    0
+                }
             })
     }
 }
@@ -634,3 +727,14 @@ fn flow_status(error: crate::flows::Error) -> Sw {
         Error::Output => Sw::WRONG_LENGTH,
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "admin",
+    feature = "openpgp",
+    feature = "piv",
+    feature = "ndef",
+    not(feature = "static-backend")
+))]
+#[path = "registry_config_tests.rs"]
+mod config_tests;

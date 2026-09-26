@@ -7,7 +7,7 @@ fn main() {
         ctap::generate_response();
     }
     cfg_aliases::cfg_aliases! {
-        has_applet: { any(feature = "admin", feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
+        has_applet: { any(feature = "ndef", feature = "admin", feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
         persistent_applet: { any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
         classic_presence: { any(feature = "oath", feature = "openpgp", feature = "piv") },
         crypto_applet: { any(feature = "openpgp", feature = "piv", feature = "ctap") },
