@@ -611,6 +611,9 @@ impl Fields {
                     return Err(Status::UnexpectedType);
                 };
                 match field {
+                    // These options are command-specific even when false.
+                    Field::Resident if !self.params.make => return Err(Status::UnsupportedOption),
+                    Field::Up if self.params.make => return Err(Status::InvalidOption),
                     Field::Resident => self.params.resident = value,
                     Field::Uv => self.params.uv = value,
                     Field::LargeBlobKey => self.params.large_blob_key = value,

@@ -77,6 +77,11 @@ def run(wire):
                 for version, length in [(1, 1), (1, 32), (2, 16)]:
                     call(command, request | {auth_field: bytes(length), protocol_field: version}, 0x33)
     check_pin_probe(False)
+    make_options = {1: client_hash, 2: {"id": rp}, 3: user,
+                    4: [{"type": "public-key", "alg": -7}]}
+    for value in (False, True):
+        call(1, make_options | {7: {"up": value}}, 0x2c)
+        call(2, {1: rp, 2: assertion_hash, 5: {"rk": value}}, 0x2b)
     credentials = []
     for algorithm in [-7, -8]:
         request = {1: client_hash, 2: {"id": rp, "name": "Example"}, 3: user,

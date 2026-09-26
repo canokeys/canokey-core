@@ -615,3 +615,8 @@ For makeCredential/getAssertion, empty `pinUvAuthParam` is a user-presence-gated
 PIN-state probe even when `pinUvAuthProtocol` is omitted: it returns `PIN_INVALID`
 when a PIN exists and `PIN_NOT_SET` otherwise. Nonempty authentication requires
 a protocol; a protocol/authentication-length mismatch returns `PIN_AUTH_INVALID`.
+
+Credential options are command-specific: makeCredential rejects explicit `up`
+with `INVALID_OPTION`, and getAssertion rejects explicit `rk` with
+`UNSUPPORTED_OPTION`, regardless of their boolean value. Omitted options retain
+the command defaults; getAssertion continues to support `up: false`.
