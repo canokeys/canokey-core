@@ -225,7 +225,19 @@ int main(void) {
   output_count = 0;
   data[0] = 4;
   command(cid, 0x90, data, 1);
-  assert(response(cid, 0x90, result, sizeof(result)) > 256 && result[0] == 0);
+  size_t info_length = response(cid, 0x90, result, sizeof(result));
+  assert(info_length > 256 && result[0] == 0);
+  memcpy(data, result, info_length);
+  /* MSG case 3 and unlimited case 4 must preserve the complete CBOR response
+   * and append exactly one APDU status word across HID continuations. */
+  const uint8_t msg_info[] = {0x80, 0x10, 0, 0, 0, 0, 1, 4, 0, 0};
+  for (size_t length = 8; length <= sizeof(msg_info); length += 2) {
+    output_count = 0;
+    command(cid, 0x83, msg_info, length);
+    assert(response(cid, 0x83, result, sizeof(result)) == info_length + 2);
+    assert(!memcmp(result, data, info_length));
+    assert(result[info_length] == 0x90 && result[info_length + 1] == 0);
+  }
 
   /* A file-backed response crosses both the shared workspace and HID packets.
    * Verify every payload byte, including the final short continuation. */
