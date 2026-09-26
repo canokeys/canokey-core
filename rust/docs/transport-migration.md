@@ -313,3 +313,20 @@ Cooperative progress dispatch also lives in Rust. Native services perform only
 a one-millisecond hardware delay before asking the active Rust transport whether
 execution is still live. WebUSB touch/crypto waits therefore do not depend on a
 CCID extension timer, and USB reset cancels them without reentering Core.
+
+### HID ingress and echo correctness coverage
+
+The Rust OUT mailbox holds one report and its receive timestamp until main-loop
+consumption rearms the endpoint. It does not execute protocol code in the IRQ.
+`hid-core::mailbox_regressions` checks overwrite rejection/rearm, 50 ordered
+reports and arrival-time timeout decisions under delayed dispatch. `hid-usb`
+checks interrupts during polling and queued cancellation with an IN report
+still owned by the controller.
+
+PING uses the available transient staging capacity, capped at the 7609-byte
+HID framing limit; it is not subject to the 1024-byte CTAP CBOR limit. MSG retains
+its additional nine envelope bytes. Length admission happens before acquisition,
+and echo storage is wiped/released after final transmission or interruption.
+The full adapter fixture verifies boundaries through its 3072-byte scratch
+capacity and rejects capacity+1 without acquiring storage. The platform's
+actual capacity remains authoritative; no Flash transport cache is used.

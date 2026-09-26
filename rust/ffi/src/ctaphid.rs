@@ -37,6 +37,9 @@ impl Scratch for RequestScratch {
             )
         })
     }
+    fn capacity(&self) -> usize {
+        unsafe { pke_buffer_size() }
+    }
     fn begin(&mut self, use_pke: bool) -> Result<(), Error> {
         unsafe {
             if ck_ccid_idle() == 0 {
@@ -45,9 +48,6 @@ impl Scratch for RequestScratch {
             // End the previous idle CCID session before staging any HID bytes.
             super::entrypoints::with_core(|core, p| core.begin_ctap(p));
             if use_pke {
-                if pke_buffer_size() < canokey_rust_core::applets::ctap::MAX_REQUEST + 9 {
-                    return Err(Error::Length);
-                }
                 if pke_buffer_acquire(PKE_OWNER_CTAP) != 0 {
                     return Err(Error::Busy);
                 }

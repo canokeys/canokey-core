@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Three C test executables remain, with 149 registered cases: APDU (66),
+Three C test executables remain, with 143 registered cases: APDU (60),
 key (25), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -343,3 +343,27 @@ invalidated before state-record mutation. A failed terminate clears grants and
 forces a durable reload: neither success nor failure of a write is guessed.
 The storage fixture models both commit outcomes and counts actual trait reads;
 physical LittleFS power-loss behavior remains a separate acceptance item.
+
+## Replaced HID ingress, timeout and echo cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_ctaphid_out_event_only_enqueues` | `hid-core::mailbox_regressions`: no protocol output before main-loop service |
+| `test_ctaphid_rx_high_water_pauses_and_resumes` | Same regression: full mailbox rejects overwrite, holds receive until consumed, then rearms and accepts new input; `hid-usb` additionally injects IRQs during consumption |
+| `test_ctaphid_uses_receive_tick_for_timeout` | Actual Rust mailbox/core: initial frame at 100 ms, continuation received at 700/1000 ms, both dispatched at 1100 ms; exact echo/timeout outcomes |
+| `test_ctaphid_cancel_is_consumed_from_queue` | `hid-core`: real selection command receives queued owner CANCEL and returns CTAP cancellation; `hid-usb`: queued cancellation while keepalive IN remains owned, foreign CANCEL isolation |
+| `test_ctaphid_sustains_fifty_reports` | `hid-core::mailbox_regressions`: 50 distinct one-byte echo reports, byte/order/count checks through each receive rearm |
+| `test_ctaphid_large_ping_is_consumed_incrementally` | `hid-core` and `ping_boundaries_and_monotonic_source_lifetime`: 192/193/1024/1033/1288/3072-byte echoes, full byte comparisons, monotonic reads and wiped/released PKE leases; capacity+1 rejected before acquisition |
+
+Rust uses one held USB OUT mailbox instead of the former eight-entry C queue;
+controller backpressure prevents accepted USB reports from being overwritten.
+The regression uses that admission/rearm contract rather than demanding the old
+internal queue depth. Cancellation is tested during actual execution, not via
+the removed C loop return code after a completed PING.
+
+Porting the large-echo case exposed a functional reduction: Rust had applied
+the 1024-byte CTAP CBOR request policy to PING. PING now uses the actual staging
+capacity (or inline capacity), capped at HID's 7609-byte framing maximum.
+CBOR/MSG still enforce their independent 1024/1033-byte admission policies;
+all staged commands check storage capacity before acquiring it. No additional
+firmware buffer or persistent staging was introduced.

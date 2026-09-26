@@ -8,12 +8,13 @@
 #include <string.h>
 
 extern uint8_t CTAPHID_OutEvent(const uint8_t *report);
+extern uint8_t CTAPHID_RxCanAccept(void);
 static uint32_t ticks;
 static uint8_t configured = 1;
 static uint8_t output[128][64];
 static size_t output_count;
 static uint8_t scratch[3072], scratch_owner;
-static unsigned leases, clears;
+static unsigned leases, clears, rearms;
 static uint8_t injected[2][64];
 static uint32_t inject_at[2];
 static size_t injection_count, injected_count;
@@ -25,7 +26,7 @@ uint32_t ck_usb_dcd_lock(void) { return 0; }
 void ck_usb_dcd_unlock(uint32_t mask) { assert(mask == 0); }
 uint8_t ck_usb_configured(void) { return configured; }
 uint8_t ck_usb_tx_idle(uint8_t ep) { assert(ep == 0x82); return 1; }
-void ck_usb_receive(uint8_t ep) { assert(ep == 2); }
+void ck_usb_receive(uint8_t ep) { assert(ep == 2); rearms++; }
 int32_t ck_usb_submit(uint8_t ep, const uint8_t *data, uint16_t n, uint8_t zlp) {
   assert(ep == 0x82 && n == 64 && zlp == 0 && output_count < 128);
   memcpy(output[output_count++], data, 64);
@@ -143,10 +144,54 @@ static void command(uint32_t cid, uint8_t cmd, const uint8_t *body, size_t lengt
   }
   drain();
 }
+static void mailbox_regressions(uint32_t cid) {
+  uint8_t packet[64], result[58];
+  reset();
+  header(packet, cid, 0x81, 0);
+  unsigned before = rearms;
+  assert(CTAPHID_OutEvent(packet));
+  assert(!output_count && !CTAPHID_RxCanAccept());
+  assert(!CTAPHID_OutEvent(packet)); // Full mailbox does not overwrite its packet.
+  assert(rearms == before);
+  CTAPHID_Loop(0); drain();
+  assert(output_count == 1 && output[0][4] == 0x81);
+  assert(CTAPHID_RxCanAccept() && rearms > before);
+
+  reset();
+  for (unsigned i = 0; i < 50; ++i) {
+    header(packet, cid, 0x81, 1); packet[7] = (uint8_t)i;
+    assert(CTAPHID_OutEvent(packet));
+    assert(output_count == i); // IRQ ingress never executes the protocol.
+    CTAPHID_Loop(0); drain();
+    assert(output_count == i + 1 && output[i][7] == i);
+    assert(CTAPHID_RxCanAccept());
+  }
+
+  for (unsigned late = 0; late < 2; ++late) {
+    reset(); ticks = 100;
+    header(packet, cid, 0x81, 58); memset(packet + 7, 0x5a, 57);
+    feed(packet);
+    assert(!output_count);
+    ticks = late ? 1000 : 700;
+    header(packet, cid, 0, 0); packet[5] = 0xa5;
+    assert(CTAPHID_OutEvent(packet));
+    ticks = 1100; // Dispatch is late; the stored arrival tick decides expiry.
+    CTAPHID_Loop(0); drain();
+    if (late) {
+      assert(response(cid, 0xbf, result, sizeof(result)) == 1 && result[0] == 5);
+    } else {
+      assert(response(cid, 0x81, result, sizeof(result)) == 58);
+      for (unsigned i = 0; i < 57; ++i) assert(result[i] == 0x5a);
+      assert(result[57] == 0xa5);
+    }
+  }
+  reset();
+}
+
 int main(void) {
   assert(ck_core_install() == 0);
   reset();
-  uint8_t data[1100], result[1100];
+  uint8_t data[3072], result[3072];
   const uint8_t nonce[8] = {1,2,3,4,5,6,7,8};
   command(UINT32_MAX, 0x86, nonce, sizeof(nonce));
   assert(response(UINT32_MAX, 0x86, result, sizeof(result)) == 17);
@@ -154,14 +199,27 @@ int main(void) {
   uint32_t cid = (uint32_t)result[8] << 24 | (uint32_t)result[9] << 16 | (uint32_t)result[10] << 8 | result[11];
   assert(cid && cid != UINT32_MAX);
 
-  /* Long echo crosses inline storage and exercises PKE lease erasure. */
+  mailbox_regressions(cid);
+  /* Echo crosses inline/staged boundaries through the actual scratch capacity. */
+  const size_t lengths[] = {192, 193, 1024, 1033, 1288, sizeof(scratch)};
+  for (size_t i = 0; i < sizeof(data); ++i) data[i] = (uint8_t)i;
+  for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i) {
+    output_count = 0;
+    unsigned old_leases = leases;
+    command(cid, 0x81, data, lengths[i]);
+    assert(response(cid, 0x81, result, sizeof(result)) == lengths[i]);
+    assert(!memcmp(data, result, lengths[i]));
+    assert(leases == old_leases + (lengths[i] > 192) && clears == leases);
+  }
+
+  /* Refuse an oversized PING before borrowing storage. */
   output_count = 0;
-  for (size_t i = 0; i < 700; ++i) data[i] = (uint8_t)i;
-  unsigned old_leases = leases;
-  command(cid, 0x81, data, 700);
-  assert(response(cid, 0x81, result, sizeof(result)) == 700);
-  assert(!memcmp(data, result, 700));
-  assert(leases > old_leases && clears == leases);
+  uint8_t oversized[64];
+  header(oversized, cid, 0x81, sizeof(scratch) + 1);
+  unsigned before_leases = leases;
+  feed(oversized); drain();
+  assert(response(cid, 0xbf, result, sizeof(result)) == 1 && result[0] == 3);
+  assert(leases == before_leases && !scratch_owner);
 
   output_count = 0;
   data[0] = 4;

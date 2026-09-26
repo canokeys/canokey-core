@@ -17,6 +17,8 @@ pub trait Scratch {
     fn webauthn_enabled(&mut self) -> bool {
         true
     }
+    /// Available staging bytes; PING is bounded by storage, not CTAP CBOR policy.
+    fn capacity(&self) -> usize;
     fn begin(&mut self, use_pke: bool) -> Result<(), Error>;
     fn write(&mut self, offset: usize, bytes: &[u8]) -> Result<(), Error>;
     fn read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), Error>;
@@ -157,7 +159,12 @@ impl Transport {
             let Some(length) = frame.length else {
                 return false;
             };
-            if length > ctap::MAX_REQUEST + if frame.tag == wire::MSG { 9 } else { 0 } {
+            let limit = if frame.tag == wire::PING {
+                scratch.capacity().max(INLINE).min(wire::MAX_MESSAGE)
+            } else {
+                ctap::MAX_REQUEST + if frame.tag == wire::MSG { 9 } else { 0 }
+            };
+            if length > limit || (length > INLINE && length > scratch.capacity()) {
                 return Self::error(out, frame.cid, Error::Length);
             }
             if frame.tag != wire::PING

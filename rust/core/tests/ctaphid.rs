@@ -23,6 +23,9 @@ struct Memory {
     message: Option<canokey_rust_core::applets::ctap::apdu::MessageParser>,
 }
 impl Scratch for Memory {
+    fn capacity(&self) -> usize {
+        3072
+    }
     fn webauthn_enabled(&mut self) -> bool {
         !self.disabled
     }
@@ -33,7 +36,7 @@ impl Scratch for Memory {
         }
         self.leased = true;
         if pke {
-            self.bytes.resize(1033, 0);
+            self.bytes.resize(self.capacity(), 0);
         }
         Ok(())
     }
@@ -143,7 +146,7 @@ fn request(hid: &mut Transport, memory: &mut Memory, command: u8, body: &[u8]) {
 
 #[test]
 fn ping_boundaries_and_monotonic_source_lifetime() {
-    for length in [0, 57, 58, 192, 193, 1024] {
+    for length in [0, 57, 58, 192, 193, 1024, 1033, 1288, 3072] {
         let mut hid = Transport::new();
         let mut memory = Memory::default();
         let body: Vec<u8> = (0..length).map(|n| (n * 37) as u8).collect();
@@ -549,5 +552,17 @@ fn response_limits_and_read_failure_close_once() {
                 assert_eq!(memory.response_closes, 1);
             }
         }
+    }
+}
+
+#[test]
+fn ping_staging_limit_is_separate_from_ctap_request_policy() {
+    let mut hid = Transport::new();
+    let mut mem = Memory::default();
+    let mut out = [0; 64];
+    for (command, length) in [(wire::PING, 3073), (wire::CBOR, 1025), (wire::MSG, 1034)] {
+        assert!(hid.receive(&initial(1, command, length, &[]), 0, &mut out, &mut mem));
+        assert_eq!(&out[4..8], &[wire::ERROR, 0, 1, Error::Length as u8]);
+        assert!(!hid.active() && !mem.leased);
     }
 }
