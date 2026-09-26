@@ -332,7 +332,8 @@ int main(void) {
   for (uint8_t kind=0;kind<3;kind++) {
     uint8_t query[]={0,0x31,kind,0,3};
     assert(exchange(query,sizeof(query),0x9000)==3);
-    assert(!memcmp(buffer,"unk",3));
+    const char *prefix[] = {"0.0", "Can", "unk"};
+    assert(!memcmp(buffer,prefix[kind],3));
   }
   SEND(0x6986,0,0xc0,0,0,0);
   const uint8_t revision[]={0,0x31,2,0,0};

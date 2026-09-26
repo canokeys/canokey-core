@@ -815,7 +815,8 @@ dependencies to copy into the Rust target:
 
 For implemented ADMIN commands, the published CanoKey ADMIN protocol is the
 wire contract. CLA 10 is not a generic ADMIN extension; unknown instructions
-return 6D00 and reserved fields are checked strictly. See admin-pass.md for
+retain the legacy ADMIN authentication gate (6982 before authentication, 6D00
+afterwards), and reserved fields are checked strictly. See admin-pass.md for
 same-AID selection, missing Le, factory reset, output leases and explicitly
 retained extensions. Do not restore C parser permissiveness merely to match
 malformed-command behavior. The confirmed current OATH A1/A2/A5 and access-code

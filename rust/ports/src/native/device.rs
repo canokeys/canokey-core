@@ -111,7 +111,13 @@ native_port! { impl Device for DeviceBackend {
         }
         #[cfg(not(feature = "device-runtime"))]
         {
-            let data: &[u8]=if kind==3 {&[0;13]} else {b"unknown"};
+            // Synthetic identity for native host tools; never a product release version.
+            let data: &[u8]=match kind {
+                0 => b"0.0.0",
+                1 => b"CanoKey Rust Virtual Card",
+                3 => &[0;13],
+                _ => b"unknown",
+            };
             let len=output.len().min(data.len());output[..len].copy_from_slice(&data[..len]);len
         }
     }

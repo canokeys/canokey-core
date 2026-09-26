@@ -30,7 +30,9 @@ The full APDU replay host build also includes this tool and its tests.
 `BUILD_TESTING=OFF` omits regression targets without removing either host tool. `ENABLE_TESTS=ON` builds this Rust UDP executable and the complete Rust suite,
 with the independent native LittleFS helper tests. The legacy C APDU test
 executable and its compilation dependency closure have been removed.
-The PC/SC IFD library also uses this crate.
+The PC/SC IFD library also uses this crate. Native host identity queries return
+the synthetic firmware version `0.0.0` and product `CanoKey Rust Virtual Card`;
+these are host compatibility identifiers, not device release metadata.
 
 ## Compatibility and storage
 

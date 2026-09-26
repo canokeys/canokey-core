@@ -331,9 +331,17 @@ jobs:
         name: logs
         path: /tmp/*.log
     
+    - name: Wrap-up - Collect virtual-card image
+      if: ${{ always() }}
+      run: |
+        mkdir -p test-artifacts
+        if sudo test -f /tmp/lfs-root; then
+          sudo cat /tmp/lfs-root >test-artifacts/virtual-card.image
+        fi
+
     - name: Wrap-up - Upload data files
       if: ${{ always() }}
       uses: actions/upload-artifact@v7
       with:
         name: data
-        path: /tmp/[lc][fe]*
+        path: test-artifacts/

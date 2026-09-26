@@ -84,9 +84,9 @@ unsupported; this is not a claim of full ADMIN protocol coverage.
 - ADMIN accepts CLA 00 only in this profile. The documented CLA 10 exception
   belongs to Write FIDO Certificate (02), which is not enabled yet. Generic
   chaining remains a common protocol capability, not an ADMIN extension.
-- Unknown/disabled instructions return 6D00. Implemented protected commands
-  require ADMIN authentication; their P1/P2 and length constraints are checked
-  strictly. C's unknown-command 6982 precedence is not reproduced.
+- Unknown/disabled instructions return 6982 without ADMIN authentication and
+  6D00 after authentication, preserving legacy precedence. Implemented protected
+  commands retain their command-specific P1/P2 and length validation order.
 - Same-ADMIN SELECT preserves the grant. Unknown AID or invalid SELECT P2 does
   not discard the selected applet. Switching applets revokes ADMIN grants.
   Applet-specific SELECT authentication remains the applet's responsibility.

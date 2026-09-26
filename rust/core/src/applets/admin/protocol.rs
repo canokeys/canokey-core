@@ -385,7 +385,7 @@ impl Admin {
             self.response_len = 8;
             return Ok(8);
         }
-        // The published ADMIN protocol specifies 6D00 for unknown instructions.
+        // Preserve legacy authentication precedence for unknown instructions.
         if !matches!(
             h.ins,
             INS_VERIFY
@@ -394,7 +394,11 @@ impl Admin {
                 | INS_SET_PASS_CONFIG
                 | INS_RESET_PASS
         ) {
-            return Err(Sw::INS_NOT_SUPPORTED);
+            return Err(if grants.admin {
+                Sw::INS_NOT_SUPPORTED
+            } else {
+                Sw::SECURITY_STATUS_NOT_SATISFIED
+            });
         }
         // ADMIN credential/PASS commands reserve P2=00. P1 is also 00
         // except SET PASS CONFIG, where 1/2 selects the keyboard slot.

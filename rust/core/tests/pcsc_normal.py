@@ -94,6 +94,14 @@ def run(library):
             assert rc == 0 and n == 17 and atr.hex() == '3bf71100008131fe6543616e6f4b657999'
             assert d.capability(0x303) == (0, atr, n)
             assert d.capability(0x303, capacity=1)[0] == 618
+            # ADMIN compatibility through the real IFD/APDU engine.
+            assert d.raw(bytes.fromhex('00a4040005f000000000'))[1] == b'\x90\x00'
+            assert d.raw(bytes.fromhex('00ee0000'))[1] == b'\x69\x82'
+            assert d.raw(bytes.fromhex('0031000000'))[1] == b'0.0.0\x90\x00'
+            assert d.raw(bytes.fromhex('0031010000'))[1] == b'CanoKey Rust Virtual Card\x90\x00'
+            assert d.raw(bytes.fromhex('0020000006313233343536'))[1] == b'\x90\x00'
+            assert d.raw(bytes.fromhex('00ee0000'))[1] == b'\x6d\x00'
+            assert d.power(502)[0] == 0
             # Exercise the actual Rust RAM fallback through its exported ABI.
             # Reacquiring the same owner is idempotent, never a reference count.
             for name, args, result in [
