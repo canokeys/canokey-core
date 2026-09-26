@@ -583,18 +583,6 @@ static void assert_make_credential_auth_data_has_hmac_secret_mc(const uint8_t *r
   assert_int_equal(hmac_secret_mc_len, HMAC_SECRET_SALT_SIZE);
 }
 
-static void test_acquire_apdu_interface_releases_session_on_buffer_conflict(void **state) {
-  (void)state;
-
-  init_apdu_buffer();
-  device_init();
-
-  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CCID), 0);
-  assert_int_equal(acquire_apdu_interface(DEVICE_APPLET_SESSION_CTAPHID, BUFFER_OWNER_CTAPHID), -1);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_NONE);
-  assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CCID), 0);
-}
-
 static void test_pke_buffer_fallback_for_ctap(void **state) {
   (void)state;
 
@@ -840,53 +828,6 @@ static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
   assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
   ctap_poweroff();
   set_nfc_state(0);
-}
-
-static void test_fido_cbor_after_reset_without_select(void **state) {
-  (void)state;
-
-  static const uint8_t get_info_apdu[] = {
-      0x80, 0x10, 0x80, 0x00, 0x01, 0x04, 0x00,
-  };
-
-  uint8_t c_buf[64], r_buf[1024];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
-  assert_true(rapdu.sw == SW_NO_ERROR || (rapdu.sw & 0xFF00) == 0x6100);
-  assert_true(rapdu.len > 0);
-  assert_int_equal(rapdu.data[0], 0x00);
-}
-
-static void test_fido_chained_cbor_after_reset_without_select(void **state) {
-  (void)state;
-
-  static const uint8_t get_info_apdu[] = {
-      0x90, 0x10, 0x80, 0x00, 0x01, 0x04, 0x00,
-  };
-
-  uint8_t c_buf[64], r_buf[1024];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(build_capdu(&capdu, get_info_apdu, sizeof(get_info_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_not_equal(rapdu.sw, SW_FILE_NOT_FOUND);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 0);
 }
 
 static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
@@ -2181,15 +2122,12 @@ int main() {
   const struct CMUnitTest tests[] = {
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
-      cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
       cmocka_unit_test(test_fido_ctap1_register_rejects_missing_attestation_key),
       cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
-      cmocka_unit_test(test_fido_cbor_after_reset_without_select),
-      cmocka_unit_test(test_fido_chained_cbor_after_reset_without_select),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),

@@ -223,7 +223,28 @@ static size_t hid_read(uint32_t cid, uint8_t command, uint8_t *out) {
 }
 int main(void) {
   assert(ck_core_install()==0); configure(); loops();
-  uint8_t out[268]; ccid_send(0x62,NULL,0); (void)ccid_read(out);
+  uint8_t out[268];
+  /* Slot reset permits implicit FIDO selection, including an ISO input chain. */
+  for(uint8_t chained=0;chained<2;++chained) {
+    ccid_send(0x62,NULL,0); (void)ccid_read(out);
+    uint8_t info[]={0x80,0x10,0x80,0,1,4,0};
+    if(chained) {
+      info[0]=0x90;
+      ccid_send(0x6f,info,sizeof(info));
+      size_t n=ccid_read(out); assert(n==12); sw(out+10,n-10,0x9000);
+      const uint8_t finish[]={0x80,0x10,0x80,0,0};
+      ccid_send(0x6f,finish,sizeof(finish));
+    } else ccid_send(0x6f,info,sizeof(info));
+    size_t n=ccid_read(out), total=n-12;
+    assert(n>12 && out[10]==0 && (out[11]&0xe0)==0xa0);
+    assert(out[n-2]==0x61);
+    for(unsigned chunks=0;out[n-2]==0x61;++chunks) {
+      assert(chunks<8);
+      const uint8_t more[]={0,0xc0,0,0,0};
+      ccid_send(0x6f,more,sizeof(more)); n=ccid_read(out); total+=n-12;
+    }
+    sw(out+10,n-10,0x9000); assert(total>256);
+  }
   ccid_apdu(select_admin,sizeof(select_admin),0x9000);
   ccid_apdu(verify,sizeof(verify),0x9000);
   now+=2000; loops();

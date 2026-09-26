@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 39 registered APDU cases.
+One legacy C test executable remains, with 36 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -984,3 +984,26 @@ stack acceptance remain open.
 Validation: full host CTest passed 28/28 in 56.93 seconds; the USB-only
 composition test also passed after making its excluded HID execution boundary
 fail explicitly if accidentally invoked.
+
+## Implicit FIDO admission after slot reset
+
+Removed `test_fido_cbor_after_reset_without_select` and
+`test_fido_chained_cbor_after_reset_without_select`. The existing `usb-sessions`
+fixture now power-resets the real Rust CCID slot before each GetInfo request,
+without SELECT. Both direct and ISO-chained input must return successful CTAP
+CBOR and an ISO response chain exceeding 256 bytes, ending in 9000. The chained
+case also checks the initial empty 9000 acknowledgement; unlike the old test it
+finishes the input chain and drains the response.
+
+Retired `test_acquire_apdu_interface_releases_session_on_buffer_conflict`, which
+constructs an internal C-only combination of an independently held APDU buffer
+and unowned applet session. Rust has no such dual-acquisition helper. The retained
+observable correctness contract is covered by the same USB fixture: a pending
+CCID response rejects HID with CHANNEL_BUSY, preserves the response bytes, then
+allows HID immediately after endpoint completion. Competing WebUSB rejection,
+same-owner authentication and subsequent takeover are also checked there. No
+new test-only C ownership API is carried into Rust.
+
+Validation: host CTest passed 28/28 in 57.82 seconds. Full production links
+remain over Flash: DevKit 187832 B (23992 B over), NFCC 195312 B (31472 B
+over), RAM_DATA 8640/8760 B. Capacity, hardware and stack acceptance remain open.
