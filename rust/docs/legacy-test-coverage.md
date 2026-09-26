@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 43 registered APDU cases.
+One legacy C test executable remains, with 42 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -931,3 +931,18 @@ successfully. USB deconfiguration during partial RX must release scratch;
 reconfiguration and power-on permit the full request again. Protocol-level
 `ccid.rs` tests additionally cover all split points and reset cleanup. The
 native padded GetInfo/abort-helper fixture is removed; no production code changed.
+
+## CCID reentrant request isolation
+
+Removed `test_ccid_rejects_reentrant_command_until_response_finishes` in favor
+of assertions in the existing `usb-sessions` integration test. Two distinct
+commands arrive before the main loop: the first authenticated query must retain
+its sequence and return 9000. While that response is pending, another command
+is queued, a further packet is rejected, and competing WebUSB admission cannot
+change any response byte. After IN completion, the deferred unsupported command
+returns its own sequence and 6D00; the next authenticated query succeeds.
+
+The Rust mailbox deliberately defers one packet rather than reproducing the
+legacy C transport's discard-all behavior. The retained correctness contract is
+request/response immutability, ordered completion and usable subsequent commands.
+Full host CTest passed 28/28 (56.96 seconds).

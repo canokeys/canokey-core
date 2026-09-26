@@ -239,12 +239,25 @@ int main(void) {
   now+=2000; loops();
   ccid_apdu(select_admin,sizeof(select_admin),0x9000);
   ccid_apdu(verify,sizeof(verify),0x9000);
-  ccid_send(0x6f,query,sizeof(query)); assert(pending[3]);
+  /* Reentrant OUT packets cannot replace a queued request or pending response.
+   * The Rust mailbox defers one packet until IN completion. */
+  uint8_t first_query[]={0x6f,4,0,0,0,0,++sequence,0,0,0,0,0x20,0,0};
+  uint8_t next_query[]={0x6f,4,0,0,0,0,(uint8_t)(sequence+1),0,0,0,0,0xfe,0,0};
+  assert(ck_usb_out(3,first_query,sizeof(first_query))==0);
+  assert(ck_usb_out(3,next_query,sizeof(next_query))==0);
+  CCID_Loop(); assert(pending[3]);
+  assert(lengths[3]==12 && packets[3][6]==sequence);
+  sw(packets[3]+10,2,0x9000);
   uint8_t ccid_saved[64]; memcpy(ccid_saved,packets[3],lengths[3]);
   uint16_t ccid_length=lengths[3];
   web_send(select_admin,sizeof(select_admin)); assert(halted[1]);
+  assert(ck_usb_out(3,next_query,sizeof(next_query))==0);
+  assert(ck_usb_out(3,first_query,sizeof(first_query))==0);
+  CCID_Loop();
   assert(pending[3] && lengths[3]==ccid_length && !memcmp(ccid_saved,packets[3],ccid_length));
-  count=ccid_read(out); sw(out+10,count-10,0x9000);
+  complete(0x83); ++sequence;
+  count=ccid_read(out); sw(out+10,count-10,0x6d00);
+  assert(!pending[3]);
   // A fully consumed CCID response has no continuation lease to protect.
   // Both competitors can take it immediately, without revoking a same-owner
   // grant merely because the main loop polled the admission predicate.

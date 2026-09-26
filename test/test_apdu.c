@@ -693,47 +693,6 @@ static void test_ctaphid_wait_services_only_ccid_presence_poll(void **state) {
   usb_device.dev_state = previous_state;
 }
 
-static void test_ccid_rejects_reentrant_command_until_response_finishes(void **state) {
-  (void)state;
-
-  static const uint8_t first[] = {
-      PC_TO_RDR_XFRBLOCK, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00,
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10,
-  };
-  static const uint8_t second[] = {
-      PC_TO_RDR_XFRBLOCK, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00,
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x01,
-  };
-  const uint8_t *first_apdu = first + CCID_CMD_HEADER_SIZE;
-  const uint8_t *second_apdu = second + CCID_CMD_HEADER_SIZE;
-
-  init_apdu_buffer();
-  device_init();
-  CCID_Init();
-
-  assert_int_equal(CCID_OutEvent((uint8_t *)first, sizeof(first)), 0);
-  assert_memory_equal(shared_io_buffer, first_apdu, sizeof(first) - CCID_CMD_HEADER_SIZE);
-
-  assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), 0);
-  assert_memory_equal(shared_io_buffer, first_apdu, sizeof(first) - CCID_CMD_HEADER_SIZE);
-
-  CCID_Loop();
-  assert_int_equal(bulkin_data.bSeq, 0x11);
-  ccid_bulkin_data_t first_response;
-  memcpy(&first_response, &bulkin_data, sizeof(first_response));
-
-  assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), 0);
-  assert_memory_equal(&bulkin_data, &first_response, sizeof(first_response));
-
-  CCID_InFinished(0);
-  assert_int_equal(CCID_OutEvent((uint8_t *)second, sizeof(second)), 0);
-  assert_memory_equal(shared_io_buffer, second_apdu, sizeof(second) - CCID_CMD_HEADER_SIZE);
-  CCID_Loop();
-  assert_int_equal(bulkin_data.bSeq, 0x22);
-  CCID_InFinished(0);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CCID);
-}
-
 static void test_pke_buffer_fallback_for_ctap(void **state) {
   (void)state;
 
@@ -2324,7 +2283,6 @@ int main() {
       cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
       cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
       cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),
-      cmocka_unit_test(test_ccid_rejects_reentrant_command_until_response_finishes),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),
       cmocka_unit_test(test_fido_ctap1_register_nfc),
