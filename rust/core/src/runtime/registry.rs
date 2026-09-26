@@ -304,14 +304,7 @@ impl Registry {
     #[cfg(feature = "ctap")]
     #[inline(never)]
     pub fn finish_hid_request(&mut self, p: &mut Platform<'_>) -> usize {
-        if let super::workspace::SessionWorkspace::CtapMessage(request) = &mut self.workspace {
-            let mut command = request.finish();
-            self.ctap
-                .execute_message(&mut command, &mut self.workspace, p)
-        } else {
-            let mut command = self.workspace.ctap_request_with(p.memory).finish();
-            self.ctap.execute(&mut command, &mut self.workspace, p)
-        }
+        self.ctap.finish_hid(&mut self.workspace, p)
     }
     #[cfg(feature = "ctap")]
     pub fn execute_ctap(

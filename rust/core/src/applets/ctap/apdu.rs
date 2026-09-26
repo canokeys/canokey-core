@@ -117,13 +117,51 @@ impl Applet {
         Ok(())
     }
     pub fn finish(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
+        self.finish_apdu_command(w, p)?;
+        Ok(self.complete(w, p, None) as u32)
+    }
+    // Command objects must leave the stack before PQ response initialization.
+    #[inline(never)]
+    fn finish_apdu_command(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Sw> {
         if let SessionWorkspace::U2fRequest(request) = w {
             let request = core::mem::replace(request, super::u2f::Request::new(request.header));
             self.response = self.session.u2f(&request, w.classic_with(p.memory), p)?;
-            return Ok(self.response.len() as u32);
+        } else {
+            let mut command = w.ctap_request_with(p.memory).finish();
+            self.dispatch(&mut command, w, p);
         }
-        let mut command = w.ctap_request_with(p.memory).finish();
-        Ok(self.execute(&mut command, w, p) as u32)
+        Ok(())
+    }
+    pub(crate) fn finish_hid(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> usize {
+        let message = self.finish_hid_command(w, p);
+        self.complete(w, p, message)
+    }
+    #[inline(never)]
+    fn finish_hid_command(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) -> Option<(u32, Sw)> {
+        if let SessionWorkspace::CtapMessage(request) = w {
+            let mut command = request.finish();
+            Some(self.dispatch_message(&mut command, w, p))
+        } else {
+            let mut command = w.ctap_request_with(p.memory).finish();
+            self.dispatch(&mut command, w, p);
+            None
+        }
+    }
+    fn dispatch(
+        &mut self,
+        command: &mut Result<super::Command, super::Status>,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) {
+        self.response = self.session.execute(command, w.classic_with(p.memory), p);
     }
     pub fn execute(
         &mut self,
@@ -131,9 +169,8 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> usize {
-        self.response = self.session.execute(command, w.classic_with(p.memory), p);
-        self.prepare(w, p);
-        self.response.len()
+        self.dispatch(command, w, p);
+        self.complete(w, p, None)
     }
     pub fn execute_message(
         &mut self,
@@ -141,6 +178,15 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) -> usize {
+        let message = self.dispatch_message(command, w, p);
+        self.complete(w, p, Some(message))
+    }
+    fn dispatch_message(
+        &mut self,
+        command: &mut Message,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+    ) -> (u32, Sw) {
         let limit = match command {
             Message::Ctap(_, limit) | Message::U2f(_, limit) => *limit,
             Message::Error(_) => u32::MAX,
@@ -157,9 +203,21 @@ impl Applet {
             Err(sw) => (Response::Constant(&[]), sw),
         };
         self.response = response;
+        (limit, sw)
+    }
+    fn complete(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_>,
+        message: Option<(u32, Sw)>,
+    ) -> usize {
         self.prepare(w, p);
-        self.message_offset = 0;
-        self.message_window(limit, sw)
+        if let Some((limit, sw)) = message {
+            self.message_offset = 0;
+            self.message_window(limit, sw)
+        } else {
+            self.response.len()
+        }
     }
     pub fn read(
         &mut self,

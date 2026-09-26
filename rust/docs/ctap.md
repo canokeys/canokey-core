@@ -510,6 +510,15 @@ mode omits it. No second full public-key buffer or Flash scratch is introduced.
 decrypts hmac-secret-mc results and compares full/metadata mixed enumeration.
 Hardware stack measurements remain required for the repaired call paths.
 
+Firmware HID CBOR/MSG and APDU execution finish parsing and dispatch in a
+separate frame before preparing a pending PQ response. This releases the
+large parsed command object before ML-DSA stream initialization and signing.
+HID MSG's requested response window and final APDU status cross that boundary
+as scalar values; response backing stays in the same shared workspace. The
+transport execution guard still covers both stages, including keepalive and
+cancellation. Classic crypto still runs while its semantic command is live;
+this boundary does not establish a bound for all crypto call paths.
+
 Applet deselection clears both resident assertion and credential-management
 continuations as well as volatile PIN authorization and key agreement. The
 `ctap-normal` APDU fixture verifies this through SELECT ADMIN / SELECT FIDO,
