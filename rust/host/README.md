@@ -21,6 +21,11 @@ cmake --build build-host --target fido-hid-over-udp
 ctest --test-dir build-host -R '^virtual-' --output-on-failure
 ```
 
+The requirements include TF-PSA's source-generator dependencies for fresh native
+crypto builds. Keep this Python environment separate from the legacy
+`fido2-tests/.venv`: that integration suite pins and patches python-fido2 0.9.3,
+whereas the Rust correctness suite uses python-fido2 2.x or newer.
+
 The full APDU replay host build also includes this tool and its tests.
 `BUILD_TESTING=OFF` omits regression targets without removing either host tool. `ENABLE_TESTS=ON` builds this Rust UDP executable and the complete Rust suite,
 with the independent native LittleFS helper tests. The legacy C APDU test

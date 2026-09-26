@@ -1,3 +1,6 @@
 # Host APDU interoperability checks; no PC/SC or attached hardware required.
 cryptography>=50
 fido2>=2
+
+# Native host crypto generates PSA driver wrappers during a fresh build.
+-r ../../../canokey-crypto/tf-psa-crypto/scripts/basic.requirements.txt

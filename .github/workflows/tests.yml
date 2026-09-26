@@ -61,9 +61,8 @@ jobs:
     - name: Prepare - Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -q -y gpg scdaemon opensc libeac3 git build-essential cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libnpth0-dev libssl-dev zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcbor-dev libcmocka-dev python3-pip python3-setuptools python3-wheel lcov yubikey-manager
+        sudo apt-get install -q -y gpg scdaemon opensc libeac3 git build-essential cmake swig psmisc procps pcscd pcsc-tools libhidapi-dev libnpth0-dev libssl-dev zlib1g libglib2.0-0 openssl openssh-server libpcsclite-dev libudev-dev libcbor-dev libcmocka-dev python3-pip python3-venv python3-setuptools python3-wheel lcov yubikey-manager
         sudo apt-get install -q -y ./yubico-piv-tool_*.deb ./libykpiv1_*.deb
-        pip3 install --upgrade pip
 
     - name: Prepare - Setup Go
       uses: actions/setup-go@v7
@@ -162,14 +161,15 @@ jobs:
     - name: Install - Rust virtual card toolchain and tests
       run: |
         rustup toolchain install nightly-2026-09-04 --profile minimal
-        fido2-tests/.venv/bin/python -m pip install -r rust/core/tests/requirements.txt
+        python3 -m venv .venv-host
+        .venv-host/bin/python -m pip install -r rust/core/tests/requirements.txt
 
     - name: Build - CanoKey tests
       run: |
         mkdir build && pushd build
-        cmake .. -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug \
+        cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug \
           -DCANOKEY_VERSIONS_FILE="$GITHUB_WORKSPACE/test-via-pcsc/versions.cmake" \
-          -DPython3_EXECUTABLE="$GITHUB_WORKSPACE/fido2-tests/.venv/bin/python"
+          -DPython3_EXECUTABLE="$GITHUB_WORKSPACE/.venv-host/bin/python"
         make -j2
       
     - name: Prepare - Start SSH server
