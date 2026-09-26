@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Five C test executables remain, with 199 registered cases: APDU (96), core
-helpers (4), key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
+Four C test executables remain, with 195 registered cases: APDU (96),
+key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -107,33 +107,12 @@ Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
 Literal malformed-input regressions remain correctness tests with explicit
 expected results; they do not run mutation campaigns.
 
-## Public helper audit in progress
+## Public helper audit
 
-The initial 13-case `test_core_helpers` audit added executable coverage for the old BER length vectors
-at every split (`tlv::tests::legacy_length_vectors_require_complete_values_at_finish`),
-PIN record blocking/change/retry/missing-store behavior
-(`record_lifecycle_blocking_and_storage_errors`), exact five-gesture strong
-presence and cancellation during inter-prompt gaps
-(`strong_presence_requires_five_released_gestures_and_services_gaps`), and native
-LittleFS missing records, bounded offset reads/writes and output canaries.
-
-The old CCID-wait/HID-service case exposed a missing Rust progress path. The
-production USB progress dispatcher now services foreign HID headers without
-reentering Core. `hid-usb` checks busy/invalid-channel replies, INIT and CANCEL
-isolation, endpoint-buffer ownership and deferred reset cleanup. All eight USB
-feature combinations verify dispatch. This does not yet retire the old session
-and metadata helper cases or establish physical interoperability.
-
-`usb-sessions` now links the actual USB facade, all four USB interfaces, Core
-and applets into one host executable. Only raw DCD/FIFO, time, PKE memory and
-native storage/crypto services are replaced. It checks CCID authorization
-retention after idle, rejected WebUSB/HID takeover at 1999 ms, accepted takeover
-at 2000 ms, grant revocation across CCID/WebUSB/HID ownership changes, queued
-CCID admission after a HID lease, immutable pending HID/CCID responses, USB
-reset revocation and lease arithmetic across tick wraparound. No Core or peer
-transport entrypoint is mocked. This strengthens the session-helper replacement
-evidence; the remaining filesystem/metadata mapping still needs audit before
-retiring `test_core_helpers`.
+The helper audit exposed missing foreign HID progress and overly restrictive
+CCID/WebUSB takeover. Both are corrected and tested through the real Rust USB
+composition. `test_core_helpers.c` and its GNU-ld wrapper target are now removed;
+all 13 original cases are mapped in the sections below.
 
 ## Replaced public-helper cases
 
@@ -156,28 +135,6 @@ that replacement contract; the native fixture checks opaque byte persistence.
 Unsigned offsets reject UINT32_MAX, the former negative-offset error case.
 No claim about physical Flash power-loss durability follows from these mocks.
 
-Five helper cases remain: LED timing, keyboard-touch gating, session/keepalive,
-and both PIN suites. In particular, the legacy session case also permits
-immediate takeover when `apdu_session_can_preempt()` is true. The two-second
-lease tests alone do not replace that branch. Keep this behavior under audit
-before removing the old session case or declaring arbitration compatibility.
-
-The preemption audit restored immediate takeover of a completed CCID transaction
-with no input chain or unread response. `usb-sessions` verifies both WebUSB and
-HID takeover without advancing the clock, grant revocation, and unchanged
-protection for partial APDU responses and endpoint-owned data. `streaming`
-checks the admission predicate during frame input, command chaining and output
-continuations. The old session case remains: WebUSB-held session preemption and
-the legacy distinction between ordinary and source-backed continuations still
-need comparison. The whole arbitration audit is not yet closed.
-
-Completed WebUSB session takeover is now restored as well. `usb-sessions`
-checks immediate CCID/HID admission, grant revocation, no delayed cleanup of the
-new owner, partial-response/EP0 ownership and INIT/CANCEL isolation. Eight USB
-feature combinations check facade cleanup without an actual Core. Source-backed
-versus ordinary response preemption remains unresolved; the legacy session
-helper stays registered until that final distinction is covered.
-
 ## Replaced session/keepalive helper
 
 `test_device_sessions_and_keepalive` is now removed. The `usb-sessions` fixture
@@ -195,6 +152,23 @@ are documented in `device.md`. The actual USB fixture verifies unread CTAP,
 OpenPGP certificate and PIV object takeover, rejection for PIV Discovery, stale
 GET RESPONSE rejection and PIN-grant revocation. The NDEF engine fixture checks
 large-read admission; streaming engine tests retain input-chain protection.
-The four remaining helper cases cover LED timing, keyboard-touch gating and PIN
-lifecycle/errors. Production capacity, stack and physical interoperability are
-still independent, incomplete acceptance items.
+The other four helper cases are mapped below. Production capacity, stack and
+physical interoperability are still independent, incomplete acceptance items.
+
+## Replaced LED, touch and PIN helper cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_device_blinking_and_led_behaviour` | `ordinary_prompt_restores_idle_on_success_timeout_and_cancellation`: exact initial LED phases, timeout tick and restoration; strong-presence phase/gap tests; `device-runtime` normally-on/off settings and timer cancellation/rearming |
+| `test_device_allow_kbd_touch_rules` | `startup_contact_release_and_short_long_boundaries`: startup hold/release, 29/30 ms debounce and 499/500 ms slot boundary; `claimed_gesture_is_not_replayed_after_wait` and pending-output inhibition tests |
+| `test_pin_lifecycle` | `codec_replacement_and_cleanup_preserve_record_contract`, `record_lifecycle_blocking_and_storage_errors`; `core-normal` PIN-change grant revocation; `openpgp-normal` maximum retry policy and 63CF queries |
+| `test_pin_error_paths` | PIN missing/failing-store, invalid-length and permanent-block unit tests; `no_success_after_any_failed_commit`; `openpgp-normal` all three retry-policy fields reject 0/16 without losing the current grant |
+
+The removed generic blink scheduler is no longer a production API. Rust presence,
+boot and wink callers own their LED policy; tests verify those callers' timing
+and idle restoration instead of preserving counts of redundant C LED writes.
+The disabled OpenPGP reset code retains its retry policy in a versioned record
+but cannot authenticate; this replaces the old `pin_clear` attribute layout.
+Generic Rust retry storage is not limited to 15: the OpenPGP wire policy enforces
+1..15 and ADMIN uses its fixed limit. No obsolete C helper API was recreated
+just to keep an internal-layout assertion passing.

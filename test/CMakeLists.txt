@@ -41,32 +41,3 @@ add_mocked_test(key
         LINK_LIBRARIES canokey-core
 )
 add_dependencies(test_key generate_virt_card_git_rev)
-
-add_mocked_test(core_helpers
-        SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        MOCKS
-        CCID_Loop
-        CTAPHID_Loop
-        CTAPHID_SendKeepAlive
-        WebUSB_Loop
-        KBDHID_Loop
-        applets_poweroff
-        apdu_response_source_clear
-        apdu_session_can_preempt
-        apdu_fido_chain_reset
-        device_config_is_led_normally_on
-        device_config_is_pass_enabled
-        device_config_is_openpgp_ccid_enabled
-        device_config_is_openpgp_nfc_enabled
-        device_config_is_piv_ccid_enabled
-        device_config_is_piv_nfc_enabled
-        device_config_is_webauthn_enabled
-        LINK_LIBRARIES canokey-core
-)
-
-# Apple ld does not support the wrappers used by this legacy unit target.
-if(APPLE)
-  set_target_properties(test_core_helpers PROPERTIES EXCLUDE_FROM_ALL TRUE)
-endif()

@@ -104,7 +104,7 @@ cmake --build build --parallel 8
 ctest --test-dir build --output-on-failure
 ```
 
-`ENABLE_TESTS` uses ASan/UBSan. The `test_core_helpers` target requires GNU ld `--wrap`; omit it on macOS.
+`ENABLE_TESTS` uses ASan/UBSan. Public helper coverage now uses Rust and native service fixtures; see `rust/docs/legacy-test-coverage.md`.
 
 ---
 
@@ -438,7 +438,7 @@ Test-mode extras (enabled by `TEST` define):
 ### Rust UDP virtual card migration
 
 `-DVIRTCARD=ON` now selects the complete Rust host composition; `ENABLE_APDU_REPLAY`
-also builds the Rust UDP tool. `ENABLE_TESTS` runs the full Rust suite alongside the five remaining C unit
+also builds the Rust UDP tool. `ENABLE_TESTS` runs the full Rust suite alongside the four remaining C unit
 executables; NDEF/keyboard/key-stream replacements are tracked in
 `rust/docs/legacy-test-coverage.md`. Its UDP executable uses `rust/host` and no C applet/protocol implementation.
 Install `nightly-2026-09-04`, OpenSSL development headers and

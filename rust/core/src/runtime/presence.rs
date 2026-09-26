@@ -190,6 +190,8 @@ mod tests {
             mode: u8,
             restored: u8,
             samples: u16,
+            first: [bool; 6],
+            last_tick: u32,
         }
         impl Device for Prompt {
             fn serial(&mut self, _: &mut [u8; 4]) {}
@@ -203,8 +205,12 @@ mod tests {
                 self.ticks += 100;
                 self.mode != 2
             }
-            fn led(&mut self, _: bool) {
+            fn led(&mut self, on: bool) {
+                if let Some(sample) = self.first.get_mut(self.samples as usize) {
+                    *sample = on;
+                }
                 self.samples += 1;
+                self.last_tick = self.ticks;
             }
             fn led_idle(&mut self) {
                 self.restored += 1;
@@ -220,10 +226,25 @@ mod tests {
                 mode,
                 restored: 0,
                 samples: 0,
+                first: [false; 6],
+                last_tick: 0,
             };
             assert_eq!(Request::new().wait_result(&mut p), expected);
             assert_eq!(p.restored, 1);
-            assert_eq!(p.samples > 0, mode != 2);
+            match mode {
+                0 => {
+                    assert_eq!(p.samples, 3);
+                    assert_eq!(&p.first[..3], &[false, true, false]);
+                    assert_eq!(p.last_tick, 300);
+                }
+                1 => {
+                    assert_eq!(p.first, [false, true, false, true, false, true]);
+                    assert_eq!(p.samples, 299);
+                    assert_eq!(p.last_tick, 29900);
+                    assert_eq!(p.ticks, 30000);
+                }
+                _ => assert_eq!(p.samples, 0),
+            }
         }
     }
     #[cfg(feature = "admin")]

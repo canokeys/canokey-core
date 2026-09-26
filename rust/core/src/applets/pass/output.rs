@@ -127,6 +127,52 @@ mod tests {
         }
     }
     #[test]
+    fn startup_contact_release_and_short_long_boundaries() {
+        let mut output = Output::new();
+        let mut slots = [0xff; 3];
+        let mut calls = 0;
+        let mut resolve = |slot: u8, bytes: &mut [u8]| {
+            slots[calls] = slot;
+            calls += 1;
+            bytes[0] = b'x' + slot;
+            1
+        };
+        // Holding across the startup gate must not print a stored password.
+        for (pressed, now) in [
+            (false, 0),
+            (true, 1499),
+            (true, 1500),
+            (true, 1600),
+            (false, 1700),
+        ] {
+            assert_eq!(
+                output.sample(pressed, now, true, &Erase, &mut resolve),
+                None
+            );
+        }
+        for (pressed, now) in [(true, 1800), (false, 1829)] {
+            assert_eq!(
+                output.sample(pressed, now, true, &Erase, &mut resolve),
+                None
+            );
+        }
+        for (start, release, expected) in
+            [(2000, 2030, b'x'), (2100, 2599, b'x'), (2700, 3200, b'y')]
+        {
+            assert_eq!(output.sample(true, start, true, &Erase, &mut resolve), None);
+            assert_eq!(
+                output.sample(false, release, true, &Erase, &mut resolve),
+                Some(expected)
+            );
+            assert_eq!(
+                output.sample(false, release + 1, true, &Erase, &mut resolve),
+                None
+            );
+        }
+        assert_eq!(calls, 3);
+        assert_eq!(slots, [0, 0, 1]);
+    }
+    #[test]
     fn claimed_gesture_is_not_replayed_after_wait() {
         let mut output = Output::new();
         let mut calls = 0;

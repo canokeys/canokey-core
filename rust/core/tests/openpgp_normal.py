@@ -244,13 +244,23 @@ def run(wire, host):
                 rsa4096_reload(role, private.public_key())
         print(f"OpenPGP algorithm {alg}: generate/import/use passed", file=sys.stderr, flush=True)
     # Re-selection retains current grants; real reset clears session grants and
-    # reloads persistent metadata/keys. No boundary or fault-injection tests.
+    # reloads persistent metadata/keys. Retry-policy boundaries use literal APDUs.
     c.select()
     c.cmd("reselect_preserves_mode82", 0x20, 0, 0x82, le=None)
     c.get(0xC1)
     c.verify()
     c.cmd("reset_pw1_admin", 0x2C, 2, 0x81, b"123456", le=None)
     c.verify(0x81)
+    for index in range(3):
+        for invalid in (0, 16):
+            limits = bytearray([3, 3, 3])
+            limits[index] = invalid
+            c.cmd("invalid_retry_limit", 0xF2, data=limits, le=None, status=0x6A80)
+            c.cmd("invalid_limits_keep_pw3_grant", 0x20, 0, 0x83, le=None)
+    c.cmd("maximum_retry_limits", 0xF2, data=bytes([15, 15, 15]), le=None)
+    c.cmd("maximum_pw1_query", 0x20, 0, 0x81, le=None, status=0x63CF)
+    c.cmd("maximum_pw3_query", 0x20, 0, 0x83, le=None, status=0x63CF)
+    c.verify()
     c.cmd("set_retry_limits", 0xF2, data=bytes([3, 3, 3]), le=None)
     c.verify()
     if host:
