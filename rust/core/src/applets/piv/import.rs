@@ -158,3 +158,39 @@ impl Import {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rsa_component_boundaries_do_not_overwrite_the_next_component() {
+        for wire in [
+            &b"\x01\x00\xa5"[..],
+            &b"\x01\x82\x01\x01\xa5"[..],
+            &b"\x01\x01\xa5\xa5"[..],
+        ] {
+            for split in 0..=wire.len() {
+                let mut import = Import::new();
+                import.meta[repo::ALGORITHM] = alg::RSA4096;
+                let mut key = [0x5a; key_layout::SIZE];
+                let result = import
+                    .feed(&wire[..split], &mut key)
+                    .and_then(|()| import.feed(&wire[split..], &mut key));
+                assert_eq!(result, Err(Sw::WRONG_DATA));
+                assert!(key[key_layout::Q..].iter().all(|&v| v == 0x5a));
+            }
+        }
+        let mut import = Import::new();
+        import.meta[repo::ALGORITHM] = alg::RSA4096;
+        let mut key = [0x5a; key_layout::SIZE];
+        for byte in [1, 1, 0xa5] {
+            assert_eq!(import.feed(&[byte], &mut key), Ok(()));
+        }
+        assert!(import.phase == Phase::Tag);
+        assert_eq!(key[key_layout::Q - 1], 0xa5);
+        assert!(key[key_layout::Q..].iter().all(|&v| v == 0x5a));
+        assert_eq!(import.feed(&[2, 1, 0xb6], &mut key), Ok(()));
+        assert_eq!(key[key_layout::Q + key_layout::RSA_LIMB_BYTES - 1], 0xb6);
+    }
+}

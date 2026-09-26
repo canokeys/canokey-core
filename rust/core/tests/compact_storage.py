@@ -4,8 +4,11 @@
 import sys
 
 from card_test import Card, connection, tlv
-from openpgp_normal import Card as OpenPgp, ATTR
-from piv_normal import Piv
+from cryptography.hazmat.primitives.asymmetric import ec
+
+from openpgp_normal import Card as OpenPgp, ATTR, exercise as pgp_exercise
+from piv_normal import Piv, exercise as piv_exercise
+from key_test import pubkey
 
 with connection(sys.argv[1]) as wire:
 
@@ -70,6 +73,17 @@ with connection(sys.argv[1]) as wire:
         pgp.cmd("generate", 0x47, 0x80, data=tlv(0xB6, b""))
         assert size(8) == 31 + 4 + 5 * width
 
+    # P-521 persists only the 66-byte scalar; its public point is re-derived.
+    private = ec.derive_private_key(0x5a5a5a, ec.SECP521R1())
+    pgp.attrs(8, 0)
+    pgp.import_key(8, 0, private)
+    public = pgp.public(0)
+    assert size(8) == 31 + 66
+    wire.command("RESET")
+    pgp.select()
+    assert pgp.public(0) == public
+    pgp_exercise(pgp, 8, 0, pubkey(8, public))
+
     piv = Piv(wire)
     piv.select()
     piv.auth()
@@ -82,4 +96,12 @@ with connection(sys.argv[1]) as wire:
             assert size(17) == 6 + 4 + 5 * width + len(name)
             assert piv.cmd("name_read", 0xF5, 0, 0x9A) == name
             assert piv.public(a).public_numbers() == key.public_numbers()
+
+    piv.import_key(8, private)
+    assert size(17) == 6 + 66
+    wire.command("RESET")
+    piv.select()
+    public = piv.public(8)
+    assert public.public_numbers() == private.public_key().public_numbers()
+    piv_exercise(piv, 8, public)
     print("Compact storage: sizes, growth, shrinkage and reload passed")

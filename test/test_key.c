@@ -25,27 +25,6 @@ static void test_encode_invalid_type(void **state) {
   assert_int_equal(ck_encode_public_key(&key, buf, true), -1);
 }
 
-static void test_parse_piv_rsa_rejects_invalid_component_bounds(void **state) {
-  (void)state;
-  ck_key_t key = {.meta.type = RSA4096, .meta.origin = KEY_ORIGIN_NOT_PRESENT, .meta.usage = SIGN};
-  ck_piv_stream_t st;
-  ck_parse_piv_stream_init(&st, &key);
-
-  const uint8_t empty_component[] = {0x01, 0x00, 0xA5};
-  assert_int_equal(ck_parse_piv_stream_update(&st, &key, empty_component, sizeof(empty_component), false),
-                   KEY_ERR_DATA);
-  assert_int_equal(key.rsa.q[0], 0);
-
-  ck_parse_piv_stream_init(&st, &key);
-  const uint8_t one_byte_component_header[] = {0x01, 0x01};
-  assert_int_equal(
-      ck_parse_piv_stream_update(&st, &key, one_byte_component_header, sizeof(one_byte_component_header), false), 0);
-  st.comp_off = st.comp_len;
-  const uint8_t component_data = 0xA5;
-  assert_int_equal(ck_parse_piv_stream_update(&st, &key, &component_data, sizeof(component_data), false), KEY_ERR_DATA);
-  assert_int_equal(key.rsa.q[0], 0);
-}
-
 static void test_read_key_rejects_short_material(void **state) {
   (void)state;
   const key_meta_t meta = {.type = MLKEM768, .origin = KEY_ORIGIN_IMPORTED, .usage = KEY_AGREEMENT};
@@ -82,43 +61,6 @@ static void test_read_empty_key_ignores_stale_material(void **state) {
   assert_memory_equal(&key.meta, &meta, sizeof(meta));
   const uint8_t zero[sizeof(rsa_key_t)] = {0};
   assert_memory_equal(key.data, zero, sizeof(zero));
-}
-
-static void test_ecc_key_persists_only_ecc_material(void **state) {
-  (void)state;
-  ck_key_t expected;
-  ck_key_init_empty(&expected, SECP521R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_CACHED);
-  expected.meta.origin = KEY_ORIGIN_GENERATED;
-  memset(expected.ecc.pri, 0x5A, sizeof(expected.ecc.pri));
-  memset(expected.ecc.pub, 0xA5, sizeof(expected.ecc.pub));
-
-  assert_int_equal(ck_write_key(PATH, &expected), 0);
-  assert_int_equal(get_file_size(PATH), sizeof(ecc_key_t));
-
-  ck_key_t actual;
-  memset(&actual, 0xCC, sizeof(actual));
-  assert_int_equal(ck_read_key(PATH, &actual), sizeof(ecc_key_t));
-  assert_memory_equal(&actual.meta, &expected.meta, sizeof(expected.meta));
-  assert_memory_equal(&actual.ecc, &expected.ecc, sizeof(expected.ecc));
-}
-
-static void test_parse_piv_policies_rejects_truncated_fields(void **state) {
-  (void)state;
-  static const uint8_t truncated[][2] = {
-      {0xAA, 0x00},
-      {0xAA, 0x01},
-      {0xAB, 0x00},
-      {0xAB, 0x01},
-  };
-
-  for (size_t i = 0; i < sizeof(truncated) / sizeof(truncated[0]); ++i) {
-    ck_key_t key;
-    ck_key_init_empty(&key, SECP256R1, SIGN, PIN_POLICY_ONCE, TOUCH_POLICY_NEVER);
-    const size_t len = i % 2 == 0 ? 1 : 2;
-    assert_int_equal(ck_parse_piv_policies(&key, truncated[i], len), KEY_ERR_LENGTH);
-    assert_int_equal(key.meta.pin_policy, PIN_POLICY_ONCE);
-    assert_int_equal(key.meta.touch_policy, TOUCH_POLICY_NEVER);
-  }
 }
 
 static void test_fs_file_operations(void **state) {
@@ -787,11 +729,8 @@ int main() {
       cmocka_unit_test(test_fs_reader_open_failure_releases_cache),
       cmocka_unit_test(test_fs_wrapper_error_paths_release_cache),
       cmocka_unit_test(test_encode_invalid_type),
-      cmocka_unit_test(test_parse_piv_rsa_rejects_invalid_component_bounds),
       cmocka_unit_test(test_read_key_rejects_short_material),
       cmocka_unit_test(test_read_empty_key_ignores_stale_material),
-      cmocka_unit_test(test_ecc_key_persists_only_ecc_material),
-      cmocka_unit_test(test_parse_piv_policies_rejects_truncated_fields),
       // Formats the fs; keep last.
       cmocka_unit_test(test_fs_generation),
   };

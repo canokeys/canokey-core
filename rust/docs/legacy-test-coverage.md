@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Three C test executables remain, with 132 registered cases: APDU (57),
-key (17), PIV (58). Their C applet/protocol dependencies
+Three C test executables remain, with 129 registered cases: APDU (57),
+key (14), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -407,4 +407,24 @@ X25519 encoder similarly copied arbitrary stored public bytes; RFC 7748 tests
 now exercise actual derivation and both applets' distinct private-wire formats.
 Strict decoding additionally rejects noncanonical widths/lengths, duplicate or
 extra public fields instead of merely extracting a valid key from them. Native
-key storage/error paths and malformed PIV import cases remain pending audit.
+key storage/error paths remain pending audit.
+
+
+## Replaced key import bounds and compact ECC storage
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_parse_piv_rsa_rejects_invalid_component_bounds` | `piv-normal::import_boundary_regressions` rejects empty/oversized RSA integers and unexpected next tags with 6A80, preserves the old key; `import::tests::rsa_component_boundaries_do_not_overwrite_the_next_component` tests every input split with canaries and bytewise component transitions |
+| `test_parse_piv_policies_rejects_truncated_fields` | `piv-normal::import_boundary_regressions` submits AA/AA01/AB/AB01 to both GENERATE and IMPORT, checks 6700, identical metadata and a subsequent independently verified private operation |
+| `test_ecc_key_persists_only_ecc_material` | `compact-storage` imports P-521 into OpenPGP and PIV, checks exact 31+66 / 6+66 record sizes, resets the engine, compares public keys and independently verifies signatures |
+
+The C parser test fabricated an internal `comp_off == comp_len` Value state.
+Rust keeps these fields private and transitions to Tag immediately after the
+last component byte. The replacement checks that reachable transition and
+ensures neither malformed input nor fragmentation crosses the next component's
+boundary. No unsafe internal-state mutation is exposed for compatibility.
+
+Rust ECC records contain only the private scalar and metadata; public points
+are derived after reload. The old 198-byte native ECC-structure persistence
+contract is intentionally replaced by the compact record contract, with actual
+post-reset private-key use rather than comparing unused structure padding.
