@@ -123,10 +123,12 @@ fn all_short_apdu_lengths_and_response_completion_hold_session() {
         assert_eq!(t.status(), 0);
         assert_eq!(t.response(17, 4), Some(17));
         assert_eq!(t.status(), 2);
+        assert!(!t.completed_transaction());
         assert!(!t.expired(10000));
         assert_eq!(t.response(17, 5), None);
         t.completed(u32::MAX - 1000);
         assert_eq!(t.status(), 4);
+        assert!(t.completed_transaction());
         assert!(!t.expired(998));
         assert!(t.expired(999));
         t.keepalive(1000);

@@ -170,3 +170,10 @@ checks the admission predicate during frame input, command chaining and output
 continuations. The old session case remains: WebUSB-held session preemption and
 the legacy distinction between ordinary and source-backed continuations still
 need comparison. The whole arbitration audit is not yet closed.
+
+Completed WebUSB session takeover is now restored as well. `usb-sessions`
+checks immediate CCID/HID admission, grant revocation, no delayed cleanup of the
+new owner, partial-response/EP0 ownership and INIT/CANCEL isolation. Eight USB
+feature combinations check facade cleanup without an actual Core. Source-backed
+versus ordinary response preemption remains unresolved; the legacy session
+helper stays registered until that final distinction is covered.

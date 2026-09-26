@@ -80,6 +80,9 @@ impl Transport {
             _ => None,
         }
     }
+    pub fn completed_transaction(&self) -> bool {
+        self.phase == Phase::Hold
+    }
     pub fn busy(&self) -> bool {
         self.phase != Phase::Idle
     }

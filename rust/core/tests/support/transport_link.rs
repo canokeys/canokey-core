@@ -20,6 +20,7 @@ mod keyboard;
 #[cfg(feature = "usb-webusb")]
 mod webusb_link {
     unsafe extern "C" { fn test_web_blocked() -> u8; }
+    pub unsafe fn try_preempt(_: bool) -> bool { false }
     pub unsafe fn block_competitor() -> bool { unsafe { test_web_blocked() != 0 } }
 }
 

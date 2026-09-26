@@ -53,3 +53,17 @@ cleanup after the core call returns. Endpoint-owned error packets remain
 immutable until IN completion; a second request stays queued while IN is busy.
 The `hid-usb` fixture verifies these rules and the USB fixture checks that both
 CCID and WebUSB progress dispatch reach the foreign-HID service.
+
+Completed WebUSB responses retain same-owner authorization until timeout or
+actual takeover. A queued CCID APDU or a valid-channel HID PING/MSG/CBOR/WINK
+may immediately take a completed session with no input chain or unread Core
+response. Polling, keyboard activity, HID INIT/CANCEL and continuation reports
+do not trigger takeover. EP0 reception/execution/transmission remain exclusive.
+The main-loop admission clears WebUSB ownership before resetting Core, so an
+old WebUSB timeout cannot revoke the next owner's grant. USB interrupts and
+progress callbacks never perform this Core inspection or reset.
+
+`usb-sessions` covers immediate CCID/HID takeover, same-owner grant retention,
+partial-response protection, pending EP0 bytes, INIT/CANCEL isolation and stale
+timeout cleanup against the real Core. The legacy source-backed-versus-ordinary
+response preemption distinction remains a separate compatibility audit item.

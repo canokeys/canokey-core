@@ -251,6 +251,58 @@ int main(void) {
   now+=2000;
   ccid_apdu(select_admin,sizeof(select_admin),0x9000);
   ccid_apdu(query,sizeof(query),0x63c3);
+  // A completed WebUSB response likewise permits immediate foreign takeover.
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  web_apdu(verify,sizeof(verify),0x9000);
+  before=now; loops(); web_apdu(query,sizeof(query),0x9000);
+  ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
+  ccid_apdu(verify,sizeof(verify),0x9000);
+  assert(now==before);
+  now+=2000; WebUSB_Loop();
+  ccid_apdu(query,sizeof(query),0x9000); // No stale WebUSB timeout cleanup.
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  web_apdu(verify,sizeof(verify),0x9000);
+  before=now;
+  hid_send(cid,0x81,nonce,8);
+  assert(hid_read(cid,0x81,hid)==8 && !memcmp(hid,nonce,8));
+  assert(now==before);
+  now+=2000; loops();
+  ccid_apdu(select_admin,sizeof(select_admin),0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  web_apdu(verify,sizeof(verify),0x9000);
+  web_apdu(partial_config,sizeof(partial_config),0x6101);
+  ccid_send(0x6f,select_admin,sizeof(select_admin)); assert(!pending[3]);
+  now+=1999; CCID_Loop(); assert(!pending[3]);
+  const uint8_t get_response[]={0,0xc0,0,0,1};
+  web_apdu(get_response,sizeof(get_response),0x9000);
+  count=ccid_read(out); sw(out+10,count-10,0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
+  web_apdu(select_admin,sizeof(select_admin),0x9000);
+  // A foreign packet cannot preempt a response still owned by EP0.
+  web_send(verify,sizeof(verify));
+  setup(0xc1,1,0,1,256); assert(pending[0]);
+  uint8_t ep0_saved[16]; uint16_t ep0_length=lengths[0];
+  memcpy(ep0_saved,packets[0],ep0_length);
+  ccid_send(0x6f,select_admin,sizeof(select_admin)); assert(!pending[3]);
+  assert(pending[0] && lengths[0]==ep0_length && !memcmp(ep0_saved,packets[0],ep0_length));
+  sw(out,read_control(out),0x9000);
+  count=ccid_read(out); sw(out+10,count-10,0x9000);
+  ccid_apdu(query,sizeof(query),0x63c3);
+  // Discovery and cancellation are not requests to acquire an APDU session.
+  const uint8_t control_commands[]={0x86,0x91};
+  for(size_t i=0;i<sizeof(control_commands);++i) {
+    web_apdu(select_admin,sizeof(select_admin),0x9000);
+    web_apdu(verify,sizeof(verify),0x9000);
+    uint8_t cmd=control_commands[i];
+    hid_send(cmd==0x86?UINT32_MAX:cid,cmd,nonce,cmd==0x86?8:0);
+    assert(!pending[2]);
+    web_apdu(query,sizeof(query),0x9000);
+    now+=2000; WebUSB_Loop(); CTAPHID_Loop(0);
+    if(cmd==0x86)assert(hid_read(UINT32_MAX,0x86,hid)==17);
+    else assert(!pending[2]);
+  }
   assert(!scratch_owner && leases==clears);
   puts("USB shared session correctness passed");
   return 0;

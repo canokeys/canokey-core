@@ -39,6 +39,31 @@ pub unsafe fn block_competitor() -> bool {
         blocked
     }
 }
+/// Main-loop only: an actual foreign request may abandon a completed session.
+/// Clear WebUSB ownership before resetting Core so a later timeout cannot reset
+/// the new owner's authorization. Mere polling/keyboard output must not do this.
+pub unsafe fn try_preempt(requested: bool) -> bool {
+    unsafe {
+        if !requested {
+            return false;
+        }
+        let mask = ck_usb_dcd_lock();
+        let eligible = !CLEANUP
+            && !WAITING
+            && SESSION
+            && (&*core::ptr::addr_of!(STATE)).completed_transaction()
+            && super::entrypoints::can_preempt();
+        if eligible {
+            SESSION = false;
+            (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+        }
+        ck_usb_dcd_unlock(mask);
+        if eligible {
+            ck_core_reset();
+        }
+        eligible
+    }
+}
 pub unsafe fn reset() {
     unsafe {
         // USB reset can interrupt an unrelated Core operation; only the main

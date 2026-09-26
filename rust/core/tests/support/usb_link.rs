@@ -30,3 +30,14 @@ mod hid_io;
 
 #[path = "../../../ffi/src/ccid_io.rs"]
 mod ccid_io;
+
+#[cfg(feature = "usb-webusb")]
+mod entrypoints {
+    unsafe extern "C" { fn test_core_preemptable() -> u8; }
+    pub unsafe fn can_preempt() -> bool { unsafe { test_core_preemptable() != 0 } }
+}
+#[cfg(feature = "usb-webusb")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn test_web_preempt(requested: u8) -> u8 {
+    unsafe { webusb_link::try_preempt(requested != 0) as u8 }
+}

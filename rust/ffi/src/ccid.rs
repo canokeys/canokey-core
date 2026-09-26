@@ -218,7 +218,9 @@ pub unsafe extern "C" fn CCID_Loop() {
             return;
         }
         #[cfg(feature = "usb-webusb")]
-        if super::webusb_link::block_competitor() {
+        if super::webusb_link::block_competitor()
+            && !super::webusb_link::try_preempt(ck_ccid_io_peek() == 0x6f)
+        {
             return;
         }
         let generation = ck_ccid_io_generation();

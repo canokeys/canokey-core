@@ -217,7 +217,18 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         }
         #[cfg(feature = "usb-webusb")]
         if super::webusb_link::block_competitor() {
-            return 0;
+            let mut header = [0; 7];
+            let mut tick = 0;
+            let requested = ck_hid_io_reset_pending() == 0
+                && ck_hid_io_configured() != 0
+                && ck_hid_io_idle() != 0
+                && ck_hid_io_peek(header.as_mut_ptr(), 7, &mut tick, ck_hid_io_epoch()) != 0
+                && !matches!(u32::from_be_bytes(header[..4].try_into().unwrap()), 0 | wire::BROADCAST)
+                && matches!(header[4], wire::PING | wire::MSG | wire::CBOR | wire::WINK);
+            // INIT, CANCEL and continuations cannot revoke a foreign grant.
+            if !super::webusb_link::try_preempt(requested) {
+                return 0;
+            }
         }
         if ck_hid_io_reset_pending() != 0 {
             let generation = ck_hid_io_epoch();
