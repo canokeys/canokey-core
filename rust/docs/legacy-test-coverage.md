@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Four C test executables remain, with 190 registered cases: APDU (91),
+Four C test executables remain, with 183 registered cases: APDU (84),
 key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -188,3 +188,26 @@ Five of the original 96 `test_apdu.c` cases are now retired:
 The first port exposed missing PowerOn/PowerOff admission in Rust's WebUSB
 preemption gate. Slot-status discovery alone still does not request takeover.
 Other APDU cases remain registered until their coverage is individually mapped.
+
+## Replaced response continuation cases
+
+Seven more APDU cases are retired after exercising the Rust response cursor and
+actual applets through the same-pointer RX/TX FFI:
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_response_source_multi_chunk_get_response` | `core-normal::aliased_response_regressions`: all 600 certificate bytes across varying chunk capacities; `streaming::generated_response_does_not_reexecute_operation`: one generation and one close |
+| `test_response_source_tail_restore_on_shared_buffer` | `core-normal::aliased_response_regressions`: request overwrites, status trailers, payload comparison and output canaries |
+| `test_response_source_read_failure_clears_state` | `response::tests::invalid_reads_wipe_requested_window_and_end_the_lease`: failed, zero and excessive reads, output wiping, status and exactly-once close |
+| `test_apdu_output_chaining_aliased_buffer` | `core-normal::aliased_response_regressions`: first payload lengths 248/247/1/0, subsequent 256/200-byte chunks |
+| `test_new_command_abandons_pending_rapdu_chain` | `core-normal::ordinary_response_cleanup_regressions` and `aliased_response_regressions`: PIV VERSION and OpenPGP certificate abandoned by SELECT ADMIN / READ_VERSION, then 6986 |
+| `test_session_reset_drops_pending_rapdu_chain` | Both `core-normal` regressions: reset with zero/partial progress under CCID/NFC ownership, then 6986 |
+| `test_response_source_clear_calls_close` | `response::tests::short_reads_preserve_offsets_status_and_exactly_one_close`: completion and repeated clear close once |
+
+Rust keeps response backing separate from transport bytes; it does not need the
+old C shared-buffer tail-restore algorithm. The actual FFI regressions overwrite
+the RX/TX buffer between calls and verify every returned byte. Rust's established
+absent-Le default is 256 rather than the old C zero; bounded output capacities
+exercise zero-progress responses without changing that wire policy. Chunk
+boundaries may differ from the old 250-byte source path. These tests establish
+byte/status/lifetime correctness, not physical transport interoperability.

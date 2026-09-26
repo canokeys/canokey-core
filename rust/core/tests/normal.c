@@ -74,6 +74,33 @@ static void aliased_response_regressions(void) {
   transport_owner=1; ck_core_reset();
 }
 #endif
+#ifdef WITH_PIV
+static void ordinary_response_cleanup_regressions(void) {
+  const uint8_t version[] = {0, 0xfd, 0, 0};
+  for (uint8_t owner = 1; owner <= 4; owner += 3) {
+    for (size_t capacity = 2; capacity <= 3; ++capacity) {
+      for (unsigned reset = 0; reset < 2; ++reset) {
+        transport_owner = owner;
+        ck_core_reset();
+        SEND(0x9000, 0, 0xa4, 4, 0, 9, 0xa0, 0, 0, 3, 8, 0, 0, 0x10, 0);
+        memcpy(buffer, version, sizeof(version));
+        assert(ck_core_exchange(owner, buffer, sizeof(version), buffer, capacity) == (int)capacity);
+        assert(buffer[capacity - 2] == 0x61);
+        assert(buffer[capacity - 1] == 5 - capacity);
+        if (reset) {
+          ck_core_reset();
+        } else {
+          SEND(0x9000, 0, 0xa4, 4, 0, 5, 0xf0, 0, 0, 0, 0);
+          SEND(0x9000, 0, 0x31, 0, 0, 0);
+        }
+        SEND(0x6986, 0, 0xc0, 0, 0, 0);
+      }
+    }
+  }
+  transport_owner = 1;
+  ck_core_reset();
+}
+#endif
 int main(void) {
   assert(ck_core_install() == 0);
 #ifdef WITH_PASS
@@ -350,6 +377,9 @@ int main(void) {
 #endif
 #ifdef WITH_OPENPGP
   aliased_response_regressions();
+#endif
+#ifdef WITH_PIV
+  ordinary_response_cleanup_regressions();
 #endif
   return 0;
 }
