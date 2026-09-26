@@ -79,6 +79,11 @@ def run(wire):
     check_pin_probe(False)
     make_options = {1: client_hash, 2: {"id": rp}, 3: user,
                     4: [{"type": "public-key", "alg": -7}]}
+    for field in ("name", "icon"):
+        for value in (8, b"bytes", False, {}):
+            call(1, make_options | {2: {"id": rp, field: value}}, 0x11)
+    metadata = call(1, make_options | {2: {"id": rp, "name": "", "icon": "https://example.com/icon"}})
+    verify_attestation(metadata, client_hash)
     for value in (False, True):
         call(1, make_options | {7: {"up": value}}, 0x2c)
         call(2, {1: rp, 2: assertion_hash, 5: {"rk": value}}, 0x2b)
@@ -231,6 +236,9 @@ def run(wire):
         expected = protocol.decrypt(secret, auth.extensions["hmac-secret-mc"])
         assert len(expected) == 64 and expected[:32] != expected[32:]
         request = {1: rp, 2: assertion_hash, 3: [handle], 4: {"hmac-secret": extension}}
+        for size in (0, 16, 48, 96):
+            # Size is plaintext length; protocol 2 also prefixes a 16-byte IV.
+            call(2, request | {4: {"hmac-secret": hmac_input(bytes(size))}}, 0x03)
         result = call(2, request)
         assert result[1] == handle
         verify_credential(auth.credential_data.public_key, result[2]+assertion_hash, result[3])

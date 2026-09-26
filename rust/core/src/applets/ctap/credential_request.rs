@@ -101,6 +101,7 @@ enum Context {
 #[derive(Clone, Copy)]
 enum Field {
     Ignore,
+    TextOnly,
     ClientHash,
     Rp,
     User,
@@ -133,6 +134,8 @@ enum Field {
 fn text_field(context: Context, key: &[u8], make: bool) -> Field {
     const FIELDS: &[(Context, &[u8], Field, bool)] = &[
         (Context::Rp, b"id", Field::Rp, false),
+        (Context::Rp, b"name", Field::TextOnly, false),
+        (Context::Rp, b"icon", Field::TextOnly, false),
         (Context::User, b"id", Field::UserId, false),
         (Context::User, b"name", Field::Name, false),
         (Context::User, b"displayName", Field::Display, false),
@@ -539,6 +542,13 @@ impl Fields {
                     _ => Context::Extensions,
                 });
             }
+            Field::TextOnly => {
+                // Validate unused RP metadata without retaining request bytes.
+                if !matches!(event, Event::Text(_)) {
+                    return Err(Status::UnexpectedType);
+                }
+                self.skip = 1;
+            }
             Field::Name | Field::Display => {
                 let Event::Text(n) = event else {
                     return Err(Status::UnexpectedType);
@@ -802,6 +812,7 @@ mod tests {
         fn reference(context: Context, key: &[u8], make: bool) -> Field {
             match (context, key) {
                 (Context::Rp, b"id") => Field::Rp,
+                (Context::Rp, b"name" | b"icon") => Field::TextOnly,
                 (Context::User, b"id") => Field::UserId,
                 (Context::User, b"name") => Field::Name,
                 (Context::User, b"displayName") => Field::Display,
@@ -825,6 +836,7 @@ mod tests {
             b"id",
             b"name",
             b"displayName",
+            b"icon",
             b"alg",
             b"type",
             b"rk",

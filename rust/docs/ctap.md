@@ -634,3 +634,8 @@ A successful `getAssertion` with `up: false` preserves token permissions for
 subsequent assertions. An assertion with user presence consumes permissions
 except large-blob write. RP binding, token expiry and UV checks apply to both
 paths; rejected RP mismatches neither authorize nor consume the valid token.
+
+Unused RP `name` and `icon` metadata must still be CBOR text; the parser
+validates their types without retaining them. HMAC-secret salt ciphertext must
+encode one or two 32-byte salts (plus the protocol-2 IV); invalid sizes return
+`INVALID_LENGTH`. Authentication and key-agreement validation are unchanged.

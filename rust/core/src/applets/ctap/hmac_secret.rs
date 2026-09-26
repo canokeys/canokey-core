@@ -93,7 +93,7 @@ impl Parser {
                 let p = &self.params;
                 let iv = if p.protocol == 2 { 16 } else { 0 };
                 if p.salt_len != 32 + iv && p.salt_len != 64 + iv {
-                    return Err(Status::InvalidParameter);
+                    return Err(Status::InvalidLength);
                 }
                 if p.auth_len != if p.protocol == 1 { 16 } else { 32 } {
                     return Err(Status::InvalidParameter);
@@ -134,7 +134,11 @@ impl Parser {
             return Err(Status::UnexpectedType);
         };
         if n < min || n > max {
-            return Err(Status::InvalidParameter);
+            return Err(if key == 2 {
+                Status::InvalidLength
+            } else {
+                Status::InvalidParameter
+            });
         }
         self.body = Some((key, 0));
         Ok(usize::from(n))
