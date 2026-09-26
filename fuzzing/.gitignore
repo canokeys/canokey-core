@@ -1,5 +1,7 @@
 *.cov
 initial
 *.sanitizer.log.*
-HONGGFUZZ.REPORT.TXT
-SIG*.fuzz
+crash-*
+timeout-*
+oom-*
+leak-*

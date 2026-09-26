@@ -13,8 +13,7 @@ typedef struct EPType {
   uint8_t *xfer_buff;  // Pointer to transfer buffer
   uint32_t xfer_len;   // Remained transfer length
   uint32_t xfer_count; // Current transfer length
+  uint32_t xfer_cap;   // Bytes the fuzzer may still write into xfer_buff
 } EPType;
 
 EPType *dummy_get_ep_by_addr(uint8_t addr);
-
-
