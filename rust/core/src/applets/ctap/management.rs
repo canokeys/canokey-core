@@ -276,7 +276,14 @@ impl Session {
             }
         } else {
             self.management = Cursor::new();
-            if params.protocol == 0 || params.auth_len == 0 {
+            if params.auth_len == 0 {
+                return Err(Status::PuatRequired);
+            }
+            if params.protocol == 0
+                || (subcommand == 4 && fields.rp.is_none())
+                || (matches!(subcommand, 6 | 7) && fields.id.is_none())
+                || (subcommand == 7 && fields.user.is_none())
+            {
                 return Err(Status::MissingParameter);
             }
             if matches!(subcommand, 1 | 2) && self.rp_bound {

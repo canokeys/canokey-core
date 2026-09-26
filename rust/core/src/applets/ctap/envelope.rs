@@ -89,7 +89,11 @@ impl Parser {
         if self.fields.command == super::CONFIG && !matches!(p.subcommand, 2..=4) {
             return Err(Status::InvalidParameter);
         }
-        if p.auth_len != 0 && p.protocol != 0 && p.auth_len != if p.protocol == 1 { 16 } else { 32 }
+        // Management checks required command fields before authenticating.
+        if self.fields.command == super::CONFIG
+            && p.auth_len != 0
+            && p.protocol != 0
+            && p.auth_len != if p.protocol == 1 { 16 } else { 32 }
         {
             return Err(Status::InvalidParameter);
         }

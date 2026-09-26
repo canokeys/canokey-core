@@ -645,3 +645,9 @@ prefix and expected offset intact. A corrected authenticated fragment can
 continue; a corrected offset exceeding the declared length returns
 `INVALID_PARAMETER`. Other upload errors still abort staging, and uncommitted
 bytes never replace the durable blob.
+
+Credential management checks required inputs before token verification: missing
+authentication returns `PUAT_REQUIRED`; missing protocol or required RP,
+credential or user fields returns `MISSING_PARAMETER`. With required fields
+present, invalid authentication (including a protocol/length mismatch) returns
+`PIN_AUTH_INVALID`. Continuation commands retain their existing cursor checks.

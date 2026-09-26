@@ -328,6 +328,14 @@ def run(wire):
             message = bytes([subcommand]) + (cbor.encode(params) if params is not None else b"")
             request.update({3: version, 4: protocol.authenticate(token, message)})
         return call(0x0a, request, status)
+    # Presence checks precede authentication, and do not authorize mutations.
+    for subcommand in (1, 2, 4, 6, 7):
+        call(10, {1: subcommand}, 0x36)
+        call(10, {1: subcommand, 2: {}, 4: bytes(32)}, 0x14)
+        call(10, {1: subcommand, 2: {}, 3: -1, 4: bytes(32)}, 0x02)
+        if subcommand in (4, 6, 7):
+            call(10, {1: subcommand, 3: 1, 4: bytes(32)}, 0x14)
+    call(10, {1: 1, 3: 1, 4: bytes(32)}, 0x33)
     manage(3, status=0x30)
     assert manage(1) == {1: 4, 2: 96}
     assert call(4)[20] == 96
