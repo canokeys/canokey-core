@@ -20,6 +20,60 @@ static int exchange(const uint8_t *in, size_t n, uint16_t sw) {
     const uint8_t request[] = {__VA_ARGS__};                                                                           \
     exchange(request, sizeof(request), sw);                                                                            \
   } while (0)
+#ifdef WITH_OPENPGP
+static void aliased_response_regressions(void) {
+  extern int32_t ck_platform_write(uint8_t, const uint8_t *, size_t);
+  uint8_t payload[600];
+  for(size_t i=0;i<sizeof(payload);++i)payload[i]=(uint8_t)(i*7+1);
+  assert(ck_platform_write(11,payload,sizeof(payload))==600); /* PgpCertSig */
+  const size_t first_capacity[]={250,249,3,2};
+  const uint8_t read[]={0,0xca,0x7f,0x21,0}, next[]={0,0xc0,0,0,0};
+  for(size_t variant=0;variant<4;++variant) {
+    ck_core_reset(); transport_owner=1;
+    SEND(0x9000,0,0xa4,4,0,6,0xd2,0x76,0,1,0x24,1);
+    size_t offset=0;
+    for(unsigned round=0;offset<sizeof(payload);++round) {
+      assert(round<10);
+      uint8_t arena[272], before[272];
+      memset(arena,0xa5,sizeof(arena));
+      memcpy(arena+1,round?next:read,5);
+      memcpy(before,arena,sizeof(arena));
+      size_t capacity=round?(variant==2?202:258):first_capacity[variant];
+      int n=ck_core_exchange(1,arena+1,5,arena+1,capacity);
+      size_t count=sizeof(payload)-offset;
+      if(count>capacity-2)count=capacity-2;
+      assert(n==(int)count+2);
+      assert(!memcmp(arena+1,payload+offset,count));
+      offset+=count;
+      size_t remaining=sizeof(payload)-offset;
+      uint16_t expected=remaining?(uint16_t)(0x6100|(remaining>255?255:remaining)):0x9000;
+      assert(arena[1+count]==(expected>>8) && arena[2+count]==(expected&255));
+      assert(arena[0]==0xa5);
+      assert(!memcmp(arena+1+capacity,before+1+capacity,sizeof(arena)-1-capacity));
+    }
+    SEND(0x6986,0,0xc0,0,0,0);
+  }
+  // Both zero-progress and partially consumed responses must be abandoned.
+  for(uint8_t owner=1;owner<=4;owner+=3) {
+    for(size_t capacity=2;capacity<=3;++capacity) {
+      transport_owner=owner; ck_core_reset();
+      SEND(0x9000,0,0xa4,4,0,6,0xd2,0x76,0,1,0x24,1);
+      memcpy(buffer,read,sizeof(read));
+      assert(ck_core_exchange(owner,buffer,sizeof(read),buffer,capacity)==(int)capacity);
+      assert(buffer[capacity-2]==0x61);
+      ck_core_reset();
+      SEND(0x6986,0,0xc0,0,0,0);
+      SEND(0x9000,0,0xa4,4,0,6,0xd2,0x76,0,1,0x24,1);
+      memcpy(buffer,read,sizeof(read));
+      assert(ck_core_exchange(owner,buffer,sizeof(read),buffer,capacity)==(int)capacity);
+      SEND(0x9000,0,0xa4,4,0,5,0xf0,0,0,0,0);
+      SEND(0x9000,0,0x31,0,0,0);
+      SEND(0x6986,0,0xc0,0,0,0);
+    }
+  }
+  transport_owner=1; ck_core_reset();
+}
+#endif
 int main(void) {
   assert(ck_core_install() == 0);
 #ifdef WITH_PASS
@@ -293,6 +347,9 @@ int main(void) {
   }
   assert(total>256);
   ck_core_reset();transport_owner=1;
+#endif
+#ifdef WITH_OPENPGP
+  aliased_response_regressions();
 #endif
   return 0;
 }
