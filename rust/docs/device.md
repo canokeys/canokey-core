@@ -43,3 +43,13 @@ Validation from the CIU parent repository:
 These host checks do not establish firmware capacity, physical USB/NFC
 interoperability or runtime stack bounds. Full DevKit and NFCC link capacity,
 boot-gate completion and hardware validation remain separate acceptance items.
+
+During a CCID or WebUSB core call, cooperative progress services competing HID
+initial reports with CHANNEL_BUSY (or INVALID_CHANNEL for an invalid CID).
+This path reads only the HID header and never calls Core, transport polling,
+reset, or session cleanup. HID CANCEL cannot cancel the unrelated APDU, and
+continuations are drained. A pending USB reset is left for normal main-loop
+cleanup after the core call returns. Endpoint-owned error packets remain
+immutable until IN completion; a second request stays queued while IN is busy.
+The `hid-usb` fixture verifies these rules and the USB fixture checks that both
+CCID and WebUSB progress dispatch reach the foreign-HID service.

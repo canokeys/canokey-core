@@ -226,6 +226,72 @@ mod tests {
             assert_eq!(p.samples > 0, mode != 2);
         }
     }
+    #[cfg(feature = "admin")]
+    #[test]
+    fn strong_presence_requires_five_released_gestures_and_services_gaps() {
+        struct Prompts {
+            ticks: u32,
+            pulses: u32,
+            held: bool,
+            cancel_at: u32,
+            progress: u32,
+            idle: u8,
+            on: u32,
+            off: u32,
+        }
+        impl Device for Prompts {
+            fn serial(&mut self, _: &mut [u8; 4]) {}
+            fn now(&mut self) -> u32 {
+                self.ticks
+            }
+            fn touched(&mut self) -> bool {
+                self.held
+                    || (self.ticks / 2040 < self.pulses && (20..40).contains(&(self.ticks % 2040)))
+            }
+            fn progress(&mut self) -> bool {
+                self.progress += 1;
+                self.ticks += 10;
+                self.ticks < self.cancel_at
+            }
+            fn led(&mut self, on: bool) {
+                if on {
+                    self.on += 1;
+                } else {
+                    self.off += 1;
+                }
+            }
+            fn led_idle(&mut self) {
+                self.idle += 1;
+            }
+        }
+        for (pulses, held, cancel_at, success) in [
+            (5, false, u32::MAX, true),
+            (4, false, u32::MAX, false),
+            (0, false, u32::MAX, false),
+            (5, true, u32::MAX, false),
+            (5, false, 1000, false), // Cancellation during the inter-prompt gap.
+        ] {
+            let mut p = Prompts {
+                ticks: 0,
+                pulses,
+                held,
+                cancel_at,
+                progress: 0,
+                idle: 0,
+                on: 0,
+                off: 0,
+            };
+            assert_eq!(strong(&mut p), success);
+            assert_eq!(p.idle, 1);
+            assert!(p.progress > 0 && p.on > 0);
+            if success {
+                assert_eq!(p.ticks, 10200);
+                assert_eq!(p.progress, 1020);
+                assert!(p.off >= 5);
+            }
+        }
+    }
+
     #[test]
     fn failed_wait_still_claims_gesture() {
         for connected in [true, false] {

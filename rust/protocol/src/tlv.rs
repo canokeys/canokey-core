@@ -169,6 +169,37 @@ mod tests {
     }
 
     #[test]
+    fn legacy_length_vectors_require_complete_values_at_finish() {
+        // Legacy helper inputs were length+value; prepend a primitive tag to
+        // exercise the production streaming decoder rather than a test parser.
+        for (input, valid) in [
+            (&[0x53][..], false),
+            (&[0x53, 0x02, 0xaa, 0xbb][..], true),
+            (&[0x53, 0x02, 0xaa][..], false),
+            (&[0x53, 0x81, 0x03, 0xaa, 0xbb, 0xcc][..], true),
+            (&[0x53, 0x81][..], false),
+            (&[0x53, 0x82, 0x01, 0x02][..], false),
+            (&[0x53, 0x83, 0x00, 0x00, 0x00][..], false),
+        ] {
+            for split in 0..=input.len() {
+                let mut decoder = Decoder::default();
+                let mut emit = |_: Event<'_>| Ok(());
+                let result = decoder
+                    .feed(&input[..split], &mut emit)
+                    .and_then(|()| decoder.feed(&input[split..], &mut emit))
+                    .and_then(|()| decoder.finish());
+                assert_eq!(result.is_ok(), valid, "input={input:?}, split={split}");
+            }
+        }
+        let mut decoder = Decoder::default();
+        decoder
+            .feed(&[0x53, 0x82, 0x01, 0x02], &mut |_| Ok(()))
+            .unwrap();
+        decoder.feed(&[0; 258], &mut |_| Ok(())).unwrap();
+        assert_eq!(decoder.finish(), Ok(()));
+    }
+
+    #[test]
     fn decoder_rejects_invalid_tag_and_stays_failed() {
         let mut decoder = Decoder::default();
         let mut emit = |_: Event<'_>| Ok(());

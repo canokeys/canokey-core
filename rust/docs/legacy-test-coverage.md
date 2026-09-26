@@ -106,3 +106,21 @@ certificate for stage six, production capacity, stack or interoperability.
 Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
 Literal malformed-input regressions remain correctness tests with explicit
 expected results; they do not run mutation campaigns.
+
+## Public helper audit in progress
+
+The 13 `test_core_helpers` cases remain registered until the complete mapping is
+reviewed. This audit added executable coverage for the old BER length vectors
+at every split (`tlv::tests::legacy_length_vectors_require_complete_values_at_finish`),
+PIN record blocking/change/retry/missing-store behavior
+(`record_lifecycle_blocking_and_storage_errors`), exact five-gesture strong
+presence and cancellation during inter-prompt gaps
+(`strong_presence_requires_five_released_gestures_and_services_gaps`), and native
+LittleFS missing records, bounded offset reads/writes and output canaries.
+
+The old CCID-wait/HID-service case exposed a missing Rust progress path. The
+production USB progress dispatcher now services foreign HID headers without
+reentering Core. `hid-usb` checks busy/invalid-channel replies, INIT and CANCEL
+isolation, endpoint-buffer ownership and deferred reset cleanup. All eight USB
+feature combinations verify dispatch. This does not yet retire the old session
+and metadata helper cases or establish physical interoperability.

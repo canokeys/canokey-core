@@ -91,16 +91,49 @@ pub unsafe extern "C" fn ck_hid_keepalive(waiting: u8) {
         LINK.keepalive_status = if waiting != 0 { 2 } else { 1 };
     }
 }
-unsafe fn send_control(cid: u32, command: u8, value: u8) {
+unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
     unsafe {
         let report = &mut *core::ptr::addr_of_mut!(CONTROL);
         wire::header(report, cid, command, 1)[0] = value;
-        if ck_hid_io_send(report.as_mut_ptr(), LINK.execution_epoch) == 0 {
+        if ck_hid_io_send(report.as_mut_ptr(), epoch) == 0 {
             LINK.abandon = true;
             return;
         }
         LINK.sent_at = device_get_tick();
         LINK.transmitting = true;
+    }
+}
+/// Service competing HID traffic while another transport borrows Core.
+/// No transport poll/reset or session cleanup is allowed on this call path.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_hid_foreign_progress() {
+    unsafe {
+        if LINK.executing
+            || ck_hid_io_reset_pending() != 0
+            || ck_hid_io_configured() == 0
+            || ck_hid_io_idle() == 0
+        {
+            return;
+        }
+        let epoch = ck_hid_io_epoch();
+        let mut header = [0; 7];
+        let mut received = 0;
+        if ck_hid_io_peek(header.as_mut_ptr(), 7, &mut received, epoch) == 0 {
+            return;
+        }
+        let cid = u32::from_be_bytes(header[..4].try_into().unwrap());
+        // CANCEL belongs to its HID operation, never to the unrelated APDU.
+        // Continuations cannot start a new command and are silently drained.
+        if header[4] & 0x80 != 0 && header[4] != wire::CANCEL {
+            let error = if cid == 0 || (cid == wire::BROADCAST && header[4] != wire::INIT) {
+                Error::Channel
+            } else {
+                Error::Busy
+            };
+            send_control(cid, wire::ERROR, error as u8, epoch);
+        }
+        ck_hid_io_consume(epoch);
+        ck_hid_io_receive();
     }
 }
 #[unsafe(no_mangle)]
@@ -140,7 +173,7 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
                     } else {
                         Error::Busy as u8
                     };
-                    send_control(cid, wire::ERROR, error);
+                    send_control(cid, wire::ERROR, error, LINK.execution_epoch);
                     idle = false;
                 }
                 ck_hid_io_consume(LINK.execution_epoch);
@@ -151,7 +184,12 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
             return 0;
         }
         if idle && device_get_tick().wrapping_sub(LINK.keepalive_at) >= 100 {
-            send_control(LINK.executing_cid, wire::KEEPALIVE, LINK.keepalive_status);
+            send_control(
+                LINK.executing_cid,
+                wire::KEEPALIVE,
+                LINK.keepalive_status,
+                LINK.execution_epoch,
+            );
             LINK.keepalive_at = device_get_tick();
         }
         u8::from(!LINK.abandon)

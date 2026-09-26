@@ -495,19 +495,24 @@ pub unsafe extern "C" fn ck_transport_progress() -> u8 {
         fn ck_hid_executing() -> u8;
         #[cfg(feature = "usb-hid")]
         fn ck_hid_progress() -> u8;
+        #[cfg(feature = "usb-hid")]
+        fn ck_hid_foreign_progress();
     }
     unsafe {
         #[cfg(feature = "nfc")]
         if super::nfc::is_nfc() != 0 {
             return super::nfc::ck_nfc_progress();
         }
+        #[cfg(feature = "usb-hid")]
+        {
+            if ck_hid_executing() != 0 {
+                return ck_hid_progress();
+            }
+            ck_hid_foreign_progress();
+        }
         #[cfg(feature = "usb-webusb")]
         if let Some(live) = super::webusb_link::progress() {
             return live as u8;
-        }
-        #[cfg(feature = "usb-hid")]
-        if ck_hid_executing() != 0 {
-            return ck_hid_progress();
         }
         ck_ccid_progress()
     }

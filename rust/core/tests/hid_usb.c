@@ -159,6 +159,36 @@ int main(void) {
   assert(CTAPHID_OutEvent(packet));
   CTAPHID_Loop(0);
   assert(received == old_received + 1);
+  // Cooperative APDU waits answer competing HID commands without reentering
+  // the core poll/reset, including when an old HID idle lease has expired.
+  idle = 1;
+  ck_hid_packet_reset();
+  CTAPHID_Loop(0);
+  unsigned polls_before = received, resets_before = resets;
+  uint8_t competing[64] = {0x12,0x34,0x56,0x78,0x90,0,1,4};
+  assert(CTAPHID_OutEvent(competing));
+  ck_hid_foreign_progress();
+  assert(!idle && in_flight[4]==0xbf && in_flight[7]==0x06);
+  assert(memcmp(in_flight, competing, 4)==0);
+  assert(received==polls_before && resets==resets_before && !ck_hid_executing());
+  uint8_t saved[64];memcpy(saved,in_flight,64);
+  competing[4]=0x86;competing[6]=8; // INIT may not reset the active APDU.
+  assert(CTAPHID_OutEvent(competing));
+  ck_hid_foreign_progress();
+  assert(memcmp(in_flight,saved,64)==0 && !CTAPHID_RxCanAccept());
+  idle=1;ck_hid_foreign_progress();
+  assert(in_flight[7]==0x06 && CTAPHID_RxCanAccept());
+  idle=1;competing[4]=0x91;competing[6]=0;
+  unsigned sent_before=sent;
+  assert(CTAPHID_OutEvent(competing));ck_hid_foreign_progress();
+  assert(sent==sent_before && CTAPHID_RxCanAccept());
+  memset(competing,0,4);competing[4]=0x81;
+  assert(CTAPHID_OutEvent(competing));ck_hid_foreign_progress();
+  assert(in_flight[7]==0x0b); // Invalid channel, not a valid busy request.
+  idle=1;ck_hid_packet_reset();
+  ck_hid_foreign_progress();
+  assert(resets==resets_before); // Reset cleanup waits until Core unwinds.
+  CTAPHID_Loop(0);
   masked = 1;
   respond = 1;
   CTAPHID_Loop(0);

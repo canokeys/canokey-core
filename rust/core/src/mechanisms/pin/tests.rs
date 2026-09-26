@@ -280,6 +280,123 @@ mod records {
         );
         assert_eq!(memory.0.get(), wiped + 1);
     }
+    #[cfg(feature = "openpgp")]
+    #[test]
+    fn record_lifecycle_blocking_and_storage_errors() {
+        let pin = RecordPin {
+            id: Record::PgpRc,
+            stored_min: 0,
+            fixed_limit: None,
+        };
+        let mut store = Store::default();
+        let memory = Eraser::default();
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory)),
+            Err(Error::Persistence)
+        );
+        assert_eq!(
+            pin.verify(
+                b"1234",
+                4,
+                Charge::OnMismatch,
+                &mut platform!(&mut store, &memory)
+            ),
+            Err(Error::Persistence)
+        );
+        store.unavailable = true;
+        assert_eq!(
+            pin.create(b"1234", 3, &mut platform!(&mut store, &memory)),
+            Err(Error::Persistence)
+        );
+        store.unavailable = false;
+        pin.create(b"1234", 3, &mut platform!(&mut store, &memory))
+            .unwrap();
+        let writes = store.writes;
+        for value in [&b"12"[..], &[0; 65][..]] {
+            assert_eq!(
+                pin.verify(
+                    value,
+                    4,
+                    Charge::OnMismatch,
+                    &mut platform!(&mut store, &memory)
+                ),
+                Err(Error::Length)
+            );
+            assert_eq!(
+                pin.change(value, 4, &mut platform!(&mut store, &memory)),
+                Err(Error::Length)
+            );
+        }
+        assert_eq!(store.writes, writes);
+        for remaining in [2, 1, 0] {
+            let result = pin.verify(
+                b"0000",
+                4,
+                Charge::OnMismatch,
+                &mut platform!(&mut store, &memory),
+            );
+            assert_eq!(
+                result,
+                if remaining == 0 {
+                    Err(Error::Blocked)
+                } else {
+                    Err(Error::Retries(remaining))
+                }
+            );
+            assert_eq!(
+                pin.info(&mut platform!(&mut store, &memory))
+                    .unwrap()
+                    .retries_remaining,
+                remaining
+            );
+        }
+        let writes = store.writes;
+        assert_eq!(
+            pin.verify(
+                b"1234",
+                4,
+                Charge::OnMismatch,
+                &mut platform!(&mut store, &memory)
+            ),
+            Err(Error::Blocked)
+        );
+        assert_eq!(store.writes, writes);
+        pin.retry_limit(15, &mut platform!(&mut store, &memory))
+            .unwrap();
+        pin.change(b"5678", 4, &mut platform!(&mut store, &memory))
+            .unwrap();
+        pin.verify(
+            b"5678",
+            4,
+            Charge::OnMismatch,
+            &mut platform!(&mut store, &memory),
+        )
+        .unwrap();
+        let info = pin.info(&mut platform!(&mut store, &memory)).unwrap();
+        assert_eq!(
+            (info.length_bytes, info.retries_remaining, info.retry_limit),
+            (4, 15, 15)
+        );
+        // Disabled OpenPGP reset codes retain policy, but cannot authenticate.
+        pin.create(b"", 3, &mut platform!(&mut store, &memory))
+            .unwrap();
+        assert_eq!(
+            pin.info(&mut platform!(&mut store, &memory))
+                .unwrap()
+                .retries_remaining,
+            0
+        );
+        assert_eq!(
+            pin.verify(
+                b"",
+                0,
+                Charge::OnMismatch,
+                &mut platform!(&mut store, &memory)
+            ),
+            Err(Error::Blocked)
+        );
+    }
+
     #[cfg(feature = "admin")]
     #[test]
     fn admin_keeps_length_precedence_and_fixed_retry_policy() {
