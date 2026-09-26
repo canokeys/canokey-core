@@ -243,6 +243,28 @@ def management_rotation(c):
     c.verify()
 
 
+def algorithm_configuration(c):
+    c.wire.command("RESET")
+    c.select()
+    expected = bytes.fromhex("01e00516e1531554e2e3")
+    assert c.cmd("public_algorithm_configuration", 0xEE, 1, 0) == expected
+    c.cmd("unauthorized_algorithm_write", 0xEE, 2, 0, expected, le=None, status=0x6982)
+    c.auth()
+    c.cmd("write_default_algorithms", 0xEE, 2, 0, expected, le=None)
+    for index, value in ((9, 0xE2), (1, 0xFF), (1, 0x11)):
+        invalid = bytearray(expected)
+        invalid[index] = value
+        c.cmd("reject_conflicting_algorithm", 0xEE, 2, 0, bytes(invalid),
+              le=None, status=0x6A80)
+        assert c.cmd("failed_write_preserves_algorithms", 0xEE, 1, 0) == expected
+    c.wire.command("RESET")
+    c.select()
+    assert c.cmd("public_algorithms_after_write", 0xEE, 1, 0) == expected
+    c.cmd("reset_revokes_algorithm_write", 0xEE, 2, 0, expected, le=None, status=0x6982)
+    c.auth()
+    c.verify()
+
+
 def object_capacity(c):
     for tag, record in [(0x5FC10D, 46), (0x5FC10E, 47), (0x5FC10F, 48), (0x5FC120, 65)]:
         assert c.wire.command(f"SIZE {record}") == b"\xff" * 4
@@ -649,8 +671,7 @@ def reset_and_persistence(c, issuer_key, issuer):
     c.cmd("rotate_management", 0xFF, 0xFF, 0xFF, bytes([0x0A, 0x9B, 24]) + new, le=None)
     c.auth(new)
     original_config = c.cmd("read_algorithms", 0xEE, 1, 0)
-    config = bytearray(original_config)
-    config[1] = 0xE4
+    config = bytes.fromhex("0122055152531554e2e3")
     c.cmd("write_algorithms", 0xEE, 2, 0, bytes(config), le=None)
     c.wire.command("RESET")
     c.select()
@@ -683,6 +704,12 @@ def reset_and_persistence(c, issuer_key, issuer):
     )
     assert c.cmd("reset_preserved_algorithms", 0xEE, 1, 0) == bytes(config)
     assert c.public(0, 0xF9).public_numbers() == issuer_key.public_key().public_numbers()
+    generated = c.cmd("generate_with_preserved_algorithm", 0x47, 0, 0x9A,
+                      bytes.fromhex("ac03800122"))
+    public = fields(fields(generated)[0x7F49])[0x86]
+    assert len(public) == 32
+    metadata = fields(c.cmd("preserved_algorithm_metadata", 0xF7, 0, 0x9A))
+    assert metadata[1] == b"\x22" and fields(metadata[4])[0x86] == public
     c.cmd("restore_algorithms", 0xEE, 2, 0, original_config, le=None)
 
 
@@ -694,6 +721,7 @@ def run(wire, progress=None, report=None):
             authentication,
             host_managed_objects,
             management_rotation,
+            algorithm_configuration,
             object_capacity,
             objects,
             classic_keys,

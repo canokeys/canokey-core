@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 95 registered cases: APDU (49)
-and PIV (46). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 91 registered cases: APDU (49)
+and PIV (42). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -579,3 +579,18 @@ internal CAPDU fixture represented it as zero. These replacements explicitly
 check that policy rather than reintroducing the native zero-Le behavior.
 Actual zero-progress output and shared-buffer trailer aliasing remain covered
 at the Rust FFI boundary. This batch changes tests only, not production behavior.
+
+
+## Replaced PIV algorithm configuration cases
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_piv_algorithm_extension_read_without_admin` | `piv-normal::algorithm_configuration`: exact ten-byte public configuration and 6982 for an unauthenticated write |
+| `test_piv_algorithm_extension_read_after_write` | Same scenario writes the original explicit configuration, resets authorization and reads the exact persistent bytes without management authentication |
+| `test_piv_algorithm_extension_rejects_conflicting_ids` | Same scenario rejects the original duplicate ML-KEM/ML-DSA ID, FF Ed25519 ID and reserved P-256 ID with 6A80, checking the complete unchanged configuration after each failure |
+| `test_piv_reset_preserves_platform_algorithm_extension` | `reset_and_persistence` writes original custom IDs (Ed25519 22, RSA-4096 51, X25519 52), verifies reset persistence, blocks PIN/PUK and runs real PIV factory reset, then generates Ed25519 through 22 and checks its exact metadata algorithm and matching public key |
+
+The factory-reset regression also retains its existing issuer preservation,
+credential deletion and default management/PIN restoration checks. Public
+configuration access does not restore authorization; protected writes after
+reset are explicitly rejected. No production code changed in this batch.
