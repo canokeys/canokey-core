@@ -11,6 +11,7 @@ struct DeviceState {
     step: usize,
     touches: &'static [bool],
     connected: bool,
+    contactless: bool,
     led: bool,
     waiting: bool,
 }
@@ -22,6 +23,7 @@ impl DeviceState {
             step: 0,
             touches,
             connected: true,
+            contactless: false,
             led: false,
             waiting: false,
         }
@@ -34,7 +36,11 @@ impl Device for DeviceState {
     fn serial(&mut self, _: &mut [u8; 4]) {
         unreachable!()
     }
+    fn contactless(&mut self) -> bool {
+        self.contactless
+    }
     fn touched(&mut self) -> bool {
+        assert!(!self.contactless, "NFC must not poll the touch sensor");
         self.touches.get(self.step).copied().unwrap_or(false)
     }
     fn progress(&mut self) -> bool {
@@ -137,6 +143,29 @@ fn reset_is_power_on_gated_and_never_erases_before_presence() {
     let mut device = DeviceState::new(&[false, true, false]);
     assert_eq!(run(&mut core, &[7], &mut device, &mut store), 0);
     assert!(store.removed);
+
+    // NFC authorizes presence through the live field, including long-reset mode.
+    for long_reset in [false, true] {
+        let mut store = Store {
+            long_reset,
+            ..Store::default()
+        };
+        let mut device = DeviceState::new(&[]);
+        device.contactless = true;
+        device.time = 10_001;
+        assert_eq!(run(&mut core, &[7], &mut device, &mut store), 0x30);
+        assert_eq!(device.step, 0);
+        assert!(!store.removed);
+        device.time = 0;
+        device.connected = false;
+        assert_eq!(run(&mut core, &[7], &mut device, &mut store), 0x2d);
+        assert!(!store.removed);
+        device.connected = true;
+        let before = device.step;
+        assert_eq!(run(&mut core, &[7], &mut device, &mut store), 0);
+        assert_eq!(device.step, before + 1);
+        assert!(store.removed);
+    }
 }
 
 #[test]

@@ -388,54 +388,6 @@ static void test_large_blob_noncanonical_string_offset(void **state) {
 
 
 
-static void test_fido_reset_nfc_bypasses_user_presence(void **state) {
-  (void)state;
-
-  static const uint8_t select_fido[] = {
-      0x00, 0xA4, 0x04, 0x00, 0x08, 0xA0, 0x00, 0x00, 0x06, 0x47, 0x2F, 0x00, 0x01,
-  };
-  static const uint8_t reset_apdu[] = {
-      0x80, 0x10, 0x80, 0x00, 0x01, 0x07, 0x00,
-  };
-
-  uint8_t c_buf[64], r_buf[64];
-  CAPDU capdu = {.data = c_buf};
-  RAPDU rapdu = {.data = r_buf};
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-  testmode_set_initial_ticks(0);
-  testmode_set_initial_ticks(device_get_tick());
-  set_nfc_state(1);
-
-  CTAP_sm2_attr saved_sm2, actual_sm2;
-  const CTAP_sm2_attr custom_sm2 = {.curve_id = -65537, .algo_id = -65538};
-  assert_int_equal(ctap_platform_sm2_config_read(&saved_sm2, sizeof(saved_sm2)), 0);
-  uint8_t config_wire[CTAP_SM2_CONFIG_WIRE_SIZE];
-  encode_sm2_config(config_wire, &custom_sm2);
-  CAPDU config_capdu = {.data = config_wire, .lc = sizeof(config_wire)};
-  assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
-
-  assert_int_equal(build_capdu(&capdu, select_fido, sizeof(select_fido)), 0);
-  process_apdu(&capdu, &rapdu);
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-
-  assert_int_equal(build_capdu(&capdu, reset_apdu, sizeof(reset_apdu)), 0);
-  process_apdu(&capdu, &rapdu);
-
-  assert_int_equal(rapdu.sw, SW_NO_ERROR);
-  assert_int_equal(rapdu.len, 1);
-  assert_int_equal(rapdu.data[0], 0x00);
-
-  assert_int_equal(ctap_platform_sm2_config_read(&actual_sm2, sizeof(actual_sm2)), 0);
-  assert_memory_equal(&actual_sm2, &custom_sm2, sizeof(actual_sm2));
-  encode_sm2_config(config_wire, &saved_sm2);
-  assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
-  ctap_poweroff();
-  set_nfc_state(0);
-}
-
 static void test_ctap_deselect_clears_get_next_assertion_state(void **state) {
   (void)state;
 
@@ -1263,7 +1215,6 @@ int main() {
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_large_blob_noncanonical_string_offset),
-      cmocka_unit_test(test_fido_reset_nfc_bypasses_user_presence),
       cmocka_unit_test(test_ctap_deselect_clears_get_next_assertion_state),
       cmocka_unit_test(test_ctap_poweroff_keeps_credential_management_state),
       cmocka_unit_test(test_ctap_deselect_clears_credential_management_state),

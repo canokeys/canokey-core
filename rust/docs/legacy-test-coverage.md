@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 25 registered APDU cases.
+One legacy C test executable remains, with 24 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1113,3 +1113,20 @@ Validation: full host CTest passed 28/28 in 59.31 seconds. Both full firmware
 links still fail at unchanged sizes: DevKit 188432 B (24592 B over), NFCC
 195912 B (32072 B over), RAM_DATA 8640/8760 B. Capacity, runtime stack and
 physical compatibility remain open.
+
+## NFC reset presence and cancellation
+
+Removed `test_fido_reset_nfc_bypasses_user_presence`. The existing Rust
+`ctap_lifecycle::reset_is_power_on_gated_and_never_erases_before_presence`
+now executes CTAP reset with contactless presence under both ordinary and
+long-reset configuration. It rejects requests outside the power-on window,
+rejects a disconnected transport without erasing records, and succeeds through
+one transport progress check without ever polling the touch sensor. Existing
+`ctap-config` coverage verifies that credential reset preserves custom SM2
+identifiers through GetInfo and retains provisioning for subsequent operations.
+This is host correctness evidence, not physical RF or timing acceptance.
+
+Validation: combined CTest 28/28 passed (58.52 s). Both full production
+links still fail at unchanged sizes: DevKit 188432 B (24592 B over), NFCC
+195912 B (32072 B over), RAM_DATA 8640/8760 B. No accepted firmware or
+hardware stack/compatibility evidence was produced.
