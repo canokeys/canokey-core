@@ -192,3 +192,15 @@ is included in that record's payload size. Filesystem metadata, old/unrecognized
 files and temporary files contribute to the nonnegative system remainder.
 LittleFS supplies allocated and total bytes; all grouping and wire encoding is
 Rust. The operation is read-only and uses the existing response workspace.
+
+### Deferred keyboard gestures
+
+One completed short/long gesture may wait behind an active text job, including
+its final USB key release. It resolves the configured slot only when that job
+has drained; it never overwrites the active password bytes or reserves another
+text buffer. A subsequent completed gesture replaces the pending slot, matching
+the legacy touch latch. Link reset, cancellation and another operation claiming
+presence clear the pending gesture along with queued text. Regression tests
+combine the real output policy and keyboard encoder with an independent HID
+usage-table decoder, including `xy` followed by a mid-typing touch producing
+`xyxy`, long-slot selection, no/empty touch, Enter and consumer Eject.

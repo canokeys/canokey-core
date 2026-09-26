@@ -256,26 +256,6 @@ Use [Canokey-STM32](https://github.com/canokeys/canokey-stm32) as an example.
 
 6. You should call the `set_touch_result` to report touch sensing result, and `set_nfc_state` to report NFC state.
 
-## Fuzz testing
-
-Fuzzing uses AFL++ with ASan/UBSan. Instrumented builds require GNU GCC,
-normally through `afl-gcc-fast`:
-
-```bash
-cmake -S . -B build -DENABLE_FUZZING=ON -DCMAKE_C_COMPILER=afl-gcc-fast -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target afl-fuzzer --parallel
-```
-
-Then, run fuzzing tests (`${id}`: empty = CCID transport, 0..5 = PIV, CTAP,
-OATH, Admin, OpenPGP, NDEF):
-
-```bash
-CANOKEY_FUZZ_APPLET=${id} afl-fuzz -i fuzzing/applet${id}/data -o fuzzing/applet${id}/findings -- ./build/afl-fuzzer
-```
-
-Crash artifacts are replayed directly with the same binary:
-`CANOKEY_FUZZ_APPLET=${id} ./build/afl-fuzzer < crash-file`.
-
 
 ## License
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_large)

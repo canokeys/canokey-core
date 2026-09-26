@@ -1,0 +1,3 @@
+# Host APDU interoperability checks; no PC/SC or attached hardware required.
+cryptography>=50
+fido2>=2

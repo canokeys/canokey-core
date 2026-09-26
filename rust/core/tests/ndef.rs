@@ -9,6 +9,7 @@ struct Disk {
     fail_read: bool,
     fail_write: bool,
     uncertain: bool,
+    reads: usize,
 }
 impl Disk {
     fn file(&mut self, f: File) -> &mut Option<Vec<u8>> {
@@ -23,6 +24,7 @@ impl Store for Disk {
         self.file(f).as_ref().map(Vec::len).ok_or(Failure::Missing)
     }
     fn read(&mut self, f: File, offset: usize, out: &mut [u8]) -> Result<(), Failure> {
+        self.reads += 1;
         if self.fail_read {
             out.fill(0);
             return Err(Failure::Io);
@@ -168,6 +170,47 @@ fn pulled_response_reads_all_1024_bytes_without_an_object_buffer() {
     }
     assert_eq!(n.check_read(1, 1024, &mut d), Err(Sw::WRONG_LENGTH));
     assert_eq!(n.check_read(usize::MAX, 2, &mut d), Err(Sw::WRONG_LENGTH));
+}
+
+#[test]
+fn capability_cache_reload_missing_file_and_recovery() {
+    let mut disk = Disk::default();
+    let mut ndef = Ndef::new();
+    ndef.install(false, &mut disk).unwrap();
+    ndef.select(0, 12, &[0xe1, 3]).unwrap();
+    let reads = disk.reads;
+    let mut cc = [0; 15];
+    ndef.read(0, &mut cc, &mut disk).unwrap();
+    assert_eq!(cc, DEFAULT_CC);
+    assert_eq!(disk.reads, reads);
+    assert_eq!(ndef.set_read_only(2, &mut disk), Err(Sw::WRONG_P1P2));
+    ndef.set_read_only(1, &mut disk).unwrap();
+    disk.fail_write = true;
+    assert_eq!(ndef.set_read_only(0, &mut disk), Err(Sw::UNABLE_TO_PROCESS));
+    disk.fail_write = false;
+    ndef.read(0, &mut cc, &mut disk).unwrap();
+    assert_eq!(disk.reads, reads + 1);
+    assert_eq!(cc[14], 0xff);
+    ndef.read(0, &mut cc, &mut disk).unwrap();
+    assert_eq!(disk.reads, reads + 1);
+    ndef.select(0, 12, &[0, 1]).unwrap();
+    ndef.read(0, &mut [0; 4], &mut disk).unwrap();
+    assert_eq!(disk.reads, reads + 2);
+    disk.fail_write = true;
+    assert_eq!(ndef.set_read_only(0, &mut disk), Err(Sw::UNABLE_TO_PROCESS));
+    disk.fail_write = false;
+    disk.cc = None;
+    assert!(ndef.read_only(&mut disk));
+    assert_eq!(ndef.update(0, b"x", false, &mut disk), Err(Sw::UNABLE_TO_PROCESS));
+    ndef.install(false, &mut disk).unwrap();
+    assert!(!ndef.read_only(&mut disk));
+    ndef.select(0, 12, &[0, 1]).unwrap();
+    ndef.update(0, b"x", false, &mut disk).unwrap();
+    ndef.check_read(512, 256, &mut disk).unwrap();
+    assert_eq!(ndef.check_read(768, 300, &mut disk), Err(Sw::WRONG_LENGTH));
+    assert_eq!(ndef.check_read(1023, 289, &mut disk), Err(Sw::WRONG_LENGTH));
+    ndef.select(0, 12, &[0xe1, 3]).unwrap();
+    assert_eq!(ndef.check_read(10, 6, &mut disk), Err(Sw::WRONG_LENGTH));
 }
 
 mod apdu {

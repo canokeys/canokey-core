@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 [workspace]
-members = ["protocol", "ports", "core", "ffi"]
+members = ["protocol", "ports", "core", "ffi", "host"]
 resolver = "3"
 [profile.release]
 opt-level = "z"

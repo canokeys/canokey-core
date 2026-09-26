@@ -44,6 +44,7 @@ int32_t ck_core_output_sample(uint8_t pressed, uint32_t now, uint8_t ready);
 int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
 int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
 /* Root-level two-digit hexadecimal filenames, IDs 0..183 (00..b7).
+ * IDs 184/185 map to the NDEF-compatible E103/NDEF filenames.
  * Record assignments are defined in rust/core/src/ports/storage.rs.
  * File 0 = versioned slots, file 1 = versioned PIN,
  * file 2 = OATH metadata, file 3 = OATH records.

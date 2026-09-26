@@ -9,15 +9,16 @@ pub const AID: &[u8] = &[0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01];
 const VERSION: &[u8] = b"FIDO_2_0";
 const INS_MSG: u8 = 0x10;
 
+fn valid_message_parameters(header: Header) -> bool {
+    // P1 bit 7 allows NFCCTAP_GETRESPONSE keepalive polling. Like the legacy
+    // synchronous engine, we may finish the command directly with 9000; the
+    // hint must not make standards-compliant NFC clients fail discovery.
+    header.p1 & 0x7f == 0 && header.p2 == 0
+}
+
 pub fn allows_extended(header: Header) -> bool {
     (header.cla == 0 && matches!(header.ins, 1 | 2 | 3 | 0xa4 | 0x10))
-        || header
-            == Header {
-                cla: 0x80,
-                ins: INS_MSG,
-                p1: 0,
-                p2: 0,
-            }
+        || (header.cla == 0x80 && header.ins == INS_MSG && valid_message_parameters(header))
 }
 
 pub struct Applet {
@@ -79,7 +80,7 @@ impl Applet {
         if header.ins != INS_MSG {
             return Err(Sw::INS_NOT_SUPPORTED);
         }
-        if header.p1 != 0 || header.p2 != 0 {
+        if !valid_message_parameters(header) {
             return Err(Sw::WRONG_P1P2);
         }
         Ok(())
@@ -247,7 +248,7 @@ impl MessageParser {
                         MessageInput::Error(Sw::CLA_NOT_SUPPORTED)
                     } else if h.ins != INS_MSG {
                         MessageInput::Error(Sw::INS_NOT_SUPPORTED)
-                    } else if h.p1 != 0 || h.p2 != 0 {
+                    } else if !valid_message_parameters(h) {
                         MessageInput::Error(Sw::WRONG_P1P2)
                     } else {
                         MessageInput::Ctap(Request::new())
@@ -290,6 +291,43 @@ impl MessageParser {
             )),
             MessageInput::Error(error) => Message::Error(*error),
             MessageInput::Empty => Message::Error(Sw::WRONG_LENGTH),
+        }
+    }
+}
+
+#[cfg(test)]
+mod message_parameters_tests {
+    use super::*;
+    #[test]
+    fn nfc_keepalive_hint_is_accepted_for_extended_and_hid_messages() {
+        for p1 in [0, 0x80, 1, 0x7f, 0xff] {
+            for p2 in [0, 1] {
+                let valid = matches!(p1, 0 | 0x80) && p2 == 0;
+                let header = Header {
+                    cla: 0x80,
+                    ins: INS_MSG,
+                    p1,
+                    p2,
+                };
+                assert_eq!(allows_extended(header), valid);
+                let short = [0x80, 0x10, p1, p2, 1, 4];
+                let extended = [0x80, 0x10, p1, p2, 0, 0, 1, 4];
+                for frame in [short.as_slice(), extended.as_slice()] {
+                    let mut parser = MessageParser::new(frame.len());
+                    for chunk in frame.chunks(2) {
+                        parser.consume(chunk);
+                    }
+                    let reply = parser.finish();
+                    if valid {
+                        assert!(matches!(
+                            reply,
+                            Message::Ctap(Ok(super::super::Command::GetInfo))
+                        ));
+                    } else {
+                        assert!(matches!(reply, Message::Error(Sw::WRONG_P1P2)));
+                    }
+                }
+            }
         }
     }
 }

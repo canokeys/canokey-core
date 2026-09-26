@@ -70,6 +70,7 @@ int32_t ck_platform_random(uint8_t *out, size_t n) { return RAND_bytes(out, (int
 void ck_platform_serial(uint8_t out[4]) { memset(out, 0, 4); }
 #endif
 
+#ifndef WITH_HID
 static uint32_t ticks;
 uint32_t ck_platform_now(void) { return ticks; }
 uint8_t ck_platform_touched(void) { return (ticks % 100) >= 20 && (ticks % 100) < 60; }
@@ -78,6 +79,7 @@ uint8_t ck_platform_progress(void) {
   return 1;
 }
 void ck_platform_led(uint8_t on) { (void)on; }
+#endif
 
 #if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
 static uint8_t stage[8192];
@@ -109,7 +111,7 @@ int32_t ck_platform_aes256(uint8_t encrypt, const uint8_t key[32], const uint8_t
 }
 #endif
 
-#ifdef WITH_CTAP
+#if defined(WITH_CTAP) && !defined(WITH_HID)
 /* The host card uses APDUs; native USB/PKE entrypoints must stay unused. */
 uint8_t ck_ccid_idle(void) { return 1; }
 void ck_hid_keepalive(uint8_t waiting) { (void)waiting; }

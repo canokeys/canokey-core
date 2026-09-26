@@ -56,11 +56,18 @@ _Static_assert(sizeof(stream_t) <= CK_CRYPTO_SCRATCH_BYTES, "Shared Rust crypto 
 // Advance the ML-DSA generator only after its previous stage bytes were read.
 // This preserves one-pass output without retaining a full public key/signature.
 static int refill(stream_t *s) {
+  uint8_t phase = s->data.dsa.state.keygen.phase;
   int n = s->kind == STREAM_PUBLIC ? ml_dsa_65_keygen_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
                                                                 &s->data.dsa.state.keygen, NULL)
                                    : ml_dsa_65_sign_seed_mu_streaming(s->data.dsa.stage, sizeof(s->data.dsa.stage),
                                                                       &s->data.dsa.state.sign, s->data.dsa.mu);
-  if (n <= 0) return -1;
+  if (n <= 0 || (size_t)n > sizeof(s->data.dsa.stage)) return -1;
+  // Keygen is exactly two chunks. Reject a short/oversized chunk or a backend
+  // which fails to terminate; Rust owns aborting and releasing the stream.
+  if (s->kind == STREAM_PUBLIC &&
+      (phase > 1 || n != (phase == 0 ? MLDSA_STAGE_BYTES : MLDSA_PK_BYTES - MLDSA_STAGE_BYTES) ||
+       s->data.dsa.state.keygen.phase != (phase == 0 ? 1 : 0)))
+    return -1;
   s->position = 0;
   s->length = (uint32_t)n;
   return 0;

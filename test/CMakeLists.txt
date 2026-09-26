@@ -42,10 +42,6 @@ add_mocked_test(piv
 add_dependencies(test_piv generate_virt_card_git_rev)
 target_include_directories(test_piv PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto/test)
 
-add_mocked_test(kbdhid
-        LINK_LIBRARIES canokey-core
-)
-
 add_mocked_test(key
         SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
@@ -54,24 +50,6 @@ add_mocked_test(key
         LINK_LIBRARIES canokey-core
 )
 add_dependencies(test_key generate_virt_card_git_rev)
-
-add_mocked_test(key_stream
-        SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core
-)
-add_dependencies(test_key_stream generate_virt_card_git_rev)
-
-add_mocked_test(ndef
-        SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../littlefs/bd/lfs_filebd.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/device-sim.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../virt-card/usb-dummy.c
-        LINK_LIBRARIES canokey-core
-)
-add_dependencies(test_ndef generate_virt_card_git_rev)
 
 add_mocked_test(core_helpers
         SOURCES
@@ -96,3 +74,8 @@ add_mocked_test(core_helpers
         device_config_is_webauthn_enabled
         LINK_LIBRARIES canokey-core
 )
+
+# Apple ld does not support the wrappers used by this legacy unit target.
+if(APPLE)
+  set_target_properties(test_core_helpers PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()

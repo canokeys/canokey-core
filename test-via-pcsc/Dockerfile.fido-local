@@ -10,13 +10,17 @@ RUN if [ -n "${UBUNTU_MIRROR}" ]; then \
     fi
 
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
-    git gcc g++ cmake pkg-config psmisc procps make \
+    curl ca-certificates git gcc g++ cmake pkg-config psmisc procps make \
     pcscd pcsc-tools \
     libhidapi-dev libssl-dev libpcsclite-dev libudev-dev libusb-1.0-0-dev \
     libcmocka-dev libcbor-dev zlib1g-dev \
     patch swig \
     python3-dev python3-pip python3-setuptools python3-wheel python3-jsonschema python3-jinja2 python3-venv \
   && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
+  && sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain nightly-2026-09-04
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 COPY test-via-pcsc /root/test-via-pcsc
 

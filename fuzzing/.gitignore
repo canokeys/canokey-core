@@ -1,7 +1,0 @@
-*.cov
-initial
-*.sanitizer.log.*
-crash-*
-timeout-*
-oom-*
-leak-*

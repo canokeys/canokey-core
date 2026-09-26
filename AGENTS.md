@@ -51,7 +51,6 @@ canokey-core/
 ├── tinycbor/           # Submodule: CBOR encoder/decoder
 ├── virt-card/          # Virtual card for host-side unit/integration tests
 ├── test/               # CMocka unit tests
-├── fuzzer/             # AFL++ fuzzing harness
 └── scripts/            # Code-generation scripts (gen_ctap_get_info.py)
 ```
 
@@ -93,8 +92,7 @@ CMake 3.16+, C11. The library target is `canokey-core`.
 | `ENABLE_DEBUG_OUTPUT` | ON | `DBG_MSG`/`ERR_MSG` via `printf` |
 | `ENABLE_BYPASS_USER_PRESENCE` | OFF | Skip all touch checks (testing only) |
 | `ENABLE_TESTS` | OFF | Build CMocka unit tests + virt-card |
-| `ENABLE_FUZZING` | OFF | Build AFL++ harness |
-| `ENABLE_APDU_REPLAY` | OFF | Build the host differential APDU replay tool |
+| `ENABLE_APDU_REPLAY` | OFF | Build the Rust correctness APDU replay tool |
 | `CTAP_RESTRICT_ALGORITHMS` | OFF | FIDO GetInfo/registration/assertion allow only ES256 and Ed25519; existing other credentials remain manageable but cannot authenticate |
 | `VIRTCARD` | OFF | Build only the virtual-card targets |
 
@@ -106,11 +104,7 @@ cmake --build build --parallel 8
 ctest --test-dir build --output-on-failure
 ```
 
-Run these commands from the core repository root with initialized submodules
-and CMocka installed. `ENABLE_TESTS` enables ASan/UBSan and coverage.
-`test_core_helpers` requires GNU ld's `--wrap`; the CIU macOS quality-gate
-wrapper excludes that target. AFL++ builds require GNU GCC; Frida mode also
-requires `-DCANOKEY_FUZZ_SANITIZERS=OFF`.
+`ENABLE_TESTS` uses ASan/UBSan. The `test_core_helpers` target requires GNU ld `--wrap`; omit it on macOS.
 
 ---
 
@@ -415,12 +409,11 @@ For `largeBlobs.set`, choose and document one command-specific contract before e
 
 | Suite | How to run |
 |---|---|
-| CMocka unit tests | `ctest` after building with `-DENABLE_TESTS=ON` |
-| FIDO2 conformance | `virt-card/fido-hid-over-udp` + `fido2-tests/` |
-| PC/SC integration | `u2f-virt-card` shared library + `test-via-pcsc/` |
+| CMocka and Rust correctness tests | `ctest` after building with `-DENABLE_TESTS=ON` |
+| FIDO2 conformance | Rust `fido-hid-over-udp` + `fido2-tests/` |
+| PC/SC integration | Rust-backed `u2f-virt-card` + `test-via-pcsc/` |
 | Real-hardware tests | `test-real/` (requires a physical device) |
-| Fuzzing | `-DENABLE_FUZZING=ON` builds `afl-fuzzer`; run with AFL++ (`afl-fuzz`), GNU GCC required (directly or via afl-gcc-fast) |
-| APDU replay | `-DENABLE_APDU_REPLAY=ON` builds `apdu-replay` (`fuzzer/apdu-replay.c`): line-based stdin/stdout APDU replayer over the virt-card, host half of the hardware differential fuzzer. Unlike the fuzzer build it defines `TEST` but not `FUZZ`, so PIN/touch gates behave like real firmware |
+| APDU replay | `-DENABLE_APDU_REPLAY=ON` builds the Rust engine and line-based correctness replay adapter |
 
 Test-mode extras (enabled by `TEST` define):
 - `testmode_emulate_user_presence()` — auto-confirms touch
@@ -428,8 +421,6 @@ Test-mode extras (enabled by `TEST` define):
 - `testmode_inject_error()` — injects storage errors for fault testing
 - `testmode_set_initial_ticks(uint32_t)` — pin the device tick counter to a known value (used by the virt-card and the MAGIC REBOOT path)
 - `testmode_err_triggered(path, file_wr)` — query whether the most recent injected error fired for a given file/operation
-
-The APDU-level hooks that expose testmode functions over the wire (INS `0xEE` MAGIC REBOOT and INS `0xEF` error injection in the FIDO dispatch, plus their `is_fido_apdu` routing) are gated behind `TESTMODE_INS_HOOKS`, defined by `ENABLE_TESTS`/`ENABLE_FUZZING` but deliberately NOT by `ENABLE_APDU_REPLAY` — real firmware has no such INS, so the differential harness must not have them either.
 
 ---
 
@@ -442,3 +433,25 @@ The APDU-level hooks that expose testmode functions over the wire (INS `0xEE` MA
 - When adding a new applet, register it in `src/applets.c` and guard any new interface class source files in `CMakeLists.txt` with the appropriate `ENABLE_*` filter.
 - `APDU_BUFFER_SIZE` (default 256) can be overridden by the platform via a compile-time define; ensure any new static buffers that alias `shared_io_buffer` respect `APDU_COMMAND_BUFFER_SIZE`, not the raw 256 value.
 - LittleFS path strings are short (≤ 31 chars including the null terminator by default). Keep FS paths concise.
+
+
+### Rust UDP virtual card migration
+
+`-DVIRTCARD=ON` now selects the complete Rust host composition; `ENABLE_APDU_REPLAY`
+also builds the Rust UDP tool. `ENABLE_TESTS` runs the full Rust suite alongside the six remaining C unit
+executables; NDEF/keyboard/key-stream replacements are tracked in
+`rust/docs/legacy-test-coverage.md`. Its UDP executable uses `rust/host` and no C applet/protocol implementation.
+Install `nightly-2026-09-04`, OpenSSL development headers and
+`rust/core/tests/requirements.txt`; select that Python with `Python3_EXECUTABLE`.
+Run `ctest -R '^virtual-'` for packet/persistence regressions.
+See [rust/host/README.md](rust/host/README.md) for retained UDP ports, control packets,
+`CANOKEY_VIRT_*` settings, touch counter and Rust record names for error injection.
+The image is a versioned host record snapshot, not LittleFS; reset-disabled runs
+reject old images without overwriting them. The PC/SC IFD library now uses the same Rust host, with serialized cross-thread entrypoints; the C unit suite remains a legacy consumer.
+
+The Rust host build requires PC/SC headers (`libpcsclite-dev` on Debian/Ubuntu,
+`PCSC_INCLUDE_DIR` for nonstandard installs). `virtual-pcsc` loads the real IFD
+library and checks power/reset authorization, buffer bounds, extended/NFC APDUs,
+thread serialization, persistence and independently verified signatures. Optional
+`rust/core/tests/pcsc_daemon.py` exercises a privately configured pcscd and an
+unmodified python-fido2 client; it must not replace/control the system daemon.

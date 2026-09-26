@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "canokey-rust-host"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+[lib]
+crate-type = ["staticlib"]
+[dependencies]
+canokey-protocol = { path = "../protocol" }
+canokey-rust-ffi = { path = "../ffi", features = ["static-backend", "usb-hid", "admin", "pass", "oath", "openpgp", "piv", "ndef"] }
+# Simulated contactless presence without disabling the UDP HID endpoint.
+canokey-ports = { path = "../ports", features = ["nfc"] }
+[lints]
+workspace = true

@@ -51,7 +51,9 @@ done
 ./test-via-pcsc/install_fido_tests.sh
 FIDO_PYTHON="${WORKDIR}/fido2-tests/.venv/bin/python"
 
-cmake -S . -B "${BUILD_DIR}" -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
+rustup toolchain install nightly-2026-09-04 --profile minimal
+"${FIDO_PYTHON}" -m pip install -r rust/core/tests/requirements.txt
+cmake -S . -B "${BUILD_DIR}" -DPython3_EXECUTABLE="${FIDO_PYTHON}" -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build "${BUILD_DIR}" -j2
 
 echo 0 >/tmp/canokey-test-up

@@ -422,3 +422,32 @@ Extended CCID/NFC admission can recognize an implicit FIDO header without
 mutating selection; normal command start performs the permission check. The
 streaming regression exercises a source-backed CBOR request without SELECT,
 including bounded length, owner restrictions, source cleanup and chain errors.
+
+
+### Full host HID execution regression
+
+Host CMake builds `hid-core` whenever `CANOKEY_APPLET_CTAP=ON`. It links a separate
+Rust archive with `usb-hid`, the production HID mailbox/link/framing code and the
+CTAP applet, plus native host crypto. Packet hardware, monotonic time, physical
+presence and PKE scratch are simulated; record storage is volatile. APDU-only
+fixtures retain their fail-on-use HID stubs and do not substitute for this test.
+
+Run `ctest --test-dir <host-build> -R '^hid-core$' --output-on-failure`. Coverage
+includes long echo, source-backed clientPIN crypto, GetInfo streaming, sequence
+errors/timeouts with scratch cleanup, execution busy/keepalive/cancel, same-CID
+INIT and disconnect response suppression. This is not USB controller, durable
+storage or physical interoperability acceptance. The [Rust UDP virtual card](../host/README.md) uses these same production
+entrypoints with durable host records and runtime error injection. PC/SC and AFL
+remain separate legacy consumers.
+
+
+### NFCCTAP_MSG polling hint
+
+`80 10 00 00` and `80 10 80 00` both accept CBOR commands. P1 bit 7 is the
+NFCCTAP_GETRESPONSE polling hint used by python-fido2; the synchronous engine
+finishes directly with a response and `9000`, as the prior C engine did. It does
+not promise an asynchronous `9100` response or invent a second command/session
+workspace. Other P1 bits and nonzero P2 remain rejected with `6A86`. This admission
+is shared by short/chained APDUs, standalone extended CTAP input and HID MSG.
+The PC/SC daemon/client regression uses the client's default P1=80; disabling
+that flag on the client would hide a firmware compatibility failure.

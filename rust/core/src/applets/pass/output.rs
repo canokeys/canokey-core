@@ -15,6 +15,9 @@ pub struct Output {
     suppressed: bool,
     // Last byte has left this buffer but the keyboard transport is still busy.
     draining: bool,
+    // One completed gesture may wait behind the active text and key release.
+    // Like the legacy touch latch, a later gesture replaces the pending one.
+    pending: u8,
 }
 impl Output {
     pub const fn new() -> Self {
@@ -27,6 +30,7 @@ impl Output {
             boot_ready: false,
             suppressed: false,
             draining: false,
+            pending: 0,
         }
     }
     pub fn inhibit(&mut self, pressed: bool, memory: &crate::ports::MemoryPort<'_>) {
@@ -41,7 +45,7 @@ impl Output {
         self.used = 1;
     }
     pub fn busy(&self) -> bool {
-        self.used != 0 || self.draining
+        self.used != 0 || self.draining || self.pending != 0
     }
     pub fn reset(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         memory.wipe(&mut self.bytes);
@@ -49,6 +53,7 @@ impl Output {
         self.position = 0;
         self.contact = false;
         self.draining = false;
+        self.pending = 0;
     }
     pub fn sample(
         &mut self,
@@ -82,17 +87,21 @@ impl Output {
         if pressed && !self.contact {
             self.since = now;
         }
-        if !pressed && self.contact && !self.busy() {
+        if !pressed && self.contact {
             let elapsed = now.wrapping_sub(self.since);
             // Milliseconds: reject contact bounce below 30; a hold of at least
             // 500 selects slot 1, otherwise the short-touch slot 0.
             if elapsed >= 30 {
-                self.used =
-                    resolve(u8::from(elapsed >= 500), &mut self.bytes).min(self.bytes.len());
-                self.position = 0;
+                self.pending = 1 + u8::from(elapsed >= 500);
             }
         }
         self.contact = pressed;
+        if self.pending != 0 && self.used == 0 && !self.draining {
+            let slot = self.pending - 1;
+            self.pending = 0;
+            self.used = resolve(slot, &mut self.bytes).min(self.bytes.len());
+            self.position = 0;
+        }
         if !ready || self.used == 0 {
             return None;
         }

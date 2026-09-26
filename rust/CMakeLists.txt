@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20)
 project(canokey_rust_core_host C)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+option(CANOKEY_APDU_REPLAY "Build the full Rust APDU replay tool" OFF)
+option(CANOKEY_VIRTUAL_CARD "Build the full Rust UDP virtual card" OFF)
 option(CANOKEY_APPLET_NDEF "Add Rust NDEF" OFF)
 option(CANOKEY_APPLET_CTAP "Add Rust CTAP" OFF)
 option(CANOKEY_APPLET_PASS "Add the Rust PASS applet" OFF)
@@ -34,25 +37,45 @@ endif()
 if(CANOKEY_APPLET_OPENPGP)
   string(APPEND FEATURES ,openpgp)
 endif()
-set(ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/cargo/release/libcanokey_rust_ffi.a")
 # This standalone build never includes the legacy core CMake/source glob.
-add_custom_target(rust-core-build ALL
+function(add_rust_host_archive target build_target directory features)
+  set(archive "${CMAKE_CURRENT_BINARY_DIR}/${directory}/release/libcanokey_rust_ffi.a")
+  add_custom_target(${build_target} ALL
   COMMAND "${CMAKE_COMMAND}" -E env "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
     ${CARGO} +nightly-2026-09-04 rustc
     --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/ffi/Cargo.toml
-    --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo
-    --release --features ${FEATURES} --crate-type staticlib
-  BYPRODUCTS ${ARCHIVE}
+    --target-dir ${CMAKE_CURRENT_BINARY_DIR}/${directory}
+    --release --features ${features} --crate-type staticlib
+  BYPRODUCTS ${archive}
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ffi/Cargo.toml
           ${CMAKE_CURRENT_SOURCE_DIR}/core/Cargo.toml
           ${CMAKE_CURRENT_SOURCE_DIR}/ports/Cargo.toml
           ${CMAKE_CURRENT_SOURCE_DIR}/protocol/Cargo.toml
   VERBATIM)
-add_library(canokey-rust-core STATIC IMPORTED GLOBAL)
-set_target_properties(canokey-rust-core PROPERTIES IMPORTED_LOCATION "${ARCHIVE}"
+  add_library(${target} STATIC IMPORTED GLOBAL)
+  set_target_properties(${target} PROPERTIES IMPORTED_LOCATION "${archive}"
   INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/../interfaces/rust-core")
-add_dependencies(canokey-rust-core rust-core-build)
+  add_dependencies(${target} ${build_target})
+endfunction()
+add_rust_host_archive(canokey-rust-core rust-core-build cargo "${FEATURES}")
 include(CTest)
+if(CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
+  find_package(OpenSSL REQUIRED)
+  set(USE_MBEDCRYPTO ON CACHE BOOL "" FORCE)
+  if(NOT TARGET canokey-crypto)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto" "${CMAKE_CURRENT_BINARY_DIR}/crypto")
+  endif()
+  # Exercise the production adapters against host crypto primitives.
+  add_library(host-key-services STATIC ../interfaces/rust-core/key_crypto.c ../interfaces/rust-core/digest_crypto.c)
+  target_link_libraries(host-key-services PUBLIC canokey-crypto)
+  target_compile_definitions(host-key-services PUBLIC
+    $<$<BOOL:${CANOKEY_APPLET_OPENPGP}>:RUST_CORE_OPENPGP>
+    $<$<BOOL:${CANOKEY_APPLET_CTAP}>:RUST_CORE_CTAP>
+    $<$<BOOL:${CANOKEY_APPLET_PIV}>:RUST_CORE_PIV>)
+  if(CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
+    target_sources(host-key-services PRIVATE ../interfaces/rust-core/piv_crypto.c)
+  endif()
+endif()
 if(BUILD_TESTING)
   add_executable(core-normal core/tests/normal.c)
   target_compile_options(core-normal PRIVATE -Wall -Wextra -UNDEBUG)
@@ -78,22 +101,17 @@ if(BUILD_TESTING)
   if(CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
     find_package(OpenSSL REQUIRED)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    set(USE_MBEDCRYPTO ON CACHE BOOL "" FORCE)
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto" "${CMAKE_CURRENT_BINARY_DIR}/crypto")
-    # Exercise the production adapters against host crypto primitives.
-    add_library(host-key-services STATIC ../interfaces/rust-core/key_crypto.c ../interfaces/rust-core/digest_crypto.c)
-    target_link_libraries(host-key-services PUBLIC canokey-crypto)
-    target_compile_definitions(host-key-services PUBLIC
-      $<$<BOOL:${CANOKEY_APPLET_OPENPGP}>:RUST_CORE_OPENPGP>
-      $<$<BOOL:${CANOKEY_APPLET_CTAP}>:RUST_CORE_CTAP>
-      $<$<BOOL:${CANOKEY_APPLET_PIV}>:RUST_CORE_PIV>)
     add_executable(crypto-profile core/tests/crypto_profile.c)
     target_include_directories(crypto-profile PRIVATE ../interfaces/rust-core)
     target_compile_options(crypto-profile PRIVATE -Wall -Wextra -UNDEBUG)
     target_link_libraries(crypto-profile PRIVATE host-key-services)
     add_test(NAME crypto-profile COMMAND crypto-profile)
     if(CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
-      target_sources(host-key-services PRIVATE ../interfaces/rust-core/piv_crypto.c)
+      add_executable(stream-crypto core/tests/stream_crypto.c)
+      target_include_directories(stream-crypto PRIVATE ../interfaces/rust-core)
+      target_compile_options(stream-crypto PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+      target_link_libraries(stream-crypto PRIVATE host-key-services)
+      add_test(NAME stream-crypto COMMAND stream-crypto)
     endif()
     if(NOT CANOKEY_APPLET_PASS)
       target_sources(core-normal PRIVATE core/tests/services.c)
@@ -106,6 +124,17 @@ if(BUILD_TESTING)
   endif()
   if(CANOKEY_APPLET_CTAP)
     target_compile_definitions(core-normal PRIVATE WITH_CTAP)
+    # Exercise the real applet, HID framing, execution policy and mailbox in
+    # one process. Only packet hardware, time and scratch memory are mocked.
+    # APDU-only adapters deliberately have no USB callbacks: keep this feature
+    # in a separate archive so their stubs cannot replace real HID execution.
+    add_rust_host_archive(canokey-rust-hid rust-hid-build cargo-hid "${FEATURES},usb-hid")
+    add_executable(hid-core core/tests/hid_core.c core/tests/services.c)
+    target_compile_definitions(hid-core PRIVATE WITH_CTAP WITH_HID ENABLE_IFACE_CTAPHID=1)
+    target_compile_options(hid-core PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    target_link_libraries(hid-core PRIVATE canokey-rust-hid OpenSSL::Crypto host-key-services)
+    add_test(NAME hid-core COMMAND hid-core)
+    set_tests_properties(hid-core PROPERTIES TIMEOUT 30)
     add_executable(ctap-host core/tests/oath_host.c core/tests/services.c)
     target_compile_definitions(ctap-host PRIVATE WITH_CTAP)
     target_compile_options(ctap-host PRIVATE -Wall -Wextra -UNDEBUG)
@@ -179,6 +208,12 @@ if(BUILD_TESTING)
       target_link_libraries(core-normal PRIVATE OpenSSL::Crypto)
     endif()
   endif()
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_storage.py")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME native-storage COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_storage.py")
+    set_tests_properties(native-storage PROPERTIES TIMEOUT 30)
+  endif()
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/hil/test_rust_nfc.py")
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME nfc-bus COMMAND "${Python3_EXECUTABLE}"
@@ -212,4 +247,36 @@ if(BUILD_TESTING)
     --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-tests
     -p canokey-protocol -p canokey-rust-core --features "${RUST_TEST_FEATURES}")
   set_tests_properties(rust-normal PROPERTIES TIMEOUT 120)
+endif()
+
+# Host tools remain available when only regression execution is disabled.
+if(CANOKEY_APDU_REPLAY)
+  foreach(applet NDEF CTAP PASS OATH OPENPGP PIV)
+    if(NOT CANOKEY_APPLET_${applet})
+      message(FATAL_ERROR "APDU replay requires the full applet set: missing ${applet}")
+    endif()
+  endforeach()
+  add_executable(apdu-replay host/replay.c core/tests/services.c)
+  target_compile_definitions(apdu-replay PRIVATE WITH_CTAP WITH_PASS WITH_OATH WITH_OPENPGP WITH_PIV WITH_NDEF)
+  target_compile_options(apdu-replay PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+  option(CANOKEY_HOST_SANITIZERS "Enable ASan/UBSan in host replay adapters" ON)
+  if(CANOKEY_HOST_SANITIZERS)
+    target_compile_options(apdu-replay PRIVATE -fno-omit-frame-pointer -fsanitize=address,undefined)
+    target_link_options(apdu-replay PRIVATE -fsanitize=address,undefined)
+  endif()
+  target_link_libraries(apdu-replay PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
+  set_target_properties(apdu-replay PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME apdu-replay COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/tests/replay_normal.py" $<TARGET_FILE:apdu-replay>)
+  endif()
+endif()
+if(CANOKEY_VIRTUAL_CARD)
+  foreach(applet NDEF CTAP PASS OATH OPENPGP PIV)
+    if(NOT CANOKEY_APPLET_${applet})
+      message(FATAL_ERROR "Virtual card requires the full applet set: missing ${applet}")
+    endif()
+  endforeach()
+  add_subdirectory(host)
 endif()

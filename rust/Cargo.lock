@@ -43,6 +43,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "canokey-rust-host"
+version = "0.1.0"
+dependencies = [
+ "canokey-ports",
+ "canokey-protocol",
+ "canokey-rust-ffi",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

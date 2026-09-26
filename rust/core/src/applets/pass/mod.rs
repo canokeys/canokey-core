@@ -15,3 +15,6 @@ pub(crate) fn status(error: domain::Error) -> canokey_protocol::response::Status
         _ => Sw::WRONG_DATA,
     }
 }
+
+#[cfg(all(test, feature = "pass"))]
+mod output_regressions;
