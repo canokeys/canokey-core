@@ -6,7 +6,8 @@ use crate::{ports::Platform, runtime::workspace::SessionWorkspace};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 
 pub const AID: &[u8] = &[0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01];
-const VERSION: &[u8] = b"FIDO_2_0";
+// Preserve the legacy six-byte SELECT reply; CTAP2 capabilities use GetInfo.
+const VERSION: &[u8] = b"U2F_V2";
 const INS_MSG: u8 = 0x10;
 
 fn valid_message_parameters(header: Header) -> bool {

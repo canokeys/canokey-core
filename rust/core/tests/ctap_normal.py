@@ -28,7 +28,7 @@ def run(wire):
         else:
             key.verify(message, signature)
     def select():
-        assert card.cmd("select", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"FIDO_2_0"
+        assert card.cmd("select", 0xa4, 4, data=bytes.fromhex("a0000006472f0001")) == b"U2F_V2"
     def call(command, parameters=None, status=0, raw=None):
         data = bytes([command]) + (raw if raw is not None else cbor.encode(parameters) if parameters is not None else b"")
         answer = card.cmd(f"CTAP {command:02x}", 0x10, data=data, cla=0x80)

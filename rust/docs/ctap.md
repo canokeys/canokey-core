@@ -6,7 +6,9 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
 - CTAPHID INIT, PING, WINK, LOCK and CBOR dispatch; INIT advertises WINK and
   CBOR (`0x05`). NMSG is not advertised. U2F/MSG handling is available through
   the native transport path.
-- CCID FIDO SELECT (`00 A4 04 00`, AID `A0000006472F0001`) returns `FIDO_2_0`.
+- CCID FIDO SELECT (`00 A4 04 00`, AID `A0000006472F0001`) returns the legacy six-byte `U2F_V2` response.
+  CTAP2 GetInfo continues to advertise the supported FIDO2 versions; keeping
+  SELECT at six bytes preserves existing U2F/NFC client buffers.
   `80 10 00 00` carries CTAP bytes; ISO chaining uses CLA `90` and final CLA `80`.
   GetInfo is command `04`, with no parameters. Unknown CTAP commands return
   CTAP INVALID_COMMAND inside a successful APDU envelope.
