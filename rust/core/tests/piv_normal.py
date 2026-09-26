@@ -720,6 +720,7 @@ def sm2_operations(c):
     assert metadata[1] == b"\x54" and metadata[3] == b"\x02"
 
     def verify_sm2(sig, digest):
+        assert len(sig) == 64
         r = int.from_bytes(sig[:32], "big")
         s = int.from_bytes(sig[32:], "big")
         assert 0 < r < sm2.N and 0 < s < sm2.N
@@ -727,14 +728,16 @@ def sm2_operations(c):
             sm2.point_mul(s, sm2.G),
             sm2.point_mul((r + s) % sm2.N, (sm2.b2i(public[:32]), sm2.b2i(public[32:]))),
         )
-        assert point is not None and (int.from_bytes(digest, "big") + point[0]) % sm2.N == r
+        return point is not None and (int.from_bytes(digest, "big") + point[0]) % sm2.N == r
 
     digest = bytes(range(32))
     reply = c.cmd(
         "sm2_digest_sign", 0x87, 0x54, 0x9A, tlv(0x7C, tlv(0x82, b"") + tlv(0x81, digest))
     )
-    verify_sm2(fields(fields(reply)[0x7C])[0x82], digest)
-    for own in [None, b"custom SM2 identity"]:
+    assert verify_sm2(fields(fields(reply)[0x7C])[0x82], digest)
+    c.cmd("sm2_short_digest", 0x87, 0x54, 0x9A,
+          tlv(0x7C, tlv(0x82, b"") + tlv(0x81, digest[:-1])), status=0x6700)
+    for own in [None, b"custom SM2 identity", bytes([0xA5]) * 32]:
         message = bytes(range(256)) * 20
         reply = c.cmd(
             "sm2_stream_sign",
@@ -743,10 +746,47 @@ def sm2_operations(c):
             0x9A,
             tlv(0x7C, (tlv(0x80, own) if own else b"") + tlv(0x82, b"") + tlv(0x81, message)),
         )
-        verify_sm2(
+        assert verify_sm2(
             fields(fields(reply)[0x7C])[0x82],
             sm2.sm3(sm2.sm2_z(own or sm2.ID_DEFAULT, public) + message),
         )
+        if own:
+            assert not verify_sm2(
+                fields(fields(reply)[0x7C])[0x82],
+                sm2.sm3(sm2.sm2_z(sm2.ID_DEFAULT, public) + message),
+            )
+
+    def stream(body, status=0x9000):
+        request = tlv(0x7C, body)
+        assert not c.raw("sm2_stream_header", 0x87, 0x54, 0x9A,
+                         request[:2], cla=0x10)
+        return c.raw("sm2_stream_finish", 0x87, 0x54, 0x9A,
+                     request[2:], status=status)
+
+    empty = tlv(0x82, b"") + tlv(0x81, b"")
+    for body in [
+        tlv(0x82, b"") + tlv(0x80, b"id") + tlv(0x81, b""),
+        tlv(0x80, bytes(33)) + empty,
+        tlv(0x80, b"") + empty,
+        tlv(0x80, b"a") + tlv(0x80, b"b") + empty,
+    ]:
+        assert not stream(body, 0x6A80)
+    # Chaining selects full-message hashing even for short and empty messages.
+    # Successful signatures also prove recovery after rejected stream templates.
+    for message in [b"", bytes(range(20))]:
+        reply = stream(tlv(0x82, b"") + tlv(0x81, message))
+        assert verify_sm2(fields(fields(reply)[0x7C])[0x82],
+                          sm2.sm3(sm2.sm2_z(sm2.ID_DEFAULT, public) + message))
+    config = c.cmd("sm2_extension_config", 0xEE, 1, 0)
+    c.cmd("sm2_disable_extension", 0xEE, 2, 0, bytes(10), le=None)
+    assert not c.raw("sm2_disabled_stream", 0x87, 0x54, 0x9A,
+                     tlv(0x7C, empty)[:2], cla=0x10, status=0x6A86)
+    c.cmd("sm2_restore_extension", 0xEE, 2, 0, config, le=None)
+    c.import_key(0, ec.derive_private_key(1, ec.SECP256R1()))
+    assert not c.raw("sm2_wrong_key_type", 0x87, 0x54, 0x9A,
+                     tlv(0x7C, empty)[:2], cla=0x10, status=0x6A86)
+    c.cmd("sm2_restore_key", 0xFE, 0x54, 0x9A, tlv(6, sm2.V_DA), le=None)
+    c.verify()
     exp = tlv(0x86, b"\x04" + sm2.V_PB) + tlv(0x87, b"\x04" + sm2.V_EB)
     reply = c.cmd("sm2_initiator_start", 0x87, 0x54, 0x9A, tlv(0x7C, tlv(0x82, b"")))
     eph = fields(fields(reply)[0x7C])[0x82][1:]

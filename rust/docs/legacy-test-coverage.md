@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Two legacy C test executables remain, with 68 registered cases: APDU (49)
-and PIV (19). Their C applet/protocol dependencies remain until each case is
+Two legacy C test executables remain, with 63 registered cases: APDU (49)
+and PIV (14). Their C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
@@ -739,3 +739,21 @@ storage backend so use-time validation traverses the real Rust loader and
 native crypto adapter. No test-only crypto implementation replaces the real
 backend. The old purported out-of-field vector had an in-range X; the new
 literal modulus boundary actually tests field membership.
+
+## SM2 signature correctness consolidation
+
+Five native SM2 signing cases are replaced by `piv-normal::sm2_operations`,
+which drives the Rust APDU engine and independently verifies signatures using
+Python curve arithmetic and SM3:
+
+| Retired native case | Important retained coverage |
+| --- | --- |
+| `test_piv_sm2_stream_sign` | Long, short and empty messages; chained short requests select SM3(Z || message); exact 64-byte raw signatures |
+| `test_piv_sm2_stream_sign_custom_id` | Custom identity and maximum 32-byte identity; signatures fail verification with the default identity |
+| `test_piv_sm2_digest_mode` | Independent precomputed-digest verification and rejection of a 31-byte digest |
+| `test_piv_sm2_stream_tlv_errors` | Misordered, duplicate, empty and oversized identity TLVs reject with 6A80 and empty output; subsequent valid streams succeed |
+| `test_piv_sm2_stream_key_mismatch_and_disabled_extension` | P-256 slot and disabled SM2 extension reject stream admission with 6A86 and empty output |
+
+The duplicated byte-at-a-time long-message run and native verifier/helpers are
+removed. Malformed identity tests use correctly encoded outer lengths so each
+failure exercises its intended semantic rule. No production behavior changed.
