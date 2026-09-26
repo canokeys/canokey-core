@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 32 registered APDU cases.
+One legacy C test executable remains, with 30 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1035,3 +1035,24 @@ Validation: full host CTest passed 28/28 in 54.97 seconds. Full production
 links still fail: DevKit 187880 B Flash (24040 B over), NFCC 195360 B
 (31520 B over), each 48 B larger; RAM_DATA remains 8640/8760 B. Capacity,
 runtime stack and physical compatibility remain unaccepted.
+
+## thirdPartyPayment registration, assertion and management
+
+Removed `test_ctap_hid_third_party_payment_round_trip` and
+`test_ctap_hid_credential_management_returns_third_party_payment`, along with
+the now-unused native payment-registration encoder. Extended the existing
+`ctap-normal` fixture with a nonresident payment credential: registration emits
+no extension output, packed attestation verifies independently, and a later
+assertion reports `thirdPartyPayment: true` with a verified credential signature.
+
+The fixture's existing resident payment/non-payment and SM2 registrations now
+also undergo metadata-only enumeration. Each entry must omit public key field
+8, retain the correct algorithm at 80, and report the stored payment flag at
+12. The first response supplies the correct total. Nonempty management responses
+are independently decoded and re-encoded to check complete canonical CBOR.
+This reuses existing credentials rather than provisioning a duplicate suite.
+
+Validation: host CTest passed 28/28 in 55.88 seconds. Both full builds were
+retried and still fail Flash capacity: DevKit 187880 B (24040 B over), NFCC
+195360 B (31520 B over), RAM_DATA 8640/8760 B. No capacity, hardware or runtime
+stack acceptance is claimed.

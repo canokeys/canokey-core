@@ -187,42 +187,6 @@ static size_t build_hmac_secret_mc_make_credential(uint8_t *req, bool include_hm
   return (size_t)(p - req);
 }
 
-static size_t build_third_party_payment_make_credential(uint8_t *req, bool rk, bool third_party_payment) {
-  uint8_t *p = req;
-  uint8_t zero32[32] = {0};
-  const uint8_t user_id[] = {1};
-
-  *p++ = CTAP_MAKE_CREDENTIAL;
-  *p++ = 0xA6;
-  *p++ = 0x01;
-  put_cbor_bytes(&p, zero32, 32);
-  *p++ = 0x02;
-  *p++ = 0xA1;
-  put_cbor_text(&p, "id");
-  put_cbor_text(&p, "pay.example");
-  *p++ = 0x03;
-  *p++ = 0xA1;
-  put_cbor_text(&p, "id");
-  put_cbor_bytes(&p, user_id, sizeof(user_id));
-  *p++ = 0x04;
-  *p++ = 0x81;
-  *p++ = 0xA2;
-  put_cbor_text(&p, "alg");
-  put_cbor_int(&p, COSE_ALG_ES256);
-  put_cbor_text(&p, "type");
-  put_cbor_text(&p, "public-key");
-  *p++ = 0x06;
-  *p++ = 0xA1;
-  put_cbor_text(&p, "thirdPartyPayment");
-  *p++ = third_party_payment ? 0xF5 : 0xF4;
-  *p++ = 0x07;
-  *p++ = 0xA1;
-  put_cbor_text(&p, "rk");
-  *p++ = rk ? 0xF5 : 0xF4;
-
-  return (size_t)(p - req);
-}
-
 static size_t build_third_party_payment_get_assertion(uint8_t *req, const credential_id *cid) {
   uint8_t *p = req;
   uint8_t zero32[32] = {0};
@@ -1461,132 +1425,6 @@ static void test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_sep
   if (source.close) source.close(source.ctx);
 }
 
-static void test_ctap_hid_third_party_payment_round_trip(void **state) {
-  (void)state;
-
-  uint8_t mc_req[256] = {0};
-  uint8_t ga_req[256] = {0};
-  uint8_t scratch[64] = {0};
-  uint8_t mc_resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  uint8_t ga_resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  uint8_t auth_data_buf[sizeof(CTAP_auth_data)] = {0};
-  uint8_t fido_private_key[32] = {1};
-  uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
-  size_t mc_written = 0;
-  size_t ga_written = 0;
-  size_t mc_req_len;
-  size_t ga_req_len;
-  CTAPHID_TxSource source = {0};
-  test_cbor_view extension_map, third_party_payment_value;
-  bool third_party_payment;
-  credential_id cid;
-  size_t auth_data_len;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
-  assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
-
-  mc_req_len = build_third_party_payment_make_credential(mc_req, false, true);
-  assert_int_equal(
-      ctap_process_cbor_stream_with_src(mc_req, mc_req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
-  assert_non_null(source.read);
-  assert_int_equal(read_tx_source_all(&source, mc_resp, sizeof(mc_resp), &mc_written), 0);
-  assert_int_equal(mc_resp[0], 0x00);
-  assert_int_equal(test_cbor_get_auth_data(mc_resp, mc_written, MC_RESP_AUTH_DATA, auth_data_buf, sizeof(auth_data_buf),
-                                           &auth_data_len),
-                   0);
-  assert_true((auth_data_buf[32] & 0x80) == 0);
-  assert_true((auth_data_buf[32] & 0x40) != 0);
-  memcpy(&cid, auth_data_buf + 37 + AAGUID_SIZE + sizeof(uint16_t), sizeof(cid));
-  assert_false(cid.nonce[CREDENTIAL_NONCE_DC_POS]);
-  assert_true(credential_third_party_payment(&cid));
-  if (source.close) source.close(source.ctx);
-
-  memset(&source, 0, sizeof(source));
-  ga_req_len = build_third_party_payment_get_assertion(ga_req, &cid);
-  assert_int_equal(
-      ctap_process_cbor_stream_with_src(ga_req, ga_req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
-  assert_non_null(source.read);
-  assert_int_equal(read_tx_source_all(&source, ga_resp, sizeof(ga_resp), &ga_written), 0);
-  assert_int_equal(test_cbor_get_auth_data_extensions(ga_resp, ga_written, GA_RESP_AUTH_DATA, auth_data_buf,
-                                                      sizeof(auth_data_buf), &extension_map),
-                   0);
-  assert_int_equal(test_cbor_map_lookup_text_key(extension_map, "thirdPartyPayment", &third_party_payment_value), 0);
-  assert_int_equal(test_cbor_get_bool(third_party_payment_value, &third_party_payment), 0);
-  assert_true(third_party_payment);
-  if (source.close) source.close(source.ctx);
-}
-
-static void test_ctap_hid_credential_management_returns_third_party_payment(void **state) {
-  (void)state;
-
-  uint8_t mc_req[256] = {0};
-  uint8_t cm_req[128] = {0};
-  uint8_t scratch[64] = {0};
-  uint8_t mc_resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  uint8_t cm_resp[APPLET_SHARED_BUFFER_LENGTH] = {0};
-  uint8_t cm_pin_msg[64] = {0};
-  uint8_t pin_auth[PIN_AUTH_SIZE_P1] = {0};
-  uint8_t rp_id_hash[SHA256_DIGEST_LENGTH] = {0};
-  uint8_t fido_private_key[32] = {1};
-  uint8_t cert[] = {0x30, 0x03, 0x02, 0x01, 0x01};
-  size_t mc_written = 0;
-  size_t cm_written = 0;
-  size_t mc_req_len;
-  size_t cm_req_len;
-  size_t cm_pin_msg_len;
-  CTAPHID_TxSource source = {0};
-  test_cbor_view value;
-  bool third_party_payment;
-  int64_t algorithm;
-  uint64_t total_credentials;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  assert_int_equal(write_attr("ctap_cert", 0, fido_private_key, sizeof(fido_private_key)), 0);
-  assert_int_equal(write_file("ctap_cert", cert, 0, sizeof(cert), 1), 0);
-
-  mc_req_len = build_third_party_payment_make_credential(mc_req, true, true);
-  assert_int_equal(
-      ctap_process_cbor_stream_with_src(mc_req, mc_req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
-  assert_non_null(source.read);
-  assert_int_equal(read_tx_source_all(&source, mc_resp, sizeof(mc_resp), &mc_written), 0);
-  assert_int_equal(mc_resp[0], 0x00);
-  if (source.close) source.close(source.ctx);
-
-  sha256_raw((const uint8_t *)"pay.example", sizeof("pay.example") - 1, rp_id_hash);
-  cp_reset_pin_uv_auth_token();
-  cp_begin_using_uv_auth_token(false);
-  cp_set_permission(CP_PERMISSION_CM);
-  cm_pin_msg_len = build_enumerate_credentials_pin_message(cm_pin_msg, rp_id_hash, true);
-  cp_test_authenticate_pin_token(cm_pin_msg, cm_pin_msg_len, pin_auth, 1);
-  cm_req_len = build_third_party_payment_credential_management(cm_req, rp_id_hash, pin_auth, true);
-
-  memset(&source, 0, sizeof(source));
-  assert_int_equal(
-      ctap_process_cbor_stream_with_src(cm_req, cm_req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
-  assert_non_null(source.read);
-  assert_int_equal(read_tx_source_all(&source, cm_resp, sizeof(cm_resp), &cm_written), 0);
-  assert_int_equal(cm_resp[0], 0x00);
-  assert_int_equal(test_cbor_is_canonical(cm_resp + 1, cm_written - 1), 0);
-  assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_TOTAL_CREDENTIALS, &value), 0);
-  assert_int_equal(test_cbor_get_uint(value, &total_credentials), 0);
-  assert_int_equal(total_credentials, 1);
-  assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_PUBLIC_KEY, &value), -1);
-  assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_VENDOR_ALGORITHM, &value), 0);
-  assert_int_equal(test_cbor_get_int(value, &algorithm), 0);
-  assert_int_equal(algorithm, COSE_ALG_ES256);
-  assert_int_equal(test_cbor_map_lookup_int_key(cm_resp + 1, cm_written - 1, CM_RESP_THIRD_PARTY_PAYMENT, &value), 0);
-  assert_int_equal(test_cbor_get_bool(value, &third_party_payment), 0);
-  assert_true(third_party_payment);
-  if (source.close) source.close(source.ctx);
-}
-
 static void test_ctap_apdu_credential_management_streams_mldsa_public_key(void **state) {
   (void)state;
 
@@ -2008,8 +1846,6 @@ int main() {
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
       cmocka_unit_test(test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_separate),
-      cmocka_unit_test(test_ctap_hid_third_party_payment_round_trip),
-      cmocka_unit_test(test_ctap_hid_credential_management_returns_third_party_payment),
       cmocka_unit_test(test_ctap_apdu_credential_management_streams_mldsa_public_key),
       cmocka_unit_test(test_pin_uv_auth_clear_permissions_except_lbw),
       cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),

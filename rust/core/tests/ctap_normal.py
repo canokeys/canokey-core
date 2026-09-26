@@ -26,8 +26,8 @@ def run(wire):
         answer = card.cmd(f"CTAP {command:02x}", 0x10, data=data, cla=0x80)
         assert answer[0] == status, (command, answer.hex(), status)
         decoded = cbor.decode(answer[1:]) if len(answer) > 1 else {}
-        if command == 4:
-            assert cbor.encode(decoded) == answer[1:], "GetInfo must be canonical and complete"
+        if command in (4, 0x0a) and len(answer) > 1:
+            assert cbor.encode(decoded) == answer[1:], "CTAP discovery/management must be canonical and complete"
         return decoded
     select()
     call(13, status=0xf1)
@@ -179,6 +179,19 @@ def run(wire):
         wire.command("RESET")
         select()
     assert hmac_results[1] == hmac_results[2]
+
+    # A nonresident payment credential reports the flag only on assertion.
+    payment = call(1, {1: client_hash, 2: {"id": "pay.example"}, 3: user,
+                       4: [{"type": "public-key", "alg": -7}],
+                       6: {"thirdPartyPayment": True}})
+    payment_auth = AuthenticatorData(payment[2])
+    assert payment_auth.extensions is None
+    verify_attestation(payment, client_hash)
+    payment_handle = {"id": payment_auth.credential_data.credential_id, "type": "public-key"}
+    payment_answer = call(2, {1: "pay.example", 2: assertion_hash, 3: [payment_handle],
+                              4: {"thirdPartyPayment": True}})
+    assert AuthenticatorData(payment_answer[2]).extensions == {"thirdPartyPayment": True}
+    payment_auth.credential_data.public_key.verify(payment_answer[2]+assertion_hash, payment_answer[3])
 
     pin = b"12345678"
     for protocol in [PinProtocolV1(), PinProtocolV2()]:
@@ -376,6 +389,13 @@ def run(wire):
     entries.extend(manage(5) for _ in range(entries[0][9] - 1))
     stored = next(entry for entry in entries if entry[7] == sm2_handle)
     assert stored[8] == cose
+    metadata = [manage(4, {1: hashlib.sha256(b"full.example").digest(), 0x80: True})]
+    metadata.extend(manage(5) for _ in range(metadata[0][9]-1))
+    assert len(metadata) == 3
+    for entry in metadata:
+        assert 8 not in entry
+        assert entry[0x80] == (-54 if entry[7] == sm2_handle else -7)
+        assert entry[12] is (entry[6]["id"] == b"\x01" * 64)
     wire.command("RESET")
     select()
     assertion = call(2, {1: "full.example", 2: assertion_hash, 3: [sm2_handle]})
