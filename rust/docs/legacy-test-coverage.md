@@ -98,8 +98,8 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-Five C test executables remain, with 208 registered cases: APDU (96), core
-helpers (13), key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
+Five C test executables remain, with 200 registered cases: APDU (96), core
+helpers (5), key (25), OpenPGP (16), PIV (58). Their C applet/protocol dependencies
 remain until each case is mapped or ported. This ledger is not a completion
 certificate for stage six, production capacity, stack or interoperability.
 
@@ -109,8 +109,7 @@ expected results; they do not run mutation campaigns.
 
 ## Public helper audit in progress
 
-The 13 `test_core_helpers` cases remain registered until the complete mapping is
-reviewed. This audit added executable coverage for the old BER length vectors
+The initial 13-case `test_core_helpers` audit added executable coverage for the old BER length vectors
 at every split (`tlv::tests::legacy_length_vectors_require_complete_values_at_finish`),
 PIN record blocking/change/retry/missing-store behavior
 (`record_lifecycle_blocking_and_storage_errors`), exact five-gesture strong
@@ -135,3 +134,30 @@ reset revocation and lease arithmetic across tick wraparound. No Core or peer
 transport entrypoint is mocked. This strengthens the session-helper replacement
 evidence; the remaining filesystem/metadata mapping still needs audit before
 retiring `test_core_helpers`.
+
+## Replaced public-helper cases
+
+Eight of the 13 old helper cases have now been removed individually:
+
+| Legacy case | Executable replacement |
+|---|---|
+| `test_tlv_get_length_safe_variants` | `legacy_length_vectors_require_complete_values_at_finish` (all split positions, complete and truncated BER values) |
+| `test_fs_roundtrip_and_metadata` | `native-storage`: write, atomic append, offset read, truncate/extend, rename, remount and reserve; Rust PIN `codec_replacement_and_cleanup_preserve_record_contract`: version/length/retry metadata and atomic replacement |
+| `test_fs_error_paths` | `native-storage`: missing record, UINT32_MAX offset rejection, canaries, injected program failure and unchanged committed record after remount |
+| `test_wait_for_user_presence_ok` | `ordinary_prompt_restores_idle_on_success_timeout_and_cancellation`, `failed_wait_still_claims_gesture`, `claimed_gesture_is_not_replayed_after_wait` |
+| `test_wait_for_user_presence_services_ctaphid_while_ccid_waits` | `hid-usb` foreign busy/INIT/CANCEL isolation; `usb-device` real progress dispatch under a CCID extension lease |
+| `test_wait_for_user_presence_cancel_and_timeout` | `ordinary_prompt_restores_idle_on_success_timeout_and_cancellation`; `hid-core` actual execution cancellation/disconnect |
+| `test_strong_user_presence_test_success_and_failure` | `strong_presence_requires_five_released_gestures_and_services_gaps` |
+| `test_device_loop_and_nfc_state` | `device-runtime`: actual Rust main loop USB dispatch and NFC mode transition/reset, all ten boot scenarios |
+
+LittleFS attributes are not a new native policy API: Rust stores PIN and key
+metadata together with the value in versioned records. The codec tests check
+that replacement contract; the native fixture checks opaque byte persistence.
+Unsigned offsets reject UINT32_MAX, the former negative-offset error case.
+No claim about physical Flash power-loss durability follows from these mocks.
+
+Five helper cases remain: LED timing, keyboard-touch gating, session/keepalive,
+and both PIN suites. In particular, the legacy session case also permits
+immediate takeover when `apdu_session_can_preempt()` is true. The two-second
+lease tests alone do not replace that branch. Keep this behavior under audit
+before removing the old session case or declaring arbitration compatibility.
