@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 42 registered APDU cases.
+One legacy C test executable remains, with 40 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -946,3 +946,21 @@ The Rust mailbox deliberately defers one packet rather than reproducing the
 legacy C transport's discard-all behavior. The retained correctness contract is
 request/response immutability, ordered completion and usable subsequent commands.
 Full host CTest passed 28/28 (56.96 seconds).
+
+## CCID slot commands across HID resynchronization
+
+Removed `test_ccid_power_on_does_not_steal_ctaphid_session` and
+`test_ccid_slot_status_survives_ctaphid_release`. The existing `usb-sessions`
+fixture now submits power-off, power-on and slot-status commands while a real
+fragmented HID request owns PKE staging. It checks every staged byte and lease
+counter before HID INIT resynchronization, verifies cleanup, and checks each
+queued response's family, sequence, length and active/inactive state afterward.
+
+Rust defers CCID dispatch while HID is active; power commands can complete during
+the subsequent HID idle lease without resetting HID ownership. The separate
+legacy `test_ctaphid_wait_services_only_ccid_presence_poll` remains: servicing
+slot polls *during* HID execution is an outstanding compatibility audit, not
+established by this replacement. Rust cooperative HID progress currently does
+not service the CCID presence mailbox.
+
+Validation: full host CTest passed 28/28 in 66.71 seconds.

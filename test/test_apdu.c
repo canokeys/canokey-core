@@ -595,66 +595,6 @@ static void test_acquire_apdu_interface_releases_session_on_buffer_conflict(void
   assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CCID), 0);
 }
 
-static void test_ccid_power_on_does_not_steal_ctaphid_session(void **state) {
-  (void)state;
-
-  static const uint8_t power_on[] = {
-      PC_TO_RDR_ICCPOWERON, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-  };
-  static const uint8_t power_off[] = {
-      PC_TO_RDR_ICCPOWEROFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
-  };
-
-  init_apdu_buffer();
-  device_init();
-  CCID_Init();
-
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_int_equal(acquire_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
-
-  assert_int_equal(CCID_OutEvent((uint8_t *)power_on, sizeof(power_on)), 0);
-  CCID_Loop();
-  CCID_InFinished(0);
-
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-
-  assert_int_equal(CCID_OutEvent((uint8_t *)power_off, sizeof(power_off)), 0);
-  CCID_Loop();
-
-  assert_int_equal(device_applet_session_owner(), DEVICE_APPLET_SESSION_CTAPHID);
-  assert_int_equal(release_apdu_buffer(BUFFER_OWNER_CTAPHID), 0);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
-}
-
-static void test_ccid_slot_status_survives_ctaphid_release(void **state) {
-  (void)state;
-  uint8_t request[] = {PC_TO_RDR_GETSLOTSTATUS, 0, 0, 0, 0, 0, 0x37, 0, 0, 0};
-  const uint8_t previous_state = usb_device.dev_state;
-  init_apdu_buffer();
-  device_init();
-  USBD_CCID_Init(&usb_device);
-  usb_device.dev_state = USBD_STATE_CONFIGURED;
-  EPType *in = dummy_get_ep_by_addr(EP_IN(ccid));
-  in->maxpacket = 64;
-  in->xfer_buff = NULL;
-
-  assert_int_equal(device_applet_session_acquire(DEVICE_APPLET_SESSION_CTAPHID), 0);
-  // A USB interrupt queues the host's presence poll just before CTAP finishes.
-  assert_int_equal(CCID_OutEvent(request, sizeof(request)), 0);
-  device_applet_session_release(DEVICE_APPLET_SESSION_CTAPHID);
-  CCID_Loop();
-
-  assert_non_null(in->xfer_buff);
-  const uint8_t *response = in->xfer_buff - CCID_CMD_HEADER_SIZE;
-  assert_int_equal(response[0], RDR_TO_PC_SLOTSTATUS);
-  assert_int_equal(response[6], 0x37);
-  assert_int_equal(response[7], BM_ICC_PRESENT_INACTIVE);
-  assert_int_equal(response[8], SLOT_NO_ERROR);
-  USBD_CCID_DataIn(&usb_device);
-  usb_device.dev_state = previous_state;
-}
-
 static void test_ctaphid_wait_services_only_ccid_presence_poll(void **state) {
   (void)state;
   uint8_t request[] = {PC_TO_RDR_GETSLOTSTATUS, 0, 0, 0, 0, 0, 0x38, 0, 0, 0};
@@ -2280,8 +2220,6 @@ int main() {
       cmocka_unit_test(test_ctap_install_preserves_sm2_during_state_rebuild),
       cmocka_unit_test(test_ctap_cm_mixed_algorithms),
       cmocka_unit_test(test_acquire_apdu_interface_releases_session_on_buffer_conflict),
-      cmocka_unit_test(test_ccid_power_on_does_not_steal_ctaphid_session),
-      cmocka_unit_test(test_ccid_slot_status_survives_ctaphid_release),
       cmocka_unit_test(test_ctaphid_wait_services_only_ccid_presence_poll),
       cmocka_unit_test(test_pke_buffer_fallback_for_ctap),
       cmocka_unit_test(test_fido_chained_make_credential_nfc),

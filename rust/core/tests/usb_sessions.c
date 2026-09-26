@@ -437,6 +437,26 @@ int main(void) {
   fragmented[0]=(uint8_t)(cid>>24); fragmented[1]=(uint8_t)(cid>>16);
   fragmented[2]=(uint8_t)(cid>>8); fragmented[3]=(uint8_t)cid;
   fragmented[4]=0x81; fragmented[6]=193;
+  /* Slot commands queued during HID RX preserve its staged request and
+   * survive resynchronization. No CCID dispatch may borrow active HID state. */
+  const uint8_t slot_commands[]={0x63,0x62,0x65};
+  for(size_t i=0;i<sizeof(slot_commands);++i) {
+    assert(ck_usb_out(2,fragmented,64)==0); CTAPHID_Loop(0);
+    assert(scratch_owner);
+    uint8_t staged[sizeof(scratch)]; memcpy(staged,scratch,sizeof(staged));
+    unsigned held_leases=leases, held_clears=clears;
+    uint8_t command=slot_commands[i];
+    ccid_send(command,NULL,0);
+    assert(!pending[3] && scratch_owner && leases==held_leases && clears==held_clears);
+    assert(!memcmp(staged,scratch,sizeof(staged)));
+    hid_send(cid,0x86,nonce,8);
+    assert(hid_read(cid,0x86,hid)==17 && !memcmp(hid,nonce,8));
+    assert(!scratch_owner && leases==clears);
+    count=ccid_read_state(out,command==0x63);
+    assert(out[0]==(command==0x62?0x80:0x81));
+    assert(command==0x62?count>10:count==10);
+    now+=2000;
+  }
   assert(ck_usb_out(2,fragmented,64)==0); CTAPHID_Loop(0);
   assert(scratch_owner);
   ccid_send(0x6f,select_admin,sizeof(select_admin));
