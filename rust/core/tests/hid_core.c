@@ -9,6 +9,7 @@
 
 extern uint8_t CTAPHID_OutEvent(const uint8_t *report);
 extern uint8_t CTAPHID_RxCanAccept(void);
+extern int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n);
 static uint32_t ticks;
 static uint8_t configured = 1;
 static uint8_t output[128][64];
@@ -225,6 +226,24 @@ int main(void) {
   data[0] = 4;
   command(cid, 0x90, data, 1);
   assert(response(cid, 0x90, result, sizeof(result)) > 256 && result[0] == 0);
+
+  /* A file-backed response crosses both the shared workspace and HID packets.
+   * Verify every payload byte, including the final short continuation. */
+  for (size_t i = 0; i < 960; ++i) data[i] = (uint8_t)i;
+  assert(ck_platform_write(180, data, 960) == 960);
+  const uint8_t blob_get[] = {0x0c, 0xa2, 1, 0x19, 3, 0xc0, 3, 0};
+  const uint8_t blob_prefix[] = {0, 0xa1, 1, 0x59, 3, 0xc0};
+  output_count = 0;
+  command(cid, 0x90, blob_get, sizeof(blob_get));
+  assert(response(cid, 0x90, result, sizeof(result)) == sizeof(blob_prefix) + 960);
+  assert(!memcmp(result, blob_prefix, sizeof(blob_prefix)));
+  assert(!memcmp(result + sizeof(blob_prefix), data, 960));
+  const uint8_t blob_end[] = {0x0c, 0xa2, 1, 1, 3, 0x19, 3, 0xc0};
+  output_count = 0;
+  command(cid, 0x90, blob_end, sizeof(blob_end));
+  const uint8_t empty_blob[] = {0, 0xa1, 1, 0x40};
+  assert(response(cid, 0x90, result, sizeof(result)) == sizeof(empty_blob));
+  assert(!memcmp(result, empty_blob, sizeof(empty_blob)));
 
   /* A large real CBOR request must be parsed before crypto can reuse PKE.
    * clientPIN getKeyAgreement plus an ignored 700-byte extension value. */

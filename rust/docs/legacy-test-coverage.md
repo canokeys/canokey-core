@@ -98,7 +98,7 @@ FF KEY compatibility difference is resolved.
 
 ## Still requiring individual coverage audit
 
-One legacy C test executable remains, with 13 registered APDU cases.
+One legacy C test executable remains, with 12 registered APDU cases.
 Its C applet/protocol dependencies remain until each case is
 mapped or ported. The independent `test_fs` retains ten allowed native LittleFS
 helper cases and has no applet/protocol/crypto/device-simulator linkage. This ledger is not a completion
@@ -1260,5 +1260,21 @@ the same token successfully, proving LBW survives credential-use permission
 consumption. No standalone bitmask test or new fixture is retained.
 
 Validation: combined CTest 28/28 passed (60.95 s). Full DevKit/NFCC
+links remain over Flash at 188472/195952 B (24632/32112 B over), with
+RAM_DATA 8640/8760 B. Runtime stack and physical acceptance remain open.
+
+## Complete HID file-backed response integrity
+
+Removed `test_ctap_hid_large_cbor_response_keeps_payload`, which checked only
+the first 16 response bytes. Existing `hid-core` now reads a 960-byte blob
+through the production Rust applet, file response source, HID framing and
+packet mailbox. It verifies the exact 966-byte status/CBOR/payload result,
+every payload byte and packet sequence through the final short continuation.
+A following read at EOF must return exactly the four-byte empty CBOR response,
+preventing stale response bytes from carrying into the next command. The fixture
+seeds the storage record directly; authenticated blob writes remain covered by
+`ctap-normal`. This is host protocol correctness, not physical USB acceptance.
+
+Validation: combined CTest 28/28 passed (55.90 s). Full DevKit/NFCC
 links remain over Flash at 188472/195952 B (24632/32112 B over), with
 RAM_DATA 8640/8760 B. Runtime stack and physical acceptance remain open.

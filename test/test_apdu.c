@@ -630,44 +630,6 @@ static void test_ctaphid_msg_case3_and_case4_send_complete_response(void **state
 
 
 
-static void test_ctap_hid_large_cbor_response_keeps_payload(void **state) {
-  (void)state;
-
-  static uint8_t req[] = {
-      CTAP_LARGE_BLOBS, 0xA2, 0x01, 0x19, HI(MAX_FRAGMENT_LENGTH), LO(MAX_FRAGMENT_LENGTH), 0x03, 0x00,
-  };
-  uint8_t blob[MAX_FRAGMENT_LENGTH];
-  uint8_t scratch[64] = {0};
-  uint8_t chunk[16] = {0};
-  CTAPHID_TxSource source = {0};
-  size_t written = 0;
-
-  init_apdu_buffer();
-  device_init();
-  assert_int_equal(applets_install(), 0);
-
-  for (size_t i = 0; i < sizeof(blob); ++i) {
-    blob[i] = (uint8_t)i;
-  }
-  assert_int_equal(write_file(LB_FILE, blob, 0, sizeof(blob), 1), 0);
-
-  assert_int_equal(ctap_process_cbor_stream_with_src(req, sizeof(req), scratch, sizeof(scratch), &source, CTAP_SRC_HID),
-                   1);
-  assert_int_equal(source.total_len, 1 + 1 + 1 + 3 + sizeof(blob));
-  assert_non_null(source.read);
-  assert_int_equal(source.read(source.ctx, chunk, sizeof(chunk), &written), 0);
-  assert_int_equal(written, sizeof(chunk));
-  assert_int_equal(chunk[0], 0x00);
-  assert_int_equal(chunk[1], 0xA1);
-  assert_int_equal(chunk[2], 0x01);
-  assert_int_equal(chunk[3], 0x59);
-  assert_int_equal(chunk[4], HI(MAX_FRAGMENT_LENGTH));
-  assert_int_equal(chunk[5], LO(MAX_FRAGMENT_LENGTH));
-  assert_int_equal(chunk[6], 0x00);
-  assert_int_equal(chunk[7], 0x01);
-  if (source.close) source.close(source.ctx);
-}
-
 static void test_ctap_install_preserves_sm2_during_state_rebuild(void **state) {
   (void)state;
   CTAP_sm2_attr saved, actual;
@@ -875,7 +837,6 @@ int main() {
       cmocka_unit_test(test_ctap_algorithm_policy),
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctaphid_msg_case3_and_case4_send_complete_response),
-      cmocka_unit_test(test_ctap_hid_large_cbor_response_keeps_payload),
   };
 
   int ret = cmocka_run_group_tests(tests, NULL, NULL);
