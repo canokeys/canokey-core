@@ -2,7 +2,7 @@
 # Common Rust protocol foundation
 
 `canokey-protocol` is allocation-free safe `no_std` Rust without applet, platform
-or C ABI dependencies. It belongs to the shared `crates/` Cargo workspace.
+or C ABI dependencies. It belongs to the root Cargo workspace.
 
 ## APDU
 
@@ -61,4 +61,4 @@ cargo +nightly-2026-09-04 test --manifest-path Cargo.toml -p canokey-protocol
 ```
 
 The production runtime's long-command/response scenarios live in
-`core/tests/streaming.rs` and run through CTest's `rust-normal` entry.
+`crates/core/tests/streaming.rs` and run through CTest's `rust-normal` entry.

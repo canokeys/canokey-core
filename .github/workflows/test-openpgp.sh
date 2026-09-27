@@ -47,7 +47,7 @@ CardRefresh() {
 }
 
 echo "=== Phase: Go unit tests ==="
-go test -v test-via-pcsc/openpgp_test.go
+go -C tests/pcsc test -v openpgp_test.go
 
 echo "=== Phase: Setup GPG environment ==="
 pkill gpg-agent || true
@@ -310,6 +310,6 @@ echo -e 'admin\ncafpr 2\n9914 B3B0 BF7E 3B12 DB72  8AC7 3695 10EC DF14 672E\ncaf
 gpgconf --kill gpg-agent
 
 echo "=== Phase: OpenPGP cert Go tests ==="
-go test -v test-via-pcsc/openpgp_test.go -run TestOpenPGPCerts
+go -C tests/pcsc test -v openpgp_test.go -run TestOpenPGPCerts
 
 echo "=== All OpenPGP tests passed ==="

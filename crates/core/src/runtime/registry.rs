@@ -12,7 +12,7 @@ use crate::applets::pass::service::Pass;
 use crate::applets::piv::Piv;
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 
-#[cfg(any(feature = "admin", feature = "oath", feature = "openpgp"))]
+#[cfg(any(feature = "admin", feature = "oath"))]
 macro_rules! pass_arg {
     ($this:expr) => {{
         #[cfg(feature = "pass")]

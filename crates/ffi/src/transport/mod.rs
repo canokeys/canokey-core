@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+#[cfg(feature = "usb-ccid")]
+pub(crate) mod ccid;
+#[cfg(feature = "ctap")]
+pub(crate) mod hid;
+#[cfg(feature = "usb-keyboard")]
+pub(crate) mod keyboard;
+#[cfg(feature = "nfc")]
+pub(crate) mod nfc;
+#[cfg(feature = "usb-device")]
+pub(crate) mod usb;
+#[cfg(feature = "usb-webusb")]
+pub(crate) mod webusb;

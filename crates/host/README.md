@@ -17,8 +17,8 @@ compiler, OpenSSL and PC/SC development headers installed:
 ```sh
 rustup toolchain install nightly-2026-09-04 --profile minimal
 python3 -m venv .venv-host
-.venv-host/bin/python -m pip install -r crates/core/tests/requirements.txt
-cmake -S . -B build-host -DVIRTCARD=ON \
+.venv-host/bin/python -m pip install -r tests/integration/requirements.txt
+cmake -S . -B build-host -DCANOKEY_PROFILE=full \
   -DPython3_EXECUTABLE="$PWD/.venv-host/bin/python"
 cmake --build build-host --target fido-hid-over-udp
 ctest --test-dir build-host -R '^virtual-' --output-on-failure
@@ -90,7 +90,7 @@ production authenticator.
 `libu2f-virt-card.so` now uses the same Rust core and durable host backend. The
 native shim uses the system `ifdhandler.h` ABI (including Linux/macOS DWORD width)
 and translates IFD constants only. Build with `--target u2f-virt-card`; existing
-`test-via-pcsc/pcscd-reader.conf` remains the daemon configuration. Install
+`tests/pcsc/pcscd-reader.conf` remains the daemon configuration. Install
 `libpcsclite-dev` on Debian/Ubuntu, or specify `PCSC_INCLUDE_DIR` when the headers
 are outside the compiler's normal search path. Header availability is required,
 not a reason to silently omit the driver.
@@ -128,7 +128,7 @@ persistence and injected failures. This establishes the IFD boundary; it does
 not substitute for a live pcscd/client compatibility run or physical tests.
 
 
-An optional live-daemon test is available in `crates/core/tests/pcsc_daemon.py`.
+An optional live-daemon test is available in `tests/integration/pcsc_daemon.py`.
 Install `pyscard` in the selected Python environment, then build upstream
 pcsc-lite with `--enable-ipcdir=/absolute/private/ipc` (plus the usual host
 compiler/flex dependencies). The test verifies that compiled path, creates an
@@ -136,7 +136,7 @@ isolated reader configuration and refuses to operate on the system daemon path:
 
 ```sh
 .venv-host/bin/python -m pip install pyscard
-.venv-host/bin/python crates/core/tests/pcsc_daemon.py \
+.venv-host/bin/python tests/integration/pcsc_daemon.py \
   --daemon /path/to/private-build/pcscd \
   --library build-host/libu2f-virt-card.so \
   --ipc-dir /absolute/private/ipc \
@@ -159,7 +159,7 @@ The existing `virtual-pcsc` correctness test checks the exported ABI directly.
 
 
 The external vendor power-loss tests are patched by
-`test-via-pcsc/fido2_rust_atomic_records.patch` for the Rust storage contract.
+`tests/pcsc/fido2_rust_atomic_records.patch` for the Rust storage contract.
 Legacy `ctap_dm`/`ctap_dc` files no longer exist; numeric records `50`/`51`
 represent the first two residents, each with atomic metadata. The tests require
 `OTHER` on an actual injected error, then reopen storage and verify creation or

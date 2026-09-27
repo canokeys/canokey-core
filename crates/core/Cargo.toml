@@ -11,7 +11,7 @@ canokey-ports = { path = "../ports" }
 canokey-protocol = { path = "../protocol" }
 [build-dependencies]
 cfg_aliases = "0.2.1"
-minicbor = { version = "=2.3.0", path = "../../minicbor/minicbor", features = ["std"] }
+minicbor = { version = "=2.3.0", path = "../../third_party/minicbor/minicbor", features = ["std"] }
 [features]
 ctap-restrict-algorithms = ["ctap"]
 ndef = ["canokey-ports/ndef"]

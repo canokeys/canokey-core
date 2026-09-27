@@ -1,12 +1,9 @@
 [submodule "canokey-crypto"]
-	path = canokey-crypto
+	path = third_party/canokey-crypto
 	url = https://github.com/canokeys/canokey-crypto.git
 [submodule "littlefs"]
-	path = littlefs
+	path = third_party/littlefs
 	url = https://github.com/ARMmbed/littlefs.git
-[submodule "test-real/shunit2"]
-	path = test-real/shunit2
-	url = https://github.com/kward/shunit2.git
 [submodule "minicbor"]
-	path = minicbor
+	path = third_party/minicbor
 	url = https://github.com/twittner/minicbor.git

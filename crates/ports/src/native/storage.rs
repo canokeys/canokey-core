@@ -53,7 +53,7 @@ unsafe extern "C" {
     fn ck_platform_resize(file: u8, length: u32) -> i32;
 }
 
-// Stable byte ABI, mirrored in native/ffi/core.h.
+// Stable byte ABI, mirrored in native/include/core.h.
 #[cfg(any(
     feature = "oath",
     feature = "openpgp",

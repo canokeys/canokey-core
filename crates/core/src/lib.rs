@@ -13,6 +13,7 @@ mod flows;
 
 #[cfg(any(
     feature = "admin",
+    feature = "oath",
     feature = "openpgp",
     feature = "piv",
     feature = "ctap"

@@ -4,9 +4,8 @@ gcov_options: -lp
 exclude_lines_pattern:
   - '.*/build/.+\.c'
 exclude:
-  - gnupg 
-  - canokey-crypto 
-  - u2f-ref-code 
-  - littlefs 
-  - test 
+  - gnupg
+  - third_party
+  - u2f-ref-code
+  - tests
   - reference

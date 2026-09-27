@@ -27,11 +27,13 @@ macro_rules! lazy_state {
         }
     };
 }
-mod entrypoints;
+mod abi;
 mod platform;
+mod runtime;
+mod transport;
 // The FFI crate is the C-facing facade; re-export the core's public port types
 // so platform adapters and generated bindings share one type namespace.
-pub use canokey_rust_core::*;
+pub use canokey_rust_core::{Core, Platform, Reply, ports};
 #[cfg(all(feature = "host-runtime", target_os = "none"))]
 compile_error!("host-runtime must not be enabled in firmware");
 #[cfg(all(feature = "host-runtime", not(test)))]
@@ -50,37 +52,3 @@ pub extern "C" fn rust_eh_personality() -> ! {
     // uses panic=abort; route it through the same terminal abort path.
     unsafe { abort() }
 }
-
-#[cfg(feature = "ctap")]
-mod ctaphid;
-
-#[cfg(feature = "usb-ccid")]
-mod ccid;
-
-#[cfg(feature = "usb-hid")]
-mod hid_link;
-#[cfg(feature = "usb-keyboard")]
-mod keyboard;
-#[cfg(feature = "usb-device")]
-mod usb;
-
-#[cfg(feature = "usb-webusb")]
-mod webusb_link;
-
-#[cfg(feature = "nfc")]
-mod nfc;
-
-#[cfg(feature = "device-runtime")]
-mod device;
-
-#[cfg(feature = "device-runtime")]
-mod timer;
-
-#[cfg(feature = "usb-keyboard")]
-mod keyboard_io;
-
-#[cfg(feature = "usb-hid")]
-mod hid_io;
-
-#[cfg(feature = "usb-ccid")]
-mod ccid_io;

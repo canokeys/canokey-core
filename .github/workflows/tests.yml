@@ -79,7 +79,7 @@ jobs:
     - name: Check - Code formatting
       continue-on-error: true
       run: |
-        find . -path ./canokey-crypto -prune -o -path ./littlefs -prune -o -path ./reference -prune -o \
+        find . -path ./third_party -prune -o -path ./reference -prune -o \
           \( -name '*.c' -o -name '*.h' \) -print0 \
           | xargs -0 clang-format --dry-run --Werror
 
@@ -106,7 +106,7 @@ jobs:
         cache-name: go_mod
       with:
         path: ~/go/pkg/mod
-        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./go.mod') }}
+        key: ${{ runner.os }}-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/go.mod') }}
 
     - name: Cache - Patched GnuPG
       id: cache-gpg
@@ -115,7 +115,7 @@ jobs:
         cache-name: cache_gpg_binary
       with:
         path: gnupg
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_gpg.sh') }}
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/build_gpg.sh') }}
 
     - name: Cache - FIDO tools
       id: cache-fido
@@ -127,24 +127,24 @@ jobs:
           u2f-ref-code
           libfido2
           fido2-tests
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./test-via-pcsc/build_fido_tests.sh') }}
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('./tests/pcsc/build_fido_tests.sh') }}
 
     - name: Build - Patched GnuPG
       if: steps.cache-gpg.outputs.cache-hit != 'true'
-      run: ./test-via-pcsc/build_gpg.sh
+      run: ./tests/pcsc/build_gpg.sh
 
     - name: Install - Patched GnuPG
       run: |
-        ./test-via-pcsc/install_gpg.sh
+        ./tests/pcsc/install_gpg.sh
         gpg --version
 
     - name: Build - FIDO tests
       if: steps.cache-fido.outputs.cache-hit != 'true'
-      run: ./test-via-pcsc/build_fido_tests.sh
+      run: ./tests/pcsc/build_fido_tests.sh
 
     - name: Install - FIDO tests
       run: |
-        ./test-via-pcsc/install_fido_tests.sh
+        ./tests/pcsc/install_fido_tests.sh
         fido2-tests/.venv/bin/python - <<'PY'
         import importlib.metadata
         import pathlib
@@ -162,13 +162,13 @@ jobs:
       run: |
         rustup toolchain install nightly-2026-09-04 --profile minimal
         python3 -m venv .venv-host
-        .venv-host/bin/python -m pip install -r crates/core/tests/requirements.txt
+        .venv-host/bin/python -m pip install -r tests/integration/requirements.txt
 
     - name: Build - CanoKey tests
       run: |
         mkdir build && pushd build
         cmake .. -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug \
-          -DCANOKEY_VERSIONS_FILE="$GITHUB_WORKSPACE/test-via-pcsc/versions.cmake" \
+          -DCANOKEY_VERSIONS_FILE="$GITHUB_WORKSPACE/tests/pcsc/versions.cmake" \
           -DPython3_EXECUTABLE="$GITHUB_WORKSPACE/.venv-host/bin/python"
         make -j2
       
@@ -192,7 +192,7 @@ jobs:
         echo 0 >/tmp/canokey-test-up && echo 0 >/tmp/canokey-test-nfc # Emulate the USB mode
         sudo killall -9 pcscd || true
         sudo cp build/libu2f-virt-card.so /usr/local/lib/
-        sudo cp test-via-pcsc/pcscd-reader.conf /etc/reader.conf.d/
+        sudo cp tests/pcsc/pcscd-reader.conf /etc/reader.conf.d/
         bash -c 'sudo LD_PRELOAD="$(gcc -print-file-name=libasan.so) $(gcc -print-file-name=libubsan.so)" pcscd --disable-polkit -a -f >/tmp/pcscd.log &'
         sleep 15 # wait for admin applet reset
         timeout 1s pcsc_scan || true
@@ -202,16 +202,16 @@ jobs:
         ls -l /tmp
 
     - name: Tests - Admin applet
-      run: go test -v test-via-pcsc/admin_test.go
+      run: go -C tests/pcsc test -v admin_test.go
 
     - name: Tests - NDEF applet
-      run: go test -v test-via-pcsc/ndef_test.go
+      run: go -C tests/pcsc test -v ndef_test.go
 
     - name: Tests - FIDO2 applet
       run: |
         echo 1 >/tmp/canokey-test-nfc # Emulate the NFC mode for PCSC/NFC tests
         cat /tmp/canokey-test-nfc
-        #pushd test-real && ./test-libfido2.sh && popd
+        #pushd tests/hardware && ./test-libfido2.sh && popd
         cd fido2-tests
         #../build/fido-hid-over-udp &
         .venv/bin/python -m pytest --color=yes --vendor canokeys --nfc tests/standard/
@@ -290,7 +290,7 @@ jobs:
     - name: Tests - OATH applet
       run: |
         echo 0 >/tmp/canokey-test-nfc
-        go test -v test-via-pcsc/oath_test.go
+        go -C tests/pcsc test -v oath_test.go
 
     - name: Tests - OpenPGP applet
       # GPG requires a tty to work
@@ -310,7 +310,7 @@ jobs:
       run: bash .github/workflows/test-piv.sh
     - name: Wrap-up - Prepare test coverage report
       run: |
-        go test test-via-pcsc/admin_test.go -v -run TestFSUsage
+        go -C tests/pcsc test admin_test.go -v -run TestFSUsage
         kill "$(cat /tmp/fido-hid-over-udp.pid)" 2>/dev/null || true
         sudo killall pcscd || true # To flush cov files
         ls /tmp

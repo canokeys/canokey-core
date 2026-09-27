@@ -6,3 +6,8 @@ libfido2/
 u2f-ref-code/
 
 /target/
+
+__pycache__/
+*.pyc
+.DS_Store
+.venv*/

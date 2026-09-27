@@ -107,7 +107,7 @@ impl SessionWorkspace {
     #[cfg(any(feature = "piv", feature = "ctap"))]
     #[inline(never)]
     pub fn classic(&mut self) -> &mut Workspace {
-        let memory = crate::ports::native::MemoryBackend;
+        let memory = canokey_ports::default_memory();
         self.classic_with(&memory)
     }
     #[cfg(feature = "ctap")]
@@ -126,13 +126,13 @@ impl SessionWorkspace {
     }
     #[cfg(feature = "ctap")]
     pub fn ctap_request(&mut self) -> &mut crate::applets::ctap::Request {
-        let memory = crate::ports::native::MemoryBackend;
+        let memory = canokey_ports::default_memory();
         self.ctap_request_with(&memory)
     }
     #[cfg(feature = "ctap")]
     pub fn cancel_ctap_request(&mut self) {
         if let Self::CtapRequest(request) = self {
-            let memory = crate::ports::native::MemoryBackend;
+            let memory = canokey_ports::default_memory();
             request.clear(&memory);
             *request = crate::applets::ctap::Request::new();
         }
@@ -153,7 +153,7 @@ impl SessionWorkspace {
     #[cfg(feature = "piv")]
     #[inline(never)]
     pub fn stream(&mut self) -> &mut crate::ports::CryptoScratch {
-        let memory = crate::ports::native::MemoryBackend;
+        let memory = canokey_ports::default_memory();
         self.stream_with(&memory)
     }
     #[cfg(feature = "piv")]
@@ -172,7 +172,7 @@ impl SessionWorkspace {
     #[cfg(feature = "piv")]
     #[inline(never)]
     pub fn attestation(&mut self) -> &mut crate::applets::piv::attestation::Attestation {
-        let memory = crate::ports::native::MemoryBackend;
+        let memory = canokey_ports::default_memory();
         self.attestation_with(&memory)
     }
 }

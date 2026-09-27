@@ -1,3 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared platform contracts; no native ABI or unsafe code in the core.
-pub use canokey_ports::*;
+//! Safe contracts and selected bindings; native adapters are not re-exported.
+pub use canokey_ports::contracts::*;
+#[cfg(any(feature = "oath", feature = "piv"))]
+pub use canokey_ports::copy_to_stage;
+pub use canokey_ports::{CryptoPort, DevicePort, MemoryPort, Platform, StoragePort};

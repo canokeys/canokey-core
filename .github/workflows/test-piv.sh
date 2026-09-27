@@ -5,10 +5,10 @@ set -e
 set -o xtrace
 
 echo "=== Phase: Go unit tests ==="
-go test -v test-via-pcsc/piv_test.go
+go -C tests/pcsc test -v piv_test.go
 
 RDID="Canokey [OpenPGP PIV OATH] 00 00"
-export PIV_EXT_AUTH_KEY=$PWD/test-via-pcsc/PIV_EXT_AUTH_KEY.txt
+export PIV_EXT_AUTH_KEY=$PWD/tests/pcsc/PIV_EXT_AUTH_KEY.txt
 
 echo "=== Phase: Basic PIV status and CHUID ==="
 yubico-piv-tool -r "$RDID" -a status -a set-ccc -a set-chuid -a status
@@ -19,8 +19,8 @@ pkcs15-tool --reader "$RDID" -D
 echo "=== Phase: Algorithm extension (ED25519) ==="
 piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 22 05 51 52 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
 piv-tool --admin M:9B:0A -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 15 54 E2 E3'
-git -C piv-go apply --unidiff-zero --check "$PWD/test-via-pcsc/piv-go-aes192.patch"
-git -C piv-go apply --unidiff-zero "$PWD/test-via-pcsc/piv-go-aes192.patch"
+git -C piv-go apply --unidiff-zero --check "$PWD/tests/pcsc/piv-go-aes192.patch"
+git -C piv-go apply --unidiff-zero "$PWD/tests/pcsc/piv-go-aes192.patch"
 cd piv-go; go test -v ./piv --wipe-yubikey; cd -
 piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 E0 05 16 E1 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
 
@@ -166,7 +166,7 @@ echo "=== Phase: Long data objects ==="
 yubico-piv-tool -r "$RDID" -a set-ccc -a set-chuid -a status
 for s in 9a 9c 9d 9e 82 83; do
   PIVGenKeyCert $s "/CN=CertAtSlot$s/" RSA4096
-  yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i test-via-pcsc/long-cert.pem
+  yubico-piv-tool -r "$RDID" -a import-certificate -s $s -i tests/pcsc/long-cert.pem
 done
 openssl rand -base64 -out /tmp/rand-pi 242
 openssl rand -base64 -out /tmp/rand-fig 508
