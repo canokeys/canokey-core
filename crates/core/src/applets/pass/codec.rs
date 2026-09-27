@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fixed RAM slots; persistence stores only headers and actual payloads.
+//! Fixed slots shared by RAM and persistence.
 //! No native-layout or previous-format decoding.
 #![forbid(unsafe_code)]
 use super::domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex, kind};
@@ -9,8 +9,7 @@ pub const FILE_SIZE: usize = SLOT_COUNT * SLOT_SIZE;
 // Offsets below are within one expanded RAM slot. LENGTH counts payload bytes
 // (the credential-name bytes for OATH); ENTER controls a trailing Enter key.
 // OATH payload is a big-endian 32-bit record ID followed by the credential name.
-// Persisted slots omit unused payload capacity; FILE_SIZE is the RAM view size.
-const FORMAT_VERSION: u8 = 2;
+const FORMAT_VERSION: u8 = 3;
 const VERSION: usize = 0;
 const KIND: usize = 1;
 const LENGTH: usize = 2;
@@ -102,44 +101,11 @@ impl Layout {
     }
 }
 
-/// Stored slot length, checked before slicing or expanding into RAM.
-fn stored_len(bytes: &[u8]) -> Result<usize, Error> {
-    if bytes.len() < PAYLOAD || bytes[VERSION] != FORMAT_VERSION {
+pub fn validate(bytes: &[u8; FILE_SIZE], length: usize) -> Result<(), Error> {
+    if length != FILE_SIZE {
         return Err(Error::Record);
     }
-    let n = PAYLOAD
-        + usize::from(bytes[LENGTH])
-        + if bytes[KIND] == kind::OATH {
-            OATH_ID_BYTES
-        } else {
-            0
-        };
-    if n > SLOT_SIZE || n > bytes.len() {
-        return Err(Error::Record);
-    }
-    Ok(n)
-}
-pub fn unpack(bytes: &mut [u8; FILE_SIZE], length: usize) -> Result<(), Error> {
-    let first = stored_len(&bytes[..length])?;
-    let second = stored_len(&bytes[first..length])?;
-    if first + second != length {
-        return Err(Error::Record);
-    }
-    bytes.copy_within(first..length, SLOT_SIZE);
-    bytes[first..SLOT_SIZE].fill(0);
-    bytes[SLOT_SIZE + second..].fill(0);
     Layout.decode(&bytes[..SLOT_SIZE])?;
     Layout.decode(&bytes[SLOT_SIZE..])?;
     Ok(())
-}
-pub fn pack(bytes: &[u8; FILE_SIZE], out: &mut [u8; FILE_SIZE]) -> Result<usize, Error> {
-    let mut at = 0;
-    let (records, _) = bytes.as_chunks::<SLOT_SIZE>();
-    for record in records {
-        Layout.decode(record)?;
-        let n = stored_len(record)?;
-        out[at..at + n].copy_from_slice(&record[..n]);
-        at += n;
-    }
-    Ok(at)
 }

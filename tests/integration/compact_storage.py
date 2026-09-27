@@ -29,9 +29,9 @@ with connection(sys.argv[1]) as wire:
     c.cmd("admin", 0xA4, 4, data=bytes.fromhex("f000000000"))
     c.cmd("pin", 0x20, data=b"123456", le=None)
     c.cmd("static", 0x44, 1, data=b"\x02\x03abc\x00", le=None)
-    assert size(0) == 11
+    assert size(0) == 144
     c.cmd("clear", 0x13, le=None)
-    assert size(0) == 8
+    assert size(0) == 144
 
     c.cmd("oath", 0xA4, 4, data=bytes.fromhex("a0000005272101"))
     for name in (b"a", b"b" * 64):

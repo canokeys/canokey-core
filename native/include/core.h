@@ -89,7 +89,10 @@ enum ck_mac_algorithm { CK_MAC_SHA1 = 1, CK_MAC_SHA256 = 2, CK_MAC_SHA512 = 3 };
  * Operations: 0 begin, 1 append, 2 publish to file, 3 abort, 4 remove file,
  * 5 rename file to the one-byte destination ID in input (length = 1).
  * Remove takes length = 0 and succeeds for missing files. Returns 0 on success.
- * All calls are serialized and stage bytes must not be published before commit. */
+ * All calls are serialized and stage bytes must not be published before commit.
+ * Append acknowledgement does not promise durability of unpublished data.
+ * The backend may retain a cache lease, released on other storage access,
+ * abort/disconnect, or publication. */
 int32_t ck_platform_stage(uint8_t operation, uint8_t file, const uint8_t *input, size_t length);
 /* Synchronous replacement of unpublished staging, at most eight pieces.
  * Descriptors and bytes are borrowed only until return; commit is separate. */

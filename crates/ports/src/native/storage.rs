@@ -36,6 +36,7 @@ unsafe extern "C" {
     fn ck_platform_size(file: u8) -> i32;
     fn ck_platform_read(file: u8, out: *mut u8, len: usize) -> i32;
     fn ck_platform_write(file: u8, input: *const u8, len: usize) -> i32;
+    fn ck_platform_write_at(file: u8, offset: u32, input: *const u8, len: usize) -> i32;
 }
 #[cfg(any(
     feature = "oath",
@@ -56,7 +57,6 @@ unsafe extern "C" {
 ))]
 unsafe extern "C" {
     fn ck_platform_read_at(file: u8, offset: u32, out: *mut u8, len: usize) -> i32;
-    fn ck_platform_write_at(file: u8, offset: u32, input: *const u8, len: usize) -> i32;
     fn ck_platform_has_space(bytes: u32, reserve: u32) -> i32;
 }
 
@@ -233,13 +233,7 @@ native_port! { impl Storage for StorageBackend {
             Err(StorageError::Unavailable)
         }
     }
-    #[cfg(any(
-        feature = "oath",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
+    #[cfg(feature = "storage")]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
         if unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) }
             == input.len() as i32

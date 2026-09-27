@@ -59,7 +59,7 @@ void ck_platform_hmac_sha1(const uint8_t key[20], const uint8_t *input, size_t n
   unsigned len = 20;
   assert(HMAC(EVP_sha1(), key, 20, input, n, out, &len));
 }
-#if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
+#if defined(WITH_ADMIN) || defined(WITH_PASS) || defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
 int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n) {
   storage_init();
   assert(id < 186);

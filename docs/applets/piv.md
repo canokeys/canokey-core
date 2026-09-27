@@ -110,6 +110,10 @@ Applet adapters retain retry-charging and authorization semantics. PIV's
 and two eight-byte credentials. Authorization is never persisted.
 Failed credential writes invalidate the cache and revoke both grants; reset
 alone cannot make an uncertain cache authoritative.
+Verification patches only the selected PIN/PUK retry byte. Full credential
+changes still publish both credentials and their metadata atomically.
+Algorithm mapping updates compare validated durable bytes before skipping an
+identical write; they do not trust the session cache after an uncertain write.
 
 PIV records use hexadecimal filenames `0e`..`4c`, with no directory prefix.
 Keys store a version-2 discriminator byte, private material, then a fixed

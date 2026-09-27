@@ -66,7 +66,8 @@ impl Page {
         self.seal();
         s.config_write(&self.0)
     }
-    fn load(&mut self, s: &mut StoragePort<'_>, repair: bool) -> Result<(), StorageError> {
+    // True means the page was already valid on storage, not synthesized defaults.
+    fn load(&mut self, s: &mut StoragePort<'_>, repair: bool) -> Result<bool, StorageError> {
         match s.config_read(0, &mut self.0) {
             Ok(()) => {
                 if !self.valid() {
@@ -74,12 +75,13 @@ impl Page {
                         return Err(StorageError::Unavailable);
                     }
                     self.defaults();
+                    return Ok(false);
                 }
-                Ok(())
+                Ok(true)
             }
             Err(StorageError::Missing) => {
                 self.defaults();
-                Ok(())
+                Ok(false)
             }
             Err(e) => Err(e),
         }
@@ -96,8 +98,12 @@ pub fn flags(s: &mut StoragePort<'_>) -> Result<u32, StorageError> {
 #[inline(never)]
 pub fn update(s: &mut StoragePort<'_>, mask: u32, value: u32) -> Result<(), StorageError> {
     let mut page = Page([0xff; 512]);
-    page.load(s, true)?;
-    let flags = (word(&page.0[12..16]) & !mask) | (value & mask);
+    let persisted = page.load(s, true)?;
+    let old = word(&page.0[12..16]);
+    let flags = (old & !mask) | (value & mask);
+    if persisted && flags == old {
+        return Ok(());
+    }
     page.0[12..16].copy_from_slice(&flags.to_ne_bytes());
     page.commit(s)
 }
@@ -158,6 +164,34 @@ mod tests {
         }
     }
     #[test]
+    fn identical_updates_skip_writes_but_defaults_and_repairs_are_persisted() {
+        let mut disk = Disk::new();
+        update(&mut disk, LED, LED).unwrap();
+        assert_eq!(disk.writes, 1, "erased pages must receive defaults");
+        disk.write_error = true;
+        update(&mut disk, LED, LED).unwrap();
+        assert_eq!(disk.writes, 1);
+        disk.write_error = false;
+        disk.page[508] ^= 1;
+        update(&mut disk, LED, LED).unwrap();
+        assert_eq!(disk.writes, 2, "repair cannot be skipped");
+        assert!(Page(disk.page).valid());
+        write_keymap(&mut disk, 0, None).unwrap();
+        assert_eq!(disk.writes, 2);
+        let table = [7; 256];
+        write_keymap(&mut disk, 17, Some(&table)).unwrap();
+        assert_eq!(disk.writes, 3);
+        write_keymap(&mut disk, 17, Some(&table)).unwrap();
+        assert_eq!(disk.writes, 3);
+        disk.page[508] ^= 1;
+        write_keymap(&mut disk, 0, None).unwrap();
+        assert_eq!(disk.writes, 4);
+        assert!(Page(disk.page).valid());
+        disk.read_error = true;
+        assert!(update(&mut disk, LED, LED).is_err());
+        assert!(write_keymap(&mut disk, 0, None).is_err());
+    }
+    #[test]
     fn legacy_crc_defaults_and_selective_update_preserve_all_other_fields() {
         assert_eq!(crc(b"123456789"), 0x340bc6d9);
         let mut disk = Disk::new();
@@ -191,7 +225,10 @@ mod tests {
         let before = disk.page;
         let selected = LED | WEBUSB | OPENPGP_USB | PIV_USB | WEBAUTHN;
         update(&mut disk, ADMIN_FLAGS, selected).unwrap();
-        assert_eq!(flags(&mut disk).unwrap(), selected | INITIALIZED | SERIAL_VALID);
+        assert_eq!(
+            flags(&mut disk).unwrap(),
+            selected | INITIALIZED | SERIAL_VALID
+        );
         assert_eq!(serial(&mut disk), [0xa1, 0xb2, 0xc3, 0xd4]);
         assert_eq!(&disk.page[..12], &before[..12]);
         assert_eq!(&disk.page[16..508], &before[16..508]);
@@ -336,7 +373,16 @@ pub fn write_keymap(
     table: Option<&[u8; 256]>,
 ) -> Result<(), StorageError> {
     let mut page = Page([0xff; 512]);
-    page.load(s, true)?;
+    let persisted = page.load(s, true)?;
+    let same_table = match table {
+        Some(table) => page.has_keymap() && page.0[32..288] == table[..],
+        None => {
+            word(&page.0[12..16]) & KEYMAP_VALID == 0 && page.0[32..288].iter().all(|&v| v == 0)
+        }
+    };
+    if persisted && same_table && page.0[20..24] == [layout, 2, 0, 128] {
+        return Ok(());
+    }
     let mut flags = word(&page.0[12..16]) & !KEYMAP_VALID;
     page.0[20..24].copy_from_slice(&[layout, 2, 0, 128]);
     if let Some(table) = table {

@@ -132,7 +132,7 @@ impl RecordPin {
                 charge,
                 &mut |bytes| {
                     p.storage
-                        .replace(self.id, &bytes[..VALUE + length])
+                        .replace_at(self.id, REMAINING as u32, &bytes[REMAINING..REMAINING + 1])
                         .map_err(|_| Error::Persistence)
                 },
             )
@@ -159,7 +159,7 @@ impl RecordPin {
             b[RETRY_LIMIT] = limit;
             b[REMAINING] = if b[LENGTH] == 0 { 0 } else { limit };
             p.storage
-                .replace(self.id, &b[..VALUE + b[LENGTH] as usize])
+                .replace_at(self.id, REMAINING as u32, &b[REMAINING..VALUE])
                 .map_err(|_| Error::Persistence)
         })
     }

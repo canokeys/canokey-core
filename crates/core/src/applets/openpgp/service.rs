@@ -168,7 +168,7 @@ impl Session {
         // Publish the signature counter before returning the signature. A
         // persistence error fails the operation rather than exposing an
         // unaccounted signature; the three-byte counter saturates at FFFFFF.
-        if r == key_role::SIGNATURE {
+        if r == key_role::SIGNATURE && m[key_meta::SIGNATURE_COUNTER..key_meta::END] != [0xff; 3] {
             let count = u32::from_be_bytes([
                 0,
                 m[key_meta::SIGNATURE_COUNTER],

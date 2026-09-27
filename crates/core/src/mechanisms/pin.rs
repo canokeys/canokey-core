@@ -57,7 +57,7 @@ impl<'a> Credential<'a> {
         })
     }
     /// The caller validates protocol lengths and revokes any previous grant.
-    /// `commit` atomically publishes the entire record. Any error is uncertain:
+    /// `commit` atomically persists the changed retry counter. Any error is uncertain:
     /// callers must discard/reload cached state and must not grant authorization.
     pub(crate) fn verify(
         &mut self,

@@ -160,7 +160,11 @@ decryption in `openpgp-normal`.
 ECC stores only its private scalar. A new signing key and its zero
 counter publish in one transaction. Successful signing persists its increment
 before exposing the response; delivery failure does not roll the counter back.
-The 24-bit counter saturates rather than wrapping to zero.
+The 24-bit counter saturates rather than wrapping to zero. Once saturated,
+signing validates the durable metadata but skips the unchanged counter write.
+PIN verification patches only the retry byte, retaining the durable decrement
+before comparison and the separate restore after success. Credential changes
+still replace the complete record atomically.
 Metadata patches leave the cold key prefix available for LittleFS block reuse.
 Key staging batches all borrowed components in one synchronous open/write/close;
 publication remains a separate atomic rename. Version-1 records are rejected;

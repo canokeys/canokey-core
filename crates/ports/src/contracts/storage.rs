@@ -154,6 +154,8 @@ pub trait Storage {
     }
     /// A single session-scoped staged object, separate from record replacements.
     /// Publication is atomic; abort/disconnect must discard unpublished bytes.
+    /// Appends need not be durable before publication. A backend may lease its
+    /// shared file cache until commit/abort or another storage operation needs it.
     #[cfg(any(
         feature = "oath",
         feature = "openpgp",

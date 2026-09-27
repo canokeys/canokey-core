@@ -10,6 +10,7 @@ struct Disk {
     fail_write: bool,
     uncertain: bool,
     reads: usize,
+    writes: Vec<(File, usize, usize, bool)>,
 }
 impl Disk {
     fn file(&mut self, f: File) -> &mut Option<Vec<u8>> {
@@ -40,6 +41,7 @@ impl Store for Disk {
         input: &[u8],
         truncate: bool,
     ) -> Result<(), Failure> {
+        self.writes.push((f, offset, input.len(), truncate));
         if self.fail_write && !self.uncertain {
             return Err(Failure::Io);
         }
@@ -62,6 +64,29 @@ impl Store for Disk {
             .resize(length, 0);
         Ok(())
     }
+}
+#[test]
+fn permission_changes_patch_one_byte_and_skip_only_valid_unchanged_values() {
+    let mut d = Disk::default();
+    let mut n = Ndef::new();
+    n.install(false, &mut d).unwrap();
+    d.writes.clear();
+    n.set_read_only(0, &mut d).unwrap();
+    assert!(d.writes.is_empty());
+    n.set_read_only(1, &mut d).unwrap();
+    assert_eq!(d.writes, [(File::Capability, 14, 1, false)]);
+    assert_eq!(&d.cc.as_ref().unwrap()[..14], &DEFAULT_CC[..14]);
+    d.fail_write = true;
+    d.uncertain = true;
+    assert!(n.set_read_only(0, &mut d).is_err());
+    d.fail_write = false;
+    let reads = d.reads;
+    n.set_read_only(0, &mut d).unwrap();
+    assert!(
+        d.reads > reads,
+        "uncertain writes invalidate the cached permissions"
+    );
+    assert_eq!(d.writes.len(), 2);
 }
 #[test]
 fn install_initial_uri_and_preserve_existing_content() {
@@ -203,7 +228,10 @@ fn capability_cache_reload_missing_file_and_recovery() {
     disk.fail_write = false;
     disk.cc = None;
     assert!(ndef.read_only(&mut disk));
-    assert_eq!(ndef.update(0, b"x", false, &mut disk), Err(Sw::UNABLE_TO_PROCESS));
+    assert_eq!(
+        ndef.update(0, b"x", false, &mut disk),
+        Err(Sw::UNABLE_TO_PROCESS)
+    );
     ndef.install(false, &mut disk).unwrap();
     assert!(!ndef.read_only(&mut disk));
     ndef.select(0, 12, &[0, 1]).unwrap();
@@ -340,7 +368,9 @@ mod apdu {
         let mut data = Vec::new();
         loop {
             data.extend_from_slice(&reply[..reply.len() - 2]);
-            if reply[reply.len() - 2..] == [0x90, 0] { break; }
+            if reply[reply.len() - 2..] == [0x90, 0] {
+                break;
+            }
             assert_eq!(reply[reply.len() - 2], 0x61);
             reply = exchange(&mut core, &mut p, &[0, 0xc0, 0, 0, 0]);
         }
@@ -352,7 +382,10 @@ mod apdu {
             exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 1]),
             [0x67, 0]
         );
-        assert_eq!(exchange(&mut core, &mut p, &[0, 0xc0, 0, 0, 0]), [0x69, 0x86]);
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xc0, 0, 0, 0]),
+            [0x69, 0x86]
+        );
         let mut chunk = exchange(&mut core, &mut p, &[0, 0xb0, 0, 0, 0, 4, 0]);
         assert!(core.can_preempt()); // Large NDEF reads used an abandonable source.
         let mut total = 0;
@@ -374,8 +407,14 @@ mod apdu {
         p.storage.replace(Record::NdefMessage, &[0; 32]).unwrap();
         canokey_rust_core::applets::ndef::Applet::install(false, &mut p).unwrap();
         assert_eq!(p.storage.size(Record::NdefMessage).unwrap(), 1024);
-        assert_eq!(exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]), [0x90, 0]);
-        assert_eq!(exchange(&mut core, &mut p, &[0, 0xb0, 0, 31, 2]), [0, 0, 0x90, 0]);
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]),
+            [0x90, 0]
+        );
+        assert_eq!(
+            exchange(&mut core, &mut p, &[0, 0xb0, 0, 31, 2]),
+            [0, 0, 0x90, 0]
+        );
     }
     #[test]
     fn truncated_frame_never_publishes_update() {

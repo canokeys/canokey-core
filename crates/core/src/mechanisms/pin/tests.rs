@@ -143,6 +143,23 @@ mod records {
         }
     }
     impl Storage for Store {
+        fn replace_at(
+            &mut self,
+            id: Record,
+            offset: u32,
+            input: &[u8],
+        ) -> Result<(), StorageError> {
+            assert_eq!(id.id(), self.id);
+            assert_eq!(offset, 2);
+            assert!((1..=2).contains(&input.len()));
+            self.writes += 1;
+            if self.unavailable || self.fail_write {
+                return Err(StorageError::Uncertain);
+            }
+            assert!(self.exists);
+            self.value[offset as usize..offset as usize + input.len()].copy_from_slice(input);
+            Ok(())
+        }
         fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
             if self.unavailable {
                 return Err(StorageError::Unavailable);

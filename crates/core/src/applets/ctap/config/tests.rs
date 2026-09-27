@@ -16,6 +16,17 @@ struct Backend {
     expected_key: Option<[u8; 32]>,
 }
 impl Storage for Backend {
+    fn replace_at(&mut self, id: Record, offset: u32, bytes: &[u8]) -> Result<(), StorageError> {
+        assert_eq!(id, Record::CtapPin);
+        assert_eq!(offset, 16);
+        assert_eq!(bytes.len(), 1);
+        self.writes += 1;
+        if self.fail {
+            return Err(StorageError::Unavailable);
+        }
+        self.record[offset as usize] = bytes[0];
+        Ok(())
+    }
     fn load(&mut self, _: Record, out: &mut [u8]) -> Result<usize, StorageError> {
         if self.record.is_empty() {
             return Err(StorageError::Missing);

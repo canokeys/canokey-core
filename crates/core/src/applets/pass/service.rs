@@ -29,10 +29,10 @@ impl Pass {
                 self.clear_slots()?;
                 // Materialize the empty layout so a first boot has the same
                 // durable PASS record contract as a configured card.
-                self.persist(storage, memory)?;
+                self.persist(storage, memory, None)?;
             }
             Ok(n) => {
-                if super::codec::unpack(&mut self.slots, n).is_err() {
+                if super::codec::validate(&self.slots, n).is_err() {
                     memory.wipe(&mut self.slots);
                     return Err(Error::Persistence);
                 }
@@ -58,14 +58,13 @@ impl Pass {
         &mut self,
         storage: &mut crate::ports::StoragePort<'_>,
         memory: &crate::ports::MemoryPort<'_>,
+        range: Option<core::ops::Range<usize>>,
     ) -> Result<(), Error> {
-        let mut packed = [0; FILE_SIZE];
-        let result = super::codec::pack(&self.slots, &mut packed).and_then(|n| {
-            storage
-                .replace(Record::Pass, &packed[..n])
-                .map_err(|_| Error::Persistence)
-        });
-        memory.wipe(&mut packed);
+        let result = match range {
+            Some(range) => storage.replace_at(Record::Pass, range.start as u32, &self.slots[range]),
+            None => storage.replace(Record::Pass, &self.slots),
+        }
+        .map_err(|_| Error::Persistence);
         if result.is_err() {
             self.available = false;
             memory.wipe(&mut self.slots);
@@ -87,7 +86,12 @@ impl Pass {
         let record = Layout.record_mut(&mut self.slots, index)?;
         memory.wipe(record);
         Layout.encode_cleared(record, slot)?;
-        self.persist(storage, memory)
+        let start = index.get() * super::codec::SLOT_SIZE;
+        self.persist(
+            storage,
+            memory,
+            Some(start..start + super::codec::SLOT_SIZE),
+        )
     }
     pub fn clear(
         &mut self,
@@ -99,7 +103,7 @@ impl Pass {
         }
         memory.wipe(&mut self.slots);
         self.clear_slots()?;
-        self.persist(storage, memory)
+        self.persist(storage, memory, Some(0..FILE_SIZE))
     }
     pub fn records(&self) -> Result<&[u8], Error> {
         if self.available {
@@ -130,7 +134,8 @@ impl Pass {
             }
         }
         if changed {
-            self.persist(storage, memory)?;
+            // Unlinking may affect both slots; publish the combined change once.
+            self.persist(storage, memory, Some(0..FILE_SIZE))?;
         }
         Ok(())
     }
@@ -159,3 +164,6 @@ impl Default for Pass {
         Self::new()
     }
 }
+
+#[cfg(all(test, not(feature = "static-backend")))]
+mod storage_tests;

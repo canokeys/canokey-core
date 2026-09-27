@@ -76,6 +76,9 @@ const FIELDS: [(u16, usize, usize); 5] = [
 ];
 pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error> {
     let n = p.storage.load(Record::PgpState, b).map_err(io)?;
+    validate_state(b, n)
+}
+fn validate_state(b: &mut [u8; STATE_LEN], n: usize) -> Result<(), Error> {
     if n != state_layout::USED_END
         || b[state_layout::VERSION] != FORMAT_VERSION
         || b[state_layout::TERMINATED] > 1
@@ -212,7 +215,7 @@ pub fn install(p: &mut Platform<'_>) -> Result<(), Error> {
     let mut s = [0; STATE_LEN];
     match p.storage.load(Record::PgpState, &mut s) {
         Err(StorageError::Missing) => reset(p),
-        Ok(_) => state(p, &mut s),
+        Ok(n) => validate_state(&mut s, n),
         Err(e) => Err(io(e)),
     }
 }

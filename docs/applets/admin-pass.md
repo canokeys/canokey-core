@@ -38,20 +38,21 @@ All byte encodings are independent of C layout and CPU endianness:
 
 - `01`: version, PIN length, retries and limit, followed by the actual PIN
   bytes (10 bytes for the default PIN). No hashing, salt or KDF is added.
-- `00`: two length-delimited version-2 PASS records, each containing its
-  four-byte header and actual payload. OATH bindings add a four-byte stable ID.
-  Two disabled slots occupy eight bytes. No previous-format decoder is retained.
+- `00`: two fixed 72-byte version-3 PASS slots, each containing its
+  four-byte header and zero-padded payload. OATH bindings add a four-byte stable ID.
+  The record is always 144 bytes. No previous-format decoder is retained.
 - `t`: atomic-replacement temporary file; close then rename. The current
-  record is never updated in place. Failed mutations invalidate cached state;
+  record is atomically replaced for initialization and PIN changes. Retry updates
+  and PASS slot changes use atomic LittleFS patches. Failed mutations invalidate cached state;
   uncertain storage errors disable backend access until reboot.
 
 Only NotFound creates the default PIN. Invalid records and I/O errors fail
 closed. This preserves C's missing-record initialization policy but does not
 detect malicious deletion with raw Flash access. Provision fresh storage;
 compatibility with previous C or Rust layouts is not supported.
-The PASS service keeps a missing record in RAM until the first successful
-configuration write; merely opening the applet does not create a persistent
-record.
+The PASS service creates a missing record during installation. A single-slot
+change patches 72 bytes; clearing or unlinking both slots publishes one atomic
+144-byte patch. Pack/unpack and their temporary secret buffer are removed.
 LittleFS mount failure never formats. The file cache is aligned to four bytes
 because CIU page programming reads words, including non-inline file payloads.
 

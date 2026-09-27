@@ -429,6 +429,18 @@ def run(wire, host, standalone=False):
         c.put(0xD6, bytes([1, 0x20]))
         exercise(c, 0, 0, key)
         c.put(0xD6, bytes([0, 0x20]))
+        size = int.from_bytes(wire.command("SIZE 8"), "big")
+        counter = fields(fields(c.get(0x7A))[0x7A])[0x93]
+        for offset, value in zip(range(size - 3, size), counter):
+            wire.command(f"CORRUPT 8 {offset} {value ^ 255}")
+        wire.command("FAIL_WRITE 8")
+        exercise(c, 0, 0, key)
+        assert fields(fields(c.get(0x7A))[0x7A])[0x93] == bytes.fromhex("ffffff")
+        c.cmd("saturated_count_did_not_consume_write_failure", 0xDA, 0, 0xC7,
+              bytes(20), le=None, status=0x6900)
+        c.verify()
+        c.public(0, True)
+        assert fields(fields(c.get(0x7A))[0x7A])[0x93] == bytes(3)
 
     if host:
         wire.command("RESET")

@@ -198,7 +198,13 @@ impl Session {
             if cp.subcommand != 3 {
                 // Charge before decrypt/compare. Failed writes never authorize.
                 record[RETRIES] -= 1;
-                save(&record, p)?;
+                p.storage
+                    .replace_at(
+                        Record::CtapPin,
+                        RETRIES as u32,
+                        &record[RETRIES..RETRIES + 1],
+                    )
+                    .map_err(|_| Status::Other)?;
                 decrypt(cp.protocol, aes_key, &mut cp.pin_hash[..hash_len], p)?;
                 if !equal(&record[..16], &cp.pin_hash[..16]) {
                     self.pin_attempts -= 1;
@@ -216,7 +222,13 @@ impl Session {
                 // Correct current PIN restores retries even if the new PIN
                 // subsequently fails policy validation.
                 record[RETRIES] = 8;
-                save(&record, p)?;
+                p.storage
+                    .replace_at(
+                        Record::CtapPin,
+                        RETRIES as u32,
+                        &record[RETRIES..RETRIES + 1],
+                    )
+                    .map_err(|_| Status::Other)?;
             }
             if cp.subcommand == 5 || cp.subcommand == 9 {
                 if record[FLAGS] & FORCE_CHANGE != 0 {

@@ -181,7 +181,11 @@ impl Pins {
         .and_then(|mut credential| {
             credential.verify(&data[..VALUE_BYTES], Charge::OnMismatch, &mut |record| {
                 p.storage
-                    .replace(Record::PivState, record)
+                    .replace_at(
+                        Record::PivState,
+                        counter as u32,
+                        &record[counter..counter + 1],
+                    )
                     .map_err(|_| Error::Persistence)
             })
         });

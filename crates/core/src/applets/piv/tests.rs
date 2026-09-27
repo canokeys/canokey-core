@@ -10,6 +10,14 @@ struct Store {
     writes: usize,
 }
 impl Storage for Store {
+    fn replace_at(&mut self, id: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
+        assert_eq!(id, Record::PivState);
+        assert_eq!(input.len(), 1);
+        assert!([1, 2].contains(&offset));
+        let mut bytes = self.bytes.ok_or(StorageError::Missing)?;
+        bytes[offset as usize] = input[0];
+        self.replace(id, &bytes)
+    }
     fn load(&mut self, _: Record, out: &mut [u8]) -> Result<usize, StorageError> {
         out.copy_from_slice(self.bytes.as_ref().ok_or(StorageError::Missing)?);
         Ok(STATE_LEN)

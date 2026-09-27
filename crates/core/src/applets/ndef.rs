@@ -106,9 +106,13 @@ impl Ndef {
             return Err(Sw::WRONG_P1P2);
         }
         self.cc(s)?;
-        self.cc[14] = if value == 0 { 0 } else { 0xff };
+        let permission = if value == 0 { 0 } else { 0xff };
+        if self.cc[14] == permission {
+            return Ok(());
+        }
+        self.cc[14] = permission;
         self.valid = false;
-        s.write(File::Capability, 0, &self.cc, true)
+        s.write(File::Capability, 14, &self.cc[14..], false)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         self.valid = true;
         Ok(())
