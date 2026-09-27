@@ -6,19 +6,26 @@
 
 ## Current Rust composition (2026-09-27)
 
+The root Cargo workspace uses `crates/{core,protocol,ports,ffi,host}`. Native
+adapters and headers live in `native/{ffi,include,src}`. Dependency submodules
+retain their existing paths. `reference/legacy-c/` is an immutable historical
+snapshot with revision/checksum provenance; never compile or include it. The C
+layout and API examples below are historical context for that snapshot.
+
+
 The default top-level CMake build selects the complete Rust host composition.
 `ENABLE_TESTS=ON` additionally enables the native LittleFS helper suite and its
 sanitizers. The former C applets, dispatcher, USB/NFC protocols and virtual-card
-implementations have been removed. `src/fs.c`, crypto and thin native adapters
+implementations have been removed. `native/src/fs.c`, crypto and thin native adapters
 remain. The unused TinyCBOR submodule and obsolete applet/scratch headers
 are removed, together with the old USB header tree and unused CTAP C API.
-Native USB callers use the thin ABI headers in `interfaces/rust-core`. The
+Native USB callers use the thin ABI headers in `native/ffi`. The
 unused C applet, APDU dispatcher and PIN declarations are removed too; key,
 PKE, filesystem and hardware headers still have native consumers.
 
-Current implementation entrypoints are `rust/core` (applets and shared runtime),
-`rust/protocol` (transport state machines), `rust/ffi` and `rust/ports` (integration),
-and `rust/host` (UDP and PC/SC host). See `rust/docs/legacy-test-coverage.md` for
+Current implementation entrypoints are `crates/core` (applets and shared runtime),
+`crates/protocol` (transport state machines), `crates/ffi` and `crates/ports` (integration),
+and `crates/host` (UDP and PC/SC host). See `crates/docs/legacy-test-coverage.md` for
 replacement coverage and the platform migration status for outstanding Flash,
 runtime stack and physical compatibility acceptance.
 
@@ -128,7 +135,7 @@ cmake --build build --parallel 8
 ctest --test-dir build --output-on-failure
 ```
 
-`ENABLE_TESTS` uses ASan/UBSan. Public helper coverage now uses Rust and native service fixtures; see `rust/docs/legacy-test-coverage.md`.
+`ENABLE_TESTS` uses ASan/UBSan. Public helper coverage now uses Rust and native service fixtures; see `crates/docs/legacy-test-coverage.md`.
 
 ---
 
@@ -464,11 +471,11 @@ Test-mode extras (enabled by `TEST` define):
 `-DVIRTCARD=ON` now selects the complete Rust host composition; `ENABLE_APDU_REPLAY`
 also builds the Rust UDP tool. `ENABLE_TESTS` runs the full Rust suite and the independent native LittleFS helper suite;
 the legacy C APDU executable is removed; NDEF/keyboard/key-stream replacements are tracked in
-`rust/docs/legacy-test-coverage.md`. Its UDP executable uses `rust/host` and no C applet/protocol implementation.
+`crates/docs/legacy-test-coverage.md`. Its UDP executable uses `crates/host` and no C applet/protocol implementation.
 Install `nightly-2026-09-04`, OpenSSL development headers and
-`rust/core/tests/requirements.txt`; select that Python with `Python3_EXECUTABLE`.
+`crates/core/tests/requirements.txt`; select that Python with `Python3_EXECUTABLE`.
 Run `ctest -R '^virtual-'` for packet/persistence regressions.
-See [rust/host/README.md](rust/host/README.md) for retained UDP ports, control packets,
+See [crates/host/README.md](crates/host/README.md) for retained UDP ports, control packets,
 `CANOKEY_VIRT_*` settings, touch counter and Rust record names for error injection.
 The image is a versioned host record snapshot, not LittleFS; reset-disabled runs
 reject old images without overwriting them. The PC/SC IFD library now uses the same Rust host, with serialized cross-thread entrypoints; the C unit suite remains a legacy consumer.
@@ -477,5 +484,5 @@ The Rust host build requires PC/SC headers (`libpcsclite-dev` on Debian/Ubuntu,
 `PCSC_INCLUDE_DIR` for nonstandard installs). `virtual-pcsc` loads the real IFD
 library and checks power/reset authorization, buffer bounds, extended/NFC APDUs,
 thread serialization, persistence and independently verified signatures. Optional
-`rust/core/tests/pcsc_daemon.py` exercises a privately configured pcscd and an
+`crates/core/tests/pcsc_daemon.py` exercises a privately configured pcscd and an
 unmodified python-fido2 client; it must not replace/control the system daemon.

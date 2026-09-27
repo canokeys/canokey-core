@@ -9,4 +9,4 @@ exclude:
   - u2f-ref-code 
   - littlefs 
   - test 
-  - interfaces
+  - reference

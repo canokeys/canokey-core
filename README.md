@@ -5,6 +5,45 @@
 [![Apache License 2.0](https://img.shields.io/badge/license-apache2.0-blue.svg)](https://github.com/canokeys/canokey-core/blob/master/LICENSE)
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fcanokeys%2Fcanokey-core?ref=badge_shield)
 
+## Rust workspace and repository layout
+
+The production core is Rust: applets, APDU/session management, USB (including
+HID, keyboard, CCID and WebUSB), NFC/NDEF and portable device policy. The root
+`Cargo.toml` owns the workspace; CMake composes host tools and native services.
+
+| Path | Purpose |
+| --- | --- |
+| `crates/core/` | Safe applets, shared session workspace and device runtime |
+| `crates/protocol/` | Wire formats and transport state machines |
+| `crates/ports/` | Storage, crypto and device service contracts |
+| `crates/ffi/` | Serialized native ABI and hardware integration |
+| `crates/host/` | Rust host backend with thin PC/SC and UDP adapters |
+| `crates/docs/` | Protocol, ownership and migration documentation |
+| `native/ffi/` | Crypto adapters and native ABI headers |
+| `native/include/`, `native/src/` | Shared native headers and thin LittleFS helpers |
+| `canokey-crypto/`, `littlefs/`, `minicbor/` | Retained dependency submodules |
+| `test/`, `test-via-pcsc/`, `test-real/` | Native helper and external-client correctness checks |
+| `reference/legacy-c/` | Historical C source snapshot; never a build input |
+
+See [reference provenance](reference/README.md) and
+[workspace architecture](crates/README.md). The historical C build files and
+README under `reference/` are for comparison only. Full CIU firmware capacity,
+complete runtime-stack and physical compatibility acceptance remain open;
+reorganizing sources does not close those migration requirements.
+
+From this repository's root:
+
+```sh
+cargo +nightly-2026-09-04 test -p canokey-protocol
+cmake -S . -B build -DENABLE_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel 2
+ctest --test-dir build --output-on-failure
+```
+
+The complete CMake host composition enables all applets and transport features.
+See [host prerequisites and external-client checks](crates/host/README.md).
+Platform firmware builds are owned by the platform repository.
+
 ## Introduction
 
 Core implementations of an open-source security key, supporting:
@@ -16,7 +55,7 @@ Core implementations of an open-source security key, supporting:
 * HOTP / TOTP
 * NDEF
 
-The USB mode contains 3 different interfaces:
+The USB mode contains four interfaces:
 
 * Interface 0: U2F / FIDO2, which is an HID interface
 * Interface 1: PIV/OpenPGP/OATH Card, which is a CCID interface

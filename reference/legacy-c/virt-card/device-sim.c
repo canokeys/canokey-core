@@ -1,0 +1,218 @@
+// SPDX-License-Identifier: Apache-2.0
+// implement software-simulated device funtions (LED, Touch, Timer, etc.)
+#include "device.h"
+#include "admin.h"
+#include "ctap.h"
+#include "ndef.h"
+#include "piv.h"
+#include <errno.h>
+#include <limits.h>
+#include <platform-config.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
+
+// constants for vendor
+#include "virt-card-git-rev.h"
+
+#ifndef HW_VARIANT_NAME
+#define HW_VARIANT_NAME "CanoKey Virt-Card"
+#endif
+
+static uint32_t initial_ticks = 0;
+static char err_trigger_filename[64];
+static bool err_trigger_file_wr;
+static uint8_t simulated_config_page[PLATFORM_CONFIG_PAGE_SIZE];
+static bool simulated_config_page_loaded;
+static char simulated_config_page_path[PATH_MAX];
+
+static void simulated_config_page_init(void) {
+  if (simulated_config_page_loaded) return;
+  memset(simulated_config_page, 0xFF, sizeof(simulated_config_page));
+  if (simulated_config_page_path[0] != '\0') {
+    FILE *fp = fopen(simulated_config_page_path, "rb");
+    if (fp != NULL) {
+      const size_t read_len = fread(simulated_config_page, 1, sizeof(simulated_config_page), fp);
+      if (read_len != sizeof(simulated_config_page) || fgetc(fp) != EOF)
+        memset(simulated_config_page, 0xFF, sizeof(simulated_config_page));
+      fclose(fp);
+    }
+  }
+  simulated_config_page_loaded = true;
+}
+
+int virt_card_config_page_open(const char *lfs_root, bool reset) {
+  if (snprintf(simulated_config_page_path, sizeof(simulated_config_page_path), "%s.config", lfs_root) >=
+      (int)sizeof(simulated_config_page_path))
+    return -1;
+  if (reset && unlink(simulated_config_page_path) != 0 && errno != ENOENT) return -1;
+  simulated_config_page_loaded = false;
+  simulated_config_page_init();
+  return 0;
+}
+
+int admin_vendor_version(const CAPDU *capdu, RAPDU *rapdu) {
+  LL = strlen(GIT_REV);
+  memcpy(RDATA, GIT_REV, LL);
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+
+int admin_vendor_hw_variant(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+
+  static const char *const hw_variant_str = HW_VARIANT_NAME;
+  size_t len = strlen(hw_variant_str);
+  memcpy(RDATA, hw_variant_str, len);
+  LL = len;
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+
+int admin_vendor_hw_sn(const CAPDU *capdu, RAPDU *rapdu) {
+  UNUSED(capdu);
+
+  static const char *const hw_sn = "\x00";
+  memcpy(RDATA, hw_sn, 1);
+  LL = 1;
+  if (LL > LE) LL = LE;
+
+  return 0;
+}
+
+int platform_config_page_read(size_t off, void *buf, size_t len) {
+  if (buf == NULL || off > sizeof(simulated_config_page) || len > sizeof(simulated_config_page) - off) return -1;
+  simulated_config_page_init();
+  memcpy(buf, simulated_config_page + off, len);
+  return 0;
+}
+
+int platform_config_page_write(const void *page, size_t len) {
+  if (page == NULL || len != sizeof(simulated_config_page)) return -1;
+  simulated_config_page_init();
+  if (simulated_config_page_path[0] != '\0') {
+    char tmp_path[PATH_MAX];
+    if (snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", simulated_config_page_path) >= (int)sizeof(tmp_path)) return -1;
+    FILE *fp = fopen(tmp_path, "wb");
+    if (fp == NULL) return -1;
+    const bool written = fwrite(page, 1, len, fp) == len && fflush(fp) == 0;
+    const bool closed = fclose(fp) == 0;
+    if (!written || !closed || rename(tmp_path, simulated_config_page_path) != 0) {
+      unlink(tmp_path);
+      return -1;
+    }
+  }
+  memcpy(simulated_config_page, page, sizeof(simulated_config_page));
+  return 0;
+}
+
+void device_delay(int tick) {
+  int ms = tick * 100; // 100ms per tick in software simulation
+  struct timespec spec = {.tv_sec = ms / 1000, .tv_nsec = ms % 1000 * 1000000ll};
+  nanosleep(&spec, NULL);
+}
+uint32_t device_get_tick(void) {
+  uint64_t ms, s;
+  struct timespec spec;
+
+  clock_gettime(CLOCK_MONOTONIC, &spec);
+
+  s = spec.tv_sec;
+  ms = spec.tv_nsec / 1000000;
+  return (uint32_t)(s * 1000 + ms) - initial_ticks;
+}
+void device_disable_irq(void) {}
+void device_enable_irq(void) {}
+void device_set_timeout(void (*callback)(void), uint16_t timeout) {}
+fm_status_t fm_write_eeprom(uint16_t addr, const uint8_t *buf, uint8_t len) { return FM_STATUS_OK; }
+
+int device_atomic_compare_and_swap(volatile uint32_t *var, uint32_t expect, uint32_t update) {
+  if (*var == expect) {
+    *var = update;
+    return 0;
+  } else {
+    return -1;
+  }
+}
+
+int device_spinlock_lock(volatile uint32_t *lock, uint32_t blocking) {
+  // Not really working, for test only
+  while (*lock) {
+    if (!blocking) return -1;
+  }
+  *lock = 1;
+  return 0;
+}
+void device_spinlock_unlock(volatile uint32_t *lock) { *lock = 0; }
+
+void led_on(void) {}
+void led_off(void) {}
+
+int testmode_emulate_user_presence(void) {
+  if (!device_is_blinking()) return 0; // user only touches while blinking
+
+#ifndef FUZZ // speed up fuzzing
+  int counter = 0;
+  FILE *f_cnt = fopen("/tmp/canokey-test-up", "r");
+  if (f_cnt != NULL) {
+    fscanf(f_cnt, "%d", &counter);
+    fclose(f_cnt);
+  } else {
+    ERR_MSG("Failed to open canokey-test-up for reading\n");
+  }
+  if (counter < 0) return 0;
+  counter++;
+  DBG_MSG("counter=%d\n", counter);
+  f_cnt = fopen("/tmp/canokey-test-up", "w");
+  if (f_cnt != NULL) {
+    fprintf(f_cnt, "%d", counter);
+    fclose(f_cnt);
+  } else {
+    ERR_MSG("Failed to open canokey-test-up for writing\n");
+  }
+#endif
+
+  set_touch_result(TOUCH_SHORT);
+  return 0;
+}
+
+int testmode_get_is_nfc_mode(void) {
+#ifndef FUZZ // speed up fuzzing
+  const char *env_nfc_mode = getenv("CANOKEY_TEST_NFC");
+  if (env_nfc_mode != NULL && *env_nfc_mode != 0) {
+    set_nfc_state((uint8_t)(atoi(env_nfc_mode) != 0));
+    return 0;
+  }
+
+  uint32_t nfc_mode = 0;
+  FILE *f_cfg = fopen("/tmp/canokey-test-nfc", "r");
+  if (f_cfg == NULL) return -1;
+  if (fscanf(f_cfg, "%u", &nfc_mode) < 1) return -1;
+  fclose(f_cfg);
+  set_nfc_state((uint8_t)nfc_mode);
+#endif
+  return 0;
+}
+
+void testmode_set_initial_ticks(uint32_t ticks) { initial_ticks = ticks; }
+
+void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data) {
+  DBG_MSG("%hhu %hhu ", p1, p2);
+  PRINT_HEX(data, len);
+  if ((p1 == TESTMODE_ERR_WRITE || p1 == TESTMODE_ERR_READ) && !p2) {
+    if (len < sizeof(err_trigger_filename)) {
+      memcpy(err_trigger_filename, data, len);
+      err_trigger_filename[len] = 0;
+      err_trigger_file_wr = p1 == TESTMODE_ERR_WRITE;
+    }
+  }
+}
+
+bool testmode_err_triggered(const char *filename, bool file_wr) {
+  bool ret = file_wr == err_trigger_file_wr && strcmp(filename, err_trigger_filename) == 0;
+  if (ret) err_trigger_filename[0] = 0;
+  return ret;
+}

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+[workspace]
+members = ["crates/protocol", "crates/ports", "crates/core", "crates/ffi", "crates/host"]
+exclude = ["minicbor"]
+resolver = "3"
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+overflow-checks = true
+
+[workspace.lints.rust]
+warnings = "deny"

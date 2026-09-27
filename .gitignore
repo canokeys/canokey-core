@@ -4,3 +4,5 @@ lfs-root
 fido2-tests/
 libfido2/
 u2f-ref-code/
+
+/target/
