@@ -28,35 +28,42 @@ pub fn length(header: &[u8]) -> Result<usize, Error> {
     Ok(FIXED_BYTES + header[NAME_LENGTH] as usize + header[KEY_LENGTH] as usize)
 }
 pub fn encode(record: &Credential, out: &mut [u8; LENGTH]) -> usize {
-    out[..HEADER_BYTES].copy_from_slice(&[
-        FORMAT_VERSION,
-        record.name_len,
-        record.key_len,
-        record.kind as u8 | record.algorithm as u8,
-        record.digits,
-        record.properties.bits(),
-    ]);
-    let key_at = HEADER_BYTES + record.name().len();
-    let counter_at = key_at + record.key().len();
-    out[HEADER_BYTES..key_at].copy_from_slice(record.name());
-    out[key_at..counter_at].copy_from_slice(record.key());
-    out[counter_at..counter_at + COUNTER_BYTES].copy_from_slice(&record.moving_factor);
-    counter_at + COUNTER_BYTES
+    let n = record.encoded_length();
+    out[..n].copy_from_slice(&record.bytes[..n]);
+    n
 }
-pub fn decode(bytes: &[u8]) -> Result<Credential, Error> {
+/// Validated non-secret fields. The serialized layout remains unchanged.
+pub(super) struct Header {
+    pub name_len: u8,
+    pub kind: Kind,
+    pub digits: u8,
+    pub properties: Properties,
+}
+// Callers first validate the record shape with length(); the repository keeps
+// that proof in its private Entry alongside these six bytes.
+pub(super) fn fields(bytes: &[u8; HEADER_BYTES]) -> Result<Header, Error> {
+    Algorithm::from_byte(bytes[TYPE] & Kind::ALGORITHM_MASK)?;
+    let header = Header {
+        name_len: bytes[NAME_LENGTH],
+        kind: Kind::from_byte(bytes[TYPE])?,
+        digits: bytes[DIGITS],
+        properties: Properties::new(bytes[PROPERTIES])?,
+    };
+    if !(4..=8).contains(&header.digits) {
+        return Err(Error::Invalid);
+    }
+    Ok(header)
+}
+pub(super) fn validate(bytes: &[u8]) -> Result<(), Error> {
     if bytes.len() != length(bytes)? {
         return Err(Error::Invalid);
     }
-    let kind = Kind::from_byte(bytes[TYPE])?;
-    let key_at = HEADER_BYTES + bytes[NAME_LENGTH] as usize;
-    let counter_at = key_at + bytes[KEY_LENGTH] as usize;
-    Credential::new(
-        &bytes[HEADER_BYTES..key_at],
-        &bytes[key_at..counter_at],
-        kind,
-        Algorithm::from_byte(bytes[TYPE] & Kind::ALGORITHM_MASK)?,
-        bytes[DIGITS],
-        Properties::new(bytes[PROPERTIES])?,
-        bytes[counter_at..].try_into().map_err(|_| Error::Invalid)?,
-    )
+    fields(bytes[..HEADER_BYTES].try_into().unwrap())?;
+    Ok(())
+}
+pub fn decode(bytes: &[u8]) -> Result<Credential, Error> {
+    validate(bytes)?;
+    let mut record = Credential { bytes: [0; LENGTH] };
+    record.bytes[..bytes.len()].copy_from_slice(bytes);
+    Ok(record)
 }

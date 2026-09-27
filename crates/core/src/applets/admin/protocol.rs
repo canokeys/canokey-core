@@ -100,12 +100,17 @@ impl Admin {
         Ok(())
     }
     pub fn cancel_command(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+        self.abort_transaction(p);
+        p.memory.wipe(&mut w.input);
+    }
+    /// End external resources; the registry wipes its active workspace once.
+    pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_>) {
+        let _ = &p;
         #[cfg(feature = "ctap")]
         if self.certificate {
             p.storage.stage_abort();
             self.certificate = false;
         }
-        p.memory.wipe(&mut w.input);
         self.used = 0;
     }
     pub fn consume(

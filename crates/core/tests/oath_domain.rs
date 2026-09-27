@@ -100,6 +100,15 @@ impl Repository for Store {
         self.writes += 1;
         Ok(())
     }
+    fn update_counter(&mut self, id: CredentialId, counter: &[u8; 8]) -> Result<(), Error> {
+        let bytes = self.rows[id.0 as usize - 1]
+            .as_mut()
+            .ok_or(Error::Missing)?;
+        let offset = bytes.len() - 8;
+        bytes[offset..].copy_from_slice(counter);
+        self.writes += 1;
+        Ok(())
+    }
     fn delete(&mut self, id: CredentialId) -> Result<(), Error> {
         self.rows[id.0 as usize - 1] = None;
         self.writes += 1;
@@ -139,6 +148,43 @@ fn credential(
         [0; 8],
     )
     .unwrap()
+}
+#[test]
+fn compact_records_preserve_keys_and_counters_when_names_change_size() {
+    let mut crypto = Primitives::default();
+    for key_len in [1, 20, 32, 64] {
+        let key = [0xa5; 64];
+        let counter = 0x0123456789abcdefu64.to_be_bytes();
+        let mut record = Credential::new(
+            b"original",
+            &key[..key_len],
+            Kind::Hotp,
+            Algorithm::Sha512,
+            8,
+            Properties::new(3).unwrap(),
+            counter,
+        )
+        .unwrap();
+        for name_len in [64, 1, 32, 63, 2] {
+            let name = [b'x'; 64];
+            record.rename(&name[..name_len], &mut crypto).unwrap();
+            let mut encoded = [0xcc; codec::LENGTH];
+            let n = codec::encode(&record, &mut encoded);
+            assert_eq!(n, codec::FIXED_BYTES + name_len + key_len);
+            assert_eq!(
+                &encoded[..6],
+                &[1, name_len as u8, key_len as u8, 0x13, 8, 3]
+            );
+            assert_eq!(&encoded[n - 8..n], &counter);
+            let mut decoded = codec::decode(&encoded[..n]).unwrap();
+            assert_eq!(decoded.name(), &name[..name_len]);
+            assert_eq!(decoded.key(), &key[..key_len]);
+            assert_eq!(decoded.moving_factor(), counter);
+            decoded.clear(&mut crypto);
+            assert!(decoded.key().is_empty());
+        }
+        record.clear(&mut crypto);
+    }
 }
 #[test]
 fn hotp_preserves_c_preincrement_and_persistence() {

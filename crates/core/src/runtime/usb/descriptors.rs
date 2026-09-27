@@ -57,25 +57,45 @@ impl Interfaces {
         }
     }
     pub fn configuration(self, out: &mut [u8; 160]) -> usize {
-        let length =
-            86 + 32 * (self.hid as usize + self.keyboard as usize) + 9 * self.webusb as usize;
-        let mut offset = 0;
-        let mut append = |bytes: &[u8]| {
-            out[offset..offset + bytes.len()].copy_from_slice(bytes);
-            offset += bytes.len();
+        Configuration::new(self).copy_into(out)
+    }
+}
+/// Immutable product composition. Firmware constructs this once in Flash;
+/// request handling only reads it and never rebuilds wire descriptors.
+pub struct Configuration {
+    interfaces: Interfaces,
+    bytes: [u8; 160],
+    length: usize,
+}
+impl Configuration {
+    pub const fn interfaces(&self) -> Interfaces {
+        self.interfaces
+    }
+    pub const fn new(interfaces: Interfaces) -> Self {
+        let length = 86
+            + 32 * (interfaces.hid as usize + interfaces.keyboard as usize)
+            + 9 * interfaces.webusb as usize;
+        let mut descriptor = Self {
+            interfaces,
+            bytes: [0; 160],
+            length: 0,
         };
-        append(&[9, 2, length as u8, 0, self.count(), 1, 0, 0x80, 50]);
-        if self.hid {
-            append(&[9, 4, 0, 0, 2, 3, 0, 0, 0]);
-            append(CTAP_HID);
-            append(&[7, 5, 0x82, 3, 64, 0, 5, 7, 5, 2, 3, 64, 0, 5]);
+        descriptor.append(&[9, 2, length as u8, 0, interfaces.count(), 1, 0, 0x80, 50]);
+        if interfaces.hid {
+            descriptor.append(&[9, 4, 0, 0, 2, 3, 0, 0, 0]);
+            descriptor.append(CTAP_HID);
+            descriptor.append(&[7, 5, 0x82, 3, 64, 0, 5, 7, 5, 2, 3, 64, 0, 5]);
         }
-        if self.webusb {
-            append(&[9, 4, self.webusb(), 0, 0, 0xff, 0xff, 0xff, 0x12]);
+        if interfaces.webusb {
+            descriptor.append(&[9, 4, interfaces.webusb(), 0, 0, 0xff, 0xff, 0xff, 0x12]);
         }
-        append(&[9, 4, self.ccid(), 0, 2, 0x0b, 0, 0, 0]);
-        let max: u16 = if self.hid { 10 + 7 + 1024 + 2 } else { 271 };
-        append(&[
+        descriptor.append(&[9, 4, interfaces.ccid(), 0, 2, 0x0b, 0, 0, 0]);
+        let max: u16 = if interfaces.hid {
+            10 + 7 + 1024 + 2
+        } else {
+            271
+        };
+        descriptor.append(&[
             54,
             0x21,
             0x10,
@@ -118,7 +138,7 @@ impl Interfaces {
             0,
             0xfe,
             0,
-            if self.hid { 4 } else { 2 },
+            if interfaces.hid { 4 } else { 2 },
             0,
             max as u8,
             (max >> 8) as u8,
@@ -131,14 +151,26 @@ impl Interfaces {
             0,
             1,
         ]);
-        append(&[7, 5, 0x83, 2, 64, 0, 0, 7, 5, 3, 2, 64, 0, 0]);
-        if self.keyboard {
-            append(&[9, 4, self.keyboard(), 0, 2, 3, 0, 0, 0]);
-            append(KEYBOARD_HID);
-            append(&[7, 5, 0x81, 3, 8, 0, 5, 7, 5, 1, 3, 8, 0, 5]);
+        descriptor.append(&[7, 5, 0x83, 2, 64, 0, 0, 7, 5, 3, 2, 64, 0, 0]);
+        if interfaces.keyboard {
+            descriptor.append(&[9, 4, interfaces.keyboard(), 0, 2, 3, 0, 0, 0]);
+            descriptor.append(KEYBOARD_HID);
+            descriptor.append(&[7, 5, 0x81, 3, 8, 0, 5, 7, 5, 1, 3, 8, 0, 5]);
         }
-        debug_assert_eq!(offset, length);
-        offset
+        assert!(descriptor.length == length);
+        descriptor
+    }
+    const fn append(&mut self, bytes: &[u8]) {
+        let mut index = 0;
+        while index < bytes.len() {
+            self.bytes[self.length] = bytes[index];
+            self.length += 1;
+            index += 1;
+        }
+    }
+    pub fn copy_into(&self, out: &mut [u8; 160]) -> usize {
+        out[..self.length].copy_from_slice(&self.bytes[..self.length]);
+        self.length
     }
 }
 pub fn string(text: &[u8], out: &mut [u8; 160]) -> usize {

@@ -176,7 +176,10 @@ fn incomplete_and_malformed_packets_never_queue_execution() {
 
 #[test]
 fn webusb_composition_preserves_native_interface_order() {
-    use canokey_rust_core::runtime::usb::{Device, Reply, descriptors::Interfaces};
+    use canokey_rust_core::runtime::usb::{
+        Device, Reply,
+        descriptors::{Configuration, Interfaces},
+    };
     for hid in [false, true] {
         for keyboard in [false, true] {
             let interfaces = Interfaces {
@@ -204,14 +207,25 @@ fn webusb_composition_preserves_native_interface_order() {
             }
             assert_eq!(seen, interfaces.count());
             assert_eq!(interfaces.ccid(), interfaces.webusb() + 1);
-            let mut d = Device::new(interfaces);
+            let configuration = Configuration::new(interfaces);
+            let mut d = Device::new();
             assert_eq!(
-                d.setup(setup(0x80, 6, 0x100, 0, 18), false, &mut bytes),
+                d.setup(
+                    &configuration,
+                    setup(0x80, 6, 0x100, 0, 18),
+                    false,
+                    &mut bytes
+                ),
                 Reply::Data(18)
             );
             assert_eq!(&bytes[2..4], &[0x10, 2]);
             assert_eq!(
-                d.setup(setup(0x80, 6, 0x312, 0x409, 255), false, &mut bytes),
+                d.setup(
+                    &configuration,
+                    setup(0x80, 6, 0x312, 0x409, 255),
+                    false,
+                    &mut bytes
+                ),
                 Reply::Data(14)
             );
         }
@@ -220,20 +234,26 @@ fn webusb_composition_preserves_native_interface_order() {
 
 #[test]
 fn landing_setting_changes_only_bos_index_and_survives_usb_reset() {
-    use canokey_rust_core::runtime::usb::{Device, Reply, descriptors::Interfaces};
-    let mut device = Device::new(Interfaces {
+    use canokey_rust_core::runtime::usb::{
+        Device, Reply,
+        descriptors::{Configuration, Interfaces},
+    };
+    let configuration = Configuration::new(Interfaces {
         hid: true,
         keyboard: true,
         webusb: true,
     });
+    let mut device = Device::new();
     let mut scratch = [0; 160];
     let request = setup(0x80, 6, 0x0f00, 0, 255);
-    let Reply::Descriptor(first) = device.setup(request, false, &mut scratch) else {
+    let Reply::Descriptor(first) = device.setup(&configuration, request, false, &mut scratch)
+    else {
         panic!()
     };
     device.landing = false;
     device.reset();
-    let Reply::Descriptor(second) = device.setup(request, false, &mut scratch) else {
+    let Reply::Descriptor(second) = device.setup(&configuration, request, false, &mut scratch)
+    else {
         panic!()
     };
     assert_eq!(first, Descriptor::Bos); // In-flight reply captures the earlier setting.
@@ -252,7 +272,12 @@ fn landing_setting_changes_only_bos_index_and_survives_usb_reset() {
         }
     }
     assert_eq!(
-        device.setup(setup(0xc0, 1, 1, 2, 255), false, &mut scratch),
+        device.setup(
+            &configuration,
+            setup(0xc0, 1, 1, 2, 255),
+            false,
+            &mut scratch
+        ),
         Reply::Descriptor(Descriptor::Url)
     );
 }

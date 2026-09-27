@@ -351,10 +351,9 @@ impl State {
         let mut mac = Mac::new(p.crypto, p.memory);
         let name = name(&mut c)?;
         let id = service::find(&mut store, &mut mac, name).map_err(status)?;
-        let mut record = store.load(id).map_err(status)?;
-        let kind = record.kind();
-        let touch = record.properties().touch();
-        record.clear(&mut mac);
+        let metadata = store.metadata(id).map_err(status)?;
+        let kind = metadata.kind;
+        let touch = metadata.properties.touch();
         let input = if kind == Kind::Totp {
             challenge(&mut c)?
         } else {

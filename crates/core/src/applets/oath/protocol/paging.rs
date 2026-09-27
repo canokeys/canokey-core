@@ -71,15 +71,21 @@ impl State {
                     } else {
                         // CALCULATE ALL shares the single-credential policy.
                         let input = &self.challenge[..self.challenge_len];
-                        let result = service::calculate(
+                        let result = service::calculate_loaded(
                             &mut store,
                             &mut mac,
                             id,
+                            &record,
                             input,
                             Presence::NotConfirmed,
                         );
-                        record.clear(&mut mac);
-                        let mut result = result.map_err(status)?;
+                        let mut result = match result {
+                            Ok(result) => result,
+                            Err(error) => {
+                                record.clear(&mut mac);
+                                return Err(status(error));
+                            }
+                        };
                         self.emit_digest(&result, truncated);
                         result.clear(&mut mac);
                     }

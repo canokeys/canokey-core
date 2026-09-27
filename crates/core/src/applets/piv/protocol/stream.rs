@@ -70,7 +70,6 @@ impl Piv {
                 self.auth_clear(p);
                 // Changing the workspace variant destroys classic key/input
                 // backing; initialize the stream only after the transition.
-                w.wipe_active(p.memory);
                 let s = w.stream_with(p.memory);
                 let operation = if a == alg::MLKEM768 {
                     StreamOperation::DecapsulateInit
@@ -342,12 +341,26 @@ impl Piv {
             self.read_classic(offset, out, w.classic_with(p.memory), p)
         }
     }
+    /// Release native/staged resources before the registry erases the active
+    /// workspace and drops this applet. No classic workspace is constructed.
+    pub(crate) fn deselect(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+        if matches!(self.request, Request::Put) {
+            p.storage.stage_abort();
+        }
+        self.auth_clear(p);
+        self.close_external(w, p);
+    }
     pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+        if !self.close_external(w, p) {
+            self.close_classic(w.classic_with(p.memory), p);
+        }
+    }
+    fn close_external(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> bool {
         self.abort_generation(p);
         if let SessionWorkspace::Attestation(a) = w {
             a.close(p);
             self.memory(0);
-            return;
+            return true;
         }
         if let SessionWorkspace::Stream(s) = w {
             let a = match self.response {
@@ -361,8 +374,9 @@ impl Piv {
             };
             abort_stream(a, s, p);
             self.memory(0);
+            true
         } else {
-            self.close_classic(w.classic_with(p.memory), p)
+            false
         }
     }
 }

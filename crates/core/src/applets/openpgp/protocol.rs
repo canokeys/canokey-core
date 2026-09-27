@@ -159,10 +159,13 @@ impl OpenPgp {
         self.used += b.len();
         Ok(())
     }
-    pub fn abort(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_>) {
         if matches!(self.request, Request::Certificate) {
             p.storage.stage_abort();
         }
+    }
+    pub fn abort(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+        self.abort_transaction(p);
         self.request = Request::None;
         self.used = 0;
         p.memory.wipe(&mut w.key.bytes);

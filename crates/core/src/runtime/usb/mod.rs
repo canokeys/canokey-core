@@ -4,7 +4,7 @@
 pub mod descriptors;
 pub mod webusb;
 use canokey_protocol::usb::Setup;
-use descriptors::Interfaces;
+use descriptors::{Configuration, Interfaces};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reply {
@@ -19,7 +19,6 @@ pub enum Reply {
     Stall,
 }
 pub struct Device {
-    interfaces: Interfaces,
     pub address: u8,
     pub configured: bool,
     idle: [u8; 2],
@@ -27,9 +26,8 @@ pub struct Device {
     pub landing: bool,
 }
 impl Device {
-    pub const fn new(interfaces: Interfaces) -> Self {
+    pub const fn new() -> Self {
         Self {
-            interfaces,
             address: 0,
             configured: false,
             idle: [0; 2],
@@ -39,12 +37,19 @@ impl Device {
     }
     pub fn reset(&mut self) {
         let landing = self.landing;
-        *self = Self::new(self.interfaces);
+        *self = Self::new();
         self.landing = landing;
     }
-    pub fn setup(&mut self, s: Setup, stalled: bool, out: &mut [u8; 160]) -> Reply {
-        if self.interfaces.webusb {
-            if let Some(d) = webusb::Descriptor::request(s, self.interfaces.webusb()) {
+    pub fn setup(
+        &mut self,
+        configuration: &Configuration,
+        s: Setup,
+        stalled: bool,
+        out: &mut [u8; 160],
+    ) -> Reply {
+        let interfaces = configuration.interfaces();
+        if interfaces.webusb {
+            if let Some(d) = webusb::Descriptor::request(s, interfaces.webusb()) {
                 return Reply::Descriptor(if d == webusb::Descriptor::Bos && !self.landing {
                     webusb::Descriptor::BosWithoutLanding
                 } else {
@@ -57,12 +62,12 @@ impl Device {
             (0x80, 6) if s.value as u8 == 0 && s.index == 0 => {
                 let desc = match s.value >> 8 {
                     1 => descriptors::DEVICE,
-                    2 => return Reply::Data(self.interfaces.configuration(out)),
+                    2 => return Reply::Data(configuration.copy_into(out)),
                     3 => descriptors::LANGUAGE,
                     _ => return Reply::Stall,
                 };
                 out[..desc.len()].copy_from_slice(desc);
-                if s.value >> 8 == 1 && self.interfaces.webusb {
+                if s.value >> 8 == 1 && interfaces.webusb {
                     out[2] = 0x10;
                 }
                 Reply::Data(desc.len())
@@ -71,7 +76,7 @@ impl Device {
                 let text: &[u8] = match s.value as u8 {
                     1 => b"canokeys.org",
                     2 => b"CanoKey Rust Core",
-                    0x12 if self.interfaces.webusb => b"WebUSB",
+                    0x12 if interfaces.webusb => b"WebUSB",
                     _ => return Reply::Stall,
                 };
                 Reply::Data(descriptors::string(text, out))
@@ -92,7 +97,7 @@ impl Device {
             }
             (0x81, 0)
                 if self.configured
-                    && s.index < self.interfaces.count() as u16
+                    && s.index < interfaces.count() as u16
                     && s.value == 0
                     && s.length == 2 =>
             {
@@ -101,7 +106,7 @@ impl Device {
             }
             (0x81, 10)
                 if self.configured
-                    && s.index < self.interfaces.count() as u16
+                    && s.index < interfaces.count() as u16
                     && s.value == 0
                     && s.length == 1 =>
             {
@@ -110,13 +115,15 @@ impl Device {
             }
             (1, 11)
                 if self.configured
-                    && s.index < self.interfaces.count() as u16
+                    && s.index < interfaces.count() as u16
                     && s.value == 0
                     && s.length == 0 =>
             {
                 Reply::Interface(s.index as u8)
             }
-            (0x82, 0) if s.value == 0 && s.length == 2 && self.valid_endpoint(s.index) => {
+            (0x82, 0)
+                if s.value == 0 && s.length == 2 && self.valid_endpoint(interfaces, s.index) =>
+            {
                 out[0] = stalled as u8;
                 out[1] = 0;
                 Reply::Data(2)
@@ -125,22 +132,22 @@ impl Device {
                 if self.configured
                     && s.value == 0
                     && s.length == 0
-                    && self.valid_endpoint(s.index)
+                    && self.valid_endpoint(interfaces, s.index)
                     && s.index & 0x7f != 0 =>
             {
                 Reply::Halt(s.index as u8, s.request == 3)
             }
-            _ => self.hid(s, out),
+            _ => self.hid(interfaces, s, out),
         }
     }
-    fn valid_endpoint(&self, endpoint: u16) -> bool {
-        self.interfaces.endpoint(endpoint) && (endpoint & 0x7f == 0 || self.configured)
+    fn valid_endpoint(&self, interfaces: Interfaces, endpoint: u16) -> bool {
+        interfaces.endpoint(endpoint) && (endpoint & 0x7f == 0 || self.configured)
     }
-    fn hid(&mut self, s: Setup, out: &mut [u8; 160]) -> Reply {
+    fn hid(&mut self, interfaces: Interfaces, s: Setup, out: &mut [u8; 160]) -> Reply {
         if !self.configured {
             return Reply::Stall;
         }
-        let Some(hid) = self.interfaces.hid_interface(s.index) else {
+        let Some(hid) = interfaces.hid_interface(s.index) else {
             return Reply::Stall;
         };
         match (s.kind, s.request) {
@@ -170,6 +177,11 @@ impl Device {
             (0x21, 9) if hid == 1 && s.value == 0x0201 && s.length == 2 => Reply::ReceiveLed,
             _ => Reply::Stall,
         }
+    }
+}
+impl Default for Device {
+    fn default() -> Self {
+        Self::new()
     }
 }
 /// One control-IN transaction. Count acknowledgements, not submitted packets.

@@ -48,12 +48,41 @@ unsafe extern "C" {
 }
 #[cfg(feature = "platform-stream")]
 unsafe extern "C" {
-    fn ck_platform_stream(
-        op: u8,
+    fn ck_stream_abort(scratch: *mut crate::CryptoScratch);
+    fn ck_stream_read(scratch: *mut crate::CryptoScratch, out: *mut u8, capacity: usize) -> i32;
+    fn ck_stream_public_init(
         alg: u8,
         scratch: *mut crate::CryptoScratch,
         input: *const u8,
         n: usize,
+    ) -> i32;
+    fn ck_stream_sign_init(
+        alg: u8,
+        scratch: *mut crate::CryptoScratch,
+        input: *const u8,
+        n: usize,
+    ) -> i32;
+    fn ck_stream_sm2_identity(
+        scratch: *mut crate::CryptoScratch,
+        input: *const u8,
+        n: usize,
+    ) -> i32;
+    fn ck_stream_sign_update(scratch: *mut crate::CryptoScratch, input: *const u8, n: usize)
+    -> i32;
+    fn ck_stream_sign_final(scratch: *mut crate::CryptoScratch) -> i32;
+    fn ck_stream_decapsulate_init(
+        alg: u8,
+        scratch: *mut crate::CryptoScratch,
+        input: *const u8,
+        n: usize,
+    ) -> i32;
+    fn ck_stream_decapsulate_update(
+        scratch: *mut crate::CryptoScratch,
+        input: *const u8,
+        n: usize,
+    ) -> i32;
+    fn ck_stream_decapsulate_final(
+        scratch: *mut crate::CryptoScratch,
         out: *mut u8,
         capacity: usize,
     ) -> i32;
@@ -165,15 +194,18 @@ native_port! { impl Crypto for CryptoBackend {
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
         let n = unsafe {
-            ck_platform_stream(
-                op as u8,
-                alg,
-                scratch,
-                input.as_ptr(),
-                input.len(),
-                out.as_mut_ptr(),
-                out.len(),
-            )
+            match op {
+                crate::StreamOperation::Abort => { ck_stream_abort(scratch); 0 },
+                crate::StreamOperation::Read => ck_stream_read(scratch, out.as_mut_ptr(), out.len()),
+                crate::StreamOperation::PublicInit => ck_stream_public_init(alg, scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::SignInit => ck_stream_sign_init(alg, scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::Sm2Identity => ck_stream_sm2_identity(scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::SignUpdate => ck_stream_sign_update(scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::SignFinal => ck_stream_sign_final(scratch),
+                crate::StreamOperation::DecapsulateInit => ck_stream_decapsulate_init(alg, scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::DecapsulateUpdate => ck_stream_decapsulate_update(scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::DecapsulateFinal => ck_stream_decapsulate_final(scratch, out.as_mut_ptr(), out.len()),
+            }
         };
         if n < 0 {
             Err(CryptoError::Failure)

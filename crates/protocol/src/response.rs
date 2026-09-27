@@ -108,7 +108,9 @@ pub struct Response {
 #[derive(Clone, Copy)]
 struct Pending {
     total: u32,
-    offset: u32,
+    // Initialized to total and decreased only by a validated positive read.
+    // Keeping the remaining budget avoids revalidating an independent cursor.
+    remaining: u32,
     sw: StatusWord,
 }
 impl Response {
@@ -133,7 +135,7 @@ impl Response {
         }
         self.pending = Some(Pending {
             total,
-            offset: 0,
+            remaining: total,
             sw,
         });
         true
@@ -154,15 +156,12 @@ impl Response {
         le: u32,
     ) -> Result<Chunk, StatusWord> {
         let p = self.pending.ok_or(StatusWord::COMMAND_NOT_ALLOWED)?;
-        let remaining = p
-            .total
-            .checked_sub(p.offset)
-            .ok_or(StatusWord::UNABLE_TO_PROCESS)?;
+        let remaining = p.remaining;
         let n = remaining.min(le).min(output.len() as u32) as usize;
         let len = if n == 0 {
             0
         } else {
-            match source.read(p.offset, &mut output[..n]) {
+            match source.read(p.total - remaining, &mut output[..n]) {
                 Ok(nread) if nread > 0 && nread <= n => nread,
                 Err(error) => {
                     output[..n].fill(0);
@@ -189,10 +188,7 @@ impl Response {
         if remaining == 0 {
             self.clear(source);
         } else {
-            self.pending = Some(Pending {
-                offset: p.total - remaining,
-                ..p
-            });
+            self.pending = Some(Pending { remaining, ..p });
         }
         Ok(Chunk { len, sw })
     }
@@ -341,7 +337,7 @@ mod tests {
                             let mut response = Response {
                                 pending: Some(Pending {
                                     total,
-                                    offset,
+                                    remaining: total - offset,
                                     sw: final_sw,
                                 }),
                             };
@@ -366,7 +362,7 @@ mod tests {
                             assert_eq!(source.offset, expected.next);
                             assert_eq!(response.active(), !expected.complete);
                             if let Some(p) = response.pending {
-                                assert_eq!(p.offset, expected.next);
+                                assert_eq!(p.total - p.remaining, expected.next);
                             }
                             assert_eq!(source.closes, usize::from(expected.complete));
                             assert_eq!(out[0], 0xa5);

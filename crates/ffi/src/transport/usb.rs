@@ -3,7 +3,10 @@
 //! All exports except init/deinit require the platform IRQ mask. Native packet
 //! callbacks publish mailboxes only. No Rust borrow crosses such a callback.
 use canokey_protocol::usb::Setup;
-use canokey_rust_core::runtime::usb::{ControlIn, Device, Reply, descriptors::Interfaces};
+use canokey_rust_core::runtime::usb::{
+    ControlIn, Device, Reply,
+    descriptors::{Configuration, Interfaces},
+};
 const INTERFACES: Interfaces = Interfaces {
     webusb: cfg!(feature = "usb-webusb"),
     hid: cfg!(feature = "usb-hid"),
@@ -58,7 +61,8 @@ enum Phase {
     #[cfg(feature = "usb-webusb")]
     WebStatus,
 }
-static mut DEVICE: Device = Device::new(INTERFACES);
+const CONFIGURATION: Configuration = Configuration::new(INTERFACES);
+static mut DEVICE: Device = Device::new();
 static mut TX: [Tx; 4] = [Tx::EMPTY; 4];
 static mut HALTED: u8 = 0;
 static mut SUSPENDED: bool = false;
@@ -259,6 +263,7 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
             false
         };
         let reply = (&mut *core::ptr::addr_of_mut!(DEVICE)).setup(
+            &CONFIGURATION,
             s,
             halted,
             &mut *core::ptr::addr_of_mut!(CONTROL),

@@ -196,8 +196,10 @@ impl AppletState {
     }
 }
 
+// Put frequently accessed session controls before the large workspace.
+// The stable internal order avoids expensive large-offset Thumb-1 accesses.
+#[repr(C)]
 pub struct Registry {
-    applet: AppletState,
     #[cfg(feature = "admin")]
     admin: admin::Admin,
     #[cfg(feature = "ctap")]
@@ -208,6 +210,7 @@ pub struct Registry {
     pass: Pass,
     #[cfg(feature = "pass")]
     output: crate::applets::pass::output::Output,
+    applet: AppletState,
     #[cfg(any(
         feature = "admin",
         feature = "openpgp",
@@ -241,23 +244,15 @@ impl Registry {
     }
     #[allow(unused_variables)]
     fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
-        #[cfg(any(
-            feature = "admin",
-            feature = "openpgp",
-            feature = "piv",
-            feature = "ctap"
-        ))]
-        self.workspace.wipe_active(platform.memory);
         #[cfg(feature = "admin")]
         {
             self.grants.admin = false;
-            self.admin
-                .cancel_command(self.workspace.classic_with(platform.memory), platform);
+            self.admin.abort_transaction(platform);
         }
         #[cfg(feature = "ctap")]
         self.ctap.reset(&mut self.workspace, platform);
-        // Wipe the live classic state before vacating it. ADMIN selection survives
-        // its factory-reset command; CTAP state was reset separately above.
+        // Release native handles before erasing backing bytes. The selected
+        // applet is discarded, so it need not rebuild an empty classic view.
         #[cfg(classic_presence)]
         match &mut self.applet {
             #[cfg(feature = "oath")]
@@ -267,16 +262,23 @@ impl Registry {
             }
             #[cfg(feature = "openpgp")]
             AppletState::OpenPgp(s) => {
-                s.reset(self.workspace.classic_with(platform.memory), platform);
+                s.abort_transaction(platform);
                 self.applet = AppletState::None;
             }
             #[cfg(feature = "piv")]
             AppletState::Piv(s) => {
-                s.reset(&mut self.workspace, platform);
+                s.deselect(&mut self.workspace, platform);
                 self.applet = AppletState::None;
             }
             _ => (),
         }
+        #[cfg(any(
+            feature = "admin",
+            feature = "openpgp",
+            feature = "piv",
+            feature = "ctap"
+        ))]
+        self.workspace.wipe_active(platform.memory);
     }
 
     #[cfg(feature = "ctap")]

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use canokey_protocol::usb::Setup;
-use canokey_rust_core::runtime::usb::{ControlIn, Device, Reply, descriptors::Interfaces};
+use canokey_rust_core::runtime::usb::{
+    ControlIn, Device, Reply,
+    descriptors::{Configuration, Interfaces},
+};
 fn request(kind: u8, request: u8, value: u16, index: u16, length: u16) -> Setup {
     Setup {
         kind,
@@ -68,21 +71,25 @@ fn descriptors_match_interfaces_and_endpoint_directions() {
 }
 #[test]
 fn standard_request_validation_and_state() {
-    let mut d = Device::new(Interfaces {
+    let configuration = Configuration::new(Interfaces {
         webusb: false,
         hid: true,
         keyboard: true,
     });
+    let mut d = Device::new();
     let mut b = [0; 160];
-    assert_eq!(d.setup(request(0, 9, 1, 0, 0), false, &mut b), Reply::Stall);
     assert_eq!(
-        d.setup(request(0, 5, 7, 0, 0), false, &mut b),
+        d.setup(&configuration, request(0, 9, 1, 0, 0), false, &mut b),
+        Reply::Stall
+    );
+    assert_eq!(
+        d.setup(&configuration, request(0, 5, 7, 0, 0), false, &mut b),
         Reply::Address(7)
     );
     assert_eq!(d.address, 0); // only the status acknowledgement commits address
     d.address = 7;
     assert_eq!(
-        d.setup(request(0, 9, 1, 0, 0), false, &mut b),
+        d.setup(&configuration, request(0, 9, 1, 0, 0), false, &mut b),
         Reply::Configure(true)
     );
     d.configured = true;
@@ -98,19 +105,23 @@ fn standard_request_validation_and_state() {
         request(0x81, 10, 0, 3, 1),
         request(1, 11, 1, 0, 0),
     ] {
-        assert_eq!(d.setup(s, false, &mut b), Reply::Stall, "{s:?}");
+        assert_eq!(
+            d.setup(&configuration, s, false, &mut b),
+            Reply::Stall,
+            "{s:?}"
+        );
     }
     assert_eq!(
-        d.setup(request(0x82, 0, 0, 0x83, 2), true, &mut b),
+        d.setup(&configuration, request(0x82, 0, 0, 0x83, 2), true, &mut b),
         Reply::Data(2)
     );
     assert_eq!(&b[..2], &[1, 0]);
     assert_eq!(
-        d.setup(request(2, 1, 0, 0x83, 0), true, &mut b),
+        d.setup(&configuration, request(2, 1, 0, 0x83, 0), true, &mut b),
         Reply::Halt(0x83, false)
     );
     assert_eq!(
-        d.setup(request(0x80, 8, 0, 0, 1), false, &mut b),
+        d.setup(&configuration, request(0x80, 8, 0, 0, 1), false, &mut b),
         Reply::Data(1)
     );
     assert_eq!(b[0], 1);
@@ -120,33 +131,54 @@ fn standard_request_validation_and_state() {
 }
 #[test]
 fn hid_reports_idle_leds_and_rejected_class_requests() {
-    let mut d = Device::new(Interfaces {
+    let configuration = Configuration::new(Interfaces {
         webusb: false,
         hid: true,
         keyboard: true,
     });
+    let mut d = Device::new();
     d.address = 1;
     d.configured = true;
     let mut b = [0; 160];
     assert_eq!(
-        d.setup(request(0x81, 6, 0x2200, 0, 255), false, &mut b),
+        d.setup(
+            &configuration,
+            request(0x81, 6, 0x2200, 0, 255),
+            false,
+            &mut b
+        ),
         Reply::Data(34)
     );
     assert_eq!(
-        d.setup(request(0x81, 6, 0x2200, 2, 255), false, &mut b),
+        d.setup(
+            &configuration,
+            request(0x81, 6, 0x2200, 2, 255),
+            false,
+            &mut b
+        ),
         Reply::Data(87)
     );
     assert_eq!(
-        d.setup(request(0x21, 10, 0x0701, 2, 0), false, &mut b),
+        d.setup(
+            &configuration,
+            request(0x21, 10, 0x0701, 2, 0),
+            false,
+            &mut b
+        ),
         Reply::Status
     );
     assert_eq!(
-        d.setup(request(0xa1, 2, 1, 2, 1), false, &mut b),
+        d.setup(&configuration, request(0xa1, 2, 1, 2, 1), false, &mut b),
         Reply::Data(1)
     );
     assert_eq!(b[0], 7);
     assert_eq!(
-        d.setup(request(0x21, 9, 0x0201, 2, 2), false, &mut b),
+        d.setup(
+            &configuration,
+            request(0x21, 9, 0x0201, 2, 2),
+            false,
+            &mut b
+        ),
         Reply::ReceiveLed
     );
     for s in [
@@ -157,7 +189,7 @@ fn hid_reports_idle_leds_and_rejected_class_requests() {
         request(0xa1, 2, 0, 1, 1),
         request(0x21, 11, 0, 2, 0),
     ] {
-        assert_eq!(d.setup(s, false, &mut b), Reply::Stall);
+        assert_eq!(d.setup(&configuration, s, false, &mut b), Reply::Stall);
     }
 }
 #[test]
@@ -212,27 +244,38 @@ fn configurations_match_legacy_wire_fixtures() {
 
 #[test]
 fn hid_descriptor_bytes_short_reads_and_unknown_class_requests() {
-    let mut d = Device::new(Interfaces {
+    let configuration = Configuration::new(Interfaces {
         webusb: false,
         hid: true,
         keyboard: true,
     });
+    let mut d = Device::new();
     d.address = 1;
     d.configured = true;
     let mut bytes = [0; 160];
     for (interface, length, prefix) in [(0, 34, [6, 0xd0, 0xf1, 9]), (2, 87, [5, 1, 9, 6])] {
         assert_eq!(
-            d.setup(request(0x81, 6, 0x2100, interface, 255), false, &mut bytes),
+            d.setup(
+                &configuration,
+                request(0x81, 6, 0x2100, interface, 255),
+                false,
+                &mut bytes
+            ),
             Reply::Data(9)
         );
         assert_eq!(&bytes[..9], &[9, 0x21, 0x11, 1, 0, 1, 0x22, length, 0]);
         assert_eq!(
-            d.setup(request(0x81, 6, 0x2200, interface, 255), false, &mut bytes),
+            d.setup(
+                &configuration,
+                request(0x81, 6, 0x2200, interface, 255),
+                false,
+                &mut bytes
+            ),
             Reply::Data(length as usize)
         );
         assert_eq!(&bytes[..4], &prefix);
         let setup = request(0x81, 6, 0x2200, interface, 4);
-        let Reply::Data(available) = d.setup(setup, false, &mut bytes) else {
+        let Reply::Data(available) = d.setup(&configuration, setup, false, &mut bytes) else {
             panic!("missing report descriptor");
         };
         let mut transfer = ControlIn::new();
@@ -241,11 +284,21 @@ fn hid_descriptor_bytes_short_reads_and_unknown_class_requests() {
         assert_eq!(&bytes[..4], &prefix);
         assert_eq!(transfer.next_packet(), None);
         assert_eq!(
-            d.setup(request(0x21, 10, 0x1200, interface, 0), false, &mut bytes),
+            d.setup(
+                &configuration,
+                request(0x21, 10, 0x1200, interface, 0),
+                false,
+                &mut bytes
+            ),
             Reply::Status
         );
         assert_eq!(
-            d.setup(request(0x21, 0xff, 0x1200, interface, 0), false, &mut bytes),
+            d.setup(
+                &configuration,
+                request(0x21, 0xff, 0x1200, interface, 0),
+                false,
+                &mut bytes
+            ),
             Reply::Stall
         );
     }

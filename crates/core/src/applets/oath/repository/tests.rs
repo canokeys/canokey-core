@@ -13,6 +13,8 @@ struct Controls {
     uncertain_commit: Cell<bool>,
     capacity: Cell<Option<u32>>,
     reserve: Cell<u32>,
+    forbidden_read: Cell<Option<(usize, usize)>>,
+    patches: Cell<usize>,
 }
 struct Files<'a> {
     bytes: Vec<u8>,
@@ -28,12 +30,33 @@ impl Storage for Files<'_> {
         self.bytes = input.to_vec();
         Ok(())
     }
+    fn replace_at(
+        &mut self,
+        record: Record,
+        offset: u32,
+        input: &[u8],
+    ) -> Result<(), StorageError> {
+        assert_eq!(record, Record::OathRecords);
+        self.controls.patches.set(self.controls.patches.get() + 1);
+        self.bytes[offset as usize..offset as usize + input.len()].copy_from_slice(input);
+        if self.controls.uncertain_commit.replace(false) {
+            Err(StorageError::Uncertain)
+        } else {
+            Ok(())
+        }
+    }
     fn size(&mut self, record: Record) -> Result<u32, StorageError> {
         assert_eq!(record, Record::OathRecords);
         Ok(self.bytes.len() as u32)
     }
     fn read_at(&mut self, record: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
         assert_eq!(record, Record::OathRecords);
+        if let Some((start, end)) = self.controls.forbidden_read.get()
+            && (offset as usize) < end
+            && offset as usize + out.len() > start
+        {
+            return Err(StorageError::Unavailable);
+        }
         if out.len() == ENTRY_HEADER_BYTES {
             self.controls
                 .header_reads
@@ -81,11 +104,95 @@ impl Storage for Files<'_> {
         self.stage.clear();
     }
 }
+
+struct NoCrypto;
+impl Crypto for NoCrypto {
+    fn hmac(&mut self, _: Algorithm, _: &[u8], _: &[u8], _: &mut [u8; 64]) -> Result<(), Error> {
+        panic!("metadata must not use crypto")
+    }
+    fn random(&mut self, _: &mut [u8]) -> Result<(), Error> {
+        panic!("metadata must not use crypto")
+    }
+    fn wipe(&mut self, bytes: &mut [u8]) {
+        bytes.fill(0);
+    }
+}
+#[test]
+fn metadata_search_never_reads_secret_and_counter_patch_preserves_record() {
+    let controls = Controls::default();
+    let mut files = Files {
+        bytes: Vec::new(),
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    let id = {
+        let mut store = Store::new(&mut files, &Wipe);
+        store.initialize().unwrap();
+        store.insert(&credential(b"first")).unwrap()
+    };
+    let original = files.bytes.clone();
+    let key_start = NEXT_ID_BYTES as usize + ENTRY_HEADER_BYTES + 5;
+    controls
+        .forbidden_read
+        .set(Some((key_start, key_start + 20)));
+    {
+        let mut store = Store::new(&mut files, &Wipe);
+        assert!(store.matches_name(id, b"first", &mut NoCrypto).unwrap());
+        assert!(!store.matches_name(id, b"other", &mut NoCrypto).unwrap());
+        assert!(matches!(store.metadata(id).unwrap().kind, Kind::Totp));
+        assert!(matches!(store.load(id), Err(Error::Storage)));
+        store.update_counter(id, &123u64.to_be_bytes()).unwrap();
+        assert_eq!(controls.patches.get(), 1);
+        controls.uncertain_commit.set(true);
+        assert_eq!(
+            store.update_counter(id, &124u64.to_be_bytes()),
+            Err(Error::Storage)
+        );
+        let reads = controls.header_reads.get();
+        store.metadata(id).unwrap();
+        assert_eq!(controls.header_reads.get(), reads + 1);
+    }
+    let end = original.len() - 8;
+    assert_eq!(&files.bytes[..end], &original[..end]);
+    assert_eq!(&files.bytes[end..], &124u64.to_be_bytes());
+    assert!(files.stage.is_empty());
+}
 struct Wipe;
 impl Memory for Wipe {
     fn wipe(&self, bytes: &mut [u8]) {
         bytes.fill(0);
     }
+}
+#[test]
+fn successful_load_erases_its_read_buffer_before_returning_the_owned_record() {
+    struct Observe(Cell<usize>);
+    impl Memory for Observe {
+        fn wipe(&self, bytes: &mut [u8]) {
+            if bytes.len() == codec::LENGTH
+                && bytes.windows(20).any(|v| v == b"12345678901234567890")
+            {
+                self.0.set(self.0.get() + 1);
+            }
+            bytes.fill(0);
+        }
+    }
+    let controls = Controls::default();
+    let mut files = Files {
+        bytes: Vec::new(),
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    let id = {
+        let mut store = Store::new(&mut files, &Wipe);
+        store.initialize().unwrap();
+        store.insert(&credential(b"first")).unwrap()
+    };
+    let memory = Observe(Cell::new(0));
+    let mut store = Store::new(&mut files, &memory);
+    let mut loaded = store.load(id).unwrap();
+    assert_eq!(memory.0.get(), 1);
+    assert_eq!(loaded.key(), b"12345678901234567890");
+    loaded.clear(&mut NoCrypto);
 }
 fn credential(name: &[u8]) -> Credential {
     Credential::new(

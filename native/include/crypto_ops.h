@@ -82,6 +82,17 @@ enum ck_sm2_packet {
 int32_t ck_platform_key(uint8_t op, uint8_t alg, rsa_key_t *material, const uint8_t *input, size_t length,
                         uint8_t *output, size_t capacity);
 int32_t ck_platform_aes192(const uint8_t *key, const uint8_t *input, uint8_t *output);
+/* Fixed-shape stream lifecycle operations avoid unused ABI arguments. */
+void ck_stream_abort(void *scratch);
+int32_t ck_stream_read(void *scratch, uint8_t *output, size_t capacity);
+int32_t ck_stream_public_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
+int32_t ck_stream_sign_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
+int32_t ck_stream_sm2_identity(void *scratch, const uint8_t *input, size_t n);
+int32_t ck_stream_sign_update(void *scratch, const uint8_t *input, size_t n);
+int32_t ck_stream_sign_final(void *scratch);
+int32_t ck_stream_decapsulate_init(uint8_t alg, void *scratch, const uint8_t *input, size_t n);
+int32_t ck_stream_decapsulate_update(void *scratch, const uint8_t *input, size_t n);
+int32_t ck_stream_decapsulate_final(void *scratch, uint8_t *out, size_t capacity);
 int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t length,
                                uint8_t *output, size_t capacity);
 int32_t ck_platform_digest(uint8_t op, void *state, const uint8_t *input, size_t length, uint8_t *output,

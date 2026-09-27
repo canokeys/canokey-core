@@ -98,7 +98,7 @@ impl Applet {
             return Ok(());
         }
         w.wipe_active(p.memory);
-        *w.ctap_request_with(p.memory) = Request::new();
+        *w = SessionWorkspace::CtapRequest(Request::new());
         if header.ins != INS_MSG {
             return Err(Sw::INS_NOT_SUPPORTED);
         }

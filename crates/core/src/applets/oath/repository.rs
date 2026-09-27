@@ -19,6 +19,7 @@ struct Entry {
     id: CredentialId,
     offset: u32,
     end: u32,
+    header: [u8; codec::HEADER_BYTES],
 }
 pub struct Mac<'a> {
     crypto: &'a mut CryptoPort<'a>,
@@ -121,6 +122,7 @@ impl Store<'_> {
             id,
             offset,
             end: offset + length,
+            header: header[ID_BYTES..].try_into().unwrap(),
         };
         self.located = Some(entry);
         Ok(Some(entry))
@@ -139,6 +141,10 @@ impl Store<'_> {
             offset = entry.end;
         }
         Err(Error::Missing)
+    }
+    pub(super) fn metadata(&mut self, id: CredentialId) -> Result<codec::Header, Error> {
+        let entry = self.locate(id)?;
+        codec::fields(&entry.header)
     }
     // Rewrite only live entries into one atomic replacement. No fixed slots or tombstones.
     fn write(
@@ -195,6 +201,25 @@ impl Repository for Store<'_> {
         let entry = self.locate(id)?;
         Ok(self.at(entry.end)?.map(|(id, _)| id))
     }
+    fn matches_name(
+        &mut self,
+        id: CredentialId,
+        name: &[u8],
+        _: &mut (impl Crypto + ?Sized),
+    ) -> Result<bool, Error> {
+        let entry = self.locate(id)?;
+        let h = codec::fields(&entry.header)?;
+        let mut bytes = [0; codec::NAME_LIMIT];
+        let bytes = &mut bytes[..usize::from(h.name_len)];
+        self.storage
+            .read_at(
+                Record::OathRecords,
+                entry.offset + ENTRY_HEADER_BYTES as u32,
+                bytes,
+            )
+            .map_err(io)?;
+        Ok(bytes == name)
+    }
     fn load(&mut self, id: CredentialId) -> Result<Credential, Error> {
         let entry = self.locate(id)?;
         let mut bytes = [0; codec::LENGTH];
@@ -207,7 +232,10 @@ impl Repository for Store<'_> {
                 &mut bytes[..n],
             )
             .map_err(io)
-            .and_then(|()| codec::decode(&bytes[..n]));
+            .and_then(|()| codec::validate(&bytes[..n]));
+        let result = result.map(|()| Credential { bytes });
+        // A Rust move may lower to a stack copy. Erase the read buffer on both
+        // paths, even when the returned credential uses the same encoding.
         self.memory.wipe(&mut bytes);
         result
     }
@@ -231,6 +259,17 @@ impl Repository for Store<'_> {
         let entry = self.locate(id)?;
         let next = self.next_id()?;
         self.write(entry.offset, entry.end, id, Some(value), next)
+    }
+    fn update_counter(&mut self, id: CredentialId, counter: &[u8; 8]) -> Result<(), Error> {
+        let entry = self.locate(id)?;
+        self.located = None;
+        self.storage
+            .replace_at(
+                Record::OathRecords,
+                entry.end - codec::COUNTER_BYTES as u32,
+                counter,
+            )
+            .map_err(io)
     }
     fn delete(&mut self, id: CredentialId) -> Result<(), Error> {
         let entry = self.locate(id)?;

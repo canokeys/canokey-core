@@ -9,7 +9,11 @@ use crate::{
     ports::{KeyOperation, Platform, Record},
     runtime::workspace::Workspace,
 };
-use canokey_protocol::cbor::{Encoder, SliceDecoder};
+use canokey_protocol::cbor::Encoder;
+#[cfg(test)]
+use canokey_protocol::cbor::SliceDecoder;
+mod parser;
+pub(super) use parser::{Parsed, Parser};
 
 const PUBLIC_KEY_OFFSET: usize = crate::ports::key_layout::P;
 const CREDENTIAL_MANAGEMENT_PERMISSION: u8 = 4;
@@ -73,18 +77,21 @@ impl Cursor {
         }
     }
 }
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 struct User<'a> {
     id: &'a [u8],
     name: Option<&'a str>,
     display: Option<&'a str>,
 }
 #[derive(Default)]
-struct Fields<'a> {
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+pub(super) struct Fields<'a> {
     rp: Option<&'a [u8; 32]>,
     id: Option<&'a credential::Id>,
     user: Option<User<'a>>,
     metadata_only: bool,
 }
+#[cfg(test)]
 fn parse(bytes: &[u8]) -> Result<Fields<'_>, Status> {
     let mut fields = Fields::default();
     if bytes.is_empty() {
@@ -177,6 +184,7 @@ fn parse(bytes: &[u8]) -> Result<Fields<'_>, Status> {
     }
     Ok(fields)
 }
+#[cfg(test)]
 fn text_key<'a>(
     d: &mut SliceDecoder<'a>,
     previous: &mut Option<&'a str>,
@@ -265,7 +273,7 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let fields = parse(&params.message[PREFIX..params.len])?;
+        let fields = params.management.fields(&params.message)?;
         let subcommand = params.subcommand;
         if !matches!(subcommand, 1..=7) {
             return Err(Status::InvalidSubcommand);

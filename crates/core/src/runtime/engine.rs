@@ -60,7 +60,12 @@ pub trait Router {
     fn end_frame(&mut self, _last: bool, _p: &mut Platform<'_>) -> Result<(), Sw> {
         Ok(())
     }
-    fn finish(&mut self, header: Header, le: Option<u32>, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw>;
+    fn finish(
+        &mut self,
+        header: Header,
+        le: Option<u32>,
+        p: &mut Platform<'_>,
+    ) -> Result<(u32, Sw), Sw>;
     fn read_response(
         &mut self,
         offset: u32,
@@ -114,6 +119,9 @@ enum FrameRoute {
     Command,
 }
 
+// Keep transport cursors before the large router on Thumb-1. This is an
+// internal layout choice, not a serialized or public C ABI.
+#[repr(C)]
 pub struct Runtime<R> {
     // Nonzero transport identity holding the session until reset/release.
     owner: Option<u8>,

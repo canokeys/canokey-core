@@ -15,6 +15,7 @@ pub struct Parameters {
     pub(super) force: bool,
     pub(super) rps: [(u16, u16); 4],
     pub(super) rp_count: Option<usize>,
+    pub(super) management: super::management::Parsed,
 }
 impl Parameters {
     const fn new() -> Self {
@@ -29,6 +30,7 @@ impl Parameters {
             force: false,
             rps: [(0, 0); 4],
             rp_count: None,
+            management: super::management::Parsed::new(),
         }
     }
 }
@@ -49,6 +51,15 @@ impl Parser {
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         let f = &mut self.fields;
+        if f.command != super::CONFIG {
+            let start = PREFIX + self.offset;
+            let Some(dest) = f.params.message.get_mut(start..start + bytes.len()) else {
+                self.decoder
+                    .consume(bytes, &mut |_, _| Err(Status::InvalidCbor));
+                return;
+            };
+            dest.copy_from_slice(bytes);
+        }
         if !self.decoder.consume(bytes, &mut |event, offset| {
             f.event(event, usize::from(offset))
         }) {
@@ -56,7 +67,9 @@ impl Parser {
         }
         // Only the authenticated parameter map crosses the source lifetime.
         // Offsets include split headers and empty maps, without re-encoding.
-        if let Some(start) = f.start {
+        if f.command == super::CONFIG
+            && let Some(start) = f.start
+        {
             let from = start.max(self.offset);
             let to = f
                 .end
@@ -97,6 +110,14 @@ impl Parser {
         {
             return Err(Status::InvalidParameter);
         }
+        if self.fields.command != super::CONFIG
+            && let Some(start) = self.fields.start
+        {
+            let end = self.fields.end.unwrap();
+            p.message.copy_within(PREFIX + start..PREFIX + end, PREFIX);
+            p.management.relocate(start);
+            p.len = PREFIX + end - start;
+        }
         p.message[..32].fill(0xff);
         p.message[32] = super::CONFIG;
         p.message[33] = p.subcommand;
@@ -124,6 +145,7 @@ struct Fields {
     param_key: Option<Option<i8>>,
     param_previous: Option<Key>,
     rp_array: bool,
+    management: super::management::Parser,
 }
 impl Fields {
     const fn new(command: u8) -> Self {
@@ -141,6 +163,7 @@ impl Fields {
             param_key: None,
             param_previous: None,
             rp_array: false,
+            management: super::management::Parser::new(),
         }
     }
     fn event(&mut self, event: Event<'_>, offset: usize) -> Result<(), Status> {
@@ -163,8 +186,18 @@ impl Fields {
             return Ok(());
         }
         if self.depth != 0 {
-            if self.command == super::CONFIG && self.start.is_some() && self.end.is_none() {
-                self.parameter(&event, offset)?;
+            if self.start.is_some() && self.end.is_none() {
+                if self.command == super::CONFIG {
+                    self.parameter(&event, offset)?;
+                } else {
+                    self.management.event(
+                        &mut self.params.management,
+                        &self.params.message,
+                        event,
+                        self.depth,
+                        offset,
+                    );
+                }
             }
             match event {
                 Event::Map(_) | Event::Array(_) | Event::Bytes(_) | Event::Text(_) => {
