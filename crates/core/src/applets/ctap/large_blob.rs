@@ -23,7 +23,6 @@ pub struct Parameters {
     auth: [u8; 32],
     auth_len: usize,
     protocol: u8,
-    pub(super) file_response: Option<(u32, usize, usize)>,
 }
 impl Parameters {
     const fn new() -> Self {
@@ -36,7 +35,6 @@ impl Parameters {
             auth: [0; 32],
             auth_len: 0,
             protocol: 0,
-            file_response: None,
         }
     }
 }
@@ -272,7 +270,11 @@ impl Session {
                 .map_err(|_| Status::Other)?;
             let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
             if size.is_some() {
-                params.file_response = Some((offset as u32, n, prefix));
+                self.auth_response = Some(super::Response::Blob {
+                    offset: offset as u32,
+                    length: n,
+                    prefix,
+                });
             } else {
                 w.output[prefix..prefix + n].copy_from_slice(&EMPTY[offset..offset + n]);
             }

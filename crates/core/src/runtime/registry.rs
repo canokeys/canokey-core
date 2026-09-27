@@ -387,13 +387,15 @@ impl Registry {
             &mut self.grants,
             pass,
             p,
-            self.workspace.classic_with(p.memory),
+            &mut self.workspace.classic_with(p.memory),
         )? {
             admin::Action::Response(n) => return Ok((n, Sw::SUCCESS)),
             #[cfg(feature = "ctap")]
-            admin::Action::InstallFidoKey(mut key) => {
-                ctap::provision::install_key(&mut key, self.workspace.classic_with(p.memory), p)?
-            }
+            admin::Action::InstallFidoKey(mut key) => ctap::provision::install_key(
+                &mut key,
+                &mut self.workspace.classic_with(p.memory),
+                p,
+            )?,
             #[cfg(feature = "ctap")]
             admin::Action::ResetCtap => self.ctap.erase(&mut self.workspace, p)?,
             #[cfg(feature = "openpgp")]
@@ -403,7 +405,7 @@ impl Registry {
                 // a temporary applet whose session state is never observed.
                 let workspace = self.workspace.classic_with(p.memory);
                 p.memory.wipe(&mut workspace.key.bytes);
-                p.memory.wipe(&mut workspace.input);
+                p.memory.wipe(workspace.input);
                 crate::applets::openpgp::repository::reset(p)?;
             }
             #[cfg(feature = "oath")]
@@ -602,14 +604,14 @@ impl Router for Registry {
             #[cfg(feature = "admin")]
             AppletState::Admin => self
                 .admin
-                .cancel_command(self.workspace.classic_with(platform.memory), platform),
+                .cancel_command(&mut self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self.ctap.cancel_command(&mut self.workspace),
             #[cfg(feature = "oath")]
             AppletState::Oath(s) => s.cancel_command(platform),
             #[cfg(feature = "openpgp")]
             AppletState::OpenPgp(s) => {
-                s.abort(self.workspace.classic_with(platform.memory), platform)
+                s.abort(&mut self.workspace.classic_with(platform.memory), platform)
             }
             #[cfg(feature = "piv")]
             AppletState::Piv(s) => s.cancel(&mut self.workspace, platform),
@@ -646,7 +648,7 @@ impl Router for Registry {
             #[cfg(feature = "openpgp")]
             AppletState::OpenPgp(s) => s.begin(
                 header,
-                self.workspace.classic_with(platform.memory),
+                &mut self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
@@ -662,7 +664,7 @@ impl Router for Registry {
             #[cfg(feature = "admin")]
             AppletState::Admin => self.admin.consume(
                 bytes,
-                self.workspace.classic_with(platform.memory),
+                &mut self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "ctap")]
@@ -672,7 +674,7 @@ impl Router for Registry {
             #[cfg(feature = "openpgp")]
             AppletState::OpenPgp(s) => s.consume(
                 bytes,
-                self.workspace.classic_with(platform.memory),
+                &mut self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
@@ -718,7 +720,7 @@ impl Router for Registry {
             AppletState::OpenPgp(s) => s.finish(
                 header,
                 le,
-                self.workspace.classic_with(platform.memory),
+                &mut self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
@@ -742,7 +744,7 @@ impl Router for Registry {
                 .read_response(
                     offset as usize,
                     out,
-                    self.workspace.classic_with(platform.memory),
+                    &mut self.workspace.classic_with(platform.memory),
                 )
                 .map(|()| out.len()),
             #[cfg(feature = "ctap")]
@@ -756,7 +758,7 @@ impl Router for Registry {
             AppletState::OpenPgp(s) => s.read(
                 offset as usize,
                 out,
-                self.workspace.classic_with(platform.memory),
+                &mut self.workspace.classic_with(platform.memory),
                 platform,
             ),
             #[cfg(feature = "piv")]
@@ -789,14 +791,14 @@ impl Router for Registry {
             #[cfg(feature = "admin")]
             AppletState::Admin => self
                 .admin
-                .close_response(self.workspace.classic_with(platform.memory), platform),
+                .close_response(&mut self.workspace.classic_with(platform.memory), platform),
             #[cfg(feature = "ctap")]
             AppletState::Ctap => self.ctap.close(&mut self.workspace, platform),
             #[cfg(feature = "oath")]
             AppletState::Oath(s) => s.close_response(platform),
             #[cfg(feature = "openpgp")]
             AppletState::OpenPgp(s) => {
-                s.close(self.workspace.classic_with(platform.memory), platform)
+                s.close(&mut self.workspace.classic_with(platform.memory), platform)
             }
             #[cfg(feature = "piv")]
             AppletState::Piv(s) => s.close(&mut self.workspace, platform),

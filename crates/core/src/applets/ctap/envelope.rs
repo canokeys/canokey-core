@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared authenticated subcommand envelope; preserve only the exact parameter map.
+//! Shared authenticated envelope. Keep input at its received offsets and
+//! authenticate only the exact parameter map, with an in-place prefix.
 use super::{Command, Key, Status};
 use canokey_protocol::cbor::Event;
 
 pub(super) const PREFIX: usize = 34;
+// Keep semantic fields together before the large byte buffer. Thumb-1 can
+// address them without rebuilding offsets past the entire request each time.
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Parameters {
-    pub(super) message: [u8; PREFIX + super::MAX_REQUEST - 1],
     pub(super) len: usize,
+    pub(super) start: usize,
     pub(super) subcommand: u8,
     pub(super) protocol: u8,
     pub(super) auth: [u8; 32],
@@ -16,12 +21,14 @@ pub struct Parameters {
     pub(super) rps: [(u16, u16); 4],
     pub(super) rp_count: Option<usize>,
     pub(super) management: super::management::Parsed,
+    pub(super) message: [u8; PREFIX + super::MAX_REQUEST - 1],
 }
 impl Parameters {
     const fn new() -> Self {
         Self {
             message: [0; PREFIX + super::MAX_REQUEST - 1],
             len: PREFIX,
+            start: 0,
             subcommand: 0,
             protocol: 0,
             auth: [0; 32],
@@ -51,36 +58,22 @@ impl Parser {
     #[inline(never)]
     pub fn consume(&mut self, bytes: &[u8]) {
         let f = &mut self.fields;
-        if f.command != super::CONFIG {
-            let start = PREFIX + self.offset;
-            let Some(dest) = f.params.message.get_mut(start..start + bytes.len()) else {
-                self.decoder
-                    .consume(bytes, &mut |_, _| Err(Status::InvalidCbor));
-                return;
-            };
-            dest.copy_from_slice(bytes);
-        }
+        let start = PREFIX + self.offset;
+        let Some(dest) = f
+            .params
+            .message
+            .get_mut(start..)
+            .and_then(|tail| tail.get_mut(..bytes.len()))
+        else {
+            self.decoder
+                .consume(bytes, &mut |_, _| Err(Status::InvalidCbor));
+            return;
+        };
+        dest.copy_from_slice(bytes);
         if !self.decoder.consume(bytes, &mut |event, offset| {
             f.event(event, usize::from(offset))
         }) {
             return;
-        }
-        // Only the authenticated parameter map crosses the source lifetime.
-        // Offsets include split headers and empty maps, without re-encoding.
-        if f.command == super::CONFIG
-            && let Some(start) = f.start
-        {
-            let from = start.max(self.offset);
-            let to = f
-                .end
-                .unwrap_or(self.offset + bytes.len())
-                .min(self.offset + bytes.len());
-            if from < to {
-                let dest = PREFIX + from - start;
-                f.params.message[dest..dest + to - from]
-                    .copy_from_slice(&bytes[from - self.offset..to - self.offset]);
-                f.params.len = dest + to - from;
-            }
         }
         self.offset += bytes.len();
     }
@@ -110,20 +103,22 @@ impl Parser {
         {
             return Err(Status::InvalidParameter);
         }
-        if self.fields.command != super::CONFIG
-            && let Some(start) = self.fields.start
-        {
-            let end = self.fields.end.unwrap();
-            p.message.copy_within(PREFIX + start..PREFIX + end, PREFIX);
-            p.management.relocate(start);
-            p.len = PREFIX + end - start;
-        }
-        p.message[..32].fill(0xff);
-        p.message[32] = super::CONFIG;
-        p.message[33] = p.subcommand;
+        // Keep the parameter map at its received offset. The reserved prefix
+        // plus the now-dead envelope header provide room for authentication.
+        p.start = self.fields.start.unwrap_or(0);
+        p.len = PREFIX + self.fields.end.unwrap_or(0);
+        let prefix = &mut p.message[p.start..p.start + PREFIX];
+        prefix[..32].fill(0xff);
+        prefix[32] = super::CONFIG;
+        prefix[33] = p.subcommand;
         // Transfer once before choosing the command tag, avoiding a large
         // branch-local temporary with the pinned Thumb-1 compiler.
-        let params = core::mem::replace(&mut self.fields.params, Parameters::new());
+        let params = self.fields.params;
+        // This parser is consumed logically; a second finish must not publish
+        // stale metadata. Clear the copied authentication bytes without building
+        // another full Parameters value and resetting every semantic field.
+        self.clear(&canokey_ports::default_memory());
+        self.fields.subcommand_seen = false;
         Ok(if self.fields.command == super::CONFIG {
             Command::Config(params)
         } else {
@@ -271,7 +266,7 @@ impl Fields {
                         return Err(Status::InvalidLength);
                     }
                     let count = self.params.rp_count.as_mut().unwrap();
-                    self.params.rps[*count] = ((PREFIX + offset - self.start.unwrap()) as u16, n);
+                    self.params.rps[*count] = ((PREFIX + offset) as u16, n);
                     *count += 1;
                 }
                 Event::End => self.rp_array = false,
@@ -312,3 +307,6 @@ impl Fields {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

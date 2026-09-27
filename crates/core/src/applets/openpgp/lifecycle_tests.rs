@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 extern crate std;
-use crate::{applets::openpgp::protocol::OpenPgp, ports::*, runtime::workspace::Workspace};
+use crate::{
+    applets::openpgp::protocol::OpenPgp,
+    ports::*,
+    runtime::workspace::{SessionWorkspace, Workspace},
+};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 use std::collections::BTreeMap;
 use std::vec::Vec;
@@ -130,7 +134,7 @@ impl Memory for Services {
 }
 struct Card {
     app: OpenPgp,
-    workspace: Workspace,
+    workspace: SessionWorkspace,
     disk: Disk,
 }
 impl Card {
@@ -146,12 +150,16 @@ impl Card {
             device: &mut device,
             memory: &Services,
         };
-        f(&mut self.app, &mut self.workspace, &mut platform)
+        f(
+            &mut self.app,
+            &mut self.workspace.classic_with(platform.memory),
+            &mut platform,
+        )
     }
     fn new() -> Self {
         let mut card = Self {
             app: OpenPgp::new(),
-            workspace: Workspace::new(),
+            workspace: SessionWorkspace::new(),
             disk: Disk::default(),
         };
         card.with(|a, _, p| a.install(p)).unwrap();

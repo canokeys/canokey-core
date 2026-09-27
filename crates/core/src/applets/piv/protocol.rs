@@ -154,7 +154,7 @@ impl Piv {
         p: &mut Platform<'_>,
     ) {
         self.agreement = None;
-        p.memory.wipe(&mut w.agreement);
+        p.memory.wipe(w.agreement);
     }
     pub const fn new() -> Self {
         Self {
@@ -250,7 +250,7 @@ impl Piv {
         self.import = Import::new();
         self.used = 0;
         p.memory.wipe(&mut w.key.bytes);
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
     }
     fn begin_classic(
         &mut self,
@@ -267,8 +267,8 @@ impl Piv {
             && self.agreement.is_some()
         {
             p.memory.wipe(&mut w.key.bytes);
-            p.memory.wipe(&mut w.input);
-            p.memory.wipe(&mut w.output);
+            p.memory.wipe(w.input);
+            p.memory.wipe(w.output);
         } else {
             w.clear(p.memory);
             self.clear_agreement(w, p);
@@ -323,7 +323,7 @@ impl Piv {
     ) -> Result<(), Sw> {
         match self.request {
             Request::Ga => {
-                self.ga.feed(b, &mut w.input)?;
+                self.ga.feed(b, w.input)?;
                 self.used = self.ga.used;
             }
             Request::Buffered => {
@@ -367,7 +367,7 @@ impl Piv {
                             self.import.meta[repo::ALGORITHM],
                             &mut w.key,
                             &[],
-                            &mut w.output,
+                            w.output,
                         )
                         .map_err(|_| Sw::WRONG_DATA)?;
                 }
@@ -393,7 +393,7 @@ impl Piv {
         if self.pending_commit.is_none() {
             p.memory.wipe(&mut w.key.bytes);
         }
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
         r.map(|n| (n, Sw::SUCCESS))
     }
     pub fn response_preemptable(&self, total: u32, w: &SessionWorkspace) -> bool {
@@ -675,7 +675,7 @@ impl Piv {
     }
     fn close_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
         self.abort_generation(p);
-        p.memory.wipe(&mut w.output);
+        p.memory.wipe(w.output);
         self.memory(0);
     }
 }

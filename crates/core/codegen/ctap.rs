@@ -63,11 +63,16 @@ pub fn generate_info() {
             .bool(true)?
             .str("makeCredUvNotRqd")?
             .bool(true)?
-            .u8(5)?;
-        Ok(())
-    });
-    fragment(&mut out, "PIN_PROTOCOLS", |e| {
-        e.u8(6)?.array(2)?.u8(1)?.u8(2)?.u8(7)?;
+            .u8(5)?
+            .u16(1024)?
+            .u8(6)?
+            .array(2)?
+            .u8(1)?
+            .u8(2)?
+            .u8(7)?
+            .u8(16)?
+            .u8(8)?
+            .u8(34)?;
         Ok(())
     });
     fragment(&mut out, "ALGORITHMS", |e| {
@@ -98,7 +103,7 @@ pub fn generate_info() {
                 .str("type")?
                 .str("public-key")?;
         }
-        e.u8(11)?;
+        e.u8(11)?.u16(4096)?.u8(12)?;
         Ok(())
     });
     fragment(&mut out, "LIMITS", |e| {

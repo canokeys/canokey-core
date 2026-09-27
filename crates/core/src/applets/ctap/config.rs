@@ -27,7 +27,7 @@ impl Session {
                 self.authorize(
                     params.protocol,
                     &params.auth[..params.auth_len],
-                    &params.message[..params.len],
+                    &params.message[params.start..params.len],
                     pin::PERMISSION_CONFIG,
                     None,
                     p,

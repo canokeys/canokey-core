@@ -12,11 +12,11 @@ fn abort_stream(a: u8, s: &mut crate::ports::CryptoScratch, p: &mut Platform<'_>
 
 impl Piv {
     pub fn select(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
-        self.select_classic(w.classic_with(p.memory), p)
+        self.select_classic(&mut w.classic_with(p.memory), p)
     }
     pub fn reset(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         self.close(w, p);
-        self.reset_classic(w.classic_with(p.memory), p);
+        self.reset_classic(&mut w.classic_with(p.memory), p);
     }
     pub fn cancel(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         if matches!(self.request, Request::None) {
@@ -29,7 +29,7 @@ impl Piv {
             self.request = Request::None;
             self.auth_clear(p);
         }
-        self.cancel_classic(w.classic_with(p.memory), p);
+        self.cancel_classic(&mut w.classic_with(p.memory), p);
     }
     // Share input handling without expanding it into the runtime dispatcher.
     #[inline(never)]
@@ -87,7 +87,7 @@ impl Piv {
                 return Ok(());
             }
         }
-        self.begin_classic(h, w.classic_with(p.memory), p)
+        self.begin_classic(h, &mut w.classic_with(p.memory), p)
     }
     #[inline(never)]
     pub fn consume(
@@ -160,7 +160,7 @@ impl Piv {
                 Ok(())
             })
         } else {
-            self.consume_classic(b, w.classic_with(p.memory), p)
+            self.consume_classic(b, &mut w.classic_with(p.memory), p)
         }
     }
     pub fn finish(
@@ -228,7 +228,7 @@ impl Piv {
             self.response = ResponseBacking::Crypto(a);
             return Ok((total, Sw::SUCCESS));
         }
-        let result = self.finish_classic(h, le, w.classic_with(p.memory), p);
+        let result = self.finish_classic(h, le, &mut w.classic_with(p.memory), p);
         if result.is_ok()
             && let Some(PendingPublicKey {
                 slot_index: id,
@@ -338,7 +338,7 @@ impl Piv {
             }
             Ok(out.len())
         } else {
-            self.read_classic(offset, out, w.classic_with(p.memory), p)
+            self.read_classic(offset, out, &mut w.classic_with(p.memory), p)
         }
     }
     /// Release native/staged resources before the registry erases the active
@@ -352,7 +352,7 @@ impl Piv {
     }
     pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
         if !self.close_external(w, p) {
-            self.close_classic(w.classic_with(p.memory), p);
+            self.close_classic(&mut w.classic_with(p.memory), p);
         }
     }
     fn close_external(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> bool {

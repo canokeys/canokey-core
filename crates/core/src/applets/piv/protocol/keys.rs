@@ -85,7 +85,7 @@ impl Piv {
         repo::load(id, m, &mut w.key.bytes, p)?;
         let n = p
             .crypto
-            .key_operation(KeyOperation::Public, a, &mut w.key, &[], &mut w.output)
+            .key_operation(KeyOperation::Public, a, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         self.memory(n);
         let mut at = 0;
@@ -168,7 +168,7 @@ impl Piv {
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         } else {
             p.crypto
-                .key_operation(KeyOperation::Generate, a, &mut w.key, &[], &mut w.output)
+                .key_operation(KeyOperation::Generate, a, &mut w.key, &[], w.output)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         }
         if a >= alg::MLKEM768 {
@@ -203,7 +203,7 @@ impl Piv {
     ) -> Result<u32, Sw> {
         let mut fields: [Option<&[u8]>; 6] = [None; 6];
         for (i, field) in fields.iter_mut().enumerate() {
-            *field = self.ga.field(i, &w.input);
+            *field = self.ga.field(i, w.input);
         }
         if h.p2 == reference::MANAGEMENT {
             return self.management_auth(h, &fields, w.output.as_mut_slice(), p);
@@ -234,7 +234,7 @@ impl Piv {
         }
         // A signing GA must not leave a previous SM2 initiator exchange live.
         self.agreement = None;
-        p.memory.wipe(&mut w.agreement);
+        p.memory.wipe(w.agreement);
         let (op, data) = if let Some(input) = fields[ga_field::CHALLENGE] {
             if fields[ga_field::EXPONENTIATION].is_some() || input.is_empty() {
                 return Err(Sw::WRONG_DATA);
@@ -293,10 +293,10 @@ impl Piv {
         };
         let mut n = p
             .crypto
-            .key_operation(op, a, &mut w.key, data, &mut w.output)
+            .key_operation(op, a, &mut w.key, data, w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if matches!(op, KeyOperation::EcSign) && a != alg::ED25519 && a != alg::SM2 {
-            n = der_signature(&mut w.output, n)?;
+            n = der_signature(w.output, n)?;
         }
         self.wrapped(n)
     }
@@ -307,13 +307,7 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         p.crypto
-            .key_operation(
-                KeyOperation::Public,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if !codec::equal(
             &w.output[..64],
@@ -330,13 +324,7 @@ impl Piv {
         }
         w.key.bytes[..32].copy_from_slice(&packet[..32]);
         p.crypto
-            .key_operation(
-                KeyOperation::Public,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if !codec::equal(
             &w.output[..64],
@@ -356,23 +344,11 @@ impl Piv {
         // parse_sm2_packet already owns the validated identity, including the
         // default when no witness is supplied; it survives workspace reuse.
         p.crypto
-            .key_operation(
-                KeyOperation::Generate,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Generate, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         packet[..32].copy_from_slice(&w.key.bytes[..32]);
         p.crypto
-            .key_operation(
-                KeyOperation::Public,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         let mut ephemeral = [0; 65];
         ephemeral[0] = EC_POINT_UNCOMPRESSED;
@@ -389,7 +365,7 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         let result = (|| {
-            let field = |i: usize| self.ga.field(i, &w.input);
+            let field = |i: usize| self.ga.field(i, w.input);
             if field(ga_field::RESPONSE) != Some(&[][..]) {
                 return Err(Sw::WRONG_DATA);
             }
@@ -442,7 +418,7 @@ impl Piv {
                     alg::SM2,
                     &mut w.key,
                     &packet,
-                    &mut w.output,
+                    w.output,
                 )
                 .map_err(|_| Sw::WRONG_DATA);
             p.memory.wipe(&mut packet);
@@ -482,35 +458,17 @@ impl Piv {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
         p.crypto
-            .key_operation(
-                KeyOperation::Public,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         w.agreement[agreement::STATIC_PUBLIC..agreement::ID_LENGTH]
             .copy_from_slice(&w.output[..64]);
         p.crypto
-            .key_operation(
-                KeyOperation::Generate,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Generate, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         w.agreement[agreement::SCALAR..agreement::EPHEMERAL_PUBLIC]
             .copy_from_slice(&w.key.bytes[..32]);
         p.crypto
-            .key_operation(
-                KeyOperation::Public,
-                alg::SM2,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         w.agreement[agreement::EPHEMERAL_PUBLIC..agreement::STATIC_PUBLIC]
             .copy_from_slice(&w.output[..64]);

@@ -22,30 +22,82 @@ pub mod agreement_layout {
 pub const INPUT_BYTES: usize = 544;
 // RSA-4096 output (512 bytes) plus room for protocol wrappers.
 pub const OUTPUT_BYTES: usize = 528;
-pub struct Workspace {
+/// A temporary split borrow of the classic fields in the session reservation.
+pub struct Workspace<'a> {
+    pub key: &'a mut KeyMaterial,
+    #[cfg(feature = "piv")]
+    pub agreement: &'a mut [u8; agreement_layout::SIZE],
+    pub input: &'a mut [u8; INPUT_BYTES],
+    pub output: &'a mut [u8; OUTPUT_BYTES],
+}
+impl Workspace<'_> {
+    pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+        #[cfg(feature = "piv")]
+        memory.wipe(self.agreement);
+        memory.wipe(&mut self.key.bytes);
+        self.key.bits = 0;
+        self.key.reserved = 0;
+        memory.wipe(self.input);
+        memory.wipe(self.output);
+    }
+}
+pub(crate) struct Classic {
     pub key: KeyMaterial,
     #[cfg(feature = "piv")]
     pub agreement: [u8; agreement_layout::SIZE],
     pub input: [u8; INPUT_BYTES],
-    pub output: [u8; OUTPUT_BYTES],
 }
-impl Workspace {
-    pub const fn new() -> Self {
+impl Classic {
+    const fn new() -> Self {
         Self {
             key: KeyMaterial::new(),
             #[cfg(feature = "piv")]
             agreement: [0; agreement_layout::SIZE],
             input: [0; INPUT_BYTES],
-            output: [0; OUTPUT_BYTES],
         }
     }
-    pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         #[cfg(feature = "piv")]
         memory.wipe(&mut self.agreement);
         memory.wipe(&mut self.key.bytes);
         self.key.bits = 0;
         self.key.reserved = 0;
         memory.wipe(&mut self.input);
+    }
+}
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum Primitive {
+    Classic(Classic),
+    #[cfg(feature = "ctap")]
+    Ctap(crate::ports::CryptoScratch),
+}
+/// Response bytes survive the classic-to-PQ primitive transition in place.
+pub struct Working {
+    pub(crate) primitive: Primitive,
+    #[cfg(feature = "ctap")]
+    pub(crate) framing: crate::applets::ctap::pq::Framing,
+    #[cfg(not(feature = "ctap"))]
+    output: [u8; OUTPUT_BYTES],
+}
+impl Working {
+    const fn new() -> Self {
+        Self {
+            primitive: Primitive::Classic(Classic::new()),
+            #[cfg(feature = "ctap")]
+            framing: crate::applets::ctap::pq::Framing::new(),
+            #[cfg(not(feature = "ctap"))]
+            output: [0; OUTPUT_BYTES],
+        }
+    }
+    fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+        match &mut self.primitive {
+            Primitive::Classic(c) => c.clear(memory),
+            #[cfg(feature = "ctap")]
+            Primitive::Ctap(c) => memory.wipe(&mut c.bytes),
+        }
+        #[cfg(feature = "ctap")]
+        self.framing.clear(memory);
+        #[cfg(not(feature = "ctap"))]
         memory.wipe(&mut self.output);
     }
 }
@@ -54,15 +106,13 @@ impl Workspace {
 /// never coexist with a classic RSA key/input/result workspace.
 #[allow(clippy::large_enum_variant)]
 pub enum SessionWorkspace {
-    Classic(Workspace),
+    Working(Working),
     #[cfg(feature = "ctap")]
     CtapRequest(crate::applets::ctap::Request),
     #[cfg(feature = "ctap")]
     CtapMessage(crate::applets::ctap::apdu::MessageParser),
     #[cfg(feature = "ctap")]
     U2fRequest(crate::applets::ctap::u2f::Request),
-    #[cfg(feature = "ctap")]
-    CtapStream(crate::applets::ctap::pq::Stream),
     #[cfg(feature = "piv")]
     Stream(crate::ports::CryptoScratch),
     #[cfg(feature = "piv")]
@@ -70,15 +120,13 @@ pub enum SessionWorkspace {
 }
 impl SessionWorkspace {
     pub const fn new() -> Self {
-        Self::Classic(Workspace::new())
+        Self::Working(Working::new())
     }
     pub(crate) fn wipe_active(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         match self {
-            Self::Classic(w) => w.clear(memory),
+            Self::Working(w) => w.clear(memory),
             #[cfg(feature = "ctap")]
             Self::U2fRequest(r) => r.clear(memory),
-            #[cfg(feature = "ctap")]
-            Self::CtapStream(s) => s.clear(memory),
             #[cfg(feature = "piv")]
             Self::Stream(s) => memory.wipe(&mut s.bytes),
             #[cfg(feature = "piv")]
@@ -90,25 +138,55 @@ impl SessionWorkspace {
         }
     }
     #[inline(never)]
-    pub fn classic_with(&mut self, memory: &crate::ports::MemoryPort<'_>) -> &mut Workspace {
-        #[cfg(not(any(feature = "piv", feature = "ctap")))]
-        let _ = memory;
-        #[cfg(any(feature = "piv", feature = "ctap"))]
-        if !matches!(self, Self::Classic(_)) {
+    pub fn classic_with(&mut self, memory: &crate::ports::MemoryPort<'_>) -> Workspace<'_> {
+        if !matches!(
+            self,
+            Self::Working(Working {
+                primitive: Primitive::Classic(_),
+                ..
+            })
+        ) {
             self.wipe_active(memory);
-            *self = Self::Classic(Workspace::new());
+            *self = Self::Working(Working::new());
         }
-        match self {
-            Self::Classic(w) => w,
+        let w = match self {
+            Self::Working(w) => w,
             #[cfg(any(feature = "piv", feature = "ctap"))]
             _ => unreachable!(),
+        };
+        let c = match &mut w.primitive {
+            Primitive::Classic(c) => c,
+            #[cfg(feature = "ctap")]
+            _ => unreachable!(),
+        };
+        Workspace {
+            key: &mut c.key,
+            #[cfg(feature = "piv")]
+            agreement: &mut c.agreement,
+            input: &mut c.input,
+            #[cfg(feature = "ctap")]
+            output: (&mut w.framing.bytes[..OUTPUT_BYTES]).try_into().unwrap(),
+            #[cfg(not(feature = "ctap"))]
+            output: &mut w.output,
         }
     }
     #[cfg(any(feature = "piv", feature = "ctap"))]
     #[inline(never)]
-    pub fn classic(&mut self) -> &mut Workspace {
+    pub fn classic(&mut self) -> Workspace<'_> {
         let memory = canokey_ports::default_memory();
         self.classic_with(&memory)
+    }
+    #[cfg(feature = "ctap")]
+    pub(crate) fn ctap_stream(&mut self) -> Option<crate::applets::ctap::pq::Stream<'_>> {
+        if let Self::Working(Working {
+            primitive: Primitive::Ctap(crypto),
+            framing,
+        }) = self
+        {
+            Some(crate::applets::ctap::pq::Stream { crypto, framing })
+        } else {
+            None
+        }
     }
     #[cfg(feature = "ctap")]
     pub fn ctap_request_with(

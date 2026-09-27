@@ -101,7 +101,7 @@ impl Admin {
     }
     pub fn cancel_command(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
         self.abort_transaction(p);
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
     }
     /// End external resources; the registry wipes its active workspace once.
     pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_>) {
@@ -185,7 +185,7 @@ impl Admin {
             } else if le < if h.p1 == 0 { 2 } else { 48 } {
                 Err(Sw::WRONG_LENGTH)
             } else {
-                super::usage::read(p.storage, h.p1 == 1, &mut w.output).map(|n| {
+                super::usage::read(p.storage, h.p1 == 1, w.output).map(|n| {
                     self.response_len = n;
                     Action::Response(n as u32)
                 })
@@ -459,7 +459,7 @@ impl Admin {
                         .map_err(crate::applets::pass::status)?;
                 } else {
                     let records = pass.records().map_err(crate::applets::pass::status)?;
-                    self.response_len = pass_protocol::read_config(records, Layout, &mut w.output)
+                    self.response_len = pass_protocol::read_config(records, Layout, w.output)
                         .map_err(crate::applets::pass::status)?;
                 }
             }
@@ -589,9 +589,9 @@ impl Admin {
         Ok(())
     }
     pub fn close_response(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
-        crate::applets::close_response(p.memory, &mut w.output, &mut self.response_len);
+        crate::applets::close_response(p.memory, w.output, &mut self.response_len);
     }
     pub fn read_response(&self, offset: usize, out: &mut [u8], w: &Workspace) -> Result<(), Sw> {
-        crate::applets::read_response_chunk(&w.output, self.response_len, offset, out)
+        crate::applets::read_response_chunk(w.output, self.response_len, offset, out)
     }
 }

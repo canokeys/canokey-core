@@ -11,22 +11,26 @@ impl Session {
     #[inline(never)]
     pub(super) fn credential(
         &mut self,
-        params: &Parameters,
+        params: Option<&Parameters>,
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let result = self.credential_inner(params, w, p);
+        let result = match params {
+            Some(params) => self.credential_inner(params, w, p),
+            None => self.next_assertion(w, p),
+        };
         if result.is_err() || self.assertion.remaining == 0 {
             self.assertion.hmac.clear(p.memory);
         }
         p.memory.wipe(&mut w.key.bytes);
         if result.is_err() {
-            p.memory.wipe(&mut w.input);
+            p.memory.wipe(w.input);
             self.assertion.remaining = 0;
-            p.memory.wipe(&mut w.output);
+            p.memory.wipe(w.output);
         }
         result
     }
+    #[inline(never)]
     fn credential_inner(
         &mut self,
         params: &Parameters,
@@ -94,7 +98,7 @@ impl Session {
                 continue;
             }
             if id[1] & resident::RESIDENT != 0 {
-                let Some((index, _)) = resident::find(id, &rp, &mut w.input, p)? else {
+                let Some((index, _)) = resident::find(id, &rp, w.input, p)? else {
                     continue;
                 };
                 user_slot = Some(index);
@@ -110,22 +114,14 @@ impl Session {
                 Err(error) => return Err(error),
             }
         }
-        let mut count = 0;
+        let mut count = 0u8;
         if !params.make && !params.list_present {
-            // Preserve the legacy descending record order for discovery.
-            for index in (0..crate::ports::Record::CTAP_CREDENTIALS).rev() {
-                if let Some(n) = resident::load(index, &mut w.input, p)? {
-                    let entry = resident::Entry::decode(&w.input[..n])?;
-                    if entry.rp_hash == &rp
-                        && (uv || entry.id[1] & 3 == 1)
-                        && credential::permitted_id(entry.id)
-                    {
-                        count += 1;
-                        if selected.is_none() {
-                            selected = Some(*entry.id);
-                            user_slot = Some(index);
-                        }
-                    }
+            let mut next = crate::ports::Record::CTAP_CREDENTIALS;
+            while let Some((index, id)) = resident::discover(&mut next, &rp, uv, w.input, p)? {
+                count += 1;
+                if selected.is_none() {
+                    selected = Some(id);
+                    user_slot = Some(index);
                 }
             }
         }
@@ -151,58 +147,50 @@ impl Session {
         if let Some(hmac) = &params.hmac {
             self.prepare_hmac(hmac, w, p)?;
         }
-        let (id, algorithm) = if params.make {
-            let algorithm = params.algorithm.ok_or(Status::UnsupportedAlgorithm)?;
-            (
-                credential::create(
-                    algorithm,
-                    params.protection
-                        | if params.third_party_payment {
-                            credential::THIRD_PARTY_PAYMENT
-                        } else {
-                            0
-                        }
-                        | if params.large_blob_key {
-                            resident::LARGE_BLOB_KEY
-                        } else {
-                            0
-                        }
-                        | if params.resident {
-                            resident::RESIDENT
-                        } else {
-                            0
-                        },
-                    self.sm2,
-                    &rp,
-                    w,
-                    p,
-                )?,
-                algorithm,
-            )
-        } else {
-            let id = selected.ok_or(Status::NoCredentials)?;
-            let algorithm = credential::open(&id, self.sm2, &rp, w, p)?;
-            (id, algorithm)
-        };
-        if params.make && params.resident {
-            resident::store(params, &id, &rp, &mut w.output, p)?;
+        if !params.make {
+            self.assertion.rp = rp;
+            self.assertion.client_hash = params.client_hash;
+            self.assertion.next = user_slot.unwrap_or(0);
+            self.assertion.remaining = count.saturating_sub(1);
+            self.assertion.uv = uv;
+            self.assertion.up = params.up;
+            self.assertion.get_cred_blob = params.get_cred_blob;
+            self.assertion.third_party_payment = params.third_party_payment;
+            return self.sign_assertion(
+                &selected.ok_or(Status::NoCredentials)?,
+                user_slot,
+                count,
+                count > 1,
+                w,
+                p,
+            );
         }
-        if !params.make && count > 1 {
-            self.assertion = resident::Assertion {
-                rp,
-                client_hash: params.client_hash,
-                next: user_slot.unwrap(),
-                remaining: count - 1,
-                uv,
-                up: params.up,
-                started: p.device.now(),
-                get_cred_blob: params.get_cred_blob,
-                third_party_payment: params.third_party_payment,
-                hmac: core::mem::replace(
-                    &mut self.assertion.hmac,
-                    super::hmac_secret::Prepared::new(),
-                ),
-            };
+        let algorithm = params.algorithm.ok_or(Status::UnsupportedAlgorithm)?;
+        let id = credential::create(
+            algorithm,
+            params.protection
+                | if params.third_party_payment {
+                    credential::THIRD_PARTY_PAYMENT
+                } else {
+                    0
+                }
+                | if params.large_blob_key {
+                    resident::LARGE_BLOB_KEY
+                } else {
+                    0
+                }
+                | if params.resident {
+                    resident::RESIDENT
+                } else {
+                    0
+                },
+            self.sm2,
+            &rp,
+            w,
+            p,
+        )?;
+        if params.resident {
+            resident::store(params, &id, &rp, w.output, p)?;
         }
         respond(
             &Signing {
@@ -211,90 +199,80 @@ impl Session {
                 client_hash: &params.client_hash,
                 algorithm,
                 sm2: self.sm2,
-                make: params.make,
+                make: true,
                 up: params.up,
                 uv,
-                user_slot: if params.make { None } else { user_slot },
-                count,
-                details: count > 1,
+                user_slot: None,
+                count: 0,
+                details: false,
                 min_pin_length,
-                hmac_secret: params.make && params.hmac_secret,
+                hmac_secret: params.hmac_secret,
                 hmac: &self.assertion.hmac,
                 cred_blob: params.cred_blob_len.map(|n| params.resident && n <= 32),
                 get_cred_blob: params.get_cred_blob,
                 third_party_payment: params.third_party_payment,
-                protection: (params.make && params.protection_requested)
-                    .then_some(params.protection),
+                protection: params.protection_requested.then_some(params.protection),
             },
             w,
             p,
             &mut self.auth_response,
         )
     }
-    pub(super) fn next_assertion(
+    fn next_assertion(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<usize, Status> {
+        if self.assertion.remaining == 0
+            || p.device.now().wrapping_sub(self.assertion.started) > 30_000
+        {
+            return Err(Status::NotAllowed);
+        }
+        let (index, id) = resident::discover(
+            &mut self.assertion.next,
+            &self.assertion.rp,
+            self.assertion.uv,
+            w.input,
+            p,
+        )?
+        .ok_or(Status::NoCredentials)?;
+        self.assertion.remaining -= 1;
+        self.sign_assertion(&id, Some(index), 0, true, w, p)
+    }
+    // Both initial and continued assertions use this exact key-open/sign path.
+    #[inline(never)]
+    fn sign_assertion(
         &mut self,
+        id: &credential::Id,
+        user_slot: Option<u8>,
+        count: u8,
+        details: bool,
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let result = (|| {
-            if self.assertion.remaining == 0
-                || p.device.now().wrapping_sub(self.assertion.started) > 30_000
-            {
-                return Err(Status::NotAllowed);
-            }
-            for index in (0..self.assertion.next).rev() {
-                if let Some(n) = resident::load(index, &mut w.input, p)? {
-                    let entry = resident::Entry::decode(&w.input[..n])?;
-                    if entry.rp_hash != &self.assertion.rp
-                        || !credential::permitted_id(entry.id)
-                        || (!self.assertion.uv && entry.id[1] & 3 != 1)
-                    {
-                        continue;
-                    }
-                    let id = *entry.id;
-                    let algorithm = credential::open(&id, self.sm2, &self.assertion.rp, w, p)?;
-                    self.assertion.next = index;
-                    self.assertion.remaining -= 1;
-                    self.assertion.started = p.device.now();
-                    return respond(
-                        &Signing {
-                            id: &id,
-                            rp: &self.assertion.rp,
-                            client_hash: &self.assertion.client_hash,
-                            algorithm,
-                            sm2: self.sm2,
-                            make: false,
-                            up: self.assertion.up,
-                            uv: self.assertion.uv,
-                            user_slot: Some(index),
-                            count: 0,
-                            details: true,
-                            protection: None,
-                            min_pin_length: None,
-                            hmac_secret: false,
-                            hmac: &self.assertion.hmac,
-                            cred_blob: None,
-                            get_cred_blob: self.assertion.get_cred_blob,
-                            third_party_payment: self.assertion.third_party_payment,
-                        },
-                        w,
-                        p,
-                        &mut self.auth_response,
-                    );
-                }
-            }
-            Err(Status::NoCredentials)
-        })();
-        if result.is_err() || self.assertion.remaining == 0 {
-            self.assertion.hmac.clear(p.memory);
-        }
-        p.memory.wipe(&mut w.key.bytes);
-        if result.is_err() {
-            p.memory.wipe(&mut w.input);
-            self.assertion.remaining = 0;
-            p.memory.wipe(&mut w.output);
-        }
-        result
+        let algorithm = credential::open(id, self.sm2, &self.assertion.rp, w, p)?;
+        self.assertion.started = p.device.now();
+        respond(
+            &Signing {
+                id,
+                rp: &self.assertion.rp,
+                client_hash: &self.assertion.client_hash,
+                algorithm,
+                sm2: self.sm2,
+                make: false,
+                up: self.assertion.up,
+                uv: self.assertion.uv,
+                user_slot,
+                count,
+                details,
+                protection: None,
+                min_pin_length: None,
+                hmac_secret: false,
+                hmac: &self.assertion.hmac,
+                cred_blob: None,
+                get_cred_blob: self.assertion.get_cred_blob,
+                third_party_payment: self.assertion.third_party_payment,
+            },
+            w,
+            p,
+            &mut self.auth_response,
+        )
     }
     fn credential_presence(
         &mut self,
@@ -354,7 +332,7 @@ fn respond(
                 request.algorithm,
                 &mut w.key,
                 &[],
-                &mut w.output,
+                w.output,
             )
             .unwrap_or_default();
         if n != credential::public_length(request.algorithm) {
@@ -429,7 +407,7 @@ fn respond(
                 alg::SM2,
                 &mut w.key,
                 &w.input[..auth_len + 32],
-                &mut w.output,
+                w.output,
             )
             .unwrap_or_default();
         if n != 32 {
@@ -447,14 +425,14 @@ fn respond(
             sign_algorithm,
             &mut w.key,
             message,
-            &mut w.output,
+            w.output,
         )
         .unwrap_or_default();
     if n != 64 {
         return Err(Status::Other);
     }
     let n = if sign_algorithm == alg::P256 {
-        der_signature(&mut w.output, n).unwrap_or_default()
+        der_signature(w.output, n).unwrap_or_default()
     } else {
         n
     };
@@ -549,7 +527,7 @@ fn append_extensions(
         let mut blob_len = 0;
         if request.get_cred_blob {
             if let Some(index) = request.user_slot {
-                let n = resident::load(index, &mut w.output, p)?.ok_or(Status::NoCredentials)?;
+                let n = resident::load(index, w.output, p)?.ok_or(Status::NoCredentials)?;
                 let entry = resident::Entry::decode(&w.output[..n])?;
                 blob_len = entry.blob.len();
                 blob[..blob_len].copy_from_slice(entry.blob);

@@ -129,7 +129,9 @@ impl Applet {
     ) -> Result<(), Sw> {
         if let SessionWorkspace::U2fRequest(request) = w {
             let request = core::mem::replace(request, super::u2f::Request::new(request.header));
-            self.response = self.session.u2f(&request, w.classic_with(p.memory), p)?;
+            self.response = self
+                .session
+                .u2f(&request, &mut w.classic_with(p.memory), p)?;
         } else {
             let mut command = w.ctap_request_with(p.memory).finish();
             self.dispatch(&mut command, w, p);
@@ -161,7 +163,9 @@ impl Applet {
         w: &mut SessionWorkspace,
         p: &mut Platform<'_>,
     ) {
-        self.response = self.session.execute(command, w.classic_with(p.memory), p);
+        self.response = self
+            .session
+            .execute(command, &mut w.classic_with(p.memory), p);
     }
     pub fn execute(
         &mut self,
@@ -193,9 +197,11 @@ impl Applet {
         };
         let result = match command {
             Message::Ctap(command, _) => {
-                Ok(self.session.execute(command, w.classic_with(p.memory), p))
+                Ok(self
+                    .session
+                    .execute(command, &mut w.classic_with(p.memory), p))
             }
-            Message::U2f(request, _) => self.session.u2f(request, w.classic_with(p.memory), p),
+            Message::U2f(request, _) => self.session.u2f(request, &mut w.classic_with(p.memory), p),
             Message::Error(error) => Err(*error),
         };
         let (response, sw) = match result {
@@ -256,13 +262,13 @@ impl Applet {
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         if matches!(self.response, Response::Stream(_)) {
-            let SessionWorkspace::CtapStream(stream) = w else {
+            let Some(mut stream) = w.ctap_stream() else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
             stream.read(offset, output, p)
         } else {
             self.response
-                .read(w.classic_with(p.memory), offset, output, p.storage)
+                .read(&mut w.classic_with(p.memory), offset, output, p.storage)
         }
     }
     fn prepare(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
@@ -341,7 +347,7 @@ impl Applet {
         })
     }
     pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
-        if let SessionWorkspace::CtapStream(stream) = w {
+        if let Some(mut stream) = w.ctap_stream() {
             stream.close(p);
         }
 

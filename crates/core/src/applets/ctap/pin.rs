@@ -103,7 +103,7 @@ impl Session {
                 alg::P256,
                 &mut w.key,
                 agreement,
-                &mut w.input,
+                w.input,
             )
             .map_err(|_| Status::InvalidParameter)?;
         if n != 32 {
@@ -309,9 +309,9 @@ impl Session {
         p.memory.wipe(&mut shared);
         p.memory.wipe(&mut record);
         p.memory.wipe(&mut w.key.bytes);
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
         if result.is_err() {
-            p.memory.wipe(&mut w.output);
+            p.memory.wipe(w.output);
         }
         result
     }

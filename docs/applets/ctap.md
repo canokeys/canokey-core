@@ -498,13 +498,18 @@ stream workspace.
 
 Credential management encodes directly from the shared resident input record,
 including maximum user fields, before reusing that input for its ML-DSA seed.
-The seed remains owned until Stream::transfer copies it and clears the old
-workspace. Transfer stages only the bounded framing, seed and client hash,
-wipes the classic workspace before replacing its variant, then explicitly
-wipes the staging bytes after copying them into the stream. It must not move
-the entire session workspace through a stack temporary. The transfer frame
-returns before primitive initialization; the crypto state remains in the sole
-shared workspace. Full enumeration returns the registration public key; metadata-only
+The shared Working reservation separates persistent response framing from an
+inner Primitive enum: classic key/input/SM2 agreement and opaque PQ state are
+mutually exclusive. Classic applets receive a temporary Workspace borrow; its
+528-byte output aliases the beginning of the existing 768-byte framing buffer.
+Stream::transfer retains that output in place, inserts assertion authenticatorData
+between its prefix and suffix, and copies the adjacent client hash and seed into
+one 64-byte retained region. It wipes the classic primitive and unused framing
+before initializing CryptoScratch in the inner enum. No framing-sized stack
+object or second output buffer bridges this transition. Retained hash/seed bytes
+are wiped after initialization on success and failure; close aborts the primitive
+and clears framing, material and counters. The transfer frame returns before
+primitive initialization; the crypto state remains in the sole shared workspace. Full enumeration returns the registration public key; metadata-only
 mode omits it. No second full public-key buffer or Flash scratch is introduced.
 `ctap-normal` independently verifies packed attestation and ML-DSA signatures,
 decrypts hmac-secret-mc results and compares full/metadata mixed enumeration.

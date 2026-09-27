@@ -125,13 +125,7 @@ impl Session {
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             let n = p
                 .crypto
-                .key_operation(
-                    KeyOperation::Public,
-                    alg::P256,
-                    &mut w.key,
-                    &[],
-                    &mut w.output,
-                )
+                .key_operation(KeyOperation::Public, alg::P256, &mut w.key, &[], w.output)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             if n != 64 {
                 return Err(Sw::UNABLE_TO_PROCESS);
@@ -187,13 +181,13 @@ impl Session {
                 alg::P256,
                 &mut w.key,
                 &digest,
-                &mut w.input,
+                w.input,
             )
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         if n != 64 {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
-        let n = der_signature(&mut w.input, n).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        let n = der_signature(w.input, n).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         w.output[prefix..prefix + n].copy_from_slice(&w.input[..n]);
         Ok(Response::Authentication {
             prefix,

@@ -177,6 +177,42 @@ pub(super) fn find(
     Ok(None)
 }
 
+/// Descending discovery shared by initial counting and getNextAssertion.
+/// The cursor excludes the last returned slot, preserving legacy ordering.
+#[inline(never)]
+pub(super) fn discover(
+    next: &mut u8,
+    rp: &[u8; 32],
+    uv: bool,
+    out: &mut [u8],
+    p: &mut Platform<'_>,
+) -> Result<Option<(u8, Id)>, Status> {
+    while *next != 0 {
+        *next -= 1;
+        if let Some(n) = load(*next, out, p)? {
+            let entry = Entry::decode(&out[..n])?;
+            if entry.rp_hash == rp
+                && (uv || entry.id[1] & 3 == 1)
+                && super::credential::permitted_id(entry.id)
+            {
+                return Ok(Some((*next, *entry.id)));
+            }
+        }
+    }
+    Ok(None)
+}
+
+pub(super) fn count(out: &mut [u8], p: &mut Platform<'_>) -> Result<u8, Status> {
+    let mut count = 0;
+    for index in 0..Record::CTAP_CREDENTIALS {
+        if let Some(n) = load(index, out, p)? {
+            Entry::decode(&out[..n])?;
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 /// Small getNextAssertion cursor, not another request or key workspace.
 pub(super) struct Assertion {
     pub rp: [u8; 32],
@@ -226,10 +262,22 @@ mod tests {
     fn stored_text_keeps_unicode_and_binary_fields_distinct() {
         for (rp, expected) in [
             ("example.com", "example.com"),
-            ("myfidousingwebsite.hostingprovider.net", "…ngwebsite.hostingprovider.net"),
-            ("mygreatsite.hostingprovider.info", "mygreatsite.hostingprovider.info"),
-            ("otherprotocol://myfidousingwebsite.hostingprovider.net", "otherprotocol:…ingprovider.net"),
-            ("veryexcessivelylargeprotocolname://example.com", "veryexcessivelylargeprotocolname"),
+            (
+                "myfidousingwebsite.hostingprovider.net",
+                "…ngwebsite.hostingprovider.net",
+            ),
+            (
+                "mygreatsite.hostingprovider.info",
+                "mygreatsite.hostingprovider.info",
+            ),
+            (
+                "otherprotocol://myfidousingwebsite.hostingprovider.net",
+                "otherprotocol:…ingprovider.net",
+            ),
+            (
+                "veryexcessivelylargeprotocolname://example.com",
+                "veryexcessivelylargeprotocolname",
+            ),
             ("界界界界界界界界界界界界", "…界界界界界界界界界"),
         ] {
             let mut out = [0; 32];

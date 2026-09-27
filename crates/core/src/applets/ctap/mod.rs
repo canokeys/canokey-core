@@ -23,7 +23,6 @@ pub(crate) mod provision;
 mod request_decoder;
 mod resident;
 pub(crate) mod settings;
-use crate::ports::Record;
 pub mod u2f;
 
 const GET_INFO: u8 = 0x04;
@@ -216,25 +215,34 @@ impl Session {
     ) -> Response {
         self.expire_token(p.device.now(), p.memory);
         self.auth_response = None;
-        if !matches!(command, Ok(Command::NextAssertion)) {
+        // Classify once. Parse failures invalidate every continuation too.
+        const ASSERTION: u8 = 1;
+        const MANAGEMENT: u8 = 2;
+        const BLOB: u8 = 4;
+        const SM2: u8 = 8;
+        let policy = match command {
+            Ok(Command::NextAssertion) => ASSERTION,
+            Ok(Command::Management(_)) => MANAGEMENT | SM2,
+            Ok(Command::LargeBlob(_)) => BLOB,
+            Ok(Command::Credential(_) | Command::GetInfo) => SM2,
+            _ => 0,
+        };
+        if policy & ASSERTION == 0 {
             self.assertion.remaining = 0;
             self.assertion.hmac.clear(p.memory);
         }
-        if !matches!(command, Ok(Command::Management(_))) {
+        if policy & MANAGEMENT == 0 {
             self.management = management::Cursor::new();
         }
-        if !matches!(command, Ok(Command::LargeBlob(_))) {
+        if policy & BLOB == 0 {
             self.abort_blob(p);
         }
-        if matches!(
-            command,
-            Ok(Command::Credential(_) | Command::Management(_) | Command::GetInfo)
-        ) {
+        if policy & SM2 != 0 {
             match settings::Sm2::load(p) {
                 Ok(config) => self.sm2 = config,
                 Err(error) => {
                     self.reset(p.memory);
-                    *command = Err(error);
+                    return Response::Error(error);
                 }
             }
         }
@@ -243,7 +251,7 @@ impl Session {
                 p.device.wink();
                 Ok(0)
             }
-            Ok(Command::NextAssertion) => self.next_assertion(workspace, p),
+            Ok(Command::NextAssertion) => self.credential(None, workspace, p),
             Ok(Command::Reset) => self.reset_data(workspace, p),
             Ok(Command::Selection) => self.selection(workspace, p),
             Ok(Command::GetInfo) => self.info(workspace, p),
@@ -265,7 +273,7 @@ impl Session {
                             }
                             _ => None,
                         });
-                self.credential(params, workspace, p)
+                self.credential(Some(params), workspace, p)
             }
             Ok(Command::LargeBlob(params)) => self.large_blob(params, workspace, p),
             Ok(Command::Management(params)) => self.manage(params, workspace, p),
@@ -283,15 +291,6 @@ impl Session {
             Ok(n) => {
                 if let Some(response) = self.auth_response.take() {
                     return response;
-                }
-                if let Ok(Command::LargeBlob(params)) = &command {
-                    if let Some((offset, length, prefix)) = params.file_response {
-                        return Response::Blob {
-                            offset,
-                            length,
-                            prefix,
-                        };
-                    }
                 }
                 Response::Prepared(n)
             }
@@ -364,6 +363,7 @@ impl Session {
         w.output[0] = 0;
         Ok(1)
     }
+    #[inline(never)]
     fn info(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
@@ -376,13 +376,7 @@ impl Session {
         let flags = record[pin::FLAGS];
         p.memory.wipe(&mut record);
         w.output[0] = 0;
-        let mut used = 0u8;
-        for index in 0..Record::CTAP_CREDENTIALS {
-            if let Some(n) = resident::load(index, &mut w.input, p)? {
-                resident::Entry::decode(&w.input[..n])?;
-                used = used.saturating_add(1);
-            }
-        }
+        let used = resident::count(w.input, p)?;
         info::encode(
             &mut w.output[1..],
             flags,
@@ -405,13 +399,7 @@ impl Session {
         let result = (|| {
             if !self.agreement_ready {
                 p.crypto
-                    .key_operation(
-                        KeyOperation::Generate,
-                        alg::P256,
-                        &mut w.key,
-                        &[],
-                        &mut w.input,
-                    )
+                    .key_operation(KeyOperation::Generate, alg::P256, &mut w.key, &[], w.input)
                     .map_err(|_| Status::Other)?;
                 self.agreement.copy_from_slice(&w.key.bytes[..32]);
                 self.agreement_ready = true;
@@ -420,13 +408,7 @@ impl Session {
             }
             let n = p
                 .crypto
-                .key_operation(
-                    KeyOperation::Public,
-                    alg::P256,
-                    &mut w.key,
-                    &[],
-                    &mut w.input,
-                )
+                .key_operation(KeyOperation::Public, alg::P256, &mut w.key, &[], w.input)
                 .map_err(|_| Status::Other)?;
             if n != 64 {
                 return Err(Status::Other);
@@ -438,10 +420,10 @@ impl Session {
             Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
         })();
         p.memory.wipe(&mut w.key.bytes);
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
         if result.is_err() {
             self.reset(p.memory);
-            p.memory.wipe(&mut w.output);
+            p.memory.wipe(w.output);
         }
         result
     }

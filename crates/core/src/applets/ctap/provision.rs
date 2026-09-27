@@ -23,13 +23,7 @@ pub(crate) fn install_key(
     p.memory.wipe(key);
     let result = (|| {
         p.crypto
-            .key_operation(
-                KeyOperation::Validate,
-                alg::P256,
-                &mut w.key,
-                &[],
-                &mut w.output,
-            )
+            .key_operation(KeyOperation::Validate, alg::P256, &mut w.key, &[], w.output)
             .map_err(|_| Sw::WRONG_DATA)?;
         p.storage
             .replace(Record::CtapAttestationKey, &w.key.bytes[..32])

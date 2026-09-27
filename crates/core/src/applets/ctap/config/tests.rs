@@ -180,7 +180,8 @@ fn run(
     for part in parts {
         request.consume(part);
     }
-    let mut w = Workspace::new();
+    let mut backing = crate::runtime::workspace::SessionWorkspace::new();
+    let mut w = backing.classic();
     let mut command = request.finish();
     let response = session.execute(
         &mut command,
@@ -418,7 +419,8 @@ fn forced_pin_change_blocks_both_tokens_and_clears_atomically_on_valid_change() 
             expected_message: [&cp.new_pin[..64], &cp.pin_hash[..16]].concat(),
             ..Backend::default()
         };
-        let mut w = Workspace::new();
+        let mut backing = crate::runtime::workspace::SessionWorkspace::new();
+        let mut w = backing.classic();
         let result = session.client_pin(
             &mut cp,
             &mut w,

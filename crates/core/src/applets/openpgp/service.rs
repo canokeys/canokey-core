@@ -64,7 +64,7 @@ impl Session {
             self.admin()?;
             let a = Algorithm(repo::meta(p, role)?[key_meta::ALGORITHM]);
             p.crypto
-                .key_operation(KeyOperation::Generate, a.0, &mut w.key, &[], &mut w.output)
+                .key_operation(KeyOperation::Generate, a.0, &mut w.key, &[], w.output)
                 .map_err(|_| Error::Crypto)?;
             repo::save_key(p, role, 1, &w.key.bytes)?;
             a
@@ -73,7 +73,7 @@ impl Session {
         };
         let n = p
             .crypto
-            .key_operation(KeyOperation::Public, a.0, &mut w.key, &[], &mut w.output)
+            .key_operation(KeyOperation::Public, a.0, &mut w.key, &[], w.output)
             .map_err(|_| Error::Crypto)?;
         Ok((a, n))
     }
@@ -160,7 +160,7 @@ impl Session {
         };
         let n = p
             .crypto
-            .key_operation(op, a.0, &mut w.key, input, &mut w.output)
+            .key_operation(op, a.0, &mut w.key, input, w.output)
             .map_err(|error| match error {
                 crate::ports::CryptoError::InvalidPadding => Error::Data,
                 crate::ports::CryptoError::Failure => Error::Crypto,

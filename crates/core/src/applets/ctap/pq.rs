@@ -7,7 +7,7 @@ use crate::{
         CryptoScratch, DigestOperation as Hash, HashState, Platform, Record, StreamOperation as Op,
         alg,
     },
-    runtime::workspace::SessionWorkspace,
+    runtime::workspace::{Primitive, SessionWorkspace},
 };
 use canokey_protocol::{cbor::Encoder, der::der_signature, response::StatusWord as Sw};
 pub(super) const PUBLIC_BYTES: usize = 1952;
@@ -32,20 +32,46 @@ pub struct Pending {
     pub hash_suffix: (usize, usize),
 }
 // Framing survives primitive initialization, but never aliases its opaque state.
-struct Framing {
-    bytes: [u8; FRAMING_BYTES],
+#[repr(C)]
+pub(crate) struct Framing {
     length: usize,
-    seed: [u8; 32],
-    client_hash: [u8; 32],
-}
-pub struct Stream {
-    crypto: CryptoScratch,
-    framing: Framing,
     generated_at: usize,
     generated_length: usize,
     certificate_at: usize,
     certificate_length: usize,
     emitted: usize,
+    // clientDataHash followed by the ML-DSA seed, matching classic input.
+    material: [u8; 64],
+    pub(crate) bytes: [u8; FRAMING_BYTES],
+}
+impl Framing {
+    pub(crate) const fn new() -> Self {
+        Self {
+            bytes: [0; FRAMING_BYTES],
+            length: 0,
+            material: [0; 64],
+            generated_at: 0,
+            generated_length: 0,
+            certificate_at: 0,
+            certificate_length: 0,
+            emitted: 0,
+        }
+    }
+    #[inline(never)]
+    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+        memory.wipe(&mut self.bytes);
+        memory.wipe(&mut self.material);
+        self.length = 0;
+        self.generated_at = 0;
+        self.generated_length = 0;
+        self.certificate_at = 0;
+        self.certificate_length = 0;
+        self.emitted = 0;
+    }
+}
+pub struct Stream<'a> {
+    pub(crate) crypto: &'a mut CryptoScratch,
+    pub(crate) framing: &'a mut Framing,
 }
 enum PartSource {
     Framing(usize),
@@ -56,57 +82,7 @@ struct Part {
     source: PartSource,
     length: usize,
 }
-impl Stream {
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
-        memory.wipe(&mut self.crypto.bytes);
-        memory.wipe(&mut self.framing.bytes);
-        memory.wipe(&mut self.framing.seed);
-        memory.wipe(&mut self.framing.client_hash);
-        self.framing.length = 0;
-        self.generated_at = 0;
-        self.generated_length = 0;
-        self.certificate_at = 0;
-        self.certificate_length = 0;
-        self.emitted = 0;
-    }
-    fn empty() -> Self {
-        Self {
-            crypto: CryptoScratch::new(),
-            framing: Framing {
-                bytes: [0; FRAMING_BYTES],
-                length: 0,
-                seed: [0; 32],
-                client_hash: [0; 32],
-            },
-            generated_at: 0,
-            generated_length: 0,
-            certificate_at: 0,
-            certificate_length: 0,
-            emitted: 0,
-        }
-    }
-
-    fn fill(framing: &mut Framing, plan: Pending, old: &crate::runtime::workspace::Workspace) {
-        if matches!(plan.mode, Mode::Make | Mode::Public) {
-            framing.bytes[..plan.output].copy_from_slice(&old.output[..plan.output]);
-            framing.client_hash.copy_from_slice(&old.input[..32]);
-            framing.seed.copy_from_slice(&old.input[32..64]);
-        } else {
-            framing.bytes[..plan.prefix].copy_from_slice(&old.output[..plan.prefix]);
-            framing.bytes[plan.prefix..plan.prefix + plan.auth]
-                .copy_from_slice(&old.input[..plan.auth]);
-            framing.bytes[plan.prefix + plan.auth..plan.output + plan.auth]
-                .copy_from_slice(&old.output[plan.prefix..plan.output]);
-            framing
-                .seed
-                .copy_from_slice(&old.input[plan.auth + 32..plan.auth + 64]);
-            framing
-                .client_hash
-                .copy_from_slice(&old.input[plan.auth..plan.auth + 32]);
-        }
-    }
-
-    // The framing temporary is gone before invoking expensive crypto.
+impl Stream<'_> {
     #[inline(never)]
     fn transfer(
         plan: Pending,
@@ -116,46 +92,39 @@ impl Stream {
         if plan.output + plan.auth > FRAMING_BYTES {
             return Err(Status::Other);
         }
-        // Preserve only the response framing across the workspace transition.
-        // Moving the entire Classic variant creates a multi-kilobyte stack copy.
-        let mut framing = Framing {
-            bytes: [0; FRAMING_BYTES],
-            length: plan.output + plan.auth,
-            seed: [0; 32],
-            client_hash: [0; 32],
-        };
-        let SessionWorkspace::Classic(old) = w else {
+        let SessionWorkspace::Working(w) = w else {
             unreachable!()
         };
-        Self::fill(&mut framing, plan, old);
+        let Primitive::Classic(old) = &mut w.primitive else {
+            unreachable!()
+        };
+        let framing = &mut w.framing;
+        // The output is already in its final backing. Only assertion authData
+        // must be inserted between the encoded prefix and suffix.
+        framing
+            .bytes
+            .copy_within(plan.prefix..plan.output, plan.prefix + plan.auth);
+        framing.bytes[plan.prefix..plan.prefix + plan.auth]
+            .copy_from_slice(&old.input[..plan.auth]);
+        framing
+            .material
+            .copy_from_slice(&old.input[plan.auth..plan.auth + 64]);
+        framing.length = plan.output + plan.auth;
+        p.memory.wipe(&mut framing.bytes[framing.length..]);
         old.clear(p.memory);
-        *w = SessionWorkspace::CtapStream(Self::empty());
-        let SessionWorkspace::CtapStream(stream) = w else {
-            unreachable!()
-        };
-        stream.framing.bytes.copy_from_slice(&framing.bytes);
-        stream.framing.seed.copy_from_slice(&framing.seed);
-        stream
-            .framing
-            .client_hash
-            .copy_from_slice(&framing.client_hash);
-        stream.framing.length = framing.length;
-        p.memory.wipe(&mut framing.bytes);
-        p.memory.wipe(&mut framing.seed);
-        p.memory.wipe(&mut framing.client_hash);
-        stream.generated_at = match plan.mode {
+        w.primitive = Primitive::Ctap(CryptoScratch::new());
+        framing.generated_at = match plan.mode {
             Mode::Make | Mode::Public => plan.public_at,
             Mode::Assert => plan.signature_at + plan.auth,
         };
-        stream.generated_length = if matches!(plan.mode, Mode::Assert) {
+        framing.generated_length = if matches!(plan.mode, Mode::Assert) {
             SIGNATURE_BYTES
         } else {
             PUBLIC_BYTES
         };
-        stream.certificate_at = plan
-            .certificate
-            .map_or(plan.output + plan.auth, |(at, _)| at);
-        stream.certificate_length = plan.certificate.map_or(0, |(_, n)| n);
+        framing.certificate_at = plan.certificate.map_or(framing.length, |(at, _)| at);
+        framing.certificate_length = plan.certificate.map_or(0, |(_, n)| n);
+        framing.emitted = 0;
         Ok(())
     }
     pub fn prepare(
@@ -164,12 +133,9 @@ impl Stream {
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
         Self::transfer(plan, w, p)?;
-        let SessionWorkspace::CtapStream(stream) = w else {
-            unreachable!()
-        };
+        let mut stream = w.ctap_stream().unwrap();
         let result = stream.initialize(plan, p);
-        p.memory.wipe(&mut stream.framing.seed);
-        p.memory.wipe(&mut stream.framing.client_hash);
+        p.memory.wipe(&mut stream.framing.material);
         if result.is_err() {
             stream.close(p);
         }
@@ -181,8 +147,8 @@ impl Stream {
             .stream(
                 op,
                 alg::MLDSA65,
-                &mut self.crypto,
-                &self.framing.seed,
+                self.crypto,
+                &self.framing.material[32..],
                 &mut [],
             )
             .map_err(|_| Status::Other)
@@ -196,7 +162,7 @@ impl Stream {
                     .stream(
                         Op::SignUpdate,
                         alg::MLDSA65,
-                        &mut self.crypto,
+                        self.crypto,
                         &self.framing.bytes[plan.prefix..plan.prefix + plan.auth],
                         &mut [],
                     )
@@ -205,13 +171,13 @@ impl Stream {
                     .stream(
                         Op::SignUpdate,
                         alg::MLDSA65,
-                        &mut self.crypto,
-                        &self.framing.client_hash,
+                        self.crypto,
+                        &self.framing.material[..32],
                         &mut [],
                     )
                     .map_err(|_| Status::Other)?;
                 if p.crypto
-                    .stream(Op::SignFinal, alg::MLDSA65, &mut self.crypto, &[], &mut [])
+                    .stream(Op::SignFinal, alg::MLDSA65, self.crypto, &[], &mut [])
                     .map_err(|_| Status::Other)?
                     != SIGNATURE_BYTES
                 {
@@ -244,7 +210,7 @@ impl Stream {
         let _ = p.crypto.digest(Hash::Abort, &mut hash, &[], &mut []);
         let _ = p
             .crypto
-            .stream(Op::Abort, alg::MLDSA65, &mut self.crypto, &[], &mut []);
+            .stream(Op::Abort, alg::MLDSA65, self.crypto, &[], &mut []);
         let digest = digest_result?;
         self.attest(plan.signature_at + plan.auth, &digest, p)?;
         // PublicInit is intentionally repeated: the primitive exposes
@@ -279,13 +245,7 @@ impl Stream {
             }
             let n = window.len().min(PUBLIC_BYTES - offset);
             if p.crypto
-                .stream(
-                    Op::Read,
-                    alg::MLDSA65,
-                    &mut self.crypto,
-                    &[],
-                    &mut window[..n],
-                )
+                .stream(Op::Read, alg::MLDSA65, self.crypto, &[], &mut window[..n])
                 .map_err(|_| Status::Other)?
                 != n
             {
@@ -304,7 +264,7 @@ impl Stream {
             )
             .map_err(|_| Status::Other)?;
         p.crypto
-            .digest(Hash::Update, hash, &self.framing.client_hash, &mut [])
+            .digest(Hash::Update, hash, &self.framing.material[..32], &mut [])
             .map_err(|_| Status::Other)?;
         let mut digest = [0; 32];
         p.crypto
@@ -337,39 +297,41 @@ impl Stream {
                 .finish()
                 .map_err(|_| Status::Other)?;
             self.framing.length += count;
-            self.certificate_at += count;
+            self.framing.certificate_at += count;
             Ok(())
         })();
         p.memory.wipe(&mut key);
         result
     }
     pub fn len(&self) -> usize {
-        self.framing.length + self.generated_length + self.certificate_length
+        self.framing.length + self.framing.generated_length + self.framing.certificate_length
     }
     pub fn read(&mut self, offset: usize, out: &mut [u8], p: &mut Platform<'_>) -> Result<(), Sw> {
-        if offset != self.emitted || offset.checked_add(out.len()).is_none_or(|n| n > self.len()) {
+        if offset != self.framing.emitted
+            || offset.checked_add(out.len()).is_none_or(|n| n > self.len())
+        {
             return Err(Sw::WRONG_LENGTH);
         }
         let parts = [
             Part {
                 source: PartSource::Framing(0),
-                length: self.generated_at,
+                length: self.framing.generated_at,
             },
             Part {
                 source: PartSource::Generated,
-                length: self.generated_length,
+                length: self.framing.generated_length,
             },
             Part {
-                source: PartSource::Framing(self.generated_at),
-                length: self.certificate_at - self.generated_at,
+                source: PartSource::Framing(self.framing.generated_at),
+                length: self.framing.certificate_at - self.framing.generated_at,
             },
             Part {
                 source: PartSource::Certificate,
-                length: self.certificate_length,
+                length: self.framing.certificate_length,
             },
             Part {
-                source: PartSource::Framing(self.certificate_at),
-                length: self.framing.length - self.certificate_at,
+                source: PartSource::Framing(self.framing.certificate_at),
+                length: self.framing.length - self.framing.certificate_at,
             },
         ];
         let count = out.len();
@@ -383,7 +345,7 @@ impl Stream {
             match part.source {
                 PartSource::Generated => {
                     if p.crypto
-                        .stream(Op::Read, alg::MLDSA65, &mut self.crypto, &[], dest)
+                        .stream(Op::Read, alg::MLDSA65, self.crypto, &[], dest)
                         .map_err(|_| Sw::UNABLE_TO_PROCESS)?
                         != n
                     {
@@ -399,16 +361,17 @@ impl Stream {
                 }
             }
         }
-        self.emitted += count;
+        self.framing.emitted += count;
         Ok(())
     }
     pub fn close(&mut self, p: &mut Platform<'_>) {
         let _ = p
             .crypto
-            .stream(Op::Abort, alg::MLDSA65, &mut self.crypto, &[], &mut []);
+            .stream(Op::Abort, alg::MLDSA65, self.crypto, &[], &mut []);
         p.memory.wipe(&mut self.crypto.bytes);
-        p.memory.wipe(&mut self.framing.bytes);
-        p.memory.wipe(&mut self.framing.seed);
-        p.memory.wipe(&mut self.framing.client_hash);
+        self.framing.clear(p.memory);
     }
 }
+
+#[cfg(test)]
+mod tests;

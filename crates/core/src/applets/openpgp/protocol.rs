@@ -169,14 +169,14 @@ impl OpenPgp {
         self.request = Request::None;
         self.used = 0;
         p.memory.wipe(&mut w.key.bytes);
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
         self.import = Import::new();
     }
     pub fn response_preemptable(&self, total: u32) -> bool {
         matches!(self.response, Response::Certificate(_)) || total > 288
     }
     pub fn close(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
-        p.memory.wipe(&mut w.output);
+        p.memory.wipe(w.output);
         self.response = Response::Memory;
     }
     #[cfg(feature = "pass")]
@@ -226,7 +226,7 @@ impl OpenPgp {
                 self.import.finish()?;
                 let a = self.import.algorithm;
                 p.crypto
-                    .key_operation(KeyOperation::Validate, a.0, &mut w.key, &[], &mut w.output)
+                    .key_operation(KeyOperation::Validate, a.0, &mut w.key, &[], w.output)
                     .map_err(|_| Sw::WRONG_DATA)?;
                 repo::save_key(p, self.import.role, 2, &w.key.bytes)?;
                 Ok(0)
@@ -237,7 +237,7 @@ impl OpenPgp {
         self.request = Request::None;
         self.used = 0;
         p.memory.wipe(&mut w.key.bytes);
-        p.memory.wipe(&mut w.input);
+        p.memory.wipe(w.input);
         self.import = Import::new();
         if result.is_err() {
             self.close(w, p)
@@ -342,7 +342,7 @@ impl OpenPgp {
                     self.response = Response::Certificate(self.occurrence);
                     return Ok(n);
                 }
-                self.get(tag, &mut w.output, p).map(|n| n as u32)
+                self.get(tag, w.output, p).map(|n| n as u32)
             }
             PUT_DATA => {
                 self.admin()?;

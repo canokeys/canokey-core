@@ -12,6 +12,13 @@ pub(super) fn encode(
     used: u8,
     sm2_algorithm: i32,
 ) -> Result<usize, EncodeError> {
+    // Keep generated fixed limits synchronized with their owning modules.
+    const {
+        assert!(MAX_REQUEST == 1024);
+        assert!(credential_request::MAX_LIST == 16);
+        assert!(credential::ID_BYTES == 34);
+        assert!(large_blob::LIMIT == 4096);
+    }
     let capacity = output.len();
     let always_uv = flags & pin::ALWAYS_UV != 0;
     let mut e = Encoder::new(output);
@@ -26,18 +33,11 @@ pub(super) fn encode(
         .encoded(CLIENT_PIN)
         .bool(configured)
         .encoded(OPTIONS_END)
-        .u16(MAX_REQUEST as u16)
-        .encoded(PIN_PROTOCOLS)
-        .u8(credential_request::MAX_LIST as u8)
-        .u8(8)
-        .u8(credential::ID_BYTES as u8)
         .encoded(ALGORITHMS);
     if !cfg!(feature = "ctap-restrict-algorithms") {
         e.i32(sm2_algorithm);
     }
     e.encoded(ALGORITHMS_END)
-        .u16(large_blob::LIMIT)
-        .u8(12)
         .bool(flags & pin::FORCE_CHANGE != 0)
         .u8(13)
         .u8(minimum)

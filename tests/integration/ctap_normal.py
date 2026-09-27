@@ -257,9 +257,25 @@ def run(wire):
         for answer in [first, second]:
             direct = call(2, {1: rp, 2: assertion_hash, 3: [answer[1]], 4: {"hmac-secret": extension}})
             assert protocol.decrypt(secret, AuthenticatorData(direct[2]).extensions["hmac-secret"]) == protocol.decrypt(secret, AuthenticatorData(answer[2]).extensions["hmac-secret"])
+        # Parse errors also terminate discovery and its prepared HMAC state.
+        call(2, {1: rp, 2: assertion_hash, 4: {"hmac-secret": extension}})
+        call(8, raw=b"\x00", status=0x03)
+        call(8, status=0x30)
+        plain = call(2, {1: rp, 2: assertion_hash})
+        following = call(8)
+        for answer in [plain, following]:
+            assert "hmac-secret" not in (AuthenticatorData(answer[2]).extensions or {})
         # Cross-protocol and reset stability on one of the original credentials.
         stable = call(2, {1: rp, 2: assertion_hash, 3: [descriptor], 4: {"hmac-secret": extension}})
         hmac_results[protocol.VERSION] = protocol.decrypt(secret, AuthenticatorData(stable[2]).extensions["hmac-secret"])
+        # A read failure while signing the next credential must clear the same
+        # state; it must not leave a resumable cursor or stale HMAC output.
+        call(2, {1: rp, 2: assertion_hash, 4: {"hmac-secret": extension}})
+        wire.command("FAIL_READ 78")
+        call(8, status=0x7f)
+        call(8, status=0x30)
+        call(2, {1: rp, 2: assertion_hash, 3: [descriptor],
+                 4: {"hmac-secret": extension}}, status=0x33)
         wire.command("RESET")
         select()
     assert hmac_results[1] == hmac_results[2]

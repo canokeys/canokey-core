@@ -258,11 +258,11 @@ impl Session {
         // A pending PQ response owns its seed in input until Stream::transfer
         // copies it and wipes the old workspace. Never zero it before that handoff.
         if !matches!(self.auth_response, Some(super::Response::Pending(_))) {
-            p.memory.wipe(&mut w.input);
+            p.memory.wipe(w.input);
         }
         if result.is_err() {
             self.management = Cursor::new();
-            p.memory.wipe(&mut w.output);
+            p.memory.wipe(w.output);
         }
         result
     }
@@ -303,7 +303,7 @@ impl Session {
                 self.authorize(
                     params.protocol,
                     &params.auth[..params.auth_len],
-                    &params.message[PREFIX - 1..params.len],
+                    &params.message[params.start + PREFIX - 1..params.len],
                     CREDENTIAL_MANAGEMENT_PERMISSION,
                     fields.rp,
                     p,
@@ -312,7 +312,7 @@ impl Session {
         }
         w.output[0] = 0;
         if subcommand == 1 {
-            let count = credential_count(None, &mut w.input, p)?;
+            let count = credential_count(None, w.input, p)?;
             let mut e = Encoder::new(&mut w.output[1..]);
             e.map(2)
                 .u8(1)
@@ -327,11 +327,11 @@ impl Session {
             let mut total = 0;
             if subcommand == 2 {
                 let mut cursor = Cursor::new();
-                while next_rp(&mut cursor, &mut w.input, p)?.is_some() {
+                while next_rp(&mut cursor, w.input, p)?.is_some() {
                     total += 1;
                 }
             }
-            let (_, n) = next_rp(&mut self.management, &mut w.input, p)?.ok_or(if continued {
+            let (_, n) = next_rp(&mut self.management, w.input, p)?.ok_or(if continued {
                 Status::NotAllowed
             } else {
                 Status::NoCredentials
@@ -360,12 +360,12 @@ impl Session {
                 self.management.metadata_only = fields.metadata_only;
             }
             let total = if subcommand == 4 {
-                credential_count(Some(&self.management.rp), &mut w.input, p)?
+                credential_count(Some(&self.management.rp), w.input, p)?
             } else {
                 0
             };
             for index in self.management.next..Record::CTAP_CREDENTIALS {
-                if let Some(n) = resident::load(index, &mut w.input, p)? {
+                if let Some(n) = resident::load(index, w.input, p)? {
                     let entry = resident::Entry::decode(&w.input[..n])?;
                     if *entry.rp_hash != self.management.rp {
                         continue;
@@ -386,7 +386,7 @@ impl Session {
                                 algorithm,
                                 &mut w.key,
                                 &[],
-                                &mut w.output,
+                                w.output,
                             )
                             .map_err(|_| Status::Other)?;
                         if n != credential::public_length(algorithm) {
@@ -415,12 +415,7 @@ impl Session {
                                 .unwrap()
                         });
                         let (plan, length) = mldsa_public_response(
-                            &entry,
-                            &id,
-                            total,
-                            subcommand,
-                            blob_key,
-                            &mut w.output,
+                            &entry, &id, total, subcommand, blob_key, w.output,
                         )?;
                         // Encode directly from the input record before reusing
                         // it for the stream seed; maximal user records exceed 256 B.
@@ -471,7 +466,7 @@ impl Session {
         }
         let id = fields.id.ok_or(Status::MissingParameter)?;
         for index in 0..Record::CTAP_CREDENTIALS {
-            let Some(n) = resident::load(index, &mut w.input, p)? else {
+            let Some(n) = resident::load(index, w.input, p)? else {
                 continue;
             };
             let entry = resident::Entry::decode(&w.input[..n])?;
@@ -481,7 +476,7 @@ impl Session {
             self.authorize(
                 params.protocol,
                 &params.auth[..params.auth_len],
-                &params.message[PREFIX - 1..params.len],
+                &params.message[params.start + PREFIX - 1..params.len],
                 CREDENTIAL_MANAGEMENT_PERMISSION,
                 Some(entry.rp_hash),
                 p,

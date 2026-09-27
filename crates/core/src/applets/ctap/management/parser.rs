@@ -19,6 +19,7 @@ impl Span {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(in crate::applets::ctap) struct Parsed {
     spans: [Span; 5], // RP hash, credential ID, user ID, name, display name.
     metadata_only: bool,
@@ -30,13 +31,6 @@ impl Parsed {
             spans: [Span::NONE; 5],
             metadata_only: false,
             error: None,
-        }
-    }
-    pub fn relocate(&mut self, start: usize) {
-        for span in &mut self.spans {
-            if span.start != 0 {
-                span.start -= start as u16;
-            }
         }
     }
     pub fn fields<'a>(&self, raw: &'a [u8]) -> Result<Fields<'a>, Status> {
@@ -210,23 +204,33 @@ mod tests {
 
     fn check(params: &[u8]) {
         let expected = super::super::parse(params);
-        let mut message = vec![0xa2, 1, 7, 2];
-        message.extend_from_slice(params);
-        for split in 0..=message.len() {
-            let mut parser = envelope::Parser::new(0x0a);
-            parser.consume(&message[..split]);
-            parser.consume(&message[split..]);
-            let Ok(Command::Management(p)) = parser.finish() else {
-                panic!("envelope rejected {message:?}");
+        for leading in [false, true] {
+            let mut message = if leading {
+                let mut bytes = vec![0xa3, 0, 0x78, 70];
+                bytes.extend_from_slice(&[b'x'; 70]);
+                bytes.extend_from_slice(&[1, 7, 2]);
+                bytes
+            } else {
+                vec![0xa2, 1, 7, 2]
             };
-            assert_eq!(&p.message[envelope::PREFIX..p.len], params);
-            assert_eq!(
-                p.management.fields(&p.message),
-                expected,
-                "split={split} params={params:?}"
-            );
+            message.extend_from_slice(params);
+            for split in 0..=message.len() {
+                let mut parser = envelope::Parser::new(0x0a);
+                parser.consume(&message[..split]);
+                parser.consume(&message[split..]);
+                let Ok(Command::Management(p)) = parser.finish() else {
+                    panic!("envelope rejected {message:?}");
+                };
+                assert_eq!(&p.message[p.start + envelope::PREFIX..p.len], params);
+                assert_eq!(
+                    p.management.fields(&p.message),
+                    expected,
+                    "leading={leading} split={split} params={params:?}"
+                );
+            }
         }
     }
+
     fn bytes(length: usize) -> Vec<u8> {
         let mut v = if length < 24 {
             vec![0x40 + length as u8]
