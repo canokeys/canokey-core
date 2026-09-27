@@ -98,17 +98,18 @@ pub const OBJECTS: [Record; 34] = [
     Record::PivObject33,
 ];
 // Byte offsets in the RAM metadata view (META is its byte capacity).
-// Disk stores six header bytes, key material, then only the used UTF-16LE name.
+// Disk stores a discriminator, key material, then this fixed metadata footer.
 // NAME_LENGTH counts bytes, not characters. ORIGIN is 0 absent / 1 generated /
 // 2 imported; PIN_POLICY and TOUCH_POLICY use wire::policy values.
 pub const VERSION: usize = 0;
 pub const FORMAT_VERSION: u8 = 1;
+pub const KEY_FORMAT_VERSION: u8 = 2;
 pub const NAME_MAX: usize = 78;
 pub const USER_KEY_COUNT: usize = 24;
 pub const ATTESTATION_KEY: usize = USER_KEY_COUNT;
 pub const KEY_COUNT: usize = USER_KEY_COUNT + 1;
-pub const HEADER: usize = 6;
-pub const META: usize = 88;
+pub const HEADER: usize = 1;
+pub const META: usize = 84;
 const P256_BYTES: usize = 32;
 const P384_BYTES: usize = 48;
 const P521_BYTES: usize = 66;
@@ -121,7 +122,7 @@ pub const ORIGIN: usize = 2;
 pub const PIN_POLICY: usize = 3;
 pub const TOUCH_POLICY: usize = 4;
 pub const NAME_LENGTH: usize = 5;
-pub const NAME: usize = 8;
+pub const NAME: usize = 6;
 // Algorithm-mapping record: enable byte, then nine wire IDs in the order of
 // EXTENSION_ALGORITHMS below. These values are APDU IDs, not ports::alg IDs.
 pub const DEFAULT_CONFIG: [u8; 10] = [0x01, 0xe0, 0x05, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3];
@@ -228,7 +229,7 @@ pub fn read_meta(id: usize, p: &mut Platform<'_>, m: &mut [u8; META]) -> Result<
         Err(e) => return Err(io(e)),
     };
     if n == 0 {
-        m[VERSION] = FORMAT_VERSION;
+        m[VERSION] = KEY_FORMAT_VERSION;
         m[ALGORITHM] = 0xff;
         m[PIN_POLICY] = match SLOTS[id] {
             slot::SIGNATURE => policy::PIN_ALWAYS,
@@ -238,27 +239,24 @@ pub fn read_meta(id: usize, p: &mut Platform<'_>, m: &mut [u8; META]) -> Result<
         m[TOUCH_POLICY] = policy::TOUCH_NEVER;
         return Ok(());
     }
+    let mut version = [0];
+    p.storage.read_at(KEYS[id], 0, &mut version).map_err(io)?;
+    if version[0] != KEY_FORMAT_VERSION || n < (HEADER + META) as u32 {
+        return Err(Sw::UNABLE_TO_PROCESS);
+    }
     p.storage
-        .read_at(KEYS[id], 0, &mut m[..HEADER])
+        .read_at(KEYS[id], n - META as u32, m)
         .map_err(io)?;
-    if m[VERSION] != FORMAT_VERSION
+    if m[VERSION] != KEY_FORMAT_VERSION
         || m[ALGORITHM] > alg::MLDSA65
         || !(1..=2).contains(&m[ORIGIN])
         || !(policy::PIN_NEVER..=policy::PIN_ALWAYS).contains(&m[PIN_POLICY])
         || m[TOUCH_POLICY] > policy::TOUCH_CACHED
         || m[NAME_LENGTH] > NAME_MAX as u8
-        || n as usize != HEADER + material(m[ALGORITHM]) + m[NAME_LENGTH] as usize
+        || n as usize != HEADER + material(m[ALGORITHM]) + META
     {
         return Err(Sw::UNABLE_TO_PROCESS);
     }
-    let name_len = m[NAME_LENGTH] as usize;
-    p.storage
-        .read_at(
-            KEYS[id],
-            (HEADER + material(m[ALGORITHM])) as u32,
-            &mut m[NAME..NAME + name_len],
-        )
-        .map_err(io)?;
     Ok(())
 }
 pub fn load(
@@ -280,13 +278,8 @@ pub fn save(
     p: &mut Platform<'_>,
 ) -> Result<(), Sw> {
     let r = (|| {
-        p.storage.stage_begin().map_err(io)?;
-        p.storage.stage_append(&m[..HEADER]).map_err(io)?;
         let a = m[ALGORITHM];
-        key_storage::append(p.storage, rsa(a), width(a), key).map_err(io)?;
-        p.storage
-            .stage_append(&m[NAME..NAME + m[NAME_LENGTH] as usize])
-            .map_err(io)?;
+        key_storage::stage(p.storage, rsa(a), width(a), key, m).map_err(io)?;
         p.storage.stage_commit(KEYS[id]).map_err(io)
     })();
     if r.is_err() {
@@ -295,26 +288,9 @@ pub fn save(
     r
 }
 pub fn save_name(id: usize, m: &[u8; META], p: &mut Platform<'_>) -> Result<(), Sw> {
-    let result = (|| {
-        p.storage.stage_begin().map_err(io)?;
-        p.storage.stage_append(&m[..HEADER]).map_err(io)?;
-        crate::ports::copy_to_stage(
-            p.storage,
-            p.memory,
-            KEYS[id],
-            HEADER as u32,
-            material(m[ALGORITHM]) as u32,
-        )
-        .map_err(io)?;
-        p.storage
-            .stage_append(&m[NAME..NAME + m[NAME_LENGTH] as usize])
-            .map_err(io)?;
-        p.storage.stage_commit(KEYS[id]).map_err(io)
-    })();
-    if result.is_err() {
-        p.storage.stage_abort();
-    }
-    result
+    p.storage
+        .replace_at(KEYS[id], (HEADER + material(m[ALGORITHM])) as u32, m)
+        .map_err(io)
 }
 pub fn policies(m: &mut [u8; META], mut b: &[u8]) -> Result<(), Sw> {
     while !b.is_empty() {

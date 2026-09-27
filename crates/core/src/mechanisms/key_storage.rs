@@ -42,21 +42,30 @@ pub fn load(
     }
     Ok(())
 }
-pub fn append(
+pub fn stage(
     storage: &mut crate::ports::StoragePort<'_>,
     rsa: bool,
     width: usize,
     key: &[u8; crate::ports::key_layout::SIZE],
+    metadata: &[u8],
 ) -> Result<(), StorageError> {
     if width > layout::RSA_LIMB_BYTES {
         return Err(StorageError::Unavailable);
     }
     if !rsa {
-        return storage.stage_append(&key[..width]);
+        return storage.stage_parts(&[&[2], &key[..width], metadata]);
     }
-    storage.stage_append(&key[..layout::EXPONENT_BYTES])?;
-    for component in key[layout::P..].as_chunks::<{ layout::RSA_LIMB_BYTES }>().0 {
-        storage.stage_append(&component[..width])?;
+    let mut parts: [&[u8]; 8] = [&[]; 8];
+    parts[0] = &[2]; // Explicit layout discriminator, before arbitrary key bytes.
+    parts[1] = &key[..layout::EXPONENT_BYTES];
+    for (i, component) in key[layout::P..]
+        .as_chunks::<{ layout::RSA_LIMB_BYTES }>()
+        .0
+        .iter()
+        .enumerate()
+    {
+        parts[i + 2] = &component[..width];
     }
-    Ok(())
+    parts[7] = metadata;
+    storage.stage_parts(&parts)
 }

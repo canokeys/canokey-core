@@ -19,7 +19,7 @@ with connection(sys.argv[1]) as wire:
         10,
         10,
         4,
-        70,
+        439,
         10,
         12,
         4,
@@ -38,15 +38,17 @@ with connection(sys.argv[1]) as wire:
         c.cmd(
             "put", 1, data=tlv(0x71, name) + tlv(0x73, b"\x21\x06" + b"k" * 20), le=None
         )
-    assert size(3) == 4 + 39 + 102
+    assert size(3) == 4 + 2 * 146
     c.cmd("rename", 5, data=tlv(0x71, b"a") + tlv(0x71, b"c" * 64), le=None)
-    assert size(3) == 208
+    assert size(3) == 4 + 2 * 146
     wire.command("RESET")
     c.cmd("oath", 0xA4, 4, data=bytes.fromhex("a0000005272101"))
     assert len(c.cmd("list", 0xA1)) == 134
     for name in (b"c" * 64, b"b" * 64):
         c.cmd("delete", 2, data=tlv(0x71, name), le=None)
-    assert size(3) == 4
+    assert size(3) == 4 + 2 * 146
+    c.cmd("reuse", 1, data=tlv(0x71, b"reused") + tlv(0x73, b"\x21\x06" + b"k" * 20), le=None)
+    assert size(3) == 4 + 2 * 146
 
     pgp = OpenPgp(wire)
     pgp.select()
@@ -60,25 +62,25 @@ with connection(sys.argv[1]) as wire:
     ]
     for tag, value in values:
         pgp.put(tag, value)
-    assert size(4) == 435
+    assert size(4) == 439
     wire.command("RESET")
     pgp.select()
     pgp.verify()
     for tag, value in values:
         assert pgp.get(tag) == value
         pgp.put(tag, value[:1])
-    assert size(4) == 74
+    assert size(4) == 439
     for a, width in [(5, 128), (6, 192), (7, 256)]:
         pgp.put(0xC1, ATTR[a])
         pgp.cmd("generate", 0x47, 0x80, data=tlv(0xB6, b""))
-        assert size(8) == 31 + 4 + 5 * width
+        assert size(8) == 32 + 4 + 5 * width
 
     # P-521 persists only the 66-byte scalar; its public point is re-derived.
     private = ec.derive_private_key(0x5a5a5a, ec.SECP521R1())
     pgp.attrs(8, 0)
     pgp.import_key(8, 0, private)
     public = pgp.public(0)
-    assert size(8) == 31 + 66
+    assert size(8) == 32 + 66
     wire.command("RESET")
     pgp.select()
     assert pgp.public(0) == public
@@ -89,16 +91,16 @@ with connection(sys.argv[1]) as wire:
     piv.auth()
     for a, width in [(5, 128), (6, 192), (7, 256)]:
         key = piv.generate(a)
-        assert size(17) == 6 + 4 + 5 * width
+        assert size(17) == 85 + 4 + 5 * width
         for name in ("x" * 39, "y", ""):
             name = name.encode("utf-16le")
             piv.cmd("name", 0xF5, 1, 0x9A, name, le=None)
-            assert size(17) == 6 + 4 + 5 * width + len(name)
+            assert size(17) == 85 + 4 + 5 * width
             assert piv.cmd("name_read", 0xF5, 0, 0x9A) == name
             assert piv.public(a).public_numbers() == key.public_numbers()
 
     piv.import_key(8, private)
-    assert size(17) == 6 + 66
+    assert size(17) == 85 + 66
     wire.command("RESET")
     piv.select()
     public = piv.public(8)

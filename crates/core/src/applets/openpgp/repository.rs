@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Compact records; fixed field offsets are an in-memory view only.
+//! Fixed state fields and cold key material followed by hot metadata.
 use super::domain::Error;
 use super::domain::key_role;
 use super::wire::tag;
@@ -9,7 +9,7 @@ use crate::{
     Platform,
     ports::{Record, StorageError},
 };
-// Byte offsets in the expanded RAM view, not offsets in the compact disk record.
+// Byte offsets shared by the fixed disk record and the RAM view.
 // *_END values are exclusive. NAME/LOGIN/LANGUAGE/SEX/URL point to a one-byte
 // length followed by a fixed-capacity value; *_MAX excludes that length byte.
 // CA means certification authority; each stored OpenPGP fingerprint is 20 bytes.
@@ -33,7 +33,7 @@ pub mod state_layout {
     pub const URL_MAX: usize = 255;
     pub const USED_END: usize = URL + 1 + URL_MAX;
 }
-// Byte offsets in the key metadata prefix. CREATED holds four protocol bytes
+// Byte offsets within the key metadata footer. CREATED holds four protocol bytes
 // (big-endian creation time); SIGNATURE_COUNTER is a three-byte big-endian count.
 // ORIGIN distinguishes absent (0), generated (1), and imported (2) keys.
 pub mod key_meta {
@@ -48,7 +48,7 @@ pub mod key_meta {
     pub const SIGNATURE_COUNTER: usize = CREATED_END;
     pub const END: usize = 31;
 }
-const FORMAT_VERSION: u8 = 1;
+const FORMAT_VERSION: u8 = 2;
 pub const STATE_LEN: usize = 512;
 pub const META_LEN: usize = key_meta::END;
 pub const KEYS: [Record; 3] = [Record::PgpSig, Record::PgpDec, Record::PgpAut];
@@ -74,68 +74,41 @@ const FIELDS: [(u16, usize, usize); 5] = [
     (tag::SEX, state_layout::SEX, 1),
     (tag::URL, state_layout::URL, state_layout::URL_MAX),
 ];
-const STATE_HEADER: usize = state_layout::FLAGS_END + 3 * state_layout::FINGERPRINT_BYTES; // Four flags followed by three CA fingerprints.
 pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error> {
     let n = p.storage.load(Record::PgpState, b).map_err(io)?;
-    if n < STATE_HEADER || b[state_layout::VERSION] != FORMAT_VERSION {
+    if n != state_layout::USED_END
+        || b[state_layout::VERSION] != FORMAT_VERSION
+        || b[state_layout::TERMINATED] > 1
+        || b[state_layout::PW1_REUSE] > 1
+    {
         return Err(Error::Storage);
     }
-    let mut starts = [0; 5];
-    let mut at = STATE_HEADER;
-    for (i, (_, _, max)) in FIELDS.iter().enumerate() {
-        if at >= n || b[at] as usize > *max || at + 1 + b[at] as usize > n {
+    for (_, off, max) in FIELDS {
+        if b[off] as usize > max {
             return Err(Error::Storage);
         }
-        starts[i] = at;
-        at += 1 + b[at] as usize;
     }
-    if at != n {
-        return Err(Error::Storage);
-    }
-    for (i, (_, off, max)) in FIELDS.iter().enumerate().rev() {
-        let from = starts[i];
-        let len = 1 + b[from] as usize;
-        b.copy_within(from..from + len, *off);
-        b[off + len..off + 1 + max].fill(0);
-    }
-    b.copy_within(
-        state_layout::FLAGS_END..STATE_HEADER,
-        state_layout::CA_FINGERPRINTS,
-    );
-    b[state_layout::FLAGS_END..state_layout::CA_FINGERPRINTS].fill(0);
     b[state_layout::USED_END..].fill(0);
     Ok(())
 }
 pub fn save_state(p: &mut Platform<'_>, b: &[u8; STATE_LEN]) -> Result<(), Error> {
-    let result = (|| {
-        p.storage.stage_begin().map_err(io)?;
-        p.storage
-            .stage_append(&b[..state_layout::FLAGS_END])
-            .map_err(io)?;
-        p.storage
-            .stage_append(&b[state_layout::CA_FINGERPRINTS..state_layout::CA_FINGERPRINTS_END])
-            .map_err(io)?;
-        for (_, off, max) in FIELDS {
-            let n = b[off] as usize;
-            if n > max {
-                return Err(Error::Storage);
-            }
-            p.storage.stage_append(&b[off..off + 1 + n]).map_err(io)?;
-        }
-        p.storage.stage_commit(Record::PgpState).map_err(io)
-    })();
-    if result.is_err() {
-        p.storage.stage_abort();
-    }
-    result
+    p.storage
+        .replace(Record::PgpState, &b[..state_layout::USED_END])
+        .map_err(io)
 }
 pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> {
-    // The stored record includes metadata in addition to native key material:
-    // RSA-4096 needs META_LEN + key_layout::SIZE bytes. Read only the prefix
-    // and validate the full record length without a key-sized stack buffer.
+    // Check the leading discriminator before interpreting a metadata footer.
+    // Never read private components merely to access hot metadata.
     let n = p.storage.size(KEYS[role]).map_err(io)?;
     let mut b = [0; META_LEN];
-    p.storage.read_at(KEYS[role], 0, &mut b).map_err(io)?;
+    let mut version = [0];
+    p.storage.read_at(KEYS[role], 0, &mut version).map_err(io)?;
+    if version[0] != FORMAT_VERSION || n < (1 + META_LEN) as u32 {
+        return Err(Error::Storage);
+    }
+    p.storage
+        .read_at(KEYS[role], n - META_LEN as u32, &mut b)
+        .map_err(io)?;
     if b[key_meta::VERSION] != FORMAT_VERSION
         || b[key_meta::ORIGIN] > 2
         || b[key_meta::TOUCH_POLICY] > 2
@@ -151,13 +124,26 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
     } else {
         key_storage::length(a.rsa(), a.private_component_bytes())
     };
-    if n != (META_LEN + material) as u32 {
+    if n != (1 + META_LEN + material) as u32 {
         return Err(Error::Storage);
     }
     Ok(b)
 }
 pub fn put_meta(p: &mut Platform<'_>, role: usize, b: &[u8; META_LEN]) -> Result<(), Error> {
-    p.storage.replace_at(KEYS[role], 0, b).map_err(io)
+    let a = Algorithm(b[key_meta::ALGORITHM]);
+    let material = if b[key_meta::ORIGIN] == 0 {
+        0
+    } else {
+        key_storage::length(a.rsa(), a.private_component_bytes())
+    };
+    p.storage
+        .replace_at(KEYS[role], (1 + material) as u32, b)
+        .map_err(io)
+}
+pub fn empty_key(p: &mut Platform<'_>, role: usize, m: &[u8; META_LEN]) -> Result<(), Error> {
+    let mut record = [FORMAT_VERSION; 1 + META_LEN];
+    record[1..].copy_from_slice(m);
+    p.storage.replace(KEYS[role], &record).map_err(io)
 }
 pub fn load_key(
     p: &mut Platform<'_>,
@@ -172,7 +158,7 @@ pub fn load_key(
     key_storage::load(
         p.storage,
         KEYS[role],
-        META_LEN as u32,
+        1,
         a.rsa(),
         a.private_component_bytes(),
         b,
@@ -193,10 +179,8 @@ pub fn save_key(
         m[key_meta::SIGNATURE_COUNTER..key_meta::END].fill(0);
     }
     let result = (|| {
-        p.storage.stage_begin().map_err(io)?;
-        p.storage.stage_append(&m).map_err(io)?;
         let a = Algorithm(m[key_meta::ALGORITHM]);
-        key_storage::append(p.storage, a.rsa(), a.private_component_bytes(), b).map_err(io)?;
+        key_storage::stage(p.storage, a.rsa(), a.private_component_bytes(), b, &m).map_err(io)?;
         p.storage.stage_commit(KEYS[role]).map_err(io)
     })();
     if result.is_err() {
@@ -216,7 +200,7 @@ pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
         let mut m = [0; META_LEN];
         m[key_meta::VERSION] = FORMAT_VERSION;
         m[key_meta::ALGORITHM] = crate::ports::alg::RSA2048;
-        p.storage.replace(KEYS[i], &m).map_err(io)?;
+        empty_key(p, i, &m)?;
         p.storage.replace(CERTS[i], &[]).map_err(io)?;
     }
     s[state_layout::SEX] = 1;

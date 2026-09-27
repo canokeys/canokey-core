@@ -565,12 +565,12 @@ def invalid_private_inputs(c):
         assert c.cmd("invalid_crt_keeps_key", 0xF7, 0, 0x9A) == before
     exercise(c, 5, private.public_key())
     # Compact record: header6, exponent4, p128, q128, then dp128.
-    c.wire.command("CORRUPT 17 366 85")
+    c.wire.command("CORRUPT 17 361 85")
     answer = c.cmd("reject_corrupt_stored_crt", 0x87, 7, 0x9A,
                    tlv(0x7C, tlv(0x82, b"") + tlv(0x81, (42).to_bytes(256, "big"))),
                    status=0x6900)
     assert answer == b""
-    c.wire.command("CORRUPT 17 366 85")
+    c.wire.command("CORRUPT 17 361 85")
     exercise(c, 5, private.public_key())
 
     private = ec.derive_private_key(1, ec.SECP256R1())
@@ -629,7 +629,7 @@ def pq_keys(c):
             metadata = fields(c.cmd("pq_algorithm_origin", 0xF7, 0, 0x9A))
             assert metadata[1] == bytes([alg]) and metadata[3] == bytes([2 if imported else 1])
             assert metadata[4] == encoded
-            assert c.wire.command("SIZE 17") == (6 + size).to_bytes(4, "big")
+            assert c.wire.command("SIZE 17") == (85 + size).to_bytes(4, "big")
             public = cls.from_public_bytes(fields(encoded)[0x86])
             assert len(fields(encoded)[0x86]) == (1952 if alg == 0xE2 else 1184)
             c.verify()

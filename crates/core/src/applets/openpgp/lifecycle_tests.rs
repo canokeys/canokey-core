@@ -42,6 +42,12 @@ impl Disk {
     }
 }
 impl Storage for Disk {
+    fn size(&mut self, id: Record) -> Result<u32, StorageError> {
+        self.records
+            .get(&id.id())
+            .map(|b| b.len() as u32)
+            .ok_or(StorageError::Missing)
+    }
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         self.staged.clear();
         Ok(())
@@ -175,6 +181,28 @@ impl Card {
     fn aid(&mut self, expected: Result<(u32, Sw), Sw>) {
         assert_eq!(self.command(0xca, 0x4f, &[]), expected);
     }
+}
+
+#[test]
+fn fixed_state_and_key_discriminators_reject_old_records() {
+    use super::repository as repo;
+    let mut c = Card::new();
+    assert_eq!(c.disk.records[&Record::PgpState.id()].len(), 439);
+    assert!(c.with(|_, _, p| repo::meta(p, 0)).is_ok());
+    c.disk.records.get_mut(&Record::PgpSig.id()).unwrap()[0] = 1;
+    assert!(c.with(|_, _, p| repo::meta(p, 0)).is_err());
+    c.disk.records.get_mut(&Record::PgpState.id()).unwrap()[0] = 1;
+    assert!(
+        c.with(|_, _, p| repo::state(p, &mut [0; repo::STATE_LEN]))
+            .is_err()
+    );
+    let state = c.disk.records.get_mut(&Record::PgpState.id()).unwrap();
+    state[0] = 2;
+    state[repo::state_layout::NAME] = 40;
+    assert!(
+        c.with(|_, _, p| repo::state(p, &mut [0; repo::STATE_LEN]))
+            .is_err()
+    );
 }
 
 #[test]

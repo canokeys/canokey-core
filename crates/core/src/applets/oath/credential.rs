@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{Algorithm, Crypto, Error};
+use super::{Algorithm, Crypto, Error, codec};
 pub const NAME_LIMIT: usize = 64;
 pub const KEY_LIMIT: usize = 64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -43,8 +43,7 @@ impl Properties {
 }
 /// Not Debug/Copy: keys are explicitly borrowed and cleared, never logged.
 pub struct Credential {
-    // Validated compact record; the unused tail is always zero. Keeping the
-    // wire storage avoids a second key-bearing decode/encode representation.
+    // Fixed storage encoding; unused name/key bytes are always zero.
     pub(super) bytes: [u8; super::codec::LENGTH],
 }
 impl Credential {
@@ -69,28 +68,23 @@ impl Credential {
             bytes: [0; super::codec::LENGTH],
         };
         value.bytes[..6].copy_from_slice(&[
-            1,
+            codec::FORMAT_VERSION,
             name.len() as u8,
             key.len() as u8,
             kind as u8 | algorithm as u8,
             digits,
             properties.bits(),
         ]);
-        let key_at = 6 + name.len();
-        let counter_at = key_at + key.len();
-        value.bytes[6..key_at].copy_from_slice(name);
-        value.bytes[key_at..counter_at].copy_from_slice(key);
-        value.bytes[counter_at..counter_at + 8].copy_from_slice(&moving_factor);
+        value.bytes[6..6 + name.len()].copy_from_slice(name);
+        value.bytes[codec::KEY_OFFSET..codec::KEY_OFFSET + key.len()].copy_from_slice(key);
+        value.bytes[codec::COUNTER_OFFSET..].copy_from_slice(&moving_factor);
         Ok(value)
-    }
-    pub(super) fn encoded_length(&self) -> usize {
-        14 + usize::from(self.bytes[1]) + usize::from(self.bytes[2])
     }
     pub fn name(&self) -> &[u8] {
         &self.bytes[6..6 + usize::from(self.bytes[1])]
     }
     pub fn key(&self) -> &[u8] {
-        let at = 6 + usize::from(self.bytes[1]);
+        let at = codec::KEY_OFFSET;
         &self.bytes[at..at + usize::from(self.bytes[2])]
     }
     pub const fn algorithm(&self) -> Algorithm {
@@ -114,8 +108,7 @@ impl Credential {
         Properties(self.bytes[5])
     }
     pub fn moving_factor(&self) -> [u8; 8] {
-        let end = self.encoded_length();
-        self.bytes[end - 8..end].try_into().unwrap()
+        self.bytes[codec::COUNTER_OFFSET..].try_into().unwrap()
     }
 
     pub fn rename(
@@ -126,21 +119,13 @@ impl Credential {
         if name.is_empty() || name.len() > NAME_LIMIT {
             return Err(Error::Invalid);
         }
-        let end = self.encoded_length();
-        let old_key_at = 6 + usize::from(self.bytes[1]);
-        let new_key_at = 6 + name.len();
-        self.bytes.copy_within(old_key_at..end, new_key_at);
-        self.bytes[6..new_key_at].copy_from_slice(name);
+        crypto.wipe(&mut self.bytes[6..codec::KEY_OFFSET]);
+        self.bytes[6..6 + name.len()].copy_from_slice(name);
         self.bytes[1] = name.len() as u8;
-        let end = self.encoded_length();
-        // The old key/counter can survive a shortening in the unused tail.
-        crypto.wipe(&mut self.bytes[end..]);
         Ok(())
     }
     pub fn clear(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
-        // Wipe through the unused tail as rename can shift the secret.
-        let at = 6 + usize::from(self.bytes[1]);
-        crypto.wipe(&mut self.bytes[at..]);
+        crypto.wipe(&mut self.bytes[codec::KEY_OFFSET..]);
         self.bytes[2] = 0;
     }
 }

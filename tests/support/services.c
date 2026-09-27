@@ -68,6 +68,7 @@ int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n)
   return (int32_t)n;
 }
 int32_t ck_platform_write_at(uint8_t id, uint32_t offset, const uint8_t *input, size_t n) {
+  if (failed_write_record == id) { failed_write_record = -1; return -2; }
   storage_init();
   assert(id < 186 && offset + n <= sizeof(files[id]));
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id]) return -2;
@@ -104,6 +105,13 @@ void ck_platform_led(uint8_t on) { (void)on; }
 #if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
 static uint8_t stage[8192];
 static size_t stage_size;
+int32_t ck_platform_stage_parts(const struct ck_storage_part *parts, size_t count) {
+  assert(count <= 8);
+  ck_platform_stage(CK_STAGE_BEGIN, 0, NULL, 0);
+  for (size_t i = 0; i < count; ++i)
+    ck_platform_stage(CK_STAGE_APPEND, 0, parts[i].data, parts[i].length);
+  return 0;
+}
 int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_t n) {
   storage_init();
   if (operation == 4 && failed_write_record == id) { failed_write_record = -1; return -2; }

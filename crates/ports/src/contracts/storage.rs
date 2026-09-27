@@ -122,6 +122,22 @@ pub enum StorageError {
     Uncertain,
 }
 pub trait Storage {
+    /// Replace the unpublished staged object with borrowed pieces in one call.
+    /// No handle or borrow survives the call; publication still needs commit.
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), StorageError> {
+        let result = (|| {
+            self.stage_begin()?;
+            for part in parts {
+                self.stage_append(part)?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.stage_abort();
+        }
+        result
+    }
     /// Allocated filesystem bytes and total capacity, including metadata.
     fn usage(&mut self) -> Result<(u32, u32), StorageError> {
         Err(StorageError::Unavailable)
@@ -197,6 +213,10 @@ pub trait Storage {
     ) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
+    /// Atomically patch one existing record, optionally extending it from an
+    /// offset at or before EOF. A failed mutation has uncertain outcome and
+    /// requires cache invalidation. The backend may use its filesystem's own
+    /// transaction; an additional whole-file staging copy is not required.
     fn replace_at(
         &mut self,
         _record: Record,

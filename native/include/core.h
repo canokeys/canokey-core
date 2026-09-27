@@ -91,6 +91,10 @@ enum ck_mac_algorithm { CK_MAC_SHA1 = 1, CK_MAC_SHA256 = 2, CK_MAC_SHA512 = 3 };
  * Remove takes length = 0 and succeeds for missing files. Returns 0 on success.
  * All calls are serialized and stage bytes must not be published before commit. */
 int32_t ck_platform_stage(uint8_t operation, uint8_t file, const uint8_t *input, size_t length);
+/* Synchronous replacement of unpublished staging, at most eight pieces.
+ * Descriptors and bytes are borrowed only until return; commit is separate. */
+struct ck_storage_part { const uint8_t *data; size_t length; };
+int32_t ck_platform_stage_parts(const struct ck_storage_part *parts, size_t count);
 /* ADMIN/PASS input and link-maintenance capabilities. */
 void ck_platform_led(uint8_t on);
 uint32_t ck_platform_now(void);

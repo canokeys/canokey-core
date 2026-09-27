@@ -112,10 +112,14 @@ Failed credential writes invalidate the cache and revoke both grants; reset
 alone cannot make an uncertain cache authoritative.
 
 PIV records use hexadecimal filenames `0e`..`4c`, with no directory prefix.
-Keys store six metadata bytes, private material and the actual name bytes.
+Keys store a version-2 discriminator byte, private material, then a fixed
+84-byte footer (six metadata bytes and 78 name bytes). Name changes patch only
+the footer and do not copy the key through a staging file.
 RSA material is exponent4 plus five active-width components (644/964/1284
-bytes); ECC and PQ records store only their scalar or seed. No padding or
-previous-format decoder is persisted. Provision fresh storage.
+bytes); ECC and PQ records store only their scalar or seed. Unused name bytes
+are zero. Version-1 key records are rejected. Provision fresh storage.
+Key staging batches borrowed pieces in one synchronous open/write/close;
+PQ generation still publishes only after the final public response chunk.
 Object capacities match C: certificates 6568 bytes, other large objects 3040,
 admin data 128. Empty `53 00` certificate writes delete the object. PUT and key
 replacement use staging plus atomic rename; interrupted writes keep the previous

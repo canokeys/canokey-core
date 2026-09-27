@@ -175,13 +175,14 @@ impl Piv {
             // Keep the previous slot untouched until the final public chunk.
             // Only the compact metadata/seed record is staged, never the public key.
             self.pending_commit = Some(id as u8);
-            p.storage.stage_begin().map_err(repo::io)?;
-            p.storage
-                .stage_append(&m[..repo::HEADER])
-                .map_err(repo::io)?;
-            p.storage
-                .stage_append(&w.key.bytes[..repo::material(a)])
-                .map_err(repo::io)?;
+            crate::mechanisms::key_storage::stage(
+                p.storage,
+                repo::rsa(a),
+                repo::width(a),
+                &w.key.bytes,
+                &m,
+            )
+            .map_err(repo::io)?;
             self.pending_public = Some(PendingPublicKey {
                 slot_index: id,
                 include_metadata: false,

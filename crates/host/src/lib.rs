@@ -112,6 +112,38 @@ unsafe extern "C" fn ck_platform_resize(id: u8, n: u32) -> i32 {
 unsafe extern "C" fn ck_platform_stage(op: u8, id: u8, p: *const u8, n: usize) -> i32 {
     status(host(|h| h.storage.stage(op, id, unsafe { input(p, n) })))
 }
+#[repr(C)]
+struct StoragePart {
+    data: *const u8,
+    length: usize,
+}
+#[unsafe(no_mangle)]
+unsafe extern "C" fn ck_platform_stage_parts(parts: *const StoragePart, count: usize) -> i32 {
+    if count > 8 || (count != 0 && parts.is_null()) {
+        return -2;
+    }
+    let parts = if count == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(parts, count) }
+    };
+    if parts.iter().any(|p| p.length != 0 && p.data.is_null()) {
+        return -2;
+    }
+    status(host(|h| {
+        h.storage.stage(0, 0, &[])?;
+        for part in parts {
+            if let Err(e) = h
+                .storage
+                .stage(1, 0, unsafe { input(part.data, part.length) })
+            {
+                let _ = h.storage.stage(3, 0, &[]);
+                return Err(e);
+            }
+        }
+        Ok(())
+    }))
+}
 #[unsafe(no_mangle)]
 unsafe extern "C" fn ck_platform_usage(used: *mut u32, total: *mut u32) -> i32 {
     status(host(|h| h.storage.usage()).map(|(u, t)| unsafe {

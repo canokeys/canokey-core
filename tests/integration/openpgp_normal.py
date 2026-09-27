@@ -364,7 +364,7 @@ def run(wire, host, standalone=False):
     def rsa4096_reload(role, key):
         if not host:
             return
-        assert int.from_bytes(wire.command(f"SIZE {8 + role}"), "big") == 31 + 1284
+        assert int.from_bytes(wire.command(f"SIZE {8 + role}"), "big") == 32 + 1284
         wire.command("RESET")
         c.select()
         restored = pubkey(7, c.public(role))

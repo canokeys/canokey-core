@@ -150,7 +150,7 @@ fn credential(
     .unwrap()
 }
 #[test]
-fn compact_records_preserve_keys_and_counters_when_names_change_size() {
+fn fixed_records_preserve_keys_and_counters_when_names_change_size() {
     let mut crypto = Primitives::default();
     for key_len in [1, 20, 32, 64] {
         let key = [0xa5; 64];
@@ -170,11 +170,14 @@ fn compact_records_preserve_keys_and_counters_when_names_change_size() {
             record.rename(&name[..name_len], &mut crypto).unwrap();
             let mut encoded = [0xcc; codec::LENGTH];
             let n = codec::encode(&record, &mut encoded);
-            assert_eq!(n, codec::FIXED_BYTES + name_len + key_len);
+            assert_eq!(n, 142);
             assert_eq!(
                 &encoded[..6],
-                &[1, name_len as u8, key_len as u8, 0x13, 8, 3]
+                &[2, name_len as u8, key_len as u8, 0x13, 8, 3]
             );
+            assert!(encoded[6 + name_len..70].iter().all(|b| *b == 0));
+            assert_eq!(&encoded[70..70 + key_len], &key[..key_len]);
+            assert!(encoded[70 + key_len..134].iter().all(|b| *b == 0));
             assert_eq!(&encoded[n - 8..n], &counter);
             let mut decoded = codec::decode(&encoded[..n]).unwrap();
             assert_eq!(decoded.name(), &name[..name_len]);

@@ -60,18 +60,31 @@ development version 0.0.0, matching the common version policy.
 
 - `02`: version/key-present/handle8, followed by access-key16 only when set
   (10 or 26 bytes).
-- `03`: next-ID watermark4, then live entries. Each entry stores ID4,
-  six header bytes, actual name/key bytes and moving-factor8, all explicitly
-  encoded. Deletion atomically removes the entry; there are no tombstones.
-- The watermark survives deletion, so a stale PASS binding cannot alias a new
-  credential. Full OATH reset clears PASS bindings before resetting IDs.
+- `03`: literal `OAT2` header, then fixed 146-byte slots: big-endian ID4,
+  version2/name-length/key-length/type/digits/properties (six bytes), name64,
+  key64 and moving-factor8. Unused name/key bytes are zero. Rename never moves
+  the key, counter or another slot. Counter patches have a fixed slot offset.
+- Deletion atomically zeros the entire credential while retaining its ID;
+  credential version zero marks a reusable slot. Insertion scans live and
+  deleted IDs and assigns max+1, refusing exhaustion. Reusing the first vacant
+  slot requires no file growth or separate watermark commit. A stale PASS
+  binding cannot alias a new credential, even after deleting every credential
+  and rebooting. Full OATH reset clears PASS bindings before resetting IDs.
+- LIST/CALCULATE ALL enumerate physical slots, skipping tombstones. A reused
+  slot appears at its original position, matching the legacy C ordering;
+  insertion order after deletion is not guaranteed.
 - `00`: two compact PASS slots. OATH slots store ID and display name, never
   the key. No previous-format upgrade path is included.
-- Updates stage the header, live prefix, replacement and suffix, then rename.
-  File caches are word aligned. Insertions retain C's 64 KiB free-space reserve
-  for other applets. Mount failure never formats. Provision fresh storage;
-  previous C/Rust data layouts are not imported. Uncertain writes disable
-  storage until remount.
+- Slot creation/replacement/deletion is one atomic patch; counter updates patch
+  eight bytes. The CIU backend uses one LittleFS open/write/close transaction,
+  relying on its copy-on-write data and atomic metadata commit instead of a
+  second whole-file copy. LittleFS can still copy the suffix after an early-file
+  write; this is not an eight-byte physical Flash write guarantee. File caches
+  are word aligned. File growth retains C's 64 KiB free-space reserve; vacant
+  slots are reusable without reserving another slot's space. Mount failure never
+  formats. Provision fresh storage: old empty and populated OATH files are
+  rejected by the `OAT2` header check, not imported or silently reinterpreted.
+  Uncertain writes disable storage until remount.
 
 Rust owns the 30-second request-bound press/release wait. C only polls raw
 input/ticks and services CCID time extensions without reentering Rust. A

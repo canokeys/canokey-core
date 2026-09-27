@@ -8,7 +8,7 @@ use super::{
     encoding::Writer,
     pin,
     protocol::{AID, OpenPgp},
-    repository::{self as repo, KEYS, io},
+    repository::{self as repo, io},
 };
 use crate::ports::alg;
 use crate::{Platform, ports::Record};
@@ -234,7 +234,7 @@ impl OpenPgp {
             if m[key_meta::ALGORITHM] != a.0 {
                 m[key_meta::ALGORITHM] = a.0;
                 m[key_meta::ORIGIN] = 0;
-                p.storage.replace(KEYS[r], &m).map_err(io)?;
+                repo::empty_key(p, r, &m)?;
             }
             return Ok(());
         }
@@ -286,6 +286,7 @@ impl OpenPgp {
         }
         let mut s = [0; repo::STATE_LEN];
         repo::state(p, &mut s)?;
+        let (offset, length);
         if let Some((off, max)) = repo::field(tag) {
             if b.len() > max {
                 return Err(Sw::WRONG_LENGTH);
@@ -293,6 +294,7 @@ impl OpenPgp {
             s[off] = b.len() as u8;
             s[off + 1..off + 1 + max].fill(0);
             s[off + 1..off + 1 + b.len()].copy_from_slice(b);
+            (offset, length) = (off, 1 + max);
         } else {
             match tag {
                 tag::PW_STATUS => {
@@ -303,6 +305,7 @@ impl OpenPgp {
                         return Err(Sw::WRONG_DATA);
                     }
                     s[state_layout::PW1_REUSE] = b[0];
+                    (offset, length) = (state_layout::PW1_REUSE, 1);
                 }
                 tag::TOUCH_CACHE => {
                     if b.len() != 1 {
@@ -310,6 +313,7 @@ impl OpenPgp {
                     }
                     s[state_layout::TOUCH_CACHE_SECONDS] = b[0];
                     self.session.clear_touch();
+                    (offset, length) = (state_layout::TOUCH_CACHE_SECONDS, 1);
                 }
                 tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3 => {
                     if b.len() != 20 {
@@ -318,10 +322,14 @@ impl OpenPgp {
                     let at = state_layout::CA_FINGERPRINTS
                         + (tag - tag::CA_FINGERPRINT_1) as usize * state_layout::FINGERPRINT_BYTES;
                     s[at..at + state_layout::FINGERPRINT_BYTES].copy_from_slice(b);
+                    (offset, length) = (at, state_layout::FINGERPRINT_BYTES);
                 }
                 _ => return Err(Sw::WRONG_P1P2),
             }
         }
-        repo::save_state(p, &s).map_err(Into::into)
+        p.storage
+            .replace_at(Record::PgpState, offset as u32, &s[offset..offset + length])
+            .map_err(io)
+            .map_err(Into::into)
     }
 }

@@ -2,6 +2,18 @@
 //! Storage and staged-record adapter for the C LittleFS backend.
 use crate::{Record, Storage, StorageError};
 
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct StoragePart {
+    data: *const u8,
+    length: usize,
+}
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+unsafe extern "C" {
+    fn ck_platform_stage_parts(parts: *const StoragePart, count: usize) -> i32;
+}
+
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.
 pub struct StorageBackend(core::marker::PhantomData<*mut ()>);
@@ -79,6 +91,16 @@ enum StageOperation {
 // mutations map to Uncertain: a backend error does not prove nothing was written,
 // so applets must invalidate cached state rather than retry from assumptions.
 native_port! { impl Storage for StorageBackend {
+    #[cfg(any(feature = "openpgp", feature = "piv"))]
+    fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), StorageError> {
+        if parts.len() > 8 { return Err(StorageError::Unavailable); }
+        let mut native = [StoragePart { data: core::ptr::null(), length: 0 }; 8];
+        for (out, part) in native.iter_mut().zip(parts) {
+            *out = StoragePart { data: part.as_ptr(), length: part.len() };
+        }
+        if unsafe { ck_platform_stage_parts(native.as_ptr(), parts.len()) } == 0 { Ok(()) }
+        else { Err(StorageError::Uncertain) }
+    }
     fn usage(&mut self) -> Result<(u32,u32),StorageError> {
         #[cfg(feature = "storage")]
         {

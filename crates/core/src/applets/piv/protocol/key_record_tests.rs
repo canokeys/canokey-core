@@ -4,18 +4,21 @@ use super::*;
 use crate::ports::*;
 
 struct Store {
-    bytes: [u8; 1290],
+    bytes: [u8; 1369],
     size: Option<usize>,
     fail_at: Option<u32>,
     material_reads: usize,
 }
 impl Store {
     fn key(algorithm: u8) -> Self {
-        let mut bytes = [0x5a; 1290];
-        bytes[..6].copy_from_slice(&[1, algorithm, 2, 2, 0, 0]);
+        let mut bytes = [0x5a; 1369];
+        bytes[0] = 2;
+        let footer = 1 + repo::material(algorithm);
+        bytes[footer..footer + repo::META].fill(0);
+        bytes[footer..footer + 6].copy_from_slice(&[2, algorithm, 2, 2, 0, 0]);
         Self {
             bytes,
-            size: Some(6 + repo::material(algorithm)),
+            size: Some(85 + repo::material(algorithm)),
             fail_at: None,
             material_reads: 0,
         }
@@ -34,7 +37,10 @@ impl Storage for Store {
     }
     fn read_at(&mut self, record: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
         assert_eq!(record, Record::PivKey0);
-        if !out.is_empty() && offset >= 6 {
+        if !out.is_empty()
+            && offset >= 1
+            && (offset as usize) < self.size.unwrap_or(0).saturating_sub(repo::META)
+        {
             self.material_reads += 1;
         }
         if self.fail_at == Some(offset) && !out.is_empty() {
@@ -131,6 +137,15 @@ fn rejected(store: &mut Store, status: Sw) {
 }
 
 #[test]
+fn old_layout_discriminator_is_rejected_before_material_reads() {
+    let mut store = Store::key(alg::RSA4096);
+    // Even a valid-looking footer cannot make a version-1 record acceptable.
+    store.bytes[0] = 1;
+    rejected(&mut store, Sw::UNABLE_TO_PROCESS);
+    assert_eq!(store.material_reads, 0);
+}
+
+#[test]
 fn truncated_seed_and_invalid_key_types_never_reach_crypto() {
     let mut store = Store::key(alg::MLKEM768);
     store.size = Some(6 + 63);
@@ -138,7 +153,7 @@ fn truncated_seed_and_invalid_key_types_never_reach_crypto() {
     assert_eq!(store.material_reads, 0);
     for algorithm in [12, 14, 0xff] {
         let mut store = Store::key(alg::P256);
-        store.bytes[1] = algorithm;
+        store.bytes[1 + repo::material(alg::P256) + repo::ALGORITHM] = algorithm;
         rejected(&mut store, Sw::UNABLE_TO_PROCESS);
         assert_eq!(store.material_reads, 0);
     }
@@ -146,13 +161,13 @@ fn truncated_seed_and_invalid_key_types_never_reach_crypto() {
 
 #[test]
 fn absent_keys_and_stale_origin_zero_records_never_load_material() {
-    for size in [None, Some(0), Some(6 + 32)] {
+    for size in [None, Some(0), Some(85 + 32)] {
         let mut store = Store::key(alg::P256);
-        store.bytes[2] = 0;
+        store.bytes[1 + 32 + repo::ORIGIN] = 0;
         store.size = size;
         rejected(
             &mut store,
-            if size == Some(38) {
+            if size == Some(117) {
                 Sw::UNABLE_TO_PROCESS
             } else {
                 Sw::REFERENCE_NOT_FOUND
@@ -168,11 +183,7 @@ fn partial_scalar_and_each_rsa_component_read_failure_clear_the_workspace() {
         let reads = if repo::rsa(algorithm) { 6 } else { 1 };
         for read in 0..reads {
             let mut store = Store::key(algorithm);
-            store.fail_at = Some(if read == 0 {
-                6
-            } else {
-                10 + (read - 1) * width
-            });
+            store.fail_at = Some(if read == 0 { 1 } else { 5 + (read - 1) * width });
             rejected(&mut store, Sw::UNABLE_TO_PROCESS);
             assert_eq!(store.material_reads, read as usize + 1);
         }
@@ -239,8 +250,8 @@ impl Device for Gesture {
 #[test]
 fn stream_validation_and_pin_precede_touch_and_one_use_grant() {
     let mut store = Store::key(alg::MLKEM768);
-    store.bytes[repo::PIN_POLICY] = policy::PIN_ALWAYS;
-    store.bytes[repo::TOUCH_POLICY] = policy::TOUCH_ALWAYS;
+    store.bytes[65 + repo::PIN_POLICY] = policy::PIN_ALWAYS;
+    store.bytes[65 + repo::TOUCH_POLICY] = policy::TOUCH_ALWAYS;
     let mut crypto = Streaming::default();
     let mut device = Gesture {
         samples: 0,
@@ -331,7 +342,7 @@ fn stream_validation_and_pin_precede_touch_and_one_use_grant() {
 #[test]
 fn classic_unauthorized_signature_does_not_consume_touch() {
     let mut store = Store::key(alg::P256);
-    store.bytes[repo::TOUCH_POLICY] = policy::TOUCH_ALWAYS;
+    store.bytes[33 + repo::TOUCH_POLICY] = policy::TOUCH_ALWAYS;
     let mut crypto = Streaming::default();
     let mut device = Gesture {
         samples: 0,

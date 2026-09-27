@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Compact credential encoding: six header bytes, name, key and counter.
+//! Fixed credential encoding: header6, name64, key64 and counter8.
 //! Storage identity belongs to the repository, not this codec.
 use super::{
     Algorithm, Error,
     credential::{Credential, Kind, Properties},
 };
-const FORMAT_VERSION: u8 = 1;
+pub(super) const FORMAT_VERSION: u8 = 2;
 const VERSION: usize = 0;
 const NAME_LENGTH: usize = 1;
 const KEY_LENGTH: usize = 2;
@@ -17,6 +17,8 @@ pub const COUNTER_BYTES: usize = 8;
 pub const FIXED_BYTES: usize = HEADER_BYTES + COUNTER_BYTES;
 pub use super::credential::{KEY_LIMIT, NAME_LIMIT};
 pub const LENGTH: usize = FIXED_BYTES + NAME_LIMIT + KEY_LIMIT;
+pub(super) const KEY_OFFSET: usize = HEADER_BYTES + NAME_LIMIT;
+pub(super) const COUNTER_OFFSET: usize = KEY_OFFSET + KEY_LIMIT;
 pub fn length(header: &[u8]) -> Result<usize, Error> {
     if header.len() < HEADER_BYTES
         || header[VERSION] != FORMAT_VERSION
@@ -25,14 +27,13 @@ pub fn length(header: &[u8]) -> Result<usize, Error> {
     {
         return Err(Error::Invalid);
     }
-    Ok(FIXED_BYTES + header[NAME_LENGTH] as usize + header[KEY_LENGTH] as usize)
+    Ok(LENGTH)
 }
 pub fn encode(record: &Credential, out: &mut [u8; LENGTH]) -> usize {
-    let n = record.encoded_length();
-    out[..n].copy_from_slice(&record.bytes[..n]);
-    n
+    out.copy_from_slice(&record.bytes);
+    LENGTH
 }
-/// Validated non-secret fields. The serialized layout remains unchanged.
+/// Validated non-secret fields.
 pub(super) struct Header {
     pub name_len: u8,
     pub kind: Kind,

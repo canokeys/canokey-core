@@ -144,14 +144,16 @@ transfer and main-loop cleanup subsequently revokes the Rust session.
 ## Persistence and recovery
 
 Records 4..13 map directly to hexadecimal filenames `04`..`0d`. State has
-four flags, 60 CA-fingerprint bytes and five length-prefixed variable fields
-(70 bytes at defaults). PIN records have four header bytes plus the actual PIN.
+four flags, 60 CA-fingerprint bytes and five fields at fixed offsets
+(439 bytes, format version 2). PUT DATA patches the affected field in place.
+PIN records have four header bytes plus the actual PIN.
 Certificates store only their contents. No previous-format decoder is included.
-The key record is a 31-byte version/algorithm/origin/UIF/fingerprint/date/counter
-header followed by explicit private components. RSA stores exponent4 and five
+The key record is a version-2 discriminator byte, explicit private components,
+then a fixed 31-byte version/algorithm/origin/UIF/fingerprint/date/counter footer.
+RSA stores exponent4 and five
 active-width components: 644/964/1284 material bytes for RSA-2048/3072/4096.
-Including metadata, RSA-4096 occupies 1315 bytes. Metadata reads fetch only the
-31-byte prefix and check the exact complete record size; the native 1284-byte
+Including metadata, RSA-4096 occupies 1316 bytes. Metadata reads fetch the
+discriminator and footer and check the exact complete record size; the native 1284-byte
 key workspace is not a bound on the stored record. Generated and imported
 RSA-4096 keys are exercised after host reset for signing, authentication and
 decryption in `openpgp-normal`.
@@ -159,6 +161,10 @@ ECC stores only its private scalar. A new signing key and its zero
 counter publish in one transaction. Successful signing persists its increment
 before exposing the response; delivery failure does not roll the counter back.
 The 24-bit counter saturates rather than wrapping to zero.
+Metadata patches leave the cold key prefix available for LittleFS block reuse.
+Key staging batches all borrowed components in one synchronous open/write/close;
+publication remains a separate atomic rename. Version-1 records are rejected;
+provision fresh storage when installing this layout.
 
 Multi-record reset first marks the applet terminated and clears that marker last;
 an interrupted reset remains recoverable with ACTIVATE. Storage failures are

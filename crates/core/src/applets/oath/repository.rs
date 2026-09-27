@@ -44,9 +44,11 @@ impl<'a> Mac<'a> {
 }
 const ID_BYTES: usize = 4;
 const ENTRY_HEADER_BYTES: usize = ID_BYTES + codec::HEADER_BYTES;
+const ENTRY_BYTES: u32 = (ID_BYTES + codec::LENGTH) as u32;
 const FREE_SPACE_RESERVE: u32 = 64 * 1024;
-// The first four bytes store the next credential ID, even when no entries remain.
-const NEXT_ID_BYTES: u32 = ID_BYTES as u32;
+// Distinguish fixed slots from every earlier encoding, including empty files.
+const FILE_HEADER: &[u8; 4] = b"OAT2";
+const FILE_HEADER_BYTES: u32 = FILE_HEADER.len() as u32;
 fn io(_: StorageError) -> Error {
     Error::Storage
 }
@@ -73,39 +75,53 @@ impl Store<'_> {
     pub fn initialize(&mut self) -> Result<(), Error> {
         self.located = None;
         self.storage
-            .replace(Record::OathRecords, &1u32.to_be_bytes())
+            .replace(Record::OathRecords, FILE_HEADER)
             .map_err(io)
     }
     pub fn install(&mut self) -> Result<(), Error> {
-        match self.storage.size(Record::OathRecords) {
-            Ok(n) if n >= NEXT_ID_BYTES => self.next_id().map(|_| ()),
-            Err(StorageError::Missing) => Err(Error::Missing),
-            _ => Err(Error::Storage),
-        }
-    }
-    fn next_id(&mut self) -> Result<u32, Error> {
-        let mut bytes = [0; ID_BYTES];
+        self.located = None;
+        self.size()?;
+        let mut bytes = [0; FILE_HEADER.len()];
         self.storage
             .read_at(Record::OathRecords, 0, &mut bytes)
             .map_err(io)?;
-        let id = u32::from_be_bytes(bytes);
-        if id == 0 {
+        if &bytes != FILE_HEADER {
             return Err(Error::Storage);
         }
-        Ok(id)
+        Ok(())
+    }
+    fn size(&mut self) -> Result<u32, Error> {
+        let size = match self.storage.size(Record::OathRecords) {
+            Ok(size) => size,
+            Err(StorageError::Missing) => return Err(Error::Missing),
+            Err(_) => return Err(Error::Storage),
+        };
+        if size < FILE_HEADER_BYTES || (size - FILE_HEADER_BYTES) % ENTRY_BYTES != 0 {
+            return Err(Error::Storage);
+        }
+        Ok(size)
     }
     /// Entry at a byte offset; zero starts an iteration after the file header.
     pub fn at(&mut self, offset: u32) -> Result<Option<(CredentialId, u32)>, Error> {
-        Ok(self.read_entry(offset)?.map(|entry| (entry.id, entry.end)))
+        let mut offset = offset.max(FILE_HEADER_BYTES);
+        while let Some(entry) = self.read_entry(offset)? {
+            if entry.header[0] != 0 {
+                return Ok(Some((entry.id, entry.end)));
+            }
+            offset = entry.end;
+        }
+        Ok(None)
     }
     fn read_entry(&mut self, offset: u32) -> Result<Option<Entry>, Error> {
         self.located = None;
-        let offset = offset.max(NEXT_ID_BYTES);
-        let size = self.storage.size(Record::OathRecords).map_err(io)?;
+        let size = self.size()?;
         if offset == size {
             return Ok(None);
         }
-        if offset > size || size - offset < ENTRY_HEADER_BYTES as u32 {
+        if offset < FILE_HEADER_BYTES
+            || offset > size
+            || (offset - FILE_HEADER_BYTES) % ENTRY_BYTES != 0
+        {
             return Err(Error::Storage);
         }
         let mut header = [0; ENTRY_HEADER_BYTES];
@@ -113,15 +129,18 @@ impl Store<'_> {
             .read_at(Record::OathRecords, offset, &mut header)
             .map_err(io)?;
         let id = CredentialId(u32::from_be_bytes(header[..ID_BYTES].try_into().unwrap()));
-        let length = ID_BYTES as u32
-            + codec::length(&header[ID_BYTES..]).map_err(|_| Error::Storage)? as u32;
-        if id.0 == 0 || length > size - offset {
+        if id.0 == 0 {
             return Err(Error::Storage);
+        }
+        // Version zero is a tombstone. Its ID survives deletion and slot reuse
+        // always assigns a larger ID, so stale PASS references cannot alias.
+        if header[ID_BYTES] != 0 {
+            codec::length(&header[ID_BYTES..]).map_err(|_| Error::Storage)?;
         }
         let entry = Entry {
             id,
             offset,
-            end: offset + length,
+            end: offset + ENTRY_BYTES,
             header: header[ID_BYTES..].try_into().unwrap(),
         };
         self.located = Some(entry);
@@ -130,12 +149,13 @@ impl Store<'_> {
     fn locate(&mut self, id: CredentialId) -> Result<Entry, Error> {
         if let Some(entry) = self.located
             && entry.id == id
+            && entry.header[0] != 0
         {
             return Ok(entry);
         }
-        let mut offset = NEXT_ID_BYTES;
+        let mut offset = FILE_HEADER_BYTES;
         while let Some(entry) = self.read_entry(offset)? {
-            if entry.id == id {
+            if entry.id == id && entry.header[0] != 0 {
                 return Ok(entry);
             }
             offset = entry.end;
@@ -146,50 +166,24 @@ impl Store<'_> {
         let entry = self.locate(id)?;
         codec::fields(&entry.header)
     }
-    // Rewrite only live entries into one atomic replacement. No fixed slots or tombstones.
+    // One slot is one atomic patch; no record shifting or second ID commit.
     fn write(
         &mut self,
         offset: u32,
-        end: u32,
         id: CredentialId,
         value: Option<&Credential>,
-        next_id: u32,
     ) -> Result<(), Error> {
         self.located = None;
-        let size = self.storage.size(Record::OathRecords).map_err(io)?;
-        let mut bytes = [0; codec::LENGTH];
-        let result = (|| {
-            self.storage.stage_begin().map_err(io)?;
-            self.storage
-                .stage_append(&next_id.to_be_bytes())
-                .map_err(io)?;
-            crate::ports::copy_to_stage(
-                self.storage,
-                self.memory,
-                Record::OathRecords,
-                NEXT_ID_BYTES,
-                offset - NEXT_ID_BYTES,
-            )
-            .map_err(io)?;
-            if let Some(value) = value {
-                let n = codec::encode(value, &mut bytes);
-                self.storage.stage_append(&id.0.to_be_bytes()).map_err(io)?;
-                self.storage.stage_append(&bytes[..n]).map_err(io)?;
-            }
-            crate::ports::copy_to_stage(
-                self.storage,
-                self.memory,
-                Record::OathRecords,
-                end,
-                size - end,
-            )
-            .map_err(io)?;
-            self.storage.stage_commit(Record::OathRecords).map_err(io)
-        })();
-        self.memory.wipe(&mut bytes);
-        if result.is_err() {
-            self.storage.stage_abort();
+        let mut bytes = [0; ENTRY_BYTES as usize];
+        bytes[..ID_BYTES].copy_from_slice(&id.0.to_be_bytes());
+        if let Some(value) = value {
+            codec::encode(value, (&mut bytes[ID_BYTES..]).try_into().unwrap());
         }
+        let result = self
+            .storage
+            .replace_at(Record::OathRecords, offset, &bytes)
+            .map_err(io);
+        self.memory.wipe(&mut bytes);
         result
     }
 }
@@ -223,16 +217,15 @@ impl Repository for Store<'_> {
     fn load(&mut self, id: CredentialId) -> Result<Credential, Error> {
         let entry = self.locate(id)?;
         let mut bytes = [0; codec::LENGTH];
-        let n = (entry.end - entry.offset - ID_BYTES as u32) as usize;
         let result = self
             .storage
             .read_at(
                 Record::OathRecords,
                 entry.offset + ID_BYTES as u32,
-                &mut bytes[..n],
+                &mut bytes,
             )
             .map_err(io)
-            .and_then(|()| codec::validate(&bytes[..n]));
+            .and_then(|()| codec::validate(&bytes));
         let result = result.map(|()| Credential { bytes });
         // A Rust move may lower to a stack copy. Erase the read buffer on both
         // paths, even when the returned credential uses the same encoding.
@@ -240,25 +233,32 @@ impl Repository for Store<'_> {
         result
     }
     fn insert(&mut self, value: &Credential) -> Result<CredentialId, Error> {
-        let size = self.storage.size(Record::OathRecords).map_err(io)?;
-        let needed =
-            (ID_BYTES + codec::FIXED_BYTES + value.name().len() + value.key().len()) as u32;
-        if !self
-            .storage
-            .has_space(needed, FREE_SPACE_RESERVE)
-            .map_err(io)?
+        let size = self.size()?;
+        let mut vacant = size;
+        let mut maximum = 0;
+        let mut offset = FILE_HEADER_BYTES;
+        while let Some(entry) = self.read_entry(offset)? {
+            maximum = maximum.max(entry.id.0);
+            if entry.header[0] == 0 && vacant == size {
+                vacant = entry.offset;
+            }
+            offset = entry.end;
+        }
+        if vacant == size
+            && !self
+                .storage
+                .has_space(ENTRY_BYTES, FREE_SPACE_RESERVE)
+                .map_err(io)?
         {
             return Err(Error::NoSpace);
         }
-        let id = CredentialId(self.next_id()?);
-        let next = id.0.checked_add(1).ok_or(Error::NoSpace)?;
-        self.write(size, size, id, Some(value), next)?;
+        let id = CredentialId(maximum.checked_add(1).ok_or(Error::NoSpace)?);
+        self.write(vacant, id, Some(value))?;
         Ok(id)
     }
     fn replace(&mut self, id: CredentialId, value: &Credential) -> Result<(), Error> {
         let entry = self.locate(id)?;
-        let next = self.next_id()?;
-        self.write(entry.offset, entry.end, id, Some(value), next)
+        self.write(entry.offset, id, Some(value))
     }
     fn update_counter(&mut self, id: CredentialId, counter: &[u8; 8]) -> Result<(), Error> {
         let entry = self.locate(id)?;
@@ -273,8 +273,7 @@ impl Repository for Store<'_> {
     }
     fn delete(&mut self, id: CredentialId) -> Result<(), Error> {
         let entry = self.locate(id)?;
-        let next = self.next_id()?;
-        self.write(entry.offset, entry.end, id, None, next)
+        self.write(entry.offset, id, None)
     }
 }
 impl auth::Repository for Store<'_> {
@@ -308,7 +307,7 @@ pub fn reset(
     memory: &crate::ports::MemoryPort<'_>,
 ) -> Result<(), Error> {
     storage
-        .replace(Record::OathRecords, &1u32.to_be_bytes())
+        .replace(Record::OathRecords, FILE_HEADER)
         .map_err(io)?;
     let mut mac = Mac::new(crypto, memory);
     let metadata = auth::Metadata::new(&mut mac)?;

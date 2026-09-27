@@ -38,6 +38,8 @@ impl Storage for Files<'_> {
     ) -> Result<(), StorageError> {
         assert_eq!(record, Record::OathRecords);
         self.controls.patches.set(self.controls.patches.get() + 1);
+        self.bytes
+            .resize(self.bytes.len().max(offset as usize + input.len()), 0);
         self.bytes[offset as usize..offset as usize + input.len()].copy_from_slice(input);
         if self.controls.uncertain_commit.replace(false) {
             Err(StorageError::Uncertain)
@@ -131,7 +133,8 @@ fn metadata_search_never_reads_secret_and_counter_patch_preserves_record() {
         store.insert(&credential(b"first")).unwrap()
     };
     let original = files.bytes.clone();
-    let key_start = NEXT_ID_BYTES as usize + ENTRY_HEADER_BYTES + 5;
+    controls.patches.set(0);
+    let key_start = FILE_HEADER_BYTES as usize + ID_BYTES + codec::KEY_OFFSET;
     controls
         .forbidden_read
         .set(Some((key_start, key_start + 20)));
@@ -208,7 +211,57 @@ fn credential(name: &[u8]) -> Credential {
 }
 
 #[test]
-fn enumeration_reuses_validated_header_and_tracks_resized_records() {
+fn deletion_erases_slot_and_retains_id_across_empty_reload_and_reuse() {
+    let controls = Controls::default();
+    let mut files = Files {
+        bytes: Vec::new(),
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    let id = {
+        let mut store = Store::new(&mut files, &Wipe);
+        store.initialize().unwrap();
+        let id = store.insert(&credential(b"secret name")).unwrap();
+        store.delete(id).unwrap();
+        id
+    };
+    assert_eq!(&files.bytes[..4], b"OAT2");
+    assert_eq!(files.bytes.len(), 150);
+    assert_eq!(&files.bytes[4..8], &id.0.to_be_bytes());
+    assert!(files.bytes[8..].iter().all(|b| *b == 0));
+    // Even when no file growth is allowed, a deleted slot remains reusable.
+    controls.capacity.set(Some(files.bytes.len() as u32));
+    let mut store = Store::new(&mut files, &Wipe);
+    store.install().unwrap();
+    assert_eq!(store.first().unwrap(), None);
+    let fresh = store.insert(&credential(b"new")).unwrap();
+    assert!(fresh.0 > id.0);
+    assert!(matches!(store.load(id), Err(Error::Missing)));
+    assert_eq!(store.load(fresh).unwrap().name(), b"new");
+}
+
+#[test]
+fn rejects_previous_layout_and_id_exhaustion_without_writes() {
+    let controls = Controls::default();
+    let mut files = Files {
+        bytes: std::vec![0, 0, 0, 1],
+        stage: Vec::new(),
+        controls: &controls,
+    };
+    assert_eq!(Store::new(&mut files, &Wipe).install(), Err(Error::Storage));
+    files.bytes = b"OAT2".to_vec();
+    files.bytes.extend_from_slice(&u32::MAX.to_be_bytes());
+    files.bytes.extend_from_slice(&[0; 142]);
+    let before = files.bytes.clone();
+    let mut store = Store::new(&mut files, &Wipe);
+    store.install().unwrap();
+    assert_eq!(store.insert(&credential(b"no wrap")), Err(Error::NoSpace));
+    assert_eq!(files.bytes, before);
+    assert_eq!(controls.patches.get(), 0);
+}
+
+#[test]
+fn enumeration_reuses_validated_header_and_recycles_slots_without_reusing_ids() {
     let controls = Controls::default();
     let mut files = Files {
         bytes: Vec::new(),
@@ -241,12 +294,14 @@ fn enumeration_reuses_validated_header_and_tracks_resized_records() {
     assert!(matches!(store.load(first), Err(Error::Missing)));
     let third = store.insert(&credential(b"third")).unwrap();
     assert!(third.0 > second.0);
-    assert_eq!(store.next(second).unwrap(), Some(third));
+    assert_eq!(store.first().unwrap(), Some(third));
+    assert_eq!(store.next(third).unwrap(), Some(second));
+    assert_eq!(store.next(second).unwrap(), None);
     assert_eq!(store.load(third).unwrap().name(), b"third");
 }
 
 #[test]
-fn uncertain_resize_and_reinitialization_discard_cached_boundaries() {
+fn uncertain_replacement_and_reinitialization_discard_cached_boundaries() {
     let controls = Controls::default();
     let mut files = Files {
         bytes: Vec::new(),
@@ -295,9 +350,9 @@ fn truncated_or_invalid_entry_headers_fail_closed() {
 #[test]
 fn capacity_exceeds_one_hundred_and_reserves_delete_and_reinsert_space() {
     let controls = Controls::default();
-    // A finite device, including the old image while its atomic replacement
-    // is staged. The reserve must leave deletion possible after append denial.
-    controls.capacity.set(Some(70 * 1024));
+    // A finite device. Exhausting the growth reserve must still allow deletion
+    // and reuse of an existing slot, without asking for another slot's space.
+    controls.capacity.set(Some(96 * 1024));
     let mut files = Files {
         bytes: Vec::new(),
         stage: Vec::new(),
