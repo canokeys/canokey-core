@@ -4,6 +4,7 @@
 
 mod agreement;
 pub mod apdu;
+mod attestation;
 mod authentication;
 mod client_pin;
 mod config;
@@ -306,10 +307,7 @@ impl Session {
         if p.device.now() > 10_000 {
             return Err(Status::NotAllowed);
         }
-        let mut record = [0; pin::RECORD_BYTES];
-        pin::load(p, &mut record)?;
-        let long = record[pin::FLAGS] & pin::LONG_RESET != 0;
-        p.memory.wipe(&mut record);
+        let long = pin::policy(p)?.flags & pin::LONG_RESET != 0;
         self.wait_presence(w, p, long)?;
         self.erase(p)?;
         Ok(1)
@@ -369,19 +367,14 @@ impl Session {
         w: &mut crate::runtime::workspace::Workspace,
         p: &mut crate::ports::Platform<'_>,
     ) -> Result<usize, Status> {
-        let mut record = [0; pin::RECORD_BYTES];
-        pin::load(p, &mut record)?;
-        let configured = record[pin::PIN_LENGTH] != 0;
-        let minimum = record[pin::MIN_PIN_LENGTH];
-        let flags = record[pin::FLAGS];
-        p.memory.wipe(&mut record);
+        let policy = pin::policy(p)?;
         w.output[0] = 0;
         let used = resident::count(w.input, p)?;
         info::encode(
             &mut w.output[1..],
-            flags,
-            configured,
-            minimum,
+            policy.flags,
+            policy.pin_length != 0,
+            policy.minimum,
             used,
             self.sm2.algorithm,
         )
@@ -397,15 +390,7 @@ impl Session {
         use crate::ports::{KeyOperation, alg};
         w.clear(p.memory);
         let result = (|| {
-            if !self.agreement_ready {
-                p.crypto
-                    .key_operation(KeyOperation::Generate, alg::P256, &mut w.key, &[], w.input)
-                    .map_err(|_| Status::Other)?;
-                self.agreement.copy_from_slice(&w.key.bytes[..32]);
-                self.agreement_ready = true;
-            } else {
-                w.key.bytes[..32].copy_from_slice(&self.agreement);
-            }
+            self.agreement_key(w, p)?;
             let n = p
                 .crypto
                 .key_operation(KeyOperation::Public, alg::P256, &mut w.key, &[], w.input)
@@ -413,11 +398,10 @@ impl Session {
             if n != 64 {
                 return Err(Status::Other);
             }
-            w.output[0] = 0;
-            let mut e = canokey_protocol::cbor::Encoder::new(&mut w.output[1..]);
-            // {keyAgreement: {kty: EC2, alg: ECDH-ES+HKDF-256, crv: P-256, x, y}}
-            encoding::key_agreement(&mut e, &w.input[..64]).map_err(|_| Status::Other)?;
-            Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len())
+            Ok(encoding::key_agreement(
+                w.output,
+                (&w.input[..64]).try_into().unwrap(),
+            ))
         })();
         p.memory.wipe(&mut w.key.bytes);
         p.memory.wipe(w.input);

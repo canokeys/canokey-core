@@ -127,15 +127,20 @@ impl RecordPin {
             }
             let length = b[LENGTH] as usize;
             let limit = b[RETRY_LIMIT];
-            Credential::new(b, VALUE..VALUE + length, REMAINING, limit)?.verify(
-                input,
-                charge,
-                &mut |bytes| {
-                    p.storage
-                        .replace_at(self.id, REMAINING as u32, &bytes[REMAINING..REMAINING + 1])
-                        .map_err(|_| Error::Persistence)
-                },
-            )
+            // load/valid proved the value bounds and retry policy. REMAINING
+            // is outside VALUE.., so this child module can construct the view
+            // without rechecking it or exposing an unchecked applet API.
+            Credential {
+                bytes: b,
+                value: VALUE..VALUE + length,
+                counter: REMAINING,
+                limit,
+            }
+            .verify(input, charge, &mut |bytes| {
+                p.storage
+                    .replace_at(self.id, REMAINING as u32, &bytes[REMAINING..REMAINING + 1])
+                    .map_err(|_| Error::Persistence)
+            })
         })
     }
     pub(crate) fn change(

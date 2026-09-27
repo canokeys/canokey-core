@@ -222,10 +222,9 @@ fn next_rp(
         if cursor.visited[usize::from(index / 8)] & (1 << (index % 8)) != 0 {
             continue;
         }
-        let Some(n) = resident::load(index, buffer, p)? else {
+        let Some((_, entry)) = resident::read(index, buffer, p)? else {
             continue;
         };
-        let entry = resident::Entry::decode(&buffer[..n])?;
         let hash = *entry.rp_hash;
         // Group records using the one shared buffer. Scanning can overwrite
         // the selected entry, so reload it before returning its length.
@@ -234,8 +233,8 @@ fn next_rp(
             if cursor.visited[usize::from(candidate / 8)] & (1 << (candidate % 8)) != 0 {
                 continue;
             }
-            if let Some(n) = resident::load(candidate, buffer, p)? {
-                if resident::Entry::decode(&buffer[..n])?.rp_hash == &hash {
+            if let Some((_, entry)) = resident::read(candidate, buffer, p)? {
+                if entry.rp_hash == &hash {
                     cursor.visited[usize::from(candidate / 8)] |= 1 << (candidate % 8);
                 }
             }
@@ -365,8 +364,7 @@ impl Session {
                 0
             };
             for index in self.management.next..Record::CTAP_CREDENTIALS {
-                if let Some(n) = resident::load(index, w.input, p)? {
-                    let entry = resident::Entry::decode(&w.input[..n])?;
+                if let Some((n, entry)) = resident::read(index, w.input, p)? {
                     if *entry.rp_hash != self.management.rp {
                         continue;
                     }

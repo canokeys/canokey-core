@@ -14,13 +14,13 @@ pub struct Parameters {
     pub(super) start: usize,
     pub(super) subcommand: u8,
     pub(super) protocol: u8,
-    pub(super) auth: [u8; 32],
     pub(super) auth_len: usize,
     pub(super) minimum: Option<u8>,
     pub(super) force: bool,
     pub(super) rps: [(u16, u16); 4],
     pub(super) rp_count: Option<usize>,
     pub(super) management: super::management::Parsed,
+    pub(super) auth: [u8; 32],
     pub(super) message: [u8; PREFIX + super::MAX_REQUEST - 1],
 }
 impl Parameters {

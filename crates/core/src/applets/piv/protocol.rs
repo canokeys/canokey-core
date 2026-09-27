@@ -188,7 +188,7 @@ impl Piv {
         }
     }
     fn reset_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
-        self.clear_agreement(w, p);
+        // cancel_classic clears the retained agreement below.
         self.pins.reset();
         self.admin = false;
         self.pin_grant_consumed = false;
@@ -270,8 +270,9 @@ impl Piv {
             p.memory.wipe(w.input);
             p.memory.wipe(w.output);
         } else {
+            // Workspace::clear already erases the agreement bytes.
             w.clear(p.memory);
-            self.clear_agreement(w, p);
+            self.agreement = None;
         }
         if h.ins != INS_GENERAL_AUTHENTICATE {
             self.auth_clear(p)

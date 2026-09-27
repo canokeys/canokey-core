@@ -106,6 +106,9 @@ impl Backend for Platform {
             Err(0x6700)
         }
     }
+    // Keep the streamed decoder window and APDU dispatch out of the CCID
+    // command switch; short and staged requests retain their existing paths.
+    #[inline(never)]
     fn exchange(&mut self, request: &mut Request, out: &mut [u8]) -> Result<usize, ()> {
         #[cfg(feature = "ctap")]
         if request.staged() {

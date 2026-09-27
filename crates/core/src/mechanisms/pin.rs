@@ -36,6 +36,7 @@ pub(crate) struct Credential<'a> {
     limit: u8,
 }
 impl<'a> Credential<'a> {
+    #[cfg(any(feature = "piv", test))]
     pub(crate) fn new(
         bytes: &'a mut [u8],
         value: Range<usize>,

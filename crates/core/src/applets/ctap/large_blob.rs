@@ -14,15 +14,16 @@ const EMPTY: [u8; 17] = [
     0x80, 0x76, 0xbe, 0x8b, 0x52, 0x8d, 0x00, 0x75, 0xf7, 0xaa, 0xe9, 0x8d, 0x6f, 0xa5, 0x7a, 0x6d,
     0x3c,
 ];
+#[repr(C)]
 pub struct Parameters {
     get: Option<u16>,
     set: Option<usize>,
     offset: Option<u16>,
     length: Option<u16>,
-    bytes: [u8; FRAGMENT],
-    auth: [u8; 32],
     auth_len: usize,
     protocol: u8,
+    bytes: [u8; FRAGMENT],
+    auth: [u8; 32],
 }
 impl Parameters {
     const fn new() -> Self {
@@ -284,10 +285,8 @@ impl Session {
         if offset != 0 && (!self.upload.active || offset != usize::from(self.upload.next)) {
             return Err(Status::InvalidSequence);
         }
-        let mut policy = [0; pin::RECORD_BYTES];
-        pin::load(p, &mut policy)?;
-        let required = policy[pin::PIN_LENGTH] != 0 || policy[pin::FLAGS] & pin::ALWAYS_UV != 0;
-        p.memory.wipe(&mut policy);
+        let policy = pin::policy(p)?;
+        let required = policy.pin_length != 0 || policy.flags & pin::ALWAYS_UV != 0;
         if required {
             if params.auth_len == 0 {
                 return Err(Status::PuatRequired);

@@ -372,3 +372,70 @@ fn classic_unauthorized_signature_does_not_consume_touch() {
     );
     assert_eq!(device.samples, 0);
 }
+
+#[test]
+fn classic_begin_preserves_only_sm2_continuation_and_reset_erases_it() {
+    let mut store = Store::key(alg::SM2);
+    let mut p = Platform {
+        storage: &mut store,
+        crypto: &mut Backend,
+        device: &mut Backend,
+        memory: &Backend,
+    };
+    for (ins, p1, retained, status) in [
+        (
+            INS_GENERAL_AUTHENTICATE,
+            repo::algorithm_id(alg::SM2, &repo::DEFAULT_CONFIG),
+            true,
+            Ok(()),
+        ),
+        (INS_GENERAL_AUTHENTICATE, wire_alg::P256, false, Ok(())),
+        (INS_GET_METADATA, 0, false, Ok(())),
+        (
+            INS_IMPORT_KEY,
+            repo::algorithm_id(alg::SM2, &repo::DEFAULT_CONFIG),
+            false,
+            Err(Sw::SECURITY_STATUS_NOT_SATISFIED),
+        ),
+    ] {
+        let mut piv = Piv::new();
+        let mut workspace = SessionWorkspace::new();
+        piv.agreement = Some(0);
+        let w = workspace.classic_with(p.memory);
+        w.agreement.fill(0x5a);
+        w.key.bytes.fill(0x5a);
+        w.input.fill(0x5a);
+        w.output.fill(0x5a);
+        let h = Header {
+            cla: 0,
+            ins,
+            p1,
+            p2: 0x9a,
+        };
+        assert_eq!(piv.begin(h, &mut workspace, &mut p), status);
+        let w = workspace.classic_with(p.memory);
+        assert_eq!(piv.agreement.is_some(), retained);
+        assert!(
+            w.agreement
+                .iter()
+                .all(|&b| b == if retained { 0x5a } else { 0 })
+        );
+        assert!(
+            w.key
+                .bytes
+                .iter()
+                .chain(w.input.iter())
+                .chain(w.output.iter())
+                .all(|&b| b == 0)
+        );
+        piv.reset(&mut workspace, &mut p);
+        assert!(piv.agreement.is_none());
+        assert!(
+            workspace
+                .classic_with(p.memory)
+                .agreement
+                .iter()
+                .all(|&b| b == 0)
+        );
+    }
+}

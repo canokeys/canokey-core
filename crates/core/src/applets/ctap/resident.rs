@@ -106,6 +106,18 @@ pub(super) fn load(
         Err(_) => Err(Status::Other),
     }
 }
+/// Load and validate one occupied resident slot without copying its fields.
+#[inline(never)]
+pub(super) fn read<'a>(
+    index: u8,
+    out: &'a mut [u8],
+    p: &mut Platform<'_>,
+) -> Result<Option<(usize, Entry<'a>)>, Status> {
+    let Some(n) = load(index, out, p)? else {
+        return Ok(None);
+    };
+    Ok(Some((n, Entry::decode(&out[..n])?)))
+}
 pub(super) fn store(
     params: &Parameters,
     id: &Id,
@@ -115,8 +127,7 @@ pub(super) fn store(
 ) -> Result<(), Status> {
     let mut slot = None;
     for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some(n) = load(index, out, p)? {
-            let entry = Entry::decode(&out[..n])?;
+        if let Some((_, entry)) = read(index, out, p)? {
             if equal(entry.rp_hash, rp_hash) && equal(entry.user, &params.user[..params.user_len]) {
                 slot = Some(index);
                 break;
@@ -167,8 +178,7 @@ pub(super) fn find(
     p: &mut Platform<'_>,
 ) -> Result<Option<(u8, usize)>, Status> {
     for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some(n) = load(index, out, p)? {
-            let entry = Entry::decode(&out[..n])?;
+        if let Some((n, entry)) = read(index, out, p)? {
             if equal(entry.id, id) && equal(entry.rp_hash, rp_hash) {
                 return Ok(Some((index, n)));
             }
@@ -189,8 +199,7 @@ pub(super) fn discover(
 ) -> Result<Option<(u8, Id)>, Status> {
     while *next != 0 {
         *next -= 1;
-        if let Some(n) = load(*next, out, p)? {
-            let entry = Entry::decode(&out[..n])?;
+        if let Some((_, entry)) = read(*next, out, p)? {
             if entry.rp_hash == rp
                 && (uv || entry.id[1] & 3 == 1)
                 && super::credential::permitted_id(entry.id)
@@ -205,8 +214,7 @@ pub(super) fn discover(
 pub(super) fn count(out: &mut [u8], p: &mut Platform<'_>) -> Result<u8, Status> {
     let mut count = 0;
     for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some(n) = load(index, out, p)? {
-            Entry::decode(&out[..n])?;
+        if read(index, out, p)?.is_some() {
             count += 1;
         }
     }
@@ -245,6 +253,7 @@ impl Assertion {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
 
     const HEADER: usize = ID_BYTES + 32;
@@ -256,6 +265,144 @@ mod tests {
         bytes[1] = RESIDENT;
         bytes[HEADER..HEADER + FIELDS.len()].copy_from_slice(FIELDS);
         bytes
+    }
+
+    use crate::ports::{Crypto, CryptoError, Device, Storage};
+    use std::vec::Vec;
+
+    #[derive(Default)]
+    struct Records {
+        records: Vec<(u8, Vec<u8>)>,
+        fail: Option<StorageError>,
+    }
+    impl Storage for Records {
+        fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+            if let Some(error) = self.fail {
+                return Err(error);
+            }
+            let (_, bytes) = self
+                .records
+                .iter()
+                .find(|(index, _)| Record::ctap_credential(*index) == Some(id))
+                .ok_or(StorageError::Missing)?;
+            out[..bytes.len()].copy_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
+            unreachable!()
+        }
+    }
+    impl Crypto for Records {
+        fn mac(&mut self, _: u8, _: &[u8], _: &[u8], _: &mut [u8; 64]) -> Result<(), CryptoError> {
+            unreachable!()
+        }
+        fn random(&mut self, _: &mut [u8]) -> Result<(), CryptoError> {
+            unreachable!()
+        }
+        fn hmac_sha1(&mut self, _: &[u8; 20], _: &[u8], _: &mut [u8; 20]) {
+            unreachable!()
+        }
+    }
+    impl Device for Records {
+        fn progress(&mut self) -> bool {
+            true
+        }
+        fn now(&mut self) -> u32 {
+            0
+        }
+        fn serial(&mut self, _: &mut [u8; 4]) {
+            unreachable!()
+        }
+        fn touched(&mut self) -> bool {
+            false
+        }
+        fn led(&mut self, _: bool) {}
+    }
+    fn resident(index: u8, rp: u8, protection: u8) -> (u8, Vec<u8>) {
+        let mut bytes = record()[..HEADER + FIELDS.len()].to_vec();
+        bytes[1] |= protection;
+        bytes[2] = index;
+        bytes[ID_BYTES..HEADER].fill(rp);
+        (index, bytes)
+    }
+
+    #[test]
+    fn discovery_preserves_descending_slots_rp_and_uv_filters() {
+        let mut storage = Records {
+            records: std::vec![
+                resident(1, 7, 1),
+                resident(4, 7, 3),
+                resident(7, 8, 1),
+                resident(99, 7, 1)
+            ],
+            ..Records::default()
+        };
+        let mut p = Platform {
+            storage: &mut storage,
+            crypto: &mut Records::default(),
+            device: &mut Records::default(),
+            memory: &canokey_ports::default_memory(),
+        };
+        let mut out = [0; MAX_BYTES];
+        assert_eq!(count(&mut out, &mut p), Ok(4));
+        for uv in [false, true] {
+            let mut next = Record::CTAP_CREDENTIALS;
+            let mut found = Vec::new();
+            while let Some((index, id)) =
+                discover(&mut next, &[7; 32], uv, &mut out, &mut p).unwrap()
+            {
+                assert_eq!(id[2], index);
+                found.push(index);
+            }
+            assert_eq!(
+                found,
+                if uv {
+                    std::vec![99, 4, 1]
+                } else {
+                    std::vec![99, 1]
+                }
+            );
+            assert!(
+                discover(&mut next, &[7; 32], uv, &mut out, &mut p)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn resident_reads_distinguish_empty_slots_corruption_and_io_failure() {
+        let mut storage = Records {
+            records: std::vec![resident(4, 7, 1)],
+            ..Records::default()
+        };
+        let mut out = [0; MAX_BYTES];
+        for case in 0..4 {
+            if case == 1 {
+                storage.records[0].1.truncate(HEADER);
+            }
+            if case == 2 {
+                storage.fail = Some(StorageError::Unavailable);
+            }
+            if case == 3 {
+                storage.fail = Some(StorageError::Uncertain);
+            }
+            let mut p = Platform {
+                storage: &mut storage,
+                crypto: &mut Records::default(),
+                device: &mut Records::default(),
+                memory: &canokey_ports::default_memory(),
+            };
+            if case == 0 {
+                assert!(read(0, &mut out, &mut p).unwrap().is_none());
+                let (n, entry) = read(4, &mut out, &mut p).unwrap().unwrap();
+                assert_eq!(n, HEADER + FIELDS.len());
+                assert_eq!(entry.rp_hash, &[7; 32]);
+            } else {
+                assert!(matches!(read(4, &mut out, &mut p), Err(Status::Other)));
+                assert_eq!(count(&mut out, &mut p), Err(Status::Other));
+            }
+        }
     }
 
     #[test]

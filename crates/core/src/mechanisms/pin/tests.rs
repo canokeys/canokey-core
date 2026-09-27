@@ -507,6 +507,41 @@ mod records {
     }
     #[cfg(feature = "openpgp")]
     #[test]
+    fn record_validation_precedes_comparison_and_retry_writes() {
+        let pin = RecordPin {
+            id: Record::PgpRc,
+            stored_min: 0,
+            fixed_limit: None,
+        };
+        let mut store = Store::default();
+        let memory = Eraser::default();
+        for charge in [Charge::OnMismatch, Charge::BeforeCompare] {
+            for (at, value) in [(0, 2), (1, 65), (2, 4), (3, 0), (1, 0)] {
+                pin.create(b"1234", 3, &mut platform!(&mut store, &memory))
+                    .unwrap();
+                store.value[at] = value;
+                if at == 1 {
+                    // Also exercise a disabled PIN with an invalid live counter.
+                    store.length = 4 + value as usize;
+                    // An oversized record cannot be copied into the read buffer.
+                    if value == 65 {
+                        store.length = 68;
+                    }
+                }
+                let writes = store.writes;
+                let wipes = memory.0.get();
+                assert_eq!(
+                    pin.verify(b"1234", 4, charge, &mut platform!(&mut store, &memory)),
+                    Err(Error::Persistence)
+                );
+                assert_eq!(store.writes, writes);
+                assert_eq!(memory.0.get(), wipes + 1);
+            }
+        }
+    }
+
+    #[cfg(feature = "openpgp")]
+    #[test]
     fn openpgp_disabled_reset_code_and_prepaid_attempts() {
         let pin = RecordPin {
             id: Record::PgpRc,

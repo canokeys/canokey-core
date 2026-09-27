@@ -8,41 +8,43 @@ use canokey_protocol::cbor::Event;
 pub const CRED_BLOB_BYTES: usize = 32;
 
 pub(super) const MAX_LIST: usize = 16;
+// Keep scalar state before contiguous zero-filled request buffers.
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Parameters {
     pub make: bool,
-    pub client_hash: [u8; 32],
-    pub rp: [u8; 254],
     pub rp_len: usize,
-    pub user: [u8; 64],
     pub user_len: usize,
-    pub name: [u8; 64],
     pub name_len: usize,
-    pub display: [u8; 64],
     pub display_len: usize,
     pub list_present: bool,
     pub algorithm: Option<u8>,
-    pub algorithms: [i32; super::MAX_REQUEST / 20],
     pub algorithm_count: usize,
-    // A flat zero initializer avoids a nested-array temporary on Thumb-1.
-    // Typed views below preserve credential boundaries without layout casts.
-    list: [u8; ID_BYTES * MAX_LIST],
     pub list_len: usize,
     pub resident: bool,
     pub up: bool,
     pub uv: bool,
-    pub auth: [u8; 32],
     pub auth_len: Option<usize>,
     pub protocol: u8,
     pub protection: u8,
     pub protection_requested: bool,
     pub min_pin_length: bool,
     pub large_blob_key: bool,
-    pub cred_blob: [u8; CRED_BLOB_BYTES],
     pub cred_blob_len: Option<usize>,
     pub get_cred_blob: bool,
     pub hmac_secret: bool,
     pub third_party_payment: bool,
     pub hmac: Option<super::hmac_secret::Parameters>,
+    pub algorithms: [i32; super::MAX_REQUEST / 20],
+    pub client_hash: [u8; 32],
+    pub rp: [u8; 254],
+    pub user: [u8; 64],
+    pub name: [u8; 64],
+    pub display: [u8; 64],
+    // Keep this flat: nested arrays produce an initializer temporary on Thumb-1.
+    list: [u8; ID_BYTES * MAX_LIST],
+    pub auth: [u8; 32],
+    pub cred_blob: [u8; CRED_BLOB_BYTES],
 }
 impl Parameters {
     pub(super) fn ids(&self) -> &[Id] {
@@ -187,13 +189,14 @@ fn text_field(context: Context, key: &[u8], make: bool) -> Field {
         .map_or(Field::Ignore, |(_, _, field, _)| *field)
 }
 
+#[repr(C)]
 struct Map {
     context: Context,
     previous_int: Option<Key>,
-    previous_text: [u8; 32],
     previous_len: usize,
     seen_text: bool,
     field: Option<Field>,
+    previous_text: [u8; 32],
 }
 impl Map {
     const fn new(context: Context) -> Self {
@@ -314,10 +317,12 @@ impl Parser {
         if f.params.make && f.params.hmac.is_some() && !f.params.hmac_secret {
             return Err(Status::MissingParameter);
         }
-        Ok(Command::Credential(core::mem::replace(
-            &mut f.params,
-            Parameters::new(false),
-        )))
+        // Publish one owned copy, then erase the source without reconstructing
+        // its large defaults. A second finish must not publish cleared data.
+        let params = f.params;
+        f.seen = 0;
+        self.clear(&canokey_ports::default_memory());
+        Ok(Command::Credential(params))
     }
 }
 impl Fields {
@@ -728,6 +733,58 @@ mod tests {
     use super::*;
     use canokey_protocol::cbor::Encoder;
 
+    #[test]
+    fn successful_finish_preserves_owned_result_and_revokes_parser() {
+        let mut wire = [0; 384];
+        let id = [0x45; ID_BYTES];
+        let mut e = Encoder::new(&mut wire[..]);
+        e.map(5)
+            .u8(1)
+            .str("example.com")
+            .u8(2)
+            .bytes(&[0x31; 32])
+            .u8(3)
+            .array(1)
+            .map(2)
+            .str("id")
+            .bytes(&id)
+            .str("type")
+            .str("public-key")
+            .u8(6)
+            .bytes(&[0x72; 32])
+            .u8(7)
+            .u8(2)
+            .finish()
+            .unwrap();
+        let n = 384 - e.writer().len();
+        for split in 0..=n {
+            let mut parser = Parser::new(false);
+            parser.consume(&wire[..split]);
+            parser.consume(&wire[split..n]);
+            let Ok(Command::Credential(params)) = parser.finish() else {
+                panic!()
+            };
+            assert_eq!(params.client_hash, [0x31; 32]);
+            assert_eq!(&params.rp[..params.rp_len], b"example.com");
+            assert_eq!(params.ids(), &[id]);
+            assert_eq!(params.auth, [0x72; 32]);
+            assert!(
+                parser
+                    .fields
+                    .params
+                    .client_hash
+                    .iter()
+                    .chain(parser.fields.params.rp.iter())
+                    .chain(parser.fields.params.list.iter())
+                    .chain(parser.fields.params.auth.iter())
+                    .all(|&b| b == 0)
+            );
+            assert!(matches!(parser.finish(), Err(Status::MissingParameter)));
+            // The command still owns the original bytes after parser cleanup.
+            parser.clear(&canokey_ports::default_memory());
+            assert_eq!(params.auth, [0x72; 32]);
+        }
+    }
     #[test]
     fn credential_lists_preserve_boundaries_across_fragments() {
         for make in [false, true] {

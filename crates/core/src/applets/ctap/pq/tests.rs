@@ -3,7 +3,11 @@ extern crate std;
 use super::*;
 use crate::ports::*;
 use sha2::{Digest, Sha256};
-use std::{cell::RefCell, vec, vec::Vec};
+use std::{
+    cell::{Cell, RefCell},
+    vec,
+    vec::Vec,
+};
 
 #[derive(Default)]
 struct Backend {
@@ -15,6 +19,9 @@ struct Backend {
     fail: Option<Op>,
     short: bool,
     cancel: bool,
+    key_result: Option<Result<usize, StorageError>>,
+    fail_attestation: bool,
+    wiped_attestation: Cell<bool>,
     wiped: RefCell<Vec<(usize, usize)>>,
 }
 impl Storage for Backend {
@@ -24,7 +31,7 @@ impl Storage for Backend {
     fn load(&mut self, record: Record, out: &mut [u8]) -> Result<usize, StorageError> {
         assert_eq!(record, Record::CtapAttestationKey);
         out.fill(0x19);
-        Ok(32)
+        self.key_result.unwrap_or(Ok(32))
     }
     fn read_at(&mut self, record: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
         assert_eq!(record, Record::CtapCertificate);
@@ -103,7 +110,11 @@ impl Crypto for Backend {
         assert_eq!(key, &[0x19; 32]);
         assert_eq!(&Sha256::digest(&self.hashed)[..], digest);
         out.fill(1);
-        Ok(())
+        if self.fail_attestation {
+            Err(CryptoError::Failure)
+        } else {
+            Ok(())
+        }
     }
     fn sha256(&mut self, _: &[u8], _: &mut [u8; 32]) -> Result<(), CryptoError> {
         unreachable!()
@@ -132,6 +143,9 @@ impl Device for Backend {
 }
 impl Memory for Backend {
     fn wipe(&self, bytes: &mut [u8]) {
+        if bytes == [0x19; 32] {
+            self.wiped_attestation.set(true);
+        }
         self.wiped
             .borrow_mut()
             .push((bytes.as_ptr() as usize, bytes.len()));
@@ -381,4 +395,36 @@ fn full_capacity_insertion_preserves_both_sides_and_overflow_is_non_mutating() {
         &stream.framing.bytes[plan.prefix + plan.auth..],
         &original[plan.prefix..]
     );
+}
+
+#[test]
+fn failed_attestation_erases_partial_key_and_closes_stream() {
+    for key_result in [
+        Ok(0),
+        Ok(31),
+        Err(StorageError::Missing),
+        Err(StorageError::Unavailable),
+        Err(StorageError::Uncertain),
+        Ok(32),
+    ] {
+        let mut storage = Backend {
+            key_result: Some(key_result),
+            ..Backend::default()
+        };
+        let mut crypto = Backend {
+            fail_attestation: true,
+            ..Backend::default()
+        };
+        let mut device = Backend::default();
+        let memory = Backend::default();
+        let mut w = staged(plan(Mode::Make), &memory);
+        let mut p = platform(&mut storage, &mut crypto, &mut device, &memory);
+        assert_eq!(
+            Stream::prepare(plan(Mode::Make), &mut w, &mut p),
+            Err(Status::Other)
+        );
+        erased(&w.ctap_stream().unwrap());
+        assert!(memory.wiped_attestation.get());
+        assert!(crypto.aborts > 0);
+    }
 }

@@ -121,25 +121,34 @@ impl Selected {
         mask == 0 || config::enabled(p.storage, mask)
     }
     fn from_aid(aid: &[u8]) -> Option<Self> {
-        match aid {
+        // Iterate borrowed AIDs so size-optimized targets share one comparison
+        // instead of expanding constant slice patterns into bytewise branches.
+        const AIDS: &[(&[u8], Selected)] = &[
             #[cfg(feature = "ndef")]
-            crate::applets::ndef::AID => Some(Self::Ndef),
+            (crate::applets::ndef::AID, Selected::Ndef),
             #[cfg(feature = "ctap")]
-            ctap::apdu::AID => Some(Self::Ctap),
+            (ctap::apdu::AID, Selected::Ctap),
             #[cfg(feature = "admin")]
-            admin::AID => Some(Self::Admin),
+            (admin::AID, Selected::Admin),
             #[cfg(feature = "oath")]
-            crate::applets::oath::protocol::AID => Some(Self::Oath),
+            (crate::applets::oath::protocol::AID, Selected::Oath),
             #[cfg(feature = "openpgp")]
-            crate::applets::openpgp::protocol::AID => Some(Self::OpenPgp),
+            (crate::applets::openpgp::protocol::AID, Selected::OpenPgp),
             #[cfg(feature = "piv")]
-            // Match the full AID, the standardized nine-byte prefix, or the
-            // legacy RID-only selector; other partial versions are not AIDs.
-            aid if matches!(aid.len(), 5 | 9 | 11) && crate::applets::piv::AID.starts_with(aid) => {
-                Some(Self::Piv)
+            (crate::applets::piv::AID, Selected::Piv),
+            // Only the standardized nine-byte and legacy RID-only selectors
+            // are accepted in addition to the full PIV AID.
+            #[cfg(feature = "piv")]
+            (crate::applets::piv::AID.split_at(9).0, Selected::Piv),
+            #[cfg(feature = "piv")]
+            (crate::applets::piv::AID.split_at(5).0, Selected::Piv),
+        ];
+        for &(candidate, selected) in AIDS {
+            if aid == candidate {
+                return Some(selected);
             }
-            _ => None,
         }
+        None
     }
 }
 
@@ -729,6 +738,9 @@ impl Router for Registry {
         }
     }
     #[allow(unused_variables)]
+    // Keep applet workspace addressing out of the response cursor and its
+    // error/close paths; this boundary reduces the complete Thumb-1 image.
+    #[inline(never)]
     fn read_response(
         &mut self,
         offset: u32,
@@ -890,3 +902,7 @@ fn flow_status(error: crate::flows::Error) -> Sw {
 ))]
 #[path = "registry_config_tests.rs"]
 mod config_tests;
+
+#[cfg(test)]
+#[path = "registry_aid_tests.rs"]
+mod aid_tests;

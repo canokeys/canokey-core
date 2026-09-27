@@ -8,16 +8,17 @@ use canokey_protocol::cbor::Event;
 // through the unknown-member path without colliding with a valid field.
 const COSE_KEY_MISSING: i8 = 127;
 
+#[repr(C)]
 pub struct Parameters {
     pub protocol: u8,
     pub subcommand: u8,
+    pub permissions: u8,
+    pub rp_len: usize,
     pub agreement: [u8; 64],
     pub auth: [u8; 32],
     pub new_pin: [u8; 80],
     pub pin_hash: [u8; 32],
-    pub permissions: u8,
     pub rp: [u8; 254],
-    pub rp_len: usize,
 }
 impl Parameters {
     const fn new() -> Self {

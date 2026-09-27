@@ -3,7 +3,7 @@
 use super::{
     Session, Status,
     client_pin::Parameters,
-    crypto::{equal, mac},
+    crypto::{equal, mac, verify_mac},
 };
 use crate::{
     ports::{KeyOperation, Platform, Record, StorageError, alg},
@@ -51,6 +51,27 @@ pub(super) fn load(p: &mut Platform<'_>, record: &mut [u8; RECORD_BYTES]) -> Res
     }
     Ok(())
 }
+/// Non-secret policy shared by callers that do not need the PIN hash/RP list.
+/// Validate the complete record before publishing any flags, then erase it here.
+pub(super) struct Policy {
+    pub retries: u8,
+    pub pin_length: u8,
+    pub minimum: u8,
+    pub flags: u8,
+}
+#[inline(never)]
+pub(super) fn policy(p: &mut Platform<'_>) -> Result<Policy, Status> {
+    let mut record = [0; RECORD_BYTES];
+    load(p, &mut record)?;
+    let policy = Policy {
+        retries: record[RETRIES],
+        pin_length: record[PIN_LENGTH],
+        minimum: record[MIN_PIN_LENGTH],
+        flags: record[FLAGS],
+    };
+    p.memory.wipe(&mut record);
+    Ok(policy)
+}
 pub(super) fn save(record: &[u8; RECORD_BYTES], p: &mut Platform<'_>) -> Result<(), Status> {
     let n = RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32;
     p.storage
@@ -82,6 +103,25 @@ pub(super) fn decrypt(
         .map_err(|_| Status::Other)
 }
 impl Session {
+    // Both callers own workspace cleanup and Session::execute invalidates
+    // authorization after a primitive failure. Only public replies export COSE.
+    #[inline(never)]
+    pub(super) fn agreement_key(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_>,
+    ) -> Result<(), Status> {
+        if !self.agreement_ready {
+            p.crypto
+                .key_operation(KeyOperation::Generate, alg::P256, &mut w.key, &[], w.input)
+                .map_err(|_| Status::Other)?;
+            self.agreement.copy_from_slice(&w.key.bytes[..32]);
+            self.agreement_ready = true;
+        } else {
+            w.key.bytes[..32].copy_from_slice(&self.agreement);
+        }
+        Ok(())
+    }
     pub(super) fn decapsulate(
         &mut self,
         protocol: u8,
@@ -90,12 +130,12 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<(), Status> {
-        // Initialize exactly as getKeyAgreement does, but never retain its
-        // response. ECDH validates the peer point in the primitive backend.
+        // ECDH validates the peer point in the primitive backend. Generating
+        // our private key does not require exporting a public response first.
         if !self.agreement_ready {
-            self.key_agreement(w, p)?;
+            w.clear(p.memory);
         }
-        w.key.bytes[..32].copy_from_slice(&self.agreement);
+        self.agreement_key(w, p)?;
         let n = p
             .crypto
             .key_operation(
@@ -141,10 +181,7 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let mut record = [0; RECORD_BYTES];
-        load(p, &mut record)?;
-        w.output[..4].copy_from_slice(&[0, 0xa1, 3, record[RETRIES]]);
-        p.memory.wipe(&mut record);
+        w.output[..4].copy_from_slice(&[0, 0xa1, 3, policy(p)?.retries]);
         Ok(4)
     }
     #[inline(never)]
@@ -185,14 +222,7 @@ impl Session {
                 } else {
                     new_len
                 };
-                let mut expected = [0; 32];
-                let result = mac(&shared[..32], &w.input[..n], &mut expected, p);
-                let valid = equal(&expected[..hash_len], &cp.auth[..hash_len]);
-                p.memory.wipe(&mut expected);
-                result?;
-                if !valid {
-                    return Err(Status::PinAuthInvalid);
-                }
+                verify_mac(&shared[..32], &cp.auth[..hash_len], &w.input[..n], p)?;
             }
             let aes_key: &[u8; 32] = shared[32..].try_into().unwrap();
             if cp.subcommand != 3 {
@@ -337,14 +367,7 @@ impl Session {
         {
             return Err(Status::PinAuthInvalid);
         }
-        let mut expected = [0; 32];
-        let result = mac(&self.token, message, &mut expected, p);
-        let valid = equal(auth, &expected[..auth.len()]);
-        p.memory.wipe(&mut expected);
-        result?;
-        if !valid {
-            return Err(Status::PinAuthInvalid);
-        }
+        verify_mac(&self.token, auth, message, p)?;
         self.token_used = p.device.now();
         Ok(())
     }
@@ -404,3 +427,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod operation_tests;

@@ -357,14 +357,11 @@ fn respond(
     let cert_len = if request.make {
         let certificate = p.storage.size(crate::ports::Record::CtapCertificate);
         let mut attestation_key = [0; 32];
-        let key = p.storage.load(
-            crate::ports::Record::CtapAttestationKey,
-            &mut attestation_key,
-        );
+        let key = super::attestation::key(&mut attestation_key, p);
         let cert_len = match (key, certificate) {
-            (Ok(32), Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => n as usize,
+            (Ok(()), Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => n as usize,
             (
-                Ok(32) | Err(crate::ports::StorageError::Missing),
+                Ok(()) | Err(crate::ports::StorageError::Missing),
                 Err(crate::ports::StorageError::Missing),
             )
             | (Err(crate::ports::StorageError::Missing), Ok(_)) => {
@@ -645,13 +642,7 @@ fn respond_mldsa_make(
     response: &mut Option<super::Response>,
     auth_prefix: usize,
 ) -> Result<usize, Status> {
-    let cert_len = p
-        .storage
-        .size(crate::ports::Record::CtapCertificate)
-        .map_err(|_| Status::Other)? as usize;
-    if cert_len == 0 || cert_len > super::provision::CERT_LIMIT {
-        return Err(Status::Other);
-    }
+    let cert_len = super::attestation::certificate(p)?;
     // Extensions are encoded once for classic and streamed keys. The large
     // public key is spliced between the COSE header and these extension bytes.
     let auth_end = append_extensions(request, w, p, auth_prefix)?;

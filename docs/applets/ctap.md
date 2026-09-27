@@ -482,6 +482,52 @@ Core reset from this callback. The `usb-sessions` fixture exercises two polls,
 IN backpressure, deferred power-on and cancellation inside a real HID selection
 presence wait.
 
+### U2F and clientPIN size boundaries
+
+U2F accepts only P-256 handles and does not load SM2 provisioning. Missing or
+malformed SM2 settings therefore do not gate VERSION, registration or
+P-256 authentication; other handle algorithms are rejected before key opening.
+Registration exports the public point directly at output offset 2, with the
+remaining 526-byte buffer preserving the native generic operation's 512-byte
+capacity contract. P-256 signatures are written and DER-encoded in their final
+output position through the existing typed signing port. Authentication uses
+Prepared backing; registration retains the common certificate-splicing response.
+
+PIN policy-only readers share one complete-record load/validation/erasure path
+and return just the four public policy bytes. This is not a policy cache or a
+partial-record read: malformed records and I/O failures still fail closed, and
+configuration changes apply on the next command. Credential/config/PIN mutation
+paths retain the full record where they need its hash or RP list.
+
+clientPIN and hmac-secret share private agreement-key preparation. Lazy ECDH
+initialization generates the key without exporting a discarded public/COSE
+response; getKeyAgreement exports the cached key when requested. The fixed
+81-byte status-plus-COSE response uses typed coordinate/output capacities.
+MAC verification shares one native output, comparison and audited erasure;
+callers retain protocol/tag-length, permission, RP binding and expiry checks.
+Primitive failure remains Other, distinct from PinAuthInvalid. Key-generation
+failures flow through command workspace cleanup and session invalidation.
+
+### Parser and resident-record size boundaries
+
+Private request layouts group scalar metadata before contiguous byte buffers;
+these layouts are neither native ABI nor persistent record formats. Preserve
+measured field order when changing them: fewer source initializers do not imply
+fewer Thumb-1 instructions. Credential finish transfers an owned parameter copy,
+clears the source buffers and invalidates its required-field mask. It does not
+move the entire parser onto the stack or borrow PKE-backed input. Copy on the
+credential/hmac parameter types supports this explicit transfer; source and
+command erasure remain separate lifecycle requirements.
+
+Strict resident scans share record loading and decoding. Callers keep their
+original ordering, UV/algorithm filtering, RP grouping and cursor advancement.
+Management's metadata counter retains its different behavior for malformed
+records, so it does not use the strict reader. No record-count cache is added.
+Attestation callers share exact key-length and required-certificate checks,
+while retaining their storage-call order, self-attestation rules, status mapping
+and secret cleanup. Signature paths remain separate after size measurements
+rejected a combined signing/DER wrapper.
+
 ### ML-DSA response streaming correctness
 
 ML-DSA-65 public keys use the AKP COSE map `{1: 7, 3: -49, -1: public_key}`

@@ -21,17 +21,16 @@ const DER_VERSION_EXPLICIT: u8 = 0xa0;
 const DER_SIGN_BIT: u8 = 0x80;
 const DER_LONG_LENGTH: usize = 0x80;
 const CERTIFICATE_SERIAL_BYTES: usize = 16;
-// A certificate is emitted as a scatter/gather plan. Each three-word entry is
-// [source selector, byte offset within that source, byte length]. Sources are
-// small encoded bytes, the stored issuer certificate, or regenerated public key.
+// A certificate is emitted as a scatter/gather plan. Array indexing scales
+// whole entries; explicit checked `count * stride` arithmetic is unnecessary.
 const MAX_SEGMENTS: usize = 18;
+const SOURCE_ENCODED: u16 = 0;
+const SOURCE_ISSUER: u16 = 1;
+const SOURCE_PUBLIC: u16 = 2;
 const SEGMENT_WORDS: usize = 3;
-const SOURCE: usize = 0;
-const OFFSET: usize = 1;
-const LENGTH: usize = 2;
-const SOURCE_ENCODED: usize = 0;
-const SOURCE_ISSUER: usize = 1;
-const SOURCE_PUBLIC: usize = 2;
+const OFFSET: usize = 0;
+const LENGTH: usize = 1;
+const SOURCE: usize = 2;
 const ENCODED_CAPACITY: usize = 256;
 const SHA256_BYTES: usize = 32;
 const P256_SIGNATURE_BYTES: usize = 64;
@@ -40,15 +39,19 @@ const P256_SIGNATURE_CAPACITY: usize = P256_SIGNATURE_BYTES + 9;
 const HASH_CHUNK_BYTES: usize = 64;
 // DER AlgorithmIdentifier for ecdsa-with-SHA256 (OID 1.2.840.10045.4.3.2).
 const SIGNATURE_ALGORITHM: &[u8] = b"\x30\x0a\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02";
+// Keep the small plan fields before the large public-key workspace so Thumb-1
+// can address them relative to one base without deep field offsets.
+#[repr(C)]
 pub struct Attestation {
-    // Scalar backing keeps initialization in place on Thumb-1 (no aggregate stack copies).
-    segments: [usize; MAX_SEGMENTS * SEGMENT_WORDS],
     count: usize,
-    encoded: [u8; ENCODED_CAPACITY],
     used: usize,
     pub total: usize,
-    public: Public,
     algorithm: usize,
+    // Scalar backing preserves in-place initialization on Thumb-1. Borrow
+    // entries with as_chunks rather than forming an aggregate array temporary.
+    segments: [u16; MAX_SEGMENTS * SEGMENT_WORDS],
+    encoded: [u8; ENCODED_CAPACITY],
+    public: Public,
 }
 // These states are mutually exclusive views of the existing public workspace.
 // A classic subject retains only its public bytes while the key area is reused
@@ -119,12 +122,17 @@ impl Attestation {
         self.total = 0;
         self.algorithm = 0;
     }
-    fn segment(&mut self, source: usize, offset: usize, len: usize) -> Result<(), Sw> {
+    fn segment(&mut self, source: u16, offset: usize, len: usize) -> Result<(), Sw> {
         if self.count == MAX_SEGMENTS {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
-        self.segments[self.count * SEGMENT_WORDS..self.count * SEGMENT_WORDS + SEGMENT_WORDS]
-            .copy_from_slice(&[source, offset, len]);
+        // All production sources are bounded below 64 KiB. Check before
+        // narrowing so even a malformed source span cannot wrap an offset.
+        self.segments.as_chunks_mut::<SEGMENT_WORDS>().0[self.count] = [
+            offset.try_into().map_err(|_| Sw::UNABLE_TO_PROCESS)?,
+            len.try_into().map_err(|_| Sw::UNABLE_TO_PROCESS)?,
+            source,
+        ];
         self.count += 1;
         self.total += len;
         Ok(())
@@ -137,10 +145,10 @@ impl Attestation {
         self.encoded[at..at + b.len()].copy_from_slice(b);
         self.used += b.len();
         if self.count > 0 {
-            let last =
-                &mut self.segments[(self.count - 1) * SEGMENT_WORDS..self.count * SEGMENT_WORDS];
-            if last[SOURCE] == SOURCE_ENCODED && last[OFFSET] + last[LENGTH] == at {
-                last[LENGTH] += b.len();
+            let last = &mut self.segments.as_chunks_mut::<SEGMENT_WORDS>().0[self.count - 1];
+            if last[SOURCE] == SOURCE_ENCODED && last[OFFSET] as usize + last[LENGTH] as usize == at
+            {
+                last[LENGTH] += b.len() as u16;
                 self.total += b.len();
                 return Ok(());
             }
@@ -175,12 +183,10 @@ impl Attestation {
         if self.count == MAX_SEGMENTS || self.used + n > ENCODED_CAPACITY {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
-        self.segments.copy_within(
-            index * SEGMENT_WORDS..self.count * SEGMENT_WORDS,
-            (index + 1) * SEGMENT_WORDS,
-        );
-        self.segments[index * SEGMENT_WORDS..index * SEGMENT_WORDS + SEGMENT_WORDS]
-            .copy_from_slice(&[SOURCE_ENCODED, self.used, n]);
+        let segments = self.segments.as_chunks_mut::<SEGMENT_WORDS>().0;
+        segments.copy_within(index..self.count, index + 1);
+        // The capacity check bounds both values by ENCODED_CAPACITY (256).
+        segments[index] = [self.used as u16, n as u16, SOURCE_ENCODED];
         self.count += 1;
         self.encoded[self.used..self.used + n].copy_from_slice(&b[..n]);
         self.used += n;
@@ -418,13 +424,10 @@ impl Attestation {
         }
         let count = out.len();
         let mut window = canokey_protocol::response::ReadWindow::new(offset, out);
-        for s in self.segments[..self.count * SEGMENT_WORDS]
-            .as_chunks::<SEGMENT_WORDS>()
-            .0
-        {
-            let (start, dst) = window.take(s[LENGTH]);
+        for s in &self.segments.as_chunks::<SEGMENT_WORDS>().0[..self.count] {
+            let (start, dst) = window.take(s[LENGTH] as usize);
             if !dst.is_empty() {
-                let at = s[OFFSET] + start;
+                let at = s[OFFSET] as usize + start;
                 match s[SOURCE] {
                     SOURCE_ENCODED => dst.copy_from_slice(&self.encoded[at..at + dst.len()]),
                     SOURCE_ISSUER => {
@@ -598,8 +601,85 @@ fn parse_cert(p: &mut Platform<'_>) -> Result<(FileSpan, FileSpan), Sw> {
 }
 
 #[cfg(test)]
-mod serial_tests {
+mod tests {
+    extern crate std;
     use super::*;
+
+    // Flatten independently of read(): exercise the construction plan against
+    // complete DER bytes, including headers inserted before existing segments.
+    fn encoded_plan(writer: &Attestation) -> std::vec::Vec<u8> {
+        let mut out = std::vec::Vec::new();
+        for segment in &writer.segments.as_chunks::<SEGMENT_WORDS>().0[..writer.count] {
+            assert_eq!(segment[SOURCE], SOURCE_ENCODED);
+            let at = segment[OFFSET] as usize;
+            out.extend_from_slice(&writer.encoded[at..at + segment[LENGTH] as usize]);
+        }
+        assert_eq!(out.len(), writer.total);
+        out
+    }
+
+    #[test]
+    fn nested_wrappers_preserve_boundaries_and_merge_only_adjacent_bytes() {
+        let mut writer = Attestation::new();
+        writer.bytes(&[DER_INTEGER, 1]).unwrap();
+        writer.bytes(&[1]).unwrap();
+        assert_eq!(writer.count, 1);
+        let index = writer.count;
+        let start = writer.total;
+        writer.boundary(&[DER_INTEGER, 1, 2]).unwrap();
+        writer.wrap(index, start, DER_SEQUENCE).unwrap();
+        writer.wrap(0, 0, DER_SEQUENCE).unwrap();
+        writer.bytes(&[DER_INTEGER, 1, 3]).unwrap();
+        assert_eq!(
+            encoded_plan(&writer),
+            [0x30, 8, 2, 1, 1, 0x30, 3, 2, 1, 2, 2, 1, 3]
+        );
+    }
+
+    #[test]
+    fn plan_capacity_and_narrow_fields_reject_without_truncation() {
+        let mut writer = Attestation::new();
+        for (offset, len) in [(65536, 1), (0, 65536), (usize::MAX, 1)] {
+            assert_eq!(
+                writer.segment(SOURCE_ISSUER, offset, len),
+                Err(Sw::UNABLE_TO_PROCESS)
+            );
+            assert_eq!((writer.count, writer.total), (0, 0));
+        }
+        writer.segment(SOURCE_ISSUER, 65535, 65535).unwrap();
+        assert_eq!(writer.segments[OFFSET], 65535);
+        assert_eq!(writer.segments[LENGTH], 65535);
+        for _ in 1..MAX_SEGMENTS {
+            writer.boundary(&[]).unwrap();
+        }
+        assert_eq!(
+            writer.segment(SOURCE_PUBLIC, 0, 1),
+            Err(Sw::UNABLE_TO_PROCESS)
+        );
+        assert_eq!(writer.wrap(0, 0, DER_SEQUENCE), Err(Sw::UNABLE_TO_PROCESS));
+        assert_eq!((writer.count, writer.total), (MAX_SEGMENTS, 65535));
+    }
+
+    #[test]
+    fn long_der_lengths_and_full_encoded_buffer_keep_exact_plan() {
+        for len in [127, 128, 252] {
+            let mut writer = Attestation::new();
+            writer.bytes(&[0x5a; ENCODED_CAPACITY][..len]).unwrap();
+            writer.wrap(0, 0, DER_SEQUENCE).unwrap();
+            let mut expected = std::vec![DER_SEQUENCE];
+            if len >= 128 {
+                expected.push(0x81);
+            }
+            expected.push(len as u8);
+            expected.extend_from_slice(&[0x5a; ENCODED_CAPACITY][..len]);
+            assert_eq!(encoded_plan(&writer), expected);
+        }
+        let mut writer = Attestation::new();
+        writer.bytes(&[0x5a; ENCODED_CAPACITY]).unwrap();
+        assert_eq!(writer.bytes(&[1]), Err(Sw::UNABLE_TO_PROCESS));
+        assert_eq!(writer.wrap(0, 0, DER_SEQUENCE), Err(Sw::UNABLE_TO_PROCESS));
+        assert_eq!(encoded_plan(&writer), [0x5a; ENCODED_CAPACITY]);
+    }
 
     #[test]
     fn certificate_serial_is_a_minimal_positive_der_integer() {

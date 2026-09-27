@@ -2,7 +2,7 @@
 //! Owned hmac-secret inputs and per-enumeration secrets; no Flash state.
 use super::{
     Key, Session, Status, credential,
-    crypto::{equal, mac},
+    crypto::{mac, verify_mac},
     pin,
 };
 use crate::{ports::Platform, runtime::workspace::Workspace};
@@ -14,13 +14,15 @@ use canokey_protocol::cbor::Event;
 const COSE_KEY_MISSING: i8 = 127;
 const HMAC_COSE_REQUIRED_MASK: u8 = 0x07;
 
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct Parameters {
-    agreement: [u8; 64],
-    salt: [u8; 80],
-    auth: [u8; 32],
     salt_len: usize,
     auth_len: usize,
     protocol: u8,
+    agreement: [u8; 64],
+    salt: [u8; 80],
+    auth: [u8; 32],
 }
 impl Parameters {
     pub const fn new() -> Self {
@@ -221,21 +223,14 @@ impl Session {
         p: &mut Platform<'_>,
     ) -> Result<(), Status> {
         let mut shared = [0; 64];
-        let mut expected = [0; 32];
         let result = (|| {
             self.decapsulate(params.protocol, &params.agreement, &mut shared, w, p)?;
-            mac(
+            verify_mac(
                 &shared[..32],
+                &params.auth[..params.auth_len],
                 &params.salt[..params.salt_len],
-                &mut expected,
                 p,
             )?;
-            if !equal(
-                &expected[..params.auth_len],
-                &params.auth[..params.auth_len],
-            ) {
-                return Err(Status::PinAuthInvalid);
-            }
             let prepared = &mut self.assertion.hmac;
             prepared.aes_key.copy_from_slice(&shared[32..]);
             prepared.salts[..params.salt_len].copy_from_slice(&params.salt[..params.salt_len]);
@@ -250,7 +245,6 @@ impl Session {
             Ok(())
         })();
         p.memory.wipe(&mut shared);
-        p.memory.wipe(&mut expected);
         if result.is_err() {
             self.assertion.hmac.clear(p.memory);
         }

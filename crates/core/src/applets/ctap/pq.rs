@@ -277,9 +277,7 @@ impl Stream<'_> {
         let mut key = [0; 32];
         let mut signature = [0; 73];
         let result = (|| {
-            if !matches!(p.storage.load(Record::CtapAttestationKey, &mut key), Ok(32)) {
-                return Err(Status::Other);
-            }
+            super::attestation::key(&mut key, p).map_err(|_| Status::Other)?;
             p.crypto
                 .p256_sign(&key, digest, (&mut signature[..64]).try_into().unwrap())
                 .map_err(|_| Status::Other)?;

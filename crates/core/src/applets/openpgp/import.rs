@@ -202,6 +202,9 @@ impl Import {
         }
         Ok(true)
     }
+    // Isolate component parsing from the other routed consumers, avoiding
+    // import-field address materialization in the common receive frame.
+    #[inline(never)]
     pub fn feed(
         &mut self,
         bytes: &[u8],

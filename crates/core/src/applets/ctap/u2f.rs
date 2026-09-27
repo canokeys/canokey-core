@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CTAP1 APDUs. Inputs are owned before presence, storage or crypto runs.
-use super::{Response, Session, credential, pin, provision};
+use super::{Response, Session, credential, pin};
 use crate::{
-    ports::{KeyOperation, Platform, Record, alg},
+    ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
 use canokey_protocol::{apdu::Header, der::der_signature, response::StatusWord as Sw};
@@ -51,10 +51,6 @@ impl Session {
         self.assertion.hmac.clear(p.memory);
         self.management = super::management::Cursor::new();
         self.abort_blob(p);
-        // U2F uses the same SM2 configuration as CTAP credential commands;
-        // refresh it at this boundary so a prior command cannot leave a stale
-        // session value after configuration changes.
-        self.sm2 = super::settings::Sm2::load(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         let result = self.u2f_inner(request, w, p);
         p.memory.wipe(&mut w.key.bytes);
         if result.is_err() {
@@ -84,11 +80,7 @@ impl Session {
             1 | 2 => (),
             _ => return Err(Sw::INS_NOT_SUPPORTED),
         }
-        let mut policy = [0; pin::RECORD_BYTES];
-        pin::load(p, &mut policy).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-        let always_uv = policy[pin::FLAGS] & pin::ALWAYS_UV != 0;
-        p.memory.wipe(&mut policy);
-        if always_uv {
+        if pin::policy(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?.flags & pin::ALWAYS_UV != 0 {
             return Err(Sw::INS_NOT_SUPPORTED);
         }
         let register = r.header.ins == 1;
@@ -107,11 +99,12 @@ impl Session {
         let mut id = [0; credential::ID_BYTES];
         if !register {
             id.copy_from_slice(&r.data[65..]);
-            let algorithm =
-                credential::open(&id, self.sm2, rp, w, p).map_err(|_| Sw::WRONG_DATA)?;
-            if algorithm != alg::P256 {
+            // U2F accepts only P-256 handles, whose derivation does not use
+            // provisioned SM2 identifiers. Reject other algorithms before opening.
+            if credential::algorithm(&id) != Ok(alg::P256) {
                 return Err(Sw::WRONG_DATA);
             }
+            credential::open(&id, self.sm2, rp, w, p).map_err(|_| Sw::WRONG_DATA)?;
             if r.header.p1 == 7 {
                 return Err(Sw::CONDITIONS_NOT_SATISFIED);
             }
@@ -125,7 +118,13 @@ impl Session {
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             let n = p
                 .crypto
-                .key_operation(KeyOperation::Public, alg::P256, &mut w.key, &[], w.output)
+                .key_operation(
+                    KeyOperation::Public,
+                    alg::P256,
+                    &mut w.key,
+                    &[],
+                    &mut w.output[2..],
+                )
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             if n != 64 {
                 return Err(Sw::UNABLE_TO_PROCESS);
@@ -137,28 +136,16 @@ impl Session {
             w.input[65..65 + id.len()].copy_from_slice(&id);
             let public = 65 + id.len();
             w.input[public] = 4;
-            w.input[public + 1..public + 65].copy_from_slice(&w.output[..64]);
+            w.input[public + 1..public + 65].copy_from_slice(&w.output[2..66]);
             // Registration response prefix is independent of the signed byte order.
-            w.output.copy_within(..64, 2);
             w.output[0] = 5;
             w.output[1] = 4;
             w.output[66] = id.len() as u8;
             w.output[67..67 + id.len()].copy_from_slice(&id);
             p.memory.wipe(&mut w.key.bytes);
-            if !matches!(
-                p.storage
-                    .load(Record::CtapAttestationKey, &mut w.key.bytes[..32]),
-                Ok(32)
-            ) {
-                return Err(Sw::UNABLE_TO_PROCESS);
-            }
-            let cert = p
-                .storage
-                .size(Record::CtapCertificate)
-                .map_err(|_| Sw::UNABLE_TO_PROCESS)? as usize;
-            if cert == 0 || cert > provision::CERT_LIMIT {
-                return Err(Sw::UNABLE_TO_PROCESS);
-            }
+            super::attestation::key((&mut w.key.bytes[..32]).try_into().unwrap(), p)
+                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+            let cert = super::attestation::certificate(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             (public + 65, 67 + id.len(), Some(cert))
         } else {
             w.input[..32].copy_from_slice(rp);
@@ -174,26 +161,23 @@ impl Session {
         p.crypto
             .sha256(&w.input[..message_len], &mut digest)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-        let n = p
-            .crypto
-            .key_operation(
-                KeyOperation::EcSign,
-                alg::P256,
-                &mut w.key,
+        p.crypto
+            .p256_sign(
+                (&w.key.bytes[..32]).try_into().unwrap(),
                 &digest,
-                w.input,
+                (&mut w.output[prefix..prefix + 64]).try_into().unwrap(),
             )
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-        if n != 64 {
-            return Err(Sw::UNABLE_TO_PROCESS);
-        }
-        let n = der_signature(w.input, n).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-        w.output[prefix..prefix + n].copy_from_slice(&w.input[..n]);
-        Ok(Response::Authentication {
-            prefix,
-            auth: 0,
-            certificate: certificate.map(|n| (prefix, n)),
-            total: prefix + n + certificate.unwrap_or(0),
+        let n = der_signature(&mut w.output[prefix..], 64).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        Ok(if let Some(length) = certificate {
+            Response::Authentication {
+                prefix,
+                auth: 0,
+                certificate: Some((prefix, length)),
+                total: prefix + n + length,
+            }
+        } else {
+            Response::Prepared(prefix + n)
         })
     }
 }

@@ -72,12 +72,22 @@ pub(super) fn mldsa_public_header(e: &mut Encoder<&mut [u8]>) -> Result<(), Enco
     e.finish()
 }
 
-pub(super) fn key_agreement(e: &mut Encoder<&mut [u8]>, public: &[u8]) -> Result<(), EncodeError> {
-    e.encoded(KEY_AGREEMENT)
-        .bytes(&public[..32])
-        .i8(-3)
-        .bytes(&public[32..64]);
-    e.finish()
+/// Fixed P-256 agreement response, including the CTAP status byte.
+/// Typed capacities make the coordinate sizes and final offsets static.
+pub(super) fn key_agreement(
+    output: &mut [u8; crate::runtime::workspace::OUTPUT_BYTES],
+    public: &[u8; 64],
+) -> usize {
+    const HEAD: usize = 1 + KEY_AGREEMENT.len();
+    const X: usize = HEAD + 2;
+    const Y: usize = X + 32 + 3;
+    output[0] = 0;
+    output[1..HEAD].copy_from_slice(KEY_AGREEMENT);
+    output[HEAD..X].copy_from_slice(b"\x58\x20");
+    output[X..X + 32].copy_from_slice(&public[..32]);
+    output[X + 32..Y].copy_from_slice(b"\x22\x58\x20");
+    output[Y..Y + 32].copy_from_slice(&public[32..]);
+    Y + 32
 }
 
 pub(super) fn public_key(
@@ -284,7 +294,14 @@ mod tests {
         expected[prefix.len()..prefix.len() + 32].fill(0x5a);
         expected[prefix.len() + 32..prefix.len() + 35].copy_from_slice(b"\x22\x58\x20");
         expected[prefix.len() + 35..].fill(0x5a);
-        check(&expected, |e| key_agreement(e, &[0x5a; 64]));
+        let mut actual = [0xa5; crate::runtime::workspace::OUTPUT_BYTES];
+        let mut public = [0x5a; 64];
+        public[32..].fill(0xa6);
+        expected[prefix.len() + 35..].fill(0xa6);
+        let n = key_agreement(&mut actual, &public);
+        assert_eq!(actual[0], 0);
+        assert_eq!(&actual[1..n], &expected);
+        assert!(actual[n..].iter().all(|&b| b == 0xa5));
     }
     fn reference_public_key(
         e: &mut Encoder<&mut [u8]>,

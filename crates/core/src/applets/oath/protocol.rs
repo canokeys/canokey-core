@@ -395,25 +395,21 @@ impl State {
         }
         let name = name(&mut c)?;
         let id = service::find(&mut store, &mut mac, name).map_err(status)?;
-        let mut record = store.load(id).map_err(status)?;
-        let result = if record.kind() != Kind::Hotp {
-            Err(Sw::CONDITIONS_NOT_SATISFIED)
-        } else {
-            pass.configure(
-                SlotIndex::new(h.p1 - 1).unwrap(),
-                Slot::Oath {
-                    id: id.0,
-                    name: record.name(),
-                    enter: h.p2,
-                },
-                p.storage,
-                p.memory,
-            )
-            .map_err(crate::applets::pass::status)
-        };
-        record.clear(&mut mac);
-        result?;
-        Ok(())
+        if store.metadata(id).map_err(status)?.kind != Kind::Hotp {
+            return Err(Sw::CONDITIONS_NOT_SATISFIED);
+        }
+        // find matched this exact name; binding PASS needs no secret material.
+        pass.configure(
+            SlotIndex::new(h.p1 - 1).unwrap(),
+            Slot::Oath {
+                id: id.0,
+                name,
+                enter: h.p2,
+            },
+            p.storage,
+            p.memory,
+        )
+        .map_err(crate::applets::pass::status)
     }
 
     // Keep command dispatch separate from finish-time wiping and error cleanup.
@@ -689,6 +685,165 @@ mod parameter_tests {
     impl Memory for Wipe {
         fn wipe(&self, bytes: &mut [u8]) {
             bytes.fill(0);
+        }
+    }
+
+    struct BindingStore {
+        oath: [u8; 8 + super::super::codec::LENGTH],
+        pass: [u8; crate::applets::pass::codec::FILE_SIZE],
+        writes: usize,
+        fail_write: bool,
+    }
+    impl BindingStore {
+        fn new(name: &[u8], kind: Kind) -> Self {
+            let mut store = Self {
+                oath: [0; 8 + super::super::codec::LENGTH],
+                pass: [0; crate::applets::pass::codec::FILE_SIZE],
+                writes: 0,
+                fail_write: false,
+            };
+            store.oath[..8].copy_from_slice(b"OAT2\x00\x00\x00\x07");
+            let mut credential = Credential::new(
+                name,
+                &[0x5a; 64],
+                kind,
+                Algorithm::Sha1,
+                6,
+                Properties::new(2).unwrap(),
+                [0; 8],
+            )
+            .unwrap();
+            super::super::codec::encode(&credential, (&mut store.oath[8..]).try_into().unwrap());
+            credential.clear(&mut Mac::new(&mut NoMac, &Wipe));
+            store
+        }
+    }
+    impl Storage for BindingStore {
+        fn load(&mut self, record: Record, _: &mut [u8]) -> Result<usize, StorageError> {
+            assert_eq!(record, Record::Pass);
+            Err(StorageError::Missing)
+        }
+        fn replace(&mut self, record: Record, input: &[u8]) -> Result<(), StorageError> {
+            assert_eq!(record, Record::Pass);
+            self.pass.copy_from_slice(input);
+            Ok(())
+        }
+        fn replace_at(
+            &mut self,
+            record: Record,
+            at: u32,
+            input: &[u8],
+        ) -> Result<(), StorageError> {
+            assert_eq!(record, Record::Pass);
+            self.writes += 1;
+            self.pass[at as usize..at as usize + input.len()].copy_from_slice(input);
+            if self.fail_write {
+                Err(StorageError::Uncertain)
+            } else {
+                Ok(())
+            }
+        }
+        fn size(&mut self, record: Record) -> Result<u32, StorageError> {
+            assert_eq!(record, Record::OathRecords);
+            Ok(self.oath.len() as u32)
+        }
+        fn read_at(&mut self, record: Record, at: u32, out: &mut [u8]) -> Result<(), StorageError> {
+            assert_eq!(record, Record::OathRecords);
+            let end = at as usize + out.len();
+            assert!(
+                end <= 8 + super::super::codec::KEY_OFFSET,
+                "SET_DEFAULT read a key"
+            );
+            out.copy_from_slice(&self.oath[at as usize..end]);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn set_default_binds_exact_name_without_reading_secrets_or_waiting_for_touch() {
+        for name in [&b"h"[..], &[b'n'; NAME_LIMIT][..]] {
+            for slot in 1..=2 {
+                let mut storage = BindingStore::new(name, Kind::Hotp);
+                let mut pass = Pass::new();
+                pass.install(&mut storage, &Wipe).unwrap();
+                let mut wire = [0; 2 + NAME_LIMIT];
+                wire[..2].copy_from_slice(&[tag::NAME, name.len() as u8]);
+                wire[2..2 + name.len()].copy_from_slice(name);
+                let h = Header {
+                    cla: 0,
+                    ins: INS_SET_DEFAULT,
+                    p1: slot,
+                    p2: slot - 1,
+                };
+                let mut state = State::new();
+                for fail in [false, true] {
+                    storage.fail_write = fail;
+                    let result = state.execute_set_default(
+                        h,
+                        &mut ByteCursor::new(&wire[..2 + name.len()]),
+                        Some(&mut pass),
+                        &mut Platform {
+                            storage: &mut storage,
+                            crypto: &mut NoMac,
+                            device: &mut NoPresence,
+                            memory: &Wipe,
+                        },
+                    );
+                    if fail {
+                        assert_eq!(
+                            result,
+                            Err(crate::applets::pass::status(
+                                crate::applets::pass::domain::Error::Persistence
+                            ))
+                        );
+                        assert!(pass.records().is_err());
+                    } else {
+                        assert_eq!(result, Ok(()));
+                        assert!(matches!(pass.slot(slot - 1), Ok(Slot::Oath {
+                            id: 7, name: stored, enter,
+                        }) if stored == name && enter == slot - 1));
+                        assert_eq!(pass.records().unwrap(), &storage.pass);
+                    }
+                }
+                assert_eq!(storage.writes, 2);
+            }
+        }
+    }
+
+    #[test]
+    fn set_default_rejects_missing_totp_and_corrupt_metadata_without_writes() {
+        for (name, kind, corrupt, expected) in [
+            (b'x', Kind::Hotp, false, Sw::DATA_INVALID),
+            (b'h', Kind::Totp, false, Sw::CONDITIONS_NOT_SATISFIED),
+            (b'h', Kind::Hotp, true, Sw::WRONG_DATA),
+        ] {
+            let mut storage = BindingStore::new(b"h", kind);
+            if corrupt {
+                storage.oath[8 + 4] = 9;
+            } // Invalid digits.
+            let mut pass = Pass::new();
+            pass.install(&mut storage, &Wipe).unwrap();
+            assert_eq!(
+                State::new().execute_set_default(
+                    Header {
+                        cla: 0,
+                        ins: INS_SET_DEFAULT,
+                        p1: 1,
+                        p2: 0
+                    },
+                    &mut ByteCursor::new(&[tag::NAME, 1, name]),
+                    Some(&mut pass),
+                    &mut Platform {
+                        storage: &mut storage,
+                        crypto: &mut NoMac,
+                        device: &mut NoPresence,
+                        memory: &Wipe
+                    },
+                ),
+                Err(expected)
+            );
+            assert_eq!(storage.writes, 0);
+            assert!(matches!(pass.slot(0), Ok(Slot::Off)));
         }
     }
 
