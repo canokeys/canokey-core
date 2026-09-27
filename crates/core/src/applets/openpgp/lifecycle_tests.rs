@@ -14,6 +14,7 @@ struct Disk {
     records: BTreeMap<u8, Vec<u8>>,
     staged: Vec<u8>,
     reads: usize,
+    writes: usize,
     fail_read: bool,
     fail_write: Option<Record>,
     applied: bool,
@@ -26,6 +27,7 @@ impl Disk {
         input: &[u8],
         truncate: bool,
     ) -> Result<(), StorageError> {
+        self.writes += 1;
         let failed = self.fail_write == Some(id);
         if failed {
             self.fail_write = None;
@@ -211,6 +213,70 @@ fn fixed_state_and_key_discriminators_reject_old_records() {
         c.with(|_, _, p| repo::state(p, &mut [0; repo::STATE_LEN]))
             .is_err()
     );
+}
+
+#[test]
+fn install_rejects_old_and_malformed_state_without_reprovisioning() {
+    use super::repository as repo;
+    let mut c = Card::new();
+    let valid = c.disk.records[&Record::PgpState.id()].clone();
+    // Version 1 stored four flags, 60 CA-fingerprint bytes, then packed
+    // length/value fields: empty name/login/language/URL and sex "9".
+    let mut compact = std::vec![0; 64];
+    compact[0] = 1;
+    compact.extend_from_slice(&[0, 0, 0, 1, b'9', 0]);
+    let mut cases = std::vec![compact, valid[..valid.len() - 1].to_vec()];
+    let mut trailing = valid.clone();
+    trailing.push(0);
+    cases.push(trailing);
+    for (offset, value) in [
+        (repo::state_layout::VERSION, 1),
+        (repo::state_layout::TERMINATED, 2),
+        (repo::state_layout::PW1_REUSE, 2),
+        (repo::state_layout::NAME, 40),
+        (repo::state_layout::LOGIN, 64),
+        (repo::state_layout::LANGUAGE, 9),
+        (repo::state_layout::SEX, 2),
+    ] {
+        let mut malformed = valid.clone();
+        malformed[offset] = value;
+        cases.push(malformed);
+    }
+    for bytes in cases {
+        c.disk.records.insert(Record::PgpState.id(), bytes);
+        c.app = OpenPgp::new();
+        let records = c.disk.records.clone();
+        let writes = c.disk.writes;
+        assert_eq!(c.with(|a, _, p| a.install(p)), Err(Sw::UNABLE_TO_PROCESS));
+        assert_eq!(c.disk.writes, writes, "rejection must not trigger reset");
+        assert_eq!(c.disk.records, records, "credentials must remain untouched");
+    }
+}
+
+#[test]
+fn old_key_records_never_reach_private_key_loading() {
+    use super::repository as repo;
+    let mut c = Card::new();
+    let valid = c.disk.records[&Record::PgpSig.id()].clone();
+    // An absent version-1 key was just a metadata prefix without a discriminator.
+    let mut legacy = valid[1..].to_vec();
+    legacy[0] = 1;
+    // Even a correctly sized new footer must not authorize an old discriminator.
+    let mut disguised = valid.clone();
+    disguised[0] = 1;
+    for bytes in [legacy, disguised] {
+        c.disk.records.insert(Record::PgpSig.id(), bytes);
+        let records = c.disk.records.clone();
+        let writes = c.disk.writes;
+        let mut key = [0xa5; crate::ports::key_layout::SIZE];
+        assert!(matches!(
+            c.with(|_, _, p| repo::load_key(p, 0, &mut key)),
+            Err(super::domain::Error::Storage)
+        ));
+        assert_eq!(key, [0xa5; crate::ports::key_layout::SIZE]);
+        assert_eq!(c.disk.writes, writes);
+        assert_eq!(c.disk.records, records);
+    }
 }
 
 #[test]

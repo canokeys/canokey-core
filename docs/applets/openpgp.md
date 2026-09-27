@@ -169,6 +169,13 @@ Metadata patches leave the cold key prefix available for LittleFS block reuse.
 Key staging batches all borrowed components in one synchronous open/write/close;
 publication remains a separate atomic rename. Version-1 records are rejected;
 provision fresh storage when installing this layout.
+There is no automatic conversion or reset of existing version-1 records:
+installation rejects an old or malformed state record without writing storage,
+and key access rejects an old discriminator before loading private material.
+Fresh provisioning is an explicit destructive operation; preserve required
+credentials before replacing storage. Lifecycle regressions cover authentic
+packed version-1 records, invalid version-2 lengths/fields, unchanged storage on
+rejection, and rejection before private-key loading.
 
 Multi-record reset first marks the applet terminated and clears that marker last;
 an interrupted reset remains recoverable with ACTIVATE. Storage failures are

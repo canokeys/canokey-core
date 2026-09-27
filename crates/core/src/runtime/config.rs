@@ -55,7 +55,7 @@ impl Page {
         self.0[16..20].fill(0);
         self.0[20..24].copy_from_slice(&[0, 2, 0, 128]);
         self.0[32..288].fill(0);
-        self.seal();
+        // Read-only defaults need no checksum; commit seals after all edits.
     }
     fn commit(&mut self, s: &mut StoragePort<'_>) -> Result<(), StorageError> {
         // Loader state can change independently of the core metadata.
@@ -190,6 +190,47 @@ mod tests {
         disk.read_error = true;
         assert!(update(&mut disk, LED, LED).is_err());
         assert!(write_keymap(&mut disk, 0, None).is_err());
+    }
+    #[test]
+    fn keymap_skip_requires_matching_flags_and_header() {
+        let mut disk = Disk::new();
+        let table = [0; 256];
+        write_keymap(&mut disk, 17, Some(&table)).unwrap();
+        let canonical = disk.page;
+        for offset in [20, 21, 22, 23] {
+            let mut page = Page(canonical);
+            page.0[offset] ^= 1;
+            page.seal();
+            disk.page = page.0;
+            let writes = disk.writes;
+            write_keymap(&mut disk, 17, Some(&table)).unwrap();
+            assert_eq!(disk.writes, writes + 1);
+            assert_eq!(disk.page, canonical);
+        }
+        let mut page = Page(canonical);
+        let flags = word(&page.0[12..16]) & !KEYMAP_VALID;
+        page.0[12..16].copy_from_slice(&flags.to_ne_bytes());
+        page.seal();
+        disk.page = page.0;
+        let writes = disk.writes;
+        write_keymap(&mut disk, 17, Some(&table)).unwrap();
+        assert_eq!(disk.writes, writes + 1);
+        assert_eq!(disk.page, canonical);
+        // A zero-valued custom map still differs from no custom map.
+        write_keymap(&mut disk, 17, None).unwrap();
+        assert_eq!(disk.writes, writes + 2);
+        assert_eq!(word(&disk.page[12..16]) & KEYMAP_VALID, 0);
+        write_keymap(&mut disk, 17, None).unwrap();
+        assert_eq!(disk.writes, writes + 2);
+        // Disabled but stale bytes must be cleared, even with a valid CRC.
+        let mut page = Page(disk.page);
+        page.0[32] = 1;
+        page.seal();
+        disk.page = page.0;
+        write_keymap(&mut disk, 17, None).unwrap();
+        assert_eq!(disk.writes, writes + 3);
+        assert!(disk.page[32..288].iter().all(|&b| b == 0));
+        assert!(Page(disk.page).valid());
     }
     #[test]
     fn legacy_crc_defaults_and_selective_update_preserve_all_other_fields() {
@@ -374,20 +415,18 @@ pub fn write_keymap(
 ) -> Result<(), StorageError> {
     let mut page = Page([0xff; 512]);
     let persisted = page.load(s, true)?;
+    let old_flags = word(&page.0[12..16]);
+    let flags = (old_flags & !KEYMAP_VALID) | if table.is_some() { KEYMAP_VALID } else { 0 };
     let same_table = match table {
-        Some(table) => page.has_keymap() && page.0[32..288] == table[..],
-        None => {
-            word(&page.0[12..16]) & KEYMAP_VALID == 0 && page.0[32..288].iter().all(|&v| v == 0)
-        }
+        Some(table) => page.0[32..288] == table[..],
+        None => page.0[32..288].iter().all(|&v| v == 0),
     };
-    if persisted && same_table && page.0[20..24] == [layout, 2, 0, 128] {
+    if persisted && flags == old_flags && same_table && page.0[20..24] == [layout, 2, 0, 128] {
         return Ok(());
     }
-    let mut flags = word(&page.0[12..16]) & !KEYMAP_VALID;
     page.0[20..24].copy_from_slice(&[layout, 2, 0, 128]);
     if let Some(table) = table {
         page.0[32..288].copy_from_slice(table);
-        flags |= KEYMAP_VALID;
     } else {
         page.0[32..288].fill(0);
     }
