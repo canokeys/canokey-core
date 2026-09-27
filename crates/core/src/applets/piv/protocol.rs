@@ -600,21 +600,9 @@ impl Piv {
                     if !repo::config_valid(c) {
                         return Err(Sw::WRONG_DATA);
                     }
-                    // Compare durable bytes, not a possibly stale session cache.
-                    let mut stored = [0; 10];
-                    if p.storage
-                        .load(Record::PivConfig, &mut stored)
-                        .map_err(repo::io)?
-                        != 10
-                        || !repo::config_valid(&stored)
-                    {
-                        return Err(Sw::UNABLE_TO_PROCESS);
-                    }
-                    if stored != *c {
-                        p.storage
-                            .replace_at(Record::PivConfig, 0, c)
-                            .map_err(repo::io)?;
-                    }
+                    p.storage
+                        .replace_at(Record::PivConfig, 0, c)
+                        .map_err(repo::io)?;
                     self.config = *c;
                     Ok(0)
                 }

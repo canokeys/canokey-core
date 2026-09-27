@@ -515,8 +515,12 @@ def custom_p521(c):
     custom = bytearray(config)
     custom[6] = 0x55
     c.wire.command("FAIL_WRITE 16")
-    c.cmd("unchanged_mapping_skips_write", 0xEE, 2, 0, config, le=None)
+    c.cmd("unchanged_mapping_reports_failure", 0xEE, 2, 0, config, le=None, status=0x6900)
+    assert c.cmd("failed_mapping_preserves_cache", 0xEE, 1, 0) == config
+    c.auth()
+    c.wire.command("FAIL_WRITE 16")
     c.cmd("changed_mapping_reports_failure", 0xEE, 2, 0, bytes(custom), le=None, status=0x6900)
+    assert c.cmd("failed_changed_mapping_preserves_cache", 0xEE, 1, 0) == config
     c.auth()
     c.cmd("custom_p521_mapping", 0xEE, 2, 0, bytes(custom), le=None)
     reply = c.cmd("custom_p521_generate", 0x47, 0, 0x9A,

@@ -184,7 +184,7 @@ impl Pins {
                     .replace_at(
                         Record::PivState,
                         counter as u32,
-                        &record[counter..counter + 1],
+                        core::slice::from_ref(&record[counter]),
                     )
                     .map_err(|_| Error::Persistence)
             })

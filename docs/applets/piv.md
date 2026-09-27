@@ -112,8 +112,9 @@ Failed credential writes invalidate the cache and revoke both grants; reset
 alone cannot make an uncertain cache authoritative.
 Verification patches only the selected PIN/PUK retry byte. Full credential
 changes still publish both credentials and their metadata atomically.
-Algorithm mapping updates compare validated durable bytes before skipping an
-identical write; they do not trust the session cache after an uncertain write.
+Algorithm mapping updates validate the input and atomically patch the fixed
+10-byte record before updating the session cache. Repeated identical mappings
+still write: this infrequent command omits readback/deduplication to reduce ROM.
 
 PIV records use hexadecimal filenames `0e`..`4c`, with no directory prefix.
 Keys store a version-2 discriminator byte, private material, then a fixed
