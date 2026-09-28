@@ -181,7 +181,6 @@ impl Piv {
                 return Err(Sw::WRONG_LENGTH);
             }
             let id = repo::slot(h.p1)?;
-            w.wipe_active(p.memory);
             let a = w.attestation_with(p.memory);
             if let Err(e) = a.prepare(id, p) {
                 a.close(p);
