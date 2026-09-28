@@ -86,7 +86,15 @@ enum Sink {
     Hash(Sha256),
     Object(u32),
 }
+#[derive(Clone, Copy)]
+enum Failure {
+    EndFrame,
+    Finish,
+    Read,
+}
 struct Fixture {
+    failure: Option<Failure>,
+    events: Vec<&'static str>,
     sink: Sink,
     tlv: tlv::Decoder,
     selected: bool,
@@ -106,6 +114,8 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         Self {
+            failure: None,
+            events: Vec::new(),
             sink: Sink::None,
             tlv: tlv::Decoder::default(),
             selected: false,
@@ -143,6 +153,7 @@ impl Router for Fixture {
         Ok(100_000)
     }
     fn abort_command(&mut self, _: &mut Platform<'_>) {
+        self.events.push("abort");
         self.sink = Sink::None;
         self.tlv = tlv::Decoder::default();
     }
@@ -198,11 +209,19 @@ impl Router for Fixture {
         Ok(())
     }
     fn end_frame(&mut self, last: bool, _: &mut Platform<'_>) -> Result<(), Sw> {
+        self.events.push("end");
+        if matches!(self.failure, Some(Failure::EndFrame)) {
+            return Err(Sw::WRONG_DATA);
+        }
         self.frames += 1;
         self.last_frame = last;
         Ok(())
     }
     fn finish(&mut self, h: Header, _: Option<u32>, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
+        self.events.push("finish");
+        if matches!(self.failure, Some(Failure::Finish)) {
+            return Err(Sw::WRONG_P1P2);
+        }
         self.finishes += 1;
         self.finished_header = Some(h);
         self.total = match core::mem::replace(&mut self.sink, Sink::None) {
@@ -242,7 +261,12 @@ impl Router for Fixture {
         out: &mut [u8],
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
+        self.events.push("read");
         assert!(self.response_open);
+        if matches!(self.failure, Some(Failure::Read)) {
+            out.fill(0xee);
+            return Err(Sw::COMMAND_NOT_ALLOWED);
+        }
         assert_eq!(offset, self.next);
         self.reads += 1;
         if self.total == 32 {
@@ -258,6 +282,7 @@ impl Router for Fixture {
         Ok(out.len())
     }
     fn close_response(&mut self, _: &mut Platform<'_>) {
+        self.events.push("close");
         if self.response_open {
             self.closes += 1;
             self.response_open = false;
@@ -592,4 +617,70 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     assert_eq!(failed.closes, 1);
     let n = core.transmit(reply, &mut out, &mut p).unwrap();
     assert_eq!(&out[..n], &[0x69, 0]);
+}
+
+#[test]
+fn failed_frame_execution_and_read_preserve_cleanup_order_and_release_ownership() {
+    for (failure, status, expected) in [
+        (Failure::EndFrame, Sw::WRONG_DATA, &["end", "abort"][..]),
+        (
+            Failure::Finish,
+            Sw::WRONG_P1P2,
+            &["end", "finish", "abort", "close"][..],
+        ),
+        (
+            Failure::Read,
+            Sw::COMMAND_NOT_ALLOWED,
+            &["end", "finish", "read", "close"][..],
+        ),
+    ] {
+        let mut storage = StorageBackend::default();
+        let mut crypto = CryptoBackend;
+        let mut device = DeviceBackend;
+        let mut p = Platform {
+            storage: &mut storage,
+            crypto: &mut crypto,
+            device: &mut device,
+            memory: &MemoryBackend,
+        };
+        let mut fixture = Fixture::new();
+        fixture.failure = Some(failure);
+        let mut runtime = Runtime::with_router(fixture);
+        assert_eq!(
+            frame(&mut runtime, &[0, 0xa4, 4, 0, 1, 1], &mut p),
+            [0x90, 0]
+        );
+        let reply = runtime.receive(1, &[0, 4, 0, 0], &mut p);
+        let mut out = [0xa5; 258];
+        let n = runtime.transmit(reply, &mut out, &mut p).unwrap();
+        assert_eq!(&out[..n], status.bytes());
+        assert!(runtime.router().events.ends_with(expected));
+        assert!(!runtime.router().response_open);
+        assert!(runtime.can_preempt());
+        if matches!(failure, Failure::Read) {
+            // A source may write sensitive bytes before reporting an error.
+            assert!(out[2..256].iter().all(|&byte| byte == 0));
+            assert_eq!(runtime.router().closes, 1);
+        }
+        // The failed response cannot be resumed or cause another source read.
+        let reads = runtime
+            .router()
+            .events
+            .iter()
+            .filter(|&&event| event == "read")
+            .count();
+        assert_eq!(
+            frame(&mut runtime, &[0, 0xc0, 0, 0, 16], &mut p),
+            Sw::COMMAND_NOT_ALLOWED.bytes()
+        );
+        assert_eq!(
+            runtime
+                .router()
+                .events
+                .iter()
+                .filter(|&&event| event == "read")
+                .count(),
+            reads
+        );
+    }
 }
