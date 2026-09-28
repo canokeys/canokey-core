@@ -173,9 +173,15 @@ impl<R: Router> Runtime<R> {
         self.chain.reset();
         self.router.abort_command(p);
     }
-    pub fn reset(&mut self, p: &mut Platform<'_>) {
+    // Cursor-dependent response close must precede input cancellation here.
+    // Other paths deliberately use abort followed by unconditional source close.
+    #[inline(never)]
+    fn close_and_abort(&mut self, p: &mut Platform<'_>) {
         self.close_response(p);
         self.abort_input(p);
+    }
+    pub fn reset(&mut self, p: &mut Platform<'_>) {
+        self.close_and_abort(p);
         self.router.reset(p);
         self.owner = None;
     }
@@ -184,8 +190,7 @@ impl<R: Router> Runtime<R> {
             self.reset(p);
             return;
         }
-        self.close_response(p);
-        self.abort_input(p);
+        self.close_and_abort(p);
         if !self.router.slot_power(p) {
             self.owner = None;
         }
@@ -214,8 +219,7 @@ impl<R: Router> Runtime<R> {
                 Ok(())
             }
             Err(_) => {
-                self.close_response(p);
-                self.abort_input(p);
+                self.close_and_abort(p);
                 Err(Sw::WRONG_LENGTH)
             }
         }
@@ -256,8 +260,7 @@ impl<R: Router> Runtime<R> {
     ) -> Result<u16, Sw> {
         let result = self.validate_extended(owner, prefix, total);
         if result.is_ok() || self.owner == Some(owner) {
-            self.close_response(p);
-            self.abort_input(p);
+            self.close_and_abort(p);
         }
         let lc = result?;
         self.owner = Some(owner);
@@ -353,8 +356,7 @@ impl<R: Router> Runtime<R> {
             })
         });
         if result.is_err() {
-            self.close_response(p);
-            self.abort_input(p);
+            self.close_and_abort(p);
             return Err(status);
         }
         self.frame = Some(frame);
@@ -364,8 +366,7 @@ impl<R: Router> Runtime<R> {
         let info = match self.frame.as_ref().and_then(|frame| frame.finish().ok()) {
             Some(info) => info,
             None => {
-                self.close_response(p);
-                self.abort_input(p);
+                self.close_and_abort(p);
                 return Reply::Status(Sw::WRONG_LENGTH);
             }
         };
@@ -480,8 +481,7 @@ impl<R: Router> Runtime<R> {
             Err(sw) => {
                 // A rejected foreign owner must not abort the current owner's work.
                 if self.owner == Some(owner) {
-                    self.close_response(p);
-                    self.abort_input(p);
+                    self.close_and_abort(p);
                 }
                 Reply::Status(sw)
             }

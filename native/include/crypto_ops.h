@@ -95,6 +95,13 @@ int32_t ck_stream_decapsulate_update(void *scratch, const uint8_t *input, size_t
 int32_t ck_stream_decapsulate_final(void *scratch, uint8_t *out, size_t capacity);
 int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t *input, size_t length,
                                uint8_t *output, size_t capacity);
+/* Incremental SHA-256. State is an aligned CK_HASH_STATE_BYTES reservation.
+ * Return zero on success; final rejects capacities below 32 before mutation.
+ * Final and abort erase state. Abort also releases host PSA resources. */
+int32_t ck_digest_init(void *state);
+int32_t ck_digest_update(void *state, const uint8_t *input, size_t length);
+int32_t ck_digest_final(void *state, uint8_t *output, size_t capacity);
+int32_t ck_digest_abort(void *state);
 int32_t ck_platform_digest(uint8_t op, void *state, const uint8_t *input, size_t length, uint8_t *output,
                            size_t capacity);
 /* Internal primitive adapter shared by key_crypto.c and piv_crypto.c. */

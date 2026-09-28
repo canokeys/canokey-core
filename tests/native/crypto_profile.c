@@ -51,7 +51,60 @@ static void signature_capacity(void) {
   assert(memcmp(&key, &before, sizeof(key)) == 0);
 }
 
+static void digest_contract(void) {
+  static const uint8_t abc_sha256[32] = {
+    0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea,
+    0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+    0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c,
+    0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
+  };
+  alignas(8) uint8_t state[CK_HASH_STATE_BYTES + 8];
+  uint8_t before[sizeof(state)], output[40];
+  // Check both the typed production calls and the compatibility facade against
+  // an independent digest vector, including fragmented and empty updates.
+  for (unsigned typed = 0; typed < 2; ++typed) {
+    memset(state, 0xa5, sizeof(state));
+    memset(output, 0x5a, sizeof(output));
+    assert((typed ? ck_digest_init(state)
+                  : ck_platform_digest(CK_DIGEST_INIT, state, NULL, 0, NULL, 0)) == 0);
+    const uint8_t *message = (const uint8_t *)"abc";
+    size_t offset = 0;
+    for (size_t n = 0; n < 3; ++n) {
+      assert((typed ? ck_digest_update(state, message + offset, n)
+                    : ck_platform_digest(CK_DIGEST_UPDATE, state, message + offset, n, NULL, 0)) == 0);
+      offset += n;
+    }
+    memcpy(before, state, sizeof(state));
+    for (size_t capacity = 0; capacity < 32; ++capacity) {
+      uint8_t *out = capacity ? output : NULL;
+      assert((typed ? ck_digest_final(state, out, capacity)
+                    : ck_platform_digest(CK_DIGEST_FINAL, state, NULL, 0, out, capacity)) == -1);
+      assert(memcmp(state, before, sizeof(state)) == 0);
+      for (size_t i = 0; i < sizeof(output); ++i) assert(output[i] == 0x5a);
+    }
+    assert((typed ? ck_digest_final(state, output, sizeof(output))
+                  : ck_platform_digest(CK_DIGEST_FINAL, state, NULL, 0, output, sizeof(output))) == 0);
+    assert(memcmp(output, abc_sha256, sizeof(abc_sha256)) == 0);
+    for (size_t i = 32; i < sizeof(output); ++i) assert(output[i] == 0x5a);
+    for (size_t i = 0; i < CK_HASH_STATE_BYTES; ++i) assert(state[i] == 0);
+    for (size_t i = CK_HASH_STATE_BYTES; i < sizeof(state); ++i) assert(state[i] == 0xa5);
+    // Abort a live operation, then repeat cleanup after ownership is released.
+    assert(ck_digest_init(state) == 0);
+    assert(ck_digest_update(state, message, 3) == 0);
+    for (unsigned repeat = 0; repeat < 2; ++repeat) {
+      assert((typed ? ck_digest_abort(state)
+                    : ck_platform_digest(CK_DIGEST_ABORT, state, NULL, 0, NULL, 0)) == 0);
+      for (size_t i = 0; i < CK_HASH_STATE_BYTES; ++i) assert(state[i] == 0);
+      for (size_t i = CK_HASH_STATE_BYTES; i < sizeof(state); ++i) assert(state[i] == 0xa5);
+    }
+    memcpy(before, state, sizeof(state));
+    assert(ck_platform_digest(255, state, NULL, 0, NULL, 0) == -1);
+    assert(memcmp(state, before, sizeof(state)) == 0);
+  }
+}
+
 int main(void) {
+  digest_contract();
   rejected_key(255);
   signature_capacity();
   public_key(SECP256R1);

@@ -55,16 +55,15 @@ pub(super) fn fields(bytes: &[u8; HEADER_BYTES]) -> Result<Header, Error> {
     }
     Ok(header)
 }
-pub(super) fn validate(bytes: &[u8]) -> Result<(), Error> {
-    if bytes.len() != length(bytes)? {
-        return Err(Error::Invalid);
-    }
+pub(super) fn validate(bytes: &[u8; LENGTH]) -> Result<(), Error> {
+    length(bytes)?;
     fields(bytes[..HEADER_BYTES].try_into().unwrap())?;
     Ok(())
 }
 pub fn decode(bytes: &[u8]) -> Result<Credential, Error> {
+    let bytes: &[u8; LENGTH] = bytes.try_into().map_err(|_| Error::Invalid)?;
     validate(bytes)?;
     let mut record = Credential { bytes: [0; LENGTH] };
-    record.bytes[..bytes.len()].copy_from_slice(bytes);
+    record.bytes.copy_from_slice(bytes);
     Ok(record)
 }

@@ -37,14 +37,10 @@ unsafe extern "C" {
 }
 #[cfg(feature = "platform-stream")]
 unsafe extern "C" {
-    fn ck_platform_digest(
-        op: u8,
-        state: *mut crate::HashState,
-        input: *const u8,
-        n: usize,
-        out: *mut u8,
-        capacity: usize,
-    ) -> i32;
+    fn ck_digest_init(state: *mut crate::HashState) -> i32;
+    fn ck_digest_update(state: *mut crate::HashState, input: *const u8, n: usize) -> i32;
+    fn ck_digest_final(state: *mut crate::HashState, out: *mut u8, capacity: usize) -> i32;
+    fn ck_digest_abort(state: *mut crate::HashState) -> i32;
 }
 #[cfg(feature = "platform-stream")]
 unsafe extern "C" {
@@ -169,14 +165,12 @@ native_port! { impl Crypto for CryptoBackend {
         out: &mut [u8],
     ) -> Result<(), CryptoError> {
         if unsafe {
-            ck_platform_digest(
-                op as u8,
-                state,
-                input.as_ptr(),
-                input.len(),
-                out.as_mut_ptr(),
-                out.len(),
-            )
+            match op {
+                crate::DigestOperation::Init => ck_digest_init(state),
+                crate::DigestOperation::Update => ck_digest_update(state, input.as_ptr(), input.len()),
+                crate::DigestOperation::Final => ck_digest_final(state, out.as_mut_ptr(), out.len()),
+                crate::DigestOperation::Abort => ck_digest_abort(state),
+            }
         } == 0
         {
             Ok(())
