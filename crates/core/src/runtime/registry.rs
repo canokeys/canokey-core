@@ -17,7 +17,7 @@ macro_rules! pass_arg {
     ($this:expr) => {{
         #[cfg(feature = "pass")]
         {
-            Some(&mut $this.pass)
+            Some(&mut *$this.pass)
         }
         #[cfg(not(feature = "pass"))]
         {
@@ -45,6 +45,9 @@ enum Selected {
 /// One discriminant owns both CCID selection and its live applet state.
 /// CTAP state stays outside this enum because native HID does not use AID selection.
 /// ADMIN/PASS services likewise remain available to cross-applet flows.
+// Keep the tag at the front of this internal RAM union. A trailing tag makes
+// every Thumb-1 dispatch rebuild a large offset before inspecting the applet.
+#[repr(u8)]
 enum AppletState {
     None,
     #[cfg(feature = "ndef")]
@@ -251,44 +254,6 @@ impl Registry {
             workspace: super::workspace::SessionWorkspace::new(),
         }
     }
-    #[allow(unused_variables)]
-    fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
-        #[cfg(feature = "admin")]
-        {
-            self.grants.admin = false;
-            self.admin.abort_transaction(platform);
-        }
-        #[cfg(feature = "ctap")]
-        self.ctap.reset(&mut self.workspace, platform);
-        // Release native handles before erasing backing bytes. The selected
-        // applet is discarded, so it need not rebuild an empty classic view.
-        #[cfg(classic_presence)]
-        match &mut self.applet {
-            #[cfg(feature = "oath")]
-            AppletState::Oath(s) => {
-                s.reset(platform);
-                self.applet = AppletState::None;
-            }
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => {
-                s.abort_transaction(platform);
-                self.applet = AppletState::None;
-            }
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => {
-                s.deselect(&mut self.workspace, platform);
-                self.applet = AppletState::None;
-            }
-            _ => (),
-        }
-        #[cfg(any(
-            feature = "admin",
-            feature = "openpgp",
-            feature = "piv",
-            feature = "ctap"
-        ))]
-        self.workspace.wipe_active(platform.memory);
-    }
 
     #[cfg(feature = "ctap")]
     // Drop parser-construction temporaries before the HID caller runs crypto.
@@ -386,8 +351,290 @@ impl Registry {
             .challenge(index, input, out, p)
             .map_err(crate::applets::pass::status)
     }
+}
+/// Unambiguous FIDO commands accepted after card/slot reset, before SELECT.
+/// Never steal an APDU from an explicitly selected applet.
+#[cfg(feature = "ctap")]
+fn implicit_fido(h: Header) -> bool {
+    (h.cla & !0x10 == 0x80 && h.ins == 0x10)
+        || (h.cla == 0 && (matches!(h.ins, 1..=3) || (h.ins == 0xa4 && h.p1 != 4)))
+}
+impl Router for Registry {
+    #[allow(unused_variables)]
+    fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        self.view().install(platform)
+    }
+    fn reset(&mut self, p: &mut Platform<'_>) {
+        self.view().reset(p)
+    }
+    fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
+        self.view().slot_power(p)
+    }
+    fn implicit_select(&mut self, header: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
+        self.view().implicit_select(header, p)
+    }
+    fn selected(&self) -> bool {
+        !matches!(self.applet, AppletState::None)
+    }
+    fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
+        self.view().select(aid, p)
+    }
+    fn allows_extended(&self, header: Header) -> bool {
+        let _ = header;
+        #[cfg(feature = "openpgp")]
+        if matches!(self.applet, AppletState::OpenPgp(_)) {
+            return true;
+        }
+        #[cfg(feature = "ndef")]
+        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xb0 {
+            return true;
+        }
+        #[cfg(feature = "ctap")]
+        if matches!(self.applet, AppletState::Ctap)
+            || (matches!(self.applet, AppletState::None) && implicit_fido(header))
+        {
+            return ctap::apdu::allows_extended(header);
+        }
+        false
+    }
+    fn command_limit(&self, h: Header) -> Result<u32, Sw> {
+        // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
+        // chaining is supported; leaving it set deliberately makes the final
+        // CLA check reject chained ADMIN or unsupported chained PIV commands.
+        #[cfg(feature = "ctap")]
+        if matches!(self.applet, AppletState::None) && implicit_fido(h) {
+            // Admission is read-only; start performs the configuration check
+            // before consuming staged input or executing any applet operation.
+            return Ok(ctap::MAX_REQUEST as u32);
+        }
+        let (cla, limit) = self.applet.command_limit(h);
+        if !self.selected() {
+            return Err(Sw::FILE_NOT_FOUND);
+        }
+        if cla != 0 {
+            Err(Sw::CLA_NOT_SUPPORTED)
+        } else {
+            Ok(limit)
+        }
+    }
+    #[allow(unused_variables)]
+    fn abort_command(&mut self, platform: &mut Platform<'_>) {
+        self.view().abort_command(platform)
+    }
+    fn chain_header(&self, header: Header) -> Header {
+        // NDEF UPDATE continues at the first fragment's offset; subsequent
+        // P1/P2 values do not restart that applet's write cursor.
+        #[cfg(feature = "ndef")]
+        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xd6 {
+            return Header {
+                p1: 0,
+                p2: 0,
+                ..header
+            };
+        }
+        header
+    }
+    #[allow(unused_variables)]
+    fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        self.view().begin_command(header, platform)
+    }
+    #[allow(unused_variables)]
+    fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
+        self.view().consume(bytes, platform)
+    }
+    #[allow(unused_variables)]
+    fn end_frame(&mut self, last: bool, platform: &mut Platform<'_>) -> Result<(), Sw> {
+        self.view().end_frame(last, platform)
+    }
+    #[allow(unused_variables)]
+    // Share final dispatch without expanding it into frame/response handling.
+    fn finish(
+        &mut self,
+        header: Header,
+        requested: Option<u32>,
+        platform: &mut Platform<'_>,
+    ) -> Result<(u32, Sw), Sw> {
+        self.view().finish(header, requested, platform)
+    }
+    #[allow(unused_variables)]
+    // Keep applet workspace addressing out of the response cursor and its
+    // error/close paths; this boundary reduces the complete Thumb-1 image.
+    fn read_response(
+        &mut self,
+        offset: u32,
+        out: &mut [u8],
+        platform: &mut Platform<'_>,
+    ) -> Result<usize, Sw> {
+        self.view().read_response(offset, out, platform)
+    }
+    fn response_preemptable(&self, total: u32) -> bool {
+        // Legacy ordinary replies used 256 bytes plus 32 bytes of APDU
+        // overhead; larger results used explicitly closeable response sources.
+        // The limits describe compatibility, not new runtime allocations.
+        let _ = total;
+        match &self.applet {
+            #[cfg(feature = "ndef")]
+            AppletState::Ndef(_) => total > 288,
+            #[cfg(feature = "openpgp")]
+            AppletState::OpenPgp(s) => s.response_preemptable(total),
+            #[cfg(feature = "piv")]
+            AppletState::Piv(s) => s.response_preemptable(total, &self.workspace),
+            #[cfg(feature = "ctap")]
+            AppletState::Ctap => self.ctap.response_preemptable(),
+            _ => false,
+        }
+    }
+    #[allow(unused_variables)]
+    fn close_response(&mut self, platform: &mut Platform<'_>) {
+        self.view().close_response(platform)
+    }
+    #[cfg(feature = "pass")]
+    fn is_eject(&self, h: Header, p: &mut Platform<'_>) -> bool {
+        h.cla == 0xff
+            && h.ins == 0xee
+            && h.p1 == 0xff
+            && h.p2 == 0xee
+            && super::config::enabled(p.storage, super::config::PASS)
+    }
+    #[cfg(feature = "pass")]
+    fn eject(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+        self.view().eject(p)
+    }
+    #[cfg(feature = "pass")]
+    fn output_busy(&self) -> bool {
+        // PASS owns the shared output queue; the registry only arbitrates
+        // applet presence and forwards sampling at this composition boundary.
+        self.output.busy()
+    }
+    #[cfg(feature = "pass")]
+    fn sample_output(
+        &mut self,
+        pressed: bool,
+        now: u32,
+        ready: bool,
+        inhibit: bool,
+        p: &mut Platform<'_>,
+    ) -> Option<u8> {
+        self.view().sample_output(pressed, now, ready, inhibit, p)
+    }
+}
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+#[cfg(any(feature = "admin", feature = "pass"))]
+fn flow_status(error: crate::flows::Error) -> Sw {
+    use crate::flows::Error;
+    match error {
+        #[cfg(all(feature = "admin", feature = "piv"))]
+        Error::Piv => Sw::UNABLE_TO_PROCESS,
+        Error::Pass(e) => crate::applets::pass::status(e),
+        #[cfg(feature = "oath")]
+        Error::Oath(e) => crate::applets::oath::protocol::status(e),
+        #[cfg(all(feature = "admin", feature = "openpgp"))]
+        Error::OpenPgp(e) => e.into(),
+        #[cfg(feature = "admin")]
+        Error::Admin(e) => admin::auth_error(e),
+        #[cfg(all(feature = "pass", feature = "oath"))]
+        Error::Output => Sw::WRONG_LENGTH,
+    }
+}
+
+// A call-scoped set of disjoint borrows, never retained in Registry or a
+// transport. Shared construction materializes deep field addresses once; the
+// outlined routing methods load nearby pointers instead of rebuilding them.
+// Registry continues to own every field and the only session workspace.
+struct RegistryView<'a> {
     #[cfg(feature = "admin")]
-    #[cfg_attr(feature = "openpgp", inline(never))]
+    admin: &'a mut admin::Admin,
+    #[cfg(feature = "ctap")]
+    ctap: &'a mut ctap::apdu::Applet,
+    #[cfg(feature = "admin")]
+    grants: &'a mut admin::Grants,
+    #[cfg(feature = "pass")]
+    pass: &'a mut Pass,
+    #[cfg(feature = "pass")]
+    output: &'a mut crate::applets::pass::output::Output,
+    applet: &'a mut AppletState,
+    #[cfg(any(
+        feature = "admin",
+        feature = "openpgp",
+        feature = "piv",
+        feature = "ctap"
+    ))]
+    workspace: &'a mut super::workspace::SessionWorkspace,
+}
+impl Registry {
+    // Keep construction shared: inlining this into each adapter grows both
+    // complete Thumb-1 images even when the view methods remain outlined.
+    #[inline(never)]
+    fn view(&mut self) -> RegistryView<'_> {
+        RegistryView {
+            #[cfg(feature = "admin")]
+            admin: &mut self.admin,
+            #[cfg(feature = "ctap")]
+            ctap: &mut self.ctap,
+            #[cfg(feature = "admin")]
+            grants: &mut self.grants,
+            #[cfg(feature = "pass")]
+            pass: &mut self.pass,
+            #[cfg(feature = "pass")]
+            output: &mut self.output,
+            applet: &mut self.applet,
+            #[cfg(any(
+                feature = "admin",
+                feature = "openpgp",
+                feature = "piv",
+                feature = "ctap"
+            ))]
+            workspace: &mut self.workspace,
+        }
+    }
+}
+impl RegistryView<'_> {
+    #[allow(unused_variables)]
+    #[inline(never)]
+    fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
+        #[cfg(feature = "admin")]
+        {
+            self.grants.admin = false;
+            self.admin.abort_transaction(platform);
+        }
+        #[cfg(feature = "ctap")]
+        self.ctap.reset(&mut self.workspace, platform);
+        // Release native handles before erasing backing bytes. The selected
+        // applet is discarded, so it need not rebuild an empty classic view.
+        #[cfg(classic_presence)]
+        match &mut self.applet {
+            #[cfg(feature = "oath")]
+            AppletState::Oath(s) => {
+                s.reset(platform);
+                *self.applet = AppletState::None;
+            }
+            #[cfg(feature = "openpgp")]
+            AppletState::OpenPgp(s) => {
+                s.abort_transaction(platform);
+                *self.applet = AppletState::None;
+            }
+            #[cfg(feature = "piv")]
+            AppletState::Piv(s) => {
+                s.deselect(&mut self.workspace, platform);
+                *self.applet = AppletState::None;
+            }
+            _ => (),
+        }
+        #[cfg(any(
+            feature = "admin",
+            feature = "openpgp",
+            feature = "piv",
+            feature = "ctap"
+        ))]
+        self.workspace.wipe_active(platform.memory);
+    }
+
+    #[cfg(feature = "admin")]
+    #[inline(never)]
     fn finish_admin(&mut self, h: Header, le: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
         let pass = pass_arg!(self);
         match self.admin.finish(
@@ -454,16 +701,9 @@ impl Registry {
         }
         Ok((0, Sw::SUCCESS))
     }
-}
-/// Unambiguous FIDO commands accepted after card/slot reset, before SELECT.
-/// Never steal an APDU from an explicitly selected applet.
-#[cfg(feature = "ctap")]
-fn implicit_fido(h: Header) -> bool {
-    (h.cla & !0x10 == 0x80 && h.ins == 0x10)
-        || (h.cla == 0 && (matches!(h.ins, 1..=3) || (h.ins == 0xa4 && h.p1 != 4)))
-}
-impl Router for Registry {
+
     #[allow(unused_variables)]
+    #[inline(never)]
     fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
         #[cfg(feature = "admin")]
         self.admin.install(platform)?;
@@ -483,12 +723,16 @@ impl Router for Registry {
         Piv::new().install(platform)?;
         Ok(())
     }
+
+    #[inline(never)]
     fn reset(&mut self, p: &mut Platform<'_>) {
         #[cfg(feature = "pass")]
         self.output.inhibit(true, p.memory);
         self.reset_sessions(p);
-        self.applet = AppletState::None;
+        *self.applet = AppletState::None;
     }
+
+    #[inline(never)]
     fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
         #[cfg(feature = "ctap")]
         if matches!(self.applet, AppletState::Ctap) {
@@ -499,6 +743,8 @@ impl Router for Registry {
         self.reset(p);
         false
     }
+
+    #[inline(never)]
     fn implicit_select(&mut self, header: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
         let _ = (&header, &p);
         #[cfg(feature = "ctap")]
@@ -506,44 +752,42 @@ impl Router for Registry {
             if !Selected::Ctap.enabled(p) {
                 return Err(Sw::FILE_NOT_FOUND);
             }
-            self.applet = AppletState::Ctap;
+            *self.applet = AppletState::Ctap;
         }
         Ok(())
     }
-    fn selected(&self) -> bool {
-        !matches!(self.applet, AppletState::None)
-    }
+
     #[inline(never)]
     fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
         let next = Selected::from_aid(aid).ok_or(Sw::FILE_NOT_FOUND)?;
         if !next.enabled(p) {
             self.reset_sessions(p);
-            self.applet = AppletState::None;
+            *self.applet = AppletState::None;
             return Err(Sw::FILE_NOT_FOUND);
         }
         if self.applet.selected() != next {
             self.reset_sessions(p);
             match next {
-                Selected::None => self.applet = AppletState::None,
+                Selected::None => *self.applet = AppletState::None,
                 #[cfg(feature = "ndef")]
                 Selected::Ndef => {
-                    self.applet = AppletState::Ndef(crate::applets::ndef::Applet::new())
+                    *self.applet = AppletState::Ndef(crate::applets::ndef::Applet::new())
                 }
                 #[cfg(feature = "admin")]
-                Selected::Admin => self.applet = AppletState::Admin,
+                Selected::Admin => *self.applet = AppletState::Admin,
                 #[cfg(feature = "ctap")]
-                Selected::Ctap => self.applet = AppletState::Ctap,
+                Selected::Ctap => *self.applet = AppletState::Ctap,
                 #[cfg(feature = "oath")]
                 Selected::Oath => {
-                    self.applet = AppletState::Oath(crate::applets::oath::protocol::Oath::new())
+                    *self.applet = AppletState::Oath(crate::applets::oath::protocol::Oath::new())
                 }
                 #[cfg(feature = "openpgp")]
                 Selected::OpenPgp => {
-                    self.applet =
+                    *self.applet =
                         AppletState::OpenPgp(crate::applets::openpgp::protocol::OpenPgp::new())
                 }
                 #[cfg(feature = "piv")]
-                Selected::Piv => self.applet = AppletState::Piv(Piv::new()),
+                Selected::Piv => *self.applet = AppletState::Piv(Piv::new()),
             };
             // Boot validates a temporary instance. Reload durable PIN/config
             // only on a real switch, preserving grants on same-AID SELECT.
@@ -551,7 +795,7 @@ impl Router for Registry {
             if let AppletState::Piv(piv) = &mut self.applet
                 && let Err(error) = piv.install(p)
             {
-                self.applet = AppletState::None;
+                *self.applet = AppletState::None;
                 return Err(error);
             }
         }
@@ -567,45 +811,9 @@ impl Router for Registry {
             _ => Ok(0),
         }
     }
-    fn allows_extended(&self, header: Header) -> bool {
-        let _ = header;
-        #[cfg(feature = "openpgp")]
-        if matches!(self.applet, AppletState::OpenPgp(_)) {
-            return true;
-        }
-        #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xb0 {
-            return true;
-        }
-        #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::Ctap)
-            || (matches!(self.applet, AppletState::None) && implicit_fido(header))
-        {
-            return ctap::apdu::allows_extended(header);
-        }
-        false
-    }
-    fn command_limit(&self, h: Header) -> Result<u32, Sw> {
-        // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
-        // chaining is supported; leaving it set deliberately makes the final
-        // CLA check reject chained ADMIN or unsupported chained PIV commands.
-        #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::None) && implicit_fido(h) {
-            // Admission is read-only; start performs the configuration check
-            // before consuming staged input or executing any applet operation.
-            return Ok(ctap::MAX_REQUEST as u32);
-        }
-        let (cla, limit) = self.applet.command_limit(h);
-        if !self.selected() {
-            return Err(Sw::FILE_NOT_FOUND);
-        }
-        if cla != 0 {
-            Err(Sw::CLA_NOT_SUPPORTED)
-        } else {
-            Ok(limit)
-        }
-    }
+
     #[allow(unused_variables)]
+    #[inline(never)]
     fn abort_command(&mut self, platform: &mut Platform<'_>) {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
@@ -627,24 +835,13 @@ impl Router for Registry {
             AppletState::None => (),
         }
     }
-    fn chain_header(&self, header: Header) -> Header {
-        // NDEF UPDATE continues at the first fragment's offset; subsequent
-        // P1/P2 values do not restart that applet's write cursor.
-        #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xd6 {
-            return Header {
-                p1: 0,
-                p2: 0,
-                ..header
-            };
-        }
-        header
-    }
+
     #[allow(unused_variables)]
+    #[inline(never)]
     fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
         if !self.applet.selected().enabled(platform) {
             self.reset_sessions(platform);
-            self.applet = AppletState::None;
+            *self.applet = AppletState::None;
             return Err(Sw::FILE_NOT_FOUND);
         }
         match &mut self.applet {
@@ -665,7 +862,9 @@ impl Router for Registry {
             _ => Ok(()),
         }
     }
+
     #[allow(unused_variables)]
+    #[inline(never)]
     fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
@@ -691,7 +890,9 @@ impl Router for Registry {
             AppletState::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
+
     #[allow(unused_variables)]
+    #[inline(never)]
     fn end_frame(&mut self, last: bool, platform: &mut Platform<'_>) -> Result<(), Sw> {
         #[cfg(feature = "ndef")]
         if let AppletState::Ndef(s) = &mut self.applet {
@@ -699,6 +900,7 @@ impl Router for Registry {
         }
         Ok(())
     }
+
     #[allow(unused_variables)]
     // Share final dispatch without expanding it into frame/response handling.
     #[inline(never)]
@@ -737,6 +939,7 @@ impl Router for Registry {
             AppletState::None => Err(Sw::FILE_NOT_FOUND),
         }
     }
+
     #[allow(unused_variables)]
     // Keep applet workspace addressing out of the response cursor and its
     // error/close paths; this boundary reduces the complete Thumb-1 image.
@@ -778,24 +981,9 @@ impl Router for Registry {
             AppletState::None => Err(Sw::COMMAND_NOT_ALLOWED),
         }
     }
-    fn response_preemptable(&self, total: u32) -> bool {
-        // Legacy ordinary replies used 256 bytes plus 32 bytes of APDU
-        // overhead; larger results used explicitly closeable response sources.
-        // The limits describe compatibility, not new runtime allocations.
-        let _ = total;
-        match &self.applet {
-            #[cfg(feature = "ndef")]
-            AppletState::Ndef(_) => total > 288,
-            #[cfg(feature = "openpgp")]
-            AppletState::OpenPgp(s) => s.response_preemptable(total),
-            #[cfg(feature = "piv")]
-            AppletState::Piv(s) => s.response_preemptable(total, &self.workspace),
-            #[cfg(feature = "ctap")]
-            AppletState::Ctap => self.ctap.response_preemptable(),
-            _ => false,
-        }
-    }
+
     #[allow(unused_variables)]
+    #[inline(never)]
     fn close_response(&mut self, platform: &mut Platform<'_>) {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
@@ -817,26 +1005,16 @@ impl Router for Registry {
             AppletState::None => (),
         }
     }
+
     #[cfg(feature = "pass")]
-    fn is_eject(&self, h: Header, p: &mut Platform<'_>) -> bool {
-        h.cla == 0xff
-            && h.ins == 0xee
-            && h.p1 == 0xff
-            && h.p2 == 0xee
-            && super::config::enabled(p.storage, super::config::PASS)
-    }
-    #[cfg(feature = "pass")]
+    #[inline(never)]
     fn eject(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
         self.output.eject(p.memory);
         Ok(())
     }
+
     #[cfg(feature = "pass")]
-    fn output_busy(&self) -> bool {
-        // PASS owns the shared output queue; the registry only arbitrates
-        // applet presence and forwards sampling at this composition boundary.
-        self.output.busy()
-    }
-    #[cfg(feature = "pass")]
+    #[inline(never)]
     fn sample_output(
         &mut self,
         pressed: bool,
@@ -867,28 +1045,6 @@ impl Router for Registry {
                     0
                 }
             })
-    }
-}
-impl Default for Registry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-#[cfg(any(feature = "admin", feature = "pass"))]
-fn flow_status(error: crate::flows::Error) -> Sw {
-    use crate::flows::Error;
-    match error {
-        #[cfg(all(feature = "admin", feature = "piv"))]
-        Error::Piv => Sw::UNABLE_TO_PROCESS,
-        Error::Pass(e) => crate::applets::pass::status(e),
-        #[cfg(feature = "oath")]
-        Error::Oath(e) => crate::applets::oath::protocol::status(e),
-        #[cfg(all(feature = "admin", feature = "openpgp"))]
-        Error::OpenPgp(e) => e.into(),
-        #[cfg(feature = "admin")]
-        Error::Admin(e) => admin::auth_error(e),
-        #[cfg(all(feature = "pass", feature = "oath"))]
-        Error::Output => Sw::WRONG_LENGTH,
     }
 }
 

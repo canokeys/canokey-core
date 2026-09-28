@@ -66,7 +66,7 @@ impl Parser {
         }
     }
     /// Returns true only after the extension map has closed and validated.
-    pub fn event(&mut self, event: Event<'_>) -> Result<bool, Status> {
+    pub fn event(&mut self, event: &Event<'_>) -> Result<bool, Status> {
         if self.cose {
             if self
                 .agreement
@@ -123,7 +123,7 @@ impl Parser {
                 self.seen |= 4;
                 self.params.auth_len = self.bytes(key, event, 16, 32)?;
             }
-            4 => match event {
+            4 => match *event {
                 Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
                 _ => return Err(Status::InvalidParameter),
             },
@@ -131,8 +131,8 @@ impl Parser {
         }
         Ok(false)
     }
-    fn bytes(&mut self, key: i8, event: Event<'_>, min: u16, max: u16) -> Result<usize, Status> {
-        let Event::Bytes(n) = event else {
+    fn bytes(&mut self, key: i8, event: &Event<'_>, min: u16, max: u16) -> Result<usize, Status> {
+        let Event::Bytes(n) = *event else {
             return Err(Status::UnexpectedType);
         };
         if n < min || n > max {
@@ -145,7 +145,7 @@ impl Parser {
         self.body = Some((key, 0));
         Ok(usize::from(n))
     }
-    fn ignore(&mut self, event: Event<'_>) {
+    fn ignore(&mut self, event: &Event<'_>) {
         if super::is_cbor_container(event) {
             self.skip = 1;
         }

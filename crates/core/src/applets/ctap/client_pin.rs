@@ -120,7 +120,7 @@ impl Fields {
             body: None,
         }
     }
-    fn event(&mut self, event: Event<'_>) -> Result<(), Status> {
+    fn event(&mut self, event: &Event<'_>) -> Result<(), Status> {
         if !self.started {
             if !matches!(event, Event::Map(_)) {
                 return Err(Status::UnexpectedType);
@@ -165,12 +165,12 @@ impl Fields {
             self.seen |= 1 << key;
         }
         match key {
-            1 => match event {
+            1 => match *event {
                 Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
                 Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),
                 _ => return Err(Status::UnexpectedType),
             },
-            2 => match event {
+            2 => match *event {
                 Event::Unsigned(n) => {
                     self.params.subcommand =
                         u8::try_from(n).map_err(|_| Status::InvalidSubcommand)?
@@ -213,7 +213,7 @@ impl Fields {
                 };
                 self.bytes(key, event, n)?;
             }
-            9 => match event {
+            9 => match *event {
                 Event::Unsigned(n) if n > 0 && n <= 0x3f && n & 8 == 0 => {
                     self.params.permissions = n as u8
                 }
@@ -223,7 +223,7 @@ impl Fields {
                 }
                 _ => return Err(Status::UnexpectedType),
             },
-            10 => match event {
+            10 => match *event {
                 Event::Text(n) if n > 0 && n <= 254 => {
                     self.params.rp_len = usize::from(n);
                     self.body = Some((10, 0));
@@ -235,8 +235,8 @@ impl Fields {
         }
         Ok(())
     }
-    fn bytes(&mut self, key: i8, event: Event<'_>, expected: u16) -> Result<(), Status> {
-        match event {
+    fn bytes(&mut self, key: i8, event: &Event<'_>, expected: u16) -> Result<(), Status> {
+        match *event {
             Event::Bytes(n) if n == expected => {
                 self.body = Some((key, 0));
                 Ok(())
@@ -246,7 +246,7 @@ impl Fields {
             _ => Err(Status::UnexpectedType),
         }
     }
-    fn skip(&mut self, event: Event<'_>) {
+    fn skip(&mut self, event: &Event<'_>) {
         if super::is_cbor_container(event) {
             self.skip_depth = 1;
         }

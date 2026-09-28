@@ -161,7 +161,7 @@ impl Fields {
             management: super::management::Parser::new(),
         }
     }
-    fn event(&mut self, event: Event<'_>, offset: usize) -> Result<(), Status> {
+    fn event(&mut self, event: &Event<'_>, offset: usize) -> Result<(), Status> {
         if !self.started {
             if !matches!(event, Event::Map(_)) {
                 return Err(Status::UnexpectedType);
@@ -170,7 +170,7 @@ impl Fields {
             return Ok(());
         }
         if let Some(pos) = self.auth_offset {
-            match event {
+            match *event {
                 Event::Data(bytes) => {
                     self.params.auth[pos..pos + bytes.len()].copy_from_slice(bytes);
                     self.auth_offset = Some(pos + bytes.len());
@@ -183,7 +183,7 @@ impl Fields {
         if self.depth != 0 {
             if self.start.is_some() && self.end.is_none() {
                 if self.command == super::CONFIG {
-                    self.parameter(&event, offset)?;
+                    self.parameter(event, offset)?;
                 } else {
                     self.management.event(
                         &mut self.params.management,
@@ -194,7 +194,7 @@ impl Fields {
                     );
                 }
             }
-            match event {
+            match *event {
                 Event::Map(_) | Event::Array(_) | Event::Bytes(_) | Event::Text(_) => {
                     self.depth += 1
                 }
@@ -220,7 +220,7 @@ impl Fields {
             return Ok(());
         };
         match key {
-            Some(1) => match event {
+            Some(1) => match *event {
                 Event::Unsigned(n) => {
                     self.subcommand_seen = true;
                     self.params.subcommand =
@@ -234,12 +234,12 @@ impl Fields {
                 }
                 self.depth = 1;
             }
-            Some(3) => match event {
+            Some(3) => match *event {
                 Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
                 Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),
                 _ => return Err(Status::UnexpectedType),
             },
-            Some(4) => match event {
+            Some(4) => match *event {
                 Event::Bytes(n @ (16 | 32)) => {
                     self.params.auth_len = usize::from(n);
                     self.auth_offset = Some(0);
@@ -280,7 +280,7 @@ impl Fields {
             if matches!(event, Event::End) {
                 return Ok(());
             }
-            let key = Key::ordered(*event, &mut self.param_previous)?;
+            let key = Key::ordered(event, &mut self.param_previous)?;
             self.param_key = Some(key);
             return Ok(());
         };

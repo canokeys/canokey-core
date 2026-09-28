@@ -28,7 +28,7 @@ impl Parser {
     #[inline(never)]
     pub fn event(
         &mut self,
-        event: Event<'_>,
+        event: &Event<'_>,
         coordinates: &mut [u8; 64],
         length_error: Status,
     ) -> Result<bool, Status> {
@@ -65,7 +65,7 @@ impl Parser {
             }
         } else {
             if matches!(key, -2 | -3) {
-                match event {
+                match *event {
                     Event::Bytes(32) => self.body = Some((key, 0)),
                     Event::Bytes(_) => return Err(length_error),
                     _ => return Err(Status::UnexpectedType),
@@ -79,7 +79,7 @@ impl Parser {
 
 /// Validate one member of the COSE_Key agreement map shared by clientPIN and
 /// hmac-secret. Unknown optional members are ignored by the caller.
-fn field(key: i8, event: canokey_protocol::cbor::Event<'_>) -> Result<u8, Status> {
+fn field(key: i8, event: &canokey_protocol::cbor::Event<'_>) -> Result<u8, Status> {
     let (bit, expected) = match key {
         1 => (1, Some(2)),
         3 => (2, Some(-25)),
@@ -125,7 +125,7 @@ mod tests {
                 opened = true;
                 return Ok(());
             }
-            match parser.event(event, &mut coordinates, policy) {
+            match parser.event(&event, &mut coordinates, policy) {
                 Ok(done) => {
                     closed |= done;
                     Ok(())

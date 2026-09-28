@@ -569,7 +569,7 @@ impl Key {
     // None is an unknown label, not an absent key; callers retain it as Some(None).
     #[inline(never)]
     fn ordered(
-        event: canokey_protocol::cbor::Event<'_>,
+        event: &canokey_protocol::cbor::Event<'_>,
         previous: &mut Option<Self>,
     ) -> Result<Option<i8>, Status> {
         let key = Self::parse(event)?;
@@ -579,8 +579,8 @@ impl Key {
         *previous = Some(key);
         Ok(key.integer())
     }
-    fn parse(event: canokey_protocol::cbor::Event<'_>) -> Result<Self, Status> {
-        match event {
+    fn parse(event: &canokey_protocol::cbor::Event<'_>) -> Result<Self, Status> {
+        match *event {
             canokey_protocol::cbor::Event::Unsigned(argument) => Ok(Self {
                 negative: false,
                 argument,
@@ -599,7 +599,7 @@ impl Key {
 }
 
 #[inline]
-pub(super) fn is_cbor_container(event: canokey_protocol::cbor::Event<'_>) -> bool {
+pub(super) fn is_cbor_container(event: &canokey_protocol::cbor::Event<'_>) -> bool {
     matches!(
         event,
         canokey_protocol::cbor::Event::Map(_)
@@ -612,7 +612,7 @@ pub(super) fn is_cbor_container(event: canokey_protocol::cbor::Event<'_>) -> boo
 /// Consume one event while ignoring an unsupported CBOR value. The decoder
 /// emits container starts and a matching End, so all extension parsers can use
 /// the same depth transition rules.
-pub(super) fn skip_cbor_event(depth: &mut u8, event: canokey_protocol::cbor::Event<'_>) -> bool {
+pub(super) fn skip_cbor_event(depth: &mut u8, event: &canokey_protocol::cbor::Event<'_>) -> bool {
     if *depth == 0 {
         return false;
     }
@@ -625,14 +625,14 @@ pub(super) fn skip_cbor_event(depth: &mut u8, event: canokey_protocol::cbor::Eve
 }
 
 pub(super) fn consume_cbor_body(
-    event: canokey_protocol::cbor::Event<'_>,
+    event: &canokey_protocol::cbor::Event<'_>,
     body: &mut Option<(i8, usize)>,
     target: &mut [u8],
 ) -> Result<(), Status> {
     let Some((key, offset)) = *body else {
         return Err(Status::Other);
     };
-    match event {
+    match *event {
         canokey_protocol::cbor::Event::Data(bytes) => {
             let end = offset.checked_add(bytes.len()).ok_or(Status::InvalidCbor)?;
             target

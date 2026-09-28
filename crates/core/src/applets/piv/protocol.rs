@@ -627,6 +627,9 @@ impl Piv {
         self.header_len = a + codec::header(&mut self.header[a..], &[ga_tag::RESPONSE], n)?;
         Ok((n + self.header_len) as u32)
     }
+    // Keep segment-copy temporaries out of the streaming response path: that
+    // path can invoke PQ signing while filling the next response fragment.
+    #[inline(never)]
     fn read_classic(
         &self,
         offset: usize,

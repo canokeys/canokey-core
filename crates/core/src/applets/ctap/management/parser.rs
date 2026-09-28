@@ -85,7 +85,7 @@ impl Parser {
         &mut self,
         p: &mut Parsed,
         raw: &[u8],
-        event: Event<'_>,
+        event: &Event<'_>,
         depth: u8,
         offset: usize,
     ) {
@@ -97,7 +97,7 @@ impl Parser {
         &mut self,
         p: &mut Parsed,
         raw: &[u8],
-        event: Event<'_>,
+        event: &Event<'_>,
         depth: u8,
         offset: usize,
     ) -> Result<(), Status> {
@@ -110,7 +110,7 @@ impl Parser {
                 if matches!(event, Event::End) {
                     return Ok(());
                 }
-                let Event::Unsigned(key) = event else {
+                let Event::Unsigned(key) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if self.previous.is_some_and(|old| key <= old) {
@@ -121,7 +121,7 @@ impl Parser {
                 return Ok(());
             };
             self.entity = 0;
-            match (key, event) {
+            match (key, *event) {
                 (1, Event::Bytes(32)) => p.spans[0] = span(32),
                 (1, Event::Bytes(_)) => return Err(Status::InvalidLength),
                 (2 | 3, Event::Map(_)) => {
@@ -136,7 +136,7 @@ impl Parser {
         } else if self.entity != 0 && depth == 2 {
             if self.value {
                 self.value = false;
-                match (self.entity, self.member, event) {
+                match (self.entity, self.member, *event) {
                     (2, 1, Event::Bytes(n)) => {
                         if usize::from(n) != core::mem::size_of::<credential::Id>() {
                             return Err(Status::NoCredentials);
@@ -154,7 +154,7 @@ impl Parser {
                     _ => return Err(Status::UnexpectedType),
                 }
             } else {
-                match event {
+                match *event {
                     Event::Text(n) => {
                         self.text = span(n);
                         self.text_kind = 1;

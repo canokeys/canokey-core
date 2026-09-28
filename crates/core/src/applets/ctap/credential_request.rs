@@ -327,7 +327,7 @@ impl Parser {
 }
 impl Fields {
     #[inline(never)]
-    fn event(&mut self, event: Event<'_>) -> Result<(), Status> {
+    fn event(&mut self, event: &Event<'_>) -> Result<(), Status> {
         if !self.started {
             if !matches!(event, Event::Map(_)) {
                 return Err(Status::UnexpectedType);
@@ -345,7 +345,7 @@ impl Fields {
             return Ok(());
         }
         if self.skip != 0 {
-            match event {
+            match *event {
                 Event::Map(_) | Event::Array(_) | Event::Bytes(_) | Event::Text(_) => {
                     self.skip += 1
                 }
@@ -355,7 +355,7 @@ impl Fields {
             return Ok(());
         }
         if let Some((field, pos)) = self.body {
-            match event {
+            match *event {
                 Event::Data(bytes) => {
                     let out: &mut [u8] = if self.key_body {
                         &mut self.key
@@ -482,7 +482,7 @@ impl Fields {
                 }
             });
         } else {
-            match event {
+            match *event {
                 Event::Text(n) if n <= 32 => {
                     self.key_len = usize::from(n);
                     self.key_body = true;
@@ -513,7 +513,7 @@ impl Fields {
         self.level += 1;
         self.maps[self.level] = Map::new(context);
     }
-    fn value(&mut self, field: Field, event: Event<'_>) -> Result<(), Status> {
+    fn value(&mut self, field: Field, event: &Event<'_>) -> Result<(), Status> {
         match field {
             Field::ClientHash => {
                 self.bytes(field, event, 32, 32)?;
@@ -526,7 +526,7 @@ impl Fields {
                     }
                     self.push(Context::Rp);
                 } else {
-                    match event {
+                    match *event {
                         Event::Text(n) if n > 0 && n <= 254 => {
                             self.params.rp_len = n as usize;
                             self.body = Some((field, 0));
@@ -555,7 +555,7 @@ impl Fields {
                 self.skip = 1;
             }
             Field::Name | Field::Display => {
-                let Event::Text(n) = event else {
+                let Event::Text(n) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if matches!(field, Field::Name) {
@@ -571,7 +571,7 @@ impl Fields {
                 self.seen |= 4;
             }
             Field::Algorithms | Field::List => {
-                let Event::Array(n) = event else {
+                let Event::Array(n) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if matches!(field, Field::List) && n as usize > MAX_LIST {
@@ -599,7 +599,7 @@ impl Fields {
                     .map(|n| if key.negative { -1 - n } else { n });
             }
             Field::DescriptorId => {
-                let Event::Bytes(n) = event else {
+                let Event::Bytes(n) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 self.item_id = true;
@@ -612,7 +612,7 @@ impl Fields {
             }
             Field::Type => {
                 self.item_type_seen = true;
-                let Event::Text(n) = event else {
+                let Event::Text(n) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if n == 10 {
@@ -622,7 +622,7 @@ impl Fields {
                 }
             }
             Field::Resident | Field::Uv | Field::Up | Field::MinPinLength | Field::LargeBlobKey => {
-                let Event::Bool(value) = event else {
+                let Event::Bool(value) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 match field {
@@ -640,11 +640,11 @@ impl Fields {
                 let n = self.bytes(field, event, 0, 32)?;
                 self.params.auth_len = Some(n);
             }
-            Field::Protocol => match event {
+            Field::Protocol => match *event {
                 Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
                 _ => return Err(Status::InvalidParameter),
             },
-            Field::Protection => match event {
+            Field::Protection => match *event {
                 Event::Unsigned(n @ 1..=3) => {
                     self.params.protection = n as u8;
                     self.params.protection_requested = true;
@@ -653,7 +653,7 @@ impl Fields {
             },
             Field::CredBlob => {
                 if self.params.make {
-                    let Event::Bytes(n) = event else {
+                    let Event::Bytes(n) = *event else {
                         return Err(Status::UnexpectedType);
                     };
                     // Consume the entire byte string, retaining only the bounded
@@ -662,14 +662,14 @@ impl Fields {
                     self.params.cred_blob_len = Some(usize::from(n));
                     self.body = Some((field, 0));
                 } else {
-                    let Event::Bool(value) = event else {
+                    let Event::Bool(value) = *event else {
                         return Err(Status::UnexpectedType);
                     };
                     self.params.get_cred_blob = value;
                 }
             }
             Field::ThirdPartyPayment => {
-                let Event::Bool(value) = event else {
+                let Event::Bool(value) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if self.params.make && !value {
@@ -678,7 +678,7 @@ impl Fields {
                 self.params.third_party_payment = value;
             }
             Field::HmacSecret if self.params.make => {
-                let Event::Bool(value) = event else {
+                let Event::Bool(value) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 self.params.hmac_secret = value;
@@ -713,11 +713,11 @@ impl Fields {
     fn bytes(
         &mut self,
         field: Field,
-        event: Event<'_>,
+        event: &Event<'_>,
         min: u16,
         max: u16,
     ) -> Result<usize, Status> {
-        let Event::Bytes(n) = event else {
+        let Event::Bytes(n) = *event else {
             return Err(Status::UnexpectedType);
         };
         if n < min || n > max {

@@ -114,7 +114,7 @@ impl Parser {
     }
 }
 impl Fields {
-    fn event(&mut self, event: Event<'_>) -> Result<(), Status> {
+    fn event(&mut self, event: &Event<'_>) -> Result<(), Status> {
         if !self.started {
             if !matches!(event, Event::Map(_)) {
                 return Err(Status::UnexpectedType);
@@ -144,7 +144,7 @@ impl Fields {
         };
         match key {
             Some(key @ (1 | 3 | 4 | 6)) => {
-                let Event::Unsigned(n) = event else {
+                let Event::Unsigned(n) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if key == 1 && n > FRAGMENT as u64 {
@@ -169,7 +169,7 @@ impl Fields {
                 }
             }
             Some(key @ (2 | 5)) => {
-                let Event::Bytes(n) = event else {
+                let Event::Bytes(n) = *event else {
                     return Err(Status::UnexpectedType);
                 };
                 if key == 2 {

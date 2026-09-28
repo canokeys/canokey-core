@@ -26,11 +26,13 @@ impl RequestDecoder {
 
     /// Returns false after any failure. A rejected request never re-enters its
     /// schema, and a schema error takes precedence over the generic CBOR error.
+    // Borrow the event only for this synchronous callback. Its scalar/slice
+    // payload need not be copied through every schema/helper call boundary.
     #[inline(never)]
     pub fn consume(
         &mut self,
         bytes: &[u8],
-        fields: &mut dyn FnMut(Event<'_>, u16) -> Result<(), Status>,
+        fields: &mut dyn FnMut(&Event<'_>, u16) -> Result<(), Status>,
     ) -> bool {
         if self.error.is_some() {
             return false;
@@ -39,7 +41,7 @@ impl RequestDecoder {
         loop {
             match self.decoder.next_event(&mut input) {
                 Ok(Some(event)) => {
-                    if let Err(status) = fields(event, self.decoder.position()) {
+                    if let Err(status) = fields(&event, self.decoder.position()) {
                         self.error = Some(status);
                         break;
                     }
@@ -90,7 +92,7 @@ mod tests {
             let mut decoder = RequestDecoder::new();
             let mut ends = [0; 2];
             let mut count = 0;
-            let mut fields = |event: Event<'_>, offset: u16| {
+            let mut fields = |event: &Event<'_>, offset: u16| {
                 if matches!(event, Event::End) {
                     ends[count] = offset;
                     count += 1;
