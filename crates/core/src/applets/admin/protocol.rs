@@ -205,6 +205,9 @@ impl Admin {
         self.cancel_command(w, p);
         result
     }
+    // Keep provisioning/reset decoding out of the registry's reset orchestration.
+    // This boundary reduces the complete CIU images with the pinned optimizer.
+    #[inline(never)]
     fn dispatch(
         &mut self,
         h: Header,

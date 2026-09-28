@@ -614,9 +614,16 @@ impl Oath {
         p: &mut Platform<'_>,
     ) -> Result<(u32, Sw), Sw> {
         self.state.length = 0;
-        let result = self
-            .state
-            .execute(h, le, &self.command[..self.used], pass, p);
+        // Preserve one local state base at this call boundary. On CIU, LTO's
+        // specialization to CORE otherwise expands repeated field addresses.
+        // This is a measured code-size barrier, not a security boundary.
+        let result = core::hint::black_box(&mut self.state).execute(
+            h,
+            le,
+            &self.command[..self.used],
+            pass,
+            p,
+        );
         self.cancel_command(p);
         if result.is_err() {
             self.state.page = Page::None;

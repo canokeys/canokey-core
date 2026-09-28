@@ -358,7 +358,10 @@ impl Piv {
                 .finish()
                 .and_then(|()| self.general_authenticate(h, w, p)),
             Request::Buffered if h.ins == INS_GENERATE_KEY => self.generate(h, w, p),
-            Request::Buffered => self.command(h, le, w, p),
+            // Keep a local applet base instead of specializing every field to
+            // CORE. This measured size barrier covers buffered commands only;
+            // private operations and key generation retain their own paths.
+            Request::Buffered => core::hint::black_box(&mut *self).command(h, le, w, p),
             Request::Import => (|| {
                 self.import.finish(&mut w.key.bytes)?;
                 if self.import.meta[repo::ALGORITHM] < alg::MLKEM768 {
