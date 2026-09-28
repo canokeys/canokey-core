@@ -152,24 +152,23 @@ impl Parser {
     }
 }
 
+const PREPARED_SALT_BYTES: usize = 80;
 pub(super) struct Prepared {
-    salts: [u8; 80],
-    aes_key: [u8; 32],
+    // Both regions share one erasure lifetime: salts, then AES key.
+    secrets: [u8; PREPARED_SALT_BYTES + 32],
     length: usize,
     protocol: u8,
 }
 impl Prepared {
     pub const fn new() -> Self {
         Self {
-            salts: [0; 80],
-            aes_key: [0; 32],
+            secrets: [0; PREPARED_SALT_BYTES + 32],
             length: 0,
             protocol: 1,
         }
     }
     pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
-        memory.wipe(&mut self.salts);
-        memory.wipe(&mut self.aes_key);
+        memory.wipe(&mut self.secrets);
         self.length = 0;
     }
     pub fn active(&self) -> bool {
@@ -192,7 +191,7 @@ impl Prepared {
                 p.crypto.random(&mut iv).map_err(|_| Status::Other)?;
                 out[..16].copy_from_slice(&iv);
             }
-            for (salt, output) in self.salts[..self.length]
+            for (salt, output) in self.secrets[..PREPARED_SALT_BYTES][..self.length]
                 .chunks_exact(32)
                 .zip(out[iv_len..iv_len + self.length].chunks_exact_mut(32))
             {
@@ -201,7 +200,7 @@ impl Prepared {
             p.crypto
                 .aes256_cbc(
                     true,
-                    &self.aes_key,
+                    self.secrets[PREPARED_SALT_BYTES..].try_into().unwrap(),
                     &iv,
                     &mut out[iv_len..iv_len + self.length],
                 )
@@ -232,12 +231,13 @@ impl Session {
                 p,
             )?;
             let prepared = &mut self.assertion.hmac;
-            prepared.aes_key.copy_from_slice(&shared[32..]);
-            prepared.salts[..params.salt_len].copy_from_slice(&params.salt[..params.salt_len]);
+            let (salts, aes_key) = prepared.secrets.split_at_mut(PREPARED_SALT_BYTES);
+            aes_key.copy_from_slice(&shared[32..]);
+            salts[..params.salt_len].copy_from_slice(&params.salt[..params.salt_len]);
             pin::decrypt(
                 params.protocol,
-                &prepared.aes_key,
-                &mut prepared.salts[..params.salt_len],
+                (&*aes_key).try_into().unwrap(),
+                &mut salts[..params.salt_len],
                 p,
             )?;
             prepared.protocol = params.protocol;
@@ -249,5 +249,36 @@ impl Session {
             self.assertion.hmac.clear(p.memory);
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Erase;
+    impl crate::ports::Memory for Erase {
+        fn wipe(&self, bytes: &mut [u8]) {
+            bytes.fill(0);
+        }
+    }
+
+    #[test]
+    fn clear_erases_key_and_unused_salt_capacity_for_both_protocols() {
+        for protocol in [1, 2] {
+            for length in [32, 64] {
+                let mut prepared = Prepared::new();
+                prepared.protocol = protocol;
+                prepared.length = length;
+                prepared.secrets[..PREPARED_SALT_BYTES].fill(0xa5);
+                prepared.secrets[PREPARED_SALT_BYTES..].fill(0x5a);
+                prepared.clear(&Erase);
+                assert!(!prepared.active());
+                assert!(prepared.secrets.iter().all(|&byte| byte == 0));
+                assert_eq!(prepared.protocol, protocol);
+                prepared.clear(&Erase);
+                assert!(prepared.secrets.iter().all(|&byte| byte == 0));
+            }
+        }
     }
 }

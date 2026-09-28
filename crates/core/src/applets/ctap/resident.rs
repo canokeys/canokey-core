@@ -161,14 +161,16 @@ pub(super) fn store(
 
 /// Encode the five bounded variable fields shared by creation and user updates.
 pub(super) fn encode_fields(out: &mut [u8], fields: &[&[u8]; 5]) -> usize {
-    let mut at = 0;
+    let capacity = out.len();
+    let mut tail = out;
     for field in fields {
-        out[at] = field.len() as u8;
-        at += 1;
-        out[at..at + field.len()].copy_from_slice(field);
-        at += field.len();
+        let (length, remaining) = tail.split_first_mut().unwrap();
+        *length = field.len() as u8;
+        let (value, remaining) = remaining.split_at_mut(field.len());
+        value.copy_from_slice(field);
+        tail = remaining;
     }
-    at
+    capacity - tail.len()
 }
 
 pub(super) fn find(

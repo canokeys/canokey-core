@@ -44,6 +44,65 @@ fn bounded_encoder_canonical_wire_and_output_exhaustion() {
 }
 
 #[test]
+fn encoder_preserves_width_boundaries_for_all_header_major_types() {
+    use canokey_protocol::cbor::{EncodeError, Encoder};
+    let vectors: &[(u64, &[u8])] = &[
+        (23, b"\x17"),
+        (24, b"\x18\x18"),
+        (255, b"\x18\xff"),
+        (256, b"\x19\x01\x00"),
+        (65535, b"\x19\xff\xff"),
+        (65536, b"\x1a\x00\x01\x00\x00"),
+        (0xffff_ffff, b"\x1a\xff\xff\xff\xff"),
+        (0x1_0000_0000, b"\x1b\x00\x00\x00\x01\x00\x00\x00\x00"),
+        (u64::MAX, b"\x1b\xff\xff\xff\xff\xff\xff\xff\xff"),
+    ];
+    for &(value, wire) in vectors {
+        for major in [0, 1, 2, 4, 5] {
+            if major == 1 && value > i64::MAX as u64 {
+                continue;
+            }
+            let mut expected = wire.to_vec();
+            expected[0] |= major << 5;
+            for capacity in 0..=wire.len() {
+                let mut guarded = [0xa5; 11];
+                let mut e = Encoder::new(&mut guarded[1..1 + capacity]);
+                match major {
+                    0 => {
+                        e.u64(value);
+                    }
+                    1 => {
+                        e.i64(-1 - value as i64);
+                    }
+                    2 => {
+                        e.bytes_len(value);
+                    }
+                    4 => {
+                        e.array(value);
+                    }
+                    5 => {
+                        e.map(value);
+                    }
+                    _ => unreachable!(),
+                }
+                if capacity == wire.len() {
+                    assert_eq!(e.finish(), Ok(()));
+                    assert_eq!(&guarded[1..1 + capacity], expected);
+                } else {
+                    assert_eq!(e.finish(), Err(EncodeError));
+                    let remaining = e.writer().len();
+                    e.u8(0);
+                    assert_eq!(e.writer().len(), remaining);
+                    assert!(guarded.iter().all(|&byte| byte == 0xa5));
+                }
+                assert_eq!(guarded[0], 0xa5);
+                assert!(guarded[1 + capacity..].iter().all(|&byte| byte == 0xa5));
+            }
+        }
+    }
+}
+
+#[test]
 fn encoder_failure_is_sticky_across_fragments() {
     use canokey_protocol::cbor::{EncodeError, Encoder};
     for capacity in 1..12 {

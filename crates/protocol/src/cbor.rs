@@ -207,9 +207,10 @@ impl<'a> Encoder<&'a mut [u8]> {
         self
     }
 
-    /// Append one shortest-form item header: major type in the top 3 bits.
-    fn header(&mut self, major: u8, value: u64) -> &mut Self {
-        let mut head = [0u8; 9];
+    // Share the common integer widths without carrying a u64 through this call.
+    #[inline(never)]
+    fn header32(&mut self, major: u8, value: u32) -> &mut Self {
+        let mut head = [0u8; 5];
         let mt = major << 5;
         let n = if value < 24 {
             head[0] = mt | value as u8;
@@ -222,21 +223,28 @@ impl<'a> Encoder<&'a mut [u8]> {
             head[0] = mt | 25;
             head[1..3].copy_from_slice(&(value as u16).to_be_bytes());
             3
-        } else if value <= 0xffff_ffff {
-            head[0] = mt | 26;
-            head[1..5].copy_from_slice(&(value as u32).to_be_bytes());
-            5
         } else {
-            head[0] = mt | 27;
-            head[1..9].copy_from_slice(&value.to_be_bytes());
-            9
+            head[0] = mt | 26;
+            head[1..5].copy_from_slice(&value.to_be_bytes());
+            5
         };
         self.raw(&head[..n])
+    }
+    // Expose the width choice to typed callers while retaining full u64 CBOR.
+    #[inline(always)]
+    fn header(&mut self, major: u8, value: u64) -> &mut Self {
+        if value <= u64::from(u32::MAX) {
+            return self.header32(major, value as u32);
+        }
+        let mut head = [0u8; 9];
+        head[0] = (major << 5) | 27;
+        head[1..].copy_from_slice(&value.to_be_bytes());
+        self.raw(&head)
     }
 
     /// Append trusted, pre-encoded CBOR tokens (for build-generated schemas).
     /// Dynamic values must still use the typed encoding methods below.
-    #[inline(never)]
+    #[inline(always)]
     pub fn encoded(&mut self, tokens: &[u8]) -> &mut Self {
         self.raw(tokens)
     }

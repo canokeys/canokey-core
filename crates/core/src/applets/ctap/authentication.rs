@@ -358,29 +358,33 @@ fn respond(
         let certificate = p.storage.size(crate::ports::Record::CtapCertificate);
         let mut attestation_key = [0; 32];
         let key = super::attestation::key(&mut attestation_key, p);
-        let cert_len = match (key, certificate) {
-            (Ok(()), Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => n as usize,
-            (
-                Ok(()) | Err(crate::ports::StorageError::Missing),
-                Err(crate::ports::StorageError::Missing),
-            )
-            | (Err(crate::ports::StorageError::Missing), Ok(_)) => {
-                self_attest = true;
-                0
+        let result = (|| {
+            let cert_len = match (key, certificate) {
+                (Ok(()), Ok(n)) if n != 0 && (n as usize) <= super::provision::CERT_LIMIT => {
+                    n as usize
+                }
+                (
+                    Ok(()) | Err(crate::ports::StorageError::Missing),
+                    Err(crate::ports::StorageError::Missing),
+                )
+                | (Err(crate::ports::StorageError::Missing), Ok(_)) => {
+                    self_attest = true;
+                    0
+                }
+                _ => {
+                    // I/O failure or malformed key material is not an unprovisioned
+                    // device. Clear even partially supplied private bytes on error.
+                    return Err(Status::Other);
+                }
+            };
+            if !self_attest {
+                p.memory.wipe(&mut w.key.bytes);
+                w.key.bytes[..32].copy_from_slice(&attestation_key);
             }
-            _ => {
-                // I/O failure or malformed key material is not an unprovisioned
-                // device. Clear even partially supplied private bytes on error.
-                p.memory.wipe(&mut attestation_key);
-                return Err(Status::Other);
-            }
-        };
-        if !self_attest {
-            p.memory.wipe(&mut w.key.bytes);
-            w.key.bytes[..32].copy_from_slice(&attestation_key);
-        }
+            Ok(cert_len)
+        })();
         p.memory.wipe(&mut attestation_key);
-        cert_len
+        result?
     } else {
         0
     };
@@ -454,14 +458,15 @@ fn respond(
     let encoded = (|| {
         e.map(
             3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key),
-        )
-        .u8(1);
+        );
         if request.make {
-            e.str("packed");
+            e.encoded(&super::encoding::MAKE_HEADER[1..]);
         } else {
+            e.u8(1);
             super::encoding::descriptor(&mut e, request.id)?;
+            e.u8(2);
         }
-        e.u8(2).bytes_len(auth_len as u64);
+        e.bytes_len(auth_len as u64);
         prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
         e.u8(3);
         if request.make {
