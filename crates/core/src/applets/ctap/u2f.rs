@@ -104,7 +104,7 @@ impl Session {
             if credential::algorithm(&id) != Ok(alg::P256) {
                 return Err(Sw::WRONG_DATA);
             }
-            credential::open(&id, self.sm2, rp, w, p).map_err(|_| Sw::WRONG_DATA)?;
+            credential::open(&id, self.sm2, rp, w.key, p).map_err(|_| Sw::WRONG_DATA)?;
             if r.header.p1 == 7 {
                 return Err(Sw::CONDITIONS_NOT_SATISFIED);
             }
@@ -114,7 +114,7 @@ impl Session {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
         }
         let (message_len, prefix, certificate) = if register {
-            id = credential::create(alg::P256, 1, self.sm2, rp, w, p)
+            id = credential::create(alg::P256, 1, self.sm2, rp, w.key, p)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             let n = p
                 .crypto

@@ -4,10 +4,7 @@ use super::{
     Status,
     crypto::{equal, mac},
 };
-use crate::{
-    ports::{Platform, Record, StorageError, alg},
-    runtime::workspace::Workspace,
-};
+use crate::ports::{KeyMaterial, Platform, Record, StorageError, alg};
 
 // Algorithm, policy flags, random nonce, truncated HMAC. The RP hash is bound
 // cryptographically rather than repeated in every credential ID.
@@ -54,7 +51,7 @@ fn derive(
     rp: &[u8; 32],
     master: &[u8; 32],
     sm2: super::settings::Sm2,
-    w: &mut Workspace,
+    key: &mut KeyMaterial,
     p: &mut Platform<'_>,
 ) -> Result<[u8; 32], Status> {
     let mut message = [0; 1 + TAG + 32 + 8];
@@ -72,7 +69,7 @@ fn derive(
     if let Err(error) = mac(
         master,
         &message[..length],
-        (&mut w.key.bytes[..32]).try_into().unwrap(),
+        (&mut key.bytes[..32]).try_into().unwrap(),
         p,
     ) {
         p.memory.wipe(&mut tag);
@@ -86,7 +83,7 @@ pub(super) fn create(
     flags: u8,
     sm2: super::settings::Sm2,
     rp: &[u8; 32],
-    w: &mut Workspace,
+    key: &mut KeyMaterial,
     p: &mut Platform<'_>,
 ) -> Result<Id, Status> {
     let mut master = master(true, p)?;
@@ -106,11 +103,11 @@ pub(super) fn create(
             p.crypto
                 .random(&mut id[2..TAG])
                 .map_err(|_| Status::Other)?;
-            let mut tag = derive(&id, rp, &master, sm2, w, p)?;
+            let mut tag = derive(&id, rp, &master, sm2, key, p)?;
             id[TAG..].copy_from_slice(&tag[..16]);
             p.memory.wipe(&mut tag);
             if matches!(algorithm, alg::P256 | alg::SM2)
-                && !valid_scalar(algorithm, &w.key.bytes[..32])
+                && !valid_scalar(algorithm, &key.bytes[..32])
             {
                 continue;
             }
@@ -144,18 +141,18 @@ pub(super) fn open(
     id: &Id,
     sm2: super::settings::Sm2,
     rp: &[u8; 32],
-    w: &mut Workspace,
+    key: &mut KeyMaterial,
     p: &mut Platform<'_>,
 ) -> Result<u8, Status> {
     let algorithm = algorithm(id)?;
     let mut master = master(false, p)?;
-    let result = derive(id, rp, &master, sm2, w, p);
+    let result = derive(id, rp, &master, sm2, key, p);
     p.memory.wipe(&mut master);
     let mut tag = result?;
     let valid = equal(&id[TAG..], &tag[..16]);
     p.memory.wipe(&mut tag);
     if !valid {
-        p.memory.wipe(&mut w.key.bytes);
+        p.memory.wipe(&mut key.bytes);
         return Err(Status::NoCredentials);
     }
     Ok(algorithm)

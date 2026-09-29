@@ -105,7 +105,7 @@ impl Session {
             } else {
                 user_slot = None;
             }
-            match credential::open(id, self.sm2, &rp, w, p) {
+            match credential::open(id, self.sm2, &rp, w.key, p) {
                 Ok(_) if id[1] & 3 != 3 || uv => {
                     selected = Some(*id);
                     break;
@@ -186,7 +186,7 @@ impl Session {
                 },
             self.sm2,
             &rp,
-            w,
+            w.key,
             p,
         )?;
         if params.resident {
@@ -246,7 +246,7 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        let algorithm = credential::open(id, self.sm2, &self.assertion.rp, w, p)?;
+        let algorithm = credential::open(id, self.sm2, &self.assertion.rp, w.key, p)?;
         self.assertion.started = p.device.now();
         respond(
             &Signing {

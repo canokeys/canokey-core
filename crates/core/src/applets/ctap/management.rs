@@ -364,14 +364,16 @@ impl Session {
                 0
             };
             for index in self.management.next..Record::CTAP_CREDENTIALS {
-                if let Some((n, entry)) = resident::read(index, w.input, p)? {
+                if let Some((_, entry)) = resident::read(index, w.input, p)? {
                     if *entry.rp_hash != self.management.rp {
                         continue;
                     }
                     self.management.next = index + 1;
                     self.management.mode = 5;
-                    let id = *entry.id;
-                    let algorithm = credential::open(&id, self.sm2, &self.management.rp, w, p)?;
+                    // Key derivation borrows only the key buffer, so the input
+                    // record stays validated and borrowed through encoding.
+                    let id = entry.id;
+                    let algorithm = credential::open(id, self.sm2, &self.management.rp, w.key, p)?;
                     let pq_public =
                         algorithm == crate::ports::alg::MLDSA65 && !self.management.metadata_only;
                     let public_len = if self.management.metadata_only || pq_public {
@@ -397,7 +399,7 @@ impl Session {
                     let has_blob_key = id[1] & resident::LARGE_BLOB_KEY != 0;
                     if has_blob_key {
                         credential::large_blob_key(
-                            &id,
+                            id,
                             &self.management.rp,
                             (&mut w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
                                 .try_into()
@@ -405,7 +407,6 @@ impl Session {
                             p,
                         )?;
                     }
-                    let entry = resident::Entry::decode(&w.input[..n])?;
                     if pq_public {
                         let blob_key = has_blob_key.then(|| {
                             (&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END])
@@ -413,7 +414,7 @@ impl Session {
                                 .unwrap()
                         });
                         let (plan, length) = mldsa_public_response(
-                            &entry, &id, total, subcommand, blob_key, w.output,
+                            &entry, id, total, subcommand, blob_key, w.output,
                         )?;
                         // Encode directly from the input record before reusing
                         // it for the stream seed; maximal user records exceed 256 B.
@@ -441,7 +442,7 @@ impl Session {
                         }
                         super::encoding::management_tail(
                             &mut e,
-                            &id,
+                            id,
                             (subcommand == 4).then_some(total),
                             has_blob_key
                                 .then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
