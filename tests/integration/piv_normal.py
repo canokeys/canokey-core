@@ -37,6 +37,17 @@ def aes(key, b, decrypt=False):
 
 
 class Piv(Card):
+    hardware = False
+
+    def host_only(self, label):
+        """Record unavailable storage inspection/injection without faking a result."""
+        if not self.hardware:
+            return True
+        skipped = self.report.setdefault("host_only_omissions", [])
+        if label not in skipped:
+            skipped.append(label)
+        return False
+
     def select(self):
         return self.cmd("select_piv", 0xA4, 4, data=AID)
 
@@ -237,11 +248,13 @@ def directory_and_move(c):
         c.put(tag, certificate)
     expected = b"".join(bytes([slot, 2, 0, 0, 0, 0]) for slot in slots)
     assert c.raw("full_directory", 0xF7, 1, 0, le=256) == bytes.fromhex("0101010290") + expected
-    for record in range(42, 66):
-        c.wire.command(f"REMOVE {record}")
+    for tag in tags:
+        c.put(tag, b"\x53\x00")
 
 
 def invalid_startup_configuration(c):
+    if not c.host_only("invalid startup configuration injection"):
+        return
     public = c.generate(0)
     certificate = tlv(0x53, b"persistent certificate sentinel")
     c.put(0x5FC105, certificate)
@@ -258,16 +271,18 @@ def invalid_startup_configuration(c):
     public.verify(c.ga(0, 0x9A, digest), digest, ec.ECDSA(utils.Prehashed(hashes.SHA256())))
     c.auth()
     c.cmd("remove_startup_test_key", 0xF6, 0xFF, 0x9A)
-    c.wire.command("REMOVE 42")
+    c.put(0x5FC105, b"\x53\x00")
 
 
 def host_managed_objects(c):
     printed = bytes.fromhex("531c881a8918") + KEY
     admin = bytes.fromhex("53058003810103")
-    management_size = c.wire.command("SIZE 15")
+    if c.host_only("internal record sizes"):
+        management_size = c.wire.command("SIZE 15")
     c.put(0x5FC109, printed)
     c.put(0x5FFF00, admin)
-    assert c.wire.command("SIZE 15") == management_size
+    if c.host_only("internal record sizes"):
+        assert c.wire.command("SIZE 15") == management_size
     c.wire.command("RESET")
     c.select()
     assert c.get(0x5FFF00) == admin
@@ -278,17 +293,20 @@ def host_managed_objects(c):
             c.verify()
         c.cmd("pin_does_not_grant_management", 0xDB, 0x3F, 0xFF, put, status=0x6982)
         c.get(0x5FC105, status=0x6A82)
-        assert c.wire.command("SIZE 42") == b"\xff" * 4
+        if c.host_only("internal record sizes"):
+            assert c.wire.command("SIZE 42") == b"\xff" * 4
     assert c.get(0x5FC109) == printed
     assert c.raw("bounded_printed_read", 0xCB, 0x3F, 0xFF,
                  bytes.fromhex("5c035fc109"), le=256) == printed
     # Host-managed printed/admin objects never replace the AES management key.
     c.auth()
     c.put(0x5FC105, bytes.fromhex("5301aa"))
-    assert c.wire.command("SIZE 42") == (3).to_bytes(4, "big")
+    if c.host_only("internal record sizes"):
+        assert c.wire.command("SIZE 42") == (3).to_bytes(4, "big")
     c.put(0x5FC105, bytes.fromhex("5300"))
     c.get(0x5FC105, status=0x6A82)
-    assert c.wire.command("SIZE 42") == b"\xff" * 4
+    if c.host_only("internal record sizes"):
+        assert c.wire.command("SIZE 42") == b"\xff" * 4
 
 
 def management_rotation(c):
@@ -354,16 +372,17 @@ def retry_configuration(c):
     c.verify()
     c.cmd("retry_limits_need_management", 0xFA, 4, 5, status=0x6982)
     c.auth()
-    c.wire.command("FAIL_WRITE 14")
-    c.cmd("retry_limit_commit_failure", 0xFA, 6, 7, status=0x6900)
-    c.cmd("failed_retry_write_revokes_management", 0xFA, 6, 7, status=0x6982)
-    c.auth()
-    c.cmd("failed_retry_write_revokes_pin", 0xFA, 6, 7, status=0x6982)
-    c.cmd("failed_retry_cache_unavailable", 0x20, 0, 0x80, PIN, status=0x6900)
-    c.wire.command("RESET")
-    c.select()
-    for reference, limit in ((0x80, 4), (0x81, 5)):
-        assert fields(c.cmd("failed_retry_write_preserves_limits", 0xF7, 0, reference))[6] == bytes([limit, limit])
+    if c.host_only("retry record write failure"):
+        c.wire.command("FAIL_WRITE 14")
+        c.cmd("retry_limit_commit_failure", 0xFA, 6, 7, status=0x6900)
+        c.cmd("failed_retry_write_revokes_management", 0xFA, 6, 7, status=0x6982)
+        c.auth()
+        c.cmd("failed_retry_write_revokes_pin", 0xFA, 6, 7, status=0x6982)
+        c.cmd("failed_retry_cache_unavailable", 0x20, 0, 0x80, PIN, status=0x6900)
+        c.wire.command("RESET")
+        c.select()
+        for reference, limit in ((0x80, 4), (0x81, 5)):
+            assert fields(c.cmd("failed_retry_write_preserves_limits", 0xF7, 0, reference))[6] == bytes([limit, limit])
     c.auth()
     c.verify()
     c.cmd("maximum_retry_limits", 0xFA, 15, 15)
@@ -377,9 +396,11 @@ def retry_configuration(c):
 
 def object_capacity(c):
     for tag, record in [(0x5FC10D, 46), (0x5FC10E, 47), (0x5FC10F, 48), (0x5FC120, 65)]:
-        assert c.wire.command(f"SIZE {record}") == b"\xff" * 4
+        if c.host_only("internal record sizes"):
+            assert c.wire.command(f"SIZE {record}") == b"\xff" * 4
         c.put(tag, bytes.fromhex("530155"))
-        assert c.wire.command(f"SIZE {record}") == (3).to_bytes(4, "big")
+        if c.host_only("internal record sizes"):
+            assert c.wire.command(f"SIZE {record}") == (3).to_bytes(4, "big")
         assert c.get(tag) == bytes.fromhex("530155")
         c.put(tag, b"\x53\x00")
     certificate = tlv(0x53, bytes(0xC0 + (i & 0x3F) for i in range(6564)))
@@ -401,7 +422,8 @@ def object_capacity(c):
     for tag, record in zip(tags, range(67, 75)):
         c.put(tag, value)
         assert c.get(tag) == value
-        assert c.wire.command(f"SIZE {record}") == (3040).to_bytes(4, "big")
+        if c.host_only("internal record sizes"):
+            assert c.wire.command(f"SIZE {record}") == (3040).to_bytes(4, "big")
     c.cmd("data_object_over_capacity", 0xDB, 0x3F, 0xFF,
           bytes.fromhex("5c035fc106") + value + b"\0", status=0x6700)
     assert c.get(0x5FC106) == value
@@ -414,7 +436,8 @@ def object_capacity(c):
         value = bytes(range(5, 5 + size))
         c.put(0x5FC109, value)
         assert c.get(0x5FC109) == value
-        assert c.wire.command("SIZE 72") == size.to_bytes(4, "big")
+        if c.host_only("internal record sizes"):
+            assert c.wire.command("SIZE 72") == size.to_bytes(4, "big")
     value = bytes((0x85 + i) % 256 for i in range(128))
     c.put(0x5FFF00, value)
     c.cmd("admin_object_over_capacity", 0xDB, 0x3F, 0xFF,
@@ -483,17 +506,18 @@ def container_names(c):
     assert c.cmd("persistent_container_name", 0xF5, 0, 0x9A) == name
     c.auth()
     before = c.cmd("named_key_metadata", 0xF7, 0, 0x9A)
-    for replacement in (maximum, b""):
+    if c.host_only("container name and key write failures"):
+        for replacement in (maximum, b""):
+            c.wire.command("FAIL_WRITE 17")
+            c.cmd("idempotent_name_needs_no_write", 0xF5, 1, 0x9A, name)
+            c.cmd("name_commit_failure", 0xF5, 1, 0x9A, replacement, status=0x6900)
+            assert c.cmd("failed_name_preserved", 0xF5, 0, 0x9A) == name
+            assert c.cmd("failed_name_keeps_key", 0xF7, 0, 0x9A) == before
         c.wire.command("FAIL_WRITE 17")
-        c.cmd("idempotent_name_needs_no_write", 0xF5, 1, 0x9A, name)
-        c.cmd("name_commit_failure", 0xF5, 1, 0x9A, replacement, status=0x6900)
-        assert c.cmd("failed_name_preserved", 0xF5, 0, 0x9A) == name
-        assert c.cmd("failed_name_keeps_key", 0xF7, 0, 0x9A) == before
-    c.wire.command("FAIL_WRITE 17")
-    c.cmd("failed_named_key_generation", 0x47, 0, 0x9A,
-          bytes.fromhex("ac03800111"), status=0x6900)
-    assert c.cmd("failed_generation_keeps_name", 0xF5, 0, 0x9A) == name
-    assert c.cmd("failed_generation_keeps_key", 0xF7, 0, 0x9A) == before
+        c.cmd("failed_named_key_generation", 0x47, 0, 0x9A,
+              bytes.fromhex("ac03800111"), status=0x6900)
+        assert c.cmd("failed_generation_keeps_name", 0xF5, 0, 0x9A) == name
+        assert c.cmd("failed_generation_keeps_key", 0xF7, 0, 0x9A) == before
     old_public = c.public(0)
     exercise(c, 0, old_public)
     imported = tlv(6, bytes(31) + b"\x01")
@@ -514,14 +538,15 @@ def custom_p521(c):
     config = c.cmd("read_before_p521_mapping", 0xEE, 1, 0)
     custom = bytearray(config)
     custom[6] = 0x55
-    c.wire.command("FAIL_WRITE 16")
-    c.cmd("unchanged_mapping_reports_failure", 0xEE, 2, 0, config, le=None, status=0x6900)
-    assert c.cmd("failed_mapping_preserves_cache", 0xEE, 1, 0) == config
-    c.auth()
-    c.wire.command("FAIL_WRITE 16")
-    c.cmd("changed_mapping_reports_failure", 0xEE, 2, 0, bytes(custom), le=None, status=0x6900)
-    assert c.cmd("failed_changed_mapping_preserves_cache", 0xEE, 1, 0) == config
-    c.auth()
+    if c.host_only("algorithm mapping write failures"):
+        c.wire.command("FAIL_WRITE 16")
+        c.cmd("unchanged_mapping_reports_failure", 0xEE, 2, 0, config, le=None, status=0x6900)
+        assert c.cmd("failed_mapping_preserves_cache", 0xEE, 1, 0) == config
+        c.auth()
+        c.wire.command("FAIL_WRITE 16")
+        c.cmd("changed_mapping_reports_failure", 0xEE, 2, 0, bytes(custom), le=None, status=0x6900)
+        assert c.cmd("failed_changed_mapping_preserves_cache", 0xEE, 1, 0) == config
+        c.auth()
     c.cmd("custom_p521_mapping", 0xEE, 2, 0, bytes(custom), le=None)
     reply = c.cmd("custom_p521_generate", 0x47, 0, 0x9A,
                   bytes.fromhex("ac09800155aa0102ab0101"))
@@ -572,14 +597,15 @@ def invalid_private_inputs(c):
         c.cmd("reject_inconsistent_crt_import", 0xFE, 7, 0x9A, body, status=0x6A80)
         assert c.cmd("invalid_crt_keeps_key", 0xF7, 0, 0x9A) == before
     exercise(c, 5, private.public_key())
-    # Compact record: header6, exponent4, p128, q128, then dp128.
-    c.wire.command("CORRUPT 17 361 85")
-    answer = c.cmd("reject_corrupt_stored_crt", 0x87, 7, 0x9A,
-                   tlv(0x7C, tlv(0x82, b"") + tlv(0x81, (42).to_bytes(256, "big"))),
-                   status=0x6900)
-    assert answer == b""
-    c.wire.command("CORRUPT 17 361 85")
-    exercise(c, 5, private.public_key())
+    if c.host_only("stored CRT corruption"):
+        # Compact record: header6, exponent4, p128, q128, then dp128.
+        c.wire.command("CORRUPT 17 361 85")
+        answer = c.cmd("reject_corrupt_stored_crt", 0x87, 7, 0x9A,
+                       tlv(0x7C, tlv(0x82, b"") + tlv(0x81, (42).to_bytes(256, "big"))),
+                       status=0x6900)
+        assert answer == b""
+        c.wire.command("CORRUPT 17 361 85")
+        exercise(c, 5, private.public_key())
 
     private = ec.derive_private_key(1, ec.SECP256R1())
     c.import_key(0, private)
@@ -637,7 +663,8 @@ def pq_keys(c):
             metadata = fields(c.cmd("pq_algorithm_origin", 0xF7, 0, 0x9A))
             assert metadata[1] == bytes([alg]) and metadata[3] == bytes([2 if imported else 1])
             assert metadata[4] == encoded
-            assert c.wire.command("SIZE 17") == (85 + size).to_bytes(4, "big")
+            if c.host_only("internal record sizes"):
+                assert c.wire.command("SIZE 17") == (85 + size).to_bytes(4, "big")
             public = cls.from_public_bytes(fields(encoded)[0x86])
             assert len(fields(encoded)[0x86]) == (1952 if alg == 0xE2 else 1184)
             c.verify()
@@ -705,10 +732,11 @@ def pq_seed_lifecycle(c):
         for value, status in malformed:
             c.cmd("invalid_pq_seed_import", 0xFE, algorithm, 0x9A, value, status=status)
             assert c.cmd("invalid_seed_keeps_key", 0xF7, 0, 0x9A) == before
-        c.wire.command("FAIL_WRITE 17")
-        c.cmd("failed_pq_seed_import", 0xFE, algorithm, 0x9A,
-              tlv(tag, bytes(size)), status=0x6900)
-        assert c.cmd("failed_seed_keeps_key", 0xF7, 0, 0x9A) == before
+        if c.host_only("PQ seed write failure"):
+            c.wire.command("FAIL_WRITE 17")
+            c.cmd("failed_pq_seed_import", 0xFE, algorithm, 0x9A,
+                  tlv(tag, bytes(size)), status=0x6900)
+            assert c.cmd("failed_seed_keeps_key", 0xF7, 0, 0x9A) == before
         c.cmd("move_imported_pq", 0xF6, 0x95, 0x9A)
         c.cmd("moved_pq_source_missing", 0xF7, 0, 0x9A, status=0x6A88)
         c.wire.command("RESET")
@@ -756,11 +784,12 @@ def pq_replacement(c):
             assert c.cmd("aborted_pq_keeps_key", 0xF7, 0, 0x95) == before
             assert c.cmd("aborted_pq_keeps_name", 0xF5, 0, 0x95) == b"M\0"
             c.auth()
-        c.raw("pq_before_commit_failure", 0x47, 0, 0x95, body, le=256, status=0x61FF)
-        c.wire.command("FAIL_WRITE 40")
-        c.cmd("pq_commit_failure", 0xC0, le=256, status=0x6900)
-        assert c.cmd("failed_pq_keeps_key", 0xF7, 0, 0x95) == before
-        assert c.cmd("failed_pq_keeps_name", 0xF5, 0, 0x95) == b"M\0"
+        if c.host_only("PQ replacement write failure"):
+            c.raw("pq_before_commit_failure", 0x47, 0, 0x95, body, le=256, status=0x61FF)
+            c.wire.command("FAIL_WRITE 40")
+            c.cmd("pq_commit_failure", 0xC0, le=256, status=0x6900)
+            assert c.cmd("failed_pq_keeps_key", 0xF7, 0, 0x95) == before
+            assert c.cmd("failed_pq_keeps_name", 0xF5, 0, 0x95) == b"M\0"
         generated = c.cmd("complete_pq_replacement", 0x47, 0, 0x95, body)
         metadata = fields(c.cmd("committed_pq_metadata", 0xF7, 0, 0x95))
         assert metadata[1] == bytes([algorithm]) and metadata[4] == fields(generated)[0x7F49]
@@ -1022,8 +1051,10 @@ def attestation(c):
     c.cmd("f9_reject_p384_import", 0xFE, 0x14, 0xF9,
           tlv(6, bytes(47) + b"\x01"), status=0x6A86)
     c.generate(0, policies=tlv(0xAA, b"\x03") + tlv(0xAB, b"\x03"))
-    c.wire.command("REMOVE 41")
-    assert not c.cmd("attestation_without_issuer", 0xF9, 0x9A, status=0x6A88)
+    if c.host_only("attestation with missing issuer key"):
+        c.wire.command("REMOVE 41")
+        assert not c.cmd("attestation_without_issuer", 0xF9, 0x9A, status=0x6A88)
+    c.put(0x5FFF01, tlv(0x53, b""))
     c.generate(0, 0xF9)
     assert not c.cmd("attestation_without_certificate", 0xF9, 0x9A, status=0x6A88)
     metadata = fields(c.cmd("f9_generated_metadata", 0xF7, 0, 0xF9))
@@ -1057,10 +1088,13 @@ def attestation(c):
             + tlv(0xFE, b""),
         ),
     )
-    c.wire.command("REMOVE 41")
-    assert not c.cmd("attestation_certificate_without_key", 0xF9, 0x9A, status=0x6A88)
+    if c.host_only("attestation certificate with missing key"):
+        c.wire.command("REMOVE 41")
+        assert not c.cmd("attestation_certificate_without_key", 0xF9, 0x9A, status=0x6A88)
     c.import_key(0, issuer_key, 0xF9)
     c.cmd("restore_issuer_name", 0xF5, 1, 0xF9, b"F\0")
+    serial = c.cmd("attestation_device_serial", 0xF8)
+    assert len(serial) == 4
     for alg in list(range(9)) + [10, 11]:
         if alg == 11:
             encoded = fields(
@@ -1087,7 +1121,7 @@ def attestation(c):
         assert certificate.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == "CanoKey PIV Attestation 9a"
         extensions = {e.oid.dotted_string: e.value.value for e in certificate.extensions}
         assert extensions == {
-            "1.3.6.1.4.1.66602.1.1": bytes(4),
+            "1.3.6.1.4.1.66602.1.1": serial,
             "1.3.6.1.4.1.66602.1.2": b"\x03\x03",
         }
         if alg == 10:
@@ -1307,8 +1341,9 @@ def reset_and_persistence(c, issuer_key, issuer):
     c.cmd("restore_algorithms", 0xEE, 2, 0, original_config, le=None)
 
 
-def run(wire, progress=None, report=None):
+def run(wire, progress=None, report=None, *, hardware=False):
     c = Piv(wire, progress, report)
+    c.hardware = hardware
     try:
         for scenario in (
             unauthenticated_queries,

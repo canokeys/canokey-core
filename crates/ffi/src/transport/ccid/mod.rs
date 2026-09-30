@@ -197,10 +197,17 @@ pub unsafe extern "C" fn ck_ccid_scratch_busy() -> u8 {
 }
 // The USB receive window is dead before applet/crypto execution starts.
 #[inline(never)]
-unsafe fn receive_packet(transport: &mut Transport, platform: &mut Platform) -> bool {
+unsafe fn receive_packet(transport: &mut Transport, platform: &mut Platform, pending: bool) -> bool {
     let mut packet = [0; 64];
     let mut tick = 0;
-    let n = unsafe { ck_ccid_io_take(platform.generation, packet.as_mut_ptr(), &mut tick) };
+    // Only consume the packet whose command was admitted by the caller's peek.
+    // An IRQ can enqueue a TRANSFER after an empty peek; taking that new packet
+    // would bypass HID ownership, including extended-request preparation.
+    let n = if pending {
+        unsafe { ck_ccid_io_take(platform.generation, packet.as_mut_ptr(), &mut tick) }
+    } else {
+        0
+    };
     if n < 0 {
         return false;
     }
@@ -253,7 +260,7 @@ pub unsafe extern "C" fn CCID_Loop() {
         if ck_ccid_io_idle() != 0 {
             transport.completed();
         }
-        if transport.can_receive() && !receive_packet(transport, &mut platform) {
+        if transport.can_receive() && !receive_packet(transport, &mut platform, first >= 0) {
             return;
         }
 

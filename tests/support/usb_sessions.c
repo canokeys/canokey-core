@@ -15,6 +15,9 @@ static void (*timer)(void);
 static uint8_t fail_send;
 static uint8_t scratch[3072], scratch_owner;
 static unsigned leases, clears;
+static unsigned inject_after_unlock;
+static uint8_t injected_ccid[64];
+static uint16_t injected_length;
 extern void CCID_Loop(void);
 extern void WebUSB_Loop(void);
 extern uint8_t ck_transport_progress(void);
@@ -36,10 +39,15 @@ uint32_t __get_PRIMASK(void) { return masked; }
 void __disable_irq(void) { masked=1; }
 void __enable_irq(void) { masked=0; }
 uint32_t ck_usb_dcd_lock(void) { uint32_t m=masked;masked=1;return m; }
-void ck_usb_dcd_unlock(uint32_t m) { masked=m; }
+void ck_usb_dcd_unlock(uint32_t m) {
+  masked=m;
+  if (!masked && inject_after_unlock && --inject_after_unlock == 0)
+    assert(ck_usb_out(3,injected_ccid,injected_length)==0);
+}
 uint32_t device_get_tick(void) { return now; }
 void device_set_timeout(void(*cb)(void),uint16_t ms) { timer=cb;interval=ms; }
 void ck_usb_dcd_start(void) { assert(masked); }
+void ck_usb_dcd_enable_irq(void) { assert(masked); }
 void ck_usb_dcd_stop(void) { assert(masked); }
 void ck_usb_dcd_open(uint8_t ep) { assert(masked);opened[ix(ep)]=1;halted[ix(ep)]=0; }
 void ck_usb_dcd_close(uint8_t ep) { assert(masked);opened[ix(ep)]=0;if(ep&0x80) pending[ep&3]=0; }
@@ -101,7 +109,7 @@ static size_t read_control(uint8_t *output) {
 }
 static void configure(void) {
   usb_device_init(); assert(masked && !address && !ready);
-  setup(0,5,17,0,0);assert(address==0);status();assert(address==17);
+  setup(0,5,17,0,0);assert(address==17);status();assert(address==17);
   setup(0,9,1,0,0);assert(ready && ck_usb_configured());status();
 }
 size_t pke_buffer_size(void) { return sizeof(scratch); }
@@ -514,6 +522,24 @@ int main(void) {
   assert(hid_read(cid,0x81,hid)==8 && !memcmp(hid,nonce,8));
   assert(now==before);
   now+=2000; ccid_apdu(stale_response,sizeof(stale_response),0x6986);
+  /* Sweep IRQ arrival across CCID polling's unlocked boundaries. An APDU
+   * arriving after an empty peek must still respect the live HID idle lease. */
+  for(unsigned boundary=1;boundary<=8;++boundary) {
+    hid_send(cid,0x81,nonce,8);
+    assert(hid_read(cid,0x81,hid)==8 && !memcmp(hid,nonce,8));
+    memset(injected_ccid,0,sizeof(injected_ccid));
+    injected_ccid[0]=0x6f;injected_ccid[1]=sizeof(select_admin);
+    injected_ccid[6]=++sequence;
+    memcpy(injected_ccid+10,select_admin,sizeof(select_admin));
+    injected_length=10+sizeof(select_admin);
+    inject_after_unlock=boundary;
+    masked=0;CCID_Loop();masked=1;
+    if(inject_after_unlock) { inject_after_unlock=0;now+=2000;break; }
+    assert(!pending[3] && !scratch_owner);
+    CCID_Loop();assert(!pending[3]);
+    now+=1999;CCID_Loop();assert(!pending[3]);
+    now+=1;count=ccid_read(out);sw(out+10,count-10,0x9000);
+  }
   // A fragmented HID request owns the shared session before staging RX.
   // CCID waits until resynchronization releases and wipes that lease.
   uint8_t fragmented[64] = {0};

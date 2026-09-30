@@ -284,7 +284,9 @@ int32_t ck_platform_stream(uint8_t op, uint8_t alg, void *scratch, const uint8_t
 
 // Fixed primitive packet: ephemeral scalar, two peer points, two length-prefixed
 // identities, role, output length. APDU validation remains in Rust.
-int32_t ck_sm2_exchange(ecc_key_t *key, const uint8_t *in, size_t n, uint8_t *out) {
+// Keep the ephemeral key and ROM exchange scratch out of other ECC operations
+// when LTO combines the primitive adapters.
+__attribute__((noinline)) int32_t ck_sm2_exchange(ecc_key_t *key, const uint8_t *in, size_t n, uint8_t *out) {
   if (n != CK_SM2_SIZE || in[CK_SM2_OWN_ID] > SM2_ID_MAX_BYTES || in[CK_SM2_PEER_ID] > SM2_ID_MAX_BYTES ||
       in[CK_SM2_ROLE] > 1 || in[CK_SM2_OUTPUT_LENGTH] == 0 || in[CK_SM2_OUTPUT_LENGTH] > SM2_MAX_OUTPUT_BYTES)
     return -1;

@@ -9,6 +9,7 @@
 uint32_t ck_usb_dcd_lock(void);
 void ck_usb_dcd_unlock(uint32_t mask);
 void ck_usb_dcd_start(void);
+void ck_usb_dcd_enable_irq(void);
 void ck_usb_dcd_stop(void);
 void ck_usb_dcd_open(uint8_t endpoint);
 void ck_usb_dcd_close(uint8_t endpoint);
@@ -19,6 +20,7 @@ uint8_t ck_usb_dcd_write(uint8_t endpoint, const uint8_t *bytes, uint16_t length
 void ck_usb_dcd_ready(uint8_t ready);
 /* Hardware event calls, IRQ masked. OUT returns 1 to release FIFO, 0 to NAK. */
 void ck_usb_reset(void);
+void ck_usb_bus_reset(void);
 void ck_usb_suspend(void);
 void ck_usb_resume(void);
 void ck_usb_setup(const uint8_t *bytes, uint16_t length);

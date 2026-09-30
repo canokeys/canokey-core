@@ -13,14 +13,14 @@ The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
   malformed framing and command-size limits still reject invalid lengths.
   `80 10 00 00` carries CTAP bytes; ISO chaining uses CLA `90` and final CLA `80`.
   GetInfo is command `04`, with no parameters. Unknown CTAP commands return
-  CTAP INVALID_COMMAND inside a successful APDU envelope.
+  CTAP UNHANDLED_REQUEST (`F1`) inside a successful APDU envelope.
 - clientPIN (`06`) protocols 1 and 2: getPinRetries, getKeyAgreement, setPIN,
   changePIN, legacy getPinToken and getPinUvAuthTokenUsingPinWithPermissions.
   GetInfo reports the actual configured-PIN flag and protocols `[1, 2]`.
 - GetInfo is encoded once with minicbor into the shared response workspace.
   It reports resident credentials, ES256/Ed25519/SM2, credential management,
-  largeBlobs and the implemented extensions. The zero AAGUID identifies this
-  unprovisioned development profile.
+  largeBlobs and the implemented extensions. The AAGUID is
+  `244eb29e-e090-4e49-81fe-1f20f8d3b8f4`.
 - authenticatorSelection (`0b`) waits up to 30 seconds for a fresh press/release.
 - authenticatorConfig (`0d`) supports toggleAlwaysUv (2), setMinPINLength (3),
   and enableLongTouchForReset (4). GetInfo reports these capabilities and policy.

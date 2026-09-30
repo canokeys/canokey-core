@@ -16,6 +16,7 @@ unsafe extern "C" {
     fn ck_usb_dcd_lock() -> u32;
     fn ck_usb_dcd_unlock(mask: u32);
     fn ck_usb_dcd_start();
+    fn ck_usb_dcd_enable_irq();
     fn ck_usb_dcd_stop();
     fn ck_usb_dcd_open(ep: u8);
     fn ck_usb_dcd_close(ep: u8);
@@ -54,7 +55,6 @@ enum Phase {
     DataIn,
     StatusOut,
     StatusIn,
-    Address(u8),
     Led,
     #[cfg(feature = "usb-webusb")]
     WebReceive,
@@ -155,13 +155,47 @@ unsafe fn endpoints(enabled: bool) {
         ck_usb_dcd_ready(enabled as u8);
     }
 }
+
+// Invalidate software mailboxes without touching hardware FIFOs on BUSRST.
+unsafe fn reset_software_pipes() {
+    unsafe {
+        for ep in 1..=3 {
+            TX[ep as usize] = Tx::EMPTY;
+            HALTED &= !(3 << (ep * 2));
+            match ep {
+                3 => ck_ccid_packet_reset(),
+                #[cfg(feature = "usb-hid")]
+                2 => ck_hid_packet_reset(),
+                #[cfg(feature = "usb-keyboard")]
+                1 => ck_keyboard_packet_reset(),
+                _ => (),
+            }
+        }
+    }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn usb_device_init() {
     unsafe {
         let mask = ck_usb_dcd_lock();
         ck_usb_dcd_start();
-        ck_usb_reset();
+        // USBD_LL_Reset in the C stack only resets protocol state and opens
+        // the already-reset EP0. Do not touch FIFO/status registers here;
+        // the controller owns the initial control FIFO state.
+        ck_usb_boot_reset();
+        // Match the C LL startup order: software reset must be complete
+        // before USB IRQs can process the first BUSRST/SETUP sequence.
+        ck_usb_dcd_enable_irq();
         ck_usb_dcd_unlock(mask);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_usb_boot_reset() {
+    unsafe {
+        ck_usb_bus_reset();
+        // The controller initializes EP0; no SET_ADDRESS or FIFO writes here.
+        ck_usb_dcd_open(0);
+        ck_usb_dcd_open(0x80);
     }
 }
 #[unsafe(no_mangle)]
@@ -192,6 +226,26 @@ pub unsafe extern "C" fn ck_usb_reset() {
         ck_usb_dcd_receive(0);
     }
 }
+
+/// Hardware bus reset is already latched and EP0 remains owned by the USB
+/// controller. Match the legacy C LL reset: reset protocol state and disable
+/// configured data pipes without closing/reopening EP0 from the IRQ.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_usb_bus_reset() {
+    unsafe {
+        #[cfg(feature = "usb-webusb")]
+        {
+            crate::transport::webusb::reset();
+            CONTROL_WEB = false;
+        }
+        ck_usb_dcd_ready(0);
+        reset_software_pipes();
+        SUSPENDED = false;
+        (&mut *core::ptr::addr_of_mut!(DEVICE)).reset();
+        PHASE = Phase::Idle;
+        CONTROL_SOURCE = None;
+    }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_usb_suspend() {
     unsafe {
@@ -212,8 +266,6 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
         ck_usb_dcd_close(0x80);
         ck_usb_dcd_open(0);
         ck_usb_dcd_open(0x80);
-        ck_usb_dcd_stall(0, 0);
-        ck_usb_dcd_stall(0x80, 0);
         #[cfg(feature = "usb-webusb")]
         {
             crate::transport::webusb::abort_control();
@@ -289,7 +341,13 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
                 }
             }
             Reply::Status => status(Phase::StatusIn),
-            Reply::Address(address) => status(Phase::Address(address)),
+            Reply::Address(address) => {
+                // The CIU controller accepts SET_ADDRESS in the same order
+                // as the legacy C stack: program it before the EP0 status ZLP.
+                (&mut *core::ptr::addr_of_mut!(DEVICE)).address = address;
+                ck_usb_dcd_address(address);
+                status(Phase::StatusIn);
+            }
             Reply::Configure(enabled) => {
                 endpoints(enabled);
                 status(Phase::StatusIn);
@@ -392,11 +450,6 @@ pub unsafe extern "C" fn ck_usb_in(ep: u8) {
         if ep == 0 || ep == 0x80 {
             match PHASE {
                 Phase::DataIn => next_control(),
-                Phase::Address(address) => {
-                    DEVICE.address = address;
-                    PHASE = Phase::Idle;
-                    ck_usb_dcd_address(address);
-                }
                 Phase::StatusIn => PHASE = Phase::Idle,
                 #[cfg(feature = "usb-webusb")]
                 Phase::WebStatus => {
