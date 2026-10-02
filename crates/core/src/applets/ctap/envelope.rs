@@ -95,7 +95,8 @@ impl Parser {
         if self.fields.command == super::CONFIG && !matches!(p.subcommand, 2..=4) {
             return Err(Status::InvalidParameter);
         }
-        // Management checks required command fields before authenticating.
+        // authenticatorConfig checks auth length here only for a supplied
+        // protocol; protocol 0 is left to config.rs to report MissingParameter.
         if self.fields.command == super::CONFIG
             && p.auth_len != 0
             && p.protocol != 0

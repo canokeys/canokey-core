@@ -8,9 +8,8 @@ use super::{
 use crate::{ports::Platform, runtime::workspace::Workspace};
 use canokey_protocol::cbor::Event;
 
-// Sentinel used when a required COSE integer is absent from an incremental map.
-// Sentinel for an absent/non-integer COSE label; no valid agreement field uses
-// this value.
+// Sentinel for a non-integer/unsupported-width label. It is outside the
+// recognized hmac-secret extension labels 1..=4 and follows the skip path.
 const COSE_KEY_MISSING: i8 = 127;
 const HMAC_COSE_REQUIRED_MASK: u8 = 0x07;
 

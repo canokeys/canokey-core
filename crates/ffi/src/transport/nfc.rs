@@ -170,7 +170,9 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
             return;
         }
         let buffer = ck_ccid_response_buffer();
-        let n = ck_core_exchange(4, input, length, buffer, 258);
+        // Must match runtime/engine.rs::OWNER_NFC, including extended-APDU admission.
+        const OWNER_NFC: u8 = 4;
+        let n = ck_core_exchange(OWNER_NFC, input, length, buffer, 258);
         with_io(|io, _, now| {
             ck_nfc_io_schedule(None, 0);
             io.computed(now);

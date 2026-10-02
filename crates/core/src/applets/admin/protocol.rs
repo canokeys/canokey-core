@@ -13,6 +13,9 @@ const INS_VERIFY: u8 = 0x20;
 const INS_CHANGE_PIN: u8 = 0x21;
 const INS_GET_PASS_CONFIG: u8 = 0x43;
 const INS_SET_PASS_CONFIG: u8 = 0x44;
+pub(crate) const INS_SET_KEYMAP: u8 = 0x45;
+const INS_GET_KEYMAP: u8 = 0x46;
+const INS_RESET_KEYMAP: u8 = 0x47;
 const INS_RESET_PASS: u8 = 0x13;
 #[cfg(feature = "ctap")]
 pub(crate) const INS_PROVISION_ATTESTATION: u8 = 0x02;
@@ -151,7 +154,8 @@ impl Admin {
         w: &mut Workspace,
     ) -> Result<Action, Sw> {
         self.response_len = 0;
-        if h.ins == 0x46 && h.p1 == 0 && h.p2 <= 1 && le < if h.p2 == 0 { 1 } else { 256 } {
+        if h.ins == INS_GET_KEYMAP && h.p1 == 0 && h.p2 <= 1 && le < if h.p2 == 0 { 1 } else { 256 }
+        {
             self.cancel_command(w, p);
             return Err(Sw::WRONG_LENGTH);
         }
@@ -316,18 +320,21 @@ impl Admin {
             result.map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             return Ok(0);
         }
-        if matches!(h.ins, 0x45..=0x47) {
+        if matches!(h.ins, INS_SET_KEYMAP..=INS_RESET_KEYMAP) {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
-            if h.p1 != 0 || (h.ins == 0x46 && h.p2 > 1) || (h.ins == 0x47 && h.p2 != 0) {
+            if h.p1 != 0
+                || (h.ins == INS_GET_KEYMAP && h.p2 > 1)
+                || (h.ins == INS_RESET_KEYMAP && h.p2 != 0)
+            {
                 return Err(Sw::WRONG_P1P2);
             }
-            if self.used != if h.ins == 0x45 { 256 } else { 0 } {
+            if self.used != if h.ins == INS_SET_KEYMAP { 256 } else { 0 } {
                 return Err(Sw::WRONG_LENGTH);
             }
             use crate::runtime::config;
-            if h.ins == 0x46 {
+            if h.ins == INS_GET_KEYMAP {
                 let layout =
                     config::read_keymap(p.storage, (&mut w.output[..256]).try_into().unwrap())
                         .map_err(|_| Sw::REFERENCE_NOT_FOUND)?;
@@ -339,7 +346,7 @@ impl Admin {
                 };
                 return Ok(self.response_len as u32);
             }
-            let table = if h.ins == 0x45 {
+            let table = if h.ins == INS_SET_KEYMAP {
                 Some((&w.input[..256]).try_into().unwrap())
             } else {
                 None

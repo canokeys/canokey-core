@@ -106,7 +106,10 @@ unsafe extern "C" fn ck_pcsc_capability(
                 &[]
             }
         }
-        1 | 2 | 3 | 4 => &[1], // one reader/slot, killable poll, serialized driver
+        // host/native/pcsc.c maps kinds 1..=4 to IFD simultaneous access,
+        // slot count, killable polling and thread safety. Counts are one;
+        // both boolean capabilities are true (Rust ENTRY serializes calls).
+        1 | 2 | 3 | 4 => &[1],
         _ => return TAG,
     };
     unsafe { copy(data, out, cap, length) }
@@ -149,9 +152,9 @@ unsafe extern "C" fn ck_pcsc_power(
         }
         return SMALL;
     }
-    // Reader power cycles preserve CTAP continuations, as on USB CCID.
-    // Other applet grants and transport fragments are revoked; actual device
-    // reset/close still clears every session and the power-on window is unchanged.
+    // As on USB CCID, slot power retains CTAP selection and session ownership,
+    // but closes response chains and clears message fragments/workspace.
+    // Other applet grants are revoked; device reset/close clears every session.
     unsafe {
         ck_core_slot_power();
     }

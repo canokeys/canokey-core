@@ -58,8 +58,8 @@ impl Applet {
         self.session.install(p).map_err(|_| Sw::UNABLE_TO_PROCESS)
     }
     pub fn response_preemptable(&self) -> bool {
-        // CTAP's encoded-response threshold excluded the 32-byte command
-        // overhead. U2F registration always published a certificate source.
+        // Responses longer than 256 bytes and U2F registration responses
+        // backed by a certificate source may be preempted between APDU chunks.
         self.response.len() > 256
             || matches!(
                 self.response,

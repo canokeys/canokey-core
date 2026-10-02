@@ -70,8 +70,9 @@ pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
         return false;
     }
     // This deliberately remains separate from `wait`: factory reset requires
-    // five released, short gestures with LED prompts between them, while
-    // ordinary applet authorization accepts one gesture and no prompt.
+    // five released, short gestures with alternating 50/200 ms LED prompts
+    // and two-second gaps; ordinary authorization uses one gesture with
+    // continuous 100 ms LED blinking.
     let accepted = (|| {
         for round in 0..STRONG_TOUCH_COUNT {
             let start = device.now();

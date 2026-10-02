@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Static firmware binding and injectable host binding share the same contracts.
+//! `static-backend` alone selects concrete native adapters. `dynamic-backend`
+//! selects trait objects and takes precedence when both features are enabled;
+//! neither feature also selects trait objects.
 
 #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
 pub type StoragePort<'a> = crate::native::StorageBackend;

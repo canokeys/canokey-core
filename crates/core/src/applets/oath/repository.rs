@@ -45,10 +45,18 @@ impl<'a> Mac<'a> {
 const ID_BYTES: usize = 4;
 const ENTRY_HEADER_BYTES: usize = ID_BYTES + codec::HEADER_BYTES;
 const ENTRY_BYTES: u32 = (ID_BYTES + codec::LENGTH) as u32;
+const STORAGE_PAGE_BYTES: u32 = 512;
+// Measured 204-page CIU policy: metadata compaction margin above the projected
+// OATH tail copy, with a 20 KiB floor for the primary mixed workload.
+const METADATA_MARGIN_PAGES: u32 = 8;
+const MIN_UPDATE_RESERVE_BYTES: u32 = 20 * 1024;
+// Conservative durable growth for appending a fixed slot, including a CTZ page.
+const PROJECTED_GROWTH_PAGES: u32 = 2;
 // OATH-local admission margin, not a reservation enforced by other applets.
 // A patch near the beginning can copy the entire surviving CTZ tail.
 fn update_reserve(size: u32) -> u32 {
-    ((size + ENTRY_BYTES).div_ceil(512) * 512 + 8 * 512).max(20 * 1024)
+    let tail_pages = (size + ENTRY_BYTES).div_ceil(STORAGE_PAGE_BYTES);
+    ((tail_pages + METADATA_MARGIN_PAGES) * STORAGE_PAGE_BYTES).max(MIN_UPDATE_RESERVE_BYTES)
 }
 // Distinguish fixed slots from every earlier encoding, including empty files.
 const FILE_HEADER: &[u8; 4] = b"OAT2";
@@ -251,7 +259,10 @@ impl Repository for Store<'_> {
         if vacant == size
             && !self
                 .storage
-                .has_space(2 * 512, update_reserve(size))
+                .has_space(
+                    PROJECTED_GROWTH_PAGES * STORAGE_PAGE_BYTES,
+                    update_reserve(size),
+                )
                 .map_err(io)?
         {
             return Err(Error::NoSpace);

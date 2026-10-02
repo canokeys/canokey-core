@@ -14,9 +14,9 @@ unsafe extern "C" {
     fn ck_hid_io_peek(report: *mut u8, length: u8, tick: *mut u32, epoch: u32) -> u8;
     fn ck_hid_io_consume(epoch: u32);
     fn ck_hid_io_receive();
-    fn ck_hid_io_send(report: *mut u8, epoch: u32) -> u8;
+    fn ck_hid_io_send(report: *const u8, epoch: u32) -> u8;
     fn ck_hid_reset();
-    fn ck_hid_poll(input: *const u8, received: u32, now: u32, output: *mut u8) -> u8;
+    fn ck_hid_poll(input: *const [u8; 64], received: u32, now: u32, output: *mut [u8; 64]) -> u8;
 }
 // Separate endpoint-owned buffers: progress runs while poll borrows OUTGOING.
 static mut OUTGOING: [u8; 64] = [0; 64];
@@ -95,7 +95,7 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
     unsafe {
         let report = &mut *core::ptr::addr_of_mut!(CONTROL);
         wire::header(report, cid, command, 1)[0] = value;
-        if ck_hid_io_send(report.as_mut_ptr(), epoch) == 0 {
+        if ck_hid_io_send(report.as_ptr(), epoch) == 0 {
             LINK.abandon = true;
             return;
         }
@@ -269,13 +269,13 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         }
         let result = ck_hid_poll(
             if has_input {
-                report.as_ptr()
+                core::ptr::addr_of!(report)
             } else {
                 core::ptr::null()
             },
             received,
             device_get_tick(),
-            core::ptr::addr_of_mut!(OUTGOING).cast(),
+            core::ptr::addr_of_mut!(OUTGOING),
         );
         if generation != ck_hid_io_epoch() {
             return 0;

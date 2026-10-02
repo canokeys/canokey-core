@@ -5,6 +5,10 @@
 use canokey_protocol::response::StatusWord as Sw;
 pub const AID: &[u8] = &[0xd2, 0x76, 0, 0, 0x85, 1, 1];
 pub const FILE_LIMIT: usize = 1024;
+// ISO 7816-4 instructions used by the Type-4 NDEF application.
+const INS_SELECT: u8 = 0xa4;
+pub(crate) const INS_READ_BINARY: u8 = 0xb0;
+pub(crate) const INS_UPDATE_BINARY: u8 = 0xd6;
 pub const DEFAULT_CC: [u8; 15] = [0, 15, 0x20, 4, 0, 4, 0, 4, 6, 0, 1, 4, 0, 0, 0];
 const INITIAL: &[u8] = b"\x00\x11\xd1\x01\x0d\x55\x04canokeys.org";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -311,7 +315,7 @@ impl Applet {
     pub fn begin(&mut self, h: canokey_protocol::apdu::Header) -> Result<(), Sw> {
         self.cancel();
         self.header = h;
-        if !matches!(h.ins, 0xa4 | 0xb0 | 0xd6) {
+        if !matches!(h.ins, INS_SELECT | INS_READ_BINARY | INS_UPDATE_BINARY) {
             return Err(Sw::INS_NOT_SUPPORTED);
         }
         Ok(())
@@ -327,7 +331,7 @@ impl Applet {
         Ok(())
     }
     pub fn end_frame(&mut self, last: bool, p: &mut crate::Platform<'_>) -> Result<(), Sw> {
-        if self.header.ins == 0xd6 {
+        if self.header.ins == INS_UPDATE_BINARY {
             let offset = u16::from_be_bytes([self.header.p1, self.header.p2]) as usize;
             let result = self
                 .file
@@ -341,19 +345,19 @@ impl Applet {
     }
     pub fn finish(&mut self, le: u32, p: &mut crate::Platform<'_>) -> Result<(u32, Sw), Sw> {
         match self.header.ins {
-            0xa4 => {
+            INS_SELECT => {
                 self.file
                     .select(self.header.p1, self.header.p2, &self.input[..self.used])?;
                 Ok((0, Sw::SUCCESS))
             }
-            0xb0 => {
+            INS_READ_BINARY => {
                 let offset = u16::from_be_bytes([self.header.p1, self.header.p2]) as usize;
                 self.file.check_read(offset, le as usize, p.storage)?;
                 self.response_offset = offset;
                 self.response_length = le as usize;
                 Ok((le, Sw::SUCCESS))
             }
-            0xd6 => Ok((0, Sw::SUCCESS)),
+            INS_UPDATE_BINARY => Ok((0, Sw::SUCCESS)),
             _ => Err(Sw::INS_NOT_SUPPORTED),
         }
     }

@@ -2,9 +2,13 @@
 //! EP0/main-loop handoff. All state access is IRQ-masked; Core runs unmasked
 //! with no live borrow of STATE. The existing CCID response allocation is also
 //! the WebUSB RX/TX allocation, exclusively leased by main-loop admission.
-//! A single 16-byte FIFO mailbox bridges SETUP arriving during another call.
+//! A single 16-byte FIFO mailbox holds a data-stage OUT packet received after
+//! SETUP admission but before the main loop accepts the command.
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
+// Shared-session owner ABI: APDU=0, CCID=1, HID CTAP=2, WebUSB=3, NFC=4.
+// runtime/engine.rs uses these identities to preempt other transport sessions.
+const OWNER_WEBUSB: u8 = 3;
 unsafe extern "C" {
     fn ck_usb_dcd_lock() -> u32;
     fn ck_usb_dcd_unlock(mask: u32);
@@ -199,7 +203,7 @@ pub unsafe extern "C" fn WebUSB_Loop() {
             }
             let buffer = ck_ccid_response_buffer();
             // ck_core_exchange ends the input borrow before creating output.
-            let n = ck_core_exchange(3, buffer, length, buffer, RESPONSE_LIMIT);
+            let n = ck_core_exchange(OWNER_WEBUSB, buffer, length, buffer, RESPONSE_LIMIT);
             let n = if n < 0 {
                 // Preserve a pollable APDU failure on a response-source error.
                 *buffer = 0x6f;

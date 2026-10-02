@@ -14,7 +14,11 @@ Mutations stream into the session stage using disjoint existing workspace
 borrows and a single atomic publish. Last-member deletion removes the file.
 No group-sized stack buffer or extra file cache is used. Enumeration and
 same-RP/user replacement retain logical-slot order. Reset deletes groups and
-user-information updates retain best-effort semantics. Actual CIU-model fault
+user-information updates retain best-effort semantics: they return success even
+if group publication fails or has an uncertain outcome. Credential deletion
+propagates storage errors. Atomic group publication still prevents partial
+records; it does not imply that a best-effort command reports storage failure.
+Actual CIU-model fault
 tests compare complete old/new group bytes. Capacity depends on occupancy and
 field lengths; see the platform NFCC storage capacity report.
 

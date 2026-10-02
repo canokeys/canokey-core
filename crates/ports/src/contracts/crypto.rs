@@ -153,6 +153,9 @@ pub trait Crypto {
         output: &mut [u8; 64],
     ) -> Result<(), CryptoError>;
     fn random(&mut self, output: &mut [u8]) -> Result<(), CryptoError>;
+    /// Infallible native HMAC capability used only by profiles with a provider.
+    /// Without `platform-hmac`, the native binding leaves output unchanged;
+    /// unlike `mac` and `random`, this method cannot report an unavailable provider.
     fn hmac_sha1(&mut self, key: &[u8; 20], input: &[u8], output: &mut [u8; 20]);
 }
 /// Audited platform erasure, separate from crypto and storage mutable borrows.

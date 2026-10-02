@@ -4,6 +4,10 @@
 use super::{Key, Status};
 use canokey_protocol::cbor::Event;
 
+// Sentinel for a non-integer/unsupported-width label. It is outside the
+// recognized COSE EC2 agreement labels 1, 3, -1, -2 and -3 and follows the skip path.
+const COSE_KEY_MISSING: i8 = 127;
+
 pub(super) struct Parser {
     previous: Option<Key>,
     key: Option<Option<i8>>,
@@ -55,9 +59,7 @@ impl Parser {
             self.key = Some(Key::ordered(event, &mut self.previous)?);
             return Ok(false);
         };
-        // No recognized COSE agreement label uses 127. Full-width labels are
-        // ordered above before unrecognized ones reach this skip path.
-        let key = key.unwrap_or(127);
+        let key = key.unwrap_or(COSE_KEY_MISSING);
         let bit = field(key, event)?;
         if bit == 0 {
             if super::is_cbor_container(event) {

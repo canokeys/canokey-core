@@ -203,8 +203,7 @@ impl State {
             KEY_HEADER_BYTES + 1,
             KEY_HEADER_BYTES + OATH_KEY_LIMIT,
         )?;
-        // KEY starts with the OATH kind/algorithm byte; the remaining
-        // bytes are the secret material.
+        // OATH PUT KEY encodes kind/algorithm, digits, then secret material.
         let kind = Kind::from_byte(key[0]).map_err(status)?;
         let alg = Algorithm::from_byte(key[0] & Kind::ALGORITHM_MASK).map_err(status)?;
         let prop = if c.peek() == Some(tag::PROPERTY) {
@@ -413,7 +412,8 @@ impl State {
     }
 
     // Keep command dispatch separate from finish-time wiping and error cleanup.
-    // This boundary reduces both full CIU images with the pinned optimizer.
+    // This boundary reduces code size in the full DevKit and NFCC images
+    // with the pinned optimizer.
     #[inline(never)]
     fn execute(
         &mut self,

@@ -220,8 +220,8 @@ fn install_rejects_old_and_malformed_state_without_reprovisioning() {
     use super::repository as repo;
     let mut c = Card::new();
     let valid = c.disk.records[&Record::PgpState.id()].clone();
-    // Version 1 stored four flags, 60 CA-fingerprint bytes, then packed
-    // length/value fields: empty name/login/language/URL and sex "9".
+    // Version 1 stored a version byte, three flags, 60 CA-fingerprint bytes,
+    // then packed length/value fields: empty name/login/language/URL and sex "9".
     let mut compact = std::vec![0; 64];
     compact[0] = 1;
     compact.extend_from_slice(&[0, 0, 0, 1, b'9', 0]);

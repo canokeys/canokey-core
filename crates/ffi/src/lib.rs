@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
-// Both C entrypoint families use the same serialized, lazy BSS initialization
+// C entrypoints use the same serialized, lazy BSS initialization
 // pattern. Keeping it in one macro prevents the READY flag and constructor
-// safety contract from drifting between CORE and HID state.
+// safety contract from drifting between CORE, CCID and HID state.
 #[macro_export]
 macro_rules! lazy_state {
     ($state:ident, $ready:ident, $ty:ty, $init:expr, $initializer:ident, $getter:ident) => {

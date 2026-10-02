@@ -14,8 +14,8 @@ pub const PARAMETERS: u8 = 0x82;
 pub const BAD_SLOT: u8 = 5;
 pub const BAD_POWER: u8 = 7;
 pub const BAD_LENGTH: u8 = 8;
-pub const MUTE: u8 = 0xfe;
-pub const HARDWARE: u8 = 0xfb;
+pub const MUTE: u8 = 0xfe; // USB CCID 1.1 bError: ICC_MUTE (ICC did not respond).
+pub const HARDWARE: u8 = 0xfb; // USB CCID 1.1 bError: HW_ERROR (hardware failure).
 pub const ATR: &[u8] = &[
     0x3b, 0xf7, 0x11, 0, 0, 0x81, 0x31, 0xfe, 0x65, 0x43, 0x61, 0x6e, 0x6f, 0x4b, 0x65, 0x79, 0x99,
 ];

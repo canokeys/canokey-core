@@ -18,7 +18,7 @@ pub(super) mod ins {
     pub const GET_CHALLENGE: u8 = 0x84;
     pub const TERMINATE: u8 = 0xe6;
     pub const ACTIVATE: u8 = 0x44;
-    // CanoKey extension (not OpenPGP Card 3.4): see docs/openpgp.md.
+    // CanoKey extension (not OpenPGP Card 3.4): see docs/applets/openpgp.md.
     pub const SET_RETRIES: u8 = 0xf2;
 }
 pub(super) mod tag {

@@ -49,7 +49,7 @@ int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
 int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
 /* Root-level two-digit hexadecimal filenames, IDs 0..183 (00..b7).
  * IDs 184/185 map to the NDEF-compatible E103/NDEF filenames.
- * Record assignments are defined in crates/core/src/ports/storage.rs.
+ * Record assignments are defined in crates/ports/src/contracts/storage.rs.
  * File 0 = versioned slots, file 1 = versioned PIN,
  * file 2 = OATH metadata, file 3 = OATH records.
  * Files 4..13 are OpenPGP state, PW1/PW3/RC, SIG/DEC/AUT keys and certificates.
@@ -75,7 +75,7 @@ int32_t ck_platform_mac(uint8_t algorithm, const uint8_t *key, size_t key_length
                         uint8_t output[64]);
 int32_t ck_platform_random(uint8_t *output, size_t length);
 void ck_platform_serial(uint8_t output[4]);
-/* Stable byte ABI, mirrored by StageOperation in crates/ffi/src/platform/storage.rs. */
+/* Stable byte ABI, mirrored by StageOperation in crates/ports/src/native/storage.rs. */
 enum ck_stage_operation {
   CK_STAGE_BEGIN = 0,
   CK_STAGE_APPEND = 1,

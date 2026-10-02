@@ -92,7 +92,8 @@ impl Record {
     pub const CtapCertificate: Self = Self(183);
     pub const NdefCapability: Self = Self(184);
     pub const NdefMessage: Self = Self(185);
-    /// Enumerate the durable Rust record namespace without exposing unchecked IDs.
+    /// Validate a raw ID in the backend namespace 0..=185, including reserved
+    /// holes and CTAP group IDs. This does not imply an assigned or existing record.
     pub const fn from_id(id: u8) -> Option<Self> {
         if id <= Self::NdefMessage.0 {
             Some(Self(id))

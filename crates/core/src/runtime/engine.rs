@@ -8,6 +8,8 @@ use canokey_protocol::{
 
 pub(super) const DEFAULT_APDU_LE: u32 = 256;
 const MAX_FRAME_CHUNK: usize = 256;
+// Shared-session identities mirrored by ffi/transport and the ck_core_exchange
+// owner argument. WebUSB uses 3 and has no special retention/extended policy.
 pub(crate) const OWNER_APDU: u8 = 0;
 pub(crate) const OWNER_CCID: u8 = 1;
 pub(crate) const OWNER_NFC: u8 = 4;

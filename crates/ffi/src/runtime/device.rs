@@ -2,6 +2,13 @@
 //! Boot, mode and main-loop policy. Board callbacks perform hardware actions;
 //! none may borrow Core. Settings notifications touch disjoint device state.
 use canokey_rust_core::runtime::config;
+// Stable u8 board ABI; keep values aligned with platform/rust-core/board.h.
+const CLOCK_USB_STARTUP: u8 = 0;
+const CLOCK_CONTACTLESS: u8 = 1;
+const CLOCK_USB_OPERATING: u8 = 2;
+// ck_board_crypto_check ABI in platform/rust-core/board.h: RNG=0, SM4=1, PKE=2.
+// Keep the count aligned with CK_BOARD_CRYPTO_CHECK_COUNT when adding a check.
+const CRYPTO_CHECK_COUNT: u8 = 3;
 unsafe extern "C" {
     fn ck_board_prepare();
     #[cfg(feature = "nfc")]
@@ -86,7 +93,11 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
         let nfc_mode = false;
         #[cfg(feature = "nfc")]
         crate::transport::nfc::ck_nfc_set_mode(nfc_mode as u8);
-        ck_board_clock(nfc_mode as u8); // USB startup 40 MHz or contactless 20 MHz.
+        ck_board_clock(if nfc_mode {
+            CLOCK_CONTACTLESS
+        } else {
+            CLOCK_USB_STARTUP
+        });
         if !readable {
             blink(10, 1000);
         }
@@ -133,8 +144,8 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
             while ck_board_usb_ready() == 0 {
                 CCID_Loop();
             }
-            ck_board_clock(2); // USB operating clock after enumeration.
-            for primitive in 0..3 {
+            ck_board_clock(CLOCK_USB_OPERATING);
+            for primitive in 0..CRYPTO_CHECK_COUNT {
                 if ck_board_crypto_check(primitive) != 0 {
                     blink(50, 50);
                 }

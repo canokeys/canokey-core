@@ -488,7 +488,7 @@ impl Session {
                     return Err(Status::InvalidParameter);
                 }
                 // Keep the ID, RP and user handle. Rewrite only variable strings,
-                // then atomically replace this record; no second metadata commit.
+                // then publish the group atomically; no second metadata commit.
                 let name = user.name.unwrap_or(entry.name).as_bytes();
                 let display = user.display.unwrap_or(entry.display).as_bytes();
                 let at = credential::ID_BYTES + 32;
@@ -503,7 +503,10 @@ impl Session {
                         entry.blob,
                     ],
                 );
-                resident::replace(index, &w.output[..at + n], w.input, p).unwrap_or_default();
+                // User-information updates deliberately remain best effort:
+                // report success even if publication fails or is uncertain.
+                // Deletion above requires confirmed success instead.
+                let _ = resident::replace(index, &w.output[..at + n], w.input, p);
             }
             w.output[0] = 0;
             return Ok(1);

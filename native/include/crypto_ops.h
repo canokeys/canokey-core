@@ -22,7 +22,7 @@ static inline int ck_ecc_complete_key(key_type_t alg, ecc_key_t *key) {
 #endif
 }
 
-// Native workspace ABI mirrored by ports/crypto.rs::key_layout and state types.
+// Native workspace ABI mirrored by crates/ports/src/contracts/crypto.rs key_layout and state types.
 enum ck_crypto_workspace {
   CK_KEY_METADATA_BYTES = 4,
   CK_RSA_EXPONENT_BYTES = 4,
@@ -33,7 +33,7 @@ enum ck_crypto_workspace {
   CK_CRYPTO_SCRATCH_BYTES = 2400,
   CK_HASH_STATE_BYTES = 256,
 };
-// Stable ABI, mirrored by the enums in crates/core/src/ports/crypto.rs.
+// Stable ABI, mirrored by the enums in crates/ports/src/contracts/crypto.rs.
 enum ck_key_operation {
   CK_KEY_GENERATE = 0,
   CK_KEY_VALIDATE = 1,
@@ -64,7 +64,7 @@ enum ck_digest_operation {
   CK_DIGEST_FINAL = 2,
   CK_DIGEST_ABORT = 3,
 };
-// Fixed SM2 exchange packet, mirrored by ports/crypto.rs::sm2_packet.
+// Fixed SM2 exchange packet, mirrored by crates/ports/src/contracts/crypto.rs::sm2_packet.
 enum ck_sm2_packet {
   CK_SM2_PEER_STATIC = 32,
   CK_SM2_PEER_EPHEMERAL = 96,

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pub trait Device {
+    /// Write the device serial. Native bindings without `platform-serial` leave
+    /// output unchanged; callers must initialize any fallback before the call.
     fn serial(&mut self, output: &mut [u8; 4]);
     /// Raw firmware version (0), product (1), core revision (2), or chip ID (3).
     /// The caller owns protocol validation and response truncation.

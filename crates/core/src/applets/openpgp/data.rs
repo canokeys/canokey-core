@@ -19,7 +19,7 @@ const CARD_VERSION_AND_MANUFACTURER: &[u8] = &[0x03, 0x04, 0xf1, 0xd0];
 const MAX_PIN_LENGTH: u8 = 64;
 // OpenPGP Card 3.4, DO 5F52 (ISO 7816 historical bytes). This is card discovery
 // metadata, not an event log. Compact-TLV headers encode tag/length in nibbles.
-// Keep the advertised profile aligned with applets/openpgp/openpgp.c.
+// Preserve the advertised CanoKey card capabilities and operational status.
 const HISTORICAL_BYTES: &[u8] = &[
     0x00, // Category indicator: final three bytes contain card status.
     0x31, 0xc5, // Card-service data: compact tag 3, one-byte service flags.
@@ -63,8 +63,9 @@ impl OpenPgp {
     pub(super) fn get(&self, tag: u16, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
         let mut s = [0; repo::STATE_LEN];
         if Self::needs_state(tag) {
-            // State validation covers version, flags and all fingerprint
-            // slots; wrapped DOs share this one validated snapshot.
+            // State validation checks record length, version, bounded flags
+            // and field lengths. Fingerprints remain opaque fixed-size bytes;
+            // wrapped DOs share this one validated snapshot.
             repo::state(p, &mut s)?;
         }
         let mut v = Writer::new(out);

@@ -129,7 +129,7 @@ impl OpenPgp {
                 &b[1..]
             }
         } else {
-            // Preserve the C OpenPGP signature-input policy: RSA accepts at
+            // Preserve the legacy OpenPGP signature-input policy: RSA accepts at
             // most 2/5 of its modulus byte length; non-Ed EC accepts one scalar
             // width. This is an applet limit, not the PKCS#1 padding capacity.
             if b.is_empty()

@@ -544,6 +544,8 @@ fn tlv(off: usize, end: usize, p: &mut Platform<'_>) -> Result<Tlv, Sw> {
     })
 }
 type FileSpan = (usize, usize);
+// Return the signer's subject and validity spans. The new certificate uses
+// this subject as its issuer, not the issuer field of the signer's certificate.
 fn parse_cert(p: &mut Platform<'_>) -> Result<(FileSpan, FileSpan), Sw> {
     let e = Sw::REFERENCE_NOT_FOUND;
     let size = p
@@ -580,6 +582,7 @@ fn parse_cert(p: &mut Platform<'_>) -> Result<(FileSpan, FileSpan), Sw> {
     if v.tag == DER_VERSION_EXPLICIT {
         off += v.total
     }
+    // Skip TBSCertificate serialNumber, signature and issuer, in that order.
     for tag in [DER_INTEGER, DER_SEQUENCE, DER_SEQUENCE] {
         let f = tlv(off, end, p)?;
         if f.tag != tag {
@@ -591,13 +594,13 @@ fn parse_cert(p: &mut Platform<'_>) -> Result<(FileSpan, FileSpan), Sw> {
     if validity.tag != DER_SEQUENCE {
         return Err(e);
     }
-    let vp = (off, validity.total);
+    let validity_span = (off, validity.total);
     off += validity.total;
-    let issuer = tlv(off, end, p)?;
-    if issuer.tag != DER_SEQUENCE {
+    let subject = tlv(off, end, p)?;
+    if subject.tag != DER_SEQUENCE {
         return Err(e);
     }
-    Ok(((off, issuer.total), vp))
+    Ok(((off, subject.total), validity_span))
 }
 
 #[cfg(test)]

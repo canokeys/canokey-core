@@ -247,7 +247,7 @@ impl Transport {
         data[..8].copy_from_slice(&frame.data[..8]);
         data[8..12].copy_from_slice(&assigned.to_be_bytes());
         data[12] = 2; // CTAPHID interface version
-        data[16] = 0x05; // WINK, CBOR and MSG
+        data[16] = 0x05; // WINK and CBOR bits; MSG is supported by leaving NMSG clear.
         true
     }
     /// Finish parsing before releasing input; execute only after release.

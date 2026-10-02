@@ -305,6 +305,9 @@ native_port! { impl Crypto for CryptoBackend {
         }
         #[cfg(not(feature = "platform-hmac"))]
         {
+            // Without a provider this infallible ABI leaves output untouched.
+            // Callers needing a digest must enable platform-hmac; there is no
+            // failure return value as there is for mac/random.
             let _ = (key, input, out);
         }
     }

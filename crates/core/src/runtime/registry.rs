@@ -165,7 +165,7 @@ impl AppletState {
                     return (h.unchained().cla, ctap::provision::CERT_LIMIT as u32);
                 }
                 (
-                    if h.ins == 0x45 {
+                    if h.ins == admin::INS_SET_KEYMAP {
                         h.unchained().cla
                     } else {
                         h.cla
@@ -196,7 +196,7 @@ impl AppletState {
             ),
             #[cfg(feature = "ndef")]
             Self::Ndef(_) => (
-                if h.ins == 0xd6 {
+                if h.ins == crate::applets::ndef::INS_UPDATE_BINARY {
                     h.unchained().cla
                 } else {
                     h.cla
@@ -386,7 +386,9 @@ impl Router for Registry {
             return true;
         }
         #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xb0 {
+        if matches!(self.applet, AppletState::Ndef(_))
+            && header.ins == crate::applets::ndef::INS_READ_BINARY
+        {
             return true;
         }
         #[cfg(feature = "ctap")]
@@ -425,7 +427,9 @@ impl Router for Registry {
         // NDEF UPDATE continues at the first fragment's offset; subsequent
         // P1/P2 values do not restart that applet's write cursor.
         #[cfg(feature = "ndef")]
-        if matches!(self.applet, AppletState::Ndef(_)) && header.ins == 0xd6 {
+        if matches!(self.applet, AppletState::Ndef(_))
+            && header.ins == crate::applets::ndef::INS_UPDATE_BINARY
+        {
             return Header {
                 p1: 0,
                 p2: 0,

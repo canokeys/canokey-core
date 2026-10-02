@@ -25,8 +25,9 @@ ctest --test-dir build/host --output-on-failure
 `ENABLE_TESTS` enables the LittleFS helper suite and native ASan/UBSan coverage.
 `BUILD_TESTING` controls regression registration. Native crypto cleanup also
 requires Linux ASan/LeakSanitizer coverage; macOS alone is not a leak oracle.
-Platform integration fixtures are registered only when the parent CIU port is
-present. Host-only checkouts do not depend on parent hardware sources.
+Platform storage integration fixtures require explicit
+`CANOKEY_PLATFORM_STORAGE_FIXTURE` and `CANOKEY_PLATFORM_STORAGE_STUBS` paths
+from the CIU port. Host-only checkouts do not depend on parent hardware sources.
 
 ## Explicit profiles
 

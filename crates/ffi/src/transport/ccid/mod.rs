@@ -2,6 +2,13 @@
 //! Serialized CCID entrypoint. IRQs operate only the platform packet mailbox.
 use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, Transport};
 
+// Session identity must match runtime/engine.rs::OWNER_CCID; it controls
+// CTAP ownership retention and admission of standalone extended FIDO APDUs.
+const OWNER_CCID: u8 = 1;
+#[cfg(feature = "ctap")]
+// Must match PKE_BUFFER_OWNER_CTAP in native/include/pke.h (also used by HID).
+const PKE_OWNER_CTAP: u8 = 3;
+
 crate::lazy_state!(
     CCID,
     CCID_READY,
@@ -44,7 +51,7 @@ impl Scratch for Platform {
     fn acquire(&mut self, length: usize) -> bool {
         #[cfg(feature = "ctap")]
         unsafe {
-            length <= pke_buffer_size() && pke_buffer_acquire(3) == 0
+            length <= pke_buffer_size() && pke_buffer_acquire(PKE_OWNER_CTAP) == 0
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -78,7 +85,7 @@ impl Scratch for Platform {
         #[cfg(feature = "ctap")]
         unsafe {
             assert_eq!(pke_buffer_clear(), 0);
-            assert_eq!(pke_buffer_release(3), 0);
+            assert_eq!(pke_buffer_release(PKE_OWNER_CTAP), 0);
         }
     }
 }
@@ -149,7 +156,7 @@ impl Backend for Platform {
         let input = request.short();
         let n = unsafe {
             crate::abi::core::ck_core_exchange(
-                1,
+                OWNER_CCID,
                 input.as_ptr(),
                 input.len(),
                 out.as_mut_ptr(),
@@ -197,7 +204,11 @@ pub unsafe extern "C" fn ck_ccid_scratch_busy() -> u8 {
 }
 // The USB receive window is dead before applet/crypto execution starts.
 #[inline(never)]
-unsafe fn receive_packet(transport: &mut Transport, platform: &mut Platform, pending: bool) -> bool {
+unsafe fn receive_packet(
+    transport: &mut Transport,
+    platform: &mut Platform,
+    pending: bool,
+) -> bool {
     let mut packet = [0; 64];
     let mut tick = 0;
     // Only consume the packet whose command was admitted by the caller's peek.

@@ -557,7 +557,8 @@ impl Parser {
     }
 }
 
-// Encoded integer ordering: positive major type, then negative argument.
+// Integer keys sort by (negative, argument): nonnegative keys before negative.
+// This is not length-first canonical CBOR ordering across encoded widths.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Key {
     negative: bool,

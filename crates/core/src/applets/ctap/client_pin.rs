@@ -3,9 +3,8 @@
 use super::{Command, Key, Status};
 use canokey_protocol::cbor::Event;
 
-// Sentinel used when a required COSE integer is absent from an incremental map.
-// Outside the signed i8 COSE key labels; forces an absent/non-integer label
-// through the unknown-member path without colliding with a valid field.
+// Sentinel for a non-integer/unsupported-width label. It is outside the
+// recognized clientPIN labels 1..=6, 9 and 10 and follows the skip path.
 const COSE_KEY_MISSING: i8 = 127;
 
 #[repr(C)]

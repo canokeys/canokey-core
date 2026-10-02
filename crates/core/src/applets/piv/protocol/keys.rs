@@ -6,6 +6,9 @@ use crate::ports::alg;
 use crate::ports::sm2_packet;
 use crate::runtime::workspace::agreement_layout as agreement;
 
+// GM/T 0003.4 default SM2 user identity, used for both parties unless supplied.
+const SM2_DEFAULT_ID: &[u8; 16] = b"1234567812345678";
+
 fn parse_sm2_packet(
     exp: &mut &[u8],
     own: Option<&[u8]>,
@@ -21,10 +24,9 @@ fn parse_sm2_packet(
         }
         packet[at..at + 64].copy_from_slice(&v[1..]);
     }
-    let default = b"1234567812345678";
-    packet[sm2_packet::PEER_ID] = 16;
-    packet[sm2_packet::PEER_ID + 1..sm2_packet::PEER_ID + 1 + default.len()]
-        .copy_from_slice(default);
+    packet[sm2_packet::PEER_ID] = SM2_DEFAULT_ID.len() as u8;
+    packet[sm2_packet::PEER_ID + 1..sm2_packet::PEER_ID + 1 + SM2_DEFAULT_ID.len()]
+        .copy_from_slice(SM2_DEFAULT_ID);
     if exp.first() == Some(&ga_tag::PEER_ID) {
         let (_, v) = codec::take(exp)?;
         if v.is_empty() || v.len() > 32 {
@@ -33,8 +35,9 @@ fn parse_sm2_packet(
         packet[sm2_packet::PEER_ID] = v.len() as u8;
         packet[sm2_packet::PEER_ID + 1..sm2_packet::PEER_ID + 1 + v.len()].copy_from_slice(v);
     }
-    packet[sm2_packet::OWN_ID] = 16;
-    packet[sm2_packet::OWN_ID + 1..sm2_packet::OWN_ID + 1 + default.len()].copy_from_slice(default);
+    packet[sm2_packet::OWN_ID] = SM2_DEFAULT_ID.len() as u8;
+    packet[sm2_packet::OWN_ID + 1..sm2_packet::OWN_ID + 1 + SM2_DEFAULT_ID.len()]
+        .copy_from_slice(SM2_DEFAULT_ID);
     if let Some(v) = own {
         if v.len() > 32 {
             return Err(Sw::WRONG_DATA);

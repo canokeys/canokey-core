@@ -3,20 +3,37 @@
 use super::{
     Status,
     credential::{ID_BYTES, Id},
-    credential_request::Parameters,
+    credential_request::{CRED_BLOB_BYTES, Parameters},
     crypto::equal,
 };
 use crate::ports::{Platform, Record, StorageError};
 
-pub(super) const RESIDENT: u8 = 4;
-pub(super) const LARGE_BLOB_KEY: u8 = 8;
-pub(super) const MAX_BYTES: usize = ID_BYTES + 32 + 5 + 32 + 64 * 3 + 32;
-const GROUP_HEADER: usize = 12;
+pub(super) const RESIDENT: u8 = 0x04;
+pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
+const RP_HASH_BYTES: usize = 32;
+const RP_DISPLAY_BYTES: usize = 32;
+const USER_ID_BYTES: usize = 64;
+const USER_NAME_BYTES: usize = 64;
+const USER_DISPLAY_BYTES: usize = 64;
+const FIELD_COUNT: usize = 5;
+const FIXED_BYTES: usize = ID_BYTES + RP_HASH_BYTES;
+pub(super) const MAX_BYTES: usize = FIXED_BYTES
+    + FIELD_COUNT
+    + RP_DISPLAY_BYTES
+    + USER_ID_BYTES
+    + USER_NAME_BYTES
+    + USER_DISPLAY_BYTES
+    + CRED_BLOB_BYTES;
+const GROUP_MEMBERS: usize = Record::CTAP_GROUP_MEMBERS as usize;
+const MEMBER_LENGTH_BYTES: usize = core::mem::size_of::<u16>();
+// CTG1 identifies version 1: four big-endian u16 lengths (zero is absent),
+// followed by present credential payloads in logical member order.
 const GROUP_FORMAT: &[u8; 4] = b"CTG1";
+const GROUP_HEADER: usize = GROUP_FORMAT.len() + GROUP_MEMBERS * MEMBER_LENGTH_BYTES;
 
 fn group_header(record: Record, p: &mut Platform<'_>) -> Result<[u8; GROUP_HEADER], Status> {
     let mut header = [0; GROUP_HEADER];
-    header[..4].copy_from_slice(GROUP_FORMAT);
+    header[..GROUP_FORMAT.len()].copy_from_slice(GROUP_FORMAT);
     let size = match p.storage.size(record) {
         Ok(n) => n,
         Err(StorageError::Missing) => return Ok(header),
@@ -25,13 +42,13 @@ fn group_header(record: Record, p: &mut Platform<'_>) -> Result<[u8; GROUP_HEADE
     p.storage
         .read_at(record, 0, &mut header)
         .map_err(|_| Status::Other)?;
-    if &header[..4] != GROUP_FORMAT {
+    if &header[..GROUP_FORMAT.len()] != GROUP_FORMAT {
         return Err(Status::Other);
     }
     let mut total = GROUP_HEADER as u32;
-    for member in 0..4 {
+    for member in 0..GROUP_MEMBERS {
         let n = member_length(&header, member);
-        if n > MAX_BYTES || (n != 0 && n < ID_BYTES + 32 + 5) {
+        if n > MAX_BYTES || (n != 0 && n < FIXED_BYTES + FIELD_COUNT) {
             return Err(Status::Other);
         }
         total += n as u32;
@@ -42,7 +59,7 @@ fn group_header(record: Record, p: &mut Platform<'_>) -> Result<[u8; GROUP_HEADE
     Ok(header)
 }
 fn member_length(header: &[u8; GROUP_HEADER], member: usize) -> usize {
-    let at = 4 + member * 2;
+    let at = GROUP_FORMAT.len() + member * MEMBER_LENGTH_BYTES;
     usize::from(u16::from_be_bytes([header[at], header[at + 1]]))
 }
 
@@ -53,7 +70,7 @@ pub(super) fn replace(
     copy: &mut [u8],
     p: &mut Platform<'_>,
 ) -> Result<(), Status> {
-    let record = Record::ctap_group(index / 4).ok_or(Status::Other)?;
+    let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
     if !value.is_empty() {
         if value.len() > MAX_BYTES {
             return Err(Status::Other);
@@ -61,9 +78,11 @@ pub(super) fn replace(
         Entry::decode(value)?;
     }
     let mut header = group_header(record, p)?;
-    let lengths = core::array::from_fn::<_, 4, _>(|i| member_length(&header, i));
-    let target = usize::from(index % 4);
-    header[4 + target * 2..6 + target * 2].copy_from_slice(&(value.len() as u16).to_be_bytes());
+    let lengths = core::array::from_fn::<_, GROUP_MEMBERS, _>(|i| member_length(&header, i));
+    let target = usize::from(index % Record::CTAP_GROUP_MEMBERS);
+    let length_offset = GROUP_FORMAT.len() + target * MEMBER_LENGTH_BYTES;
+    header[length_offset..length_offset + MEMBER_LENGTH_BYTES]
+        .copy_from_slice(&(value.len() as u16).to_be_bytes());
     let result = (|| {
         if value.is_empty()
             && lengths
@@ -97,7 +116,7 @@ pub(super) fn replace(
 }
 pub(super) struct Entry<'a> {
     pub id: &'a Id,
-    pub rp_hash: &'a [u8; 32],
+    pub rp_hash: &'a [u8; RP_HASH_BYTES],
     pub rp: &'a str,
     pub user: &'a [u8],
     pub name: &'a str,
@@ -106,17 +125,17 @@ pub(super) struct Entry<'a> {
 }
 impl<'a> Entry<'a> {
     pub fn decode(bytes: &'a [u8]) -> Result<Self, Status> {
-        if bytes.len() < ID_BYTES + 32 {
+        if bytes.len() < FIXED_BYTES {
             return Err(Status::Other);
         }
         let id: &Id = bytes[..ID_BYTES].try_into().unwrap();
-        let rp_hash = bytes[ID_BYTES..ID_BYTES + 32].try_into().unwrap();
-        let mut rest = &bytes[ID_BYTES + 32..];
-        let rp = take(&mut rest, 32)?;
-        let user = take(&mut rest, 64)?;
-        let name = take(&mut rest, 64)?;
-        let display = take(&mut rest, 64)?;
-        let blob = take(&mut rest, 32)?;
+        let rp_hash = bytes[ID_BYTES..FIXED_BYTES].try_into().unwrap();
+        let mut rest = &bytes[FIXED_BYTES..];
+        let rp = take(&mut rest, RP_DISPLAY_BYTES)?;
+        let user = take(&mut rest, USER_ID_BYTES)?;
+        let name = take(&mut rest, USER_NAME_BYTES)?;
+        let display = take(&mut rest, USER_DISPLAY_BYTES)?;
+        let blob = take(&mut rest, CRED_BLOB_BYTES)?;
         if user.is_empty() || !rest.is_empty() || id[1] & RESIDENT == 0 {
             return Err(Status::Other);
         }
@@ -155,7 +174,7 @@ pub(super) fn text_prefix(bytes: &[u8]) -> &[u8] {
 }
 // Preserve scheme and domain suffix for the legacy 32-byte RP display field.
 // Hashing and credential matching always use the complete original RP ID.
-fn display_rp<'a>(rp: &'a [u8], out: &'a mut [u8; 32]) -> &'a [u8] {
+fn display_rp<'a>(rp: &'a [u8], out: &'a mut [u8; RP_DISPLAY_BYTES]) -> &'a [u8] {
     if rp.len() <= out.len() {
         return rp;
     }
@@ -182,9 +201,9 @@ pub(super) fn load(
     out: &mut [u8],
     p: &mut Platform<'_>,
 ) -> Result<Option<usize>, Status> {
-    let record = Record::ctap_group(index / 4).ok_or(Status::Other)?;
+    let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
     let header = group_header(record, p)?;
-    let member = usize::from(index % 4);
+    let member = usize::from(index % Record::CTAP_GROUP_MEMBERS);
     let n = member_length(&header, member);
     if n == 0 {
         return Ok(None);
@@ -213,7 +232,7 @@ pub(super) fn read<'a>(
 pub(super) fn store(
     params: &Parameters,
     id: &Id,
-    rp_hash: &[u8; 32],
+    rp_hash: &[u8; RP_HASH_BYTES],
     out: &mut [u8],
     copy: &mut [u8],
     p: &mut Platform<'_>,
@@ -231,9 +250,9 @@ pub(super) fn store(
     }
     let slot = slot.ok_or(Status::KeyStoreFull)?;
     out[..ID_BYTES].copy_from_slice(id);
-    out[ID_BYTES..ID_BYTES + 32].copy_from_slice(rp_hash);
-    let at = ID_BYTES + 32;
-    let mut display = [0; 32];
+    out[ID_BYTES..FIXED_BYTES].copy_from_slice(rp_hash);
+    let at = FIXED_BYTES;
+    let mut display = [0; RP_DISPLAY_BYTES];
     let n = encode_fields(
         &mut out[at..],
         &[
@@ -251,7 +270,7 @@ pub(super) fn store(
 }
 
 /// Encode the five bounded variable fields shared by creation and user updates.
-pub(super) fn encode_fields(out: &mut [u8], fields: &[&[u8]; 5]) -> usize {
+pub(super) fn encode_fields(out: &mut [u8], fields: &[&[u8]; FIELD_COUNT]) -> usize {
     let capacity = out.len();
     let mut tail = out;
     for field in fields {
@@ -266,7 +285,7 @@ pub(super) fn encode_fields(out: &mut [u8], fields: &[&[u8]; 5]) -> usize {
 
 pub(super) fn find(
     id: &Id,
-    rp_hash: &[u8; 32],
+    rp_hash: &[u8; RP_HASH_BYTES],
     out: &mut [u8],
     p: &mut Platform<'_>,
 ) -> Result<Option<(u8, usize)>, Status> {
@@ -285,7 +304,7 @@ pub(super) fn find(
 #[inline(never)]
 pub(super) fn discover(
     next: &mut u8,
-    rp: &[u8; 32],
+    rp: &[u8; RP_HASH_BYTES],
     uv: bool,
     out: &mut [u8],
     p: &mut Platform<'_>,

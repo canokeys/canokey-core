@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Storage and staged-record adapter for the C LittleFS backend.
+//! Storage and staged-record adapter for the `core.h` ck_platform_* ABI.
+//! Firmware implements it with LittleFS; host virtual cards use record images.
 use crate::{Record, Storage, StorageError};
 
 #[cfg(any(feature = "openpgp", feature = "piv"))]
@@ -74,8 +75,8 @@ unsafe extern "C" {
     feature = "ndef"
 ))]
 #[repr(u8)]
-// Variants are gated by the applet profiles that can issue them; the numeric
-// values remain aligned with the shared C StageOperation ABI.
+// Variants are gated by platform capabilities and applet features; numeric
+// values remain aligned with ck_stage_operation in native/include/core.h.
 enum StageOperation {
     Begin = 0,
     Append = 1,
@@ -93,43 +94,78 @@ enum StageOperation {
 native_port! { impl Storage for StorageBackend {
     #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), StorageError> {
-        if parts.len() > 8 { return Err(StorageError::Unavailable); }
-        let mut native = [StoragePart { data: core::ptr::null(), length: 0 }; 8];
-        for (out, part) in native.iter_mut().zip(parts) {
-            *out = StoragePart { data: part.as_ptr(), length: part.len() };
+        if parts.len() > 8 {
+            return Err(StorageError::Unavailable);
         }
-        if unsafe { ck_platform_stage_parts(native.as_ptr(), parts.len()) } == 0 { Ok(()) }
-        else { Err(StorageError::Uncertain) }
+        let mut native = [StoragePart {
+            data: core::ptr::null(),
+            length: 0,
+        }; 8];
+        for (out, part) in native.iter_mut().zip(parts) {
+            *out = StoragePart {
+                data: part.as_ptr(),
+                length: part.len(),
+            };
+        }
+        if unsafe { ck_platform_stage_parts(native.as_ptr(), parts.len()) } == 0 {
+            Ok(())
+        } else {
+            Err(StorageError::Uncertain)
+        }
     }
-    fn usage(&mut self) -> Result<(u32,u32),StorageError> {
+    fn usage(&mut self) -> Result<(u32, u32), StorageError> {
         #[cfg(feature = "storage")]
         {
-            let(mut used,mut total)=(0,0);
-            if unsafe {ck_platform_usage(&mut used,&mut total)}==0 && used<=total {Ok((used,total))}
-            else {Err(StorageError::Unavailable)}
+            let (mut used, mut total) = (0, 0);
+            if unsafe { ck_platform_usage(&mut used, &mut total) } == 0 && used <= total {
+                Ok((used, total))
+            } else {
+                Err(StorageError::Unavailable)
+            }
         }
         #[cfg(not(feature = "storage"))]
-        {Err(StorageError::Unavailable)}
+        {
+            Err(StorageError::Unavailable)
+        }
     }
 
     fn config_read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
-        { if unsafe { platform_config_page_read(offset, bytes.as_mut_ptr(), bytes.len()) } == 0 { Ok(()) }
-          else { Err(StorageError::Unavailable) } }
+        {
+            if unsafe { platform_config_page_read(offset, bytes.as_mut_ptr(), bytes.len()) } == 0 {
+                Ok(())
+            } else {
+                Err(StorageError::Unavailable)
+            }
+        }
         #[cfg(not(feature = "storage"))]
-        { let _ = (offset, bytes); Err(StorageError::Missing) }
+        {
+            let _ = (offset, bytes);
+            Err(StorageError::Missing)
+        }
     }
     fn config_write(&mut self, bytes: &[u8; 512]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
-        { if unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) } == 0 { Ok(()) }
-          else { Err(StorageError::Uncertain) } }
+        {
+            if unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) } == 0 {
+                Ok(())
+            } else {
+                Err(StorageError::Uncertain)
+            }
+        }
         #[cfg(not(feature = "storage"))]
-        { let _ = bytes; Err(StorageError::Unavailable) }
+        {
+            let _ = bytes;
+            Err(StorageError::Unavailable)
+        }
     }
     #[cfg(feature = "ndef")]
     fn resize(&mut self, record: Record, length: u32) -> Result<(), StorageError> {
-        if unsafe { ck_platform_resize(record.id(), length) } == 0 { Ok(()) }
-        else { Err(StorageError::Uncertain) }
+        if unsafe { ck_platform_resize(record.id(), length) } == 0 {
+            Ok(())
+        } else {
+            Err(StorageError::Uncertain)
+        }
     }
     #[cfg(feature = "platform-stage")]
     fn remove(&mut self, id: Record) -> Result<(), StorageError> {
@@ -211,11 +247,18 @@ native_port! { impl Storage for StorageBackend {
 
     fn size(&mut self, file: Record) -> Result<u32, StorageError> {
         #[cfg(feature = "storage")]
-        { match unsafe {ck_platform_size(file.id())} {
-            -1 => Err(StorageError::Missing), n if n>=0 => Ok(n as u32), _ => Err(StorageError::Unavailable)
-        } }
+        {
+            match unsafe { ck_platform_size(file.id()) } {
+                -1 => Err(StorageError::Missing),
+                n if n >= 0 => Ok(n as u32),
+                _ => Err(StorageError::Unavailable),
+            }
+        }
         #[cfg(not(feature = "storage"))]
-        {let _=file;Err(StorageError::Unavailable)}
+        {
+            let _ = file;
+            Err(StorageError::Unavailable)
+        }
     }
     #[cfg(any(
         feature = "oath",

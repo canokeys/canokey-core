@@ -174,6 +174,8 @@ native_port! { impl Device for DeviceBackend {
         }
         #[cfg(not(feature = "platform-serial"))]
         {
+            // Partial profiles have no serial provider; the caller's initialized
+            // fallback remains untouched because this infallible ABI has no status.
             let _ = out;
         }
     }

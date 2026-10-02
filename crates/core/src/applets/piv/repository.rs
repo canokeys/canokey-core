@@ -392,7 +392,7 @@ pub const MANAGEMENT_TOUCH: usize = 1;
 pub const MANAGEMENT_KEY: usize = 2;
 pub fn management_record(touch: u8, key: &[u8]) -> [u8; MANAGEMENT_SIZE] {
     let mut record = [0; MANAGEMENT_SIZE];
-    record[VERSION] = FORMAT_VERSION; // Format version.
+    record[VERSION] = FORMAT_VERSION;
     record[MANAGEMENT_TOUCH] = touch;
     record[MANAGEMENT_KEY..].copy_from_slice(key);
     record

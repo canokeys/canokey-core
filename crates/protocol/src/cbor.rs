@@ -13,7 +13,8 @@ pub struct DecodeError;
 
 /// Cursor over a contiguous input slice. Accepts every definite-length
 /// encoding width (shortest form is enforced only by the incremental Decoder),
-/// rejects indefinite lengths, and bounds every skip by the remaining input.
+/// bounds every skip by the remaining input, and rejects indefinite values
+/// except that `map()` reports an indefinite-map header as `None` for the caller.
 pub struct SliceDecoder<'a> {
     input: &'a [u8],
 }
@@ -64,6 +65,8 @@ impl<'a> SliceDecoder<'a> {
         Ok(value)
     }
 
+    /// Consume a map header: `Some(count)` is definite, `None` is indefinite.
+    /// Callers requiring definite-length maps must reject `None` themselves.
     pub fn map(&mut self) -> Result<Option<u64>, DecodeError> {
         if self.input.first() == Some(&0xbf) {
             self.input = &self.input[1..];
