@@ -480,9 +480,8 @@ impl Session {
                 Some(entry.rp_hash),
                 p,
             )?;
-            let record = Record::ctap_credential(index).unwrap();
             if subcommand == 6 {
-                p.storage.remove(record).map_err(|_| Status::Other)?;
+                resident::replace(index, &[], w.output, p)?;
             } else {
                 let user = fields.user.as_ref().ok_or(Status::MissingParameter)?;
                 if user.id != entry.user {
@@ -504,9 +503,7 @@ impl Session {
                         entry.blob,
                     ],
                 );
-                p.storage
-                    .replace(record, &w.output[..at + n])
-                    .unwrap_or_default();
+                resident::replace(index, &w.output[..at + n], w.input, p).unwrap_or_default();
             }
             w.output[0] = 0;
             return Ok(1);

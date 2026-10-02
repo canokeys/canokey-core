@@ -324,9 +324,9 @@ impl Session {
         ] {
             p.storage.remove(record).map_err(|_| Status::Other)?;
         }
-        for index in 0..crate::ports::Record::CTAP_CREDENTIALS {
+        for index in 0..crate::ports::Record::CTAP_GROUPS {
             p.storage
-                .remove(crate::ports::Record::ctap_credential(index).unwrap())
+                .remove(crate::ports::Record::ctap_group(index).unwrap())
                 .map_err(|_| Status::Other)?;
         }
         self.pin_attempts = 3;

@@ -62,6 +62,9 @@ struct Store {
     fail: bool,
 }
 impl Storage for Store {
+    fn size(&mut self, _: Record) -> Result<u32, StorageError> {
+        Err(StorageError::Missing)
+    }
     fn load(&mut self, _: Record, out: &mut [u8]) -> Result<usize, StorageError> {
         if !self.long_reset {
             return Err(StorageError::Missing);
@@ -196,8 +199,15 @@ fn long_reset_ignores_short_touch_and_requires_release_after_half_second() {
 fn credential_scan_errors_do_not_publish_or_cache_capacity() {
     struct ScanStore(Result<usize, StorageError>);
     impl Storage for ScanStore {
+        fn size(&mut self, id: Record) -> Result<u32, StorageError> {
+            if Some(id) == Record::ctap_group(0) {
+                self.0.map(|n| n as u32)
+            } else {
+                Err(StorageError::Missing)
+            }
+        }
         fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
-            if Some(id) == Record::ctap_credential(0) {
+            if Some(id) == Record::ctap_group(0) {
                 out[0] = 0xff;
                 self.0
             } else {

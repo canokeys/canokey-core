@@ -1,5 +1,23 @@
 # Rust CTAP migration
 
+## Resident storage groups (2026-10-01)
+
+Fresh provisioning is required. There is no migration or compatibility decoder.
+The 100 logical slots share 25 physical files, `50`..`68`, four consecutive slots
+per file. Each begins with `CTG1`, four big-endian u16 lengths (zero means absent),
+then present payloads in slot order. Payloads remain at most 327 bytes; the group
+maximum is 1320 bytes. Invalid headers, lengths, truncation and trailing bytes
+fail closed. Reads validate the envelope and requested member; mutations also
+validate copied members before publication.
+
+Mutations stream into the session stage using disjoint existing workspace
+borrows and a single atomic publish. Last-member deletion removes the file.
+No group-sized stack buffer or extra file cache is used. Enumeration and
+same-RP/user replacement retain logical-slot order. Reset deletes groups and
+user-information updates retain best-effort semantics. Actual CIU-model fault
+tests compare complete old/new group bytes. Capacity depends on occupancy and
+field lengths; see the platform NFCC storage capacity report.
+
 The independent `ctap` feature links no C CTAP dispatcher or applet. It is a
 **development profile**, not a complete authenticator. It currently supports:
 

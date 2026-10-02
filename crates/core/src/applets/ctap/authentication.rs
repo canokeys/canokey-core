@@ -190,7 +190,7 @@ impl Session {
             p,
         )?;
         if params.resident {
-            resident::store(params, &id, &rp, w.output, p)?;
+            resident::store(params, &id, &rp, w.output, w.input, p)?;
         }
         respond(
             &Signing {

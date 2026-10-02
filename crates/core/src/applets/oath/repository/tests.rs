@@ -370,7 +370,10 @@ fn capacity_exceeds_one_hundred_and_reserves_delete_and_reinsert_space() {
             }
         }
         assert!(ids.len() > 100 && ids.len() < 2048);
-        assert_eq!(controls.reserve.get(), 64 * 1024);
+        assert_eq!(
+            controls.reserve.get(),
+            update_reserve(FILE_HEADER_BYTES + ids.len() as u32 * ENTRY_BYTES)
+        );
     }
     let original = files.bytes.clone();
     {

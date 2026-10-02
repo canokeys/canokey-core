@@ -7,10 +7,19 @@
 #include <string.h>
 extern int32_t ck_platform_size(uint8_t id);
 int main(void) {
+#ifdef CK_TEST_LITTLEFS
+  extern void ck_test_flash_init(void);
+  extern int ck_test_flash_command(const char *);
+  extern int32_t ck_test_flash_exchange(uint8_t, const uint8_t *, size_t, uint8_t *, size_t);
+  ck_test_flash_init();
+#endif
   assert(ck_core_install() == 0);
   char line[1100];
   uint8_t buffer[512];
   while (fgets(line, sizeof(line), stdin)) {
+#ifdef CK_TEST_LITTLEFS
+    if (ck_test_flash_command(line)) { fflush(stdout); continue; }
+#endif
     int32_t n;
 #ifdef WITH_CTAP
     if (strncmp(line, "POLL ", 5) == 0) {
@@ -121,7 +130,11 @@ int main(void) {
         assert(sscanf(line + i * 2, "%2x", &value) == 1);
         buffer[i] = (uint8_t)value;
       }
+#ifdef CK_TEST_LITTLEFS
+      n = ck_test_flash_exchange(1, buffer, len / 2, buffer, sizeof(buffer));
+#else
       n = ck_core_exchange(1, buffer, len / 2, buffer, sizeof(buffer));
+#endif
     }
     assert(n >= 0);
     for (int32_t i = 0; i < n; i++)

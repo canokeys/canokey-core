@@ -80,8 +80,11 @@ development version 0.0.0, matching the common version policy.
   relying on its copy-on-write data and atomic metadata commit instead of a
   second whole-file copy. LittleFS can still copy the suffix after an early-file
   write; this is not an eight-byte physical Flash write guarantee. File caches
-  are word aligned. File growth retains C's 64 KiB free-space reserve; vacant
-  slots are reusable without reserving another slot's space. Mount failure never
+  are word aligned. New-slot admission accounts for two 512-byte growth pages
+  plus `max(20 KiB, ceil((file_bytes + 146) / 512) * 512 + 8 * 512)` of
+  OATH-local update margin. This replaces the old 64 KiB quota; other applets
+  do not enforce it, so it is not a global reserve. Vacant slots are reusable
+  without reserving another slot's space. Mount failure never
   formats. Provision fresh storage: old empty and populated OATH files are
   rejected by the `OAT2` header check, not imported or silently reinterpreted.
   Uncertain writes disable storage until remount.

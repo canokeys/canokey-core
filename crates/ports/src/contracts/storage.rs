@@ -104,12 +104,11 @@ impl Record {
         self.0
     }
     pub const CTAP_CREDENTIALS: u8 = 100;
-    const CTAP_CREDENTIAL_BASE: u8 = 0x50;
-    pub const fn ctap_credential(index: u8) -> Option<Self> {
-        if index < Self::CTAP_CREDENTIALS {
-            // CTAP resident credentials occupy the contiguous 0x50..0xb3
-            // range; 0xb4..0xb7 remain reserved for future records.
-            Some(Self(Self::CTAP_CREDENTIAL_BASE + index))
+    pub const CTAP_GROUP_MEMBERS: u8 = 4;
+    pub const CTAP_GROUPS: u8 = Self::CTAP_CREDENTIALS / Self::CTAP_GROUP_MEMBERS;
+    pub const fn ctap_group(index: u8) -> Option<Self> {
+        if index < Self::CTAP_GROUPS {
+            Some(Self(0x50 + index))
         } else {
             None
         }

@@ -179,7 +179,8 @@ def run(wire):
     assert call(4)[20] == 98
     call(1, replacement)
     call(2, {1: rp, 2: assertion_hash, 3: [old]}, 0x2e)
-    assert int.from_bytes(wire.command("SIZE 80"), "big") < 120
+    group = wire.command("RECORD 80")[:-2]
+    assert group[:4] == b"CTG1" and int.from_bytes(group[4:6], "big") < 120
     assert wire.command("SIZE 82") == bytes.fromhex("ffffffff")
 
     request = {1: client_hash, 2: {"id": "blob.example"}, 3: user,
@@ -630,7 +631,7 @@ def algorithm_policy(full_path, restricted_path):
                 attest(answer, challenge)
                 data = AuthenticatorData(answer[2]).credential_data
                 credentials.append((resident, algorithm, {"id": data.credential_id, "type": "public-key"}, data.public_key))
-        for record in [78, *range(80, 84)]:
+        for record in [78, 80]:
             data = full.command(f"RECORD {record}")
             assert data[-2:] == b"\x90\x00"
             assert restricted.command(f"RECORD {record} {data[:-2].hex()}") == b"\x90\x00"

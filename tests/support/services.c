@@ -4,6 +4,7 @@
 #include <string.h>
 #include <openssl/hmac.h>
 #include <openssl/rand.h>
+#ifndef CK_TEST_LITTLEFS
 static uint8_t files[186][32768];
 static int32_t sizes[186];
 static int initialized;
@@ -55,11 +56,13 @@ int32_t ck_platform_write(uint8_t id, const uint8_t *input, size_t n) {
   sizes[id] = (int32_t)n;
   return (int32_t)n;
 }
+#endif
 void ck_platform_hmac_sha1(const uint8_t key[20], const uint8_t *input, size_t n, uint8_t out[20]) {
   unsigned len = 20;
   assert(HMAC(EVP_sha1(), key, 20, input, n, out, &len));
 }
 #if defined(WITH_ADMIN) || defined(WITH_PASS) || defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
+#ifndef CK_TEST_LITTLEFS
 int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n) {
   storage_init();
   assert(id < 186);
@@ -80,6 +83,7 @@ int32_t ck_platform_has_space(uint32_t bytes, uint32_t reserve) {
   (void)reserve;
   return bytes + (uint32_t)sizes[3] <= sizeof(files[3]);
 }
+#endif
 int32_t ck_platform_mac(uint8_t alg, const uint8_t *key, size_t k, const uint8_t *input, size_t n, uint8_t out[64]) {
   const EVP_MD *md = alg == 1 ? EVP_sha1() : alg == 2 ? EVP_sha256() : EVP_sha512();
   unsigned len = 64;
@@ -87,7 +91,14 @@ int32_t ck_platform_mac(uint8_t alg, const uint8_t *key, size_t k, const uint8_t
   assert(HMAC(md, key, (int)k, input, n, out, &len));
   return 0;
 }
-int32_t ck_platform_random(uint8_t *out, size_t n) { return RAND_bytes(out, (int)n) == 1 ? 0 : -1; }
+int32_t ck_platform_random(uint8_t *out, size_t n) {
+#ifdef CK_TEST_LITTLEFS
+  extern int32_t ck_test_flash_random(uint8_t *, size_t);
+  return ck_test_flash_random(out, n);
+#else
+  return RAND_bytes(out, (int)n) == 1 ? 0 : -1;
+#endif
+}
 void ck_platform_serial(uint8_t out[4]) { memset(out, 0, 4); }
 #endif
 
@@ -103,6 +114,7 @@ void ck_platform_led(uint8_t on) { (void)on; }
 #endif
 
 #if defined(WITH_OATH) || defined(WITH_OPENPGP) || defined(WITH_PIV) || defined(WITH_CTAP) || defined(WITH_NDEF)
+#ifndef CK_TEST_LITTLEFS
 static uint8_t stage[8192];
 static size_t stage_size;
 int32_t ck_platform_stage_parts(const struct ck_storage_part *parts, size_t count) {
@@ -126,6 +138,7 @@ int32_t ck_platform_stage(uint8_t operation, uint8_t id, const uint8_t *b, size_
   // Staged callers must observe the same one-shot failure as direct writes.
   return result < 0 ? result : 0;
 }
+#endif
 #endif
 
 #ifdef WITH_CTAP
@@ -163,6 +176,7 @@ int pke_buffer_write(size_t offset, const uint8_t *in, size_t n) {
 }
 #endif
 
+#ifndef CK_TEST_LITTLEFS
 int32_t ck_platform_resize(uint8_t id, uint32_t length) {
   storage_init();
   assert(id < 186 && length <= sizeof(files[id]));
@@ -170,6 +184,7 @@ int32_t ck_platform_resize(uint8_t id, uint32_t length) {
   if(length > (uint32_t)sizes[id])memset(files[id]+sizes[id],0,length-(uint32_t)sizes[id]);
   sizes[id]=(int32_t)length;return 0;
 }
+#endif
 
 /* Raw configuration-page backend; Rust owns metadata, flags and CRC policy. */
 static uint8_t config_page[512];

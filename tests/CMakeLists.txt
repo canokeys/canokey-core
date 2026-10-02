@@ -150,6 +150,17 @@ if(BUILD_TESTING)
       "${CANOKEY_ROOT}/tests/integration/piv_normal.py" --host $<TARGET_FILE:piv-host>)
   endif()
   if(CANOKEY_APPLET_OPENPGP AND CANOKEY_APPLET_PIV AND CANOKEY_APPLET_ADMIN AND CANOKEY_APPLET_PASS AND CANOKEY_APPLET_OATH)
+    if(EXISTS "${CANOKEY_ROOT}/../tests/host/rust_storage_applet.c" AND CANOKEY_APPLET_CTAP AND CANOKEY_APPLET_NDEF)
+      add_executable(storage-applet-host ${CANOKEY_ROOT}/tests/support/oath_host.c
+        ${CANOKEY_ROOT}/tests/support/services.c ${CANOKEY_ROOT}/../tests/host/rust_storage_applet.c
+        ${CANOKEY_ROOT}/third_party/littlefs/lfs.c ${CANOKEY_ROOT}/third_party/littlefs/lfs_util.c)
+      target_compile_definitions(storage-applet-host PRIVATE CK_TEST_LITTLEFS WITH_ADMIN WITH_PASS WITH_OATH
+        WITH_OPENPGP WITH_PIV WITH_CTAP WITH_NDEF LFS_NO_MALLOC LFS_NO_DEBUG LFS_NO_WARN LFS_NO_ERROR)
+      target_include_directories(storage-applet-host PRIVATE ${CANOKEY_ROOT}/../tests/host/rust_stubs
+        ${CANOKEY_ROOT}/third_party/littlefs)
+      target_compile_options(storage-applet-host PRIVATE -Wall -Wextra -UNDEBUG)
+      target_link_libraries(storage-applet-host PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
+    endif()
     add_test(NAME compact-storage COMMAND "${Python3_EXECUTABLE}"
       "${CANOKEY_ROOT}/tests/integration/compact_storage.py" $<TARGET_FILE:oath-host>)
     add_test(NAME combined-reset COMMAND "${Python3_EXECUTABLE}"

@@ -5,6 +5,9 @@ pub struct Backend {
     pub generated: usize,
 }
 impl Storage for Backend {
+    fn size(&mut self, _: Record) -> Result<u32, StorageError> {
+        Err(StorageError::Missing)
+    }
     fn load(&mut self, _: Record, _: &mut [u8]) -> Result<usize, StorageError> {
         Err(StorageError::Missing)
     }

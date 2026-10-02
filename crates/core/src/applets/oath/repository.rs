@@ -45,7 +45,11 @@ impl<'a> Mac<'a> {
 const ID_BYTES: usize = 4;
 const ENTRY_HEADER_BYTES: usize = ID_BYTES + codec::HEADER_BYTES;
 const ENTRY_BYTES: u32 = (ID_BYTES + codec::LENGTH) as u32;
-const FREE_SPACE_RESERVE: u32 = 64 * 1024;
+// OATH-local admission margin, not a reservation enforced by other applets.
+// A patch near the beginning can copy the entire surviving CTZ tail.
+fn update_reserve(size: u32) -> u32 {
+    ((size + ENTRY_BYTES).div_ceil(512) * 512 + 8 * 512).max(20 * 1024)
+}
 // Distinguish fixed slots from every earlier encoding, including empty files.
 const FILE_HEADER: &[u8; 4] = b"OAT2";
 const FILE_HEADER_BYTES: u32 = FILE_HEADER.len() as u32;
@@ -247,7 +251,7 @@ impl Repository for Store<'_> {
         if vacant == size
             && !self
                 .storage
-                .has_space(ENTRY_BYTES, FREE_SPACE_RESERVE)
+                .has_space(2 * 512, update_reserve(size))
                 .map_err(io)?
         {
             return Err(Error::NoSpace);

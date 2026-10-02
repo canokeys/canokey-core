@@ -153,6 +153,9 @@ fn pin_read_failures_never_advertise_unconfigured_state_or_reset_retries() {
         retries: u8,
     }
     impl Storage for PinStore {
+        fn size(&mut self, _: Record) -> Result<u32, StorageError> {
+            Err(StorageError::Missing)
+        }
         fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
             if id != Record::CtapPin {
                 return Err(StorageError::Missing);

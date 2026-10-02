@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Each discoverable credential is one compact atomic record. Enumeration scans
-//! records, avoiding duplicate indexes, tombstones and cross-file recovery state.
+//! Four logical credentials share one atomically published record.
 use super::{
     Status,
     credential::{ID_BYTES, Id},
@@ -12,6 +11,90 @@ use crate::ports::{Platform, Record, StorageError};
 pub(super) const RESIDENT: u8 = 4;
 pub(super) const LARGE_BLOB_KEY: u8 = 8;
 pub(super) const MAX_BYTES: usize = ID_BYTES + 32 + 5 + 32 + 64 * 3 + 32;
+const GROUP_HEADER: usize = 12;
+const GROUP_FORMAT: &[u8; 4] = b"CTG1";
+
+fn group_header(record: Record, p: &mut Platform<'_>) -> Result<[u8; GROUP_HEADER], Status> {
+    let mut header = [0; GROUP_HEADER];
+    header[..4].copy_from_slice(GROUP_FORMAT);
+    let size = match p.storage.size(record) {
+        Ok(n) => n,
+        Err(StorageError::Missing) => return Ok(header),
+        Err(_) => return Err(Status::Other),
+    };
+    p.storage
+        .read_at(record, 0, &mut header)
+        .map_err(|_| Status::Other)?;
+    if &header[..4] != GROUP_FORMAT {
+        return Err(Status::Other);
+    }
+    let mut total = GROUP_HEADER as u32;
+    for member in 0..4 {
+        let n = member_length(&header, member);
+        if n > MAX_BYTES || (n != 0 && n < ID_BYTES + 32 + 5) {
+            return Err(Status::Other);
+        }
+        total += n as u32;
+    }
+    if total != size || total == GROUP_HEADER as u32 {
+        return Err(Status::Other);
+    }
+    Ok(header)
+}
+fn member_length(header: &[u8; GROUP_HEADER], member: usize) -> usize {
+    let at = 4 + member * 2;
+    usize::from(u16::from_be_bytes([header[at], header[at + 1]]))
+}
+
+/// Copy validated unchanged members using the caller's disjoint workspace.
+pub(super) fn replace(
+    index: u8,
+    value: &[u8],
+    copy: &mut [u8],
+    p: &mut Platform<'_>,
+) -> Result<(), Status> {
+    let record = Record::ctap_group(index / 4).ok_or(Status::Other)?;
+    if !value.is_empty() {
+        if value.len() > MAX_BYTES {
+            return Err(Status::Other);
+        }
+        Entry::decode(value)?;
+    }
+    let mut header = group_header(record, p)?;
+    let lengths = core::array::from_fn::<_, 4, _>(|i| member_length(&header, i));
+    let target = usize::from(index % 4);
+    header[4 + target * 2..6 + target * 2].copy_from_slice(&(value.len() as u16).to_be_bytes());
+    let result = (|| {
+        if value.is_empty()
+            && lengths
+                .iter()
+                .enumerate()
+                .all(|(i, &n)| i == target || n == 0)
+        {
+            return p.storage.remove(record).map_err(|_| Status::Other);
+        }
+        p.storage.stage_begin().map_err(|_| Status::Other)?;
+        p.storage.stage_append(&header).map_err(|_| Status::Other)?;
+        let mut offset = GROUP_HEADER as u32;
+        for (member, &n) in lengths.iter().enumerate() {
+            if n != 0 {
+                p.storage
+                    .read_at(record, offset, &mut copy[..n])
+                    .map_err(|_| Status::Other)?;
+                Entry::decode(&copy[..n])?;
+            }
+            let bytes = if member == target { value } else { &copy[..n] };
+            p.storage.stage_append(bytes).map_err(|_| Status::Other)?;
+            offset += n as u32;
+        }
+        p.storage.stage_commit(record).map_err(|_| Status::Other)
+    })();
+    p.memory.wipe(copy);
+    if result.is_err() {
+        p.storage.stage_abort();
+    }
+    result
+}
 pub(super) struct Entry<'a> {
     pub id: &'a Id,
     pub rp_hash: &'a [u8; 32],
@@ -99,12 +182,21 @@ pub(super) fn load(
     out: &mut [u8],
     p: &mut Platform<'_>,
 ) -> Result<Option<usize>, Status> {
-    let record = Record::ctap_credential(index).ok_or(Status::Other)?;
-    match p.storage.load(record, &mut out[..MAX_BYTES]) {
-        Ok(n) => Ok(Some(n)),
-        Err(StorageError::Missing) => Ok(None),
-        Err(_) => Err(Status::Other),
+    let record = Record::ctap_group(index / 4).ok_or(Status::Other)?;
+    let header = group_header(record, p)?;
+    let member = usize::from(index % 4);
+    let n = member_length(&header, member);
+    if n == 0 {
+        return Ok(None);
     }
+    let offset = GROUP_HEADER
+        + (0..member)
+            .map(|i| member_length(&header, i))
+            .sum::<usize>();
+    p.storage
+        .read_at(record, offset as u32, &mut out[..n])
+        .map_err(|_| Status::Other)?;
+    Ok(Some(n))
 }
 /// Load and validate one occupied resident slot without copying its fields.
 #[inline(never)]
@@ -123,6 +215,7 @@ pub(super) fn store(
     id: &Id,
     rp_hash: &[u8; 32],
     out: &mut [u8],
+    copy: &mut [u8],
     p: &mut Platform<'_>,
 ) -> Result<(), Status> {
     let mut slot = None;
@@ -136,7 +229,7 @@ pub(super) fn store(
             slot.get_or_insert(index);
         }
     }
-    let record = Record::ctap_credential(slot.ok_or(Status::KeyStoreFull)?).unwrap();
+    let slot = slot.ok_or(Status::KeyStoreFull)?;
     out[..ID_BYTES].copy_from_slice(id);
     out[ID_BYTES..ID_BYTES + 32].copy_from_slice(rp_hash);
     let at = ID_BYTES + 32;
@@ -154,9 +247,7 @@ pub(super) fn store(
                 .unwrap_or(0)],
         ],
     );
-    p.storage
-        .replace(record, &out[..at + n])
-        .map_err(|_| Status::Other)
+    replace(slot, &out[..at + n], copy, p)
 }
 
 /// Encode the five bounded variable fields shared by creation and user updates.
@@ -277,18 +368,48 @@ mod tests {
         records: Vec<(u8, Vec<u8>)>,
         fail: Option<StorageError>,
     }
-    impl Storage for Records {
-        fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+    impl Records {
+        fn group(&self, id: Record) -> Result<Vec<u8>, StorageError> {
             if let Some(error) = self.fail {
                 return Err(error);
             }
-            let (_, bytes) = self
-                .records
-                .iter()
-                .find(|(index, _)| Record::ctap_credential(*index) == Some(id))
-                .ok_or(StorageError::Missing)?;
-            out[..bytes.len()].copy_from_slice(bytes);
+            let mut header = [0; GROUP_HEADER];
+            header[..4].copy_from_slice(GROUP_FORMAT);
+            let mut body = Vec::new();
+            for member in 0..4 {
+                if let Some((_, bytes)) = self.records.iter().find(|(index, _)| {
+                    Record::ctap_group(*index / 4) == Some(id) && usize::from(*index % 4) == member
+                }) {
+                    header[4 + member * 2..6 + member * 2]
+                        .copy_from_slice(&(bytes.len() as u16).to_be_bytes());
+                    body.extend_from_slice(bytes);
+                }
+            }
+            if body.is_empty() {
+                return Err(StorageError::Missing);
+            }
+            let mut bytes = header.to_vec();
+            bytes.extend(body);
+            Ok(bytes)
+        }
+    }
+    impl Storage for Records {
+        fn load(&mut self, id: Record, out: &mut [u8]) -> Result<usize, StorageError> {
+            let bytes = self.group(id)?;
+            out[..bytes.len()].copy_from_slice(&bytes);
             Ok(bytes.len())
+        }
+        fn size(&mut self, id: Record) -> Result<u32, StorageError> {
+            Ok(self.group(id)?.len() as u32)
+        }
+        fn read_at(&mut self, id: Record, at: u32, out: &mut [u8]) -> Result<(), StorageError> {
+            let bytes = self.group(id)?;
+            let at = at as usize;
+            let value = bytes
+                .get(at..at + out.len())
+                .ok_or(StorageError::Unavailable)?;
+            out.copy_from_slice(value);
+            Ok(())
         }
         fn replace(&mut self, _: Record, _: &[u8]) -> Result<(), StorageError> {
             unreachable!()
