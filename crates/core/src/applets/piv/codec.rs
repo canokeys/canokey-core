@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+//! PIV BER-TLV helpers: bounded lengths, single-byte GA tags and up to
+//! three-byte object identifiers. Multibyte tag/length values use wire endian.
 use super::wire::object_tlv;
 pub(super) use crate::mechanisms::equal;
 use canokey_protocol::{

@@ -12,8 +12,8 @@ pub(crate) struct Sm2 {
 }
 impl Sm2 {
     pub const DEFAULT: Self = Self {
-        curve: 9,
-        algorithm: -54,
+        curve: 9,       // CanoKey private COSE curve identifier for SM2.
+        algorithm: -54, // CanoKey private COSE algorithm identifier for SM2.
     };
     pub fn encode(self) -> [u8; 8] {
         let mut wire = [0; 8];

@@ -11,6 +11,28 @@ const INS_RESET_PIV: u8 = 0x04;
 const INS_RESET_OATH: u8 = 0x05;
 const INS_VERIFY: u8 = 0x20;
 const INS_CHANGE_PIN: u8 = 0x21;
+const INS_WRITE_SERIAL: u8 = 0x30;
+const INS_READ_VERSION: u8 = 0x31;
+const INS_READ_SERIAL: u8 = 0x32;
+const INS_NFC_ENABLE: u8 = 0x14;
+const INS_CONFIG: u8 = 0x40;
+const INS_READ_CONFIG: u8 = 0x42;
+#[cfg(feature = "ndef")]
+const INS_RESET_NDEF: u8 = 0x07;
+#[cfg(feature = "ndef")]
+const INS_NDEF_READ_ONLY: u8 = 0x08;
+const INS_VENDOR: u8 = 0xff;
+const P1_CORE_COMMIT: u8 = 0x02;
+const INFORMATION_CHIP_ID: u8 = 0x03;
+const P1_CONFIG_LED: u8 = 0x01;
+const P1_CONFIG_NDEF: u8 = 0x04;
+const P1_CONFIG_WEBUSB: u8 = 0x05;
+const P1_CONFIG_FEATURES: u8 = 0x06;
+const CONFIG_RESPONSE_BYTES: usize = 6;
+// CIU vendor recovery payload, checked in addition to ADMIN authorization.
+// This literal is a command discriminator, not a secret authentication factor.
+const RECOVERY_PAYLOAD: &[u8] = b"D3549Fa2dcb$23n";
+const INS_STORAGE_USAGE: u8 = 0x41;
 const INS_GET_PASS_CONFIG: u8 = 0x43;
 const INS_SET_PASS_CONFIG: u8 = 0x44;
 pub(crate) const INS_SET_KEYMAP: u8 = 0x45;
@@ -154,15 +176,25 @@ impl Admin {
         w: &mut Workspace,
     ) -> Result<Action, Sw> {
         self.response_len = 0;
-        if h.ins == INS_GET_KEYMAP && h.p1 == 0 && h.p2 <= 1 && le < if h.p2 == 0 { 1 } else { 256 }
+        if h.ins == INS_GET_KEYMAP
+            && h.p1 == 0
+            && h.p2 <= 1
+            && le
+                < if h.p2 == 0 {
+                    1
+                } else {
+                    crate::runtime::config::KEYMAP_BYTES as u32
+                }
         {
             self.cancel_command(w, p);
             return Err(Sw::WRONG_LENGTH);
         }
 
         // Information queries truncate at Le, without GET RESPONSE chaining.
-        if h.ins == 0x31 || (h.ins == 0x32 && h.p1 != 0) {
-            let result = if h.p2 != 0 || (h.ins == 0x31 && h.p1 > 2) || (h.ins == 0x32 && h.p1 != 1)
+        if h.ins == INS_READ_VERSION || (h.ins == INS_READ_SERIAL && h.p1 != 0) {
+            let result = if h.p2 != 0
+                || (h.ins == INS_READ_VERSION && h.p1 > P1_CORE_COMMIT)
+                || (h.ins == INS_READ_SERIAL && h.p1 != 1)
             {
                 Err(Sw::WRONG_P1P2)
             } else if self.used != 0 {
@@ -170,7 +202,11 @@ impl Admin {
             } else {
                 let capacity = (le as usize).min(w.output.len());
                 self.response_len = p.device.information(
-                    if h.ins == 0x32 { 3 } else { h.p1 },
+                    if h.ins == INS_READ_SERIAL {
+                        INFORMATION_CHIP_ID
+                    } else {
+                        h.p1
+                    },
                     &mut w.output[..capacity],
                 );
                 if self.response_len > capacity {
@@ -183,10 +219,16 @@ impl Admin {
             self.cancel_command(w, p);
             return result;
         }
-        if h.ins == 0x41 {
+        if h.ins == INS_STORAGE_USAGE {
             let result = if h.p1 > 1 || h.p2 != 0 {
                 Err(Sw::WRONG_P1P2)
-            } else if le < if h.p1 == 0 { 2 } else { 48 } {
+            } else if le
+                < if h.p1 == 0 {
+                    super::usage::SUMMARY_BYTES as u32
+                } else {
+                    super::usage::APPLET_BYTES as u32
+                }
+            {
                 Err(Sw::WRONG_LENGTH)
             } else {
                 super::usage::read(p.storage, h.p1 == 1, w.output).map(|n| {
@@ -197,15 +239,18 @@ impl Admin {
             self.cancel_command(w, p);
             return result;
         }
-        let result =
-            if h.p1 == 0 && h.p2 == 0 && ((h.ins == 0x42 && le < 6) || (h.ins == 0x32 && le < 4)) {
-                Err(Sw::WRONG_LENGTH)
-            } else if h.ins == INS_FACTORY_RESET {
-                self.check_factory_reset(h, w, p)
-                    .map(|()| Action::FactoryReset)
-            } else {
-                self.dispatch(h, grants, pass, p, w)
-            };
+        let result = if h.p1 == 0
+            && h.p2 == 0
+            && ((h.ins == INS_READ_CONFIG && le < CONFIG_RESPONSE_BYTES as u32)
+                || (h.ins == INS_READ_SERIAL && le < crate::runtime::config::SERIAL_BYTES as u32))
+        {
+            Err(Sw::WRONG_LENGTH)
+        } else if h.ins == INS_FACTORY_RESET {
+            self.check_factory_reset(h, w, p)
+                .map(|()| Action::FactoryReset)
+        } else {
+            self.dispatch(h, grants, pass, p, w)
+        };
         self.cancel_command(w, p);
         result
     }
@@ -280,14 +325,14 @@ impl Admin {
             return Ok(Action::ResetOath);
         }
         #[cfg(feature = "ndef")]
-        if matches!(h.ins, 0x07 | 0x08) {
+        if matches!(h.ins, INS_RESET_NDEF | INS_NDEF_READ_ONLY) {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
             // ADMIN selection has already dropped the NDEF session. This
             // temporary policy object shares storage and needs no file buffer.
             let mut ndef = crate::applets::ndef::Ndef::new();
-            if h.ins == 0x07 {
+            if h.ins == INS_RESET_NDEF {
                 ndef.install(true, p.storage)?;
             } else {
                 ndef.set_read_only(h.p1, p.storage)?;
@@ -307,11 +352,11 @@ impl Admin {
         p: &mut Platform<'_>,
         w: &mut Workspace,
     ) -> Result<u32, Sw> {
-        if h.ins == 0xff {
+        if h.ins == INS_VENDOR {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
-            if h.p1 != 0xff || h.p2 > 1 || &w.input[..self.used] != b"D3549Fa2dcb$23n" {
+            if h.p1 != 0xff || h.p2 > 1 || &w.input[..self.used] != RECOVERY_PAYLOAD {
                 return Err(Sw::WRONG_P1P2);
             }
             let word = p.device.recovery_word().ok_or(Sw::UNABLE_TO_PROCESS)?;
@@ -330,35 +375,49 @@ impl Admin {
             {
                 return Err(Sw::WRONG_P1P2);
             }
-            if self.used != if h.ins == INS_SET_KEYMAP { 256 } else { 0 } {
+            if self.used
+                != if h.ins == INS_SET_KEYMAP {
+                    crate::runtime::config::KEYMAP_BYTES
+                } else {
+                    0
+                }
+            {
                 return Err(Sw::WRONG_LENGTH);
             }
             use crate::runtime::config;
             if h.ins == INS_GET_KEYMAP {
-                let layout =
-                    config::read_keymap(p.storage, (&mut w.output[..256]).try_into().unwrap())
-                        .map_err(|_| Sw::REFERENCE_NOT_FOUND)?;
+                let layout = config::read_keymap(
+                    p.storage,
+                    (&mut w.output[..crate::runtime::config::KEYMAP_BYTES])
+                        .try_into()
+                        .unwrap(),
+                )
+                .map_err(|_| Sw::REFERENCE_NOT_FOUND)?;
                 self.response_len = if h.p2 == 0 {
                     w.output[0] = layout;
                     1
                 } else {
-                    256
+                    crate::runtime::config::KEYMAP_BYTES
                 };
                 return Ok(self.response_len as u32);
             }
             let table = if h.ins == INS_SET_KEYMAP {
-                Some((&w.input[..256]).try_into().unwrap())
+                Some(
+                    (&w.input[..crate::runtime::config::KEYMAP_BYTES])
+                        .try_into()
+                        .unwrap(),
+                )
             } else {
                 None
             };
             config::write_keymap(p.storage, h.p2, table).map_err(|_| Sw::UNABLE_TO_PROCESS)?;
             return Ok(0);
         }
-        if h.ins == 0x30 || (h.ins == 0x32 && h.p1 == 0) {
+        if h.ins == INS_WRITE_SERIAL || (h.ins == INS_READ_SERIAL && h.p1 == 0) {
             if h.p1 != 0 || h.p2 != 0 {
                 return Err(Sw::WRONG_P1P2);
             }
-            if h.ins == 0x30 {
+            if h.ins == INS_WRITE_SERIAL {
                 if !grants.admin {
                     return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
                 }
@@ -376,7 +435,7 @@ impl Admin {
             self.response_len = 4;
             return Ok(4);
         }
-        if matches!(h.ins, 0x14 | 0x40 | 0x42) {
+        if matches!(h.ins, INS_NFC_ENABLE | INS_CONFIG | INS_READ_CONFIG) {
             return self.device_config(h, grants, p, w);
         }
         #[cfg(feature = "ctap")]
@@ -498,7 +557,7 @@ impl Admin {
     ) -> Result<u32, Sw> {
         use crate::runtime::config;
         let io = |_| Sw::UNABLE_TO_PROCESS;
-        if h.ins == 0x14 {
+        if h.ins == INS_NFC_ENABLE {
             if h.p1 > 1 || h.p2 > 1 {
                 return Err(Sw::WRONG_P1P2);
             }
@@ -522,46 +581,48 @@ impl Admin {
             result.map_err(io)?;
             return Ok(0);
         }
-        if h.ins == 0x42 {
+        if h.ins == INS_READ_CONFIG {
             if h.p1 != 0 || h.p2 != 0 {
                 return Err(Sw::WRONG_P1P2);
             }
             let flags = config::flags(p.storage).map_err(io)?;
-            w.output[..6].copy_from_slice(&[
+            // LED, reserved, NDEF read-only, NDEF enabled, WebUSB landing,
+            // then the six applet feature bits packed from config FEATURE_SHIFT.
+            w.output[..CONFIG_RESPONSE_BYTES].copy_from_slice(&[
                 u8::from(flags & config::LED != 0),
                 0,
                 0,
                 u8::from(flags & config::NDEF != 0),
                 u8::from(flags & config::WEBUSB != 0),
-                ((flags & config::FEATURES) >> 7) as u8,
+                ((flags & config::FEATURES) >> config::FEATURE_SHIFT) as u8,
             ]);
             #[cfg(feature = "ndef")]
             {
                 w.output[2] = u8::from(crate::applets::ndef::Ndef::new().read_only(p.storage));
             }
-            self.response_len = 6;
-            return Ok(6);
+            self.response_len = CONFIG_RESPONSE_BYTES;
+            return Ok(CONFIG_RESPONSE_BYTES as u32);
         }
         if !grants.admin {
             return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
         }
         let mask = match h.p1 {
-            1 => config::LED,
-            4 => config::NDEF,
-            5 => config::WEBUSB,
-            6 => {
+            P1_CONFIG_LED => config::LED,
+            P1_CONFIG_NDEF => config::NDEF,
+            P1_CONFIG_WEBUSB => config::WEBUSB,
+            P1_CONFIG_FEATURES => {
                 if self.used != 0 {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                if h.p2 & !0x3f != 0 {
+                if h.p2 & !config::FEATURE_MASK != 0 {
                     return Err(Sw::WRONG_P1P2);
                 }
                 config::FEATURES
             }
             _ => return Err(Sw::WRONG_P1P2),
         };
-        let value = if h.p1 == 6 {
-            u32::from(h.p2) << 7
+        let value = if h.p1 == P1_CONFIG_FEATURES {
+            u32::from(h.p2) << config::FEATURE_SHIFT
         } else if h.p2 & 1 != 0 {
             mask
         } else {

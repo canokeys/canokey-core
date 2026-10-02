@@ -2,6 +2,8 @@
 //! OpenPGP key roles and algorithm attributes; no transport or platform calls.
 use super::wire::reference;
 use crate::ports::alg;
+// Largest current attribute is X25519 (11 bytes); capacity 12 leaves one spare.
+pub const ATTRIBUTE_BYTES: usize = 12;
 const EC_P256_BYTES: usize = 32;
 const EC_P384_BYTES: usize = 48;
 const EC_P521_BYTES: usize = 66;
@@ -38,7 +40,7 @@ impl Algorithm {
     // OpenPGP algorithm attributes: EC uses an algorithm byte followed by an
     // OID; RSA uses algorithm, modulus bits (u16 BE), exponent bits (u16 BE),
     // and import format. These bytes are independent of native ports::alg IDs.
-    pub fn attrs(self, role: usize, out: &mut [u8; 12]) -> usize {
+    pub fn attrs(self, role: usize, out: &mut [u8; ATTRIBUTE_BYTES]) -> usize {
         let attr: &[u8] = match self.0 {
             alg::P256 => &[0x13, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07],
             alg::SECP256K1 => &[0x13, 0x2b, 0x81, 0x04, 0x00, 0x0a],
@@ -57,6 +59,7 @@ impl Algorithm {
         if role == key_role::DECIPHER
             && matches!(self.0, alg::P256 | alg::SECP256K1 | alg::P384 | alg::P521)
         {
+            // DECIPHER uses ECDH(0x12), rather than the ECDSA(0x13) attribute.
             out[0] = 0x12;
         }
         attr.len()
@@ -70,7 +73,7 @@ impl Algorithm {
         }
     }
     pub fn parse(bytes: &[u8], role: usize) -> Option<Self> {
-        let mut attr = [0; 12];
+        let mut attr = [0; ATTRIBUTE_BYTES];
         (alg::P256..=alg::P521).map(Self).find(|a| {
             a.allowed(role) && {
                 let n = a.attrs(role, &mut attr);
@@ -114,5 +117,6 @@ pub(super) mod grant {
 }
 pub(super) mod touch_policy {
     pub const DISABLED: u8 = 0;
-    pub const FIXED: u8 = 2;
+    pub const FIXED: u8 = 0x02;
+    pub const BUTTON_INPUT: u8 = 0x20; // UIF input method: physical button.
 }

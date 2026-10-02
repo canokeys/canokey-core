@@ -40,6 +40,9 @@ pub mod key_meta {
     pub const VERSION: usize = 0;
     pub const ALGORITHM: usize = 1;
     pub const ORIGIN: usize = 2;
+    pub const ORIGIN_ABSENT: u8 = 0x00;
+    pub const ORIGIN_GENERATED: u8 = 0x01;
+    pub const ORIGIN_IMPORTED: u8 = 0x02;
     pub const TOUCH_POLICY: usize = 3;
     pub const FINGERPRINT: usize = 4;
     pub const FINGERPRINT_END: usize = 24;
@@ -113,7 +116,7 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
         .read_at(KEYS[role], n - META_LEN as u32, &mut b)
         .map_err(io)?;
     if b[key_meta::VERSION] != FORMAT_VERSION
-        || b[key_meta::ORIGIN] > 2
+        || b[key_meta::ORIGIN] > key_meta::ORIGIN_IMPORTED
         || b[key_meta::TOUCH_POLICY] > 2
     {
         return Err(Error::Storage);
@@ -122,7 +125,7 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
     if a.private_component_bytes() == 0 {
         return Err(Error::Storage);
     }
-    let material = if b[key_meta::ORIGIN] == 0 {
+    let material = if b[key_meta::ORIGIN] == key_meta::ORIGIN_ABSENT {
         0
     } else {
         key_storage::length(a.rsa(), a.private_component_bytes())
@@ -134,7 +137,7 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
 }
 pub fn put_meta(p: &mut Platform<'_>, role: usize, b: &[u8; META_LEN]) -> Result<(), Error> {
     let a = Algorithm(b[key_meta::ALGORITHM]);
-    let material = if b[key_meta::ORIGIN] == 0 {
+    let material = if b[key_meta::ORIGIN] == key_meta::ORIGIN_ABSENT {
         0
     } else {
         key_storage::length(a.rsa(), a.private_component_bytes())
@@ -154,7 +157,7 @@ pub fn load_key(
     b: &mut [u8; crate::ports::key_layout::SIZE],
 ) -> Result<Algorithm, Error> {
     let m = meta(p, role)?;
-    if m[key_meta::ORIGIN] == 0 {
+    if m[key_meta::ORIGIN] == key_meta::ORIGIN_ABSENT {
         return Err(Error::Missing);
     }
     let a = Algorithm(m[key_meta::ALGORITHM]);
@@ -196,9 +199,9 @@ pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
     s[state_layout::VERSION] = FORMAT_VERSION;
     s[state_layout::TERMINATED] = 1;
     save_state(p, &s)?; // Incomplete reset stays terminated and can be retried.
-    pin::create(Record::PgpPw1, b"123456", 3, p)?;
-    pin::create(Record::PgpPw3, b"12345678", 3, p)?;
-    pin::create(Record::PgpRc, b"", 3, p)?;
+    pin::create(Record::PgpPw1, pin::DEFAULT_PW1, pin::DEFAULT_RETRIES, p)?;
+    pin::create(Record::PgpPw3, pin::DEFAULT_PW3, pin::DEFAULT_RETRIES, p)?;
+    pin::create(Record::PgpRc, b"", pin::DEFAULT_RETRIES, p)?;
     for i in 0..key_role::COUNT {
         let mut m = [0; META_LEN];
         m[key_meta::VERSION] = FORMAT_VERSION;
@@ -207,7 +210,7 @@ pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
         p.storage.replace(CERTS[i], &[]).map_err(io)?;
     }
     s[state_layout::SEX] = 1;
-    s[state_layout::SEX + 1] = b'9';
+    s[state_layout::SEX + 1] = b'9'; // ISO 5218: sex not applicable.
     s[state_layout::TERMINATED] = 0;
     save_state(p, &s)
 }

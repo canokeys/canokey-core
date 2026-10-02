@@ -2,6 +2,14 @@
 // Actual production USB runtime and IRQ facade, without applet mocks inside it.
 extern crate self as canokey_protocol;
 extern crate self as canokey_rust_core;
+#[path = "../../crates/protocol/src/apdu.rs"]
+pub mod apdu;
+#[path = "../../crates/protocol/src/ccid.rs"]
+pub mod ccid;
+#[path = "../../crates/protocol/src/ctaphid.rs"]
+pub mod ctaphid;
+#[path = "../../crates/protocol/src/response.rs"]
+pub mod response;
 #[path = "../../crates/protocol/src/usb.rs"]
 mod usb_wire;
 pub mod usb {
@@ -58,7 +66,7 @@ pub unsafe extern "C" fn test_web_preempt(requested: u8) -> u8 {
 // This fixture isolates USB/controller behavior; usb-sessions links the actual
 // CCID/Core progress path and verifies presence polling during HID execution.
 #[cfg(feature = "usb-hid")]
-mod ccid {
+mod ccid_policy {
     pub unsafe fn presence_progress() {
         unreachable!("HID execution belongs in usb-sessions")
     }
@@ -66,9 +74,9 @@ mod ccid {
 
 mod transport {
     pub(crate) mod ccid {
-        #[cfg(feature = "usb-hid")]
-        pub(crate) use crate::ccid::presence_progress;
         pub(crate) use crate::ccid_io as io;
+        #[cfg(feature = "usb-hid")]
+        pub(crate) use crate::ccid_policy::presence_progress;
     }
     pub(crate) use crate::usb;
     #[cfg(feature = "usb-webusb")]

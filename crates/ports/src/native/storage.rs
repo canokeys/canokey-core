@@ -78,15 +78,17 @@ unsafe extern "C" {
 // Variants are gated by platform capabilities and applet features; numeric
 // values remain aligned with ck_stage_operation in native/include/core.h.
 enum StageOperation {
-    Begin = 0,
-    Append = 1,
-    Publish = 2,
-    Abort = 3,
+    Begin = crate::contracts::stage_operation::BEGIN,
+    Append = crate::contracts::stage_operation::APPEND,
+    Publish = crate::contracts::stage_operation::PUBLISH,
+    Abort = crate::contracts::stage_operation::ABORT,
     #[cfg(feature = "platform-stage")]
-    Remove = 4,
+    Remove = crate::contracts::stage_operation::REMOVE,
     #[cfg(feature = "piv")]
-    Rename = 5,
+    Rename = crate::contracts::stage_operation::RENAME,
 }
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+const MAX_STAGE_PARTS: usize = 8; // ck_platform_stage_parts ABI, core.h.
 // C reads return a byte count, -1 for missing, and other negatives for failure.
 // Writes/staging use different success conventions (count vs zero). Failed
 // mutations map to Uncertain: a backend error does not prove nothing was written,
@@ -94,13 +96,13 @@ enum StageOperation {
 native_port! { impl Storage for StorageBackend {
     #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), StorageError> {
-        if parts.len() > 8 {
+        if parts.len() > MAX_STAGE_PARTS {
             return Err(StorageError::Unavailable);
         }
         let mut native = [StoragePart {
             data: core::ptr::null(),
             length: 0,
-        }; 8];
+        }; MAX_STAGE_PARTS];
         for (out, part) in native.iter_mut().zip(parts) {
             *out = StoragePart {
                 data: part.as_ptr(),

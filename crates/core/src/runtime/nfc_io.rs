@@ -13,7 +13,7 @@ pub struct Io {
     execution: Execution,
     computing: bool,
     turn: bool,
-    frame: [u8; 32],
+    frame: [u8; wire::FRAME_LIMIT],
     length: u8,
 }
 impl Io {
@@ -23,7 +23,7 @@ impl Io {
             execution: Execution::new(),
             computing: false,
             turn: false,
-            frame: [0; 32],
+            frame: [0; wire::FRAME_LIMIT],
             length: 0,
         }
     }
@@ -43,8 +43,8 @@ impl Io {
         self.recovery.fault();
     }
     pub fn interrupt(&mut self, now: u32, chip: &mut impl Chip) {
-        let mut flags = [0; 3];
-        if !chip.read(0xfff7, &mut flags) {
+        let mut flags = [0; wire::FM_IRQ_BYTES];
+        if !chip.read(wire::FM_REG_MAIN_IRQ, &mut flags) {
             if !self.recovery.drain_only() {
                 self.fault();
             }
@@ -71,7 +71,7 @@ impl Io {
                     self.discard();
                     self.recovery.activated(now);
                 }
-                if !self.computing && flags[0] & 0x3f != 0 {
+                if !self.computing && flags[0] & wire::FM_MAIN_ACTIVITY != 0 {
                     self.recovery.activity(now);
                 }
                 if !received {
@@ -80,7 +80,9 @@ impl Io {
             }
         }
         let mut size = [0];
-        if !chip.read(0xfff2, &mut size) || !(3..=32).contains(&size[0]) {
+        if !chip.read(wire::FM_REG_FIFO_WORDCNT, &mut size)
+            || !(3..=wire::FRAME_LIMIT).contains(&usize::from(size[0]))
+        {
             self.fault();
             return;
         }
@@ -89,7 +91,10 @@ impl Io {
             self.fault();
             return;
         }
-        if !chip.read(0xfff0, &mut self.frame[..size[0] as usize]) {
+        if !chip.read(
+            wire::FM_REG_FIFO_ACCESS,
+            &mut self.frame[..size[0] as usize],
+        ) {
             self.fault();
             return;
         }
@@ -116,7 +121,7 @@ impl Io {
             Err(_) => self.fault(),
         }
     }
-    pub fn take(&mut self, out: &mut [u8; 32]) -> Option<usize> {
+    pub fn take(&mut self, out: &mut [u8; wire::FRAME_LIMIT]) -> Option<usize> {
         if self.length == 0 || self.recovery.drain_only() {
             return None;
         }
@@ -131,7 +136,9 @@ impl Io {
         if !self.turn || self.recovery.drain_only() {
             return false;
         }
-        if !chip.write(0xfff0, packet.bytes()) || !chip.write(0xfff4, &[0x55]) {
+        if !chip.write(wire::FM_REG_FIFO_ACCESS, packet.bytes())
+            || !chip.write(wire::FM_REG_RF_TXEN, &[wire::FM_RF_TX_ENABLE])
+        {
             self.fault();
             return false;
         }
@@ -174,14 +181,20 @@ impl Io {
         }
         if let Some(action) = action {
             let ok = match action.operation {
-                HardwareAction::Silence => chip.write(0xffe6, &[0x33]),
-                HardwareAction::Unsilence => chip.write(0xffe6, &[0xcc]),
-                HardwareAction::ConfigureInterrupts => chip.write(0xfffa, &[0x22]),
+                HardwareAction::Silence => {
+                    chip.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_SILENCE])
+                }
+                HardwareAction::Unsilence => {
+                    chip.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_UNSILENCE])
+                }
+                HardwareAction::ConfigureInterrupts => {
+                    chip.write(wire::FM_REG_MAIN_IRQ_MASK, &[wire::FM_MAIN_IRQ_MASK])
+                }
             };
             self.recovery.completed(action, ok, now);
             if ok && action.operation == HardwareAction::Silence {
                 // Failed masking is covered by drain-only IRQ handling.
-                let _ = chip.write(0xfffa, &[0]);
+                let _ = chip.write(wire::FM_REG_MAIN_IRQ_MASK, &[0]);
             }
         }
     }

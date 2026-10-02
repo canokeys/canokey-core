@@ -174,7 +174,10 @@ impl AppletState {
                 )
             }
             #[cfg(feature = "ctap")]
-            Self::Ctap => (h.unchained().cla & !0x80, ctap::MAX_REQUEST as u32),
+            Self::Ctap => (
+                h.unchained().cla & !canokey_protocol::apdu::CLA_FIDO,
+                ctap::MAX_REQUEST as u32,
+            ),
             #[cfg(feature = "oath")]
             Self::Oath(_) => (
                 h.unchained().cla,
@@ -201,7 +204,7 @@ impl AppletState {
                 } else {
                     h.cla
                 },
-                1024,
+                crate::applets::ndef::FILE_LIMIT as u32,
             ),
             Self::None => (h.cla, 0),
         }
@@ -356,8 +359,16 @@ impl Registry {
 /// Never steal an APDU from an explicitly selected applet.
 #[cfg(feature = "ctap")]
 fn implicit_fido(h: Header) -> bool {
-    (h.cla & !0x10 == 0x80 && h.ins == 0x10)
-        || (h.cla == 0 && (matches!(h.ins, 1..=3) || (h.ins == 0xa4 && h.p1 != 4)))
+    // Strip APDU chaining from FIDO CLA 80; accept CBOR INS 10 or U2F
+    // REGISTER/AUTHENTICATE/VERSION. SELECT-by-name (P1=04) remains explicit.
+    (h.cla & !canokey_protocol::apdu::CLA_CHAINING == canokey_protocol::apdu::CLA_FIDO
+        && h.ins == canokey_protocol::apdu::FIDO_CBOR_INS)
+        || (h.cla == 0
+            && (matches!(
+                h.ins,
+                canokey_protocol::apdu::U2F_REGISTER..=canokey_protocol::apdu::U2F_VERSION
+            ) || (h.ins == canokey_protocol::apdu::INS_SELECT
+                && h.p1 != canokey_protocol::apdu::SELECT_BY_NAME)))
 }
 impl Router for Registry {
     #[allow(unused_variables)]
@@ -478,7 +489,7 @@ impl Router for Registry {
         let _ = total;
         match &self.applet {
             #[cfg(feature = "ndef")]
-            AppletState::Ndef(_) => total > 288,
+            AppletState::Ndef(_) => total > canokey_protocol::apdu::RESPONSE_PREEMPT_BYTES as u32,
             #[cfg(feature = "openpgp")]
             AppletState::OpenPgp(s) => s.response_preemptable(total),
             #[cfg(feature = "piv")]
@@ -494,6 +505,7 @@ impl Router for Registry {
     }
     #[cfg(feature = "pass")]
     fn is_eject(&self, h: Header, p: &mut Platform<'_>) -> bool {
+        // PASS eject pseudo-APDU: FF EE FF EE, gated by the PASS feature.
         h.cla == 0xff
             && h.ins == 0xee
             && h.p1 == 0xff

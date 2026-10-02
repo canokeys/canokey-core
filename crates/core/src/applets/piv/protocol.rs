@@ -22,6 +22,7 @@ use crate::{
 };
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 use objects::Put;
+// NIST PIV AID: RID A000000308 with application suffix 000010000100.
 pub const AID: &[u8] = &[
     0xa0, 0x00, 0x00, 0x03, 0x08, 0x00, 0x00, 0x10, 0x00, 0x01, 0x00,
 ];
@@ -36,7 +37,7 @@ pub(crate) fn init_stream(
     scratch: &mut CryptoScratch,
     p: &mut Platform<'_>,
 ) -> Result<usize, Sw> {
-    let mut seed = [0; 64];
+    let mut seed = [0; crate::ports::mlkem768::SEED_BYTES];
     let result = (|| {
         p.storage
             .read_at(
@@ -117,7 +118,7 @@ pub struct Piv {
     pin_grant_consumed: bool,
     auth_mode: AuthMode,
     challenge: [u8; 16],
-    config: [u8; 10],
+    config: [u8; repo::CONFIG_BYTES],
     request: Request,
     response: ResponseBacking,
     used: usize,
@@ -139,7 +140,7 @@ pub struct Piv {
     stream_phase: StreamPhase,
     stream_pin_policy: u8,
     stream_touch_policy: u8,
-    sm2_id: [u8; 32],
+    sm2_id: [u8; limits::SM2_ID_MAX],
     sm2_id_used: usize,
 }
 impl Piv {
@@ -183,7 +184,7 @@ impl Piv {
             stream_phase: StreamPhase::Identity,
             stream_pin_policy: policy::PIN_NEVER,
             stream_touch_policy: policy::TOUCH_NEVER,
-            sm2_id: [0; 32],
+            sm2_id: [0; limits::SM2_ID_MAX],
             sm2_id_used: 0,
         }
     }
@@ -407,7 +408,7 @@ impl Piv {
             self.response,
             ResponseBacking::Object(_) | ResponseBacking::Crypto(_)
         ) || matches!(w, SessionWorkspace::Attestation(_))
-            || total > 288
+            || total > canokey_protocol::apdu::RESPONSE_PREEMPT_BYTES as u32
     }
     fn memory(&mut self, n: usize) {
         self.response = ResponseBacking::Memory;
@@ -466,7 +467,7 @@ impl Piv {
         match h.ins {
             INS_VERIFY => {
                 let r = self.pins.verify(h, &w.input[..self.used], p);
-                if r.is_ok() && (self.used == 8 || h.p1 == 0xff) {
+                if r.is_ok() && (self.used == super::pin::VALUE_BYTES || h.p1 == 0xff) {
                     self.pin_grant_consumed = false;
                 }
                 r
@@ -516,7 +517,8 @@ impl Piv {
                 if h.p1 != 0xff || !matches!(h.p2, 0xfe | 0xff) {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if self.used != 27 {
+                // SET MANAGEMENT KEY: algorithm/reference/key-length header + AES-192 key.
+                if self.used != 3 + repo::MANAGEMENT_KEY_BYTES {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 if w.input[..3]
@@ -535,7 +537,7 @@ impl Piv {
                     } else {
                         policy::TOUCH_NEVER
                     },
-                    &w.input[3..27],
+                    &w.input[3..3 + repo::MANAGEMENT_KEY_BYTES],
                 );
                 let r = p
                     .storage
@@ -592,15 +594,16 @@ impl Piv {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if h.p1 == 0x01 {
-                    w.output[..10].copy_from_slice(&self.config);
-                    self.memory(10);
-                    Ok(10)
+                    w.output[..repo::CONFIG_BYTES].copy_from_slice(&self.config);
+                    self.memory(repo::CONFIG_BYTES);
+                    Ok(repo::CONFIG_BYTES as u32)
                 } else {
                     self.authorized()?;
-                    if self.used != 10 {
+                    if self.used != repo::CONFIG_BYTES {
                         return Err(Sw::WRONG_LENGTH);
                     }
-                    let c: &[u8; 10] = (&w.input[..10]).try_into().unwrap();
+                    let c: &[u8; repo::CONFIG_BYTES] =
+                        (&w.input[..repo::CONFIG_BYTES]).try_into().unwrap();
                     if !repo::config_valid(c) {
                         return Err(Sw::WRONG_DATA);
                     }

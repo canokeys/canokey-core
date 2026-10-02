@@ -6,12 +6,12 @@ use super::{
     credential::{Credential, Kind, Properties},
 };
 pub(super) const FORMAT_VERSION: u8 = 2;
-const VERSION: usize = 0;
-const NAME_LENGTH: usize = 1;
-const KEY_LENGTH: usize = 2;
-const TYPE: usize = 3;
-const DIGITS: usize = 4;
-const PROPERTIES: usize = 5;
+pub(super) const VERSION: usize = 0;
+pub(super) const NAME_LENGTH: usize = 1;
+pub(super) const KEY_LENGTH: usize = 2;
+pub(super) const TYPE: usize = 3;
+pub(super) const DIGITS: usize = 4;
+pub(super) const PROPERTIES: usize = 5;
 pub const HEADER_BYTES: usize = 6;
 pub const COUNTER_BYTES: usize = 8;
 pub const FIXED_BYTES: usize = HEADER_BYTES + COUNTER_BYTES;

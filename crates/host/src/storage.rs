@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Host-only durable record image. This is not a LittleFS durability oracle.
+use canokey_ports::{Record, stage_operation as stage};
 use std::os::unix::fs::OpenOptionsExt;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
 };
+// Synthetic accounting allowance for image metadata/configuration; deliberately
+// conservative, independent of serialized length and not a LittleFS page cost.
+const IMAGE_OVERHEAD_BYTES: usize = 4096;
 const MAGIC: &[u8; 8] = b"CKRHOST1";
 const COUNT: usize = 186;
 const CAPACITY: usize = 128 * 1024;
@@ -72,7 +76,7 @@ impl Storage {
         Ok((store, fresh))
     }
     fn used(&self) -> usize {
-        4096 + self.records.iter().flatten().map(Vec::len).sum::<usize>()
+        IMAGE_OVERHEAD_BYTES + self.records.iter().flatten().map(Vec::len).sum::<usize>()
     }
     pub fn reopen(&self) -> io::Result<Self> {
         Self::open(&self.path, false).map(|(storage, _)| storage)
@@ -130,9 +134,11 @@ impl Storage {
         if self.uncertain || usize::from(id) >= COUNT {
             return Err(-2);
         }
-        let path = match id {
-            184 => b"E103".to_vec(),
-            185 => b"NDEF".to_vec(),
+        // Legacy fault-injection path labels: E103 is the NFC Forum Type 4
+        // capability-container file ID; NDEF names the message file.
+        let path = match Record::from_id(id) {
+            Some(Record::NdefCapability) => b"E103".to_vec(),
+            Some(Record::NdefMessage) => b"NDEF".to_vec(),
             _ => format!("{id:02x}").into_bytes(),
         };
         if self
@@ -146,7 +152,8 @@ impl Storage {
         Ok(usize::from(id))
     }
     pub fn inject(&mut self, op: u8, sub: u8, path: &[u8]) {
-        if op <= 2 && sub == 0 && !path.is_empty() && path.len() < 32 {
+        // Injection operation codes: 00 write, 01 read/stat, 02 unlink.
+        if op <= 0x02 && sub == 0 && !path.is_empty() && path.len() < 32 {
             self.fault = Some((op, path.to_vec()));
         }
     }
@@ -221,28 +228,28 @@ impl Storage {
             return Err(-2);
         }
         match op {
-            0 => {
+            stage::BEGIN => {
                 if data.len() > MAX_RECORD {
                     return Err(-2);
                 }
                 self.stage = Some(data.to_vec());
             }
-            1 => {
+            stage::APPEND => {
                 let stage = self.stage.as_mut().ok_or(-2)?;
                 if data.len() > MAX_RECORD - stage.len() {
                     return Err(-2);
                 }
                 stage.extend_from_slice(data);
             }
-            2 => {
+            stage::PUBLISH => {
                 let id = self.check(id, 0)?;
                 let stage = self.stage.take().ok_or(-2)?;
                 self.replace(id, stage)?;
             }
-            3 => {
+            stage::ABORT => {
                 self.stage = None;
             }
-            4 => {
+            stage::REMOVE => {
                 if !data.is_empty() {
                     return Err(-2);
                 }
@@ -250,7 +257,7 @@ impl Storage {
                 self.records[id] = None;
                 self.commit_record(id)?;
             }
-            5 => {
+            stage::RENAME => {
                 if data.len() != 1 {
                     return Err(-2);
                 }

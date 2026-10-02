@@ -233,7 +233,12 @@ impl<R: Router> Runtime<R> {
             && !self.router.output_busy()
             && self.router.allows_extended(header)
     }
-    fn validate_extended(&self, owner: u8, prefix: &[u8; 7], total: usize) -> Result<u16, Sw> {
+    fn validate_extended(
+        &self,
+        owner: u8,
+        prefix: &[u8; canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
+        total: usize,
+    ) -> Result<u16, Sw> {
         let header = Header {
             cla: prefix[0],
             ins: prefix[1],
@@ -244,7 +249,11 @@ impl<R: Router> Runtime<R> {
         if !self.extended_allowed(owner, header)
             || prefix[4] != 0
             || lc == 0
-            || ![usize::from(lc) + 7, usize::from(lc) + 9].contains(&total)
+            || ![
+                usize::from(lc) + canokey_protocol::apdu::EXTENDED_HEADER_BYTES,
+                usize::from(lc) + canokey_protocol::apdu::EXTENDED_OVERHEAD_BYTES,
+            ]
+            .contains(&total)
             || u32::from(lc) > self.router.command_limit(header)?
         {
             return Err(Sw::WRONG_LENGTH);
@@ -256,7 +265,7 @@ impl<R: Router> Runtime<R> {
     pub fn prepare_extended(
         &mut self,
         owner: u8,
-        prefix: &[u8; 7],
+        prefix: &[u8; canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
         total: usize,
         p: &mut Platform<'_>,
     ) -> Result<u16, Sw> {
@@ -455,6 +464,7 @@ impl<R: Router> Runtime<R> {
     ) -> Reply {
         let result = (|| {
             self.begin_frame(owner, total, p)?;
+            // Bounded streaming chunk; independent of APDU length and applet buffers.
             let mut window = [0; 64];
             let mut remaining = total;
             while remaining != 0 {

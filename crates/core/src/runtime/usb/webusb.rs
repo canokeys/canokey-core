@@ -3,12 +3,18 @@
 #![forbid(unsafe_code)]
 use canokey_protocol::usb::Setup;
 
+// USB BOS: five-byte header, WebUSB platform capability (24 bytes), then
+// Microsoft OS 2.0 capability (28 bytes). UUIDs use the platform descriptor byte
+// order: 3408b638-09a9-47a0-8bfd-a0768815b665 and
+// d8dd60df-4589-4cc7-9cd2-659d9e648a9f. Vendor request codes are 01/02.
 const BOS: &[u8] = &[
     0x05, 0x0f, 0x39, 0x00, 0x02, 0x18, 0x10, 0x05, 0x00, 0x38, 0xb6, 0x08, 0x34, 0xa9, 0x09, 0xa0,
     0x47, 0x8b, 0xfd, 0xa0, 0x76, 0x88, 0x15, 0xb6, 0x65, 0x00, 0x01, 0x01, 0x01, 0x1c, 0x10, 0x05,
     0x00, 0xdf, 0x60, 0xdd, 0xd8, 0x89, 0x45, 0xc7, 0x4c, 0x9c, 0xd2, 0x65, 0x9d, 0x9e, 0x64, 0x8a,
     0x9f, 0x00, 0x00, 0x03, 0x06, 0xb2, 0x00, 0x02, 0x00,
 ];
+// MS OS 2.0 set/configuration/function subset headers, WINUSB compatible ID,
+// then UTF-16LE DeviceInterfaceGUIDs = {244EB29E-E090-4E49-81FE-1F20F8D3B8F4}.
 const MS_OS_20: &[u8] = &[
     0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0xb2, 0x00, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00,
     0xa8, 0x00, 0x08, 0x00, 0x02, 0x00, 0x01, 0x00, 0xa0, 0x00, 0x14, 0x00, 0x03, 0x00, 0x57, 0x49,
@@ -23,11 +29,14 @@ const MS_OS_20: &[u8] = &[
     0x44, 0x00, 0x33, 0x00, 0x42, 0x00, 0x38, 0x00, 0x46, 0x00, 0x34, 0x00, 0x7d, 0x00, 0x00, 0x00,
     0x00, 0x00,
 ];
+// WebUSB URL descriptor: length/type/HTTPS scheme, ASCII console.canokeys.org.
 const URL: &[u8] = &[
     0x17, 0x03, 0x01, 0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65, 0x2e, 0x63, 0x61, 0x6e, 0x6f, 0x6b,
     0x65, 0x79, 0x73, 0x2e, 0x6f, 0x72, 0x67,
 ];
 
+const BOS_LANDING_PAGE_OFFSET: usize = 28;
+const MS_FIRST_INTERFACE_OFFSET: usize = 22;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Descriptor {
     Bos,
@@ -38,9 +47,9 @@ pub enum Descriptor {
 impl Descriptor {
     pub fn request(s: Setup, interface: u8) -> Option<Self> {
         match (s.kind, s.request, s.value, s.index) {
-            (0x80, 6, 0x0f00, 0) => Some(Self::Bos),
-            (0xc0, 1, 1, 2) => Some(Self::Url),
-            (0xc0, 2, 0, 7) => Some(Self::Microsoft { interface }),
+            (0x80, 6, 0x0f00, 0) /* Standard GET_DESCRIPTOR(BOS). */ => Some(Self::Bos),
+            (0xc0, 1, 1, 2) /* WebUSB GET_URL, URL index 1. */ => Some(Self::Url),
+            (0xc0, 2, 0, 7) /* MS OS 2.0 descriptor set. */ => Some(Self::Microsoft { interface }),
             _ => None,
         }
     }
@@ -65,12 +74,15 @@ impl Descriptor {
         }
         let n = out.len().min(bytes.len() - offset);
         out[..n].copy_from_slice(&bytes[offset..offset + n]);
-        if self == Self::BosWithoutLanding && offset <= 28 && 28 - offset < n {
-            out[28 - offset] = 0;
+        if self == Self::BosWithoutLanding
+            && offset <= BOS_LANDING_PAGE_OFFSET
+            && BOS_LANDING_PAGE_OFFSET - offset < n
+        {
+            out[BOS_LANDING_PAGE_OFFSET - offset] = 0;
         }
         if let Self::Microsoft { interface } = self {
-            if offset <= 22 && 22 - offset < n {
-                out[22 - offset] = interface;
+            if offset <= MS_FIRST_INTERFACE_OFFSET && MS_FIRST_INTERFACE_OFFSET - offset < n {
+                out[MS_FIRST_INTERFACE_OFFSET - offset] = interface;
             }
         }
         n

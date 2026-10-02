@@ -104,16 +104,27 @@ impl Record {
     pub const fn id(self) -> u8 {
         self.0
     }
+    // Group namespace starts immediately after CtapCounter (4F).
+    pub const CTAP_GROUP_BASE: u8 = 0x50;
     pub const CTAP_CREDENTIALS: u8 = 100;
     pub const CTAP_GROUP_MEMBERS: u8 = 4;
     pub const CTAP_GROUPS: u8 = Self::CTAP_CREDENTIALS / Self::CTAP_GROUP_MEMBERS;
     pub const fn ctap_group(index: u8) -> Option<Self> {
         if index < Self::CTAP_GROUPS {
-            Some(Self(0x50 + index))
+            Some(Self(Self::CTAP_GROUP_BASE + index))
         } else {
             None
         }
     }
+}
+/// Staged-record C ABI operation codes; mirrored by ck_stage_operation in core.h.
+pub mod stage_operation {
+    pub const BEGIN: u8 = 0x00;
+    pub const APPEND: u8 = 0x01;
+    pub const PUBLISH: u8 = 0x02;
+    pub const ABORT: u8 = 0x03;
+    pub const REMOVE: u8 = 0x04;
+    pub const RENAME: u8 = 0x05;
 }
 #[derive(Clone, Copy, Debug)]
 pub enum StorageError {

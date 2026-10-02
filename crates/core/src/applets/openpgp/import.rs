@@ -146,7 +146,9 @@ impl Import {
         let Some(n) = length(b, &mut at)? else {
             return Ok(false);
         };
-        if n > 24 {
+        // Six RSA descriptors, each one tag byte plus at most three BER length bytes.
+        const COMPONENT_DESCRIPTOR_BYTES: usize = 6 * (1 + 3);
+        if n > COMPONENT_DESCRIPTOR_BYTES {
             return Err(Sw::WRONG_DATA);
         }
         if b.len() < at + n {
@@ -184,7 +186,7 @@ impl Import {
         if a.rsa() {
             if count != 6
                 || tags != key_tag::RSA_COMPONENTS
-                || self.lengths[0] != 4
+                || self.lengths[0] != key_layout::EXPONENT_BYTES
                 || self.lengths[1] != width
                 || self.lengths[2] != width
                 || self.lengths[3..].iter().any(|n| *n == 0 || *n > width)

@@ -3,7 +3,7 @@
 //! this state retains only one 30-byte packet for retransmission.
 #![forbid(unsafe_code)]
 use canokey_protocol::nfc::{self, Block, Packet};
-pub const COMMAND_LIMIT: usize = 261;
+pub const COMMAND_LIMIT: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
 pub const MAX_RETRANSMITS: u8 = 2;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -164,7 +164,7 @@ impl Link {
             return Err(Error::Sequence);
         }
         let bytes = self.cached.as_ref().ok_or(Error::Sequence)?.bytes();
-        self.phase = if bytes[0] & 0x10 != 0 {
+        self.phase = if bytes[0] & nfc::PCB_CHAIN_OR_NAK != 0 {
             Phase::Responding
         } else {
             Phase::Complete
@@ -213,7 +213,9 @@ impl Execution {
         self.running && self.live
     }
     pub fn due(&self, now: u32) -> bool {
-        self.live() && !self.waiting && now.wrapping_sub(self.last) >= 150
+        self.live()
+            && !self.waiting
+            && now.wrapping_sub(self.last) >= u32::from(nfc::WTX_INTERVAL_MS)
     }
     pub fn sent(&mut self, now: u32) {
         self.waiting = true;
@@ -378,15 +380,15 @@ pub enum Irq {
     Halt,
     Activity { activated: bool, received: bool },
 }
-pub fn irq(flags: [u8; 3]) -> Irq {
-    if flags[2] & 0x78 != 0 || flags[1] & 4 != 0 {
+pub fn irq(flags: [u8; nfc::FM_IRQ_BYTES]) -> Irq {
+    if flags[2] & nfc::FM_AUX_ERRORS != 0 || flags[1] & nfc::FM_FIFO_OVERFLOW != 0 {
         Irq::Fault
-    } else if flags[2] & 4 != 0 {
+    } else if flags[2] & nfc::FM_AUX_HALT != 0 {
         Irq::Halt
     } else {
         Irq::Activity {
-            activated: flags[0] & 0x40 != 0,
-            received: flags[0] & 0x10 != 0,
+            activated: flags[0] & nfc::FM_MAIN_ACTIVE != 0,
+            received: flags[0] & nfc::FM_MAIN_RX_DONE != 0,
         }
     }
 }

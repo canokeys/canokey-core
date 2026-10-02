@@ -37,7 +37,7 @@ impl Put {
             }
             if self.used >= 2 {
                 let n = self.prefix[1] as usize;
-                if !(1..=3).contains(&n) {
+                if !(1..=object_tlv::MAX_TAG_BYTES).contains(&n) {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 if self.used == n + 2 {

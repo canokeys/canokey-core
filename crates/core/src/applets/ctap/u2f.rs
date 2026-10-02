@@ -7,6 +7,13 @@ use crate::{
 };
 use canokey_protocol::{apdu::Header, der::der_signature, response::StatusWord as Sw};
 
+const REGISTER: u8 = canokey_protocol::apdu::U2F_REGISTER;
+const AUTHENTICATE: u8 = canokey_protocol::apdu::U2F_AUTHENTICATE;
+const VERSION: u8 = canokey_protocol::apdu::U2F_VERSION;
+const SELECT: u8 = canokey_protocol::apdu::INS_SELECT;
+const MSG: u8 = canokey_protocol::apdu::FIDO_CBOR_INS;
+const CHECK_ONLY: u8 = 0x07;
+const REGISTRATION_RESERVED: u8 = 0x05;
 pub const MAX_INPUT: usize = 65 + credential::ID_BYTES;
 pub struct Request {
     pub header: Header,
@@ -68,22 +75,22 @@ impl Session {
             return Err(Sw::CLA_NOT_SUPPORTED);
         }
         match r.header.ins {
-            3 => {
+            VERSION => {
                 return if r.length == 0 {
                     Ok(Response::Constant(b"U2F_V2"))
                 } else {
                     Err(Sw::WRONG_LENGTH)
                 };
             }
-            0xa4 => return Ok(Response::Constant(b"U2F_V2")),
-            0x10 => return Ok(Response::Constant(&[])),
-            1 | 2 => (),
+            SELECT => return Ok(Response::Constant(b"U2F_V2")),
+            MSG => return Ok(Response::Constant(&[])),
+            REGISTER | AUTHENTICATE => (),
             _ => return Err(Sw::INS_NOT_SUPPORTED),
         }
         if pin::policy(p).map_err(|_| Sw::UNABLE_TO_PROCESS)?.flags & pin::ALWAYS_UV != 0 {
             return Err(Sw::INS_NOT_SUPPORTED);
         }
-        let register = r.header.ins == 1;
+        let register = r.header.ins == REGISTER;
         if register && r.length != 64 {
             return Err(Sw::WRONG_LENGTH);
         }
@@ -105,7 +112,7 @@ impl Session {
                 return Err(Sw::WRONG_DATA);
             }
             credential::open(&id, self.sm2, rp, w.key, p).map_err(|_| Sw::WRONG_DATA)?;
-            if r.header.p1 == 7 {
+            if r.header.p1 == CHECK_ONLY {
                 return Err(Sw::CONDITIONS_NOT_SATISFIED);
             }
         }
@@ -135,11 +142,11 @@ impl Session {
             w.input[33..65].copy_from_slice(&r.data[..32]);
             w.input[65..65 + id.len()].copy_from_slice(&id);
             let public = 65 + id.len();
-            w.input[public] = 4;
+            w.input[public] = crate::ports::EC_POINT_UNCOMPRESSED;
             w.input[public + 1..public + 65].copy_from_slice(&w.output[2..66]);
             // Registration response prefix is independent of the signed byte order.
-            w.output[0] = 5;
-            w.output[1] = 4;
+            w.output[0] = REGISTRATION_RESERVED;
+            w.output[1] = crate::ports::EC_POINT_UNCOMPRESSED;
             w.output[66] = id.len() as u8;
             w.output[67..67 + id.len()].copy_from_slice(&id);
             p.memory.wipe(&mut w.key.bytes);

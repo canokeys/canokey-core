@@ -2,8 +2,8 @@
 //! Fixed slots shared by RAM and persistence.
 //! No native-layout or previous-format decoding.
 #![forbid(unsafe_code)]
+pub use super::domain::SLOT_COUNT;
 use super::domain::{Error, KEY_LENGTH, PASSWORD_LIMIT, Slot, SlotIndex, kind};
-pub const SLOT_COUNT: usize = 2;
 pub const SLOT_SIZE: usize = 72;
 pub const FILE_SIZE: usize = SLOT_COUNT * SLOT_SIZE;
 // Offsets below are within one expanded RAM slot. LENGTH counts payload bytes
@@ -17,7 +17,7 @@ const ENTER: usize = 3;
 const PAYLOAD: usize = 4;
 const OATH_ID_BYTES: usize = 4;
 const OATH_NAME: usize = PAYLOAD + OATH_ID_BYTES;
-const OATH_NAME_LIMIT: usize = 64;
+use super::domain::OATH_NAME_LIMIT;
 #[derive(Clone, Copy)]
 pub struct Layout;
 impl Layout {

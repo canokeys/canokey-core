@@ -8,7 +8,15 @@ use crate::ports::{KeyMaterial, Platform, Record, StorageError, alg};
 
 // Algorithm, policy flags, random nonce, truncated HMAC. The RP hash is bound
 // cryptographically rather than repeated in every credential ID.
-pub(super) const THIRD_PARTY_PAYMENT: u8 = 16;
+pub(super) const THIRD_PARTY_PAYMENT: u8 = 0x10;
+pub(super) const CRED_PROTECT_MASK: u8 = 0x03;
+// Credential-ID algorithm discriminator; distinct from native algorithm IDs.
+mod scheme {
+    pub const P256: u8 = 0x00;
+    pub const ED25519: u8 = 0x01;
+    pub const SM2: u8 = 0x02;
+    pub const MLDSA65: u8 = 0x03;
+}
 pub(super) const ID_BYTES: usize = 34;
 pub(super) type Id = [u8; ID_BYTES];
 const TAG: usize = 18;
@@ -38,10 +46,10 @@ fn master(create: bool, p: &mut Platform<'_>) -> Result<[u8; 32], Status> {
 
 pub(super) fn algorithm(id: &Id) -> Result<u8, Status> {
     match id[0] {
-        0 => Ok(alg::P256),
-        1 => Ok(alg::ED25519),
-        2 => Ok(alg::SM2),
-        3 => Ok(alg::MLDSA65),
+        scheme::P256 => Ok(alg::P256),
+        scheme::ED25519 => Ok(alg::ED25519),
+        scheme::SM2 => Ok(alg::SM2),
+        scheme::MLDSA65 => Ok(alg::MLDSA65),
         _ => Err(Status::NoCredentials),
     }
 }
@@ -57,7 +65,7 @@ fn derive(
     let mut message = [0; 1 + TAG + 32 + 8];
     message[1..1 + TAG].copy_from_slice(&id[..TAG]);
     message[1 + TAG..1 + TAG + 32].copy_from_slice(rp);
-    let length = if id[0] == 2 {
+    let length = if id[0] == scheme::SM2 {
         message[1 + TAG + 32..].copy_from_slice(&sm2.encode());
         message.len()
     } else {
@@ -90,10 +98,10 @@ pub(super) fn create(
     let result = (|| {
         let mut id = [0; ID_BYTES];
         id[0] = match algorithm {
-            alg::P256 => 0,
-            alg::ED25519 => 1,
-            alg::SM2 => 2,
-            alg::MLDSA65 => 3,
+            alg::P256 => scheme::P256,
+            alg::ED25519 => scheme::ED25519,
+            alg::SM2 => scheme::SM2,
+            alg::MLDSA65 => scheme::MLDSA65,
             _ => return Err(Status::UnsupportedAlgorithm),
         };
         id[1] = flags;
@@ -119,6 +127,7 @@ pub(super) fn create(
 }
 
 fn valid_scalar(algorithm: u8, scalar: &[u8]) -> bool {
+    // SEC 2 secp256r1 group order n, big-endian; valid scalars satisfy 0 < d < n.
     const ORDER: [u8; 32] = [
         0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xbc,
         0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51,
@@ -214,11 +223,11 @@ pub(super) fn permitted_id(id: &Id) -> bool {
 
 pub(super) fn cose_algorithm(algorithm: u8, sm2: super::settings::Sm2) -> i32 {
     match algorithm {
-        alg::P256 => -7,
-        alg::ED25519 => -8,
-        alg::MLDSA65 => -49,
+        alg::P256 => super::wire::cose::ES256,
+        alg::ED25519 => super::wire::cose::EDDSA,
+        alg::MLDSA65 => super::wire::cose::MLDSA65,
         alg::SM2 => sm2.algorithm,
-        _ => -7,
+        _ => super::wire::cose::ES256,
     }
 }
 pub(super) fn public_length(algorithm: u8) -> usize {

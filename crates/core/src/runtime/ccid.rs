@@ -2,11 +2,12 @@
 //! Main-loop CCID protocol. Endpoint/timer callbacks never borrow this state.
 use canokey_protocol::ccid::*;
 
-pub const FRAME: usize = 261;
-pub const REPLY: usize = 258;
+use canokey_protocol::apdu::{EXTENDED_HEADER_BYTES, EXTENDED_OVERHEAD_BYTES};
+pub const FRAME: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
+pub const REPLY: usize = canokey_protocol::apdu::SHORT_REPLY_BYTES;
 pub const TIMEOUT: u32 = 2000;
 pub const EXTENSION_INTERVAL: u16 = 500;
-const PREFIX: usize = HEADER + 7;
+const PREFIX: usize = HEADER + EXTENDED_HEADER_BYTES;
 
 pub trait Scratch {
     fn acquire(&mut self, length: usize) -> bool;
@@ -22,7 +23,11 @@ pub trait Backend: Scratch {
     fn slot_power(&mut self) {
         self.reset();
     }
-    fn prepare_extended(&mut self, prefix: &[u8; 7], total: usize) -> Result<u16, u16>;
+    fn prepare_extended(
+        &mut self,
+        prefix: &[u8; EXTENDED_HEADER_BYTES],
+        total: usize,
+    ) -> Result<u16, u16>;
     /// The backend must close staged input before executing the parsed command.
     fn exchange(&mut self, request: &mut Request, out: &mut [u8]) -> Result<usize, ()>;
     /// Copy these opaque bytes into a disjoint IRQ-owned periodic TX buffer.
@@ -72,19 +77,21 @@ impl Request {
             return false;
         }
         while !out.is_empty() {
-            let n = if offset < 7 {
-                let n = out.len().min(7 - offset);
+            let n = if offset < EXTENDED_HEADER_BYTES {
+                let n = out.len().min(EXTENDED_HEADER_BYTES - offset);
                 out[..n].copy_from_slice(&self.bytes[HEADER + offset..HEADER + offset + n]);
                 n
-            } else if offset < 7 + self.body as usize {
-                let n = out.len().min(7 + self.body as usize - offset);
-                if !scratch.read(offset - 7, &mut out[..n]) {
+            } else if offset < EXTENDED_HEADER_BYTES + self.body as usize {
+                let n = out
+                    .len()
+                    .min(EXTENDED_HEADER_BYTES + self.body as usize - offset);
+                if !scratch.read(offset - EXTENDED_HEADER_BYTES, &mut out[..n]) {
                     return false;
                 }
                 n
             } else {
                 let n = out.len();
-                let start = PREFIX + offset - 7 - self.body as usize;
+                let start = PREFIX + offset - EXTENDED_HEADER_BYTES - self.body as usize;
                 out.copy_from_slice(&self.bytes[start..start + n]);
                 n
             };
@@ -233,18 +240,22 @@ impl Transport {
             if r.received == HEADER as u32 {
                 let payload = payload_length(r.bytes[..HEADER].try_into().unwrap());
                 r.expected = payload.saturating_add(HEADER as u32);
-                let maximum = if extended { 1024 + 9 } else { FRAME as u32 };
+                let maximum = if extended {
+                    (canokey_protocol::ctaphid::CTAP_MAX_REQUEST + EXTENDED_OVERHEAD_BYTES) as u32
+                } else {
+                    FRAME as u32
+                };
                 if payload > maximum || (payload > FRAME as u32 && r.bytes[0] != TRANSFER) {
                     self.error = BAD_LENGTH;
                 }
             }
             if r.received == PREFIX as u32 && r.expected as usize > r.bytes.len() && self.error == 0
             {
-                if r.bytes[5] != 0 {
+                if r.bytes[SLOT_OFFSET] != 0 {
                     self.error = BAD_SLOT;
                 } else if !self.active {
                     self.error = MUTE;
-                } else if r.bytes[8] != 0 || r.bytes[9] != 0 {
+                } else if r.bytes[SPECIFIC_OFFSET + 1] != 0 || r.bytes[SPECIFIC_OFFSET + 2] != 0 {
                     self.error = BAD_LENGTH;
                 } else {
                     match backend
@@ -254,8 +265,12 @@ impl Transport {
                         Ok(length) => {
                             // Bound the backend contract before any PKE write or suffix copy.
                             if length == 0
-                                || length > 1024
-                                || ![7 + length as usize, 9 + length as usize].contains(&r.len())
+                                || usize::from(length) > canokey_protocol::ctaphid::CTAP_MAX_REQUEST
+                                || ![
+                                    EXTENDED_HEADER_BYTES + length as usize,
+                                    EXTENDED_OVERHEAD_BYTES + length as usize,
+                                ]
+                                .contains(&r.len())
                             {
                                 self.error = HARDWARE;
                             } else if !backend.acquire(length as usize) {
@@ -299,8 +314,8 @@ impl Transport {
         }
         let r = &mut self.request;
         let command = r.bytes[0];
-        let slot = r.bytes[5];
-        let seq = r.bytes[6];
+        let slot = r.bytes[SLOT_OFFSET];
+        let seq = r.bytes[SEQUENCE_OFFSET];
         // Response family is determined by the request even when validation
         // fails before dispatch (for example an invalid slot).
         let kind = match command {
@@ -316,9 +331,12 @@ impl Transport {
         if error == 0 {
             match command {
                 POWER_ON => {
-                    if r.len() != 0 || r.bytes[8] != 0 || r.bytes[9] != 0 {
+                    if r.len() != 0
+                        || r.bytes[SPECIFIC_OFFSET + 1] != 0
+                        || r.bytes[SPECIFIC_OFFSET + 2] != 0
+                    {
                         error = BAD_LENGTH;
-                    } else if r.bytes[7] != 0 {
+                    } else if r.bytes[SPECIFIC_OFFSET] != 0 {
                         error = BAD_POWER;
                     } else {
                         self.session_owned = !hid_busy;
@@ -350,7 +368,8 @@ impl Transport {
                 TRANSFER => {
                     if !self.active {
                         error = MUTE;
-                    } else if r.bytes[8] != 0 || r.bytes[9] != 0 {
+                    } else if r.bytes[SPECIFIC_OFFSET + 1] != 0 || r.bytes[SPECIFIC_OFFSET + 2] != 0
+                    {
                         error = BAD_LENGTH;
                     } else {
                         backend.arm(&extension(slot, seq), EXTENSION_INTERVAL);
@@ -370,7 +389,9 @@ impl Transport {
                     }
                 }
                 GET_PARAMETERS | RESET_PARAMETERS | SET_PARAMETERS => {
-                    if command == SET_PARAMETERS && (r.bytes[7] != 1 || r.len() != T1.len()) {
+                    if command == SET_PARAMETERS
+                        && (r.bytes[SPECIFIC_OFFSET] != 1 || r.len() != T1.len())
+                    {
                         error = BAD_POWER;
                     } else {
                         output[HEADER..HEADER + T1.len()].copy_from_slice(T1);
@@ -383,7 +404,12 @@ impl Transport {
             }
         }
         r.close(backend);
-        let status = u8::from(!self.active) | if error != 0 || unsupported { 0x40 } else { 0 };
+        let status = u8::from(!self.active)
+            | if error != 0 || unsupported {
+                COMMAND_FAILED
+            } else {
+                0
+            };
         response(
             (&mut output[..HEADER]).try_into().unwrap(),
             kind,

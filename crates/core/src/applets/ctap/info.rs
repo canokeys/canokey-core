@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! GetInfo's fixed schema lives in Flash; only card state is encoded at runtime.
+// authenticatorGetInfo response member: minPINLength.
+const MIN_PIN_LENGTH: u8 = 0x0d;
 use super::{MAX_REQUEST, credential, credential_request, large_blob, pin, provision};
 use crate::ports::Record;
 use canokey_protocol::cbor::{EncodeError, Encoder};
@@ -39,7 +41,7 @@ pub(super) fn encode(
     }
     e.encoded(ALGORITHMS_END)
         .bool(flags & pin::FORCE_CHANGE != 0)
-        .u8(13)
+        .u8(MIN_PIN_LENGTH)
         .u8(minimum)
         .encoded(LIMITS)
         .u8(Record::CTAP_CREDENTIALS - used)

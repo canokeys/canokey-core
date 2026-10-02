@@ -80,7 +80,13 @@ pub unsafe fn reset() {
 }
 pub unsafe fn abort_control() {
     unsafe {
-        if WAITING || matches!((&*core::ptr::addr_of!(STATE)).status(), 2 | 3) {
+        if WAITING
+            || matches!(
+                (&*core::ptr::addr_of!(STATE)).status(),
+                canokey_rust_core::runtime::webusb::STATUS_SENDING
+                    | canokey_rust_core::runtime::webusb::STATUS_RECEIVING
+            )
+        {
             reset();
         }
     }

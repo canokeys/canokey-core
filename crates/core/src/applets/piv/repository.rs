@@ -12,6 +12,7 @@ pub const SLOTS: [u8; KEY_COUNT] = [
     slot::SIGNATURE,
     slot::KEY_MANAGEMENT,
     slot::CARD_AUTHENTICATION,
+    // NIST SP 800-73 retired key-management slots 0x82..=0x95.
     0x82,
     0x83,
     0x84,
@@ -61,7 +62,7 @@ pub const KEYS: [Record; KEY_COUNT] = [
     Record::PivKey23,
     Record::PivKey24,
 ];
-pub const OBJECTS: [Record; 34] = [
+pub const OBJECTS: [Record; ADMIN_OBJECT_INDEX + 1] = [
     Record::PivObject0,
     Record::PivObject1,
     Record::PivObject2,
@@ -116,7 +117,7 @@ const P521_BYTES: usize = 66;
 const RSA2048_COMPONENT_BYTES: usize = 128;
 const RSA3072_COMPONENT_BYTES: usize = 192;
 const RSA4096_COMPONENT_BYTES: usize = 256;
-const MLKEM_SEED_BYTES: usize = 64;
+const MLKEM_SEED_BYTES: usize = crate::ports::mlkem768::SEED_BYTES;
 pub const ALGORITHM: usize = 1;
 pub const ORIGIN: usize = 2;
 pub const PIN_POLICY: usize = 3;
@@ -125,7 +126,11 @@ pub const NAME_LENGTH: usize = 5;
 pub const NAME: usize = 6;
 // Algorithm-mapping record: enable byte, then nine wire IDs in the order of
 // EXTENSION_ALGORITHMS below. These values are APDU IDs, not ports::alg IDs.
-pub const DEFAULT_CONFIG: [u8; 10] = [0x01, 0xe0, 0x05, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3];
+pub const CONFIG_BYTES: usize = 1 + 9;
+pub const NO_ALGORITHM: u8 = 0xff; // Empty key slot has no selected algorithm.
+pub const DEFAULT_CONFIG: [u8; CONFIG_BYTES] =
+    [0x01, 0xe0, 0x05, 0x16, 0xe1, 0x53, 0x15, 0x54, 0xe2, 0xe3];
+// Factory AES-192 management key: bytes 0x01..=0x08 repeated three times.
 pub const DEFAULT_MGMT: [u8; MANAGEMENT_KEY_BYTES] = [
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
     0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
@@ -170,7 +175,7 @@ const EXTENSION_ALGORITHMS: [u8; 9] = [
     alg::MLDSA65,
     alg::MLKEM768,
 ];
-pub fn algorithm(id: u8, c: &[u8; 10]) -> Result<u8, Sw> {
+pub fn algorithm(id: u8, c: &[u8; CONFIG_BYTES]) -> Result<u8, Sw> {
     match id {
         wire_alg::P256 => return Ok(alg::P256),
         wire_alg::P384 => return Ok(alg::P384),
@@ -188,7 +193,7 @@ pub fn algorithm(id: u8, c: &[u8; 10]) -> Result<u8, Sw> {
     }
     Err(Sw::WRONG_DATA)
 }
-pub fn algorithm_id(a: u8, c: &[u8; 10]) -> u8 {
+pub fn algorithm_id(a: u8, c: &[u8; CONFIG_BYTES]) -> u8 {
     match a {
         alg::P256 => wire_alg::P256,
         alg::P384 => wire_alg::P384,
@@ -203,7 +208,7 @@ pub fn algorithm_id(a: u8, c: &[u8; 10]) -> u8 {
 // standard/reserved wire IDs and duplicate extension IDs; otherwise dispatch
 // could silently select a different algorithm from the one requested.
 pub fn config_valid(c: &[u8]) -> bool {
-    c.len() == 10
+    c.len() == CONFIG_BYTES
         && c[0] <= 1
         && (c[0] == 0
             || c[1..].iter().enumerate().all(|(i, v)| {
@@ -230,7 +235,7 @@ pub fn read_meta(id: usize, p: &mut Platform<'_>, m: &mut [u8; META]) -> Result<
     };
     if n == 0 {
         m[VERSION] = KEY_FORMAT_VERSION;
-        m[ALGORITHM] = 0xff;
+        m[ALGORITHM] = NO_ALGORITHM;
         m[PIN_POLICY] = match SLOTS[id] {
             slot::SIGNATURE => policy::PIN_ALWAYS,
             slot::CARD_AUTHENTICATION | slot::ATTESTATION => policy::PIN_NEVER,

@@ -13,7 +13,11 @@ use std::{
 };
 mod pcsc;
 mod storage;
+use canokey_ports::stage_operation;
+use canokey_protocol::{apdu as apdu_wire, usb};
 use storage::Storage;
+// CIU PKE register file: 48 registers of 64 bytes each.
+const PKE_BYTES: usize = 48 * 64;
 unsafe extern "C" {
     fn ck_core_install() -> i32;
     fn ck_core_exchange(
@@ -45,7 +49,7 @@ struct Host {
     led: bool,
     gesture: Gesture,
     reboot: bool,
-    pke: [u8; 3072],
+    pke: [u8; PKE_BYTES],
     owner: u8,
 }
 // Entry serialization is separate from callback data. Never hold HOST across
@@ -131,13 +135,12 @@ unsafe extern "C" fn ck_platform_stage_parts(parts: *const StoragePart, count: u
         return -2;
     }
     status(host(|h| {
-        h.storage.stage(0, 0, &[])?;
+        h.storage.stage(stage_operation::BEGIN, 0, &[])?;
         for part in parts {
-            if let Err(e) = h
-                .storage
-                .stage(1, 0, unsafe { input(part.data, part.length) })
-            {
-                let _ = h.storage.stage(3, 0, &[]);
+            if let Err(e) = h.storage.stage(stage_operation::APPEND, 0, unsafe {
+                input(part.data, part.length)
+            }) {
+                let _ = h.storage.stage(stage_operation::ABORT, 0, &[]);
                 return Err(e);
             }
         }
@@ -287,17 +290,21 @@ extern "C" fn ck_usb_configured() -> u8 {
     host(|h| u8::from(h.socket.is_some() && !h.reboot))
 }
 #[unsafe(no_mangle)]
+// The UDP virtual card implements only the FIDO HID endpoint.
 extern "C" fn ck_usb_tx_idle(ep: u8) -> u8 {
-    assert_eq!(ep, 0x82);
+    assert_eq!(ep, usb::EP_HID_IN);
     1
 }
 #[unsafe(no_mangle)]
 extern "C" fn ck_usb_receive(ep: u8) {
-    assert_eq!(ep, 2);
+    assert_eq!(ep, usb::EP_HID);
 }
 #[unsafe(no_mangle)]
 unsafe extern "C" fn ck_usb_submit(ep: u8, p: *const u8, n: u16, zlp: u8) -> i32 {
-    assert_eq!((ep, n, zlp), (0x82, 64, 0));
+    assert_eq!(
+        (ep, n, zlp),
+        (usb::EP_HID_IN, usb::DATA_PACKET_BYTES as u16, 0)
+    );
     let bytes = unsafe { input(p, n as usize) };
     host(|h| {
         h.socket
@@ -309,7 +316,7 @@ unsafe extern "C" fn ck_usb_submit(ep: u8, p: *const u8, n: u16, zlp: u8) -> i32
 }
 #[unsafe(no_mangle)]
 extern "C" fn pke_buffer_size() -> usize {
-    3072
+    PKE_BYTES
 }
 #[unsafe(no_mangle)]
 extern "C" fn pke_buffer_acquire(owner: u8) -> i32 {
@@ -360,6 +367,8 @@ unsafe extern "C" fn pke_buffer_write(off: usize, p: *const u8, n: usize) -> i32
         0
     })
 }
+// Host-only UDP control datagrams share an 11-byte identifying prefix after
+// their AC reboot / 99 fault-injection discriminators; not a CTAPHID command.
 const REBOOT: [u8; 64] = [
     0xac, 0x10, 0x52, 0xca, 0x95, 0xe5, 0x69, 0xde, 0x69, 0xe0, 0x2e, 0xbf, 0xf3, 0x33, 0x48, 0x5f,
     0x13, 0xf9, 0xb2, 0xda, 0x34, 0xc5, 0xa8, 0xa3, 0x40, 0x52, 0x66, 0x97, 0xa9, 0xab, 0x2e, 0x0b,
@@ -400,7 +409,7 @@ fn receive() {
     }
 }
 fn exchange(command: &[u8]) -> Vec<u8> {
-    let mut out = [0; 258];
+    let mut out = [0; apdu_wire::SHORT_REPLY_BYTES];
     let n = unsafe {
         ck_core_exchange(
             1,
@@ -434,6 +443,9 @@ fn apdu(ins: u8, p1: u8, data: &[u8]) {
         );
     }
 }
+// Fresh virtual-card fixtures: SELECT ADMIN, VERIFY factory PIN, provision
+// FIDO attestation key/certificate; SELECT OATH, PUT SHA1/HOTP name abc
+// (six digits, secret 000102), then link that stable credential to PASS slot 1.
 fn provision() {
     apdu(0xa4, 4, &[0xf0, 0, 0, 0, 0]);
     apdu(0x20, 0, b"123456");
@@ -487,7 +499,7 @@ fn initialize_storage(
         led: false,
         gesture: Gesture::Idle,
         reboot: false,
-        pke: [0; 3072],
+        pke: [0; PKE_BYTES],
         owner: 0,
     });
     if touch_file && (host(|h| h.socket.is_some()) || !Path::new("/tmp/canokey-test-up").exists()) {

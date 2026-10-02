@@ -2,6 +2,11 @@
 //! US keyboard encoding and completion-driven press/release sequencing.
 #![forbid(unsafe_code)]
 
+use canokey_protocol::usb::{
+    CONSUMER_REPORT_BYTES, CONSUMER_REPORT_ID, KEYBOARD_PACKET_BYTES, KEYBOARD_REPORT_ID,
+};
+// HID Usage Tables, Consumer page: Eject.
+const CONSUMER_EJECT: u8 = 0xb8;
 pub struct Keyboard {
     release_id: u8,
 }
@@ -27,22 +32,26 @@ impl Keyboard {
         report.fill(0);
         if self.release_id != 0 {
             report[0] = self.release_id;
-            return Some(if self.release_id == 2 { 2 } else { 8 });
+            return Some(if self.release_id == CONSUMER_REPORT_ID {
+                CONSUMER_REPORT_BYTES
+            } else {
+                KEYBOARD_PACKET_BYTES
+            });
         }
         let (modifier, usage) = usage?;
-        report[0] = 1;
+        report[0] = KEYBOARD_REPORT_ID;
         report[1] = modifier;
         report[3] = usage;
-        Some(8)
+        Some(KEYBOARD_PACKET_BYTES)
     }
     pub fn prepare_eject(&self, report: &mut [u8; 8]) -> Option<usize> {
         if self.release_id != 0 {
             return self.prepare_usage(None, report);
         }
         report.fill(0);
-        report[0] = 2;
-        report[1] = 0xb8;
-        Some(2)
+        report[0] = CONSUMER_REPORT_ID;
+        report[1] = CONSUMER_EJECT;
+        Some(CONSUMER_REPORT_BYTES)
     }
     pub fn accepted(&mut self, report_id: u8) {
         self.release_id = if self.release_id == 0 { report_id } else { 0 };
@@ -52,7 +61,7 @@ impl Keyboard {
 pub fn ascii(ch: u8) -> Option<(u8, u8)> {
     // One packed byte per ASCII value: bit 7 selects left Shift; zero skips.
     let key = *US_ASCII.get(usize::from(ch))?;
-    (key != 0).then_some((if key & 0x80 != 0 { 2 } else { 0 }, key & 0x7f))
+    (key != 0).then_some((if key & 0x80 != 0 { 0x02 } else { 0 }, key & 0x7f))
 }
 const US_ASCII: [u8; 128] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x00,

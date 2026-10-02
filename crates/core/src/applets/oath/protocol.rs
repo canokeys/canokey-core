@@ -17,6 +17,7 @@ use crate::{
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw, tlv::ByteCursor};
 mod paging;
 include!(concat!(env!("OUT_DIR"), "/oath_version.rs"));
+// Yubico RID A000000527, OATH application suffix 2101.
 pub const AID: &[u8] = &[0xa0, 0x00, 0x00, 0x05, 0x27, 0x21, 0x01];
 pub const CAPACITY: usize = 288;
 const NAME_LIMIT: usize = credential::NAME_LIMIT;
@@ -106,7 +107,7 @@ enum Page {
 }
 struct State {
     session: auth::Session,
-    response: [u8; 256],
+    response: [u8; canokey_protocol::apdu::SHORT_DATA_BYTES],
     length: usize,
     page: Page,
     cursor: u32,
@@ -119,7 +120,7 @@ impl State {
     pub const fn new() -> Self {
         Self {
             session: auth::Session::new(),
-            response: [0; 256],
+            response: [0; canokey_protocol::apdu::SHORT_DATA_BYTES],
             length: 0,
             page: Page::None,
             cursor: 0,
@@ -178,8 +179,8 @@ impl State {
             let algorithm_at = value_at + auth::CHALLENGE_BYTES;
             self.response[algorithm_at..algorithm_at + 3].copy_from_slice(&[
                 tag::ALGORITHM,
-                0x01,
-                0x01,
+                0x01, // One-byte SELECT challenge MAC algorithm.
+                Algorithm::Sha1 as u8,
             ]);
             self.length = algorithm_at + 3;
         }

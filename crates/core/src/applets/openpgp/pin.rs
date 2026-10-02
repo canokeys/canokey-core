@@ -6,6 +6,11 @@ use crate::{
     mechanisms::pin::{self as pin_mechanism, Charge, PinInfo, RecordPin},
     ports::Record,
 };
+pub const DEFAULT_PW1: &[u8] = b"123456";
+pub const DEFAULT_PW3: &[u8] = b"12345678";
+pub const DEFAULT_RETRIES: u8 = 3;
+const PW1_MIN_BYTES: usize = 6;
+const PW3_RC_MIN_BYTES: usize = 8; // OpenPGP Card password minimums.
 fn credential(id: Record) -> RecordPin {
     RecordPin {
         id,
@@ -14,7 +19,11 @@ fn credential(id: Record) -> RecordPin {
     }
 }
 fn min(id: Record) -> usize {
-    if matches!(id, Record::PgpPw1) { 6 } else { 8 }
+    if matches!(id, Record::PgpPw1) {
+        PW1_MIN_BYTES
+    } else {
+        PW3_RC_MIN_BYTES
+    }
 }
 fn error(e: pin_mechanism::Error) -> Error {
     match e {

@@ -23,9 +23,9 @@ pub enum Error {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Algorithm {
-    Sha1 = 1,
-    Sha256 = 2,
-    Sha512 = 3,
+    Sha1 = 0x01,
+    Sha256 = 0x02,
+    Sha512 = 0x03,
 }
 impl Algorithm {
     pub const fn digest_length(self) -> usize {
@@ -37,9 +37,9 @@ impl Algorithm {
     }
     pub fn from_byte(value: u8) -> Result<Self, Error> {
         match value {
-            1 => Ok(Self::Sha1),
-            2 => Ok(Self::Sha256),
-            3 => Ok(Self::Sha512),
+            0x01 => Ok(Self::Sha1),
+            0x02 => Ok(Self::Sha256),
+            0x03 => Ok(Self::Sha512),
             _ => Err(Error::Invalid),
         }
     }

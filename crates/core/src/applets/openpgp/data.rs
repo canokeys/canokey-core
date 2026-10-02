@@ -144,7 +144,7 @@ impl OpenPgp {
             tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT => {
                 let r = (tag - tag::ALGORITHM_SIG) as usize;
                 let a = Algorithm(repo::meta(p, r)?[key_meta::ALGORITHM]);
-                let mut b = [0; 12];
+                let mut b = [0; super::domain::ATTRIBUTE_BYTES];
                 let n = a.attrs(r, &mut b);
                 v.bytes(&b[..n])
             }
@@ -194,10 +194,11 @@ impl OpenPgp {
             ),
             tag::UIF_SIG..=tag::UIF_AUT => v.bytes(&[
                 repo::meta(p, (tag - tag::UIF_SIG) as usize)?[key_meta::TOUCH_POLICY],
-                0x20,
+                touch_policy::BUTTON_INPUT,
             ]),
             tag::KEY_INFORMATION => {
                 for r in 0..key_role::COUNT {
+                    // KEY INFORMATION uses references 0x01/0x02/0x03 for SIG/DEC/AUT.
                     v.bytes(&[r as u8 + 1, repo::meta(p, r)?[key_meta::ORIGIN]])?;
                 }
                 Ok(())
@@ -215,7 +216,7 @@ impl OpenPgp {
                         .map(Algorithm)
                         .filter(|a| a.allowed(r))
                     {
-                        let mut b = [0; 12];
+                        let mut b = [0; super::domain::ATTRIBUTE_BYTES];
                         let n = a.attrs(r, &mut b);
                         v.header(tag::ALGORITHM_SIG + r as u16, n)?;
                         v.bytes(&b[..n])?;
@@ -234,7 +235,7 @@ impl OpenPgp {
             let mut m = repo::meta(p, r)?;
             if m[key_meta::ALGORITHM] != a.0 {
                 m[key_meta::ALGORITHM] = a.0;
-                m[key_meta::ORIGIN] = 0;
+                m[key_meta::ORIGIN] = key_meta::ORIGIN_ABSENT;
                 repo::empty_key(p, r, &m)?;
             }
             return Ok(());
@@ -266,7 +267,7 @@ impl OpenPgp {
                 if m[key_meta::TOUCH_POLICY] == touch_policy::FIXED {
                     return Err(Sw::CONDITIONS_NOT_SATISFIED);
                 }
-                if b[0] > 2 || b[1] != 0x20 {
+                if b[0] > touch_policy::FIXED || b[1] != touch_policy::BUTTON_INPUT {
                     return Err(Sw::WRONG_DATA);
                 }
                 m[key_meta::TOUCH_POLICY] = b[0];
@@ -317,7 +318,7 @@ impl OpenPgp {
                     (offset, length) = (state_layout::TOUCH_CACHE_SECONDS, 1);
                 }
                 tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3 => {
-                    if b.len() != 20 {
+                    if b.len() != state_layout::FINGERPRINT_BYTES {
                         return Err(Sw::WRONG_LENGTH);
                     }
                     let at = state_layout::CA_FINGERPRINTS

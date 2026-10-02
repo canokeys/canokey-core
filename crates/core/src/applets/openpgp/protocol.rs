@@ -173,7 +173,8 @@ impl OpenPgp {
         self.import = Import::new();
     }
     pub fn response_preemptable(&self, total: u32) -> bool {
-        matches!(self.response, Response::Certificate(_)) || total > 288
+        matches!(self.response, Response::Certificate(_))
+            || total > canokey_protocol::apdu::RESPONSE_PREEMPT_BYTES as u32
     }
     pub fn close(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
         p.memory.wipe(w.output);
@@ -228,7 +229,12 @@ impl OpenPgp {
                 p.crypto
                     .key_operation(KeyOperation::Validate, a.0, &mut w.key, &[], w.output)
                     .map_err(|_| Sw::WRONG_DATA)?;
-                repo::save_key(p, self.import.role, 2, &w.key.bytes)?;
+                repo::save_key(
+                    p,
+                    self.import.role,
+                    repo::key_meta::ORIGIN_IMPORTED,
+                    &w.key.bytes,
+                )?;
                 Ok(0)
             })(),
             Request::Buffered => self.command(h, le, w, p),
@@ -379,7 +385,11 @@ impl OpenPgp {
                 self.session.grants = 0;
                 self.session.clear_touch();
                 p.storage
-                    .replace_at(Record::PgpState, 1, &[1])
+                    .replace_at(
+                        Record::PgpState,
+                        repo::state_layout::TERMINATED as u32,
+                        &[1],
+                    )
                     .map_err(io)?;
                 self.terminated = Some(true);
                 Ok(0)
@@ -410,9 +420,9 @@ impl OpenPgp {
                     return Err(Sw::WRONG_DATA);
                 }
                 self.session.grants = 0;
-                pin::create(Record::PgpPw1, b"123456", b[0], p)?;
+                pin::create(Record::PgpPw1, pin::DEFAULT_PW1, b[0], p)?;
                 pin::retry_limit(Record::PgpRc, b[1], p)?;
-                pin::create(Record::PgpPw3, b"12345678", b[2], p)?;
+                pin::create(Record::PgpPw3, pin::DEFAULT_PW3, b[2], p)?;
                 Ok(0)
             }
             _ => Err(Sw::INS_NOT_SUPPORTED),

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental clientPIN schema. Only owned fields survive request release.
+use super::wire::pin_protocol as wire;
 use super::{Command, Key, Status};
 use canokey_protocol::cbor::Event;
 
@@ -15,9 +16,9 @@ pub struct Parameters {
     pub rp_len: usize,
     pub agreement: [u8; 64],
     pub auth: [u8; 32],
-    pub new_pin: [u8; 80],
+    pub new_pin: [u8; wire::NEW_PIN_V2_BYTES],
     pub pin_hash: [u8; 32],
-    pub rp: [u8; 254],
+    pub rp: [u8; super::wire::RP_ID_MAX],
 }
 impl Parameters {
     const fn new() -> Self {
@@ -26,10 +27,10 @@ impl Parameters {
             subcommand: 0,
             agreement: [0; 64],
             auth: [0; 32],
-            new_pin: [0; 80],
+            new_pin: [0; wire::NEW_PIN_V2_BYTES],
             pin_hash: [0; 32],
             permissions: 0,
-            rp: [0; 254],
+            rp: [0; super::wire::RP_ID_MAX],
             rp_len: 0,
         }
     }
@@ -63,28 +64,53 @@ impl Parser {
     pub fn finish(&mut self) -> Result<Command, Status> {
         self.decoder.finish()?;
         let f = &mut self.fields;
-        if f.seen & (1 << 2) == 0 {
+        if f.seen & (1 << wire::LABEL_SUBCOMMAND) == 0 {
             return Err(Status::MissingParameter);
         }
         let required = match f.params.subcommand {
-            1 => return Ok(Command::GetPinRetries),
-            2 => 1 << 1,
-            3 => (1 << 1) | (1 << 3) | (1 << 4) | (1 << 5),
-            4 => (1 << 1) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6),
-            5 => (1 << 1) | (1 << 3) | (1 << 6),
-            9 => (1 << 1) | (1 << 3) | (1 << 6) | (1 << 9),
+            wire::GET_RETRIES => return Ok(Command::GetPinRetries),
+            wire::GET_AGREEMENT => 1 << wire::LABEL_PROTOCOL,
+            wire::SET_PIN => {
+                (1 << wire::LABEL_PROTOCOL)
+                    | (1 << wire::LABEL_AGREEMENT)
+                    | (1 << wire::LABEL_AUTH)
+                    | (1 << wire::LABEL_NEW_PIN)
+            }
+            wire::CHANGE_PIN => {
+                (1 << wire::LABEL_PROTOCOL)
+                    | (1 << wire::LABEL_AGREEMENT)
+                    | (1 << wire::LABEL_AUTH)
+                    | (1 << wire::LABEL_NEW_PIN)
+                    | (1 << wire::LABEL_PIN_HASH)
+            }
+            wire::GET_TOKEN => {
+                (1 << wire::LABEL_PROTOCOL)
+                    | (1 << wire::LABEL_AGREEMENT)
+                    | (1 << wire::LABEL_PIN_HASH)
+            }
+            wire::GET_TOKEN_PERMISSIONS => {
+                (1 << wire::LABEL_PROTOCOL)
+                    | (1 << wire::LABEL_AGREEMENT)
+                    | (1 << wire::LABEL_PIN_HASH)
+                    | (1 << wire::LABEL_PERMISSIONS)
+            }
             _ => return Err(Status::InvalidSubcommand),
         };
         if f.seen & required != required {
             return Err(Status::MissingParameter);
         }
-        if f.params.subcommand == 5 && f.seen & ((1 << 9) | (1 << 10)) != 0 {
+        if f.params.subcommand == wire::GET_TOKEN
+            && f.seen & ((1 << wire::LABEL_PERMISSIONS) | (1 << wire::LABEL_RP_ID)) != 0
+        {
             return Err(Status::InvalidParameter);
         }
-        if f.params.subcommand == 9 && f.params.permissions & 3 != 0 && f.params.rp_len == 0 {
+        if f.params.subcommand == wire::GET_TOKEN_PERMISSIONS
+            && f.params.permissions & wire::PERMISSION_RP != 0
+            && f.params.rp_len == 0
+        {
             return Err(Status::MissingParameter);
         }
-        if f.params.subcommand == 2 {
+        if f.params.subcommand == wire::GET_AGREEMENT {
             Ok(Command::GetKeyAgreement)
         } else {
             Ok(Command::ClientPin(core::mem::replace(
@@ -141,10 +167,10 @@ impl Fields {
         }
         if let Some((key, _)) = self.body {
             let dest: &mut [u8] = match key {
-                4 => &mut self.params.auth,
-                5 => &mut self.params.new_pin,
-                6 => &mut self.params.pin_hash,
-                10 => &mut self.params.rp,
+                wire::LABEL_AUTH => &mut self.params.auth,
+                wire::LABEL_NEW_PIN => &mut self.params.new_pin,
+                wire::LABEL_PIN_HASH => &mut self.params.pin_hash,
+                wire::LABEL_RP_ID => &mut self.params.rp,
                 _ => return Err(Status::InvalidCbor),
             };
             super::consume_cbor_body(event, &mut self.body, dest)?;
@@ -160,16 +186,21 @@ impl Fields {
         };
         let key = key.unwrap_or(COSE_KEY_MISSING);
 
-        if (1..=6).contains(&key) || key == 9 || key == 10 {
+        if (wire::LABEL_PROTOCOL..=wire::LABEL_PIN_HASH).contains(&key)
+            || key == wire::LABEL_PERMISSIONS
+            || key == wire::LABEL_RP_ID
+        {
             self.seen |= 1 << key;
         }
         match key {
-            1 => match *event {
-                Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
+            wire::LABEL_PROTOCOL => match *event {
+                Event::Unsigned(n) if n == u64::from(wire::V1) || n == u64::from(wire::V2) => {
+                    self.params.protocol = n as u8
+                }
                 Event::Unsigned(_) | Event::Negative(_) => return Err(Status::InvalidParameter),
                 _ => return Err(Status::UnexpectedType),
             },
-            2 => match *event {
+            wire::LABEL_SUBCOMMAND => match *event {
                 Event::Unsigned(n) => {
                     self.params.subcommand =
                         u8::try_from(n).map_err(|_| Status::InvalidSubcommand)?
@@ -177,43 +208,47 @@ impl Fields {
                 Event::Negative(_) => return Err(Status::InvalidSubcommand),
                 _ => return Err(Status::UnexpectedType),
             },
-            3 => {
+            wire::LABEL_AGREEMENT => {
                 if !matches!(event, Event::Map(_)) {
                     return Err(Status::UnexpectedType);
                 }
                 self.cose = true;
             }
-            4..=6 => {
+            wire::LABEL_AUTH..=wire::LABEL_PIN_HASH => {
                 if self.params.protocol == 0 {
                     return Err(Status::MissingParameter);
                 }
                 let n = match key {
-                    4 => {
-                        if self.params.protocol == 1 {
-                            16
+                    wire::LABEL_AUTH => {
+                        if self.params.protocol == wire::V1 {
+                            wire::AUTH_V1_BYTES as u16
                         } else {
-                            32
+                            wire::AUTH_V2_BYTES as u16
                         }
                     }
-                    5 => {
-                        if self.params.protocol == 1 {
-                            64
+                    wire::LABEL_NEW_PIN => {
+                        if self.params.protocol == wire::V1 {
+                            wire::NEW_PIN_V1_BYTES as u16
                         } else {
-                            80
+                            wire::NEW_PIN_V2_BYTES as u16
                         }
                     }
                     _ => {
-                        if self.params.protocol == 1 {
-                            16
+                        if self.params.protocol == wire::V1 {
+                            wire::AUTH_V1_BYTES as u16
                         } else {
-                            32
+                            wire::AUTH_V2_BYTES as u16
                         }
                     }
                 };
                 self.bytes(key, event, n)?;
             }
-            9 => match *event {
-                Event::Unsigned(n) if n > 0 && n <= 0x3f && n & 8 == 0 => {
+            wire::LABEL_PERMISSIONS => match *event {
+                Event::Unsigned(n)
+                    if n > 0
+                        && n <= u64::from(wire::PERMISSION_MASK)
+                        && n & u64::from(wire::PERMISSION_BIO) == 0 =>
+                {
                     self.params.permissions = n as u8
                 }
                 Event::Unsigned(0) => return Err(Status::InvalidParameter),
@@ -222,10 +257,10 @@ impl Fields {
                 }
                 _ => return Err(Status::UnexpectedType),
             },
-            10 => match *event {
-                Event::Text(n) if n > 0 && n <= 254 => {
+            wire::LABEL_RP_ID => match *event {
+                Event::Text(n) if n > 0 && usize::from(n) <= super::wire::RP_ID_MAX => {
                     self.params.rp_len = usize::from(n);
-                    self.body = Some((10, 0));
+                    self.body = Some((wire::LABEL_RP_ID, 0));
                 }
                 Event::Text(_) => return Err(Status::InvalidParameter),
                 _ => return Err(Status::UnexpectedType),
@@ -240,7 +275,7 @@ impl Fields {
                 self.body = Some((key, 0));
                 Ok(())
             }
-            Event::Bytes(n) if key == 5 && n > expected => Err(Status::PinPolicy),
+            Event::Bytes(n) if key == wire::LABEL_NEW_PIN && n > expected => Err(Status::PinPolicy),
             Event::Bytes(_) => Err(Status::InvalidCbor),
             _ => Err(Status::UnexpectedType),
         }

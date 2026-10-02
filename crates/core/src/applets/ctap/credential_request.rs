@@ -37,10 +37,10 @@ pub struct Parameters {
     pub hmac: Option<super::hmac_secret::Parameters>,
     pub algorithms: [i32; super::MAX_REQUEST / 20],
     pub client_hash: [u8; 32],
-    pub rp: [u8; 254],
-    pub user: [u8; 64],
-    pub name: [u8; 64],
-    pub display: [u8; 64],
+    pub rp: [u8; super::wire::RP_ID_MAX],
+    pub user: [u8; super::resident::USER_ID_BYTES],
+    pub name: [u8; super::resident::USER_NAME_BYTES],
+    pub display: [u8; super::resident::USER_DISPLAY_BYTES],
     // Keep this flat: nested arrays produce an initializer temporary on Thumb-1.
     list: [u8; ID_BYTES * MAX_LIST],
     pub auth: [u8; 32],
@@ -55,13 +55,13 @@ impl Parameters {
         Self {
             make,
             client_hash: [0; 32],
-            rp: [0; 254],
+            rp: [0; super::wire::RP_ID_MAX],
             rp_len: 0,
-            user: [0; 64],
+            user: [0; super::resident::USER_ID_BYTES],
             user_len: 0,
-            name: [0; 64],
+            name: [0; super::resident::USER_NAME_BYTES],
             name_len: 0,
-            display: [0; 64],
+            display: [0; super::resident::USER_DISPLAY_BYTES],
             display_len: 0,
             list_present: false,
             algorithm: None,
@@ -296,7 +296,8 @@ impl Parser {
         f.params.name_len = super::resident::text_prefix(&f.params.name[..f.params.name_len]).len();
         f.params.display_len =
             super::resident::text_prefix(&f.params.display[..f.params.display_len]).len();
-        let required = if f.params.make { 15 } else { 3 };
+        // Required make fields: clientDataHash/RP/user/algorithms; get: RP/clientDataHash.
+        let required = if f.params.make { 0x0f } else { 0x03 };
         if f.seen & required != required {
             return Err(Status::MissingParameter);
         }
@@ -308,10 +309,9 @@ impl Parser {
         if f.params.auth_len.is_some_and(|n| n != 0) && f.params.protocol == 0 {
             return Err(Status::MissingParameter);
         }
-        if f.params
-            .auth_len
-            .is_some_and(|n| n != 0 && n != if f.params.protocol == 1 { 16 } else { 32 })
-        {
+        if f.params.auth_len.is_some_and(|n| {
+            n != 0 && n != super::wire::pin_protocol::auth_bytes(f.params.protocol)
+        }) {
             return Err(Status::PinAuthInvalid);
         }
         if f.params.make && f.params.hmac.is_some() && !f.params.hmac_secret {
@@ -527,7 +527,7 @@ impl Fields {
                     self.push(Context::Rp);
                 } else {
                     match *event {
-                        Event::Text(n) if n > 0 && n <= 254 => {
+                        Event::Text(n) if n > 0 && n <= super::wire::RP_ID_MAX as u16 => {
                             self.params.rp_len = n as usize;
                             self.body = Some((field, 0));
                             self.seen |= 2;

@@ -9,9 +9,11 @@ const UNSUPPORTED: i32 = 3;
 const MISSING: i32 = 4;
 const PROTOCOL: i32 = 5;
 const TAG: i32 = 6;
-const ATR: &[u8] = &[
-    0x3b, 0xf7, 0x11, 0, 0, 0x81, 0x31, 0xfe, 0x65, 0x43, 0x61, 0x6e, 0x6f, 0x4b, 0x65, 0x79, 0x99,
-];
+const ATR: &[u8] = canokey_protocol::ccid::ATR;
+// Action ABI translated from IFD_POWER_* by host/native/pcsc.c.
+const POWER_UP: u8 = 0x00;
+const POWER_DOWN: u8 = 0x01;
+const POWER_RESET: u8 = 0x02;
 fn valid(lun: u64) -> bool {
     HOST.lock()
         .unwrap()
@@ -143,10 +145,10 @@ unsafe extern "C" fn ck_pcsc_power(
     if !valid(lun) {
         return MISSING;
     }
-    if action > 2 {
+    if !matches!(action, POWER_UP | POWER_DOWN | POWER_RESET) {
         return UNSUPPORTED;
     }
-    if action != 1 && (cap < ATR.len() || out.is_null()) {
+    if action != POWER_DOWN && (cap < ATR.len() || out.is_null()) {
         unsafe {
             length.write(ATR.len());
         }
@@ -163,7 +165,7 @@ unsafe extern "C" fn ck_pcsc_power(
         h.led = false;
         h.gesture = Gesture::Idle;
     });
-    if action == 1 {
+    if action == POWER_DOWN {
         return OK;
     }
     let storage = match host(|h| h.storage.reopen()) {
@@ -182,14 +184,20 @@ unsafe extern "C" fn ck_pcsc_power(
     host(|h| h.powered = true);
     unsafe { copy(ATR, out, cap, length) }
 }
+// Contactless FIDO clients receive one assembled reply. Other applets retain
+// APDU-level 61xx paging so GET RESPONSE remains visible to the caller.
 fn aggregate(request: &[u8]) -> bool {
-    if request.len() >= 4 && request[0] == 0x80 {
+    if request.len() >= 4 && request[0] == apdu_wire::CLA_FIDO {
         return true;
     }
-    request.len() >= 7
+    request.len() >= apdu_wire::EXTENDED_HEADER_BYTES
         && request[0] == 0
         && request[4] == 0
-        && (matches!(request[1], 1 | 2 | 3) || (request[1] == 0xa4 && request[2..4] != [4, 0]))
+        && (matches!(
+            request[1],
+            apdu_wire::U2F_REGISTER | apdu_wire::U2F_AUTHENTICATE | apdu_wire::U2F_VERSION
+        ) || (request[1] == apdu_wire::INS_SELECT
+            && request[2..4] != [apdu_wire::SELECT_BY_NAME, 0x00]))
 }
 fn reboot() -> Result<(), ()> {
     unsafe {
@@ -216,6 +224,7 @@ fn test_control(request: &[u8]) -> Option<Result<Vec<u8>, ()>> {
     if h.cla != 0 {
         return None;
     }
+    // Test-only reboot cookie shared with legacy host clients; never a product command.
     if h.ins == 0xee && apdu.data == [0x12, 0x56, 0xab, 0xf0] {
         return Some(reboot().map(|()| vec![0x90, 0]));
     }
@@ -250,7 +259,9 @@ unsafe extern "C" fn ck_pcsc_transmit(
     if tx.is_null() || rx.is_null() || n == 0 {
         return COMM;
     }
-    if n > 1033 || cap < 2 {
+    if n > canokey_protocol::ctaphid::CTAP_MAX_REQUEST + apdu_wire::EXTENDED_OVERHEAD_BYTES
+        || cap < apdu_wire::STATUS_BYTES
+    {
         return SMALL;
     }
     let request = unsafe { input(tx, n) };
@@ -267,10 +278,10 @@ unsafe extern "C" fn ck_pcsc_transmit(
     let auto = host(|h| h.nfc) && aggregate(request);
     let mut pending = request;
     let mut written = 0usize;
-    for _ in 0..256 {
+    for _ in 0..apdu_wire::RESPONSE_CHAIN_LIMIT {
         let response = exchange(pending);
         let data = response.len() - 2;
-        let more = auto && response[data] == 0x61;
+        let more = auto && response[data] == apdu_wire::MORE_DATA_SW1;
         let count = if more { data } else { response.len() };
         if count > cap - written {
             // No partial success and no response tail leaking into a later call.
@@ -287,7 +298,7 @@ unsafe extern "C" fn ck_pcsc_transmit(
             }
             return OK;
         }
-        pending = &[0, 0xc0, 0, 0, 0];
+        pending = &apdu_wire::GET_RESPONSE;
     }
     unsafe {
         ck_core_reset();

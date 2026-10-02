@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{Algorithm, Crypto, Error, codec};
-pub const NAME_LIMIT: usize = 64;
+pub const NAME_LIMIT: usize = super::super::OATH_NAME_BYTES;
 pub const KEY_LIMIT: usize = 64;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -22,8 +22,8 @@ impl Kind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Properties(u8);
 impl Properties {
-    const INCREASING: u8 = 1;
-    const TOUCH: u8 = 2;
+    const INCREASING: u8 = 0x01;
+    const TOUCH: u8 = 0x02;
     pub fn new(value: u8) -> Result<Self, Error> {
         if value & !(Self::INCREASING | Self::TOUCH) == 0 {
             Ok(Self(value))
@@ -67,7 +67,7 @@ impl Credential {
         let mut value = Self {
             bytes: [0; super::codec::LENGTH],
         };
-        value.bytes[..6].copy_from_slice(&[
+        value.bytes[..codec::HEADER_BYTES].copy_from_slice(&[
             codec::FORMAT_VERSION,
             name.len() as u8,
             key.len() as u8,
@@ -75,37 +75,38 @@ impl Credential {
             digits,
             properties.bits(),
         ]);
-        value.bytes[6..6 + name.len()].copy_from_slice(name);
+        value.bytes[codec::HEADER_BYTES..codec::HEADER_BYTES + name.len()].copy_from_slice(name);
         value.bytes[codec::KEY_OFFSET..codec::KEY_OFFSET + key.len()].copy_from_slice(key);
         value.bytes[codec::COUNTER_OFFSET..].copy_from_slice(&moving_factor);
         Ok(value)
     }
     pub fn name(&self) -> &[u8] {
-        &self.bytes[6..6 + usize::from(self.bytes[1])]
+        &self.bytes
+            [codec::HEADER_BYTES..codec::HEADER_BYTES + usize::from(self.bytes[codec::NAME_LENGTH])]
     }
     pub fn key(&self) -> &[u8] {
         let at = codec::KEY_OFFSET;
-        &self.bytes[at..at + usize::from(self.bytes[2])]
+        &self.bytes[at..at + usize::from(self.bytes[codec::KEY_LENGTH])]
     }
     pub const fn algorithm(&self) -> Algorithm {
-        match self.bytes[3] & Kind::ALGORITHM_MASK {
-            1 => Algorithm::Sha1,
-            2 => Algorithm::Sha256,
+        match self.bytes[codec::TYPE] & Kind::ALGORITHM_MASK {
+            0x01 => Algorithm::Sha1,
+            0x02 => Algorithm::Sha256,
             _ => Algorithm::Sha512,
         }
     }
     pub const fn kind(&self) -> Kind {
-        if self.bytes[3] & Kind::MASK == Kind::Hotp as u8 {
+        if self.bytes[codec::TYPE] & Kind::MASK == Kind::Hotp as u8 {
             Kind::Hotp
         } else {
             Kind::Totp
         }
     }
     pub const fn digits(&self) -> u8 {
-        self.bytes[4]
+        self.bytes[codec::DIGITS]
     }
     pub const fn properties(&self) -> Properties {
-        Properties(self.bytes[5])
+        Properties(self.bytes[codec::PROPERTIES])
     }
     pub fn moving_factor(&self) -> [u8; 8] {
         self.bytes[codec::COUNTER_OFFSET..].try_into().unwrap()
@@ -119,13 +120,13 @@ impl Credential {
         if name.is_empty() || name.len() > NAME_LIMIT {
             return Err(Error::Invalid);
         }
-        crypto.wipe(&mut self.bytes[6..codec::KEY_OFFSET]);
-        self.bytes[6..6 + name.len()].copy_from_slice(name);
-        self.bytes[1] = name.len() as u8;
+        crypto.wipe(&mut self.bytes[codec::HEADER_BYTES..codec::KEY_OFFSET]);
+        self.bytes[codec::HEADER_BYTES..codec::HEADER_BYTES + name.len()].copy_from_slice(name);
+        self.bytes[codec::NAME_LENGTH] = name.len() as u8;
         Ok(())
     }
     pub fn clear(&mut self, crypto: &mut (impl Crypto + ?Sized)) {
         crypto.wipe(&mut self.bytes[codec::KEY_OFFSET..]);
-        self.bytes[2] = 0;
+        self.bytes[codec::KEY_LENGTH] = 0;
     }
 }

@@ -13,6 +13,8 @@ use crate::{
 use canokey_protocol::{cbor::Encoder, der::der_signature, response::StatusWord as Sw};
 pub(super) const PUBLIC_BYTES: usize = 1952;
 pub(super) const SIGNATURE_BYTES: usize = 3309;
+// Bounded envelope storage, excluding streamed public key/signature/certificate.
+// transfer() checks prefix + tail + assertion authData against this workspace slice.
 const FRAMING_BYTES: usize = 768;
 #[derive(Clone, Copy)]
 pub enum Mode {

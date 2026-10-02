@@ -109,7 +109,7 @@ impl Piv {
                             if a == alg::SM2
                                 && self.stream_phase == StreamPhase::Identity
                                 && n > 0
-                                && n <= 32 => {}
+                                && n <= limits::SM2_ID_MAX => {}
                         ga_tag::RESPONSE
                             if self.stream_phase == StreamPhase::Identity && n == 0 =>
                         {
@@ -137,7 +137,7 @@ impl Piv {
                     }
                 } else if tag == ga_tag::WITNESS {
                     let end = self.sm2_id_used + bytes.len();
-                    if end > 32 {
+                    if end > limits::SM2_ID_MAX {
                         return Err(Sw::WRONG_DATA);
                     }
                     self.sm2_id[self.sm2_id_used..end].copy_from_slice(bytes);
@@ -202,7 +202,7 @@ impl Piv {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
             if a == alg::MLKEM768 {
-                let mut secret = [0; 32];
+                let mut secret = [0; crate::ports::mlkem768::SHARED_KEY_BYTES];
                 let r = p
                     .crypto
                     .stream(StreamOperation::DecapsulateFinal, a, s, &[], &mut secret)
@@ -210,7 +210,7 @@ impl Piv {
                 abort_stream(a, s, p);
                 self.request = Request::None;
                 let n = r?;
-                if n != 32 {
+                if n != crate::ports::mlkem768::SHARED_KEY_BYTES {
                     p.memory.wipe(&mut secret);
                     return Err(Sw::UNABLE_TO_PROCESS);
                 }
@@ -257,7 +257,7 @@ impl Piv {
         let (a, n) = if let Some(a) = generated_algorithm {
             // The seed crosses the workspace variant transition only on this
             // bounded stack frame. Persistent staging owns the eventual commit.
-            let mut seed = [0; 64];
+            let mut seed = [0; crate::ports::mlkem768::SEED_BYTES];
             let length = repo::material(a);
             seed[..length].copy_from_slice(&w.classic_with(p.memory).key.bytes[..length]);
             let s = w.stream_with(p.memory);

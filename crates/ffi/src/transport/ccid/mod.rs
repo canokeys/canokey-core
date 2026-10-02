@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized CCID entrypoint. IRQs operate only the platform packet mailbox.
+use canokey_protocol::{apdu::EXTENDED_HEADER_BYTES, ccid::HEADER};
 use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, Transport};
 
 // Session identity must match runtime/engine.rs::OWNER_CCID; it controls
@@ -20,8 +21,8 @@ crate::lazy_state!(
 static mut GENERATION: u32 = u32::MAX;
 // Endpoint-owned bytes are outside Transport. Polling/timeout may mutably
 // borrow Transport while the USB IRQ reads this buffer through its TX lease.
-static mut RESPONSE: [u8; 10 + canokey_rust_core::runtime::ccid::REPLY] =
-    [0; 10 + canokey_rust_core::runtime::ccid::REPLY];
+static mut RESPONSE: [u8; HEADER + canokey_rust_core::runtime::ccid::REPLY] =
+    [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
 unsafe extern "C" {
     fn ck_ccid_io_generation() -> u32;
     fn ck_ccid_io_now() -> u32;
@@ -99,18 +100,22 @@ impl Backend for Platform {
     fn slot_power(&mut self) {
         unsafe { crate::abi::core::ck_core_slot_power() }
     }
-    fn prepare_extended(&mut self, prefix: &[u8; 7], total: usize) -> Result<u16, u16> {
+    fn prepare_extended(
+        &mut self,
+        prefix: &[u8; EXTENDED_HEADER_BYTES],
+        total: usize,
+    ) -> Result<u16, u16> {
         #[cfg(feature = "ctap")]
         {
             crate::abi::core::with_core(|core, p| {
-                core.prepare_extended(1, prefix, total, p)
+                core.prepare_extended(OWNER_CCID, prefix, total, p)
                     .map_err(|sw| sw.value())
             })
         }
         #[cfg(not(feature = "ctap"))]
         {
             let _ = (prefix, total);
-            Err(0x6700)
+            Err(canokey_protocol::response::StatusWord::WRONG_LENGTH.value())
         }
     }
     // Keep the streamed decoder window and APDU dispatch out of the CCID
@@ -141,7 +146,7 @@ impl Backend for Platform {
             return crate::abi::core::with_core(|core, p| {
                 let total = request.len();
                 let reply = core.receive_source(
-                    1,
+                    OWNER_CCID,
                     total,
                     &mut Source {
                         request,
@@ -244,8 +249,13 @@ pub unsafe extern "C" fn CCID_Loop() {
         #[cfg(feature = "usb-webusb")]
         if crate::transport::webusb::block_competitor()
             && !crate::transport::webusb::try_preempt(matches!(
-                ck_ccid_io_peek(),
-                0x62 | 0x63 | 0x6f
+                // POWER_ON/OFF and XfrBlock (6F), not passive slot polling.
+                u8::try_from(ck_ccid_io_peek()).ok(),
+                Some(
+                    canokey_protocol::ccid::POWER_ON
+                        | canokey_protocol::ccid::POWER_OFF
+                        | canokey_protocol::ccid::TRANSFER
+                )
             ))
         {
             return;
@@ -319,7 +329,7 @@ pub unsafe fn presence_progress() {
         transport.completed();
         let mut platform = Platform { generation };
         if transport.completed_transaction() {
-            let mut packet = [0; 10];
+            let mut packet = [0; HEADER];
             if !crate::transport::ccid::io::take_presence(generation, &mut packet) {
                 return;
             }

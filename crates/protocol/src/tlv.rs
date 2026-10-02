@@ -77,6 +77,9 @@ impl Decoder {
         while !bytes.is_empty() {
             match self.phase {
                 Phase::Tag => {
+                    // X.690 section 8.1.2: low five bits 1F introduce a high-tag
+                    // number; subsequent bit 80 means continuation. A zero first
+                    // base-128 digit is non-minimal and is rejected.
                     let byte = bytes[0];
                     bytes = &bytes[1..];
                     let i = usize::from(self.tag_len);

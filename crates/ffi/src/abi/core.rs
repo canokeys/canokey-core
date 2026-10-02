@@ -44,7 +44,7 @@ pub unsafe extern "C" fn ck_core_exchange(
         || out.is_null()
         || len > isize::MAX as usize
         || capacity > isize::MAX as usize
-        || capacity < 2
+        || capacity < canokey_protocol::apdu::STATUS_BYTES
     {
         return -1;
     }
@@ -122,10 +122,13 @@ pub unsafe extern "C" fn ck_core_output_sample(pressed: u8, now: u32, ready: u8)
 #[unsafe(no_mangle)]
 pub extern "C" fn ck_core_keyboard_usage(ch: u8) -> i32 {
     with_platform(|p| {
-        canokey_rust_core::runtime::config::keyboard_usage(p.storage, ch)
-            .map_or(-1, |(modifier, usage)| {
+        canokey_rust_core::runtime::config::keyboard_usage(p.storage, ch).map_or(
+            -1,
+            |(modifier, usage)| {
+                // Keyboard ABI: modifier in high byte, HID usage in low byte.
                 (i32::from(modifier) << 8) | i32::from(usage)
-            })
+            },
+        )
     })
 }
 

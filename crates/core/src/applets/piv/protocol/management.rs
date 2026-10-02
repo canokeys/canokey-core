@@ -22,7 +22,8 @@ impl Piv {
         let mut mgmt = repo::management(p)?;
         let r = (|| {
             self.touch(mgmt[repo::MANAGEMENT_TOUCH], p)?;
-            let key: &[u8; 24] = mgmt[repo::MANAGEMENT_KEY..].try_into().unwrap();
+            let key: &[u8; repo::MANAGEMENT_KEY_BYTES] =
+                mgmt[repo::MANAGEMENT_KEY..].try_into().unwrap();
             let initial =
                 f[ga_field::WITNESS] == Some(&[][..]) || f[ga_field::CHALLENGE] == Some(&[][..]);
             if initial {

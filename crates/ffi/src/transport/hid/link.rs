@@ -3,6 +3,10 @@
 //! state. Core execution may call progress, so no state borrow crosses a poll.
 use canokey_protocol::ctaphid::{self as wire, Error};
 
+// Idle ownership grace prevents CCID preemption between HID requests.
+const SESSION_IDLE_MS: u32 = 2000;
+const KEEPALIVE_INTERVAL_MS: u32 = 100;
+const TX_TIMEOUT_MS: u32 = 1000;
 unsafe extern "C" {
     fn device_get_tick() -> u32;
     fn device_delay(ms: i32);
@@ -49,7 +53,7 @@ impl Link {
             executing: false,
             cancelled: false,
             abandon: false,
-            keepalive_status: 1,
+            keepalive_status: wire::STATUS_PROCESSING,
         }
     }
 }
@@ -64,7 +68,7 @@ pub unsafe extern "C" fn ck_hid_busy() -> u8 {
         u8::from(
             LINK.active
                 || (LINK.session_owned
-                    && device_get_tick().wrapping_sub(LINK.session_last_used) < 2000),
+                    && device_get_tick().wrapping_sub(LINK.session_last_used) < SESSION_IDLE_MS),
         )
     }
 }
@@ -81,14 +85,18 @@ pub unsafe extern "C" fn ck_hid_execution_begin(cid: u32) {
         LINK.active = true;
         LINK.cancelled = false;
         LINK.abandon = false;
-        LINK.keepalive_status = 1;
-        LINK.keepalive_at = device_get_tick().wrapping_sub(100);
+        LINK.keepalive_status = wire::STATUS_PROCESSING;
+        LINK.keepalive_at = device_get_tick().wrapping_sub(KEEPALIVE_INTERVAL_MS) /* First keepalive is immediately due. */;
     }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_keepalive(waiting: u8) {
     unsafe {
-        LINK.keepalive_status = if waiting != 0 { 2 } else { 1 };
+        LINK.keepalive_status = if waiting != 0 {
+            wire::STATUS_UPNEEDED
+        } else {
+            wire::STATUS_PROCESSING
+        };
     }
 }
 unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
@@ -143,7 +151,10 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
             return 0;
         }
         let mut idle = ck_hid_io_idle() != 0;
-        if !idle && LINK.transmitting && device_get_tick().wrapping_sub(LINK.sent_at) >= 1000 {
+        if !idle
+            && LINK.transmitting
+            && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS
+        {
             LINK.abandon = true;
         }
         // Only the initial header is needed while crypto owns the core stack.
@@ -183,7 +194,7 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
         if LINK.cancelled || LINK.abandon {
             return 0;
         }
-        if idle && device_get_tick().wrapping_sub(LINK.keepalive_at) >= 100 {
+        if idle && device_get_tick().wrapping_sub(LINK.keepalive_at) >= KEEPALIVE_INTERVAL_MS {
             send_control(
                 LINK.executing_cid,
                 wire::KEEPALIVE,
@@ -199,7 +210,7 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
 pub unsafe extern "C" fn ck_hid_execution_end() {
     unsafe {
         while ck_hid_io_reset_pending() == 0 && ck_hid_io_idle() == 0 {
-            if device_get_tick().wrapping_sub(LINK.sent_at) >= 1000 {
+            if device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
                 LINK.abandon = true;
                 break;
             }
@@ -245,7 +256,7 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
             return 0;
         }
         if ck_hid_io_idle() == 0 {
-            if LINK.transmitting && device_get_tick().wrapping_sub(LINK.sent_at) >= 1000 {
+            if LINK.transmitting && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
                 ck_hid_reset();
                 LINK.active = false;
                 LINK.transmitting = false;

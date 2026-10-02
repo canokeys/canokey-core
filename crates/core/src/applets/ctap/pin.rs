@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PIN protocol crypto and compact durable retries. Request PKE is already gone.
+use super::wire::pin_protocol as wire;
+use super::wire::pin_protocol::{
+    MAX_PIN_BYTES, MAX_RETRIES, MIN_CODE_POINTS, PIN_HASH_BYTES, SESSION_ATTEMPTS,
+};
 use super::{
     Session, Status,
     client_pin::Parameters,
@@ -31,14 +35,15 @@ pub(super) fn load(p: &mut Platform<'_>, record: &mut [u8; RECORD_BYTES]) -> Res
     record.fill(0);
     match p.storage.load(Record::CtapPin, record) {
         Err(StorageError::Missing) => {
-            record[RETRIES] = 8;
-            record[MIN_PIN_LENGTH] = 4;
+            record[RETRIES] = MAX_RETRIES;
+            record[MIN_PIN_LENGTH] = MIN_CODE_POINTS;
         }
         Ok(n)
             if n >= RP_HASHES
-                && record[RETRIES] <= 8
-                && (record[PIN_LENGTH] == 0 || (4..=63).contains(&record[PIN_LENGTH]))
-                && (4..=63).contains(&record[MIN_PIN_LENGTH])
+                && record[RETRIES] <= MAX_RETRIES
+                && (record[PIN_LENGTH] == 0
+                    || (MIN_CODE_POINTS..=MAX_PIN_BYTES).contains(&record[PIN_LENGTH]))
+                && (MIN_CODE_POINTS..=MAX_PIN_BYTES).contains(&record[MIN_PIN_LENGTH])
                 && record[FLAGS] >> RP_HASH_COUNT_SHIFT <= 4
                 && n == RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32 =>
         {
@@ -84,17 +89,17 @@ pub(super) fn decrypt(
     bytes: &mut [u8],
     p: &mut Platform<'_>,
 ) -> Result<(), Status> {
-    if protocol == 2 && bytes.len() < 16 {
+    if protocol == wire::V2 && bytes.len() < wire::AES_BLOCK_BYTES {
         return Err(Status::InvalidLength);
     }
-    if bytes.len() % 16 != 0 {
+    if bytes.len() % wire::AES_BLOCK_BYTES != 0 {
         return Err(Status::InvalidLength);
     }
-    let mut iv = [0; 16];
-    let n = if protocol == 2 {
-        iv.copy_from_slice(&bytes[..16]);
-        bytes.copy_within(16.., 0);
-        bytes.len() - 16
+    let mut iv = [0; wire::AES_BLOCK_BYTES];
+    let n = if protocol == wire::V2 {
+        iv.copy_from_slice(&bytes[..wire::AES_BLOCK_BYTES]);
+        bytes.copy_within(wire::AES_BLOCK_BYTES.., 0);
+        bytes.len() - wire::AES_BLOCK_BYTES
     } else {
         bytes.len()
     };
@@ -149,7 +154,7 @@ impl Session {
         if n != 32 {
             return Err(Status::Other);
         }
-        if protocol == 1 {
+        if protocol == wire::V1 {
             p.crypto
                 .sha256(&w.input[..32], (&mut shared[..32]).try_into().unwrap())
                 .map_err(|_| Status::Other)?;
@@ -160,12 +165,14 @@ impl Session {
                 mac(&[0; 32], &w.input[..32], &mut prk, p)?;
                 mac(
                     &prk,
+                    // CTAP2 protocol2 HKDF-Expand info plus block counter 0x01.
                     b"CTAP2 HMAC key\x01",
                     (&mut shared[..32]).try_into().unwrap(),
                     p,
                 )?;
                 mac(
                     &prk,
+                    // Separate HKDF info derives the AES key, block counter 0x01.
                     b"CTAP2 AES key\x01",
                     (&mut shared[32..]).try_into().unwrap(),
                     p,
@@ -181,7 +188,7 @@ impl Session {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
-        w.output[..4].copy_from_slice(&[0, 0xa1, 3, policy(p)?.retries]);
+        w.output[..4].copy_from_slice(&[0, 0xa1, wire::RESPONSE_RETRIES, policy(p)?.retries]);
         Ok(4)
     }
     #[inline(never)]
@@ -196,7 +203,7 @@ impl Session {
         let result = (|| {
             load(p, &mut record)?;
             let configured = record[PIN_LENGTH] != 0;
-            if cp.subcommand == 3 {
+            if cp.subcommand == wire::SET_PIN {
                 if configured {
                     return Err(Status::PinAuthInvalid);
                 }
@@ -212,11 +219,11 @@ impl Session {
                 }
             }
             self.decapsulate(cp.protocol, &cp.agreement, &mut shared, w, p)?;
-            let new_len = if cp.protocol == 1 { 64 } else { 80 };
-            let hash_len = if cp.protocol == 1 { 16 } else { 32 };
-            if cp.subcommand == 3 || cp.subcommand == 4 {
+            let new_len = wire::new_pin_bytes(cp.protocol);
+            let hash_len = wire::auth_bytes(cp.protocol);
+            if cp.subcommand == wire::SET_PIN || cp.subcommand == wire::CHANGE_PIN {
                 w.input[..new_len].copy_from_slice(&cp.new_pin[..new_len]);
-                let n = if cp.subcommand == 4 {
+                let n = if cp.subcommand == wire::CHANGE_PIN {
                     w.input[new_len..new_len + hash_len].copy_from_slice(&cp.pin_hash[..hash_len]);
                     new_len + hash_len
                 } else {
@@ -225,7 +232,7 @@ impl Session {
                 verify_mac(&shared[..32], &cp.auth[..hash_len], &w.input[..n], p)?;
             }
             let aes_key: &[u8; 32] = shared[32..].try_into().unwrap();
-            if cp.subcommand != 3 {
+            if cp.subcommand != wire::SET_PIN {
                 // Charge before decrypt/compare. Failed writes never authorize.
                 record[RETRIES] -= 1;
                 p.storage
@@ -236,7 +243,7 @@ impl Session {
                     )
                     .map_err(|_| Status::Other)?;
                 decrypt(cp.protocol, aes_key, &mut cp.pin_hash[..hash_len], p)?;
-                if !equal(&record[..16], &cp.pin_hash[..16]) {
+                if !equal(&record[..PIN_HASH_BYTES], &cp.pin_hash[..PIN_HASH_BYTES]) {
                     self.pin_attempts -= 1;
                     self.agreement_ready = false;
                     p.memory.wipe(&mut self.agreement);
@@ -248,10 +255,10 @@ impl Session {
                         Status::PinInvalid
                     });
                 }
-                self.pin_attempts = 3;
+                self.pin_attempts = SESSION_ATTEMPTS;
                 // Correct current PIN restores retries even if the new PIN
                 // subsequently fails policy validation.
-                record[RETRIES] = 8;
+                record[RETRIES] = MAX_RETRIES;
                 p.storage
                     .replace_at(
                         Record::CtapPin,
@@ -260,9 +267,9 @@ impl Session {
                     )
                     .map_err(|_| Status::Other)?;
             }
-            if cp.subcommand == 5 || cp.subcommand == 9 {
+            if cp.subcommand == wire::GET_TOKEN || cp.subcommand == wire::GET_TOKEN_PERMISSIONS {
                 if record[FLAGS] & FORCE_CHANGE != 0 {
-                    return Err(if cp.subcommand == 5 {
+                    return Err(if cp.subcommand == wire::GET_TOKEN {
                         Status::PinInvalid
                     } else {
                         Status::PinPolicy
@@ -273,16 +280,16 @@ impl Session {
                     .random(&mut self.token)
                     .map_err(|_| Status::Other)?;
                 w.input[..32].copy_from_slice(&self.token);
-                let mut iv = [0; 16];
-                if cp.protocol == 2 {
+                let mut iv = [0; wire::AES_BLOCK_BYTES];
+                if cp.protocol == wire::V2 {
                     p.crypto.random(&mut iv).map_err(|_| Status::Other)?;
                 }
                 p.crypto
                     .aes256_cbc(true, aes_key, &iv, &mut w.input[..32])
                     .map_err(|_| Status::Other)?;
-                let n = if cp.protocol == 1 { 32 } else { 48 };
-                w.output[..5].copy_from_slice(&[0, 0xa1, 2, 0x58, n]);
-                let offset = if cp.protocol == 2 {
+                let n = wire::token_bytes(cp.protocol) as u8;
+                w.output[..5].copy_from_slice(&[0, 0xa1, wire::RESPONSE_TOKEN, 0x58, n]);
+                let offset = if cp.protocol == wire::V2 {
                     w.output[5..21].copy_from_slice(&iv);
                     21
                 } else {
@@ -291,25 +298,25 @@ impl Session {
                 w.output[offset..offset + 32].copy_from_slice(&w.input[..32]);
                 self.token_started = p.device.now();
                 self.token_used = self.token_started;
-                if cp.subcommand == 9 && cp.rp_len != 0 {
+                if cp.subcommand == wire::GET_TOKEN_PERMISSIONS && cp.rp_len != 0 {
                     p.crypto
                         .sha256(&cp.rp[..cp.rp_len], &mut self.rp_binding)
                         .map_err(|_| Status::Other)?;
                     self.rp_bound = true;
                 }
-                self.permissions = if cp.subcommand == 5 {
-                    3
+                self.permissions = if cp.subcommand == wire::GET_TOKEN {
+                    wire::PERMISSION_RP
                 } else {
                     cp.permissions
                 };
                 return Ok(offset + 32);
             }
             decrypt(cp.protocol, aes_key, &mut cp.new_pin[..new_len], p)?;
-            let n = cp.new_pin[..64]
+            let n = cp.new_pin[..wire::PADDED_PIN_BYTES]
                 .iter()
                 .rposition(|b| *b != 0)
                 .map_or(0, |i| i + 1);
-            if n == 0 || n > 63 {
+            if n == 0 || n > usize::from(MAX_PIN_BYTES) {
                 return Err(Status::PinPolicy);
             }
             let pin = core::str::from_utf8(&cp.new_pin[..n]).map_err(|_| Status::PinPolicy)?;
@@ -322,10 +329,10 @@ impl Session {
                 .crypto
                 .sha256(pin.as_bytes(), &mut digest)
                 .map_err(|_| Status::Other);
-            record[..16].copy_from_slice(&digest[..16]);
+            record[..PIN_HASH_BYTES].copy_from_slice(&digest[..PIN_HASH_BYTES]);
             p.memory.wipe(&mut digest);
             hash?;
-            record[RETRIES] = 8;
+            record[RETRIES] = MAX_RETRIES;
             record[PIN_LENGTH] = count as u8;
             record[FLAGS] &= !FORCE_CHANGE;
             save(&record, p)?;
@@ -360,8 +367,8 @@ impl Session {
         if self.pin_attempts == 0 {
             return Err(Status::PinAuthBlocked);
         }
-        if !matches!(protocol, 1 | 2)
-            || auth.len() != if protocol == 1 { 16 } else { 32 }
+        if !matches!(protocol, wire::V1 | wire::V2)
+            || auth.len() != wire::auth_bytes(protocol)
             || self.permissions & permission != permission
             || rp.is_some_and(|rp| self.rp_bound && !equal(rp, &self.rp_binding))
         {

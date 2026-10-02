@@ -25,13 +25,20 @@ mod request_decoder;
 mod resident;
 pub(crate) mod settings;
 pub mod u2f;
+mod wire;
 
+const MAKE_CREDENTIAL: u8 = 0x01;
+const GET_ASSERTION: u8 = 0x02;
+const NEXT_ASSERTION: u8 = 0x08;
+const CREDENTIAL_MANAGEMENT: u8 = 0x0a;
+const LEGACY_CREDENTIAL_MANAGEMENT: u8 = 0x41;
+const LARGE_BLOBS: u8 = 0x0c;
 const GET_INFO: u8 = 0x04;
 const CLIENT_PIN: u8 = 0x06;
 const SELECTION: u8 = 0x0b;
 const RESET: u8 = 0x07;
 const CONFIG: u8 = 0x0d;
-pub const MAX_REQUEST: usize = 1024;
+pub const MAX_REQUEST: usize = canokey_protocol::ctaphid::CTAP_MAX_REQUEST;
 /// Response bytes are either immutable or in the sole session workspace.
 /// Encoding happens once; transport retries only read the prepared result.
 pub enum Response {
@@ -185,7 +192,7 @@ impl Session {
             presence: crate::runtime::presence::Request::new(),
             agreement: [0; 32],
             agreement_ready: false,
-            pin_attempts: 3,
+            pin_attempts: wire::pin_protocol::SESSION_ATTEMPTS,
             token: [0; 32],
             permissions: 0,
             token_started: 0,
@@ -262,9 +269,11 @@ impl Session {
                     params.algorithms[..params.algorithm_count]
                         .iter()
                         .find_map(|id| match *id {
-                            -7 => Some(crate::ports::alg::P256),
-                            -8 => Some(crate::ports::alg::ED25519),
-                            -49 if credential::permitted(crate::ports::alg::MLDSA65) => {
+                            wire::cose::ES256 => Some(crate::ports::alg::P256),
+                            wire::cose::EDDSA => Some(crate::ports::alg::ED25519),
+                            wire::cose::MLDSA65
+                                if credential::permitted(crate::ports::alg::MLDSA65) =>
+                            {
                                 Some(crate::ports::alg::MLDSA65)
                             }
                             n if n == self.sm2.algorithm
@@ -329,7 +338,7 @@ impl Session {
                 .remove(crate::ports::Record::ctap_group(index).unwrap())
                 .map_err(|_| Status::Other)?;
         }
-        self.pin_attempts = 3;
+        self.pin_attempts = wire::pin_protocol::SESSION_ATTEMPTS;
         Ok(())
     }
     fn selection(
@@ -506,15 +515,23 @@ impl Request {
     pub fn finish(&mut self) -> Result<Command, Status> {
         match self.command.take() {
             None => Err(Status::InvalidLength),
-            Some(8) if !self.extra => Ok(Command::NextAssertion),
-            Some(8) => Err(Status::InvalidLength),
+            Some(NEXT_ASSERTION) if !self.extra => Ok(Command::NextAssertion),
+            Some(NEXT_ASSERTION) => Err(Status::InvalidLength),
             Some(RESET) if !self.extra => Ok(Command::Reset),
             Some(RESET) => Err(Status::InvalidLength),
             Some(SELECTION) if !self.extra => Ok(Command::Selection),
             Some(SELECTION) => Err(Status::InvalidLength),
             Some(GET_INFO) if !self.extra => Ok(Command::GetInfo),
             Some(GET_INFO) => Err(Status::InvalidLength),
-            Some(1 | 2 | CLIENT_PIN | CONFIG | 0x0a | 0x41 | 12) => match &mut self.parser {
+            Some(
+                MAKE_CREDENTIAL
+                | GET_ASSERTION
+                | CLIENT_PIN
+                | CONFIG
+                | CREDENTIAL_MANAGEMENT
+                | LEGACY_CREDENTIAL_MANAGEMENT
+                | LARGE_BLOBS,
+            ) => match &mut self.parser {
                 Parser::ClientPin(parser) => parser.finish(),
                 Parser::Config(parser) => parser.finish(),
                 Parser::LargeBlob(parser) => parser.finish(),
@@ -545,12 +562,13 @@ impl Parser {
     fn initialize(&mut self, command: Option<u8>) {
         match command {
             Some(CLIENT_PIN) => *self = Self::ClientPin(client_pin::Parser::new()),
-            Some(command @ (0x0a | 0x41 | CONFIG)) => {
+            Some(command @ (CREDENTIAL_MANAGEMENT | LEGACY_CREDENTIAL_MANAGEMENT | CONFIG)) => {
                 *self = Self::Config(envelope::Parser::new(command))
             }
-            Some(12) => *self = Self::LargeBlob(large_blob::Parser::new()),
-            Some(command @ (1 | 2)) => {
-                *self = Self::Credential(credential_request::Parser::new(command == 1))
+            Some(LARGE_BLOBS) => *self = Self::LargeBlob(large_blob::Parser::new()),
+            Some(command @ (MAKE_CREDENTIAL | GET_ASSERTION)) => {
+                *self =
+                    Self::Credential(credential_request::Parser::new(command == MAKE_CREDENTIAL))
             }
             _ => *self = Self::None,
         }

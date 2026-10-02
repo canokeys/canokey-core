@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CTAPHID report layout. USB SETUP has different (little-endian) wire fields.
 pub const REPORT_SIZE: usize = 64;
-pub const MAX_MESSAGE: usize = 57 + 128 * 59;
+pub const INITIAL_HEADER_BYTES: usize = 7;
+pub const CONTINUATION_HEADER_BYTES: usize = 5;
+pub const CONTINUATION_COUNT: usize = 128; // SEQ 0x00..=0x7F.
+pub const MAX_MESSAGE: usize = REPORT_SIZE - INITIAL_HEADER_BYTES
+    + CONTINUATION_COUNT * (REPORT_SIZE - CONTINUATION_HEADER_BYTES);
+pub const CTAP_MAX_REQUEST: usize = 1024;
+pub const INIT_NONCE_BYTES: usize = 8;
+pub const INIT_RESPONSE_BYTES: usize = INIT_NONCE_BYTES + 4 + 1 + 3 + 1;
+pub const CMD_INIT_BIT: u8 = 0x80;
+pub const STATUS_PROCESSING: u8 = 0x01;
+pub const STATUS_UPNEEDED: u8 = 0x02;
 pub const BROADCAST: u32 = u32::MAX;
 pub const PING: u8 = 0x81;
 pub const WINK: u8 = 0x88;
@@ -15,11 +25,11 @@ pub const KEEPALIVE: u8 = 0xbb;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Error {
-    Command = 1,
-    Length = 3,
-    Sequence = 4,
-    Timeout = 5,
-    Busy = 6,
+    Command = 0x01,
+    Length = 0x03,
+    Sequence = 0x04,
+    Timeout = 0x05,
+    Busy = 0x06,
     Channel = 0x0b,
     Other = 0x7f,
 }
@@ -32,7 +42,7 @@ pub struct Report<'a> {
 }
 impl<'a> Report<'a> {
     pub fn decode(bytes: &'a [u8; REPORT_SIZE]) -> Self {
-        let initial = bytes[4] & 0x80 != 0;
+        let initial = bytes[4] & CMD_INIT_BIT != 0;
         Self {
             cid: u32::from_be_bytes(bytes[..4].try_into().unwrap()),
             tag: bytes[4],
@@ -47,7 +57,7 @@ pub fn header(out: &mut [u8; REPORT_SIZE], cid: u32, tag: u8, length: usize) -> 
     out.fill(0);
     out[..4].copy_from_slice(&cid.to_be_bytes());
     out[4] = tag;
-    if tag & 0x80 != 0 {
+    if tag & CMD_INIT_BIT != 0 {
         out[5..7].copy_from_slice(&(length as u16).to_be_bytes());
         &mut out[7..]
     } else {

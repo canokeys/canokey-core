@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Owned hmac-secret inputs and per-enumeration secrets; no Flash state.
+use super::wire::pin_protocol as wire;
 use super::{
     Key, Session, Status, credential,
     crypto::{mac, verify_mac},
@@ -7,6 +8,10 @@ use super::{
 };
 use crate::{ports::Platform, runtime::workspace::Workspace};
 use canokey_protocol::cbor::Event;
+// One/two SHA-256 salts, optionally preceded by the v2 AES IV.
+const SALT_BYTES: usize = 32;
+const DOUBLE_SALT_BYTES: usize = 2 * SALT_BYTES;
+const MAX_ENCRYPTED_SALT_BYTES: usize = wire::AES_BLOCK_BYTES + DOUBLE_SALT_BYTES;
 
 // Sentinel for a non-integer/unsupported-width label. It is outside the
 // recognized hmac-secret extension labels 1..=4 and follows the skip path.
@@ -20,18 +25,18 @@ pub struct Parameters {
     auth_len: usize,
     protocol: u8,
     agreement: [u8; 64],
-    salt: [u8; 80],
+    salt: [u8; MAX_ENCRYPTED_SALT_BYTES],
     auth: [u8; 32],
 }
 impl Parameters {
     pub const fn new() -> Self {
         Self {
             agreement: [0; 64],
-            salt: [0; 80],
+            salt: [0; MAX_ENCRYPTED_SALT_BYTES],
             auth: [0; 32],
             salt_len: 0,
             auth_len: 0,
-            protocol: 1,
+            protocol: wire::V1,
         }
     }
     pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
@@ -92,11 +97,15 @@ impl Parser {
                     return Err(Status::MissingParameter);
                 }
                 let p = &self.params;
-                let iv = if p.protocol == 2 { 16 } else { 0 };
-                if p.salt_len != 32 + iv && p.salt_len != 64 + iv {
+                let iv = if p.protocol == wire::V2 {
+                    wire::AES_BLOCK_BYTES
+                } else {
+                    0
+                };
+                if p.salt_len != SALT_BYTES + iv && p.salt_len != DOUBLE_SALT_BYTES + iv {
                     return Err(Status::InvalidLength);
                 }
-                if p.auth_len != if p.protocol == 1 { 16 } else { 32 } {
+                if p.auth_len != super::wire::pin_protocol::auth_bytes(p.protocol) {
                     return Err(Status::InvalidParameter);
                 }
                 return Ok(true);
@@ -116,11 +125,21 @@ impl Parser {
             }
             2 => {
                 self.seen |= 2;
-                self.params.salt_len = self.bytes(key, event, 32, 80)?;
+                self.params.salt_len = self.bytes(
+                    key,
+                    event,
+                    SALT_BYTES as u16,
+                    MAX_ENCRYPTED_SALT_BYTES as u16,
+                )?;
             }
             3 => {
                 self.seen |= 4;
-                self.params.auth_len = self.bytes(key, event, 16, 32)?;
+                self.params.auth_len = self.bytes(
+                    key,
+                    event,
+                    wire::AUTH_V1_BYTES as u16,
+                    wire::AUTH_V2_BYTES as u16,
+                )?;
             }
             4 => match *event {
                 Event::Unsigned(n @ (1 | 2)) => self.params.protocol = n as u8,
@@ -151,7 +170,7 @@ impl Parser {
     }
 }
 
-const PREPARED_SALT_BYTES: usize = 80;
+const PREPARED_SALT_BYTES: usize = MAX_ENCRYPTED_SALT_BYTES;
 pub(super) struct Prepared {
     // Both regions share one erasure lifetime: salts, then AES key.
     secrets: [u8; PREPARED_SALT_BYTES + 32],
@@ -163,7 +182,7 @@ impl Prepared {
         Self {
             secrets: [0; PREPARED_SALT_BYTES + 32],
             length: 0,
-            protocol: 1,
+            protocol: wire::V1,
         }
     }
     pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
@@ -178,17 +197,21 @@ impl Prepared {
         id: &credential::Id,
         rp: &[u8; 32],
         uv: bool,
-        out: &mut [u8; 80],
+        out: &mut [u8; MAX_ENCRYPTED_SALT_BYTES],
         p: &mut Platform<'_>,
     ) -> Result<usize, Status> {
         let mut random = [0; 32];
         let result = (|| {
             credential::extension_key(if uv { 4 } else { 3 }, id, rp, &mut random, p)?;
-            let iv_len = if self.protocol == 2 { 16 } else { 0 };
-            let mut iv = [0; 16];
+            let iv_len = if self.protocol == wire::V2 {
+                wire::AES_BLOCK_BYTES
+            } else {
+                0
+            };
+            let mut iv = [0; wire::AES_BLOCK_BYTES];
             if iv_len != 0 {
                 p.crypto.random(&mut iv).map_err(|_| Status::Other)?;
-                out[..16].copy_from_slice(&iv);
+                out[..wire::AES_BLOCK_BYTES].copy_from_slice(&iv);
             }
             for (salt, output) in self.secrets[..PREPARED_SALT_BYTES][..self.length]
                 .chunks_exact(32)
@@ -240,7 +263,12 @@ impl Session {
                 p,
             )?;
             prepared.protocol = params.protocol;
-            prepared.length = params.salt_len - if params.protocol == 2 { 16 } else { 0 };
+            prepared.length = params.salt_len
+                - if params.protocol == wire::V2 {
+                    wire::AES_BLOCK_BYTES
+                } else {
+                    0
+                };
             Ok(())
         })();
         p.memory.wipe(&mut shared);

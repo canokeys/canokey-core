@@ -27,7 +27,7 @@ pub fn der_signature(out: &mut [u8], n: usize) -> Result<usize, Sw> {
         let start = start + skip;
         let len = width - skip;
         let pad = usize::from(out[start] & 0x80 != 0);
-        out[at] = 2;
+        out[at] = 0x02; // X.690 INTEGER tag.
         out[at + 1] = (len + pad) as u8;
         at += 2;
         out[at..at + pad].fill(0);

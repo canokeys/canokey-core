@@ -54,12 +54,12 @@ pub(super) mod key_tag {
     pub const MODULUS: u8 = 0x81;
     pub const EXPONENT: u8 = 0x82;
     pub const PUBLIC_POINT: u8 = 0x86;
-    pub const IMPORT_RSA_P: u8 = 1;
-    pub const IMPORT_EC: u8 = 6;
-    pub const IMPORT_ED25519: u8 = 7;
-    pub const IMPORT_X25519: u8 = 8;
-    pub const IMPORT_MLDSA: u8 = 9;
-    pub const IMPORT_MLKEM: u8 = 10;
+    pub const IMPORT_RSA_P: u8 = 0x01;
+    pub const IMPORT_EC: u8 = 0x06;
+    pub const IMPORT_ED25519: u8 = 0x07;
+    pub const IMPORT_X25519: u8 = 0x08;
+    pub const IMPORT_MLDSA: u8 = 0x09;
+    pub const IMPORT_MLKEM: u8 = 0x0a;
 }
 // Credential references: PIN is the user secret, PUK is the PIN unblocking
 // key, and MANAGEMENT selects AES management-key authentication.
@@ -77,13 +77,13 @@ pub(super) mod wire_alg {
     pub const ED25519_STREAM: u8 = 0xff;
 }
 pub(super) mod policy {
-    pub const DEFAULT: u8 = 0;
-    pub const PIN_NEVER: u8 = 1;
-    pub const PIN_ONCE: u8 = 2;
-    pub const PIN_ALWAYS: u8 = 3;
-    pub const TOUCH_NEVER: u8 = 1;
-    pub const TOUCH_ALWAYS: u8 = 2;
-    pub const TOUCH_CACHED: u8 = 3;
+    pub const DEFAULT: u8 = 0x00;
+    pub const PIN_NEVER: u8 = 0x01;
+    pub const PIN_ONCE: u8 = 0x02;
+    pub const PIN_ALWAYS: u8 = 0x03;
+    pub const TOUCH_NEVER: u8 = 0x01;
+    pub const TOUCH_ALWAYS: u8 = 0x02;
+    pub const TOUCH_CACHED: u8 = 0x03;
     pub const TOUCH_CACHE_MS: u32 = 15_000;
 }
 pub(super) mod slot {
@@ -123,17 +123,20 @@ pub(super) mod object_tlv {
 // GET METADATA response tags (F7): algorithm, PIN/touch policy, key origin,
 // public key, factory-default indicator, and retry limit/remaining count.
 pub(super) mod metadata_tag {
-    pub const ALGORITHM: u8 = 1;
-    pub const POLICY: u8 = 2;
-    pub const ORIGIN: u8 = 3;
-    pub const PUBLIC_KEY: u8 = 4;
-    pub const DEFAULT: u8 = 5;
-    pub const RETRIES: u8 = 6;
+    pub const ALGORITHM: u8 = 0x01;
+    pub const POLICY: u8 = 0x02;
+    pub const ORIGIN: u8 = 0x03;
+    pub const PUBLIC_KEY: u8 = 0x04;
+    pub const DEFAULT: u8 = 0x05;
+    pub const RETRIES: u8 = 0x06;
 }
 
 /// Accepted logical-command byte counts, accumulated across short APDU chains.
 /// Streaming limits do not reserve equivalently sized RAM buffers.
 pub(super) mod limits {
+    pub const SM2_ID_MAX: usize = 32;
+    pub const SM2_KDF_DEFAULT_BYTES: usize = 16;
+    pub const SM2_KDF_MAX_BYTES: usize = 128; // Bounded by the native packet ABI.
     // Stored certificate TLV quota, shared by PUT routing and object storage.
     pub const CERTIFICATE_OBJECT_BYTES: usize = 6568;
     // PUT adds a 5C selector: tag, length, and up to three object-ID bytes.

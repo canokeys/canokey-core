@@ -2,8 +2,12 @@
 // Production protocol, runtime and FFI; only register I/O and Core are mocked.
 extern crate self as canokey_protocol;
 extern crate self as canokey_rust_core;
+#[path = "../../crates/protocol/src/apdu.rs"]
+pub mod apdu;
 #[path = "../../crates/core/src/runtime/nfc.rs"]
 pub mod link;
+#[path = "../../crates/protocol/src/response.rs"]
+pub mod response;
 #[path = "../../crates/protocol/src/nfc.rs"]
 mod wire;
 // nfc_io resolves sibling runtime types, while Link resolves wire types through

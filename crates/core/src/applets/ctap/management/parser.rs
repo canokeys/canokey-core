@@ -2,6 +2,7 @@
 //! Semantic offsets into the owned, authenticated envelope. Framing errors
 //! retain precedence over these deferred management-schema errors.
 use super::{Fields, Status, User, credential};
+const VENDOR_METADATA_ONLY: u64 = super::cm::VENDOR_METADATA_ONLY as u64;
 use canokey_protocol::cbor::Event;
 
 #[derive(Clone, Copy, Default)]
@@ -129,8 +130,8 @@ impl Parser {
                     self.previous_text = Span::NONE;
                     self.value = false;
                 }
-                (0x80, Event::Bool(value)) => p.metadata_only = value,
-                (1..=3 | 0x80, _) => return Err(Status::UnexpectedType),
+                (VENDOR_METADATA_ONLY, Event::Bool(value)) => p.metadata_only = value,
+                (1..=3 | VENDOR_METADATA_ONLY, _) => return Err(Status::UnexpectedType),
                 _ => (),
             }
         } else if self.entity != 0 && depth == 2 {

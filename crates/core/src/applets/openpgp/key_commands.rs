@@ -92,6 +92,7 @@ impl OpenPgp {
         };
         let a = self.session.prepare(r, &mut w.key.bytes, p)?;
         let input = if r == key_role::DECIPHER && a.rsa() {
+            // PSO DECIPHER RSA input is padding indicator 0x00 followed by ciphertext.
             if b.len() != a.public_value_bytes() + 1 {
                 return Err(Sw::WRONG_LENGTH);
             }
@@ -102,6 +103,7 @@ impl OpenPgp {
         } else if r == key_role::DECIPHER {
             // Legacy ECDH distinguishes a short APDU body from a malformed
             // nested public-key object; all TLV failures are data errors.
+            // Minimum A6 / 7F49 / 86 envelope: headers2+3+2 and one value byte.
             if b.len() < 8 {
                 return Err(Sw::WRONG_LENGTH);
             }
@@ -123,6 +125,7 @@ impl OpenPgp {
                 }
                 b
             } else {
+                // PSO DECIPHER ECDH input is a SEC 1 uncompressed point: 0x04 || X || Y.
                 if b.len() != a.public_value_bytes() + 1 || b[0] != EC_POINT_UNCOMPRESSED {
                     return Err(Sw::WRONG_DATA);
                 }

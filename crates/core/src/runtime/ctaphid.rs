@@ -178,7 +178,12 @@ impl Transport {
             let limit = if frame.tag == wire::PING {
                 scratch.capacity().max(INLINE).min(wire::MAX_MESSAGE)
             } else {
-                ctap::MAX_REQUEST + if frame.tag == wire::MSG { 9 } else { 0 }
+                ctap::MAX_REQUEST
+                    + if frame.tag == wire::MSG {
+                        canokey_protocol::apdu::EXTENDED_OVERHEAD_BYTES
+                    } else {
+                        0
+                    }
             };
             if length > limit || (length > INLINE && length > scratch.capacity()) {
                 return Self::error(out, frame.cid, Error::Length);
@@ -228,7 +233,7 @@ impl Transport {
         out: &mut [u8; REPORT_SIZE],
         scratch: &mut impl Scratch,
     ) -> bool {
-        if frame.length != Some(8) {
+        if frame.length != Some(wire::INIT_NONCE_BYTES) {
             return Self::error(out, frame.cid, Error::Length);
         }
         self.reset(scratch);
@@ -243,8 +248,8 @@ impl Transport {
         } else {
             frame.cid
         };
-        let data = wire::header(out, frame.cid, wire::INIT, 17);
-        data[..8].copy_from_slice(&frame.data[..8]);
+        let data = wire::header(out, frame.cid, wire::INIT, wire::INIT_RESPONSE_BYTES);
+        data[..wire::INIT_NONCE_BYTES].copy_from_slice(&frame.data[..wire::INIT_NONCE_BYTES]);
         data[8..12].copy_from_slice(&assigned.to_be_bytes());
         data[12] = 2; // CTAPHID interface version
         data[16] = 0x05; // WINK and CBOR bits; MSG is supported by leaving NMSG clear.

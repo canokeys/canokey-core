@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+// Shared bound for an OATH credential name and its PASS reference.
+#[cfg(any(feature = "admin", feature = "oath", feature = "pass"))]
+pub(crate) const OATH_NAME_BYTES: usize = 64;
 #[cfg(feature = "admin")]
 pub mod admin;
 #[cfg(feature = "ctap")]

@@ -2,6 +2,8 @@
 //! Shared CTAP authentication primitives. Call only after request PKE release.
 use super::Status;
 use crate::ports::Platform;
+// MAC selector in the native crypto ABI: 0x02 = HMAC-SHA-256.
+const HMAC_SHA256: u8 = 0x02;
 
 pub(super) use crate::mechanisms::equal;
 pub(super) fn mac(
@@ -13,7 +15,7 @@ pub(super) fn mac(
     let mut full = [0; 64];
     let result = p
         .crypto
-        .mac(2, key, input, &mut full)
+        .mac(HMAC_SHA256, key, input, &mut full)
         .map_err(|_| Status::Other);
     if result.is_ok() {
         out.copy_from_slice(&full[..32]);
@@ -33,7 +35,7 @@ pub(super) fn verify_mac(
     let mut full = [0; 64];
     let result = p
         .crypto
-        .mac(2, key, input, &mut full)
+        .mac(HMAC_SHA256, key, input, &mut full)
         .map_err(|_| Status::Other);
     let valid = equal(auth, &full[..32][..auth.len()]);
     p.memory.wipe(&mut full);

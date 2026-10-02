@@ -6,6 +6,8 @@
 /* Main-loop only: serialize every call, including touch and reset. Callbacks
  * must never reenter the core. Buffers are borrowed only until return.
  * exchange supports identical input/output buffers; capacity includes SW.
+ * ck_core_keyboard_usage returns modifier in bits 15..8 and HID usage in 7..0,
+ * or -1 when the character has no mapping.
  * Reset releases transport ownership and authorization, not stored slots. */
 void CCID_Loop(void);
 void WebUSB_Loop(void);

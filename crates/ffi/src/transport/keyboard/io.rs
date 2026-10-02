@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ-visible keyboard transfer generation, separate from main-loop policy.
+use canokey_protocol::usb::*;
 unsafe extern "C" {
     fn ck_usb_dcd_lock() -> u32;
     fn ck_usb_dcd_unlock(mask: u32);
@@ -33,7 +34,7 @@ pub unsafe extern "C" fn ck_keyboard_io_configured() -> u8 {
 pub unsafe extern "C" fn ck_keyboard_io_idle() -> u8 {
     unsafe {
         let mask = ck_usb_dcd_lock();
-        let idle = ck_usb_tx_idle(0x81);
+        let idle = ck_usb_tx_idle(EP_KEYBOARD_IN);
         ck_usb_dcd_unlock(mask);
         idle
     }
@@ -42,10 +43,14 @@ pub unsafe extern "C" fn ck_keyboard_io_idle() -> u8 {
 pub unsafe extern "C" fn ck_keyboard_io_send(report: *const u8, length: u8, generation: u32) -> u8 {
     unsafe {
         let mask = ck_usb_dcd_lock();
+        // Report ID1 plus seven keyboard bytes, or ID2 plus one consumer byte.
         let ok = generation == EPOCH
             && !report.is_null()
-            && matches!(length, 2 | 8)
-            && ck_usb_submit(0x81, report, u16::from(length), 0) == 1;
+            && matches!(
+                usize::from(length),
+                CONSUMER_REPORT_BYTES | KEYBOARD_PACKET_BYTES
+            )
+            && ck_usb_submit(EP_KEYBOARD_IN, report, u16::from(length), 0) == 1;
         ck_usb_dcd_unlock(mask);
         u8::from(ok)
     }

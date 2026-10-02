@@ -146,7 +146,7 @@ impl Pass {
         &self,
         index: u8,
         input: &[u8],
-        out: &mut [u8; 20],
+        out: &mut [u8; super::domain::KEY_LENGTH],
         p: &mut Platform<'_>,
     ) -> Result<(), Error> {
         domain::challenge_response(self.slot(index)?, input, out, &mut Crypto(p.crypto))
@@ -154,7 +154,12 @@ impl Pass {
 }
 struct Crypto<'a>(&'a mut crate::ports::CryptoPort<'a>);
 impl domain::Crypto for Crypto<'_> {
-    fn hmac(&mut self, key: &[u8; 20], input: &[u8], out: &mut [u8; 20]) {
+    fn hmac(
+        &mut self,
+        key: &[u8; super::domain::KEY_LENGTH],
+        input: &[u8],
+        out: &mut [u8; super::domain::KEY_LENGTH],
+    ) {
         self.0.hmac_sha1(key, input, out);
     }
 }

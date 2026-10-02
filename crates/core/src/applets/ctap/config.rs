@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Authenticator policy updates use one compact atomic PIN/policy record.
+use super::wire::config as wire;
 use super::{Session, Status, envelope::Parameters, pin};
 use crate::{ports::Platform, runtime::workspace::Workspace};
 
@@ -16,7 +17,8 @@ impl Session {
         let result = (|| {
             let configured = record[pin::PIN_LENGTH] != 0;
             let always_uv = record[pin::FLAGS] & pin::ALWAYS_UV != 0;
-            let enabling_always_uv_without_pin = params.subcommand == 2 && !configured && always_uv;
+            let enabling_always_uv_without_pin =
+                params.subcommand == wire::TOGGLE_ALWAYS_UV && !configured && always_uv;
             if (configured || always_uv) && !enabling_always_uv_without_pin {
                 if params.auth_len == 0 {
                     return Err(Status::PuatRequired);
@@ -34,8 +36,8 @@ impl Session {
                 )?;
             }
             match params.subcommand {
-                2 => record[pin::FLAGS] ^= pin::ALWAYS_UV,
-                3 => {
+                wire::TOGGLE_ALWAYS_UV => record[pin::FLAGS] ^= pin::ALWAYS_UV,
+                wire::SET_MIN_PIN => {
                     let minimum = params.minimum.unwrap_or(record[pin::MIN_PIN_LENGTH]);
                     if minimum < record[pin::MIN_PIN_LENGTH] {
                         return Err(Status::PinPolicy);
@@ -63,7 +65,7 @@ impl Session {
                         }
                     }
                 }
-                4 => record[pin::FLAGS] |= pin::LONG_RESET,
+                wire::VENDOR_LONG_RESET => record[pin::FLAGS] |= pin::LONG_RESET,
                 _ => return Err(Status::InvalidParameter),
             }
             pin::save(&record, p)?;

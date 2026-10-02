@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 pub mod descriptors;
 pub mod webusb;
-use canokey_protocol::usb::Setup;
+use canokey_protocol::usb::*;
 use descriptors::{Configuration, Interfaces};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,7 +45,7 @@ impl Device {
         configuration: &Configuration,
         s: Setup,
         stalled: bool,
-        out: &mut [u8; 160],
+        out: &mut [u8; CONTROL_BUFFER_BYTES],
     ) -> Reply {
         let interfaces = configuration.interfaces();
         if interfaces.webusb {
@@ -59,7 +59,7 @@ impl Device {
         }
         let zero = s.value == 0 && s.index == 0;
         match (s.kind, s.request) {
-            (0x80, 6) if s.value as u8 == 0 && s.index == 0 => {
+            (DEVICE_IN, GET_DESCRIPTOR) if s.value as u8 == 0 && s.index == 0 => {
                 let desc = match s.value >> 8 {
                     1 => descriptors::DEVICE,
                     2 => return Reply::Data(configuration.copy_into(out)),
@@ -68,34 +68,41 @@ impl Device {
                 };
                 out[..desc.len()].copy_from_slice(desc);
                 if s.value >> 8 == 1 && interfaces.webusb {
+                    // WebUSB BOS platform capabilities require bcdUSB 2.10.
                     out[2] = 0x10;
                 }
                 Reply::Data(desc.len())
             }
-            (0x80, 6) if s.value >> 8 == 3 && (s.index == 0 || s.index == 0x409) => {
+            (DEVICE_IN, GET_DESCRIPTOR)
+                if s.value >> 8 == 3 && (s.index == 0 || s.index == 0x409) =>
+            {
                 let text: &[u8] = match s.value as u8 {
-                    1 => b"canokeys.org",
-                    2 => b"CanoKey Rust Core",
-                    0x12 if interfaces.webusb => b"WebUSB",
+                    STRING_MANUFACTURER => b"canokeys.org",
+                    STRING_PRODUCT => b"CanoKey Rust Core",
+                    STRING_WEBUSB if interfaces.webusb => b"WebUSB",
                     _ => return Reply::Stall,
                 };
                 Reply::Data(descriptors::string(text, out))
             }
-            (0, 5) if s.index == 0 && s.length == 0 && s.value <= 127 && !self.configured => {
+            (DEVICE_OUT, SET_ADDRESS)
+                if s.index == 0 && s.length == 0 && s.value <= 127 && !self.configured =>
+            {
                 Reply::Address(s.value as u8)
             }
-            (0, 9) if s.index == 0 && s.length == 0 && s.value <= 1 && self.address != 0 => {
+            (DEVICE_OUT, SET_CONFIGURATION)
+                if s.index == 0 && s.length == 0 && s.value <= 1 && self.address != 0 =>
+            {
                 Reply::Configure(s.value != 0)
             }
-            (0x80, 8) if zero && s.length == 1 && self.address != 0 => {
+            (DEVICE_IN, GET_CONFIGURATION) if zero && s.length == 1 && self.address != 0 => {
                 out[0] = self.configured as u8;
                 Reply::Data(1)
             }
-            (0x80, 0) if zero && s.length == 2 => {
+            (DEVICE_IN, GET_STATUS) if zero && s.length == 2 => {
                 out[..2].fill(0);
                 Reply::Data(2)
             }
-            (0x81, 0)
+            (INTERFACE_IN, GET_STATUS)
                 if self.configured
                     && s.index < interfaces.count() as u16
                     && s.value == 0
@@ -104,7 +111,7 @@ impl Device {
                 out[..2].fill(0);
                 Reply::Data(2)
             }
-            (0x81, 10)
+            (INTERFACE_IN, GET_INTERFACE)
                 if self.configured
                     && s.index < interfaces.count() as u16
                     && s.value == 0
@@ -113,7 +120,7 @@ impl Device {
                 out[0] = 0;
                 Reply::Data(1)
             }
-            (1, 11)
+            (INTERFACE_OUT, SET_INTERFACE)
                 if self.configured
                     && s.index < interfaces.count() as u16
                     && s.value == 0
@@ -121,21 +128,21 @@ impl Device {
             {
                 Reply::Interface(s.index as u8)
             }
-            (0x82, 0)
+            (ENDPOINT_IN, GET_STATUS)
                 if s.value == 0 && s.length == 2 && self.valid_endpoint(interfaces, s.index) =>
             {
                 out[0] = stalled as u8;
                 out[1] = 0;
                 Reply::Data(2)
             }
-            (2, 1 | 3)
+            (ENDPOINT_OUT, CLEAR_FEATURE | SET_FEATURE)
                 if self.configured
                     && s.value == 0
                     && s.length == 0
                     && self.valid_endpoint(interfaces, s.index)
                     && s.index & 0x7f != 0 =>
             {
-                Reply::Halt(s.index as u8, s.request == 3)
+                Reply::Halt(s.index as u8, s.request == SET_FEATURE)
             }
             _ => self.hid(interfaces, s, out),
         }
@@ -143,7 +150,12 @@ impl Device {
     fn valid_endpoint(&self, interfaces: Interfaces, endpoint: u16) -> bool {
         interfaces.endpoint(endpoint) && (endpoint & 0x7f == 0 || self.configured)
     }
-    fn hid(&mut self, interfaces: Interfaces, s: Setup, out: &mut [u8; 160]) -> Reply {
+    fn hid(
+        &mut self,
+        interfaces: Interfaces,
+        s: Setup,
+        out: &mut [u8; CONTROL_BUFFER_BYTES],
+    ) -> Reply {
         if !self.configured {
             return Reply::Stall;
         }
@@ -151,7 +163,7 @@ impl Device {
             return Reply::Stall;
         };
         match (s.kind, s.request) {
-            (0x81, 6) if s.value as u8 == 0 => {
+            (INTERFACE_IN, GET_DESCRIPTOR) if s.value as u8 == 0 => {
                 let bytes = match (hid, s.value >> 8) {
                     (0, 0x21) => descriptors::CTAP_HID,
                     (0, 0x22) => descriptors::CTAP_REPORT,
@@ -162,19 +174,25 @@ impl Device {
                 out[..bytes.len()].copy_from_slice(bytes);
                 Reply::Data(bytes.len())
             }
-            (0x21, 10)
+            (CLASS_INTERFACE_OUT, HID_SET_IDLE)
                 if s.length == 0 && (s.value as u8 == 0 || (hid == 1 && s.value as u8 <= 2)) =>
             {
                 self.idle[hid] = (s.value >> 8) as u8;
                 Reply::Status
             }
-            (0xa1, 2) if s.length == 1 && (s.value == 0 || (hid == 1 && s.value <= 2)) => {
+            (CLASS_INTERFACE_IN, HID_GET_IDLE)
+                if s.length == 1 && (s.value == 0 || (hid == 1 && s.value <= 2)) =>
+            {
                 out[0] = self.idle[hid];
                 Reply::Data(1)
             }
             // Keyboard LEDs, report ID 1. HID protocol is report-only: the
             // interface does not advertise boot protocol or remote wakeup.
-            (0x21, 9) if hid == 1 && s.value == 0x0201 && s.length == 2 => Reply::ReceiveLed,
+            (CLASS_INTERFACE_OUT, HID_SET_REPORT)
+                if hid == 1 && s.value == 0x0201 && s.length == 2 =>
+            {
+                Reply::ReceiveLed
+            }
             _ => Reply::Stall,
         }
     }
@@ -202,11 +220,11 @@ impl ControlIn {
     pub fn begin(&mut self, available: usize, requested: u16) {
         self.total = available.min(requested as usize);
         self.offset = 0;
-        self.zlp = self.total < requested as usize && self.total % 16 == 0;
+        self.zlp = self.total < requested as usize && self.total % EP0_PACKET_BYTES == 0;
     }
     pub fn next_packet(&mut self) -> Option<(usize, usize)> {
         if self.offset < self.total {
-            let n = (self.total - self.offset).min(16);
+            let n = (self.total - self.offset).min(EP0_PACKET_BYTES);
             let start = self.offset;
             self.offset += n;
             Some((start, n))

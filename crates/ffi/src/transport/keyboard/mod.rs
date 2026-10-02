@@ -78,11 +78,12 @@ pub unsafe extern "C" fn ck_keyboard_loop() {
         if PENDING == 0 {
             let keyboard = &*core::ptr::addr_of!(KEYBOARD);
             let report = &mut *core::ptr::addr_of_mut!(REPORT);
-            PENDING = if ch == 3 {
+            PENDING = if ch == i32::from(canokey_protocol::usb::EJECT_SENTINEL) {
                 keyboard.prepare_eject(report)
             } else {
                 let usage = u8::try_from(ch).ok().and_then(|ch| {
                     let encoded = ck_core_keyboard_usage(ch);
+                    // ABI packs modifier in the high byte, usage in the low byte.
                     (encoded >= 0).then_some(((encoded >> 8) as u8, encoded as u8))
                 });
                 keyboard.prepare_usage(usage, report)

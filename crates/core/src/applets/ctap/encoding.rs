@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared CTAP response schemas. Fixed tokens are encoded on the build host.
+use super::wire::{cose, management as cm};
 use super::{credential, resident, settings::Sm2};
 use crate::ports::alg;
 use canokey_protocol::cbor::{EncodeError, Encoder};
@@ -42,9 +43,10 @@ pub(super) fn management_header(
     first: bool,
     has_blob_key: bool,
 ) -> Result<(), EncodeError> {
-    e.map(5 + u64::from(first) + u64::from(has_blob_key)).u8(6);
+    e.map(5 + u64::from(first) + u64::from(has_blob_key))
+        .u8(cm::USER);
     user(e, entry, true)?;
-    e.u8(7);
+    e.u8(cm::DESCRIPTOR);
     descriptor(e, entry.id)
 }
 
@@ -56,13 +58,15 @@ pub(super) fn management_tail(
     blob_key: Option<&[u8]>,
 ) -> Result<(), EncodeError> {
     if let Some(total) = total {
-        e.u8(9).u8(total);
+        e.u8(cm::TOTAL_CREDENTIALS).u8(total);
     }
-    e.u8(10).u8(id[1] & 3);
+    e.u8(cm::CRED_PROTECT)
+        .u8(id[1] & credential::CRED_PROTECT_MASK);
     if let Some(key) = blob_key {
-        e.u8(11).bytes(key);
+        e.u8(cm::LARGE_BLOB_KEY).bytes(key);
     }
-    e.u8(12).bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0);
+    e.u8(cm::THIRD_PARTY_PAYMENT)
+        .bool(id[1] & credential::THIRD_PARTY_PAYMENT != 0);
     e.finish()
 }
 
@@ -83,9 +87,9 @@ pub(super) fn key_agreement(
     const Y: usize = X + 32 + 3;
     output[0] = 0;
     output[1..HEAD].copy_from_slice(KEY_AGREEMENT);
-    output[HEAD..X].copy_from_slice(b"\x58\x20");
+    output[HEAD..X].copy_from_slice(b"\x58\x20"); // CBOR bytes(32) header.
     output[X..X + 32].copy_from_slice(&public[..32]);
-    output[X + 32..Y].copy_from_slice(b"\x22\x58\x20");
+    output[X + 32..Y].copy_from_slice(b"\x22\x58\x20"); // COSE Y label (-3), bytes(32).
     output[Y..Y + 32].copy_from_slice(&public[32..]);
     Y + 32
 }
@@ -101,11 +105,15 @@ pub(super) fn public_key(
     } else if algorithm != alg::ED25519 {
         e.encoded(COSE_EC2)
             .i32(credential::cose_algorithm(algorithm, sm2))
-            .i8(-1)
-            .i32(if algorithm == alg::SM2 { sm2.curve } else { 1 })
-            .i8(-2)
+            .i8(cose::CRV)
+            .i32(if algorithm == alg::SM2 {
+                sm2.curve
+            } else {
+                i32::from(cose::P256)
+            })
+            .i8(cose::X)
             .bytes(&public[..32])
-            .i8(-3)
+            .i8(cose::Y)
             .bytes(&public[32..64]);
     } else {
         e.encoded(COSE_ED25519).bytes(&public[..32]);

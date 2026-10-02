@@ -4,8 +4,18 @@
 #![forbid(unsafe_code)]
 use canokey_protocol::usb::Setup;
 
-pub const COMMAND_LIMIT: usize = 261;
-pub const RESPONSE_LIMIT: usize = 258;
+pub const COMMAND_LIMIT: usize = canokey_protocol::apdu::SHORT_FRAME_BYTES;
+pub const RESPONSE_LIMIT: usize = canokey_protocol::apdu::SHORT_REPLY_BYTES;
+// CanoKey vendor/interface requests: submit APDU, fetch response, read state.
+pub const REQUEST_COMMAND: u8 = 0x00;
+pub const REQUEST_RESPONSE: u8 = 0x01;
+pub const REQUEST_STATUS: u8 = 0x02;
+pub const STATUS_IDLE: u8 = 0xff;
+pub const STATUS_RECEIVING: u8 = 0x03;
+pub const STATUS_PROCESSING: u8 = 0x01;
+pub const STATUS_RESPONSE: u8 = 0x00;
+pub const STATUS_SENDING: u8 = 0x02;
+pub const STATUS_HOLD: u8 = 0x04;
 pub const SESSION_TIMEOUT: u32 = 2000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,11 +30,17 @@ impl Request {
             return None;
         }
         match (s.kind, s.request) {
-            (0x41, 0) if usize::from(s.length) <= COMMAND_LIMIT => {
+            (canokey_protocol::usb::VENDOR_INTERFACE_OUT, REQUEST_COMMAND)
+                if usize::from(s.length) <= COMMAND_LIMIT =>
+            {
                 Some(Self::Command(usize::from(s.length)))
             }
-            (0xc1, 1) => Some(Self::Response(usize::from(s.length))),
-            (0xc1, 2) if s.length == 1 => Some(Self::Status),
+            (canokey_protocol::usb::VENDOR_INTERFACE_IN, REQUEST_RESPONSE) => {
+                Some(Self::Response(usize::from(s.length)))
+            }
+            (canokey_protocol::usb::VENDOR_INTERFACE_IN, REQUEST_STATUS) if s.length == 1 => {
+                Some(Self::Status)
+            }
             _ => None,
         }
     }
@@ -65,12 +81,12 @@ impl Transport {
     }
     pub fn status(&self) -> u8 {
         match self.phase {
-            Phase::Idle => 0xff,
-            Phase::Receiving => 3,
-            Phase::Queued | Phase::Executing | Phase::Discarding => 1,
-            Phase::Response => 0,
-            Phase::Sending => 2,
-            Phase::Hold => 4,
+            Phase::Idle => STATUS_IDLE,
+            Phase::Receiving => STATUS_RECEIVING,
+            Phase::Queued | Phase::Executing | Phase::Discarding => STATUS_PROCESSING,
+            Phase::Response => STATUS_RESPONSE,
+            Phase::Sending => STATUS_SENDING,
+            Phase::Hold => STATUS_HOLD,
         }
     }
     pub fn execution_live(&self) -> Option<bool> {
@@ -107,10 +123,11 @@ impl Transport {
     /// A short packet before wLength is exhausted is malformed, not an APDU.
     pub fn receive(&mut self, length: usize, now: u32) -> Option<usize> {
         if self.phase != Phase::Receiving
-            || length > 16
+            || length > canokey_protocol::usb::EP0_PACKET_BYTES
             || length == 0
             || length > self.length - self.received
-            || (length < 16 && length != self.length - self.received)
+            || (length < canokey_protocol::usb::EP0_PACKET_BYTES
+                && length != self.length - self.received)
         {
             return None;
         }

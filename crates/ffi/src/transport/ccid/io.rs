@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ mailbox and timed CCID extension lease, disjoint from Core execution.
+use canokey_protocol::usb::*;
 unsafe extern "C" {
     fn ck_usb_dcd_lock() -> u32;
     fn ck_usb_dcd_unlock(mask: u32);
@@ -45,7 +46,7 @@ pub unsafe extern "C" fn ck_ccid_io_peek() -> i32 {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_ccid_io_idle() -> u8 {
-    locked(|| unsafe { ck_usb_tx_idle(0x83) })
+    locked(|| unsafe { ck_usb_tx_idle(EP_CCID_IN) })
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_ccid_io_live() -> u8 {
@@ -64,7 +65,7 @@ pub unsafe extern "C" fn ck_ccid_io_submit(
         if epoch != GENERATION || (bytes.is_null() && length != 0) {
             -1
         } else {
-            ck_usb_submit(0x83, bytes, length, zlp)
+            ck_usb_submit(EP_CCID_IN, bytes, length, zlp)
         }
     })
 }
@@ -86,7 +87,7 @@ pub unsafe extern "C" fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8
     locked(|| unsafe {
         // Never replace bytes retained by an in-flight extension transfer.
         if epoch == GENERATION
-            && ck_usb_tx_idle(0x83) != 0
+            && ck_usb_tx_idle(EP_CCID_IN) != 0
             && length <= 16
             && interval != 0
             && !bytes.is_null()
@@ -154,7 +155,7 @@ pub unsafe extern "C" fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut
             core::ptr::copy_nonoverlapping(core::ptr::addr_of!(RX).cast(), output, usize::from(n));
             tick.write(RX_TICK);
             QUEUED = 0;
-            ck_usb_receive(3);
+            ck_usb_receive(EP_CCID);
         }
         i32::from(n)
     })
@@ -167,14 +168,22 @@ pub unsafe extern "C" fn ck_ccid_progress() -> u8 {
 /// Take only a complete, bodyless slot poll. Other commands stay queued for
 /// the main loop; a progress callback must never trigger Core dispatch/reset.
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
-pub unsafe fn take_presence(epoch: u32, output: &mut [u8; 10]) -> bool {
+pub unsafe fn take_presence(epoch: u32, output: &mut [u8; canokey_protocol::ccid::HEADER]) -> bool {
     locked(|| unsafe {
-        if epoch != GENERATION || QUEUED != 10 || RX[0] != 0x65 || RX[1..5] != [0; 4] {
+        if epoch != GENERATION
+            || usize::from(QUEUED) != canokey_protocol::ccid::HEADER
+            || RX[0] != canokey_protocol::ccid::SLOT_STATUS
+            || RX[1..5] != [0; 4]
+        {
             return false;
         }
-        core::ptr::copy_nonoverlapping(core::ptr::addr_of!(RX).cast(), output.as_mut_ptr(), 10);
+        core::ptr::copy_nonoverlapping(
+            core::ptr::addr_of!(RX).cast(),
+            output.as_mut_ptr(),
+            canokey_protocol::ccid::HEADER,
+        );
         QUEUED = 0;
-        ck_usb_receive(3);
+        ck_usb_receive(EP_CCID);
         true
     })
 }

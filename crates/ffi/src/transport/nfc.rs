@@ -2,7 +2,10 @@
 //! NFC facade: IRQ-local bus/WTX state is disjoint from main-loop Link/Core.
 //! NFC and USB are mutually exclusive operating modes and share CCID's response
 //! allocation for APDU RX/TX. No borrow of IRQ state crosses a Core call.
-use canokey_protocol::nfc::Packet;
+use canokey_protocol::{
+    apdu,
+    nfc::{self as wire, Packet},
+};
 use canokey_rust_core::runtime::{
     nfc::{Event, Link},
     nfc_io::{Chip, Io},
@@ -95,7 +98,7 @@ pub unsafe extern "C" fn nfc_handler() {
             if ACTIVE {
                 io.interrupt(now, chip);
             } else {
-                let _ = chip.read(0xfff7, &mut [0; 3]);
+                let _ = chip.read(wire::FM_REG_MAIN_IRQ, &mut [0; wire::FM_IRQ_BYTES]);
             }
         });
     }
@@ -106,7 +109,7 @@ unsafe extern "C" fn timer() {
             if ACTIVE {
                 io.tick(now, chip);
                 if io.live() {
-                    ck_nfc_io_schedule(Some(timer), 150);
+                    ck_nfc_io_schedule(Some(timer), wire::WTX_INTERVAL_MS);
                 }
             }
         });
@@ -163,7 +166,7 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
             if io.generation() != GENERATION || !io.begin_execution(now) {
                 return false;
             }
-            ck_nfc_io_schedule(Some(timer), 150);
+            ck_nfc_io_schedule(Some(timer), wire::WTX_INTERVAL_MS);
             true
         });
         if !started {
@@ -172,23 +175,24 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
         let buffer = ck_ccid_response_buffer();
         // Must match runtime/engine.rs::OWNER_NFC, including extended-APDU admission.
         const OWNER_NFC: u8 = 4;
-        let n = ck_core_exchange(OWNER_NFC, input, length, buffer, 258);
+        let n = ck_core_exchange(OWNER_NFC, input, length, buffer, apdu::SHORT_REPLY_BYTES);
         with_io(|io, _, now| {
             ck_nfc_io_schedule(None, 0);
             io.computed(now);
         });
         let n = if n < 2 {
+            // Transport failure synthesizes SW 0x6F00; no valid Core response exists.
             *buffer = 0x6f;
             *buffer.add(1) = 0;
             2
         } else {
             n as usize
         };
-        if n > 258 {
+        if n > apdu::SHORT_REPLY_BYTES {
             fault();
             return;
         }
-        MORE = aggregate && *buffer.add(n - 2) == 0x61;
+        MORE = aggregate && *buffer.add(n - 2) == apdu::MORE_DATA_SW1;
         LENGTH = if MORE { n - 2 } else { n };
         SENT = 0;
         PENDING = true;
@@ -199,8 +203,7 @@ unsafe fn next_response() {
         if SENT == LENGTH && MORE {
             // The existing engine owns response sources/offsets. This request
             // merely continues its stream; no NFC-specific APDU engine exists.
-            const GET_RESPONSE: [u8; 5] = [0, 0xc0, 0, 0, 0];
-            execute(GET_RESPONSE.as_ptr(), GET_RESPONSE.len(), true);
+            execute(apdu::GET_RESPONSE.as_ptr(), apdu::GET_RESPONSE.len(), true);
             return;
         }
         let buffer = ck_ccid_response_buffer();
@@ -224,7 +227,7 @@ unsafe fn next_response() {
 #[inline(never)]
 unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Error>> {
     unsafe {
-        let mut frame = [0; 32];
+        let mut frame = [0; wire::FRAME_LIMIT];
         let n = with_io(|io, _, _| {
             if io.generation() != GENERATION {
                 None
@@ -233,10 +236,10 @@ unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Err
             }
         })?;
         let buffer = ck_ccid_response_buffer();
-        Some(
-            (&mut *core::ptr::addr_of_mut!(LINK))
-                .receive(&frame[..n], core::slice::from_raw_parts_mut(buffer, 261)),
-        )
+        Some((&mut *core::ptr::addr_of_mut!(LINK)).receive(
+            &frame[..n],
+            core::slice::from_raw_parts_mut(buffer, apdu::SHORT_FRAME_BYTES),
+        ))
     }
 }
 #[unsafe(no_mangle)]
@@ -276,12 +279,16 @@ pub unsafe extern "C" fn nfc_loop() {
         match event {
             Ok(Event::Execute(length)) => {
                 let input = core::slice::from_raw_parts(buffer, length);
-                if length >= 5 && input[..4] == [0, 0xa4, 4, 0] {
-                    FIDO = length == 13
-                        && input[4] == 8
-                        && input[5..] == [0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1];
+                // Track SELECT-by-name so extended FIDO replies can aggregate 61xx.
+                if length >= apdu::SHORT_HEADER_BYTES
+                    && input[..4] == [0x00, apdu::INS_SELECT, apdu::SELECT_BY_NAME, 0x00]
+                {
+                    FIDO = length
+                        == apdu::SHORT_HEADER_BYTES + canokey_protocol::apdu::FIDO_AID.len()
+                        && usize::from(input[4]) == apdu::FIDO_AID.len()
+                        && input[apdu::SHORT_HEADER_BYTES..] == apdu::FIDO_AID;
                 }
-                let aggregate = FIDO && length >= 7 && input[4] == 0;
+                let aggregate = FIDO && length >= apdu::EXTENDED_HEADER_BYTES && input[4] == 0;
                 execute(buffer, length, aggregate);
             }
             Ok(Event::Send(packet)) => {
@@ -304,7 +311,7 @@ pub unsafe extern "C" fn nfc_loop() {
 /// Boot-only stored NFC disable policy, before GPIO IRQ is enabled.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_nfc_silence() -> i32 {
-    if Hardware.write(0xffe6, &[0x33]) {
+    if Hardware.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_SILENCE]) {
         0
     } else {
         -1

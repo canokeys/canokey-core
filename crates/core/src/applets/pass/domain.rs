@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![forbid(unsafe_code)]
+pub const SLOT_COUNT: usize = 2;
+pub const OATH_NAME_LIMIT: usize = super::super::OATH_NAME_BYTES;
 pub const PASSWORD_LIMIT: usize = 32;
 pub const KEY_LENGTH: usize = 20;
 pub const CHALLENGE_LIMIT: usize = 64;
@@ -24,7 +26,7 @@ pub enum Error {
 pub struct SlotIndex(usize);
 impl SlotIndex {
     pub fn new(index: u8) -> Result<Self, Error> {
-        if index < 2 {
+        if usize::from(index) < SLOT_COUNT {
             Ok(Self(usize::from(index)))
         } else {
             Err(Error::Slot)
@@ -45,7 +47,7 @@ impl Slot<'_> {
     pub fn validate(self) -> Result<(), Error> {
         match self {
             Self::Oath { id, name, enter }
-                if id == 0 || name.is_empty() || name.len() > 64 || enter > 1 =>
+                if id == 0 || name.is_empty() || name.len() > OATH_NAME_LIMIT || enter > 1 =>
             {
                 Err(Error::Length)
             }

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Credential authorization and signing. All request bytes are owned before entry.
+use super::wire::{assertion_response, auth_data, make_response, pin_protocol};
 use super::{Session, Status, credential, credential_request::Parameters, pin, resident};
 use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
+// getNextAssertion continuation lifetime, in milliseconds.
+const ASSERTION_WINDOW_MS: u32 = 30_000;
+// Two 33-byte positive INTEGERs plus DER tags/lengths.
+const MAX_ECDSA_SIGNATURE_BYTES: usize = 72;
 use canokey_protocol::{cbor::Encoder, der::der_signature};
 
 impl Session {
@@ -49,7 +54,9 @@ impl Session {
         let hash_result = p.crypto.sha256(&params.rp[..params.rp_len], &mut rp);
         let min_pin_length = (params.make
             && params.min_pin_length
-            && policy[pin::RP_HASHES..pin::RP_HASHES + usize::from(policy[pin::FLAGS] >> 3) * 32]
+            && policy[pin::RP_HASHES
+                ..pin::RP_HASHES
+                    + usize::from(policy[pin::FLAGS] >> pin::RP_HASH_COUNT_SHIFT) * 32]
                 .chunks_exact(32)
                 .any(|allowed| allowed == rp))
         .then_some(policy[pin::MIN_PIN_LENGTH]);
@@ -80,7 +87,11 @@ impl Session {
                 params.protocol,
                 &params.auth[..n],
                 &params.client_hash,
-                if params.make { 1 } else { 2 },
+                if params.make {
+                    pin_protocol::PERMISSION_MAKE
+                } else {
+                    pin_protocol::PERMISSION_ASSERT
+                },
                 Some(&rp),
                 p,
             )?;
@@ -106,7 +117,7 @@ impl Session {
                 user_slot = None;
             }
             match credential::open(id, self.sm2, &rp, w.key, p) {
-                Ok(_) if id[1] & 3 != 3 || uv => {
+                Ok(_) if id[1] & credential::CRED_PROTECT_MASK != 3 || uv => {
                     selected = Some(*id);
                     break;
                 }
@@ -220,7 +231,7 @@ impl Session {
     }
     fn next_assertion(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<usize, Status> {
         if self.assertion.remaining == 0
-            || p.device.now().wrapping_sub(self.assertion.started) > 30_000
+            || p.device.now().wrapping_sub(self.assertion.started) > ASSERTION_WINDOW_MS
         {
             return Err(Status::NotAllowed);
         }
@@ -317,10 +328,11 @@ fn respond(
 ) -> Result<usize, Status> {
     let counter = credential::counter(p)?;
     w.input[..32].copy_from_slice(request.rp);
-    w.input[32] =
-        u8::from(request.up) | if request.uv { 4 } else { 0 } | if request.make { 0x40 } else { 0 };
-    w.input[33..37].copy_from_slice(&counter);
-    let mut auth_len = 37;
+    w.input[auth_data::FLAGS_OFFSET] = if request.up { auth_data::UP } else { 0 }
+        | if request.uv { auth_data::UV } else { 0 }
+        | if request.make { auth_data::AT } else { 0 };
+    w.input[auth_data::COUNTER_OFFSET..auth_data::HEADER_BYTES].copy_from_slice(&counter);
+    let mut auth_len = auth_data::HEADER_BYTES;
     if request.make {
         if request.algorithm == alg::MLDSA65 {
             return respond_mldsa_make(request, w, p, response, auth_len);
@@ -338,10 +350,13 @@ fn respond(
         if n != credential::public_length(request.algorithm) {
             return Err(Status::Other);
         }
-        w.input[37..53].copy_from_slice(&super::provision::AAGUID);
-        w.input[53..55].copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
-        w.input[55..55 + credential::ID_BYTES].copy_from_slice(request.id);
-        auth_len = 55 + credential::ID_BYTES;
+        w.input[auth_data::HEADER_BYTES..auth_data::CREDENTIAL_LENGTH_OFFSET]
+            .copy_from_slice(&super::provision::AAGUID);
+        w.input[auth_data::CREDENTIAL_LENGTH_OFFSET..auth_data::CREDENTIAL_OFFSET]
+            .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
+        w.input[auth_data::CREDENTIAL_OFFSET..auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES]
+            .copy_from_slice(request.id);
+        auth_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
         let tail = &mut w.input[auth_len..];
         let capacity = tail.len();
         let mut e = Encoder::new(tail);
@@ -437,7 +452,7 @@ fn respond(
     } else {
         n
     };
-    let mut signature = [0; 72];
+    let mut signature = [0; MAX_ECDSA_SIGNATURE_BYTES];
     signature[..n].copy_from_slice(&w.output[..n]);
     p.memory.wipe(&mut w.key.bytes);
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
@@ -462,13 +477,17 @@ fn respond(
         if request.make {
             e.encoded(&super::encoding::MAKE_HEADER[1..]);
         } else {
-            e.u8(1);
+            e.u8(assertion_response::CREDENTIAL);
             super::encoding::descriptor(&mut e, request.id)?;
-            e.u8(2);
+            e.u8(assertion_response::AUTH_DATA);
         }
         e.bytes_len(auth_len as u64);
         prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
-        e.u8(3);
+        e.u8(if request.make {
+            make_response::ATTESTATION
+        } else {
+            assertion_response::SIGNATURE
+        });
         if request.make {
             if self_attest {
                 e.encoded(super::encoding::SELF_ATTESTATION)
@@ -488,14 +507,19 @@ fn respond(
             ));
         }
         if let Some(user) = &user {
-            e.u8(4);
+            e.u8(assertion_response::USER);
             super::encoding::user(&mut e, user, request.uv && request.details)?;
         }
         if request.count > 1 {
-            e.u8(5).u8(request.count);
+            e.u8(assertion_response::COUNT).u8(request.count);
         }
         if has_blob_key {
-            e.u8(if request.make { 5 } else { 7 }).bytes(&blob_key);
+            e.u8(if request.make {
+                make_response::LARGE_BLOB_KEY
+            } else {
+                assertion_response::LARGE_BLOB_KEY
+            })
+            .bytes(&blob_key);
         }
         e.finish()
     })();
@@ -524,7 +548,7 @@ fn append_extensions(
         + u64::from(request.hmac.active())
         + u64::from(!request.make && request.third_party_payment);
     if extensions != 0 {
-        w.input[32] |= 0x80;
+        w.input[auth_data::FLAGS_OFFSET] |= auth_data::ED;
         let mut blob = [0; 32];
         let mut blob_len = 0;
         if request.get_cred_blob {
@@ -597,28 +621,29 @@ fn respond_mldsa_assertion(
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
     e.map(3 + u64::from(user.is_some()) + u64::from(request.count > 1) + u64::from(has_blob_key));
-    e.u8(1);
+    e.u8(assertion_response::CREDENTIAL);
     super::encoding::descriptor(&mut e, request.id).map_err(|_| Status::Other)?;
-    e.u8(2)
+    e.u8(assertion_response::AUTH_DATA)
         .bytes_len(auth_len as u64)
         .finish()
         .map_err(|_| Status::Other)?;
     let prefix = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     let mut tail = Encoder::new(&mut w.output[prefix..]);
-    tail.u8(3).bytes_len(super::pq::SIGNATURE_BYTES as u64);
+    tail.u8(assertion_response::SIGNATURE)
+        .bytes_len(super::pq::SIGNATURE_BYTES as u64);
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
     if let Some(user) = &user {
-        tail.u8(4);
+        tail.u8(assertion_response::USER);
         super::encoding::user(&mut tail, user, request.uv && request.details)
             .map_err(|_| Status::Other)?;
     }
     if request.count > 1 {
-        tail.u8(5).u8(request.count);
+        tail.u8(assertion_response::COUNT).u8(request.count);
     }
     if has_blob_key {
         let mut key = [0; 32];
         credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        tail.u8(7).bytes(&key);
+        tail.u8(assertion_response::LARGE_BLOB_KEY).bytes(&key);
         p.memory.wipe(&mut key);
     }
     tail.finish().map_err(|_| Status::Other)?;
@@ -656,7 +681,7 @@ fn respond_mldsa_make(
     let mut ce = Encoder::new(&mut cose[..]);
     super::encoding::mldsa_public_header(&mut ce).map_err(|_| Status::Other)?;
     let cose_prefix_len = 32 - ce.writer().len();
-    let auth_prefix_len = 55 + credential::ID_BYTES + cose_prefix_len;
+    let auth_prefix_len = auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES + cose_prefix_len;
     let has_blob_key = request.id[1] & resident::LARGE_BLOB_KEY != 0;
     w.output[0] = 0;
     let mut e = Encoder::new(&mut w.output[1..]);
@@ -666,16 +691,20 @@ fn respond_mldsa_make(
     e.finish().map_err(|_| Status::Other)?;
     let auth_start = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     w.output[auth_start..auth_start + auth_prefix].copy_from_slice(&w.input[..auth_prefix]);
-    w.output[auth_start + 37..auth_start + 53].copy_from_slice(&super::provision::AAGUID);
-    w.output[auth_start + 53..auth_start + 55]
+    w.output
+        [auth_start + auth_data::HEADER_BYTES..auth_start + auth_data::CREDENTIAL_LENGTH_OFFSET]
+        .copy_from_slice(&super::provision::AAGUID);
+    w.output[auth_start + auth_data::CREDENTIAL_LENGTH_OFFSET
+        ..auth_start + auth_data::CREDENTIAL_OFFSET]
         .copy_from_slice(&(credential::ID_BYTES as u16).to_be_bytes());
-    let cose_at = auth_start + 55 + credential::ID_BYTES;
-    w.output[auth_start + 55..cose_at].copy_from_slice(request.id);
+    let cose_at = auth_start + auth_data::CREDENTIAL_OFFSET + credential::ID_BYTES;
+    w.output[auth_start + auth_data::CREDENTIAL_OFFSET..cose_at].copy_from_slice(request.id);
     let public_at = cose_at + cose_prefix_len;
     w.output[cose_at..public_at].copy_from_slice(&cose[..cose_prefix_len]);
     w.output[public_at..public_at + extension_len].copy_from_slice(&w.input[auth_prefix..auth_end]);
     let mut tail = Encoder::new(&mut w.output[public_at + extension_len..]);
-    tail.u8(3).encoded(super::encoding::ATTESTATION);
+    tail.u8(make_response::ATTESTATION)
+        .encoded(super::encoding::ATTESTATION);
     tail.finish().map_err(|_| Status::Other)?;
     // Stream::attest inserts the encoded DER signature here, exactly once.
     let signature_at = crate::runtime::workspace::OUTPUT_BYTES - tail.writer().len();
@@ -686,7 +715,7 @@ fn respond_mldsa_make(
     if has_blob_key {
         let mut key = [0; 32];
         credential::large_blob_key(request.id, request.rp, &mut key, p)?;
-        tail.u8(5).bytes(&key);
+        tail.u8(make_response::LARGE_BLOB_KEY).bytes(&key);
         p.memory.wipe(&mut key);
     }
     tail.finish().map_err(|_| Status::Other)?;

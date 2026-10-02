@@ -210,6 +210,7 @@ impl Attestation {
         let index = self.count;
         let start = self.total;
         if repo::rsa(a) {
+            // AlgorithmIdentifier: rsaEncryption 1.2.840.113549.1.1.1, NULL parameters.
             self.boundary(b"\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00")?;
             let bi = self.count;
             let bs = self.total;
@@ -253,6 +254,7 @@ impl Attestation {
             let ast = self.total;
             self.boundary(&[])?;
             if ec {
+                // id-ecPublicKey 1.2.840.10045.2.1; next OID identifies the curve.
                 self.oid(b"\x2a\x86\x48\xce\x3d\x02\x01")?
             }
             self.oid(oid)?;
@@ -290,6 +292,7 @@ impl Attestation {
             self.classic_public(id, &m, p)?
         };
         (|| {
+            // X.509 explicit version [0], INTEGER2 (v3).
             self.bytes(b"\xa0\x03\x02\x01\x02")?;
             let mut serial = [0; CERTIFICATE_SERIAL_BYTES];
             p.crypto
@@ -299,6 +302,7 @@ impl Attestation {
             self.bytes(SIGNATURE_ALGORITHM)?;
             self.segment(SOURCE_ISSUER, issuer.0, issuer.1)?;
             self.segment(SOURCE_ISSUER, validity.0, validity.1)?;
+            // Subject Name: commonName OID2.5.4.3, UTF8String26; append slot hex.
             self.bytes(
                 b"\x30\x25\x31\x23\x30\x21\x06\x03\x55\x04\x03\x0c\x1aCanoKey PIV Attestation ",
             )?;
@@ -306,12 +310,14 @@ impl Attestation {
             let slot = repo::SLOTS[id];
             self.bytes(&[hex[(slot >> 4) as usize], hex[(slot & 15) as usize]])?;
             self.spki(m[repo::ALGORITHM], n)?;
+            // Extensions [3]: CanoKey serial-number OID 1.3.6.1.4.1.66602.1.1, OCTET STRING (4 bytes).
             self.bytes(
                 b"\xa3\x28\x30\x26\x30\x12\x06\x0a\x2b\x06\x01\x04\x01\x84\x88\x2a\x01\x01\x04\x04",
             )?;
             let mut serial = [0; 4];
             p.device.serial(&mut serial);
             self.bytes(&serial)?;
+            // CanoKey PIN/touch policy OID 1.3.6.1.4.1.66602.1.2, OCTET STRING (2 bytes).
             self.bytes(b"\x30\x10\x06\x0a\x2b\x06\x01\x04\x01\x84\x88\x2a\x01\x02\x04\x02")?;
             self.bytes(&m[repo::PIN_POLICY..repo::TOUCH_POLICY + 1])?;
             self.wrap(0, 0, DER_SEQUENCE)?;
@@ -513,7 +519,7 @@ fn tlv(off: usize, end: usize, p: &mut Platform<'_>) -> Result<Tlv, Sw> {
     let mut h = 2;
     let mut len = b[1] as usize;
     if len & DER_LONG_LENGTH != 0 {
-        let count = len & 127;
+        let count = len & !DER_LONG_LENGTH;
         if count == 0 || count > 2 || off + 2 + count > end {
             return Err(error);
         }
@@ -529,7 +535,7 @@ fn tlv(off: usize, end: usize, p: &mut Platform<'_>) -> Result<Tlv, Sw> {
         for v in &b[2..h] {
             len = len * 256 + *v as usize
         }
-        if len < 128 {
+        if len < DER_LONG_LENGTH {
             return Err(error);
         }
     }

@@ -4,7 +4,8 @@
 use super::{Command, Key, Status};
 use canokey_protocol::cbor::Event;
 
-pub(super) const PREFIX: usize = 34;
+// authenticatorConfig auth prefix: 32 bytes 0xFF, command, subcommand.
+pub(super) const PREFIX: usize = 32 + 1 + 1;
 // Keep semantic fields together before the large byte buffer. Thumb-1 can
 // address them without rebuilding offsets past the entire request each time.
 #[repr(C)]
@@ -92,7 +93,12 @@ impl Parser {
         if !self.fields.subcommand_seen {
             return Err(Status::MissingParameter);
         }
-        if self.fields.command == super::CONFIG && !matches!(p.subcommand, 2..=4) {
+        if self.fields.command == super::CONFIG
+            && !matches!(
+                p.subcommand,
+                super::wire::config::TOGGLE_ALWAYS_UV..=super::wire::config::VENDOR_LONG_RESET
+            )
+        {
             return Err(Status::InvalidParameter);
         }
         // authenticatorConfig checks auth length here only for a supplied
@@ -100,7 +106,7 @@ impl Parser {
         if self.fields.command == super::CONFIG
             && p.auth_len != 0
             && p.protocol != 0
-            && p.auth_len != if p.protocol == 1 { 16 } else { 32 }
+            && p.auth_len != super::wire::pin_protocol::auth_bytes(p.protocol)
         {
             return Err(Status::InvalidParameter);
         }
@@ -241,7 +247,10 @@ impl Fields {
                 _ => return Err(Status::UnexpectedType),
             },
             Some(4) => match *event {
-                Event::Bytes(n @ (16 | 32)) => {
+                Event::Bytes(n)
+                    if usize::from(n) == super::wire::pin_protocol::AUTH_V1_BYTES
+                        || usize::from(n) == super::wire::pin_protocol::AUTH_V2_BYTES =>
+                {
                     self.params.auth_len = usize::from(n);
                     self.auth_offset = Some(0);
                 }
@@ -263,7 +272,7 @@ impl Fields {
         if self.rp_array && self.depth == 2 {
             match *event {
                 Event::Text(n) => {
-                    if n > 254 {
+                    if usize::from(n) > super::wire::RP_ID_MAX {
                         return Err(Status::InvalidLength);
                     }
                     let count = self.params.rp_count.as_mut().unwrap();

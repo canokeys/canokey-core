@@ -2,7 +2,10 @@
 //! IRQ-local USB facade. No USB event accesses Core, APDU/HID/CCID parsers or PKE.
 //! All exports except init/deinit require the platform IRQ mask. Native packet
 //! callbacks publish mailboxes only. No Rust borrow crosses such a callback.
-use canokey_protocol::usb::Setup;
+use canokey_protocol::usb::*;
+// HALTED packs two bits per endpoint: OUT then IN, including EP0.
+const HALT_BITS_PER_ENDPOINT: u8 = 2;
+const HALT_PAIR_MASK: u8 = 0x03;
 use canokey_rust_core::runtime::usb::{
     ControlIn, Device, Reply,
     descriptors::{Configuration, Interfaces},
@@ -66,7 +69,7 @@ static mut DEVICE: Device = Device::new();
 static mut TX: [Tx; 4] = [Tx::EMPTY; 4];
 static mut HALTED: u8 = 0;
 static mut SUSPENDED: bool = false;
-static mut CONTROL: [u8; 160] = [0; 160];
+static mut CONTROL: [u8; CONTROL_BUFFER_BYTES] = [0; CONTROL_BUFFER_BYTES];
 static mut CONTROL_IN: ControlIn = ControlIn::new();
 #[cfg(feature = "usb-webusb")]
 static mut CONTROL_WEB: bool = false;
@@ -125,20 +128,20 @@ unsafe fn next_control() {
 unsafe fn reset_pipe(ep: u8, enabled: bool) {
     unsafe {
         ck_usb_dcd_close(ep);
-        ck_usb_dcd_close(ep | 0x80);
+        ck_usb_dcd_close(ep | DIRECTION_IN);
         TX[ep as usize] = Tx::EMPTY;
-        HALTED &= !(3 << (ep * 2));
+        HALTED &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
         match ep {
-            3 => ck_ccid_packet_reset(),
+            EP_CCID => ck_ccid_packet_reset(),
             #[cfg(feature = "usb-hid")]
-            2 => ck_hid_packet_reset(),
+            EP_HID => ck_hid_packet_reset(),
             #[cfg(feature = "usb-keyboard")]
-            1 => ck_keyboard_packet_reset(),
+            EP_KEYBOARD => ck_keyboard_packet_reset(),
             _ => (),
         }
         if enabled {
             ck_usb_dcd_open(ep);
-            ck_usb_dcd_open(ep | 0x80);
+            ck_usb_dcd_open(ep | DIRECTION_IN);
             ck_usb_dcd_receive(ep);
         }
     }
@@ -148,7 +151,7 @@ unsafe fn endpoints(enabled: bool) {
         #[cfg(feature = "usb-webusb")]
         crate::transport::webusb::reset();
         DEVICE.configured = false;
-        for ep in 1..=3 {
+        for ep in EP_KEYBOARD..=EP_CCID {
             reset_pipe(ep, enabled && INTERFACES.endpoint(ep as u16));
         }
         DEVICE.configured = enabled;
@@ -159,15 +162,15 @@ unsafe fn endpoints(enabled: bool) {
 // Invalidate software mailboxes without touching hardware FIFOs on BUSRST.
 unsafe fn reset_software_pipes() {
     unsafe {
-        for ep in 1..=3 {
+        for ep in EP_KEYBOARD..=EP_CCID {
             TX[ep as usize] = Tx::EMPTY;
-            HALTED &= !(3 << (ep * 2));
+            HALTED &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
             match ep {
-                3 => ck_ccid_packet_reset(),
+                EP_CCID => ck_ccid_packet_reset(),
                 #[cfg(feature = "usb-hid")]
-                2 => ck_hid_packet_reset(),
+                EP_HID => ck_hid_packet_reset(),
                 #[cfg(feature = "usb-keyboard")]
-                1 => ck_keyboard_packet_reset(),
+                EP_KEYBOARD => ck_keyboard_packet_reset(),
                 _ => (),
             }
         }
@@ -282,7 +285,10 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
             return;
         };
         #[cfg(feature = "usb-webusb")]
-        if DEVICE.configured && s.index == INTERFACES.webusb() as u16 && s.kind & 0x7f == 0x41 {
+        if DEVICE.configured
+            && s.index == INTERFACES.webusb() as u16
+            && s.kind & !DIRECTION_IN == VENDOR_INTERFACE_OUT
+        {
             use crate::transport::webusb::{self as web, Action};
             match web::setup(s, INTERFACES.webusb()) {
                 Some(Action::Receive) => {
@@ -310,7 +316,10 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
             return;
         }
         let halted = if INTERFACES.endpoint(s.index) {
-            HALTED & (1 << ((s.index as u8 & 3) * 2 + ((s.index >> 7) as u8))) != 0
+            HALTED
+                & (1 << ((s.index as u8 & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT
+                    + ((s.index >> 7) as u8)))
+                != 0
         } else {
             false
         };
@@ -361,17 +370,17 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
                 }
 
                 let ep = if index == INTERFACES.ccid() {
-                    3
+                    EP_CCID
                 } else if INTERFACES.hid && index == 0 {
-                    2
+                    EP_HID
                 } else {
-                    1
+                    EP_KEYBOARD
                 };
                 reset_pipe(ep, true);
                 status(Phase::StatusIn);
             }
             Reply::Halt(ep, halt) => {
-                let bit = 1 << ((ep & 3) * 2 + (ep >> 7));
+                let bit = 1 << ((ep & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT + (ep >> 7));
                 if halt {
                     HALTED |= bit;
                 } else {
@@ -394,13 +403,25 @@ pub unsafe extern "C" fn ck_usb_configured() -> u8 {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_usb_tx_idle(ep: u8) -> u8 {
-    unsafe { u8::from(ep & !0x83 == 0 && ep & 3 != 0 && !TX[(ep & 3) as usize].active) }
+    unsafe {
+        u8::from(
+            ep & !ENDPOINT_ADDRESS_MASK == 0
+                && ep & ENDPOINT_NUMBER_MASK != 0
+                && !TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active,
+        )
+    }
 }
 unsafe fn transmit(ep: u8) -> bool {
     unsafe {
-        let tx = &mut TX[(ep & 3) as usize];
-        let n = tx.remaining.min(if ep & 3 == 1 { 8 } else { 64 });
-        if ck_usb_dcd_write(ep | 0x80, tx.bytes, n) == 0 {
+        let tx = &mut TX[(ep & ENDPOINT_NUMBER_MASK) as usize];
+        let n = tx
+            .remaining
+            .min(if ep & ENDPOINT_NUMBER_MASK == EP_KEYBOARD {
+                KEYBOARD_PACKET_BYTES as u16
+            } else {
+                DATA_PACKET_BYTES as u16
+            });
+        if ck_usb_dcd_write(ep | DIRECTION_IN, tx.bytes, n) == 0 {
             return false;
         }
         if n != 0 {
@@ -413,24 +434,30 @@ unsafe fn transmit(ep: u8) -> bool {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i32 {
     unsafe {
-        if !DEVICE.configured || ep & 0x80 == 0 || ep & 0x7f == 0 || !INTERFACES.endpoint(ep as u16)
+        if !DEVICE.configured
+            || ep & DIRECTION_IN == 0
+            || ep & ENDPOINT_NUMBER_MASK == 0
+            || !INTERFACES.endpoint(ep as u16)
         {
             return -1;
         }
-        if SUSPENDED || HALTED & (1 << ((ep & 3) * 2 + 1)) != 0 || TX[(ep & 3) as usize].active {
+        if SUSPENDED
+            || HALTED & (1 << ((ep & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT + 1)) != 0
+            || TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
+        {
             return 0;
         }
         if length != 0 && bytes.is_null() {
             return -1;
         }
-        TX[(ep & 3) as usize] = Tx {
+        TX[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx {
             bytes,
             remaining: length,
             zlp: zlp != 0 && length != 0,
             active: true,
         };
         if !transmit(ep) {
-            TX[(ep & 3) as usize] = Tx::EMPTY;
+            TX[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx::EMPTY;
             return -1;
         }
         1
@@ -439,7 +466,8 @@ pub unsafe extern "C" fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zl
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_usb_receive(ep: u8) {
     unsafe {
-        if DEVICE.configured && ep & 0x80 == 0 && ep != 0 && INTERFACES.endpoint(ep as u16) {
+        if DEVICE.configured && ep & DIRECTION_IN == 0 && ep != 0 && INTERFACES.endpoint(ep as u16)
+        {
             ck_usb_dcd_receive(ep);
         }
     }
@@ -460,18 +488,21 @@ pub unsafe extern "C" fn ck_usb_in(ep: u8) {
 
                 _ => (),
             }
-        } else if ep & !0x83 == 0 && DEVICE.configured && TX[(ep & 3) as usize].active {
-            if TX[(ep & 3) as usize].remaining != 0 {
+        } else if ep & !ENDPOINT_ADDRESS_MASK == 0
+            && DEVICE.configured
+            && TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
+        {
+            if TX[(ep & ENDPOINT_NUMBER_MASK) as usize].remaining != 0 {
                 if !transmit(ep) {
                     ck_usb_reset();
                 }
-            } else if TX[(ep & 3) as usize].zlp {
-                TX[(ep & 3) as usize].zlp = false;
+            } else if TX[(ep & ENDPOINT_NUMBER_MASK) as usize].zlp {
+                TX[(ep & ENDPOINT_NUMBER_MASK) as usize].zlp = false;
                 if !transmit(ep) {
                     ck_usb_reset();
                 }
             } else {
-                TX[(ep & 3) as usize] = Tx::EMPTY;
+                TX[(ep & ENDPOINT_NUMBER_MASK) as usize] = Tx::EMPTY;
             }
         }
     }
@@ -503,8 +534,8 @@ pub unsafe extern "C" fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8
                         }
                     }
                 }
-                Phase::Led if length == 2 && *bytes == 1 => {
-                    DEVICE.leds = *bytes.add(1) & 31;
+                Phase::Led if length == 2 && *bytes == KEYBOARD_REPORT_ID => {
+                    DEVICE.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
                     status(Phase::StatusIn);
                 }
                 _ => stall(),
@@ -515,12 +546,16 @@ pub unsafe extern "C" fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8
             return 0;
         }
         match ep {
-            3 if length <= 64 => ck_ccid_packet_out(bytes, length),
+            EP_CCID if usize::from(length) <= DATA_PACKET_BYTES => {
+                ck_ccid_packet_out(bytes, length)
+            }
             #[cfg(feature = "usb-hid")]
-            2 if length == 64 => ck_hid_packet_out(bytes),
+            EP_HID if usize::from(length) == DATA_PACKET_BYTES => ck_hid_packet_out(bytes),
             #[cfg(feature = "usb-keyboard")]
-            1 if length == 2 && *bytes == 1 => {
-                DEVICE.leds = *bytes.add(1) & 31;
+            EP_KEYBOARD
+                if usize::from(length) == CONSUMER_REPORT_BYTES && *bytes == KEYBOARD_REPORT_ID =>
+            {
+                DEVICE.leds = *bytes.add(1) & KEYBOARD_LED_MASK;
                 1
             }
             _ => 1, // Ignore malformed interrupt reports; never parse stale tail.

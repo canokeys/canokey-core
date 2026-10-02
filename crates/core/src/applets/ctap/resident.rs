@@ -12,9 +12,9 @@ pub(super) const RESIDENT: u8 = 0x04;
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
 const RP_HASH_BYTES: usize = 32;
 const RP_DISPLAY_BYTES: usize = 32;
-const USER_ID_BYTES: usize = 64;
-const USER_NAME_BYTES: usize = 64;
-const USER_DISPLAY_BYTES: usize = 64;
+pub(super) const USER_ID_BYTES: usize = 64;
+pub(super) const USER_NAME_BYTES: usize = 64;
+pub(super) const USER_DISPLAY_BYTES: usize = 64;
 const FIELD_COUNT: usize = 5;
 const FIXED_BYTES: usize = ID_BYTES + RP_HASH_BYTES;
 pub(super) const MAX_BYTES: usize = FIXED_BYTES
@@ -313,7 +313,7 @@ pub(super) fn discover(
         *next -= 1;
         if let Some((_, entry)) = read(*next, out, p)? {
             if entry.rp_hash == rp
-                && (uv || entry.id[1] & 3 == 1)
+                && (uv || entry.id[1] & super::credential::CRED_PROTECT_MASK == 1)
                 && super::credential::permitted_id(entry.id)
             {
                 return Ok(Some((*next, *entry.id)));

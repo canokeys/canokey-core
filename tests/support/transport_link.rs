@@ -7,6 +7,8 @@ extern crate self as canokey_rust_core;
 pub mod ctaphid;
 #[path = "../../crates/core/src/runtime/keyboard.rs"]
 pub mod keyboard_policy;
+#[path = "../../crates/protocol/src/usb.rs"]
+pub mod usb;
 pub mod runtime {
     pub use crate::keyboard_policy as keyboard;
 }

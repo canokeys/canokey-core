@@ -97,7 +97,7 @@ native_port! { impl Device for DeviceBackend {
         #[cfg(feature = "device-runtime")]
         {
             if kind == 3 {
-                let mut id=[0;13];
+                let mut id=[0;crate::contracts::CHIP_ID_BYTES];
                 unsafe { ck_board_chip_id(id.as_mut_ptr()); }
                 let len=output.len().min(id.len());output[..len].copy_from_slice(&id[..len]);
                 return len;
@@ -115,7 +115,7 @@ native_port! { impl Device for DeviceBackend {
             let data: &[u8]=match kind {
                 0 => b"0.0.0",
                 1 => b"CanoKey Rust Virtual Card",
-                3 => &[0;13],
+                3 => &[0;crate::contracts::CHIP_ID_BYTES],
                 _ => b"unknown",
             };
             let len=output.len().min(data.len());output[..len].copy_from_slice(&data[..len]);len

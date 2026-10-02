@@ -29,7 +29,7 @@ fn parse_sm2_packet(
         .copy_from_slice(SM2_DEFAULT_ID);
     if exp.first() == Some(&ga_tag::PEER_ID) {
         let (_, v) = codec::take(exp)?;
-        if v.is_empty() || v.len() > 32 {
+        if v.is_empty() || v.len() > limits::SM2_ID_MAX {
             return Err(Sw::WRONG_DATA);
         }
         packet[sm2_packet::PEER_ID] = v.len() as u8;
@@ -39,13 +39,13 @@ fn parse_sm2_packet(
     packet[sm2_packet::OWN_ID + 1..sm2_packet::OWN_ID + 1 + SM2_DEFAULT_ID.len()]
         .copy_from_slice(SM2_DEFAULT_ID);
     if let Some(v) = own {
-        if v.len() > 32 {
+        if v.len() > limits::SM2_ID_MAX {
             return Err(Sw::WRONG_DATA);
         }
         packet[sm2_packet::OWN_ID] = v.len() as u8;
         packet[sm2_packet::OWN_ID + 1..sm2_packet::OWN_ID + 1 + v.len()].copy_from_slice(v);
     }
-    let mut klen = 16;
+    let mut klen = limits::SM2_KDF_DEFAULT_BYTES;
     if !exp.is_empty() {
         let (t, v) = codec::take(exp)?;
         if t != ga_tag::OUTPUT_LENGTH || v.len() != 2 {
@@ -53,7 +53,7 @@ fn parse_sm2_packet(
         }
         klen = u16::from_be_bytes(v.try_into().unwrap()) as usize;
     }
-    if !exp.is_empty() || klen == 0 || klen > 128 {
+    if !exp.is_empty() || klen == 0 || klen > limits::SM2_KDF_MAX_BYTES {
         return Err(Sw::WRONG_DATA);
     }
     Ok((packet, klen))
@@ -97,10 +97,11 @@ impl Piv {
         }
         let rsa = repo::rsa(a);
         let point = usize::from(!rsa && a != alg::ED25519 && a != alg::X25519);
-        // RSA includes the modulus header and exponent TLV; EC includes its
+        // RSA: four-byte modulus TLV header + two-byte exponent header + exponent4.
+        // EC includes its
         // point tag and optional uncompressed-point prefix.
         let inner = if rsa {
-            n + 4 + 6
+            n + 4 + (2 + crate::ports::key_layout::EXPONENT_BYTES)
         } else {
             n + point + if n + point < 128 { 2 } else { 3 }
         };
@@ -124,7 +125,8 @@ impl Piv {
         )?;
         if rsa {
             self.suffix[..2].copy_from_slice(&[key_tag::EXPONENT, 0x04]);
-            self.suffix[2..].copy_from_slice(&w.key.bytes[..4]);
+            self.suffix[2..]
+                .copy_from_slice(&w.key.bytes[..crate::ports::key_layout::EXPONENT_BYTES]);
             self.suffix_len = 6;
         } else if point != 0 {
             self.header[at] = EC_POINT_UNCOMPRESSED;
@@ -141,6 +143,7 @@ impl Piv {
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
         self.authorized()?;
+        // Minimum AC template: two-byte outer header plus algorithm TLV(3).
         if self.used < 5 {
             return Err(Sw::WRONG_LENGTH);
         }
@@ -204,7 +207,7 @@ impl Piv {
         w: &mut Workspace,
         p: &mut Platform<'_>,
     ) -> Result<u32, Sw> {
-        let mut fields: [Option<&[u8]>; 6] = [None; 6];
+        let mut fields: [Option<&[u8]>; ga_field::COUNT] = [None; ga_field::COUNT];
         for (i, field) in fields.iter_mut().enumerate() {
             *field = self.ga.field(i, w.input);
         }
@@ -373,7 +376,7 @@ impl Piv {
                 return Err(Sw::WRONG_DATA);
             }
             let own = field(ga_field::WITNESS);
-            if own.is_some_and(|v| v.is_empty() || v.len() > 32) {
+            if own.is_some_and(|v| v.is_empty() || v.len() > limits::SM2_ID_MAX) {
                 return Err(Sw::WRONG_DATA);
             }
             let exp = field(ga_field::EXPONENTIATION);
@@ -382,7 +385,7 @@ impl Piv {
             // No peer template (85): initiator step 1 generates an ephemeral
             // key and retains it for a later request on this same key slot.
             if exp.is_none() {
-                let mut identity = [0; 32];
+                let mut identity = [0; limits::SM2_ID_MAX];
                 let identity_len = own.map_or(0, |v| {
                     identity[..v.len()].copy_from_slice(v);
                     v.len()

@@ -58,10 +58,36 @@ because CIU page programming reads words, including non-inline file payloads.
 
 Firmware startup and recovery remain the original C implementation.
 
+## Storage usage response
+
+ADMIN `00 41 P1 00` accepts an empty body and P1 0 or 1. P1 0 returns
+two bytes: physically allocated KiB and total KiB, each rounded down and
+encoded as a single byte. P1 1 returns 48 bytes: eight six-byte entries
+`ID | flags | size_be32`, with size measured in bytes.
+
+| ID | Attribution | Record IDs (hexadecimal) |
+| --- | --- | --- |
+| 1 | ADMIN | `0x01` |
+| 2 | OpenPGP | `0x04..0x0D` |
+| 3 | PIV | `0x0E..0x4C` |
+| 4 | OATH | `0x02..0x03` |
+| 5 | CTAP | `0x4D..0xB7`, including reserved holes |
+| 6 | NDEF | `0xB8..0xB9` |
+| 7 | PASS | `0x00` |
+| 0 | System overhead (last entry) | Physical allocation minus attributed sizes |
+
+Applet sizes sum logical record lengths, not their allocated filesystem pages.
+Flag `0x01` means at least one record in that namespace is missing; optional
+records and reserved holes count, so this flag does not indicate corruption.
+Other flag bits are zero. The final system entry has zero flags and includes
+filesystem metadata, page slack and unattributed allocation. Its size saturates
+at zero if attributed sizes exceed physical usage. A storage error other than
+missing, or physical usage exceeding total capacity, returns `0x6900`.
+
 ## Remaining compatibility work
 
 This is not yet the full C ADMIN command set. Device configuration/enable flags,
-version/serial/usage reporting, custom keyboard maps
+version/serial reporting, custom keyboard maps
 and vendor hooks still need their typed services and normal functional coverage.
 They currently return INS_NOT_SUPPORTED. Commands managing CTAP/PIV/OpenPGP/
 NDEF will arrive only with those applets; none are linked implicitly.

@@ -44,7 +44,7 @@ impl Piv {
             // Preserve custom IDs when resuming an interrupted explicit reset.
             // A corrupt existing mapping must never trigger an implicit reset.
             match p.storage.load(Record::PivConfig, &mut self.config) {
-                Ok(10) if repo::config_valid(&self.config) => (),
+                Ok(repo::CONFIG_BYTES) if repo::config_valid(&self.config) => (),
                 Err(StorageError::Missing) => self.config = repo::DEFAULT_CONFIG,
                 _ => return Err(Sw::UNABLE_TO_PROCESS),
             }
@@ -53,7 +53,7 @@ impl Piv {
         if p.storage
             .load(Record::PivConfig, &mut self.config)
             .map_err(repo::io)?
-            != 10
+            != repo::CONFIG_BYTES
             || !repo::config_valid(&self.config)
         {
             return Err(Sw::UNABLE_TO_PROCESS);

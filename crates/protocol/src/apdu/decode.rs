@@ -93,7 +93,7 @@ impl Layout {
 /// tests; firmware transport uses `FrameDecoder::feed_events` to avoid reassembly.
 #[doc(hidden)]
 pub fn parse(bytes: &[u8]) -> Result<Command<'_>, Error> {
-    if bytes.len() < 4 || bytes.len() > 65544 {
+    if bytes.len() < 4 || bytes.len() > super::MAX_FRAME {
         return Err(Error::Length);
     }
     let layout = Layout::decode(bytes, bytes.len())?;
@@ -128,7 +128,7 @@ pub struct FrameDecoder {
 
 impl FrameDecoder {
     pub fn new(total: usize) -> Result<Self, Error> {
-        if !(4..=65544).contains(&total) {
+        if !(4..=super::MAX_FRAME).contains(&total) {
             return Err(Error::Length);
         }
         Ok(Self {

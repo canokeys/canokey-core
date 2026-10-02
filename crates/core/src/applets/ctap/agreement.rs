@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Incremental COSE EC2 key agreement shared by clientPIN and hmac-secret.
 //! The enclosing schema owns the coordinates and its length-error policy.
-use super::{Key, Status};
+use super::{Key, Status, wire::cose};
 use canokey_protocol::cbor::Event;
 
 // Sentinel for a non-integer/unsupported-width label. It is outside the
@@ -40,7 +40,7 @@ impl Parser {
             return Ok(false);
         }
         if let Some((key, _)) = self.body {
-            let target = if key == -2 {
+            let target = if key == cose::X {
                 &mut coordinates[..32]
             } else {
                 &mut coordinates[32..]
@@ -50,7 +50,7 @@ impl Parser {
         }
         let Some(key) = self.key.take() else {
             if matches!(event, Event::End) {
-                return if self.seen == 0x1f {
+                return if self.seen == cose::AGREEMENT_FIELDS {
                     Ok(true)
                 } else {
                     Err(Status::MissingParameter)
@@ -66,7 +66,7 @@ impl Parser {
                 self.skip = 1;
             }
         } else {
-            if matches!(key, -2 | -3) {
+            if matches!(key, cose::X | cose::Y) {
                 match *event {
                     Event::Bytes(32) => self.body = Some((key, 0)),
                     Event::Bytes(_) => return Err(length_error),
@@ -83,11 +83,11 @@ impl Parser {
 /// hmac-secret. Unknown optional members are ignored by the caller.
 fn field(key: i8, event: &canokey_protocol::cbor::Event<'_>) -> Result<u8, Status> {
     let (bit, expected) = match key {
-        1 => (1, Some(2)),
-        3 => (2, Some(-25)),
-        -1 => (4, Some(1)),
-        -2 => (8, None),
-        -3 => (16, None),
+        cose::KTY => (0x01, Some(cose::EC2)),
+        cose::ALG => (0x02, Some(cose::ECDH_ES_HKDF256)),
+        cose::CRV => (0x04, Some(cose::P256)),
+        cose::X => (0x08, None),
+        cose::Y => (0x10, None),
         _ => return Ok(0),
     };
     if let Some(expected) = expected {

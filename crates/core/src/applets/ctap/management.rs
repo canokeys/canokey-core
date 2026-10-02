@@ -16,7 +16,9 @@ mod parser;
 pub(super) use parser::{Parsed, Parser};
 
 const PUBLIC_KEY_OFFSET: usize = crate::ports::key_layout::P;
-const CREDENTIAL_MANAGEMENT_PERMISSION: u8 = 4;
+use super::wire::management as cm;
+const CREDENTIAL_MANAGEMENT_PERMISSION: u8 = super::wire::pin_protocol::PERMISSION_CREDENTIALS;
+const VISITED_BYTES: usize = (Record::CTAP_CREDENTIALS as usize).div_ceil(8);
 const LARGE_BLOB_KEY_OFFSET: usize = 320;
 const LARGE_BLOB_KEY_END: usize = LARGE_BLOB_KEY_OFFSET + 32;
 
@@ -30,15 +32,20 @@ fn mldsa_public_response(
 ) -> Result<(super::pq::Pending, usize), Status> {
     output[0] = 0;
     let mut e = Encoder::new(&mut output[1..]);
-    super::encoding::management_header(&mut e, entry, subcommand == 4, blob_key.is_some())
-        .map_err(|_| Status::Other)?;
+    super::encoding::management_header(
+        &mut e,
+        entry,
+        subcommand == cm::CREDENTIAL_BEGIN,
+        blob_key.is_some(),
+    )
+    .map_err(|_| Status::Other)?;
     e.u8(8).finish().map_err(|_| Status::Other)?;
     super::encoding::mldsa_public_header(&mut e).map_err(|_| Status::Other)?;
     let public_at = crate::runtime::workspace::OUTPUT_BYTES - e.writer().len();
     super::encoding::management_tail(
         &mut e,
         id,
-        (subcommand == 4).then_some(total),
+        (subcommand == cm::CREDENTIAL_BEGIN).then_some(total),
         blob_key.map(|key| &key[..]),
     )
     .map_err(|_| Status::Other)?;
@@ -64,7 +71,7 @@ pub(super) struct Cursor {
     metadata_only: bool,
     next: u8,
     rp: [u8; 32],
-    visited: [u8; 13],
+    visited: [u8; VISITED_BYTES],
 }
 impl Cursor {
     pub const fn new() -> Self {
@@ -73,7 +80,7 @@ impl Cursor {
             metadata_only: false,
             next: 0,
             rp: [0; 32],
-            visited: [0; 13],
+            visited: [0; VISITED_BYTES],
         }
     }
 }
@@ -178,7 +185,9 @@ fn parse(bytes: &[u8]) -> Result<Fields<'_>, Status> {
                     display,
                 });
             }
-            0x80 => fields.metadata_only = d.bool().map_err(|_| Status::UnexpectedType)?,
+            key if key == u64::from(cm::VENDOR_METADATA_ONLY) => {
+                fields.metadata_only = d.bool().map_err(|_| Status::UnexpectedType)?
+            }
             _ => d.skip().map_err(|_| Status::InvalidCbor)?,
         }
     }
@@ -274,10 +283,10 @@ impl Session {
     ) -> Result<usize, Status> {
         let fields = params.management.fields(&params.message)?;
         let subcommand = params.subcommand;
-        if !matches!(subcommand, 1..=7) {
+        if !matches!(subcommand, cm::METADATA..=cm::UPDATE_USER) {
             return Err(Status::InvalidSubcommand);
         }
-        let continued = subcommand == 3 || subcommand == 5;
+        let continued = subcommand == cm::RP_NEXT || subcommand == cm::CREDENTIAL_NEXT;
         if continued {
             if self.management.mode != subcommand {
                 return Err(Status::NotAllowed);
@@ -288,17 +297,17 @@ impl Session {
                 return Err(Status::PuatRequired);
             }
             if params.protocol == 0
-                || (subcommand == 4 && fields.rp.is_none())
-                || (matches!(subcommand, 6 | 7) && fields.id.is_none())
-                || (subcommand == 7 && fields.user.is_none())
+                || (subcommand == cm::CREDENTIAL_BEGIN && fields.rp.is_none())
+                || (matches!(subcommand, cm::DELETE | cm::UPDATE_USER) && fields.id.is_none())
+                || (subcommand == cm::UPDATE_USER && fields.user.is_none())
             {
                 return Err(Status::MissingParameter);
             }
-            if matches!(subcommand, 1 | 2) && self.rp_bound {
+            if matches!(subcommand, cm::METADATA | cm::RP_BEGIN) && self.rp_bound {
                 return Err(Status::PinAuthInvalid);
             }
             // Mutations authenticate against the stored credential's RP below.
-            if !matches!(subcommand, 6 | 7) {
+            if !matches!(subcommand, cm::DELETE | cm::UPDATE_USER) {
                 self.authorize(
                     params.protocol,
                     &params.auth[..params.auth_len],
@@ -310,7 +319,7 @@ impl Session {
             }
         }
         w.output[0] = 0;
-        if subcommand == 1 {
+        if subcommand == cm::METADATA {
             let count = credential_count(None, w.input, p)?;
             let mut e = Encoder::new(&mut w.output[1..]);
             e.map(2)
@@ -322,9 +331,9 @@ impl Session {
                 .map_err(|_| Status::Other)?;
             return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
         }
-        if subcommand == 2 || subcommand == 3 {
+        if subcommand == cm::RP_BEGIN || subcommand == cm::RP_NEXT {
             let mut total = 0;
-            if subcommand == 2 {
+            if subcommand == cm::RP_BEGIN {
                 let mut cursor = Cursor::new();
                 while next_rp(&mut cursor, w.input, p)?.is_some() {
                     total += 1;
@@ -335,17 +344,17 @@ impl Session {
             } else {
                 Status::NoCredentials
             })?;
-            self.management.mode = 3;
+            self.management.mode = cm::RP_NEXT;
             let entry = resident::Entry::decode(&w.input[..n])?;
             let mut e = Encoder::new(&mut w.output[1..]);
             let result = (|| {
-                e.map(if subcommand == 2 { 3 } else { 2 })
+                e.map(if subcommand == cm::RP_BEGIN { 3 } else { 2 })
                     .u8(3)
                     .map(1)
                     .str("id")
                     .str(entry.rp);
                 e.u8(4).bytes(entry.rp_hash);
-                if subcommand == 2 {
+                if subcommand == cm::RP_BEGIN {
                     e.u8(5).u8(total);
                 }
                 e.finish()
@@ -353,12 +362,12 @@ impl Session {
             result.map_err(|_| Status::Other)?;
             return Ok(crate::runtime::workspace::OUTPUT_BYTES - e.writer().len());
         }
-        if subcommand == 4 || subcommand == 5 {
-            if subcommand == 4 {
+        if subcommand == cm::CREDENTIAL_BEGIN || subcommand == cm::CREDENTIAL_NEXT {
+            if subcommand == cm::CREDENTIAL_BEGIN {
                 self.management.rp = *fields.rp.ok_or(Status::MissingParameter)?;
                 self.management.metadata_only = fields.metadata_only;
             }
-            let total = if subcommand == 4 {
+            let total = if subcommand == cm::CREDENTIAL_BEGIN {
                 credential_count(Some(&self.management.rp), w.input, p)?
             } else {
                 0
@@ -369,7 +378,7 @@ impl Session {
                         continue;
                     }
                     self.management.next = index + 1;
-                    self.management.mode = 5;
+                    self.management.mode = cm::CREDENTIAL_NEXT;
                     // Key derivation borrows only the key buffer, so the input
                     // record stays validated and borrowed through encoding.
                     let id = entry.id;
@@ -428,7 +437,7 @@ impl Session {
                         super::encoding::management_header(
                             &mut e,
                             &entry,
-                            subcommand == 4,
+                            subcommand == cm::CREDENTIAL_BEGIN,
                             has_blob_key,
                         )?;
                         if public_len != 0 {
@@ -443,12 +452,12 @@ impl Session {
                         super::encoding::management_tail(
                             &mut e,
                             id,
-                            (subcommand == 4).then_some(total),
+                            (subcommand == cm::CREDENTIAL_BEGIN).then_some(total),
                             has_blob_key
                                 .then_some(&w.key.bytes[LARGE_BLOB_KEY_OFFSET..LARGE_BLOB_KEY_END]),
                         )?;
                         if public_len == 0 {
-                            e.u8(0x80)
+                            e.u8(cm::VENDOR_ALGORITHM)
                                 .i32(credential::cose_algorithm(algorithm, self.sm2));
                         }
                         e.finish()
@@ -480,7 +489,7 @@ impl Session {
                 Some(entry.rp_hash),
                 p,
             )?;
-            if subcommand == 6 {
+            if subcommand == cm::DELETE {
                 resident::replace(index, &[], w.output, p)?;
             } else {
                 let user = fields.user.as_ref().ok_or(Status::MissingParameter)?;

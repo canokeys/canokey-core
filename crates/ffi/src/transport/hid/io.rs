@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB IRQ report mailbox and reset epochs, disjoint from CTAPHID execution.
+use canokey_protocol::usb::*;
 unsafe extern "C" {
     fn ck_usb_dcd_lock() -> u32;
     fn ck_usb_dcd_unlock(mask: u32);
@@ -75,7 +76,7 @@ pub unsafe extern "C" fn ck_hid_io_configured() -> u8 {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_idle() -> u8 {
-    locked(|| unsafe { ck_usb_tx_idle(0x82) })
+    locked(|| unsafe { ck_usb_tx_idle(EP_HID_IN) })
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_peek(
@@ -110,7 +111,7 @@ pub unsafe extern "C" fn ck_hid_io_consume(generation: u32) {
 pub unsafe extern "C" fn ck_hid_io_receive() {
     locked(|| unsafe {
         if !QUEUED {
-            ck_usb_receive(2);
+            ck_usb_receive(EP_HID);
         }
     });
 }
@@ -121,7 +122,7 @@ pub unsafe extern "C" fn ck_hid_io_send(report: *const u8, generation: u32) -> u
             generation == EPOCH
                 && !RESET
                 && !report.is_null()
-                && ck_usb_submit(0x82, report, 64, 0) == 1,
+                && ck_usb_submit(EP_HID_IN, report, 64, 0) == 1,
         )
     })
 }

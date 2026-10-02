@@ -66,7 +66,7 @@ impl Session {
             p.crypto
                 .key_operation(KeyOperation::Generate, a.0, &mut w.key, &[], w.output)
                 .map_err(|_| Error::Crypto)?;
-            repo::save_key(p, role, 1, &w.key.bytes)?;
+            repo::save_key(p, role, key_meta::ORIGIN_GENERATED, &w.key.bytes)?;
             a
         } else {
             repo::load_key(p, role, &mut w.key.bytes)?

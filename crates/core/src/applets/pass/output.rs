@@ -41,7 +41,7 @@ impl Output {
     pub fn eject(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         self.reset(memory);
         self.suppressed = false;
-        self.bytes[0] = 3;
+        self.bytes[0] = canokey_protocol::usb::EJECT_SENTINEL;
         self.used = 1;
     }
     pub fn busy(&self) -> bool {

@@ -6,6 +6,9 @@
 //! Map key types/order/uniqueness belong to the command schema. Events are
 //! provisional until finish succeeds; consumers must not perform side effects.
 
+// RFC 8949 section 3: initial byte = three-bit major type | five-bit
+// additional information. Values 0..23 are inline; 24/25/26/27 carry 1/2/4/8
+// argument bytes. Shared by the slice cursor, incremental decoder and encoder.
 /// Bounded CTAP consumers translate decoder failures into protocol status codes;
 /// they do not retain diagnostic strings or byte positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

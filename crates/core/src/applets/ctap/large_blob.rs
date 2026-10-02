@@ -102,7 +102,7 @@ impl Parser {
             }
             if p.auth_len != 0
                 && p.protocol != 0
-                && p.auth_len != if p.protocol == 1 { 16 } else { 32 }
+                && p.auth_len != super::wire::pin_protocol::auth_bytes(p.protocol)
             {
                 return Err(Status::InvalidParameter);
             }
@@ -178,7 +178,9 @@ impl Fields {
                     }
                     self.params.set = Some(usize::from(n));
                 } else {
-                    if n != 16 && n != 32 {
+                    if n != super::wire::pin_protocol::AUTH_V1_BYTES as u16
+                        && n != super::wire::pin_protocol::AUTH_V2_BYTES as u16
+                    {
                         return Err(Status::InvalidParameter);
                     }
                     self.params.auth_len = usize::from(n);
@@ -294,11 +296,18 @@ impl Session {
             if params.protocol == 0 {
                 return Err(Status::MissingParameter);
             }
-            let mut message = [0xff; 70];
-            message[32..34].copy_from_slice(&[12, 0]);
-            message[34..38].copy_from_slice(&(offset as u32).to_le_bytes());
+            // CTAP largeBlobs proof: 32*FF || 0C00 || offset(uint32LE) || SHA256(fragment).
+            const COMMAND_AT: usize = 32;
+            const OFFSET_AT: usize = COMMAND_AT + 2;
+            const HASH_AT: usize = OFFSET_AT + 4;
+            let mut message = [0xff; HASH_AT + 32];
+            message[COMMAND_AT..OFFSET_AT].copy_from_slice(&[super::LARGE_BLOBS, 0x00]);
+            message[OFFSET_AT..HASH_AT].copy_from_slice(&(offset as u32).to_le_bytes());
             p.crypto
-                .sha256(&params.bytes[..n], (&mut message[38..]).try_into().unwrap())
+                .sha256(
+                    &params.bytes[..n],
+                    (&mut message[HASH_AT..]).try_into().unwrap(),
+                )
                 .map_err(|_| Status::Other)?;
             self.authorize(
                 params.protocol,
