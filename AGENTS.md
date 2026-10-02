@@ -40,8 +40,9 @@ plans and the old C guide; historical APIs there are not implementation guidance
   intentional protocol changes near the corresponding applet and add coverage.
 - Session ownership is shared across HID, CCID, WebUSB and NFC. Use one shared
   transient workspace, never independent per-applet worst-case buffers.
-- No dynamic allocation in firmware. A single call path must fit 5120 bytes of
-  stack unless the platform documents a measured exception. Preserve source
+- No dynamic allocation in firmware. CIU single-call-path stack budget is
+  6000 bytes, including callers and interrupt frames; other platforms must
+  document their own budget. Preserve source
   optimization and LTO settings when moving build inputs.
 - Stream large APDU bodies, key imports, certificates, public-key encodings and
   responses. Do not increase short APDU buffers to avoid streaming. The bounded

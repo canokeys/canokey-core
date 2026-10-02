@@ -1,4 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
+set(CANOKEY_PLATFORM_STORAGE_FIXTURE "" CACHE FILEPATH "Explicit platform LittleFS capacity fixture")
+set(CANOKEY_PLATFORM_STORAGE_STUBS "" CACHE PATH "Platform headers for the capacity fixture")
+if(CANOKEY_PLATFORM_STORAGE_FIXTURE)
+  if(NOT BUILD_TESTING OR NOT CANOKEY_APPLET_OPENPGP OR NOT CANOKEY_APPLET_PIV OR
+     NOT CANOKEY_APPLET_ADMIN OR NOT CANOKEY_APPLET_PASS OR NOT CANOKEY_APPLET_OATH OR
+     NOT CANOKEY_APPLET_CTAP OR NOT CANOKEY_APPLET_NDEF)
+    message(FATAL_ERROR "The platform storage fixture requires BUILD_TESTING and the full applet profile")
+  endif()
+  if(NOT EXISTS "${CANOKEY_PLATFORM_STORAGE_FIXTURE}" OR
+     NOT IS_DIRECTORY "${CANOKEY_PLATFORM_STORAGE_STUBS}")
+    message(FATAL_ERROR "Explicit platform storage fixture or stub directory is missing")
+  endif()
+endif()
 if(BUILD_TESTING AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   # The retained native SM3 fallback must pass with fatal sanitizer diagnostics.
   add_executable(native-sm3
@@ -150,13 +163,13 @@ if(BUILD_TESTING)
       "${CANOKEY_ROOT}/tests/integration/piv_normal.py" --host $<TARGET_FILE:piv-host>)
   endif()
   if(CANOKEY_APPLET_OPENPGP AND CANOKEY_APPLET_PIV AND CANOKEY_APPLET_ADMIN AND CANOKEY_APPLET_PASS AND CANOKEY_APPLET_OATH)
-    if(EXISTS "${CANOKEY_ROOT}/../tests/host/rust_storage_applet.c" AND CANOKEY_APPLET_CTAP AND CANOKEY_APPLET_NDEF)
+    if(CANOKEY_PLATFORM_STORAGE_FIXTURE)
       add_executable(storage-applet-host ${CANOKEY_ROOT}/tests/support/oath_host.c
-        ${CANOKEY_ROOT}/tests/support/services.c ${CANOKEY_ROOT}/../tests/host/rust_storage_applet.c
+        ${CANOKEY_ROOT}/tests/support/services.c ${CANOKEY_PLATFORM_STORAGE_FIXTURE}
         ${CANOKEY_ROOT}/third_party/littlefs/lfs.c ${CANOKEY_ROOT}/third_party/littlefs/lfs_util.c)
       target_compile_definitions(storage-applet-host PRIVATE CK_TEST_LITTLEFS WITH_ADMIN WITH_PASS WITH_OATH
         WITH_OPENPGP WITH_PIV WITH_CTAP WITH_NDEF LFS_NO_MALLOC LFS_NO_DEBUG LFS_NO_WARN LFS_NO_ERROR)
-      target_include_directories(storage-applet-host PRIVATE ${CANOKEY_ROOT}/../tests/host/rust_stubs
+      target_include_directories(storage-applet-host PRIVATE ${CANOKEY_PLATFORM_STORAGE_STUBS}
         ${CANOKEY_ROOT}/third_party/littlefs)
       target_compile_options(storage-applet-host PRIVATE -Wall -Wextra -UNDEBUG)
       target_link_libraries(storage-applet-host PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
