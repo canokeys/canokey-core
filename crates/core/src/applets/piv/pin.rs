@@ -198,7 +198,6 @@ impl Pins {
                 self.state.pin_ok = false;
                 Sw::UNABLE_TO_PROCESS
             }
-            #[cfg(any(feature = "admin", feature = "openpgp"))]
             Error::Length => Sw::WRONG_LENGTH,
             Error::Blocked => Sw::AUTHENTICATION_BLOCKED,
             Error::Retries(n) => Sw::retries(n),

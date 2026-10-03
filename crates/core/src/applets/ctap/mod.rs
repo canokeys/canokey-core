@@ -86,7 +86,7 @@ impl Response {
             total,
         } = *self
         {
-            if offset.checked_add(out.len()).is_none_or(|end| end > total) {
+            if !canokey_protocol::response::checked_window(offset, out.len(), total) {
                 return Err(Sw::WRONG_LENGTH);
             }
             let cert_len = certificate.map_or(0, |(_, length)| length);
@@ -121,10 +121,7 @@ impl Response {
             prefix,
         } = *self
         {
-            if offset
-                .checked_add(out.len())
-                .is_none_or(|end| end > prefix + length)
-            {
+            if !canokey_protocol::response::checked_window(offset, out.len(), prefix + length) {
                 return Err(Sw::WRONG_LENGTH);
             }
             let head = out.len().min(prefix.saturating_sub(offset));
@@ -155,15 +152,7 @@ impl Response {
             | Self::Pending(_)
             | Self::Stream(_) => unreachable!(),
         };
-        let end = offset
-            .checked_add(out.len())
-            .ok_or(canokey_protocol::response::StatusWord::WRONG_LENGTH)?;
-        out.copy_from_slice(
-            bytes
-                .get(offset..end)
-                .ok_or(canokey_protocol::response::StatusWord::WRONG_LENGTH)?,
-        );
-        Ok(())
+        crate::applets::read_response_chunk(bytes, bytes.len(), offset, out)
     }
 }
 

@@ -146,11 +146,10 @@ impl OpenPgp {
     pub fn consume(&mut self, b: &[u8], w: &mut Workspace, p: &mut Platform<'_>) -> Result<(), Sw> {
         match self.request {
             Request::Buffered => {
-                let end = self.used.checked_add(b.len()).ok_or(Sw::WRONG_LENGTH)?;
-                w.input
-                    .get_mut(self.used..end)
-                    .ok_or(Sw::WRONG_LENGTH)?
-                    .copy_from_slice(b);
+                let cap = w.input.len();
+                crate::applets::append_bounded(&mut self.used, w.input, cap, b)
+                    .ok_or(Sw::WRONG_LENGTH)?;
+                return Ok(());
             }
             Request::Certificate => p.storage.stage_append(b).map_err(io)?,
             Request::Import => self.import.feed(b, &mut w.key.bytes, p)?,
@@ -362,13 +361,10 @@ impl OpenPgp {
                 if tag != 0x0000 {
                     return Err(Sw::WRONG_P1P2);
                 }
-                if !b.is_empty() || le == 0 || le > 256 {
+                if !b.is_empty() {
                     return Err(Sw::WRONG_LENGTH);
                 }
-                p.crypto
-                    .random(&mut w.output[..le as usize])
-                    .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-                Ok(le)
+                crate::applets::get_challenge(le, w.output, p.crypto)
             }
             TERMINATE => {
                 // E6 00 00 marks the application terminated without erasing it.

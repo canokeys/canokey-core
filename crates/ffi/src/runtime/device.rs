@@ -24,26 +24,12 @@ unsafe extern "C" {
     fn ck_board_stack_report();
     fn ck_platform_led(on: u8);
     fn device_delay(milliseconds: i32);
-    fn ck_transport_progress() -> u8;
-    fn ck_core_install() -> i32;
-    fn ck_core_boot_flags(out: *mut u32) -> i32;
-    #[cfg(feature = "storage")]
-    fn ck_core_mark_initialized() -> i32;
-    fn usb_device_init();
-    fn ck_usb_set_landing(enabled: u8);
-    fn CCID_Loop();
+    #[cfg(feature = "ctap")]
+    fn ck_core_presence_sample();
     #[cfg(feature = "storage")]
     fn ck_storage_init() -> i32;
     #[cfg(feature = "storage")]
     fn ck_storage_format() -> i32;
-    #[cfg(feature = "usb-hid")]
-    fn CTAPHID_Loop(waiting: u8) -> u8;
-    #[cfg(feature = "ctap")]
-    fn ck_core_presence_sample();
-    #[cfg(feature = "usb-keyboard")]
-    fn ck_keyboard_loop();
-    #[cfg(feature = "usb-webusb")]
-    fn WebUSB_Loop();
 }
 static mut LED_DEFAULT: bool = true;
 #[unsafe(no_mangle)]
@@ -60,7 +46,7 @@ pub unsafe extern "C" fn ck_device_led_idle() {
 pub unsafe extern "C" fn ck_device_settings(flags: u32) {
     unsafe {
         LED_DEFAULT = flags & config::LED != 0;
-        ck_usb_set_landing(u8::from(flags & config::WEBUSB != 0));
+        crate::transport::usb::ck_usb_set_landing(u8::from(flags & config::WEBUSB != 0));
         ck_device_led_idle();
     }
 }
@@ -68,7 +54,7 @@ pub unsafe extern "C" fn ck_device_settings(flags: u32) {
 pub unsafe extern "C" fn ck_device_progress() -> u8 {
     unsafe {
         device_delay(1);
-        ck_transport_progress()
+        crate::transport::usb::ck_transport_progress()
     }
 }
 unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
@@ -86,7 +72,7 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
     unsafe {
         ck_board_prepare();
         let mut flags = config::DEFAULT_FLAGS | config::INITIALIZED;
-        let readable = ck_core_boot_flags(&mut flags) == 0;
+        let readable = crate::abi::core::ck_core_boot_flags(&mut flags) == 0;
         #[cfg(feature = "nfc")]
         let nfc_mode = readable && flags & config::NFC != 0 && ck_board_mode_pin() != 0;
         #[cfg(not(feature = "nfc"))]
@@ -112,7 +98,7 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
                 blink(10, 1000);
             }
         }
-        if ck_core_install() != 0 {
+        if crate::abi::core::ck_core_install() != 0 {
             blink(10, 1000);
         }
         #[cfg(feature = "nfc")]
@@ -126,7 +112,7 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
         }
         #[cfg(feature = "storage")]
         if flags & config::INITIALIZED == 0 {
-            if ck_core_mark_initialized() != 0 {
+            if crate::abi::core::ck_core_mark_initialized() != 0 {
                 blink(10, 1000);
             }
             // Match product first-boot acknowledgement. Power-cycle reloads
@@ -140,9 +126,9 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
                 ck_board_nfc_irq_enable();
             }
         } else {
-            usb_device_init();
+            crate::transport::usb::usb_device_init();
             while ck_board_usb_ready() == 0 {
-                CCID_Loop();
+                crate::transport::ccid::CCID_Loop();
             }
             ck_board_clock(CLOCK_USB_OPERATING);
             for primitive in 0..CRYPTO_CHECK_COUNT {
@@ -166,12 +152,12 @@ pub unsafe extern "C" fn ck_device_main() -> ! {
                 #[cfg(feature = "ctap")]
                 ck_core_presence_sample();
                 #[cfg(feature = "usb-hid")]
-                let _ = CTAPHID_Loop(0);
-                CCID_Loop();
+                let _ = crate::transport::hid::link::CTAPHID_Loop(0);
+                crate::transport::ccid::CCID_Loop();
                 #[cfg(feature = "usb-keyboard")]
-                ck_keyboard_loop();
+                crate::transport::keyboard::ck_keyboard_loop();
                 #[cfg(feature = "usb-webusb")]
-                WebUSB_Loop();
+                crate::transport::webusb::WebUSB_Loop();
             }
             ck_board_stack_report();
         }

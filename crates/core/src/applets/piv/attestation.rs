@@ -425,7 +425,7 @@ impl Attestation {
         out: &mut [u8],
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
-        if offset.checked_add(out.len()).is_none_or(|n| n > self.total) {
+        if !canokey_protocol::response::checked_window(offset, out.len(), self.total) {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
         let count = out.len();

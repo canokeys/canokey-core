@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+pub fn checked_window(offset: usize, len: usize, total: usize) -> bool {
+    offset.checked_add(len).is_some_and(|end| end <= total)
+}
 
 use core::num::NonZeroU16;
 

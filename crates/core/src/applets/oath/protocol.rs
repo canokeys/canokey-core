@@ -448,8 +448,7 @@ impl State {
                 }
                 let mut serial = [0; 4];
                 p.device.serial(&mut serial);
-                self.response[..4].copy_from_slice(&serial);
-                self.length = 4;
+                self.length = crate::applets::write_serial(&mut self.response, |out| *out = serial);
             } else {
                 if data.len() > OTP_INPUT_LIMIT {
                     return Err(Sw::WRONG_LENGTH);
@@ -590,13 +589,8 @@ impl Oath {
         self.used = 0;
     }
     pub fn consume(&mut self, bytes: &[u8]) -> Result<(), Sw> {
-        let end = self
-            .used
-            .checked_add(bytes.len())
-            .filter(|n| *n <= CAPACITY)
+        crate::applets::append_bounded(&mut self.used, &mut self.command, CAPACITY, bytes)
             .ok_or(Sw::WRONG_LENGTH)?;
-        self.command[self.used..end].copy_from_slice(bytes);
-        self.used = end;
         Ok(())
     }
     pub fn read_response(&self, offset: usize, out: &mut [u8]) -> Result<(), Sw> {

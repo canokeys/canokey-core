@@ -4,27 +4,14 @@
 //! the WebUSB RX/TX allocation, exclusively leased by main-loop admission.
 //! A single 16-byte FIFO mailbox holds a data-stage OUT packet received after
 //! SETUP admission but before the main loop accepts the command.
+use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
 // Shared-session owner ABI: APDU=0, CCID=1, HID CTAP=2, WebUSB=3, NFC=4.
 // runtime/engine.rs uses these identities to preempt other transport sessions.
 const OWNER_WEBUSB: u8 = 3;
 unsafe extern "C" {
-    fn ck_usb_dcd_lock() -> u32;
-    fn ck_usb_dcd_unlock(mask: u32);
     fn device_get_tick() -> u32;
-    fn ck_ccid_idle() -> u8;
-    fn ck_ccid_response_buffer() -> *mut u8;
-    fn ck_core_reset();
-    fn ck_core_exchange(
-        owner: u8,
-        input: *const u8,
-        len: usize,
-        output: *mut u8,
-        capacity: usize,
-    ) -> i32;
-    #[cfg(feature = "usb-hid")]
-    fn ck_hid_busy() -> u8;
 }
 static mut STATE: Transport = Transport::new();
 static mut WAITING: bool = false;
@@ -36,12 +23,7 @@ static mut SESSION: bool = false;
 /// Competitors yield to an EP0 reservation. A command arriving during a Core
 /// call waits in the FIFO mailbox and cannot touch the shared byte buffer.
 pub unsafe fn block_competitor() -> bool {
-    unsafe {
-        let mask = ck_usb_dcd_lock();
-        let blocked = CLEANUP || (&*core::ptr::addr_of!(STATE)).busy();
-        ck_usb_dcd_unlock(mask);
-        blocked
-    }
+    usb_locked(|| unsafe { CLEANUP || (&*core::ptr::addr_of!(STATE)).busy() })
 }
 /// Main-loop only: an actual foreign request may abandon a completed session.
 /// Clear WebUSB ownership before resetting Core so a later timeout cannot reset
@@ -51,19 +33,20 @@ pub unsafe fn try_preempt(requested: bool) -> bool {
         if !requested {
             return false;
         }
-        let mask = ck_usb_dcd_lock();
-        let eligible = !CLEANUP
-            && !WAITING
-            && SESSION
-            && (&*core::ptr::addr_of!(STATE)).completed_transaction()
-            && crate::abi::core::can_preempt();
+        let eligible = usb_locked(|| {
+            let eligible = !CLEANUP
+                && !WAITING
+                && SESSION
+                && (&*core::ptr::addr_of!(STATE)).completed_transaction()
+                && crate::abi::core::can_preempt();
+            if eligible {
+                SESSION = false;
+                (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+            }
+            eligible
+        });
         if eligible {
-            SESSION = false;
-            (&mut *core::ptr::addr_of_mut!(STATE)).reset();
-        }
-        ck_usb_dcd_unlock(mask);
-        if eligible {
-            ck_core_reset();
+            crate::abi::core::ck_core_reset();
         }
         eligible
     }
@@ -139,12 +122,16 @@ pub unsafe fn receive(bytes: *const u8, length: usize) -> i8 {
         let Some(offset) = state.receive(length, device_get_tick()) else {
             return -1;
         };
-        core::ptr::copy_nonoverlapping(bytes, ck_ccid_response_buffer().add(offset), length);
+        core::ptr::copy_nonoverlapping(
+            bytes,
+            crate::transport::ccid::ck_ccid_response_buffer().add(offset),
+            length,
+        );
         i8::from(state.status() == 1)
     }
 }
 pub unsafe fn pointer(offset: usize) -> *const u8 {
-    unsafe { ck_ccid_response_buffer().add(offset) }
+    unsafe { crate::transport::ccid::ck_ccid_response_buffer().add(offset) }
 }
 pub unsafe fn completed() {
     unsafe {
@@ -158,58 +145,66 @@ pub unsafe extern "C" fn WebUSB_Loop() {
         if crate::transport::nfc::is_nfc() != 0 {
             return;
         }
-        let mask = ck_usb_dcd_lock();
-        let cleanup = CLEANUP || (&*core::ptr::addr_of!(STATE)).expired(device_get_tick());
+        let cleanup = usb_locked(|| {
+            let cleanup = CLEANUP || (&*core::ptr::addr_of!(STATE)).expired(device_get_tick());
+            if cleanup {
+                CLEANUP = false;
+                SESSION = false;
+                (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+            }
+            cleanup
+        });
         if cleanup {
-            CLEANUP = false;
-            SESSION = false;
-            (&mut *core::ptr::addr_of_mut!(STATE)).reset();
-        }
-        ck_usb_dcd_unlock(mask);
-        if cleanup {
-            ck_core_reset();
+            crate::abi::core::ck_core_reset();
         }
 
-        let mask = ck_usb_dcd_lock();
-        if WAITING && !CLEANUP {
-            let idle = ck_ccid_idle() != 0;
-            #[cfg(feature = "usb-hid")]
-            let idle = idle && ck_hid_busy() == 0;
-            WAITING = false;
-            if SESSION || idle {
-                let mut valid = true;
-                if let Some(n) = PACKET_LENGTH {
-                    valid = receive(core::ptr::addr_of!(PACKET).cast(), n) >= 0;
+        let (command, new_session) = usb_locked(|| {
+            if WAITING && !CLEANUP {
+                let idle = crate::transport::ccid::ck_ccid_idle() != 0;
+                #[cfg(feature = "usb-hid")]
+                let idle = idle && crate::transport::hid::link::ck_hid_busy() == 0;
+                WAITING = false;
+                if SESSION || idle {
+                    let mut valid = true;
+                    if let Some(n) = PACKET_LENGTH {
+                        valid = receive(core::ptr::addr_of!(PACKET).cast(), n) >= 0;
+                    }
+                    PACKET_LENGTH = None;
+                    crate::transport::usb::web_admission(
+                        valid,
+                        (&*core::ptr::addr_of!(STATE)).status() == 1,
+                    );
+                    if !valid {
+                        reset();
+                    }
+                } else {
+                    // Refused admission must never reset a foreign applet session.
+                    PACKET_LENGTH = None;
+                    (&mut *core::ptr::addr_of_mut!(STATE)).reset();
+                    crate::transport::usb::web_admission(false, false);
                 }
-                PACKET_LENGTH = None;
-                crate::transport::usb::web_admission(
-                    valid,
-                    (&*core::ptr::addr_of!(STATE)).status() == 1,
-                );
-                if !valid {
-                    reset();
-                }
-            } else {
-                // Refused admission must never reset a foreign applet session.
-                PACKET_LENGTH = None;
-                (&mut *core::ptr::addr_of_mut!(STATE)).reset();
-                crate::transport::usb::web_admission(false, false);
             }
-        }
-        let command = if CLEANUP {
-            None
-        } else {
-            (&mut *core::ptr::addr_of_mut!(STATE)).execute()
-        };
-        let new_session = !SESSION;
-        ck_usb_dcd_unlock(mask);
+            let command = if CLEANUP {
+                None
+            } else {
+                (&mut *core::ptr::addr_of_mut!(STATE)).execute()
+            };
+            let new_session = !SESSION;
+            (command, new_session)
+        });
         if let Some(length) = command {
             if new_session {
-                ck_core_reset();
+                crate::abi::core::ck_core_reset();
             }
-            let buffer = ck_ccid_response_buffer();
+            let buffer = crate::transport::ccid::ck_ccid_response_buffer();
             // ck_core_exchange ends the input borrow before creating output.
-            let n = ck_core_exchange(OWNER_WEBUSB, buffer, length, buffer, RESPONSE_LIMIT);
+            let n = crate::abi::core::ck_core_exchange(
+                OWNER_WEBUSB,
+                buffer,
+                length,
+                buffer,
+                RESPONSE_LIMIT,
+            );
             let n = if n < 0 {
                 // Preserve a pollable APDU failure on a response-source error.
                 *buffer = 0x6f;
@@ -218,24 +213,21 @@ pub unsafe extern "C" fn WebUSB_Loop() {
             } else {
                 n as usize
             };
-            let mask = ck_usb_dcd_lock();
-            if (&mut *core::ptr::addr_of_mut!(STATE)).finish(n, device_get_tick()) {
-                SESSION = true;
-            } else {
-                CLEANUP = true;
-            }
-            ck_usb_dcd_unlock(mask);
+            usb_locked(|| {
+                if (&mut *core::ptr::addr_of_mut!(STATE)).finish(n, device_get_tick()) {
+                    SESSION = true;
+                } else {
+                    CLEANUP = true;
+                }
+            });
         }
     }
 }
 
 pub unsafe fn progress() -> Option<bool> {
-    unsafe {
-        let mask = ck_usb_dcd_lock();
-        let live = (&*core::ptr::addr_of!(STATE))
+    usb_locked(|| unsafe {
+        (&*core::ptr::addr_of!(STATE))
             .execution_live()
-            .map(|live| live && !CLEANUP);
-        ck_usb_dcd_unlock(mask);
-        live
-    }
+            .map(|live| live && !CLEANUP)
+    })
 }

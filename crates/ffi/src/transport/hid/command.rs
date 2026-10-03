@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized main-loop boundary; USB interrupts never access HID or CORE.
+#[cfg(feature = "usb-hid")]
+use super::link::{ck_hid_execution_begin, ck_hid_execution_end};
+#[cfg(feature = "usb-ccid")]
+use crate::transport::ccid::ck_ccid_idle;
 use canokey_protocol::ctaphid::Error;
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
 
@@ -15,8 +19,11 @@ crate::lazy_state!(
 // this is an FFI ABI value, so keep the correspondence explicit.
 const PKE_OWNER_CTAP: u8 = 3;
 unsafe extern "C" {
+    #[cfg(not(feature = "usb-ccid"))]
     fn ck_ccid_idle() -> u8;
+    #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_execution_begin(cid: u32);
+    #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_execution_end();
     fn pke_buffer_size() -> usize;
     fn pke_buffer_acquire(owner: u8) -> i32;

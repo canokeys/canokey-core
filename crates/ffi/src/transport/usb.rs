@@ -2,6 +2,7 @@
 //! IRQ-local USB facade. No USB event accesses Core, APDU/HID/CCID parsers or PKE.
 //! All exports except init/deinit require the platform IRQ mask. Native packet
 //! callbacks publish mailboxes only. No Rust borrow crosses such a callback.
+use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
 // HALTED packs two bits per endpoint: OUT then IN, including EP0.
 const HALT_BITS_PER_ENDPOINT: u8 = 2;
@@ -16,8 +17,6 @@ const INTERFACES: Interfaces = Interfaces {
     keyboard: cfg!(feature = "usb-keyboard"),
 };
 unsafe extern "C" {
-    fn ck_usb_dcd_lock() -> u32;
-    fn ck_usb_dcd_unlock(mask: u32);
     fn ck_usb_dcd_start();
     fn ck_usb_dcd_enable_irq();
     fn ck_usb_dcd_stop();
@@ -178,8 +177,7 @@ unsafe fn reset_software_pipes() {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn usb_device_init() {
-    unsafe {
-        let mask = ck_usb_dcd_lock();
+    usb_locked(|| unsafe {
         ck_usb_dcd_start();
         // USBD_LL_Reset in the C stack only resets protocol state and opens
         // the already-reset EP0. Do not touch FIFO/status registers here;
@@ -188,8 +186,7 @@ pub unsafe extern "C" fn usb_device_init() {
         // Match the C LL startup order: software reset must be complete
         // before USB IRQs can process the first BUSRST/SETUP sequence.
         ck_usb_dcd_enable_irq();
-        ck_usb_dcd_unlock(mask);
-    }
+    });
 }
 
 #[unsafe(no_mangle)]
@@ -203,12 +200,10 @@ pub unsafe extern "C" fn ck_usb_boot_reset() {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn usb_device_deinit() {
-    unsafe {
-        let mask = ck_usb_dcd_lock();
+    usb_locked(|| unsafe {
         ck_usb_dcd_stop();
         ck_usb_reset();
-        ck_usb_dcd_unlock(mask);
-    }
+    });
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_usb_reset() {
@@ -618,9 +613,7 @@ pub unsafe extern "C" fn ck_transport_progress() -> u8 {
 /// changed; an in-flight descriptor keeps its captured immutable variant.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
-    unsafe {
-        let mask = ck_usb_dcd_lock();
+    usb_locked(|| unsafe {
         DEVICE.landing = enabled != 0;
-        ck_usb_dcd_unlock(mask);
-    }
+    });
 }

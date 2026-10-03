@@ -12,7 +12,11 @@ pub(crate) use record::RecordPin;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Error {
     Persistence,
-    #[cfg(any(feature = "admin", feature = "openpgp"))]
+    #[cfg(any(feature = "admin", feature = "openpgp", feature = "piv"))]
+    #[cfg_attr(
+        all(feature = "piv", not(any(feature = "admin", feature = "openpgp"))),
+        expect(dead_code)
+    )]
     Length,
     Blocked,
     Retries(u8),

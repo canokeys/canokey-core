@@ -13,6 +13,7 @@ canokey-rust-ffi = { path = "../ffi", features = ["static-backend", "usb-hid", "
 # Simulated contactless presence without disabling the UDP HID endpoint.
 canokey-ports = { path = "../ports", features = ["nfc"] }
 [features]
+default = []
 ctap-restrict-algorithms = ["canokey-rust-ffi/ctap-restrict-algorithms"]
 
 [lints]

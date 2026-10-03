@@ -7,9 +7,13 @@ fn main() {
         ctap::generate_response();
     }
     cfg_aliases::cfg_aliases! {
+        // APDU applets need shared runtime support; PASS only supplies credential output.
         has_applet: { any(feature = "ndef", feature = "admin", feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
+        // These applets retain presence requests; ADMIN uses a separate factory-reset gesture.
         persistent_applet: { any(feature = "oath", feature = "openpgp", feature = "piv", feature = "ctap") },
+        // Classic applets consume boolean presence; CTAP needs polling and typed failures.
         classic_presence: { any(feature = "oath", feature = "openpgp", feature = "piv") },
+        // Key-operation applets need crypto workspace; OATH/PASS keep bounded MAC buffers.
         crypto_applet: { any(feature = "openpgp", feature = "piv", feature = "ctap") },
     }
     for (name, file) in [

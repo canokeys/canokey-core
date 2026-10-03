@@ -329,12 +329,9 @@ impl Piv {
                 self.used = self.ga.used;
             }
             Request::Buffered => {
-                let end = self.used.checked_add(b.len()).ok_or(Sw::WRONG_LENGTH)?;
-                w.input
-                    .get_mut(self.used..end)
-                    .ok_or(Sw::WRONG_LENGTH)?
-                    .copy_from_slice(b);
-                self.used = end;
+                let cap = w.input.len();
+                crate::applets::append_bounded(&mut self.used, w.input, cap, b)
+                    .ok_or(Sw::WRONG_LENGTH)?;
             }
             Request::Import => {
                 self.import.feed(b, &mut w.key.bytes)?;
@@ -485,22 +482,13 @@ impl Piv {
                 }
                 let n = match h.ins {
                     INS_GET_CHALLENGE => {
-                        if le == 0 || le > 256 {
-                            return Err(Sw::WRONG_LENGTH);
-                        }
-                        p.crypto
-                            .random(&mut w.output[..le as usize])
-                            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-                        le as usize
+                        crate::applets::get_challenge(le, w.output, p.crypto)? as usize
                     }
                     INS_GET_VERSION => {
                         w.output[..3].copy_from_slice(&PIV_VERSION);
                         3
                     }
-                    _ => {
-                        p.device.serial((&mut w.output[..4]).try_into().unwrap());
-                        4
-                    }
+                    _ => crate::applets::write_serial(w.output, |out| p.device.serial(out)),
                 };
                 self.memory(n);
                 Ok(n as u32)
@@ -640,10 +628,11 @@ impl Piv {
         w: &Workspace,
         p: &mut Platform<'_>,
     ) -> Result<usize, Sw> {
-        if offset
-            .checked_add(out.len())
-            .is_none_or(|end| end > self.header_len + self.body_len + self.suffix_len)
-        {
+        if !canokey_protocol::response::checked_window(
+            offset,
+            out.len(),
+            self.header_len + self.body_len + self.suffix_len,
+        ) {
             return Err(Sw::UNABLE_TO_PROCESS);
         }
         match self.response {

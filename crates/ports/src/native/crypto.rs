@@ -109,6 +109,30 @@ unsafe extern "C" {
         capacity: usize,
     ) -> i32;
 }
+#[cfg(any(
+    feature = "ctap",
+    feature = "piv",
+    feature = "platform-stream",
+    feature = "platform-mac",
+    feature = "platform-random"
+))]
+fn rc_unit(n: i32) -> Result<(), CryptoError> {
+    if n == 0 {
+        Ok(())
+    } else {
+        Err(CryptoError::Failure)
+    }
+}
+
+#[cfg(any(feature = "platform-stream", feature = "platform-key"))]
+fn rc_len(n: i32, capacity: usize) -> Result<usize, CryptoError> {
+    if n < 0 || n as usize > capacity {
+        Err(CryptoError::Failure)
+    } else {
+        Ok(n as usize)
+    }
+}
+
 native_port! { impl Crypto for CryptoBackend {
     #[cfg(feature = "ctap")]
     fn p256_sign(
@@ -117,12 +141,7 @@ native_port! { impl Crypto for CryptoBackend {
         digest: &[u8; 32],
         out: &mut [u8; 64],
     ) -> Result<(), CryptoError> {
-        if unsafe { ck_platform_p256_sign(scalar.as_ptr(), digest.as_ptr(), out.as_mut_ptr()) } == 0
-        {
-            Ok(())
-        } else {
-            Err(CryptoError::Failure)
-        }
+        rc_unit(unsafe { ck_platform_p256_sign(scalar.as_ptr(), digest.as_ptr(), out.as_mut_ptr()) })
     }
 
     #[cfg(feature = "ctap")]
@@ -140,7 +159,7 @@ native_port! { impl Crypto for CryptoBackend {
         iv: &[u8; 16],
         data: &mut [u8],
     ) -> Result<(), CryptoError> {
-        if unsafe {
+        rc_unit(unsafe {
             ck_platform_aes256(
                 u8::from(encrypt),
                 key.as_ptr(),
@@ -148,12 +167,7 @@ native_port! { impl Crypto for CryptoBackend {
                 data.as_mut_ptr(),
                 data.len(),
             )
-        } == 0
-        {
-            Ok(())
-        } else {
-            Err(CryptoError::Failure)
-        }
+        })
     }
 
     #[cfg(feature = "platform-stream")]
@@ -164,19 +178,14 @@ native_port! { impl Crypto for CryptoBackend {
         input: &[u8],
         out: &mut [u8],
     ) -> Result<(), CryptoError> {
-        if unsafe {
+        rc_unit(unsafe {
             match op {
                 crate::DigestOperation::Init => ck_digest_init(state),
                 crate::DigestOperation::Update => ck_digest_update(state, input.as_ptr(), input.len()),
                 crate::DigestOperation::Final => ck_digest_final(state, out.as_mut_ptr(), out.len()),
                 crate::DigestOperation::Abort => ck_digest_abort(state),
             }
-        } == 0
-        {
-            Ok(())
-        } else {
-            Err(CryptoError::Failure)
-        }
+        })
     }
     #[cfg(feature = "platform-stream")]
     fn stream(
@@ -201,11 +210,7 @@ native_port! { impl Crypto for CryptoBackend {
                 crate::StreamOperation::DecapsulateFinal => ck_stream_decapsulate_final(scratch, out.as_mut_ptr(), out.len()),
             }
         };
-        if n < 0 {
-            Err(CryptoError::Failure)
-        } else {
-            Ok(n as usize)
-        }
+        rc_len(n, usize::MAX)
     }
 
     #[cfg(feature = "piv")]
@@ -215,11 +220,7 @@ native_port! { impl Crypto for CryptoBackend {
         input: &[u8; 16],
         out: &mut [u8; 16],
     ) -> Result<(), CryptoError> {
-        if unsafe { ck_platform_aes192(key.as_ptr(), input.as_ptr(), out.as_mut_ptr()) } == 0 {
-            Ok(())
-        } else {
-            Err(CryptoError::Failure)
-        }
+        rc_unit(unsafe { ck_platform_aes192(key.as_ptr(), input.as_ptr(), out.as_mut_ptr()) })
     }
 
     #[cfg(feature = "platform-key")]
@@ -245,10 +246,8 @@ native_port! { impl Crypto for CryptoBackend {
         if n == -2 && matches!(op, crate::KeyOperation::RsaPkcs1Decipher) {
             // CK_KEY_INVALID_PADDING in crypto_ops.h.
             Err(CryptoError::InvalidPadding)
-        } else if n < 0 || n as usize > out.len() {
-            Err(CryptoError::Failure)
         } else {
-            Ok(n as usize)
+            rc_len(n, out.len())
         }
     }
 
@@ -261,7 +260,7 @@ native_port! { impl Crypto for CryptoBackend {
     ) -> Result<(), CryptoError> {
         #[cfg(feature = "platform-mac")]
         {
-            if unsafe {
+            rc_unit(unsafe {
                 ck_platform_mac(
                     algorithm,
                     key.as_ptr(),
@@ -270,12 +269,7 @@ native_port! { impl Crypto for CryptoBackend {
                     input.len(),
                     out.as_mut_ptr(),
                 )
-            } == 0
-            {
-                Ok(())
-            } else {
-                Err(CryptoError::Failure)
-            }
+            })
         }
         #[cfg(not(feature = "platform-mac"))]
         {
@@ -286,11 +280,7 @@ native_port! { impl Crypto for CryptoBackend {
     fn random(&mut self, out: &mut [u8]) -> Result<(), CryptoError> {
         #[cfg(feature = "platform-random")]
         {
-            if unsafe { ck_platform_random(out.as_mut_ptr(), out.len()) } == 0 {
-                Ok(())
-            } else {
-                Err(CryptoError::Failure)
-            }
+            rc_unit(unsafe { ck_platform_random(out.as_mut_ptr(), out.len()) })
         }
         #[cfg(not(feature = "platform-random"))]
         {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::CLA_CHAINING;
+use super::{CLA_CHAINING, INS_SELECT, SELECT_BY_NAME};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -12,9 +12,7 @@ pub struct Header {
 
 const CLA_ISO: u8 = 0x00;
 const CLA_PROPRIETARY: u8 = 0x80;
-const INS_SELECT: u8 = 0xa4;
 const INS_GET_RESPONSE: u8 = 0xc0;
-const SELECT_BY_NAME: u8 = 0x04;
 impl Header {
     pub fn is_select_by_name(self) -> bool {
         self.cla == CLA_ISO && self.ins == INS_SELECT && self.p1 == SELECT_BY_NAME

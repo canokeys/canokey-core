@@ -3,6 +3,42 @@
 //! Firmware implements it with LittleFS; host virtual cards use record images.
 use crate::{Record, Storage, StorageError};
 
+#[cfg(any(
+    feature = "storage",
+    feature = "oath",
+    feature = "openpgp",
+    feature = "piv",
+    feature = "ctap",
+    feature = "ndef"
+))]
+fn io_count(n: i32, expected: Option<usize>, failure: StorageError) -> Result<usize, StorageError> {
+    match expected {
+        Some(count) if n == count as i32 => Ok(count),
+        Some(_) => Err(failure),
+        None => match n {
+            -1 => Err(StorageError::Missing),
+            n if n >= 0 => Ok(n as usize),
+            _ => Err(failure),
+        },
+    }
+}
+
+#[cfg(any(
+    feature = "oath",
+    feature = "openpgp",
+    feature = "piv",
+    feature = "ctap",
+    feature = "ndef"
+))]
+fn stage(op: StageOperation, file: u8, data: *const u8, len: usize) -> Result<(), StorageError> {
+    io_count(
+        unsafe { ck_platform_stage(op as u8, file, data, len) },
+        Some(0),
+        StorageError::Uncertain,
+    )
+    .map(|_| ())
+}
+
 #[cfg(any(feature = "openpgp", feature = "piv"))]
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -149,11 +185,7 @@ native_port! { impl Storage for StorageBackend {
     fn config_write(&mut self, bytes: &[u8; 512]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
         {
-            if unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) } == 0 {
-                Ok(())
-            } else {
-                Err(StorageError::Uncertain)
-            }
+            io_count(unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) }, Some(0), StorageError::Uncertain).map(|_| ())
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -163,30 +195,15 @@ native_port! { impl Storage for StorageBackend {
     }
     #[cfg(feature = "ndef")]
     fn resize(&mut self, record: Record, length: u32) -> Result<(), StorageError> {
-        if unsafe { ck_platform_resize(record.id(), length) } == 0 {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        io_count(unsafe { ck_platform_resize(record.id(), length) }, Some(0), StorageError::Uncertain).map(|_| ())
     }
     #[cfg(feature = "platform-stage")]
     fn remove(&mut self, id: Record) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(StageOperation::Remove as u8, id.id(), core::ptr::null(), 0) }
-            == 0
-        {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        stage(StageOperation::Remove, id.id(), core::ptr::null(), 0)
     }
     #[cfg(feature = "piv")]
     fn move_record(&mut self, from: Record, to: Record) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(StageOperation::Rename as u8, from.id(), &(to.id()), 1) } == 0
-        {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        stage(StageOperation::Rename, from.id(), &(to.id()), 1)
     }
 
     #[cfg(any(
@@ -197,11 +214,7 @@ native_port! { impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(StageOperation::Begin as u8, 0, core::ptr::null(), 0) } == 0 {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        stage(StageOperation::Begin, 0, core::ptr::null(), 0)
     }
     #[cfg(any(
         feature = "oath",
@@ -211,11 +224,7 @@ native_port! { impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn stage_append(&mut self, b: &[u8]) -> Result<(), StorageError> {
-        if unsafe { ck_platform_stage(StageOperation::Append as u8, 0, b.as_ptr(), b.len()) } == 0 {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        stage(StageOperation::Append, 0, b.as_ptr(), b.len())
     }
     #[cfg(any(
         feature = "oath",
@@ -225,14 +234,7 @@ native_port! { impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn stage_commit(&mut self, id: Record) -> Result<(), StorageError> {
-        if unsafe {
-            ck_platform_stage(StageOperation::Publish as u8, id.id(), core::ptr::null(), 0)
-        } == 0
-        {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        stage(StageOperation::Publish, id.id(), core::ptr::null(), 0)
     }
     #[cfg(any(
         feature = "oath",
@@ -242,19 +244,13 @@ native_port! { impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn stage_abort(&mut self) {
-        unsafe {
-            ck_platform_stage(StageOperation::Abort as u8, 0, core::ptr::null(), 0);
-        }
+        let _ = stage(StageOperation::Abort, 0, core::ptr::null(), 0);
     }
 
     fn size(&mut self, file: Record) -> Result<u32, StorageError> {
         #[cfg(feature = "storage")]
         {
-            match unsafe { ck_platform_size(file.id()) } {
-                -1 => Err(StorageError::Missing),
-                n if n >= 0 => Ok(n as u32),
-                _ => Err(StorageError::Unavailable),
-            }
+            io_count(unsafe { ck_platform_size(file.id()) }, None, StorageError::Unavailable).map(|n| n as u32)
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -270,23 +266,11 @@ native_port! { impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn read_at(&mut self, file: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
-        if unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) }
-            == out.len() as i32
-        {
-            Ok(())
-        } else {
-            Err(StorageError::Unavailable)
-        }
+        io_count(unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) }, Some(out.len()), StorageError::Unavailable).map(|_| ())
     }
     #[cfg(feature = "storage")]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
-        if unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) }
-            == input.len() as i32
-        {
-            Ok(())
-        } else {
-            Err(StorageError::Uncertain)
-        }
+        io_count(unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) }, Some(input.len()), StorageError::Uncertain).map(|_| ())
     }
     #[cfg(any(
         feature = "oath",
@@ -306,11 +290,7 @@ native_port! { impl Storage for StorageBackend {
     fn load(&mut self, file: Record, out: &mut [u8]) -> Result<usize, StorageError> {
         #[cfg(feature = "storage")]
         {
-            match unsafe { ck_platform_read(file.id(), out.as_mut_ptr(), out.len()) } {
-                -1 => Err(StorageError::Missing),
-                n if n >= 0 => Ok(n as usize),
-                _ => Err(StorageError::Unavailable),
-            }
+            io_count(unsafe { ck_platform_read(file.id(), out.as_mut_ptr(), out.len()) }, None, StorageError::Unavailable)
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -321,13 +301,7 @@ native_port! { impl Storage for StorageBackend {
     fn replace(&mut self, file: Record, input: &[u8]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
         {
-            if unsafe { ck_platform_write(file.id(), input.as_ptr(), input.len()) }
-                == input.len() as i32
-            {
-                Ok(())
-            } else {
-                Err(StorageError::Uncertain)
-            }
+            io_count(unsafe { ck_platform_write(file.id(), input.as_ptr(), input.len()) }, Some(input.len()), StorageError::Uncertain).map(|_| ())
         }
         #[cfg(not(feature = "storage"))]
         {

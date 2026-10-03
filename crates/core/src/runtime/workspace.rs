@@ -24,6 +24,7 @@ pub const INPUT_BYTES: usize = 544;
 pub const OUTPUT_BYTES: usize = 528;
 /// A temporary split borrow of the classic fields in the session reservation.
 pub struct Workspace<'a> {
+    #[cfg_attr(not(crypto_applet), expect(dead_code))]
     pub key: &'a mut KeyMaterial,
     #[cfg(feature = "piv")]
     pub agreement: &'a mut [u8; agreement_layout::SIZE],
@@ -31,6 +32,7 @@ pub struct Workspace<'a> {
     pub output: &'a mut [u8; OUTPUT_BYTES],
 }
 impl Workspace<'_> {
+    #[cfg_attr(not(crypto_applet), expect(dead_code))]
     pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
         #[cfg(feature = "piv")]
         memory.wipe(self.agreement);

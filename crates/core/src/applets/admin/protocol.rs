@@ -157,13 +157,8 @@ impl Admin {
                 .stage_append(data)
                 .map_err(|_| Sw::UNABLE_TO_PROCESS);
         }
-        let end = self
-            .used
-            .checked_add(data.len())
-            .filter(|n| *n <= COMMAND_CAPACITY)
+        crate::applets::append_bounded(&mut self.used, w.input, COMMAND_CAPACITY, data)
             .ok_or(Sw::WRONG_LENGTH)?;
-        w.input[self.used..end].copy_from_slice(data);
-        self.used = end;
         Ok(())
     }
     pub fn finish(
@@ -431,9 +426,10 @@ impl Admin {
             if self.used != 0 {
                 return Err(Sw::WRONG_LENGTH);
             }
-            w.output[..4].copy_from_slice(&crate::runtime::config::serial(p.storage));
-            self.response_len = 4;
-            return Ok(4);
+            self.response_len = crate::applets::write_serial(w.output, |out| {
+                out.copy_from_slice(&crate::runtime::config::serial(p.storage));
+            });
+            return Ok(self.response_len as u32);
         }
         if matches!(h.ins, INS_NFC_ENABLE | INS_CONFIG | INS_READ_CONFIG) {
             return self.device_config(h, grants, p, w);

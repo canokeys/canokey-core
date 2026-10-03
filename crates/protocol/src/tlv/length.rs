@@ -23,17 +23,15 @@ pub enum Feed {
 /// invalid BER length. Return the value and bytes consumed, leaving any body
 /// bytes to the caller. Non-minimal definite encodings remain valid.
 pub fn read_prefix(bytes: &[u8]) -> Result<Option<(u16, usize)>, super::Error> {
-    let Some(&first) = bytes.first() else {
-        return Ok(None);
-    };
-    match first {
-        0..=0x7f => Ok(Some((u16::from(first), 1))),
-        0x81 => Ok(bytes.get(1).map(|&n| (u16::from(n), 2))),
-        0x82 => Ok(bytes
-            .get(1..3)
-            .map(|n| (u16::from_be_bytes([n[0], n[1]]), 3))),
-        _ => Err(super::Error::Invalid),
+    let mut state = LengthState::Initial;
+    for (i, &byte) in bytes.iter().enumerate() {
+        match state.feed(byte) {
+            Feed::More => (),
+            Feed::Complete(n) => return Ok(Some((n, i + 1))),
+            Feed::Invalid => return Err(super::Error::Invalid),
+        }
     }
+    Ok(None)
 }
 impl LengthState {
     pub fn feed(&mut self, byte: u8) -> Feed {

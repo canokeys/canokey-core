@@ -19,16 +19,6 @@ unsafe extern "C" {
     fn ck_nfc_io_select(active: u8);
     fn ck_nfc_io_delay(milliseconds: u16);
     fn ck_nfc_io_schedule(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
-    fn ck_ccid_response_buffer() -> *mut u8;
-    fn ck_core_reset();
-    fn ck_core_exchange(
-        owner: u8,
-        input: *const u8,
-        length: usize,
-        out: *mut u8,
-        capacity: usize,
-    ) -> i32;
-    fn usb_device_deinit();
 }
 struct Hardware;
 impl Chip for Hardware {
@@ -123,7 +113,7 @@ unsafe fn reset_link() {
         SENT = 0;
         MORE = false;
         FIDO = false;
-        ck_core_reset();
+        crate::abi::core::ck_core_reset();
     }
 }
 /// Boot-only mode latch, before any transport or applet is started.
@@ -137,7 +127,7 @@ pub unsafe extern "C" fn ck_nfc_set_mode(active: u8) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nfc_init() {
     unsafe {
-        usb_device_deinit();
+        crate::transport::usb::usb_device_deinit();
         let mask = ck_nfc_io_lock();
         ck_nfc_io_schedule(None, 0);
         ACTIVE = true;
@@ -172,10 +162,16 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
         if !started {
             return;
         }
-        let buffer = ck_ccid_response_buffer();
+        let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         // Must match runtime/engine.rs::OWNER_NFC, including extended-APDU admission.
         const OWNER_NFC: u8 = 4;
-        let n = ck_core_exchange(OWNER_NFC, input, length, buffer, apdu::SHORT_REPLY_BYTES);
+        let n = crate::abi::core::ck_core_exchange(
+            OWNER_NFC,
+            input,
+            length,
+            buffer,
+            apdu::SHORT_REPLY_BYTES,
+        );
         with_io(|io, _, now| {
             ck_nfc_io_schedule(None, 0);
             io.computed(now);
@@ -206,7 +202,7 @@ unsafe fn next_response() {
             execute(apdu::GET_RESPONSE.as_ptr(), apdu::GET_RESPONSE.len(), true);
             return;
         }
-        let buffer = ck_ccid_response_buffer();
+        let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         let remaining = core::slice::from_raw_parts(buffer.add(SENT), LENGTH - SENT);
         match (&mut *core::ptr::addr_of_mut!(LINK)).response(remaining, MORE) {
             Ok(packet) => {
@@ -235,7 +231,7 @@ unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Err
                 io.take(&mut frame)
             }
         })?;
-        let buffer = ck_ccid_response_buffer();
+        let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         Some((&mut *core::ptr::addr_of_mut!(LINK)).receive(
             &frame[..n],
             core::slice::from_raw_parts_mut(buffer, apdu::SHORT_FRAME_BYTES),
@@ -275,7 +271,7 @@ pub unsafe extern "C" fn nfc_loop() {
         let Some(event) = receive() else {
             return;
         };
-        let buffer = ck_ccid_response_buffer();
+        let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         match event {
             Ok(Event::Execute(length)) => {
                 let input = core::slice::from_raw_parts(buffer, length);

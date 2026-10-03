@@ -308,10 +308,11 @@ impl Piv {
             let SessionWorkspace::Stream(s) = w else {
                 return Err(Sw::UNABLE_TO_PROCESS);
             };
-            if offset
-                .checked_add(out.len())
-                .is_none_or(|n| n > self.header_len + self.body_len)
-            {
+            if !canokey_protocol::response::checked_window(
+                offset,
+                out.len(),
+                self.header_len + self.body_len,
+            ) {
                 return Err(Sw::UNABLE_TO_PROCESS);
             }
             let head = self.header_len.saturating_sub(offset).min(out.len());

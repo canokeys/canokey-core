@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized CCID entrypoint. IRQs operate only the platform packet mailbox.
+#[cfg(all(feature = "ctap", feature = "usb-hid"))]
+use crate::transport::hid::link::{ck_hid_active, ck_hid_busy};
 use canokey_protocol::{apdu::EXTENDED_HEADER_BYTES, ccid::HEADER};
 use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, Transport};
 
@@ -36,7 +38,9 @@ unsafe extern "C" {
 }
 #[cfg(feature = "ctap")]
 unsafe extern "C" {
+    #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_busy() -> u8;
+    #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_active() -> u8;
     fn pke_buffer_size() -> usize;
     fn pke_buffer_acquire(owner: u8) -> i32;

@@ -321,13 +321,9 @@ impl Applet {
         Ok(())
     }
     pub fn consume(&mut self, bytes: &[u8]) -> Result<(), Sw> {
-        let end = self
-            .used
-            .checked_add(bytes.len())
-            .filter(|&n| n <= self.input.len())
+        let cap = self.input.len();
+        crate::applets::append_bounded(&mut self.used, &mut self.input, cap, bytes)
             .ok_or(Sw::WRONG_LENGTH)?;
-        self.input[self.used..end].copy_from_slice(bytes);
-        self.used = end;
         Ok(())
     }
     pub fn end_frame(&mut self, last: bool, p: &mut crate::Platform<'_>) -> Result<(), Sw> {
@@ -367,7 +363,7 @@ impl Applet {
         out: &mut [u8],
         p: &mut crate::Platform<'_>,
     ) -> Result<usize, Sw> {
-        if offset > self.response_length || out.len() > self.response_length - offset {
+        if !canokey_protocol::response::checked_window(offset, out.len(), self.response_length) {
             return Err(Sw::WRONG_LENGTH);
         }
         self.file

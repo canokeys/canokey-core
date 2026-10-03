@@ -235,10 +235,7 @@ impl Applet {
     ) -> Result<(), Sw> {
         if let Some(sw) = self.message_status {
             let length = self.message_length;
-            if offset
-                .checked_add(output.len())
-                .is_none_or(|end| end > length + 2)
-            {
+            if !canokey_protocol::response::checked_window(offset, output.len(), length + 2) {
                 return Err(Sw::WRONG_LENGTH);
             }
             let n = output.len().min(length.saturating_sub(offset));

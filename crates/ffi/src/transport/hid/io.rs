@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB IRQ report mailbox and reset epochs, disjoint from CTAPHID execution.
+use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
 unsafe extern "C" {
-    fn ck_usb_dcd_lock() -> u32;
-    fn ck_usb_dcd_unlock(mask: u32);
     fn ck_usb_configured() -> u8;
     fn ck_usb_tx_idle(endpoint: u8) -> u8;
     fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
@@ -15,21 +14,13 @@ static mut QUEUED: bool = false;
 static mut RESET: bool = false;
 static mut EPOCH: u32 = 0;
 static mut RECEIVED: u32 = 0;
-fn locked<T>(run: impl FnOnce() -> T) -> T {
-    unsafe {
-        let mask = ck_usb_dcd_lock();
-        let result = run();
-        ck_usb_dcd_unlock(mask);
-        result
-    }
-}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CTAPHID_RxCanAccept() -> u8 {
     unsafe { u8::from(!core::ptr::read_volatile(core::ptr::addr_of!(QUEUED))) }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CTAPHID_OutEvent(data: *const u8) -> u8 {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         if QUEUED || data.is_null() {
             return 0;
         }
@@ -41,7 +32,7 @@ pub unsafe extern "C" fn CTAPHID_OutEvent(data: *const u8) -> u8 {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_packet_reset() {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         EPOCH = EPOCH.wrapping_add(1);
         RESET = true;
         QUEUED = false;
@@ -64,7 +55,7 @@ pub unsafe extern "C" fn ck_hid_io_reset_pending() -> u8 {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_ack_reset(generation: u32) {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         if EPOCH == generation {
             RESET = false;
         }
@@ -72,11 +63,11 @@ pub unsafe extern "C" fn ck_hid_io_ack_reset(generation: u32) {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_configured() -> u8 {
-    locked(|| unsafe { ck_usb_configured() })
+    usb_locked(|| unsafe { ck_usb_configured() })
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_idle() -> u8 {
-    locked(|| unsafe { ck_usb_tx_idle(EP_HID_IN) })
+    usb_locked(|| unsafe { ck_usb_tx_idle(EP_HID_IN) })
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_peek(
@@ -85,7 +76,7 @@ pub unsafe extern "C" fn ck_hid_io_peek(
     tick: *mut u32,
     generation: u32,
 ) -> u8 {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         let ok =
             generation == EPOCH && QUEUED && length <= 64 && !report.is_null() && !tick.is_null();
         if ok {
@@ -101,7 +92,7 @@ pub unsafe extern "C" fn ck_hid_io_peek(
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_consume(generation: u32) {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         if generation == EPOCH {
             QUEUED = false;
         }
@@ -109,7 +100,7 @@ pub unsafe extern "C" fn ck_hid_io_consume(generation: u32) {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_receive() {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         if !QUEUED {
             ck_usb_receive(EP_HID);
         }
@@ -117,7 +108,7 @@ pub unsafe extern "C" fn ck_hid_io_receive() {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_io_send(report: *const u8, generation: u32) -> u8 {
-    locked(|| unsafe {
+    usb_locked(|| unsafe {
         u8::from(
             generation == EPOCH
                 && !RESET

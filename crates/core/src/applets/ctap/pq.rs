@@ -306,7 +306,7 @@ impl Stream<'_> {
     }
     pub fn read(&mut self, offset: usize, out: &mut [u8], p: &mut Platform<'_>) -> Result<(), Sw> {
         if offset != self.framing.emitted
-            || offset.checked_add(out.len()).is_none_or(|n| n > self.len())
+            || !canokey_protocol::response::checked_window(offset, out.len(), self.len())
         {
             return Err(Sw::WRONG_LENGTH);
         }

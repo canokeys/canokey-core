@@ -27,6 +27,7 @@ pass = ["canokey-ports/pass"]
 oath = ["canokey-ports/oath"]
 
 [dev-dependencies]
+canokey-ports = { path = "../ports", features = ["dynamic-backend"] }
 sha2 = "0.10.9"
 
 [lints]

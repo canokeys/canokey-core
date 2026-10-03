@@ -48,13 +48,9 @@ impl<'a> Writer<'a> {
     }
     pub(super) fn header(&mut self, tag: u16, n: usize) -> Result<(), Sw> {
         self.tag(tag)?;
-        if n < 128 {
-            self.bytes(&[n as u8])
-        } else if n < 256 {
-            self.bytes(&[0x81, n as u8])
-        } else {
-            self.bytes(&[0x82, (n >> 8) as u8, n as u8])
-        }
+        self.len += canokey_protocol::tlv::write_length(n as u16, &mut self.out[self.len..])
+            .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
+        Ok(())
     }
     // Reserve the longest supported BER length (82 hi lo). The returned
     // token is the value start; close() shrinks this prefix after encoding.
