@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::wire::reference;
-use crate::{
-    Platform,
-    ports::{Record, StorageError},
-};
+use crate::mechanisms::pin::{self as mechanism, VerifyMode};
+use crate::{Platform, ports::Record};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 // One atomic disk record contains both secrets and their retry counters.
 // Authorization grants (pin_ok) are session-only and never serialized.
@@ -111,14 +109,23 @@ impl Pins {
         self.available = false;
         self.state.pin_ok = false;
         let mut bytes = [0; STATE_LEN];
-        let result = match p.storage.load(Record::PivState, &mut bytes) {
-            Ok(STATE_LEN) => State::decode(&bytes).ok_or(Sw::UNABLE_TO_PROCESS),
-            Err(StorageError::Missing) => {
+        let result = crate::mechanisms::storage::load_or_else(
+            p,
+            Record::PivState,
+            &mut bytes,
+            |bytes, n| {
+                if n == STATE_LEN {
+                    State::decode(bytes).ok_or(Sw::UNABLE_TO_PROCESS)
+                } else {
+                    Err(Sw::UNABLE_TO_PROCESS)
+                }
+            },
+            |_, p| {
                 self.state = State::fresh();
-                self.save(p).map(|()| self.state)
-            }
-            _ => Err(Sw::UNABLE_TO_PROCESS),
-        };
+                self.save(p).map(|()| State::fresh())
+            },
+            |_| Sw::UNABLE_TO_PROCESS,
+        );
         p.memory.wipe(&mut bytes);
         self.state = result?;
         self.available = true;
@@ -146,11 +153,9 @@ impl Pins {
         }
     }
     fn reference(h: Header, allow_puk: bool) -> Result<bool, Sw> {
-        match h.p2 {
-            reference::PIN => Ok(false),
-            reference::PUK if allow_puk => Ok(true),
-            _ => Err(Sw::REFERENCE_NOT_FOUND),
-        }
+        mechanism::reference(h.p2, reference::PIN, reference::PUK)
+            .filter(|puk| !*puk || allow_puk)
+            .ok_or(Sw::REFERENCE_NOT_FOUND)
     }
     fn authenticate(&mut self, puk: bool, data: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
         self.ready()?;
@@ -217,12 +222,10 @@ impl Pins {
     ) -> Result<u32, Sw> {
         // VERIFY: P1=00 verifies (or queries with empty data); P1=FF logs
         // out and requires empty data. P2 must identify the PIN (80).
-        if !matches!(h.p1, 0x00 | 0xff) {
-            return Err(Sw::WRONG_P1P2);
-        }
+        let mode = mechanism::verify_mode(h.p1, data.is_empty()).ok_or(Sw::WRONG_P1P2)?;
         Self::reference(h, false)?;
         self.ready()?;
-        if h.p1 == 0xff {
+        if matches!(mode, VerifyMode::Logout) {
             if !data.is_empty() {
                 return Err(Sw::WRONG_LENGTH);
             }
@@ -255,19 +258,14 @@ impl Pins {
         // CHANGE REFERENCE DATA: P1=00, P2=80 PIN / 81 PUK. The body
         // concatenates the old and new eight-byte values.
         let puk = Self::reference(h, true)?;
-        if data.len() != 2 * VALUE_BYTES {
-            return Err(Sw::WRONG_LENGTH);
-        }
-        self.authenticate(puk, data, p)?;
+        let (old, new) = mechanism::split_change(data, VALUE_BYTES, Some(VALUE_BYTES))
+            .ok_or(Sw::WRONG_LENGTH)?;
+        self.authenticate(puk, old, p)?;
         if puk {
-            self.state
-                .puk
-                .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);
+            self.state.puk.copy_from_slice(new);
         } else {
             self.state.pin_ok = false;
-            self.state
-                .pin
-                .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);
+            self.state.pin.copy_from_slice(new);
         }
         self.save(p)?;
         Ok(0)
@@ -283,17 +281,14 @@ impl Pins {
             return Err(Sw::WRONG_P1P2);
         }
         Self::reference(h, false)?;
-        if data.len() != 2 * VALUE_BYTES {
-            return Err(Sw::WRONG_LENGTH);
-        }
+        let (old, new) = mechanism::split_change(data, VALUE_BYTES, Some(VALUE_BYTES))
+            .ok_or(Sw::WRONG_LENGTH)?;
         // RESET RETRY COUNTER: P1=00, P2=80 selects the PIN being reset;
         // authentication uses the PUK supplied before the replacement PIN.
-        self.authenticate(true, data, p)?;
+        self.authenticate(true, old, p)?;
         self.state.pin_tries = self.state.pin_limit;
         self.state.pin_ok = false;
-        self.state
-            .pin
-            .copy_from_slice(&data[VALUE_BYTES..2 * VALUE_BYTES]);
+        self.state.pin.copy_from_slice(new);
         self.save(p)?;
         Ok(0)
     }

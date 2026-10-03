@@ -11,6 +11,12 @@ const INVENTORY_LENGTH: usize = 4;
 const INVENTORY_SLOT_BYTES: usize = 6;
 const INVENTORY_HAS_KEY: u8 = 0x01;
 const INVENTORY_HAS_CERTIFICATE: u8 = 0x02;
+const REFERENCE_METADATA_BYTES: usize = 10;
+#[inline(always)]
+fn reference_metadata(out: &mut [u8], algorithm: u8, fields: &[u8; 7]) {
+    out[..3].copy_from_slice(&[metadata_tag::ALGORITHM, 0x01, algorithm]);
+    out[3..REFERENCE_METADATA_BYTES].copy_from_slice(fields);
+}
 
 impl Piv {
     #[inline(never)]
@@ -103,40 +109,42 @@ impl Piv {
             };
             // TLVs: algorithm FF (PIN/PUK), factory-default flag, then
             // retry limit and remaining attempts (in that order).
-            w.output[..10].copy_from_slice(&[
-                metadata_tag::ALGORITHM,
-                0x01,
-                0xff, // PIN/PUK reference, not an asymmetric algorithm.
-                metadata_tag::DEFAULT,
-                0x01,
-                u8::from(default),
-                metadata_tag::RETRIES,
-                0x02,
-                limit,
-                remaining,
-            ]);
-            self.memory(10);
-            return Ok(10);
+            reference_metadata(
+                w.output,
+                0xff,
+                &[
+                    metadata_tag::DEFAULT,
+                    0x01,
+                    u8::from(default),
+                    metadata_tag::RETRIES,
+                    0x02,
+                    limit,
+                    remaining,
+                ],
+            );
+            self.memory(REFERENCE_METADATA_BYTES);
+            return Ok(REFERENCE_METADATA_BYTES as u32);
         }
         if h.p2 == reference::MANAGEMENT {
             let mut mgmt = repo::management(p)?;
             // TLVs: AES-192 algorithm, policy (no PIN + configured touch),
             // and whether the management key is still the factory default.
-            w.output[..10].copy_from_slice(&[
-                metadata_tag::ALGORITHM,
-                0x01,
+            reference_metadata(
+                w.output,
                 wire_alg::AES192,
-                metadata_tag::POLICY,
-                0x02,
-                0x00,
-                mgmt[repo::MANAGEMENT_TOUCH],
-                metadata_tag::DEFAULT,
-                0x01,
-                u8::from(mgmt[repo::MANAGEMENT_KEY..] == repo::DEFAULT_MGMT),
-            ]);
+                &[
+                    metadata_tag::POLICY,
+                    0x02,
+                    0x00,
+                    mgmt[repo::MANAGEMENT_TOUCH],
+                    metadata_tag::DEFAULT,
+                    0x01,
+                    u8::from(mgmt[repo::MANAGEMENT_KEY..] == repo::DEFAULT_MGMT),
+                ],
+            );
             p.memory.wipe(&mut mgmt);
-            self.memory(10);
-            return Ok(10);
+            self.memory(REFERENCE_METADATA_BYTES);
+            return Ok(REFERENCE_METADATA_BYTES as u32);
         }
         let id = repo::slot(h.p2).map_err(|_| Sw::REFERENCE_NOT_FOUND)?;
         let mut m = [0; repo::META];

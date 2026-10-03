@@ -59,6 +59,42 @@ fn parse_sm2_packet(
     Ok((packet, klen))
 }
 
+pub(super) fn public_envelope(
+    header: &mut [u8],
+    metadata: bool,
+    n: usize,
+    rsa: bool,
+    point: usize,
+    public_bytes: usize,
+) -> Result<usize, Sw> {
+    let mut at = 0;
+    // RSA includes modulus/exponent headers and the four-byte exponent.
+    // Streaming public bytes already include any point prefix.
+    let inner = if rsa {
+        n + 4 + 2 + crate::ports::key_layout::EXPONENT_BYTES
+    } else {
+        n + point + if n + point < 128 { 2 } else { 3 }
+    };
+    at += codec::header(
+        &mut header[at..],
+        if metadata {
+            &[metadata_tag::PUBLIC_KEY]
+        } else {
+            &key_tag::PUBLIC_TEMPLATE
+        },
+        inner,
+    )?;
+    at += codec::header(
+        &mut header[at..],
+        &[if rsa {
+            key_tag::MODULUS
+        } else {
+            key_tag::PUBLIC_POINT
+        }],
+        public_bytes,
+    )?;
+    Ok(at)
+}
 impl Piv {
     #[inline(never)]
     pub(super) fn public(
@@ -91,38 +127,14 @@ impl Piv {
             .key_operation(KeyOperation::Public, a, &mut w.key, &[], w.output)
             .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
         self.memory(n);
-        let mut at = 0;
-        if metadata {
-            at = self.metadata_header(a, m);
-        }
         let rsa = repo::rsa(a);
         let point = usize::from(!rsa && a != alg::ED25519 && a != alg::X25519);
-        // RSA: four-byte modulus TLV header + two-byte exponent header + exponent4.
-        // EC includes its
-        // point tag and optional uncompressed-point prefix.
-        let inner = if rsa {
-            n + 4 + (2 + crate::ports::key_layout::EXPONENT_BYTES)
+        let mut at = if metadata {
+            self.metadata_header(a, m)
         } else {
-            n + point + if n + point < 128 { 2 } else { 3 }
+            0
         };
-        at += codec::header(
-            &mut self.header[at..],
-            if metadata {
-                &[metadata_tag::PUBLIC_KEY]
-            } else {
-                &key_tag::PUBLIC_TEMPLATE
-            },
-            inner,
-        )?;
-        at += codec::header(
-            &mut self.header[at..],
-            &[if rsa {
-                key_tag::MODULUS
-            } else {
-                key_tag::PUBLIC_POINT
-            }],
-            n + point,
-        )?;
+        at += public_envelope(&mut self.header[at..], metadata, n, rsa, point, n + point)?;
         if rsa {
             self.suffix[..2].copy_from_slice(&[key_tag::EXPONENT, 0x04]);
             self.suffix[2..]

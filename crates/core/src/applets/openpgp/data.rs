@@ -45,6 +45,25 @@ const EXTENDED_CAPABILITIES: &[u8] = &[
     0x00, // ISO 9564 PIN block format 2 is not supported.
     0x00, // MANAGE SECURITY ENVIRONMENT (MSE) is not supported.
 ];
+#[inline(always)]
+fn role_of(value: u16, first: u16) -> usize {
+    (value - first) as usize
+}
+#[inline(always)]
+fn ca_fingerprint_offset(tag: u16) -> usize {
+    state_layout::CA_FINGERPRINTS
+        + role_of(tag, tag::CA_FINGERPRINT_1) * state_layout::FINGERPRINT_BYTES
+}
+// Fill on first access so storage failures do not precede earlier writer errors.
+struct Metadata([Option<[u8; repo::META_LEN]>; key_role::COUNT]);
+impl Metadata {
+    fn get(&mut self, p: &mut Platform<'_>, role: usize) -> Result<&[u8; repo::META_LEN], Sw> {
+        if self.0[role].is_none() {
+            self.0[role] = Some(repo::meta(p, role)?);
+        }
+        Ok(self.0[role].as_ref().unwrap())
+    }
+}
 impl OpenPgp {
     fn needs_state(tag: u16) -> bool {
         repo::field(tag).is_some()
@@ -69,6 +88,7 @@ impl OpenPgp {
             repo::state(p, &mut s)?;
         }
         let mut v = Writer::new(out);
+        let mut metadata = Metadata([None; key_role::COUNT]);
         if matches!(
             tag,
             tag::CARDHOLDER
@@ -78,10 +98,10 @@ impl OpenPgp {
                 | tag::ALGORITHM_INFORMATION
         ) {
             let start = v.open(tag)?;
-            self.emit(tag, &mut v, &s, p)?;
+            self.emit(tag, &mut v, &s, &mut metadata, p)?;
             v.close(start)?;
         } else {
-            self.emit(tag, &mut v, &s, p)?;
+            self.emit(tag, &mut v, &s, &mut metadata, p)?;
         }
         Ok(v.len)
     }
@@ -90,6 +110,7 @@ impl OpenPgp {
         tag: u16,
         v: &mut Writer<'_>,
         s: &[u8; repo::STATE_LEN],
+        metadata: &mut Metadata,
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
         if let Some((off, _)) = repo::field(tag) {
@@ -136,14 +157,14 @@ impl OpenPgp {
                 };
                 for &t in tags {
                     let at = v.open(t)?;
-                    self.emit(t, v, s, p)?;
+                    self.emit(t, v, s, metadata, p)?;
                     v.close(at)?;
                 }
                 Ok(())
             }
             tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT => {
-                let r = (tag - tag::ALGORITHM_SIG) as usize;
-                let a = Algorithm(repo::meta(p, r)?[key_meta::ALGORITHM]);
+                let r = role_of(tag, tag::ALGORITHM_SIG);
+                let a = Algorithm(metadata.get(p, r)?[key_meta::ALGORITHM]);
                 let mut b = [0; super::domain::ATTRIBUTE_BYTES];
                 let n = a.attrs(r, &mut b);
                 v.bytes(&b[..n])
@@ -166,7 +187,9 @@ impl OpenPgp {
             }
             tag::FINGERPRINTS => {
                 for r in 0..key_role::COUNT {
-                    v.bytes(&repo::meta(p, r)?[key_meta::FINGERPRINT..key_meta::FINGERPRINT_END])?;
+                    v.bytes(
+                        &metadata.get(p, r)?[key_meta::FINGERPRINT..key_meta::FINGERPRINT_END],
+                    )?;
                 }
                 Ok(())
             }
@@ -174,38 +197,40 @@ impl OpenPgp {
                 v.bytes(&s[state_layout::CA_FINGERPRINTS..state_layout::CA_FINGERPRINTS_END])
             }
             tag::FINGERPRINT_SIG..=tag::FINGERPRINT_AUT => v.bytes(
-                &repo::meta(p, (tag - tag::FINGERPRINT_SIG) as usize)?
+                &metadata.get(p, role_of(tag, tag::FINGERPRINT_SIG))?
                     [key_meta::FINGERPRINT..key_meta::FINGERPRINT_END],
             ),
             tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3 => {
-                let at = state_layout::CA_FINGERPRINTS
-                    + (tag - tag::CA_FINGERPRINT_1) as usize * state_layout::FINGERPRINT_BYTES;
+                let at = ca_fingerprint_offset(tag);
                 v.bytes(&s[at..at + state_layout::FINGERPRINT_BYTES])
             }
             tag::CREATION_TIMES => {
                 for r in 0..key_role::COUNT {
-                    v.bytes(&repo::meta(p, r)?[key_meta::CREATED..key_meta::CREATED_END])?;
+                    v.bytes(&metadata.get(p, r)?[key_meta::CREATED..key_meta::CREATED_END])?;
                 }
                 Ok(())
             }
             tag::CREATED_SIG..=tag::CREATED_AUT => v.bytes(
-                &repo::meta(p, (tag - tag::CREATED_SIG) as usize)?
+                &metadata.get(p, role_of(tag, tag::CREATED_SIG))?
                     [key_meta::CREATED..key_meta::CREATED_END],
             ),
             tag::UIF_SIG..=tag::UIF_AUT => v.bytes(&[
-                repo::meta(p, (tag - tag::UIF_SIG) as usize)?[key_meta::TOUCH_POLICY],
+                metadata.get(p, role_of(tag, tag::UIF_SIG))?[key_meta::TOUCH_POLICY],
                 touch_policy::BUTTON_INPUT,
             ]),
             tag::KEY_INFORMATION => {
                 for r in 0..key_role::COUNT {
                     // KEY INFORMATION uses references 0x01/0x02/0x03 for SIG/DEC/AUT.
-                    v.bytes(&[r as u8 + 1, repo::meta(p, r)?[key_meta::ORIGIN]])?;
+                    v.bytes(&[r as u8 + 1, metadata.get(p, r)?[key_meta::ORIGIN]])?;
                 }
                 Ok(())
             }
             tag::SECURITY_SUPPORT => {
                 v.header(tag::SIGNATURE_COUNTER, 3)?;
-                v.bytes(&repo::meta(p, 0)?[key_meta::SIGNATURE_COUNTER..key_meta::END])
+                v.bytes(
+                    &metadata.get(p, key_role::SIGNATURE)?
+                        [key_meta::SIGNATURE_COUNTER..key_meta::END],
+                )
             }
             tag::TOUCH_CACHE => {
                 v.bytes(&s[state_layout::TOUCH_CACHE_SECONDS..state_layout::FLAGS_END])
@@ -230,7 +255,7 @@ impl OpenPgp {
     #[inline(never)]
     pub(super) fn put(&mut self, tag: u16, b: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
         if (tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT).contains(&tag) {
-            let r = (tag - tag::ALGORITHM_SIG) as usize;
+            let r = role_of(tag, tag::ALGORITHM_SIG);
             let a = Algorithm::parse(b, r).ok_or(Sw::WRONG_DATA)?;
             let mut m = repo::meta(p, r)?;
             if m[key_meta::ALGORITHM] != a.0 {
@@ -246,18 +271,18 @@ impl OpenPgp {
         {
             let (r, off, n) = if tag <= tag::FINGERPRINT_AUT {
                 (
-                    (tag - tag::FINGERPRINT_SIG) as usize,
+                    role_of(tag, tag::FINGERPRINT_SIG),
                     key_meta::FINGERPRINT,
                     state_layout::FINGERPRINT_BYTES,
                 )
             } else if tag <= tag::CREATED_AUT {
                 (
-                    (tag - tag::CREATED_SIG) as usize,
+                    role_of(tag, tag::CREATED_SIG),
                     key_meta::CREATED,
                     key_meta::CREATED_END - key_meta::CREATED,
                 )
             } else {
-                ((tag - tag::UIF_SIG) as usize, key_meta::TOUCH_POLICY, 2)
+                (role_of(tag, tag::UIF_SIG), key_meta::TOUCH_POLICY, 2)
             };
             if b.len() != n {
                 return Err(Sw::WRONG_LENGTH);
@@ -321,8 +346,7 @@ impl OpenPgp {
                     if b.len() != state_layout::FINGERPRINT_BYTES {
                         return Err(Sw::WRONG_LENGTH);
                     }
-                    let at = state_layout::CA_FINGERPRINTS
-                        + (tag - tag::CA_FINGERPRINT_1) as usize * state_layout::FINGERPRINT_BYTES;
+                    let at = ca_fingerprint_offset(tag);
                     s[at..at + state_layout::FINGERPRINT_BYTES].copy_from_slice(b);
                     (offset, length) = (at, state_layout::FINGERPRINT_BYTES);
                 }

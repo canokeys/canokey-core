@@ -438,18 +438,18 @@ impl Piv {
         if policy < policy::TOUCH_ALWAYS {
             return Ok(());
         }
-        let now = p.device.now();
-        if policy == policy::TOUCH_CACHED
-            && self
-                .last_touch
-                .is_some_and(|t| now.wrapping_sub(t) < policy::TOUCH_CACHE_MS)
-        {
-            return Ok(());
-        }
-        if !self.presence.wait(p.device) {
+        if !crate::mechanisms::touch_cache::wait(
+            &mut self.last_touch,
+            if policy == policy::TOUCH_CACHED {
+                policy::TOUCH_CACHE_MS
+            } else {
+                0
+            },
+            &mut self.presence,
+            p.device,
+        ) {
             return Err(Sw::EXECUTION_ERROR);
         }
-        self.last_touch = Some(p.device.now());
         Ok(())
     }
     // Keep buffered-command temporaries out of the private-operation call path.

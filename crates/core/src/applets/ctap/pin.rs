@@ -10,7 +10,7 @@ use super::{
     crypto::{equal, mac, verify_mac},
 };
 use crate::{
-    ports::{KeyOperation, Platform, Record, StorageError, alg},
+    ports::{KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
 
@@ -33,28 +33,35 @@ pub(super) const PERMISSION_CONFIG: u8 = 0x20;
 /// A failed read/validation wipes even partially supplied backend data.
 pub(super) fn load(p: &mut Platform<'_>, record: &mut [u8; RECORD_BYTES]) -> Result<(), Status> {
     record.fill(0);
-    match p.storage.load(Record::CtapPin, record) {
-        Err(StorageError::Missing) => {
-            record[RETRIES] = MAX_RETRIES;
-            record[MIN_PIN_LENGTH] = MIN_CODE_POINTS;
-        }
-        Ok(n)
+    let result = crate::mechanisms::storage::load_or_else(
+        p,
+        Record::CtapPin,
+        record,
+        |record, n| {
             if n >= RP_HASHES
                 && record[RETRIES] <= MAX_RETRIES
                 && (record[PIN_LENGTH] == 0
                     || (MIN_CODE_POINTS..=MAX_PIN_BYTES).contains(&record[PIN_LENGTH]))
                 && (MIN_CODE_POINTS..=MAX_PIN_BYTES).contains(&record[MIN_PIN_LENGTH])
                 && record[FLAGS] >> RP_HASH_COUNT_SHIFT <= 4
-                && n == RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32 =>
-        {
-            ()
-        }
-        _ => {
-            p.memory.wipe(record);
-            return Err(Status::Other);
-        }
+                && n == RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32
+            {
+                Ok(())
+            } else {
+                Err(Status::Other)
+            }
+        },
+        |record, _| {
+            record[RETRIES] = MAX_RETRIES;
+            record[MIN_PIN_LENGTH] = MIN_CODE_POINTS;
+            Ok(())
+        },
+        |_| Status::Other,
+    );
+    if result.is_err() {
+        p.memory.wipe(record);
     }
-    Ok(())
+    result
 }
 /// Non-secret policy shared by callers that do not need the PIN hash/RP list.
 /// Validate the complete record before publishing any flags, then erase it here.

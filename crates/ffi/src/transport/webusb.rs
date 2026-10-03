@@ -4,12 +4,10 @@
 //! the WebUSB RX/TX allocation, exclusively leased by main-loop admission.
 //! A single 16-byte FIFO mailbox holds a data-stage OUT packet received after
 //! SETUP admission but before the main loop accepts the command.
+use crate::transport::owners::OWNER_WEBUSB;
 use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
-// Shared-session owner ABI: APDU=0, CCID=1, HID CTAP=2, WebUSB=3, NFC=4.
-// runtime/engine.rs uses these identities to preempt other transport sessions.
-const OWNER_WEBUSB: u8 = 3;
 unsafe extern "C" {
     fn device_get_tick() -> u32;
 }

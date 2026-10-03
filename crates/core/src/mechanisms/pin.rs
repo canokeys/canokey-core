@@ -2,6 +2,46 @@
 //! Credential comparison and durable retries, without APDUs or session grants.
 use core::ops::Range;
 
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+#[inline(always)]
+pub(crate) fn reference(p2: u8, first: u8, second: u8) -> Option<bool> {
+    if p2 == first {
+        Some(false)
+    } else if p2 == second {
+        Some(true)
+    } else {
+        None
+    }
+}
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+pub(crate) enum VerifyMode {
+    Logout,
+    Query,
+    Authenticate,
+}
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+#[inline(always)]
+pub(crate) fn verify_mode(p1: u8, empty: bool) -> Option<VerifyMode> {
+    match p1 {
+        0xff => Some(VerifyMode::Logout),
+        0x00 if empty => Some(VerifyMode::Query),
+        0x00 => Some(VerifyMode::Authenticate),
+        _ => None,
+    }
+}
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+#[inline(always)]
+pub(crate) fn split_change(
+    data: &[u8],
+    old_bytes: usize,
+    new_bytes: Option<usize>,
+) -> Option<(&[u8], &[u8])> {
+    if data.len() < old_bytes || new_bytes.is_some_and(|n| data.len() - old_bytes != n) {
+        return None;
+    }
+    Some(data.split_at(old_bytes))
+}
+
 #[cfg(any(feature = "admin", feature = "openpgp"))]
 mod record;
 #[cfg(any(feature = "openpgp", all(test, feature = "admin")))]

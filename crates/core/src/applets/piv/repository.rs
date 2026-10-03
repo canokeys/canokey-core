@@ -35,69 +35,21 @@ pub const SLOTS: [u8; KEY_COUNT] = [
     0x95,
     slot::ATTESTATION,
 ];
-pub const KEYS: [Record; KEY_COUNT] = [
-    Record::PivKey0,
-    Record::PivKey1,
-    Record::PivKey2,
-    Record::PivKey3,
-    Record::PivKey4,
-    Record::PivKey5,
-    Record::PivKey6,
-    Record::PivKey7,
-    Record::PivKey8,
-    Record::PivKey9,
-    Record::PivKey10,
-    Record::PivKey11,
-    Record::PivKey12,
-    Record::PivKey13,
-    Record::PivKey14,
-    Record::PivKey15,
-    Record::PivKey16,
-    Record::PivKey17,
-    Record::PivKey18,
-    Record::PivKey19,
-    Record::PivKey20,
-    Record::PivKey21,
-    Record::PivKey22,
-    Record::PivKey23,
-    Record::PivKey24,
-];
-pub const OBJECTS: [Record; ADMIN_OBJECT_INDEX + 1] = [
-    Record::PivObject0,
-    Record::PivObject1,
-    Record::PivObject2,
-    Record::PivObject3,
-    Record::PivObject4,
-    Record::PivObject5,
-    Record::PivObject6,
-    Record::PivObject7,
-    Record::PivObject8,
-    Record::PivObject9,
-    Record::PivObject10,
-    Record::PivObject11,
-    Record::PivObject12,
-    Record::PivObject13,
-    Record::PivObject14,
-    Record::PivObject15,
-    Record::PivObject16,
-    Record::PivObject17,
-    Record::PivObject18,
-    Record::PivObject19,
-    Record::PivObject20,
-    Record::PivObject21,
-    Record::PivObject22,
-    Record::PivObject23,
-    Record::PivObject24,
-    Record::PivObject25,
-    Record::PivObject26,
-    Record::PivObject27,
-    Record::PivObject28,
-    Record::PivObject29,
-    Record::PivObject30,
-    Record::PivObject31,
-    Record::PivObject32,
-    Record::PivObject33,
-];
+// Both assigned PIV record groups are contiguous in the storage namespace.
+const fn records<const N: usize>(first: Record) -> [Record; N] {
+    let mut records = [first; N];
+    let mut i = 0;
+    while i < N {
+        records[i] = match Record::from_id(first.id() + i as u8) {
+            Some(record) => record,
+            None => panic!("PIV record range"),
+        };
+        i += 1;
+    }
+    records
+}
+pub const KEYS: [Record; KEY_COUNT] = records(Record::PivKey0);
+pub const OBJECTS: [Record; ADMIN_OBJECT_INDEX + 1] = records(Record::PivObject0);
 // Byte offsets in the RAM metadata view (META is its byte capacity).
 // Disk stores a discriminator, key material, then this fixed metadata footer.
 // NAME_LENGTH counts bytes, not characters. ORIGIN is 0 absent / 1 generated /
@@ -244,22 +196,17 @@ pub fn read_meta(id: usize, p: &mut Platform<'_>, m: &mut [u8; META]) -> Result<
         m[TOUCH_POLICY] = policy::TOUCH_NEVER;
         return Ok(());
     }
-    let mut version = [0];
-    p.storage.read_at(KEYS[id], 0, &mut version).map_err(io)?;
-    if version[0] != KEY_FORMAT_VERSION || n < (HEADER + META) as u32 {
-        return Err(Sw::UNABLE_TO_PROCESS);
-    }
-    p.storage
-        .read_at(KEYS[id], n - META as u32, m)
-        .map_err(io)?;
-    if m[VERSION] != KEY_FORMAT_VERSION
-        || m[ALGORITHM] > alg::MLDSA65
-        || !(1..=2).contains(&m[ORIGIN])
-        || !(policy::PIN_NEVER..=policy::PIN_ALWAYS).contains(&m[PIN_POLICY])
-        || m[TOUCH_POLICY] > policy::TOUCH_CACHED
-        || m[NAME_LENGTH] > NAME_MAX as u8
-        || n as usize != HEADER + material(m[ALGORITHM]) + META
-    {
+    let valid = key_storage::read_footer(p.storage, KEYS[id], n, KEY_FORMAT_VERSION, m, |m, n| {
+        !(m[VERSION] != KEY_FORMAT_VERSION
+            || m[ALGORITHM] > alg::MLDSA65
+            || !(1..=2).contains(&m[ORIGIN])
+            || !(policy::PIN_NEVER..=policy::PIN_ALWAYS).contains(&m[PIN_POLICY])
+            || m[TOUCH_POLICY] > policy::TOUCH_CACHED
+            || m[NAME_LENGTH] > NAME_MAX as u8
+            || n as usize != HEADER + material(m[ALGORITHM]) + META)
+    })
+    .map_err(io)?;
+    if !valid {
         return Err(Sw::UNABLE_TO_PROCESS);
     }
     Ok(())
@@ -282,15 +229,8 @@ pub fn save(
     key: &[u8; crate::ports::key_layout::SIZE],
     p: &mut Platform<'_>,
 ) -> Result<(), Sw> {
-    let r = (|| {
-        let a = m[ALGORITHM];
-        key_storage::stage(p.storage, rsa(a), width(a), key, m).map_err(io)?;
-        p.storage.stage_commit(KEYS[id]).map_err(io)
-    })();
-    if r.is_err() {
-        p.storage.stage_abort()
-    }
-    r
+    let a = m[ALGORITHM];
+    key_storage::commit(p.storage, KEYS[id], rsa(a), width(a), key, m).map_err(io)
 }
 pub fn save_name(id: usize, m: &[u8; META], p: &mut Platform<'_>) -> Result<(), Sw> {
     p.storage

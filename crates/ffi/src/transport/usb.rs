@@ -7,6 +7,10 @@ use canokey_protocol::usb::*;
 // HALTED packs two bits per endpoint: OUT then IN, including EP0.
 const HALT_BITS_PER_ENDPOINT: u8 = 2;
 const HALT_PAIR_MASK: u8 = 0x03;
+#[inline(always)]
+fn halt_bit(ep: u8) -> u8 {
+    1 << ((ep & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT + (ep >> 7))
+}
 use canokey_rust_core::runtime::usb::{
     ControlIn, Device, Reply,
     descriptors::{Configuration, Interfaces},
@@ -124,10 +128,8 @@ unsafe fn next_control() {
         ck_usb_dcd_receive(0);
     }
 }
-unsafe fn reset_pipe(ep: u8, enabled: bool) {
+unsafe fn mailbox_reset(ep: u8) {
     unsafe {
-        ck_usb_dcd_close(ep);
-        ck_usb_dcd_close(ep | DIRECTION_IN);
         TX[ep as usize] = Tx::EMPTY;
         HALTED &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
         match ep {
@@ -138,6 +140,13 @@ unsafe fn reset_pipe(ep: u8, enabled: bool) {
             EP_KEYBOARD => ck_keyboard_packet_reset(),
             _ => (),
         }
+    }
+}
+unsafe fn reset_pipe(ep: u8, enabled: bool) {
+    unsafe {
+        ck_usb_dcd_close(ep);
+        ck_usb_dcd_close(ep | DIRECTION_IN);
+        mailbox_reset(ep);
         if enabled {
             ck_usb_dcd_open(ep);
             ck_usb_dcd_open(ep | DIRECTION_IN);
@@ -162,17 +171,26 @@ unsafe fn endpoints(enabled: bool) {
 unsafe fn reset_software_pipes() {
     unsafe {
         for ep in EP_KEYBOARD..=EP_CCID {
-            TX[ep as usize] = Tx::EMPTY;
-            HALTED &= !(HALT_PAIR_MASK << (ep * HALT_BITS_PER_ENDPOINT));
-            match ep {
-                EP_CCID => ck_ccid_packet_reset(),
-                #[cfg(feature = "usb-hid")]
-                EP_HID => ck_hid_packet_reset(),
-                #[cfg(feature = "usb-keyboard")]
-                EP_KEYBOARD => ck_keyboard_packet_reset(),
-                _ => (),
-            }
+            mailbox_reset(ep);
         }
+    }
+}
+unsafe fn begin_data_in(length: usize, requested: u16, zero_phase: Option<Phase>) {
+    unsafe {
+        if requested == 0
+            && let Some(zero_phase) = zero_phase
+        {
+            status(zero_phase);
+            return;
+        }
+        start_data_in(length, requested);
+    }
+}
+unsafe fn start_data_in(length: usize, requested: u16) {
+    unsafe {
+        (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(length, requested);
+        PHASE = Phase::DataIn;
+        next_control();
     }
 }
 #[unsafe(no_mangle)]
@@ -292,29 +310,19 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
                 }
                 Some(Action::Send(n)) => {
                     CONTROL_WEB = true;
-                    if s.length == 0 {
-                        status(Phase::WebStatus);
-                    } else {
-                        (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(n, s.length);
-                        PHASE = Phase::DataIn;
-                        next_control();
-                    }
+                    begin_data_in(n, s.length, Some(Phase::WebStatus));
                 }
                 Some(Action::Status(value)) => {
                     CONTROL[0] = value;
-                    (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(1, s.length);
-                    PHASE = Phase::DataIn;
-                    next_control();
+                    // This status reply begins DataIn even for a zero request.
+                    begin_data_in(1, s.length, None);
                 }
                 _ => stall(),
             }
             return;
         }
         let halted = if INTERFACES.endpoint(s.index) {
-            HALTED
-                & (1 << ((s.index as u8 & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT
-                    + ((s.index >> 7) as u8)))
-                != 0
+            HALTED & halt_bit(s.index as u8) != 0
         } else {
             false
         };
@@ -331,18 +339,10 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
                     return;
                 }
                 CONTROL_SOURCE = Some(source);
-                (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(source.len(), s.length);
-                PHASE = Phase::DataIn;
-                next_control();
+                begin_data_in(source.len(), s.length, Some(Phase::StatusIn));
             }
             Reply::Data(n) => {
-                if s.length == 0 {
-                    status(Phase::StatusIn);
-                } else {
-                    (&mut *core::ptr::addr_of_mut!(CONTROL_IN)).begin(n, s.length);
-                    PHASE = Phase::DataIn;
-                    next_control();
-                }
+                begin_data_in(n, s.length, Some(Phase::StatusIn));
             }
             Reply::Status => status(Phase::StatusIn),
             Reply::Address(address) => {
@@ -375,7 +375,7 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
                 status(Phase::StatusIn);
             }
             Reply::Halt(ep, halt) => {
-                let bit = 1 << ((ep & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT + (ep >> 7));
+                let bit = halt_bit(ep);
                 if halt {
                     HALTED |= bit;
                 } else {
@@ -437,7 +437,7 @@ pub unsafe extern "C" fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zl
             return -1;
         }
         if SUSPENDED
-            || HALTED & (1 << ((ep & ENDPOINT_NUMBER_MASK) * HALT_BITS_PER_ENDPOINT + 1)) != 0
+            || HALTED & halt_bit(ep | DIRECTION_IN) != 0
             || TX[(ep & ENDPOINT_NUMBER_MASK) as usize].active
         {
             return 0;

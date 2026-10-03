@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length-delimited credential record shared by ADMIN and OpenPGP.
 use super::{Charge, Credential, Error};
-#[cfg(feature = "admin")]
-use crate::ports::StorageError;
 use crate::{Platform, ports::Record};
 const PIN_CAPACITY: usize = 64;
 const FORMAT_VERSION: u8 = 1;
@@ -93,11 +91,20 @@ impl RecordPin {
         p: &mut Platform<'_>,
     ) -> Result<(), Error> {
         let mut b = [0; SIZE];
-        let result = match p.storage.load(self.id, &mut b) {
-            Err(StorageError::Missing) => self.create(default, limit, p),
-            Ok(n) if n >= VALUE && n == VALUE + b[LENGTH] as usize => self.valid(&b),
-            _ => Err(Error::Persistence),
-        };
+        let result = crate::mechanisms::storage::load_or_else(
+            p,
+            self.id,
+            &mut b,
+            |b, n| {
+                if n >= VALUE && n == VALUE + b[LENGTH] as usize {
+                    self.valid(b)
+                } else {
+                    Err(Error::Persistence)
+                }
+            },
+            |_, p| self.create(default, limit, p),
+            |_| Error::Persistence,
+        );
         p.memory.wipe(&mut b);
         result
     }

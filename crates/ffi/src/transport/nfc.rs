@@ -163,8 +163,7 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
             return;
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
-        // Must match runtime/engine.rs::OWNER_NFC, including extended-APDU admission.
-        const OWNER_NFC: u8 = 4;
+        use crate::transport::owners::OWNER_NFC;
         let n = crate::abi::core::ck_core_exchange(
             OWNER_NFC,
             input,

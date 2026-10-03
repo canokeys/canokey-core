@@ -4,6 +4,15 @@ pub(crate) mod pin;
 
 #[cfg(any(feature = "openpgp", feature = "piv"))]
 pub(crate) mod key_storage;
+#[cfg(any(
+    feature = "admin",
+    feature = "openpgp",
+    feature = "piv",
+    feature = "ctap"
+))]
+pub(crate) mod storage;
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+pub(crate) mod touch_cache;
 
 /// Compare every overlapping byte and the public length difference. Keep one
 /// implementation for applet authentication and PIN checks.

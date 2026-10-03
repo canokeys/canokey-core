@@ -20,6 +20,16 @@ static mut REPORT: [u8; 8] = [0; 8];
 static mut EPOCH: u32 = 0;
 static mut PENDING: u8 = 0;
 static mut RESET_OUTPUT: bool = false;
+unsafe fn flush_pending(epoch: u32) {
+    unsafe {
+        if PENDING != 0
+            && ck_keyboard_io_send(core::ptr::addr_of_mut!(REPORT).cast(), PENDING, epoch) != 0
+        {
+            (&mut *core::ptr::addr_of_mut!(KEYBOARD)).accepted(REPORT[0]);
+            PENDING = 0;
+        }
+    }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_keyboard_loop() {
     unsafe {
@@ -47,13 +57,7 @@ pub unsafe extern "C" fn ck_keyboard_loop() {
                 PENDING = (&*core::ptr::addr_of!(KEYBOARD))
                     .prepare(None, &mut *core::ptr::addr_of_mut!(REPORT))
                     .unwrap_or(0) as u8;
-                if PENDING != 0
-                    && ck_keyboard_io_send(core::ptr::addr_of_mut!(REPORT).cast(), PENDING, epoch)
-                        != 0
-                {
-                    (&mut *core::ptr::addr_of_mut!(KEYBOARD)).accepted(REPORT[0]);
-                    PENDING = 0;
-                }
+                flush_pending(epoch);
             }
             return;
         }
@@ -90,12 +94,7 @@ pub unsafe extern "C" fn ck_keyboard_loop() {
             }
             .unwrap_or(0) as u8;
         }
-        if PENDING != 0
-            && ck_keyboard_io_send(core::ptr::addr_of_mut!(REPORT).cast(), PENDING, epoch) != 0
-        {
-            (&mut *core::ptr::addr_of_mut!(KEYBOARD)).accepted(REPORT[0]);
-            PENDING = 0;
-        }
+        flush_pending(epoch);
     }
 }
 

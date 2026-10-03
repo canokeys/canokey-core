@@ -5,12 +5,9 @@ use crate::transport::hid::link::{ck_hid_active, ck_hid_busy};
 use canokey_protocol::{apdu::EXTENDED_HEADER_BYTES, ccid::HEADER};
 use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, Transport};
 
-// Session identity must match runtime/engine.rs::OWNER_CCID; it controls
-// CTAP ownership retention and admission of standalone extended FIDO APDUs.
-const OWNER_CCID: u8 = 1;
+use crate::transport::owners::OWNER_CCID;
 #[cfg(feature = "ctap")]
-// Must match PKE_BUFFER_OWNER_CTAP in native/include/pke.h (also used by HID).
-const PKE_OWNER_CTAP: u8 = 3;
+use crate::transport::pke_scratch as pke;
 
 crate::lazy_state!(
     CCID,
@@ -42,12 +39,6 @@ unsafe extern "C" {
     fn ck_hid_busy() -> u8;
     #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_active() -> u8;
-    fn pke_buffer_size() -> usize;
-    fn pke_buffer_acquire(owner: u8) -> i32;
-    fn pke_buffer_release(owner: u8) -> i32;
-    fn pke_buffer_clear() -> i32;
-    fn pke_buffer_read(offset: usize, out: *mut u8, length: usize) -> i32;
-    fn pke_buffer_write(offset: usize, input: *const u8, length: usize) -> i32;
 }
 struct Platform {
     generation: u32,
@@ -55,8 +46,8 @@ struct Platform {
 impl Scratch for Platform {
     fn acquire(&mut self, length: usize) -> bool {
         #[cfg(feature = "ctap")]
-        unsafe {
-            length <= pke_buffer_size() && pke_buffer_acquire(PKE_OWNER_CTAP) == 0
+        {
+            length <= pke::capacity() && pke::acquire()
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -66,8 +57,8 @@ impl Scratch for Platform {
     }
     fn read(&mut self, offset: usize, out: &mut [u8]) -> bool {
         #[cfg(feature = "ctap")]
-        unsafe {
-            pke_buffer_read(offset, out.as_mut_ptr(), out.len()) == 0
+        {
+            pke::read(offset, out)
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -77,8 +68,8 @@ impl Scratch for Platform {
     }
     fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
         #[cfg(feature = "ctap")]
-        unsafe {
-            pke_buffer_write(offset, bytes.as_ptr(), bytes.len()) == 0
+        {
+            pke::write(offset, bytes)
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -88,10 +79,7 @@ impl Scratch for Platform {
     }
     fn close(&mut self) {
         #[cfg(feature = "ctap")]
-        unsafe {
-            assert_eq!(pke_buffer_clear(), 0);
-            assert_eq!(pke_buffer_release(PKE_OWNER_CTAP), 0);
-        }
+        pke::close_acquired();
     }
 }
 impl Backend for Platform {

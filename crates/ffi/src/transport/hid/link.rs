@@ -58,6 +58,35 @@ impl Link {
     }
 }
 static mut LINK: Link = Link::new();
+unsafe fn peek_header(epoch: u32) -> Option<(u32, u8, u16)> {
+    let mut header = [0; 7];
+    let mut received = 0;
+    if unsafe {
+        ck_hid_io_peek(
+            header.as_mut_ptr(),
+            header.len() as u8,
+            &mut received,
+            epoch,
+        )
+    } == 0
+    {
+        return None;
+    }
+    Some((
+        u32::from_be_bytes(header[..4].try_into().unwrap()),
+        header[4],
+        u16::from_be_bytes([header[5], header[6]]),
+    ))
+}
+fn classify_error(cid: u32, command: u8, executing: Option<u32>) -> Error {
+    if cid == 0 || (cid == wire::BROADCAST && command != wire::INIT) {
+        Error::Channel
+    } else if executing == Some(cid) && command == wire::INIT {
+        Error::Length
+    } else {
+        Error::Busy
+    }
+}
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_hid_active() -> u8 {
     unsafe { u8::from(LINK.active) }
@@ -124,20 +153,13 @@ pub unsafe extern "C" fn ck_hid_foreign_progress() {
             return;
         }
         let epoch = ck_hid_io_epoch();
-        let mut header = [0; 7];
-        let mut received = 0;
-        if ck_hid_io_peek(header.as_mut_ptr(), 7, &mut received, epoch) == 0 {
+        let Some((cid, command, _)) = peek_header(epoch) else {
             return;
-        }
-        let cid = u32::from_be_bytes(header[..4].try_into().unwrap());
+        };
         // CANCEL belongs to its HID operation, never to the unrelated APDU.
         // Continuations cannot start a new command and are silently drained.
-        if header[4] & 0x80 != 0 && header[4] != wire::CANCEL {
-            let error = if cid == 0 || (cid == wire::BROADCAST && header[4] != wire::INIT) {
-                Error::Channel
-            } else {
-                Error::Busy
-            };
+        if command & 0x80 != 0 && command != wire::CANCEL {
+            let error = classify_error(cid, command, None);
             send_control(cid, wire::ERROR, error as u8, epoch);
         }
         ck_hid_io_consume(epoch);
@@ -158,32 +180,16 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
             LINK.abandon = true;
         }
         // Only the initial header is needed while crypto owns the core stack.
-        let mut report = [0; 7];
-        let mut received = 0;
-        if ck_hid_io_peek(
-            report.as_mut_ptr(),
-            report.len() as u8,
-            &mut received,
-            LINK.execution_epoch,
-        ) != 0
-        {
-            let cid = u32::from_be_bytes(report[..4].try_into().unwrap());
-            let length = u16::from_be_bytes([report[5], report[6]]);
-            if cid == LINK.executing_cid && report[4] == wire::INIT && length == 8 {
+        if let Some((cid, command, length)) = peek_header(LINK.execution_epoch) {
+            if cid == LINK.executing_cid && command == wire::INIT && length == 8 {
                 // Keep INIT queued until the interrupted core borrow unwinds.
                 LINK.abandon = true;
-            } else if cid == LINK.executing_cid && report[4] == wire::CANCEL && length == 0 {
+            } else if cid == LINK.executing_cid && command == wire::CANCEL && length == 0 {
                 LINK.cancelled = true;
                 ck_hid_io_consume(LINK.execution_epoch);
             } else if idle {
-                if report[4] & 0x80 != 0 {
-                    let error = if cid == 0 || (cid == wire::BROADCAST && report[4] != wire::INIT) {
-                        Error::Channel as u8
-                    } else if cid == LINK.executing_cid && report[4] == wire::INIT {
-                        Error::Length as u8
-                    } else {
-                        Error::Busy as u8
-                    };
+                if command & 0x80 != 0 {
+                    let error = classify_error(cid, command, Some(LINK.executing_cid)) as u8;
                     send_control(cid, wire::ERROR, error, LINK.execution_epoch);
                     idle = false;
                 }
@@ -228,17 +234,13 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         }
         #[cfg(feature = "usb-webusb")]
         if crate::transport::webusb::block_competitor() {
-            let mut header = [0; 7];
-            let mut tick = 0;
             let requested = ck_hid_io_reset_pending() == 0
                 && ck_hid_io_configured() != 0
                 && ck_hid_io_idle() != 0
-                && ck_hid_io_peek(header.as_mut_ptr(), 7, &mut tick, ck_hid_io_epoch()) != 0
-                && !matches!(
-                    u32::from_be_bytes(header[..4].try_into().unwrap()),
-                    0 | wire::BROADCAST
-                )
-                && matches!(header[4], wire::PING | wire::MSG | wire::CBOR | wire::WINK);
+                && peek_header(ck_hid_io_epoch()).is_some_and(|(cid, command, _)| {
+                    !matches!(cid, 0 | wire::BROADCAST)
+                        && matches!(command, wire::PING | wire::MSG | wire::CBOR | wire::WINK)
+                });
             // INIT, CANCEL and continuations cannot revoke a foreign grant.
             if !crate::transport::webusb::try_preempt(requested) {
                 return 0;

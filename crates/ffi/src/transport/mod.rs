@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+#[cfg(any(feature = "usb-ccid", feature = "usb-webusb", feature = "nfc"))]
+mod owners;
+#[cfg(feature = "ctap")]
+mod pke_scratch;
 #[cfg(any(
     feature = "usb-ccid",
     feature = "usb-hid",

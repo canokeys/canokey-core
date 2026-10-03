@@ -27,21 +27,19 @@ pub struct Session {
     // Independent authorization bits: signature PW1, other PW1, and PW3.
     // A successful VERIFY adds one bit; failure revokes all uses of that PIN.
     pub(super) grants: u8,
-    last_touch: u32,
-    touch_valid: bool,
+    last_touch: Option<u32>,
     pub(super) presence: crate::runtime::presence::Request,
 }
 impl Session {
     pub const fn new() -> Self {
         Self {
             grants: 0,
-            last_touch: 0,
-            touch_valid: false,
+            last_touch: None,
             presence: crate::runtime::presence::Request::new(),
         }
     }
     pub fn clear_touch(&mut self) {
-        self.touch_valid = false;
+        self.last_touch = None;
     }
     pub fn admin(&self) -> Result<(), Error> {
         if self.grants & grant::ADMIN == 0 {
@@ -130,18 +128,15 @@ impl Session {
         };
         let used = input.len();
         let mut m = repo::meta(p, r)?;
-        if m[key_meta::TOUCH_POLICY] != touch_policy::DISABLED {
-            let now = p.device.now();
-            if !(self.touch_valid
-                && policy[1] != 0
-                && now.wrapping_sub(self.last_touch) < u32::from(policy[1]) * 1000)
-            {
-                if !self.presence.wait(p.device) {
-                    return Err(Error::Presence);
-                }
-                self.last_touch = p.device.now();
-                self.touch_valid = true;
-            }
+        if m[key_meta::TOUCH_POLICY] != touch_policy::DISABLED
+            && !crate::mechanisms::touch_cache::wait(
+                &mut self.last_touch,
+                u32::from(policy[1]) * 1000,
+                &mut self.presence,
+                p.device,
+            )
+        {
+            return Err(Error::Presence);
         }
         // A native Weierstrass digest is a scalar-width integer.
         // Normalize in session input; it is no longer needed as wire data.
@@ -216,11 +211,10 @@ impl Session {
             !grant::ADMIN
         };
         let n = super::pin::info(id, p)?.length_bytes;
-        if value.len() < n {
-            return Err(Error::Length);
-        }
-        super::pin::verify(id, &value[..n], p)?;
-        super::pin::change(id, &value[n..], p)
+        let (old, new) =
+            crate::mechanisms::pin::split_change(value, n, None).ok_or(Error::Length)?;
+        super::pin::verify(id, old, p)?;
+        super::pin::change(id, new, p)
     }
     pub fn reset_pw1(
         &mut self,
@@ -234,10 +228,9 @@ impl Session {
             0
         } else {
             let n = super::pin::info(Record::PgpRc, p)?.length_bytes;
-            if value.len() < n {
-                return Err(Error::Length);
-            }
-            super::pin::verify(Record::PgpRc, &value[..n], p)?;
+            let (old, _) =
+                crate::mechanisms::pin::split_change(value, n, None).ok_or(Error::Length)?;
+            super::pin::verify(Record::PgpRc, old, p)?;
             n
         };
         super::pin::change(Record::PgpPw1, &value[n..], p)

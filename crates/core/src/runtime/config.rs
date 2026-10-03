@@ -65,6 +65,19 @@ fn crc(bytes: &[u8]) -> u32 {
     crc
 }
 impl Page {
+    #[inline(always)]
+    fn with_page<T>(
+        s: &mut StoragePort<'_>,
+        repair: bool,
+        run: impl FnOnce(&mut Self, &mut StoragePort<'_>, bool) -> Result<T, StorageError>,
+    ) -> Result<T, StorageError> {
+        let mut page = Self([0xff; PAGE_BYTES]);
+        let persisted = page.load(s, repair)?;
+        run(&mut page, s, persisted)
+    }
+    fn flags(&self) -> u32 {
+        word(&self.0[FLAGS_OFFSET..SERIAL_OFFSET])
+    }
     fn valid(&self) -> bool {
         word(&self.0[MAGIC_OFFSET..VERSION_OFFSET]) == MAGIC
             && self.0[VERSION_OFFSET] == FORMAT_VERSION
@@ -123,21 +136,19 @@ impl Page {
 /// The frame ends before applet execution and never spans a crypto operation.
 #[inline(never)]
 pub fn flags(s: &mut StoragePort<'_>) -> Result<u32, StorageError> {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    page.load(s, false)?;
-    Ok(word(&page.0[FLAGS_OFFSET..SERIAL_OFFSET]))
+    Page::with_page(s, false, |page, _, _| Ok(page.flags()))
 }
 #[inline(never)]
 pub fn update(s: &mut StoragePort<'_>, mask: u32, value: u32) -> Result<(), StorageError> {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    let persisted = page.load(s, true)?;
-    let old = word(&page.0[FLAGS_OFFSET..SERIAL_OFFSET]);
-    let flags = (old & !mask) | (value & mask);
-    if persisted && flags == old {
-        return Ok(());
-    }
-    page.0[FLAGS_OFFSET..SERIAL_OFFSET].copy_from_slice(&flags.to_ne_bytes());
-    page.commit(s)
+    Page::with_page(s, true, |page, s, persisted| {
+        let old = page.flags();
+        let flags = (old & !mask) | (value & mask);
+        if persisted && flags == old {
+            return Ok(());
+        }
+        page.0[FLAGS_OFFSET..SERIAL_OFFSET].copy_from_slice(&flags.to_ne_bytes());
+        page.commit(s)
+    })
 }
 pub fn enabled(s: &mut StoragePort<'_>, mask: u32) -> bool {
     flags(s).is_ok_and(|flags| flags & mask != 0)
@@ -422,33 +433,33 @@ pub fn notify(p: &mut crate::Platform<'_>) {
 /// zero identity; never initialize Flash to answer a serial-number query.
 #[inline(never)]
 pub fn serial(s: &mut StoragePort<'_>) -> [u8; 4] {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    if page.load(s, false).is_err()
-        || word(&page.0[FLAGS_OFFSET..SERIAL_OFFSET]) & SERIAL_VALID == 0
-    {
-        return [0; 4];
-    }
-    page.0[SERIAL_OFFSET..KEYMAP_HEADER_OFFSET]
-        .try_into()
-        .unwrap()
+    Page::with_page(s, false, |page, _, _| {
+        if page.flags() & SERIAL_VALID == 0 {
+            return Ok([0; 4]);
+        }
+        Ok(page.0[SERIAL_OFFSET..KEYMAP_HEADER_OFFSET]
+            .try_into()
+            .unwrap())
+    })
+    .unwrap_or([0; 4])
 }
 #[inline(never)]
 pub fn write_serial(s: &mut StoragePort<'_>, serial: &[u8; 4]) -> Result<(), StorageError> {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    page.load(s, true)?;
-    let flags = word(&page.0[FLAGS_OFFSET..SERIAL_OFFSET]);
-    if flags & SERIAL_VALID != 0 {
-        return Err(StorageError::Unavailable);
-    }
-    page.0[FLAGS_OFFSET..SERIAL_OFFSET].copy_from_slice(&(flags | SERIAL_VALID).to_ne_bytes());
-    page.0[SERIAL_OFFSET..KEYMAP_HEADER_OFFSET].copy_from_slice(serial);
-    page.commit(s)
+    Page::with_page(s, true, |page, s, _| {
+        let flags = page.flags();
+        if flags & SERIAL_VALID != 0 {
+            return Err(StorageError::Unavailable);
+        }
+        page.0[FLAGS_OFFSET..SERIAL_OFFSET].copy_from_slice(&(flags | SERIAL_VALID).to_ne_bytes());
+        page.0[SERIAL_OFFSET..KEYMAP_HEADER_OFFSET].copy_from_slice(serial);
+        page.commit(s)
+    })
 }
 
 const KEYMAP_VALID: u32 = 1 << 6;
 impl Page {
     fn has_keymap(&self) -> bool {
-        word(&self.0[FLAGS_OFFSET..SERIAL_OFFSET]) & KEYMAP_VALID != 0
+        self.flags() & KEYMAP_VALID != 0
             && self.0[KEYMAP_HEADER_OFFSET + 1..KEYMAP_HEADER_END] == DEFAULT_KEYMAP_HEADER[1..]
     }
 }
@@ -459,50 +470,57 @@ pub fn write_keymap(
     layout: u8,
     table: Option<&[u8; KEYMAP_BYTES]>,
 ) -> Result<(), StorageError> {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    let persisted = page.load(s, true)?;
-    let old_flags = word(&page.0[FLAGS_OFFSET..SERIAL_OFFSET]);
-    let flags = (old_flags & !KEYMAP_VALID) | if table.is_some() { KEYMAP_VALID } else { 0 };
-    let same_table = match table {
-        Some(table) => page.0[KEYMAP_OFFSET..KEYMAP_END] == table[..],
-        None => page.0[KEYMAP_OFFSET..KEYMAP_END].iter().all(|&v| v == 0),
-    };
-    if persisted
-        && flags == old_flags
-        && same_table
-        && page.0[KEYMAP_HEADER_OFFSET..KEYMAP_HEADER_END] == keymap_header(layout)
-    {
-        return Ok(());
-    }
-    page.0[KEYMAP_HEADER_OFFSET..KEYMAP_HEADER_END].copy_from_slice(&keymap_header(layout));
-    if let Some(table) = table {
-        page.0[KEYMAP_OFFSET..KEYMAP_END].copy_from_slice(table);
-    } else {
-        page.0[KEYMAP_OFFSET..KEYMAP_END].fill(0);
-    }
-    page.0[FLAGS_OFFSET..SERIAL_OFFSET].copy_from_slice(&flags.to_ne_bytes());
-    page.commit(s)
+    Page::with_page(s, true, |page, s, persisted| {
+        let old_flags = page.flags();
+        let flags = (old_flags & !KEYMAP_VALID) | if table.is_some() { KEYMAP_VALID } else { 0 };
+        let same_table = match table {
+            Some(table) => page.0[KEYMAP_OFFSET..KEYMAP_END] == table[..],
+            None => page.0[KEYMAP_OFFSET..KEYMAP_END].iter().all(|&v| v == 0),
+        };
+        if persisted
+            && flags == old_flags
+            && same_table
+            && page.0[KEYMAP_HEADER_OFFSET..KEYMAP_HEADER_END] == keymap_header(layout)
+        {
+            return Ok(());
+        }
+        page.0[KEYMAP_HEADER_OFFSET..KEYMAP_HEADER_END].copy_from_slice(&keymap_header(layout));
+        if let Some(table) = table {
+            page.0[KEYMAP_OFFSET..KEYMAP_END].copy_from_slice(table);
+        } else {
+            page.0[KEYMAP_OFFSET..KEYMAP_END].fill(0);
+        }
+        page.0[FLAGS_OFFSET..SERIAL_OFFSET].copy_from_slice(&flags.to_ne_bytes());
+        page.commit(s)
+    })
 }
 #[inline(never)]
 pub fn read_keymap(
     s: &mut StoragePort<'_>,
     table: &mut [u8; KEYMAP_BYTES],
 ) -> Result<u8, StorageError> {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    page.load(s, false)?;
-    if !page.has_keymap() {
-        return Err(StorageError::Missing);
-    }
-    table.copy_from_slice(&page.0[KEYMAP_OFFSET..KEYMAP_END]);
-    Ok(page.0[KEYMAP_HEADER_OFFSET])
+    Page::with_page(s, false, |page, _, _| {
+        if !page.has_keymap() {
+            return Err(StorageError::Missing);
+        }
+        table.copy_from_slice(&page.0[KEYMAP_OFFSET..KEYMAP_END]);
+        Ok(page.0[KEYMAP_HEADER_OFFSET])
+    })
 }
 /// A stored zero usage suppresses the character; it never falls back to US.
 #[inline(never)]
 pub fn keyboard_usage(s: &mut StoragePort<'_>, ch: u8) -> Option<(u8, u8)> {
-    let mut page = Page([0xff; PAGE_BYTES]);
-    if usize::from(ch) < KEYMAP_ENTRY_COUNT && page.load(s, false).is_ok() && page.has_keymap() {
-        let offset = KEYMAP_OFFSET + usize::from(ch) * KEYMAP_ENTRY_BYTES;
-        return (page.0[offset + 1] != 0).then_some((page.0[offset], page.0[offset + 1]));
+    if usize::from(ch) < KEYMAP_ENTRY_COUNT {
+        let stored = Page::with_page(s, false, |page, _, _| {
+            if !page.has_keymap() {
+                return Err(StorageError::Missing);
+            }
+            let offset = KEYMAP_OFFSET + usize::from(ch) * KEYMAP_ENTRY_BYTES;
+            Ok((page.0[offset + 1] != 0).then_some((page.0[offset], page.0[offset + 1])))
+        });
+        if let Ok(usage) = stored {
+            return usage;
+        }
     }
     super::keyboard::ascii(ch)
 }

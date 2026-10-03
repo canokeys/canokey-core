@@ -4,6 +4,7 @@
 use super::link::{ck_hid_execution_begin, ck_hid_execution_end};
 #[cfg(feature = "usb-ccid")]
 use crate::transport::ccid::ck_ccid_idle;
+use crate::transport::pke_scratch::{self as pke, PkeLease};
 use canokey_protocol::ctaphid::Error;
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
 
@@ -15,9 +16,6 @@ crate::lazy_state!(
     initialize_hid,
     hid
 );
-// Must match PKE_BUFFER_OWNER_CTAP in native/include/pke.h;
-// this is an FFI ABI value, so keep the correspondence explicit.
-const PKE_OWNER_CTAP: u8 = 3;
 unsafe extern "C" {
     #[cfg(not(feature = "usb-ccid"))]
     fn ck_ccid_idle() -> u8;
@@ -25,16 +23,10 @@ unsafe extern "C" {
     fn ck_hid_execution_begin(cid: u32);
     #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_execution_end();
-    fn pke_buffer_size() -> usize;
-    fn pke_buffer_acquire(owner: u8) -> i32;
-    fn pke_buffer_release(owner: u8) -> i32;
-    fn pke_buffer_clear() -> i32;
-    fn pke_buffer_read(offset: usize, out: *mut u8, length: usize) -> i32;
-    fn pke_buffer_write(offset: usize, input: *const u8, length: usize) -> i32;
 }
 struct RequestScratch;
 // The backend owns only PKE bookkeeping, never a slice into hardware memory.
-static mut PKE_LEASED: bool = false;
+static mut PKE_LEASE: PkeLease = PkeLease::new();
 impl Scratch for RequestScratch {
     fn webauthn_enabled(&mut self) -> bool {
         crate::platform::with_platform(|p| {
@@ -45,7 +37,7 @@ impl Scratch for RequestScratch {
         })
     }
     fn capacity(&self) -> usize {
-        unsafe { pke_buffer_size() }
+        pke::capacity()
     }
     fn begin(&mut self, use_pke: bool) -> Result<(), Error> {
         unsafe {
@@ -58,23 +50,22 @@ impl Scratch for RequestScratch {
                 // A valid GET RESPONSE fits inline. Close a prior response
                 // before new staged input borrows the accelerator workspace.
                 crate::abi::core::with_core(|core, p| core.close_ctap(p));
-                if pke_buffer_acquire(PKE_OWNER_CTAP) != 0 {
+                if !(&mut *core::ptr::addr_of_mut!(PKE_LEASE)).acquire() {
                     return Err(Error::Busy);
                 }
-                PKE_LEASED = true;
             }
         }
         Ok(())
     }
     fn write(&mut self, offset: usize, bytes: &[u8]) -> Result<(), Error> {
-        if unsafe { pke_buffer_write(offset, bytes.as_ptr(), bytes.len()) } == 0 {
+        if pke::write(offset, bytes) {
             Ok(())
         } else {
             Err(Error::Other)
         }
     }
     fn read(&mut self, offset: usize, bytes: &mut [u8]) -> Result<(), Error> {
-        if unsafe { pke_buffer_read(offset, bytes.as_mut_ptr(), bytes.len()) } == 0 {
+        if pke::read(offset, bytes) {
             Ok(())
         } else {
             Err(Error::Other)
@@ -120,13 +111,7 @@ impl Scratch for RequestScratch {
 
     fn close(&mut self) {
         unsafe {
-            if PKE_LEASED {
-                // Hardware cleanup failures deliberately halt here: reusing a
-                // uncleared PKE lease could expose another request's secrets.
-                assert_eq!(pke_buffer_clear(), 0);
-                assert_eq!(pke_buffer_release(PKE_OWNER_CTAP), 0);
-                PKE_LEASED = false;
-            }
+            (&mut *core::ptr::addr_of_mut!(PKE_LEASE)).close();
         }
     }
 }

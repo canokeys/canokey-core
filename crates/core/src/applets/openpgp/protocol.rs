@@ -265,22 +265,28 @@ impl OpenPgp {
             VERIFY => {
                 // P2 selects a password grant (81 signature PW1, 82 other
                 // PW1, 83 admin PW3). P1=00 verifies/queries; FF logs out.
-                let bit = match h.p2 {
-                    reference::PW1_SIGNATURE => grant::SIGNATURE,
-                    reference::PW1_OTHER => grant::OTHER,
-                    reference::PW3 => grant::ADMIN,
-                    _ => return Err(Sw::WRONG_P1P2),
+                use crate::mechanisms::pin::{self as mechanism, VerifyMode};
+                let bit = match mechanism::reference(
+                    h.p2,
+                    reference::PW1_SIGNATURE,
+                    reference::PW1_OTHER,
+                ) {
+                    Some(false) => grant::SIGNATURE,
+                    Some(true) => grant::OTHER,
+                    None if h.p2 == reference::PW3 => grant::ADMIN,
+                    None => return Err(Sw::WRONG_P1P2),
                 };
                 let id = if bit == grant::ADMIN {
                     Record::PgpPw3
                 } else {
                     Record::PgpPw1
                 };
-                if h.p1 == 0xff && b.is_empty() {
+                let mode = mechanism::verify_mode(h.p1, b.is_empty()).ok_or(Sw::WRONG_P1P2)?;
+                if matches!(mode, VerifyMode::Logout) && b.is_empty() {
                     self.session.grants &= !bit;
                     return Ok(0);
                 }
-                if h.p1 != 0x00 {
+                if matches!(mode, VerifyMode::Logout) {
                     return Err(Sw::WRONG_P1P2);
                 }
                 if b.is_empty() {

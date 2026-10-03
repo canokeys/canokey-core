@@ -284,16 +284,12 @@ impl<R: Router> Runtime<R> {
         }
         let h = info.header;
         if h.is_get_response() {
-            self.chain.reset();
-            self.router.abort_command(p);
-            self.route = FrameRoute::GetResponse;
+            self.reroute(FrameRoute::GetResponse, p);
             return Ok(());
         }
         if self.router.is_eject(h, p) {
             self.close_response(p);
-            self.chain.reset();
-            self.router.abort_command(p);
-            self.route = FrameRoute::Eject;
+            self.reroute(FrameRoute::Eject, p);
             return Ok(());
         }
         if self.router.output_busy() {
@@ -303,12 +299,13 @@ impl<R: Router> Runtime<R> {
         // the earlier branch so it can continue using the existing backing.
         self.close_response(p);
         if h.is_select_by_name() {
-            self.chain.reset();
-            self.router.abort_command(p);
-            self.route = FrameRoute::Select {
-                aid: [0; 16],
-                used: 0,
-            };
+            self.reroute(
+                FrameRoute::Select {
+                    aid: [0; 16],
+                    used: 0,
+                },
+                p,
+            );
             return Ok(());
         }
         self.router.implicit_select(h, p)?;
@@ -330,6 +327,11 @@ impl<R: Router> Runtime<R> {
         // route retains only the selected consumer, not a second header copy.
         self.route = FrameRoute::Command;
         Ok(())
+    }
+    fn reroute(&mut self, route: FrameRoute, p: &mut Platform<'_>) {
+        self.chain.reset();
+        self.router.abort_command(p);
+        self.route = route;
     }
     #[inline(never)]
     fn data(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {

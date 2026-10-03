@@ -3,6 +3,45 @@
 use crate::ports::key_layout as layout;
 use crate::ports::{Record, StorageError};
 
+const RECORD_HEADER_BYTES: usize = 1;
+// The leading byte distinguishes compact RSA/EC/PQ records from legacy layouts.
+const KEY_FORMAT_VERSION: u8 = 0x02;
+
+#[inline(always)]
+pub fn read_footer<const N: usize>(
+    storage: &mut crate::ports::StoragePort<'_>,
+    record: Record,
+    total: u32,
+    version: u8,
+    footer: &mut [u8; N],
+    validate: impl FnOnce(&[u8; N], u32) -> bool,
+) -> Result<bool, StorageError> {
+    let mut discriminator = [0];
+    storage.read_at(record, 0, &mut discriminator)?;
+    if discriminator[0] != version || total < (RECORD_HEADER_BYTES + N) as u32 {
+        return Ok(false);
+    }
+    storage.read_at(record, total - N as u32, footer)?;
+    Ok(validate(footer, total))
+}
+
+#[inline(always)]
+pub fn commit(
+    storage: &mut crate::ports::StoragePort<'_>,
+    record: Record,
+    rsa: bool,
+    width: usize,
+    key: &[u8; layout::SIZE],
+    metadata: &[u8],
+) -> Result<(), StorageError> {
+    let result =
+        stage(storage, rsa, width, key, metadata).and_then(|()| storage.stage_commit(record));
+    if result.is_err() {
+        storage.stage_abort();
+    }
+    result
+}
+
 // width is a byte count: one RSA prime/CRT component, an EC scalar, or a PQ
 // seed. RSA disk order is e,p,q,dp,dq,qinv; each native slot has 256-byte capacity
 // but only its active width is persisted. Public keys are derived, not stored.
@@ -53,10 +92,10 @@ pub fn stage(
         return Err(StorageError::Unavailable);
     }
     if !rsa {
-        return storage.stage_parts(&[&[2], &key[..width], metadata]);
+        return storage.stage_parts(&[&[KEY_FORMAT_VERSION], &key[..width], metadata]);
     }
     let mut parts: [&[u8]; 8] = [&[]; 8];
-    parts[0] = &[2]; // Explicit layout discriminator, before arbitrary key bytes.
+    parts[0] = &[KEY_FORMAT_VERSION];
     parts[1] = &key[..layout::EXPONENT_BYTES];
     for (i, component) in key[layout::P..]
         .as_chunks::<{ layout::RSA_LIMB_BYTES }>()

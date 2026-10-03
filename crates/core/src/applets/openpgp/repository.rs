@@ -107,30 +107,27 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
     // Never read private components merely to access hot metadata.
     let n = p.storage.size(KEYS[role]).map_err(io)?;
     let mut b = [0; META_LEN];
-    let mut version = [0];
-    p.storage.read_at(KEYS[role], 0, &mut version).map_err(io)?;
-    if version[0] != FORMAT_VERSION || n < (1 + META_LEN) as u32 {
-        return Err(Error::Storage);
-    }
-    p.storage
-        .read_at(KEYS[role], n - META_LEN as u32, &mut b)
+    let valid =
+        key_storage::read_footer(p.storage, KEYS[role], n, FORMAT_VERSION, &mut b, |b, n| {
+            if b[key_meta::VERSION] != FORMAT_VERSION
+                || b[key_meta::ORIGIN] > key_meta::ORIGIN_IMPORTED
+                || b[key_meta::TOUCH_POLICY] > 2
+            {
+                return false;
+            }
+            let a = Algorithm(b[key_meta::ALGORITHM]);
+            if a.private_component_bytes() == 0 {
+                return false;
+            }
+            let material = if b[key_meta::ORIGIN] == key_meta::ORIGIN_ABSENT {
+                0
+            } else {
+                key_storage::length(a.rsa(), a.private_component_bytes())
+            };
+            n == (1 + META_LEN + material) as u32
+        })
         .map_err(io)?;
-    if b[key_meta::VERSION] != FORMAT_VERSION
-        || b[key_meta::ORIGIN] > key_meta::ORIGIN_IMPORTED
-        || b[key_meta::TOUCH_POLICY] > 2
-    {
-        return Err(Error::Storage);
-    }
-    let a = Algorithm(b[key_meta::ALGORITHM]);
-    if a.private_component_bytes() == 0 {
-        return Err(Error::Storage);
-    }
-    let material = if b[key_meta::ORIGIN] == key_meta::ORIGIN_ABSENT {
-        0
-    } else {
-        key_storage::length(a.rsa(), a.private_component_bytes())
-    };
-    if n != (1 + META_LEN + material) as u32 {
+    if !valid {
         return Err(Error::Storage);
     }
     Ok(b)
@@ -184,15 +181,16 @@ pub fn save_key(
     if role == key_role::SIGNATURE {
         m[key_meta::SIGNATURE_COUNTER..key_meta::END].fill(0);
     }
-    let result = (|| {
-        let a = Algorithm(m[key_meta::ALGORITHM]);
-        key_storage::stage(p.storage, a.rsa(), a.private_component_bytes(), b, &m).map_err(io)?;
-        p.storage.stage_commit(KEYS[role]).map_err(io)
-    })();
-    if result.is_err() {
-        p.storage.stage_abort()
-    }
-    result
+    let a = Algorithm(m[key_meta::ALGORITHM]);
+    key_storage::commit(
+        p.storage,
+        KEYS[role],
+        a.rsa(),
+        a.private_component_bytes(),
+        b,
+        &m,
+    )
+    .map_err(io)
 }
 pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
     let mut s = [0; STATE_LEN];
@@ -216,11 +214,14 @@ pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
 }
 pub fn install(p: &mut Platform<'_>) -> Result<(), Error> {
     let mut s = [0; STATE_LEN];
-    match p.storage.load(Record::PgpState, &mut s) {
-        Err(StorageError::Missing) => reset(p),
-        Ok(n) => validate_state(&mut s, n),
-        Err(e) => Err(io(e)),
-    }
+    crate::mechanisms::storage::load_or_else(
+        p,
+        Record::PgpState,
+        &mut s,
+        validate_state,
+        |_, p| reset(p),
+        io,
+    )
 }
 
 pub fn terminated(p: &mut Platform<'_>) -> Result<bool, Error> {

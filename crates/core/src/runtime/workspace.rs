@@ -34,12 +34,13 @@ pub struct Workspace<'a> {
 impl Workspace<'_> {
     #[cfg_attr(not(crypto_applet), expect(dead_code))]
     pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
-        #[cfg(feature = "piv")]
-        memory.wipe(self.agreement);
-        memory.wipe(&mut self.key.bytes);
-        self.key.bits = 0;
-        self.key.reserved = 0;
-        memory.wipe(self.input);
+        clear_classic(
+            self.key,
+            self.input,
+            #[cfg(feature = "piv")]
+            self.agreement,
+            memory,
+        );
         memory.wipe(self.output);
     }
 }
@@ -59,13 +60,45 @@ impl Classic {
         }
     }
     pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
-        #[cfg(feature = "piv")]
-        memory.wipe(&mut self.agreement);
-        memory.wipe(&mut self.key.bytes);
-        self.key.bits = 0;
-        self.key.reserved = 0;
-        memory.wipe(&mut self.input);
+        clear_classic(
+            &mut self.key,
+            &mut self.input,
+            #[cfg(feature = "piv")]
+            &mut self.agreement,
+            memory,
+        );
     }
+}
+fn clear_classic(
+    key: &mut KeyMaterial,
+    input: &mut [u8; INPUT_BYTES],
+    #[cfg(feature = "piv")] agreement: &mut [u8; agreement_layout::SIZE],
+    memory: &crate::ports::MemoryPort<'_>,
+) {
+    #[cfg(feature = "piv")]
+    memory.wipe(agreement);
+    memory.wipe(&mut key.bytes);
+    key.bits = 0;
+    key.reserved = 0;
+    memory.wipe(input);
+}
+macro_rules! workspace_view {
+    ($(#[$attr:meta])* $with:ident, $plain:ident, $variant:ident, $ty:ty, $reuse:expr) => {
+        $(#[$attr])*
+        pub fn $with(&mut self, memory: &crate::ports::MemoryPort<'_>) -> &mut $ty {
+            if !$reuse || !matches!(self, Self::$variant(_)) {
+                self.wipe_active(memory);
+                *self = Self::$variant(<$ty>::new());
+            }
+            let Self::$variant(view) = self else { unreachable!() };
+            view
+        }
+        $(#[$attr])*
+        pub fn $plain(&mut self) -> &mut $ty {
+            let memory = canokey_ports::default_memory();
+            self.$with(&memory)
+        }
+    };
 }
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum Primitive {
@@ -190,25 +223,14 @@ impl SessionWorkspace {
             None
         }
     }
-    #[cfg(feature = "ctap")]
-    pub fn ctap_request_with(
-        &mut self,
-        memory: &crate::ports::MemoryPort<'_>,
-    ) -> &mut crate::applets::ctap::Request {
-        if !matches!(self, Self::CtapRequest(_)) {
-            self.wipe_active(memory);
-            *self = Self::CtapRequest(crate::applets::ctap::Request::new());
-        }
-        let Self::CtapRequest(request) = self else {
-            unreachable!()
-        };
-        request
-    }
-    #[cfg(feature = "ctap")]
-    pub fn ctap_request(&mut self) -> &mut crate::applets::ctap::Request {
-        let memory = canokey_ports::default_memory();
-        self.ctap_request_with(&memory)
-    }
+    workspace_view!(
+        #[cfg(feature = "ctap")]
+        ctap_request_with,
+        ctap_request,
+        CtapRequest,
+        crate::applets::ctap::Request,
+        true
+    );
     #[cfg(feature = "ctap")]
     pub fn cancel_ctap_request(&mut self) {
         if let Self::CtapRequest(request) = self {
@@ -217,42 +239,22 @@ impl SessionWorkspace {
             *request = crate::applets::ctap::Request::new();
         }
     }
-    #[cfg(feature = "piv")]
-    #[inline(never)]
-    pub fn stream_with(
-        &mut self,
-        memory: &crate::ports::MemoryPort<'_>,
-    ) -> &mut crate::ports::CryptoScratch {
-        self.wipe_active(memory);
-        *self = Self::Stream(crate::ports::CryptoScratch::new());
-        let Self::Stream(s) = self else {
-            unreachable!()
-        };
-        s
-    }
-    #[cfg(feature = "piv")]
-    #[inline(never)]
-    pub fn stream(&mut self) -> &mut crate::ports::CryptoScratch {
-        let memory = canokey_ports::default_memory();
-        self.stream_with(&memory)
-    }
-    #[cfg(feature = "piv")]
-    #[inline(never)]
-    pub fn attestation_with(
-        &mut self,
-        memory: &crate::ports::MemoryPort<'_>,
-    ) -> &mut crate::applets::piv::attestation::Attestation {
-        self.wipe_active(memory);
-        *self = Self::Attestation(crate::applets::piv::attestation::Attestation::new());
-        let Self::Attestation(a) = self else {
-            unreachable!()
-        };
-        a
-    }
-    #[cfg(feature = "piv")]
-    #[inline(never)]
-    pub fn attestation(&mut self) -> &mut crate::applets::piv::attestation::Attestation {
-        let memory = canokey_ports::default_memory();
-        self.attestation_with(&memory)
-    }
+    workspace_view!(
+        #[cfg(feature = "piv")]
+        #[inline(never)]
+        stream_with,
+        stream,
+        Stream,
+        crate::ports::CryptoScratch,
+        false
+    );
+    workspace_view!(
+        #[cfg(feature = "piv")]
+        #[inline(never)]
+        attestation_with,
+        attestation,
+        Attestation,
+        crate::applets::piv::attestation::Attestation,
+        false
+    );
 }

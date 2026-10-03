@@ -275,22 +275,13 @@ impl Piv {
         };
         self.memory(n);
         self.response = ResponseBacking::Crypto(a);
-        let mut at = 0;
-        if metadata {
-            at = self.metadata_header(a, &m);
-        }
+        let mut at = if metadata {
+            self.metadata_header(a, &m)
+        } else {
+            0
+        };
         let point = usize::from(a != alg::ED25519 && a != alg::X25519);
-        let inner = n + point + if n + point < 128 { 2 } else { 3 };
-        at += codec::header(
-            &mut self.header[at..],
-            if metadata {
-                &[metadata_tag::PUBLIC_KEY]
-            } else {
-                &key_tag::PUBLIC_TEMPLATE
-            },
-            inner,
-        )?;
-        at += codec::header(&mut self.header[at..], &[key_tag::PUBLIC_POINT], n)?;
+        at += super::keys::public_envelope(&mut self.header[at..], metadata, n, false, point, n)?;
         self.header_len = at;
         Ok(((at + n) as u32, Sw::SUCCESS))
     }
