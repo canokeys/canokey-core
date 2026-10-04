@@ -13,8 +13,12 @@ use std::{
 };
 mod pcsc;
 mod storage;
+#[cfg(feature = "usbip")]
+mod usbip;
 use canokey_ports::stage_operation;
-use canokey_protocol::{apdu as apdu_wire, usb};
+use canokey_protocol::apdu as apdu_wire;
+#[cfg(not(feature = "usbip"))]
+use canokey_protocol::usb;
 use storage::Storage;
 // CIU PKE register file: 48 registers of 64 bytes each.
 const PKE_BYTES: usize = 48 * 64;
@@ -274,6 +278,7 @@ extern "C" fn ck_platform_progress() -> u8 {
     result
 }
 #[unsafe(no_mangle)]
+#[cfg(not(feature = "usbip"))]
 extern "C" fn ck_ccid_idle() -> u8 {
     1
 }
@@ -286,20 +291,24 @@ extern "C" fn ck_usb_dcd_unlock(mask: u32) {
     assert_eq!(mask, 0);
 }
 #[unsafe(no_mangle)]
+#[cfg(not(feature = "usbip"))]
 extern "C" fn ck_usb_configured() -> u8 {
     host(|h| u8::from(h.socket.is_some() && !h.reboot))
 }
 #[unsafe(no_mangle)]
+#[cfg(not(feature = "usbip"))]
 // The UDP virtual card implements only the FIDO HID endpoint.
 extern "C" fn ck_usb_tx_idle(ep: u8) -> u8 {
     assert_eq!(ep, usb::EP_HID_IN);
     1
 }
 #[unsafe(no_mangle)]
+#[cfg(not(feature = "usbip"))]
 extern "C" fn ck_usb_receive(ep: u8) {
     assert_eq!(ep, usb::EP_HID);
 }
 #[unsafe(no_mangle)]
+#[cfg(not(feature = "usbip"))]
 unsafe extern "C" fn ck_usb_submit(ep: u8, p: *const u8, n: u16, zlp: u8) -> i32 {
     assert_eq!(
         (ep, n, zlp),

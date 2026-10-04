@@ -14,6 +14,7 @@ canokey-rust-ffi = { path = "../ffi", features = ["static-backend", "usb-hid", "
 canokey-ports = { path = "../ports", features = ["nfc"] }
 [features]
 default = []
+usbip = ["canokey-rust-ffi/usb-device", "canokey-rust-ffi/usb-webusb"]
 ctap-restrict-algorithms = ["canokey-rust-ffi/ctap-restrict-algorithms"]
 
 [lints]

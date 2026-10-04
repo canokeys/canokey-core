@@ -111,12 +111,12 @@ native_port! { impl Device for DeviceBackend {
         }
         #[cfg(not(feature = "device-runtime"))]
         {
-            // Synthetic identity for native host tools; never a product release version.
+            // Unconfigured host tools retain zero identity; USB/IP supplies release fields.
             let data: &[u8]=match kind {
-                0 => b"0.0.0",
+                0 => option_env!("CANOKEY_ADMIN_VERSION").unwrap_or("0.0.0").as_bytes(),
                 1 => b"CanoKey Rust Virtual Card",
                 3 => &[0;crate::contracts::CHIP_ID_BYTES],
-                _ => b"unknown",
+                _ => option_env!("CANOKEY_CORE_SHA").unwrap_or("unknown").as_bytes(),
             };
             let len=output.len().min(data.len());output[..len].copy_from_slice(&data[..len]);len
         }

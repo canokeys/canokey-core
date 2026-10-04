@@ -252,6 +252,7 @@ impl Transport {
         data[..wire::INIT_NONCE_BYTES].copy_from_slice(&frame.data[..wire::INIT_NONCE_BYTES]);
         data[8..12].copy_from_slice(&assigned.to_be_bytes());
         data[12] = 2; // CTAPHID interface version
+        data[13..16].copy_from_slice(&crate::release::CTAPHID_DEVICE);
         data[16] = 0x05; // WINK and CBOR bits; MSG is supported by leaving NMSG clear.
         true
     }

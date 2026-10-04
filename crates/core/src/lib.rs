@@ -2,6 +2,11 @@
 //! Safe independent core; all C ABI and raw pointer access lives in ffi.
 #![no_std]
 #![forbid(unsafe_code)]
+
+#[allow(dead_code)] // Reduced applet/interface profiles consume only some fields.
+pub(crate) mod release {
+    include!(concat!(env!("OUT_DIR"), "/release_versions.rs"));
+}
 pub mod applets;
 pub mod ports;
 pub mod runtime;

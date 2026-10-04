@@ -118,7 +118,7 @@ mod tests {
             e.u8(11).u16(large_blob::LIMIT);
             e.u8(12).bool(flags & pin::FORCE_CHANGE != 0);
             e.u8(13).u8(minimum);
-            e.u8(14).u32(0);
+            e.u8(14).u32(crate::release::FIDO_FIRMWARE);
             e.u8(15).u8(32);
             e.u8(16).u8(4);
             e.u8(20).u8(Record::CTAP_CREDENTIALS - used);

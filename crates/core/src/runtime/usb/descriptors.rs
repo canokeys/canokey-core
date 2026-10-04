@@ -108,7 +108,7 @@ pub const KEYBOARD_REPORT: &[u8] = &[
 ];
 pub const DEVICE: &[u8] = &[
     // USB 2.00, per-interface classes, EP0 MPS; VID20A0/PID42D4;
-    // bcdDevice1.00, manufacturer/product, no serial, one configuration.
+    // Configured bcdDevice, manufacturer/product, no serial, one configuration.
     0x12,
     0x01,
     0x00,
@@ -121,8 +121,8 @@ pub const DEVICE: &[u8] = &[
     0x20,
     0xd4,
     0x42,
-    0x00,
-    0x01,
+    crate::release::USB_BCD_DEVICE as u8,
+    (crate::release::USB_BCD_DEVICE >> 8) as u8,
     STRING_MANUFACTURER,
     STRING_PRODUCT,
     0x00,
