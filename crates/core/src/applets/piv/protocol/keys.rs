@@ -392,7 +392,7 @@ impl Piv {
                 return Err(Sw::WRONG_DATA);
             }
             let exp = field(ga_field::EXPONENTIATION);
-            self.authorize_private(m[repo::PIN_POLICY])?;
+            self.check_private(m[repo::PIN_POLICY])?;
             repo::load(id, m, &mut w.key.bytes, p)?;
             // No peer template (85): initiator step 1 generates an ephemeral
             // key and retains it for a later request on this same key slot.
@@ -403,6 +403,9 @@ impl Piv {
                     v.len()
                 });
                 self.touch(m[repo::TOUCH_POLICY], p)?;
+                // Consume the one-use PIN grant only after the gesture
+                // succeeds, matching the classic sign/decipher path.
+                self.authorize_private(m[repo::PIN_POLICY])?;
                 return self.sm2_start(id, Some(&identity[..identity_len]), w, p);
             }
             let mut exp = exp.unwrap();
@@ -421,6 +424,7 @@ impl Piv {
                 return Err(Sw::WRONG_DATA);
             }
             self.touch(m[repo::TOUCH_POLICY], p)?;
+            self.authorize_private(m[repo::PIN_POLICY])?;
             if step2 {
                 self.sm2_step2(&mut packet, w, p)?;
             } else {
