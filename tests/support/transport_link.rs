@@ -36,7 +36,11 @@ mod webusb_link {
 #[path = "../../crates/ffi/src/transport/hid/io.rs"]
 mod hid_io;
 
+#[path = "../../crates/ffi/src/transport/lock.rs"]
+mod usb_lock;
+
 mod transport {
+    pub(crate) use crate::usb_lock::usb_locked;
     #[cfg(feature = "usb-webusb")]
     pub(crate) use crate::webusb_link as webusb;
 }

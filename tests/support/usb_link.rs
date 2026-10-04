@@ -52,6 +52,14 @@ mod ccid_io;
 mod entrypoints {
     unsafe extern "C" {
         fn test_core_preemptable() -> u8;
+        pub fn ck_core_reset();
+        pub fn ck_core_exchange(
+            owner: u8,
+            input: *const u8,
+            length: usize,
+            output: *mut u8,
+            capacity: usize,
+        ) -> i32;
     }
     pub unsafe fn can_preempt() -> bool {
         unsafe { test_core_preemptable() != 0 }
@@ -72,8 +80,19 @@ mod ccid_policy {
     }
 }
 
+#[path = "../../crates/ffi/src/transport/owners.rs"]
+mod owners;
+#[path = "../../crates/ffi/src/transport/lock.rs"]
+mod usb_lock;
+
 mod transport {
+    pub(crate) use crate::owners;
+    pub(crate) use crate::usb_lock::usb_locked;
     pub(crate) mod ccid {
+        unsafe extern "C" {
+            pub fn ck_ccid_response_buffer() -> *mut u8;
+            pub fn ck_ccid_idle() -> u8;
+        }
         pub(crate) use crate::ccid_io as io;
         #[cfg(feature = "usb-hid")]
         pub(crate) use crate::ccid_policy::presence_progress;
@@ -84,6 +103,11 @@ mod transport {
     #[cfg(any(hid_fixture, feature = "usb-hid"))]
     pub(crate) mod hid {
         pub(crate) use crate::hid_io as io;
+        pub(crate) mod link {
+            unsafe extern "C" {
+                pub fn ck_hid_busy() -> u8;
+            }
+        }
     }
     #[cfg(any(keyboard_fixture, feature = "usb-keyboard"))]
     pub(crate) mod keyboard {

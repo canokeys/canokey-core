@@ -27,3 +27,33 @@ pub mod runtime {
 }
 #[path = "../../crates/ffi/src/transport/nfc.rs"]
 mod facade;
+#[path = "../../crates/ffi/src/transport/owners.rs"]
+mod owners;
+
+mod transport {
+    pub(crate) use crate::owners;
+    pub(crate) mod usb {
+        unsafe extern "C" {
+            pub fn usb_device_deinit();
+        }
+    }
+    pub(crate) mod ccid {
+        unsafe extern "C" {
+            pub fn ck_ccid_response_buffer() -> *mut u8;
+        }
+    }
+}
+mod abi {
+    pub(crate) mod core {
+        unsafe extern "C" {
+            pub fn ck_core_reset();
+            pub fn ck_core_exchange(
+                owner: u8,
+                input: *const u8,
+                length: usize,
+                output: *mut u8,
+                capacity: usize,
+            ) -> i32;
+        }
+    }
+}
