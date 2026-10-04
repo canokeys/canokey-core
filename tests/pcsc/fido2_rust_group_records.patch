@@ -1,0 +1,29 @@
+--- a/tests/vendor/canokeys/test_power_loss.py
++++ b/tests/vendor/canokeys/test_power_loss.py
+@@ -27,6 +27,10 @@
+     pin_protocol = PinProtocolV1()
+     return CredentialManagement(device.ctap2, pin_protocol, _get_pin_token_with_CM_permission(device))
+ 
+-# Rust atomic credential records replace the legacy DC/DM multi-file layout.
++# Rust grouped credential records replace the legacy DC/DM multi-file layout.
++# Physical file IDs encode groups of four consecutive logical credentials.
++CTAP_GROUP_BASE = 0x50
++CTAP_GROUP_MEMBERS = 4
++DELETE_CREDENTIAL_COUNT = CTAP_GROUP_MEMBERS + 1
+ # Test both failure before commit and lost acknowledgement after durable commit.
+ class TestPowerLoss:
+@@ -62,6 +66,6 @@
+         registrations = []
+-        for _ in range(2):
++        for _ in range(DELETE_CREDENTIAL_COUNT):
+             req.user = generate_user()
+             registrations.append(device.sendMC(*req.toMC()))
+-        count = 2
++        count = len(registrations)
+         for index, registration in enumerate(registrations):
+@@ -69,3 +73,4 @@
+             CredMgmt.pin_uv_token = _get_pin_token_with_CM_permission(device)
+-            device.send_err_injection(("%02x" % (80 + index)).encode(), p1=2 if after_commit else 0)
++            group = CTAP_GROUP_BASE + index // CTAP_GROUP_MEMBERS
++            device.send_err_injection(("%02x" % group).encode(), p1=2 if after_commit else 0)
+             with pytest.raises(CtapError) as error:

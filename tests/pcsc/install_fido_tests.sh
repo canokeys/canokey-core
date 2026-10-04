@@ -23,7 +23,10 @@ apply_patch_if_missing() {
 
 pushd fido2-tests
 apply_patch_if_missing 'def _bind_client' tests/conftest.py 1 . ../tests/pcsc/fido2_retry_ctap2_init.patch
-apply_patch_if_missing '# Rust atomic credential records' tests/vendor/canokeys/test_power_loss.py 1 . ../tests/pcsc/fido2_rust_atomic_records.patch
+if ! grep -Fq '# Rust grouped credential records' tests/vendor/canokeys/test_power_loss.py; then
+  apply_patch_if_missing '# Rust atomic credential records' tests/vendor/canokeys/test_power_loss.py 1 . ../tests/pcsc/fido2_rust_atomic_records.patch
+  apply_patch_if_missing '# Rust grouped credential records' tests/vendor/canokeys/test_power_loss.py 1 . ../tests/pcsc/fido2_rust_group_records.patch
+fi
 VENV_DIR="${PWD}/.venv"
 if [ ! -x "${VENV_DIR}/bin/python" ]; then
   "${PYTHON_BIN}" -m venv "${VENV_DIR}"
