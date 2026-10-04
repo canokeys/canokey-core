@@ -223,6 +223,12 @@ extern "C" fn ck_platform_touched() -> u8 {
         .ok()
         .and_then(|s| s.trim().parse::<i32>().ok())
         .unwrap_or(-1);
+    // A host-only gesture duration lets CCID acceptance exercise long reset.
+    let held_ms = std::fs::read_to_string("/tmp/canokey-test-touch-ms")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .filter(|duration| (1..=30_000).contains(duration))
+        .unwrap_or(40);
     let (pressed, rising) = host(|h| {
         if count < 0 {
             h.gesture = Gesture::Idle;
@@ -242,7 +248,7 @@ extern "C" fn ck_platform_touched() -> u8 {
                 h.gesture = Gesture::Pressed(now);
                 (true, true)
             }
-            Gesture::Pressed(at) if at.elapsed() >= Duration::from_millis(40) => {
+            Gesture::Pressed(at) if at.elapsed() >= Duration::from_millis(held_ms) => {
                 h.gesture = Gesture::Cooldown(now);
                 (false, false)
             }
