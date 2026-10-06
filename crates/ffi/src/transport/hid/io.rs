@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB IRQ report mailbox and reset epochs, disjoint from CTAPHID execution.
+use crate::sys::device_get_tick;
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
 unsafe extern "C" {
@@ -7,7 +8,6 @@ unsafe extern "C" {
     fn ck_usb_tx_idle(endpoint: u8) -> u8;
     fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
     fn ck_usb_receive(endpoint: u8);
-    fn device_get_tick() -> u32;
 }
 static mut INCOMING: [u8; 64] = [0; 64];
 static mut QUEUED: bool = false;

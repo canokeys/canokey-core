@@ -19,8 +19,10 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-
   && rm -rf /var/lib/apt/lists/*
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
-  && sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain nightly-2026-09-04
+  && sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain none
 ENV PATH="/root/.cargo/bin:${PATH}"
+COPY rust-toolchain.toml /root/rust-toolchain.toml
+RUN cd /root && rustup show active-toolchain
 
 COPY tests/pcsc /root/tests/pcsc
 

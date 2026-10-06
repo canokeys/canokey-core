@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Production boot/loop FFI; the harness supplies board and Core boundaries.
 extern crate self as canokey_rust_core;
+#[allow(dead_code)]
+#[path = "../../crates/ffi/src/sys.rs"]
+mod sys;
 pub mod runtime {
     pub mod config {
         pub const INITIALIZED: u32 = 1;

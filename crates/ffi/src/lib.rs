@@ -12,7 +12,8 @@ macro_rules! lazy_state {
         #[cold]
         #[inline(never)]
         unsafe fn $initializer(state: *mut $ty) {
-            unsafe { state.write($init) }
+            let initial = $init;
+            unsafe { state.write(initial) }
         }
 
         unsafe fn $getter() -> &'static mut $ty {
@@ -30,6 +31,7 @@ macro_rules! lazy_state {
 mod abi;
 mod platform;
 mod runtime;
+mod sys;
 mod transport;
 // The FFI crate is the C-facing facade; re-export the core's public port types
 // so platform adapters and generated bindings share one type namespace.

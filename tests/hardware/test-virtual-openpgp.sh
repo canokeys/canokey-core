@@ -1,5 +1,5 @@
 #!/bin/bash
-# OpenPGP applet integration tests
+# OpenPGP virtual-card integration tests
 # Called from tests.yml with `script -e -c` for TTY support
 set -e
 set -o pipefail

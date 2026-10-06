@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop keyboard policy; hardware reset notifications remain in a mailbox.
+use crate::sys::ck_platform_now;
+use crate::sys::ck_platform_touched;
 use canokey_rust_core::runtime::keyboard::Keyboard;
 unsafe extern "C" {
     fn ck_keyboard_io_epoch() -> u32;
     fn ck_keyboard_io_configured() -> u8;
     fn ck_keyboard_io_idle() -> u8;
     fn ck_keyboard_io_send(report: *mut u8, len: u8, epoch: u32) -> u8;
-    fn ck_platform_touched() -> u8;
-    fn ck_platform_now() -> u32;
     fn ck_core_keyboard_usage(ch: u8) -> i32;
     fn ck_core_output_cancel(pressed: u8);
     fn ck_core_output_sample(pressed: u8, now: u32, ready: u8) -> i32;

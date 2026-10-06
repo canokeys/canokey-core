@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Must match PKE_BUFFER_OWNER_CTAP in native/include/pke.h.
 const PKE_OWNER_CTAP: u8 = 3;
-unsafe extern "C" {
-    fn pke_buffer_size() -> usize;
-    fn pke_buffer_acquire(owner: u8) -> i32;
-    fn pke_buffer_release(owner: u8) -> i32;
-    fn pke_buffer_clear() -> i32;
-    fn pke_buffer_read(offset: usize, out: *mut u8, length: usize) -> i32;
-    fn pke_buffer_write(offset: usize, input: *const u8, length: usize) -> i32;
-}
+use crate::sys::pke_buffer_acquire;
+use crate::sys::pke_buffer_clear;
+use crate::sys::pke_buffer_read;
+use crate::sys::pke_buffer_release;
+use crate::sys::pke_buffer_size;
+use crate::sys::pke_buffer_write;
 // Serialized transports retain bookkeeping across polls, never hardware slices.
 // Cleanup is explicit: a temporary platform adapter must not release the lease.
 pub struct PkeLease {

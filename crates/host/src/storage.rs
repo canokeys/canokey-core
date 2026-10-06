@@ -11,7 +11,7 @@ use std::{
 // conservative, independent of serialized length and not a LittleFS page cost.
 const IMAGE_OVERHEAD_BYTES: usize = 4096;
 const MAGIC: &[u8; 8] = b"CKRHOST1";
-const COUNT: usize = 186;
+const COUNT: usize = Record::COUNT;
 const CAPACITY: usize = 128 * 1024;
 // A shared OATH file may consume the available image budget. Do not impose a
 // lower per-record limit that contradicts the storage free-space query.

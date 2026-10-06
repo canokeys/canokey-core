@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! WebUSB discovery descriptors, streamed without a descriptor-sized RAM buffer.
+//! BOS and discovery descriptors, streamed without a descriptor-sized RAM buffer.
 #![forbid(unsafe_code)]
 use canokey_protocol::usb::Setup;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::{
-    usb::webusb::Descriptor,
+    usb::bos::Descriptor,
     webusb::{Request, Transport},
 };
 fn setup(kind: u8, request: u8, value: u16, index: u16, length: u16) -> Setup {

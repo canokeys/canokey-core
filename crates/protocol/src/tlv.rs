@@ -26,6 +26,27 @@ impl Tag {
     }
 }
 
+#[inline(always)]
+fn tag_complete(i: usize, byte: u8) -> Result<bool, Error> {
+    // X.690 8.1.2: at most three tag bytes, with a nonzero first base-128 digit.
+    if i == 3 || (i == 1 && byte & 0x7f == 0) {
+        return Err(Error::Invalid);
+    }
+    Ok((i == 0 && byte & 0x1f != 0x1f) || (i != 0 && byte & 0x80 == 0))
+}
+
+/// Decode just the header. None means incomplete; the value may be absent.
+#[inline(always)]
+pub fn read_header(bytes: &[u8]) -> Result<Option<(&[u8], usize, u16)>, Error> {
+    for (i, &byte) in bytes.iter().enumerate() {
+        if tag_complete(i, byte)? {
+            return Ok(length::read_prefix(&bytes[i + 1..])?
+                .map(|(length, consumed)| (&bytes[..i + 1], i + 1 + consumed, length)));
+        }
+    }
+    Ok(None)
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Event<'a> {
     Start { tag: Tag, length: u16 },
@@ -77,18 +98,13 @@ impl Decoder {
         while !bytes.is_empty() {
             match self.phase {
                 Phase::Tag => {
-                    // X.690 section 8.1.2: low five bits 1F introduce a high-tag
-                    // number; subsequent bit 80 means continuation. A zero first
-                    // base-128 digit is non-minimal and is rejected.
                     let byte = bytes[0];
                     bytes = &bytes[1..];
                     let i = usize::from(self.tag_len);
-                    if i == 3 || (i == 1 && byte & 0x7f == 0) {
-                        return Err(Error::Invalid);
-                    }
+                    let complete = tag_complete(i, byte)?;
                     self.tag[i] = byte;
                     self.tag_len += 1;
-                    if (i == 0 && byte & 0x1f != 0x1f) || (i != 0 && byte & 0x80 == 0) {
+                    if complete {
                         self.phase = Phase::Length;
                     }
                 }
@@ -148,6 +164,50 @@ impl Decoder {
 #[cfg(test)]
 mod tests {
     use super::{Decoder, Error, Event};
+
+    #[test]
+    fn borrowed_headers_match_streaming_at_every_prefix() {
+        let vectors: &[&[u8]] = &[
+            &[0x01, 0x00],
+            &[0x5f, 0x2d, 0x81, 0x03],
+            &[0x9f, 0x81, 0x01, 0x82, 0x01, 0x00],
+            &[0x1f, 0x00],
+            &[0x1f, 0x81, 0x81, 0x00],
+            &[0x01, 0x80],
+            &[0x01, 0x83],
+        ];
+        for vector in vectors {
+            for end in 0..=vector.len() {
+                let bytes = &vector[..end];
+                let mut decoder = Decoder::default();
+                let mut header = None;
+                let mut invalid = false;
+                for (i, &byte) in bytes.iter().enumerate() {
+                    if decoder
+                        .feed(&[byte], &mut |event| {
+                            if let Event::Start { tag, length } = event {
+                                header = Some((tag, i + 1, length));
+                            }
+                            Ok(())
+                        })
+                        .is_err()
+                    {
+                        invalid = true;
+                        break;
+                    }
+                    if header.is_some() {
+                        break;
+                    }
+                }
+                let expected = if invalid {
+                    Err(Error::Invalid)
+                } else {
+                    Ok(header.as_ref().map(|(tag, at, n)| (tag.bytes(), *at, *n)))
+                };
+                assert_eq!(super::read_header(bytes), expected, "{bytes:?}");
+            }
+        }
+    }
 
     #[test]
     fn decoder_handles_fragmented_tag_length_and_value() {

@@ -1,9 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-export LANGUAGE=en_US
-export LANG=en_US.UTF8
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 export TEST_TMP_DIR=/tmp/canokey-piv
-export USER=`id -nu`
 
 YPT() {
     yubico-piv-tool -r "$RDID" $@
@@ -247,4 +245,4 @@ test_FillData() {
     YPT -a status
 }
 
-. ./shunit2/shunit2
+. "$TEST_REAL_DIR/shunit2/shunit2"

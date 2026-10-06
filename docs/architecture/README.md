@@ -16,6 +16,18 @@ record codecs and repositories stay together. Shared mechanisms do not depend
 on applets; `flows/` owns explicit cross-applet reset and keyboard workflows.
 The registry routes operations without absorbing applet policy.
 
+## Transport ownership
+
+| Transport | protocol | core/runtime | ffi/transport |
+| --- | --- | --- | --- |
+| CCID | Packet fields and framing | APDU/slot state machine and response leases | IRQ mailbox, timed extensions and serialized execution |
+| CTAPHID | Report framing and command/error values | Reassembly, channel and execution policy | USB mailbox, progress and shared-runtime arbitration |
+| NFC | ISO-DEP block encoding | ISO-DEP state machine, FM11NT I/O policy and provisioning | IRQ/timer handoff, chip callbacks and serialized execution |
+| WebUSB | USB setup fields | APDU transaction state; `usb/bos.rs` owns discovery descriptors | EP0 mailbox and shared-runtime arbitration |
+
+`runtime/webusb.rs` owns transactions; `runtime/usb/bos.rs` owns BOS, URL and
+Microsoft OS descriptors. The framing crate does not own hardware/session state.
+
 ## Ports and bindings
 
 `ports/src/contracts/` defines safe services and value types. `binding.rs`

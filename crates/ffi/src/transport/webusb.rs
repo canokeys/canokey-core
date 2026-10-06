@@ -4,13 +4,11 @@
 //! the WebUSB RX/TX allocation, exclusively leased by main-loop admission.
 //! A single 16-byte FIFO mailbox holds a data-stage OUT packet received after
 //! SETUP admission but before the main loop accepts the command.
+use crate::sys::device_get_tick;
 use crate::transport::owners::OWNER_WEBUSB;
 use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
-unsafe extern "C" {
-    fn device_get_tick() -> u32;
-}
 static mut STATE: Transport = Transport::new();
 static mut WAITING: bool = false;
 static mut PACKET: [u8; 16] = [0; 16];

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Device callbacks and volatile secret erasure adapter.
-use crate::{Device, Memory};
 use crate::contracts::board_info_kind;
+use crate::{Device, Memory};
 
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.

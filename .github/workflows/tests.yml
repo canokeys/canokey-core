@@ -2,6 +2,29 @@ name: tests
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
+  rust_checks:
+    name: Rust formatting, lints and supported profiles
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - run: rustup show active-toolchain
+    - run: cargo fmt --all --check
+    # Enforce correctness/suspicious lints without requiring unrelated style
+    # rewrites. Explicit drop ends borrowed adapter lifetimes before erasure.
+    - run: >-
+        cargo clippy --workspace --exclude canokey-rust-host --all-targets --all-features --
+        -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
+        -A clippy::drop_non_drop
+    # host links std: it must not unify ffi's standalone host-runtime handler.
+    - run: >-
+        cargo clippy -p canokey-rust-host --all-targets --features ctap-restrict-algorithms --
+        -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
+        -A clippy::drop_non_drop
+    - run: python3 tests/check_rust_profiles.py
+
   build_tools:
     name: Build custom yubico-piv-tool package
     #if: github.event_name == 'workflow_dispatch'
@@ -160,7 +183,7 @@ jobs:
 
     - name: Install - Rust virtual card toolchain and tests
       run: |
-        rustup toolchain install nightly-2026-09-04 --profile minimal
+        rustup show active-toolchain
         python3 -m venv .venv-host
         .venv-host/bin/python -m pip install -r tests/integration/requirements.txt
 
@@ -295,7 +318,7 @@ jobs:
     - name: Tests - OpenPGP applet
       # GPG requires a tty to work
       shell: script -e -c "bash {0}"
-      run: bash .github/workflows/test-openpgp.sh
+      run: bash tests/hardware/test-virtual-openpgp.sh
     - name: Tests - Interoperate with ckman openpgp
       # Disabled: the legacy ckman fork is incompatible with the current Python/pyscard toolchain.
       if: false
@@ -307,7 +330,7 @@ jobs:
         poetry run pytest --reader 'Canokey ' --no-serial --use-version 5.7.0 -s ./tests/device/test_piv.py -v
 
     - name: Tests - PIV applet
-      run: bash .github/workflows/test-piv.sh
+      run: bash tests/hardware/test-virtual-piv.sh
     - name: Wrap-up - Prepare test coverage report
       run: |
         go -C tests/pcsc test admin_test.go -v -run TestFSUsage
@@ -316,7 +339,7 @@ jobs:
         ls /tmp
         sleep 2
         mkdir coverage
-        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|littlefs|interfaces)/' | xargs -r rm
+        find build/ -name '*.gcda' | grep -P '/(canokey-crypto|littlefs)/' | xargs -r rm
         lcov --base-directory . --directory . -c -o ./coverage/lcov.info
 
     - name: Wrap-up - Coveralls

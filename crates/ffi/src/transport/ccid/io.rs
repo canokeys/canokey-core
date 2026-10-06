@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ mailbox and timed CCID extension lease, disjoint from Core execution.
+use crate::sys::device_get_tick;
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
 unsafe extern "C" {
@@ -7,7 +8,6 @@ unsafe extern "C" {
     fn ck_usb_tx_idle(endpoint: u8) -> u8;
     fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
     fn ck_usb_receive(endpoint: u8);
-    fn device_get_tick() -> u32;
     fn device_set_timeout(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
 }
 static mut RX: [u8; 64] = [0; 64];

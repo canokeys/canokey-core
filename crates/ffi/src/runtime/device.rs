@@ -9,27 +9,27 @@ const CLOCK_USB_OPERATING: u8 = 2;
 // ck_board_crypto_check ABI in platform/rust-core/board.h: RNG=0, SM4=1, PKE=2.
 // Keep the count aligned with CK_BOARD_CRYPTO_CHECK_COUNT when adding a check.
 const CRYPTO_CHECK_COUNT: u8 = 3;
+use crate::sys::ck_board_clock;
+use crate::sys::ck_board_crypto_check;
+#[cfg(feature = "nfc")]
+use crate::sys::ck_board_mode_pin;
+#[cfg(feature = "nfc")]
+use crate::sys::ck_board_nfc_irq_enable;
+use crate::sys::ck_board_prepare;
+#[cfg(feature = "nfc")]
+use crate::sys::ck_board_reset;
+use crate::sys::ck_board_stack_paint;
+use crate::sys::ck_board_stack_report;
+use crate::sys::ck_board_usb_ready;
+use crate::sys::ck_platform_led;
+#[cfg(feature = "storage")]
+use crate::sys::ck_storage_format;
+#[cfg(feature = "storage")]
+use crate::sys::ck_storage_init;
+use crate::sys::device_delay;
 unsafe extern "C" {
-    fn ck_board_prepare();
-    #[cfg(feature = "nfc")]
-    fn ck_board_mode_pin() -> u8;
-    fn ck_board_clock(mode: u8);
-    #[cfg(feature = "nfc")]
-    fn ck_board_nfc_irq_enable();
-    fn ck_board_usb_ready() -> u8;
-    fn ck_board_crypto_check(which: u8) -> u32;
-    #[cfg(feature = "nfc")]
-    fn ck_board_reset() -> !;
-    fn ck_board_stack_paint();
-    fn ck_board_stack_report();
-    fn ck_platform_led(on: u8);
-    fn device_delay(milliseconds: i32);
     #[cfg(feature = "ctap")]
     fn ck_core_presence_sample();
-    #[cfg(feature = "storage")]
-    fn ck_storage_init() -> i32;
-    #[cfg(feature = "storage")]
-    fn ck_storage_format() -> i32;
 }
 static mut LED_DEFAULT: bool = true;
 #[unsafe(no_mangle)]

@@ -25,13 +25,7 @@ fn main() {
     ] {
         println!("cargo:rerun-if-env-changed={name}");
         let value = std::env::var(name).unwrap_or_else(|_| "0.0.0".to_owned());
-        let bytes: Vec<u8> = value
-            .split('.')
-            .take(3)
-            .map(|part| part.parse::<u8>().unwrap_or(0))
-            .collect();
-        let mut version = [0u8; 3];
-        version[..bytes.len()].copy_from_slice(&bytes);
+        let version = release::version_bytes(&value);
         let out = std::env::var_os("OUT_DIR").expect("OUT_DIR set");
         let path = std::path::Path::new(&out).join(file);
         let text = format!(

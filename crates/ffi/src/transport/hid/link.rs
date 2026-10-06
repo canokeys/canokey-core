@@ -7,9 +7,9 @@ use canokey_protocol::ctaphid::{self as wire, Error};
 const SESSION_IDLE_MS: u32 = 2000;
 const KEEPALIVE_INTERVAL_MS: u32 = 100;
 const TX_TIMEOUT_MS: u32 = 1000;
+use crate::sys::device_delay;
+use crate::sys::device_get_tick;
 unsafe extern "C" {
-    fn device_get_tick() -> u32;
-    fn device_delay(ms: i32);
     fn ck_hid_io_epoch() -> u32;
     fn ck_hid_io_reset_pending() -> u8;
     fn ck_hid_io_ack_reset(epoch: u32);

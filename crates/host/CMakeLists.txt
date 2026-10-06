@@ -23,18 +23,17 @@ endif()
 
 if(CANOKEY_VIRTUAL_CARD)
   find_program(CARGO cargo REQUIRED)
-  find_package(OpenSSL REQUIRED)
   find_package(Threads REQUIRED)
-  set(HOST_ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/cargo/release/libcanokey_rust_host.a")
+  set(HOST_ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/cargo/host-test/libcanokey_rust_host.a")
   set(HOST_FEATURE_ARGS "")
   if(CTAP_RESTRICT_ALGORITHMS)
     list(APPEND HOST_FEATURE_ARGS --features ctap-restrict-algorithms)
   endif()
   add_custom_target(rust-host-build ALL
     COMMAND "${CMAKE_COMMAND}" -E env "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
-      ${CARGO} +nightly-2026-09-04 build
+      ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} build
       --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
-      --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo --release ${HOST_FEATURE_ARGS}
+      --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo --profile host-test ${HOST_FEATURE_ARGS}
     BYPRODUCTS "${HOST_ARCHIVE}" VERBATIM)
   add_library(canokey-rust-host STATIC IMPORTED GLOBAL)
   set_target_properties(canokey-rust-host PROPERTIES IMPORTED_LOCATION "${HOST_ARCHIVE}")
@@ -108,7 +107,7 @@ if(CANOKEY_VIRTUAL_CARD)
           "__PYVENV_LAUNCHER__=${Python3_EXECUTABLE}")
       endif()
     endif()
-    add_test(NAME virtual-storage COMMAND ${CARGO} +nightly-2026-09-04 test
+    add_test(NAME virtual-storage COMMAND ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} test
       --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
       --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-tests --lib)
     set_tests_properties(virtual-storage PROPERTIES TIMEOUT 120)
@@ -122,7 +121,6 @@ if(CANOKEY_VIRTUAL_CARD)
 endif()
 
 if(CANOKEY_FUZZING)
-  find_package(OpenSSL REQUIRED)
   find_package(Threads REQUIRED)
   # libFuzzer coverage instrumentation for the Rust side; the C side gets
   # -fsanitize=fuzzer-no-link from the top-level CANOKEY_FUZZING block.

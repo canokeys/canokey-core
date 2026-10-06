@@ -2,6 +2,14 @@
 //! NFC facade: IRQ-local bus/WTX state is disjoint from main-loop Link/Core.
 //! NFC and USB are mutually exclusive operating modes and share CCID's response
 //! allocation for APDU RX/TX. No borrow of IRQ state crosses a Core call.
+use crate::sys::ck_nfc_io_delay;
+use crate::sys::ck_nfc_io_lock;
+use crate::sys::ck_nfc_io_now;
+use crate::sys::ck_nfc_io_read;
+use crate::sys::ck_nfc_io_schedule;
+use crate::sys::ck_nfc_io_select;
+use crate::sys::ck_nfc_io_unlock;
+use crate::sys::ck_nfc_io_write;
 use canokey_protocol::{
     apdu,
     nfc::{self as wire, Packet},
@@ -10,16 +18,6 @@ use canokey_rust_core::runtime::{
     nfc::{Event, Link},
     nfc_io::{Chip, Io},
 };
-unsafe extern "C" {
-    fn ck_nfc_io_lock() -> u32;
-    fn ck_nfc_io_unlock(mask: u32);
-    fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i32;
-    fn ck_nfc_io_write(address: u16, bytes: *const u8, length: u8) -> i32;
-    fn ck_nfc_io_now() -> u32;
-    fn ck_nfc_io_select(active: u8);
-    fn ck_nfc_io_delay(milliseconds: u16);
-    fn ck_nfc_io_schedule(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
-}
 struct Hardware;
 impl Chip for Hardware {
     fn read(&mut self, address: u16, out: &mut [u8]) -> bool {

@@ -2,6 +2,9 @@
 // Production protocol, runtime and FFI; only register I/O and Core are mocked.
 extern crate self as canokey_protocol;
 extern crate self as canokey_rust_core;
+#[allow(dead_code)]
+#[path = "../../crates/ffi/src/sys.rs"]
+mod sys;
 #[path = "../../crates/protocol/src/apdu.rs"]
 pub mod apdu;
 #[path = "../../crates/core/src/runtime/nfc.rs"]

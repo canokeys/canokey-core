@@ -15,7 +15,7 @@ Build from the core repository with the pinned Rust toolchain, CMake, native C
 compiler, OpenSSL and PC/SC development headers installed:
 
 ```sh
-rustup toolchain install nightly-2026-09-04 --profile minimal
+rustup show active-toolchain
 python3 -m venv .venv-host
 .venv-host/bin/python -m pip install -r tests/integration/requirements.txt
 cmake -S . -B build-host -DCANOKEY_PROFILE=full \

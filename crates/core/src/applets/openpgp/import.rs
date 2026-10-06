@@ -23,38 +23,22 @@ fn length(b: &[u8], at: &mut usize) -> Result<Option<usize>, Sw> {
         }
     }
 }
-// Complete headers need no event callback or streaming decoder state. Match
-// the streaming decoder's tag grammar and retain incomplete vs invalid errors.
 fn object_header(b: &[u8]) -> Result<(u16, usize, usize), Sw> {
-    let mut at = 0;
-    loop {
-        let byte = *b.get(at).ok_or(Sw::WRONG_LENGTH)?;
-        if at == 3 || (at == 1 && byte & 0x7f == 0) {
-            return Err(Sw::WRONG_DATA);
-        }
-        let last = if at == 0 {
-            byte & 0x1f != 0x1f
-        } else {
-            byte & 0x80 == 0
-        };
-        at += 1;
-        if last {
-            break;
-        }
-    }
-    let tag_end = at;
-    let size = length(b, &mut at)?.ok_or(Sw::WRONG_LENGTH)?;
+    let (tag, at, size) = canokey_protocol::tlv::read_header(b)
+        .map_err(|_| Sw::WRONG_DATA)?
+        .ok_or(Sw::WRONG_LENGTH)?;
     // The streaming parser rejects wide tags when their complete header is
     // emitted, not before: a truncated three-byte-tag header is WRONG_LENGTH.
-    if tag_end > 2 {
+    let bytes = tag;
+    if bytes.len() > 2 {
         return Err(Sw::WRONG_DATA);
     }
-    let tag = if tag_end == 1 {
-        u16::from(b[0])
+    let tag = if bytes.len() == 1 {
+        u16::from(bytes[0])
     } else {
-        u16::from_be_bytes([b[0], b[1]])
+        u16::from_be_bytes([bytes[0], bytes[1]])
     };
-    Ok((tag, at, size))
+    Ok((tag, at, usize::from(size)))
 }
 
 /// Parse exactly one complete BER object, borrowing its value without copying.

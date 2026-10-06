@@ -51,7 +51,7 @@ done
 ./tests/pcsc/install_fido_tests.sh
 FIDO_PYTHON="${WORKDIR}/fido2-tests/.venv/bin/python"
 
-rustup toolchain install nightly-2026-09-04 --profile minimal
+rustup show active-toolchain
 "${FIDO_PYTHON}" -m pip install -r tests/integration/requirements.txt
 cmake -S . -B "${BUILD_DIR}" -DPython3_EXECUTABLE="${FIDO_PYTHON}" -DENABLE_TESTS=ON -DENABLE_DEBUG_OUTPUT=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build "${BUILD_DIR}" -j2

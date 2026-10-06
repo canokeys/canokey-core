@@ -1,8 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: Apache-2.0
-export LANGUAGE=en_US
-export LANG=en_US.UTF8
-export USER=`id -nu`
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 export GNUPGHOME="$(pwd)/temp_gnupg"
 export SSHDIR="$(pwd)/temp_ssh"
 GPG="gpg --command-fd 0 --yes --expert"
@@ -216,4 +214,4 @@ test_GeneratedKeys() {
 #     done
 # }
 
-. ./shunit2/shunit2
+. "$TEST_REAL_DIR/shunit2/shunit2"

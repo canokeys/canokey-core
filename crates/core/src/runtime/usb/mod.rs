@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB control policy. IRQ-local USB state never borrows applet or session state.
 #![forbid(unsafe_code)]
+pub mod bos;
 pub mod descriptors;
-pub mod webusb;
 use canokey_protocol::usb::*;
 use descriptors::{Configuration, Interfaces};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reply {
     Data(usize),
-    Descriptor(webusb::Descriptor),
+    Descriptor(bos::Descriptor),
     Status,
     Address(u8),
     Configure(bool),
@@ -49,9 +49,9 @@ impl Device {
     ) -> Reply {
         let interfaces = configuration.interfaces();
         if interfaces.webusb {
-            if let Some(d) = webusb::Descriptor::request(s, interfaces.webusb()) {
-                return Reply::Descriptor(if d == webusb::Descriptor::Bos && !self.landing {
-                    webusb::Descriptor::BosWithoutLanding
+            if let Some(d) = bos::Descriptor::request(s, interfaces.webusb()) {
+                return Reply::Descriptor(if d == bos::Descriptor::Bos && !self.landing {
+                    bos::Descriptor::BosWithoutLanding
                 } else {
                     d
                 });

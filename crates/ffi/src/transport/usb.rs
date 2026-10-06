@@ -20,17 +20,17 @@ const INTERFACES: Interfaces = Interfaces {
     hid: cfg!(feature = "usb-hid"),
     keyboard: cfg!(feature = "usb-keyboard"),
 };
+use crate::sys::ck_usb_dcd_address;
+use crate::sys::ck_usb_dcd_close;
+use crate::sys::ck_usb_dcd_enable_irq;
+use crate::sys::ck_usb_dcd_open;
+use crate::sys::ck_usb_dcd_ready;
+use crate::sys::ck_usb_dcd_receive;
+use crate::sys::ck_usb_dcd_stall;
+use crate::sys::ck_usb_dcd_start;
+use crate::sys::ck_usb_dcd_stop;
+use crate::sys::ck_usb_dcd_write;
 unsafe extern "C" {
-    fn ck_usb_dcd_start();
-    fn ck_usb_dcd_enable_irq();
-    fn ck_usb_dcd_stop();
-    fn ck_usb_dcd_open(ep: u8);
-    fn ck_usb_dcd_close(ep: u8);
-    fn ck_usb_dcd_stall(ep: u8, halt: u8);
-    fn ck_usb_dcd_address(address: u8);
-    fn ck_usb_dcd_receive(ep: u8);
-    fn ck_usb_dcd_write(ep: u8, bytes: *const u8, length: u16) -> u8;
-    fn ck_usb_dcd_ready(ready: u8);
     fn ck_ccid_packet_reset();
     fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8;
     #[cfg(feature = "usb-hid")]
@@ -76,7 +76,7 @@ static mut CONTROL: [u8; CONTROL_BUFFER_BYTES] = [0; CONTROL_BUFFER_BYTES];
 static mut CONTROL_IN: ControlIn = ControlIn::new();
 #[cfg(feature = "usb-webusb")]
 static mut CONTROL_WEB: bool = false;
-static mut CONTROL_SOURCE: Option<canokey_rust_core::runtime::usb::webusb::Descriptor> = None;
+static mut CONTROL_SOURCE: Option<canokey_rust_core::runtime::usb::bos::Descriptor> = None;
 static mut PHASE: Phase = Phase::Idle;
 
 unsafe fn stall() {

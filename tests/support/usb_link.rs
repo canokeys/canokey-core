@@ -3,6 +3,9 @@
 extern crate self as canokey_protocol;
 extern crate self as canokey_rust_core;
 #[allow(dead_code)]
+#[path = "../../crates/ffi/src/sys.rs"]
+mod sys;
+#[allow(dead_code)]
 pub(crate) mod release {
     include!(env!("CANOKEY_RELEASE_VERSIONS"));
 }

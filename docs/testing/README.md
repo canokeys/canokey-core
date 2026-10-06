@@ -17,10 +17,18 @@ if CMake cannot discover the headers. The root Rust toolchain is pinned.
 ```sh
 cargo test -p canokey-protocol
 cargo test -p canokey-rust-core --features admin,pass,oath,openpgp,piv,ctap,ndef
+python3 tests/check_rust_profiles.py
 cmake -S . -B build/host -DENABLE_TESTS=ON -DENABLE_APDU_REPLAY=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/host --parallel 2
 ctest --test-dir build/host --output-on-failure
 ```
+
+Core CTest never discovers platform fixtures in a parent checkout. CIU owns
+those tests through its standalone `tests/host` CMake entrypoint. Rust CI checks
+formatting, Clippy correctness/suspicious lints and supported applet/transport
+profiles. Style-only Clippy lints are not yet enforced; explicit adapter drops
+are allowed to end borrows before workspace erasure. Host/std and standalone
+FFI panic handlers are checked in separate Cargo invocations.
 
 `cargo test -p canokey-ports` checks the committed C projection of record IDs,
 board-information selectors and chip-ID size against the Rust contracts. After

@@ -1,5 +1,5 @@
 #!/bin/bash
-# PIV applet integration tests
+# PIV virtual-card integration tests
 # Called from tests.yml
 set -e
 set -o xtrace

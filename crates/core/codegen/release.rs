@@ -1,5 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared release-field generator for Cargo and standalone native fixtures.
+pub fn version_bytes(value: &str) -> [u8; 3] {
+    let bytes: Vec<u8> = value
+        .split('.')
+        .map(|part| {
+            assert!(
+                !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()),
+                "version component must be decimal"
+            );
+            part.parse().expect("version component must fit one byte")
+        })
+        .collect();
+    bytes
+        .try_into()
+        .expect("version must have exactly three components")
+}
+
 pub fn main() {
     let mut release = String::new();
     for (name, declaration, default, max) in [
@@ -28,11 +44,7 @@ pub fn main() {
     }
     println!("cargo:rerun-if-env-changed=CANOKEY_CTAPHID_DEVICE_VERSION");
     let value = std::env::var("CANOKEY_CTAPHID_DEVICE_VERSION").unwrap_or_else(|_| "0.0.0".into());
-    let version: Vec<u8> = value
-        .split('.')
-        .map(|part| part.parse().expect("version byte"))
-        .collect();
-    assert_eq!(version.len(), 3);
+    let version = version_bytes(&value);
     release.push_str(&format!(
         "pub const CTAPHID_DEVICE: [u8; 3] = {version:?};\n"
     ));
