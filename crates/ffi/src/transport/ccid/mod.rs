@@ -341,3 +341,6 @@ pub unsafe fn presence_progress() {
 }
 
 pub(crate) mod io;
+
+// Keep the fixture swap point's imported and exported ABI signatures checked.
+const _: crate::sys::CcidIoTake = ck_ccid_io_take;

@@ -117,3 +117,6 @@ pub unsafe extern "C" fn ck_hid_io_send(report: *const u8, generation: u32) -> u
         )
     })
 }
+
+// Keep the fixture swap point's imported and exported ABI signatures checked.
+const _: crate::sys::UsbSubmit = ck_usb_submit;

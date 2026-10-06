@@ -617,3 +617,6 @@ pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
         DEVICE.landing = enabled != 0;
     });
 }
+
+// Keep the fixture swap point's imported and exported ABI signatures checked.
+const _: crate::sys::UsbSubmit = ck_usb_submit;

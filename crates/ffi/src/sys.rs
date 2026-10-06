@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Platform imports shared by the serialized runtime and transport adapters.
+// Fixture swap points share these types at their declarations and definitions.
+#[cfg(any(
+    feature = "usb-device",
+    feature = "usb-ccid",
+    feature = "usb-hid",
+    feature = "usb-keyboard"
+))]
+pub(crate) type UsbSubmit = unsafe extern "C" fn(u8, *const u8, u16, u8) -> i32;
+#[cfg(feature = "usb-ccid")]
+pub(crate) type CcidIoTake = unsafe extern "C" fn(u32, *mut u8, *mut u32) -> i32;
+#[cfg(any(feature = "ctap", feature = "usb-hid"))]
+pub(crate) type HidPoll = unsafe extern "C" fn(*const [u8; 64], u32, u32, *mut [u8; 64]) -> u8;
+
 unsafe extern "C" {
     #[cfg(feature = "device-runtime")]
     pub(crate) fn ck_board_prepare();

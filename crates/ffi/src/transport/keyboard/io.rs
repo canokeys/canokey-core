@@ -40,3 +40,6 @@ pub unsafe extern "C" fn ck_keyboard_io_send(report: *const u8, length: u8, gene
         u8::from(ok)
     })
 }
+
+// Keep the fixture swap point's imported and exported ABI signatures checked.
+const _: crate::sys::UsbSubmit = ck_usb_submit;

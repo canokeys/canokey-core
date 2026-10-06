@@ -24,19 +24,18 @@ fn length(b: &[u8], at: &mut usize) -> Result<Option<usize>, Sw> {
     }
 }
 fn object_header(b: &[u8]) -> Result<(u16, usize, usize), Sw> {
-    let (tag, at, size) = canokey_protocol::tlv::read_header(b)
+    let (tag_bytes, at, size) = canokey_protocol::tlv::read_header(b)
         .map_err(|_| Sw::WRONG_DATA)?
         .ok_or(Sw::WRONG_LENGTH)?;
     // The streaming parser rejects wide tags when their complete header is
     // emitted, not before: a truncated three-byte-tag header is WRONG_LENGTH.
-    let bytes = tag;
-    if bytes.len() > 2 {
+    if tag_bytes.len() > 2 {
         return Err(Sw::WRONG_DATA);
     }
-    let tag = if bytes.len() == 1 {
-        u16::from(bytes[0])
+    let tag = if tag_bytes.len() == 1 {
+        u16::from(tag_bytes[0])
     } else {
-        u16::from_be_bytes([bytes[0], bytes[1]])
+        u16::from_be_bytes([tag_bytes[0], tag_bytes[1]])
     };
     Ok((tag, at, usize::from(size)))
 }

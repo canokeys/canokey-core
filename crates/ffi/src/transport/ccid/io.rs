@@ -178,3 +178,7 @@ pub unsafe fn take_presence(epoch: u32, output: &mut [u8; canokey_protocol::ccid
         true
     })
 }
+
+// Keep the fixture swap point's imported and exported ABI signatures checked.
+const _: crate::sys::UsbSubmit = ck_usb_submit;
+const _: crate::sys::CcidIoTake = ck_ccid_io_take;

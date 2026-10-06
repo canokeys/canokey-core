@@ -320,3 +320,6 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         0
     }
 }
+
+// Keep the fixture swap point's imported and exported ABI signatures checked.
+const _: crate::sys::HidPoll = ck_hid_poll;
