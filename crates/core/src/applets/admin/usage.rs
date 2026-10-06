@@ -133,14 +133,7 @@ mod tests {
             let id = (i + 1) as u8;
             assert_eq!(
                 &out[i * ENTRY_BYTES..(i + 1) * ENTRY_BYTES],
-                &[
-                    id,
-                    if id == 1 || id == 7 { 0 } else { 1 },
-                    0,
-                    0,
-                    0,
-                    id
-                ]
+                &[id, if id == 1 || id == 7 { 0 } else { 1 }, 0, 0, 0, id]
             );
         }
         // System ID/flags are zero; 4096 bytes is encoded as 0x00001000.
