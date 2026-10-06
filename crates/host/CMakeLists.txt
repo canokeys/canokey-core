@@ -16,6 +16,8 @@ if(CANOKEY_APDU_REPLAY)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME apdu-replay COMMAND "${Python3_EXECUTABLE}"
     "${CANOKEY_ROOT}/tests/integration/replay_normal.py" $<TARGET_FILE:apdu-replay>)
+    add_test(NAME fuzz-seed-baselines COMMAND "${Python3_EXECUTABLE}"
+      "${CANOKEY_ROOT}/tests/support/fuzz_seeds.py" --validate-only --replay $<TARGET_FILE:apdu-replay>)
   endif()
 endif()
 
@@ -134,8 +136,10 @@ if(CANOKEY_FUZZING)
     Threads::Threads ${CMAKE_DL_LIBS} m)
   set_target_properties(apdu-fuzzer PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
   if(BUILD_TESTING)
-    add_test(NAME fuzz-smoke COMMAND apdu-fuzzer
-      "${CANOKEY_ROOT}/tests/fixtures/fuzz-seeds" -max_total_time=30 -print_final_stats=1)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME fuzz-smoke COMMAND "${Python3_EXECUTABLE}"
+      "${CANOKEY_ROOT}/tests/support/fuzz_smoke.py" $<TARGET_FILE:apdu-fuzzer>
+      "${CANOKEY_ROOT}/tests/fixtures/fuzz-seeds")
     set_tests_properties(fuzz-smoke PROPERTIES TIMEOUT 120)
   endif()
 endif()

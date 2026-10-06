@@ -18,11 +18,12 @@
 // Control lines start with '!' (they mirror device events that are not
 // APDUs):
 //
-//   !POWEROFF   simulates a CCID slot power-off: expires the applet session
-//               exactly like the Rust CCID slot reset on hardware (clears PIN
-//               validation, pending chains
-//               and response sources). The runner sends one per connection
-//               close; answers "OK".
+//   !POWEROFF   logical CCID slot power: closes leases; selected CTAP retains
+//               agreement/token state. Other applets clear selection/session.
+//   !RESET      full runtime reset: clears all sessions and selection.
+//   !RAW <hex>  one APDU exchange without automatic GET RESPONSE, for lease tests.
+//   !FAIL_READ / !FAIL_WRITE <record-id>   host-only one-shot storage fault.
+//               Control commands answer "OK" on success.
 //
 // Input lines carry one hex-encoded raw APDU (case-insensitive, no spaces);
 // empty lines are ignored. While the status word is 61xx, GET RESPONSE
@@ -45,11 +46,13 @@
 #include "core.h"
 
 #define REPLAY_MAX_APDU_LEN 4096                      // bytes
-#define REPLAY_MAX_LINE_LEN (REPLAY_MAX_APDU_LEN * 2) // hex characters
+#define REPLAY_MAX_LINE_LEN (REPLAY_MAX_APDU_LEN * 2 + 5) // hex plus optional !RAW prefix
 #define REPLAY_MAX_RESPONSE_DATA (64 * 1024)          // well beyond any real card response
 #define REPLAY_MAX_GET_RESPONSE 1024                  // guards against a stuck 61xx loop
 
 static int proto_fd = -1;
+void ck_test_fail_write(uint8_t id);
+void ck_test_fail_read(uint8_t id);
 
 static uint8_t r_buf[288]; // Same short response capacity as the product transport.
 static uint8_t apdu_buf[REPLAY_MAX_APDU_LEN];
@@ -79,7 +82,7 @@ static int hex_nibble(char c) {
   return -1;
 }
 
-static void process_apdu_line(const uint8_t *apdu, size_t len) {
+static void process_apdu_line(const uint8_t *apdu, size_t len, int drain) {
   static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
 
   size_t total = 0;
@@ -98,7 +101,7 @@ static void process_apdu_line(const uint8_t *apdu, size_t len) {
     }
     memcpy(resp_buf + total, r_buf, data_len);
     total += data_len;
-    if ((sw & 0xFF00) != 0x6100) break;
+    if (!drain || (sw & 0xFF00) != 0x6100) break;
     if (++chain >= REPLAY_MAX_GET_RESPONSE) { proto_error("response-chain-limit"); return; }
     apdu = get_response;
     len = sizeof(get_response);
@@ -140,13 +143,32 @@ int main(void) {
     if (len > 0 && in_line[len - 1] == '\n') in_line[--len] = '\0';
     if (len == 0) continue; // empty lines are ignored
 
+    int drain = 1;
+    if (strncmp(in_line, "!RAW ", 5) == 0) {
+      drain = 0;
+      len -= 5;
+      memmove(in_line, in_line + 5, len + 1);
+    }
+
     if (in_line[0] == '!') { // control line: a device event, not an APDU
       if (strcmp(in_line, "!POWEROFF") == 0) {
-        // Same Rust session reset used by the product CCID power-off path.
+        ck_core_slot_power();
+        proto_write("OK\n", 3);
+      } else if (strcmp(in_line, "!RESET") == 0) {
         ck_core_reset();
         proto_write("OK\n", 3);
       } else {
-        proto_error("unknown-control");
+        unsigned id;
+        char trailing;
+        if (sscanf(in_line, "!FAIL_READ %u%c", &id, &trailing) == 1 && id <= UINT8_MAX) {
+          ck_test_fail_read((uint8_t)id);
+          proto_write("OK\n", 3);
+        } else if (sscanf(in_line, "!FAIL_WRITE %u%c", &id, &trailing) == 1 && id <= UINT8_MAX) {
+          ck_test_fail_write((uint8_t)id);
+          proto_write("OK\n", 3);
+        } else {
+          proto_error("unknown-control");
+        }
       }
       continue;
     }
@@ -156,6 +178,10 @@ int main(void) {
       continue;
     }
     size_t apdu_len = len / 2;
+    if (apdu_len > sizeof(apdu_buf)) {
+      proto_error("too-long");
+      continue;
+    }
     unsigned i;
     for (i = 0; i < apdu_len; ++i) {
       int hi = hex_nibble(in_line[i * 2]);
@@ -168,7 +194,7 @@ int main(void) {
       continue;
     }
 
-    process_apdu_line(apdu_buf, apdu_len);
+    process_apdu_line(apdu_buf, apdu_len, drain);
   }
 
   return 0;

@@ -10,10 +10,12 @@
 //   tag 0x00  APDU     payload is one raw APDU, executed via ck_core_exchange
 //                      with automatic GET RESPONSE chaining, mirroring the
 //                      apdu-replay semantics (and therefore the device).
-//   tag 0x01  POWEROFF len = 0; ck_core_reset(), same session reset as the
-//                      product CCID slot power-off path.
+//   tag 0x01  POWEROFF len = 0; ck_core_slot_power(), preserving selected
+//                      CTAP agreement/token state like product CCID.
 //   tag 0x02  STORAGE FAULT  payload = [record_id, op]; op 0 fails the next
 //                      write, op 1 fails the next read of that record.
+//   tag 0x03  RESET len = 0; ck_core_reset(), full runtime session reset.
+//   tag 0x04  APDU RAW; one exchange, leaving a response lease for following events.
 //
 // Truncated frames and unknown tags end the input. Card state persists
 // across inputs inside the fuzzer process, like a real card across a
@@ -35,6 +37,8 @@ enum {
   FUZZ_TAG_APDU = 0x00,
   FUZZ_TAG_POWEROFF = 0x01,
   FUZZ_TAG_STORAGE_FAULT = 0x02,
+  FUZZ_TAG_RESET = 0x03,
+  FUZZ_TAG_APDU_RAW = 0x04,
 };
 
 enum {
@@ -58,7 +62,7 @@ static void fuzz_init(void) {
   if (ck_core_install() != 0) abort(); // fabrication failure is a harness bug
 }
 
-static void run_apdu(const uint8_t *apdu, size_t len) {
+static void run_apdu(const uint8_t *apdu, size_t len, int drain) {
   static const uint8_t get_response[] = {0x00, 0xC0, 0x00, 0x00, 0x00};
 
   size_t total = 0;
@@ -73,7 +77,7 @@ static void run_apdu(const uint8_t *apdu, size_t len) {
     if (data_len > room) return;
     memcpy(resp_buf + total, r_buf, data_len);
     total += data_len;
-    if ((sw & 0xFF00) != 0x6100) break;
+    if (!drain || (sw & 0xFF00) != 0x6100) break;
     if (++chain >= FUZZ_MAX_GET_RESPONSE) return;
     apdu = get_response;
     len = sizeof(get_response);
@@ -91,9 +95,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (len > size) break; // truncated frame ends the input
     switch (tag) {
     case FUZZ_TAG_APDU:
-      if (len <= FUZZ_MAX_APDU_LEN) run_apdu(data, len);
+    case FUZZ_TAG_APDU_RAW:
+      if (len <= FUZZ_MAX_APDU_LEN) run_apdu(data, len, tag == FUZZ_TAG_APDU);
       break;
     case FUZZ_TAG_POWEROFF:
+      if (len != 0) return 0;
+      ck_core_slot_power();
+      break;
+    case FUZZ_TAG_RESET:
+      if (len != 0) return 0;
       ck_core_reset();
       break;
     case FUZZ_TAG_STORAGE_FAULT:
@@ -102,8 +112,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
           ck_test_fail_write(data[0]);
         } else if (data[1] == FUZZ_FAULT_FAIL_READ) {
           ck_test_fail_read(data[0]);
-        }
-      }
+        } else return 0;
+      } else return 0;
       break;
     default:
       return 0; // unknown tag: ignore the rest so structure stays learnable

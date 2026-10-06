@@ -38,3 +38,21 @@ assert replies[16].startswith('RESP 900000'), replies[16]
 assert len(bytes.fromhex(replies[16][9:])) > 256, 'GetInfo response must traverse GET RESPONSE'
 assert replies[17] == 'RESP 6986', 'automatic draining must leave no pending response'
 print('Rust replay: parser recovery, authorization reset, retained records and complete GetInfo passed')
+
+# clientPIN getKeyAgreement: CTAP command 0x06, CBOR {1: protocol 1, 2: getKeyAgreement}.
+agreement = '801000000606a201010202'
+lifecycle = ['00a4040008a0000006472f0001', agreement, '!POWEROFF', agreement,
+             '!RESET', '00a4040008a0000006472f0001', agreement,
+             '00a4040005f000000000', '!POWEROFF', '0043000000',
+             '!RESET', '!FAIL_READ 4', '00a4040006d27600012401',
+             '00a4040006d27600012401']
+result = subprocess.run([sys.argv[1]], input='\n'.join(lifecycle) + '\n',
+                        text=True, capture_output=True, check=True, timeout=30)
+replies = result.stdout.splitlines()[1:]
+assert len(replies) == len(lifecycle), result.stdout
+assert replies[1].startswith('RESP 900000'), replies[1]
+assert replies[1] == replies[3], 'slot power must preserve selected CTAP key agreement'
+assert replies[6].startswith('RESP 900000') and replies[6] != replies[1], 'reset clears agreement'
+assert replies[9] == 'RESP 6A82', 'other-app slot power must clear selection'
+assert replies[12] == 'RESP 6900' and replies[13] == 'RESP 9000', 'streamed read fault is one-shot'
+print('Rust replay: CTAP agreement retention, full reset, deselection and streamed read faults passed')

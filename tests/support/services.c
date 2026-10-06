@@ -68,6 +68,8 @@ int32_t ck_platform_read_at(uint8_t id, uint32_t offset, uint8_t *out, size_t n)
   assert(id < 186);
   if (sizes[id] < 0 || offset > (uint32_t)sizes[id] || n > (uint32_t)sizes[id] - offset) return -2;
   memcpy(out, files[id] + offset, n);
+  // Streaming repository reads must consume the same one-shot fault as full reads.
+  if (failed_read_record == id) { failed_read_record = -1; return -2; }
   return (int32_t)n;
 }
 int32_t ck_platform_write_at(uint8_t id, uint32_t offset, const uint8_t *input, size_t n) {
