@@ -114,9 +114,11 @@ standard C headers for their mocks; no legacy protocol types are required.
 Unused public C applet, APDU-dispatch and PIN headers are removed. Native
 key/PKE, filesystem and hardware declarations remain for their actual consumers.
 
-Fuzz campaigns, corpus replay and coverage-guided test harnesses are removed.
-Literal malformed-input regressions remain correctness tests with explicit
-expected results; they do not run mutation campaigns.
+The legacy C fuzz harnesses are retired; coverage-guided fuzzing of the Rust
+core runs through `apdu-fuzzer` (`CANOKEY_FUZZING`, see README.md), which keeps
+the stateful APDU-session and fault-injection model. Literal malformed-input
+regressions remain correctness tests with explicit expected results; they do
+not run mutation campaigns.
 
 ## Public helper audit
 
