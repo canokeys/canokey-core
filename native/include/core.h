@@ -3,6 +3,7 @@
 #define CANOKEY_RUST_CORE_H
 #include <stddef.h>
 #include <stdint.h>
+#include "port_abi.h"
 /* Main-loop only: serialize every call, including touch and reset. Callbacks
  * must never reenter the core. Buffers are borrowed only until return.
  * exchange supports identical input/output buffers; capacity includes SW.

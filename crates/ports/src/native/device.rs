@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Device callbacks and volatile secret erasure adapter.
 use crate::{Device, Memory};
+use crate::contracts::board_info_kind;
 
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.
@@ -96,7 +97,7 @@ native_port! { impl Device for DeviceBackend {
     fn information(&mut self, kind: u8, output: &mut [u8]) -> usize {
         #[cfg(feature = "device-runtime")]
         {
-            if kind == 3 {
+            if kind == board_info_kind::CHIP_ID {
                 let mut id=[0;crate::contracts::CHIP_ID_BYTES];
                 unsafe { ck_board_chip_id(id.as_mut_ptr()); }
                 let len=output.len().min(id.len());output[..len].copy_from_slice(&id[..len]);
@@ -113,9 +114,9 @@ native_port! { impl Device for DeviceBackend {
         {
             // Unconfigured host tools retain zero identity; USB/IP supplies release fields.
             let data: &[u8]=match kind {
-                0 => option_env!("CANOKEY_ADMIN_VERSION").unwrap_or("0.0.0").as_bytes(),
-                1 => b"CanoKey Rust Virtual Card",
-                3 => &[0;crate::contracts::CHIP_ID_BYTES],
+                board_info_kind::FIRMWARE => option_env!("CANOKEY_ADMIN_VERSION").unwrap_or("0.0.0").as_bytes(),
+                board_info_kind::PRODUCT => b"CanoKey Rust Virtual Card",
+                board_info_kind::CHIP_ID => &[0;crate::contracts::CHIP_ID_BYTES],
                 _ => option_env!("CANOKEY_CORE_SHA").unwrap_or("unknown").as_bytes(),
             };
             let len=output.len().min(data.len());output[..len].copy_from_slice(&data[..len]);len

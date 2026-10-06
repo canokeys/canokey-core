@@ -22,6 +22,15 @@ cmake --build build/host --parallel 2
 ctest --test-dir build/host --output-on-failure
 ```
 
+`cargo test -p canokey-ports` checks the committed C projection of record IDs,
+board-information selectors and chip-ID size against the Rust contracts. After
+an intentional contract change, regenerate the header from the core root:
+
+```sh
+rustc --edition=2024 crates/ports/codegen/abi.rs -o /tmp/canokey-port-abi
+/tmp/canokey-port-abi --output native/include/port_abi.h
+```
+
 ## Fuzzing
 
 `CANOKEY_FUZZING` builds `apdu-fuzzer`, a libFuzzer harness that drives the

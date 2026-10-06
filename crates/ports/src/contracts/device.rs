@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // CIU board ABI writes the complete 13-byte chip identifier.
 pub const CHIP_ID_BYTES: usize = 13;
+/// Stable kinds passed to the board-information C ABI and ADMIN read command.
+pub mod board_info_kind {
+    pub const FIRMWARE: u8 = 0x00;
+    pub const PRODUCT: u8 = 0x01;
+    pub const CORE: u8 = 0x02;
+    pub const CHIP_ID: u8 = 0x03;
+}
 pub trait Device {
     /// Write the device serial. Native bindings without `platform-serial` leave
     /// output unchanged; callers must initialize any fallback before the call.
@@ -8,7 +15,7 @@ pub trait Device {
     /// Raw firmware version (0), product (1), core revision (2), or chip ID (3).
     /// The caller owns protocol validation and response truncation.
     fn information(&mut self, kind: u8, output: &mut [u8]) -> usize {
-        let data: &[u8] = if kind == 3 {
+        let data: &[u8] = if kind == board_info_kind::CHIP_ID {
             &[0; CHIP_ID_BYTES]
         } else {
             b"unknown"
