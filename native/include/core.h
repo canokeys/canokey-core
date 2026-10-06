@@ -41,6 +41,9 @@ int32_t ck_core_install(void);
 /* Boot/main-loop only: reads persistent NFC mode policy, never from an IRQ. */
 uint8_t ck_core_nfc_enabled(void);
 void ck_core_reset(void);
+/* Logical CCID slot power: closes transient input/response leases. Selected
+ * CTAP retains its agreement/token session; USB/device reset clears all
+ * sessions through ck_core_reset. Does not cycle CIU power or change storage. */
 void ck_core_slot_power(void);
 uint8_t ck_core_applet_count(void);
 int32_t ck_core_exchange(uint8_t owner, const uint8_t *input, size_t length, uint8_t *output, size_t capacity);

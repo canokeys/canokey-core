@@ -2,12 +2,24 @@
 // Actual production USB runtime and IRQ facade, without applet mocks inside it.
 extern crate self as canokey_protocol;
 extern crate self as canokey_rust_core;
+#[allow(dead_code)]
+pub(crate) mod release {
+    include!(env!("CANOKEY_RELEASE_VERSIONS"));
+}
 #[path = "../../crates/protocol/src/apdu.rs"]
 pub mod apdu;
 #[path = "../../crates/protocol/src/ccid.rs"]
 pub mod ccid;
 #[path = "../../crates/protocol/src/ctaphid.rs"]
 pub mod ctaphid;
+#[unsafe(no_mangle)]
+pub extern "C" fn test_ctap_request_limit() -> usize {
+    ctaphid::CTAP_MAX_REQUEST
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn test_usb_bcd_device() -> u16 {
+    release::USB_BCD_DEVICE
+}
 #[path = "../../crates/protocol/src/response.rs"]
 pub mod response;
 #[path = "../../crates/protocol/src/usb.rs"]
