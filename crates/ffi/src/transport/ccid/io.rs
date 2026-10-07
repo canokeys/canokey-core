@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ mailbox and timed CCID extension lease, disjoint from Core execution.
+#[cfg(feature = "device-runtime")]
+use crate::runtime::timer::device_set_timeout;
 use crate::sys::device_get_tick;
+use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
+#[cfg(not(feature = "device-runtime"))]
 unsafe extern "C" {
-    fn ck_usb_configured() -> u8;
-    fn ck_usb_tx_idle(endpoint: u8) -> u8;
-    fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
-    fn ck_usb_receive(endpoint: u8);
     fn device_set_timeout(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
 }
 static mut RX: [u8; 64] = [0; 64];
@@ -178,7 +178,3 @@ pub unsafe fn take_presence(epoch: u32, output: &mut [u8; canokey_protocol::ccid
         true
     })
 }
-
-// Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::UsbSubmit = ck_usb_submit;
-const _: crate::sys::CcidIoTake = ck_ccid_io_take;

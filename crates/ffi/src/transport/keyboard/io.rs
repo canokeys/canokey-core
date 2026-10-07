@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ-visible keyboard transfer generation, separate from main-loop policy.
+use crate::transport::usb_io::{ck_usb_configured, ck_usb_submit, ck_usb_tx_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
-unsafe extern "C" {
-    fn ck_usb_configured() -> u8;
-    fn ck_usb_tx_idle(endpoint: u8) -> u8;
-    fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
-}
 static mut EPOCH: u32 = 0;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_keyboard_packet_reset() {
@@ -40,6 +36,3 @@ pub unsafe extern "C" fn ck_keyboard_io_send(report: *const u8, length: u8, gene
         u8::from(ok)
     })
 }
-
-// Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::UsbSubmit = ck_usb_submit;

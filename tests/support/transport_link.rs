@@ -42,8 +42,50 @@ mod hid_io;
 #[path = "../../crates/ffi/src/transport/lock.rs"]
 mod usb_lock;
 
+#[cfg(hid_fixture)]
+use hid_io as io;
+#[cfg(hid_fixture)]
+mod command {
+    unsafe extern "C" {
+        pub fn ck_hid_reset();
+        pub fn ck_hid_poll(input: *const [u8; 64], received: u32, now: u32, output: *mut [u8; 64]) -> u8;
+    }
+}
+#[cfg(keyboard_fixture)]
+mod abi {
+    pub(crate) mod core {
+        unsafe extern "C" {
+            pub fn ck_core_keyboard_usage(ch: u8) -> i32;
+            pub fn ck_core_output_cancel(pressed: u8);
+            pub fn ck_core_output_sample(pressed: u8, now: u32, ready: u8) -> i32;
+        }
+    }
+}
+
 mod transport {
     pub(crate) use crate::usb_lock::usb_locked;
+    pub(crate) mod usb_io {
+        unsafe extern "C" {
+            pub fn ck_usb_configured() -> u8;
+            pub fn ck_usb_tx_idle(endpoint: u8) -> u8;
+            pub fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
+            pub fn ck_usb_receive(endpoint: u8);
+        }
+    }
+    #[cfg(keyboard_fixture)]
+    pub(crate) mod ccid {
+        unsafe extern "C" {
+            pub fn ck_ccid_scratch_busy() -> u8;
+        }
+    }
+    #[cfg(keyboard_fixture)]
+    pub(crate) mod hid {
+        pub(crate) mod link {
+            unsafe extern "C" {
+                pub fn ck_hid_busy() -> u8;
+            }
+        }
+    }
     #[cfg(feature = "usb-webusb")]
     pub(crate) use crate::webusb_link as webusb;
 }

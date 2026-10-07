@@ -1,14 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB IRQ report mailbox and reset epochs, disjoint from CTAPHID execution.
 use crate::sys::device_get_tick;
+use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
-unsafe extern "C" {
-    fn ck_usb_configured() -> u8;
-    fn ck_usb_tx_idle(endpoint: u8) -> u8;
-    fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
-    fn ck_usb_receive(endpoint: u8);
-}
 static mut INCOMING: [u8; 64] = [0; 64];
 static mut QUEUED: bool = false;
 static mut RESET: bool = false;
@@ -117,6 +112,3 @@ pub unsafe extern "C" fn ck_hid_io_send(report: *const u8, generation: u32) -> u
         )
     })
 }
-
-// Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::UsbSubmit = ck_usb_submit;

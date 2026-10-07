@@ -10,6 +10,8 @@ mod lock;
 mod owners;
 #[cfg(feature = "ctap")]
 mod pke_scratch;
+#[cfg(any(feature = "usb-ccid", feature = "usb-hid", feature = "usb-keyboard"))]
+pub(crate) mod usb_io;
 #[cfg(any(
     feature = "usb-ccid",
     feature = "usb-hid",

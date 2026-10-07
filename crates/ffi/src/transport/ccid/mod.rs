@@ -22,22 +22,13 @@ static mut GENERATION: u32 = u32::MAX;
 // borrow Transport while the USB IRQ reads this buffer through its TX lease.
 static mut RESPONSE: [u8; HEADER + canokey_rust_core::runtime::ccid::REPLY] =
     [0; HEADER + canokey_rust_core::runtime::ccid::REPLY];
+use self::io::{
+    ck_ccid_io_arm, ck_ccid_io_disarm, ck_ccid_io_generation, ck_ccid_io_idle, ck_ccid_io_now,
+    ck_ccid_io_peek, ck_ccid_io_pending, ck_ccid_io_submit, ck_ccid_io_take,
+};
+#[cfg(all(feature = "ctap", not(feature = "usb-hid")))]
 unsafe extern "C" {
-    fn ck_ccid_io_generation() -> u32;
-    fn ck_ccid_io_now() -> u32;
-    fn ck_ccid_io_pending() -> u8;
-    fn ck_ccid_io_peek() -> i32;
-    fn ck_ccid_io_take(generation: u32, output: *mut u8, tick: *mut u32) -> i32;
-    fn ck_ccid_io_idle() -> u8;
-    fn ck_ccid_io_submit(generation: u32, bytes: *const u8, length: u16, zlp: u8) -> i32;
-    fn ck_ccid_io_arm(generation: u32, bytes: *const u8, length: u8, interval: u16);
-    fn ck_ccid_io_disarm();
-}
-#[cfg(feature = "ctap")]
-unsafe extern "C" {
-    #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_busy() -> u8;
-    #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_active() -> u8;
 }
 struct Platform {
@@ -343,4 +334,3 @@ pub unsafe fn presence_progress() {
 pub(crate) mod io;
 
 // Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::CcidIoTake = ck_ccid_io_take;

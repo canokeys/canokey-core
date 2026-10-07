@@ -147,6 +147,3 @@ pub unsafe extern "C" fn ck_hid_poll(
         u8::from(produced) | (u8::from(hid.active()) << 1)
     }
 }
-
-// Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::HidPoll = ck_hid_poll;

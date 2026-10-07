@@ -7,21 +7,13 @@ use canokey_protocol::ctaphid::{self as wire, Error};
 const SESSION_IDLE_MS: u32 = 2000;
 const KEEPALIVE_INTERVAL_MS: u32 = 100;
 const TX_TIMEOUT_MS: u32 = 1000;
+use super::command::{ck_hid_poll, ck_hid_reset};
+use super::io::{
+    ck_hid_io_ack_reset, ck_hid_io_configured, ck_hid_io_consume, ck_hid_io_epoch, ck_hid_io_idle,
+    ck_hid_io_peek, ck_hid_io_receive, ck_hid_io_reset_pending, ck_hid_io_send,
+};
 use crate::sys::device_delay;
 use crate::sys::device_get_tick;
-unsafe extern "C" {
-    fn ck_hid_io_epoch() -> u32;
-    fn ck_hid_io_reset_pending() -> u8;
-    fn ck_hid_io_ack_reset(epoch: u32);
-    fn ck_hid_io_configured() -> u8;
-    fn ck_hid_io_idle() -> u8;
-    fn ck_hid_io_peek(report: *mut u8, length: u8, tick: *mut u32, epoch: u32) -> u8;
-    fn ck_hid_io_consume(epoch: u32);
-    fn ck_hid_io_receive();
-    fn ck_hid_io_send(report: *const u8, epoch: u32) -> u8;
-    fn ck_hid_reset();
-    fn ck_hid_poll(input: *const [u8; 64], received: u32, now: u32, output: *mut [u8; 64]) -> u8;
-}
 // Separate endpoint-owned buffers: progress runs while poll borrows OUTGOING.
 static mut OUTGOING: [u8; 64] = [0; 64];
 static mut CONTROL: [u8; 64] = [0; 64];
@@ -322,4 +314,3 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
 }
 
 // Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::HidPoll = ck_hid_poll;

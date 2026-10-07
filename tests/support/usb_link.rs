@@ -112,7 +112,10 @@ mod transport {
         #[cfg(feature = "usb-hid")]
         pub(crate) use crate::ccid_policy::presence_progress;
     }
-    pub(crate) use crate::usb;
+    pub(crate) use crate::usb_ffi as usb;
+    pub(crate) mod usb_io {
+        pub(crate) use crate::usb_ffi::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
+    }
     #[cfg(feature = "usb-webusb")]
     pub(crate) use crate::webusb_link as webusb;
     #[cfg(any(hid_fixture, feature = "usb-hid"))]
@@ -121,6 +124,9 @@ mod transport {
         pub(crate) mod link {
             unsafe extern "C" {
                 pub fn ck_hid_busy() -> u8;
+                pub fn ck_hid_executing() -> u8;
+                pub fn ck_hid_progress() -> u8;
+                pub fn ck_hid_foreign_progress();
             }
         }
     }

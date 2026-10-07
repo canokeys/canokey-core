@@ -1,20 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop keyboard policy; hardware reset notifications remain in a mailbox.
+use self::io::{
+    ck_keyboard_io_configured, ck_keyboard_io_epoch, ck_keyboard_io_idle, ck_keyboard_io_send,
+};
+use crate::abi::core::{ck_core_keyboard_usage, ck_core_output_cancel, ck_core_output_sample};
 use crate::sys::ck_platform_now;
 use crate::sys::ck_platform_touched;
+use crate::transport::ccid::ck_ccid_scratch_busy;
+#[cfg(feature = "ctap")]
+use crate::transport::hid::link::ck_hid_busy;
 use canokey_rust_core::runtime::keyboard::Keyboard;
-unsafe extern "C" {
-    fn ck_keyboard_io_epoch() -> u32;
-    fn ck_keyboard_io_configured() -> u8;
-    fn ck_keyboard_io_idle() -> u8;
-    fn ck_keyboard_io_send(report: *mut u8, len: u8, epoch: u32) -> u8;
-    fn ck_core_keyboard_usage(ch: u8) -> i32;
-    fn ck_core_output_cancel(pressed: u8);
-    fn ck_core_output_sample(pressed: u8, now: u32, ready: u8) -> i32;
-    fn ck_ccid_scratch_busy() -> u8;
-    #[cfg(feature = "ctap")]
-    fn ck_hid_busy() -> u8;
-}
 static mut KEYBOARD: Keyboard = Keyboard::new();
 static mut REPORT: [u8; 8] = [0; 8];
 static mut EPOCH: u32 = 0;

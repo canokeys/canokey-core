@@ -30,16 +30,11 @@ use crate::sys::ck_usb_dcd_stall;
 use crate::sys::ck_usb_dcd_start;
 use crate::sys::ck_usb_dcd_stop;
 use crate::sys::ck_usb_dcd_write;
-unsafe extern "C" {
-    fn ck_ccid_packet_reset();
-    fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8;
-    #[cfg(feature = "usb-hid")]
-    fn ck_hid_packet_reset();
-    #[cfg(feature = "usb-hid")]
-    fn ck_hid_packet_out(bytes: *const u8) -> u8;
-    #[cfg(feature = "usb-keyboard")]
-    fn ck_keyboard_packet_reset();
-}
+use crate::transport::ccid::io::{ck_ccid_packet_out, ck_ccid_packet_reset};
+#[cfg(feature = "usb-hid")]
+use crate::transport::hid::io::{ck_hid_packet_out, ck_hid_packet_reset};
+#[cfg(feature = "usb-keyboard")]
+use crate::transport::keyboard::io::ck_keyboard_packet_reset;
 #[derive(Clone, Copy)]
 struct Tx {
     bytes: *const u8,
@@ -207,8 +202,7 @@ pub unsafe extern "C" fn usb_device_init() {
     });
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_boot_reset() {
+pub unsafe fn ck_usb_boot_reset() {
     unsafe {
         ck_usb_bus_reset();
         // The controller initializes EP0; no SET_ADDRESS or FIFO writes here.
@@ -579,15 +573,9 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 /// one hardware tick before calling this function; no callback enters Core.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
-    unsafe extern "C" {
-        fn ck_ccid_progress() -> u8;
-        #[cfg(feature = "usb-hid")]
-        fn ck_hid_executing() -> u8;
-        #[cfg(feature = "usb-hid")]
-        fn ck_hid_progress() -> u8;
-        #[cfg(feature = "usb-hid")]
-        fn ck_hid_foreign_progress();
-    }
+    use crate::transport::ccid::io::ck_ccid_progress;
+    #[cfg(feature = "usb-hid")]
+    use crate::transport::hid::link::{ck_hid_executing, ck_hid_foreign_progress, ck_hid_progress};
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -617,6 +605,3 @@ pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
         DEVICE.landing = enabled != 0;
     });
 }
-
-// Keep the fixture swap point's imported and exported ABI signatures checked.
-const _: crate::sys::UsbSubmit = ck_usb_submit;
