@@ -109,7 +109,6 @@ uint32_t ck_platform_now(void);
 uint8_t ck_platform_touched(void);
 uint8_t ck_platform_progress(void);
 // Transport-only progress; must not reenter the Rust core from a callback.
-uint8_t ck_ccid_progress(void);
 // Main-loop raw touch sampling for non-blocking CTAP1 presence.
 void ck_core_presence_sample(void);
 #endif

@@ -4,6 +4,7 @@
 pub(crate) use super::usb::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 
 #[cfg(not(feature = "usb-device"))]
+#[cfg_attr(test, allow(dead_code))]
 unsafe extern "C" {
     pub(crate) fn ck_usb_configured() -> u8;
     pub(crate) fn ck_usb_tx_idle(endpoint: u8) -> u8;

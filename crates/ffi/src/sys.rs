@@ -83,6 +83,7 @@ unsafe extern "C" {
         feature = "usb-keyboard",
         feature = "device-runtime"
     ))]
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn ck_usb_dcd_lock() -> u32;
     #[cfg(any(
         feature = "usb-ccid",
@@ -90,11 +91,13 @@ unsafe extern "C" {
         feature = "usb-keyboard",
         feature = "device-runtime"
     ))]
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn ck_usb_dcd_unlock(mask: u32);
     #[cfg(feature = "usb-keyboard")]
     pub(crate) fn ck_platform_touched() -> u8;
     #[cfg(feature = "usb-keyboard")]
     pub(crate) fn ck_platform_now() -> u32;
     #[cfg(any(feature = "usb-ccid", feature = "usb-hid", feature = "usb-webusb"))]
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn device_get_tick() -> u32;
 }

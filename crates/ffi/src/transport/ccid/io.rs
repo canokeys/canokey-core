@@ -2,11 +2,20 @@
 //! IRQ mailbox and timed CCID extension lease, disjoint from Core execution.
 #[cfg(feature = "device-runtime")]
 use crate::runtime::timer::device_set_timeout;
+#[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::sys::device_get_tick;
+#[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
+#[cfg(all(test, not(feature = "usb-device")))]
+pub(crate) mod tests;
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
-#[cfg(not(feature = "device-runtime"))]
+#[cfg(all(test, not(feature = "usb-device")))]
+use tests::{
+    ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle, device_get_tick,
+    device_set_timeout,
+};
+#[cfg(not(any(feature = "device-runtime", all(test, not(feature = "usb-device")))))]
 unsafe extern "C" {
     fn device_set_timeout(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
 }
@@ -23,24 +32,20 @@ static mut REPEAT_INTERVAL: u16 = 0;
 pub unsafe extern "C" fn ck_ccid_io_generation() -> u32 {
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(GENERATION)) }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_now() -> u32 {
+pub unsafe fn ck_ccid_io_now() -> u32 {
     unsafe { device_get_tick() }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_ccid_io_pending() -> u8 {
     unsafe { u8::from(core::ptr::read_volatile(core::ptr::addr_of!(QUEUED)) != 0) }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_peek() -> i32 {
+pub unsafe fn ck_ccid_io_peek() -> i32 {
     usb_locked(|| unsafe { if QUEUED != 0 { i32::from(RX[0]) } else { -1 } })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_idle() -> u8 {
+pub unsafe fn ck_ccid_io_idle() -> u8 {
     usb_locked(|| unsafe { ck_usb_tx_idle(EP_CCID_IN) })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_live() -> u8 {
+pub unsafe fn ck_ccid_io_live() -> u8 {
     usb_locked(|| unsafe {
         u8::from(REPEATING && REPEAT_GENERATION == GENERATION && ck_usb_configured() != 0)
     })
@@ -96,8 +101,7 @@ pub unsafe extern "C" fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8
         }
     });
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_disarm() {
+pub unsafe fn ck_ccid_io_disarm() {
     usb_locked(|| unsafe {
         if REPEATING {
             device_set_timeout(None, 0);
@@ -151,8 +155,8 @@ pub unsafe extern "C" fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut
         i32::from(n)
     })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_progress() -> u8 {
+#[cfg(feature = "usb-device")]
+pub unsafe fn ck_ccid_progress() -> u8 {
     unsafe { ck_ccid_io_live() }
 }
 
