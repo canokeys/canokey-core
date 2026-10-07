@@ -12,34 +12,34 @@ pub(crate) use crate::transport::usb::tests::{
     ck_usb_dcd_unlock, ck_usb_dcd_write, device_get_tick,
 };
 unsafe extern "C" {
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_prepare();
-    #[cfg(all(feature = "device-runtime", feature = "nfc"))]
+    #[cfg(all(feature = "device-runtime", feature = "nfc", not(test)))]
     pub(crate) fn ck_board_mode_pin() -> u8;
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_clock(mode: u8);
-    #[cfg(all(feature = "device-runtime", feature = "nfc"))]
+    #[cfg(all(feature = "device-runtime", feature = "nfc", not(test)))]
     pub(crate) fn ck_board_nfc_irq_enable();
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_usb_ready() -> u8;
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_crypto_check(which: u8) -> u32;
-    #[cfg(all(feature = "device-runtime", feature = "nfc"))]
+    #[cfg(all(feature = "device-runtime", feature = "nfc", not(test)))]
     pub(crate) fn ck_board_reset() -> !;
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_stack_paint();
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_board_stack_report();
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_platform_led(on: u8);
     #[cfg(any(feature = "device-runtime", feature = "usb-hid"))]
     #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn device_delay(milliseconds: i32);
-    #[cfg(all(feature = "device-runtime", feature = "storage"))]
+    #[cfg(all(feature = "device-runtime", feature = "storage", not(test)))]
     pub(crate) fn ck_storage_init() -> i32;
-    #[cfg(all(feature = "device-runtime", feature = "storage"))]
+    #[cfg(all(feature = "device-runtime", feature = "storage", not(test)))]
     pub(crate) fn ck_storage_format() -> i32;
-    #[cfg(feature = "device-runtime")]
+    #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_timer_arm(milliseconds: u16);
     #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_lock() -> u32;

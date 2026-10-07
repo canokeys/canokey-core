@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! One transport timer lease, disjoint from Core and its shared workspace.
-use crate::sys::ck_timer_arm;
-use crate::transport::usb_locked;
+#[cfg(test)]
+use super::device::tests::hal::{ck_timer_arm, usb_locked};
+#[cfg(not(test))]
+use crate::{sys::ck_timer_arm, transport::usb_locked};
 type Callback = unsafe extern "C" fn();
 static mut CALLBACK: Option<Callback> = None;
 #[unsafe(no_mangle)]

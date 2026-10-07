@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IRQ mailbox and timed CCID extension lease, disjoint from Core execution.
-#[cfg(feature = "device-runtime")]
+#[cfg(all(feature = "device-runtime", not(test)))]
 use crate::runtime::timer::device_set_timeout;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::sys::device_get_tick;
-#[cfg(all(test, feature = "usb-device", not(feature = "device-runtime")))]
+#[cfg(all(test, feature = "usb-device"))]
 use crate::transport::usb::tests::device_set_timeout;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};

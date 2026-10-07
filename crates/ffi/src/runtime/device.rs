@@ -2,6 +2,12 @@
 //! Boot, mode and main-loop policy. Board callbacks perform hardware actions;
 //! none may borrow Core. Settings notifications touch disjoint device state.
 use canokey_rust_core::runtime::config;
+#[cfg(test)]
+pub(crate) mod tests;
+#[cfg(not(test))]
+use crate::{abi, sys as hal, transport};
+#[cfg(test)]
+use tests::{abi, hal, transport};
 // Stable u8 board ABI; keep values aligned with platform/rust-core/board.h.
 const CLOCK_USB_STARTUP: u8 = 0;
 const CLOCK_CONTACTLESS: u8 = 1;
@@ -9,34 +15,34 @@ const CLOCK_USB_OPERATING: u8 = 2;
 // ck_board_crypto_check ABI in platform/rust-core/board.h: RNG=0, SM4=1, PKE=2.
 // Keep the count aligned with CK_BOARD_CRYPTO_CHECK_COUNT when adding a check.
 const CRYPTO_CHECK_COUNT: u8 = 3;
-use crate::sys::ck_board_clock;
-use crate::sys::ck_board_crypto_check;
+#[cfg(all(feature = "ctap", not(test)))]
+use canokey_ports::native::ck_core_presence_sample;
+use hal::ck_board_clock;
+use hal::ck_board_crypto_check;
 #[cfg(feature = "nfc")]
-use crate::sys::ck_board_mode_pin;
+use hal::ck_board_mode_pin;
 #[cfg(feature = "nfc")]
-use crate::sys::ck_board_nfc_irq_enable;
-use crate::sys::ck_board_prepare;
+use hal::ck_board_nfc_irq_enable;
+use hal::ck_board_prepare;
 #[cfg(feature = "nfc")]
-use crate::sys::ck_board_reset;
-use crate::sys::ck_board_stack_paint;
-use crate::sys::ck_board_stack_report;
-use crate::sys::ck_board_usb_ready;
-use crate::sys::ck_platform_led;
+use hal::ck_board_reset;
+use hal::ck_board_stack_paint;
+use hal::ck_board_stack_report;
+use hal::ck_board_usb_ready;
+use hal::ck_platform_led;
 #[cfg(feature = "storage")]
-use crate::sys::ck_storage_format;
+use hal::ck_storage_format;
 #[cfg(feature = "storage")]
-use crate::sys::ck_storage_init;
-use crate::sys::device_delay;
-unsafe extern "C" {
-    #[cfg(feature = "ctap")]
-    fn ck_core_presence_sample();
-}
+use hal::ck_storage_init;
+use hal::device_delay;
+#[cfg(all(feature = "ctap", test))]
+use tests::ck_core_presence_sample;
 static mut LED_DEFAULT: bool = true;
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_device_led_idle() {
     unsafe {
         #[cfg(feature = "nfc")]
-        if crate::transport::nfc::is_nfc() != 0 {
+        if transport::nfc::is_nfc() != 0 {
             return;
         }
         ck_platform_led(LED_DEFAULT as u8);
@@ -46,7 +52,7 @@ pub unsafe extern "C" fn ck_device_led_idle() {
 pub unsafe extern "C" fn ck_device_settings(flags: u32) {
     unsafe {
         LED_DEFAULT = flags & config::LED != 0;
-        crate::transport::usb::ck_usb_set_landing(u8::from(flags & config::WEBUSB != 0));
+        transport::usb::ck_usb_set_landing(u8::from(flags & config::WEBUSB != 0));
         ck_device_led_idle();
     }
 }
@@ -54,7 +60,7 @@ pub unsafe extern "C" fn ck_device_settings(flags: u32) {
 pub unsafe extern "C" fn ck_device_progress() -> u8 {
     unsafe {
         device_delay(1);
-        crate::transport::usb::ck_transport_progress()
+        transport::usb::ck_transport_progress()
     }
 }
 unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
@@ -69,97 +75,119 @@ unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_device_main() -> ! {
+    match unsafe { run() } {
+        Stop::Blink(on, off) => unsafe { blink(on, off) },
+        #[cfg(feature = "nfc")]
+        Stop::Reset => unsafe { ck_board_reset() },
+        #[cfg(test)]
+        Stop::Iteration => panic!("bounded device run is test-only"),
+    }
+}
+#[derive(Debug, PartialEq, Eq)]
+enum Stop {
+    Blink(i32, i32),
+    #[cfg(feature = "nfc")]
+    Reset,
+    #[cfg(test)]
+    Iteration,
+}
+// Tests call this Rust runner directly; no panic/unwind crosses the C entrypoint.
+unsafe fn run() -> Stop {
     unsafe {
         ck_board_prepare();
         let mut flags = config::DEFAULT_FLAGS | config::INITIALIZED;
-        let readable = crate::abi::core::ck_core_boot_flags(&mut flags) == 0;
+        let readable = abi::core::ck_core_boot_flags(&mut flags) == 0;
         #[cfg(feature = "nfc")]
         let nfc_mode = readable && flags & config::NFC != 0 && ck_board_mode_pin() != 0;
         #[cfg(not(feature = "nfc"))]
         let nfc_mode = false;
         #[cfg(feature = "nfc")]
-        crate::transport::nfc::ck_nfc_set_mode(nfc_mode as u8);
+        transport::nfc::ck_nfc_set_mode(nfc_mode as u8);
         ck_board_clock(if nfc_mode {
             CLOCK_CONTACTLESS
         } else {
             CLOCK_USB_STARTUP
         });
         if !readable {
-            blink(10, 1000);
+            return Stop::Blink(10, 1000);
         }
         #[cfg(feature = "storage")]
         {
             // Only a known uninitialized page permits formatting. Mount errors
             // on provisioned devices are never permission to erase credentials.
             if flags & config::INITIALIZED == 0 && ck_storage_format() != 0 {
-                blink(10, 1000);
+                return Stop::Blink(10, 1000);
             }
             if ck_storage_init() != 0 {
-                blink(10, 1000);
+                return Stop::Blink(10, 1000);
             }
         }
-        if crate::abi::core::ck_core_install() != 0 {
-            blink(10, 1000);
+        if abi::core::ck_core_install() != 0 {
+            return Stop::Blink(10, 1000);
         }
         #[cfg(feature = "nfc")]
         {
-            if crate::transport::nfc::ck_nfc_configure() != 0 {
-                blink(10, 1000);
+            if transport::nfc::ck_nfc_configure() != 0 {
+                return Stop::Blink(10, 1000);
             }
-            if flags & config::NFC == 0 && crate::transport::nfc::ck_nfc_silence() != 0 {
-                blink(10, 1000);
+            if flags & config::NFC == 0 && transport::nfc::ck_nfc_silence() != 0 {
+                return Stop::Blink(10, 1000);
             }
         }
         #[cfg(feature = "storage")]
         if flags & config::INITIALIZED == 0 {
-            if crate::abi::core::ck_core_mark_initialized() != 0 {
-                blink(10, 1000);
+            if abi::core::ck_core_mark_initialized() != 0 {
+                return Stop::Blink(10, 1000);
             }
             // Match product first-boot acknowledgement. Power-cycle reloads
             // programmed chip EEPROM and starts the provisioned device.
-            blink(50, 50);
+            return Stop::Blink(50, 50);
         }
         if nfc_mode {
             #[cfg(feature = "nfc")]
             {
-                crate::transport::nfc::nfc_init();
+                transport::nfc::nfc_init();
                 ck_board_nfc_irq_enable();
             }
         } else {
-            crate::transport::usb::usb_device_init();
+            transport::usb::usb_device_init();
             while ck_board_usb_ready() == 0 {
-                crate::transport::ccid::CCID_Loop();
+                transport::ccid::CCID_Loop();
             }
             ck_board_clock(CLOCK_USB_OPERATING);
             for primitive in 0..CRYPTO_CHECK_COUNT {
                 if ck_board_crypto_check(primitive) != 0 {
-                    blink(50, 50);
+                    return Stop::Blink(50, 50);
                 }
             }
             ck_device_led_idle();
         }
         ck_board_stack_paint();
+        #[cfg_attr(test, allow(clippy::never_loop))]
+        // Unit runs stop after one main-loop iteration.
         loop {
             if nfc_mode {
                 #[cfg(feature = "nfc")]
                 {
-                    crate::transport::nfc::nfc_loop();
+                    transport::nfc::nfc_loop();
                     if ck_board_mode_pin() == 0 {
-                        ck_board_reset();
+                        return Stop::Reset;
                     }
                 }
             } else {
                 #[cfg(feature = "ctap")]
                 ck_core_presence_sample();
                 #[cfg(feature = "usb-hid")]
-                let _ = crate::transport::hid::link::CTAPHID_Loop(0);
-                crate::transport::ccid::CCID_Loop();
+                let _ = transport::hid::link::CTAPHID_Loop(0);
+                transport::ccid::CCID_Loop();
                 #[cfg(feature = "usb-keyboard")]
-                crate::transport::keyboard::ck_keyboard_loop();
+                transport::keyboard::ck_keyboard_loop();
                 #[cfg(feature = "usb-webusb")]
-                crate::transport::webusb::WebUSB_Loop();
+                transport::webusb::WebUSB_Loop();
             }
             ck_board_stack_report();
+            #[cfg(test)]
+            return Stop::Iteration;
         }
     }
 }
