@@ -89,7 +89,6 @@ fn execute(fail_at: Option<usize>) -> (bool, Vec<Mutation>) {
     let result = run(
         Some(&mut pass),
         &mut crate::applets::ctap::Applet::new(),
-        &mut crate::applets::piv::Piv::new(),
         &mut SessionWorkspace::new(),
         &mut Platform {
             storage: &mut storage,

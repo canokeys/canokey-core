@@ -708,14 +708,10 @@ impl RegistryView<'_> {
                 }
                 self.reset_sessions(p);
                 let pass = pass_arg!(self);
-                #[cfg(feature = "piv")]
-                let mut piv = Piv::new();
                 crate::flows::factory_reset::run(
                     pass,
                     #[cfg(feature = "ctap")]
                     self.ctap,
-                    #[cfg(feature = "piv")]
-                    &mut piv,
                     self.workspace,
                     p,
                 )

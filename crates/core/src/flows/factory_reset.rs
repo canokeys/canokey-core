@@ -44,11 +44,11 @@ pub fn oath(pass: Option<&mut Pass>, p: &mut Platform<'_>) -> Result<(), Error> 
 pub fn run(
     mut pass: Option<&mut Pass>,
     #[cfg(feature = "ctap")] ctap: &mut crate::applets::ctap::Applet,
-    #[cfg(feature = "piv")] piv: &mut crate::applets::piv::Piv,
-    workspace: &mut SessionWorkspace,
+    #[allow(unused_variables)] workspace: &mut SessionWorkspace,
     p: &mut Platform<'_>,
 ) -> Result<(), Error> {
-    let _ = &workspace;
+    // Session revocation precedes this flow. Reuse individual reset entrypoints
+    // so their workspace cleanup also remains part of a full reset.
     #[cfg(feature = "ndef")]
     ndef(p)?;
     #[cfg(feature = "ctap")]
@@ -60,9 +60,9 @@ pub fn run(
     #[cfg(feature = "oath")]
     oath(pass, p)?;
     #[cfg(feature = "openpgp")]
-    crate::applets::openpgp::repository::reset(p).map_err(Error::OpenPgp)?;
+    openpgp(workspace, p)?;
     #[cfg(feature = "piv")]
-    piv.reset_persistent(p).map_err(|_| Error::Piv)?;
+    piv(workspace, p)?;
     pin::factory_reset(p).map_err(Error::Admin)
 }
 
