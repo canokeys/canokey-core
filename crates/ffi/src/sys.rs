@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Platform imports shared by the serialized runtime and transport adapters.
+#[cfg(all(test, feature = "nfc"))]
+pub(crate) use crate::transport::nfc::tests::{
+    ck_nfc_io_delay, ck_nfc_io_lock, ck_nfc_io_now, ck_nfc_io_read, ck_nfc_io_schedule,
+    ck_nfc_io_select, ck_nfc_io_unlock, ck_nfc_io_write,
+};
 #[cfg(all(test, feature = "usb-device"))]
 pub(crate) use crate::transport::usb::tests::{
     ck_usb_dcd_address, ck_usb_dcd_close, ck_usb_dcd_enable_irq, ck_usb_dcd_lock, ck_usb_dcd_open,
@@ -36,21 +41,21 @@ unsafe extern "C" {
     pub(crate) fn ck_storage_format() -> i32;
     #[cfg(feature = "device-runtime")]
     pub(crate) fn ck_timer_arm(milliseconds: u16);
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_lock() -> u32;
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_unlock(mask: u32);
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_read(address: u16, out: *mut u8, length: u8) -> i32;
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_write(address: u16, bytes: *const u8, length: u8) -> i32;
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_now() -> u32;
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_select(active: u8);
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_delay(milliseconds: u16);
-    #[cfg(feature = "nfc")]
+    #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_schedule(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
     #[cfg(feature = "ctap")]
     pub(crate) fn pke_buffer_size() -> usize;

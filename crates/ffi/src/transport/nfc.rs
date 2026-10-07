@@ -2,6 +2,10 @@
 //! NFC facade: IRQ-local bus/WTX state is disjoint from main-loop Link/Core.
 //! NFC and USB are mutually exclusive operating modes and share CCID's response
 //! allocation for APDU RX/TX. No borrow of IRQ state crosses a Core call.
+#[cfg(test)]
+pub(crate) mod tests;
+#[cfg(not(test))]
+use crate::abi::core::{ck_core_exchange, ck_core_reset};
 use crate::sys::ck_nfc_io_delay;
 use crate::sys::ck_nfc_io_lock;
 use crate::sys::ck_nfc_io_now;
@@ -10,6 +14,8 @@ use crate::sys::ck_nfc_io_schedule;
 use crate::sys::ck_nfc_io_select;
 use crate::sys::ck_nfc_io_unlock;
 use crate::sys::ck_nfc_io_write;
+#[cfg(not(test))]
+use crate::transport::usb::usb_device_deinit;
 use canokey_protocol::{
     apdu,
     nfc::{self as wire, Packet},
@@ -18,6 +24,8 @@ use canokey_rust_core::runtime::{
     nfc::{Event, Link},
     nfc_io::{Chip, Io},
 };
+#[cfg(test)]
+use tests::{ck_core_exchange, ck_core_reset, usb_device_deinit};
 struct Hardware;
 impl Chip for Hardware {
     fn read(&mut self, address: u16, out: &mut [u8]) -> bool {
@@ -111,7 +119,7 @@ unsafe fn reset_link() {
         SENT = 0;
         MORE = false;
         FIDO = false;
-        crate::abi::core::ck_core_reset();
+        ck_core_reset();
     }
 }
 /// Boot-only mode latch, before any transport or applet is started.
@@ -125,7 +133,7 @@ pub unsafe extern "C" fn ck_nfc_set_mode(active: u8) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nfc_init() {
     unsafe {
-        crate::transport::usb::usb_device_deinit();
+        usb_device_deinit();
         let mask = ck_nfc_io_lock();
         ck_nfc_io_schedule(None, 0);
         ACTIVE = true;
@@ -162,13 +170,7 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         use crate::transport::owners::OWNER_NFC;
-        let n = crate::abi::core::ck_core_exchange(
-            OWNER_NFC,
-            input,
-            length,
-            buffer,
-            apdu::SHORT_REPLY_BYTES,
-        );
+        let n = ck_core_exchange(OWNER_NFC, input, length, buffer, apdu::SHORT_REPLY_BYTES);
         with_io(|io, _, now| {
             ck_nfc_io_schedule(None, 0);
             io.computed(now);
