@@ -40,7 +40,6 @@ uint8_t ck_ccid_scratch_busy(void);
 void ck_device_main(void);
 int32_t ck_core_install(void);
 /* Boot/main-loop only: reads persistent NFC mode policy, never from an IRQ. */
-uint8_t ck_core_nfc_enabled(void);
 void ck_core_reset(void);
 /* Logical CCID slot power: closes transient input/response leases. Selected
  * CTAP retains its agreement/token session; USB/device reset clears all

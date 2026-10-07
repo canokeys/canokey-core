@@ -140,17 +140,6 @@ pub(crate) fn with_core<T>(
     with_platform(|p| unsafe { run(core(), p) })
 }
 
-/// Main-loop/boot only; never call the storage port from an IRQ.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_core_nfc_enabled() -> u8 {
-    with_platform(|p| {
-        u8::from(canokey_rust_core::runtime::config::enabled(
-            p.storage,
-            canokey_rust_core::runtime::config::NFC,
-        ))
-    })
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_core_boot_flags(out: *mut u32) -> i32 {
     if out.is_null() {
