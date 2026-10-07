@@ -30,15 +30,13 @@ static mut QUEUED: u8 = 0;
 static mut REPEATING: bool = false;
 static mut REPEAT_LENGTH: u8 = 0;
 static mut REPEAT_INTERVAL: u16 = 0;
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_generation() -> u32 {
+pub unsafe fn ck_ccid_io_generation() -> u32 {
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(GENERATION)) }
 }
 pub unsafe fn ck_ccid_io_now() -> u32 {
     unsafe { device_get_tick() }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_pending() -> u8 {
+pub unsafe fn ck_ccid_io_pending() -> u8 {
     unsafe { u8::from(core::ptr::read_volatile(core::ptr::addr_of!(QUEUED)) != 0) }
 }
 pub unsafe fn ck_ccid_io_peek() -> i32 {
@@ -52,13 +50,7 @@ pub unsafe fn ck_ccid_io_live() -> u8 {
         u8::from(REPEATING && REPEAT_GENERATION == GENERATION && ck_usb_configured() != 0)
     })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_submit(
-    epoch: u32,
-    bytes: *const u8,
-    length: u16,
-    zlp: u8,
-) -> i32 {
+pub unsafe fn ck_ccid_io_submit(epoch: u32, bytes: *const u8, length: u16, zlp: u8) -> i32 {
     usb_locked(|| unsafe {
         if epoch != GENERATION || (bytes.is_null() && length != 0) {
             -1
@@ -80,8 +72,7 @@ unsafe extern "C" fn repeat_tick() {
         }
     });
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8, interval: u16) {
+pub unsafe fn ck_ccid_io_arm(epoch: u32, bytes: *const u8, length: u8, interval: u16) {
     usb_locked(|| unsafe {
         // Never replace bytes retained by an in-flight extension transfer.
         if epoch == GENERATION
@@ -111,8 +102,7 @@ pub unsafe fn ck_ccid_io_disarm() {
         REPEATING = false;
     });
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_packet_reset() {
+pub unsafe fn ck_ccid_packet_reset() {
     usb_locked(|| unsafe {
         if REPEATING {
             device_set_timeout(None, 0);
@@ -122,8 +112,7 @@ pub unsafe extern "C" fn ck_ccid_packet_reset() {
         REPEATING = false;
     });
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8 {
+pub unsafe fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8 {
     if length == 0 {
         return 1;
     }
@@ -141,8 +130,7 @@ pub unsafe extern "C" fn ck_ccid_packet_out(bytes: *const u8, length: u16) -> u8
         0
     })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut u32) -> i32 {
+pub unsafe fn ck_ccid_io_take(epoch: u32, output: *mut u8, tick: *mut u32) -> i32 {
     usb_locked(|| unsafe {
         if epoch != GENERATION || output.is_null() || tick.is_null() {
             return -1;

@@ -219,8 +219,7 @@ pub unsafe extern "C" fn usb_device_deinit() {
         ck_usb_reset();
     });
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_reset() {
+pub unsafe fn ck_usb_reset() {
     unsafe {
         endpoints(false);
         #[cfg(feature = "usb-webusb")]
@@ -392,8 +391,7 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
 pub unsafe extern "C" fn ck_usb_configured() -> u8 {
     unsafe { DEVICE.configured as u8 }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_tx_idle(ep: u8) -> u8 {
+pub unsafe fn ck_usb_tx_idle(ep: u8) -> u8 {
     unsafe {
         u8::from(
             ep & !ENDPOINT_ADDRESS_MASK == 0
@@ -422,8 +420,7 @@ unsafe fn transmit(ep: u8) -> bool {
         true
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i32 {
+pub unsafe fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zlp: u8) -> i32 {
     unsafe {
         if !DEVICE.configured
             || ep & DIRECTION_IN == 0
@@ -454,8 +451,7 @@ pub unsafe extern "C" fn ck_usb_submit(ep: u8, bytes: *const u8, length: u16, zl
         1
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_receive(ep: u8) {
+pub unsafe fn ck_usb_receive(ep: u8) {
     unsafe {
         if DEVICE.configured && ep & DIRECTION_IN == 0 && ep != 0 && INTERFACES.endpoint(ep as u16)
         {

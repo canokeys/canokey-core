@@ -4,8 +4,7 @@ use crate::transport::usb_io::{ck_usb_configured, ck_usb_submit, ck_usb_tx_idle}
 use crate::transport::usb_locked;
 use canokey_protocol::usb::*;
 static mut EPOCH: u32 = 0;
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_keyboard_packet_reset() {
+pub unsafe fn ck_keyboard_packet_reset() {
     usb_locked(|| unsafe {
         EPOCH = EPOCH.wrapping_add(1);
     });

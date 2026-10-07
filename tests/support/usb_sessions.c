@@ -3,7 +3,6 @@
  * controller/FIFO, clock, PKE memory and native storage/crypto are host services. */
 #include "core.h"
 #include "usb_io.h"
-#include "ccid_io.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
