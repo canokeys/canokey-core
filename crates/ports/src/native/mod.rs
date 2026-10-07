@@ -23,6 +23,7 @@ pub use crypto::CryptoBackend;
 pub use storage::StorageBackend;
 
 mod device;
+pub use crate::MemoryBackend;
+pub use device::DeviceBackend;
 #[cfg(feature = "ctap")]
 pub use device::ck_core_presence_sample;
-pub use device::{DeviceBackend, MemoryBackend};

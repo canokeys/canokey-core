@@ -18,7 +18,7 @@ pub type DevicePort<'a> = crate::native::DeviceBackend;
 #[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
 pub type DevicePort<'a> = dyn crate::Device + 'a;
 #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
-pub type MemoryPort<'a> = crate::native::MemoryBackend;
+pub type MemoryPort<'a> = crate::MemoryBackend;
 #[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
 pub type MemoryPort<'a> = dyn crate::Memory + 'a;
 
@@ -57,6 +57,6 @@ pub fn copy_to_stage(
 
 /// Default wipe/staging capability for compatibility entrypoints without Platform.
 /// Construction is safe; all access remains bounded by the Memory contract.
-pub fn default_memory() -> crate::native::MemoryBackend {
-    crate::native::MemoryBackend
+pub fn default_memory() -> crate::MemoryBackend {
+    crate::MemoryBackend
 }

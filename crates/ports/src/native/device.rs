@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Device callbacks and volatile secret erasure adapter.
+//! Device callbacks at the native platform boundary.
+use crate::Device;
 use crate::contracts::board_info_kind;
-use crate::{Device, Memory};
 
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.
@@ -16,7 +16,6 @@ impl DeviceBackend {
         Self(core::marker::PhantomData)
     }
 }
-pub struct MemoryBackend;
 #[cfg(feature = "device-runtime")]
 unsafe extern "C" {
     fn ck_device_settings(flags: u32);
@@ -231,20 +230,4 @@ native_port! { impl Device for DeviceBackend {
         }
     }
 }
-}
-impl MemoryBackend {
-    #[inline(never)]
-    pub fn wipe(&self, bytes: &mut [u8]) {
-        for byte in bytes {
-            unsafe {
-                core::ptr::write_volatile(byte, 0);
-            }
-        }
-    }
-}
-
-impl Memory for MemoryBackend {
-    fn wipe(&self, bytes: &mut [u8]) {
-        MemoryBackend::wipe(self, bytes)
-    }
 }
