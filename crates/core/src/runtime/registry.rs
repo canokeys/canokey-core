@@ -82,14 +82,14 @@ impl AppletState {
         }
     }
     #[cfg(all(feature = "pass", classic_presence))]
-    fn take_presence(&mut self) -> bool {
+    fn take_presence_attempt(&mut self) -> bool {
         match self {
             #[cfg(feature = "oath")]
-            Self::Oath(s) => s.take_presence(),
+            Self::Oath(s) => s.take_presence_attempt(),
             #[cfg(feature = "openpgp")]
-            Self::OpenPgp(s) => s.take_presence(),
+            Self::OpenPgp(s) => s.take_presence_attempt(),
             #[cfg(feature = "piv")]
-            Self::Piv(s) => s.take_presence(),
+            Self::Piv(s) => s.take_presence_attempt(),
             _ => false,
         }
     }
@@ -218,7 +218,7 @@ pub struct Registry {
     #[cfg(feature = "admin")]
     admin: admin::Admin,
     #[cfg(feature = "ctap")]
-    ctap: ctap::apdu::Applet,
+    ctap: ctap::Applet,
     #[cfg(feature = "admin")]
     grants: admin::Grants,
     #[cfg(feature = "pass")]
@@ -241,7 +241,7 @@ impl Registry {
             #[cfg(feature = "admin")]
             admin: admin::Admin::new(),
             #[cfg(feature = "ctap")]
-            ctap: ctap::apdu::Applet::new(),
+            ctap: ctap::Applet::new(),
             #[cfg(feature = "admin")]
             grants: admin::Grants { admin: false },
             #[cfg(feature = "pass")]
@@ -266,7 +266,8 @@ impl Registry {
         self.ctap.close(&mut self.workspace, p);
         self.workspace.wipe_active(p.memory);
         if let Some(length) = message_length {
-            self.workspace = SessionWorkspace::CtapMessage(ctap::apdu::MessageParser::new(length));
+            self.workspace =
+                SessionWorkspace::CtapMessage(ctap::message::MessageParser::new(length));
         } else {
             self.workspace = SessionWorkspace::CtapRequest(ctap::Request::new());
         }
@@ -297,7 +298,7 @@ impl Registry {
     #[cfg(feature = "ctap")]
     pub fn execute_ctap_message(
         &mut self,
-        command: ctap::apdu::Message,
+        command: ctap::message::Message,
         p: &mut Platform<'_>,
     ) -> usize {
         self.ctap
@@ -340,7 +341,7 @@ impl Registry {
         }
         // HOTP touch is a flow operation and uses flow_status; challenge is
         // a PASS service primitive and maps its domain status directly below.
-        crate::flows::hotp_output::touch(&self.pass, index, out, p).map_err(flow_status)
+        crate::flows::credential_output::touch(&self.pass, index, out, p).map_err(flow_status)
     }
     #[cfg(feature = "pass")]
     pub fn challenge(
@@ -543,6 +544,10 @@ impl Default for Registry {
 fn flow_status(error: crate::flows::Error) -> Sw {
     use crate::flows::Error;
     match error {
+        #[cfg(all(feature = "admin", feature = "ctap"))]
+        Error::Ctap => Sw::UNABLE_TO_PROCESS,
+        #[cfg(all(feature = "admin", feature = "ndef"))]
+        Error::Ndef => Sw::UNABLE_TO_PROCESS,
         #[cfg(all(feature = "admin", feature = "piv"))]
         Error::Piv => Sw::UNABLE_TO_PROCESS,
         Error::Pass(e) => crate::applets::pass::status(e),
@@ -565,7 +570,7 @@ struct RegistryView<'a> {
     #[cfg(feature = "admin")]
     admin: &'a mut admin::Admin,
     #[cfg(feature = "ctap")]
-    ctap: &'a mut ctap::apdu::Applet,
+    ctap: &'a mut ctap::Applet,
     #[cfg(feature = "admin")]
     grants: &'a mut admin::Grants,
     #[cfg(feature = "pass")]
@@ -667,18 +672,23 @@ impl RegistryView<'_> {
                 &mut key,
                 &mut self.workspace.classic_with(p.memory),
                 p,
-            )?,
+            )
+            .map_err(admin::provision_error)?,
             #[cfg(feature = "ctap")]
-            admin::Action::ResetCtap => self.ctap.erase(&mut self.workspace, p)?,
+            admin::Action::ResetCtap => {
+                crate::flows::factory_reset::ctap(self.ctap, self.workspace, p)
+                    .map_err(flow_status)?
+            }
+            #[cfg(feature = "ndef")]
+            admin::Action::ResetNdef => {
+                crate::flows::factory_reset::ndef(p).map_err(flow_status)?
+            }
             #[cfg(feature = "openpgp")]
             admin::Action::ResetOpenPgp => {
                 // ADMIN selection already revoked the OpenPGP session. Keep
                 // the clear operation's workspace wipe without constructing
                 // a temporary applet whose session state is never observed.
-                let workspace = self.workspace.classic_with(p.memory);
-                p.memory.wipe(&mut workspace.key.bytes);
-                p.memory.wipe(workspace.input);
-                crate::applets::openpgp::repository::reset(p)?;
+                crate::flows::factory_reset::openpgp(self.workspace, p).map_err(flow_status)?;
             }
             #[cfg(feature = "oath")]
             admin::Action::ResetOath => {
@@ -688,9 +698,7 @@ impl RegistryView<'_> {
             }
             #[cfg(feature = "piv")]
             admin::Action::ResetPiv => {
-                let mut piv = Piv::new();
-                piv.reset(&mut self.workspace, p);
-                piv.reset_persistent(p)?;
+                crate::flows::factory_reset::piv(self.workspace, p).map_err(flow_status)?;
             }
             admin::Action::FactoryReset => {
                 #[cfg(feature = "pass")]
@@ -699,17 +707,16 @@ impl RegistryView<'_> {
                     return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
                 }
                 self.reset_sessions(p);
-                #[cfg(feature = "ndef")]
-                crate::applets::ndef::Applet::install(true, p)?;
-                #[cfg(feature = "ctap")]
-                self.ctap.erase(&mut self.workspace, p)?;
                 let pass = pass_arg!(self);
                 #[cfg(feature = "piv")]
                 let mut piv = Piv::new();
                 crate::flows::factory_reset::run(
                     pass,
+                    #[cfg(feature = "ctap")]
+                    self.ctap,
                     #[cfg(feature = "piv")]
                     &mut piv,
+                    self.workspace,
                     p,
                 )
                 .map_err(flow_status)?;
@@ -1043,11 +1050,11 @@ impl RegistryView<'_> {
         let mut presence = false;
         #[cfg(classic_presence)]
         {
-            presence |= self.applet.take_presence();
+            presence |= self.applet.take_presence_attempt();
         }
         #[cfg(feature = "ctap")]
         {
-            presence |= self.ctap.take_presence();
+            presence |= self.ctap.take_presence_attempt();
         }
         if presence || inhibit {
             self.output.inhibit(pressed, p.memory);
@@ -1056,7 +1063,7 @@ impl RegistryView<'_> {
         self.output
             .sample(pressed, now, ready, p.memory, |index, out| {
                 if super::config::enabled(p.storage, super::config::PASS) {
-                    crate::flows::hotp_output::touch(&self.pass, index, out, p).unwrap_or(0)
+                    crate::flows::credential_output::touch(&self.pass, index, out, p).unwrap_or(0)
                 } else {
                     0
                 }

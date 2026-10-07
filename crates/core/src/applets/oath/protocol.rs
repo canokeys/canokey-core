@@ -2,13 +2,21 @@
 //! OATH wire schema. Domain/authentication modules have no APDU dependency.
 #![forbid(unsafe_code)]
 
-use super::wire::{ins::*, otp_selector, tag};
+#[cfg(test)]
+use super::wire::otp_selector;
+use super::{
+    legacy_otp,
+    wire::{ins::*, tag},
+};
 use crate::applets::oath::{
     Algorithm, Crypto, Error, auth, credential,
     credential::{Credential, Kind, Properties},
     service::{self, Presence, Repository},
 };
-use crate::applets::pass::domain::{Slot, SlotIndex};
+#[cfg(test)]
+use crate::applets::pass::domain::Slot;
+use crate::applets::pass::domain::SlotIndex;
+use crate::flows::oath_pass;
 use crate::{
     Platform,
     applets::oath::repository::{Mac, Store},
@@ -26,7 +34,6 @@ const KEY_HEADER_BYTES: usize = 2;
 const OATH_KEY_LIMIT: usize = credential::KEY_LIMIT;
 const SET_CODE_KEY_BYTES: usize = 1 + 16;
 const SET_CODE_ALGORITHM: u8 = 0x01;
-const OTP_INPUT_LIMIT: usize = 64;
 // Share the status lookup instead of cloning it into each protocol/flow caller.
 #[inline(never)]
 pub fn status(error: Error) -> Sw {
@@ -39,6 +46,13 @@ pub fn status(error: Error) -> Sw {
         }
         Error::Invalid => Sw::WRONG_DATA,
         _ => Sw::UNABLE_TO_PROCESS,
+    }
+}
+fn workflow_status(error: oath_pass::Error) -> Sw {
+    match error {
+        oath_pass::Error::Oath(error) => status(error),
+        oath_pass::Error::Pass(error) => crate::applets::pass::status(error),
+        oath_pass::Error::NotHotp => Sw::CONDITIONS_NOT_SATISFIED,
     }
 }
 fn proof_status(error: Error) -> Sw {
@@ -262,15 +276,9 @@ impl State {
             if !c.is_empty() {
                 return Err(Sw::WRONG_LENGTH);
             }
-            let id = service::find(&mut store, &mut mac, old).map_err(status)?;
             drop(store);
-            if let Some(pass) = pass {
-                pass.remove_oath(Some(id.0), p.storage, p.memory)
-                    .map_err(crate::applets::pass::status)?;
-            }
-            // PASS and OATH share the storage borrow; recreate the store only
-            // after PASS has released it so both records remain consistent.
-            Store::new(p.storage, p.memory).delete(id).map_err(status)?;
+            drop(mac);
+            oath_pass::delete(old, pass, p).map_err(workflow_status)?;
         }
         Ok(())
     }
@@ -385,8 +393,6 @@ impl State {
         pass: Option<&mut Pass>,
         p: &mut Platform<'_>,
     ) -> Result<(), Sw> {
-        let mut store = Store::new(p.storage, p.memory);
-        let mut mac = Mac::new(p.crypto, p.memory);
         // P1=1/2 selects a PASS slot (one-based); P2=0/1 controls
         // the trailing Enter key. NAME binds an HOTP credential.
         let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
@@ -394,22 +400,8 @@ impl State {
             return Err(Sw::WRONG_P1P2);
         }
         let name = name(&mut c)?;
-        let id = service::find(&mut store, &mut mac, name).map_err(status)?;
-        if store.metadata(id).map_err(status)?.kind != Kind::Hotp {
-            return Err(Sw::CONDITIONS_NOT_SATISFIED);
-        }
-        // find matched this exact name; binding PASS needs no secret material.
-        pass.configure(
-            SlotIndex::new(h.p1 - 1).unwrap(),
-            Slot::Oath {
-                id: id.0,
-                name,
-                enter: h.p2,
-            },
-            p.storage,
-            p.memory,
-        )
-        .map_err(crate::applets::pass::status)
+        oath_pass::bind(pass, SlotIndex::new(h.p1 - 1).unwrap(), name, h.p2, p)
+            .map_err(workflow_status)
     }
 
     // Keep command dispatch separate from finish-time wiping and error cleanup.
@@ -428,43 +420,8 @@ impl State {
             self.page = Page::None;
             self.cursor = 0;
         }
-        // Original YubiKey OTP API is deliberately outside the OATH auth gate.
-        if h.ins == INS_PUT
-            && matches!(
-                h.p1,
-                otp_selector::SERIAL
-                    | otp_selector::CHALLENGE_SLOT_1
-                    | otp_selector::CHALLENGE_SLOT_2
-            )
-        {
-            // Legacy OTP uses P1 for the operation/slot; P2 has no options
-            // and must be 00 even for HMAC challenge-response requests.
-            if h.p2 != 0x00 {
-                return Err(Sw::WRONG_P1P2);
-            }
-            if h.p1 == otp_selector::SERIAL {
-                if !data.is_empty() {
-                    return Err(Sw::WRONG_LENGTH);
-                }
-                let mut serial = [0; 4];
-                p.device.serial(&mut serial);
-                self.length = crate::applets::write_serial(&mut self.response, |out| *out = serial);
-            } else {
-                if data.len() > OTP_INPUT_LIMIT {
-                    return Err(Sw::WRONG_LENGTH);
-                }
-                let index = u8::from(h.p1 == otp_selector::CHALLENGE_SLOT_2);
-                let pass = pass.ok_or(Sw::INS_NOT_SUPPORTED)?;
-                if !matches!(pass.slot(index), Ok(Slot::Hmac(_))) {
-                    return Err(Sw::FILE_NOT_FOUND);
-                }
-                let mut result = [0; 20];
-                pass.challenge(index, data, &mut result, p)
-                    .map_err(crate::applets::pass::status)?;
-                self.response[..20].copy_from_slice(&result);
-                p.memory.wipe(&mut result);
-                self.length = 20;
-            }
+        if legacy_otp::matches(h) {
+            self.length = legacy_otp::execute(h, data, pass, p, &mut self.response)?;
             return Ok(Sw::SUCCESS);
         }
         if !self.session.authorized() && h.ins != INS_VALIDATE {
@@ -581,8 +538,8 @@ impl Oath {
         self.state.select(p)
     }
     #[cfg(feature = "pass")]
-    pub fn take_presence(&mut self) -> bool {
-        self.state.presence.take()
+    pub fn take_presence_attempt(&mut self) -> bool {
+        self.state.presence.take_attempt()
     }
     pub fn cancel_command(&mut self, p: &mut Platform<'_>) {
         p.memory.wipe(&mut self.command);

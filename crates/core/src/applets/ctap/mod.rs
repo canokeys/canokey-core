@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 
 mod agreement;
+mod applet;
+pub use applet::Applet;
 pub mod apdu;
 mod attestation;
 mod authentication;
@@ -18,6 +20,7 @@ mod info;
 mod install;
 mod large_blob;
 mod management;
+pub mod message;
 mod pin;
 pub(crate) mod pq;
 pub(crate) mod provision;
@@ -307,10 +310,10 @@ impl Session {
         }
         let long = pin::policy(p)?.flags & pin::LONG_RESET != 0;
         self.wait_presence(w, p, long)?;
-        self.erase(p)?;
+        self.reset_persistent(p)?;
         Ok(1)
     }
-    fn erase(&mut self, p: &mut crate::ports::Platform<'_>) -> Result<(), Status> {
+    fn reset_persistent(&mut self, p: &mut crate::ports::Platform<'_>) -> Result<(), Status> {
         self.abort_blob(p);
         self.reset(p.memory);
         // Provisioned attestation material and SM2 identifiers survive reset.

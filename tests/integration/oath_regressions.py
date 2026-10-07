@@ -73,6 +73,24 @@ def run(library):
                     touch(0,code)
                 cmd(2,data=tlv(0x71,b'FP'),le=None);touch(0,b'')
                 admin();assert cmd(0x43)==b'\x00\x00';oath()
+                # A failed PASS unlink must prevent OATH deletion, even with two bindings.
+                put(b'unlink')
+                for slot in (1,2): cmd(0x55,slot,data=tlv(0x71,b'unlink'),le=None)
+                cmd(0xef,data=b'00',le=None)  # Atomic PASS record patch fails once.
+                cmd(2,data=tlv(0x71,b'unlink'),sw=0x6900,le=None)
+                assert b'unlink' in cmd(0xa1)
+                assert driver.power(502)[0]==0
+                touch(0,failure=True)  # Logical slot reset retains invalidated PASS cache.
+                assert driver.lib.ck_core_install()==0  # Boot installation reloads durable slots.
+                oath();cmd(2,data=tlv(0x71,b'unlink'),le=None)
+                # OATH delete failure occurs after durable unlink; record reuse stays unbound.
+                put(b'delete-fail')
+                for slot in (1,2): cmd(0x55,slot,data=tlv(0x71,b'delete-fail'),le=None)
+                inject();cmd(2,data=tlv(0x71,b'delete-fail'),sw=0x6900,le=None)
+                assert b'delete-fail' in cmd(0xa1)
+                touch(0,b'');touch(1,b'')
+                cmd(2,data=tlv(0x71,b'delete-fail'),le=None)
+                put(b'reused');touch(0,b'');touch(1,b'')
                 put(b'initial',digits=8,extra=tlv(0x7a,(2).to_bytes(4,'big')))
                 cmd(0x55,2,data=tlv(0x71,b'initial'),le=None)
                 digest=hmac.digest(b'12345678901234567890',(3).to_bytes(8,'big'),'sha1');off=digest[-1]&15

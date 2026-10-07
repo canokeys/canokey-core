@@ -589,7 +589,7 @@ impl Core {
     #[cfg(feature = "ctap")]
     pub fn execute_ctap_message(
         &mut self,
-        command: crate::applets::ctap::apdu::Message,
+        command: crate::applets::ctap::message::Message,
         p: &mut Platform<'_>,
     ) -> usize {
         self.router.execute_ctap_message(command, p)

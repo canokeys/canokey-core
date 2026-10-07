@@ -9,7 +9,8 @@ use crate::applets::pass::{
 use canokey_protocol::response::StatusWord;
 
 // Two slots; worst case per slot is kind + name length + 64-byte name + Enter.
-pub const MAX_DESCRIPTION_LENGTH: usize = 2 * (1 + 1 + 64 + 1);
+pub const MAX_DESCRIPTION_LENGTH: usize =
+    crate::applets::pass::domain::SLOT_COUNT * (1 + 1 + crate::applets::OATH_NAME_BYTES + 1);
 
 // ADMIN uses one-based P1 slots (1/2); the domain uses zero-based indexes.
 // Payloads: OFF=[kind], STATIC=[kind,len,password...,enter], HMAC=[kind,len,key...].

@@ -1,6 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 # ADMIN + PASS implementation checkpoint
 
+ADMIN retains wire parsing and grant checks and delegates typed CTAP/NDEF
+administrative operations to their owning services. Reset actions route through
+`flows/factory_reset.rs`; runtime verifies presence and revokes sessions first.
+The flow performs all persistent factory phases with ADMIN PIN recovery last.
+`flows/credential_output.rs` handles both static password and OATH HOTP output.
+
 This checkpoint establishes the independent core's first applet composition.
 Published protocol behavior is the migration contract; C behavior is a
 reference where the protocol is silent, not a requirement to accept malformed

@@ -145,7 +145,7 @@ pub enum SessionWorkspace {
     #[cfg(feature = "ctap")]
     CtapRequest(crate::applets::ctap::Request),
     #[cfg(feature = "ctap")]
-    CtapMessage(crate::applets::ctap::apdu::MessageParser),
+    CtapMessage(crate::applets::ctap::message::MessageParser),
     #[cfg(feature = "ctap")]
     U2fRequest(crate::applets::ctap::u2f::Request),
     #[cfg(feature = "piv")]

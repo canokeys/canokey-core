@@ -21,6 +21,33 @@ pub enum Failure {
     Missing,
     Io,
 }
+#[cfg(feature = "admin")]
+pub(crate) enum ConfigurationError {
+    Value,
+    Persistence,
+}
+#[cfg(feature = "admin")]
+pub(crate) fn reset_persistent(p: &mut crate::Platform<'_>) -> Result<(), ConfigurationError> {
+    Ndef::new()
+        .install(true, p.storage)
+        .map_err(|_| ConfigurationError::Persistence)
+}
+#[cfg(feature = "admin")]
+pub(crate) fn configure_read_only(
+    value: u8,
+    p: &mut crate::Platform<'_>,
+) -> Result<(), ConfigurationError> {
+    if value > 1 {
+        return Err(ConfigurationError::Value);
+    }
+    Ndef::new()
+        .set_read_only(value, p.storage)
+        .map_err(|_| ConfigurationError::Persistence)
+}
+#[cfg(feature = "admin")]
+pub(crate) fn configured_read_only(p: &mut crate::Platform<'_>) -> bool {
+    Ndef::new().read_only(p.storage)
+}
 /// The platform adapter exposes only byte-file operations. Offset arithmetic,
 /// initialization, permissions and cache invalidation remain in this applet.
 pub trait Store {
@@ -104,7 +131,7 @@ impl Ndef {
     pub fn read_only(&mut self, s: &mut (impl Store + ?Sized)) -> bool {
         self.cc(s).is_err() || self.cc[14] == 0xff
     }
-    /// ADMIN authorization is checked by its dispatcher before this call.
+    /// Administrative authorization is checked by the caller.
     pub fn set_read_only(&mut self, value: u8, s: &mut (impl Store + ?Sized)) -> Result<(), Sw> {
         if value > 1 {
             return Err(Sw::WRONG_P1P2);

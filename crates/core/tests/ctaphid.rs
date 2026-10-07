@@ -20,7 +20,7 @@ struct Memory {
     response_failure: bool,
     response_closes: usize,
     request: Option<canokey_rust_core::applets::ctap::Request>,
-    message: Option<canokey_rust_core::applets::ctap::apdu::MessageParser>,
+    message: Option<canokey_rust_core::applets::ctap::message::MessageParser>,
 }
 impl Scratch for Memory {
     fn capacity(&self) -> usize {
@@ -62,9 +62,8 @@ impl Scratch for Memory {
     }
     fn begin_request(&mut self, message_length: Option<usize>) {
         if let Some(length) = message_length {
-            self.message = Some(canokey_rust_core::applets::ctap::apdu::MessageParser::new(
-                length,
-            ));
+            self.message =
+                Some(canokey_rust_core::applets::ctap::message::MessageParser::new(length));
         } else {
             self.request = Some(canokey_rust_core::applets::ctap::Request::new());
         }
@@ -409,7 +408,7 @@ impl Memory {
     fn execute_message(
         &mut self,
         _: u32,
-        command: canokey_rust_core::applets::ctap::apdu::Message,
+        command: canokey_rust_core::applets::ctap::message::Message,
     ) -> usize {
         assert!(
             !self.leased,

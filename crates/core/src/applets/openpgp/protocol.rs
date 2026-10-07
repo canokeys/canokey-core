@@ -180,8 +180,8 @@ impl OpenPgp {
         self.response = Response::Memory;
     }
     #[cfg(feature = "pass")]
-    pub fn take_presence(&mut self) -> bool {
-        self.session.presence.take()
+    pub fn take_presence_attempt(&mut self) -> bool {
+        self.session.presence.take_attempt()
     }
     pub fn read(
         &self,

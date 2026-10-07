@@ -13,7 +13,7 @@ pub mod runtime;
 pub use ports::Platform;
 pub use runtime::engine::{Core, Reply};
 
-#[cfg(any(feature = "admin", feature = "pass"))]
+#[cfg(any(feature = "admin", feature = "pass", feature = "oath"))]
 mod flows;
 
 #[cfg(any(

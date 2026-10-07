@@ -59,4 +59,5 @@ pub trait Crypto {
 pub(crate) mod protocol;
 pub(crate) mod repository;
 
+mod legacy_otp;
 mod wire;

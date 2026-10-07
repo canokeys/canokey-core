@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
+#[cfg(feature = "pass")]
+pub(crate) mod credential_output;
 #[cfg(feature = "admin")]
 pub(crate) mod factory_reset;
-#[cfg(feature = "pass")]
-pub(crate) mod hotp_output;
+#[cfg(feature = "oath")]
+pub(crate) mod oath_pass;
 /// Cross-applet errors carry no wire status.
+#[cfg(any(feature = "admin", feature = "pass"))]
 pub enum Error {
+    #[cfg(all(feature = "admin", feature = "ctap"))]
+    Ctap,
+    #[cfg(all(feature = "admin", feature = "ndef"))]
+    Ndef,
     #[cfg(all(feature = "admin", feature = "piv"))]
     Piv,
     Pass(crate::applets::pass::domain::Error),

@@ -9,6 +9,12 @@ byte-TLV primitives; repository and MAC borrow disjoint storage/crypto ports.
 The safe core is allocation-free `no_std`; FFI lives in a separate crate.
 CTAP/PIV/OpenPGP/NFC remain absent.
 
+`flows/oath_pass.rs` coordinates reference unlinking/deletion and HOTP default
+binding. The protocol adapter retains authorization, parsing and status precedence;
+`legacy_otp.rs` handles the serial/HMAC compatibility route before the OATH gate.
+Unlink failure prevents deletion. Delete failure after unlink leaves the credential
+present with no active PASS references, so retry or record reuse is safe.
+
 ## Command coverage
 
 OATH AID is `A0000005272101`. Commands use CLA 00 (10 for ISO command chaining).

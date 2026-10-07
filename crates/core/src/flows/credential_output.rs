@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+//! Touch-authorized static password and OATH credential output.
 use super::Error;
 use crate::{Platform, applets::pass::service::Pass};
 pub fn touch(pass: &Pass, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Error> {

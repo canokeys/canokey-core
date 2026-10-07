@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Provisioned COSE identifiers survive credential reset. The record is two BE32s.
 use super::Status;
-use crate::ports::{Platform, Record, StorageError};
 #[cfg(feature = "admin")]
-use canokey_protocol::response::StatusWord as Sw;
+use super::provision::Error;
+use crate::ports::{Platform, Record, StorageError};
 
 #[derive(Clone, Copy)]
 pub(crate) struct Sm2 {
@@ -44,13 +44,13 @@ impl Sm2 {
         }
     }
     #[cfg(feature = "admin")]
-    pub fn save(wire: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn save(wire: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
         if wire.len() != 8 {
-            return Err(Sw::WRONG_LENGTH);
+            return Err(Error::Length);
         }
-        Self::decode(wire).ok_or(Sw::WRONG_DATA)?;
+        Self::decode(wire).ok_or(Error::Invalid)?;
         p.storage
             .replace(Record::CtapSm2, wire)
-            .map_err(|_| Sw::UNABLE_TO_PROCESS)
+            .map_err(|_| Error::Storage)
     }
 }

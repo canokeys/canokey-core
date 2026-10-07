@@ -44,11 +44,11 @@ pub(crate) const INS_PROVISION_ATTESTATION: u8 = 0x02;
 #[cfg(feature = "ctap")]
 const INS_CTAP_INSTALL: u8 = 0x01;
 #[cfg(feature = "ctap")]
-const INS_CTAP_CERTIFICATE: u8 = 0x09;
+const INS_RESET_CTAP: u8 = 0x09;
 #[cfg(feature = "ctap")]
-const INS_CTAP_BEGIN: u8 = 0x11;
+const INS_READ_CTAP_SM2: u8 = 0x11;
 #[cfg(feature = "ctap")]
-const INS_CTAP_END: u8 = 0x12;
+const INS_WRITE_CTAP_SM2: u8 = 0x12;
 
 use crate::applets::pass::codec::Layout;
 use crate::{
@@ -77,6 +77,24 @@ pub(crate) fn auth_error(error: auth::Error) -> Sw {
     }
 }
 
+#[cfg(feature = "ctap")]
+pub(crate) fn provision_error(error: crate::applets::ctap::provision::Error) -> Sw {
+    use crate::applets::ctap::provision::Error;
+    match error {
+        Error::Length => Sw::WRONG_LENGTH,
+        Error::Invalid => Sw::WRONG_DATA,
+        Error::Storage => Sw::UNABLE_TO_PROCESS,
+        Error::NotActive => Sw::CONDITIONS_NOT_SATISFIED,
+    }
+}
+#[cfg(feature = "ndef")]
+fn ndef_error(error: crate::applets::ndef::ConfigurationError) -> Sw {
+    match error {
+        crate::applets::ndef::ConfigurationError::Value => Sw::WRONG_P1P2,
+        crate::applets::ndef::ConfigurationError::Persistence => Sw::UNABLE_TO_PROCESS,
+    }
+}
+
 pub enum Action {
     Response(u32),
     FactoryReset,
@@ -84,6 +102,8 @@ pub enum Action {
     InstallFidoKey([u8; 32]),
     #[cfg(feature = "ctap")]
     ResetCtap,
+    #[cfg(feature = "ndef")]
+    ResetNdef,
     #[cfg(feature = "piv")]
     ResetPiv,
     #[cfg(feature = "oath")]
@@ -95,15 +115,23 @@ pub struct Admin {
     used: usize,
     response_len: usize,
     #[cfg(feature = "ctap")]
-    certificate: bool,
+    certificate: crate::applets::ctap::provision::Certificate,
 }
+
+#[cfg(all(
+    test,
+    feature = "ctap",
+    any(not(feature = "static-backend"), feature = "dynamic-backend")
+))]
+#[path = "protocol/certificate_tests.rs"]
+mod certificate_tests;
 impl Admin {
     pub const fn new() -> Self {
         Self {
             used: 0,
             response_len: 0,
             #[cfg(feature = "ctap")]
-            certificate: false,
+            certificate: crate::applets::ctap::provision::Certificate::new(),
         }
     }
     pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
@@ -119,8 +147,7 @@ impl Admin {
             if h.p1 != 0 || h.p2 != 0 {
                 return Err(Sw::WRONG_P1P2);
             }
-            p.storage.stage_begin().map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-            self.certificate = true;
+            self.certificate.begin(p).map_err(provision_error)?;
         }
         Ok(())
     }
@@ -132,10 +159,7 @@ impl Admin {
     pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_>) {
         let _ = &p;
         #[cfg(feature = "ctap")]
-        if self.certificate {
-            p.storage.stage_abort();
-            self.certificate = false;
-        }
+        self.certificate.abort(p);
         self.used = 0;
     }
     pub fn consume(
@@ -146,16 +170,11 @@ impl Admin {
     ) -> Result<(), Sw> {
         let _ = &p;
         #[cfg(feature = "ctap")]
-        if self.certificate {
-            self.used = self
-                .used
-                .checked_add(data.len())
-                .filter(|n| *n <= crate::applets::ctap::provision::CERT_LIMIT)
-                .ok_or(Sw::WRONG_LENGTH)?;
-            return p
-                .storage
-                .stage_append(data)
-                .map_err(|_| Sw::UNABLE_TO_PROCESS);
+        if self.certificate.active() {
+            return self
+                .certificate
+                .append(&mut self.used, data, p)
+                .map_err(provision_error);
         }
         crate::applets::append_bounded(&mut self.used, w.input, COMMAND_CAPACITY, data)
             .ok_or(Sw::WRONG_LENGTH)?;
@@ -263,7 +282,7 @@ impl Admin {
         #[cfg(feature = "ctap")]
         if matches!(
             h.ins,
-            INS_CTAP_INSTALL | INS_PROVISION_ATTESTATION | INS_CTAP_CERTIFICATE
+            INS_CTAP_INSTALL | INS_PROVISION_ATTESTATION | INS_RESET_CTAP
         ) {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
@@ -277,19 +296,13 @@ impl Admin {
                     .map_err(|_| Sw::WRONG_LENGTH)?;
                 return Ok(Action::InstallFidoKey(key));
             }
-            if h.ins == INS_CTAP_CERTIFICATE {
+            if h.ins == INS_RESET_CTAP {
                 if self.used != 0 {
                     return Err(Sw::WRONG_LENGTH);
                 }
                 return Ok(Action::ResetCtap);
             }
-            if !self.certificate {
-                return Err(Sw::CONDITIONS_NOT_SATISFIED);
-            }
-            p.storage
-                .stage_commit(crate::ports::Record::CtapCertificate)
-                .map_err(|_| Sw::UNABLE_TO_PROCESS)?;
-            self.certificate = false;
+            self.certificate.commit(p).map_err(provision_error)?;
             return Ok(Action::Response(0));
         }
         #[cfg(feature = "openpgp")]
@@ -324,14 +337,10 @@ impl Admin {
             if !grants.admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
-            // ADMIN selection has already dropped the NDEF session. This
-            // temporary policy object shares storage and needs no file buffer.
-            let mut ndef = crate::applets::ndef::Ndef::new();
             if h.ins == INS_RESET_NDEF {
-                ndef.install(true, p.storage)?;
-            } else {
-                ndef.set_read_only(h.p1, p.storage)?;
+                return Ok(Action::ResetNdef);
             }
+            crate::applets::ndef::configure_read_only(h.p1, p).map_err(ndef_error)?;
             return Ok(Action::Response(0));
         }
         self.execute(h, grants, pass, p, w).map(Action::Response)
@@ -435,7 +444,7 @@ impl Admin {
             return self.device_config(h, grants, p, w);
         }
         #[cfg(feature = "ctap")]
-        if matches!(h.ins, INS_CTAP_BEGIN | INS_CTAP_END) {
+        if matches!(h.ins, INS_READ_CTAP_SM2 | INS_WRITE_CTAP_SM2) {
             if h.p1 != 0 || h.p2 != 0 {
                 return Err(Sw::WRONG_P1P2);
             }
@@ -443,8 +452,8 @@ impl Admin {
                 return Err(Sw::SECURITY_STATUS_NOT_SATISFIED);
             }
             use crate::applets::ctap::settings::Sm2;
-            if h.ins == INS_CTAP_END {
-                Sm2::save(&w.input[..self.used], p)?;
+            if h.ins == INS_WRITE_CTAP_SM2 {
+                Sm2::save(&w.input[..self.used], p).map_err(provision_error)?;
                 return Ok(0);
             }
             if self.used != 0 {
@@ -594,7 +603,7 @@ impl Admin {
             ]);
             #[cfg(feature = "ndef")]
             {
-                w.output[2] = u8::from(crate::applets::ndef::Ndef::new().read_only(p.storage));
+                w.output[2] = u8::from(crate::applets::ndef::configured_read_only(p));
             }
             self.response_len = CONFIG_RESPONSE_BYTES;
             return Ok(CONFIG_RESPONSE_BYTES as u32);

@@ -42,7 +42,7 @@ impl Session {
             // Keep the invalid prerequisite until cleanup completes, so a
             // failed cleanup is retried at the next boot. Erase does not touch
             // manufacturing records, including malformed attestation material.
-            self.erase(p)?;
+            self.reset_persistent(p)?;
             if sm2.is_none() {
                 p.storage
                     .replace(Record::CtapSm2, &Sm2::DEFAULT.encode())

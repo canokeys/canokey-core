@@ -13,8 +13,27 @@ new independently reusable component needs a separately enforced dependency.
 
 `core` is `no_std` and forbids unsafe code. Applet-local wire adapters, services,
 record codecs and repositories stay together. Shared mechanisms do not depend
-on applets; `flows/` owns explicit cross-applet reset and keyboard workflows.
+on applets; `flows/` owns explicit cross-applet reset, OATH/PASS binding and
+credential-output workflows.
 The registry routes operations without absorbing applet policy.
+
+`ctap::Applet` owns the single CTAP/U2F session and response backing shared by
+native HID and APDU transports. `ctap/apdu.rs` handles FIDO SELECT and command
+envelopes; `ctap/message.rs` handles HID MSG envelopes and continuation. Neither
+adapter reserves a second session or response buffer. ADMIN invokes typed CTAP
+provisioning/settings services; the certificate transaction owns its complete
+begin/append/commit/abort lifecycle.
+
+Runtime validates factory-reset presence, inhibits keyboard output and revokes
+sessions. `flows/factory_reset.rs` then owns the persistent sequence: NDEF, CTAP,
+PASS, OATH, OpenPGP, PIV, and ADMIN PIN recovery last. Failure stops later phases;
+this sequence is not an atomic transaction across all records. OATH/PASS flows
+unlink references before deleting credentials and bind HOTP using metadata only.
+
+Presence hooks report an attempted wait or poll, including timeout/cancellation.
+Runtime consumes `take_presence_attempt()` to prevent the same input epoch from
+producing PASS output. Product feature names and consumer feature guards remain
+intentional composition/code-elimination choices.
 
 ## Transport ownership
 

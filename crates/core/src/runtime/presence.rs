@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Main-loop presence operation; no C callback may reenter the core.
 #![forbid(unsafe_code)]
-#[cfg(persistent_applet)]
+#[cfg(presence_applet)]
 const PRESENCE_TIMEOUT_MS: u32 = 30_000;
-#[cfg(persistent_applet)]
+#[cfg(presence_applet)]
 fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<(), Error> {
     if device.contactless() {
         return if device.progress() {
@@ -42,7 +42,7 @@ fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<()
     result
 }
 
-#[cfg(persistent_applet)]
+#[cfg(presence_applet)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
     Cancelled,
@@ -119,11 +119,11 @@ pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
 }
 
 /// An attempted request owns its gesture even when it times out or is cancelled.
-#[cfg(persistent_applet)]
+#[cfg(presence_applet)]
 pub struct Request {
     attempted: bool,
 }
-#[cfg(persistent_applet)]
+#[cfg(presence_applet)]
 impl Request {
     pub const fn new() -> Self {
         Self { attempted: false }
@@ -151,7 +151,8 @@ impl Request {
         wait(device, LONG_TOUCH_MS)
     }
     #[cfg(feature = "pass")]
-    pub fn take(&mut self) -> bool {
+    /// PASS suppresses output after any presence attempt, including failure.
+    pub fn take_attempt(&mut self) -> bool {
         core::mem::take(&mut self.attempted)
     }
 }
@@ -322,8 +323,8 @@ mod tests {
                 ticks: 0,
                 connected
             }));
-            assert!(request.take());
-            assert!(!request.take());
+            assert!(request.take_attempt());
+            assert!(!request.take_attempt());
         }
     }
 }

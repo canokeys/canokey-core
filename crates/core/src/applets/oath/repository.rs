@@ -174,6 +174,12 @@ impl Store<'_> {
         }
         Err(Error::Missing)
     }
+    pub(crate) fn credential_kind(
+        &mut self,
+        id: CredentialId,
+    ) -> Result<super::credential::Kind, Error> {
+        self.metadata(id).map(|header| header.kind)
+    }
     pub(super) fn metadata(&mut self, id: CredentialId) -> Result<codec::Header, Error> {
         let entry = self.locate(id)?;
         codec::fields(&entry.header)

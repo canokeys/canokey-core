@@ -1,5 +1,12 @@
 # Rust CTAP migration
 
+`ctap::Applet` owns shared session/execution/response state. The APDU adapter is
+in `apdu.rs`; HID MSG framing and continuation are in `message.rs`. Native HID
+and APDU commands use the same container and transient workspace. ADMIN reset
+uses `reset_persistent`; ordinary transport/session reset does not erase records.
+Provisioning and SM2 settings return typed errors mapped by ADMIN to its existing
+status words. Certificate staging owns begin, append, commit and abort together.
+
 ## Resident storage groups (2026-10-01)
 
 Fresh provisioning is required. There is no migration or compatibility decoder.

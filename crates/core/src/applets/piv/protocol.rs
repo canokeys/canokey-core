@@ -133,7 +133,7 @@ pub struct Piv {
     ga: Ga,
     put: Put,
     last_touch: Option<u32>,
-    pub presence: presence::Request,
+    presence: presence::Request,
     pending_public: Option<PendingPublicKey>,
     pending_commit: Option<u8>,
     agreement: Option<usize>,
@@ -145,8 +145,8 @@ pub struct Piv {
 }
 impl Piv {
     #[cfg(feature = "pass")]
-    pub fn take_presence(&mut self) -> bool {
-        self.presence.take()
+    pub fn take_presence_attempt(&mut self) -> bool {
+        self.presence.take_attempt()
     }
 
     pub(super) fn clear_agreement(

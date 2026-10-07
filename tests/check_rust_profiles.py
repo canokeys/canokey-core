@@ -15,6 +15,16 @@ PROFILES = {
     "ctap": ("admin", "ctap"),
     "full": ("admin", "pass", "oath", "openpgp", "piv", "ctap", "ndef"),
 }
+CROSS_APPLET_PROFILES = {
+    "ctap-pass": ("ctap", "pass"),
+    "oath-pass": ("oath", "pass"),
+    "admin-ctap-pass": ("admin", "ctap", "pass"),
+    "admin-ndef": ("admin", "ndef"),
+    "admin-piv": ("admin", "piv"),
+    "admin-openpgp": ("admin", "openpgp"),
+    "pass-piv": ("pass", "piv"),
+    "pass-openpgp": ("pass", "openpgp"),
+}
 
 
 def check(name, features):
@@ -26,7 +36,7 @@ def check(name, features):
 
 
 def main():
-    for name, applets in PROFILES.items():
+    for name, applets in {**PROFILES, **CROSS_APPLET_PROFILES}.items():
         for backend in ("static-backend", "dynamic-backend"):
             check(f"{name}/{backend}", (backend, *applets))
     for applet in ("admin", "pass", "oath", "openpgp", "piv", "ctap", "ndef"):
