@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! USB/IP enters the same serialized applet runtime as the physical USB device.
 use super::*;
-unsafe extern "C" {
-    fn CCID_Loop();
-    fn WebUSB_Loop();
-    fn usb_device_init();
-}
+use canokey_rust_ffi::{CCID_Loop, WebUSB_Loop, usb_device_init};
 
 #[unsafe(no_mangle)]
 unsafe extern "C" fn ck_host_usbip_open(path: *const std::ffi::c_char, touch: u8) -> i32 {

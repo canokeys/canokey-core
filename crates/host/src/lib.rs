@@ -3,7 +3,11 @@
 //! maintain packet state but never reenter applet execution or hold HOST borrows.
 #[cfg(target_os = "none")]
 compile_error!("the virtual-card host must never be linked into firmware");
-use canokey_rust_ffi as _;
+use canokey_ports::native::ck_core_presence_sample;
+use canokey_rust_ffi::{
+    CTAPHID_Loop, CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_core_exchange, ck_core_install,
+    ck_core_reset, ck_core_slot_power, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
+};
 use std::{
     io,
     net::UdpSocket,
@@ -23,23 +27,6 @@ use storage::Storage;
 // CIU PKE register file: 48 registers of 64 bytes each.
 const PKE_BYTES: usize = 48 * 64;
 unsafe extern "C" {
-    fn ck_core_install() -> i32;
-    fn ck_core_exchange(
-        owner: u8,
-        input: *const u8,
-        len: usize,
-        out: *mut u8,
-        capacity: usize,
-    ) -> i32;
-    fn ck_core_reset();
-    fn ck_core_slot_power();
-    fn ck_core_presence_sample();
-    fn CTAPHID_Loop(wait: u8) -> u8;
-    fn CTAPHID_OutEvent(data: *const u8) -> u8;
-    fn CTAPHID_RxCanAccept() -> u8;
-    fn ck_hid_packet_reset();
-    fn ck_hid_executing() -> u8;
-    fn ck_hid_progress() -> u8;
     fn ck_host_stopping() -> i32;
 }
 struct Host {

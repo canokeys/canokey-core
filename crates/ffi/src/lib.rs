@@ -38,12 +38,24 @@ mod platform;
 mod runtime;
 mod sys;
 mod transport;
+pub use abi::core::{ck_core_exchange, ck_core_install, ck_core_reset, ck_core_slot_power};
+#[cfg(feature = "usb-ccid")]
+pub use transport::ccid::CCID_Loop;
 #[cfg(feature = "ctap")]
 pub use transport::hid::command::{ck_hid_poll, ck_hid_reset};
+#[cfg(feature = "usb-hid")]
+pub use transport::hid::{
+    io::{CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_hid_packet_reset},
+    link::{CTAPHID_Loop, ck_hid_executing, ck_hid_progress},
+};
 #[cfg(feature = "usb-keyboard")]
 pub use transport::keyboard::ck_keyboard_loop;
 #[cfg(feature = "nfc")]
 pub use transport::nfc::{ck_nfc_configure, ck_nfc_set_mode, ck_nfc_silence, nfc_init, nfc_loop};
+#[cfg(feature = "usb-device")]
+pub use transport::usb::usb_device_init;
+#[cfg(feature = "usb-webusb")]
+pub use transport::webusb::WebUSB_Loop;
 // The FFI crate is the C-facing facade; re-export the core's public port types
 // so platform adapters and generated bindings share one type namespace.
 pub use canokey_rust_core::{Core, Platform, Reply, ports};
