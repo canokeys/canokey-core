@@ -107,6 +107,7 @@ impl Io for Fake {
 // One serialized scenario owns the production singleton, matching firmware.
 #[test]
 fn keyboard_controller_leases_retries_preemption_and_reset() {
+    let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
     let mut io = Fake {
         epoch: 1,
         busy: false,

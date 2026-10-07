@@ -195,6 +195,7 @@ fn normal_exchange() {
 )))]
 #[test]
 fn ccid_controller_leases_timer_reset_and_fragmentation() {
+    let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
     unsafe {
         configure();
         normal_exchange();

@@ -4,8 +4,18 @@
 //! the WebUSB RX/TX allocation, exclusively leased by main-loop admission.
 //! A single 16-byte FIFO mailbox holds a data-stage OUT packet received after
 //! SETUP admission but before the main loop accepts the command.
+#[cfg(not(test))]
+use crate::abi::core::{can_preempt, ck_core_exchange, ck_core_reset};
 use crate::sys::device_get_tick;
+#[cfg(not(test))]
+use crate::transport::ccid::ck_ccid_idle;
+#[cfg(all(not(test), feature = "usb-hid"))]
+use crate::transport::hid::link::ck_hid_busy;
 use crate::transport::owners::OWNER_WEBUSB;
+#[cfg(all(test, feature = "usb-hid"))]
+use crate::transport::usb::tests::ck_hid_busy;
+#[cfg(test)]
+use crate::transport::usb::tests::{can_preempt, ck_ccid_idle, ck_core_exchange, ck_core_reset};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
@@ -34,7 +44,7 @@ pub unsafe fn try_preempt(requested: bool) -> bool {
                 && !WAITING
                 && SESSION
                 && (&*core::ptr::addr_of!(STATE)).completed_transaction()
-                && crate::abi::core::can_preempt();
+                && can_preempt();
             if eligible {
                 SESSION = false;
                 (&mut *core::ptr::addr_of_mut!(STATE)).reset();
@@ -42,7 +52,7 @@ pub unsafe fn try_preempt(requested: bool) -> bool {
             eligible
         });
         if eligible {
-            crate::abi::core::ck_core_reset();
+            ck_core_reset();
         }
         eligible
     }
@@ -151,14 +161,14 @@ pub unsafe extern "C" fn WebUSB_Loop() {
             cleanup
         });
         if cleanup {
-            crate::abi::core::ck_core_reset();
+            ck_core_reset();
         }
 
         let (command, new_session) = usb_locked(|| {
             if WAITING && !CLEANUP {
-                let idle = crate::transport::ccid::ck_ccid_idle() != 0;
+                let idle = ck_ccid_idle() != 0;
                 #[cfg(feature = "usb-hid")]
-                let idle = idle && crate::transport::hid::link::ck_hid_busy() == 0;
+                let idle = idle && ck_hid_busy() == 0;
                 WAITING = false;
                 if SESSION || idle {
                     let mut valid = true;
@@ -190,17 +200,11 @@ pub unsafe extern "C" fn WebUSB_Loop() {
         });
         if let Some(length) = command {
             if new_session {
-                crate::abi::core::ck_core_reset();
+                ck_core_reset();
             }
             let buffer = crate::transport::ccid::ck_ccid_response_buffer();
             // ck_core_exchange ends the input borrow before creating output.
-            let n = crate::abi::core::ck_core_exchange(
-                OWNER_WEBUSB,
-                buffer,
-                length,
-                buffer,
-                RESPONSE_LIMIT,
-            );
+            let n = ck_core_exchange(OWNER_WEBUSB, buffer, length, buffer, RESPONSE_LIMIT);
             let n = if n < 0 {
                 // Preserve a pollable APDU failure on a response-source error.
                 *buffer = 0x6f;

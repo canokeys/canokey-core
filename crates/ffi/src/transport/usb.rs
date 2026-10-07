@@ -3,6 +3,8 @@
 //! All exports except init/deinit require the platform IRQ mask. Native packet
 //! callbacks publish mailboxes only. No Rust borrow crosses such a callback.
 use crate::transport::usb_locked;
+#[cfg(test)]
+pub(crate) mod tests;
 use canokey_protocol::usb::*;
 // HALTED packs two bits per endpoint: OUT then IN, including EP0.
 const HALT_BITS_PER_ENDPOINT: u8 = 2;
@@ -574,8 +576,13 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
     use crate::transport::ccid::io::ck_ccid_progress;
+    #[cfg(all(feature = "usb-hid", not(test)))]
+    use crate::transport::ccid::presence_progress;
     #[cfg(feature = "usb-hid")]
+    #[cfg(not(test))]
     use crate::transport::hid::link::{ck_hid_executing, ck_hid_foreign_progress, ck_hid_progress};
+    #[cfg(all(test, feature = "usb-hid"))]
+    use tests::{ck_hid_executing, ck_hid_foreign_progress, ck_hid_progress, presence_progress};
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -584,7 +591,7 @@ pub unsafe extern "C" fn ck_transport_progress() -> u8 {
         #[cfg(feature = "usb-hid")]
         {
             if ck_hid_executing() != 0 {
-                crate::transport::ccid::presence_progress();
+                presence_progress();
                 return ck_hid_progress();
             }
             ck_hid_foreign_progress();

@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 #![no_std]
+#[cfg(test)]
+extern crate std;
+#[cfg(test)]
+#[allow(dead_code)] // Reduced feature profiles may contain no transport scenario.
+static TRANSPORT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 // C entrypoints use the same serialized, lazy BSS initialization
 // pattern. Keeping it in one macro prevents the READY flag and constructor
 // safety contract from drifting between CORE, CCID and HID state.

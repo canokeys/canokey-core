@@ -302,6 +302,7 @@ pub extern "C" fn ck_ccid_response_buffer() -> *mut u8 {
 /// Never reset on generation change, consume APDUs/power commands, expire a
 /// session or touch the shared workspace. Slot replies use the CCID TX buffer.
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
+#[cfg_attr(test, allow(dead_code))]
 pub unsafe fn presence_progress() {
     unsafe {
         let generation = ck_ccid_io_generation();

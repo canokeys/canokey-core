@@ -4,6 +4,8 @@
 use crate::runtime::timer::device_set_timeout;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::sys::device_get_tick;
+#[cfg(all(test, feature = "usb-device", not(feature = "device-runtime")))]
+use crate::transport::usb::tests::device_set_timeout;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
 use crate::transport::usb_io::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 #[cfg(all(test, not(feature = "usb-device")))]
@@ -15,7 +17,7 @@ use tests::{
     ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle, device_get_tick,
     device_set_timeout,
 };
-#[cfg(not(any(feature = "device-runtime", all(test, not(feature = "usb-device")))))]
+#[cfg(all(not(feature = "device-runtime"), not(test)))]
 unsafe extern "C" {
     fn device_set_timeout(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
 }
@@ -163,6 +165,7 @@ pub unsafe fn ck_ccid_progress() -> u8 {
 /// Take only a complete, bodyless slot poll. Other commands stay queued for
 /// the main loop; a progress callback must never trigger Core dispatch/reset.
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
+#[cfg_attr(test, allow(dead_code))]
 pub unsafe fn take_presence(epoch: u32, output: &mut [u8; canokey_protocol::ccid::HEADER]) -> bool {
     usb_locked(|| unsafe {
         if epoch != GENERATION
