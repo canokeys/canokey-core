@@ -75,13 +75,9 @@
 #endif
 
 #if ENABLE_NFC
-void nfc_init(void);
 void nfc_handler(void);
-void nfc_loop(void);
 #else
-static inline void nfc_init(void) {}
 static inline void nfc_handler(void) {}
-static inline void nfc_loop(void) {}
 #endif
 
 #endif // _NFC_H_

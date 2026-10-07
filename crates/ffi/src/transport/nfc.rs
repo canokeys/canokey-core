@@ -50,8 +50,7 @@ impl canokey_rust_core::runtime::nfc_provision::Provision for Hardware {
     }
 }
 /// Boot-only, before GPIO NFC IRQ is enabled. EEPROM delays require SysTick.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_nfc_configure() -> i32 {
+pub unsafe fn ck_nfc_configure() -> i32 {
     if canokey_rust_core::runtime::nfc_provision::configure(&mut Hardware) {
         0
     } else {
@@ -123,15 +122,13 @@ unsafe fn reset_link() {
     }
 }
 /// Boot-only mode latch, before any transport or applet is started.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_nfc_set_mode(active: u8) {
+pub unsafe fn ck_nfc_set_mode(active: u8) {
     unsafe {
         ACTIVE = active != 0;
     }
 }
 /// Main-loop startup only. Quiesce USB before leasing its byte allocation.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nfc_init() {
+pub unsafe fn nfc_init() {
     unsafe {
         usb_device_deinit();
         let mask = ck_nfc_io_lock();
@@ -237,8 +234,7 @@ unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Err
         ))
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nfc_loop() {
+pub unsafe fn nfc_loop() {
     unsafe {
         if !ACTIVE {
             return;
@@ -304,8 +300,7 @@ pub unsafe extern "C" fn nfc_loop() {
 }
 
 /// Boot-only stored NFC disable policy, before GPIO IRQ is enabled.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_nfc_silence() -> i32 {
+pub unsafe fn ck_nfc_silence() -> i32 {
     if Hardware.write(wire::FM_REG_RESET_SILENCE, &[wire::FM_SILENCE]) {
         0
     } else {

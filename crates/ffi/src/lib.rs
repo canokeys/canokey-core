@@ -42,6 +42,8 @@ mod transport;
 pub use transport::hid::command::{ck_hid_poll, ck_hid_reset};
 #[cfg(feature = "usb-keyboard")]
 pub use transport::keyboard::ck_keyboard_loop;
+#[cfg(feature = "nfc")]
+pub use transport::nfc::{ck_nfc_configure, ck_nfc_set_mode, ck_nfc_silence, nfc_init, nfc_loop};
 // The FFI crate is the C-facing facade; re-export the core's public port types
 // so platform adapters and generated bindings share one type namespace.
 pub use canokey_rust_core::{Core, Platform, Reply, ports};
