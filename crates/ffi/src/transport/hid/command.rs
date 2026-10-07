@@ -26,6 +26,9 @@ unsafe extern "C" {
 }
 struct RequestScratch;
 // The backend owns only PKE bookkeeping, never a slice into hardware memory.
+// Keep this byte out of LLVM's merged transport globals, whose padding otherwise
+// grows when the HID helper exports become internal Rust functions.
+#[cfg_attr(target_os = "none", unsafe(link_section = ".bss.ck_hid_pke_lease"))]
 static mut PKE_LEASE: PkeLease = PkeLease::new();
 impl Scratch for RequestScratch {
     fn webauthn_enabled(&mut self) -> bool {
@@ -115,8 +118,8 @@ impl Scratch for RequestScratch {
         }
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_reset() {
+#[inline(never)]
+pub unsafe fn ck_hid_reset() {
     unsafe {
         hid().reset(&mut RequestScratch);
         crate::abi::core::ck_core_reset();
@@ -125,8 +128,8 @@ pub unsafe extern "C" fn ck_hid_reset() {
 /// input is null or one full report; output is a distinct writable report.
 /// Called only when the previous USB IN report has completed. Bit 0 indicates
 /// output, bit 1 holds the shared session through RX and final TX completion.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_poll(
+#[inline(never)]
+pub unsafe fn ck_hid_poll(
     input: *const [u8; 64],
     received: u32,
     now: u32,

@@ -38,5 +38,4 @@ void usb_device_deinit(void);
 uint8_t CTAPHID_RxCanAccept(void);
 uint8_t CTAPHID_OutEvent(const uint8_t *bytes);
 void ck_hid_packet_reset(void);
-uint8_t ck_hid_packet_out(const uint8_t *bytes);
 #endif

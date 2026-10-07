@@ -16,19 +16,13 @@ uint8_t ck_transport_progress(void);
 #if ENABLE_IFACE_CTAPHID
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 #endif
-/* HID calls are main-loop-only. poll requires distinct 64-byte buffers and
- * completion of the previous IN report. See the Rust ABI for result bits. */
+/* HID queries and progress callbacks are main-loop-only. */
 #if ENABLE_IFACE_CTAPHID
-void ck_hid_reset(void);
-uint8_t ck_hid_poll(const uint8_t *input, uint32_t received, uint32_t now, uint8_t *output);
 uint8_t ck_hid_busy(void);
 uint8_t ck_hid_active(void);
 /* Serialized Rust transport callbacks; never reenter applet state or use PKE. */
-void ck_hid_execution_begin(uint32_t cid);
-void ck_hid_execution_end(void);
 uint8_t ck_hid_executing(void);
 uint8_t ck_hid_progress(void);
-void ck_hid_foreign_progress(void);
 void ck_hid_keepalive(uint8_t waiting);
 /* Main-loop admission only: may inspect Core after completed USB transfers.
  * Never call while a Core entrypoint is borrowed (including progress/IRQ). */

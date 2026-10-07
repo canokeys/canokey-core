@@ -7,13 +7,18 @@ use canokey_protocol::ctaphid::{self as wire, Error};
 const SESSION_IDLE_MS: u32 = 2000;
 const KEEPALIVE_INTERVAL_MS: u32 = 100;
 const TX_TIMEOUT_MS: u32 = 1000;
+#[cfg(not(all(test, not(feature = "usb-device"))))]
 use super::command::{ck_hid_poll, ck_hid_reset};
+#[cfg(all(test, not(feature = "usb-device")))]
+pub(crate) mod tests;
 use super::io::{
     ck_hid_io_ack_reset, ck_hid_io_configured, ck_hid_io_consume, ck_hid_io_epoch, ck_hid_io_idle,
     ck_hid_io_peek, ck_hid_io_receive, ck_hid_io_reset_pending, ck_hid_io_send,
 };
-use crate::sys::device_delay;
-use crate::sys::device_get_tick;
+#[cfg(not(all(test, not(feature = "usb-device"))))]
+use crate::sys::{device_delay, device_get_tick};
+#[cfg(all(test, not(feature = "usb-device")))]
+use tests::{ck_hid_poll, ck_hid_reset, device_delay, device_get_tick};
 // Separate endpoint-owned buffers: progress runs while poll borrows OUTGOING.
 static mut OUTGOING: [u8; 64] = [0; 64];
 static mut CONTROL: [u8; 64] = [0; 64];
@@ -97,8 +102,7 @@ pub unsafe extern "C" fn ck_hid_busy() -> u8 {
 pub unsafe extern "C" fn ck_hid_executing() -> u8 {
     unsafe { u8::from(LINK.executing) }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_execution_begin(cid: u32) {
+pub unsafe fn ck_hid_execution_begin(cid: u32) {
     unsafe {
         LINK.executing_cid = cid;
         LINK.execution_epoch = ck_hid_io_epoch();
@@ -134,8 +138,9 @@ unsafe fn send_control(cid: u32, command: u8, value: u8, epoch: u32) {
 }
 /// Service competing HID traffic while another transport borrows Core.
 /// No transport poll/reset or session cleanup is allowed on this call path.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_foreign_progress() {
+#[cfg(any(feature = "usb-device", test))]
+#[cfg_attr(all(test, feature = "usb-device"), allow(dead_code))]
+pub unsafe fn ck_hid_foreign_progress() {
     unsafe {
         if LINK.executing
             || ck_hid_io_reset_pending() != 0
@@ -204,8 +209,7 @@ pub unsafe extern "C" fn ck_hid_progress() -> u8 {
         u8::from(!LINK.abandon)
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_execution_end() {
+pub unsafe fn ck_hid_execution_end() {
     unsafe {
         while ck_hid_io_reset_pending() == 0 && ck_hid_io_idle() == 0 {
             if device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
@@ -312,5 +316,3 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         0
     }
 }
-
-// Keep the fixture swap point's imported and exported ABI signatures checked.

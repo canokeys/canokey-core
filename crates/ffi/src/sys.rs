@@ -28,6 +28,7 @@ unsafe extern "C" {
     #[cfg(feature = "device-runtime")]
     pub(crate) fn ck_platform_led(on: u8);
     #[cfg(any(feature = "device-runtime", feature = "usb-hid"))]
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn device_delay(milliseconds: i32);
     #[cfg(all(feature = "device-runtime", feature = "storage"))]
     pub(crate) fn ck_storage_init() -> i32;

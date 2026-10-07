@@ -38,6 +38,8 @@ mod platform;
 mod runtime;
 mod sys;
 mod transport;
+#[cfg(feature = "ctap")]
+pub use transport::hid::command::{ck_hid_poll, ck_hid_reset};
 #[cfg(feature = "usb-keyboard")]
 pub use transport::keyboard::ck_keyboard_loop;
 // The FFI crate is the C-facing facade; re-export the core's public port types

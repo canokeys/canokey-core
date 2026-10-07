@@ -3,7 +3,12 @@
 #[cfg(feature = "usb-device")]
 pub(crate) use super::usb::{ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle};
 
-#[cfg(not(feature = "usb-device"))]
+#[cfg(all(test, feature = "usb-hid", not(feature = "usb-device")))]
+pub(crate) use super::hid::link::tests::{
+    ck_usb_configured, ck_usb_receive, ck_usb_submit, ck_usb_tx_idle,
+};
+
+#[cfg(not(any(feature = "usb-device", all(test, feature = "usb-hid"))))]
 #[cfg_attr(test, allow(dead_code))]
 unsafe extern "C" {
     pub(crate) fn ck_usb_configured() -> u8;
