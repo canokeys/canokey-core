@@ -8,19 +8,11 @@ extern crate self as canokey_rust_core;
 mod sys;
 #[path = "../../crates/protocol/src/ctaphid.rs"]
 pub mod ctaphid;
-#[path = "../../crates/core/src/runtime/keyboard.rs"]
-pub mod keyboard_policy;
 #[path = "../../crates/protocol/src/usb.rs"]
 pub mod usb;
-pub mod runtime {
-    pub use crate::keyboard_policy as keyboard;
-}
 #[cfg(hid_fixture)]
 #[path = "../../crates/ffi/src/transport/hid/link.rs"]
 mod hid_link;
-#[cfg(keyboard_fixture)]
-#[path = "../../crates/ffi/src/transport/keyboard/mod.rs"]
-mod keyboard;
 
 #[cfg(feature = "usb-webusb")]
 mod webusb_link {
@@ -51,16 +43,6 @@ mod command {
         pub fn ck_hid_poll(input: *const [u8; 64], received: u32, now: u32, output: *mut [u8; 64]) -> u8;
     }
 }
-#[cfg(keyboard_fixture)]
-mod abi {
-    pub(crate) mod core {
-        unsafe extern "C" {
-            pub fn ck_core_keyboard_usage(ch: u8) -> i32;
-            pub fn ck_core_output_cancel(pressed: u8);
-            pub fn ck_core_output_sample(pressed: u8, now: u32, ready: u8) -> i32;
-        }
-    }
-}
 
 mod transport {
     pub(crate) use crate::usb_lock::usb_locked;
@@ -70,20 +52,6 @@ mod transport {
             pub fn ck_usb_tx_idle(endpoint: u8) -> u8;
             pub fn ck_usb_submit(endpoint: u8, bytes: *const u8, length: u16, zlp: u8) -> i32;
             pub fn ck_usb_receive(endpoint: u8);
-        }
-    }
-    #[cfg(keyboard_fixture)]
-    pub(crate) mod ccid {
-        unsafe extern "C" {
-            pub fn ck_ccid_scratch_busy() -> u8;
-        }
-    }
-    #[cfg(keyboard_fixture)]
-    pub(crate) mod hid {
-        pub(crate) mod link {
-            unsafe extern "C" {
-                pub fn ck_hid_busy() -> u8;
-            }
         }
     }
     #[cfg(feature = "usb-webusb")]

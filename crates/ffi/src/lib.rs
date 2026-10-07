@@ -33,6 +33,8 @@ mod platform;
 mod runtime;
 mod sys;
 mod transport;
+#[cfg(feature = "usb-keyboard")]
+pub use transport::keyboard::ck_keyboard_loop;
 // The FFI crate is the C-facing facade; re-export the core's public port types
 // so platform adapters and generated bindings share one type namespace.
 pub use canokey_rust_core::{Core, Platform, Reply, ports};

@@ -10,20 +10,16 @@ pub unsafe extern "C" fn ck_keyboard_packet_reset() {
         EPOCH = EPOCH.wrapping_add(1);
     });
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_keyboard_io_epoch() -> u32 {
+pub unsafe fn ck_keyboard_io_epoch() -> u32 {
     unsafe { core::ptr::read_volatile(core::ptr::addr_of!(EPOCH)) }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_keyboard_io_configured() -> u8 {
+pub unsafe fn ck_keyboard_io_configured() -> u8 {
     usb_locked(|| unsafe { ck_usb_configured() })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_keyboard_io_idle() -> u8 {
+pub unsafe fn ck_keyboard_io_idle() -> u8 {
     usb_locked(|| unsafe { ck_usb_tx_idle(EP_KEYBOARD_IN) })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_keyboard_io_send(report: *const u8, length: u8, generation: u32) -> u8 {
+pub unsafe fn ck_keyboard_io_send(report: *const u8, length: u8, generation: u32) -> u8 {
     usb_locked(|| unsafe {
         // Report ID1 plus seven keyboard bytes, or ID2 plus one consumer byte.
         let ok = generation == EPOCH
