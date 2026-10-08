@@ -1,4 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
+if(CANOKEY_APPLET_ADMIN OR CANOKEY_APPLET_PASS OR CANOKEY_APPLET_OATH OR
+   CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP OR CANOKEY_APPLET_NDEF)
+  find_package(OpenSSL REQUIRED)
+  add_library(card-crypto STATIC ${CANOKEY_ROOT}/crates/host/native/crypto.c)
+  target_link_libraries(card-crypto PRIVATE OpenSSL::Crypto)
+  target_include_directories(card-crypto PRIVATE ${CANOKEY_ROOT}/native/include)
+  target_compile_options(card-crypto PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+  if(CANOKEY_APDU_REPLAY AND CANOKEY_HOST_SANITIZERS)
+    target_compile_options(card-crypto PRIVATE -fno-omit-frame-pointer -fsanitize=address,undefined)
+  endif()
+endif()
 if(CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
   find_package(OpenSSL REQUIRED)
   set(USE_MBEDCRYPTO ON CACHE BOOL "" FORCE)

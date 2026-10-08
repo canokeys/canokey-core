@@ -7,7 +7,7 @@ fn main() {
                 if variable == "CANOKEY_HOST_LINK_LIBRARIES" {
                     println!("cargo:rerun-if-changed={argument}");
                 }
-                println!("cargo:rustc-link-arg-bin=canokey-test-card={argument}");
+                println!("cargo:rustc-link-arg-bins={argument}");
             }
         }
     }

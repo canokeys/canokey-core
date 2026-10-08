@@ -36,46 +36,6 @@ if(BUILD_TESTING)
      CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP OR CANOKEY_APPLET_NDEF)
     find_package(OpenSSL REQUIRED)
   endif()
-  if(TARGET OpenSSL::Crypto)
-    add_library(card-crypto STATIC ${CANOKEY_ROOT}/crates/host/native/crypto.c)
-    target_link_libraries(card-crypto PRIVATE OpenSSL::Crypto)
-    target_include_directories(card-crypto PRIVATE ${CANOKEY_ROOT}/native/include)
-    target_compile_options(card-crypto PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-  endif()
-  function(add_rust_card target restricted)
-    string(REPLACE "," ";" card_features "${FEATURES}")
-    list(REMOVE_ITEM card_features host-runtime static-backend dynamic-backend)
-    if(restricted)
-      list(APPEND card_features ctap-restrict-algorithms)
-    endif()
-    list(JOIN card_features "," card_features)
-    set(card_libraries "$<TARGET_FILE:card-crypto>")
-    set(card_dependencies card-crypto)
-    if(TARGET host-key-services)
-      string(APPEND card_libraries "|$<TARGET_FILE:host-key-services>|$<TARGET_FILE:canokey-crypto>|$<TARGET_FILE:tfpsacrypto>")
-      list(APPEND card_dependencies host-key-services canokey-crypto tfpsacrypto)
-    endif()
-    string(APPEND card_libraries "|$<TARGET_FILE:OpenSSL::Crypto>")
-    separate_arguments(card_options NATIVE_COMMAND "${CMAKE_EXE_LINKER_FLAGS}")
-    get_directory_property(directory_options LINK_OPTIONS)
-    list(APPEND card_options ${directory_options} -lm)
-    list(JOIN card_options "|" card_options)
-    set(card_image "${CMAKE_CURRENT_BINARY_DIR}/${target}")
-    add_custom_target(${target}-build ALL
-      COMMAND "${CMAKE_COMMAND}" -E env
-        "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
-        "CANOKEY_HOST_LINK_LIBRARIES=${card_libraries}" "CANOKEY_HOST_LINK_OPTIONS=${card_options}"
-        ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc --manifest-path ${CANOKEY_ROOT}/tests/card/Cargo.toml
-        --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-${target} --profile host-test
-        --features "${card_features}" --bin canokey-test-card
-        -- -C "linker=${CMAKE_C_COMPILER}" -C default-linker-libraries=yes
-      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-        ${CMAKE_CURRENT_BINARY_DIR}/cargo-${target}/host-test/canokey-test-card "${card_image}"
-      BYPRODUCTS "${card_image}" DEPENDS ${card_dependencies} VERBATIM)
-    add_executable(${target} IMPORTED GLOBAL)
-    set_target_properties(${target} PROPERTIES IMPORTED_LOCATION "${card_image}")
-    add_dependencies(${target} ${target}-build)
-  endfunction()
   add_executable(core-normal ${CANOKEY_ROOT}/tests/support/normal.c)
   set(expected_applet_count 0)
   foreach(applet ADMIN OATH OPENPGP PIV CTAP NDEF)

@@ -9,6 +9,8 @@ the owning crate. `tests/integration/` holds Python end-to-end regressions;
 They construct the real Core with Rust record/clock fakes and native C crypto;
 they do not call the core C ABI. The LittleFS capacity fixture retains its C
 storage harness and the same independent Python checks.
+The Rust `apdu-replay` binary uses the same composition and retains the existing
+line protocol, response draining, slot-power and fault-injection controls.
 
 ## Prerequisites
 

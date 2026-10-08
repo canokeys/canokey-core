@@ -2,16 +2,7 @@
 # Host tools remain available when only regression execution is disabled.
 find_package(OpenSSL REQUIRED)
 if(CANOKEY_APDU_REPLAY)
-  add_executable(apdu-replay ${CANOKEY_ROOT}/crates/host/native/replay.c ${CANOKEY_ROOT}/tests/support/services.c)
-  target_compile_definitions(apdu-replay PRIVATE WITH_CTAP WITH_PASS WITH_OATH WITH_OPENPGP WITH_PIV WITH_NDEF)
-  target_compile_options(apdu-replay PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-  option(CANOKEY_HOST_SANITIZERS "Enable ASan/UBSan in host replay adapters" ON)
-  if(CANOKEY_HOST_SANITIZERS)
-    target_compile_options(apdu-replay PRIVATE -fno-omit-frame-pointer -fsanitize=address,undefined)
-    target_link_options(apdu-replay PRIVATE -fsanitize=address,undefined)
-  endif()
-  target_link_libraries(apdu-replay PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
-  set_target_properties(apdu-replay PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  add_rust_card(apdu-replay FALSE apdu-replay)
   if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME apdu-replay COMMAND "${Python3_EXECUTABLE}"

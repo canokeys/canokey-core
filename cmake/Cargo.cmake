@@ -31,3 +31,54 @@ function(add_rust_host_archive target build_target directory features)
   INTERFACE_INCLUDE_DIRECTORIES "${CANOKEY_ROOT}/native/include")
   add_dependencies(${target} ${build_target})
 endfunction()
+
+function(add_rust_card target restricted)
+  set(card_binary canokey-test-card)
+  if(ARGV2)
+    set(card_binary "${ARGV2}")
+  endif()
+  string(REPLACE "," ";" card_features "${FEATURES}")
+  list(REMOVE_ITEM card_features host-runtime static-backend dynamic-backend)
+  if(restricted)
+    list(APPEND card_features ctap-restrict-algorithms)
+  endif()
+  if(card_binary STREQUAL "apdu-replay")
+    list(APPEND card_features replay)
+  endif()
+  list(JOIN card_features "," card_features)
+  set(card_libraries "$<TARGET_FILE:card-crypto>")
+  set(card_dependencies card-crypto)
+  if(TARGET host-key-services)
+    string(APPEND card_libraries "|$<TARGET_FILE:host-key-services>|$<TARGET_FILE:canokey-crypto>|$<TARGET_FILE:tfpsacrypto>")
+    list(APPEND card_dependencies host-key-services canokey-crypto tfpsacrypto)
+  endif()
+  string(APPEND card_libraries "|$<TARGET_FILE:OpenSSL::Crypto>")
+  separate_arguments(card_options NATIVE_COMMAND "${CMAKE_EXE_LINKER_FLAGS}")
+  get_directory_property(directory_options LINK_OPTIONS)
+  list(APPEND card_options ${directory_options} -lm)
+  if(CANOKEY_APDU_REPLAY AND CANOKEY_HOST_SANITIZERS)
+    list(APPEND card_options -fsanitize=address,undefined)
+  endif()
+  if(ARGV3)
+    list(APPEND card_options ${ARGV3})
+  endif()
+  list(JOIN card_options "|" card_options)
+  set(card_image "${CMAKE_CURRENT_BINARY_DIR}/${target}")
+  if(card_binary STREQUAL "apdu-replay")
+    set(card_image "${CMAKE_BINARY_DIR}/${target}")
+  endif()
+  add_custom_target(${target}-build ALL
+    COMMAND "${CMAKE_COMMAND}" -E env
+      "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
+      "CANOKEY_HOST_LINK_LIBRARIES=${card_libraries}" "CANOKEY_HOST_LINK_OPTIONS=${card_options}"
+      ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc --manifest-path ${CANOKEY_ROOT}/tests/card/Cargo.toml
+      --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-${target} --profile host-test
+      --features "${card_features}" --bin ${card_binary}
+      -- -C "linker=${CMAKE_C_COMPILER}" -C default-linker-libraries=yes
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      ${CMAKE_CURRENT_BINARY_DIR}/cargo-${target}/host-test/${card_binary} "${card_image}"
+    BYPRODUCTS "${card_image}" DEPENDS ${card_dependencies} VERBATIM)
+  add_executable(${target} IMPORTED GLOBAL)
+  set_target_properties(${target} PROPERTIES IMPORTED_LOCATION "${card_image}")
+  add_dependencies(${target} ${target}-build)
+endfunction()
