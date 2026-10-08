@@ -1,12 +1,71 @@
 // SPDX-License-Identifier: Apache-2.0
 //! C platform adapters split by capability. The safe core sees only typed ports.
 
-use canokey_ports::native::{CryptoBackend, DeviceBackend, MemoryBackend, StorageBackend};
-use canokey_ports::{BackendTypes, CryptoPort, DevicePort, MemoryPort, StoragePort};
+#[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
+use canokey_ports::BackendTypes;
+use canokey_ports::native::{
+    CryptoBackend, DeviceBackend, DeviceRuntime, MemoryBackend, StorageBackend,
+};
 use canokey_rust_core::ports::Platform;
 
-pub(crate) type BoundPlatform<'a> =
-    Platform<'a, BackendTypes<StoragePort<'a>, CryptoPort<'a>, DevicePort<'a>, MemoryPort<'a>>>;
+#[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
+pub(crate) type BoundPlatform<'a> = Platform<
+    'a,
+    BackendTypes<StorageBackend, CryptoBackend, DeviceBackend<Runtime>, MemoryBackend>,
+>;
+#[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
+pub(crate) type BoundPlatform<'a> = Platform<'a>;
+
+pub(crate) struct Runtime;
+impl DeviceRuntime for Runtime {
+    fn settings(flags: u32) {
+        #[cfg(feature = "device-runtime")]
+        unsafe {
+            crate::runtime::device::ck_device_settings(flags)
+        };
+        #[cfg(not(feature = "device-runtime"))]
+        let _ = flags;
+    }
+    fn led_idle() {
+        #[cfg(feature = "device-runtime")]
+        unsafe {
+            crate::runtime::device::ck_device_led_idle()
+        };
+    }
+    fn progress() -> bool {
+        #[cfg(feature = "device-runtime")]
+        {
+            unsafe { crate::runtime::device::ck_device_progress() != 0 }
+        }
+        #[cfg(not(feature = "device-runtime"))]
+        {
+            false
+        }
+    }
+    fn serial(out: &mut [u8; 4]) {
+        #[cfg(all(feature = "device-runtime", feature = "platform-serial"))]
+        unsafe {
+            crate::runtime::device::ck_device_serial(out.as_mut_ptr())
+        };
+        #[cfg(not(all(feature = "device-runtime", feature = "platform-serial")))]
+        let _ = out;
+    }
+    fn keepalive(waiting: bool) {
+        #[cfg(feature = "usb-hid")]
+        unsafe {
+            crate::transport::hid::link::ck_hid_keepalive(u8::from(waiting))
+        };
+        #[cfg(not(feature = "usb-hid"))]
+        let _ = waiting;
+    }
+}
+
+// Retained for the C storage fixture until its platform composition moves.
+#[cfg(feature = "ctap")]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ck_core_presence_sample() {
+    unsafe { canokey_ports::native::presence_sample::<Runtime>() }
+}
 
 pub(crate) fn with_platform<T>(run: impl FnOnce(&mut BoundPlatform<'_>) -> T) -> T {
     // SAFETY: callers are the serialized C entrypoints or their main-loop
@@ -15,7 +74,7 @@ pub(crate) fn with_platform<T>(run: impl FnOnce(&mut BoundPlatform<'_>) -> T) ->
         (
             StorageBackend::new(),
             CryptoBackend::new(),
-            DeviceBackend::new(),
+            DeviceBackend::<Runtime>::new(),
         )
     };
     run(&mut Platform::new(

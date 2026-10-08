@@ -62,6 +62,14 @@ const WINK_INTERVAL_MS: u32 = 50;
 #[cfg(feature = "ctap")]
 const PROMPT_INTERVAL_MS: u32 = 100;
 
+#[cfg(feature = "ctap")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Prompt {
+    Idle,
+    Presence,
+    Wink,
+}
+
 /// CTAP1 polling observes completed gestures between commands. The latch has
 /// the same one-second lifetime as the C touch driver and is consumed once.
 #[cfg(feature = "ctap")]
@@ -70,8 +78,11 @@ pub struct Polling {
     // the blocking waiter's timing state or strong factory-reset sequence.
     armed: bool,
     pressed: bool,
-    released: Option<u32>,
-    prompt: Option<(u32, bool)>,
+    // Explicit validity keeps idle state zero-initialized and avoids timestamp padding.
+    released_at: u32,
+    prompt_at: u32,
+    release_pending: bool,
+    prompt: Prompt,
 }
 #[cfg(feature = "ctap")]
 impl Polling {
@@ -79,24 +90,27 @@ impl Polling {
         Self {
             armed: false,
             pressed: false,
-            released: None,
-            prompt: None,
+            released_at: 0,
+            prompt_at: 0,
+            release_pending: false,
+            prompt: Prompt::Idle,
         }
     }
     pub fn sample(&mut self, pressed: bool, now: u32) -> Option<bool> {
         if self.armed && self.pressed && !pressed {
-            self.released = Some(now);
+            self.released_at = now;
+            self.release_pending = true;
         }
         self.armed |= !pressed;
         self.pressed = pressed;
-        if self
-            .released
-            .is_some_and(|t| now.wrapping_sub(t) >= POLL_LATCH_MS)
-        {
-            self.released = None;
+        if self.release_pending && now.wrapping_sub(self.released_at) >= POLL_LATCH_MS {
+            self.release_pending = false;
         }
-        self.prompt.map(|(start, wink)| {
-            let elapsed = now.wrapping_sub(start);
+        if self.prompt == Prompt::Idle {
+            None
+        } else {
+            let elapsed = now.wrapping_sub(self.prompt_at);
+            let wink = self.prompt == Prompt::Wink;
             let duration = if wink { WINK_MS } else { PROMPT_MS };
             let interval = if wink {
                 WINK_INTERVAL_MS
@@ -104,33 +118,35 @@ impl Polling {
                 PROMPT_INTERVAL_MS
             };
             if elapsed >= duration {
-                self.prompt = None;
+                self.prompt = Prompt::Idle;
             }
-            elapsed < duration && (elapsed / interval).is_multiple_of(2)
-        })
+            Some(elapsed < duration && (elapsed / interval).is_multiple_of(2))
+        }
     }
     pub fn take(&mut self, now: u32) -> bool {
-        if self
-            .released
-            .take()
-            .is_some_and(|t| now.wrapping_sub(t) < POLL_LATCH_MS)
-        {
-            self.prompt = None;
+        let accepted = self.release_pending && now.wrapping_sub(self.released_at) < POLL_LATCH_MS;
+        self.release_pending = false;
+        if accepted {
+            self.prompt = Prompt::Idle;
             true
         } else {
-            self.prompt.get_or_insert((now, false));
+            if self.prompt == Prompt::Idle {
+                self.prompt_at = now;
+                self.prompt = Prompt::Presence;
+            }
             false
         }
     }
     pub fn prompt_active(&self) -> bool {
-        self.prompt.is_some()
+        self.prompt != Prompt::Idle
     }
     pub fn wink(&mut self, now: u32) {
-        self.prompt = Some((now, true));
+        self.prompt_at = now;
+        self.prompt = Prompt::Wink;
     }
     pub fn clear(&mut self) {
-        self.released = None;
-        self.prompt = None;
+        self.release_pending = false;
+        self.prompt = Prompt::Idle;
         self.armed = false;
         self.pressed = false;
     }

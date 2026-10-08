@@ -379,6 +379,47 @@ fn polling_presence_is_fresh_single_use_and_expires() {
     assert!(!touch.take(4));
 }
 
+#[test]
+fn polling_prompt_deadlines_survive_repeated_requests_and_clock_wrap() {
+    use canokey_rust_core::runtime::Polling;
+    // Presence flashes every 100 ms for 2 s; wink every 50 ms for 1 s.
+    const PRESENCE_INTERVAL_MS: u32 = 100;
+    const PRESENCE_DURATION_MS: u32 = 2_000;
+    const WINK_INTERVAL_MS: u32 = 50;
+    const WINK_DURATION_MS: u32 = 1_000;
+    for start in [0, u32::MAX - 10] {
+        let mut touch = Polling::new();
+        assert!(!touch.take(start));
+        assert_eq!(touch.sample(false, start), Some(true));
+        let off = start.wrapping_add(PRESENCE_INTERVAL_MS);
+        assert!(!touch.take(off));
+        assert_eq!(touch.sample(false, off), Some(false));
+        assert_eq!(
+            touch.sample(false, start.wrapping_add(PRESENCE_DURATION_MS)),
+            Some(false)
+        );
+        assert!(!touch.prompt_active());
+        assert_eq!(
+            touch.sample(false, start.wrapping_add(PRESENCE_DURATION_MS + 1)),
+            None
+        );
+        touch.wink(start);
+        assert!(!touch.take(start.wrapping_add(1)));
+        assert_eq!(
+            touch.sample(false, start.wrapping_add(WINK_INTERVAL_MS)),
+            Some(false)
+        );
+        assert_eq!(
+            touch.sample(false, start.wrapping_add(WINK_DURATION_MS)),
+            Some(false)
+        );
+        assert!(!touch.prompt_active());
+        touch.wink(start);
+        touch.clear();
+        assert_eq!(touch.sample(false, start), None);
+    }
+}
+
 impl Memory {
     fn override_response(&mut self) -> Option<usize> {
         let length = self.response_length?;

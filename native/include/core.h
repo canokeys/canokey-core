@@ -23,7 +23,6 @@ uint8_t ck_hid_active(void);
 /* Serialized Rust transport callbacks; never reenter applet state or use PKE. */
 uint8_t ck_hid_executing(void);
 uint8_t ck_hid_progress(void);
-void ck_hid_keepalive(uint8_t waiting);
 /* Main-loop admission only: may inspect Core after completed USB transfers.
  * Never call while a Core entrypoint is borrowed (including progress/IRQ). */
 uint8_t ck_ccid_idle(void);

@@ -50,7 +50,8 @@ impl Link {
             executing: false,
             cancelled: false,
             abandon: false,
-            keepalive_status: wire::STATUS_PROCESSING,
+            // Execution begin supplies the wire status before any keepalive.
+            keepalive_status: 0,
         }
     }
 }
@@ -114,8 +115,7 @@ pub unsafe fn ck_hid_execution_begin(cid: u32) {
         LINK.keepalive_at = device_get_tick().wrapping_sub(KEEPALIVE_INTERVAL_MS) /* First keepalive is immediately due. */;
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_keepalive(waiting: u8) {
+pub unsafe fn ck_hid_keepalive(waiting: u8) {
     unsafe {
         LINK.keepalive_status = if waiting != 0 {
             wire::STATUS_UPNEEDED

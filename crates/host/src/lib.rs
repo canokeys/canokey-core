@@ -3,7 +3,7 @@
 //! maintain packet state but never reenter applet execution or hold HOST borrows.
 #[cfg(target_os = "none")]
 compile_error!("the virtual-card host must never be linked into firmware");
-use canokey_ports::native::ck_core_presence_sample;
+use canokey_rust_ffi::ck_core_presence_sample;
 #[cfg(feature = "pcsc-plugin")]
 use canokey_rust_ffi::ck_core_slot_power;
 use canokey_rust_ffi::{

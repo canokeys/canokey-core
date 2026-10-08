@@ -8,9 +8,6 @@ mod memory;
 pub mod native;
 #[cfg(any(feature = "oath", feature = "piv"))]
 pub use binding::copy_to_stage;
-pub use binding::{
-    BackendTypes, Backends, CryptoPort, DevicePort, DynamicBackends, MemoryPort, Platform,
-    StoragePort, default_memory,
-};
+pub use binding::{BackendTypes, Backends, DynamicBackends, Platform, default_memory};
 pub use contracts::*;
 pub use memory::MemoryBackend;

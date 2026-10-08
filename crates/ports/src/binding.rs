@@ -1,26 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Static firmware binding and injectable host binding share the same contracts.
-//! `static-backend` alone selects concrete native adapters. `dynamic-backend`
-//! selects trait objects and takes precedence when both features are enabled;
-//! neither feature also selects trait objects.
-
-#[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
-pub type StoragePort<'a> = crate::native::StorageBackend;
-#[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
-pub type StoragePort<'a> = dyn crate::Storage + 'a;
-#[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
-pub type CryptoPort<'a> = crate::native::CryptoBackend;
-#[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
-pub type CryptoPort<'a> = dyn crate::Crypto + 'a;
-
-#[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
-pub type DevicePort<'a> = crate::native::DeviceBackend;
-#[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
-pub type DevicePort<'a> = dyn crate::Device + 'a;
-#[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
-pub type MemoryPort<'a> = crate::MemoryBackend;
-#[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
-pub type MemoryPort<'a> = dyn crate::Memory + 'a;
+//! Backend families and capability borrows, independent of outer composition.
 
 /// Disjoint capabilities assembled at the boundary. Borrow individual fields;
 /// never wrap the entire platform in an interior-mutable shared handle.

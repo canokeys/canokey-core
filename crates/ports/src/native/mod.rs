@@ -11,7 +11,7 @@ pub use storage::StorageBackend;
 #[cfg(feature = "native-backend")]
 mod device;
 pub use crate::MemoryBackend;
-#[cfg(feature = "native-backend")]
-pub use device::DeviceBackend;
 #[cfg(all(feature = "native-backend", feature = "ctap"))]
-pub use device::ck_core_presence_sample;
+pub use device::presence_sample;
+#[cfg(feature = "native-backend")]
+pub use device::{DeviceBackend, DeviceRuntime};

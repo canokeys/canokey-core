@@ -5,9 +5,18 @@ use crate::contracts::board_info_kind;
 
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.
-pub struct DeviceBackend(core::marker::PhantomData<*mut ()>);
+pub struct DeviceBackend<R: DeviceRuntime>(core::marker::PhantomData<(*mut (), R)>);
 
-impl DeviceBackend {
+/// Rust-owned lifecycle hooks supplied by the outer runtime composition.
+pub trait DeviceRuntime {
+    fn settings(flags: u32);
+    fn led_idle();
+    fn progress() -> bool;
+    fn serial(out: &mut [u8; 4]);
+    fn keepalive(waiting: bool);
+}
+
+impl<R: DeviceRuntime> DeviceBackend<R> {
     /// # Safety
     /// All native platform access, including callbacks and other backend values,
     /// must remain serialized for this value's entire lifetime. Native global
@@ -18,21 +27,14 @@ impl DeviceBackend {
 }
 #[cfg(feature = "device-runtime")]
 unsafe extern "C" {
-    fn ck_device_settings(flags: u32);
     fn ck_board_info(kind: u8, length: *mut usize) -> *const u8;
     fn ck_board_chip_id(output: *mut u8);
     fn ck_board_recovery_word() -> u32;
-    #[cfg(feature = "platform-device")]
-    fn ck_device_led_idle();
-    #[cfg(feature = "platform-device")]
-    fn ck_device_progress() -> u8;
 }
 #[cfg(feature = "platform-device")]
-fn idle_led() {
+fn idle_led<R: DeviceRuntime>() {
     #[cfg(feature = "device-runtime")]
-    unsafe {
-        ck_device_led_idle();
-    }
+    R::led_idle();
     #[cfg(not(feature = "device-runtime"))]
     unsafe {
         ck_platform_led(0);
@@ -56,20 +58,13 @@ unsafe extern "C" {
 unsafe extern "C" {
     #[cfg(not(feature = "device-runtime"))]
     fn ck_platform_serial(out: *mut u8);
-    #[cfg(feature = "device-runtime")]
-    fn ck_device_serial(out: *mut u8);
-}
-#[cfg(feature = "ctap")]
-unsafe extern "C" {
-    fn ck_hid_keepalive(waiting: u8);
 }
 #[cfg(feature = "ctap")]
 static mut PRESENCE: crate::Polling = crate::Polling::new();
 
 // Main loop only, including while neither transport owns a core session.
 #[cfg(feature = "ctap")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_core_presence_sample() {
+pub unsafe fn presence_sample<R: DeviceRuntime>() {
     #[cfg(feature = "nfc")]
     if unsafe { is_nfc() != 0 } {
         return;
@@ -78,14 +73,14 @@ pub unsafe extern "C" fn ck_core_presence_sample() {
         let poll = &mut *core::ptr::addr_of_mut!(PRESENCE);
         if let Some(on) = poll.sample(ck_platform_touched() != 0, ck_platform_now()) {
             if !poll.prompt_active() {
-                idle_led();
+                idle_led::<R>();
             } else {
                 ck_platform_led(u8::from(on));
             }
         }
     }
 }
-impl Device for DeviceBackend {
+impl<R: DeviceRuntime> Device for DeviceBackend<R> {
     fn recovery_word(&mut self) -> Option<u32> {
         #[cfg(feature = "device-runtime")]
         {
@@ -139,15 +134,13 @@ impl Device for DeviceBackend {
 
     fn configuration_changed(&mut self, flags: u32) {
         #[cfg(feature = "device-runtime")]
-        unsafe {
-            ck_device_settings(flags);
-        }
+        R::settings(flags);
         #[cfg(not(feature = "device-runtime"))]
         let _ = flags;
     }
     fn led_idle(&mut self) {
         #[cfg(feature = "platform-device")]
-        idle_led();
+        idle_led::<R>();
     }
     fn contactless(&mut self) -> bool {
         #[cfg(feature = "nfc")]
@@ -170,7 +163,7 @@ impl Device for DeviceBackend {
         unsafe {
             let accepted = (&mut *core::ptr::addr_of_mut!(PRESENCE)).take(ck_platform_now());
             if accepted {
-                idle_led();
+                idle_led::<R>();
             }
             accepted
         }
@@ -181,9 +174,7 @@ impl Device for DeviceBackend {
             return;
         }
         #[cfg(feature = "ctap")]
-        unsafe {
-            ck_hid_keepalive(u8::from(waiting))
-        };
+        R::keepalive(waiting);
         #[cfg(not(feature = "ctap"))]
         let _ = waiting;
     }
@@ -191,9 +182,7 @@ impl Device for DeviceBackend {
         #[cfg(feature = "platform-serial")]
         {
             #[cfg(feature = "device-runtime")]
-            unsafe {
-                ck_device_serial(out.as_mut_ptr())
-            }
+            R::serial(out);
             #[cfg(not(feature = "device-runtime"))]
             unsafe {
                 ck_platform_serial(out.as_mut_ptr())
@@ -237,7 +226,7 @@ impl Device for DeviceBackend {
         {
             #[cfg(feature = "device-runtime")]
             {
-                unsafe { ck_device_progress() != 0 }
+                R::progress()
             }
             #[cfg(not(feature = "device-runtime"))]
             {

@@ -163,7 +163,6 @@ int32_t ck_platform_aes256(uint8_t encrypt, const uint8_t key[32], const uint8_t
 #if defined(WITH_CTAP) && !defined(WITH_HID)
 /* The host card uses APDUs; native USB/PKE entrypoints must stay unused. */
 uint8_t ck_ccid_idle(void) { return 1; }
-void ck_hid_keepalive(uint8_t waiting) { (void)waiting; }
 void ck_hid_execution_begin(uint32_t cid) { (void)cid; assert(0); }
 void ck_hid_execution_end(void) { assert(0); }
 size_t pke_buffer_size(void) { return 0; }

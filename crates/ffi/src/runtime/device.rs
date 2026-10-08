@@ -16,7 +16,7 @@ const CLOCK_USB_OPERATING: u8 = 2;
 // Keep the count aligned with CK_BOARD_CRYPTO_CHECK_COUNT when adding a check.
 const CRYPTO_CHECK_COUNT: u8 = 3;
 #[cfg(all(feature = "ctap", not(test)))]
-use canokey_ports::native::ck_core_presence_sample;
+use crate::platform::ck_core_presence_sample;
 use hal::ck_board_clock;
 use hal::ck_board_crypto_check;
 #[cfg(feature = "nfc")]
@@ -38,8 +38,7 @@ use hal::device_delay;
 #[cfg(all(feature = "ctap", test))]
 use tests::ck_core_presence_sample;
 static mut LED_DEFAULT: bool = true;
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_device_led_idle() {
+pub unsafe fn ck_device_led_idle() {
     unsafe {
         #[cfg(feature = "nfc")]
         if transport::nfc::is_nfc() != 0 {
@@ -48,16 +47,14 @@ pub unsafe extern "C" fn ck_device_led_idle() {
         ck_platform_led(LED_DEFAULT as u8);
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_device_settings(flags: u32) {
+pub unsafe fn ck_device_settings(flags: u32) {
     unsafe {
         LED_DEFAULT = flags & config::LED != 0;
         transport::usb::ck_usb_set_landing(u8::from(flags & config::WEBUSB != 0));
         ck_device_led_idle();
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_device_progress() -> u8 {
+pub unsafe fn ck_device_progress() -> u8 {
     unsafe {
         device_delay(1);
         transport::usb::ck_transport_progress()
@@ -194,8 +191,7 @@ unsafe fn run() -> Stop {
 }
 
 #[cfg(feature = "platform-serial")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_device_serial(out: *mut u8) {
+pub unsafe fn ck_device_serial(out: *mut u8) {
     if out.is_null() {
         return;
     }

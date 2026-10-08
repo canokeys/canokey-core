@@ -39,6 +39,8 @@ mod runtime;
 mod sys;
 mod transport;
 pub use abi::core::{ck_core_exchange, ck_core_install, ck_core_reset, ck_core_slot_power};
+#[cfg(feature = "ctap")]
+pub use platform::ck_core_presence_sample;
 #[cfg(feature = "usb-ccid")]
 pub use transport::ccid::CCID_Loop;
 #[cfg(feature = "ctap")]
