@@ -2,7 +2,7 @@
 //! Native-endian platform page ABI, matching the existing 512-byte config page.
 //! The loader owns bytes 0..4. Never include them in the CRC or reset them.
 #![forbid(unsafe_code)]
-use crate::ports::{StorageError, StoragePort};
+use crate::ports::{Storage, StorageError};
 pub const INITIALIZED: u32 = 1;
 pub const NFC: u32 = 1 << 1;
 pub const LED: u32 = 1 << 2;
@@ -66,10 +66,10 @@ fn crc(bytes: &[u8]) -> u32 {
 }
 impl Page {
     #[inline(always)]
-    fn with_page<T>(
-        s: &mut StoragePort<'_>,
+    fn with_page<T, S: Storage + ?Sized>(
+        s: &mut S,
         repair: bool,
-        run: impl FnOnce(&mut Self, &mut StoragePort<'_>, bool) -> Result<T, StorageError>,
+        run: impl FnOnce(&mut Self, &mut S, bool) -> Result<T, StorageError>,
     ) -> Result<T, StorageError> {
         let mut page = Self([0xff; PAGE_BYTES]);
         let persisted = page.load(s, repair)?;
@@ -102,7 +102,7 @@ impl Page {
         self.0[KEYMAP_OFFSET..KEYMAP_END].fill(0);
         // Read-only defaults need no checksum; commit seals after all edits.
     }
-    fn commit(&mut self, s: &mut StoragePort<'_>) -> Result<(), StorageError> {
+    fn commit(&mut self, s: &mut (impl Storage + ?Sized)) -> Result<(), StorageError> {
         // Loader state can change independently of the core metadata.
         match s.config_read(0, &mut self.0[..MAGIC_OFFSET]) {
             Ok(()) | Err(StorageError::Missing) => (),
@@ -112,7 +112,11 @@ impl Page {
         s.config_write(&self.0)
     }
     // True means the page was already valid on storage, not synthesized defaults.
-    fn load(&mut self, s: &mut StoragePort<'_>, repair: bool) -> Result<bool, StorageError> {
+    fn load(
+        &mut self,
+        s: &mut (impl Storage + ?Sized),
+        repair: bool,
+    ) -> Result<bool, StorageError> {
         match s.config_read(0, &mut self.0) {
             Ok(()) => {
                 if !self.valid() {
@@ -135,11 +139,11 @@ impl Page {
 /// No cached permissions: an uncertain write is reloaded by the next caller.
 /// The frame ends before applet execution and never spans a crypto operation.
 #[inline(never)]
-pub fn flags(s: &mut StoragePort<'_>) -> Result<u32, StorageError> {
+pub fn flags(s: &mut (impl Storage + ?Sized)) -> Result<u32, StorageError> {
     Page::with_page(s, false, |page, _, _| Ok(page.flags()))
 }
 #[inline(never)]
-pub fn update(s: &mut StoragePort<'_>, mask: u32, value: u32) -> Result<(), StorageError> {
+pub fn update(s: &mut (impl Storage + ?Sized), mask: u32, value: u32) -> Result<(), StorageError> {
     Page::with_page(s, true, |page, s, persisted| {
         let old = page.flags();
         let flags = (old & !mask) | (value & mask);
@@ -150,11 +154,11 @@ pub fn update(s: &mut StoragePort<'_>, mask: u32, value: u32) -> Result<(), Stor
         page.commit(s)
     })
 }
-pub fn enabled(s: &mut StoragePort<'_>, mask: u32) -> bool {
+pub fn enabled(s: &mut (impl Storage + ?Sized), mask: u32) -> bool {
     flags(s).is_ok_and(|flags| flags & mask != 0)
 }
 
-#[cfg(all(test, not(feature = "static-backend")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ports::{Record, Storage};
@@ -414,7 +418,7 @@ mod tests {
 
 /// Factory reset restores user-configurable applet flags, preserving NFC mode,
 /// serial, keyboard table and algorithm TLVs exactly as the legacy ADMIN reset.
-pub fn reset_admin(s: &mut StoragePort<'_>) -> Result<(), StorageError> {
+pub fn reset_admin(s: &mut (impl Storage + ?Sized)) -> Result<(), StorageError> {
     let mut present = [0];
     match s.config_read(0, &mut present) {
         Err(StorageError::Missing) => Ok(()), // No page capability in this backend.
@@ -432,7 +436,7 @@ pub fn notify(p: &mut crate::Platform<'_>) {
 /// Read-only identity access. Invalid/unprovisioned pages return the legacy
 /// zero identity; never initialize Flash to answer a serial-number query.
 #[inline(never)]
-pub fn serial(s: &mut StoragePort<'_>) -> [u8; 4] {
+pub fn serial(s: &mut (impl Storage + ?Sized)) -> [u8; 4] {
     Page::with_page(s, false, |page, _, _| {
         if page.flags() & SERIAL_VALID == 0 {
             return Ok([0; 4]);
@@ -444,7 +448,7 @@ pub fn serial(s: &mut StoragePort<'_>) -> [u8; 4] {
     .unwrap_or([0; 4])
 }
 #[inline(never)]
-pub fn write_serial(s: &mut StoragePort<'_>, serial: &[u8; 4]) -> Result<(), StorageError> {
+pub fn write_serial(s: &mut (impl Storage + ?Sized), serial: &[u8; 4]) -> Result<(), StorageError> {
     Page::with_page(s, true, |page, s, _| {
         let flags = page.flags();
         if flags & SERIAL_VALID != 0 {
@@ -466,7 +470,7 @@ impl Page {
 /// Keep keyboard settings in the existing page, preserving serial and TLVs.
 #[inline(never)]
 pub fn write_keymap(
-    s: &mut StoragePort<'_>,
+    s: &mut (impl Storage + ?Sized),
     layout: u8,
     table: Option<&[u8; KEYMAP_BYTES]>,
 ) -> Result<(), StorageError> {
@@ -496,7 +500,7 @@ pub fn write_keymap(
 }
 #[inline(never)]
 pub fn read_keymap(
-    s: &mut StoragePort<'_>,
+    s: &mut (impl Storage + ?Sized),
     table: &mut [u8; KEYMAP_BYTES],
 ) -> Result<u8, StorageError> {
     Page::with_page(s, false, |page, _, _| {
@@ -509,7 +513,7 @@ pub fn read_keymap(
 }
 /// A stored zero usage suppresses the character; it never falls back to US.
 #[inline(never)]
-pub fn keyboard_usage(s: &mut StoragePort<'_>, ch: u8) -> Option<(u8, u8)> {
+pub fn keyboard_usage(s: &mut (impl Storage + ?Sized), ch: u8) -> Option<(u8, u8)> {
     if usize::from(ch) < KEYMAP_ENTRY_COUNT {
         let stored = Page::with_page(s, false, |page, _, _| {
             if !page.has_keymap() {
@@ -528,7 +532,11 @@ pub fn keyboard_usage(s: &mut StoragePort<'_>, ch: u8) -> Option<(u8, u8)> {
 /// Recovery deliberately operates on raw pages, including corrupt metadata.
 /// P2=0 preserves every non-loader byte; P2=1 erases metadata as on legacy CIU.
 #[inline(never)]
-pub fn recovery(s: &mut StoragePort<'_>, word: u32, erase: bool) -> Result<(), StorageError> {
+pub fn recovery(
+    s: &mut (impl Storage + ?Sized),
+    word: u32,
+    erase: bool,
+) -> Result<(), StorageError> {
     let mut page = Page([0xff; PAGE_BYTES]);
     if !erase {
         s.config_read(0, &mut page.0)?;
