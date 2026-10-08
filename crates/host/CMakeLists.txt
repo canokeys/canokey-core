@@ -55,6 +55,10 @@ if(CANOKEY_VIRTUAL_CARD)
     BYPRODUCTS "${HOST_UDP_IMAGE}"
     DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
   find_path(PCSC_INCLUDE_DIR ifdhandler.h PATH_SUFFIXES PCSC REQUIRED)
+  add_library(host-pcsc-poll STATIC native/pcsc_poll.c)
+  target_include_directories(host-pcsc-poll PRIVATE "${PCSC_INCLUDE_DIR}")
+  set_property(TARGET host-pcsc-poll PROPERTY POSITION_INDEPENDENT_CODE ON)
+  set(HOST_PCSC_LIBRARIES "$<TARGET_FILE:host-pcsc-poll>|${HOST_UDP_LIBRARIES}")
   set(HOST_PCSC_IMAGE "${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}u2f-virt-card${CMAKE_SHARED_LIBRARY_SUFFIX}")
   set(HOST_PCSC_OPTIONS "${HOST_UDP_OPTIONS}")
   if(APPLE)
@@ -65,7 +69,7 @@ if(CANOKEY_VIRTUAL_CARD)
   add_custom_target(u2f-virt-card ALL
     COMMAND "${CMAKE_COMMAND}" -E env
       "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
-      "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_UDP_LIBRARIES}" "CANOKEY_PCSC_LINK_OPTIONS=${HOST_PCSC_OPTIONS}"
+      "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_PCSC_LIBRARIES}" "CANOKEY_PCSC_LINK_OPTIONS=${HOST_PCSC_OPTIONS}"
       ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc
       --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
       --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-pcsc --profile host-test
@@ -74,7 +78,7 @@ if(CANOKEY_VIRTUAL_CARD)
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       "${CMAKE_CURRENT_BINARY_DIR}/cargo-pcsc/host-test/${CMAKE_SHARED_LIBRARY_PREFIX}canokey_rust_host${CMAKE_SHARED_LIBRARY_SUFFIX}" "${HOST_PCSC_IMAGE}"
     BYPRODUCTS "${HOST_PCSC_IMAGE}"
-    DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
+    DEPENDS host-pcsc-poll host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
   add_library(u2f-virt-card-image SHARED IMPORTED GLOBAL)
   set_target_properties(u2f-virt-card-image PROPERTIES IMPORTED_LOCATION "${HOST_PCSC_IMAGE}")
   add_dependencies(u2f-virt-card-image u2f-virt-card)
@@ -82,7 +86,7 @@ if(CANOKEY_VIRTUAL_CARD)
     set(HOST_REGRESSION_IMAGE "${CMAKE_BINARY_DIR}/host-regressions")
     add_custom_target(host-regressions ALL
       COMMAND "${CMAKE_COMMAND}" -E env
-        "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_UDP_LIBRARIES}"
+        "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_PCSC_LIBRARIES}"
         "CANOKEY_PCSC_LINK_OPTIONS=${HOST_UDP_OPTIONS}"
         ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc
         --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
@@ -92,7 +96,7 @@ if(CANOKEY_VIRTUAL_CARD)
       COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${CMAKE_CURRENT_BINARY_DIR}/cargo-regressions/host-test/host-regressions" "${HOST_REGRESSION_IMAGE}"
       BYPRODUCTS "${HOST_REGRESSION_IMAGE}"
-      DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
+      DEPENDS host-pcsc-poll host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
   endif()
   if(BUILD_TESTING OR ENABLE_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)

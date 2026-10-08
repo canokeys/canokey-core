@@ -1,25 +1,23 @@
 # Platform ports
 
 This crate owns the storage, crypto, device and erasure contracts formerly in
-`core/src/ports`, and the native implementations formerly in `ffi/src/platform`.
-The core reexports these types and retains `forbid(unsafe_code)`. Native C calls
-and volatile erasure remain confined to `native/`; key layouts, record IDs,
-error mappings, ownership and C signatures have not changed.
+`core/src/ports`. Core reexports these types and retains `forbid(unsafe_code)`.
+Ports has no native imports. CIU and host own storage/device backends;
+`canokey-native-crypto` owns reusable native crypto imports. Portable erasure
+operates on its caller-owned slice.
 
-`Platform` lends four disjoint capabilities. With `static-backend`, its fields
-refer to the concrete native types. This removes vtable loads and passes fewer
-arguments through internal helpers without making the core generic over every
-capability. With no backend feature, fields are trait objects for mocks.
-`dynamic-backend` explicitly overrides `static-backend`, so workspace
-`cargo test --workspace --all-features` retains injectable unit-test backends.
+`Platform<B>` lends four disjoint capabilities from a backend family. CIU and
+host select concrete `BackendTypes` through their Rust Provider. The default
+`DynamicBackends` supports trait-object test compositions. The compatibility
+FFI composition's `dynamic-backend` switch overrides `static-backend`; it also
+keeps workspace all-feature tests injectable. This supported compatibility/test
+use is why the switch remains. Firmware continues to use static dispatch.
 The OATH domain uses generic capability arguments with one concrete production
 implementation; its domain contracts remain independent of APDU and native ABI.
 
-CIU's staticlib and the CMake host adapter build both enable `static-backend`.
-The latter therefore exercises the same direct call paths against the native
-host crypto and storage adapters. Run that build separately from the workspace
-unit-test invocation: Cargo unifies features within an invocation. The CMake
-adapter archive and Rust test targets already use different target directories.
+Cargo unifies features within an invocation. CMake compatibility archives and
+Rust test targets use separate target directories to keep their selections
+independent. The full feature matrix covers both supported compatibility modes.
 
 Native storage/crypto/device values require an unsafe constructor at the
 serialized FFI composition boundary and are neither Send nor Sync. Safe core

@@ -25,7 +25,6 @@ const ERROR_TAG: ResponseCode = 600;
 const ERROR_NOT_SUPPORTED: ResponseCode = 606;
 const PROTOCOL_NOT_SUPPORTED: ResponseCode = 607;
 const COMMUNICATION_ERROR: ResponseCode = 612;
-const RESPONSE_TIMEOUT: ResponseCode = 613;
 const NOT_SUPPORTED: ResponseCode = 614;
 const ICC_PRESENT: ResponseCode = 615;
 const ICC_NOT_PRESENT: ResponseCode = 616;
@@ -65,26 +64,12 @@ extern "C" fn create_named(lun: Dword, _: *mut c_char) -> ResponseCode {
 extern "C" fn close(lun: Dword) -> ResponseCode {
     status(ck_pcsc_close(lun as u64))
 }
-extern "C-unwind" fn wait_change(lun: Dword, milliseconds: c_int) -> ResponseCode {
-    if ck_pcsc_present(lun as u64) != 0 {
-        return NO_SUCH_DEVICE;
-    }
-    if milliseconds < 0 {
-        return COMMUNICATION_ERROR;
-    }
-    // pcscd may pthread_cancel this callback. Permit the POSIX forced unwind
-    // across both the cancellation point and the callback; no lock is held.
-    unsafe extern "C-unwind" {
-        fn nanosleep(request: *const libc::timespec, remaining: *mut libc::timespec) -> c_int;
-    }
-    let mut delay = libc::timespec {
-        tv_sec: (milliseconds / 1000).into(),
-        tv_nsec: (milliseconds % 1000) as c_long * 1_000_000,
-    };
-    while unsafe { nanosleep(&delay, &mut delay) } != 0
-        && std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR)
-    {}
-    RESPONSE_TIMEOUT
+unsafe extern "C" {
+    fn ck_host_pcsc_wait_change(lun: Dword, milliseconds: c_int) -> ResponseCode;
+}
+#[unsafe(no_mangle)]
+extern "C" fn ck_host_pcsc_poll_valid(lun: Dword) -> c_int {
+    i32::from(ck_pcsc_present(lun as u64) == 0)
 }
 #[unsafe(export_name = "IFDHGetCapabilities")]
 unsafe extern "C" fn get_capability(
@@ -104,7 +89,7 @@ unsafe extern "C" fn get_capability(
             }
             return NO_SUCH_DEVICE;
         }
-        let callback: extern "C-unwind" fn(Dword, c_int) -> ResponseCode = wait_change;
+        let callback: unsafe extern "C" fn(Dword, c_int) -> ResponseCode = ck_host_pcsc_wait_change;
         let size = mem::size_of_val(&callback);
         unsafe {
             length.write(size as Dword);
