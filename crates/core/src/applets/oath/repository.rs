@@ -6,10 +6,10 @@ use crate::applets::oath::{
     credential::Credential,
     service::{CredentialId, Repository},
 };
-use crate::ports::{CryptoPort, Record, StorageError};
-pub struct Store<'a> {
-    storage: &'a mut crate::ports::StoragePort<'a>,
-    memory: &'a crate::ports::MemoryPort<'a>,
+use crate::ports::{Crypto as BackendCrypto, Memory, Record, Storage, StorageError};
+pub struct Store<'a, S: Storage + ?Sized, M: Memory + ?Sized> {
+    storage: &'a mut S,
+    memory: &'a M,
     located: Option<Entry>,
 }
 /// Validated record boundaries, local to this exclusive storage borrow.
@@ -21,15 +21,12 @@ struct Entry {
     end: u32,
     header: [u8; codec::HEADER_BYTES],
 }
-pub struct Mac<'a> {
-    crypto: &'a mut CryptoPort<'a>,
-    memory: &'a crate::ports::MemoryPort<'a>,
+pub struct Mac<'a, C: BackendCrypto + ?Sized, M: Memory + ?Sized> {
+    crypto: &'a mut C,
+    memory: &'a M,
 }
-impl<'a> Store<'a> {
-    pub fn new(
-        storage: &'a mut crate::ports::StoragePort<'a>,
-        memory: &'a crate::ports::MemoryPort<'a>,
-    ) -> Self {
+impl<'a, S: Storage + ?Sized, M: Memory + ?Sized> Store<'a, S, M> {
+    pub fn new(storage: &'a mut S, memory: &'a M) -> Self {
         Self {
             storage,
             memory,
@@ -37,8 +34,8 @@ impl<'a> Store<'a> {
         }
     }
 }
-impl<'a> Mac<'a> {
-    pub fn new(crypto: &'a mut CryptoPort<'a>, memory: &'a crate::ports::MemoryPort<'a>) -> Self {
+impl<'a, C: BackendCrypto + ?Sized, M: Memory + ?Sized> Mac<'a, C, M> {
+    pub fn new(crypto: &'a mut C, memory: &'a M) -> Self {
         Self { crypto, memory }
     }
 }
@@ -64,7 +61,7 @@ const FILE_HEADER_BYTES: u32 = FILE_HEADER.len() as u32;
 fn io(_: StorageError) -> Error {
     Error::Storage
 }
-impl Crypto for Mac<'_> {
+impl<C: BackendCrypto + ?Sized, M: Memory + ?Sized> Crypto for Mac<'_, C, M> {
     fn hmac(
         &mut self,
         alg: Algorithm,
@@ -83,7 +80,7 @@ impl Crypto for Mac<'_> {
         self.memory.wipe(bytes);
     }
 }
-impl Store<'_> {
+impl<S: Storage + ?Sized, M: Memory + ?Sized> Store<'_, S, M> {
     pub fn initialize(&mut self) -> Result<(), Error> {
         self.located = None;
         self.storage
@@ -205,7 +202,7 @@ impl Store<'_> {
         result
     }
 }
-impl Repository for Store<'_> {
+impl<S: Storage + ?Sized, M: Memory + ?Sized> Repository for Store<'_, S, M> {
     fn first(&mut self) -> Result<Option<CredentialId>, Error> {
         Ok(self.at(0)?.map(|(id, _)| id))
     }
@@ -297,7 +294,7 @@ impl Repository for Store<'_> {
         self.write(entry.offset, id, None)
     }
 }
-impl auth::Repository for Store<'_> {
+impl<S: Storage + ?Sized, M: Memory + ?Sized> auth::Repository for Store<'_, S, M> {
     fn load(&mut self) -> Result<Option<auth::Metadata>, Error> {
         let mut bytes = [0; auth::METADATA_LENGTH];
         let result = match self.storage.load(Record::OathMetadata, &mut bytes) {
@@ -323,9 +320,9 @@ impl auth::Repository for Store<'_> {
 /// Reset persistent OATH state; the caller first removes PASS bindings.
 #[cfg(feature = "admin")]
 pub fn reset(
-    storage: &mut crate::ports::StoragePort<'_>,
-    crypto: &mut CryptoPort<'_>,
-    memory: &crate::ports::MemoryPort<'_>,
+    storage: &mut (impl Storage + ?Sized),
+    crypto: &mut (impl BackendCrypto + ?Sized),
+    memory: &(impl Memory + ?Sized),
 ) -> Result<(), Error> {
     storage
         .replace(Record::OathRecords, FILE_HEADER)
@@ -335,8 +332,5 @@ pub fn reset(
     auth::Repository::replace(&mut Store::new(storage, memory), &metadata)
 }
 
-#[cfg(all(
-    test,
-    any(not(feature = "static-backend"), feature = "dynamic-backend")
-))]
+#[cfg(test)]
 mod tests;

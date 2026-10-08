@@ -208,8 +208,12 @@ impl State {
     fn execute_put(
         &mut self,
         mut c: &mut ByteCursor<'_>,
-        store: &mut Store<'_>,
-        mac: &mut Mac<'_>,
+        store: &mut Store<
+            '_,
+            impl crate::ports::Storage + ?Sized,
+            impl crate::ports::Memory + ?Sized,
+        >,
+        mac: &mut Mac<'_, impl crate::ports::Crypto + ?Sized, impl crate::ports::Memory + ?Sized>,
     ) -> Result<(), Sw> {
         let name = name(&mut c)?;
         let key = bounded_field(
@@ -287,8 +291,12 @@ impl State {
         &mut self,
         data: &[u8],
         mut c: &mut ByteCursor<'_>,
-        store: &mut Store<'_>,
-        mac: &mut Mac<'_>,
+        store: &mut Store<
+            '_,
+            impl crate::ports::Storage + ?Sized,
+            impl crate::ports::Memory + ?Sized,
+        >,
+        mac: &mut Mac<'_, impl crate::ports::Crypto + ?Sized, impl crate::ports::Memory + ?Sized>,
     ) -> Result<(), Sw> {
         let key = if data.is_empty() {
             &[][..]
@@ -327,8 +335,12 @@ impl State {
     fn execute_validate(
         &mut self,
         mut c: &mut ByteCursor<'_>,
-        store: &mut Store<'_>,
-        mac: &mut Mac<'_>,
+        store: &mut Store<
+            '_,
+            impl crate::ports::Storage + ?Sized,
+            impl crate::ports::Memory + ?Sized,
+        >,
+        mac: &mut Mac<'_, impl crate::ports::Crypto + ?Sized, impl crate::ports::Memory + ?Sized>,
     ) -> Result<(), Sw> {
         let response = field(&mut c, tag::RESPONSE)?
             .try_into()
