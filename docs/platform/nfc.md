@@ -45,7 +45,7 @@ Validation entrypoints:
   Core/registers; fragmentation, retransmission, FIDO aggregation, WTX and reset.
 - Rust `--test nfc`: wire, lifecycle, IRQ register and provisioning failure tests.
 - Rust `--test ndef`: file policy and actual Core/registry frame routing.
-- Combined host `core-normal`: ADMIN NDEF authorization and read-only/reset APDUs.
+- Combined host `core-behavior`: ADMIN NDEF authorization and read-only/reset APDUs.
 - `cmake --preset nfcc-rust-all` and `cmake --build --preset build-nfcc-rust-all`:
   real big-endian target compilation and full-feature capacity check.
 

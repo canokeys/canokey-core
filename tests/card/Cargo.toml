@@ -13,13 +13,19 @@ required-features = ["replay"]
 name = "apdu-fuzzer"
 path = "src/bin/fuzz.rs"
 required-features = ["fuzz"]
+[[bin]]
+name = "core-behavior"
+path = "src/bin/behavior.rs"
+required-features = ["behavior"]
 [dependencies]
 canokey-rust-core = { path = "../../crates/core" }
+canokey-protocol = { path = "../../crates/protocol" }
 canokey-ports = { path = "../../crates/ports", default-features = false, features = ["native-crypto"] }
 libc = { version = "=0.2.189", optional = true }
 libfuzzer-sys = { version = "=0.4.13", optional = true }
 [features]
 default = []
+behavior = []
 replay = ["dep:libc"]
 fuzz = ["dep:libfuzzer-sys", "dep:libc"]
 admin = ["canokey-rust-core/admin"]

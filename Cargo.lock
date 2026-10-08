@@ -63,6 +63,7 @@ name = "canokey-test-card"
 version = "0.1.0"
 dependencies = [
  "canokey-ports",
+ "canokey-protocol",
  "canokey-rust-core",
  "libc",
  "libfuzzer-sys",

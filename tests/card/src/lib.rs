@@ -19,6 +19,18 @@ impl Clock {
     }
 }
 impl Device for Clock {
+    fn information(&mut self, kind: u8, output: &mut [u8]) -> usize {
+        use canokey_ports::board_info_kind;
+        let bytes: &[u8] = match kind {
+            board_info_kind::FIRMWARE => b"0.0.0",
+            board_info_kind::PRODUCT => b"CanoKey Rust Virtual Card",
+            board_info_kind::CORE => b"unknown",
+            _ => &[0; canokey_ports::CHIP_ID_BYTES],
+        };
+        let n = bytes.len().min(output.len());
+        output[..n].copy_from_slice(&bytes[..n]);
+        n
+    }
     fn serial(&mut self, out: &mut [u8; 4]) {
         out.fill(0);
     }
@@ -73,7 +85,7 @@ impl Card {
             memory: MemoryBackend,
         }
     }
-    fn run<T>(&mut self, action: impl FnOnce(&mut Core, &mut Platform<'_, Backend>) -> T) -> T {
+    pub fn run<T>(&mut self, action: impl FnOnce(&mut Core, &mut Platform<'_, Backend>) -> T) -> T {
         action(
             &mut self.core,
             &mut Platform::new(
@@ -94,8 +106,11 @@ impl Card {
         self.run(|core, p| core.slot_power(p));
     }
     pub fn exchange(&mut self, input: &[u8], output: &mut [u8]) -> Option<usize> {
+        self.exchange_owner(CCID_OWNER, input, output)
+    }
+    pub fn exchange_owner(&mut self, owner: u8, input: &[u8], output: &mut [u8]) -> Option<usize> {
         self.run(|core, p| {
-            let reply = core.receive(CCID_OWNER, input, p);
+            let reply = core.receive(owner, input, p);
             core.transmit(reply, output, p).ok()
         })
     }

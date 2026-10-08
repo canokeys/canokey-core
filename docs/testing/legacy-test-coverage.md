@@ -174,7 +174,7 @@ physical interoperability are still independent, incomplete acceptance items.
 |---|---|
 | `test_device_blinking_and_led_behaviour` | `ordinary_prompt_restores_idle_on_success_timeout_and_cancellation`: exact initial LED phases, timeout tick and restoration; strong-presence phase/gap tests; `device-runtime` normally-on/off settings and timer cancellation/rearming |
 | `test_device_allow_kbd_touch_rules` | `startup_contact_release_and_short_long_boundaries`: startup hold/release, 29/30 ms debounce and 499/500 ms slot boundary; `claimed_gesture_is_not_replayed_after_wait` and pending-output inhibition tests |
-| `test_pin_lifecycle` | `codec_replacement_and_cleanup_preserve_record_contract`, `record_lifecycle_blocking_and_storage_errors`; `core-normal` PIN-change grant revocation; `openpgp-normal` maximum retry policy and 63CF queries |
+| `test_pin_lifecycle` | `codec_replacement_and_cleanup_preserve_record_contract`, `record_lifecycle_blocking_and_storage_errors`; `core-behavior` PIN-change grant revocation; `openpgp-normal` maximum retry policy and 63CF queries |
 | `test_pin_error_paths` | PIN missing/failing-store, invalid-length and permanent-block unit tests; `no_success_after_any_failed_commit`; `openpgp-normal` all three retry-policy fields reject 0/16 without losing the current grant |
 
 The removed generic blink scheduler is no longer a production API. Rust presence,
@@ -194,7 +194,7 @@ Five of the original 96 `test_apdu.c` cases are now retired:
 |---|---|
 | `test_ccid_power_on_preempts_idle_webusb_session` | `usb-sessions`: real PowerOn/PowerOff takeover, ATR/inactive status, grant revocation, partial-response exclusion and stale cleanup isolation |
 | `test_applet_session_deadline_wraparound` | `usb-sessions`: actual 1999/2000 ms cross-interface admission across uint32 tick wraparound |
-| `test_get_response_after_reset_without_pending_response` | `core-normal`: 6986 without a pending response; `usb-sessions`: direct GET RESPONSE after takeover and reset |
+| `test_get_response_after_reset_without_pending_response` | `core-behavior`: 6986 without a pending response; `usb-sessions`: direct GET RESPONSE after takeover and reset |
 | `test_pending_ccid_response_can_be_abandoned_by_ctaphid` | `usb-sessions`: unread real CTAP GetInfo source is abandoned immediately by HID PING after CCID IN completion; protocol response tests check exactly-once close |
 | `test_active_ccid_transfer_cannot_be_preempted` | `usb-sessions`: same source rejects HID PING while CCID IN owns its packet, verifies unchanged bytes, then permits takeover after completion |
 
@@ -209,12 +209,12 @@ actual applets through the same-pointer RX/TX FFI:
 
 | Legacy case | Executable replacement |
 |---|---|
-| `test_response_source_multi_chunk_get_response` | `core-normal::aliased_response_regressions`: all 600 certificate bytes across varying chunk capacities; `streaming::generated_response_does_not_reexecute_operation`: one generation and one close |
-| `test_response_source_tail_restore_on_shared_buffer` | `core-normal::aliased_response_regressions`: request overwrites, status trailers, payload comparison and output canaries |
+| `test_response_source_multi_chunk_get_response` | `core-abi::aliased_response_regressions`: all 600 certificate bytes across varying chunk capacities; `streaming::generated_response_does_not_reexecute_operation`: one generation and one close |
+| `test_response_source_tail_restore_on_shared_buffer` | `core-abi::aliased_response_regressions`: request overwrites, status trailers, payload comparison and output canaries |
 | `test_response_source_read_failure_clears_state` | `response::tests::invalid_reads_wipe_requested_window_and_end_the_lease`: failed, zero and excessive reads, output wiping, status and exactly-once close |
-| `test_apdu_output_chaining_aliased_buffer` | `core-normal::aliased_response_regressions`: first payload lengths 248/247/1/0, subsequent 256/200-byte chunks |
-| `test_new_command_abandons_pending_rapdu_chain` | `core-normal::ordinary_response_cleanup_regressions` and `aliased_response_regressions`: PIV VERSION and OpenPGP certificate abandoned by SELECT ADMIN / READ_VERSION, then 6986 |
-| `test_session_reset_drops_pending_rapdu_chain` | Both `core-normal` regressions: reset with zero/partial progress under CCID/NFC ownership, then 6986 |
+| `test_apdu_output_chaining_aliased_buffer` | `core-abi::aliased_response_regressions`: first payload lengths 248/247/1/0, subsequent 256/200-byte chunks |
+| `test_new_command_abandons_pending_rapdu_chain` | `core-behavior::response_cleanup` and `aliased_response_regressions`: PIV VERSION and OpenPGP certificate abandoned by SELECT ADMIN / READ_VERSION, then 6986 |
+| `test_session_reset_drops_pending_rapdu_chain` | Both `core-behavior` regressions: reset with zero/partial progress under CCID/NFC ownership, then 6986 |
 | `test_response_source_clear_calls_close` | `response::tests::short_reads_preserve_offsets_status_and_exactly_one_close`: completion and repeated clear close once |
 
 Rust keeps response backing separate from transport bytes; it does not need the
@@ -258,10 +258,10 @@ GetInfo identifiers and the existing custom-curve credential/signature checks.
 
 | Legacy case | Executable replacement |
 |---|---|
-| `test_admin_platform_config_and_serial_apdus` | `core-normal`: unauthorized writes, invalid selectors/lengths, LED/NDEF/WebUSB and feature changes surviving reset, disabled applet routing, one-time serial write/read and short-Le rejection |
-| `test_admin_read_core_commit_apdu` | `core-normal`: full host revision, truncated public fields, no pending continuation and invalid P1/P2 |
-| `test_admin_flash_usage_apdus` | `core-normal`: total and eight-record APDU shape/length/selectors; `groups_use_big_endian_bytes_and_system_overhead`: every record group, missing flags, seven added PIV bytes, stable system overhead and read/capacity failures |
-| `test_admin_kbd_keymap_apdus` | `core-normal`: missing map, invalid write selector/255-byte length, full streamed 256-byte map, layout ID, exact readback and real keyboard lookup, invalid read/clear requests, reset persistence and clear restoring default mapping |
+| `test_admin_platform_config_and_serial_apdus` | `core-behavior`: unauthorized writes, invalid selectors/lengths, LED/NDEF/WebUSB and feature changes surviving reset, disabled applet routing, one-time serial write/read and short-Le rejection |
+| `test_admin_read_core_commit_apdu` | `core-behavior`: full host revision, truncated public fields, no pending continuation and invalid P1/P2 |
+| `test_admin_flash_usage_apdus` | `core-behavior`: total and eight-record APDU shape/length/selectors; `groups_use_big_endian_bytes_and_system_overhead`: every record group, missing flags, seven added PIV bytes, stable system overhead and read/capacity failures |
+| `test_admin_kbd_keymap_apdus` | `core-behavior`: missing map, invalid write selector/255-byte length, full streamed 256-byte map, layout ID, exact readback and real keyboard lookup, invalid read/clear requests, reset persistence and clear restoring default mapping |
 
 The host revision is the native information provider's `unknown`, not a C build
 macro. Firmware board-information plumbing is separately exercised by the device
@@ -277,7 +277,7 @@ namespace; native storage tests separately verify physical capacity reporting.
 | `test_piv_reselect_preserves_security_status` | `usb-sessions`: real PIN verification, full and RID-only reselect/query success, applet switch and revoked PIN |
 | `test_platform_config_flags_preserve_other_state` | `admin_flags_preserve_initialization_nfc_and_identity`: exact flag mask, initialized/NFC state, serial, CRC and every non-flag/non-CRC page byte |
 | `test_virt_card_config_page_persistence` | `virtual-storage::configuration_snapshot_reopens_and_explicit_reset_erases_it`: 512-byte page survives reopening; explicit reset persists an erased page |
-| `test_runtime_feature_apdu_routing` | `independent_transport_bits_and_failed_reads_guard_actual_select`: independent USB/NFC masks reject actual PIV/OpenPGP SELECT; `core-normal`: restored successful selection/read, disabled implicit FIDO and reset persistence |
+| `test_runtime_feature_apdu_routing` | `independent_transport_bits_and_failed_reads_guard_actual_select`: independent USB/NFC masks reject actual PIV/OpenPGP SELECT; `core-behavior`: restored successful selection/read, disabled implicit FIDO and reset persistence |
 
 The virtual card uses the Rust host snapshot rather than the removed C sidecar
 format. These are host persistence tests; physical configuration-page writes
@@ -287,7 +287,7 @@ and Flash power-loss durability require separate hardware acceptance.
 
 | Legacy case | Executable replacement |
 |---|---|
-| `test_select_and_read_command_validation` | `core-normal::select_validation_regressions`: ADMIN suffix/class/data, SELECT P2 precedence, all legacy PIV AID forms and invalid partial/version forms, OATH class rejection |
+| `test_select_and_read_command_validation` | `core-behavior::selection`: ADMIN suffix/class/data, SELECT P2 precedence, all legacy PIV AID forms and invalid partial/version forms, OATH class rejection |
 | `test_ctaphid_rejected_source_closes_once` | `response_limits_and_read_failure_close_once`: CBOR/MSG/WINK reject 7610, 65536 and usize::MAX lengths, one request/response close, repeated reset/completion cannot close again |
 | `test_ctaphid_active_source_failure_closes_once` | Same Rust regression: source read failure closes once; successful lengths 0/1/57/58/7609 verify every payload byte, sequence and ownership through final completion |
 | `test_ctap_get_info_reports_transport_msg_size` | `ctap-normal` and `virtual-hid-udp`: decoded GetInfo key 5 equals 1024 on real APDU/HID routes |
@@ -583,7 +583,7 @@ remain pending and are not claimed covered by these replacements.
 | Legacy case | Executable replacement |
 |---|---|
 | `test_piv_cert_chained_read` | `piv-normal::object_capacity`: original 6564-byte payload pattern, first 200 payload bytes plus selector/TLV then 200-byte PUT fragments; `read_in_chunks` verifies every 256-byte response length, exact 61xx status, complete certificate and exhausted GET RESPONSE rejection |
-| `test_piv_get_version_chained_le_absent` | `unauthenticated_queries`: complete three-byte version with absent Le, Le=1/6102 continuation, exact reassembled bytes and exhausted GET RESPONSE; `core-normal::aliased_response_regressions` and `ordinary_response_cleanup_regressions` retain FFI overwrite, zero-progress and abandoned-response coverage |
+| `test_piv_get_version_chained_le_absent` | `unauthenticated_queries`: complete three-byte version with absent Le, Le=1/6102 continuation, exact reassembled bytes and exhausted GET RESPONSE; `core-abi::aliased_response_regressions` and `ordinary_response_cleanup_regressions` retain FFI overwrite, zero-progress and abandoned-response coverage |
 | `test_piv_get_random_without_authentication` | `unauthenticated_queries`: no PIN authorization before/after queries, 256/32-byte challenges, invalid P1/data rejection, absent-Le default and literal extended Le=257 rejection |
 | `test_piv_rsa4096_metadata_chained_read` | `encoding_regressions`: fixed RSA-4096 public-key vector, exact 536-byte metadata with literal prefix/exponent suffix, 256/256/24-byte response chunks and exhausted GET RESPONSE rejection |
 
