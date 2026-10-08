@@ -9,6 +9,12 @@ the owning crate. `tests/integration/` holds Python end-to-end regressions;
 They construct the real Core with Rust record/clock fakes and native C crypto;
 they do not call the core C ABI. The LittleFS capacity fixture retains its C
 storage harness and the same independent Python checks.
+`hid-core` and `usb-sessions` are Rust binaries using direct storage, device
+and staging fakes. The USB session fixture retains C imports only for the DCD
+and clock/timer boundary. It covers cross-transport ownership, immutable IN
+packets, reset cleanup, IRQ arrival boundaries and CCID presence polling during
+HID execution. Its Provider also selects the presence-progress path; no
+platform storage/device/staging C callbacks are linked into these binaries.
 The Rust `apdu-replay` binary uses the same composition and retains the existing
 line protocol, response draining, slot-power and fault-injection controls.
 The PC/SC driver is a Rust cdylib exposing the IFD handler v3 ABI. `pcsc-abi`

@@ -307,7 +307,7 @@ pub extern "C" fn ck_ccid_response_buffer() -> *mut u8 {
 /// session or touch the shared workspace. Slot replies use the CCID TX buffer.
 #[cfg(all(feature = "usb-device", feature = "usb-hid"))]
 #[cfg_attr(test, allow(dead_code))]
-pub unsafe fn presence_progress() {
+pub unsafe fn presence_progress<P: Provider>() {
     unsafe {
         let generation = ck_ccid_io_generation();
         if GENERATION != generation || ck_ccid_io_idle() == 0 {
@@ -315,7 +315,7 @@ pub unsafe fn presence_progress() {
         }
         let transport = ccid();
         transport.completed();
-        let mut platform = Platform::<crate::platform::Native> {
+        let mut platform = Platform::<P> {
             generation,
             provider: core::marker::PhantomData,
         };

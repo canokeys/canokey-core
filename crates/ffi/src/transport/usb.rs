@@ -571,6 +571,10 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 /// one hardware tick before calling this function; no callback enters Core.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
+    unsafe { progress::<crate::platform::Native>() }
+}
+
+pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
     use crate::transport::ccid::io::ck_ccid_progress;
     #[cfg(all(feature = "usb-hid", not(test)))]
     use crate::transport::ccid::presence_progress;
@@ -587,6 +591,9 @@ pub unsafe extern "C" fn ck_transport_progress() -> u8 {
         #[cfg(feature = "usb-hid")]
         {
             if ck_hid_executing() != 0 {
+                #[cfg(not(test))]
+                presence_progress::<P>();
+                #[cfg(test)]
                 presence_progress();
                 return ck_hid_progress();
             }

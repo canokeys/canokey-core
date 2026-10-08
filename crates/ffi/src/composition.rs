@@ -20,6 +20,13 @@ pub mod ccid {
 pub mod webusb {
     pub use crate::transport::webusb::poll;
 }
+#[cfg(feature = "usb-device")]
+pub mod usb {
+    pub use crate::transport::usb::{
+        ck_usb_configured as configured, ck_usb_in as in_event, ck_usb_out as out_event,
+        ck_usb_setup as setup, progress, usb_device_deinit as deinit, usb_device_init as init,
+    };
+}
 
 /// Capabilities constructed by the firmware, host or test owner.
 ///
