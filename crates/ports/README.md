@@ -24,9 +24,7 @@ serialized FFI composition boundary and are neither Send nor Sync. Safe core
 code cannot create an unsynchronized native hardware session. The memory
 backend only operates on its caller-owned slice and needs no global state.
 
-The small `native_port!` macro generates inherent methods and forwarding trait
-methods from one implementation body. It does not encode protocol policy or
-interpret operation tables. Missing-feature defaults still live on the traits;
+Missing-feature defaults live on the traits;
 all supported production compositions supply the enabled methods explicitly.
 `MemoryBackend::wipe` is one out-of-line volatile byte loop, also used by local
 workspace cleanup that has no borrowed `Platform`.
