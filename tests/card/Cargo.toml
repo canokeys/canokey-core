@@ -21,6 +21,10 @@ required-features = ["behavior"]
 name = "runtime-composition"
 path = "src/bin/composition.rs"
 required-features = ["composition"]
+[[bin]]
+name = "hid-core-rust"
+path = "src/bin/hid.rs"
+required-features = ["transport-hid"]
 [dependencies]
 canokey-rust-core = { path = "../../crates/core" }
 canokey-protocol = { path = "../../crates/protocol" }
@@ -32,6 +36,7 @@ libfuzzer-sys = { version = "=0.4.13", optional = true }
 default = []
 behavior = []
 composition = ["dep:canokey-rust-ffi"]
+transport-hid = ["composition", "ctap", "canokey-rust-ffi/usb-hid"]
 replay = ["dep:libc"]
 fuzz = ["dep:libfuzzer-sys", "dep:libc"]
 admin = ["canokey-rust-core/admin", "canokey-rust-ffi?/admin"]

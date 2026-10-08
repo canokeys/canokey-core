@@ -11,8 +11,33 @@ thread_local! {
 struct Fake;
 impl Provider for Fake {
     type Backends = Backend;
+    #[cfg(feature = "ctap")]
+    type Staging = NoStaging;
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Backend>) -> T) -> T {
         CARD.with(|card| card.borrow_mut().run(|_, p| run(p)))
+    }
+}
+#[cfg(feature = "ctap")]
+struct NoStaging;
+#[cfg(feature = "ctap")]
+impl canokey_rust_ffi::composition::Staging for NoStaging {
+    fn capacity() -> usize {
+        0
+    }
+    fn acquire(_: u8) -> bool {
+        false
+    }
+    fn clear() -> bool {
+        false
+    }
+    fn release(_: u8) -> bool {
+        false
+    }
+    fn read(_: usize, _: &mut [u8]) -> bool {
+        false
+    }
+    fn write(_: usize, _: &[u8]) -> bool {
+        false
     }
 }
 const OWNER_CCID: u8 = 1;

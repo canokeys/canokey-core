@@ -2,6 +2,21 @@
 //! Outer backend selection for the serialized shared runtime.
 use canokey_ports::{Backends, Platform};
 pub mod core;
+#[cfg(feature = "usb-hid")]
+pub mod hid {
+    pub use crate::transport::hid::link::{ck_hid_active as active, poll};
+    pub unsafe fn keepalive(waiting: bool) {
+        unsafe { crate::transport::hid::link::ck_hid_keepalive(u8::from(waiting)) }
+    }
+}
+#[cfg(feature = "usb-ccid")]
+pub mod ccid {
+    pub use crate::transport::ccid::poll;
+}
+#[cfg(feature = "usb-webusb")]
+pub mod webusb {
+    pub use crate::transport::webusb::poll;
+}
 
 /// Capabilities constructed by the firmware, host or test owner.
 ///
@@ -9,5 +24,19 @@ pub mod core;
 /// progress may service disjoint IRQ mailboxes while these capabilities are live.
 pub trait Provider {
     type Backends: Backends;
+    #[cfg(feature = "ctap")]
+    type Staging: Staging;
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Self::Backends>) -> T) -> T;
+}
+
+/// Serialized accelerator scratch, shared by HID and CCID request staging.
+/// No backend may expose a hardware slice or release another owner's lease.
+#[cfg(feature = "ctap")]
+pub trait Staging {
+    fn capacity() -> usize;
+    fn acquire(owner: u8) -> bool;
+    fn clear() -> bool;
+    fn release(owner: u8) -> bool;
+    fn read(offset: usize, out: &mut [u8]) -> bool;
+    fn write(offset: usize, bytes: &[u8]) -> bool;
 }

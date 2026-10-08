@@ -474,10 +474,10 @@ including bounded length, owner restrictions, source cleanup and chain errors.
 
 ### Full host HID execution regression
 
-Host CMake builds `hid-core` whenever `CANOKEY_APPLET_CTAP=ON`. It links a separate
-Rust archive with `usb-hid`, the production HID mailbox/link/framing code and the
-CTAP applet, plus native host crypto. Packet hardware, monotonic time, physical
-presence and PKE scratch are simulated; record storage is volatile. APDU-only
+Host CMake builds `hid-core` whenever `CANOKEY_APPLET_CTAP=ON`. Its Rust binary
+uses the production HID mailbox/link/framing code and CTAP applet through a
+Rust Provider with direct storage/device/staging fakes and native crypto imports.
+Packet hardware and monotonic time are simulated; record storage is volatile. APDU-only
 fixtures retain their fail-on-use HID stubs and do not substitute for this test.
 
 Run `ctest --test-dir <host-build> -R '^hid-core$' --output-on-failure`. Coverage
@@ -485,8 +485,8 @@ includes long echo, source-backed clientPIN crypto, GetInfo streaming, sequence
 errors/timeouts with scratch cleanup, execution busy/keepalive/cancel, same-CID
 INIT and disconnect response suppression. This is not USB controller, durable
 storage or physical interoperability acceptance. The [Rust UDP virtual card](../../crates/host/README.md) uses these same production
-entrypoints with durable host records and runtime error injection. PC/SC and AFL
-remain separate legacy consumers.
+runtime with durable host records and runtime error injection. PC/SC and Rust
+libfuzzer-sys entrypoints have separate acceptance suites.
 
 
 ### NFCCTAP_MSG polling hint

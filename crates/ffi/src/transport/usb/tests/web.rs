@@ -137,11 +137,11 @@ pub(super) fn scenario() {
         assert_eq!(read_control(&mut bytes), 1);
         assert_eq!(bytes[0], STATUS_HOLD);
         let before = policy().resets;
-        assert!(!try_preempt(true));
+        assert!(!try_preempt::<crate::platform::Native>(true));
         policy().preemptable = true;
-        assert!(!try_preempt(false));
+        assert!(!try_preempt::<crate::platform::Native>(false));
         assert_eq!(policy().resets, before);
-        assert!(try_preempt(true));
+        assert!(try_preempt::<crate::platform::Native>(true));
         assert_eq!(policy().resets, before + 1);
         assert!(!block_competitor());
         controller().now += 2000;

@@ -5,6 +5,7 @@ use crate::transport::hid::link::{ck_hid_active, ck_hid_busy};
 use canokey_protocol::{apdu::EXTENDED_HEADER_BYTES, ccid::HEADER};
 use canokey_rust_core::runtime::ccid::{Backend, Request, Scratch, Transport};
 
+use crate::composition::{Provider, core as core_ops};
 use crate::transport::owners::OWNER_CCID;
 #[cfg(feature = "ctap")]
 use crate::transport::pke_scratch as pke;
@@ -31,14 +32,15 @@ unsafe extern "C" {
     fn ck_hid_busy() -> u8;
     fn ck_hid_active() -> u8;
 }
-struct Platform {
+struct Platform<P> {
     generation: u32,
+    provider: core::marker::PhantomData<P>,
 }
-impl Scratch for Platform {
+impl<P: Provider> Scratch for Platform<P> {
     fn acquire(&mut self, length: usize) -> bool {
         #[cfg(feature = "ctap")]
         {
-            length <= pke::capacity() && pke::acquire()
+            length <= pke::capacity::<P>() && pke::acquire::<P>()
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -49,7 +51,7 @@ impl Scratch for Platform {
     fn read(&mut self, offset: usize, out: &mut [u8]) -> bool {
         #[cfg(feature = "ctap")]
         {
-            pke::read(offset, out)
+            pke::read::<P>(offset, out)
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -60,7 +62,7 @@ impl Scratch for Platform {
     fn write(&mut self, offset: usize, bytes: &[u8]) -> bool {
         #[cfg(feature = "ctap")]
         {
-            pke::write(offset, bytes)
+            pke::write::<P>(offset, bytes)
         }
         #[cfg(not(feature = "ctap"))]
         {
@@ -70,18 +72,18 @@ impl Scratch for Platform {
     }
     fn close(&mut self) {
         #[cfg(feature = "ctap")]
-        pke::close_acquired();
+        pke::close_acquired::<P>();
     }
 }
-impl Backend for Platform {
+impl<P: Provider> Backend for Platform<P> {
     fn now(&mut self) -> u32 {
         unsafe { ck_ccid_io_now() }
     }
     fn reset(&mut self) {
-        unsafe { crate::abi::core::ck_core_reset() }
+        unsafe { core_ops::reset::<P>() }
     }
     fn slot_power(&mut self) {
-        unsafe { crate::abi::core::ck_core_slot_power() }
+        unsafe { core_ops::slot_power::<P>() }
     }
     fn prepare_extended(
         &mut self,
@@ -90,7 +92,7 @@ impl Backend for Platform {
     ) -> Result<u16, u16> {
         #[cfg(feature = "ctap")]
         {
-            crate::abi::core::with_core(|core, p| {
+            core_ops::with_core::<P, _>(|core, p| {
                 core.prepare_extended(OWNER_CCID, prefix, total, p)
                     .map_err(|sw| sw.value())
             })
@@ -109,12 +111,12 @@ impl Backend for Platform {
         if request.staged() {
             use canokey_protocol::response::StatusWord;
             use canokey_rust_core::runtime::engine::InputSource;
-            struct Source<'a> {
+            struct Source<'a, P: Provider> {
                 request: &'a mut Request,
-                platform: &'a mut Platform,
+                platform: &'a mut Platform<P>,
                 offset: usize,
             }
-            impl InputSource for Source<'_> {
+            impl<P: Provider> InputSource for Source<'_, P> {
                 fn read(&mut self, out: &mut [u8]) -> Result<usize, StatusWord> {
                     if !self.request.read(self.offset, out, self.platform) {
                         return Err(StatusWord::UNABLE_TO_PROCESS);
@@ -126,7 +128,7 @@ impl Backend for Platform {
                     self.request.close(self.platform);
                 }
             }
-            return crate::abi::core::with_core(|core, p| {
+            return core_ops::with_core::<P, _>(|core, p| {
                 let total = request.len();
                 let reply = core.receive_source(
                     OWNER_CCID,
@@ -143,7 +145,7 @@ impl Backend for Platform {
         }
         let input = request.short();
         let n = unsafe {
-            crate::abi::core::ck_core_exchange(
+            core_ops::exchange::<P>(
                 OWNER_CCID,
                 input.as_ptr(),
                 input.len(),
@@ -192,9 +194,9 @@ pub unsafe extern "C" fn ck_ccid_scratch_busy() -> u8 {
 }
 // The USB receive window is dead before applet/crypto execution starts.
 #[inline(never)]
-unsafe fn receive_packet(
+unsafe fn receive_packet<P: Provider>(
     transport: &mut Transport,
-    platform: &mut Platform,
+    platform: &mut Platform<P>,
     pending: bool,
 ) -> bool {
     let mut packet = [0; 64];
@@ -222,8 +224,7 @@ unsafe fn receive_packet(
     }
     true
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn CCID_Loop() {
+pub unsafe fn poll<P: Provider>() {
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -231,7 +232,7 @@ pub unsafe extern "C" fn CCID_Loop() {
         }
         #[cfg(feature = "usb-webusb")]
         if crate::transport::webusb::block_competitor()
-            && !crate::transport::webusb::try_preempt(matches!(
+            && !crate::transport::webusb::try_preempt::<P>(matches!(
                 // POWER_ON/OFF and XfrBlock (6F), not passive slot polling.
                 u8::try_from(ck_ccid_io_peek()).ok(),
                 Some(
@@ -244,7 +245,10 @@ pub unsafe extern "C" fn CCID_Loop() {
             return;
         }
         let generation = ck_ccid_io_generation();
-        let mut platform = Platform { generation };
+        let mut platform = Platform::<P> {
+            generation,
+            provider: core::marker::PhantomData,
+        };
         let transport = ccid();
         if GENERATION != generation {
             transport.reset(&mut platform);
@@ -311,7 +315,10 @@ pub unsafe fn presence_progress() {
         }
         let transport = ccid();
         transport.completed();
-        let mut platform = Platform { generation };
+        let mut platform = Platform::<crate::platform::Native> {
+            generation,
+            provider: core::marker::PhantomData,
+        };
         if transport.completed_transaction() {
             let mut packet = [0; HEADER];
             if !crate::transport::ccid::io::take_presence(generation, &mut packet) {
@@ -333,3 +340,8 @@ pub unsafe fn presence_progress() {
 }
 
 pub(crate) mod io;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn CCID_Loop() {
+    unsafe { poll::<crate::platform::Native>() }
+}

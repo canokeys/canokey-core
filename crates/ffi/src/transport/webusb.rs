@@ -4,8 +4,9 @@
 //! the WebUSB RX/TX allocation, exclusively leased by main-loop admission.
 //! A single 16-byte FIFO mailbox holds a data-stage OUT packet received after
 //! SETUP admission but before the main loop accepts the command.
+use crate::composition::Provider;
 #[cfg(not(test))]
-use crate::abi::core::{can_preempt, ck_core_exchange, ck_core_reset};
+use crate::composition::core::{can_preempt, exchange as ck_core_exchange, reset as ck_core_reset};
 use crate::sys::device_get_tick;
 #[cfg(not(test))]
 use crate::transport::ccid::ck_ccid_idle;
@@ -15,7 +16,7 @@ use crate::transport::owners::OWNER_WEBUSB;
 #[cfg(all(test, feature = "usb-hid"))]
 use crate::transport::usb::tests::ck_hid_busy;
 #[cfg(test)]
-use crate::transport::usb::tests::{can_preempt, ck_ccid_idle, ck_core_exchange, ck_core_reset};
+use crate::transport::usb::tests::{can_preempt, ck_ccid_idle};
 use crate::transport::usb_locked;
 use canokey_protocol::usb::Setup;
 use canokey_rust_core::runtime::webusb::{RESPONSE_LIMIT, Request, Transport};
@@ -34,7 +35,7 @@ pub unsafe fn block_competitor() -> bool {
 /// Main-loop only: an actual foreign request may abandon a completed session.
 /// Clear WebUSB ownership before resetting Core so a later timeout cannot reset
 /// the new owner's authorization. Mere polling/keyboard output must not do this.
-pub unsafe fn try_preempt(requested: bool) -> bool {
+pub unsafe fn try_preempt<P: Provider>(requested: bool) -> bool {
     unsafe {
         if !requested {
             return false;
@@ -52,7 +53,7 @@ pub unsafe fn try_preempt(requested: bool) -> bool {
             eligible
         });
         if eligible {
-            ck_core_reset();
+            ck_core_reset::<P>();
         }
         eligible
     }
@@ -144,8 +145,7 @@ pub unsafe fn completed() {
         (&mut *core::ptr::addr_of_mut!(STATE)).completed(device_get_tick());
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn WebUSB_Loop() {
+pub unsafe fn poll<P: Provider>() {
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -161,7 +161,7 @@ pub unsafe extern "C" fn WebUSB_Loop() {
             cleanup
         });
         if cleanup {
-            ck_core_reset();
+            ck_core_reset::<P>();
         }
 
         let (command, new_session) = usb_locked(|| {
@@ -200,11 +200,11 @@ pub unsafe extern "C" fn WebUSB_Loop() {
         });
         if let Some(length) = command {
             if new_session {
-                ck_core_reset();
+                ck_core_reset::<P>();
             }
             let buffer = crate::transport::ccid::ck_ccid_response_buffer();
             // ck_core_exchange ends the input borrow before creating output.
-            let n = ck_core_exchange(OWNER_WEBUSB, buffer, length, buffer, RESPONSE_LIMIT);
+            let n = ck_core_exchange::<P>(OWNER_WEBUSB, buffer, length, buffer, RESPONSE_LIMIT);
             let n = if n < 0 {
                 // Preserve a pollable APDU failure on a response-source error.
                 *buffer = 0x6f;
@@ -230,4 +230,23 @@ pub unsafe fn progress() -> Option<bool> {
             .execution_live()
             .map(|live| live && !CLEANUP)
     })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn WebUSB_Loop() {
+    unsafe { poll::<crate::platform::Native>() }
+}
+#[cfg(test)]
+unsafe fn ck_core_reset<P: Provider>() {
+    unsafe { crate::transport::usb::tests::ck_core_reset() }
+}
+#[cfg(test)]
+unsafe fn ck_core_exchange<P: Provider>(
+    owner: u8,
+    input: *const u8,
+    length: usize,
+    out: *mut u8,
+    capacity: usize,
+) -> i32 {
+    unsafe { crate::transport::usb::tests::ck_core_exchange(owner, input, length, out, capacity) }
 }

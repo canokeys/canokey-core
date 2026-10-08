@@ -54,10 +54,10 @@ pub(crate) unsafe fn device_get_tick() -> u32 {
 pub(crate) unsafe fn device_delay(ms: i32) {
     controller().now += ms as u32;
 }
-pub(crate) unsafe fn ck_hid_reset() {
+pub(crate) unsafe fn ck_hid_reset<P: crate::composition::Provider>() {
     controller().resets += 1;
 }
-pub(crate) unsafe fn ck_hid_poll(
+pub(crate) unsafe fn ck_hid_poll<P: crate::composition::Provider>(
     input: *const [u8; DATA_PACKET_BYTES],
     tick: u32,
     now: u32,

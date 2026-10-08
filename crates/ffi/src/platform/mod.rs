@@ -18,6 +18,8 @@ pub(crate) type BoundPlatform<'a> = Platform<'a, canokey_ports::DynamicBackends<
 
 pub(crate) struct Native;
 impl crate::composition::Provider for Native {
+    #[cfg(feature = "ctap")]
+    type Staging = Scratch;
     #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
     type Backends =
         BackendTypes<StorageBackend, CryptoBackend, DeviceBackend<Runtime>, MemoryBackend>;
@@ -25,6 +27,30 @@ impl crate::composition::Provider for Native {
     type Backends = canokey_ports::DynamicBackends<'static>;
     fn with_platform<T>(run: impl FnOnce(&mut BoundPlatform<'_>) -> T) -> T {
         with_platform(run)
+    }
+}
+
+#[cfg(feature = "ctap")]
+pub(crate) struct Scratch;
+#[cfg(feature = "ctap")]
+impl crate::composition::Staging for Scratch {
+    fn capacity() -> usize {
+        unsafe { crate::sys::pke_buffer_size() }
+    }
+    fn acquire(owner: u8) -> bool {
+        unsafe { crate::sys::pke_buffer_acquire(owner) == 0 }
+    }
+    fn clear() -> bool {
+        unsafe { crate::sys::pke_buffer_clear() == 0 }
+    }
+    fn release(owner: u8) -> bool {
+        unsafe { crate::sys::pke_buffer_release(owner) == 0 }
+    }
+    fn read(offset: usize, out: &mut [u8]) -> bool {
+        unsafe { crate::sys::pke_buffer_read(offset, out.as_mut_ptr(), out.len()) == 0 }
+    }
+    fn write(offset: usize, bytes: &[u8]) -> bool {
+        unsafe { crate::sys::pke_buffer_write(offset, bytes.as_ptr(), bytes.len()) == 0 }
     }
 }
 

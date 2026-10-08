@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Must match PKE_BUFFER_OWNER_CTAP in native/include/pke.h.
 const PKE_OWNER_CTAP: u8 = 3;
-use crate::sys::pke_buffer_acquire;
-use crate::sys::pke_buffer_clear;
-use crate::sys::pke_buffer_read;
-use crate::sys::pke_buffer_release;
-use crate::sys::pke_buffer_size;
-use crate::sys::pke_buffer_write;
+use crate::composition::{Provider, Staging};
 // Serialized transports retain bookkeeping across polls, never hardware slices.
 // Cleanup is explicit: a temporary platform adapter must not release the lease.
 pub struct PkeLease {
@@ -17,40 +12,38 @@ impl PkeLease {
         Self { active: false }
     }
     #[inline(always)]
-    pub fn acquire(&mut self) -> bool {
-        if unsafe { pke_buffer_acquire(PKE_OWNER_CTAP) } != 0 {
+    pub fn acquire<P: Provider>(&mut self) -> bool {
+        if !P::Staging::acquire(PKE_OWNER_CTAP) {
             return false;
         }
         self.active = true;
         true
     }
-    pub fn close(&mut self) {
+    pub fn close<P: Provider>(&mut self) {
         if self.active {
-            close_acquired();
+            close_acquired::<P>();
             self.active = false;
         }
     }
 }
-pub fn close_acquired() {
+pub fn close_acquired<P: Provider>() {
     // Failed cleanup must halt before another request can reuse secrets.
-    unsafe {
-        assert_eq!(pke_buffer_clear(), 0);
-        assert_eq!(pke_buffer_release(PKE_OWNER_CTAP), 0);
-    }
+    assert!(P::Staging::clear());
+    assert!(P::Staging::release(PKE_OWNER_CTAP));
 }
 #[cfg(feature = "usb-ccid")]
 #[inline(always)]
-pub fn acquire() -> bool {
-    unsafe { pke_buffer_acquire(PKE_OWNER_CTAP) == 0 }
+pub fn acquire<P: Provider>() -> bool {
+    P::Staging::acquire(PKE_OWNER_CTAP)
 }
-pub fn capacity() -> usize {
-    unsafe { pke_buffer_size() }
-}
-#[inline(always)]
-pub fn read(offset: usize, out: &mut [u8]) -> bool {
-    unsafe { pke_buffer_read(offset, out.as_mut_ptr(), out.len()) == 0 }
+pub fn capacity<P: Provider>() -> usize {
+    P::Staging::capacity()
 }
 #[inline(always)]
-pub fn write(offset: usize, bytes: &[u8]) -> bool {
-    unsafe { pke_buffer_write(offset, bytes.as_ptr(), bytes.len()) == 0 }
+pub fn read<P: Provider>(offset: usize, out: &mut [u8]) -> bool {
+    P::Staging::read(offset, out)
+}
+#[inline(always)]
+pub fn write<P: Provider>(offset: usize, bytes: &[u8]) -> bool {
+    P::Staging::write(offset, bytes)
 }

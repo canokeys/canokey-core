@@ -3,6 +3,8 @@
 use canokey_ports::{Device, MemoryBackend, Platform};
 use canokey_rust_core::Core;
 pub mod storage;
+#[cfg(feature = "transport-hid")]
+pub mod transport;
 pub const CCID_OWNER: u8 = 1;
 pub struct Clock {
     ticks: u32,

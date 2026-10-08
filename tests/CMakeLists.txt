@@ -79,12 +79,8 @@ if(BUILD_TESTING)
     # one process. Only packet hardware, time and scratch memory are mocked.
     # APDU-only adapters deliberately have no USB callbacks: keep this feature
     # in a separate archive so their stubs cannot replace real HID execution.
-    add_rust_host_archive(canokey-rust-hid rust-hid-build cargo-hid "${FEATURES},usb-hid")
-    add_executable(hid-core ${CANOKEY_ROOT}/tests/support/hid_core.c ${CANOKEY_ROOT}/tests/support/services.c)
-    target_compile_definitions(hid-core PRIVATE WITH_CTAP WITH_HID ENABLE_IFACE_CTAPHID=1)
-    target_compile_options(hid-core PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-    target_link_libraries(hid-core PRIVATE canokey-rust-hid OpenSSL::Crypto host-key-services)
-    add_test(NAME hid-core COMMAND hid-core)
+    add_rust_card(hid-core FALSE hid-core-rust)
+    add_test(NAME hid-core COMMAND $<TARGET_FILE:hid-core-image>)
     set_tests_properties(hid-core PROPERTIES TIMEOUT 30)
     if(CANOKEY_APPLET_PASS)
       add_rust_host_archive(canokey-rust-usb rust-usb-build cargo-usb

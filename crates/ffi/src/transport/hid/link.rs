@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized HID link policy. IRQs access only the native mailbox, never this
 //! state. Core execution may call progress, so no state borrow crosses a poll.
+use crate::composition::Provider;
 use canokey_protocol::ctaphid::{self as wire, Error};
 
 // Idle ownership grace prevents CCID preemption between HID requests.
@@ -8,7 +9,7 @@ const SESSION_IDLE_MS: u32 = 2000;
 const KEEPALIVE_INTERVAL_MS: u32 = 100;
 const TX_TIMEOUT_MS: u32 = 1000;
 #[cfg(not(all(test, not(feature = "usb-device"))))]
-use super::command::{ck_hid_poll, ck_hid_reset};
+use super::command::{poll as ck_hid_poll, reset as ck_hid_reset};
 #[cfg(all(test, not(feature = "usb-device")))]
 pub(crate) mod tests;
 use super::io::{
@@ -221,8 +222,7 @@ pub unsafe fn ck_hid_execution_end() {
         LINK.executing = false;
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
+pub unsafe fn poll<P: Provider>() -> u8 {
     unsafe {
         #[cfg(feature = "nfc")]
         if crate::transport::nfc::is_nfc() != 0 {
@@ -238,13 +238,13 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
                         && matches!(command, wire::PING | wire::MSG | wire::CBOR | wire::WINK)
                 });
             // INIT, CANCEL and continuations cannot revoke a foreign grant.
-            if !crate::transport::webusb::try_preempt(requested) {
+            if !crate::transport::webusb::try_preempt::<P>(requested) {
                 return 0;
             }
         }
         if ck_hid_io_reset_pending() != 0 {
             let generation = ck_hid_io_epoch();
-            ck_hid_reset();
+            ck_hid_reset::<P>();
             LINK = Link::new();
             // A hardware reset has released the endpoint-owned buffers.
             core::ptr::addr_of_mut!(OUTGOING).write([0; 64]);
@@ -255,7 +255,7 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         }
         if ck_hid_io_idle() == 0 {
             if LINK.transmitting && device_get_tick().wrapping_sub(LINK.sent_at) >= TX_TIMEOUT_MS {
-                ck_hid_reset();
+                ck_hid_reset::<P>();
                 LINK.active = false;
                 LINK.transmitting = false;
                 LINK.session_owned = false;
@@ -276,7 +276,7 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
             ck_hid_io_consume(generation);
             ck_hid_io_receive();
         }
-        let result = ck_hid_poll(
+        let result = ck_hid_poll::<P>(
             if has_input {
                 core::ptr::addr_of!(report)
             } else {
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
             LINK.transmitting = false;
             LINK.session_owned = false;
             // Drop the suppressed response before processing the queued INIT.
-            ck_hid_reset();
+            ck_hid_reset::<P>();
             return 0;
         }
         if LINK.active || result & 2 != 0 {
@@ -305,7 +305,7 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         LINK.active = result & 2 != 0;
         if result & 1 != 0 {
             if ck_hid_io_send(core::ptr::addr_of_mut!(OUTGOING).cast(), generation) == 0 {
-                ck_hid_reset();
+                ck_hid_reset::<P>();
                 LINK = Link::new();
                 return 0;
             }
@@ -315,4 +315,9 @@ pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
         ck_hid_io_receive();
         0
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
+    unsafe { poll::<crate::platform::Native>() }
 }

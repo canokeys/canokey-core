@@ -60,12 +60,6 @@ pub unsafe extern "C" fn ck_core_output_sample(pressed: u8, now: u32, ready: u8)
 pub extern "C" fn ck_core_keyboard_usage(ch: u8) -> i32 {
     core::keyboard_usage::<Native>(ch)
 }
-#[cfg(feature = "ctap")]
-pub(crate) fn with_core<T>(
-    run: impl FnOnce(&mut canokey_rust_core::Core, &mut crate::platform::BoundPlatform<'_>) -> T,
-) -> T {
-    core::with_core::<Native, T>(run)
-}
 #[cfg(all(feature = "device-runtime", not(test)))]
 pub(crate) fn boot_flags() -> Result<u32, canokey_ports::StorageError> {
     core::boot_flags::<Native>()
