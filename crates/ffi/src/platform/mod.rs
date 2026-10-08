@@ -88,6 +88,34 @@ impl DeviceRuntime for Runtime {
 
 #[cfg(feature = "device-runtime")]
 impl crate::composition::FirmwareProvider for Native {
+    unsafe fn storage_mount() -> i32 {
+        #[cfg(all(feature = "storage", not(test)))]
+        unsafe {
+            return crate::sys::ck_storage_init();
+        }
+        #[cfg(all(feature = "storage", test))]
+        unsafe {
+            return crate::runtime::device::tests::hal::ck_storage_init();
+        }
+        #[cfg(not(feature = "storage"))]
+        {
+            0
+        }
+    }
+    unsafe fn storage_format() -> i32 {
+        #[cfg(all(feature = "storage", not(test)))]
+        unsafe {
+            return crate::sys::ck_storage_format();
+        }
+        #[cfg(all(feature = "storage", test))]
+        unsafe {
+            return crate::runtime::device::tests::hal::ck_storage_format();
+        }
+        #[cfg(not(feature = "storage"))]
+        {
+            0
+        }
+    }
     #[cfg(feature = "ctap")]
     unsafe fn sample_presence() {
         #[cfg(not(test))]

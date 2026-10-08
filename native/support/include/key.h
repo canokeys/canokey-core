@@ -1,4 +1,5 @@
 #ifndef CANOKEY_CORE_KEY_H
+/* Native C key layout shared by crypto facades. */
 #define CANOKEY_CORE_KEY_H
 
 #include <algo.h>

@@ -6,7 +6,7 @@ add_mocked_test(fs
         ${CANOKEY_ROOT}/third_party/littlefs/lfs_util.c
         ${CANOKEY_ROOT}/third_party/littlefs/bd/lfs_filebd.c
 )
-target_include_directories(test_fs PRIVATE ${CANOKEY_ROOT}/native/include)
+target_include_directories(test_fs PRIVATE ${CANOKEY_ROOT}/native/support/include)
 target_compile_definitions(test_fs PRIVATE TEST TESTMODE_INS_HOOKS)
 
 # Sanitizer diagnostics are correctness failures, not passing-test log output.

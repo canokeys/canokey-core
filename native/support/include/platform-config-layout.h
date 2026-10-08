@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Native configuration backend layout.
 #ifndef CANOKEY_PLATFORM_CONFIG_LAYOUT_H
 #define CANOKEY_PLATFORM_CONFIG_LAYOUT_H
 /* Native-endian on-flash format owned and statically checked by

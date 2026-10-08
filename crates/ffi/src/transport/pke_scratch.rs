@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Must match PKE_BUFFER_OWNER_CTAP in native/include/pke.h.
+// Must match PKE_BUFFER_OWNER_CTAP in native/support/include/pke.h.
 const PKE_OWNER_CTAP: u8 = 3;
 use crate::composition::{Provider, Staging};
 // Serialized transports retain bookkeeping across polls, never hardware slices.

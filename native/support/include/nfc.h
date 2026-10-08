@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Native chip configuration declarations. */
 #ifndef _NFC_H_
 #define _NFC_H_
 

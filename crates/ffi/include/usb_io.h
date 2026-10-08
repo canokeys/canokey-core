@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Compatibility USB hardware bridge; product exports belong to the platform. */
 #ifndef CK_USB_IO_H
 #define CK_USB_IO_H
 #include <stdint.h>

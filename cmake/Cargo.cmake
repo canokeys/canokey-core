@@ -29,7 +29,7 @@ function(add_rust_host_archive target build_target directory features)
   VERBATIM)
   add_library(${target} STATIC IMPORTED GLOBAL)
   set_target_properties(${target} PROPERTIES IMPORTED_LOCATION "${archive}"
-  INTERFACE_INCLUDE_DIRECTORIES "${CANOKEY_ROOT}/native/include")
+  INTERFACE_INCLUDE_DIRECTORIES "${CANOKEY_ROOT}/crates/ffi/include;${CANOKEY_ROOT}/native/support/include;${CANOKEY_ROOT}/crates/native-crypto/include")
   add_dependencies(${target} ${build_target})
 endfunction()
 

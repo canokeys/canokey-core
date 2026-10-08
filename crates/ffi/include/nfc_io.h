@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Compatibility NFC hardware bridge.
 #ifndef CANOKEY_RUST_NFC_IO_H
 #define CANOKEY_RUST_NFC_IO_H
 #include <stdint.h>

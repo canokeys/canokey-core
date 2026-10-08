@@ -148,7 +148,7 @@ and incremental hashing/ciphertext processing may precede touch; no final
 signature or shared secret is returned until the gesture succeeds. Parser and
 stream phases have named variants; persistent metadata uses named, stable byte
 offsets. Crypto operations have explicit ABI discriminants in Rust and matching
-C constants in `native/include/crypto_ops.h`.
+C constants in `crates/native-crypto/include/crypto_ops.h`.
 
 A single registry-owned `SessionWorkspace` has mutually exclusive classic,
 streaming-crypto and attestation views; OpenPGP uses the classic view. No applet

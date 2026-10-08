@@ -109,7 +109,7 @@ The unused TinyCBOR submodule and C applet/scratch headers have also been
 removed. CBOR decoding remains in Rust; the native crypto and LittleFS
 dependencies are unchanged.
 The old USB header tree and unused CTAP C API are removed as well. Existing
-HID/CCID hardware fixtures compile against only `native/include`, with
+HID/CCID hardware fixtures compile against owned compatibility/native headers, with
 standard C headers for their mocks; no legacy protocol types are required.
 Unused public C applet, APDU-dispatch and PIN headers are removed. Native
 key/PKE, filesystem and hardware declarations remain for their actual consumers.

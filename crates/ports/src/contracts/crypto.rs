@@ -21,7 +21,7 @@ pub enum KeyOperation {
     Sm2MessageDigest = 9,
 }
 
-/// Stable primitive ABI; mirrored in native/include/crypto_ops.h.
+/// Stable primitive ABI; mirrored in crates/native-crypto/include/crypto_ops.h.
 #[cfg(any(feature = "piv", feature = "ctap"))]
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -38,7 +38,7 @@ pub enum StreamOperation {
     Sm2Identity = 9,
 }
 
-/// Stable primitive ABI; mirrored in native/include/crypto_ops.h.
+/// Stable primitive ABI; mirrored in crates/native-crypto/include/crypto_ops.h.
 #[cfg(any(feature = "piv", feature = "ctap"))]
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -191,7 +191,7 @@ impl Default for KeyMaterial {
 }
 
 /// Byte offsets in the fixed SM2 key-exchange input packet, mirrored in
-/// native/include/crypto_ops.h. Bytes 0..32 hold our ephemeral scalar;
+/// crates/native-crypto/include/crypto_ops.h. Bytes 0..32 hold our ephemeral scalar;
 /// each peer point is 64 raw X||Y bytes (no 04 prefix). Each ID occupies a
 /// one-byte length plus 32-byte capacity. ROLE selects initiator/responder;
 /// OUTPUT_LENGTH is the requested shared-key byte count (1..128).

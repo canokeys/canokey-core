@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Native C support declarations. */
 #ifndef _DEVICE_H_
 #define _DEVICE_H_
 

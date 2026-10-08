@@ -29,10 +29,6 @@ use hal::ck_board_stack_paint;
 use hal::ck_board_stack_report;
 use hal::ck_board_usb_ready;
 use hal::ck_platform_led;
-#[cfg(feature = "storage")]
-use hal::ck_storage_format;
-#[cfg(feature = "storage")]
-use hal::ck_storage_init;
 use hal::device_delay;
 static mut LED_DEFAULT: bool = true;
 pub unsafe fn ck_device_led_idle() {
@@ -123,10 +119,10 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
         {
             // Only a known uninitialized page permits formatting. Mount errors
             // on provisioned devices are never permission to erase credentials.
-            if flags & config::INITIALIZED == 0 && ck_storage_format() != 0 {
+            if flags & config::INITIALIZED == 0 && P::storage_format() != 0 {
                 return Stop::Blink(10, 1000);
             }
-            if ck_storage_init() != 0 {
+            if P::storage_mount() != 0 {
                 return Stop::Blink(10, 1000);
             }
         }

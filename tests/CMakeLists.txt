@@ -61,13 +61,13 @@ if(BUILD_TESTING)
   endif()
   if(CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
     add_executable(crypto-profile ${CANOKEY_ROOT}/tests/native/crypto_profile.c)
-    target_include_directories(crypto-profile PRIVATE ${CANOKEY_ROOT}/native/include)
+    target_include_directories(crypto-profile PRIVATE ${CANOKEY_ROOT}/crates/native-crypto/include)
     target_compile_options(crypto-profile PRIVATE -Wall -Wextra -UNDEBUG)
     target_link_libraries(crypto-profile PRIVATE host-key-services)
     add_test(NAME crypto-profile COMMAND crypto-profile)
     if(CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP)
       add_executable(stream-crypto ${CANOKEY_ROOT}/tests/native/stream_crypto.c)
-      target_include_directories(stream-crypto PRIVATE ${CANOKEY_ROOT}/native/include)
+      target_include_directories(stream-crypto PRIVATE ${CANOKEY_ROOT}/crates/native-crypto/include)
       target_compile_options(stream-crypto PRIVATE -Wall -Wextra -Werror -UNDEBUG)
       target_link_libraries(stream-crypto PRIVATE host-key-services)
       add_test(NAME stream-crypto COMMAND stream-crypto)
@@ -112,6 +112,15 @@ if(BUILD_TESTING)
   endif()
   if(CANOKEY_APPLET_OPENPGP AND CANOKEY_APPLET_PIV AND CANOKEY_APPLET_ADMIN AND CANOKEY_APPLET_PASS AND CANOKEY_APPLET_OATH)
     if(CANOKEY_PLATFORM_STORAGE_FIXTURE)
+      if(CANOKEY_PLATFORM_STORAGE_MANIFEST)
+        set(storage_bridge "${CMAKE_CURRENT_BINARY_DIR}/platform-storage/release/examples/libfixture.a")
+        add_custom_target(platform-storage-bridge
+          COMMAND ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} build
+            --manifest-path "${CANOKEY_PLATFORM_STORAGE_MANIFEST}"
+            --target-dir "${CMAKE_CURRENT_BINARY_DIR}/platform-storage"
+            --release --example fixture --features applet-fixture
+          BYPRODUCTS "${storage_bridge}" VERBATIM)
+      endif()
       add_executable(storage-applet-host ${CANOKEY_ROOT}/tests/support/oath_host.c
         ${CANOKEY_ROOT}/tests/support/services.c ${CANOKEY_PLATFORM_STORAGE_FIXTURE}
         ${CANOKEY_ROOT}/third_party/littlefs/lfs.c ${CANOKEY_ROOT}/third_party/littlefs/lfs_util.c)
@@ -121,6 +130,10 @@ if(BUILD_TESTING)
         ${CANOKEY_ROOT}/third_party/littlefs)
       target_compile_options(storage-applet-host PRIVATE -Wall -Wextra -UNDEBUG)
       target_link_libraries(storage-applet-host PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
+      if(CANOKEY_PLATFORM_STORAGE_MANIFEST)
+        add_dependencies(storage-applet-host platform-storage-bridge)
+        target_link_libraries(storage-applet-host PRIVATE "${storage_bridge}")
+      endif()
     endif()
     add_test(NAME compact-storage COMMAND "${Python3_EXECUTABLE}"
       "${CANOKEY_ROOT}/tests/integration/compact_storage.py" $<TARGET_FILE:oath-host-image>)

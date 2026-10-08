@@ -67,6 +67,8 @@ pub trait Provider {
 /// Firmware main-loop capabilities; presence sampling must never enter Core.
 #[cfg(feature = "device-runtime")]
 pub trait FirmwareProvider: Provider {
+    unsafe fn storage_mount() -> i32;
+    unsafe fn storage_format() -> i32;
     #[cfg(feature = "ctap")]
     unsafe fn sample_presence();
 }

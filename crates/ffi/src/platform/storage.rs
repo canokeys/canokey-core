@@ -102,7 +102,7 @@ unsafe extern "C" {
     fn ck_platform_resize(file: u8, length: u32) -> i32;
 }
 
-// Stable byte ABI, mirrored in native/include/core.h.
+// Stable byte ABI, mirrored in crates/ffi/include/core.h.
 #[cfg(any(
     feature = "oath",
     feature = "openpgp",
@@ -112,7 +112,7 @@ unsafe extern "C" {
 ))]
 #[repr(u8)]
 // Variants are gated by platform capabilities and applet features; numeric
-// values remain aligned with ck_stage_operation in native/include/core.h.
+// values remain aligned with ck_stage_operation in crates/ffi/include/core.h.
 enum StageOperation {
     Begin = canokey_ports::contracts::stage_operation::BEGIN,
     Append = canokey_ports::contracts::stage_operation::APPEND,

@@ -4,8 +4,10 @@
 
 CanoKey Core is a Rust workspace. See [README](README.md),
 [architecture](docs/architecture/README.md) and [testing](docs/testing/README.md).
-Product code lives in `crates/{core,protocol,ports,ffi,host}`. Native ABI headers
-are in `native/include`, crypto facades in `native/crypto`, and filesystem
+Product code lives in `crates/{core,protocol,ports,ffi,host,native-crypto}`.
+Compatibility ABI headers are in `crates/ffi/include`; imported crypto ABI is in
+`crates/native-crypto/include`, C support headers in `native/support/include`,
+crypto facades in `native/crypto`, and filesystem
 helpers in `native/storage`. Dependencies in `third_party/` are Git submodules;
 retain their gitlinks and pinned revisions when relocating them.
 

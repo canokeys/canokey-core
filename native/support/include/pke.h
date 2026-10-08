@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Native accelerator scratch declarations. */
 #ifndef CANOKEY_CORE__PKE_H
 #define CANOKEY_CORE__PKE_H
 

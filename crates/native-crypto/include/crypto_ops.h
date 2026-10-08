@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+// Imported native crypto ABI, owned by canokey-native-crypto.
 #ifndef CK_RUST_CRYPTO_OPS_H
 #define CK_RUST_CRYPTO_OPS_H
 #include <stddef.h>

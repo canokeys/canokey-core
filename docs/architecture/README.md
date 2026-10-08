@@ -82,9 +82,13 @@ and timers. `transport/` groups CCID, HID, keyboard, USB, WebUSB and NFC facades
 `platform/` assembles the capability bundle. Transport facades manage buffers,
 progress and arbitration; credential policy and record interpretation stay in core.
 
-Public C declarations are in `native/include/`. Shared crypto facades live in
-`native/crypto/`, filesystem helpers in `native/storage/`. Host-only C entrypoints
-are private to `crates/host/native/`. Cryptographic primitives and LittleFS remain
+Optional compatibility C declarations are in `crates/ffi/include/`. Production
+entrypoints and their generated header belong to the platform. Native crypto
+imports and their declarations are owned by `crates/native-crypto`; C crypto
+facades live in `native/crypto/`, filesystem helpers in `native/storage/`, and
+C support headers in `native/support/include/`. Host-only C callbacks, including
+the POSIX-cancellable PC/SC wait, are private to `crates/host/native/`.
+Cryptographic primitives and LittleFS remain
 pinned submodules; neither C applets nor the historical transport stack are linked.
 
 ## Resource and lifetime contracts

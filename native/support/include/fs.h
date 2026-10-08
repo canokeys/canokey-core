@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Native C filesystem helper declarations. */
 #ifndef CANOKEY_CORE_INCLUDE_FS_H
 #define CANOKEY_CORE_INCLUDE_FS_H
 

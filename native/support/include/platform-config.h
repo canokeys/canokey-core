@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Native configuration backend declarations. */
 #ifndef CANOKEY_CORE_INCLUDE_PLATFORM_CONFIG_H_
 #define CANOKEY_CORE_INCLUDE_PLATFORM_CONFIG_H_
 

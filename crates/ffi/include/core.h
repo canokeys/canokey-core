@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* Optional compatibility composition; not the CIU production entrypoint ABI. */
 #ifndef CANOKEY_RUST_CORE_H
 #define CANOKEY_RUST_CORE_H
 #include <stddef.h>

@@ -56,7 +56,7 @@ an intentional contract change, regenerate the header from the core root:
 
 ```sh
 rustc --edition=2024 crates/ports/codegen/abi.rs -o /tmp/canokey-port-abi
-/tmp/canokey-port-abi --output native/include/port_abi.h
+/tmp/canokey-port-abi --output crates/ffi/include/port_abi.h
 ```
 
 ## Fuzzing

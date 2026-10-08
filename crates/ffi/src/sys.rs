@@ -35,9 +35,19 @@ unsafe extern "C" {
     #[cfg(any(feature = "device-runtime", feature = "usb-hid"))]
     #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn device_delay(milliseconds: i32);
-    #[cfg(all(feature = "device-runtime", feature = "storage", not(test)))]
+    #[cfg(all(
+        feature = "native-composition",
+        feature = "device-runtime",
+        feature = "storage",
+        not(test)
+    ))]
     pub(crate) fn ck_storage_init() -> i32;
-    #[cfg(all(feature = "device-runtime", feature = "storage", not(test)))]
+    #[cfg(all(
+        feature = "native-composition",
+        feature = "device-runtime",
+        feature = "storage",
+        not(test)
+    ))]
     pub(crate) fn ck_storage_format() -> i32;
     #[cfg(all(feature = "device-runtime", not(test)))]
     pub(crate) fn ck_timer_arm(milliseconds: u16);
