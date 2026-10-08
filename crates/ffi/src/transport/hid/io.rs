@@ -12,12 +12,10 @@ static mut QUEUED: bool = false;
 static mut RESET: bool = false;
 static mut EPOCH: u32 = 0;
 static mut RECEIVED: u32 = 0;
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn CTAPHID_RxCanAccept() -> u8 {
+pub unsafe fn rx_can_accept() -> u8 {
     unsafe { u8::from(!core::ptr::read_volatile(core::ptr::addr_of!(QUEUED))) }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn CTAPHID_OutEvent(data: *const u8) -> u8 {
+pub unsafe fn out_event(data: *const u8) -> u8 {
     usb_locked(|| unsafe {
         if QUEUED || data.is_null() {
             return 0;
@@ -28,8 +26,7 @@ pub unsafe extern "C" fn CTAPHID_OutEvent(data: *const u8) -> u8 {
         1
     })
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_packet_reset() {
+pub unsafe fn ck_hid_packet_reset() {
     usb_locked(|| unsafe {
         EPOCH = EPOCH.wrapping_add(1);
         RESET = true;
@@ -39,7 +36,7 @@ pub unsafe extern "C" fn ck_hid_packet_reset() {
 #[cfg(feature = "usb-device")]
 pub unsafe fn ck_hid_packet_out(data: *const u8) -> u8 {
     unsafe {
-        CTAPHID_OutEvent(data);
+        out_event(data);
     }
     0 // Only main-loop consumption releases the FIFO.
 }

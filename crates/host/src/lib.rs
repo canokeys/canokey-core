@@ -4,8 +4,9 @@
 #[cfg(target_os = "none")]
 compile_error!("the virtual-card host must never be linked into firmware");
 use canokey_rust_ffi::{
-    CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
+    ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
     composition::{core, hid},
+    out_event, rx_can_accept,
 };
 use std::{
     io,
@@ -246,7 +247,7 @@ const INJECT: [u8; 12] = [
 fn receive() {
     // A full mailbox applies socket backpressure. Never overwrite an INIT
     // queued by execution-time resynchronization with a later UDP datagram.
-    if unsafe { CTAPHID_RxCanAccept() == 0 } || host(|h| h.reboot || h.socket.is_none()) {
+    if unsafe { rx_can_accept() == 0 } || host(|h| h.reboot || h.socket.is_none()) {
         return;
     }
     let mut data = [0; 2048];
@@ -270,7 +271,7 @@ fn receive() {
         let tail = &data[INJECT.len()..];
         host(|h| h.storage.inject(tail[0], tail[1], &tail[2..]));
     } else if data.len() == 64 {
-        assert_ne!(unsafe { CTAPHID_OutEvent(data.as_ptr()) }, 0);
+        assert_ne!(unsafe { out_event(data.as_ptr()) }, 0);
     }
 }
 fn exchange(command: &[u8]) -> Vec<u8> {

@@ -100,8 +100,7 @@ pub unsafe extern "C" fn ck_hid_busy() -> u8 {
         )
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_executing() -> u8 {
+pub unsafe fn ck_hid_executing() -> u8 {
     unsafe { u8::from(LINK.executing) }
 }
 pub unsafe fn ck_hid_execution_begin(cid: u32) {
@@ -164,8 +163,7 @@ pub unsafe fn ck_hid_foreign_progress() {
         ck_hid_io_receive();
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_hid_progress() -> u8 {
+pub unsafe fn ck_hid_progress() -> u8 {
     unsafe {
         if !LINK.executing || ck_hid_io_reset_pending() != 0 || ck_hid_io_configured() == 0 {
             return 0;

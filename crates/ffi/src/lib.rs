@@ -50,7 +50,7 @@ pub use transport::hid::command::{ck_hid_poll, ck_hid_reset};
 pub use transport::hid::link::CTAPHID_Loop;
 #[cfg(feature = "usb-hid")]
 pub use transport::hid::{
-    io::{CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_hid_packet_reset},
+    io::{ck_hid_packet_reset, out_event, rx_can_accept},
     link::{ck_hid_executing, ck_hid_progress},
 };
 #[cfg(feature = "usb-keyboard")]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Link/mailbox behavior; the core integration suite covers CTAP execution.
 use super::*;
-use crate::transport::hid::io::{CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_hid_packet_reset};
+use crate::transport::hid::io::{ck_hid_packet_reset, out_event, rx_can_accept};
 use canokey_protocol::usb::{DATA_PACKET_BYTES, EP_HID, EP_HID_IN};
 const CHANNEL: u32 = 0x12345678;
 // Initial PING on CHANNEL, big-endian body length 1, payload 0xab.
@@ -71,7 +71,7 @@ pub(crate) unsafe fn ck_hid_poll<P: crate::composition::Provider>(
             controller().inject = 0;
             let mut next = PACKET;
             next[7] ^= 0xff;
-            assert_ne!(unsafe { CTAPHID_OutEvent(next.as_ptr()) }, 0);
+            assert_ne!(unsafe { out_event(next.as_ptr()) }, 0);
             assert_eq!(unsafe { &*input }, &PACKET);
         }
         controller().received += 1;
@@ -79,7 +79,7 @@ pub(crate) unsafe fn ck_hid_poll<P: crate::composition::Provider>(
     if controller().inject != 0 {
         controller().inject = 0;
         assert!(input.is_null());
-        assert_ne!(unsafe { CTAPHID_OutEvent(PACKET.as_ptr()) }, 0);
+        assert_ne!(unsafe { out_event(PACKET.as_ptr()) }, 0);
     }
     if controller().reset_during_poll {
         controller().reset_during_poll = false;
@@ -133,13 +133,13 @@ pub(crate) unsafe fn ck_usb_receive(ep: u8) {
     assert_ne!(controller().masked, 0);
 }
 fn packet(bytes: &[u8; DATA_PACKET_BYTES]) {
-    assert_ne!(unsafe { CTAPHID_OutEvent(bytes.as_ptr()) }, 0);
+    assert_ne!(unsafe { out_event(bytes.as_ptr()) }, 0);
 }
 fn poll() {
     unsafe { CTAPHID_Loop(0) };
 }
 fn empty_mailbox() -> bool {
-    unsafe { CTAPHID_RxCanAccept() != 0 }
+    unsafe { rx_can_accept() != 0 }
 }
 
 #[test]

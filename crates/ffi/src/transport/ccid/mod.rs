@@ -188,8 +188,8 @@ pub unsafe extern "C" fn ck_ccid_idle() -> u8 {
         )
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_ccid_scratch_busy() -> u8 {
+#[cfg(feature = "usb-keyboard")]
+pub unsafe fn ck_ccid_scratch_busy() -> u8 {
     unsafe { u8::from(ccid().scratch_busy()) }
 }
 // The USB receive window is dead before applet/crypto execution starts.
@@ -297,8 +297,8 @@ pub unsafe fn poll<P: Provider>() {
 }
 
 #[cfg(any(feature = "usb-webusb", feature = "nfc"))]
-#[unsafe(no_mangle)]
-pub extern "C" fn ck_ccid_response_buffer() -> *mut u8 {
+#[cfg(any(feature = "usb-webusb", feature = "nfc"))]
+pub fn ck_ccid_response_buffer() -> *mut u8 {
     core::ptr::addr_of_mut!(RESPONSE).cast()
 }
 

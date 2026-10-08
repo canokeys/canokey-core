@@ -20,13 +20,9 @@ uint8_t CTAPHID_Loop(uint8_t wait_for_user);
 #if ENABLE_IFACE_CTAPHID
 uint8_t ck_hid_busy(void);
 uint8_t ck_hid_active(void);
-/* Serialized Rust transport callbacks; never reenter applet state or use PKE. */
-uint8_t ck_hid_executing(void);
-uint8_t ck_hid_progress(void);
 /* Main-loop admission only: may inspect Core after completed USB transfers.
  * Never call while a Core entrypoint is borrowed (including progress/IRQ). */
 uint8_t ck_ccid_idle(void);
-uint8_t ck_ccid_scratch_busy(void);
 /* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
 #define CK_CTAP_MAX_REQUEST 1024u
 #endif

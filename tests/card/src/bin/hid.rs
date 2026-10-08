@@ -3,8 +3,9 @@
 use canokey_ports::{Record, Storage};
 use canokey_protocol::ctaphid as wire;
 use canokey_rust_ffi::{
-    CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
+    ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
     composition::{core, hid},
+    out_event, rx_can_accept,
 };
 use canokey_test_card::transport::{self, Fake, SCRATCH_BYTES};
 use std::cell::RefCell;
@@ -96,7 +97,7 @@ fn progress() -> bool {
         (report, disconnect)
     });
     if let Some(report) = report {
-        assert_ne!(unsafe { CTAPHID_OutEvent(report.as_ptr()) }, 0);
+        assert_ne!(unsafe { out_event(report.as_ptr()) }, 0);
     }
     if disconnect {
         unsafe { ck_hid_packet_reset() };
@@ -114,7 +115,7 @@ fn poll() {
     unsafe { hid::poll::<Fake>() };
 }
 fn feed(report: &[u8; REPORT_BYTES]) {
-    assert_ne!(unsafe { CTAPHID_OutEvent(report.as_ptr()) }, 0);
+    assert_ne!(unsafe { out_event(report.as_ptr()) }, 0);
     poll();
 }
 fn drain() {
@@ -187,26 +188,26 @@ fn mailbox(cid: u32) {
     reset();
     let report = packet(cid, wire::PING, 0);
     let before = hw(|h| h.rearms);
-    assert_ne!(unsafe { CTAPHID_OutEvent(report.as_ptr()) }, 0);
+    assert_ne!(unsafe { out_event(report.as_ptr()) }, 0);
     assert_eq!(hw(|h| h.output.len()), 0);
-    assert_eq!(unsafe { CTAPHID_RxCanAccept() }, 0);
-    assert_eq!(unsafe { CTAPHID_OutEvent(report.as_ptr()) }, 0);
+    assert_eq!(unsafe { rx_can_accept() }, 0);
+    assert_eq!(unsafe { out_event(report.as_ptr()) }, 0);
     assert_eq!(hw(|h| h.rearms), before);
     poll();
     drain();
     assert_eq!(hw(|h| (h.output.len(), h.output[0][4])), (1, wire::PING));
-    assert_ne!(unsafe { CTAPHID_RxCanAccept() }, 0);
+    assert_ne!(unsafe { rx_can_accept() }, 0);
     assert!(hw(|h| h.rearms) > before);
     reset();
     for value in 0..50 {
         let mut report = packet(cid, wire::PING, 1);
         report[7] = value;
-        assert_ne!(unsafe { CTAPHID_OutEvent(report.as_ptr()) }, 0);
+        assert_ne!(unsafe { out_event(report.as_ptr()) }, 0);
         assert_eq!(hw(|h| h.output.len()), value as usize);
         poll();
         drain();
         assert_eq!(hw(|h| h.output[value as usize][7]), value);
-        assert_ne!(unsafe { CTAPHID_RxCanAccept() }, 0);
+        assert_ne!(unsafe { rx_can_accept() }, 0);
     }
     for late in [false, true] {
         reset();
@@ -218,7 +219,7 @@ fn mailbox(cid: u32) {
         hw(|h| h.ticks = if late { 1000 } else { 700 });
         let mut report = packet(cid, 0, 0);
         report[5] = 0xa5;
-        assert_ne!(unsafe { CTAPHID_OutEvent(report.as_ptr()) }, 0);
+        assert_ne!(unsafe { out_event(report.as_ptr()) }, 0);
         hw(|h| h.ticks = 1100);
         poll();
         drain();
