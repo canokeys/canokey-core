@@ -79,7 +79,7 @@ impl Response {
         workspace: &crate::runtime::workspace::Workspace,
         offset: usize,
         out: &mut [u8],
-        storage: &mut crate::ports::StoragePort<'_>,
+        storage: &mut (impl crate::ports::Storage + ?Sized),
     ) -> Result<(), canokey_protocol::response::StatusWord> {
         use canokey_protocol::response::StatusWord as Sw;
         if let Self::Authentication {

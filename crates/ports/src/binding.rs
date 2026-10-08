@@ -34,8 +34,8 @@ pub struct Platform<'a> {
 /// Copy a bounded window into an active staging transaction, wiping temporary data.
 #[cfg(any(feature = "oath", feature = "piv"))]
 pub fn copy_to_stage(
-    storage: &mut crate::StoragePort<'_>,
-    memory: &crate::MemoryPort<'_>,
+    storage: &mut (impl crate::Storage + ?Sized),
+    memory: &(impl crate::Memory + ?Sized),
     record: crate::Record,
     mut offset: u32,
     mut length: u32,

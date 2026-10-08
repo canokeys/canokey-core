@@ -5,7 +5,7 @@ use crate::applets::pass::{
     codec::{FILE_SIZE, Layout},
     domain::{self, Error, Slot, SlotIndex},
 };
-use crate::ports::{Platform, Record, StorageError};
+use crate::ports::{Memory, Platform, Record, Storage, StorageError};
 pub struct Pass {
     slots: [u8; FILE_SIZE],
     available: bool,
@@ -19,8 +19,8 @@ impl Pass {
     }
     pub fn install(
         &mut self,
-        storage: &mut crate::ports::StoragePort<'_>,
-        memory: &crate::ports::MemoryPort<'_>,
+        storage: &mut (impl Storage + ?Sized),
+        memory: &(impl Memory + ?Sized),
     ) -> Result<(), Error> {
         self.available = false;
         memory.wipe(&mut self.slots);
@@ -56,8 +56,8 @@ impl Pass {
     }
     fn persist(
         &mut self,
-        storage: &mut crate::ports::StoragePort<'_>,
-        memory: &crate::ports::MemoryPort<'_>,
+        storage: &mut (impl Storage + ?Sized),
+        memory: &(impl Memory + ?Sized),
         range: Option<core::ops::Range<usize>>,
     ) -> Result<(), Error> {
         let result = match range {
@@ -76,8 +76,8 @@ impl Pass {
         &mut self,
         index: SlotIndex,
         slot: Slot<'_>,
-        storage: &mut crate::ports::StoragePort<'_>,
-        memory: &crate::ports::MemoryPort<'_>,
+        storage: &mut (impl Storage + ?Sized),
+        memory: &(impl Memory + ?Sized),
     ) -> Result<(), Error> {
         if !self.available {
             return Err(Error::Persistence);
@@ -95,8 +95,8 @@ impl Pass {
     }
     pub fn clear(
         &mut self,
-        storage: &mut crate::ports::StoragePort<'_>,
-        memory: &crate::ports::MemoryPort<'_>,
+        storage: &mut (impl Storage + ?Sized),
+        memory: &(impl Memory + ?Sized),
     ) -> Result<(), Error> {
         if !self.available {
             return Err(Error::Persistence);
@@ -119,8 +119,8 @@ impl Pass {
     pub fn remove_oath(
         &mut self,
         id: Option<u32>,
-        storage: &mut crate::ports::StoragePort<'_>,
-        memory: &crate::ports::MemoryPort<'_>,
+        storage: &mut (impl Storage + ?Sized),
+        memory: &(impl Memory + ?Sized),
     ) -> Result<(), Error> {
         let mut changed = false;
         for index in 0..crate::applets::pass::codec::SLOT_COUNT {
@@ -170,5 +170,5 @@ impl Default for Pass {
     }
 }
 
-#[cfg(all(test, not(feature = "static-backend")))]
+#[cfg(test)]
 mod storage_tests;

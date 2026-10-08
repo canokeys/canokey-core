@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ADMIN usage attribution over the durable Rust record namespace.
 #![forbid(unsafe_code)]
-use crate::ports::{Record, StorageError, StoragePort};
+use crate::ports::{Record, Storage, StorageError};
 use canokey_protocol::response::StatusWord as Sw;
 const BYTES_PER_KIB: u32 = 1024;
 pub(super) const SUMMARY_BYTES: usize = 2;
@@ -42,7 +42,11 @@ fn applet_id(record: Record) -> usize {
     }
 }
 
-pub fn read(storage: &mut StoragePort<'_>, applets: bool, out: &mut [u8]) -> Result<usize, Sw> {
+pub fn read(
+    storage: &mut (impl Storage + ?Sized),
+    applets: bool,
+    out: &mut [u8],
+) -> Result<usize, Sw> {
     let (used, total) = storage.usage().map_err(|_| Sw::UNABLE_TO_PROCESS)?;
     if used > total {
         return Err(Sw::UNABLE_TO_PROCESS);
@@ -77,7 +81,7 @@ pub fn read(storage: &mut StoragePort<'_>, applets: bool, out: &mut [u8]) -> Res
     Ok(APPLET_BYTES)
 }
 
-#[cfg(all(test, not(feature = "static-backend")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ports::Storage;

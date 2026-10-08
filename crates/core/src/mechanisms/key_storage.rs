@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persist only active RSA limbs; expand into the fixed native workspace on load.
 use crate::ports::key_layout as layout;
-use crate::ports::{Record, StorageError};
+use crate::ports::{Record, Storage, StorageError};
 
 const RECORD_HEADER_BYTES: usize = 1;
 // The leading byte distinguishes compact RSA/EC/PQ records from legacy layouts.
@@ -9,7 +9,7 @@ const KEY_FORMAT_VERSION: u8 = 0x02;
 
 #[inline(always)]
 pub fn read_footer<const N: usize>(
-    storage: &mut crate::ports::StoragePort<'_>,
+    storage: &mut (impl Storage + ?Sized),
     record: Record,
     total: u32,
     version: u8,
@@ -27,7 +27,7 @@ pub fn read_footer<const N: usize>(
 
 #[inline(always)]
 pub fn commit(
-    storage: &mut crate::ports::StoragePort<'_>,
+    storage: &mut (impl Storage + ?Sized),
     record: Record,
     rsa: bool,
     width: usize,
@@ -56,7 +56,7 @@ pub fn length(rsa: bool, width: usize) -> usize {
     }
 }
 pub fn load(
-    storage: &mut crate::ports::StoragePort<'_>,
+    storage: &mut (impl Storage + ?Sized),
     record: Record,
     mut offset: u32,
     rsa: bool,
@@ -82,7 +82,7 @@ pub fn load(
     Ok(())
 }
 pub fn stage(
-    storage: &mut crate::ports::StoragePort<'_>,
+    storage: &mut (impl Storage + ?Sized),
     rsa: bool,
     width: usize,
     key: &[u8; crate::ports::key_layout::SIZE],
