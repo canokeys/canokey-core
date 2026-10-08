@@ -5,6 +5,7 @@ import hashlib
 import os
 from pathlib import Path
 import selectors
+import signal
 import socket
 import subprocess
 import sys
@@ -90,12 +91,12 @@ class Card:
             assert cbor.encode(result) == data[1:], "complete canonical management response"
         return result
 
-    def close(self):
+    def close(self, stopping_signal=signal.SIGTERM):
         if self.process.poll() is None:
-            self.process.terminate()
+            self.process.send_signal(stopping_signal)
         out, err = self.process.communicate(timeout=5)
         self.socket.close()
-        assert self.process.returncode == 143, (self.process.returncode, out, err)
+        assert self.process.returncode == 128 + stopping_signal, (self.process.returncode, out, err)
 
 
 def run(executable):
@@ -103,6 +104,8 @@ def run(executable):
     try:
         with tempfile.TemporaryDirectory(prefix='rust-udp-') as directory:
             image = Path(directory)/'image'
+            interrupted = Card(executable, image)
+            interrupted.close(signal.SIGINT)
             card = Card(executable, image)
             try:
                 echo = bytes(range(256))*3

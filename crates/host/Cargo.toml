@@ -6,14 +6,20 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
+[[bin]]
+name = "fido-hid-over-udp"
+path = "src/bin/udp.rs"
+required-features = ["udp-binary"]
 [dependencies]
 canokey-protocol = { path = "../protocol" }
 canokey-rust-ffi = { path = "../ffi", features = ["static-backend", "usb-hid", "admin", "pass", "oath", "openpgp", "piv", "ndef"] }
 # Simulated contactless presence without disabling the UDP HID endpoint.
 canokey-ports = { path = "../ports", features = ["nfc"] }
+libc = { version = "=0.2.189", optional = true }
 [features]
 default = []
+udp-binary = ["dep:libc"]
 usbip = ["canokey-rust-ffi/usb-device", "canokey-rust-ffi/usb-webusb"]
 ctap-restrict-algorithms = ["canokey-rust-ffi/ctap-restrict-algorithms"]
 

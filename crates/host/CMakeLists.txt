@@ -46,11 +46,33 @@ if(CANOKEY_VIRTUAL_CARD)
   target_compile_definitions(virtual-key-services PRIVATE RUST_CORE_OPENPGP RUST_CORE_PIV RUST_CORE_CTAP)
   target_link_libraries(virtual-key-services PUBLIC canokey-crypto)
   target_include_directories(virtual-key-services PUBLIC "${CANOKEY_ROOT}/native/include")
-  add_executable(fido-hid-over-udp native/main.c native/crypto.c)
-  target_include_directories(fido-hid-over-udp PRIVATE ${CANOKEY_ROOT}/native/include)
-  target_compile_options(fido-hid-over-udp PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-  target_link_libraries(fido-hid-over-udp PRIVATE canokey-rust-host virtual-key-services OpenSSL::Crypto Threads::Threads ${CMAKE_DL_LIBS} m)
-  set_target_properties(fido-hid-over-udp PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+  add_library(host-native-crypto STATIC native/crypto.c)
+  target_link_libraries(host-native-crypto PRIVATE OpenSSL::Crypto virtual-key-services)
+  target_include_directories(host-native-crypto PRIVATE ${CANOKEY_ROOT}/native/include)
+  target_compile_options(host-native-crypto PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+  set(HOST_UDP_LIBRARIES "$<TARGET_FILE:host-native-crypto>|$<TARGET_FILE:virtual-key-services>|$<TARGET_FILE:OpenSSL::Crypto>|$<TARGET_FILE:canokey-crypto>|$<TARGET_FILE:tfpsacrypto>")
+  separate_arguments(HOST_UDP_OPTIONS NATIVE_COMMAND "${CMAKE_EXE_LINKER_FLAGS}")
+  get_directory_property(HOST_DIRECTORY_LINK_OPTIONS LINK_OPTIONS)
+  list(APPEND HOST_UDP_OPTIONS ${HOST_DIRECTORY_LINK_OPTIONS})
+  list(APPEND HOST_UDP_OPTIONS -lm)
+  foreach(library IN LISTS CMAKE_DL_LIBS)
+    list(APPEND HOST_UDP_OPTIONS "-l${library}")
+  endforeach()
+  list(JOIN HOST_UDP_OPTIONS "|" HOST_UDP_OPTIONS)
+  set(HOST_UDP_IMAGE "${CMAKE_BINARY_DIR}/fido-hid-over-udp")
+  add_custom_target(fido-hid-over-udp ALL
+    COMMAND "${CMAKE_COMMAND}" -E env
+      "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
+      "CANOKEY_HOST_LINK_LIBRARIES=${HOST_UDP_LIBRARIES}" "CANOKEY_HOST_LINK_OPTIONS=${HOST_UDP_OPTIONS}"
+      ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc
+      --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
+      --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-udp --profile host-test
+      --features udp-binary ${HOST_FEATURE_ARGS} --bin fido-hid-over-udp
+      -- -C "linker=${CMAKE_C_COMPILER}" -C default-linker-libraries=yes
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_BINARY_DIR}/cargo-udp/host-test/fido-hid-over-udp" "${HOST_UDP_IMAGE}"
+    BYPRODUCTS "${HOST_UDP_IMAGE}"
+    DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
   find_path(PCSC_INCLUDE_DIR ifdhandler.h PATH_SUFFIXES PCSC REQUIRED)
   add_library(u2f-virt-card SHARED native/pcsc.c native/crypto.c)
   set_target_properties(u2f-virt-card PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -60,7 +82,7 @@ if(CANOKEY_VIRTUAL_CARD)
   if(BUILD_TESTING OR ENABLE_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME virtual-hid-udp COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/integration/udp_normal.py" $<TARGET_FILE:fido-hid-over-udp>)
+      "${CANOKEY_ROOT}/tests/integration/udp_normal.py" "${HOST_UDP_IMAGE}")
     # Fixed compatibility ports and presence-counter path are shared host resources.
     set_tests_properties(virtual-hid-udp PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
     set(PCSC_TEST_PYTHON "${Python3_EXECUTABLE}")

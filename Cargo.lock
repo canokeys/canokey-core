@@ -49,6 +49,7 @@ dependencies = [
  "canokey-ports",
  "canokey-protocol",
  "canokey-rust-ffi",
+ "libc",
 ]
 
 [[package]]

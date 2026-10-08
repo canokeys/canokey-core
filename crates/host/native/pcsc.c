@@ -16,8 +16,6 @@ int ck_pcsc_capability(uint64_t lun, uint8_t kind, uint8_t *out, size_t cap, siz
 int ck_pcsc_protocol(uint64_t lun, uint8_t t1);
 int ck_pcsc_power(uint64_t lun, uint8_t action, uint8_t *out, size_t cap, size_t *length);
 int ck_pcsc_transmit(uint64_t lun, const uint8_t *tx, size_t n, uint8_t *rx, size_t cap, size_t *length);
-/* The PC/SC daemon owns signals; only the UDP executable installs handlers. */
-int ck_host_stopping(void) { return 0; }
 static RESPONSECODE status(int result) {
   switch (result) {
   case 0: return IFD_SUCCESS;

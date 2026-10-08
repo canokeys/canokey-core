@@ -12,7 +12,10 @@ use std::{
     io,
     net::UdpSocket,
     path::Path,
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicI32, Ordering},
+    },
     time::{Duration, Instant},
 };
 mod pcsc;
@@ -26,8 +29,23 @@ use canokey_protocol::usb;
 use storage::Storage;
 // CIU PKE register file: 48 registers of 64 bytes each.
 const PKE_BYTES: usize = 48 * 64;
-unsafe extern "C" {
-    fn ck_host_stopping() -> i32;
+static STOPPED: AtomicI32 = AtomicI32::new(0);
+pub fn stopping_signal() -> i32 {
+    STOPPED.load(Ordering::Relaxed)
+}
+#[cfg(feature = "udp-binary")]
+pub fn install_signal_handlers() -> io::Result<()> {
+    extern "C" fn stop(signal: libc::c_int) {
+        STOPPED.store(signal, Ordering::Relaxed);
+    }
+    for signal in [libc::SIGTERM, libc::SIGINT] {
+        // Only a lock-free atomic store runs in the signal handler.
+        if unsafe { libc::signal(signal, stop as *const () as libc::sighandler_t) } == libc::SIG_ERR
+        {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 struct Host {
     storage: Storage,
@@ -259,7 +277,7 @@ extern "C" fn ck_platform_touched() -> u8 {
 #[unsafe(no_mangle)]
 extern "C" fn ck_platform_progress() -> u8 {
     receive();
-    if host(|h| h.reboot) || unsafe { ck_host_stopping() != 0 } {
+    if host(|h| h.reboot) || stopping_signal() != 0 {
         return 0;
     }
     let result = if unsafe { ck_hid_executing() != 0 } {
@@ -525,7 +543,7 @@ fn run() -> io::Result<()> {
         CTAPHID_Loop(0);
     }
     println!("Rust virtual HID ready on UDP 8111 (responses: 127.0.0.1:7112)");
-    while unsafe { ck_host_stopping() == 0 } {
+    while stopping_signal() == 0 {
         receive();
         if host(|h| h.reboot) {
             // All nested callbacks have unwound. Reset authorization and the
@@ -557,8 +575,7 @@ fn run() -> io::Result<()> {
     HOST.lock().unwrap().take();
     Ok(())
 }
-#[unsafe(no_mangle)]
-pub extern "C" fn ck_host_udp_main() -> i32 {
+pub fn run_udp() -> i32 {
     let _entry = ENTRY.lock().unwrap();
     match run() {
         Ok(()) => 0,
