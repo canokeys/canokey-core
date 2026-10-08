@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Serialized test composition shared by APDU fixtures, replay and fuzzing.
+use canokey_ports::{Device, MemoryBackend, Platform};
+use canokey_rust_core::Core;
+pub mod storage;
+pub const CCID_OWNER: u8 = 1;
+pub struct Clock {
+    ticks: u32,
+    #[cfg(feature = "ctap")]
+    polling: canokey_ports::Polling,
+}
+impl Clock {
+    fn pressed(&self) -> bool {
+        (20..60).contains(&(self.ticks % 100))
+    }
+    #[cfg(feature = "ctap")]
+    pub fn sample(&mut self) {
+        self.polling.sample(self.pressed(), self.ticks);
+    }
+}
+impl Device for Clock {
+    fn serial(&mut self, out: &mut [u8; 4]) {
+        out.fill(0);
+    }
+    fn now(&mut self) -> u32 {
+        self.ticks
+    }
+    fn touched(&mut self) -> bool {
+        #[cfg(feature = "ctap")]
+        self.polling.clear();
+        self.pressed()
+    }
+    fn progress(&mut self) -> bool {
+        self.ticks = self.ticks.wrapping_add(1);
+        true
+    }
+    fn led(&mut self, _: bool) {}
+    #[cfg(feature = "ctap")]
+    fn poll_presence(&mut self) -> bool {
+        self.polling.take(self.ticks)
+    }
+    #[cfg(feature = "ctap")]
+    fn wink(&mut self) {
+        self.polling.wink(self.ticks);
+    }
+}
+type Backend = canokey_ports::BackendTypes<
+    storage::Records,
+    canokey_ports::native::CryptoBackend,
+    Clock,
+    MemoryBackend,
+>;
+pub struct Card {
+    core: Core,
+    pub records: storage::Records,
+    pub clock: Clock,
+    crypto: canokey_ports::native::CryptoBackend,
+    memory: MemoryBackend,
+}
+impl Card {
+    /// # Safety
+    /// All native crypto use must be serialized for the lifetime of this card.
+    pub unsafe fn new() -> Self {
+        Self {
+            core: Core::new(),
+            records: storage::Records::new(),
+            clock: Clock {
+                ticks: 0,
+                #[cfg(feature = "ctap")]
+                polling: canokey_ports::Polling::new(),
+            },
+            crypto: unsafe { canokey_ports::native::CryptoBackend::new() },
+            memory: MemoryBackend,
+        }
+    }
+    fn run<T>(&mut self, action: impl FnOnce(&mut Core, &mut Platform<'_, Backend>) -> T) -> T {
+        action(
+            &mut self.core,
+            &mut Platform::new(
+                &mut self.records,
+                &mut self.crypto,
+                &mut self.clock,
+                &self.memory,
+            ),
+        )
+    }
+    pub fn install(&mut self) -> bool {
+        self.run(|core, p| core.install(p).is_ok())
+    }
+    pub fn reset(&mut self) {
+        self.run(|core, p| core.reset(p));
+    }
+    pub fn slot_power(&mut self) {
+        self.run(|core, p| core.slot_power(p));
+    }
+    pub fn exchange(&mut self, input: &[u8], output: &mut [u8]) -> Option<usize> {
+        self.run(|core, p| {
+            let reply = core.receive(CCID_OWNER, input, p);
+            core.transmit(reply, output, p).ok()
+        })
+    }
+    #[cfg(feature = "pass")]
+    pub fn touch(&mut self, index: u8, output: &mut [u8]) -> Option<usize> {
+        self.run(|core, p| core.touch(index, output, p).ok())
+    }
+}

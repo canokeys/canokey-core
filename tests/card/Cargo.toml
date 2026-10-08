@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "canokey-test-card"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+[dependencies]
+canokey-rust-core = { path = "../../crates/core" }
+canokey-ports = { path = "../../crates/ports" }
+[features]
+default = []
+admin = ["canokey-rust-core/admin"]
+pass = ["canokey-rust-core/pass"]
+oath = ["canokey-rust-core/oath"]
+openpgp = ["canokey-rust-core/openpgp"]
+piv = ["canokey-rust-core/piv"]
+ctap = ["canokey-rust-core/ctap"]
+ndef = ["canokey-rust-core/ndef"]
+ctap-restrict-algorithms = ["ctap", "canokey-rust-core/ctap-restrict-algorithms"]
+[lints]
+workspace = true

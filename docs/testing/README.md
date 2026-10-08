@@ -5,6 +5,10 @@ the owning crate. `tests/integration/` holds Python end-to-end regressions;
 `tests/support/` supplies C harnesses and standalone Rust hardware fixtures;
 `tests/native/` covers native helpers. Shared external vectors are in
 `tests/fixtures/`; Rust-only wire vectors remain beside their Rust tests.
+`tests/card` builds the APDU card executables used by the Python applet oracles.
+They construct the real Core with Rust record/clock fakes and native C crypto;
+they do not call the core C ABI. The LittleFS capacity fixture retains its C
+storage harness and the same independent Python checks.
 
 ## Prerequisites
 
