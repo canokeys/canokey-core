@@ -4,6 +4,7 @@
 mod binding;
 pub mod contracts;
 mod memory;
+#[cfg(feature = "native-crypto")]
 pub mod native;
 #[cfg(any(feature = "oath", feature = "piv"))]
 pub use binding::copy_to_stage;

@@ -47,12 +47,12 @@ rustc --edition=2024 crates/ports/codegen/abi.rs -o /tmp/canokey-port-abi
 
 ## Fuzzing
 
-`CANOKEY_FUZZING` builds `apdu-fuzzer`, a libFuzzer harness that drives the
+`CANOKEY_FUZZING` builds `apdu-fuzzer`, a Rust/libfuzzer-sys harness that drives the
 Rust core through the same volatile-record backend as `apdu-replay`. Inputs
 are framed records (`[tag:u8][len:u16-LE][payload]`): APDU execution with
-automatic GET RESPONSE chaining (`0x00`), slot power (`0x01`,
-`ck_core_slot_power`), one-shot storage faults (`0x02`), full runtime reset
-(`0x03`, `ck_core_reset`) and raw APDU exchange (`0x04`, without draining).
+automatic GET RESPONSE chaining (`0x00`), slot power (`0x01`), one-shot storage
+faults (`0x02`), full runtime reset (`0x03`) and raw APDU exchange (`0x04`,
+without draining). It invokes Rust Core APIs directly.
 Selected CTAP agreement/token state survives slot power; pending responses do
 not. Full reset clears sessions and selection. Card state persists across inputs inside
 the fuzzer process. Use a dedicated build directory with Clang; every C

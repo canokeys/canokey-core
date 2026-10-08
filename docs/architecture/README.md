@@ -1,6 +1,7 @@
 # Architecture
 
-The root Cargo workspace contains five crates. Keep this granularity unless a
+The root Cargo workspace contains five product crates and the test card crate.
+Keep this granularity unless a
 new independently reusable component needs a separately enforced dependency.
 
 | Component | Owns | Dependencies |
@@ -93,3 +94,11 @@ memory still borrowed by an active operation.
 Keep authentication, persistent record encodings, retry ordering and wire behavior
 unchanged during structural refactors. Platform-specific Flash and stack limits
 remain binding; directory organization is not a resource optimization.
+
+## Native adapter selection
+
+Core depends on ports with default features disabled. Rust test compositions
+use capability contracts and can opt into `native-crypto` for C primitives.
+`native-backend` includes the temporary storage/device adapters; static firmware
+binding enables it. This prevents coverage instrumentation from retaining unused
+device callbacks in the replay/fuzz composition. Platform relocation is pending.

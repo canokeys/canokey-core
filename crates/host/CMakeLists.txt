@@ -6,9 +6,9 @@ if(CANOKEY_APDU_REPLAY)
   if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME apdu-replay COMMAND "${Python3_EXECUTABLE}"
-    "${CANOKEY_ROOT}/tests/integration/replay_normal.py" $<TARGET_FILE:apdu-replay>)
+    "${CANOKEY_ROOT}/tests/integration/replay_normal.py" $<TARGET_FILE:apdu-replay-image>)
     add_test(NAME fuzz-seed-baselines COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/support/fuzz_seeds.py" --validate-only --replay $<TARGET_FILE:apdu-replay>)
+      "${CANOKEY_ROOT}/tests/support/fuzz_seeds.py" --validate-only --replay $<TARGET_FILE:apdu-replay-image>)
   endif()
 endif()
 
@@ -137,19 +137,12 @@ if(CANOKEY_FUZZING)
   find_package(Threads REQUIRED)
   # libFuzzer coverage instrumentation for the Rust side; the C side gets
   # -fsanitize=fuzzer-no-link from the top-level CANOKEY_FUZZING block.
-  add_rust_host_archive(canokey-rust-core-fuzz rust-core-fuzz-build cargo-fuzz "${FEATURES}"
+  add_rust_card(apdu-fuzzer FALSE apdu-fuzzer ""
     "-Cpasses=sancov-module -Cllvm-args=-sanitizer-coverage-level=4 -Cllvm-args=-sanitizer-coverage-inline-8bit-counters -Cllvm-args=-sanitizer-coverage-pc-table -Cllvm-args=-sanitizer-coverage-trace-compares -Cdebug-assertions=on -Cforce-frame-pointers=yes -Zsanitizer=address")
-  add_executable(apdu-fuzzer native/fuzz.c ${CANOKEY_ROOT}/tests/support/services.c)
-  target_compile_definitions(apdu-fuzzer PRIVATE WITH_CTAP WITH_PASS WITH_OATH WITH_OPENPGP WITH_PIV WITH_NDEF)
-  target_compile_options(apdu-fuzzer PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-  target_link_options(apdu-fuzzer PRIVATE -fsanitize=fuzzer)
-  target_link_libraries(apdu-fuzzer PRIVATE canokey-rust-core-fuzz OpenSSL::Crypto host-key-services
-    Threads::Threads ${CMAKE_DL_LIBS} m)
-  set_target_properties(apdu-fuzzer PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
   if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_test(NAME fuzz-smoke COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/support/fuzz_smoke.py" $<TARGET_FILE:apdu-fuzzer>
+      "${CANOKEY_ROOT}/tests/support/fuzz_smoke.py" $<TARGET_FILE:apdu-fuzzer-image>
       "${CANOKEY_ROOT}/tests/fixtures/fuzz-seeds")
     set_tests_properties(fuzz-smoke PROPERTIES TIMEOUT 120)
   endif()

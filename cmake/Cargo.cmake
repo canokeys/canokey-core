@@ -44,6 +44,8 @@ function(add_rust_card target restricted)
   endif()
   if(card_binary STREQUAL "apdu-replay")
     list(APPEND card_features replay)
+  elseif(card_binary STREQUAL "apdu-fuzzer")
+    list(APPEND card_features fuzz)
   endif()
   list(JOIN card_features "," card_features)
   set(card_libraries "$<TARGET_FILE:card-crypto>")
@@ -62,15 +64,28 @@ function(add_rust_card target restricted)
   if(ARGV3)
     list(APPEND card_options ${ARGV3})
   endif()
+  if(card_binary STREQUAL "apdu-fuzzer")
+    # Rust's -Zsanitizer supplies ASan/UBSan symbols; a second Clang ASan
+    # runtime breaks macOS interceptor initialization.
+    list(APPEND card_options -fno-sanitize-link-runtime)
+  endif()
   list(JOIN card_options "|" card_options)
   set(card_image "${CMAKE_CURRENT_BINARY_DIR}/${target}")
-  if(card_binary STREQUAL "apdu-replay")
+  if(card_binary MATCHES "^apdu-(replay|fuzzer)$")
     set(card_image "${CMAKE_BINARY_DIR}/${target}")
+  endif()
+  set(card_environment "")
+  if(ARGV4)
+    list(APPEND card_environment "RUSTFLAGS=${ARGV4}")
+  endif()
+  if(card_binary STREQUAL "apdu-fuzzer")
+    list(APPEND card_environment "CXX=${CMAKE_C_COMPILER}")
   endif()
   add_custom_target(${target}-build ALL
     COMMAND "${CMAKE_COMMAND}" -E env
       "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
       "CANOKEY_HOST_LINK_LIBRARIES=${card_libraries}" "CANOKEY_HOST_LINK_OPTIONS=${card_options}"
+      ${card_environment}
       ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc --manifest-path ${CANOKEY_ROOT}/tests/card/Cargo.toml
       --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-${target} --profile host-test
       --features "${card_features}" --bin ${card_binary}
@@ -78,7 +93,10 @@ function(add_rust_card target restricted)
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
       ${CMAKE_CURRENT_BINARY_DIR}/cargo-${target}/host-test/${card_binary} "${card_image}"
     BYPRODUCTS "${card_image}" DEPENDS ${card_dependencies} VERBATIM)
-  add_executable(${target} IMPORTED GLOBAL)
-  set_target_properties(${target} PROPERTIES IMPORTED_LOCATION "${card_image}")
-  add_dependencies(${target} ${target}-build)
+  if(card_binary MATCHES "^apdu-(replay|fuzzer)$")
+    add_custom_target(${target} DEPENDS ${target}-build)
+  endif()
+  add_executable(${target}-image IMPORTED GLOBAL)
+  set_target_properties(${target}-image PROPERTIES IMPORTED_LOCATION "${card_image}")
+  add_dependencies(${target}-image ${target}-build)
 endfunction()

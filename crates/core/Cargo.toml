@@ -7,7 +7,7 @@ license = "Apache-2.0"
 publish = false
 build = "build.rs"
 [dependencies]
-canokey-ports = { path = "../ports" }
+canokey-ports = { path = "../ports", default-features = false }
 canokey-protocol = { path = "../protocol" }
 [build-dependencies]
 cfg_aliases = "0.2.1"

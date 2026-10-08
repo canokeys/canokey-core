@@ -64,7 +64,7 @@ if(BUILD_TESTING)
       target_compile_definitions(core-normal PRIVATE WITH_OATH)
       add_test(NAME oath-normal COMMAND "${Python3_EXECUTABLE}"
         "${CANOKEY_ROOT}/tests/integration/oath_normal.py"
-        --host $<TARGET_FILE:oath-host> --expected-version "${CANOKEY_OATH_VERSION}" ${oath_profile_args})
+        --host $<TARGET_FILE:oath-host-image> --expected-version "${CANOKEY_OATH_VERSION}" ${oath_profile_args})
       set_tests_properties(oath-normal PROPERTIES TIMEOUT 60)
     endif()
   endif()
@@ -114,8 +114,8 @@ if(BUILD_TESTING)
     add_rust_card(ctap-restricted-host TRUE)
     if(CANOKEY_APPLET_ADMIN)
     add_test(NAME ctap-normal COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/integration/ctap_normal.py" --host $<TARGET_FILE:ctap-host>
-      --restricted-host $<TARGET_FILE:ctap-restricted-host>)
+      "${CANOKEY_ROOT}/tests/integration/ctap_normal.py" --host $<TARGET_FILE:ctap-host-image>
+      --restricted-host $<TARGET_FILE:ctap-restricted-host-image>)
     endif()
   endif()
   if(CANOKEY_APPLET_OPENPGP)
@@ -125,14 +125,14 @@ if(BUILD_TESTING)
       list(APPEND openpgp_profile_args --standalone)
     endif()
     add_test(NAME openpgp-normal COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/integration/openpgp_normal.py" --host $<TARGET_FILE:oath-host> ${openpgp_profile_args})
+      "${CANOKEY_ROOT}/tests/integration/openpgp_normal.py" --host $<TARGET_FILE:oath-host-image> ${openpgp_profile_args})
     set_tests_properties(openpgp-normal PROPERTIES TIMEOUT 300)
   endif()
   if(CANOKEY_APPLET_PIV)
     target_compile_definitions(core-normal PRIVATE WITH_PIV)
     add_rust_card(piv-host FALSE)
     add_test(NAME piv-normal COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/integration/piv_normal.py" --host $<TARGET_FILE:piv-host>)
+      "${CANOKEY_ROOT}/tests/integration/piv_normal.py" --host $<TARGET_FILE:piv-host-image>)
   endif()
   if(CANOKEY_APPLET_OPENPGP AND CANOKEY_APPLET_PIV AND CANOKEY_APPLET_ADMIN AND CANOKEY_APPLET_PASS AND CANOKEY_APPLET_OATH)
     if(CANOKEY_PLATFORM_STORAGE_FIXTURE)
@@ -147,16 +147,16 @@ if(BUILD_TESTING)
       target_link_libraries(storage-applet-host PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
     endif()
     add_test(NAME compact-storage COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/integration/compact_storage.py" $<TARGET_FILE:oath-host>)
+      "${CANOKEY_ROOT}/tests/integration/compact_storage.py" $<TARGET_FILE:oath-host-image>)
     add_test(NAME combined-reset COMMAND "${Python3_EXECUTABLE}"
-      "${CANOKEY_ROOT}/tests/integration/reset_normal.py" --host $<TARGET_FILE:oath-host>)
+      "${CANOKEY_ROOT}/tests/integration/reset_normal.py" --host $<TARGET_FILE:oath-host-image>)
   endif()
   if(CANOKEY_APPLET_CTAP)
     if(CANOKEY_APPLET_ADMIN)
       add_test(NAME ctap-u2f COMMAND "${Python3_EXECUTABLE}"
-        "${CANOKEY_ROOT}/tests/integration/ctap_u2f.py" --host $<TARGET_FILE:ctap-host>)
+        "${CANOKEY_ROOT}/tests/integration/ctap_u2f.py" --host $<TARGET_FILE:ctap-host-image>)
       add_test(NAME ctap-config COMMAND "${Python3_EXECUTABLE}"
-        "${CANOKEY_ROOT}/tests/integration/ctap_config.py" --host $<TARGET_FILE:ctap-host>)
+        "${CANOKEY_ROOT}/tests/integration/ctap_config.py" --host $<TARGET_FILE:ctap-host-image>)
     endif()
   endif()
   if(CANOKEY_APPLET_NDEF)
