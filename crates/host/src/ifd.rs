@@ -65,9 +65,10 @@ extern "C" fn close(lun: Dword) -> ResponseCode {
     status(ck_pcsc_close(lun as u64))
 }
 unsafe extern "C" {
-    fn ck_host_pcsc_wait_change(lun: Dword, milliseconds: c_int) -> ResponseCode;
+    fn ck_host_pcsc_poll_setup(
+        validate: extern "C" fn(Dword) -> c_int,
+    ) -> unsafe extern "C" fn(Dword, c_int) -> ResponseCode;
 }
-#[unsafe(no_mangle)]
 extern "C" fn ck_host_pcsc_poll_valid(lun: Dword) -> c_int {
     i32::from(ck_pcsc_present(lun as u64) == 0)
 }
@@ -89,7 +90,7 @@ unsafe extern "C" fn get_capability(
             }
             return NO_SUCH_DEVICE;
         }
-        let callback: unsafe extern "C" fn(Dword, c_int) -> ResponseCode = ck_host_pcsc_wait_change;
+        let callback = unsafe { ck_host_pcsc_poll_setup(ck_host_pcsc_poll_valid) };
         let size = mem::size_of_val(&callback);
         unsafe {
             length.write(size as Dword);

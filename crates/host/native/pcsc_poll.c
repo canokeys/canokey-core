@@ -5,12 +5,20 @@
 #include <ifdhandler.h>
 #include <errno.h>
 #include <time.h>
-extern int ck_host_pcsc_poll_valid(DWORD lun);
-RESPONSECODE ck_host_pcsc_wait_change(DWORD lun, int milliseconds) {
-  if (!ck_host_pcsc_poll_valid(lun)) return IFD_NO_SUCH_DEVICE;
+#include <stdatomic.h>
+typedef int (*validate_callback)(DWORD);
+typedef RESPONSECODE (*poll_callback)(DWORD, int);
+static _Atomic(validate_callback) validate;
+static RESPONSECODE wait_change(DWORD lun, int milliseconds) {
+  validate_callback check = atomic_load_explicit(&validate, memory_order_relaxed);
+  if (!check || !check(lun)) return IFD_NO_SUCH_DEVICE;
   if (milliseconds < 0) return IFD_COMMUNICATION_ERROR;
   struct timespec delay = {.tv_sec = milliseconds / 1000,
                           .tv_nsec = (milliseconds % 1000) * 1000000L};
   while (nanosleep(&delay, &delay) != 0 && errno == EINTR) {}
   return IFD_RESPONSE_TIMEOUT;
+}
+poll_callback ck_host_pcsc_poll_setup(validate_callback check) {
+  atomic_store_explicit(&validate, check, memory_order_relaxed);
+  return wait_change;
 }
