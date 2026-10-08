@@ -60,6 +60,8 @@ unsafe extern "C" {
     fn ck_platform_serial(out: *mut u8);
 }
 #[cfg(feature = "ctap")]
+// Keep the independent polling latch out of LLVM's merged transport globals.
+#[cfg_attr(target_os = "none", unsafe(link_section = ".bss.ck_device_presence"))]
 static mut PRESENCE: crate::Polling = crate::Polling::new();
 
 // Main loop only, including while neither transport owns a core session.

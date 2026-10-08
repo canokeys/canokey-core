@@ -5,6 +5,26 @@
 //! same staging backend that acquired it. IRQ callbacks never select a Provider.
 use canokey_ports::{Backends, Platform};
 pub mod core;
+#[cfg(feature = "ctap")]
+pub mod hid_command {
+    pub use crate::transport::hid::command::{poll, reset};
+}
+#[cfg(feature = "device-runtime")]
+pub mod device {
+    #[cfg(feature = "platform-serial")]
+    pub use crate::runtime::device::serial;
+    pub use crate::runtime::device::{
+        ck_device_led_idle as led_idle, ck_device_settings as settings, main, progress,
+    };
+}
+#[cfg(feature = "usb-keyboard")]
+pub mod keyboard {
+    pub use crate::transport::keyboard::poll_provider as poll;
+}
+#[cfg(feature = "nfc")]
+pub mod nfc {
+    pub use crate::transport::nfc::{init, poll};
+}
 #[cfg(feature = "usb-hid")]
 pub mod hid {
     pub use crate::transport::hid::link::{ck_hid_active as active, poll};
@@ -37,6 +57,13 @@ pub trait Provider {
     #[cfg(feature = "ctap")]
     type Staging: Staging;
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Self::Backends>) -> T) -> T;
+}
+
+/// Firmware main-loop capabilities; presence sampling must never enter Core.
+#[cfg(feature = "device-runtime")]
+pub trait FirmwareProvider: Provider {
+    #[cfg(feature = "ctap")]
+    unsafe fn sample_presence();
 }
 
 /// Serialized accelerator scratch, shared by HID and CCID request staging.

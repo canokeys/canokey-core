@@ -4,8 +4,9 @@
 //! allocation for APDU RX/TX. No borrow of IRQ state crosses a Core call.
 #[cfg(test)]
 pub(crate) mod tests;
+use crate::composition::Provider;
 #[cfg(not(test))]
-use crate::abi::core::{ck_core_exchange, ck_core_reset};
+use crate::composition::core::{exchange as ck_core_exchange, reset as ck_core_reset};
 use crate::sys::ck_nfc_io_delay;
 use crate::sys::ck_nfc_io_lock;
 use crate::sys::ck_nfc_io_now;
@@ -25,7 +26,21 @@ use canokey_rust_core::runtime::{
     nfc_io::{Chip, Io},
 };
 #[cfg(test)]
-use tests::{ck_core_exchange, ck_core_reset, usb_device_deinit};
+use tests::usb_device_deinit;
+#[cfg(test)]
+unsafe fn ck_core_reset<P: Provider>() {
+    unsafe { tests::ck_core_reset() }
+}
+#[cfg(test)]
+unsafe fn ck_core_exchange<P: Provider>(
+    owner: u8,
+    input: *const u8,
+    length: usize,
+    out: *mut u8,
+    capacity: usize,
+) -> i32 {
+    unsafe { tests::ck_core_exchange(owner, input, length, out, capacity) }
+}
 struct Hardware;
 impl Chip for Hardware {
     fn read(&mut self, address: u16, out: &mut [u8]) -> bool {
@@ -110,7 +125,7 @@ unsafe extern "C" fn timer() {
         });
     }
 }
-unsafe fn reset_link() {
+unsafe fn reset_link<P: Provider>() {
     unsafe {
         (&mut *core::ptr::addr_of_mut!(LINK)).reset();
         PENDING = false;
@@ -118,7 +133,7 @@ unsafe fn reset_link() {
         SENT = 0;
         MORE = false;
         FIDO = false;
-        ck_core_reset();
+        ck_core_reset::<P>();
     }
 }
 /// Boot-only mode latch, before any transport or applet is started.
@@ -128,7 +143,11 @@ pub unsafe fn ck_nfc_set_mode(active: u8) {
     }
 }
 /// Main-loop startup only. Quiesce USB before leasing its byte allocation.
+#[cfg(any(feature = "native-composition", test))]
 pub unsafe fn nfc_init() {
+    unsafe { init::<crate::platform::Native>() }
+}
+pub unsafe fn init<P: Provider>() {
     unsafe {
         usb_device_deinit();
         let mask = ck_nfc_io_lock();
@@ -137,7 +156,7 @@ pub unsafe fn nfc_init() {
         IO = Io::new(ck_nfc_io_now());
         GENERATION = 0;
         ck_nfc_io_unlock(mask);
-        reset_link();
+        reset_link::<P>();
         with_io(|io, chip, now| io.poll(now, false, chip));
     }
 }
@@ -153,7 +172,7 @@ unsafe fn fault() {
 unsafe fn send(packet: &Packet) -> bool {
     unsafe { with_io(|io, chip, _| io.generation() == GENERATION && io.send(packet, chip)) }
 }
-unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
+unsafe fn execute<P: Provider>(input: *const u8, length: usize, aggregate: bool) {
     unsafe {
         let started = with_io(|io, _, now| {
             if io.generation() != GENERATION || !io.begin_execution(now) {
@@ -167,7 +186,7 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
         use crate::transport::owners::OWNER_NFC;
-        let n = ck_core_exchange(OWNER_NFC, input, length, buffer, apdu::SHORT_REPLY_BYTES);
+        let n = ck_core_exchange::<P>(OWNER_NFC, input, length, buffer, apdu::SHORT_REPLY_BYTES);
         with_io(|io, _, now| {
             ck_nfc_io_schedule(None, 0);
             io.computed(now);
@@ -190,12 +209,12 @@ unsafe fn execute(input: *const u8, length: usize, aggregate: bool) {
         PENDING = true;
     }
 }
-unsafe fn next_response() {
+unsafe fn next_response<P: Provider>() {
     unsafe {
         if SENT == LENGTH && MORE {
             // The existing engine owns response sources/offsets. This request
             // merely continues its stream; no NFC-specific APDU engine exists.
-            execute(apdu::GET_RESPONSE.as_ptr(), apdu::GET_RESPONSE.len(), true);
+            execute::<P>(apdu::GET_RESPONSE.as_ptr(), apdu::GET_RESPONSE.len(), true);
             return;
         }
         let buffer = crate::transport::ccid::ck_ccid_response_buffer();
@@ -234,7 +253,11 @@ unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Err
         ))
     }
 }
+#[cfg(any(feature = "native-composition", test))]
 pub unsafe fn nfc_loop() {
+    unsafe { poll::<crate::platform::Native>() }
+}
+pub unsafe fn poll<P: Provider>() {
     unsafe {
         if !ACTIVE {
             return;
@@ -246,19 +269,19 @@ pub unsafe fn nfc_loop() {
         });
         if generation != GENERATION {
             GENERATION = generation;
-            reset_link();
+            reset_link::<P>();
             return;
         }
         if PENDING {
             match with_io(|io, _, _| io.complete_execution()) {
                 None => return,
                 Some(false) => {
-                    reset_link();
+                    reset_link::<P>();
                     return;
                 }
                 Some(true) => {
                     PENDING = false;
-                    next_response();
+                    next_response::<P>();
                     return;
                 }
             }
@@ -280,19 +303,19 @@ pub unsafe fn nfc_loop() {
                         && input[apdu::SHORT_HEADER_BYTES..] == apdu::FIDO_AID;
                 }
                 let aggregate = FIDO && length >= apdu::EXTENDED_HEADER_BYTES && input[4] == 0;
-                execute(buffer, length, aggregate);
+                execute::<P>(buffer, length, aggregate);
             }
             Ok(Event::Send(packet)) => {
                 if !send(&packet) {
                     fault();
                 }
             }
-            Ok(Event::NextResponse) => next_response(),
+            Ok(Event::NextResponse) => next_response::<P>(),
             Ok(Event::Deselect) => {
                 if !send(&Packet::deselect()) {
                     fault();
                 }
-                reset_link();
+                reset_link::<P>();
             }
             Ok(Event::Waiting(_)) | Err(_) => fault(),
         }

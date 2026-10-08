@@ -128,11 +128,11 @@ pub fn with_core<P: Provider, T>(
 }
 
 #[cfg(all(feature = "device-runtime", not(test)))]
-pub(crate) fn boot_flags<P: Provider>() -> Result<u32, canokey_ports::StorageError> {
+pub fn boot_flags<P: Provider>() -> Result<u32, canokey_ports::StorageError> {
     P::with_platform(|p| canokey_rust_core::runtime::config::flags(p.storage))
 }
 #[cfg(all(feature = "device-runtime", feature = "storage", not(test)))]
-pub(crate) fn mark_initialized<P: Provider>() -> Result<(), canokey_ports::StorageError> {
+pub fn mark_initialized<P: Provider>() -> Result<(), canokey_ports::StorageError> {
     use canokey_rust_core::runtime::config;
     P::with_platform(|p| config::update(p.storage, config::INITIALIZED, config::INITIALIZED))
 }

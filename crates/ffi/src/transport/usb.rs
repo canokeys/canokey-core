@@ -570,6 +570,7 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 /// Cooperative progress dispatch is portable policy. Native code only waits
 /// one hardware tick before calling this function; no callback enters Core.
 #[unsafe(no_mangle)]
+#[cfg(any(feature = "native-composition", test))]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
     unsafe { progress::<crate::platform::Native>() }
 }

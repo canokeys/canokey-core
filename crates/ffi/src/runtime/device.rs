@@ -4,10 +4,11 @@
 use canokey_rust_core::runtime::config;
 #[cfg(test)]
 pub(crate) mod tests;
+use crate::composition::{FirmwareProvider, Provider};
 #[cfg(not(test))]
-use crate::{abi, sys as hal, transport};
+use crate::{composition::core as core_ops, sys as hal, transport};
 #[cfg(test)]
-use tests::{abi, hal, transport};
+use tests::{abi::core as core_ops, hal, transport};
 // Stable u8 board ABI; keep values aligned with platform/rust-core/board.h.
 const CLOCK_USB_STARTUP: u8 = 0;
 const CLOCK_CONTACTLESS: u8 = 1;
@@ -15,8 +16,6 @@ const CLOCK_USB_OPERATING: u8 = 2;
 // ck_board_crypto_check ABI in platform/rust-core/board.h: RNG=0, SM4=1, PKE=2.
 // Keep the count aligned with CK_BOARD_CRYPTO_CHECK_COUNT when adding a check.
 const CRYPTO_CHECK_COUNT: u8 = 3;
-#[cfg(all(feature = "ctap", not(test)))]
-use crate::platform::ck_core_presence_sample;
 use hal::ck_board_clock;
 use hal::ck_board_crypto_check;
 #[cfg(feature = "nfc")]
@@ -35,8 +34,6 @@ use hal::ck_storage_format;
 #[cfg(feature = "storage")]
 use hal::ck_storage_init;
 use hal::device_delay;
-#[cfg(all(feature = "ctap", test))]
-use tests::ck_core_presence_sample;
 static mut LED_DEFAULT: bool = true;
 pub unsafe fn ck_device_led_idle() {
     unsafe {
@@ -54,10 +51,14 @@ pub unsafe fn ck_device_settings(flags: u32) {
         ck_device_led_idle();
     }
 }
+#[cfg(feature = "native-composition")]
 pub unsafe fn ck_device_progress() -> u8 {
+    unsafe { progress::<crate::platform::Native>() }
+}
+pub unsafe fn progress<P: Provider>() -> u8 {
     unsafe {
         device_delay(1);
-        transport::usb::ck_transport_progress()
+        transport::usb::progress::<P>()
     }
 }
 unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
@@ -70,9 +71,13 @@ unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
         }
     }
 }
+#[cfg(feature = "native-composition")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ck_device_main() -> ! {
-    match unsafe { run() } {
+    unsafe { main::<crate::platform::Native>() }
+}
+pub unsafe fn main<P: FirmwareProvider>() -> ! {
+    match unsafe { run_with::<P>() } {
         Stop::Blink(on, off) => unsafe { blink(on, off) },
         #[cfg(feature = "nfc")]
         Stop::Reset => unsafe { ck_board_reset() },
@@ -89,11 +94,16 @@ enum Stop {
     Iteration,
 }
 // Tests call this Rust runner directly; no panic/unwind crosses the C entrypoint.
+#[cfg(test)]
 unsafe fn run() -> Stop {
+    unsafe { run_with::<crate::platform::Native>() }
+}
+unsafe fn run_with<P: FirmwareProvider>() -> Stop {
     unsafe {
         ck_board_prepare();
-        let stored_flags = abi::core::boot_flags();
+        let stored_flags = core_ops::boot_flags::<P>();
         let readable = stored_flags.is_ok();
+        #[cfg(any(feature = "storage", feature = "nfc"))]
         let flags = stored_flags.unwrap_or(config::DEFAULT_FLAGS | config::INITIALIZED);
         #[cfg(feature = "nfc")]
         let nfc_mode = readable && flags & config::NFC != 0 && ck_board_mode_pin() != 0;
@@ -120,7 +130,7 @@ unsafe fn run() -> Stop {
                 return Stop::Blink(10, 1000);
             }
         }
-        if abi::core::ck_core_install() != 0 {
+        if core_ops::install::<P>() != 0 {
             return Stop::Blink(10, 1000);
         }
         #[cfg(feature = "nfc")]
@@ -134,7 +144,7 @@ unsafe fn run() -> Stop {
         }
         #[cfg(feature = "storage")]
         if flags & config::INITIALIZED == 0 {
-            if abi::core::mark_initialized().is_err() {
+            if core_ops::mark_initialized::<P>().is_err() {
                 return Stop::Blink(10, 1000);
             }
             // Match product first-boot acknowledgement. Power-cycle reloads
@@ -144,13 +154,13 @@ unsafe fn run() -> Stop {
         if nfc_mode {
             #[cfg(feature = "nfc")]
             {
-                transport::nfc::nfc_init();
+                transport::nfc::init::<P>();
                 ck_board_nfc_irq_enable();
             }
         } else {
             transport::usb::usb_device_init();
             while ck_board_usb_ready() == 0 {
-                transport::ccid::poll::<crate::platform::Native>();
+                transport::ccid::poll::<P>();
             }
             ck_board_clock(CLOCK_USB_OPERATING);
             for primitive in 0..CRYPTO_CHECK_COUNT {
@@ -167,21 +177,21 @@ unsafe fn run() -> Stop {
             if nfc_mode {
                 #[cfg(feature = "nfc")]
                 {
-                    transport::nfc::nfc_loop();
+                    transport::nfc::poll::<P>();
                     if ck_board_mode_pin() == 0 {
                         return Stop::Reset;
                     }
                 }
             } else {
                 #[cfg(feature = "ctap")]
-                ck_core_presence_sample();
+                P::sample_presence();
                 #[cfg(feature = "usb-hid")]
-                let _ = transport::hid::link::poll::<crate::platform::Native>();
-                transport::ccid::poll::<crate::platform::Native>();
+                let _ = transport::hid::link::poll::<P>();
+                transport::ccid::poll::<P>();
                 #[cfg(feature = "usb-keyboard")]
-                transport::keyboard::ck_keyboard_loop();
+                transport::keyboard::poll_provider::<P>();
                 #[cfg(feature = "usb-webusb")]
-                transport::webusb::poll::<crate::platform::Native>();
+                transport::webusb::poll::<P>();
             }
             ck_board_stack_report();
             #[cfg(test)]
@@ -190,15 +200,18 @@ unsafe fn run() -> Stop {
     }
 }
 
-#[cfg(feature = "platform-serial")]
+#[cfg(all(feature = "platform-serial", feature = "native-composition"))]
 pub unsafe fn ck_device_serial(out: *mut u8) {
+    unsafe { serial::<crate::platform::Native>(out) }
+}
+#[cfg(feature = "platform-serial")]
+pub unsafe fn serial<P: Provider>(out: *mut u8) {
     if out.is_null() {
         return;
     }
     // Device callbacks may only read this independent raw config page. No
     // reentry into Core, LittleFS cache, crypto or the caller's workspace.
-    let mut storage = unsafe { canokey_ports::native::StorageBackend::new() };
-    let serial = config::serial(&mut storage);
+    let serial = P::with_platform(|p| config::serial(p.storage));
     unsafe {
         core::ptr::copy_nonoverlapping(serial.as_ptr(), out, 4);
     }

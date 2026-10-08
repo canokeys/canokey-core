@@ -220,6 +220,7 @@ pub unsafe fn ck_hid_execution_end() {
         LINK.executing = false;
     }
 }
+#[inline(never)]
 pub unsafe fn poll<P: Provider>() -> u8 {
     unsafe {
         #[cfg(feature = "nfc")]

@@ -152,9 +152,11 @@ pub unsafe fn poll<P: Provider>(
     }
 }
 
+#[cfg(feature = "native-composition")]
 pub unsafe fn ck_hid_reset() {
     unsafe { reset::<crate::platform::Native>() }
 }
+#[cfg(feature = "native-composition")]
 pub unsafe fn ck_hid_poll(
     input: *const [u8; 64],
     received: u32,

@@ -154,7 +154,7 @@ pub(crate) mod hal {
 pub(crate) mod abi {
     pub(crate) mod core {
         use super::super::*;
-        pub(crate) fn boot_flags() -> Result<u32, canokey_ports::StorageError> {
+        pub(crate) fn boot_flags<P>() -> Result<u32, canokey_ports::StorageError> {
             let b = board();
             if b.scenario == 4 {
                 Err(canokey_ports::StorageError::Unavailable)
@@ -162,7 +162,7 @@ pub(crate) mod abi {
                 Ok(b.flags)
             }
         }
-        pub(crate) unsafe fn ck_core_install() -> i32 {
+        pub(crate) unsafe fn install<P>() -> i32 {
             let flags = {
                 let mut b = board();
                 assert_eq!(b.mounted, 1);
@@ -173,7 +173,7 @@ pub(crate) mod abi {
             0
         }
         #[cfg(feature = "storage")]
-        pub(crate) fn mark_initialized() -> Result<(), canokey_ports::StorageError> {
+        pub(crate) fn mark_initialized<P>() -> Result<(), canokey_ports::StorageError> {
             let mut b = board();
             assert_eq!(b.formatted, 1);
             assert_eq!(b.installed, 1);
@@ -209,14 +209,14 @@ pub(crate) mod transport {
             b.silenced += 1;
             0
         }
-        pub(crate) unsafe fn nfc_init() {
+        pub(crate) unsafe fn init<P>() {
             let b = board();
             assert!(b.active);
             assert_eq!(b.installed, 1);
             assert_eq!(b.configured, 1);
             assert_eq!(b.usb, 0);
         }
-        pub(crate) unsafe fn nfc_loop() {
+        pub(crate) unsafe fn poll<P>() {
             board().nfc_loop += 1;
         }
     }
@@ -225,7 +225,7 @@ pub(crate) mod transport {
         pub(crate) unsafe fn ck_usb_set_landing(enabled: u8) {
             board().landing = enabled;
         }
-        pub(crate) unsafe fn ck_transport_progress() -> u8 {
+        pub(crate) unsafe fn progress<P>() -> u8 {
             1
         }
         pub(crate) unsafe fn usb_device_init() {
@@ -253,7 +253,7 @@ pub(crate) mod transport {
     }
     #[cfg(feature = "usb-keyboard")]
     pub(crate) mod keyboard {
-        pub(crate) unsafe fn ck_keyboard_loop() {
+        pub(crate) unsafe fn poll_provider<P>() {
             super::super::board().keyboard += 1;
         }
     }

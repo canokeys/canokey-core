@@ -98,6 +98,21 @@ impl DeviceRuntime for Runtime {
     }
 }
 
+#[cfg(feature = "device-runtime")]
+impl crate::composition::FirmwareProvider for Native {
+    #[cfg(feature = "ctap")]
+    unsafe fn sample_presence() {
+        #[cfg(not(test))]
+        unsafe {
+            ck_core_presence_sample()
+        };
+        #[cfg(test)]
+        unsafe {
+            crate::runtime::device::tests::ck_core_presence_sample()
+        };
+    }
+}
+
 // Retained for the C storage fixture until its platform composition moves.
 #[cfg(feature = "ctap")]
 #[cfg_attr(feature = "native-composition", unsafe(no_mangle))]

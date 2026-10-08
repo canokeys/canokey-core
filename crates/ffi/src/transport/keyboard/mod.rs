@@ -3,7 +3,7 @@
 use self::io::{
     ck_keyboard_io_configured, ck_keyboard_io_epoch, ck_keyboard_io_idle, ck_keyboard_io_send,
 };
-use crate::abi::core::{ck_core_keyboard_usage, ck_core_output_cancel, ck_core_output_sample};
+use crate::composition::{Provider, core as core_ops};
 use crate::sys::ck_platform_now;
 use crate::sys::ck_platform_touched;
 use crate::transport::ccid::ck_ccid_scratch_busy;
@@ -32,8 +32,8 @@ trait Io {
     unsafe fn send(&mut self, report: *const u8, length: u8, epoch: u32) -> bool;
 }
 
-struct Native;
-impl Io for Native {
+struct Native<P>(core::marker::PhantomData<P>);
+impl<P: Provider> Io for Native<P> {
     fn contactless(&mut self) -> bool {
         #[cfg(feature = "nfc")]
         return unsafe { crate::transport::nfc::is_nfc() != 0 };
@@ -69,13 +69,13 @@ impl Io for Native {
         unsafe { ck_platform_now() }
     }
     fn cancel(&mut self, pressed: u8) {
-        unsafe { ck_core_output_cancel(pressed) }
+        unsafe { core_ops::output_cancel::<P>(pressed) }
     }
     fn sample(&mut self, pressed: u8, now: u32, ready: bool) -> i32 {
-        unsafe { ck_core_output_sample(pressed, now, u8::from(ready)) }
+        unsafe { core_ops::output_sample::<P>(pressed, now, u8::from(ready)) }
     }
     fn usage(&mut self, ch: u8) -> i32 {
-        ck_core_keyboard_usage(ch)
+        core_ops::keyboard_usage::<P>(ch)
     }
     unsafe fn send(&mut self, report: *const u8, length: u8, epoch: u32) -> bool {
         unsafe { ck_keyboard_io_send(report, length, epoch) != 0 }
@@ -91,8 +91,14 @@ unsafe fn flush_pending(io: &mut impl Io, epoch: u32) {
     }
 }
 #[inline(never)]
+#[cfg(feature = "native-composition")]
 pub unsafe fn ck_keyboard_loop() {
-    unsafe { poll(&mut Native) }
+    unsafe { poll_provider::<crate::platform::Native>() }
+}
+
+#[inline(never)]
+pub unsafe fn poll_provider<P: Provider>() {
+    unsafe { poll(&mut Native::<P>(core::marker::PhantomData)) }
 }
 
 unsafe fn poll(io: &mut impl Io) {

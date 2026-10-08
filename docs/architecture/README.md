@@ -55,9 +55,13 @@ defines `Platform<'a, B>` with four disjoint capability borrows. `Backends`
 and `BackendTypes` carry storage/crypto/device/memory types through static core
 routing. Core APIs accept a generic family and re-export contracts plus Platform;
 they do not select native adapter types. Rust fakes can compose concrete families.
-The FFI composition still selects concrete native aliases for `static-backend`
-and trait objects for dynamic binding. `dynamic-backend` wins when Cargo feature
-unification enables both. Native callbacks remain in `ports/src/native/` pending
+CIU and host select their own Providers for installation and transport execution.
+CIU also owns `ck_device_main`, selecting the same Provider for boot, keyboard,
+NFC, serial and cooperative progress. The optional FFI `native-composition`
+compatibility projection selects concrete native aliases for `static-backend`
+and trait objects for dynamic binding; CIU and host disable it. `dynamic-backend`
+wins when Cargo feature unification enables both. Native callbacks remain in
+`ports/src/native/` pending
 platform relocation; portable volatile erasure lives in `ports/src/memory.rs`.
 The safe `default_memory()` binding supplies erasure for compatibility methods
 that have no borrowed Platform; it does not construct a hardware session.
@@ -66,7 +70,7 @@ Firmware retains static dispatch without heap allocation or additional buffers.
 Runtime methods are generic over the capability family, while stored applet and
 transport state remains backend independent. Native constructors for storage,
 crypto and device remain unsafe and are
-used at the serialized FFI composition boundary.
+used at the serialized outer composition boundary.
 
 ## FFI and native code
 

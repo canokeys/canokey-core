@@ -145,6 +145,7 @@ pub unsafe fn completed() {
         (&mut *core::ptr::addr_of_mut!(STATE)).completed(device_get_tick());
     }
 }
+#[inline(never)]
 pub unsafe fn poll<P: Provider>() {
     unsafe {
         #[cfg(feature = "nfc")]

@@ -40,7 +40,11 @@ ctest --test-dir build/host --output-on-failure
 ```
 
 Core CTest never discovers platform fixtures in a parent checkout. CIU owns
-those tests through its standalone `tests/host` CMake entrypoint. Rust CI checks
+those tests through its standalone `tests/host` CMake entrypoint. CIU tests check
+the generic device runner with bounded boot/failure/loop fakes. CIU selects its
+production Provider in `platform/rust-core`; both board builds validate that
+composition with the compatibility `native-composition` feature disabled.
+Rust CI checks
 formatting, Clippy correctness/suspicious lints and supported applet/transport
 profiles. Style-only Clippy lints are not yet enforced; explicit adapter drops
 are allowed to end borrows before workspace erasure. Host/std and standalone

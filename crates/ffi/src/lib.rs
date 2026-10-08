@@ -35,16 +35,18 @@ macro_rules! lazy_state {
 }
 mod abi;
 pub mod composition;
+#[cfg(any(feature = "native-composition", test))]
 mod platform;
 mod runtime;
 mod sys;
 mod transport;
+#[cfg(feature = "native-composition")]
 pub use abi::core::{ck_core_exchange, ck_core_install, ck_core_reset, ck_core_slot_power};
-#[cfg(feature = "ctap")]
+#[cfg(all(feature = "ctap", feature = "native-composition"))]
 pub use platform::ck_core_presence_sample;
 #[cfg(all(feature = "usb-ccid", feature = "native-composition"))]
 pub use transport::ccid::CCID_Loop;
-#[cfg(feature = "ctap")]
+#[cfg(all(feature = "ctap", feature = "native-composition"))]
 pub use transport::hid::command::{ck_hid_poll, ck_hid_reset};
 #[cfg(all(feature = "usb-hid", feature = "native-composition"))]
 pub use transport::hid::link::CTAPHID_Loop;
@@ -53,10 +55,12 @@ pub use transport::hid::{
     io::{ck_hid_packet_reset, out_event, rx_can_accept},
     link::{ck_hid_executing, ck_hid_progress},
 };
-#[cfg(feature = "usb-keyboard")]
+#[cfg(all(feature = "usb-keyboard", feature = "native-composition"))]
 pub use transport::keyboard::ck_keyboard_loop;
 #[cfg(feature = "nfc")]
-pub use transport::nfc::{ck_nfc_configure, ck_nfc_set_mode, ck_nfc_silence, nfc_init, nfc_loop};
+pub use transport::nfc::{ck_nfc_configure, ck_nfc_set_mode, ck_nfc_silence};
+#[cfg(all(feature = "nfc", feature = "native-composition"))]
+pub use transport::nfc::{nfc_init, nfc_loop};
 #[cfg(feature = "usb-device")]
 pub use transport::usb::usb_device_init;
 #[cfg(all(feature = "usb-webusb", feature = "native-composition"))]
