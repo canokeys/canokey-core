@@ -23,8 +23,8 @@ plans and the old C guide; historical APIs there are not implementation guidance
 - `ports/contracts` contains safe capability contracts; `binding.rs` selects
   outer static production or injectable test bindings; generic `Platform`
   families carry capability types through core routing. `ports/native` retains
-  crypto imports and temporary device adapters; storage C calls belong to the
-  outer platform or `ffi/platform` compatibility projection.
+  only crypto imports; device/storage C calls belong to the outer platform or
+  `ffi/platform` compatibility projection. Presence policy stays portable.
   Do not re-export native adapters through core. Keep safe default erasure
   available through the binding API for workspace cleanup.
 - `ffi/abi`, `ffi/runtime`, `ffi/transport` and `ffi/platform` own C entrypoints,

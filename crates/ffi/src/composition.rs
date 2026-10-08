@@ -23,7 +23,7 @@ pub mod keyboard {
 }
 #[cfg(feature = "nfc")]
 pub mod nfc {
-    pub use crate::transport::nfc::{init, poll};
+    pub use crate::transport::nfc::{init, is_nfc as mode, poll};
 }
 #[cfg(feature = "usb-hid")]
 pub mod hid {

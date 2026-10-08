@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Device callbacks at the native platform boundary.
-use crate::Device;
-use crate::contracts::board_info_kind;
+//! Device callbacks for the optional compatibility C composition.
+use canokey_ports::Device;
+use canokey_ports::contracts::board_info_kind;
 
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.
@@ -9,10 +9,15 @@ pub struct DeviceBackend<R: DeviceRuntime>(core::marker::PhantomData<(*mut (), R
 
 /// Rust-owned lifecycle hooks supplied by the outer runtime composition.
 pub trait DeviceRuntime {
+    #[cfg(feature = "device-runtime")]
     fn settings(flags: u32);
+    #[cfg(all(feature = "device-runtime", feature = "platform-device"))]
     fn led_idle();
+    #[cfg(all(feature = "device-runtime", feature = "platform-device"))]
     fn progress() -> bool;
+    #[cfg(all(feature = "device-runtime", feature = "platform-serial"))]
     fn serial(out: &mut [u8; 4]);
+    #[cfg(feature = "ctap")]
     fn keepalive(waiting: bool);
 }
 
@@ -42,9 +47,7 @@ fn idle_led<R: DeviceRuntime>() {
 }
 
 #[cfg(feature = "nfc")]
-unsafe extern "C" {
-    fn is_nfc() -> u8;
-}
+use crate::transport::nfc::is_nfc;
 
 #[cfg(feature = "platform-device")]
 unsafe extern "C" {
@@ -62,7 +65,7 @@ unsafe extern "C" {
 #[cfg(feature = "ctap")]
 // Keep the independent polling latch out of LLVM's merged transport globals.
 #[cfg_attr(target_os = "none", unsafe(link_section = ".bss.ck_device_presence"))]
-static mut PRESENCE: crate::Polling = crate::Polling::new();
+static mut PRESENCE: canokey_ports::Polling = canokey_ports::Polling::new();
 
 // Main loop only, including while neither transport owns a core session.
 #[cfg(feature = "ctap")]
@@ -98,7 +101,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
         #[cfg(feature = "device-runtime")]
         {
             if kind == board_info_kind::CHIP_ID {
-                let mut id = [0; crate::contracts::CHIP_ID_BYTES];
+                let mut id = [0; canokey_ports::contracts::CHIP_ID_BYTES];
                 unsafe {
                     ck_board_chip_id(id.as_mut_ptr());
                 }
@@ -123,7 +126,7 @@ impl<R: DeviceRuntime> Device for DeviceBackend<R> {
                     .unwrap_or("0.0.0")
                     .as_bytes(),
                 board_info_kind::PRODUCT => b"CanoKey Rust Virtual Card",
-                board_info_kind::CHIP_ID => &[0; crate::contracts::CHIP_ID_BYTES],
+                board_info_kind::CHIP_ID => &[0; canokey_ports::contracts::CHIP_ID_BYTES],
                 _ => option_env!("CANOKEY_CORE_SHA")
                     .unwrap_or("unknown")
                     .as_bytes(),

@@ -3,9 +3,11 @@
 
 #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
 use canokey_ports::BackendTypes;
+mod device;
 mod storage;
-use canokey_ports::native::{CryptoBackend, DeviceBackend, DeviceRuntime, MemoryBackend};
+use canokey_ports::native::{CryptoBackend, MemoryBackend};
 use canokey_rust_core::ports::Platform;
+use device::{DeviceBackend, DeviceRuntime};
 use storage::StorageBackend;
 
 #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
@@ -56,38 +58,23 @@ impl crate::composition::Staging for Scratch {
 
 pub(crate) struct Runtime;
 impl DeviceRuntime for Runtime {
+    #[cfg(feature = "device-runtime")]
     fn settings(flags: u32) {
-        #[cfg(feature = "device-runtime")]
-        unsafe {
-            crate::runtime::device::ck_device_settings(flags)
-        };
-        #[cfg(not(feature = "device-runtime"))]
-        let _ = flags;
+        unsafe { crate::runtime::device::ck_device_settings(flags) };
     }
+    #[cfg(all(feature = "device-runtime", feature = "platform-device"))]
     fn led_idle() {
-        #[cfg(feature = "device-runtime")]
-        unsafe {
-            crate::runtime::device::ck_device_led_idle()
-        };
+        unsafe { crate::runtime::device::ck_device_led_idle() };
     }
+    #[cfg(all(feature = "device-runtime", feature = "platform-device"))]
     fn progress() -> bool {
-        #[cfg(feature = "device-runtime")]
-        {
-            unsafe { crate::runtime::device::ck_device_progress() != 0 }
-        }
-        #[cfg(not(feature = "device-runtime"))]
-        {
-            false
-        }
+        unsafe { crate::runtime::device::ck_device_progress() != 0 }
     }
+    #[cfg(all(feature = "device-runtime", feature = "platform-serial"))]
     fn serial(out: &mut [u8; 4]) {
-        #[cfg(all(feature = "device-runtime", feature = "platform-serial"))]
-        unsafe {
-            crate::runtime::device::ck_device_serial(out.as_mut_ptr())
-        };
-        #[cfg(not(all(feature = "device-runtime", feature = "platform-serial")))]
-        let _ = out;
+        unsafe { crate::runtime::device::ck_device_serial(out.as_mut_ptr()) };
     }
+    #[cfg(feature = "ctap")]
     fn keepalive(waiting: bool) {
         #[cfg(feature = "usb-hid")]
         unsafe {
@@ -117,7 +104,7 @@ impl crate::composition::FirmwareProvider for Native {
 #[cfg(feature = "ctap")]
 #[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_core_presence_sample() {
-    unsafe { canokey_ports::native::presence_sample::<Runtime>() }
+    unsafe { device::presence_sample::<Runtime>() }
 }
 
 pub(crate) fn with_platform<T>(run: impl FnOnce(&mut BoundPlatform<'_>) -> T) -> T {
