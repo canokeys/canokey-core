@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Legacy OATH/PASS boundary cases against the real Rust PC/SC host engine."""
-import ctypes as C
+"""OATH/PASS oracle cases through direct Rust host APIs and durable storage."""
 import hmac
 import os
 from pathlib import Path
 import sys
 import tempfile
-from pcsc_normal import Driver
+from card_test import Host
 from oath_normal import tlv, fields
 
 
@@ -18,10 +17,9 @@ def run(library):
         with tempfile.TemporaryDirectory(prefix='rust-oath-regressions-') as directory:
             image = Path(directory) / 'image'
             os.environ.update(CANOKEY_VIRT_LFS_ROOT=str(image), CANOKEY_VIRT_RESET_STORAGE='1', CANOKEY_TEST_NFC='1')
-            driver = Driver(library)
-            assert driver.lib.IFDHCreateChannel(driver.lun, 0) == 0
+            driver = Host(library)
             try:
-                assert driver.power(500)[0] == 0
+                assert driver.command("SLOT_POWER") == b"\x90\x00"
                 def cmd(ins, p1=0, p2=0, data=b'', sw=0x9000, le=0):
                     request = bytes([0, ins, p1, p2]) + (bytes([len(data)]) + data if data else b'')
                     if le is not None: request += bytes([le])
@@ -45,18 +43,17 @@ def run(library):
                         digest=hmac.digest(b'12345678901234567890',counter.to_bytes(8,'big'),'sha1')
                         off=digest[-1]&15
                         assert body==tlv(0x76,b'\x06'+(int.from_bytes(digest[off:off+4],'big')&0x7fffffff).to_bytes(4,'big'))
-                driver.lib.ck_core_touch.argtypes=[C.c_ubyte,C.c_void_p,C.c_size_t]
-                driver.lib.ck_core_touch.restype=C.c_int32
                 def touch(slot, expected=None, failure=False):
-                    output=(C.c_ubyte*41)(*([0xa5]*41))
-                    n=driver.lib.ck_core_touch(slot,output,33)
-                    assert bytes(output[33:])==b'\xa5'*8
+                    driver.process.stdin.write(f"TOUCH {slot}\n")
+                    driver.process.stdin.flush()
+                    response = driver.process.stdout.readline().strip()
                     if failure:
-                        assert n == -1
-                    else:
-                        assert n>=0
-                        if expected is not None: assert bytes(output[:n])==expected,(n,bytes(output[:max(n,0)]),expected)
-                    return n
+                        assert response == "FAIL"
+                        return -1
+                    assert response != "FAIL"
+                    output = bytes.fromhex(response)
+                    if expected is not None: assert output == expected, (output, expected)
+                    return len(output)
                 admin();cmd(5,le=None);cmd(0x13,le=None);oath()
                 cmd(0xdd,sw=0x6d00)
                 put(b'FH'); put(b'FH',sw=0x6985)
@@ -79,9 +76,9 @@ def run(library):
                 cmd(0xef,data=b'00',le=None)  # Atomic PASS record patch fails once.
                 cmd(2,data=tlv(0x71,b'unlink'),sw=0x6900,le=None)
                 assert b'unlink' in cmd(0xa1)
-                assert driver.power(502)[0]==0
+                assert driver.command("SLOT_POWER") == b"\x90\x00"
                 touch(0,failure=True)  # Logical slot reset retains invalidated PASS cache.
-                assert driver.lib.ck_core_install()==0  # Boot installation reloads durable slots.
+                assert driver.command("INSTALL") == b"\x90\x00"  # Boot installation reloads durable slots.
                 oath();cmd(2,data=tlv(0x71,b'unlink'),le=None)
                 # OATH delete failure occurs after durable unlink; record reuse stays unbound.
                 put(b'delete-fail')
@@ -124,7 +121,7 @@ def run(library):
                 for enter in (0,1):
                     cmd(0x44,2,data=bytes([2,32])+password+bytes([enter]),le=None)
                     touch(1,password+(b'\r' if enter else b''))
-                assert driver.power(502)[0]==0
+                assert driver.command("SLOT_POWER") == b"\x90\x00"
                 touch(1,password+b'\r')
                 admin();key=b'\x0b'*20
                 cmd(0x44,1,data=bytes([3,20])+key,le=None)
@@ -135,7 +132,7 @@ def run(library):
                 cmd(1,0x38,data=bytes(64),sw=0x6a82)
                 assert len(cmd(1,0x10))==4
                 admin();cmd(0x44,1,data=b'\x00',le=None)
-                assert driver.power(502)[0]==0
+                assert driver.command("SLOT_POWER") == b"\x90\x00"
                 admin();assert cmd(0x43)[0]==0
                 oath();cmd(1,0x30,data=bytes(64),sw=0x6a82)
                 # Removing/reinserting same-sized data does not grow the live file.
@@ -166,14 +163,14 @@ def run(library):
                     raise AssertionError('OATH never reported full')
                 assert record_size() > 32768 and filled
                 full_size = record_size()
-                assert driver.power(502)[0] == 0
+                assert driver.command("SLOT_POWER") == b"\x90\x00"
                 oath()
                 assert record_size() == full_size
                 cmd(2, data=tlv(0x71, filled[-1]), le=None)
                 put(filled[-1], 0x21, key=b'k' * 64)
                 assert record_size() == full_size
             finally:
-                assert driver.lib.IFDHCloseChannel(driver.lun)==0
+                driver.close()
     finally:
         if old_touch is None:touch_file.unlink(missing_ok=True)
         else:touch_file.write_bytes(old_touch)

@@ -150,7 +150,7 @@ unsafe fn run() -> Stop {
         } else {
             transport::usb::usb_device_init();
             while ck_board_usb_ready() == 0 {
-                transport::ccid::CCID_Loop();
+                transport::ccid::poll::<crate::platform::Native>();
             }
             ck_board_clock(CLOCK_USB_OPERATING);
             for primitive in 0..CRYPTO_CHECK_COUNT {
@@ -176,12 +176,12 @@ unsafe fn run() -> Stop {
                 #[cfg(feature = "ctap")]
                 ck_core_presence_sample();
                 #[cfg(feature = "usb-hid")]
-                let _ = transport::hid::link::CTAPHID_Loop(0);
-                transport::ccid::CCID_Loop();
+                let _ = transport::hid::link::poll::<crate::platform::Native>();
+                transport::ccid::poll::<crate::platform::Native>();
                 #[cfg(feature = "usb-keyboard")]
                 transport::keyboard::ck_keyboard_loop();
                 #[cfg(feature = "usb-webusb")]
-                transport::webusb::WebUSB_Loop();
+                transport::webusb::poll::<crate::platform::Native>();
             }
             ck_board_stack_report();
             #[cfg(test)]

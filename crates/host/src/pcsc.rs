@@ -66,7 +66,7 @@ pub(super) fn ck_pcsc_open(lun: u64) -> i32 {
     // Flush mailbox/link state from any previous open before admission.
     unsafe {
         ck_hid_packet_reset();
-        CTAPHID_Loop(0);
+        hid::poll::<HostProvider>();
     }
     OK
 }
@@ -76,7 +76,7 @@ pub(super) fn ck_pcsc_close(lun: u64) -> i32 {
         return MISSING;
     }
     unsafe {
-        ck_core_reset();
+        core::reset::<HostProvider>();
     }
     HOST.lock().unwrap().take();
     OK
@@ -152,7 +152,7 @@ pub(super) unsafe fn ck_pcsc_power(
     // but closes response chains and clears message fragments/workspace.
     // Other applet grants are revoked; device reset/close clears every session.
     unsafe {
-        ck_core_slot_power();
+        core::slot_power::<HostProvider>();
     }
     host(|h| {
         h.powered = false;
@@ -166,7 +166,7 @@ pub(super) unsafe fn ck_pcsc_power(
         Ok(s) => s,
         Err(_) => {
             unsafe {
-                ck_core_reset();
+                core::reset::<HostProvider>();
             }
             return COMM;
         }
@@ -195,7 +195,7 @@ fn aggregate(request: &[u8]) -> bool {
 }
 fn reboot() -> Result<(), ()> {
     unsafe {
-        ck_core_reset();
+        core::reset::<HostProvider>();
     }
     let storage = host(|h| h.storage.reopen()).map_err(|_| ())?;
     host(|h| {
@@ -204,7 +204,7 @@ fn reboot() -> Result<(), ()> {
         h.led = false;
         h.gesture = Gesture::Idle;
     });
-    if unsafe { ck_core_install() } == 0 {
+    if unsafe { core::install::<HostProvider>() } == 0 {
         Ok(())
     } else {
         Err(())
@@ -259,9 +259,7 @@ pub(super) unsafe fn ck_pcsc_transmit(
     }
     let request = unsafe { input(tx, n) };
     host(|h| h.nfc = contactless());
-    unsafe {
-        ck_core_presence_sample();
-    }
+    presence_sample();
     if let Some(response) = test_control(request) {
         return match response {
             Ok(bytes) => unsafe { copy(&bytes, rx, cap, length) },
@@ -279,7 +277,7 @@ pub(super) unsafe fn ck_pcsc_transmit(
         if count > cap - written {
             // No partial success and no response tail leaking into a later call.
             unsafe {
-                ck_core_reset();
+                core::reset::<HostProvider>();
             }
             return SMALL;
         }
@@ -294,7 +292,7 @@ pub(super) unsafe fn ck_pcsc_transmit(
         pending = &apdu_wire::GET_RESPONSE;
     }
     unsafe {
-        ck_core_reset();
+        core::reset::<HostProvider>();
     }
     COMM
 }

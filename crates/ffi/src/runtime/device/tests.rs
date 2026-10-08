@@ -238,17 +238,14 @@ pub(crate) mod transport {
         }
     }
     pub(crate) mod ccid {
-        #[allow(non_snake_case)]
-        pub(crate) unsafe fn CCID_Loop() {
+        pub(crate) unsafe fn poll<P>() {
             super::super::board().ccid += 1;
         }
     }
     #[cfg(feature = "usb-hid")]
     pub(crate) mod hid {
         pub(crate) mod link {
-            #[allow(non_snake_case)]
-            pub(crate) unsafe fn CTAPHID_Loop(wait: u8) -> u8 {
-                assert_eq!(wait, 0);
+            pub(crate) unsafe fn poll<P>() -> u8 {
                 super::super::super::board().hid += 1;
                 0
             }
@@ -262,8 +259,7 @@ pub(crate) mod transport {
     }
     #[cfg(feature = "usb-webusb")]
     pub(crate) mod webusb {
-        #[allow(non_snake_case)]
-        pub(crate) unsafe fn WebUSB_Loop() {
+        pub(crate) unsafe fn poll<P>() {
             super::super::board().webusb += 1;
         }
     }

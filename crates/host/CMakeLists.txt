@@ -79,6 +79,22 @@ if(CANOKEY_VIRTUAL_CARD)
   set_target_properties(u2f-virt-card-image PROPERTIES IMPORTED_LOCATION "${HOST_PCSC_IMAGE}")
   add_dependencies(u2f-virt-card-image u2f-virt-card)
   if(BUILD_TESTING OR ENABLE_TESTS)
+    set(HOST_REGRESSION_IMAGE "${CMAKE_BINARY_DIR}/host-regressions")
+    add_custom_target(host-regressions ALL
+      COMMAND "${CMAKE_COMMAND}" -E env
+        "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_UDP_LIBRARIES}"
+        "CANOKEY_PCSC_LINK_OPTIONS=${HOST_UDP_OPTIONS}"
+        ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc
+        --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
+        --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-regressions --profile host-test
+        --features regression-binary ${HOST_FEATURE_ARGS} --bin host-regressions
+        -- -C "linker=${CMAKE_C_COMPILER}" -C default-linker-libraries=yes
+      COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_BINARY_DIR}/cargo-regressions/host-test/host-regressions" "${HOST_REGRESSION_IMAGE}"
+      BYPRODUCTS "${HOST_REGRESSION_IMAGE}"
+      DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
+  endif()
+  if(BUILD_TESTING OR ENABLE_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_executable(pcsc-abi ${CANOKEY_ROOT}/tests/native/pcsc_abi.c)
     target_include_directories(pcsc-abi PRIVATE "${PCSC_INCLUDE_DIR}")
@@ -102,7 +118,7 @@ if(CANOKEY_VIRTUAL_CARD)
       "${CANOKEY_ROOT}/tests/integration/pcsc_normal.py" "${HOST_PCSC_IMAGE}")
     set_tests_properties(virtual-pcsc PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
     add_test(NAME virtual-oath-regressions COMMAND "${PCSC_TEST_PYTHON}"
-      "${CANOKEY_ROOT}/tests/integration/oath_regressions.py" "${HOST_PCSC_IMAGE}")
+      "${CANOKEY_ROOT}/tests/integration/oath_regressions.py" "${HOST_REGRESSION_IMAGE}")
     set_tests_properties(virtual-oath-regressions PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
     if(ENABLE_TESTS)
       # The legacy entry instruments its native libraries globally. ctypes loads
@@ -133,7 +149,11 @@ if(CANOKEY_VIRTUAL_CARD)
           "__PYVENV_LAUNCHER__=${Python3_EXECUTABLE}")
       endif()
     endif()
-    add_test(NAME virtual-storage COMMAND ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} test
+    add_test(NAME virtual-storage COMMAND "${CMAKE_COMMAND}" -E env
+      "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_UDP_LIBRARIES}"
+      "CANOKEY_PCSC_LINK_OPTIONS=${HOST_UDP_OPTIONS}"
+      "RUSTFLAGS=-C linker=${CMAKE_C_COMPILER} -C default-linker-libraries=yes"
+      ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} test
       --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
       --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-tests --lib)
     set_tests_properties(virtual-storage PROPERTIES TIMEOUT 120)

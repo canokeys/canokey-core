@@ -3,12 +3,9 @@
 //! maintain packet state but never reenter applet execution or hold HOST borrows.
 #[cfg(target_os = "none")]
 compile_error!("the virtual-card host must never be linked into firmware");
-use canokey_rust_ffi::ck_core_presence_sample;
-#[cfg(feature = "pcsc-plugin")]
-use canokey_rust_ffi::ck_core_slot_power;
 use canokey_rust_ffi::{
-    CTAPHID_Loop, CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_core_exchange, ck_core_install,
-    ck_core_reset, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
+    CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
+    composition::{core, hid},
 };
 use std::{
     io,
@@ -20,14 +17,15 @@ use std::{
     },
     time::{Duration, Instant},
 };
+mod backend;
 #[cfg(feature = "pcsc-plugin")]
 mod ifd;
 #[cfg(feature = "pcsc-plugin")]
 mod pcsc;
 mod storage;
+use backend::{HostProvider, presence_sample};
 #[cfg(feature = "usbip")]
 mod usbip;
-use canokey_ports::stage_operation;
 use canokey_protocol::apdu as apdu_wire;
 #[cfg(not(feature = "usbip"))]
 use canokey_protocol::usb;
@@ -64,6 +62,7 @@ struct Host {
     nfc: bool,
     led: bool,
     gesture: Gesture,
+    presence: canokey_ports::Polling,
     reboot: bool,
     pke: [u8; PKE_BYTES],
     owner: u8,
@@ -75,12 +74,7 @@ static HOST: Mutex<Option<Host>> = Mutex::new(None);
 fn host<T>(f: impl FnOnce(&mut Host) -> T) -> T {
     f(HOST.lock().unwrap().as_mut().expect("host not initialized"))
 }
-fn result(r: Result<usize, i32>) -> i32 {
-    r.map_or_else(|e| e, |n| n as i32)
-}
-fn status(r: Result<(), i32>) -> i32 {
-    r.map_or_else(|e| e, |()| 0)
-}
+#[cfg(any(feature = "pcsc-plugin", not(feature = "usbip")))]
 unsafe fn input<'a>(p: *const u8, n: usize) -> &'a [u8] {
     if n == 0 {
         &[]
@@ -89,6 +83,7 @@ unsafe fn input<'a>(p: *const u8, n: usize) -> &'a [u8] {
         unsafe { std::slice::from_raw_parts(p, n) }
     }
 }
+#[cfg(feature = "pcsc-plugin")]
 unsafe fn output<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
     if n == 0 {
         &mut []
@@ -98,105 +93,11 @@ unsafe fn output<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
     }
 }
 #[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_size(id: u8) -> i32 {
-    result(host(|h| h.storage.size(id)))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_read(id: u8, p: *mut u8, n: usize) -> i32 {
-    result(host(|h| {
-        h.storage.read(id, 0, unsafe { output(p, n) }, true)
-    }))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_read_at(id: u8, off: u32, p: *mut u8, n: usize) -> i32 {
-    result(host(|h| {
-        h.storage
-            .read(id, off as usize, unsafe { output(p, n) }, false)
-    }))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_write(id: u8, p: *const u8, n: usize) -> i32 {
-    result(host(|h| h.storage.write(id, unsafe { input(p, n) })))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_write_at(id: u8, off: u32, p: *const u8, n: usize) -> i32 {
-    result(host(|h| {
-        h.storage.patch(id, off as usize, unsafe { input(p, n) })
-    }))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_resize(id: u8, n: u32) -> i32 {
-    status(host(|h| h.storage.resize(id, n as usize)))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_stage(op: u8, id: u8, p: *const u8, n: usize) -> i32 {
-    status(host(|h| h.storage.stage(op, id, unsafe { input(p, n) })))
-}
-#[repr(C)]
-struct StoragePart {
-    data: *const u8,
-    length: usize,
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_stage_parts(parts: *const StoragePart, count: usize) -> i32 {
-    if count > 8 || (count != 0 && parts.is_null()) {
-        return -2;
-    }
-    let parts = if count == 0 {
-        &[]
-    } else {
-        unsafe { std::slice::from_raw_parts(parts, count) }
-    };
-    if parts.iter().any(|p| p.length != 0 && p.data.is_null()) {
-        return -2;
-    }
-    status(host(|h| {
-        h.storage.stage(stage_operation::BEGIN, 0, &[])?;
-        for part in parts {
-            if let Err(e) = h.storage.stage(stage_operation::APPEND, 0, unsafe {
-                input(part.data, part.length)
-            }) {
-                let _ = h.storage.stage(stage_operation::ABORT, 0, &[]);
-                return Err(e);
-            }
-        }
-        Ok(())
-    }))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_platform_usage(used: *mut u32, total: *mut u32) -> i32 {
-    status(host(|h| h.storage.usage()).map(|(u, t)| unsafe {
-        used.write(u);
-        total.write(t)
-    }))
-}
-#[unsafe(no_mangle)]
-extern "C" fn ck_platform_has_space(bytes: u32, reserve: u32) -> i32 {
-    host(|h| h.storage.usage()).map_or_else(
-        |e| e,
-        |(u, t)| i32::from(t - u >= reserve && t - u - reserve >= bytes),
-    )
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn platform_config_page_read(off: usize, p: *mut u8, n: usize) -> i32 {
-    status(host(|h| {
-        h.storage.config_read(off, unsafe { output(p, n) })
-    }))
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn platform_config_page_write(p: *const u8, n: usize) -> i32 {
-    status(host(|h| h.storage.config_write(unsafe { input(p, n) })))
-}
-#[unsafe(no_mangle)]
 extern "C" fn device_get_tick() -> u32 {
     host(|h| {
         h.ticks
             .unwrap_or_else(|| h.boot.elapsed().as_millis() as u32)
     })
-}
-#[unsafe(no_mangle)]
-extern "C" fn ck_platform_now() -> u32 {
-    device_get_tick()
 }
 #[unsafe(no_mangle)]
 extern "C" fn device_delay(ms: i32) {
@@ -212,24 +113,15 @@ extern "C" fn device_delay(ms: i32) {
         std::thread::sleep(Duration::from_millis(ms as u64));
     }
 }
-#[unsafe(no_mangle)]
-extern "C" fn is_nfc() -> u8 {
-    host(|h| u8::from(h.nfc))
-}
-#[unsafe(no_mangle)]
-extern "C" fn ck_platform_led(on: u8) {
-    host(|h| h.led = on != 0);
-}
 enum Gesture {
     Idle,
     Released(Instant),
     Pressed(Instant),
     Cooldown(Instant),
 }
-#[unsafe(no_mangle)]
-extern "C" fn ck_platform_touched() -> u8 {
+fn touched() -> bool {
     if host(|h| h.ticks.is_some()) {
-        return 0;
+        return false;
     }
     let count = std::fs::read_to_string("/tmp/canokey-test-up")
         .ok()
@@ -279,13 +171,12 @@ extern "C" fn ck_platform_touched() -> u8 {
         )
         .expect("write presence counter");
     }
-    u8::from(pressed)
+    pressed
 }
-#[unsafe(no_mangle)]
-extern "C" fn ck_platform_progress() -> u8 {
+fn progress() -> bool {
     receive();
     if host(|h| h.reboot) || stopping_signal() != 0 {
-        return 0;
+        return false;
     }
     let result = if unsafe { ck_hid_executing() != 0 } {
         unsafe { ck_hid_progress() }
@@ -293,7 +184,7 @@ extern "C" fn ck_platform_progress() -> u8 {
         1
     };
     std::thread::sleep(Duration::from_millis(1));
-    result
+    result != 0
 }
 #[unsafe(no_mangle)]
 #[cfg(not(feature = "usbip"))]
@@ -341,59 +232,6 @@ unsafe extern "C" fn ck_usb_submit(ep: u8, p: *const u8, n: u16, zlp: u8) -> i32
             .map_or(0, |n| i32::from(n == 64))
     })
 }
-#[unsafe(no_mangle)]
-extern "C" fn pke_buffer_size() -> usize {
-    PKE_BYTES
-}
-#[unsafe(no_mangle)]
-extern "C" fn pke_buffer_acquire(owner: u8) -> i32 {
-    host(|h| {
-        if owner == 0 || (h.owner != 0 && h.owner != owner) {
-            -1
-        } else {
-            h.owner = owner;
-            0
-        }
-    })
-}
-#[unsafe(no_mangle)]
-extern "C" fn pke_buffer_release(owner: u8) -> i32 {
-    host(|h| {
-        if owner == 0 || h.owner != owner {
-            -1
-        } else {
-            h.owner = 0;
-            0
-        }
-    })
-}
-#[unsafe(no_mangle)]
-extern "C" fn pke_buffer_clear() -> i32 {
-    host(|h| {
-        h.pke.fill(0);
-        0
-    })
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn pke_buffer_read(off: usize, p: *mut u8, n: usize) -> i32 {
-    host(|h| {
-        if h.owner == 0 || off > h.pke.len() || n > h.pke.len() - off {
-            return -1;
-        }
-        unsafe { output(p, n) }.copy_from_slice(&h.pke[off..off + n]);
-        0
-    })
-}
-#[unsafe(no_mangle)]
-unsafe extern "C" fn pke_buffer_write(off: usize, p: *const u8, n: usize) -> i32 {
-    host(|h| {
-        if h.owner == 0 || off > h.pke.len() || n > h.pke.len() - off {
-            return -1;
-        }
-        h.pke[off..off + n].copy_from_slice(unsafe { input(p, n) });
-        0
-    })
-}
 // Host-only UDP control datagrams share an 11-byte identifying prefix after
 // their AC reboot / 99 fault-injection discriminators; not a CTAPHID command.
 const REBOOT: [u8; 64] = [
@@ -438,7 +276,7 @@ fn receive() {
 fn exchange(command: &[u8]) -> Vec<u8> {
     let mut out = [0; apdu_wire::SHORT_REPLY_BYTES];
     let n = unsafe {
-        ck_core_exchange(
+        core::exchange::<HostProvider>(
             1,
             command.as_ptr(),
             command.len(),
@@ -488,7 +326,7 @@ fn provision() {
         exchange(&[0, 0x55, 1, 1, 5, 0x71, 3, b'a', b'b', b'c']),
         [0x90, 0]
     );
-    unsafe { ck_core_reset() };
+    unsafe { core::reset::<HostProvider>() };
 }
 fn flag(name: &str, default: bool) -> bool {
     std::env::var(name)
@@ -527,6 +365,7 @@ fn initialize_storage(
         nfc: false,
         led: false,
         gesture: Gesture::Idle,
+        presence: canokey_ports::Polling::new(),
         reboot: false,
         pke: [0; PKE_BYTES],
         owner: 0,
@@ -534,7 +373,7 @@ fn initialize_storage(
     if touch_file && (host(|h| h.socket.is_some()) || !Path::new("/tmp/canokey-test-up").exists()) {
         std::fs::write("/tmp/canokey-test-up", "0\n")?;
     }
-    if unsafe { ck_core_install() } != 0 {
+    if unsafe { core::install::<HostProvider>() } != 0 {
         return Err(io::Error::other("core installation failed"));
     }
     if fresh {
@@ -549,7 +388,7 @@ fn run() -> io::Result<()> {
     host(|h| h.nfc = flag("CANOKEY_VIRT_NFC", false));
     unsafe {
         ck_hid_packet_reset();
-        CTAPHID_Loop(0);
+        hid::poll::<HostProvider>();
     }
     println!("Rust virtual HID ready on UDP 8111 (responses: 127.0.0.1:7112)");
     while stopping_signal() == 0 {
@@ -566,20 +405,20 @@ fn run() -> io::Result<()> {
                 h.gesture = Gesture::Idle;
             });
             unsafe {
-                CTAPHID_Loop(0);
-                assert_eq!(ck_core_install(), 0);
+                hid::poll::<HostProvider>();
+                assert_eq!(core::install::<HostProvider>(), 0);
             }
             println!("MAGIC REBOOT command received!");
         }
         unsafe {
-            ck_core_presence_sample();
-            CTAPHID_Loop(0);
+            presence_sample();
+            hid::poll::<HostProvider>();
         }
         std::thread::sleep(Duration::from_micros(100));
     }
     unsafe {
         ck_hid_packet_reset();
-        CTAPHID_Loop(0);
+        hid::poll::<HostProvider>();
     }
     HOST.lock().unwrap().take();
     Ok(())
@@ -592,5 +431,87 @@ pub fn run_udp() -> i32 {
             eprintln!("Rust virtual HID: {e}");
             1
         }
+    }
+}
+
+/// Host-only oracle driver: exercises direct Rust APIs and durable record images.
+#[cfg(feature = "regression-binary")]
+pub fn run_regression_driver() {
+    use std::io::{BufRead, Write};
+    const LUN: u64 = 0x10000;
+    assert_eq!(pcsc::ck_pcsc_open(LUN), 0);
+    host(|h| {
+        h.powered = true;
+        h.nfc = true;
+    });
+    let mut output = io::BufWriter::new(io::stdout().lock());
+    for line in io::stdin().lock().lines() {
+        let line = line.unwrap();
+        let mut words = line.split_whitespace();
+        let response = match words.next().unwrap_or("") {
+            "TOUCH" => {
+                let _entry = ENTRY.lock().unwrap();
+                // PASS emits at most 33 bytes; the trailing canary catches overflow.
+                let mut bytes = [0xa5; 41];
+                let n = unsafe {
+                    core::touch::<HostProvider>(
+                        words.next().unwrap().parse().unwrap(),
+                        bytes.as_mut_ptr(),
+                        33,
+                    )
+                };
+                assert_eq!(&bytes[33..], &[0xa5; 8]);
+                if n < 0 {
+                    "FAIL".to_owned()
+                } else {
+                    encode(&bytes[..n as usize])
+                }
+            }
+            "INSTALL" => {
+                let _entry = ENTRY.lock().unwrap();
+                assert_eq!(unsafe { core::install::<HostProvider>() }, 0);
+                "9000".to_owned()
+            }
+            "SLOT_POWER" => {
+                let _entry = ENTRY.lock().unwrap();
+                unsafe { core::slot_power::<HostProvider>() };
+                "9000".to_owned()
+            }
+            _ => {
+                assert!(line.len().is_multiple_of(2) && line.len() <= 2 * 512);
+                let command: Vec<_> = line
+                    .as_bytes()
+                    .chunks_exact(2)
+                    .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
+                    .collect();
+                let mut bytes = [0; 8192];
+                let mut n = 0;
+                assert_eq!(
+                    unsafe {
+                        pcsc::ck_pcsc_transmit(
+                            LUN,
+                            command.as_ptr(),
+                            command.len(),
+                            bytes.as_mut_ptr(),
+                            bytes.len(),
+                            &mut n,
+                        )
+                    },
+                    0
+                );
+                encode(&bytes[..n])
+            }
+        };
+        writeln!(output, "{response}").unwrap();
+        output.flush().unwrap();
+    }
+    assert_eq!(pcsc::ck_pcsc_close(LUN), 0);
+    fn encode(bytes: &[u8]) -> String {
+        use std::fmt::Write;
+        let mut text = String::new();
+        for byte in bytes {
+            write!(text, "{byte:02x}").unwrap();
+        }
+        text
     }
 }

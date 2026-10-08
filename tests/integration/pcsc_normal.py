@@ -25,6 +25,10 @@ class PCI(C.Structure):
 class Driver:
     def __init__(self, library):
         self.lib = C.CDLL(library)
+        # Internal Rust composition must not grow the external IFD ABI.
+        for symbol in ('ck_core_install', 'ck_core_touch', 'ck_platform_read',
+                       'ck_platform_now', 'pke_buffer_acquire', 'pke_buffer_read'):
+            assert not hasattr(self.lib, symbol), symbol
         self.lun = 0x10000 # reader number need not be zero; slot remains zero
         signatures = {
             'CreateChannel': [DWORD, DWORD], 'CreateChannelByName': [DWORD, C.c_char_p],
@@ -112,39 +116,7 @@ def run(library):
             assert d.raw(bytes.fromhex('00b00400'))[1] == b'\x90\x00'
             assert d.raw(bytes.fromhex('00b0040001'))[1] == b'\x67\x00'
             assert d.power(502)[0] == 0
-            # Exercise the actual Rust RAM fallback through its exported ABI.
-            # Reacquiring the same owner is idempotent, never a reference count.
-            for name, args, result in [
-                ('size', [], C.c_size_t), ('acquire', [BYTE], C.c_int32),
-                ('release', [BYTE], C.c_int32), ('clear', [], C.c_int32),
-                ('read', [C.c_size_t, C.c_void_p, C.c_size_t], C.c_int32),
-                ('write', [C.c_size_t, C.c_void_p, C.c_size_t], C.c_int32),
-            ]:
-                fn = getattr(d.lib, 'pke_buffer_' + name)
-                fn.argtypes, fn.restype = args, result
-            capacity = d.lib.pke_buffer_size()
-            assert capacity >= 1024
-            payload = bytes(i & 255 for i in range(capacity))
-            tx = C.create_string_buffer(payload)
-            rx = (BYTE * len(payload))()
-            assert d.lib.pke_buffer_acquire(0) == -1
-            assert d.lib.pke_buffer_acquire(3) == 0
-            assert d.lib.pke_buffer_acquire(3) == 0
-            assert d.lib.pke_buffer_acquire(2) == -1
-            assert d.lib.pke_buffer_write(0, tx, len(payload)) == 0
-            assert d.lib.pke_buffer_release(2) == -1
-            assert d.lib.pke_buffer_release(3) == 0
-            assert d.lib.pke_buffer_read(0, rx, len(payload)) == -1
-            assert d.lib.pke_buffer_acquire(2) == 0
-            assert d.lib.pke_buffer_read(0, rx, len(payload)) == 0
-            assert bytes(rx) == payload
-            for offset, length in [(capacity, 1), (capacity + 1, 0), (0, C.c_size_t(-1).value)]:
-                assert d.lib.pke_buffer_read(offset, rx, length) == -1
-                assert d.lib.pke_buffer_write(offset, tx, length) == -1
-            assert d.lib.pke_buffer_clear() == 0
-            assert d.lib.pke_buffer_read(0, rx, len(payload)) == 0
-            assert bytes(rx) == bytes(len(payload))
-            assert d.lib.pke_buffer_release(2) == 0
+            # Accelerator staging is covered through direct Rust traits in virtual-storage.
             card = Card(d)
             # Legacy test-control reboot works before any applet selection.
             assert d.power(502)[0] == 0
@@ -159,11 +131,11 @@ def run(library):
             admin(); edit(0x6982); verify()
             saved = card.cmd('slots', 0x43)
             assert saved[0] == 2
-            d.lib.ck_platform_now.restype = C.c_uint32
+            d.lib.device_get_tick.restype = C.c_uint32
             time.sleep(.025)
-            before_reset = d.lib.ck_platform_now()
+            before_reset = d.lib.device_get_tick()
             assert d.power(502)[0] == 0
-            assert d.lib.ck_platform_now() >= before_reset, 'slot reset restarted the power-on window'
+            assert d.lib.device_get_tick() >= before_reset, 'slot reset restarted the power-on window'
             admin(); edit(0x6982)
             card.cmd('fido', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
 

@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer backend selection for the serialized shared runtime.
+//! Unsafe runtime entrypoints require one Provider for an installed runtime's
+//! lifetime, including transport reset/cleanup: a lease must return to the
+//! same staging backend that acquired it. IRQ callbacks never select a Provider.
 use canokey_ports::{Backends, Platform};
 pub mod core;
 #[cfg(feature = "usb-hid")]

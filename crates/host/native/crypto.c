@@ -17,7 +17,6 @@ int32_t ck_platform_mac(uint8_t alg, const uint8_t *key, size_t k, const uint8_t
   return 0;
 }
 int32_t ck_platform_random(uint8_t *out, size_t n) { return RAND_bytes(out, (int)n) == 1 ? 0 : -1; }
-void ck_platform_serial(uint8_t out[4]) { memset(out, 0, 4); }
 void ck_platform_sha256(const uint8_t *input, size_t n, uint8_t out[32]) {
   unsigned length;
   assert(EVP_Digest(input, n, out, &length, EVP_sha256(), NULL) && length == 32);

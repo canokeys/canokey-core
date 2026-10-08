@@ -100,7 +100,7 @@ impl DeviceRuntime for Runtime {
 
 // Retained for the C storage fixture until its platform composition moves.
 #[cfg(feature = "ctap")]
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_core_presence_sample() {
     unsafe { canokey_ports::native::presence_sample::<Runtime>() }
 }

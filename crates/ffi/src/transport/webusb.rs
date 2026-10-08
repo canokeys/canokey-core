@@ -232,6 +232,7 @@ pub unsafe fn progress() -> Option<bool> {
     })
 }
 
+#[cfg(feature = "native-composition")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn WebUSB_Loop() {
     unsafe { poll::<crate::platform::Native>() }

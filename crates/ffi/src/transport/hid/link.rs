@@ -317,6 +317,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
     }
 }
 
+#[cfg(feature = "native-composition")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
     unsafe { poll::<crate::platform::Native>() }

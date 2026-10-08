@@ -341,6 +341,7 @@ pub unsafe fn presence_progress() {
 
 pub(crate) mod io;
 
+#[cfg(feature = "native-composition")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn CCID_Loop() {
     unsafe { poll::<crate::platform::Native>() }

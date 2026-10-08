@@ -4,7 +4,10 @@
 The `fido-hid-over-udp` executable uses the production Rust CTAPHID mailbox,
 execution/framing engine, APDU engine, shared session/workspace and all applets.
 The host crate supplies UDP, a simulated touch input/PKE scratch area and durable
-host records. The image has a 128 KiB total record budget; an individual
+host records through direct Rust storage/device/staging capabilities. The outer
+host Provider selects these capabilities for Core and HID/CCID/WebUSB execution;
+it does not export storage, presence or accelerator callbacks through C. Native
+crypto remains an imported C implementation. The image has a 128 KiB total record budget; an individual
 record may grow to that same bound. There is no smaller 32 KiB file ceiling,
 so OATH's shared record can reach its free-space reserve and report storage
 full consistently with the usage query. Native inputs are the POSIX signal shim, host crypto and the same
@@ -78,7 +81,11 @@ LittleFS power-loss, device capacity, physical presence or hardware acceptance.
 counter/RK behavior across process restart, read/write injection, runtime cancel,
 INIT and reboot during presence waits, plus NFC presence policy. `virtual-storage`
 checks atomic record/staging semantics, rejected images, bounds and fail-closed
-commit errors. Fixed ports and the touch-counter file require serialized runs.
+commit errors, plus direct accelerator ownership/bounds/wipe checks.
+`virtual-oath-regressions` runs the `host-regressions` Rust oracle driver over
+standard input/output, preserving durable image, fault, PASS touch and reload
+coverage without internal C exports. This driver is built only for host tests.
+Fixed ports and the touch-counter file require serialized runs.
 
 The files in `fixtures/` are the publicly known test material from the former
 `virt-card/fabrication.c`, not production secrets. Never provision them on a
@@ -153,9 +160,9 @@ software compatibility result still does not establish physical USB/NFC behavior
 The RAM PKE-buffer fallback keeps the legacy idempotent same-owner acquisition
 contract: repeated acquisition does not require repeated release. Competing
 owners and mismatched releases fail. Reads/writes require an active owner and
-validate offsets/lengths before accessing pointers. Release preserves bytes;
+validate offsets and lengths before accessing slices. Release preserves bytes;
 the core explicitly clears transient data before handing off the shared buffer.
-The existing `virtual-pcsc` correctness test checks the exported ABI directly.
+`virtual-storage` checks this contract through the host's Rust staging trait.
 
 
 The external vendor power-loss tests are patched by
