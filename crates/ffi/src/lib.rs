@@ -34,6 +34,7 @@ macro_rules! lazy_state {
     };
 }
 mod abi;
+pub mod composition;
 mod platform;
 mod runtime;
 mod sys;

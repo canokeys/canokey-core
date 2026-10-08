@@ -14,7 +14,19 @@ pub(crate) type BoundPlatform<'a> = Platform<
     BackendTypes<StorageBackend, CryptoBackend, DeviceBackend<Runtime>, MemoryBackend>,
 >;
 #[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
-pub(crate) type BoundPlatform<'a> = Platform<'a>;
+pub(crate) type BoundPlatform<'a> = Platform<'a, canokey_ports::DynamicBackends<'static>>;
+
+pub(crate) struct Native;
+impl crate::composition::Provider for Native {
+    #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
+    type Backends =
+        BackendTypes<StorageBackend, CryptoBackend, DeviceBackend<Runtime>, MemoryBackend>;
+    #[cfg(not(all(feature = "static-backend", not(feature = "dynamic-backend"))))]
+    type Backends = canokey_ports::DynamicBackends<'static>;
+    fn with_platform<T>(run: impl FnOnce(&mut BoundPlatform<'_>) -> T) -> T {
+        with_platform(run)
+    }
+}
 
 pub(crate) struct Runtime;
 impl DeviceRuntime for Runtime {

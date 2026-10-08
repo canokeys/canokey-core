@@ -17,24 +17,30 @@ required-features = ["fuzz"]
 name = "core-behavior"
 path = "src/bin/behavior.rs"
 required-features = ["behavior"]
+[[bin]]
+name = "runtime-composition"
+path = "src/bin/composition.rs"
+required-features = ["composition"]
 [dependencies]
 canokey-rust-core = { path = "../../crates/core" }
 canokey-protocol = { path = "../../crates/protocol" }
 canokey-ports = { path = "../../crates/ports", default-features = false, features = ["native-crypto"] }
+canokey-rust-ffi = { path = "../../crates/ffi", optional = true }
 libc = { version = "=0.2.189", optional = true }
 libfuzzer-sys = { version = "=0.4.13", optional = true }
 [features]
 default = []
 behavior = []
+composition = ["dep:canokey-rust-ffi"]
 replay = ["dep:libc"]
 fuzz = ["dep:libfuzzer-sys", "dep:libc"]
-admin = ["canokey-rust-core/admin"]
-pass = ["canokey-rust-core/pass"]
-oath = ["canokey-rust-core/oath"]
-openpgp = ["canokey-rust-core/openpgp"]
-piv = ["canokey-rust-core/piv"]
-ctap = ["canokey-rust-core/ctap"]
-ndef = ["canokey-rust-core/ndef"]
+admin = ["canokey-rust-core/admin", "canokey-rust-ffi?/admin"]
+pass = ["canokey-rust-core/pass", "canokey-rust-ffi?/pass"]
+oath = ["canokey-rust-core/oath", "canokey-rust-ffi?/oath"]
+openpgp = ["canokey-rust-core/openpgp", "canokey-rust-ffi?/openpgp"]
+piv = ["canokey-rust-core/piv", "canokey-rust-ffi?/piv"]
+ctap = ["canokey-rust-core/ctap", "canokey-rust-ffi?/ctap"]
+ndef = ["canokey-rust-core/ndef", "canokey-rust-ffi?/ndef"]
 ctap-restrict-algorithms = ["ctap", "canokey-rust-core/ctap-restrict-algorithms"]
 [lints]
 workspace = true

@@ -65,6 +65,7 @@ dependencies = [
  "canokey-ports",
  "canokey-protocol",
  "canokey-rust-core",
+ "canokey-rust-ffi",
  "libc",
  "libfuzzer-sys",
 ]

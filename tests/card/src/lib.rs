@@ -56,7 +56,7 @@ impl Device for Clock {
         self.polling.wink(self.ticks);
     }
 }
-type Backend = canokey_ports::BackendTypes<
+pub type Backend = canokey_ports::BackendTypes<
     storage::Records,
     canokey_ports::native::CryptoBackend,
     Clock,

@@ -150,6 +150,8 @@ if(BUILD_TESTING)
   add_test(NAME core-abi COMMAND core-abi)
   add_rust_card(core-behavior FALSE core-behavior)
   add_test(NAME core-behavior COMMAND $<TARGET_FILE:core-behavior-image>)
+  add_rust_card(runtime-composition FALSE runtime-composition)
+  add_test(NAME runtime-composition COMMAND $<TARGET_FILE:runtime-composition-image>)
   # Pure transport tests also run in profiles without the CTAP firmware applet.
   set(RUST_TEST_FEATURES canokey-rust-core/ctap)
   if(CTAP_RESTRICT_ALGORITHMS)
