@@ -1,12 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! One implementation serves direct firmware calls and trait-based host tests.
-//! Only this adapter layer crosses the native ABI.
+//! Shared crypto imports and temporary device adapters.
+//! Storage adapters belong to the outer platform or compatibility composition.
 mod crypto;
-#[cfg(feature = "native-backend")]
-mod storage;
 pub use crypto::CryptoBackend;
-#[cfg(feature = "native-backend")]
-pub use storage::StorageBackend;
 
 #[cfg(feature = "native-backend")]
 mod device;

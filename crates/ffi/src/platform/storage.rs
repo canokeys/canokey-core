@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Storage and staged-record adapter for the `core.h` ck_platform_* ABI.
-//! Firmware implements it with LittleFS; host virtual cards use record images.
-use crate::{Record, Storage, StorageError};
+//! Compatibility storage projection for the `core.h` ck_platform_* ABI.
+//! CIU and Rust host compositions own their storage adapters separately.
+use canokey_ports::{Record, Storage, StorageError};
 
 #[cfg(any(
     feature = "storage",
@@ -114,14 +114,14 @@ unsafe extern "C" {
 // Variants are gated by platform capabilities and applet features; numeric
 // values remain aligned with ck_stage_operation in native/include/core.h.
 enum StageOperation {
-    Begin = crate::contracts::stage_operation::BEGIN,
-    Append = crate::contracts::stage_operation::APPEND,
-    Publish = crate::contracts::stage_operation::PUBLISH,
-    Abort = crate::contracts::stage_operation::ABORT,
+    Begin = canokey_ports::contracts::stage_operation::BEGIN,
+    Append = canokey_ports::contracts::stage_operation::APPEND,
+    Publish = canokey_ports::contracts::stage_operation::PUBLISH,
+    Abort = canokey_ports::contracts::stage_operation::ABORT,
     #[cfg(feature = "platform-stage")]
-    Remove = crate::contracts::stage_operation::REMOVE,
+    Remove = canokey_ports::contracts::stage_operation::REMOVE,
     #[cfg(feature = "piv")]
-    Rename = crate::contracts::stage_operation::RENAME,
+    Rename = canokey_ports::contracts::stage_operation::RENAME,
 }
 #[cfg(any(feature = "openpgp", feature = "piv"))]
 const MAX_STAGE_PARTS: usize = 8; // ck_platform_stage_parts ABI, core.h.

@@ -61,8 +61,9 @@ NFC, serial and cooperative progress. The optional FFI `native-composition`
 compatibility projection selects concrete native aliases for `static-backend`
 and trait objects for dynamic binding; CIU and host disable it. `dynamic-backend`
 wins when Cargo feature unification enables both. Native callbacks remain in
-`ports/src/native/` pending
-platform relocation; portable volatile erasure lives in `ports/src/memory.rs`.
+`ports/src/native/` for device and crypto pending platform relocation. Storage
+adapters belong to CIU, host or the optional `ffi/platform/storage.rs`
+compatibility projection. Portable volatile erasure lives in `ports/src/memory.rs`.
 The safe `default_memory()` binding supplies erasure for compatibility methods
 that have no borrowed Platform; it does not construct a hardware session.
 
@@ -103,6 +104,6 @@ remain binding; directory organization is not a resource optimization.
 
 Core depends on ports with default features disabled. Rust test compositions
 use capability contracts and can opt into `native-crypto` for C primitives.
-`native-backend` includes the temporary storage/device adapters; static firmware
+`native-backend` includes the temporary device adapter and crypto imports; static firmware
 binding enables it. This prevents coverage instrumentation from retaining unused
 device callbacks in the replay/fuzz composition. Platform relocation is pending.

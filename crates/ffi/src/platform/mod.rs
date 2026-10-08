@@ -3,10 +3,10 @@
 
 #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
 use canokey_ports::BackendTypes;
-use canokey_ports::native::{
-    CryptoBackend, DeviceBackend, DeviceRuntime, MemoryBackend, StorageBackend,
-};
+mod storage;
+use canokey_ports::native::{CryptoBackend, DeviceBackend, DeviceRuntime, MemoryBackend};
 use canokey_rust_core::ports::Platform;
+use storage::StorageBackend;
 
 #[cfg(all(feature = "static-backend", not(feature = "dynamic-backend")))]
 pub(crate) type BoundPlatform<'a> = Platform<
