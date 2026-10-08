@@ -15,20 +15,10 @@ endif()
 if(CANOKEY_VIRTUAL_CARD)
   find_program(CARGO cargo REQUIRED)
   find_package(Threads REQUIRED)
-  set(HOST_ARCHIVE "${CMAKE_CURRENT_BINARY_DIR}/cargo/host-test/libcanokey_rust_host.a")
   set(HOST_FEATURE_ARGS "")
   if(CTAP_RESTRICT_ALGORITHMS)
     list(APPEND HOST_FEATURE_ARGS --features ctap-restrict-algorithms)
   endif()
-  add_custom_target(rust-host-build ALL
-    COMMAND "${CMAKE_COMMAND}" -E env "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
-      ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} build
-      --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
-      --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo --profile host-test ${HOST_FEATURE_ARGS}
-    BYPRODUCTS "${HOST_ARCHIVE}" VERBATIM)
-  add_library(canokey-rust-host STATIC IMPORTED GLOBAL)
-  set_target_properties(canokey-rust-host PROPERTIES IMPORTED_LOCATION "${HOST_ARCHIVE}")
-  add_dependencies(canokey-rust-host rust-host-build)
   # Same native crypto facade as firmware; no C applet, dispatcher or USB stack.
   add_library(virtual-key-services STATIC
     ${CANOKEY_ROOT}/native/crypto/key_crypto.c
@@ -65,13 +55,36 @@ if(CANOKEY_VIRTUAL_CARD)
     BYPRODUCTS "${HOST_UDP_IMAGE}"
     DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
   find_path(PCSC_INCLUDE_DIR ifdhandler.h PATH_SUFFIXES PCSC REQUIRED)
-  add_library(u2f-virt-card SHARED native/pcsc.c native/crypto.c)
-  set_target_properties(u2f-virt-card PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
-  target_include_directories(u2f-virt-card PRIVATE "${PCSC_INCLUDE_DIR}" ${CANOKEY_ROOT}/native/include)
-  target_compile_options(u2f-virt-card PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-  target_link_libraries(u2f-virt-card PRIVATE canokey-rust-host virtual-key-services OpenSSL::Crypto Threads::Threads ${CMAKE_DL_LIBS} m)
+  set(HOST_PCSC_IMAGE "${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}u2f-virt-card${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  set(HOST_PCSC_OPTIONS "${HOST_UDP_OPTIONS}")
+  if(APPLE)
+    string(APPEND HOST_PCSC_OPTIONS "|-Wl,-install_name,${HOST_PCSC_IMAGE}")
+  elseif(UNIX)
+    string(APPEND HOST_PCSC_OPTIONS "|-Wl,-soname,${CMAKE_SHARED_LIBRARY_PREFIX}u2f-virt-card${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  endif()
+  add_custom_target(u2f-virt-card ALL
+    COMMAND "${CMAKE_COMMAND}" -E env
+      "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}"
+      "CANOKEY_PCSC_LINK_LIBRARIES=${HOST_UDP_LIBRARIES}" "CANOKEY_PCSC_LINK_OPTIONS=${HOST_PCSC_OPTIONS}"
+      ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc
+      --manifest-path ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml
+      --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-pcsc --profile host-test
+      --features pcsc-plugin ${HOST_FEATURE_ARGS} --lib --crate-type cdylib
+      -- -C "linker=${CMAKE_C_COMPILER}" -C default-linker-libraries=yes
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+      "${CMAKE_CURRENT_BINARY_DIR}/cargo-pcsc/host-test/${CMAKE_SHARED_LIBRARY_PREFIX}canokey_rust_host${CMAKE_SHARED_LIBRARY_SUFFIX}" "${HOST_PCSC_IMAGE}"
+    BYPRODUCTS "${HOST_PCSC_IMAGE}"
+    DEPENDS host-native-crypto virtual-key-services canokey-crypto tfpsacrypto VERBATIM)
+  add_library(u2f-virt-card-image SHARED IMPORTED GLOBAL)
+  set_target_properties(u2f-virt-card-image PROPERTIES IMPORTED_LOCATION "${HOST_PCSC_IMAGE}")
+  add_dependencies(u2f-virt-card-image u2f-virt-card)
   if(BUILD_TESTING OR ENABLE_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_executable(pcsc-abi ${CANOKEY_ROOT}/tests/native/pcsc_abi.c)
+    target_include_directories(pcsc-abi PRIVATE "${PCSC_INCLUDE_DIR}")
+    target_compile_options(pcsc-abi PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+    target_link_libraries(pcsc-abi PRIVATE u2f-virt-card-image Threads::Threads)
+    add_test(NAME pcsc-abi COMMAND pcsc-abi)
     add_test(NAME virtual-hid-udp COMMAND "${Python3_EXECUTABLE}"
       "${CANOKEY_ROOT}/tests/integration/udp_normal.py" "${HOST_UDP_IMAGE}")
     # Fixed compatibility ports and presence-counter path are shared host resources.
@@ -86,10 +99,10 @@ if(CANOKEY_VIRTUAL_CARD)
         COMMAND_ERROR_IS_FATAL ANY)
     endif()
     add_test(NAME virtual-pcsc COMMAND "${PCSC_TEST_PYTHON}"
-      "${CANOKEY_ROOT}/tests/integration/pcsc_normal.py" $<TARGET_FILE:u2f-virt-card>)
+      "${CANOKEY_ROOT}/tests/integration/pcsc_normal.py" "${HOST_PCSC_IMAGE}")
     set_tests_properties(virtual-pcsc PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
     add_test(NAME virtual-oath-regressions COMMAND "${PCSC_TEST_PYTHON}"
-      "${CANOKEY_ROOT}/tests/integration/oath_regressions.py" $<TARGET_FILE:u2f-virt-card>)
+      "${CANOKEY_ROOT}/tests/integration/oath_regressions.py" "${HOST_PCSC_IMAGE}")
     set_tests_properties(virtual-oath-regressions PROPERTIES TIMEOUT 60 RESOURCE_LOCK virtual-card-udp)
     if(ENABLE_TESTS)
       # The legacy entry instruments its native libraries globally. ctypes loads

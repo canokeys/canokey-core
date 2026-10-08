@@ -4,9 +4,11 @@
 #[cfg(target_os = "none")]
 compile_error!("the virtual-card host must never be linked into firmware");
 use canokey_ports::native::ck_core_presence_sample;
+#[cfg(feature = "pcsc-plugin")]
+use canokey_rust_ffi::ck_core_slot_power;
 use canokey_rust_ffi::{
     CTAPHID_Loop, CTAPHID_OutEvent, CTAPHID_RxCanAccept, ck_core_exchange, ck_core_install,
-    ck_core_reset, ck_core_slot_power, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
+    ck_core_reset, ck_hid_executing, ck_hid_packet_reset, ck_hid_progress,
 };
 use std::{
     io,
@@ -18,6 +20,9 @@ use std::{
     },
     time::{Duration, Instant},
 };
+#[cfg(feature = "pcsc-plugin")]
+mod ifd;
+#[cfg(feature = "pcsc-plugin")]
 mod pcsc;
 mod storage;
 #[cfg(feature = "usbip")]
@@ -50,7 +55,9 @@ pub fn install_signal_handlers() -> io::Result<()> {
 struct Host {
     storage: Storage,
     socket: Option<UdpSocket>,
+    #[cfg(feature = "pcsc-plugin")]
     pcsc_lun: Option<u64>,
+    #[cfg(feature = "pcsc-plugin")]
     powered: bool,
     boot: Instant,
     ticks: Option<u32>,
@@ -511,7 +518,9 @@ fn initialize_storage(
     *HOST.lock().unwrap() = Some(Host {
         storage,
         socket,
+        #[cfg(feature = "pcsc-plugin")]
         pcsc_lun: None,
+        #[cfg(feature = "pcsc-plugin")]
         powered: false,
         boot: Instant::now(),
         ticks: None,

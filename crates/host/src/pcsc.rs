@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! PC/SC slot/session policy. The native IFD shim translates platform types and
+//! PC/SC slot/session policy. The Rust IFD adapter translates platform types and
 //! constants only. Every entry touching CORE takes ENTRY, across host threads.
 use super::*;
 const OK: i32 = 0;
@@ -10,7 +10,7 @@ const MISSING: i32 = 4;
 const PROTOCOL: i32 = 5;
 const TAG: i32 = 6;
 const ATR: &[u8] = canokey_protocol::ccid::ATR;
-// Action ABI translated from IFD_POWER_* by host/native/pcsc.c.
+// Internal actions translated from IFD_POWER_* by the IFD adapter.
 const POWER_UP: u8 = 0x00;
 const POWER_DOWN: u8 = 0x01;
 const POWER_RESET: u8 = 0x02;
@@ -49,8 +49,7 @@ unsafe fn copy(bytes: &[u8], out: *mut u8, cap: usize, length: *mut usize) -> i3
     }
     OK
 }
-#[unsafe(no_mangle)]
-extern "C" fn ck_pcsc_open(lun: u64) -> i32 {
+pub(super) fn ck_pcsc_open(lun: u64) -> i32 {
     let _entry = ENTRY.lock().unwrap();
     if HOST.lock().unwrap().is_some() {
         return if valid(lun) { OK } else { MISSING };
@@ -71,8 +70,7 @@ extern "C" fn ck_pcsc_open(lun: u64) -> i32 {
     }
     OK
 }
-#[unsafe(no_mangle)]
-extern "C" fn ck_pcsc_close(lun: u64) -> i32 {
+pub(super) fn ck_pcsc_close(lun: u64) -> i32 {
     let _entry = ENTRY.lock().unwrap();
     if !valid(lun) {
         return MISSING;
@@ -83,13 +81,11 @@ extern "C" fn ck_pcsc_close(lun: u64) -> i32 {
     HOST.lock().unwrap().take();
     OK
 }
-#[unsafe(no_mangle)]
-extern "C" fn ck_pcsc_present(lun: u64) -> i32 {
+pub(super) fn ck_pcsc_present(lun: u64) -> i32 {
     let _entry = ENTRY.lock().unwrap();
     if valid(lun) { OK } else { MISSING }
 }
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_pcsc_capability(
+pub(super) unsafe fn ck_pcsc_capability(
     lun: u64,
     kind: u8,
     out: *mut u8,
@@ -108,7 +104,7 @@ unsafe extern "C" fn ck_pcsc_capability(
                 &[]
             }
         }
-        // host/native/pcsc.c maps kinds 1..=4 to IFD simultaneous access,
+        // The IFD adapter maps kinds 1..=4 to simultaneous access,
         // slot count, killable polling and thread safety. Counts are one;
         // both boolean capabilities are true (Rust ENTRY serializes calls).
         1 | 2 | 3 | 4 => &[1],
@@ -116,8 +112,7 @@ unsafe extern "C" fn ck_pcsc_capability(
     };
     unsafe { copy(data, out, cap, length) }
 }
-#[unsafe(no_mangle)]
-extern "C" fn ck_pcsc_protocol(lun: u64, t1: u8) -> i32 {
+pub(super) fn ck_pcsc_protocol(lun: u64, t1: u8) -> i32 {
     let _entry = ENTRY.lock().unwrap();
     if !valid(lun) {
         MISSING
@@ -127,8 +122,7 @@ extern "C" fn ck_pcsc_protocol(lun: u64, t1: u8) -> i32 {
         PROTOCOL
     }
 }
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_pcsc_power(
+pub(super) unsafe fn ck_pcsc_power(
     lun: u64,
     action: u8,
     out: *mut u8,
@@ -234,8 +228,7 @@ fn test_control(request: &[u8]) -> Option<Result<Vec<u8>, ()>> {
     }
     None
 }
-#[unsafe(no_mangle)]
-unsafe extern "C" fn ck_pcsc_transmit(
+pub(super) unsafe fn ck_pcsc_transmit(
     lun: u64,
     tx: *const u8,
     n: usize,

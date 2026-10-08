@@ -11,6 +11,10 @@ they do not call the core C ABI. The LittleFS capacity fixture retains its C
 storage harness and the same independent Python checks.
 The Rust `apdu-replay` binary uses the same composition and retains the existing
 line protocol, response draining, slot-power and fault-injection controls.
+The PC/SC driver is a Rust cdylib exposing the IFD handler v3 ABI. `pcsc-abi`
+links it against the installed C headers and verifies platform typedef/layout,
+error results and cancellation of the killable polling callback. The Python
+PC/SC and OATH suites exercise the actual driver with independent oracles.
 
 ## Prerequisites
 

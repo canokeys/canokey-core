@@ -20,6 +20,7 @@ libc = { version = "=0.2.189", optional = true }
 [features]
 default = []
 udp-binary = ["dep:libc"]
+pcsc-plugin = ["dep:libc"]
 usbip = ["canokey-rust-ffi/usb-device", "canokey-rust-ffi/usb-webusb"]
 ctap-restrict-algorithms = ["canokey-rust-ffi/ctap-restrict-algorithms"]
 
