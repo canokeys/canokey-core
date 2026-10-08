@@ -5,7 +5,8 @@
 use canokey_ports::BackendTypes;
 mod device;
 mod storage;
-use canokey_ports::native::{CryptoBackend, MemoryBackend};
+use canokey_native_crypto::CryptoBackend;
+use canokey_ports::MemoryBackend;
 use canokey_rust_core::ports::Platform;
 use device::{DeviceBackend, DeviceRuntime};
 use storage::StorageBackend;

@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "canokey-native-crypto"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+[dependencies]
+canokey-ports = { path = "../ports", default-features = false }
+[features]
+default = []
+platform-hmac = ["canokey-ports/platform-hmac"]
+platform-key = ["canokey-ports/platform-key"]
+platform-random = ["canokey-ports/platform-random"]
+platform-mac = ["platform-random", "canokey-ports/platform-mac"]
+platform-stream = ["canokey-ports/platform-stream"]
+ctap = ["platform-mac", "platform-stream", "platform-key", "canokey-ports/ctap"]
+piv = ["platform-random", "platform-stream", "platform-key", "canokey-ports/piv"]
+[lints]
+workspace = true

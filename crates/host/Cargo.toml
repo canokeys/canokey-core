@@ -16,6 +16,7 @@ name = "host-regressions"
 path = "src/bin/regressions.rs"
 required-features = ["regression-binary"]
 [dependencies]
+canokey-native-crypto = { path = "../native-crypto", features = ["ctap", "piv", "platform-hmac"] }
 canokey-protocol = { path = "../protocol" }
 canokey-rust-ffi = { path = "../ffi", default-features = false, features = ["static-backend", "usb-hid", "admin", "pass", "oath", "openpgp", "piv", "ndef"] }
 # Simulated contactless presence without disabling the UDP HID endpoint.

@@ -32,7 +32,8 @@ required-features = ["transport-usb"]
 [dependencies]
 canokey-rust-core = { path = "../../crates/core" }
 canokey-protocol = { path = "../../crates/protocol" }
-canokey-ports = { path = "../../crates/ports", default-features = false, features = ["native-crypto"] }
+canokey-ports = { path = "../../crates/ports", default-features = false }
+canokey-native-crypto = { path = "../../crates/native-crypto" }
 canokey-rust-ffi = { path = "../../crates/ffi", optional = true, default-features = false }
 libc = { version = "=0.2.189", optional = true }
 libfuzzer-sys = { version = "=0.4.13", optional = true }
@@ -45,11 +46,11 @@ transport-usb = ["transport-hid", "canokey-rust-ffi/usb-device", "canokey-rust-f
 replay = ["dep:libc"]
 fuzz = ["dep:libfuzzer-sys", "dep:libc"]
 admin = ["canokey-rust-core/admin", "canokey-rust-ffi?/admin"]
-pass = ["canokey-rust-core/pass", "canokey-rust-ffi?/pass"]
-oath = ["canokey-rust-core/oath", "canokey-rust-ffi?/oath"]
-openpgp = ["canokey-rust-core/openpgp", "canokey-rust-ffi?/openpgp"]
-piv = ["canokey-rust-core/piv", "canokey-rust-ffi?/piv"]
-ctap = ["canokey-rust-core/ctap", "canokey-rust-ffi?/ctap"]
+pass = ["canokey-rust-core/pass", "canokey-rust-ffi?/pass", "canokey-native-crypto/platform-hmac"]
+oath = ["canokey-rust-core/oath", "canokey-rust-ffi?/oath", "canokey-native-crypto/platform-mac"]
+openpgp = ["canokey-rust-core/openpgp", "canokey-rust-ffi?/openpgp", "canokey-native-crypto/platform-key", "canokey-native-crypto/platform-random"]
+piv = ["canokey-rust-core/piv", "canokey-rust-ffi?/piv", "canokey-native-crypto/piv"]
+ctap = ["canokey-rust-core/ctap", "canokey-rust-ffi?/ctap", "canokey-native-crypto/ctap"]
 ndef = ["canokey-rust-core/ndef", "canokey-rust-ffi?/ndef"]
 ctap-restrict-algorithms = ["ctap", "canokey-rust-core/ctap-restrict-algorithms"]
 [lints]

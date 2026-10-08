@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "canokey-native-crypto"
+version = "0.1.0"
+dependencies = [
+ "canokey-ports",
+]
+
+[[package]]
 name = "canokey-ports"
 version = "0.1.0"
 
@@ -43,6 +50,7 @@ dependencies = [
 name = "canokey-rust-ffi"
 version = "0.1.0"
 dependencies = [
+ "canokey-native-crypto",
  "canokey-ports",
  "canokey-protocol",
  "canokey-rust-core",
@@ -52,6 +60,7 @@ dependencies = [
 name = "canokey-rust-host"
 version = "0.1.0"
 dependencies = [
+ "canokey-native-crypto",
  "canokey-ports",
  "canokey-protocol",
  "canokey-rust-ffi",
@@ -62,6 +71,7 @@ dependencies = [
 name = "canokey-test-card"
 version = "0.1.0"
 dependencies = [
+ "canokey-native-crypto",
  "canokey-ports",
  "canokey-protocol",
  "canokey-rust-core",

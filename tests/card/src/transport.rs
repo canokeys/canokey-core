@@ -42,11 +42,11 @@ impl Device for Clock {
 pub struct Fake;
 impl Provider for Fake {
     type Backends =
-        BackendTypes<Records, canokey_ports::native::CryptoBackend, Clock, MemoryBackend>;
+        BackendTypes<Records, canokey_native_crypto::CryptoBackend, Clock, MemoryBackend>;
     type Staging = Scratch;
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Self::Backends>) -> T) -> T {
         records(|storage| {
-            let mut crypto = unsafe { canokey_ports::native::CryptoBackend::new() };
+            let mut crypto = unsafe { canokey_native_crypto::CryptoBackend::new() };
             run(&mut Platform::new(
                 storage,
                 &mut crypto,

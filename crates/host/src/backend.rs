@@ -15,10 +15,10 @@ pub(crate) struct Scratch;
 const MAX_STAGE_PARTS: usize = 8;
 impl Provider for HostProvider {
     type Backends =
-        BackendTypes<Records, canokey_ports::native::CryptoBackend, Clock, MemoryBackend>;
+        BackendTypes<Records, canokey_native_crypto::CryptoBackend, Clock, MemoryBackend>;
     type Staging = Scratch;
     fn with_platform<T>(run: impl FnOnce(&mut Platform<'_, Self::Backends>) -> T) -> T {
-        let mut crypto = unsafe { canokey_ports::native::CryptoBackend::new() };
+        let mut crypto = unsafe { canokey_native_crypto::CryptoBackend::new() };
         run(&mut Platform::new(
             &mut Records,
             &mut crypto,

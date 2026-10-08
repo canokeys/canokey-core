@@ -24,6 +24,7 @@ function(add_rust_host_archive target build_target directory features)
   DEPENDS ${CANOKEY_ROOT}/crates/ffi/Cargo.toml
           ${CANOKEY_ROOT}/crates/core/Cargo.toml
           ${CANOKEY_ROOT}/crates/ports/Cargo.toml
+          ${CANOKEY_ROOT}/crates/native-crypto/Cargo.toml
           ${CANOKEY_ROOT}/crates/protocol/Cargo.toml
   VERBATIM)
   add_library(${target} STATIC IMPORTED GLOBAL)

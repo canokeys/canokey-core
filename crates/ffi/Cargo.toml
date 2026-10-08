@@ -6,6 +6,7 @@ edition = "2024"
 license = "Apache-2.0"
 publish = false
 [dependencies]
+canokey-native-crypto = { path = "../native-crypto", optional = true }
 canokey-ports = { path = "../ports" }
 canokey-protocol = { path = "../protocol" }
 canokey-rust-core = { path = "../core" }
@@ -27,25 +28,28 @@ storage = ["canokey-ports/storage"]
 platform-device = ["canokey-ports/platform-device"]
 platform-serial = ["canokey-ports/platform-serial"]
 # Fixed 20-byte HMAC-SHA1 keys are used by PASS only.
-platform-hmac = ["canokey-ports/platform-hmac"]
-platform-key = ["canokey-ports/platform-key"]
+platform-hmac = ["canokey-ports/platform-hmac", "canokey-native-crypto?/platform-hmac"]
+platform-key = ["canokey-ports/platform-key", "canokey-native-crypto?/platform-key"]
 # Randomness must not retain the MAC vtable implementation in PIV/OpenPGP.
-platform-random = ["canokey-ports/platform-random"]
-platform-mac = ["platform-random", "canokey-ports/platform-mac"]
-platform-stream = ["canokey-ports/platform-stream"]
+platform-random = ["canokey-ports/platform-random", "canokey-native-crypto?/platform-random"]
+platform-mac = ["platform-random", "canokey-ports/platform-mac", "canokey-native-crypto?/platform-mac"]
+platform-stream = ["canokey-ports/platform-stream", "canokey-native-crypto?/platform-stream"]
 platform-stage = ["canokey-ports/platform-stage"]
 admin = ["canokey-rust-core/admin", "storage", "platform-device", "canokey-ports/admin"]
-ctap = ["canokey-rust-core/ctap", "storage", "platform-device", "platform-serial", "platform-mac", "platform-stream", "platform-key", "platform-stage", "canokey-ports/ctap"]
+ctap = ["canokey-rust-core/ctap", "storage", "platform-device", "platform-serial", "platform-mac", "platform-stream", "platform-key", "platform-stage", "canokey-ports/ctap", "canokey-native-crypto?/ctap"]
 openpgp = ["canokey-rust-core/openpgp", "storage", "platform-device", "platform-serial", "platform-random", "platform-key", "canokey-ports/openpgp"]
-piv = ["canokey-rust-core/piv", "storage", "platform-device", "platform-serial", "platform-random", "platform-stream", "platform-key", "platform-stage", "canokey-ports/piv"]
+piv = ["canokey-rust-core/piv", "storage", "platform-device", "platform-serial", "platform-random", "platform-stream", "platform-key", "platform-stage", "canokey-ports/piv", "canokey-native-crypto?/piv"]
 
 # Compatibility C wrappers select the native callback Provider. Rust hosts
 # disable this projection and supply their own Provider.
-native-composition = []
+native-composition = ["dep:canokey-native-crypto"]
 default = ["native-composition"]
 pass = ["canokey-rust-core/pass", "storage", "platform-device", "platform-hmac", "canokey-ports/pass"]
 oath = ["canokey-rust-core/oath", "storage", "platform-device", "platform-serial", "platform-mac", "canokey-ports/oath"]
 host-runtime = []
+
+[dev-dependencies]
+canokey-native-crypto = { path = "../native-crypto" }
 
 [lints]
 workspace = true

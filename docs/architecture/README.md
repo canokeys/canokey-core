@@ -105,9 +105,10 @@ remain binding; directory organization is not a resource optimization.
 ## Native adapter selection
 
 Core depends on ports with default features disabled. Rust test compositions
-use capability contracts and can opt into `native-crypto` for C primitives.
-`native-backend` is now a compatibility feature alias for `native-crypto`;
-static firmware binding still enables it. CIU explicitly requests only
-`native-crypto` and implements device/storage traits in its own crate. The FFI
+use capability contracts and depend directly on the `canokey-native-crypto`
+crate for C primitives. Ports has no native adapter dependency. CIU selects
+crypto capabilities explicitly and implements device/storage traits in its own
+crate. The FFI
 device/storage compatibility adapters compile only for `native-composition`
-or unit-test substitution. Crypto-facade ownership cleanup is pending.
+or unit-test substitution. Host and test-card compositions select their own
+native crypto capability without routing through a ports adapter.

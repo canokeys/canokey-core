@@ -60,7 +60,7 @@ impl Device for Clock {
 }
 pub type Backend = canokey_ports::BackendTypes<
     storage::Records,
-    canokey_ports::native::CryptoBackend,
+    canokey_native_crypto::CryptoBackend,
     Clock,
     MemoryBackend,
 >;
@@ -68,7 +68,7 @@ pub struct Card {
     core: Core,
     pub records: storage::Records,
     pub clock: Clock,
-    crypto: canokey_ports::native::CryptoBackend,
+    crypto: canokey_native_crypto::CryptoBackend,
     memory: MemoryBackend,
 }
 impl Card {
@@ -83,7 +83,7 @@ impl Card {
                 #[cfg(feature = "ctap")]
                 polling: canokey_ports::Polling::new(),
             },
-            crypto: unsafe { canokey_ports::native::CryptoBackend::new() },
+            crypto: unsafe { canokey_native_crypto::CryptoBackend::new() },
             memory: MemoryBackend,
         }
     }

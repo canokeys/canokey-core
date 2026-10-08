@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+#![no_std]
 //! Cryptographic primitive adapter. Policy and protocol stay in safe Rust.
-use crate::{Crypto, CryptoError};
+use canokey_ports::{Crypto, CryptoError};
 
 /// Native platform capability, created only at the serialized FFI boundary.
 /// The marker prevents transferring a borrowed hardware session across threads.
@@ -37,48 +38,55 @@ unsafe extern "C" {
 }
 #[cfg(feature = "platform-stream")]
 unsafe extern "C" {
-    fn ck_digest_init(state: *mut crate::HashState) -> i32;
-    fn ck_digest_update(state: *mut crate::HashState, input: *const u8, n: usize) -> i32;
-    fn ck_digest_final(state: *mut crate::HashState, out: *mut u8, capacity: usize) -> i32;
-    fn ck_digest_abort(state: *mut crate::HashState) -> i32;
+    fn ck_digest_init(state: *mut canokey_ports::HashState) -> i32;
+    fn ck_digest_update(state: *mut canokey_ports::HashState, input: *const u8, n: usize) -> i32;
+    fn ck_digest_final(state: *mut canokey_ports::HashState, out: *mut u8, capacity: usize) -> i32;
+    fn ck_digest_abort(state: *mut canokey_ports::HashState) -> i32;
 }
 #[cfg(feature = "platform-stream")]
 unsafe extern "C" {
-    fn ck_stream_abort(scratch: *mut crate::CryptoScratch);
-    fn ck_stream_read(scratch: *mut crate::CryptoScratch, out: *mut u8, capacity: usize) -> i32;
+    fn ck_stream_abort(scratch: *mut canokey_ports::CryptoScratch);
+    fn ck_stream_read(
+        scratch: *mut canokey_ports::CryptoScratch,
+        out: *mut u8,
+        capacity: usize,
+    ) -> i32;
     fn ck_stream_public_init(
         alg: u8,
-        scratch: *mut crate::CryptoScratch,
+        scratch: *mut canokey_ports::CryptoScratch,
         input: *const u8,
         n: usize,
     ) -> i32;
     fn ck_stream_sign_init(
         alg: u8,
-        scratch: *mut crate::CryptoScratch,
+        scratch: *mut canokey_ports::CryptoScratch,
         input: *const u8,
         n: usize,
     ) -> i32;
     fn ck_stream_sm2_identity(
-        scratch: *mut crate::CryptoScratch,
+        scratch: *mut canokey_ports::CryptoScratch,
         input: *const u8,
         n: usize,
     ) -> i32;
-    fn ck_stream_sign_update(scratch: *mut crate::CryptoScratch, input: *const u8, n: usize)
-    -> i32;
-    fn ck_stream_sign_final(scratch: *mut crate::CryptoScratch) -> i32;
+    fn ck_stream_sign_update(
+        scratch: *mut canokey_ports::CryptoScratch,
+        input: *const u8,
+        n: usize,
+    ) -> i32;
+    fn ck_stream_sign_final(scratch: *mut canokey_ports::CryptoScratch) -> i32;
     fn ck_stream_decapsulate_init(
         alg: u8,
-        scratch: *mut crate::CryptoScratch,
+        scratch: *mut canokey_ports::CryptoScratch,
         input: *const u8,
         n: usize,
     ) -> i32;
     fn ck_stream_decapsulate_update(
-        scratch: *mut crate::CryptoScratch,
+        scratch: *mut canokey_ports::CryptoScratch,
         input: *const u8,
         n: usize,
     ) -> i32;
     fn ck_stream_decapsulate_final(
-        scratch: *mut crate::CryptoScratch,
+        scratch: *mut canokey_ports::CryptoScratch,
         out: *mut u8,
         capacity: usize,
     ) -> i32;
@@ -102,7 +110,7 @@ unsafe extern "C" {
     fn ck_platform_key(
         operation: u8,
         algorithm: u8,
-        key: *mut crate::KeyMaterial,
+        key: *mut canokey_ports::KeyMaterial,
         input: *const u8,
         input_len: usize,
         output: *mut u8,
@@ -175,62 +183,62 @@ impl Crypto for CryptoBackend {
     #[cfg(feature = "platform-stream")]
     fn digest(
         &mut self,
-        op: crate::DigestOperation,
-        state: &mut crate::HashState,
+        op: canokey_ports::DigestOperation,
+        state: &mut canokey_ports::HashState,
         input: &[u8],
         out: &mut [u8],
     ) -> Result<(), CryptoError> {
         rc_unit(unsafe {
             match op {
-                crate::DigestOperation::Init => ck_digest_init(state),
-                crate::DigestOperation::Update => {
+                canokey_ports::DigestOperation::Init => ck_digest_init(state),
+                canokey_ports::DigestOperation::Update => {
                     ck_digest_update(state, input.as_ptr(), input.len())
                 }
-                crate::DigestOperation::Final => {
+                canokey_ports::DigestOperation::Final => {
                     ck_digest_final(state, out.as_mut_ptr(), out.len())
                 }
-                crate::DigestOperation::Abort => ck_digest_abort(state),
+                canokey_ports::DigestOperation::Abort => ck_digest_abort(state),
             }
         })
     }
     #[cfg(feature = "platform-stream")]
     fn stream(
         &mut self,
-        op: crate::StreamOperation,
+        op: canokey_ports::StreamOperation,
         alg: u8,
-        scratch: &mut crate::CryptoScratch,
+        scratch: &mut canokey_ports::CryptoScratch,
         input: &[u8],
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
         let n = unsafe {
             match op {
-                crate::StreamOperation::Abort => {
+                canokey_ports::StreamOperation::Abort => {
                     ck_stream_abort(scratch);
                     0
                 }
-                crate::StreamOperation::Read => {
+                canokey_ports::StreamOperation::Read => {
                     ck_stream_read(scratch, out.as_mut_ptr(), out.len())
                 }
-                crate::StreamOperation::PublicInit => {
+                canokey_ports::StreamOperation::PublicInit => {
                     ck_stream_public_init(alg, scratch, input.as_ptr(), input.len())
                 }
-                crate::StreamOperation::SignInit => {
+                canokey_ports::StreamOperation::SignInit => {
                     ck_stream_sign_init(alg, scratch, input.as_ptr(), input.len())
                 }
-                crate::StreamOperation::Sm2Identity => {
+                canokey_ports::StreamOperation::Sm2Identity => {
                     ck_stream_sm2_identity(scratch, input.as_ptr(), input.len())
                 }
-                crate::StreamOperation::SignUpdate => {
+                canokey_ports::StreamOperation::SignUpdate => {
                     ck_stream_sign_update(scratch, input.as_ptr(), input.len())
                 }
-                crate::StreamOperation::SignFinal => ck_stream_sign_final(scratch),
-                crate::StreamOperation::DecapsulateInit => {
+                canokey_ports::StreamOperation::SignFinal => ck_stream_sign_final(scratch),
+                canokey_ports::StreamOperation::DecapsulateInit => {
                     ck_stream_decapsulate_init(alg, scratch, input.as_ptr(), input.len())
                 }
-                crate::StreamOperation::DecapsulateUpdate => {
+                canokey_ports::StreamOperation::DecapsulateUpdate => {
                     ck_stream_decapsulate_update(scratch, input.as_ptr(), input.len())
                 }
-                crate::StreamOperation::DecapsulateFinal => {
+                canokey_ports::StreamOperation::DecapsulateFinal => {
                     ck_stream_decapsulate_final(scratch, out.as_mut_ptr(), out.len())
                 }
             }
@@ -251,9 +259,9 @@ impl Crypto for CryptoBackend {
     #[cfg(feature = "platform-key")]
     fn key_operation(
         &mut self,
-        op: crate::KeyOperation,
+        op: canokey_ports::KeyOperation,
         algorithm: u8,
-        key: &mut crate::KeyMaterial,
+        key: &mut canokey_ports::KeyMaterial,
         input: &[u8],
         out: &mut [u8],
     ) -> Result<usize, CryptoError> {
@@ -268,7 +276,7 @@ impl Crypto for CryptoBackend {
                 out.len(),
             )
         };
-        if n == -2 && matches!(op, crate::KeyOperation::RsaPkcs1Decipher) {
+        if n == -2 && matches!(op, canokey_ports::KeyOperation::RsaPkcs1Decipher) {
             // CK_KEY_INVALID_PADDING in crypto_ops.h.
             Err(CryptoError::InvalidPadding)
         } else {
