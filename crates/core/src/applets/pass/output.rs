@@ -33,12 +33,12 @@ impl Output {
             pending: 0,
         }
     }
-    pub fn inhibit(&mut self, pressed: bool, memory: &crate::ports::MemoryPort<'_>) {
+    pub fn inhibit(&mut self, pressed: bool, memory: &(impl crate::ports::Memory + ?Sized)) {
         self.reset(memory);
         self.suppressed = pressed;
     }
     /// Replace queued text; the transport completes any prior key release.
-    pub fn eject(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub fn eject(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         self.reset(memory);
         self.suppressed = false;
         self.bytes[0] = canokey_protocol::usb::EJECT_SENTINEL;
@@ -47,7 +47,7 @@ impl Output {
     pub fn busy(&self) -> bool {
         self.used != 0 || self.draining || self.pending != 0
     }
-    pub fn reset(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub fn reset(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.bytes);
         self.used = 0;
         self.position = 0;
@@ -60,7 +60,7 @@ impl Output {
         pressed: bool,
         now: u32,
         ready: bool,
-        memory: &crate::ports::MemoryPort<'_>,
+        memory: &(impl crate::ports::Memory + ?Sized),
         mut resolve: impl FnMut(u8, &mut [u8]) -> usize,
     ) -> Option<u8> {
         if ready {

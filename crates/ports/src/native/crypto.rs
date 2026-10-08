@@ -133,7 +133,7 @@ fn rc_len(n: i32, capacity: usize) -> Result<usize, CryptoError> {
     }
 }
 
-native_port! { impl Crypto for CryptoBackend {
+impl Crypto for CryptoBackend {
     #[cfg(feature = "ctap")]
     fn p256_sign(
         &mut self,
@@ -141,7 +141,9 @@ native_port! { impl Crypto for CryptoBackend {
         digest: &[u8; 32],
         out: &mut [u8; 64],
     ) -> Result<(), CryptoError> {
-        rc_unit(unsafe { ck_platform_p256_sign(scalar.as_ptr(), digest.as_ptr(), out.as_mut_ptr()) })
+        rc_unit(unsafe {
+            ck_platform_p256_sign(scalar.as_ptr(), digest.as_ptr(), out.as_mut_ptr())
+        })
     }
 
     #[cfg(feature = "ctap")]
@@ -181,8 +183,12 @@ native_port! { impl Crypto for CryptoBackend {
         rc_unit(unsafe {
             match op {
                 crate::DigestOperation::Init => ck_digest_init(state),
-                crate::DigestOperation::Update => ck_digest_update(state, input.as_ptr(), input.len()),
-                crate::DigestOperation::Final => ck_digest_final(state, out.as_mut_ptr(), out.len()),
+                crate::DigestOperation::Update => {
+                    ck_digest_update(state, input.as_ptr(), input.len())
+                }
+                crate::DigestOperation::Final => {
+                    ck_digest_final(state, out.as_mut_ptr(), out.len())
+                }
                 crate::DigestOperation::Abort => ck_digest_abort(state),
             }
         })
@@ -198,16 +204,35 @@ native_port! { impl Crypto for CryptoBackend {
     ) -> Result<usize, CryptoError> {
         let n = unsafe {
             match op {
-                crate::StreamOperation::Abort => { ck_stream_abort(scratch); 0 },
-                crate::StreamOperation::Read => ck_stream_read(scratch, out.as_mut_ptr(), out.len()),
-                crate::StreamOperation::PublicInit => ck_stream_public_init(alg, scratch, input.as_ptr(), input.len()),
-                crate::StreamOperation::SignInit => ck_stream_sign_init(alg, scratch, input.as_ptr(), input.len()),
-                crate::StreamOperation::Sm2Identity => ck_stream_sm2_identity(scratch, input.as_ptr(), input.len()),
-                crate::StreamOperation::SignUpdate => ck_stream_sign_update(scratch, input.as_ptr(), input.len()),
+                crate::StreamOperation::Abort => {
+                    ck_stream_abort(scratch);
+                    0
+                }
+                crate::StreamOperation::Read => {
+                    ck_stream_read(scratch, out.as_mut_ptr(), out.len())
+                }
+                crate::StreamOperation::PublicInit => {
+                    ck_stream_public_init(alg, scratch, input.as_ptr(), input.len())
+                }
+                crate::StreamOperation::SignInit => {
+                    ck_stream_sign_init(alg, scratch, input.as_ptr(), input.len())
+                }
+                crate::StreamOperation::Sm2Identity => {
+                    ck_stream_sm2_identity(scratch, input.as_ptr(), input.len())
+                }
+                crate::StreamOperation::SignUpdate => {
+                    ck_stream_sign_update(scratch, input.as_ptr(), input.len())
+                }
                 crate::StreamOperation::SignFinal => ck_stream_sign_final(scratch),
-                crate::StreamOperation::DecapsulateInit => ck_stream_decapsulate_init(alg, scratch, input.as_ptr(), input.len()),
-                crate::StreamOperation::DecapsulateUpdate => ck_stream_decapsulate_update(scratch, input.as_ptr(), input.len()),
-                crate::StreamOperation::DecapsulateFinal => ck_stream_decapsulate_final(scratch, out.as_mut_ptr(), out.len()),
+                crate::StreamOperation::DecapsulateInit => {
+                    ck_stream_decapsulate_init(alg, scratch, input.as_ptr(), input.len())
+                }
+                crate::StreamOperation::DecapsulateUpdate => {
+                    ck_stream_decapsulate_update(scratch, input.as_ptr(), input.len())
+                }
+                crate::StreamOperation::DecapsulateFinal => {
+                    ck_stream_decapsulate_final(scratch, out.as_mut_ptr(), out.len())
+                }
             }
         };
         rc_len(n, usize::MAX)
@@ -301,6 +326,4 @@ native_port! { impl Crypto for CryptoBackend {
             let _ = (key, input, out);
         }
     }
-}
-
 }

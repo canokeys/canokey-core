@@ -8,6 +8,7 @@ use crate::{
         service::Pass,
     },
 };
+use canokey_ports::{Device as _, Memory as _};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 
 pub(super) fn matches(h: Header) -> bool {
@@ -22,7 +23,7 @@ pub(super) fn execute(
     h: Header,
     data: &[u8],
     pass: Option<&mut Pass>,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     output: &mut [u8],
 ) -> Result<usize, Sw> {
     if h.p2 != 0x00 {

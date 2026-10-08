@@ -7,6 +7,7 @@ use super::{
     crypto::equal,
 };
 use crate::ports::{Platform, Record, StorageError};
+use canokey_ports::{Memory as _, Storage as _};
 
 pub(super) const RESIDENT: u8 = 0x04;
 pub(super) const LARGE_BLOB_KEY: u8 = 0x08;
@@ -31,7 +32,10 @@ const MEMBER_LENGTH_BYTES: usize = core::mem::size_of::<u16>();
 const GROUP_FORMAT: &[u8; 4] = b"CTG1";
 const GROUP_HEADER: usize = GROUP_FORMAT.len() + GROUP_MEMBERS * MEMBER_LENGTH_BYTES;
 
-fn group_header(record: Record, p: &mut Platform<'_>) -> Result<[u8; GROUP_HEADER], Status> {
+fn group_header(
+    record: Record,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<[u8; GROUP_HEADER], Status> {
     let mut header = [0; GROUP_HEADER];
     header[..GROUP_FORMAT.len()].copy_from_slice(GROUP_FORMAT);
     let size = match p.storage.size(record) {
@@ -68,7 +72,7 @@ pub(super) fn replace(
     index: u8,
     value: &[u8],
     copy: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
     if !value.is_empty() {
@@ -199,7 +203,7 @@ fn display_rp<'a>(rp: &'a [u8], out: &'a mut [u8; RP_DISPLAY_BYTES]) -> &'a [u8]
 pub(super) fn load(
     index: u8,
     out: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<usize>, Status> {
     let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
     let header = group_header(record, p)?;
@@ -222,7 +226,7 @@ pub(super) fn load(
 pub(super) fn read<'a>(
     index: u8,
     out: &'a mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(usize, Entry<'a>)>, Status> {
     let Some(n) = load(index, out, p)? else {
         return Ok(None);
@@ -235,7 +239,7 @@ pub(super) fn store(
     rp_hash: &[u8; RP_HASH_BYTES],
     out: &mut [u8],
     copy: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut slot = None;
     for index in 0..Record::CTAP_CREDENTIALS {
@@ -287,7 +291,7 @@ pub(super) fn find(
     id: &Id,
     rp_hash: &[u8; RP_HASH_BYTES],
     out: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, usize)>, Status> {
     for index in 0..Record::CTAP_CREDENTIALS {
         if let Some((n, entry)) = read(index, out, p)? {
@@ -307,7 +311,7 @@ pub(super) fn discover(
     rp: &[u8; RP_HASH_BYTES],
     uv: bool,
     out: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, Id)>, Status> {
     while *next != 0 {
         *next -= 1;
@@ -323,7 +327,10 @@ pub(super) fn discover(
     Ok(None)
 }
 
-pub(super) fn count(out: &mut [u8], p: &mut Platform<'_>) -> Result<u8, Status> {
+pub(super) fn count(
+    out: &mut [u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<u8, Status> {
     let mut count = 0;
     for index in 0..Record::CTAP_CREDENTIALS {
         if read(index, out, p)?.is_some() {
@@ -479,7 +486,7 @@ mod tests {
             ],
             ..Records::default()
         };
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut storage,
             crypto: &mut Records::default(),
             device: &mut Records::default(),
@@ -529,7 +536,7 @@ mod tests {
             if case == 3 {
                 storage.fail = Some(StorageError::Uncertain);
             }
-            let mut p = Platform {
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
                 crypto: &mut Records::default(),
                 device: &mut Records::default(),

@@ -117,8 +117,8 @@ impl Fixture {
             device: NoTouch,
         }
     }
-    fn platform(&mut self) -> Platform<'_> {
-        Platform {
+    fn platform(&mut self) -> Platform<'_, impl crate::ports::Backends> {
+        Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut self.storage,
             crypto: &mut self.crypto,
             device: &mut self.device,

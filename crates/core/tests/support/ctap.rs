@@ -68,8 +68,13 @@ impl Memory for Backend {
         bytes.fill(0);
     }
 }
-pub fn with_platform<T>(crypto: &mut Backend, run: impl FnOnce(&mut Platform<'_>) -> T) -> T {
-    run(&mut Platform {
+pub fn with_platform<T>(
+    crypto: &mut Backend,
+    run: impl FnOnce(
+        &mut Platform<'_, canokey_ports::BackendTypes<Backend, Backend, Backend, Backend>>,
+    ) -> T,
+) -> T {
+    run(&mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut Backend::default(),
         crypto,
         device: &mut Backend::default(),

@@ -125,7 +125,7 @@ fn pin_record_reads_initialize_tail_and_wipe_failed_data() {
     let mut output = [0xcc; pin::RECORD_BYTES];
     let mut read = |store: &mut Backend, output: &mut [u8; pin::RECORD_BYTES]| {
         pin::load(
-            &mut Platform {
+            &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: store,
                 crypto: &mut crypto,
                 device: &mut device,
@@ -186,9 +186,9 @@ fn run(
     let response = session.execute(
         &mut command,
         &mut w,
-        &mut Platform {
+        &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: store,
-            crypto,
+            crypto: crypto,
             device: &mut Backend {
                 now,
                 ..Backend::default()
@@ -424,7 +424,7 @@ fn forced_pin_change_blocks_both_tokens_and_clears_atomically_on_valid_change() 
         let result = session.client_pin(
             &mut cp,
             &mut w,
-            &mut Platform {
+            &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut store,
                 crypto: &mut crypto,
                 device: &mut Backend::default(),
@@ -505,7 +505,7 @@ fn token_authorization_refresh_and_expiry_follow_successful_uses_across_wrap() {
                         &[1, 2, 3],
                         pin::PERMISSION_CONFIG,
                         None,
-                        &mut Platform {
+                        &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                             storage: &mut store,
                             crypto: &mut crypto,
                             device: &mut device,

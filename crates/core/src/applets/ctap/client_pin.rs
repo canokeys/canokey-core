@@ -53,7 +53,7 @@ impl Parser {
         self.decoder
             .consume(bytes, &mut |event, _| fields.event(event));
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.fields.params.agreement);
         memory.wipe(&mut self.fields.params.auth);
         memory.wipe(&mut self.fields.params.new_pin);

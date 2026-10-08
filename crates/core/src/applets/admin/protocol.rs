@@ -2,6 +2,7 @@
 //! ADMIN protocol adapter. PASS remains a typed service without APDU knowledge.
 #![forbid(unsafe_code)]
 // Applet instruction bytes; P1/P2 and TLV tags have separate meanings.
+use canokey_ports::{Device as _, Memory as _};
 const INS_FACTORY_RESET: u8 = 0x50;
 #[cfg(feature = "openpgp")]
 const INS_RESET_OPENPGP: u8 = 0x03;
@@ -134,10 +135,15 @@ impl Admin {
             certificate: crate::applets::ctap::provision::Certificate::new(),
         }
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         auth::install(p).map_err(auth_error)
     }
-    pub fn begin(&mut self, h: Header, grants: &Grants, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn begin(
+        &mut self,
+        h: Header,
+        grants: &Grants,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         let _ = (&h, &grants, &p);
         #[cfg(feature = "ctap")]
         if h.ins == INS_PROVISION_ATTESTATION {
@@ -151,12 +157,16 @@ impl Admin {
         }
         Ok(())
     }
-    pub fn cancel_command(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    pub fn cancel_command(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         self.abort_transaction(p);
         p.memory.wipe(w.input);
     }
     /// End external resources; the registry wipes its active workspace once.
-    pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_>) {
+    pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         let _ = &p;
         #[cfg(feature = "ctap")]
         self.certificate.abort(p);
@@ -166,7 +176,7 @@ impl Admin {
         &mut self,
         data: &[u8],
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         let _ = &p;
         #[cfg(feature = "ctap")]
@@ -186,7 +196,7 @@ impl Admin {
         le: u32,
         grants: &mut Grants,
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
         w: &mut Workspace,
     ) -> Result<Action, Sw> {
         self.response_len = 0;
@@ -276,7 +286,7 @@ impl Admin {
         h: Header,
         grants: &mut Grants,
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
         w: &mut Workspace,
     ) -> Result<Action, Sw> {
         #[cfg(feature = "ctap")]
@@ -353,7 +363,7 @@ impl Admin {
         h: Header,
         grants: &mut Grants,
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
         w: &mut Workspace,
     ) -> Result<u32, Sw> {
         if h.ins == INS_VENDOR {
@@ -557,7 +567,7 @@ impl Admin {
         &mut self,
         h: Header,
         grants: &Grants,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
         w: &mut Workspace,
     ) -> Result<u32, Sw> {
         use crate::runtime::config;
@@ -645,7 +655,7 @@ impl Admin {
         &self,
         h: Header,
         w: &Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if p.device.contactless() {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);
@@ -664,7 +674,11 @@ impl Admin {
         }
         Ok(())
     }
-    pub fn close_response(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    pub fn close_response(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         crate::applets::close_response(p.memory, w.output, &mut self.response_len);
     }
     pub fn read_response(&self, offset: usize, out: &mut [u8], w: &Workspace) -> Result<(), Sw> {

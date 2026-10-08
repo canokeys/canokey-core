@@ -4,7 +4,7 @@
 #[cfg(presence_applet)]
 const PRESENCE_TIMEOUT_MS: u32 = 30_000;
 #[cfg(presence_applet)]
-fn wait(device: &mut crate::ports::DevicePort<'_>, minimum_ms: u32) -> Result<(), Error> {
+fn wait(device: &mut (impl crate::ports::Device + ?Sized), minimum_ms: u32) -> Result<(), Error> {
     if device.contactless() {
         return if device.progress() {
             Ok(())
@@ -64,7 +64,7 @@ const BLINK_SLOW_MS: u32 = 200;
 /// Five fresh short touches, each prompted within a two-second blink window.
 /// Delay after each release separates prompts; only raw transport progress runs.
 #[cfg(feature = "admin")]
-pub fn strong(device: &mut crate::ports::DevicePort<'_>) -> bool {
+pub fn strong(device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
     // Factory reset requires physical gestures and is forbidden over NFC.
     if device.contactless() {
         return false;
@@ -129,11 +129,11 @@ impl Request {
         Self { attempted: false }
     }
     #[cfg(classic_presence)]
-    pub fn wait(&mut self, device: &mut crate::ports::DevicePort<'_>) -> bool {
+    pub fn wait(&mut self, device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
         self.wait_result(device).is_ok()
     }
     #[cfg(feature = "ctap")]
-    pub fn poll(&mut self, device: &mut crate::ports::DevicePort<'_>) -> bool {
+    pub fn poll(&mut self, device: &mut (impl crate::ports::Device + ?Sized)) -> bool {
         self.attempted = true;
         if device.contactless() {
             device.progress()
@@ -141,12 +141,18 @@ impl Request {
             device.poll_presence()
         }
     }
-    pub fn wait_result(&mut self, device: &mut crate::ports::DevicePort<'_>) -> Result<(), Error> {
+    pub fn wait_result(
+        &mut self,
+        device: &mut (impl crate::ports::Device + ?Sized),
+    ) -> Result<(), Error> {
         self.attempted = true;
         wait(device, 0)
     }
     #[cfg(feature = "ctap")]
-    pub fn wait_long(&mut self, device: &mut crate::ports::DevicePort<'_>) -> Result<(), Error> {
+    pub fn wait_long(
+        &mut self,
+        device: &mut (impl crate::ports::Device + ?Sized),
+    ) -> Result<(), Error> {
         self.attempted = true;
         wait(device, LONG_TOUCH_MS)
     }

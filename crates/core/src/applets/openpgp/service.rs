@@ -12,7 +12,8 @@ use crate::{
     ports::{KeyOperation, Record},
     runtime::workspace::Workspace,
 };
-fn pw1_policy(p: &mut Platform<'_>) -> Result<[u8; 2], Error> {
+use canokey_ports::{Crypto as _, Storage as _};
+fn pw1_policy(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<[u8; 2], Error> {
     let mut policy = [0; 2];
     p.storage
         .read_at(
@@ -56,7 +57,7 @@ impl Session {
         role: usize,
         generate: bool,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(Algorithm, usize), Error> {
         let a = if generate {
             self.admin()?;
@@ -79,7 +80,7 @@ impl Session {
         &mut self,
         r: usize,
         key: &mut [u8; crate::ports::key_layout::SIZE],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<Algorithm, Error> {
         let bit = if r == key_role::SIGNATURE {
             grant::SIGNATURE
@@ -107,7 +108,7 @@ impl Session {
         a: Algorithm,
         input: core::ops::Range<usize>,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Error> {
         if input.end > w.input.len() {
             return Err(Error::Length);
@@ -181,7 +182,12 @@ impl Session {
 }
 
 impl Session {
-    pub fn verify_pin(&mut self, bit: u8, value: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
+    pub fn verify_pin(
+        &mut self,
+        bit: u8,
+        value: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Error> {
         let id = if bit == grant::ADMIN {
             Record::PgpPw3
         } else {
@@ -203,7 +209,7 @@ impl Session {
         &mut self,
         id: Record,
         value: &[u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         self.grants &= if matches!(id, Record::PgpPw1) {
             !grant::PW1
@@ -220,7 +226,7 @@ impl Session {
         &mut self,
         use_admin: bool,
         value: &[u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         self.grants &= !grant::PW1;
         let n = if use_admin {

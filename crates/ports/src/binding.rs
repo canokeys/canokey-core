@@ -24,11 +24,61 @@ pub type MemoryPort<'a> = dyn crate::Memory + 'a;
 
 /// Disjoint capabilities assembled at the boundary. Borrow individual fields;
 /// never wrap the entire platform in an interior-mutable shared handle.
-pub struct Platform<'a> {
-    pub storage: &'a mut StoragePort<'a>,
-    pub crypto: &'a mut CryptoPort<'a>,
-    pub device: &'a mut DevicePort<'a>,
-    pub memory: &'a MemoryPort<'a>,
+pub struct Platform<'a, B: Backends = DynamicBackends<'a>> {
+    pub storage: &'a mut B::Storage,
+    pub crypto: &'a mut B::Crypto,
+    pub device: &'a mut B::Device,
+    pub memory: &'a B::Memory,
+}
+
+/// A backend family keeps capability types consistent across runtime routing.
+/// The family carries types only; Platform stores the four disjoint borrows.
+pub trait Backends {
+    type Storage: crate::Storage + ?Sized;
+    type Crypto: crate::Crypto + ?Sized;
+    type Device: crate::Device + ?Sized;
+    type Memory: crate::Memory + ?Sized;
+}
+
+pub struct BackendTypes<S: ?Sized, C: ?Sized, D: ?Sized, M: ?Sized>(
+    core::marker::PhantomData<(*const S, *const C, *const D, *const M)>,
+);
+
+impl<S, C, D, M> Backends for BackendTypes<S, C, D, M>
+where
+    S: crate::Storage + ?Sized,
+    C: crate::Crypto + ?Sized,
+    D: crate::Device + ?Sized,
+    M: crate::Memory + ?Sized,
+{
+    type Storage = S;
+    type Crypto = C;
+    type Device = D;
+    type Memory = M;
+}
+
+pub type DynamicBackends<'a> = BackendTypes<
+    dyn crate::Storage + 'a,
+    dyn crate::Crypto + 'a,
+    dyn crate::Device + 'a,
+    dyn crate::Memory + 'a,
+>;
+
+impl<'a, S, C, D, M> Platform<'a, BackendTypes<S, C, D, M>>
+where
+    S: crate::Storage + ?Sized,
+    C: crate::Crypto + ?Sized,
+    D: crate::Device + ?Sized,
+    M: crate::Memory + ?Sized,
+{
+    pub fn new(storage: &'a mut S, crypto: &'a mut C, device: &'a mut D, memory: &'a M) -> Self {
+        Self {
+            storage,
+            crypto,
+            device,
+            memory,
+        }
+    }
 }
 
 /// Copy a bounded window into an active staging transaction, wiping temporary data.

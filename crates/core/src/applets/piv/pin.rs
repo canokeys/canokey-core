@@ -2,6 +2,7 @@
 use super::wire::reference;
 use crate::mechanisms::pin::{self as mechanism, VerifyMode};
 use crate::{Platform, ports::Record};
+use canokey_ports::{Memory as _, Storage as _};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 // One atomic disk record contains both secrets and their retry counters.
 // Authorization grants (pin_ok) are session-only and never serialized.
@@ -93,7 +94,7 @@ impl Pins {
         &mut self,
         pin_limit: u8,
         puk_limit: u8,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.reset();
         self.state = State::fresh();
@@ -105,7 +106,7 @@ impl Pins {
         self.available = true;
         Ok(())
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.available = false;
         self.state.pin_ok = false;
         let mut bytes = [0; STATE_LEN];
@@ -131,7 +132,10 @@ impl Pins {
         self.available = true;
         Ok(())
     }
-    pub(super) fn save(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub(super) fn save(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         let mut bytes = [0; STATE_LEN];
         self.state.encode(&mut bytes);
         let result = p.storage.replace(Record::PivState, &bytes);
@@ -157,7 +161,12 @@ impl Pins {
             .filter(|puk| !*puk || allow_puk)
             .ok_or(Sw::REFERENCE_NOT_FOUND)
     }
-    fn authenticate(&mut self, puk: bool, data: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn authenticate(
+        &mut self,
+        puk: bool,
+        data: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.ready()?;
         use crate::mechanisms::pin::{Charge, Credential, Error};
         if puk {
@@ -218,7 +227,7 @@ impl Pins {
         &mut self,
         h: Header,
         data: &[u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         // VERIFY: P1=00 verifies (or queries with empty data); P1=FF logs
         // out and requires empty data. P2 must identify the PIN (80).
@@ -250,7 +259,7 @@ impl Pins {
         &mut self,
         h: Header,
         data: &[u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         if h.p1 != 0x00 {
             return Err(Sw::WRONG_P1P2);
@@ -275,7 +284,7 @@ impl Pins {
         &mut self,
         h: Header,
         data: &[u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         if h.p1 != 0x00 {
             return Err(Sw::WRONG_P1P2);

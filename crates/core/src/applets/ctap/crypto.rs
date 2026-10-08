@@ -2,6 +2,7 @@
 //! Shared CTAP authentication primitives. Call only after request PKE release.
 use super::Status;
 use crate::ports::Platform;
+use canokey_ports::{Crypto as _, Memory as _};
 // MAC selector in the native crypto ABI: 0x02 = HMAC-SHA-256.
 const HMAC_SHA256: u8 = 0x02;
 
@@ -10,7 +11,7 @@ pub(super) fn mac(
     key: &[u8],
     input: &[u8],
     out: &mut [u8; 32],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut full = [0; 64];
     let result = p
@@ -30,7 +31,7 @@ pub(super) fn verify_mac(
     key: &[u8],
     auth: &[u8],
     input: &[u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut full = [0; 64];
     let result = p

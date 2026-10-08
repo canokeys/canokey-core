@@ -4,6 +4,7 @@ use super::Status;
 #[cfg(feature = "admin")]
 use super::provision::Error;
 use crate::ports::{Platform, Record, StorageError};
+use canokey_ports::Storage as _;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Sm2 {
@@ -35,7 +36,7 @@ impl Sm2 {
         }
         Some(value)
     }
-    pub fn load(p: &mut Platform<'_>) -> Result<Self, Status> {
+    pub fn load(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<Self, Status> {
         let mut wire = [0; 8];
         match p.storage.load(Record::CtapSm2, &mut wire) {
             Err(StorageError::Missing) => Ok(Self::DEFAULT),
@@ -44,7 +45,10 @@ impl Sm2 {
         }
     }
     #[cfg(feature = "admin")]
-    pub fn save(wire: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
+    pub fn save(
+        wire: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Error> {
         if wire.len() != 8 {
             return Err(Error::Length);
         }

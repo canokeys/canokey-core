@@ -20,7 +20,7 @@ impl OpenPgp {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         let b = &w.input[..self.used];
 
@@ -79,7 +79,7 @@ impl OpenPgp {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         let b = &w.input[..self.used];
         let tag = u16::from_be_bytes([h.p1, h.p2]);

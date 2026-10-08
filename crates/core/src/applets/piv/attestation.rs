@@ -12,6 +12,7 @@ use crate::{
     Platform,
     ports::{CryptoScratch, HashState, KeyMaterial, KeyOperation},
 };
+use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 use canokey_protocol::response::StatusWord as Sw;
 const DER_INTEGER: u8 = 0x02;
 const DER_BIT_STRING: u8 = 0x03;
@@ -70,7 +71,7 @@ impl Public {
             bytes: [0; OUTPUT_BYTES],
         }
     }
-    fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         match self {
             Self::Classic { key, bytes } => {
                 memory.wipe(&mut key.bytes);
@@ -88,7 +89,7 @@ impl Public {
         }
     }
     #[inline(never)]
-    fn classic(&mut self, memory: &crate::ports::MemoryPort<'_>) -> &mut KeyMaterial {
+    fn classic(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) -> &mut KeyMaterial {
         if !matches!(self, Self::Classic { .. }) {
             self.clear(memory);
             // No const template: the enum-sized rodata copy costs more Flash
@@ -113,7 +114,7 @@ impl Attestation {
             algorithm: 0,
         }
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.encoded);
         self.public.clear(memory);
         self.segments.fill(0);
@@ -270,7 +271,11 @@ impl Attestation {
         self.wrap(index, start, DER_SEQUENCE)
     }
     #[inline(never)]
-    pub fn prepare(&mut self, id: usize, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn prepare(
+        &mut self,
+        id: usize,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         let (issuer, validity) = parse_cert(p)?;
         let mut m = [0; repo::META];
         repo::read_meta(id, p, &mut m)?;
@@ -343,7 +348,11 @@ impl Attestation {
         })()
     }
     #[inline(never)]
-    fn pq_public(&mut self, id: usize, p: &mut Platform<'_>) -> Result<usize, Sw> {
+    fn pq_public(
+        &mut self,
+        id: usize,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Sw> {
         self.public.clear(p.memory);
         // In-place init: a const CryptoScratch template would duplicate its
         // 2,400 zero bytes into rodata for a single copy.
@@ -353,7 +362,7 @@ impl Attestation {
         };
         super::protocol::init_public_stream(id, alg::MLDSA65, s, p)
     }
-    fn abort_pq(&mut self, p: &mut Platform<'_>) {
+    fn abort_pq(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if let Public::Pq(s) = &mut self.public {
             let _ = p
                 .crypto
@@ -365,7 +374,7 @@ impl Attestation {
         &mut self,
         id: usize,
         m: &[u8; repo::META],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         self.public.classic(p.memory);
         let Public::Classic { key, bytes } = &mut self.public else {
@@ -392,7 +401,11 @@ impl Attestation {
         result
     }
     #[inline(never)]
-    fn hash(&mut self, digest: &mut [u8; SHA256_BYTES], p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn hash(
+        &mut self,
+        digest: &mut [u8; SHA256_BYTES],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         let mut state = HashState {
             bytes: [0; HASH_STATE_BYTES],
         };
@@ -423,7 +436,7 @@ impl Attestation {
         &mut self,
         offset: usize,
         out: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         if !canokey_protocol::response::checked_window(offset, out.len(), self.total) {
             return Err(Sw::UNABLE_TO_PROCESS);
@@ -462,7 +475,7 @@ impl Attestation {
         }
         Ok(count)
     }
-    pub fn close(&mut self, p: &mut Platform<'_>) {
+    pub fn close(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if self.algorithm == alg::MLDSA65 as usize {
             self.abort_pq(p);
         }
@@ -478,7 +491,7 @@ fn sign(
     m: &[u8; repo::META],
     digest: &[u8; SHA256_BYTES],
     signature: &mut [u8; P256_SIGNATURE_CAPACITY],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<usize, Sw> {
     let result = (|| {
         repo::load(repo::ATTESTATION_KEY, m, &mut key.bytes, p)?;
@@ -503,7 +516,11 @@ struct Tlv {
     len: usize,
     total: usize,
 }
-fn tlv(off: usize, end: usize, p: &mut Platform<'_>) -> Result<Tlv, Sw> {
+fn tlv(
+    off: usize,
+    end: usize,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<Tlv, Sw> {
     let error = Sw::REFERENCE_NOT_FOUND;
     if off + 2 > end {
         return Err(error);
@@ -552,7 +569,9 @@ fn tlv(off: usize, end: usize, p: &mut Platform<'_>) -> Result<Tlv, Sw> {
 type FileSpan = (usize, usize);
 // Return the signer's subject and validity spans. The new certificate uses
 // this subject as its issuer, not the issuer field of the signer's certificate.
-fn parse_cert(p: &mut Platform<'_>) -> Result<(FileSpan, FileSpan), Sw> {
+fn parse_cert(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(FileSpan, FileSpan), Sw> {
     let e = Sw::REFERENCE_NOT_FOUND;
     let size = p
         .storage

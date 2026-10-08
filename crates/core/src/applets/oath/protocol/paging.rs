@@ -2,7 +2,11 @@
 //! OATH A5 page generation; the runtime still owns GET RESPONSE offsets.
 use super::*;
 impl State {
-    pub(super) fn page(&mut self, le: u32, p: &mut Platform<'_>) -> Result<Sw, Sw> {
+    pub(super) fn page(
+        &mut self,
+        le: u32,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<Sw, Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
         // OATH A5 continues the credential enumeration; ISO GET RESPONSE

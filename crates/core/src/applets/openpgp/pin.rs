@@ -33,20 +33,40 @@ fn error(e: pin_mechanism::Error) -> Error {
         pin_mechanism::Error::Retries(_) => Error::Unauthorized,
     }
 }
-pub fn create(id: Record, pin: &[u8], limit: u8, p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn create(
+    id: Record,
+    pin: &[u8],
+    limit: u8,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     credential(id).create(pin, limit, p).map_err(error)
 }
-pub fn info(id: Record, p: &mut Platform<'_>) -> Result<PinInfo, Error> {
+pub fn info(
+    id: Record,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<PinInfo, Error> {
     credential(id).info(p).map_err(error)
 }
-pub fn verify(id: Record, pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn verify(
+    id: Record,
+    pin: &[u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     credential(id)
         .verify(pin, min(id), Charge::BeforeCompare, p)
         .map_err(error)
 }
-pub fn change(id: Record, value: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn change(
+    id: Record,
+    value: &[u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     credential(id).change(value, min(id), p).map_err(error)
 }
-pub fn retry_limit(id: Record, limit: u8, p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn retry_limit(
+    id: Record,
+    limit: u8,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     credential(id).retry_limit(limit, p).map_err(error)
 }

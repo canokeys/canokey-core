@@ -29,12 +29,12 @@ impl Applet {
     pub(crate) fn reset_persistent(
         &mut self,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), super::Status> {
         self.close(w, p);
         self.session.reset_persistent(p)
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.session.install(p).map_err(|_| Sw::UNABLE_TO_PROCESS)
     }
     pub fn response_preemptable(&self) -> bool {
@@ -49,7 +49,11 @@ impl Applet {
                 }
             )
     }
-    pub fn reset(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    pub fn reset(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         self.session.abort_blob(p);
         self.session.reset(p.memory);
         self.close(w, p);
@@ -58,7 +62,11 @@ impl Applet {
         // GET RESPONSE abandons input chaining while retaining response backing.
         w.cancel_ctap_request();
     }
-    pub(crate) fn finish_hid(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> usize {
+    pub(crate) fn finish_hid(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> usize {
         let message = self.finish_hid_command(w, p);
         self.complete(w, p, message)
     }
@@ -66,7 +74,7 @@ impl Applet {
     fn finish_hid_command(
         &mut self,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<(u32, Sw)> {
         if let SessionWorkspace::CtapMessage(request) = w {
             let mut command = request.finish();
@@ -81,7 +89,7 @@ impl Applet {
         &mut self,
         command: &mut Result<super::Command, super::Status>,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) {
         self.response = self
             .session
@@ -91,7 +99,7 @@ impl Applet {
         &mut self,
         command: &mut Result<super::Command, super::Status>,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> usize {
         self.dispatch(command, w, p);
         self.complete(w, p, None)
@@ -99,7 +107,7 @@ impl Applet {
     pub(super) fn complete(
         &mut self,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
         message: Option<(u32, Sw)>,
     ) -> usize {
         self.prepare(w, p);
@@ -115,7 +123,7 @@ impl Applet {
         offset: usize,
         output: &mut [u8],
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if let Some(sw) = self.message_status {
             let length = self.message_length;
@@ -141,7 +149,7 @@ impl Applet {
         offset: usize,
         output: &mut [u8],
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if matches!(self.response, Response::Stream(_)) {
             let Some(mut stream) = w.ctap_stream() else {
@@ -153,7 +161,11 @@ impl Applet {
                 .read(&mut w.classic_with(p.memory), offset, output, p.storage)
         }
     }
-    fn prepare(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    fn prepare(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         if let Response::Pending(plan) = self.response {
             self.response = match super::pq::Stream::prepare(plan, w, p) {
                 Ok(n) => Response::Stream(n),
@@ -164,7 +176,11 @@ impl Applet {
             };
         }
     }
-    pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    pub fn close(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         if let Some(mut stream) = w.ctap_stream() {
             stream.close(p);
         }

@@ -6,6 +6,7 @@ use crate::{
     Platform,
     ports::{Record, StorageError},
 };
+use canokey_ports::{Memory as _, Storage as _};
 use canokey_protocol::response::StatusWord as Sw;
 pub const SLOTS: [u8; KEY_COUNT] = [
     slot::AUTHENTICATION,
@@ -178,7 +179,11 @@ pub fn config_valid(c: &[u8]) -> bool {
 /// Fill a caller-owned metadata buffer; its contents are valid only on success.
 /// Keeping the output separate from the status avoids a second large return
 /// buffer on targets whose ABI returns Result<[u8; META], Sw> indirectly.
-pub fn read_meta(id: usize, p: &mut Platform<'_>, m: &mut [u8; META]) -> Result<(), Sw> {
+pub fn read_meta(
+    id: usize,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    m: &mut [u8; META],
+) -> Result<(), Sw> {
     m.fill(0);
     let n = match p.storage.size(KEYS[id]) {
         Err(StorageError::Missing) => 0,
@@ -215,7 +220,7 @@ pub fn load(
     id: usize,
     m: &[u8; META],
     key: &mut [u8; crate::ports::key_layout::SIZE],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Sw> {
     if m[ORIGIN] == 0 {
         return Err(Sw::REFERENCE_NOT_FOUND);
@@ -227,12 +232,16 @@ pub fn save(
     id: usize,
     m: &[u8; META],
     key: &[u8; crate::ports::key_layout::SIZE],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Sw> {
     let a = m[ALGORITHM];
     key_storage::commit(p.storage, KEYS[id], rsa(a), width(a), key, m).map_err(io)
 }
-pub fn save_name(id: usize, m: &[u8; META], p: &mut Platform<'_>) -> Result<(), Sw> {
+pub fn save_name(
+    id: usize,
+    m: &[u8; META],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Sw> {
     p.storage
         .replace_at(KEYS[id], (HEADER + material(m[ALGORITHM])) as u32, m)
         .map_err(io)
@@ -342,7 +351,9 @@ pub fn management_record(touch: u8, key: &[u8]) -> [u8; MANAGEMENT_SIZE] {
     record[MANAGEMENT_KEY..].copy_from_slice(key);
     record
 }
-pub fn management(p: &mut Platform<'_>) -> Result<[u8; MANAGEMENT_SIZE], Sw> {
+pub fn management(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<[u8; MANAGEMENT_SIZE], Sw> {
     let mut b = [0; MANAGEMENT_SIZE];
     if p.storage.load(Record::PivManagement, &mut b).map_err(io)? != MANAGEMENT_SIZE
         || b[VERSION] != FORMAT_VERSION

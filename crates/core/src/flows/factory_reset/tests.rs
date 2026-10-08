@@ -90,7 +90,7 @@ fn execute(fail_at: Option<usize>) -> (bool, Vec<Mutation>) {
         Some(&mut pass),
         &mut crate::applets::ctap::Applet::new(),
         &mut SessionWorkspace::new(),
-        &mut Platform {
+        &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut storage,
             crypto: &mut Random,
             device: &mut NoTouch,

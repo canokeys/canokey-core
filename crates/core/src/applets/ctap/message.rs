@@ -12,7 +12,7 @@ impl Applet {
         &mut self,
         command: &mut Message,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> usize {
         let message = self.dispatch_message(command, w, p);
         self.complete(w, p, Some(message))
@@ -21,7 +21,7 @@ impl Applet {
         &mut self,
         command: &mut Message,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> (u32, Sw) {
         let limit = match command {
             Message::Ctap(_, limit) | Message::U2f(_, limit) => *limit,
@@ -74,7 +74,7 @@ impl Applet {
         &mut self,
         bytes: &[u8],
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<usize> {
         if bytes.len() < 2 || !matches!(bytes[0], 0 | 0x80) || bytes[1] != 0xc0 {
             return None;
@@ -167,7 +167,7 @@ impl MessageParser {
             self.decoder = None;
         }
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         match &mut self.request {
             MessageInput::Ctap(r) => r.clear(memory),
             MessageInput::U2f(r) => r.clear(memory),

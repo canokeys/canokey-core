@@ -124,9 +124,9 @@ fn lazy_decapsulation_generates_once_without_exporting_a_response() {
     let mut backing = SessionWorkspace::new();
     let mut crypto = Backend::default();
     let memory = Backend::default();
-    let mut p = Platform {
-        crypto: &mut crypto,
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut Backend::default(),
+        crypto: &mut crypto,
         device: &mut Backend::default(),
         memory: &memory,
     };
@@ -144,9 +144,9 @@ fn lazy_decapsulation_generates_once_without_exporting_a_response() {
         (crypto.generated, crypto.exported, crypto.agreed),
         (1, 0, 2)
     );
-    let mut p = Platform {
-        crypto: &mut crypto,
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut Backend::default(),
+        crypto: &mut crypto,
         device: &mut Backend::default(),
         memory: &memory,
     };
@@ -167,12 +167,12 @@ fn failed_lazy_key_generation_clears_command_workspace_and_authorization() {
     session.permissions = 0x20;
     let mut backing = SessionWorkspace::new();
     let memory = Backend::default();
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+        storage: &mut Backend::default(),
         crypto: &mut Backend {
             fail_generate: true,
             ..Backend::default()
         },
-        storage: &mut Backend::default(),
         device: &mut Backend::default(),
         memory: &memory,
     };
@@ -223,12 +223,12 @@ fn mac_verification_erases_primitive_output_and_preserves_failure_status() {
         for fail in [false, true] {
             for valid in [false, true] {
                 let memory = Backend::default();
-                let mut p = Platform {
+                let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                    storage: &mut Backend::default(),
                     crypto: &mut Backend {
                         fail_mac: fail,
                         ..Backend::default()
                     },
-                    storage: &mut Backend::default(),
                     device: &mut Backend::default(),
                     memory: &memory,
                 };
@@ -256,8 +256,8 @@ fn policy_reads_validate_the_full_record_and_never_cache_flags() {
     let mut crypto = Backend::default();
     let mut device = Backend::default();
     let mut read = |storage: &mut Backend| {
-        policy(&mut Platform {
-            storage,
+        policy(&mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: storage,
             crypto: &mut crypto,
             device: &mut device,
             memory: &memory,

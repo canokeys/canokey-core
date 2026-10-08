@@ -9,6 +9,7 @@ use super::{codec, ga::Ga, import::Import, pin::Pins, repository as repo};
 use crate::ports::alg;
 use crate::ports::{CryptoScratch, StreamOperation};
 use crate::runtime::workspace::SessionWorkspace;
+use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 mod keys;
 mod management;
 mod metadata;
@@ -35,7 +36,7 @@ pub(crate) fn init_stream(
     algorithm: u8,
     operation: StreamOperation,
     scratch: &mut CryptoScratch,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<usize, Sw> {
     let mut seed = [0; crate::ports::mlkem768::SEED_BYTES];
     let result = (|| {
@@ -64,7 +65,7 @@ pub(crate) fn init_public_stream(
     id: usize,
     algorithm: u8,
     scratch: &mut CryptoScratch,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<usize, Sw> {
     init_stream(id, algorithm, StreamOperation::PublicInit, scratch, p)
 }
@@ -152,7 +153,7 @@ impl Piv {
     pub(super) fn clear_agreement(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) {
         self.agreement = None;
         p.memory.wipe(w.agreement);
@@ -188,7 +189,11 @@ impl Piv {
             sm2_id_used: 0,
         }
     }
-    fn reset_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    fn reset_classic(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         // cancel_classic clears the retained agreement below.
         self.pins.reset();
         self.admin = false;
@@ -198,11 +203,15 @@ impl Piv {
         self.cancel_classic(w, p);
         self.close_classic(w, p);
     }
-    fn auth_clear(&mut self, p: &mut Platform<'_>) {
+    fn auth_clear(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.auth_mode = AuthMode::None;
         p.memory.wipe(&mut self.challenge);
     }
-    fn select_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    fn select_classic(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         self.clear_agreement(w, p);
         self.auth_clear(p);
         w.output[..SELECT.len()].copy_from_slice(SELECT);
@@ -241,7 +250,11 @@ impl Piv {
             _ => CAPACITY as u32,
         }
     }
-    fn cancel_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    fn cancel_classic(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         if matches!(self.request, Request::Put) {
             p.storage.stage_abort()
         }
@@ -257,7 +270,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.used = 0;
         self.memory(0);
@@ -321,7 +334,7 @@ impl Piv {
         &mut self,
         b: &[u8],
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         match self.request {
             Request::Ga => {
@@ -348,7 +361,7 @@ impl Piv {
         h: Header,
         le: u32,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         let r = match self.request {
             Request::Ga => self
@@ -434,7 +447,11 @@ impl Piv {
         self.pin_grant_consumed = true;
         Ok(())
     }
-    fn touch(&mut self, policy: u8, p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn touch(
+        &mut self,
+        policy: u8,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         if policy < policy::TOUCH_ALWAYS {
             return Ok(());
         }
@@ -459,7 +476,7 @@ impl Piv {
         h: Header,
         le: u32,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         match h.ins {
             INS_VERIFY => {
@@ -626,7 +643,7 @@ impl Piv {
         offset: usize,
         out: &mut [u8],
         w: &Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         if !canokey_protocol::response::checked_window(
             offset,
@@ -655,12 +672,16 @@ impl Piv {
         }
         Ok(out.len())
     }
-    fn abort_generation(&mut self, p: &mut Platform<'_>) {
+    fn abort_generation(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if self.pending_commit.take().is_some() {
             p.storage.stage_abort();
         }
     }
-    fn close_classic(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    fn close_classic(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         self.abort_generation(p);
         p.memory.wipe(w.output);
         self.memory(0);

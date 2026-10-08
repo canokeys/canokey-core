@@ -5,6 +5,7 @@ use super::{
     crypto::{equal, mac},
 };
 use crate::ports::{KeyMaterial, Platform, Record, StorageError, alg};
+use canokey_ports::{Crypto as _, Memory as _, Storage as _};
 
 // Algorithm, policy flags, random nonce, truncated HMAC. The RP hash is bound
 // cryptographically rather than repeated in every credential ID.
@@ -21,7 +22,10 @@ pub(super) const ID_BYTES: usize = 34;
 pub(super) type Id = [u8; ID_BYTES];
 const TAG: usize = 18;
 
-fn master(create: bool, p: &mut Platform<'_>) -> Result<[u8; 32], Status> {
+fn master(
+    create: bool,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<[u8; 32], Status> {
     let mut key = [0; 32];
     let result = match p.storage.load(Record::CtapMaster, &mut key) {
         Ok(32) => Ok(()),
@@ -60,7 +64,7 @@ fn derive(
     master: &[u8; 32],
     sm2: super::settings::Sm2,
     key: &mut KeyMaterial,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<[u8; 32], Status> {
     let mut message = [0; 1 + TAG + 32 + 8];
     message[1..1 + TAG].copy_from_slice(&id[..TAG]);
@@ -92,7 +96,7 @@ pub(super) fn create(
     sm2: super::settings::Sm2,
     rp: &[u8; 32],
     key: &mut KeyMaterial,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Id, Status> {
     let mut master = master(true, p)?;
     let result = (|| {
@@ -151,7 +155,7 @@ pub(super) fn open(
     sm2: super::settings::Sm2,
     rp: &[u8; 32],
     key: &mut KeyMaterial,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
     let algorithm = algorithm(id)?;
     let mut master = master(false, p)?;
@@ -167,7 +171,9 @@ pub(super) fn open(
     Ok(algorithm)
 }
 
-pub(super) fn counter(p: &mut Platform<'_>) -> Result<[u8; 4], Status> {
+pub(super) fn counter(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<[u8; 4], Status> {
     let mut bytes = [0; 4];
     match p.storage.load(Record::CtapCounter, &mut bytes) {
         Ok(4) | Err(StorageError::Missing) => (),
@@ -192,7 +198,7 @@ pub(super) fn extension_key(
     id: &Id,
     rp: &[u8; 32],
     out: &mut [u8; 32],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut master = master(false, p)?;
     let mut message = [0; 1 + ID_BYTES + 32];
@@ -208,7 +214,7 @@ pub(super) fn large_blob_key(
     id: &Id,
     rp: &[u8; 32],
     out: &mut [u8; 32],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     extension_key(2, id, rp, out, p)
 }

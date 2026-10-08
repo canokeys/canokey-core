@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! One frame decoder, logical-command lifecycle and response cursor for all routes.
 use crate::ports::Platform;
+use canokey_ports::Memory as _;
 use canokey_protocol::{
     apdu::{self, CommandInfo, FrameEvent, Header},
     response::{ReadError, Response, Source, StatusWord as Sw},
@@ -35,18 +36,26 @@ pub trait InputSource {
 /// Static routing contract. Applets own semantic consumers and response backing;
 /// this runtime owns transport/chain boundaries and the only response offset.
 pub trait Router {
-    fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw>;
-    fn reset(&mut self, p: &mut Platform<'_>);
+    fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw>;
+    fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>);
     /// Keep only applet state that survives a reader's logical power cycle.
-    fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
+    fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
         self.reset(p);
         false
     }
     fn selected(&self) -> bool;
-    fn implicit_select(&mut self, _header: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn implicit_select(
+        &mut self,
+        _header: Header,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         Ok(())
     }
-    fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw>;
+    fn select(
+        &mut self,
+        aid: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw>;
     fn command_limit(&self, header: Header) -> Result<u32, Sw>;
     fn chain_header(&self, header: Header) -> Header {
         header
@@ -54,36 +63,52 @@ pub trait Router {
     fn allows_extended(&self, _header: Header) -> bool {
         false
     }
-    fn abort_command(&mut self, p: &mut Platform<'_>);
-    fn begin_command(&mut self, _header: Header, _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn abort_command(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>);
+    fn begin_command(
+        &mut self,
+        _header: Header,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         Ok(())
     }
-    fn consume(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw>;
-    fn end_frame(&mut self, _last: bool, _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn consume(
+        &mut self,
+        bytes: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw>;
+    fn end_frame(
+        &mut self,
+        _last: bool,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         Ok(())
     }
     fn finish(
         &mut self,
         header: Header,
         le: Option<u32>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw>;
     fn read_response(
         &mut self,
         offset: u32,
         out: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw>;
-    fn close_response(&mut self, p: &mut Platform<'_>);
+    fn close_response(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>);
     /// Match applet response-source abandonment policy, not buffer ownership.
     /// Transport admission must still wait for final endpoint completion.
     fn response_preemptable(&self, _total: u32) -> bool {
         false
     }
-    fn is_eject(&self, _header: Header, _p: &mut Platform<'_>) -> bool {
+    fn is_eject(
+        &self,
+        _header: Header,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> bool {
         false
     }
-    fn eject(&mut self, _p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn eject(&mut self, _p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         Err(Sw::INS_NOT_SUPPORTED)
     }
     fn output_busy(&self) -> bool {
@@ -95,14 +120,14 @@ pub trait Router {
         _now: u32,
         _ready: bool,
         _inhibit: bool,
-        _p: &mut Platform<'_>,
+        _p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<u8> {
         None
     }
 }
 
-struct RoutedSource<'a, 'p, R>(&'a mut R, &'a mut Platform<'p>);
-impl<R: Router> Source for RoutedSource<'_, '_, R> {
+struct RoutedSource<'a, 'p, R, B: crate::ports::Backends>(&'a mut R, &'a mut Platform<'p, B>);
+impl<R: Router, B: crate::ports::Backends> Source for RoutedSource<'_, '_, R, B> {
     fn read(&mut self, offset: u32, out: &mut [u8]) -> Result<usize, ReadError> {
         // ReadError carries the applet's exact status word; the response layer
         // uses it to terminate the lease without collapsing the distinction.
@@ -156,20 +181,20 @@ impl<R: Router> Runtime<R> {
         &self.router
     }
     /// Release all leases before returning a router to its owner.
-    pub fn into_router(mut self, p: &mut Platform<'_>) -> R {
+    pub fn into_router(mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> R {
         self.reset(p);
         self.router
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.reset(p);
         self.router.install(p)?;
         super::config::notify(p);
         Ok(())
     }
-    fn close_response(&mut self, p: &mut Platform<'_>) {
+    fn close_response(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.response.clear(&mut RoutedSource(&mut self.router, p));
     }
-    fn abort_input(&mut self, p: &mut Platform<'_>) {
+    fn abort_input(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.frame = None;
         self.route = FrameRoute::None;
         self.chain.reset();
@@ -178,16 +203,18 @@ impl<R: Router> Runtime<R> {
     // Cursor-dependent response close must precede input cancellation here.
     // Other paths deliberately use abort followed by unconditional source close.
     #[inline(never)]
-    fn close_and_abort(&mut self, p: &mut Platform<'_>) {
+    fn close_and_abort(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.close_response(p);
         self.abort_input(p);
     }
-    pub fn reset(&mut self, p: &mut Platform<'_>) {
+    // Share the generic cleanup path across transport reset and CTAP preemption.
+    #[inline(never)]
+    pub fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.close_and_abort(p);
         self.router.reset(p);
         self.owner = None;
     }
-    pub fn slot_power(&mut self, p: &mut Platform<'_>) {
+    pub fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if self.owner != Some(OWNER_CCID) {
             self.reset(p);
             return;
@@ -200,7 +227,12 @@ impl<R: Router> Runtime<R> {
     }
     /// Frame length is supplied by the transport; no body buffer is allocated.
     #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]
-    pub fn begin_frame(&mut self, owner: u8, total: usize, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn begin_frame(
+        &mut self,
+        owner: u8,
+        total: usize,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         // Platform admission excludes HID while it owns an active USB transfer.
         // A subsequent APDU abandons the idle native session before selecting.
         #[cfg(feature = "ctap")]
@@ -267,7 +299,7 @@ impl<R: Router> Runtime<R> {
         owner: u8,
         prefix: &[u8; canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
         total: usize,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u16, Sw> {
         let result = self.validate_extended(owner, prefix, total);
         if result.is_ok() || self.owner == Some(owner) {
@@ -278,7 +310,11 @@ impl<R: Router> Runtime<R> {
         Ok(lc)
     }
     #[inline(never)]
-    fn start(&mut self, info: CommandInfo, p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn start(
+        &mut self,
+        info: CommandInfo,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         if info.extended && !self.extended_allowed(self.owner.unwrap_or(OWNER_APDU), info.header) {
             return Err(Sw::WRONG_LENGTH);
         }
@@ -328,13 +364,17 @@ impl<R: Router> Runtime<R> {
         self.route = FrameRoute::Command;
         Ok(())
     }
-    fn reroute(&mut self, route: FrameRoute, p: &mut Platform<'_>) {
+    fn reroute(&mut self, route: FrameRoute, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.chain.reset();
         self.router.abort_command(p);
         self.route = route;
     }
     #[inline(never)]
-    fn data(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn data(
+        &mut self,
+        bytes: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         match &mut self.route {
             FrameRoute::Select { aid, used, .. } => {
                 let end = used
@@ -355,7 +395,11 @@ impl<R: Router> Runtime<R> {
     // Decoder temporaries are dead before finalization calls into crypto.
     // Keep this stack boundary on small targets instead of inlining both paths.
     #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]
-    pub fn feed_frame(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn feed_frame(
+        &mut self,
+        bytes: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         let mut frame = self.frame.take().ok_or(Sw::WRONG_LENGTH)?;
         let mut status = Sw::WRONG_LENGTH;
         let result = frame.feed_events(bytes, &mut |event| {
@@ -375,7 +419,7 @@ impl<R: Router> Runtime<R> {
         self.frame = Some(frame);
         Ok(())
     }
-    pub fn end_frame(&mut self, p: &mut Platform<'_>) -> Reply {
+    pub fn end_frame(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Reply {
         let info = match self.frame.as_ref().and_then(|frame| frame.finish().ok()) {
             Some(info) => info,
             None => {
@@ -446,7 +490,12 @@ impl<R: Router> Runtime<R> {
             }
         }
     }
-    pub fn receive(&mut self, owner: u8, frame: &[u8], p: &mut Platform<'_>) -> Reply {
+    pub fn receive(
+        &mut self,
+        owner: u8,
+        frame: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Reply {
         if let Err(sw) = self
             .begin_frame(owner, frame.len(), p)
             .and_then(|()| self.feed_frame(frame, p))
@@ -462,7 +511,7 @@ impl<R: Router> Runtime<R> {
         owner: u8,
         total: usize,
         source: &mut (impl InputSource + ?Sized),
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Reply {
         let result = (|| {
             self.begin_frame(owner, total, p)?;
@@ -507,7 +556,7 @@ impl<R: Router> Runtime<R> {
         &mut self,
         reply: Reply,
         output: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         if output.len() < 2 {
             return Err(Sw::WRONG_LENGTH);
@@ -531,7 +580,11 @@ impl<R: Router> Runtime<R> {
     }
     /// Discard queued output and consume the current contact after USB reset.
     #[cfg(feature = "pass")]
-    pub fn cancel_output(&mut self, pressed: bool, p: &mut Platform<'_>) {
+    pub fn cancel_output(
+        &mut self,
+        pressed: bool,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         self.router.sample_output(pressed, 0, false, true, p);
     }
     pub fn sample_output(
@@ -539,7 +592,7 @@ impl<R: Router> Runtime<R> {
         pressed: bool,
         now: u32,
         ready: bool,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<u8> {
         self.router.sample_output(
             pressed,
@@ -557,7 +610,7 @@ impl Core {
         Self::with_router(super::registry::Registry::new())
     }
     #[cfg(feature = "ctap")]
-    pub fn begin_ctap(&mut self, p: &mut Platform<'_>) {
+    pub fn begin_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         // Native HID holds owner 2 across commands; preserve its PIN agreement
         // and authorization state. Preempting an idle APDU owner resets it.
         if self.owner != Some(OWNER_CTAP) {
@@ -567,7 +620,11 @@ impl Core {
         self.router.resume_ctap(p);
     }
     #[cfg(feature = "ctap")]
-    pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
+    pub fn begin_hid_request(
+        &mut self,
+        message_length: Option<usize>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         self.router.begin_hid_request(message_length, p);
     }
     #[cfg(feature = "ctap")]
@@ -575,14 +632,17 @@ impl Core {
         self.router.consume_hid_request(bytes);
     }
     #[cfg(feature = "ctap")]
-    pub fn finish_hid_request(&mut self, p: &mut Platform<'_>) -> usize {
+    pub fn finish_hid_request(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> usize {
         self.router.finish_hid_request(p)
     }
     #[cfg(feature = "ctap")]
     pub fn execute_ctap(
         &mut self,
         command: Result<crate::applets::ctap::Command, crate::applets::ctap::Status>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> usize {
         self.router.execute_ctap(command, p)
     }
@@ -590,7 +650,7 @@ impl Core {
     pub fn execute_ctap_message(
         &mut self,
         command: crate::applets::ctap::message::Message,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> usize {
         self.router.execute_ctap_message(command, p)
     }
@@ -599,27 +659,31 @@ impl Core {
         &mut self,
         offset: usize,
         out: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.router.read_ctap(offset, out, p)
     }
     #[cfg(feature = "ctap")]
-    pub fn discard_ctap_continuation(&mut self, p: &mut Platform<'_>) {
+    pub fn discard_ctap_continuation(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         // An idle HID reset/INIT must never close another transport's backing.
         if self.owner == Some(OWNER_CTAP) {
             self.router.close_ctap(p);
         }
     }
     #[cfg(feature = "ctap")]
-    pub fn complete_ctap(&mut self, p: &mut Platform<'_>) {
+    pub fn complete_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.router.complete_ctap(p);
     }
     #[cfg(feature = "ctap")]
-    pub fn continue_ctap_message(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Option<usize> {
+    pub fn continue_ctap_message(
+        &mut self,
+        bytes: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Option<usize> {
         self.router.continue_ctap_message(bytes, p)
     }
     #[cfg(feature = "ctap")]
-    pub fn close_ctap(&mut self, p: &mut Platform<'_>) {
+    pub fn close_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.router.close_ctap(p);
     }
     pub const fn applet_count() -> u8 {
@@ -631,7 +695,12 @@ impl Core {
             + cfg!(feature = "ctap") as u8
     }
     #[cfg(feature = "pass")]
-    pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
+    pub fn touch(
+        &self,
+        index: u8,
+        out: &mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Sw> {
         self.router.touch(index, out, p)
     }
     #[cfg(feature = "pass")]
@@ -640,7 +709,7 @@ impl Core {
         index: u8,
         input: &[u8],
         out: &mut [u8; 20],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.router.challenge(index, input, out, p)
     }

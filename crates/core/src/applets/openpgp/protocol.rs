@@ -16,6 +16,7 @@ use crate::{
     ports::{KeyOperation, Record},
     runtime::workspace::Workspace,
 };
+use canokey_ports::{Crypto as _, Memory as _, Storage as _};
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 pub const AID: &[u8] = &[0xd2, 0x76, 0x00, 0x01, 0x24, 0x01];
 enum Request {
@@ -55,13 +56,13 @@ impl OpenPgp {
             terminated: None,
         }
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.terminated = None;
         repo::install(p)?;
         self.is_terminated(p)?;
         Ok(())
     }
-    pub fn reset(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    pub fn reset(&mut self, w: &mut Workspace, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.abort(w, p);
         self.terminated = None;
         self.session.grants = 0;
@@ -69,13 +70,20 @@ impl OpenPgp {
         self.session.clear_touch();
         self.response = Response::Memory;
     }
-    pub fn clear(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn clear(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.reset(w, p);
         repo::reset(p)?;
         self.terminated = Some(false);
         Ok(())
     }
-    fn is_terminated(&mut self, p: &mut Platform<'_>) -> Result<bool, Sw> {
+    fn is_terminated(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<bool, Sw> {
         if let Some(value) = self.terminated {
             return Ok(value);
         }
@@ -83,7 +91,7 @@ impl OpenPgp {
         self.terminated = Some(value);
         Ok(value)
     }
-    pub fn select(&mut self, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub fn select(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<u32, Sw> {
         self.occurrence = 0;
         // Selection permits ACTIVATE recovery. Ordinary commands still reject
         // a terminated applet in begin(), including after a new selection.
@@ -107,7 +115,12 @@ impl OpenPgp {
     pub(super) fn admin(&self) -> Result<(), Sw> {
         self.session.admin().map_err(Into::into)
     }
-    pub fn begin(&mut self, h: Header, w: &mut Workspace, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn begin(
+        &mut self,
+        h: Header,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.used = 0;
         w.clear(p.memory);
         self.response = Response::Memory;
@@ -143,7 +156,12 @@ impl OpenPgp {
         };
         Ok(())
     }
-    pub fn consume(&mut self, b: &[u8], w: &mut Workspace, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn consume(
+        &mut self,
+        b: &[u8],
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         match self.request {
             Request::Buffered => {
                 let cap = w.input.len();
@@ -158,12 +176,12 @@ impl OpenPgp {
         self.used += b.len();
         Ok(())
     }
-    pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_>) {
+    pub(crate) fn abort_transaction(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if matches!(self.request, Request::Certificate) {
             p.storage.stage_abort();
         }
     }
-    pub fn abort(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    pub fn abort(&mut self, w: &mut Workspace, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.abort_transaction(p);
         self.request = Request::None;
         self.used = 0;
@@ -175,7 +193,7 @@ impl OpenPgp {
         matches!(self.response, Response::Certificate(_))
             || total > canokey_protocol::apdu::RESPONSE_PREEMPT_BYTES as u32
     }
-    pub fn close(&mut self, w: &mut Workspace, p: &mut Platform<'_>) {
+    pub fn close(&mut self, w: &mut Workspace, p: &mut Platform<'_, impl crate::ports::Backends>) {
         p.memory.wipe(w.output);
         self.response = Response::Memory;
     }
@@ -188,7 +206,7 @@ impl OpenPgp {
         offset: usize,
         out: &mut [u8],
         w: &Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         match self.response {
             Response::Memory => {
@@ -208,7 +226,7 @@ impl OpenPgp {
         h: Header,
         le: u32,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         let result = match self.request {
             Request::Certificate => {
@@ -257,7 +275,7 @@ impl OpenPgp {
         h: Header,
         le: u32,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         let b = &w.input[..self.used];
         let tag = u16::from_be_bytes([h.p1, h.p2]);

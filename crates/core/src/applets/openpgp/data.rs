@@ -12,6 +12,7 @@ use super::{
 };
 use crate::ports::alg;
 use crate::{Platform, ports::Record};
+use canokey_ports::{Device as _, Storage as _};
 use canokey_protocol::response::StatusWord as Sw;
 // Suffix of the OpenPGP application identifier (AID), before the device serial:
 // specification version 3.4, then CanoKey manufacturer ID 0xF1D0 (big-endian).
@@ -57,7 +58,11 @@ fn ca_fingerprint_offset(tag: u16) -> usize {
 // Fill on first access so storage failures do not precede earlier writer errors.
 struct Metadata([Option<[u8; repo::META_LEN]>; key_role::COUNT]);
 impl Metadata {
-    fn get(&mut self, p: &mut Platform<'_>, role: usize) -> Result<&[u8; repo::META_LEN], Sw> {
+    fn get(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+        role: usize,
+    ) -> Result<&[u8; repo::META_LEN], Sw> {
         if self.0[role].is_none() {
             self.0[role] = Some(repo::meta(p, role)?);
         }
@@ -79,7 +84,12 @@ impl OpenPgp {
             || (tag::CA_FINGERPRINT_1..=tag::CA_FINGERPRINT_3).contains(&tag)
     }
     #[inline(never)]
-    pub(super) fn get(&self, tag: u16, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
+    pub(super) fn get(
+        &self,
+        tag: u16,
+        out: &mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Sw> {
         let mut s = [0; repo::STATE_LEN];
         if Self::needs_state(tag) {
             // State validation checks record length, version, bounded flags
@@ -111,7 +121,7 @@ impl OpenPgp {
         v: &mut Writer<'_>,
         s: &[u8; repo::STATE_LEN],
         metadata: &mut Metadata,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if let Some((off, _)) = repo::field(tag) {
             return v.bytes(&s[off + 1..off + 1 + s[off] as usize]);
@@ -253,7 +263,12 @@ impl OpenPgp {
         }
     }
     #[inline(never)]
-    pub(super) fn put(&mut self, tag: u16, b: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub(super) fn put(
+        &mut self,
+        tag: u16,
+        b: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         if (tag::ALGORITHM_SIG..=tag::ALGORITHM_AUT).contains(&tag) {
             let r = role_of(tag, tag::ALGORITHM_SIG);
             let a = Algorithm::parse(b, r).ok_or(Sw::WRONG_DATA)?;

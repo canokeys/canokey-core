@@ -103,7 +103,7 @@ impl Piv {
         m: &[u8; repo::META],
         metadata: bool,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         if m[repo::ORIGIN] == 0 {
             return Err(Sw::REFERENCE_NOT_FOUND);
@@ -152,7 +152,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         self.authorized()?;
         // Minimum AC template: two-byte outer header plus algorithm TLV(3).
@@ -217,7 +217,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         let mut fields: [Option<&[u8]>; ga_field::COUNT] = [None; ga_field::COUNT];
         for (i, field) in fields.iter_mut().enumerate() {
@@ -322,7 +322,7 @@ impl Piv {
         &mut self,
         packet: &mut [u8; sm2_packet::SIZE],
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         p.crypto
             .key_operation(KeyOperation::Public, alg::SM2, &mut w.key, &[], w.output)
@@ -357,7 +357,7 @@ impl Piv {
     fn sm2_responder(
         packet: &mut [u8; sm2_packet::SIZE],
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<[u8; 65], Sw> {
         // parse_sm2_packet already owns the validated identity, including the
         // default when no witness is supplied; it survives workspace reuse.
@@ -380,7 +380,7 @@ impl Piv {
         id: usize,
         m: &[u8; repo::META],
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         let result = (|| {
             let field = |i: usize| self.ga.field(i, w.input);
@@ -474,7 +474,7 @@ impl Piv {
         id: usize,
         own: Option<&[u8]>,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         if self.agreement.is_some() {
             return Err(Sw::CONDITIONS_NOT_SATISFIED);

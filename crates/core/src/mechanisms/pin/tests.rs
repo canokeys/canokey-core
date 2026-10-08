@@ -222,7 +222,7 @@ mod records {
     }
     macro_rules! platform {
         ($store:expr,$memory:expr) => {
-            Platform {
+            Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: $store,
                 crypto: &mut Primitives,
                 device: &mut Board,

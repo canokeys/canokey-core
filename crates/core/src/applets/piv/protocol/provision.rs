@@ -14,11 +14,14 @@ const CCC_CARD_ID: core::ops::Range<usize> = 4..25;
 const CHUID_GUID: core::ops::Range<usize> = 31..47;
 
 impl Piv {
-    pub(crate) fn reset_persistent(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub(crate) fn reset_persistent(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.provision(true, p)
     }
 
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.pins.install(p)?;
         let mut status = [0; 1];
         let provision = match p.storage.load(Record::PivProvision, &mut status) {
@@ -63,7 +66,7 @@ impl Piv {
     pub(super) fn provision(
         &mut self,
         reset_credentials: bool,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         p.storage
             .replace(

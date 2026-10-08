@@ -6,33 +6,44 @@ use crate::{
     applets::{admin::pin, pass::service::Pass},
     runtime::workspace::SessionWorkspace,
 };
+#[cfg(feature = "openpgp")]
+use canokey_ports::Memory as _;
 #[cfg(feature = "ctap")]
 pub fn ctap(
     ctap: &mut crate::applets::ctap::Applet,
     workspace: &mut SessionWorkspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
     ctap.reset_persistent(workspace, p).map_err(|_| Error::Ctap)
 }
 #[cfg(feature = "ndef")]
-pub fn ndef(p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn ndef(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     crate::applets::ndef::reset_persistent(p).map_err(|_| Error::Ndef)
 }
 #[cfg(feature = "openpgp")]
-pub fn openpgp(workspace: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn openpgp(
+    workspace: &mut SessionWorkspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     let workspace = workspace.classic_with(p.memory);
     p.memory.wipe(&mut workspace.key.bytes);
     p.memory.wipe(workspace.input);
     crate::applets::openpgp::repository::reset(p).map_err(Error::OpenPgp)
 }
 #[cfg(feature = "piv")]
-pub fn piv(workspace: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn piv(
+    workspace: &mut SessionWorkspace,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     let mut piv = crate::applets::piv::Piv::new();
     piv.reset(workspace, p);
     piv.reset_persistent(p).map_err(|_| Error::Piv)
 }
 #[cfg(feature = "oath")]
-pub fn oath(pass: Option<&mut Pass>, p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn oath(
+    pass: Option<&mut Pass>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Error> {
     // Remove keyboard references first, so a partial OATH reset cannot leave
     // PASS pointing at an erased or subsequently reused credential record.
     if let Some(pass) = pass {
@@ -45,7 +56,7 @@ pub fn run(
     mut pass: Option<&mut Pass>,
     #[cfg(feature = "ctap")] ctap: &mut crate::applets::ctap::Applet,
     #[allow(unused_variables)] workspace: &mut SessionWorkspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
     // Session revocation precedes this flow. Reuse individual reset entrypoints
     // so their workspace cleanup also remains part of a full reset.

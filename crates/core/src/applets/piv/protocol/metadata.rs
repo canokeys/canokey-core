@@ -24,7 +24,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         if self.used != 0 {
             return Err(Sw::WRONG_LENGTH);
@@ -155,7 +155,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         // NAME F5: P1=00 reads the label; P1=01 replaces it (management
         // authorization required). P2 identifies the key slot in both modes.
@@ -224,7 +224,11 @@ impl Piv {
         repo::save_name(id, &m, p)?;
         Ok(0)
     }
-    pub(super) fn move_key(&mut self, h: Header, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub(super) fn move_key(
+        &mut self,
+        h: Header,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         self.authorized()?;
         if self.used != 0 {
             return Err(Sw::WRONG_LENGTH);

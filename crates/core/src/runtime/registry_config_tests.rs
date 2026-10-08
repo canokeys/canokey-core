@@ -73,10 +73,10 @@ fn independent_transport_bits_and_failed_reads_guard_actual_select() {
             };
             let mut hardware = Hardware(nfc);
             let mut crypto = Hardware(false);
-            let mut p = Platform {
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut disk,
-                device: &mut hardware,
                 crypto: &mut crypto,
+                device: &mut hardware,
                 memory: &Hardware(false),
             };
             config::update(p.storage, config::FEATURES, flag).unwrap();
@@ -121,10 +121,10 @@ fn independent_transport_bits_and_failed_reads_guard_actual_select() {
                     && Selected::Ndef.enabled(&mut p)
             );
             disk.fail = true;
-            let mut p = Platform {
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut disk,
-                device: &mut hardware,
                 crypto: &mut crypto,
+                device: &mut hardware,
                 memory: &Hardware(false),
             };
             assert!(!Selected::Piv.enabled(&mut p) && !Selected::OpenPgp.enabled(&mut p));

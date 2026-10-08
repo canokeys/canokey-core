@@ -320,7 +320,11 @@ mod apdu {
             bytes.fill(0);
         }
     }
-    fn exchange(core: &mut Core, p: &mut Platform<'_>, bytes: &[u8]) -> Vec<u8> {
+    fn exchange(
+        core: &mut Core,
+        p: &mut Platform<'_, impl canokey_ports::Backends>,
+        bytes: &[u8],
+    ) -> Vec<u8> {
         let reply = core.receive(1, bytes, p);
         let mut out = [0; 258];
         let n = core.transmit(reply, &mut out, p).unwrap();
@@ -331,7 +335,7 @@ mod apdu {
         let mut records = Records(Disk::default());
         let mut crypto = UnusedCrypto;
         let mut device = DeviceStub;
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut records,
             crypto: &mut crypto,
             device: &mut device,
@@ -406,7 +410,7 @@ mod apdu {
         );
         p.storage.replace(Record::NdefMessage, &[0; 32]).unwrap();
         canokey_rust_core::applets::ndef::Applet::install(false, &mut p).unwrap();
-        assert_eq!(p.storage.size(Record::NdefMessage).unwrap(), 1024);
+        assert_eq!(Storage::size(p.storage, Record::NdefMessage).unwrap(), 1024);
         assert_eq!(
             exchange(&mut core, &mut p, &[0, 0xa4, 0, 12, 2, 0, 1]),
             [0x90, 0]
@@ -421,7 +425,7 @@ mod apdu {
         let mut records = Records(Disk::default());
         let mut crypto = UnusedCrypto;
         let mut device = DeviceStub;
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut records,
             crypto: &mut crypto,
             device: &mut device,

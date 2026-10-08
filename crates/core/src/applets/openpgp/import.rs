@@ -87,7 +87,7 @@ impl Import {
     }
     // Reparse the bounded prefix after each byte: false means incomplete,
     // not invalid. No private component has been consumed when this returns true.
-    fn header(&mut self, p: &mut Platform<'_>) -> Result<bool, Sw> {
+    fn header(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<bool, Sw> {
         let b = &self.prefix[..self.used];
         if b[0] != key_tag::IMPORT {
             return Err(Sw::WRONG_DATA);
@@ -194,7 +194,7 @@ impl Import {
         &mut self,
         bytes: &[u8],
         key: &mut [u8; crate::ports::key_layout::SIZE],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         for &byte in bytes {
             self.received += 1;

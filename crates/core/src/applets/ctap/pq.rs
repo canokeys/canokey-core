@@ -10,6 +10,7 @@ use crate::{
     },
     runtime::workspace::{Primitive, SessionWorkspace},
 };
+use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 use canokey_protocol::{cbor::Encoder, der::der_signature, response::StatusWord as Sw};
 pub(super) const PUBLIC_BYTES: usize = 1952;
 pub(super) const SIGNATURE_BYTES: usize = 3309;
@@ -61,7 +62,7 @@ impl Framing {
         }
     }
     #[inline(never)]
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.bytes);
         memory.wipe(&mut self.material);
         self.length = 0;
@@ -90,7 +91,7 @@ impl Stream<'_> {
     fn transfer(
         plan: Pending,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         if plan.output + plan.auth > FRAMING_BYTES {
             return Err(Status::Other);
@@ -133,7 +134,7 @@ impl Stream<'_> {
     pub fn prepare(
         plan: Pending,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         Self::transfer(plan, w, p)?;
         let mut stream = w.ctap_stream().unwrap();
@@ -144,7 +145,11 @@ impl Stream<'_> {
         }
         result.map(|()| stream.len())
     }
-    fn init(&mut self, op: Op, p: &mut Platform<'_>) -> Result<usize, Status> {
+    fn init(
+        &mut self,
+        op: Op,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Status> {
         p.device.keepalive(false);
         p.crypto
             .stream(
@@ -156,7 +161,11 @@ impl Stream<'_> {
             )
             .map_err(|_| Status::Other)
     }
-    fn initialize(&mut self, plan: Pending, p: &mut Platform<'_>) -> Result<(), Status> {
+    fn initialize(
+        &mut self,
+        plan: Pending,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
         match plan.mode {
             Mode::Make => self.initialize_make(plan, p)?,
             Mode::Assert => {
@@ -198,7 +207,11 @@ impl Stream<'_> {
     // Registration-only hash/signature temporaries must not remain live on
     // the ML-DSA assertion signing path.
     #[inline(never)]
-    fn initialize_make(&mut self, plan: Pending, p: &mut Platform<'_>) -> Result<(), Status> {
+    fn initialize_make(
+        &mut self,
+        plan: Pending,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
         if self.init(Op::PublicInit, p)? != PUBLIC_BYTES {
             return Err(Status::Other);
         }
@@ -225,7 +238,7 @@ impl Stream<'_> {
         &mut self,
         plan: Pending,
         hash: &mut HashState,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<[u8; 32], Status> {
         p.crypto
             .digest(Hash::Init, hash, &[], &mut [])
@@ -273,7 +286,12 @@ impl Stream<'_> {
         Ok(digest)
     }
     // PKE public generation is closed before the P-256 primitive runs.
-    fn attest(&mut self, at: usize, digest: &[u8; 32], p: &mut Platform<'_>) -> Result<(), Status> {
+    fn attest(
+        &mut self,
+        at: usize,
+        digest: &[u8; 32],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
         let mut key = [0; 32];
         let mut signature = [0; 73];
         let result = (|| {
@@ -304,7 +322,12 @@ impl Stream<'_> {
     pub fn len(&self) -> usize {
         self.framing.length + self.framing.generated_length + self.framing.certificate_length
     }
-    pub fn read(&mut self, offset: usize, out: &mut [u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn read(
+        &mut self,
+        offset: usize,
+        out: &mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         if offset != self.framing.emitted
             || !canokey_protocol::response::checked_window(offset, out.len(), self.len())
         {
@@ -362,7 +385,7 @@ impl Stream<'_> {
         self.framing.emitted += count;
         Ok(())
     }
-    pub fn close(&mut self, p: &mut Platform<'_>) {
+    pub fn close(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         let _ = p
             .crypto
             .stream(Op::Abort, alg::MLDSA65, self.crypto, &[], &mut []);

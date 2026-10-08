@@ -129,7 +129,7 @@ const MAX_STAGE_PARTS: usize = 8; // ck_platform_stage_parts ABI, core.h.
 // Writes/staging use different success conventions (count vs zero). Failed
 // mutations map to Uncertain: a backend error does not prove nothing was written,
 // so applets must invalidate cached state rather than retry from assumptions.
-native_port! { impl Storage for StorageBackend {
+impl Storage for StorageBackend {
     #[cfg(any(feature = "openpgp", feature = "piv"))]
     fn stage_parts(&mut self, parts: &[&[u8]]) -> Result<(), StorageError> {
         if parts.len() > MAX_STAGE_PARTS {
@@ -185,7 +185,12 @@ native_port! { impl Storage for StorageBackend {
     fn config_write(&mut self, bytes: &[u8; 512]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
         {
-            io_count(unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) }, Some(0), StorageError::Uncertain).map(|_| ())
+            io_count(
+                unsafe { platform_config_page_write(bytes.as_ptr(), bytes.len()) },
+                Some(0),
+                StorageError::Uncertain,
+            )
+            .map(|_| ())
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -195,7 +200,12 @@ native_port! { impl Storage for StorageBackend {
     }
     #[cfg(feature = "ndef")]
     fn resize(&mut self, record: Record, length: u32) -> Result<(), StorageError> {
-        io_count(unsafe { ck_platform_resize(record.id(), length) }, Some(0), StorageError::Uncertain).map(|_| ())
+        io_count(
+            unsafe { ck_platform_resize(record.id(), length) },
+            Some(0),
+            StorageError::Uncertain,
+        )
+        .map(|_| ())
     }
     #[cfg(feature = "platform-stage")]
     fn remove(&mut self, id: Record) -> Result<(), StorageError> {
@@ -250,7 +260,12 @@ native_port! { impl Storage for StorageBackend {
     fn size(&mut self, file: Record) -> Result<u32, StorageError> {
         #[cfg(feature = "storage")]
         {
-            io_count(unsafe { ck_platform_size(file.id()) }, None, StorageError::Unavailable).map(|n| n as u32)
+            io_count(
+                unsafe { ck_platform_size(file.id()) },
+                None,
+                StorageError::Unavailable,
+            )
+            .map(|n| n as u32)
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -266,11 +281,21 @@ native_port! { impl Storage for StorageBackend {
         feature = "ndef"
     ))]
     fn read_at(&mut self, file: Record, offset: u32, out: &mut [u8]) -> Result<(), StorageError> {
-        io_count(unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) }, Some(out.len()), StorageError::Unavailable).map(|_| ())
+        io_count(
+            unsafe { ck_platform_read_at(file.id(), offset, out.as_mut_ptr(), out.len()) },
+            Some(out.len()),
+            StorageError::Unavailable,
+        )
+        .map(|_| ())
     }
     #[cfg(feature = "storage")]
     fn replace_at(&mut self, file: Record, offset: u32, input: &[u8]) -> Result<(), StorageError> {
-        io_count(unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) }, Some(input.len()), StorageError::Uncertain).map(|_| ())
+        io_count(
+            unsafe { ck_platform_write_at(file.id(), offset, input.as_ptr(), input.len()) },
+            Some(input.len()),
+            StorageError::Uncertain,
+        )
+        .map(|_| ())
     }
     #[cfg(any(
         feature = "oath",
@@ -290,7 +315,11 @@ native_port! { impl Storage for StorageBackend {
     fn load(&mut self, file: Record, out: &mut [u8]) -> Result<usize, StorageError> {
         #[cfg(feature = "storage")]
         {
-            io_count(unsafe { ck_platform_read(file.id(), out.as_mut_ptr(), out.len()) }, None, StorageError::Unavailable)
+            io_count(
+                unsafe { ck_platform_read(file.id(), out.as_mut_ptr(), out.len()) },
+                None,
+                StorageError::Unavailable,
+            )
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -301,7 +330,12 @@ native_port! { impl Storage for StorageBackend {
     fn replace(&mut self, file: Record, input: &[u8]) -> Result<(), StorageError> {
         #[cfg(feature = "storage")]
         {
-            io_count(unsafe { ck_platform_write(file.id(), input.as_ptr(), input.len()) }, Some(input.len()), StorageError::Uncertain).map(|_| ())
+            io_count(
+                unsafe { ck_platform_write(file.id(), input.as_ptr(), input.len()) },
+                Some(input.len()),
+                StorageError::Uncertain,
+            )
+            .map(|_| ())
         }
         #[cfg(not(feature = "storage"))]
         {
@@ -309,6 +343,4 @@ native_port! { impl Storage for StorageBackend {
             Err(StorageError::Unavailable)
         }
     }
-}
-
 }

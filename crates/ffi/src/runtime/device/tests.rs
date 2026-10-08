@@ -154,10 +154,13 @@ pub(crate) mod hal {
 pub(crate) mod abi {
     pub(crate) mod core {
         use super::super::*;
-        pub(crate) unsafe fn ck_core_boot_flags(out: *mut u32) -> i32 {
+        pub(crate) fn boot_flags() -> Result<u32, canokey_ports::StorageError> {
             let b = board();
-            unsafe { out.write(b.flags) };
-            if b.scenario == 4 { -1 } else { 0 }
+            if b.scenario == 4 {
+                Err(canokey_ports::StorageError::Unavailable)
+            } else {
+                Ok(b.flags)
+            }
         }
         pub(crate) unsafe fn ck_core_install() -> i32 {
             let flags = {
@@ -170,14 +173,14 @@ pub(crate) mod abi {
             0
         }
         #[cfg(feature = "storage")]
-        pub(crate) unsafe fn ck_core_mark_initialized() -> i32 {
+        pub(crate) fn mark_initialized() -> Result<(), canokey_ports::StorageError> {
             let mut b = board();
             assert_eq!(b.formatted, 1);
             assert_eq!(b.installed, 1);
             #[cfg(feature = "nfc")]
             assert_eq!(b.configured, 1);
             b.marked += 1;
-            0
+            Ok(())
         }
     }
 }

@@ -5,6 +5,7 @@ use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
+use canokey_ports::{Crypto as _, Memory as _};
 use canokey_protocol::{apdu::Header, der::der_signature, response::StatusWord as Sw};
 
 const REGISTER: u8 = canokey_protocol::apdu::U2F_REGISTER;
@@ -35,7 +36,7 @@ impl Request {
         }
         self.length = self.length.saturating_add(bytes.len());
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.data);
         self.length = 0;
         self.header = Header {
@@ -52,7 +53,7 @@ impl Session {
         &mut self,
         request: &Request,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<Response, Sw> {
         self.assertion.remaining = 0;
         self.assertion.hmac.clear(p.memory);
@@ -69,7 +70,7 @@ impl Session {
         &mut self,
         r: &Request,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<Response, Sw> {
         if r.header.cla != 0 {
             return Err(Sw::CLA_NOT_SUPPORTED);

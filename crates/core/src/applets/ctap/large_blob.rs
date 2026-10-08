@@ -5,6 +5,7 @@ use crate::{
     ports::{DigestOperation, HashState, Platform, Record, StorageError},
     runtime::workspace::Workspace,
 };
+use canokey_ports::{Crypto as _, Storage as _};
 use canokey_protocol::cbor::{Encoder, Event};
 
 pub(super) const LIMIT: u16 = 4096;
@@ -72,7 +73,7 @@ impl Parser {
         self.decoder
             .consume(bytes, &mut |event, _| fields.event(event));
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.fields.params.bytes);
         memory.wipe(&mut self.fields.params.auth);
     }
@@ -221,7 +222,7 @@ impl Upload {
     }
 }
 impl Session {
-    pub(super) fn abort_blob(&mut self, p: &mut Platform<'_>) {
+    pub(super) fn abort_blob(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if self.upload.active {
             let _ = p
                 .crypto
@@ -235,7 +236,7 @@ impl Session {
         &mut self,
         params: &mut Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let result = self.large_blob_inner(params, w, p);
         // Offset validation precedes authentication and staging. Reject the
@@ -250,7 +251,7 @@ impl Session {
         &mut self,
         params: &mut Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let offset = usize::from(params.offset.unwrap());
         if let Some(get) = params.get {

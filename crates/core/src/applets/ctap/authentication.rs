@@ -6,6 +6,7 @@ use crate::{
     ports::{KeyOperation, Platform, alg},
     runtime::workspace::Workspace,
 };
+use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 // getNextAssertion continuation lifetime, in milliseconds.
 const ASSERTION_WINDOW_MS: u32 = 30_000;
 // Two 33-byte positive INTEGERs plus DER tags/lengths.
@@ -18,7 +19,7 @@ impl Session {
         &mut self,
         params: Option<&Parameters>,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let result = match params {
             Some(params) => self.credential_inner(params, w, p),
@@ -40,7 +41,7 @@ impl Session {
         &mut self,
         params: &Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         if params.make && params.algorithm.is_none() {
             return Err(Status::UnsupportedAlgorithm);
@@ -229,7 +230,11 @@ impl Session {
             &mut self.auth_response,
         )
     }
-    fn next_assertion(&mut self, w: &mut Workspace, p: &mut Platform<'_>) -> Result<usize, Status> {
+    fn next_assertion(
+        &mut self,
+        w: &mut Workspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Status> {
         if self.assertion.remaining == 0
             || p.device.now().wrapping_sub(self.assertion.started) > ASSERTION_WINDOW_MS
         {
@@ -255,7 +260,7 @@ impl Session {
         count: u8,
         details: bool,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let algorithm = credential::open(id, self.sm2, &self.assertion.rp, w.key, p)?;
         self.assertion.started = p.device.now();
@@ -288,7 +293,7 @@ impl Session {
     fn credential_presence(
         &mut self,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         self.selection(w, p).map(|_| ()).map_err(|error| {
             if error == Status::UserActionTimeout {
@@ -323,7 +328,7 @@ struct Signing<'a> {
 fn respond(
     request: &Signing<'_>,
     w: &mut Workspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     response: &mut Option<super::Response>,
 ) -> Result<usize, Status> {
     let counter = credential::counter(p)?;
@@ -538,7 +543,7 @@ fn respond(
 fn append_extensions(
     request: &Signing<'_>,
     w: &mut Workspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     mut auth_len: usize,
 ) -> Result<usize, Status> {
     let extensions = u64::from(request.protection.is_some())
@@ -605,7 +610,7 @@ fn append_extensions(
 fn respond_mldsa_assertion(
     request: &Signing<'_>,
     w: &mut Workspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     response: &mut Option<super::Response>,
     auth_len: usize,
 ) -> Result<usize, Status> {
@@ -668,7 +673,7 @@ fn respond_mldsa_assertion(
 fn respond_mldsa_make(
     request: &Signing<'_>,
     w: &mut Workspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     response: &mut Option<super::Response>,
     auth_prefix: usize,
 ) -> Result<usize, Status> {

@@ -15,16 +15,16 @@ const PIN: RecordPin = RecordPin {
     stored_min: MIN_LENGTH as u8,
     fixed_limit: Some(RETRIES),
 };
-pub fn change(pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn change(pin: &[u8], p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     PIN.change(pin, MIN_LENGTH, p)
 }
-pub fn install(p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn install(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     PIN.install(DEFAULT_PIN, RETRIES, p)
 }
-pub fn retries(p: &mut Platform<'_>) -> Result<u8, Error> {
+pub fn retries(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<u8, Error> {
     PIN.info(p).map(|info| info.retries_remaining)
 }
-pub fn verify(pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn verify(pin: &[u8], p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     // Preserve ADMIN's length error even when storage is unavailable or blocked.
     if !(MIN_LENGTH..=MAX_LENGTH).contains(&pin.len()) {
         return Err(Error::Length);
@@ -32,7 +32,7 @@ pub fn verify(pin: &[u8], p: &mut Platform<'_>) -> Result<(), Error> {
     PIN.verify(pin, MIN_LENGTH, Charge::OnMismatch, p)
 }
 /// Registry calls only after locked-PIN and strong-presence checks, with PIN last.
-pub fn factory_reset(p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn factory_reset(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     let result = crate::runtime::config::reset_admin(p.storage);
     crate::runtime::config::notify(p);
     result.map_err(|_| Error::Persistence)?;

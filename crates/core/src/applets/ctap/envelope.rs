@@ -78,7 +78,7 @@ impl Parser {
         }
         self.offset += bytes.len();
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.fields.params.message);
         memory.wipe(&mut self.fields.params.auth);
     }

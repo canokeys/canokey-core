@@ -2,7 +2,12 @@
 //! Touch-authorized static password and OATH credential output.
 use super::Error;
 use crate::{Platform, applets::pass::service::Pass};
-pub fn touch(pass: &Pass, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Error> {
+pub fn touch(
+    pass: &Pass,
+    index: u8,
+    out: &mut [u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<usize, Error> {
     #[cfg(feature = "oath")]
     if let crate::applets::pass::domain::Slot::Oath { id, enter, .. } =
         pass.slot(index).map_err(Error::Pass)?

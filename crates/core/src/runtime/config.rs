@@ -3,6 +3,7 @@
 //! The loader owns bytes 0..4. Never include them in the CRC or reset them.
 #![forbid(unsafe_code)]
 use crate::ports::{Storage, StorageError};
+use canokey_ports::Device as _;
 pub const INITIALIZED: u32 = 1;
 pub const NFC: u32 = 1 << 1;
 pub const LED: u32 = 1 << 2;
@@ -428,7 +429,7 @@ pub fn reset_admin(s: &mut (impl Storage + ?Sized)) -> Result<(), StorageError> 
 }
 
 /// Notification only touches disjoint device state after the page borrow ends.
-pub fn notify(p: &mut crate::Platform<'_>) {
+pub fn notify(p: &mut crate::Platform<'_, impl crate::ports::Backends>) {
     let flags = flags(p.storage).unwrap_or(0);
     p.device.configuration_changed(flags);
 }

@@ -3,4 +3,4 @@
 pub use canokey_ports::contracts::*;
 #[cfg(any(feature = "oath", feature = "piv"))]
 pub use canokey_ports::copy_to_stage;
-pub use canokey_ports::{CryptoPort, DevicePort, MemoryPort, Platform, StoragePort};
+pub use canokey_ports::{Backends, Platform};

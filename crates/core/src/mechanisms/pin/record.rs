@@ -2,6 +2,7 @@
 //! Length-delimited credential record shared by ADMIN and OpenPGP.
 use super::{Charge, Credential, Error};
 use crate::{Platform, ports::Record};
+use canokey_ports::{Memory as _, Storage as _};
 const PIN_CAPACITY: usize = 64;
 const FORMAT_VERSION: u8 = 1;
 const VERSION: usize = 0;
@@ -39,17 +40,21 @@ impl RecordPin {
         }
         Ok(())
     }
-    fn load(&self, b: &mut [u8; SIZE], p: &mut Platform<'_>) -> Result<(), Error> {
+    fn load(
+        &self,
+        b: &mut [u8; SIZE],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Error> {
         let n = p.storage.load(self.id, b).map_err(|_| Error::Persistence)?;
         if n < VALUE || n != VALUE + b[LENGTH] as usize {
             return Err(Error::Persistence);
         }
         self.valid(b)
     }
-    fn with_record<T>(
+    fn with_record<T, B: crate::ports::Backends>(
         &self,
-        p: &mut Platform<'_>,
-        f: impl FnOnce(&mut [u8; SIZE], &mut Platform<'_>) -> Result<T, Error>,
+        p: &mut Platform<'_, B>,
+        f: impl FnOnce(&mut [u8; SIZE], &mut Platform<'_, B>) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let mut b = [0; SIZE];
         let result = self.load(&mut b, p).and_then(|()| f(&mut b, p));
@@ -60,7 +65,7 @@ impl RecordPin {
         &self,
         value: &[u8],
         limit: u8,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         if !(self.stored_min as usize..=PIN_CAPACITY).contains(&value.len()) {
             return Err(Error::Length);
@@ -88,7 +93,7 @@ impl RecordPin {
         &self,
         default: &[u8],
         limit: u8,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         let mut b = [0; SIZE];
         let result = crate::mechanisms::storage::load_or_else(
@@ -108,7 +113,10 @@ impl RecordPin {
         p.memory.wipe(&mut b);
         result
     }
-    pub(crate) fn info(&self, p: &mut Platform<'_>) -> Result<PinInfo, Error> {
+    pub(crate) fn info(
+        &self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<PinInfo, Error> {
         self.with_record(p, |b, _| {
             Ok(PinInfo {
                 length_bytes: b[LENGTH] as usize,
@@ -122,7 +130,7 @@ impl RecordPin {
         input: &[u8],
         min: usize,
         charge: Charge,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         self.with_record(p, |b, p| {
             // OpenPGP checks blocking before input length; ADMIN prechecks length.
@@ -154,7 +162,7 @@ impl RecordPin {
         &self,
         value: &[u8],
         min: usize,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         if !(min..=PIN_CAPACITY).contains(&value.len()) {
             return Err(Error::Length);
@@ -163,7 +171,11 @@ impl RecordPin {
         self.create(value, limit, p)
     }
     #[cfg(feature = "openpgp")]
-    pub(crate) fn retry_limit(&self, limit: u8, p: &mut Platform<'_>) -> Result<(), Error> {
+    pub(crate) fn retry_limit(
+        &self,
+        limit: u8,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Error> {
         if limit == 0 || self.fixed_limit.is_some_and(|n| n != limit) {
             return Err(Error::Persistence);
         }

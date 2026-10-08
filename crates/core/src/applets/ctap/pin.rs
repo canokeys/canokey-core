@@ -13,6 +13,7 @@ use crate::{
     ports::{KeyOperation, Platform, Record, alg},
     runtime::workspace::Workspace,
 };
+use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 
 // PIN hash, retries, code-point count, minimum length, flags/RP count,
 // followed by at most four RP hashes. One atomic record; no padding or prefix.
@@ -31,7 +32,10 @@ pub(super) const PERMISSION_LARGE_BLOB_WRITE: u8 = 0x10;
 pub(super) const PERMISSION_CONFIG: u8 = 0x20;
 /// Fill a caller-owned PIN record without returning a second array copy.
 /// A failed read/validation wipes even partially supplied backend data.
-pub(super) fn load(p: &mut Platform<'_>, record: &mut [u8; RECORD_BYTES]) -> Result<(), Status> {
+pub(super) fn load(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    record: &mut [u8; RECORD_BYTES],
+) -> Result<(), Status> {
     record.fill(0);
     let result = crate::mechanisms::storage::load_or_else(
         p,
@@ -72,7 +76,7 @@ pub(super) struct Policy {
     pub flags: u8,
 }
 #[inline(never)]
-pub(super) fn policy(p: &mut Platform<'_>) -> Result<Policy, Status> {
+pub(super) fn policy(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<Policy, Status> {
     let mut record = [0; RECORD_BYTES];
     load(p, &mut record)?;
     let policy = Policy {
@@ -84,7 +88,10 @@ pub(super) fn policy(p: &mut Platform<'_>) -> Result<Policy, Status> {
     p.memory.wipe(&mut record);
     Ok(policy)
 }
-pub(super) fn save(record: &[u8; RECORD_BYTES], p: &mut Platform<'_>) -> Result<(), Status> {
+pub(super) fn save(
+    record: &[u8; RECORD_BYTES],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), Status> {
     let n = RP_HASHES + usize::from(record[FLAGS] >> RP_HASH_COUNT_SHIFT) * 32;
     p.storage
         .replace(Record::CtapPin, &record[..n])
@@ -94,7 +101,7 @@ pub(super) fn decrypt(
     protocol: u8,
     key: &[u8; 32],
     bytes: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     if protocol == wire::V2 && bytes.len() < wire::AES_BLOCK_BYTES {
         return Err(Status::InvalidLength);
@@ -121,7 +128,7 @@ impl Session {
     pub(super) fn agreement_key(
         &mut self,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         if !self.agreement_ready {
             p.crypto
@@ -140,7 +147,7 @@ impl Session {
         agreement: &[u8; 64],
         shared: &mut [u8; 64],
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         // ECDH validates the peer point in the primitive backend. Generating
         // our private key does not require exporting a public response first.
@@ -193,7 +200,7 @@ impl Session {
     pub(super) fn retries(
         &mut self,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         w.output[..4].copy_from_slice(&[0, 0xa1, wire::RESPONSE_RETRIES, policy(p)?.retries]);
         Ok(4)
@@ -203,7 +210,7 @@ impl Session {
         &mut self,
         cp: &mut Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let mut shared = [0; 64];
         let mut record = [0; RECORD_BYTES];
@@ -368,7 +375,7 @@ impl Session {
         message: &[u8],
         permission: u8,
         rp: Option<&[u8; 32]>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         self.expire_token(p.device.now(), p.memory);
         if self.pin_attempts == 0 {
@@ -385,7 +392,7 @@ impl Session {
         self.token_used = p.device.now();
         Ok(())
     }
-    pub(super) fn expire_token(&mut self, now: u32, memory: &crate::ports::MemoryPort<'_>) {
+    pub(super) fn expire_token(&mut self, now: u32, memory: &(impl crate::ports::Memory + ?Sized)) {
         // Match C: 30 seconds without successful authentication, at most ten
         // minutes from issuance. Unauthenticated requests never refresh either.
         if self.permissions != 0
@@ -395,7 +402,7 @@ impl Session {
             self.clear_token(memory);
         }
     }
-    pub(super) fn clear_token(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(super) fn clear_token(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.token);
         self.permissions = 0;
         memory.wipe(&mut self.rp_binding);

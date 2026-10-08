@@ -109,7 +109,7 @@ impl Memory for Backend {
     }
 }
 fn rejected(store: &mut Store, status: Sw) {
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: store,
         crypto: &mut Backend,
         device: &mut Backend,
@@ -267,7 +267,7 @@ fn stream_validation_and_pin_precede_touch_and_one_use_grant() {
     };
     macro_rules! platform {
         () => {
-            Platform {
+            Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut store,
                 crypto: &mut crypto,
                 device: &mut device,
@@ -356,7 +356,7 @@ fn classic_unauthorized_signature_does_not_consume_touch() {
         p1: 0x11,
         p2: 0x9a,
     };
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut store,
         crypto: &mut crypto,
         device: &mut device,
@@ -376,7 +376,7 @@ fn classic_unauthorized_signature_does_not_consume_touch() {
 #[test]
 fn classic_begin_preserves_only_sm2_continuation_and_reset_erases_it() {
     let mut store = Store::key(alg::SM2);
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut store,
         crypto: &mut Backend,
         device: &mut Backend,

@@ -2,8 +2,12 @@
 //! Boot validation is distinct from command-time validation and reader power.
 use super::{Session, Status, provision, settings::Sm2};
 use crate::ports::{Platform, Record, StorageError};
+use canokey_ports::{Memory as _, Storage as _};
 
-fn size(record: Record, p: &mut Platform<'_>) -> Result<Option<u32>, Status> {
+fn size(
+    record: Record,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<Option<u32>, Status> {
     match p.storage.size(record) {
         Ok(n) => Ok(Some(n)),
         Err(StorageError::Missing) => Ok(None),
@@ -12,7 +16,10 @@ fn size(record: Record, p: &mut Platform<'_>) -> Result<Option<u32>, Status> {
 }
 
 impl Session {
-    pub(super) fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Status> {
+    pub(super) fn install(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
         let key_size = size(Record::CtapAttestationKey, p)?;
         let certificate = size(Record::CtapCertificate, p)?;
         let mut rebuild = key_size != Some(32)

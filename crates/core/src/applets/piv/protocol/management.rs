@@ -9,7 +9,7 @@ impl Piv {
         h: Header,
         f: &[Option<&[u8]>; ga_field::COUNT],
         out: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         // P2 already selected the management key. P1=00 uses its default
         // algorithm; P1=0A explicitly requests the supported AES-192 key.

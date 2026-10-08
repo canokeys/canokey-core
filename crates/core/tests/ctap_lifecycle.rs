@@ -91,7 +91,7 @@ fn run(core: &mut Core, request: &[u8], device: &mut DeviceState, storage: &mut 
     let mut parser = Request::new();
     parser.consume(request);
     let mut crypto = support::Backend::default();
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         device,
         storage,
         crypto: &mut crypto,
@@ -127,7 +127,7 @@ fn reset_is_power_on_gated_and_never_erases_before_presence() {
     device.time = 10_001;
     assert_eq!(run(&mut core, &[7], &mut device, &mut store), 0x30);
     assert_eq!(device.step, 0);
-    core.reset(&mut Platform {
+    core.reset(&mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut store,
         device: &mut device,
         crypto: &mut support::Backend::default(),
@@ -227,7 +227,7 @@ fn credential_scan_errors_do_not_publish_or_cache_capacity() {
         Ok(1), // corrupt resident record, not an empty slot
         Err(StorageError::Missing),
     ] {
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut ScanStore(result),
             crypto: &mut support::Backend::default(),
             device: &mut support::Backend::default(),

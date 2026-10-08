@@ -142,11 +142,15 @@ struct Card {
 impl Card {
     fn with<T>(
         &mut self,
-        f: impl FnOnce(&mut OpenPgp, &mut Workspace, &mut Platform<'_>) -> T,
+        f: impl FnOnce(
+            &mut OpenPgp,
+            &mut Workspace,
+            &mut Platform<'_, canokey_ports::BackendTypes<Disk, Services, Services, Services>>,
+        ) -> T,
     ) -> T {
         let mut crypto = Services;
         let mut device = Services;
-        let mut platform = Platform {
+        let mut platform = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut self.disk,
             crypto: &mut crypto,
             device: &mut device,

@@ -5,20 +5,36 @@ use crate::ports::StreamOperation;
 use crate::ports::alg;
 use crate::runtime::workspace::SessionWorkspace;
 
-fn abort_stream(a: u8, s: &mut crate::ports::CryptoScratch, p: &mut Platform<'_>) {
+fn abort_stream(
+    a: u8,
+    s: &mut crate::ports::CryptoScratch,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) {
     let _ = p.crypto.stream(StreamOperation::Abort, a, s, &[], &mut []);
     p.memory.wipe(&mut s.bytes);
 }
 
 impl Piv {
-    pub fn select(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub fn select(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         self.select_classic(&mut w.classic_with(p.memory), p)
     }
-    pub fn reset(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    pub fn reset(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         self.close(w, p);
         self.reset_classic(&mut w.classic_with(p.memory), p);
     }
-    pub fn cancel(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    pub fn cancel(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         if matches!(self.request, Request::None) {
             return;
         }
@@ -37,7 +53,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if h.ins == INS_GENERAL_AUTHENTICATE && h.p2 != reference::MANAGEMENT {
             let a = if h.p1 == wire_alg::ED25519_STREAM && self.config[0] != 0 {
@@ -94,7 +110,7 @@ impl Piv {
         &mut self,
         b: &[u8],
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if let Request::Stream(a) = self.request {
             let SessionWorkspace::Stream(s) = w else {
@@ -168,7 +184,7 @@ impl Piv {
         h: Header,
         le: u32,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         // ATTEST F9 uses P1 as the subject key slot, unlike GA which uses P2.
         // P2 is reserved (00); the signer is always the attestation identity.
@@ -251,7 +267,7 @@ impl Piv {
         metadata: bool,
         generated_algorithm: Option<u8>,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         let mut m = [0; repo::META];
         let (a, n) = if let Some(a) = generated_algorithm {
@@ -290,7 +306,7 @@ impl Piv {
         offset: usize,
         out: &mut [u8],
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         if let SessionWorkspace::Attestation(a) = w {
             return a.read(offset, out, p);
@@ -334,19 +350,31 @@ impl Piv {
     }
     /// Release native/staged resources before the registry erases the active
     /// workspace and drops this applet. No classic workspace is constructed.
-    pub(crate) fn deselect(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    pub(crate) fn deselect(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         if matches!(self.request, Request::Put) {
             p.storage.stage_abort();
         }
         self.auth_clear(p);
         self.close_external(w, p);
     }
-    pub fn close(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) {
+    pub fn close(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         if !self.close_external(w, p) {
             self.close_classic(&mut w.classic_with(p.memory), p);
         }
     }
-    fn close_external(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> bool {
+    fn close_external(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> bool {
         self.abort_generation(p);
         if let SessionWorkspace::Attestation(a) = w {
             a.close(p);

@@ -63,7 +63,7 @@ pub(crate) fn append_bounded(
 pub(crate) fn get_challenge(
     le: u32,
     out: &mut [u8],
-    crypto: &mut crate::ports::CryptoPort<'_>,
+    crypto: &mut (impl crate::ports::Crypto + ?Sized),
 ) -> Result<u32, canokey_protocol::response::StatusWord> {
     use canokey_protocol::{apdu::SHORT_DATA_BYTES, response::StatusWord as Sw};
     if le == 0 || le > SHORT_DATA_BYTES as u32 {
@@ -84,7 +84,7 @@ pub(crate) fn write_serial(out: &mut [u8], serial: impl FnOnce(&mut [u8; 4])) ->
 
 #[cfg(any(feature = "admin", feature = "oath"))]
 pub(crate) fn close_response(
-    memory: &crate::ports::MemoryPort<'_>,
+    memory: &(impl crate::ports::Memory + ?Sized),
     response: &mut [u8],
     length: &mut usize,
 ) {

@@ -135,30 +135,17 @@ pub extern "C" fn ck_core_keyboard_usage(ch: u8) -> i32 {
 // Native HID uses the same registry, authorization state and workspace as APDU.
 #[cfg(feature = "ctap")]
 pub(crate) fn with_core<T>(
-    run: impl FnOnce(&mut Core, &mut canokey_rust_core::Platform<'_>) -> T,
+    run: impl FnOnce(&mut Core, &mut crate::platform::BoundPlatform<'_>) -> T,
 ) -> T {
     with_platform(|p| unsafe { run(core(), p) })
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_core_boot_flags(out: *mut u32) -> i32 {
-    if out.is_null() {
-        return -1;
-    }
-    with_platform(
-        |p| match canokey_rust_core::runtime::config::flags(p.storage) {
-            Ok(flags) => {
-                unsafe { *out = flags };
-                0
-            }
-            Err(_) => -1,
-        },
-    )
+#[cfg(all(feature = "device-runtime", not(test)))]
+pub(crate) fn boot_flags() -> Result<u32, canokey_ports::StorageError> {
+    with_platform(|p| canokey_rust_core::runtime::config::flags(p.storage))
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_core_mark_initialized() -> i32 {
+#[cfg(all(feature = "device-runtime", feature = "storage", not(test)))]
+pub(crate) fn mark_initialized() -> Result<(), canokey_ports::StorageError> {
     use canokey_rust_core::runtime::config;
-    with_platform(|p| {
-        config::update(p.storage, config::INITIALIZED, config::INITIALIZED).map_or(-1, |_| 0)
-    })
+    with_platform(|p| config::update(p.storage, config::INITIALIZED, config::INITIALIZED))
 }

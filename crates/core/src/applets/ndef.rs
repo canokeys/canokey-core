@@ -27,7 +27,9 @@ pub(crate) enum ConfigurationError {
     Persistence,
 }
 #[cfg(feature = "admin")]
-pub(crate) fn reset_persistent(p: &mut crate::Platform<'_>) -> Result<(), ConfigurationError> {
+pub(crate) fn reset_persistent(
+    p: &mut crate::Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), ConfigurationError> {
     Ndef::new()
         .install(true, p.storage)
         .map_err(|_| ConfigurationError::Persistence)
@@ -35,7 +37,7 @@ pub(crate) fn reset_persistent(p: &mut crate::Platform<'_>) -> Result<(), Config
 #[cfg(feature = "admin")]
 pub(crate) fn configure_read_only(
     value: u8,
-    p: &mut crate::Platform<'_>,
+    p: &mut crate::Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), ConfigurationError> {
     if value > 1 {
         return Err(ConfigurationError::Value);
@@ -45,7 +47,9 @@ pub(crate) fn configure_read_only(
         .map_err(|_| ConfigurationError::Persistence)
 }
 #[cfg(feature = "admin")]
-pub(crate) fn configured_read_only(p: &mut crate::Platform<'_>) -> bool {
+pub(crate) fn configured_read_only(
+    p: &mut crate::Platform<'_, impl crate::ports::Backends>,
+) -> bool {
     Ndef::new().read_only(p.storage)
 }
 /// The platform adapter exposes only byte-file operations. Offset arithmetic,
@@ -331,7 +335,10 @@ impl Applet {
             response_length: 0,
         }
     }
-    pub fn install(reset: bool, p: &mut crate::Platform<'_>) -> Result<(), Sw> {
+    pub fn install(
+        reset: bool,
+        p: &mut crate::Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         Ndef::new().install(reset, p.storage)
     }
     pub fn cancel(&mut self) {
@@ -353,7 +360,11 @@ impl Applet {
             .ok_or(Sw::WRONG_LENGTH)?;
         Ok(())
     }
-    pub fn end_frame(&mut self, last: bool, p: &mut crate::Platform<'_>) -> Result<(), Sw> {
+    pub fn end_frame(
+        &mut self,
+        last: bool,
+        p: &mut crate::Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         if self.header.ins == INS_UPDATE_BINARY {
             let offset = u16::from_be_bytes([self.header.p1, self.header.p2]) as usize;
             let result = self
@@ -366,7 +377,11 @@ impl Applet {
             Ok(())
         }
     }
-    pub fn finish(&mut self, le: u32, p: &mut crate::Platform<'_>) -> Result<(u32, Sw), Sw> {
+    pub fn finish(
+        &mut self,
+        le: u32,
+        p: &mut crate::Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(u32, Sw), Sw> {
         match self.header.ins {
             INS_SELECT => {
                 self.file
@@ -388,7 +403,7 @@ impl Applet {
         &mut self,
         offset: usize,
         out: &mut [u8],
-        p: &mut crate::Platform<'_>,
+        p: &mut crate::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         if !canokey_protocol::response::checked_window(offset, out.len(), self.response_length) {
             return Err(Sw::WRONG_LENGTH);

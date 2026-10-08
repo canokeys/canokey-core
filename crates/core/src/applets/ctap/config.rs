@@ -3,6 +3,7 @@
 use super::wire::config as wire;
 use super::{Session, Status, envelope::Parameters, pin};
 use crate::{ports::Platform, runtime::workspace::Workspace};
+use canokey_ports::{Crypto as _, Memory as _};
 
 impl Session {
     #[inline(never)]
@@ -10,7 +11,7 @@ impl Session {
         &mut self,
         params: &Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let mut record = [0; pin::RECORD_BYTES];
         pin::load(p, &mut record)?;

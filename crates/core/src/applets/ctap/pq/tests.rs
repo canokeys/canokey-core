@@ -158,11 +158,11 @@ fn platform<'a>(
     device: &'a mut Backend,
     memory: &'a Backend,
 ) -> Platform<'a> {
-    Platform {
-        storage,
-        crypto,
-        device,
-        memory,
+    Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+        storage: storage,
+        crypto: crypto,
+        device: device,
+        memory: memory,
     }
 }
 fn plan(mode: Mode) -> Pending {

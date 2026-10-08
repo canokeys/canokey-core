@@ -33,7 +33,7 @@ pub struct Workspace<'a> {
 }
 impl Workspace<'_> {
     #[cfg_attr(not(crypto_applet), expect(dead_code))]
-    pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         clear_classic(
             self.key,
             self.input,
@@ -59,7 +59,7 @@ impl Classic {
             input: [0; INPUT_BYTES],
         }
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         clear_classic(
             &mut self.key,
             &mut self.input,
@@ -73,7 +73,7 @@ fn clear_classic(
     key: &mut KeyMaterial,
     input: &mut [u8; INPUT_BYTES],
     #[cfg(feature = "piv")] agreement: &mut [u8; agreement_layout::SIZE],
-    memory: &crate::ports::MemoryPort<'_>,
+    memory: &(impl crate::ports::Memory + ?Sized),
 ) {
     #[cfg(feature = "piv")]
     memory.wipe(agreement);
@@ -85,7 +85,7 @@ fn clear_classic(
 macro_rules! workspace_view {
     ($(#[$attr:meta])* $with:ident, $plain:ident, $variant:ident, $ty:ty, $reuse:expr) => {
         $(#[$attr])*
-        pub fn $with(&mut self, memory: &crate::ports::MemoryPort<'_>) -> &mut $ty {
+        pub fn $with(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) -> &mut $ty {
             if !$reuse || !matches!(self, Self::$variant(_)) {
                 self.wipe_active(memory);
                 *self = Self::$variant(<$ty>::new());
@@ -124,7 +124,7 @@ impl Working {
             output: [0; OUTPUT_BYTES],
         }
     }
-    fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         match &mut self.primitive {
             Primitive::Classic(c) => c.clear(memory),
             #[cfg(feature = "ctap")]
@@ -157,7 +157,7 @@ impl SessionWorkspace {
     pub const fn new() -> Self {
         Self::Working(Working::new())
     }
-    pub(crate) fn wipe_active(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn wipe_active(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         match self {
             Self::Working(w) => w.clear(memory),
             #[cfg(feature = "ctap")]
@@ -173,7 +173,7 @@ impl SessionWorkspace {
         }
     }
     #[inline(never)]
-    pub fn classic_with(&mut self, memory: &crate::ports::MemoryPort<'_>) -> Workspace<'_> {
+    pub fn classic_with(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) -> Workspace<'_> {
         if !matches!(
             self,
             Self::Working(Working {

@@ -179,7 +179,7 @@ fn pin_read_failures_never_advertise_unconfigured_state_or_reset_retries() {
         (Ok(20), 6, false),
     ] {
         let mut store = PinStore { result, retries };
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut store,
             crypto: &mut support::Backend::default(),
             device: &mut support::Backend::default(),

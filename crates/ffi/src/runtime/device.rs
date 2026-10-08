@@ -95,8 +95,9 @@ enum Stop {
 unsafe fn run() -> Stop {
     unsafe {
         ck_board_prepare();
-        let mut flags = config::DEFAULT_FLAGS | config::INITIALIZED;
-        let readable = abi::core::ck_core_boot_flags(&mut flags) == 0;
+        let stored_flags = abi::core::boot_flags();
+        let readable = stored_flags.is_ok();
+        let flags = stored_flags.unwrap_or(config::DEFAULT_FLAGS | config::INITIALIZED);
         #[cfg(feature = "nfc")]
         let nfc_mode = readable && flags & config::NFC != 0 && ck_board_mode_pin() != 0;
         #[cfg(not(feature = "nfc"))]
@@ -136,7 +137,7 @@ unsafe fn run() -> Stop {
         }
         #[cfg(feature = "storage")]
         if flags & config::INITIALIZED == 0 {
-            if abi::core::ck_core_mark_initialized() != 0 {
+            if abi::core::mark_initialized().is_err() {
                 return Stop::Blink(10, 1000);
             }
             // Match product first-boot acknowledgement. Power-cycle reloads

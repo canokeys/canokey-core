@@ -9,6 +9,7 @@ use crate::{
     Platform,
     ports::{Record, StorageError},
 };
+use canokey_ports::Storage as _;
 // Byte offsets shared by the fixed disk record and the RAM view.
 // *_END values are exclusive. NAME/LOGIN/LANGUAGE/SEX/URL point to a one-byte
 // length followed by a fixed-capacity value; *_MAX excludes that length byte.
@@ -77,7 +78,10 @@ const FIELDS: [(u16, usize, usize); 5] = [
     (tag::SEX, state_layout::SEX, 1),
     (tag::URL, state_layout::URL, state_layout::URL_MAX),
 ];
-pub fn state(p: &mut Platform<'_>, b: &mut [u8; STATE_LEN]) -> Result<(), Error> {
+pub fn state(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    b: &mut [u8; STATE_LEN],
+) -> Result<(), Error> {
     let n = p.storage.load(Record::PgpState, b).map_err(io)?;
     validate_state(b, n)
 }
@@ -97,12 +101,18 @@ fn validate_state(b: &mut [u8; STATE_LEN], n: usize) -> Result<(), Error> {
     b[state_layout::USED_END..].fill(0);
     Ok(())
 }
-pub fn save_state(p: &mut Platform<'_>, b: &[u8; STATE_LEN]) -> Result<(), Error> {
+pub fn save_state(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    b: &[u8; STATE_LEN],
+) -> Result<(), Error> {
     p.storage
         .replace(Record::PgpState, &b[..state_layout::USED_END])
         .map_err(io)
 }
-pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> {
+pub fn meta(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    role: usize,
+) -> Result<[u8; META_LEN], Error> {
     // Check the leading discriminator before interpreting a metadata footer.
     // Never read private components merely to access hot metadata.
     let n = p.storage.size(KEYS[role]).map_err(io)?;
@@ -132,7 +142,11 @@ pub fn meta(p: &mut Platform<'_>, role: usize) -> Result<[u8; META_LEN], Error> 
     }
     Ok(b)
 }
-pub fn put_meta(p: &mut Platform<'_>, role: usize, b: &[u8; META_LEN]) -> Result<(), Error> {
+pub fn put_meta(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    role: usize,
+    b: &[u8; META_LEN],
+) -> Result<(), Error> {
     let a = Algorithm(b[key_meta::ALGORITHM]);
     let material = if b[key_meta::ORIGIN] == key_meta::ORIGIN_ABSENT {
         0
@@ -143,13 +157,17 @@ pub fn put_meta(p: &mut Platform<'_>, role: usize, b: &[u8; META_LEN]) -> Result
         .replace_at(KEYS[role], (1 + material) as u32, b)
         .map_err(io)
 }
-pub fn empty_key(p: &mut Platform<'_>, role: usize, m: &[u8; META_LEN]) -> Result<(), Error> {
+pub fn empty_key(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+    role: usize,
+    m: &[u8; META_LEN],
+) -> Result<(), Error> {
     let mut record = [FORMAT_VERSION; 1 + META_LEN];
     record[1..].copy_from_slice(m);
     p.storage.replace(KEYS[role], &record).map_err(io)
 }
 pub fn load_key(
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     role: usize,
     b: &mut [u8; crate::ports::key_layout::SIZE],
 ) -> Result<Algorithm, Error> {
@@ -170,7 +188,7 @@ pub fn load_key(
     Ok(a)
 }
 pub fn save_key(
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
     role: usize,
     origin: u8,
     b: &[u8; crate::ports::key_layout::SIZE],
@@ -192,7 +210,7 @@ pub fn save_key(
     )
     .map_err(io)
 }
-pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn reset(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     let mut s = [0; STATE_LEN];
     s[state_layout::VERSION] = FORMAT_VERSION;
     s[state_layout::TERMINATED] = 1;
@@ -212,7 +230,7 @@ pub fn reset(p: &mut Platform<'_>) -> Result<(), Error> {
     s[state_layout::TERMINATED] = 0;
     save_state(p, &s)
 }
-pub fn install(p: &mut Platform<'_>) -> Result<(), Error> {
+pub fn install(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Error> {
     let mut s = [0; STATE_LEN];
     crate::mechanisms::storage::load_or_else(
         p,
@@ -224,7 +242,7 @@ pub fn install(p: &mut Platform<'_>) -> Result<(), Error> {
     )
 }
 
-pub fn terminated(p: &mut Platform<'_>) -> Result<bool, Error> {
+pub fn terminated(p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<bool, Error> {
     let mut bytes = [0; 2];
     p.storage
         .read_at(Record::PgpState, 0, &mut bytes)

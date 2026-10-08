@@ -2,9 +2,13 @@
 //! Shared record checks; callers retain their self-attestation and error policy.
 use super::{Status, provision};
 use crate::ports::{Platform, Record, StorageError};
+use canokey_ports::Storage as _;
 
 #[inline(never)]
-pub(super) fn key(out: &mut [u8; 32], p: &mut Platform<'_>) -> Result<(), StorageError> {
+pub(super) fn key(
+    out: &mut [u8; 32],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<(), StorageError> {
     match p.storage.load(Record::CtapAttestationKey, out) {
         Ok(32) => Ok(()),
         Ok(_) => Err(StorageError::Unavailable),
@@ -13,7 +17,9 @@ pub(super) fn key(out: &mut [u8; 32], p: &mut Platform<'_>) -> Result<(), Storag
 }
 
 #[inline(never)]
-pub(super) fn certificate(p: &mut Platform<'_>) -> Result<usize, Status> {
+pub(super) fn certificate(
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<usize, Status> {
     let length = p
         .storage
         .size(Record::CtapCertificate)

@@ -10,6 +10,8 @@ use crate::applets::ctap;
 use crate::applets::pass::service::Pass;
 #[cfg(feature = "piv")]
 use crate::applets::piv::Piv;
+#[cfg(any(feature = "openpgp", feature = "piv"))]
+use canokey_ports::Device as _;
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw};
 
 #[cfg(any(feature = "admin", feature = "oath"))]
@@ -96,7 +98,7 @@ impl AppletState {
 }
 
 impl Selected {
-    fn enabled(self, p: &mut Platform<'_>) -> bool {
+    fn enabled(self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
         use super::config;
         let mask = match self {
             #[cfg(feature = "ndef")]
@@ -261,7 +263,11 @@ impl Registry {
     #[cfg(feature = "ctap")]
     // Drop parser-construction temporaries before the HID caller runs crypto.
     #[inline(never)]
-    pub fn begin_hid_request(&mut self, message_length: Option<usize>, p: &mut Platform<'_>) {
+    pub fn begin_hid_request(
+        &mut self,
+        message_length: Option<usize>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) {
         use super::workspace::SessionWorkspace;
         self.ctap.close(&mut self.workspace, p);
         self.workspace.wipe_active(p.memory);
@@ -283,14 +289,17 @@ impl Registry {
     }
     #[cfg(feature = "ctap")]
     #[inline(never)]
-    pub fn finish_hid_request(&mut self, p: &mut Platform<'_>) -> usize {
+    pub fn finish_hid_request(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> usize {
         self.ctap.finish_hid(&mut self.workspace, p)
     }
     #[cfg(feature = "ctap")]
     pub fn execute_ctap(
         &mut self,
         command: Result<ctap::Command, ctap::Status>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> usize {
         let mut command = command;
         self.ctap.execute(&mut command, &mut self.workspace, p)
@@ -299,7 +308,7 @@ impl Registry {
     pub fn execute_ctap_message(
         &mut self,
         command: ctap::message::Message,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> usize {
         self.ctap
             .execute_message(&mut { command }, &mut self.workspace, p)
@@ -309,33 +318,42 @@ impl Registry {
         &mut self,
         offset: usize,
         out: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.ctap.read(offset, out, &mut self.workspace, p)
     }
     #[cfg(feature = "ctap")]
-    pub fn resume_ctap(&mut self, p: &mut Platform<'_>) {
+    pub fn resume_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if !self.ctap.pending_message() {
             self.close_ctap(p);
         }
     }
     #[cfg(feature = "ctap")]
-    pub fn complete_ctap(&mut self, p: &mut Platform<'_>) {
+    pub fn complete_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if !self.ctap.complete_message() {
             self.close_ctap(p);
         }
     }
     #[cfg(feature = "ctap")]
-    pub fn continue_ctap_message(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Option<usize> {
+    pub fn continue_ctap_message(
+        &mut self,
+        bytes: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Option<usize> {
         self.ctap.continue_message(bytes, &mut self.workspace, p)
     }
     #[cfg(feature = "ctap")]
-    pub fn close_ctap(&mut self, p: &mut Platform<'_>) {
+    pub fn close_ctap(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.ctap.close(&mut self.workspace, p);
         self.workspace.classic_with(p.memory).clear(p.memory);
     }
     #[cfg(feature = "pass")]
-    pub fn touch(&self, index: u8, out: &mut [u8], p: &mut Platform<'_>) -> Result<usize, Sw> {
+    pub fn touch(
+        &self,
+        index: u8,
+        out: &mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<usize, Sw> {
         if !super::config::enabled(p.storage, super::config::PASS) {
             return Ok(0);
         }
@@ -349,7 +367,7 @@ impl Registry {
         index: u8,
         input: &[u8],
         out: &mut [u8; 20],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.pass
             .challenge(index, input, out, p)
@@ -373,22 +391,33 @@ fn implicit_fido(h: Header) -> bool {
 }
 impl Router for Registry {
     #[allow(unused_variables)]
-    fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn install(
+        &mut self,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.view().install(platform)
     }
-    fn reset(&mut self, p: &mut Platform<'_>) {
+    fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.view().reset(p)
     }
-    fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
+    fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
         self.view().slot_power(p)
     }
-    fn implicit_select(&mut self, header: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn implicit_select(
+        &mut self,
+        header: Header,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.view().implicit_select(header, p)
     }
     fn selected(&self) -> bool {
         !matches!(self.applet, AppletState::None)
     }
-    fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
+    fn select(
+        &mut self,
+        aid: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         self.view().select(aid, p)
     }
     fn allows_extended(&self, header: Header) -> bool {
@@ -432,7 +461,7 @@ impl Router for Registry {
         }
     }
     #[allow(unused_variables)]
-    fn abort_command(&mut self, platform: &mut Platform<'_>) {
+    fn abort_command(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         self.view().abort_command(platform)
     }
     fn chain_header(&self, header: Header) -> Header {
@@ -451,15 +480,27 @@ impl Router for Registry {
         header
     }
     #[allow(unused_variables)]
-    fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn begin_command(
+        &mut self,
+        header: Header,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.view().begin_command(header, platform)
     }
     #[allow(unused_variables)]
-    fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn consume(
+        &mut self,
+        bytes: &[u8],
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.view().consume(bytes, platform)
     }
     #[allow(unused_variables)]
-    fn end_frame(&mut self, last: bool, platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn end_frame(
+        &mut self,
+        last: bool,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         self.view().end_frame(last, platform)
     }
     #[allow(unused_variables)]
@@ -468,7 +509,7 @@ impl Router for Registry {
         &mut self,
         header: Header,
         requested: Option<u32>,
-        platform: &mut Platform<'_>,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         self.view().finish(header, requested, platform)
     }
@@ -479,7 +520,7 @@ impl Router for Registry {
         &mut self,
         offset: u32,
         out: &mut [u8],
-        platform: &mut Platform<'_>,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         self.view().read_response(offset, out, platform)
     }
@@ -501,11 +542,11 @@ impl Router for Registry {
         }
     }
     #[allow(unused_variables)]
-    fn close_response(&mut self, platform: &mut Platform<'_>) {
+    fn close_response(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         self.view().close_response(platform)
     }
     #[cfg(feature = "pass")]
-    fn is_eject(&self, h: Header, p: &mut Platform<'_>) -> bool {
+    fn is_eject(&self, h: Header, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
         // PASS eject pseudo-APDU: FF EE FF EE, gated by the PASS feature.
         h.cla == 0xff
             && h.ins == 0xee
@@ -514,7 +555,7 @@ impl Router for Registry {
             && super::config::enabled(p.storage, super::config::PASS)
     }
     #[cfg(feature = "pass")]
-    fn eject(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn eject(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.view().eject(p)
     }
     #[cfg(feature = "pass")]
@@ -530,7 +571,7 @@ impl Router for Registry {
         now: u32,
         ready: bool,
         inhibit: bool,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<u8> {
         self.view().sample_output(pressed, now, ready, inhibit, p)
     }
@@ -616,7 +657,7 @@ impl Registry {
 impl RegistryView<'_> {
     #[allow(unused_variables)]
     #[inline(never)]
-    fn reset_sessions(&mut self, platform: &mut Platform<'_>) {
+    fn reset_sessions(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         #[cfg(feature = "admin")]
         {
             self.grants.admin = false;
@@ -656,7 +697,12 @@ impl RegistryView<'_> {
 
     #[cfg(feature = "admin")]
     #[inline(never)]
-    fn finish_admin(&mut self, h: Header, le: u32, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
+    fn finish_admin(
+        &mut self,
+        h: Header,
+        le: u32,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(u32, Sw), Sw> {
         let pass = pass_arg!(self);
         match self.admin.finish(
             h,
@@ -723,7 +769,10 @@ impl RegistryView<'_> {
 
     #[allow(unused_variables)]
     #[inline(never)]
-    fn install(&mut self, platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn install(
+        &mut self,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         #[cfg(feature = "admin")]
         self.admin.install(platform)?;
         #[cfg(feature = "ctap")]
@@ -744,7 +793,7 @@ impl RegistryView<'_> {
     }
 
     #[inline(never)]
-    fn reset(&mut self, p: &mut Platform<'_>) {
+    fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         #[cfg(feature = "pass")]
         self.output.inhibit(true, p.memory);
         self.reset_sessions(p);
@@ -752,7 +801,7 @@ impl RegistryView<'_> {
     }
 
     #[inline(never)]
-    fn slot_power(&mut self, p: &mut Platform<'_>) -> bool {
+    fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
         #[cfg(feature = "ctap")]
         if matches!(self.applet, AppletState::Ctap) {
             self.ctap.close(&mut self.workspace, p);
@@ -764,7 +813,11 @@ impl RegistryView<'_> {
     }
 
     #[inline(never)]
-    fn implicit_select(&mut self, header: Header, p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn implicit_select(
+        &mut self,
+        header: Header,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         let _ = (&header, &p);
         #[cfg(feature = "ctap")]
         if matches!(self.applet, AppletState::None) && implicit_fido(header) {
@@ -777,7 +830,11 @@ impl RegistryView<'_> {
     }
 
     #[inline(never)]
-    fn select(&mut self, aid: &[u8], p: &mut Platform<'_>) -> Result<u32, Sw> {
+    fn select(
+        &mut self,
+        aid: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         let next = Selected::from_aid(aid).ok_or(Sw::FILE_NOT_FOUND)?;
         if !next.enabled(p) {
             self.reset_sessions(p);
@@ -833,7 +890,7 @@ impl RegistryView<'_> {
 
     #[allow(unused_variables)]
     #[inline(never)]
-    fn abort_command(&mut self, platform: &mut Platform<'_>) {
+    fn abort_command(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
             AppletState::Ndef(s) => s.cancel(),
@@ -857,7 +914,11 @@ impl RegistryView<'_> {
 
     #[allow(unused_variables)]
     #[inline(never)]
-    fn begin_command(&mut self, header: Header, platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn begin_command(
+        &mut self,
+        header: Header,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         if !self.applet.selected().enabled(platform) {
             self.reset_sessions(platform);
             *self.applet = AppletState::None;
@@ -884,7 +945,11 @@ impl RegistryView<'_> {
 
     #[allow(unused_variables)]
     #[inline(never)]
-    fn consume(&mut self, bytes: &[u8], platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn consume(
+        &mut self,
+        bytes: &[u8],
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
             AppletState::Ndef(s) => s.consume(bytes),
@@ -912,7 +977,11 @@ impl RegistryView<'_> {
 
     #[allow(unused_variables)]
     #[inline(never)]
-    fn end_frame(&mut self, last: bool, platform: &mut Platform<'_>) -> Result<(), Sw> {
+    fn end_frame(
+        &mut self,
+        last: bool,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         #[cfg(feature = "ndef")]
         if let AppletState::Ndef(s) = &mut self.applet {
             return s.end_frame(last, platform);
@@ -927,7 +996,7 @@ impl RegistryView<'_> {
         &mut self,
         header: Header,
         requested: Option<u32>,
-        platform: &mut Platform<'_>,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         let le = requested.unwrap_or(super::engine::DEFAULT_APDU_LE);
         match &mut self.applet {
@@ -967,7 +1036,7 @@ impl RegistryView<'_> {
         &mut self,
         offset: u32,
         out: &mut [u8],
-        platform: &mut Platform<'_>,
+        platform: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Sw> {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
@@ -1003,7 +1072,7 @@ impl RegistryView<'_> {
 
     #[allow(unused_variables)]
     #[inline(never)]
-    fn close_response(&mut self, platform: &mut Platform<'_>) {
+    fn close_response(&mut self, platform: &mut Platform<'_, impl crate::ports::Backends>) {
         match &mut self.applet {
             #[cfg(feature = "ndef")]
             AppletState::Ndef(s) => s.close(),
@@ -1027,7 +1096,7 @@ impl RegistryView<'_> {
 
     #[cfg(feature = "pass")]
     #[inline(never)]
-    fn eject(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn eject(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.output.eject(p.memory);
         Ok(())
     }
@@ -1040,7 +1109,7 @@ impl RegistryView<'_> {
         now: u32,
         ready: bool,
         inhibit: bool,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Option<u8> {
         #[allow(unused_mut)]
         let mut presence = false;

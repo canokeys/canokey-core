@@ -71,7 +71,7 @@ impl Memory for MemoryBackend {
 
 macro_rules! platform {
     ($store:expr) => {
-        Platform {
+        Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: $store,
             crypto: &mut CryptoBackend,
             device: &mut DeviceBackend,

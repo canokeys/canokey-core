@@ -6,6 +6,8 @@ use crate::{
     runtime::workspace::Workspace,
 };
 #[cfg(feature = "admin")]
+use canokey_ports::{Crypto as _, Memory as _, Storage as _};
+#[cfg(feature = "admin")]
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Error {
     Length,
@@ -22,7 +24,7 @@ pub(super) const AAGUID: [u8; 16] = [
 pub(crate) fn install_key(
     key: &mut [u8; 32],
     w: &mut Workspace,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
     w.clear(p.memory);
     w.key.bytes[..32].copy_from_slice(key);
@@ -52,7 +54,10 @@ impl Certificate {
     pub fn active(&self) -> bool {
         self.active
     }
-    pub fn begin(&mut self, p: &mut Platform<'_>) -> Result<(), Error> {
+    pub fn begin(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Error> {
         p.storage.stage_begin().map_err(|_| Error::Storage)?;
         self.active = true;
         Ok(())
@@ -61,7 +66,7 @@ impl Certificate {
         &mut self,
         used: &mut usize,
         bytes: &[u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Error> {
         *used = used
             .checked_add(bytes.len())
@@ -69,7 +74,10 @@ impl Certificate {
             .ok_or(Error::Length)?;
         p.storage.stage_append(bytes).map_err(|_| Error::Storage)
     }
-    pub fn commit(&mut self, p: &mut Platform<'_>) -> Result<(), Error> {
+    pub fn commit(
+        &mut self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Error> {
         if !self.active {
             return Err(Error::NotActive);
         }
@@ -79,7 +87,7 @@ impl Certificate {
         self.active = false;
         Ok(())
     }
-    pub fn abort(&mut self, p: &mut Platform<'_>) {
+    pub fn abort(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         if self.active {
             p.storage.stage_abort();
             self.active = false;

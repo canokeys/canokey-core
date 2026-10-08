@@ -135,16 +135,20 @@ impl Fixture {
     }
 }
 impl Router for Fixture {
-    fn install(&mut self, _: &mut Platform<'_>) -> Result<(), Sw> {
+    fn install(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) -> Result<(), Sw> {
         Ok(())
     }
-    fn reset(&mut self, _: &mut Platform<'_>) {
+    fn reset(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) {
         self.selected = false;
     }
     fn selected(&self) -> bool {
         self.selected
     }
-    fn select(&mut self, aid: &[u8], _: &mut Platform<'_>) -> Result<u32, Sw> {
+    fn select(
+        &mut self,
+        aid: &[u8],
+        _: &mut Platform<'_, impl canokey_ports::Backends>,
+    ) -> Result<u32, Sw> {
         assert_eq!(aid, [1]);
         self.selected = true;
         Ok(0)
@@ -152,12 +156,16 @@ impl Router for Fixture {
     fn command_limit(&self, _: Header) -> Result<u32, Sw> {
         Ok(100_000)
     }
-    fn abort_command(&mut self, _: &mut Platform<'_>) {
+    fn abort_command(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) {
         self.events.push("abort");
         self.sink = Sink::None;
         self.tlv = tlv::Decoder::default();
     }
-    fn begin_command(&mut self, h: Header, _: &mut Platform<'_>) -> Result<(), Sw> {
+    fn begin_command(
+        &mut self,
+        h: Header,
+        _: &mut Platform<'_, impl canokey_ports::Backends>,
+    ) -> Result<(), Sw> {
         self.sink = match h.ins {
             0x01 => Sink::Key {
                 components: [[0; 256]; 5],
@@ -171,7 +179,11 @@ impl Router for Fixture {
         };
         Ok(())
     }
-    fn consume(&mut self, bytes: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    fn consume(
+        &mut self,
+        bytes: &[u8],
+        p: &mut Platform<'_, impl canokey_ports::Backends>,
+    ) -> Result<(), Sw> {
         match &mut self.sink {
             Sink::Key {
                 components,
@@ -208,7 +220,11 @@ impl Router for Fixture {
         };
         Ok(())
     }
-    fn end_frame(&mut self, last: bool, _: &mut Platform<'_>) -> Result<(), Sw> {
+    fn end_frame(
+        &mut self,
+        last: bool,
+        _: &mut Platform<'_, impl canokey_ports::Backends>,
+    ) -> Result<(), Sw> {
         self.events.push("end");
         if matches!(self.failure, Some(Failure::EndFrame)) {
             return Err(Sw::WRONG_DATA);
@@ -217,7 +233,12 @@ impl Router for Fixture {
         self.last_frame = last;
         Ok(())
     }
-    fn finish(&mut self, h: Header, _: Option<u32>, p: &mut Platform<'_>) -> Result<(u32, Sw), Sw> {
+    fn finish(
+        &mut self,
+        h: Header,
+        _: Option<u32>,
+        p: &mut Platform<'_, impl canokey_ports::Backends>,
+    ) -> Result<(u32, Sw), Sw> {
         self.events.push("finish");
         if matches!(self.failure, Some(Failure::Finish)) {
             return Err(Sw::WRONG_P1P2);
@@ -259,7 +280,7 @@ impl Router for Fixture {
         &mut self,
         offset: u32,
         out: &mut [u8],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl canokey_ports::Backends>,
     ) -> Result<usize, Sw> {
         self.events.push("read");
         assert!(self.response_open);
@@ -281,7 +302,7 @@ impl Router for Fixture {
         self.next += out.len() as u32;
         Ok(out.len())
     }
-    fn close_response(&mut self, _: &mut Platform<'_>) {
+    fn close_response(&mut self, _: &mut Platform<'_, impl canokey_ports::Backends>) {
         self.events.push("close");
         if self.response_open {
             self.closes += 1;
@@ -304,7 +325,11 @@ impl canokey_rust_core::runtime::engine::InputSource for FrameSource<'_> {
         self.closes += 1;
     }
 }
-fn frame(runtime: &mut Runtime<Fixture>, bytes: &[u8], p: &mut Platform<'_>) -> Vec<u8> {
+fn frame(
+    runtime: &mut Runtime<Fixture>,
+    bytes: &[u8],
+    p: &mut Platform<'_, impl canokey_ports::Backends>,
+) -> Vec<u8> {
     if bytes[1] == 3 {
         let mut source = FrameSource {
             remaining: bytes,
@@ -331,7 +356,7 @@ fn run(ins: u8, body: &[u8], chunk: usize) -> (Fixture, StorageBackend, Vec<u8>)
     let mut storage = StorageBackend::default();
     let mut crypto = CryptoBackend;
     let mut device = DeviceBackend;
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut storage,
         crypto: &mut crypto,
         device: &mut device,
@@ -434,7 +459,7 @@ fn frame_decoder_owns_select_parameters_and_final_command_header() {
         let mut storage = StorageBackend::default();
         let mut crypto = CryptoBackend;
         let mut device = DeviceBackend;
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut storage,
             crypto: &mut crypto,
             device: &mut device,
@@ -494,7 +519,7 @@ fn fido_chain_exact_limit_overflow_and_recovery() {
         for overflow in [false, true] {
             let (mut storage, mut crypto, mut device) =
                 (StorageBackend::default(), CryptoBackend, DeviceBackend);
-            let mut p = Platform {
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
                 crypto: &mut crypto,
                 device: &mut device,
@@ -551,7 +576,7 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
         DeviceBackend,
         MemoryBackend,
     );
-    let mut p = Platform {
+    let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
         storage: &mut storage,
         crypto: &mut crypto,
         device: &mut device,
@@ -637,7 +662,7 @@ fn failed_frame_execution_and_read_preserve_cleanup_order_and_release_ownership(
         let mut storage = StorageBackend::default();
         let mut crypto = CryptoBackend;
         let mut device = DeviceBackend;
-        let mut p = Platform {
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
             storage: &mut storage,
             crypto: &mut crypto,
             device: &mut device,

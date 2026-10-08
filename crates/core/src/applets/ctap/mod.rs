@@ -2,6 +2,7 @@
 //! Shared CTAP parsing, PIN session and prepared responses for HID and APDU.
 #![forbid(unsafe_code)]
 
+use canokey_ports::{Crypto as _, Device as _, Memory as _, Storage as _};
 mod agreement;
 mod applet;
 pub use applet::Applet;
@@ -198,7 +199,7 @@ impl Session {
             sm2: settings::Sm2::DEFAULT,
         }
     }
-    pub fn reset(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub fn reset(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         self.assertion.remaining = 0;
         self.assertion.hmac.clear(memory);
         self.management = management::Cursor::new();
@@ -211,7 +212,7 @@ impl Session {
         &mut self,
         command: &mut Result<Command, Status>,
         workspace: &mut crate::runtime::workspace::Workspace,
-        p: &mut crate::ports::Platform<'_>,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Response {
         self.expire_token(p.device.now(), p.memory);
         self.auth_response = None;
@@ -302,7 +303,7 @@ impl Session {
     fn reset_data(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
-        p: &mut crate::ports::Platform<'_>,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         // Match the C power-on window; transport resets must not restart it.
         if p.device.now() > 10_000 {
@@ -313,7 +314,10 @@ impl Session {
         self.reset_persistent(p)?;
         Ok(1)
     }
-    fn reset_persistent(&mut self, p: &mut crate::ports::Platform<'_>) -> Result<(), Status> {
+    fn reset_persistent(
+        &mut self,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Status> {
         self.abort_blob(p);
         self.reset(p.memory);
         // Provisioned attestation material and SM2 identifiers survive reset.
@@ -336,14 +340,14 @@ impl Session {
     fn selection(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
-        p: &mut crate::ports::Platform<'_>,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         self.wait_presence(w, p, false)
     }
     fn wait_presence(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
-        p: &mut crate::ports::Platform<'_>,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
         long: bool,
     ) -> Result<usize, Status> {
         p.device.keepalive(true);
@@ -366,7 +370,7 @@ impl Session {
     fn info(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
-        p: &mut crate::ports::Platform<'_>,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let policy = pin::policy(p)?;
         w.output[0] = 0;
@@ -386,7 +390,7 @@ impl Session {
     fn key_agreement(
         &mut self,
         w: &mut crate::runtime::workspace::Workspace,
-        p: &mut crate::ports::Platform<'_>,
+        p: &mut crate::ports::Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         use crate::ports::{KeyOperation, alg};
         w.clear(p.memory);
@@ -491,7 +495,7 @@ impl Request {
             Parser::None => self.extra |= !bytes.is_empty(),
         }
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         match &mut self.parser {
             Parser::ClientPin(p) => p.clear(memory),
             Parser::Config(p) => p.clear(memory),

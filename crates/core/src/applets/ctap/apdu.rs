@@ -25,7 +25,11 @@ pub fn allows_extended(header: Header) -> bool {
 }
 
 impl Applet {
-    pub fn select(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> u32 {
+    pub fn select(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> u32 {
         self.close(w, p);
         self.response = Response::Constant(VERSION);
         VERSION.len() as u32
@@ -36,7 +40,7 @@ impl Applet {
         &mut self,
         header: Header,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         self.close(w, p);
         if header.cla == 0 {
@@ -63,7 +67,11 @@ impl Applet {
         }
         Ok(())
     }
-    pub fn finish(&mut self, w: &mut SessionWorkspace, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub fn finish(
+        &mut self,
+        w: &mut SessionWorkspace,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         self.finish_apdu_command(w, p)?;
         Ok(self.complete(w, p, None) as u32)
     }
@@ -72,7 +80,7 @@ impl Applet {
     fn finish_apdu_command(
         &mut self,
         w: &mut SessionWorkspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         if let SessionWorkspace::U2fRequest(request) = w {
             let request = core::mem::replace(request, super::u2f::Request::new(request.header));

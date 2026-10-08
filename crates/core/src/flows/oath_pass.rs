@@ -25,7 +25,7 @@ pub(crate) enum Error {
 pub(crate) fn delete(
     name: &[u8],
     pass: Option<&mut Pass>,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
     let id = service::find(
         &mut Store::new(p.storage, p.memory),
@@ -48,7 +48,7 @@ pub(crate) fn bind(
     index: SlotIndex,
     name: &[u8],
     enter: u8,
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Error> {
     let mut store = Store::new(p.storage, p.memory);
     let id =

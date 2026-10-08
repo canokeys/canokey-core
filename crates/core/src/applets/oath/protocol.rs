@@ -22,6 +22,7 @@ use crate::{
     applets::oath::repository::{Mac, Store},
     applets::pass::service::Pass,
 };
+use canokey_ports::Memory as _;
 use canokey_protocol::{apdu::Header, response::StatusWord as Sw, tlv::ByteCursor};
 mod paging;
 include!(concat!(env!("OUT_DIR"), "/oath_version.rs"));
@@ -143,7 +144,7 @@ impl State {
             presence: crate::runtime::presence::Request::new(),
         }
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
         match store.install() {
@@ -153,7 +154,7 @@ impl State {
         }
         auth::install(&mut store, &mut mac).map_err(status)
     }
-    pub fn reset(&mut self, p: &mut Platform<'_>) {
+    pub fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         p.memory.wipe(&mut self.response);
         self.length = 0;
         self.page = Page::None;
@@ -162,7 +163,7 @@ impl State {
         self.challenge_len = 0;
         self.session.reset(&mut Mac::new(p.crypto, p.memory));
     }
-    pub fn select(&mut self, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub fn select(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<u32, Sw> {
         self.reset(p);
         let selected = self
             .session
@@ -199,7 +200,7 @@ impl State {
             self.length = algorithm_at + 3;
         }
     }
-    pub fn close_response(&mut self, p: &mut Platform<'_>) {
+    pub fn close_response(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         crate::applets::close_response(p.memory, &mut self.response, &mut self.length);
     }
     pub fn read_response(&self, offset: usize, out: &mut [u8]) -> Result<(), Sw> {
@@ -265,7 +266,7 @@ impl State {
         h: Header,
         mut c: &mut ByteCursor<'_>,
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
@@ -365,7 +366,7 @@ impl State {
         &mut self,
         h: Header,
         mut c: &mut ByteCursor<'_>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         let mut store = Store::new(p.storage, p.memory);
         let mut mac = Mac::new(p.crypto, p.memory);
@@ -403,7 +404,7 @@ impl State {
         h: Header,
         mut c: &mut ByteCursor<'_>,
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
         // P1=1/2 selects a PASS slot (one-based); P2=0/1 controls
         // the trailing Enter key. NAME binds an HOTP credential.
@@ -426,7 +427,7 @@ impl State {
         le: u32,
         data: &[u8],
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<Sw, Sw> {
         if h.ins != INS_SEND_REMAINING {
             self.page = Page::None;
@@ -538,14 +539,14 @@ impl Oath {
             state: State::new(),
         }
     }
-    pub fn install(&mut self, p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw> {
         self.state.install(p)
     }
-    pub fn reset(&mut self, p: &mut Platform<'_>) {
+    pub fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.cancel_command(p);
         self.state.reset(p);
     }
-    pub fn select(&mut self, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub fn select(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<u32, Sw> {
         self.cancel_command(p);
         self.state.select(p)
     }
@@ -553,7 +554,7 @@ impl Oath {
     pub fn take_presence_attempt(&mut self) -> bool {
         self.state.presence.take_attempt()
     }
-    pub fn cancel_command(&mut self, p: &mut Platform<'_>) {
+    pub fn cancel_command(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         p.memory.wipe(&mut self.command);
         self.used = 0;
     }
@@ -565,7 +566,7 @@ impl Oath {
     pub fn read_response(&self, offset: usize, out: &mut [u8]) -> Result<(), Sw> {
         self.state.read_response(offset, out)
     }
-    pub fn close_response(&mut self, p: &mut Platform<'_>) {
+    pub fn close_response(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.state.close_response(p);
     }
     // Keep OATH temporaries out of unrelated asymmetric-crypto call paths.
@@ -575,7 +576,7 @@ impl Oath {
         h: Header,
         le: u32,
         pass: Option<&mut Pass>,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(u32, Sw), Sw> {
         self.state.length = 0;
         // Preserve one local state base at this call boundary. On CIU, LTO's
@@ -753,7 +754,7 @@ mod parameter_tests {
                         h,
                         &mut ByteCursor::new(&wire[..2 + name.len()]),
                         Some(&mut pass),
-                        &mut Platform {
+                        &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                             storage: &mut storage,
                             crypto: &mut NoMac,
                             device: &mut NoPresence,
@@ -804,11 +805,11 @@ mod parameter_tests {
                     },
                     &mut ByteCursor::new(&[tag::NAME, 1, name]),
                     Some(&mut pass),
-                    &mut Platform {
+                    &mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                         storage: &mut storage,
                         crypto: &mut NoMac,
                         device: &mut NoPresence,
-                        memory: &Wipe
+                        memory: &Wipe,
                     },
                 ),
                 Err(expected)
@@ -829,7 +830,7 @@ mod parameter_tests {
             let mut device = NoPresence;
             let mut state = State::new();
             state
-                .select(&mut Platform {
+                .select(&mut Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                     storage: &mut storage,
                     crypto: &mut crypto,
                     device: &mut device,
@@ -837,7 +838,7 @@ mod parameter_tests {
                 })
                 .unwrap();
             storage.selecting = false;
-            let mut p = Platform {
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
                 storage: &mut storage,
                 crypto: &mut crypto,
                 device: &mut device,

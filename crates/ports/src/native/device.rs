@@ -85,46 +85,63 @@ pub unsafe extern "C" fn ck_core_presence_sample() {
         }
     }
 }
-native_port! { impl Device for DeviceBackend {
+impl Device for DeviceBackend {
     fn recovery_word(&mut self) -> Option<u32> {
         #[cfg(feature = "device-runtime")]
-        { Some(unsafe {ck_board_recovery_word()}) }
+        {
+            Some(unsafe { ck_board_recovery_word() })
+        }
         #[cfg(not(feature = "device-runtime"))]
-        { None }
+        {
+            None
+        }
     }
 
     fn information(&mut self, kind: u8, output: &mut [u8]) -> usize {
         #[cfg(feature = "device-runtime")]
         {
             if kind == board_info_kind::CHIP_ID {
-                let mut id=[0;crate::contracts::CHIP_ID_BYTES];
-                unsafe { ck_board_chip_id(id.as_mut_ptr()); }
-                let len=output.len().min(id.len());output[..len].copy_from_slice(&id[..len]);
+                let mut id = [0; crate::contracts::CHIP_ID_BYTES];
+                unsafe {
+                    ck_board_chip_id(id.as_mut_ptr());
+                }
+                let len = output.len().min(id.len());
+                output[..len].copy_from_slice(&id[..len]);
                 return len;
             }
-            let mut len=0;
-            let data=unsafe { ck_board_info(kind,&mut len) };
-            if data.is_null() { return 0; }
-            let len=len.min(output.len());
-            output[..len].copy_from_slice(unsafe {core::slice::from_raw_parts(data,len)});
+            let mut len = 0;
+            let data = unsafe { ck_board_info(kind, &mut len) };
+            if data.is_null() {
+                return 0;
+            }
+            let len = len.min(output.len());
+            output[..len].copy_from_slice(unsafe { core::slice::from_raw_parts(data, len) });
             len
         }
         #[cfg(not(feature = "device-runtime"))]
         {
             // Unconfigured host tools retain zero identity; USB/IP supplies release fields.
-            let data: &[u8]=match kind {
-                board_info_kind::FIRMWARE => option_env!("CANOKEY_ADMIN_VERSION").unwrap_or("0.0.0").as_bytes(),
+            let data: &[u8] = match kind {
+                board_info_kind::FIRMWARE => option_env!("CANOKEY_ADMIN_VERSION")
+                    .unwrap_or("0.0.0")
+                    .as_bytes(),
                 board_info_kind::PRODUCT => b"CanoKey Rust Virtual Card",
-                board_info_kind::CHIP_ID => &[0;crate::contracts::CHIP_ID_BYTES],
-                _ => option_env!("CANOKEY_CORE_SHA").unwrap_or("unknown").as_bytes(),
+                board_info_kind::CHIP_ID => &[0; crate::contracts::CHIP_ID_BYTES],
+                _ => option_env!("CANOKEY_CORE_SHA")
+                    .unwrap_or("unknown")
+                    .as_bytes(),
             };
-            let len=output.len().min(data.len());output[..len].copy_from_slice(&data[..len]);len
+            let len = output.len().min(data.len());
+            output[..len].copy_from_slice(&data[..len]);
+            len
         }
     }
 
     fn configuration_changed(&mut self, flags: u32) {
         #[cfg(feature = "device-runtime")]
-        unsafe { ck_device_settings(flags); }
+        unsafe {
+            ck_device_settings(flags);
+        }
         #[cfg(not(feature = "device-runtime"))]
         let _ = flags;
     }
@@ -134,9 +151,13 @@ native_port! { impl Device for DeviceBackend {
     }
     fn contactless(&mut self) -> bool {
         #[cfg(feature = "nfc")]
-        { unsafe { is_nfc() != 0 } }
+        {
+            unsafe { is_nfc() != 0 }
+        }
         #[cfg(not(feature = "nfc"))]
-        { false }
+        {
+            false
+        }
     }
     #[cfg(feature = "ctap")]
     fn wink(&mut self) {
@@ -156,7 +177,9 @@ native_port! { impl Device for DeviceBackend {
     }
     fn keepalive(&mut self, waiting: bool) {
         #[cfg(feature = "nfc")]
-        if unsafe { is_nfc() != 0 } { return; }
+        if unsafe { is_nfc() != 0 } {
+            return;
+        }
         #[cfg(feature = "ctap")]
         unsafe {
             ck_hid_keepalive(u8::from(waiting))
@@ -168,9 +191,13 @@ native_port! { impl Device for DeviceBackend {
         #[cfg(feature = "platform-serial")]
         {
             #[cfg(feature = "device-runtime")]
-            unsafe { ck_device_serial(out.as_mut_ptr()) }
+            unsafe {
+                ck_device_serial(out.as_mut_ptr())
+            }
             #[cfg(not(feature = "device-runtime"))]
-            unsafe { ck_platform_serial(out.as_mut_ptr()) }
+            unsafe {
+                ck_platform_serial(out.as_mut_ptr())
+            }
         }
         #[cfg(not(feature = "platform-serial"))]
         {
@@ -209,9 +236,13 @@ native_port! { impl Device for DeviceBackend {
         #[cfg(feature = "platform-device")]
         {
             #[cfg(feature = "device-runtime")]
-            { unsafe { ck_device_progress() != 0 } }
+            {
+                unsafe { ck_device_progress() != 0 }
+            }
             #[cfg(not(feature = "device-runtime"))]
-            { unsafe { ck_platform_progress() != 0 } }
+            {
+                unsafe { ck_platform_progress() != 0 }
+            }
         }
         #[cfg(not(feature = "platform-device"))]
         {
@@ -229,5 +260,4 @@ native_port! { impl Device for DeviceBackend {
             let _ = on;
         }
     }
-}
 }

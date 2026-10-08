@@ -7,6 +7,7 @@ use super::{
     pin,
 };
 use crate::{ports::Platform, runtime::workspace::Workspace};
+use canokey_ports::{Crypto as _, Memory as _};
 use canokey_protocol::cbor::Event;
 // One/two SHA-256 salts, optionally preceded by the v2 AES IV.
 const SALT_BYTES: usize = 32;
@@ -39,7 +40,7 @@ impl Parameters {
             protocol: wire::V1,
         }
     }
-    pub(crate) fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub(crate) fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.agreement);
         memory.wipe(&mut self.salt);
         memory.wipe(&mut self.auth);
@@ -185,7 +186,7 @@ impl Prepared {
             protocol: wire::V1,
         }
     }
-    pub fn clear(&mut self, memory: &crate::ports::MemoryPort<'_>) {
+    pub fn clear(&mut self, memory: &(impl crate::ports::Memory + ?Sized)) {
         memory.wipe(&mut self.secrets);
         self.length = 0;
     }
@@ -198,7 +199,7 @@ impl Prepared {
         rp: &[u8; 32],
         uv: bool,
         out: &mut [u8; MAX_ENCRYPTED_SALT_BYTES],
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let mut random = [0; 32];
         let result = (|| {
@@ -241,7 +242,7 @@ impl Session {
         &mut self,
         params: &Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Status> {
         let mut shared = [0; 64];
         let result = (|| {

@@ -24,7 +24,11 @@ impl Put {
             first: [0; 2],
         }
     }
-    pub(super) fn feed(&mut self, mut b: &[u8], p: &mut Platform<'_>) -> Result<(), Sw> {
+    pub(super) fn feed(
+        &mut self,
+        mut b: &[u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<(), Sw> {
         while self.object.is_none() && !b.is_empty() {
             if self.used == 5 {
                 return Err(Sw::WRONG_DATA);
@@ -64,7 +68,10 @@ impl Put {
         }
         Ok(())
     }
-    pub(super) fn finish(&self, p: &mut Platform<'_>) -> Result<u32, Sw> {
+    pub(super) fn finish(
+        &self,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<u32, Sw> {
         let i = self.object.ok_or(Sw::WRONG_LENGTH)?;
         // An empty certificate TLV deletes the object; other empty/short
         // objects follow ordinary replace semantics. Never commit a partial PUT.
@@ -82,7 +89,7 @@ impl Piv {
         &mut self,
         h: Header,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<u32, Sw> {
         // GET DATA also uses P1/P2=3FFF. The object identifier is carried by
         // the 5C tag list, not by these parameter bytes.

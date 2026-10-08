@@ -9,6 +9,7 @@ use crate::{
     ports::{KeyOperation, Platform, Record},
     runtime::workspace::Workspace,
 };
+use canokey_ports::{Crypto as _, Memory as _};
 use canokey_protocol::cbor::Encoder;
 #[cfg(test)]
 use canokey_protocol::cbor::SliceDecoder;
@@ -208,7 +209,7 @@ fn text_key<'a>(
 fn credential_count(
     rp: Option<&[u8; 32]>,
     buffer: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
     let mut count = 0;
     for index in 0..Record::CTAP_CREDENTIALS {
@@ -225,7 +226,7 @@ fn credential_count(
 fn next_rp(
     cursor: &mut Cursor,
     buffer: &mut [u8],
-    p: &mut Platform<'_>,
+    p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, usize)>, Status> {
     for index in 0..Record::CTAP_CREDENTIALS {
         if cursor.visited[usize::from(index / 8)] & (1 << (index % 8)) != 0 {
@@ -259,7 +260,7 @@ impl Session {
         &mut self,
         params: &Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let result = self.manage_inner(params, w, p);
         p.memory.wipe(&mut w.key.bytes);
@@ -279,7 +280,7 @@ impl Session {
         &mut self,
         params: &Parameters,
         w: &mut Workspace,
-        p: &mut Platform<'_>,
+        p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<usize, Status> {
         let fields = params.management.fields(&params.message)?;
         let subcommand = params.subcommand;
