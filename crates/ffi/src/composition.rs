@@ -17,24 +17,28 @@ pub mod device {
         ck_device_led_idle as led_idle, ck_device_settings as settings, main, progress,
     };
 }
+#[cfg(feature = "device-runtime")]
+pub mod timer {
+    pub use crate::runtime::timer::{ck_timer_irq as irq, device_set_timeout as set_timeout};
+}
 #[cfg(feature = "usb-keyboard")]
 pub mod keyboard {
     pub use crate::transport::keyboard::poll_provider as poll;
 }
 #[cfg(feature = "nfc")]
 pub mod nfc {
-    pub use crate::transport::nfc::{init, is_nfc as mode, poll};
+    pub use crate::transport::nfc::{init, is_nfc as mode, nfc_handler as interrupt, poll};
 }
 #[cfg(feature = "usb-hid")]
 pub mod hid {
-    pub use crate::transport::hid::link::{ck_hid_active as active, poll};
+    pub use crate::transport::hid::link::{ck_hid_active as active, ck_hid_busy as busy, poll};
     pub unsafe fn keepalive(waiting: bool) {
         unsafe { crate::transport::hid::link::ck_hid_keepalive(u8::from(waiting)) }
     }
 }
 #[cfg(feature = "usb-ccid")]
 pub mod ccid {
-    pub use crate::transport::ccid::poll;
+    pub use crate::transport::ccid::{ck_ccid_idle as idle, poll};
 }
 #[cfg(feature = "usb-webusb")]
 pub mod webusb {
@@ -43,8 +47,9 @@ pub mod webusb {
 #[cfg(feature = "usb-device")]
 pub mod usb {
     pub use crate::transport::usb::{
-        ck_usb_configured as configured, ck_usb_in as in_event, ck_usb_out as out_event,
-        ck_usb_setup as setup, progress, usb_device_deinit as deinit, usb_device_init as init,
+        ck_usb_bus_reset as bus_reset, ck_usb_configured as configured, ck_usb_in as in_event,
+        ck_usb_out as out_event, ck_usb_resume as resume, ck_usb_set_landing as set_landing,
+        ck_usb_setup as setup, ck_usb_suspend as suspend, deinit, init, progress,
     };
 }
 

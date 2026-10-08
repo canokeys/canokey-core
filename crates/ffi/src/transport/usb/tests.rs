@@ -184,7 +184,7 @@ fn bus_reset() {
     unsafe { ck_usb_bus_reset() };
 }
 fn configure() {
-    unsafe { usb_device_init() };
+    unsafe { init() };
     assert_ne!(controller().masked, 0);
     assert_eq!(controller().address, 0);
     assert!(!controller().ready);
@@ -426,7 +426,7 @@ fn usb_controller_control_endpoints_mailboxes_and_reset() {
         assert!(!controller().ready && !controller().pending[0] && !controller().pending[3]);
         assert!(!controller().opened[2] && !controller().opened[4] && !controller().opened[6]);
         controller().masked = 0;
-        usb_device_deinit();
+        deinit();
         assert_eq!(controller().masked, 0);
     }
 }

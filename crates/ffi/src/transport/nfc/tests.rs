@@ -112,7 +112,7 @@ pub(crate) unsafe fn ck_nfc_io_write(address: u16, bytes: *const u8, length: u8)
     }
     0
 }
-pub(crate) unsafe fn usb_device_deinit() {
+pub(crate) unsafe fn deinit() {
     assert_eq!(controller().masked, 0);
 }
 pub(crate) unsafe fn ck_core_reset() {

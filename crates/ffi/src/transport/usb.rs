@@ -190,8 +190,7 @@ unsafe fn start_data_in(length: usize, requested: u16) {
         next_control();
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn usb_device_init() {
+pub unsafe fn init() {
     usb_locked(|| unsafe {
         ck_usb_dcd_start();
         // USBD_LL_Reset in the C stack only resets protocol state and opens
@@ -212,8 +211,7 @@ pub unsafe fn ck_usb_boot_reset() {
         ck_usb_dcd_open(0x80);
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn usb_device_deinit() {
+pub unsafe fn deinit() {
     usb_locked(|| unsafe {
         ck_usb_dcd_stop();
         ck_usb_reset();
@@ -241,8 +239,7 @@ pub unsafe fn ck_usb_reset() {
 /// Hardware bus reset is already latched and EP0 remains owned by the USB
 /// controller. Match the legacy C LL reset: reset protocol state and disable
 /// configured data pipes without closing/reopening EP0 from the IRQ.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_bus_reset() {
+pub unsafe fn ck_usb_bus_reset() {
     unsafe {
         #[cfg(feature = "usb-webusb")]
         {
@@ -257,20 +254,17 @@ pub unsafe extern "C" fn ck_usb_bus_reset() {
         CONTROL_SOURCE = None;
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_suspend() {
+pub unsafe fn ck_usb_suspend() {
     unsafe {
         SUSPENDED = true;
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_resume() {
+pub unsafe fn ck_usb_resume() {
     unsafe {
         SUSPENDED = false;
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
+pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
     unsafe {
         // SETUP supersedes the preceding transfer, including unacknowledged IN.
         ck_usb_dcd_close(0);
@@ -387,7 +381,7 @@ pub unsafe extern "C" fn ck_usb_setup(bytes: *const u8, length: u16) {
         }
     }
 }
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_usb_configured() -> u8 {
     unsafe { DEVICE.configured as u8 }
 }
@@ -459,8 +453,7 @@ pub unsafe fn ck_usb_receive(ep: u8) {
         }
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_in(ep: u8) {
+pub unsafe fn ck_usb_in(ep: u8) {
     unsafe {
         if ep == 0 || ep == 0x80 {
             match PHASE {
@@ -494,8 +487,7 @@ pub unsafe extern "C" fn ck_usb_in(ep: u8) {
         }
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
+pub unsafe fn ck_usb_out(ep: u8, bytes: *const u8, length: u16) -> u8 {
     unsafe {
         if ep == 0 {
             match PHASE {
@@ -569,7 +561,7 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 
 /// Cooperative progress dispatch is portable policy. Native code only waits
 /// one hardware tick before calling this function; no callback enters Core.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 #[cfg(any(feature = "native-composition", test))]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
     unsafe { progress::<crate::platform::Native>() }
@@ -610,7 +602,7 @@ pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
 
 /// Main-loop settings notification. Only the IRQ-local descriptor snapshot is
 /// changed; an in-flight descriptor keeps its captured immutable variant.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
     usb_locked(|| unsafe {
         DEVICE.landing = enabled != 0;

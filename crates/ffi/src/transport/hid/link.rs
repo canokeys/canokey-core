@@ -86,11 +86,11 @@ fn classify_error(cid: u32, command: u8, executing: Option<u32>) -> Error {
         Error::Busy
     }
 }
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_hid_active() -> u8 {
     unsafe { u8::from(LINK.active) }
 }
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_hid_busy() -> u8 {
     unsafe {
         u8::from(
@@ -317,7 +317,7 @@ pub unsafe fn poll<P: Provider>() -> u8 {
 }
 
 #[cfg(feature = "native-composition")]
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn CTAPHID_Loop(_wait_for_user: u8) -> u8 {
     unsafe { poll::<crate::platform::Native>() }
 }

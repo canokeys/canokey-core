@@ -158,7 +158,7 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
                 ck_board_nfc_irq_enable();
             }
         } else {
-            transport::usb::usb_device_init();
+            transport::usb::init();
             while ck_board_usb_ready() == 0 {
                 transport::ccid::poll::<P>();
             }

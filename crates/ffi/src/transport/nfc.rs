@@ -16,7 +16,7 @@ use crate::sys::ck_nfc_io_select;
 use crate::sys::ck_nfc_io_unlock;
 use crate::sys::ck_nfc_io_write;
 #[cfg(not(test))]
-use crate::transport::usb::usb_device_deinit;
+use crate::transport::usb::deinit;
 use canokey_protocol::{
     apdu,
     nfc::{self as wire, Packet},
@@ -26,7 +26,7 @@ use canokey_rust_core::runtime::{
     nfc_io::{Chip, Io},
 };
 #[cfg(test)]
-use tests::usb_device_deinit;
+use tests::deinit;
 #[cfg(test)]
 unsafe fn ck_core_reset<P: Provider>() {
     unsafe { tests::ck_core_reset() }
@@ -93,16 +93,14 @@ unsafe fn with_io<T>(f: impl FnOnce(&mut Io, &mut Hardware, u32) -> T) -> T {
         result
     }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn is_nfc() -> u8 {
+pub unsafe fn is_nfc() -> u8 {
     unsafe { ACTIVE as u8 }
 }
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_nfc_progress() -> u8 {
     unsafe { with_io(|io, _, _| io.live() as u8) }
 }
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nfc_handler() {
+pub unsafe fn nfc_handler() {
     unsafe {
         with_io(|io, chip, now| {
             if ACTIVE {
@@ -149,7 +147,7 @@ pub unsafe fn nfc_init() {
 }
 pub unsafe fn init<P: Provider>() {
     unsafe {
-        usb_device_deinit();
+        deinit();
         let mask = ck_nfc_io_lock();
         ck_nfc_io_schedule(None, 0);
         ACTIVE = true;

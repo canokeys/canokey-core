@@ -228,7 +228,7 @@ pub(crate) mod transport {
         pub(crate) unsafe fn progress<P>() -> u8 {
             1
         }
-        pub(crate) unsafe fn usb_device_init() {
+        pub(crate) unsafe fn init() {
             let mut b = board();
             assert!(!b.active);
             assert_eq!(b.installed, 1);

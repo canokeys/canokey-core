@@ -172,7 +172,7 @@ fn hid_busy() -> bool {
         false
     }
 }
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_ccid_idle() -> u8 {
     unsafe {
         if hid_busy() {
@@ -342,7 +342,7 @@ pub unsafe fn presence_progress<P: Provider>() {
 pub(crate) mod io;
 
 #[cfg(feature = "native-composition")]
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn CCID_Loop() {
     unsafe { poll::<crate::platform::Native>() }
 }

@@ -61,8 +61,6 @@ pub use transport::keyboard::ck_keyboard_loop;
 pub use transport::nfc::{ck_nfc_configure, ck_nfc_set_mode, ck_nfc_silence};
 #[cfg(all(feature = "nfc", feature = "native-composition"))]
 pub use transport::nfc::{nfc_init, nfc_loop};
-#[cfg(feature = "usb-device")]
-pub use transport::usb::usb_device_init;
 #[cfg(all(feature = "usb-webusb", feature = "native-composition"))]
 pub use transport::webusb::WebUSB_Loop;
 // The FFI crate is the C-facing facade; re-export the core's public port types
