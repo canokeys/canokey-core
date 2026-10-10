@@ -212,8 +212,9 @@ fn credential_count(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
     let mut count = 0;
+    let mut scan = resident::Scan::new();
     for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some(n) = resident::load(index, buffer, p)? {
+        if let Some(n) = scan.load(index, buffer, p)? {
             if rp.is_none_or(|rp| {
                 resident::Entry::decode(&buffer[..n]).is_ok_and(|entry| entry.rp_hash == rp)
             }) {

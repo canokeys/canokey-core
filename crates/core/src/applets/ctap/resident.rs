@@ -207,19 +207,62 @@ pub(super) fn load(
 ) -> Result<Option<usize>, Status> {
     let record = Record::ctap_group(index / Record::CTAP_GROUP_MEMBERS).ok_or(Status::Other)?;
     let header = group_header(record, p)?;
+    load_member(index, record, &header, out, p)
+}
+#[inline(never)]
+fn load_member(
+    index: u8,
+    record: Record,
+    header: &[u8; GROUP_HEADER],
+    out: &mut [u8],
+    p: &mut Platform<'_, impl crate::ports::Backends>,
+) -> Result<Option<usize>, Status> {
     let member = usize::from(index % Record::CTAP_GROUP_MEMBERS);
-    let n = member_length(&header, member);
+    let n = member_length(header, member);
     if n == 0 {
         return Ok(None);
     }
-    let offset = GROUP_HEADER
-        + (0..member)
-            .map(|i| member_length(&header, i))
-            .sum::<usize>();
+    let offset = GROUP_HEADER + (0..member).map(|i| member_length(header, i)).sum::<usize>();
     p.storage
         .read_at(record, offset as u32, &mut out[..n])
         .map_err(|_| Status::Other)?;
     Ok(Some(n))
+}
+/// Validated group metadata for one synchronous read-only scan only.
+/// Drop before mutations, crypto, progress callbacks or returning a response.
+pub(super) struct Scan {
+    group: u8,
+    header: [u8; GROUP_HEADER],
+}
+impl Scan {
+    pub const fn new() -> Self {
+        Self {
+            group: Record::CTAP_CREDENTIALS,
+            header: [0; GROUP_HEADER],
+        }
+    }
+    pub fn load(
+        &mut self,
+        index: u8,
+        out: &mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<Option<usize>, Status> {
+        let group = index / Record::CTAP_GROUP_MEMBERS;
+        let record = Record::ctap_group(group).ok_or(Status::Other)?;
+        if self.group != group {
+            self.header = group_header(record, p)?;
+            self.group = group;
+        }
+        load_member(index, record, &self.header, out, p)
+    }
+    pub fn read<'a>(
+        &mut self,
+        index: u8,
+        out: &'a mut [u8],
+        p: &mut Platform<'_, impl crate::ports::Backends>,
+    ) -> Result<Option<(usize, Entry<'a>)>, Status> {
+        decode_loaded(self.load(index, out, p)?, out)
+    }
 }
 /// Load and validate one occupied resident slot without copying its fields.
 #[inline(never)]
@@ -228,7 +271,11 @@ pub(super) fn read<'a>(
     out: &'a mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(usize, Entry<'a>)>, Status> {
-    let Some(n) = load(index, out, p)? else {
+    decode_loaded(load(index, out, p)?, out)
+}
+#[inline(never)]
+fn decode_loaded(length: Option<usize>, out: &[u8]) -> Result<Option<(usize, Entry<'_>)>, Status> {
+    let Some(n) = length else {
         return Ok(None);
     };
     Ok(Some((n, Entry::decode(&out[..n])?)))
@@ -242,8 +289,9 @@ pub(super) fn store(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<(), Status> {
     let mut slot = None;
+    let mut scan = Scan::new();
     for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some((_, entry)) = read(index, out, p)? {
+        if let Some((_, entry)) = scan.read(index, out, p)? {
             if equal(entry.rp_hash, rp_hash) && equal(entry.user, &params.user[..params.user_len]) {
                 slot = Some(index);
                 break;
@@ -293,8 +341,9 @@ pub(super) fn find(
     out: &mut [u8],
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<Option<(u8, usize)>, Status> {
+    let mut scan = Scan::new();
     for index in 0..Record::CTAP_CREDENTIALS {
-        if let Some((n, entry)) = read(index, out, p)? {
+        if let Some((n, entry)) = scan.read(index, out, p)? {
             if equal(entry.id, id) && equal(entry.rp_hash, rp_hash) {
                 return Ok(Some((index, n)));
             }
@@ -332,8 +381,9 @@ pub(super) fn count(
     p: &mut Platform<'_, impl crate::ports::Backends>,
 ) -> Result<u8, Status> {
     let mut count = 0;
+    let mut scan = Scan::new();
     for index in 0..Record::CTAP_CREDENTIALS {
-        if read(index, out, p)?.is_some() {
+        if scan.read(index, out, p)?.is_some() {
             count += 1;
         }
     }
@@ -393,6 +443,8 @@ mod tests {
     struct Records {
         records: Vec<(u8, Vec<u8>)>,
         fail: Option<StorageError>,
+        size_calls: usize,
+        read_calls: usize,
     }
     impl Records {
         fn group(&self, id: Record) -> Result<Vec<u8>, StorageError> {
@@ -426,9 +478,11 @@ mod tests {
             Ok(bytes.len())
         }
         fn size(&mut self, id: Record) -> Result<u32, StorageError> {
+            self.size_calls += 1;
             Ok(self.group(id)?.len() as u32)
         }
         fn read_at(&mut self, id: Record, at: u32, out: &mut [u8]) -> Result<(), StorageError> {
+            self.read_calls += 1;
             let bytes = self.group(id)?;
             let at = at as usize;
             let value = bytes
@@ -473,6 +527,85 @@ mod tests {
         bytes[2] = index;
         bytes[ID_BYTES..HEADER].fill(rp);
         (index, bytes)
+    }
+
+    #[test]
+    fn grouped_scan_halves_full_store_calls_without_changing_slot_data() {
+        for cached in [false, true] {
+            let mut storage = Records {
+                records: (0..Record::CTAP_CREDENTIALS)
+                    .map(|index| resident(index, index % 7, 1))
+                    .collect(),
+                ..Records::default()
+            };
+            let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+                storage: &mut storage,
+                crypto: &mut Records::default(),
+                device: &mut Records::default(),
+                memory: &canokey_ports::default_memory(),
+            };
+            let mut out = [0; MAX_BYTES];
+            let mut scan = Scan::new();
+            for index in 0..Record::CTAP_CREDENTIALS {
+                let (_, entry) = if cached {
+                    scan.read(index, &mut out, &mut p)
+                } else {
+                    read(index, &mut out, &mut p)
+                }
+                .unwrap()
+                .unwrap();
+                assert_eq!(entry.id[2], index);
+                assert_eq!(entry.rp_hash, &[index % 7; RP_HASH_BYTES]);
+            }
+            let groups = usize::from(Record::CTAP_CREDENTIALS / Record::CTAP_GROUP_MEMBERS);
+            let slots = usize::from(Record::CTAP_CREDENTIALS);
+            assert_eq!(p.storage.size_calls, if cached { groups } else { slots });
+            assert_eq!(
+                p.storage.read_calls,
+                if cached { groups + slots } else { 2 * slots }
+            );
+        }
+    }
+
+    #[test]
+    fn grouped_scan_refreshes_between_requests_and_propagates_read_errors() {
+        let mut storage = Records {
+            records: std::vec![resident(0, 7, 1), resident(1, 8, 1)],
+            ..Records::default()
+        };
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut Records::default(),
+            device: &mut Records::default(),
+            memory: &canokey_ports::default_memory(),
+        };
+        let mut out = [0; MAX_BYTES];
+        let mut scan = Scan::new();
+        assert_eq!(
+            scan.read(0, &mut out, &mut p).unwrap().unwrap().1.rp_hash,
+            &[7; RP_HASH_BYTES]
+        );
+        p.storage.fail = Some(StorageError::Unavailable);
+        assert!(matches!(scan.read(1, &mut out, &mut p), Err(Status::Other)));
+        assert!(matches!(scan.read(4, &mut out, &mut p), Err(Status::Other)));
+        drop(scan);
+        p.storage.fail = None;
+        p.storage.records.clear();
+        let mut scan = Scan::new();
+        assert!(scan.read(0, &mut out, &mut p).unwrap().is_none());
+        drop(scan);
+        p.storage.records.push(resident(0, 9, 1));
+        let mut scan = Scan::new();
+        assert_eq!(
+            scan.read(0, &mut out, &mut p).unwrap().unwrap().1.rp_hash,
+            &[9; RP_HASH_BYTES]
+        );
+        drop(scan);
+        p.storage.records[0].1.truncate(HEADER);
+        assert!(matches!(
+            Scan::new().read(0, &mut out, &mut p),
+            Err(Status::Other)
+        ));
     }
 
     #[test]
