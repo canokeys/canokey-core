@@ -2,9 +2,11 @@
 # Rust OpenPGP implementation and normal validation
 
 The optional `openpgp` core/FFI feature registers OpenPGP Card 3.4 at
-`D27600012401`. The CIU `devkit-rust-openpgp` and host
-`CANOKEY_APPLET_OPENPGP` profiles explicitly combine ADMIN, PASS, OATH and
-OpenPGP. PIV, CTAP, NDEF and NFC are not enabled. No legacy C OpenPGP dispatcher,
+`D27600012401`. The host `CANOKEY_PROFILE=openpgp` composition combines
+ADMIN, PASS, OATH and OpenPGP. CIU's `devkit` and `nfcc` presets include
+OpenPGP in the full product; focused diagnostic compositions use explicit
+options documented in the parent platform's `firmware/rust-core/README.md`.
+No legacy C OpenPGP dispatcher,
 PIN manager, `src/key.c`, or applet storage layout is linked.
 
 ## Responsibilities

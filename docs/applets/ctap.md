@@ -410,8 +410,8 @@ prefixes, malformed canonical encodings, nesting limits and split UTF-8.
 In the CIU parent repository:
 
 ```sh
-cmake --preset devkit-rust-ctap
-cmake --build --preset build-devkit-rust-ctap
+cmake --preset devkit
+cmake --build --preset build-devkit
 .venv-hil/bin/python tools/hil/devkit_ctl.py --list
 # Flash using the parent AGENTS.md workflow, then:
 .venv-hil/bin/python tools/hil/rust_ctap_smoke.py --control <control-port> --output <report.json>

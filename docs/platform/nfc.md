@@ -46,12 +46,13 @@ Validation entrypoints:
 - Rust `--test nfc`: wire, lifecycle, IRQ register and provisioning failure tests.
 - Rust `--test ndef`: file policy and actual Core/registry frame routing.
 - Combined host `core-behavior`: ADMIN NDEF authorization and read-only/reset APDUs.
-- `cmake --preset nfcc-rust-all` and `cmake --build --preset build-nfcc-rust-all`:
+- `cmake --preset nfcc` and `cmake --build --preset build-nfcc`:
   real big-endian target compilation and full-feature capacity check.
 
-Still open: LED/WebUSB landing consumers of the common configuration flags,
-complete native ownership gates, capacity reduction,
-boot/recovery gate completion, physical reader compatibility and stack paint.
+CIU's full product passes native ownership, capacity and offline boot/recovery
+gates. NFCC physical reader/RF compatibility, instrumented I2C timing, deliberate
+MPU fault/recovery checks and board-specific stack evidence remain scoped by
+the platform's `docs/acceptance.md`; DevKit measurements do not establish them.
 
 The native-endian configuration-page layout is preserved by `runtime::config`.
 NFC enable/disable (`14`, P1=0 read or P1=1 authenticated write, P2=0/1), ADMIN

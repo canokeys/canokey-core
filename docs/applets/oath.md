@@ -110,8 +110,8 @@ cmake -S canokey-core -B build/rust-core-oath -DCANOKEY_PROFILE=oath -DCANOKEY_V
 cmake --build build/rust-core-oath
 ctest --test-dir build/rust-core-oath --output-on-failure
 .venv-hil/bin/python tools/hil/rust_oath_smoke.py --host build/rust-core-oath/oath-host
-cmake --preset devkit-rust-oath
-cmake --build --preset build-devkit-rust-oath
+cmake --preset devkit
+cmake --build --preset build-devkit
 # Flash only the HEX produced after the mandatory vector/ResumeLoader gate.
 .venv-hil/bin/python tools/hil/rust_oath_smoke.py --touch --output /tmp/oath-usb.json
 .venv-hil/bin/python tools/hil/devkit_ctl.py --list

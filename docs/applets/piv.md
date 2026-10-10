@@ -181,8 +181,8 @@ ctest --test-dir build/rust-combined-host --output-on-failure
 
 python3 tools/hil/test_rust_storage.py
 
-cmake --preset devkit-rust-piv
-cmake --build --preset build-devkit-rust-piv
+cmake --preset devkit
+cmake --build --preset build-devkit
 ```
 
 The Python PIV suite requires `cryptography >= 50` for independent ML-DSA/ML-KEM
