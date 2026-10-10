@@ -60,8 +60,3 @@ pub unsafe extern "C" fn device_set_timeout(
 pub unsafe extern "C" fn nfc_handler() {
     unsafe { composition::nfc::interrupt() }
 }
-#[cfg(feature = "nfc")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn is_nfc() -> u8 {
-    unsafe { composition::nfc::mode() }
-}

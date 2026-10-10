@@ -12,11 +12,6 @@
 #define TOUCH_SHORT 1
 #define TOUCH_LONG 2
 
-typedef enum {
-  FM_STATUS_OK = 0,
-  FM_STATUS_NACK = 1,
-} fm_status_t;
-
 // functions should be implemented by device
 /**
  * Delay processing for specific milliseconds
@@ -66,17 +61,6 @@ void fm_csn_low(void);
  * Disable FM chip by pull up CSN
  */
 void fm_csn_high(void);
-#if NFC_CHIP == NFC_CHIP_FM11NT
-void i2c_start(void);
-void i2c_stop(void);
-void i2c_bus_recover(void);
-void scl_delay(void);
-fm_status_t i2c_read_ack(void);
-void i2c_send_ack(void);
-void i2c_send_nack(void);
-fm_status_t i2c_write_byte(uint8_t data);
-uint8_t i2c_read_byte(void);
-#endif
 
 // only for test
 #define TESTMODE_ERR_WRITE 0
@@ -84,13 +68,5 @@ uint8_t i2c_read_byte(void);
 
 void testmode_inject_error(uint8_t p1, uint8_t p2, uint16_t len, const uint8_t *data);
 bool testmode_err_triggered(const char *filename, bool file_wr);
-
-// -----------------------------------------------------------------------------------
-
-#if ENABLE_NFC
-uint8_t is_nfc(void);
-#else
-static inline uint8_t is_nfc(void) { return 0; }
-#endif
 
 #endif // _DEVICE_H_
