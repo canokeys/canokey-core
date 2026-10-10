@@ -3,6 +3,7 @@
 #define __CTAPHID_H_INCLUDED__
 
 #include <common.h>
+#include <pke.h>
 
 #define HID_RPT_SIZE 64 // Default size of raw HID report
 
@@ -93,7 +94,13 @@ typedef struct {
 #define LOOP_SUCCESS 0x00
 #define LOOP_CANCEL 0x01
 
-#define MAX_CTAP_BUFSIZE 1300
+#ifndef CTAPHID_STREAM_THRESHOLD
+#define CTAPHID_STREAM_THRESHOLD 192
+#endif
+#define MAX_CTAP_BUFSIZE PKE_BUFFER_SIZE
+#define CTAPHID_INLINE_BUFSIZE CTAPHID_STREAM_THRESHOLD
+_Static_assert(CTAPHID_INLINE_BUFSIZE >= CTAPHID_STREAM_THRESHOLD,
+               "inline response buffer must hold every non-streamed response");
 
 typedef struct {
   uint32_t cid;
@@ -101,16 +108,39 @@ typedef struct {
   uint16_t bcnt_current;
   uint32_t expire;
   uint8_t state;
+  uint8_t ready;
+  volatile uint8_t executing;
+  volatile uint8_t cancel_pending;
+  volatile uint8_t cancel_response_sent;
   uint8_t cmd;
   uint8_t seq;
-  alignas(4) uint8_t data[MAX_CTAP_BUFSIZE];
+  uint8_t use_pke_buffer;
+  alignas(4) uint8_t data[CTAPHID_INLINE_BUFSIZE];
 } CTAPHID_Channel;
 
 typedef struct _USBD_HandleTypeDef USBD_HandleTypeDef;
 
+typedef struct {
+  size_t total_len;
+  int (*read)(void *ctx, uint8_t *out, size_t max_len, size_t *written);
+  void (*close)(void *ctx);
+  void *ctx;
+} CTAPHID_TxSource;
+
 uint8_t CTAPHID_Init(uint8_t (*send_report)(USBD_HandleTypeDef *pdev, uint8_t *report, uint16_t len));
 uint8_t CTAPHID_OutEvent(uint8_t *data);
+uint8_t CTAPHID_RxCanAccept(void);
 void CTAPHID_SendKeepAlive(uint8_t status);
 uint8_t CTAPHID_Loop(uint8_t wait_for_user);
+int CTAPHID_SendResponseAuto(uint32_t cid, uint8_t cmd, const uint8_t *data, size_t len);
+int CTAPHID_SendStreamResponse(uint32_t cid, uint8_t cmd, const uint8_t *data, size_t len);
+// Takes ownership of source and invokes its close callback exactly once, including on failure.
+int CTAPHID_SendStreamSource(uint32_t cid, uint8_t cmd, const CTAPHID_TxSource *source);
+int CTAPHID_AcquireSharedBuffer(uint8_t **buf, size_t *len);
+void CTAPHID_ReleaseSharedBuffer(void);
+void CTAPHID_CloseSharedBufferSource(void *ctx);
+void CTAPHID_TxContinue(void);
+uint8_t CTAPHID_TxBusy(void);
+void CTAPHID_TxReset(void);
 
 #endif // __CTAPHID_H_INCLUDED__

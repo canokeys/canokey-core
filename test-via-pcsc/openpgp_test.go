@@ -38,19 +38,29 @@ func New() (*OpenPGPApplet, error) {
 		context.Release()
 		return nil, errors.Wrapf(err, errFailedToListReaders)
 	}
-	for _, reader := range readers {
-		if strings.Contains(strings.ToLower(reader), "canokey") && strings.Contains(strings.ToLower(reader), "openpgp") {
-			card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
-			if err != nil {
-				context.Release()
-				return nil, errors.Wrapf(err, errFailedToConnect)
+	reader := ""
+	if len(readers) == 1 {
+		reader = readers[0]
+	} else {
+		for _, candidate := range readers {
+			lower := strings.ToLower(candidate)
+			if strings.Contains(lower, "canokey") && strings.Contains(lower, "openpgp") {
+				reader = candidate
+				break
 			}
-
-			return &OpenPGPApplet{
-				card:    card,
-				context: context,
-			}, nil
 		}
+	}
+	if reader != "" {
+		card, err := context.Connect(reader, scard.ShareShared, scard.ProtocolAny)
+		if err != nil {
+			context.Release()
+			return nil, errors.Wrapf(err, errFailedToConnect)
+		}
+
+		return &OpenPGPApplet{
+			card:    card,
+			context: context,
+		}, nil
 	}
 	context.Release()
 	return nil, fmt.Errorf(errFailedToListSuitableReader, len(readers))
@@ -73,6 +83,53 @@ func (o *OpenPGPApplet) Send(apdu []byte) ([]byte, uint16, error) {
 		return nil, 0, errors.Wrapf(err, errFailedToTransmit)
 	}
 	return res[0 : len(res)-2], uint16(res[len(res)-2])<<8 | uint16(res[len(res)-1]), nil
+}
+
+func (o *OpenPGPApplet) SendWithGetResponse(apdu []byte) ([]byte, uint16, error) {
+	data, code, err := o.Send(apdu)
+	if err != nil {
+		return nil, code, err
+	}
+
+	out := append([]byte{}, data...)
+	for code&0xFF00 == 0x6100 {
+		le := byte(code)
+		if le == 0x00 || le == 0xFF {
+			le = 0x00
+		}
+
+		data, code, err = o.Send([]byte{0x00, 0xC0, 0x00, 0x00, le})
+		if err != nil {
+			return nil, code, err
+		}
+		out = append(out, data...)
+	}
+
+	return out, code, nil
+}
+
+func (o *OpenPGPApplet) SendPutDataChained(p1, p2 byte, data []byte) (uint16, error) {
+	const maxChunkSize = 0xFF
+
+	for len(data) > 0 {
+		chunkSize := len(data)
+		cla := byte(0x00)
+		if chunkSize > maxChunkSize {
+			chunkSize = maxChunkSize
+			cla = 0x10
+		}
+
+		_, code, err := o.Send(append([]byte{cla, 0xDA, p1, p2, byte(chunkSize)}, data[:chunkSize]...))
+		if err != nil {
+			return 0, err
+		}
+		if code != 0x9000 {
+			return code, nil
+		}
+		data = data[chunkSize:]
+	}
+
+	return 0x9000, nil
 }
 
 func TestOpenPGPApplet(t *testing.T) {
@@ -103,15 +160,15 @@ func TestOpenPGPApplet(t *testing.T) {
 		Convey("Get extended length info", func(ctx C) {
 			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x66, 0x08})
 			So(err, ShouldBeNil)
-			So(code, ShouldEqual, 0x9000)
-			So(res, ShouldResemble, []byte{2, 2, 0x05, 0x3C, 2, 2, 0x05, 0x3C}) // 1340 bytes
+			So(code, ShouldEqual, 0x6A88)
+			So(res, ShouldBeEmpty)
 		})
 
 		Convey("Get challenge", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0x84, 0x00, 0x00, 0x00, 0x05, 0x3C})
+			res, code, err := app.Send([]byte{0x00, 0x84, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
-			So(len(res), ShouldEqual, 0x53C) // 1340 bytes
+			So(len(res), ShouldEqual, 0x100) // 256 bytes
 		})
 
 		Convey("Admin PIN retry times", func(ctx C) {
@@ -168,6 +225,14 @@ func TestOpenPGPApplet(t *testing.T) {
 		})
 
 		Convey("Error handling", func(ctx C) {
+			verifyPin := func(reference byte, pin []byte) {
+				_, code, err := app.Send(append([]byte{0x00, 0x20, 0x00, reference, byte(len(pin))}, pin...))
+				So(err, ShouldBeNil)
+				So(code, ShouldEqual, 0x9000)
+			}
+			verifyAdmin := func() { verifyPin(0x83, []byte("12345678")) }
+			verifyUser := func(reference byte) { verifyPin(reference, []byte("123456")) }
+
 			_, code, err := app.Send([]byte{0x00, 0xFF, 0x01, 0x01, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6D00)
@@ -176,6 +241,7 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88)
 
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x01, 0x01, 0x01, 0x55})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A86)
@@ -209,11 +275,13 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(code, ShouldEqual, 0x6A86)
 
 			// Sign
+			verifyUser(0x81)
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x02, 0xA4, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88) // KEY_NOT_PRESENT
 
 			// add an ECDSA key
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC1, 0x06, 0x13, 0x2B, 0x81, 0x04, 0x00, 0x0A})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
@@ -221,16 +289,19 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
+			verifyUser(0x81)
 			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x31}, make([]byte, 0x31)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6700) // data too long for ECDSA
 
 			// add a RSA key
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC1, 0x06, 0x01, 0x08, 0x00, 0x00, 0x20, 0x02})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			// not generated
 
+			verifyUser(0x81)
 			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x66}, make([]byte, 0x66)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88) // key deleted automatically
@@ -239,16 +310,19 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x61FF) // more data available
 
+			verifyUser(0x81)
 			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x9E, 0x9A, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6700) // data is longer than 40% of 2048-bits
 
 			// Decipher
+			verifyUser(0x82)
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x80, 0x86, 0x02, 0xA4, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88) // KEY_NOT_PRESENT
 
 			// add an ECDH key
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC2, 0x06, 0x12, 0x2B, 0x81, 0x04, 0x00, 0x22})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
@@ -256,6 +330,7 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
+			verifyUser(0x82)
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x80, 0x86, 0x08, 0xA6, 0x33, 0x77, 0xA6, 0x77, 0xA6, 0x33, 0x77})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A80) // wrong T for ECDH
@@ -265,11 +340,13 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(code, ShouldEqual, 0x6A80) // wrong L for ECDH
 
 			// add a X25519 key
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC2, 0x0B, 0x12, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			// not generated
 
+			verifyUser(0x82)
 			_, code, err = app.Send(append([]byte{0x00, 0x2A, 0x80, 0x86, 0x27, 0xA6, 0x25, 0x7F, 0x49, 0x22, 0x86, 0x20}, make([]byte, 0x20)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88) // key deleted automatically
@@ -278,25 +355,30 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
+			verifyUser(0x82)
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x80, 0x86, 0x08, 0xA6, 0x25, 0x7F, 0x49, 0x22, 0x86, 0x19, 0x04})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A80) // wrong L for X25519
 
 			// X25519, unchanged
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC2, 0x0B, 0x12, 0x2B, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
+			verifyUser(0x82)
 			_, code, err = app.Send([]byte{0x00, 0x2A, 0x80, 0x86, 0x08, 0xA6, 0x25, 0x7F, 0x49, 0x22, 0x86, 0x19, 0x04})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A80) // wrong L for X25519
 
 			// Auth
+			verifyUser(0x82)
 			_, code, err = app.Send([]byte{0x00, 0x88, 0x00, 0x00, 0x02, 0xA4, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88) // KEY_NOT_PRESENT
 
 			// add an ECDSA key
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC3, 0x06, 0x13, 0x2B, 0x81, 0x04, 0x00, 0x22})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
@@ -304,16 +386,19 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 
+			verifyUser(0x82)
 			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x31}, make([]byte, 0x31)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6700) // data too long for ECDSA
 
 			// add a RSA key
+			verifyAdmin()
 			_, code, err = app.Send([]byte{0x00, 0xDA, 0x00, 0xC3, 0x06, 0x01, 0x08, 0x00, 0x00, 0x20, 0x02})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			// not generated
 
+			verifyUser(0x82)
 			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6A88) // key deleted automatically
@@ -322,6 +407,7 @@ func TestOpenPGPApplet(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x61FF) // more data available
 
+			verifyUser(0x82)
 			_, code, err = app.Send(append([]byte{0x00, 0x88, 0x00, 0x00, 0x67}, make([]byte, 0x67)...))
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x6700) // data is longer than 40% of 2048-bits
@@ -369,11 +455,8 @@ func TestOpenPGPCerts(t *testing.T) {
 			So(code, ShouldEqual, 0x9000)
 		})
 
-		putCert := func(cert []byte) []byte {
-			if len(cert) > 255 {
-				return append([]byte{0x00, 0xDA, 0x7F, 0x21, 0x00, byte(len(cert) >> 8), byte(len(cert))}, cert...)
-			}
-			return append([]byte{0x00, 0xDA, 0x7F, 0x21, byte(len(cert))}, cert...)
+		putCert := func(cert []byte) (uint16, error) {
+			return app.SendPutDataChained(0x7F, 0x21, cert)
 		}
 
 		Convey("Select cert 3", func(ctx C) {
@@ -383,7 +466,7 @@ func TestOpenPGPCerts(t *testing.T) {
 		})
 
 		Convey("Put cert 3", func(ctx C) {
-			_, code, err := app.Send(putCert(cert3Short))
+			code, err := putCert(cert3Short)
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})
@@ -395,7 +478,7 @@ func TestOpenPGPCerts(t *testing.T) {
 		})
 
 		Convey("Put cert 1", func(ctx C) {
-			_, code, err := app.Send(putCert(certContent[1]))
+			code, err := putCert(certContent[1])
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})
@@ -407,20 +490,20 @@ func TestOpenPGPCerts(t *testing.T) {
 		})
 
 		Convey("Put cert 2", func(ctx C) {
-			_, code, err := app.Send(putCert(certContent[2]))
+			code, err := putCert(certContent[2])
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})
 
 		Convey("Read cert 1", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
+			res, code, err := app.SendWithGetResponse([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[1])
 		})
 
 		Convey("Read next cert 2", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
+			res, code, err := app.SendWithGetResponse([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[2])
@@ -433,7 +516,7 @@ func TestOpenPGPCerts(t *testing.T) {
 		})
 
 		Convey("Read cert 3", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
+			res, code, err := app.SendWithGetResponse([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, cert3Short)
@@ -452,7 +535,7 @@ func TestOpenPGPCerts(t *testing.T) {
 		})
 
 		Convey("Put cert 3 again", func(ctx C) {
-			_, code, err := app.Send(putCert(certContent[3]))
+			code, err := putCert(certContent[3])
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 		})
@@ -470,14 +553,14 @@ func TestOpenPGPCerts(t *testing.T) {
 		})
 
 		Convey("Read cert 2 again", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
+			res, code, err := app.SendWithGetResponse([]byte{0x00, 0xCA, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[2])
 		})
 
 		Convey("Read next cert 3", func(ctx C) {
-			res, code, err := app.Send([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
+			res, code, err := app.SendWithGetResponse([]byte{0x00, 0xCC, 0x7F, 0x21, 0x00, 0x00, 0x00})
 			So(err, ShouldBeNil)
 			So(code, ShouldEqual, 0x9000)
 			So(res, ShouldResemble, certContent[3])
