@@ -157,7 +157,17 @@ def run(library):
             assert d.raw(bytes(1034))[0] == 618
             assert d.raw(b'\x00')[1] == b'\x67\x00'
             assert d.raw(getinfo, capacity=1)[0] == 618
+            card.cmd('reselect after malformed input', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
             assert d.raw(bytes.fromhex('00030000000000'))[1] == b'U2F_V2\x90\x00'
+            for action in (502, 501):
+                assert d.power(action)[0] == 0
+                if action == 501:
+                    assert d.power(500)[0] == 0
+                for apdu in ('80100000010400', '0003000000', '901000000104',
+                             '80100000000001040000'):
+                    assert d.raw(bytes.fromhex(apdu))[1] == b'\x6a\x82', apdu
+                card.cmd('reselect after slot reset', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
+                assert d.raw(bytes.fromhex('0003000000'))[1] == b'U2F_V2\x90\x00'
 
             def ctap(command, params=None, expected=0):
                 payload = bytes([command]) + (cbor.encode(params) if params is not None else b'')
@@ -174,21 +184,11 @@ def run(library):
                     rc, result, _ = d.raw(apdu)
                 assert rc == 0 and result[-2:] == b'\x90\x00' and result[0] == expected, (rc, result.hex())
                 return cbor.decode(result[1:-2]) if len(result) > 3 else None
-            reader_cycles = 0
-            def reader_cycle():
-                nonlocal reader_cycles
-                reader_cycles += 1
-                if reader_cycles % 2:
-                    assert d.power(501) == (0, b'', 0)
-                    assert d.power(500)[0] == 0
-                else:
-                    assert d.power(502)[0] == 0
-                card.cmd('reselect FIDO', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
             def verify_attestation(result, challenge):
                 cert = x509.load_der_x509_certificate(result[3]['x5c'][0])
                 cert.public_key().verify(result[3]['sig'], result[2] + challenge, ec.ECDSA(hashes.SHA256()))
             mixed_management(lambda command, params=None, status=0: ctap(command, params, status),
-                             verify_attestation, cycle=reader_cycle)
+                             verify_attestation)
             ctap(6, {1: 1, 2: 2, 127: bytes(700)}) # full standalone extended input
             digest = hashlib.sha256(b'IFD boundary').digest()
             rp = 'rust-pcsc.example'
@@ -210,6 +210,7 @@ def run(library):
                 assert AuthenticatorData(answer[2]).counter > counter
                 counter = AuthenticatorData(answer[2]).counter
             card.cmd('magic reboot', 0xee, data=bytes.fromhex('1256abf0'))
+            card.cmd('reselect after reboot', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
             answer = ctap(2, request)
             assert AuthenticatorData(answer[2]).counter > counter
 
@@ -254,6 +255,7 @@ def run(library):
             os.environ['CANOKEY_TEST_NFC'] = '1'
             assert d.lib.IFDHCreateChannelByName(d.lun, b'virtual') == 0
             assert d.power(500)[0] == 0
+            card.cmd('select after reopening reader', 0xa4, 4, data=bytes.fromhex('a0000006472f0001'))
             answer = ctap(2, request)
             key.verify(answer[2]+digest, answer[3])
             admin(); edit(0x6982); verify()

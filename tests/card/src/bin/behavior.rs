@@ -510,6 +510,8 @@ fn ctap_sessions() {
     for owner in [OWNER_CCID, OWNER_WEBUSB, OWNER_NFC] {
         f.owner = owner;
         f.reset();
+        f.command(U2F_VERSION, 0, 0, &[], Some(6), Sw::FILE_NOT_FOUND);
+        f.select(FIDO_AID, Sw::SUCCESS);
         f.command(U2F_VERSION, 0, 0, &[], Some(6), Sw::SUCCESS);
         assert_eq!(&f.buffer[..6], b"U2F_V2");
     }
@@ -531,6 +533,7 @@ fn ctap_sessions() {
     }
     f.reset();
     f.owner = OWNER_NFC;
+    f.select(FIDO_AID, Sw::SUCCESS);
     // NFC extended CTAP GetInfo: CLA 80, INS 10, extended Lc=1, command 04.
     const GET_INFO: &[u8] = &[0x80, 0x10, 0, 0, 0, 0, 1, 4];
     let n = f

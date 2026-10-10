@@ -78,8 +78,8 @@ are framed records (`[tag:u8][len:u16-LE][payload]`): APDU execution with
 automatic GET RESPONSE chaining (`0x00`), slot power (`0x01`), one-shot storage
 faults (`0x02`), full runtime reset (`0x03`) and raw APDU exchange (`0x04`,
 without draining). It invokes Rust Core APIs directly.
-Selected CTAP agreement/token state survives slot power; pending responses do
-not. Full reset clears sessions and selection. Card state persists across inputs inside
+Slot power and full reset clear sessions, selection and pending responses.
+Durable card state persists across inputs inside
 the fuzzer process. Use a dedicated build directory with Clang; every C
 object in it is coverage-instrumented and linked against ASan/UBSan:
 

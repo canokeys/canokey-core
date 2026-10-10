@@ -148,9 +148,8 @@ pub(super) unsafe fn ck_pcsc_power(
         }
         return SMALL;
     }
-    // As on USB CCID, slot power retains CTAP selection and session ownership,
-    // but closes response chains and clears message fragments/workspace.
-    // Other applet grants are revoked; device reset/close clears every session.
+    // As on USB CCID, slot power clears applet selection, authorization and
+    // transient sessions. Device time and durable records survive slot cycles.
     unsafe {
         core::slot_power::<HostProvider>();
     }

@@ -374,21 +374,6 @@ impl Registry {
             .map_err(crate::applets::pass::status)
     }
 }
-/// Unambiguous FIDO commands accepted after card/slot reset, before SELECT.
-/// Never steal an APDU from an explicitly selected applet.
-#[cfg(feature = "ctap")]
-fn implicit_fido(h: Header) -> bool {
-    // Strip APDU chaining from FIDO CLA 80; accept CBOR INS 10 or U2F
-    // REGISTER/AUTHENTICATE/VERSION. SELECT-by-name (P1=04) remains explicit.
-    (h.cla & !canokey_protocol::apdu::CLA_CHAINING == canokey_protocol::apdu::CLA_FIDO
-        && h.ins == canokey_protocol::apdu::FIDO_CBOR_INS)
-        || (h.cla == 0
-            && (matches!(
-                h.ins,
-                canokey_protocol::apdu::U2F_REGISTER..=canokey_protocol::apdu::U2F_VERSION
-            ) || (h.ins == canokey_protocol::apdu::INS_SELECT
-                && h.p1 != canokey_protocol::apdu::SELECT_BY_NAME)))
-}
 impl Router for Registry {
     #[allow(unused_variables)]
     fn install(
@@ -399,16 +384,6 @@ impl Router for Registry {
     }
     fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
         self.view().reset(p)
-    }
-    fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
-        self.view().slot_power(p)
-    }
-    fn implicit_select(
-        &mut self,
-        header: Header,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        self.view().implicit_select(header, p)
     }
     fn selected(&self) -> bool {
         !matches!(self.applet, AppletState::None)
@@ -433,9 +408,7 @@ impl Router for Registry {
             return true;
         }
         #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::Ctap)
-            || (matches!(self.applet, AppletState::None) && implicit_fido(header))
-        {
+        if matches!(self.applet, AppletState::Ctap) {
             return ctap::apdu::allows_extended(header);
         }
         false
@@ -444,12 +417,6 @@ impl Router for Registry {
         // CTAP uses base CLA=80; other applets require CLA=00. Strip the chain bit only where
         // chaining is supported; leaving it set deliberately makes the final
         // CLA check reject chained ADMIN or unsupported chained PIV commands.
-        #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::None) && implicit_fido(h) {
-            // Admission is read-only; start performs the configuration check
-            // before consuming staged input or executing any applet operation.
-            return Ok(ctap::MAX_REQUEST as u32);
-        }
         let (cla, limit) = self.applet.command_limit(h);
         if !self.selected() {
             return Err(Sw::FILE_NOT_FOUND);
@@ -798,35 +765,6 @@ impl RegistryView<'_> {
         self.output.inhibit(true, p.memory);
         self.reset_sessions(p);
         *self.applet = AppletState::None;
-    }
-
-    #[inline(never)]
-    fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
-        #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::Ctap) {
-            self.ctap.close(&mut self.workspace, p);
-            self.workspace.wipe_active(p.memory);
-            return true;
-        }
-        self.reset(p);
-        false
-    }
-
-    #[inline(never)]
-    fn implicit_select(
-        &mut self,
-        header: Header,
-        p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        let _ = (&header, &p);
-        #[cfg(feature = "ctap")]
-        if matches!(self.applet, AppletState::None) && implicit_fido(header) {
-            if !Selected::Ctap.enabled(p) {
-                return Err(Sw::FILE_NOT_FOUND);
-            }
-            *self.applet = AppletState::Ctap;
-        }
-        Ok(())
     }
 
     #[inline(never)]

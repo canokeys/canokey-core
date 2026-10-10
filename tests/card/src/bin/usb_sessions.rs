@@ -447,7 +447,7 @@ fn main() {
     assert_eq!(unsafe { core::install::<Fake>() }, 0);
     configure();
     loops();
-    implicit_selection();
+    explicit_selection();
     let cid = ownership_and_pending();
     preemption(cid);
     applet_streams();
@@ -456,10 +456,14 @@ fn main() {
     println!("USB shared session correctness passed");
 }
 
-fn implicit_selection() {
+fn explicit_selection() {
     for chained in [false, true] {
         ccid_send(ccid_wire::POWER_ON, &[]);
         ccid_read();
+        ccid_apdu(&[0x80, 0x10, 0, 0, 1, 4, 0], 0x6a82);
+        ccid_apdu(&[0, 3, 0, 0, 0], 0x6a82);
+        ccid_apdu(&[0x90, 0x10, 0, 0, 1, 4], 0x6a82);
+        ccid_apdu(SELECT_FIDO, 0x9000);
         // P1=80 permits NFC polling semantics over CCID; optional ISO input chain.
         let mut info = [0x80, 0x10, 0x80, 0, 1, 4, 0];
         if chained {

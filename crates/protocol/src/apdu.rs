@@ -7,7 +7,7 @@ pub use decode::{FrameDecoder, FrameEvent, parse};
 pub use header::*;
 // FIDO Alliance AID: RID A000000647, PIX 2F0001 (FIDO/U2F applet).
 pub const FIDO_AID: [u8; 8] = [0xa0, 0x00, 0x00, 0x06, 0x47, 0x2f, 0x00, 0x01];
-// FIDO/U2F APDU dispatch assignments, shared with implicit NFC/PCSC selection.
+// FIDO/U2F APDU dispatch assignments after explicit applet selection.
 pub const CLA_CHAINING: u8 = 0x10;
 pub const CLA_FIDO: u8 = 0x80;
 pub const INS_SELECT: u8 = 0xa4;

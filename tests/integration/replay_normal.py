@@ -51,8 +51,8 @@ result = subprocess.run([sys.argv[1]], input='\n'.join(lifecycle) + '\n',
 replies = result.stdout.splitlines()[1:]
 assert len(replies) == len(lifecycle), result.stdout
 assert replies[1].startswith('RESP 900000'), replies[1]
-assert replies[1] == replies[3], 'slot power must preserve selected CTAP key agreement'
+assert replies[3] == 'RESP 6A82', 'slot power must clear FIDO selection'
 assert replies[6].startswith('RESP 900000') and replies[6] != replies[1], 'reset clears agreement'
 assert replies[9] == 'RESP 6A82', 'other-app slot power must clear selection'
 assert replies[12] == 'RESP 6900' and replies[13] == 'RESP 9000', 'streamed read fault is one-shot'
-print('Rust replay: CTAP agreement retention, full reset, deselection and streamed read faults passed')
+print('Rust replay: explicit FIDO selection, agreement reset and streamed read faults passed')

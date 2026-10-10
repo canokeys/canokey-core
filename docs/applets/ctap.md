@@ -460,16 +460,13 @@ The script uses python-fido2/cryptography independently for ECDH, KDF, AES-CBC,
 HMAC and token decryption under both protocols. Run the read-only transport smoke
 before/after it. Preserve evidence of firmware identity and stack profile settings.
 
-Implicit APDU routing after a slot reset is supported for CLA 80/90 INS 10
-(CTAP2), CLA 00 INS 01/02/03 (U2F), and CLA 00 INS A4 with P1 other than 04.
-ISO SELECT-by-name retains precedence, including invalid-P2 rejection. Routing
-only applies while no applet is selected and still checks the persistent
-WebAuthn permission before consuming/executing a request. An already selected
-ADMIN, OpenPGP, PIV, OATH or NDEF applet is never replaced by this heuristic.
-Extended CCID/NFC admission can recognize an implicit FIDO header without
-mutating selection; normal command start performs the permission check. The
-streaming regression exercises a source-backed CBOR request without SELECT,
-including bounded length, owner restrictions, source cleanup and chain errors.
+FIDO APDUs require explicit SELECT-by-name after startup or slot reset.
+CTAP2/U2F command headers do not select an applet; unselected short, chained
+and standalone extended FIDO requests return `6A82`. Native CTAPHID CBOR
+execution remains independent of APDU selection. Extended CCID/NFC admission
+requires an already selected applet before staging request bytes. Streaming
+regressions cover explicit selection, bounded length, owner restrictions,
+source cleanup and chain errors.
 
 
 ### Full host HID execution regression
@@ -672,21 +669,16 @@ allowed signatures, resident continuation filtering and authenticated management
 
 ### Reader logical power versus device reset
 
-CCID PowerOn/PowerOff and virtual PC/SC PowerICC do not represent device power
-loss. When CCID owns a selected CTAP applet, these events discard wire response
-and partial command state while preserving token/key agreement and assertion/
-management continuations. A FIDO reselect on that reader also preserves them.
-The engine retains the transport owner so another interface must pass normal
-session preemption, which clears CTAP state. USB/device reset, reader close,
-application deselection and failed storage reopen remain full reset boundaries.
-Other applets still lose their grants on every reader power cycle. No timestamp
-is restarted: token expiry, assertion timeout and the reset power-on gate apply.
+CCID PowerOn/PowerOff and virtual PC/SC PowerICC clear APDU selection,
+authorization, key agreement, continuations and pending responses. Clients
+must SELECT again and obtain fresh authorization. Durable records and the
+device power-on timestamp are preserved; slot reset does not restart the
+authenticatorReset power-on window. Active foreign transport ownership is
+protected by the transport's power-command admission checks.
 
-The existing PC/SC fixture runs mixed GA/CM enumeration through alternating
-power-down/up pairs and warm PowerICC resets, reselecting FIDO between commands.
-Full public keys, credential identities and P-256/Ed25519 assertion signatures
-are checked; the same management token starts the second enumeration afterward.
-The CCID transport test distinguishes logical power from timeout/full reset.
+The PC/SC fixture checks warm reset and power-down/up rejection before SELECT,
+then recovery after reselection. Mixed GA/CM enumeration stays within one
+session. The replay lifecycle test verifies agreement and token revocation.
 
 ### Boot reconstruction of incomplete provisioning
 

@@ -527,6 +527,9 @@ fn fido_chain_exact_limit_overflow_and_recovery() {
             };
             let mut core = Core::new();
             let mut out = [0; 258];
+            let select = [0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1];
+            let reply = core.receive(owner, &select, &mut p);
+            core.transmit(reply, &mut out, &mut p).unwrap();
             // getPinRetries plus an ignored 1015-byte extension: exactly 1024.
             let mut request = vec![6, 0xa2, 2, 1, 0x18, 99, 0x59, 3, 0xf7];
             request.extend_from_slice(&[0x37; 1015]);
@@ -585,21 +588,27 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     let mut core = Core::new();
     let mut out = [0; 258];
     let prefix = [0x80, 0x10, 0, 0, 0, 1, 0x23]; // Lc=291, BE
-    assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
+    assert_eq!(
+        core.prepare_extended(1, &prefix, 300, &mut p),
+        Err(Sw::FILE_NOT_FOUND)
+    );
     let select = [0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0];
-    // Admission and source parsing work without a prior AID selection.
     for (owner, head, total) in [
         (2, prefix, 300),
         (1, [0x90, 0x10, 0, 0, 0, 1, 0x23], 300),
-        (1, [0, 0xda, 0, 0, 0, 1, 0x23], 300),
+        (1, [0x81, 0xda, 0, 0, 0, 1, 0x23], 300),
         (1, prefix, 299),
         (1, [0x80, 0x10, 0, 0, 0, 4, 1], 1034),
     ] {
+        let reply = core.receive(1, &select, &mut p);
+        core.transmit(reply, &mut out, &mut p).unwrap();
         assert_eq!(
             core.prepare_extended(owner, &head, total, &mut p),
             Err(Sw::WRONG_LENGTH)
         );
     }
+    let reply = core.receive(1, &select, &mut p);
+    core.transmit(reply, &mut out, &mut p).unwrap();
     assert_eq!(core.prepare_extended(1, &prefix, 300, &mut p), Ok(291));
     let mut data = Vec::from(prefix);
     // getPinRetries plus a skipped extension forces PKE-backed CBOR parsing.
@@ -642,6 +651,46 @@ fn extended_fido_source_is_bounded_and_ccid_only() {
     assert_eq!(failed.closes, 1);
     let n = core.transmit(reply, &mut out, &mut p).unwrap();
     assert_eq!(&out[..n], &[0x69, 0]);
+}
+
+#[cfg(feature = "ctap")]
+#[test]
+fn fido_requires_select_after_startup_and_slot_reset() {
+    use canokey_rust_core::Core;
+    // FIDO AID, CBOR getPinRetries, U2F VERSION and an ISO-chained CBOR fragment.
+    const SELECT: &[u8] = &[0, 0xa4, 4, 0, 8, 0xa0, 0, 0, 6, 0x47, 0x2f, 0, 1, 0];
+    const RETRIES: &[u8] = &[0x80, 0x10, 0, 0, 4, 6, 0xa1, 2, 1];
+    const VERSION: &[u8] = &[0, 3, 0, 0, 0];
+    const CHAIN: &[u8] = &[0x90, 0x10, 0, 0, 1, 6];
+    // Standalone extended CBOR getPinRetries: two-byte Lc=4, no Le.
+    const EXTENDED: &[u8] = &[0x80, 0x10, 0, 0, 0, 0, 4, 6, 0xa1, 2, 1];
+    for owner in [1, 3, 4] {
+        let mut storage = StorageBackend::default();
+        let mut crypto = CryptoBackend;
+        let mut device = DeviceBackend;
+        let mut p = Platform::<canokey_ports::BackendTypes<_, _, _, _>> {
+            storage: &mut storage,
+            crypto: &mut crypto,
+            device: &mut device,
+            memory: &MemoryBackend,
+        };
+        let mut core = Core::new();
+        let mut out = [0; 258];
+        for _ in 0..2 {
+            for command in [RETRIES, VERSION, CHAIN, EXTENDED] {
+                let reply = core.receive(owner, command, &mut p);
+                let n = core.transmit(reply, &mut out, &mut p).unwrap();
+                assert_eq!(&out[..n], &[0x6a, 0x82]);
+            }
+            let reply = core.receive(owner, SELECT, &mut p);
+            let n = core.transmit(reply, &mut out, &mut p).unwrap();
+            assert_eq!(&out[..n], b"U2F_V2\x90\x00");
+            let reply = core.receive(owner, RETRIES, &mut p);
+            let n = core.transmit(reply, &mut out, &mut p).unwrap();
+            assert_eq!(&out[..n], &[0, 0xa1, 3, 8, 0x90, 0]);
+            core.slot_power(&mut p);
+        }
+    }
 }
 
 #[test]

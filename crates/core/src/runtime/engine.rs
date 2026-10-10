@@ -38,19 +38,7 @@ pub trait InputSource {
 pub trait Router {
     fn install(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> Result<(), Sw>;
     fn reset(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>);
-    /// Keep only applet state that survives a reader's logical power cycle.
-    fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) -> bool {
-        self.reset(p);
-        false
-    }
     fn selected(&self) -> bool;
-    fn implicit_select(
-        &mut self,
-        _header: Header,
-        _p: &mut Platform<'_, impl crate::ports::Backends>,
-    ) -> Result<(), Sw> {
-        Ok(())
-    }
     fn select(
         &mut self,
         aid: &[u8],
@@ -215,15 +203,7 @@ impl<R: Router> Runtime<R> {
         self.owner = None;
     }
     pub fn slot_power(&mut self, p: &mut Platform<'_, impl crate::ports::Backends>) {
-        if self.owner != Some(OWNER_CCID) {
-            self.reset(p);
-            return;
-        }
-        self.close_and_abort(p);
-        if !self.router.slot_power(p) {
-            self.owner = None;
-        }
-        // Retained CTAP state keeps its owner: other transports must preempt.
+        self.reset(p);
     }
     /// Frame length is supplied by the transport; no body buffer is allocated.
     #[cfg_attr(any(feature = "openpgp", feature = "piv"), inline(never))]
@@ -271,6 +251,9 @@ impl<R: Router> Runtime<R> {
         prefix: &[u8; canokey_protocol::apdu::EXTENDED_HEADER_BYTES],
         total: usize,
     ) -> Result<u16, Sw> {
+        if !self.router.selected() {
+            return Err(Sw::FILE_NOT_FOUND);
+        }
         let header = Header {
             cla: prefix[0],
             ins: prefix[1],
@@ -315,6 +298,9 @@ impl<R: Router> Runtime<R> {
         info: CommandInfo,
         p: &mut Platform<'_, impl crate::ports::Backends>,
     ) -> Result<(), Sw> {
+        if info.extended && !self.router.selected() {
+            return Err(Sw::FILE_NOT_FOUND);
+        }
         if info.extended && !self.extended_allowed(self.owner.unwrap_or(OWNER_APDU), info.header) {
             return Err(Sw::WRONG_LENGTH);
         }
@@ -344,7 +330,6 @@ impl<R: Router> Runtime<R> {
             );
             return Ok(());
         }
-        self.router.implicit_select(h, p)?;
         if !self.router.selected() {
             return Err(Sw::FILE_NOT_FOUND);
         }
