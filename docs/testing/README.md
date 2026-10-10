@@ -7,8 +7,11 @@ the owning crate. `tests/integration/` holds Python end-to-end regressions;
 `tests/fixtures/`; Rust-only wire vectors remain beside their Rust tests.
 `tests/card` builds the APDU card executables used by the Python applet oracles.
 They construct the real Core with Rust record/clock fakes and native C crypto;
-they do not call the core C ABI. The LittleFS capacity fixture retains its C
-storage harness and the same independent Python checks.
+they do not call a core C ABI. The LittleFS capacity fixture uses the same
+independent Python checks.
+The LittleFS storage runner is also Rust; C models flash faults and calls the
+runner through explicit test-only function pointers. `runtime-composition`
+checks invalid pointer/length pairs and overlapping certificate responses.
 `hid-core` and `usb-sessions` are Rust binaries using direct storage, device
 and staging fakes. The USB session fixture retains C imports only for the DCD
 and clock/timer boundary. It covers cross-transport ownership, immutable IN
@@ -34,16 +37,18 @@ if CMake cannot discover the headers. The root Rust toolchain is pinned.
 cargo test -p canokey-protocol
 cargo test -p canokey-rust-core --features admin,pass,oath,openpgp,piv,ctap,ndef
 python3 tests/check_rust_profiles.py
+python3 tests/test_rust_transports.py
 cmake -S . -B build/host -DENABLE_TESTS=ON -DENABLE_APDU_REPLAY=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/host --parallel 2
 ctest --test-dir build/host --output-on-failure
 ```
 
 Core CTest never discovers platform fixtures in a parent checkout. CIU owns
-those tests through its standalone `tests/host` CMake entrypoint. CIU tests check
-the generic device runner with bounded boot/failure/loop fakes. CIU selects its
-production Provider in `platform/rust-core`; both board builds validate that
-composition with the compatibility `native-composition` feature disabled.
+those tests through its standalone `tests/host` CMake entrypoint. Core owns the
+generic device runner and transport tests, executed by its `rust-transports`
+CTest across USB combinations, CCID, HID, NFC and device lifecycle profiles.
+Each runs with and without `native-platform`. CIU selects its own production
+Provider in `platform/rust-core` and disables the native fixture projection.
 Rust CI checks
 formatting, Clippy correctness/suspicious lints and supported applet/transport
 profiles. Style-only Clippy lints are not yet enforced; explicit adapter drops
@@ -56,7 +61,7 @@ an intentional contract change, regenerate the header from the core root:
 
 ```sh
 rustc --edition=2024 crates/ports/codegen/abi.rs -o /tmp/canokey-port-abi
-/tmp/canokey-port-abi --output crates/ffi/include/port_abi.h
+/tmp/canokey-port-abi --output crates/ports/include/port_abi.h
 ```
 
 ## Fuzzing
@@ -95,7 +100,7 @@ python tests/support/fuzz_seeds.py tests/fixtures/fuzz-seeds \
 ```
 
 The replay build registers `fuzz-seed-baselines` alongside `apdu-replay`.
-The `fuzz-smoke` ctest runs 30 seconds on a temporary copy of the committed seeds
+The `fuzz-smoke` ctest runs 60 seconds on a temporary copy of the committed seeds
 so it cannot rewrite the source corpus. It only proves the harness stays
 functional; long campaigns are manual. Panics, asserts, arithmetic overflow
 and sanitizer reports are the bug oracle. For differential comparison of a

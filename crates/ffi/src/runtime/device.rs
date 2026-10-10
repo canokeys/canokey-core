@@ -47,10 +47,6 @@ pub unsafe fn ck_device_settings(flags: u32) {
         ck_device_led_idle();
     }
 }
-#[cfg(feature = "native-composition")]
-pub unsafe fn ck_device_progress() -> u8 {
-    unsafe { progress::<crate::platform::Native>() }
-}
 pub unsafe fn progress<P: Provider>() -> u8 {
     unsafe {
         device_delay(1);
@@ -66,11 +62,6 @@ unsafe fn blink(on_ms: i32, off_ms: i32) -> ! {
             device_delay(off_ms);
         }
     }
-}
-#[cfg(feature = "native-composition")]
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn ck_device_main() -> ! {
-    unsafe { main::<crate::platform::Native>() }
 }
 pub unsafe fn main<P: FirmwareProvider>() -> ! {
     match unsafe { run_with::<P>() } {
@@ -119,10 +110,10 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
         {
             // Only a known uninitialized page permits formatting. Mount errors
             // on provisioned devices are never permission to erase credentials.
-            if flags & config::INITIALIZED == 0 && P::storage_format() != 0 {
+            if flags & config::INITIALIZED == 0 && P::storage_format().is_err() {
                 return Stop::Blink(10, 1000);
             }
-            if P::storage_mount() != 0 {
+            if P::storage_mount().is_err() {
                 return Stop::Blink(10, 1000);
             }
         }
@@ -196,10 +187,6 @@ unsafe fn run_with<P: FirmwareProvider>() -> Stop {
     }
 }
 
-#[cfg(all(feature = "platform-serial", feature = "native-composition"))]
-pub unsafe fn ck_device_serial(out: *mut u8) {
-    unsafe { serial::<crate::platform::Native>(out) }
-}
 #[cfg(feature = "platform-serial")]
 pub unsafe fn serial<P: Provider>(out: *mut u8) {
     if out.is_null() {

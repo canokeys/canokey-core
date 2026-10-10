@@ -136,7 +136,7 @@ fn packet(bytes: &[u8; DATA_PACKET_BYTES]) {
     assert_ne!(unsafe { out_event(bytes.as_ptr()) }, 0);
 }
 fn poll() {
-    unsafe { CTAPHID_Loop(0) };
+    unsafe { super::poll::<crate::platform::Native>() };
 }
 fn empty_mailbox() -> bool {
     unsafe { rx_can_accept() != 0 }

@@ -124,7 +124,6 @@ pub struct Admin {
     feature = "ctap",
     any(not(feature = "static-backend"), feature = "dynamic-backend")
 ))]
-#[path = "protocol/certificate_tests.rs"]
 mod certificate_tests;
 impl Admin {
     pub const fn new() -> Self {

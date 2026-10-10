@@ -36,14 +36,14 @@ unsafe extern "C" {
     #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn device_delay(milliseconds: i32);
     #[cfg(all(
-        feature = "native-composition",
+        feature = "native-platform",
         feature = "device-runtime",
         feature = "storage",
         not(test)
     ))]
     pub(crate) fn ck_storage_init() -> i32;
     #[cfg(all(
-        feature = "native-composition",
+        feature = "native-platform",
         feature = "device-runtime",
         feature = "storage",
         not(test)
@@ -67,17 +67,17 @@ unsafe extern "C" {
     pub(crate) fn ck_nfc_io_delay(milliseconds: u16);
     #[cfg(all(feature = "nfc", not(test)))]
     pub(crate) fn ck_nfc_io_schedule(callback: Option<unsafe extern "C" fn()>, milliseconds: u16);
-    #[cfg(all(feature = "ctap", any(feature = "native-composition", test)))]
+    #[cfg(all(feature = "ctap", any(feature = "native-platform", test)))]
     pub(crate) fn pke_buffer_size() -> usize;
-    #[cfg(all(feature = "ctap", any(feature = "native-composition", test)))]
+    #[cfg(all(feature = "ctap", any(feature = "native-platform", test)))]
     pub(crate) fn pke_buffer_acquire(owner: u8) -> i32;
-    #[cfg(all(feature = "ctap", any(feature = "native-composition", test)))]
+    #[cfg(all(feature = "ctap", any(feature = "native-platform", test)))]
     pub(crate) fn pke_buffer_release(owner: u8) -> i32;
-    #[cfg(all(feature = "ctap", any(feature = "native-composition", test)))]
+    #[cfg(all(feature = "ctap", any(feature = "native-platform", test)))]
     pub(crate) fn pke_buffer_clear() -> i32;
-    #[cfg(all(feature = "ctap", any(feature = "native-composition", test)))]
+    #[cfg(all(feature = "ctap", any(feature = "native-platform", test)))]
     pub(crate) fn pke_buffer_read(offset: usize, out: *mut u8, length: usize) -> i32;
-    #[cfg(all(feature = "ctap", any(feature = "native-composition", test)))]
+    #[cfg(all(feature = "ctap", any(feature = "native-platform", test)))]
     pub(crate) fn pke_buffer_write(offset: usize, input: *const u8, length: usize) -> i32;
     #[cfg(all(feature = "usb-device", not(test)))]
     pub(crate) fn ck_usb_dcd_start();

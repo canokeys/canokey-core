@@ -68,7 +68,7 @@ unsafe extern "C" {
 static mut PRESENCE: canokey_ports::Polling = canokey_ports::Polling::new();
 
 // Main loop only, including while neither transport owns a core session.
-#[cfg(feature = "ctap")]
+#[cfg(all(feature = "ctap", feature = "native-platform"))]
 pub unsafe fn presence_sample<R: DeviceRuntime>() {
     #[cfg(feature = "nfc")]
     if unsafe { is_nfc() != 0 } {

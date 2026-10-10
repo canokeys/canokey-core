@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![cfg(feature = "ctap")]
 use canokey_rust_core::{Core, applets::ctap::Request};
-#[path = "support/ctap.rs"]
 mod support;
 
 fn reply(parts: &[&[u8]]) -> Vec<u8> {

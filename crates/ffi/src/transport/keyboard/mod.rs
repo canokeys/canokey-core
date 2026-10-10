@@ -91,12 +91,6 @@ unsafe fn flush_pending(io: &mut impl Io, epoch: u32) {
     }
 }
 #[inline(never)]
-#[cfg(feature = "native-composition")]
-pub unsafe fn ck_keyboard_loop() {
-    unsafe { poll_provider::<crate::platform::Native>() }
-}
-
-#[inline(never)]
 pub unsafe fn poll_provider<P: Provider>() {
     unsafe { poll(&mut Native::<P>(core::marker::PhantomData)) }
 }

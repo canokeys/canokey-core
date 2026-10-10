@@ -207,12 +207,12 @@ pub(crate) unsafe fn ck_core_exchange(
     (RESPONSE_PAYLOAD + 2) as i32
 }
 fn poll() {
-    unsafe { nfc_loop() };
+    unsafe { super::poll::<crate::platform::Native>() };
 }
 #[test]
 fn nfc_link_chaining_wtx_reset_and_fido_aggregation() {
     let _guard = crate::TRANSPORT_TEST_LOCK.lock().unwrap();
-    unsafe { nfc_init() };
+    unsafe { init::<crate::platform::Native>() };
     assert_ne!(unsafe { is_nfc() }, 0);
     assert_eq!(controller().resets, 1);
     frame(&COMMAND);

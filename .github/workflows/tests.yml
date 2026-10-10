@@ -18,12 +18,28 @@ jobs:
         cargo clippy --workspace --exclude canokey-rust-host --all-targets --all-features --
         -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
         -A clippy::drop_non_drop
-    # host links std: it must not unify ffi's standalone host-runtime handler.
+    # Check the host's supported feature set separately from the workspace matrix.
     - run: >-
         cargo clippy -p canokey-rust-host --all-targets --features ctap-restrict-algorithms --
         -D warnings -A clippy::all -D clippy::correctness -D clippy::suspicious
         -A clippy::drop_non_drop
     - run: python3 tests/check_rust_profiles.py
+
+  fuzz:
+    name: APDU corpus and bounded fuzzing
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        submodules: recursive
+        persist-credentials: false
+    - run: sudo apt-get update && sudo apt-get install -y clang libssl-dev
+    - run: rustup show active-toolchain
+    - run: >-
+        cmake -S . -B build/fuzz -DCMAKE_C_COMPILER=clang
+        -DCANOKEY_FUZZING=ON -DCANOKEY_VIRTUAL_CARD=OFF
+    - run: cmake --build build/fuzz --target apdu-fuzzer --parallel 4
+    - run: ctest --test-dir build/fuzz -R '^fuzz-smoke$' --output-on-failure
 
   build_tools:
     name: Build custom yubico-piv-tool package

@@ -96,7 +96,6 @@ unsafe fn with_io<T>(f: impl FnOnce(&mut Io, &mut Hardware, u32) -> T) -> T {
 pub unsafe fn is_nfc() -> u8 {
     unsafe { ACTIVE as u8 }
 }
-#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_nfc_progress() -> u8 {
     unsafe { with_io(|io, _, _| io.live() as u8) }
 }
@@ -141,10 +140,6 @@ pub unsafe fn ck_nfc_set_mode(active: u8) {
     }
 }
 /// Main-loop startup only. Quiesce USB before leasing its byte allocation.
-#[cfg(any(feature = "native-composition", test))]
-pub unsafe fn nfc_init() {
-    unsafe { init::<crate::platform::Native>() }
-}
 pub unsafe fn init<P: Provider>() {
     unsafe {
         deinit();
@@ -250,10 +245,6 @@ unsafe fn receive() -> Option<Result<Event, canokey_rust_core::runtime::nfc::Err
             core::slice::from_raw_parts_mut(buffer, apdu::SHORT_FRAME_BYTES),
         ))
     }
-}
-#[cfg(any(feature = "native-composition", test))]
-pub unsafe fn nfc_loop() {
-    unsafe { poll::<crate::platform::Native>() }
 }
 pub unsafe fn poll<P: Provider>() {
     unsafe {

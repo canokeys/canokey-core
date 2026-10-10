@@ -2,7 +2,6 @@
 #![cfg(feature = "ctap")]
 use canokey_protocol::ctaphid::{self as wire, Error};
 use canokey_rust_core::runtime::ctaphid::{Scratch, Transport};
-#[path = "support/ctap.rs"]
 mod support;
 
 #[derive(Default)]

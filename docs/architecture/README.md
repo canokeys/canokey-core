@@ -1,6 +1,6 @@
 # Architecture
 
-The root Cargo workspace contains five product crates and the test card crate.
+The root Cargo workspace contains six product crates and the test card crate.
 Keep this granularity unless a
 new independently reusable component needs a separately enforced dependency.
 
@@ -10,6 +10,7 @@ new independently reusable component needs a separately enforced dependency.
 | ports | Capability contracts, binding strategy, native implementations | Platform C callbacks at the native boundary |
 | core | Applets, authorization, records, shared runtime and workflows | protocol; safe ports contracts and bindings |
 | ffi | Pointer validation, serialized runtime access, IRQ/main-loop handoff | core, protocol, ports native adapters |
+| native-crypto | Native cryptographic imports and capability adapters | ports contracts and C primitives |
 | host | Host storage and virtual-card composition | ffi, protocol, ports |
 
 `core` is `no_std` and forbids unsafe code. Applet-local wire adapters, services,
@@ -57,13 +58,12 @@ routing. Core APIs accept a generic family and re-export contracts plus Platform
 they do not select native adapter types. Rust fakes can compose concrete families.
 CIU and host select their own Providers for installation and transport execution.
 CIU also owns `ck_device_main`, selecting the same Provider for boot, keyboard,
-NFC, serial and cooperative progress. The optional FFI `native-composition`
-compatibility projection selects concrete native aliases for `static-backend`
-and trait objects for dynamic binding; CIU and host disable it. `dynamic-backend`
-wins when Cargo feature unification enables both. Native callbacks remain in
-`ports/src/native/` only for crypto pending ownership cleanup. Device and storage
-adapters belong to CIU, host or the optional `ffi/platform/` compatibility
-projection. The portable `Polling` state machine stays in ports contracts;
+NFC, serial and cooperative progress. The optional FFI `native-platform`
+projection selects native callback imports for explicit storage fixtures, without
+exporting a C API. It uses concrete aliases for `static-backend` and trait objects
+for dynamic binding; `dynamic-backend` wins when feature unification enables both.
+Device and storage adapters belong to CIU, host or this fixture projection.
+Native crypto adapters belong to `native-crypto`. The portable `Polling` state machine stays in ports contracts;
 the actual presence latch belongs to each outer device adapter.
 Portable volatile erasure lives in `ports/src/memory.rs`.
 The safe `default_memory()` binding supplies erasure for compatibility methods
@@ -77,12 +77,12 @@ used at the serialized outer composition boundary.
 
 ## FFI and native code
 
-`ffi/src/abi/` owns core C entrypoints. `runtime/` integrates device lifecycle
+`ffi/src/runtime/` integrates device lifecycle
 and timers. `transport/` groups CCID, HID, keyboard, USB, WebUSB and NFC facades.
 `platform/` assembles the capability bundle. Transport facades manage buffers,
 progress and arbitration; credential policy and record interpretation stay in core.
 
-Optional compatibility C declarations are in `crates/ffi/include/`. Production
+Native callback imports and generated C contracts are in `crates/ports/include/`. Production
 entrypoints and their generated header belong to the platform. Native crypto
 imports and their declarations are owned by `crates/native-crypto`; C crypto
 facades live in `native/crypto/`, filesystem helpers in `native/storage/`, and
@@ -113,6 +113,6 @@ use capability contracts and depend directly on the `canokey-native-crypto`
 crate for C primitives. Ports has no native adapter dependency. CIU selects
 crypto capabilities explicitly and implements device/storage traits in its own
 crate. The FFI
-device/storage compatibility adapters compile only for `native-composition`
+device/storage fixture adapters compile only for `native-platform`
 or unit-test substitution. Host and test-card compositions select their own
 native crypto capability without routing through a ports adapter.

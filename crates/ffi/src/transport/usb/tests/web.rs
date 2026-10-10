@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
-use crate::transport::webusb::{WebUSB_Loop, block_competitor, try_preempt};
+use crate::transport::webusb::{block_competitor, try_preempt};
 use canokey_rust_core::runtime::webusb::{
     RESPONSE_LIMIT, STATUS_HOLD, STATUS_IDLE, STATUS_PROCESSING,
 };
@@ -102,7 +102,7 @@ pub(super) fn scenario() {
         setup(INTERFACE_OUT, SET_INTERFACE, 0, interface, 0);
         status();
         assert_eq!(ck_ccid_io_generation(), epoch);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         for hid_busy in [false, true] {
             policy().ccid_idle = hid_busy;
             policy().hid_busy = hid_busy;
@@ -113,7 +113,7 @@ pub(super) fn scenario() {
             setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
             assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
             assert!(block_competitor());
-            WebUSB_Loop();
+            crate::transport::webusb::poll::<crate::platform::Native>();
             assert!(!block_competitor());
             assert!(controller().halted[1]);
             assert_eq!(policy().resets, before);
@@ -123,7 +123,7 @@ pub(super) fn scenario() {
         policy().hid_busy = false;
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
         assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 1);
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
         assert_eq!(read_control(&mut bytes), 1);
@@ -145,7 +145,7 @@ pub(super) fn scenario() {
         assert_eq!(policy().resets, before + 1);
         assert!(!block_competitor());
         controller().now += 2000;
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().resets, before + 1);
         policy().preemptable = false;
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
@@ -154,7 +154,7 @@ pub(super) fn scenario() {
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, 261);
         let mut fragment: [u8; EP0_PACKET_BYTES] = core::array::from_fn(|i| i as u8);
         assert_eq!(ck_usb_out(0, fragment.as_ptr(), fragment.len() as u16), 0);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         for offset in (EP0_PACKET_BYTES..261).step_by(EP0_PACKET_BYTES) {
             let count = (261 - offset).min(EP0_PACKET_BYTES);
             for (i, byte) in fragment.iter_mut().enumerate() {
@@ -163,46 +163,46 @@ pub(super) fn scenario() {
             assert_eq!(ck_usb_out(0, fragment.as_ptr(), count as u16), 1);
         }
         status();
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 2);
         setup(VENDOR_INTERFACE_IN, 1, 0, interface, 2);
         assert_eq!(read_control(&mut bytes), 2);
         assert_eq!(&bytes[..2], &[0, 1]);
         controller().now += 2000;
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, 0);
         setup(VENDOR_INTERFACE_IN, 2, 0, interface, 1);
         assert_eq!(read_control(&mut bytes), 1);
         assert_eq!(bytes[0], STATUS_IDLE);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 2);
         policy().exchange_error = true;
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
         assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 3);
         setup(VENDOR_INTERFACE_IN, 1, 0, interface, RESPONSE_LIMIT as u16);
         assert_eq!(read_control(&mut bytes), 2);
         assert_eq!(&bytes[..2], &[0x6f, 0]);
         controller().now += 2000;
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         policy().exchange_error = false;
         policy().reset_during_exchange = true;
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
         assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 4);
         assert!(!controller().ready);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         policy().reset_during_exchange = false;
         configure();
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         setup(VENDOR_INTERFACE_OUT, 0, 0, interface, SELECT.len() as u16);
         assert_eq!(ck_usb_out(0, SELECT.as_ptr(), SELECT.len() as u16), 0);
         bus_reset();
         assert!(!controller().ready);
         assert_eq!(ck_usb_configured(), 0);
-        WebUSB_Loop();
+        crate::transport::webusb::poll::<crate::platform::Native>();
         assert_eq!(policy().exchanges, 4);
         assert!(!block_competitor());
         setup(DEVICE_OUT, SET_ADDRESS, u16::from(ADDRESS), 0, 0);

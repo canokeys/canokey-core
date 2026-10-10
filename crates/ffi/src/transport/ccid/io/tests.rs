@@ -2,7 +2,6 @@
 //! Asynchronous controller substitute for the real CCID facade and core.
 #![allow(dead_code)] // Other feature profiles compile the substitute without this scenario.
 use super::*;
-use crate::transport::ccid::CCID_Loop;
 use canokey_protocol::ccid::{DATA as DATA_BLOCK, POWER_ON, TRANSFER};
 
 const EXTENSION_INTERVAL: u16 = 500;
@@ -156,23 +155,23 @@ fn packet(bytes: &[u8]) {
 fn configure() {
     hardware_reset();
     controller().configured = true;
-    unsafe { CCID_Loop() };
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
 }
 fn normal_exchange() {
     packet(&POWER[..3]);
-    unsafe { CCID_Loop() };
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     packet(&POWER[3..]);
-    unsafe { CCID_Loop() };
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     {
         let c = controller();
         assert_eq!(c.length, 27);
         assert_eq!((c.saved[0], c.saved[6], c.saved[7]), (DATA_BLOCK, 0x56, 0));
     }
     packet(&SELECT);
-    unsafe { CCID_Loop() };
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     assert_ne!(unsafe { ck_ccid_io_pending() }, 0);
     complete();
-    unsafe { CCID_Loop() };
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
     assert_eq!(unsafe { ck_ccid_io_pending() }, 0);
     {
         let c = controller();
@@ -181,7 +180,7 @@ fn normal_exchange() {
         assert!(c.timer.is_none());
     }
     complete();
-    unsafe { CCID_Loop() };
+    unsafe { crate::transport::ccid::poll::<crate::platform::Native>() };
 }
 
 #[cfg(not(any(
@@ -200,7 +199,7 @@ fn ccid_controller_leases_timer_reset_and_fragmentation() {
         configure();
         normal_exchange();
         packet(&[]);
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         assert_ne!(ck_ccid_io_idle(), 0);
         let epoch = ck_ccid_io_generation();
         ck_ccid_io_arm(
@@ -255,19 +254,19 @@ fn ccid_controller_leases_timer_reset_and_fragmentation() {
         hardware_reset();
         controller().configured = true;
         packet(&POWER);
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         assert_ne!(ck_ccid_io_pending(), 0);
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         assert_eq!(controller().length, 27);
         complete();
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         packet(&POWER);
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         controller().now += 2000;
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         assert_eq!(ck_ccid_io_idle(), 0);
         complete();
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         let epoch = ck_ccid_io_generation();
         configure();
         packet(&POWER);
@@ -275,8 +274,8 @@ fn ccid_controller_leases_timer_reset_and_fragmentation() {
         let mut tick = 0;
         assert_eq!(ck_ccid_io_take(epoch, out.as_mut_ptr(), &mut tick), -1);
         assert_ne!(ck_ccid_io_pending(), 0);
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
         complete();
-        CCID_Loop();
+        crate::transport::ccid::poll::<crate::platform::Native>();
     }
 }

@@ -1144,9 +1144,7 @@ impl RegistryView<'_> {
     feature = "ndef",
     not(feature = "static-backend")
 ))]
-#[path = "registry_config_tests.rs"]
 mod config_tests;
 
 #[cfg(test)]
-#[path = "registry_aid_tests.rs"]
 mod aid_tests;

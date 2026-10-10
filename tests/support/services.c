@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "core.h"
+#include "native_platform.h"
 #include <assert.h>
 #include <string.h>
 #include <openssl/hmac.h>

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-#[path = "apdu/chain.rs"]
 mod chain;
-#[path = "apdu/decode.rs"]
 mod decode;
-#[path = "apdu/header.rs"]
 mod header;
 pub use chain::{ChainStep, CommandChain};
 pub use decode::{FrameDecoder, FrameEvent, parse};

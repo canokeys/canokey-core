@@ -5,7 +5,7 @@
 CanoKey Core is a Rust workspace. See [README](README.md),
 [architecture](docs/architecture/README.md) and [testing](docs/testing/README.md).
 Product code lives in `crates/{core,protocol,ports,ffi,host,native-crypto}`.
-Compatibility ABI headers are in `crates/ffi/include`; imported crypto ABI is in
+Native import headers and C contract projections are in `crates/ports/include`; imported crypto ABI is in
 `crates/native-crypto/include`, C support headers in `native/support/include`,
 crypto facades in `native/crypto`, and filesystem
 helpers in `native/storage`. Dependencies in `third_party/` are Git submodules;
@@ -26,11 +26,12 @@ plans and the old C guide; historical APIs there are not implementation guidance
   outer static production or injectable test bindings; generic `Platform`
   families carry capability types through core routing. `native-crypto` owns
   reusable C crypto imports; device/storage C calls belong to the outer platform or
-  `ffi/platform` compatibility projection. Presence policy stays portable.
+  `ffi/platform` native fixture projection. Presence policy stays portable.
   Do not re-export native adapters through core. Keep safe default erasure
   available through the binding API for workspace cleanup.
-- `ffi/abi`, `ffi/runtime`, `ffi/transport` and `ffi/platform` own C entrypoints,
-  lifecycle integration, hardware-facing transport facades and assembly.
+- `ffi/runtime`, `ffi/transport` and `ffi/platform` own lifecycle integration,
+  hardware-facing transport facades and native fixture bindings. Product C
+  entrypoints belong to the platform; PC/SC exports belong to host.
   Validate raw pointer/length pairs and preserve alias-safe in-place APDUs.
 - Only serialized main-loop execution may enter the core. Interrupts queue
   events; no callback may reenter an active mutable runtime borrow.

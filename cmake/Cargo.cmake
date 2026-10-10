@@ -6,40 +6,13 @@ if(NOT toolchain_channel MATCHES "^channel[ \t]*=[ \t]*\"([^\"]+)\"$")
   message(FATAL_ERROR "rust-toolchain.toml must define one quoted channel")
 endif()
 set(CANOKEY_RUST_TOOLCHAIN "${CMAKE_MATCH_1}")
-function(add_rust_host_archive target build_target directory features)
-  # Optional 5th argument: extra RUSTFLAGS (e.g. sanitizer coverage for fuzzing).
-  set(rustflags "${ARGV4}")
-  set(env_vars "CANOKEY_OATH_VERSION=${CANOKEY_OATH_VERSION}" "CANOKEY_PIV_VERSION=${CANOKEY_PIV_VERSION}")
-  if(rustflags)
-    list(APPEND env_vars "RUSTFLAGS=${rustflags}")
-  endif()
-  set(archive "${CMAKE_CURRENT_BINARY_DIR}/${directory}/host-test/libcanokey_rust_ffi.a")
-  add_custom_target(${build_target} ALL
-  COMMAND "${CMAKE_COMMAND}" -E env ${env_vars}
-    ${CARGO} +${CANOKEY_RUST_TOOLCHAIN} rustc
-    --manifest-path ${CANOKEY_ROOT}/crates/ffi/Cargo.toml
-    --target-dir ${CMAKE_CURRENT_BINARY_DIR}/${directory}
-    --profile host-test --features ${features} --crate-type staticlib
-  BYPRODUCTS ${archive}
-  DEPENDS ${CANOKEY_ROOT}/crates/ffi/Cargo.toml
-          ${CANOKEY_ROOT}/crates/core/Cargo.toml
-          ${CANOKEY_ROOT}/crates/ports/Cargo.toml
-          ${CANOKEY_ROOT}/crates/native-crypto/Cargo.toml
-          ${CANOKEY_ROOT}/crates/protocol/Cargo.toml
-  VERBATIM)
-  add_library(${target} STATIC IMPORTED GLOBAL)
-  set_target_properties(${target} PROPERTIES IMPORTED_LOCATION "${archive}"
-  INTERFACE_INCLUDE_DIRECTORIES "${CANOKEY_ROOT}/crates/ffi/include;${CANOKEY_ROOT}/native/support/include;${CANOKEY_ROOT}/crates/native-crypto/include")
-  add_dependencies(${target} ${build_target})
-endfunction()
-
 function(add_rust_card target restricted)
   set(card_binary canokey-test-card)
   if(ARGV2)
     set(card_binary "${ARGV2}")
   endif()
   string(REPLACE "," ";" card_features "${FEATURES}")
-  list(REMOVE_ITEM card_features host-runtime static-backend dynamic-backend)
+  list(REMOVE_ITEM card_features static-backend dynamic-backend)
   if(restricted)
     list(APPEND card_features ctap-restrict-algorithms)
   endif()
@@ -51,6 +24,8 @@ function(add_rust_card target restricted)
     list(APPEND card_features behavior)
   elseif(card_binary STREQUAL "runtime-composition")
     list(APPEND card_features composition)
+  elseif(card_binary STREQUAL "storage-applet-host")
+    list(APPEND card_features native-fixture)
   elseif(card_binary STREQUAL "hid-core-rust")
     list(APPEND card_features transport-hid)
   elseif(card_binary STREQUAL "usb-sessions-rust")
@@ -69,6 +44,10 @@ function(add_rust_card target restricted)
   endif()
   if(TARGET OpenSSL::Crypto)
     string(APPEND card_libraries "|$<TARGET_FILE:OpenSSL::Crypto>")
+  endif()
+  if(card_binary STREQUAL "storage-applet-host")
+    set(card_libraries "$<TARGET_FILE:storage-fixture-native>|${storage_bridge}|${card_libraries}")
+    list(APPEND card_dependencies storage-fixture-native platform-storage-bridge)
   endif()
   separate_arguments(card_options NATIVE_COMMAND "${CMAKE_EXE_LINKER_FLAGS}")
   get_directory_property(directory_options LINK_OPTIONS)

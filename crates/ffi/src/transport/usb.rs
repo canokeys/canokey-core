@@ -381,7 +381,6 @@ pub unsafe fn ck_usb_setup(bytes: *const u8, length: u16) {
         }
     }
 }
-#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_usb_configured() -> u8 {
     unsafe { DEVICE.configured as u8 }
 }
@@ -561,8 +560,7 @@ pub(crate) unsafe fn web_admission(accepted: bool, complete: bool) {
 
 /// Cooperative progress dispatch is portable policy. Native code only waits
 /// one hardware tick before calling this function; no callback enters Core.
-#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
-#[cfg(any(feature = "native-composition", test))]
+#[cfg(test)]
 pub unsafe extern "C" fn ck_transport_progress() -> u8 {
     unsafe { progress::<crate::platform::Native>() }
 }
@@ -602,7 +600,6 @@ pub unsafe fn progress<P: crate::composition::Provider>() -> u8 {
 
 /// Main-loop settings notification. Only the IRQ-local descriptor snapshot is
 /// changed; an in-flight descriptor keeps its captured immutable variant.
-#[cfg_attr(feature = "native-composition", unsafe(no_mangle))]
 pub unsafe extern "C" fn ck_usb_set_landing(enabled: u8) {
     usb_locked(|| unsafe {
         DEVICE.landing = enabled != 0;

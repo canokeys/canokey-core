@@ -1,47 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-/* Optional compatibility composition; not the CIU production entrypoint ABI. */
-#ifndef CANOKEY_RUST_CORE_H
-#define CANOKEY_RUST_CORE_H
+/* Native callback imports for explicit platform fixtures; no Core entrypoints. */
+#ifndef CANOKEY_NATIVE_PLATFORM_H
+#define CANOKEY_NATIVE_PLATFORM_H
 #include <stddef.h>
 #include <stdint.h>
 #include "port_abi.h"
-/* Main-loop only: serialize every call, including touch and reset. Callbacks
- * must never reenter the core. Buffers are borrowed only until return.
- * exchange supports identical input/output buffers; capacity includes SW.
- * ck_core_keyboard_usage returns modifier in bits 15..8 and HID usage in 7..0,
- * or -1 when the character has no mapping.
- * Reset releases transport ownership and authorization, not stored slots. */
-void CCID_Loop(void);
-void WebUSB_Loop(void);
-uint8_t ck_transport_progress(void);
-#if ENABLE_IFACE_CTAPHID
-uint8_t CTAPHID_Loop(uint8_t wait_for_user);
-#endif
-/* HID queries and progress callbacks are main-loop-only. */
-#if ENABLE_IFACE_CTAPHID
-uint8_t ck_hid_busy(void);
-uint8_t ck_hid_active(void);
-/* Main-loop admission only: may inspect Core after completed USB transfers.
- * Never call while a Core entrypoint is borrowed (including progress/IRQ). */
-uint8_t ck_ccid_idle(void);
-/* Mirrors ctap::MAX_REQUEST. Only the CBOR body occupies PKE. */
-#define CK_CTAP_MAX_REQUEST 1024u
-#endif
-void ck_device_main(void);
-int32_t ck_core_install(void);
-/* Boot/main-loop only: reads persistent NFC mode policy, never from an IRQ. */
-void ck_core_reset(void);
-/* Logical CCID slot power: closes transient input/response leases. Selected
- * CTAP retains its agreement/token session; USB/device reset clears all
- * sessions through ck_core_reset. Does not cycle CIU power or change storage. */
-void ck_core_slot_power(void);
-uint8_t ck_core_applet_count(void);
-int32_t ck_core_exchange(uint8_t owner, const uint8_t *input, size_t length, uint8_t *output, size_t capacity);
-/* Present only when PASS is enabled. Slot indices here are zero based. */
-void ck_core_output_cancel(uint8_t pressed);
-int32_t ck_core_output_sample(uint8_t pressed, uint32_t now, uint8_t ready);
-int32_t ck_core_touch(uint8_t slot, uint8_t *output, size_t capacity);
-int32_t ck_core_challenge(uint8_t slot, const uint8_t *input, size_t length, uint8_t output[20]);
 /* Root-level two-digit hexadecimal filenames, IDs 0..183 (00..b7).
  * IDs 184/185 map to the NDEF-compatible E103/NDEF filenames.
  * Record assignments are defined in crates/ports/src/contracts/storage.rs.
@@ -70,7 +33,7 @@ int32_t ck_platform_mac(uint8_t algorithm, const uint8_t *key, size_t key_length
                         uint8_t output[64]);
 int32_t ck_platform_random(uint8_t *output, size_t length);
 void ck_platform_serial(uint8_t output[4]);
-/* Stable byte ABI, mirrored by StageOperation in crates/ports/src/native/storage.rs. */
+/* Stable byte ABI, mirrored by StageOperation in crates/ports/src/contracts/storage.rs. */
 enum ck_stage_operation {
   CK_STAGE_BEGIN = 0,
   CK_STAGE_APPEND = 1,
@@ -98,7 +61,4 @@ void ck_platform_led(uint8_t on);
 uint32_t ck_platform_now(void);
 uint8_t ck_platform_touched(void);
 uint8_t ck_platform_progress(void);
-// Transport-only progress; must not reenter the Rust core from a callback.
-// Main-loop raw touch sampling for non-blocking CTAP1 presence.
-void ck_core_presence_sample(void);
 #endif

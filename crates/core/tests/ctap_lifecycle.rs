@@ -2,7 +2,6 @@
 #![cfg(feature = "ctap")]
 use canokey_rust_core::{Core, applets::ctap::Request, ports::*};
 #[allow(dead_code)]
-#[path = "support/ctap.rs"]
 mod support;
 
 struct DeviceState {

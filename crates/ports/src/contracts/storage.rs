@@ -118,7 +118,7 @@ impl Record {
         }
     }
 }
-/// Staged-record C ABI operation codes; mirrored by ck_stage_operation in core.h.
+/// Staged-record operation codes, also projected into native_platform.h.
 pub mod stage_operation {
     pub const BEGIN: u8 = 0x00;
     pub const APPEND: u8 = 0x01;
@@ -127,7 +127,7 @@ pub mod stage_operation {
     pub const REMOVE: u8 = 0x04;
     pub const RENAME: u8 = 0x05;
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StorageError {
     Missing,
     Unavailable,
@@ -168,43 +168,19 @@ pub trait Storage {
     /// Publication is atomic; abort/disconnect must discard unpublished bytes.
     /// Appends need not be durable before publication. A backend may lease its
     /// shared file cache until commit/abort or another storage operation needs it.
-    #[cfg(any(
-        feature = "oath",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
+    #[cfg(feature = "storage-staging")]
     fn stage_begin(&mut self) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(
-        feature = "oath",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
+    #[cfg(feature = "storage-staging")]
     fn stage_append(&mut self, _bytes: &[u8]) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(
-        feature = "oath",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
+    #[cfg(feature = "storage-staging")]
     fn stage_commit(&mut self, _record: Record) -> Result<(), StorageError> {
         Err(StorageError::Unavailable)
     }
-    #[cfg(any(
-        feature = "oath",
-        feature = "openpgp",
-        feature = "piv",
-        feature = "ctap",
-        feature = "ndef"
-    ))]
+    #[cfg(feature = "storage-staging")]
     fn stage_abort(&mut self) {}
     /// Delete the record, treating an absent record as success. Empty data is
     /// not equivalent to absence for applets that validate persistent records.

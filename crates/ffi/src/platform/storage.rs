@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Compatibility storage projection for the `core.h` ck_platform_* ABI.
+//! Native fixture storage projection for the imported ck_platform_* ABI.
 //! CIU and Rust host compositions own their storage adapters separately.
 use canokey_ports::{Record, Storage, StorageError};
 
@@ -102,7 +102,7 @@ unsafe extern "C" {
     fn ck_platform_resize(file: u8, length: u32) -> i32;
 }
 
-// Stable byte ABI, mirrored in crates/ffi/include/core.h.
+// Stable byte ABI, mirrored in crates/ports/include/native_platform.h.
 #[cfg(any(
     feature = "oath",
     feature = "openpgp",
@@ -112,7 +112,7 @@ unsafe extern "C" {
 ))]
 #[repr(u8)]
 // Variants are gated by platform capabilities and applet features; numeric
-// values remain aligned with ck_stage_operation in crates/ffi/include/core.h.
+// values remain aligned with ck_stage_operation in crates/ports/include/native_platform.h.
 enum StageOperation {
     Begin = canokey_ports::contracts::stage_operation::BEGIN,
     Append = canokey_ports::contracts::stage_operation::APPEND,
@@ -124,7 +124,7 @@ enum StageOperation {
     Rename = canokey_ports::contracts::stage_operation::RENAME,
 }
 #[cfg(any(feature = "openpgp", feature = "piv"))]
-const MAX_STAGE_PARTS: usize = 8; // ck_platform_stage_parts ABI, core.h.
+const MAX_STAGE_PARTS: usize = 8; // Native scatter/gather import limit.
 // C reads return a byte count, -1 for missing, and other negatives for failure.
 // Writes/staging use different success conventions (count vs zero). Failed
 // mutations map to Uncertain: a backend error does not prove nothing was written,

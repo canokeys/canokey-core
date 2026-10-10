@@ -151,17 +151,3 @@ pub unsafe fn poll<P: Provider>(
         u8::from(produced) | (u8::from(hid.active()) << 1)
     }
 }
-
-#[cfg(feature = "native-composition")]
-pub unsafe fn ck_hid_reset() {
-    unsafe { reset::<crate::platform::Native>() }
-}
-#[cfg(feature = "native-composition")]
-pub unsafe fn ck_hid_poll(
-    input: *const [u8; 64],
-    received: u32,
-    now: u32,
-    output: *mut [u8; 64],
-) -> u8 {
-    unsafe { poll::<crate::platform::Native>(input, received, now, output) }
-}

@@ -70,5 +70,5 @@ fn main() {
 
 #[test]
 fn committed_c_header_matches_contracts() {
-    assert_eq!(header(), include_str!("../../ffi/include/port_abi.h"));
+    assert_eq!(header(), include_str!("../include/port_abi.h"));
 }

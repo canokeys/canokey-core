@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /* Host native crypto only; virtual hardware and persistence live in Rust. */
-#include "core.h"
+#include "native_platform.h"
 #include <assert.h>
 #include <string.h>
 #include <openssl/hmac.h>

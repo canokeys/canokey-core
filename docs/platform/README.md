@@ -5,7 +5,7 @@ filesystem callbacks and firmware startup. Current entrypoints and ownership
 contracts are documented in [device runtime](device.md), [NFC](nfc.md) and
 [architecture](../architecture/README.md). Platforms own their production C
 entrypoints and implement Rust capability traits. Optional compatibility
-declarations live in `crates/ffi/include/`; native crypto imports have their
+declarations live in `crates/ports/include/`; native crypto imports have their
 own declarations in `crates/native-crypto/include/`.
 Use the CIU integration as the current reference. The former C core porting
 recipe is preserved only in the historical snapshot and migration guide.

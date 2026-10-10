@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 set(CANOKEY_PLATFORM_STORAGE_FIXTURE "" CACHE FILEPATH "Explicit platform LittleFS capacity fixture")
 set(CANOKEY_PLATFORM_STORAGE_STUBS "" CACHE PATH "Platform headers for the capacity fixture")
+set(CANOKEY_PLATFORM_STORAGE_MANIFEST "" CACHE FILEPATH "Rust platform storage transaction manifest")
 if(CANOKEY_PLATFORM_STORAGE_FIXTURE)
   if(NOT BUILD_TESTING OR NOT CANOKEY_APPLET_OPENPGP OR NOT CANOKEY_APPLET_PIV OR
      NOT CANOKEY_APPLET_ADMIN OR NOT CANOKEY_APPLET_PASS OR NOT CANOKEY_APPLET_OATH OR
@@ -8,8 +9,9 @@ if(CANOKEY_PLATFORM_STORAGE_FIXTURE)
     message(FATAL_ERROR "The platform storage fixture requires BUILD_TESTING and the full applet profile")
   endif()
   if(NOT EXISTS "${CANOKEY_PLATFORM_STORAGE_FIXTURE}" OR
-     NOT IS_DIRECTORY "${CANOKEY_PLATFORM_STORAGE_STUBS}")
-    message(FATAL_ERROR "Explicit platform storage fixture or stub directory is missing")
+     NOT IS_DIRECTORY "${CANOKEY_PLATFORM_STORAGE_STUBS}" OR
+     NOT EXISTS "${CANOKEY_PLATFORM_STORAGE_MANIFEST}")
+    message(FATAL_ERROR "Explicit platform storage fixture, stub directory or Rust manifest is missing")
   endif()
 endif()
 if(BUILD_TESTING AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -35,16 +37,6 @@ if(BUILD_TESTING)
   if(CANOKEY_APPLET_ADMIN OR CANOKEY_APPLET_PASS OR CANOKEY_APPLET_OATH OR
      CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP OR CANOKEY_APPLET_NDEF)
     find_package(OpenSSL REQUIRED)
-  endif()
-  add_executable(core-abi ${CANOKEY_ROOT}/tests/native/core_abi.c)
-  target_compile_options(core-abi PRIVATE -Wall -Wextra -Werror -UNDEBUG)
-  target_link_libraries(core-abi PRIVATE canokey-rust-core)
-  foreach(applet ADMIN PASS OATH OPENPGP PIV CTAP NDEF)
-    target_compile_definitions(core-abi PRIVATE $<$<BOOL:${CANOKEY_APPLET_${applet}}>:WITH_${applet}>)
-  endforeach()
-  if(CANOKEY_APPLET_ADMIN OR CANOKEY_APPLET_PASS OR CANOKEY_APPLET_OATH OR CANOKEY_APPLET_OPENPGP OR CANOKEY_APPLET_PIV OR CANOKEY_APPLET_CTAP OR CANOKEY_APPLET_NDEF)
-    target_sources(core-abi PRIVATE ${CANOKEY_ROOT}/tests/support/services.c)
-    target_link_libraries(core-abi PRIVATE OpenSSL::Crypto)
   endif()
   if(CANOKEY_APPLET_OATH OR CANOKEY_APPLET_OPENPGP)
     add_rust_card(oath-host FALSE)
@@ -72,7 +64,6 @@ if(BUILD_TESTING)
       target_link_libraries(stream-crypto PRIVATE host-key-services)
       add_test(NAME stream-crypto COMMAND stream-crypto)
     endif()
-    target_link_libraries(core-abi PRIVATE host-key-services)
   endif()
   if(CANOKEY_APPLET_CTAP)
     # Exercise the real applet, HID framing, execution policy and mailbox in
@@ -121,19 +112,20 @@ if(BUILD_TESTING)
             --release --example fixture --features applet-fixture
           BYPRODUCTS "${storage_bridge}" VERBATIM)
       endif()
-      add_executable(storage-applet-host ${CANOKEY_ROOT}/tests/support/oath_host.c
+      add_library(storage-fixture-native STATIC
         ${CANOKEY_ROOT}/tests/support/services.c ${CANOKEY_PLATFORM_STORAGE_FIXTURE}
         ${CANOKEY_ROOT}/third_party/littlefs/lfs.c ${CANOKEY_ROOT}/third_party/littlefs/lfs_util.c)
-      target_compile_definitions(storage-applet-host PRIVATE CK_TEST_LITTLEFS WITH_ADMIN WITH_PASS WITH_OATH
+      target_compile_definitions(storage-fixture-native PRIVATE CK_TEST_LITTLEFS WITH_ADMIN WITH_PASS WITH_OATH
         WITH_OPENPGP WITH_PIV WITH_CTAP WITH_NDEF LFS_NO_MALLOC LFS_NO_DEBUG LFS_NO_WARN LFS_NO_ERROR)
-      target_include_directories(storage-applet-host PRIVATE ${CANOKEY_PLATFORM_STORAGE_STUBS}
-        ${CANOKEY_ROOT}/third_party/littlefs)
-      target_compile_options(storage-applet-host PRIVATE -Wall -Wextra -UNDEBUG)
-      target_link_libraries(storage-applet-host PRIVATE canokey-rust-core OpenSSL::Crypto host-key-services)
+      target_include_directories(storage-fixture-native PRIVATE ${CANOKEY_PLATFORM_STORAGE_STUBS}
+        ${CANOKEY_ROOT}/third_party/littlefs ${CANOKEY_ROOT}/crates/ports/include
+        ${CANOKEY_ROOT}/native/support/include ${CANOKEY_ROOT}/crates/native-crypto/include)
+      target_compile_options(storage-fixture-native PRIVATE -Wall -Wextra -UNDEBUG)
+      target_link_libraries(storage-fixture-native PRIVATE OpenSSL::Crypto host-key-services)
       if(CANOKEY_PLATFORM_STORAGE_MANIFEST)
-        add_dependencies(storage-applet-host platform-storage-bridge)
-        target_link_libraries(storage-applet-host PRIVATE "${storage_bridge}")
+        add_dependencies(storage-fixture-native platform-storage-bridge)
       endif()
+      add_rust_card(storage-applet-host FALSE storage-applet-host)
     endif()
     add_test(NAME compact-storage COMMAND "${Python3_EXECUTABLE}"
       "${CANOKEY_ROOT}/tests/integration/compact_storage.py" $<TARGET_FILE:oath-host-image>)
@@ -148,7 +140,6 @@ if(BUILD_TESTING)
         "${CANOKEY_ROOT}/tests/integration/ctap_config.py" --host $<TARGET_FILE:ctap-host-image>)
     endif()
   endif()
-  add_test(NAME core-abi COMMAND core-abi)
   add_rust_card(core-behavior FALSE core-behavior)
   add_test(NAME core-behavior COMMAND $<TARGET_FILE:core-behavior-image>)
   add_rust_card(runtime-composition FALSE runtime-composition)
@@ -179,6 +170,10 @@ if(BUILD_TESTING)
     --target-dir ${CMAKE_CURRENT_BINARY_DIR}/cargo-tests
     -p canokey-protocol -p canokey-rust-core --features "${RUST_TEST_FEATURES}")
   set_tests_properties(rust-normal PROPERTIES TIMEOUT 120)
+  add_test(NAME rust-transports COMMAND "${Python3_EXECUTABLE}"
+    "${CANOKEY_ROOT}/tests/test_rust_transports.py"
+    --target-dir "${CMAKE_CURRENT_BINARY_DIR}/cargo-transports")
+  set_tests_properties(rust-transports PROPERTIES TIMEOUT 600)
 endif()
 
 
