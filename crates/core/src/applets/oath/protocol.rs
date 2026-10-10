@@ -206,6 +206,7 @@ impl State {
     pub fn read_response(&self, offset: usize, out: &mut [u8]) -> Result<(), Sw> {
         crate::applets::read_response_chunk(&self.response, self.length, offset, out)
     }
+    #[inline(never)]
     fn execute_put(
         &mut self,
         mut c: &mut ByteCursor<'_>,
