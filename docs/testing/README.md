@@ -25,6 +25,12 @@ links it against the installed C headers and verifies platform typedef/layout,
 error results and cancellation of the killable polling callback. The Python
 PC/SC and OATH suites exercise the actual driver with independent oracles.
 
+`tests/integration/ctap_fixture.py` generates a self-signed test attestation
+certificate valid for one day, with the packed-attestation subject, CA=false
+constraint and AAGUID extension. CTAP regressions verify the full packed
+attestation, including certificate fields, AAGUID and signature. This identity
+is for tests and does not establish production attestation trust.
+
 ## Prerequisites
 
 Initialize submodules recursively. Install CMake, a C compiler, CMocka, OpenSSL
@@ -52,8 +58,8 @@ Provider in `platform/rust-core` and disables the native fixture projection.
 Rust CI checks
 formatting, Clippy correctness/suspicious lints and supported applet/transport
 profiles. Style-only Clippy lints are not yet enforced; explicit adapter drops
-are allowed to end borrows before workspace erasure. Host/std and standalone
-FFI panic handlers are checked in separate Cargo invocations.
+are allowed to end borrows before workspace erasure. Host/std and supported
+firmware feature profiles are checked in separate Cargo invocations.
 
 `cargo test -p canokey-ports` checks the committed C projection of record IDs,
 board-information selectors and chip-ID size against the Rust contracts. After

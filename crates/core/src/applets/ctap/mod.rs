@@ -351,13 +351,11 @@ impl Session {
         long: bool,
     ) -> Result<usize, Status> {
         p.device.keepalive(true);
-        p.device.led(true);
         let result = if long {
             self.presence.wait_long(p.device)
         } else {
             self.presence.wait_result(p.device)
         };
-        p.device.led(false);
         p.device.keepalive(false);
         result.map_err(|error| match error {
             crate::runtime::presence::Error::Cancelled => Status::Cancelled,

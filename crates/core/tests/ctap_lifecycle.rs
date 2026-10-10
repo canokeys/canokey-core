@@ -12,6 +12,7 @@ struct DeviceState {
     connected: bool,
     contactless: bool,
     led: bool,
+    idle_led: bool,
     waiting: bool,
 }
 impl DeviceState {
@@ -24,6 +25,7 @@ impl DeviceState {
             connected: true,
             contactless: false,
             led: false,
+            idle_led: false,
             waiting: false,
         }
     }
@@ -49,6 +51,9 @@ impl Device for DeviceState {
     }
     fn led(&mut self, on: bool) {
         self.led = on;
+    }
+    fn led_idle(&mut self) {
+        self.led = self.idle_led;
     }
     fn keepalive(&mut self, waiting: bool) {
         self.waiting = waiting;
@@ -99,7 +104,8 @@ fn run(core: &mut Core, request: &[u8], device: &mut DeviceState, storage: &mut 
     assert_eq!(core.execute_ctap(parser.finish(), &mut p), 1);
     let mut status = [0];
     core.read_ctap(0, &mut status, &mut p).unwrap();
-    assert!(!device.led && !device.waiting);
+    assert_eq!(device.led, device.idle_led);
+    assert!(!device.waiting);
     status[0]
 }
 #[test]
@@ -117,6 +123,31 @@ fn selection_requires_fresh_touch_and_cleans_up_on_cancel_or_timeout() {
     assert_eq!(run(&mut core, &[0x0b], &mut device, &mut store), 0x2d);
     assert_eq!(run(&mut core, &[0x0b, 0], &mut device, &mut store), 3);
     assert!(!store.removed);
+}
+#[test]
+fn selection_restores_configured_idle_led_on_success_timeout_and_cancel() {
+    const SELECTION: &[u8] = &[0x0b];
+    for idle_led in [false, true] {
+        for (touches, connected, expected) in [
+            (&[false, true, false][..], true, 0),
+            (&[][..], true, 0x2f),
+            (&[][..], false, 0x2d),
+        ] {
+            let mut device = DeviceState::new(touches);
+            device.idle_led = idle_led;
+            device.led = idle_led;
+            device.connected = connected;
+            assert_eq!(
+                run(
+                    &mut Core::new(),
+                    SELECTION,
+                    &mut device,
+                    &mut Store::default()
+                ),
+                expected
+            );
+        }
+    }
 }
 #[test]
 fn reset_is_power_on_gated_and_never_erases_before_presence() {

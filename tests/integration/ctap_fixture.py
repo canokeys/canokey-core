@@ -7,16 +7,28 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID, ObjectIdentifier
 
 AAGUID = bytes.fromhex("244eb29ee0904e4981fe1f20f8d3b8f4")
+AAGUID_OID = ObjectIdentifier("1.3.6.1.4.1.45724.1.1.4")
+# Keep the certificate larger than one short response to exercise streaming.
+CERTIFICATE_PADDING_BYTES = 384
 
 
 def provision(card):
     key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "CanoKey test attestation")])
+    name = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "CN"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "CanoKeys"),
+        x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "Authenticator Attestation"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "CanoKey test attestation"),
+    ])
     now = datetime.datetime.now(datetime.timezone.utc)
     cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
             .public_key(key.public_key()).serial_number(1)
             .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=1))
-            .add_extension(x509.UnrecognizedExtension(ObjectIdentifier("1.3.6.1.4.1.55555.1"), bytes(650)), False)
+            .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
+            # The FIDO extension contains a DER OCTET STRING holding the AAGUID.
+            .add_extension(x509.UnrecognizedExtension(AAGUID_OID, b"\x04\x10" + AAGUID), False)
+            .add_extension(x509.UnrecognizedExtension(ObjectIdentifier("1.3.6.1.4.1.55555.1"),
+                                                     bytes(CERTIFICATE_PADDING_BYTES)), False)
             .sign(key, hashes.SHA256()).public_bytes(serialization.Encoding.DER))
     assert 528 < len(cert) <= 1152
     card.cmd("admin", 0xa4, 4, data=bytes.fromhex("f000000000"))
@@ -24,8 +36,10 @@ def provision(card):
     card.cmd("attestation key", 1, data=key.private_numbers().private_value.to_bytes(32, "big"))
     card.cmd("attestation cert", 2, data=cert)
     def verify(result, client_hash):
+        from fido2.attestation import PackedAttestation
+        from fido2.webauthn import AuthenticatorData
         assert result[3]["alg"] == -7 and result[3]["x5c"] == [cert]
-        key.public_key().verify(result[3]["sig"], result[2] + client_hash, ec.ECDSA(hashes.SHA256()))
+        PackedAttestation().verify(result[3], AuthenticatorData(result[2]), client_hash)
     return verify
 
 
