@@ -2,6 +2,7 @@
 #ifndef CANOKEY_CORE_FIDO2_CTAP_ERRORS_H_
 #define CANOKEY_CORE_FIDO2_CTAP_ERRORS_H_
 
+// clang-format off
 #define CTAP1_ERR_SUCCESS                   0x00
 #define CTAP1_ERR_INVALID_COMMAND           0x01
 #define CTAP1_ERR_INVALID_PARAMETER         0x02
@@ -54,5 +55,6 @@
 #define CTAP2_ERR_VENDOR_FIRST              0xF0
 #define CTAP2_ERR_UNHANDLED_REQUEST         0xF1
 #define CTAP2_ERR_VENDOR_LAST               0xFF
+// clang-format on
 
 #endif // CANOKEY_CORE_FIDO2_CTAP_ERRORS_H_

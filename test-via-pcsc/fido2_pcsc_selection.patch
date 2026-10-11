@@ -1,0 +1,43 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+index 21ff639..d104c49 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -154,11 +154,9 @@ class MoreRobustPcscDevice(CtapPcscDevice):
+         # print('read ctrl res:',res)
+         # res = self.control_exchange(SCARD_CTL_CODE(3500), b"\xE0\x00\x00\x24\x02\x00\x00")
+
+-        self._conn.connect(
+-            # CardConnection.T0_protocol,
+-            # mode=SCARD_SHARE_DIRECT
+-            # disposition = SCARD_RESET_CARD,
+-        )
++        # Old test clients may be garbage-collected during a later command.
++        # Disconnecting them must not power down another client's card session.
++        self._conn.connect(disposition=SCARD_LEAVE_CARD)
+
+         self._name = name
+         self._select()
+@@ -182,8 +180,13 @@ class MoreRobustPcscDevice(CtapPcscDevice):
+             return super().apdu_exchange(apdu,protocol)
+         except:
+             # Try reconnecting..
++            from smartcard.scard import SCARD_LEAVE_CARD
+             self._conn.disconnect()
+-            self._conn.connect()
++            self._conn.connect(disposition=SCARD_LEAVE_CARD)
++            # Reconnection can clear selection. Retry SELECT directly to avoid
++            # recursing through _select when SELECT itself was interrupted.
++            if apdu[:4] != b"\x00\xa4\x04\x00":
++                self._select()
+             return super().apdu_exchange(apdu,protocol)
+
+     def call(self, cmd, data=b"", event=None, on_keepalive=None):
+@@ -370,6 +373,8 @@ class TestDevice:
+         from smartcard.Exceptions import NoCardException, CardConnectionException
+
+         if "solokeys" in sys.argv or "canokeys" in sys.argv:
++            # The test hook is routed through FIDO just like CTAP commands.
++            self.dev._select()
+             header = b"\x00\xee\x00\x00\x04"
+             data = b"\x12\x56\xab\xf0"
+             resp, sw1, sw2 = self.dev.apdu_exchange(header + data)

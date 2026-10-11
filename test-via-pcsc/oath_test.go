@@ -392,43 +392,65 @@ func TestFullOath(t *testing.T) {
 		// enable OATH for this session
 		_, err = oath.Select()
 		So(err, ShouldBeNil)
+		defer clearRecords(oath, -1)
 
 		clearRecords(oath, -1)
 
-		NumKeys := 100
+		Convey("If we fill all flash-backed OATH storage", func(ctx C) {
+			const oldFixedLimit = 100
+			const maxFillAttempts = 2048
 
-		Convey("If we fill all slots in the end", func(ctx C) {
-			var name string
-			type1 := ykoath.Totp
-			alg1, _ := chooseAlgorithm()
+			var defaultName string
+			var fullErr error
+			var names []string
 			key := make([]byte, 64)
-			for i := 0; i < NumKeys; i++ {
-				alg1, _ = chooseAlgorithm()
-				if i == NumKeys-1 {
+			for i := 0; i < maxFillAttempts; i++ {
+				type1 := ykoath.Totp
+				alg1, _ := chooseAlgorithm()
+				if i%16 == 0 {
 					type1 = ykoath.Hotp
 				}
 
-				name = fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
+				name := fmt.Sprintf("Index%054dHmac%d", i, alg1) // len=5+54+4+1
 				_, err := crand.Read(key)
 				So(err, ShouldBeNil)
 
 				err = oath.Put(name, alg1, type1, 6, key, false, true, 0)
-				So(err, ShouldBeNil)
+				if err != nil {
+					fullErr = err
+					break
+				}
+
+				names = append(names, name)
+				if type1 == ykoath.Hotp {
+					defaultName = name
+				}
 			}
+			So(len(names), ShouldBeGreaterThan, oldFixedLimit)
+			So(fullErr, ShouldNotBeNil)
+			So(fullErr.Error(), ShouldEqual, "unknown (6a 84)")
 
 			lResult, err := oath.List()
 			So(err, ShouldBeNil)
-			So(len(lResult), ShouldEqual, NumKeys)
+			So(len(lResult), ShouldEqual, len(names))
 
-			Convey("Then put one more key should fail", func(ctx C) {
-				err = oath.Put("name", alg1, type1, 6, key, false, true, 0)
-				So(err, ShouldNotBeNil)
-				So(err.Error(), ShouldEqual, "unknown (6a 84)")
+			Convey("Then a deleted record can be reused", func(ctx C) {
+				So(defaultName, ShouldNotBeEmpty)
+				err := oath.Delete(defaultName)
+				So(err, ShouldBeNil)
 
-				Convey("Then set the last key as default", func(ctx C) {
-					err := oath.SetAsDefault(name)
-					So(err, ShouldBeNil)
-				})
+				alg1, _ := chooseAlgorithm()
+				_, err = crand.Read(key)
+				So(err, ShouldBeNil)
+				err = oath.Put("reused-deleted-record", alg1, ykoath.Hotp, 6, key, false, true, 0)
+				So(err, ShouldBeNil)
+
+				lResult, err := oath.List()
+				So(err, ShouldBeNil)
+				So(len(lResult), ShouldEqual, len(names))
+
+				err = oath.SetAsDefault("reused-deleted-record")
+				So(err, ShouldBeNil)
 			})
 		})
 	})
