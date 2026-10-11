@@ -25,6 +25,8 @@ unsafe extern "C" {
     #[cfg(not(feature = "usb-hid"))]
     fn ck_hid_execution_end();
 }
+// Only serialized poll/reset constructs this adapter. Its callbacks may service
+// disjoint IRQ mailboxes but must never recursively enter the shared Core.
 struct RequestScratch<P>(core::marker::PhantomData<P>);
 // The backend owns only PKE bookkeeping, never a slice into hardware memory.
 // Keep this byte out of LLVM's merged transport globals, whose padding otherwise
@@ -76,41 +78,43 @@ impl<P: Provider> Scratch for RequestScratch<P> {
         }
     }
     fn begin_request(&mut self, message_length: Option<usize>) {
-        core_ops::with_core::<P, _>(|core, p| core.begin_hid_request(message_length, p));
+        unsafe { core_ops::with_core::<P, _>(|core, p| core.begin_hid_request(message_length, p)) };
     }
     fn consume_request(&mut self, bytes: &[u8]) {
-        core_ops::with_core::<P, _>(|core, _| core.consume_hid_request(bytes));
+        unsafe { core_ops::with_core::<P, _>(|core, _| core.consume_hid_request(bytes)) };
     }
     fn finish_request(&mut self, cid: u32) -> usize {
         unsafe { ck_hid_execution_begin(cid) };
-        let length = core_ops::with_core::<P, _>(|core, p| core.finish_hid_request(p));
+        let length = unsafe { core_ops::with_core::<P, _>(|core, p| core.finish_hid_request(p)) };
         unsafe { ck_hid_execution_end() };
         length
     }
     #[inline(never)]
     fn wink(&mut self, cid: u32) -> usize {
         unsafe { ck_hid_execution_begin(cid) };
-        let length = core_ops::with_core::<P, _>(|core, p| {
-            core.execute_ctap(Ok(canokey_rust_core::applets::ctap::Command::Wink), p)
-        });
+        let length = unsafe {
+            core_ops::with_core::<P, _>(|core, p| {
+                core.execute_ctap(Ok(canokey_rust_core::applets::ctap::Command::Wink), p)
+            })
+        };
         unsafe { ck_hid_execution_end() };
         length
     }
     fn read_response(&mut self, offset: usize, out: &mut [u8]) -> Result<(), Error> {
-        core_ops::with_core::<P, _>(|core, p| core.read_ctap(offset, out, p))
+        unsafe { core_ops::with_core::<P, _>(|core, p| core.read_ctap(offset, out, p)) }
             .map_err(|_| Error::Other)
     }
     fn close_response(&mut self) {
-        core_ops::with_core::<P, _>(|core, p| core.close_ctap(p));
+        unsafe { core_ops::with_core::<P, _>(|core, p| core.close_ctap(p)) };
     }
     fn complete_response(&mut self) {
-        core_ops::with_core::<P, _>(|core, p| core.complete_ctap(p));
+        unsafe { core_ops::with_core::<P, _>(|core, p| core.complete_ctap(p)) };
     }
     fn discard_continuation(&mut self) {
-        core_ops::with_core::<P, _>(|core, p| core.discard_ctap_continuation(p));
+        unsafe { core_ops::with_core::<P, _>(|core, p| core.discard_ctap_continuation(p)) };
     }
     fn continue_message(&mut self, bytes: &[u8]) -> Option<usize> {
-        core_ops::with_core::<P, _>(|core, p| core.continue_ctap_message(bytes, p))
+        unsafe { core_ops::with_core::<P, _>(|core, p| core.continue_ctap_message(bytes, p)) }
     }
 
     fn close(&mut self) {

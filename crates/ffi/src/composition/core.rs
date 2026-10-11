@@ -119,9 +119,22 @@ pub fn keyboard_usage<P: Provider>(ch: u8) -> i32 {
     })
 }
 
-// Native HID uses the same registry, authorization state and workspace as APDU.
+/// Borrow the shared APDU/HID Core with the installed runtime's capabilities.
+///
+/// # Safety
+/// All Core access must be serialized by the outer runtime owner with the same
+/// Provider for the runtime's lifetime. The callback, including its device/progress
+/// callbacks, must not reenter Core or retain a Core/platform borrow.
+///
+/// Safe callers cannot enter the global mutable runtime:
+/// ```compile_fail,E0133
+/// use canokey_rust_ffi::composition::{Provider, core::with_core};
+/// fn unguarded<P: Provider>() {
+///     with_core::<P, _>(|_, _| ());
+/// }
+/// ```
 #[cfg(feature = "ctap")]
-pub fn with_core<P: Provider, T>(
+pub unsafe fn with_core<P: Provider, T>(
     run: impl FnOnce(&mut Core, &mut canokey_ports::Platform<'_, P::Backends>) -> T,
 ) -> T {
     P::with_platform(|p| unsafe { run(core(), p) })

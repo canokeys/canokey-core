@@ -75,6 +75,11 @@ transport state remains backend independent. Native constructors for storage,
 crypto and device remain unsafe and are
 used at the serialized outer composition boundary.
 
+`composition::core::with_core` is an unsafe shared-runtime entrypoint. Its
+caller must serialize all Core access, retain the installed Provider, and
+exclude recursive entry from the closure or progress callbacks. Safe applet
+tests instead own a local `Core`; they do not borrow the global runtime.
+
 ## FFI and native code
 
 `ffi/src/runtime/` integrates device lifecycle

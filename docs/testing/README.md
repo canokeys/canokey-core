@@ -149,6 +149,11 @@ cmake -S . -B build/openpgp-only -DCANOKEY_PROFILE=custom -DCANOKEY_APPLET_OPENP
 
 ## External clients and hardware
 
+The FIDO installer patches the pinned PC/SC client to retain other clients'
+selection on disconnect and reselect FIDO after reconnect. Its fake-connection
+regressions run before any device tests; firmware still requires explicit FIDO
+selection after logical slot power/reset.
+
 Go manifests belong to `tests/pcsc/`. Compile/run each legacy Go test file
 separately because helper names overlap:
 

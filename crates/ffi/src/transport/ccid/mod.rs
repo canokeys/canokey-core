@@ -32,6 +32,8 @@ unsafe extern "C" {
     fn ck_hid_busy() -> u8;
     fn ck_hid_active() -> u8;
 }
+// Constructed only by serialized main-loop poll/progress. Backend execution
+// never overlaps a live Core borrow; progress only services transport mailboxes.
 struct Platform<P> {
     generation: u32,
     provider: core::marker::PhantomData<P>,
@@ -91,7 +93,7 @@ impl<P: Provider> Backend for Platform<P> {
         total: usize,
     ) -> Result<u16, u16> {
         #[cfg(feature = "ctap")]
-        {
+        unsafe {
             core_ops::with_core::<P, _>(|core, p| {
                 core.prepare_extended(OWNER_CCID, prefix, total, p)
                     .map_err(|sw| sw.value())
@@ -128,20 +130,22 @@ impl<P: Provider> Backend for Platform<P> {
                     self.request.close(self.platform);
                 }
             }
-            return core_ops::with_core::<P, _>(|core, p| {
-                let total = request.len();
-                let reply = core.receive_source(
-                    OWNER_CCID,
-                    total,
-                    &mut Source {
-                        request,
-                        platform: self,
-                        offset: 0,
-                    },
-                    p,
-                );
-                core.transmit(reply, out, p).map_err(|_| ())
-            });
+            return unsafe {
+                core_ops::with_core::<P, _>(|core, p| {
+                    let total = request.len();
+                    let reply = core.receive_source(
+                        OWNER_CCID,
+                        total,
+                        &mut Source {
+                            request,
+                            platform: self,
+                            offset: 0,
+                        },
+                        p,
+                    );
+                    core.transmit(reply, out, p).map_err(|_| ())
+                })
+            };
         }
         let input = request.short();
         let n = unsafe {
