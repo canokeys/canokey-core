@@ -23,6 +23,7 @@ apply_patch_if_missing() {
 
 pushd fido2-tests
 apply_patch_if_missing 'def _bind_client' tests/conftest.py 1 . ../test-via-pcsc/fido2_retry_ctap2_init.patch
+apply_patch_if_missing 'connect(disposition=SCARD_LEAVE_CARD)' tests/conftest.py 1 . ../test-via-pcsc/fido2_pcsc_selection.patch
 VENV_DIR="${PWD}/.venv"
 if [ ! -x "${VENV_DIR}/bin/python" ]; then
   "${PYTHON_BIN}" -m venv "${VENV_DIR}"
@@ -95,6 +96,7 @@ EOF
 fi
 apply_patch_if_missing 'class SM2(CoseKey)' "${FIDO2_PACKAGE_DIR}/cose.py" \
   1 "${FIDO2_PACKAGE_DIR}" ../test-via-pcsc/fido2_SM2_COSE_key.patch
+"${VENV_PYTHON}" ../test-via-pcsc/test_fido_pcsc_selection.py tests/conftest.py
 popd
 
 pushd libfido2/build
