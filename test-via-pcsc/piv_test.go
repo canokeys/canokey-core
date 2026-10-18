@@ -115,6 +115,19 @@ func (app *PIVApplet) ConfigPIVAlgoExt(config []byte) {
 	_, code, err := app.Send(append([]byte{0x00, 0xEE, 0x02, 0x00, byte(len(config))}, config...))
 	So(err, ShouldBeNil)
 	So(code, ShouldEqual, 0x9000)
+	readback, code, err := app.Send([]byte{0x00, 0xEE, 0x01, 0x00, 0x0C})
+	So(err, ShouldBeNil)
+	So(code, ShouldEqual, 0x9000)
+	So(readback, ShouldResemble, config)
+
+	// The current protocol accepts only the complete twelve-byte map.
+	_, code, err = app.Send(append([]byte{0x00, 0xEE, 0x02, 0x00, 0x0A}, config[:10]...))
+	So(err, ShouldBeNil)
+	So(code, ShouldEqual, 0x6700)
+	readback, code, err = app.Send([]byte{0x00, 0xEE, 0x01, 0x00, 0x0C})
+	So(err, ShouldBeNil)
+	So(code, ShouldEqual, 0x9000)
+	So(readback, ShouldResemble, config)
 }
 func (app *PIVApplet) Select() {
 	_, code, err := app.Send([]byte{0x00, 0xA4, 0x04, 0x00, 0x05, 0xA0, 0x00, 0x00, 0x03, 0x08})
@@ -147,13 +160,14 @@ func (app *PIVApplet) Authenticate() {
 func TestPIVExtensions(t *testing.T) {
 	leaveAlgoExtEnabled := os.Getenv("CANOKEY_TEST_LEAVE_PIV_ALGO_EXT") != ""
 	configOnly := os.Getenv("CANOKEY_TEST_PIV_CONFIG_ONLY") != ""
-	algorithmIDs := []byte{0x22, 0x50, 0x51, 0x52, 0x53, 0x15, 0x54, 0xE2, 0xE3}
+	algorithmIDs := []byte{0x22, 0x50, 0x51, 0x52, 0x53, 0x15, 0x54, 0xE2, 0xE3, 0xE4, 0xE5}
 	if os.Getenv("CANOKEY_TEST_PIV_ALGO_EXT_STANDARD") != "" {
-		algorithmIDs = []byte{0xE0, 0x05, 0x16, 0xE1, 0x53, 0x15, 0x54, 0xE2, 0xE3}
+		algorithmIDs = []byte{0xE0, 0x05, 0x16, 0xE1, 0x53, 0x15, 0x54, 0xE2, 0xE3, 0xE4, 0xE5}
 	}
 	// Complete 7F49 response lengths: Ed25519, RSA3072, RSA4096,
-	// X25519, secp256k1, secp521r1, SM2, ML-DSA-65, and ML-KEM-768.
-	publicKeyResponseLengths := []int{37, 399, 527, 37, 70, 140, 70, 1961, 1193}
+	// X25519, secp256k1, secp521r1, SM2, ML-DSA-65, ML-KEM-768,
+	// ML-DSA-44, and ML-KEM-512.
+	publicKeyResponseLengths := []int{37, 399, 527, 37, 70, 140, 70, 1961, 1193, 1321, 809}
 	enabledConfig := append([]byte{1}, algorithmIDs...)
 	if os.Getenv("CANOKEY_TEST_PIV_ALGO_EXT_DISABLE") != "" {
 		enabledConfig[0] = 0

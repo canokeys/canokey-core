@@ -17,12 +17,12 @@ opensc-tool -r "$RDID" -s '00 FD 00 00' | grep 'SW1=0x90, SW2=0x00' # PIV_INS_GE
 pkcs15-tool --reader "$RDID" -D
 
 echo "=== Phase: Algorithm extension (ED25519) ==="
-piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 22 05 51 52 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
-piv-tool --admin M:9B:0A -s '00 EE 01 00 10' | grep '01 22 05 51 52 53 15 54 E2 E3'
+piv-tool --admin M:9B:0A -s '00 EE 02 00 0C 01 22 05 51 52 53 15 54 E2 E3 E4 E5' | grep 'SW1=0x90, SW2=0x00'
+piv-tool --admin M:9B:0A -s '00 EE 01 00 0C' | grep '01 22 05 51 52 53 15 54 E2 E3 E4 E5'
 git -C piv-go apply --unidiff-zero --check "$PWD/test-via-pcsc/piv-go-aes192.patch"
 git -C piv-go apply --unidiff-zero "$PWD/test-via-pcsc/piv-go-aes192.patch"
 cd piv-go; go test -v ./piv --wipe-yubikey; cd -
-piv-tool --admin M:9B:0A -s '00 EE 02 00 0A 01 E0 05 16 E1 53 15 54 E2 E3' | grep 'SW1=0x90, SW2=0x00'
+piv-tool --admin M:9B:0A -s '00 EE 02 00 0C 01 E0 05 16 E1 53 15 54 E2 E3 E4 E5' | grep 'SW1=0x90, SW2=0x00'
 
 echo "=== Phase: PIN management ==="
 yubico-piv-tool -r "$RDID" -a verify-pin -P 123456
