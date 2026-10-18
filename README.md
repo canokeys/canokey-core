@@ -74,7 +74,7 @@ PIV attestation tests verify the retained curve OIDs, including SM2.
 
 The PIV applet supports RSA-2048, NIST P-256/P-384, and the following
 algorithm-extension key types: RSA-3072, RSA-4096, P-521, secp256k1, SM2,
-Ed25519, X25519, ML-DSA-65, and ML-KEM-768. Extension algorithm identifiers
+Ed25519, X25519, ML-DSA-44/65, and ML-KEM-512/768. Extension algorithm identifiers
 are stored in a card configuration record and may be changed through the
 authenticated algorithm-extension APDU (`00 EE`). Clients must read that
 record rather than assuming the documented default bytes. ML-DSA signs and
@@ -189,8 +189,9 @@ preserve credentials. Changing identifiers while credentials exist can invalidat
 their algorithm mapping.
 
 Credential-management enumeration returns SM2 as an EC2 COSE key with the
-configured identifiers and both coordinates. ML-DSA-65 returns an AKP key
-`{1: 7, 3: -49, -1: publicKey}` with a 1952-byte public key, generated from
+configured identifiers and both coordinates. ML-DSA returns an AKP key
+`{1: 7, 3: algorithm, -1: publicKey}` with algorithm -48 and a 1312-byte public
+key for ML-DSA-44, or -49 and a 1952-byte key for ML-DSA-65, generated from
 the credential seed and streamed over HID or APDU `GET RESPONSE` chaining.
 The vendor `subCommandParams[0x80]=true` option on EnumerateCredentialsBegin
 omits public keys and returns `response[0x80]=algorithm`; this mode persists

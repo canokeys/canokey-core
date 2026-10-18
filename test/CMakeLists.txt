@@ -96,3 +96,9 @@ add_mocked_test(core_helpers
         device_config_is_webauthn_enabled
         LINK_LIBRARIES canokey-core
 )
+
+if(USE_MBEDCRYPTO)
+    add_executable(pq-native-correctness ${CMAKE_CURRENT_SOURCE_DIR}/../canokey-crypto/test/pq_native_correctness.c)
+    target_link_libraries(pq-native-correctness PRIVATE canokey-crypto)
+    add_test(NAME pq-native-correctness COMMAND pq-native-correctness)
+endif()
