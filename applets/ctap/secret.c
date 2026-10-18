@@ -223,7 +223,7 @@ bool ctap_credential_algorithm_supported(int32_t alg) {
 #if CTAP_RESTRICT_ALGORITHMS
   return false;
 #else
-  return alg == COSE_ALG_ML_DSA_65 || alg == ctap_sm2_attr.algo_id;
+  return cose_alg_is_mldsa(alg) || alg == ctap_sm2_attr.algo_id;
 #endif
 }
 
@@ -239,7 +239,9 @@ key_type_t cose_alg_to_key_type(int alg) {
   }
 }
 
-bool cose_alg_is_mldsa65(int32_t alg) { return alg == COSE_ALG_ML_DSA_65; }
+bool cose_alg_is_mldsa(int32_t alg) {
+  return alg == COSE_ALG_ML_DSA_65 || alg == COSE_ALG_ML_DSA_44;
+}
 
 static int read_device_pri_key(uint8_t *pri_key) {
   int ret = read_attr(CTAP_CERT_FILE, KEY_ATTR, pri_key, PRI_KEY_SIZE);
@@ -339,7 +341,7 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_
 
   kh->alg_type = alg_type;
   const key_type_t key_type = cose_alg_to_key_type(alg_type);
-  if (key_type == KEY_TYPE_PKC_END && !cose_alg_is_mldsa65(alg_type)) {
+  if (key_type == KEY_TYPE_PKC_END && !cose_alg_is_mldsa(alg_type)) {
     DBG_MSG("Unsupported algo key_type\n");
     return -1;
   }
@@ -352,10 +354,10 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_
   if (ret < 0) return ret;
   do
     generate_credential_id_nonce_tag(kh, kh_key, &key);
-  while (!cose_alg_is_mldsa65(alg_type) && ecc_complete_key(key_type, &key) < 0);
+  while (!cose_alg_is_mldsa(alg_type) && ecc_complete_key(key_type, &key) < 0);
   memzero(kh_key, KH_KEY_SIZE);
 
-  if (cose_alg_is_mldsa65(alg_type)) {
+  if (cose_alg_is_mldsa(alg_type)) {
     memcpy(pubkey_or_seed, key.pri, PRI_KEY_SIZE);
   } else {
     memcpy(pubkey_or_seed, key.pub, PUBLIC_KEY_LENGTH[key_type]);
@@ -383,7 +385,7 @@ int verify_key_handle(const credential_id *kh, ecc_key_t *key) {
   return 0;
 }
 
-int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]) {
+int verify_mldsa_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]) {
   ecc_key_t key;
   int ret = verify_key_handle(kh, &key);
   if (ret != 0) return ret;

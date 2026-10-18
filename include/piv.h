@@ -70,15 +70,17 @@
 /*
  * CanoKey PIV algorithm extensions use the configurable algorithm IDs below
  * (defaults include Ed25519 = E0, X25519 = E1, ML-DSA-65 = E2,
- * ML-KEM-768 = E3, secp256k1 = 53, P-521 = 15, and SM2 = 54).
+ * ML-KEM-768 = E3, ML-DSA-44 = E4, ML-KEM-512 = E5, secp256k1 = 53,
+ * P-521 = 15, and SM2 = 54). The configuration is exactly twelve bytes;
+ * writes must provide the complete map.
  * RSA-3072 and RSA-4096 default to 05 and 16. ML-DSA GENERAL AUTHENTICATE
  * accepts 7C { 82 00, 81 <message> } through Short APDU command chaining and
  * hashes the message incrementally; Extended APDUs are rejected. ML-KEM key
  * generation uses the standard 00 47 command. Import accepts exactly one 0A 40 <64-byte d || z>
  * component followed by the common AA/AB policy tags. Only d || z is persisted;
- * the 1184-byte public key is derived for GENERATE/GET METADATA responses and
- * the 2400-byte expanded decapsulation key is never stored. GENERAL
- * AUTHENTICATE takes a 1088-byte ciphertext in tag 81 and returns the 32-byte
+ * the 800/1184-byte public key is derived for GENERATE/GET METADATA responses
+ * and the 1632/2400-byte expanded decapsulation key is never stored. GENERAL
+ * AUTHENTICATE takes a 768/1088-byte ciphertext in tag 81 and returns the 32-byte
  * shared secret in tag 82.
  *
  * GENERAL AUTHENTICATE with P1=FF is a vendor randomized Ed25519 signing mode.
@@ -101,6 +103,8 @@ typedef struct {
   uint8_t sm2;
   uint8_t mldsa65;
   uint8_t mlkem768;
+  uint8_t mldsa44;
+  uint8_t mlkem512;
 } __packed piv_algorithm_extension_config_t;
 
 /*

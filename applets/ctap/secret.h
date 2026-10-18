@@ -38,7 +38,7 @@ bool cp_verify_rp_id(const uint8_t *rp_id_hash);
 void cp_associate_rp_id(const uint8_t *rp_id_hash);
 bool ctap_credential_algorithm_supported(int32_t alg);
 key_type_t cose_alg_to_key_type(int alg);
-bool cose_alg_is_mldsa65(int32_t alg);
+bool cose_alg_is_mldsa(int32_t alg);
 
 // Invalidate before installation or any raw mutation of KH_KEY_ATTR.
 void ctap_kh_cache_reset(void);
@@ -49,7 +49,7 @@ int generate_key_handle(credential_id *kh, uint8_t *pubkey_or_seed, int32_t alg_
 size_t sign_with_device_key(const uint8_t *input, size_t input_len, uint8_t *sig);
 int sign_with_private_key(int32_t alg_type, ecc_key_t *key, const uint8_t *input, size_t len, uint8_t *sig);
 int verify_key_handle(const credential_id *kh, ecc_key_t *key);
-int verify_mldsa65_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]);
+int verify_mldsa_key_handle(const credential_id *kh, uint8_t seed[PRI_KEY_SIZE]);
 bool check_credential_protect_requirements(credential_id *kh, bool with_cred_list, bool uv);
 uint8_t credential_cred_protect(const credential_id *kh);
 bool credential_third_party_payment(const credential_id *kh);

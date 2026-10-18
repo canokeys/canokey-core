@@ -1036,8 +1036,8 @@ static uint8_t parse_make_credential_impl(CborParser *parser, CTAP_make_credenti
         DBG_MSG("EcDSA found\n");
       else if (mc->alg_type == COSE_ALG_EDDSA)
         DBG_MSG("EdDSA found\n");
-      else if (mc->alg_type == COSE_ALG_ML_DSA_65)
-        DBG_MSG("ML-DSA-65 found\n");
+      else if (cose_alg_is_mldsa(mc->alg_type))
+        DBG_MSG("ML-DSA found\n");
       else if (mc->alg_type == ctap_sm2_attr.algo_id)
         DBG_MSG("SM2 found\n");
       else

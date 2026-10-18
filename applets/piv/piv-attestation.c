@@ -8,6 +8,7 @@
 #include <ecc.h>
 #include <fs.h>
 #include <key.h>
+#include <pq.h>
 #include <memzero.h>
 #include <rand.h>
 #include <rsa.h>
@@ -83,6 +84,7 @@ static const char piv_attestation_cert_path[] = "piv-cf9";
 static const uint8_t oid_ec_public_key[] = {0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01};
 static const uint8_t oid_ed25519[] = {0x2B, 0x65, 0x70};
 static const uint8_t oid_x25519[] = {0x2B, 0x65, 0x6E};
+static const uint8_t oid_mldsa44[] = {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x11};
 static const uint8_t oid_mldsa65[] = {0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x12};
 static const uint8_t der_ecdsa_with_sha256[] = "\x30\x0a\x06\x08\x2a\x86\x48\xce\x3d\x04\x03\x02";
 static const uint8_t der_subject_prefix[] =
@@ -218,11 +220,8 @@ static void piv_attestation_plan_reset(piv_attestation_plan_t *plan) { memzero(p
 
 static void piv_attestation_mldsa_public_reset(piv_attestation_scratch_t *scratch) {
   piv_attestation_mldsa_scratch_t *mldsa = &scratch->source.mldsa;
-  uint8_t seed[MLDSA_SEEDBYTES];
-  memcpy(seed, mldsa->keygen.seed, sizeof(seed));
   ml_dsa_65_keygen_streaming_abort(&mldsa->keygen);
-  memcpy(mldsa->keygen.seed, seed, sizeof(seed));
-  memzero(seed, sizeof(seed));
+  memcpy(mldsa->keygen.seed, mldsa->seed, sizeof(mldsa->seed));
   mldsa->stage_len = 0;
   mldsa->stage_off = 0;
   mldsa->emitted = 0;
@@ -239,12 +238,15 @@ static int piv_attestation_mldsa_public_read(piv_attestation_scratch_t *scratch,
                                              uint16_t len) {
   piv_attestation_mldsa_scratch_t *mldsa = &scratch->source.mldsa;
   size_t copied = 0;
-  if (offset > MLDSA_PK_BYTES || offset != mldsa->emitted || len > MLDSA_PK_BYTES - offset) return -1;
+  if (offset > piv_attestation_state.public_material_len || offset != mldsa->emitted ||
+      len > piv_attestation_state.public_material_len - offset)
+    return -1;
 
   while (copied < len) {
     if (mldsa->stage_off == mldsa->stage_len) {
       if (mldsa->keygen.phase == 0 && mldsa->stage_len != 0) return -1;
-      const int ret = ml_dsa_65_keygen_streaming(mldsa->stage, sizeof(mldsa->stage), &mldsa->keygen, NULL);
+      const int ret =
+          pq_mldsa_keygen(piv_attestation_state.target_type, mldsa->stage, sizeof(mldsa->stage), &mldsa->keygen, NULL);
       if (ret <= 0) return -1;
       mldsa->stage_len = (size_t)ret;
       mldsa->stage_off = 0;
@@ -388,7 +390,8 @@ static int piv_attestation_plan_add_spki(piv_attestation_plan_t *plan, const piv
   } else if (IS_MLDSA(state->target_type)) {
     const uint8_t algorithm_index = plan->count;
     const uint16_t algorithm_start = plan->total_len;
-    piv_attestation_plan_start_oid(plan, oid_mldsa65, sizeof(oid_mldsa65));
+    piv_attestation_plan_start_oid(plan, state->target_type == MLDSA44 ? oid_mldsa44 : oid_mldsa65,
+                                   sizeof(oid_mldsa65));
     piv_attestation_plan_insert_header(plan, algorithm_index, 0x30, plan->total_len - algorithm_start);
 
     const uint8_t bit_string_index = plan->count;
@@ -534,8 +537,8 @@ static int piv_attestation_build_public(const char *path, piv_attestation_state_
       memzero(&key, sizeof(key));
       return -1;
     }
-    memcpy(scratch->source.mldsa.keygen.seed, key.seed, sizeof(scratch->source.mldsa.keygen.seed));
-    state->public_material_len = MLDSA_PK_BYTES;
+    memcpy(scratch->source.mldsa.seed, key.seed, sizeof(scratch->source.mldsa.seed));
+    state->public_material_len = PUBLIC_KEY_LENGTH[meta.type];
     memzero(&key, sizeof(key));
   } else {
     memzero(&scratch->plan_work, sizeof(scratch->plan_work));

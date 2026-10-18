@@ -25,6 +25,8 @@
 #include <openpgp.h>
 #include <platform-config.h>
 #include <pke.h>
+#include <pq.h>
+#include <memzero.h>
 #include "../applets/ctap/secret.h"
 #include "../applets/ctap/cose-key.h"
 #include "../applets/ctap/ctap-errors.h"
@@ -2091,10 +2093,12 @@ static void test_ctap_hid_get_info_stream_source(void **state) {
   size_t count;
   CTAP_sm2_attr sm2;
   assert_int_equal(ctap_platform_sm2_config_read(&sm2, sizeof(sm2)), 0);
-  const int32_t expected[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id};
+  const int32_t expected[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65,
+                              COSE_ALG_ML_DSA_44,
+                              sm2.algo_id};
   assert_int_equal(cbor_parser_init(algorithms.ptr, algorithms.len, 0, &parser, &array), CborNoError);
   assert_int_equal(cbor_value_get_array_length(&array, &count), CborNoError);
-  assert_int_equal(count, CTAP_RESTRICT_ALGORITHMS ? 2 : 4);
+  assert_int_equal(count, CTAP_RESTRICT_ALGORITHMS ? 2 : sizeof(expected) / sizeof(expected[0]));
   assert_int_equal(cbor_value_enter_container(&array, &entry), CborNoError);
   for (size_t i = 0; i < count; ++i) {
     int algorithm;
@@ -2113,8 +2117,11 @@ static void test_ctap_algorithm_policy(void **state) {
   assert_int_equal(applets_install(), 0);
   CTAP_sm2_attr sm2;
   assert_int_equal(ctap_platform_sm2_config_read(&sm2, sizeof(sm2)), 0);
-  const int32_t algorithms[] = {COSE_ALG_ES256, COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id};
-  for (size_t i = 0; i < 4; ++i) {
+  const int32_t algorithms[] = {
+      COSE_ALG_ES256,     COSE_ALG_EDDSA, COSE_ALG_ML_DSA_65, sm2.algo_id,
+      COSE_ALG_ML_DSA_44,
+  };
+  for (size_t i = 0; i < sizeof(algorithms) / sizeof(algorithms[0]); ++i) {
     // Exercise unsupported-only lists and fallback to the RP's next choice.
     for (size_t fallback = 0; fallback < 2; ++fallback) {
       uint8_t req[256], zero32[32] = {0}, *p = req;
@@ -2665,6 +2672,104 @@ static void test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_sep
 
   if (source.close) source.close(source.ctx);
 }
+
+#if !CTAP_RESTRICT_ALGORITHMS
+static void test_ctap_mldsa44_round_trip(void **state) {
+  (void)state;
+  init_apdu_buffer();
+  device_init();
+  assert_int_equal(applets_install(), 0);
+  provision_test_attestation();
+  uint8_t req[256], scratch[64], zeros[32] = {0}, *p = req;
+  *p++ = CTAP_MAKE_CREDENTIAL;
+  *p++ = 0xA5;
+  *p++ = 1;
+  put_cbor_bytes(&p, zeros, 32);
+  *p++ = 2;
+  *p++ = 0xA1;
+  put_cbor_text(&p, "id");
+  put_cbor_text(&p, "pay.example");
+  *p++ = 3;
+  *p++ = 0xA1;
+  put_cbor_text(&p, "id");
+  put_cbor_bytes(&p, zeros, 1);
+  *p++ = 4;
+  *p++ = 0x81;
+  *p++ = 0xA2;
+  put_cbor_text(&p, "alg");
+  put_cbor_int(&p, COSE_ALG_ML_DSA_44);
+  put_cbor_text(&p, "type");
+  put_cbor_text(&p, "public-key");
+  *p++ = 7;
+  *p++ = 0xA1;
+  put_cbor_text(&p, "rk");
+  *p++ = 0xF5;
+  static uint8_t response[4096], auth_data[2048], expected_pk[1312];
+  CTAPHID_TxSource source = {0};
+  size_t written, auth_len;
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, p - req, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
+  assert_int_equal(read_tx_source_all(&source, response, sizeof(response), &written), 0);
+  assert_int_equal(response[0], 0);
+  assert_int_equal(test_cbor_is_canonical(response + 1, written - 1), 0);
+  assert_int_equal(
+      test_cbor_get_auth_data(response, written, MC_RESP_AUTH_DATA, auth_data, sizeof(auth_data), &auth_len), 0);
+  credential_id cid;
+  const size_t cid_offset = 37 + AAGUID_SIZE + sizeof(uint16_t);
+  memcpy(&cid, auth_data + cid_offset, sizeof(cid));
+  assert_int_equal(cid.alg_type, COSE_ALG_ML_DSA_44);
+  const size_t key_offset = cid_offset + sizeof(cid);
+  test_cbor_view cose = {.ptr = auth_data + key_offset, .len = auth_len - key_offset}, value;
+  int64_t alg;
+  const uint8_t *public_key;
+  size_t public_len;
+  assert_int_equal(test_cbor_map_lookup_int_key(cose.ptr, cose.len, COSE_KEY_LABEL_ALG, &value), 0);
+  assert_int_equal(test_cbor_get_int(value, &alg), 0);
+  assert_int_equal(alg, COSE_ALG_ML_DSA_44);
+  assert_int_equal(test_cbor_map_lookup_int_key(cose.ptr, cose.len, COSE_KEY_LABEL_AKP_PUB, &value), 0);
+  assert_int_equal(test_cbor_get_byte_string(value, &public_key, &public_len), 0);
+  assert_int_equal(public_len, 1312);
+  uint8_t seed[32], pk_hash[32], sig_hash[32];
+  assert_int_equal(verify_mldsa_key_handle(&cid, seed), 0);
+  assert_int_equal(ml_dsa_44_keygen(expected_pk, NULL, NULL, seed), 0);
+  assert_memory_equal(public_key, expected_pk, 1312);
+  sha256_raw(public_key, 1312, pk_hash);
+  if (source.close) source.close(source.ctx);
+
+  // Assertions use both the registered parameter set and its exact COSE length.
+  memset(&source, 0, sizeof(source));
+  size_t req_len = build_third_party_payment_get_assertion(req, &cid);
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
+  assert_int_equal(read_tx_source_all(&source, response, sizeof(response), &written), 0);
+  assert_int_equal(response[0], 0);
+  assert_int_equal(test_cbor_is_canonical(response + 1, written - 1), 0);
+  assert_int_equal(
+      test_cbor_get_auth_data(response, written, GA_RESP_AUTH_DATA, auth_data, sizeof(auth_data), &auth_len), 0);
+  const uint8_t *signature;
+  size_t signature_len;
+  assert_int_equal(test_cbor_map_lookup_int_key(response + 1, written - 1, GA_RESP_SIGNATURE, &value), 0);
+  assert_int_equal(test_cbor_get_byte_string(value, &signature, &signature_len), 0);
+  assert_int_equal(signature_len, 2420);
+  sha256_raw(signature, signature_len, sig_hash);
+  // Compact record independently checked by tools/crypto/verify_pq_applets.py.
+  print_message("PQ_APPLET_DSA44 seed=");
+  for (size_t i = 0; i < 32; ++i)
+    print_message("%02x", seed[i]);
+  print_message(" msg=");
+  for (size_t i = 0; i < auth_len; ++i)
+    print_message("%02x", auth_data[i]);
+  for (size_t i = 0; i < 32; ++i)
+    print_message("00");
+  print_message(" pk_sha256=");
+  for (size_t i = 0; i < 32; ++i)
+    print_message("%02x", pk_hash[i]);
+  print_message(" sig_sha256=");
+  for (size_t i = 0; i < 32; ++i)
+    print_message("%02x", sig_hash[i]);
+  print_message("\n");
+  if (source.close) source.close(source.ctx);
+  memzero(seed, sizeof(seed));
+}
+#endif
 
 static void test_ctap_hid_third_party_payment_round_trip(void **state) {
   (void)state;
@@ -4406,8 +4511,12 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
     encode_sm2_config(config_wire, &sm2_configs[config]);
     CAPDU config_capdu = {.data = config_wire, .lc = sizeof(config_wire)};
     assert_int_equal(ctap_write_sm2_config(&config_capdu, &rapdu), 0);
-    const int32_t algorithms[] = {sm2_configs[config].algo_id, COSE_ALG_ML_DSA_65, COSE_ALG_ES256,
-                                  COSE_ALG_ML_DSA_65,          COSE_ALG_EDDSA,     sm2_configs[config].algo_id};
+    const int32_t algorithms[] = {sm2_configs[config].algo_id,
+                                  COSE_ALG_ML_DSA_65,
+                                  COSE_ALG_ES256,
+                                  COSE_ALG_ML_DSA_44,
+                                  COSE_ALG_EDDSA,
+                                  sm2_configs[config].algo_id};
     sha256_raw((const uint8_t *)"cm.example", 10, meta.rp_id_hash);
     memcpy(meta.rp_id, "cm.example", 10);
     meta.rp_id_len = 10;
@@ -4415,10 +4524,20 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
     for (size_t i = 0; i < 6; ++i) {
       memcpy(credentials[i].credential_id.rp_id_hash, meta.rp_id_hash, SHA256_DIGEST_LENGTH);
       assert_int_equal(generate_key_handle(&credentials[i].credential_id,
-                                           algorithms[i] == COSE_ALG_ML_DSA_65 ? seed : expected[i], algorithms[i], 1,
+                                           cose_alg_is_mldsa(algorithms[i]) ? seed : expected[i], algorithms[i], 1,
                                            CRED_PROTECT_VERIFICATION_OPTIONAL, true),
                        0);
-      if (algorithms[i] == COSE_ALG_ML_DSA_65) assert_int_equal(ml_dsa_65_keygen(expected[i], NULL, NULL, seed), 0);
+      if (cose_alg_is_mldsa(algorithms[i])) {
+        mldsa_keygen_state_t keygen = {0};
+        memcpy(keygen.seed, seed, 32);
+        size_t off = 0;
+        do {
+          int n = pq_mldsa_keygen(algorithms[i] == COSE_ALG_ML_DSA_44 ? MLDSA44 : MLDSA65, expected[i] + off,
+                                  sizeof(expected[i]) - off, &keygen, NULL);
+          assert_true(n > 0);
+          off += (size_t)n;
+        } while (keygen.phase);
+      }
       credentials[i].user.id[0] = (uint8_t)i;
       credentials[i].user.id_size = 1;
     }
@@ -4448,7 +4567,7 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
         assert_int_equal(test_cbor_map_lookup_int_key(key.ptr, key.len, COSE_KEY_LABEL_ALG, &value), 0);
         assert_int_equal(test_cbor_get_int(value, &integer), 0);
         assert_int_equal(integer, algorithms[i]);
-        bool mldsa = algorithms[i] == COSE_ALG_ML_DSA_65;
+        bool mldsa = cose_alg_is_mldsa(algorithms[i]);
         bool eddsa = algorithms[i] == COSE_ALG_EDDSA;
         assert_int_equal(test_cbor_map_lookup_int_key(key.ptr, key.len, COSE_KEY_LABEL_KTY, &value), 0);
         assert_int_equal(test_cbor_get_int(value, &integer), 0);
@@ -4457,7 +4576,7 @@ static void test_ctap_cm_mixed_algorithms(void **state) {
             test_cbor_map_lookup_int_key(key.ptr, key.len, mldsa ? COSE_KEY_LABEL_AKP_PUB : COSE_KEY_LABEL_X, &value),
             0);
         assert_int_equal(test_cbor_get_byte_string(value, &bytes, &bytes_len), 0);
-        assert_int_equal(bytes_len, mldsa ? MLDSA_PK_BYTES : 32);
+        assert_int_equal(bytes_len, mldsa ? (algorithms[i] == COSE_ALG_ML_DSA_44 ? 1312 : MLDSA_PK_BYTES) : 32);
         assert_memory_equal(bytes, expected[i], bytes_len);
         if (!mldsa) {
           assert_int_equal(test_cbor_map_lookup_int_key(key.ptr, key.len, COSE_KEY_LABEL_CRV, &value), 0);
@@ -4605,6 +4724,9 @@ int main() {
       cmocka_unit_test(test_ctap_install_rebuilds_state_with_empty_attestation_cert),
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_algorithm_policy),
+#if !CTAP_RESTRICT_ALGORITHMS
+      cmocka_unit_test(test_ctap_mldsa44_round_trip),
+#endif
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),
       cmocka_unit_test(test_ctap_hid_get_info_with_force_pin_change_is_canonical),

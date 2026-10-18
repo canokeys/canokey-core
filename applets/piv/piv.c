@@ -9,6 +9,7 @@
 #include <device.h>
 #include <ecc.h>
 #include <key.h>
+#include <pq.h>
 #include <memzero.h>
 #include <ml-kem-768.h>
 #include <pin.h>
@@ -54,6 +55,8 @@
 #define ALG_X25519_DEFAULT    0xE1
 #define ALG_MLDSA65_DEFAULT   0xE2
 #define ALG_MLKEM768_DEFAULT  0xE3
+#define ALG_MLDSA44_DEFAULT   0xE4
+#define ALG_MLKEM512_DEFAULT  0xE5
 #define ALG_ED25519_RANDOMIZED 0xFF
 #define ALG_SECP256K1_DEFAULT 0x53
 #define ALG_SECP521R1_DEFAULT 0x15
@@ -301,9 +304,10 @@ static bool piv_algorithm_extension_config_valid(const piv_algorithm_extension_c
   if (cfg->enabled > 1) return false;
   if (cfg->enabled == 0) return true;
 
-  const uint8_t ids[] = {cfg->ed25519,   cfg->rsa3072,   cfg->rsa4096, cfg->x25519, cfg->secp256k1,
-                         cfg->secp521r1, cfg->sm2,       cfg->mldsa65, cfg->mlkem768};
-  for (size_t i = 0; i < sizeof(ids); ++i) {
+  /* The packed wire map is already the ordered ID list; avoid copying it. */
+  const size_t ids_offset = offsetof(piv_algorithm_extension_config_t, ed25519);
+  const uint8_t *ids = (const uint8_t *)cfg + ids_offset;
+  for (size_t i = 0; i < sizeof(*cfg) - ids_offset; ++i) {
     switch (ids[i]) {
     case ALG_DEFAULT:
     case ALG_AES_192:
@@ -614,28 +618,6 @@ static bool piv_littlefs_state_present(void) {
          read_attr(puk.path, TAG_PIN_KEY_DEFAULT, &default_value, sizeof(default_value)) == sizeof(default_value);
 }
 
-static int piv_migrate_legacy_management_key_type(void) {
-  // Persisted values before ML-KEM and ML-DSA shifted the symmetric types.
-  enum { LEGACY_TDEA = 11, LEGACY_AES128 = 12, LEGACY_AES256 = 13 };
-  char path[MAX_KEY_PATH_LEN];
-  piv_key_path(0x9B, path);
-
-  key_meta_t meta;
-  if (ck_read_key_metadata(path, &meta) < 0) return -1;
-  const int key_len = get_file_size(path);
-  key_type_t migrated = meta.type;
-  if ((unsigned)meta.type == LEGACY_TDEA && key_len == 24)
-    migrated = TDEA;
-  else if ((unsigned)meta.type == LEGACY_AES128 && key_len == 16)
-    migrated = AES128;
-  else if ((unsigned)meta.type == LEGACY_AES256 && key_len == 32)
-    migrated = AES256;
-
-  if (migrated == meta.type) return 0;
-  meta.type = migrated;
-  return ck_write_key_metadata(path, &meta) < 0 ? -1 : 0;
-}
-
 static key_type_t algo_id_to_key_type(const uint8_t id) {
   switch (id) {
   case ALG_ECC_256:
@@ -661,6 +643,8 @@ static key_type_t algo_id_to_key_type(const uint8_t id) {
   if (id == alg_ext_cfg.sm2) return SM2;
   if (id == alg_ext_cfg.mldsa65) return MLDSA65;
   if (id == alg_ext_cfg.mlkem768) return MLKEM768;
+  if (id == alg_ext_cfg.mldsa44) return MLDSA44;
+  if (id == alg_ext_cfg.mlkem512) return MLKEM512;
   return KEY_TYPE_PKC_END;
 }
 
@@ -676,6 +660,10 @@ static uint8_t key_type_to_algo_id(const key_type_t type) {
     return alg_ext_cfg.ed25519;
   case X25519:
     return alg_ext_cfg.x25519;
+  case MLDSA44:
+    return alg_ext_cfg.mldsa44;
+  case MLKEM512:
+    return alg_ext_cfg.mlkem512;
   case MLDSA65:
     return alg_ext_cfg.mldsa65;
   case MLKEM768:
@@ -711,7 +699,8 @@ static int piv_mlkem_public_read(void *ctx, uint32_t offset, uint8_t *out, uint1
   }
   if (copied < len) {
     const uint32_t public_offset = offset - (uint32_t)prefix_len;
-    if (public_offset > MLKEM768_PUBLIC_KEY_BYTES || len - copied > MLKEM768_PUBLIC_KEY_BYTES - public_offset)
+    if (public_offset > scratch->public_key.total_len - prefix_len ||
+        len - copied > scratch->public_key.total_len - prefix_len - public_offset)
       return -1;
     memcpy(out + copied, scratch->public_key.public_key + public_offset, len - copied);
     copied = len;
@@ -721,9 +710,11 @@ static int piv_mlkem_public_read(void *ctx, uint32_t offset, uint8_t *out, uint1
 
 static void piv_mlkem_public_close(void *ctx) { memzero(ctx, sizeof(piv_mlkem_scratch_t)); }
 
-static int piv_mlkem_prepare_public(const uint8_t seed[MLKEM768_KEYGEN_SEED_BYTES], const uint8_t *prefix,
-                                    size_t prefix_len) {
-  static const uint8_t encoded_header[] = {0x82, 0x04, 0xA4, 0x86, 0x82, 0x04, 0xA0};
+static int piv_mlkem_prepare_public(key_type_t type, const uint8_t seed[MLKEM768_KEYGEN_SEED_BYTES],
+                                    const uint8_t *prefix, size_t prefix_len) {
+  const size_t public_len = PUBLIC_KEY_LENGTH[type];
+  const uint8_t encoded_header[] = {0x82, HI(public_len + 4), LO(public_len + 4), 0x86,
+                                    0x82, HI(public_len),     LO(public_len)};
   piv_mlkem_scratch_t *scratch = &piv_mlkem_scratch;
   if (prefix_len + sizeof(encoded_header) > sizeof(scratch->public_key.prefix))
     return -1;
@@ -733,11 +724,11 @@ static int piv_mlkem_prepare_public(const uint8_t seed[MLKEM768_KEYGEN_SEED_BYTE
   memcpy(scratch->public_key.prefix, prefix, prefix_len);
   memcpy(scratch->public_key.prefix + prefix_len, encoded_header, sizeof(encoded_header));
   scratch->public_key.prefix_len = prefix_len + sizeof(encoded_header);
-  if (ml_kem_768_seed_to_public(scratch->public_key.public_key, seed) < 0) {
+  if (pq_mlkem_public(type, scratch->public_key.public_key, seed) < 0) {
     memzero(scratch, sizeof(*scratch));
     return -1;
   }
-  scratch->public_key.total_len = scratch->public_key.prefix_len + MLKEM768_PUBLIC_KEY_BYTES;
+  scratch->public_key.total_len = scratch->public_key.prefix_len + public_len;
   apdu_response_source_set((uint32_t)scratch->public_key.total_len, SW_NO_ERROR, piv_mlkem_public_read,
                            piv_mlkem_public_close, scratch);
   return 0;
@@ -842,7 +833,8 @@ static int piv_mldsa_fill_public_stage(piv_mldsa_stream_state_t *state) {
   state->stage_off = 0;
   if (first_stage)
     memcpy(state->crypto.keygen.seed, state->seed, sizeof(state->crypto.keygen.seed));
-  const int ret = ml_dsa_65_keygen_streaming(state->stage, sizeof(state->stage), &state->crypto.keygen, NULL);
+  const int ret = pq_mldsa_keygen(state->small ? MLDSA44 : MLDSA65, state->stage, sizeof(state->stage),
+                                  &state->crypto.keygen, NULL);
   if (ret <= 0) return -1;
   state->stage_len = (size_t)ret;
 
@@ -863,7 +855,8 @@ static int piv_mldsa_fill_signature_stage(piv_mldsa_stream_state_t *state) {
   state->stage_off = 0;
   if (state->crypto.sign.phase == 0)
     memcpy(state->crypto.sign.seed, state->seed, sizeof(state->crypto.sign.seed));
-  const int ret = ml_dsa_65_sign_seed_mu_streaming(state->stage, sizeof(state->stage), &state->crypto.sign, state->mu);
+  const int ret =
+      pq_mldsa_sign(state->small, state->stage, sizeof(state->stage), &state->crypto.sign, NULL, 0, NULL, state->mu);
   if (ret <= 0) return -1;
   state->stage_len = (size_t)ret;
   return 0;
@@ -945,18 +938,20 @@ static int piv_mldsa_prepare_public(const ck_key_t *key, const uint8_t *prefix, 
   if (prefix_len + 7 > sizeof(state->prefix)) return -1;
 
   piv_mldsa_stream_begin();
+  state->small = key->meta.type == MLDSA44;
+  const size_t public_len = PUBLIC_KEY_LENGTH[key->meta.type];
   memcpy(state->prefix, prefix, prefix_len);
   state->prefix[prefix_len++] = 0x82;
-  state->prefix[prefix_len++] = HI(4 + MLDSA_PK_BYTES);
-  state->prefix[prefix_len++] = LO(4 + MLDSA_PK_BYTES);
+  state->prefix[prefix_len++] = HI(4 + public_len);
+  state->prefix[prefix_len++] = LO(4 + public_len);
   state->prefix[prefix_len++] = 0x86;
   state->prefix[prefix_len++] = 0x82;
-  state->prefix[prefix_len++] = HI(MLDSA_PK_BYTES);
-  state->prefix[prefix_len++] = LO(MLDSA_PK_BYTES);
+  state->prefix[prefix_len++] = HI(public_len);
+  state->prefix[prefix_len++] = LO(public_len);
   state->prefix_len = prefix_len;
   state->kind = PIV_MLDSA_STREAM_PK;
   memcpy(state->seed, key->mldsa.seed, sizeof(state->seed));
-  state->total_len = state->prefix_len + MLDSA_PK_BYTES;
+  state->total_len = state->prefix_len + public_len;
 
   if (pending_key_id != 0) {
     state->pending_meta = key->meta;
@@ -972,7 +967,10 @@ static int piv_mldsa_prepare_public(const ck_key_t *key, const uint8_t *prefix, 
 
 static int piv_mldsa_prepare_signature(const ck_key_t *key, const uint8_t mu[MLDSA_CRHBYTES]) {
   piv_mldsa_stream_state_t *state = &piv_mldsa_stream_state;
-  static const uint8_t signature_prefix[] = {0x7C, 0x82, 0x0C, 0xF1, 0x82, 0x82, 0x0C, 0xED};
+  state->small = key->meta.type == MLDSA44;
+  const size_t sig_len = SIGNATURE_LENGTH[key->meta.type];
+  const uint8_t signature_prefix[] = {0x7C, 0x82, HI(sig_len + 4), LO(sig_len + 4),
+                                      0x82, 0x82, HI(sig_len),     LO(sig_len)};
 
   memcpy(state->prefix, signature_prefix, sizeof(signature_prefix));
   state->prefix_len = sizeof(signature_prefix);
@@ -980,7 +978,7 @@ static int piv_mldsa_prepare_signature(const ck_key_t *key, const uint8_t mu[MLD
   memcpy(state->seed, key->mldsa.seed, sizeof(state->seed));
   memcpy(state->tr, key->mldsa.tr, sizeof(state->tr));
   memcpy(state->mu, mu, sizeof(state->mu));
-  state->total_len = state->prefix_len + MLDSA_SIG_BYTES;
+  state->total_len = state->prefix_len + sig_len;
 
   return 0;
 }
@@ -1277,7 +1275,7 @@ static int piv_set_public_key_response(ck_key_t *key, const uint8_t *prefix, uin
   }
 
   if (IS_MLKEM(key->meta.type)) {
-    if (piv_mlkem_prepare_public(key->mlkem.seed, prefix, prefix_len) < 0) return -1;
+    if (piv_mlkem_prepare_public(key->meta.type, key->mlkem.seed, prefix, prefix_len) < 0) return -1;
     *out_len = 0;
     return 0;
   }
@@ -1321,13 +1319,13 @@ int piv_security_status_check(uint8_t id __attribute__((unused)), const key_meta
   return 0;
 }
 
-static int piv_ga_stream_begin(uint8_t p2, uint8_t mode) {
+static int piv_ga_stream_begin(uint8_t p2, uint8_t mode, key_type_t type) {
   char key_path[MAX_KEY_PATH_LEN];
   ck_key_t key;
   const int meta_sw = piv_read_key_metadata_or_default(p2, &key.meta, key_path);
   if (meta_sw != SW_NO_ERROR) return meta_sw;
   if (key.meta.type == KEY_TYPE_PKC_END) return SW_CONDITIONS_NOT_SATISFIED;
-  if ((mode == PIV_AUTH_MODE_MLDSA && !IS_MLDSA(key.meta.type)) ||
+  if ((mode == PIV_AUTH_MODE_MLDSA && key.meta.type != type) ||
       (mode == PIV_AUTH_MODE_ED25519_RANDOMIZED && key.meta.type != ED25519) ||
       (mode == PIV_AUTH_MODE_SM2 && key.meta.type != SM2))
     return SW_WRONG_P1P2;
@@ -1417,6 +1415,8 @@ static void piv_algorithm_extension_config_set_default(void) {
   alg_ext_cfg.sm2 = ALG_SM2_DEFAULT;
   alg_ext_cfg.mldsa65 = ALG_MLDSA65_DEFAULT;
   alg_ext_cfg.mlkem768 = ALG_MLKEM768_DEFAULT;
+  alg_ext_cfg.mldsa44 = ALG_MLDSA44_DEFAULT;
+  alg_ext_cfg.mlkem512 = ALG_MLKEM512_DEFAULT;
 }
 
 void piv_poweroff(void) {
@@ -1442,7 +1442,6 @@ int piv_install(const uint8_t reset) {
   // reset that deletes existing keys and certificates.
   if (!reset && piv_littlefs_state_present()) {
     if (!has_alg_ext_cfg) return -1;
-    if (piv_migrate_legacy_management_key_type() < 0) return -1;
     alg_ext_cfg = preserved_alg_ext_cfg;
     return 0;
   }
@@ -1721,8 +1720,9 @@ __attribute__((noinline)) static int piv_general_authenticate_mlkem_dispatch(
   uint16_t pos[6] = {0}, len[6] = {0};
   const uint16_t parse_sw = piv_parse_general_authenticate(auth_len, read, ctx, pos, len);
   if (parse_sw != SW_NO_ERROR) EXCEPT(parse_sw);
-  if (algo_id_to_key_type(P1) != MLKEM768) EXCEPT(SW_WRONG_P1P2);
-  if (pos[IDX_WITNESS] != 0 || pos[IDX_CHALLENGE] == 0 || len[IDX_CHALLENGE] != MLKEM768_CIPHERTEXT_BYTES ||
+  if (algo_id_to_key_type(P1) != meta->type) EXCEPT(SW_WRONG_P1P2);
+  const size_t ciphertext_len = meta->type == MLKEM512 ? 768 : MLKEM768_CIPHERTEXT_BYTES;
+  if (pos[IDX_WITNESS] != 0 || pos[IDX_CHALLENGE] == 0 || len[IDX_CHALLENGE] != ciphertext_len ||
       pos[IDX_RESPONSE] == 0 || len[IDX_RESPONSE] != 0)
     EXCEPT(SW_WRONG_DATA);
   authenticate_reset();
@@ -1733,7 +1733,7 @@ __attribute__((noinline)) static int piv_general_authenticate_mlkem_dispatch(
     PIV_TOUCH(meta->touch_policy == TOUCH_POLICY_CACHED);
 
   uint8_t *ciphertext = piv_mlkem_scratch.decaps.ciphertext;
-  if (read(ctx, pos[IDX_CHALLENGE], ciphertext, MLKEM768_CIPHERTEXT_BYTES) != MLKEM768_CIPHERTEXT_BYTES) {
+  if (read(ctx, pos[IDX_CHALLENGE], ciphertext, ciphertext_len) != (int)ciphertext_len) {
     memzero(&piv_mlkem_scratch, sizeof(piv_mlkem_scratch));
     return -1;
   }
@@ -1744,8 +1744,8 @@ __attribute__((noinline)) static int piv_general_authenticate_mlkem_dispatch(
   }
   piv_pke_release(PIV_PKE_USE_AUTH);
   start_quick_blinking(0);
-  const int decaps_ret = ml_kem_768_decaps_seed(RDATA + 4, ciphertext, piv_mlkem_scratch.decaps.seed,
-                                                piv_mlkem_scratch.decaps.public_key);
+  const int decaps_ret = pq_mlkem_decaps(meta->type, RDATA + 4, ciphertext, piv_mlkem_scratch.decaps.seed,
+                                         piv_mlkem_scratch.decaps.public_key);
   memzero(&piv_mlkem_scratch, sizeof(piv_mlkem_scratch));
   if (decaps_ret < 0) return -1;
   LL = piv_7c_wrap(RDATA, TAG_RESPONSE, MLKEM768_SHARED_KEY_BYTES);
@@ -2312,7 +2312,7 @@ __attribute__((noinline)) static int piv_general_authenticate_dispatch_classic(
 static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, uint16_t auth_len, piv_data_read_t read,
                                              void *ctx) {
   const key_type_t p1_key_type = algo_id_to_key_type(P1);
-  if (p1_key_type != MLKEM768 && p1_key_type != SM2)
+  if (!IS_MLKEM(p1_key_type) && p1_key_type != SM2)
     return piv_general_authenticate_dispatch_classic(capdu, rapdu, auth_len, read, ctx);
   if (auth_len == 0) EXCEPT(SW_WRONG_LENGTH);
 
@@ -2322,8 +2322,8 @@ static int piv_general_authenticate_dispatch(const CAPDU *capdu, RAPDU *rapdu, u
   if (meta_sw == SW_WRONG_P1P2) EXCEPT(meta_sw);
   if (meta_sw < 0) return -1;
   if (meta.type == KEY_TYPE_PKC_END) EXCEPT(SW_CONDITIONS_NOT_SATISFIED);
-  if (p1_key_type == MLKEM768) {
-    if (!IS_MLKEM(meta.type)) EXCEPT(SW_WRONG_P1P2);
+  if (IS_MLKEM(p1_key_type)) {
+    if (meta.type != p1_key_type) EXCEPT(SW_WRONG_P1P2);
     return piv_general_authenticate_mlkem_dispatch(capdu, rapdu, auth_len, read, ctx, key_path, &meta);
   }
   if (meta.type != SM2) EXCEPT(SW_WRONG_P1P2);
@@ -2349,7 +2349,7 @@ static int piv_general_authenticate_stream(const CAPDU *capdu, RAPDU *rapdu, uin
     piv_auth_active = 1;
     piv_auth_p1 = P1;
     piv_auth_p2 = P2;
-    const int begin_sw = piv_ga_stream_begin(P2, requested_mode);
+    const int begin_sw = piv_ga_stream_begin(P2, requested_mode, algo_id_to_key_type(P1));
     if (begin_sw != SW_NO_ERROR) {
       piv_auth_reset();
       if (begin_sw < 0) return -1;
@@ -2443,7 +2443,7 @@ static int piv_general_authenticate(const CAPDU *capdu, RAPDU *rapdu) {
   uint8_t stream_mode = PIV_AUTH_MODE_CLASSIC;
   if (P1 == ALG_ED25519_RANDOMIZED)
     stream_mode = PIV_AUTH_MODE_ED25519_RANDOMIZED;
-  else if (algo_id_to_key_type(P1) == MLDSA65)
+  else if (IS_MLDSA(algo_id_to_key_type(P1)))
     stream_mode = PIV_AUTH_MODE_MLDSA;
   else if (algo_id_to_key_type(P1) == SM2 &&
            ((CLA & 0x10) != 0 || (piv_auth_active && piv_auth_mode == PIV_AUTH_MODE_SM2)))

@@ -29,6 +29,9 @@
 // reorder breaks the build instead of silently corrupting parser state.
 #define APPLET_SHARED_BUFFER_LENGTH ((RSA_N_BIT_MAX / 8) + 32)
 #define PIV_ATTESTATION_PLAN_SIZE 384
+// ML-DSA-44 uses the last 84 stage bytes for persistent hints. Its output
+// and polynomial cache are bounded to the preceding bytes; 65 uses the full
+// stage. Parsed input is consumed before signing overwrites that same stage.
 #define MLDSA_STREAM_STAGE_BYTES (MLDSA_K * MLDSA_POLYT0_PACKEDBYTES)
 #define CTAP_MLDSA_PREFIX_BYTES 384
 #define CTAP_MLDSA_PK_STAGE_BYTES (MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES)
@@ -71,6 +74,7 @@ typedef struct {
   CTAP_mldsa_stream_kind kind;
   CTAP_mldsa_stream_kind storage_kind;
   bool pending;
+  bool small;
   uint16_t prefix_len;
   uint16_t prefix_off;
   uint16_t suffix_len;
@@ -101,6 +105,7 @@ typedef struct {
   key_meta_t pending_meta;
   uint8_t pending_key_id;
   bool install_pending;
+  bool small;
   union {
     mldsa_keygen_state_t keygen;
     mldsa_sign_state_t sign;
@@ -167,6 +172,9 @@ typedef union {
 
 typedef struct {
   uint8_t stage[MLDSA_SEEDBYTES + 4 * MLDSA_POLYT1_PACKEDBYTES];
+  // The backend wipes keygen on completion; attestation regenerates the
+  // public key for the TBS hash and again for output, so retain its seed.
+  uint8_t seed[MLDSA_SEEDBYTES];
   mldsa_keygen_state_t keygen;
   size_t stage_len;
   size_t stage_off;

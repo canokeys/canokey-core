@@ -3,6 +3,7 @@
 #include "memzero.h"
 #include <common.h>
 #include <key.h>
+#include <pq.h>
 #include <ml-dsa-65.h>
 #include <rand.h>
 
@@ -66,9 +67,11 @@ int ck_encoded_public_key_length(key_type_t type, bool include_length) {
   case RSA4096:
     return (include_length ? 3 : 0) + 6 + key_len + E_LENGTH;
 
+  case MLDSA44:
   case MLDSA65:
     return (include_length ? 3 : 0) + 4 + key_len;
 
+  case MLKEM512:
   case MLKEM768:
     return (include_length ? 3 : 0) + 4 + key_len;
 
@@ -144,34 +147,35 @@ int ck_encode_public_key(ck_key_t *key, uint8_t *buf, bool include_length) {
     off += E_LENGTH;
     break;
 
+  case MLDSA44:
   case MLDSA65:
     if (include_length) {
       buf[off++] = 0x82;
-      buf[off++] = HI(4 + MLDSA_PK_BYTES);
-      buf[off++] = LO(4 + MLDSA_PK_BYTES);
+      buf[off++] = HI(4 + key_len);
+      buf[off++] = LO(4 + key_len);
     }
     buf[off++] = 0x86;
     buf[off++] = 0x82;
-    buf[off++] = HI(MLDSA_PK_BYTES);
-    buf[off++] = LO(MLDSA_PK_BYTES);
+    buf[off++] = HI(key_len);
+    buf[off++] = LO(key_len);
     {
       /* Reuse the streaming backend so complete encoding needs no second keygen implementation. */
       mldsa_keygen_state_t state = {0};
       memcpy(state.seed, key->mldsa.seed, sizeof(state.seed));
       size_t written = 0;
       do {
-        int ret = ml_dsa_65_keygen_streaming(buf + off + written, MLDSA_PK_BYTES - written, &state, NULL);
-        if (ret <= 0 || (size_t)ret > MLDSA_PK_BYTES - written) {
+        int ret = pq_mldsa_keygen(key->meta.type, buf + off + written, key_len - written, &state, NULL);
+        if (ret <= 0 || (size_t)ret > key_len - written) {
           ml_dsa_65_keygen_streaming_abort(&state);
           return -1;
         }
         written += (size_t)ret;
-      } while (state.phase != 0 && written < MLDSA_PK_BYTES);
-      const bool complete = state.phase == 0 && written == MLDSA_PK_BYTES;
+      } while (state.phase != 0 && written < key_len);
+      const bool complete = state.phase == 0 && written == key_len;
       ml_dsa_65_keygen_streaming_abort(&state);
       if (!complete) return -1;
     }
-    off += MLDSA_PK_BYTES;
+    off += key_len;
     break;
 
   default:
@@ -497,7 +501,7 @@ static int ck_piv_stream_finish(ck_piv_stream_t *st, ck_key_t *key) {
   } else if (st->mldsa) {
     // Seed-based import: every 32-byte value is a valid ML-DSA seed (the key
     // is deterministically expanded from it), so no consistency check applies.
-    if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
+    if (pq_mldsa_seed_to_tr(key->meta.type, key->mldsa.tr, key->mldsa.seed) < 0) {
       memzero(key, sizeof(ck_key_t));
       return KEY_ERR_PROC;
     }
@@ -674,7 +678,7 @@ int ck_generate_key(ck_key_t *key) {
     return 0;
   } else if (IS_MLDSA(key->meta.type)) {
     random_buffer(key->mldsa.seed, sizeof(key->mldsa.seed));
-    if (ml_dsa_65_seed_to_tr(key->mldsa.tr, key->mldsa.seed) < 0) {
+    if (pq_mldsa_seed_to_tr(key->meta.type, key->mldsa.tr, key->mldsa.seed) < 0) {
       memzero(key, sizeof(ck_key_t));
       return -1;
     }

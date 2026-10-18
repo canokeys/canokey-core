@@ -20,6 +20,7 @@
 #define COSE_ALG_ES256            -7
 #define COSE_ALG_EDDSA            -8
 #define COSE_ALG_ECDH_ES_HKDF_256 -25
+#define COSE_ALG_ML_DSA_44        -48
 #define COSE_ALG_ML_DSA_65        -49
 // clang-format on
 

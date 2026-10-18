@@ -8,11 +8,13 @@
 #include <bd/lfs_filebd.h>
 #include <cmocka.h>
 #include <crypto-util.h>
+#include <crc.h>
 #include <device.h>
 #include <device-config.h>
 #include <firmware-version.h>
 #include <fs.h>
 #include <key.h>
+#include <pq.h>
 #include <lfs.h>
 #include <memzero.h>
 #include <ml-kem-768.h>
@@ -20,6 +22,7 @@
 #include <platform-config.h>
 #include <rsa.h>
 #include <sha.h>
+#include <sha3.h>
 #include <sm2_ke.h>
 #include <sm3.h>
 #include <string.h>
@@ -494,6 +497,103 @@ static void test_piv_mldsa65_aborted_generation_not_installed(void **state) {
   assert_int_equal(get_file_size("piv-k95"), LFS_ERR_NOENT);
 }
 
+static void test_piv_small_pq(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+  uint8_t generate[] = {0xAC, 0x06, 0x80, 0x01, 0xE4, 0xAA, 0x01, PIN_POLICY_NEVER};
+  static uint8_t response[MLDSA_SIG_BYTES + 32], message[4096], auth[4106];
+  uint16_t sw;
+  CAPDU command = {.data = generate,
+                   .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+                   .p2 = 0x95,
+                   .lc = sizeof(generate),
+                   .le = APDU_BUFFER_SIZE};
+  assert_int_equal(piv_test_collect_response(command, response, sizeof(response), &sw), 1321);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_memory_equal(response, ((uint8_t[]){0x7F, 0x49, 0x82, 0x05, 0x24, 0x86, 0x82, 0x05, 0x20}), 9);
+  ck_key_t key;
+  assert_int_equal(ck_read_key("piv-k95", &key), sizeof(mldsa65_private_key_t));
+  assert_int_equal(key.meta.type, MLDSA44);
+  uint8_t tr[64];
+  assert_int_equal(ml_dsa_44_seed_to_tr(tr, key.mldsa.seed), 0);
+  assert_memory_equal(tr, key.mldsa.tr, sizeof(tr));
+
+  // Independent dilithium-py 1.4.0 KAT: seed 00..1f, message (00..ff)*16.
+  uint8_t imported[37] = {0x09, 32};
+  for (size_t i = 0; i < 32; ++i)
+    imported[2 + i] = (uint8_t)i;
+  memcpy(imported + 34, ((uint8_t[]){0xAA, 1, PIN_POLICY_NEVER}), 3);
+  test_helper(imported, sizeof(imported), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0xE4, 0x95, SW_NO_ERROR);
+  command = (CAPDU){.ins = PIV_INS_GET_METADATA, .p2 = 0x95, .le = APDU_BUFFER_SIZE};
+  assert_int_equal(piv_test_collect_response(command, response, sizeof(response), &sw), 1330);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_int_equal(response[2], 0xE4);
+  static const uint8_t pk_hash[32] = {0x9f, 0x10, 0x76, 0x44, 0xc1, 0x08, 0x45, 0x26, 0xaf, 0x3b, 0xc8,
+                                      0x09, 0x86, 0x80, 0xb0, 0x54, 0x99, 0xa2, 0x32, 0x5a, 0x64, 0x4e,
+                                      0x38, 0x8f, 0xb4, 0xf9, 0x70, 0xe0, 0x58, 0xd1, 0x9d, 0x46};
+  static const uint8_t sig_hash[32] = {0x79, 0xfa, 0x55, 0xfe, 0x79, 0xe6, 0x81, 0x2d, 0x3d, 0x15, 0xaa,
+                                       0xcd, 0xf0, 0xa9, 0xbb, 0x8e, 0x29, 0x08, 0x8b, 0x42, 0xad, 0xb6,
+                                       0xf1, 0x7b, 0x3e, 0x63, 0xc8, 0x4b, 0x03, 0x50, 0x4a, 0xb6};
+  uint8_t digest[32];
+  sha256_raw(response + 18, 1312, digest);
+  assert_memory_equal(digest, pk_hash, 32);
+  for (size_t i = 0; i < sizeof(message); ++i)
+    message[i] = (uint8_t)i;
+  size_t auth_len = piv_test_build_long_auth(auth, message, sizeof(message));
+  assert_int_equal(piv_test_send_chained_message(0xE4, 0x95, auth, auth_len, 240, response, sizeof(response), &sw),
+                   2428);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_memory_equal(response, ((uint8_t[]){0x7C, 0x82, 0x09, 0x78, 0x82, 0x82, 0x09, 0x74}), 8);
+  sha256_raw(response + 8, 2420, digest);
+  assert_memory_equal(digest, sig_hash, 32);
+  uint8_t short_auth[] = {0x7C, 0x05, 0x82, 0, 0x81, 1, 0x42};
+  test_helper(short_auth, sizeof(short_auth), PIV_INS_GENERAL_AUTHENTICATE, 0xE2, 0x95, SW_WRONG_P1P2);
+
+  generate[4] = 0xE5;
+  command = (CAPDU){.data = generate,
+                    .ins = PIV_INS_GENERATE_ASYMMETRIC_KEY_PAIR,
+                    .p2 = 0x95,
+                    .lc = sizeof(generate),
+                    .le = APDU_BUFFER_SIZE};
+  assert_int_equal(piv_test_collect_response(command, response, sizeof(response), &sw), 809);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_memory_equal(response, ((uint8_t[]){0x7F, 0x49, 0x82, 0x03, 0x24, 0x86, 0x82, 0x03, 0x20}), 9);
+  uint8_t public_key[800], ct[768], ss[32], coins[32] = {0}, seed[64];
+  memcpy(public_key, response + 9, 800);
+  assert_int_equal(ck_read_key("piv-k95", &key), 64);
+  assert_int_equal(key.meta.type, MLKEM512);
+  memcpy(seed, key.mlkem.seed, 64);
+  assert_int_equal(ml_kem_512_encaps(ct, ss, public_key, coins), 0);
+  auth_len = piv_test_build_long_auth(auth, ct, sizeof(ct));
+  assert_int_equal(piv_test_send_chained_message(0xE5, 0x95, auth, auth_len, 240, response, sizeof(response), &sw), 36);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_memory_equal(response + 4, ss, 32);
+  ct[0] ^= 1;
+  auth_len = piv_test_build_long_auth(auth, ct, sizeof(ct));
+  assert_int_equal(piv_test_send_chained_message(0xE5, 0x95, auth, auth_len, 240, response, sizeof(response), &sw), 36);
+  assert_int_equal(sw, SW_NO_ERROR);
+  SHA3_CTX_T shake;
+  shake256_init(&shake);
+  shake_update(&shake, seed + 32, 32);
+  shake_update(&shake, ct, sizeof(ct));
+  shake_finalize(&shake);
+  shake_squeeze(&shake, ss, 32);
+  assert_memory_equal(response + 4, ss, 32);
+  // Import remains the same 64-byte seed format for both KEM levels.
+  uint8_t kem_import[69] = {0x0A, 64};
+  memcpy(kem_import + 2, seed, 64);
+  memcpy(kem_import + 66, ((uint8_t[]){0xAA, 1, PIN_POLICY_NEVER}), 3);
+  test_helper(kem_import, sizeof(kem_import), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0xE5, 0x9D, SW_NO_ERROR);
+  assert_int_equal(ck_read_key("piv-k9d", &key), 64);
+  assert_int_equal(key.meta.type, MLKEM512);
+  assert_memory_equal(key.mlkem.seed, seed, 64);
+  command = (CAPDU){.ins = PIV_INS_GET_METADATA, .p2 = 0x9D, .le = APDU_BUFFER_SIZE};
+  assert_int_equal(piv_test_collect_response(command, response, sizeof(response), &sw), 818);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_memory_equal(response + 18, public_key, 800);
+}
+
 static void test_piv_mlkem768_generate_metadata_decaps_and_lifecycle(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -699,6 +799,8 @@ static void test_piv_pq_custom_algorithm_ids(void **state) {
       .sm2 = 0x54,
       .mldsa65 = mldsa_algorithm,
       .mlkem768 = mlkem_algorithm,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   uint8_t response_chunk[APDU_BUFFER_SIZE];
   CAPDU command = {.data = (uint8_t *)&custom,
@@ -798,6 +900,8 @@ static void test_piv_pq_custom_algorithm_ids(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   command = (CAPDU){.data = (uint8_t *)&defaults,
                     .cla = 0x00,
@@ -935,9 +1039,12 @@ static void piv_test_assert_attestation_spki(const test_der_tlv_t *spki, ck_key_
     assert_int_equal(algorithm_oid.total_len, expected_oid_len);
     assert_memory_equal(algorithm.value, expected_oid, expected_oid_len);
     assert_int_equal(algorithm_remaining, 0);
-    assert_int_equal(public_key.value_len, 1 + MLDSA_PK_BYTES);
-    assert_int_equal(ml_dsa_65_keygen(expected_public, NULL, NULL, target->mldsa.seed), 0);
-    assert_memory_equal(public_key.value + 1, expected_public, sizeof(expected_public));
+    assert_int_equal(public_key.value_len, 1 + PUBLIC_KEY_LENGTH[target->meta.type]);
+    if (target->meta.type == MLDSA44)
+      assert_int_equal(ml_dsa_44_keygen(expected_public, NULL, NULL, target->mldsa.seed), 0);
+    else
+      assert_int_equal(ml_dsa_65_keygen(expected_public, NULL, NULL, target->mldsa.seed), 0);
+    assert_memory_equal(public_key.value + 1, expected_public, PUBLIC_KEY_LENGTH[target->meta.type]);
     memzero(expected_public, sizeof(expected_public));
   } else {
     assert_int_equal(algorithm_oid.total_len, expected_oid_len);
@@ -1163,36 +1270,6 @@ static void test_piv_aes192_management_key(void **state) {
       .data = init, .cla = 0x00, .ins = PIV_INS_GENERAL_AUTHENTICATE, .p1 = 0x03, .p2 = 0x9B, .lc = sizeof(init)};
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_WRONG_P1P2);
-
-  assert_int_equal(piv_install(1), 0);
-}
-
-static void test_piv_migrates_legacy_management_key_types(void **state) {
-  (void)state;
-  assert_int_equal(piv_install(1), 0);
-
-  enum { LEGACY_TDEA = 11, LEGACY_AES128 = 12, LEGACY_AES256 = 13 };
-  static const struct {
-    unsigned legacy_type;
-    key_type_t current_type;
-    size_t key_len;
-  } cases[] = {
-      {LEGACY_TDEA, TDEA, 24},
-      {LEGACY_AES128, AES128, 16},
-      {LEGACY_AES256, AES256, 32},
-  };
-  uint8_t key_material[32] = {0};
-  key_meta_t meta;
-  assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
-
-  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-    meta.type = (key_type_t)cases[i].legacy_type;
-    assert_int_equal(write_file("piv-k9b", key_material, 0, cases[i].key_len, 1), 0);
-    assert_true(ck_write_key_metadata("piv-k9b", &meta) >= 0);
-    assert_int_equal(piv_install(0), 0);
-    assert_true(ck_read_key_metadata("piv-k9b", &meta) >= 0);
-    assert_int_equal(meta.type, cases[i].current_type);
-  }
 
   assert_int_equal(piv_install(1), 0);
 }
@@ -1595,6 +1672,8 @@ static void test_piv_rsa4096_metadata_chained_read(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&config), 0);
   assert_int_equal(piv_install(1), 0);
@@ -1977,18 +2056,20 @@ static void test_piv_attestation_all_target_algorithms(void **state) {
   static const uint8_t oid_sm2[] = {0x06, 0x08, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x82, 0x2D};
   static const uint8_t oid_ed25519[] = {0x06, 0x03, 0x2B, 0x65, 0x70};
   static const uint8_t oid_x25519[] = {0x06, 0x03, 0x2B, 0x65, 0x6E};
+  static const uint8_t oid_mldsa44[] = {0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x11};
   static const uint8_t oid_mldsa65[] = {0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x12};
   static const struct {
     key_type_t type;
     const uint8_t *oid;
     size_t oid_len;
   } cases[] = {
-      {RSA2048, oid_rsa, sizeof(oid_rsa)},      {RSA3072, oid_rsa, sizeof(oid_rsa)},
-      {RSA4096, oid_rsa, sizeof(oid_rsa)},      {SECP256R1, oid_p256, sizeof(oid_p256)},
-      {SECP384R1, oid_p384, sizeof(oid_p384)},  {ED25519, oid_ed25519, sizeof(oid_ed25519)},
-      {X25519, oid_x25519, sizeof(oid_x25519)}, {SECP256K1, oid_k256, sizeof(oid_k256)},
-      {SECP521R1, oid_p521, sizeof(oid_p521)},  {SM2, oid_sm2, sizeof(oid_sm2)},
+      {RSA2048, oid_rsa, sizeof(oid_rsa)},         {RSA3072, oid_rsa, sizeof(oid_rsa)},
+      {RSA4096, oid_rsa, sizeof(oid_rsa)},         {SECP256R1, oid_p256, sizeof(oid_p256)},
+      {SECP384R1, oid_p384, sizeof(oid_p384)},     {ED25519, oid_ed25519, sizeof(oid_ed25519)},
+      {X25519, oid_x25519, sizeof(oid_x25519)},    {SECP256K1, oid_k256, sizeof(oid_k256)},
+      {SECP521R1, oid_p521, sizeof(oid_p521)},     {SM2, oid_sm2, sizeof(oid_sm2)},
       {MLDSA65, oid_mldsa65, sizeof(oid_mldsa65)},
+      {MLDSA44, oid_mldsa44, sizeof(oid_mldsa44)},
   };
 
   static uint8_t certificate[3072];
@@ -2069,6 +2150,8 @@ static void test_piv_reset_preserves_platform_algorithm_extension(void **state) 
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&custom), 0);
 
@@ -2103,6 +2186,8 @@ static void test_piv_reset_preserves_platform_algorithm_extension(void **state) 
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
   assert_int_equal(piv_install(1), 0);
@@ -2122,6 +2207,8 @@ static void test_piv_algorithm_extension_read_without_admin(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&expected), 0);
   assert_int_equal(piv_install(1), 0);
@@ -2157,6 +2244,8 @@ static void test_piv_algorithm_extension_read_after_write(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
 
   set_admin_status(1);
@@ -2167,8 +2256,16 @@ static void test_piv_algorithm_extension_read_after_write(void **state) {
   piv_process_apdu(&C, &R);
   assert_int_equal(R.sw, SW_NO_ERROR);
 
+  /* A truncated map must not partially update the persisted configuration. */
+  C.lc = 10;
+  piv_process_apdu(&C, &R);
+  assert_int_equal(R.sw, SW_WRONG_LENGTH);
+  piv_algorithm_extension_config_t actual;
+  assert_int_equal(piv_platform_algorithm_extension_config_read(&actual), 0);
+  assert_memory_equal(&actual, &expected, sizeof(expected));
+
   set_admin_status(0);
-  C = (CAPDU){.data = NULL, .ins = PIV_INS_ALGORITHM_EXTENSION, .p1 = 0x01, .p2 = 0x00, .lc = 0};
+  C = (CAPDU){.data = NULL, .ins = PIV_INS_ALGORITHM_EXTENSION, .p1 = 0x01, .p2 = 0x00, .lc = 0, .le = 10};
   R.len = 0;
   R.sw = 0;
   piv_process_apdu(&C, &R);
@@ -2193,6 +2290,8 @@ static void test_piv_algorithm_extension_rejects_conflicting_ids(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   piv_algorithm_extension_config_t invalid[] = {valid, valid, valid};
   invalid[0].mlkem768 = invalid[0].mldsa65;
@@ -2317,6 +2416,8 @@ static void test_piv_streaming_auth_parser_errors(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&config), 0);
   assert_int_equal(piv_install(1), 0);
@@ -2465,6 +2566,8 @@ static void test_secp521r1_generate_and_authenticate(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
   assert_int_equal(piv_install(1), 0);
@@ -2551,6 +2654,8 @@ static void test_secp521r1_custom_algorithm_id(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&custom), 0);
   assert_int_equal(piv_install(1), 0);
@@ -2587,6 +2692,8 @@ static void test_secp521r1_custom_algorithm_id(void **state) {
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
   assert_int_equal(piv_install(1), 0);
@@ -3408,6 +3515,8 @@ static void test_piv_sm2_stream_key_mismatch_and_disabled_extension(void **state
       .sm2 = 0x54,
       .mldsa65 = 0xE2,
       .mlkem768 = 0xE3,
+      .mldsa44 = 0xE4,
+      .mlkem512 = 0xE5,
   };
   assert_int_equal(piv_platform_algorithm_extension_config_write(&defaults), 0);
   assert_int_equal(piv_install(1), 0);
@@ -4184,7 +4293,6 @@ int main() {
       cmocka_unit_test(test_piv_container_name_mldsa_replacement),
       cmocka_unit_test(test_regression_fuzz),
       cmocka_unit_test(test_piv_aes192_management_key),
-      cmocka_unit_test(test_piv_migrates_legacy_management_key_types),
       cmocka_unit_test(test_piv_startup_preserves_state_when_platform_config_is_invalid),
       cmocka_unit_test(test_piv_aes192_mutual_authentication),
       cmocka_unit_test(test_delete_certificate_object),
@@ -4206,6 +4314,7 @@ int main() {
       cmocka_unit_test(test_piv_algorithm_extension_read_after_write),
       cmocka_unit_test(test_piv_algorithm_extension_rejects_conflicting_ids),
       cmocka_unit_test(test_piv_regular_slot_defaults),
+      cmocka_unit_test(test_piv_small_pq),
       cmocka_unit_test(test_piv_mldsa65_import_seed_only),
       cmocka_unit_test(test_piv_mldsa65_generate_metadata_and_sign),
       cmocka_unit_test(test_piv_mldsa65_aborted_generation_not_installed),

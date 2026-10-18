@@ -945,7 +945,7 @@ static int openpgp_sign_or_auth(const CAPDU *capdu, RAPDU *rapdu, bool is_sign) 
   size_t input_size = LC;
   uint8_t padded_digest[MAX_SHORT_WEIERSTRASS_DIGEST_LENGTH];
   if (IS_RSA(key.meta.type)) {
-    if (LC > PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
+    if (LC > (size_t)PUBLIC_KEY_LENGTH[key.meta.type] * 2 / 5) {
       DBG_MSG("DigestInfo should be not longer than 40%% of the length of the modulus\n");
       EXCEPT(SW_WRONG_LENGTH);
     }

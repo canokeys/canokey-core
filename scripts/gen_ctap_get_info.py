@@ -183,12 +183,13 @@ def build_segments(c, restrict_algorithms=False):
     after_versions += encode_uint(c['GI_RESP_TRANSPORTS'])
     after_versions += encode_array_header(2) + encode_text("nfc") + encode_text("usb")
     after_versions += encode_uint(c['GI_RESP_ALGORITHMS'])
-    after_versions += encode_array_header(2 if restrict_algorithms else 4)
+    after_versions += encode_array_header(2 if restrict_algorithms else 5)
     after_versions += algorithm_entry(c['COSE_ALG_ES256'])
     after_versions += algorithm_entry(c['COSE_ALG_EDDSA'])
     sm2_marker = b'\xF0SM2ALG'
     if not restrict_algorithms:
         after_versions += algorithm_entry(c['COSE_ALG_ML_DSA_65'])
+        after_versions += algorithm_entry(c['COSE_ALG_ML_DSA_44'])
         after_versions += encode_map_header(2) + encode_text("alg") + sm2_marker
         after_versions += encode_text("type") + encode_text("public-key")
     else:
@@ -331,6 +332,7 @@ def main():
         'COSE_ALG_ES256': None,
         'COSE_ALG_EDDSA': None,
         'COSE_ALG_ML_DSA_65': None,
+        'COSE_ALG_ML_DSA_44': None,
         'CONFIG_CMD_TOGGLE_ALWAYS_UV': None,
         'CONFIG_CMD_SET_MIN_PIN_LENGTH': None,
         'CONFIG_CMD_ENABLE_LONG_TOUCH_FOR_RESET': None,
