@@ -2674,8 +2674,10 @@ static void test_ctap_hid_make_credential_mldsa_hmac_secret_mc_output_key_is_sep
 }
 
 #if !CTAP_RESTRICT_ALGORITHMS
-static void test_ctap_mldsa44_round_trip(void **state) {
-  (void)state;
+static void ctap_test_mldsa_round_trip(bool small, bool resident, int transport) {
+  const int algorithm = small ? COSE_ALG_ML_DSA_44 : COSE_ALG_ML_DSA_65;
+  const size_t pk_len = small ? MLDSA44_PUBLIC_KEY_BYTES : MLDSA_PK_BYTES;
+  const size_t sig_len = small ? MLDSA44_SIGNATURE_BYTES : MLDSA_SIG_BYTES;
   init_apdu_buffer();
   device_init();
   assert_int_equal(applets_install(), 0);
@@ -2697,17 +2699,17 @@ static void test_ctap_mldsa44_round_trip(void **state) {
   *p++ = 0x81;
   *p++ = 0xA2;
   put_cbor_text(&p, "alg");
-  put_cbor_int(&p, COSE_ALG_ML_DSA_44);
+  put_cbor_int(&p, algorithm);
   put_cbor_text(&p, "type");
   put_cbor_text(&p, "public-key");
   *p++ = 7;
   *p++ = 0xA1;
   put_cbor_text(&p, "rk");
-  *p++ = 0xF5;
-  static uint8_t response[4096], auth_data[2048], expected_pk[1312];
+  *p++ = resident ? 0xF5 : 0xF4;
+  static uint8_t response[4096], auth_data[3072], expected_pk[MLDSA_PK_BYTES];
   CTAPHID_TxSource source = {0};
   size_t written, auth_len;
-  assert_int_equal(ctap_process_cbor_stream_with_src(req, p - req, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, p - req, scratch, sizeof(scratch), &source, transport), 1);
   assert_int_equal(read_tx_source_all(&source, response, sizeof(response), &written), 0);
   assert_int_equal(response[0], 0);
   assert_int_equal(test_cbor_is_canonical(response + 1, written - 1), 0);
@@ -2716,7 +2718,7 @@ static void test_ctap_mldsa44_round_trip(void **state) {
   credential_id cid;
   const size_t cid_offset = 37 + AAGUID_SIZE + sizeof(uint16_t);
   memcpy(&cid, auth_data + cid_offset, sizeof(cid));
-  assert_int_equal(cid.alg_type, COSE_ALG_ML_DSA_44);
+  assert_int_equal(cid.alg_type, algorithm);
   const size_t key_offset = cid_offset + sizeof(cid);
   test_cbor_view cose = {.ptr = auth_data + key_offset, .len = auth_len - key_offset}, value;
   int64_t alg;
@@ -2724,21 +2726,22 @@ static void test_ctap_mldsa44_round_trip(void **state) {
   size_t public_len;
   assert_int_equal(test_cbor_map_lookup_int_key(cose.ptr, cose.len, COSE_KEY_LABEL_ALG, &value), 0);
   assert_int_equal(test_cbor_get_int(value, &alg), 0);
-  assert_int_equal(alg, COSE_ALG_ML_DSA_44);
+  assert_int_equal(alg, algorithm);
   assert_int_equal(test_cbor_map_lookup_int_key(cose.ptr, cose.len, COSE_KEY_LABEL_AKP_PUB, &value), 0);
   assert_int_equal(test_cbor_get_byte_string(value, &public_key, &public_len), 0);
-  assert_int_equal(public_len, 1312);
+  assert_int_equal(public_len, pk_len);
   uint8_t seed[32], pk_hash[32], sig_hash[32];
   assert_int_equal(verify_mldsa_key_handle(&cid, seed), 0);
-  assert_int_equal(ml_dsa_44_keygen(expected_pk, NULL, NULL, seed), 0);
-  assert_memory_equal(public_key, expected_pk, 1312);
-  sha256_raw(public_key, 1312, pk_hash);
+  assert_int_equal(
+      small ? ml_dsa_44_keygen(expected_pk, NULL, NULL, seed) : ml_dsa_65_keygen(expected_pk, NULL, NULL, seed), 0);
+  assert_memory_equal(public_key, expected_pk, pk_len);
+  sha256_raw(public_key, pk_len, pk_hash);
   if (source.close) source.close(source.ctx);
 
   // Assertions use both the registered parameter set and its exact COSE length.
   memset(&source, 0, sizeof(source));
   size_t req_len = build_third_party_payment_get_assertion(req, &cid);
-  assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, CTAP_SRC_HID), 1);
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, transport), 1);
   assert_int_equal(read_tx_source_all(&source, response, sizeof(response), &written), 0);
   assert_int_equal(response[0], 0);
   assert_int_equal(test_cbor_is_canonical(response + 1, written - 1), 0);
@@ -2748,10 +2751,23 @@ static void test_ctap_mldsa44_round_trip(void **state) {
   size_t signature_len;
   assert_int_equal(test_cbor_map_lookup_int_key(response + 1, written - 1, GA_RESP_SIGNATURE, &value), 0);
   assert_int_equal(test_cbor_get_byte_string(value, &signature, &signature_len), 0);
-  assert_int_equal(signature_len, 2420);
+  assert_int_equal(signature_len, sig_len);
+  // Validate the full WebAuthn signing transcript, not only its output length.
+  uint8_t signed_message[sizeof(auth_data) + 32], tr[MLDSA_TRBYTES];
+  static uint8_t expected_signature[MLDSA_SIG_BYTES];
+  size_t expected_len = 0;
+  memcpy(signed_message, auth_data, auth_len);
+  memset(signed_message + auth_len, 0, 32);
+  assert_int_equal(pq_mldsa_seed_to_tr(small ? MLDSA44 : MLDSA65, tr, seed), 0);
+  assert_int_equal(
+      small ? ml_dsa_44_sign_seed(expected_signature, &expected_len, signed_message, auth_len + 32, NULL, 0, seed, tr)
+            : ml_dsa_65_sign_seed(expected_signature, &expected_len, signed_message, auth_len + 32, NULL, 0, seed, tr),
+      0);
+  assert_int_equal(expected_len, sig_len);
+  assert_memory_equal(signature, expected_signature, sig_len);
   sha256_raw(signature, signature_len, sig_hash);
   // Compact record independently checked by tools/crypto/verify_pq_applets.py.
-  print_message("PQ_APPLET_DSA44 seed=");
+  print_message("PQ_APPLET_DSA%d seed=", small ? 44 : 65);
   for (size_t i = 0; i < 32; ++i)
     print_message("%02x", seed[i]);
   print_message(" msg=");
@@ -2765,9 +2781,27 @@ static void test_ctap_mldsa44_round_trip(void **state) {
   print_message(" sig_sha256=");
   for (size_t i = 0; i < 32; ++i)
     print_message("%02x", sig_hash[i]);
-  print_message("\n");
+  print_message(" resident=%u transport=%s\n", (unsigned)resident, transport == CTAP_SRC_HID ? "HID" : "CCID");
+  if (source.close) source.close(source.ctx);
+  // A corrupted key handle must not produce an assertion.
+  cid.nonce[0] ^= 1;
+  memset(&source, 0, sizeof(source));
+  req_len = build_third_party_payment_get_assertion(req, &cid);
+  assert_int_equal(ctap_process_cbor_stream_with_src(req, req_len, scratch, sizeof(scratch), &source, transport), 1);
+  assert_int_equal(read_tx_source_all(&source, response, sizeof(response), &written), 0);
+  assert_int_equal(response[0], CTAP2_ERR_NO_CREDENTIALS);
   if (source.close) source.close(source.ctx);
   memzero(seed, sizeof(seed));
+  memzero(expected_signature, sizeof(expected_signature));
+}
+
+static void test_ctap_mldsa_round_trips(void **state) {
+  (void)state;
+  const int transports[] = {CTAP_SRC_HID, CTAP_SRC_CCID};
+  for (size_t i = 0; i < sizeof(transports) / sizeof(transports[0]); ++i)
+    for (int small = 0; small < 2; ++small)
+      for (int resident = 0; resident < 2; ++resident)
+        ctap_test_mldsa_round_trip(small, resident, transports[i]);
 }
 #endif
 
@@ -4725,7 +4759,7 @@ int main() {
       cmocka_unit_test(test_ctap_hid_get_info_stream_source),
       cmocka_unit_test(test_ctap_algorithm_policy),
 #if !CTAP_RESTRICT_ALGORITHMS
-      cmocka_unit_test(test_ctap_mldsa44_round_trip),
+      cmocka_unit_test(test_ctap_mldsa_round_trips),
 #endif
       cmocka_unit_test(test_ctap_kh_cache_lifecycle),
       cmocka_unit_test(test_ctap_pin_state_read_errors_are_propagated),

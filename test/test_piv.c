@@ -594,6 +594,96 @@ static void test_piv_small_pq(void **state) {
   assert_memory_equal(response + 18, public_key, 800);
 }
 
+static void test_piv_small_pq_import_rejection_and_lifecycle(void **state) {
+  (void)state;
+  const struct {
+    uint8_t algorithm, tag, seed_len;
+    key_type_t type;
+  } cases[] = {{0xE4, 0x09, 32, MLDSA44}, {0xE5, 0x0A, 64, MLKEM512}};
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    assert_int_equal(piv_install(1), 0);
+    set_admin_status(1);
+    uint8_t imported[69] = {cases[i].tag, cases[i].seed_len};
+    for (size_t j = 0; j < cases[i].seed_len; ++j)
+      imported[2 + j] = (uint8_t)(j + 1);
+    size_t seed_tlv_len = 2 + cases[i].seed_len;
+    memcpy(imported + seed_tlv_len, ((uint8_t[]){0xAA, 1, PIN_POLICY_NEVER}), 3);
+    size_t import_len = seed_tlv_len + 3;
+    test_helper(imported, import_len, PIV_INS_IMPORT_ASYMMETRIC_KEY, cases[i].algorithm, 0x95, SW_NO_ERROR);
+    uint8_t saved[96], actual[96];
+    int saved_len = read_file("piv-k95", saved, 0, sizeof(saved));
+    assert_true(saved_len > 0);
+
+    // Valid TLVs with invalid seed lengths must not replace an existing key.
+    for (int delta = -1; delta <= 1; delta += 2) {
+      uint8_t bad[67] = {cases[i].tag, cases[i].seed_len + delta};
+      memset(bad + 2, 0xA5, bad[1]);
+      assert_int_equal(piv_test_mlkem_import(cases[i].algorithm, 0x95, bad, 2 + bad[1]), SW_WRONG_LENGTH);
+    }
+    // ML-KEM's seed-only parser also rejects duplicate seed components.
+    if (cases[i].type == MLKEM512) {
+      uint8_t duplicate[132];
+      memcpy(duplicate, imported, seed_tlv_len);
+      memcpy(duplicate + seed_tlv_len, imported, seed_tlv_len);
+      assert_int_equal(piv_test_mlkem_import(cases[i].algorithm, 0x95, duplicate, 2 * seed_tlv_len), SW_WRONG_DATA);
+    }
+    imported[0] = cases[i].tag == 0x09 ? 0x0A : 0x09;
+    assert_int_equal(piv_test_mlkem_import(cases[i].algorithm, 0x95, imported, import_len), SW_WRONG_DATA);
+    imported[0] = cases[i].tag;
+    set_admin_status(0);
+    assert_int_equal(piv_test_mlkem_import(cases[i].algorithm, 0x95, imported, import_len),
+                     SW_SECURITY_STATUS_NOT_SATISFIED);
+    set_admin_status(1);
+    assert_int_equal(read_file("piv-k95", actual, 0, sizeof(actual)), saved_len);
+    assert_memory_equal(actual, saved, saved_len);
+    key_meta_t meta;
+    assert_int_equal(ck_read_key_metadata("piv-k95", &meta), sizeof(meta));
+    assert_int_equal(meta.type, cases[i].type);
+    assert_int_equal(meta.origin, KEY_ORIGIN_IMPORTED);
+    assert_int_equal(meta.pin_policy, PIN_POLICY_NEVER);
+
+    // Move preserves the parameter set and seed; deletion removes the new slot.
+    test_helper(NULL, 0, PIV_INS_MOVE_DELETE_KEY, 0x94, 0x95, SW_NO_ERROR);
+    assert_int_equal(get_file_size("piv-k95"), LFS_ERR_NOENT);
+    assert_int_equal(read_file("piv-k94", actual, 0, sizeof(actual)), saved_len);
+    assert_memory_equal(actual, saved, saved_len);
+    assert_int_equal(ck_read_key_metadata("piv-k94", &meta), sizeof(meta));
+    assert_int_equal(meta.type, cases[i].type);
+    test_helper(NULL, 0, PIV_INS_MOVE_DELETE_KEY, 0xFF, 0x94, SW_NO_ERROR);
+    assert_int_equal(get_file_size("piv-k94"), LFS_ERR_NOENT);
+  }
+}
+
+static void test_piv_mlkem512_ciphertext_boundaries(void **state) {
+  (void)state;
+  assert_int_equal(piv_install(1), 0);
+  set_admin_status(1);
+  uint8_t imported[69] = {0x0A, 64};
+  memcpy(imported + 66, ((uint8_t[]){0xAA, 1, PIN_POLICY_NEVER}), 3);
+  test_helper(imported, sizeof(imported), PIV_INS_IMPORT_ASYMMETRIC_KEY, 0xE5, 0x95, SW_NO_ERROR);
+  uint8_t pk[MLKEM512_PUBLIC_KEY_BYTES], ct[MLKEM512_CIPHERTEXT_BYTES + 1], ss[32], coins[32] = {0};
+  assert_int_equal(ml_kem_512_seed_to_public(pk, imported + 2), 0);
+  assert_int_equal(ml_kem_512_encaps(ct, ss, pk, coins), 0);
+  ct[sizeof(ct) - 1] = 0;
+  uint8_t auth[sizeof(ct) + 10], response[64];
+  uint16_t sw;
+  for (int delta = -1; delta <= 1; ++delta) {
+    size_t len = piv_test_build_long_auth(auth, ct, MLKEM512_CIPHERTEXT_BYTES + delta);
+    size_t written = piv_test_send_chained_message(0xE5, 0x95, auth, len, 240, response, sizeof(response), &sw);
+    assert_int_equal(sw, delta ? SW_WRONG_DATA : SW_NO_ERROR);
+    assert_int_equal(written, delta ? 0 : 36);
+    if (!delta) assert_memory_equal(response + 4, ss, sizeof(ss));
+  }
+  // A 768-level algorithm identifier must never use a 512-level key.
+  size_t len = piv_test_build_long_auth(auth, ct, MLKEM512_CIPHERTEXT_BYTES);
+  assert_int_equal(piv_test_send_chained_message(0xE3, 0x95, auth, len, 240, response, sizeof(response), &sw), 0);
+  assert_int_equal(sw, SW_WRONG_P1P2);
+  // Rejection leaves the key usable for a subsequent correctly sized request.
+  assert_int_equal(piv_test_send_chained_message(0xE5, 0x95, auth, len, 240, response, sizeof(response), &sw), 36);
+  assert_int_equal(sw, SW_NO_ERROR);
+  assert_memory_equal(response + 4, ss, sizeof(ss));
+}
+
 static void test_piv_mlkem768_generate_metadata_decaps_and_lifecycle(void **state) {
   (void)state;
   assert_int_equal(piv_install(1), 0);
@@ -4315,6 +4405,8 @@ int main() {
       cmocka_unit_test(test_piv_algorithm_extension_rejects_conflicting_ids),
       cmocka_unit_test(test_piv_regular_slot_defaults),
       cmocka_unit_test(test_piv_small_pq),
+      cmocka_unit_test(test_piv_small_pq_import_rejection_and_lifecycle),
+      cmocka_unit_test(test_piv_mlkem512_ciphertext_boundaries),
       cmocka_unit_test(test_piv_mldsa65_import_seed_only),
       cmocka_unit_test(test_piv_mldsa65_generate_metadata_and_sign),
       cmocka_unit_test(test_piv_mldsa65_aborted_generation_not_installed),
