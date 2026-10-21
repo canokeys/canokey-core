@@ -124,7 +124,10 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
   USBD_StatusTypeDef ret = USBD_OK;
   ep_addr = LO(req->wIndex);
 
-  if ((ep_addr & 0x7F) >= USBD_EP_SIZE) return USBD_FAIL;
+  if ((ep_addr & 0x7F) >= USBD_EP_SIZE) {
+    USBD_CtlError(pdev, req);
+    return USBD_FAIL;
+  }
 
   /* Check if it is a class request */
   if ((req->bmRequest & 0x60) == 0x20) {
@@ -137,22 +140,20 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
 
   case USB_REQ_SET_FEATURE:
 
+    if (req->bmRequest != (USB_REQ_TYPE_STANDARD | USB_REQ_RECIPIENT_ENDPOINT) ||
+        req->wValue != USB_FEATURE_EP_HALT || req->wLength != 0 || (ep_addr & 0x7F) == 0) {
+      USBD_CtlError(pdev, req);
+      break;
+    }
+
     switch (pdev->dev_state) {
     case USBD_STATE_ADDRESSED:
-      if ((ep_addr != 0x00) && (ep_addr != 0x80)) {
-        USBD_LL_StallEP(pdev, ep_addr);
-      }
+      USBD_CtlError(pdev, req);
       break;
 
     case USBD_STATE_CONFIGURED:
-      if (req->wValue == USB_FEATURE_EP_HALT) {
-        if ((ep_addr != 0x00) && (ep_addr != 0x80)) {
-          USBD_LL_StallEP(pdev, ep_addr);
-        }
-      }
-      pdev->pClass->Setup(pdev, req);
+      USBD_LL_StallEP(pdev, ep_addr);
       USBD_CtlSendStatus(pdev);
-
       break;
 
     default:
@@ -163,21 +164,22 @@ USBD_StatusTypeDef USBD_StdEPReq(USBD_HandleTypeDef *pdev, USBD_SetupReqTypedef 
 
   case USB_REQ_CLEAR_FEATURE:
 
+    if (req->bmRequest != (USB_REQ_TYPE_STANDARD | USB_REQ_RECIPIENT_ENDPOINT) ||
+        req->wValue != USB_FEATURE_EP_HALT || req->wLength != 0 || (ep_addr & 0x7F) == 0) {
+      USBD_CtlError(pdev, req);
+      break;
+    }
+
     switch (pdev->dev_state) {
     case USBD_STATE_ADDRESSED:
-      if ((ep_addr != 0x00) && (ep_addr != 0x80)) {
-        USBD_LL_StallEP(pdev, ep_addr);
-      }
+      USBD_CtlError(pdev, req);
       break;
 
     case USBD_STATE_CONFIGURED:
-      if (req->wValue == USB_FEATURE_EP_HALT) {
-        if ((ep_addr & 0x7F) != 0x00) {
-          USBD_LL_ClearStallEP(pdev, ep_addr);
-          pdev->pClass->Setup(pdev, req);
-        }
-        USBD_CtlSendStatus(pdev);
-      }
+      // The controller also resets the endpoint DATA toggle when clearing
+      // STALL, including when the endpoint was not halted.
+      USBD_LL_ClearStallEP(pdev, ep_addr);
+      USBD_CtlSendStatus(pdev);
       break;
 
     default:
